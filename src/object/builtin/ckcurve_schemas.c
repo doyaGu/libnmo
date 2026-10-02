@@ -19,10 +19,8 @@
 #include "object/nmo_object_repository.h"
 #include <string.h>
 
-static void nmo_curve_set_defaults(nmo_curve_state_t *state) {
-    if (state == NULL) {
-        return;
-    }
+static void nmo_curve_set_defaults(void *instance) {
+    nmo_curve_state_t *state = instance;
 
     state->has_curve_data = 1;
     state->control_point_count = 0;
@@ -42,10 +40,8 @@ static void nmo_curve_set_defaults(nmo_curve_state_t *state) {
     state->savepoints_in_file = 0;
 }
 
-static void nmo_curvepoint_set_defaults(nmo_curvepoint_state_t *state) {
-    if (state == NULL) {
-        return;
-    }
+static void nmo_curvepoint_set_defaults(void *instance) {
+    nmo_curvepoint_state_t *state = instance;
 
     state->has_default_data = 1;
     state->defaultdata_is_modern = 1;
@@ -63,44 +59,6 @@ static void nmo_curvepoint_set_defaults(nmo_curvepoint_state_t *state) {
     state->has_tangents_chunk = 0;
     state->has_legacy_position = 0;
     state->legacy_position = (nmo_vector_t){0.0f, 0.0f, 0.0f};
-}
-
-static void nmo_curve_dispose_state(nmo_curve_state_t *state);
-
-NMO_DEFINE_OBJECT_LIFECYCLE(
-    curve,
-    nmo_curve_state_t,
-    do {
-        nmo_status_t result = nmo_3dentity_vtable.create(
-            &state->base, NULL, context);
-        if (result != NMO_OK) return result;
-        nmo_curve_set_defaults(state);
-    } while (0),
-    nmo_curve_dispose_state(state))
-
-NMO_DEFINE_OBJECT_LIFECYCLE(
-    curvepoint,
-    nmo_curvepoint_state_t,
-    do {
-        nmo_status_t result = nmo_3dentity_vtable.create(
-            &state->base, NULL, context);
-        if (result != NMO_OK) return result;
-        nmo_curvepoint_set_defaults(state);
-    } while (0),
-    nmo_3dentity_vtable.destroy(&state->base, NULL, context))
-
-static void nmo_curve_dispose_state(nmo_curve_state_t *state)
-{
-    if (state == NULL) return;
-    if (state->sub_points != NULL) {
-        for (uint32_t i = 0; i < state->sub_point_count; ++i) {
-            if (state->sub_points[i].chunk != NULL) {
-                nmo_chunk_destroy(state->sub_points[i].chunk);
-                state->sub_points[i].chunk = NULL;
-            }
-        }
-    }
-    nmo_3dentity_vtable.destroy(&state->base, NULL, NULL);
 }
 
 static nmo_status_t read_object_sequence(
@@ -218,82 +176,81 @@ static nmo_status_t nmo_curvepoint_validate(
     const nmo_type_descriptor_t *type,
     void *context);
 
-static nmo_status_t nmo_curve_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    const nmo_curve_state_t *s = src;
-    nmo_curve_state_t *d = dst;
-    if (s == NULL || d == NULL || arena == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    NMO_RETURN_IF_ERROR(nmo_curve_validate(s, NULL, NULL));
+static const nmo_object_state_member_t nmo_curve_sub_point_members[] = {
+    NMO_STATE_VALUE(nmo_curve_point_subchunk_t, ref),
+    NMO_STATE_CHUNK(nmo_curve_point_subchunk_t, chunk)
+};
 
-    nmo_curve_state_t copied;
-    nmo_status_t result = nmo_curve_create(&copied, NULL, NULL);
-    if (result != NMO_OK) return result;
-    result = nmo_3dentity_vtable.copy(
-        &s->base, &copied.base, NULL, arena);
-    if (result != NMO_OK) goto fail;
+static const nmo_object_state_layout_t nmo_curve_sub_point_layout = {
+    .size = sizeof(nmo_curve_point_subchunk_t),
+    .members = nmo_curve_sub_point_members,
+    .member_count = sizeof(nmo_curve_sub_point_members) /
+        sizeof(nmo_curve_sub_point_members[0]),
+};
 
-    copied.has_curve_data = s->has_curve_data;
-    copied.control_point_count = s->control_point_count;
-    copied.fitting_coeff = s->fitting_coeff;
-    copied.step_count = s->step_count;
-    copied.opened = s->opened;
-    copied.sub_point_count = s->sub_point_count;
-    copied.has_curveonly_chunk = s->has_curveonly_chunk;
-    copied.has_controlpoints_chunk = s->has_controlpoints_chunk;
-    copied.has_fitting_chunk = s->has_fitting_chunk;
-    copied.has_steps_chunk = s->has_steps_chunk;
-    copied.has_open_chunk = s->has_open_chunk;
-    copied.has_savepoints_chunk = s->has_savepoints_chunk;
-    copied.savepoints_in_file = s->savepoints_in_file;
+static const nmo_object_state_member_t nmo_curve_members[] = {
+    NMO_STATE_VALUE(nmo_curve_state_t, has_curve_data),
+    NMO_STATE_VALUE(nmo_curve_state_t, control_point_count),
+    NMO_STATE_COUNTED(nmo_curve_state_t, control_point_ids, control_point_count,
+                      nmo_ref_t),
+    NMO_STATE_VALUE(nmo_curve_state_t, fitting_coeff),
+    NMO_STATE_VALUE(nmo_curve_state_t, step_count),
+    NMO_STATE_VALUE(nmo_curve_state_t, opened),
+    NMO_STATE_VALUE(nmo_curve_state_t, sub_point_count),
+    NMO_STATE_COUNTED_RECORDS(nmo_curve_state_t, sub_points, sub_point_count,
+                              nmo_curve_sub_point_layout),
+    NMO_STATE_VALUE(nmo_curve_state_t, has_curveonly_chunk),
+    NMO_STATE_VALUE(nmo_curve_state_t, has_controlpoints_chunk),
+    NMO_STATE_VALUE(nmo_curve_state_t, has_fitting_chunk),
+    NMO_STATE_VALUE(nmo_curve_state_t, has_steps_chunk),
+    NMO_STATE_VALUE(nmo_curve_state_t, has_open_chunk),
+    NMO_STATE_VALUE(nmo_curve_state_t, has_savepoints_chunk),
+    NMO_STATE_VALUE(nmo_curve_state_t, savepoints_in_file)
+};
 
-    result = nmo_object_copy_array(
-        arena, (void **)&copied.control_point_ids,
-        s->control_point_ids, sizeof(nmo_ref_t), s->control_point_count);
-    if (result != NMO_OK) goto fail;
-    result = nmo_object_copy_array(
-        arena, (void **)&copied.sub_points,
-        s->sub_points, sizeof(nmo_curve_point_subchunk_t),
-        s->sub_point_count);
-    if (result != NMO_OK) goto fail;
-    for (uint32_t i = 0; i < copied.sub_point_count; ++i) {
-        copied.sub_points[i].chunk = NULL;
-    }
-    for (uint32_t i = 0; i < copied.sub_point_count; ++i) {
-        result = nmo_object_copy_chunk(
-            arena, &copied.sub_points[i].chunk,
-            s->sub_points[i].chunk);
-        if (result != NMO_OK) goto fail;
-    }
+static const nmo_object_state_layout_t nmo_curve_layout = {
+    .size = sizeof(nmo_curve_state_t),
+    .base_vtable = &nmo_3dentity_vtable,
+    .members = nmo_curve_members,
+    .member_count = sizeof(nmo_curve_members) / sizeof(nmo_curve_members[0]),
+    .set_defaults = nmo_curve_set_defaults,
+    .validate = nmo_curve_validate,
+};
 
-#define NMO_CURVE_DETACH_SHARED_ARRAY(field) \
-    do { \
-        if (d->field.data == s->field.data) { \
-            memset(&d->field, 0, sizeof(d->field)); \
-        } \
-    } while (0)
-    NMO_CURVE_DETACH_SHARED_ARRAY(base.base.base.scripts);
-    NMO_CURVE_DETACH_SHARED_ARRAY(base.base.base.attributes);
-    NMO_CURVE_DETACH_SHARED_ARRAY(base.base.base.legacy_attributes);
-#undef NMO_CURVE_DETACH_SHARED_ARRAY
-    if (d->sub_points == s->sub_points) {
-        d->sub_points = NULL;
-        d->sub_point_count = 0;
-    }
-    nmo_curve_destroy(d, NULL, NULL);
-    *d = copied;
-    return NMO_OK;
+NMO_DEFINE_OBJECT_LAYOUT_LIFECYCLE(curve, nmo_curve_layout)
+NMO_DEFINE_OBJECT_LAYOUT_COPY(curve, nmo_curve_layout)
 
-fail:
-    nmo_curve_destroy(&copied, NULL, NULL);
-    return result;
-}
+static const nmo_object_state_member_t nmo_curvepoint_members[] = {
+    NMO_STATE_VALUE(nmo_curvepoint_state_t, has_default_data),
+    NMO_STATE_VALUE(nmo_curvepoint_state_t, defaultdata_is_modern),
+    NMO_STATE_VALUE(nmo_curvepoint_state_t, curve),
+    NMO_STATE_VALUE(nmo_curvepoint_state_t, tangent_mode),
+    NMO_STATE_VALUE(nmo_curvepoint_state_t, linear),
+    NMO_STATE_VALUE(nmo_curvepoint_state_t, tension),
+    NMO_STATE_VALUE(nmo_curvepoint_state_t, continuity),
+    NMO_STATE_VALUE(nmo_curvepoint_state_t, bias),
+    NMO_STATE_VALUE(nmo_curvepoint_state_t, tangent_in),
+    NMO_STATE_VALUE(nmo_curvepoint_state_t, tangent_out),
+    NMO_STATE_VALUE(nmo_curvepoint_state_t, has_reserved_vector),
+    NMO_STATE_VALUE(nmo_curvepoint_state_t, reserved_vector),
+    NMO_STATE_VALUE(nmo_curvepoint_state_t, has_tcb_chunk),
+    NMO_STATE_VALUE(nmo_curvepoint_state_t, has_tangents_chunk),
+    NMO_STATE_VALUE(nmo_curvepoint_state_t, has_legacy_position),
+    NMO_STATE_VALUE(nmo_curvepoint_state_t, legacy_position)
+};
+
+static const nmo_object_state_layout_t nmo_curvepoint_layout = {
+    .size = sizeof(nmo_curvepoint_state_t),
+    .base_vtable = &nmo_3dentity_vtable,
+    .members = nmo_curvepoint_members,
+    .member_count = sizeof(nmo_curvepoint_members) /
+        sizeof(nmo_curvepoint_members[0]),
+    .set_defaults = nmo_curvepoint_set_defaults,
+    .validate = nmo_curvepoint_validate,
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_LIFECYCLE(curvepoint, nmo_curvepoint_layout)
+NMO_DEFINE_OBJECT_LAYOUT_COPY(curvepoint, nmo_curvepoint_layout)
 
 static nmo_status_t nmo_curve_validate(
     const void *instance,
@@ -311,63 +268,6 @@ static nmo_status_t nmo_curve_validate(
         return NMO_ERR_VALIDATION_FAILED;
     }
     NMO_RETURN_OK();
-}
-
-static nmo_status_t nmo_curvepoint_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    const nmo_curvepoint_state_t *s = src;
-    nmo_curvepoint_state_t *d = dst;
-    if (s == NULL || d == NULL || arena == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    NMO_RETURN_IF_ERROR(nmo_curvepoint_validate(s, NULL, NULL));
-
-    nmo_curvepoint_state_t copied;
-    nmo_status_t result = nmo_curvepoint_create(&copied, NULL, NULL);
-    if (result != NMO_OK) return result;
-    result = nmo_3dentity_vtable.copy(
-        &s->base, &copied.base, NULL, arena);
-    if (result != NMO_OK) goto fail;
-
-    copied.has_default_data = s->has_default_data;
-    copied.defaultdata_is_modern = s->defaultdata_is_modern;
-    copied.curve = s->curve;
-    copied.tangent_mode = s->tangent_mode;
-    copied.linear = s->linear;
-    copied.tension = s->tension;
-    copied.continuity = s->continuity;
-    copied.bias = s->bias;
-    copied.tangent_in = s->tangent_in;
-    copied.tangent_out = s->tangent_out;
-    copied.has_reserved_vector = s->has_reserved_vector;
-    copied.reserved_vector = s->reserved_vector;
-    copied.has_tcb_chunk = s->has_tcb_chunk;
-    copied.has_tangents_chunk = s->has_tangents_chunk;
-    copied.has_legacy_position = s->has_legacy_position;
-    copied.legacy_position = s->legacy_position;
-
-#define NMO_CURVEPOINT_DETACH_SHARED_ARRAY(field) \
-    do { \
-        if (d->field.data == s->field.data) { \
-            memset(&d->field, 0, sizeof(d->field)); \
-        } \
-    } while (0)
-    NMO_CURVEPOINT_DETACH_SHARED_ARRAY(base.base.base.scripts);
-    NMO_CURVEPOINT_DETACH_SHARED_ARRAY(base.base.base.attributes);
-    NMO_CURVEPOINT_DETACH_SHARED_ARRAY(base.base.base.legacy_attributes);
-#undef NMO_CURVEPOINT_DETACH_SHARED_ARRAY
-    nmo_curvepoint_destroy(d, NULL, NULL);
-    *d = copied;
-    return NMO_OK;
-
-fail:
-    nmo_curvepoint_destroy(&copied, NULL, NULL);
-    return result;
 }
 
 NMO_DEFINE_OBJECT_VALIDATE_BASE(nmo_curvepoint, nmo_curvepoint_state_t, base, nmo_3dentity_vtable)

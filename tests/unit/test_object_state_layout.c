@@ -12,6 +12,7 @@
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_beobject_schemas.h"
 #include "object/builtin/nmo_character_schemas.h"
+#include "object/builtin/nmo_curve_schemas.h"
 #include "object/builtin/nmo_grid_schemas.h"
 #include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_layer_schemas.h"
@@ -827,6 +828,39 @@ TEST(object_state_layout, mesh_counts_follow_the_state) {
     nmo_arena_destroy(arena);
 }
 
+TEST(object_state_layout, curve_sub_points_copy_with_their_chunks) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_curve_state_t curve;
+    nmo_curve_state_t curve_copy;
+    ASSERT_EQ(NMO_OK, nmo_curve_vtable.create(&curve, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_curve_vtable.create(&curve_copy, NULL, NULL));
+    ASSERT_EQ(100u, curve.step_count);
+    nmo_ref_t control_points[2] = {nmo_ref_from_raw(130), nmo_ref_from_raw(131)};
+    nmo_curve_point_subchunk_t sub_points[1] = {
+        {.ref = nmo_ref_from_raw(132), .chunk = make_chunk(arena, 0xE5u)},
+    };
+    ASSERT_NOT_NULL(sub_points[0].chunk);
+    curve.control_point_count = 2;
+    curve.control_point_ids = control_points;
+    curve.sub_point_count = 1;
+    curve.sub_points = sub_points;
+    ASSERT_EQ(NMO_OK, nmo_curve_vtable.copy(&curve, &curve_copy, NULL, arena));
+    ASSERT_TRUE(curve_copy.control_point_ids != control_points);
+    ASSERT_TRUE(curve_copy.sub_points != sub_points);
+    ASSERT_TRUE(curve_copy.sub_points[0].chunk != sub_points[0].chunk);
+    ASSERT_EQ(132u, curve_copy.sub_points[0].ref.raw_id);
+    ASSERT_EQ(100u, curve_copy.step_count);
+    curve.control_point_ids = NULL;
+    curve.control_point_count = 0;
+    curve.sub_points = NULL;
+    curve.sub_point_count = 0;
+    nmo_curve_vtable.destroy(&curve, NULL, NULL);
+    nmo_curve_vtable.destroy(&curve_copy, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 /* A record that holds a counted array of its own, reached through a pointer,
  * with the count of the outer array computed from the state. */
 typedef struct nested_leaf {
@@ -962,5 +996,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, counted_and_record_members_of_both_widths);
     REGISTER_TEST(object_state_layout, entity_skin_copies_deeply);
     REGISTER_TEST(object_state_layout, mesh_counts_follow_the_state);
+    REGISTER_TEST(object_state_layout, curve_sub_points_copy_with_their_chunks);
     REGISTER_TEST(object_state_layout, record_pointer_with_nested_counted_members);
 TEST_MAIN_END()
