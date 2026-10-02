@@ -9,6 +9,7 @@
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "object/nmo_ref.h"
+#include "object/builtin/nmo_beobject_schemas.h"
 #include "object/builtin/nmo_character_schemas.h"
 #include "object/builtin/nmo_grid_schemas.h"
 #include "object/builtin/nmo_group_schemas.h"
@@ -514,6 +515,66 @@ TEST(object_state_layout, character_parts_and_animations_copy) {
     nmo_arena_destroy(arena);
 }
 
+TEST(object_state_layout, beobject_attributes_copy_with_strings_and_chunks) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_beobject_state_t source;
+    nmo_beobject_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(&copied, NULL, NULL));
+
+    nmo_chunk_t *payload = make_chunk(arena, 0xD4u);
+    ASSERT_NOT_NULL(payload);
+    ASSERT_EQ(NMO_OK, nmo_beobject_attribute_array_append(
+        &source.attributes, 110, 7u, payload));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(&source.scripts, 112));
+    source.priority = 5;
+
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.copy(&source, &copied, NULL, arena));
+    const nmo_beobject_attribute_t *attribute =
+        NMO_ARRAY_DATA(nmo_beobject_attribute_t, &copied.attributes);
+    ASSERT_EQ(1u, copied.attributes.count);
+    ASSERT_EQ(7u, attribute->type_id);
+    ASSERT_TRUE(attribute->chunk != payload);
+    ASSERT_EQ(1u, copied.scripts.count);
+    ASSERT_TRUE(copied.scripts.data != source.scripts.data);
+    ASSERT_EQ(5, copied.priority);
+    ASSERT_TRUE(nmo_beobject_vtable.equals(&source, &copied));
+    ASSERT_EQ(nmo_beobject_vtable.hash(&source), nmo_beobject_vtable.hash(&copied));
+    nmo_beobject_vtable.destroy(&source, NULL, NULL);
+    nmo_beobject_vtable.destroy(&copied, NULL, NULL);
+
+    /* The legacy lane is exclusive with the modern one, so it is a state of its own. */
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(&copied, NULL, NULL));
+    const nmo_beobject_legacy_attribute_t legacy = {
+        .compatible_class_id = 3,
+        .name = "Tag",
+        .category = "Misc",
+        .parameter = nmo_ref_from_raw(111),
+    };
+    ASSERT_EQ(NMO_OK, nmo_array_append(&source.legacy_attributes, &legacy));
+    source.has_data_section = 1;
+    source.data_is_legacy = 1;
+    source.legacy_data_words[2] = 0x55u;
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.copy(&source, &copied, NULL, arena));
+    const nmo_beobject_legacy_attribute_t *legacy_copy =
+        NMO_ARRAY_DATA(nmo_beobject_legacy_attribute_t, &copied.legacy_attributes);
+    ASSERT_EQ(1u, copied.legacy_attributes.count);
+    ASSERT_EQ(0, strcmp("Tag", legacy_copy->name));
+    ASSERT_TRUE(legacy_copy->name != legacy.name);
+    ASSERT_EQ(0, strcmp("Misc", legacy_copy->category));
+    ASSERT_EQ(0x55u, copied.legacy_data_words[2]);
+    ASSERT_TRUE(nmo_beobject_vtable.equals(&source, &copied));
+    NMO_ARRAY_DATA(nmo_beobject_legacy_attribute_t, &copied.legacy_attributes)[0]
+        .category = "Other";
+    ASSERT_FALSE(nmo_beobject_vtable.equals(&source, &copied));
+
+    nmo_beobject_vtable.destroy(&source, NULL, NULL);
+    nmo_beobject_vtable.destroy(&copied, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 /* A state that exercises the member kinds with a count of each width, records
  * that have padding, and the failure paths. */
 typedef struct synthetic_record {
@@ -632,5 +693,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, scene_descriptors_copy_with_their_chunks);
     REGISTER_TEST(object_state_layout, grid_defaults_and_layers_copy);
     REGISTER_TEST(object_state_layout, character_parts_and_animations_copy);
+    REGISTER_TEST(object_state_layout, beobject_attributes_copy_with_strings_and_chunks);
     REGISTER_TEST(object_state_layout, counted_and_record_members_of_both_widths);
 TEST_MAIN_END()

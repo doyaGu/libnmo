@@ -71,6 +71,68 @@ static nmo_status_t nmo_beobject_validate(
     const nmo_type_descriptor_t *type,
     void *context);
 
+static const nmo_object_state_member_t nmo_beobject_attribute_members[] = {
+    NMO_STATE_VALUE(nmo_beobject_attribute_t, parameter),
+    NMO_STATE_VALUE(nmo_beobject_attribute_t, type_id),
+    NMO_STATE_CHUNK(nmo_beobject_attribute_t, chunk)
+};
+
+static const nmo_object_state_layout_t nmo_beobject_attribute_layout = {
+    .size = sizeof(nmo_beobject_attribute_t),
+    .members = nmo_beobject_attribute_members,
+    .member_count = sizeof(nmo_beobject_attribute_members) /
+        sizeof(nmo_beobject_attribute_members[0]),
+};
+
+static const nmo_object_state_member_t nmo_beobject_legacy_attribute_members[] = {
+    NMO_STATE_VALUE(nmo_beobject_legacy_attribute_t, compatible_class_id),
+    NMO_STATE_STRING(nmo_beobject_legacy_attribute_t, name),
+    NMO_STATE_STRING(nmo_beobject_legacy_attribute_t, category),
+    NMO_STATE_VALUE(nmo_beobject_legacy_attribute_t, parameter_guid),
+    NMO_STATE_VALUE(nmo_beobject_legacy_attribute_t, parameter)
+};
+
+static const nmo_object_state_layout_t nmo_beobject_legacy_attribute_layout = {
+    .size = sizeof(nmo_beobject_legacy_attribute_t),
+    .members = nmo_beobject_legacy_attribute_members,
+    .member_count = sizeof(nmo_beobject_legacy_attribute_members) /
+        sizeof(nmo_beobject_legacy_attribute_members[0]),
+};
+
+static const nmo_object_state_member_t nmo_beobject_members[] = {
+    NMO_STATE_ARRAY(nmo_beobject_state_t, scripts, nmo_ref_t),
+    NMO_STATE_VALUE(nmo_beobject_state_t, has_scripts_section),
+    NMO_STATE_VALUE(nmo_beobject_state_t, scripts_use_legacy_identifier),
+    NMO_STATE_VALUE(nmo_beobject_state_t, priority),
+    NMO_STATE_VALUE(nmo_beobject_state_t, has_data_section),
+    NMO_STATE_VALUE(nmo_beobject_state_t, data_is_legacy),
+    NMO_STATE_VALUE(nmo_beobject_state_t, data_flags),
+    NMO_STATE_VALUE(nmo_beobject_state_t, legacy_data_words),
+    NMO_STATE_VALUE(nmo_beobject_state_t, has_runtime_data_section),
+    NMO_STATE_VALUE(nmo_beobject_state_t, runtime_data_value),
+    NMO_STATE_RECORDS(nmo_beobject_state_t, attributes,
+                      nmo_beobject_attribute_layout),
+    NMO_STATE_VALUE(nmo_beobject_state_t, has_attributes_section),
+    NMO_STATE_VALUE(nmo_beobject_state_t, has_single_activity),
+    NMO_STATE_VALUE(nmo_beobject_state_t, single_activity_flags),
+    NMO_STATE_RECORDS(nmo_beobject_state_t, legacy_attributes,
+                      nmo_beobject_legacy_attribute_layout),
+    NMO_STATE_VALUE(nmo_beobject_state_t, has_legacy_attributes),
+    NMO_STATE_VALUE(nmo_beobject_state_t, legacy_attr_old_version)
+};
+
+static const nmo_object_state_layout_t nmo_beobject_layout = {
+    .size = sizeof(nmo_beobject_state_t),
+    .base_vtable = &nmo_sceneobject_vtable,
+    .members = nmo_beobject_members,
+    .member_count = sizeof(nmo_beobject_members) /
+        sizeof(nmo_beobject_members[0]),
+    .validate = nmo_beobject_validate,
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_LIFECYCLE(beobject, nmo_beobject_layout)
+NMO_DEFINE_OBJECT_LAYOUT_COPY(beobject, nmo_beobject_layout)
+
 nmo_status_t nmo_beobject_script_array_append(
     nmo_array_t *scripts,
     nmo_object_id_t script_id)
@@ -181,43 +243,6 @@ nmo_status_t nmo_beobject_clone_attributes(
     }
     return NMO_OK;
 }
-
-NMO_DEFINE_OBJECT_LIFECYCLE(
-    beobject,
-    nmo_beobject_state_t,
-    do {
-        nmo_status_t result = nmo_sceneobject_vtable.create(
-            &state->base, NULL, context);
-        if (result != NMO_OK) return result;
-        result = nmo_array_init(
-            &state->scripts, sizeof(nmo_ref_t), 0, NULL);
-        if (result != NMO_OK) {
-            nmo_sceneobject_vtable.destroy(&state->base, NULL, context);
-            return result;
-        }
-        result = nmo_array_init(&state->attributes, sizeof(nmo_beobject_attribute_t), 0, NULL);
-        if (result != NMO_OK) {
-            nmo_array_dispose(&state->scripts);
-            nmo_sceneobject_vtable.destroy(&state->base, NULL, context);
-            return result;
-        }
-        nmo_beobject_attribute_array_set_lifecycle(&state->attributes);
-        result = nmo_array_init(
-            &state->legacy_attributes,
-            sizeof(nmo_beobject_legacy_attribute_t), 0, NULL);
-        if (result != NMO_OK) {
-            nmo_array_dispose(&state->attributes);
-            nmo_array_dispose(&state->scripts);
-            nmo_sceneobject_vtable.destroy(&state->base, NULL, context);
-            return result;
-        }
-        state->has_legacy_attributes = 0;
-        state->legacy_attr_old_version = 0;
-    } while (0),
-    do {
-        nmo_beobject_dispose_arrays(state);
-        nmo_sceneobject_vtable.destroy(&state->base, NULL, context);
-    } while (0))
 
 /* =============================================================================
  * REFLECTION FIELDS
@@ -1072,73 +1097,6 @@ nmo_status_t nmo_beobject_clone_legacy_attributes(
         }
     }
     return NMO_OK;
-}
-
-static nmo_status_t nmo_beobject_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
-{
-    const nmo_beobject_state_t *s = src;
-    nmo_beobject_state_t *d = dst;
-    (void)type;
-    if (s == NULL || d == NULL || arena == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    NMO_RETURN_IF_ERROR(nmo_beobject_validate(s, NULL, NULL));
-
-    nmo_beobject_state_t copied;
-    nmo_status_t result = nmo_beobject_create(&copied, NULL, NULL);
-    if (result != NMO_OK) return result;
-
-    result = nmo_sceneobject_vtable.copy(
-        &s->base, &copied.base, NULL, arena);
-    if (result != NMO_OK) goto fail;
-    copied.priority = s->priority;
-    copied.has_scripts_section = s->has_scripts_section;
-    copied.scripts_use_legacy_identifier =
-        s->scripts_use_legacy_identifier;
-    copied.has_data_section = s->has_data_section;
-    copied.data_is_legacy = s->data_is_legacy;
-    copied.data_flags = s->data_flags;
-    memcpy(copied.legacy_data_words, s->legacy_data_words,
-           sizeof(copied.legacy_data_words));
-    copied.has_runtime_data_section = s->has_runtime_data_section;
-    copied.runtime_data_value = s->runtime_data_value;
-    copied.has_single_activity = s->has_single_activity;
-    copied.single_activity_flags = s->single_activity_flags;
-    copied.has_attributes_section = s->has_attributes_section;
-    copied.has_legacy_attributes = s->has_legacy_attributes;
-    copied.legacy_attr_old_version = s->legacy_attr_old_version;
-
-    nmo_array_dispose(&copied.scripts);
-    result = nmo_array_clone(
-        &s->scripts, &copied.scripts, &s->scripts.allocator);
-    if (result != NMO_OK) goto fail;
-    result = nmo_beobject_clone_attributes(
-        arena, &copied.attributes, &s->attributes);
-    if (result != NMO_OK) goto fail;
-    result = nmo_beobject_clone_legacy_attributes(
-        arena, &copied.legacy_attributes, &s->legacy_attributes);
-    if (result != NMO_OK) goto fail;
-
-    if (d->scripts.data == s->scripts.data) {
-        memset(&d->scripts, 0, sizeof(d->scripts));
-    }
-    if (d->attributes.data == s->attributes.data) {
-        memset(&d->attributes, 0, sizeof(d->attributes));
-    }
-    if (d->legacy_attributes.data == s->legacy_attributes.data) {
-        memset(&d->legacy_attributes, 0, sizeof(d->legacy_attributes));
-    }
-    nmo_beobject_destroy(d, NULL, NULL);
-    *d = copied;
-    return NMO_OK;
-
-fail:
-    nmo_beobject_destroy(&copied, NULL, NULL);
-    return result;
 }
 
 static nmo_status_t nmo_beobject_validate(
