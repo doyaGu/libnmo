@@ -204,6 +204,14 @@ nmo_status_t script_edit_make_building_block(
     uint32_t block_version,
     bool clear_graph);
 
+/* Renames a behavior of the workspace through edit; nmo_script_edit_rename_node
+ * and the rewrites that hold only a workspace edit share it. */
+nmo_status_t script_edit_rename_behavior(
+    nmo_workspace_t *workspace,
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t behavior_id,
+    const char *name);
+
 nmo_status_t script_edit_parameterout_append_destination(
     nmo_script_edit_tx_t *tx,
     nmo_parameterout_state_t *state,

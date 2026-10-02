@@ -1305,6 +1305,67 @@ TEST(beh_rewrite, replace_bb_uses_explicit_behavior_type)
     nmo_context_release(ctx);
 }
 
+TEST(beh_rewrite, replace_bb_in_edit_renames_and_rolls_back_with_the_edit)
+{
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_object_id_t behavior_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, 0, "Old BB", CKPGUID_BEHAVIOR,
+        &behavior_id, NULL));
+    nmo_object_t *behavior = test_find_object(session, behavior_id);
+    ASSERT_NOT_NULL(behavior);
+    nmo_behavior_state_t *state = (nmo_behavior_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            nmo_context_get_type_registry(ctx), behavior, CKPGUID_BEHAVIOR);
+    ASSERT_NOT_NULL(state);
+    state->flags = CKBEHAVIOR_BUILDINGBLOCK;
+    const nmo_guid_t original = NMO_GUID_INIT(0x11111111u, 0x22222222u);
+    state->block_guid = original;
+
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
+    ASSERT_EQ(NMO_OK, nmo_session_borrow_document(session, &document));
+    ASSERT_EQ(NMO_OK, nmo_workspace_create(ctx, document, &workspace));
+    const nmo_guid_t replacement =
+        NMO_GUID_INIT(0x33333333u, 0x44444444u);
+    nmo_behavior_replace_bb_desc_t desc = {
+        .behavior_id = behavior_id,
+        .block_guid = replacement,
+        .name = "New BB",
+        .preserve_links = true,
+        .preserve_params = true,
+    };
+
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_begin(workspace, "replace-bb", &edit));
+    nmo_behavior_replace_report_t report = {0};
+    ASSERT_EQ(NMO_OK, nmo_behavior_edit_replace_bb_in_edit(
+        workspace, edit, &desc, &report));
+    ASSERT_TRUE(report.changed);
+    ASSERT_STR_EQ("New BB", nmo_object_get_name(behavior));
+    ASSERT_TRUE(nmo_guid_equals(replacement, state->block_guid));
+
+    nmo_workspace_edit_rollback(edit);
+    behavior = test_find_object(session, behavior_id);
+    ASSERT_NOT_NULL(behavior);
+    state = (nmo_behavior_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            nmo_context_get_type_registry(ctx), behavior, CKPGUID_BEHAVIOR);
+    ASSERT_NOT_NULL(state);
+    ASSERT_STR_EQ("Old BB", nmo_object_get_name(behavior));
+    ASSERT_TRUE(nmo_guid_equals(original, state->block_guid));
+
+    nmo_behavior_edit_semantic_risks_free(report.semantic_risks);
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(beh_rewrite, fold_apply_retargets_parameter_in_to_anchor_input_parameter);
     REGISTER_TEST(beh_rewrite, fold_apply_retargets_parameter_out_to_anchor_output_parameter);
@@ -1323,5 +1384,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(beh_rewrite, fold_analyze_rejects_anchor_outside_selection);
     REGISTER_TEST(beh_rewrite, fold_analyze_rejects_parent_in_selected_nodes);
     REGISTER_TEST(beh_rewrite, replace_bb_uses_explicit_behavior_type);
+    REGISTER_TEST(beh_rewrite, replace_bb_in_edit_renames_and_rolls_back_with_the_edit);
 TEST_MAIN_END()
 

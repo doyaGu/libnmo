@@ -663,22 +663,34 @@ NMO_API nmo_status_t nmo_script_edit_add_io(
     return NMO_OK;
 }
 
+nmo_status_t script_edit_rename_behavior(
+    nmo_workspace_t *workspace,
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t behavior_id,
+    const char *name)
+{
+    if (!workspace || !edit || behavior_id == 0 || !name || name[0] == '\0') {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (!script_edit_find_behavior_state_in_repo(
+            nmo_workspace_internal_type_registry(workspace),
+            nmo_workspace_internal_repository(workspace),
+            behavior_id,
+            NULL)) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    return nmo_object_edit_rename(edit, behavior_id, name);
+}
+
 NMO_API nmo_status_t nmo_script_edit_rename_node(
     nmo_script_edit_tx_t *tx,
     nmo_object_id_t node_id,
     const char *name)
 {
-    if (!tx || !tx->edit || node_id == 0 || !name || name[0] == '\0') {
+    if (!tx) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    if (!script_edit_find_behavior_state_in_repo(
-            nmo_workspace_internal_type_registry(tx->workspace),
-            nmo_workspace_internal_repository(tx->workspace),
-            node_id,
-            NULL)) {
-        return NMO_ERR_NOT_FOUND;
-    }
-    return nmo_object_edit_rename(tx->edit, node_id, name);
+    return script_edit_rename_behavior(tx->workspace, tx->edit, node_id, name);
 }
 
 NMO_API nmo_status_t nmo_script_edit_rename_io(

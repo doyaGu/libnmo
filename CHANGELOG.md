@@ -345,7 +345,9 @@ What breaks source compatibility, in short; the sections below give the details.
   repository.
 - Fold and replace-bb rename behaviors through the new `nmo_script_edit_rename_node()` inside their
   script edit transaction; `nmo_behavior_edit_replace_bb_in_script_tx()` is the transaction entry
-  point of replace-bb, which the edit plan executor uses.
+  point of replace-bb, which the edit plan executor uses. `nmo_behavior_edit_replace_bb_in_edit()`,
+  which has only a workspace edit, renames through the same code, so no rewrite renames an object
+  directly any more.
 - `tools/commands/nmo_cmd_script.c` (4,590 lines) and `nmo_cmd_behavior_interface.c` (3,857) are
   split by command into files of at most 1,754 lines; the functions are unchanged.
 - Every edit plan op kind is encoded and decoded from its field table (`src/edit/edit_plan_json.c`,
