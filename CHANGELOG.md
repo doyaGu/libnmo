@@ -403,6 +403,22 @@ the tests build each layout dword by dword.
 - The generated and the corpus round-trip tests no longer share a scratch file name; ctest ran them in
   parallel in the same directory.
 
+### Changed - More state hooks come from the state layouts
+- `nmo_object_state_member_t` gained the kinds `COUNTED` (an arena-owned array counted by an integer member of
+  either width) and `RECORDS` (an `nmo_array_t` of records described by a nested member list, with owned
+  strings, byte buffers, chunks and counted arrays), and the flag `UNCOMPARED` (copied, but left out of equals
+  and hash). The members are now written with designated initializers.
+- Create, destroy, copy, equals and hash of the parameter, local parameter, output parameter, synchro, state
+  object, critical section, sound, wave sound, midi sound and body part classes, and create and copy of the
+  scene, grid, character and behavior object classes (those four compare through the serialized form), come
+  from their layouts. 29 of the 43 schemas use layouts now, up from 20; about 1,060 lines fewer in
+  `src/object/builtin`.
+- Behavior differences, all on states that are not serialized the same way: `equals` of a MIDI sound now
+  compares whether its file name came from a file, which decides whether it is written back; the loop word
+  of a pre-version-2 wave sound is copied but, as before, not compared; `equals` and `hash` of a synchro
+  object no longer return false and 0 for a state that fails validation; the hash values of these classes
+  changed, which only the object diff and the hook coverage test read.
+
 ### Changed - Chunks keep no copy of the bytes they were parsed from
 - `nmo_chunk_t` lost `raw_data` and `raw_size`, and `nmo_data_chunk_slice_t` lost `borrowed`. A parsed chunk
   used to keep its source buffer and the data section writer emitted those bytes instead of the chunk, so a
