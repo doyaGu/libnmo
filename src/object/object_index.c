@@ -30,6 +30,7 @@ typedef struct object_array {
     nmo_object_t **objects;
     size_t count;
     size_t capacity;
+    char *name; /**< Key of a name index entry, owned by the entry; NULL in the other indexes */
 } object_array_t;
 
 /**
@@ -72,6 +73,7 @@ static void object_array_dispose(void *element, void *user_data) {
         alloc = &fallback;
     }
     nmo_free(alloc, arr->objects);
+    nmo_free(alloc, arr->name);
     nmo_free(alloc, arr);
 }
 
@@ -124,6 +126,7 @@ static object_array_t *object_array_create(size_t initial_capacity, nmo_allocato
     }
 
     arr->count = 0;
+    arr->name = NULL;
     return arr;
 }
 
@@ -265,6 +268,7 @@ static nmo_status_t object_index_prepare_build(nmo_object_index_t *index, uint32
 static nmo_status_t object_index_add_to_table(
     nmo_hash_table_t *table,
     const void *key,
+    bool copy_name_key,
     nmo_object_t *object,
     size_t initial_capacity,
     nmo_allocator_t *allocator)
@@ -276,6 +280,20 @@ static nmo_status_t object_index_add_to_table(
         arr = object_array_create(initial_capacity, allocator);
         if (arr == NULL) {
             return NMO_ERR_NOMEM;
+        }
+        if (copy_name_key) {
+            /* The objects that carry a name come and go and are renamed, so the
+               entry keeps its own copy of the name instead of borrowing the
+               storage of the first one. */
+            const char *name = *(const char *const *)key;
+            const size_t size = strlen(name) + 1;
+            arr->name = (char *)nmo_alloc(allocator, size, 1);
+            if (arr->name == NULL) {
+                object_array_dispose(&arr, allocator);
+                return NMO_ERR_NOMEM;
+            }
+            memcpy(arr->name, name, size);
+            key = &arr->name;
         }
         nmo_status_t insert_result = nmo_hash_table_insert(table, key, &arr);
         if (insert_result != NMO_OK) {
@@ -346,6 +364,7 @@ static nmo_status_t object_index_add_object_to_tables(
         nmo_status_t status = object_index_add_to_table(
             index->class_index,
             &object->class_id,
+            false,
             object,
             8,
             &index->allocator);
@@ -361,6 +380,7 @@ static nmo_status_t object_index_add_object_to_tables(
             nmo_status_t status = object_index_add_to_table(
                 index->name_index,
                 &name,
+                true,
                 object,
                 4,
                 &index->allocator);
@@ -378,6 +398,7 @@ static nmo_status_t object_index_add_object_to_tables(
         nmo_status_t status = object_index_add_to_table(
             index->guid_index,
             &object->type_guid,
+            false,
             object,
             4,
             &index->allocator);

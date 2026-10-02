@@ -347,6 +347,59 @@ TEST(object_index, remove_clears_empty_entries) {
     teardown_fixture(f);
 }
 
+/* Two objects share a name and the first one leaves: the entry of the name must
+ * not keep the name storage of the object that left as its key. */
+TEST(object_index, a_shared_name_outlives_the_first_object_that_had_it) {
+    test_fixture_t *f = setup_fixture();
+    ASSERT_NOT_NULL(f);
+
+    create_test_object(f, 1, 100, "Alice");
+    create_test_object(f, 2, 100, "Alice");
+    ASSERT_EQ(NMO_OK, nmo_object_index_build(f->index, NMO_INDEX_BUILD_NAME));
+    nmo_object_repository_set_index(f->repo, f->index);
+
+    nmo_object_t *taken = NULL;
+    ASSERT_EQ(NMO_OK, nmo_object_repository_take(f->repo, 1, &taken));
+    ASSERT_NOT_NULL(taken);
+    nmo_object_destroy(taken);
+
+    nmo_object_t *obj = nmo_object_index_find_by_name(f->index, "Alice", 0);
+    ASSERT_NOT_NULL(obj);
+    ASSERT_EQ(2, obj->id);
+
+    ASSERT_EQ(NMO_OK, nmo_object_repository_remove(f->repo, 2));
+    ASSERT_NULL(nmo_object_index_find_by_name(f->index, "Alice", 0));
+
+    teardown_fixture(f);
+}
+
+TEST(object_index, a_shared_name_outlives_the_rename_of_the_first_object) {
+    test_fixture_t *f = setup_fixture();
+    ASSERT_NOT_NULL(f);
+
+    create_test_object(f, 1, 100, "Alice");
+    create_test_object(f, 2, 100, "Alice");
+    ASSERT_EQ(NMO_OK, nmo_object_index_build(f->index, NMO_INDEX_BUILD_NAME));
+    nmo_object_repository_set_index(f->repo, f->index);
+
+    /* The rename frees the old name of object 1 and allocates the new one,
+     * which the allocator is free to put where the old one was. */
+    ASSERT_EQ(NMO_OK, nmo_object_repository_rename(f->repo, 1, "Bob"));
+
+    nmo_object_t *obj = nmo_object_index_find_by_name(f->index, "Alice", 0);
+    ASSERT_NOT_NULL(obj);
+    ASSERT_EQ(2, obj->id);
+    obj = nmo_object_index_find_by_name(f->index, "Bob", 0);
+    ASSERT_NOT_NULL(obj);
+    ASSERT_EQ(1, obj->id);
+
+    size_t count = 0;
+    ASSERT_NOT_NULL(nmo_object_index_get_by_name_all(f->index, "Alice", 0, &count));
+    ASSERT_EQ(1, count);
+
+    teardown_fixture(f);
+}
+
 TEST(object_index, repository_type_guid_update_refreshes_guid_index) {
     test_fixture_t *f = setup_fixture();
     ASSERT_NOT_NULL(f);
@@ -517,6 +570,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_index, guid_index);
     REGISTER_TEST(object_index, incremental_update);
     REGISTER_TEST(object_index, remove_clears_empty_entries);
+    REGISTER_TEST(object_index, a_shared_name_outlives_the_first_object_that_had_it);
+    REGISTER_TEST(object_index, a_shared_name_outlives_the_rename_of_the_first_object);
     REGISTER_TEST(object_index, repository_type_guid_update_refreshes_guid_index);
     REGISTER_TEST(object_index, statistics);
     REGISTER_TEST(object_index, active_flags);
