@@ -231,6 +231,10 @@ if(TARGET nmo_cli)
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_patch.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_parameter.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_script.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_script_edit.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_script_graph.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_script_param.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_script_run.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_convert.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_diff.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_extension.c

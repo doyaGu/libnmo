@@ -978,51 +978,51 @@ TEST(repl_read, no_remaining_repl_read_placeholder_strings) {
 }
 
 TEST(repl_read, script_run_uses_executor_handles_only) {
-    assert_source_not_contains("tools/commands/nmo_cmd_script.c",
+    assert_source_not_contains("tools/commands/nmo_cmd_script_run.c",
                                "result_handles");
-    assert_source_not_contains("tools/commands/nmo_cmd_script.c",
+    assert_source_not_contains("tools/commands/nmo_cmd_script_run.c",
                                "result_handle_count");
-    assert_source_not_contains("tools/commands/nmo_cmd_script.c",
+    assert_source_not_contains("tools/commands/nmo_cmd_script_run.c",
                                "script_run_add_operation_json");
-    assert_source_not_contains("tools/commands/nmo_cmd_script.c",
+    assert_source_not_contains("tools/commands/nmo_cmd_script_run.c",
                                "script_run_count_report_impacts");
-    assert_source_not_contains("tools/commands/nmo_cmd_script.c",
+    assert_source_not_contains("tools/commands/nmo_cmd_script_run.c",
                                "script_run_operation_t");
-    assert_source_not_contains("tools/commands/nmo_cmd_script.c",
+    assert_source_not_contains("tools/commands/nmo_cmd_script_run.c",
                                "script_run_append_operation");
-    assert_source_not_contains("tools/commands/nmo_cmd_script.c",
+    assert_source_not_contains("tools/commands/nmo_cmd_script_run.c",
                                "operation_capacity");
 }
 
 TEST(repl_read, script_run_does_not_keep_script_edit_report) {
-    assert_source_not_contains("tools/commands/nmo_cmd_script.c",
+    assert_source_not_contains("tools/commands/nmo_cmd_script_run.c",
                                "nmo_script_edit_report_t report");
-    assert_source_not_contains("tools/commands/nmo_cmd_script.c",
+    assert_source_not_contains("tools/commands/nmo_cmd_script_run.c",
                                "&args->report");
 }
 
 TEST(repl_read, script_run_does_not_keep_private_validation) {
-    assert_source_not_contains("tools/commands/nmo_cmd_script.c",
+    assert_source_not_contains("tools/commands/nmo_cmd_script_run.c",
                                "args->validation");
-    assert_source_not_contains("tools/commands/nmo_cmd_script.c",
+    assert_source_not_contains("tools/commands/nmo_cmd_script_run.c",
                                "script_run_collect_validation");
 }
 
 TEST(repl_read, script_run_uses_executor_report_directly) {
-    assert_source_not_contains("tools/commands/nmo_cmd_script.c",
+    assert_source_not_contains("tools/commands/nmo_cmd_script_run.c",
                                "script_run_accumulate_edit_report");
-    assert_source_not_contains("tools/commands/nmo_cmd_script.c",
+    assert_source_not_contains("tools/commands/nmo_cmd_script_run.c",
                                "script_run_copy_operation_result");
-    assert_source_not_contains("tools/commands/nmo_cmd_script.c",
+    assert_source_not_contains("tools/commands/nmo_cmd_script_run.c",
                                "script_run_accumulate_semantic_risks");
 }
 
 TEST(repl_read, script_write_commands_use_edit_report_validation_only) {
-    assert_source_not_contains("tools/commands/nmo_cmd_script.c",
+    assert_source_not_contains("tools/commands/nmo_cmd_script_run.c",
                                "script_run_validation_t");
-    assert_source_not_contains("tools/commands/nmo_cmd_script.c",
+    assert_source_not_contains("tools/commands/nmo_cmd_script_run.c",
                                "common->validation");
-    assert_source_not_contains("tools/commands/nmo_cmd_script.c",
+    assert_source_not_contains("tools/commands/nmo_cmd_script_run.c",
                                "script_collect_validation");
 }
 
@@ -1040,7 +1040,7 @@ TEST(repl_read, edit_report_schema_v2_has_single_json_helper) {
                            "nmo_cli_edit_report_add_schema_v2_json");
     assert_source_contains("tools/commands/nmo_cmd_patch.c",
                            "nmo_cli_edit_report_add_schema_v2_json");
-    assert_source_contains("tools/commands/nmo_cmd_script.c",
+    assert_source_contains("tools/commands/nmo_cmd_script_run.c",
                            "nmo_cli_edit_report_add_schema_v2_json");
     assert_source_contains("tools/commands/nmo_cmd_debug.c",
                            "nmo_cli_edit_report_add_schema_v2_json");
@@ -1168,11 +1168,11 @@ TEST(repl_read, lua_fold_maps_accept_patch_id_aliases) {
                            "\"new_parameter_id\"");
     assert_source_contains("src/lua/lua_bindings_plan.c",
                            "nmo_lua_fold_map_parse(");
-    assert_source_contains("tools/commands/nmo_cmd_script.c",
+    assert_source_contains("tools/commands/nmo_cmd_script_run.c",
                            "nmo_lua_fold_map_parse(");
     assert_source_not_contains("src/lua/lua_bindings_plan.c",
                                "nmo_lua_plan_parse_fold_maps");
-    assert_source_not_contains("tools/commands/nmo_cmd_script.c",
+    assert_source_not_contains("tools/commands/nmo_cmd_script_run.c",
                                "script_run_lua_parse_fold_maps");
 }
 
@@ -1197,9 +1197,9 @@ TEST(repl_read, patch_uses_schema_v2_output_path) {
 }
 
 TEST(repl_read, script_uses_schema_v2_output_path) {
-    assert_source_contains("tools/commands/nmo_cmd_script.c",
+    assert_source_contains("tools/commands/nmo_cmd_script_run.c",
                            "nmo_edit_report_set_output_path");
-    assert_source_not_contains("tools/commands/nmo_cmd_script.c",
+    assert_source_not_contains("tools/commands/nmo_cmd_script_run.c",
                                "\"output_path\"");
 }
 
