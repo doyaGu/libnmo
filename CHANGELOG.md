@@ -9,6 +9,53 @@ never tagged; the numbering restarted at 0.2.0.
 
 ## [Unreleased]
 
+Changes since 0.2.0 (`5005aac3`, 2026-07-16). About 1,000 commits of July to September are summarized
+by theme in the sections marked "July to September"; the other sections record the work from
+September 30 on in detail.
+
+### Upgrading from 0.2.0
+What breaks source compatibility, in short; the sections below give the details.
+- The edit stack, the Lua runtime and the project layer are the separate libraries `nmo::edit`,
+  `nmo::lua` and `nmo::project`, and seven `behavior/` headers moved to `edit/` (see "Edit, Lua and
+  project layers are separate libraries").
+- 20 public headers are gone, seven of them moved to `edit/`, and 163 `NMO_API` functions were
+  removed (see "Unused APIs"). The chunk parser and writer objects give way to the `nmo_chunk_*`
+  functions of `format/nmo_chunk_api.h`, and the `nmo_io_file_*` and `nmo_io_memory_*` functions to
+  `nmo_file_io_open()`, `nmo_memory_io_open_read()` and `nmo_memory_io_open_write()`.
+- Three signatures changed: `nmo_behavior_normalize_references()` takes the type registry,
+  `nmo_interface_graph_io_set_array()` takes the tag array of the ports, and
+  `nmo_object_format_path()` returns the full length of the path, as snprintf does.
+- State structs of the built-in classes changed, so code that reads them needs a rebuild and a look
+  at the members it uses. Renamed or reinterpreted: the skin vertex buffers (`bone_weights` first),
+  `nmo_curvepoint_state_t.tangent_mode` (was `use_tcb`, with the opposite meaning), the patch channel
+  dwords (`source_blend`, `dest_blend`, `flags`), the legacy texture format fields, the camera's
+  `aspect_width` and `aspect_height`, the morph sections of an object animation, and `nmo_chunk_t`,
+  which has no `raw_data` any more.
+- Changed values: `NMO_CKTEXTURE_USEGLOBAL` and `NMO_CKTEXTURE_INCLUDEORIGINALFILE` are 3 and 4, the
+  `data_size` of a CONTROLLERS controller leaves out its key count, `nmo_objanim_controller_key_size()`
+  returns 0 for bezier controllers, raw bitmap planes are in blue, green, red, alpha order,
+  `nmo_image_reconstruct_pixels()` returns rows top-down, and the hash values of most classes differ.
+- Changed behavior: a default save keeps the original chunk of every object that did not change, a
+  checksum mismatch on load is a warning (`NMO_LOAD_VERIFY_CRC` makes it an error), and files older
+  than version 7 are refused at load.
+
+### Added - Build, install and release packages (July to September)
+- Lua 5.5.1 is downloaded and SHA-256 verified at configure time (FetchContent), and isocline, the REPL
+  line editor, comes from `deps/isocline/` or a pinned archive. miniz is compiled into libnmo; the
+  bundled miniz is 3.1.2, yyjson 0.13.0 and stb 2c980bb5.
+- `cmake --install` installs a CMake package (`find_package(libnmo CONFIG)`, `nmo::nmo`), pkg-config
+  files, the Lua headers and the licenses of libnmo and its bundled dependencies.
+  `tools/scripts/package_release.py` builds a release package.
+- CI builds and tests on Linux, macOS (universal), Windows MSVC and Windows MinGW and under ASan and
+  UBSan, packages every platform, and publishes the packages as a GitHub release for a `vX.Y.Z` tag.
+  Everything builds with `-Wall -Wextra -Wpedantic -Wshadow -Werror`, and with `/W4 /WX` under MSVC.
+- A test that needs a Virtools sample that is not there reports itself skipped (exit code 77;
+  `TEST_SKIP`, `TEST_REQUIRE_FILE`, `TEST_REQUIRE_FIXTURE`). CTest also runs source audits (no byte
+  order marks or mojibake, no upward include outside `tests/layering_allowlist.txt`) and checks that
+  the generated CLI completions, object enums and Lua pushers match their generators.
+- `docs/api-tiers.md` states what each API tier promises; the CLI and API reference moved from the
+  README to `docs/cli-reference.md` and `docs/api.md`.
+
 ### Added - Execution attachments and schema helpers
 - `nmo_behavior_execution_set_attachment()` / `nmo_behavior_execution_get_attachment()`:
   per-execution data owned by optional components.
@@ -34,6 +81,52 @@ never tagged; the numbering restarted at 0.2.0.
   0xC6C7A400 where the computation, checked independently, gives 0x196CA3FC; `validate all` on it
   reports that one error. `test_file_checksum` covers a generated file, a flipped header field, a
   flipped stored checksum and the whole corpus.
+
+### Changed - CLI output comes from records (July to September)
+- Every command builds its output as a record (`tools/nmo_cli_record.h`) and renders it as text,
+  `json` or `json-pretty`, instead of printing the text and building the JSON tree separately, and the
+  options of the commands come from shared specs (`tools/nmo_opt.h`). Text is formatted into heap
+  strings of the exact size instead of fixed-size buffers.
+- Packed ARGB fields print as `0xAARRGGBB` and accept `#` or `0x` hex as well as a float tuple; they
+  were read as a 16-byte float color. Snapshots leave out `raw_hex` for values that hold process
+  addresses or strings, and object summaries describe pointer fields instead of printing addresses.
+
+### Changed - Objects are handled by their effective type (July to September)
+- An object whose type GUID was set (`nmo_object_set_type_guid()`) is loaded, saved, validated and
+  edited through that type instead of the one registered for its class id, and so are the behavior
+  graph, script, semantic validator and probe analyzer views of it. `nmo_type_query_find_for_object()`
+  and `nmo_type_query_object_is_derived_from_class()` do the lookup.
+
+### Changed - Editing (July to September)
+- Workspace edit transactions reclaim what a failed edit allocated and keep their journal in a unit of
+  its own; object creation, entity writes and camera and light settings go through workspace edits;
+  behavior edit snapshots are deep copies; the fold and replace-bb rewrites run inside script edit
+  transactions and rewire their boundary through script edit primitives.
+- The edit op kinds have one metadata table (`nmo_edit_op_kind_name()`, `nmo_edit_op_kind_parse()`),
+  and the JSON of the op kinds with flat scalar payloads is encoded and decoded from field tables.
+- `script_edit.c`, `edit_plan.c` and `behavior_rewrite.c` are split by operation family.
+
+### Changed - State hooks and older data versions (July to September)
+- The copy, equals and hash hooks compare by content (reflected arrays, nested records) and copy
+  transactionally: a failed copy leaves the destination as it was. Arrays are validated before a
+  state is serialized or copied, and fixed caps on collection sizes (for example 100,000 scene
+  objects) gave way to what the format can encode.
+- Chunks of older data versions are written back in their own layout (wave sound, behavior, 2D
+  entity, character, body part joints, curve, curve point, legacy scale-axis controllers), while new
+  chunks and states use the current version.
+- A section longer than the fields of its class was rejected; the CK2_3D classes accept the extra
+  dwords again, as the engine does (see "Loading accepts what the engine accepts").
+
+### Changed - References are kept and checked (July to September)
+- Every built-in class keeps its object references as the `nmo_ref_t` records of 0.2.0, so an
+  unresolved, null or mismatched reference survives load and save: levels, synchros, scenes,
+  behavior links, materials, parameters, legacy attributes, characters, meshes, patch meshes,
+  animations, curves, behaviors, data array cells, skin bones and place portals.
+- References are checked against the classes their field allows (parameter inputs, outputs and
+  operations, synchro waiters, scene descriptors, place children, character animations, BeObject
+  attribute parameters, behavior owners, data array cells). Normalizing invalid references
+  (`nmo_runtime_normalize_object_invalid_refs()`) reports each object and leaves the chunks of the
+  other objects and the compression of the file as they were.
 
 ### Changed - Edit, Lua and project layers are separate libraries
 - The edit stack (edit plans, script edits, behavior rewrites, the semantic validator, the probe
@@ -217,6 +310,21 @@ never tagged; the numbering restarted at 0.2.0.
 - A chunk written by a manager hook is remapped to file ids like every other chunk; before, one that had been
   parsed from bytes was left alone.
 
+### Removed - Unused APIs (July to September)
+- Headers: `session/nmo_builder.h` (the staged file builder), `session/nmo_runtime_result.h` (result
+  objects of copy, destroy and destroy preview that only the Lua bindings used),
+  `object/nmo_object_iter.h`, `object/nmo_value_writer.h`, `lua/nmo_lua_value.h`,
+  `extension/nmo_extension_diagnostics.h`, `io/nmo_io_checksum.h`, `io/nmo_io_compressed.h`,
+  `core/nmo_hash_set.h`, `core/nmo_list.h` and `core/nmo_pool.h`.
+- `format/nmo_chunk_parser.h` and `format/nmo_chunk_writer.h`: the parser and writer objects were a
+  second implementation next to the chunk. `format/nmo_chunk_api.h` gained what only they offered
+  (reserve and patch, 16-bit little-endian buffers, dwords as words, buffer locks,
+  `nmo_chunk_seek_identifier_with_size()`).
+- The `nmo_io_file_*` and `nmo_io_memory_*` functions (the `nmo_io_interface_t` API stays), the view
+  builders `nmo_comparison_build_view()`, `nmo_diff_build_view()` and `nmo_object_summary_build_view()`
+  with their `_destroy` and `_collect_stats` companions, `nmo_chunk_inspect_validate()` and
+  `nmo_deserialize_store_remaining()`.
+
 ### Removed - The save_buffer module and internal helpers
 - The unused `save_buffer` module and its forward typedef `nmo_save_buffer_t`, and internal helpers
   with no callers.
@@ -225,6 +333,26 @@ never tagged; the numbering restarted at 0.2.0.
 - `nmo_beobject_clone_attributes` and `nmo_beobject_clone_legacy_attributes` are gone. They deep copied the modern
   and the legacy attribute arrays of a CKBeObject for the hand written copy hook; the state layout of the
   behavior object does that now, and nothing else called them.
+
+### Fixed - Malformed input fails cleanly (July to September)
+- Reading and writing the state of a built-in class is atomic: a state is replaced only when its
+  chunk was read completely, and a failed write leaves no partial chunk behind.
+- Seek and read errors reach the caller instead of being ignored, counts are checked before anything
+  is allocated, and payloads are bounded to their identifier section, so a corrupt count or offset
+  fails instead of reading into the next section. The chunk reader and writer reject unterminated
+  strings, sizes the format cannot encode and overflowing arithmetic, and chunks, Header1 and the data
+  section are parsed into a staging state that is published only on success.
+- Failures in the load pipeline (reference resolver, remap tables, shadow storage, included files,
+  finalization) are reported instead of continuing with a partial result.
+- Core fixes: large aligned arena allocations, string mutations whose source overlaps the
+  destination, removal from containers that own their elements, object renames and index updates
+  that fail half way, and the durability of transactional file writes.
+
+### Fixed - Saves keep chunk metadata (July to September)
+- A save keeps the class id of each chunk and the plugin dependencies of the file, a targeted save
+  or a reference normalization leaves the chunks of the other objects untouched, and the write mode
+  flags of the header are the ones Virtools writes. `diff` reports differences in chunk metadata and
+  plugin dependencies.
 
 ### Fixed - CKObjectAnimation controller keys
 - CONTROLLERS-format controllers are stored as `[u32 key_count][keys]` (checked against the
