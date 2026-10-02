@@ -3,6 +3,8 @@
 
 #include "session/nmo_session.h"
 #include "session/nmo_session_pipeline.h"
+#include "session/nmo_deserializer.h"
+#include "session/nmo_serializer.h"
 #include "session/nmo_runtime_kernel.h"
 #include "session/nmo_reference_resolver.h"
 #include "core/nmo_allocator.h"
@@ -207,6 +209,16 @@ nmo_status_t nmo_session_get_runtime_load_stats(
     nmo_runtime_load_stats_t *out_stats);
 const nmo_session_plugin_diagnostics_t *nmo_session_get_plugin_diagnostics(
     const nmo_session_t *session);
+/* The load and save pipelines (session_load.c, serializer.c); the session
+   reaches them through its runtime ops. */
+nmo_status_t nmo_load_file(
+    nmo_session_t *session,
+    const char *path,
+    const nmo_load_options_t *opts);
+nmo_status_t nmo_save_file(
+    nmo_session_t *session,
+    const char *path,
+    const nmo_save_options_t *opts);
 void nmo_session_internal_set_partial_load(nmo_session_t *session, int partial);
 void nmo_session_invalidate_behavior_index(nmo_session_t *session);
 /** Drop the caches an edit with these flags made stale (nmo_edit_flags.h). */

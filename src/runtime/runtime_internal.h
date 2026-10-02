@@ -63,15 +63,6 @@ void nmo_session_close_with_context(
 nmo_status_t nmo_session_borrow_document(
     nmo_session_t *session,
     nmo_document_t **out_document);
-/* Legacy 3-argument runtime-op callbacks kept internal to the session bridge. */
-nmo_status_t nmo_load_file(
-    nmo_session_t *session,
-    const char *path,
-    const nmo_load_options_t *opts);
-nmo_status_t nmo_save_file(
-    nmo_session_t *session,
-    const char *path,
-    const nmo_save_options_t *opts);
 nmo_session_t *nmo_session_load(nmo_context_t *ctx, const char *filename);
 nmo_status_t nmo_session_load_file(
     nmo_session_t *session,

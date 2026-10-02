@@ -307,6 +307,8 @@ set(NMO_RUNTIME_SOURCES
     src/runtime/workspace_edit_scene.c
     src/runtime/workspace_edit_sound.c
     src/session/object_system.c
+    src/session/serializer.c
+    src/session/session_load.c
     src/session/session.c
     src/session/deserializer.c
     src/session/id_mapping.c
