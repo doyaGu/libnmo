@@ -48,6 +48,44 @@ static const nmo_object_state_member_t nmo_behaviorlink_members[] = {
     NMO_STATE_VALUE(nmo_behaviorlink_state_t, has_legacy_delay)
 };
 
+/* CKBehaviorLink::Save writes the new layout: both delays in one dword (the
+ * activation delay in the low half), then the two ends. A file of the legacy
+ * layout holds the activation delay, the ends and the initial delay in sections
+ * of their own, which are read only when the new section is absent. */
+static const nmo_object_section_field_t nmo_behaviorlink_new_fields[] = {
+    NMO_SECTION_FIELD_INT16_PAIR(nmo_behaviorlink_state_t, activation_delay,
+                                 initial_activation_delay),
+    NMO_SECTION_FIELD_REF(nmo_behaviorlink_state_t, in_io, NMO_CID_BEHAVIORIO),
+    NMO_SECTION_FIELD_REF(nmo_behaviorlink_state_t, out_io, NMO_CID_BEHAVIORIO)
+};
+static const nmo_object_section_field_t nmo_behaviorlink_curdelay_fields[] = {
+    NMO_SECTION_FIELD_INT16_AS_INT(nmo_behaviorlink_state_t, activation_delay)
+};
+static const nmo_object_section_field_t nmo_behaviorlink_ios_fields[] = {
+    NMO_SECTION_FIELD_REF(nmo_behaviorlink_state_t, in_io, NMO_CID_BEHAVIORIO),
+    NMO_SECTION_FIELD_REF(nmo_behaviorlink_state_t, out_io, NMO_CID_BEHAVIORIO)
+};
+static const nmo_object_section_field_t nmo_behaviorlink_delay_fields[] = {
+    NMO_SECTION_FIELD_INT16_AS_INT(nmo_behaviorlink_state_t, initial_activation_delay)
+};
+
+static const nmo_object_section_t nmo_behaviorlink_section_list[] = {
+    NMO_SECTION(CK_STATESAVE_BEHAV_LINK_NEWDATA, nmo_behaviorlink_state_t,
+                use_new_format, 0, 0, nmo_behaviorlink_new_fields),
+    NMO_SECTION(CK_STATESAVE_BEHAV_LINK_CURDELAY, nmo_behaviorlink_state_t,
+                has_legacy_curdelay, 1, 0, nmo_behaviorlink_curdelay_fields),
+    NMO_SECTION(CK_STATESAVE_BEHAV_LINK_IOS, nmo_behaviorlink_state_t,
+                has_legacy_ios, 1, 0, nmo_behaviorlink_ios_fields),
+    NMO_SECTION(CK_STATESAVE_BEHAV_LINK_DELAY, nmo_behaviorlink_state_t,
+                has_legacy_delay, 1, 0, nmo_behaviorlink_delay_fields)
+};
+
+static const nmo_object_sections_t nmo_behaviorlink_sections = {
+    NMO_SECTION_LIST(nmo_behaviorlink_section_list),
+    .any_present_offset = offsetof(nmo_behaviorlink_state_t, has_format),
+    .non_file_save_flags = CK_STATESAVE_BEHAV_LINKONLY,
+};
+
 static const nmo_object_state_layout_t nmo_behaviorlink_layout = {
     .size = sizeof(nmo_behaviorlink_state_t),
     .base_vtable = &nmo_object_vtable,
@@ -56,6 +94,7 @@ static const nmo_object_state_layout_t nmo_behaviorlink_layout = {
     .member_count =
         sizeof(nmo_behaviorlink_members) / sizeof(nmo_behaviorlink_members[0]),
     .set_defaults = nmo_behaviorlink_set_defaults,
+    .sections = &nmo_behaviorlink_sections,
 };
 
 NMO_DEFINE_OBJECT_LAYOUT_OPS(behaviorlink, nmo_behaviorlink_layout)
@@ -64,6 +103,8 @@ static nmo_status_t nmo_behaviorlink_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context);
+
+NMO_DEFINE_OBJECT_LAYOUT_SERDE(nmo_behaviorlink, nmo_behaviorlink_layout, nmo_behaviorlink_validate)
 
 /* =============================================================================
  * REFLECTION FIELDS
@@ -102,148 +143,6 @@ static const nmo_type_field_t nmo_behaviorlink_fields[] = {
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-static nmo_status_t nmo_behaviorlink_deserialize_internal(
-    void *instance,
-    nmo_chunk_t *chunk,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    nmo_behaviorlink_state_t *out_state = (nmo_behaviorlink_state_t *)instance;
-
-    if (chunk == NULL || out_state == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_behaviorlink_deserialize");
-    }
-
-    nmo_status_t result;
-
-    /* Read base CKObject state (merged into this chunk by AddChunkAndDelete) */
-    result = nmo_object_deserialize(&out_state->base, chunk, NULL, context);
-    if (result != NMO_OK) return result;
-
-    int16_t activation_delay = out_state->activation_delay;
-    int16_t initial_activation_delay = out_state->initial_activation_delay;
-    nmo_ref_t in_io = out_state->in_io;
-    nmo_ref_t out_io = out_state->out_io;
-    bool has_format = false;
-    bool use_new_format = false;
-    bool has_legacy_curdelay = false;
-    bool has_legacy_ios = false;
-    bool has_legacy_delay = false;
-
-    /* Try new format first (preferred). Decode into locals so a truncated
-     * section cannot publish a partial endpoint pair. */
-    size_t section_dwords = 0;
-    result = nmo_chunk_seek_identifier_with_size(
-        chunk, CK_STATESAVE_BEHAV_LINK_NEWDATA, &section_dwords);
-    if (result == NMO_OK) {
-        if (section_dwords < 3u) return NMO_ERR_TRUNCATED_CHUNK;
-        if (section_dwords > 3u) return NMO_ERR_INVALID_FORMAT;
-        has_format = true;
-        use_new_format = true;
-        /* New format: packed delays (lower 16 bits = activation, upper 16 bits = initial) */
-        uint32_t delays;
-        result = nmo_chunk_read_dword(chunk, &delays);
-        if (result != NMO_OK) return result;
-
-        activation_delay = (int16_t)(delays & 0xFFFF);
-        initial_activation_delay = (int16_t)((delays >> 16) & 0xFFFF);
-
-        /* Read I/O object references */
-        result = nmo_ref_read(chunk, &in_io);
-        if (result != NMO_OK) return result;
-
-        result = nmo_ref_read(chunk, &out_io);
-        if (result != NMO_OK) return result;
-    } else {
-        if (result != NMO_ERR_NOT_FOUND) return result;
-        /* Legacy format support */
-        result = nmo_chunk_seek_identifier_with_size(
-            chunk, CK_STATESAVE_BEHAV_LINK_CURDELAY, &section_dwords);
-        if (result == NMO_OK) {
-            if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
-            if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
-            int32_t delay;
-            result = nmo_chunk_read_int(chunk, &delay);
-            if (result != NMO_OK) return result;
-            activation_delay = (int16_t)delay;
-            has_format = true;
-            has_legacy_curdelay = true;
-        } else if (result != NMO_ERR_NOT_FOUND) return result;
-
-        result = nmo_chunk_seek_identifier_with_size(
-            chunk, CK_STATESAVE_BEHAV_LINK_IOS, &section_dwords);
-        if (result == NMO_OK) {
-            if (section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
-            if (section_dwords > 2u) return NMO_ERR_INVALID_FORMAT;
-            result = nmo_ref_read(chunk, &in_io);
-            if (result != NMO_OK) return result;
-
-            result = nmo_ref_read(chunk, &out_io);
-            if (result != NMO_OK) return result;
-            has_format = true;
-            has_legacy_ios = true;
-        } else if (result != NMO_ERR_NOT_FOUND) return result;
-
-        result = nmo_chunk_seek_identifier_with_size(
-            chunk, CK_STATESAVE_BEHAV_LINK_DELAY, &section_dwords);
-        if (result == NMO_OK) {
-            if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
-            if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
-            int32_t delay;
-            result = nmo_chunk_read_int(chunk, &delay);
-            if (result != NMO_OK) return result;
-            initial_activation_delay = (int16_t)delay;
-            has_format = true;
-            has_legacy_delay = true;
-        } else if (result != NMO_ERR_NOT_FOUND) return result;
-    }
-
-    const nmo_object_repository_t *repository =
-        (const nmo_object_repository_t *)
-            nmo_deserialize_context_get_repository(context);
-    const nmo_type_registry_t *types =
-        nmo_deserialize_context_get_type_registry(context);
-    nmo_ref_check_class(&in_io, repository, types, NMO_CID_BEHAVIORIO);
-    nmo_ref_check_class(&out_io, repository, types, NMO_CID_BEHAVIORIO);
-
-    out_state->activation_delay = activation_delay;
-    out_state->initial_activation_delay = initial_activation_delay;
-    out_state->in_io = in_io;
-    out_state->out_io = out_io;
-    out_state->has_format = has_format;
-    out_state->use_new_format = use_new_format;
-    out_state->has_legacy_curdelay = has_legacy_curdelay;
-    out_state->has_legacy_ios = has_legacy_ios;
-    out_state->has_legacy_delay = has_legacy_delay;
-
-    NMO_RETURN_OK();
-}
-
-nmo_status_t nmo_behaviorlink_deserialize(
-    void *instance,
-    nmo_chunk_t *chunk,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    nmo_behaviorlink_state_t *out_state =
-        (nmo_behaviorlink_state_t *)instance;
-    if (out_state == NULL || chunk == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    nmo_behaviorlink_state_t decoded;
-    nmo_status_t result = nmo_behaviorlink_create(
-        &decoded, type, context);
-    if (result != NMO_OK) return result;
-    result = nmo_behaviorlink_deserialize_internal(
-        &decoded, chunk, type, context);
-    if (result != NMO_OK) {
-        nmo_behaviorlink_destroy(&decoded, type, context);
-        return result;
-    }
-    nmo_behaviorlink_destroy(out_state, type, context);
-    *out_state = decoded;
-    return NMO_OK;
-}
-
 /* =============================================================================
  * CKBehaviorLink SERIALIZATION
  * ============================================================================= */
@@ -260,85 +159,6 @@ nmo_status_t nmo_behaviorlink_deserialize(
  * @param state Input state structure
  * @return Result indicating success or error
  */
-static nmo_status_t nmo_behaviorlink_serialize_internal(
-    const void *instance,
-    nmo_chunk_t *out_chunk,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    const nmo_behaviorlink_state_t *in_state = (const nmo_behaviorlink_state_t *)instance;
-
-    if (in_state == NULL || out_chunk == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_behaviorlink_serialize");
-    }
-    NMO_RETURN_IF_ERROR(nmo_behaviorlink_validate(
-        in_state, type, context));
-
-    nmo_status_t result;
-
-    /* Write base CKObject state (merged into this chunk by AddChunkAndDelete) */
-    result = nmo_object_serialize(&in_state->base, out_chunk, NULL, context);
-    if (result != NMO_OK) return result;
-
-    const bool is_file = nmo_object_serialize_is_file(out_chunk, context);
-    if (!is_file) {
-        uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
-        if ((save_flags & CK_STATESAVE_BEHAV_LINKONLY) == 0) {
-            return NMO_OK;
-        }
-    }
-
-    if (!in_state->has_format) return NMO_OK;
-
-    if (in_state->use_new_format) {
-        /* Write new format identifier */
-        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_BEHAV_LINK_NEWDATA);
-        if (result != NMO_OK) return result;
-
-        /* Pack delays into single DWORD (lower 16 bits = activation, upper 16 bits = initial) */
-        uint32_t delays = ((uint32_t)in_state->activation_delay & 0xFFFF) |
-                          (((uint32_t)in_state->initial_activation_delay & 0xFFFF) << 16);
-        result = nmo_chunk_write_dword(out_chunk, delays);
-        if (result != NMO_OK) return result;
-
-        /* Write I/O object references */
-        result = nmo_ref_write(out_chunk, &in_state->in_io);
-        if (result != NMO_OK) return result;
-
-        result = nmo_ref_write(out_chunk, &in_state->out_io);
-        if (result != NMO_OK) return result;
-    } else {
-        /* Legacy format: emit only identifiers present in the source */
-        if (in_state->has_legacy_curdelay) {
-            result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_BEHAV_LINK_CURDELAY);
-            if (result != NMO_OK) return result;
-            result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->activation_delay);
-            if (result != NMO_OK) return result;
-        }
-
-        if (in_state->has_legacy_ios) {
-            result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_BEHAV_LINK_IOS);
-            if (result != NMO_OK) return result;
-            result = nmo_ref_write(out_chunk, &in_state->in_io);
-            if (result != NMO_OK) return result;
-            result = nmo_ref_write(out_chunk, &in_state->out_io);
-            if (result != NMO_OK) return result;
-        }
-
-        if (in_state->has_legacy_delay) {
-            result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_BEHAV_LINK_DELAY);
-            if (result != NMO_OK) return result;
-            result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->initial_activation_delay);
-            if (result != NMO_OK) return result;
-        }
-    }
-
-    NMO_RETURN_OK();
-}
-
-NMO_DEFINE_OBJECT_STAGED_SERIALIZE(nmo_behaviorlink)
-
 nmo_status_t nmo_behaviorlink_remap_dependencies(
     void *instance,
     const nmo_type_descriptor_t *type,
