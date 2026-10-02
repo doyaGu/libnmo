@@ -35,33 +35,6 @@ static void character_parts_set_lifecycle(nmo_array_t *parts)
     nmo_array_set_lifecycle(parts, &lifecycle);
 }
 
-NMO_DEFINE_OBJECT_LIFECYCLE(
-    character,
-    nmo_character_state_t,
-    do {
-        nmo_status_t result = nmo_3dentity_vtable.create(
-            &state->base, NULL, context);
-        if (result != NMO_OK) return result;
-        result = nmo_array_init(
-            &state->body_parts, sizeof(nmo_character_part_t), 0, NULL);
-        if (result != NMO_OK) {
-            nmo_3dentity_vtable.destroy(&state->base, NULL, context);
-            return result;
-        }
-        character_parts_set_lifecycle(&state->body_parts);
-        result = nmo_array_init(
-            &state->animations, sizeof(nmo_ref_t), 0, NULL);
-        if (result != NMO_OK) {
-            nmo_array_dispose(&state->body_parts);
-            nmo_3dentity_vtable.destroy(&state->base, NULL, context);
-            return result;
-        }
-    } while (0),
-    do {
-        nmo_array_dispose(&state->body_parts);
-        nmo_array_dispose(&state->animations);
-        nmo_3dentity_vtable.destroy(&state->base, NULL, context);
-    } while (0))
 nmo_object_id_t nmo_character_effective_root_body_part(
     const nmo_object_repository_t *repository,
     const nmo_object_t *character)
@@ -128,6 +101,43 @@ static nmo_status_t nmo_character_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context);
+
+static const nmo_object_state_member_t nmo_character_part_members[] = {
+    NMO_STATE_VALUE(nmo_character_part_t, ref),
+    NMO_STATE_CHUNK(nmo_character_part_t, chunk)
+};
+
+static const nmo_object_state_layout_t nmo_character_part_layout = {
+    .size = sizeof(nmo_character_part_t),
+    .members = nmo_character_part_members,
+    .member_count = sizeof(nmo_character_part_members) /
+        sizeof(nmo_character_part_members[0]),
+};
+
+static const nmo_object_state_member_t nmo_character_members[] = {
+    NMO_STATE_RECORDS(nmo_character_state_t, body_parts,
+                      nmo_character_part_layout),
+    NMO_STATE_ARRAY(nmo_character_state_t, animations, nmo_ref_t),
+    NMO_STATE_VALUE(nmo_character_state_t, legacy_animation_prefix),
+    NMO_STATE_VALUE(nmo_character_state_t, has_save_parts_section),
+    NMO_STATE_VALUE(nmo_character_state_t, active_animation),
+    NMO_STATE_VALUE(nmo_character_state_t, anim_dest),
+    NMO_STATE_VALUE(nmo_character_state_t, root_body_part),
+    NMO_STATE_VALUE(nmo_character_state_t, floor_ref)
+};
+
+static const nmo_object_state_layout_t nmo_character_layout = {
+    .size = sizeof(nmo_character_state_t),
+    .base_vtable = &nmo_3dentity_vtable,
+    .base_size = sizeof(nmo_3dentity_state_t),
+    .members = nmo_character_members,
+    .member_count = sizeof(nmo_character_members) /
+        sizeof(nmo_character_members[0]),
+    .validate = nmo_character_validate,
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_LIFECYCLE(character, nmo_character_layout)
+NMO_DEFINE_OBJECT_LAYOUT_COPY(character, nmo_character_layout)
 
 static nmo_status_t read_exact_buffer(
     nmo_chunk_t *chunk,
@@ -256,88 +266,6 @@ static const nmo_type_field_t nmo_bodypart_fields[] = {
                     sizeof(nmo_ik_joint_t), NMO_GUID_STRUCT_CKIKJOINT,
                     NMO_FIELD_REQUIRED, 0)
 };
-
-static nmo_status_t nmo_character_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
-{
-    const nmo_character_state_t *s = src;
-    nmo_character_state_t *d = dst;
-    (void)type;
-    if (s == NULL || d == NULL || arena == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    NMO_RETURN_IF_ERROR(nmo_character_validate(s, NULL, NULL));
-
-    nmo_character_state_t copied;
-    nmo_status_t result = nmo_character_create(&copied, NULL, NULL);
-    if (result != NMO_OK) return result;
-
-    nmo_type_descriptor_t base_type = {
-        .size = sizeof(nmo_3dentity_state_t),
-    };
-    result = nmo_3dentity_vtable.copy(
-        &s->base, &copied.base, &base_type, arena);
-    if (result != NMO_OK) goto fail;
-    copied.legacy_animation_prefix = s->legacy_animation_prefix;
-    copied.has_save_parts_section = s->has_save_parts_section;
-    copied.active_animation = s->active_animation;
-    copied.anim_dest = s->anim_dest;
-    copied.root_body_part = s->root_body_part;
-    copied.floor_ref = s->floor_ref;
-
-    nmo_array_dispose(&copied.body_parts);
-    result = nmo_array_init(
-        &copied.body_parts, sizeof(nmo_character_part_t),
-        s->body_parts.count, &s->body_parts.allocator);
-    if (result != NMO_OK) goto fail;
-    character_parts_set_lifecycle(&copied.body_parts);
-    nmo_character_part_t *dst_parts = NULL;
-    result = nmo_array_extend(
-        &copied.body_parts, s->body_parts.count, (void **)&dst_parts);
-    if (result != NMO_OK) goto fail;
-    const nmo_character_part_t *src_parts = NMO_ARRAY_DATA(
-        nmo_character_part_t, &s->body_parts);
-    for (size_t i = 0; i < s->body_parts.count; ++i) {
-        dst_parts[i].ref = src_parts[i].ref;
-        result = nmo_object_copy_chunk(
-            arena, &dst_parts[i].chunk, src_parts[i].chunk);
-        if (result != NMO_OK) goto fail;
-    }
-    nmo_array_dispose(&copied.animations);
-    result = nmo_array_clone(
-        &s->animations, &copied.animations, &s->animations.allocator);
-    if (result != NMO_OK) goto fail;
-
-    nmo_beobject_state_t *target_base = &d->base.base.base;
-    const nmo_beobject_state_t *source_base = &s->base.base.base;
-    if (target_base->scripts.data == source_base->scripts.data) {
-        memset(&target_base->scripts, 0, sizeof(target_base->scripts));
-    }
-    if (target_base->attributes.data == source_base->attributes.data) {
-        memset(&target_base->attributes, 0, sizeof(target_base->attributes));
-    }
-    if (target_base->legacy_attributes.data ==
-        source_base->legacy_attributes.data) {
-        memset(&target_base->legacy_attributes, 0,
-               sizeof(target_base->legacy_attributes));
-    }
-    if (d->body_parts.data == s->body_parts.data) {
-        memset(&d->body_parts, 0, sizeof(d->body_parts));
-    }
-    if (d->animations.data == s->animations.data) {
-        memset(&d->animations, 0, sizeof(d->animations));
-    }
-    nmo_character_destroy(d, NULL, NULL);
-    *d = copied;
-    return NMO_OK;
-
-fail:
-    nmo_character_destroy(&copied, NULL, NULL);
-    return result;
-}
 
 static nmo_status_t nmo_character_validate(
     const void *instance,

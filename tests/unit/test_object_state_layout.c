@@ -483,6 +483,37 @@ TEST(object_state_layout, grid_defaults_and_layers_copy) {
     nmo_arena_destroy(arena);
 }
 
+TEST(object_state_layout, character_parts_and_animations_copy) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_character_state_t source;
+    nmo_character_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_character_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_character_vtable.create(&copied, NULL, NULL));
+
+    const nmo_character_part_t part = {
+        .ref = nmo_ref_from_raw(100),
+        .chunk = make_chunk(arena, 0xC3u),
+    };
+    ASSERT_NOT_NULL(part.chunk);
+    ASSERT_EQ(NMO_OK, nmo_array_append(&source.body_parts, &part));
+    const nmo_ref_t animation = nmo_ref_from_raw(101);
+    ASSERT_EQ(NMO_OK, nmo_array_append(&source.animations, &animation));
+    source.root_body_part = nmo_ref_from_raw(102);
+
+    ASSERT_EQ(NMO_OK, nmo_character_vtable.copy(&source, &copied, NULL, arena));
+    ASSERT_EQ(1u, copied.body_parts.count);
+    ASSERT_EQ(1u, copied.animations.count);
+    ASSERT_TRUE(copied.animations.data != source.animations.data);
+    ASSERT_TRUE(NMO_ARRAY_DATA(nmo_character_part_t, &copied.body_parts)->chunk !=
+                part.chunk);
+    ASSERT_EQ(102u, copied.root_body_part.raw_id);
+
+    nmo_character_vtable.destroy(&source, NULL, NULL);
+    nmo_character_vtable.destroy(&copied, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 /* A state that exercises the member kinds with a count of each width, records
  * that have padding, and the failure paths. */
 typedef struct synthetic_record {
@@ -600,5 +631,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, parameterout_destinations_copy_by_content);
     REGISTER_TEST(object_state_layout, scene_descriptors_copy_with_their_chunks);
     REGISTER_TEST(object_state_layout, grid_defaults_and_layers_copy);
+    REGISTER_TEST(object_state_layout, character_parts_and_animations_copy);
     REGISTER_TEST(object_state_layout, counted_and_record_members_of_both_widths);
 TEST_MAIN_END()
