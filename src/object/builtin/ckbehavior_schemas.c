@@ -117,68 +117,91 @@ nmo_object_id_t nmo_behavior_ref_array_get_id(
     return nmo_behavior_ref_runtime_id(&values[index]);
 }
 
-static void nmo_behavior_dispose_ref_arrays(nmo_behavior_state_t *state)
-{
-    if (state == NULL) return;
-    nmo_array_dispose(&state->sub_behaviors);
-    nmo_array_dispose(&state->sub_behavior_links);
-    nmo_array_dispose(&state->operations);
-    nmo_array_dispose(&state->in_parameters);
-    nmo_array_dispose(&state->out_parameters);
-    nmo_array_dispose(&state->local_parameters);
-    nmo_array_dispose(&state->inputs);
-    nmo_array_dispose(&state->outputs);
-}
-
-static nmo_status_t nmo_behavior_create(
-    void *instance,
+static nmo_status_t nmo_behavior_validate(
+    const void *instance,
     const nmo_type_descriptor_t *type,
-    void *context)
+    void *context);
+
+/* The interface data is owned by the format layer, which copies it. */
+static nmo_status_t nmo_behavior_interface_data_copy(
+    nmo_arena_t *arena, void *dst, const void *src, const void *src_owner)
 {
-    (void)type;
-    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
-
-    nmo_behavior_state_t *state = (nmo_behavior_state_t *)instance;
-    memset(state, 0, sizeof(*state));
-    nmo_status_t result = nmo_sceneobject_vtable.create(
-        &state->base, NULL, context);
-    if (result != NMO_OK) return result;
-
-    state->compatible_class_id = NMO_CID_BEOBJECT;
-    state->owner = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-    state->target_parameter = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-    nmo_array_t *arrays[] = {
-        &state->sub_behaviors, &state->sub_behavior_links,
-        &state->operations, &state->in_parameters,
-        &state->out_parameters, &state->local_parameters,
-        &state->inputs, &state->outputs,
-    };
-    for (size_t i = 0; i < sizeof(arrays) / sizeof(arrays[0]); ++i) {
-        result = nmo_array_init(
-            arrays[i], sizeof(nmo_behavior_ref_t), 0, NULL);
-        if (result != NMO_OK) {
-            nmo_behavior_dispose_ref_arrays(state);
-            nmo_sceneobject_vtable.destroy(&state->base, NULL, context);
-            memset(state, 0, sizeof(*state));
-            return result;
-        }
-        nmo_behavior_ref_array_set_lifecycle(arrays[i]);
-    }
+    (void)src_owner;
+    nmo_interface_data_t *copy = NULL;
+    NMO_RETURN_IF_ERROR(nmo_interface_data_copy(
+        arena, &copy, *(nmo_interface_data_t *const *)src));
+    memcpy(dst, &copy, sizeof(copy));
     return NMO_OK;
 }
 
-static void nmo_behavior_destroy(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
+static const nmo_object_state_custom_ops_t nmo_behavior_interface_data_ops = {
+    .copy = nmo_behavior_interface_data_copy,
+};
+
+static void nmo_behavior_set_defaults(void *instance)
 {
-    (void)type;
-    if (instance == NULL) return;
-    nmo_behavior_state_t *state = (nmo_behavior_state_t *)instance;
-    nmo_behavior_dispose_ref_arrays(state);
-    nmo_sceneobject_vtable.destroy(&state->base, NULL, context);
-    memset(state, 0, sizeof(*state));
+    nmo_behavior_state_t *state = instance;
+    state->compatible_class_id = NMO_CID_BEOBJECT;
+    state->owner = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+    state->target_parameter = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
 }
+
+static const nmo_object_state_member_t nmo_behavior_ref_members[] = {
+    NMO_STATE_VALUE(nmo_behavior_ref_t, ref),
+    NMO_STATE_CHUNK(nmo_behavior_ref_t, chunk)
+};
+
+static const nmo_object_state_layout_t nmo_behavior_ref_layout = {
+    .size = sizeof(nmo_behavior_ref_t),
+    .members = nmo_behavior_ref_members,
+    .member_count = sizeof(nmo_behavior_ref_members) /
+        sizeof(nmo_behavior_ref_members[0]),
+};
+
+/* The equals and hash of a behavior compare its serialized form, so the layout
+ * serves create and copy only. */
+static const nmo_object_state_member_t nmo_behavior_members[] = {
+    NMO_STATE_VALUE(nmo_behavior_state_t, flags),
+    NMO_STATE_VALUE(nmo_behavior_state_t, runtime_flags),
+    NMO_STATE_VALUE(nmo_behavior_state_t, priority),
+    NMO_STATE_VALUE(nmo_behavior_state_t, compatible_class_id),
+    NMO_STATE_VALUE(nmo_behavior_state_t, owner),
+    NMO_STATE_VALUE(nmo_behavior_state_t, behavior_type),
+    NMO_STATE_VALUE(nmo_behavior_state_t, save_flags),
+    NMO_STATE_VALUE(nmo_behavior_state_t, has_save_flags),
+    NMO_STATE_VALUE(nmo_behavior_state_t, use_legacy_identifiers),
+    NMO_STATE_VALUE(nmo_behavior_state_t, block_guid),
+    NMO_STATE_VALUE(nmo_behavior_state_t, block_version),
+    NMO_STATE_VALUE(nmo_behavior_state_t, target_parameter),
+    NMO_STATE_RECORDS(nmo_behavior_state_t, sub_behaviors, nmo_behavior_ref_layout),
+    NMO_STATE_RECORDS(nmo_behavior_state_t, sub_behavior_links, nmo_behavior_ref_layout),
+    NMO_STATE_RECORDS(nmo_behavior_state_t, operations, nmo_behavior_ref_layout),
+    NMO_STATE_RECORDS(nmo_behavior_state_t, in_parameters, nmo_behavior_ref_layout),
+    NMO_STATE_RECORDS(nmo_behavior_state_t, out_parameters, nmo_behavior_ref_layout),
+    NMO_STATE_RECORDS(nmo_behavior_state_t, local_parameters, nmo_behavior_ref_layout),
+    NMO_STATE_RECORDS(nmo_behavior_state_t, inputs, nmo_behavior_ref_layout),
+    NMO_STATE_RECORDS(nmo_behavior_state_t, outputs, nmo_behavior_ref_layout),
+    NMO_STATE_VALUE(nmo_behavior_state_t, single_activity_flags),
+    NMO_STATE_VALUE(nmo_behavior_state_t, has_single_activity),
+    NMO_STATE_CHUNK(nmo_behavior_state_t, interface_chunk),
+    NMO_STATE_VALUE(nmo_behavior_state_t, has_interface),
+    NMO_STATE_CUSTOM(nmo_behavior_state_t, interface_data,
+                     nmo_behavior_interface_data_ops),
+    NMO_STATE_VALUE(nmo_behavior_state_t, interface_ids_are_runtime)
+};
+
+static const nmo_object_state_layout_t nmo_behavior_layout = {
+    .size = sizeof(nmo_behavior_state_t),
+    .base_vtable = &nmo_sceneobject_vtable,
+    .members = nmo_behavior_members,
+    .member_count = sizeof(nmo_behavior_members) /
+        sizeof(nmo_behavior_members[0]),
+    .set_defaults = nmo_behavior_set_defaults,
+    .validate = nmo_behavior_validate,
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_LIFECYCLE(behavior, nmo_behavior_layout)
+NMO_DEFINE_OBJECT_LAYOUT_COPY(behavior, nmo_behavior_layout)
 
 /* Legacy identifier values (older CK2 builds) */
 #define CK_STATESAVE_BEHAVIORINTERFACE_LEGACY      0x00000001u
@@ -1057,11 +1080,6 @@ static nmo_status_t build_interface_file_index_remap(
  * CKBehavior SERIALIZATION
  * ============================================================================= */
 
-static nmo_status_t nmo_behavior_validate(
-    const void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context);
-
 /**
  * @brief Serialize CKBehavior state to chunk
  * 
@@ -1439,130 +1457,6 @@ static nmo_status_t nmo_behavior_serialize_internal(
 }
 
 NMO_DEFINE_OBJECT_STAGED_SERIALIZE_VALIDATED(nmo_behavior)
-
-static nmo_status_t nmo_behavior_copy_ref_array(
-    nmo_arena_t *arena,
-    nmo_array_t *dst,
-    const nmo_array_t *src)
-{
-    if (arena == NULL || dst == NULL || src == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    if (src->count > 0 &&
-        (src->data == NULL ||
-         src->element_size != sizeof(nmo_behavior_ref_t))) {
-        return NMO_ERR_VALIDATION_FAILED;
-    }
-
-    nmo_array_dispose(dst);
-    const nmo_allocator_t *allocator =
-        src->allocator.alloc != NULL ? &src->allocator : NULL;
-    nmo_status_t result = nmo_array_init(
-        dst, sizeof(nmo_behavior_ref_t), src->count, allocator);
-    if (result != NMO_OK) return result;
-    nmo_behavior_ref_array_set_lifecycle(dst);
-
-    nmo_behavior_ref_t *dst_refs = NULL;
-    result = nmo_array_extend(dst, src->count, (void **)&dst_refs);
-    if (result != NMO_OK) return result;
-    const nmo_behavior_ref_t *src_refs = NMO_ARRAY_DATA(
-        nmo_behavior_ref_t, src);
-    for (size_t i = 0; i < src->count; ++i) {
-        dst_refs[i].ref = src_refs[i].ref;
-        dst_refs[i].chunk = NULL;
-        if (src_refs[i].chunk != NULL) {
-            dst_refs[i].chunk = nmo_chunk_clone(src_refs[i].chunk, arena);
-            if (dst_refs[i].chunk == NULL) return NMO_ERR_NOMEM;
-        }
-    }
-    return NMO_OK;
-}
-
-static nmo_status_t nmo_behavior_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
-{
-    const nmo_behavior_state_t *s = src;
-    nmo_behavior_state_t *d = dst;
-    if (s == NULL || d == NULL || arena == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    NMO_RETURN_IF_ERROR(nmo_behavior_validate(s, type, NULL));
-
-    nmo_behavior_state_t copied;
-    nmo_status_t result = nmo_behavior_create(&copied, NULL, NULL);
-    if (result != NMO_OK) return result;
-    result = nmo_sceneobject_vtable.copy(
-        &s->base, &copied.base, NULL, arena);
-    if (result != NMO_OK) goto fail;
-
-    copied.flags = s->flags;
-    copied.runtime_flags = s->runtime_flags;
-    copied.priority = s->priority;
-    copied.compatible_class_id = s->compatible_class_id;
-    copied.owner = s->owner;
-    copied.behavior_type = s->behavior_type;
-    copied.save_flags = s->save_flags;
-    copied.has_save_flags = s->has_save_flags;
-    copied.use_legacy_identifiers = s->use_legacy_identifiers;
-    copied.block_guid = s->block_guid;
-    copied.block_version = s->block_version;
-    copied.target_parameter = s->target_parameter;
-    copied.single_activity_flags = s->single_activity_flags;
-    copied.has_single_activity = s->has_single_activity;
-    copied.has_interface = s->has_interface;
-    copied.interface_ids_are_runtime = s->interface_ids_are_runtime;
-
-    const nmo_array_t *src_arrays[] = {
-        &s->sub_behaviors, &s->sub_behavior_links, &s->operations,
-        &s->in_parameters, &s->out_parameters, &s->local_parameters,
-        &s->inputs, &s->outputs
-    };
-    nmo_array_t *dst_arrays[] = {
-        &copied.sub_behaviors, &copied.sub_behavior_links,
-        &copied.operations, &copied.in_parameters,
-        &copied.out_parameters, &copied.local_parameters,
-        &copied.inputs, &copied.outputs,
-    };
-    for (size_t array_index = 0;
-         array_index < sizeof(src_arrays) / sizeof(src_arrays[0]);
-         ++array_index) {
-        result = nmo_behavior_copy_ref_array(
-            arena, dst_arrays[array_index], src_arrays[array_index]);
-        if (result != NMO_OK) goto fail;
-    }
-    result = nmo_object_copy_chunk(
-        arena, &copied.interface_chunk, s->interface_chunk);
-    if (result != NMO_OK) goto fail;
-    result = nmo_interface_data_copy(
-        arena, &copied.interface_data, s->interface_data);
-    if (result != NMO_OK) goto fail;
-
-#define NMO_BEHAVIOR_DETACH_SHARED_ARRAY(field) \
-    do { \
-        if (d->field.data == s->field.data) { \
-            memset(&d->field, 0, sizeof(d->field)); \
-        } \
-    } while (0)
-    NMO_BEHAVIOR_DETACH_SHARED_ARRAY(sub_behaviors);
-    NMO_BEHAVIOR_DETACH_SHARED_ARRAY(sub_behavior_links);
-    NMO_BEHAVIOR_DETACH_SHARED_ARRAY(operations);
-    NMO_BEHAVIOR_DETACH_SHARED_ARRAY(in_parameters);
-    NMO_BEHAVIOR_DETACH_SHARED_ARRAY(out_parameters);
-    NMO_BEHAVIOR_DETACH_SHARED_ARRAY(local_parameters);
-    NMO_BEHAVIOR_DETACH_SHARED_ARRAY(inputs);
-    NMO_BEHAVIOR_DETACH_SHARED_ARRAY(outputs);
-#undef NMO_BEHAVIOR_DETACH_SHARED_ARRAY
-    nmo_behavior_destroy(d, NULL, NULL);
-    *d = copied;
-    return NMO_OK;
-
-fail:
-    nmo_behavior_destroy(&copied, NULL, NULL);
-    return result;
-}
 
 static nmo_status_t nmo_behavior_validate(
     const void *instance,
