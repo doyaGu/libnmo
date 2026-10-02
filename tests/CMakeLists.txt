@@ -29,6 +29,12 @@ add_test(
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND)
     add_test(
+        NAME test_layering_calls_audit
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/layering_calls_audit.py
+                ${PROJECT_SOURCE_DIR}
+    )
+    add_test(
         NAME test_completions_manifest
         COMMAND ${Python3_EXECUTABLE}
                 ${PROJECT_SOURCE_DIR}/tools/scripts/gen_completions.py

@@ -322,7 +322,11 @@ What breaks source compatibility, in short; the sections below give the details.
 - The layering audit (`test_layering_audit`) also checks relative includes of another layer's
   private headers (`"../runtime/runtime_internal.h"`); seventeen such upward includes had gone
   unseen. Counting function calls between layers as well, 50 references pointed up; none does now,
-  and `tests/layering_allowlist.txt` is empty (38 entries before).
+  and `tests/layering_allowlist.txt` is empty (38 entries before). `test_layering_calls_audit`
+  (`tests/layering_calls_audit.py`, runs when Python is found) keeps it that way: it fails when a
+  file names a function with external linkage defined in a higher layer, including the functions
+  the `NMO_DEFINE_*` macros define, so an upward call that comes in through a transitive include
+  is caught.
 - The layer order puts export above object and below session (export uses nothing above object,
   and chunk and document use it).
 - Moved to the layer of what they depend on, with the old header paths as forwarders: the context

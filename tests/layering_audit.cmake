@@ -5,6 +5,8 @@
 # own. Every upward include that exists today is listed in
 # tests/layering_allowlist.txt so the debt is visible and can be paid down;
 # this audit fails only when a new upward include is introduced.
+# tests/layering_calls_audit.py checks the functions a file uses, which an
+# include check cannot see when a header pulls in another layer transitively.
 #
 # Usage: cmake -DSOURCE_DIR=<repo root> -P layering_audit.cmake
 
