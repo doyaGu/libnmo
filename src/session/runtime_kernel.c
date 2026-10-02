@@ -3,7 +3,7 @@
 #include "object/nmo_context.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_pipeline.h"
-#include "runtime/nmo_workspace.h"
+#include "object/nmo_edit_flags.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_logger.h"
 #include "format/nmo_id_remap.h"
@@ -17,7 +17,6 @@
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_runtime.h"
 #include "type/nmo_type_system.h"
-#include "../runtime/runtime_internal.h"
 #include "session_internal.h"
 #include <string.h>
 

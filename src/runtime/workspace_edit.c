@@ -12,13 +12,6 @@
 
 #include "workspace_edit_internal.h"
 
-static const uint32_t NMO_WORKSPACE_EDIT_KNOWN_FLAGS =
-    NMO_WORKSPACE_EDIT_OBJECT_STATE |
-    NMO_WORKSPACE_EDIT_REFERENCES |
-    NMO_WORKSPACE_EDIT_BEHAVIOR_GRAPH |
-    NMO_WORKSPACE_EDIT_NAMES |
-    NMO_WORKSPACE_EDIT_RESOURCES;
-
 typedef struct destroy_objects_action {
     nmo_object_id_t *ids;
     size_t count;
@@ -572,38 +565,6 @@ void nmo_workspace_edit_mark(nmo_workspace_edit_t *edit, uint32_t flags)
     if (edit != NULL) {
         edit->flags |= flags;
     }
-}
-
-nmo_status_t nmo_runtime_apply_edit_flags(nmo_session_t *session, uint32_t flags)
-{
-    if (session == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    if ((flags & ~NMO_WORKSPACE_EDIT_KNOWN_FLAGS) != 0u) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    if (nmo_session_is_partial_load(session)) {
-        return NMO_ERR_INVALID_STATE;
-    }
-    if ((flags & NMO_WORKSPACE_EDIT_BEHAVIOR_GRAPH) != 0u) {
-        nmo_session_invalidate_behavior_index(session);
-        nmo_session_invalidate_ref_graph(session);
-    } else if ((flags & NMO_WORKSPACE_EDIT_REFERENCES) != 0u) {
-        nmo_session_invalidate_ref_graph(session);
-    }
-    if ((flags & NMO_WORKSPACE_EDIT_NAMES) != 0u) {
-        nmo_session_invalidate_object_query(session, NMO_OBJECT_QUERY_INDEX_NAMES);
-        return nmo_session_rebuild_indexes(session, NMO_INDEX_BUILD_ALL);
-    }
-    if ((flags & NMO_WORKSPACE_EDIT_BEHAVIOR_GRAPH) != 0u) {
-        nmo_session_invalidate_object_query(
-            session,
-            NMO_OBJECT_QUERY_INDEX_MEMBERSHIP);
-    }
-    if ((flags & NMO_WORKSPACE_EDIT_RESOURCES) != 0u) {
-        /* Resource edits affect save output. No resource-derived query cache exists yet. */
-    }
-    return NMO_OK;
 }
 
 nmo_status_t nmo_workspace_apply_edit_flags(nmo_workspace_t *workspace, uint32_t flags)

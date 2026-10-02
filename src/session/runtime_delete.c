@@ -27,7 +27,6 @@
 #include "type/nmo_type_runtime.h"
 #include "type/nmo_type_system.h"
 #include "core/nmo_logger.h"
-#include "../runtime/runtime_internal.h"
 #include "session_internal.h"
 #include <string.h>
 

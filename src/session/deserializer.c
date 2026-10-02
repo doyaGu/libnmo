@@ -5,7 +5,6 @@
 
 #include "session/nmo_deserializer.h"
 #include "session/nmo_id_mapping.h"
-#include "../runtime/runtime_internal.h"
 #include "session_internal.h"
 
 #include "session/nmo_session.h"
