@@ -4,35 +4,10 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+Versions 1.2.0 to 1.4.0 at the end of this file are milestones of an earlier numbering and were
+never tagged; the numbering restarted at 0.2.0.
 
-## [0.2.0] - 2026-07-14
-
-### Added
-- Lossless `nmo_ref_t` references with explicit resolved, unresolved, ambiguous,
-  class-mismatch, and null states.
-- Caller-owned load diagnostics and strict end-of-scan validation for recoverable
-  schema failures.
-- Explicit invalid-reference normalization for save-as workflows.
-- Sectioned InterfaceChunk support for local/shared parameter sections and both
-  graph mapping section pairs, including raw mapping tags.
-
-### Changed
-- All 43 built-in schema implementations propagate chunk read, skip, and write
-  failures; a source audit test prevents ignored results from returning.
-- Failed schema state is discarded while its original chunk remains available
-  for an unchanged save.
-- Unresolved IDs are preserved through legacy schema load/save paths instead of
-  being silently encoded as null references.
-- Grid layer ID/chunk lanes are represented as atomic `nmo_grid_layer_t` records.
-- Behavior graph traversal detects cycles, and Behavior index rebuilds release
-  their previous slot storage.
-
-### Fixed
-- Negative and impossible sequence/manager counts are rejected before allocation.
-- Behavior dependency remapping no longer compacts serialized lanes.
-- Sectioned InterfaceChunk writing preserves absent versus present-empty sections.
-
-## [Unreleased] - 2026-xx-xx
+## [Unreleased]
 
 ### Changed - Edit, Lua and project layers are separate libraries
 - The edit stack (edit plans, script edits, behavior rewrites, the semantic validator, the probe
@@ -544,6 +519,36 @@ the tests build each layout dword by dword.
   `test_load_options` and `test_virtools_types`, which run with the source root as their working
   directory, wrote there (`test_behavior_execute` left six `.cmo` files behind on every run).
 
+## [0.2.0] - 2026-07-14
+
+### Added
+- Lossless `nmo_ref_t` references with explicit resolved, unresolved, ambiguous,
+  class-mismatch, and null states.
+- Caller-owned load diagnostics and strict end-of-scan validation for recoverable
+  schema failures.
+- Explicit invalid-reference normalization for save-as workflows.
+- Sectioned InterfaceChunk support for local/shared parameter sections and both
+  graph mapping section pairs, including raw mapping tags.
+
+### Changed
+- All 43 built-in schema implementations propagate chunk read, skip, and write
+  failures; a source audit test prevents ignored results from returning.
+- Failed schema state is discarded while its original chunk remains available
+  for an unchanged save.
+- Unresolved IDs are preserved through legacy schema load/save paths instead of
+  being silently encoded as null references.
+- Grid layer ID/chunk lanes are represented as atomic `nmo_grid_layer_t` records.
+- Behavior graph traversal detects cycles, and Behavior index rebuilds release
+  their previous slot storage.
+
+### Fixed
+- Negative and impossible sequence/manager counts are rejected before allocation.
+- Behavior dependency remapping no longer compacts serialized lanes.
+- Sectioned InterfaceChunk writing preserves absent versus present-empty sections.
+
+The entries below were recorded as unreleased work after 1.4.0 of the earlier numbering and
+shipped in 0.2.0.
+
 ### Added - Phase 8: Round-Trip Framework
 - DOM comparison API (`nmo_comparison.h`): diff two loaded sessions at the object
   level; used by round-trip integration tests
@@ -720,14 +725,3 @@ the tests build each layout dword by dword.
 
 ### Tests
 - 7/7 unit tests passing
-
----
-
-## [1.0.0] - TBD - First Stable Release
-
-First stable release is targeted after the Phase 3 (Production Ready) milestone:
-- Chunk read bounds checking (no crash on truncated input)
-- Round-trip coverage: 50+ files, 23/23 object types, >=99% pass rate
-- CI pipeline: Windows / Linux / macOS, PR-triggered
-
-See TODO.md for current Phase 3 milestone definitions (M3.0, M3.1, M3.2).
