@@ -653,6 +653,21 @@ the tests build each layout dword by dword.
   memory or missed the entry. Each entry now keeps its own copy of the name. Virtools files often give
   several objects the same name, so deleting or renaming objects of a session with an object index hit it.
 
+### Fixed - The examples build and run
+- `simple_save`, `file_converter` and `custom_manager` used the session functions that `nmo.h` no
+  longer declares and did not compile; they use the document API now. `simple_save` creates a camera
+  through a workspace edit before it saves, since an empty document cannot be saved.
+  `custom_manager` destroyed the manager it had handed to the manager registry, which destroys it
+  again with the context. `file_converter --validate` no longer turns on the plugin dependency check,
+  which fails whenever the context does not know the plugins of the file; `--check-dependencies`
+  does that.
+- `object_type_usage` and `type_system_example` were not in `examples/CMakeLists.txt`. They are built
+  now, with the current GUID and state names; `type_system_example.c` had a copy of an example for
+  the removed type system v2 prototype appended to it, which is gone.
+- With `NMO_BUILD_EXAMPLES` and `NMO_BUILD_TESTS` on, CTest runs the examples that need no sample file
+  (save, convert, load and inspect a file, and the registration examples). The sanitizer job of CI
+  builds and runs them.
+
 ### Tests
 - Six corpus tests (`test_corpus_semantics_{geometry,media,scene,behavior}` and the earlier
   `test_corpus_invariants`) check about 300 relationships the engine guarantees between decoded

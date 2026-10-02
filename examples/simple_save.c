@@ -33,29 +33,58 @@ int main(int argc, char *argv[]) {
     }
     printf("Context created successfully\n\n");
 
-    // Step 2: Create a session
-    printf("Creating session...\n");
-    nmo_session_t *session = nmo_session_create(ctx);
-    if (session == NULL) {
-        fprintf(stderr, "Error: Failed to create session\n");
+    // Step 2: Create an empty document
+    printf("Creating document...\n");
+    nmo_document_t *document = nmo_document_create(ctx);
+    if (document == NULL) {
+        fprintf(stderr, "Error: Failed to create document\n");
         nmo_context_release(ctx);
         return 1;
     }
-    printf("Session created successfully\n\n");
+    printf("Document created successfully\n\n");
 
-    // Step 3: (In a real application) Add objects to the session
+    // Step 3: Add an object through a workspace edit (an empty document
+    // cannot be saved)
     printf("Setting up objects...\n");
-    // In production, you would add objects to the session here
-    printf("Objects ready\n\n");
+    nmo_workspace_t *workspace = NULL;
+    nmo_workspace_edit_t *edit = NULL;
+    nmo_object_id_t camera_id = 0;
+    nmo_status_t result = nmo_workspace_create(ctx, document, &workspace);
+    if (result == NMO_OK) {
+        result = nmo_workspace_edit_begin(workspace, "create camera", &edit);
+    }
+    if (result == NMO_OK) {
+        nmo_object_create_desc_t desc = {
+            .class_id = NMO_CID_CAMERA,
+            .name = "Camera",
+            .type_guid = NMO_GUID_NULL,
+        };
+        result = nmo_object_edit_create(edit, &desc, &camera_id);
+        if (result == NMO_OK) {
+            result = nmo_workspace_edit_commit(edit);
+        } else {
+            nmo_workspace_edit_rollback(edit);
+        }
+    }
+    if (result != NMO_OK) {
+        fprintf(stderr, "Error: Failed to create an object (%s)\n",
+                nmo_error_string(result));
+        nmo_workspace_destroy(workspace);
+        nmo_document_destroy(document);
+        nmo_context_release(ctx);
+        return 1;
+    }
+    printf("Created camera (ID: %u)\n\n", camera_id);
 
     // Step 4: Save the file
     printf("Saving file: %s\n", output_file);
-    int result = nmo_save_file(session, output_file, NULL);
+    result = nmo_document_save_file(document, output_file, NULL);
 
     if (result != NMO_OK) {
         fprintf(stderr, "Error: Failed to save file (%s)\n",
                 nmo_error_string(result));
-        nmo_session_destroy(session);
+        nmo_workspace_destroy(workspace);
+        nmo_document_destroy(document);
         nmo_context_release(ctx);
         return 1;
     }
@@ -63,7 +92,8 @@ int main(int argc, char *argv[]) {
 
     // Step 5: Clean up
     printf("Cleaning up...\n");
-    nmo_session_destroy(session);
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
     nmo_context_release(ctx);
     printf("Done.\n");
 

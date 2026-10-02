@@ -9,6 +9,8 @@
  */
 
 #include "nmo.h"
+#include "session/nmo_deserializer.h" /* nmo_load_options_t */
+#include "session/nmo_serializer.h"   /* nmo_save_options_t */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,13 +18,14 @@
 typedef struct {
     int compress;
     int validate;
+    int check_dependencies;
     int verbose;
 } converter_options;
 
 int main(int argc, char *argv[]) {
     if (argc < 3) {
         fprintf(stderr,
-                "Usage: %s <input.nmo> <output.nmo> [--compress] [--validate]\n",
+                "Usage: %s <input.nmo> <output.nmo> [--compress] [--validate] [--check-dependencies]\n",
                 argv[0]);
         return 1;
     }
@@ -33,6 +36,7 @@ int main(int argc, char *argv[]) {
     converter_options opts = {
         .compress = 0,
         .validate = 0,
+        .check_dependencies = 0,
         .verbose = 1,
     };
 
@@ -42,6 +46,8 @@ int main(int argc, char *argv[]) {
             opts.compress = 1;
         } else if (strcmp(argv[i], "--validate") == 0) {
             opts.validate = 1;
+        } else if (strcmp(argv[i], "--check-dependencies") == 0) {
+            opts.check_dependencies = 1;
         }
     }
 
@@ -50,6 +56,7 @@ int main(int argc, char *argv[]) {
     printf("Output: %s\n", output_file);
     if (opts.compress) printf("Options: compression enabled\n");
     if (opts.validate) printf("Options: validation enabled\n");
+    if (opts.check_dependencies) printf("Options: dependency check enabled\n");
     printf("\n");
 
     // Create context
@@ -67,27 +74,21 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    // Create session
-    nmo_session_t *session = nmo_session_create(ctx);
-    if (session == NULL) {
-        fprintf(stderr, "Error: Failed to create session\n");
-        nmo_context_release(ctx);
-        return 1;
-    }
-
     // Load input file
     printf("Loading input file...\n");
     nmo_load_options_t load_opts = nmo_load_options_default();
-    if (opts.validate) {
+    if (opts.check_dependencies) {
+        // Fails when the context does not know every plugin the file needs
         load_opts.flags |= NMO_LOAD_CHECK_DEPENDENCIES;
     }
 
-    int load_result = nmo_load_file(session, input_file, &load_opts);
+    nmo_document_t *document = NULL;
+    nmo_status_t load_result =
+        nmo_document_load_file(ctx, input_file, &load_opts, &document);
 
     if (load_result != NMO_OK) {
         fprintf(stderr, "Error loading file (%s)\n",
                 nmo_error_string(load_result));
-        nmo_session_destroy(session);
         nmo_context_release(ctx);
         return 1;
     }
@@ -102,16 +103,16 @@ int main(int argc, char *argv[]) {
     printf("Saving output file...\n");
     nmo_save_options_t save_opts = nmo_save_options_default();
     if (opts.compress) {
-        save_opts.flags = NMO_SAVE_COMPRESSED;
+        save_opts.flags |= NMO_SAVE_COMPRESSED;
     }
     save_opts.validate_before_write = opts.validate;
 
-    int save_result = nmo_save_file(session, output_file, &save_opts);
+    nmo_status_t save_result = nmo_document_save_file(document, output_file, &save_opts);
 
     if (save_result != NMO_OK) {
         fprintf(stderr, "Error saving file (%s)\n",
                 nmo_error_string(save_result));
-        nmo_session_destroy(session);
+        nmo_document_destroy(document);
         nmo_context_release(ctx);
         return 1;
     }
@@ -119,7 +120,7 @@ int main(int argc, char *argv[]) {
     printf("Output file saved successfully\n\n");
 
     // Clean up
-    nmo_session_destroy(session);
+    nmo_document_destroy(document);
     nmo_context_release(ctx);
 
     printf("Conversion complete.\n");

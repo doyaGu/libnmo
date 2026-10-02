@@ -1,5 +1,5 @@
 /**
- * @file object_type_usage_example.c
+ * @file object_type_usage.c
  * @brief Complete example of using the rebuilt object type system
  * 
  * This example demonstrates:
@@ -11,6 +11,9 @@
  */
 
 #include "object/nmo_object_types.h"
+#include "object/builtin/nmo_object_schemas.h"
+#include "object/builtin/nmo_3dentity_schemas.h"
+#include "type/nmo_type_guids.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_operations.h"
 #include "format/nmo_chunk.h"
@@ -54,7 +57,7 @@ void example_basic_usage(void) {
     
     /* Lookup by GUID */
     const nmo_type_descriptor_t *mesh_type = nmo_type_registry_find_by_guid(
-        registry, NMO_GUID_CKMESH);
+        registry, CKPGUID_MESH);
     if (mesh_type) {
         printf("Found CKMesh by GUID:\n");
         printf("  Name: %s\n", mesh_type->name);
@@ -123,9 +126,9 @@ void example_inheritance(void) {
     
     /* Check using GUID helper */
     printf("Is CKMesh a Virtools object? %s\n",
-           nmo_is_object_type(registry, NMO_GUID_CKMESH) ? "YES" : "NO");
+           nmo_is_object_type(registry, CKPGUID_MESH) ? "YES" : "NO");
     printf("Is INT a Virtools object? %s\n",
-           nmo_is_object_type(registry, NMO_TYPE_GUID_INT) ? "YES" : "NO");
+           nmo_is_object_type(registry, CKPGUID_INT) ? "YES" : "NO");
     printf("\n");
     
     nmo_arena_destroy(arena);
@@ -149,7 +152,7 @@ void example_serialization(void) {
     
     /* Get CKObject type */
     const nmo_type_descriptor_t *ckobject_type = nmo_type_registry_find_by_guid(
-        registry, NMO_GUID_CKOBJECT);
+        registry, CKPGUID_OBJECT);
     
     if (!ckobject_type || !ckobject_type->vtable) {
         printf("CKObject type not found or no vtable\n");
@@ -217,7 +220,7 @@ void example_3d_entity(void) {
     
     /* Get CK3dEntity type */
     const nmo_type_descriptor_t *entity3d_type = nmo_type_registry_find_by_guid(
-        registry, NMO_GUID_CK3DENTITY);
+        registry, CKPGUID_3DENTITY);
     
     if (!entity3d_type || !entity3d_type->vtable) {
         printf("CK3dEntity type not found or no vtable\n");
@@ -227,15 +230,14 @@ void example_3d_entity(void) {
     
     /* Create 3D entity with identity matrix */
     nmo_3dentity_state_t entity_out = {
-        .base = { .visibility_flags = NMO_CKOBJECT_VISIBLE },
-        .flags = 0x00000001,
+        .entity_flags = 0x00000001,
         .world_matrix = {
             1.0f, 0.0f, 0.0f, 0.0f,
             0.0f, 1.0f, 0.0f, 0.0f,
             0.0f, 0.0f, 1.0f, 0.0f,
             100.0f, 200.0f, 300.0f, 1.0f  /* Translation */
         },
-        .zorder = 10
+        .z_order = 10
     };
     
     printf("Created CK3dEntity:\n");
@@ -243,7 +245,7 @@ void example_3d_entity(void) {
            entity_out.world_matrix[12],
            entity_out.world_matrix[13],
            entity_out.world_matrix[14]);
-    printf("  Z-order: %u\n", entity_out.zorder);
+    printf("  Z-order: %d\n", (int)entity_out.z_order);
     printf("\n");
     
     /* Serialize */
@@ -278,9 +280,9 @@ void example_3d_entity(void) {
                entity_in.world_matrix[12],
                entity_in.world_matrix[13],
                entity_in.world_matrix[14]);
-        printf("  Z-order: %u\n", entity_in.zorder);
+        printf("  Z-order: %d\n", (int)entity_in.z_order);
         printf("  Flags match: %s\n",
-               (entity_in.flags == entity_out.flags) ? "YES" : "NO");
+               (entity_in.entity_flags == entity_out.entity_flags) ? "YES" : "NO");
     } else {
         printf("✗ Deserialization failed with code %d\n", result);
     }
@@ -306,11 +308,11 @@ void example_categories(void) {
         const char *name;
         nmo_guid_t guid;
     } types_to_check[] = {
-        {"INT", NMO_TYPE_GUID_INT},
-        {"FLOAT", NMO_TYPE_GUID_FLOAT},
-        {"CKObject", NMO_GUID_CKOBJECT},
-        {"CKMesh", NMO_GUID_CKMESH},
-        {"CK3dEntity", NMO_GUID_CK3DENTITY}
+        {"INT", CKPGUID_INT},
+        {"FLOAT", CKPGUID_FLOAT},
+        {"CKObject", CKPGUID_OBJECT},
+        {"CKMesh", CKPGUID_MESH},
+        {"CK3dEntity", CKPGUID_3DENTITY}
     };
     
     printf("Type categories:\n");

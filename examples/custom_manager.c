@@ -5,7 +5,7 @@
  * This example shows how to:
  * 1. Create a custom manager
  * 2. Register it with the context
- * 3. Use it in a session
+ * 3. Add an object to a document
  */
 
 #include "nmo.h"
@@ -73,25 +73,27 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Warning: Failed to register manager (%s)\n",
                 nmo_error_string(reg_result));
     } else {
+        // The registry owns the manager now and destroys it with the context
+        custom_manager = NULL;
         printf("Manager registered successfully\n\n");
     }
 
-    // Step 5: Create a session and use the manager
-    printf("Creating session...\n");
-    nmo_session_t *session = nmo_session_create(ctx);
-    if (session == NULL) {
-        fprintf(stderr, "Error: Failed to create session\n");
+    // Step 5: Create a document
+    printf("Creating document...\n");
+    nmo_document_t *document = nmo_document_create(ctx);
+    if (document == NULL) {
+        fprintf(stderr, "Error: Failed to create document\n");
         nmo_manager_destroy(custom_manager);
         nmo_context_release(ctx);
         return 1;
     }
-    printf("Session created\n\n");
+    printf("Document created\n\n");
 
     // Step 6: Create objects with the custom manager
     printf("Creating objects with custom manager...\n");
     nmo_object_id_t object_id = 1;
     nmo_class_id_t class_id = 1; /* CKObject */
-    const nmo_allocator_t *allocator = nmo_context_get_allocator(nmo_session_get_context(session));
+    const nmo_allocator_t *allocator = nmo_context_get_allocator(nmo_document_get_context(document));
     nmo_object_t *obj = nmo_object_create(allocator, object_id, class_id);
     int obj_added_to_repo = 0;
 
@@ -100,7 +102,7 @@ int main(int argc, char *argv[]) {
     } else {
         nmo_object_set_name(obj, "CustomObject");
         nmo_object_t *repo_obj = obj;
-        nmo_object_repository_t *repo = nmo_session_get_repository(session);
+        nmo_object_repository_t *repo = nmo_document_get_repository(document);
         if (repo != NULL) {
             obj_added_to_repo = (nmo_object_repository_add(repo, &obj) == NMO_OK);
             if (obj_added_to_repo) {
@@ -116,7 +118,7 @@ int main(int argc, char *argv[]) {
     if (obj != NULL && !obj_added_to_repo) {
         nmo_object_destroy(obj);
     }
-    nmo_session_destroy(session);
+    nmo_document_destroy(document);
     nmo_manager_destroy(custom_manager);
     nmo_context_release(ctx);
 
