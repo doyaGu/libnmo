@@ -271,14 +271,48 @@ static const void *layout_member_ptr_const(
     return (const uint8_t *)instance + offset;
 }
 
-static size_t layout_bytes_size(
+/* A BYTES member is a COUNTED member of single bytes counted by a size_t. */
+static size_t layout_element_size(const nmo_object_state_member_t *member)
+{
+    return member->kind == NMO_OBJECT_STATE_MEMBER_BYTES ? 1u : member->size;
+}
+
+static size_t layout_count_size(const nmo_object_state_member_t *member)
+{
+    return member->kind == NMO_OBJECT_STATE_MEMBER_BYTES
+        ? sizeof(size_t) : member->count_size;
+}
+
+static size_t layout_counted_count(
     const void *instance,
     const nmo_object_state_member_t *member)
 {
-    size_t size;
-    memcpy(&size, layout_member_ptr_const(instance, member->size_offset),
-           sizeof(size));
-    return size;
+    const void *count_ptr =
+        layout_member_ptr_const(instance, member->size_offset);
+    switch (layout_count_size(member)) {
+    case sizeof(uint32_t): {
+        uint32_t count;
+        memcpy(&count, count_ptr, sizeof(count));
+        return count;
+    }
+    default: {
+        size_t count;
+        memcpy(&count, count_ptr, sizeof(count));
+        return count;
+    }
+    }
+}
+
+static bool layout_counted_bytes(
+    const void *instance,
+    const nmo_object_state_member_t *member,
+    size_t *out_bytes)
+{
+    const size_t count = layout_counted_count(instance, member);
+    const size_t element = layout_element_size(member);
+    if (element != 0 && count > SIZE_MAX / element) return false;
+    *out_bytes = count * element;
+    return true;
 }
 
 static const void *layout_pointer_member(
@@ -289,157 +323,6 @@ static const void *layout_pointer_member(
     memcpy(&data, layout_member_ptr_const(instance, member->offset),
            sizeof(data));
     return data;
-}
-
-nmo_status_t nmo_object_layout_create(
-    const nmo_object_state_layout_t *layout,
-    void *instance,
-    void *context)
-{
-    if (layout == NULL || instance == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_object_layout_create");
-    }
-    memset(instance, 0, layout->size);
-    nmo_status_t result = layout->base_vtable->create(instance, NULL, context);
-    if (result != NMO_OK) return result;
-    if (layout->set_defaults != NULL) {
-        layout->set_defaults(instance);
-    }
-    for (size_t i = 0; i < layout->member_count; ++i) {
-        const nmo_object_state_member_t *member = &layout->members[i];
-        if (member->kind != NMO_OBJECT_STATE_MEMBER_ARRAY) continue;
-        result = nmo_array_init(
-            layout_member_ptr(instance, member->offset), member->size, 0, NULL);
-        if (result != NMO_OK) {
-            nmo_object_layout_destroy(layout, instance, context);
-            return result;
-        }
-    }
-    NMO_RETURN_OK();
-}
-
-void nmo_object_layout_destroy(
-    const nmo_object_state_layout_t *layout,
-    void *instance,
-    void *context)
-{
-    if (layout == NULL || instance == NULL) return;
-    for (size_t i = 0; i < layout->member_count; ++i) {
-        const nmo_object_state_member_t *member = &layout->members[i];
-        if (member->kind == NMO_OBJECT_STATE_MEMBER_ARRAY) {
-            nmo_array_dispose(layout_member_ptr(instance, member->offset));
-        }
-    }
-    layout->base_vtable->destroy(instance, NULL, context);
-    memset(instance, 0, layout->size);
-}
-
-typedef union layout_staged_member {
-    nmo_array_t array;
-    void *bytes;
-} layout_staged_member_t;
-
-static void layout_dispose_staged(
-    const nmo_object_state_layout_t *layout,
-    layout_staged_member_t *staged)
-{
-    for (size_t i = 0; i < layout->member_count; ++i) {
-        if (layout->members[i].kind == NMO_OBJECT_STATE_MEMBER_ARRAY) {
-            nmo_array_dispose(&staged[i].array);
-        }
-    }
-    free(staged);
-}
-
-nmo_status_t nmo_object_layout_copy(
-    const nmo_object_state_layout_t *layout,
-    const void *src,
-    void *dst,
-    nmo_arena_t *arena)
-{
-    if (layout == NULL || src == NULL || dst == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    if (layout->validate != NULL) {
-        NMO_RETURN_IF_ERROR(layout->validate(src, NULL, NULL));
-    }
-
-    /* Clone owned members first and copy the base in place, which each
-     * base vtable does atomically, so a failure leaves dst untouched. */
-    layout_staged_member_t *staged = NULL;
-    bool owns_members = false;
-    for (size_t i = 0; i < layout->member_count; ++i) {
-        owns_members = owns_members ||
-            layout->members[i].kind != NMO_OBJECT_STATE_MEMBER_VALUE;
-    }
-    if (owns_members) {
-        staged = calloc(layout->member_count, sizeof(*staged));
-        if (staged == NULL) return NMO_ERR_NOMEM;
-    }
-    nmo_status_t result = NMO_OK;
-    for (size_t i = 0; result == NMO_OK && i < layout->member_count; ++i) {
-        const nmo_object_state_member_t *member = &layout->members[i];
-        if (member->kind == NMO_OBJECT_STATE_MEMBER_ARRAY) {
-            const nmo_array_t *from =
-                layout_member_ptr_const(src, member->offset);
-            result = nmo_array_clone(from, &staged[i].array, &from->allocator);
-        } else if (member->kind == NMO_OBJECT_STATE_MEMBER_BYTES) {
-            result = nmo_object_copy_bytes(
-                arena, &staged[i].bytes, layout_pointer_member(src, member),
-                layout_bytes_size(src, member));
-        } else if (member->kind == NMO_OBJECT_STATE_MEMBER_STRING) {
-            char *string = NULL;
-            result = nmo_object_copy_string(
-                arena, &string, layout_pointer_member(src, member));
-            staged[i].bytes = string;
-        } else if (member->kind == NMO_OBJECT_STATE_MEMBER_CHUNK) {
-            nmo_chunk_t *chunk = NULL;
-            result = nmo_object_copy_chunk(
-                arena, &chunk,
-                (nmo_chunk_t *)layout_pointer_member(src, member));
-            staged[i].bytes = chunk;
-        }
-    }
-    if (result == NMO_OK) {
-        const nmo_type_descriptor_t base_type = {
-            .size = (uint32_t)layout->base_size,
-        };
-        result = layout->base_vtable->copy(
-            src, dst, layout->base_size != 0 ? &base_type : NULL, arena);
-    }
-    if (result != NMO_OK) {
-        layout_dispose_staged(layout, staged);
-        return result;
-    }
-
-    for (size_t i = 0; i < layout->member_count; ++i) {
-        const nmo_object_state_member_t *member = &layout->members[i];
-        void *to = layout_member_ptr(dst, member->offset);
-        switch (member->kind) {
-        case NMO_OBJECT_STATE_MEMBER_VALUE:
-            memmove(to, layout_member_ptr_const(src, member->offset),
-                    member->size);
-            break;
-        case NMO_OBJECT_STATE_MEMBER_ARRAY: {
-            nmo_array_t *array = to;
-            const nmo_array_t *from =
-                layout_member_ptr_const(src, member->offset);
-            if (array->data != from->data) {
-                nmo_array_dispose(array);
-            }
-            *array = staged[i].array;
-            break;
-        }
-        case NMO_OBJECT_STATE_MEMBER_BYTES:
-        case NMO_OBJECT_STATE_MEMBER_STRING:
-        case NMO_OBJECT_STATE_MEMBER_CHUNK:
-            memcpy(to, &staged[i].bytes, sizeof(staged[i].bytes));
-            break;
-        }
-    }
-    free(staged);
-    return NMO_OK;
 }
 
 static bool layout_bytes_equal(
@@ -486,17 +369,60 @@ static bool layout_chunk_equal(
         layout_bytes_equal(lhs_data, rhs_data, lhs_size);
 }
 
-bool nmo_object_layout_equals(
-    const nmo_object_state_layout_t *layout,
+static uint32_t layout_hash_bytes(
+    uint32_t hash,
+    const void *data,
+    size_t size)
+{
+    const uint8_t *bytes = data;
+    for (size_t i = 0; i < size; ++i) {
+        hash ^= bytes[i];
+        hash *= 16777619u;
+    }
+    return hash;
+}
+
+static bool layout_members_equal(
+    const nmo_object_state_member_t *members,
+    size_t member_count,
+    const void *a,
+    const void *b);
+
+static uint32_t layout_members_hash(
+    uint32_t hash,
+    const nmo_object_state_member_t *members,
+    size_t member_count,
+    const void *instance);
+
+static bool layout_records_equal(
+    const nmo_object_state_layout_t *record,
+    const nmo_array_t *la,
+    const nmo_array_t *ra)
+{
+    if (la->count != ra->count ||
+        la->element_size != ra->element_size ||
+        (la->count > 0 && la->element_size != record->size)) {
+        return false;
+    }
+    for (size_t i = 0; i < la->count; ++i) {
+        if (!layout_members_equal(
+                record->members, record->member_count,
+                (const uint8_t *)la->data + i * record->size,
+                (const uint8_t *)ra->data + i * record->size)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool layout_members_equal(
+    const nmo_object_state_member_t *members,
+    size_t member_count,
     const void *a,
     const void *b)
 {
-    if (a == b) return true;
-    if (layout == NULL || a == NULL || b == NULL) return false;
-    if (!layout->base_vtable->equals(a, b)) return false;
-
-    for (size_t i = 0; i < layout->member_count; ++i) {
-        const nmo_object_state_member_t *member = &layout->members[i];
+    for (size_t i = 0; i < member_count; ++i) {
+        const nmo_object_state_member_t *member = &members[i];
         if ((member->flags & NMO_OBJECT_STATE_MEMBER_UNCOMPARED) != 0u) continue;
         const void *lhs = layout_member_ptr_const(a, member->offset);
         const void *rhs = layout_member_ptr_const(b, member->offset);
@@ -516,11 +442,17 @@ bool nmo_object_layout_equals(
             }
             break;
         }
-        case NMO_OBJECT_STATE_MEMBER_BYTES: {
-            const size_t size = layout_bytes_size(a, member);
-            if (size != layout_bytes_size(b, member) ||
+        case NMO_OBJECT_STATE_MEMBER_BYTES:
+        case NMO_OBJECT_STATE_MEMBER_COUNTED: {
+            size_t lhs_bytes = 0;
+            size_t rhs_bytes = 0;
+            if (!layout_counted_bytes(a, member, &lhs_bytes) ||
+                !layout_counted_bytes(b, member, &rhs_bytes) ||
+                layout_counted_count(a, member) !=
+                    layout_counted_count(b, member) ||
                 !layout_bytes_equal(layout_pointer_member(a, member),
-                                    layout_pointer_member(b, member), size)) {
+                                    layout_pointer_member(b, member),
+                                    lhs_bytes)) {
                 return false;
             }
             break;
@@ -537,33 +469,22 @@ bool nmo_object_layout_equals(
                 return false;
             }
             break;
+        case NMO_OBJECT_STATE_MEMBER_RECORDS:
+            if (!layout_records_equal(member->record, lhs, rhs)) return false;
+            break;
         }
     }
     return true;
 }
 
-static uint32_t layout_hash_bytes(
+static uint32_t layout_members_hash(
     uint32_t hash,
-    const void *data,
-    size_t size)
-{
-    const uint8_t *bytes = data;
-    for (size_t i = 0; i < size; ++i) {
-        hash ^= bytes[i];
-        hash *= 16777619u;
-    }
-    return hash;
-}
-
-uint32_t nmo_object_layout_hash(
-    const nmo_object_state_layout_t *layout,
+    const nmo_object_state_member_t *members,
+    size_t member_count,
     const void *instance)
 {
-    if (layout == NULL || instance == NULL) return 0;
-    uint32_t hash = layout->base_vtable->hash(instance);
-
-    for (size_t i = 0; i < layout->member_count; ++i) {
-        const nmo_object_state_member_t *member = &layout->members[i];
+    for (size_t i = 0; i < member_count; ++i) {
+        const nmo_object_state_member_t *member = &members[i];
         if ((member->flags & NMO_OBJECT_STATE_MEMBER_UNCOMPARED) != 0u) continue;
         const void *value = layout_member_ptr_const(instance, member->offset);
         switch (member->kind) {
@@ -579,12 +500,14 @@ uint32_t nmo_object_layout_hash(
             }
             break;
         }
-        case NMO_OBJECT_STATE_MEMBER_BYTES: {
-            const size_t size = layout_bytes_size(instance, member);
+        case NMO_OBJECT_STATE_MEMBER_BYTES:
+        case NMO_OBJECT_STATE_MEMBER_COUNTED: {
+            const size_t count = layout_counted_count(instance, member);
             const void *data = layout_pointer_member(instance, member);
-            hash = layout_hash_bytes(hash, &size, sizeof(size));
-            if (data != NULL) {
-                hash = layout_hash_bytes(hash, data, size);
+            size_t bytes = 0;
+            hash = layout_hash_bytes(hash, &count, sizeof(count));
+            if (data != NULL && layout_counted_bytes(instance, member, &bytes)) {
+                hash = layout_hash_bytes(hash, data, bytes);
             }
             break;
         }
@@ -611,9 +534,302 @@ uint32_t nmo_object_layout_hash(
             }
             break;
         }
+        case NMO_OBJECT_STATE_MEMBER_RECORDS: {
+            const nmo_array_t *array = value;
+            const nmo_object_state_layout_t *record = member->record;
+            hash = layout_hash_bytes(hash, &array->count, sizeof(array->count));
+            for (size_t r = 0; r < array->count && array->data != NULL; ++r) {
+                hash = layout_members_hash(
+                    hash, record->members, record->member_count,
+                    (const uint8_t *)array->data + r * record->size);
+            }
+            break;
+        }
         }
     }
     return hash;
+}
+
+/* A record array element is plain data plus arena-owned memory, so the array
+ * itself needs no per-element teardown. */
+static nmo_status_t layout_init_member(
+    const nmo_object_state_member_t *member,
+    void *instance)
+{
+    if (member->kind == NMO_OBJECT_STATE_MEMBER_ARRAY) {
+        return nmo_array_init(
+            layout_member_ptr(instance, member->offset), member->size, 0, NULL);
+    }
+    if (member->kind == NMO_OBJECT_STATE_MEMBER_RECORDS) {
+        return nmo_array_init(
+            layout_member_ptr(instance, member->offset),
+            member->record->size, 0, NULL);
+    }
+    return NMO_OK;
+}
+
+static bool layout_member_owns_array(const nmo_object_state_member_t *member)
+{
+    return member->kind == NMO_OBJECT_STATE_MEMBER_ARRAY ||
+           member->kind == NMO_OBJECT_STATE_MEMBER_RECORDS;
+}
+
+nmo_status_t nmo_object_layout_create(
+    const nmo_object_state_layout_t *layout,
+    void *instance,
+    void *context)
+{
+    if (layout == NULL || instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_object_layout_create");
+    }
+    memset(instance, 0, layout->size);
+    nmo_status_t result = layout->base_vtable->create(instance, NULL, context);
+    if (result != NMO_OK) return result;
+    if (layout->set_defaults != NULL) {
+        layout->set_defaults(instance);
+    }
+    for (size_t i = 0; i < layout->member_count; ++i) {
+        result = layout_init_member(&layout->members[i], instance);
+        if (result != NMO_OK) {
+            nmo_object_layout_destroy(layout, instance, context);
+            return result;
+        }
+    }
+    NMO_RETURN_OK();
+}
+
+void nmo_object_layout_destroy(
+    const nmo_object_state_layout_t *layout,
+    void *instance,
+    void *context)
+{
+    if (layout == NULL || instance == NULL) return;
+    for (size_t i = 0; i < layout->member_count; ++i) {
+        const nmo_object_state_member_t *member = &layout->members[i];
+        if (layout_member_owns_array(member)) {
+            nmo_array_dispose(layout_member_ptr(instance, member->offset));
+        }
+    }
+    layout->base_vtable->destroy(instance, NULL, context);
+    memset(instance, 0, layout->size);
+}
+
+typedef union layout_owned {
+    nmo_array_t array;
+    void *pointer;
+} layout_owned_t;
+
+static nmo_status_t layout_copy_members_into(
+    const nmo_object_state_member_t *members,
+    size_t member_count,
+    const void *src,
+    void *dst,
+    nmo_arena_t *arena);
+
+static nmo_status_t layout_copy_owned(
+    const nmo_object_state_member_t *member,
+    const void *src,
+    nmo_arena_t *arena,
+    layout_owned_t *out)
+{
+    switch (member->kind) {
+    case NMO_OBJECT_STATE_MEMBER_ARRAY: {
+        const nmo_array_t *from = layout_member_ptr_const(src, member->offset);
+        return nmo_array_clone(from, &out->array, &from->allocator);
+    }
+    case NMO_OBJECT_STATE_MEMBER_BYTES:
+    case NMO_OBJECT_STATE_MEMBER_COUNTED: {
+        size_t bytes = 0;
+        if (!layout_counted_bytes(src, member, &bytes)) {
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
+        const void *from = layout_pointer_member(src, member);
+        out->pointer = NULL;
+        if (bytes == 0) return NMO_OK;
+        if (from == NULL || arena == NULL) return NMO_ERR_INVALID_ARGUMENT;
+        /* The element type is not known here, so align for any of them. */
+        out->pointer = nmo_arena_alloc(arena, bytes, NMO_MAX_ALIGN);
+        if (out->pointer == NULL) return NMO_ERR_NOMEM;
+        memcpy(out->pointer, from, bytes);
+        return NMO_OK;
+    }
+    case NMO_OBJECT_STATE_MEMBER_STRING: {
+        char *string = NULL;
+        const nmo_status_t result = nmo_object_copy_string(
+            arena, &string, layout_pointer_member(src, member));
+        out->pointer = string;
+        return result;
+    }
+    case NMO_OBJECT_STATE_MEMBER_CHUNK: {
+        nmo_chunk_t *chunk = NULL;
+        const nmo_status_t result = nmo_object_copy_chunk(
+            arena, &chunk, (nmo_chunk_t *)layout_pointer_member(src, member));
+        out->pointer = chunk;
+        return result;
+    }
+    case NMO_OBJECT_STATE_MEMBER_RECORDS: {
+        const nmo_array_t *from = layout_member_ptr_const(src, member->offset);
+        const nmo_object_state_layout_t *record = member->record;
+        if (from->count > 0 &&
+            (from->data == NULL || from->element_size != record->size)) {
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
+        nmo_status_t result = nmo_array_init(
+            &out->array, record->size, from->count, &from->allocator);
+        if (result != NMO_OK) return result;
+        nmo_array_set_lifecycle(&out->array, &from->lifecycle);
+        void *elements = NULL;
+        result = nmo_array_extend(&out->array, from->count, &elements);
+        for (size_t i = 0; result == NMO_OK && i < from->count; ++i) {
+            const uint8_t *from_record = (const uint8_t *)from->data +
+                i * record->size;
+            uint8_t *to_record = (uint8_t *)elements + i * record->size;
+            memcpy(to_record, from_record, record->size);
+            result = layout_copy_members_into(
+                record->members, record->member_count,
+                from_record, to_record, arena);
+        }
+        if (result != NMO_OK) nmo_array_dispose(&out->array);
+        return result;
+    }
+    case NMO_OBJECT_STATE_MEMBER_VALUE:
+        break;
+    }
+    return NMO_OK;
+}
+
+/* dst already holds the bytes of src; the owned members are replaced by copies. */
+static nmo_status_t layout_copy_members_into(
+    const nmo_object_state_member_t *members,
+    size_t member_count,
+    const void *src,
+    void *dst,
+    nmo_arena_t *arena)
+{
+    for (size_t i = 0; i < member_count; ++i) {
+        const nmo_object_state_member_t *member = &members[i];
+        if (member->kind == NMO_OBJECT_STATE_MEMBER_VALUE) continue;
+        layout_owned_t owned;
+        memset(&owned, 0, sizeof(owned));
+        if (layout_member_owns_array(member)) {
+            /* A record holds no array it would have to tear down. */
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
+        NMO_RETURN_IF_ERROR(layout_copy_owned(member, src, arena, &owned));
+        if (member->kind == NMO_OBJECT_STATE_MEMBER_RECORDS) {
+            memcpy(layout_member_ptr(dst, member->offset), &owned.array,
+                   sizeof(owned.array));
+        } else {
+            memcpy(layout_member_ptr(dst, member->offset), &owned.pointer,
+                   sizeof(owned.pointer));
+        }
+    }
+    return NMO_OK;
+}
+
+static void layout_dispose_staged(
+    const nmo_object_state_layout_t *layout,
+    layout_owned_t *staged)
+{
+    for (size_t i = 0; i < layout->member_count; ++i) {
+        if (layout_member_owns_array(&layout->members[i])) {
+            nmo_array_dispose(&staged[i].array);
+        }
+    }
+    free(staged);
+}
+
+nmo_status_t nmo_object_layout_copy(
+    const nmo_object_state_layout_t *layout,
+    const void *src,
+    void *dst,
+    nmo_arena_t *arena)
+{
+    if (layout == NULL || src == NULL || dst == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (layout->validate != NULL) {
+        NMO_RETURN_IF_ERROR(layout->validate(src, NULL, NULL));
+    }
+
+    /* Clone owned members first and copy the base in place, which each
+     * base vtable does atomically, so a failure leaves dst untouched. */
+    layout_owned_t *staged = NULL;
+    bool owns_members = false;
+    for (size_t i = 0; i < layout->member_count; ++i) {
+        owns_members = owns_members ||
+            layout->members[i].kind != NMO_OBJECT_STATE_MEMBER_VALUE;
+    }
+    if (owns_members) {
+        staged = calloc(layout->member_count, sizeof(*staged));
+        if (staged == NULL) return NMO_ERR_NOMEM;
+    }
+    nmo_status_t result = NMO_OK;
+    for (size_t i = 0; result == NMO_OK && i < layout->member_count; ++i) {
+        if (layout->members[i].kind == NMO_OBJECT_STATE_MEMBER_VALUE) continue;
+        result = layout_copy_owned(
+            &layout->members[i], src, arena, &staged[i]);
+    }
+    if (result == NMO_OK) {
+        const nmo_type_descriptor_t base_type = {
+            .size = (uint32_t)layout->base_size,
+        };
+        result = layout->base_vtable->copy(
+            src, dst, layout->base_size != 0 ? &base_type : NULL, arena);
+    }
+    if (result != NMO_OK) {
+        layout_dispose_staged(layout, staged);
+        return result;
+    }
+
+    for (size_t i = 0; i < layout->member_count; ++i) {
+        const nmo_object_state_member_t *member = &layout->members[i];
+        void *to = layout_member_ptr(dst, member->offset);
+        switch (member->kind) {
+        case NMO_OBJECT_STATE_MEMBER_VALUE:
+            memmove(to, layout_member_ptr_const(src, member->offset),
+                    member->size);
+            break;
+        case NMO_OBJECT_STATE_MEMBER_ARRAY:
+        case NMO_OBJECT_STATE_MEMBER_RECORDS: {
+            nmo_array_t *array = to;
+            const nmo_array_t *from =
+                layout_member_ptr_const(src, member->offset);
+            if (array->data != from->data) {
+                nmo_array_dispose(array);
+            }
+            *array = staged[i].array;
+            break;
+        }
+        default:
+            memcpy(to, &staged[i].pointer, sizeof(staged[i].pointer));
+            break;
+        }
+    }
+    free(staged);
+    return NMO_OK;
+}
+
+bool nmo_object_layout_equals(
+    const nmo_object_state_layout_t *layout,
+    const void *a,
+    const void *b)
+{
+    if (a == b) return true;
+    if (layout == NULL || a == NULL || b == NULL) return false;
+    if (!layout->base_vtable->equals(a, b)) return false;
+    return layout_members_equal(layout->members, layout->member_count, a, b);
+}
+
+uint32_t nmo_object_layout_hash(
+    const nmo_object_state_layout_t *layout,
+    const void *instance)
+{
+    if (layout == NULL || instance == NULL) return 0;
+    return layout_members_hash(
+        layout->base_vtable->hash(instance), layout->members,
+        layout->member_count, instance);
 }
 
 

@@ -19,6 +19,9 @@
 #include "object/builtin/nmo_spritetext_schemas.h"
 #include "object/builtin/nmo_synchro_schemas.h"
 #include "object/builtin/nmo_targetlight_schemas.h"
+#include "object/builtin/nmo_object_schemas.h"
+#include "object/nmo_object_type_common.h"
+#include <stddef.h>
 #include <string.h>
 
 TEST(object_state_layout, place_copy_equals_hash) {
@@ -366,6 +369,108 @@ TEST(object_state_layout, bodypart_joint_defaults_and_copy) {
     nmo_arena_destroy(arena);
 }
 
+/* A state that exercises the member kinds with a count of each width, records
+ * that have padding, and the failure paths. */
+typedef struct synthetic_record {
+    uint8_t tag;
+    uint32_t value;
+    char *name;
+} synthetic_record_t;
+
+typedef struct synthetic_state {
+    nmo_object_state_t base;
+    uint32_t count32;
+    uint16_t *words;
+    size_t count64;
+    uint32_t *wide;
+    nmo_array_t records;
+} synthetic_state_t;
+
+static const nmo_object_state_member_t synthetic_record_members[] = {
+    NMO_STATE_VALUE(synthetic_record_t, tag),
+    NMO_STATE_VALUE(synthetic_record_t, value),
+    NMO_STATE_STRING(synthetic_record_t, name)
+};
+
+static const nmo_object_state_layout_t synthetic_record_layout = {
+    .size = sizeof(synthetic_record_t),
+    .members = synthetic_record_members,
+    .member_count = sizeof(synthetic_record_members) /
+        sizeof(synthetic_record_members[0]),
+};
+
+static const nmo_object_state_member_t synthetic_members[] = {
+    NMO_STATE_VALUE(synthetic_state_t, count32),
+    NMO_STATE_COUNTED(synthetic_state_t, words, count32, uint16_t),
+    NMO_STATE_VALUE(synthetic_state_t, count64),
+    NMO_STATE_COUNTED(synthetic_state_t, wide, count64, uint32_t),
+    NMO_STATE_RECORDS(synthetic_state_t, records, synthetic_record_layout)
+};
+
+static const nmo_object_state_layout_t synthetic_layout = {
+    .size = sizeof(synthetic_state_t),
+    .base_vtable = &nmo_object_vtable,
+    .base_size = sizeof(nmo_object_state_t),
+    .members = synthetic_members,
+    .member_count = sizeof(synthetic_members) / sizeof(synthetic_members[0]),
+};
+
+TEST(object_state_layout, counted_and_record_members_of_both_widths) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    synthetic_state_t source;
+    synthetic_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_object_layout_create(&synthetic_layout, &source, NULL));
+    ASSERT_EQ(NMO_OK, nmo_object_layout_create(&synthetic_layout, &copied, NULL));
+    ASSERT_EQ(sizeof(synthetic_record_t), source.records.element_size);
+
+    uint16_t words[3] = {1u, 2u, 3u};
+    uint32_t wide[2] = {70000u, 80000u};
+    source.count32 = 3;
+    source.words = words;
+    source.count64 = 2;
+    source.wide = wide;
+    synthetic_record_t record;
+    memset(&record, 0xFF, sizeof(record));
+    record.tag = 4u;
+    record.value = 9u;
+    record.name = "rec";
+    ASSERT_EQ(NMO_OK, nmo_array_append(&source.records, &record));
+
+    ASSERT_EQ(NMO_OK, nmo_object_layout_copy(&synthetic_layout, &source, &copied, arena));
+    ASSERT_TRUE(copied.words != source.words);
+    ASSERT_TRUE(copied.wide != source.wide);
+    ASSERT_EQ(3u, copied.words[2]);
+    ASSERT_EQ(80000u, copied.wide[1]);
+    ASSERT_TRUE(nmo_object_layout_equals(&synthetic_layout, &source, &copied));
+    ASSERT_EQ(nmo_object_layout_hash(&synthetic_layout, &source),
+              nmo_object_layout_hash(&synthetic_layout, &copied));
+
+    /* Padding bytes of a record are not part of its value. */
+    synthetic_record_t *copied_record =
+        NMO_ARRAY_DATA(synthetic_record_t, &copied.records);
+    memset(&copied_record->tag + 1, 0x00, offsetof(synthetic_record_t, value) - 1);
+    ASSERT_TRUE(nmo_object_layout_equals(&synthetic_layout, &source, &copied));
+    ASSERT_EQ(nmo_object_layout_hash(&synthetic_layout, &source),
+              nmo_object_layout_hash(&synthetic_layout, &copied));
+    copied_record->name = "other";
+    ASSERT_FALSE(nmo_object_layout_equals(&synthetic_layout, &source, &copied));
+    copied_record->name = "rec";
+    copied.wide[0] ^= 1u;
+    ASSERT_FALSE(nmo_object_layout_equals(&synthetic_layout, &source, &copied));
+
+    /* Without an arena the counted buffers cannot be copied and the target stays. */
+    copied.wide[0] ^= 1u;
+    synthetic_state_t untouched = copied;
+    ASSERT_NE(NMO_OK,
+              nmo_object_layout_copy(&synthetic_layout, &source, &copied, NULL));
+    ASSERT_EQ(0, memcmp(&untouched, &copied, sizeof(copied)));
+
+    nmo_object_layout_destroy(&synthetic_layout, &source, NULL);
+    nmo_object_layout_destroy(&synthetic_layout, &copied, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, place_copy_equals_hash);
     REGISTER_TEST(object_state_layout, copy_into_shallow_alias_detaches_arrays);
@@ -378,4 +483,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, synchro_reference_arrays_copy_and_compare);
     REGISTER_TEST(object_state_layout, parameter_payload_lanes_copy_by_content);
     REGISTER_TEST(object_state_layout, bodypart_joint_defaults_and_copy);
+    REGISTER_TEST(object_state_layout, counted_and_record_members_of_both_widths);
 TEST_MAIN_END()

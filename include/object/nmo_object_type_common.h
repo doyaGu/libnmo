@@ -102,8 +102,12 @@ typedef enum nmo_object_state_member_kind {
     NMO_OBJECT_STATE_MEMBER_ARRAY, /**< Owned nmo_array_t of trivially copyable elements */
     NMO_OBJECT_STATE_MEMBER_BYTES, /**< Arena-owned buffer sized by a size_t member */
     NMO_OBJECT_STATE_MEMBER_STRING, /**< Arena-owned NUL-terminated string, compared by content */
-    NMO_OBJECT_STATE_MEMBER_CHUNK  /**< Arena-owned nmo_chunk_t *, compared by chunk data */
+    NMO_OBJECT_STATE_MEMBER_CHUNK, /**< Arena-owned nmo_chunk_t *, compared by chunk data */
+    NMO_OBJECT_STATE_MEMBER_COUNTED, /**< Arena-owned array of trivially copyable elements, counted by an integer member */
+    NMO_OBJECT_STATE_MEMBER_RECORDS /**< Owned nmo_array_t of records laid out by a nested member list */
 } nmo_object_state_member_kind_t;
+
+typedef struct nmo_object_state_layout nmo_object_state_layout_t;
 
 /** Member flags */
 #define NMO_OBJECT_STATE_MEMBER_UNCOMPARED 0x1u /**< Copied, but left out of equals and hash */
@@ -111,34 +115,55 @@ typedef enum nmo_object_state_member_kind {
 typedef struct nmo_object_state_member {
     nmo_object_state_member_kind_t kind;
     size_t offset;
-    size_t size;        /**< VALUE: member size; ARRAY: element size */
-    size_t size_offset; /**< BYTES: offset of the size_t byte count */
+    size_t size;        /**< VALUE: member size; ARRAY, COUNTED: element size */
+    size_t size_offset; /**< BYTES, COUNTED: offset of the integer element count */
+    size_t count_size;  /**< COUNTED: byte width of the count (4 or 8) */
     uint32_t flags;     /**< NMO_OBJECT_STATE_MEMBER_* flags */
+    const nmo_object_state_layout_t *record; /**< RECORDS: layout of one element */
 } nmo_object_state_member_t;
 
 #define NMO_STATE_VALUE(_state_t, _member) \
-    {NMO_OBJECT_STATE_MEMBER_VALUE, offsetof(_state_t, _member), \
-     sizeof(((_state_t *)0)->_member), 0, 0}
+    {.kind = NMO_OBJECT_STATE_MEMBER_VALUE, \
+     .offset = offsetof(_state_t, _member), \
+     .size = sizeof(((_state_t *)0)->_member)}
 /* Elements [_first, _first + _count) of a fixed array member, as one value */
 #define NMO_STATE_ELEMENTS(_state_t, _member, _first, _count) \
-    {NMO_OBJECT_STATE_MEMBER_VALUE, offsetof(_state_t, _member[_first]), \
-     sizeof(((_state_t *)0)->_member[0]) * (_count), 0, 0}
+    {.kind = NMO_OBJECT_STATE_MEMBER_VALUE, \
+     .offset = offsetof(_state_t, _member[_first]), \
+     .size = sizeof(((_state_t *)0)->_member[0]) * (_count)}
 /* Elements that are copied but are not part of the state equals and hash
  * compare, because the serialized form derives them from another member. */
 #define NMO_STATE_ELEMENTS_UNCOMPARED(_state_t, _member, _first, _count) \
-    {NMO_OBJECT_STATE_MEMBER_VALUE, offsetof(_state_t, _member[_first]), \
-     sizeof(((_state_t *)0)->_member[0]) * (_count), 0, \
-     NMO_OBJECT_STATE_MEMBER_UNCOMPARED}
+    {.kind = NMO_OBJECT_STATE_MEMBER_VALUE, \
+     .offset = offsetof(_state_t, _member[_first]), \
+     .size = sizeof(((_state_t *)0)->_member[0]) * (_count), \
+     .flags = NMO_OBJECT_STATE_MEMBER_UNCOMPARED}
 #define NMO_STATE_ARRAY(_state_t, _member, _element_t) \
-    {NMO_OBJECT_STATE_MEMBER_ARRAY, offsetof(_state_t, _member), \
-     sizeof(_element_t), 0, 0}
+    {.kind = NMO_OBJECT_STATE_MEMBER_ARRAY, \
+     .offset = offsetof(_state_t, _member), .size = sizeof(_element_t)}
 #define NMO_STATE_BYTES(_state_t, _member, _size_member) \
-    {NMO_OBJECT_STATE_MEMBER_BYTES, offsetof(_state_t, _member), 0, \
-     offsetof(_state_t, _size_member), 0}
+    {.kind = NMO_OBJECT_STATE_MEMBER_BYTES, \
+     .offset = offsetof(_state_t, _member), \
+     .size_offset = offsetof(_state_t, _size_member)}
+/* A pointer to _count_member elements. The count is a member of its own and
+ * is listed as a value, like the size of a BYTES member. */
+#define NMO_STATE_COUNTED(_state_t, _member, _count_member, _element_t) \
+    {.kind = NMO_OBJECT_STATE_MEMBER_COUNTED, \
+     .offset = offsetof(_state_t, _member), .size = sizeof(_element_t), \
+     .size_offset = offsetof(_state_t, _count_member), \
+     .count_size = sizeof(((_state_t *)0)->_count_member)}
 #define NMO_STATE_STRING(_state_t, _member) \
-    {NMO_OBJECT_STATE_MEMBER_STRING, offsetof(_state_t, _member), 0, 0, 0}
+    {.kind = NMO_OBJECT_STATE_MEMBER_STRING, \
+     .offset = offsetof(_state_t, _member)}
 #define NMO_STATE_CHUNK(_state_t, _member) \
-    {NMO_OBJECT_STATE_MEMBER_CHUNK, offsetof(_state_t, _member), 0, 0, 0}
+    {.kind = NMO_OBJECT_STATE_MEMBER_CHUNK, \
+     .offset = offsetof(_state_t, _member)}
+/* An nmo_array_t of records. _record is the nmo_object_state_layout_t of one
+ * record: its size and members, with no base. A record holds values, strings,
+ * byte buffers, chunks and counted arrays, but no array of its own. */
+#define NMO_STATE_RECORDS(_state_t, _member, _record) \
+    {.kind = NMO_OBJECT_STATE_MEMBER_RECORDS, \
+     .offset = offsetof(_state_t, _member), .record = &(_record)}
 
 /**
  * @brief State layout of a class whose own members need no custom logic.
@@ -146,7 +171,7 @@ typedef struct nmo_object_state_member {
  * The base state is embedded at offset 0 and handled by its vtable; the
  * members after it are handled by the generic ops below.
  */
-typedef struct nmo_object_state_layout {
+struct nmo_object_state_layout {
     size_t size;
     const nmo_type_vtable_t *base_vtable;
     size_t base_size;        /**< Type size handed to the base copy; 0 hands no type */
@@ -156,7 +181,7 @@ typedef struct nmo_object_state_layout {
     nmo_status_t (*validate)(const void *instance,
                              const nmo_type_descriptor_t *type,
                              void *context);
-} nmo_object_state_layout_t;
+};
 
 NMO_API nmo_status_t nmo_object_layout_create(
     const nmo_object_state_layout_t *layout,
