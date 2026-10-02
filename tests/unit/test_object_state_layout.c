@@ -14,6 +14,7 @@
 #include "object/builtin/nmo_layer_schemas.h"
 #include "object/builtin/nmo_parameteroperation_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
+#include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/builtin/nmo_place_schemas.h"
 #include "object/builtin/nmo_sound_schemas.h"
 #include "object/builtin/nmo_spritetext_schemas.h"
@@ -369,6 +370,38 @@ TEST(object_state_layout, bodypart_joint_defaults_and_copy) {
     nmo_arena_destroy(arena);
 }
 
+TEST(object_state_layout, parameterout_destinations_copy_by_content) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_parameterout_state_t source;
+    nmo_parameterout_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_parameterout_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_parameterout_vtable.create(&copied, NULL, NULL));
+    ASSERT_EQ(NMO_OBJECT_ID_NONE, source.owner.raw_id);
+
+    nmo_ref_t destinations[2] = {nmo_ref_from_raw(81), nmo_ref_from_raw(82)};
+    source.destination_ids = destinations;
+    source.destination_count = 2;
+    source.has_destinations = 1;
+    ASSERT_EQ(NMO_OK, nmo_parameterout_vtable.copy(&source, &copied, NULL, arena));
+    ASSERT_EQ(2u, copied.destination_count);
+    ASSERT_TRUE(copied.destination_ids != source.destination_ids);
+    ASSERT_EQ(82u, copied.destination_ids[1].raw_id);
+    ASSERT_TRUE(nmo_parameterout_vtable.equals(&source, &copied));
+    ASSERT_EQ(nmo_parameterout_vtable.hash(&source),
+              nmo_parameterout_vtable.hash(&copied));
+
+    copied.destination_ids[1] = nmo_ref_from_raw(83);
+    ASSERT_FALSE(nmo_parameterout_vtable.equals(&source, &copied));
+    copied.destination_ids[1] = nmo_ref_from_raw(82);
+    copied.destination_count = 1;
+    ASSERT_FALSE(nmo_parameterout_vtable.equals(&source, &copied));
+
+    nmo_parameterout_vtable.destroy(&source, NULL, NULL);
+    nmo_parameterout_vtable.destroy(&copied, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 /* A state that exercises the member kinds with a count of each width, records
  * that have padding, and the failure paths. */
 typedef struct synthetic_record {
@@ -483,5 +516,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, synchro_reference_arrays_copy_and_compare);
     REGISTER_TEST(object_state_layout, parameter_payload_lanes_copy_by_content);
     REGISTER_TEST(object_state_layout, bodypart_joint_defaults_and_copy);
+    REGISTER_TEST(object_state_layout, parameterout_destinations_copy_by_content);
     REGISTER_TEST(object_state_layout, counted_and_record_members_of_both_widths);
 TEST_MAIN_END()

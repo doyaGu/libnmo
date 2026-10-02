@@ -26,16 +26,6 @@
 #include <stdalign.h>
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE(
-    parameterout,
-    nmo_parameterout_state_t,
-    do {
-        NMO_RETURN_IF_ERROR(nmo_parameter_vtable.create(
-            &state->base, NULL, context));
-        state->owner = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-    } while (0),
-    nmo_parameter_vtable.destroy(&state->base, NULL, context))
-
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
@@ -231,49 +221,34 @@ static nmo_status_t nmo_parameterout_validate(
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_DEFINE_OBJECT_STAGED_SERIALIZE_VALIDATED(nmo_parameterout)
-
-static nmo_status_t nmo_parameterout_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
+static void nmo_parameterout_set_defaults(void *instance)
 {
-    (void)type;
-    if (src == NULL || dst == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    if (src == dst) return NMO_OK;
-    const nmo_parameterout_state_t *s = src;
-    nmo_parameterout_state_t *d = dst;
-    NMO_RETURN_IF_ERROR(nmo_parameterout_validate(s, type, NULL));
-
-    nmo_parameterout_state_t copied;
-    nmo_status_t result = nmo_parameterout_create(
-        &copied, NULL, NULL);
-    if (result != NMO_OK) return result;
-    result = nmo_parameter_vtable.copy(
-        &s->base, &copied.base, NULL, arena);
-    if (result != NMO_OK) goto fail;
-
-    copied.owner = s->owner;
-    copied.destination_count = s->destination_count;
-    copied.has_destinations = s->has_destinations;
-    result = nmo_object_copy_array(
-        arena, (void **)&copied.destination_ids, s->destination_ids,
-        sizeof(nmo_ref_t), s->destination_count);
-    if (result != NMO_OK) goto fail;
-
-    if (s->base.buffer_data.data != NULL &&
-        d->base.buffer_data.data == s->base.buffer_data.data) {
-        memset(&d->base.buffer_data, 0, sizeof(d->base.buffer_data));
-    }
-    nmo_parameterout_destroy(d, NULL, NULL);
-    *d = copied;
-    return NMO_OK;
-
-fail:
-    nmo_parameterout_destroy(&copied, NULL, NULL);
-    return result;
+    nmo_parameterout_state_t *state = instance;
+    state->owner = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
 }
+
+static const nmo_object_state_member_t nmo_parameterout_members[] = {
+    NMO_STATE_VALUE(nmo_parameterout_state_t, owner),
+    NMO_STATE_VALUE(nmo_parameterout_state_t, destination_count),
+    NMO_STATE_COUNTED(nmo_parameterout_state_t, destination_ids,
+                      destination_count, nmo_ref_t),
+    NMO_STATE_VALUE(nmo_parameterout_state_t, has_destinations)
+};
+
+static const nmo_object_state_layout_t nmo_parameterout_layout = {
+    .size = sizeof(nmo_parameterout_state_t),
+    .base_vtable = &nmo_parameter_vtable,
+    .base_size = sizeof(nmo_parameter_state_t),
+    .members = nmo_parameterout_members,
+    .member_count = sizeof(nmo_parameterout_members) /
+        sizeof(nmo_parameterout_members[0]),
+    .set_defaults = nmo_parameterout_set_defaults,
+    .validate = nmo_parameterout_validate,
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_OPS(parameterout, nmo_parameterout_layout)
+
+NMO_DEFINE_OBJECT_STAGED_SERIALIZE_VALIDATED(nmo_parameterout)
 
 static nmo_status_t nmo_parameterout_validate(
     const void *instance,
@@ -341,114 +316,6 @@ static nmo_status_t nmo_parameterout_pre_delete(
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
-
-static bool nmo_parameterout_equals(const void *a, const void *b)
-{
-    if (a == b) return true;
-    if (a == NULL || b == NULL) return false;
-    const nmo_parameterout_state_t *lhs =
-        (const nmo_parameterout_state_t *)a;
-    const nmo_parameterout_state_t *rhs =
-        (const nmo_parameterout_state_t *)b;
-    if (lhs->base.base.visibility_flags != rhs->base.base.visibility_flags ||
-        !nmo_guid_equals(lhs->base.type_guid, rhs->base.type_guid) ||
-        lhs->base.mode != rhs->base.mode ||
-        lhs->base.has_state != rhs->base.has_state ||
-        memcmp(&lhs->base.object_ref, &rhs->base.object_ref,
-               sizeof(nmo_ref_t)) != 0 ||
-        !nmo_guid_equals(lhs->base.manager_guid, rhs->base.manager_guid) ||
-        lhs->base.manager_value != rhs->base.manager_value ||
-        lhs->base.buffer_data.count != rhs->base.buffer_data.count ||
-        (lhs->base.buffer_data.count > 0 &&
-         (lhs->base.buffer_data.data == NULL ||
-          rhs->base.buffer_data.data == NULL ||
-          memcmp(lhs->base.buffer_data.data, rhs->base.buffer_data.data,
-                 lhs->base.buffer_data.count) != 0)) ||
-        memcmp(&lhs->owner, &rhs->owner, sizeof(nmo_ref_t)) != 0 ||
-        lhs->destination_count != rhs->destination_count ||
-        lhs->has_destinations != rhs->has_destinations ||
-        (lhs->destination_count > 0 &&
-         (lhs->destination_ids == NULL || rhs->destination_ids == NULL))) {
-        return false;
-    }
-    if ((lhs->base.subchunk == NULL) != (rhs->base.subchunk == NULL)) {
-        return false;
-    }
-    if (lhs->base.subchunk != NULL) {
-        size_t lhs_size = 0;
-        size_t rhs_size = 0;
-        const void *lhs_data = nmo_chunk_get_data(
-            lhs->base.subchunk, &lhs_size);
-        const void *rhs_data = nmo_chunk_get_data(
-            rhs->base.subchunk, &rhs_size);
-        if (lhs_size != rhs_size ||
-            (lhs_size > 0 &&
-             (lhs_data == NULL || rhs_data == NULL ||
-              memcmp(lhs_data, rhs_data, lhs_size) != 0))) {
-            return false;
-        }
-    }
-    return lhs->destination_count == 0 || memcmp(
-        lhs->destination_ids, rhs->destination_ids,
-        (size_t)lhs->destination_count * sizeof(nmo_ref_t)) == 0;
-}
-
-static uint32_t nmo_parameterout_hash(const void *instance)
-{
-    if (instance == NULL) return 0;
-    const nmo_parameterout_state_t *state =
-        (const nmo_parameterout_state_t *)instance;
-    uint32_t hash = 2166136261u;
-    hash = nmo_hash_fnv1a32_update(
-        hash, &state->base.base.visibility_flags,
-        sizeof(state->base.base.visibility_flags));
-    hash = nmo_hash_fnv1a32_update(
-        hash, &state->base.type_guid, sizeof(state->base.type_guid));
-    hash = nmo_hash_fnv1a32_update(
-        hash, &state->base.mode, sizeof(state->base.mode));
-    hash = nmo_hash_fnv1a32_update(
-        hash, &state->base.has_state, sizeof(state->base.has_state));
-    hash = nmo_hash_fnv1a32_update(
-        hash, &state->base.object_ref, sizeof(state->base.object_ref));
-    hash = nmo_hash_fnv1a32_update(
-        hash, &state->base.manager_guid, sizeof(state->base.manager_guid));
-    hash = nmo_hash_fnv1a32_update(
-        hash, &state->base.manager_value, sizeof(state->base.manager_value));
-    hash = nmo_hash_fnv1a32_update(
-        hash, &state->base.buffer_data.count,
-        sizeof(state->base.buffer_data.count));
-    if (state->base.buffer_data.data != NULL &&
-        state->base.buffer_data.count > 0) {
-        hash = nmo_hash_fnv1a32_update(
-            hash, state->base.buffer_data.data,
-            state->base.buffer_data.count);
-    }
-    if (state->base.subchunk != NULL) {
-        size_t chunk_size = 0;
-        const void *chunk_data = nmo_chunk_get_data(
-            state->base.subchunk, &chunk_size);
-        hash = nmo_hash_fnv1a32_update(
-            hash, &chunk_size, sizeof(chunk_size));
-        if (chunk_data != NULL && chunk_size > 0) {
-            hash = nmo_hash_fnv1a32_update(
-                hash, chunk_data, chunk_size);
-        }
-    }
-    hash = nmo_hash_fnv1a32_update(
-        hash, &state->owner, sizeof(state->owner));
-    hash = nmo_hash_fnv1a32_update(
-        hash, &state->destination_count,
-        sizeof(state->destination_count));
-    hash = nmo_hash_fnv1a32_update(
-        hash, &state->has_destinations,
-        sizeof(state->has_destinations));
-    if (state->destination_ids != NULL && state->destination_count > 0) {
-        hash = nmo_hash_fnv1a32_update(
-            hash, state->destination_ids,
-            (size_t)state->destination_count * sizeof(nmo_ref_t));
-    }
-    return hash;
-}
 
 nmo_type_vtable_t nmo_parameterout_vtable = {
     .prepare_dependencies = nmo_parameterout_prepare_dependencies,
