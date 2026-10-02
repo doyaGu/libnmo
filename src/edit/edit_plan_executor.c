@@ -1017,12 +1017,10 @@ static nmo_status_t edit_apply_replace_bb(const edit_apply_env_t *env)
     nmo_edit_report_t *report = env->report;
     const char **out_diagnostic_code = env->out_diagnostic_code;
     const char **out_diagnostic_message = env->out_diagnostic_message;
-    nmo_workspace_edit_t *edit = env->edit;
 
     nmo_behavior_replace_report_t replace_report = {0};
-    nmo_status_t rc = nmo_behavior_edit_replace_bb_in_edit(
-        nmo_script_edit_workspace(tx),
-        edit,
+    nmo_status_t rc = nmo_behavior_edit_replace_bb_in_script_tx(
+        tx,
         &op->data.replace_bb.desc,
         &replace_report);
     if (out_diagnostic_code != NULL) {

@@ -9,14 +9,15 @@
 #include <stdint.h>
 #include <string.h>
 
-nmo_status_t rewrite_fold_transform_anchor_in_edit(
+nmo_status_t rewrite_fold_transform_anchor_in_tx(
     nmo_context_t *ctx,
-    nmo_workspace_t *workspace,
-    nmo_workspace_edit_t *edit,
+    nmo_script_edit_tx_t *tx,
     const nmo_behavior_fold_desc_t *desc,
     nmo_behavior_fold_report_t *report,
     bool clear_graph_state) {
-    if (!edit) {
+    nmo_workspace_t *workspace = nmo_script_edit_workspace(tx);
+    nmo_workspace_edit_t *edit = nmo_script_edit_workspace_edit(tx);
+    if (!workspace || !edit) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
     nmo_object_repository_t *repo = nmo_workspace_internal_repository(workspace);
@@ -44,7 +45,7 @@ nmo_status_t rewrite_fold_transform_anchor_in_edit(
     }
 
     if (desc->name && desc->name[0] != '\0') {
-        rc = nmo_object_edit_rename(edit, report->anchor_id, desc->name);
+        rc = nmo_script_edit_rename_node(tx, report->anchor_id, desc->name);
         if (rc != NMO_OK) {
             rewrite_fold_report_reject(report, "rename_failed",
                                        "Failed to rename fold anchor");

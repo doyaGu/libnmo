@@ -148,6 +148,12 @@ NMO_API nmo_status_t nmo_behavior_edit_replace_bb_in_edit(
     const nmo_behavior_replace_bb_desc_t *desc,
     nmo_behavior_replace_report_t *report);
 
+/** Replace-bb inside a script edit transaction: the edits go through tx. */
+NMO_API nmo_status_t nmo_behavior_edit_replace_bb_in_script_tx(
+    nmo_script_edit_tx_t *tx,
+    const nmo_behavior_replace_bb_desc_t *desc,
+    nmo_behavior_replace_report_t *report);
+
 NMO_API nmo_status_t nmo_behavior_edit_fold_analyze(
     nmo_workspace_t *workspace,
     const nmo_behavior_fold_desc_t *desc,

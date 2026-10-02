@@ -92,10 +92,13 @@ static void rewrite_report_reject(nmo_behavior_replace_report_t *report,
     report->diagnostics_count = 1;
 }
 
+/* tx is the script edit transaction edit belongs to, or NULL when the caller
+ * has only the workspace edit (nmo_behavior_edit_replace_bb_in_edit). */
 static nmo_status_t rewrite_replace_bb_in_edit(
     nmo_context_t *ctx,
     nmo_workspace_t *workspace,
     nmo_workspace_edit_t *edit,
+    nmo_script_edit_tx_t *tx,
     const nmo_behavior_replace_bb_desc_t *desc,
     nmo_behavior_replace_report_t *report) {
     if (report) {
@@ -199,8 +202,9 @@ static nmo_status_t rewrite_replace_bb_in_edit(
     }
 
     if (desc->name && desc->name[0] != '\0') {
-        rc = nmo_object_edit_rename(
-            edit, desc->behavior_id, desc->name);
+        rc = tx != NULL
+            ? nmo_script_edit_rename_node(tx, desc->behavior_id, desc->name)
+            : nmo_object_edit_rename(edit, desc->behavior_id, desc->name);
         if (rc != NMO_OK) {
             rewrite_report_reject(report, "rename_failed",
                                   "Failed to rename behavior");
@@ -308,8 +312,8 @@ static nmo_status_t rewrite_replace_bb_workspace(
     }
 
     rc = rewrite_replace_bb_in_edit(ctx, nmo_script_edit_workspace(tx),
-                                    nmo_script_edit_workspace_edit(tx), desc,
-                                    report);
+                                    nmo_script_edit_workspace_edit(tx), tx,
+                                    desc, report);
     if (rc != NMO_OK) {
         nmo_script_edit_rollback(tx);
         return rc;
@@ -352,5 +356,23 @@ NMO_API nmo_status_t nmo_behavior_edit_replace_bb_in_edit(
         }
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    return rewrite_replace_bb_in_edit(ctx, workspace, edit, desc, report);
+    return rewrite_replace_bb_in_edit(ctx, workspace, edit, NULL, desc, report);
+}
+
+NMO_API nmo_status_t nmo_behavior_edit_replace_bb_in_script_tx(
+    nmo_script_edit_tx_t *tx,
+    const nmo_behavior_replace_bb_desc_t *desc,
+    nmo_behavior_replace_report_t *report) {
+    nmo_workspace_t *workspace = nmo_script_edit_workspace(tx);
+    nmo_workspace_edit_t *edit = nmo_script_edit_workspace_edit(tx);
+    nmo_context_t *ctx = nmo_workspace_internal_context(workspace);
+    if (!tx || !workspace || !edit || !ctx) {
+        if (report) {
+            memset(report, 0, sizeof(*report));
+            rewrite_report_reject(report, "invalid_argument",
+                                  "Invalid behavior replace-bb arguments");
+        }
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    return rewrite_replace_bb_in_edit(ctx, workspace, edit, tx, desc, report);
 }

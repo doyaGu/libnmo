@@ -1008,7 +1008,6 @@ static nmo_status_t rewrite_fold_apply_script_tx(
     nmo_script_edit_tx_t *tx,
     nmo_context_t *ctx,
     nmo_workspace_t *workspace,
-    nmo_workspace_edit_t *edit,
     const nmo_behavior_fold_desc_t *desc,
     nmo_behavior_fold_report_t *report);
 
@@ -1031,8 +1030,7 @@ static nmo_status_t rewrite_fold_apply_workspace(
         return rc;
     }
     rc = rewrite_fold_apply_script_tx(
-        tx, ctx, nmo_script_edit_workspace(tx),
-        nmo_script_edit_workspace_edit(tx), desc, report);
+        tx, ctx, nmo_script_edit_workspace(tx), desc, report);
     if (rc != NMO_OK) {
         nmo_script_edit_rollback(tx);
         return rc;
@@ -1049,7 +1047,6 @@ static nmo_status_t rewrite_fold_apply_script_tx(
     nmo_script_edit_tx_t *tx,
     nmo_context_t *ctx,
     nmo_workspace_t *workspace,
-    nmo_workspace_edit_t *edit,
     const nmo_behavior_fold_desc_t *desc,
     nmo_behavior_fold_report_t *report) {
     nmo_status_t rc = rewrite_fold_analyze_workspace(ctx, workspace, desc, report);
@@ -1091,8 +1088,8 @@ static nmo_status_t rewrite_fold_apply_script_tx(
                 "Single-node fold requires a leaf BB anchor");
             return NMO_ERR_INVALID_ARGUMENT;
         }
-        rc = rewrite_fold_transform_anchor_in_edit(
-            ctx, workspace, edit, desc, report, false);
+        rc = rewrite_fold_transform_anchor_in_tx(
+            ctx, tx, desc, report, false);
         if (rc != NMO_OK) {
             return rc;
         }
@@ -1131,8 +1128,8 @@ static nmo_status_t rewrite_fold_apply_script_tx(
             return rc;
         }
 
-        rc = rewrite_fold_transform_anchor_in_edit(
-            ctx, workspace, edit, desc, report, true);
+        rc = rewrite_fold_transform_anchor_in_tx(
+            ctx, tx, desc, report, true);
         if (rc != NMO_OK) {
             return rc;
         }
@@ -1240,5 +1237,5 @@ NMO_API nmo_status_t nmo_behavior_edit_fold_in_script_tx(
         }
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    return rewrite_fold_apply_script_tx(tx, ctx, workspace, edit, desc, report);
+    return rewrite_fold_apply_script_tx(tx, ctx, workspace, desc, report);
 }
