@@ -150,6 +150,38 @@ TEST(fidelity_small_items, legacy_bodypart_joint_uses_integer_booleans)
     nmo_arena_destroy(arena);
 }
 
+TEST(fidelity_small_items, empty_morph_controller_writes_all_three_header_words)
+{
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t des_ctx = nmo_deserialize_context_create(
+        arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+    nmo_objanim_controller_t controller = {.type = NMO_OBJANIM_CONTROLLER_MORPH};
+    nmo_objectanimation_state_t source, loaded;
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(&loaded, NULL, NULL));
+    source.format = CKOBJANIM_FORMAT_CONTROLLERS;
+    source.controller_count = 1u;
+    source.controllers = &controller;
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_serialize(&source, chunk, NULL, &ser_ctx));
+    nmo_chunk_close(chunk);
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_deserialize(&loaded, chunk, NULL, &des_ctx));
+    ASSERT_EQ(1u, loaded.controller_count);
+    nmo_objanim_morph_info_t info;
+    ASSERT_TRUE(nmo_objanim_morph_controller_info(&loaded.controllers[0], &info));
+    ASSERT_EQ(12u, loaded.controllers[0].data_size);
+    ASSERT_EQ(0u, info.key_count);
+    ASSERT_EQ(0u, info.vertex_count);
+    ASSERT_FALSE(info.has_normals);
+    nmo_objectanimation_vtable.destroy(&source, NULL, NULL);
+    nmo_objectanimation_vtable.destroy(&loaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(fidelity_small_items, empty_controller_is_written_with_a_key_count)
 {
     nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
@@ -403,6 +435,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(fidelity_small_items, sprite_text_font_matches_native_save_order);
     REGISTER_TEST(fidelity_small_items, sprite_text_save_uses_only_the_2d_entity_base);
     REGISTER_TEST(fidelity_small_items, legacy_bodypart_joint_uses_integer_booleans);
+    REGISTER_TEST(fidelity_small_items, empty_morph_controller_writes_all_three_header_words);
     REGISTER_TEST(fidelity_small_items, murmur3_32_matches_the_reference_vectors);
     REGISTER_TEST(fidelity_small_items, chunks_older_than_version_four_use_the_old_object_encodings);
     REGISTER_TEST(fidelity_small_items, light_keeps_the_type_byte_and_alpha_the_file_holds);

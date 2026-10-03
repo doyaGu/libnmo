@@ -2795,19 +2795,27 @@ static nmo_status_t nmo_objectanimation_serialize_internal(
             const nmo_objanim_controller_t *ctrl = &in_state->controllers[i];
             /* Controllers with keys get their count written as the blob prefix. */
             const bool has_prefix = ctrl->key_count > 0u;
-            /* The engine reads a key count from every blob, so a controller
-               without keys is written as {type, 1, 0}. */
+            /* A controller without key bytes still needs its type's header. */
             const bool empty = ctrl->key_count == 0u && ctrl->data_size == 0u;
+            const uint32_t empty_words =
+                ctrl->type == NMO_OBJANIM_CONTROLLER_MORPH ? 3u : 1u;
             nmo_status_t result = nmo_chunk_write_dword(out_chunk, ctrl->type);
             if (result != NMO_OK) return result;
             uint32_t size_dwords =
                 (ctrl->data_size + (has_prefix ? (uint32_t)sizeof(uint32_t) : 0u)) / 4;
-            if (empty) size_dwords = 1u;
+            if (empty) size_dwords = empty_words;
             result = nmo_chunk_write_dword(out_chunk, size_dwords);
             if (result != NMO_OK) return result;
-            if (has_prefix || empty) {
+            if (has_prefix) {
                 result = nmo_chunk_write_dword(out_chunk, ctrl->key_count);
                 if (result != NMO_OK) return result;
+            }
+            /* Morph DumpKeysTo (0x100505D9) keeps count, vertex count and
+               normal presence even with no keys. Other empty types need count. */
+            if (empty) {
+                for (uint32_t word = 0; word < empty_words; ++word) {
+                    NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(out_chunk, 0u));
+                }
             }
             if (ctrl->data_size > 0 && ctrl->data != NULL) {
                 result = nmo_chunk_write_buffer_no_size(out_chunk, ctrl->data, ctrl->data_size);
