@@ -11,6 +11,7 @@
 #include "format/nmo_chunk_api.h"
 #include "object/builtin/nmo_2dentity_schemas.h"
 #include "object/builtin/nmo_animation_schemas.h"
+#include "object/builtin/nmo_character_schemas.h"
 #include "object/builtin/nmo_layer_schemas.h"
 #include "object/builtin/nmo_light_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
@@ -96,6 +97,56 @@ TEST(fidelity_small_items, sprite_text_save_uses_only_the_2d_entity_base)
         ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SPRITEFONT));
     }
     nmo_spritetext_vtable.destroy(&source, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(fidelity_small_items, legacy_bodypart_joint_uses_integer_booleans)
+{
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t des_ctx = nmo_deserialize_context_create(
+        arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->data_version = 4u;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, CK_STATESAVE_BODYPARTROTJOINT));
+    /* Integer 0x80000000 is true, although its float representation is -0. */
+    const uint32_t words[] = {0x80000000u, 1u, 0u, 1u, 0u, 0x80000000u, 0u, 0x80000000u, 0u};
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 72u));
+    for (size_t i = 0; i < 9u; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, words[i]));
+    }
+    for (size_t i = 0; i < 9u; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_float(chunk, (float)i + 0.25f));
+    }
+    nmo_chunk_close(chunk);
+    nmo_bodypart_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_bodypart_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_bodypart_deserialize(&loaded, chunk, NULL, &des_ctx));
+    ASSERT_EQ(0x80000121u, loaded.rotation_joint.flags);
+    ASSERT_EQ(0.25f, loaded.rotation_joint.min.x);
+    ASSERT_EQ(4.25f, loaded.rotation_joint.max.y);
+    ASSERT_EQ(8.25f, loaded.rotation_joint.damping.z);
+
+    nmo_chunk_t *saved = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(saved);
+    saved->data_version = 4u;
+    ASSERT_EQ(NMO_OK, nmo_bodypart_serialize(&loaded, saved, NULL, &ser_ctx));
+    nmo_chunk_close(saved);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(saved, CK_STATESAVE_BODYPARTROTJOINT));
+    uint32_t size = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(saved, &size));
+    ASSERT_EQ(72u, size);
+    const uint32_t canonical[] = {1u, 1u, 0u, 0u, 0u, 1u, 0u, 1u, 0u};
+    for (size_t i = 0; i < 9u; ++i) {
+        uint32_t actual = 0;
+        ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(saved, &actual));
+        ASSERT_EQ(canonical[i], actual);
+    }
+    nmo_bodypart_vtable.destroy(&loaded, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 
@@ -351,6 +402,7 @@ TEST(fidelity_small_items, murmur3_32_matches_the_reference_vectors)
 TEST_MAIN_BEGIN()
     REGISTER_TEST(fidelity_small_items, sprite_text_font_matches_native_save_order);
     REGISTER_TEST(fidelity_small_items, sprite_text_save_uses_only_the_2d_entity_base);
+    REGISTER_TEST(fidelity_small_items, legacy_bodypart_joint_uses_integer_booleans);
     REGISTER_TEST(fidelity_small_items, murmur3_32_matches_the_reference_vectors);
     REGISTER_TEST(fidelity_small_items, chunks_older_than_version_four_use_the_old_object_encodings);
     REGISTER_TEST(fidelity_small_items, light_keeps_the_type_byte_and_alpha_the_file_holds);

@@ -17919,7 +17919,7 @@ TEST(chunk_id_remap, bodypart_rotation_joint_round_trips_with_size_prefix) {
     ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
         legacy_chunk, CK_STATESAVE_BODYPARTROTJOINT,
         &section_dwords));
-    /* The legacy block is size-prefixed: [72] and six vectors. */
+    /* The block is [72], nine integer booleans and three vectors. */
     ASSERT_EQ(19u, section_dwords);
     ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
         legacy_chunk, CK_STATESAVE_BODYPARTCHARACTER,
@@ -18046,7 +18046,7 @@ TEST(chunk_id_remap, bodypart_rotation_joint_round_trips_with_size_prefix) {
 }
 
 TEST(chunk_id_remap, legacy_bodypart_joint_flags_follow_the_engine_shift) {
-    /* RCKBodyPart::Load (data_version < 5) sets flag (1, 16, 256)[vector] <<
+    /* RCKBodyPart::Load (data_version < 5) sets flag (1, 16, 256)[group] <<
      * (axis - 1). On x86 a shift by -1 is a shift by 31, so axis 0 of the
      * first vector lands on bit 31 and axis 0 of the others shifts out. */
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
@@ -18067,7 +18067,7 @@ TEST(chunk_id_remap, legacy_bodypart_joint_flags_follow_the_engine_shift) {
         chunk, CK_STATESAVE_BODYPARTROTJOINT));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 72u));
     for (size_t i = 0; i < 9; ++i) {
-        ASSERT_EQ(NMO_OK, nmo_chunk_write_float(chunk, 1.0f));   /* three flag vectors */
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 1u));
     }
     const float limits[9] = {-1.0f, -2.0f, -3.0f, 1.0f, 2.0f, 3.0f, 0.5f, 0.25f, 0.125f};
     for (size_t i = 0; i < 9; ++i) {
