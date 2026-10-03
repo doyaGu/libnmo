@@ -9112,9 +9112,7 @@ TEST(chunk_id_remap, light_loading_ignores_what_the_engine_ignores) {
 }
 
 TEST(chunk_id_remap, spritetext_font_integers_are_in_engine_order) {
-    /* RCKSpriteText::Load reads the four integers into the arguments of
-     * SetFont(face, size, weight, italic, underline) from the last to the
-     * first: underline, italic, weight, size. */
+    /* RCKSpriteText::Save writes size, weight, italic, underline. */
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
     nmo_deserialize_context_t deserialize_context =
@@ -9131,10 +9129,10 @@ TEST(chunk_id_remap, spritetext_font_integers_are_in_engine_order) {
     ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, CK_STATESAVE_SPRITEFONT));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_string(chunk, "Arial"));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 1));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 0));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 700));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 24));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 700));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 1));
     nmo_chunk_close(chunk);
 
     nmo_spritetext_state_t loaded;
@@ -9161,10 +9159,10 @@ TEST(chunk_id_remap, spritetext_font_integers_are_in_engine_order) {
     for (int i = 0; i < 4; ++i) {
         ASSERT_EQ(NMO_OK, nmo_chunk_read_int(saved, &ints[i]));
     }
-    ASSERT_EQ(1, ints[0]);
-    ASSERT_EQ(0, ints[1]);
-    ASSERT_EQ(700, ints[2]);
-    ASSERT_EQ(24, ints[3]);
+    ASSERT_EQ(24, ints[0]);
+    ASSERT_EQ(700, ints[1]);
+    ASSERT_EQ(0, ints[2]);
+    ASSERT_EQ(1, ints[3]);
 
     nmo_spritetext_vtable.destroy(&loaded, NULL, NULL);
     nmo_arena_destroy(arena);

@@ -24,6 +24,52 @@
 
 #define CONTROLLER_LINPOS 0x637c4301u
 
+TEST(fidelity_small_items, sprite_text_font_matches_native_save_order)
+{
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t des_ctx = nmo_deserialize_context_create(
+        arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+
+    /* CK2_3D.dll 0x100621FF writes size, weight, italic, underline. */
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, CK_STATESAVE_SPRITEFONT));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_string(chunk, "Arial"));
+    const int32_t expected[] = {24, 700, 1, 0};
+    for (size_t i = 0; i < 4u; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, expected[i]));
+    }
+    nmo_chunk_close(chunk);
+
+    nmo_spritetext_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_spritetext_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_spritetext_deserialize(&loaded, chunk, NULL, &des_ctx));
+    ASSERT_EQ(24, loaded.font.size);
+    ASSERT_EQ(700, loaded.font.weight);
+    ASSERT_EQ(1, loaded.font.italic);
+    ASSERT_EQ(0, loaded.font.underline);
+
+    nmo_chunk_t *saved = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(saved);
+    ASSERT_EQ(NMO_OK, nmo_spritetext_serialize(&loaded, saved, NULL, &ser_ctx));
+    nmo_chunk_close(saved);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(saved, CK_STATESAVE_SPRITEFONT));
+    char *name = NULL;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_string_checked(saved, &name, NULL));
+    ASSERT_STR_EQ("Arial", name);
+    for (size_t i = 0; i < 4u; ++i) {
+        int32_t actual = 0;
+        ASSERT_EQ(NMO_OK, nmo_chunk_read_int(saved, &actual));
+        ASSERT_EQ(expected[i], actual);
+    }
+    nmo_spritetext_vtable.destroy(&loaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(fidelity_small_items, empty_controller_is_written_with_a_key_count)
 {
     nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
@@ -274,6 +320,7 @@ TEST(fidelity_small_items, murmur3_32_matches_the_reference_vectors)
 }
 
 TEST_MAIN_BEGIN()
+    REGISTER_TEST(fidelity_small_items, sprite_text_font_matches_native_save_order);
     REGISTER_TEST(fidelity_small_items, murmur3_32_matches_the_reference_vectors);
     REGISTER_TEST(fidelity_small_items, chunks_older_than_version_four_use_the_old_object_encodings);
     REGISTER_TEST(fidelity_small_items, light_keeps_the_type_byte_and_alpha_the_file_holds);

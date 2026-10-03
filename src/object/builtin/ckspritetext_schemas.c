@@ -152,13 +152,11 @@ static nmo_status_t deserialize_font_properties(
     (void)arena;
     state->font.font_name = font_name;
     
-    /* RCKSpriteText::Load hands the four integers to SetFont(face, size,
-       weight, italic, underline) in reverse: the first one read is the
-       underline flag and the last one the size. */
-    NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &state->font.underline));
-    NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &state->font.italic));
-    NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &state->font.weight));
+    /* RCKSpriteText::Save (0x100621FF) writes the SetFont argument order. */
     NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &state->font.size));
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &state->font.weight));
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &state->font.italic));
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &state->font.underline));
     
     NMO_RETURN_OK();
 }
@@ -292,11 +290,11 @@ static nmo_status_t ckspritetext_serialize_modern(
         return result;
     }
     
-    /* Same order as the reader: underline, italic, weight, size. */
-    NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, state->font.underline));
-    NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, state->font.italic));
-    NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, state->font.weight));
+    /* Native wire order: size, weight, italic, underline. */
     NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, state->font.size));
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, state->font.weight));
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, state->font.italic));
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, state->font.underline));
     
     /* Write identifier 0x04000000: Colors */
     result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_SPRITETEXTCOLOR);
