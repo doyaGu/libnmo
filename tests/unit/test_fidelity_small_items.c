@@ -70,6 +70,35 @@ TEST(fidelity_small_items, sprite_text_font_matches_native_save_order)
     nmo_arena_destroy(arena);
 }
 
+TEST(fidelity_small_items, sprite_text_save_uses_only_the_2d_entity_base)
+{
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_spritetext_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_spritetext_vtable.create(&source, NULL, NULL));
+    source.base.has_transparency = true;
+    source.base.transparent_color = 0x12345678u;
+    source.base.has_slot = true;
+    source.base.current_slot = 3u;
+    source.base.has_save_options = true;
+
+    for (size_t file_mode = 0; file_mode < 2u; ++file_mode) {
+        nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
+            arena, NULL, file_mode ? NMO_SERIALIZE_FLAG_FILE_MODE : 0u,
+            CK_STATESAVE_SPRITETEXTALL);
+        nmo_chunk_t *chunk = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(chunk);
+        ASSERT_EQ(NMO_OK, nmo_spritetext_serialize(&source, chunk, NULL, &ser_ctx));
+        nmo_chunk_close(chunk);
+        ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SPRITETRANSPARENT));
+        ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SPRITECURRENTIMAGE));
+        ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SPRITEFORMAT));
+        ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SPRITEFONT));
+    }
+    nmo_spritetext_vtable.destroy(&source, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(fidelity_small_items, empty_controller_is_written_with_a_key_count)
 {
     nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
@@ -321,6 +350,7 @@ TEST(fidelity_small_items, murmur3_32_matches_the_reference_vectors)
 
 TEST_MAIN_BEGIN()
     REGISTER_TEST(fidelity_small_items, sprite_text_font_matches_native_save_order);
+    REGISTER_TEST(fidelity_small_items, sprite_text_save_uses_only_the_2d_entity_base);
     REGISTER_TEST(fidelity_small_items, murmur3_32_matches_the_reference_vectors);
     REGISTER_TEST(fidelity_small_items, chunks_older_than_version_four_use_the_old_object_encodings);
     REGISTER_TEST(fidelity_small_items, light_keeps_the_type_byte_and_alpha_the_file_holds);

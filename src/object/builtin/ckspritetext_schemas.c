@@ -453,7 +453,9 @@ static nmo_status_t nmo_spritetext_serialize_internal(
             "Invalid arguments to nmo_spritetext_serialize");
     }
 
-    nmo_status_t result = nmo_sprite_serialize(&in_state->base, out_chunk, NULL, context);
+    /* SpriteText saves its 2D entity directly; the bitmap is produced by Redraw. */
+    nmo_status_t result = nmo_2dentity_serialize(
+        &in_state->base.entity, out_chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
