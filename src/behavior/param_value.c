@@ -10,6 +10,8 @@
 #include "behavior/nmo_behavior_view.h"
 #include "type/nmo_type_string.h"
 #include "type/nmo_type_guids.h"
+#include "type/nmo_param_guids.h"
+#include "object/nmo_manager_guids.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_hex.h"
 #include "core/nmo_error.h"
@@ -187,6 +189,90 @@ static nmo_status_t format_object_ref(
 }
 
 /* ============================================================================
+ * Manager values and keyboard keys
+ * ============================================================================ */
+
+/* A Message value is an index into the Message Manager's name table. */
+static bool format_message_name(uint32_t index,
+                                const nmo_workspace_t *workspace,
+                                char *buffer, size_t buffer_size)
+{
+    char name[256];
+    if (workspace == NULL ||
+        nmo_workspace_internal_message_name((nmo_workspace_t *)workspace, index,
+                                            name, sizeof(name)) != NMO_OK) {
+        return false;
+    }
+    snprintf(buffer, buffer_size, "\"%s\"", name);
+    return true;
+}
+
+/* DirectInput scan code names, as the Windows key name text spells them. */
+static const char *keyboard_key_name(uint32_t key)
+{
+    static const char *const low[0x59] = {
+        [0x01] = "Esc", [0x02] = "1", [0x03] = "2", [0x04] = "3", [0x05] = "4",
+        [0x06] = "5", [0x07] = "6", [0x08] = "7", [0x09] = "8", [0x0A] = "9",
+        [0x0B] = "0", [0x0C] = "-", [0x0D] = "=", [0x0E] = "Backspace",
+        [0x0F] = "Tab", [0x10] = "Q", [0x11] = "W", [0x12] = "E", [0x13] = "R",
+        [0x14] = "T", [0x15] = "Y", [0x16] = "U", [0x17] = "I", [0x18] = "O",
+        [0x19] = "P", [0x1A] = "[", [0x1B] = "]", [0x1C] = "Enter",
+        [0x1D] = "Ctrl", [0x1E] = "A", [0x1F] = "S", [0x20] = "D", [0x21] = "F",
+        [0x22] = "G", [0x23] = "H", [0x24] = "J", [0x25] = "K", [0x26] = "L",
+        [0x27] = ";", [0x28] = "'", [0x29] = "`", [0x2A] = "Shift",
+        [0x2B] = "\\", [0x2C] = "Z", [0x2D] = "X", [0x2E] = "C", [0x2F] = "V",
+        [0x30] = "B", [0x31] = "N", [0x32] = "M", [0x33] = ",", [0x34] = ".",
+        [0x35] = "/", [0x36] = "Right Shift", [0x37] = "Num *", [0x38] = "Alt",
+        [0x39] = "Space", [0x3A] = "Caps Lock", [0x3B] = "F1", [0x3C] = "F2",
+        [0x3D] = "F3", [0x3E] = "F4", [0x3F] = "F5", [0x40] = "F6",
+        [0x41] = "F7", [0x42] = "F8", [0x43] = "F9", [0x44] = "F10",
+        [0x45] = "Pause", [0x46] = "Scroll Lock", [0x47] = "Num 7",
+        [0x48] = "Num 8", [0x49] = "Num 9", [0x4A] = "Num -", [0x4B] = "Num 4",
+        [0x4C] = "Num 5", [0x4D] = "Num 6", [0x4E] = "Num +", [0x4F] = "Num 1",
+        [0x50] = "Num 2", [0x51] = "Num 3", [0x52] = "Num 0", [0x53] = "Num Del",
+        [0x56] = "<>", [0x57] = "F11", [0x58] = "F12",
+    };
+    if (key < sizeof(low) / sizeof(low[0])) {
+        return low[key];
+    }
+    switch (key) {
+    case 0x9C: return "Num Enter";
+    case 0x9D: return "Right Ctrl";
+    case 0xB5: return "Num /";
+    case 0xB7: return "Prnt Scrn";
+    case 0xB8: return "Right Alt";
+    case 0xC5: return "Num Lock";
+    case 0xC7: return "Home";
+    case 0xC8: return "Up";
+    case 0xC9: return "Page Up";
+    case 0xCB: return "Left";
+    case 0xCD: return "Right";
+    case 0xCF: return "End";
+    case 0xD0: return "Down";
+    case 0xD1: return "Page Down";
+    case 0xD2: return "Insert";
+    case 0xD3: return "Delete";
+    case 0xDB: return "Left Windows";
+    case 0xDC: return "Right Windows";
+    case 0xDD: return "Application";
+    default:   return NULL;
+    }
+}
+
+static nmo_status_t format_keyboard_key(uint32_t key, char *buffer, size_t buffer_size)
+{
+    const char *name = keyboard_key_name(key);
+    if (key == 0) {
+        snprintf(buffer, buffer_size, "(none)");
+    } else if (name != NULL) {
+        snprintf(buffer, buffer_size, "\"%s\" (%u)", name, (unsigned)key);
+    } else {
+        snprintf(buffer, buffer_size, "%u", (unsigned)key);
+    }
+    return NMO_OK;
+}
+
+/* ============================================================================
  * Core value-to-string conversion
  * ============================================================================ */
 
@@ -219,6 +305,11 @@ nmo_status_t nmo_behavior_param_value_to_string(
                                  buffer, buffer_size);
 
     case CKPARAM_MODE_MANAGER: {
+        if (nmo_guid_equals(param->manager_guid, NMO_MANAGER_GUID_MESSAGE) &&
+            format_message_name(param->manager_value, workspace,
+                                buffer, buffer_size)) {
+            return NMO_OK;
+        }
         char guid_buf[24];
         nmo_guid_format(param->manager_guid, guid_buf, sizeof(guid_buf));
         snprintf(buffer, buffer_size, "manager{%s} = %u",
@@ -254,6 +345,12 @@ nmo_status_t nmo_behavior_param_value_to_string(
 
     if (nmo_guid_equals(param->type_guid, CKPGUID_STRING)) {
         return format_raw_string_buffer(data, data_size, buffer, buffer_size);
+    }
+
+    if (nmo_guid_equals(param->type_guid, CKPGUID_KEY) && data_size >= sizeof(uint32_t)) {
+        uint32_t key = 0;
+        memcpy(&key, data, sizeof(key));
+        return format_keyboard_key(key, buffer, buffer_size);
     }
 
     /* Look up the type descriptor */

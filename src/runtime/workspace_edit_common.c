@@ -8,10 +8,13 @@
 #include "object/nmo_class_ids.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_dataarray_schemas.h"
+#include "object/nmo_manager_guids.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_data.h"
 
 #include "workspace_edit_internal.h"
+
+#include <stdio.h>
 
 nmo_status_t workspace_edit_push_action(
     nmo_workspace_edit_t *edit,
@@ -367,23 +370,19 @@ bool workspace_edit_object_is_entity_target(
     return workspace_edit_session_object_derives(registry, object, NMO_CID_3DENTITY);
 }
 
-nmo_status_t workspace_edit_read_message_manager_names(
-    nmo_session_t *session,
+/* The message names of `manager`, allocated in `arena`. */
+static nmo_status_t workspace_edit_read_message_names_in(
+    nmo_arena_t *arena,
     const nmo_manager_data_t *manager,
     const char ***out_names,
     uint32_t *out_count)
 {
-    if (session == NULL || manager == NULL || out_names == NULL ||
-        out_count == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
     *out_names = NULL;
     *out_count = 0u;
     if (manager->chunk == NULL) {
         return NMO_OK;
     }
 
-    nmo_arena_t *arena = nmo_session_get_arena(session);
     nmo_chunk_t *chunk = nmo_chunk_clone(manager->chunk, arena);
     if (chunk == NULL) {
         return NMO_ERR_NOMEM;
@@ -434,4 +433,62 @@ nmo_status_t workspace_edit_read_message_manager_names(
     *out_names = names;
     *out_count = (uint32_t)count;
     return NMO_OK;
+}
+
+nmo_status_t workspace_edit_read_message_manager_names(
+    nmo_session_t *session,
+    const nmo_manager_data_t *manager,
+    const char ***out_names,
+    uint32_t *out_count)
+{
+    if (session == NULL || manager == NULL || out_names == NULL ||
+        out_count == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    return workspace_edit_read_message_names_in(
+        nmo_session_get_arena(session), manager, out_names, out_count);
+}
+
+nmo_status_t nmo_workspace_internal_message_name(
+    nmo_workspace_t *workspace,
+    uint32_t index,
+    char *buffer,
+    size_t buffer_size)
+{
+    if (workspace == NULL || buffer == NULL || buffer_size == 0u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    buffer[0] = '\0';
+    nmo_session_t *session = nmo_workspace_internal_session(workspace);
+    const nmo_file_state_t *file_state =
+        session != NULL ? nmo_session_get_file_state(session) : NULL;
+    if (file_state == NULL || file_state->manager_data == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+
+    for (uint32_t i = 0; i < file_state->manager_data_count; ++i) {
+        const nmo_manager_data_t *manager = &file_state->manager_data[i];
+        if (!nmo_guid_equals(manager->guid, NMO_MANAGER_GUID_MESSAGE)) {
+            continue;
+        }
+        /* A scratch arena keeps repeated lookups from growing the session's. */
+        nmo_arena_t *arena = nmo_arena_create(NULL, 4096u);
+        if (arena == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+        const char **names = NULL;
+        uint32_t count = 0u;
+        nmo_status_t status = workspace_edit_read_message_names_in(
+            arena, manager, &names, &count);
+        if (status == NMO_OK) {
+            if (index < count && names[index] != NULL) {
+                snprintf(buffer, buffer_size, "%s", names[index]);
+            } else {
+                status = NMO_ERR_NOT_FOUND;
+            }
+        }
+        nmo_arena_destroy(arena);
+        return status;
+    }
+    return NMO_ERR_NOT_FOUND;
 }

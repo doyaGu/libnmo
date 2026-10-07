@@ -48,6 +48,12 @@ nmo_status_t nmo_document_internal_init_object_query_context(
     nmo_document_t *document,
     nmo_object_query_context_t *out_query_ctx);
 nmo_session_t *nmo_workspace_internal_session(nmo_workspace_t *workspace);
+/* Name of message type `index` in the file's Message Manager data. */
+nmo_status_t nmo_workspace_internal_message_name(
+    nmo_workspace_t *workspace,
+    uint32_t index,
+    char *buffer,
+    size_t buffer_size);
 
 bool nmo_session_open_file_with_context(
     const char *path,
