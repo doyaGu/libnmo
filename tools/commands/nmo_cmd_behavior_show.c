@@ -648,34 +648,30 @@ static bool behavior_show_add_sub_behaviors(nmo_cli_record_t *rec, const behavio
 /* "Execution Flow": each behavior link as "owner.port -> owner.port". */
 static bool behavior_show_add_links(nmo_cli_record_t *rec, const behavior_show_t *s)
 {
-    const nmo_behavior_state_t *bs = s->bs;
-    const nmo_behavior_index_t *bidx = nmo_tool_owner_behavior_index(s->c->workspace);
-    bool ok = behavior_show_heading(rec, bs->sub_behavior_links.count > 0, "Execution Flow");
+    const nmo_script_node_t *node = nmo_script_model_find_node(s->flow.model, s->target_id);
+    size_t link_total = 0;
+    const nmo_script_link_t *links = nmo_script_model_links(s->flow.model, &link_total);
+    size_t link_count = node ? node->link_count : 0;
+    bool ok = behavior_show_heading(rec, link_count > 0, "Execution Flow");
     nmo_cli_record_array_t *arr = ok ? behavior_show_array(rec, "behavior_links") : NULL;
     ok = arr != NULL;
-    for (size_t i = 0; ok && i < bs->sub_behavior_links.count; i++) {
-        nmo_object_id_t id = nmo_behavior_ref_array_get_id(&bs->sub_behavior_links, i);
-        nmo_object_t *link_obj = nmo_object_repository_find_by_id(s->repo, id);
-        if (!link_obj || !link_obj->state) continue;
-        const nmo_behaviorlink_state_t *ls = (const nmo_behaviorlink_state_t *)link_obj->state;
-        /* in_io_id = source (SDK naming is backwards), out_io_id = target */
-        const nmo_object_id_t in_io_id = nmo_behaviorlink_in_io_id(ls);
-        const nmo_object_id_t out_io_id = nmo_behaviorlink_out_io_id(ls);
-        const nmo_port_owner_t *sp = bidx ? nmo_behavior_index_find(bidx, in_io_id) : NULL;
-        const nmo_port_owner_t *tp = bidx ? nmo_behavior_index_find(bidx, out_io_id) : NULL;
-        nmo_object_id_t src_owner = sp ? sp->owner_id : 0;
-        nmo_object_id_t tgt_owner = tp ? tp->owner_id : 0;
+    for (size_t i = 0; ok && i < link_count; i++) {
+        const nmo_script_link_t *ls = &links[node->first_link + i];
+        const nmo_object_id_t in_io_id = ls->source_io_id;
+        const nmo_object_id_t out_io_id = ls->target_io_id;
 
         nmo_cli_record_t *item = nmo_cli_record_new();
         bool item_ok = item != NULL &&
-            nmo_cli_record_uint(item, "id", NULL, id) &&
+            nmo_cli_record_uint(item, "id", NULL, ls->id) &&
             nmo_cli_record_uint(item, "in_io_id", NULL, in_io_id) &&
             nmo_cli_record_uint(item, "out_io_id", NULL, out_io_id);
-        if (sp) {
-            item_ok = item_ok && nmo_cli_record_uint(item, "source_owner_id", NULL, src_owner);
+        if (ls->source_node_id) {
+            item_ok = item_ok &&
+                nmo_cli_record_uint(item, "source_owner_id", NULL, ls->source_node_id);
         }
-        if (tp) {
-            item_ok = item_ok && nmo_cli_record_uint(item, "target_owner_id", NULL, tgt_owner);
+        if (ls->target_node_id) {
+            item_ok = item_ok &&
+                nmo_cli_record_uint(item, "target_owner_id", NULL, ls->target_node_id);
         }
         item_ok = item_ok &&
             nmo_cli_record_int(item, "activation_delay", NULL, ls->activation_delay);
@@ -829,13 +825,10 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
         .bs = bs,
         .target_id = target_id,
         .name = name,
-        .flow = {
-            .repo = repo,
-            .registry = c.registry,
-            .workspace = c.workspace,
-            .index = nmo_tool_owner_behavior_index(c.workspace),
-        },
     };
+    if (!nmo_cmd_behavior_flow_init(&show.flow, &c)) {
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
     nmo_cli_record_t *rec = nmo_cli_record_new();
     bool ok = rec != NULL &&
               behavior_show_add_header(rec, &show) &&
@@ -853,5 +846,6 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
         rec = NULL;
     }
     rc = nmo_cmd_ctx_emit_record(&c, rec, "behavior.show", 0, c.colorize);
+    nmo_cmd_behavior_flow_dispose(&show.flow);
     return nmo_cmd_ctx_done(&c, rc);
 }

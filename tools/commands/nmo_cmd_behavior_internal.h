@@ -12,7 +12,7 @@
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_types.h"
 #include "type/nmo_type_system.h"
-#include "behavior/nmo_behavior_analyze.h"
+#include "behavior/nmo_script_model.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -88,13 +88,16 @@ bool nmo_cmd_behavior_add_interface_diagnostics(nmo_cli_record_t *rec,
                                                 nmo_workspace_t *workspace,
                                                 bool show_text);
 
-/* What the behavior flow helpers read. `index` may be NULL (no owners known). */
+/* What the behavior flow helpers read: the document's script model. */
 typedef struct nmo_cmd_behavior_flow_ctx {
+    nmo_script_model_t *model;
     nmo_object_repository_t *repo;
     const nmo_type_registry_t *registry;
-    nmo_workspace_t *workspace;
-    const nmo_behavior_index_t *index;
 } nmo_cmd_behavior_flow_ctx_t;
+
+/* Build the script model of the command's document; false (with an error printed) on failure. */
+bool nmo_cmd_behavior_flow_init(nmo_cmd_behavior_flow_ctx_t *f, const nmo_cmd_ctx_t *c);
+void nmo_cmd_behavior_flow_dispose(nmo_cmd_behavior_flow_ctx_t *f);
 
 /* The graph that holds `behavior_id` as a sub-behavior, or 0. */
 nmo_object_id_t nmo_cmd_behavior_parent_id(const nmo_cmd_behavior_flow_ctx_t *f,
@@ -104,9 +107,9 @@ nmo_object_id_t nmo_cmd_behavior_parent_id(const nmo_cmd_behavior_flow_ctx_t *f,
 const char *nmo_cmd_behavior_op_block_name(const nmo_cmd_behavior_flow_ctx_t *f,
                                            nmo_object_id_t behavior_id);
 
-/* "Name#id", or "Name(Operation)#id" for an Op building block. Heap string. */
+/* nmo_script_model_label() of `id`. Heap string. */
 char *nmo_cmd_behavior_node_label_dup(const nmo_cmd_behavior_flow_ctx_t *f,
-                                      nmo_object_id_t behavior_id);
+                                      nmo_object_id_t id);
 
 /* "Owner#id.Port" for a behavior IO. Heap string. */
 char *nmo_cmd_behavior_io_label_dup(const nmo_cmd_behavior_flow_ctx_t *f,
@@ -122,7 +125,8 @@ char *nmo_cmd_behavior_io_label_dup(const nmo_cmd_behavior_flow_ctx_t *f,
 typedef struct nmo_cmd_behavior_param_ref {
     nmo_object_id_t param_id;
     nmo_object_id_t owner_id; /* 0 when no behavior or operation owns it */
-    const char *kind;
+    nmo_script_reach_t reach;
+    const char *kind;         /* nmo_script_reach_name(reach) */
     char *value;              /* heap, may be NULL */
     char *text;               /* heap */
 } nmo_cmd_behavior_param_ref_t;

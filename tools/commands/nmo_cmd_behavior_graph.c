@@ -1398,31 +1398,21 @@ static bool dump_add_execution_flow(nmo_cli_record_t *rec,
                                     nmo_object_id_t graph_id,
                                     const char *graph_label)
 {
-    nmo_object_t *graph = nmo_object_repository_find_by_id(d->repo, graph_id);
-    const nmo_behavior_state_t *bs =
-        graph ? (const nmo_behavior_state_t *)nmo_object_get_state(graph) : NULL;
+    const nmo_script_node_t *graph = nmo_script_model_find_node(d->flow.model, graph_id);
+    size_t link_total = 0;
+    const nmo_script_link_t *links = nmo_script_model_links(d->flow.model, &link_total);
     char *heading = nmo_tool_strdup_fmt("Execution Flow: %s", graph_label);
     nmo_cli_record_array_t *arr = heading ? dump_flow_array(rec, "execution_flow", heading,
                                                             "  (no execution links)") : NULL;
     free(heading);
     bool ok = arr != NULL;
-    for (size_t i = 0; ok && bs && i < bs->sub_behavior_links.count; i++) {
-        nmo_object_id_t link_id = nmo_behavior_ref_array_get_id(&bs->sub_behavior_links, i);
-        nmo_object_t *link_obj = nmo_object_repository_find_by_id(d->repo, link_id);
-        if (!link_obj || !link_obj->state) {
-            continue;
-        }
-        const nmo_behaviorlink_state_t *link =
-            (const nmo_behaviorlink_state_t *)link_obj->state;
-        /* in_io_id = source (SDK naming is backwards), out_io_id = target */
-        const nmo_object_id_t in_io_id = nmo_behaviorlink_in_io_id(link);
-        const nmo_object_id_t out_io_id = nmo_behaviorlink_out_io_id(link);
-        const nmo_port_owner_t *sp =
-            d->flow.index ? nmo_behavior_index_find(d->flow.index, in_io_id) : NULL;
-        const nmo_port_owner_t *tp =
-            d->flow.index ? nmo_behavior_index_find(d->flow.index, out_io_id) : NULL;
-        nmo_object_id_t src_owner = sp ? sp->owner_id : graph_id;
-        nmo_object_id_t tgt_owner = tp ? tp->owner_id : graph_id;
+    for (size_t i = 0; ok && graph && i < graph->link_count; i++) {
+        const nmo_script_link_t *link = &links[graph->first_link + i];
+        const nmo_object_id_t link_id = link->id;
+        const nmo_object_id_t in_io_id = link->source_io_id;
+        const nmo_object_id_t out_io_id = link->target_io_id;
+        nmo_object_id_t src_owner = link->source_node_id ? link->source_node_id : graph_id;
+        nmo_object_id_t tgt_owner = link->target_node_id ? link->target_node_id : graph_id;
         char *src = nmo_cmd_behavior_io_label_dup(&d->flow, in_io_id);
         char *tgt = nmo_cmd_behavior_io_label_dup(&d->flow, out_io_id);
 
@@ -1591,13 +1581,9 @@ int nmo_cmd_behavior_dump(int argc, char **argv, const nmo_cli_global_opts_t *gl
     if (rc) return rc;
 
     nmo_object_repository_t *repo = nmo_tool_owner_repository(c.workspace);
-    const nmo_behavior_index_t *bidx = NULL;
-    if (include_flows) {
-        if (nmo_tool_owner_ensure_behavior_acceleration(c.workspace) != NMO_OK) {
-            fprintf(stderr, "Error: Failed to build behavior acceleration\n");
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-        }
-        bidx = nmo_tool_owner_behavior_index(c.workspace);
+    nmo_cmd_behavior_flow_ctx_t flow;
+    if (!nmo_cmd_behavior_flow_init(&flow, &c)) {
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
     behavior_dump_t dump = {
@@ -1605,12 +1591,7 @@ int nmo_cmd_behavior_dump(int argc, char **argv, const nmo_cli_global_opts_t *gl
         .reg = c.registry,
         .bb_reg = nmo_context_get_bb_registry(c.ctx),
         .workspace = c.workspace,
-        .flow = {
-            .repo = repo,
-            .registry = c.registry,
-            .workspace = c.workspace,
-            .index = bidx,
-        },
+        .flow = flow,
         .include_values = include_values,
         .include_flows = include_flows,
         .ok = true,
@@ -1626,6 +1607,8 @@ int nmo_cmd_behavior_dump(int argc, char **argv, const nmo_cli_global_opts_t *gl
         rc = nmo_core_object_query_run(&c, NULL, behavior_dump_all_object, &dump, NULL);
         if (rc != NMO_CLI_EXIT_SUCCESS) {
             nmo_cli_record_free(rec);
+            free(dump.graphs);
+            nmo_cmd_behavior_flow_dispose(&dump.flow);
             fprintf(stderr, "Error: Failed to query objects\n");
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
@@ -1642,6 +1625,7 @@ int nmo_cmd_behavior_dump(int argc, char **argv, const nmo_cli_global_opts_t *gl
         if (rc != NMO_CLI_EXIT_SUCCESS) {
             fprintf(stderr, "Usage: nmo behavior dump [--all | --id <id> | --name <name> | <id>] <file>\n");
             nmo_cli_record_free(rec);
+            nmo_cmd_behavior_flow_dispose(&dump.flow);
             return nmo_cmd_ctx_done(&c, rc);
         }
 
@@ -1662,5 +1646,6 @@ int nmo_cmd_behavior_dump(int argc, char **argv, const nmo_cli_global_opts_t *gl
         rec = NULL;
     }
     rc = nmo_cmd_ctx_emit_record(&c, rec, "behavior.dump", 0, c.colorize);
+    nmo_cmd_behavior_flow_dispose(&dump.flow);
     return nmo_cmd_ctx_done(&c, rc);
 }
