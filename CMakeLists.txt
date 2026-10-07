@@ -351,6 +351,7 @@ set(NMO_BEHAVIOR_SOURCES
     src/behavior/behavior_boundary.c
     src/behavior/behavior_graph.c
     src/behavior/behavior_index.c
+    src/behavior/behavior_op_block.c
     src/behavior/behavior_query.c
     src/behavior/behavior_view.c
     src/behavior/script_edit_graph.c

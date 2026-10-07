@@ -191,6 +191,16 @@ NMO_API nmo_status_t nmo_behavior_analyze_trace_param_chain(
     nmo_array_t *out_chain,
     uint32_t max_depth);
 
+/*
+ * The parameter operation an "Op" building block runs, from the GUID its
+ * second and third local parameters hold. NMO_ERR_NOT_FOUND when the behavior
+ * is not an Op building block or its locals hold no operation.
+ */
+NMO_API nmo_status_t nmo_behavior_op_block_operation_guid(
+    nmo_workspace_t *workspace,
+    nmo_object_id_t behavior_id,
+    nmo_guid_t *out_guid);
+
 NMO_API nmo_status_t nmo_behavior_analyze_dump_text(
     nmo_workspace_t *workspace,
     nmo_object_id_t root_behavior_id,
