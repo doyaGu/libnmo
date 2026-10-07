@@ -588,14 +588,18 @@ static void behavior_dump_usage(FILE *out) {
 }
 
 static void behavior_find_usage(FILE *out) {
-    fprintf(out, "Usage: nmo behavior find [options] <file>\n\n");
-    fprintf(out, "Search behaviors by name, GUID, or type.\n\n");
+    fprintf(out, "Usage: nmo behavior find [options] [<pattern>] <file>\n\n");
+    fprintf(out, "Search behaviors by name, GUID, or type.\n");
+    fprintf(out, "A <pattern> argument is the same as --name <pattern>.\n\n");
     fprintf(out, "Output:\n");
     fprintf(out, "  Use global -f json or -f json-pretty for machine-readable output.\n\n");
     fprintf(out, "Options:\n");
-    fprintf(out, "  --name <pattern>  Name wildcard pattern\n");
-    fprintf(out, "  --guid <guid>     Building block GUID\n");
-    fprintf(out, "  --type <type>     Behavior type filter\n");
+    fprintf(out, "  --name <pattern>        Name wildcard pattern\n");
+    fprintf(out, "  --guid <guid>           Building block GUID (substring)\n");
+    fprintf(out, "  --param-type <type>     Parameter type name\n");
+    fprintf(out, "  --op-type <type>        Operation type name\n");
+    fprintf(out, "  --scripts               Show only scripts\n");
+    fprintf(out, "  --bbs                   Show only building blocks\n");
 }
 
 static void behavior_trace_usage(FILE *out) {

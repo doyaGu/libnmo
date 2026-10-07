@@ -243,6 +243,14 @@ int nmo_cmd_behavior_find(int argc, char **argv, const nmo_cli_global_opts_t *gl
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     const char *name_pat  = nmo_opt_str(&vals[OPT_NAME]);
+    /* "find <pattern> <file>": the pattern is a name pattern */
+    if (r.pos_count >= 2) {
+        if (name_pat) {
+            fprintf(stderr, "Error: give the name pattern either as --name or as an argument\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        name_pat = r.pos_args[0];
+    }
     const char *guid_pat  = nmo_opt_str(&vals[OPT_GUID]);
     const char *ptype_pat = nmo_opt_str(&vals[OPT_PTYPE]);
     const char *optype_pat = nmo_opt_str(&vals[OPT_OPTYPE]);

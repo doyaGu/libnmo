@@ -1037,6 +1037,21 @@ TEST(cli, behavior_dump_text_values_name_keyboard_keys) {
     free(result.output);
 }
 
+TEST(cli, behavior_find_takes_positional_name_pattern) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
+    char args[1024];
+    snprintf(args, sizeof(args), "-f json behavior find \"Send Message\" \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "behavior.find", &doc);
+    ASSERT_NOT_NULL(doc);
+    yyjson_val *data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_EQ(29, (int)yyjson_get_uint(yyjson_obj_get(data, "match_count")));
+    yyjson_doc_free(doc);
+}
+
 TEST(cli, behavior_dump_text_flows_show_owner_endpoints) {
     TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
@@ -2467,6 +2482,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_show_text_resolves_input_sources);
     REGISTER_TEST(cli, behavior_show_text_names_op_block_operation);
     REGISTER_TEST(cli, behavior_dump_text_values_name_keyboard_keys);
+    REGISTER_TEST(cli, behavior_find_takes_positional_name_pattern);
     REGISTER_TEST(cli, behavior_dump_text_flows_show_owner_endpoints);
     REGISTER_TEST(cli, behavior_dump_text_flows_resolve_parameter_sources);
     REGISTER_TEST(cli, behavior_dump_all_flows_cover_every_graph);

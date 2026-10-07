@@ -167,8 +167,8 @@ _nmo_action_flags() {
         behavior/fold-candidates/) echo '-p --parent -d --depth' ;;
         behavior/dump/) echo '--all --flows --values' ;;
         behavior/d/) echo '--all --flows --values' ;;
-        behavior/find/) echo '--name --guid --type' ;;
-        behavior/f/) echo '--name --guid --type' ;;
+        behavior/find/) echo '--name --guid --param-type --op-type --scripts --bbs' ;;
+        behavior/f/) echo '--name --guid --param-type --op-type --scripts --bbs' ;;
         behavior/trace/) echo '--from --max-depth' ;;
         behavior/tr/) echo '--from --max-depth' ;;
         behavior/add-link/) echo '-p --parent --from --to -d --delay -o --output --dry-run' ;;
