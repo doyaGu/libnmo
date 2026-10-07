@@ -1,5 +1,6 @@
 #include "test_framework.h"
 
+#include "behavior/nmo_script_index.h"
 #include "behavior/nmo_script_model.h"
 #include "core/nmo_array.h"
 #include "format/nmo_object.h"
@@ -288,8 +289,71 @@ TEST(script_model, names_the_holder_of_an_exported_input) {
     test_close_workspace(ctx, session, document, workspace);
 }
 
+/* The use of building block `node_id`, or NULL. */
+static const nmo_script_use_t *test_find_use(const nmo_script_index_t *index,
+                                             nmo_object_id_t node_id)
+{
+    size_t count = 0;
+    const nmo_script_use_t *uses = nmo_script_index_uses(index, &count);
+    for (size_t i = 0; i < count; i++) {
+        if (uses[i].node_id == node_id) {
+            return &uses[i];
+        }
+    }
+    return NULL;
+}
+
+TEST(script_index, indexes_messages_arrays_and_scripts) {
+    TEST_REQUIRE_FIXTURE("Ballance/Gameplay.nmo");
+    nmo_context_t *ctx = NULL;
+    nmo_session_t *session = NULL;
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
+    ASSERT_EQ(NMO_OK, test_open_workspace(NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo"),
+                                          &ctx, &session, &document, &workspace));
+    nmo_script_model_t *model = NULL;
+    nmo_script_index_t *index = NULL;
+    ASSERT_EQ(NMO_OK, nmo_script_model_build(workspace, &model));
+    ASSERT_EQ(NMO_OK, nmo_script_index_build(workspace, model, &index));
+
+    /* Send Message #495 sends "BallNav deactivate" to All_Gameplay #10713 */
+    const nmo_script_use_t *send = test_find_use(index, 495);
+    ASSERT_NOT_NULL(send);
+    ASSERT_EQ(NMO_SCRIPT_USE_MESSAGE_SEND, send->kind);
+    ASSERT_STR_EQ("BallNav deactivate", send->message);
+    ASSERT_EQ(10713u, send->dest_object_id);
+    ASSERT_EQ(877u, send->graph_id);
+    ASSERT_EQ(3128u, send->root_id);
+
+    /* Get Cell #989 reads column Ball_Pos_Frame of CurrentLevel #10703 */
+    const nmo_script_use_t *read = test_find_use(index, 989);
+    ASSERT_NOT_NULL(read);
+    ASSERT_EQ(NMO_SCRIPT_USE_ARRAY_READ, read->kind);
+    ASSERT_EQ(10703u, read->object_id);
+    ASSERT_STR_EQ("Ball_Pos_Frame", read->column_name);
+
+    /* Get Cell #1300 reads the array Gameplay_Init looks up as "AllLevel" */
+    const nmo_script_use_t *by_name = test_find_use(index, 1300);
+    ASSERT_NOT_NULL(by_name);
+    ASSERT_EQ(0u, by_name->object_id);
+    ASSERT_STR_EQ("AllLevel", by_name->object_name);
+    ASSERT_EQ(2, by_name->column);
+
+    /* Activate Script #1094 activates Gameplay_Energy #4969 */
+    const nmo_script_use_t *activate = test_find_use(index, 1094);
+    ASSERT_NOT_NULL(activate);
+    ASSERT_EQ(NMO_SCRIPT_USE_SCRIPT_ACTIVATE, activate->kind);
+    ASSERT_EQ(4969u, activate->object_id);
+    ASSERT_STR_EQ("activate", nmo_script_use_kind_name(activate->kind));
+
+    nmo_script_index_destroy(index);
+    nmo_script_model_destroy(model);
+    test_close_workspace(ctx, session, document, workspace);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(script_model, models_a_graph_no_script_holds);
     REGISTER_TEST(script_model, models_ballance_base_scripts);
     REGISTER_TEST(script_model, names_the_holder_of_an_exported_input);
+    REGISTER_TEST(script_index, indexes_messages_arrays_and_scripts);
 TEST_MAIN_END()

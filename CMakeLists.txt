@@ -355,6 +355,7 @@ set(NMO_BEHAVIOR_SOURCES
     src/behavior/behavior_query.c
     src/behavior/behavior_view.c
     src/behavior/script_edit_graph.c
+    src/behavior/script_index.c
     src/behavior/script_model.c
     src/behavior/script_trace_view.c
     src/behavior/script_walker.c
