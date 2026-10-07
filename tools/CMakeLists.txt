@@ -65,6 +65,7 @@ add_executable(nmo_cli
     commands/nmo_cmd_script_graph.c
     commands/nmo_cmd_script_param.c
     commands/nmo_cmd_script_run.c
+    commands/nmo_cmd_script_view.c
     commands/nmo_cmd_convert.c
     commands/nmo_cmd_diff.c
     commands/nmo_cmd_extension.c

@@ -1052,6 +1052,101 @@ TEST(cli, behavior_find_takes_positional_name_pattern) {
     yyjson_doc_free(doc);
 }
 
+TEST(cli, script_xref_text_groups_messages_arrays_and_scripts) {
+    TEST_REQUIRE_FIXTURE("Ballance/Gameplay.nmo");
+    char args[1024];
+    snprintf(args, sizeof(args), "script xref \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo"));
+
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "\"BallNav deactivate\"");
+    ASSERT_STR_CONTAINS(result.output,
+                        "send       Send Message#495  in Gameplay_Ingame#3128 / Trafo Manager#877  "
+                        "(sends \"BallNav deactivate\" to All_Gameplay#10713)");
+    ASSERT_STR_CONTAINS(result.output, "(reads CurrentLevel#10703 [Ball_Pos_Frame])");
+    ASSERT_STR_CONTAINS(result.output, "\"AllLevel\" (looked up by name; not in this file)");
+    ASSERT_STR_CONTAINS(result.output, "(activates Gameplay_Energy#4969)");
+    ASSERT_STR_CONTAINS(result.output, "Unresolved");
+    free(result.output);
+}
+
+TEST(cli, script_xref_json_filters_by_section_and_name) {
+    TEST_REQUIRE_FIXTURE("Ballance/Gameplay.nmo");
+    char args[1024];
+    snprintf(args, sizeof(args), "-f json script xref --messages --name \"Ball Off\" \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo"));
+
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "script.xref", &doc);
+    ASSERT_NOT_NULL(doc);
+    yyjson_val *data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_NULL(yyjson_obj_get(data, "arrays"));
+    yyjson_val *messages = get_array_field(data, "messages");
+    ASSERT_NOT_NULL(messages);
+    ASSERT_EQ(1u, yyjson_arr_size(messages));
+    yyjson_val *message = yyjson_arr_get(messages, 0);
+    ASSERT_STR_EQ("Ball Off", get_string_field(message, "name"));
+    yyjson_val *uses = get_array_field(message, "uses");
+    ASSERT_NOT_NULL(uses);
+    bool saw_send = false, saw_wait = false;
+    size_t idx, max;
+    yyjson_val *use;
+    yyjson_arr_foreach(uses, idx, max, use) {
+        const char *kind = get_string_field(use, "kind");
+        saw_send = saw_send || (kind && strcmp(kind, "send") == 0);
+        saw_wait = saw_wait || (kind && strcmp(kind, "wait") == 0);
+        ASSERT_TRUE(json_has_nonempty_string(use, "path"));
+    }
+    ASSERT_TRUE(saw_send);
+    ASSERT_TRUE(saw_wait);
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, script_view_text_shows_sources_semantics_and_links) {
+    TEST_REQUIRE_FIXTURE("Ballance/Gameplay.nmo");
+    char args[1024];
+    snprintf(args, sizeof(args), "script view 877 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo"));
+
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Trafo Manager#877 [Graph]  in Gameplay_Ingame#3128");
+    ASSERT_STR_CONTAINS(result.output, "  Send Message#495\n"
+                                       "    = sends \"BallNav deactivate\" to All_Gameplay#10713\n"
+                                       "    Message <- Trafo Manager#877.Message "
+                                       "(local = \"BallNav deactivate\")\n");
+    ASSERT_STR_CONTAINS(result.output, "    False -> Get Nearest In Group#18.In (delay 1)\n");
+    ASSERT_STR_CONTAINS(result.output,
+                        "    Nearest Object => Trafo Manager#877.Trafo (local = (null))\n");
+    free(result.output);
+}
+
+TEST(cli, script_view_requires_a_behavior_or_all) {
+    TEST_REQUIRE_FIXTURE("Ballance/Gameplay.nmo");
+    char args[1024];
+    snprintf(args, sizeof(args), "script view \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo"));
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_ARG_ERROR, result.exit_code);
+    free(result.output);
+
+    snprintf(args, sizeof(args), "-f json script view --all \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo"));
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "script.view", &doc);
+    ASSERT_NOT_NULL(doc);
+    yyjson_val *data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    /* Every graph and script of Gameplay.nmo */
+    ASSERT_EQ(122u, yyjson_arr_size(get_array_field(data, "graphs")));
+    yyjson_doc_free(doc);
+}
+
 TEST(cli, behavior_dump_text_flows_show_owner_endpoints) {
     TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
@@ -2483,6 +2578,10 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_show_text_names_op_block_operation);
     REGISTER_TEST(cli, behavior_dump_text_values_name_keyboard_keys);
     REGISTER_TEST(cli, behavior_find_takes_positional_name_pattern);
+    REGISTER_TEST(cli, script_xref_text_groups_messages_arrays_and_scripts);
+    REGISTER_TEST(cli, script_xref_json_filters_by_section_and_name);
+    REGISTER_TEST(cli, script_view_text_shows_sources_semantics_and_links);
+    REGISTER_TEST(cli, script_view_requires_a_behavior_or_all);
     REGISTER_TEST(cli, behavior_dump_text_flows_show_owner_endpoints);
     REGISTER_TEST(cli, behavior_dump_text_flows_resolve_parameter_sources);
     REGISTER_TEST(cli, behavior_dump_all_flows_cover_every_graph);

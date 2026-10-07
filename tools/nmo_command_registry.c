@@ -473,6 +473,33 @@ static void script_graph_usage(FILE *out) {
             "  Use global -f json or -f json-pretty for machine-readable output.\n");
 }
 
+static void script_view_usage(FILE *out) {
+    fprintf(out, "Usage: nmo script view [--recursive] [--all | --id <id> | --name <name> | <id>] <file>\n\n");
+    fprintf(out, "Show a graph as readable blocks: each sub-behavior in the order its links\n");
+    fprintf(out, "reach it, where each input reads from, what it sends, waits for, reads,\n");
+    fprintf(out, "writes, or activates, and the links leaving its outputs.\n\n");
+    fprintf(out, "Output:\n");
+    fprintf(out, "  Use global -f json or -f json-pretty for machine-readable output.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  --recursive       Also show the graphs inside it\n");
+    fprintf(out, "  --all             Show every root and the graphs inside them\n");
+}
+
+static void script_xref_usage(FILE *out) {
+    fprintf(out, "Usage: nmo script xref [--messages] [--arrays] [--scripts] [--name <pattern>] <file>\n\n");
+    fprintf(out, "Cross-reference the building blocks that send and wait for each message,\n");
+    fprintf(out, "read and write each data array (by column), and activate and deactivate\n");
+    fprintf(out, "each script. Uses whose message, array, or script is computed at run time\n");
+    fprintf(out, "or not connected are listed under Unresolved.\n\n");
+    fprintf(out, "Output:\n");
+    fprintf(out, "  Use global -f json or -f json-pretty for machine-readable output.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  --messages        Only messages\n");
+    fprintf(out, "  --arrays          Only data arrays\n");
+    fprintf(out, "  --scripts         Only script activation\n");
+    fprintf(out, "  --name <pattern>  Only keys whose name matches the wildcard pattern\n");
+}
+
 static void script_run_usage(FILE *out) {
     fprintf(out,
             "Usage: nmo script run [--dry-run] <script.lua> <file> -o <output>\n\n");
@@ -1135,6 +1162,8 @@ static const nmo_cli_action_t parameter_actions[] = {
 
 static const nmo_cli_action_t script_actions[] = {
     ACTION("graph", "g", "Export script edit graph", nmo_cmd_script_graph, script_graph_usage, NMO_REPL_ACTION_READ_SESSION),
+    ACTION("view", "v", "Show a graph as readable blocks", nmo_cmd_script_view, script_view_usage, NMO_REPL_ACTION_READ_SESSION),
+    ACTION("xref", "x", "Cross-reference messages, arrays, and scripts", nmo_cmd_script_xref, script_xref_usage, NMO_REPL_ACTION_READ_SESSION),
     ACTION("run", NULL, "Run Lua script automation", nmo_cmd_script_run, script_run_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),
     ACTION("node", NULL, "Script node editing", nmo_cmd_script_node, script_node_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),
     ACTION("io", NULL, "Script IO editing", nmo_cmd_script_io, script_io_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),

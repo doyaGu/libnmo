@@ -21,6 +21,11 @@ int nmo_cmd_script_io(int argc, char **argv, const nmo_cli_global_opts_t *global
 int nmo_cmd_script_link(int argc, char **argv, const nmo_cli_global_opts_t *global);
 int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *global);
 int nmo_cmd_script_op(int argc, char **argv, const nmo_cli_global_opts_t *global);
+int nmo_cmd_script_view(int argc, char **argv, const nmo_cli_global_opts_t *global);
+int nmo_cmd_script_xref(int argc, char **argv, const nmo_cli_global_opts_t *global);
+/* The in-session forms: argv[0] is the action, there is no file operand. */
+int nmo_cmd_script_view_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
+int nmo_cmd_script_xref_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 
 #ifdef __cplusplus
 }

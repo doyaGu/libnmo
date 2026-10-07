@@ -402,6 +402,12 @@ int nmo_cmd_script_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
+    if (strcmp(argv[0], "view") == 0 || strcmp(argv[0], "v") == 0) {
+        return nmo_cmd_script_view_in_session(ctx, argc, argv);
+    }
+    if (strcmp(argv[0], "xref") == 0 || strcmp(argv[0], "x") == 0) {
+        return nmo_cmd_script_xref_in_session(ctx, argc, argv);
+    }
     if (strcmp(argv[0], "graph") != 0 && strcmp(argv[0], "g") != 0) {
         fprintf(stderr, "Unsupported script read action in session: %s\n", argv[0]);
         return NMO_CLI_EXIT_ARG_ERROR;

@@ -234,6 +234,10 @@ _nmo_action_flags() {
         parameter/set/) echo '-o --output -b --owner -n --name -i --index --hex --dry-run' ;;
         script/graph/) echo '' ;;
         script/g/) echo '' ;;
+        script/view/) echo '--recursive --all' ;;
+        script/v/) echo '--recursive --all' ;;
+        script/xref/) echo '--messages --arrays --scripts --name' ;;
+        script/x/) echo '--messages --arrays --scripts --name' ;;
         script/run/) echo '' ;;
         script/node/) echo '' ;;
         script/io/) echo '' ;;
@@ -479,6 +483,10 @@ _nmo_actions() {
             acts=(
                 'graph:Export script edit graph'
                 'g:Alias for graph'
+                'view:Show a graph as readable blocks'
+                'v:Alias for view'
+                'xref:Cross-reference messages, arrays, and scripts'
+                'x:Alias for xref'
                 'run:Run Lua script automation'
                 'node:Script node editing'
                 'io:Script IO editing'
