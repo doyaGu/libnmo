@@ -237,6 +237,10 @@ set_tests_properties(test_behavior_index PROPERTIES WORKING_DIRECTORY "${CMAKE_S
 # Stable behavior view facade
 add_unit_test(test_behavior_view)
 
+# Script model
+add_unit_test(test_script_model)
+set_tests_properties(test_script_model PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
 # Recursive behavior graph
 add_unit_test(test_behavior_graph_recursive)
 set_tests_properties(test_behavior_graph_recursive PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
