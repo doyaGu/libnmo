@@ -223,6 +223,7 @@ if(TARGET nmo_cli)
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_resource.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_behavior.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_behavior_show.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_behavior_flow.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_behavior_graph.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_behavior_rewrite.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_behavior_search.c

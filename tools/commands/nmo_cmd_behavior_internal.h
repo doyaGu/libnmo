@@ -12,6 +12,7 @@
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_types.h"
 #include "type/nmo_type_system.h"
+#include "behavior/nmo_behavior_analyze.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -86,6 +87,62 @@ void nmo_cmd_behavior_print_interface_diagnostics(
 bool nmo_cmd_behavior_add_interface_diagnostics(nmo_cli_record_t *rec,
                                                 nmo_workspace_t *workspace,
                                                 bool show_text);
+
+/* What the behavior flow helpers read. `index` may be NULL (no owners known). */
+typedef struct nmo_cmd_behavior_flow_ctx {
+    nmo_object_repository_t *repo;
+    const nmo_type_registry_t *registry;
+    nmo_workspace_t *workspace;
+    const nmo_behavior_index_t *index;
+} nmo_cmd_behavior_flow_ctx_t;
+
+/* The graph that holds `behavior_id` as a sub-behavior, or 0. */
+nmo_object_id_t nmo_cmd_behavior_parent_id(const nmo_cmd_behavior_flow_ctx_t *f,
+                                           nmo_object_id_t behavior_id);
+
+/* The operation name of an "Op" building block, or NULL for any other behavior. */
+const char *nmo_cmd_behavior_op_block_name(const nmo_cmd_behavior_flow_ctx_t *f,
+                                           nmo_object_id_t behavior_id);
+
+/* "Name#id", or "Name(Operation)#id" for an Op building block. Heap string. */
+char *nmo_cmd_behavior_node_label_dup(const nmo_cmd_behavior_flow_ctx_t *f,
+                                      nmo_object_id_t behavior_id);
+
+/* "Owner#id.Port" for a behavior IO. Heap string. */
+char *nmo_cmd_behavior_io_label_dup(const nmo_cmd_behavior_flow_ctx_t *f,
+                                    nmo_object_id_t io_id);
+
+/*
+ * A parameter as seen from inside a graph: its owner, how the graph reaches
+ * it (`kind`: "local", "ancestor local", "foreign local", "pOut", "graph pOut",
+ * "graph pIn", "target", "operation", "external", ...), its decoded value for
+ * the kinds that hold one, and a one-line `text` such as
+ * "Gameplay_Ingame#3128.ActiveBall (ancestor local = (null))".
+ */
+typedef struct nmo_cmd_behavior_param_ref {
+    nmo_object_id_t param_id;
+    nmo_object_id_t owner_id; /* 0 when no behavior or operation owns it */
+    const char *kind;
+    char *value;              /* heap, may be NULL */
+    char *text;               /* heap */
+} nmo_cmd_behavior_param_ref_t;
+
+bool nmo_cmd_behavior_resolve_param(const nmo_cmd_behavior_flow_ctx_t *f,
+                                    nmo_object_id_t graph_id,
+                                    nmo_object_id_t param_id,
+                                    nmo_cmd_behavior_param_ref_t *out);
+void nmo_cmd_behavior_param_ref_dispose(nmo_cmd_behavior_param_ref_t *ref);
+
+/*
+ * The data flow of graph `graph_id` into `arr`: every read of a sub-behavior
+ * or operation input, target parameter included, and every write of a
+ * sub-behavior or operation output into a parameter other than an input.
+ * Items get a text summary only when `with_text`.
+ */
+bool nmo_cmd_behavior_add_data_flow_items(nmo_cli_record_array_t *arr,
+                                          const nmo_cmd_behavior_flow_ctx_t *f,
+                                          nmo_object_id_t graph_id,
+                                          bool with_text);
 
 int nmo_cmd_behavior_graph_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 int nmo_cmd_behavior_graph_boundary_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);

@@ -583,7 +583,7 @@ static void behavior_dump_usage(FILE *out) {
     fprintf(out, "  Use global -f json or -f json-pretty for machine-readable output.\n\n");
     fprintf(out, "Options:\n");
     fprintf(out, "  --all             Dump all script behavior trees\n");
-    fprintf(out, "  --flows           Include execution/data flow summaries for one behavior\n");
+    fprintf(out, "  --flows           Include the execution and data flows of every dumped graph\n");
     fprintf(out, "  --values          Include decoded local/output parameter values\n");
 }
 

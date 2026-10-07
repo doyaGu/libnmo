@@ -817,6 +817,8 @@ TEST(cli, behavior_show_json_p2_parity) {
     ASSERT_TRUE(json_has_nonempty_string(flow, "target_owner_name"));
     ASSERT_TRUE(json_has_nonempty_string(flow, "target_name"));
     ASSERT_TRUE(json_has_nonempty_string(flow, "type_name"));
+    ASSERT_TRUE(json_has_nonempty_string(flow, "source_kind"));
+    ASSERT_TRUE(json_has_nonempty_string(flow, "target_kind"));
 
     yyjson_doc_free(doc);
 }
@@ -994,6 +996,47 @@ TEST(cli, behavior_dump_help_describes_tree_overview_options) {
     free(result.output);
 }
 
+TEST(cli, behavior_show_text_resolves_input_sources) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
+    char args[1024];
+    snprintf(args, sizeof(args), "behavior show 1667 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    /* The Message value is named from the Message Manager data */
+    ASSERT_STR_CONTAINS(result.output,
+                        "<- Default Level#2172.Message (local = \"Start Menu\")");
+    free(result.output);
+}
+
+TEST(cli, behavior_show_text_names_op_block_operation) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
+    char args[1024];
+    snprintf(args, sizeof(args), "behavior show 160 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Operation: Subtraction");
+    free(result.output);
+}
+
+TEST(cli, behavior_dump_text_values_name_keyboard_keys) {
+    TEST_REQUIRE_FIXTURE("Ballance/Gameplay.nmo");
+    char args[1024];
+    snprintf(args, sizeof(args), "behavior dump --values 1750 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo"));
+
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Key Waited [Keyboard Key] = \"1\" (2)");
+    free(result.output);
+}
+
 TEST(cli, behavior_dump_text_flows_show_owner_endpoints) {
     TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
@@ -1006,21 +1049,77 @@ TEST(cli, behavior_dump_text_flows_show_owner_endpoints) {
     ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
     ASSERT_STR_CONTAINS(result.output, "Execution Flow");
     ASSERT_STR_CONTAINS(result.output, "Data Flow");
-    ASSERT_STR_CONTAINS(result.output, "Register & Activate Init_Script.In 0 -> Op.In");
+    ASSERT_STR_CONTAINS(result.output,
+                        "Register & Activate Init_Script#237.In 0 -> Op(Subtraction)#160.In");
     free(result.output);
 }
 
-TEST(cli, behavior_dump_all_rejects_flows) {
+TEST(cli, behavior_dump_text_flows_resolve_parameter_sources) {
     TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
-             "behavior dump --all --flows \"%s\"",
+             "behavior dump --flows 237 \"%s\"",
              NMO_TEST_DATA_FILE("Ballance/base.cmo"));
 
     cli_run_result_t result = run_cli_capture(args);
     ASSERT_NOT_NULL(result.output);
-    ASSERT_EQ(NMO_CLI_EXIT_ARG_ERROR, result.exit_code);
-    ASSERT_STR_CONTAINS(result.output, "--flows cannot be used with --all");
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    /* A local with its value, an operation output, and a graph input's upstream */
+    ASSERT_STR_CONTAINS(result.output,
+                        "Register & Activate Init_Script#237.p2 (local = 4) -> "
+                        "Op(Subtraction)#160.p2  [int]");
+    ASSERT_STR_CONTAINS(result.output,
+                        "Get Length#223.Pout 0 (operation) -> Op(Subtraction)#160.p1  [int]");
+    ASSERT_STR_CONTAINS(result.output,
+                        "Register & Activate Init_Script#237.Load ID (graph pIn <- "
+                        "Load_Object#358.Load ID) -> Add Row#211.Load ID  [int] (shared)");
+    ASSERT_TRUE(strstr(result.output, "(external)") == NULL);
+    free(result.output);
+}
+
+TEST(cli, behavior_dump_all_flows_cover_every_graph) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json behavior dump --all --flows \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "behavior.dump", &doc);
+    ASSERT_NOT_NULL(doc);
+    yyjson_val *data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    yyjson_val *graph_flows = get_array_field(data, "graph_flows");
+    ASSERT_NOT_NULL(graph_flows);
+    ASSERT_TRUE(yyjson_arr_size(graph_flows) > 1);
+
+    bool found = false;
+    size_t idx, max;
+    yyjson_val *graph;
+    yyjson_arr_foreach(graph_flows, idx, max, graph) {
+        ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(graph, "graph_id")));
+        ASSERT_NOT_NULL(get_array_field(graph, "execution_flow"));
+        ASSERT_NOT_NULL(get_array_field(graph, "data_flow"));
+        if (yyjson_get_uint(yyjson_obj_get(graph, "graph_id")) == 237) {
+            found = true;
+        }
+    }
+    ASSERT_TRUE(found);
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, behavior_dump_flows_cover_nested_graphs) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior dump --flows 363 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Execution Flow: Loading_Manager#363");
+    ASSERT_STR_CONTAINS(result.output, "Execution Flow: Register & Activate Init_Script#237");
     free(result.output);
 }
 
@@ -1096,6 +1195,8 @@ TEST(cli, behavior_dump_json_flows_include_owner_names) {
     ASSERT_TRUE(json_has_nonempty_string(flow, "target_owner_name"));
     ASSERT_TRUE(json_has_nonempty_string(flow, "target_name"));
     ASSERT_TRUE(json_has_nonempty_string(flow, "type_name"));
+    ASSERT_TRUE(json_has_nonempty_string(flow, "source_kind"));
+    ASSERT_TRUE(json_has_nonempty_string(flow, "target_kind"));
 
     yyjson_doc_free(doc);
 }
@@ -2363,8 +2464,13 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_trace_text_mentions_current_graph);
     REGISTER_TEST(cli, behavior_read_commands_accept_exact_name_selectors);
     REGISTER_TEST(cli, behavior_dump_help_describes_tree_overview_options);
+    REGISTER_TEST(cli, behavior_show_text_resolves_input_sources);
+    REGISTER_TEST(cli, behavior_show_text_names_op_block_operation);
+    REGISTER_TEST(cli, behavior_dump_text_values_name_keyboard_keys);
     REGISTER_TEST(cli, behavior_dump_text_flows_show_owner_endpoints);
-    REGISTER_TEST(cli, behavior_dump_all_rejects_flows);
+    REGISTER_TEST(cli, behavior_dump_text_flows_resolve_parameter_sources);
+    REGISTER_TEST(cli, behavior_dump_all_flows_cover_every_graph);
+    REGISTER_TEST(cli, behavior_dump_flows_cover_nested_graphs);
     REGISTER_TEST(cli, behavior_dump_text_flows_show_empty_execution_section);
     REGISTER_TEST(cli, behavior_dump_text_values_show_decoded_values);
     REGISTER_TEST(cli, behavior_dump_json_flows_include_owner_names);

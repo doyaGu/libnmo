@@ -51,6 +51,7 @@ typedef struct behavior_show {
     const nmo_behavior_state_t *bs;
     nmo_object_id_t target_id;
     const char *name;
+    nmo_cmd_behavior_flow_ctx_t flow;
 } behavior_show_t;
 
 /* Append `item` to `arr`, freeing it when building it failed. */
@@ -188,9 +189,9 @@ static bool behavior_show_add_source_chain(nmo_cli_record_t *item,
 }
 
 /*
- * Text: where a ParameterIn reads from, "  <- <source>", or, through shared
- * links, "  <- <direct source> [<type>] via N shared link(s)". Heap string,
- * empty when the parameter has no source; NULL on OOM.
+ * Text: where a ParameterIn reads from, "  <- <source>", seen from the graph
+ * that holds the behavior. Heap string, empty when the parameter has no
+ * source; NULL on OOM.
  */
 static char *behavior_show_pin_source_text(const behavior_show_t *s, const nmo_object_t *p)
 {
@@ -203,37 +204,15 @@ static char *behavior_show_pin_source_text(const behavior_show_t *s, const nmo_o
     if (source_id == 0) {
         return nmo_tool_strdup_fmt("%s", "");
     }
-    if (!pin->is_shared) {
-        const char *src = resolve_name(s->repo, source_id);
-        return nmo_tool_strdup_fmt("  <- %s", src ? src : "?");
+    nmo_cmd_behavior_param_ref_t source = {0};
+    if (!nmo_cmd_behavior_resolve_param(&s->flow,
+                                        nmo_cmd_behavior_parent_id(&s->flow, s->target_id),
+                                        source_id, &source)) {
+        return NULL;
     }
-
-    /* Trace the shared chain to the direct source */
-    uint32_t shared_hops = 0;
-    nmo_object_id_t cur_id = source_id;
-    while (shared_hops < 32) {
-        nmo_object_t *cur_obj = nmo_object_repository_find_by_id(s->repo, cur_id);
-        if (!cur_obj) break;
-        if (nmo_object_get_class_id(cur_obj) != NMO_CID_PARAMETERIN) break;
-        const nmo_parameterin_state_t *cur_pin =
-            (const nmo_parameterin_state_t *)nmo_object_get_state(cur_obj);
-        const nmo_object_id_t next_id = nmo_parameterin_source_id(cur_pin);
-        if (next_id == 0) break;
-        if (!cur_pin->is_shared) {
-            /* Reached direct source */
-            cur_id = next_id;
-            shared_hops++;
-            break;
-        }
-        cur_id = next_id;
-        shared_hops++;
-    }
-    const char *final_name = resolve_name(s->repo, cur_id);
-    nmo_object_t *final_obj = nmo_object_repository_find_by_id(s->repo, cur_id);
-    const char *final_type = resolve_type(s->c->registry, get_param_type_guid(final_obj));
-    return nmo_tool_strdup_fmt("  <- %s [%s] via %u shared link%s",
-                               final_name ? final_name : "?", final_type,
-                               shared_hops, shared_hops == 1 ? "" : "s");
+    char *text = nmo_tool_strdup_fmt("  <- %s", source.text);
+    nmo_cmd_behavior_param_ref_dispose(&source);
+    return text;
 }
 
 static const char *behavior_show_operation_token(const char *op_name) {
@@ -378,6 +357,11 @@ static bool behavior_show_add_header(nmo_cli_record_t *rec, const behavior_show_
         ok = ok && nmo_cli_record_str_fmt(rec, "bb_guid", NULL, "%08X-%08X",
                                           bs->block_guid.d1, bs->block_guid.d2) &&
              nmo_cli_record_uint(rec, "bb_version", NULL, bs->block_version);
+        const char *op_name = nmo_cmd_behavior_op_block_name(&s->flow, s->target_id);
+        if (op_name) {
+            ok = ok && nmo_cli_record_str(rec, "operation_name", NULL, op_name) &&
+                 nmo_cli_record_raw_fmt(rec, "  Operation: %s\n", op_name);
+        }
         if (proto_name) {
             ok = ok && nmo_cli_record_str(rec, "bb_proto_name", NULL, proto_name) &&
                  nmo_cli_record_raw_fmt(rec, "  Prototype: %s  {%08X-%08X}  v%u\n",
@@ -642,14 +626,19 @@ static bool behavior_show_add_sub_behaviors(nmo_cli_record_t *rec, const behavio
             }
         }
 
+        const char *op_name = nmo_cmd_behavior_op_block_name(&s->flow, id);
+        if (op_name) {
+            item_ok = item_ok && nmo_cli_record_str(item, "operation_name", NULL, op_name);
+        }
         const char *label = proto_name ? proto_name : named ? sname : "(unnamed)";
         bool alias = proto_name && named && strcmp(sname, proto_name) != 0;
         const nmo_interface_behavior_t *isub = find_interface_sub(bs->interface_data, id);
         bool folded = isub && (isub->flags & NMO_INTERFACE_FLAG_FOLDED);
         bool header_only = isub && (isub->flags & NMO_INTERFACE_FLAG_HEADER_ONLY);
         item_ok = item_ok && nmo_cli_record_set_summary_fmt(
-            item, "  [%zu] #%u %s%s%s%s%s%s", i, id, label,
+            item, "  [%zu] #%u %s%s%s%s%s%s%s%s", i, id, label,
             alias ? " (" : "", alias ? sname : "", alias ? ")" : "",
+            op_name ? " = " : "", op_name ? op_name : "",
             folded ? " [folded]" : "", header_only ? " [header-only]" : "");
         ok = behavior_show_add_item(arr, item, item_ok);
     }
@@ -691,180 +680,31 @@ static bool behavior_show_add_links(nmo_cli_record_t *rec, const behavior_show_t
         item_ok = item_ok &&
             nmo_cli_record_int(item, "activation_delay", NULL, ls->activation_delay);
 
-        const char *so = (src_owner == 0 || src_owner == s->target_id)
-            ? s->name : resolve_name(s->repo, src_owner);
-        const char *to = (tgt_owner == 0 || tgt_owner == s->target_id)
-            ? s->name : resolve_name(s->repo, tgt_owner);
+        char *src = nmo_cmd_behavior_io_label_dup(&s->flow, in_io_id);
+        char *tgt = nmo_cmd_behavior_io_label_dup(&s->flow, out_io_id);
+        item_ok = item_ok && src != NULL && tgt != NULL;
         if (ls->activation_delay != 0) {
             item_ok = item_ok && nmo_cli_record_set_summary_fmt(
-                item, "  %s.%s -> %s.%s  (delay: %d)",
-                (so && so[0]) ? so : "?", resolve_name(s->repo, in_io_id),
-                (to && to[0]) ? to : "?", resolve_name(s->repo, out_io_id),
-                ls->activation_delay);
+                item, "  %s -> %s  (delay: %d)", src, tgt, ls->activation_delay);
         } else {
-            item_ok = item_ok && nmo_cli_record_set_summary_fmt(
-                item, "  %s.%s -> %s.%s",
-                (so && so[0]) ? so : "?", resolve_name(s->repo, in_io_id),
-                (to && to[0]) ? to : "?", resolve_name(s->repo, out_io_id));
+            item_ok = item_ok && nmo_cli_record_set_summary_fmt(item, "  %s -> %s", src, tgt);
         }
+        free(src);
+        free(tgt);
         ok = behavior_show_add_item(arr, item, item_ok);
     }
     return ok;
 }
 
-/* A parameter that can feed a sub-behavior input: a local or a sub-behavior pOut. */
-typedef struct behavior_show_flow_source {
-    nmo_object_id_t param_id;
-    nmo_object_id_t owner_id;
-    const char *owner_name;
-    const char *json_name; /* resolve_name() */
-    const char *text_name; /* object name, NULL or "?" when missing */
-} behavior_show_flow_source_t;
-
-typedef struct behavior_show_flow_sources {
-    behavior_show_flow_source_t *items;
-    size_t count;
-    size_t capacity;
-} behavior_show_flow_sources_t;
-
-static bool behavior_show_flow_source_add(behavior_show_flow_sources_t *list,
-                                          const behavior_show_t *s,
-                                          nmo_object_id_t param_id,
-                                          nmo_object_id_t owner_id,
-                                          const char *owner_name)
-{
-    if (list->count == list->capacity) {
-        size_t new_capacity = list->capacity ? list->capacity * 2u : 64u;
-        behavior_show_flow_source_t *new_items = (behavior_show_flow_source_t *)realloc(
-            list->items, new_capacity * sizeof(*new_items));
-        if (!new_items) {
-            return false;
-        }
-        list->items = new_items;
-        list->capacity = new_capacity;
-    }
-    nmo_object_t *p = nmo_object_repository_find_by_id(s->repo, param_id);
-    behavior_show_flow_source_t *src = &list->items[list->count++];
-    src->param_id = param_id;
-    src->owner_id = owner_id;
-    src->owner_name = owner_name;
-    src->json_name = resolve_name(s->repo, param_id);
-    src->text_name = p ? nmo_object_get_name(p) : "?";
-    return true;
-}
-
-/* The parent's locals and every sub-behavior's pOut, in lookup order. */
-static bool behavior_show_collect_flow_sources(behavior_show_flow_sources_t *list,
-                                               const behavior_show_t *s)
-{
-    const nmo_behavior_state_t *bs = s->bs;
-    const char *root_name = (s->name && s->name[0]) ? s->name : "(root)";
-    bool ok = true;
-    for (size_t i = 0; ok && i < bs->local_parameters.count; i++) {
-        ok = behavior_show_flow_source_add(
-            list, s, nmo_behavior_ref_array_get_id(&bs->local_parameters, i),
-            s->target_id, root_name);
-    }
-    for (size_t si = 0; ok && si < bs->sub_behaviors.count; si++) {
-        nmo_object_id_t sub_id = nmo_behavior_ref_array_get_id(&bs->sub_behaviors, si);
-        if (sub_id == 0) continue;
-        nmo_object_t *sub = nmo_object_repository_find_by_id(s->repo, sub_id);
-        if (!sub || !sub->state) continue;
-        const nmo_behavior_state_t *sub_bs = (const nmo_behavior_state_t *)sub->state;
-        const char *sub_name = nmo_object_get_name(sub);
-        if (!sub_name || !sub_name[0]) sub_name = "(unnamed)";
-        for (size_t pi = 0; ok && pi < sub_bs->out_parameters.count; pi++) {
-            ok = behavior_show_flow_source_add(
-                list, s, nmo_behavior_ref_array_get_id(&sub_bs->out_parameters, pi),
-                sub_id, sub_name);
-        }
-    }
-    return ok;
-}
-
-/*
- * "Data Flow": every sub-behavior pIn with a source, as
- * "source owner.param -> sub.pin  [type]".
- */
+/* "Data Flow": the parameter reads and writes inside the behavior. */
 static bool behavior_show_add_data_flow(nmo_cli_record_t *rec, const behavior_show_t *s)
 {
     const nmo_behavior_state_t *bs = s->bs;
-    bool show_text = bs->sub_behaviors.count > 0;
-    behavior_show_flow_sources_t sources = {0};
-    bool ok = behavior_show_collect_flow_sources(&sources, s) &&
-              behavior_show_heading(rec, show_text, "Data Flow");
+    bool show_text = bs->sub_behaviors.count > 0 || bs->operations.count > 0;
+    bool ok = behavior_show_heading(rec, show_text, "Data Flow");
     nmo_cli_record_array_t *arr = ok ? behavior_show_array(rec, "data_flow") : NULL;
-    ok = arr != NULL;
-
-    for (size_t si = 0; ok && si < bs->sub_behaviors.count; si++) {
-        nmo_object_id_t sub_id = nmo_behavior_ref_array_get_id(&bs->sub_behaviors, si);
-        if (sub_id == 0) continue;
-        nmo_object_t *sub = nmo_object_repository_find_by_id(s->repo, sub_id);
-        if (!sub || !sub->state) continue;
-        const nmo_behavior_state_t *sub_bs = (const nmo_behavior_state_t *)sub->state;
-        const char *sub_name = nmo_object_get_name(sub);
-        if (!sub_name || !sub_name[0]) sub_name = "(unnamed)";
-
-        for (size_t pi = 0; ok && pi < sub_bs->in_parameters.count; pi++) {
-            nmo_object_id_t param_id =
-                nmo_behavior_ref_array_get_id(&sub_bs->in_parameters, pi);
-            if (param_id == 0) continue;
-            nmo_object_t *pin_obj = nmo_object_repository_find_by_id(s->repo, param_id);
-            if (!pin_obj || !pin_obj->state) continue;
-            const nmo_parameterin_state_t *pin =
-                (const nmo_parameterin_state_t *)pin_obj->state;
-            const nmo_object_id_t source_id = nmo_parameterin_source_id(pin);
-            if (source_id == 0) continue;
-
-            const behavior_show_flow_source_t *src = NULL;
-            for (size_t k = 0; k < sources.count; k++) {
-                if (sources.items[k].param_id == source_id) {
-                    src = &sources.items[k];
-                    break;
-                }
-            }
-
-            /* A source outside the local scope is external */
-            nmo_object_t *src_obj = nmo_object_repository_find_by_id(s->repo, source_id);
-            const char *src_owner_name = src ? src->owner_name : "(external)";
-            const char *src_json_name = src ? src->json_name : resolve_name(s->repo, source_id);
-            const char *src_text_name = src ? src->text_name
-                                            : src_obj ? nmo_object_get_name(src_obj) : "?";
-            const char *pin_name = nmo_object_get_name(pin_obj);
-            nmo_guid_t type_guid = get_param_type_guid(pin_obj);
-            const char *tname = resolve_type(s->c->registry, type_guid);
-
-            nmo_cli_record_t *flow = nmo_cli_record_new();
-            bool flow_ok = flow != NULL &&
-                nmo_cli_record_uint(flow, "source_id", NULL, source_id) &&
-                nmo_cli_record_str(flow, "source_name", NULL, src_json_name) &&
-                nmo_cli_record_uint(flow, "source_owner_id", NULL, src ? src->owner_id : 0) &&
-                nmo_cli_record_str(flow, "source_owner_name", NULL, src_owner_name) &&
-                nmo_cli_record_uint(flow, "target_id", NULL, param_id) &&
-                nmo_cli_record_str(flow, "target_name", NULL, resolve_name(s->repo, param_id)) &&
-                nmo_cli_record_uint(flow, "target_owner_id", NULL, sub_id) &&
-                nmo_cli_record_str(flow, "target_owner_name", NULL, sub_name) &&
-                nmo_cli_record_str_fmt(flow, "type_guid", NULL, "%08X-%08X",
-                                       type_guid.d1, type_guid.d2) &&
-                nmo_cli_record_str(flow, "type_name", NULL, tname) &&
-                nmo_cli_record_bool(flow, "is_shared", NULL, pin->is_shared != 0);
-            if (src_obj && nmo_object_get_class_id(src_obj) == NMO_CID_PARAMETERIN) {
-                flow_ok = flow_ok &&
-                    nmo_cli_record_bool(flow, "source_is_parameter_in", NULL, true);
-            }
-            flow_ok = flow_ok && nmo_cli_record_set_summary_fmt(
-                flow, "  %s.%s -> %s.%s  [%s]%s",
-                src_owner_name,
-                (src_text_name && src_text_name[0]) ? src_text_name : "?",
-                sub_name,
-                (pin_name && pin_name[0]) ? pin_name : "?",
-                tname,
-                pin->is_shared ? " (shared)" : "");
-            ok = behavior_show_add_item(arr, flow, flow_ok);
-        }
-    }
-    free(sources.items);
-
+    ok = arr != NULL &&
+         nmo_cmd_behavior_add_data_flow_items(arr, &s->flow, s->target_id, show_text);
     if (ok && show_text && nmo_cli_record_array_count(arr) == 0) {
         ok = nmo_cli_record_raw(rec, "  (no parameter connections)\n");
     }
@@ -989,6 +829,12 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
         .bs = bs,
         .target_id = target_id,
         .name = name,
+        .flow = {
+            .repo = repo,
+            .registry = c.registry,
+            .workspace = c.workspace,
+            .index = nmo_tool_owner_behavior_index(c.workspace),
+        },
     };
     nmo_cli_record_t *rec = nmo_cli_record_new();
     bool ok = rec != NULL &&
