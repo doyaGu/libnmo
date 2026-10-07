@@ -316,108 +316,45 @@ int nmo_cmd_behavior_find(int argc, char **argv, const nmo_cli_global_opts_t *gl
  * behavior trace -- execution path tracing from IO (recursive into sub-graphs)
  * ============================================================================ */
 
-typedef struct {
-    nmo_object_id_t source_io; /* in_io_id: where activation comes FROM */
-    nmo_object_id_t target_io; /* out_io_id: where activation goes TO */
-    int16_t delay;
-} trace_link_t;
-
-/* Recursively collect all behavior links from a behavior tree */
-static bool collect_links_recursive(
-    nmo_object_repository_t *repo,
-    nmo_object_id_t beh_id,
-    trace_link_t **links, size_t *count, size_t *cap,
-    uint32_t depth, uint32_t max_depth)
+/* The behavior links of `node_id` and the graphs below it. */
+static size_t trace_count_links(const nmo_script_model_t *model, nmo_object_id_t node_id,
+                                uint32_t depth)
 {
-    if (depth > 256) return true;
-    nmo_object_t *beh = nmo_object_repository_find_by_id(repo, beh_id);
-    if (!beh || !beh->state) return true;
-    const nmo_behavior_state_t *bs = (const nmo_behavior_state_t *)beh->state;
-
-    /* Collect links from this behavior */
-    if (bs->sub_behavior_links.data) {
-        for (size_t i = 0; i < bs->sub_behavior_links.count; i++) {
-            nmo_object_id_t id = nmo_behavior_ref_array_get_id(
-                &bs->sub_behavior_links, i);
-            nmo_object_t *lo = nmo_object_repository_find_by_id(repo, id);
-            if (!lo || !lo->state) continue;
-            const nmo_behaviorlink_state_t *ls = (const nmo_behaviorlink_state_t *)lo->state;
-            if (*count == *cap) {
-                size_t new_cap = (*cap == 0) ? 64 : (*cap * 2);
-                trace_link_t *nl = (trace_link_t *)realloc(*links, new_cap * sizeof(trace_link_t));
-                if (!nl) return false;
-                *links = nl;
-                *cap = new_cap;
-            }
-            (*links)[*count] = (trace_link_t){
-                .source_io = nmo_behaviorlink_in_io_id(ls),
-                .target_io = nmo_behaviorlink_out_io_id(ls),
-                .delay = ls->activation_delay,
-            };
-            (*count)++;
-        }
+    const nmo_script_node_t *node = nmo_script_model_find_node(model, node_id);
+    if (!node || depth > 256) {
+        return 0;
     }
-
-    /* Recurse into graph-type sub-behaviors */
-    if (depth < max_depth && bs->sub_behaviors.data) {
-        for (size_t i = 0; i < bs->sub_behaviors.count; i++) {
-            nmo_object_id_t id = nmo_behavior_ref_array_get_id(
-                &bs->sub_behaviors, i);
-            if (id == 0) continue;
-            nmo_object_t *sub = nmo_object_repository_find_by_id(repo, id);
-            if (!sub || !sub->state) continue;
-            const nmo_behavior_state_t *sbs = (const nmo_behavior_state_t *)sub->state;
-            if (sbs->flags & CKBEHAVIOR_BUILDINGBLOCK) continue;
-            if (!collect_links_recursive(repo, id, links, count, cap,
-                                         depth + 1, max_depth))
-                return false;
-        }
+    size_t child_total = 0;
+    const nmo_object_id_t *children = nmo_script_model_children(model, &child_total);
+    size_t count = node->link_count;
+    for (size_t i = 0; i < node->child_count; i++) {
+        count += trace_count_links(model, children[node->first_child + i], depth + 1);
     }
-    return true;
+    return count;
 }
 
-static const char *trace_behavior_type_name(const nmo_behavior_state_t *bs) {
-    if (!bs) {
-        return "Unknown";
-    }
-    if (bs->flags & CKBEHAVIOR_SCRIPT) {
-        return "Script";
-    }
-    if (bs->flags & CKBEHAVIOR_BUILDINGBLOCK) {
-        return "BB";
-    }
-    return "Graph";
+static const char *trace_behavior_type_name(const nmo_script_node_t *node)
+{
+    return node ? nmo_script_node_kind_name(node->kind) : "Unknown";
 }
 
-static const nmo_behavior_state_t *trace_owner_state(
-    nmo_object_repository_t *repo,
-    nmo_object_id_t owner_id)
+/* The prototype of a building block, or its name when the prototype is unknown. */
+static const char *trace_bb_proto_name(const nmo_script_node_t *node)
 {
-    if (!repo || owner_id == 0) {
+    if (!node || node->kind != NMO_SCRIPT_NODE_BUILDING_BLOCK) {
         return NULL;
     }
-    nmo_object_t *obj = nmo_object_repository_find_by_id(repo, owner_id);
-    return (obj && obj->state) ? (const nmo_behavior_state_t *)obj->state : NULL;
-}
-
-static const char *trace_bb_proto_name(
-    nmo_context_t *ctx,
-    const nmo_behavior_state_t *bs)
-{
-    if (!ctx || !bs ||
-        !(bs->flags & CKBEHAVIOR_BUILDINGBLOCK) ||
-        nmo_guid_is_null(bs->block_guid)) {
-        return NULL;
+    if (node->prototype_name) {
+        return node->prototype_name;
     }
-    return nmo_behavior_registry_get_name(nmo_context_get_bb_registry(ctx),
-                                    bs->block_guid);
+    return node->name[0] ? node->name : NULL;
 }
 
 static const char *trace_transition_name(
     nmo_object_id_t root_behavior_id,
     nmo_object_id_t source_owner,
     nmo_object_id_t target_owner,
-    const nmo_behavior_state_t *target_bs)
+    const nmo_script_node_t *target)
 {
     if (source_owner == 0 || target_owner == 0) {
         return "unknown";
@@ -425,9 +362,8 @@ static const char *trace_transition_name(
     if (target_owner == root_behavior_id && source_owner != root_behavior_id) {
         return "exit_to_parent";
     }
-    if (target_owner != source_owner &&
-        target_bs &&
-        !(target_bs->flags & CKBEHAVIOR_BUILDINGBLOCK)) {
+    if (target_owner != source_owner && target &&
+        target->kind != NMO_SCRIPT_NODE_BUILDING_BLOCK) {
         return "enter_subgraph";
     }
     return "same_graph";
@@ -437,16 +373,12 @@ typedef struct {
     uint32_t depth;
     nmo_object_id_t source_io;
     nmo_object_id_t source_owner;
-    const char *source_owner_name;
     nmo_object_id_t target_io;
     const char *target_io_name;
     nmo_object_id_t target_owner;
-    const char *target_owner_name;
-    const nmo_behavior_state_t *target_bs;
-    const char *target_type;
-    const char *target_proto;
+    const nmo_script_node_t *target;
     const char *transition;
-    int16_t delay;
+    int32_t delay;
     const char *truncated_reason;
     bool loop_detected;
     nmo_object_id_t loop_io;
@@ -474,37 +406,33 @@ static nmo_cli_record_t *trace_record_new(nmo_object_id_t beh_id,
     return rec;
 }
 
-static bool trace_add_step_text(nmo_cli_record_t *item, nmo_context_t *ctx,
+/* Text: "  -> Label#id [Prototype].port [Kind]  (transition: ...)". */
+static bool trace_add_step_text(nmo_cli_record_t *item,
+                                const nmo_cmd_behavior_flow_ctx_t *f,
                                 const trace_step_t *step)
 {
-    /* Resolve type label and prototype name */
+    const nmo_script_node_t *target = step->target;
     const char *type_label = "";
     const char *proto_name = NULL;
     bool entering_subgraph = false;
-    const nmo_behavior_state_t *tgt_state = step->target_bs;
-    if (tgt_state) {
-        if (tgt_state->flags & CKBEHAVIOR_SCRIPT) {
-            type_label = " [Script]";
-        } else if (tgt_state->flags & CKBEHAVIOR_BUILDINGBLOCK) {
-            type_label = " [BB]";
-            if (!nmo_guid_is_null(tgt_state->block_guid)) {
-                proto_name = nmo_behavior_registry_get_name(
-                    nmo_context_get_bb_registry(ctx), tgt_state->block_guid);
-            }
-            if (!proto_name) {
-                proto_name = step->target_proto;
-            }
-        } else {
-            type_label = " [Graph]";
-            entering_subgraph = true;
+    if (target) {
+        type_label = target->kind == NMO_SCRIPT_NODE_SCRIPT ? " [Script]"
+                   : target->kind == NMO_SCRIPT_NODE_GRAPH ? " [Graph]" : " [BB]";
+        entering_subgraph = target->kind == NMO_SCRIPT_NODE_GRAPH;
+        /* The prototype of a renamed building block */
+        if (target->prototype_name && strcmp(target->prototype_name, target->name) != 0) {
+            proto_name = target->prototype_name;
         }
     }
 
-    bool ok = nmo_cli_record_raw_fmt(item, "%*s%s%s",
+    char *label = step->target_owner ? nmo_cmd_behavior_node_label_dup(f, step->target_owner)
+                                     : nmo_tool_strdup_fmt("?");
+    bool ok = label != NULL &&
+              nmo_cli_record_raw_fmt(item, "%*s%s%s",
                                      (int)(2u * (step->depth + 1u)), "",
-                                     entering_subgraph ? "\xe2\x96\xb6 "
-                                                       : "\xe2\x86\x92 ",
-                                     step->target_owner_name);
+                                     entering_subgraph ? "\xe2\x96\xb6 " : "\xe2\x86\x92 ",
+                                     label);
+    free(label);
     if (proto_name) {
         ok = ok && nmo_cli_record_raw_fmt(item, " [%s]", proto_name);
     }
@@ -512,7 +440,7 @@ static bool trace_add_step_text(nmo_cli_record_t *item, nmo_context_t *ctx,
                                       step->target_io_name ? step->target_io_name : "?",
                                       type_label, step->transition);
     if (step->delay != 0) {
-        ok = ok && nmo_cli_record_raw_fmt(item, "  (delay: %d)", step->delay);
+        ok = ok && nmo_cli_record_raw_fmt(item, "  (delay: %d)", (int)step->delay);
     }
     if (step->truncated_reason) {
         ok = ok && nmo_cli_record_raw_fmt(item, "  (truncated: %s)",
@@ -530,19 +458,20 @@ static bool trace_add_step_text(nmo_cli_record_t *item, nmo_context_t *ctx,
 }
 
 /* One "steps" item; in text, one indented trace line. */
-static bool trace_add_step(nmo_cli_record_array_t *steps, nmo_context_t *ctx,
+static bool trace_add_step(nmo_cli_record_array_t *steps,
+                           const nmo_cmd_behavior_flow_ctx_t *f,
                            const trace_step_t *step)
 {
+    const char *target_proto = trace_bb_proto_name(step->target);
     nmo_cli_record_t *item = nmo_cli_record_new();
     bool ok = item != NULL &&
               nmo_cli_record_uint(item, "depth", NULL, step->depth) &&
               nmo_cli_record_uint(item, "source_io_id", NULL, step->source_io);
     if (step->source_owner != 0) {
         ok = ok &&
-             nmo_cli_record_uint(item, "source_owner_id", NULL,
-                                 step->source_owner) &&
+             nmo_cli_record_uint(item, "source_owner_id", NULL, step->source_owner) &&
              nmo_cli_record_str(item, "source_owner_name", NULL,
-                                step->source_owner_name);
+                                resolve_name(f->repo, step->source_owner));
     }
     ok = ok &&
          nmo_cli_record_uint(item, "target_io_id", NULL, step->target_io) &&
@@ -550,16 +479,14 @@ static bool trace_add_step(nmo_cli_record_array_t *steps, nmo_context_t *ctx,
                             step->target_io_name ? step->target_io_name : "");
     if (step->target_owner != 0) {
         ok = ok &&
-             nmo_cli_record_uint(item, "target_owner_id", NULL,
-                                 step->target_owner) &&
+             nmo_cli_record_uint(item, "target_owner_id", NULL, step->target_owner) &&
              nmo_cli_record_str(item, "target_owner_name", NULL,
-                                step->target_owner_name);
+                                resolve_name(f->repo, step->target_owner));
     }
     ok = ok && nmo_cli_record_str(item, "target_behavior_type", NULL,
-                                  step->target_type);
-    if (step->target_proto) {
-        ok = ok && nmo_cli_record_str(item, "target_bb_proto_name", NULL,
-                                      step->target_proto);
+                                  trace_behavior_type_name(step->target));
+    if (target_proto) {
+        ok = ok && nmo_cli_record_str(item, "target_bb_proto_name", NULL, target_proto);
     }
     ok = ok && nmo_cli_record_str(item, "transition", NULL, step->transition);
     if (step->delay != 0) {
@@ -576,7 +503,7 @@ static bool trace_add_step(nmo_cli_record_array_t *steps, nmo_context_t *ctx,
              nmo_cli_record_uint_list(item, "loop_path_io_ids", NULL, loop_path,
                                       step->loop_io != 0 ? 3u : 2u, NULL);
     }
-    ok = ok && trace_add_step_text(item, ctx, step);
+    ok = ok && trace_add_step_text(item, f, step);
     if (!ok) {
         nmo_cli_record_free(item);
         return false;
@@ -594,6 +521,134 @@ static nmo_cli_record_array_t *trace_inline_array(nmo_cli_record_t *rec,
         nmo_cli_record_array_inline_items(arr);
     }
     return arr;
+}
+
+/* The IOs a trace has reached, and the IOs still to follow. */
+typedef struct trace_walk {
+    nmo_object_id_t *visited;
+    size_t visited_count;
+    size_t visited_cap;
+    struct trace_pending { nmo_object_id_t io; uint32_t depth; } *stack;
+    size_t stack_count;
+    size_t stack_cap;
+} trace_walk_t;
+
+static bool trace_walk_seen(const trace_walk_t *w, nmo_object_id_t io)
+{
+    for (size_t i = 0; i < w->visited_count; i++) {
+        if (w->visited[i] == io) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* Mark `io` reached and queue it at `depth`. */
+static bool trace_walk_push(trace_walk_t *w, nmo_object_id_t io, uint32_t depth)
+{
+    if (w->visited_count == w->visited_cap) {
+        size_t cap = w->visited_cap ? w->visited_cap * 2u : 256u;
+        nmo_object_id_t *v = (nmo_object_id_t *)realloc(w->visited, cap * sizeof(*v));
+        if (!v) return false;
+        w->visited = v;
+        w->visited_cap = cap;
+    }
+    if (w->stack_count == w->stack_cap) {
+        size_t cap = w->stack_cap ? w->stack_cap * 2u : 256u;
+        struct trace_pending *st =
+            (struct trace_pending *)realloc(w->stack, cap * sizeof(*st));
+        if (!st) return false;
+        w->stack = st;
+        w->stack_cap = cap;
+    }
+    w->visited[w->visited_count++] = io;
+    w->stack[w->stack_count].io = io;
+    w->stack[w->stack_count].depth = depth;
+    w->stack_count++;
+    return true;
+}
+
+/* The steps from entry IO `entry` of the traced behavior `root_id`. */
+static bool trace_add_entry_steps(nmo_cli_record_array_t *steps,
+                                  const nmo_cmd_behavior_flow_ctx_t *f,
+                                  nmo_object_id_t root_id,
+                                  nmo_object_id_t entry,
+                                  uint32_t max_depth,
+                                  trace_walk_t *w)
+{
+    size_t io_total = 0;
+    const nmo_script_io_t *ios = nmo_script_model_ios(f->model, &io_total);
+    w->visited_count = 0;
+    w->stack_count = 0;
+    bool ok = trace_walk_push(w, entry, 0);
+    while (ok && w->stack_count > 0) {
+        struct trace_pending cur = w->stack[--w->stack_count];
+        if (cur.depth > max_depth) continue;
+
+        size_t link_count = 0;
+        const nmo_script_link_t *const *links =
+            nmo_script_model_links_from_io(f->model, cur.io, &link_count);
+        for (size_t li = 0; ok && li < link_count; li++) {
+            const nmo_script_link_t *link = links[li];
+            /* Only the links of the traced behavior and the graphs below it */
+            if (link->graph_id != root_id &&
+                !nmo_script_model_is_ancestor(f->model, root_id, link->graph_id)) {
+                continue;
+            }
+            const nmo_script_node_t *target =
+                nmo_script_model_find_node(f->model, link->target_node_id);
+            const nmo_script_io_t *target_io =
+                nmo_script_model_find_io(f->model, link->target_io_id);
+
+            /* Whether the target's outputs lead somewhere new */
+            nmo_object_id_t loop_io = 0;
+            bool loop_detected = false;
+            bool has_unseen_continuation = false;
+            for (size_t oi = 0; target && oi < target->output_count; oi++) {
+                nmo_object_id_t output_id = ios[target->first_io + target->input_count + oi].id;
+                if (trace_walk_seen(w, output_id)) {
+                    loop_detected = true;
+                    if (loop_io == 0) loop_io = output_id;
+                } else {
+                    has_unseen_continuation = true;
+                }
+            }
+            const char *truncated_reason = NULL;
+            if (cur.depth >= max_depth && has_unseen_continuation) {
+                truncated_reason = "max_depth";
+            } else if (loop_detected && !has_unseen_continuation) {
+                truncated_reason = "loop";
+            }
+
+            trace_step_t step = {
+                .depth = cur.depth,
+                .source_io = cur.io,
+                .source_owner = link->source_node_id,
+                .target_io = link->target_io_id,
+                .target_io_name = target_io ? target_io->name
+                                            : resolve_name(f->repo, link->target_io_id),
+                .target_owner = link->target_node_id,
+                .target = target,
+                .transition = trace_transition_name(root_id, link->source_node_id,
+                                                    link->target_node_id, target),
+                .delay = link->activation_delay,
+                .truncated_reason = truncated_reason,
+                .loop_detected = loop_detected,
+                .loop_io = loop_io,
+            };
+            ok = trace_add_step(steps, f, &step);
+
+            /* Continue through the target's outputs */
+            for (size_t oi = 0; ok && target && cur.depth < max_depth &&
+                                oi < target->output_count; oi++) {
+                nmo_object_id_t output_id = ios[target->first_io + target->input_count + oi].id;
+                if (!trace_walk_seen(w, output_id)) {
+                    ok = trace_walk_push(w, output_id, cur.depth + 1);
+                }
+            }
+        }
+    }
+    return ok;
 }
 
 int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -624,7 +679,6 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    nmo_object_repository_t *repo = nmo_tool_owner_repository(c.workspace);
     nmo_core_object_selector_t selector = {
         .has_id = vals[OPT_ID].present,
         .id = nmo_opt_uint_or(&vals[OPT_ID], 0),
@@ -641,22 +695,19 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
         fprintf(stderr, "Usage: nmo behavior trace [--from <io>] [--depth N] [--id <id> | --name <name> | <id>] <file>\n");
         return nmo_cmd_ctx_done(&c, rc);
     }
-    if (!beh->state) {
-        fprintf(stderr, "Error: Behavior %u has no state\n", beh_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-    }
 
-    const nmo_behavior_state_t *bs = (const nmo_behavior_state_t *)beh->state;
-    const char *beh_name = nmo_object_get_name(beh);
-
-    /* Build link table recursively */
-    trace_link_t *links = NULL;
-    size_t link_count = 0, link_cap = 0;
-    if (!collect_links_recursive(repo, beh_id, &links, &link_count, &link_cap,
-                                 0, UINT32_MAX)) {
-        free(links);
+    nmo_cmd_behavior_flow_ctx_t flow;
+    if (!nmo_cmd_behavior_flow_init(&flow, &c)) {
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
+    const nmo_script_node_t *root = nmo_script_model_find_node(flow.model, beh_id);
+    if (!root) {
+        fprintf(stderr, "Error: Behavior %u has no state\n", beh_id);
+        nmo_cmd_behavior_flow_dispose(&flow);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    }
+    const char *beh_name = root->name;
+    size_t link_count = trace_count_links(flow.model, beh_id, 0);
 
     if (link_count == 0) {
         nmo_cli_record_t *rec = trace_record_new(beh_id, beh_name, 0, 0);
@@ -667,287 +718,94 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
             nmo_cli_record_free(rec);
             rec = NULL;
         }
-        free(links);
         rc = nmo_cmd_ctx_emit_record(&c, rec, "behavior.trace", 0, false);
+        nmo_cmd_behavior_flow_dispose(&flow);
         return nmo_cmd_ctx_done(&c, rc);
     }
 
-    /* Use behavior_index for O(1) IO owner lookups */
-    const nmo_behavior_index_t *beh_index = nmo_tool_owner_behavior_index(c.workspace);
-
-    /* Find starting IO */
-    nmo_object_id_t start_io = NMO_OBJECT_ID_NONE;
-    if (from_name) {
-        if (bs->inputs.data) {
-            for (size_t i = 0; i < bs->inputs.count; i++) {
-                nmo_object_id_t id = nmo_behavior_ref_array_get_id(&bs->inputs, i);
-                const char *ion = resolve_name(repo, id);
-                if (ion && nmo_tool_match_wildcard_ci(from_name, ion)) {
-                    start_io = id; break;
-                }
-            }
-        }
-        if (start_io == NMO_OBJECT_ID_NONE) {
-            fprintf(stderr, "Error: IO '%s' not found\n", from_name);
-            free(links);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-        }
-    } else {
-        if (bs->inputs.data && bs->inputs.count > 0) {
-            start_io = nmo_behavior_ref_array_get_id(&bs->inputs, 0);
-        } else {
-            fprintf(stderr, "Error: Behavior has no input IOs\n");
-            free(links);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-        }
-    }
-
-    /* Entry points: root behavior's bIn ports that appear as source in any link */
-    nmo_object_id_t entry_ios[64];
+    /* Entry points: the behavior's inputs with links, matching --from */
+    size_t io_total = 0;
+    const nmo_script_io_t *ios = nmo_script_model_ios(flow.model, &io_total);
+    nmo_object_id_t *entry_ios = (nmo_object_id_t *)malloc(
+        (root->input_count ? root->input_count : 1u) * sizeof(*entry_ios));
     size_t entry_count = 0;
-
-    if (bs->inputs.data) {
-        for (size_t i = 0; i < bs->inputs.count && entry_count < 64; i++) {
-            nmo_object_id_t id = nmo_behavior_ref_array_get_id(&bs->inputs, i);
-            for (size_t li = 0; li < link_count; li++) {
-                if (links[li].source_io == id) {
-                    entry_ios[entry_count++] = id;
-                    break;
-                }
-            }
+    bool from_matched = false;
+    for (size_t i = 0; entry_ios && i < root->input_count; i++) {
+        const nmo_script_io_t *io = &ios[root->first_io + i];
+        if (from_name && !nmo_tool_match_wildcard_ci(from_name, io->name)) {
+            continue;
+        }
+        from_matched = true;
+        size_t out_count = 0;
+        nmo_script_model_links_from_io(flow.model, io->id, &out_count);
+        if (out_count > 0) {
+            entry_ios[entry_count++] = io->id;
         }
     }
-
-    if (from_name) {
-        size_t matched = 0;
-        for (size_t e = 0; e < entry_count; e++) {
-            const char *ion = resolve_name(repo, entry_ios[e]);
-            if (ion && nmo_tool_match_wildcard_ci(from_name, ion)) {
-                entry_ios[matched++] = entry_ios[e];
-            }
-        }
-        entry_count = matched;
-        if (entry_count == 0) {
-            fprintf(stderr, "Error: No entry IO matching '%s'\n", from_name);
-            free(links);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-        }
+    int entry_rc = NMO_CLI_EXIT_SUCCESS;
+    if (!entry_ios) {
+        entry_rc = NMO_CLI_EXIT_INTERNAL_ERROR;
+    } else if (root->input_count == 0) {
+        fprintf(stderr, "Error: Behavior has no input IOs\n");
+        entry_rc = NMO_CLI_EXIT_ARG_ERROR;
+    } else if (from_name && !from_matched) {
+        fprintf(stderr, "Error: IO '%s' not found\n", from_name);
+        entry_rc = NMO_CLI_EXIT_ARG_ERROR;
+    } else if (from_name && entry_count == 0) {
+        fprintf(stderr, "Error: No entry IO matching '%s'\n", from_name);
+        entry_rc = NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (entry_rc != NMO_CLI_EXIT_SUCCESS) {
+        free(entry_ios);
+        nmo_cmd_behavior_flow_dispose(&flow);
+        return nmo_cmd_ctx_done(&c, entry_rc);
     }
 
-    /* DFS with explicit stack, per-entry visited set */
-    typedef struct { nmo_object_id_t io; uint32_t depth; } stack_entry_t;
-    size_t stack_cap = (link_count > 512) ? link_count * 2 : 1024;
-    stack_entry_t *stack = (stack_entry_t *)malloc(stack_cap * sizeof(stack_entry_t));
-    nmo_object_id_t *visited = (nmo_object_id_t *)malloc(stack_cap * sizeof(nmo_object_id_t));
-    if (!stack || !visited) {
-        free(links); free(stack); free(visited);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-    }
-
-    nmo_cli_record_t *rec = trace_record_new(beh_id, beh_name, entry_count,
-                                             link_count);
-    /* Type label for root behavior */
-    const char *root_label = "[Graph]";
-    if (bs->flags & CKBEHAVIOR_SCRIPT) root_label = "[Script]";
-    else if (bs->flags & CKBEHAVIOR_BUILDINGBLOCK) root_label = "[BB]";
-    const char *root_name = (beh_name && beh_name[0]) ? beh_name : "(unnamed)";
+    nmo_cli_record_t *rec = trace_record_new(beh_id, beh_name, entry_count, link_count);
+    const char *root_name = beh_name[0] ? beh_name : "(unnamed)";
     bool ok = rec != NULL &&
               nmo_cli_record_raw_fmt(rec,
-                                     "Execution Trace: %s %s [#%u]\n"
+                                     "Execution Trace: %s [%s] [#%u]\n"
                                      "Current graph: %s [#%u]\n"
                                      "Entry points: %zu, Links: %zu\n\n",
-                                     root_name, root_label, beh_id,
+                                     root_name, nmo_script_node_kind_name(root->kind), beh_id,
                                      root_name, beh_id,
                                      entry_count, link_count);
-    nmo_cli_record_array_t *entries =
-        ok ? trace_inline_array(rec, "entries") : NULL;
+    nmo_cli_record_array_t *entries = ok ? trace_inline_array(rec, "entries") : NULL;
     ok = entries != NULL;
 
+    trace_walk_t walk = {0};
+    char *root_label = nmo_cmd_behavior_node_label_dup(&flow, beh_id);
+    ok = ok && root_label != NULL;
     for (size_t ei = 0; ok && ei < entry_count; ei++) {
         nmo_object_id_t entry = entry_ios[ei];
-
-        /* Resolve entry owner via behavior_index */
-        const char *eowner = beh_name;
-        nmo_object_id_t entry_owner_id = beh_id;
-        if (beh_index) {
-            const nmo_port_owner_t *po = nmo_behavior_index_find(beh_index, entry);
-            if (po && po->owner_id != beh_id) {
-                entry_owner_id = po->owner_id;
-                const char *n = resolve_name(repo, po->owner_id);
-                if (n && n[0]) eowner = n;
-            }
-        }
-
+        const char *entry_name = nmo_script_model_find_io(flow.model, entry)->name;
         nmo_cli_record_t *entry_item = nmo_cli_record_new();
-        const char *entry_name = resolve_name(repo, entry);
         ok = entry_item != NULL &&
              nmo_cli_record_uint(entry_item, "entry_io_id", NULL, entry) &&
              nmo_cli_record_str(entry_item, "entry_io_name", NULL, entry_name) &&
-             nmo_cli_record_uint(entry_item, "entry_owner_id", NULL,
-                                 entry_owner_id) &&
-             nmo_cli_record_str(entry_item, "entry_owner_name", NULL,
-                                (eowner && eowner[0]) ? eowner : "") &&
-             nmo_cli_record_raw_fmt(entry_item, "%s.%s\n",
-                                    (eowner && eowner[0]) ? eowner : "?",
-                                    entry_name);
-        nmo_cli_record_array_t *steps =
-            ok ? trace_inline_array(entry_item, "steps") : NULL;
-        ok = steps != NULL;
-
-        size_t sp = 0, vis_count = 0;
-        stack[sp].io = entry;
-        stack[sp].depth = 0;
-        sp++;
-        visited[vis_count++] = entry;
-
-        while (ok && sp > 0) {
-            stack_entry_t cur = stack[--sp];
-            if (cur.depth > max_trace_depth) continue;
-
-            for (size_t li = 0; ok && li < link_count; li++) {
-                if (links[li].source_io != cur.io) continue;
-
-                nmo_object_id_t tgt = links[li].target_io;
-
-                nmo_object_id_t src_owner = 0;
-                const char *sname = "?";
-                if (beh_index) {
-                    const nmo_port_owner_t *spo =
-                        nmo_behavior_index_find(beh_index, cur.io);
-                    if (spo) {
-                        src_owner = spo->owner_id;
-                        const char *n = resolve_name(repo, src_owner);
-                        if (n && n[0]) sname = n;
-                    }
-                }
-
-                /* Resolve target owner via behavior_index */
-                const char *tname = "?";
-                nmo_object_id_t tgt_owner = 0;
-                if (beh_index) {
-                    const nmo_port_owner_t *po = nmo_behavior_index_find(beh_index, tgt);
-                    if (po) {
-                        tgt_owner = po->owner_id;
-                        const char *n = resolve_name(repo, tgt_owner);
-                        if (n && n[0]) tname = n;
-                    }
-                }
-                const char *tio = resolve_name(repo, tgt);
-                const nmo_behavior_state_t *tgt_bs =
-                    trace_owner_state(repo, tgt_owner);
-                const char *target_type =
-                    trace_behavior_type_name(tgt_bs);
-                const char *target_proto =
-                    trace_bb_proto_name(c.ctx, tgt_bs);
-                if (!target_proto &&
-                    tgt_bs &&
-                    (tgt_bs->flags & CKBEHAVIOR_BUILDINGBLOCK) &&
-                    tname && tname[0] && strcmp(tname, "?") != 0) {
-                    target_proto = tname;
-                }
-                const char *transition =
-                    trace_transition_name(beh_id, src_owner, tgt_owner,
-                                          tgt_bs);
-                const char *truncated_reason = NULL;
-                nmo_object_id_t loop_io = 0;
-                bool loop_detected = false;
-                bool has_unseen_continuation = false;
-                if (tgt_owner != 0) {
-                    nmo_object_t *to =
-                        nmo_object_repository_find_by_id(repo, tgt_owner);
-                    if (to && to->state) {
-                        const nmo_behavior_state_t *tbs =
-                            (const nmo_behavior_state_t *)to->state;
-                        if (tbs->outputs.data) {
-                            for (size_t oi = 0; oi < tbs->outputs.count; oi++) {
-                                nmo_object_id_t output_id =
-                                    nmo_behavior_ref_array_get_id(&tbs->outputs, oi);
-                                bool seen = false;
-                                for (size_t v = 0; v < vis_count; v++) {
-                                    if (visited[v] == output_id) {
-                                        seen = true;
-                                        break;
-                                    }
-                                }
-                                if (seen) {
-                                    loop_detected = true;
-                                    if (loop_io == 0) {
-                                        loop_io = output_id;
-                                    }
-                                } else {
-                                    has_unseen_continuation = true;
-                                }
-                            }
-                        }
-                    }
-                }
-                if (cur.depth >= max_trace_depth && has_unseen_continuation) {
-                    truncated_reason = "max_depth";
-                } else if (loop_detected && !has_unseen_continuation) {
-                    truncated_reason = "loop";
-                }
-
-                trace_step_t step = {
-                    .depth = cur.depth,
-                    .source_io = cur.io,
-                    .source_owner = src_owner,
-                    .source_owner_name = sname,
-                    .target_io = tgt,
-                    .target_io_name = tio,
-                    .target_owner = tgt_owner,
-                    .target_owner_name = tname,
-                    .target_bs = tgt_bs,
-                    .target_type = target_type,
-                    .target_proto = target_proto,
-                    .transition = transition,
-                    .delay = links[li].delay,
-                    .truncated_reason = truncated_reason,
-                    .loop_detected = loop_detected,
-                    .loop_io = loop_io,
-                };
-                ok = trace_add_step(steps, c.ctx, &step);
-
-                /* Continue through: add target owner's outputs to stack */
-                if (tgt_owner != 0 && cur.depth < max_trace_depth) {
-                    nmo_object_t *to = nmo_object_repository_find_by_id(repo, tgt_owner);
-                    if (to && to->state) {
-                        const nmo_behavior_state_t *tbs = (const nmo_behavior_state_t *)to->state;
-                        if (tbs->outputs.data) {
-                            for (size_t oi = 0; oi < tbs->outputs.count && sp < stack_cap - 1; oi++) {
-                                nmo_object_id_t output_id =
-                                    nmo_behavior_ref_array_get_id(&tbs->outputs, oi);
-                                bool seen = false;
-                                for (size_t v = 0; v < vis_count; v++) {
-                                    if (visited[v] == output_id) { seen = true; break; }
-                                }
-                                if (!seen) {
-                                    stack[sp].io = output_id;
-                                    stack[sp].depth = cur.depth + 1;
-                                    sp++;
-                                    if (vis_count < stack_cap) visited[vis_count++] = output_id;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        ok = ok && nmo_cli_record_raw(entry_item, "\n");
+             nmo_cli_record_uint(entry_item, "entry_owner_id", NULL, beh_id) &&
+             nmo_cli_record_str(entry_item, "entry_owner_name", NULL, beh_name) &&
+             nmo_cli_record_raw_fmt(entry_item, "%s.%s\n", root_label, entry_name);
+        nmo_cli_record_array_t *steps = ok ? trace_inline_array(entry_item, "steps") : NULL;
+        ok = steps != NULL &&
+             trace_add_entry_steps(steps, &flow, beh_id, entry, max_trace_depth, &walk) &&
+             nmo_cli_record_raw(entry_item, "\n");
         if (!ok) {
             nmo_cli_record_free(entry_item);
         } else {
             ok = nmo_cli_record_array_add(entries, entry_item);
         }
     }
-
-    free(stack);
-    free(visited);
-    free(links);
+    free(root_label);
+    free(walk.visited);
+    free(walk.stack);
+    free(entry_ios);
     if (!ok) {
         nmo_cli_record_free(rec);
         rec = NULL;
     }
     rc = nmo_cmd_ctx_emit_record(&c, rec, "behavior.trace", 0, false);
+    nmo_cmd_behavior_flow_dispose(&flow);
     return nmo_cmd_ctx_done(&c, rc);
 }
