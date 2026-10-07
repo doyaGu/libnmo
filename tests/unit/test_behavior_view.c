@@ -281,7 +281,8 @@ TEST(behavior_view, summarizes_boundary_counts_without_exposing_graph_arrays) {
     ASSERT_EQ(anchor, boundary.behavior_id);
     ASSERT_TRUE(boundary.internal_node_count >= 2u);
     ASSERT_EQ(0u, boundary.control_in_count);
-    ASSERT_EQ(0u, boundary.control_out_count);
+    /* Child Out -> External In leaves the anchor */
+    ASSERT_EQ(1u, boundary.control_out_count);
     ASSERT_EQ(0u, boundary.parameter_in_count);
     ASSERT_EQ(0u, boundary.parameter_out_count);
     ASSERT_EQ(0u, boundary.broken_links);

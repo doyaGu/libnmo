@@ -267,6 +267,27 @@ nmo_status_t nmo_behavior_index_build(
     }
 
     nmo_array_dispose(&scripts);
+
+    /*
+     * Behaviors no script holds, such as the graphs of a behavior file: walk
+     * each one the scripts did not reach. Owners are the same whichever walk
+     * records them first.
+     */
+    size_t object_count = nmo_object_repository_get_count(repo);
+    for (size_t i = 0; i < object_count; i++) {
+        nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
+        if (!object || nmo_object_get_class_id(object) != NMO_CID_BEHAVIOR ||
+            index_find(index, nmo_object_get_id(object)) != NULL) {
+            continue;
+        }
+        st = nmo_behavior_walk(workspace, nmo_object_get_id(object), build_visitor, &bctx);
+        if (st != NMO_OK) {
+            return st;
+        }
+        if (bctx.status != NMO_OK) {
+            return bctx.status;
+        }
+    }
     return NMO_OK;
 }
 
