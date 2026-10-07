@@ -967,6 +967,46 @@ const nmo_script_data_edge_t *const *nmo_script_model_param_uses(const nmo_scrip
     return end > lo ? &model->uses_by_source[lo] : NULL;
 }
 
+nmo_script_value_kind_t nmo_script_model_value_source(const nmo_script_model_t *model,
+                                                      nmo_object_id_t param_id,
+                                                      nmo_object_id_t *out_holder_id)
+{
+    nmo_object_id_t cur = param_id;
+    if (out_holder_id != NULL) {
+        *out_holder_id = 0;
+    }
+    if (model == NULL) {
+        return NMO_SCRIPT_VALUE_NONE;
+    }
+    for (uint32_t hops = 0; cur != 0 && hops < 64u; hops++) {
+        if (out_holder_id != NULL) {
+            *out_holder_id = cur;
+        }
+        nmo_object_t *object = nmo_object_repository_find_by_id(model->repo, cur);
+        nmo_class_id_t cid = object != NULL ? nmo_object_get_class_id(object) : 0;
+        switch (cid) {
+        case NMO_CID_PARAMETERIN: {
+            const nmo_parameterin_state_t *pin =
+                (const nmo_parameterin_state_t *)nmo_object_get_state(object);
+            nmo_object_id_t source = pin != NULL ? nmo_parameterin_source_id(pin) : 0;
+            if (source == 0) {
+                return NMO_SCRIPT_VALUE_NONE;
+            }
+            cur = source;
+            break;
+        }
+        case NMO_CID_PARAMETEROUT:
+            return NMO_SCRIPT_VALUE_COMPUTED;
+        case NMO_CID_PARAMETERLOCAL:
+        case NMO_CID_PARAMETER:
+            return NMO_SCRIPT_VALUE_SAVED;
+        default:
+            return NMO_SCRIPT_VALUE_NONE;
+        }
+    }
+    return NMO_SCRIPT_VALUE_NONE;
+}
+
 nmo_status_t nmo_script_model_param_value(const nmo_script_model_t *model,
                                           nmo_object_id_t param_id,
                                           char *buffer,

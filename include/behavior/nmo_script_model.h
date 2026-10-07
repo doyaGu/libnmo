@@ -228,6 +228,22 @@ NMO_API bool nmo_script_model_is_ancestor(const nmo_script_model_t *model,
                                           nmo_object_id_t ancestor_id,
                                           nmo_object_id_t node_id);
 
+typedef enum nmo_script_value_kind {
+    NMO_SCRIPT_VALUE_NONE = 0,   /* an input reading nothing */
+    NMO_SCRIPT_VALUE_SAVED,      /* a local or plain parameter: its saved value */
+    NMO_SCRIPT_VALUE_COMPUTED,   /* an output or operation result: set at run time */
+} nmo_script_value_kind_t;
+
+/**
+ * The parameter a parameter takes its value from: inputs are followed
+ * through their sources (shared inputs and graph inputs included) to a
+ * local, a plain parameter, or an output. `*out_holder_id` is that
+ * parameter, or the last input reached for NMO_SCRIPT_VALUE_NONE.
+ */
+NMO_API nmo_script_value_kind_t nmo_script_model_value_source(const nmo_script_model_t *model,
+                                                              nmo_object_id_t param_id,
+                                                              nmo_object_id_t *out_holder_id);
+
 /**
  * The decoded value of a parameter holding one (a local, an output, or a
  * plain parameter; not an input), into `buffer`. NMO_ERR_NOT_FOUND when the
