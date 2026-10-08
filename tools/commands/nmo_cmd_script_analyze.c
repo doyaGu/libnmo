@@ -40,7 +40,7 @@ typedef struct analyze_bundled {
 static const analyze_bundled_t analyze_bundled[] = {
     ANALYZE_BUNDLED("summary", "What each script waits for, sends, reads, writes, and activates",
                     analyze_summary_text),
-    ANALYZE_BUNDLED("messages", "Who sends and who waits for each message, across the files",
+    ANALYZE_BUNDLED("messages", "Where each message goes: the receivers each send reaches",
                     analyze_messages_text),
     ANALYZE_BUNDLED("arrays", "Who reads and writes each data array, by column, across the files",
                     analyze_arrays_text),

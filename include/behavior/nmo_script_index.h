@@ -24,6 +24,12 @@
  * holds one of that name and class. Other keys computed at run time stay
  * unknown.
  *
+ * Message uses also say where the message goes: a sender sends to an object,
+ * to every object of a group, or to every object of a class, and a receiver
+ * receives the messages of its target object, or of the object its script
+ * belongs to when it has no target. A dest the scripts look up by name gets
+ * that name, as an array does.
+ *
  * The index borrows the model and the document: it is valid while both are.
  */
 
@@ -38,13 +44,23 @@ typedef struct nmo_script_index nmo_script_index_t;
 
 typedef enum nmo_script_use_kind {
     NMO_SCRIPT_USE_MESSAGE_SEND = 0,  /* Send Message, Broadcast Message, ... */
-    NMO_SCRIPT_USE_MESSAGE_WAIT,      /* Wait Message, Switch On Message */
+    NMO_SCRIPT_USE_MESSAGE_WAIT,      /* Wait Message, Switch On Message, Check For Message */
     NMO_SCRIPT_USE_MESSAGE_OTHER,     /* any other block with a Message input */
     NMO_SCRIPT_USE_ARRAY_READ,        /* Get Cell, Get Row, Iterator, ... */
     NMO_SCRIPT_USE_ARRAY_WRITE,       /* Set Cell, Add Row, Clear Array, ... */
     NMO_SCRIPT_USE_SCRIPT_ACTIVATE,   /* Activate Script, Execute Script */
     NMO_SCRIPT_USE_SCRIPT_DEACTIVATE, /* Deactivate Script */
 } nmo_script_use_kind_t;
+
+/* Where a message use sends to, or receives from. */
+typedef enum nmo_script_route {
+    NMO_SCRIPT_ROUTE_NONE = 0,  /* not a send or a receipt */
+    NMO_SCRIPT_ROUTE_OBJECT,    /* to, or the messages of, object `route_object_id` */
+    NMO_SCRIPT_ROUTE_GROUP,     /* to every object of group `route_object_id` */
+                                /* (either may only have `route_object_name`) */
+    NMO_SCRIPT_ROUTE_BROADCAST, /* to every object of class `route_class_id` (0: any) */
+    NMO_SCRIPT_ROUTE_UNKNOWN,   /* the object is computed at run time, or not connected */
+} nmo_script_route_t;
 
 typedef struct nmo_script_use {
     nmo_script_use_kind_t kind;
@@ -58,7 +74,11 @@ typedef struct nmo_script_use {
     const char *object_name;        /* the name a by-name lookup finds the array or script by */
     int32_t column;                 /* ARRAY_* on a cell or column: its index; -1 otherwise */
     const char *column_name;        /* NULL unless the column is saved and the array names it */
-    nmo_object_id_t dest_object_id; /* MESSAGE_SEND: the Dest or Group object; 0 unless saved */
+    nmo_script_route_t route;       /* MESSAGE_SEND and MESSAGE_WAIT: where it goes */
+    nmo_object_id_t route_object_id; /* ROUTE_OBJECT, ROUTE_GROUP: the object or group; 0
+                                        when only its name is known */
+    const char *route_object_name;  /* the name a by-name lookup finds it by */
+    nmo_class_id_t route_class_id;  /* ROUTE_BROADCAST: the class; 0 for any */
 } nmo_script_use_t;
 
 NMO_API nmo_status_t nmo_script_index_build(nmo_workspace_t *workspace,
@@ -72,6 +92,8 @@ NMO_API const nmo_script_use_t *nmo_script_index_uses(const nmo_script_index_t *
 
 /** "send", "wait", "message", "read", "write", "activate", "deactivate". */
 NMO_API const char *nmo_script_use_kind_name(nmo_script_use_kind_t kind);
+/** "", "object", "group", "broadcast", "unknown". */
+NMO_API const char *nmo_script_route_name(nmo_script_route_t route);
 NMO_API bool nmo_script_use_kind_is_message(nmo_script_use_kind_t kind);
 NMO_API bool nmo_script_use_kind_is_array(nmo_script_use_kind_t kind);
 NMO_API bool nmo_script_use_kind_is_script(nmo_script_use_kind_t kind);

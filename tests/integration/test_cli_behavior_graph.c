@@ -1069,6 +1069,13 @@ TEST(cli, script_xref_text_groups_messages_arrays_and_scripts) {
     ASSERT_STR_CONTAINS(result.output, "\"AllLevel\" (looked up by name; not in this file)");
     ASSERT_STR_CONTAINS(result.output, "(activates Gameplay_Energy#4969)");
     ASSERT_STR_CONTAINS(result.output, "Unresolved");
+    /* where messages go: a dest looked up by name, and the object a receiver waits on */
+    ASSERT_STR_CONTAINS(result.output,
+                        "(sends \"BallNav activate\" to \"All_Sound\" (looked up by name))");
+    ASSERT_STR_CONTAINS(result.output,
+                        "(waits for \"BallNav activate\" on All_Gameplay#10713)");
+    ASSERT_STR_CONTAINS(result.output,
+                        "(sends \"Donner\" to every object of \"All_Sound\" (looked up by name))");
     free(result.output);
 }
 

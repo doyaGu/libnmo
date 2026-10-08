@@ -1,13 +1,14 @@
 -- The methods of the tables nmo.script.model() returns. The C side builds a
 -- snapshot of the script model and the script index as plain tables that
 -- refer to each other, and gives them these classes as metatables. This
--- chunk returns the classes; a script can add its own methods to them.
+-- chunk returns the classes, and join(); a script can add its own methods to
+-- the classes.
 
-local Model, Node, Io, Param, Operation, Link, Edge, Use, Object =
-    {}, {}, {}, {}, {}, {}, {}, {}, {}
+local Model, Node, Io, Param, Operation, Link, Edge, Use, Object, Set =
+    {}, {}, {}, {}, {}, {}, {}, {}, {}, {}
 local classes = {
     Model = Model, Node = Node, Io = Io, Param = Param, Operation = Operation,
-    Link = Link, Edge = Edge, Use = Use, Object = Object,
+    Link = Link, Edge = Edge, Use = Use, Object = Object, Set = Set,
 }
 for _, class in pairs(classes) do
     class.__index = class
@@ -283,6 +284,69 @@ function Use:key_text()
     return tostring(key)
 end
 
+-- Whether objects `a` and `b` (either may be only a name) are one object: the
+-- same table, or of one name, and of one class when both say. The files of
+-- a game share their objects by name.
+local function same_object(a, a_name, b, b_name)
+    if a ~= nil and a == b then
+        return true
+    end
+    a_name = a ~= nil and a.name or a_name
+    b_name = b ~= nil and b.name or b_name
+    if a_name == nil or a_name == "" or a_name ~= b_name then
+        return false
+    end
+    return a == nil or b == nil or a.class == nil or b.class == nil or a.class == b.class
+end
+
+-- Whether the send delivers its message to receiver `receiver` (a "wait"
+-- use): true, false, or nil when that depends on what the scripts compute at
+-- run time or on objects no loaded file holds. `set` (from join()) finds the
+-- members of a group the send only knows by name.
+function Use:reaches(receiver, set)
+    if self.kind ~= "send" or receiver.kind ~= "wait" then
+        return false
+    end
+    if self.message ~= nil and receiver.message ~= nil and self.message ~= receiver.message then
+        return false
+    end
+    if self.message == nil or receiver.message == nil or self.route == "unknown" or
+        receiver.route == "unknown" then
+        return nil
+    end
+    local listener, listener_name = receiver.listener, receiver.route_name
+    if self.route == "object" then
+        return same_object(self.dest, self.route_name, listener, listener_name)
+    elseif self.route == "group" then
+        -- the group gets it too: Ballance's scripts on a group wait for what is
+        -- sent to the group
+        if same_object(self.dest, self.route_name, listener, listener_name) then
+            return true
+        end
+        local group = self.dest
+        if (group == nil or group.members == nil) and set ~= nil then
+            group = set:object(self.route_name or (group and group.name), "CKGroup")
+        end
+        if group == nil or group.members == nil then
+            return nil
+        end
+        for _, member in ipairs(group.members) do
+            if same_object(member, nil, listener, listener_name) then
+                return true
+            end
+        end
+        return false
+    elseif self.route == "broadcast" then
+        if self.broadcast_class == nil then
+            return true
+        elseif listener == nil or listener.classes == nil then
+            return nil
+        end
+        return listener.classes[self.broadcast_class] == true
+    end
+    return nil
+end
+
 function Use:is_message() return self.kind == "send" or self.kind == "wait" or self.kind == "message" end
 function Use:is_array() return self.kind == "read" or self.kind == "write" end
 function Use:is_script() return self.kind == "activate" or self.kind == "deactivate" end
@@ -370,6 +434,84 @@ function Model:unresolved()
         end
     end
     return found
+end
+
+-- ---------------------------------------------------------------------------
+-- Several files
+-- ---------------------------------------------------------------------------
+
+-- The models of several files of one game, joined: their objects by name,
+-- and where each message goes from one file to another.
+function classes.join(models)
+    local set = setmetatable({ models = models, by_name = {} }, Set)
+    for _, m in ipairs(models) do
+        for _, object in pairs(m.objects) do
+            local list = set.by_name[object.name]
+            if list == nil then
+                list = {}
+                set.by_name[object.name] = list
+            end
+            list[#list + 1] = object
+        end
+    end
+    return set
+end
+
+-- An object named `name` (of class `class` when given) in the files: one
+-- with members first, for a group the files list in more than one place.
+function Set:object(name, class)
+    local found
+    for _, object in ipairs(self.by_name[name] or {}) do
+        if class == nil or object.class == class then
+            if object.members ~= nil and #object.members > 0 then
+                return object
+            end
+            found = found or object
+        end
+    end
+    return found
+end
+
+-- Every use of the files matching the criteria, as Model:find_uses() does.
+function Set:find_uses(criteria)
+    local found = {}
+    for _, m in ipairs(self.models) do
+        for _, use in ipairs(m:find_uses(criteria)) do
+            found[#found + 1] = use
+        end
+    end
+    return found
+end
+
+-- The receivers send `send` reaches in the files, and those it may reach
+-- (Use:reaches() is nil): two lists of "wait" uses.
+function Set:receivers(send)
+    local sure, maybe = {}, {}
+    for _, receiver in ipairs(self:find_uses{ kind = "wait" }) do
+        local reached = send:reaches(receiver, self)
+        if reached then
+            sure[#sure + 1] = receiver
+        elseif reached == nil and (receiver.message == nil or send.message == nil or
+                                   receiver.message == send.message) then
+            maybe[#maybe + 1] = receiver
+        end
+    end
+    return sure, maybe
+end
+
+-- The sends in the files that reach receiver `receiver`, and those that may.
+function Set:senders(receiver)
+    local sure, maybe = {}, {}
+    for _, send in ipairs(self:find_uses{ kind = "send" }) do
+        local reached = send:reaches(receiver, self)
+        if reached then
+            sure[#sure + 1] = send
+        elseif reached == nil and (receiver.message == nil or send.message == nil or
+                                   receiver.message == send.message) then
+            maybe[#maybe + 1] = send
+        end
+    end
+    return sure, maybe
 end
 
 return classes

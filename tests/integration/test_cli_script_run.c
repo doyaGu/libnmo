@@ -1998,22 +1998,33 @@ TEST(cli, script_analyze_bundled_messages_join_the_files)
 {
     TEST_REQUIRE_FIXTURE("Ballance/Gameplay.nmo");
     TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
+    TEST_REQUIRE_FIXTURE("Ballance/Sound.nmo");
     char args[4096];
-    snprintf(args, sizeof(args), "script analyze messages \"%s\" \"%s\" -- \"ballnav activate\"",
+    snprintf(args, sizeof(args),
+             "script analyze messages \"%s\" \"%s\" \"%s\" -- \"ballnav activate\"",
              NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo"),
-             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"),
+             NMO_TEST_DATA_FILE("Ballance/Sound.nmo"));
 
     cli_run_result_t result = run_cli_capture(args);
     ASSERT_NOT_NULL(result.output);
     ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
-    /* base.cmo sends what Gameplay.nmo waits for */
-    ASSERT_STR_CONTAINS(result.output, "\"BallNav activate\"  6 sent, 1 waited for\n");
+    ASSERT_STR_CONTAINS(result.output, "\"BallNav activate\"  6 sent, 2 received\n");
+    /* base.cmo sends to the object Gameplay.nmo holds, by name */
     ASSERT_STR_CONTAINS(result.output,
                         "  send     Send Message#2294 in Event_handler#4692 / "
-                        "Unpause Level#2364 (base.cmo)\n");
-    ASSERT_STR_CONTAINS(result.output,
-                        "  wait     Wait Message#3074 in Gameplay_Ingame#3128 / "
+                        "Unpause Level#2364 (base.cmo) to \"All_Gameplay\"\n"
+                        "             reaches   Wait Message#3074 in Gameplay_Ingame#3128 / "
                         "BallNav On/Off#3086 (Gameplay.nmo)\n");
+    /* the same message sent to All_Sound reaches only Sound.nmo's receiver */
+    ASSERT_STR_CONTAINS(result.output,
+                        "  send     Send Message#845 in Gameplay_Ingame#3128 / "
+                        "Trafo Manager#877 (Gameplay.nmo) to \"All_Sound\"\n"
+                        "             reaches   Wait Message#574 in Sound_Manager#1229 "
+                        "(Sound.nmo)\n");
+    ASSERT_STR_CONTAINS(result.output,
+                        "  receive  Wait Message#3074 in Gameplay_Ingame#3128 / "
+                        "BallNav On/Off#3086 (Gameplay.nmo) on All_Gameplay#10713\n");
     ASSERT_TRUE(strstr(result.output, "\"BallNav deactivate\"") == NULL);
     free(result.output);
 }

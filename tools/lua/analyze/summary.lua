@@ -4,7 +4,8 @@
 --
 -- Lists every root (a script, or a graph no script holds) of each file with
 -- the messages its building blocks wait for and send, the data arrays they
--- read and write, the scripts they activate, and the keys they react to.
+-- read and write, the scripts they activate, and the keys they react to. A
+-- message sent to an object other files hold names it in quotes.
 -- With <name>, only the roots whose name contains it.
 
 local filter = arg[1] and arg[1]:lower()
@@ -85,8 +86,11 @@ local function summarize(root)
             else
                 if use:is_array() then
                     text = text .. column_text(use)
-                elseif use.kind == "send" and use.dest then
-                    text = text .. " to " .. tostring(use.dest)
+                elseif use.kind == "send" and (use.dest or use.route_name) then
+                    local dest = use.dest and tostring(use.dest) or ('"' .. use.route_name .. '"')
+                    text = text .. (use.route == "group" and " to group " or " to ") .. dest
+                elseif use.kind == "send" and use.route == "broadcast" then
+                    text = text .. " to every " .. (use.broadcast_class or "object")
                 end
                 local line = by_kind[use.kind]
                 add(line.set, line.list, text)

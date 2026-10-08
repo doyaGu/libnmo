@@ -339,9 +339,32 @@ TEST(script_index, indexes_messages_arrays_and_scripts) {
     ASSERT_NOT_NULL(send);
     ASSERT_EQ(NMO_SCRIPT_USE_MESSAGE_SEND, send->kind);
     ASSERT_STR_EQ("BallNav deactivate", send->message);
-    ASSERT_EQ(10713u, send->dest_object_id);
+    ASSERT_EQ(NMO_SCRIPT_ROUTE_OBJECT, send->route);
+    ASSERT_EQ(10713u, send->route_object_id);
     ASSERT_EQ(877u, send->graph_id);
     ASSERT_EQ(3128u, send->root_id);
+
+    /* Send Message #845 sends to All_Sound, which Gameplay_Init looks up by name in
+     * another file */
+    const nmo_script_use_t *by_name_dest = test_find_use(index, 845);
+    ASSERT_NOT_NULL(by_name_dest);
+    ASSERT_EQ(NMO_SCRIPT_ROUTE_OBJECT, by_name_dest->route);
+    ASSERT_EQ(0u, by_name_dest->route_object_id);
+    ASSERT_STR_EQ("All_Sound", by_name_dest->route_object_name);
+
+    /* Send Message To Group #10664 sends "Donner" to the group All_Sound */
+    const nmo_script_use_t *to_group = test_find_use(index, 10664);
+    ASSERT_NOT_NULL(to_group);
+    ASSERT_EQ(NMO_SCRIPT_ROUTE_GROUP, to_group->route);
+    ASSERT_STR_EQ("All_Sound", to_group->route_object_name);
+
+    /* Wait Message #3074 has no target: it waits on the object its script belongs to */
+    const nmo_script_use_t *wait = test_find_use(index, 3074);
+    ASSERT_NOT_NULL(wait);
+    ASSERT_EQ(NMO_SCRIPT_USE_MESSAGE_WAIT, wait->kind);
+    ASSERT_EQ(NMO_SCRIPT_ROUTE_OBJECT, wait->route);
+    ASSERT_EQ(10713u, wait->route_object_id);
+    ASSERT_STR_EQ("object", nmo_script_route_name(wait->route));
 
     /* Get Cell #989 reads column Ball_Pos_Frame of CurrentLevel #10703 */
     const nmo_script_use_t *read = test_find_use(index, 989);

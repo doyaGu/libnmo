@@ -8,6 +8,8 @@
 #include "behavior/nmo_script_index.h"
 #include "behavior/nmo_script_model.h"
 #include "core/nmo_guid.h"
+#include "object/builtin/nmo_group_schemas.h"
+#include "object/nmo_class_ids.h"
 #include "lua/nmo_lua_script.h"
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_query.h"
@@ -154,13 +156,45 @@ static void script_push_object(const script_push_t *sp, nmo_object_id_t id)
     const char *class_name = object != NULL
         ? nmo_type_query_class_name_from_id(sp->registry, nmo_object_get_class_id(object))
         : NULL;
-    script_new(sp, "Object", 0, 4);
+    script_new(sp, "Object", 0, 8);
+    lua_pushvalue(L, -1);
+    lua_rawseti(L, sp->objects, (lua_Integer)id);
     script_set_integer(L, "id", (lua_Integer)id);
     script_set_string(L, "name", name != NULL ? name : "");
     script_set_string(L, "class", class_name);
     script_set_boolean(L, "missing", object == NULL);
-    lua_pushvalue(L, -1);
-    lua_rawseti(L, sp->objects, (lua_Integer)id);
+    if (object == NULL) {
+        return;
+    }
+    /* classes: the set of the names of its class and the classes it derives from */
+    nmo_class_id_t class_id = nmo_object_get_class_id(object);
+    script_set_integer(L, "class_id", (lua_Integer)class_id);
+    lua_newtable(L);
+    for (int depth = 0; class_id != 0 && depth < 32; depth++) {
+        const char *ancestor = nmo_type_query_class_name_from_id(sp->registry, class_id);
+        if (ancestor != NULL) {
+            lua_pushboolean(L, 1);
+            lua_setfield(L, -2, ancestor);
+        }
+        nmo_class_id_t parent = nmo_type_query_class_get_parent(sp->registry, class_id);
+        class_id = parent != class_id ? parent : 0;
+    }
+    lua_setfield(L, -2, "classes");
+    /* a group: its members */
+    if (nmo_object_get_class_id(object) == NMO_CID_GROUP) {
+        const nmo_group_state_t *group = (const nmo_group_state_t *)nmo_object_get_state(object);
+        size_t count = group != NULL ? group->object_ids.count : 0;
+        lua_createtable(L, (int)count, 0);
+        for (size_t i = 0; i < count; i++) {
+            const nmo_ref_t *ref = (const nmo_ref_t *)nmo_array_get(&group->object_ids, i);
+            nmo_object_id_t member = ref != NULL ? nmo_ref_runtime_id(ref) : 0;
+            if (member != 0) {
+                script_push_object(sp, member);
+                lua_rawseti(L, -2, (lua_Integer)lua_rawlen(L, -2) + 1);
+            }
+        }
+        lua_setfield(L, -2, "members");
+    }
 }
 
 static void script_set_object(const script_push_t *sp, const char *field, nmo_object_id_t id)
@@ -290,6 +324,8 @@ static void script_build_nodes(const script_push_t *sp)
     for (size_t i = 0; i < count; i++) {
         const nmo_script_node_t *node = &nodes[i];
         script_new(sp, "Node", 0, 32);
+        lua_pushvalue(L, sp->model_table);
+        lua_setfield(L, -2, "model");
         script_set_integer(L, "id", (lua_Integer)node->id);
         script_set_string(L, "kind", nmo_script_node_kind_name(node->kind));
         script_set_string(L, "name", node->name);
@@ -565,7 +601,9 @@ static void script_build_uses(const script_push_t *sp)
     const nmo_script_use_t *uses = nmo_script_index_uses(sp->index, &count);
     for (size_t i = 0; i < count; i++) {
         const nmo_script_use_t *use = &uses[i];
-        script_new(sp, "Use", 0, 12);
+        script_new(sp, "Use", 0, 16);
+        lua_pushvalue(L, sp->model_table);
+        lua_setfield(L, -2, "model");
         script_set_string(L, "kind", nmo_script_use_kind_name(use->kind));
         script_set_item(sp, "node", use->node_id);
         script_set_item(sp, "graph", use->graph_id);
@@ -579,7 +617,18 @@ static void script_build_uses(const script_push_t *sp)
             script_set_integer(L, "column", (lua_Integer)use->column);
         }
         script_set_string(L, "column_name", use->column_name);
-        script_set_object(sp, "dest", use->dest_object_id);
+        if (use->route != NMO_SCRIPT_ROUTE_NONE) {
+            script_set_string(L, "route", nmo_script_route_name(use->route));
+            /* the object it sends to, or receives the messages of */
+            script_set_object(sp, use->kind == NMO_SCRIPT_USE_MESSAGE_SEND ? "dest" : "listener",
+                              use->route_object_id);
+            script_set_string(L, "route_name", use->route_object_name);
+        }
+        if (use->route_class_id != 0) {
+            script_set_string(L, "broadcast_class",
+                              nmo_type_query_class_name_from_id(sp->registry,
+                                                                use->route_class_id));
+        }
         script_register(sp, 0, "uses");
         script_push_item(sp, use->node_id);
         if (!lua_isnil(L, -1)) {

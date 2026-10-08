@@ -14,6 +14,7 @@
 #include "behavior/nmo_script_index.h"
 #include "behavior/nmo_script_model.h"
 #include "object/nmo_class_ids.h"
+#include "type/nmo_type_query.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -65,6 +66,39 @@ static const char *view_unknown_key_text(const nmo_script_use_t *use)
     }
 }
 
+/* " to Dest#id", " on Owner#id", ...: where a message use goes. Heap string; NULL for none. */
+static char *view_route_text_dup(const nmo_cmd_behavior_flow_ctx_t *f, const nmo_script_use_t *use)
+{
+    bool send = use->kind == NMO_SCRIPT_USE_MESSAGE_SEND;
+    char *object = use->route_object_id
+        ? nmo_cmd_behavior_node_label_dup(f, use->route_object_id)
+        : use->route_object_name
+        ? nmo_tool_strdup_fmt("\"%s\" (looked up by name)", use->route_object_name) : NULL;
+    const char *class_name = use->route_class_id
+        ? nmo_type_query_class_name_from_id(f->registry, use->route_class_id) : NULL;
+    char *text = NULL;
+    switch (use->route) {
+    case NMO_SCRIPT_ROUTE_OBJECT:
+        text = nmo_tool_strdup_fmt("%s%s", send ? " to " : " on ", object ? object : "?");
+        break;
+    case NMO_SCRIPT_ROUTE_GROUP:
+        text = nmo_tool_strdup_fmt(" to every object of %s", object ? object : "?");
+        break;
+    case NMO_SCRIPT_ROUTE_BROADCAST:
+        text = class_name ? nmo_tool_strdup_fmt(" to every %s", class_name)
+                          : nmo_tool_strdup_fmt(" to every object");
+        break;
+    case NMO_SCRIPT_ROUTE_UNKNOWN:
+        text = nmo_tool_strdup_fmt(send ? " to an object set at run time"
+                                        : " on an object set at run time");
+        break;
+    default:
+        break;
+    }
+    free(object);
+    return text;
+}
+
 /*
  * What a use does: 'sends "Msg" to Dest#id', 'reads CurrentLevel#10703
  * [Points]', 'activates Script#id'. Heap string.
@@ -82,13 +116,12 @@ static char *view_use_text_dup(const nmo_cmd_behavior_flow_ctx_t *f, const nmo_s
     };
     const char *verb = verbs[use->kind];
     if (nmo_script_use_kind_is_message(use->kind)) {
-        char *dest = use->dest_object_id ? nmo_cmd_behavior_node_label_dup(f, use->dest_object_id)
-                                         : NULL;
+        char *route = view_route_text_dup(f, use);
         char *text = use->message
-            ? nmo_tool_strdup_fmt("%s \"%s\"%s%s", verb, use->message,
-                                  dest ? " to " : "", dest ? dest : "")
-            : nmo_tool_strdup_fmt("%s a message %s", verb, view_unknown_key_text(use));
-        free(dest);
+            ? nmo_tool_strdup_fmt("%s \"%s\"%s", verb, use->message, route ? route : "")
+            : nmo_tool_strdup_fmt("%s a message %s%s", verb, view_unknown_key_text(use),
+                                  route ? route : "");
+        free(route);
         return text;
     }
     if (use->object_id == 0 && use->object_name) {
@@ -154,10 +187,22 @@ static nmo_cli_record_t *view_use_record(const nmo_cmd_behavior_flow_ctx_t *f,
         ok = nmo_cli_record_int(item, "column", NULL, use->column) &&
              nmo_cli_record_str_opt(item, "column_name", NULL, use->column_name, NULL);
     }
-    if (ok && use->dest_object_id) {
-        ok = nmo_cli_record_uint(item, "dest_object_id", NULL, use->dest_object_id) &&
-             nmo_cli_record_str(item, "dest_name", NULL,
-                                resolve_name(f->repo, use->dest_object_id));
+    if (ok && use->route != NMO_SCRIPT_ROUTE_NONE) {
+        ok = nmo_cli_record_str(item, "route", NULL, nmo_script_route_name(use->route));
+    }
+    if (ok && use->route_object_id) {
+        ok = nmo_cli_record_uint(item, "route_object_id", NULL, use->route_object_id);
+    }
+    if (ok && (use->route_object_id || use->route_object_name)) {
+        ok = nmo_cli_record_str(item, "route_object_name", NULL,
+                                use->route_object_id ? resolve_name(f->repo, use->route_object_id)
+                                                     : use->route_object_name);
+    }
+    if (ok && use->route_class_id) {
+        const char *class_name = nmo_type_query_class_name_from_id(f->registry,
+                                                                   use->route_class_id);
+        ok = nmo_cli_record_uint(item, "route_class_id", NULL, use->route_class_id) &&
+             nmo_cli_record_str_opt(item, "route_class", NULL, class_name, NULL);
     }
     if (ok) {
         ok = nmo_cli_record_set_summary_fmt(item, "  %-10s %s  in %s  (%s)",

@@ -511,7 +511,7 @@ static void script_analyze_usage(FILE *out) {
     fprintf(out, "require(\"nmo.script\").model() builds them. print() writes to the output.\n\n");
     fprintf(out, "An analysis bundled with nmo can be named instead of a script file:\n");
     fprintf(out, "  summary        What each script waits for, sends, reads, writes, and activates\n");
-    fprintf(out, "  messages       Who sends and who waits for each message, across the files\n");
+    fprintf(out, "  messages       Where each message goes: the receivers each send reaches\n");
     fprintf(out, "  arrays         Who reads and writes each data array, by column, across the files\n");
     fprintf(out, "  interactions   How scripts start each other (-- --dot for Graphviz)\n\n");
     fprintf(out, "Options:\n");

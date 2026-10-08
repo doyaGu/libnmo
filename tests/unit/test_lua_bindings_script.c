@@ -127,7 +127,56 @@ TEST(lua_bindings_script, model_groups_uses_and_finds_nodes)
     nmo_lua_runtime_destroy(runtime);
 }
 
+TEST(lua_bindings_script, join_routes_messages_between_files)
+{
+    TEST_REQUIRE_FIXTURE("Ballance/Gameplay.nmo");
+    TEST_REQUIRE_FIXTURE("Ballance/Sound.nmo");
+    nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
+    ASSERT_NOT_NULL(runtime);
+    ASSERT_EQ(NMO_OK, nmo_lua_register_platform_bindings(runtime));
+    assert_lua_ok(
+        runtime,
+        OPEN_GAMEPLAY_MODEL
+        "local sound_doc = document.load_file(ctx, '" NMO_TEST_DATA_FILE("Ballance/Sound.nmo") "')\n"
+        "local sound = script.model(workspace_mod.create(ctx, sound_doc))\n"
+        "local set = script.join{m, sound}\n"
+        "local function use_of(model, id) return model:get(id).uses[1] end\n"
+        /* the uses know their model */
+        "assert(use_of(m, 845).model == m and m:get(845).model == m)\n"
+        /* Wait Message #574 of Sound_Manager waits on the group All_Sound */
+        "local sound_wait = use_of(sound, 574)\n"
+        "assert(sound_wait.kind == 'wait' and sound_wait.route == 'object')\n"
+        "local all_sound = sound_wait.listener\n"
+        "assert(all_sound.name == 'All_Sound' and all_sound.class == 'CKGroup')\n"
+        "assert(all_sound.classes.CKGroup and all_sound.classes.CKBeObject)\n"
+        "assert(type(all_sound.members) == 'table')\n"
+        "assert(set:object('All_Sound', 'CKGroup') == all_sound)\n"
+        /* Send Message #845 sends "BallNav activate" to All_Sound, found by name in Sound.nmo */
+        "local to_sound = use_of(m, 845)\n"
+        "assert(to_sound.dest == nil and to_sound.route_name == 'All_Sound')\n"
+        "assert(to_sound:reaches(sound_wait) == true)\n"
+        /* Send Message #584 sends it to All_Gameplay: not to Sound_Manager */
+        "local to_gameplay = use_of(m, 584)\n"
+        "assert(to_gameplay:reaches(sound_wait) == false)\n"
+        "assert(to_gameplay:reaches(use_of(m, 3074)) == true)\n"
+        "local sure, maybe = set:receivers(to_sound)\n"
+        "assert(#sure == 1 and sure[1] == sound_wait and #maybe == 0)\n"
+        /* a group send reaches the group's own scripts */
+        "local thunder = use_of(m, 10664)\n"
+        "assert(thunder.route == 'group')\n"
+        "local donner\n"
+        "for _, use in ipairs(sound:get(698).uses) do\n"
+        "  if use.message == 'Donner' then donner = use end\n"
+        "end\n"
+        "assert(thunder:reaches(donner, set) == true)\n"
+        "local senders = set:senders(donner)\n"
+        "assert(#senders == 1 and senders[1] == thunder)\n");
+
+    nmo_lua_runtime_destroy(runtime);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(lua_bindings_script, model_tables_refer_to_each_other);
     REGISTER_TEST(lua_bindings_script, model_groups_uses_and_finds_nodes);
+    REGISTER_TEST(lua_bindings_script, join_routes_messages_between_files);
 TEST_MAIN_END()

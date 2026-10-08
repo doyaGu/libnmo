@@ -13,6 +13,7 @@
 #include "object/nmo_object_repository.h"
 #include "type/nmo_param_guids.h"
 #include "type/nmo_type_guids.h"
+#include "type/nmo_type_query.h"
 #include "../runtime/runtime_internal.h"
 
 #include <stdio.h>
@@ -36,33 +37,54 @@ typedef struct bb_semantics {
     bb_key_source_t key_source;
     const char *key_input;    /* BB_KEY_INPUT */
     const char *column_input; /* array blocks on a cell or column */
-    const char *dest_input;   /* message senders */
+    const char *dest_input;   /* message senders: the object or group input */
+    nmo_script_route_t route; /* message senders: where the dest input sends to */
 } bb_semantics_t;
 
 #define BB(d1, d2) NMO_GUID_INIT(0x##d1##u, 0x##d2##u)
 
 static const bb_semantics_t bb_semantics[] = {
     /* Logics/Message */
-    {BB(A20E8D5B, DF002150), NMO_SCRIPT_USE_MESSAGE_SEND, BB_KEY_INPUT, "Message", NULL, "Dest"},
-    {BB(3D6C4AE1, 72AE2CD6), NMO_SCRIPT_USE_MESSAGE_SEND, BB_KEY_INPUT, "Message", NULL, NULL},
-    {BB(5F906952, 6DF11649), NMO_SCRIPT_USE_MESSAGE_SEND, BB_KEY_INPUT, "Message", NULL, "Group"},
-    {BB(4587FFEE, 4587FFDD), NMO_SCRIPT_USE_MESSAGE_WAIT, BB_KEY_INPUT, "Message", NULL, NULL},
-    {BB(1BB23F1D, 17FF14B9), NMO_SCRIPT_USE_MESSAGE_WAIT, BB_KEY_MESSAGE_INPUTS, NULL, NULL, NULL},
+    {BB(A20E8D5B, DF002150), NMO_SCRIPT_USE_MESSAGE_SEND, BB_KEY_INPUT, "Message", NULL, "Dest",
+     NMO_SCRIPT_ROUTE_OBJECT},
+    {BB(3D6C4AE1, 72AE2CD6), NMO_SCRIPT_USE_MESSAGE_SEND, BB_KEY_INPUT, "Message", NULL, "Type",
+     NMO_SCRIPT_ROUTE_BROADCAST},
+    {BB(5F906952, 6DF11649), NMO_SCRIPT_USE_MESSAGE_SEND, BB_KEY_INPUT, "Message", NULL, "Group",
+     NMO_SCRIPT_ROUTE_GROUP},
+    {BB(4587FFEE, 4587FFDD), NMO_SCRIPT_USE_MESSAGE_WAIT, BB_KEY_INPUT, "Message", NULL, NULL,
+     NMO_SCRIPT_ROUTE_NONE},
+    {BB(1BB23F1D, 17FF14B9), NMO_SCRIPT_USE_MESSAGE_WAIT, BB_KEY_MESSAGE_INPUTS, NULL, NULL, NULL,
+     NMO_SCRIPT_ROUTE_NONE},
+    {BB(61226639, 6D390CB7), NMO_SCRIPT_USE_MESSAGE_WAIT, BB_KEY_INPUT, "Message", NULL, NULL,
+     NMO_SCRIPT_ROUTE_NONE},
     /* Logics/Array: the target parameter is the array */
-    {BB(33B99F51, 07D95C45), NMO_SCRIPT_USE_ARRAY_READ, BB_KEY_TARGET, NULL, "Column Index", NULL},
-    {BB(33B77F41, 07B95C45), NMO_SCRIPT_USE_ARRAY_READ, BB_KEY_TARGET, NULL, NULL, NULL},
-    {BB(49064205, 10E72F7A), NMO_SCRIPT_USE_ARRAY_READ, BB_KEY_TARGET, NULL, NULL, NULL},
-    {BB(198F0AF9, 0268249F), NMO_SCRIPT_USE_ARRAY_READ, BB_KEY_TARGET, NULL, NULL, NULL},
-    {BB(6BEC4BE6, 12D64C7C), NMO_SCRIPT_USE_ARRAY_READ, BB_KEY_TARGET, NULL, "Column", NULL},
-    {BB(30ED1C6D, 4A3B7067), NMO_SCRIPT_USE_ARRAY_WRITE, BB_KEY_TARGET, NULL, "Column Index", NULL},
-    {BB(62E87901, 2DF007DD), NMO_SCRIPT_USE_ARRAY_WRITE, BB_KEY_TARGET, NULL, NULL, NULL},
-    {BB(1C7E5DC6, 3F6423C2), NMO_SCRIPT_USE_ARRAY_WRITE, BB_KEY_TARGET, NULL, NULL, NULL},
-    {BB(1FA57136, 14310857), NMO_SCRIPT_USE_ARRAY_WRITE, BB_KEY_TARGET, NULL, NULL, NULL},
-    {BB(35C9352F, 7B1A193B), NMO_SCRIPT_USE_ARRAY_WRITE, BB_KEY_TARGET, NULL, NULL, NULL},
+    {BB(33B99F51, 07D95C45), NMO_SCRIPT_USE_ARRAY_READ, BB_KEY_TARGET, NULL, "Column Index", NULL,
+     NMO_SCRIPT_ROUTE_NONE},
+    {BB(33B77F41, 07B95C45), NMO_SCRIPT_USE_ARRAY_READ, BB_KEY_TARGET, NULL, NULL, NULL,
+     NMO_SCRIPT_ROUTE_NONE},
+    {BB(49064205, 10E72F7A), NMO_SCRIPT_USE_ARRAY_READ, BB_KEY_TARGET, NULL, NULL, NULL,
+     NMO_SCRIPT_ROUTE_NONE},
+    {BB(198F0AF9, 0268249F), NMO_SCRIPT_USE_ARRAY_READ, BB_KEY_TARGET, NULL, NULL, NULL,
+     NMO_SCRIPT_ROUTE_NONE},
+    {BB(6BEC4BE6, 12D64C7C), NMO_SCRIPT_USE_ARRAY_READ, BB_KEY_TARGET, NULL, "Column", NULL,
+     NMO_SCRIPT_ROUTE_NONE},
+    {BB(30ED1C6D, 4A3B7067), NMO_SCRIPT_USE_ARRAY_WRITE, BB_KEY_TARGET, NULL, "Column Index", NULL,
+     NMO_SCRIPT_ROUTE_NONE},
+    {BB(62E87901, 2DF007DD), NMO_SCRIPT_USE_ARRAY_WRITE, BB_KEY_TARGET, NULL, NULL, NULL,
+     NMO_SCRIPT_ROUTE_NONE},
+    {BB(1C7E5DC6, 3F6423C2), NMO_SCRIPT_USE_ARRAY_WRITE, BB_KEY_TARGET, NULL, NULL, NULL,
+     NMO_SCRIPT_ROUTE_NONE},
+    {BB(1FA57136, 14310857), NMO_SCRIPT_USE_ARRAY_WRITE, BB_KEY_TARGET, NULL, NULL, NULL,
+     NMO_SCRIPT_ROUTE_NONE},
+    {BB(35C9352F, 7B1A193B), NMO_SCRIPT_USE_ARRAY_WRITE, BB_KEY_TARGET, NULL, NULL, NULL,
+     NMO_SCRIPT_ROUTE_NONE},
     /* Narratives/Script Management */
-    {BB(4C7E7BC3, 0B693155), NMO_SCRIPT_USE_SCRIPT_ACTIVATE, BB_KEY_INPUT, "Script", NULL, NULL},
-    {BB(706C5A40, 5BB31A0B), NMO_SCRIPT_USE_SCRIPT_ACTIVATE, BB_KEY_INPUT, "Script", NULL, NULL},
-    {BB(14367C05, 635B24F9), NMO_SCRIPT_USE_SCRIPT_DEACTIVATE, BB_KEY_INPUT, "Script", NULL, NULL},
+    {BB(4C7E7BC3, 0B693155), NMO_SCRIPT_USE_SCRIPT_ACTIVATE, BB_KEY_INPUT, "Script", NULL, NULL,
+     NMO_SCRIPT_ROUTE_NONE},
+    {BB(706C5A40, 5BB31A0B), NMO_SCRIPT_USE_SCRIPT_ACTIVATE, BB_KEY_INPUT, "Script", NULL, NULL,
+     NMO_SCRIPT_ROUTE_NONE},
+    {BB(14367C05, 635B24F9), NMO_SCRIPT_USE_SCRIPT_DEACTIVATE, BB_KEY_INPUT, "Script", NULL, NULL,
+     NMO_SCRIPT_ROUTE_NONE},
 };
 
 #undef BB
@@ -100,6 +122,7 @@ typedef struct index_builder {
     nmo_script_index_t *index;
     nmo_workspace_t *workspace;
     nmo_object_repository_t *repo;
+    const nmo_type_registry_t *registry;
     const nmo_script_model_t *model;
     const nmo_script_param_t *params;
 } index_builder_t;
@@ -307,6 +330,22 @@ static nmo_object_id_t index_object_named(const index_builder_t *b, const char *
     return 0;
 }
 
+/* The object named `name` that scripts can send messages to (a CKBeObject), or 0. */
+static nmo_object_id_t index_beobject_named(const index_builder_t *b, const char *name)
+{
+    size_t count = nmo_object_repository_get_count(b->repo);
+    for (size_t i = 0; i < count; i++) {
+        nmo_object_t *object = nmo_object_repository_get_by_index(b->repo, i);
+        const char *object_name = object != NULL ? nmo_object_get_name(object) : NULL;
+        if (object_name != NULL && strcmp(object_name, name) == 0 &&
+            nmo_type_query_class_is_derived_from(b->registry, nmo_object_get_class_id(object),
+                                                 NMO_CID_BEOBJECT)) {
+            return nmo_object_get_id(object);
+        }
+    }
+    return 0;
+}
+
 static const char *index_column_name(const index_builder_t *b,
                                      nmo_object_id_t array_id,
                                      int32_t column)
@@ -361,6 +400,46 @@ static nmo_object_id_t index_root(const nmo_script_model_t *model, const nmo_scr
     return cur != NULL ? cur->id : node->id;
 }
 
+/*
+ * Where message use `use` of `node` goes: a sender to its dest input, a
+ * receiver from its target, or from the object its script belongs to.
+ */
+static void index_route(const index_builder_t *b, const nmo_script_node_t *node,
+                        nmo_script_use_t *use, const bb_semantics_t *sem, bool *out_oom)
+{
+    if (use->kind == NMO_SCRIPT_USE_MESSAGE_SEND && sem != NULL) {
+        const nmo_script_param_t *dest = index_input(b, node, sem->dest_input,
+                                                     NMO_SCRIPT_PARAM_INPUT);
+        int32_t class_id = 0;
+        if (sem->route == NMO_SCRIPT_ROUTE_BROADCAST) {
+            use->route = NMO_SCRIPT_ROUTE_BROADCAST;
+            if (dest != NULL && index_saved_int(b, dest->id, &class_id) && class_id > 0) {
+                use->route_class_id = (nmo_class_id_t)class_id;
+            }
+            return;
+        }
+        use->route_object_id = dest != NULL ? index_saved_object(b, dest->id) : 0;
+        if (use->route_object_id == 0 && dest != NULL) {
+            use->route_object_name = index_lookup_name(b, dest->id, out_oom);
+            if (use->route_object_name != NULL) {
+                use->route_object_id = index_beobject_named(b, use->route_object_name);
+            }
+        }
+        use->route = (use->route_object_id != 0 || use->route_object_name != NULL)
+            ? sem->route : NMO_SCRIPT_ROUTE_UNKNOWN;
+    } else if (use->kind == NMO_SCRIPT_USE_MESSAGE_WAIT) {
+        const nmo_script_param_t *target = index_target(b, node);
+        if (target != NULL) {
+            use->route_object_id = index_saved_object(b, target->id);
+        } else {
+            const nmo_script_node_t *root = nmo_script_model_find_node(b->model, use->root_id);
+            use->route_object_id = root != NULL ? root->owner_object_id : 0;
+        }
+        use->route = use->route_object_id != 0 ? NMO_SCRIPT_ROUTE_OBJECT
+                                                : NMO_SCRIPT_ROUTE_UNKNOWN;
+    }
+}
+
 /* One use of `node` with key input `key` (NULL when it has none). */
 static bool index_add_use(const index_builder_t *b,
                           const nmo_script_node_t *node,
@@ -383,9 +462,7 @@ static bool index_add_use(const index_builder_t *b,
         if (key != NULL) {
             use->message = index_saved_message(b, key->id, &use->key_value, &oom);
         }
-        const nmo_script_param_t *dest =
-            sem != NULL ? index_input(b, node, sem->dest_input, NMO_SCRIPT_PARAM_INPUT) : NULL;
-        use->dest_object_id = dest != NULL ? index_saved_object(b, dest->id) : 0;
+        index_route(b, node, use, sem, &oom);
     } else {
         if (key != NULL) {
             index_saved_value(b, key->id, &use->key_value);
@@ -460,6 +537,7 @@ nmo_status_t nmo_script_index_build(nmo_workspace_t *workspace,
         .index = index,
         .workspace = workspace,
         .repo = nmo_workspace_internal_repository(workspace),
+        .registry = nmo_workspace_internal_type_registry(workspace),
         .model = model,
         .params = nmo_script_model_params(model, NULL),
     };
@@ -508,6 +586,17 @@ const char *nmo_script_use_kind_name(nmo_script_use_kind_t kind)
     case NMO_SCRIPT_USE_SCRIPT_ACTIVATE:   return "activate";
     case NMO_SCRIPT_USE_SCRIPT_DEACTIVATE: return "deactivate";
     default:                               return "?";
+    }
+}
+
+const char *nmo_script_route_name(nmo_script_route_t route)
+{
+    switch (route) {
+    case NMO_SCRIPT_ROUTE_OBJECT:    return "object";
+    case NMO_SCRIPT_ROUTE_GROUP:     return "group";
+    case NMO_SCRIPT_ROUTE_BROADCAST: return "broadcast";
+    case NMO_SCRIPT_ROUTE_UNKNOWN:   return "unknown";
+    default:                         return "";
     }
 }
 
