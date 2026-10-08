@@ -181,15 +181,22 @@ To run a script against a document with load, validate and save handled for you 
 callback with `nmo_behavior_execution_lua_runtime()` (declared in `lua/nmo_lua_behavior.h`; the
 runtime is created on first use).
 
+To analyze scripts rather than edit them, `nmo_lua_push_script_model()` pushes the script model
+of a workspace as Lua tables, and `nmo_lua_runtime_execute_file()` runs a script file with
+arguments; see [Analyzing Behavior Scripts with Lua](lua-script-analysis.md).
+
 | Function                                  | Header                           |
 |-------------------------------------------|----------------------------------|
 | `nmo_lua_runtime_create()`                | `include/lua/nmo_lua_runtime.h`  |
 | `nmo_lua_runtime_destroy()`               | `include/lua/nmo_lua_runtime.h`  |
 | `nmo_lua_runtime_execute_string()`        | `include/lua/nmo_lua_runtime.h`  |
+| `nmo_lua_runtime_execute_file()` / `_execute_buffer()` | `include/lua/nmo_lua_runtime.h`  |
+| `nmo_lua_runtime_state()`                 | `include/lua/nmo_lua_runtime.h`  |
 | `nmo_lua_runtime_register_module()`       | `include/lua/nmo_lua_runtime.h`  |
 | `nmo_behavior_execution_lua_runtime()`    | `include/lua/nmo_lua_behavior.h` |
-| `nmo_lua_register_core_bindings()` and the other `nmo_lua_register_*_bindings()` (context, document, workspace, session, runtime, object, type, behavior, plan, format, platform) | `include/lua/nmo_lua_bindings.h` |
+| `nmo_lua_register_core_bindings()` and the other `nmo_lua_register_*_bindings()` (context, document, workspace, session, runtime, object, type, behavior, plan, format, script, platform) | `include/lua/nmo_lua_bindings.h` |
 | `nmo_lua_handle_scope_create()` / `_retain()` / `_release()` / `_invalidate()` | `include/lua/nmo_lua_handles.h`  |
+| `nmo_lua_push_script_model()`             | `include/lua/nmo_lua_script.h`   |
 
 ## Extension System
 

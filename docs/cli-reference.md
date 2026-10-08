@@ -84,6 +84,20 @@ nmo patch diff <patch.json>                                     # Preview a rewr
 `replace-bb` also accepts `--dry-run`. `fold` is analysis only for now: it reports the planned
 fold without saving, and `--dry-run` is currently required.
 
+## Script Analysis
+
+```
+nmo script view [--recursive] [--all | <id>] <file>   # A graph as readable blocks
+nmo script xref [--messages] [--arrays] [--scripts] [--name <pattern>] <file>
+nmo script analyze <script.lua | analysis> <file>... [-- <arg>...]   # Run a Lua analysis
+nmo script analyze --list                             # The bundled analyses
+```
+
+`script xref` cross-references who sends and waits for each message, reads and writes each
+data array, and activates each script. `script analyze` runs a Lua script over the script
+models of one or more files, read-only; `summary`, `messages`, `arrays`, and `interactions`
+are bundled. See [Analyzing Behavior Scripts with Lua](lua-script-analysis.md).
+
 ## Script Editing
 
 ```
