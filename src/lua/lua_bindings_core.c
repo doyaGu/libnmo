@@ -90,5 +90,10 @@ nmo_status_t nmo_lua_register_platform_bindings(nmo_lua_runtime_t *runtime)
         return status;
     }
 
+    status = nmo_lua_register_script_bindings(runtime);
+    if (status != NMO_OK) {
+        return status;
+    }
+
     return NMO_OK;
 }

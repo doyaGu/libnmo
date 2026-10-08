@@ -162,6 +162,7 @@ add_unit_test(test_lua_bindings_type)
 add_unit_test(test_lua_bindings_behavior)
 add_unit_test(test_lua_bindings_plan)
 add_unit_test(test_lua_bindings_format)
+add_unit_test(test_lua_bindings_script)
 add_unit_test(test_app_util)
 target_link_libraries(test_app_util PRIVATE yyjson)
 add_unit_test(test_chunk_inspect_api)
@@ -301,7 +302,7 @@ foreach(_nmo_test IN ITEMS
         test_lua_runtime test_lua_bindings test_lua_bindings_document
         test_lua_bindings_session_runtime test_lua_bindings_object
         test_lua_bindings_type test_lua_bindings_behavior
-        test_lua_bindings_plan test_lua_bindings_format)
+        test_lua_bindings_plan test_lua_bindings_format test_lua_bindings_script)
     target_link_libraries(${_nmo_test} PRIVATE nmo_lua)
 endforeach()
 foreach(_nmo_test IN ITEMS

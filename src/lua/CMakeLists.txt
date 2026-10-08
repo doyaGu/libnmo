@@ -12,6 +12,7 @@ set(NMO_LUA_SOURCES
     lua_bindings_format.c
     lua_bindings_object.c
     lua_bindings_runtime.c
+    lua_bindings_script.c
     lua_bindings_session.c
     lua_bindings_type.c
     lua_bindings_workspace.c
@@ -24,12 +25,20 @@ set(NMO_LUA_SOURCES
 )
 list(TRANSFORM NMO_LUA_SOURCES PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/")
 
+# The methods of the nmo.script tables, compiled into lua_bindings_script.c. A
+# target generates them: in a shared build the library is defined elsewhere.
+nmo_embed_text("${CMAKE_CURRENT_SOURCE_DIR}/lua_script_model.lua"
+               "${CMAKE_CURRENT_BINARY_DIR}/lua_script_model.lua.inc")
+add_custom_target(nmo_lua_embedded DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/lua_script_model.lua.inc")
+
 if(NMO_BUILD_SHARED)
     # A shared build is a single library: the component compiles into nmo, and
     # nmo_lua is an interface target so consumers link it the same way.
     target_sources(nmo PRIVATE ${NMO_LUA_SOURCES})
     target_link_libraries(nmo PRIVATE lua::lua)
     target_include_directories(nmo PUBLIC $<BUILD_INTERFACE:${LUA_RESOLVED_SOURCE_ROOT}/src>)
+    target_include_directories(nmo PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+    add_dependencies(nmo nmo_lua_embedded)
     add_library(nmo_lua INTERFACE)
     target_link_libraries(nmo_lua INTERFACE nmo)
     set(NMO_LUA_PC_LIBS "")
@@ -37,6 +46,8 @@ else()
     add_library(nmo_lua STATIC ${NMO_LUA_SOURCES} $<TARGET_OBJECTS:liblua_objects>)
     target_link_libraries(nmo_lua PUBLIC nmo_edit)
     target_include_directories(nmo_lua PUBLIC $<BUILD_INTERFACE:${LUA_RESOLVED_SOURCE_ROOT}/src>)
+    target_include_directories(nmo_lua PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+    add_dependencies(nmo_lua nmo_lua_embedded)
     set(NMO_LUA_PC_LIBS "-lnmo_lua")
 endif()
 add_library(nmo::lua ALIAS nmo_lua)

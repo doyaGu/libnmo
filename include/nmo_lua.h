@@ -19,5 +19,6 @@
 #include "lua/nmo_lua_behavior.h"
 #include "lua/nmo_lua_bindings.h"
 #include "lua/nmo_lua_handles.h"
+#include "lua/nmo_lua_script.h"
 
 #endif /* NMO_LUA_H */

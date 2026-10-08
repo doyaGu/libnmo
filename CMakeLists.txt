@@ -449,6 +449,7 @@ install(DIRECTORY include/
 # library, and in a shared build compiles into the shared nmo library. The Lua
 # and project components build on the edit component.
 set(NMO_THIRD_PARTY_DOCDIR "${CMAKE_INSTALL_DOCDIR}/third-party")
+include(cmake/NmoEmbedText.cmake)
 add_subdirectory(src/edit)
 add_subdirectory(src/lua)
 add_subdirectory(src/project)
