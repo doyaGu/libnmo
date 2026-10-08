@@ -238,6 +238,8 @@ _nmo_action_flags() {
         script/v/) echo '--recursive --all' ;;
         script/xref/) echo '--messages --arrays --scripts --name' ;;
         script/x/) echo '--messages --arrays --scripts --name' ;;
+        script/analyze/) echo '--list' ;;
+        script/a/) echo '--list' ;;
         script/run/) echo '' ;;
         script/node/) echo '' ;;
         script/io/) echo '' ;;
@@ -487,6 +489,8 @@ _nmo_actions() {
                 'v:Alias for view'
                 'xref:Cross-reference messages, arrays, and scripts'
                 'x:Alias for xref'
+                'analyze:Run a Lua analysis over script models'
+                'a:Alias for analyze'
                 'run:Run Lua script automation'
                 'node:Script node editing'
                 'io:Script IO editing'

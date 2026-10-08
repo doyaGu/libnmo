@@ -61,6 +61,7 @@ add_executable(nmo_cli
     commands/nmo_cmd_patch.c
     commands/nmo_cmd_parameter.c
     commands/nmo_cmd_script.c
+    commands/nmo_cmd_script_analyze.c
     commands/nmo_cmd_script_edit.c
     commands/nmo_cmd_script_graph.c
     commands/nmo_cmd_script_param.c
@@ -80,6 +81,15 @@ add_executable(nmo_cli
 )
 set_target_properties(nmo_cli PROPERTIES OUTPUT_NAME nmo)
 target_link_libraries(nmo_cli PRIVATE nmo_project nmo_lua nmo_edit nmo yyjson)
+
+# The analyses `nmo script analyze` bundles, compiled into nmo_cmd_script_analyze.c.
+foreach(_nmo_analysis IN ITEMS summary messages arrays interactions)
+    set(_nmo_analysis_inc "${CMAKE_CURRENT_BINARY_DIR}/analyze/${_nmo_analysis}.lua.inc")
+    nmo_embed_text("${CMAKE_CURRENT_SOURCE_DIR}/lua/analyze/${_nmo_analysis}.lua"
+                   "${_nmo_analysis_inc}")
+    target_sources(nmo_cli PRIVATE "${_nmo_analysis_inc}")
+endforeach()
+target_include_directories(nmo_cli PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 
 if(MINGW AND NMO_MINGW_STATIC_RUNTIME)
     target_link_options(nmo_cli PRIVATE -static)

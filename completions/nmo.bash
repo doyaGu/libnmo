@@ -60,7 +60,7 @@ _nmo() {
             behavior) echo 'list ls stats st show s graph g graph-boundary replace-bb fold fold-candidates dump d find f trace tr add-link remove-link interface iface' ;;
             patch) echo 'apply diff' ;;
             parameter) echo 'list ls show s dump d set' ;;
-            script) echo 'graph g view v xref x run node io link param op' ;;
+            script) echo 'graph g view v xref x analyze a run node io link param op' ;;
             resource) echo 'list ls show s extract x import imp replace rep remove rm info' ;;
             texture) echo 'list ls show s extract x replace rep' ;;
             data) echo 'list ls show s dump d set-cell sc' ;;
@@ -228,6 +228,8 @@ _nmo() {
             script/v/) echo '--recursive --all' ;;
             script/xref/) echo '--messages --arrays --scripts --name' ;;
             script/x/) echo '--messages --arrays --scripts --name' ;;
+            script/analyze/) echo '--list' ;;
+            script/a/) echo '--list' ;;
             script/run/) echo '' ;;
             script/node/) echo '' ;;
             script/io/) echo '' ;;

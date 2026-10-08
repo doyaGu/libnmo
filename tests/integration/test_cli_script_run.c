@@ -1969,6 +1969,120 @@ TEST(cli, script_run_validation_failure_does_not_write_output)
     ASSERT_FALSE(file_exists(output_path));
 }
 
+TEST(cli, script_analyze_runs_a_script_over_the_models_of_each_file)
+{
+    TEST_REQUIRE_FIXTURE("Ballance/Gameplay.nmo");
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
+    char script_path[1024];
+    char args[4096];
+    ASSERT_TRUE(build_repo_fixture_path("tests/fixtures/lua/script_analyze_models.lua",
+                                        script_path, sizeof(script_path)));
+    snprintf(args, sizeof(args), "script analyze \"%s\" \"%s\" \"%s\" -- one two", script_path,
+             NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo"),
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "files\t2\tGameplay.nmo\tbase.cmo\n");
+    ASSERT_STR_CONTAINS(result.output, "args\tone\ttwo\ttrue\n");
+    ASSERT_STR_CONTAINS(result.output,
+                        "send\tSend Message#495 in Gameplay_Ingame#3128 / Trafo Manager#877\t"
+                        "BallNav deactivate\n");
+    ASSERT_STR_CONTAINS(result.output, "scripts\tGameplay.nmo\ttrue\n");
+    ASSERT_STR_CONTAINS(result.output, "scripts\tbase.cmo\ttrue\n");
+    free(result.output);
+}
+
+TEST(cli, script_analyze_bundled_messages_join_the_files)
+{
+    TEST_REQUIRE_FIXTURE("Ballance/Gameplay.nmo");
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
+    char args[4096];
+    snprintf(args, sizeof(args), "script analyze messages \"%s\" \"%s\" -- \"ballnav activate\"",
+             NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo"),
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    /* base.cmo sends what Gameplay.nmo waits for */
+    ASSERT_STR_CONTAINS(result.output, "\"BallNav activate\"  6 sent, 1 waited for\n");
+    ASSERT_STR_CONTAINS(result.output,
+                        "  send     Send Message#2294 in Event_handler#4692 / "
+                        "Unpause Level#2364 (base.cmo)\n");
+    ASSERT_STR_CONTAINS(result.output,
+                        "  wait     Wait Message#3074 in Gameplay_Ingame#3128 / "
+                        "BallNav On/Off#3086 (Gameplay.nmo)\n");
+    ASSERT_TRUE(strstr(result.output, "\"BallNav deactivate\"") == NULL);
+    free(result.output);
+}
+
+TEST(cli, script_analyze_bundled_analyses_run)
+{
+    TEST_REQUIRE_FIXTURE("Ballance/Gameplay.nmo");
+    char args[4096];
+    snprintf(args, sizeof(args), "script analyze summary \"%s\" -- gameplay_energy",
+             NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo"));
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "  Gameplay_Energy#4969 (on All_Gameplay#10713): ");
+    ASSERT_STR_CONTAINS(result.output, "    writes       Energy#10709[Lifes], ");
+    ASSERT_STR_CONTAINS(result.output, "    keys         Key Event(F3)\n");
+    free(result.output);
+
+    snprintf(args, sizeof(args), "script analyze arrays \"%s\" -- currentlevel",
+             NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo"));
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "\"CurrentLevel\"  CurrentLevel#10703\n");
+    ASSERT_STR_CONTAINS(result.output, "  read   [Ball_Pos_Frame]         Get Cell#989 in "
+                                       "Gameplay_Ingame#3128 / Set Init-Positions#1052\n");
+    free(result.output);
+
+    snprintf(args, sizeof(args), "script analyze interactions \"%s\" -- --dot",
+             NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo"));
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "digraph interactions {\n");
+    ASSERT_STR_CONTAINS(result.output,
+                        "  \"Gameplay_Ingame#3128\" -> \"Gameplay_Energy#4969\" [label=");
+    free(result.output);
+}
+
+TEST(cli, script_analyze_reports_unknown_and_failing_scripts)
+{
+    TEST_REQUIRE_FIXTURE("Ballance/Gameplay.nmo");
+    char script_path[1024];
+    char args[4096];
+    snprintf(args, sizeof(args), "script analyze no-such-analysis \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo"));
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_ARG_ERROR, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "neither a Lua file nor a bundled analysis");
+    free(result.output);
+
+    ASSERT_TRUE(build_repo_fixture_path("tests/fixtures/lua/script_analyze_error.lua",
+                                        script_path, sizeof(script_path)));
+    snprintf(args, sizeof(args), "script analyze \"%s\" \"%s\"", script_path,
+             NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo"));
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_NE(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "script_analyze_error.lua:4: analysis failure over 1 file(s)");
+    free(result.output);
+
+    result = run_cli_capture("script analyze --list");
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "  interactions   ");
+    free(result.output);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, script_run_dry_run_emits_frozen_json_contract);
     REGISTER_TEST(cli, script_run_applies_changes_through_executor);
@@ -2004,5 +2118,9 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, script_run_noop_emits_schema_v2_report);
     REGISTER_TEST(cli, script_run_runtime_error_does_not_write_output);
     REGISTER_TEST(cli, script_run_validation_failure_does_not_write_output);
+    REGISTER_TEST(cli, script_analyze_runs_a_script_over_the_models_of_each_file);
+    REGISTER_TEST(cli, script_analyze_bundled_messages_join_the_files);
+    REGISTER_TEST(cli, script_analyze_bundled_analyses_run);
+    REGISTER_TEST(cli, script_analyze_reports_unknown_and_failing_scripts);
 TEST_MAIN_END()
 

@@ -500,6 +500,24 @@ static void script_xref_usage(FILE *out) {
     fprintf(out, "  --name <pattern>  Only keys whose name matches the wildcard pattern\n");
 }
 
+static void script_analyze_usage(FILE *out) {
+    fprintf(out, "Usage: nmo script analyze <script.lua | analysis> <file>... [-- <arg>...]\n");
+    fprintf(out, "       nmo script analyze --list\n\n");
+    fprintf(out, "Run a Lua script over the script models of the files, without changing them.\n");
+    fprintf(out, "The global `models` lists one model per file (with .path and .name), and\n");
+    fprintf(out, "`model` is the first; the arguments after -- are the script's `arg` and `...`.\n");
+    fprintf(out, "Each model holds the nodes, IOs, parameters and their values, operations,\n");
+    fprintf(out, "links, data edges, and message, array, and script uses of its file, as\n");
+    fprintf(out, "require(\"nmo.script\").model() builds them. print() writes to the output.\n\n");
+    fprintf(out, "An analysis bundled with nmo can be named instead of a script file:\n");
+    fprintf(out, "  summary        What each script waits for, sends, reads, writes, and activates\n");
+    fprintf(out, "  messages       Who sends and who waits for each message, across the files\n");
+    fprintf(out, "  arrays         Who reads and writes each data array, by column, across the files\n");
+    fprintf(out, "  interactions   How scripts start each other (-- --dot for Graphviz)\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  --list            List the bundled analyses\n");
+}
+
 static void script_run_usage(FILE *out) {
     fprintf(out,
             "Usage: nmo script run [--dry-run] <script.lua> <file> -o <output>\n\n");
@@ -1164,6 +1182,7 @@ static const nmo_cli_action_t script_actions[] = {
     ACTION("graph", "g", "Export script edit graph", nmo_cmd_script_graph, script_graph_usage, NMO_REPL_ACTION_READ_SESSION),
     ACTION("view", "v", "Show a graph as readable blocks", nmo_cmd_script_view, script_view_usage, NMO_REPL_ACTION_READ_SESSION),
     ACTION("xref", "x", "Cross-reference messages, arrays, and scripts", nmo_cmd_script_xref, script_xref_usage, NMO_REPL_ACTION_READ_SESSION),
+    ACTION("analyze", "a", "Run a Lua analysis over script models", nmo_cmd_script_analyze, script_analyze_usage, NMO_REPL_ACTION_READ_NO_SESSION),
     ACTION("run", NULL, "Run Lua script automation", nmo_cmd_script_run, script_run_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),
     ACTION("node", NULL, "Script node editing", nmo_cmd_script_node, script_node_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),
     ACTION("io", NULL, "Script IO editing", nmo_cmd_script_io, script_io_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),

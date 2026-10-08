@@ -236,6 +236,7 @@ if(TARGET nmo_cli)
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_patch.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_parameter.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_script.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_script_analyze.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_script_edit.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_script_graph.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_script_param.c
@@ -259,7 +260,10 @@ if(TARGET nmo_cli)
         write_semantic_probe.c
         ${REPL_COMMAND_MIRROR_SOURCES}
     )
-    target_include_directories(test_repl_write_commands PRIVATE ${PROJECT_SOURCE_DIR}/tools)
+    # nmo_cli generates the analyses nmo_cmd_script_analyze.c includes.
+    add_dependencies(test_repl_write_commands nmo_cli)
+    target_include_directories(test_repl_write_commands PRIVATE ${PROJECT_SOURCE_DIR}/tools
+                               ${PROJECT_BINARY_DIR}/tools)
     target_link_libraries(test_repl_write_commands PRIVATE nmo_project nmo_lua nmo test_framework yyjson)
     add_test(NAME test_repl_write_commands COMMAND test_repl_write_commands)
     set_tests_properties(test_repl_write_commands PROPERTIES SKIP_RETURN_CODE 77)
@@ -271,7 +275,9 @@ if(TARGET nmo_cli)
         test_repl_read_commands.c
         ${REPL_COMMAND_MIRROR_SOURCES}
     )
-    target_include_directories(test_repl_read_commands PRIVATE ${PROJECT_SOURCE_DIR}/tools)
+    add_dependencies(test_repl_read_commands nmo_cli)
+    target_include_directories(test_repl_read_commands PRIVATE ${PROJECT_SOURCE_DIR}/tools
+                               ${PROJECT_BINARY_DIR}/tools)
     target_compile_definitions(test_repl_read_commands PRIVATE
         NMO_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
     )
