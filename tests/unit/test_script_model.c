@@ -351,9 +351,62 @@ TEST(script_index, indexes_messages_arrays_and_scripts) {
     test_close_workspace(ctx, session, document, workspace);
 }
 
+TEST(script_model, decodes_saved_values_as_data) {
+    TEST_REQUIRE_FIXTURE("Ballance/Gameplay.nmo");
+    nmo_context_t *ctx = NULL;
+    nmo_session_t *session = NULL;
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
+    ASSERT_EQ(NMO_OK, test_open_workspace(NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo"),
+                                          &ctx, &session, &document, &workspace));
+    nmo_script_model_t *model = NULL;
+    ASSERT_EQ(NMO_OK, nmo_script_model_build(workspace, &model));
+
+    /* Every kind of value a script saves turns up */
+    size_t kinds[NMO_SCRIPT_DATUM_OTHER + 1] = {0};
+    size_t param_count = 0;
+    const nmo_script_param_t *params = nmo_script_model_params(model, &param_count);
+    char text[256];
+    nmo_script_datum_t datum;
+    for (size_t i = 0; i < param_count; i++) {
+        if (nmo_script_model_param_datum(model, params[i].id, &datum, text, sizeof(text)) ==
+            NMO_OK) {
+            kinds[datum.kind]++;
+        }
+    }
+    for (int kind = NMO_SCRIPT_DATUM_BOOLEAN; kind < NMO_SCRIPT_DATUM_OTHER; kind++) {
+        ASSERT_TRUE(kinds[kind] > 0);
+    }
+
+    /* Send Message #495 sends the message its Message input reads */
+    const nmo_script_node_t *send = nmo_script_model_find_node(model, 495);
+    ASSERT_NOT_NULL(send);
+    nmo_object_id_t holder = 0;
+    const nmo_script_param_t *message = NULL;
+    for (size_t i = 0; i < send->param_count; i++) {
+        if (strcmp(params[send->first_param + i].name, "Message") == 0) {
+            message = &params[send->first_param + i];
+        }
+    }
+    ASSERT_NOT_NULL(message);
+    ASSERT_EQ(NMO_SCRIPT_VALUE_SAVED, nmo_script_model_value_source(model, message->id, &holder));
+    ASSERT_EQ(NMO_OK, nmo_script_model_param_datum(model, holder, &datum, text, sizeof(text)));
+    ASSERT_EQ(NMO_SCRIPT_DATUM_MESSAGE, datum.kind);
+    ASSERT_STR_EQ("BallNav deactivate", datum.text);
+
+    /* An input holds no value of its own */
+    ASSERT_EQ(NMO_ERR_NOT_FOUND,
+              nmo_script_model_param_datum(model, message->id, &datum, text, sizeof(text)));
+    ASSERT_EQ(NMO_SCRIPT_DATUM_NONE, datum.kind);
+
+    nmo_script_model_destroy(model);
+    test_close_workspace(ctx, session, document, workspace);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(script_model, models_a_graph_no_script_holds);
     REGISTER_TEST(script_model, models_ballance_base_scripts);
     REGISTER_TEST(script_model, names_the_holder_of_an_exported_input);
+    REGISTER_TEST(script_model, decodes_saved_values_as_data);
     REGISTER_TEST(script_index, indexes_messages_arrays_and_scripts);
 TEST_MAIN_END()

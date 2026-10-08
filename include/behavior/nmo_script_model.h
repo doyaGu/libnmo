@@ -254,6 +254,44 @@ NMO_API nmo_status_t nmo_script_model_param_value(const nmo_script_model_t *mode
                                                   char *buffer,
                                                   size_t buffer_size);
 
+typedef enum nmo_script_datum_kind {
+    NMO_SCRIPT_DATUM_NONE = 0, /* no saved value */
+    NMO_SCRIPT_DATUM_BOOLEAN,  /* boolean */
+    NMO_SCRIPT_DATUM_INTEGER,  /* integer: integers, enumerations, flags, keys */
+    NMO_SCRIPT_DATUM_FLOAT,    /* number */
+    NMO_SCRIPT_DATUM_STRING,   /* text: the string */
+    NMO_SCRIPT_DATUM_OBJECT,   /* object_id: the object referenced; 0 for none */
+    NMO_SCRIPT_DATUM_MESSAGE,  /* integer: the message index; text: its name */
+    NMO_SCRIPT_DATUM_FLOATS,   /* floats: a vector, color, box, ... of floats only */
+    NMO_SCRIPT_DATUM_OTHER,    /* a value only nmo_script_model_param_value() describes */
+} nmo_script_datum_kind_t;
+
+#define NMO_SCRIPT_DATUM_MAX_FLOATS 16u
+
+/* A saved parameter value as data. */
+typedef struct nmo_script_datum {
+    nmo_script_datum_kind_t kind;
+    bool boolean;
+    int64_t integer;
+    double number;
+    nmo_object_id_t object_id;
+    float floats[NMO_SCRIPT_DATUM_MAX_FLOATS];
+    uint32_t float_count;
+    const char *text;   /* in the caller's buffer; NULL unless STRING or MESSAGE */
+} nmo_script_datum_t;
+
+/**
+ * The value of a parameter holding one, as nmo_script_model_param_value()
+ * reads it, as data. A string or message name goes into `text_buffer`
+ * (truncated to fit). NMO_ERR_NOT_FOUND with a NONE datum when the parameter
+ * has no value.
+ */
+NMO_API nmo_status_t nmo_script_model_param_datum(const nmo_script_model_t *model,
+                                                  nmo_object_id_t param_id,
+                                                  nmo_script_datum_t *out_datum,
+                                                  char *text_buffer,
+                                                  size_t text_buffer_size);
+
 /**
  * "Name#id" for a node, "Name(Operation)#id" for an Op building block, and
  * "Operation#id" for a parameter operation, into `buffer`. Returns the

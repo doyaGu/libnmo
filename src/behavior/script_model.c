@@ -20,10 +20,13 @@
 #include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_context.h"
+#include "object/nmo_manager_guids.h"
 #include "object/nmo_object_enum_defs.h"
 #include "object/nmo_object_repository.h"
 #include "runtime/nmo_workspace.h"
+#include "type/nmo_param_guids.h"
 #include "type/nmo_reflection.h"
+#include "type/nmo_type_guids.h"
 #include "type/nmo_type_system.h"
 #include "../runtime/runtime_internal.h"
 
@@ -1034,6 +1037,148 @@ nmo_status_t nmo_script_model_param_value(const nmo_script_model_t *model,
         return NMO_ERR_NOT_FOUND;
     }
     return status;
+}
+
+/* Built-in types the datum decodes: their value is an int, a float, a boolean, a string,
+ * or floats only. */
+#define MODEL_TYPE(name) NMO_GUID_INIT(name##_D1, name##_D2)
+static const nmo_guid_t model_basic_types[] = {
+    MODEL_TYPE(CKPGUID_INT), NMO_GUID_INIT(0xfa6e1bdd, 0x62d2abd7) /* KEY */,
+    MODEL_TYPE(CKPGUID_FLOAT), MODEL_TYPE(CKPGUID_BOOL), MODEL_TYPE(CKPGUID_STRING),
+    MODEL_TYPE(CKPGUID_2DVECTOR), MODEL_TYPE(CKPGUID_VECTOR), MODEL_TYPE(CKPGUID_VECTOR4),
+    MODEL_TYPE(CKPGUID_QUATERNION), MODEL_TYPE(CKPGUID_EULERANGLES), MODEL_TYPE(CKPGUID_MATRIX),
+    MODEL_TYPE(CKPGUID_RECT), MODEL_TYPE(CKPGUID_COLOR), MODEL_TYPE(CKPGUID_BOX),
+};
+#undef MODEL_TYPE
+#define MODEL_FIRST_FLOATS_TYPE 5u
+
+/* The index in model_basic_types of the type `guid` is or derives from through the
+ * registry's base types; -1 when none. `*out_category` is the category of `guid`. */
+static int model_basic_type(const nmo_script_model_t *model, nmo_guid_t guid,
+                            uint16_t *out_category)
+{
+    const size_t count = sizeof(model_basic_types) / sizeof(model_basic_types[0]);
+    nmo_guid_t current = guid;
+    *out_category = 0;
+    for (int depth = 0; depth < 16 && !nmo_guid_is_null(current); depth++) {
+        for (size_t i = 0; i < count; i++) {
+            if (nmo_guid_equals(current, model_basic_types[i])) {
+                return (int)i;
+            }
+        }
+        const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(model->registry,
+                                                                           current);
+        if (type == NULL) {
+            break;
+        }
+        if (depth == 0) {
+            *out_category = type->category;
+        }
+        current = type->base_type;
+    }
+    return -1;
+}
+
+static void model_copy_text(const char *text, size_t length, char *buffer, size_t buffer_size)
+{
+    if (length >= buffer_size) {
+        length = buffer_size - 1;
+    }
+    memcpy(buffer, text, length);
+    buffer[length] = '\0';
+}
+
+nmo_status_t nmo_script_model_param_datum(const nmo_script_model_t *model,
+                                          nmo_object_id_t param_id,
+                                          nmo_script_datum_t *out_datum,
+                                          char *text_buffer,
+                                          size_t text_buffer_size)
+{
+    if (model == NULL || out_datum == NULL || text_buffer == NULL || text_buffer_size == 0) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    memset(out_datum, 0, sizeof(*out_datum));
+    text_buffer[0] = '\0';
+    nmo_object_t *object = nmo_object_repository_find_by_id(model->repo, param_id);
+    nmo_class_id_t cid = object != NULL ? nmo_object_get_class_id(object) : 0;
+    if (cid != NMO_CID_PARAMETERLOCAL && cid != NMO_CID_PARAMETEROUT &&
+        cid != NMO_CID_PARAMETER) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    const nmo_parameter_state_t *state =
+        (const nmo_parameter_state_t *)nmo_object_get_state(object);
+    if (state == NULL || !state->has_state) {
+        return NMO_ERR_NOT_FOUND;
+    }
+
+    nmo_script_datum_t *datum = out_datum;
+    switch (state->mode) {
+    case CKPARAM_MODE_OBJECT:
+        datum->kind = NMO_SCRIPT_DATUM_OBJECT;
+        datum->object_id = nmo_parameter_object_id(state);
+        return NMO_OK;
+    case CKPARAM_MODE_MANAGER:
+        datum->integer = state->manager_value;
+        if (nmo_guid_equals(state->manager_guid, NMO_MANAGER_GUID_MESSAGE) &&
+            nmo_workspace_internal_message_name(model->workspace, state->manager_value,
+                                                text_buffer, text_buffer_size) == NMO_OK) {
+            datum->kind = NMO_SCRIPT_DATUM_MESSAGE;
+            datum->text = text_buffer;
+        } else {
+            datum->kind = NMO_SCRIPT_DATUM_INTEGER;
+        }
+        return NMO_OK;
+    case CKPARAM_MODE_BUFFER:
+        break;
+    case CKPARAM_MODE_NONE:
+        return NMO_ERR_NOT_FOUND;
+    default:
+        datum->kind = NMO_SCRIPT_DATUM_OTHER;
+        return NMO_OK;
+    }
+
+    const uint8_t *data = (const uint8_t *)state->buffer_data.data;
+    size_t size = state->buffer_data.count;
+    if (data == NULL || size == 0) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    uint16_t category = 0;
+    int basic = model_basic_type(model, state->type_guid, &category);
+    nmo_guid_t basic_guid = basic >= 0 ? model_basic_types[basic] : NMO_GUID(0u, 0u);
+    int32_t word = 0;
+    if (size == sizeof(word)) {
+        memcpy(&word, data, sizeof(word));
+    }
+    datum->kind = NMO_SCRIPT_DATUM_OTHER;
+    if (nmo_guid_equals(basic_guid, CKPGUID_STRING)) {
+        const uint8_t *end = memchr(data, 0, size);
+        size_t length = end != NULL ? (size_t)(end - data) : size;
+        model_copy_text((const char *)data, length, text_buffer, text_buffer_size);
+        datum->kind = NMO_SCRIPT_DATUM_STRING;
+        datum->text = text_buffer;
+    } else if (size != sizeof(word) && basic >= (int)MODEL_FIRST_FLOATS_TYPE) {
+        if (size % sizeof(float) == 0 && size / sizeof(float) <= NMO_SCRIPT_DATUM_MAX_FLOATS) {
+            datum->kind = NMO_SCRIPT_DATUM_FLOATS;
+            datum->float_count = (uint32_t)(size / sizeof(float));
+            memcpy(datum->floats, data, size);
+        }
+    } else if (size != sizeof(word)) {
+        /* only the text describes it */
+    } else if (nmo_guid_equals(basic_guid, CKPGUID_FLOAT)) {
+        float value = 0.0f;
+        memcpy(&value, data, sizeof(value));
+        datum->kind = NMO_SCRIPT_DATUM_FLOAT;
+        datum->number = value;
+    } else if (nmo_guid_equals(basic_guid, CKPGUID_BOOL)) {
+        datum->kind = NMO_SCRIPT_DATUM_BOOLEAN;
+        datum->boolean = word != 0;
+    } else if (nmo_guid_equals(basic_guid, CKPGUID_INT) ||
+               nmo_guid_equals(basic_guid, CKPGUID_KEY) ||
+               (category & (NMO_TYPE_CATEGORY_ENUM | NMO_TYPE_CATEGORY_FLAGS)) != 0) {
+        datum->kind = NMO_SCRIPT_DATUM_INTEGER;
+        datum->integer = word;
+    }
+    return NMO_OK;
 }
 
 size_t nmo_script_model_label(const nmo_script_model_t *model,
