@@ -1072,6 +1072,21 @@ TEST(cli, script_xref_text_groups_messages_arrays_and_scripts) {
     free(result.output);
 }
 
+TEST(cli, script_view_marks_inputs_written_at_run_time) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
+    char args[1024];
+    snprintf(args, sizeof(args), "script view 3798 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output,
+                        "    p1 <- Check Highscore#3798.p1 (local = \"DB_Highscore_Lv02\"), "
+                        "written by Op(Addition)#3723.res, Op(Addition)#3734.res\n");
+    free(result.output);
+}
+
 TEST(cli, script_xref_json_filters_by_section_and_name) {
     TEST_REQUIRE_FIXTURE("Ballance/Gameplay.nmo");
     char args[1024];
@@ -2580,6 +2595,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_find_takes_positional_name_pattern);
     REGISTER_TEST(cli, script_xref_text_groups_messages_arrays_and_scripts);
     REGISTER_TEST(cli, script_xref_json_filters_by_section_and_name);
+    REGISTER_TEST(cli, script_view_marks_inputs_written_at_run_time);
     REGISTER_TEST(cli, script_view_text_shows_sources_semantics_and_links);
     REGISTER_TEST(cli, script_view_requires_a_behavior_or_all);
     REGISTER_TEST(cli, behavior_dump_text_flows_show_owner_endpoints);

@@ -49,6 +49,7 @@ static const char *view_value_kind_name(nmo_script_value_kind_t kind)
     switch (kind) {
     case NMO_SCRIPT_VALUE_SAVED:    return "saved";
     case NMO_SCRIPT_VALUE_COMPUTED: return "computed";
+    case NMO_SCRIPT_VALUE_WRITTEN:  return "written";
     default:                        return "none";
     }
 }
@@ -58,7 +59,8 @@ static const char *view_unknown_key_text(const nmo_script_use_t *use)
 {
     switch (use->key_value) {
     case NMO_SCRIPT_VALUE_COMPUTED: return "computed at run time";
-    case NMO_SCRIPT_VALUE_SAVED:    return "saved empty (set at run time)";
+    case NMO_SCRIPT_VALUE_WRITTEN:  return "written at run time";
+    case NMO_SCRIPT_VALUE_SAVED:    return "saved empty";
     default:                        return "not connected";
     }
 }
@@ -534,6 +536,36 @@ static bool view_add_semantics(nmo_cli_record_t *item, const view_ctx_t *v,
     return ok;
 }
 
+/* "Owner#id.pOut, ..." for the outputs writing the parameter input `param_id` reads,
+ * when its value is written at run time; NULL otherwise. Heap string. */
+static char *view_writers_text_dup(const view_ctx_t *v, nmo_object_id_t param_id)
+{
+    nmo_object_id_t holder = 0;
+    if (nmo_script_model_value_source(v->flow.model, param_id, &holder) !=
+        NMO_SCRIPT_VALUE_WRITTEN) {
+        return NULL;
+    }
+    size_t count = 0;
+    const nmo_script_data_edge_t *const *writers =
+        nmo_script_model_param_writers(v->flow.model, holder, &count);
+    char *text = NULL;
+    for (size_t i = 0; i < count && i < 3; i++) {
+        char owner[256];
+        (void)nmo_script_model_label(v->flow.model, writers[i]->source_owner_id, owner,
+                                     sizeof(owner));
+        char *next = nmo_tool_strdup_fmt("%s%s%s.%s", text ? text : "", text ? ", " : "",
+                                         owner, resolve_name(v->flow.repo, writers[i]->source_id));
+        free(text);
+        text = next;
+    }
+    if (text != NULL && count > 3) {
+        char *next = nmo_tool_strdup_fmt("%s and %zu more", text, count - 3);
+        free(text);
+        text = next;
+    }
+    return text;
+}
+
 /* "    Name <- <source>" for each target and input of `node` read in `graph_id`. */
 static bool view_add_inputs(nmo_cli_record_t *item, const view_ctx_t *v,
                             const nmo_script_node_t *node, nmo_object_id_t graph_id)
@@ -551,14 +583,18 @@ static bool view_add_inputs(nmo_cli_record_t *item, const view_ctx_t *v,
         bool has_source = p->source_id != 0;
         ok = !has_source || nmo_cmd_behavior_resolve_param(&v->flow, graph_id, p->source_id, &src);
         const char *text = has_source ? src.text : "(not connected)";
+        char *writers = ok ? view_writers_text_dup(v, p->id) : NULL;
         nmo_cli_record_t *in = ok ? nmo_cli_record_new() : NULL;
         ok = in != NULL &&
              nmo_cli_record_str(in, "name", NULL, name) &&
              nmo_cli_record_str(in, "type", NULL, p->type_name) &&
              nmo_cli_record_str(in, "source", NULL, text) &&
+             (writers == NULL || nmo_cli_record_str(in, "written_by", NULL, writers)) &&
              nmo_cli_record_array_add(arr, in) &&
-             nmo_cli_record_raw_fmt(item, "    %s <- %s%s\n", name, text,
-                                    p->is_shared ? " (shared)" : "");
+             nmo_cli_record_raw_fmt(item, "    %s <- %s%s%s%s\n", name, text,
+                                    p->is_shared ? " (shared)" : "",
+                                    writers ? ", written by " : "", writers ? writers : "");
+        free(writers);
         nmo_cmd_behavior_param_ref_dispose(&src);
     }
     /* Building block settings */

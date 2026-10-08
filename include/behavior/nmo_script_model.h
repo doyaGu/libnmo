@@ -218,6 +218,10 @@ NMO_API const nmo_script_link_t *const *nmo_script_model_links_from_io(
 NMO_API const nmo_script_data_edge_t *const *nmo_script_model_param_uses(
     const nmo_script_model_t *model, nmo_object_id_t param_id, size_t *out_count);
 
+/** The write edges whose target is parameter `param_id`: the outputs writing it. */
+NMO_API const nmo_script_data_edge_t *const *nmo_script_model_param_writers(
+    const nmo_script_model_t *model, nmo_object_id_t param_id, size_t *out_count);
+
 /** How graph `graph_id` reaches parameter `param_id`. */
 NMO_API nmo_script_reach_t nmo_script_model_reach(const nmo_script_model_t *model,
                                                   nmo_object_id_t graph_id,
@@ -230,15 +234,19 @@ NMO_API bool nmo_script_model_is_ancestor(const nmo_script_model_t *model,
 
 typedef enum nmo_script_value_kind {
     NMO_SCRIPT_VALUE_NONE = 0,   /* an input reading nothing */
-    NMO_SCRIPT_VALUE_SAVED,      /* a local or plain parameter: its saved value */
+    NMO_SCRIPT_VALUE_SAVED,      /* a local or plain parameter no output writes: its saved value */
     NMO_SCRIPT_VALUE_COMPUTED,   /* an output or operation result: set at run time */
+    NMO_SCRIPT_VALUE_WRITTEN,    /* a local or plain parameter outputs write at run time;
+                                    its saved value is the one it starts with */
 } nmo_script_value_kind_t;
 
 /**
  * The parameter a parameter takes its value from: inputs are followed
  * through their sources (shared inputs and graph inputs included) to a
  * local, a plain parameter, or an output. `*out_holder_id` is that
- * parameter, or the last input reached for NMO_SCRIPT_VALUE_NONE.
+ * parameter, or the last input reached for NMO_SCRIPT_VALUE_NONE. Only
+ * the writes inside the model count: a parameter another file writes reads
+ * as saved.
  */
 NMO_API nmo_script_value_kind_t nmo_script_model_value_source(const nmo_script_model_t *model,
                                                               nmo_object_id_t param_id,

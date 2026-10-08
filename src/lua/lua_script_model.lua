@@ -194,12 +194,11 @@ end
 --   "computed"  the origin is an output or an operation result: no value
 --   "none"      the input reads nothing: no value
 function Param:value()
-    local origin = self.origin
-    if self.origin_kind == "saved" and origin ~= nil then
-        local how = #origin:writers() > 0 and "written" or "saved"
+    local origin, how = self.origin, self.origin_kind
+    if (how == "saved" or how == "written") and origin ~= nil then
         return origin.data, how, origin
     end
-    return nil, self.origin_kind, origin
+    return nil, how, origin
 end
 
 -- The value as text: the saved value, or where it is computed.

@@ -181,6 +181,8 @@ struct nmo_script_model {
 
     const nmo_script_link_t **links_by_source;      /* sorted by source_io_id */
     const nmo_script_data_edge_t **uses_by_source;  /* sorted by source_id */
+    const nmo_script_data_edge_t **writes_by_target; /* the writes, sorted by target_id */
+    size_t write_count;
 };
 
 static const char *model_object_name(nmo_object_t *object)
@@ -728,6 +730,16 @@ static int model_cmp_edge_source(const void *a, const void *b)
     return x < y ? -1 : x > y ? 1 : 0;
 }
 
+static int model_cmp_edge_target(const void *a, const void *b)
+{
+    const nmo_script_data_edge_t *x = *(const nmo_script_data_edge_t *const *)a;
+    const nmo_script_data_edge_t *y = *(const nmo_script_data_edge_t *const *)b;
+    if (x->target_id != y->target_id) {
+        return x->target_id < y->target_id ? -1 : 1;
+    }
+    return x < y ? -1 : x > y ? 1 : 0;
+}
+
 static bool model_build_lookups(nmo_script_model_t *model)
 {
     size_t link_count = model->links.count;
@@ -736,7 +748,10 @@ static bool model_build_lookups(nmo_script_model_t *model)
         (link_count ? link_count : 1u) * sizeof(*model->links_by_source));
     model->uses_by_source = (const nmo_script_data_edge_t **)malloc(
         (edge_count ? edge_count : 1u) * sizeof(*model->uses_by_source));
-    if (model->links_by_source == NULL || model->uses_by_source == NULL) {
+    model->writes_by_target = (const nmo_script_data_edge_t **)malloc(
+        (edge_count ? edge_count : 1u) * sizeof(*model->writes_by_target));
+    if (model->links_by_source == NULL || model->uses_by_source == NULL ||
+        model->writes_by_target == NULL) {
         return false;
     }
     for (size_t i = 0; i < link_count; i++) {
@@ -747,13 +762,21 @@ static bool model_build_lookups(nmo_script_model_t *model)
         link->target_node_id = target != NULL ? target->node_id : 0;
         model->links_by_source[i] = link;
     }
+    model->write_count = 0;
     for (size_t i = 0; i < edge_count; i++) {
-        model->uses_by_source[i] = MODEL_VEC_AT(model->data_edges, nmo_script_data_edge_t, i);
+        const nmo_script_data_edge_t *edge =
+            MODEL_VEC_AT(model->data_edges, nmo_script_data_edge_t, i);
+        model->uses_by_source[i] = edge;
+        if (edge->kind == NMO_SCRIPT_DATA_WRITE) {
+            model->writes_by_target[model->write_count++] = edge;
+        }
     }
     qsort(model->links_by_source, link_count, sizeof(*model->links_by_source),
           model_cmp_link_source);
     qsort(model->uses_by_source, edge_count, sizeof(*model->uses_by_source),
           model_cmp_edge_source);
+    qsort(model->writes_by_target, model->write_count, sizeof(*model->writes_by_target),
+          model_cmp_edge_target);
     return true;
 }
 
@@ -865,6 +888,7 @@ void nmo_script_model_destroy(nmo_script_model_t *model)
     free(model->operation_map.slots);
     free((void *)model->links_by_source);
     free((void *)model->uses_by_source);
+    free((void *)model->writes_by_target);
     free(model);
 }
 
@@ -970,6 +994,30 @@ const nmo_script_data_edge_t *const *nmo_script_model_param_uses(const nmo_scrip
     return end > lo ? &model->uses_by_source[lo] : NULL;
 }
 
+const nmo_script_data_edge_t *const *nmo_script_model_param_writers(
+    const nmo_script_model_t *model, nmo_object_id_t param_id, size_t *out_count)
+{
+    *out_count = 0;
+    if (model == NULL || model->write_count == 0) {
+        return NULL;
+    }
+    size_t lo = 0, hi = model->write_count;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2u;
+        if (model->writes_by_target[mid]->target_id < param_id) {
+            lo = mid + 1u;
+        } else {
+            hi = mid;
+        }
+    }
+    size_t end = lo;
+    while (end < model->write_count && model->writes_by_target[end]->target_id == param_id) {
+        end++;
+    }
+    *out_count = end - lo;
+    return end > lo ? &model->writes_by_target[lo] : NULL;
+}
+
 nmo_script_value_kind_t nmo_script_model_value_source(const nmo_script_model_t *model,
                                                       nmo_object_id_t param_id,
                                                       nmo_object_id_t *out_holder_id)
@@ -1001,8 +1049,11 @@ nmo_script_value_kind_t nmo_script_model_value_source(const nmo_script_model_t *
         case NMO_CID_PARAMETEROUT:
             return NMO_SCRIPT_VALUE_COMPUTED;
         case NMO_CID_PARAMETERLOCAL:
-        case NMO_CID_PARAMETER:
-            return NMO_SCRIPT_VALUE_SAVED;
+        case NMO_CID_PARAMETER: {
+            size_t writers = 0;
+            (void)nmo_script_model_param_writers(model, cur, &writers);
+            return writers > 0 ? NMO_SCRIPT_VALUE_WRITTEN : NMO_SCRIPT_VALUE_SAVED;
+        }
         default:
             return NMO_SCRIPT_VALUE_NONE;
         }

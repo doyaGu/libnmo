@@ -217,6 +217,7 @@ static const char *script_value_kind_name(nmo_script_value_kind_t kind)
     switch (kind) {
     case NMO_SCRIPT_VALUE_SAVED:    return "saved";
     case NMO_SCRIPT_VALUE_COMPUTED: return "computed";
+    case NMO_SCRIPT_VALUE_WRITTEN:  return "written";
     default:                        return "none";
     }
 }

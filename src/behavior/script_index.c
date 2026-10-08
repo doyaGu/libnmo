@@ -266,7 +266,7 @@ static const char *index_lookup_output_name(const index_builder_t *b, nmo_object
 
 /*
  * The name the key input `param_id` looks its object up by: a lookup output
- * it reads, or one that writes the empty local it reads.
+ * it reads, or one that writes the local it reads.
  */
 static const char *index_lookup_name(const index_builder_t *b, nmo_object_id_t param_id,
                                      bool *out_oom)
@@ -276,17 +276,16 @@ static const char *index_lookup_name(const index_builder_t *b, nmo_object_id_t p
     if (kind == NMO_SCRIPT_VALUE_COMPUTED) {
         return index_lookup_output_name(b, holder, out_oom);
     }
-    if (kind != NMO_SCRIPT_VALUE_SAVED) {
+    if (kind != NMO_SCRIPT_VALUE_WRITTEN) {
         return NULL;
     }
-    size_t edge_count = 0;
-    const nmo_script_data_edge_t *edges = nmo_script_model_data_edges(b->model, &edge_count);
-    for (size_t i = 0; i < edge_count && !*out_oom; i++) {
-        if (edges[i].kind == NMO_SCRIPT_DATA_WRITE && edges[i].target_id == holder) {
-            const char *name = index_lookup_output_name(b, edges[i].source_id, out_oom);
-            if (name != NULL) {
-                return name;
-            }
+    size_t writer_count = 0;
+    const nmo_script_data_edge_t *const *writers =
+        nmo_script_model_param_writers(b->model, holder, &writer_count);
+    for (size_t i = 0; i < writer_count && !*out_oom; i++) {
+        const char *name = index_lookup_output_name(b, writers[i]->source_id, out_oom);
+        if (name != NULL) {
+            return name;
         }
     }
     return NULL;

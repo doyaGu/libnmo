@@ -255,6 +255,24 @@ TEST(script_model, models_ballance_base_scripts) {
     ASSERT_EQ(NMO_OK, nmo_script_model_param_value(model, write->target_id, value,
                                                    sizeof(value)));
 
+    /* Get Object By Name #3682 reads the name local #3674, which two Additions write:
+     * its saved "DB_Highscore_Lv02" is only the value it starts with */
+    nmo_object_id_t holder = 0;
+    ASSERT_EQ(NMO_SCRIPT_VALUE_WRITTEN, nmo_script_model_value_source(model, 3675, &holder));
+    ASSERT_EQ(3674u, holder);
+    size_t writer_count = 0;
+    const nmo_script_data_edge_t *const *writers =
+        nmo_script_model_param_writers(model, holder, &writer_count);
+    ASSERT_EQ(2u, writer_count);
+    ASSERT_EQ(NMO_SCRIPT_DATA_WRITE, writers[0]->kind);
+    ASSERT_EQ(holder, writers[1]->target_id);
+    /* so is the Screen Modes local TT List ScreenModes writes; nothing writes the output */
+    ASSERT_EQ(NMO_SCRIPT_VALUE_WRITTEN,
+              nmo_script_model_value_source(model, write->target_id, &holder));
+    ASSERT_EQ(write->target_id, holder);
+    (void)nmo_script_model_param_writers(model, write->source_id, &writer_count);
+    ASSERT_EQ(0u, writer_count);
+
     nmo_script_model_destroy(model);
     test_close_workspace(ctx, session, document, workspace);
 }
