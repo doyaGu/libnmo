@@ -5,6 +5,8 @@
 #include "core/nmo_error.h"
 #include "lua/nmo_lua_module.h"
 
+#include <stddef.h>
+
 #define NMO_LUA_RUNTIME_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER
 #define NMO_LUA_RUNTIME_API_TIER NMO_API_TIER_STABLE_CONSUMER
 
@@ -40,6 +42,39 @@ NMO_API void nmo_lua_runtime_destroy(nmo_lua_runtime_t *runtime);
  */
 NMO_API nmo_status_t nmo_lua_runtime_execute_string(nmo_lua_runtime_t *runtime,
                                                     const char *chunk);
+
+/**
+ * @brief Execute a Lua script file, as the standalone `lua` interpreter does.
+ *
+ * The chunk is named after the file in error messages. The global `arg`
+ * holds the script path at 0 and `args` from 1, and the chunk receives
+ * `args` as its `...`.
+ *
+ * @return NMO_OK on success, otherwise an error code with last-error text set
+ *         (the Lua error message and traceback for a script error)
+ */
+NMO_API nmo_status_t nmo_lua_runtime_execute_file(nmo_lua_runtime_t *runtime,
+                                                  const char *path,
+                                                  const char *const *args,
+                                                  size_t arg_count);
+
+/**
+ * @brief Execute Lua source text as a script, as nmo_lua_runtime_execute_file() does.
+ *
+ * `name` names the chunk in error messages and is `arg[0]`.
+ */
+NMO_API nmo_status_t nmo_lua_runtime_execute_buffer(nmo_lua_runtime_t *runtime,
+                                                    const char *name,
+                                                    const char *text,
+                                                    size_t text_size,
+                                                    const char *const *args,
+                                                    size_t arg_count);
+
+/**
+ * @brief The Lua state of a runtime, for pushing values and setting globals.
+ * @ownership borrowed
+ */
+NMO_API lua_State *nmo_lua_runtime_state(nmo_lua_runtime_t *runtime);
 
 /**
  * @brief Register a preloadable Lua module on this runtime.

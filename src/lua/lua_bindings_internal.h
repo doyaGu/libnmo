@@ -140,8 +140,6 @@ nmo_status_t nmo_lua_parse_object_query(lua_State *state,
                                         nmo_object_query_t *out_query);
 void nmo_lua_push_object_query_name_modes(lua_State *state);
 
-lua_State *nmo_lua_runtime_state(nmo_lua_runtime_t *runtime);
-
 void nmo_lua_push_edit_report(lua_State *state, const nmo_edit_report_t *report);
 void nmo_lua_push_pending_edit_plan_report(lua_State *state,
                                            const nmo_edit_plan_t *plan);

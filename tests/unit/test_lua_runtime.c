@@ -63,8 +63,34 @@ TEST(lua_runtime, captures_traceback_on_runtime_error) {
     nmo_lua_runtime_destroy(runtime);
 }
 
+TEST(lua_runtime, executes_a_script_with_arguments) {
+    nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
+    ASSERT_NOT_NULL(runtime);
+
+    static const char text[] =
+        "local first, second = ...\n"
+        "assert(select('#', ...) == 2 and first == 'a' and second == 'b')\n"
+        "assert(arg[0] == 'probe' and arg[1] == 'a' and arg[2] == 'b')\n";
+    const char *args[] = {"a", "b"};
+    ASSERT_EQ(NMO_OK, nmo_lua_runtime_execute_buffer(runtime, "probe", text, sizeof(text) - 1,
+                                                     args, 2));
+
+    /* the chunk is named after the script in messages */
+    static const char failing[] = "\nerror('boom')\n";
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,
+              nmo_lua_runtime_execute_buffer(runtime, "probe", failing, sizeof(failing) - 1,
+                                             NULL, 0));
+    ASSERT_TRUE(strstr(nmo_last_error_message(), "probe:2: boom") != NULL);
+
+    ASSERT_EQ(NMO_ERR_CANT_OPEN_FILE,
+              nmo_lua_runtime_execute_file(runtime, "no-such-script.lua", NULL, 0));
+
+    nmo_lua_runtime_destroy(runtime);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(lua_runtime, creates_executes_and_destroys_runtime);
     REGISTER_TEST(lua_runtime, registers_preload_module_for_require);
     REGISTER_TEST(lua_runtime, captures_traceback_on_runtime_error);
+    REGISTER_TEST(lua_runtime, executes_a_script_with_arguments);
 TEST_MAIN_END()
