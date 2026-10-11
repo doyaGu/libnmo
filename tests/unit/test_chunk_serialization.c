@@ -424,6 +424,38 @@ TEST(chunk_serialization, rejects_truncated_counts_before_allocation) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_serialization, legacy_headers_preserve_16_bit_versions) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+
+    const uint32_t legacy_versions[] = {
+        NMO_CHUNK_VERSION1,
+        NMO_CHUNK_VERSION2,
+    };
+    for (size_t i = 0;
+         i < sizeof(legacy_versions) / sizeof(legacy_versions[0]); ++i) {
+        nmo_chunk_t *source = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(source);
+        source->class_id = 0x12345678u;
+        source->data_version = 0xABCDu;
+        source->chunk_version = legacy_versions[i];
+
+        void *buffer = NULL;
+        size_t buffer_size = 0;
+        ASSERT_EQ(NMO_OK, nmo_chunk_serialize_version1(
+            source, &buffer, &buffer_size, arena));
+        ASSERT_EQ(0xABCDu, ((const uint32_t *)buffer)[0] & 0xFFFFu);
+
+        nmo_chunk_t *loaded = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(loaded);
+        ASSERT_EQ(NMO_OK, nmo_chunk_parse(loaded, buffer, buffer_size));
+        ASSERT_EQ(0xABCDu, loaded->data_version);
+        ASSERT_EQ(legacy_versions[i], loaded->chunk_version);
+    }
+
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_serialization, version_info_packing);
     REGISTER_TEST(chunk_serialization, full_serialization);
@@ -432,4 +464,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_serialization, rejects_invalid_public_array_state);
     REGISTER_TEST(chunk_serialization, invalid_arguments_clear_outputs);
     REGISTER_TEST(chunk_serialization, rejects_truncated_counts_before_allocation);
+    REGISTER_TEST(chunk_serialization, legacy_headers_preserve_16_bit_versions);
 TEST_MAIN_END()

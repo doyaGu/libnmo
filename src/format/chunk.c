@@ -749,8 +749,8 @@ nmo_status_t nmo_chunk_serialize_version1(const nmo_chunk_t *chunk,
 
     if (chunk_version < NMO_CHUNK_VERSION2) {
         /* VERSION1 layout (24-byte header) */
-        uint32_t version_info = (chunk->data_version & 0xFFu) |
-                                ((chunk_version & 0xFFu) << 16);
+        uint32_t version_info = (chunk->data_version & 0xFFFFu) |
+                                ((chunk_version & 0xFFFFu) << 16);
         buffer[pos++] = version_info;
         buffer[pos++] = chunk->class_id;
         buffer[pos++] = (uint32_t) data_count;
@@ -783,8 +783,8 @@ nmo_status_t nmo_chunk_serialize_version1(const nmo_chunk_t *chunk,
         }
     } else if (chunk_version == NMO_CHUNK_VERSION2) {
         /* VERSION2 layout adds manager count */
-        uint32_t version_info = (chunk->data_version & 0xFFu) |
-                                ((chunk_version & 0xFFu) << 16);
+        uint32_t version_info = (chunk->data_version & 0xFFFFu) |
+                                ((chunk_version & 0xFFFFu) << 16);
         buffer[pos++] = version_info;
         buffer[pos++] = (uint32_t) chunk->class_id;
         buffer[pos++] = (uint32_t) data_count;
@@ -1063,11 +1063,12 @@ static nmo_status_t chunk_parse_into(nmo_chunk_t *chunk,
     uint32_t val = buf[pos++];
     uint16_t packed_data_version = (uint16_t) (val & 0x0000FFFF);
     uint16_t packed_chunk_version = (uint16_t) ((val & 0xFFFF0000) >> 16);
-    uint8_t data_version = (uint8_t) (packed_data_version & 0x00FF);
-    uint8_t chunk_version = (uint8_t) (packed_chunk_version & 0x00FF);
+    uint16_t chunk_version = (uint16_t) (packed_chunk_version & 0x00FF);
 
-    chunk->data_version = data_version;
-    chunk->chunk_version = chunk_version;
+    /* Legacy envelopes use both 16-bit version fields.  Only the compact
+       VERSION3/VERSION4 envelope spends their high bytes on class/options. */
+    chunk->data_version = packed_data_version;
+    chunk->chunk_version = packed_chunk_version;
 
     /* Parse based on chunk version */
     if (chunk_version < NMO_CHUNK_VERSION2) {
