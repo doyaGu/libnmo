@@ -28,19 +28,30 @@ static char *record_json(const nmo_cli_record_t *rec)
 /* Record as plain key/value text; the caller frees the result. */
 static char *record_text(const nmo_cli_record_t *rec, int key_width)
 {
-    FILE *out = tmpfile();
+    const char *path = NMO_TEST_SCRATCH_FILE("cli_record_capture.tmp");
+    FILE *out = fopen(path, "w+b");
     if (!out) {
         return NULL;
     }
     nmo_cli_record_print_kv(rec, out, key_width, false);
-    long size = ftell(out);
-    char *text = size >= 0 ? (char *)malloc((size_t)size + 1u) : NULL;
-    if (text) {
-        rewind(out);
-        size_t n = fread(text, 1u, (size_t)size, out);
-        text[n] = '\0';
+    char *text = NULL;
+    if (fflush(out) == 0) {
+        long size = ftell(out);
+        if (size >= 0 && fseek(out, 0, SEEK_SET) == 0) {
+            text = (char *)malloc((size_t)size + 1u);
+            if (text != NULL) {
+                size_t n = fread(text, 1u, (size_t)size, out);
+                if (n == (size_t)size) {
+                    text[n] = '\0';
+                } else {
+                    free(text);
+                    text = NULL;
+                }
+            }
+        }
     }
     fclose(out);
+    remove(path);
     return text;
 }
 
