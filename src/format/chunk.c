@@ -956,6 +956,10 @@ nmo_chunk_t *nmo_chunk_clone(const nmo_chunk_t *src, nmo_arena_t *arena) {
     clone->chunk_class_id = src->chunk_class_id;
     clone->chunk_options = src->chunk_options;
     clone->file_context = src->file_context;
+    clone->uncompressed_size = src->uncompressed_size;
+    clone->compressed_size = src->compressed_size;
+    clone->is_compressed = src->is_compressed;
+    clone->unpack_size = src->unpack_size;
 
     if (src->data.count > 0) {
         nmo_status_t result = nmo_arena_array_resize(&clone->data, src->data.count);
@@ -1433,6 +1437,18 @@ nmo_status_t nmo_chunk_start_write(nmo_chunk_t *chunk) {
 
     /* Reset logical size; keep capacity */
     chunk->data.count = 0;
+    chunk->ids.count = 0;
+    chunk->chunks.count = 0;
+    chunk->chunk_refs.count = 0;
+    chunk->managers.count = 0;
+    chunk->chunk_options &= ~(NMO_CHUNK_OPTION_IDS |
+                              NMO_CHUNK_OPTION_CHN |
+                              NMO_CHUNK_OPTION_MAN |
+                              NMO_CHUNK_OPTION_PACKED);
+    chunk->uncompressed_size = 0;
+    chunk->compressed_size = 0;
+    chunk->is_compressed = 0;
+    chunk->unpack_size = 0;
 
     /* CK2 behavior: StartWrite() sets m_ChunkVersion = CHUNK_VERSION4 (7) */
     chunk->chunk_version = NMO_CHUNK_VERSION4;

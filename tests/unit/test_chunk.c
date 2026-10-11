@@ -209,6 +209,66 @@ TEST(chunk, header_rejects_unencodable_public_state) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk, start_write_discards_previous_tracking_state) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    nmo_chunk_t* sub = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(sub);
+
+    ASSERT_EQ(NMO_OK, nmo_arena_array_resize(&chunk->data, 1u));
+    ASSERT_EQ(NMO_OK, nmo_arena_array_resize(&chunk->ids, 1u));
+    ASSERT_EQ(NMO_OK, nmo_arena_array_resize(&chunk->chunks, 1u));
+    ASSERT_EQ(NMO_OK, nmo_arena_array_resize(&chunk->chunk_refs, 1u));
+    ASSERT_EQ(NMO_OK, nmo_arena_array_resize(&chunk->managers, 1u));
+    NMO_ARENA_ARRAY_DATA(nmo_chunk_t*, &chunk->chunks)[0] = sub;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_IDS |
+                            NMO_CHUNK_OPTION_CHN |
+                            NMO_CHUNK_OPTION_MAN;
+
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(0u, chunk->data.count);
+    ASSERT_EQ(0u, chunk->ids.count);
+    ASSERT_EQ(0u, chunk->chunks.count);
+    ASSERT_EQ(0u, chunk->chunk_refs.count);
+    ASSERT_EQ(0u, chunk->managers.count);
+    ASSERT_EQ(0u, chunk->chunk_options &
+                  (NMO_CHUNK_OPTION_IDS |
+                   NMO_CHUNK_OPTION_CHN |
+                   NMO_CHUNK_OPTION_MAN));
+
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk, clone_preserves_compression_state) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    for (uint32_t i = 0; i < 128u; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0x12345678u));
+    }
+    ASSERT_EQ(NMO_OK, nmo_chunk_compress(chunk, 6));
+    ASSERT_TRUE(nmo_chunk_is_compressed(chunk));
+
+    nmo_chunk_t* clone = nmo_chunk_clone(chunk, arena);
+    ASSERT_NOT_NULL(clone);
+    ASSERT_TRUE(nmo_chunk_is_compressed(clone));
+    ASSERT_EQ(NMO_OK, nmo_chunk_decompress(clone));
+    ASSERT_FALSE(nmo_chunk_is_compressed(clone));
+    ASSERT_EQ(128u * sizeof(uint32_t), nmo_chunk_get_data_size(clone));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(clone));
+    for (uint32_t i = 0; i < 128u; ++i) {
+        uint32_t value = 0u;
+        ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(clone, &value));
+        ASSERT_EQ(0x12345678u, value);
+    }
+
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk, create);
     REGISTER_TEST(chunk, get_id);
@@ -220,4 +280,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk, clone_null_params);
     REGISTER_TEST(chunk, clone_rejects_malformed_public_state);
     REGISTER_TEST(chunk, header_rejects_unencodable_public_state);
+    REGISTER_TEST(chunk, start_write_discards_previous_tracking_state);
+    REGISTER_TEST(chunk, clone_preserves_compression_state);
 TEST_MAIN_END()
