@@ -258,6 +258,31 @@ TEST(old_sub_chunk, old_sub_chunk_is_written_back_as_the_engine_would)
     nmo_arena_destroy(arena);
 }
 
+TEST(old_sub_chunk, noncanonical_file_flag_does_not_inherit_parent_file)
+{
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NOT_NULL(arena);
+
+    /* Native CK2 inherits the parent file only for the exact boolean value 1. */
+    const uint32_t words[] = {
+        7u, 0x12u, (uint32_t)NMO_CHUNK_VERSION4 << 16,
+        0u, 2u, 0u, 0u, 0u,
+    };
+    nmo_chunk_t *parent = chunk_of_words(
+        arena, words, sizeof(words) / sizeof(words[0]), NMO_CHUNK_VERSION4);
+    ASSERT_NOT_NULL(parent);
+    parent->file_context = (const struct nmo_chunk_file_context *)(uintptr_t)1;
+    parent->chunk_options |= NMO_CHUNK_OPTION_FILE;
+
+    nmo_chunk_t *sub = NULL;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_sub_chunk(parent, &sub));
+    ASSERT_NOT_NULL(sub);
+    ASSERT_NULL(sub->file_context);
+    ASSERT_EQ(0u, sub->chunk_options & NMO_CHUNK_OPTION_FILE);
+
+    nmo_arena_destroy(arena);
+}
+
 /* ------------------------------------------------------------------------
  * Data section
  * ------------------------------------------------------------------------ */
@@ -529,6 +554,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(old_sub_chunk, null_and_truncated_old_sub_chunks);
     REGISTER_TEST(old_sub_chunk, newer_chunk_detects_the_old_layout);
     REGISTER_TEST(old_sub_chunk, old_sub_chunk_is_written_back_as_the_engine_would);
+    REGISTER_TEST(old_sub_chunk, noncanonical_file_flag_does_not_inherit_parent_file);
     REGISTER_TEST(data_section_layouts, version_7_starts_with_save_id_max_and_object_count);
     REGISTER_TEST(data_section_layouts, version_7_round_trip);
     REGISTER_TEST(data_section_layouts, version_7_uses_the_section_object_count_up_to_the_header_s);

@@ -458,11 +458,11 @@ nmo_status_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub)
     sub->chunk_class_id = (uint8_t) (class_id & 0xFFu);
     sub->data_version = (uint16_t) (version_info & 0xFFFFu);
     sub->chunk_version = (uint16_t) ((version_info >> 16) & 0xFFFFu);
-    /* CKStateChunk::WriteSubChunk stores whether the sub-chunk itself had a
-       file, so a flag read here is written back as it was. */
+    /* Native CK2 treats only the canonical boolean value 1 as inheriting the
+       parent file.  Other values are normalized to false on write-back. */
     sub->chunk_options = NMO_CHUNK_OPTION_FILE_KEPT;
-    if (file_flag) sub->chunk_options |= NMO_CHUNK_OPTION_FILE;
-    if (file_flag && chunk->file_context != NULL) {
+    if (file_flag == 1u) sub->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    if (file_flag == 1u && chunk->file_context != NULL) {
         sub->file_context = chunk->file_context;
     }
 
