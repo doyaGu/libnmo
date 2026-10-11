@@ -1971,6 +1971,40 @@ TEST(chunk_api, compression_new_api) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_api, compression_rejects_invalid_levels_atomically) {
+    const int invalid_levels[] = {-2, 10};
+    for (size_t level = 0;
+         level < sizeof(invalid_levels) / sizeof(invalid_levels[0]); ++level) {
+        nmo_arena_t* arena = nmo_arena_create(NULL, 1024 * 32);
+        ASSERT_NOT_NULL(arena);
+        nmo_chunk_t* chunk = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(chunk);
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+        for (uint32_t i = 0; i < 64u; ++i) {
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0x11110000u + i));
+        }
+
+        const size_t count_before = chunk->data.count;
+        const uint32_t options_before = chunk->chunk_options;
+        uint32_t words_before[64];
+        memcpy(words_before, chunk->data.data, sizeof(words_before));
+
+        ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+            nmo_chunk_compress(chunk, invalid_levels[level]));
+        ASSERT_EQ(count_before, chunk->data.count);
+        ASSERT_EQ(options_before, chunk->chunk_options);
+        ASSERT_EQ(0, memcmp(words_before, chunk->data.data, sizeof(words_before)));
+
+        ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+            nmo_chunk_compress_if_beneficial(
+                chunk, invalid_levels[level], 1.0f));
+        ASSERT_EQ(count_before, chunk->data.count);
+        ASSERT_EQ(options_before, chunk->chunk_options);
+        ASSERT_EQ(0, memcmp(words_before, chunk->data.data, sizeof(words_before)));
+        nmo_arena_destroy(arena);
+    }
+}
+
 TEST(chunk_api, crc) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 1024 * 16);
     ASSERT_NOT_NULL(arena);
@@ -2068,5 +2102,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_api, string_array_truncation_is_atomic);
     REGISTER_TEST(chunk_api, compression);
     REGISTER_TEST(chunk_api, compression_new_api);
+    REGISTER_TEST(chunk_api, compression_rejects_invalid_levels_atomically);
     REGISTER_TEST(chunk_api, crc);
 TEST_MAIN_END()

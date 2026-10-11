@@ -1356,7 +1356,7 @@ NMO_API nmo_status_t nmo_chunk_seek_identifier_with_size(
  * later via nmo_chunk_decompress().
  *
  * @param chunk Chunk to compress (required)
- * @param compression_level Compression level (0-9, values <0 fall back to 6)
+ * @param compression_level Compression level (-1 for zlib default, or 0-9)
  * @return NMO_OK on success, error code otherwise
  */
 NMO_API nmo_status_t nmo_chunk_compress(nmo_chunk_t *chunk, int compression_level);
@@ -1368,7 +1368,7 @@ NMO_API nmo_status_t nmo_chunk_compress(nmo_chunk_t *chunk, int compression_leve
  * resulting size satisfies the provided ratio threshold.
  *
  * @param chunk Chunk to compress (required)
- * @param compression_level Compression level (0-9)
+ * @param compression_level Compression level (-1 for zlib default, or 0-9)
  * @param min_ratio Minimum compression ratio to accept (0 < ratio <= 1). The
  *        compressed size must be <= original_size * min_ratio.
  * @return NMO_OK on success, NMO_ERR_INVALID_ARGUMENT on bad ratio

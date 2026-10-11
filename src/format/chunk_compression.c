@@ -12,14 +12,8 @@
 // Compression
 // =============================================================================
 
-static int clamp_compression_level(int level) {
-    if (level < 0) {
-        return 6;
-    }
-    if (level > 9) {
-        return 9;
-    }
-    return level;
+static int compression_level_is_valid(int level) {
+    return level >= MZ_DEFAULT_COMPRESSION && level <= MZ_BEST_COMPRESSION;
 }
 
 static nmo_status_t chunk_generate_compressed_bytes(nmo_chunk_t *chunk,
@@ -27,6 +21,10 @@ static nmo_status_t chunk_generate_compressed_bytes(nmo_chunk_t *chunk,
                                                     uint8_t **out_bytes,
                                                     size_t *out_size) {
     NMO_CHUNK_CHECK_ARGS2(chunk, out_bytes, out_size, "Invalid arguments");
+    if (!compression_level_is_valid(compression_level)) {
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT(
+            "Compression level must be -1 or within 0-9");
+    }
 
     size_t src_size = chunk->data.count * sizeof(uint32_t);
     if (src_size == 0) {
@@ -47,7 +45,7 @@ static nmo_status_t chunk_generate_compressed_bytes(nmo_chunk_t *chunk,
     mz_ulong dest_size = dest_capacity;
     int mz_result = mz_compress2(buffer, &dest_size,
                                  (const unsigned char *)src_data, (mz_ulong)src_size,
-                                 clamp_compression_level(compression_level));
+                                 compression_level);
     if (mz_result != MZ_OK) {
         nmo_free(&alloc, buffer);
         NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR, "Compression failed");
@@ -93,6 +91,10 @@ static nmo_status_t chunk_commit_compressed_payload(nmo_chunk_t *chunk,
 
 nmo_status_t nmo_chunk_compress(nmo_chunk_t *chunk, int compression_level) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
+    if (!compression_level_is_valid(compression_level)) {
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT(
+            "Compression level must be -1 or within 0-9");
+    }
 
     if (chunk->data.count == 0) {
         NMO_RETURN_OK();
@@ -132,6 +134,10 @@ nmo_status_t nmo_chunk_compress_if_beneficial(nmo_chunk_t *chunk,
     }
 
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
+    if (!compression_level_is_valid(compression_level)) {
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT(
+            "Compression level must be -1 or within 0-9");
+    }
 
     if (chunk->chunk_options & NMO_CHUNK_OPTION_PACKED) {
         NMO_RETURN_OK();
