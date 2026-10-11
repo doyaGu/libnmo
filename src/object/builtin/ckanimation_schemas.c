@@ -21,6 +21,7 @@
 #include "object/nmo_ref.h"
 #include "type/nmo_reflection.h"
 #include "object/nmo_object_struct_guids.h"
+#include <math.h>
 #include <string.h>
 #include <stddef.h>
 
@@ -353,6 +354,164 @@ NMO_DEFINE_OBJECT_LAYOUT_OPS(objectanimation, nmo_objectanimation_layout)
 #define CKANIMATION_TCBSCLAXIS_CONTROL  0x32595908u
 #define CKANIMATION_BEZIERPOS_CONTROL   0x921ab801u
 #define CKANIMATION_BEZIERSCL_CONTROL   0x18ab4404u
+
+#define CKANIMATION_CONTROLLER_POS      0x00000001u
+#define CKANIMATION_CONTROLLER_ROT      0x00000002u
+#define CKANIMATION_CONTROLLER_SCL      0x00000004u
+#define CKANIMATION_CONTROLLER_MORPH    0x00000010u
+
+static bool objanim_controller_canonical_type(
+    uint32_t type,
+    uint32_t *out_type)
+{
+    uint32_t canonical = type;
+    switch (type) {
+    case CKANIMATION_CONTROLLER_POS:
+        canonical = CKANIMATION_LINPOS_CONTROL;
+        break;
+    case CKANIMATION_CONTROLLER_ROT:
+        canonical = CKANIMATION_LINROT_CONTROL;
+        break;
+    case CKANIMATION_CONTROLLER_SCL:
+        canonical = CKANIMATION_LINSCL_CONTROL;
+        break;
+    case CKANIMATION_CONTROLLER_MORPH:
+        canonical = NMO_OBJANIM_CONTROLLER_MORPH;
+        break;
+    default:
+        break;
+    }
+
+    switch (canonical) {
+    case CKANIMATION_LINPOS_CONTROL:
+    case CKANIMATION_LINROT_CONTROL:
+    case CKANIMATION_LINSCL_CONTROL:
+    case CKANIMATION_LINSCLAXIS_CONTROL:
+    case CKANIMATION_TCBPOS_CONTROL:
+    case CKANIMATION_TCBROT_CONTROL:
+    case CKANIMATION_TCBSCL_CONTROL:
+    case CKANIMATION_TCBSCLAXIS_CONTROL:
+    case CKANIMATION_BEZIERPOS_CONTROL:
+    case CKANIMATION_BEZIERSCL_CONTROL:
+    case NMO_OBJANIM_CONTROLLER_MORPH:
+        if (out_type != NULL) *out_type = canonical;
+        return true;
+    default:
+        return false;
+    }
+}
+
+static bool objanim_controller_key_payload_valid(
+    uint32_t canonical_type,
+    const void *keys,
+    size_t available,
+    uint32_t key_count,
+    size_t *out_size)
+{
+    size_t keys_size = 0u;
+    if (!nmo_objanim_controller_keys_size(
+            canonical_type, CKOBJANIM_FORMAT_CONTROLLERS,
+            keys, available, key_count, &keys_size)) {
+        return false;
+    }
+
+    float previous_time = 0.0f;
+    size_t offset = 0u;
+    for (uint32_t i = 0; i < key_count; ++i) {
+        float time = 0.0f;
+        if (nmo_objanim_controller_is_bezier(canonical_type)) {
+            nmo_objanim_bezier_key_t key;
+            const size_t key_size = nmo_objanim_bezier_key_decode(
+                (const uint8_t *)keys + offset,
+                available - offset, &key);
+            if (key_size == 0u) return false;
+            time = key.time;
+            offset += key_size;
+        } else {
+            const uint32_t key_size = nmo_objanim_controller_key_size(
+                canonical_type);
+            if (key_size == 0u || keys == NULL) return false;
+            memcpy(&time, (const uint8_t *)keys + offset, sizeof(time));
+            offset += key_size;
+        }
+        if (!isfinite(time) || (i > 0u && time < previous_time)) {
+            return false;
+        }
+        previous_time = time;
+    }
+
+    if (out_size != NULL) *out_size = keys_size;
+    return true;
+}
+
+static bool objanim_morph_blob_valid(
+    const void *blob,
+    size_t blob_size,
+    size_t *out_consumed)
+{
+    if (blob == NULL || blob_size < 3u * sizeof(uint32_t)) return false;
+
+    int32_t header[3];
+    memcpy(header, blob, sizeof(header));
+    if (header[0] < 0 || header[1] < 0) return false;
+
+    const uint64_t key_count = (uint32_t)header[0];
+    const uint64_t vertex_count = (uint32_t)header[1];
+    const uint64_t vertex_size = header[2] != 0 ? 16u : 12u;
+    const uint64_t key_size = sizeof(float) + vertex_count * vertex_size;
+    if (key_count != 0u &&
+        key_size > (UINT64_MAX - 3u * sizeof(uint32_t)) / key_count) {
+        return false;
+    }
+    const uint64_t total = 3u * sizeof(uint32_t) + key_count * key_size;
+    if (total > blob_size || total > SIZE_MAX) return false;
+
+    float previous_time = 0.0f;
+    for (uint32_t i = 0u; i < (uint32_t)key_count; ++i) {
+        float time = 0.0f;
+        const size_t offset = 3u * sizeof(uint32_t) +
+            (size_t)((uint64_t)i * key_size);
+        memcpy(&time, (const uint8_t *)blob + offset, sizeof(time));
+        if (!isfinite(time) || (i > 0u && time < previous_time)) {
+            return false;
+        }
+        previous_time = time;
+    }
+
+    if (out_consumed != NULL) *out_consumed = (size_t)total;
+    return true;
+}
+
+static bool objanim_controller_blob_valid(
+    uint32_t canonical_type,
+    const void *blob,
+    size_t blob_size,
+    uint32_t *out_key_count,
+    size_t *out_consumed)
+{
+    if (canonical_type == NMO_OBJANIM_CONTROLLER_MORPH) {
+        if (out_key_count != NULL) *out_key_count = 0u;
+        return objanim_morph_blob_valid(blob, blob_size, out_consumed);
+    }
+    if (blob == NULL || blob_size < sizeof(uint32_t)) return false;
+
+    int32_t signed_count = 0;
+    memcpy(&signed_count, blob, sizeof(signed_count));
+    if (signed_count < 0) return false;
+    const uint32_t key_count = (uint32_t)signed_count;
+    size_t keys_size = 0u;
+    if (!objanim_controller_key_payload_valid(
+            canonical_type,
+            (const uint8_t *)blob + sizeof(uint32_t),
+            blob_size - sizeof(uint32_t), key_count, &keys_size)) {
+        return false;
+    }
+    if (out_key_count != NULL) *out_key_count = key_count;
+    if (out_consumed != NULL) {
+        *out_consumed = sizeof(uint32_t) + keys_size;
+    }
+    return true;
+}
 
 /* =============================================================================
  * REFLECTION FIELDS
@@ -694,15 +853,29 @@ static nmo_status_t nmo_objectanimation_validate(
              (s->controllers[i].data_size & 3u) != 0u)) {
             return NMO_ERR_VALIDATION_FAILED;
         }
-        if (s->format == CKOBJANIM_FORMAT_CONTROLLERS &&
-            s->controllers[i].key_count > 0u) {
-            size_t keys_size = 0u;
-            if (!nmo_objanim_controller_keys_size(
-                    s->controllers[i].type, s->format, s->controllers[i].data,
-                    s->controllers[i].data_size, s->controllers[i].key_count,
-                    &keys_size) ||
-                keys_size != s->controllers[i].data_size) {
-                return NMO_ERR_VALIDATION_FAILED;
+        if (s->format == CKOBJANIM_FORMAT_CONTROLLERS) {
+            uint32_t canonical_type = 0u;
+            const bool known = objanim_controller_canonical_type(
+                s->controllers[i].type, &canonical_type);
+            if (s->controllers[i].key_count > 0u) {
+                size_t keys_size = 0u;
+                if (!known ||
+                    canonical_type == NMO_OBJANIM_CONTROLLER_MORPH ||
+                    !objanim_controller_key_payload_valid(
+                        canonical_type, s->controllers[i].data,
+                        s->controllers[i].data_size,
+                        s->controllers[i].key_count, &keys_size) ||
+                    keys_size != s->controllers[i].data_size) {
+                    return NMO_ERR_VALIDATION_FAILED;
+                }
+            } else if (known && s->controllers[i].data_size > 0u) {
+                size_t consumed = 0u;
+                if (!objanim_controller_blob_valid(
+                        canonical_type, s->controllers[i].data,
+                        s->controllers[i].data_size, NULL, &consumed) ||
+                    consumed > s->controllers[i].data_size) {
+                    return NMO_ERR_VALIDATION_FAILED;
+                }
             }
         }
         if (s->format == CKOBJANIM_FORMAT_NEWDATA ||
@@ -1513,15 +1686,28 @@ static nmo_status_t read_controllers_loop(
             NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                              "Controller count exceeds state limits");
         }
-        /* Known layouts drop the count prefix; other blobs stay raw. */
+        uint32_t canonical_type = type;
+        const bool known = objanim_controller_canonical_type(
+            type, &canonical_type);
+        size_t consumed = 0u;
+        if (known && !objanim_controller_blob_valid(
+                canonical_type, data, data_size, NULL, &consumed)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Known controller payload is malformed");
+        }
+
+        /* Exact fixed and bezier layouts drop the count prefix.  Padding and
+           morph data stay raw so no unread bytes are lost. */
         nmo_objanim_controller_t controller = {
-            .type = type,
+            .type = canonical_type,
             .key_count = 0u,
             .data_size = data_size,
             .data = data,
         };
-        if (objanim_controller_split_blob(
-                type, data, data_size,
+        if (known && consumed == data_size &&
+            canonical_type != NMO_OBJANIM_CONTROLLER_MORPH &&
+            objanim_controller_split_blob(
+                canonical_type, data, data_size,
                 &controller.key_count, &controller.data_size)) {
             controller.data = (uint8_t *)data + sizeof(uint32_t);
         }
