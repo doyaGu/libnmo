@@ -11,6 +11,7 @@
 #include "format/nmo_chunk_api.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_grid_schemas.h"
+#include "object/builtin/nmo_layer_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/builtin/nmo_parameteroperation_schemas.h"
@@ -405,6 +406,48 @@ TEST(place_grid_behavior_gaps, grid_keeps_the_layer_entries_the_engine_checks_aw
     nmo_arena_destroy(arena);
 }
 
+TEST(place_grid_behavior_gaps, layer_normalizes_partial_cell_payloads)
+{
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NOT_NULL(arena);
+
+    const uint8_t payload[6] = {1u, 2u, 3u, 4u, 5u, 6u};
+    nmo_chunk_t *chunk = new_chunk(
+        arena, NMO_CID_LAYER, 7, NMO_CHUNK_OPTION_FILE);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        chunk, CK_STATESAVE_LAYERDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(chunk, 0u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_buffer(
+        chunk, payload, sizeof(payload)));
+    nmo_chunk_close(chunk);
+
+    nmo_deserialize_context_t des_ctx = nmo_deserialize_context_create(
+        arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+    nmo_layer_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_layer_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_layer_deserialize(
+        &loaded, chunk, NULL, &des_ctx));
+    ASSERT_TRUE(loaded.has_square_data);
+    ASSERT_EQ(sizeof(uint32_t), loaded.square_data_size);
+    ASSERT_EQ(0, memcmp(payload, loaded.square_data, sizeof(uint32_t)));
+
+    nmo_layer_state_t invalid = loaded;
+    invalid.square_data_size = sizeof(payload);
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_chunk_t *target = new_chunk(
+        arena, NMO_CID_LAYER, 7, NMO_CHUNK_OPTION_FILE);
+    ASSERT_NOT_NULL(target);
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_layer_serialize(
+        &invalid, target, NULL, &ser_ctx));
+
+    nmo_layer_vtable.destroy(&loaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(place_grid_behavior_gaps, legacy_building_block_keeps_parameter_and_io_sections);
     REGISTER_TEST(place_grid_behavior_gaps, legacy_building_block_chunk_with_foreign_sections_is_read);
@@ -414,4 +457,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(place_grid_behavior_gaps, parameter_effective_type_guid_maps_the_four_legacy_types);
     REGISTER_TEST(place_grid_behavior_gaps, place_keeps_the_portal_entries_the_engine_drops);
     REGISTER_TEST(place_grid_behavior_gaps, grid_keeps_the_layer_entries_the_engine_checks_away);
+    REGISTER_TEST(place_grid_behavior_gaps, layer_normalizes_partial_cell_payloads);
 TEST_MAIN_END()

@@ -193,7 +193,10 @@ static nmo_status_t nmo_layer_deserialize_internal(
             dwords[i] = nmo_le32toh(dwords[i]);
         }
         out_state->square_data = raw;
-        out_state->square_data_size = raw_size;
+        /* CKSquare's serialized value is exactly one DWORD.  Native Load
+           derives its cell count with integer division and drops any partial
+           trailing cell. */
+        out_state->square_data_size = dword_count * sizeof(uint32_t);
         out_state->has_square_data = 1;
     }
 
@@ -304,7 +307,7 @@ static nmo_status_t nmo_layer_serialize_internal(
     NMO_RETURN_OK();
 }
 
-NMO_DEFINE_OBJECT_STAGED_SERIALIZE(nmo_layer)
+NMO_DEFINE_OBJECT_STAGED_SERIALIZE_VALIDATED(nmo_layer)
 
 static const nmo_type_field_t nmo_layer_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_layer_state_t, base),
@@ -340,6 +343,9 @@ static nmo_status_t nmo_layer_validate(
     const nmo_layer_state_t *s = instance;
     if (s == NULL) return NMO_ERR_INVALID_ARGUMENT;
     NMO_VALIDATE_BYTES(s->square_data, s->square_data_size, "square_data");
+    if ((s->square_data_size & (sizeof(uint32_t) - 1u)) != 0u) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
     NMO_RETURN_OK();
 }
 
