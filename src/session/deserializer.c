@@ -258,10 +258,15 @@ static int nmo_load_included_files(
         if (max_name_len == 0) {
             max_name_len = NMO_LOAD_DEFAULT_MAX_INCLUDED_NAME_LEN;
         }
-        if (name_len > max_name_len) {
+        if (name_len > INT32_MAX || name_len > max_name_len) {
             nmo_log(logger, NMO_LOG_ERROR,
                     "Included filename too large (%u bytes)", name_len);
             result = NMO_ERR_INVALID_FORMAT;
+            goto cleanup;
+        }
+
+        result = deserializer_require_bytes(io, (uint64_t)name_len + sizeof(uint32_t));
+        if (result != NMO_OK) {
             goto cleanup;
         }
 
@@ -317,10 +322,15 @@ static int nmo_load_included_files(
         if (max_data_size == 0) {
             max_data_size = NMO_LOAD_DEFAULT_MAX_INCLUDED_FILE_SIZE;
         }
-        if (data_size_val > max_data_size) {
+        if (data_size_val > INT32_MAX || data_size_val > max_data_size) {
             nmo_log(logger, NMO_LOG_ERROR,
                 "Included file '%s' too large (%u bytes)", name_buf, data_size_val);
             result = NMO_ERR_INVALID_FORMAT;
+            goto cleanup;
+        }
+
+        result = deserializer_require_bytes(io, data_size_val);
+        if (result != NMO_OK) {
             goto cleanup;
         }
 

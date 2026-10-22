@@ -484,10 +484,33 @@ static nmo_status_t parse_data_payload(const void *payload,
     return result;
 }
 
-static nmo_status_t parse_included_payload(const void *payload,
+typedef struct bounded_allocator_context {
+    nmo_allocator_t base;
+    size_t large_requests;
+} bounded_allocator_context_t;
+
+static void *bounded_alloc(void *user_data, size_t size, size_t alignment)
+{
+    bounded_allocator_context_t *state = (bounded_allocator_context_t *)user_data;
+    if (size > 64u * 1024u * 1024u) {
+        state->large_requests++;
+        return NULL;
+    }
+    return state->base.alloc(state->base.user_data, size, alignment);
+}
+
+static void bounded_free(void *user_data, void *ptr)
+{
+    bounded_allocator_context_t *state = (bounded_allocator_context_t *)user_data;
+    state->base.free(state->base.user_data, ptr);
+}
+
+static nmo_status_t parse_included_payload_with_options(const void *payload,
                                            size_t payload_size,
                                            uint32_t included_count,
-                                           uint32_t *out_loaded_count)
+                                           uint32_t *out_loaded_count,
+                                           const nmo_load_options_t *options,
+                                           size_t *out_large_requests)
 {
     nmo_file_header_t header = {0};
     memcpy(header.signature, "Nemo Fi\0", sizeof(header.signature));
@@ -521,13 +544,16 @@ static nmo_status_t parse_included_payload(const void *payload,
         return result != NMO_OK ? result : NMO_ERR_INTERNAL;
     }
 
-    nmo_context_t *ctx = nmo_context_create(NULL);
+    bounded_allocator_context_t allocation = {nmo_allocator_default(), 0u};
+    nmo_allocator_t allocator = nmo_allocator_custom(bounded_alloc, bounded_free, &allocation);
+    const nmo_context_desc_t desc = {.allocator = &allocator};
+    nmo_context_t *ctx = nmo_context_create(&desc);
     nmo_session_t *session = ctx != NULL ? nmo_session_create(ctx) : NULL;
     nmo_io_interface_t *read_io = session != NULL
         ? nmo_memory_io_open_read(data, size)
         : NULL;
     nmo_deserializer_t *ds = read_io != NULL
-        ? nmo_deserializer_create(session, read_io, NULL)
+        ? nmo_deserializer_create(session, read_io, options)
         : NULL;
     if (ds == NULL) {
         if (read_io != NULL) {
@@ -548,7 +574,17 @@ static nmo_status_t parse_included_payload(const void *payload,
     nmo_deserializer_destroy(ds);
     destroy_ctx_session(ctx, session);
     nmo_io_close(write_io);
+    if (out_large_requests != NULL) *out_large_requests = allocation.large_requests;
     return result;
+}
+
+static nmo_status_t parse_included_payload(const void *payload,
+                                           size_t payload_size,
+                                           uint32_t included_count,
+                                           uint32_t *out_loaded_count)
+{
+    return parse_included_payload_with_options(payload, payload_size, included_count,
+                                               out_loaded_count, NULL, NULL);
 }
 
 typedef struct rejecting_allocator_context {
@@ -911,6 +947,28 @@ TEST(load_options, included_file_loading_stops_at_header_count)
     ASSERT_EQ(1u, loaded_count);
 }
 
+TEST(load_options, included_lengths_remain_signed_when_limits_are_raised)
+{
+    const uint32_t lengths[] = {INT32_MAX, 0x80000000u, UINT32_MAX};
+    nmo_load_options_t options = nmo_load_options_default();
+    options.max_included_name_len = UINT32_MAX;
+    options.max_included_file_size = UINT32_MAX;
+    for (size_t field = 0u; field < 2u; ++field) {
+        for (size_t i = 0u; i < sizeof(lengths) / sizeof(lengths[0]); ++i) {
+            uint8_t payload[8] = {0};
+            nmo_write_u32_le(payload + field * 4u, lengths[i]);
+            uint32_t loaded_count = UINT32_MAX;
+            size_t large_requests = SIZE_MAX;
+            const nmo_status_t status = parse_included_payload_with_options(
+                payload, sizeof(payload), 1u, &loaded_count, &options, &large_requests);
+            ASSERT_EQ(lengths[i] > INT32_MAX ? NMO_ERR_INVALID_FORMAT : NMO_ERR_TRUNCATED_CHUNK,
+                      status);
+            ASSERT_EQ(0u, loaded_count);
+            ASSERT_EQ(0u, large_requests);
+        }
+    }
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(load_options, metadata_profile_stops_after_header_and_rejects_mutation);
     REGISTER_TEST(load_options, partial_profile_rejects_non_empty_session);
@@ -932,6 +990,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(load_options, phased_data_classifies_payload_failures);
     REGISTER_TEST(load_options, included_file_failure_does_not_publish_prefix);
     REGISTER_TEST(load_options, included_file_loading_stops_at_header_count);
+    REGISTER_TEST(load_options, included_lengths_remain_signed_when_limits_are_raised);
 TEST_MAIN_END()
 
 
