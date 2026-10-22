@@ -20,6 +20,7 @@
 #include "format/nmo_image.h"
 #include "io/nmo_io_memory.h"
 #include "object/builtin/nmo_mesh_schemas.h"
+#include "object/builtin/nmo_bitmap_slots.h"
 #include "object/builtin/nmo_texture_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_deserialize_context.h"
@@ -638,7 +639,46 @@ TEST(header1_gaps, plugin_entry_with_zero_guid_is_kept)
     nmo_arena_destroy(arena);
 }
 
+TEST(texture_gaps, reader_dimensions_are_required_only_for_nonempty_slots)
+{
+    const nmo_bitmap_slot_ids_t ids = {1u, 2u, 3u, 4u, 5u};
+    static const int32_t dimensions[][2] = {{0, 0}, {-1, 1}, {1, -1}, {1, 1}};
+    for (uint32_t count = 0; count <= 1u; ++count) {
+        for (size_t i = 0; i < sizeof(dimensions) / sizeof(dimensions[0]); ++i) {
+            nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+            ASSERT_NOT_NULL(arena);
+            nmo_chunk_t *chunk = nmo_chunk_create(arena);
+            ASSERT_NOT_NULL(chunk);
+            ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, ids.reader));
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, (int32_t)count));
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, dimensions[i][0]));
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, dimensions[i][1]));
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 32));
+            if (count != 0u) {
+                ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0u));
+            }
+            nmo_chunk_close(chunk);
+            nmo_bitmap_slots_t bitmap = {0};
+            const bool valid = count == 0u ||
+                (dimensions[i][0] > 0 && dimensions[i][1] > 0);
+            ASSERT_EQ(valid ? NMO_OK : NMO_ERR_INVALID_FORMAT,
+                nmo_bitmap_slots_read(chunk, arena, &ids, &bitmap));
+            nmo_texture_reader_slot_t empty = {0};
+            bitmap.kind = CKTEXTURE_BITMAP_READER;
+            bitmap.slot_count = count;
+            bitmap.reader_width = dimensions[i][0];
+            bitmap.reader_height = dimensions[i][1];
+            bitmap.reader_slots = count == 0u ? NULL : &empty;
+            ASSERT_EQ(valid ? NMO_OK : NMO_ERR_VALIDATION_FAILED,
+                nmo_bitmap_slots_validate(&bitmap));
+            nmo_arena_destroy(arena);
+        }
+    }
+}
+
 TEST_MAIN_BEGIN()
+    REGISTER_TEST(texture_gaps, reader_dimensions_are_required_only_for_nonempty_slots);
     REGISTER_TEST(texture_gaps, desired_video_format_keeps_the_stored_value);
     REGISTER_TEST(texture_gaps, raw_slot_below_24_bits_per_pixel_decodes_like_32);
     REGISTER_TEST(mesh_gaps, weight_section_of_eight_bytes_is_the_uniform_form);

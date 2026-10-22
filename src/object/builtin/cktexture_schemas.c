@@ -1714,6 +1714,10 @@ nmo_status_t nmo_bitmap_slots_read(
         if (header_result != NMO_OK) return header_result;
         header_result = nmo_chunk_read_int(chunk, &bpp);
         if (header_result != NMO_OK) return header_result;
+        if (count > 0 && (width <= 0 || height <= 0)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Nonempty bitmap reader slots require positive dimensions");
+        }
         bitmap->reader_width = width;
         bitmap->reader_height = height;
         bitmap->reader_bpp = bpp;
@@ -1875,6 +1879,11 @@ nmo_status_t nmo_bitmap_slots_validate(const nmo_bitmap_slots_t *bitmap)
                          "Bitmap slot file names are present without their section");
     }
     if (bitmap->kind == CKTEXTURE_BITMAP_READER) {
+        if (bitmap->slot_count > 0u &&
+            (bitmap->reader_width <= 0 || bitmap->reader_height <= 0)) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                             "Nonempty bitmap reader slots require positive dimensions");
+        }
         NMO_VALIDATE_COUNT(bitmap->reader_slots, bitmap->slot_count, "reader_slots");
     } else if (bitmap->kind == CKTEXTURE_BITMAP_RAW) {
         NMO_VALIDATE_COUNT(bitmap->raw_slots, bitmap->slot_count, "raw_slots");

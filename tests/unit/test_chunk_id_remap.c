@@ -8831,6 +8831,8 @@ TEST(chunk_id_remap, texture_copy_preserves_nested_content) {
         &unnamed_copy, NULL, NULL));
     unnamed.slot_count = 1;
     unnamed.bitmap_kind = CKTEXTURE_BITMAP_READER;
+    unnamed.reader_width = 1;
+    unnamed.reader_height = 1;
     unnamed.reader_slots = &reader_slot;
     ASSERT_EQ(NMO_OK, nmo_texture_vtable.copy(
         &unnamed, &unnamed_copy, &type, arena));
@@ -12553,6 +12555,8 @@ TEST(chunk_id_remap, spritetext_copy_preserves_base_and_strings) {
         .format_type = 1, .data_size = 1, .data = text_encoded,
     };
     source.base.bitmap.kind = CKTEXTURE_BITMAP_READER;
+    source.base.bitmap.reader_width = 1;
+    source.base.bitmap.reader_height = 1;
     source.base.bitmap.slot_count = 1;
     source.base.bitmap.reader_slots = &text_slot;
     source.text_content = "Hello";
