@@ -12,6 +12,7 @@
 #include "test_framework.h"
 
 #include "core/nmo_arena.h"
+#include "core/nmo_utils.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_data.h"
@@ -20,6 +21,7 @@
 #include "format/nmo_image.h"
 #include "io/nmo_io_memory.h"
 #include "object/builtin/nmo_mesh_schemas.h"
+#include "object/builtin/nmo_material_schemas.h"
 #include "object/builtin/nmo_bitmap_slots.h"
 #include "object/builtin/nmo_texture_schemas.h"
 #include "object/nmo_class_ids.h"
@@ -686,7 +688,90 @@ TEST(texture_gaps, reader_dimensions_are_required_only_for_nonempty_slots)
     }
 }
 
+TEST(material_gaps, legacy_color_prefixes_keep_constructor_defaults)
+{
+    static const uint32_t sizes[] = {0u, 1u, 4u, 7u, 8u, 12u, 15u, 16u, 17u};
+    static const uint32_t expected[4][8] = {
+        {0xFFB2B2B2u, 0xFFB2B2B2u, 0xFFFFB2B2u, 0xFFFF7FB2u,
+         0xFFFF00B2u, 0xFFFF007Fu, 0xFFFF007Fu, 0x3FFF007Fu},
+        {0xFF4C4C4Cu, 0xFF4C4C4Cu, 0xFFFF4C4Cu, 0xFFFF1F4Cu,
+         0xFFFF004Cu, 0xFFFF007Fu, 0xFFFF007Fu, 0x3FFF007Fu},
+        {0xFF7F7F7Fu, 0xFF7F7F7Fu, 0xFFFF7F7Fu, 0xFFFF7F7Fu,
+         0xFFFF007Fu, 0xFFFF007Fu, 0xFFFF007Fu, 0x3FFF007Fu},
+        {0xFF000000u, 0xFF000000u, 0xFFFF0000u, 0xFFFF0000u,
+         0xFFFF0000u, 0xFFFF007Fu, 0xFFFF007Fu, 0x3FFF007Fu},
+    };
+    const uint32_t payload_words[] = {0x3F800000u, 0u, 0x3F000000u, 0x3E800000u, 0u};
+    uint8_t payload[sizeof(payload_words)];
+    for (size_t d = 0; d < sizeof(payload_words) / sizeof(payload_words[0]); ++d) {
+        nmo_write_u32_le(payload + d * 4u, payload_words[d]);
+    }
+    /* Vary each color separately, then all four together (including the
+     * minimum 17-DWORD legacy section with four empty color prefixes). */
+    for (size_t selected = 0u; selected <= 4u; ++selected) {
+        for (size_t c = 0u; c < sizeof(sizes) / sizeof(sizes[0]); ++c) {
+            nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+            ASSERT_NOT_NULL(arena);
+            nmo_chunk_t *chunk = nmo_chunk_create(arena);
+            ASSERT_NOT_NULL(chunk);
+            chunk->class_id = NMO_CID_MATERIAL;
+            chunk->data_version = 4u;
+            ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, CK_STATESAVE_MATDATA));
+            for (size_t color = 0u; color < 4u; ++color) {
+                const uint32_t size = selected == color || selected == 4u ? sizes[c] : 16u;
+                ASSERT_EQ(NMO_OK, nmo_chunk_write_buffer(chunk, payload, size));
+            }
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_float(chunk, 12.0f));
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0u));
+            const uint32_t settings[] = {6u, 4u, 2u, 2u, 2u, 1u, 2u, 3u, 1u, 0x12345678u, 4u};
+            for (size_t s = 0; s < sizeof(settings) / sizeof(settings[0]); ++s) {
+                ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, settings[s]));
+            }
+            nmo_chunk_close(chunk);
+            nmo_deserialize_context_t des = nmo_deserialize_context_create(
+                arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+            nmo_material_state_t loaded;
+            ASSERT_EQ(NMO_OK, nmo_material_vtable.create(&loaded, NULL, NULL));
+            loaded.specular_power = 42.0f;
+            ASSERT_EQ(sizes[c] <= 16u ? NMO_OK : NMO_ERR_INVALID_FORMAT,
+                nmo_material_deserialize(&loaded, chunk, NULL, &des));
+            if (sizes[c] <= 16u) {
+                const uint32_t actual[] = {loaded.diffuse_color, loaded.ambient_color,
+                                          loaded.specular_color, loaded.emissive_color};
+                for (size_t color = 0u; color < 4u; ++color) {
+                    ASSERT_EQ(selected == color || selected == 4u ? expected[color][c] : 0x3FFF007Fu,
+                              actual[color]);
+                }
+                ASSERT_EQ(12.0f, loaded.specular_power);
+                ASSERT_EQ(0x12345678u, loaded.texture_border_color);
+                nmo_serialize_context_t ser = nmo_serialize_context_create(
+                    arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+                nmo_chunk_t *saved = nmo_chunk_create(arena);
+                ASSERT_NOT_NULL(saved);
+                saved->class_id = NMO_CID_MATERIAL;
+                saved->data_version = 4u;
+                ASSERT_EQ(NMO_OK, nmo_material_serialize(&loaded, saved, NULL, &ser));
+                nmo_chunk_close(saved);
+                nmo_material_state_t reloaded;
+                ASSERT_EQ(NMO_OK, nmo_material_vtable.create(&reloaded, NULL, NULL));
+                ASSERT_EQ(NMO_OK, nmo_material_deserialize(&reloaded, saved, NULL, &des));
+                ASSERT_EQ(loaded.diffuse_color, reloaded.diffuse_color);
+                ASSERT_EQ(loaded.ambient_color, reloaded.ambient_color);
+                ASSERT_EQ(loaded.specular_color, reloaded.specular_color);
+                ASSERT_EQ(loaded.emissive_color, reloaded.emissive_color);
+                nmo_material_vtable.destroy(&reloaded, NULL, NULL);
+            } else {
+                ASSERT_EQ(42.0f, loaded.specular_power);
+            }
+            nmo_material_vtable.destroy(&loaded, NULL, NULL);
+            nmo_arena_destroy(arena);
+        }
+    }
+}
+
 TEST_MAIN_BEGIN()
+    REGISTER_TEST(material_gaps, legacy_color_prefixes_keep_constructor_defaults);
     REGISTER_TEST(texture_gaps, reader_dimensions_are_required_only_for_nonempty_slots);
     REGISTER_TEST(texture_gaps, desired_video_format_keeps_the_stored_value);
     REGISTER_TEST(texture_gaps, raw_slot_below_24_bits_per_pixel_decodes_like_32);

@@ -20,6 +20,7 @@
 #include "format/nmo_chunk_api.h"
 #include "object/nmo_object_repository.h"
 #include "core/nmo_color.h"
+#include "core/nmo_utils.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include "type/nmo_reflection.h"
@@ -160,20 +161,34 @@ static uint32_t nmo_material_normalize_packed_flags(uint32_t packed_flags)
            (packed_flags & 0xFF000000u);
 }
 
-/* In files with data_version < 5 each color is a size-prefixed buffer of four
- * floats (ReadAndFillBuffer_LEndian), [16][r][g][b][a]. */
+/* Legacy colors are size-prefixed raw float records. Short prefixes retain
+ * constructor bytes; oversized records would overwrite the native object. */
 static nmo_status_t nmo_material_read_legacy_color(
-    nmo_chunk_t *chunk, nmo_color_t *out_color)
+    nmo_chunk_t *chunk, nmo_color_t *out_color, size_t trailing_dwords)
 {
     uint32_t size = 0;
     NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &size));
-    if (size != 4u * sizeof(float)) {
+    if (size > 4u * sizeof(float)) {
         return NMO_ERR_INVALID_FORMAT;
     }
-    NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_color->r));
-    NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_color->g));
-    NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_color->b));
-    NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_color->a));
+    const size_t remaining = nmo_chunk_identifier_remaining_dwords(chunk);
+    const size_t payload_dwords = (size + 3u) / 4u;
+    if (trailing_dwords > remaining || payload_dwords > remaining - trailing_dwords) {
+        return NMO_ERR_TRUNCATED_CHUNK;
+    }
+    float values[4] = {out_color->r, out_color->g, out_color->b, out_color->a};
+    uint8_t bytes[4u * sizeof(float)];
+    for (size_t i = 0; i < 4u; ++i) {
+        uint32_t bits = 0u;
+        memcpy(&bits, &values[i], sizeof(bits));
+        nmo_write_u32_le(bytes + i * sizeof(bits), bits);
+    }
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_and_fill_buffer_nosize_checked(chunk, bytes, size));
+    for (size_t i = 0; i < 4u; ++i) {
+        uint32_t bits = nmo_read_u32_le(bytes + i * sizeof(bits));
+        memcpy(&values[i], &bits, sizeof(bits));
+    }
+    *out_color = (nmo_color_t){values[0], values[1], values[2], values[3]};
     return NMO_OK;
 }
 
@@ -242,25 +257,28 @@ static nmo_status_t nmo_material_deserialize_internal(
         decoded.has_material_data = 1;
         uint32_t data_version = nmo_chunk_get_data_version(chunk);
         decoded.material_data_is_legacy = data_version < 5u;
-        const size_t expected_dwords = data_version < 5u ? 33u : 9u;
+        const size_t expected_dwords = data_version < 5u ? 17u : 9u;
         if (payload_dwords < expected_dwords) {
             return NMO_ERR_TRUNCATED_CHUNK;
         }
 
         if (data_version < 5) {
-            nmo_color_t color;
+            nmo_color_t color = {0.7f, 0.7f, 0.7f, 1.0f};
 
-            NMO_RETURN_IF_ERROR(nmo_material_read_legacy_color(chunk, &color));
+            NMO_RETURN_IF_ERROR(nmo_material_read_legacy_color(chunk, &color, 16u));
             const float diffuse_a = color.a;
             decoded.diffuse_color = nmo_material_pack_legacy_color(&color);
 
-            NMO_RETURN_IF_ERROR(nmo_material_read_legacy_color(chunk, &color));
+            color = (nmo_color_t){0.3f, 0.3f, 0.3f, 1.0f};
+            NMO_RETURN_IF_ERROR(nmo_material_read_legacy_color(chunk, &color, 15u));
             decoded.ambient_color = nmo_material_pack_legacy_color(&color);
 
-            NMO_RETURN_IF_ERROR(nmo_material_read_legacy_color(chunk, &color));
+            color = (nmo_color_t){0.5f, 0.5f, 0.5f, 1.0f};
+            NMO_RETURN_IF_ERROR(nmo_material_read_legacy_color(chunk, &color, 14u));
             decoded.specular_color = nmo_material_pack_legacy_color(&color);
 
-            NMO_RETURN_IF_ERROR(nmo_material_read_legacy_color(chunk, &color));
+            color = (nmo_color_t){0.0f, 0.0f, 0.0f, 1.0f};
+            NMO_RETURN_IF_ERROR(nmo_material_read_legacy_color(chunk, &color, 13u));
             decoded.emissive_color = nmo_material_pack_legacy_color(&color);
 
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(

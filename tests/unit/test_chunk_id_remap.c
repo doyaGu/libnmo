@@ -3303,7 +3303,8 @@ TEST(chunk_id_remap, material_refs_round_trip_and_failure_is_atomic) {
     /* One dword short of the 33 a legacy section holds: four size-prefixed
      * colors (5 dwords each), power, texture, eleven settings. */
     for (size_t i = 0; i < 32; ++i) {
-        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(legacy_cross_section, 0));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+            legacy_cross_section, i < 20u && i % 5u == 0u ? 16u : 0u));
     }
     ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
         legacy_cross_section, 0x01020304u));
