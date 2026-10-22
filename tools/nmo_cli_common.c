@@ -5,6 +5,7 @@
 
 #include "nmo_cli_common.h"
 #include "nmo_tool_common.h"
+#include "nmo_opt.h"
 #include "type/nmo_type_query.h"
 
 #include <string.h>
@@ -100,14 +101,112 @@ static bool add_plugin_path(nmo_cli_global_opts_t *opts, const char *path) {
 }
 
 /**
- * Check if argument is a long option with value (--opt=value)
+ * Match @p arg against a value option spelled @p long_name or @p short_name
+ * ("--name value", "--name=value", "-s value").
+ *
+ * @return Tokens consumed (1 or 2), 0 when @p arg is a different option,
+ *         or -1 when the value is missing (message printed).
  */
-static const char *get_long_opt_value(const char *arg, const char *opt) {
-    size_t opt_len = strlen(opt);
-    if (strncmp(arg, opt, opt_len) == 0 && arg[opt_len] == '=') {
-        return arg + opt_len + 1;
+static int match_value_opt(int argc, char **argv, int i,
+                           const char *long_name, const char *short_name,
+                           const char **out_value) {
+    const char *arg = argv[i];
+    size_t long_len = strlen(long_name);
+    if (strncmp(arg, long_name, long_len) == 0 && arg[long_len] == '=') {
+        *out_value = arg + long_len + 1;
+        return 1;
     }
-    return NULL;
+    if (strcmp(arg, long_name) != 0 &&
+        (short_name == NULL || strcmp(arg, short_name) != 0)) {
+        return 0;
+    }
+    if (i + 1 >= argc) {
+        fprintf(stderr, "Error: %s requires a value\n", arg);
+        return -1;
+    }
+    *out_value = argv[i + 1];
+    return 2;
+}
+
+static bool is_flag(const char *arg, const char *long_name, const char *short_name) {
+    return strcmp(arg, long_name) == 0 ||
+           (short_name != NULL && strcmp(arg, short_name) == 0);
+}
+
+/**
+ * Parse one global option at argv[i].
+ *
+ * After the action only output and loading options are accepted: -o,
+ * --batch, -h and -V must come before the group.
+ *
+ * @return Tokens consumed, 0 when argv[i] is not a global option, -1 on error.
+ */
+static int parse_global_opt(int argc, char **argv, int i,
+                            nmo_cli_global_opts_t *opts, bool after_action) {
+    const char *arg = argv[i];
+    const char *value = NULL;
+    int n = 0;
+
+    if (is_flag(arg, "--verbose", "-v")) {
+        opts->verbosity++;
+        return 1;
+    }
+    if (is_flag(arg, "--quiet", "-q")) {
+        opts->quiet = true;
+        opts->verbosity--;
+        return 1;
+    }
+    if (is_flag(arg, "--fail-on-warning", NULL)) {
+        opts->fail_on_warning = true;
+        return 1;
+    }
+    if (is_flag(arg, "--strict", NULL)) {
+        opts->strict_mode = true;
+        return 1;
+    }
+    if ((n = match_value_opt(argc, argv, i, "--format", "-f", &value)) != 0) {
+        if (n > 0 && !parse_format(value, &opts->format)) {
+            fprintf(stderr, "Error: Invalid format '%s'\n", value);
+            return -1;
+        }
+        return n;
+    }
+    if ((n = match_value_opt(argc, argv, i, "--color", NULL, &value)) != 0) {
+        if (n > 0 && !parse_color_mode(value, &opts->color_mode)) {
+            fprintf(stderr, "Error: Invalid color mode '%s'\n", value);
+            return -1;
+        }
+        return n;
+    }
+    if ((n = match_value_opt(argc, argv, i, "--plugin", NULL, &value)) != 0) {
+        if (n > 0 && !add_plugin_path(opts, value)) {
+            return -1;
+        }
+        return n;
+    }
+    if (after_action) {
+        return 0;
+    }
+
+    if (is_flag(arg, "--help", "-h")) {
+        opts->show_help = true;
+        return 1;
+    }
+    if (is_flag(arg, "--version", "-V")) {
+        opts->show_version = true;
+        return 1;
+    }
+    if (is_flag(arg, "--batch", NULL)) {
+        opts->batch_mode = true;
+        return 1;
+    }
+    if ((n = match_value_opt(argc, argv, i, "--output", "-o", &value)) != 0) {
+        if (n > 0) {
+            opts->output_path = value;
+        }
+        return n;
+    }
+    return 0;
 }
 
 int nmo_cli_parse_global_opts(int argc, char **argv, nmo_cli_global_opts_t *opts) {
@@ -118,157 +217,47 @@ int nmo_cli_parse_global_opts(int argc, char **argv, nmo_cli_global_opts_t *opts
 
     int i = 1; /* Skip program name */
     while (i < argc) {
-        const char *arg = argv[i];
-
-        /* End of options */
-        if (strcmp(arg, "--") == 0) {
+        /* "--" ends global options; a non-option is the command group */
+        if (strcmp(argv[i], "--") == 0) {
             return i + 1;
         }
-
-        /* Not an option */
-        if (arg[0] != '-') {
+        if (argv[i][0] != '-') {
             return i;
         }
 
-        /* Help */
-        if (strcmp(arg, "-h") == 0 || strcmp(arg, "--help") == 0) {
-            opts->show_help = true;
-            i++;
-            continue;
+        int n = parse_global_opt(argc, argv, i, opts, false);
+        if (n < 0) {
+            return -1;
         }
-
-        /* Version */
-        if (strcmp(arg, "-V") == 0 || strcmp(arg, "--version") == 0) {
-            opts->show_version = true;
-            i++;
-            continue;
+        if (n == 0) {
+            /* Unknown option: the dispatcher reports it */
+            return i;
         }
-
-        /* Verbosity */
-        if (strcmp(arg, "-v") == 0 || strcmp(arg, "--verbose") == 0) {
-            opts->verbosity++;
-            i++;
-            continue;
-        }
-
-        /* Quiet */
-        if (strcmp(arg, "-q") == 0 || strcmp(arg, "--quiet") == 0) {
-            opts->quiet = true;
-            opts->verbosity--;
-            i++;
-            continue;
-        }
-
-        /* Fail on warning */
-        if (strcmp(arg, "--fail-on-warning") == 0) {
-            opts->fail_on_warning = true;
-            i++;
-            continue;
-        }
-
-        /* Strict mode */
-        if (strcmp(arg, "--strict") == 0) {
-            opts->strict_mode = true;
-            i++;
-            continue;
-        }
-
-        /* Format: --format=value or --format value */
-        const char *format_val = get_long_opt_value(arg, "--format");
-        if (format_val) {
-            if (!parse_format(format_val, &opts->format)) {
-                fprintf(stderr, "Error: Invalid format '%s'\n", format_val);
-                return -1;
-            }
-            i++;
-            continue;
-        }
-        if (strcmp(arg, "--format") == 0 || strcmp(arg, "-f") == 0) {
-            if (i + 1 >= argc) {
-                fprintf(stderr, "Error: %s requires a value\n", arg);
-                return -1;
-            }
-            if (!parse_format(argv[i + 1], &opts->format)) {
-                fprintf(stderr, "Error: Invalid format '%s'\n", argv[i + 1]);
-                return -1;
-            }
-            i += 2;
-            continue;
-        }
-
-        /* Color: --color=value or --color value */
-        const char *color_val = get_long_opt_value(arg, "--color");
-        if (color_val) {
-            if (!parse_color_mode(color_val, &opts->color_mode)) {
-                fprintf(stderr, "Error: Invalid color mode '%s'\n", color_val);
-                return -1;
-            }
-            i++;
-            continue;
-        }
-        if (strcmp(arg, "--color") == 0) {
-            if (i + 1 >= argc) {
-                fprintf(stderr, "Error: --color requires a value\n");
-                return -1;
-            }
-            if (!parse_color_mode(argv[i + 1], &opts->color_mode)) {
-                fprintf(stderr, "Error: Invalid color mode '%s'\n", argv[i + 1]);
-                return -1;
-            }
-            i += 2;
-            continue;
-        }
-
-        /* Output file: -o path or --output=path */
-        const char *output_val = get_long_opt_value(arg, "--output");
-        if (output_val) {
-            opts->output_path = output_val;
-            i++;
-            continue;
-        }
-        if (strcmp(arg, "-o") == 0 || strcmp(arg, "--output") == 0) {
-            if (i + 1 >= argc) {
-                fprintf(stderr, "Error: %s requires a path\n", arg);
-                return -1;
-            }
-            opts->output_path = argv[i + 1];
-            i += 2;
-            continue;
-        }
-
-        /* Plugin: --plugin path (repeatable) */
-        const char *plugin_val = get_long_opt_value(arg, "--plugin");
-        if (plugin_val) {
-            if (!add_plugin_path(opts, plugin_val)) {
-                return -1;
-            }
-            i++;
-            continue;
-        }
-        if (strcmp(arg, "--plugin") == 0) {
-            if (i + 1 >= argc) {
-                fprintf(stderr, "Error: --plugin requires a path\n");
-                return -1;
-            }
-            if (!add_plugin_path(opts, argv[i + 1])) {
-                return -1;
-            }
-            i += 2;
-            continue;
-        }
-
-        /* Batch mode */
-        if (strcmp(arg, "--batch") == 0) {
-            opts->batch_mode = true;
-            i++;
-            continue;
-        }
-
-        /* Unknown option - stop parsing, let subcommand handle it */
-        return i;
+        i += n;
     }
 
     return i;
+}
+
+int nmo_cli_parse_trailing_global_opt(int argc, char **argv, int index,
+                                      void *opts) {
+    if (opts == NULL || index < 0 || index >= argc) {
+        return 0;
+    }
+    return parse_global_opt(argc, argv, index,
+                            (nmo_cli_global_opts_t *)opts, true);
+}
+
+int nmo_cli_parse_args(int argc, char **argv,
+                       const nmo_opt_def_t *defs, size_t def_count,
+                       nmo_opt_result_t *result,
+                       nmo_cli_global_opts_t *global) {
+    result->fallback = global ? nmo_cli_parse_trailing_global_opt : NULL;
+    result->fallback_user = global;
+    int rc = nmo_opt_parse(argc, argv, defs, def_count, result);
+    result->fallback = NULL;
+    result->fallback_user = NULL;
+    return rc < 0 ? NMO_CLI_EXIT_ARG_ERROR : NMO_CLI_EXIT_SUCCESS;
 }
 
 void nmo_cli_print_missing_output(const nmo_cli_global_opts_t *opts,

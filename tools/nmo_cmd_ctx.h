@@ -21,6 +21,7 @@
 #include "nmo_cli_common.h"
 #include "nmo_cli_json.h"
 #include "nmo_cli_record.h"
+#include "nmo_opt.h"
 #include "nmo_tool_owner.h"
 #include "nmo_tool_session.h"
 
@@ -36,10 +37,21 @@ extern "C" {
 /* Forward declarations */
 typedef struct nmo_type_registry nmo_type_registry_t;
 
+typedef enum nmo_cmd_ctx_state {
+    NMO_CMD_CTX_READY = 0,        /**< Usable; nmo_cmd_ctx_open is a no-op */
+    NMO_CMD_CTX_PENDING_FILE,     /**< Begun; open the last positional as the file */
+    NMO_CMD_CTX_PENDING_NO_FILE   /**< Begun; open only the output stream */
+} nmo_cmd_ctx_state_t;
+
 typedef struct nmo_cmd_ctx {
     /* Input */
     const nmo_cli_global_opts_t *global;
     const char *file_path;
+
+    /* CLI commands started with nmo_cmd_ctx_begin*() */
+    nmo_cmd_ctx_state_t state;
+    nmo_cli_global_opts_t global_opts; /**< Copy that trailing global options update */
+    const nmo_load_options_t *load_options; /**< Used by nmo_cmd_ctx_open (may be NULL) */
 
     /* Document/workspace (opened by init, closed by done) */
     nmo_context_t *ctx;
@@ -79,6 +91,68 @@ typedef struct nmo_cmd_source {
     const char *source_label;
     const nmo_load_options_t *load_options;
 } nmo_cmd_source_t;
+
+/**
+ * @brief Begin a CLI command whose last positional argument is the file.
+ *
+ * Nothing is opened yet. Call nmo_cmd_ctx_parse(), then nmo_cmd_ctx_open().
+ * c->global points at a copy of @p global inside @p c, so do not move a
+ * begun context. Set c->load_options before opening to change how the
+ * file is loaded.
+ *
+ * @param c      Context to begin (caller-allocated)
+ * @param global Global options parsed before the group (may be NULL)
+ */
+void nmo_cmd_ctx_begin(nmo_cmd_ctx_t *c, const nmo_cli_global_opts_t *global);
+
+/**
+ * @brief Begin a CLI command that opens no document (output stream only).
+ */
+void nmo_cmd_ctx_begin_no_file(nmo_cmd_ctx_t *c,
+                               const nmo_cli_global_opts_t *global);
+
+/**
+ * @brief Parse a command's argv.
+ *
+ * For a begun context, also accepts global options after the action (an
+ * option in @p defs wins over a global one of the same spelling) and, for
+ * nmo_cmd_ctx_begin(), records the last positional as c->file_path. The
+ * file stays in result->pos_args. For other contexts this is
+ * nmo_opt_parse().
+ *
+ * @return NMO_CLI_EXIT_SUCCESS, or NMO_CLI_EXIT_ARG_ERROR (message printed)
+ */
+int nmo_cmd_ctx_parse(nmo_cmd_ctx_t *c, int argc, char **argv,
+                      const nmo_opt_def_t *defs, size_t def_count,
+                      nmo_opt_result_t *result);
+
+
+/**
+ * @brief Open what a begun context needs: the file (if any) and the output.
+ *
+ * A no-op for contexts that are already usable, such as REPL sessions.
+ *
+ * @return NMO_CLI_EXIT_SUCCESS or an NMO_CLI_EXIT_* code (message printed)
+ */
+int nmo_cmd_ctx_open(nmo_cmd_ctx_t *c);
+
+/**
+ * @brief nmo_cmd_ctx_parse() followed by nmo_cmd_ctx_open().
+ */
+int nmo_cmd_ctx_parse_and_open(nmo_cmd_ctx_t *c, int argc, char **argv,
+                               const nmo_opt_def_t *defs, size_t def_count,
+                               nmo_opt_result_t *result);
+
+/**
+ * @brief Open a command that takes no options or arguments of its own.
+ *
+ * A begun file command must get exactly the file; other contexts must get
+ * no positional argument. Global options after the action are accepted.
+ *
+ * @param usage Printed after an unexpected argument (may be NULL)
+ */
+int nmo_cmd_ctx_open_without_args(nmo_cmd_ctx_t *c, int argc, char **argv,
+                                  const char *usage);
 
 /**
  * @brief Initialize command context: find file arg, open document/workspace, open output.

@@ -90,6 +90,14 @@ int nmo_opt_parse(int argc, char **argv,
             if (push_positional(result, arg) < 0) return -1;
             continue;
         }
+        if (idx == (size_t)-1 && result->fallback != NULL) {
+            int consumed = result->fallback(argc, argv, i, result->fallback_user);
+            if (consumed < 0) return -1;
+            if (consumed > 0) {
+                i += consumed - 1;
+                continue;
+            }
+        }
         if (idx == (size_t)-1) {
             fprintf(stderr, "Error: Unknown option '%s'\n", arg);
             return -1;

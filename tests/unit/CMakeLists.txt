@@ -179,6 +179,7 @@ add_unit_test(test_report_result)
 add_executable(test_batch_rename test_batch_rename.c
     ../../tools/nmo_tool_common.c
     ../../tools/nmo_cli_common.c
+    ../../tools/nmo_opt.c
     ../../tools/nmo_cli_output.c
     ../../tools/nmo_cli_json.c
     ../../tools/nmo_cli_record.c
@@ -191,6 +192,7 @@ add_test(NAME test_batch_rename COMMAND test_batch_rename)
 add_executable(test_cli_record test_cli_record.c
     ../../tools/nmo_tool_common.c
     ../../tools/nmo_cli_common.c
+    ../../tools/nmo_opt.c
     ../../tools/nmo_cli_output.c
     ../../tools/nmo_cli_json.c
     ../../tools/nmo_cli_record.c

@@ -55,6 +55,18 @@ typedef struct {
 } nmo_opt_val_t;
 
 /**
+ * @brief Handler for an option token that matches no definition.
+ *
+ * @param argc  Argument count
+ * @param argv  Argument vector
+ * @param index Index of the unmatched option token
+ * @param user  nmo_opt_result_t::fallback_user
+ * @return Tokens consumed (>0), 0 if the token is not recognized, or -1 on
+ *         error (message printed)
+ */
+typedef int (*nmo_opt_fallback_fn)(int argc, char **argv, int index, void *user);
+
+/**
  * @brief Parse result
  */
 typedef struct {
@@ -62,6 +74,8 @@ typedef struct {
     const char **pos_args;   /**< Positional arguments (points into argv) */
     size_t pos_capacity;     /**< Capacity of pos_args array */
     size_t pos_count;        /**< Number of positional arguments */
+    nmo_opt_fallback_fn fallback; /**< Tried for unmatched options (may be NULL) */
+    void *fallback_user;     /**< Passed to fallback */
 } nmo_opt_result_t;
 
 /**
@@ -125,6 +139,9 @@ static inline float nmo_opt_float_or(const nmo_opt_val_t *v, float fallback)
  * Recognized options fill vals[]; tokens that don't start with '-', and
  * negative numbers such as "-1" or "-0.5" that match no definition, are
  * collected as positional arguments. Everything after "--" is positional.
+ *
+ * An option that matches no definition is passed to result->fallback when
+ * set; it is an error if the fallback does not consume it.
  *
  * On error (unknown --option, missing value, bad integer), prints a
  * message to stderr and returns -1.

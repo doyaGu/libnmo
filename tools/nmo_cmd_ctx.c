@@ -142,6 +142,51 @@ static int init_output(nmo_cmd_ctx_t *c, const nmo_cli_global_opts_t *global) {
     return NMO_CLI_EXIT_SUCCESS;
 }
 
+/* Open c->file_path, apply --plugin options, then open the output stream. */
+static int open_document(nmo_cmd_ctx_t *c, const nmo_load_options_t *load_options)
+{
+    const nmo_cli_global_opts_t *global = c->global;
+    char *open_error = NULL;
+    bool opened = (load_options != NULL)
+        ? nmo_tool_open_document_opts(c->file_path, load_options,
+                                      &c->ctx, &c->document, &c->workspace,
+                                      &open_error)
+        : nmo_tool_open_document(c->file_path,
+                                 &c->ctx, &c->document, &c->workspace,
+                                 &open_error);
+    if (!opened) {
+        fprintf(stderr, "Error: Cannot load '%s': %s\n", c->file_path,
+                open_error ? open_error : "Failed to open file");
+        free(open_error);
+        return NMO_CLI_EXIT_IO_ERROR;
+    }
+    c->owns_document = true;
+
+    int plugin_rc = apply_global_plugins(c);
+    if (plugin_rc != NMO_CLI_EXIT_SUCCESS) {
+        nmo_tool_close_document(c->ctx, c->document, c->workspace);
+        c->ctx = NULL;
+        c->document = NULL;
+        c->workspace = NULL;
+        c->owns_document = false;
+        return plugin_rc;
+    }
+
+    c->registry = nmo_context_get_type_registry(c->ctx);
+
+    int rc = init_output(c, global);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        nmo_tool_close_document(c->ctx, c->document, c->workspace);
+        c->ctx = NULL;
+        c->document = NULL;
+        c->workspace = NULL;
+        c->owns_document = false;
+        return rc;
+    }
+
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
 int nmo_cmd_ctx_init_from_source(nmo_cmd_ctx_t *c,
                                  int argc,
                                  char **argv,
@@ -181,44 +226,106 @@ int nmo_cmd_ctx_init_from_source(nmo_cmd_ctx_t *c,
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    char *open_error = NULL;
-    bool opened = (source->load_options != NULL)
-        ? nmo_tool_open_document_opts(c->file_path, source->load_options,
-                                      &c->ctx, &c->document, &c->workspace,
-                                      &open_error)
-        : nmo_tool_open_document(c->file_path,
-                                 &c->ctx, &c->document, &c->workspace,
-                                 &open_error);
-    if (!opened) {
-        fprintf(stderr, "Error: %s\n", open_error ? open_error : "Failed to open file");
-        free(open_error);
-        return NMO_CLI_EXIT_IO_ERROR;
+    return open_document(c, source->load_options);
+}
+
+static void begin_common(nmo_cmd_ctx_t *c, const nmo_cli_global_opts_t *global,
+                         nmo_cmd_ctx_state_t state)
+{
+    memset(c, 0, sizeof(*c));
+    if (global) {
+        c->global_opts = *global;
+    } else {
+        nmo_cli_global_opts_init(&c->global_opts);
     }
-    c->owns_document = true;
+    c->global = &c->global_opts;
+    c->state = state;
+    /* Usable for messages printed before nmo_cmd_ctx_open */
+    c->out = stdout;
+}
 
-    int plugin_rc = apply_global_plugins(c);
-    if (plugin_rc != NMO_CLI_EXIT_SUCCESS) {
-        nmo_tool_close_document(c->ctx, c->document, c->workspace);
-        c->ctx = NULL;
-        c->document = NULL;
-        c->workspace = NULL;
-        c->owns_document = false;
-        return plugin_rc;
+void nmo_cmd_ctx_begin(nmo_cmd_ctx_t *c, const nmo_cli_global_opts_t *global)
+{
+    begin_common(c, global, NMO_CMD_CTX_PENDING_FILE);
+}
+
+void nmo_cmd_ctx_begin_no_file(nmo_cmd_ctx_t *c,
+                               const nmo_cli_global_opts_t *global)
+{
+    begin_common(c, global, NMO_CMD_CTX_PENDING_NO_FILE);
+}
+
+int nmo_cmd_ctx_parse(nmo_cmd_ctx_t *c, int argc, char **argv,
+                      const nmo_opt_def_t *defs, size_t def_count,
+                      nmo_opt_result_t *result)
+{
+    if (c->state == NMO_CMD_CTX_READY) {
+        return nmo_opt_parse(argc, argv, defs, def_count, result) < 0
+            ? NMO_CLI_EXIT_ARG_ERROR : NMO_CLI_EXIT_SUCCESS;
     }
 
-    c->registry = nmo_context_get_type_registry(c->ctx);
-
-    int rc = init_output(c, global);
+    c->global = &c->global_opts; /* in case the context was copied */
+    int rc = nmo_cli_parse_args(argc, argv, defs, def_count, result,
+                                &c->global_opts);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
-        nmo_tool_close_document(c->ctx, c->document, c->workspace);
-        c->ctx = NULL;
-        c->document = NULL;
-        c->workspace = NULL;
-        c->owns_document = false;
         return rc;
     }
-
+    if (c->state == NMO_CMD_CTX_PENDING_FILE) {
+        c->file_path = result->pos_count > 0
+            ? result->pos_args[result->pos_count - 1] : NULL;
+    }
     return NMO_CLI_EXIT_SUCCESS;
+}
+
+int nmo_cmd_ctx_open(nmo_cmd_ctx_t *c)
+{
+    nmo_cmd_ctx_state_t state = c->state;
+    if (state == NMO_CMD_CTX_READY) {
+        return NMO_CLI_EXIT_SUCCESS;
+    }
+    c->state = NMO_CMD_CTX_READY;
+    c->global = &c->global_opts; /* in case the context was copied */
+    c->out = NULL;
+    c->is_json = c->global_opts.format == NMO_CLI_FORMAT_JSON ||
+                 c->global_opts.format == NMO_CLI_FORMAT_JSON_PRETTY;
+    c->load_diagnostics = c->load_options ? c->load_options->diagnostics : NULL;
+
+    if (state == NMO_CMD_CTX_PENDING_NO_FILE) {
+        return init_output(c, c->global);
+    }
+    if (!c->file_path) {
+        fprintf(stderr, "Error: No file specified\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    return open_document(c, c->load_options);
+}
+
+int nmo_cmd_ctx_parse_and_open(nmo_cmd_ctx_t *c, int argc, char **argv,
+                               const nmo_opt_def_t *defs, size_t def_count,
+                               nmo_opt_result_t *result)
+{
+    int rc = nmo_cmd_ctx_parse(c, argc, argv, defs, def_count, result);
+    return rc != NMO_CLI_EXIT_SUCCESS ? rc : nmo_cmd_ctx_open(c);
+}
+
+int nmo_cmd_ctx_open_without_args(nmo_cmd_ctx_t *c, int argc, char **argv,
+                                  const char *usage)
+{
+    const char *pos[4];
+    nmo_opt_result_t r = NMO_OPT_RESULT(NULL, pos);
+    int rc = nmo_cmd_ctx_parse(c, argc, argv, NULL, 0, &r);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+    size_t expected = c->state == NMO_CMD_CTX_PENDING_FILE ? 1 : 0;
+    if (r.pos_count > expected) {
+        fprintf(stderr, "Error: Unexpected argument '%s'\n", r.pos_args[0]);
+        if (usage) {
+            fprintf(stderr, "Usage: %s\n", usage);
+        }
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    return nmo_cmd_ctx_open(c);
 }
 
 int nmo_cmd_ctx_init_with_file(nmo_cmd_ctx_t *c, const char *file_path,

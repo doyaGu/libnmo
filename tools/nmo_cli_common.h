@@ -7,6 +7,7 @@
 #define NMO_CLI_COMMON_H
 
 #include "nmo.h"
+#include "nmo_opt.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -91,6 +92,36 @@ void nmo_cli_global_opts_init(nmo_cli_global_opts_t *opts);
  * @return Index of first non-global argument, or -1 on error
  */
 int nmo_cli_parse_global_opts(int argc, char **argv, nmo_cli_global_opts_t *opts);
+
+/**
+ * @brief Parse one global option that follows the action.
+ *
+ * Accepts -f/--format, --color, -v/--verbose, -q/--quiet, --strict,
+ * --fail-on-warning and --plugin. -o/--output, --batch, -h and -V are only
+ * global before the command group. Matches nmo_opt_fallback_fn.
+ *
+ * @param argc  Argument count
+ * @param argv  Argument vector
+ * @param index Index of the option token
+ * @param opts  nmo_cli_global_opts_t to update
+ * @return Tokens consumed, 0 if argv[index] is not such an option, -1 on error
+ */
+int nmo_cli_parse_trailing_global_opt(int argc, char **argv, int index,
+                                      void *opts);
+
+/**
+ * @brief Parse command-local argv, also accepting trailing global options.
+ *
+ * Options in @p defs take precedence over global options of the same
+ * spelling. Global options found in argv update @p global.
+ *
+ * @param global Global options to update, or NULL to accept only @p defs
+ * @return NMO_CLI_EXIT_SUCCESS, or NMO_CLI_EXIT_ARG_ERROR (message printed)
+ */
+int nmo_cli_parse_args(int argc, char **argv,
+                       const nmo_opt_def_t *defs, size_t def_count,
+                       nmo_opt_result_t *result,
+                       nmo_cli_global_opts_t *global);
 
 /**
  * @brief Check if color output should be enabled

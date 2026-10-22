@@ -133,8 +133,8 @@ static int file_info_single(const char *file_path,
 }
 
 static int nmo_cmd_file_info_in_session(nmo_cmd_ctx_t *c, int argc, char **argv) {
-    (void)argc;
-    (void)argv;
+    int rc = nmo_cmd_ctx_open_without_args(c, argc, argv, "nmo file info <file>");
+    if (rc) return rc;
 
     nmo_file_info_t info = nmo_document_get_file_info(c->document);
     nmo_cli_record_t *rec = nmo_cli_record_new();
@@ -147,59 +147,36 @@ static int nmo_cmd_file_info_in_session(nmo_cmd_ctx_t *c, int argc, char **argv)
 }
 
 int nmo_cmd_file_info(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    /* Batch mode */
+    /* Batch mode: every positional is a file */
     if (global->batch_mode) {
-        /* Count positional args first */
-        size_t initial_capacity = 64;
-        const char **paths = (const char **)malloc(initial_capacity * sizeof(const char *));
+        nmo_cmd_ctx_t c;
+        nmo_cmd_ctx_begin_no_file(&c, global);
+        const char **paths = (const char **)malloc((size_t)argc * sizeof(const char *));
         if (!paths) {
             fprintf(stderr, "Error: Out of memory\n");
             return NMO_CLI_EXIT_INTERNAL_ERROR;
         }
-
-        size_t count = 0;
-        for (int i = 1; i < argc; ++i) {
-            if (argv[i][0] != '-') {
-                if (count >= initial_capacity) {
-                    size_t new_capacity = initial_capacity * 2;
-                    const char **new_paths = (const char **)realloc(paths, new_capacity * sizeof(const char *));
-                    if (!new_paths) {
-                        free(paths);
-                        fprintf(stderr, "Error: Out of memory\n");
-                        return NMO_CLI_EXIT_INTERNAL_ERROR;
-                    }
-                    paths = new_paths;
-                    initial_capacity = new_capacity;
-                }
-                paths[count++] = argv[i];
-            }
-        }
-
-        if (count == 0) {
-            free(paths);
+        nmo_opt_result_t r = { .pos_args = paths, .pos_capacity = (size_t)argc };
+        int rc = nmo_cmd_ctx_parse(&c, argc, argv, NULL, 0, &r);
+        if (rc == NMO_CLI_EXIT_SUCCESS && r.pos_count == 0) {
             fprintf(stderr, "Error: No files specified\n");
             fprintf(stderr, "Usage: nmo --batch file info <file1> <file2> ...\n");
-            return NMO_CLI_EXIT_ARG_ERROR;
+            rc = NMO_CLI_EXIT_ARG_ERROR;
         }
-        int result = nmo_tool_batch_run(paths, count, global, "file.info",
-                                        file_info_single, NULL);
+        if (rc == NMO_CLI_EXIT_SUCCESS) {
+            rc = nmo_tool_batch_run(paths, r.pos_count, c.global, "file.info",
+                                    file_info_single, NULL);
+        }
         free(paths);
-        return result;
-    }
-
-    const char *file_path = nmo_tool_find_file_arg(argc, argv);
-    if (!file_path) {
-        fprintf(stderr, "Error: No file specified\n");
-        fprintf(stderr, "Usage: nmo file info <file>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
+        return nmo_cmd_ctx_done(&c, rc);
     }
 
     nmo_load_options_t opts = nmo_load_options_default();
     opts.profile = NMO_LOAD_PROFILE_METADATA;
     nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init_with_load_options(&c, argc, argv, global, &opts);
-    if (rc) return rc;
-    rc = nmo_cmd_file_info_in_session(&c, argc, argv);
+    nmo_cmd_ctx_begin(&c, global);
+    c.load_options = &opts;
+    int rc = nmo_cmd_file_info_in_session(&c, argc, argv);
     return nmo_cmd_ctx_done(&c, rc);
 }
 
@@ -249,8 +226,8 @@ static bool file_header_build_record(const nmo_file_header_t *header,
 }
 
 static int nmo_cmd_file_header_in_session(nmo_cmd_ctx_t *c, int argc, char **argv) {
-    (void)argc;
-    (void)argv;
+    int rc = nmo_cmd_ctx_open_without_args(c, argc, argv, "nmo file header <file>");
+    if (rc) return rc;
 
     /* Get header - cast from opaque nmo_header_t to public nmo_file_header_t */
     const nmo_file_header_t *header =
@@ -276,9 +253,9 @@ int nmo_cmd_file_header(int argc, char **argv, const nmo_cli_global_opts_t *glob
     opts.profile = NMO_LOAD_PROFILE_HEADER_ONLY;
 
     nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init_with_load_options(&c, argc, argv, global, &opts);
-    if (rc) return rc;
-    rc = nmo_cmd_file_header_in_session(&c, argc, argv);
+    nmo_cmd_ctx_begin(&c, global);
+    c.load_options = &opts;
+    int rc = nmo_cmd_file_header_in_session(&c, argc, argv);
     return nmo_cmd_ctx_done(&c, rc);
 }
 
@@ -301,8 +278,8 @@ static int file_emit(nmo_cmd_ctx_t *c,
  * ============================================================================ */
 
 static int nmo_cmd_file_stats_in_session(nmo_cmd_ctx_t *c, int argc, char **argv) {
-    (void)argc;
-    (void)argv;
+    int rc = nmo_cmd_ctx_open_without_args(c, argc, argv, "nmo file stats <file>");
+    if (rc) return rc;
     /* Collect stats */
     nmo_file_stats_t stats;
     if (nmo_tool_owner_stats_collect(c->workspace, &stats) != NMO_OK) {
@@ -393,9 +370,8 @@ static int nmo_cmd_file_stats_in_session(nmo_cmd_ctx_t *c, int argc, char **argv
 
 int nmo_cmd_file_stats(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
-    rc = nmo_cmd_file_stats_in_session(&c, argc, argv);
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = nmo_cmd_file_stats_in_session(&c, argc, argv);
     return nmo_cmd_ctx_done(&c, rc);
 }
 
@@ -534,7 +510,8 @@ static int nmo_cmd_file_classes_in_session(nmo_cmd_ctx_t *c, int argc, char **ar
     nmo_opt_val_t vals[1];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    int rc = nmo_cmd_ctx_parse_and_open(c, argc, argv, opts, 1, &r);
+    if (rc) return rc;
 
     const char *sort_key_str = nmo_opt_str(&vals[0]);
 
@@ -548,8 +525,8 @@ static int nmo_cmd_file_classes_in_session(nmo_cmd_ctx_t *c, int argc, char **ar
     if (!sort_key_str) sort_key = NMO_CLI_SORT_ID;
 
     file_class_collect_t collect = {0};
-    int rc = nmo_core_object_query_run(c, NULL, file_classes_object,
-                                       &collect, NULL);
+    rc = nmo_core_object_query_run(c, NULL, file_classes_object,
+                                   &collect, NULL);
     if (rc != NMO_CLI_EXIT_SUCCESS || collect.oom) {
         free(collect.entries);
         fprintf(stderr, "Error: Out of memory\n");
@@ -623,9 +600,8 @@ static int nmo_cmd_file_classes_in_session(nmo_cmd_ctx_t *c, int argc, char **ar
 
 int nmo_cmd_file_classes(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
-    rc = nmo_cmd_file_classes_in_session(&c, argc, argv);
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = nmo_cmd_file_classes_in_session(&c, argc, argv);
     return nmo_cmd_ctx_done(&c, rc);
 }
 
@@ -649,8 +625,8 @@ static const char *file_plugin_category_name(nmo_plugin_category_t category) {
 }
 
 static int nmo_cmd_file_plugins_in_session(nmo_cmd_ctx_t *c, int argc, char **argv) {
-    (void)argc;
-    (void)argv;
+    int rc = nmo_cmd_ctx_open_without_args(c, argc, argv, "nmo file plugins <file>");
+    if (rc) return rc;
 
     /* Get plugin diagnostics */
     const nmo_tool_plugin_diagnostics_t *diag =
@@ -738,9 +714,9 @@ int nmo_cmd_file_plugins(int argc, char **argv, const nmo_cli_global_opts_t *glo
     opts.profile = NMO_LOAD_PROFILE_METADATA;
 
     nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init_with_load_options(&c, argc, argv, global, &opts);
-    if (rc) return rc;
-    rc = nmo_cmd_file_plugins_in_session(&c, argc, argv);
+    nmo_cmd_ctx_begin(&c, global);
+    c.load_options = &opts;
+    int rc = nmo_cmd_file_plugins_in_session(&c, argc, argv);
     return nmo_cmd_ctx_done(&c, rc);
 }
 
@@ -879,7 +855,8 @@ static int nmo_cmd_file_space_in_session(nmo_cmd_ctx_t *c, int argc, char **argv
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    int rc = nmo_cmd_ctx_parse_and_open(c, argc, argv, opts, OPT_COUNT, &r);
+    if (rc) return rc;
 
     uint32_t top_n = nmo_opt_uint_or(&vals[OPT_TOP], 15);
 
@@ -893,8 +870,8 @@ static int nmo_cmd_file_space_in_session(nmo_cmd_ctx_t *c, int argc, char **argv
         collect.pack_scale_den = header->data_unpack_size;
         collect.global_data_compressed = header->data_pack_size < header->data_unpack_size;
     }
-    int rc = nmo_core_object_query_run(c, NULL, file_space_object,
-                                       &collect, NULL);
+    rc = nmo_core_object_query_run(c, NULL, file_space_object,
+                                   &collect, NULL);
     if (rc != NMO_CLI_EXIT_SUCCESS || collect.oom) {
         free(collect.objects);
         fprintf(stderr, "Error: Out of memory\n");
@@ -1059,9 +1036,8 @@ static int nmo_cmd_file_space_in_session(nmo_cmd_ctx_t *c, int argc, char **argv
 
 int nmo_cmd_file_space(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
-    rc = nmo_cmd_file_space_in_session(&c, argc, argv);
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = nmo_cmd_file_space_in_session(&c, argc, argv);
     return nmo_cmd_ctx_done(&c, rc);
 }
 
