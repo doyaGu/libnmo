@@ -55,11 +55,10 @@ static bool parse_behavior_graph_args(int argc, char **argv,
         {"--max-nodes", NULL, NMO_OPT_UINT, "Max nodes to display"},
         {"--max-edges", NULL, NMO_OPT_UINT, "Max edges to display"},
         NMO_OPT_DEF_DEPTH,
-        NMO_OPT_DEF_JSON,
         {"--id",        "-i", NMO_OPT_UINT, "Behavior object ID"},
         {"--name",      "-n", NMO_OPT_STRING, "Behavior object name"},
     };
-    enum { OPT_DOT, OPT_MAX_NODES, OPT_MAX_EDGES, OPT_DEPTH, OPT_JSON,
+    enum { OPT_DOT, OPT_MAX_NODES, OPT_MAX_EDGES, OPT_DEPTH,
            OPT_ID, OPT_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
@@ -1544,11 +1543,10 @@ int nmo_cmd_behavior_dump(int argc, char **argv, const nmo_cli_global_opts_t *gl
         {"--all",    "-a", NMO_OPT_FLAG, "Dump all script behaviors as trees"},
         {"--flows",  NULL, NMO_OPT_FLAG, "Include execution/data flows of every dumped graph"},
         {"--values", NULL, NMO_OPT_FLAG, "Include decoded local/output values"},
-        NMO_OPT_DEF_JSON,
         {"--id",     "-i", NMO_OPT_UINT, "Behavior object ID"},
         {"--name",   "-n", NMO_OPT_STRING, "Behavior object name"},
     };
-    enum { OPT_ALL, OPT_FLOWS, OPT_VALUES, OPT_JSON, OPT_ID, OPT_NAME, OPT_COUNT };
+    enum { OPT_ALL, OPT_FLOWS, OPT_VALUES, OPT_ID, OPT_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);

@@ -387,9 +387,8 @@ static int xref_parse(int argc, char **argv, bool file_operand, xref_opts_t *out
         {"--arrays",   NULL, NMO_OPT_FLAG,   "Only data arrays"},
         {"--scripts",  NULL, NMO_OPT_FLAG,   "Only script activation"},
         {"--name",     "-n", NMO_OPT_STRING, "Only keys whose name matches the pattern"},
-        NMO_OPT_DEF_JSON,
     };
-    enum { OPT_MESSAGES, OPT_ARRAYS, OPT_SCRIPTS, OPT_NAME, OPT_JSON, OPT_COUNT };
+    enum { OPT_MESSAGES, OPT_ARRAYS, OPT_SCRIPTS, OPT_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
@@ -825,11 +824,10 @@ static int view_parse(int argc, char **argv, bool file_operand, view_opts_t *out
     static const nmo_opt_def_t opts[] = {
         {"--recursive", "-r", NMO_OPT_FLAG,   "Also show the graphs inside it"},
         {"--all",       "-a", NMO_OPT_FLAG,   "Show every root and the graphs inside them"},
-        NMO_OPT_DEF_JSON,
         {"--id",        "-i", NMO_OPT_UINT,   "Behavior object ID"},
         {"--name",      "-n", NMO_OPT_STRING, "Behavior object name"},
     };
-    enum { OPT_RECURSIVE, OPT_ALL, OPT_JSON, OPT_ID, OPT_NAME, OPT_COUNT };
+    enum { OPT_RECURSIVE, OPT_ALL, OPT_ID, OPT_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);

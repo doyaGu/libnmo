@@ -76,8 +76,6 @@ typedef struct {
     {"--output", "-o", NMO_OPT_STRING, "Output file (required unless --dry-run)"}
 #define NMO_OPT_DEF_DRY_RUN \
     {"--dry-run", NULL, NMO_OPT_FLAG, "Preview without saving"}
-#define NMO_OPT_DEF_JSON \
-    {"--json", "-j", NMO_OPT_FLAG, "JSON output"}
 #define NMO_OPT_DEF_CLASS_FILTER \
     {"--class", "-c", NMO_OPT_STRING, "Filter by class name"}
 #define NMO_OPT_DEF_DEPTH \

@@ -761,11 +761,10 @@ static bool behavior_show_add_comments(nmo_cli_record_t *rec, const behavior_sho
 int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
         {"--raw",  NULL, NMO_OPT_FLAG, "Show raw reflection (like object show)"},
-        NMO_OPT_DEF_JSON,
         {"--id",   "-i", NMO_OPT_UINT, "Behavior object ID"},
         {"--name", "-n", NMO_OPT_STRING, "Behavior object name"},
     };
-    enum { OPT_RAW, OPT_JSON, OPT_ID, OPT_NAME, OPT_COUNT };
+    enum { OPT_RAW, OPT_ID, OPT_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);

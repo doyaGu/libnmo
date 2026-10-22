@@ -13,7 +13,7 @@ function __nmo_positionals
             continue
         end
         switch $cmd[$i]
-            case '-f' '--format' '--color' '-o' '--output' '--plugin' '-F' '--filter' '--top' '-m' '--max-bytes' '-c' '--class' '--name' '-o' '--output' '-n' '-d' '--depth' '--id' '--type-guid' '--kind' '--max-nodes' '--max-edges' '--bb-guid' '--version' '-p' '--parent' '--nodes' '--guid' '--param-type' '--op-type' '--from' '--max-depth' '--to' '--delay' '--project' '--type' '-b' '--owner' '-i' '--index' '-s' '--sort' '-t' '--out-dir' '-f' '--format' '-q' '--quality' '--file' '-r' '--row' '--col' '-v' '--value' '--bg-color' '--ambient' '--fog-color' '--camera' '--fov' '--near' '--far' '--diffuse' '--range' '--specular' '--emissive' '--power' '--replace' '--replace-name' '--strip' '--compress' '--max-objects' '--max-fields' '--min-similarity' '--rename-similarity' '--object' '--behavior' '--remove-link' '--from-io' '--to-io' '--message-node' '--parameter' '--dataarray' '--write-node' '--write-operation' '--write-link' '--text'
+            case '-f' '--format' '--color' '-o' '--output' '--plugin' '--top' '-m' '--max-bytes' '-c' '--class' '--name' '-o' '--output' '-n' '-d' '--depth' '--id' '--type-guid' '--kind' '--max-nodes' '--max-edges' '--bb-guid' '--version' '-p' '--parent' '--nodes' '--guid' '--param-type' '--op-type' '--from' '--max-depth' '--to' '--delay' '--project' '--type' '-b' '--owner' '-i' '--index' '-s' '--sort' '-t' '--out-dir' '-f' '--format' '-q' '--quality' '--file' '-r' '--row' '--col' '-v' '--value' '--bg-color' '--ambient' '--fog-color' '--camera' '--fov' '--near' '--far' '--diffuse' '--range' '--specular' '--emissive' '--power' '--replace' '--replace-name' '--strip' '--compress' '--max-objects' '--max-fields' '--min-similarity' '--rename-similarity' '--object' '--behavior' '--remove-link' '--from-io' '--to-io' '--message-node' '--parameter' '--dataarray' '--write-node' '--write-operation' '--write-link' '--text'
                 set expect_value 1
             case '-*'
             case '*'
@@ -337,11 +337,9 @@ complete -c nmo -l color -r -a 'auto always never' -d 'Color mode'
 complete -c nmo -s o -l output -d 'Write output to file'
 complete -c nmo -s v -l verbose -d 'Increase verbosity'
 complete -c nmo -s q -l quiet -d 'Suppress non-essential output'
-complete -c nmo -l no-pager -d 'Disable pager'
 complete -c nmo -l strict -d 'Enable strict validation mode'
-complete -c nmo -l fail-on-warning -d 'Exit with code 4 on warnings'
+complete -c nmo -l fail-on-warning -d 'validate: exit with code 4 on warnings'
 complete -c nmo -l plugin -d 'Load extension plugin'
-complete -c nmo -s F -l filter -d 'Filter objects by name pattern'
 complete -c nmo -l batch -d 'Process multiple files for supported commands'
 complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = file or test (__nmo_group) = f); and (test (__nmo_action) = space or test (__nmo_action) = sp)' -l top -r -d 'Show top N objects by size (default: 15)'
 complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = chunk or test (__nmo_group) = ch); and (test (__nmo_action) = show or test (__nmo_action) = s)' -l hexdump -d 'Include hexdump -C compatible output (text) or data_hex (JSON)'
@@ -372,7 +370,7 @@ complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = obje
 complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = object or test (__nmo_group) = obj); and (test (__nmo_action) = copy or test (__nmo_action) = cp)' -s n -l name -r -d 'Filter by name wildcard pattern'
 complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = object or test (__nmo_group) = obj); and (test (__nmo_action) = copy or test (__nmo_action) = cp)' -l cascade -d 'Copy dependents'
 complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = object or test (__nmo_group) = obj); and (test (__nmo_action) = copy or test (__nmo_action) = cp)' -l dry-run -d 'Preview without saving'
-complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = object or test (__nmo_group) = obj); and (test (__nmo_action) = import)' -s f -l format -d 'Input format (required)'
+complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = object or test (__nmo_group) = obj); and (test (__nmo_action) = import)' -s f -l format -d 'Input format (default: json)'
 complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = object or test (__nmo_group) = obj); and (test (__nmo_action) = import)' -s o -l output -r -d 'Output file (required unless --dry-run)'
 complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = object or test (__nmo_group) = obj); and (test (__nmo_action) = import)' -l create -d 'Create objects not found by ID'
 complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = object or test (__nmo_group) = obj); and (test (__nmo_action) = import)' -l dry-run -d 'Preview changes without saving'

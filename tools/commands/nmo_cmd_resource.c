@@ -1325,7 +1325,7 @@ int nmo_cmd_resource_remove(int argc, char **argv, const nmo_cli_global_opts_t *
     const bool dry_run = vals[3].val.flag;
 
     if (!dry_run && output_path != NULL && !*output_path) {
-        fprintf(stderr, "Error: Missing --output (required unless --dry-run)\n");
+        nmo_cli_print_missing_output(global, "Missing --output (required unless --dry-run)");
         fprintf(stderr, "Usage: nmo resource remove -o <output> [--index <n> | --name <name>] [--dry-run] <nmo-file>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }

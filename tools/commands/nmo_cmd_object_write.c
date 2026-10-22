@@ -402,7 +402,7 @@ static int nmo_cmd_object_rename_batch(
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     if (!dry_run && !output_path) {
-        fprintf(stderr, "Error: -o/--output is required (or use --dry-run)\n");
+        nmo_cli_print_missing_output(global, "-o/--output is required (or use --dry-run)");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     if (!file_path) {
@@ -560,7 +560,7 @@ int nmo_cmd_object_rename(int argc, char **argv, const nmo_cli_global_opts_t *gl
     /* Single mode: <id> <new_name> <file> -o <output> */
     const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
     if (!output_path) {
-        fprintf(stderr, "Error: Output file not specified (use -o or --output)\n");
+        nmo_cli_print_missing_output(global, "Output file not specified (use -o or --output)");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
@@ -1176,7 +1176,7 @@ int nmo_cmd_object_delete(int argc, char **argv, const nmo_cli_global_opts_t *gl
     bool use_filter = vals[OPT_CLASS].present || vals[OPT_NAME].present;
 
     if (!dry_run && !output_path) {
-        fprintf(stderr, "Error: -o/--output is required (or use --dry-run)\n");
+        nmo_cli_print_missing_output(global, "-o/--output is required (or use --dry-run)");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
@@ -1451,7 +1451,7 @@ int nmo_cmd_object_create(int argc, char **argv, const nmo_cli_global_opts_t *gl
     bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
 
     if (!dry_run && !output_path) {
-        fprintf(stderr, "Error: -o/--output is required (or use --dry-run)\n");
+        nmo_cli_print_missing_output(global, "-o/--output is required (or use --dry-run)");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     if (!class_str) {
@@ -1795,7 +1795,7 @@ int nmo_cmd_object_copy(int argc, char **argv, const nmo_cli_global_opts_t *glob
     bool use_filter = vals[OPT_CLASS].present || vals[OPT_NAME].present;
 
     if (!dry_run && !output_path) {
-        fprintf(stderr, "Error: -o/--output is required (or use --dry-run)\n");
+        nmo_cli_print_missing_output(global, "-o/--output is required (or use --dry-run)");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
@@ -1977,7 +1977,7 @@ static int object_import_report(
 int nmo_cmd_object_import(int argc, char **argv, const nmo_cli_global_opts_t *global)
 {
     static const nmo_opt_def_t opts[] = {
-        {"--format",  "-f", NMO_OPT_STRING, "Input format (json)"},
+        {"--format",  "-f", NMO_OPT_STRING, "Input format: json (default)"},
         NMO_OPT_DEF_WRITE_OUTPUT,
         {"--create",  NULL, NMO_OPT_FLAG,   "Create objects not found by ID"},
         {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview changes without saving"},
@@ -1995,18 +1995,19 @@ int nmo_cmd_object_import(int argc, char **argv, const nmo_cli_global_opts_t *gl
     bool create  = nmo_opt_flag(&vals[OPT_CREATE]);
     bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
 
-    if (!input_format ||
-        (!nmo_tool_streq_ci(input_format, "json") &&
-         !nmo_tool_streq_ci(input_format, "json-pretty"))) {
-        fprintf(stderr, "Error: object import requires -f json\n");
+    if (input_format &&
+        !nmo_tool_streq_ci(input_format, "json") &&
+        !nmo_tool_streq_ci(input_format, "json-pretty")) {
+        fprintf(stderr, "Error: Unsupported import format '%s' (only json)\n",
+                input_format);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     if (!dry_run && !output_path) {
-        fprintf(stderr, "Error: -o/--output required (or use --dry-run)\n");
+        nmo_cli_print_missing_output(global, "-o/--output required (or use --dry-run)");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     if (r.pos_count < 2) {
-        fprintf(stderr, "Usage: nmo object import -f json <json-file> <nmo-file> -o <output>\n");
+        fprintf(stderr, "Usage: nmo object import [-f json] <json-file> <nmo-file> -o <output>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 

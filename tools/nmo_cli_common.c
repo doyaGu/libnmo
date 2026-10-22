@@ -89,6 +89,16 @@ static bool parse_color_mode(const char *str, nmo_cli_color_mode_t *out) {
     return false;
 }
 
+static bool add_plugin_path(nmo_cli_global_opts_t *opts, const char *path) {
+    if (opts->plugin_count >= NMO_CLI_MAX_PLUGINS) {
+        fprintf(stderr, "Error: Too many --plugin options (at most %d)\n",
+                NMO_CLI_MAX_PLUGINS);
+        return false;
+    }
+    opts->plugin_paths[opts->plugin_count++] = path;
+    return true;
+}
+
 /**
  * Check if argument is a long option with value (--opt=value)
  */
@@ -145,13 +155,6 @@ int nmo_cli_parse_global_opts(int argc, char **argv, nmo_cli_global_opts_t *opts
         if (strcmp(arg, "-q") == 0 || strcmp(arg, "--quiet") == 0) {
             opts->quiet = true;
             opts->verbosity--;
-            i++;
-            continue;
-        }
-
-        /* No pager */
-        if (strcmp(arg, "--no-pager") == 0) {
-            opts->no_pager = true;
             i++;
             continue;
         }
@@ -233,45 +236,11 @@ int nmo_cli_parse_global_opts(int argc, char **argv, nmo_cli_global_opts_t *opts
             continue;
         }
 
-        /* Locale: --locale=value */
-        const char *locale_val = get_long_opt_value(arg, "--locale");
-        if (locale_val) {
-            opts->locale = locale_val;
-            i++;
-            continue;
-        }
-        if (strcmp(arg, "--locale") == 0) {
-            if (i + 1 >= argc) {
-                fprintf(stderr, "Error: --locale requires a value\n");
-                return -1;
-            }
-            opts->locale = argv[i + 1];
-            i += 2;
-            continue;
-        }
-
-        /* Encoding: --encoding=value */
-        const char *encoding_val = get_long_opt_value(arg, "--encoding");
-        if (encoding_val) {
-            opts->encoding = encoding_val;
-            i++;
-            continue;
-        }
-        if (strcmp(arg, "--encoding") == 0) {
-            if (i + 1 >= argc) {
-                fprintf(stderr, "Error: --encoding requires a value\n");
-                return -1;
-            }
-            opts->encoding = argv[i + 1];
-            i += 2;
-            continue;
-        }
-
         /* Plugin: --plugin path (repeatable) */
         const char *plugin_val = get_long_opt_value(arg, "--plugin");
         if (plugin_val) {
-            if (opts->plugin_count < 16) {
-                opts->plugin_paths[opts->plugin_count++] = plugin_val;
+            if (!add_plugin_path(opts, plugin_val)) {
+                return -1;
             }
             i++;
             continue;
@@ -281,8 +250,8 @@ int nmo_cli_parse_global_opts(int argc, char **argv, nmo_cli_global_opts_t *opts
                 fprintf(stderr, "Error: --plugin requires a path\n");
                 return -1;
             }
-            if (opts->plugin_count < 16) {
-                opts->plugin_paths[opts->plugin_count++] = argv[i + 1];
+            if (!add_plugin_path(opts, argv[i + 1])) {
+                return -1;
             }
             i += 2;
             continue;
@@ -295,28 +264,22 @@ int nmo_cli_parse_global_opts(int argc, char **argv, nmo_cli_global_opts_t *opts
             continue;
         }
 
-        /* Filter: --filter/-F pattern */
-        const char *filter_val = get_long_opt_value(arg, "--filter");
-        if (filter_val) {
-            opts->filter_pattern = filter_val;
-            i++;
-            continue;
-        }
-        if (strcmp(arg, "--filter") == 0 || strcmp(arg, "-F") == 0) {
-            if (i + 1 >= argc) {
-                fprintf(stderr, "Error: %s requires a pattern\n", arg);
-                return -1;
-            }
-            opts->filter_pattern = argv[i + 1];
-            i += 2;
-            continue;
-        }
-
         /* Unknown option - stop parsing, let subcommand handle it */
         return i;
     }
 
     return i;
+}
+
+void nmo_cli_print_missing_output(const nmo_cli_global_opts_t *opts,
+                                  const char *message) {
+    fprintf(stderr, "Error: %s\n", message);
+    if (opts && opts->output_path) {
+        fprintf(stderr,
+                "Note: '-o %s' before the command group only redirects the report; "
+                "put -o after the action to name the saved file.\n",
+                opts->output_path);
+    }
 }
 
 bool nmo_cli_should_colorize(const nmo_cli_global_opts_t *opts, FILE *stream) {

@@ -28,14 +28,16 @@ typedef struct nmo_type_registry nmo_type_registry_t;
 #define NMO_CLI_EXIT_INTERNAL_ERROR  5  /**< Internal error */
 #define NMO_CLI_EXIT_NOT_FOUND       6  /**< Object/resource not found */
 
+/** Maximum number of --plugin options */
+#define NMO_CLI_MAX_PLUGINS 16
+
 /**
  * @brief Output format for CLI commands
  */
 typedef enum {
     NMO_CLI_FORMAT_TEXT = 0,      /**< Human-readable text (default) */
     NMO_CLI_FORMAT_JSON,          /**< Compact JSON */
-    NMO_CLI_FORMAT_JSON_PRETTY,   /**< Pretty-printed JSON */
-    NMO_CLI_FORMAT_YAML           /**< YAML (future) */
+    NMO_CLI_FORMAT_JSON_PRETTY    /**< Pretty-printed JSON */
 } nmo_cli_format_t;
 
 /**
@@ -57,20 +59,14 @@ typedef struct nmo_cli_global_opts {
     const char *output_path;          /**< Output file path (NULL = stdout) */
     int verbosity;                    /**< Verbosity level (0 = normal, >0 = verbose, <0 = quiet) */
     bool quiet;                       /**< Suppress non-essential output */
-    bool no_pager;                    /**< Disable pager for long output */
-    bool fail_on_warning;             /**< Exit with code 4 on warnings */
+    bool fail_on_warning;             /**< validate: exit with code 4 on warnings */
     bool strict_mode;                 /**< Exit with code 3 on validation failures */
-    const char *locale;               /**< Locale override (NULL = system default) */
-    const char *encoding;             /**< Encoding override (NULL = UTF-8) */
     bool show_help;                   /**< --help was specified */
     bool show_version;                /**< --version was specified */
 
     /* Extension loading */
-    const char *plugin_paths[16];     /**< --plugin paths (up to 16) */
+    const char *plugin_paths[NMO_CLI_MAX_PLUGINS]; /**< --plugin paths */
     size_t plugin_count;              /**< Number of --plugin paths */
-
-    /* Object filtering */
-    const char *filter_pattern;       /**< --filter / -F pattern for listing commands */
 
     /* Batch processing */
     bool batch_mode;                  /**< --batch: process multiple files */
@@ -122,6 +118,18 @@ FILE *nmo_cli_get_output_stream(const nmo_cli_global_opts_t *opts, char **out_er
  * @param stream Stream to potentially close
  */
 void nmo_cli_close_output_stream(const nmo_cli_global_opts_t *opts, FILE *stream);
+
+/**
+ * @brief Report that a command needs its own -o/--output.
+ *
+ * Prints "Error: <message>". When a global -o was given before the command
+ * group, also explains that it only redirects the command's report.
+ *
+ * @param opts    Global options (may be NULL)
+ * @param message Error text without the "Error: " prefix
+ */
+void nmo_cli_print_missing_output(const nmo_cli_global_opts_t *opts,
+                                  const char *message);
 
 /* ============================================================================
  * Type system helpers

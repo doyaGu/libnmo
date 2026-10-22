@@ -1277,7 +1277,7 @@ static int nmo_cmd_validate_references_in_session(nmo_cmd_ctx_t *c, int argc, ch
     bool normalize = parse_flag(argc, argv, "--normalize");
     const char *output_path = parse_string_option(argc, argv, "--output", "-o");
     if (normalize && !output_path) {
-        fprintf(stderr, "Error: --normalize requires -o/--output\n");
+        nmo_cli_print_missing_output(c->global, "--normalize requires -o/--output");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     if (normalize && paths_refer_same_file(output_path, c->file_path)) {
@@ -1760,7 +1760,7 @@ static int validate_orphans_run_in_ctx(nmo_cmd_ctx_t *c,
     }
 
     if (do_strip && !output_path) {
-        fprintf(stderr, "Error: --strip requires -o/--output\n");
+        nmo_cli_print_missing_output(c->global, "--strip requires -o/--output");
         return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_ARG_ERROR)
                          : NMO_CLI_EXIT_ARG_ERROR;
     }

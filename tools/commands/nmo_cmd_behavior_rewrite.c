@@ -39,11 +39,10 @@ static bool parse_graph_boundary_args(int argc,
                                       uint32_t *out_depth) {
     static const nmo_opt_def_t opts[] = {
         NMO_OPT_DEF_DEPTH,
-        NMO_OPT_DEF_JSON,
         {"--id",    "-i", NMO_OPT_UINT, "Behavior object ID"},
         {"--name",  "-n", NMO_OPT_STRING, "Behavior object name"},
     };
-    enum { OPT_DEPTH, OPT_JSON, OPT_ID, OPT_NAME, OPT_COUNT };
+    enum { OPT_DEPTH, OPT_ID, OPT_NAME, OPT_COUNT };
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
@@ -1284,9 +1283,8 @@ static bool parse_fold_candidates_args(int argc,
     static const nmo_opt_def_t opts[] = {
         {"--parent", "-p", NMO_OPT_UINT, "Parent behavior ID"},
         NMO_OPT_DEF_DEPTH,
-        NMO_OPT_DEF_JSON,
     };
-    enum { OPT_PARENT, OPT_DEPTH, OPT_JSON, OPT_COUNT };
+    enum { OPT_PARENT, OPT_DEPTH, OPT_COUNT };
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
@@ -1294,7 +1292,6 @@ static bool parse_fold_candidates_args(int argc,
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &result) < 0) {
         return false;
     }
-    (void)vals[OPT_JSON];
 
     nmo_object_id_t parent_id = 0;
     const char *file_path = NULL;

@@ -240,7 +240,7 @@ int nmo_cmd_convert_copy(int argc, char **argv, const nmo_cli_global_opts_t *glo
     bool fast_save            = nmo_opt_flag(&vals[OPT_FAST_SAVE]);
 
     if (!output_path) {
-        fprintf(stderr, "Error: Output file not specified (use -o or --output)\n");
+        nmo_cli_print_missing_output(global, "Output file not specified (use -o or --output)");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
@@ -460,7 +460,7 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
     bool fast_save          = nmo_opt_flag(&vals[OPT_FAST_SAVE]);
 
     if (!output_path && !dry_run) {
-        fprintf(stderr, "Error: Output file not specified (use -o or --output)\n");
+        nmo_cli_print_missing_output(global, "Output file not specified (use -o or --output)");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
@@ -668,7 +668,7 @@ int nmo_cmd_convert_merge(int argc, char **argv, const nmo_cli_global_opts_t *gl
     /* Parse options */
     const char *output_path = nmo_tool_find_opt_value(argc, argv, "-o", "--output");
     if (!output_path) {
-        fprintf(stderr, "Error: Output file not specified (use -o or --output)\n");
+        nmo_cli_print_missing_output(global, "Output file not specified (use -o or --output)");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     bool fast_save = nmo_tool_has_flag(argc, argv, "--fast-save", NULL);
@@ -847,7 +847,7 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
     bool fast_save               = nmo_opt_flag(&vals[OPT_FAST_SAVE]);
 
     if (!dry_run && !output_path) {
-        fprintf(stderr, "Error: -o/--output is required (or use --dry-run)\n");
+        nmo_cli_print_missing_output(global, "-o/--output is required (or use --dry-run)");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 

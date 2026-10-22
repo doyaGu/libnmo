@@ -1044,12 +1044,11 @@ static int parameter_dump_parse(int argc, char **argv, bool expect_file_operand,
     static const nmo_opt_def_t opts[] = {
         {"--all",  "-a", NMO_OPT_FLAG,   "Dump all parameters"},
         {"--type", NULL, NMO_OPT_STRING, "Filter by type GUID"},
-        NMO_OPT_DEF_JSON,
     };
-    nmo_opt_val_t vals[3];
+    nmo_opt_val_t vals[2];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, 3, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    if (nmo_opt_parse(argc, argv, opts, 2, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     bool dump_all = nmo_opt_flag(&vals[0]);
     const char *type_guid_str = nmo_opt_str(&vals[1]);

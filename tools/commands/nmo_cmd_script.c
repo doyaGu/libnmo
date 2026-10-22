@@ -70,7 +70,7 @@ int behavior_execute_cli_run_write_command(
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     if (spec->output_required_unless_dry_run && !dry_run && output_path == NULL) {
-        fprintf(stderr, "Error: -o/--output is required (or use --dry-run)\n");
+        nmo_cli_print_missing_output(global, "-o/--output is required (or use --dry-run)");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     if (common != NULL) {

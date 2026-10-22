@@ -208,10 +208,10 @@ static void object_copy_usage(FILE *out) {
 }
 
 static void object_import_usage(FILE *out) {
-    fprintf(out, "Usage: nmo object import -f json <json-file> <nmo-file> -o <output>\n\n");
+    fprintf(out, "Usage: nmo object import [-f json] <json-file> <nmo-file> -o <output>\n\n");
     fprintf(out, "Import object export snapshot JSON.\n\n");
     fprintf(out, "Options:\n");
-    fprintf(out, "  -f, --format json    Input format (required)\n");
+    fprintf(out, "  -f, --format json    Input format (default: json)\n");
     fprintf(out, "  -o, --output <file>  Output file (required unless --dry-run)\n");
     fprintf(out, "  --create             Create objects not found by ID\n");
     fprintf(out, "  --dry-run            Preview changes without saving\n");

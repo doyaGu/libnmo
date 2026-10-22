@@ -959,9 +959,8 @@ int nmo_cmd_diff_objects(int argc, char **argv, const nmo_cli_global_opts_t *glo
         {"--max-fields",        NULL, NMO_OPT_UINT,  "Maximum fields per object"},
         {"--min-similarity",    NULL, NMO_OPT_FLOAT, "Minimum similarity threshold (0..1)"},
         {"--rename-similarity", NULL, NMO_OPT_FLOAT, "Rename detection threshold (0..1)"},
-        {"--format",            "-f", NMO_OPT_STRING, "Output format"},
     };
-    enum { OPT_MAXOBJ, OPT_MAXFLD, OPT_MINSIM, OPT_RENSIM, OPT_FMT, OPT_COUNT };
+    enum { OPT_MAXOBJ, OPT_MAXFLD, OPT_MINSIM, OPT_RENSIM, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
@@ -1259,9 +1258,8 @@ static int nmo_cmd_diff_objects_in_session(nmo_cmd_ctx_t *ctx, int argc, char **
         {"--max-fields",        NULL, NMO_OPT_UINT,  "Maximum fields per object"},
         {"--min-similarity",    NULL, NMO_OPT_FLOAT, "Minimum similarity threshold (0..1)"},
         {"--rename-similarity", NULL, NMO_OPT_FLOAT, "Rename detection threshold (0..1)"},
-        {"--format",            "-f", NMO_OPT_STRING, "Output format"},
     };
-    enum { OPT_MAXOBJ, OPT_MAXFLD, OPT_MINSIM, OPT_RENSIM, OPT_FMT, OPT_COUNT };
+    enum { OPT_MAXOBJ, OPT_MAXFLD, OPT_MINSIM, OPT_RENSIM, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);

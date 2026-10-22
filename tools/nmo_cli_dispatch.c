@@ -26,11 +26,9 @@ void nmo_cli_print_usage(FILE *out) {
     fprintf(out, "  -o, --output <path>     Write output to file\n");
     fprintf(out, "  -v, --verbose           Increase verbosity (can repeat)\n");
     fprintf(out, "  -q, --quiet             Suppress non-essential output\n");
-    fprintf(out, "  --no-pager              Disable pager for long output\n");
     fprintf(out, "  --strict                Enable strict validation mode\n");
-    fprintf(out, "  --fail-on-warning       Exit with code 4 on warnings\n");
+    fprintf(out, "  --fail-on-warning       validate: exit with code 4 on warnings\n");
     fprintf(out, "  --plugin <path>         Load extension plugin (repeatable)\n");
-    fprintf(out, "  -F, --filter <pattern>  Filter objects by name pattern\n");
     fprintf(out, "  --batch                 Process multiple files for supported commands\n");
     fprintf(out, "\n");
     fprintf(out, "Supported batch commands:\n");
@@ -249,6 +247,11 @@ int nmo_cli_dispatch(int argc, char **argv, const nmo_cli_global_opts_t *global)
     }
 
     const nmo_cli_group_t *group = nmo_cli_find_group(group_name);
+    if (!group && group_name[0] == '-') {
+        fprintf(stderr, "Error: Unknown global option '%s'\n\n", group_name);
+        nmo_cli_print_usage(stderr);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
     if (!group) {
         fprintf(stderr, "Error: Unknown group '%s'\n\n", group_name);
         nmo_cli_print_usage(stderr);

@@ -234,9 +234,8 @@ int nmo_cmd_behavior_find(int argc, char **argv, const nmo_cli_global_opts_t *gl
         {"--op-type",    "-o", NMO_OPT_STRING, "Filter by operation type name"},
         {"--scripts",    NULL, NMO_OPT_FLAG,   "Show only scripts"},
         {"--bbs",        NULL, NMO_OPT_FLAG,   "Show only building blocks"},
-        NMO_OPT_DEF_JSON,
     };
-    enum { OPT_NAME, OPT_GUID, OPT_PTYPE, OPT_OPTYPE, OPT_SCRIPTS, OPT_BBS, OPT_JSON, OPT_COUNT };
+    enum { OPT_NAME, OPT_GUID, OPT_PTYPE, OPT_OPTYPE, OPT_SCRIPTS, OPT_BBS, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
@@ -655,11 +654,10 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
     static const nmo_opt_def_t opts[] = {
         {"--from",  NULL, NMO_OPT_STRING, "Start IO name (default: first bIn)"},
         {"--depth", "-d", NMO_OPT_UINT,   "Max trace depth (default: unlimited)"},
-        NMO_OPT_DEF_JSON,
         {"--id",    "-i", NMO_OPT_UINT,   "Behavior object ID"},
         {"--name",  "-n", NMO_OPT_STRING, "Behavior object name"},
     };
-    enum { OPT_FROM, OPT_DEPTH, OPT_JSON, OPT_ID, OPT_NAME, OPT_COUNT };
+    enum { OPT_FROM, OPT_DEPTH, OPT_ID, OPT_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);

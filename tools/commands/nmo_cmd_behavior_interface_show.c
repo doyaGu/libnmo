@@ -545,11 +545,10 @@ static int behavior_iface_show_parse(int argc, char **argv,
 
     static const nmo_opt_def_t opts[] = {
         {"--brief", "-b", NMO_OPT_FLAG, "Brief summary output"},
-        NMO_OPT_DEF_JSON,
         {"--id",    "-i", NMO_OPT_UINT, "Behavior object ID"},
         {"--name",  "-n", NMO_OPT_STRING, "Behavior object name"},
     };
-    enum { OPT_BRIEF, OPT_JSON, OPT_ID, OPT_NAME, OPT_COUNT };
+    enum { OPT_BRIEF, OPT_ID, OPT_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
@@ -561,7 +560,7 @@ static int behavior_iface_show_parse(int argc, char **argv,
         positional_id = has_selector_opt ? NULL : (r.pos_count >= 2 ? r.pos_args[0] : NULL);
         if ((has_selector_opt && r.pos_count < 1) || (!has_selector_opt && positional_id == NULL)) {
             fprintf(stderr, "Usage: %s\n", usage);
-            fprintf(stderr, "Output: use global -f json or command --json for machine-readable output.\n");
+            fprintf(stderr, "Output: use -f json for machine-readable output.\n");
             return NMO_CLI_EXIT_ARG_ERROR;
         }
     } else if (has_selector_opt) {
@@ -573,7 +572,7 @@ static int behavior_iface_show_parse(int argc, char **argv,
     } else {
         if (r.pos_count != 1) {
             fprintf(stderr, "Usage: %s\n", usage);
-            fprintf(stderr, "Output: use global -f json or command --json for machine-readable output.\n");
+            fprintf(stderr, "Output: use -f json for machine-readable output.\n");
             return NMO_CLI_EXIT_ARG_ERROR;
         }
         positional_id = r.pos_args[0];
@@ -638,7 +637,7 @@ static int behavior_iface_show_run(nmo_cmd_ctx_t *ctx,
 
 int nmo_cmd_behavior_iface_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     behavior_iface_show_args_t args;
-    const char *usage = "nmo behavior interface [--brief] [--json] [--id <id> | --name <name> | <id>] <file>";
+    const char *usage = "nmo behavior interface [--brief] [--id <id> | --name <name> | <id>] <file>";
     int rc = behavior_iface_show_parse(argc, argv, true, &args, usage);
     if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
 
@@ -651,7 +650,7 @@ int nmo_cmd_behavior_iface_show(int argc, char **argv, const nmo_cli_global_opts
 
 int nmo_cmd_behavior_interface_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv) {
     if (!ctx || argc < 1 || !argv || !argv[0]) {
-        fprintf(stderr, "Usage: behavior interface show [--brief] [--json] [--id <id> | --name <name> | <id>]\n");
+        fprintf(stderr, "Usage: behavior interface show [--brief] [--id <id> | --name <name> | <id>]\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
@@ -665,7 +664,7 @@ int nmo_cmd_behavior_interface_in_session(nmo_cmd_ctx_t *ctx, int argc, char **a
                     (argv[1][0] >= '0' && argv[1][0] <= '9'))) {
             arg_offset = 0;
         } else {
-            fprintf(stderr, "Usage: behavior interface show [--brief] [--json] [--id <id> | --name <name> | <id>]\n");
+            fprintf(stderr, "Usage: behavior interface show [--brief] [--id <id> | --name <name> | <id>]\n");
             return NMO_CLI_EXIT_ARG_ERROR;
         }
     }
@@ -674,12 +673,12 @@ int nmo_cmd_behavior_interface_in_session(nmo_cmd_ctx_t *ctx, int argc, char **a
          strcmp(argv[arg_offset], "s") != 0 &&
          strcmp(argv[arg_offset], "interface") != 0 &&
          strcmp(argv[arg_offset], "iface") != 0)) {
-        fprintf(stderr, "Usage: behavior interface show [--brief] [--json] [--id <id> | --name <name> | <id>]\n");
+        fprintf(stderr, "Usage: behavior interface show [--brief] [--id <id> | --name <name> | <id>]\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
     behavior_iface_show_args_t args;
-    const char *usage = "behavior interface show [--brief] [--json] [--id <id> | --name <name> | <id>]";
+    const char *usage = "behavior interface show [--brief] [--id <id> | --name <name> | <id>]";
     int rc = behavior_iface_show_parse(argc - arg_offset, argv + arg_offset,
                                        false, &args, usage);
     if (rc != NMO_CLI_EXIT_SUCCESS) return rc;

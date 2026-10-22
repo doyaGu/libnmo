@@ -92,12 +92,9 @@ $_nmo_flags = @(
     @{ Name = '--verbose'; Desc = 'Increase verbosity' }
     @{ Name = '-q'; Desc = 'Suppress non-essential output' }
     @{ Name = '--quiet'; Desc = 'Suppress non-essential output' }
-    @{ Name = '--no-pager'; Desc = 'Disable pager' }
     @{ Name = '--strict'; Desc = 'Enable strict validation mode' }
-    @{ Name = '--fail-on-warning'; Desc = 'Exit with code 4 on warnings' }
+    @{ Name = '--fail-on-warning'; Desc = 'validate: exit with code 4 on warnings' }
     @{ Name = '--plugin'; Desc = 'Load extension plugin' }
-    @{ Name = '-F'; Desc = 'Filter objects by name pattern' }
-    @{ Name = '--filter'; Desc = 'Filter objects by name pattern' }
     @{ Name = '--batch'; Desc = 'Process multiple files for supported commands' }
 )
 $_nmo_action_flags = @{
@@ -146,7 +143,7 @@ $_nmo_action_flags = @{
     'object/create/' = @(@{ Name = '-o'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--output'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '-c'; Desc = 'Class name (required)' }, @{ Name = '--class'; Desc = 'Class name (required)' }, @{ Name = '-n'; Desc = 'Object name' }, @{ Name = '--name'; Desc = 'Object name' }, @{ Name = '--type-guid'; Desc = 'Type GUID (d1,d2 format)' }, @{ Name = '--dry-run'; Desc = 'Preview without saving' })
     'object/copy/' = @(@{ Name = '-o'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--output'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '-c'; Desc = 'Filter by class (includes derived)' }, @{ Name = '--class'; Desc = 'Filter by class (includes derived)' }, @{ Name = '-n'; Desc = 'Filter by name wildcard pattern' }, @{ Name = '--name'; Desc = 'Filter by name wildcard pattern' }, @{ Name = '--cascade'; Desc = 'Copy dependents' }, @{ Name = '--dry-run'; Desc = 'Preview without saving' })
     'object/cp/' = @(@{ Name = '-o'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--output'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '-c'; Desc = 'Filter by class (includes derived)' }, @{ Name = '--class'; Desc = 'Filter by class (includes derived)' }, @{ Name = '-n'; Desc = 'Filter by name wildcard pattern' }, @{ Name = '--name'; Desc = 'Filter by name wildcard pattern' }, @{ Name = '--cascade'; Desc = 'Copy dependents' }, @{ Name = '--dry-run'; Desc = 'Preview without saving' })
-    'object/import/' = @(@{ Name = '-f'; Desc = 'Input format (required)' }, @{ Name = '--format'; Desc = 'Input format (required)' }, @{ Name = '-o'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--output'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--create'; Desc = 'Create objects not found by ID' }, @{ Name = '--dry-run'; Desc = 'Preview changes without saving' })
+    'object/import/' = @(@{ Name = '-f'; Desc = 'Input format (default: json)' }, @{ Name = '--format'; Desc = 'Input format (default: json)' }, @{ Name = '-o'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--output'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--create'; Desc = 'Create objects not found by ID' }, @{ Name = '--dry-run'; Desc = 'Preview changes without saving' })
     'object/graph/' = @(@{ Name = '--dot'; Desc = 'Output DOT digraph format' }, @{ Name = '--kind'; Desc = 'Filter edges by ref kind (case-insensitive)' })
     'object/gr/' = @(@{ Name = '--dot'; Desc = 'Output DOT digraph format' }, @{ Name = '--kind'; Desc = 'Filter edges by ref kind (case-insensitive)' })
     'object/set-field/' = @(@{ Name = '-o'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--output'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--dry-run'; Desc = 'Preview without saving' })
@@ -378,7 +375,7 @@ $_nmo_action_flags = @{
 Register-ArgumentCompleter -CommandName nmo -Native -ScriptBlock {
     param($wordToComplete, $commandAst, $cursorPosition)
     $tokens = $commandAst.ToString().Substring(0, $cursorPosition).Trim() -split '\s+'
-    $valueOptions = @('-f','--format','--color','-o','--output','--plugin','-F','--filter','--top', '-m', '--max-bytes', '-c', '--class', '--name', '-o', '--output', '-n', '-d', '--depth', '--id', '--type-guid', '--kind', '--max-nodes', '--max-edges', '--bb-guid', '--version', '-p', '--parent', '--nodes', '--guid', '--param-type', '--op-type', '--from', '--max-depth', '--to', '--delay', '--project', '--type', '-b', '--owner', '-i', '--index', '-s', '--sort', '-t', '--out-dir', '-f', '--format', '-q', '--quality', '--file', '-r', '--row', '--col', '-v', '--value', '--bg-color', '--ambient', '--fog-color', '--camera', '--fov', '--near', '--far', '--diffuse', '--range', '--specular', '--emissive', '--power', '--replace', '--replace-name', '--strip', '--compress', '--max-objects', '--max-fields', '--min-similarity', '--rename-similarity', '--object', '--behavior', '--remove-link', '--from-io', '--to-io', '--message-node', '--parameter', '--dataarray', '--write-node', '--write-operation', '--write-link', '--text')
+    $valueOptions = @('-f','--format','--color','-o','--output','--plugin','--top', '-m', '--max-bytes', '-c', '--class', '--name', '-o', '--output', '-n', '-d', '--depth', '--id', '--type-guid', '--kind', '--max-nodes', '--max-edges', '--bb-guid', '--version', '-p', '--parent', '--nodes', '--guid', '--param-type', '--op-type', '--from', '--max-depth', '--to', '--delay', '--project', '--type', '-b', '--owner', '-i', '--index', '-s', '--sort', '-t', '--out-dir', '-f', '--format', '-q', '--quality', '--file', '-r', '--row', '--col', '-v', '--value', '--bg-color', '--ambient', '--fog-color', '--camera', '--fov', '--near', '--far', '--diffuse', '--range', '--specular', '--emissive', '--power', '--replace', '--replace-name', '--strip', '--compress', '--max-objects', '--max-fields', '--min-similarity', '--rename-similarity', '--object', '--behavior', '--remove-link', '--from-io', '--to-io', '--message-node', '--parameter', '--dataarray', '--write-node', '--write-operation', '--write-link', '--text')
     $positional = @()
     $expectValue = $false
     for ($i = 1; $i -lt $tokens.Count; $i++) {

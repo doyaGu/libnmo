@@ -1193,7 +1193,7 @@ int nmo_cmd_animation_import(int argc, char **argv, const nmo_cli_global_opts_t 
     bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
 
     if (!dry_run && !output_path) {
-        fprintf(stderr, "Error: --output/-o is required (or use --dry-run)\n");
+        nmo_cli_print_missing_output(global, "--output/-o is required (or use --dry-run)");
         fprintf(stderr, "Usage: nmo animation import <json-file> <nmo-file> -o <output> [--dry-run]\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }

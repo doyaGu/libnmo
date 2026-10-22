@@ -19,12 +19,9 @@ flags=(
     '--verbose[Increase verbosity]'
     '-q[Suppress non-essential output]'
     '--quiet[Suppress non-essential output]'
-    '--no-pager[Disable pager]'
     '--strict[Enable strict validation mode]'
-    '--fail-on-warning[Exit with code 4 on warnings]'
+    '--fail-on-warning[validate: exit with code 4 on warnings]'
     '--plugin[Load extension plugin]'
-    '-F[Filter objects by name pattern]'
-    '--filter[Filter objects by name pattern]'
     '--batch[Process multiple files for supported commands]'
 )
 groups=(
