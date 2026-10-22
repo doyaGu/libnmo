@@ -373,7 +373,53 @@ TEST(legacy_file_load, an_entry_without_a_class_id_is_corrupt)
     nmo_context_release(ctx);
 }
 
+TEST(legacy_file_load, equal_size_compressed_sections_are_decoded_before_raw_fallback)
+{
+    uint8_t raw[64] = {0}; /* Empty object table followed by ignored padding. */
+    uint8_t compressed[128];
+    size_t raw_size = 0u;
+    mz_ulong compressed_size = 0u;
+    for (size_t size = 8u; size <= sizeof(raw); ++size) {
+        compressed_size = sizeof(compressed);
+        ASSERT_EQ(MZ_OK, mz_compress(compressed, &compressed_size, raw, (mz_ulong)size));
+        if (compressed_size == size) {
+            raw_size = size;
+            break;
+        }
+    }
+    ASSERT_NE(0u, raw_size);
+    for (uint32_t version = 5u; version <= 6u; ++version) {
+        for (uint32_t packed = 0u; packed <= 1u; ++packed) {
+            byte_buffer_t file = {0};
+            buffer_append(&file, "Nemo Fi\0", 8);
+            buffer_u32(&file, nmo_file_data_crc(raw, raw_size));
+            buffer_u32(&file, 0x13022002u);
+            buffer_u32(&file, version);
+            buffer_u32(&file, 0u);
+            buffer_u32(&file, NMO_FILE_WRITE_WHOLE_COMPRESSED);
+            buffer_u32(&file, 0u);
+            buffer_u32(&file, (uint32_t)raw_size);
+            buffer_u32(&file, (uint32_t)raw_size);
+            for (uint32_t i = 0; i < 6u; ++i) buffer_u32(&file, 0u);
+            buffer_append(&file, packed ? compressed : raw, raw_size);
+            const char *path = NMO_TEST_SCRATCH_FILE("legacy_equal_size_compressed.nmo");
+            ASSERT_TRUE(write_file(path, &file));
+            free(file.data);
+            nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+            ASSERT_NOT_NULL(ctx);
+            nmo_document_t *document = NULL;
+            ASSERT_EQ(NMO_OK, nmo_document_load_file(ctx, path, NULL, &document));
+            ASSERT_NOT_NULL(document);
+            ASSERT_EQ(0u, nmo_object_repository_get_count(nmo_document_get_repository(document)));
+            ASSERT_EQ(NMO_CRC_OK, nmo_document_get_file_info(document).crc_status);
+            nmo_document_destroy(document);
+            nmo_context_release(ctx);
+        }
+    }
+}
+
 TEST_MAIN_BEGIN()
+    REGISTER_TEST(legacy_file_load, equal_size_compressed_sections_are_decoded_before_raw_fallback);
     REGISTER_TEST(legacy_file_load, versions_4_to_6_take_ids_from_the_section_and_names_from_the_chunks);
     REGISTER_TEST(legacy_file_load, versions_5_and_6_unpack_a_compressed_data_section);
     REGISTER_TEST(legacy_file_load, versions_2_and_3_read_their_own_entry_layout);

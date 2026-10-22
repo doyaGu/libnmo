@@ -1026,7 +1026,10 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
         void *data_buffer = NULL;
         size_t data_size = 0;
 
-        if (!data_to_end && ds->header.data_pack_size != ds->header.data_unpack_size) {
+        const bool compression_flag = (ds->header.file_write_mode &
+            (NMO_FILE_WRITE_CHUNK_COMPRESSED_OLD | NMO_FILE_WRITE_WHOLE_COMPRESSED)) != 0u;
+        if (!data_to_end && (compression_flag ||
+                ds->header.data_pack_size != ds->header.data_unpack_size)) {
             nmo_log(logger, NMO_LOG_INFO, "  Decompressing data: %u -> %u bytes",
                     ds->header.data_pack_size, ds->header.data_unpack_size);
 
@@ -1044,7 +1047,8 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
                                                   (const unsigned char *) packed_buffer,
                                                   ds->header.data_pack_size);
             load_perf_end(ds, NMO_LOAD_PERF_DATA_INFLATE, data_inflate_start);
-            if (uncompress_result != MZ_OK) {
+            if (uncompress_result != MZ_OK &&
+                ds->header.data_pack_size != ds->header.data_unpack_size) {
                 nmo_log(logger, NMO_LOG_ERROR, "Failed to decompress data section: %d",
                         uncompress_result);
                 nmo_id_mapping_destroy(id_map);
@@ -1052,16 +1056,22 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
                 return NMO_ERR_DECOMPRESSION_FAILED;
             }
 
-            if (dest_len != ds->header.data_unpack_size) {
+            if (uncompress_result != MZ_OK) {
+                /* CKFile first tries flagged compression even when sizes are
+                 * equal, and only falls back to raw bytes if unpacking fails. */
+                data_buffer = packed_buffer;
+                data_size = packed_size;
+                nmo_log(logger, NMO_LOG_INFO, "  Equal-size data uses the raw fallback");
+            } else if (dest_len != ds->header.data_unpack_size) {
                 nmo_log(logger, NMO_LOG_ERROR, "Data decompression size mismatch: expected %u, got %lu",
                         ds->header.data_unpack_size, dest_len);
                 nmo_id_mapping_destroy(id_map);
                 ds->id_mapping = NULL;
                 return NMO_ERR_DECOMPRESSION_FAILED;
+            } else {
+                data_size = dest_len;
+                nmo_log(logger, NMO_LOG_INFO, "  Decompression successful: %zu bytes", data_size);
             }
-
-            data_size = dest_len;
-            nmo_log(logger, NMO_LOG_INFO, "  Decompression successful: %zu bytes", data_size);
         } else {
             /* Already uncompressed */
             data_buffer = packed_buffer;
