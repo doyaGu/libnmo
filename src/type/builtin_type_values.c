@@ -6,6 +6,7 @@
 #include "type/nmo_type_system.h"
 #include "type/nmo_type_string.h"
 #include "type/nmo_type_guids.h"
+#include "type/nmo_type_query.h"
 #include "type_value_internal.h"
 #include "core/nmo_array.h"
 #include "core/nmo_arena.h"
@@ -174,6 +175,10 @@ nmo_status_t nmo_vt_to_string_classid(
     const void *value, const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry,
     char *buffer, size_t buffer_size, int depth);
+nmo_status_t nmo_vt_from_string_classid(
+    void *value, const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    const char *string);
 nmo_status_t nmo_vt_to_string_none(
     const void *value, const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry,
@@ -236,7 +241,7 @@ NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
 NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
     nmo_builtin_vtable_classid,
     nmo_vt_equals_uint32, nmo_vt_hash_uint32,
-    nmo_vt_to_string_classid, nmo_vt_from_string_uint32)
+    nmo_vt_to_string_classid, nmo_vt_from_string_classid)
 NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
     nmo_builtin_vtable_int64,
     nmo_vt_equals_int64, nmo_vt_hash_int64,
@@ -1580,6 +1585,23 @@ static nmo_status_t nmo_parse_uint32(
     NMO_RETURN_OK();
 }
 
+/* Virtools stores a class id and its editor shows the class name, so a
+   class id accepts any name the registry gives a class descriptor ("3D Entity",
+   "CK3dEntity") as well as a number. Names go first: some start with a digit. */
+static nmo_status_t nmo_parse_classid(
+    void *value,
+    const nmo_type_registry_t *registry,
+    const char *string)
+{
+    const nmo_class_id_t class_id =
+        nmo_type_query_class_id_from_name(registry, string);
+    if (class_id != 0) {
+        NMO_STORE_SCALAR(uint32_t, value, (uint32_t)class_id);
+        NMO_RETURN_OK();
+    }
+    return nmo_parse_uint32(value, registry, string);
+}
+
 static nmo_status_t nmo_parse_uint64(
     void *value,
     const nmo_type_registry_t *registry,
@@ -2163,6 +2185,7 @@ NMO_DEFINE_VT_FROM_STRING(int32, nmo_parse_int32)
 
 NMO_DEFINE_UNSIGNED_VT_TO_STRING(uint32, uint32_t)
 NMO_DEFINE_VT_FROM_STRING(uint32, nmo_parse_uint32)
+NMO_DEFINE_VT_FROM_STRING(classid, nmo_parse_classid)
 
 NMO_DEFINE_SIGNED_VT_TO_STRING(int8, int8_t)
 NMO_DEFINE_VT_FROM_STRING(int8, nmo_parse_int8)

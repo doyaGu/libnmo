@@ -810,6 +810,87 @@ TEST(script_edit_transaction, add_node_rejects_unknown_building_block)
     nmo_context_release(ctx);
 }
 
+TEST(script_edit_transaction, add_node_reads_class_names_as_class_ids)
+{
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){ .data_dir = NMO_TEST_DATA_DIR });
+    nmo_session_t *session = NULL;
+    nmo_script_edit_tx_t *tx = NULL;
+    script_control_fixture_t fixture;
+    nmo_object_repository_t *repo = NULL;
+    nmo_object_t *object = NULL;
+    const nmo_behavior_state_t *node_state = NULL;
+    const nmo_parameterin_state_t *type_state = NULL;
+    const nmo_parameter_state_t *source_state = NULL;
+    nmo_object_id_t node_id = 0;
+    nmo_object_id_t type_id = 0;
+    nmo_object_id_t source_id = 0;
+    uint32_t class_id = 0u;
+    nmo_script_edit_add_node_options_t options = {
+        nmo_manager_entry_options_default()};
+
+    ASSERT_NOT_NULL(ctx);
+    session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+    setup_script_control_fixture(session, &fixture);
+
+    /* Broadcast Message's Type defaults to "Behavioral Object"; its
+       Message default names a message the session does not have yet */
+    options.manager_entry.policy = NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING;
+    ASSERT_EQ(NMO_OK,
+              begin_test_script_edit(ctx, session, "class-name-default", &tx));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_add_node_ex(
+                  tx,
+                  fixture.root_behavior_id,
+                  nmo_guid_parse("3D6C4AE1-72AE2CD6"),
+                  "Broadcast Message",
+                  &options,
+                  &node_id));
+    object = nmo_object_repository_find_by_id(repo, node_id);
+    node_state = object
+        ? (const nmo_behavior_state_t *)nmo_object_get_state(object)
+        : NULL;
+    ASSERT_NOT_NULL(node_state);
+    type_id = find_named_parameter_in_ids(repo, &node_state->in_parameters, "Type");
+    object = type_id ? nmo_object_repository_find_by_id(repo, type_id) : NULL;
+    type_state = object
+        ? (const nmo_parameterin_state_t *)nmo_object_get_state(object)
+        : NULL;
+    ASSERT_NOT_NULL(type_state);
+    ASSERT_TRUE(nmo_guid_equals(CKPGUID_CLASSID, type_state->type_guid));
+    source_id = nmo_parameterin_source_id(type_state);
+    object = source_id ? nmo_object_repository_find_by_id(repo, source_id) : NULL;
+    source_state = object ? nmo_parameter_get_state(object) : NULL;
+    ASSERT_NOT_NULL(source_state);
+    ASSERT_EQ(sizeof(class_id), source_state->buffer_data.count);
+    memcpy(&class_id, source_state->buffer_data.data, sizeof(class_id));
+    ASSERT_EQ((uint32_t)NMO_CID_BEOBJECT, class_id);
+
+    /* A value set later takes the same names, and numbers still */
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_set_parameter_value(tx, source_id, "3D Entity"));
+    memcpy(&class_id, source_state->buffer_data.data, sizeof(class_id));
+    ASSERT_EQ((uint32_t)NMO_CID_3DENTITY, class_id);
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_set_parameter_value(tx, source_id, "CKMaterial"));
+    memcpy(&class_id, source_state->buffer_data.data, sizeof(class_id));
+    ASSERT_EQ((uint32_t)NMO_CID_MATERIAL, class_id);
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_set_parameter_value(tx, source_id, "41"));
+    memcpy(&class_id, source_state->buffer_data.data, sizeof(class_id));
+    ASSERT_EQ(41u, class_id);
+    ASSERT_NE(NMO_OK,
+              nmo_script_edit_set_parameter_value(tx, source_id, "Integer"));
+    ASSERT_NE(NMO_OK,
+              nmo_script_edit_set_parameter_value(tx, source_id, "No Such Class"));
+
+    nmo_script_edit_rollback(tx);
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(script_edit_transaction, add_node_materializes_targetable_beobject_target)
 {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){ .data_dir = NMO_TEST_DATA_DIR });
@@ -1854,6 +1935,8 @@ TEST_MAIN_BEGIN()
                   add_node_rejects_cross_section_manager_strings);
     REGISTER_TEST(script_edit_transaction,
                   add_node_materializes_targetable_beobject_target);
+    REGISTER_TEST(script_edit_transaction,
+                  add_node_reads_class_names_as_class_ids);
     REGISTER_TEST(script_edit_transaction,
                   remove_link_then_add_link_keeps_validation_green_within_transaction);
     REGISTER_TEST(script_edit_transaction,

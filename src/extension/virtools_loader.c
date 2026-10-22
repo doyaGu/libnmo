@@ -214,10 +214,19 @@ nmo_status_t nmo_virtools_load_param_types(nmo_type_registry_t *registry, const 
         /* A type the library registered itself keeps its definition, but not
            its place in the derivation tree, which only the engine's table has:
            every enum and flags type derives from Integer there. */
-        if (nmo_type_registry_guid_to_type_id(registry, guid) != NMO_TYPE_ID_INVALID) {
+        const nmo_type_id_t existing_id = nmo_type_registry_guid_to_type_id(registry, guid);
+        if (existing_id != NMO_TYPE_ID_INVALID) {
             nmo_type_descriptor_t *existing =
                 (nmo_type_descriptor_t *)nmo_type_registry_find_by_guid(registry, guid);
             const nmo_guid_t derived_from = get_guid(item, "derived_from");
+            /* Nor the engine's name for a class ("3D Entity" for CK3dEntity),
+               which class id values are written with. */
+            const char *engine_name = get_str(item, "name");
+            if (existing != NULL && existing->class_id != 0 &&
+                engine_name != NULL && engine_name[0] != '\0' &&
+                (existing->name == NULL || strcmp(engine_name, existing->name) != 0)) {
+                (void)nmo_type_registry_add_name_alias(registry, existing_id, engine_name);
+            }
             if (existing != NULL && nmo_guid_is_null(existing->base_type) &&
                 !nmo_guid_is_null(derived_from) &&
                 !nmo_guid_equals(derived_from, existing->guid) &&
