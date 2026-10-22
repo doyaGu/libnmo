@@ -241,12 +241,40 @@ static bool nmo_texture_oldtex_layout_is_representable(
     return !state->has_transparent_color && state->has_current_slot;
 }
 
-/* RCKTexture::Load ignores what follows the fields it reads in a section. */
+/* Trailing bytes may be ignored, but fields cannot extend into the next ID. */
 static nmo_status_t nmo_texture_require_identifier_end(
     const nmo_chunk_t *chunk)
 {
-    (void)chunk;
-    return NMO_OK;
+    if (chunk == NULL || chunk->parser_state == NULL || chunk->data.data == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    const nmo_chunk_parser_state_t *parser = chunk->parser_state;
+    const size_t id_pos = parser->prev_identifier_pos;
+    if (id_pos > chunk->data.count || chunk->data.count - id_pos < 2u) {
+        return NMO_ERR_TRUNCATED_CHUNK;
+    }
+    const uint32_t *data = chunk->data.data;
+    const size_t end = data[id_pos + 1u] == 0u ? chunk->data.count : data[id_pos + 1u];
+    if (end > chunk->data.count || end < id_pos + 2u) return NMO_ERR_INVALID_FORMAT;
+    return parser->current_pos > end ? NMO_ERR_TRUNCATED_CHUNK : NMO_OK;
+}
+
+static nmo_status_t nmo_texture_read_buffer(
+    nmo_chunk_t *chunk, void **out_data, size_t *out_size)
+{
+    *out_data = NULL;
+    *out_size = 0u;
+    const size_t remaining = nmo_chunk_identifier_remaining_dwords(chunk);
+    if (remaining == 0u) return NMO_ERR_TRUNCATED_CHUNK;
+    const size_t position = nmo_chunk_get_position(chunk);
+    uint32_t stored_size = 0u;
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &stored_size));
+    NMO_RETURN_IF_ERROR(nmo_chunk_goto(chunk, position));
+    const size_t bytes = stored_size;
+    const size_t payload_dwords = bytes / 4u + (bytes % 4u != 0u);
+    if (payload_dwords > remaining - 1u) return NMO_ERR_TRUNCATED_CHUNK;
+    if (bytes > INT32_MAX) return NMO_ERR_INVALID_FORMAT;
+    return nmo_chunk_read_buffer(chunk, out_data, out_size);
 }
 
 static nmo_status_t nmo_texture_validate_array_count(
@@ -374,6 +402,7 @@ static nmo_status_t nmo_texture_read_reader_slot(
     (void)arena;
     memset(slot, 0, sizeof(*slot));
 
+    if (nmo_chunk_identifier_remaining_dwords(chunk) < 1u) return NMO_ERR_TRUNCATED_CHUNK;
     uint32_t format_type = 0;
     nmo_status_t result = nmo_chunk_read_dword(chunk, &format_type);
     if (result != NMO_OK) return result;
@@ -383,6 +412,7 @@ static nmo_status_t nmo_texture_read_reader_slot(
         NMO_RETURN_OK();
     }
 
+    if (nmo_chunk_identifier_remaining_dwords(chunk) < 4u) return NMO_ERR_TRUNCATED_CHUNK;
     uint32_t extension = 0;
     result = nmo_chunk_read_dword(chunk, &extension);
     if (result != NMO_OK) return result;
@@ -393,17 +423,19 @@ static nmo_status_t nmo_texture_read_reader_slot(
 
     void *data = NULL;
     size_t size = 0;
-    result = nmo_chunk_read_buffer(chunk, &data, &size);
+    result = nmo_texture_read_buffer(chunk, &data, &size);
     if (result != NMO_OK) return result;
     slot->data = (uint8_t *)data;
     slot->data_size = (uint32_t)size;
 
     if (format_type == 2) {
+        if (nmo_chunk_identifier_remaining_dwords(chunk) < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         int32_t distinct = 0;
         result = nmo_chunk_read_int(chunk, &distinct);
         if (result != NMO_OK) return result;
         slot->alpha_count = (uint32_t)distinct;
         if (distinct == 1) {
+            if (nmo_chunk_identifier_remaining_dwords(chunk) < 1u) return NMO_ERR_TRUNCATED_CHUNK;
             int32_t alpha_value = 0;
             result = nmo_chunk_read_int(chunk, &alpha_value);
             if (result != NMO_OK) return result;
@@ -412,7 +444,7 @@ static nmo_status_t nmo_texture_read_reader_slot(
             /* Any other count, 0 included, is followed by the alpha plane. */
             void *alpha_plane = NULL;
             size_t alpha_size = 0;
-            result = nmo_chunk_read_buffer(chunk, &alpha_plane, &alpha_size);
+            result = nmo_texture_read_buffer(chunk, &alpha_plane, &alpha_size);
             if (result != NMO_OK) return result;
             slot->alpha_plane = (uint8_t *)alpha_plane;
             slot->alpha_plane_size = (uint32_t)alpha_size;
@@ -492,28 +524,28 @@ static nmo_status_t nmo_texture_read_raw_slot(
 
     void *buffer = NULL;
     size_t size = 0;
-    result = nmo_chunk_read_buffer(chunk, &buffer, &size);
+    result = nmo_texture_read_buffer(chunk, &buffer, &size);
     if (result != NMO_OK) return result;
     slot->blue_data = (uint8_t *)buffer;
     slot->blue_size = (uint32_t)size;
 
     buffer = NULL;
     size = 0;
-    result = nmo_chunk_read_buffer(chunk, &buffer, &size);
+    result = nmo_texture_read_buffer(chunk, &buffer, &size);
     if (result != NMO_OK) return result;
     slot->green_data = (uint8_t *)buffer;
     slot->green_size = (uint32_t)size;
 
     buffer = NULL;
     size = 0;
-    result = nmo_chunk_read_buffer(chunk, &buffer, &size);
+    result = nmo_texture_read_buffer(chunk, &buffer, &size);
     if (result != NMO_OK) return result;
     slot->red_data = (uint8_t *)buffer;
     slot->red_size = (uint32_t)size;
 
     buffer = NULL;
     size = 0;
-    result = nmo_chunk_read_buffer(chunk, &buffer, &size);
+    result = nmo_texture_read_buffer(chunk, &buffer, &size);
     if (result != NMO_OK) return result;
     slot->alpha_data = (uint8_t *)buffer;
     slot->alpha_size = (uint32_t)size;
@@ -574,7 +606,7 @@ static nmo_status_t nmo_texture_read_bitmap2_slot(
 
     void *buffer = NULL;
     size_t size = 0;
-    result = nmo_chunk_read_buffer(chunk, &buffer, &size);
+    result = nmo_texture_read_buffer(chunk, &buffer, &size);
     if (result != NMO_OK) return result;
     slot->buffer = (uint8_t *)buffer;
     slot->buffer_size = (uint32_t)size;
@@ -982,7 +1014,7 @@ static nmo_status_t nmo_texture_deserialize_internal(
 
             void *format = NULL;
             size_t size = 0;
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_buffer(chunk, &format, &size));
+            NMO_RETURN_IF_ERROR(nmo_texture_read_buffer(chunk, &format, &size));
             if (payload < 2u * sizeof(uint32_t) + ((size + 3u) & ~(size_t)3u)) {
                 return NMO_ERR_TRUNCATED_CHUNK;
             }
@@ -1088,7 +1120,7 @@ static nmo_status_t nmo_texture_deserialize_internal(
         const size_t payload = nmo_texture_identifier_payload_size(chunk);
         void *format = NULL;
         size_t size = 0;
-        NMO_RETURN_IF_ERROR(nmo_chunk_read_buffer(chunk, &format, &size));
+        NMO_RETURN_IF_ERROR(nmo_texture_read_buffer(chunk, &format, &size));
         if (payload < sizeof(uint32_t) + ((size + 3u) & ~(size_t)3u)) {
             return NMO_ERR_TRUNCATED_CHUNK;
         }

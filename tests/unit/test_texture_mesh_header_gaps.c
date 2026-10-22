@@ -770,7 +770,117 @@ TEST(material_gaps, legacy_color_prefixes_keep_constructor_defaults)
     }
 }
 
+TEST(texture_gaps, reader_records_do_not_borrow_the_next_identifier)
+{
+    for (uint32_t mode = 0u; mode < 4u; ++mode) {
+        for (uint32_t complete = 0u; complete <= 1u; ++complete) {
+            nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+            ASSERT_NOT_NULL(arena);
+            nmo_chunk_t *chunk = nmo_chunk_create(arena);
+            ASSERT_NOT_NULL(chunk);
+            chunk->class_id = NMO_CID_TEXTURE;
+            chunk->data_version = 7u;
+            ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXREADER));
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 1));
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 1));
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 1));
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 32));
+            const uint32_t kind = mode == 1u || mode == 2u ? 2u : 1u;
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, kind));
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0x00676E70u));
+            if (mode != 3u || complete) {
+                ASSERT_EQ(NMO_OK, nmo_chunk_write_guid(chunk, (nmo_guid_t){1u, 2u}));
+                ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, mode == 0u ? 4u : 0u));
+                if (mode == 0u && complete) {
+                    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0x11223344u));
+                }
+            }
+            if (kind == 2u) {
+                ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, mode == 1u ? 1 : 2));
+                if (mode == 2u) {
+                    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 4u));
+                }
+                if (complete) {
+                    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0x89u));
+                }
+            }
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, 0x7F123456u));
+            for (uint32_t i = 0; i < 8u; ++i) {
+                ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0u));
+            }
+            nmo_chunk_close(chunk);
+            nmo_deserialize_context_t des = nmo_deserialize_context_create(
+                arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+            nmo_texture_state_t texture;
+            ASSERT_EQ(NMO_OK, nmo_texture_vtable.create(&texture, NULL, NULL));
+            texture.pick_threshold = 777;
+            ASSERT_EQ(complete ? NMO_OK : NMO_ERR_TRUNCATED_CHUNK,
+                nmo_texture_deserialize(&texture, chunk, NULL, &des));
+            if (complete) {
+                ASSERT_EQ(1u, texture.slot_count);
+                ASSERT_EQ(kind, texture.reader_slots[0].format_type);
+                ASSERT_EQ(mode == 0u ? 4u : 0u, texture.reader_slots[0].data_size);
+                if (mode == 1u) ASSERT_EQ(0x89u, texture.reader_slots[0].alpha_value);
+                if (mode == 2u) ASSERT_EQ(4u, texture.reader_slots[0].alpha_plane_size);
+            } else {
+                ASSERT_EQ(777, texture.pick_threshold);
+                ASSERT_NULL(texture.reader_slots);
+            }
+            nmo_texture_vtable.destroy(&texture, NULL, NULL);
+            nmo_arena_destroy(arena);
+        }
+    }
+}
+
+TEST(texture_gaps, raw_and_legacy_bitmap_buffers_stay_in_their_sections)
+{
+    for (uint32_t lane = 0u; lane < 5u; ++lane) {
+        nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+        ASSERT_NOT_NULL(arena);
+        nmo_chunk_t *chunk = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(chunk);
+        chunk->class_id = NMO_CID_TEXTURE;
+        chunk->data_version = 7u;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, lane == 4u
+            ? CK_STATESAVE_TEXBITMAPS : CK_STATESAVE_TEXCOMPRESSED));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 1));
+        if (lane != 4u) {
+            const uint32_t header[] = {32u, 1u, 1u, 0u, 0u, 0u, 0u, 0u};
+            for (size_t d = 0u; d < sizeof(header) / sizeof(header[0]); ++d) {
+                ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, header[d]));
+            }
+            for (uint32_t previous = 0u; previous < lane; ++previous) {
+                ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0u));
+            }
+        } else {
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0u));
+        }
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 4u));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, 0x7F123456u));
+        for (uint32_t d = 0; d < 8u; ++d) {
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0u));
+        }
+        nmo_chunk_close(chunk);
+        nmo_deserialize_context_t des = nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+        nmo_texture_state_t texture;
+        ASSERT_EQ(NMO_OK, nmo_texture_vtable.create(&texture, NULL, NULL));
+        texture.pick_threshold = 777;
+        ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
+            nmo_texture_deserialize(&texture, chunk, NULL, &des));
+        ASSERT_EQ(777, texture.pick_threshold);
+        ASSERT_NULL(texture.raw_slots);
+        ASSERT_NULL(texture.bitmap2_slots);
+        nmo_texture_vtable.destroy(&texture, NULL, NULL);
+        nmo_arena_destroy(arena);
+    }
+}
+
 TEST_MAIN_BEGIN()
+    REGISTER_TEST(texture_gaps, raw_and_legacy_bitmap_buffers_stay_in_their_sections);
+    REGISTER_TEST(texture_gaps, reader_records_do_not_borrow_the_next_identifier);
     REGISTER_TEST(material_gaps, legacy_color_prefixes_keep_constructor_defaults);
     REGISTER_TEST(texture_gaps, reader_dimensions_are_required_only_for_nonempty_slots);
     REGISTER_TEST(texture_gaps, desired_video_format_keeps_the_stored_value);
