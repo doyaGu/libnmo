@@ -1946,7 +1946,100 @@ TEST(objanim_controllers, old_morph_payloads_require_complete_vertex_arrays) {
     }
 }
 
+typedef struct controller_size_allocator {
+    size_t large_requests;
+} controller_size_allocator_t;
+
+static void *controller_size_alloc(void *user, size_t size, size_t alignment) {
+    controller_size_allocator_t *probe = user;
+    if (size > 16u * 1024u * 1024u) {
+        ++probe->large_requests;
+        return NULL;
+    }
+    nmo_allocator_t allocator = nmo_allocator_default();
+    return allocator.alloc(allocator.user_data, size, alignment);
+}
+
+static void controller_size_free(void *user, void *ptr) {
+    (void)user;
+    nmo_allocator_t allocator = nmo_allocator_default();
+    allocator.free(allocator.user_data, ptr);
+}
+
+TEST(objanim_controllers, signed_controller_sizes_are_preflighted_before_payload_access) {
+    for (int mode = 0; mode < 10; ++mode) {
+        controller_size_allocator_t probe = {0};
+        nmo_allocator_t allocator = {0};
+        allocator.alloc = controller_size_alloc;
+        allocator.free = controller_size_free;
+        allocator.user_data = &probe;
+        nmo_arena_t *arena = nmo_arena_create(&allocator, 4096);
+        ASSERT_NOT_NULL(arena);
+        nmo_chunk_t *output = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(output);
+        output->chunk_options |= NMO_CHUNK_OPTION_FILE;
+        output->data_version = 7;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(output));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(output, 0x1234u));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(output, 0xA5A5A5A5u));
+        const size_t old_count = output->data.count;
+        uint32_t marker[3];
+        ASSERT_EQ(sizeof(marker), old_count * sizeof(uint32_t));
+        memcpy(marker, output->data.data, sizeof(marker));
+        uint32_t dummy = 0u;
+        /* Unknown controller payloads are retained opaquely; their extents can
+           be rejected without touching the claimed data or allocating it. */
+        nmo_objanim_controller_t records[2] = {
+            {.type = 0xABCDEF01u, .data_size = 0x80000000u, .data = &dummy},
+            {.type = 0xABCDEF02u, .data_size = 0x40000000u, .data = &dummy},
+        };
+        nmo_objectanimation_state_t state = {0};
+        state.base.base.visibility_flags = 1u;
+        state.format = CKOBJANIM_FORMAT_CONTROLLERS;
+        state.controllers = records;
+        state.controller_count = mode == 1 ? 2u : 1u;
+        if (mode == 1) records[0].data_size = 0x40000000u;
+        if (mode == 2) {
+            records[0].data_size = 4u;
+            state.raw_tail = (uint8_t *)&dummy;
+            state.raw_tail_size = INT32_MAX;
+        }
+        if (mode == 3) state.controller_count = UINT32_MAX;
+        if (mode == 4) {
+            records[0].type = CKANIMATION_LINPOS_CONTROL;
+            records[0].key_count = records[0].data_size / 16u;
+        }
+        if (mode >= 5 && mode <= 8) {
+            /* Visible fixed header 52 + record header 8. Exact signed
+               capacity is allowed through to the allocation guard. */
+            records[0].data_size = (uint32_t)(INT32_MAX / 4u * 4u - 60u);
+            if (mode == 6) records[0].data_size += 4u;
+            if (mode == 7) state.base.base.visibility_flags = 0u;
+            if (mode == 8) state.flags = 0x80u;
+        }
+        if (mode == 9) output->chunk_options &= ~NMO_CHUNK_OPTION_FILE;
+        nmo_serialize_context_t context = nmo_serialize_context_create(
+            arena, NULL, mode == 9 ? 0u : NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+        const nmo_status_t expected = mode == 5 ? NMO_ERR_NOMEM
+            : mode == 9 || mode == 2 ? NMO_OK : NMO_ERR_VALIDATION_FAILED;
+        ASSERT_EQ(expected,
+                  nmo_objectanimation_serialize(&state, output, NULL, &context));
+        if (mode == 5) ASSERT_TRUE(probe.large_requests > 0u);
+        else ASSERT_EQ(0u, probe.large_requests);
+        if (mode == 9) ASSERT_EQ(0u, output->data.count);
+        /* CONTROLLERS does not emit raw_tail; ignored metadata must not
+           inflate its planned wire size. */
+        else if (mode == 2) ASSERT_EQ(16u, output->data.count);
+        else {
+            ASSERT_EQ(old_count, output->data.count);
+            ASSERT_MEM_EQ(marker, output->data.data, sizeof(marker));
+        }
+        nmo_arena_destroy(arena);
+    }
+}
+
 TEST_MAIN_BEGIN()
+    REGISTER_TEST(objanim_controllers, signed_controller_sizes_are_preflighted_before_payload_access);
     REGISTER_TEST(objanim_controllers, controllers_roundtrip);
     REGISTER_TEST(objanim_controllers, controllers_empty);
     REGISTER_TEST(objanim_controllers, controllers_preserve_terminator_delimited_count);

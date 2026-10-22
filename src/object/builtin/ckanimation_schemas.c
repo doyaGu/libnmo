@@ -3304,4 +3304,52 @@ nmo_status_t nmo_objectanimation_deserialize(
     return NMO_OK;
 }
 
-NMO_DEFINE_OBJECT_STAGED_SERIALIZE_STATE(nmo_objectanimation, nmo_objectanimation_state_t, nmo_objectanimation_validate)
+/* Native controller Dump/Save uses signed byte counts. Check all metadata
+   before validating key times (which reads payloads) or allocating a chunk. */
+static nmo_status_t nmo_objectanimation_preflight_controllers(
+    const nmo_objectanimation_state_t *state)
+{
+    if (state->format != CKOBJANIM_FORMAT_CONTROLLERS) return NMO_OK;
+    NMO_VALIDATE_COUNT(state->controllers, state->controller_count, "controllers");
+    const uint64_t limit = (uint64_t)INT32_MAX / 4u * 4u;
+    /* Identifier + root/flags/entity/length + terminator; hidden base objects
+       add an identifier, merged animation headers add three DWORDs. */
+    uint64_t total = 13u * 4u;
+    const uint32_t visibility = state->base.base.visibility_flags;
+    if ((visibility & NMO_CKOBJECT_HIERARCHICAL) != 0u ||
+        (visibility & NMO_CKOBJECT_VISIBLE) == 0u) total += 8u;
+    if ((state->flags & 0x80u) != 0u) total += 12u;
+    if (total + (uint64_t)state->controller_count * 12u > limit) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    for (uint32_t i = 0u; i < state->controller_count; ++i) {
+        const nmo_objanim_controller_t *record = &state->controllers[i];
+        uint64_t bytes = record->data_size;
+        if (record->key_count != 0u) bytes += 4u;
+        else if (bytes == 0u) bytes = record->type == NMO_OBJANIM_CONTROLLER_MORPH ? 12u : 4u;
+        total += 8u + (bytes + 3u) / 4u * 4u;
+        if (total > limit) return NMO_ERR_VALIDATION_FAILED;
+    }
+    return NMO_OK;
+}
+
+static nmo_status_t nmo_objectanimation_serialize_staged_body(
+    const void *instance, nmo_chunk_t *chunk,
+    const nmo_type_descriptor_t *type, void *context)
+{
+    (void)type;
+    return nmo_objectanimation_serialize_internal(instance, chunk, context);
+}
+
+nmo_status_t nmo_objectanimation_serialize(
+    const void *instance, nmo_chunk_t *out_chunk,
+    const nmo_type_descriptor_t *type, void *context)
+{
+    if (instance == NULL || out_chunk == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    if (nmo_object_serialize_is_file(out_chunk, context) ||
+        (nmo_serialize_context_get_save_flags(context) & CK_STATESAVE_OBJANIMALL) != 0u) {
+        NMO_RETURN_IF_ERROR(nmo_objectanimation_preflight_controllers(instance));
+    }
+    return nmo_object_serialize_staged(instance, out_chunk, type, context,
+        nmo_objectanimation_validate, nmo_objectanimation_serialize_staged_body);
+}
