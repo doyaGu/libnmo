@@ -182,6 +182,15 @@ bool script_edit_find_parameter_owner(
     nmo_object_id_t parameter_id,
     const nmo_port_owner_t **out_owner);
 
+/* Like script_edit_find_parameter_owner, but also finds the slots of operations
+ * and the values input parameters hold, which the behavior index does not list.
+ * The owner of those has index -1. */
+bool script_edit_resolve_parameter_owner(
+    nmo_script_edit_tx_t *tx,
+    const nmo_behavior_index_t *index,
+    nmo_object_id_t parameter_id,
+    nmo_port_owner_t *out_owner);
+
 bool script_edit_is_parameter_reference_object(
     const nmo_type_registry_t *registry,
     nmo_object_t *object);

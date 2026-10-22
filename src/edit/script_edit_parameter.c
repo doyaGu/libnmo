@@ -491,6 +491,133 @@ bool script_edit_find_parameter_owner(
     return true;
 }
 
+/* A slot of an operation belongs to the graph that holds the operation. */
+static bool script_edit_find_operation_slot_owner(
+    const nmo_type_registry_t *registry,
+    nmo_object_repository_t *repo,
+    const nmo_behavior_index_t *index,
+    nmo_object_t *object,
+    nmo_port_owner_t *out_owner)
+{
+    const nmo_parameterin_state_t *input = NULL;
+    const nmo_parameterout_state_t *output = NULL;
+    const nmo_parameteroperation_state_t *operation = NULL;
+    const nmo_port_owner_t *operation_owner = NULL;
+    nmo_object_id_t parameter_id = nmo_object_get_id(object);
+    nmo_object_id_t operation_id = 0u;
+    nmo_port_kind_t kind = NMO_PORT_PARAM_IN;
+
+    input = (const nmo_parameterin_state_t *)script_edit_get_object_state(
+        registry, object, NMO_CID_PARAMETERIN, CKPGUID_PARAMETERIN);
+    if (input) {
+        operation_id = nmo_parameterin_owner_id(input);
+    } else {
+        output = (const nmo_parameterout_state_t *)script_edit_get_object_state(
+            registry, object, NMO_CID_PARAMETEROUT, CKPGUID_PARAMETEROUT);
+        if (!output) {
+            return false;
+        }
+        operation_id = nmo_parameterout_owner_id(output);
+        kind = NMO_PORT_PARAM_OUT;
+    }
+
+    operation_owner = operation_id != 0u
+        ? nmo_behavior_index_find(index, operation_id)
+        : NULL;
+    if (!operation_owner || operation_owner->kind != NMO_PORT_OPERATION) {
+        return false;
+    }
+    operation = script_edit_find_operation_state_in_repo(
+        registry, repo, operation_id, NULL);
+    if (!operation ||
+        (input && nmo_parameteroperation_in1_id(operation) != parameter_id &&
+         nmo_parameteroperation_in2_id(operation) != parameter_id) ||
+        (output && nmo_parameteroperation_out_id(operation) != parameter_id)) {
+        return false;
+    }
+
+    out_owner->owner_id = operation_owner->owner_id;
+    out_owner->index = -1;
+    out_owner->kind = kind;
+    return true;
+}
+
+/* The value an input parameter holds as its own source belongs to that input's owner. */
+static bool script_edit_find_input_source_owner(
+    const nmo_type_registry_t *registry,
+    nmo_object_repository_t *repo,
+    const nmo_behavior_index_t *index,
+    nmo_object_id_t parameter_id,
+    nmo_port_owner_t *out_owner)
+{
+    size_t object_count = nmo_object_repository_get_count(repo);
+
+    for (size_t i = 0; i < object_count; ++i) {
+        nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
+        const nmo_parameterin_state_t *input = NULL;
+        const nmo_port_owner_t *owner = NULL;
+
+        if (!object) {
+            continue;
+        }
+        input = (const nmo_parameterin_state_t *)script_edit_get_object_state(
+            registry, object, NMO_CID_PARAMETERIN, CKPGUID_PARAMETERIN);
+        if (!input || input->is_shared ||
+            nmo_parameterin_source_id(input) != parameter_id) {
+            continue;
+        }
+        if (script_edit_find_parameter_owner(
+                index, nmo_object_get_id(object), &owner)) {
+            *out_owner = *owner;
+            return true;
+        }
+        if (script_edit_find_operation_slot_owner(
+                registry, repo, index, object, out_owner)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool script_edit_resolve_parameter_owner(
+    nmo_script_edit_tx_t *tx,
+    const nmo_behavior_index_t *index,
+    nmo_object_id_t parameter_id,
+    nmo_port_owner_t *out_owner)
+{
+    const nmo_port_owner_t *owner = NULL;
+    const nmo_type_registry_t *registry = NULL;
+    nmo_object_repository_t *repo = NULL;
+    nmo_object_t *object = NULL;
+    nmo_port_owner_t resolved = {0};
+
+    if (script_edit_find_parameter_owner(index, parameter_id, &owner)) {
+        resolved = *owner;
+    } else {
+        /* The index records the parameters behaviors list, not the slots of
+         * their operations or the values their inputs hold. */
+        if (!tx || !index || parameter_id == 0u) {
+            return false;
+        }
+        registry = nmo_workspace_internal_type_registry(tx->workspace);
+        repo = nmo_workspace_internal_repository(tx->workspace);
+        object = registry && repo
+            ? nmo_object_repository_find_by_id(repo, parameter_id)
+            : NULL;
+        if (!object ||
+            (!script_edit_find_operation_slot_owner(
+                 registry, repo, index, object, &resolved) &&
+             !script_edit_find_input_source_owner(
+                 registry, repo, index, parameter_id, &resolved))) {
+            return false;
+        }
+    }
+    if (out_owner) {
+        *out_owner = resolved;
+    }
+    return true;
+}
+
 static bool script_edit_resolve_common_parent_graph(
     nmo_session_t *session,
     nmo_object_id_t left_owner_id,
@@ -1091,7 +1218,7 @@ NMO_API nmo_status_t nmo_script_edit_set_parameter_value(
     if (rc != NMO_OK) {
         return rc;
     }
-    if (!script_edit_find_parameter_owner(index, parameter_id, NULL)) {
+    if (!script_edit_resolve_parameter_owner(tx, index, parameter_id, NULL)) {
         return NMO_ERR_NOT_FOUND;
     }
 
@@ -1143,7 +1270,7 @@ NMO_API nmo_status_t nmo_script_edit_set_parameter_bytes(
     if (rc != NMO_OK) {
         return rc;
     }
-    if (!script_edit_find_parameter_owner(index, parameter_id, NULL)) {
+    if (!script_edit_resolve_parameter_owner(tx, index, parameter_id, NULL)) {
         return NMO_ERR_NOT_FOUND;
     }
 
@@ -1252,8 +1379,8 @@ NMO_API nmo_status_t nmo_script_edit_connect_parameter(
     nmo_object_id_t target_parameter_id)
 {
     const nmo_behavior_index_t *index = NULL;
-    const nmo_port_owner_t *source_owner = NULL;
-    const nmo_port_owner_t *target_owner = NULL;
+    nmo_port_owner_t source_owner = {0};
+    nmo_port_owner_t target_owner = {0};
     nmo_object_repository_t *repo = NULL;
     const nmo_type_registry_t *registry = NULL;
     nmo_object_t *source_object = NULL;
@@ -1272,13 +1399,15 @@ NMO_API nmo_status_t nmo_script_edit_connect_parameter(
     if (rc != NMO_OK) {
         return rc;
     }
-    if (!script_edit_find_parameter_owner(index, source_parameter_id, &source_owner) ||
-        !script_edit_find_parameter_owner(index, target_parameter_id, &target_owner)) {
+    if (!script_edit_resolve_parameter_owner(tx, index, source_parameter_id,
+                                             &source_owner) ||
+        !script_edit_resolve_parameter_owner(tx, index, target_parameter_id,
+                                             &target_owner)) {
         return NMO_ERR_NOT_FOUND;
     }
     if (!script_edit_resolve_common_parent_graph(tx->session,
-                                                 source_owner->owner_id,
-                                                 target_owner->owner_id,
+                                                 source_owner.owner_id,
+                                                 target_owner.owner_id,
                                                  &common_parent_id)) {
         return NMO_ERR_VALIDATION_FAILED;
     }
@@ -1356,7 +1485,8 @@ NMO_API nmo_status_t nmo_script_edit_disconnect_parameter(
     if (rc != NMO_OK) {
         return rc;
     }
-    if (!script_edit_find_parameter_owner(index, target_parameter_id, NULL)) {
+    if (!script_edit_resolve_parameter_owner(tx, index, target_parameter_id,
+                                             NULL)) {
         return NMO_ERR_NOT_FOUND;
     }
 

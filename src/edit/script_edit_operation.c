@@ -14,29 +14,19 @@
 #include <string.h>
 
 static bool script_edit_parameter_belongs_to_parent_graph(
-    nmo_session_t *session,
+    nmo_script_edit_tx_t *tx,
     const nmo_behavior_index_t *index,
     nmo_object_id_t parent_behavior_id,
-    nmo_object_id_t parameter_id,
-    const nmo_port_owner_t **out_owner)
+    nmo_object_id_t parameter_id)
 {
-    const nmo_port_owner_t *owner = NULL;
+    nmo_port_owner_t owner = {0};
 
-    if (out_owner) {
-        *out_owner = NULL;
-    }
-    if (!script_edit_find_parameter_owner(index, parameter_id, &owner)) {
+    if (!script_edit_resolve_parameter_owner(tx, index, parameter_id, &owner)) {
         return false;
     }
-    if (!script_edit_behavior_is_direct_graph_member(session,
-                                                     parent_behavior_id,
-                                                     owner->owner_id)) {
-        return false;
-    }
-    if (out_owner) {
-        *out_owner = owner;
-    }
-    return true;
+    return script_edit_behavior_is_direct_graph_member(tx->session,
+                                                       parent_behavior_id,
+                                                       owner.owner_id);
 }
 
 nmo_status_t script_edit_parameterout_append_destination(
@@ -455,20 +445,17 @@ NMO_API nmo_status_t nmo_script_edit_add_operation(
             return rc;
         }
         if ((in1_parameter_id != 0u &&
-             !script_edit_parameter_belongs_to_parent_graph(tx->session, index,
+             !script_edit_parameter_belongs_to_parent_graph(tx, index,
                                                             parent_behavior_id,
-                                                            in1_parameter_id,
-                                                            NULL)) ||
+                                                            in1_parameter_id)) ||
             (in2_parameter_id != 0u &&
-             !script_edit_parameter_belongs_to_parent_graph(tx->session, index,
+             !script_edit_parameter_belongs_to_parent_graph(tx, index,
                                                             parent_behavior_id,
-                                                            in2_parameter_id,
-                                                            NULL)) ||
+                                                            in2_parameter_id)) ||
             (out_parameter_id != 0u &&
-             !script_edit_parameter_belongs_to_parent_graph(tx->session, index,
+             !script_edit_parameter_belongs_to_parent_graph(tx, index,
                                                             parent_behavior_id,
-                                                            out_parameter_id,
-                                                            NULL))) {
+                                                            out_parameter_id))) {
             return NMO_ERR_VALIDATION_FAILED;
         }
 
@@ -605,22 +592,19 @@ NMO_API nmo_status_t nmo_script_edit_rewire_operation(
 
     if (((slot_flags & NMO_SCRIPT_EDIT_OP_SLOT_IN1) != 0u &&
          in1_parameter_id != 0u &&
-         !script_edit_parameter_belongs_to_parent_graph(tx->session, index,
+         !script_edit_parameter_belongs_to_parent_graph(tx, index,
                                                         owner->owner_id,
-                                                        in1_parameter_id,
-                                                        NULL)) ||
+                                                        in1_parameter_id)) ||
         ((slot_flags & NMO_SCRIPT_EDIT_OP_SLOT_IN2) != 0u &&
          in2_parameter_id != 0u &&
-         !script_edit_parameter_belongs_to_parent_graph(tx->session, index,
+         !script_edit_parameter_belongs_to_parent_graph(tx, index,
                                                         owner->owner_id,
-                                                        in2_parameter_id,
-                                                        NULL)) ||
+                                                        in2_parameter_id)) ||
         ((slot_flags & NMO_SCRIPT_EDIT_OP_SLOT_OUT) != 0u &&
          out_parameter_id != 0u &&
-         !script_edit_parameter_belongs_to_parent_graph(tx->session, index,
+         !script_edit_parameter_belongs_to_parent_graph(tx, index,
                                                         owner->owner_id,
-                                                        out_parameter_id,
-                                                        NULL))) {
+                                                        out_parameter_id))) {
         return NMO_ERR_VALIDATION_FAILED;
     }
 

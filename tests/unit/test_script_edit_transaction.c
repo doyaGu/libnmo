@@ -17,6 +17,7 @@
 #include "object/nmo_ref_graph.h"
 #include "object/nmo_manager_guids.h"
 #include "type/nmo_param_guids.h"
+#include "type/nmo_operations.h"
 #include "object/nmo_statesave_ids.h"
 #include "object/builtin/nmo_beobject_schemas.h"
 #include "object/builtin/nmo_behavior_schemas.h"
@@ -1438,6 +1439,103 @@ TEST(script_edit_transaction, writes_explicit_parameter_values)
     nmo_context_release(ctx);
 }
 
+TEST(script_edit_transaction, finds_parameters_created_in_the_transaction)
+{
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    nmo_session_t *session = NULL;
+    nmo_script_edit_tx_t *tx = NULL;
+    nmo_object_repository_t *repo = NULL;
+    const nmo_type_registry_t *registry = NULL;
+    nmo_object_t *object = NULL;
+    const nmo_parameter_state_t *source_state = NULL;
+    const nmo_parameteroperation_state_t *operation_state = NULL;
+    const nmo_parameterin_state_t *sum_state = NULL;
+    script_control_fixture_t fixture;
+    nmo_object_id_t value_id = 0u;
+    nmo_object_id_t sum_id = 0u;
+    nmo_object_id_t source_id = 0u;
+    nmo_object_id_t a_id = 0u;
+    nmo_object_id_t b_id = 0u;
+    nmo_object_id_t operation_id = 0u;
+    nmo_object_id_t operation_out_id = 0u;
+    const float value = 4.5f;
+
+    ASSERT_NOT_NULL(ctx);
+    session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    setup_script_control_fixture(session, &fixture);
+    repo = nmo_session_get_repository(session);
+    registry = nmo_context_get_type_registry(ctx);
+    ASSERT_NOT_NULL(repo);
+    ASSERT_NOT_NULL(registry);
+
+    ASSERT_EQ(NMO_OK,
+              begin_test_script_edit(
+                  ctx, session, "edit parameters created in transaction", &tx));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_add_parameter(
+                  tx, fixture.target_behavior_id, NMO_SCRIPT_EDIT_PARAM_IN,
+                  CKPGUID_FLOAT, "Value", &value_id));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_add_parameter(
+                  tx, fixture.target_behavior_id, NMO_SCRIPT_EDIT_PARAM_IN,
+                  CKPGUID_FLOAT, "Sum", &sum_id));
+
+    /* The source an input gets is no port of the graph */
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_ensure_input_parameter_source(
+                  tx, value_id, &source_id));
+    ASSERT_TRUE(source_id != 0u);
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_set_parameter_bytes(
+                  tx, source_id, (const uint8_t *)&value, sizeof(value)));
+    object = nmo_object_repository_find_by_id(repo, source_id);
+    ASSERT_NOT_NULL(object);
+    source_state = nmo_parameter_get_state(object);
+    ASSERT_NOT_NULL(source_state);
+    ASSERT_EQ(sizeof(value), source_state->buffer_data.count);
+    ASSERT_EQ(0, memcmp(source_state->buffer_data.data, &value, sizeof(value)));
+
+    /* Neither are the slots of an operation */
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_add_parameter(
+                  tx, fixture.root_behavior_id, NMO_SCRIPT_EDIT_PARAM_LOCAL,
+                  CKPGUID_FLOAT, "A", &a_id));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_add_parameter(
+                  tx, fixture.root_behavior_id, NMO_SCRIPT_EDIT_PARAM_LOCAL,
+                  CKPGUID_FLOAT, "B", &b_id));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_add_operation(
+                  tx, fixture.root_behavior_id, NMO_OP_GUID_ADD, a_id, b_id,
+                  0u, &operation_id));
+    object = nmo_object_repository_find_by_id(repo, operation_id);
+    ASSERT_NOT_NULL(object);
+    operation_state = (const nmo_parameteroperation_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, object, CKPGUID_PARAMETEROPERATION);
+    ASSERT_NOT_NULL(operation_state);
+    operation_out_id = nmo_parameteroperation_out_id(operation_state);
+    ASSERT_TRUE(operation_out_id != 0u);
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_connect_parameter(tx, operation_out_id, sum_id));
+    object = nmo_object_repository_find_by_id(repo, sum_id);
+    ASSERT_NOT_NULL(object);
+    sum_state = (const nmo_parameterin_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, object, CKPGUID_PARAMETERIN);
+    ASSERT_NOT_NULL(sum_state);
+    ASSERT_EQ(operation_out_id, nmo_parameterin_source_id(sum_state));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_validate(
+                  tx, NMO_SCRIPT_EDIT_VALIDATE_REFERENCES |
+                          NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX));
+
+    nmo_script_edit_rollback(tx);
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(script_edit_transaction, validates_explicit_parameter_connections)
 {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
@@ -1774,6 +1872,8 @@ TEST_MAIN_BEGIN()
                   connects_parameters_across_explicit_parent_graph);
     REGISTER_TEST(script_edit_transaction,
                   writes_explicit_parameter_values);
+    REGISTER_TEST(script_edit_transaction,
+                  finds_parameters_created_in_the_transaction);
     REGISTER_TEST(script_edit_transaction,
                   validates_explicit_parameter_connections);
     REGISTER_TEST(script_edit_transaction,
