@@ -35,6 +35,7 @@ typedef struct run_unknown {
 
 typedef struct run_state {
     const nmo_script_model_t *model;
+    const nmo_engine_t *engine;
     const run_args_t *args;
     nmo_cli_record_array_t *events;
     run_unknown_t *unknown;
@@ -67,6 +68,8 @@ static bool run_event_shown(const run_args_t *args, const nmo_engine_event_t *ev
     switch (event->kind) {
     case NMO_ENGINE_EVENT_ACTIVATE:
     case NMO_ENGINE_EVENT_INFINITE_LOOP:
+    case NMO_ENGINE_EVENT_MESSAGE_SENT:
+    case NMO_ENGINE_EVENT_MESSAGE_RECEIVED:
         return true;
     case NMO_ENGINE_EVENT_EXECUTE:
         return node != NULL && node->kind == NMO_SCRIPT_NODE_BUILDING_BLOCK;
@@ -193,6 +196,27 @@ static void run_trace(const nmo_engine_event_t *event, void *user_data)
                                                   (unsigned long long)event->frame, indent, "",
                                                   behavior);
         break;
+    case NMO_ENGINE_EVENT_MESSAGE_SENT:
+    case NMO_ENGINE_EVENT_MESSAGE_RECEIVED: {
+        const char *message = nmo_engine_message_type_name(state->engine, event->result);
+        char *object = event->object_id != 0 ? run_label_dup(state->model, event->object_id)
+                                             : NULL;
+        ok = ok && (event->object_id == 0 || object != NULL);
+        ok = ok && nmo_cli_record_str(item, "message", NULL, message != NULL ? message : "");
+        if (event->kind == NMO_ENGINE_EVENT_MESSAGE_SENT) {
+            ok = ok && nmo_cli_record_set_summary_fmt(
+                item, "[%llu]%*s%s sends \"%s\" to %s", (unsigned long long)event->frame,
+                indent, "", behavior != NULL ? behavior : "host", message != NULL ? message : "?",
+                object != NULL ? object : "a broadcast");
+        } else {
+            ok = ok && nmo_cli_record_set_summary_fmt(
+                item, "[%llu]  \"%s\" reaches %s: %s stops waiting",
+                (unsigned long long)event->frame, message != NULL ? message : "?",
+                object != NULL ? object : "?", behavior);
+        }
+        free(object);
+        break;
+    }
     case NMO_ENGINE_EVENT_INFINITE_LOOP:
         ok = ok && nmo_cli_record_set_summary_fmt(item, "[%llu]%*s%s: infinite loop, stopped after %d iterations",
                                                   (unsigned long long)event->frame, indent, "",
@@ -304,7 +328,7 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
     const nmo_script_model_t *model = nmo_engine_script_model(engine);
 
     nmo_cli_record_t *rec = nmo_cli_record_new();
-    run_state_t state = {.model = model, .args = args, .ok = rec != NULL};
+    run_state_t state = {.model = model, .engine = engine, .args = args, .ok = rec != NULL};
     if (state.ok) {
         state.events = nmo_cli_record_array(rec, "events", NULL);
         state.ok = state.events != NULL;
