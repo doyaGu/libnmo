@@ -104,26 +104,24 @@ nmo_status_t nmo_animation_edit_set_object_animation(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    nmo_status_t status =
-        nmo_workspace_edit_snapshot_bytes(edit, state, sizeof(*state));
-    if (status != NMO_OK) {
-        return status;
-    }
-
-    state->format = settings->format;
-    state->entity = nmo_ref_from_id(settings->entity_id);
+    /* Prepare every owned array before publishing metadata or pointers.
+       A caller can recover from this operation's failure without rolling back
+       unrelated successful operations in the same edit. */
+    nmo_objectanimation_state_t prepared = *state;
+    prepared.format = settings->format;
+    prepared.entity = nmo_ref_from_id(settings->entity_id);
     if (settings->has_root_position) {
-        state->has_root_pos = 1u;
-        state->root_pos.x = settings->root_position[0];
-        state->root_pos.y = settings->root_position[1];
-        state->root_pos.z = settings->root_position[2];
+        prepared.has_root_pos = 1u;
+        prepared.root_pos.x = settings->root_position[0];
+        prepared.root_pos.y = settings->root_position[1];
+        prepared.root_pos.z = settings->root_position[2];
     }
     if (settings->has_flags) {
-        state->flags = settings->flags;
+        prepared.flags = settings->flags;
     }
     if (settings->has_length) {
-        state->has_length = 1u;
-        state->length = settings->length;
+        prepared.has_length = 1u;
+        prepared.length = settings->length;
     }
     if (settings->controller_count > 0u) {
         nmo_arena_t *arena =
@@ -152,11 +150,11 @@ nmo_status_t nmo_animation_edit_set_object_animation(
             controllers[i].data_size = src->data_size;
             controllers[i].data = data;
         }
-        state->controller_count = (uint32_t)settings->controller_count;
-        state->controllers = controllers;
+        prepared.controller_count = (uint32_t)settings->controller_count;
+        prepared.controllers = controllers;
     } else {
-        state->controller_count = 0u;
-        state->controllers = NULL;
+        prepared.controller_count = 0u;
+        prepared.controllers = NULL;
     }
     if (settings->morph_key_count > 0u) {
         nmo_arena_t *arena =
@@ -184,19 +182,23 @@ nmo_status_t nmo_animation_edit_set_object_animation(
             morph_keys[i].data_size = src->data_size;
             morph_keys[i].data = data;
         }
-        state->has_morph_counts = 1u;
-        state->morph_key_count = (int32_t)settings->morph_key_count;
-        state->morph_vertex_count =
+        prepared.has_morph_counts = 1u;
+        prepared.morph_key_count = (int32_t)settings->morph_key_count;
+        prepared.morph_vertex_count =
             (int32_t)(settings->morph_keys[0].data_size / (3u * sizeof(float)));
-        state->morph_key_parsed_count = (uint32_t)settings->morph_key_count;
-        state->morph_keys = morph_keys;
+        prepared.morph_key_parsed_count = (uint32_t)settings->morph_key_count;
+        prepared.morph_keys = morph_keys;
     } else {
-        state->has_morph_counts = 0u;
-        state->morph_key_count = 0;
-        state->morph_vertex_count = 0;
-        state->morph_key_parsed_count = 0u;
-        state->morph_keys = NULL;
+        prepared.has_morph_counts = 0u;
+        prepared.morph_key_count = 0;
+        prepared.morph_vertex_count = 0;
+        prepared.morph_key_parsed_count = 0u;
+        prepared.morph_keys = NULL;
     }
+
+    nmo_status_t status = nmo_workspace_edit_snapshot_bytes(edit, state, sizeof(*state));
+    if (status != NMO_OK) return status;
+    *state = prepared;
 
     nmo_workspace_edit_mark(
         edit,

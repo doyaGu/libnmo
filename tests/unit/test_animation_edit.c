@@ -11,6 +11,8 @@
 #include "object/nmo_context.h"
 #include "runtime/nmo_workspace.h"
 #include "type/nmo_type_query.h"
+#include "core/nmo_allocator.h"
+#include <stdlib.h>
 
 static void create_workspace(
     nmo_context_t **out_ctx,
@@ -461,7 +463,95 @@ TEST(animation_edit, edits_explicit_animation_types)
     destroy_workspace(ctx, doc, workspace);
 }
 
+typedef struct animation_edit_fail_allocator {
+    int fail_large;
+    size_t rejected;
+} animation_edit_fail_allocator_t;
+
+static void *animation_edit_alloc(void *user, size_t size, size_t alignment) {
+    animation_edit_fail_allocator_t *probe = user;
+    if (probe->fail_large && size >= 1024u * 1024u) {
+        ++probe->rejected;
+        return NULL;
+    }
+    nmo_allocator_t allocator = nmo_allocator_default();
+    return allocator.alloc(allocator.user_data, size, alignment);
+}
+
+static void animation_edit_free(void *user, void *pointer) {
+    (void)user;
+    nmo_allocator_t allocator = nmo_allocator_default();
+    allocator.free(allocator.user_data, pointer);
+}
+
+TEST(animation_edit, allocation_failure_preserves_the_current_animation) {
+    for (int morph = 0; morph < 2; ++morph) {
+        animation_edit_fail_allocator_t probe = {0};
+        nmo_allocator_t allocator = {0};
+        allocator.alloc = animation_edit_alloc;
+        allocator.free = animation_edit_free;
+        allocator.user_data = &probe;
+        nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){.allocator = &allocator});
+        ASSERT_NOT_NULL(ctx);
+        nmo_document_t *doc = nmo_document_create(ctx);
+        ASSERT_NOT_NULL(doc);
+        nmo_workspace_t *workspace = NULL;
+        ASSERT_EQ(NMO_OK, nmo_workspace_create(ctx, doc, &workspace));
+        nmo_workspace_edit_t *edit = NULL;
+        ASSERT_EQ(NMO_OK, nmo_workspace_edit_begin(workspace, "atomic animation", &edit));
+        nmo_object_id_t animation_id = 0u, entity_id = 0u;
+        ASSERT_EQ(NMO_OK, nmo_object_edit_create(edit,
+            &(nmo_object_create_desc_t){.class_id = NMO_CID_OBJECTANIMATION}, &animation_id));
+        ASSERT_EQ(NMO_OK, nmo_object_edit_create(edit,
+            &(nmo_object_create_desc_t){.class_id = NMO_CID_3DENTITY}, &entity_id));
+        nmo_objectanimation_state_t *state = nmo_object_get_state(find_object(doc, animation_id));
+        ASSERT_NOT_NULL(state);
+        uint8_t before[sizeof(*state)];
+        memcpy(before, state, sizeof(before));
+        const uint32_t payload_size = 1200000u; /* Whole vertices and position keys. */
+        void *payload = calloc(1u, payload_size);
+        ASSERT_NOT_NULL(payload);
+        float small_key[4] = {0};
+        nmo_objanim_controller_t controller = {
+            .type = 0x637c4301u,
+            .key_count = morph ? 1u : payload_size / 16u,
+            .data_size = morph ? sizeof(small_key) : payload_size,
+            .data = morph ? small_key : payload,
+        };
+        nmo_objanim_morph_key_t morph_key = {.data_size = payload_size, .data = payload};
+        nmo_object_animation_settings_t settings = {
+            .format = morph ? CKOBJANIM_FORMAT_NEWDATA : CKOBJANIM_FORMAT_CONTROLLERS,
+            .entity_id = entity_id,
+            .has_flags = true, .flags = 77u,
+            .has_length = true, .length = 12.5f,
+            .controller_count = 1u, .controllers = &controller,
+            .morph_key_count = morph ? 1u : 0u,
+            .morph_keys = morph ? &morph_key : NULL,
+        };
+        probe.fail_large = 1;
+        const nmo_status_t status = nmo_animation_edit_set_object_animation(edit, animation_id, &settings);
+        probe.fail_large = 0;
+        ASSERT_EQ(NMO_ERR_NOMEM, status);
+        ASSERT_TRUE(probe.rejected > 0u);
+        ASSERT_MEM_EQ(before, state, sizeof(before));
+        /* The same edit remains usable after a rejected operation. */
+        controller.key_count = 1u;
+        controller.data_size = sizeof(small_key);
+        controller.data = small_key;
+        settings.format = CKOBJANIM_FORMAT_CONTROLLERS;
+        settings.morph_key_count = 0u;
+        settings.morph_keys = NULL;
+        ASSERT_EQ(NMO_OK, nmo_animation_edit_set_object_animation(edit, animation_id, &settings));
+        ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(edit));
+        ASSERT_EQ(77u, state->flags);
+        ASSERT_EQ(1u, state->controller_count);
+        free(payload);
+        destroy_workspace(ctx, doc, workspace);
+    }
+}
+
 TEST_MAIN_BEGIN()
+REGISTER_TEST(animation_edit, allocation_failure_preserves_the_current_animation);
 REGISTER_TEST(animation_edit, sets_object_animation_metadata);
 REGISTER_TEST(animation_edit, sets_object_animation_controllers);
 REGISTER_TEST(animation_edit, scale_axis_key_size_depends_on_format);
