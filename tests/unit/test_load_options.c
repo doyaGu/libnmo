@@ -969,7 +969,43 @@ TEST(load_options, included_lengths_remain_signed_when_limits_are_raised)
     }
 }
 
+
+
+TEST(load_options, public_two_phase_serializer_can_save_a_full_session)
+{
+    const char *path = NMO_TEST_SCRATCH_FILE("two_phase_serializer.nmo");
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_id_t id = 0u;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(session, NMO_CID_OBJECT, "two phase",
+                                               (nmo_guid_t){0, 0}, &id, NULL));
+    nmo_serializer_t *serializer = nmo_serializer_create(session, NULL);
+    ASSERT_NOT_NULL(serializer);
+    const nmo_status_t layout_status = nmo_serializer_layout(serializer);
+    ASSERT_EQ(NMO_OK, layout_status);
+    const nmo_status_t commit_status = nmo_serializer_commit(serializer, path);
+    ASSERT_EQ(NMO_OK, commit_status);
+    nmo_serializer_destroy(serializer);
+    nmo_session_destroy(session);
+
+    session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    const nmo_status_t load_status = nmo_load_file(session, path, NULL);
+    ASSERT_EQ(NMO_OK, load_status);
+    ASSERT_EQ(1u, nmo_object_repository_get_count(nmo_session_get_repository(session)));
+    const nmo_object_t *loaded = nmo_object_repository_get_by_index(
+        nmo_session_get_repository(session), 0u);
+    ASSERT_NOT_NULL(loaded);
+    ASSERT_STR_EQ("two phase", loaded->name);
+    destroy_ctx_session(ctx, session);
+    const int remove_status = remove(path);
+    ASSERT_EQ(0, remove_status);
+}
+
 TEST_MAIN_BEGIN()
+    REGISTER_TEST(load_options, public_two_phase_serializer_can_save_a_full_session);
     REGISTER_TEST(load_options, metadata_profile_stops_after_header_and_rejects_mutation);
     REGISTER_TEST(load_options, partial_profile_rejects_non_empty_session);
     REGISTER_TEST(load_options, partial_profile_rejects_non_object_session_state);

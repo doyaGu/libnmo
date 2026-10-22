@@ -149,7 +149,9 @@ struct nmo_serializer {
 };
 
 static inline nmo_arena_t *save_scratch(const nmo_serializer_t *ctx) {
-    return ctx->scratch;
+    /* The one-shot wrapper supplies reclaimable scratch storage. Public
+     * two-phase callers use the session arena promised by the API. */
+    return ctx->scratch != NULL ? ctx->scratch : ctx->arena;
 }
 
 static uint64_t save_perf_begin(const nmo_serializer_t *ctx) {
