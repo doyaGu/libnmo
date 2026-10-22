@@ -295,7 +295,17 @@ nmo_status_t nmo_image_reconstruct_pixels(
         return NMO_ERR_INVALID_FORMAT;
     }
 
+    if ((size_t)width > SIZE_MAX / (size_t)height) {
+        return NMO_ERR_INVALID_FORMAT;
+    }
     size_t pixel_count = (size_t)width * (size_t)height;
+    if (pixel_count > SIZE_MAX / 4u ||
+        (red != NULL && red_size < pixel_count) ||
+        (green != NULL && green_size < pixel_count) ||
+        (blue != NULL && blue_size < pixel_count) ||
+        (alpha != NULL && alpha_size < pixel_count)) {
+        return NMO_ERR_INVALID_FORMAT;
+    }
     bool has_red   = (red   && red_size   >= pixel_count);
     bool has_green = (green && green_size >= pixel_count);
     bool has_blue  = (blue  && blue_size  >= pixel_count);

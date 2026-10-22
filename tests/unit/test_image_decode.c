@@ -240,6 +240,23 @@ TEST(image_decode, reconstruct_pixels_flips_bottom_up_planes) {
     nmo_arena_destroy(arena);
 }
 
+TEST(image_decode, partial_channel_is_not_an_absent_channel) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 0);
+    ASSERT_NOT_NULL(arena);
+    const uint8_t plane[] = {1u, 2u, 3u, 4u};
+    for (size_t channel = 0u; channel < 4u; ++channel) {
+        uint32_t sizes[] = {4u, 4u, 4u, 4u};
+        sizes[channel] = 3u;
+        uint8_t *pixels = NULL;
+        int channels = 0;
+        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_image_reconstruct_pixels(
+            plane, plane, plane, plane, sizes[0], sizes[1], sizes[2], sizes[3],
+            2, 2, 32, arena, &pixels, &channels));
+        ASSERT_NULL(pixels);
+    }
+    nmo_arena_destroy(arena);
+}
+
 /* Append count bits, the first one most significant, at the bit position of a
  * stream whose bytes are filled from the least significant bit. */
 static void dct_put_bits(uint8_t *stream, size_t *position, unsigned value, unsigned count) {
@@ -309,5 +326,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(image_decode, dxt_rejects_truncated);
     REGISTER_TEST(image_decode, dxt_rejects_zero_dims);
     REGISTER_TEST(image_decode, reconstruct_pixels_flips_bottom_up_planes);
+    REGISTER_TEST(image_decode, partial_channel_is_not_an_absent_channel);
     REGISTER_TEST(image_decode, dct_plane_dc_only_blocks);
 TEST_MAIN_END()

@@ -970,7 +970,8 @@ nmo_status_t nmo_chunk_read_raw_bitmap(nmo_chunk_t *chunk,
         }
     }
 
-    if (r_size != plane_size || g_size != plane_size || b_size != plane_size) {
+    if (r_size < plane_size || g_size < plane_size || b_size < plane_size ||
+        (a_size != 0u && a_size < plane_size)) {
         return nmo_chunk_bitmap_cleanup_arena_with_rollback(
             scratch,
             state,
@@ -978,7 +979,7 @@ nmo_status_t nmo_chunk_read_raw_bitmap(nmo_chunk_t *chunk,
             make_error(NMO_ERR_CORRUPT, "Bitmap plane size mismatch"));
     }
 
-    const bool has_alpha_plane = (a_size == plane_size && a_plane != NULL);
+    const bool has_alpha_plane = (a_size >= plane_size && a_plane != NULL);
 
     const int32_t bytes_per_line = nmo_image_calc_bytes_per_line(width, 32);
     if (bytes_per_line <= 0) {
@@ -1154,7 +1155,7 @@ nmo_status_t nmo_chunk_read_encoded_bitmap(nmo_chunk_t *chunk,
             result = nmo_chunk_bitmap_read_buffer_in_arena(chunk, scratch, &alpha_data, &alpha_size,
                                                            "Failed to read alpha plane");
             NMO_CHUNK_BITMAP_RETURN_IF_ERROR_SCRATCH_WITH_ROLLBACK(result, scratch, state, start_pos);
-            if (!alpha_data || alpha_size != pixel_count) {
+            if (!alpha_data || alpha_size < pixel_count) {
                 NMO_CHUNK_BITMAP_RETURN_ERROR_SCRATCH_WITH_ROLLBACK(
                     scratch,
                     state,

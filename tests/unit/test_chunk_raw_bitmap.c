@@ -284,6 +284,57 @@ TEST(chunk_raw_bitmap, truncated_plane_keeps_position) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_raw_bitmap, rejects_partial_alpha_plane_atomically) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 64 * 1024);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    const uint32_t header[] = {32u, 2u, 1u, 0xFF000000u,
+        0x00FF0000u, 0x0000FF00u, 0x000000FFu, 0u};
+    for (size_t i = 0; i < sizeof(header) / sizeof(header[0]); ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, header[i]));
+    }
+    const uint8_t plane[] = {0x12u, 0x34u};
+    for (size_t i = 0; i < 3u; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_buffer(chunk, plane, sizeof(plane)));
+    }
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_buffer(chunk, plane, 1u));
+    nmo_chunk_close(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
+    nmo_image_desc_t decoded;
+    uint8_t *pixels = NULL;
+    ASSERT_EQ(NMO_ERR_CORRUPT, nmo_chunk_read_raw_bitmap(chunk, &decoded, &pixels));
+    ASSERT_NULL(pixels);
+    ASSERT_EQ(0u, nmo_chunk_get_position(chunk));
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_raw_bitmap, plane_padding_does_not_change_visible_pixels) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 64 * 1024);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    const uint32_t header[] = {32u, 2u, 1u, 0xFF000000u,
+        0x00FF0000u, 0x0000FF00u, 0x000000FFu, 0u};
+    for (size_t i = 0; i < sizeof(header) / sizeof(header[0]); ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, header[i]));
+    }
+    const uint8_t plane[] = {0x12u, 0x34u, 0xFFu};
+    for (size_t i = 0; i < 4u; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_buffer(chunk, plane, sizeof(plane)));
+    }
+    nmo_chunk_close(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
+    nmo_image_desc_t decoded;
+    uint8_t *pixels = NULL;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_raw_bitmap(chunk, &decoded, &pixels));
+    const uint32_t expected[] = {0x12121212u, 0x34343434u};
+    ASSERT_MEM_EQ(expected, pixels, sizeof(expected));
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_raw_bitmap, write_read_argb32_roundtrip);
     REGISTER_TEST(chunk_raw_bitmap, planes_follow_pixel_byte_order);
@@ -291,4 +342,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_raw_bitmap, write_read_rgb565_conversion);
     REGISTER_TEST(chunk_raw_bitmap, empty_descriptor_writes_zero);
     REGISTER_TEST(chunk_raw_bitmap, truncated_plane_keeps_position);
+    REGISTER_TEST(chunk_raw_bitmap, rejects_partial_alpha_plane_atomically);
+    REGISTER_TEST(chunk_raw_bitmap, plane_padding_does_not_change_visible_pixels);
 TEST_MAIN_END()

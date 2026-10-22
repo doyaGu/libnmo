@@ -175,6 +175,8 @@ NMO_API size_t nmo_image_calc_size(
  * pixel stored with a raw slot except for zero (no image), so any non-zero
  * value (8, 16, 24, 32 ...) decodes the same way. The channel buffers are
  * bottom-up, as a CKTexture raw slot stores them; the output is top-down.
+ * Present channels must contain at least width * height bytes. Extra bytes
+ * are ignored; a partial channel is invalid rather than treated as absent.
  *
  * @param red       Red channel buffer (NULL = fill zeros)
  * @param green     Green channel buffer (NULL = fill zeros)
