@@ -457,6 +457,12 @@ static nmo_status_t validate_header1_for_write(const nmo_header1_t *header) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Header1 included file count exceeds signed wire range");
     }
+    const uint64_t minimum_size = 12u + (uint64_t)header->object_count * 16u +
+        (uint64_t)header->plugin_dep_count * 8u + (header->plugin_dep_count > 0u ? 8u : 0u);
+    if (minimum_size > INT32_MAX) {
+        NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR,
+                         "Header1 record tables exceed the signed wire range");
+    }
     if (header->object_count > 0 && header->objects == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
                          "Header1 object count is non-zero but object array is NULL");
@@ -502,6 +508,14 @@ nmo_status_t nmo_header1_plan(
         if (!nmo_safe_add_size(staged.object_table_size, name_len, &staged.object_table_size)) {
             NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Header1 size overflow (object name)");
         }
+        if (staged.object_table_size > (size_t)INT32_MAX - 12u) {
+            return NMO_ERR_CORRUPT;
+        }
+    }
+
+    if ((uint64_t)staged.object_table_size + 12u +
+        (uint64_t)header->plugin_dep_count * 8u + (header->plugin_dep_count > 0u ? 8u : 0u) > INT32_MAX) {
+        return NMO_ERR_CORRUPT;
     }
 
     /* Plugin dependencies */
@@ -564,6 +578,7 @@ nmo_status_t nmo_header1_plan(
         NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Header1 size overflow");
     }
 
+    if (staged.total_size > INT32_MAX) return NMO_ERR_CORRUPT;
     *out_layout = staged;
     NMO_RETURN_OK();
 }
@@ -589,7 +604,8 @@ nmo_status_t nmo_header1_write_planned(
     NMO_RETURN_IF_ERROR(validate_header1_for_write(header));
 
     size_t expected_total = 0;
-    if (!nmo_safe_add_size(layout->object_table_size, layout->plugin_dep_size, &expected_total) ||
+    if (layout->total_size > INT32_MAX ||
+        !nmo_safe_add_size(layout->object_table_size, layout->plugin_dep_size, &expected_total) ||
         !nmo_safe_add_size(expected_total, layout->included_metadata_size, &expected_total) ||
         expected_total != layout->total_size) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid Header1 layout sizes");

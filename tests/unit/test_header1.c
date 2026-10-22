@@ -430,7 +430,45 @@ TEST(header1, included_file_count_has_a_signed_wire_range) {
     nmo_arena_destroy(arena);
 }
 
+TEST(header1, rejects_unrepresentable_plans_before_allocation) {
+    header1_fail_allocator_state_t state = {0};
+    nmo_allocator_t allocator = nmo_allocator_custom(header1_fail_alloc, header1_fail_free, &state);
+    nmo_arena_t *arena = nmo_arena_create(&allocator, 1u);
+    ASSERT_NOT_NULL(arena);
+    state.fail_allocations = 1;
+    nmo_plugin_dep_t dependency = {0};
+    nmo_header1_t header = {.plugin_dep_count = UINT32_MAX, .plugin_deps = &dependency};
+    nmo_header1_layout_t layout;
+    memset(&layout, 0xA5, sizeof(layout));
+    const nmo_status_t plan_status = nmo_header1_plan(&header, arena, &layout);
+    ASSERT_EQ(NMO_ERR_CORRUPT, plan_status);
+    ASSERT_EQ(0u, layout.total_size);
+    ASSERT_NULL(layout.plugin_categories);
+    nmo_object_desc_t object = {0};
+    header.plugin_dep_count = 0u;
+    header.object_count = UINT32_MAX;
+    header.objects = &object;
+    const nmo_status_t object_status = nmo_header1_plan(&header, arena, &layout);
+    ASSERT_EQ(NMO_ERR_CORRUPT, object_status);
+    ASSERT_EQ(0u, layout.total_size);
+    header.object_count = 0u;
+    header.plugin_dep_count = 0u;
+    layout = (nmo_header1_layout_t){
+        .plugin_dep_size = INT32_MAX, .included_metadata_size = 8u,
+        .total_size = (size_t)INT32_MAX + 8u
+    };
+    uint8_t *output = (uint8_t *)(uintptr_t)1u;
+    size_t output_size = SIZE_MAX;
+    const nmo_status_t write_status = nmo_header1_write_planned(
+        &header, &layout, arena, &output, &output_size);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, write_status);
+    ASSERT_NULL(output);
+    ASSERT_EQ(0u, output_size);
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
+    REGISTER_TEST(header1, rejects_unrepresentable_plans_before_allocation);
     REGISTER_TEST(header1, rejects_negative_signed_wire_fields_atomically);
     REGISTER_TEST(header1, included_file_count_has_a_signed_wire_range);
     REGISTER_TEST(header1, serialization);
