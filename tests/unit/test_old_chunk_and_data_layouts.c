@@ -591,21 +591,29 @@ TEST(data_section_layouts, legacy_objects_reject_invalid_lengths_and_compressed_
         }
     }
 
-    /* Successful zlib decoding must also produce exactly the declared size. */
+    /* Old object UnPack treats the declared size as capacity, but the actual
+     * decoded bytes must still form a complete DWORD array. */
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
-    uint8_t bytes[128] = {0};
     const uint8_t raw[4] = {1u, 2u, 3u, 4u};
-    mz_ulong compressed_size = sizeof(bytes) - 28u;
-    ASSERT_EQ(MZ_OK, mz_compress(bytes + 28u, &compressed_size, raw, sizeof(raw)));
-    const uint32_t words[] = {1u, 1u, 1u, 8u, 23u, 0u, (uint32_t)compressed_size};
-    for (size_t d = 0; d < sizeof(words) / sizeof(words[0]); ++d) {
-        nmo_write_u32_le(bytes + d * 4u, words[d]);
+    for (uint32_t raw_size = 3u; raw_size <= 4u; ++raw_size) {
+        uint8_t bytes[128] = {0};
+        mz_ulong compressed_size = sizeof(bytes) - 28u;
+        ASSERT_EQ(MZ_OK, mz_compress(bytes + 28u, &compressed_size, raw, raw_size));
+        const uint32_t words[] = {1u, 1u, 1u, 8u, 23u, 0u, (uint32_t)compressed_size};
+        for (size_t d = 0; d < sizeof(words) / sizeof(words[0]); ++d) {
+            nmo_write_u32_le(bytes + d * 4u, words[d]);
+        }
+        nmo_data_section_t section = {0};
+        section.file_write_mode = NMO_FILE_WRITE_CHUNK_COMPRESSED_OLD;
+        ASSERT_EQ(raw_size == 4u ? NMO_OK : NMO_ERR_DECOMPRESSION_FAILED,
+            nmo_data_section_parse(bytes, 28u + compressed_size, 2u, &section, NULL, arena));
+        if (raw_size == 4u) {
+            ASSERT_EQ(1u, section.objects[0].chunk->data.count);
+            ASSERT_EQ(4u, section.objects[0].chunk->uncompressed_size);
+            ASSERT_EQ(0x04030201u, ((const uint32_t *)section.objects[0].chunk->data.data)[0]);
+        }
     }
-    nmo_data_section_t section = {0};
-    section.file_write_mode = NMO_FILE_WRITE_CHUNK_COMPRESSED_OLD;
-    ASSERT_EQ(NMO_ERR_DECOMPRESSION_FAILED, nmo_data_section_parse(
-        bytes, 28u + compressed_size, 2u, &section, NULL, arena));
     nmo_arena_destroy(arena);
 }
 

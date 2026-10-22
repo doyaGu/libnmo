@@ -211,7 +211,7 @@ static nmo_status_t parse_object_entry_v2(
         }
         mz_ulong unpacked_size = obj->data_size;
         if (mz_uncompress(unpacked, &unpacked_size, stored, stored_size) != MZ_OK ||
-            unpacked_size != obj->data_size) {
+            (unpacked_size & 3u) != 0u) {
             NMO_RETURN_ERROR(NMO_ERR_DECOMPRESSION_FAILED, NMO_SEVERITY_ERROR,
                              "Failed to unpack object entry %u", (unsigned)index);
         }
