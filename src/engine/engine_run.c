@@ -86,7 +86,7 @@ nmo_status_t nmo_engine_start(nmo_engine_t *engine, nmo_engine_start_mode_t mode
                 active = true;
                 break;
             case NMO_ENGINE_START_NONE:
-                continue;
+                break; /* reset all the same, so a later activation without reset starts it */
             }
             eng_behavior_activate(engine, script, active, true);
             if (active) {

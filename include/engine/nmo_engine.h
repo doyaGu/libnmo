@@ -96,7 +96,8 @@ typedef enum nmo_engine_start_mode {
     NMO_ENGINE_START_SCENE_DEFAULT = 0,
     /* Every script, reset. */
     NMO_ENGINE_START_ALL,
-    /* None; the caller activates scripts with nmo_engine_activate_script(). */
+    /* None, though every script is reset; the caller activates scripts with
+       nmo_engine_activate_script(). */
     NMO_ENGINE_START_NONE,
 } nmo_engine_start_mode_t;
 
@@ -147,9 +148,10 @@ NMO_API void nmo_engine_set_trace(nmo_engine_t *engine, nmo_engine_trace_fn fn, 
 
 /**
  * Prepare to run: send the load and reset messages to every building block
- * (CKM_BEHAVIORLOAD picks a block's function by version), then activate
- * scripts as `mode` says. Building block functions must be registered
- * before this. A second call is NMO_ERR_INVALID_STATE.
+ * (CKM_BEHAVIORLOAD picks a block's function by version), then reset every
+ * script and activate the ones `mode` says, as a level launch does.
+ * Building block functions must be registered before this. A second call is
+ * NMO_ERR_INVALID_STATE.
  */
 NMO_API nmo_status_t nmo_engine_start(nmo_engine_t *engine, nmo_engine_start_mode_t mode);
 
