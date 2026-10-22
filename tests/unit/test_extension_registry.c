@@ -47,8 +47,16 @@ static nmo_status_t dummy_init(const nmo_extension_host_t *host, void *host_user
 }
 
 static int g_ext_manager_preload_hits = 0;
+static int g_legacy_plugin_init_hits = 0;
 static bool g_shutdown_context_seen = false;
 static nmo_guid_t g_shutdown_expected_guid = {0, 0};
+
+static nmo_status_t legacy_plugin_init(const nmo_extension_host_t *host, void *host_user) {
+    (void)host;
+    (void)host_user;
+    ++g_legacy_plugin_init_hits;
+    return NMO_OK;
+}
 
 static int ext_manager_on_event(void *session,
                                 const nmo_runtime_event_ctx_t *ctx,
@@ -264,6 +272,29 @@ TEST(extension, abi_compatibility_check) {
     ASSERT_TRUE(nmo_extension_host_is_compatible(&valid_host));
 }
 
+TEST(extension, rejects_pre_registry_serialization_context_abi_before_init) {
+    setup_registries();
+    nmo_extension_registry_t *registry = nmo_extension_registry_create(
+        NULL, g_type_registry, NULL, NULL, g_manager_registry);
+    ASSERT_NOT_NULL(registry);
+    nmo_extension_plugin_t legacy = create_test_plugin(
+        NMO_GUID(0xA8B1C401, 0x317A0004), "PreRegistryContext");
+    legacy.abi_version = 4u;
+    legacy.init = legacy_plugin_init;
+    g_legacy_plugin_init_hits = 0;
+    ASSERT_FALSE(nmo_extension_plugin_is_compatible(&legacy));
+    nmo_extension_host_t old_host = {0};
+    old_host.abi_version = 4u;
+    old_host.struct_size = sizeof(old_host);
+    ASSERT_FALSE(nmo_extension_host_is_compatible(&old_host));
+    const nmo_status_t status = nmo_extension_registry_register_static(registry, &legacy, 1u);
+    ASSERT_EQ(NMO_ERR_UNSUPPORTED_VERSION, status);
+    ASSERT_EQ(0, g_legacy_plugin_init_hits);
+    ASSERT_EQ(0u, nmo_extension_registry_get_count(registry));
+    nmo_extension_registry_destroy(registry);
+    teardown_registries();
+}
+
 TEST(extension, host_register_manager_callbacks) {
     setup_registries();
 
@@ -418,6 +449,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(extension, unload_by_guid);
     REGISTER_TEST(extension, abi_version_mismatch);
     REGISTER_TEST(extension, abi_compatibility_check);
+    REGISTER_TEST(extension, rejects_pre_registry_serialization_context_abi_before_init);
     REGISTER_TEST(extension, host_register_manager_callbacks);
     REGISTER_TEST(extension, list_returns_contiguous_info_records);
     REGISTER_TEST(extension, shutdown_receives_host_context);

@@ -36,7 +36,8 @@ typedef struct nmo_runtime_event_ctx nmo_runtime_event_ctx_t;
 /**
  * @brief Current ABI version (exact match required)
  */
-#define NMO_EXTENSION_ABI_VERSION 4u
+/* Version 5 adds type_registry to the callback-visible serialize context. */
+#define NMO_EXTENSION_ABI_VERSION 5u
 
 /**
  * @brief Default symbol name for extension query function

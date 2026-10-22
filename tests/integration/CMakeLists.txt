@@ -78,7 +78,7 @@ set_tests_properties(test_generated_chunk_roundtrip PROPERTIES
 add_integration_test(test_runtime_load_pipeline)
 add_integration_test(test_runtime_copy_behavior_graph)
 add_integration_test(test_runtime_delete_scene_group_consistency)
-add_integration_test(test_extension_abi_v3)
+add_integration_test(test_extension_abi)
 add_integration_test(test_reference_alignment_matrix)
 target_compile_definitions(test_reference_alignment_matrix PRIVATE
     NMO_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
