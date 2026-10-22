@@ -350,6 +350,8 @@ static nmo_status_t eng_build_nodes(eng_builder_t *b)
         node->pout_count = pout_count;
         node->first_local = first_local;
         node->local_count = local_count;
+        nmo_object_id_t target_id = nmo_behavior_target_parameter_id(state);
+        node->target = target_id != 0 ? eng_map_get(&engine->param_map, target_id) : -1;
         node->first_child = first_child;
         node->child_count = (uint32_t)mnode->child_count;
         for (size_t k = 0; k < mnode->child_count; k++) {

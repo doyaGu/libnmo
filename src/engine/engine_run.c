@@ -60,6 +60,7 @@ nmo_status_t nmo_engine_start(nmo_engine_t *engine, nmo_engine_start_mode_t mode
             eng_block_callback(engine, (int32_t)i, NMO_ENGINE_MSG_LOAD);
         }
     }
+    eng_reset_messages(engine); /* CKMessageManager::OnCKReset */
     for (size_t i = 0; i < engine->nodes.count; i++) {
         if (engine->nodes.data[i].is_block) {
             eng_block_callback(engine, (int32_t)i, NMO_ENGINE_MSG_RESET);
@@ -139,6 +140,9 @@ nmo_status_t nmo_engine_step(nmo_engine_t *engine, float delta_ms)
     engine->delta = delta_ms;
     eng_emit(engine, NMO_ENGINE_EVENT_FRAME_BEGIN, -1, 0, 0);
     nmo_status_t status = eng_manager_execute(engine);
+    if (status == NMO_OK) {
+        eng_dispatch_messages(engine); /* CKMessageManager::PostProcess */
+    }
     eng_emit(engine, NMO_ENGINE_EVENT_FRAME_END, -1, 0, 0);
     engine->frame++;
     engine->time += delta_ms;

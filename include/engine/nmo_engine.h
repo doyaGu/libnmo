@@ -38,6 +38,13 @@
  * blocks unless told not to. A building block without a function follows
  * nmo_engine_options_t.unknown_block.
  *
+ * Messages work as the message manager's do: a message sent during a frame
+ * is delivered at the end of that frame (CKMessageManager::PostProcess). A
+ * behavior waiting for it gets its output activated, which its graph acts on
+ * in the next frame, and the objects waiting for messages hold it as a last
+ * frame message until the next delivery. A message type is the index of the
+ * message in the file's message list.
+ *
  * Times are in milliseconds, as CKBehaviorContext::DeltaTime is.
  */
 
@@ -104,6 +111,10 @@ typedef enum nmo_engine_event_kind {
     NMO_ENGINE_EVENT_OPERATION,        /* object: a parameter operation ran; result is its status */
     NMO_ENGINE_EVENT_UNKNOWN_BLOCK,    /* behavior: a building block without a function executed */
     NMO_ENGINE_EVENT_INFINITE_LOOP,    /* behavior: a graph reached the iteration limit */
+    NMO_ENGINE_EVENT_MESSAGE_SENT,     /* behavior: the sender block, if any; object: the
+                                          recipient (0 for a broadcast); result: the type */
+    NMO_ENGINE_EVENT_MESSAGE_RECEIVED, /* behavior: the block whose wait it ended;
+                                          object: the object it reached; result: the type */
 } nmo_engine_event_kind_t;
 
 typedef struct nmo_engine_event {
@@ -187,6 +198,26 @@ NMO_API nmo_status_t nmo_engine_set_param_value(nmo_engine_t *engine,
                                                 nmo_object_id_t param_id,
                                                 const void *data,
                                                 size_t size);
+
+/* ---- Messages ---- */
+
+/** Number of message types the file declares. */
+NMO_API int32_t nmo_engine_message_type_count(const nmo_engine_t *engine);
+/** Name of message type `type`; NULL when there is none. */
+NMO_API const char *nmo_engine_message_type_name(const nmo_engine_t *engine, int32_t type);
+/** The message type named `name`, or -1. */
+NMO_API int32_t nmo_engine_message_type(const nmo_engine_t *engine, const char *name);
+
+/** Send message `type` to object `recipient` (CKMessageManager::SendMessageSingle). */
+NMO_API nmo_status_t nmo_engine_send_message(nmo_engine_t *engine,
+                                             int32_t type,
+                                             nmo_object_id_t recipient,
+                                             nmo_object_id_t sender);
+/** Send message `type` to every object of class `class_id` and its subclasses. */
+NMO_API nmo_status_t nmo_engine_broadcast_message(nmo_engine_t *engine,
+                                                  int32_t type,
+                                                  nmo_class_id_t class_id,
+                                                  nmo_object_id_t sender);
 
 /** "execute", "link", ... */
 NMO_API const char *nmo_engine_event_kind_name(nmo_engine_event_kind_t kind);

@@ -285,6 +285,95 @@ nmo_status_t nmo_engine_block_set_local_value(nmo_engine_block_t *block, int pos
     return param != NULL ? eng_param_write(block->engine, param, data, size) : NMO_ERR_NOT_FOUND;
 }
 
+nmo_object_id_t nmo_engine_block_get_input_object(nmo_engine_block_t *block, int pos)
+{
+    uint32_t id = 0;
+    nmo_engine_block_get_input_value(block, pos, &id, sizeof(id));
+    return (nmo_object_id_t)id;
+}
+
+nmo_object_id_t nmo_engine_block_target(nmo_engine_block_t *block)
+{
+    const eng_node_t *node = eng_block_node(block);
+    if (node->target < 0) {
+        return node->owner;
+    }
+    eng_param_t *source =
+        eng_param_real_source(block->engine, &block->engine->params.data[node->target]);
+    eng_param_update(block->engine, source);
+    uint32_t id = 0;
+    if (source != NULL && source->size >= sizeof(id)) {
+        memcpy(&id, source->data, sizeof(id));
+    }
+    return (nmo_object_id_t)id;
+}
+
+/* ---- Messages ---- */
+
+nmo_status_t nmo_engine_block_register_wait(nmo_engine_block_t *block, int32_t type,
+                                            int output_pos, nmo_object_id_t object)
+{
+    return eng_register_wait(block->engine, type, block->node, output_pos, object);
+}
+
+void nmo_engine_block_unregister_wait(nmo_engine_block_t *block, int32_t type, int output_pos)
+{
+    eng_unregister_wait(block->engine, type, block->node, output_pos);
+}
+
+nmo_status_t nmo_engine_block_send_message(nmo_engine_block_t *block, int32_t type,
+                                           nmo_object_id_t recipient, nmo_object_id_t sender)
+{
+    eng_message_t message = {.type = type, .sending = ENG_MESSAGE_SINGLE, .sender = sender,
+                             .recipient = recipient, .sent_by = block->node};
+    return eng_send(block->engine, &message);
+}
+
+nmo_status_t nmo_engine_block_broadcast_message(nmo_engine_block_t *block, int32_t type,
+                                                nmo_class_id_t class_id, nmo_object_id_t sender)
+{
+    eng_message_t message = {.type = type, .sending = ENG_MESSAGE_BROADCAST, .sender = sender,
+                             .broadcast_cid = class_id, .sent_by = block->node};
+    return eng_send(block->engine, &message);
+}
+
+void nmo_engine_block_set_waiting_for_messages(nmo_engine_block_t *block, nmo_object_id_t object,
+                                               bool waiting)
+{
+    int32_t index = eng_map_get(&block->engine->object_map, object);
+    if (index < 0) {
+        return;
+    }
+    eng_object_t *entry = &block->engine->objects.data[index];
+    if (waiting) {
+        entry->waiting++;
+    } else if (entry->waiting > 0) {
+        entry->waiting--;
+    }
+}
+
+int nmo_engine_block_last_frame_message_count(const nmo_engine_block_t *block,
+                                              nmo_object_id_t object)
+{
+    int count = 0;
+    for (size_t i = 0; i < block->engine->received.count; i++) {
+        count += block->engine->received.data[i].object == object;
+    }
+    return count;
+}
+
+int32_t nmo_engine_block_last_frame_message_type(const nmo_engine_block_t *block,
+                                                 nmo_object_id_t object, int pos)
+{
+    for (size_t i = 0; pos >= 0 && i < block->engine->received.count; i++) {
+        const eng_received_t *r = &block->engine->received.data[i];
+        if (r->object == object && pos-- == 0) {
+            return r->type;
+        }
+    }
+    return -1;
+}
+
 /* ---- Engine-internal helpers for the built-in blocks ---- */
 
 nmo_guid_t eng_block_operation_guid(const nmo_engine_block_t *block)

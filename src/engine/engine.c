@@ -164,6 +164,9 @@ nmo_status_t nmo_engine_create(nmo_workspace_t *workspace,
     if (status == NMO_OK) {
         status = eng_build(engine);
     }
+    if (status == NMO_OK) {
+        status = eng_load_message_names(engine);
+    }
     if (status == NMO_OK && !engine->options.no_builtin_blocks) {
         status = eng_register_logics(engine);
     }
@@ -196,6 +199,7 @@ void nmo_engine_destroy(nmo_engine_t *engine)
     free(engine->blocks.data);
     free(engine->listed.data);
     free(engine->scratch_io.data);
+    eng_free_messages(engine);
     free(engine->node_map.slots);
     free(engine->io_map.slots);
     free(engine->param_map.slots);
@@ -326,6 +330,8 @@ const char *nmo_engine_event_kind_name(nmo_engine_event_kind_t kind)
     case NMO_ENGINE_EVENT_OPERATION: return "operation";
     case NMO_ENGINE_EVENT_UNKNOWN_BLOCK: return "unknown block";
     case NMO_ENGINE_EVENT_INFINITE_LOOP: return "infinite loop";
+    case NMO_ENGINE_EVENT_MESSAGE_SENT: return "message sent";
+    case NMO_ENGINE_EVENT_MESSAGE_RECEIVED: return "message received";
     }
     return "?";
 }

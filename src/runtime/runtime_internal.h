@@ -48,6 +48,12 @@ nmo_status_t nmo_document_internal_init_object_query_context(
     nmo_document_t *document,
     nmo_object_query_context_t *out_query_ctx);
 nmo_session_t *nmo_workspace_internal_session(nmo_workspace_t *workspace);
+/* The names of the file's message types, by type, allocated in `arena`. */
+nmo_status_t nmo_workspace_internal_message_names(
+    nmo_workspace_t *workspace,
+    nmo_arena_t *arena,
+    const char ***out_names,
+    uint32_t *out_count);
 /* Name of message type `index` in the file's Message Manager data. */
 nmo_status_t nmo_workspace_internal_message_name(
     nmo_workspace_t *workspace,

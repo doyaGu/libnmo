@@ -131,6 +131,49 @@ NMO_API nmo_status_t nmo_engine_block_set_local_value(nmo_engine_block_t *block,
                                                       const void *data,
                                                       size_t size);
 
+/** The object input `pos` holds (GetInputParameterObject); 0 when none. */
+NMO_API nmo_object_id_t nmo_engine_block_get_input_object(nmo_engine_block_t *block, int pos);
+/**
+ * The object the block acts on (CKBehavior::GetTarget): what its target
+ * parameter holds, or the owner when it has none.
+ */
+NMO_API nmo_object_id_t nmo_engine_block_target(nmo_engine_block_t *block);
+
+/* ---- Messages ---- */
+
+/**
+ * Wait for message `type` to reach `object`; on arrival output `output_pos`
+ * activates (CKMessageManager::RegisterWait). The block waits for messages
+ * (CKBEHAVIOR_WAITSFORMESSAGE), which keeps its graph active.
+ */
+NMO_API nmo_status_t nmo_engine_block_register_wait(nmo_engine_block_t *block,
+                                                    int32_t type,
+                                                    int output_pos,
+                                                    nmo_object_id_t object);
+/** Stop waiting for `type` on `output_pos`, or on every output for -1. */
+NMO_API void nmo_engine_block_unregister_wait(nmo_engine_block_t *block,
+                                              int32_t type,
+                                              int output_pos);
+NMO_API nmo_status_t nmo_engine_block_send_message(nmo_engine_block_t *block,
+                                                   int32_t type,
+                                                   nmo_object_id_t recipient,
+                                                   nmo_object_id_t sender);
+NMO_API nmo_status_t nmo_engine_block_broadcast_message(nmo_engine_block_t *block,
+                                                        int32_t type,
+                                                        nmo_class_id_t class_id,
+                                                        nmo_object_id_t sender);
+/** Count `object` as waiting for messages, or stop (CKBeObject::SetAsWaitingForMessages). */
+NMO_API void nmo_engine_block_set_waiting_for_messages(nmo_engine_block_t *block,
+                                                       nmo_object_id_t object,
+                                                       bool waiting);
+/** Messages `object` received in the last delivery. */
+NMO_API int nmo_engine_block_last_frame_message_count(const nmo_engine_block_t *block,
+                                                      nmo_object_id_t object);
+/** Type of the `pos`th of them; -1 when there is none. */
+NMO_API int32_t nmo_engine_block_last_frame_message_type(const nmo_engine_block_t *block,
+                                                         nmo_object_id_t object,
+                                                         int pos);
+
 #ifdef __cplusplus
 }
 #endif
