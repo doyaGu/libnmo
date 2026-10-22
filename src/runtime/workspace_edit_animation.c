@@ -52,6 +52,7 @@ nmo_status_t nmo_animation_edit_set_object_animation(
     if (settings->controller_count > 0u) {
         if (settings->controllers == NULL ||
             settings->controller_count > UINT32_MAX ||
+            settings->controller_count > SIZE_MAX / sizeof(nmo_objanim_controller_t) ||
             (settings->format != CKOBJANIM_FORMAT_CONTROLLERS &&
              settings->format != CKOBJANIM_FORMAT_NEWDATA)) {
             return NMO_ERR_INVALID_ARGUMENT;
@@ -82,6 +83,7 @@ nmo_status_t nmo_animation_edit_set_object_animation(
     if (settings->morph_key_count > 0u) {
         if (settings->morph_keys == NULL ||
             settings->morph_key_count > INT32_MAX ||
+            settings->morph_key_count > SIZE_MAX / sizeof(nmo_objanim_morph_key_t) ||
             settings->format != CKOBJANIM_FORMAT_NEWDATA) {
             return NMO_ERR_INVALID_ARGUMENT;
         }

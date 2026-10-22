@@ -550,7 +550,51 @@ TEST(animation_edit, allocation_failure_preserves_the_current_animation) {
     }
 }
 
+TEST(animation_edit, unrepresentable_record_arrays_are_rejected_before_iteration) {
+    nmo_context_t *ctx = NULL;
+    nmo_document_t *doc = NULL;
+    nmo_workspace_t *workspace = NULL;
+    create_workspace(&ctx, &doc, &workspace);
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_begin(workspace, "array extents", &edit));
+    nmo_object_id_t animation_id = 0u, entity_id = 0u;
+    ASSERT_EQ(NMO_OK, nmo_object_edit_create(edit,
+        &(nmo_object_create_desc_t){.class_id = NMO_CID_OBJECTANIMATION}, &animation_id));
+    ASSERT_EQ(NMO_OK, nmo_object_edit_create(edit,
+        &(nmo_object_create_desc_t){.class_id = NMO_CID_3DENTITY}, &entity_id));
+    nmo_objectanimation_state_t *state = nmo_object_get_state(find_object(doc, animation_id));
+    ASSERT_NOT_NULL(state);
+    uint8_t before[sizeof(*state)];
+    memcpy(before, state, sizeof(before));
+    float payload[4] = {0};
+    nmo_objanim_controller_t controller = {
+        .type = 0x637c4301u, .key_count = 1u, .data_size = sizeof(payload), .data = payload,
+    };
+    nmo_objanim_morph_key_t morph = {.data_size = 12u, .data = payload};
+    nmo_object_animation_settings_t settings = {
+        .format = CKOBJANIM_FORMAT_CONTROLLERS, .entity_id = entity_id,
+        .controller_count = SIZE_MAX / sizeof(controller) + 1u,
+        .controllers = &controller,
+    };
+    /* On 32-bit, these counts fit the wire integer but not their host record
+       arrays. Never inspect the dummy records using the impossible counts. */
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_animation_edit_set_object_animation(edit, animation_id, &settings));
+    ASSERT_MEM_EQ(before, state, sizeof(before));
+    settings.controller_count = 0u;
+    settings.controllers = NULL;
+    settings.format = CKOBJANIM_FORMAT_NEWDATA;
+    settings.morph_key_count = SIZE_MAX / sizeof(morph) + 1u;
+    settings.morph_keys = &morph;
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_animation_edit_set_object_animation(edit, animation_id, &settings));
+    ASSERT_MEM_EQ(before, state, sizeof(before));
+    nmo_workspace_edit_rollback(edit);
+    destroy_workspace(ctx, doc, workspace);
+}
+
 TEST_MAIN_BEGIN()
+REGISTER_TEST(animation_edit, unrepresentable_record_arrays_are_rejected_before_iteration);
 REGISTER_TEST(animation_edit, allocation_failure_preserves_the_current_animation);
 REGISTER_TEST(animation_edit, sets_object_animation_metadata);
 REGISTER_TEST(animation_edit, sets_object_animation_controllers);
