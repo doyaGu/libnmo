@@ -188,6 +188,24 @@ static nmo_status_t nmo_material_write_legacy_color(
     return NMO_OK;
 }
 
+/* RCKMaterial::Save uses RGBAFTOCOLOR, which truncates rather than rounding
+ * to the nearest byte. Keep that wire conversion separate from the generic
+ * nmo_color_to_argb32 API's documented round-to-nearest behavior. */
+static uint32_t nmo_material_legacy_color_byte(float value)
+{
+    if (!(value > 0.0f)) return 0u;
+    if (value >= 1.0f) return 255u;
+    return (uint32_t)(value * 255.0f);
+}
+
+static uint32_t nmo_material_pack_legacy_color(const nmo_color_t *color)
+{
+    return (nmo_material_legacy_color_byte(color->a) << 24) |
+           (nmo_material_legacy_color_byte(color->r) << 16) |
+           (nmo_material_legacy_color_byte(color->g) << 8) |
+           nmo_material_legacy_color_byte(color->b);
+}
+
 static nmo_status_t nmo_material_deserialize_internal(
     void *instance,
     nmo_chunk_t *chunk,
@@ -234,16 +252,16 @@ static nmo_status_t nmo_material_deserialize_internal(
 
             NMO_RETURN_IF_ERROR(nmo_material_read_legacy_color(chunk, &color));
             const float diffuse_a = color.a;
-            decoded.diffuse_color = nmo_color_to_argb32(&color);
+            decoded.diffuse_color = nmo_material_pack_legacy_color(&color);
 
             NMO_RETURN_IF_ERROR(nmo_material_read_legacy_color(chunk, &color));
-            decoded.ambient_color = nmo_color_to_argb32(&color);
+            decoded.ambient_color = nmo_material_pack_legacy_color(&color);
 
             NMO_RETURN_IF_ERROR(nmo_material_read_legacy_color(chunk, &color));
-            decoded.specular_color = nmo_color_to_argb32(&color);
+            decoded.specular_color = nmo_material_pack_legacy_color(&color);
 
             NMO_RETURN_IF_ERROR(nmo_material_read_legacy_color(chunk, &color));
-            decoded.emissive_color = nmo_color_to_argb32(&color);
+            decoded.emissive_color = nmo_material_pack_legacy_color(&color);
 
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(
                 chunk, &decoded.specular_power));

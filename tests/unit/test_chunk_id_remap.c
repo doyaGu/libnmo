@@ -3505,7 +3505,7 @@ TEST(chunk_id_remap, legacy_material_colors_are_size_prefixed_buffers) {
     ASSERT_EQ(NMO_OK, nmo_material_vtable.create(&material, NULL, NULL));
     ASSERT_EQ(NMO_OK, nmo_material_deserialize(
         &material, chunk, NULL, &deserialize_context));
-    ASSERT_EQ(0xFFFF8040u, material.diffuse_color);
+    ASSERT_EQ(0xFFFF7F3Fu, material.diffuse_color);
     ASSERT_EQ(0xFF0000FFu, material.ambient_color);
     ASSERT_EQ(0xFFFFFFFFu, material.specular_color);
     ASSERT_EQ(0xFF00FF00u, material.emissive_color);
@@ -21771,7 +21771,42 @@ TEST(chunk_id_remap, legacy_unresolved_id_preserves_raw_id) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, legacy_material_colors_preserve_every_authored_byte) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t ser = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t des = nmo_deserialize_context_create(
+        arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+    for (uint32_t value = 0u; value <= 255u; ++value) {
+        nmo_material_state_t source;
+        ASSERT_EQ(NMO_OK, nmo_material_vtable.create(&source, NULL, NULL));
+        source.material_data_is_legacy = 1;
+        source.diffuse_color = value * 0x01010101u;
+        source.ambient_color = (255u - value) * 0x01010101u;
+        source.specular_color = source.diffuse_color;
+        source.emissive_color = source.ambient_color;
+        nmo_chunk_t *chunk = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(chunk);
+        chunk->class_id = NMO_CID_MATERIAL;
+        chunk->data_version = 4;
+        ASSERT_EQ(NMO_OK, nmo_material_serialize(&source, chunk, NULL, &ser));
+        nmo_chunk_close(chunk);
+        nmo_material_state_t loaded;
+        ASSERT_EQ(NMO_OK, nmo_material_vtable.create(&loaded, NULL, NULL));
+        ASSERT_EQ(NMO_OK, nmo_material_deserialize(&loaded, chunk, NULL, &des));
+        ASSERT_EQ(source.diffuse_color, loaded.diffuse_color);
+        ASSERT_EQ(source.ambient_color, loaded.ambient_color);
+        ASSERT_EQ(source.specular_color, loaded.specular_color);
+        ASSERT_EQ(source.emissive_color, loaded.emissive_color);
+        nmo_material_vtable.destroy(&loaded, NULL, NULL);
+        nmo_material_vtable.destroy(&source, NULL, NULL);
+    }
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
+    REGISTER_TEST(chunk_id_remap, legacy_material_colors_preserve_every_authored_byte);
     REGISTER_TEST(chunk_id_remap, id_remap_basic);
     REGISTER_TEST(chunk_id_remap, id_remap_preserves_maximum_target);
     REGISTER_TEST(chunk_id_remap, object_visibility_seek_errors_propagate_atomically);
