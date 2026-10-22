@@ -98,7 +98,7 @@ typedef struct nmo_objanim_controller {
  */
 typedef struct nmo_objanim_morph_key {
     float    time_step;  /**< Key time */
-    uint32_t data_size;  /**< Vertex position data size in bytes */
+    uint32_t data_size;  /**< 0 (absent), or whole 12-byte records for at least morph_vertex_count vertices */
     void    *data;       /**< Arena-allocated vertex positions */
 } nmo_objanim_morph_key_t;
 
@@ -152,7 +152,10 @@ typedef struct nmo_objectanimation_state {
     /* Per-key normals of the morph keys (NEWDATA only, optional). The engine
      * reads the two sections independently: compressed vectors from
      * CK_STATESAVE_OBJANIMMORPHCOMP and, after them, from
-     * CK_STATESAVE_OBJANIMMORPHNORMALS, which replaces them. Both are kept. */
+     * CK_STATESAVE_OBJANIMMORPHNORMALS, which replaces them after legacy
+     * conversion. Both wire payloads are kept, without converting the latter.
+     * A nonempty payload has whole DWORDs for at least morph_vertex_count
+     * vertices; zero bytes mean an absent optional normal array. */
     uint32_t morph_comp_count;      /**< 0 or morph_key_parsed_count */
     uint32_t *morph_comp_sizes;     /**< Per-key data sizes */
     void   **morph_comp_data;       /**< Per-key arena-allocated buffers */

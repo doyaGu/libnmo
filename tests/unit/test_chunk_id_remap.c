@@ -21105,7 +21105,7 @@ TEST(chunk_id_remap, objectanimation_refs_round_trip_and_failure_is_atomic) {
         .data_size = sizeof(controller_data),
         .data = controller_data,
     };
-    uint8_t morph_data[] = {5, 6, 7, 8};
+    uint8_t morph_data[12] = {5, 6, 7, 8};
     nmo_objanim_morph_key_t morph_key = {
         .time_step = 2.5f,
         .data_size = sizeof(morph_data),
@@ -21455,7 +21455,7 @@ TEST(chunk_id_remap, objectanimation_newdata_morph_normals_are_bounded) {
     source.controller_count = 1u;
     source.controllers = &controller;
 
-    uint8_t normal_data[4] = {1u, 2u, 3u, 4u};
+    uint8_t normal_data[12] = {1u, 2u, 3u, 4u};
     uint32_t normal_sizes[2] = {sizeof(normal_data), 0u};
     void *normal_data_ptrs[2] = {normal_data, NULL};
     /* Each per-key section alone, then both together. */

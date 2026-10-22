@@ -1823,6 +1823,129 @@ TEST(objanim_controllers, shared_animation_without_owner_saves_as_empty_controll
     nmo_arena_destroy(arena);
 }
 
+TEST(objanim_controllers, old_morph_payloads_require_complete_vertex_arrays) {
+    static const uint32_t position_sizes[] = {0u, 1u, 4u, 11u, 12u, 16u, 23u, 24u, 36u};
+    static const uint32_t normal_sizes[] = {0u, 1u, 3u, 4u, 7u, 8u, 12u};
+    uint32_t payload[9] = {0};
+
+    for (uint32_t mode = 0; mode < 4u; ++mode) {
+        const bool legacy = mode == 0u;
+        const bool normals = mode >= 2u;
+        const uint32_t *sizes = normals ? normal_sizes : position_sizes;
+        const size_t case_count = normals
+            ? sizeof(normal_sizes) / sizeof(normal_sizes[0])
+            : sizeof(position_sizes) / sizeof(position_sizes[0]);
+        for (size_t c = 0; c < case_count; ++c) {
+            nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+            ASSERT_NOT_NULL(arena);
+            nmo_deserialize_context_t des_ctx = nmo_deserialize_context_create(
+                arena, NULL, NULL, 0);
+            nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
+                arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+            nmo_chunk_t *chunk = nmo_chunk_create(arena);
+            ASSERT_NOT_NULL(chunk);
+            chunk->class_id = NMO_CID_OBJECTANIMATION;
+            chunk->data_version = legacy ? 0u : 7u;
+            ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, legacy
+                ? CK_STATESAVE_OBJANIMMORPHKEYS2 : CK_STATESAVE_OBJANIMNEWDATA));
+            if (!legacy) {
+                for (uint32_t i = 0; i < 7u; ++i) {
+                    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(chunk, 0.0f));
+                }
+                ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 2));
+                ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 1));
+                ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0u));
+                ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(chunk, NMO_OBJECT_ID_NONE));
+                ASSERT_EQ(NMO_OK, nmo_chunk_write_float(chunk, 0.0f));
+            } else {
+                ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 1));
+                ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 2));
+            }
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_float(chunk, 1.0f));
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, normals ? 0u : sizes[c]));
+            if (!normals && sizes[c] != 0u) {
+                ASSERT_EQ(NMO_OK, nmo_chunk_write_buffer_no_size(chunk, payload, sizes[c]));
+            }
+            if (!legacy) {
+                for (uint32_t i = 0; i < 8u; ++i) {
+                    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0u));
+                }
+            }
+            if (normals) {
+                ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, mode == 2u
+                    ? CK_STATESAVE_OBJANIMMORPHCOMP : CK_STATESAVE_OBJANIMMORPHNORMALS));
+                ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, sizes[c]));
+                if (sizes[c] != 0u) {
+                    ASSERT_EQ(NMO_OK, nmo_chunk_write_buffer_no_size(chunk, payload, sizes[c]));
+                }
+            }
+            nmo_chunk_close(chunk);
+
+            const uint32_t stride = normals ? 4u : 12u;
+            const bool valid = sizes[c] == 0u ||
+                (sizes[c] % stride == 0u && sizes[c] / stride >= 2u);
+            nmo_objectanimation_state_t loaded;
+            ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(&loaded, NULL, NULL));
+            loaded.format = CKOBJANIM_FORMAT_SHARED;
+            const nmo_status_t status = nmo_objectanimation_deserialize(
+                &loaded, chunk, NULL, &des_ctx);
+            ASSERT_EQ(valid ? NMO_OK : NMO_ERR_INVALID_FORMAT, status);
+            if (valid) {
+                ASSERT_EQ(1u, loaded.morph_key_parsed_count);
+                ASSERT_EQ(normals ? 0u : sizes[c], loaded.morph_keys[0].data_size);
+                nmo_chunk_t *saved = nmo_chunk_create(arena);
+                ASSERT_NOT_NULL(saved);
+                saved->class_id = NMO_CID_OBJECTANIMATION;
+                saved->data_version = chunk->data_version;
+                ASSERT_EQ(NMO_OK, nmo_objectanimation_serialize(&loaded, saved, NULL, &ser_ctx));
+                nmo_chunk_close(saved);
+                nmo_objectanimation_state_t reloaded;
+                ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(&reloaded, NULL, NULL));
+                ASSERT_EQ(NMO_OK, nmo_objectanimation_deserialize(&reloaded, saved, NULL, &des_ctx));
+                ASSERT_EQ(loaded.morph_vertex_count, reloaded.morph_vertex_count);
+                ASSERT_EQ(loaded.morph_key_count, reloaded.morph_key_count);
+                ASSERT_EQ(loaded.morph_keys[0].time_step, reloaded.morph_keys[0].time_step);
+                ASSERT_EQ(loaded.morph_keys[0].data_size, reloaded.morph_keys[0].data_size);
+                if (mode == 2u) {
+                    ASSERT_EQ(sizes[c], reloaded.morph_comp_sizes[0]);
+                } else if (mode == 3u) {
+                    ASSERT_EQ(sizes[c], reloaded.morph_normals_sizes[0]);
+                }
+                nmo_objectanimation_vtable.destroy(&reloaded, NULL, NULL);
+            } else {
+                ASSERT_EQ(CKOBJANIM_FORMAT_SHARED, loaded.format);
+                ASSERT_EQ(0u, loaded.morph_key_parsed_count);
+            }
+
+            nmo_objanim_morph_key_t key = {1.0f, normals ? 0u : sizes[c], payload};
+            void *normal_data = payload;
+            uint32_t normal_size = sizes[c];
+            nmo_objectanimation_state_t authored;
+            ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(&authored, NULL, NULL));
+            authored.format = legacy ? CKOBJANIM_FORMAT_LEGACY : CKOBJANIM_FORMAT_NEWDATA;
+            authored.has_morph_counts = 1;
+            authored.morph_vertex_count = 2;
+            authored.morph_key_count = 1;
+            authored.morph_key_parsed_count = 1;
+            authored.morph_keys = &key;
+            if (mode == 2u) {
+                authored.morph_comp_count = 1;
+                authored.morph_comp_sizes = &normal_size;
+                authored.morph_comp_data = &normal_data;
+            } else if (mode == 3u) {
+                authored.morph_normals_count = 1;
+                authored.morph_normals_sizes = &normal_size;
+                authored.morph_normals_data = &normal_data;
+            }
+            ASSERT_EQ(valid ? NMO_OK : NMO_ERR_VALIDATION_FAILED,
+                nmo_objectanimation_vtable.validate(&authored, NULL, NULL));
+            nmo_objectanimation_vtable.destroy(&loaded, NULL, NULL);
+            nmo_arena_destroy(arena);
+        }
+    }
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(objanim_controllers, controllers_roundtrip);
     REGISTER_TEST(objanim_controllers, controllers_empty);
@@ -1860,4 +1983,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(objanim_controllers, copy_controllers);
     REGISTER_TEST(objanim_controllers, morph_controller_blob_is_read_and_kept);
     REGISTER_TEST(objanim_controllers, shared_animation_without_owner_saves_as_empty_controllers);
+    REGISTER_TEST(objanim_controllers, old_morph_payloads_require_complete_vertex_arrays);
 TEST_MAIN_END()

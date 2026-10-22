@@ -33,6 +33,17 @@ static nmo_status_t nmo_keyedanimation_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context);
+/* Zero bytes mean an absent optional array. Nonempty legacy morph arrays
+ * must contain whole records for at least the declared number of vertices. */
+static bool nmo_objectanimation_morph_payload_valid(
+    uint32_t size_bytes, int32_t vertex_count, uint32_t stride)
+{
+    return size_bytes == 0u ||
+        (size_bytes <= INT32_MAX && vertex_count >= 0 &&
+         size_bytes % stride == 0u &&
+         size_bytes / stride >= (uint32_t)vertex_count);
+}
+
 static nmo_status_t nmo_objectanimation_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
@@ -901,18 +912,30 @@ static nmo_status_t nmo_objectanimation_validate(
         }
     }
     for (uint32_t i = 0; i < s->morph_key_parsed_count; ++i) {
+        if (!nmo_objectanimation_morph_payload_valid(
+                s->morph_keys[i].data_size, s->morph_vertex_count, 12u)) {
+            return NMO_ERR_VALIDATION_FAILED;
+        }
         NMO_VALIDATE_BYTES(
             s->morph_keys[i].data,
             s->morph_keys[i].data_size,
             "morph key data");
     }
     for (uint32_t i = 0; i < s->morph_comp_count; ++i) {
+        if (!nmo_objectanimation_morph_payload_valid(
+                s->morph_comp_sizes[i], s->morph_vertex_count, 4u)) {
+            return NMO_ERR_VALIDATION_FAILED;
+        }
         NMO_VALIDATE_BYTES(
             s->morph_comp_data[i],
             s->morph_comp_sizes[i],
             "morph compressed data");
     }
     for (uint32_t i = 0; i < s->morph_normals_count; ++i) {
+        if (!nmo_objectanimation_morph_payload_valid(
+                s->morph_normals_sizes[i], s->morph_vertex_count, 4u)) {
+            return NMO_ERR_VALIDATION_FAILED;
+        }
         NMO_VALIDATE_BYTES(
             s->morph_normals_data[i],
             s->morph_normals_sizes[i],
@@ -1635,6 +1658,7 @@ static nmo_status_t nmo_objectanimation_read_morph_section(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
     uint32_t count,
+    int32_t vertex_count,
     uint32_t *out_count,
     uint32_t **out_sizes,
     void ***out_data)
@@ -1668,6 +1692,10 @@ static nmo_status_t nmo_objectanimation_read_morph_section(
         sizes[i] = size_bytes;
         NMO_RETURN_IF_ERROR(nmo_animation_validate_payload_size(
             chunk, size_bytes, (size_t)(count - i - 1u)));
+        if (!nmo_objectanimation_morph_payload_valid(size_bytes, vertex_count, 4u)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Morph normal payload does not contain complete vertex records");
+        }
 
         data_ptrs[i] = NULL;
         if (size_bytes > 0u) {
@@ -1826,6 +1854,11 @@ static nmo_status_t read_newdata_controllers(
                 (size_t)(morph_key_count - i - 1) * 2u + 8u;
             NMO_RETURN_IF_ERROR(nmo_animation_validate_payload_size(
                 chunk, size_bytes, trailing_dwords));
+            if (!nmo_objectanimation_morph_payload_valid(
+                    size_bytes, out_state->morph_vertex_count, 12u)) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "Morph position payload does not contain complete vertex records");
+            }
 
             if (size_bytes > 0) {
                 void *data = nmo_arena_alloc(arena, size_bytes, 4);
@@ -1876,6 +1909,7 @@ static nmo_status_t read_newdata_controllers(
             nmo_chunk_get_position(chunk) + section_dwords;
         NMO_RETURN_IF_ERROR(nmo_objectanimation_read_morph_section(
             chunk, arena, out_state->morph_key_parsed_count,
+            out_state->morph_vertex_count,
             &out_state->morph_comp_count, &out_state->morph_comp_sizes,
             &out_state->morph_comp_data));
         NMO_RETURN_IF_ERROR(nmo_animation_require_section_end(
@@ -1889,6 +1923,7 @@ static nmo_status_t read_newdata_controllers(
             nmo_chunk_get_position(chunk) + section_dwords;
         NMO_RETURN_IF_ERROR(nmo_objectanimation_read_morph_section(
             chunk, arena, out_state->morph_key_parsed_count,
+            out_state->morph_vertex_count,
             &out_state->morph_normals_count, &out_state->morph_normals_sizes,
             &out_state->morph_normals_data));
         NMO_RETURN_IF_ERROR(nmo_animation_require_section_end(
@@ -1989,6 +2024,11 @@ static nmo_status_t read_legacy_controllers(
                 NMO_RETURN_IF_ERROR(nmo_animation_validate_payload_size(
                     chunk, size_bytes,
                     (size_t)(morph_key_count - i - 1) * 2u));
+                if (!nmo_objectanimation_morph_payload_valid(
+                        size_bytes, out_state->morph_vertex_count, 12u)) {
+                    NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                     "Morph position payload does not contain complete vertex records");
+                }
 
                 if (size_bytes > 0) {
                     void *data = nmo_arena_alloc(arena, size_bytes, 4);

@@ -1607,16 +1607,16 @@ TEST(object_state_layout, animations_copy_controllers_morph_keys_and_sections) {
     nmo_objanim_controller_t controller = {
         .type = 0x637c4301u, .key_count = 1u, .data_size = 16u, .data = key_bytes,
     };
-    uint8_t vertex_bytes[6] = {1, 2, 3, 4, 5, 6};
+    uint8_t vertex_bytes[12] = {1, 2, 3, 4, 5, 6};
     nmo_objanim_morph_key_t morph_key = {
-        .time_step = 2.0f, .data_size = 6u, .data = vertex_bytes,
+        .time_step = 2.0f, .data_size = sizeof(vertex_bytes), .data = vertex_bytes,
     };
-    uint8_t comp_bytes[3] = {7, 8, 9};
+    uint8_t comp_bytes[4] = {7, 8, 9};
     void *comp_data[1] = {comp_bytes};
-    uint32_t comp_sizes[1] = {3u};
-    uint8_t normal_bytes[2] = {10, 11};
+    uint32_t comp_sizes[1] = {sizeof(comp_bytes)};
+    uint8_t normal_bytes[4] = {10, 11};
     void *normal_data[1] = {normal_bytes};
-    uint32_t normal_sizes[1] = {2u};
+    uint32_t normal_sizes[1] = {sizeof(normal_bytes)};
     uint8_t tail[4] = {0xA, 0xB, 0xC, 0xD};
     source.format = CKOBJANIM_FORMAT_NEWDATA;
     source.has_morph_counts = 1;
