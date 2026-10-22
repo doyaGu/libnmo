@@ -21,6 +21,8 @@
 #include "session/nmo_deserializer.h"
 #include "session/nmo_serializer.h"
 #include "session/nmo_session.h"
+#include "session/nmo_session_pipeline.h"
+#include "object/nmo_shadow_storage.h"
 #include "runtime/nmo_workspace.h"
 #include "type/nmo_type_system.h"
 #include "core/nmo_allocator.h"
@@ -1071,7 +1073,87 @@ TEST(load_options, included_payload_sizes_are_validated_during_save_layout)
     ASSERT_EQ(0, remove_status);
 }
 
+TEST(load_options, save_statistics_include_every_written_byte)
+{
+    const char *path = NMO_TEST_SCRATCH_FILE("save_complete_size.nmo");
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_id_t id = 0u;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(session, NMO_CID_OBJECT,
+        "size owner", NMO_NULL_GUID, &id, NULL));
+    const uint8_t payload[] = {1u, 2u, 3u, 4u, 5u};
+    ASSERT_EQ(NMO_OK, nmo_session_add_included_file_borrowed(
+        session, "folder/payload.bin", payload, sizeof(payload)));
+    uint32_t count = 0u;
+    nmo_included_file_t *files = nmo_session_get_included_files(session, &count);
+    ASSERT_EQ(1u, count);
+    for (int mode = 0; mode < 4; ++mode) {
+        files[0].attributes = NMO_INCLUDED_FILE_ATTR_BORROWED |
+            (mode == 1 ? NMO_INCLUDED_FILE_ATTR_METADATA_ONLY : 0u);
+        nmo_save_options_t options = nmo_save_options_default();
+        options.compress_header = mode != 3;
+        options.compress_data = mode != 3;
+        if (mode == 2) options.flags |= NMO_SAVE_STRIP_INCLUDED_FILES;
+        nmo_serializer_t *serializer = nmo_serializer_create(session, &options);
+        ASSERT_NOT_NULL(serializer);
+        ASSERT_EQ(NMO_OK, nmo_serializer_layout(serializer));
+        ASSERT_EQ(NMO_OK, nmo_serializer_commit(serializer, path));
+        nmo_save_stats_t stats = nmo_serializer_get_stats(serializer);
+        FILE *file = fopen(path, "rb");
+        ASSERT_NOT_NULL(file);
+        const int seek_result = fseek(file, 0, SEEK_END);
+        const long actual = ftell(file);
+        const int close_result = fclose(file);
+        ASSERT_EQ(0, seek_result);
+        ASSERT_EQ(0, close_result);
+        ASSERT_TRUE(actual > 0);
+        ASSERT_EQ((size_t)actual, stats.total_file_size);
+        const size_t included_bytes = mode == 2 ? 0u
+            : 8u + strlen("payload.bin") + (mode == 1 ? 0u : sizeof(payload));
+        ASSERT_EQ(sizeof(nmo_file_header_t) + stats.header1_pack_size +
+                  stats.data_pack_size + included_bytes, stats.total_file_size);
+        nmo_serializer_destroy(serializer);
+    }
+    /* Loading with shadow preservation exercises the separate verbatim-tail
+       write path rather than rebuilding included entries. */
+    nmo_session_destroy(session);
+    session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_load_options_t load_options = nmo_load_options_default();
+    load_options.flags |= NMO_LOAD_PRESERVE_SHADOW;
+    ASSERT_EQ(NMO_OK, nmo_load_file(session, path, &load_options));
+    nmo_shadow_storage_t *shadow = nmo_session_get_shadow_storage(session);
+    ASSERT_TRUE(nmo_shadow_has_included_files(shadow));
+    files = nmo_session_get_included_files(session, &count);
+    ASSERT_EQ(1u, count);
+    ASSERT_TRUE((files[0].attributes & NMO_INCLUDED_FILE_ATTR_BORROWED) != 0u);
+    size_t shadow_bytes = 0u;
+    ASSERT_NOT_NULL(nmo_shadow_get_included_files(shadow, &shadow_bytes));
+    nmo_serializer_t *preserved = nmo_serializer_create(session, NULL);
+    ASSERT_NOT_NULL(preserved);
+    ASSERT_EQ(NMO_OK, nmo_serializer_layout(preserved));
+    ASSERT_EQ(NMO_OK, nmo_serializer_commit(preserved, path));
+    nmo_save_stats_t preserved_stats = nmo_serializer_get_stats(preserved);
+    ASSERT_EQ(sizeof(nmo_file_header_t) + preserved_stats.header1_pack_size +
+              preserved_stats.data_pack_size + shadow_bytes, preserved_stats.total_file_size);
+    FILE *preserved_file = fopen(path, "rb");
+    ASSERT_NOT_NULL(preserved_file);
+    const int preserved_seek = fseek(preserved_file, 0, SEEK_END);
+    const long preserved_size = ftell(preserved_file);
+    const int preserved_close = fclose(preserved_file);
+    ASSERT_EQ(0, preserved_seek);
+    ASSERT_EQ(0, preserved_close);
+    ASSERT_EQ((size_t)preserved_size, preserved_stats.total_file_size);
+    nmo_serializer_destroy(preserved);
+    destroy_ctx_session(ctx, session);
+    const int remove_result = remove(path);
+    ASSERT_EQ(0, remove_result);
+}
+
 TEST_MAIN_BEGIN()
+    REGISTER_TEST(load_options, save_statistics_include_every_written_byte);
     REGISTER_TEST(load_options, included_payload_sizes_are_validated_during_save_layout);
     REGISTER_TEST(load_options, public_two_phase_serializer_can_save_a_full_session);
     REGISTER_TEST(load_options, metadata_profile_stops_after_header_and_rejects_mutation);

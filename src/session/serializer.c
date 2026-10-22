@@ -61,10 +61,23 @@
     (nmo_last_error_setf((code), NMO_SEVERITY_ERROR, __FILE__, __LINE__, "%s", (msg)), \
      (nmo_status_t)(code))
 
-static nmo_status_t save_txn_write_u32_le(nmo_txn_handle_t *txn, uint32_t value) {
+static nmo_status_t save_txn_write_counted(
+    nmo_txn_handle_t *txn, const void *data, size_t size, size_t *total)
+{
+    size_t next = 0u;
+    if (!nmo_safe_add_size(*total, size, &next)) {
+        return SAVE_ERR(NMO_ERR_NOMEM, "Total file size overflow");
+    }
+    NMO_RETURN_IF_ERROR(nmo_txn_write(txn, data, size));
+    *total = next;
+    return NMO_OK;
+}
+
+static nmo_status_t save_txn_write_u32_le(
+    nmo_txn_handle_t *txn, uint32_t value, size_t *total) {
     uint8_t encoded[4];
     nmo_write_u32_le(encoded, value);
-    return nmo_txn_write(txn, encoded, sizeof(encoded));
+    return save_txn_write_counted(txn, encoded, sizeof(encoded), total);
 }
 
 static nmo_txn_durability_t save_txn_durability_from_options(
@@ -1584,9 +1597,9 @@ static nmo_status_t save_write_file(nmo_serializer_t *ctx, const char *path) {
     NMO_RETURN_IF_ERROR(save_validate_included_files(ctx));
     nmo_log(ctx->logger, NMO_LOG_INFO, "Step 2.2: Writing file with CRC");
 
-    /* Calculate total file size */
-    uint32_t file_size = sizeof(nmo_file_header_t) + ctx->header1_pack_size + ctx->data_pack_size;
-    ctx->stats.total_file_size = file_size;
+    /* Count every successful write, including preserved included-file tails.
+       Individual wire sections are signed-sized; their sum need not be. */
+    size_t file_size = 0u;
 
     /* Build file header */
     nmo_file_header_t header = {0};
@@ -1698,7 +1711,8 @@ static nmo_status_t save_write_file(nmo_serializer_t *ctx, const char *path) {
         return SAVE_ERR(NMO_ERR_INTERNAL, "Header serialization produced no data");
     }
 
-    nmo_status_t write_result = nmo_txn_write(txn, serialized_header, serialized_header_size);
+    nmo_status_t write_result = save_txn_write_counted(
+        txn, serialized_header, serialized_header_size, &file_size);
     nmo_io_close(header_io);
     if (write_result != NMO_OK) {
         nmo_txn_rollback(txn);
@@ -1708,7 +1722,8 @@ static nmo_status_t save_write_file(nmo_serializer_t *ctx, const char *path) {
 
     /* Write Header1 */
     if (ctx->header1_pack_size > 0) {
-        write_result = nmo_txn_write(txn, ctx->header1_packed, ctx->header1_pack_size);
+        write_result = save_txn_write_counted(
+            txn, ctx->header1_packed, ctx->header1_pack_size, &file_size);
         if (write_result != NMO_OK) {
             nmo_txn_rollback(txn);
             nmo_txn_close(txn);
@@ -1718,7 +1733,8 @@ static nmo_status_t save_write_file(nmo_serializer_t *ctx, const char *path) {
 
     /* Write Data section */
     if (ctx->data_pack_size > 0) {
-        write_result = nmo_txn_write(txn, ctx->data_packed, ctx->data_pack_size);
+        write_result = save_txn_write_counted(
+            txn, ctx->data_packed, ctx->data_pack_size, &file_size);
         if (write_result != NMO_OK) {
             nmo_txn_rollback(txn);
             nmo_txn_close(txn);
@@ -1756,7 +1772,7 @@ static nmo_status_t save_write_file(nmo_serializer_t *ctx, const char *path) {
     if (!strip_included && use_shadow_included) {
         nmo_log(ctx->logger, NMO_LOG_INFO, "  Writing shadow included files blob (%zu bytes)",
                 shadow_size);
-        if (nmo_txn_write(txn, shadow_blob, shadow_size) != NMO_OK) {
+        if (save_txn_write_counted(txn, shadow_blob, shadow_size, &file_size) != NMO_OK) {
             nmo_txn_rollback(txn);
             nmo_txn_close(txn);
             return SAVE_ERR(NMO_ERR_CANT_WRITE_FILE, "Included files shadow blob write failed");
@@ -1771,16 +1787,16 @@ static nmo_status_t save_write_file(nmo_serializer_t *ctx, const char *path) {
             const int metadata_only = (entry->attributes & NMO_INCLUDED_FILE_ATTR_METADATA_ONLY) != 0;
             uint32_t payload_size = (entry->data != NULL && !metadata_only) ? entry->size : 0u;
 
-            if (save_txn_write_u32_le(txn, name_len) != NMO_OK ||
-                (name_len > 0 && nmo_txn_write(txn, name, name_len) != NMO_OK) ||
-                save_txn_write_u32_le(txn, payload_size) != NMO_OK) {
+            if (save_txn_write_u32_le(txn, name_len, &file_size) != NMO_OK ||
+                (name_len > 0 && save_txn_write_counted(txn, name, name_len, &file_size) != NMO_OK) ||
+                save_txn_write_u32_le(txn, payload_size, &file_size) != NMO_OK) {
                 nmo_txn_rollback(txn);
                 nmo_txn_close(txn);
                 return SAVE_ERR(NMO_ERR_CANT_WRITE_FILE, "Included file metadata write failed");
             }
 
             if (payload_size > 0 && entry->data != NULL) {
-                if (nmo_txn_write(txn, entry->data, payload_size) != NMO_OK) {
+                if (save_txn_write_counted(txn, entry->data, payload_size, &file_size) != NMO_OK) {
                     nmo_txn_rollback(txn);
                     nmo_txn_close(txn);
                     return SAVE_ERR(NMO_ERR_CANT_WRITE_FILE, "Included file payload write failed");
@@ -1803,7 +1819,8 @@ static nmo_status_t save_write_file(nmo_serializer_t *ctx, const char *path) {
     }
     nmo_txn_close(txn);
 
-    nmo_log(ctx->logger, NMO_LOG_INFO, "  Write complete: %u bytes", file_size);
+    ctx->stats.total_file_size = file_size;
+    nmo_log(ctx->logger, NMO_LOG_INFO, "  Write complete: %zu bytes", file_size);
 
     NMO_RETURN_OK();
 }
