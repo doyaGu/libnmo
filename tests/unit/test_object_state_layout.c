@@ -145,6 +145,7 @@ TEST(object_state_layout, targetlight_defaults_and_value_copy) {
     ASSERT_EQ(NMO_OK, nmo_targetlight_vtable.create(&source, NULL, NULL));
     ASSERT_EQ(NMO_OK, nmo_targetlight_vtable.create(&copied, NULL, NULL));
     ASSERT_EQ(NMO_REF_NONE, source.target.state);
+    ASSERT_EQ(1.0f, source.base.light_data.ambient.a);
     ASSERT_TRUE(nmo_targetlight_vtable.equals(&source, &copied));
 
     source.has_target = 1;

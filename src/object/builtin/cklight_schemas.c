@@ -78,7 +78,7 @@ static void nmo_light_set_defaults(void *instance)
     state->light_data.ambient.r = 0.0f;
     state->light_data.ambient.g = 0.0f;
     state->light_data.ambient.b = 0.0f;
-    state->light_data.ambient.a = 0.0f;
+    state->light_data.ambient.a = 1.0f;
 
     state->light_data.range = 5000.0f;
     state->light_data.falloff = 1.0f;
