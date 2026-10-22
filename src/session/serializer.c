@@ -696,8 +696,27 @@ nmo_status_t nmo_save_file(
  * Phase 1 Implementation: Layout & Serialize
  * ============================================================================ */
 
+static nmo_status_t save_validate_included_files(nmo_serializer_t *ctx) {
+    if ((ctx->options.flags & NMO_SAVE_STRIP_INCLUDED_FILES) != 0u) return NMO_OK;
+    uint32_t count = 0u;
+    const nmo_included_file_t *files = nmo_session_get_included_files(ctx->session, &count);
+    for (uint32_t i = 0u; i < count; ++i) {
+        const nmo_included_file_t *entry = &files[i];
+        const char *name = nmo_path_basename(entry->name != NULL ? entry->name : "");
+        const bool metadata_only = (entry->attributes & NMO_INCLUDED_FILE_ATTR_METADATA_ONLY) != 0u;
+        if (strlen(name) > INT32_MAX ||
+            (!metadata_only && entry->data != NULL && entry->size > INT32_MAX)) {
+            return SAVE_ERR(NMO_ERR_INVALID_ARGUMENT,
+                            "Included file lengths exceed the signed wire range");
+        }
+    }
+    return NMO_OK;
+}
+
 static nmo_status_t save_validate_session(nmo_serializer_t *ctx) {
     nmo_log(ctx->logger, NMO_LOG_INFO, "Step 1.1: Validating session state");
+
+    NMO_RETURN_IF_ERROR(save_validate_included_files(ctx));
 
     if ((ctx->options.flags & NMO_SAVE_CHANGED_OBJECTS_ONLY) != 0u) {
         const uint32_t incompatible =
@@ -1560,6 +1579,9 @@ static nmo_status_t save_compress_sections(nmo_serializer_t *ctx) {
 }
 
 static nmo_status_t save_write_file(nmo_serializer_t *ctx, const char *path) {
+    /* Included entries are borrowed from the session, so recheck after layout
+     * and before opening a transaction or touching their payload bytes. */
+    NMO_RETURN_IF_ERROR(save_validate_included_files(ctx));
     nmo_log(ctx->logger, NMO_LOG_INFO, "Step 2.2: Writing file with CRC");
 
     /* Calculate total file size */

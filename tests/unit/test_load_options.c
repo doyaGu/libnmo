@@ -1004,7 +1004,75 @@ TEST(load_options, public_two_phase_serializer_can_save_a_full_session)
     ASSERT_EQ(0, remove_status);
 }
 
+TEST(load_options, included_payload_sizes_are_validated_during_save_layout)
+{
+    const uint32_t sizes[] = {INT32_MAX, 0x80000000u, UINT32_MAX};
+    static const uint8_t borrowed_byte = 7u;
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_id_t object_id = 0u;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(session, NMO_CID_OBJECT, "included owner",
+                                               (nmo_guid_t){0, 0}, &object_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_add_included_file_borrowed(
+        session, "payload.bin", &borrowed_byte, 1u));
+    uint32_t count = 0u;
+    nmo_included_file_t *files = nmo_session_get_included_files(session, &count);
+    ASSERT_EQ(1u, count);
+    ASSERT_NOT_NULL(files);
+    for (size_t i = 0u; i < sizeof(sizes) / sizeof(sizes[0]); ++i) {
+        for (uint32_t mode = 0u; mode < 3u; ++mode) {
+            files[0].size = sizes[i];
+            files[0].attributes = NMO_INCLUDED_FILE_ATTR_BORROWED |
+                (mode == 1u ? NMO_INCLUDED_FILE_ATTR_METADATA_ONLY : 0u);
+            nmo_save_options_t options = nmo_save_options_default();
+            if (mode == 2u) options.flags |= NMO_SAVE_STRIP_INCLUDED_FILES;
+            nmo_serializer_t *serializer = nmo_serializer_create(session, &options);
+            ASSERT_NOT_NULL(serializer);
+            /* Layout never dereferences the borrowed payload. A high-bit wire
+             * length must be rejected before commit can try to read it. */
+            const nmo_status_t status = nmo_serializer_layout(serializer);
+            ASSERT_EQ(mode != 0u || sizes[i] <= INT32_MAX ? NMO_OK : NMO_ERR_INVALID_ARGUMENT,
+                      status);
+            nmo_serializer_destroy(serializer);
+        }
+    }
+    /* The caller may edit included metadata between the two public phases.
+     * A rejected commit must leave an existing destination untouched. */
+    files[0].size = 1u;
+    files[0].attributes = NMO_INCLUDED_FILE_ATTR_BORROWED;
+    nmo_serializer_t *serializer = nmo_serializer_create(session, NULL);
+    ASSERT_NOT_NULL(serializer);
+    const nmo_status_t layout_status = nmo_serializer_layout(serializer);
+    ASSERT_EQ(NMO_OK, layout_status);
+    files[0].size = UINT32_MAX;
+    const char *path = NMO_TEST_SCRATCH_FILE("included_save_rejected.nmo");
+    static const char marker[] = "original";
+    FILE *file = fopen(path, "wb");
+    ASSERT_NOT_NULL(file);
+    const size_t written = fwrite(marker, 1u, sizeof(marker), file);
+    const int write_close = fclose(file);
+    ASSERT_EQ(sizeof(marker), written);
+    ASSERT_EQ(0, write_close);
+    const nmo_status_t commit_status = nmo_serializer_commit(serializer, path);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, commit_status);
+    file = fopen(path, "rb");
+    ASSERT_NOT_NULL(file);
+    char actual[sizeof(marker) + 1u] = {0};
+    const size_t read_size = fread(actual, 1u, sizeof(actual), file);
+    const int read_close = fclose(file);
+    ASSERT_EQ(sizeof(marker), read_size);
+    ASSERT_EQ(0, read_close);
+    ASSERT_EQ(0, memcmp(marker, actual, sizeof(marker)));
+    nmo_serializer_destroy(serializer);
+    destroy_ctx_session(ctx, session);
+    const int remove_status = remove(path);
+    ASSERT_EQ(0, remove_status);
+}
+
 TEST_MAIN_BEGIN()
+    REGISTER_TEST(load_options, included_payload_sizes_are_validated_during_save_layout);
     REGISTER_TEST(load_options, public_two_phase_serializer_can_save_a_full_session);
     REGISTER_TEST(load_options, metadata_profile_stops_after_header_and_rejects_mutation);
     REGISTER_TEST(load_options, partial_profile_rejects_non_empty_session);
