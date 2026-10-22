@@ -285,9 +285,16 @@ int nmo_core_resolve_one_object(
         return NMO_CLI_EXIT_NOT_FOUND;
     }
     if (status != NMO_OK) {
+        /* resolve_one clears its outputs on failure, so look the ID up again
+         * to tell a class mismatch from a malformed selector. */
+        if (status == NMO_ERR_INVALID_ARGUMENT && object_selector.has_id &&
+            c->document != NULL) {
+            obj = nmo_object_repository_find_by_id(
+                nmo_document_get_repository(c->document), object_selector.id);
+        }
         if (status == NMO_ERR_INVALID_ARGUMENT && obj != NULL) {
             fprintf(stderr, "Error: Object %u is not a %s (class %u)\n",
-                    id, type_label, nmo_object_get_class_id(obj));
+                    object_selector.id, type_label, nmo_object_get_class_id(obj));
             return NMO_CLI_EXIT_ARG_ERROR;
         }
         if (status == NMO_ERR_INVALID_ARGUMENT) {
