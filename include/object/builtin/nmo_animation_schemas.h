@@ -82,6 +82,9 @@ typedef CK_OBJECTANIMATION_FORMAT nmo_objectanimation_format_t;
  * adds it back. With key_count == 0, data is an opaque blob that is written
  * verbatim: unknown controller types, empty controllers, or valid controller
  * records with trailing padding.
+ * NEWDATA/LEGACY arrays may provide only a prefix of the declared keys. Reads
+ * expand them to complete records with constructor defaults (zero vectors and
+ * identity quaternions); zero key counts ignore the byte-size field.
  */
 typedef struct nmo_objanim_controller {
     uint32_t type;       /**< CKANIMATION_CONTROLLER enum value */

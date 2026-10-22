@@ -888,9 +888,13 @@ static nmo_status_t nmo_objectanimation_validate(
             case CKANIMATION_LINSCLAXIS_CONTROL: slot = 1u << 3; break;
             default: return NMO_ERR_VALIDATION_FAILED;
             }
+            const uint64_t capacity = (uint64_t)s->controllers[i].key_count *
+                nmo_objanim_controller_format_key_size(s->controllers[i].type, s->format);
             if ((controller_slots & slot) != 0u ||
                 s->controllers[i].key_count == 0u ||
-                s->controllers[i].data_size == 0u) {
+                s->controllers[i].key_count > INT32_MAX ||
+                s->controllers[i].data_size > INT32_MAX ||
+                s->controllers[i].data_size > capacity) {
                 return NMO_ERR_VALIDATION_FAILED;
             }
             controller_slots |= slot;
@@ -1576,6 +1580,57 @@ static nmo_status_t nmo_animation_validate_payload_size(
     return NMO_OK;
 }
 
+/* Legacy arrays are raw constructor-initialized records, not modern
+ * count-prefixed controller blobs. Zero counts ignore the byte-size field. */
+static nmo_status_t nmo_objectanimation_read_old_controller(
+    nmo_chunk_t *chunk,
+    nmo_arena_t *arena,
+    uint32_t type,
+    size_t trailing_dwords,
+    nmo_objanim_controller_t *controller)
+{
+    memset(controller, 0, sizeof(*controller));
+    if (nmo_chunk_identifier_remaining_dwords(chunk) < 2u) {
+        return NMO_ERR_TRUNCATED_CHUNK;
+    }
+    uint32_t bytes = 0u, count = 0u;
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &bytes));
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &count));
+    if (count == 0u) {
+        return nmo_animation_validate_payload_size(chunk, 0u, trailing_dwords);
+    }
+    const uint32_t stride = nmo_objanim_controller_format_key_size(
+        type, CKOBJANIM_FORMAT_LEGACY);
+    size_t size = 0u;
+    if (count > INT32_MAX || bytes > INT32_MAX || stride == 0u ||
+        !nmo_safe_mul_size(count, stride, &size) || size > INT32_MAX ||
+        bytes > size) {
+        return NMO_ERR_INVALID_FORMAT;
+    }
+    NMO_RETURN_IF_ERROR(nmo_animation_validate_payload_size(
+        chunk, bytes, trailing_dwords));
+    uint8_t *data = nmo_arena_alloc(arena, size, _Alignof(float));
+    if (data == NULL) return NMO_ERR_NOMEM;
+    memset(data, 0, size);
+    if (type == CKANIMATION_LINROT_CONTROL ||
+        type == CKANIMATION_LINSCLAXIS_CONTROL) {
+        const float one = 1.0f;
+        for (uint32_t i = 0u; i < count; ++i) {
+            memcpy(data + (size_t)(i + 1u) * stride - sizeof(one),
+                   &one, sizeof(one));
+        }
+    }
+    if (bytes > 0u) {
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_and_fill_buffer_nosize_checked(
+            chunk, data, bytes));
+    }
+    controller->type = type;
+    controller->key_count = count;
+    controller->data_size = (uint32_t)size;
+    controller->data = data;
+    return NMO_OK;
+}
+
 static nmo_status_t nmo_objectanimation_read_morph_section(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
@@ -1799,31 +1854,12 @@ static nmo_status_t read_newdata_controllers(
     };
 
     for (int i = 0; i < 4; ++i) {
-        uint32_t buf_size = 0;
-        uint32_t key_count = 0;
-        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &buf_size));
-        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &key_count));
-        if ((key_count == 0u) != (buf_size == 0u)) {
-            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                             "Inconsistent NEWDATA controller payload");
-        }
-        NMO_RETURN_IF_ERROR(nmo_animation_validate_payload_size(
-            chunk, buf_size, (size_t)(3 - i) * 2u));
-
-        if (key_count > 0 && buf_size > 0) {
-            void *data = nmo_arena_alloc(arena, buf_size, 4);
-            if (!data) {
-                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                 "Failed to allocate controller data");
-            }
-            NMO_RETURN_IF_ERROR(
-                nmo_chunk_read_and_fill_buffer_nosize_checked(chunk, data, buf_size));
-
-            local_controllers[count].type = controller_types[i];
-            local_controllers[count].key_count = key_count;
-            local_controllers[count].data_size = buf_size;
-            local_controllers[count].data = data;
-            count++;
+        nmo_objanim_controller_t controller;
+        NMO_RETURN_IF_ERROR(nmo_objectanimation_read_old_controller(
+            chunk, arena, controller_types[i], (size_t)(3 - i) * 2u,
+            &controller));
+        if (controller.key_count > 0u) {
+            local_controllers[count++] = controller;
         }
     }
 
@@ -1984,31 +2020,11 @@ static nmo_status_t read_legacy_controllers(
         if (section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
         const size_t section_end =
             nmo_chunk_get_position(chunk) + section_dwords;
-        uint32_t buf_size = 0;
-        uint32_t key_count = 0;
-        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &buf_size));
-        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &key_count));
-        if ((key_count == 0u) != (buf_size == 0u)) {
-            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                             "Inconsistent legacy position controller payload");
-        }
-        NMO_RETURN_IF_ERROR(nmo_animation_validate_payload_size(
-            chunk, buf_size, 0u));
-
-        if (key_count > 0 && buf_size > 0) {
-            void *data = nmo_arena_alloc(arena, buf_size, 4);
-            if (!data) {
-                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                 "Failed to allocate position controller data");
-            }
-            NMO_RETURN_IF_ERROR(
-                nmo_chunk_read_and_fill_buffer_nosize_checked(chunk, data, buf_size));
-
-            local_controllers[count].type = CKANIMATION_LINPOS_CONTROL;
-            local_controllers[count].key_count = key_count;
-            local_controllers[count].data_size = buf_size;
-            local_controllers[count].data = data;
-            count++;
+        nmo_objanim_controller_t controller;
+        NMO_RETURN_IF_ERROR(nmo_objectanimation_read_old_controller(
+            chunk, arena, CKANIMATION_LINPOS_CONTROL, 0u, &controller));
+        if (controller.key_count > 0u) {
+            local_controllers[count++] = controller;
         }
         NMO_RETURN_IF_ERROR(nmo_animation_require_section_end(
             chunk, section_end));
@@ -2023,58 +2039,16 @@ static nmo_status_t read_legacy_controllers(
         if (section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
         const size_t section_end =
             nmo_chunk_get_position(chunk) + section_dwords;
-        uint32_t rot_buf_size = 0;
-        uint32_t rot_key_count = 0;
-        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &rot_buf_size));
-        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &rot_key_count));
-        if ((rot_key_count == 0u) != (rot_buf_size == 0u)) {
-            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                             "Inconsistent legacy rotation controller payload");
+        nmo_objanim_controller_t controller;
+        NMO_RETURN_IF_ERROR(nmo_objectanimation_read_old_controller(
+            chunk, arena, CKANIMATION_LINROT_CONTROL, 2u, &controller));
+        if (controller.key_count > 0u) {
+            local_controllers[count++] = controller;
         }
-        NMO_RETURN_IF_ERROR(nmo_animation_validate_payload_size(
-            chunk, rot_buf_size, 2u));
-
-        if (rot_key_count > 0 && rot_buf_size > 0) {
-            void *data = nmo_arena_alloc(arena, rot_buf_size, 4);
-            if (!data) {
-                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                 "Failed to allocate rotation controller data");
-            }
-            NMO_RETURN_IF_ERROR(
-                nmo_chunk_read_and_fill_buffer_nosize_checked(chunk, data, rot_buf_size));
-
-            local_controllers[count].type = CKANIMATION_LINROT_CONTROL;
-            local_controllers[count].key_count = rot_key_count;
-            local_controllers[count].data_size = rot_buf_size;
-            local_controllers[count].data = data;
-            count++;
-        }
-
-        uint32_t axis_buf_size = 0;
-        uint32_t axis_key_count = 0;
-        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &axis_buf_size));
-        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &axis_key_count));
-        if ((axis_key_count == 0u) != (axis_buf_size == 0u)) {
-            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                             "Inconsistent legacy scale-axis controller payload");
-        }
-        NMO_RETURN_IF_ERROR(nmo_animation_validate_payload_size(
-            chunk, axis_buf_size, 0u));
-
-        if (axis_key_count > 0 && axis_buf_size > 0) {
-            void *data = nmo_arena_alloc(arena, axis_buf_size, 4);
-            if (!data) {
-                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                 "Failed to allocate scale axis controller data");
-            }
-            NMO_RETURN_IF_ERROR(
-                nmo_chunk_read_and_fill_buffer_nosize_checked(chunk, data, axis_buf_size));
-
-            local_controllers[count].type = CKANIMATION_LINSCLAXIS_CONTROL;
-            local_controllers[count].key_count = axis_key_count;
-            local_controllers[count].data_size = axis_buf_size;
-            local_controllers[count].data = data;
-            count++;
+        NMO_RETURN_IF_ERROR(nmo_objectanimation_read_old_controller(
+            chunk, arena, CKANIMATION_LINSCLAXIS_CONTROL, 0u, &controller));
+        if (controller.key_count > 0u) {
+            local_controllers[count++] = controller;
         }
         NMO_RETURN_IF_ERROR(nmo_animation_require_section_end(
             chunk, section_end));
@@ -2089,31 +2063,11 @@ static nmo_status_t read_legacy_controllers(
         if (section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
         const size_t section_end =
             nmo_chunk_get_position(chunk) + section_dwords;
-        uint32_t buf_size = 0;
-        uint32_t key_count = 0;
-        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &buf_size));
-        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &key_count));
-        if ((key_count == 0u) != (buf_size == 0u)) {
-            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                             "Inconsistent legacy scale controller payload");
-        }
-        NMO_RETURN_IF_ERROR(nmo_animation_validate_payload_size(
-            chunk, buf_size, 0u));
-
-        if (key_count > 0 && buf_size > 0) {
-            void *data = nmo_arena_alloc(arena, buf_size, 4);
-            if (!data) {
-                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                 "Failed to allocate scale controller data");
-            }
-            NMO_RETURN_IF_ERROR(
-                nmo_chunk_read_and_fill_buffer_nosize_checked(chunk, data, buf_size));
-
-            local_controllers[count].type = CKANIMATION_LINSCL_CONTROL;
-            local_controllers[count].key_count = key_count;
-            local_controllers[count].data_size = buf_size;
-            local_controllers[count].data = data;
-            count++;
+        nmo_objanim_controller_t controller;
+        NMO_RETURN_IF_ERROR(nmo_objectanimation_read_old_controller(
+            chunk, arena, CKANIMATION_LINSCL_CONTROL, 0u, &controller));
+        if (controller.key_count > 0u) {
+            local_controllers[count++] = controller;
         }
         NMO_RETURN_IF_ERROR(nmo_animation_require_section_end(
             chunk, section_end));

@@ -933,7 +933,7 @@ TEST(objanim_controllers, oversized_morph_payload_is_rejected_before_allocation)
     nmo_arena_destroy(arena);
 }
 
-TEST(objanim_controllers, newdata_rejects_inconsistent_controller_header) {
+TEST(objanim_controllers, newdata_rejects_truncated_inline_headers) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NE(NULL, arena);
     nmo_deserialize_context_t des_ctx = nmo_deserialize_context_create(
@@ -967,7 +967,7 @@ TEST(objanim_controllers, newdata_rejects_inconsistent_controller_header) {
     ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(
         &state, NULL, NULL));
     state.format = CKOBJANIM_FORMAT_SHARED;
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_objectanimation_deserialize(
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_objectanimation_deserialize(
         &state, chunk, NULL, &des_ctx));
     ASSERT_EQ(CKOBJANIM_FORMAT_SHARED, state.format);
 
@@ -1261,7 +1261,7 @@ TEST(objanim_controllers, legacy_scale_axis_roundtrips_without_rotation) {
     ASSERT_EQ(1u, loaded.controller_count);
     ASSERT_EQ(CKANIMATION_LINSCLAXIS_CONTROL,
               loaded.controllers[0].type);
-    ASSERT_EQ(sizeof(axis_payload), loaded.controllers[0].data_size);
+    ASSERT_EQ(24u, loaded.controllers[0].data_size);
     ASSERT_EQ(0, memcmp(axis_payload, loaded.controllers[0].data,
                         sizeof(axis_payload)));
 
@@ -1465,7 +1465,7 @@ TEST(objanim_controllers, legacy_empty_sections_roundtrip) {
     nmo_arena_destroy(arena);
 }
 
-TEST(objanim_controllers, legacy_rejects_inconsistent_controller_header) {
+TEST(objanim_controllers, legacy_rejects_truncated_inline_headers) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NE(NULL, arena);
     nmo_deserialize_context_t des_ctx = nmo_deserialize_context_create(
@@ -1487,12 +1487,93 @@ TEST(objanim_controllers, legacy_rejects_inconsistent_controller_header) {
     ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(
         &state, NULL, NULL));
     state.flags = 0xabcdef01u;
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_objectanimation_deserialize(
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_objectanimation_deserialize(
         &state, chunk, NULL, &des_ctx));
     ASSERT_EQ(0xabcdef01u, state.flags);
 
     nmo_objectanimation_vtable.destroy(&state, NULL, NULL);
     nmo_arena_destroy(arena);
+}
+
+TEST(objanim_controllers, old_controller_arrays_initialize_partial_records) {
+    const uint32_t types[] = {CKANIMATION_LINPOS_CONTROL, CKANIMATION_LINSCL_CONTROL,
+        CKANIMATION_LINROT_CONTROL, CKANIMATION_LINSCLAXIS_CONTROL};
+    const uint32_t ids[] = {CK_STATESAVE_OBJANIMPOSKEYS, CK_STATESAVE_OBJANIMSCLKEYS,
+        CK_STATESAVE_OBJANIMROTKEYS, CK_STATESAVE_OBJANIMROTKEYS};
+    for (size_t modern = 0u; modern < 2u; ++modern) {
+        for (size_t slot = 0u; slot < 4u; ++slot) {
+            const uint32_t stride = slot == 2u ? 20u : slot == 3u ? 24u : 16u;
+            const uint32_t sizes[] = {0u, 4u, stride - 4u, stride, stride + 4u, stride * 2u, stride * 2u + 4u};
+            for (size_t size = 0u; size < sizeof(sizes) / sizeof(sizes[0]); ++size) {
+                nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+                ASSERT_NOT_NULL(arena);
+                nmo_chunk_t *chunk = nmo_chunk_create(arena);
+                ASSERT_NOT_NULL(chunk);
+                chunk->data_version = modern ? 7u : 0u;
+                ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+                ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk,
+                    modern ? CK_STATESAVE_OBJANIMNEWDATA : ids[slot]));
+                if (modern) {
+                    for (size_t i = 0u; i < 12u; ++i) {
+                        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0u));
+                    }
+                } else if (slot == 3u) {
+                    /* A zero key count ignores its size without skipping. */
+                    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, UINT32_MAX));
+                    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0u));
+                }
+                uint32_t payload[13];
+                for (size_t i = 0u; i < 13u; ++i) payload[i] = 0x3F000000u;
+                for (size_t i = 0u; i < (modern ? 4u : 1u); ++i) {
+                    const bool selected = !modern || i == slot;
+                    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, selected ? sizes[size] : UINT32_MAX));
+                    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, selected ? 2u : 0u));
+                    if (selected && sizes[size] > 0u) {
+                        ASSERT_EQ(NMO_OK, nmo_chunk_write_buffer_no_size(chunk, payload, sizes[size]));
+                    }
+                }
+                if (!modern && slot == 2u) {
+                    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, UINT32_MAX));
+                    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0u));
+                }
+                nmo_chunk_close(chunk);
+                nmo_deserialize_context_t context = nmo_deserialize_context_create(
+                    arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+                nmo_objectanimation_state_t state;
+                ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(&state, NULL, NULL));
+                const nmo_status_t expected = sizes[size] > stride * 2u ? NMO_ERR_INVALID_FORMAT : NMO_OK;
+                ASSERT_EQ(expected, nmo_objectanimation_deserialize(&state, chunk, NULL, &context));
+                if (expected == NMO_OK) {
+                    ASSERT_EQ(1u, state.controller_count);
+                    ASSERT_EQ(types[slot], state.controllers[0].type);
+                    ASSERT_EQ(2u, state.controllers[0].key_count);
+                    ASSERT_EQ(stride * 2u, state.controllers[0].data_size);
+                    uint32_t expected_words[12] = {0};
+                    if (slot >= 2u) {
+                        expected_words[stride / 4u - 1u] = 0x3F800000u;
+                        expected_words[stride / 2u - 1u] = 0x3F800000u;
+                    }
+                    memcpy(expected_words, payload, sizes[size]);
+                    ASSERT_MEM_EQ(expected_words, state.controllers[0].data, stride * 2u);
+                    nmo_serialize_context_t ser_context = nmo_serialize_context_create(
+                        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+                    nmo_chunk_t *saved = nmo_chunk_create(arena);
+                    ASSERT_NOT_NULL(saved);
+                    saved->data_version = chunk->data_version;
+                    ASSERT_EQ(NMO_OK, nmo_objectanimation_serialize(&state, saved, NULL, &ser_context));
+                    nmo_chunk_close(saved);
+                    nmo_objectanimation_state_t reloaded;
+                    ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(&reloaded, NULL, NULL));
+                    ASSERT_EQ(NMO_OK, nmo_objectanimation_deserialize(&reloaded, saved, NULL, &context));
+                    ASSERT_EQ(1u, reloaded.controller_count);
+                    ASSERT_MEM_EQ(expected_words, reloaded.controllers[0].data, stride * 2u);
+                    nmo_objectanimation_vtable.destroy(&reloaded, NULL, NULL);
+                }
+                nmo_objectanimation_vtable.destroy(&state, NULL, NULL);
+                nmo_arena_destroy(arena);
+            }
+        }
+    }
 }
 
 TEST(objanim_controllers, legacy_rejects_lossy_controller_state) {
@@ -1764,7 +1845,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(objanim_controllers, key_size_helper);
     REGISTER_TEST(objanim_controllers, negative_morph_counts_are_rejected_atomically);
     REGISTER_TEST(objanim_controllers, oversized_morph_payload_is_rejected_before_allocation);
-    REGISTER_TEST(objanim_controllers, newdata_rejects_inconsistent_controller_header);
+    REGISTER_TEST(objanim_controllers, newdata_rejects_truncated_inline_headers);
     REGISTER_TEST(objanim_controllers, newdata_rejects_lossy_state);
     REGISTER_TEST(objanim_controllers, legacy_controllers_roundtrip_without_loss);
     REGISTER_TEST(objanim_controllers, legacy_inactive_merge_section_roundtrips);
@@ -1773,7 +1854,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(objanim_controllers, objectanimation_enforces_format_version);
     REGISTER_TEST(objanim_controllers, version_zero_reads_0x1000_as_the_root_vector);
     REGISTER_TEST(objanim_controllers, legacy_empty_sections_roundtrip);
-    REGISTER_TEST(objanim_controllers, legacy_rejects_inconsistent_controller_header);
+    REGISTER_TEST(objanim_controllers, legacy_rejects_truncated_inline_headers);
+    REGISTER_TEST(objanim_controllers, old_controller_arrays_initialize_partial_records);
     REGISTER_TEST(objanim_controllers, legacy_rejects_lossy_controller_state);
     REGISTER_TEST(objanim_controllers, copy_controllers);
     REGISTER_TEST(objanim_controllers, morph_controller_blob_is_read_and_kept);
