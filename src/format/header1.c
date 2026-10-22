@@ -75,6 +75,10 @@ static nmo_status_t parse_objects(
         CHECK_BUFFER_SIZE(*pos, sizeof(uint32_t), size);
         uint32_t name_len = nmo_read_u32_le(data + *pos);
         *pos += sizeof(uint32_t);
+        if (name_len > INT32_MAX) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Negative Header1 object name length");
+        }
 
         /* Read name string (if any) */
         if (name_len > 0) {
@@ -112,6 +116,10 @@ static nmo_status_t parse_plugin_deps(
     CHECK_BUFFER_SIZE(*pos, sizeof(uint32_t), size);
     uint32_t category_count = nmo_read_u32_le(data + *pos);
     *pos += sizeof(uint32_t);
+    if (category_count > INT32_MAX) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Negative Header1 plugin category count");
+    }
 
     if (category_count == 0) {
         header->plugin_dep_count = 0;
@@ -132,6 +140,10 @@ static nmo_status_t parse_plugin_deps(
         CHECK_BUFFER_SIZE(*pos, sizeof(uint32_t), size);
         uint32_t guid_count = nmo_read_u32_le(data + *pos);
         *pos += sizeof(uint32_t);
+        if (guid_count > INT32_MAX) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Negative Header1 plugin GUID count");
+        }
 
         if (total_plugins > SIZE_MAX - guid_count) {
             NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Plugin dependency count overflow");
@@ -214,6 +226,10 @@ static nmo_status_t parse_included_files(
     CHECK_BUFFER_SIZE(*pos, sizeof(uint32_t), size);
     uint32_t payload_size = nmo_read_u32_le(data + *pos);
     *pos += sizeof(uint32_t);
+    if (payload_size > INT32_MAX) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Negative Header1 included metadata size");
+    }
 
     header->included_file_count = 0;
     header->included_files = NULL;
@@ -229,6 +245,10 @@ static nmo_status_t parse_included_files(
     CHECK_BUFFER_SIZE(*pos, sizeof(uint32_t), size);
     uint32_t file_count = nmo_read_u32_le(data + *pos);
     *pos += sizeof(uint32_t);
+    if (file_count > INT32_MAX) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Negative Header1 included file count");
+    }
 
     header->included_file_count = file_count;
 
@@ -322,7 +342,7 @@ static nmo_status_t serialize_objects(
 
         /* Calculate name length (does NOT include null terminator) */
         size_t name_size = obj->name ? strlen(obj->name) : 0;
-        if (name_size > UINT32_MAX) {
+        if (name_size > INT32_MAX) {
             NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                              "Object name length does not fit the file format");
         }
@@ -370,7 +390,7 @@ static nmo_status_t serialize_plugin_deps_planned(
     if (layout == NULL ||
         layout->plugin_categories == NULL ||
         layout->plugin_category_count == 0 ||
-        layout->plugin_category_count > UINT32_MAX) {
+        layout->plugin_category_count > INT32_MAX) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid Header1 plugin layout");
     }
 
@@ -399,6 +419,10 @@ static nmo_status_t serialize_plugin_deps_planned(
         *pos += sizeof(uint32_t);
 
         /* Write GUID count */
+        if (cat_count > INT32_MAX) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "Header1 plugin GUID count exceeds signed wire range");
+        }
         if (*pos + sizeof(uint32_t) > buffer_size) {
             NMO_RETURN_ERROR(NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR, "Buffer too small for GUID count");
         }
@@ -428,6 +452,10 @@ static nmo_status_t serialize_plugin_deps_planned(
 static nmo_status_t validate_header1_for_write(const nmo_header1_t *header) {
     if (header == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL Header1");
+    }
+    if (header->included_file_count > INT32_MAX) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Header1 included file count exceeds signed wire range");
     }
     if (header->object_count > 0 && header->objects == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
@@ -462,7 +490,7 @@ nmo_status_t nmo_header1_plan(
     /* Object descriptors */
     for (uint32_t i = 0; i < header->object_count; i++) {
         size_t name_len = header->objects[i].name ? strlen(header->objects[i].name) : 0;
-        if (name_len > UINT32_MAX) {
+        if (name_len > INT32_MAX) {
             NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                              "Object name length does not fit the file format");
         }

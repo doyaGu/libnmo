@@ -377,7 +377,62 @@ TEST(header1, empty_plugin_category_keeps_trailer_aligned) {
     nmo_arena_destroy(arena);
 }
 
+TEST(header1, rejects_negative_signed_wire_fields_atomically) {
+    static const struct {
+        uint32_t words[5];
+        size_t count;
+        uint32_t object_count;
+    } cases[] = {
+        {{0x80000000u}, 1u, 0u},                 /* category count */
+        {{1u, 4u, 0x80000000u}, 3u, 0u},       /* GUID count */
+        {{0u, 0x80000000u}, 2u, 0u},           /* included metadata size */
+        {{0u, 4u, 0x80000000u}, 3u, 0u},       /* included file count */
+        {{1u, 2u, 0u, 0x80000000u}, 4u, 1u},  /* object name length */
+    };
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        uint8_t bytes[sizeof(cases[i].words)];
+        for (size_t d = 0; d < cases[i].count; ++d) {
+            nmo_write_u32_le(bytes + 4u * d, cases[i].words[d]);
+        }
+        nmo_header1_t header = {0};
+        header.object_count = cases[i].object_count;
+        header.included_file_count = 777u;
+        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_header1_parse(
+            bytes, 4u * cases[i].count, &header, arena));
+        ASSERT_EQ(777u, header.included_file_count);
+        ASSERT_NULL(header.objects);
+    }
+    nmo_arena_destroy(arena);
+}
+
+TEST(header1, included_file_count_has_a_signed_wire_range) {
+    static const uint32_t counts[] = {0u, INT32_MAX, (uint32_t)INT32_MAX + 1u, UINT32_MAX};
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    for (size_t i = 0; i < sizeof(counts) / sizeof(counts[0]); ++i) {
+        nmo_header1_t header = {0};
+        header.included_file_count = counts[i];
+        void *bytes = (void *)(uintptr_t)1u;
+        size_t size = 999u;
+        ASSERT_EQ(counts[i] <= INT32_MAX ? NMO_OK : NMO_ERR_INVALID_ARGUMENT,
+            nmo_header1_serialize(&header, &bytes, &size, arena));
+        if (counts[i] <= INT32_MAX) {
+            nmo_header1_t parsed = {0};
+            ASSERT_EQ(NMO_OK, nmo_header1_parse(bytes, size, &parsed, arena));
+            ASSERT_EQ(counts[i], parsed.included_file_count);
+        } else {
+            ASSERT_NULL(bytes);
+            ASSERT_EQ(0u, size);
+        }
+    }
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
+    REGISTER_TEST(header1, rejects_negative_signed_wire_fields_atomically);
+    REGISTER_TEST(header1, included_file_count_has_a_signed_wire_range);
     REGISTER_TEST(header1, serialization);
     REGISTER_TEST(header1, round_trip);
     REGISTER_TEST(header1, planned_write_matches_serialize);
