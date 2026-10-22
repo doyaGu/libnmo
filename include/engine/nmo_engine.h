@@ -45,6 +45,9 @@
  * frame message until the next delivery. A message type is the index of the
  * message in the file's message list.
  *
+ * Data arrays (CKDataArray) are copied too: blocks read and change the
+ * engine's copy of each array, never the document's.
+ *
  * Times are in milliseconds, as CKBehaviorContext::DeltaTime is.
  */
 
@@ -220,6 +223,74 @@ NMO_API nmo_status_t nmo_engine_broadcast_message(nmo_engine_t *engine,
                                                   int32_t type,
                                                   nmo_class_id_t class_id,
                                                   nmo_object_id_t sender);
+
+/* ---- Data arrays and groups ---- */
+
+/*
+ * A data array cell. `type` is the column's CK_ARRAYTYPE: INT, FLOAT and
+ * OBJECT cells hold `value` (an int32, a float's bits, an object id), STRING
+ * cells `text` (NULL for no string) and PARAMETER cells `data` and `size`, a
+ * value of type `parameter_type`.
+ */
+typedef struct nmo_engine_cell {
+    int32_t type;
+    uint32_t value;
+    const char *text;
+    const void *data;
+    size_t size;
+    nmo_guid_t parameter_type;
+} nmo_engine_cell_t;
+
+/** Rows of data array `array_id`; -1 when it is not a data array. */
+NMO_API int32_t nmo_engine_array_row_count(const nmo_engine_t *engine, nmo_object_id_t array_id);
+NMO_API int32_t nmo_engine_array_column_count(const nmo_engine_t *engine,
+                                              nmo_object_id_t array_id);
+/** The column holding the array's keys, or -1. */
+NMO_API int32_t nmo_engine_array_key_column(const nmo_engine_t *engine, nmo_object_id_t array_id);
+/** CK_ARRAYTYPE of a column; 0 when there is none. */
+NMO_API int32_t nmo_engine_array_column_type(const nmo_engine_t *engine,
+                                             nmo_object_id_t array_id,
+                                             int32_t column);
+
+/**
+ * The cell at `row`, `column`. Its text and data stay valid until the cell
+ * or the array changes. NMO_ERR_NOT_FOUND outside the array.
+ */
+NMO_API nmo_status_t nmo_engine_array_get_cell(const nmo_engine_t *engine,
+                                               nmo_object_id_t array_id,
+                                               int32_t row,
+                                               int32_t column,
+                                               nmo_engine_cell_t *out_cell);
+/** Store the part of `cell` the column's type uses (value, text or data). */
+NMO_API nmo_status_t nmo_engine_array_set_cell(nmo_engine_t *engine,
+                                               nmo_object_id_t array_id,
+                                               int32_t row,
+                                               int32_t column,
+                                               const nmo_engine_cell_t *cell);
+/**
+ * Insert an empty row before `row`, or at the end for -1 (CKDataArray::InsertRow);
+ * its position goes to `out_row`.
+ */
+NMO_API nmo_status_t nmo_engine_array_insert_row(nmo_engine_t *engine,
+                                                 nmo_object_id_t array_id,
+                                                 int32_t row,
+                                                 int32_t *out_row);
+/**
+ * The first row from `start` whose cell in `column` equals `key` (FindRowIndex
+ * with CKEQUAL), or -1.
+ */
+NMO_API int32_t nmo_engine_array_find_row(const nmo_engine_t *engine,
+                                          nmo_object_id_t array_id,
+                                          int32_t column,
+                                          const nmo_engine_cell_t *key,
+                                          int32_t start);
+
+/** Objects in group `group_id`; -1 when it is not a group. */
+NMO_API int32_t nmo_engine_group_count(const nmo_engine_t *engine, nmo_object_id_t group_id);
+/** The object at `index` in the group; 0 when there is none. */
+NMO_API nmo_object_id_t nmo_engine_group_object(const nmo_engine_t *engine,
+                                                nmo_object_id_t group_id,
+                                                int32_t index);
 
 /** "execute", "link", ... */
 NMO_API const char *nmo_engine_event_kind_name(nmo_engine_event_kind_t kind);

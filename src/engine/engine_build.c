@@ -56,47 +56,59 @@ static uint32_t eng_alloc_indexes(nmo_engine_t *engine, size_t count)
  * Parameters
  * ============================================================================ */
 
-static bool eng_param_set_bytes(eng_param_t *param, const void *data, size_t size)
+bool eng_parameter_state_bytes(const nmo_parameter_state_t *state, size_t fallback_size,
+                               uint8_t **out_data, uint32_t *out_size)
 {
-    uint8_t *copy = NULL;
+    const void *source = NULL;
+    size_t size = fallback_size;
+    uint32_t value = 0;
+    switch (state->mode) {
+    case CKPARAM_MODE_BUFFER:
+        if (state->buffer_data.count > 0) {
+            source = state->buffer_data.data;
+            size = state->buffer_data.count;
+        }
+        break;
+    case CKPARAM_MODE_OBJECT:
+        value = (uint32_t)nmo_parameter_object_id(state);
+        source = &value;
+        size = sizeof(value);
+        break;
+    case CKPARAM_MODE_MANAGER:
+        source = &state->manager_value;
+        size = sizeof(state->manager_value);
+        break;
+    default:
+        break; /* no flat value saved: zeroes, so blocks can write it */
+    }
+    uint8_t *data = NULL;
     if (size > 0) {
-        copy = (uint8_t *)calloc(1, size);
-        if (copy == NULL) {
+        data = (uint8_t *)calloc(1, size);
+        if (data == NULL) {
             return false;
         }
-        if (data != NULL) {
-            memcpy(copy, data, size);
+        if (source != NULL) {
+            memcpy(data, source, size);
         }
     }
-    free(param->data);
-    param->data = copy;
-    param->size = (uint32_t)size;
+    *out_data = data;
+    *out_size = (uint32_t)size;
     return true;
 }
 
 /* The value bytes a CKParameter holds in memory, from its saved state. */
-static bool eng_param_load_value(nmo_engine_t *engine, eng_param_t *param,
-                                 const nmo_parameter_state_t *state)
+static bool eng_param_load_value(eng_param_t *param, const nmo_parameter_state_t *state)
 {
-    uint32_t object_value = 0;
-    switch (state->mode) {
-    case CKPARAM_MODE_BUFFER:
-        if (state->buffer_data.count > 0) {
-            return eng_param_set_bytes(param, state->buffer_data.data, state->buffer_data.count);
-        }
-        break;
-    case CKPARAM_MODE_OBJECT:
-        object_value = (uint32_t)nmo_parameter_object_id(state);
-        return eng_param_set_bytes(param, &object_value, sizeof(object_value));
-    case CKPARAM_MODE_MANAGER:
-        return eng_param_set_bytes(param, &state->manager_value, sizeof(state->manager_value));
-    default:
-        break;
+    uint8_t *data = NULL;
+    uint32_t size = 0;
+    if (!eng_parameter_state_bytes(state, param->type_desc != NULL ? param->type_desc->size : 0u,
+                                   &data, &size)) {
+        return false;
     }
-    /* No flat value saved: zeroes of the type's size, so blocks can write it */
-    size_t size = param->type_desc != NULL ? param->type_desc->size : 0u;
-    (void)engine;
-    return eng_param_set_bytes(param, NULL, size);
+    free(param->data);
+    param->data = data;
+    param->size = size;
+    return true;
 }
 
 /* The engine index of parameter `id`, loading it (and what it reads or writes) once. */
@@ -153,7 +165,7 @@ static int32_t eng_load_param(eng_builder_t *b, nmo_object_id_t id)
                                                        : ENG_PARAM_PLAIN;
     param->type = base->type_guid;
     param->type_desc = nmo_type_registry_find_by_guid(engine->types, param->type);
-    if (!eng_param_load_value(engine, param, base)) {
+    if (!eng_param_load_value(param, base)) {
         return -2;
     }
     if (class_id == NMO_CID_PARAMETERLOCAL) {

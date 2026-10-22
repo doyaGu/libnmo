@@ -167,6 +167,9 @@ nmo_status_t nmo_engine_create(nmo_workspace_t *workspace,
     if (status == NMO_OK) {
         status = eng_load_message_names(engine);
     }
+    if (status == NMO_OK) {
+        status = eng_load_arrays(engine);
+    }
     if (status == NMO_OK && !engine->options.no_builtin_blocks) {
         status = eng_register_logics(engine);
     }
@@ -203,6 +206,7 @@ void nmo_engine_destroy(nmo_engine_t *engine)
     free(engine->listed.data);
     free(engine->scratch_io.data);
     eng_free_messages(engine);
+    eng_free_arrays(engine);
     free(engine->node_map.slots);
     free(engine->io_map.slots);
     free(engine->param_map.slots);

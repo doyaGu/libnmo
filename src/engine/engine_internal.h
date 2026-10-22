@@ -157,6 +157,30 @@ typedef struct eng_map {
 
 #define ENG_VEC(type) struct { type *data; size_t count; size_t capacity; }
 
+/* A CKDataArray cell: INT, FLOAT and OBJECT hold 32 bits, STRING text, PARAMETER bytes. */
+typedef struct eng_cell {
+    uint32_t value;
+    char *text;     /* STRING; NULL for no string */
+    uint8_t *data;  /* PARAMETER */
+    uint32_t size;
+} eng_cell_t;
+
+typedef struct eng_column {
+    int32_t type;           /* CK_ARRAYTYPE */
+    nmo_guid_t param_type;  /* PARAMETER columns */
+} eng_column_t;
+
+/* A runtime copy of a CKDataArray; cells row by row. */
+typedef struct eng_array {
+    nmo_object_id_t id;
+    uint32_t column_count;
+    eng_column_t *columns;
+    eng_cell_t *cells;
+    size_t row_count;
+    size_t row_capacity;
+    int32_t key_column;     /* -1 when none */
+} eng_array_t;
+
 struct nmo_engine_block {
     nmo_engine_t *engine;
     int32_t node;
@@ -183,8 +207,9 @@ struct nmo_engine {
     ENG_VEC(eng_wait_t) waits;
     ENG_VEC(eng_received_t) received;
     ENG_VEC(char *) message_names;   /* the file's message types, by type */
+    ENG_VEC(eng_array_t) arrays;
 
-    eng_map_t node_map, io_map, param_map, operation_map, object_map;
+    eng_map_t node_map, io_map, param_map, operation_map, object_map, array_map;
 
     bool started;
     uint64_t frame;
@@ -236,6 +261,19 @@ static inline eng_param_t *eng_node_param(nmo_engine_t *engine, uint32_t first, 
 
 /* engine_build.c */
 nmo_status_t eng_build(nmo_engine_t *engine);
+typedef struct nmo_parameter_state nmo_parameter_state_t;
+/*
+ * The bytes a CKParameter holds in memory, from its saved state, into a new
+ * heap block; zeroes of `fallback_size` when the state holds no flat value.
+ */
+bool eng_parameter_state_bytes(const nmo_parameter_state_t *state, size_t fallback_size,
+                               uint8_t **out_data, uint32_t *out_size);
+
+/* engine_array.c */
+nmo_status_t eng_load_arrays(nmo_engine_t *engine);
+void eng_free_arrays(nmo_engine_t *engine);
+eng_array_t *eng_find_array(const nmo_engine_t *engine, nmo_object_id_t id);
+size_t eng_type_size(const nmo_engine_t *engine, nmo_guid_t type);
 
 /* engine_param.c */
 /* The parameter holding the value an input reads (GetRealSource); NULL when none. */
@@ -279,6 +317,10 @@ void eng_unregister_wait(nmo_engine_t *engine, int32_t type, int32_t node, int o
 void eng_dispatch_messages(nmo_engine_t *engine);
 /* CKMessageManager::OnCKReset: no waits and no messages. */
 void eng_reset_messages(nmo_engine_t *engine);
+/* The class of object `id` in the document; 0 when there is none. */
+nmo_class_id_t eng_object_class(nmo_engine_t *engine, nmo_object_id_t id);
+/* CKIsChildClassOf for class ids. */
+bool eng_is_child_class(nmo_engine_t *engine, nmo_class_id_t class_id, nmo_class_id_t base);
 
 /* engine_logics.c */
 nmo_status_t eng_register_logics(nmo_engine_t *engine);

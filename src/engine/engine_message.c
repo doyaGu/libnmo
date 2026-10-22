@@ -204,7 +204,7 @@ void eng_reset_messages(nmo_engine_t *engine)
  * Delivery
  * ============================================================================ */
 
-static nmo_class_id_t eng_object_class(nmo_engine_t *engine, nmo_object_id_t id)
+nmo_class_id_t eng_object_class(nmo_engine_t *engine, nmo_object_id_t id)
 {
     nmo_object_repository_t *repo = nmo_workspace_internal_repository(engine->workspace);
     nmo_object_t *object = repo != NULL && id != 0 ? nmo_object_repository_find_by_id(repo, id)
@@ -212,7 +212,7 @@ static nmo_class_id_t eng_object_class(nmo_engine_t *engine, nmo_object_id_t id)
     return object != NULL ? nmo_object_get_class_id(object) : 0;
 }
 
-static bool eng_is_child_class(nmo_engine_t *engine, nmo_class_id_t class_id, nmo_class_id_t base)
+bool eng_is_child_class(nmo_engine_t *engine, nmo_class_id_t class_id, nmo_class_id_t base)
 {
     return class_id != 0 &&
            (class_id == base || nmo_type_query_class_is_derived_from(engine->types, class_id, base));
