@@ -553,6 +553,7 @@ static nmo_chunk_t *object_system_serialize_impl(
 
     nmo_serialize_context_t ser_ctx = nmo_serialize_context_create_with_scratch(
         arena, scratch, repo, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    ser_ctx.type_registry = type_rt->types;
 
     result = schema_type->vtable->serialize(state, new_chunk, schema_type, &ser_ctx);
 

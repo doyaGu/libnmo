@@ -28,6 +28,7 @@ extern "C" {
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk nmo_chunk_t;
 typedef struct nmo_type_descriptor nmo_type_descriptor_t;
+typedef struct nmo_type_registry nmo_type_registry_t;
 
 /** Magic value for detecting nmo_serialize_context_t. */
 #define NMO_SERIALIZE_CONTEXT_MAGIC 0x4E4D4F53u /* "NMOS" */
@@ -52,6 +53,7 @@ typedef struct nmo_serialize_context {
     void *repository;             /**< Object repository for reference resolution */
     uint32_t flags;               /**< Operation flags */
     uint32_t save_flags;          /**< Optional CK_STATESAVE_* flags for non-file saves */
+    const nmo_type_registry_t *type_registry; /**< Optional owner-state hierarchy lookups */
 } nmo_serialize_context_t;
 
 /* Context flags */
@@ -194,6 +196,12 @@ static inline void *nmo_serialize_context_get_repository(void *context)
 {
     const nmo_serialize_context_t *ctx = nmo_serialize_context_try(context);
     return ctx ? ctx->repository : NULL;
+}
+
+static inline const nmo_type_registry_t *nmo_serialize_context_get_type_registry(void *context)
+{
+    const nmo_serialize_context_t *ctx = nmo_serialize_context_try(context);
+    return ctx ? ctx->type_registry : NULL;
 }
 
 static inline uint32_t nmo_serialize_context_get_flags(void *context)

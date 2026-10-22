@@ -4,10 +4,12 @@
  */
 
 #include "object/builtin/nmo_layer_schemas.h"
+#include "object/builtin/nmo_grid_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
 #include "type/nmo_reflection.h"
+#include "type/nmo_type_query.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
@@ -231,6 +233,57 @@ nmo_status_t nmo_layer_deserialize(
     return NMO_OK;
 }
 
+/* Fit the wire view, not the authored state. Canonical serialization must use
+   this view as well so an owner resize invalidates fidelity chunk reuse. */
+static nmo_status_t nmo_layer_write_cells(
+    const nmo_layer_state_t *state, nmo_chunk_t *chunk, void *context)
+{
+    const void *data = state->has_square_data ? state->square_data : NULL;
+    size_t bytes = state->has_square_data ? state->square_data_size : 0u;
+    const nmo_object_repository_t *repo = nmo_serialize_context_get_repository(context);
+    const nmo_type_registry_t *types = nmo_serialize_context_get_type_registry(context);
+    nmo_object_t *owner = state->grid.state == NMO_REF_RESOLVED && repo != NULL
+        ? nmo_object_repository_find_by_id(repo, state->grid.id) : NULL;
+    const nmo_grid_state_t *grid = NULL;
+    if (types != NULL) {
+        grid = nmo_type_query_object_get_ancestor_state_by_guid(types, owner, CKPGUID_GRID);
+    } else if (owner != NULL && owner->class_id == NMO_CID_GRID &&
+               (nmo_guid_is_null(owner->type_guid) ||
+                nmo_guid_equals(owner->type_guid, CKPGUID_GRID)) &&
+               owner->state_size >= sizeof(nmo_grid_state_t)) {
+        grid = owner->state;
+    }
+    if (grid != NULL) {
+        if (grid->width < 0 || grid->length < 0 ||
+            (grid->length > 0 && grid->width > INT32_MAX / grid->length)) {
+            return NMO_ERR_INVALID_FORMAT;
+        }
+        const size_t cells = (size_t)grid->width * (size_t)grid->length;
+        if (cells > (size_t)INT32_MAX / sizeof(uint32_t) - 1u) {
+            return NMO_ERR_INVALID_FORMAT;
+        }
+        if (cells != 0u) {
+            const size_t fitted_size = cells * sizeof(uint32_t);
+            if (fitted_size != bytes) {
+                const nmo_serialize_context_t *ctx = nmo_serialize_context_try(context);
+                nmo_arena_t *work = ctx != NULL && ctx->scratch != NULL
+                    ? ctx->scratch : chunk->arena;
+                void *fitted = nmo_arena_alloc(work, fitted_size, _Alignof(uint32_t));
+                if (fitted == NULL) return NMO_ERR_NOMEM;
+                memset(fitted, 0, fitted_size);
+                const size_t kept = bytes < fitted_size ? bytes : fitted_size;
+                if (kept != 0u) memcpy(fitted, data, kept);
+                data = fitted;
+                bytes = fitted_size;
+            }
+        }
+    }
+    if (bytes / sizeof(uint32_t) > (size_t)INT32_MAX / sizeof(uint32_t) - 1u) {
+        return NMO_ERR_INVALID_FORMAT;
+    }
+    return nmo_chunk_write_buffer(chunk, data, bytes);
+}
+
 static nmo_status_t nmo_layer_serialize_internal(
     const void *instance,
     nmo_chunk_t *out_chunk,
@@ -298,10 +351,7 @@ static nmo_status_t nmo_layer_serialize_internal(
     if (in_state->format == 0 &&
         (in_state->has_square_data ||
          nmo_ref_serialized_id(&in_state->grid) != NMO_OBJECT_ID_NONE)) {
-        return nmo_chunk_write_buffer(
-            out_chunk,
-            in_state->has_square_data ? in_state->square_data : NULL,
-            in_state->has_square_data ? in_state->square_data_size : 0u);
+        return nmo_layer_write_cells(in_state, out_chunk, context);
     }
 
     NMO_RETURN_OK();

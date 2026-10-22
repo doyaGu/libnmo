@@ -5197,8 +5197,80 @@ TEST(runtime_kernel, safe_detach_preserves_curve_and_place_child_world_poses) {
     }
 }
 
+TEST(runtime_kernel, layer_save_tracks_owner_dimensions_without_mutating_cells) {
+    for (int mode = 0; mode < 7; ++mode) {
+        nmo_context_t *ctx = nmo_context_create(NULL);
+        ASSERT_NOT_NULL(ctx);
+        nmo_session_t *session = nmo_session_create(ctx);
+        ASSERT_NOT_NULL(session);
+        nmo_object_repository_t *repo = nmo_session_get_repository(session);
+        const nmo_type_runtime_t *rt = nmo_context_get_type_runtime(ctx);
+        nmo_object_id_t grid_id = 0, layer_id = 0;
+        ASSERT_EQ(NMO_OK, nmo_session_create_object(session, NMO_CID_GRID,
+            "grid", NMO_NULL_GUID, &grid_id, NULL));
+        ASSERT_EQ(NMO_OK, nmo_session_create_object(session, NMO_CID_LAYER,
+            "layer", NMO_NULL_GUID, &layer_id, NULL));
+        nmo_object_t *object = nmo_object_repository_find_by_id(repo, layer_id);
+        nmo_grid_state_t *grid = nmo_object_repository_find_by_id(repo, grid_id)->state;
+        nmo_layer_state_t *layer = object->state;
+        uint32_t cells[] = {17u, 29u};
+        layer->grid = nmo_ref_from_id(grid_id);
+        layer->has_square_data = 1;
+        layer->square_data = cells;
+        layer->square_data_size = sizeof(cells);
+        grid->width = 2;
+        grid->length = 1;
+        nmo_status_t status = NMO_OK;
+        nmo_arena_t *arena = nmo_object_get_storage_arena(object);
+        object->chunk = nmo_object_system_serialize_object_state(
+            object, rt, arena, NULL, repo, NULL, &status);
+        ASSERT_NOT_NULL(object->chunk);
+        ASSERT_EQ(NMO_OK, nmo_object_system_capture_fidelity(repo, rt, NULL, NULL));
+        ASSERT_TRUE(object->fidelity_captured);
+
+        const int widths[] = {4, 1, 0, -1, INT32_MAX, INT32_MAX / 4, 4};
+        grid->width = widths[mode];
+        if (mode == 4) grid->length = 2;
+        if (mode == 6) layer->grid = nmo_ref_from_raw(grid_id);
+        nmo_chunk_t *current = NULL;
+        const nmo_fidelity_outcome_t outcome = nmo_object_system_fidelity_inspect(
+            object, rt, arena, NULL, repo, NULL, &current);
+        if (mode >= 3 && mode <= 5) {
+            ASSERT_EQ(NMO_FIDELITY_UNKNOWN, outcome);
+            ASSERT_NULL(current);
+            ASSERT_NULL(nmo_object_system_serialize_object_state(
+                object, rt, arena, NULL, repo, NULL, &status));
+            ASSERT_EQ(NMO_ERR_INVALID_FORMAT, status);
+        } else {
+            ASSERT_NOT_NULL(current);
+            if (mode < 2) ASSERT_EQ(NMO_FIDELITY_CHANGED, outcome);
+            if (mode == 2) ASSERT_EQ(NMO_FIDELITY_UNCHANGED, outcome);
+            nmo_chunk_close(current);
+            nmo_layer_state_t decoded;
+            ASSERT_EQ(NMO_OK, nmo_layer_vtable.create(&decoded, NULL, NULL));
+            ASSERT_EQ(NMO_OK, nmo_layer_deserialize(&decoded, current, NULL, NULL));
+            const size_t expected = mode == 0 ? 4u : mode == 1 ? 1u : 2u;
+            ASSERT_EQ(expected * sizeof(uint32_t), decoded.square_data_size);
+            const uint32_t *saved = decoded.square_data;
+            ASSERT_EQ(17u, saved[0]);
+            if (expected > 1) ASSERT_EQ(29u, saved[1]);
+            if (expected > 2) {
+                ASSERT_EQ(0u, saved[2]);
+                ASSERT_EQ(0u, saved[3]);
+            }
+            nmo_layer_vtable.destroy(&decoded, NULL, NULL);
+        }
+        ASSERT_TRUE(layer->square_data == cells);
+        ASSERT_EQ(sizeof(cells), layer->square_data_size);
+        ASSERT_EQ(29u, cells[1]);
+        nmo_session_destroy(session);
+        nmo_context_release(ctx);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(runtime_kernel, safe_detach_preserves_curve_and_place_child_world_poses);
+REGISTER_TEST(runtime_kernel, layer_save_tracks_owner_dimensions_without_mutating_cells);
 REGISTER_TEST(runtime_kernel, finalize_fits_layer_cells_after_owner_dimensions_are_known);
 REGISTER_TEST(runtime_kernel, layer_cell_fitting_is_bounded_and_failure_atomic);
 REGISTER_TEST(runtime_kernel, file_header_allocation_failure_preserves_state);

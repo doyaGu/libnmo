@@ -15,6 +15,10 @@
 #include "object/builtin/nmo_level_schemas.h"
 #include "object/builtin/nmo_material_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
+#include "object/builtin/nmo_grid_schemas.h"
+#include "object/builtin/nmo_layer_schemas.h"
+#include "format/nmo_chunk_api.h"
+#include "object/nmo_statesave_ids.h"
 #include "session/nmo_runtime_kernel.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
@@ -389,7 +393,75 @@ TEST(fidelity_save, enum_and_flags_types_derive_from_integer)
     nmo_context_release(ctx);
 }
 
+TEST(fidelity_save, resizing_only_the_grid_rewrites_the_layer_buffer)
+{
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_id_t grid_id = 0, layer_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(session, NMO_CID_GRID,
+        "resize-grid", NMO_NULL_GUID, &grid_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(session, NMO_CID_LAYER,
+        "resize-layer", NMO_NULL_GUID, &layer_id, NULL));
+    nmo_grid_state_t *grid = nmo_object_repository_find_by_id(repo, grid_id)->state;
+    nmo_layer_state_t *layer = nmo_object_repository_find_by_id(repo, layer_id)->state;
+    grid->width = 2;
+    grid->length = 1;
+    uint32_t cells[] = {11u, 22u};
+    layer->grid = nmo_ref_from_id(grid_id);
+    layer->has_square_data = 1;
+    layer->square_data = cells;
+    layer->square_data_size = sizeof(cells);
+    nmo_grid_layer_t entry = {.ref = nmo_ref_from_id(layer_id)};
+    ASSERT_EQ(NMO_OK, nmo_array_append(&grid->layers, &entry));
+    ASSERT_EQ(NMO_OK, nmo_session_save_file(session, SCRATCH_FILE, NULL, NULL));
+    nmo_session_destroy(session);
+    session = load_session(ctx, SCRATCH_FILE);
+    ASSERT_NOT_NULL(session);
+    repo = nmo_session_get_repository(session);
+    nmo_object_t *grid_object = nmo_object_repository_find_by_name(repo, "resize-grid");
+    nmo_object_t *layer_object = nmo_object_repository_find_by_name(repo, "resize-layer");
+    ASSERT_NOT_NULL(grid_object);
+    ASSERT_NOT_NULL(layer_object);
+    ASSERT_TRUE(layer_object->fidelity_captured);
+    grid = grid_object->state;
+    layer = layer_object->state;
+    const void *original_cells = layer->square_data;
+    grid->width = 4;
+    for (int save = 0; save < 2; ++save) {
+        ASSERT_EQ(NMO_OK, nmo_session_save_file(session, SCRATCH_FILE, NULL, NULL));
+        nmo_session_t *reloaded = load_session(ctx, SCRATCH_FILE);
+        ASSERT_NOT_NULL(reloaded);
+        nmo_object_t *saved = nmo_object_repository_find_by_name(
+            nmo_session_get_repository(reloaded), "resize-layer");
+        ASSERT_NOT_NULL(saved);
+        /* Inspect the wire directly: load-time fitting would hide a stale
+           two-cell buffer and make a state-only roundtrip test pass. */
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_read(saved->chunk));
+        ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(saved->chunk, CK_STATESAVE_LAYERDATA));
+        uint32_t word = 0;
+        for (int i = 0; i < 7; ++i) {
+            ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(saved->chunk, &word));
+        }
+        void *raw = NULL;
+        size_t bytes = 0;
+        ASSERT_EQ(NMO_OK, nmo_chunk_read_buffer(saved->chunk, &raw, &bytes));
+        const uint32_t expected[] = {11u, 22u, 0u, 0u};
+        ASSERT_EQ(sizeof(expected), bytes);
+        ASSERT_MEM_EQ(expected, raw, bytes);
+        ASSERT_TRUE(layer->square_data == original_cells);
+        ASSERT_EQ(sizeof(cells), layer->square_data_size);
+        nmo_session_destroy(reloaded);
+    }
+    remove(SCRATCH_FILE);
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
+    REGISTER_TEST(fidelity_save, resizing_only_the_grid_rewrites_the_layer_buffer);
     REGISTER_TEST(fidelity_save, enum_and_flags_types_derive_from_integer);
     REGISTER_TEST(fidelity_save, state_the_schema_refuses_keeps_its_loaded_chunk);
     REGISTER_TEST(fidelity_save, full_save_after_a_strip_save_is_unchanged);
