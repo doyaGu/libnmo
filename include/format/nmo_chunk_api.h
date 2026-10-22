@@ -656,7 +656,9 @@ NMO_API nmo_status_t nmo_chunk_read_guid(nmo_chunk_t *chunk, nmo_guid_t *out_val
  */
 NMO_API size_t nmo_chunk_read_string(nmo_chunk_t *chunk, char **out_str);
 
-/** Read a string while distinguishing an empty value from an I/O failure. */
+/** Read a string while distinguishing an empty value from an I/O failure.
+ * A NUL must occur within the declared payload; later payload bytes are
+ * consumed but excluded from out_length, like CKStateChunk's XString read. */
 NMO_API nmo_status_t nmo_chunk_read_string_checked(
     nmo_chunk_t *chunk,
     char **out_str,

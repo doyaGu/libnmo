@@ -2046,7 +2046,42 @@ TEST(chunk_api, crc) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_api, string_terminator_is_bounded_by_the_declared_payload) {
+    for (size_t terminator = 0u; terminator <= 5u; ++terminator) {
+        nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+        ASSERT_NOT_NULL(arena);
+        nmo_chunk_t *chunk = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(chunk);
+        uint8_t payload[5] = {'A', 'B', 'C', 'D', 'E'};
+        if (terminator < sizeof(payload)) payload[terminator] = 0;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_buffer(chunk, payload, sizeof(payload)));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0xCAFEBABEu));
+        nmo_chunk_close(chunk);
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
+        char *text = (char *)(uintptr_t)1u;
+        size_t length = 123u;
+        ASSERT_EQ(terminator < sizeof(payload) ? NMO_OK : NMO_ERR_INVALID_FORMAT,
+            nmo_chunk_read_string_checked(chunk, &text, &length));
+        if (terminator < sizeof(payload)) {
+            ASSERT_NOT_NULL(text);
+            ASSERT_EQ(terminator, length);
+            ASSERT_EQ(length, strlen(text));
+            ASSERT_MEM_EQ(payload, text, sizeof(payload));
+            uint32_t next = 0u;
+            ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(chunk, &next));
+            ASSERT_EQ(0xCAFEBABEu, next);
+        } else {
+            ASSERT_NULL(text);
+            ASSERT_EQ(0u, length);
+            ASSERT_EQ(0u, nmo_chunk_get_position(chunk));
+        }
+        nmo_arena_destroy(arena);
+    }
+}
+
 TEST_MAIN_BEGIN()
+    REGISTER_TEST(chunk_api, string_terminator_is_bounded_by_the_declared_payload);
     REGISTER_TEST(chunk_api, primitives);
     REGISTER_TEST(chunk_api, string);
     REGISTER_TEST(chunk_api, string_truncated_payload_keeps_position);
