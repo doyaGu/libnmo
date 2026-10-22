@@ -1244,6 +1244,8 @@ TEST(object_state_layout, texture_lanes_and_buffers_copy) {
     source.slot_count = 1;
     source.slot_filenames = names;
     source.bitmap_kind = CKTEXTURE_BITMAP_READER;
+    source.reader_width = 1;
+    source.reader_height = 1;
     source.reader_slots = reader;
     source.has_save_format = 1;
     source.save_format_size = 2;

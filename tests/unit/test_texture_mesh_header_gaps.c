@@ -672,6 +672,15 @@ TEST(texture_gaps, reader_dimensions_are_required_only_for_nonempty_slots)
             bitmap.reader_slots = count == 0u ? NULL : &empty;
             ASSERT_EQ(valid ? NMO_OK : NMO_ERR_VALIDATION_FAILED,
                 nmo_bitmap_slots_validate(&bitmap));
+            nmo_texture_state_t texture;
+            ASSERT_EQ(NMO_OK, nmo_texture_vtable.create(&texture, NULL, NULL));
+            texture.bitmap_kind = CKTEXTURE_BITMAP_READER;
+            texture.slot_count = bitmap.slot_count;
+            texture.reader_width = bitmap.reader_width;
+            texture.reader_height = bitmap.reader_height;
+            texture.reader_slots = bitmap.reader_slots;
+            ASSERT_EQ(valid ? NMO_OK : NMO_ERR_VALIDATION_FAILED,
+                nmo_texture_vtable.validate(&texture, NULL, NULL));
             nmo_arena_destroy(arena);
         }
     }

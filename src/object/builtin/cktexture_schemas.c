@@ -1161,6 +1161,10 @@ static nmo_status_t nmo_texture_validate(
             "Texture slot filenames are present without their section");
     }
     if (s->bitmap_kind == CKTEXTURE_BITMAP_READER) {
+        if (s->slot_count > 0u && (s->reader_width <= 0 || s->reader_height <= 0)) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                             "Nonempty bitmap reader slots require positive dimensions");
+        }
         NMO_VALIDATE_COUNT(s->reader_slots, s->slot_count, "reader_slots");
     } else if (s->bitmap_kind == CKTEXTURE_BITMAP_RAW) {
         NMO_VALIDATE_COUNT(s->raw_slots, s->slot_count, "raw_slots");
