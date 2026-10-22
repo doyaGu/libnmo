@@ -758,6 +758,29 @@ static bool behavior_show_add_comments(nmo_cli_record_t *rec, const behavior_sho
     return ok;
 }
 
+/* --raw: hand argv without --raw to object show, which rejects it. */
+static int behavior_show_raw(int argc, char **argv,
+                             const nmo_cli_global_opts_t *global) {
+    char **object_argv = (char **)malloc((size_t)argc * sizeof(char *));
+    if (!object_argv) {
+        fprintf(stderr, "Error: Out of memory\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+    int object_argc = 0;
+    bool options_done = false;
+    for (int i = 0; i < argc; ++i) {
+        if (!options_done && strcmp(argv[i], "--") == 0) {
+            options_done = true;
+        } else if (i > 0 && !options_done && strcmp(argv[i], "--raw") == 0) {
+            continue;
+        }
+        object_argv[object_argc++] = argv[i];
+    }
+    int rc = nmo_cmd_object_show(object_argc, object_argv, global);
+    free(object_argv);
+    return rc;
+}
+
 int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
         {"--raw",  NULL, NMO_OPT_FLAG, "Show raw reflection (like object show)"},
@@ -768,11 +791,14 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = nmo_cmd_ctx_parse(&c, argc, argv, opts, OPT_COUNT, &r);
+    if (rc) return rc;
 
     bool raw_mode = nmo_opt_flag(&vals[OPT_RAW]);
     if (raw_mode) {
-        return nmo_cmd_object_show(argc, argv, global);
+        return behavior_show_raw(argc, argv, c.global);
     }
 
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
@@ -782,9 +808,8 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    rc = nmo_cmd_ctx_open(&c);
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     if (nmo_tool_owner_ensure_behavior_acceleration(c.workspace) != NMO_OK) {
         fprintf(stderr, "Error: Failed to build behavior acceleration\n");

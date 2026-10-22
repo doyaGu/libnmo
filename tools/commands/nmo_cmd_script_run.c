@@ -1735,7 +1735,9 @@ int nmo_cmd_script_run(int argc,
     if (argc < 2 || argv == NULL || argv[1] == NULL) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &result) < 0 ||
+    nmo_cli_global_opts_t local_global = *global;
+    if (nmo_cli_parse_args(argc, argv, opts, OPT_COUNT, &result, &local_global) !=
+            NMO_CLI_EXIT_SUCCESS ||
         result.pos_count != 2) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
@@ -1744,7 +1746,7 @@ int nmo_cmd_script_run(int argc,
     rc = nmo_cli_run_write_command(result.pos_args[1],
                                    nmo_opt_str(&vals[OPT_OUTPUT]),
                                    nmo_opt_flag(&vals[OPT_DRY_RUN]),
-                                   global,
+                                   &local_global,
                                    &spec,
                                    script_run_mutate,
                                    script_run_report,

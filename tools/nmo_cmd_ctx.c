@@ -112,23 +112,6 @@ static int apply_global_plugins(nmo_cmd_ctx_t *c)
     return NMO_CLI_EXIT_SUCCESS;
 }
 
-int nmo_cmd_ctx_init(nmo_cmd_ctx_t *c, int argc, char **argv,
-                     const nmo_cli_global_opts_t *global)
-{
-    return nmo_cmd_ctx_init_with_load_options(c, argc, argv, global, NULL);
-}
-
-int nmo_cmd_ctx_init_with_load_options(nmo_cmd_ctx_t *c, int argc, char **argv,
-                                       const nmo_cli_global_opts_t *global,
-                                       const nmo_load_options_t *options)
-{
-    nmo_cmd_source_t source = {
-        .kind = NMO_CMD_SOURCE_FILE_OPERAND,
-        .load_options = options,
-    };
-    return nmo_cmd_ctx_init_from_source(c, argc, argv, global, &source);
-}
-
 static int init_output(nmo_cmd_ctx_t *c, const nmo_cli_global_opts_t *global) {
     char *out_error = NULL;
     c->out = nmo_cli_get_output_stream(global, &out_error);
@@ -188,8 +171,6 @@ static int open_document(nmo_cmd_ctx_t *c, const nmo_load_options_t *load_option
 }
 
 int nmo_cmd_ctx_init_from_source(nmo_cmd_ctx_t *c,
-                                 int argc,
-                                 char **argv,
                                  const nmo_cli_global_opts_t *global,
                                  const nmo_cmd_source_t *source)
 {
@@ -216,11 +197,7 @@ int nmo_cmd_ctx_init_from_source(nmo_cmd_ctx_t *c,
             global);
     }
 
-    if (source->kind == NMO_CMD_SOURCE_EXPLICIT_FILE) {
-        c->file_path = source->file_path;
-    } else {
-        c->file_path = nmo_tool_find_file_arg_last(argc, argv);
-    }
+    c->file_path = source->file_path;
     if (!c->file_path) {
         fprintf(stderr, "Error: No file specified\n");
         return NMO_CLI_EXIT_ARG_ERROR;
@@ -328,6 +305,33 @@ int nmo_cmd_ctx_open_without_args(nmo_cmd_ctx_t *c, int argc, char **argv,
     return nmo_cmd_ctx_open(c);
 }
 
+int nmo_cmd_batch_run_files(int argc, char **argv,
+                            const nmo_cli_global_opts_t *global,
+                            const char *usage, const char *cmd_name,
+                            nmo_batch_handler_t handler, void *user_data)
+{
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_begin_no_file(&c, global);
+    const char **paths = (const char **)malloc((size_t)argc * sizeof(const char *));
+    if (!paths) {
+        fprintf(stderr, "Error: Out of memory\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+    nmo_opt_result_t r = { .pos_args = paths, .pos_capacity = (size_t)argc };
+    int rc = nmo_cmd_ctx_parse(&c, argc, argv, NULL, 0, &r);
+    if (rc == NMO_CLI_EXIT_SUCCESS && r.pos_count == 0) {
+        fprintf(stderr, "Error: No files specified\n");
+        fprintf(stderr, "Usage: %s\n", usage);
+        rc = NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (rc == NMO_CLI_EXIT_SUCCESS) {
+        rc = nmo_tool_batch_run(paths, r.pos_count, c.global, cmd_name,
+                                handler, user_data);
+    }
+    free(paths);
+    return nmo_cmd_ctx_done(&c, rc);
+}
+
 int nmo_cmd_ctx_init_with_file(nmo_cmd_ctx_t *c, const char *file_path,
                                const nmo_cli_global_opts_t *global)
 {
@@ -335,7 +339,7 @@ int nmo_cmd_ctx_init_with_file(nmo_cmd_ctx_t *c, const char *file_path,
         .kind = NMO_CMD_SOURCE_EXPLICIT_FILE,
         .file_path = file_path,
     };
-    return nmo_cmd_ctx_init_from_source(c, 0, NULL, global, &source);
+    return nmo_cmd_ctx_init_from_source(c, global, &source);
 }
 
 int nmo_cmd_ctx_init_with_document(nmo_cmd_ctx_t *c,
@@ -376,7 +380,7 @@ int nmo_cmd_ctx_init_no_file(nmo_cmd_ctx_t *c,
     nmo_cmd_source_t source = {
         .kind = NMO_CMD_SOURCE_NO_DOCUMENT,
     };
-    return nmo_cmd_ctx_init_from_source(c, 0, NULL, global, &source);
+    return nmo_cmd_ctx_init_from_source(c, global, &source);
 }
 
 void nmo_cmd_ctx_init_from_repl_document(nmo_cmd_ctx_t *c,

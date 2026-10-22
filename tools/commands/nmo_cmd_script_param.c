@@ -636,8 +636,9 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
         .output_required_unless_dry_run = true,
     };
     if (argc < 2 || !argv || !argv[1]) {
-        return NMO_CLI_EXIT_ARG_ERROR;
+        return script_report_unknown_command("param", "add|set|connect|disconnect|remove", argc, argv);
     }
+    nmo_cli_global_opts_t local_global = *global;
 
     if (strcmp(argv[1], "add") == 0) {
         static const nmo_opt_def_t opts[] = {
@@ -653,7 +654,8 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
         const char *pos[16];
         nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
         script_param_add_args_t args = {0};
-        if (nmo_opt_parse(argc - 1, argv + 1, opts, OPT_COUNT, &r) < 0 ||
+        if (nmo_cli_parse_args(argc - 1, argv + 1, opts, OPT_COUNT, &r,
+                               &local_global) != NMO_CLI_EXIT_SUCCESS ||
             !vals[OPT_OWNER].present || !vals[OPT_KIND].present ||
             !vals[OPT_TYPE].present || !vals[OPT_NAME].present ||
             r.pos_count != 1) {
@@ -667,7 +669,7 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
             r.pos_args[0],
             nmo_opt_str(&vals[OPT_OUTPUT]),
             nmo_opt_flag(&vals[OPT_DRY_RUN]),
-            global,
+            &local_global,
             &spec,
             "script param add",
             0u,
@@ -707,7 +709,8 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
         const char *pos[16];
         nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
         script_param_set_args_t args = {0};
-        if (nmo_opt_parse(argc - 1, argv + 1, opts, OPT_COUNT, &r) < 0 ||
+        if (nmo_cli_parse_args(argc - 1, argv + 1, opts, OPT_COUNT, &r,
+                               &local_global) != NMO_CLI_EXIT_SUCCESS ||
             !vals[OPT_PARAM].present || !vals[OPT_VALUE].present ||
             r.pos_count != 1) {
             return NMO_CLI_EXIT_ARG_ERROR;
@@ -747,7 +750,7 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
                 r.pos_args[0],
                 nmo_opt_str(&vals[OPT_OUTPUT]),
                 nmo_opt_flag(&vals[OPT_DRY_RUN]),
-                global,
+                &local_global,
                 &spec,
                 "script param set",
                 0u,
@@ -772,7 +775,8 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
         const char *pos[16];
         nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
         script_param_connect_args_t args = {0};
-        if (nmo_opt_parse(argc - 1, argv + 1, opts, OPT_COUNT, &r) < 0 ||
+        if (nmo_cli_parse_args(argc - 1, argv + 1, opts, OPT_COUNT, &r,
+                               &local_global) != NMO_CLI_EXIT_SUCCESS ||
             !vals[OPT_FROM].present || !vals[OPT_TO].present || r.pos_count != 1) {
             return NMO_CLI_EXIT_ARG_ERROR;
         }
@@ -782,7 +786,7 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
             r.pos_args[0],
             nmo_opt_str(&vals[OPT_OUTPUT]),
             nmo_opt_flag(&vals[OPT_DRY_RUN]),
-            global,
+            &local_global,
             &spec,
             "script param connect",
             0u,
@@ -803,7 +807,8 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
         const char *pos[16];
         nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
         script_param_disconnect_args_t args = {0};
-        if (nmo_opt_parse(argc - 1, argv + 1, opts, OPT_COUNT, &r) < 0 ||
+        if (nmo_cli_parse_args(argc - 1, argv + 1, opts, OPT_COUNT, &r,
+                               &local_global) != NMO_CLI_EXIT_SUCCESS ||
             !vals[OPT_TO].present || r.pos_count != 1) {
             return NMO_CLI_EXIT_ARG_ERROR;
         }
@@ -812,7 +817,7 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
             r.pos_args[0],
             nmo_opt_str(&vals[OPT_OUTPUT]),
             nmo_opt_flag(&vals[OPT_DRY_RUN]),
-            global,
+            &local_global,
             &spec,
             "script param disconnect",
             0u,
@@ -838,7 +843,8 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
         script_param_remove_args_t args = {
             .interface_mode = NMO_SCRIPT_EDIT_INTERFACE_PRESERVE
         };
-        if (nmo_opt_parse(argc - 1, argv + 1, opts, OPT_COUNT, &r) < 0 ||
+        if (nmo_cli_parse_args(argc - 1, argv + 1, opts, OPT_COUNT, &r,
+                               &local_global) != NMO_CLI_EXIT_SUCCESS ||
             !vals[OPT_PARAM].present || r.pos_count != 1) {
             return NMO_CLI_EXIT_ARG_ERROR;
         }
@@ -853,7 +859,7 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
             r.pos_args[0],
             nmo_opt_str(&vals[OPT_OUTPUT]),
             nmo_opt_flag(&vals[OPT_DRY_RUN]),
-            global,
+            &local_global,
             &spec,
             "script param remove",
             0u,
@@ -863,7 +869,7 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
             &args.common);
     }
 
-    return NMO_CLI_EXIT_ARG_ERROR;
+    return script_report_unknown_command("param", "add|set|connect|disconnect|remove", argc, argv);
 }
 
 int nmo_cmd_script_op(int argc, char **argv, const nmo_cli_global_opts_t *global)
@@ -873,8 +879,9 @@ int nmo_cmd_script_op(int argc, char **argv, const nmo_cli_global_opts_t *global
         .output_required_unless_dry_run = true,
     };
     if (argc < 2 || !argv || !argv[1]) {
-        return NMO_CLI_EXIT_ARG_ERROR;
+        return script_report_unknown_command("op", "add|rewire|remove", argc, argv);
     }
+    nmo_cli_global_opts_t local_global = *global;
 
     if (strcmp(argv[1], "add") == 0) {
         static const nmo_opt_def_t opts[] = {
@@ -891,7 +898,8 @@ int nmo_cmd_script_op(int argc, char **argv, const nmo_cli_global_opts_t *global
         const char *pos[16];
         nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
         script_op_add_args_t args = {0};
-        if (nmo_opt_parse(argc - 1, argv + 1, opts, OPT_COUNT, &r) < 0 ||
+        if (nmo_cli_parse_args(argc - 1, argv + 1, opts, OPT_COUNT, &r,
+                               &local_global) != NMO_CLI_EXIT_SUCCESS ||
             !vals[OPT_PARENT].present || !vals[OPT_OP_GUID].present ||
             r.pos_count != 1) {
             return NMO_CLI_EXIT_ARG_ERROR;
@@ -908,7 +916,7 @@ int nmo_cmd_script_op(int argc, char **argv, const nmo_cli_global_opts_t *global
             r.pos_args[0],
             nmo_opt_str(&vals[OPT_OUTPUT]),
             nmo_opt_flag(&vals[OPT_DRY_RUN]),
-            global,
+            &local_global,
             &spec,
             "script op add",
             0u,
@@ -932,7 +940,8 @@ int nmo_cmd_script_op(int argc, char **argv, const nmo_cli_global_opts_t *global
         const char *pos[16];
         nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
         script_op_rewire_args_t args = {0};
-        if (nmo_opt_parse(argc - 1, argv + 1, opts, OPT_COUNT, &r) < 0 ||
+        if (nmo_cli_parse_args(argc - 1, argv + 1, opts, OPT_COUNT, &r,
+                               &local_global) != NMO_CLI_EXIT_SUCCESS ||
             !vals[OPT_OP].present ||
             (!vals[OPT_IN1].present && !vals[OPT_IN2].present && !vals[OPT_OUT].present) ||
             r.pos_count != 1) {
@@ -955,7 +964,7 @@ int nmo_cmd_script_op(int argc, char **argv, const nmo_cli_global_opts_t *global
             r.pos_args[0],
             nmo_opt_str(&vals[OPT_OUTPUT]),
             nmo_opt_flag(&vals[OPT_DRY_RUN]),
-            global,
+            &local_global,
             &spec,
             "script op rewire",
             0u,
@@ -980,7 +989,8 @@ int nmo_cmd_script_op(int argc, char **argv, const nmo_cli_global_opts_t *global
         script_op_remove_args_t args = {
             .interface_mode = NMO_SCRIPT_EDIT_INTERFACE_PRESERVE
         };
-        if (nmo_opt_parse(argc - 1, argv + 1, opts, OPT_COUNT, &r) < 0 ||
+        if (nmo_cli_parse_args(argc - 1, argv + 1, opts, OPT_COUNT, &r,
+                               &local_global) != NMO_CLI_EXIT_SUCCESS ||
             !vals[OPT_OP].present || r.pos_count != 1) {
             return NMO_CLI_EXIT_ARG_ERROR;
         }
@@ -994,7 +1004,7 @@ int nmo_cmd_script_op(int argc, char **argv, const nmo_cli_global_opts_t *global
             r.pos_args[0],
             nmo_opt_str(&vals[OPT_OUTPUT]),
             nmo_opt_flag(&vals[OPT_DRY_RUN]),
-            global,
+            &local_global,
             &spec,
             "script op remove",
             0u,
@@ -1004,5 +1014,5 @@ int nmo_cmd_script_op(int argc, char **argv, const nmo_cli_global_opts_t *global
             &args.common);
     }
 
-    return NMO_CLI_EXIT_ARG_ERROR;
+    return script_report_unknown_command("op", "add|rewire|remove", argc, argv);
 }

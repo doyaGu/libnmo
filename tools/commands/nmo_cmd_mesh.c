@@ -243,8 +243,9 @@ static nmo_cli_record_t *mesh_list_record_new(mesh_list_data_t *data)
 
 int nmo_cmd_mesh_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = nmo_cmd_ctx_open_without_args(&c, argc, argv, "nmo mesh list <file>");
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     nmo_object_query_t query = {0};
     nmo_core_query_set_class_id(&query, NMO_CID_MESH, false);
@@ -277,14 +278,13 @@ int nmo_cmd_mesh_show(int argc, char **argv, const nmo_cli_global_opts_t *global
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = nmo_cmd_ctx_parse_and_open(&c, argc, argv, opts, OPT_COUNT, &r);
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
     const char *positional_id = (!has_selector_opt && r.pos_count >= 2) ? r.pos_args[0] : NULL;
-
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
 
     nmo_core_object_selector_t selector = {
         .has_id = vals[OPT_ID].present,
@@ -634,7 +634,8 @@ typedef struct mesh_export_args {
     bool export_all;
 } mesh_export_args_t;
 
-static int mesh_export_parse(int argc, char **argv, bool expect_file_operand,
+static int mesh_export_parse(nmo_cmd_ctx_t *c, int argc, char **argv,
+                             bool expect_file_operand,
                              mesh_export_args_t *args, const char *usage) {
     memset(args, 0, sizeof(*args));
 
@@ -648,7 +649,8 @@ static int mesh_export_parse(int argc, char **argv, bool expect_file_operand,
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    int rc = nmo_cmd_ctx_parse(c, argc, argv, opts, OPT_COUNT, &r);
+    if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
 
     args->out_dir = nmo_opt_str(&vals[OPT_OUT_DIR]);
     args->has_id = vals[OPT_ID].present;
@@ -802,12 +804,13 @@ static int mesh_export_run(nmo_cmd_ctx_t *ctx, const mesh_export_args_t *args,
 int nmo_cmd_mesh_export(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     mesh_export_args_t args;
     const char *usage = "nmo mesh export --out-dir <dir> [--all | --id <id> | --name <name> | <id>] <file>";
-    int rc = mesh_export_parse(argc, argv, true, &args, usage);
-    if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
-
     nmo_cmd_ctx_t c;
-    rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = mesh_export_parse(&c, argc, argv, true, &args, usage);
+    if (rc == NMO_CLI_EXIT_SUCCESS) {
+        rc = nmo_cmd_ctx_open(&c);
+    }
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     return mesh_export_run(&c, &args, true, usage);
 }
@@ -815,7 +818,7 @@ int nmo_cmd_mesh_export(int argc, char **argv, const nmo_cli_global_opts_t *glob
 static int nmo_cmd_mesh_export_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv) {
     mesh_export_args_t args;
     const char *usage = "mesh export --out-dir <dir> [--all | --id <id> | --name <name> | <id>]";
-    int rc = mesh_export_parse(argc, argv, false, &args, usage);
+    int rc = mesh_export_parse(ctx, argc, argv, false, &args, usage);
     if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
 
     return mesh_export_run(ctx, &args, false, usage);
@@ -854,10 +857,12 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
         NMO_OPT_DEF_DRY_RUN,
     };
     enum { OPT_OUTPUT, OPT_REPLACE, OPT_REPLACE_NAME, OPT_NAME, OPT_DRYRUN, OPT_COUNT };
+    nmo_cli_global_opts_t local_global = *global;
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    if (nmo_cli_parse_args(argc, argv, opts, OPT_COUNT, &r, &local_global) != NMO_CLI_EXIT_SUCCESS)
+        return NMO_CLI_EXIT_ARG_ERROR;
 
     const char *output_path  = nmo_opt_str(&vals[OPT_OUTPUT]);
     const char *replace_str  = nmo_opt_str(&vals[OPT_REPLACE]);
@@ -903,7 +908,7 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
 
     /* Open NMO session */
     nmo_cmd_ctx_t c;
-    int rc = nmo_cli_write_init_ctx(&c, nmo_file_path, global);
+    int rc = nmo_cli_write_init_ctx(&c, nmo_file_path, &local_global);
     if (rc) { free(obj_buf); return rc; }
 
     nmo_arena_t *arena = nmo_tool_owner_arena(c.workspace);

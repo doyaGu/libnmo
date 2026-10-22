@@ -868,7 +868,9 @@ int nmo_cmd_diff_summary(int argc, char **argv, const nmo_cli_global_opts_t *glo
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_begin_no_file(&c, global);
+    if (nmo_cmd_ctx_parse(&c, argc, argv, opts, OPT_COUNT, &r)) return NMO_CLI_EXIT_ARG_ERROR;
 
     if (r.pos_count < 2) {
         fprintf(stderr, "Error: Need two files to compare\n");
@@ -926,8 +928,7 @@ int nmo_cmd_diff_summary(int argc, char **argv, const nmo_cli_global_opts_t *glo
     qsort(hist.entries, hist.count, sizeof(class_count_entry_t), class_entry_cmp);
 
     /* Output */
-    nmo_cmd_ctx_t c;
-    int out_rc = nmo_cmd_ctx_init_no_file(&c, global);
+    int out_rc = nmo_cmd_ctx_open(&c);
     if (out_rc) {
         close_two_documents(ctx1, doc1, ws1, owns1, ctx2, doc2, ws2, owns2);
         return out_rc;
@@ -964,7 +965,9 @@ int nmo_cmd_diff_objects(int argc, char **argv, const nmo_cli_global_opts_t *glo
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_begin_no_file(&c, global);
+    if (nmo_cmd_ctx_parse(&c, argc, argv, opts, OPT_COUNT, &r)) return NMO_CLI_EXIT_ARG_ERROR;
 
     if (r.pos_count < 2) {
         fprintf(stderr, "Error: Need two files to compare\n");
@@ -1006,8 +1009,7 @@ int nmo_cmd_diff_objects(int argc, char **argv, const nmo_cli_global_opts_t *glo
     }
 
     /* ---- Output ---- */
-    nmo_cmd_ctx_t c;
-    int out_rc = nmo_cmd_ctx_init_no_file(&c, global);
+    int out_rc = nmo_cmd_ctx_open(&c);
     if (out_rc) {
         nmo_diff_result_destroy(&diff);
         close_two_documents(ctx1, doc1, ws1, owns1, ctx2, doc2, ws2, owns2);
@@ -1037,7 +1039,9 @@ int nmo_cmd_diff_chunks(int argc, char **argv, const nmo_cli_global_opts_t *glob
     nmo_opt_val_t vals[1];
     const char *pos[8];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_begin_no_file(&c, global);
+    if (nmo_cmd_ctx_parse(&c, argc, argv, opts, 1, &r)) return NMO_CLI_EXIT_ARG_ERROR;
 
     if (r.pos_count < 2) {
         fprintf(stderr, "Error: Need two files to compare\n");
@@ -1081,8 +1085,7 @@ int nmo_cmd_diff_chunks(int argc, char **argv, const nmo_cli_global_opts_t *glob
     }
 
     /* Output */
-    nmo_cmd_ctx_t c;
-    int out_rc = nmo_cmd_ctx_init_no_file(&c, global);
+    int out_rc = nmo_cmd_ctx_open(&c);
     if (out_rc) {
         close_two_documents(ctx1, doc1, ws1, owns1, ctx2, doc2, ws2, owns2);
         return out_rc;
@@ -1114,7 +1117,9 @@ int nmo_cmd_diff_full(int argc, char **argv, const nmo_cli_global_opts_t *global
     nmo_opt_val_t vals[1];
     const char *pos[8];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_begin_no_file(&c, global);
+    if (nmo_cmd_ctx_parse(&c, argc, argv, opts, 1, &r)) return NMO_CLI_EXIT_ARG_ERROR;
 
     if (r.pos_count < 2) {
         fprintf(stderr, "Error: Need two files to compare\n");
@@ -1163,8 +1168,7 @@ int nmo_cmd_diff_full(int argc, char **argv, const nmo_cli_global_opts_t *global
     nmo_comparison_result_format_report(&result);
 
     /* Output */
-    nmo_cmd_ctx_t c;
-    int out_rc = nmo_cmd_ctx_init_no_file(&c, global);
+    int out_rc = nmo_cmd_ctx_open(&c);
     if (out_rc) {
         close_two_documents(ctx1, doc1, ws1, owns1, ctx2, doc2, ws2, owns2);
         return out_rc;

@@ -22,12 +22,23 @@
 #include <string.h>
 
 int nmo_cmd_repl_start(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *file_path = nmo_tool_find_file_arg(argc, argv);
-    if (!file_path) {
+    nmo_cli_global_opts_t local_global = *global;
+    const char *pos[4];
+    nmo_opt_result_t r = NMO_OPT_RESULT(NULL, pos);
+    if (nmo_cli_parse_args(argc, argv, NULL, 0, &r, &local_global) != NMO_CLI_EXIT_SUCCESS) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (r.pos_count == 0) {
         fprintf(stderr, "Error: No file specified\n");
         fprintf(stderr, "Usage: nmo repl start <file>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
+    if (r.pos_count > 1) {
+        fprintf(stderr, "Error: Unexpected argument '%s'\n", r.pos_args[1]);
+        fprintf(stderr, "Usage: nmo repl start <file>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    const char *file_path = r.pos_args[0];
 
     /* Open document */
     nmo_context_t *ctx = NULL;
@@ -48,7 +59,7 @@ int nmo_cmd_repl_start(int argc, char **argv, const nmo_cli_global_opts_t *globa
     repl.document = document;
     repl.workspace = workspace;
     repl.filename = file_path;
-    repl.colorize = nmo_cli_should_colorize(global, stdout);
+    repl.colorize = nmo_cli_should_colorize(&local_global, stdout);
     repl.dump_level = NMO_DUMP_NORMAL;
     repl.page_size = 20;
     repl.regex_icase = false;

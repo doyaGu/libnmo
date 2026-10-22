@@ -1205,6 +1205,7 @@ static int patch_apply_project_manifest(
 
 static int patch_parse_apply_args(int argc,
                                   char **argv,
+                                  nmo_cli_global_opts_t *global,
                                   patch_apply_args_t *out_args) {
     static const nmo_opt_def_t opts[] = {
         NMO_OPT_DEF_DRY_RUN,
@@ -1216,7 +1217,8 @@ static int patch_parse_apply_args(int argc,
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[4];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0 ||
+    if (nmo_cli_parse_args(argc, argv, opts, OPT_COUNT, &r, global) !=
+            NMO_CLI_EXIT_SUCCESS ||
         ((vals[OPT_PROJECT].present && r.pos_count != 0) ||
          (!vals[OPT_PROJECT].present && r.pos_count != 1)) ||
         (vals[OPT_OUTPUT].present && !vals[OPT_PROJECT].present)) {
@@ -1237,14 +1239,15 @@ static int patch_parse_apply_args(int argc,
 int nmo_cmd_patch_apply(int argc,
                         char **argv,
                         const nmo_cli_global_opts_t *global) {
+    nmo_cli_global_opts_t local_global = *global;
     patch_apply_args_t args;
-    int rc = patch_parse_apply_args(argc, argv, &args);
+    int rc = patch_parse_apply_args(argc, argv, &local_global, &args);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         return rc;
     }
 
     if (args.project_path) {
-        return patch_apply_project_manifest(&args, global);
+        return patch_apply_project_manifest(&args, &local_global);
     }
 
     patch_plan_t plan;
@@ -1252,7 +1255,7 @@ int nmo_cmd_patch_apply(int argc,
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         return rc;
     }
-    rc = patch_apply_plan(&plan, args.dry_run, global, false);
+    rc = patch_apply_plan(&plan, args.dry_run, &local_global, false);
     patch_plan_free(&plan);
     return rc;
 }
@@ -1260,17 +1263,23 @@ int nmo_cmd_patch_apply(int argc,
 int nmo_cmd_patch_diff(int argc,
                        char **argv,
                        const nmo_cli_global_opts_t *global) {
-    if (argc != 2 || !argv || !argv[1]) {
+    nmo_cli_global_opts_t local_global = *global;
+    const char *pos[4];
+    nmo_opt_result_t r = NMO_OPT_RESULT(NULL, pos);
+    if (!argv ||
+        nmo_cli_parse_args(argc, argv, NULL, 0, &r, &local_global) !=
+            NMO_CLI_EXIT_SUCCESS ||
+        r.pos_count != 1) {
         fprintf(stderr, "Usage: nmo patch diff <patch.json>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
     patch_plan_t plan;
-    int rc = patch_parse_plan(argv[1], &plan);
+    int rc = patch_parse_plan(r.pos_args[0], &plan);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         return rc;
     }
-    rc = patch_apply_plan(&plan, true, global, true);
+    rc = patch_apply_plan(&plan, true, &local_global, true);
     patch_plan_free(&plan);
     return rc;
 }

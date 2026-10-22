@@ -387,13 +387,12 @@ int nmo_cmd_chunk_list(int argc, char **argv, const nmo_cli_global_opts_t *globa
     nmo_opt_val_t vals[1];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = nmo_cmd_ctx_parse_and_open(&c, argc, argv, opts, 1, &r);
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     uint32_t top_n = nmo_opt_uint_or(&vals[0], 0);
-
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
 
     rc = chunk_list_run(&c, top_n);
     return nmo_cmd_ctx_done(&c, rc);
@@ -482,8 +481,9 @@ static int chunk_tree_run(nmo_cmd_ctx_t *ctx)
 
 int nmo_cmd_chunk_tree(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = nmo_cmd_ctx_open_without_args(&c, argc, argv, "nmo chunk tree <file>");
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     rc = chunk_tree_run(&c);
     return nmo_cmd_ctx_done(&c, rc);
@@ -501,7 +501,8 @@ typedef struct chunk_show_args {
     size_t max_bytes;
 } chunk_show_args_t;
 
-static int chunk_show_parse(int argc, char **argv, bool in_session, chunk_show_args_t *args)
+static int chunk_show_parse(nmo_cmd_ctx_t *c, int argc, char **argv, bool in_session,
+                            chunk_show_args_t *args)
 {
     if (!args) {
         return NMO_CLI_EXIT_INTERNAL_ERROR;
@@ -517,7 +518,8 @@ static int chunk_show_parse(int argc, char **argv, bool in_session, chunk_show_a
     nmo_opt_val_t vals[3];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, 3, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    int rc = nmo_cmd_ctx_parse(c, argc, argv, opts, 3, &r);
+    if (rc) return rc;
 
     const char *index_str = nmo_opt_str(&vals[0]);
     args->include_hexdump = vals[1].val.flag;
@@ -760,12 +762,13 @@ int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
        - nmo chunk show <object-id> <file> (root chunk for object)
     */
     chunk_show_args_t args;
-    int rc = chunk_show_parse(argc, argv, false, &args);
-    if (rc) return rc;
-
     nmo_cmd_ctx_t c;
-    rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = chunk_show_parse(&c, argc, argv, false, &args);
+    if (rc == NMO_CLI_EXIT_SUCCESS) {
+        rc = nmo_cmd_ctx_open(&c);
+    }
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     rc = chunk_show_run(&c, &args);
     return nmo_cmd_ctx_done(&c, rc);
@@ -839,18 +842,20 @@ int nmo_cmd_chunk_find(int argc, char **argv, const nmo_cli_global_opts_t *globa
     nmo_opt_val_t vals[1];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = nmo_cmd_ctx_parse(&c, argc, argv, opts, 1, &r);
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     const char *class_filter = nmo_opt_str(&vals[0]);
     if (!class_filter) {
         fprintf(stderr, "Error: --class filter required\n");
         fprintf(stderr, "Usage: nmo chunk find --class <name> <file>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
     }
 
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    rc = nmo_cmd_ctx_open(&c);
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     rc = chunk_find_run(&c, class_filter);
     return nmo_cmd_ctx_done(&c, rc);
@@ -881,7 +886,7 @@ int nmo_cmd_chunk_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
     }
     if (strcmp(argv[0], "show") == 0 || strcmp(argv[0], "s") == 0) {
         chunk_show_args_t args;
-        int rc = chunk_show_parse(argc, argv, true, &args);
+        int rc = chunk_show_parse(ctx, argc, argv, true, &args);
         if (rc) {
             return rc;
         }

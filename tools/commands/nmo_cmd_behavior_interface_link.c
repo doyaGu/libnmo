@@ -157,13 +157,16 @@ int nmo_cmd_behavior_iface_add_point(int argc, char **argv, const nmo_cli_global
     static const nmo_opt_def_t opts[] = {
         NMO_OPT_DEF_OUTPUT,
         NMO_OPT_DEF_DRY_RUN,
+        IFACE_OPT_DEFS_TARGET_SELECTOR,
     };
-    enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
-    IFACE_STRIP_TARGET_SELECTOR_ARGS();
+    enum { OPT_OUTPUT, OPT_DRYRUN, OPT_TARGET_ID, OPT_TARGET_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos_arr);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_cli_global_opts_t local_global = *global;
+    if (nmo_cli_parse_args(argc, argv, opts, OPT_COUNT, &r, &local_global) != NMO_CLI_EXIT_SUCCESS) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
 
     const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
     bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
@@ -174,7 +177,8 @@ int nmo_cmd_behavior_iface_add_point(int argc, char **argv, const nmo_cli_global
     int value_offset = 0;
     const char *file_path = NULL;
     int target_rc = iface_prepare_target_selector(
-        &option_selector, &r, 3, usage, &target_selector, &value_offset, &file_path);
+        &vals[OPT_TARGET_ID], &vals[OPT_TARGET_NAME], &r, 3, usage,
+        &target_selector, &value_offset, &file_path);
     if (target_rc != NMO_CLI_EXIT_SUCCESS) {
         return target_rc;
     }
@@ -207,7 +211,7 @@ int nmo_cmd_behavior_iface_add_point(int argc, char **argv, const nmo_cli_global
         file_path,
         output_path,
         dry_run,
-        global,
+        &local_global,
         &spec,
         &target_selector,
         &args.target_id,
@@ -221,13 +225,16 @@ int nmo_cmd_behavior_iface_clear_points(int argc, char **argv, const nmo_cli_glo
     static const nmo_opt_def_t opts[] = {
         NMO_OPT_DEF_OUTPUT,
         NMO_OPT_DEF_DRY_RUN,
+        IFACE_OPT_DEFS_TARGET_SELECTOR,
     };
-    enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
-    IFACE_STRIP_TARGET_SELECTOR_ARGS();
+    enum { OPT_OUTPUT, OPT_DRYRUN, OPT_TARGET_ID, OPT_TARGET_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos_arr);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_cli_global_opts_t local_global = *global;
+    if (nmo_cli_parse_args(argc, argv, opts, OPT_COUNT, &r, &local_global) != NMO_CLI_EXIT_SUCCESS) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
 
     const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
     bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
@@ -238,7 +245,8 @@ int nmo_cmd_behavior_iface_clear_points(int argc, char **argv, const nmo_cli_glo
     int value_offset = 0;
     const char *file_path = NULL;
     int target_rc = iface_prepare_target_selector(
-        &option_selector, &r, 1, usage, &target_selector, &value_offset, &file_path);
+        &vals[OPT_TARGET_ID], &vals[OPT_TARGET_NAME], &r, 1, usage,
+        &target_selector, &value_offset, &file_path);
     if (target_rc != NMO_CLI_EXIT_SUCCESS) {
         return target_rc;
     }
@@ -260,7 +268,7 @@ int nmo_cmd_behavior_iface_clear_points(int argc, char **argv, const nmo_cli_glo
         file_path,
         output_path,
         dry_run,
-        global,
+        &local_global,
         &spec,
         &target_selector,
         &args.target_id,
@@ -274,13 +282,16 @@ int nmo_cmd_behavior_iface_remove_point(int argc, char **argv, const nmo_cli_glo
     static const nmo_opt_def_t opts[] = {
         NMO_OPT_DEF_OUTPUT,
         NMO_OPT_DEF_DRY_RUN,
+        IFACE_OPT_DEFS_TARGET_SELECTOR,
     };
-    enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
-    IFACE_STRIP_TARGET_SELECTOR_ARGS();
+    enum { OPT_OUTPUT, OPT_DRYRUN, OPT_TARGET_ID, OPT_TARGET_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos_arr);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_cli_global_opts_t local_global = *global;
+    if (nmo_cli_parse_args(argc, argv, opts, OPT_COUNT, &r, &local_global) != NMO_CLI_EXIT_SUCCESS) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
 
     const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
     bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
@@ -291,7 +302,8 @@ int nmo_cmd_behavior_iface_remove_point(int argc, char **argv, const nmo_cli_glo
     int value_offset = 0;
     const char *file_path = NULL;
     int target_rc = iface_prepare_target_selector(
-        &option_selector, &r, 2, usage, &target_selector, &value_offset, &file_path);
+        &vals[OPT_TARGET_ID], &vals[OPT_TARGET_NAME], &r, 2, usage,
+        &target_selector, &value_offset, &file_path);
     if (target_rc != NMO_CLI_EXIT_SUCCESS) {
         return target_rc;
     }
@@ -319,7 +331,7 @@ int nmo_cmd_behavior_iface_remove_point(int argc, char **argv, const nmo_cli_glo
         file_path,
         output_path,
         dry_run,
-        global,
+        &local_global,
         &spec,
         &target_selector,
         &args.target_id,
@@ -333,13 +345,16 @@ int nmo_cmd_behavior_iface_move_point(int argc, char **argv, const nmo_cli_globa
     static const nmo_opt_def_t opts[] = {
         NMO_OPT_DEF_OUTPUT,
         NMO_OPT_DEF_DRY_RUN,
+        IFACE_OPT_DEFS_TARGET_SELECTOR,
     };
-    enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
-    IFACE_STRIP_TARGET_SELECTOR_ARGS();
+    enum { OPT_OUTPUT, OPT_DRYRUN, OPT_TARGET_ID, OPT_TARGET_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos_arr);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_cli_global_opts_t local_global = *global;
+    if (nmo_cli_parse_args(argc, argv, opts, OPT_COUNT, &r, &local_global) != NMO_CLI_EXIT_SUCCESS) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
 
     const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
     bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
@@ -350,7 +365,8 @@ int nmo_cmd_behavior_iface_move_point(int argc, char **argv, const nmo_cli_globa
     int value_offset = 0;
     const char *file_path = NULL;
     int target_rc = iface_prepare_target_selector(
-        &option_selector, &r, 4, usage, &target_selector, &value_offset, &file_path);
+        &vals[OPT_TARGET_ID], &vals[OPT_TARGET_NAME], &r, 4, usage,
+        &target_selector, &value_offset, &file_path);
     if (target_rc != NMO_CLI_EXIT_SUCCESS) {
         return target_rc;
     }
@@ -389,7 +405,7 @@ int nmo_cmd_behavior_iface_move_point(int argc, char **argv, const nmo_cli_globa
         file_path,
         output_path,
         dry_run,
-        global,
+        &local_global,
         &spec,
         &target_selector,
         &args.target_id,
@@ -403,13 +419,16 @@ int nmo_cmd_behavior_iface_set_link_highlight(int argc, char **argv, const nmo_c
     static const nmo_opt_def_t opts[] = {
         NMO_OPT_DEF_OUTPUT,
         NMO_OPT_DEF_DRY_RUN,
+        IFACE_OPT_DEFS_TARGET_SELECTOR,
     };
-    enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
-    IFACE_STRIP_TARGET_SELECTOR_ARGS();
+    enum { OPT_OUTPUT, OPT_DRYRUN, OPT_TARGET_ID, OPT_TARGET_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos_arr);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_cli_global_opts_t local_global = *global;
+    if (nmo_cli_parse_args(argc, argv, opts, OPT_COUNT, &r, &local_global) != NMO_CLI_EXIT_SUCCESS) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
 
     const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
     bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
@@ -420,7 +439,8 @@ int nmo_cmd_behavior_iface_set_link_highlight(int argc, char **argv, const nmo_c
     int value_offset = 0;
     const char *file_path = NULL;
     int target_rc = iface_prepare_target_selector(
-        &option_selector, &r, 2, usage, &target_selector, &value_offset, &file_path);
+        &vals[OPT_TARGET_ID], &vals[OPT_TARGET_NAME], &r, 2, usage,
+        &target_selector, &value_offset, &file_path);
     if (target_rc != NMO_CLI_EXIT_SUCCESS) {
         return target_rc;
     }
@@ -454,7 +474,7 @@ int nmo_cmd_behavior_iface_set_link_highlight(int argc, char **argv, const nmo_c
         file_path,
         output_path,
         dry_run,
-        global,
+        &local_global,
         &spec,
         &target_selector,
         &args.target_id,

@@ -5,7 +5,8 @@
 
 #include "nmo_cmd_script_internal.h"
 
-static bool parse_script_graph_args(int argc,
+static bool parse_script_graph_args(nmo_cmd_ctx_t *c,
+                                    int argc,
                                     char **argv,
                                     bool expect_file_operand,
                                     nmo_core_object_selector_t *out_selector,
@@ -27,7 +28,8 @@ static bool parse_script_graph_args(int argc,
     const char *positional_id = NULL;
     const char *file_path = NULL;
 
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &result) < 0) {
+    if (nmo_cmd_ctx_parse(c, argc, argv, opts, OPT_COUNT, &result) !=
+        NMO_CLI_EXIT_SUCCESS) {
         return false;
     }
 
@@ -372,7 +374,8 @@ int nmo_cmd_script_graph(int argc, char **argv, const nmo_cli_global_opts_t *glo
     nmo_cmd_ctx_t ctx;
     int rc = 0;
 
-    if (!parse_script_graph_args(argc, argv, true, &selector, &file_path,
+    nmo_cmd_ctx_begin(&ctx, global);
+    if (!parse_script_graph_args(&ctx, argc, argv, true, &selector, &file_path,
                                  &emit_dot, &depth)) {
         fprintf(stderr, "Error: Missing or invalid arguments\n");
         fprintf(stderr, "Usage: %s\n", usage);
@@ -380,9 +383,9 @@ int nmo_cmd_script_graph(int argc, char **argv, const nmo_cli_global_opts_t *glo
     }
     (void)file_path;
 
-    rc = nmo_cmd_ctx_init(&ctx, argc, argv, global);
+    rc = nmo_cmd_ctx_open(&ctx);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
-        return rc;
+        return nmo_cmd_ctx_done(&ctx, rc);
     }
 
     return script_graph_run(&ctx, &selector, emit_dot, depth, true, usage);
@@ -413,7 +416,7 @@ int nmo_cmd_script_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    if (!parse_script_graph_args(argc - 1, argv + 1, false, &selector, &file_path,
+    if (!parse_script_graph_args(ctx, argc - 1, argv + 1, false, &selector, &file_path,
                                  &emit_dot, &depth)) {
         fprintf(stderr, "Error: Missing or invalid arguments\n");
         fprintf(stderr, "Usage: %s\n", usage);

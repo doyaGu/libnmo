@@ -134,8 +134,17 @@ static nmo_cli_record_t *extension_list_record_new(
 }
 
 int nmo_cmd_extension_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    (void)argc;
-    (void)argv;
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_begin_no_file(&c, global);
+    const char *pos[4];
+    nmo_opt_result_t r = NMO_OPT_RESULT(NULL, pos);
+    int rc = nmo_cmd_ctx_parse(&c, argc, argv, NULL, 0, &r);
+    if (rc) return rc;
+    if (r.pos_count > 0) {
+        fprintf(stderr, "Error: Unexpected argument '%s'\n", r.pos_args[0]);
+        fprintf(stderr, "Usage: nmo extension list\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
 
     /* Create context to access extension registry */
     nmo_context_t *ctx = nmo_context_create(NULL);
@@ -157,11 +166,10 @@ int nmo_cmd_extension_list(int argc, char **argv, const nmo_cli_global_opts_t *g
     const nmo_extension_plugin_info_t *plugins = nmo_extension_registry_list(registry, &count);
 
     /* Setup output stream */
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init_no_file(&c, global);
+    rc = nmo_cmd_ctx_open(&c);
     if (rc) {
         nmo_context_release(ctx);
-        return rc;
+        return nmo_cmd_ctx_done(&c, rc);
     }
 
     nmo_cli_record_t *rec = extension_list_record_new(plugins, count);
@@ -227,12 +235,23 @@ static nmo_cli_record_t *extension_load_record_new(
 }
 
 int nmo_cmd_extension_load(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *dll_path = nmo_tool_find_file_arg(argc, argv);
-    if (!dll_path) {
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_begin_no_file(&c, global);
+    const char *pos[4];
+    nmo_opt_result_t r = NMO_OPT_RESULT(NULL, pos);
+    int rc = nmo_cmd_ctx_parse(&c, argc, argv, NULL, 0, &r);
+    if (rc) return rc;
+    if (r.pos_count == 0) {
         fprintf(stderr, "Error: No DLL path specified\n");
         fprintf(stderr, "Usage: nmo extension load <path.dll>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
+    if (r.pos_count > 1) {
+        fprintf(stderr, "Error: Unexpected argument '%s'\n", r.pos_args[1]);
+        fprintf(stderr, "Usage: nmo extension load <path.dll>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    const char *dll_path = r.pos_args[0];
 
     /* Create context */
     nmo_context_t *ctx = nmo_context_create(NULL);
@@ -266,11 +285,10 @@ int nmo_cmd_extension_load(int argc, char **argv, const nmo_cli_global_opts_t *g
     size_t loaded_count = count_after - count_before;
 
     /* Setup output stream */
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init_no_file(&c, global);
+    rc = nmo_cmd_ctx_open(&c);
     if (rc) {
         nmo_context_release(ctx);
-        return rc;
+        return nmo_cmd_ctx_done(&c, rc);
     }
 
     size_t total_count = 0;
@@ -398,8 +416,9 @@ static int extension_info_run(nmo_cmd_ctx_t *c)
 
 int nmo_cmd_extension_info(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = nmo_cmd_ctx_open_without_args(&c, argc, argv, "nmo extension info <file>");
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     rc = extension_info_run(&c);
     return nmo_cmd_ctx_done(&c, rc);
@@ -526,10 +545,11 @@ static int extension_check_run(nmo_cmd_ctx_t *c, bool strict_mode)
 
 int nmo_cmd_extension_check(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = nmo_cmd_ctx_open_without_args(&c, argc, argv, "nmo extension check <file>");
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
-    rc = extension_check_run(&c, global ? global->strict_mode : false);
+    rc = extension_check_run(&c, c.global->strict_mode);
     return nmo_cmd_ctx_done(&c, rc);
 }
 

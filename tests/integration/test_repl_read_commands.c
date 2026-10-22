@@ -1458,7 +1458,7 @@ TEST(repl_read, explicit_document_source_initializes_command_context) {
 
     nmo_cmd_ctx_t cmd;
     ASSERT_EQ(NMO_CLI_EXIT_SUCCESS,
-              nmo_cmd_ctx_init_from_source(&cmd, 0, NULL, &global, &source));
+              nmo_cmd_ctx_init_from_source(&cmd, &global, &source));
     char *argv[] = {"info"};
     ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, nmo_cmd_file_in_session(&cmd, 1, argv));
     ASSERT_EQ(NMO_CLI_EXIT_SUCCESS,

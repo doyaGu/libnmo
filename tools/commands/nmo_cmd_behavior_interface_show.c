@@ -537,7 +537,8 @@ static nmo_cli_record_t *iface_brief_record(const nmo_interface_data_t *idata,
     return rec;
 }
 
-static int behavior_iface_show_parse(int argc, char **argv,
+static int behavior_iface_show_parse(nmo_cmd_ctx_t *c,
+                                     int argc, char **argv,
                                      bool expect_file_operand,
                                      behavior_iface_show_args_t *args,
                                      const char *usage) {
@@ -552,7 +553,8 @@ static int behavior_iface_show_parse(int argc, char **argv,
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    int rc = nmo_cmd_ctx_parse(c, argc, argv, opts, OPT_COUNT, &r);
+    if (rc) return rc;
 
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
     const char *positional_id = NULL;
@@ -638,12 +640,13 @@ static int behavior_iface_show_run(nmo_cmd_ctx_t *ctx,
 int nmo_cmd_behavior_iface_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     behavior_iface_show_args_t args;
     const char *usage = "nmo behavior interface [--brief] [--id <id> | --name <name> | <id>] <file>";
-    int rc = behavior_iface_show_parse(argc, argv, true, &args, usage);
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = behavior_iface_show_parse(&c, argc, argv, true, &args, usage);
     if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
 
-    nmo_cmd_ctx_t c;
-    rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    rc = nmo_cmd_ctx_open(&c);
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     return behavior_iface_show_run(&c, &args, true, usage);
 }
@@ -679,7 +682,7 @@ int nmo_cmd_behavior_interface_in_session(nmo_cmd_ctx_t *ctx, int argc, char **a
 
     behavior_iface_show_args_t args;
     const char *usage = "behavior interface show [--brief] [--id <id> | --name <name> | <id>]";
-    int rc = behavior_iface_show_parse(argc - arg_offset, argv + arg_offset,
+    int rc = behavior_iface_show_parse(ctx, argc - arg_offset, argv + arg_offset,
                                        false, &args, usage);
     if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
 

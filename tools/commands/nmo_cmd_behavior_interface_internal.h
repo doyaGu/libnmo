@@ -37,8 +37,6 @@
  * Interface edit: verb handlers (now public sub-action handlers)
  * ================================================================ */
 
-enum { IFACE_SELECTOR_ARGV_CAP = 64 };
-
 typedef struct iface_resolving_write_args {
     const nmo_core_object_selector_t *selector;
     uint32_t *target_id;
@@ -48,16 +46,10 @@ typedef struct iface_resolving_write_args {
     const char *usage;
 } iface_resolving_write_args_t;
 
-#define IFACE_STRIP_TARGET_SELECTOR_ARGS()                                      \
-    char *parse_argv[IFACE_SELECTOR_ARGV_CAP];                                  \
-    int parse_argc = 0;                                                         \
-    nmo_core_object_selector_t option_selector = {0};                           \
-    int selector_rc = iface_strip_target_selector_args(                         \
-        argc, argv, &parse_argc, parse_argv, IFACE_SELECTOR_ARGV_CAP,           \
-        &option_selector);                                                      \
-    if (selector_rc != NMO_CLI_EXIT_SUCCESS) return selector_rc;                \
-    argc = parse_argc;                                                          \
-    argv = parse_argv
+/* Target behavior selector options; pair with OPT_TARGET_ID, OPT_TARGET_NAME */
+#define IFACE_OPT_DEFS_TARGET_SELECTOR                                         \
+    {"--id",   NULL, NMO_OPT_STRING, "Behavior object ID"},                    \
+    {"--name", "-n", NMO_OPT_STRING, "Behavior object name"}
 
 const char *iface_root_kind_name(const nmo_interface_data_t *idata);
 bool iface_is_sectioned(const nmo_interface_data_t *idata);
@@ -76,16 +68,9 @@ int iface_report_emit(
     bool dry_run,
     const char *output_path,
     const char *command);
-bool iface_option_consumes_next_arg(const char *arg);
-int iface_strip_target_selector_args(
-    int argc,
-    char **argv,
-    int *out_argc,
-    char **out_argv,
-    size_t out_capacity,
-    nmo_core_object_selector_t *out_selector);
 int iface_prepare_target_selector(
-    const nmo_core_object_selector_t *option_selector,
+    const nmo_opt_val_t *id_val,
+    const nmo_opt_val_t *name_val,
     const nmo_opt_result_t *parse_result,
     int positional_tail_count,
     const char *usage,

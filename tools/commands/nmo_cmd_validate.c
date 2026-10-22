@@ -79,18 +79,6 @@ int nmo_cmd_validate_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
     return NMO_CLI_EXIT_ARG_ERROR;
 }
 
-/**
- * Check if --fix or --suggest-fixes flag is present.
- */
-static bool parse_fix_flag(int argc, char **argv) {
-    for (int i = 1; i < argc; ++i) {
-        if (strcmp(argv[i], "--fix") == 0 || strcmp(argv[i], "--suggest-fixes") == 0) {
-            return true;
-        }
-    }
-    return false;
-}
-
 typedef struct validate_all_data {
     const nmo_cli_global_opts_t *global;
     nmo_cli_record_array_t *lines;
@@ -157,25 +145,6 @@ static int validate_emit(const nmo_cmd_ctx_t *c, nmo_cli_record_t *rec,
     int emit_rc = nmo_cmd_ctx_emit_record(&out, rec, command, key_width,
                                           c->colorize);
     return emit_rc != NMO_CLI_EXIT_SUCCESS ? emit_rc : rc;
-}
-
-static const char *parse_string_option(int argc, char **argv,
-                                       const char *long_name, const char *short_name)
-{
-    for (int i = 1; i + 1 < argc; ++i) {
-        if (strcmp(argv[i], long_name) == 0 || strcmp(argv[i], short_name) == 0) {
-            return argv[i + 1];
-        }
-    }
-    return NULL;
-}
-
-static bool parse_flag(int argc, char **argv, const char *name)
-{
-    for (int i = 1; i < argc; ++i) {
-        if (strcmp(argv[i], name) == 0) return true;
-    }
-    return false;
 }
 
 static bool paths_refer_same_file(const char *a, const char *b)
@@ -524,36 +493,39 @@ static int nmo_cmd_validate_all_in_session(nmo_cmd_ctx_t *cmd, int argc, char **
 }
 
 int nmo_cmd_validate_all(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    /* Batch mode: process multiple files */
+    /* Batch mode: every positional is a file */
     if (global->batch_mode) {
-        const char *paths[64];
-        size_t count = nmo_tool_find_file_args(argc, argv, paths, 64);
-        if (count == 0) {
-            fprintf(stderr, "Error: No files specified\n");
-            fprintf(stderr, "Usage: nmo --batch validate all <file1> <file2> ...\n");
-            return NMO_CLI_EXIT_ARG_ERROR;
-        }
-        return nmo_tool_batch_run(paths, count, global, "validate.all",
-                                   validate_all_single, NULL);
+        return nmo_cmd_batch_run_files(argc, argv, global,
+                                       "nmo --batch validate all <file1> <file2> ...",
+                                       "validate.all", validate_all_single, NULL);
     }
 
     /* Single file mode - validate_all_file opens its own session */
     nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init_no_file(&c, global);
+    nmo_cmd_ctx_begin_no_file(&c, global);
+    const char *pos[4];
+    nmo_opt_result_t r = NMO_OPT_RESULT(NULL, pos);
+    int rc = nmo_cmd_ctx_parse(&c, argc, argv, NULL, 0, &r);
     if (rc) return rc;
-
-    const char *file_path = nmo_tool_find_file_arg(argc, argv);
-    if (!file_path) {
+    if (r.pos_count == 0) {
         fprintf(stderr, "Error: No file specified\n");
         fprintf(stderr, "Usage: nmo validate all <file>\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        return NMO_CLI_EXIT_ARG_ERROR;
     }
+    if (r.pos_count > 1) {
+        fprintf(stderr, "Error: Unexpected argument '%s'\n", r.pos_args[1]);
+        fprintf(stderr, "Usage: nmo validate all <file>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    const char *file_path = r.pos_args[0];
+    rc = nmo_cmd_ctx_open(&c);
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     nmo_cli_record_t *rec = validate_all_report_new(file_path);
     if (!rec) {
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
-    rc = validate_all_file(file_path, global, rec);
+    rc = validate_all_file(file_path, c.global, rec);
     nmo_cli_record_str(rec, "file", NULL, file_path);
     rc = validate_emit(&c, rec, "validate.all", file_path, 12, rc);
     return nmo_cmd_ctx_done(&c, rc);
@@ -564,9 +536,18 @@ int nmo_cmd_validate_all(int argc, char **argv, const nmo_cli_global_opts_t *glo
  * ============================================================================ */
 
 static int nmo_cmd_validate_structure_in_session(nmo_cmd_ctx_t *c, int argc, char **argv) {
+    static const nmo_opt_def_t opts[] = {
+        {"--fix", "--suggest-fixes", NMO_OPT_FLAG, "Show suggested fixes for each issue"},
+    };
+    nmo_opt_val_t vals[1];
+    const char *pos[8];
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
+    int rc = nmo_cmd_ctx_parse_and_open(c, argc, argv, opts, 1, &r);
+    if (rc) return rc;
+
     validate_structure_data_t structure_data = {
         .global = c->global,
-        .suggest_fixes = parse_fix_flag(argc, argv),
+        .suggest_fixes = nmo_opt_flag(&vals[0]),
     };
     if (c->load_diagnostics) {
         structure_data.error_count += c->load_diagnostics->count;
@@ -577,8 +558,8 @@ static int nmo_cmd_validate_structure_in_session(nmo_cmd_ctx_t *c, int argc, cha
         }
     }
     nmo_core_iter_result_t query_result = {0};
-    int rc = nmo_core_object_query_run(c, NULL, validate_structure_object,
-                                       &structure_data, &query_result);
+    rc = nmo_core_object_query_run(c, NULL, validate_structure_object,
+                                   &structure_data, &query_result);
     nmo_cli_record_t *rec = NULL;
     if (rc == NMO_CLI_EXIT_SUCCESS && !structure_data.out_of_memory) {
         rec = nmo_cli_record_new();
@@ -632,12 +613,9 @@ int nmo_cmd_validate_structure(int argc, char **argv, const nmo_cli_global_opts_
     nmo_load_diagnostics_init(&diagnostics);
     nmo_load_options_t options = nmo_load_options_default();
     options.diagnostics = &diagnostics;
-    int rc = nmo_cmd_ctx_init_with_load_options(&c, argc, argv, global, &options);
-    if (rc) {
-        nmo_load_diagnostics_destroy(&diagnostics);
-        return rc;
-    }
-    rc = nmo_cmd_validate_structure_in_session(&c, argc, argv);
+    nmo_cmd_ctx_begin(&c, global);
+    c.load_options = &options;
+    int rc = nmo_cmd_validate_structure_in_session(&c, argc, argv);
     rc = nmo_cmd_ctx_done(&c, rc);
     nmo_load_diagnostics_destroy(&diagnostics);
     return rc;
@@ -692,8 +670,9 @@ static int nmo_cmd_validate_checksum_in_session(nmo_cmd_ctx_t *c, int argc, char
 int nmo_cmd_validate_checksum(int argc, char **argv, const nmo_cli_global_opts_t *global)
 {
     nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = nmo_cmd_ctx_open_without_args(&c, argc, argv, "nmo validate checksum [--strict] <file>");
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
     rc = nmo_cmd_validate_checksum_in_session(&c, argc, argv);
     return nmo_cmd_ctx_done(&c, rc);
 }
@@ -1273,9 +1252,21 @@ static nmo_cli_record_t *validate_mismatch_edge_record(const nmo_ref_edge_t *edg
 }
 
 static int nmo_cmd_validate_references_in_session(nmo_cmd_ctx_t *c, int argc, char **argv) {
-    bool suggest_fixes = parse_fix_flag(argc, argv);
-    bool normalize = parse_flag(argc, argv, "--normalize");
-    const char *output_path = parse_string_option(argc, argv, "--output", "-o");
+    static const nmo_opt_def_t opts[] = {
+        {"--fix",       "--suggest-fixes", NMO_OPT_FLAG, "Show suggested fixes for each issue"},
+        {"--normalize", NULL,              NMO_OPT_FLAG, "Remove invalid references before saving"},
+        {"--output",    "-o",              NMO_OPT_STRING, "Write normalized data to a new file"},
+    };
+    enum { OPT_FIX, OPT_NORMALIZE, OPT_OUTPUT, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[8];
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
+    int parse_rc = nmo_cmd_ctx_parse_and_open(c, argc, argv, opts, OPT_COUNT, &r);
+    if (parse_rc) return parse_rc;
+
+    bool suggest_fixes = nmo_opt_flag(&vals[OPT_FIX]);
+    bool normalize = nmo_opt_flag(&vals[OPT_NORMALIZE]);
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
     if (normalize && !output_path) {
         nmo_cli_print_missing_output(c->global, "--normalize requires -o/--output");
         return NMO_CLI_EXIT_ARG_ERROR;
@@ -1464,12 +1455,9 @@ int nmo_cmd_validate_references(int argc, char **argv, const nmo_cli_global_opts
     nmo_load_diagnostics_init(&diagnostics);
     nmo_load_options_t options = nmo_load_options_default();
     options.diagnostics = &diagnostics;
-    int rc = nmo_cmd_ctx_init_with_load_options(&c, argc, argv, global, &options);
-    if (rc) {
-        nmo_load_diagnostics_destroy(&diagnostics);
-        return rc;
-    }
-    rc = nmo_cmd_validate_references_in_session(&c, argc, argv);
+    nmo_cmd_ctx_begin(&c, global);
+    c.load_options = &options;
+    int rc = nmo_cmd_validate_references_in_session(&c, argc, argv);
     rc = nmo_cmd_ctx_done(&c, rc);
     nmo_load_diagnostics_destroy(&diagnostics);
     return rc;
@@ -1581,8 +1569,9 @@ static int nmo_cmd_validate_resources_in_session(nmo_cmd_ctx_t *c, int argc, cha
 
 int nmo_cmd_validate_resources(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = nmo_cmd_ctx_open_without_args(&c, argc, argv, "nmo validate resources <file>");
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
     rc = nmo_cmd_validate_resources_in_session(&c, argc, argv);
     return nmo_cmd_ctx_done(&c, rc);
 }
@@ -1727,7 +1716,6 @@ static nmo_cli_record_t *validate_orphan_record(const nmo_cmd_ctx_t *c,
 static int validate_orphans_run_in_ctx(nmo_cmd_ctx_t *c,
                                        int argc,
                                        char **argv,
-                                       const nmo_cli_global_opts_t *global,
                                        bool allow_strip,
                                        bool close_ctx)
 {
@@ -1742,13 +1730,13 @@ static int validate_orphans_run_in_ctx(nmo_cmd_ctx_t *c,
     nmo_opt_val_t vals[5];
     const char *pos_arr[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos_arr);
-    if (nmo_opt_parse(argc, argv, opts, 5, &r) < 0) {
-        return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_ARG_ERROR)
-                         : NMO_CLI_EXIT_ARG_ERROR;
+    int parse_rc = nmo_cmd_ctx_parse_and_open(c, argc, argv, opts, 5, &r);
+    if (parse_rc) {
+        return close_ctx ? nmo_cmd_ctx_done(c, parse_rc) : parse_rc;
     }
 
     const char *class_filter_str = nmo_opt_str(&vals[OPT_CLASS]);
-    bool strict = vals[OPT_STRICT].present || (global && global->strict_mode);
+    bool strict = vals[OPT_STRICT].present || (c->global && c->global->strict_mode);
     bool summary_only = nmo_opt_flag(&vals[OPT_SUMMARY]);
     bool do_strip = nmo_opt_flag(&vals[OPT_STRIP]);
     const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
@@ -1961,9 +1949,8 @@ static int validate_orphans_run_in_ctx(nmo_cmd_ctx_t *c,
 
 int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
-    return validate_orphans_run_in_ctx(&c, argc, argv, global, true, true);
+    nmo_cmd_ctx_begin(&c, global);
+    return validate_orphans_run_in_ctx(&c, argc, argv, true, true);
 }
 
 static int nmo_cmd_validate_orphans_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
@@ -1971,12 +1958,6 @@ static int nmo_cmd_validate_orphans_in_session(nmo_cmd_ctx_t *ctx, int argc, cha
     if (!ctx) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
-    nmo_cli_global_opts_t global;
-    if (ctx && ctx->global) {
-        global = *ctx->global;
-    } else {
-        nmo_cli_global_opts_init(&global);
-    }
-    return validate_orphans_run_in_ctx(ctx, argc, argv, &global, false, false);
+    return validate_orphans_run_in_ctx(ctx, argc, argv, false, false);
 }
 

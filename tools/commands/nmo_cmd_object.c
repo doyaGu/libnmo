@@ -347,10 +347,24 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
         {"--reverse", "-r",  NMO_OPT_FLAG,   "Reverse sort direction"},
         {"--top",     NULL,  NMO_OPT_UINT,   "Show only first N results"},
     };
+    nmo_cmd_ctx_t c;
+    if (global->batch_mode) {
+        nmo_cmd_ctx_begin_no_file(&c, global);
+    } else {
+        nmo_cmd_ctx_begin(&c, global);
+    }
     nmo_opt_val_t vals[4];
-    const char *pos[16];
-    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, 4, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    const char **pos = (const char **)malloc((size_t)argc * sizeof(const char *));
+    if (!pos) {
+        fprintf(stderr, "Error: Out of memory\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = (size_t)argc };
+    int rc = nmo_cmd_ctx_parse(&c, argc, argv, opts, 4, &r);
+    if (rc) {
+        free(pos);
+        return nmo_cmd_ctx_done(&c, rc);
+    }
 
     const char *class_filter_str = nmo_opt_str(&vals[0]);
     const char *sort_key_str     = nmo_opt_str(&vals[1]);
@@ -361,7 +375,8 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
     nmo_cli_sort_key_t sort_key = nmo_cli_parse_sort_key(sort_key_str);
     if (sort_key_str && sort_key == NMO_CLI_SORT_NONE) {
         fprintf(stderr, "Error: Invalid sort key '%s' (use: id, name, class, size)\n", sort_key_str);
-        return NMO_CLI_EXIT_ARG_ERROR;
+        free(pos);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
     }
 
     object_list_opts_t list_opts = {
@@ -371,30 +386,24 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
         .top_n = top_n,
     };
 
-    /* Batch mode */
+    /* Batch mode: every positional is a file */
     if (global->batch_mode) {
-        static const char *const value_opts[] = {
-            "--class", "-c", "--sort", "-s", "--top",
-        };
-        const char *paths[256];
-        size_t count = nmo_tool_find_file_args_ex(
-            argc, argv, paths, 256, value_opts,
-            sizeof(value_opts) / sizeof(value_opts[0]));
-
-        if (count == 0) {
+        if (r.pos_count == 0) {
             fprintf(stderr, "Error: No files specified\n");
             fprintf(stderr, "Usage: nmo --batch object list [options] <file1> <file2> ...\n");
-            return NMO_CLI_EXIT_ARG_ERROR;
+            rc = NMO_CLI_EXIT_ARG_ERROR;
+        } else {
+            rc = nmo_tool_batch_run(pos, r.pos_count, c.global, "object.list",
+                                    object_list_single, &list_opts);
         }
-
-        return nmo_tool_batch_run(paths, count, global, "object.list",
-                                  object_list_single, &list_opts);
+        free(pos);
+        return nmo_cmd_ctx_done(&c, rc);
     }
+    free(pos);
 
     /* Single file mode */
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    rc = nmo_cmd_ctx_open(&c);
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     /* Build query */
     nmo_object_query_t query = {0};
@@ -516,8 +525,9 @@ static nmo_cli_record_t *object_tree_node_new(nmo_context_t *ctx,
 
 int nmo_cmd_object_tree(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = nmo_cmd_ctx_open_without_args(&c, argc, argv, "nmo object tree <file>");
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     obj_collect_t col = {0};
     nmo_core_iter_result_t iter_result = {0};
@@ -617,7 +627,8 @@ typedef struct object_show_args {
     const char *type_label;
 } object_show_args_t;
 
-static int object_show_parse(int argc, char **argv, bool expect_file_operand,
+static int object_show_parse(nmo_cmd_ctx_t *c, int argc, char **argv,
+                             bool expect_file_operand,
                              object_show_args_t *args, const char *usage)
 {
     memset(args, 0, sizeof(*args));
@@ -663,11 +674,9 @@ static int object_show_parse(int argc, char **argv, bool expect_file_operand,
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(clean_argc, clean_argv, opts, OPT_COUNT, &r) < 0) {
-        free(clean_argv);
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    int rc = nmo_cmd_ctx_parse(c, clean_argc, clean_argv, opts, OPT_COUNT, &r);
     free(clean_argv);
+    if (rc) return rc;
 
     args->depth = vals[OPT_DEPTH].present ? (int)vals[OPT_DEPTH].val.u : -1;
     args->full_mode = nmo_opt_flag(&vals[OPT_FULL]);
@@ -845,14 +854,13 @@ int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
     const char *usage =
         "nmo object show [--select <path>]... "
         "[--id <id> | --name <name> | <id>] <file>";
-    int rc = object_show_parse(argc, argv, true, &args, usage);
-    if (rc != NMO_CLI_EXIT_SUCCESS) {
-        return rc;
-    }
-
     nmo_cmd_ctx_t c;
-    rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = object_show_parse(&c, argc, argv, true, &args, usage);
+    if (rc == NMO_CLI_EXIT_SUCCESS) {
+        rc = nmo_cmd_ctx_open(&c);
+    }
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     return object_show_run(&c, &args, true, usage);
 }
@@ -862,7 +870,7 @@ int nmo_cmd_object_show_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv) {
     const char *usage =
         "object show [--select <path>]... "
         "[--id <id> | --name <name> | <id>]";
-    int rc = object_show_parse(argc, argv, false, &args, usage);
+    int rc = object_show_parse(ctx, argc, argv, false, &args, usage);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         return rc;
     }
@@ -879,7 +887,7 @@ int nmo_cmd_object_show_class_in_session(nmo_cmd_ctx_t *ctx,
     const char *usage =
         "show [--select <path>]... "
         "[--id <id> | --name <name> | <id>]";
-    int rc = object_show_parse(argc, argv, false, &args, usage);
+    int rc = object_show_parse(ctx, argc, argv, false, &args, usage);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         return rc;
     }
@@ -938,7 +946,10 @@ int nmo_cmd_object_find(int argc, char **argv, const nmo_cli_global_opts_t *glob
     nmo_opt_val_t vals[2];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, 2, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = nmo_cmd_ctx_parse(&c, argc, argv, opts, 2, &r);
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     const char *class_filter_str = nmo_opt_str(&vals[0]);
     const char *name_filter      = nmo_opt_str(&vals[1]);
@@ -946,12 +957,11 @@ int nmo_cmd_object_find(int argc, char **argv, const nmo_cli_global_opts_t *glob
     if (!class_filter_str && !name_filter) {
         fprintf(stderr, "Error: At least one filter required (--name or --class)\n");
         fprintf(stderr, "Usage: nmo object find [--name <pattern>] [--class <name>] <file>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
     }
 
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    rc = nmo_cmd_ctx_open(&c);
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     /* Build query */
     nmo_object_query_t query = {0};
@@ -1031,17 +1041,16 @@ int nmo_cmd_object_export(int argc, char **argv, const nmo_cli_global_opts_t *gl
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = nmo_cmd_ctx_parse_and_open(&c, argc, argv, opts, OPT_COUNT, &r);
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     const char *class_filter_str = nmo_opt_str(&vals[OPT_CLASS]);
     const char *name_pattern     = nmo_opt_str(&vals[OPT_NAME]);
     int depth                    = vals[OPT_DEPTH].present ? (int)vals[OPT_DEPTH].val.u : -1;
     bool full_mode               = nmo_opt_flag(&vals[OPT_FULL]);
     uint32_t id_filter           = nmo_opt_uint_or(&vals[OPT_ID], 0);
-
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
 
     /* Build query */
     nmo_object_query_t query = {0};
@@ -1195,18 +1204,16 @@ int nmo_cmd_object_list_fields(int argc, char **argv,
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
-        return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = nmo_cmd_ctx_parse_and_open(&c, argc, argv, opts, OPT_COUNT, &r);
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
     const char *positional_id = NULL;
     if (!has_selector_opt) {
         positional_id = r.pos_count >= 2 ? r.pos_args[0] : NULL;
     }
-
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
 
     nmo_core_object_selector_t selector = {
         .has_id = vals[OPT_ID].present,

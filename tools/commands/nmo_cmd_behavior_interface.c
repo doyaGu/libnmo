@@ -139,111 +139,9 @@ int iface_report_emit(
     return nmo_cmd_ctx_emit_record(c, rec, command, 0, false);
 }
 
-bool iface_option_consumes_next_arg(const char *arg)
-{
-    if (arg == NULL || arg[0] != '-') {
-        return false;
-    }
-    if (strchr(arg, '=') != NULL) {
-        return false;
-    }
-    return strcmp(arg, "--output") == 0 ||
-           strcmp(arg, "-o") == 0 ||
-           strcmp(arg, "--body") == 0 ||
-           strcmp(arg, "--text") == 0 ||
-           strcmp(arg, "-t") == 0 ||
-           strcmp(arg, "--rect") == 0 ||
-           strcmp(arg, "-r") == 0 ||
-           strcmp(arg, "--style") == 0 ||
-           strcmp(arg, "-s") == 0 ||
-           strcmp(arg, "--param-index") == 0 ||
-           strcmp(arg, "--in-in") == 0 ||
-           strcmp(arg, "--in-out") == 0 ||
-           strcmp(arg, "--out-in") == 0 ||
-           strcmp(arg, "--out-out") == 0;
-}
-
-int iface_strip_target_selector_args(
-    int argc,
-    char **argv,
-    int *out_argc,
-    char **out_argv,
-    size_t out_capacity,
-    nmo_core_object_selector_t *out_selector)
-{
-    if (argv == NULL || out_argc == NULL || out_argv == NULL ||
-        out_selector == NULL || (size_t)argc > out_capacity) {
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
-    *out_argc = 0;
-    *out_selector = (nmo_core_object_selector_t){
-        .required_base_class = NMO_CID_BEHAVIOR,
-        .selector_label = "Behavior",
-        .type_label = "CKBehavior",
-    };
-
-    for (int i = 0; i < argc; ++i) {
-        const char *arg = argv[i];
-        const char *id_value = NULL;
-        const char *name_value = NULL;
-
-        if (iface_option_consumes_next_arg(arg)) {
-            if (i + 1 >= argc) {
-                out_argv[(*out_argc)++] = argv[i];
-                continue;
-            }
-            if ((size_t)(*out_argc + 2) > out_capacity) {
-                return NMO_CLI_EXIT_ARG_ERROR;
-            }
-            out_argv[(*out_argc)++] = argv[i];
-            out_argv[(*out_argc)++] = argv[++i];
-            continue;
-        }
-
-        if (strcmp(arg, "--id") == 0) {
-            if (i + 1 >= argc) {
-                fprintf(stderr, "Error: --id requires a value\n");
-                return NMO_CLI_EXIT_ARG_ERROR;
-            }
-            id_value = argv[++i];
-        } else if (strncmp(arg, "--id=", 5) == 0) {
-            id_value = arg + 5;
-        } else if (strcmp(arg, "--name") == 0 || strcmp(arg, "-n") == 0) {
-            if (i + 1 >= argc) {
-                fprintf(stderr, "Error: --name requires a value\n");
-                return NMO_CLI_EXIT_ARG_ERROR;
-            }
-            name_value = argv[++i];
-        } else if (strncmp(arg, "--name=", 7) == 0) {
-            name_value = arg + 7;
-        } else {
-            out_argv[(*out_argc)++] = argv[i];
-            continue;
-        }
-
-        if (out_selector->has_id || out_selector->name != NULL) {
-            fprintf(stderr, "Error: Use only one behavior selector\n");
-            return NMO_CLI_EXIT_ARG_ERROR;
-        }
-        if (id_value != NULL) {
-            uint32_t parsed_id = 0;
-            if (!nmo_tool_parse_u32(id_value, &parsed_id)) {
-                fprintf(stderr, "Error: Invalid Behavior ID '%s'\n", id_value);
-                return NMO_CLI_EXIT_ARG_ERROR;
-            }
-            out_selector->has_id = true;
-            out_selector->id = parsed_id;
-        } else {
-            out_selector->name = name_value;
-        }
-    }
-
-    return NMO_CLI_EXIT_SUCCESS;
-}
-
 int iface_prepare_target_selector(
-    const nmo_core_object_selector_t *option_selector,
+    const nmo_opt_val_t *id_val,
+    const nmo_opt_val_t *name_val,
     const nmo_opt_result_t *parse_result,
     int positional_tail_count,
     const char *usage,
@@ -251,14 +149,34 @@ int iface_prepare_target_selector(
     int *out_value_offset,
     const char **out_file_path)
 {
-    if (option_selector == NULL || parse_result == NULL || usage == NULL ||
+    if (id_val == NULL || name_val == NULL || parse_result == NULL || usage == NULL ||
         out_selector == NULL || out_value_offset == NULL || out_file_path == NULL) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
+    nmo_core_object_selector_t option_selector = {
+        .required_base_class = NMO_CID_BEHAVIOR,
+        .selector_label = "Behavior",
+        .type_label = "CKBehavior",
+    };
+    if (id_val->present && name_val->present) {
+        fprintf(stderr, "Error: Use only one behavior selector\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (id_val->present) {
+        uint32_t parsed_id = 0;
+        if (!nmo_tool_parse_u32(id_val->val.str, &parsed_id)) {
+            fprintf(stderr, "Error: Invalid Behavior ID '%s'\n", id_val->val.str);
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        option_selector.has_id = true;
+        option_selector.id = parsed_id;
+    }
+    option_selector.name = nmo_opt_str(name_val);
+
     bool has_selector_opt =
-        option_selector->has_id ||
-        (option_selector->name != NULL && option_selector->name[0] != '\0');
+        option_selector.has_id ||
+        (option_selector.name != NULL && option_selector.name[0] != '\0');
     size_t required_pos_count =
         (size_t)positional_tail_count + 1u + (has_selector_opt ? 0u : 1u);
     if (parse_result->pos_count < required_pos_count) {
@@ -266,7 +184,7 @@ int iface_prepare_target_selector(
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    *out_selector = *option_selector;
+    *out_selector = option_selector;
     *out_value_offset = 0;
     if (!has_selector_opt) {
         out_selector->positional_id = parse_result->pos_args[0];

@@ -31,6 +31,10 @@ void nmo_cli_print_usage(FILE *out) {
     fprintf(out, "  --plugin <path>         Load extension plugin (repeatable)\n");
     fprintf(out, "  --batch                 Process multiple files for supported commands\n");
     fprintf(out, "\n");
+    fprintf(out, "Global options other than -o, --batch, -h and -V may also follow the action;\n");
+    fprintf(out, "an option the action defines itself takes precedence. The file is the last\n");
+    fprintf(out, "argument that is not an option or an option value.\n");
+    fprintf(out, "\n");
     fprintf(out, "Supported batch commands:\n");
     fprintf(out, "  file info, object list, object rename, object delete\n");
     fprintf(out, "  parameter list, behavior list, behavior stats, validate all\n");
@@ -50,6 +54,7 @@ void nmo_cli_print_usage(FILE *out) {
     fprintf(out, "  nmo object list example.nmo         List all objects\n");
     fprintf(out, "  nmo object show 42 example.nmo      Show object #42\n");
     fprintf(out, "  nmo --format json file stats x.nmo  Output as JSON\n");
+    fprintf(out, "  nmo object list x.nmo -f json       JSON, with -f after the action\n");
     fprintf(out, "  nmo repl start example.nmo          Start interactive REPL\n");
     fprintf(out, "\n");
     fprintf(out, "Run 'nmo <group> --help' for group-specific help.\n");

@@ -43,6 +43,18 @@ nmo_status_t behavior_execute_cli_action_trampoline(
     return status;
 }
 
+int script_report_unknown_command(const char *group, const char *commands,
+                                  int argc, char **argv)
+{
+    if (argc < 2 || !argv || !argv[1]) {
+        fprintf(stderr, "Error: Missing script %s command\n", group);
+    } else {
+        fprintf(stderr, "Error: Unknown script %s command '%s'\n", group, argv[1]);
+    }
+    fprintf(stderr, "Usage: nmo script %s %s ...\n", group, commands);
+    return NMO_CLI_EXIT_ARG_ERROR;
+}
+
 int behavior_execute_cli_run_write_command(
     const char *input_path,
     const char *output_path,

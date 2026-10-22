@@ -380,7 +380,8 @@ typedef struct xref_opts {
 } xref_opts_t;
 
 /* Parse the options; `file_operand` when the last argument is the file. */
-static int xref_parse(int argc, char **argv, bool file_operand, xref_opts_t *out)
+static int xref_parse(nmo_cmd_ctx_t *c, int argc, char **argv, bool file_operand,
+                      xref_opts_t *out)
 {
     static const nmo_opt_def_t opts[] = {
         {"--messages", NULL, NMO_OPT_FLAG,   "Only messages"},
@@ -392,7 +393,8 @@ static int xref_parse(int argc, char **argv, bool file_operand, xref_opts_t *out
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    int rc = nmo_cmd_ctx_parse(c, argc, argv, opts, OPT_COUNT, &r);
+    if (rc) return rc;
     if (r.pos_count != (file_operand ? 1u : 0u)) {
         fprintf(stderr, "Usage: nmo script xref [--messages] [--arrays] [--scripts] "
                         "[--name <pattern>] <file>\n");
@@ -449,18 +451,19 @@ static int xref_run(nmo_cmd_ctx_t *c, const xref_opts_t *o)
 int nmo_cmd_script_xref(int argc, char **argv, const nmo_cli_global_opts_t *global)
 {
     xref_opts_t o;
-    int rc = xref_parse(argc, argv, true, &o);
-    if (rc) return rc;
     nmo_cmd_ctx_t c;
-    rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = xref_parse(&c, argc, argv, true, &o);
     if (rc) return rc;
+    rc = nmo_cmd_ctx_open(&c);
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
     return nmo_cmd_ctx_done(&c, xref_run(&c, &o));
 }
 
 int nmo_cmd_script_xref_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 {
     xref_opts_t o;
-    int rc = xref_parse(argc, argv, false, &o);
+    int rc = xref_parse(ctx, argc, argv, false, &o);
     return rc ? rc : xref_run(ctx, &o);
 }
 
@@ -819,7 +822,8 @@ typedef struct view_opts {
 } view_opts_t;
 
 /* Parse the options; `file_operand` when the last argument is the file. */
-static int view_parse(int argc, char **argv, bool file_operand, view_opts_t *out)
+static int view_parse(nmo_cmd_ctx_t *c, int argc, char **argv, bool file_operand,
+                      view_opts_t *out)
 {
     static const nmo_opt_def_t opts[] = {
         {"--recursive", "-r", NMO_OPT_FLAG,   "Also show the graphs inside it"},
@@ -831,7 +835,8 @@ static int view_parse(int argc, char **argv, bool file_operand, view_opts_t *out
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    int rc = nmo_cmd_ctx_parse(c, argc, argv, opts, OPT_COUNT, &r);
+    if (rc) return rc;
 
     memset(out, 0, sizeof(*out));
     out->all = nmo_opt_flag(&vals[OPT_ALL]);
@@ -921,17 +926,18 @@ static int view_run(nmo_cmd_ctx_t *c, const view_opts_t *o)
 int nmo_cmd_script_view(int argc, char **argv, const nmo_cli_global_opts_t *global)
 {
     view_opts_t o;
-    int rc = view_parse(argc, argv, true, &o);
-    if (rc) return rc;
     nmo_cmd_ctx_t c;
-    rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = view_parse(&c, argc, argv, true, &o);
     if (rc) return rc;
+    rc = nmo_cmd_ctx_open(&c);
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
     return nmo_cmd_ctx_done(&c, view_run(&c, &o));
 }
 
 int nmo_cmd_script_view_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 {
     view_opts_t o;
-    int rc = view_parse(argc, argv, false, &o);
+    int rc = view_parse(ctx, argc, argv, false, &o);
     return rc ? rc : view_run(ctx, &o);
 }

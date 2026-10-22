@@ -210,13 +210,16 @@ int nmo_cmd_behavior_iface_add_comment(int argc, char **argv, const nmo_cli_glob
         {"--text",   "-t",    NMO_OPT_STRING, "Comment text"},
         {"--rect",   "-r",    NMO_OPT_STRING, "Rectangle L,T,R,B"},
         NMO_OPT_DEF_DRY_RUN,
+        IFACE_OPT_DEFS_TARGET_SELECTOR,
     };
-    enum { OPT_OUTPUT, OPT_BODY, OPT_TEXT, OPT_RECT, OPT_DRYRUN, OPT_COUNT };
-    IFACE_STRIP_TARGET_SELECTOR_ARGS();
+    enum { OPT_OUTPUT, OPT_BODY, OPT_TEXT, OPT_RECT, OPT_DRYRUN, OPT_TARGET_ID, OPT_TARGET_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos_arr);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_cli_global_opts_t local_global = *global;
+    if (nmo_cli_parse_args(argc, argv, opts, OPT_COUNT, &r, &local_global) != NMO_CLI_EXIT_SUCCESS) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
 
     const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
     bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
@@ -235,7 +238,8 @@ int nmo_cmd_behavior_iface_add_comment(int argc, char **argv, const nmo_cli_glob
     int value_offset = 0;
     const char *file_path = NULL;
     int target_rc = iface_prepare_target_selector(
-        &option_selector, &r, 0, usage, &target_selector, &value_offset, &file_path);
+        &vals[OPT_TARGET_ID], &vals[OPT_TARGET_NAME], &r, 0, usage,
+        &target_selector, &value_offset, &file_path);
     if (target_rc != NMO_CLI_EXIT_SUCCESS) {
         return target_rc;
     }
@@ -270,7 +274,7 @@ int nmo_cmd_behavior_iface_add_comment(int argc, char **argv, const nmo_cli_glob
         file_path,
         output_path,
         dry_run,
-        global,
+        &local_global,
         &spec,
         &target_selector,
         &args.target_id,
@@ -285,13 +289,16 @@ int nmo_cmd_behavior_iface_remove_comment(int argc, char **argv, const nmo_cli_g
         NMO_OPT_DEF_OUTPUT,
         {"--body",   NULL,    NMO_OPT_STRING, "Target behavior ID (default: script)"},
         NMO_OPT_DEF_DRY_RUN,
+        IFACE_OPT_DEFS_TARGET_SELECTOR,
     };
-    enum { OPT_OUTPUT, OPT_BODY, OPT_DRYRUN, OPT_COUNT };
-    IFACE_STRIP_TARGET_SELECTOR_ARGS();
+    enum { OPT_OUTPUT, OPT_BODY, OPT_DRYRUN, OPT_TARGET_ID, OPT_TARGET_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos_arr);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_cli_global_opts_t local_global = *global;
+    if (nmo_cli_parse_args(argc, argv, opts, OPT_COUNT, &r, &local_global) != NMO_CLI_EXIT_SUCCESS) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
 
     const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
     bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
@@ -302,7 +309,8 @@ int nmo_cmd_behavior_iface_remove_comment(int argc, char **argv, const nmo_cli_g
     int value_offset = 0;
     const char *file_path = NULL;
     int target_rc = iface_prepare_target_selector(
-        &option_selector, &r, 1, usage, &target_selector, &value_offset, &file_path);
+        &vals[OPT_TARGET_ID], &vals[OPT_TARGET_NAME], &r, 1, usage,
+        &target_selector, &value_offset, &file_path);
     if (target_rc != NMO_CLI_EXIT_SUCCESS) {
         return target_rc;
     }
@@ -332,7 +340,7 @@ int nmo_cmd_behavior_iface_remove_comment(int argc, char **argv, const nmo_cli_g
         file_path,
         output_path,
         dry_run,
-        global,
+        &local_global,
         &spec,
         &target_selector,
         &args.target_id,
@@ -352,13 +360,16 @@ int nmo_cmd_behavior_iface_set_comment_text(int argc, char **argv, const nmo_cli
         {"--body",   NULL,  NMO_OPT_STRING, "Target behavior ID (default: script)"},
         {"--text",   "-t",  NMO_OPT_STRING, "New comment text"},
         NMO_OPT_DEF_DRY_RUN,
+        IFACE_OPT_DEFS_TARGET_SELECTOR,
     };
-    enum { OPT_OUTPUT, OPT_BODY, OPT_TEXT, OPT_DRYRUN, OPT_COUNT };
-    IFACE_STRIP_TARGET_SELECTOR_ARGS();
+    enum { OPT_OUTPUT, OPT_BODY, OPT_TEXT, OPT_DRYRUN, OPT_TARGET_ID, OPT_TARGET_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos_arr);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_cli_global_opts_t local_global = *global;
+    if (nmo_cli_parse_args(argc, argv, opts, OPT_COUNT, &r, &local_global) != NMO_CLI_EXIT_SUCCESS) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
 
     const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
     bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
@@ -373,7 +384,8 @@ int nmo_cmd_behavior_iface_set_comment_text(int argc, char **argv, const nmo_cli
     int value_offset = 0;
     const char *file_path = NULL;
     int target_rc = iface_prepare_target_selector(
-        &option_selector, &r, 1, usage, &target_selector, &value_offset, &file_path);
+        &vals[OPT_TARGET_ID], &vals[OPT_TARGET_NAME], &r, 1, usage,
+        &target_selector, &value_offset, &file_path);
     if (target_rc != NMO_CLI_EXIT_SUCCESS) {
         return target_rc;
     }
@@ -403,7 +415,7 @@ int nmo_cmd_behavior_iface_set_comment_text(int argc, char **argv, const nmo_cli
         file_path,
         output_path,
         dry_run,
-        global,
+        &local_global,
         &spec,
         &target_selector,
         &args.target_id,
@@ -419,13 +431,16 @@ int nmo_cmd_behavior_iface_move_comment(int argc, char **argv, const nmo_cli_glo
         {"--body",   NULL,  NMO_OPT_STRING, "Target behavior ID (default: script)"},
         {"--rect",   "-r",  NMO_OPT_STRING, "Rectangle L,T,R,B"},
         NMO_OPT_DEF_DRY_RUN,
+        IFACE_OPT_DEFS_TARGET_SELECTOR,
     };
-    enum { OPT_OUTPUT, OPT_BODY, OPT_RECT, OPT_DRYRUN, OPT_COUNT };
-    IFACE_STRIP_TARGET_SELECTOR_ARGS();
+    enum { OPT_OUTPUT, OPT_BODY, OPT_RECT, OPT_DRYRUN, OPT_TARGET_ID, OPT_TARGET_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos_arr);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_cli_global_opts_t local_global = *global;
+    if (nmo_cli_parse_args(argc, argv, opts, OPT_COUNT, &r, &local_global) != NMO_CLI_EXIT_SUCCESS) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
 
     const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
     bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
@@ -440,7 +455,8 @@ int nmo_cmd_behavior_iface_move_comment(int argc, char **argv, const nmo_cli_glo
     int value_offset = 0;
     const char *file_path = NULL;
     int target_rc = iface_prepare_target_selector(
-        &option_selector, &r, 1, usage, &target_selector, &value_offset, &file_path);
+        &vals[OPT_TARGET_ID], &vals[OPT_TARGET_NAME], &r, 1, usage,
+        &target_selector, &value_offset, &file_path);
     if (target_rc != NMO_CLI_EXIT_SUCCESS) {
         return target_rc;
     }
@@ -478,7 +494,7 @@ int nmo_cmd_behavior_iface_move_comment(int argc, char **argv, const nmo_cli_glo
         file_path,
         output_path,
         dry_run,
-        global,
+        &local_global,
         &spec,
         &target_selector,
         &args.target_id,
@@ -494,13 +510,16 @@ int nmo_cmd_behavior_iface_set_comment_style(int argc, char **argv, const nmo_cl
         {"--body",   NULL,    NMO_OPT_STRING, "Target behavior ID (default: script)"},
         {"--style",  "-s",    NMO_OPT_STRING, "Style flags value"},
         NMO_OPT_DEF_DRY_RUN,
+        IFACE_OPT_DEFS_TARGET_SELECTOR,
     };
-    enum { OPT_OUTPUT, OPT_BODY, OPT_STYLE, OPT_DRYRUN, OPT_COUNT };
-    IFACE_STRIP_TARGET_SELECTOR_ARGS();
+    enum { OPT_OUTPUT, OPT_BODY, OPT_STYLE, OPT_DRYRUN, OPT_TARGET_ID, OPT_TARGET_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos_arr);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_cli_global_opts_t local_global = *global;
+    if (nmo_cli_parse_args(argc, argv, opts, OPT_COUNT, &r, &local_global) != NMO_CLI_EXIT_SUCCESS) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
 
     const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
     bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
@@ -515,7 +534,8 @@ int nmo_cmd_behavior_iface_set_comment_style(int argc, char **argv, const nmo_cl
     int value_offset = 0;
     const char *file_path = NULL;
     int target_rc = iface_prepare_target_selector(
-        &option_selector, &r, 1, usage, &target_selector, &value_offset, &file_path);
+        &vals[OPT_TARGET_ID], &vals[OPT_TARGET_NAME], &r, 1, usage,
+        &target_selector, &value_offset, &file_path);
     if (target_rc != NMO_CLI_EXIT_SUCCESS) {
         return target_rc;
     }
@@ -550,7 +570,7 @@ int nmo_cmd_behavior_iface_set_comment_style(int argc, char **argv, const nmo_cl
         file_path,
         output_path,
         dry_run,
-        global,
+        &local_global,
         &spec,
         &target_selector,
         &args.target_id,

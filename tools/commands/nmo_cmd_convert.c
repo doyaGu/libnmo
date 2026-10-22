@@ -229,7 +229,10 @@ int nmo_cmd_convert_copy(int argc, char **argv, const nmo_cli_global_opts_t *glo
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = nmo_cmd_ctx_parse(&c, argc, argv, opts, OPT_COUNT, &r);
+    if (rc) return rc;
 
     const char *output_path   = nmo_opt_str(&vals[OPT_OUTPUT]);
     const char *compress_str  = nmo_opt_str(&vals[OPT_COMPRESS]);
@@ -240,13 +243,12 @@ int nmo_cmd_convert_copy(int argc, char **argv, const nmo_cli_global_opts_t *glo
     bool fast_save            = nmo_opt_flag(&vals[OPT_FAST_SAVE]);
 
     if (!output_path) {
-        nmo_cli_print_missing_output(global, "Output file not specified (use -o or --output)");
+        nmo_cli_print_missing_output(c.global, "Output file not specified (use -o or --output)");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    rc = nmo_cmd_ctx_open(&c);
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     /* Build save options */
     nmo_save_options_t save_opts = nmo_tool_owner_save_options_default();
@@ -328,14 +330,16 @@ int nmo_cmd_convert_version(int argc, char **argv, const nmo_cli_global_opts_t *
     nmo_opt_val_t vals[OPT_VERSION_COUNT];
     const char *pos[8];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_VERSION_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = nmo_cmd_ctx_parse(&c, argc, argv, opts, OPT_VERSION_COUNT, &r);
+    if (rc) return rc;
 
     const char *output_path = nmo_opt_str(&vals[OPT_VERSION_OUTPUT]);
     bool fast_save = nmo_opt_flag(&vals[OPT_VERSION_FAST_SAVE]);
 
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    rc = nmo_cmd_ctx_open(&c);
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     /* Get file info */
     nmo_file_info_t info = nmo_document_get_file_info(c.document);
@@ -451,7 +455,10 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = nmo_cmd_ctx_parse(&c, argc, argv, opts, OPT_COUNT, &r);
+    if (rc) return rc;
 
     const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
     const char *class_name  = nmo_opt_str(&vals[OPT_CLASS]);
@@ -460,7 +467,7 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
     bool fast_save          = nmo_opt_flag(&vals[OPT_FAST_SAVE]);
 
     if (!output_path && !dry_run) {
-        nmo_cli_print_missing_output(global, "Output file not specified (use -o or --output)");
+        nmo_cli_print_missing_output(c.global, "Output file not specified (use -o or --output)");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
@@ -469,9 +476,8 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    rc = nmo_cmd_ctx_open(&c);
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     nmo_object_query_t class_query = {0};
     const nmo_object_query_t *class_filter = NULL;
@@ -650,33 +656,40 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
 
 int nmo_cmd_convert_merge(int argc, char **argv, const nmo_cli_global_opts_t *global)
 {
-    /* Find input files (need two positional args) */
-    const char *file_args[2] = {NULL, NULL};
-    const char *const value_opts[] = {"-o", "--output"};
-    size_t file_count = nmo_tool_find_file_args_ex(
-        argc, argv, file_args, 2, value_opts, 2);
+    static const nmo_opt_def_t opts[] = {
+        NMO_OPT_DEF_OUTPUT,
+        NMO_OPT_DEF_FAST_SAVE,
+    };
+    enum { OPT_OUTPUT, OPT_FAST_SAVE, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[8];
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
 
-    if (file_count < 2) {
+    /* Begin without a file since we manage two documents manually */
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_begin_no_file(&c, global);
+    int rc = nmo_cmd_ctx_parse(&c, argc, argv, opts, OPT_COUNT, &r);
+    if (rc) return rc;
+
+    /* Need two positional args */
+    if (r.pos_count < 2) {
         fprintf(stderr, "Error: Need two input files (source and target)\n");
         fprintf(stderr, "Usage: nmo convert merge [options] -o <output> <source> <target>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    const char *source_path = file_args[0];
-    const char *target_path = file_args[1];
+    const char *source_path = r.pos_args[0];
+    const char *target_path = r.pos_args[1];
 
-    /* Parse options */
-    const char *output_path = nmo_tool_find_opt_value(argc, argv, "-o", "--output");
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
     if (!output_path) {
-        nmo_cli_print_missing_output(global, "Output file not specified (use -o or --output)");
+        nmo_cli_print_missing_output(c.global, "Output file not specified (use -o or --output)");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
-    bool fast_save = nmo_tool_has_flag(argc, argv, "--fast-save", NULL);
+    bool fast_save = nmo_opt_flag(&vals[OPT_FAST_SAVE]);
 
-    /* Use init_no_file since we manage two documents manually */
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init_no_file(&c, global);
-    if (rc) return rc;
+    rc = nmo_cmd_ctx_open(&c);
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     /* Load source file */
     nmo_context_t *src_ctx = NULL;
@@ -835,7 +848,10 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = nmo_cmd_ctx_parse(&c, argc, argv, opts, OPT_COUNT, &r);
+    if (rc) return rc;
 
     const char *output_path      = nmo_opt_str(&vals[OPT_OUTPUT]);
     const char *class_filter_str = nmo_opt_str(&vals[OPT_CLASS]);
@@ -847,7 +863,7 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
     bool fast_save               = nmo_opt_flag(&vals[OPT_FAST_SAVE]);
 
     if (!dry_run && !output_path) {
-        nmo_cli_print_missing_output(global, "-o/--output is required (or use --dry-run)");
+        nmo_cli_print_missing_output(c.global, "-o/--output is required (or use --dry-run)");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
@@ -865,9 +881,8 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
         }
     }
 
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    rc = nmo_cmd_ctx_open(&c);
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     /* Build query */
     nmo_object_query_t query = {0};

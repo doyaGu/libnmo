@@ -31,7 +31,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-static bool parse_graph_boundary_args(int argc,
+static bool parse_graph_boundary_args(nmo_cmd_ctx_t *c,
+                                      int argc,
                                       char **argv,
                                       bool expect_file_operand,
                                       nmo_core_object_selector_t *out_selector,
@@ -47,7 +48,7 @@ static bool parse_graph_boundary_args(int argc,
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t result = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &result) < 0) {
+    if (nmo_cmd_ctx_parse(c, argc, argv, opts, OPT_COUNT, &result) != NMO_CLI_EXIT_SUCCESS) {
         return false;
     }
 
@@ -327,7 +328,9 @@ int nmo_cmd_behavior_graph_boundary(int argc,
     const char *usage =
         "nmo behavior graph-boundary [--depth N] [--id <id> | --name <name> | <id>] <file>";
 
-    if (!parse_graph_boundary_args(argc, argv, true, &selector,
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_begin(&c, global);
+    if (!parse_graph_boundary_args(&c, argc, argv, true, &selector,
                                    &file_path, &depth)) {
         fprintf(stderr, "Error: Missing or invalid arguments\n");
         fprintf(stderr, "Usage: %s\n", usage);
@@ -335,10 +338,9 @@ int nmo_cmd_behavior_graph_boundary(int argc,
     }
     (void)file_path;
 
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    int rc = nmo_cmd_ctx_open(&c);
     if (rc) {
-        return rc;
+        return nmo_cmd_ctx_done(&c, rc);
     }
 
     return graph_boundary_run(&c, &selector, depth, true, usage);
@@ -353,7 +355,7 @@ int nmo_cmd_behavior_graph_boundary_in_session(nmo_cmd_ctx_t *ctx,
     const char *usage =
         "behavior graph-boundary [--depth N] [--id <id> | --name <name> | <id>]";
 
-    if (!parse_graph_boundary_args(argc, argv, false, &selector,
+    if (!parse_graph_boundary_args(ctx, argc, argv, false, &selector,
                                    &file_path, &depth)) {
         fprintf(stderr, "Error: Missing or invalid arguments\n");
         fprintf(stderr, "Usage: %s\n", usage);
@@ -1275,7 +1277,8 @@ static bool parse_fold_interface_mode(
     return false;
 }
 
-static bool parse_fold_candidates_args(int argc,
+static bool parse_fold_candidates_args(nmo_cmd_ctx_t *c,
+                                       int argc,
                                        char **argv,
                                        bool expect_file_operand,
                                        fold_candidates_args_t *out_args,
@@ -1289,7 +1292,7 @@ static bool parse_fold_candidates_args(int argc,
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t result = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &result) < 0) {
+    if (nmo_cmd_ctx_parse(c, argc, argv, opts, OPT_COUNT, &result) != NMO_CLI_EXIT_SUCCESS) {
         return false;
     }
 
@@ -1531,16 +1534,17 @@ int nmo_cmd_behavior_fold_candidates(int argc,
     const char *usage =
         "nmo behavior fold-candidates --parent <id> <file>";
 
-    if (!parse_fold_candidates_args(argc, argv, true, &args, &file_path)) {
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_begin(&c, global);
+    if (!parse_fold_candidates_args(&c, argc, argv, true, &args, &file_path)) {
         fprintf(stderr, "Error: Missing or invalid arguments\n");
         fprintf(stderr, "Usage: %s\n", usage);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    int rc = nmo_cmd_ctx_open(&c);
     if (rc) {
-        return rc;
+        return nmo_cmd_ctx_done(&c, rc);
     }
     (void)file_path;
     return fold_candidates_run(&c, &args, true, usage);
@@ -1554,7 +1558,7 @@ int nmo_cmd_behavior_fold_candidates_in_session(nmo_cmd_ctx_t *ctx,
     const char *usage =
         "behavior fold-candidates --parent <id>";
 
-    if (!parse_fold_candidates_args(argc, argv, false, &args, &file_path)) {
+    if (!parse_fold_candidates_args(ctx, argc, argv, false, &args, &file_path)) {
         fprintf(stderr, "Error: Missing or invalid arguments\n");
         fprintf(stderr, "Usage: %s\n", usage);
         return NMO_CLI_EXIT_ARG_ERROR;
@@ -1565,6 +1569,7 @@ int nmo_cmd_behavior_fold_candidates_in_session(nmo_cmd_ctx_t *ctx,
 
 static bool parse_fold_args(int argc,
                             char **argv,
+                            nmo_cli_global_opts_t *global,
                             fold_args_t *out_args,
                             const char **out_file) {
     static const nmo_opt_def_t opts[] = {
@@ -1607,7 +1612,7 @@ static bool parse_fold_args(int argc,
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) {
+    if (nmo_cli_parse_args(argc, argv, opts, OPT_COUNT, &r, global) != NMO_CLI_EXIT_SUCCESS) {
         return false;
     }
     if (!vals[OPT_PARENT].present || !vals[OPT_NODES].present ||
@@ -1893,7 +1898,8 @@ int nmo_cmd_behavior_fold(int argc,
         "nmo behavior fold --parent <id> --nodes <id,...> "
         "--bb-guid <guid> --name <name> [--dry-run] <file> -o <output>";
 
-    if (!parse_fold_args(argc, argv, &args, &file_path)) {
+    nmo_cli_global_opts_t local_global = *global;
+    if (!parse_fold_args(argc, argv, &local_global, &args, &file_path)) {
         fprintf(stderr, "Error: Missing or invalid arguments\n");
         fprintf(stderr, "Usage: %s\n", usage);
         return NMO_CLI_EXIT_ARG_ERROR;
@@ -1903,7 +1909,7 @@ int nmo_cmd_behavior_fold(int argc,
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init_with_file(&c, file_path, global);
+    int rc = nmo_cmd_ctx_init_with_file(&c, file_path, &local_global);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         return rc;
     }
@@ -2167,8 +2173,10 @@ int nmo_cmd_behavior_replace_bb(int argc,
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) {
-        return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_cli_global_opts_t local_global = *global;
+    int rc = nmo_cli_parse_args(argc, argv, opts, OPT_COUNT, &r, &local_global);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
     }
     if (r.pos_count < 2) {
         fprintf(stderr,
@@ -2219,7 +2227,7 @@ int nmo_cmd_behavior_replace_bb(int argc,
         file_path,
         output_path,
         dry_run,
-        global,
+        &local_global,
         &spec,
         replace_bb_mutate,
         replace_bb_report,

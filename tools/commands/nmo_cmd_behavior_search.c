@@ -239,7 +239,10 @@ int nmo_cmd_behavior_find(int argc, char **argv, const nmo_cli_global_opts_t *gl
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = nmo_cmd_ctx_parse(&c, argc, argv, opts, OPT_COUNT, &r);
+    if (rc) return rc;
 
     const char *name_pat  = nmo_opt_str(&vals[OPT_NAME]);
     /* "find <pattern> <file>": the pattern is a name pattern */
@@ -256,9 +259,8 @@ int nmo_cmd_behavior_find(int argc, char **argv, const nmo_cli_global_opts_t *gl
     bool only_scripts     = nmo_opt_flag(&vals[OPT_SCRIPTS]);
     bool only_bbs         = nmo_opt_flag(&vals[OPT_BBS]);
 
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    rc = nmo_cmd_ctx_open(&c);
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     nmo_object_repository_t *repo = nmo_tool_owner_repository(c.workspace);
 
@@ -661,7 +663,10 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = nmo_cmd_ctx_parse(&c, argc, argv, opts, OPT_COUNT, &r);
+    if (rc) return rc;
 
     const char *from_name = nmo_opt_str(&vals[OPT_FROM]);
     uint32_t max_trace_depth = nmo_opt_uint_or(&vals[OPT_DEPTH], 64);
@@ -673,9 +678,8 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    rc = nmo_cmd_ctx_open(&c);
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     nmo_core_object_selector_t selector = {
         .has_id = vals[OPT_ID].present,

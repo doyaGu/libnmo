@@ -199,10 +199,11 @@ static int scene_list_run(nmo_cmd_ctx_t *c) {
 
 int nmo_cmd_scene_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
-
-    rc = scene_list_run(&c);
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = nmo_cmd_ctx_open_without_args(&c, argc, argv, "nmo scene list <file>");
+    if (rc == NMO_CLI_EXIT_SUCCESS) {
+        rc = scene_list_run(&c);
+    }
     return nmo_cmd_ctx_done(&c, rc);
 }
 
@@ -214,7 +215,8 @@ typedef struct scene_show_args {
     nmo_core_object_selector_t selector;
 } scene_show_args_t;
 
-static int scene_show_parse(int argc,
+static int scene_show_parse(nmo_cmd_ctx_t *c,
+                            int argc,
                             char **argv,
                             bool in_session,
                             scene_show_args_t *args) {
@@ -226,7 +228,8 @@ static int scene_show_parse(int argc,
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    int rc = nmo_cmd_ctx_parse(c, argc, argv, opts, OPT_COUNT, &r);
+    if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
 
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
     static const nmo_class_id_t scene_classes[] = {
@@ -383,15 +386,16 @@ static int scene_show_run(nmo_cmd_ctx_t *c, const scene_show_args_t *args) {
 }
 
 int nmo_cmd_scene_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    scene_show_args_t args;
-    int rc = scene_show_parse(argc, argv, false, &args);
-    if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
-
     nmo_cmd_ctx_t c;
-    rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
-
-    rc = scene_show_run(&c, &args);
+    nmo_cmd_ctx_begin(&c, global);
+    scene_show_args_t args;
+    int rc = scene_show_parse(&c, argc, argv, false, &args);
+    if (rc == NMO_CLI_EXIT_SUCCESS) {
+        rc = nmo_cmd_ctx_open(&c);
+    }
+    if (rc == NMO_CLI_EXIT_SUCCESS) {
+        rc = scene_show_run(&c, &args);
+    }
     return nmo_cmd_ctx_done(&c, rc);
 }
 
@@ -407,7 +411,7 @@ int nmo_cmd_scene_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
     }
     if (strcmp(argv[0], "show") == 0 || strcmp(argv[0], "s") == 0) {
         scene_show_args_t args;
-        int rc = scene_show_parse(argc, argv, true, &args);
+        int rc = scene_show_parse(ctx, argc, argv, true, &args);
         if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
         return scene_show_run(ctx, &args);
     }
@@ -489,10 +493,11 @@ int nmo_cmd_scene_set(int argc, char **argv, const nmo_cli_global_opts_t *global
     enum { OPT_OUTPUT, OPT_BG, OPT_AMBIENT, OPT_FOG, OPT_CAMERA,
            OPT_DRYRUN, OPT_ID, OPT_NAME, OPT_COUNT };
 
+    nmo_cli_global_opts_t local_global = *global;
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
+    if (nmo_cli_parse_args(argc, argv, opts, OPT_COUNT, &r, &local_global) != NMO_CLI_EXIT_SUCCESS)
         return NMO_CLI_EXIT_ARG_ERROR;
 
     const char *output = nmo_opt_str(&vals[OPT_OUTPUT]);
@@ -554,7 +559,7 @@ int nmo_cmd_scene_set(int argc, char **argv, const nmo_cli_global_opts_t *global
         file_path,
         output,
         dry_run,
-        global,
+        &local_global,
         &spec,
         scene_set_mutate,
         scene_set_report,

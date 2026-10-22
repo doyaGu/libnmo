@@ -896,8 +896,13 @@ TEST(cli_write, object_export_import_snapshot_round_trips_mesh_and_matrix) {
     ASSERT_FLOAT_EQ(0.00003596f, roundtrip_entity->world_matrix[14], 0.001f);
     write_probe_close(&entity_probe);
 
+    assert_cli_success(
+        "object import \"test_cli_write_tmp/object_entity_snapshot.json\" "
+        "\"" NMO_TEST_DATA_FILE("Ballance/Camera.nmo") "\" --dry-run",
+        "Fields written");
+
     assert_cli_failure(
-        "object import-json \"test_cli_write_tmp/object_mesh_snapshot.json\" "
+        "object import-json\"test_cli_write_tmp/object_mesh_snapshot.json\" "
         "\"" NMO_TEST_DATA_FILE("Ballance/P_Box.nmo") "\" --dry-run",
         "Unknown action");
 }

@@ -149,26 +149,9 @@ static int nmo_cmd_file_info_in_session(nmo_cmd_ctx_t *c, int argc, char **argv)
 int nmo_cmd_file_info(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     /* Batch mode: every positional is a file */
     if (global->batch_mode) {
-        nmo_cmd_ctx_t c;
-        nmo_cmd_ctx_begin_no_file(&c, global);
-        const char **paths = (const char **)malloc((size_t)argc * sizeof(const char *));
-        if (!paths) {
-            fprintf(stderr, "Error: Out of memory\n");
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-        nmo_opt_result_t r = { .pos_args = paths, .pos_capacity = (size_t)argc };
-        int rc = nmo_cmd_ctx_parse(&c, argc, argv, NULL, 0, &r);
-        if (rc == NMO_CLI_EXIT_SUCCESS && r.pos_count == 0) {
-            fprintf(stderr, "Error: No files specified\n");
-            fprintf(stderr, "Usage: nmo --batch file info <file1> <file2> ...\n");
-            rc = NMO_CLI_EXIT_ARG_ERROR;
-        }
-        if (rc == NMO_CLI_EXIT_SUCCESS) {
-            rc = nmo_tool_batch_run(paths, r.pos_count, c.global, "file.info",
-                                    file_info_single, NULL);
-        }
-        free(paths);
-        return nmo_cmd_ctx_done(&c, rc);
+        return nmo_cmd_batch_run_files(argc, argv, global,
+                                       "nmo --batch file info <file1> <file2> ...",
+                                       "file.info", file_info_single, NULL);
     }
 
     nmo_load_options_t opts = nmo_load_options_default();

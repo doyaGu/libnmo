@@ -12,9 +12,19 @@
 #include <string.h>
 
 int nmo_cmd_completion_print(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    (void)global;
-
     if (argc < 1 || !argv || !argv[0]) {
+        fprintf(stderr, "Usage: nmo completion <bash|fish|zsh|powershell|ps1>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    nmo_cli_global_opts_t local_global = *global;
+    const char *pos[4];
+    nmo_opt_result_t r = NMO_OPT_RESULT(NULL, pos);
+    if (nmo_cli_parse_args(argc, argv, NULL, 0, &r, &local_global) != NMO_CLI_EXIT_SUCCESS) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (r.pos_count > 0) {
+        fprintf(stderr, "Error: Unexpected argument '%s'\n", r.pos_args[0]);
         fprintf(stderr, "Usage: nmo completion <bash|fish|zsh|powershell|ps1>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }

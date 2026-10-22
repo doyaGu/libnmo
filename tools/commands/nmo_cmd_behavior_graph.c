@@ -41,7 +41,8 @@
 typedef nmo_behavior_graph_node_t nmo_cli_graph_node_t;
 typedef nmo_behavior_graph_edge_t nmo_cli_graph_edge_t;
 
-static bool parse_behavior_graph_args(int argc, char **argv,
+static bool parse_behavior_graph_args(nmo_cmd_ctx_t *c,
+                                      int argc, char **argv,
                                       bool expect_file_operand,
                                       nmo_core_object_selector_t *out_selector,
                                       const char **out_file,
@@ -63,7 +64,7 @@ static bool parse_behavior_graph_args(int argc, char **argv,
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return false;
+    if (nmo_cmd_ctx_parse(c, argc, argv, opts, OPT_COUNT, &r) != NMO_CLI_EXIT_SUCCESS) return false;
 
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
     const char *positional_id = NULL;
@@ -1015,16 +1016,17 @@ int nmo_cmd_behavior_graph(int argc, char **argv, const nmo_cli_global_opts_t *g
     uint32_t depth = UINT32_MAX;
     const char *usage = "nmo behavior graph [--depth N] [--dot] [--id <id> | --name <name> | <id>] <file>";
 
-    if (!parse_behavior_graph_args(argc, argv, true, &selector, &file_path,
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_begin(&c, global);
+    if (!parse_behavior_graph_args(&c, argc, argv, true, &selector, &file_path,
                                    &emit_dot, &max_nodes, &max_edges, &depth)) {
         fprintf(stderr, "Error: Missing or invalid arguments\n");
         fprintf(stderr, "Usage: %s\n", usage);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    int rc = nmo_cmd_ctx_open(&c);
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     return behavior_graph_run(&c, &selector, emit_dot, max_nodes, max_edges,
                               depth, true, usage);
@@ -1039,7 +1041,7 @@ int nmo_cmd_behavior_graph_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
     uint32_t depth = UINT32_MAX;
     const char *usage = "behavior graph [--depth N] [--dot] [--id <id> | --name <name> | <id>]";
 
-    if (!parse_behavior_graph_args(argc, argv, false, &selector, &file_path,
+    if (!parse_behavior_graph_args(ctx, argc, argv, false, &selector, &file_path,
                                    &emit_dot, &max_nodes, &max_edges, &depth)) {
         fprintf(stderr, "Error: Missing or invalid arguments\n");
         fprintf(stderr, "Usage: %s\n", usage);
@@ -1550,7 +1552,10 @@ int nmo_cmd_behavior_dump(int argc, char **argv, const nmo_cli_global_opts_t *gl
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = nmo_cmd_ctx_parse(&c, argc, argv, opts, OPT_COUNT, &r);
+    if (rc) return rc;
 
     bool dump_all = nmo_opt_flag(&vals[OPT_ALL]);
     bool include_flows = nmo_opt_flag(&vals[OPT_FLOWS]);
@@ -1574,9 +1579,8 @@ int nmo_cmd_behavior_dump(int argc, char **argv, const nmo_cli_global_opts_t *gl
         };
     }
 
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    rc = nmo_cmd_ctx_open(&c);
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     nmo_object_repository_t *repo = nmo_tool_owner_repository(c.workspace);
     nmo_cmd_behavior_flow_ctx_t flow;

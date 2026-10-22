@@ -3,7 +3,8 @@
  * @brief Command context framework - eliminates per-command boilerplate
  *
  * Every CLI command follows the same lifecycle:
- *   1. Find file argument
+ *   1. Parse argv against the command's option table (the file is the
+ *      last positional argument)
  *   2. Open document/workspace
  *   3. Open output stream
  *   4. Determine colorize / JSON mode
@@ -11,8 +12,8 @@
  *   6. Close output stream
  *   7. Close document/workspace
  *
- * nmo_cmd_ctx_t wraps steps 1-4 into nmo_cmd_ctx_init() and
- * steps 6-7 into nmo_cmd_ctx_done().
+ * nmo_cmd_ctx_begin() + nmo_cmd_ctx_parse() cover step 1,
+ * nmo_cmd_ctx_open() steps 2-4, and nmo_cmd_ctx_done() steps 6-7.
  */
 
 #ifndef NMO_CMD_CTX_H
@@ -22,6 +23,7 @@
 #include "nmo_cli_json.h"
 #include "nmo_cli_record.h"
 #include "nmo_opt.h"
+#include "nmo_tool_common.h"
 #include "nmo_tool_owner.h"
 #include "nmo_tool_session.h"
 
@@ -76,8 +78,7 @@ typedef struct nmo_cmd_in_session_result {
 } nmo_cmd_in_session_result_t;
 
 typedef enum nmo_cmd_source_kind {
-    NMO_CMD_SOURCE_FILE_OPERAND = 0,
-    NMO_CMD_SOURCE_EXPLICIT_FILE,
+    NMO_CMD_SOURCE_EXPLICIT_FILE = 0,
     NMO_CMD_SOURCE_DOCUMENT,
     NMO_CMD_SOURCE_NO_DOCUMENT
 } nmo_cmd_source_kind_t;
@@ -155,43 +156,32 @@ int nmo_cmd_ctx_open_without_args(nmo_cmd_ctx_t *c, int argc, char **argv,
                                   const char *usage);
 
 /**
- * @brief Initialize command context: find file arg, open document/workspace, open output.
+ * @brief Run a --batch command over its positional arguments.
  *
- * The file argument is found via nmo_tool_find_file_arg_last(argc, argv).
- * On failure, prints an error to stderr and returns an NMO_CLI_EXIT_* code.
- * On success, returns 0 and the caller can use c->document, c->workspace, c->out, etc.
+ * Every positional argument is a file; global options after the action are
+ * accepted. Calls nmo_tool_batch_run() with the files.
  *
- * @param c         Context to initialize (caller-allocated, e.g. on stack)
- * @param argc      Argument count (command-local, after global option stripping)
- * @param argv      Argument vector
- * @param global    Parsed global options
- * @return 0 on success, NMO_CLI_EXIT_* on failure
+ * @param usage Printed when no file is given, e.g. "nmo --batch file info <file1> <file2> ..."
  */
-int nmo_cmd_ctx_init(nmo_cmd_ctx_t *c, int argc, char **argv,
-                     const nmo_cli_global_opts_t *global);
+int nmo_cmd_batch_run_files(int argc, char **argv,
+                            const nmo_cli_global_opts_t *global,
+                            const char *usage, const char *cmd_name,
+                            nmo_batch_handler_t handler, void *user_data);
 
 /**
  * @brief Initialize command context from an explicit frontend source.
+ *
+ * On failure, prints an error to stderr and returns an NMO_CLI_EXIT_* code.
  */
 int nmo_cmd_ctx_init_from_source(nmo_cmd_ctx_t *c,
-                                 int argc,
-                                 char **argv,
                                  const nmo_cli_global_opts_t *global,
                                  const nmo_cmd_source_t *source);
 
 /**
- * @brief Initialize command context with explicit load options.
- */
-int nmo_cmd_ctx_init_with_load_options(nmo_cmd_ctx_t *c, int argc, char **argv,
-                                       const nmo_cli_global_opts_t *global,
-                                       const nmo_load_options_t *options);
-
-/**
  * @brief Initialize context with an explicit file path.
  *
- * For write commands where -o is a separate option and the input file
- * path is known before ctx_init. Avoids the auto-detect logic of
- * nmo_cmd_ctx_init that may pick up -o's value.
+ * For commands that parsed argv themselves, such as write commands that
+ * take the input file from their positional arguments.
  */
 int nmo_cmd_ctx_init_with_file(nmo_cmd_ctx_t *c, const char *file_path,
                                const nmo_cli_global_opts_t *global);

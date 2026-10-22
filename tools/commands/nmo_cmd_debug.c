@@ -274,13 +274,77 @@ static bool debug_item_list_to_array(debug_item_list_t *list,
     return ok;
 }
 
+/* A present option's value as a u32; false (message printed) when invalid. */
+static bool debug_probe_opt_u32(const nmo_opt_val_t *val,
+                                const char *option,
+                                uint32_t *out_value,
+                                bool *out_present)
+{
+    if (!val->present) {
+        return true;
+    }
+    if (!debug_probe_parse_u32_arg(val->val.str, out_value)) {
+        fprintf(stderr, "Error: Invalid %s '%s'\n", option, val->val.str);
+        return false;
+    }
+    if (out_present != NULL) {
+        *out_present = true;
+    }
+    return true;
+}
+
 static int debug_probe_parse(int argc,
                              char **argv,
+                             nmo_cli_global_opts_t *global,
                              nmo_debug_probe_args_t *args,
                              const char **out_input_path,
                              const char **out_output_path,
                              bool *out_dry_run)
 {
+    static const nmo_opt_def_t opts[] = {
+        {"--behavior",        NULL,             NMO_OPT_STRING, "Parent behavior receiving the probe"},
+        {"--remove-link",     NULL,             NMO_OPT_STRING, "Existing link removed before inserting the probe"},
+        {"--from-io",         NULL,             NMO_OPT_STRING, "Existing source IO linked to the probe input"},
+        {"--to-io",           NULL,             NMO_OPT_STRING, "Existing target IO linked from the probe output"},
+        {"--message-node",    NULL,             NMO_OPT_STRING, "Message BB selected by message-logger probes"},
+        {"--write-node",      NULL,             NMO_OPT_STRING, "Explicit data write behavior for data-cell-logger"},
+        {"--write-operation", NULL,             NMO_OPT_STRING, "Explicit data write operation for data-cell-logger"},
+        {"--write-link",      NULL,             NMO_OPT_STRING, "Explicit data write control link for data-cell-logger"},
+        {"--parameter",       "--source-param", NMO_OPT_STRING, "Source parameter connected to parameter-logger text input"},
+        {"--dataarray",       "--data-array",   NMO_OPT_STRING, "Data array id tagged by data-cell-logger"},
+        {"--row",             NULL,             NMO_OPT_STRING, "Data array row tagged by data-cell-logger"},
+        {"--col",             NULL,             NMO_OPT_STRING, "Data array column tagged by data-cell-logger"},
+        {"--delay",           NULL,             NMO_OPT_STRING, "Activation delay for the first generated probe link"},
+        {"--name",            NULL,             NMO_OPT_STRING, "Probe node name (default: nmo debug probe)"},
+        {"--text",            NULL,             NMO_OPT_STRING,
+         "Probe text for 2d-text, console, debug-output, message-logger, or data-cell-logger"},
+        NMO_OPT_DEF_OUTPUT,
+        NMO_OPT_DEF_DRY_RUN,
+    };
+    enum {
+        OPT_BEHAVIOR,
+        OPT_REMOVE_LINK,
+        OPT_FROM_IO,
+        OPT_TO_IO,
+        OPT_MESSAGE_NODE,
+        OPT_WRITE_NODE,
+        OPT_WRITE_OPERATION,
+        OPT_WRITE_LINK,
+        OPT_PARAMETER,
+        OPT_DATAARRAY,
+        OPT_ROW,
+        OPT_COL,
+        OPT_DELAY,
+        OPT_NAME,
+        OPT_TEXT,
+        OPT_OUTPUT,
+        OPT_DRY_RUN,
+        OPT_COUNT
+    };
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[16];
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
+
     if (argc < 2 || argv == NULL || args == NULL || out_input_path == NULL ||
         out_output_path == NULL || out_dry_run == NULL) {
         return NMO_CLI_EXIT_ARG_ERROR;
@@ -293,129 +357,47 @@ static int debug_probe_parse(int argc,
     *out_output_path = NULL;
     *out_dry_run = false;
 
-    for (int i = 2; i < argc; ++i) {
-        if (strcmp(argv[i], "--behavior") == 0 && i + 1 < argc) {
-            uint32_t parsed = 0u;
-            const char *value = argv[++i];
-            if (!debug_probe_parse_u32_arg(value, &parsed)) {
-                fprintf(stderr, "Error: Invalid --behavior '%s'\n", value);
-                return NMO_CLI_EXIT_ARG_ERROR;
-            }
-            args->behavior_id = (nmo_object_id_t)parsed;
-        } else if (strcmp(argv[i], "--remove-link") == 0 && i + 1 < argc) {
-            uint32_t parsed = 0u;
-            const char *value = argv[++i];
-            if (!debug_probe_parse_u32_arg(value, &parsed)) {
-                fprintf(stderr, "Error: Invalid --remove-link '%s'\n", value);
-                return NMO_CLI_EXIT_ARG_ERROR;
-            }
-            args->remove_link_id = (nmo_object_id_t)parsed;
-        } else if (strcmp(argv[i], "--from-io") == 0 && i + 1 < argc) {
-            uint32_t parsed = 0u;
-            const char *value = argv[++i];
-            if (!debug_probe_parse_u32_arg(value, &parsed)) {
-                fprintf(stderr, "Error: Invalid --from-io '%s'\n", value);
-                return NMO_CLI_EXIT_ARG_ERROR;
-            }
-            args->from_io_id = (nmo_object_id_t)parsed;
-        } else if (strcmp(argv[i], "--to-io") == 0 && i + 1 < argc) {
-            uint32_t parsed = 0u;
-            const char *value = argv[++i];
-            if (!debug_probe_parse_u32_arg(value, &parsed)) {
-                fprintf(stderr, "Error: Invalid --to-io '%s'\n", value);
-                return NMO_CLI_EXIT_ARG_ERROR;
-            }
-            args->to_io_id = (nmo_object_id_t)parsed;
-        } else if (strcmp(argv[i], "--message-node") == 0 && i + 1 < argc) {
-            uint32_t parsed = 0u;
-            const char *value = argv[++i];
-            if (!debug_probe_parse_u32_arg(value, &parsed)) {
-                fprintf(stderr, "Error: Invalid --message-node '%s'\n", value);
-                return NMO_CLI_EXIT_ARG_ERROR;
-            }
-            args->message_node_id = (nmo_object_id_t)parsed;
-        } else if (strcmp(argv[i], "--write-node") == 0 && i + 1 < argc) {
-            uint32_t parsed = 0u;
-            const char *value = argv[++i];
-            if (!debug_probe_parse_u32_arg(value, &parsed)) {
-                fprintf(stderr, "Error: Invalid --write-node '%s'\n", value);
-                return NMO_CLI_EXIT_ARG_ERROR;
-            }
-            args->write_node_id = (nmo_object_id_t)parsed;
-        } else if (strcmp(argv[i], "--write-operation") == 0 && i + 1 < argc) {
-            uint32_t parsed = 0u;
-            const char *value = argv[++i];
-            if (!debug_probe_parse_u32_arg(value, &parsed)) {
-                fprintf(stderr, "Error: Invalid --write-operation '%s'\n", value);
-                return NMO_CLI_EXIT_ARG_ERROR;
-            }
-            args->write_operation_id = (nmo_object_id_t)parsed;
-        } else if (strcmp(argv[i], "--write-link") == 0 && i + 1 < argc) {
-            uint32_t parsed = 0u;
-            const char *value = argv[++i];
-            if (!debug_probe_parse_u32_arg(value, &parsed)) {
-                fprintf(stderr, "Error: Invalid --write-link '%s'\n", value);
-                return NMO_CLI_EXIT_ARG_ERROR;
-            }
-            args->write_link_id = (nmo_object_id_t)parsed;
-        } else if ((strcmp(argv[i], "--parameter") == 0 ||
-                    strcmp(argv[i], "--source-param") == 0) &&
-                   i + 1 < argc) {
-            uint32_t parsed = 0u;
-            const char *value = argv[++i];
-            if (!debug_probe_parse_u32_arg(value, &parsed)) {
-                fprintf(stderr, "Error: Invalid --parameter '%s'\n", value);
-                return NMO_CLI_EXIT_ARG_ERROR;
-            }
-            args->parameter_id = (nmo_object_id_t)parsed;
-        } else if ((strcmp(argv[i], "--dataarray") == 0 ||
-                    strcmp(argv[i], "--data-array") == 0) &&
-                   i + 1 < argc) {
-            uint32_t parsed = 0u;
-            const char *value = argv[++i];
-            if (!debug_probe_parse_u32_arg(value, &parsed)) {
-                fprintf(stderr, "Error: Invalid --dataarray '%s'\n", value);
-                return NMO_CLI_EXIT_ARG_ERROR;
-            }
-            args->dataarray_id = (nmo_object_id_t)parsed;
-        } else if (strcmp(argv[i], "--row") == 0 && i + 1 < argc) {
-            const char *value = argv[++i];
-            if (!debug_probe_parse_u32_arg(value, &args->data_row)) {
-                fprintf(stderr, "Error: Invalid --row '%s'\n", value);
-                return NMO_CLI_EXIT_ARG_ERROR;
-            }
-            args->has_data_row = true;
-        } else if (strcmp(argv[i], "--col") == 0 && i + 1 < argc) {
-            const char *value = argv[++i];
-            if (!debug_probe_parse_u32_arg(value, &args->data_col)) {
-                fprintf(stderr, "Error: Invalid --col '%s'\n", value);
-                return NMO_CLI_EXIT_ARG_ERROR;
-            }
-            args->has_data_col = true;
-        } else if (strcmp(argv[i], "--delay") == 0 && i + 1 < argc) {
-            const char *value = argv[++i];
-            if (!debug_probe_parse_u32_arg(value, &args->delay)) {
-                fprintf(stderr, "Error: Invalid --delay '%s'\n", value);
-                return NMO_CLI_EXIT_ARG_ERROR;
-            }
-            args->has_delay = true;
-        } else if (strcmp(argv[i], "--name") == 0 && i + 1 < argc) {
-            args->name = argv[++i];
-        } else if (strcmp(argv[i], "--text") == 0 && i + 1 < argc) {
-            args->text = argv[++i];
-        } else if ((strcmp(argv[i], "-o") == 0 ||
-                    strcmp(argv[i], "--output") == 0) &&
-                   i + 1 < argc) {
-            *out_output_path = argv[++i];
-        } else if (strcmp(argv[i], "--dry-run") == 0) {
-            *out_dry_run = true;
-        } else if (argv[i][0] != '-') {
-            *out_input_path = argv[i];
-        } else {
-            fprintf(stderr, "Error: Unsupported debug probe option '%s'\n",
-                    argv[i]);
-            return NMO_CLI_EXIT_ARG_ERROR;
-        }
+    /* argv[1] is the probe kind */
+    if (nmo_cli_parse_args(argc - 1, argv + 1, opts, OPT_COUNT, &r, global) !=
+        NMO_CLI_EXIT_SUCCESS) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (!debug_probe_opt_u32(&vals[OPT_BEHAVIOR], "--behavior",
+                             &args->behavior_id, NULL) ||
+        !debug_probe_opt_u32(&vals[OPT_REMOVE_LINK], "--remove-link",
+                             &args->remove_link_id, NULL) ||
+        !debug_probe_opt_u32(&vals[OPT_FROM_IO], "--from-io",
+                             &args->from_io_id, NULL) ||
+        !debug_probe_opt_u32(&vals[OPT_TO_IO], "--to-io",
+                             &args->to_io_id, NULL) ||
+        !debug_probe_opt_u32(&vals[OPT_MESSAGE_NODE], "--message-node",
+                             &args->message_node_id, NULL) ||
+        !debug_probe_opt_u32(&vals[OPT_WRITE_NODE], "--write-node",
+                             &args->write_node_id, NULL) ||
+        !debug_probe_opt_u32(&vals[OPT_WRITE_OPERATION], "--write-operation",
+                             &args->write_operation_id, NULL) ||
+        !debug_probe_opt_u32(&vals[OPT_WRITE_LINK], "--write-link",
+                             &args->write_link_id, NULL) ||
+        !debug_probe_opt_u32(&vals[OPT_PARAMETER], "--parameter",
+                             &args->parameter_id, NULL) ||
+        !debug_probe_opt_u32(&vals[OPT_DATAARRAY], "--dataarray",
+                             &args->dataarray_id, NULL) ||
+        !debug_probe_opt_u32(&vals[OPT_ROW], "--row",
+                             &args->data_row, &args->has_data_row) ||
+        !debug_probe_opt_u32(&vals[OPT_COL], "--col",
+                             &args->data_col, &args->has_data_col) ||
+        !debug_probe_opt_u32(&vals[OPT_DELAY], "--delay",
+                             &args->delay, &args->has_delay)) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (vals[OPT_NAME].present) {
+        args->name = vals[OPT_NAME].val.str;
+    }
+    args->text = nmo_opt_str(&vals[OPT_TEXT]);
+    *out_output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
+    *out_dry_run = nmo_opt_flag(&vals[OPT_DRY_RUN]);
+    if (r.pos_count > 0) {
+        *out_input_path = r.pos_args[r.pos_count - 1];
     }
 
     const debug_probe_kind_spec_t *spec = debug_probe_find_kind(args->kind);
@@ -1803,18 +1785,24 @@ static const char *debug_load_profile_name(nmo_load_profile_t profile) {
     }
 }
 
-static int debug_parse_load_profile(int argc, char **argv,
+static int debug_parse_load_profile(nmo_cmd_ctx_t *c, int argc, char **argv,
                                     nmo_load_profile_t *profile)
 {
-    *profile = NMO_LOAD_PROFILE_FULL;
-    for (int i = 0; i < argc; i++) {
-        const char *value = NULL;
-        if (strncmp(argv[i], "--profile=", 10) == 0) {
-            value = argv[i] + 10;
-        } else if (strncmp(argv[i], "--load-profile=", 15) == 0) {
-            value = argv[i] + 15;
-        }
+    static const nmo_opt_def_t opts[] = {
+        {"--profile",      NULL, NMO_OPT_STRING, "Load profile: full|metadata|header-only"},
+        {"--load-profile", NULL, NMO_OPT_STRING, "Same as --profile"},
+    };
+    nmo_opt_val_t vals[2];
+    const char *pos[16];
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
+    int rc = nmo_cmd_ctx_parse(c, argc, argv, opts, 2, &r);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
 
+    *profile = NMO_LOAD_PROFILE_FULL;
+    for (size_t i = 0; i < 2; i++) {
+        const char *value = nmo_opt_str(&vals[i]);
         if (value != NULL && !debug_load_profile_from_arg(value, profile)) {
             fprintf(stderr, "Error: Invalid load profile '%s'\n", value);
             return NMO_CLI_EXIT_ARG_ERROR;
@@ -2044,19 +2032,12 @@ static int debug_load_phases_run_in_ctx(nmo_cmd_ctx_t *c,
 
 int nmo_cmd_debug_load_phases(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init_no_file(&c, global);
-    if (rc) return rc;
+    nmo_cmd_ctx_begin(&c, global);
 
     nmo_load_profile_t profile;
-    rc = debug_parse_load_profile(argc, argv, &profile);
+    int rc = debug_parse_load_profile(&c, argc, argv, &profile);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
-        return nmo_cmd_ctx_done(&c, rc);
-    }
-
-    c.file_path = nmo_tool_find_file_arg_last(argc, argv);
-    if (!c.file_path) {
-        fprintf(stderr, "Error: No file specified\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        return rc;
     }
 
     nmo_load_perf_stats_t phase_stats;
@@ -2067,16 +2048,9 @@ int nmo_cmd_debug_load_phases(int argc, char **argv, const nmo_cli_global_opts_t
     load_opts.collect_perf_stats = true;
     load_opts.perf_stats = &phase_stats;
 
-    char *open_error = NULL;
-    if (!nmo_tool_open_document_opts(c.file_path, &load_opts,
-                                     &c.ctx, &c.document, &c.workspace,
-                                     &open_error)) {
-        fprintf(stderr, "Error: %s\n", open_error ? open_error : "Failed to open file");
-        free(open_error);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
-    }
-    c.owns_document = true;
-    c.registry = nmo_context_get_type_registry(c.ctx);
+    c.load_options = &load_opts;
+    rc = nmo_cmd_ctx_open(&c);
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
     return debug_load_phases_run_in_ctx(&c, profile, &phase_stats, true);
 }
 
@@ -2086,7 +2060,7 @@ static int nmo_cmd_debug_load_phases_in_session(nmo_cmd_ctx_t *ctx, int argc, ch
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     nmo_load_profile_t profile;
-    int rc = debug_parse_load_profile(argc, argv, &profile);
+    int rc = debug_parse_load_profile(ctx, argc, argv, &profile);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         return rc;
     }
@@ -2136,8 +2110,9 @@ static int debug_chunks_run_in_ctx(nmo_cmd_ctx_t *c, bool close_ctx)
 
 int nmo_cmd_debug_chunks(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = nmo_cmd_ctx_open_without_args(&c, argc, argv, "nmo debug chunks <file>");
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
     return debug_chunks_run_in_ctx(&c, true);
 }
 
@@ -2191,8 +2166,9 @@ static int debug_objects_run_in_ctx(nmo_cmd_ctx_t *c, bool close_ctx)
 
 int nmo_cmd_debug_objects(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = nmo_cmd_ctx_open_without_args(&c, argc, argv, "nmo debug objects <file>");
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
     return debug_objects_run_in_ctx(&c, true);
 }
 
@@ -2210,7 +2186,7 @@ static int nmo_cmd_debug_objects_in_session(nmo_cmd_ctx_t *ctx, int argc, char *
  * debug export
  * ============================================================================ */
 
-static int debug_export_parse(int argc, char **argv,
+static int debug_export_parse(nmo_cmd_ctx_t *c, int argc, char **argv,
                               bool *include_data,
                               size_t *max_bytes)
 {
@@ -2221,7 +2197,8 @@ static int debug_export_parse(int argc, char **argv,
     nmo_opt_val_t vals[2];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, 2, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    int rc = nmo_cmd_ctx_parse(c, argc, argv, opts, 2, &r);
+    if (rc) return rc;
 
     *include_data = vals[0].val.flag;
     *max_bytes = vals[1].present ? (size_t)vals[1].val.u : 4096;
@@ -2272,14 +2249,15 @@ static int debug_export_run_in_ctx(nmo_cmd_ctx_t *c,
 int nmo_cmd_debug_export(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     bool include_data = false;
     size_t max_bytes = 4096;
-    int rc = debug_export_parse(argc, argv, &include_data, &max_bytes);
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = debug_export_parse(&c, argc, argv, &include_data, &max_bytes);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         return rc;
     }
 
-    nmo_cmd_ctx_t c;
-    rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    rc = nmo_cmd_ctx_open(&c);
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
     return debug_export_run_in_ctx(&c, include_data, max_bytes, true);
 }
 
@@ -2287,12 +2265,13 @@ int nmo_cmd_debug_probe(int argc,
                         char **argv,
                         const nmo_cli_global_opts_t *global)
 {
+    nmo_cli_global_opts_t local_global = *global;
     nmo_debug_probe_args_t args;
     const char *input_path = NULL;
     const char *output_path = NULL;
     bool dry_run = false;
     int rc = debug_probe_parse(
-        argc, argv, &args, &input_path, &output_path, &dry_run);
+        argc, argv, &local_global, &args, &input_path, &output_path, &dry_run);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         return rc;
     }
@@ -2306,7 +2285,7 @@ int nmo_cmd_debug_probe(int argc,
         input_path,
         output_path,
         dry_run,
-        global,
+        &local_global,
         &spec,
         debug_probe_mutate,
         debug_probe_report,
@@ -2320,7 +2299,7 @@ static int nmo_cmd_debug_export_in_session(nmo_cmd_ctx_t *ctx, int argc, char **
     }
     bool include_data = false;
     size_t max_bytes = 4096;
-    int rc = debug_export_parse(argc, argv, &include_data, &max_bytes);
+    int rc = debug_export_parse(ctx, argc, argv, &include_data, &max_bytes);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         return rc;
     }

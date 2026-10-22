@@ -78,56 +78,8 @@ bool nmo_tool_parse_u32(const char *text, uint32_t *out);
 bool nmo_tool_parse_size_dec(const char *text, size_t *out);
 
 /* ============================================================================
- * Argument Parsing Helpers (centralized to avoid duplication)
+ * File Name Helpers
  * ============================================================================ */
-
-/**
- * Find the first positional (non-option) argument.
- * Use for commands with a single file argument: `nmo file info <file>`.
- */
-const char *nmo_tool_find_file_arg(int argc, char **argv);
-
-/**
- * Find the last positional (non-option) argument.
- * Use for commands where the file is the trailing arg:
- * `nmo object list --class Foo <file>`.
- */
-const char *nmo_tool_find_file_arg_last(int argc, char **argv);
-
-/**
- * Collect all positional (non-option) arguments into out_paths.
- * Returns the number of paths written (up to max_count).
- * Skips argv[0] (the action name).
- */
-size_t nmo_tool_find_file_args(int argc, char **argv,
-                               const char **out_paths, size_t max_count);
-
-/**
- * Collect positional arguments while skipping values for known value-taking options.
- *
- * `opts_with_values` should contain option names such as "--object" or "-o".
- * Tokens provided as values for those options are excluded from positional results.
- */
-size_t nmo_tool_find_file_args_ex(int argc, char **argv,
-                                  const char **out_paths, size_t max_count,
-                                  const char *const *opts_with_values, size_t opt_count);
-
-/**
- * Look up a named option value.
- * Searches for `opt1 <value>` or `opt2 <value>` in argv.
- * Either opt1 or opt2 may be NULL.
- * Returns the value string or NULL if not found.
- */
-const char *nmo_tool_find_opt_value(int argc, char **argv,
-                                    const char *opt1, const char *opt2);
-
-/**
- * Check whether a boolean flag is present in argv.
- * Returns true if flag1 or flag2 is found.
- * Either flag1 or flag2 may be NULL.
- */
-bool nmo_tool_has_flag(int argc, char **argv,
-                       const char *flag1, const char *flag2);
 
 /**
  * malloc'd copy of `name` made safe for use as a file name: path separators

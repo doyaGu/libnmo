@@ -183,7 +183,8 @@ typedef struct object_refs_args {
     const char *name;
 } object_refs_args_t;
 
-static int object_refs_parse(int argc, char **argv, bool expect_file_operand,
+static int object_refs_parse(nmo_cmd_ctx_t *c, int argc, char **argv,
+                             bool expect_file_operand,
                              object_refs_args_t *args, const char *usage)
 {
     memset(args, 0, sizeof(*args));
@@ -196,7 +197,8 @@ static int object_refs_parse(int argc, char **argv, bool expect_file_operand,
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    int rc = nmo_cmd_ctx_parse(c, argc, argv, opts, OPT_COUNT, &r);
+    if (rc) return rc;
 
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
     if (expect_file_operand) {
@@ -261,14 +263,13 @@ static int object_refs_run(nmo_cmd_ctx_t *ctx, const object_refs_args_t *args,
 int nmo_cmd_object_refs(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     object_refs_args_t args;
     const char *usage = "nmo object refs [--id <id> | --name <name> | <id>] <file>";
-    int rc = object_refs_parse(argc, argv, true, &args, usage);
-    if (rc != NMO_CLI_EXIT_SUCCESS) {
-        return rc;
-    }
-
     nmo_cmd_ctx_t c;
-    rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = object_refs_parse(&c, argc, argv, true, &args, usage);
+    if (rc == NMO_CLI_EXIT_SUCCESS) {
+        rc = nmo_cmd_ctx_open(&c);
+    }
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     return object_refs_run(&c, &args, true, usage);
 }
@@ -276,7 +277,7 @@ int nmo_cmd_object_refs(int argc, char **argv, const nmo_cli_global_opts_t *glob
 int nmo_cmd_object_refs_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv) {
     object_refs_args_t args;
     const char *usage = "object refs [--id <id> | --name <name> | <id>]";
-    int rc = object_refs_parse(argc, argv, false, &args, usage);
+    int rc = object_refs_parse(ctx, argc, argv, false, &args, usage);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         return rc;
     }
@@ -486,14 +487,13 @@ static int object_impact_run(nmo_cmd_ctx_t *ctx, const object_refs_args_t *args,
 int nmo_cmd_object_impact(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     object_refs_args_t args;
     const char *usage = "nmo object impact [--id <id> | --name <name> | <id>] <file>";
-    int rc = object_refs_parse(argc, argv, true, &args, usage);
-    if (rc != NMO_CLI_EXIT_SUCCESS) {
-        return rc;
-    }
-
     nmo_cmd_ctx_t c;
-    rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = object_refs_parse(&c, argc, argv, true, &args, usage);
+    if (rc == NMO_CLI_EXIT_SUCCESS) {
+        rc = nmo_cmd_ctx_open(&c);
+    }
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     return object_impact_run(&c, &args, true, usage);
 }
@@ -506,7 +506,8 @@ typedef struct object_orphans_args {
     const char *class_filter_str;
 } object_orphans_args_t;
 
-static int object_orphans_parse(int argc, char **argv, bool expect_file_operand,
+static int object_orphans_parse(nmo_cmd_ctx_t *c, int argc, char **argv,
+                                bool expect_file_operand,
                                 object_orphans_args_t *args,
                                 const char *usage) {
     memset(args, 0, sizeof(*args));
@@ -518,7 +519,8 @@ static int object_orphans_parse(int argc, char **argv, bool expect_file_operand,
     nmo_opt_val_t vals[1];
     const char *pos_arr[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos_arr);
-    if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    int rc = nmo_cmd_ctx_parse(c, argc, argv, opts, 1, &r);
+    if (rc) return rc;
 
     if (!expect_file_operand && r.pos_count != 0) {
         fprintf(stderr, "Error: Unexpected argument '%s'\n", r.pos_args[0]);
@@ -652,12 +654,13 @@ static int object_orphans_run(nmo_cmd_ctx_t *ctx, const object_orphans_args_t *a
 int nmo_cmd_object_orphans(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     object_orphans_args_t args;
     const char *usage = "nmo object orphans [--class <name>] <file>";
-    int rc = object_orphans_parse(argc, argv, true, &args, usage);
-    if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
-
     nmo_cmd_ctx_t c;
-    rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = object_orphans_parse(&c, argc, argv, true, &args, usage);
+    if (rc == NMO_CLI_EXIT_SUCCESS) {
+        rc = nmo_cmd_ctx_open(&c);
+    }
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     return object_orphans_run(&c, &args, true);
 }
@@ -666,12 +669,14 @@ int nmo_cmd_object_orphans(int argc, char **argv, const nmo_cli_global_opts_t *g
  * object cycles - Detect circular references
  * ============================================================================ */
 
-static int object_cycles_parse(int argc, char **argv, bool expect_file_operand,
+static int object_cycles_parse(nmo_cmd_ctx_t *c, int argc, char **argv,
+                               bool expect_file_operand,
                                const char *usage) {
     nmo_opt_val_t vals[1];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, NULL, 0, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    int rc = nmo_cmd_ctx_parse(c, argc, argv, NULL, 0, &r);
+    if (rc) return rc;
 
     if (!expect_file_operand && r.pos_count != 0) {
         fprintf(stderr, "Error: Unexpected argument '%s'\n", r.pos_args[0]);
@@ -806,12 +811,13 @@ static int object_cycles_run(nmo_cmd_ctx_t *ctx, bool close_ctx) {
 
 int nmo_cmd_object_cycles(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     const char *usage = "nmo object cycles <file>";
-    int rc = object_cycles_parse(argc, argv, true, usage);
-    if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
-
     nmo_cmd_ctx_t c;
-    rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = object_cycles_parse(&c, argc, argv, true, usage);
+    if (rc == NMO_CLI_EXIT_SUCCESS) {
+        rc = nmo_cmd_ctx_open(&c);
+    }
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     return object_cycles_run(&c, true);
 }
@@ -855,7 +861,8 @@ typedef struct object_graph_args {
     const char *kind_str;
 } object_graph_args_t;
 
-static int object_graph_parse(int argc, char **argv, bool expect_file_operand,
+static int object_graph_parse(nmo_cmd_ctx_t *c, int argc, char **argv,
+                              bool expect_file_operand,
                               object_graph_args_t *args,
                               const char *usage) {
     memset(args, 0, sizeof(*args));
@@ -868,7 +875,8 @@ static int object_graph_parse(int argc, char **argv, bool expect_file_operand,
     nmo_opt_val_t vals[2];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, 2, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    int rc = nmo_cmd_ctx_parse(c, argc, argv, opts, 2, &r);
+    if (rc) return rc;
 
     if (!expect_file_operand && r.pos_count != 0) {
         fprintf(stderr, "Error: Unexpected argument '%s'\n", r.pos_args[0]);
@@ -1044,12 +1052,13 @@ static int object_graph_run(nmo_cmd_ctx_t *ctx, const object_graph_args_t *args,
 int nmo_cmd_object_graph(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     object_graph_args_t args;
     const char *usage = "nmo object graph [--dot] [--kind <kind>] <file>";
-    int rc = object_graph_parse(argc, argv, true, &args, usage);
-    if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
-
     nmo_cmd_ctx_t c;
-    rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = object_graph_parse(&c, argc, argv, true, &args, usage);
+    if (rc == NMO_CLI_EXIT_SUCCESS) {
+        rc = nmo_cmd_ctx_open(&c);
+    }
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     return object_graph_run(&c, &args, true);
 }
@@ -1063,7 +1072,7 @@ int nmo_cmd_object_refgraph_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv
     if (strcmp(argv[0], "impact") == 0 || strcmp(argv[0], "imp") == 0) {
         object_refs_args_t args;
         const char *usage = "object impact [--id <id> | --name <name> | <id>]";
-        int rc = object_refs_parse(argc, argv, false, &args, usage);
+        int rc = object_refs_parse(ctx, argc, argv, false, &args, usage);
         if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
         return object_impact_run(ctx, &args, false, usage);
     }
@@ -1071,14 +1080,14 @@ int nmo_cmd_object_refgraph_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv
     if (strcmp(argv[0], "orphans") == 0 || strcmp(argv[0], "orp") == 0) {
         object_orphans_args_t args;
         const char *usage = "object orphans [--class <name>]";
-        int rc = object_orphans_parse(argc, argv, false, &args, usage);
+        int rc = object_orphans_parse(ctx, argc, argv, false, &args, usage);
         if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
         return object_orphans_run(ctx, &args, false);
     }
 
     if (strcmp(argv[0], "cycles") == 0 || strcmp(argv[0], "cyc") == 0) {
         const char *usage = "object cycles";
-        int rc = object_cycles_parse(argc, argv, false, usage);
+        int rc = object_cycles_parse(ctx, argc, argv, false, usage);
         if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
         return object_cycles_run(ctx, false);
     }
@@ -1086,7 +1095,7 @@ int nmo_cmd_object_refgraph_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv
     if (strcmp(argv[0], "graph") == 0 || strcmp(argv[0], "gr") == 0) {
         object_graph_args_t args;
         const char *usage = "object graph [--dot] [--kind <kind>]";
-        int rc = object_graph_parse(argc, argv, false, &args, usage);
+        int rc = object_graph_parse(ctx, argc, argv, false, &args, usage);
         if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
         return object_graph_run(ctx, &args, false);
     }

@@ -312,13 +312,12 @@ int nmo_cmd_resource_list(int argc, char **argv, const nmo_cli_global_opts_t *gl
     nmo_opt_val_t vals[1];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = nmo_cmd_ctx_parse_and_open(&c, argc, argv, opts, 1, &r);
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     const char *sort_by = nmo_opt_str(&vals[0]);
-
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
 
     uint32_t count = 0;
     nmo_included_file_t *files = resource_files_from_ctx(&c, &count);
@@ -414,14 +413,13 @@ int nmo_cmd_resource_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
     nmo_opt_val_t vals[2];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, 2, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = nmo_cmd_ctx_parse_and_open(&c, argc, argv, opts, 2, &r);
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     const char *index_str = nmo_opt_str(&vals[0]);
     const char *name_str = nmo_opt_str(&vals[1]);
-
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
 
     /* If no --index/--name, check first positional (excluding file) as shorthand */
     if (!index_str && !name_str && r.pos_count >= 2) {
@@ -525,7 +523,7 @@ typedef struct resource_extract_args {
     bool overwrite;
 } resource_extract_args_t;
 
-static int resource_extract_parse(int argc, char **argv,
+static int resource_extract_parse(nmo_cmd_ctx_t *c, int argc, char **argv,
                                   bool expect_file_operand,
                                   resource_extract_args_t *args,
                                   const char *usage) {
@@ -540,7 +538,8 @@ static int resource_extract_parse(int argc, char **argv,
     nmo_opt_val_t vals[4];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, 4, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    int rc = nmo_cmd_ctx_parse(c, argc, argv, opts, 4, &r);
+    if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
 
     if (!expect_file_operand && r.pos_count != 0) {
         fprintf(stderr, "Error: Unexpected argument '%s'\n", r.pos_args[0]);
@@ -712,12 +711,13 @@ int nmo_cmd_resource_extract(int argc, char **argv, const nmo_cli_global_opts_t 
     resource_extract_args_t args;
     const char *usage =
         "nmo resource extract --out-dir <dir> [--index <n> | --name <name>] <file>";
-    int rc = resource_extract_parse(argc, argv, true, &args, usage);
-    if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
-
     nmo_cmd_ctx_t c;
-    rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = resource_extract_parse(&c, argc, argv, true, &args, usage);
+    if (rc == NMO_CLI_EXIT_SUCCESS) {
+        rc = nmo_cmd_ctx_open(&c);
+    }
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     return resource_extract_run(&c, &args, true);
 }
@@ -726,7 +726,7 @@ static int nmo_cmd_resource_extract_in_session(nmo_cmd_ctx_t *ctx, int argc, cha
     resource_extract_args_t args;
     const char *usage =
         "resource extract --out-dir <dir> [--index <n> | --name <name>]";
-    int rc = resource_extract_parse(argc, argv, false, &args, usage);
+    int rc = resource_extract_parse(ctx, argc, argv, false, &args, usage);
     if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
 
     return resource_extract_run(ctx, &args, false);
@@ -899,10 +899,12 @@ int nmo_cmd_resource_import(int argc, char **argv, const nmo_cli_global_opts_t *
         {"--owner",  NULL, NMO_OPT_STRING, "Owner object IDs (comma-separated)"},
         NMO_OPT_DEF_DRY_RUN,
     };
+    nmo_cli_global_opts_t local_global = *global;
     nmo_opt_val_t vals[4];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, 4, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    if (nmo_cli_parse_args(argc, argv, opts, 4, &r, &local_global) != NMO_CLI_EXIT_SUCCESS)
+        return NMO_CLI_EXIT_ARG_ERROR;
 
     const char *output_path = nmo_opt_str(&vals[0]);
     bool dry_run = nmo_opt_flag(&vals[3]);
@@ -971,7 +973,7 @@ int nmo_cmd_resource_import(int argc, char **argv, const nmo_cli_global_opts_t *
         nmo_file,
         output_path,
         dry_run,
-        global,
+        &local_global,
         &spec,
         resource_import_mutate,
         resource_import_report,
@@ -1116,10 +1118,12 @@ int nmo_cmd_resource_replace(int argc, char **argv, const nmo_cli_global_opts_t 
         {"--name",   "-n", NMO_OPT_STRING, "Resource name"},
         NMO_OPT_DEF_DRY_RUN,
     };
+    nmo_cli_global_opts_t local_global = *global;
     nmo_opt_val_t vals[4];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, 4, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    if (nmo_cli_parse_args(argc, argv, opts, 4, &r, &local_global) != NMO_CLI_EXIT_SUCCESS)
+        return NMO_CLI_EXIT_ARG_ERROR;
 
     const char *output_path = nmo_opt_str(&vals[0]);
     bool dry_run = nmo_opt_flag(&vals[3]);
@@ -1167,7 +1171,7 @@ int nmo_cmd_resource_replace(int argc, char **argv, const nmo_cli_global_opts_t 
         nmo_file,
         output_path,
         dry_run,
-        global,
+        &local_global,
         &spec,
         resource_replace_mutate,
         resource_replace_report,
@@ -1314,10 +1318,12 @@ int nmo_cmd_resource_remove(int argc, char **argv, const nmo_cli_global_opts_t *
         {"--name",    "-n", NMO_OPT_STRING, "Resource name"},
         NMO_OPT_DEF_DRY_RUN,
     };
+    nmo_cli_global_opts_t local_global = *global;
     nmo_opt_val_t vals[4];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, 4, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    if (nmo_cli_parse_args(argc, argv, opts, 4, &r, &local_global) != NMO_CLI_EXIT_SUCCESS)
+        return NMO_CLI_EXIT_ARG_ERROR;
 
     const char *output_path = nmo_opt_str(&vals[0]);
     const char *index_str = nmo_opt_str(&vals[1]);
@@ -1325,7 +1331,7 @@ int nmo_cmd_resource_remove(int argc, char **argv, const nmo_cli_global_opts_t *
     const bool dry_run = vals[3].val.flag;
 
     if (!dry_run && output_path != NULL && !*output_path) {
-        nmo_cli_print_missing_output(global, "Missing --output (required unless --dry-run)");
+        nmo_cli_print_missing_output(&local_global, "Missing --output (required unless --dry-run)");
         fprintf(stderr, "Usage: nmo resource remove -o <output> [--index <n> | --name <name>] [--dry-run] <nmo-file>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
@@ -1354,7 +1360,7 @@ int nmo_cmd_resource_remove(int argc, char **argv, const nmo_cli_global_opts_t *
         nmo_file,
         output_path,
         dry_run,
-        global,
+        &local_global,
         &spec,
         resource_remove_mutate,
         resource_remove_report,
@@ -1398,10 +1404,12 @@ int nmo_cmd_resource_info(int argc, char **argv, const nmo_cli_global_opts_t *gl
         {"--index", "-i", NMO_OPT_STRING, "Resource index (in NMO)"},
         {"--name",  "-n", NMO_OPT_STRING, "Resource name (in NMO)"},
     };
+    nmo_cli_global_opts_t local_global = *global;
     nmo_opt_val_t vals[2];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, 2, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    if (nmo_cli_parse_args(argc, argv, opts, 2, &r, &local_global) != NMO_CLI_EXIT_SUCCESS)
+        return NMO_CLI_EXIT_ARG_ERROR;
 
     const char *index_str = nmo_opt_str(&vals[0]);
     const char *name_str = nmo_opt_str(&vals[1]);
@@ -1416,7 +1424,8 @@ int nmo_cmd_resource_info(int argc, char **argv, const nmo_cli_global_opts_t *gl
 
     if (from_nmo) {
         /* Open NMO, find resource */
-        int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+        const char *nmo_path = r.pos_count > 0 ? r.pos_args[r.pos_count - 1] : NULL;
+        int rc = nmo_cmd_ctx_init_with_file(&c, nmo_path, &local_global);
         if (rc) return rc;
 
         uint32_t count = 0;
@@ -1468,7 +1477,7 @@ int nmo_cmd_resource_info(int argc, char **argv, const nmo_cli_global_opts_t *gl
         res_name = path_basename(disk_path);
 
         /* Open a minimal context for output formatting */
-        int rc = nmo_cmd_ctx_init_no_file(&c, global);
+        int rc = nmo_cmd_ctx_init_no_file(&c, &local_global);
         if (rc) {
             free(file_data);
             return rc;

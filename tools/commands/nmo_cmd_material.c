@@ -161,10 +161,11 @@ static int material_list_run(nmo_cmd_ctx_t *c) {
 
 int nmo_cmd_material_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
-
-    rc = material_list_run(&c);
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = nmo_cmd_ctx_open_without_args(&c, argc, argv, "nmo material list <file>");
+    if (rc == NMO_CLI_EXIT_SUCCESS) {
+        rc = material_list_run(&c);
+    }
     return nmo_cmd_ctx_done(&c, rc);
 }
 
@@ -176,7 +177,8 @@ typedef struct material_show_args {
     nmo_core_object_selector_t selector;
 } material_show_args_t;
 
-static int material_show_parse(int argc,
+static int material_show_parse(nmo_cmd_ctx_t *c,
+                               int argc,
                                char **argv,
                                bool in_session,
                                material_show_args_t *args) {
@@ -188,7 +190,8 @@ static int material_show_parse(int argc,
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    int rc = nmo_cmd_ctx_parse(c, argc, argv, opts, OPT_COUNT, &r);
+    if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
 
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
     const char *positional_id =
@@ -302,15 +305,16 @@ static int material_show_run(nmo_cmd_ctx_t *c, const material_show_args_t *args)
 }
 
 int nmo_cmd_material_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    material_show_args_t args;
-    int rc = material_show_parse(argc, argv, false, &args);
-    if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
-
     nmo_cmd_ctx_t c;
-    rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
-
-    rc = material_show_run(&c, &args);
+    nmo_cmd_ctx_begin(&c, global);
+    material_show_args_t args;
+    int rc = material_show_parse(&c, argc, argv, false, &args);
+    if (rc == NMO_CLI_EXIT_SUCCESS) {
+        rc = nmo_cmd_ctx_open(&c);
+    }
+    if (rc == NMO_CLI_EXIT_SUCCESS) {
+        rc = material_show_run(&c, &args);
+    }
     return nmo_cmd_ctx_done(&c, rc);
 }
 
@@ -326,7 +330,7 @@ int nmo_cmd_material_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
     }
     if (strcmp(argv[0], "show") == 0 || strcmp(argv[0], "s") == 0) {
         material_show_args_t args;
-        int rc = material_show_parse(argc, argv, true, &args);
+        int rc = material_show_parse(ctx, argc, argv, true, &args);
         if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
         return material_show_run(ctx, &args);
     }
@@ -409,10 +413,11 @@ int nmo_cmd_material_set(int argc, char **argv, const nmo_cli_global_opts_t *glo
     enum { OPT_OUTPUT, OPT_DIFFUSE, OPT_AMBIENT, OPT_SPECULAR,
            OPT_EMISSIVE, OPT_POWER, OPT_DRYRUN, OPT_ID, OPT_NAME, OPT_COUNT };
 
+    nmo_cli_global_opts_t local_global = *global;
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
+    if (nmo_cli_parse_args(argc, argv, opts, OPT_COUNT, &r, &local_global) != NMO_CLI_EXIT_SUCCESS)
         return NMO_CLI_EXIT_ARG_ERROR;
 
     const char *output = nmo_opt_str(&vals[OPT_OUTPUT]);
@@ -477,7 +482,7 @@ int nmo_cmd_material_set(int argc, char **argv, const nmo_cli_global_opts_t *glo
         file_path,
         output,
         dry_run,
-        global,
+        &local_global,
         &spec,
         material_set_mutate,
         material_set_report,

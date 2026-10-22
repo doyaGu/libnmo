@@ -1677,10 +1677,7 @@ TEST(cli, validate_references_accepts_behavior_input_parameters) {
  * ============================================================================ */
 
 TEST(cli, type_list_text) {
-    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
-    char args[512];
-    snprintf(args, sizeof(args), "type list \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
-    char *output = run_cli(args);
+    char *output = run_cli("type list");
     ASSERT_NOT_NULL(output);
     /* Should list registered types */
     ASSERT_STR_CONTAINS(output, "CKObject");
@@ -1688,10 +1685,7 @@ TEST(cli, type_list_text) {
 }
 
 TEST(cli, type_list_json) {
-    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
-    char args[512];
-    snprintf(args, sizeof(args), "type list \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
-    yyjson_doc *doc = run_cli_json(args);
+    yyjson_doc *doc = run_cli_json("type list");
     ASSERT_NOT_NULL(doc);
 
     const char *cmd = json_envelope_command(doc);
@@ -3219,6 +3213,133 @@ TEST(cli, id_selector_reports_requested_missing_id) {
     ASSERT_NOT_NULL(result.output);
     ASSERT_EQ(NMO_CLI_EXIT_NOT_FOUND, result.exit_code);
     ASSERT_STR_CONTAINS(result.output, "Object 999999 not found");
+    free(result.output);
+}
+
+/* ============================================================================
+ * Argument parsing
+ * ============================================================================ */
+
+TEST(cli, file_operand_may_precede_options) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
+    char args[512];
+
+    snprintf(args, sizeof(args), "object list \"%s\" --class CKMaterial",
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "filtered by class: CKMaterial");
+    free(result.output);
+}
+
+TEST(cli, global_options_may_follow_the_action) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
+    char args[512];
+
+    snprintf(args, sizeof(args), "object list \"%s\" -f json",
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+    cli_run_result_t list = run_cli_capture(args);
+    ASSERT_NOT_NULL(list.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, list.exit_code);
+    ASSERT_STR_CONTAINS(list.output, "\"command\":\"object.list\"");
+    free(list.output);
+
+    snprintf(args, sizeof(args), "diff objects -f json \"%s\" \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"),
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+    cli_run_result_t diff = run_cli_capture(args);
+    ASSERT_NOT_NULL(diff.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, diff.exit_code);
+    ASSERT_STR_CONTAINS(diff.output, "\"command\":\"diff.objects\"");
+    free(diff.output);
+}
+
+TEST(cli, unknown_options_are_rejected) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
+    char args[512];
+
+    snprintf(args, sizeof(args), "file info \"%s\" --bogus",
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+    cli_run_result_t local = run_cli_capture(args);
+    ASSERT_NOT_NULL(local.output);
+    ASSERT_EQ(NMO_CLI_EXIT_ARG_ERROR, local.exit_code);
+    ASSERT_STR_CONTAINS(local.output, "Unknown option '--bogus'");
+    free(local.output);
+
+    snprintf(args, sizeof(args), "-F Cam_* object list \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+    cli_run_result_t global = run_cli_capture(args);
+    ASSERT_NOT_NULL(global.output);
+    ASSERT_EQ(NMO_CLI_EXIT_ARG_ERROR, global.exit_code);
+    ASSERT_STR_CONTAINS(global.output, "Unknown global option '-F'");
+    free(global.output);
+}
+
+TEST(cli, negative_numbers_are_positional_arguments) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
+    char args[512];
+
+    snprintf(args, sizeof(args), "entity set-position 2 -1 -0.5 3 \"%s\" --dry-run",
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "(-1.0000, -0.5000, 3.0000)");
+    free(result.output);
+}
+
+TEST(cli, help_after_double_dash_is_an_argument) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
+    char args[512];
+
+    snprintf(args, sizeof(args), "object show 2 \"%s\" -- --help",
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_NE(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Cannot load '--help'");
+    free(result.output);
+}
+
+TEST(cli, id_selector_reports_class_mismatch) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
+    char args[512];
+
+    snprintf(args, sizeof(args), "material show 2 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_ARG_ERROR, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Object 2 is not a CKMaterial");
+    free(result.output);
+}
+
+TEST(cli, missing_output_explains_global_output_option) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
+    char args[512];
+
+    snprintf(args, sizeof(args), "-o unused_output.nmo object rename 2 Renamed \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_ARG_ERROR, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "only redirects the report");
+    free(result.output);
+}
+
+TEST(cli, too_many_plugins_are_rejected) {
+    char args[1024];
+    size_t len = 0;
+    for (int i = 0; i < 17; ++i) {
+        len += (size_t)snprintf(args + len, sizeof(args) - len,
+                                "--plugin missing_%d.json ", i);
+    }
+    snprintf(args + len, sizeof(args) - len, "type list");
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_ARG_ERROR, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Too many --plugin options");
     free(result.output);
 }
 
@@ -4976,6 +5097,14 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, object_read_commands_accept_exact_name_selectors);
     REGISTER_TEST(cli, name_selectors_report_family_specific_missing_errors);
     REGISTER_TEST(cli, id_selector_reports_requested_missing_id);
+    REGISTER_TEST(cli, file_operand_may_precede_options);
+    REGISTER_TEST(cli, global_options_may_follow_the_action);
+    REGISTER_TEST(cli, unknown_options_are_rejected);
+    REGISTER_TEST(cli, negative_numbers_are_positional_arguments);
+    REGISTER_TEST(cli, help_after_double_dash_is_an_argument);
+    REGISTER_TEST(cli, id_selector_reports_class_mismatch);
+    REGISTER_TEST(cli, missing_output_explains_global_output_option);
+    REGISTER_TEST(cli, too_many_plugins_are_rejected);
 
     /* chunk list --top */
     REGISTER_TEST(cli, chunk_list_top_limits_output);

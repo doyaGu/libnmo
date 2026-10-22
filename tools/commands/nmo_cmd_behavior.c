@@ -477,23 +477,18 @@ static int behavior_list_single(const char *file_path,
 }
 
 int nmo_cmd_behavior_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    /* Batch mode */
+    /* Batch mode: every positional is a file */
     if (global->batch_mode) {
-        const char *paths[256];
-        size_t count = nmo_tool_find_file_args(argc, argv, paths, 256);
-        if (count == 0) {
-            fprintf(stderr, "Error: No files specified\n");
-            fprintf(stderr, "Usage: nmo --batch behavior list <file1> <file2> ...\n");
-            return NMO_CLI_EXIT_ARG_ERROR;
-        }
-        return nmo_tool_batch_run(paths, count, global, "behavior.list",
-                                  behavior_list_single, NULL);
+        return nmo_cmd_batch_run_files(argc, argv, global,
+                                       "nmo --batch behavior list <file1> <file2> ...",
+                                       "behavior.list", behavior_list_single, NULL);
     }
 
     /* Single file mode */
     nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = nmo_cmd_ctx_open_without_args(&c, argc, argv, "nmo behavior list <file>");
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     if (!c.registry) {
         fprintf(stderr, "Error: Type registry unavailable\n");
@@ -1249,23 +1244,18 @@ static int behavior_stats_single(const char *file_path,
 }
 
 int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    /* Batch mode */
+    /* Batch mode: every positional is a file */
     if (global->batch_mode) {
-        const char *paths[256];
-        size_t count = nmo_tool_find_file_args(argc, argv, paths, 256);
-        if (count == 0) {
-            fprintf(stderr, "Error: No files specified\n");
-            fprintf(stderr, "Usage: nmo --batch behavior stats <file1> <file2> ...\n");
-            return NMO_CLI_EXIT_ARG_ERROR;
-        }
-        return nmo_tool_batch_run(paths, count, global, "behavior.stats",
-                                  behavior_stats_single, NULL);
+        return nmo_cmd_batch_run_files(argc, argv, global,
+                                       "nmo --batch behavior stats <file1> <file2> ...",
+                                       "behavior.stats", behavior_stats_single, NULL);
     }
 
     /* Single file mode */
     nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = nmo_cmd_ctx_open_without_args(&c, argc, argv, "nmo behavior stats <file>");
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     nmo_cli_record_t *rec = NULL;
     rc = behavior_stats_run(&c, &rec);

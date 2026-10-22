@@ -270,8 +270,9 @@ static nmo_cli_record_t *data_list_record_new(data_list_data_t *data)
 
 int nmo_cmd_data_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = nmo_cmd_ctx_open_without_args(&c, argc, argv, "nmo data list <file>");
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     nmo_object_query_t query = {0};
     nmo_core_query_set_class_id(&query, NMO_CID_DATAARRAY, false);
@@ -371,14 +372,13 @@ int nmo_cmd_data_show(int argc, char **argv, const nmo_cli_global_opts_t *global
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = nmo_cmd_ctx_parse_and_open(&c, argc, argv, opts, OPT_COUNT, &r);
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
     const char *positional_id = (!has_selector_opt && r.pos_count >= 2) ? r.pos_args[0] : NULL;
-
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
 
     nmo_core_object_selector_t selector = {
         .has_id = vals[OPT_ID].present,
@@ -545,7 +545,10 @@ int nmo_cmd_data_dump(int argc, char **argv, const nmo_cli_global_opts_t *global
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_begin(&c, global);
+    int rc = nmo_cmd_ctx_parse(&c, argc, argv, opts, OPT_COUNT, &r);
+    if (rc) return rc;
 
     const char *row_str = nmo_opt_str(&vals[OPT_ROW]);
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
@@ -561,9 +564,8 @@ int nmo_cmd_data_dump(int argc, char **argv, const nmo_cli_global_opts_t *global
         has_single_row = true;
     }
 
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    rc = nmo_cmd_ctx_open(&c);
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     nmo_core_object_selector_t selector = {
         .has_id = vals[OPT_ID].present,
@@ -854,10 +856,11 @@ int nmo_cmd_data_set_cell(int argc, char **argv, const nmo_cli_global_opts_t *gl
     enum { OPT_OUTPUT, OPT_ROW, OPT_COL, OPT_VALUE, OPT_DRYRUN,
            OPT_ID, OPT_NAME, OPT_COUNT };
 
+    nmo_cli_global_opts_t local_global = *global;
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
+    if (nmo_cli_parse_args(argc, argv, opts, OPT_COUNT, &r, &local_global) != NMO_CLI_EXIT_SUCCESS)
         return NMO_CLI_EXIT_ARG_ERROR;
 
     const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
@@ -917,7 +920,7 @@ int nmo_cmd_data_set_cell(int argc, char **argv, const nmo_cli_global_opts_t *gl
         file_path,
         output_path,
         dry_run,
-        global,
+        &local_global,
         &spec,
         data_set_cell_mutate,
         data_set_cell_report,

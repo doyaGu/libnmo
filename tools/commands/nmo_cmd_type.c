@@ -167,12 +167,10 @@ static const nmo_cli_table_col_t type_list_columns[] = {
 };
 
 int nmo_cmd_type_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    (void)argc;
-    (void)argv;
-
     nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init_no_file(&c, global);
-    if (rc) return rc;
+    nmo_cmd_ctx_begin_no_file(&c, global);
+    int rc = nmo_cmd_ctx_open_without_args(&c, argc, argv, "nmo type list");
+    if (rc) return nmo_cmd_ctx_done(&c, rc);
 
     /* For type list, we don't need a file - we use a temporary context */
     nmo_context_t *ctx = nmo_context_create(NULL);
@@ -220,20 +218,25 @@ int nmo_cmd_type_list(int argc, char **argv, const nmo_cli_global_opts_t *global
  * ============================================================================ */
 
 int nmo_cmd_type_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    /* Find class name or ID */
-    const char *type_arg = NULL;
-    for (int i = 1; i < argc; ++i) {
-        if (argv[i][0] != '-') {
-            type_arg = argv[i];
-            break;
-        }
-    }
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_begin_no_file(&c, global);
+    const char *operands[4];
+    nmo_opt_result_t r = NMO_OPT_RESULT(NULL, operands);
+    int rc = nmo_cmd_ctx_parse(&c, argc, argv, NULL, 0, &r);
+    if (rc) return rc;
 
-    if (!type_arg) {
+    /* Find class name or ID */
+    if (r.pos_count == 0) {
         fprintf(stderr, "Error: No type specified\n");
         fprintf(stderr, "Usage: nmo type show <class-name-or-id>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
+    if (r.pos_count > 1) {
+        fprintf(stderr, "Error: Unexpected argument '%s'\n", r.pos_args[1]);
+        fprintf(stderr, "Usage: nmo type show <class-name-or-id>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    const char *type_arg = r.pos_args[0];
 
     /* Create context for type lookups */
     nmo_context_t *ctx = nmo_context_create(NULL);
@@ -265,11 +268,10 @@ int nmo_cmd_type_show(int argc, char **argv, const nmo_cli_global_opts_t *global
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init_no_file(&c, global);
+    rc = nmo_cmd_ctx_open(&c);
     if (rc) {
         nmo_context_release(ctx);
-        return rc;
+        return nmo_cmd_ctx_done(&c, rc);
     }
 
     nmo_class_id_t parent_id = nmo_cli_class_get_parent(ctx, class_id);
@@ -433,8 +435,17 @@ static void class_tree_print(FILE *out, bool colorize, const void *data)
 }
 
 int nmo_cmd_type_class_tree(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    (void)argc;
-    (void)argv;
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_begin_no_file(&c, global);
+    const char *pos[4];
+    nmo_opt_result_t r = NMO_OPT_RESULT(NULL, pos);
+    int rc = nmo_cmd_ctx_parse(&c, argc, argv, NULL, 0, &r);
+    if (rc) return rc;
+    if (r.pos_count > 0) {
+        fprintf(stderr, "Error: Unexpected argument '%s'\n", r.pos_args[0]);
+        fprintf(stderr, "Usage: nmo type class-tree\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
 
     nmo_context_t *ctx = nmo_context_create(NULL);
     if (!ctx) {
@@ -450,12 +461,11 @@ int nmo_cmd_type_class_tree(int argc, char **argv, const nmo_cli_global_opts_t *
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init_no_file(&c, global);
+    rc = nmo_cmd_ctx_open(&c);
     if (rc) {
         free(entries);
         nmo_context_release(ctx);
-        return rc;
+        return nmo_cmd_ctx_done(&c, rc);
     }
 
     class_tree_t tree = {

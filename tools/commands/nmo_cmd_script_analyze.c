@@ -167,11 +167,13 @@ int nmo_cmd_script_analyze(int argc, char **argv, const nmo_cli_global_opts_t *g
             break;
         }
     }
-    if (nmo_opt_parse(split, argv, opts, OPT_COUNT, &r) < 0) {
+    nmo_cli_global_opts_t local_global = *global;
+    if (nmo_cli_parse_args(split, argv, opts, OPT_COUNT, &r, &local_global) !=
+        NMO_CLI_EXIT_SUCCESS) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     if (nmo_opt_flag(&vals[OPT_LIST])) {
-        return analyze_list(global);
+        return analyze_list(&local_global);
     }
     if (r.pos_count < 2) {
         fprintf(stderr, "Usage: nmo script analyze <script.lua | analysis> <file>... "
@@ -191,7 +193,7 @@ int nmo_cmd_script_analyze(int argc, char **argv, const nmo_cli_global_opts_t *g
     }
 
     nmo_cmd_ctx_t out;
-    int rc = nmo_cmd_ctx_init_no_file(&out, global);
+    int rc = nmo_cmd_ctx_init_no_file(&out, &local_global);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         return rc;
     }
@@ -206,7 +208,7 @@ int nmo_cmd_script_analyze(int argc, char **argv, const nmo_cli_global_opts_t *g
     lua_pushcclosure(L, analyze_print, 1);
     lua_setglobal(L, "print");
 
-    rc = analyze_load_models(L, &r.pos_args[1], r.pos_count - 1, global);
+    rc = analyze_load_models(L, &r.pos_args[1], r.pos_count - 1, &local_global);
     if (rc == NMO_CLI_EXIT_SUCCESS) {
         const char *const *script_args = (const char *const *)&argv[split + 1];
         size_t script_arg_count = split < argc ? (size_t)(argc - split - 1) : 0u;

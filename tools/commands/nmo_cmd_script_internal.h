@@ -78,6 +78,10 @@ int behavior_execute_cli_run_write_command(
     nmo_cli_write_report_fn report,
     void *user_data,
     script_command_common_t *common);
+
+/* Report a missing or unknown `script <group>` command; returns ARG_ERROR. */
+int script_report_unknown_command(const char *group, const char *commands,
+                                  int argc, char **argv);
 bool script_record_str_or_null(nmo_cli_record_t *rec,
                                const char *key,
                                const char *value);

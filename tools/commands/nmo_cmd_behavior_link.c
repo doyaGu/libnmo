@@ -319,7 +319,8 @@ int nmo_cmd_behavior_add_link(int argc, char **argv,
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
+    nmo_cli_global_opts_t local_global = *global;
+    if (nmo_cli_parse_args(argc, argv, opts, OPT_COUNT, &r, &local_global) != NMO_CLI_EXIT_SUCCESS)
         return NMO_CLI_EXIT_ARG_ERROR;
 
     if (!vals[OPT_PARENT].present) {
@@ -363,7 +364,7 @@ int nmo_cmd_behavior_add_link(int argc, char **argv,
         file_path,
         output_path,
         dry_run,
-        global,
+        &local_global,
         &spec,
         behavior_add_link_mutate,
         behavior_add_link_report,
@@ -390,7 +391,8 @@ int nmo_cmd_behavior_remove_link(int argc, char **argv,
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
+    nmo_cli_global_opts_t local_global = *global;
+    if (nmo_cli_parse_args(argc, argv, opts, OPT_COUNT, &r, &local_global) != NMO_CLI_EXIT_SUCCESS)
         return NMO_CLI_EXIT_ARG_ERROR;
 
     if (!vals[OPT_PARENT].present) {
@@ -430,7 +432,7 @@ int nmo_cmd_behavior_remove_link(int argc, char **argv,
         file_path,
         output_path,
         dry_run,
-        global,
+        &local_global,
         &spec,
         behavior_remove_link_mutate,
         behavior_remove_link_report,

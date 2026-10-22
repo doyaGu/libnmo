@@ -188,14 +188,16 @@ static nmo_cli_record_t *entity_list_record_new(entity_list_data_t *data)
  * entity list
  * ============================================================================ */
 
-static int entity_list_parse(int argc, char **argv, const char **class_filter) {
+static int entity_list_parse(nmo_cmd_ctx_t *c, int argc, char **argv,
+                             const char **class_filter) {
     static const nmo_opt_def_t opts[] = {
         {"--class", "-c", NMO_OPT_STRING, "Filter by class name (e.g. CKCamera, CKLight)"},
     };
     nmo_opt_val_t vals[1];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    int rc = nmo_cmd_ctx_parse(c, argc, argv, opts, 1, &r);
+    if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
 
     *class_filter = nmo_opt_str(&vals[0]);
     return NMO_CLI_EXIT_SUCCESS;
@@ -237,15 +239,16 @@ static int entity_list_run(nmo_cmd_ctx_t *c, const char *class_filter) {
 }
 
 int nmo_cmd_entity_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *class_filter = NULL;
-    int rc = entity_list_parse(argc, argv, &class_filter);
-    if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
-
     nmo_cmd_ctx_t c;
-    rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
-
-    rc = entity_list_run(&c, class_filter);
+    nmo_cmd_ctx_begin(&c, global);
+    const char *class_filter = NULL;
+    int rc = entity_list_parse(&c, argc, argv, &class_filter);
+    if (rc == NMO_CLI_EXIT_SUCCESS) {
+        rc = nmo_cmd_ctx_open(&c);
+    }
+    if (rc == NMO_CLI_EXIT_SUCCESS) {
+        rc = entity_list_run(&c, class_filter);
+    }
     return nmo_cmd_ctx_done(&c, rc);
 }
 
@@ -257,7 +260,8 @@ typedef struct entity_show_args {
     nmo_core_object_selector_t selector;
 } entity_show_args_t;
 
-static int entity_show_parse(int argc,
+static int entity_show_parse(nmo_cmd_ctx_t *c,
+                             int argc,
                              char **argv,
                              bool in_session,
                              entity_show_args_t *args)
@@ -270,7 +274,8 @@ static int entity_show_parse(int argc,
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    int rc = nmo_cmd_ctx_parse(c, argc, argv, opts, OPT_COUNT, &r);
+    if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
 
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
     uint32_t min_pos = in_session ? 1u : 2u;
@@ -488,15 +493,16 @@ static int entity_show_run(nmo_cmd_ctx_t *ctx, const entity_show_args_t *args)
 }
 
 int nmo_cmd_entity_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    entity_show_args_t args;
-    int rc = entity_show_parse(argc, argv, false, &args);
-    if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
-
     nmo_cmd_ctx_t c;
-    rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
-
-    rc = entity_show_run(&c, &args);
+    nmo_cmd_ctx_begin(&c, global);
+    entity_show_args_t args;
+    int rc = entity_show_parse(&c, argc, argv, false, &args);
+    if (rc == NMO_CLI_EXIT_SUCCESS) {
+        rc = nmo_cmd_ctx_open(&c);
+    }
+    if (rc == NMO_CLI_EXIT_SUCCESS) {
+        rc = entity_show_run(&c, &args);
+    }
     return nmo_cmd_ctx_done(&c, rc);
 }
 
@@ -509,13 +515,13 @@ int nmo_cmd_entity_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 
     if (strcmp(argv[0], "list") == 0 || strcmp(argv[0], "ls") == 0) {
         const char *class_filter = NULL;
-        int rc = entity_list_parse(argc, argv, &class_filter);
+        int rc = entity_list_parse(ctx, argc, argv, &class_filter);
         if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
         return entity_list_run(ctx, class_filter);
     }
     if (strcmp(argv[0], "show") == 0 || strcmp(argv[0], "s") == 0) {
         entity_show_args_t args;
-        int rc = entity_show_parse(argc, argv, true, &args);
+        int rc = entity_show_parse(ctx, argc, argv, true, &args);
         if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
         return entity_show_run(ctx, &args);
     }
@@ -640,10 +646,11 @@ int nmo_cmd_entity_set_position(int argc, char **argv,
     };
     enum { OPT_OUTPUT, OPT_DRYRUN, OPT_ID, OPT_NAME, OPT_COUNT };
 
+    nmo_cli_global_opts_t local_global = *global;
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
+    if (nmo_cli_parse_args(argc, argv, opts, OPT_COUNT, &r, &local_global) != NMO_CLI_EXIT_SUCCESS)
         return NMO_CLI_EXIT_ARG_ERROR;
 
     const char *output = nmo_opt_str(&vals[OPT_OUTPUT]);
@@ -704,7 +711,7 @@ int nmo_cmd_entity_set_position(int argc, char **argv,
         file_path,
         output,
         dry_run,
-        global,
+        &local_global,
         &spec,
         entity_set_position_mutate,
         entity_set_position_report,
@@ -824,10 +831,11 @@ int nmo_cmd_entity_set_parent(int argc, char **argv,
     };
     enum { OPT_OUTPUT, OPT_DRYRUN, OPT_ID, OPT_NAME, OPT_COUNT };
 
+    nmo_cli_global_opts_t local_global = *global;
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
+    if (nmo_cli_parse_args(argc, argv, opts, OPT_COUNT, &r, &local_global) != NMO_CLI_EXIT_SUCCESS)
         return NMO_CLI_EXIT_ARG_ERROR;
 
     const char *output = nmo_opt_str(&vals[OPT_OUTPUT]);
@@ -879,7 +887,7 @@ int nmo_cmd_entity_set_parent(int argc, char **argv,
         file_path,
         output,
         dry_run,
-        global,
+        &local_global,
         &spec,
         entity_set_parent_mutate,
         entity_set_parent_report,
@@ -1131,10 +1139,11 @@ int nmo_cmd_entity_set_camera(int argc, char **argv,
     enum { OPT_OUTPUT, OPT_FOV, OPT_NEAR, OPT_FAR, OPT_DRYRUN,
            OPT_ID, OPT_NAME, OPT_COUNT };
 
+    nmo_cli_global_opts_t local_global = *global;
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
+    if (nmo_cli_parse_args(argc, argv, opts, OPT_COUNT, &r, &local_global) != NMO_CLI_EXIT_SUCCESS)
         return NMO_CLI_EXIT_ARG_ERROR;
 
     const char *output = nmo_opt_str(&vals[OPT_OUTPUT]);
@@ -1194,7 +1203,7 @@ int nmo_cmd_entity_set_camera(int argc, char **argv,
         file_path,
         output,
         dry_run,
-        global,
+        &local_global,
         &spec,
         entity_set_fields_mutate,
         entity_set_fields_report,
@@ -1221,10 +1230,11 @@ int nmo_cmd_entity_set_light(int argc, char **argv,
     enum { OPT_OUTPUT, OPT_DIFFUSE, OPT_RANGE, OPT_DRYRUN,
            OPT_ID, OPT_NAME, OPT_COUNT };
 
+    nmo_cli_global_opts_t local_global = *global;
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
+    if (nmo_cli_parse_args(argc, argv, opts, OPT_COUNT, &r, &local_global) != NMO_CLI_EXIT_SUCCESS)
         return NMO_CLI_EXIT_ARG_ERROR;
 
     const char *output = nmo_opt_str(&vals[OPT_OUTPUT]);
@@ -1281,7 +1291,7 @@ int nmo_cmd_entity_set_light(int argc, char **argv,
         file_path,
         output,
         dry_run,
-        global,
+        &local_global,
         &spec,
         entity_set_fields_mutate,
         entity_set_fields_report,

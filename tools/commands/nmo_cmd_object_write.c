@@ -536,10 +536,12 @@ int nmo_cmd_object_rename(int argc, char **argv, const nmo_cli_global_opts_t *gl
     };
     enum { OPT_NAME, OPT_TO, OPT_REGEX, OPT_CLASS, OPT_DRY_RUN, OPT_OUTPUT, OPT_COUNT };
 
+    nmo_cli_global_opts_t local_global = *global;
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
+    if (nmo_cli_parse_args(argc, argv, opts, OPT_COUNT, &r, &local_global) !=
+        NMO_CLI_EXIT_SUCCESS)
         return NMO_CLI_EXIT_ARG_ERROR;
 
     /* Batch mode: --name is present */
@@ -554,13 +556,13 @@ int nmo_cmd_object_rename(int argc, char **argv, const nmo_cli_global_opts_t *gl
             nmo_opt_flag(&vals[OPT_DRY_RUN]),
             nmo_opt_str(&vals[OPT_OUTPUT]),
             file_path,
-            global);
+            &local_global);
     }
 
     /* Single mode: <id> <new_name> <file> -o <output> */
     const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
     if (!output_path) {
-        nmo_cli_print_missing_output(global, "Output file not specified (use -o or --output)");
+        nmo_cli_print_missing_output(&local_global, "Output file not specified (use -o or --output)");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
@@ -593,7 +595,7 @@ int nmo_cmd_object_rename(int argc, char **argv, const nmo_cli_global_opts_t *gl
         file_path,
         output_path,
         false,
-        global,
+        &local_global,
         &spec,
         object_rename_single_mutate,
         object_rename_single_report,
@@ -1163,10 +1165,12 @@ int nmo_cmd_object_delete(int argc, char **argv, const nmo_cli_global_opts_t *gl
     enum { OPT_OUTPUT, OPT_CLASS, OPT_NAME, OPT_CASCADE,
            OPT_DRYRUN, OPT_STRICT, OPT_COUNT };
 
+    nmo_cli_global_opts_t local_global = *global;
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
+    if (nmo_cli_parse_args(argc, argv, opts, OPT_COUNT, &r, &local_global) !=
+        NMO_CLI_EXIT_SUCCESS)
         return NMO_CLI_EXIT_ARG_ERROR;
 
     const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
@@ -1176,12 +1180,12 @@ int nmo_cmd_object_delete(int argc, char **argv, const nmo_cli_global_opts_t *gl
     bool use_filter = vals[OPT_CLASS].present || vals[OPT_NAME].present;
 
     if (!dry_run && !output_path) {
-        nmo_cli_print_missing_output(global, "-o/--output is required (or use --dry-run)");
+        nmo_cli_print_missing_output(&local_global, "-o/--output is required (or use --dry-run)");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
     /* Batch mode: all positional args are files (filter mode only) */
-    if (global->batch_mode && use_filter && r.pos_count > 0 && output_path) {
+    if (local_global.batch_mode && use_filter && r.pos_count > 0 && output_path) {
         delete_batch_ctx_t batch_ctx;
         memset(&batch_ctx, 0, sizeof(batch_ctx));
         if (vals[OPT_CLASS].present) {
@@ -1195,7 +1199,7 @@ int nmo_cmd_object_delete(int argc, char **argv, const nmo_cli_global_opts_t *gl
         batch_ctx.cascade = cascade;
         batch_ctx.strict = strict;
         return nmo_tool_batch_write_run(
-            r.pos_args, r.pos_count, output_path, global,
+            r.pos_args, r.pos_count, output_path, &local_global,
             "object.delete", delete_batch_handler, &batch_ctx);
     }
 
@@ -1224,7 +1228,7 @@ int nmo_cmd_object_delete(int argc, char **argv, const nmo_cli_global_opts_t *gl
         file_path,
         output_path,
         dry_run,
-        global,
+        &local_global,
         &spec,
         object_delete_mutate,
         object_delete_report,
@@ -1439,10 +1443,12 @@ int nmo_cmd_object_create(int argc, char **argv, const nmo_cli_global_opts_t *gl
     };
     enum { OPT_OUTPUT, OPT_CLASS, OPT_NAME, OPT_TYPE_GUID, OPT_DRYRUN, OPT_COUNT };
 
+    nmo_cli_global_opts_t local_global = *global;
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
+    if (nmo_cli_parse_args(argc, argv, opts, OPT_COUNT, &r, &local_global) !=
+        NMO_CLI_EXIT_SUCCESS)
         return NMO_CLI_EXIT_ARG_ERROR;
 
     const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
@@ -1451,7 +1457,7 @@ int nmo_cmd_object_create(int argc, char **argv, const nmo_cli_global_opts_t *gl
     bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
 
     if (!dry_run && !output_path) {
-        nmo_cli_print_missing_output(global, "-o/--output is required (or use --dry-run)");
+        nmo_cli_print_missing_output(&local_global, "-o/--output is required (or use --dry-run)");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     if (!class_str) {
@@ -1497,7 +1503,7 @@ int nmo_cmd_object_create(int argc, char **argv, const nmo_cli_global_opts_t *gl
         file_path,
         output_path,
         dry_run,
-        global,
+        &local_global,
         &spec,
         object_create_mutate,
         object_create_report,
@@ -1783,10 +1789,12 @@ int nmo_cmd_object_copy(int argc, char **argv, const nmo_cli_global_opts_t *glob
     };
     enum { OPT_OUTPUT, OPT_CLASS, OPT_NAME, OPT_CASCADE, OPT_DRYRUN, OPT_COUNT };
 
+    nmo_cli_global_opts_t local_global = *global;
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
+    if (nmo_cli_parse_args(argc, argv, opts, OPT_COUNT, &r, &local_global) !=
+        NMO_CLI_EXIT_SUCCESS)
         return NMO_CLI_EXIT_ARG_ERROR;
 
     const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
@@ -1795,7 +1803,7 @@ int nmo_cmd_object_copy(int argc, char **argv, const nmo_cli_global_opts_t *glob
     bool use_filter = vals[OPT_CLASS].present || vals[OPT_NAME].present;
 
     if (!dry_run && !output_path) {
-        nmo_cli_print_missing_output(global, "-o/--output is required (or use --dry-run)");
+        nmo_cli_print_missing_output(&local_global, "-o/--output is required (or use --dry-run)");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
@@ -1822,7 +1830,7 @@ int nmo_cmd_object_copy(int argc, char **argv, const nmo_cli_global_opts_t *glob
         file_path,
         output_path,
         dry_run,
-        global,
+        &local_global,
         &spec,
         object_copy_mutate,
         object_copy_report,
@@ -1984,10 +1992,12 @@ int nmo_cmd_object_import(int argc, char **argv, const nmo_cli_global_opts_t *gl
     };
     enum { OPT_FORMAT, OPT_OUTPUT, OPT_CREATE, OPT_DRYRUN, OPT_COUNT };
 
+    nmo_cli_global_opts_t local_global = *global;
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
+    if (nmo_cli_parse_args(argc, argv, opts, OPT_COUNT, &r, &local_global) !=
+        NMO_CLI_EXIT_SUCCESS)
         return NMO_CLI_EXIT_ARG_ERROR;
 
     const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
@@ -2003,7 +2013,7 @@ int nmo_cmd_object_import(int argc, char **argv, const nmo_cli_global_opts_t *gl
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     if (!dry_run && !output_path) {
-        nmo_cli_print_missing_output(global, "-o/--output required (or use --dry-run)");
+        nmo_cli_print_missing_output(&local_global, "-o/--output required (or use --dry-run)");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     if (r.pos_count < 2) {
@@ -2055,7 +2065,7 @@ int nmo_cmd_object_import(int argc, char **argv, const nmo_cli_global_opts_t *gl
         nmo_path,
         output_path,
         dry_run,
-        global,
+        &local_global,
         &spec,
         object_import_mutate,
         object_import_report,
@@ -2136,10 +2146,12 @@ int nmo_cmd_object_set_field(int argc, char **argv,
     };
     enum { OPT_OUTPUT, OPT_DRYRUN, OPT_ID, OPT_NAME, OPT_COUNT };
 
+    nmo_cli_global_opts_t local_global = *global;
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
+    if (nmo_cli_parse_args(argc, argv, opts, OPT_COUNT, &r, &local_global) !=
+        NMO_CLI_EXIT_SUCCESS)
         return NMO_CLI_EXIT_ARG_ERROR;
 
     const char *output = nmo_opt_str(&vals[OPT_OUTPUT]);
@@ -2190,7 +2202,7 @@ int nmo_cmd_object_set_field(int argc, char **argv,
         file_path,
         output,
         dry_run,
-        global,
+        &local_global,
         &spec,
         object_set_field_mutate,
         object_set_field_report,
