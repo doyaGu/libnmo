@@ -609,7 +609,36 @@ TEST(data_section_layouts, legacy_objects_reject_invalid_lengths_and_compressed_
     nmo_arena_destroy(arena);
 }
 
+TEST(data_section_layouts, record_counts_are_bounded_before_array_allocation)
+{
+    for (uint32_t version = 6u; version <= 8u; ++version) {
+        nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+        ASSERT_NOT_NULL(arena);
+        const size_t before = nmo_arena_bytes_used(arena);
+        const uint8_t bytes[12] = {0};
+        nmo_data_section_t section = {0};
+        section.manager_count = 2u;
+        ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_data_section_parse(
+            bytes, sizeof(bytes), version, &section, NULL, arena));
+        ASSERT_EQ(before, nmo_arena_bytes_used(arena));
+        ASSERT_NULL(section.managers);
+        nmo_arena_destroy(arena);
+    }
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    const size_t before = nmo_arena_bytes_used(arena);
+    const uint8_t bytes[4] = {0};
+    nmo_data_section_t section = {0};
+    section.object_count = 2u;
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_data_section_parse(
+        bytes, sizeof(bytes), 8u, &section, NULL, arena));
+    ASSERT_EQ(before, nmo_arena_bytes_used(arena));
+    ASSERT_NULL(section.objects);
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
+    REGISTER_TEST(data_section_layouts, record_counts_are_bounded_before_array_allocation);
     REGISTER_TEST(data_section_layouts, legacy_objects_reject_invalid_lengths_and_compressed_data);
     REGISTER_TEST(old_sub_chunk, chunk_older_than_four_reads_the_old_layout);
     REGISTER_TEST(old_sub_chunk, sequence_of_old_sub_chunks);

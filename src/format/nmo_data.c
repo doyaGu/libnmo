@@ -82,6 +82,11 @@ static nmo_status_t parse_manager_data(
         NMO_RETURN_OK();
     }
 
+    if (*pos > size || (size_t)section->manager_count > (size - *pos) / 12u) {
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                         "Manager records exceed data section bounds");
+    }
+
     /* Allocate manager data array */
     size_t manager_bytes = 0;
     if (!nmo_safe_mul_size(sizeof(nmo_manager_data_t), section->manager_count, &manager_bytes)) {
@@ -254,6 +259,13 @@ static nmo_status_t parse_object_data(
     if (section->object_count == 0) {
         section->objects = NULL;
         NMO_RETURN_OK();
+    }
+
+    const size_t minimum_entry_size = file_version < 7u ? 8u : 4u;
+    if (*pos > size ||
+        (size_t)section->object_count > (size - *pos) / minimum_entry_size) {
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                         "Object records exceed data section bounds");
     }
 
     /* Allocate object data array */
