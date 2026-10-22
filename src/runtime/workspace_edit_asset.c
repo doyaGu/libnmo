@@ -921,23 +921,23 @@ static nmo_status_t workspace_obj_mesh_build(
         nmo_vertex_t *v0 = &vertices[face_indices[face_index * 3u + 0u]];
         nmo_vertex_t *v1 = &vertices[face_indices[face_index * 3u + 1u]];
         nmo_vertex_t *v2 = &vertices[face_indices[face_index * 3u + 2u]];
-        float e1x = v1->position.x - v0->position.x;
-        float e1y = v1->position.y - v0->position.y;
-        float e1z = v1->position.z - v0->position.z;
-        float e2x = v2->position.x - v0->position.x;
-        float e2y = v2->position.y - v0->position.y;
-        float e2z = v2->position.z - v0->position.z;
-        float nx = e1y * e2z - e1z * e2y;
-        float ny = e1z * e2x - e1x * e2z;
-        float nz = e1x * e2y - e1y * e2x;
-        float len = sqrtf(nx * nx + ny * ny + nz * nz);
-        if (len > 1e-8f) {
+        double e1x = (double)v1->position.x - v0->position.x;
+        double e1y = (double)v1->position.y - v0->position.y;
+        double e1z = (double)v1->position.z - v0->position.z;
+        double e2x = (double)v2->position.x - v0->position.x;
+        double e2y = (double)v2->position.y - v0->position.y;
+        double e2z = (double)v2->position.z - v0->position.z;
+        double nx = e1y * e2z - e1z * e2y;
+        double ny = e1z * e2x - e1x * e2z;
+        double nz = e1x * e2y - e1y * e2x;
+        double len = sqrt(nx * nx + ny * ny + nz * nz);
+        if (len > 0.0) {
             nx /= len;
             ny /= len;
             nz /= len;
         }
 
-        faces[face_index].normal = (nmo_vector_t){nx, ny, nz};
+        faces[face_index].normal = (nmo_vector_t){(float)nx, (float)ny, (float)nz};
         faces[face_index].material_group_idx =
             obj_face->material_group == NMO_OBJ_NO_MATERIAL
                 ? 0u

@@ -412,18 +412,18 @@ void nmo_mesh_update_bounding_volumes(nmo_mesh_state_t *state) {
     state->bary_center.y = (float)(sum_y / (double)state->vertex_count);
     state->bary_center.z = (float)(sum_z / (double)state->vertex_count);
 
-    float max_dist_sq = 0.0f;
+    double max_dist_sq = 0.0;
     for (uint32_t i = 0; i < state->vertex_count; ++i) {
         const nmo_vector_t *pos = &state->vertices[i].position;
-        float dx = pos->x - state->bary_center.x;
-        float dy = pos->y - state->bary_center.y;
-        float dz = pos->z - state->bary_center.z;
-        float dist_sq = dx * dx + dy * dy + dz * dz;
+        double dx = (double)pos->x - state->bary_center.x;
+        double dy = (double)pos->y - state->bary_center.y;
+        double dz = (double)pos->z - state->bary_center.z;
+        double dist_sq = dx * dx + dy * dy + dz * dz;
         if (dist_sq > max_dist_sq) {
             max_dist_sq = dist_sq;
         }
     }
-    state->radius = sqrtf(max_dist_sq);
+    state->radius = (float)sqrt(max_dist_sq);
 }
 
 bool nmo_mesh_normals_are_derived(const nmo_mesh_state_t *state) {
@@ -462,33 +462,36 @@ nmo_status_t nmo_mesh_build_vertex_normals(
         const nmo_vector_t *p0 = &state->vertices[ids[0]].position;
         const nmo_vector_t *p1 = &state->vertices[ids[1]].position;
         const nmo_vector_t *p2 = &state->vertices[ids[2]].position;
-        const float e1x = p1->x - p0->x, e1y = p1->y - p0->y, e1z = p1->z - p0->z;
-        const float e2x = p2->x - p0->x, e2y = p2->y - p0->y, e2z = p2->z - p0->z;
-        float nx = e1y * e2z - e1z * e2y;
-        float ny = e1z * e2x - e1x * e2z;
-        float nz = e1x * e2y - e1y * e2x;
-        const float length = sqrtf(nx * nx + ny * ny + nz * nz);
-        if (length <= 0.0f) {
+        const double e1x = (double)p1->x - p0->x;
+        const double e1y = (double)p1->y - p0->y;
+        const double e1z = (double)p1->z - p0->z;
+        const double e2x = (double)p2->x - p0->x;
+        const double e2y = (double)p2->y - p0->y;
+        const double e2z = (double)p2->z - p0->z;
+        const double nx = e1y * e2z - e1z * e2y;
+        const double ny = e1z * e2x - e1x * e2z;
+        const double nz = e1x * e2y - e1y * e2x;
+        const double length = sqrt(nx * nx + ny * ny + nz * nz);
+        if (!(length > 0.0)) {
             continue;
         }
-        nx /= length;
-        ny /= length;
-        nz /= length;
+        const nmo_vector_t face_normal = {
+            (float)(nx / length), (float)(ny / length), (float)(nz / length)};
         for (int corner = 0; corner < 3; ++corner) {
-            out_normals[ids[corner]].x += nx;
-            out_normals[ids[corner]].y += ny;
-            out_normals[ids[corner]].z += nz;
+            out_normals[ids[corner]].x += face_normal.x;
+            out_normals[ids[corner]].y += face_normal.y;
+            out_normals[ids[corner]].z += face_normal.z;
         }
     }
 
     for (uint32_t i = 0; i < state->vertex_count; ++i) {
         nmo_vector_t *normal = &out_normals[i];
-        const float length = sqrtf(normal->x * normal->x + normal->y * normal->y +
-                                   normal->z * normal->z);
-        if (length > 0.0f) {
-            normal->x /= length;
-            normal->y /= length;
-            normal->z /= length;
+        const double x = normal->x, y = normal->y, z = normal->z;
+        const double length = sqrt(x * x + y * y + z * z);
+        if (length > 0.0) {
+            normal->x = (float)(x / length);
+            normal->y = (float)(y / length);
+            normal->z = (float)(z / length);
         }
     }
     NMO_RETURN_OK();

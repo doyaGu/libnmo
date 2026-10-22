@@ -108,9 +108,52 @@ TEST(mesh_normals, ignores_faces_with_bad_indices_and_degenerate_faces) {
     }
 }
 
+TEST(mesh_normals, finite_scales_keep_unit_normals_and_radius) {
+    const float scales[] = {1.0e-30f, 1.0e30f};
+    for (size_t scale = 0u; scale < sizeof(scales) / sizeof(scales[0]); ++scale) {
+        nmo_mesh_state_t mesh;
+        nmo_vertex_t vertices[4];
+        uint16_t indices[6];
+        make_quad(&mesh, vertices, indices);
+        for (size_t i = 0u; i < 4u; ++i) {
+            vertices[i].position.x *= scales[scale];
+            vertices[i].position.y *= scales[scale];
+        }
+        nmo_vector_t normals[4];
+        ASSERT_EQ(NMO_OK, nmo_mesh_build_vertex_normals(&mesh, normals));
+        for (size_t i = 0u; i < 4u; ++i) {
+            ASSERT_TRUE(isfinite(normals[i].x) && isfinite(normals[i].y) && isfinite(normals[i].z));
+            ASSERT_FLOAT_EQ(1.0f, normals[i].z, 1.0e-6f);
+        }
+        nmo_mesh_update_bounding_volumes(&mesh);
+        ASSERT_TRUE(isfinite(mesh.radius));
+        ASSERT_FLOAT_EQ(sqrtf(0.5f), mesh.radius / scales[scale], 1.0e-6f);
+    }
+}
+
+TEST(mesh_normals, nearly_opposite_faces_keep_the_residual_direction) {
+    nmo_vertex_t vertices[5] = {0};
+    vertices[1].position = (nmo_vector_t){1.0f, 0.0f, 0.0f};
+    vertices[2].position = (nmo_vector_t){0.0f, 1.0f, 0.0f};
+    vertices[3].position = (nmo_vector_t){0.0f, 1.0f, 0.0f};
+    vertices[4].position = (nmo_vector_t){1.0f, 0.0f, 1.0e-30f};
+    uint16_t indices[] = {0u, 1u, 2u, 0u, 3u, 4u};
+    nmo_mesh_state_t mesh = {
+        .vertices = vertices, .vertex_count = 5u,
+        .face_vertex_indices = indices, .face_count = 2u};
+    nmo_vector_t normals[5];
+    ASSERT_EQ(NMO_OK, nmo_mesh_build_vertex_normals(&mesh, normals));
+    ASSERT_TRUE(isfinite(normals[0].x));
+    ASSERT_FLOAT_EQ(1.0f, normals[0].x, 1.0e-6f);
+    ASSERT_EQ(0.0f, normals[0].y);
+    ASSERT_EQ(0.0f, normals[0].z);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(mesh_normals, all_zero_normals_count_as_derived);
     REGISTER_TEST(mesh_normals, builds_unit_normals_from_face_winding);
     REGISTER_TEST(mesh_normals, averages_faces_that_meet_at_a_vertex);
     REGISTER_TEST(mesh_normals, ignores_faces_with_bad_indices_and_degenerate_faces);
+    REGISTER_TEST(mesh_normals, finite_scales_keep_unit_normals_and_radius);
+    REGISTER_TEST(mesh_normals, nearly_opposite_faces_keep_the_residual_direction);
 TEST_MAIN_END()

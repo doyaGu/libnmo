@@ -18,6 +18,7 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include <math.h>
 #include <string.h>
 
 static void create_workspace(
@@ -518,6 +519,40 @@ TEST(asset_edit_obj_mesh, reimport_keeps_the_scripts_and_visibility_of_the_mesh)
     destroy_workspace(ctx, doc, workspace);
 }
 
+TEST(asset_edit_obj_mesh, imported_normals_survive_finite_geometry_scales)
+{
+    const char *sources[] = {
+        "v 0 0 0\nv 1e-30 0 0\nv 0 1e-30 0\nf 1 2 3\n",
+        "v 0 0 0\nv 1e30 0 0\nv 0 1e30 0\nf 1 2 3\n"};
+    for (size_t i = 0u; i < sizeof(sources) / sizeof(sources[0]); ++i) {
+        nmo_context_t *ctx = NULL;
+        nmo_document_t *doc = NULL;
+        nmo_workspace_t *workspace = NULL;
+        create_workspace(&ctx, &doc, &workspace);
+        nmo_workspace_edit_t *edit = NULL;
+        ASSERT_EQ(NMO_OK, nmo_workspace_edit_begin(workspace, "scaled normals", &edit));
+        nmo_object_id_t mesh_id = 0u;
+        ASSERT_EQ(NMO_OK, nmo_object_edit_create(edit,
+            &(nmo_object_create_desc_t){.class_id = NMO_CID_MESH, .name = "Scaled"}, &mesh_id));
+        nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+        ASSERT_NOT_NULL(arena);
+        nmo_obj_data_t obj = {0};
+        parse_obj_or_fail(arena, sources[i], &obj);
+        ASSERT_EQ(NMO_OK, nmo_asset_edit_set_obj_mesh(edit, mesh_id, &obj, NULL));
+        ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(edit));
+        const nmo_object_t *object = find_object(doc, mesh_id);
+        ASSERT_NOT_NULL(object);
+        const nmo_mesh_state_t *mesh = nmo_object_get_state(object);
+        ASSERT_NOT_NULL(mesh);
+        ASSERT_EQ(1u, mesh->face_count);
+        ASSERT_TRUE(isfinite(mesh->faces[0].normal.z));
+        ASSERT_FLOAT_EQ(1.0f, mesh->faces[0].normal.z, 1.0e-6f);
+        ASSERT_TRUE(isfinite(mesh->radius) && mesh->radius > 0.0f);
+        nmo_arena_destroy(arena);
+        destroy_workspace(ctx, doc, workspace);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(asset_edit_obj_mesh, imports_triangle_from_parsed_obj);
 REGISTER_TEST(asset_edit_obj_mesh, binds_named_obj_materials);
@@ -530,4 +565,5 @@ REGISTER_TEST(asset_edit_obj_mesh, rejects_overflowing_combined_vertex_count);
 REGISTER_TEST(asset_edit_obj_mesh, imports_obj_from_file);
 REGISTER_TEST(asset_edit_obj_mesh, binds_derived_entity_to_explicit_mesh);
 REGISTER_TEST(asset_edit_obj_mesh, reimport_keeps_the_scripts_and_visibility_of_the_mesh);
+REGISTER_TEST(asset_edit_obj_mesh, imported_normals_survive_finite_geometry_scales);
 TEST_MAIN_END()
