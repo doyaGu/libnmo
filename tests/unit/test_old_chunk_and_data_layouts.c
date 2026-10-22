@@ -15,6 +15,8 @@
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_data.h"
+#include "format/nmo_header.h"
+#include <miniz.h>
 
 #include <string.h>
 
@@ -548,7 +550,67 @@ TEST(data_section_layouts, version_8_has_no_leading_counts)
     nmo_arena_destroy(arena);
 }
 
+TEST(data_section_layouts, legacy_objects_reject_invalid_lengths_and_compressed_data)
+{
+    static const struct {
+        uint32_t unpacked_size;
+        uint32_t stored_size;
+        uint32_t flags;
+        nmo_status_t expected;
+    } cases[] = {
+        {0u, 0u, 0u, NMO_OK},
+        {UINT32_MAX, 0u, 0u, NMO_ERR_INVALID_FORMAT},
+        {3u, 4u, 0u, NMO_ERR_INVALID_FORMAT},
+        {4u, 3u, 0u, NMO_ERR_INVALID_FORMAT},
+        {4u, 4u, 0u, NMO_OK},
+        {8u, 4u, 0u, NMO_OK},
+        {4u, 4u, NMO_FILE_WRITE_CHUNK_COMPRESSED_OLD, NMO_OK},
+        {8u, 4u, NMO_FILE_WRITE_CHUNK_COMPRESSED_OLD, NMO_ERR_DECOMPRESSION_FAILED},
+    };
+    for (uint32_t version = 2u; version <= 3u; ++version) {
+        for (size_t c = 0; c < sizeof(cases) / sizeof(cases[0]); ++c) {
+            nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+            ASSERT_NOT_NULL(arena);
+            uint32_t words[] = {1u, 1u, 1u, cases[c].unpacked_size,
+                                23u, 0u, cases[c].stored_size, 0u};
+            uint8_t bytes[sizeof(words)];
+            for (size_t d = 0; d < sizeof(words) / sizeof(words[0]); ++d) {
+                nmo_write_u32_le(bytes + d * 4u, words[d]);
+            }
+            nmo_data_section_t section = {0};
+            section.file_write_mode = cases[c].flags;
+            section.save_id_max = 777u;
+            ASSERT_EQ(cases[c].expected, nmo_data_section_parse(
+                bytes, sizeof(bytes), version, &section, NULL, arena));
+            if (cases[c].expected != NMO_OK) {
+                ASSERT_EQ(777u, section.save_id_max);
+                ASSERT_EQ(0u, section.object_count);
+                ASSERT_NULL(section.objects);
+            }
+            nmo_arena_destroy(arena);
+        }
+    }
+
+    /* Successful zlib decoding must also produce exactly the declared size. */
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    uint8_t bytes[128] = {0};
+    const uint8_t raw[4] = {1u, 2u, 3u, 4u};
+    mz_ulong compressed_size = sizeof(bytes) - 28u;
+    ASSERT_EQ(MZ_OK, mz_compress(bytes + 28u, &compressed_size, raw, sizeof(raw)));
+    const uint32_t words[] = {1u, 1u, 1u, 8u, 23u, 0u, (uint32_t)compressed_size};
+    for (size_t d = 0; d < sizeof(words) / sizeof(words[0]); ++d) {
+        nmo_write_u32_le(bytes + d * 4u, words[d]);
+    }
+    nmo_data_section_t section = {0};
+    section.file_write_mode = NMO_FILE_WRITE_CHUNK_COMPRESSED_OLD;
+    ASSERT_EQ(NMO_ERR_DECOMPRESSION_FAILED, nmo_data_section_parse(
+        bytes, 28u + compressed_size, 2u, &section, NULL, arena));
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
+    REGISTER_TEST(data_section_layouts, legacy_objects_reject_invalid_lengths_and_compressed_data);
     REGISTER_TEST(old_sub_chunk, chunk_older_than_four_reads_the_old_layout);
     REGISTER_TEST(old_sub_chunk, sequence_of_old_sub_chunks);
     REGISTER_TEST(old_sub_chunk, null_and_truncated_old_sub_chunks);

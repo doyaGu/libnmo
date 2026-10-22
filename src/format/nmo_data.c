@@ -153,8 +153,8 @@ static nmo_status_t parse_manager_data(
  * the stored bytes. The chunk is built as CKStateChunk(class id, NULL) builds
  * it, with data and chunk version 0, so its reads take the layout of chunks
  * older than version 4. With NMO_FILE_WRITE_CHUNK_COMPRESSED_OLD and a stored
- * size that differs from the size, the bytes are zlib packed; a chunk that
- * does not unpack is dropped, as the engine drops it.
+ * size that differs from the size, the bytes are zlib packed. Invalid raw
+ * lengths or failed decompression reject the data section atomically.
  */
 static nmo_status_t parse_object_entry_v2(
     const uint8_t *data,
@@ -170,8 +170,11 @@ static nmo_status_t parse_object_entry_v2(
     obj->data_size = nmo_read_u32_le(data + *pos + 4);
     *pos += 8;
     obj->chunk = NULL;
-    if ((int32_t)obj->data_size <= 0) {
-        obj->data_size = 0;
+    if (obj->data_size > INT32_MAX || (obj->data_size & 3u) != 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Object entry %u has an invalid unpacked size", (unsigned)index);
+    }
+    if (obj->data_size == 0u) {
         NMO_RETURN_OK();
     }
 
@@ -183,12 +186,15 @@ static nmo_status_t parse_object_entry_v2(
         NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR,
                          "Object entry %u has no class id", (unsigned)index);
     }
+    const bool packed = stored_size != obj->data_size &&
+                        (file_write_mode & NMO_FILE_WRITE_CHUNK_COMPRESSED_OLD) != 0;
+    if (stored_size > INT32_MAX || (!packed && (stored_size & 3u) != 0u)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Object entry %u has an invalid stored size", (unsigned)index);
+    }
     CHECK_BUFFER_SIZE(arena, *pos, stored_size, size);
     const uint8_t *stored = data + *pos;
     *pos += stored_size;
-
-    const bool packed = stored_size != obj->data_size &&
-                        (file_write_mode & NMO_FILE_WRITE_CHUNK_COMPRESSED_OLD) != 0;
     const uint8_t *bytes = stored;
     size_t byte_count = stored_size;
     uint8_t *unpacked = NULL;
@@ -199,9 +205,10 @@ static nmo_status_t parse_object_entry_v2(
                              "Failed to allocate object entry %u", (unsigned)index);
         }
         mz_ulong unpacked_size = obj->data_size;
-        if (mz_uncompress(unpacked, &unpacked_size, stored, stored_size) != MZ_OK) {
-            obj->data_size = 0;
-            NMO_RETURN_OK();
+        if (mz_uncompress(unpacked, &unpacked_size, stored, stored_size) != MZ_OK ||
+            unpacked_size != obj->data_size) {
+            NMO_RETURN_ERROR(NMO_ERR_DECOMPRESSION_FAILED, NMO_SEVERITY_ERROR,
+                             "Failed to unpack object entry %u", (unsigned)index);
         }
         bytes = unpacked;
         byte_count = (size_t)unpacked_size;
