@@ -4,6 +4,7 @@
 #define GUID_DELAYER NMO_GUID(0x15d472a5, 0x3bea409f)
 #define GUID_WAIT_MESSAGE NMO_GUID(0x4587ffee, 0x4587ffdd)
 #define GUID_SEND_MESSAGE NMO_GUID(0xa20e8d5b, 0xdf002150)
+#define GUID_BROADCAST_MESSAGE NMO_GUID(0x3d6c4ae1, 0x72ae2cd6)
 #define GUID_SWITCH_ON_MESSAGE NMO_GUID(0x1bb23f1d, 0x17ff14b9)
 #define GUID_EXECUTE_SCRIPT NMO_GUID(0x706c5a40, 0x5bb31a0b)
 #define GUID_DEACTIVATE_SCRIPT NMO_GUID(0x14367c05, 0x635b24f9)
@@ -125,27 +126,36 @@ TEST(engine_messages, waiting_keeps_the_script_active_until_the_message_comes)
 
 TEST(engine_messages, broadcast_reaches_waiters_of_the_class)
 {
-    /*
-     * Sent from the host: script edits cannot add a Broadcast Message, whose
-     * "Type" default ("Behavioral Object") they do not parse.
-     */
-    engine_fixture_t f;
-    begin(&f);
-    nmo_object_id_t after = 0;
-    nmo_object_id_t wait = add_wait(&f, MSG_A, &after);
-    fixture_commit(&f, NULL);
+    for (int matching = 0; matching < 2; matching++) {
+        engine_fixture_t f;
+        begin(&f);
+        nmo_object_id_t after = 0;
+        nmo_object_id_t wait = add_wait(&f, MSG_A, &after);
+        nmo_object_id_t broadcast = fixture_block(&f, GUID_BROADCAST_MESSAGE, "Broadcast");
+        ASSERT_TRUE(broadcast != 0);
+        fixture_link(&f, f.script_in, BLOCK_IN(&f, broadcast, 0), 0);
+        fixture_input_int(&f, BLOCK_PIN(&f, broadcast, 0), MSG_A);
+        /*
+         * "Type" keeps its default, "Behavioral Object", which the owner (a 3D
+         * entity) derives from; a broadcast to cameras misses it.
+         */
+        if (!matching) {
+            fixture_input_int(&f, BLOCK_PIN(&f, broadcast, 1), NMO_CID_CAMERA);
+        }
+        if (fixture_target(&f, broadcast) != 0) {
+            fixture_input_int(&f, fixture_target(&f, broadcast), (int32_t)f.owner_id);
+        }
+        fixture_commit(&f, NULL);
 
-    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
-    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
-    /* The owner is a 3D entity: a broadcast to cameras misses it */
-    ASSERT_EQ(NMO_OK, nmo_engine_broadcast_message(f.engine, MSG_A, NMO_CID_CAMERA, 0));
-    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
-    ASSERT_TRUE((nmo_engine_behavior_flags(f.engine, wait) & CKBEHAVIOR_WAITSFORMESSAGE) != 0);
-    ASSERT_EQ(NMO_OK, nmo_engine_broadcast_message(f.engine, MSG_A, NMO_CID_BEOBJECT, 0));
-    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
-    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
-    ASSERT_EQ(1u, runs(&f, after));
-    fixture_end(&f);
+        ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+        ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+        ASSERT_EQ(1u, runs(&f, broadcast));
+        ASSERT_EQ(matching ? 0 : 1,
+                  (nmo_engine_behavior_flags(f.engine, wait) & CKBEHAVIOR_WAITSFORMESSAGE) != 0);
+        ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+        ASSERT_EQ(matching ? 1u : 0u, runs(&f, after));
+        fixture_end(&f);
+    }
 }
 
 TEST(engine_messages, switch_on_message_sees_last_frame_messages)
