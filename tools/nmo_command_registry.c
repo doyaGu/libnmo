@@ -657,6 +657,24 @@ static void behavior_trace_usage(FILE *out) {
     fprintf(out, "  --max-depth <n>  Maximum trace depth\n");
 }
 
+static void behavior_run_usage(FILE *out) {
+    fprintf(out, "Usage: nmo behavior run [options] <file>\n\n");
+    fprintf(out, "Run the behavior graphs of the file frame by frame, as the Virtools behavior\n");
+    fprintf(out, "manager does, and report what executes. The file is not changed. Building\n");
+    fprintf(out, "blocks the engine has no function for are listed at the end.\n\n");
+    fprintf(out, "Output:\n");
+    fprintf(out, "  Use global -f json or -f json-pretty for machine-readable output.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  -n, --frames <n>          Frames to run (default: 1)\n");
+    fprintf(out, "  --delta <ms>              Frame time in ms (default: 16.667)\n");
+    fprintf(out, "  --start <mode>            Scripts to start: scene, all or none (default: scene)\n");
+    fprintf(out, "  -s, --script <id>         Start only this script (reset)\n");
+    fprintf(out, "  --unknown <mode>          Blocks without a function: stop or pass (default: stop)\n");
+    fprintf(out, "  --max-iterations <n>      Iterations per graph and frame (default: 8000)\n");
+    fprintf(out, "  --seed <n>                Random seed (default: 1)\n");
+    fprintf(out, "  -t, --trace               Show links, operations and graphs too\n");
+}
+
 static void behavior_interface_usage(FILE *out) {
     fprintf(out, "Output:\n");
     fprintf(out, "  Use global -f json or -f json-pretty for machine-readable output.\n\n");
@@ -1160,6 +1178,7 @@ static const nmo_cli_action_t behavior_actions[] = {
     ACTION("dump", "d", "Dump compact behavior tree overview", nmo_cmd_behavior_dump, behavior_dump_usage, NMO_REPL_ACTION_READ_SESSION),
     ACTION("find", "f", "Search behaviors by name/GUID/type", nmo_cmd_behavior_find, behavior_find_usage, NMO_REPL_ACTION_READ_SESSION),
     ACTION("trace", "tr", "Trace execution path from IO", nmo_cmd_behavior_trace, behavior_trace_usage, NMO_REPL_ACTION_READ_SESSION),
+    ACTION("run", NULL, "Run behavior graphs frame by frame", nmo_cmd_behavior_run, behavior_run_usage, NMO_REPL_ACTION_READ_SESSION),
     ACTION("add-link", NULL, "Add behavior graph link", nmo_cmd_behavior_add_link, behavior_add_link_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),
     ACTION("remove-link", NULL, "Remove behavior graph link", nmo_cmd_behavior_remove_link, behavior_remove_link_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),
     ACTION_SUB("interface", "iface", "Interface layout commands", behavior_interface_usage,

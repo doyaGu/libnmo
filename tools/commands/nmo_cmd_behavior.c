@@ -41,7 +41,7 @@
 int nmo_cmd_behavior_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 {
     if (!ctx || argc < 1 || !argv || !argv[0]) {
-        fprintf(stderr, "Usage: behavior list|stats|show|graph|dump|find|trace|interface show ...\n");
+        fprintf(stderr, "Usage: behavior list|stats|show|graph|dump|find|trace|run|interface show ...\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
@@ -68,6 +68,9 @@ int nmo_cmd_behavior_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
     }
     if (strcmp(argv[0], "graph") == 0 || strcmp(argv[0], "g") == 0) {
         return nmo_cmd_behavior_graph_in_session(ctx, argc, argv);
+    }
+    if (strcmp(argv[0], "run") == 0) {
+        return nmo_cmd_behavior_run_in_session(ctx, argc, argv);
     }
     if (strcmp(argv[0], "graph-boundary") == 0) {
         return nmo_cmd_behavior_graph_boundary_in_session(ctx, argc, argv);

@@ -51,6 +51,7 @@ add_executable(nmo_cli
     commands/nmo_cmd_behavior_flow.c
     commands/nmo_cmd_behavior_graph.c
     commands/nmo_cmd_behavior_rewrite.c
+    commands/nmo_cmd_behavior_run.c
     commands/nmo_cmd_behavior_search.c
     commands/nmo_cmd_behavior_interface.c
     commands/nmo_cmd_behavior_interface_comment.c
@@ -80,7 +81,7 @@ add_executable(nmo_cli
     commands/nmo_cmd_completion.c
 )
 set_target_properties(nmo_cli PROPERTIES OUTPUT_NAME nmo)
-target_link_libraries(nmo_cli PRIVATE nmo_project nmo_lua nmo_edit nmo yyjson)
+target_link_libraries(nmo_cli PRIVATE nmo_project nmo_lua nmo_edit nmo_engine nmo yyjson)
 
 # The analyses `nmo script analyze` bundles, compiled into nmo_cmd_script_analyze.c.
 foreach(_nmo_analysis IN ITEMS summary messages arrays interactions)

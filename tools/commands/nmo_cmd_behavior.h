@@ -23,6 +23,7 @@ int nmo_cmd_behavior_fold_candidates(int argc, char **argv, const nmo_cli_global
 int nmo_cmd_behavior_dump(int argc, char **argv, const nmo_cli_global_opts_t *global);
 int nmo_cmd_behavior_find(int argc, char **argv, const nmo_cli_global_opts_t *global);
 int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *global);
+int nmo_cmd_behavior_run(int argc, char **argv, const nmo_cli_global_opts_t *global);
 int nmo_cmd_behavior_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 
 /* Link commands */

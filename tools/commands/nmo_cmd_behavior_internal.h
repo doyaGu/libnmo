@@ -150,6 +150,7 @@ bool nmo_cmd_behavior_add_data_flow_items(nmo_cli_record_array_t *arr,
 
 int nmo_cmd_behavior_graph_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 int nmo_cmd_behavior_graph_boundary_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
+int nmo_cmd_behavior_run_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 int nmo_cmd_behavior_fold_candidates_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 int nmo_cmd_behavior_interface_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 

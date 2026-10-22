@@ -13,7 +13,7 @@ function __nmo_positionals
             continue
         end
         switch $cmd[$i]
-            case '-f' '--format' '--color' '-o' '--output' '--plugin' '--top' '-m' '--max-bytes' '-c' '--class' '--name' '-o' '--output' '-n' '-d' '--depth' '--id' '--type-guid' '--kind' '--max-nodes' '--max-edges' '--bb-guid' '--version' '-p' '--parent' '--nodes' '--guid' '--param-type' '--op-type' '--from' '--max-depth' '--to' '--delay' '--project' '--type' '-b' '--owner' '-i' '--index' '-s' '--sort' '-t' '--out-dir' '-f' '--format' '-q' '--quality' '--file' '-r' '--row' '--col' '-v' '--value' '--bg-color' '--ambient' '--fog-color' '--camera' '--fov' '--near' '--far' '--diffuse' '--range' '--specular' '--emissive' '--power' '--replace' '--replace-name' '--strip' '--compress' '--max-objects' '--max-fields' '--min-similarity' '--rename-similarity' '--object' '--behavior' '--remove-link' '--from-io' '--to-io' '--message-node' '--parameter' '--dataarray' '--write-node' '--write-operation' '--write-link' '--text'
+            case '-f' '--format' '--color' '-o' '--output' '--plugin' '--top' '-m' '--max-bytes' '-c' '--class' '--name' '-o' '--output' '-n' '-d' '--depth' '--id' '--type-guid' '--kind' '--max-nodes' '--max-edges' '--bb-guid' '--version' '-p' '--parent' '--nodes' '--guid' '--param-type' '--op-type' '--from' '--max-depth' '--frames' '--delta' '--start' '-s' '--script' '--unknown' '--max-iterations' '--seed' '--to' '--delay' '--project' '--type' '-b' '--owner' '-i' '--index' '--sort' '-t' '--out-dir' '-f' '--format' '-q' '--quality' '--file' '-r' '--row' '--col' '-v' '--value' '--bg-color' '--ambient' '--fog-color' '--camera' '--fov' '--near' '--far' '--diffuse' '--range' '--specular' '--emissive' '--power' '--replace' '--replace-name' '--strip' '--compress' '--max-objects' '--max-fields' '--min-similarity' '--rename-similarity' '--object' '--behavior' '--remove-link' '--from-io' '--to-io' '--message-node' '--parameter' '--dataarray' '--write-node' '--write-operation' '--write-link' '--text'
                 set expect_value 1
             case '-*'
             case '*'
@@ -151,6 +151,7 @@ complete -c nmo -n 'test (__nmo_pos_count) -eq 1; and (test (__nmo_group) = beha
 complete -c nmo -n 'test (__nmo_pos_count) -eq 1; and (test (__nmo_group) = behavior or test (__nmo_group) = beh)' -a 'f' -d 'Alias for find'
 complete -c nmo -n 'test (__nmo_pos_count) -eq 1; and (test (__nmo_group) = behavior or test (__nmo_group) = beh)' -a 'trace' -d 'Trace execution path from IO'
 complete -c nmo -n 'test (__nmo_pos_count) -eq 1; and (test (__nmo_group) = behavior or test (__nmo_group) = beh)' -a 'tr' -d 'Alias for trace'
+complete -c nmo -n 'test (__nmo_pos_count) -eq 1; and (test (__nmo_group) = behavior or test (__nmo_group) = beh)' -a 'run' -d 'Run behavior graphs frame by frame'
 complete -c nmo -n 'test (__nmo_pos_count) -eq 1; and (test (__nmo_group) = behavior or test (__nmo_group) = beh)' -a 'add-link' -d 'Add behavior graph link'
 complete -c nmo -n 'test (__nmo_pos_count) -eq 1; and (test (__nmo_group) = behavior or test (__nmo_group) = beh)' -a 'remove-link' -d 'Remove behavior graph link'
 complete -c nmo -n 'test (__nmo_pos_count) -eq 1; and (test (__nmo_group) = behavior or test (__nmo_group) = beh)' -a 'interface' -d 'Interface layout commands'
@@ -412,6 +413,14 @@ complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = beha
 complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = behavior or test (__nmo_group) = beh); and (test (__nmo_action) = find or test (__nmo_action) = f)' -l bbs -d 'Show only building blocks'
 complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = behavior or test (__nmo_group) = beh); and (test (__nmo_action) = trace or test (__nmo_action) = tr)' -l from -r -d 'Starting IO port'
 complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = behavior or test (__nmo_group) = beh); and (test (__nmo_action) = trace or test (__nmo_action) = tr)' -l max-depth -r -d 'Maximum trace depth'
+complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = behavior or test (__nmo_group) = beh); and (test (__nmo_action) = run)' -s n -l frames -r -d 'Frames to run (default: 1)'
+complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = behavior or test (__nmo_group) = beh); and (test (__nmo_action) = run)' -l delta -r -d 'Frame time in ms (default: 16.667)'
+complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = behavior or test (__nmo_group) = beh); and (test (__nmo_action) = run)' -l start -r -d 'Scripts to start: scene, all or none (default: scene)'
+complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = behavior or test (__nmo_group) = beh); and (test (__nmo_action) = run)' -s s -l script -r -d 'Start only this script (reset)'
+complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = behavior or test (__nmo_group) = beh); and (test (__nmo_action) = run)' -l unknown -r -d 'Blocks without a function: stop or pass (default: stop)'
+complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = behavior or test (__nmo_group) = beh); and (test (__nmo_action) = run)' -l max-iterations -r -d 'Iterations per graph and frame (default: 8000)'
+complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = behavior or test (__nmo_group) = beh); and (test (__nmo_action) = run)' -l seed -r -d 'Random seed (default: 1)'
+complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = behavior or test (__nmo_group) = beh); and (test (__nmo_action) = run)' -s t -l trace -d 'Show links, operations and graphs too'
 complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = behavior or test (__nmo_group) = beh); and (test (__nmo_action) = add-link)' -s p -l parent -r -d 'Parent behavior ID (required)'
 complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = behavior or test (__nmo_group) = beh); and (test (__nmo_action) = add-link)' -l from -r -d 'Source IO port ID (required)'
 complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = behavior or test (__nmo_group) = beh); and (test (__nmo_action) = add-link)' -l to -r -d 'Target IO port ID (required)'
