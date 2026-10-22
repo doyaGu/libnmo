@@ -6,6 +6,7 @@
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk_context.h"
+#include "chunk_serialization_internal.h"
 #include "format/nmo_id_remap.h"
 #include "core/nmo_utils.h"
 #include <string.h>
@@ -679,6 +680,13 @@ finish:
         return NMO_ERR_INVALID_ARGUMENT;
     }
     return NMO_OK;
+}
+
+nmo_status_t nmo_chunk_measure_version1(const nmo_chunk_t *chunk, size_t *out_size) {
+    if (out_size != NULL) *out_size = 0u;
+    if (chunk == NULL || out_size == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    NMO_RETURN_IF_ERROR(chunk_validate_serializable(chunk, chunk_compute_option_flags(chunk)));
+    return chunk_calc_size_version1(chunk, out_size);
 }
 
 /**

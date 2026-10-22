@@ -7,6 +7,7 @@
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk_pool.h"
+#include "chunk_serialization_internal.h"
 #include "core/nmo_utils.h"
 #include "miniz.h"
 #include <string.h>
@@ -516,15 +517,45 @@ static nmo_status_t data_section_plan_add_entry_size(size_t *total_size, size_t 
     if (total_size == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL data plan size output");
     }
-    if (chunk_size > (size_t)UINT32_MAX) {
+    if (header_bytes > INT32_MAX || chunk_size > (size_t)INT32_MAX - header_bytes ||
+        *total_size > (size_t)INT32_MAX - header_bytes - chunk_size) {
         NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR,
-                         "Data section chunk too large to serialize (size=%zu)", chunk_size);
+                         "Data section exceeds the signed wire range");
     }
     if (!nmo_safe_add_size(*total_size, header_bytes, total_size) ||
         !nmo_safe_add_size(*total_size, chunk_size, total_size)) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Data section plan size overflow");
     }
     NMO_RETURN_OK();
+}
+
+static nmo_status_t data_section_measure(const nmo_data_section_t *section,
+                                         uint32_t file_version, size_t *out_size) {
+    size_t total = data_section_leading_bytes(file_version);
+    const uint32_t managers = data_section_has_manager_block(file_version)
+        ? section->manager_count : 0u;
+    const size_t object_header = file_version < 7u ? 8u : 4u;
+    /* Reject impossible record tables before iterating or allocating them. */
+    if ((uint64_t)managers * 12u + (uint64_t)section->object_count * object_header + total > INT32_MAX) {
+        return NMO_ERR_CORRUPT;
+    }
+    for (uint32_t i = 0u; i < managers; ++i) {
+        size_t bytes = 0u;
+        if (section->managers[i].chunk != NULL) {
+            NMO_RETURN_IF_ERROR(nmo_chunk_measure_version1(section->managers[i].chunk, &bytes));
+        }
+        NMO_RETURN_IF_ERROR(data_section_plan_add_entry_size(&total, 12u, bytes));
+    }
+    for (uint32_t i = 0u; i < section->object_count; ++i) {
+        if (file_version < 7u && section->objects[i].object_id == 0u) return NMO_ERR_INVALID_STATE;
+        size_t bytes = 0u;
+        if (section->objects[i].chunk != NULL) {
+            NMO_RETURN_IF_ERROR(nmo_chunk_measure_version1(section->objects[i].chunk, &bytes));
+        }
+        NMO_RETURN_IF_ERROR(data_section_plan_add_entry_size(&total, object_header, bytes));
+    }
+    *out_size = total;
+    return NMO_OK;
 }
 
 nmo_status_t nmo_data_section_plan_build(
@@ -539,6 +570,8 @@ nmo_status_t nmo_data_section_plan_build(
 
     memset(out_plan, 0, sizeof(*out_plan));
     NMO_RETURN_IF_ERROR(data_section_validate_storage(data_section));
+    size_t measured_size = 0u;
+    NMO_RETURN_IF_ERROR(data_section_measure(data_section, file_version, &measured_size));
 
     nmo_data_section_plan_t staged;
     memset(&staged, 0, sizeof(staged));
@@ -602,6 +635,7 @@ nmo_status_t nmo_data_section_plan_build(
         }
     }
 
+    if (staged.total_size != measured_size) return NMO_ERR_INVALID_STATE;
     *out_plan = staged;
     NMO_RETURN_OK();
 }
@@ -727,61 +761,10 @@ size_t nmo_data_section_calculate_size(
     const nmo_data_section_t *data_section,
     uint32_t file_version,
     nmo_arena_t *arena) {
-    if (data_section == NULL || arena == NULL) {
-        return 0;
-    }
-    if (data_section_validate_storage(data_section) != NMO_OK) {
-        return 0;
-    }
-
-    size_t total_size = data_section_leading_bytes(file_version);
-
-    /* Manager data (none before file version 6) */
-    for (uint32_t i = 0; data_section_has_manager_block(file_version) &&
-                         i < data_section->manager_count; i++) {
-        const nmo_manager_data_t *mgr = &data_section->managers[i];
-        if (!nmo_safe_add_size(total_size, 8u, &total_size) ||
-            !nmo_safe_add_size(total_size, 4u, &total_size)) {
-            return 0;
-        }
-
-        nmo_data_chunk_slice_t slice;
-        if (data_section_make_slice(mgr->chunk, arena, &slice) != NMO_OK) {
-            return 0;
-        }
-
-        if (slice.size > (size_t)UINT32_MAX ||
-            !nmo_safe_add_size(total_size, slice.size, &total_size)) {
-            return 0;
-        }
-    }
-
-    /* Object data */
-    for (uint32_t i = 0; i < data_section->object_count; i++) {
-        const nmo_object_data_t *obj = &data_section->objects[i];
-
-        if (file_version < 7) {
-            if (!nmo_safe_add_size(total_size, 4u, &total_size)) {
-                return 0;
-            }
-        }
-
-        if (!nmo_safe_add_size(total_size, 4u, &total_size)) {
-            return 0;
-        }
-
-        nmo_data_chunk_slice_t slice;
-        if (data_section_make_slice(obj->chunk, arena, &slice) != NMO_OK) {
-            return 0;
-        }
-
-        if (slice.size > (size_t)UINT32_MAX ||
-            !nmo_safe_add_size(total_size, slice.size, &total_size)) {
-            return 0;
-        }
-    }
-
-    return total_size;
+    if (data_section == NULL || arena == NULL ||
+        data_section_validate_storage(data_section) != NMO_OK) return 0u;
+    size_t total = 0u;
+    return data_section_measure(data_section, file_version, &total) == NMO_OK ? total : 0u;
 }
 
 void nmo_data_section_free(nmo_data_section_t *data_section) {
