@@ -222,6 +222,10 @@ add_unit_test(test_script_edit_interface)
 add_unit_test(test_behavior_execute)
 set_tests_properties(test_behavior_execute PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
+# Behavior engine (nmo_engine); the graphs are built with script edits
+add_unit_test(test_engine)
+target_link_libraries(test_engine PRIVATE nmo_engine nmo_edit)
+
 # BB prototype registry (JSON loader now in nmo core)
 add_unit_test(test_bb_registry)
 set_tests_properties(test_bb_registry PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
