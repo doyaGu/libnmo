@@ -351,8 +351,10 @@ TEST(data_section_plan, rejects_signed_overflow_before_writing_plan_bytes) {
             ASSERT_MEM_EQ(expected, output, sizeof(output));
         }
         slices[0].size = slices[1].size = (size_t)INT32_MAX / 2u;
-        section.manager_count = plan.manager_count = manager_mode ? 2u : 0u;
-        section.object_count = plan.object_count = manager_mode ? 0u : 2u;
+        section.manager_count = manager_mode ? 2u : 0u;
+        section.object_count = manager_mode ? 0u : 2u;
+        plan.manager_count = section.manager_count;
+        plan.object_count = section.object_count;
         plan.total_size = 2u * (slices[0].size + header_size);
         const nmo_status_t status = nmo_data_section_plan_write(
             &section, &plan, 8u, output, sizeof(output));
