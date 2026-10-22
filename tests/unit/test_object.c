@@ -167,7 +167,61 @@ TEST(object, set_chunk) {
     nmo_object_destroy(obj);
 }
 
+TEST(object, destruction_unlinks_borrowed_hierarchy_in_either_order) {
+    for (int parent_first = 0; parent_first < 2; ++parent_first) {
+        nmo_object_t *parent = nmo_object_create(NULL, 1u, 1u);
+        nmo_object_t *child = nmo_object_create(NULL, 2u, 1u);
+        ASSERT_NOT_NULL(parent);
+        ASSERT_NOT_NULL(child);
+        ASSERT_EQ(NMO_OK, nmo_object_add_child(parent, child));
+        if (parent_first) {
+            nmo_object_destroy(parent);
+            ASSERT_NULL(child->parent);
+            nmo_object_destroy(child);
+        } else {
+            nmo_object_destroy(child);
+            ASSERT_EQ(0u, parent->child_count);
+            ASSERT_NULL(nmo_object_get_child(parent, 0u));
+            nmo_object_destroy(parent);
+        }
+    }
+}
+
+TEST(object, reparenting_is_unique_and_failure_atomic) {
+    object_fail_allocator_state_t state = {0};
+    nmo_allocator_t allocator = nmo_allocator_custom(object_test_alloc, object_test_free, &state);
+    nmo_object_t *first = nmo_object_create(NULL, 1u, 1u);
+    nmo_object_t *second = nmo_object_create(&allocator, 2u, 1u);
+    nmo_object_t *child = nmo_object_create(NULL, 3u, 1u);
+    ASSERT_NOT_NULL(first);
+    ASSERT_NOT_NULL(second);
+    ASSERT_NOT_NULL(child);
+    ASSERT_EQ(NMO_OK, nmo_object_add_child(first, child));
+    ASSERT_EQ(NMO_OK, nmo_object_add_child(first, child));
+    ASSERT_EQ(1u, first->child_count);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, nmo_object_add_child(child, first));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, nmo_object_add_child(child, child));
+    state.fail_allocations = 1;
+    const nmo_status_t failed = nmo_object_add_child(second, child);
+    state.fail_allocations = 0;
+    ASSERT_EQ(NMO_ERR_NOMEM, failed);
+    ASSERT_EQ(first, child->parent);
+    ASSERT_EQ(1u, first->child_count);
+    ASSERT_EQ(0u, second->child_count);
+    ASSERT_EQ(NMO_OK, nmo_object_add_child(second, child));
+    ASSERT_EQ(0u, first->child_count);
+    ASSERT_EQ(1u, second->child_count);
+    ASSERT_EQ(second, child->parent);
+    nmo_object_destroy(first);
+    ASSERT_EQ(second, child->parent);
+    nmo_object_destroy(second);
+    ASSERT_NULL(child->parent);
+    nmo_object_destroy(child);
+}
+
 TEST_MAIN_BEGIN()
+    REGISTER_TEST(object, destruction_unlinks_borrowed_hierarchy_in_either_order);
+    REGISTER_TEST(object, reparenting_is_unique_and_failure_atomic);
     REGISTER_TEST(object, create_destroy);
     REGISTER_TEST(object, set_name);
     REGISTER_TEST(object, set_name_is_alias_safe_and_failure_atomic);

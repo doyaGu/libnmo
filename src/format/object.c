@@ -38,6 +38,20 @@ void nmo_object_destroy(nmo_object_t *object) {
         return;
     }
 
+    /* Hierarchy edges are borrowed. Remove both directions before freeing
+     * either endpoint, including when a repository destroys parents first. */
+    nmo_object_t *parent = object->parent;
+    if (parent != NULL) {
+        while (nmo_object_remove_child(parent, object) == NMO_OK) {
+        }
+        object->parent = NULL;
+    }
+    for (size_t i = 0u; i < object->child_count; ++i) {
+        nmo_object_t *child = object->children[i];
+        if (child != NULL && child->parent == object) child->parent = NULL;
+    }
+    object->child_count = 0u;
+
     /* Free allocator-managed metadata */
     if (object->children != NULL) {
         nmo_free(&object->allocator, object->children);
@@ -100,13 +114,31 @@ const char *nmo_object_get_name(const nmo_object_t *object) {
 }
 
 nmo_status_t nmo_object_add_child(nmo_object_t *parent, nmo_object_t *child) {
-    if (parent == NULL || child == NULL) {
+    if (parent == NULL || child == NULL || parent == child) {
         return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (parent->child_count > parent->child_capacity ||
+        (parent->child_count > 0u && parent->children == NULL)) return NMO_ERR_INVALID_STATE;
+    const nmo_object_t *slow = parent, *fast = parent;
+    while (fast != NULL && fast->parent != NULL) {
+        slow = slow->parent;
+        fast = fast->parent->parent;
+        if (slow == fast) return NMO_ERR_INVALID_STATE;
+    }
+    for (const nmo_object_t *ancestor = parent; ancestor != NULL; ancestor = ancestor->parent) {
+        if (ancestor == child) return NMO_ERR_INVALID_ARGUMENT;
+    }
+    for (size_t i = 0u; i < parent->child_count; ++i) {
+        if (parent->children[i] == child) {
+            return child->parent == parent ? NMO_OK : NMO_ERR_INVALID_STATE;
+        }
     }
 
     // Check if we need to grow the children array
     if (parent->child_count >= parent->child_capacity) {
+        if (parent->child_capacity > SIZE_MAX / 2u) return NMO_ERR_NOMEM;
         size_t new_capacity = parent->child_capacity == 0 ? INITIAL_CHILD_CAPACITY : parent->child_capacity * 2;
+        if (new_capacity > SIZE_MAX / sizeof(nmo_object_t *)) return NMO_ERR_NOMEM;
 
         nmo_object_t **new_children = (nmo_object_t **)nmo_alloc(&parent->allocator,
                                                                  new_capacity * sizeof(nmo_object_t *),
@@ -125,6 +157,14 @@ nmo_status_t nmo_object_add_child(nmo_object_t *parent, nmo_object_t *child) {
         }
         parent->children = new_children;
         parent->child_capacity = new_capacity;
+    }
+
+    /* Reserve the destination before unlinking so allocation failure cannot
+     * detach a child from its previous parent. */
+    nmo_object_t *previous = child->parent;
+    if (previous != NULL) {
+        while (nmo_object_remove_child(previous, child) == NMO_OK) {
+        }
     }
 
     // Add child
@@ -151,7 +191,7 @@ nmo_status_t nmo_object_remove_child(nmo_object_t *parent, nmo_object_t *child) 
                 parent->children[j] = parent->children[j + 1];
             }
             parent->child_count--;
-            child->parent = NULL;
+            if (child->parent == parent) child->parent = NULL;
             return NMO_OK;
         }
     }

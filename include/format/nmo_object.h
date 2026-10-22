@@ -161,6 +161,9 @@ NMO_API nmo_object_t *nmo_object_get_parent(const nmo_object_t *object);
 /**
  * @brief Add child object
  *
+ * Maintains one parent per child. Repeated attachment is a no-op; reparenting
+ * reserves storage before detaching the old parent. Rejects hierarchy cycles.
+ *
  * @param parent Parent object (required)
  * @param child Child object (required)
  * @return NMO_OK on success

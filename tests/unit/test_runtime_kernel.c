@@ -5156,7 +5156,49 @@ TEST(runtime_kernel, layer_cell_fitting_is_bounded_and_failure_atomic) {
     }
 }
 
+TEST(runtime_kernel, safe_detach_preserves_curve_and_place_child_world_poses) {
+    const nmo_class_id_t parent_classes[] = {NMO_CID_CURVE, NMO_CID_CURVEPOINT, NMO_CID_PLACE};
+    for (size_t mode = 0u; mode < 3u; ++mode) {
+        nmo_context_t *ctx = nmo_context_create(NULL);
+        ASSERT_NOT_NULL(ctx);
+        nmo_session_t *session = nmo_session_create(ctx);
+        ASSERT_NOT_NULL(session);
+        nmo_object_repository_t *repo = nmo_session_get_repository(session);
+        nmo_object_id_t parent_id = 0u, child_id = 0u;
+        ASSERT_EQ(NMO_OK, nmo_session_create_object(session, parent_classes[mode],
+            "parent", NMO_NULL_GUID, &parent_id, NULL));
+        ASSERT_EQ(NMO_OK, nmo_session_create_object(session, NMO_CID_CURVEPOINT,
+            "child", NMO_NULL_GUID, &child_id, NULL));
+        nmo_object_t *parent = nmo_object_repository_find_by_id(repo, parent_id);
+        nmo_object_t *child = nmo_object_repository_find_by_id(repo, child_id);
+        nmo_curvepoint_state_t *point = child->state;
+        point->base.parent = nmo_ref_from_id(parent_id);
+        if (mode == 0u) point->curve = nmo_ref_from_id(parent_id);
+        if (mode == 2u) point->base.place = nmo_ref_from_id(parent_id);
+        point->base.world_matrix[12] = 10.5f;
+        point->base.world_matrix[13] = -2.0f;
+        point->base.world_matrix[14] = 7.0f;
+        float original[16];
+        memcpy(original, point->base.world_matrix, sizeof(original));
+        ASSERT_EQ(NMO_OK, nmo_object_add_child(parent, child));
+        nmo_runtime_report_t report = {0};
+        const nmo_status_t status = nmo_session_destroy_objects(session, &parent_id, 1u,
+            NMO_RUNTIME_REQUEST_SAFE_DETACH | NMO_RUNTIME_REQUEST_STRICT, &report);
+        ASSERT_EQ(NMO_OK, status);
+        ASSERT_EQ(1u, report.deleted_objects);
+        ASSERT_EQ(child, nmo_object_repository_find_by_id(repo, child_id));
+        ASSERT_NULL(child->parent);
+        ASSERT_EQ(NMO_REF_NONE, point->base.parent.state);
+        if (mode == 0u) ASSERT_EQ(NMO_REF_NONE, point->curve.state);
+        if (mode == 2u) ASSERT_EQ(NMO_REF_NONE, point->base.place.state);
+        ASSERT_MEM_EQ(original, point->base.world_matrix, sizeof(original));
+        nmo_session_destroy(session);
+        nmo_context_release(ctx);
+    }
+}
+
 TEST_MAIN_BEGIN()
+REGISTER_TEST(runtime_kernel, safe_detach_preserves_curve_and_place_child_world_poses);
 REGISTER_TEST(runtime_kernel, finalize_fits_layer_cells_after_owner_dimensions_are_known);
 REGISTER_TEST(runtime_kernel, layer_cell_fitting_is_bounded_and_failure_atomic);
 REGISTER_TEST(runtime_kernel, file_header_allocation_failure_preserves_state);
