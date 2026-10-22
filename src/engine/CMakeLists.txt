@@ -9,6 +9,7 @@ set(NMO_ENGINE_SOURCES
     engine_build.c
     engine_logics.c
     engine_message.c
+    engine_narratives.c
     engine_param.c
     engine_run.c
     engine_schedule.c
