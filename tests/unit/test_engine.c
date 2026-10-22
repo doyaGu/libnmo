@@ -6,11 +6,9 @@
 #include "object/builtin/nmo_beobject_schemas.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_behaviorio_schemas.h"
-#include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/builtin/nmo_parameteroperation_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_context.h"
-#include "object/nmo_object_edit.h"
 #include "object/nmo_object_enum_defs.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_statesave_ids.h"
@@ -138,9 +136,8 @@ static void fixture_input_value(engine_fixture_t *f, nmo_object_id_t pin, const 
 {
     nmo_object_id_t source = 0;
     ASSERT_EQ(NMO_OK, nmo_script_edit_ensure_input_parameter_source(f->tx, pin, &source));
-    /* Through the workspace edit: the script edit does not find a source it just created */
-    ASSERT_EQ(NMO_OK, nmo_object_edit_set_parameter_bytes(nmo_script_edit_workspace_edit(f->tx),
-                                                          source, (const uint8_t *)data, size));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_set_parameter_bytes(f->tx, source, (const uint8_t *)data, size));
 }
 
 static void fixture_commit(engine_fixture_t *f, const nmo_engine_options_t *options)
@@ -334,12 +331,8 @@ TEST(engine, operation_output_is_computed_when_read)
     const nmo_parameteroperation_state_t *op_state =
         (const nmo_parameteroperation_state_t *)fixture_state(&f, op);
     ASSERT_NOT_NULL(op_state);
-    /* Read the operation's output directly: the script edit does not find it to connect */
-    nmo_parameterin_state_t *pin =
-        (nmo_parameterin_state_t *)fixture_state(&f, BLOCK_PIN(&f, identity, 0));
-    ASSERT_NOT_NULL(pin);
-    nmo_parameterin_set_source_id(pin, nmo_parameteroperation_out_id(op_state));
-    pin->is_shared = 0;
+    ASSERT_EQ(NMO_OK, nmo_script_edit_connect_parameter(
+                          f.tx, nmo_parameteroperation_out_id(op_state), BLOCK_PIN(&f, identity, 0)));
     fixture_commit(&f, NULL);
 
     event_log_t log = {0};
