@@ -230,6 +230,49 @@ TEST(mesh_gaps, weight_section_of_more_than_eight_bytes_is_a_buffer)
     nmo_arena_destroy(arena);
 }
 
+TEST(mesh_gaps, face_masks_copy_every_available_face_in_order)
+{
+    for (uint32_t version = 8u; version <= 9u; ++version) {
+        for (uint32_t faces = 0u; faces <= 5u; ++faces) {
+            for (uint32_t masks = 0u; masks <= 5u; ++masks) {
+                nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+                ASSERT_NOT_NULL(arena);
+                nmo_chunk_t *chunk = nmo_chunk_create(arena);
+                ASSERT_NOT_NULL(chunk);
+                chunk->data_version = version;
+                ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+                ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, CK_STATESAVE_MESHFACES));
+                ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, (int32_t)faces));
+                if (version < 9u && faces > 0u) {
+                    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 1));
+                    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(chunk, 0u));
+                    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, (int32_t)faces));
+                }
+                for (uint32_t i = 0u; i < faces * 2u; ++i) {
+                    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0u));
+                }
+                ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, CK_STATESAVE_MESHFACECHANMASK));
+                ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, (int32_t)masks));
+                for (uint32_t i = 0u; i < masks / 2u; ++i) {
+                    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword_as_words(
+                        chunk, (0x1200u + 2u * i) | ((0x1201u + 2u * i) << 16)));
+                }
+                if ((masks & 1u) != 0u) {
+                    ASSERT_EQ(NMO_OK, nmo_chunk_write_word(chunk, (uint16_t)(0x1200u + masks - 1u)));
+                }
+                nmo_mesh_state_t state;
+                ASSERT_EQ(NMO_OK, load_weights(arena, chunk, &state));
+                ASSERT_EQ(faces, state.face_count);
+                for (uint32_t i = 0u; i < faces; ++i) {
+                    ASSERT_EQ(i < masks ? 0x1200u + i : 0xFFFFu, state.faces[i].channel_mask);
+                }
+                nmo_mesh_vtable.destroy(&state, NULL, NULL);
+                nmo_arena_destroy(arena);
+            }
+        }
+    }
+}
+
 /* ------------------------------------------------------------------------
  * Data section: the manager block exists from file version 6
  * ------------------------------------------------------------------------ */
@@ -600,6 +643,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(texture_gaps, raw_slot_below_24_bits_per_pixel_decodes_like_32);
     REGISTER_TEST(mesh_gaps, weight_section_of_eight_bytes_is_the_uniform_form);
     REGISTER_TEST(mesh_gaps, weight_section_of_more_than_eight_bytes_is_a_buffer);
+    REGISTER_TEST(mesh_gaps, face_masks_copy_every_available_face_in_order);
     REGISTER_TEST(data_gaps, manager_block_is_only_written_from_version_6);
     REGISTER_TEST(header_gaps, versions_5_to_8_parse_and_validate);
     REGISTER_TEST(header_gaps, data_checksum_is_adler32_from_zero);

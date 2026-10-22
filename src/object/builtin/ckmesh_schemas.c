@@ -915,6 +915,52 @@ static nmo_status_t nmo_mesh_deserialize_weights(
 /**
  * @brief Deserialize CKMesh state from chunk (modern format v9+)
  */
+static nmo_status_t nmo_mesh_deserialize_face_masks(
+    nmo_chunk_t *chunk,
+    nmo_mesh_state_t *state)
+{
+    bool found = false;
+    size_t section_dwords = 0u;
+    NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
+        chunk, CK_STATESAVE_MESHFACECHANMASK, &found, &section_dwords));
+    if (!found) return NMO_OK;
+    if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+
+    int32_t count = 0;
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &count));
+    if (count < 0) return NMO_ERR_INVALID_FORMAT;
+    const uint32_t mask_count = (uint32_t)count;
+    const size_t words = (size_t)(mask_count / 2u) + mask_count % 2u;
+    if (words > nmo_chunk_identifier_remaining_dwords(chunk)) {
+        return NMO_ERR_TRUNCATED_CHUNK;
+    }
+    if (state->face_count > 0u && state->faces == NULL) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+
+    /* Consume the source stream and assign its available prefix. An odd
+       destination still receives the low half of its final source pair. */
+    for (uint32_t i = 0u; i < mask_count / 2u; ++i) {
+        uint32_t packed = 0u;
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword_as_words(chunk, &packed));
+        const uint32_t face = i * 2u;
+        if (face < state->face_count) {
+            state->faces[face].channel_mask = (uint16_t)packed;
+        }
+        if (face + 1u < state->face_count) {
+            state->faces[face + 1u].channel_mask = (uint16_t)(packed >> 16);
+        }
+    }
+    if ((mask_count & 1u) != 0u) {
+        uint16_t mask = 0u;
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_word(chunk, &mask));
+        if (mask_count - 1u < state->face_count) {
+            state->faces[mask_count - 1u].channel_mask = mask;
+        }
+    }
+    return nmo_mesh_require_identifier_end(chunk);
+}
+
 static nmo_status_t nmo_mesh_deserialize_modern(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
@@ -1139,81 +1185,7 @@ static nmo_status_t nmo_mesh_deserialize_modern(
             chunk, arena, out_state, "modern"));
     }
     
-    // Read face channel masks (identifier CK_STATESAVE_MESHFACECHANMASK, optional)
-    NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
-        chunk, CK_STATESAVE_MESHFACECHANMASK, &section_found,
-        &section_dwords));
-    if (section_found) {
-        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
-        int32_t mask_face_count;
-        result = nmo_chunk_read_int(chunk, &mask_face_count);
-        if (result != NMO_OK) {
-            NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR,
-                             "CKMesh modern face-mask count is truncated");
-        }
-        if (mask_face_count < 0) {
-            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                             "Invalid modern mesh face-mask count %d",
-                             mask_face_count);
-        }
-        if (mask_face_count > 0) {
-            uint32_t face_count = out_state->face_count;
-            const uint32_t serialized_pair_count =
-                (uint32_t)mask_face_count / 2u;
-            const uint32_t serialized_remainder =
-                (uint32_t)mask_face_count % 2u;
-            const size_t serialized_dwords =
-                (size_t)serialized_pair_count + serialized_remainder;
-            if (serialized_dwords >
-                nmo_chunk_identifier_remaining_dwords(chunk)) {
-                return NMO_ERR_TRUNCATED_CHUNK;
-            }
-            uint32_t pair_count = serialized_pair_count;
-            uint32_t remainder = serialized_remainder;
-            if ((uint32_t)mask_face_count > face_count) {
-                /* RCKMesh::Load clamps oversized mask arrays to complete
-                 * pairs that fit the allocated face array. */
-                pair_count = face_count / 2u;
-                remainder = 0u;
-            }
-            if (face_count > 0u && out_state->faces == NULL) {
-                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED,
-                                 NMO_SEVERITY_ERROR,
-                                 "Modern mesh faces missing for channel masks");
-            }
-
-            for (uint32_t i = 0; i < pair_count; i++) {
-                uint32_t packed_masks;
-                result = nmo_chunk_read_dword_as_words(
-                    chunk, &packed_masks);
-                if (result != NMO_OK) {
-                    NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR,
-                                     "CKMesh modern face masks are truncated");
-                }
-
-                nmo_unpack_dword_to_words(packed_masks,
-                    &out_state->faces[i * 2].channel_mask,
-                    &out_state->faces[i * 2 + 1].channel_mask);
-            }
-
-            if (remainder) {
-                /* The engine stores the odd word in the last face of the mesh
-                   (its writer only makes an odd count for a mesh that has
-                   as many masks as faces). */
-                result = nmo_chunk_read_word(chunk,
-                    &out_state->faces[face_count - 1u].channel_mask);
-                if (result != NMO_OK) {
-                    NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR,
-                                     "CKMesh modern trailing face mask is truncated");
-                }
-            }
-            const size_t consumed_dwords =
-                (size_t)pair_count + remainder;
-            NMO_RETURN_IF_ERROR(nmo_chunk_skip(
-                chunk, serialized_dwords - consumed_dwords));
-        }
-        NMO_RETURN_IF_ERROR(nmo_mesh_require_identifier_end(chunk));
-    }
+    NMO_RETURN_IF_ERROR(nmo_mesh_deserialize_face_masks(chunk, out_state));
     
     // Read progressive mesh (identifier CK_STATESAVE_PROGRESSIVEMESH, optional)
     NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
@@ -1719,69 +1691,7 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
             chunk, arena, out_state, "legacy"));
     }
 
-    NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
-        chunk, CK_STATESAVE_MESHFACECHANMASK, &section_found,
-        &section_dwords));
-    if (section_found) {
-        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
-        int32_t mask_face_count;
-        result = nmo_chunk_read_int(chunk, &mask_face_count);
-        if (result != NMO_OK) return result;
-        if (mask_face_count < 0) {
-            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                             "Invalid legacy mesh face-mask count %d",
-                             mask_face_count);
-        }
-        if (mask_face_count > 0) {
-            uint32_t face_count = out_state->face_count;
-            const uint32_t serialized_pair_count =
-                (uint32_t)mask_face_count / 2u;
-            const uint32_t serialized_remainder =
-                (uint32_t)mask_face_count % 2u;
-            const size_t serialized_dwords =
-                (size_t)serialized_pair_count + serialized_remainder;
-            if (serialized_dwords >
-                nmo_chunk_identifier_remaining_dwords(chunk)) {
-                return NMO_ERR_TRUNCATED_CHUNK;
-            }
-            uint32_t pair_count = serialized_pair_count;
-            uint32_t remainder = serialized_remainder;
-            if ((uint32_t)mask_face_count > face_count) {
-                pair_count = face_count / 2u;
-                remainder = 0u;
-            }
-            if (face_count > 0u && out_state->faces == NULL) {
-                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED,
-                                 NMO_SEVERITY_ERROR,
-                                 "Legacy mesh faces missing for channel masks");
-            }
-
-            for (uint32_t i = 0; i < pair_count; i++) {
-                uint32_t packed_masks;
-                result = nmo_chunk_read_dword_as_words(
-                    chunk, &packed_masks);
-                if (result != NMO_OK) return result;
-
-                nmo_unpack_dword_to_words(packed_masks,
-                    &out_state->faces[i * 2].channel_mask,
-                    &out_state->faces[i * 2 + 1].channel_mask);
-            }
-
-            if (remainder) {
-                /* The engine stores the odd word in the last face of the mesh
-                   (its writer only makes an odd count for a mesh that has
-                   as many masks as faces). */
-                result = nmo_chunk_read_word(chunk,
-                    &out_state->faces[face_count - 1u].channel_mask);
-                if (result != NMO_OK) return result;
-            }
-            const size_t consumed_dwords =
-                (size_t)pair_count + remainder;
-            NMO_RETURN_IF_ERROR(nmo_chunk_skip(
-                chunk, serialized_dwords - consumed_dwords));
-        }
-        NMO_RETURN_IF_ERROR(nmo_mesh_require_identifier_end(chunk));
-    }
+    NMO_RETURN_IF_ERROR(nmo_mesh_deserialize_face_masks(chunk, out_state));
 
     NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
         chunk, CK_STATESAVE_PROGRESSIVEMESH, &section_found,
