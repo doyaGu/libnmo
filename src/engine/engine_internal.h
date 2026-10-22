@@ -232,4 +232,7 @@ nmo_guid_t eng_block_operation_guid(const nmo_engine_block_t *block);
 /* Run `guid` over the block's first two inputs into its first output (the Op block). */
 nmo_status_t eng_block_run_operation(nmo_engine_block_t *block, nmo_guid_t guid);
 
+/* engine_logics.c */
+nmo_status_t eng_register_logics(nmo_engine_t *engine);
+
 #endif /* NMO_ENGINE_INTERNAL_H */

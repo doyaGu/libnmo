@@ -1,11 +1,13 @@
 # Engine component: the behavior engine, which runs the behavior graphs of a
-# document frame by frame. It builds on the core library (nmo); the core does not depend on it. Consumers
+# document frame by frame, and the built-in building block functions. It
+# builds on the core library (nmo); the core does not depend on it. Consumers
 # link nmo::engine (target nmo_engine).
 
 set(NMO_ENGINE_SOURCES
     engine.c
     engine_block.c
     engine_build.c
+    engine_logics.c
     engine_param.c
     engine_run.c
     engine_schedule.c

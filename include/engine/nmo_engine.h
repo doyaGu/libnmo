@@ -34,7 +34,8 @@
  * operation first.
  *
  * Building blocks run C functions registered by prototype GUID (see
- * engine/nmo_engine_block.h). A building block without a function follows
+ * engine/nmo_engine_block.h). The engine registers ports of the common Logics
+ * blocks unless told not to. A building block without a function follows
  * nmo_engine_options_t.unknown_block.
  *
  * Times are in milliseconds, as CKBehaviorContext::DeltaTime is.
@@ -74,6 +75,8 @@ typedef struct nmo_engine_options {
     /* Iterations a graph may run in one frame; 0 for the default. */
     int32_t max_iterations;
     nmo_engine_unknown_block_t unknown_block;
+    /* Do not register the built-in building block functions. */
+    bool no_builtin_blocks;
     /* Seed of the engine's random numbers (Random, Random Switch, ...). */
     uint32_t random_seed;
 } nmo_engine_options_t;
