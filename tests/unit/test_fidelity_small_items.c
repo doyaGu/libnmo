@@ -126,7 +126,7 @@ TEST(fidelity_small_items, legacy_bodypart_joint_uses_integer_booleans)
     nmo_bodypart_state_t loaded;
     ASSERT_EQ(NMO_OK, nmo_bodypart_vtable.create(&loaded, NULL, NULL));
     ASSERT_EQ(NMO_OK, nmo_bodypart_deserialize(&loaded, chunk, NULL, &des_ctx));
-    ASSERT_EQ(0x80000121u, loaded.rotation_joint.flags);
+    ASSERT_EQ(0x253u, loaded.rotation_joint.flags);
     ASSERT_EQ(0.25f, loaded.rotation_joint.min.x);
     ASSERT_EQ(4.25f, loaded.rotation_joint.max.y);
     ASSERT_EQ(8.25f, loaded.rotation_joint.damping.z);
@@ -140,12 +140,75 @@ TEST(fidelity_small_items, legacy_bodypart_joint_uses_integer_booleans)
     uint32_t size = 0;
     ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(saved, &size));
     ASSERT_EQ(72u, size);
-    const uint32_t canonical[] = {1u, 1u, 0u, 0u, 0u, 1u, 0u, 1u, 0u};
+    const uint32_t canonical[] = {1u, 1u, 0u, 1u, 0u, 1u, 0u, 1u, 0u};
     for (size_t i = 0; i < 9u; ++i) {
         uint32_t actual = 0;
         ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(saved, &actual));
         ASSERT_EQ(canonical[i], actual);
     }
+    nmo_bodypart_vtable.destroy(&loaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(fidelity_small_items, legacy_bodypart_joint_accepts_bounded_prefixes)
+{
+    const uint32_t sizes[] = {0u, 4u, 36u, 40u, 72u, 76u};
+    const uint32_t expected_flags[] = {0u, 1u, 0x111u, 0x111u, 0x111u, 7u};
+    for (size_t i = 0; i < sizeof(sizes) / sizeof(sizes[0]); ++i) {
+        nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+        ASSERT_NOT_NULL(arena);
+        nmo_chunk_t *chunk = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(chunk);
+        chunk->data_version = 4u;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, CK_STATESAVE_BODYPARTROTJOINT));
+        uint32_t words[19] = {1u, 0u, 0u, 1u, 0u, 0u, 1u};
+        const float minimum = 1.25f;
+        memcpy(&words[9], &minimum, sizeof(minimum));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_buffer(chunk, words, sizes[i]));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, CK_STATESAVE_BODYPARTCHARACTER));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(chunk, 123u));
+        nmo_chunk_close(chunk);
+
+        nmo_deserialize_context_t des_ctx = nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+        nmo_bodypart_state_t loaded;
+        ASSERT_EQ(NMO_OK, nmo_bodypart_vtable.create(&loaded, NULL, NULL));
+        ASSERT_EQ(NMO_OK, nmo_bodypart_deserialize(&loaded, chunk, NULL, &des_ctx));
+        ASSERT_EQ(sizes[i] <= 72u, loaded.has_rotation_joint != 0u);
+        ASSERT_EQ(expected_flags[i], loaded.rotation_joint.flags);
+        ASSERT_TRUE(loaded.has_character);
+        ASSERT_EQ(123u, loaded.character.raw_id);
+        if (sizes[i] >= 40u && sizes[i] <= 72u) {
+            ASSERT_EQ(minimum, loaded.rotation_joint.min.x);
+        }
+        nmo_bodypart_vtable.destroy(&loaded, NULL, NULL);
+        nmo_arena_destroy(arena);
+    }
+}
+
+TEST(fidelity_small_items, legacy_bodypart_joint_cannot_borrow_next_section)
+{
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->data_version = 4u;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, CK_STATESAVE_BODYPARTROTJOINT));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 72u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 1u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, CK_STATESAVE_BODYPARTCHARACTER));
+    for (size_t i = 0; i < 20u; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0u));
+    }
+    nmo_chunk_close(chunk);
+    nmo_deserialize_context_t des_ctx = nmo_deserialize_context_create(
+        arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+    nmo_bodypart_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_bodypart_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
+        nmo_bodypart_deserialize(&loaded, chunk, NULL, &des_ctx));
     nmo_bodypart_vtable.destroy(&loaded, NULL, NULL);
     nmo_arena_destroy(arena);
 }
@@ -435,6 +498,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(fidelity_small_items, sprite_text_font_matches_native_save_order);
     REGISTER_TEST(fidelity_small_items, sprite_text_save_uses_only_the_2d_entity_base);
     REGISTER_TEST(fidelity_small_items, legacy_bodypart_joint_uses_integer_booleans);
+    REGISTER_TEST(fidelity_small_items, legacy_bodypart_joint_accepts_bounded_prefixes);
+    REGISTER_TEST(fidelity_small_items, legacy_bodypart_joint_cannot_borrow_next_section);
     REGISTER_TEST(fidelity_small_items, empty_morph_controller_writes_all_three_header_words);
     REGISTER_TEST(fidelity_small_items, murmur3_32_matches_the_reference_vectors);
     REGISTER_TEST(fidelity_small_items, chunks_older_than_version_four_use_the_old_object_encodings);

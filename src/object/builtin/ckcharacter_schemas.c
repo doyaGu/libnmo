@@ -150,10 +150,8 @@ static nmo_status_t read_exact_buffer(
 
 /* Files with data_version < 5 store a body part's rotation joint as a
  * size-prefixed block of nine integer booleans, then the minimum, maximum and
- * damping vectors. RCKBodyPart::Load turns axis i of group k into flag
- * (1, 16, 256)[k] << (i - 1). On x86 a shift by -1 counts as a shift by 31,
- * so axis 0 of the first group sets bit 31 and axis 0 of the other two
- * sets nothing. */
+ * damping vectors. Map each column to the SDK's named X/Y/Z axis bits,
+ * matching the corrected engine rather than the native off-by-one shift. */
 typedef struct nmo_bodypart_legacy_joint {
     uint32_t flags[3][3];
     nmo_vector_t min, max, damping;
@@ -163,17 +161,12 @@ _Static_assert(sizeof(nmo_bodypart_legacy_joint_t) == 72u,
                "Legacy rotation joint wire layout");
 #define NMO_BODYPART_LEGACY_JOINT_BYTES sizeof(nmo_bodypart_legacy_joint_t)
 
-static uint32_t nmo_bodypart_legacy_axis_shift(int axis)
-{
-    return (uint32_t)(axis + 31) & 31u;
-}
-
 static uint32_t nmo_bodypart_joint_flags_from_legacy(
     const nmo_bodypart_legacy_joint_t *legacy)
 {
     uint32_t flags = 0;
     for (int axis = 0; axis < 3; ++axis) {
-        const uint32_t shift = nmo_bodypart_legacy_axis_shift(axis);
+        const uint32_t shift = (uint32_t)axis;
         if (legacy->flags[0][axis] != 0u) flags |= 1u << shift;
         if (legacy->flags[1][axis] != 0u) flags |= 16u << shift;
         if (legacy->flags[2][axis] != 0u) flags |= 256u << shift;
@@ -185,7 +178,7 @@ static void nmo_bodypart_legacy_from_joint_flags(
     uint32_t flags, nmo_bodypart_legacy_joint_t *legacy)
 {
     for (int axis = 0; axis < 3; ++axis) {
-        const uint32_t shift = nmo_bodypart_legacy_axis_shift(axis);
+        const uint32_t shift = (uint32_t)axis;
         if ((flags & (1u << shift)) != 0u) legacy->flags[0][axis] = 1u;
         if ((flags & (16u << shift)) != 0u) legacy->flags[1][axis] = 1u;
         if ((flags & (256u << shift)) != 0u) legacy->flags[2][axis] = 1u;
@@ -1075,7 +1068,7 @@ static nmo_status_t nmo_bodypart_deserialize_internal(
     uint8_t has_character = 0;
     uint8_t has_rotation_joint = 0;
     nmo_ref_t character = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-    nmo_ik_joint_t rotation_joint = {0};
+    nmo_ik_joint_t rotation_joint = out_state->rotation_joint;
     bool section_found = false;
     size_t section_dwords = 0;
     nmo_status_t result = NMO_OK;
@@ -1115,24 +1108,32 @@ static nmo_status_t nmo_bodypart_deserialize_internal(
         if (section_found) {
             /* [size][nine booleans][three vectors]: read with the size-prefixed
                ReadAndFillBuffer_LEndian. */
-            const size_t legacy_dwords =
-                1u + NMO_BODYPART_LEGACY_JOINT_BYTES / sizeof(uint32_t);
-            if (section_dwords < legacy_dwords) return NMO_ERR_TRUNCATED_CHUNK;
+            if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
             uint32_t block_size = 0;
             result = nmo_chunk_read_dword(chunk, &block_size);
             if (result != NMO_OK) return result;
-            if (block_size != NMO_BODYPART_LEGACY_JOINT_BYTES) {
+            if (block_size > INT32_MAX) {
                 return NMO_ERR_INVALID_FORMAT;
             }
-            nmo_bodypart_legacy_joint_t legacy = {0};
-            result = read_exact_buffer(chunk, &legacy, sizeof(legacy));
-            if (result != NMO_OK) return result;
+            const size_t block_dwords = ((size_t)block_size + 3u) / 4u;
+            if (block_dwords > section_dwords - 1u) {
+                return NMO_ERR_TRUNCATED_CHUNK;
+            }
+            if (block_size > NMO_BODYPART_LEGACY_JOINT_BYTES) {
+                /* A complete unknown extension must not replace the joint. */
+                result = nmo_chunk_skip(chunk, block_dwords);
+                if (result != NMO_OK) return result;
+            } else {
+                nmo_bodypart_legacy_joint_t legacy = {0};
+                result = read_exact_buffer(chunk, &legacy, block_size);
+                if (result != NMO_OK) return result;
 
-            has_rotation_joint = 1;
-            rotation_joint.flags = nmo_bodypart_joint_flags_from_legacy(&legacy);
-            rotation_joint.min = legacy.min;
-            rotation_joint.max = legacy.max;
-            rotation_joint.damping = legacy.damping;
+                has_rotation_joint = 1;
+                rotation_joint.flags = nmo_bodypart_joint_flags_from_legacy(&legacy);
+                rotation_joint.min = legacy.min;
+                rotation_joint.max = legacy.max;
+                rotation_joint.damping = legacy.damping;
+            }
         }
 
         result = nmo_character_seek_optional(
