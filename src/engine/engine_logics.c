@@ -12,9 +12,13 @@
 #include "engine_internal.h"
 
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_enum_defs.h"
 #include "type/nmo_param_guids.h"
 #include "type/nmo_type_guids.h"
 
+#include "type/nmo_object_guids.h"
+
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -798,6 +802,474 @@ static int cb_switch_on_message(blk_t *b, uint32_t message)
     return NMO_ENGINE_BR_OK;
 }
 
+/* ---- Logics/Array ---- */
+
+static nmo_class_id_t type_class(blk_t *b, nmo_guid_t type)
+{
+    nmo_engine_t *engine = nmo_engine_block_engine(b);
+    const nmo_type_descriptor_t *desc = nmo_type_registry_find_by_guid(engine->types, type);
+    return desc != NULL ? (nmo_class_id_t)desc->class_id : 0;
+}
+
+/* The string an input reads, or NULL when it reads none (or bytes without a terminator). */
+static const char *input_string(blk_t *b, int pos)
+{
+    size_t size = 0;
+    const char *text = (const char *)nmo_engine_block_input_data(b, pos, &size);
+    return text != NULL && size > 0 && memchr(text, '\0', size) != NULL ? text : NULL;
+}
+
+/* WriteOutputParameters: row `row` into the outputs from `first`, where types agree. */
+static void array_write_outputs(blk_t *b, nmo_object_id_t array, int32_t row, int first)
+{
+    nmo_engine_t *engine = nmo_engine_block_engine(b);
+    int32_t columns = nmo_engine_array_column_count(engine, array);
+    for (int32_t c = 0; c < columns; c++) {
+        nmo_guid_t out = nmo_engine_block_output_parameter_type(b, first + c);
+        nmo_engine_cell_t cell;
+        if (nmo_guid_is_null(out) ||
+            nmo_engine_array_get_cell(engine, array, row, c, &cell) != NMO_OK) {
+            continue;
+        }
+        switch (cell.type) {
+        case CKARRAYTYPE_INT:
+            if (nmo_guid_equals(out, CKPGUID_INT)) {
+                nmo_engine_block_set_output_value(b, first + c, &cell.value, sizeof(cell.value));
+            }
+            break;
+        case CKARRAYTYPE_FLOAT:
+            if (nmo_guid_equals(out, CKPGUID_FLOAT)) {
+                nmo_engine_block_set_output_value(b, first + c, &cell.value, sizeof(cell.value));
+            }
+            break;
+        case CKARRAYTYPE_STRING:
+            if (nmo_guid_equals(out, CKPGUID_STRING)) {
+                const char *text = cell.text != NULL ? cell.text : "";
+                nmo_engine_block_set_output_value(b, first + c, text, strlen(text) + 1u);
+            }
+            break;
+        case CKARRAYTYPE_OBJECT: {
+            nmo_class_id_t cid = type_class(b, out);
+            if (cid != 0) {
+                uint32_t id = eng_is_child_class(engine, eng_object_class(engine, cell.value), cid)
+                                  ? cell.value
+                                  : 0u;
+                nmo_engine_block_set_output_value(b, first + c, &id, sizeof(id));
+            }
+            break;
+        }
+        case CKARRAYTYPE_PARAMETER:
+            /* CKParameter::CopyValue: when the types are compatible */
+            if (cell.data != NULL && (type_derives(b, cell.parameter_type, out) ||
+                                      type_derives(b, out, cell.parameter_type))) {
+                nmo_engine_block_set_output_value(b, first + c, cell.data, cell.size);
+            }
+            break;
+        default:
+            break;
+        }
+    }
+}
+
+/* ReadInputParameters: the inputs from `first` into row `row`, where types agree. */
+static void array_read_inputs(blk_t *b, nmo_object_id_t array, int32_t row, int first)
+{
+    nmo_engine_t *engine = nmo_engine_block_engine(b);
+    int32_t columns = nmo_engine_array_column_count(engine, array);
+    for (int32_t c = 0; c < columns; c++) {
+        nmo_guid_t in = nmo_engine_block_input_parameter_type(b, first + c);
+        size_t size = 0;
+        const void *data = nmo_engine_block_input_data(b, first + c, &size);
+        if (nmo_guid_is_null(in) || data == NULL) {
+            continue;
+        }
+        nmo_engine_cell_t cell = {.type = nmo_engine_array_column_type(engine, array, c)};
+        switch (cell.type) {
+        case CKARRAYTYPE_INT:
+        case CKARRAYTYPE_FLOAT:
+        case CKARRAYTYPE_OBJECT: {
+            nmo_guid_t expected = cell.type == CKARRAYTYPE_INT     ? CKPGUID_INT
+                                  : cell.type == CKARRAYTYPE_FLOAT ? CKPGUID_FLOAT
+                                                                   : CKPGUID_BEOBJECT;
+            if (!nmo_guid_equals(in, expected)) {
+                continue;
+            }
+            memcpy(&cell.value, data, size < sizeof(cell.value) ? size : sizeof(cell.value));
+            break;
+        }
+        case CKARRAYTYPE_STRING:
+            if (!nmo_guid_equals(in, CKPGUID_STRING)) {
+                continue;
+            }
+            cell.text = input_string(b, first + c);
+            break;
+        case CKARRAYTYPE_PARAMETER: {
+            nmo_engine_cell_t current;
+            if (nmo_engine_array_get_cell(engine, array, row, c, &current) != NMO_OK ||
+                !nmo_guid_equals(in, current.parameter_type)) {
+                continue;
+            }
+            cell.data = data;
+            cell.size = size;
+            break;
+        }
+        default:
+            continue;
+        }
+        nmo_engine_array_set_cell(engine, array, row, c, &cell);
+    }
+}
+
+/*
+ * GetInputValue: input `pos` as a key for `column`; false when its type is not
+ * the column's, and the key then is a zero (as the CK code leaves it).
+ */
+static void array_input_key(blk_t *b, nmo_object_id_t array, int32_t column, int pos,
+                            nmo_engine_cell_t *key)
+{
+    nmo_engine_t *engine = nmo_engine_block_engine(b);
+    memset(key, 0, sizeof(*key));
+    key->type = nmo_engine_array_column_type(engine, array, column);
+    nmo_guid_t in = nmo_engine_block_input_parameter_type(b, pos);
+    switch (key->type) {
+    case CKARRAYTYPE_INT:
+        if (nmo_guid_equals(in, CKPGUID_INT)) {
+            key->value = (uint32_t)get_in_int(b, pos, 0);
+        }
+        break;
+    case CKARRAYTYPE_FLOAT:
+        if (nmo_guid_equals(in, CKPGUID_FLOAT)) {
+            nmo_engine_block_get_input_value(b, pos, &key->value, sizeof(key->value));
+        }
+        break;
+    case CKARRAYTYPE_STRING:
+        if (nmo_guid_equals(in, CKPGUID_STRING)) {
+            key->text = input_string(b, pos);
+        }
+        break;
+    case CKARRAYTYPE_OBJECT:
+        if (nmo_guid_equals(in, CKPGUID_BEOBJECT)) {
+            key->value = (uint32_t)get_in_int(b, pos, 0);
+        }
+        break;
+    case CKARRAYTYPE_PARAMETER: {
+        nmo_engine_cell_t first;
+        if (nmo_engine_array_get_cell(engine, array, 0, column, &first) == NMO_OK &&
+            nmo_guid_equals(in, first.parameter_type)) {
+            key->data = nmo_engine_block_input_data(b, pos, &key->size);
+        }
+        break;
+    }
+    default:
+        break;
+    }
+}
+
+/* The data array a block works on (its target); 0 when the target is not one. */
+static nmo_object_id_t array_target(blk_t *b)
+{
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    return nmo_engine_array_row_count(nmo_engine_block_engine(b), target) >= 0 ? target : 0;
+}
+
+/* Get Cell (ArrayGetElement) */
+static int bb_get_cell(blk_t *b)
+{
+    nmo_object_id_t array = array_target(b);
+    if (array == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    nmo_engine_t *engine = nmo_engine_block_engine(b);
+    int32_t row = get_in_int(b, 0, 0), column = get_in_int(b, 1, 0);
+    nmo_engine_cell_t cell;
+    IN_OFF(b, 0);
+    if (nmo_engine_array_get_cell(engine, array, row, column, &cell) != NMO_OK) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    /* The output written as a one-column row */
+    nmo_guid_t out = nmo_engine_block_output_parameter_type(b, 0);
+    switch (cell.type) {
+    case CKARRAYTYPE_INT:
+    case CKARRAYTYPE_FLOAT:
+        if (nmo_guid_equals(out, cell.type == CKARRAYTYPE_INT ? CKPGUID_INT : CKPGUID_FLOAT)) {
+            nmo_engine_block_set_output_value(b, 0, &cell.value, sizeof(cell.value));
+        }
+        break;
+    case CKARRAYTYPE_STRING:
+        if (nmo_guid_equals(out, CKPGUID_STRING)) {
+            const char *text = cell.text != NULL ? cell.text : "";
+            nmo_engine_block_set_output_value(b, 0, text, strlen(text) + 1u);
+        }
+        break;
+    case CKARRAYTYPE_OBJECT: {
+        nmo_class_id_t cid = type_class(b, out);
+        if (cid != 0) {
+            uint32_t id = eng_is_child_class(engine, eng_object_class(engine, cell.value), cid)
+                              ? cell.value
+                              : 0u;
+            nmo_engine_block_set_output_value(b, 0, &id, sizeof(id));
+        }
+        break;
+    }
+    case CKARRAYTYPE_PARAMETER:
+        if (cell.data != NULL && (type_derives(b, cell.parameter_type, out) ||
+                                  type_derives(b, out, cell.parameter_type))) {
+            nmo_engine_block_set_output_value(b, 0, cell.data, cell.size);
+        }
+        break;
+    default:
+        break;
+    }
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* A parameter value as text (GetStringValue), for the types a string column takes. */
+static char *value_text(blk_t *b, nmo_guid_t type, const void *data, size_t size)
+{
+    if (type_derives(b, type, CKPGUID_STRING)) {
+        if (memchr(data, '\0', size) == NULL) {
+            return NULL;
+        }
+        size_t length = strlen((const char *)data);
+        char *copy = (char *)malloc(length + 1u);
+        if (copy != NULL) {
+            memcpy(copy, data, length + 1u);
+        }
+        return copy;
+    }
+    if (size < 4) {
+        return NULL;
+    }
+    int32_t i = 0;
+    float f = 0.0f;
+    memcpy(&i, data, sizeof(i));
+    memcpy(&f, data, sizeof(f));
+    bool is_float = type_derives(b, type, CKPGUID_FLOAT);
+    if (!is_float && !type_derives(b, type, CKPGUID_INT)) {
+        return NULL;
+    }
+    int length = is_float ? snprintf(NULL, 0, "%g", f) : snprintf(NULL, 0, "%d", i);
+    char *text = length >= 0 ? (char *)malloc((size_t)length + 1u) : NULL;
+    if (text != NULL) {
+        if (is_float) {
+            snprintf(text, (size_t)length + 1u, "%g", f);
+        } else {
+            snprintf(text, (size_t)length + 1u, "%d", i);
+        }
+    }
+    return text;
+}
+
+/* Set Cell (ArraySetElement, CKDataArray::SetElementValueFromParameter) */
+static int bb_set_cell(blk_t *b)
+{
+    nmo_object_id_t array = array_target(b);
+    if (array == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    nmo_engine_t *engine = nmo_engine_block_engine(b);
+    int32_t row = get_in_int(b, 0, 0), column = get_in_int(b, 1, 0);
+    size_t size = 0;
+    const void *data = nmo_engine_block_input_data(b, 2, &size);
+    nmo_engine_cell_t current;
+    IN_OFF(b, 0);
+    if (data == NULL || nmo_engine_array_get_cell(engine, array, row, column, &current) != NMO_OK) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    nmo_engine_cell_t cell = {.type = current.type};
+    char *text = NULL;
+    switch (current.type) {
+    case CKARRAYTYPE_STRING:
+        text = value_text(b, nmo_engine_block_input_parameter_type(b, 2), data, size);
+        cell.text = text;
+        nmo_engine_array_set_cell(engine, array, row, column, &cell);
+        free(text);
+        break;
+    case CKARRAYTYPE_PARAMETER:
+        if (type_derives(b, nmo_engine_block_input_parameter_type(b, 2), current.parameter_type) ||
+            type_derives(b, current.parameter_type, nmo_engine_block_input_parameter_type(b, 2))) {
+            cell.data = data;
+            cell.size = size;
+            nmo_engine_array_set_cell(engine, array, row, column, &cell);
+        }
+        break;
+    default:
+        memcpy(&cell.value, data, size < sizeof(cell.value) ? size : sizeof(cell.value));
+        nmo_engine_array_set_cell(engine, array, row, column, &cell);
+        break;
+    }
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Get Row (ArrayGetLine) */
+static int bb_get_row(blk_t *b)
+{
+    nmo_object_id_t array = array_target(b);
+    if (array == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    int32_t row = get_in_int(b, 0, 0);
+    IN_OFF(b, 0);
+    if (row < 0 || row >= nmo_engine_array_row_count(nmo_engine_block_engine(b), array)) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    array_write_outputs(b, array, row, 0);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Set Row (ArraySetLine) */
+static int bb_set_row(blk_t *b)
+{
+    nmo_object_id_t array = array_target(b);
+    if (array == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    nmo_engine_t *engine = nmo_engine_block_engine(b);
+    int32_t row = get_in_int(b, 0, 0);
+    int32_t unique = 1;
+    nmo_engine_block_get_local_value(b, 0, &unique, sizeof(unique));
+    int32_t key_column = nmo_engine_array_key_column(engine, array);
+    if (unique && key_column >= 0) {
+        nmo_engine_cell_t key;
+        array_input_key(b, array, key_column, key_column + 1, &key);
+        int32_t found = nmo_engine_array_find_row(engine, array, key_column, &key, 0);
+        if (found != -1 && found != row) {
+            IN_OFF(b, 0);
+            OUT_ON(b, 1);
+            return NMO_ENGINE_BR_OK;
+        }
+    }
+    if (row >= 0 && row < nmo_engine_array_row_count(engine, array)) {
+        array_read_inputs(b, array, row, 1);
+    }
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Add Row (AddArray) */
+static int bb_add_row(blk_t *b)
+{
+    nmo_object_id_t array = array_target(b);
+    if (array == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    nmo_engine_t *engine = nmo_engine_block_engine(b);
+    int32_t unique = 1;
+    nmo_engine_block_get_local_value(b, 0, &unique, sizeof(unique));
+    int32_t key_column = nmo_engine_array_key_column(engine, array);
+    if (unique && key_column >= 0) {
+        nmo_engine_cell_t key;
+        array_input_key(b, array, key_column, key_column, &key);
+        if (nmo_engine_array_find_row(engine, array, key_column, &key, 0) != -1) {
+            IN_OFF(b, 0);
+            OUT_ON(b, 1);
+            return NMO_ENGINE_BR_OK;
+        }
+    }
+    int32_t row = -1;
+    if (nmo_engine_array_insert_row(engine, array, -1, &row) == NMO_OK) {
+        array_read_inputs(b, array, row, 0);
+    }
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Iterator (ArrayIterator) */
+static int bb_array_iterator(blk_t *b)
+{
+    nmo_object_id_t array = array_target(b);
+    if (array == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    int32_t count = nmo_engine_array_row_count(nmo_engine_block_engine(b), array);
+    int32_t starting = get_in_int(b, 0, 0);
+    if (starting >= count) {
+        OUT_ON(b, 0);
+        return NMO_ENGINE_BR_OK;
+    }
+    int32_t ending = get_in_int(b, 1, -1);
+    if (ending == -1) {
+        ending = count - 1;
+    }
+    bool backward = get_in_int(b, 2, 0) != 0;
+    int32_t index;
+    bool first = false;
+    if (IN_ACTIVE(b, 0)) {
+        first = true;
+        IN_OFF(b, 0);
+        index = backward ? ending : starting;
+        set_out_int(b, 0, index);
+    } else {
+        IN_OFF(b, 1);
+        index = get_out_int(b, 0) + (backward ? -1 : 1);
+        if (index <= -1) {
+            index = count - 1;
+        } else if (index >= count) {
+            index = 0;
+        }
+        set_out_int(b, 0, index);
+    }
+    if (backward) {
+        ending = starting - 1;
+        if (ending == -1) {
+            ending = count - 1;
+        }
+    } else if (++ending >= count) {
+        ending = 0;
+    }
+    if ((!first || count == 0) && index == ending) {
+        OUT_ON(b, 0);
+        return NMO_ENGINE_BR_OK;
+    }
+    array_write_outputs(b, array, index, 1);
+    OUT_ON(b, 1);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* ---- Logics/Groups ---- */
+
+static int bb_group_iterator(blk_t *b)
+{
+    nmo_engine_t *engine = nmo_engine_block_engine(b);
+    nmo_object_id_t group = nmo_engine_block_get_input_object(b, 0);
+    int32_t count = nmo_engine_group_count(engine, group);
+    if (count < 0) {
+        OUT_ON(b, 0);
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    /* The index is the Index output, or a local in the version without it */
+    bool index_output = !nmo_guid_is_null(nmo_engine_block_output_parameter_type(b, 1));
+    int32_t index = index_output ? get_out_int(b, 1) : get_local_int(b, 0);
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        index = 0;
+    } else {
+        IN_OFF(b, 1);
+        ++index;
+    }
+    if (index >= count) {
+        OUT_ON(b, 0);
+        return NMO_ENGINE_BR_OK;
+    }
+    uint32_t element = (uint32_t)nmo_engine_group_object(engine, group, index);
+    nmo_engine_block_set_output_value(b, 0, &element, sizeof(element));
+    if (index_output) {
+        set_out_int(b, 1, index);
+    } else {
+        set_local_int(b, 0, index);
+    }
+    OUT_ON(b, 1);
+    return NMO_ENGINE_BR_OK;
+}
+
 /* ============================================================================
  * Registration
  * ============================================================================ */
@@ -830,6 +1302,13 @@ static const nmo_engine_block_desc_t eng_logics_blocks[] = {
     {NMO_GUID(0x3d6c4ae1, 0x72ae2cd6), "Broadcast Message", bb_broadcast_message, NULL, NULL},
     {NMO_GUID(0x1bb23f1d, 0x17ff14b9), "Switch On Message", bb_switch_on_message,
      cb_switch_on_message, NULL},
+    {NMO_GUID(0x33b99f51, 0x07d95c45), "Get Cell", bb_get_cell, NULL, NULL},
+    {NMO_GUID(0x30ed1c6d, 0x4a3b7067), "Set Cell", bb_set_cell, NULL, NULL},
+    {NMO_GUID(0x33b77f41, 0x07b95c45), "Get Row", bb_get_row, NULL, NULL},
+    {NMO_GUID(0x62e87901, 0x2df007dd), "Set Row", bb_set_row, NULL, NULL},
+    {NMO_GUID(0x1c7e5dc6, 0x3f6423c2), "Add Row", bb_add_row, NULL, NULL},
+    {NMO_GUID(0x198f0af9, 0x0268249f), "Iterator", bb_array_iterator, NULL, NULL},
+    {NMO_GUID(0x6050252f, 0x3aa82d40), "Group Iterator", bb_group_iterator, NULL, NULL},
 };
 
 nmo_status_t eng_register_logics(nmo_engine_t *engine)
