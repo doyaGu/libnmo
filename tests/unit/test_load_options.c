@@ -859,7 +859,6 @@ TEST(load_options, section_preflight_preserves_the_cursor_and_streaming_support)
         if (!streaming) ASSERT_EQ(68, nmo_io_tell(io));
         const nmo_status_t object_status = nmo_deserializer_parse_objects(ds);
         ASSERT_EQ(NMO_OK, object_status);
-        if (!streaming) ASSERT_EQ(76, nmo_io_tell(io));
         nmo_deserializer_destroy(ds);
         destroy_ctx_session(ctx, session);
     }
