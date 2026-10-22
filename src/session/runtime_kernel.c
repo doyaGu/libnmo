@@ -12,11 +12,14 @@
 #include "format/nmo_object.h"
 #include "object/nmo_object_index.h"
 #include "object/nmo_object_repository.h"
+#include "object/builtin/nmo_grid_schemas.h"
+#include "object/builtin/nmo_layer_schemas.h"
 #include "session/nmo_deserializer.h"
 #include "session/nmo_reference_resolver.h"
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_runtime.h"
 #include "type/nmo_type_system.h"
+#include "type/nmo_object_guids.h"
 #include "session_internal.h"
 #include <string.h>
 
@@ -640,6 +643,48 @@ static int runtime_execute_copy(
 
 /* ── Finalize load ─────────────────────────────────────────────── */
 
+/* All object states and references are available here, independently of file
+ * order. Match CKLayer::FitSquareArrayForLoad after its grid dimensions arrive. */
+static nmo_status_t runtime_fit_layer_cells(nmo_session_t *session,
+                                            nmo_object_repository_t *repo,
+                                            const nmo_type_registry_t *types)
+{
+    const size_t count = nmo_object_repository_get_count(repo);
+    for (size_t i = 0u; i < count; ++i) {
+        nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
+        nmo_layer_state_t *layer = nmo_type_query_object_get_ancestor_state_by_guid(
+            types, object, CKPGUID_LAYER);
+        if (layer == NULL || !layer->has_layer_data || layer->format != 0 ||
+            layer->grid.state != NMO_REF_RESOLVED) continue;
+        nmo_object_t *owner = nmo_object_repository_find_by_id(repo, layer->grid.id);
+        const nmo_grid_state_t *grid = nmo_type_query_object_get_ancestor_state_by_guid(
+            types, owner, CKPGUID_GRID);
+        if (grid == NULL) continue;
+        if (grid->width < 0 || grid->length < 0 ||
+            (grid->length > 0 && grid->width > INT32_MAX / grid->length)) {
+            return NMO_ERR_INVALID_FORMAT;
+        }
+        const size_t cells = (size_t)grid->width * (size_t)grid->length;
+        if (cells == 0u) continue; /* Owner dimensions may still be pending. */
+        if (cells > SIZE_MAX / sizeof(uint32_t)) return NMO_ERR_INVALID_FORMAT;
+        const size_t bytes = cells * sizeof(uint32_t);
+        if (layer->square_data_size == bytes && layer->square_data != NULL) continue;
+        NMO_VALIDATE_BYTES(layer->square_data, layer->square_data_size, "layer cells");
+        if ((layer->square_data_size & 3u) != 0u) return NMO_ERR_INVALID_FORMAT;
+        nmo_arena_t *arena = nmo_object_get_storage_arena(object);
+        if (arena == NULL) arena = nmo_session_get_arena(session);
+        void *fitted = nmo_arena_alloc(arena, bytes, _Alignof(uint32_t));
+        if (fitted == NULL) return NMO_ERR_NOMEM;
+        memset(fitted, 0, bytes);
+        const size_t kept = layer->square_data_size < bytes ? layer->square_data_size : bytes;
+        if (kept != 0u) memcpy(fitted, layer->square_data, kept);
+        layer->square_data = fitted;
+        layer->square_data_size = bytes;
+        layer->has_square_data = 1u;
+    }
+    return NMO_OK;
+}
+
 nmo_status_t nmo_runtime_kernel_finalize_load(
     nmo_session_t *session,
     const nmo_runtime_request_t *request,
@@ -777,6 +822,10 @@ nmo_status_t nmo_runtime_kernel_finalize_load(
                 }
             }
         }
+    }
+
+    if (repo != NULL && type_rt != NULL && type_rt->types != NULL) {
+        NMO_RETURN_IF_ERROR(runtime_fit_layer_cells(session, repo, type_rt->types));
     }
 
     /* Post-load callback (e.g., build behavior index) */

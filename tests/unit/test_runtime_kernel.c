@@ -17,6 +17,7 @@
 #include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_grid_schemas.h"
+#include "object/builtin/nmo_layer_schemas.h"
 #include "object/builtin/nmo_animation_schemas.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_2dentity_schemas.h"
@@ -5058,7 +5059,106 @@ TEST(runtime_kernel, normalize_and_safe_detach_keep_curve_sections_independent) 
     nmo_context_release(ctx);
 }
 
+TEST(runtime_kernel, finalize_fits_layer_cells_after_owner_dimensions_are_known) {
+    const size_t stored_counts[] = {0u, 2u, 6u, 8u};
+    for (uint32_t grid_index = 0u; grid_index < 2u; ++grid_index) {
+        for (size_t case_index = 0u; case_index < 4u; ++case_index) {
+            nmo_context_t *ctx = nmo_context_create(NULL);
+            ASSERT_NOT_NULL(ctx);
+            nmo_session_t *session = nmo_session_create(ctx);
+            ASSERT_NOT_NULL(session);
+            nmo_object_repository_t *repo = nmo_session_get_repository(session);
+            nmo_object_id_t ids[2] = {0};
+            for (uint32_t i = 0u; i < 2u; ++i) {
+                const nmo_class_id_t class_id = i == grid_index ? NMO_CID_GRID : NMO_CID_LAYER;
+                ASSERT_EQ(NMO_OK, nmo_session_create_object(
+                    session, class_id, "cells", NMO_NULL_GUID, &ids[i], NULL));
+            }
+            const nmo_object_id_t grid_id = ids[grid_index];
+            nmo_grid_state_t *grid = nmo_object_repository_find_by_id(repo, grid_id)->state;
+            nmo_object_t *layer_object = nmo_object_repository_find_by_id(repo, ids[1u - grid_index]);
+            nmo_layer_state_t *layer = layer_object->state;
+            layer->grid = nmo_ref_from_id(grid_id);
+            const size_t stored = stored_counts[case_index];
+            uint32_t values[8] = {11u, 22u, 33u, 44u, 55u, 66u, 77u, 88u};
+            layer->square_data = stored > 0u ? values : NULL;
+            layer->square_data_size = stored * sizeof(uint32_t);
+            layer->has_square_data = stored > 0u;
+            /* Pending dimensions retain the loaded prefix, even when the
+             * layer precedes its grid in the object table. */
+            const nmo_status_t pending = nmo_runtime_kernel_finalize_load(session, NULL, NULL);
+            ASSERT_EQ(NMO_OK, pending);
+            ASSERT_EQ(stored * sizeof(uint32_t), layer->square_data_size);
+            grid->width = 2;
+            grid->length = 3;
+            const nmo_status_t status = nmo_runtime_kernel_finalize_load(session, NULL, NULL);
+            ASSERT_EQ(NMO_OK, status);
+            ASSERT_EQ(6u * sizeof(uint32_t), layer->square_data_size);
+            ASSERT_EQ(1u, layer->has_square_data);
+            ASSERT_NOT_NULL(layer->square_data);
+            const uint32_t *fitted = layer->square_data;
+            for (size_t i = 0u; i < 6u; ++i) {
+                ASSERT_EQ(i < stored ? values[i] : 0u, fitted[i]);
+            }
+            void *previous = layer->square_data;
+            ASSERT_EQ(NMO_OK, nmo_runtime_kernel_finalize_load(session, NULL, NULL));
+            ASSERT_EQ(previous, layer->square_data);
+            nmo_session_destroy(session);
+            nmo_context_release(ctx);
+        }
+    }
+}
+
+TEST(runtime_kernel, layer_cell_fitting_is_bounded_and_failure_atomic) {
+    for (uint32_t mode = 0u; mode < 6u; ++mode) {
+        nmo_context_t *ctx = nmo_context_create(NULL);
+        ASSERT_NOT_NULL(ctx);
+        nmo_session_t *session = nmo_session_create(ctx);
+        ASSERT_NOT_NULL(session);
+        nmo_object_repository_t *repo = nmo_session_get_repository(session);
+        nmo_object_id_t grid_id = 0u, layer_id = 0u;
+        ASSERT_EQ(NMO_OK, nmo_session_create_object(session, NMO_CID_GRID,
+            "owner", NMO_NULL_GUID, &grid_id, NULL));
+        ASSERT_EQ(NMO_OK, nmo_session_create_object(session, NMO_CID_LAYER,
+            "cells", NMO_NULL_GUID, &layer_id, NULL));
+        nmo_grid_state_t *grid = nmo_object_repository_find_by_id(repo, grid_id)->state;
+        nmo_object_t *object = nmo_object_repository_find_by_id(repo, layer_id);
+        nmo_layer_state_t *layer = object->state;
+        uint32_t values[] = {11u, 22u};
+        layer->square_data = values;
+        layer->square_data_size = sizeof(values);
+        layer->has_square_data = 1u;
+        layer->grid = mode == 3u ? nmo_ref_from_raw(grid_id) : nmo_ref_from_id(grid_id);
+        layer->format = mode == 4u ? 1 : 0;
+        layer->has_layer_data = mode == 5u ? 0u : 1u;
+        grid->width = mode == 0u ? -1 : mode == 1u ? INT32_MAX : 512;
+        grid->length = mode == 1u ? 2 : 512;
+        runtime_ref_graph_fail_allocator_state_t fail_state = {0};
+        nmo_allocator_t allocator = nmo_allocator_custom(
+            runtime_ref_graph_fail_alloc, runtime_ref_graph_fail_free, &fail_state);
+        nmo_arena_t *failing_arena = nmo_arena_create(&allocator, 128u);
+        ASSERT_NOT_NULL(failing_arena);
+        nmo_arena_t *original_arena = object->storage_arena;
+        if (mode == 2u) object->storage_arena = failing_arena;
+        fail_state.fail_allocations = 1;
+        const nmo_status_t status = nmo_runtime_kernel_finalize_load(session, NULL, NULL);
+        object->storage_arena = original_arena;
+        fail_state.fail_allocations = 0;
+        nmo_arena_destroy(failing_arena);
+        ASSERT_EQ(mode < 2u ? NMO_ERR_INVALID_FORMAT : mode == 2u ? NMO_ERR_NOMEM : NMO_OK,
+                  status);
+        ASSERT_EQ(values, layer->square_data);
+        ASSERT_EQ(sizeof(values), layer->square_data_size);
+        ASSERT_EQ(11u, values[0]);
+        ASSERT_EQ(22u, values[1]);
+        nmo_session_destroy(session);
+        nmo_context_release(ctx);
+    }
+}
+
 TEST_MAIN_BEGIN()
+REGISTER_TEST(runtime_kernel, finalize_fits_layer_cells_after_owner_dimensions_are_known);
+REGISTER_TEST(runtime_kernel, layer_cell_fitting_is_bounded_and_failure_atomic);
 REGISTER_TEST(runtime_kernel, file_header_allocation_failure_preserves_state);
 REGISTER_TEST(runtime_kernel, plugin_dependency_failure_preserves_state);
 REGISTER_TEST(runtime_kernel, execute_create_and_delete);
