@@ -278,7 +278,7 @@ int nmo_core_resolve_one_object(
         : NMO_ERR_INVALID_ARGUMENT;
     if (status == NMO_ERR_NOT_FOUND) {
         if (object_selector.has_id) {
-            fprintf(stderr, "Error: Object %u not found\n", id);
+            fprintf(stderr, "Error: Object %u not found\n", object_selector.id);
         } else {
             fprintf(stderr, "Error: %s '%s' not found\n", label, selector->name);
         }

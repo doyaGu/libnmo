@@ -3208,6 +3208,20 @@ TEST(cli, name_selectors_report_family_specific_missing_errors) {
     free(object.output);
 }
 
+TEST(cli, id_selector_reports_requested_missing_id) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
+    char args[512];
+
+    snprintf(args, sizeof(args),
+             "object show 999999 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_NOT_FOUND, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Object 999999 not found");
+    free(result.output);
+}
+
 /* ============================================================================
  * chunk list --top
  * ============================================================================ */
@@ -4961,6 +4975,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, entity_show_names_camera_and_light_fields_as_the_engine_does);
     REGISTER_TEST(cli, object_read_commands_accept_exact_name_selectors);
     REGISTER_TEST(cli, name_selectors_report_family_specific_missing_errors);
+    REGISTER_TEST(cli, id_selector_reports_requested_missing_id);
 
     /* chunk list --top */
     REGISTER_TEST(cli, chunk_list_top_limits_output);
