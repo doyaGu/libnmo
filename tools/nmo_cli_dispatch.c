@@ -9,6 +9,7 @@
 
 #include "commands/nmo_cmd_repl.h"
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -74,6 +75,21 @@ void nmo_cli_print_group_help(const nmo_cli_group_t *group, FILE *out) {
     }
     fprintf(out, "\n");
     fprintf(out, "Run 'nmo %s <action> --help' for action-specific help.\n", group->name);
+}
+
+/* True when -h/--help appears before any "--" separator in argv[start..]. */
+static bool nmo_cli_wants_help(int argc, char **argv, int start)
+{
+    for (int i = start; i < argc; ++i) {
+        if (strcmp(argv[i], "--") == 0) {
+            return false;
+        }
+        if (nmo_tool_streq_ci(argv[i], "--help") ||
+            nmo_tool_streq_ci(argv[i], "-h")) {
+            return true;
+        }
+    }
+    return false;
 }
 
 static const nmo_cli_action_t *nmo_cli_find_sub_action(
@@ -144,15 +160,12 @@ static int nmo_cli_dispatch_sub_action(
     }
 
     if (sub) {
-        for (int i = 2; i < argc; ++i) {
-            if (nmo_tool_streq_ci(argv[i], "--help") ||
-                nmo_tool_streq_ci(argv[i], "-h")) {
-                fprintf(stdout, "Usage: nmo %s %s %s [options] [file]\n\n",
-                        group->name, parent->name, sub->name);
-                fprintf(stdout, "%s\n\n", sub->brief);
-                if (sub->print_usage) sub->print_usage(stdout);
-                return NMO_CLI_EXIT_SUCCESS;
-            }
+        if (nmo_cli_wants_help(argc, argv, 2)) {
+            fprintf(stdout, "Usage: nmo %s %s %s [options] [file]\n\n",
+                    group->name, parent->name, sub->name);
+            fprintf(stdout, "%s\n\n", sub->brief);
+            if (sub->print_usage) sub->print_usage(stdout);
+            return NMO_CLI_EXIT_SUCCESS;
         }
         return sub->handler(argc - 1, argv + 1, global);
     }
@@ -189,16 +202,13 @@ static int nmo_cli_dispatch_repl(int argc, char **argv,
         nmo_cli_print_group_help(group, stderr);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
-    for (int i = 2; i < argc; ++i) {
-        if (nmo_tool_streq_ci(argv[i], "--help") ||
-            nmo_tool_streq_ci(argv[i], "-h")) {
-            fprintf(stdout, "Usage: nmo repl start [options] [file]\n\n");
-            fprintf(stdout, "%s\n\n", action->brief);
-            if (action->print_usage) {
-                action->print_usage(stdout);
-            }
-            return NMO_CLI_EXIT_SUCCESS;
+    if (nmo_cli_wants_help(argc, argv, 2)) {
+        fprintf(stdout, "Usage: nmo repl start [options] [file]\n\n");
+        fprintf(stdout, "%s\n\n", action->brief);
+        if (action->print_usage) {
+            action->print_usage(stdout);
         }
+        return NMO_CLI_EXIT_SUCCESS;
     }
     return nmo_cmd_repl_start(argc - 1, argv + 1, global);
 }
@@ -269,16 +279,13 @@ int nmo_cli_dispatch(int argc, char **argv, const nmo_cli_global_opts_t *global)
                                            argc - 1, argv + 1, global);
     }
 
-    for (int i = 2; i < argc; ++i) {
-        if (nmo_tool_streq_ci(argv[i], "--help") ||
-            nmo_tool_streq_ci(argv[i], "-h")) {
-            fprintf(stdout, "Usage: nmo %s %s [options] [file]\n\n", group->name, action->name);
-            fprintf(stdout, "%s\n\n", action->brief);
-            if (action->print_usage) {
-                action->print_usage(stdout);
-            }
-            return NMO_CLI_EXIT_SUCCESS;
+    if (nmo_cli_wants_help(argc, argv, 2)) {
+        fprintf(stdout, "Usage: nmo %s %s [options] [file]\n\n", group->name, action->name);
+        fprintf(stdout, "%s\n\n", action->brief);
+        if (action->print_usage) {
+            action->print_usage(stdout);
         }
+        return NMO_CLI_EXIT_SUCCESS;
     }
 
     return action->handler(argc - 1, argv + 1, global);

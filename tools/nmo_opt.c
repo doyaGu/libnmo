@@ -8,6 +8,7 @@
 #include "core/nmo_parse.h"
 
 #include <limits.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -36,6 +37,25 @@ static size_t find_def(const char *token,
     return (size_t)-1;
 }
 
+/* "-1", "-0.5", "-.5": a negative number, not an option cluster. */
+static bool looks_like_negative_number(const char *token)
+{
+    if (token[0] != '-') return false;
+    const char *p = token + 1;
+    if (*p == '.') ++p;
+    return *p >= '0' && *p <= '9';
+}
+
+static int push_positional(nmo_opt_result_t *result, const char *arg)
+{
+    if (result->pos_capacity > 0 && result->pos_count >= result->pos_capacity) {
+        fprintf(stderr, "Error: Too many positional arguments\n");
+        return -1;
+    }
+    result->pos_args[result->pos_count++] = arg;
+    return 0;
+}
+
 int nmo_opt_parse(int argc, char **argv,
                   const nmo_opt_def_t *defs, size_t def_count,
                   nmo_opt_result_t *result)
@@ -59,17 +79,17 @@ int nmo_opt_parse(int argc, char **argv,
 
         /* Positional argument */
         if (stop_options || arg[0] != '-') {
-            if (result->pos_capacity > 0 && result->pos_count >= result->pos_capacity) {
-                fprintf(stderr, "Error: Too many positional arguments\n");
-                return -1;
-            }
-            result->pos_args[result->pos_count++] = arg;
+            if (push_positional(result, arg) < 0) return -1;
             continue;
         }
 
-        /* Look up option */
+        /* Look up option; an unmatched negative number is a positional */
         const char *eq_value = NULL;
         size_t idx = find_def(arg, defs, def_count, &eq_value);
+        if (idx == (size_t)-1 && looks_like_negative_number(arg)) {
+            if (push_positional(result, arg) < 0) return -1;
+            continue;
+        }
         if (idx == (size_t)-1) {
             fprintf(stderr, "Error: Unknown option '%s'\n", arg);
             return -1;

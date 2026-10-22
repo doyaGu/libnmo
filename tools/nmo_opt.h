@@ -124,8 +124,9 @@ static inline float nmo_opt_float_or(const nmo_opt_val_t *v, float fallback)
  * @brief Parse command-local argv against option definitions.
  *
  * Scans argv[1..argc-1] (argv[0] is the action name).
- * Recognized options fill vals[]; unrecognized tokens that don't start
- * with '-' are collected as positional arguments.
+ * Recognized options fill vals[]; tokens that don't start with '-', and
+ * negative numbers such as "-1" or "-0.5" that match no definition, are
+ * collected as positional arguments. Everything after "--" is positional.
  *
  * On error (unknown --option, missing value, bad integer), prints a
  * message to stderr and returns -1.
