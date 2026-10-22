@@ -188,6 +188,29 @@ static int nmo_shadow_buffer_append_u32(nmo_arena_t *arena,
     return nmo_shadow_buffer_append(arena, buffer, size, capacity, bytes, sizeof(bytes));
 }
 
+/* Seekable sources can reject impossible wire extents before allocating their
+ * advertised size. Streaming backends still use the normal exact-read checks. */
+static nmo_status_t deserializer_require_bytes(nmo_io_interface_t *io, uint64_t size)
+{
+    if (size == 0u || io->seek == NULL || io->tell == NULL) {
+        return NMO_OK;
+    }
+    const int64_t position = nmo_io_tell(io);
+    if (position < 0 || nmo_io_seek(io, 0, NMO_SEEK_END) != NMO_OK) {
+        return NMO_OK;
+    }
+    const int64_t end = nmo_io_tell(io);
+    const nmo_status_t restore_status = nmo_io_seek(io, position, NMO_SEEK_SET);
+    if (restore_status != NMO_OK) {
+        return restore_status;
+    }
+    if (end < 0) {
+        return NMO_OK;
+    }
+    return end < position || size > (uint64_t)(end - position)
+        ? NMO_ERR_TRUNCATED_CHUNK : NMO_OK;
+}
+
 static int nmo_load_included_files(
     nmo_session_t *session,
     nmo_io_interface_t *io,
@@ -540,6 +563,21 @@ nmo_status_t nmo_deserializer_parse_header(nmo_deserializer_t *ds)
     result = nmo_file_header_validate(&ds->header);
     if (result != NMO_OK) {
         nmo_log(logger, NMO_LOG_ERROR, "Invalid file header");
+        return result;
+    }
+
+    /* CKFile's parser and decompressor take signed byte counts. Below version
+     * 5 there are no data size fields; below version 7 Header1 is ignored. */
+    if (ds->header.file_version >= 5u &&
+        (ds->header.data_pack_size > INT32_MAX || ds->header.data_unpack_size > INT32_MAX)) {
+        return NMO_ERR_INVALID_FORMAT;
+    }
+    const uint64_t packed_header_size = ds->header.file_version >= 7u
+        ? ds->header.hdr1_pack_size : 0u;
+    const uint64_t packed_data_size = ds->header.file_version >= 5u
+        ? ds->header.data_pack_size : 0u;
+    result = deserializer_require_bytes(io, packed_header_size + packed_data_size);
+    if (result != NMO_OK) {
         return result;
     }
 

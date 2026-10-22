@@ -24,6 +24,7 @@
 #include "runtime/nmo_workspace.h"
 #include "type/nmo_type_system.h"
 #include "core/nmo_allocator.h"
+#include "core/nmo_utils.h"
 #include "../../src/session/load_diagnostics_internal.h"
 
 #include <stdio.h>
@@ -758,6 +759,74 @@ TEST(load_options, phased_header1_classifies_payload_failures)
                                     NULL));
 }
 
+TEST(load_options, section_extents_are_checked_before_header_publication)
+{
+    static const uint32_t sizes[] = {4u, 0x7FFFFFFFu, 0x80000000u, UINT32_MAX};
+    for (uint32_t version = 5u; version <= 9u; ++version) {
+        for (size_t field = 0; field < 2u; ++field) {
+            for (size_t i = 0; i < sizeof(sizes) / sizeof(sizes[0]); ++i) {
+                uint8_t bytes[64] = {0};
+                memcpy(bytes, "Nemo Fi\0", 8u);
+                nmo_write_u32_le(bytes + 16u, version);
+                nmo_write_u32_le(bytes + 32u, field == 0u ? sizes[i] : 4u);
+                nmo_write_u32_le(bytes + 36u, field == 1u ? sizes[i] : 4u);
+                int materialized = 1;
+                const nmo_status_t status = parse_memory_header(bytes, sizeof(bytes), &materialized);
+                ASSERT_EQ(sizes[i] > INT32_MAX ? NMO_ERR_INVALID_FORMAT : NMO_ERR_TRUNCATED_CHUNK,
+                          status);
+                ASSERT_FALSE(materialized);
+            }
+        }
+    }
+    /* Versions below 7 ignore the Header1 size field, not bytes from data. */
+    for (uint32_t version = 5u; version <= 9u; ++version) {
+        uint8_t bytes[68] = {0};
+        memcpy(bytes, "Nemo Fi\0", 8u);
+        nmo_write_u32_le(bytes + 16u, version);
+        nmo_write_u32_le(bytes + 28u, 4u);
+        nmo_write_u32_le(bytes + 32u, 4u);
+        nmo_write_u32_le(bytes + 36u, 4u);
+        nmo_write_u32_le(bytes + 60u, 4u);
+        int materialized = 1;
+        const nmo_status_t status = parse_memory_header(bytes, sizeof(bytes), &materialized);
+        ASSERT_EQ(version < 7u ? NMO_OK : NMO_ERR_TRUNCATED_CHUNK, status);
+        ASSERT_EQ(version < 7u, materialized != 0);
+    }
+}
+
+TEST(load_options, section_preflight_preserves_the_cursor_and_streaming_support)
+{
+    for (uint32_t streaming = 0u; streaming <= 1u; ++streaming) {
+        uint8_t bytes[76] = {0};
+        memcpy(bytes, "Nemo Fi\0", 8u);
+        nmo_write_u32_le(bytes + 16u, 8u);
+        nmo_write_u32_le(bytes + 28u, 4u);
+        nmo_write_u32_le(bytes + 32u, 8u);
+        nmo_write_u32_le(bytes + 36u, 8u);
+        nmo_write_u32_le(bytes + 60u, 4u);
+        nmo_context_t *ctx = nmo_context_create(NULL);
+        ASSERT_NOT_NULL(ctx);
+        nmo_session_t *session = nmo_session_create(ctx);
+        ASSERT_NOT_NULL(session);
+        nmo_io_interface_t *io = nmo_memory_io_open_read(bytes, sizeof(bytes));
+        ASSERT_NOT_NULL(io);
+        if (streaming) {
+            io->seek = NULL;
+            io->tell = NULL;
+        }
+        nmo_deserializer_t *ds = nmo_deserializer_create(session, io, NULL);
+        ASSERT_NOT_NULL(ds);
+        const nmo_status_t header_status = nmo_deserializer_parse_header(ds);
+        ASSERT_EQ(NMO_OK, header_status);
+        if (!streaming) ASSERT_EQ(68, nmo_io_tell(io));
+        const nmo_status_t object_status = nmo_deserializer_parse_objects(ds);
+        ASSERT_EQ(NMO_OK, object_status);
+        if (!streaming) ASSERT_EQ(76, nmo_io_tell(io));
+        nmo_deserializer_destroy(ds);
+        destroy_ctx_session(ctx, session);
+    }
+}
+
 TEST(load_options, load_file_preserves_header_errors)
 {
     const char *path = NMO_TEST_SCRATCH_FILE("test_load_options_invalid_header.nmo");
@@ -857,6 +926,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(load_options, custom_allocator_controls_object_and_schema_storage);
     REGISTER_TEST(load_options, phased_header_parse_preserves_format_errors);
     REGISTER_TEST(load_options, phased_header1_classifies_payload_failures);
+    REGISTER_TEST(load_options, section_extents_are_checked_before_header_publication);
+    REGISTER_TEST(load_options, section_preflight_preserves_the_cursor_and_streaming_support);
     REGISTER_TEST(load_options, load_file_preserves_header_errors);
     REGISTER_TEST(load_options, phased_data_classifies_payload_failures);
     REGISTER_TEST(load_options, included_file_failure_does_not_publish_prefix);
