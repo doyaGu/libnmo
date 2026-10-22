@@ -475,6 +475,10 @@ static int runtime_abort_copy(
     return rollback_result != NMO_OK ? rollback_result : operation_result;
 }
 
+static nmo_status_t runtime_fit_layer_cells(
+    nmo_session_t *session, nmo_object_repository_t *repo,
+    const nmo_type_registry_t *types, nmo_object_t *const *objects, size_t count);
+
 static int runtime_execute_copy(
     nmo_session_t *session,
     const nmo_runtime_request_t *request,
@@ -608,6 +612,13 @@ static int runtime_execute_copy(
                 session, repo, clones, copied_count, hook_result);
         }
 
+        hook_result = runtime_fit_layer_cells(
+            session, repo, type_rt->types, &clone, 1u);
+        if (hook_result != NMO_OK) {
+            return runtime_abort_copy(
+                session, repo, clones, copied_count, hook_result);
+        }
+
         if (type->vtable != NULL && type->vtable->prepare_dependencies != NULL) {
             hook_result = type->vtable->prepare_dependencies(
                 clone->state, type, repo);
@@ -643,15 +654,17 @@ static int runtime_execute_copy(
 
 /* ── Finalize load ─────────────────────────────────────────────── */
 
-/* All object states and references are available here, independently of file
- * order. Match CKLayer::FitSquareArrayForLoad after its grid dimensions arrive. */
+/* Match CKLayer's owner-sized cell copies once all states and reference
+ * mappings are available, independently of load/copy order. */
 static nmo_status_t runtime_fit_layer_cells(nmo_session_t *session,
                                             nmo_object_repository_t *repo,
-                                            const nmo_type_registry_t *types)
+                                            const nmo_type_registry_t *types,
+                                            nmo_object_t *const *objects,
+                                            size_t count)
 {
-    const size_t count = nmo_object_repository_get_count(repo);
     for (size_t i = 0u; i < count; ++i) {
-        nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
+        nmo_object_t *object = objects != NULL ? objects[i]
+            : nmo_object_repository_get_by_index(repo, i);
         nmo_layer_state_t *layer = nmo_type_query_object_get_ancestor_state_by_guid(
             types, object, CKPGUID_LAYER);
         if (layer == NULL || !layer->has_layer_data || layer->format != 0 ||
@@ -825,7 +838,8 @@ nmo_status_t nmo_runtime_kernel_finalize_load(
     }
 
     if (repo != NULL && type_rt != NULL && type_rt->types != NULL) {
-        NMO_RETURN_IF_ERROR(runtime_fit_layer_cells(session, repo, type_rt->types));
+        NMO_RETURN_IF_ERROR(runtime_fit_layer_cells(
+            session, repo, type_rt->types, NULL, nmo_object_repository_get_count(repo)));
     }
 
     /* Post-load callback (e.g., build behavior index) */

@@ -5268,7 +5268,68 @@ TEST(runtime_kernel, layer_save_tracks_owner_dimensions_without_mutating_cells) 
     }
 }
 
+TEST(runtime_kernel, layer_copy_fits_cells_and_rolls_back_invalid_owners) {
+    for (int mode = 0; mode < 6; ++mode) {
+        nmo_context_t *ctx = nmo_context_create(NULL);
+        ASSERT_NOT_NULL(ctx);
+        nmo_session_t *session = nmo_session_create(ctx);
+        ASSERT_NOT_NULL(session);
+        nmo_object_repository_t *repo = nmo_session_get_repository(session);
+        nmo_object_id_t grid_id = 0, layer_id = 0;
+        ASSERT_EQ(NMO_OK, nmo_session_create_object(session, NMO_CID_GRID,
+            "grid", NMO_NULL_GUID, &grid_id, NULL));
+        ASSERT_EQ(NMO_OK, nmo_session_create_object(session, NMO_CID_LAYER,
+            "layer", NMO_NULL_GUID, &layer_id, NULL));
+        nmo_grid_state_t *grid = nmo_object_repository_find_by_id(repo, grid_id)->state;
+        nmo_layer_state_t *layer = nmo_object_repository_find_by_id(repo, layer_id)->state;
+        uint32_t cells[] = {17u, 29u};
+        layer->grid = mode == 4 ? nmo_ref_from_raw(grid_id) : nmo_ref_from_id(grid_id);
+        layer->has_square_data = 1;
+        layer->square_data = cells;
+        layer->square_data_size = sizeof(cells);
+        const int widths[] = {4, 1, 0, -1, 4, 4};
+        grid->width = widths[mode];
+        grid->length = 1;
+        const nmo_object_id_t ids[] = {layer_id, grid_id};
+        nmo_runtime_request_t request = {0};
+        request.kind = NMO_RUNTIME_OP_COPY;
+        request.flags = NMO_RUNTIME_REQUEST_STRICT;
+        request.payload.copy.ids = ids;
+        request.payload.copy.count = mode == 5 ? 2u : 1u;
+        nmo_runtime_report_t report;
+        const nmo_status_t result = nmo_runtime_kernel_execute(session, &request, &report);
+        if (mode == 3) {
+            ASSERT_EQ(NMO_ERR_INVALID_FORMAT, result);
+            ASSERT_EQ(2u, nmo_object_repository_get_count(repo));
+            ASSERT_EQ(0u, report.copied_objects);
+        } else {
+            ASSERT_EQ(NMO_OK, result);
+            ASSERT_EQ(mode == 5 ? 4u : 3u, nmo_object_repository_get_count(repo));
+            nmo_object_t *clone = nmo_object_repository_get_by_index(repo, 2u);
+            nmo_layer_state_t *copied = clone->state;
+            const size_t expected = mode == 0 || mode == 5 ? 4u : mode == 1 ? 1u : 2u;
+            ASSERT_EQ(expected * sizeof(uint32_t), copied->square_data_size);
+            ASSERT_TRUE(copied->square_data != cells);
+            const uint32_t *values = copied->square_data;
+            ASSERT_EQ(17u, values[0]);
+            if (expected > 1u) ASSERT_EQ(29u, values[1]);
+            if (expected > 2u) {
+                ASSERT_EQ(0u, values[2]);
+                ASSERT_EQ(0u, values[3]);
+            }
+            if (mode == 5) ASSERT_EQ(nmo_object_repository_get_by_index(repo, 3u)->id,
+                                     nmo_ref_runtime_id(&copied->grid));
+        }
+        ASSERT_TRUE(layer->square_data == cells);
+        ASSERT_EQ(sizeof(cells), layer->square_data_size);
+        ASSERT_EQ(29u, cells[1]);
+        nmo_session_destroy(session);
+        nmo_context_release(ctx);
+    }
+}
+
 TEST_MAIN_BEGIN()
+REGISTER_TEST(runtime_kernel, layer_copy_fits_cells_and_rolls_back_invalid_owners);
 REGISTER_TEST(runtime_kernel, safe_detach_preserves_curve_and_place_child_world_poses);
 REGISTER_TEST(runtime_kernel, layer_save_tracks_owner_dimensions_without_mutating_cells);
 REGISTER_TEST(runtime_kernel, finalize_fits_layer_cells_after_owner_dimensions_are_known);
