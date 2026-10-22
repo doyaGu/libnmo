@@ -9,6 +9,7 @@
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "object/nmo_ref.h"
+#include "object/nmo_class_ids.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_animation_schemas.h"
 #include "object/builtin/nmo_attributemanager_schemas.h"
@@ -38,6 +39,8 @@
 #include "object/builtin/nmo_targetlight_schemas.h"
 #include "object/builtin/nmo_object_schemas.h"
 #include "object/nmo_object_type_common.h"
+#include "object/nmo_serialize_context.h"
+#include "object/nmo_deserialize_context.h"
 #include <stddef.h>
 #include <string.h>
 
@@ -834,6 +837,81 @@ TEST(object_state_layout, mesh_counts_follow_the_state) {
     source.vertices = NULL;
     source.vertex_colors = NULL;
     source.vertex_specular = NULL;
+    nmo_mesh_vtable.destroy(&source, NULL, NULL);
+    nmo_mesh_vtable.destroy(&copied, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(object_state_layout, mesh_channels_preserve_null_and_duplicate_material_slots) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_mesh_state_t source, copied;
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(&copied, NULL, NULL));
+    nmo_vertex_t vertices[2] = {0};
+    uint32_t colors[2] = {0xFFFFFFFFu, 0xFFFFFFFFu};
+    uint32_t specular[2] = {0};
+    nmo_face_t face = {.channel_mask = 5u};
+    nmo_material_group_t group = {0};
+    uint16_t indices[3] = {0u, 1u, 0u};
+    nmo_vector2_t uv[3][2] = {
+        {{1.f, 2.f}, {3.f, 4.f}},
+        {{5.f, 6.f}, {7.f, 8.f}},
+        {{9.f, 10.f}, {11.f, 12.f}},
+    };
+    nmo_material_channel_t channels[3] = {0};
+    for (size_t i = 0u; i < 3u; ++i) {
+        channels[i].material = nmo_ref_from_raw(i == 1u ? 0u : 55u);
+        channels[i].flags = 0x100u + (uint32_t)i;
+        channels[i].source_blend = 2u;
+        channels[i].dest_blend = 1u;
+        channels[i].uv_count = 2u;
+        channels[i].uv_coords = uv[i];
+    }
+    source.vertex_count = 2u;
+    source.vertices = vertices;
+    source.vertex_colors = colors;
+    source.vertex_specular = specular;
+    source.face_count = 1u;
+    source.faces = &face;
+    source.face_vertex_indices = indices;
+    source.material_group_count = 1u;
+    source.material_groups = &group;
+    source.has_material_channels = true;
+    source.material_channel_count = 3u;
+    source.material_channels = channels;
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.copy(&source, &copied, NULL, arena));
+    ASSERT_EQ(3u, copied.material_channel_count);
+    ASSERT_EQ(5u, copied.faces[0].channel_mask);
+    for (size_t i = 0u; i < 3u; ++i) {
+        ASSERT_TRUE(copied.material_channels[i].uv_coords != uv[i]);
+        ASSERT_MEM_EQ(uv[i], copied.material_channels[i].uv_coords, sizeof(uv[i]));
+        ASSERT_EQ(channels[i].material.raw_id, copied.material_channels[i].material.raw_id);
+    }
+    for (int file_mode = 0; file_mode < 2; ++file_mode) {
+        nmo_chunk_t *chunk = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(chunk);
+        chunk->class_id = NMO_CID_MESH;
+        chunk->data_version = 9u;
+        nmo_serialize_context_t context = nmo_serialize_context_create(
+            arena, NULL, file_mode ? NMO_SERIALIZE_FLAG_FILE_MODE : 0u, CK_STATESAVE_MESHONLY);
+        ASSERT_EQ(NMO_OK, nmo_mesh_serialize(&copied, chunk, NULL, &context));
+        nmo_chunk_close(chunk);
+        nmo_deserialize_context_t load = nmo_deserialize_context_create(
+            arena, NULL, NULL, file_mode ? NMO_DESER_FLAG_FILE_MODE : 0u);
+        nmo_mesh_state_t decoded;
+        ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(&decoded, NULL, NULL));
+        ASSERT_EQ(NMO_OK, nmo_mesh_deserialize(&decoded, chunk, NULL, &load));
+        ASSERT_EQ(3u, decoded.material_channel_count);
+        ASSERT_EQ(5u, decoded.faces[0].channel_mask);
+        for (size_t i = 0u; i < 3u; ++i) {
+            ASSERT_EQ(channels[i].material.raw_id, decoded.material_channels[i].material.raw_id);
+            ASSERT_EQ(channels[i].flags, decoded.material_channels[i].flags);
+            ASSERT_EQ(2u, decoded.material_channels[i].uv_count);
+            ASSERT_MEM_EQ(uv[i], decoded.material_channels[i].uv_coords, sizeof(uv[i]));
+        }
+        nmo_mesh_vtable.destroy(&decoded, NULL, NULL);
+    }
     nmo_mesh_vtable.destroy(&source, NULL, NULL);
     nmo_mesh_vtable.destroy(&copied, NULL, NULL);
     nmo_arena_destroy(arena);
@@ -1721,6 +1799,7 @@ TEST(object_state_layout, animations_copy_controllers_morph_keys_and_sections) {
 }
 
 TEST_MAIN_BEGIN()
+    REGISTER_TEST(object_state_layout, mesh_channels_preserve_null_and_duplicate_material_slots);
     REGISTER_TEST(object_state_layout, place_copy_equals_hash);
     REGISTER_TEST(object_state_layout, copy_into_shallow_alias_detaches_arrays);
     REGISTER_TEST(object_state_layout, layer_defaults_and_square_data_copy);
