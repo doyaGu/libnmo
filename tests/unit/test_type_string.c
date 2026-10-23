@@ -732,6 +732,40 @@ TEST(type_string, quaternion_roundtrip) {
 }
 
 /* ============================================================================
+ * Virtools Default Text Tests
+ * ============================================================================ */
+
+TEST(type_string, angle_from_string_turns_and_degrees) {
+    setup();
+
+    float value = 0.0f;
+    ASSERT_EQ(NMO_OK, test_builtin_from_string(CKPGUID_ANGLE, &value, "0:20"));
+    ASSERT_FLOAT_EQ(20.0f * (float)M_PI / 180.0f, value, 0.0001f);
+    ASSERT_EQ(NMO_OK, test_builtin_from_string(CKPGUID_ANGLE, &value, "1:90"));
+    ASSERT_FLOAT_EQ(450.0f * (float)M_PI / 180.0f, value, 0.0001f);
+    ASSERT_EQ(NMO_OK, test_builtin_from_string(CKPGUID_ANGLE, &value, "-0:45"));
+    ASSERT_FLOAT_EQ(-45.0f * (float)M_PI / 180.0f, value, 0.0001f);
+    ASSERT_EQ(NMO_OK, test_builtin_from_string(CKPGUID_ANGLE, &value, "1.5"));
+    ASSERT_FLOAT_EQ(1.5f, value, 0.0001f);
+    ASSERT_NE(NMO_OK, test_builtin_from_string(CKPGUID_ANGLE, &value, "0:x"));
+
+    teardown();
+}
+
+TEST(type_string, angle_roundtrip_through_degrees) {
+    setup();
+
+    float original = 0.75f;
+    float parsed = 0.0f;
+    char buffer[64];
+    ASSERT_EQ(NMO_OK, test_builtin_to_string(CKPGUID_ANGLE, &original, buffer, sizeof(buffer)));
+    ASSERT_EQ(NMO_OK, test_builtin_from_string(CKPGUID_ANGLE, &parsed, buffer));
+    ASSERT_FLOAT_EQ(original, parsed, 0.0001f);
+
+    teardown();
+}
+
+/* ============================================================================
  * Enum Conversion Tests
  * ============================================================================ */
 
@@ -3147,6 +3181,10 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(type_string, quaternion_to_string);
     REGISTER_TEST(type_string, quaternion_from_string);
     REGISTER_TEST(type_string, quaternion_roundtrip);
+
+    // Virtools default text tests
+    REGISTER_TEST(type_string, angle_from_string_turns_and_degrees);
+    REGISTER_TEST(type_string, angle_roundtrip_through_degrees);
     
     // Enum tests
     REGISTER_TEST(type_string, enum_to_string_by_name);

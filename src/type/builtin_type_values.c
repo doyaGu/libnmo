@@ -147,6 +147,10 @@ nmo_status_t nmo_vt_to_string_angle(
     const void *value, const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry,
     char *buffer, size_t buffer_size, int depth);
+nmo_status_t nmo_vt_from_string_angle(
+    void *value, const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    const char *string);
 nmo_status_t nmo_vt_to_string_percentage(
     const void *value, const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry,
@@ -205,7 +209,7 @@ NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
 NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
     nmo_builtin_vtable_angle,
     nmo_equals_float_bits, nmo_hash_float_bits,
-    nmo_vt_to_string_angle, nmo_vt_from_string_float)
+    nmo_vt_to_string_angle, nmo_vt_from_string_angle)
 NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
     nmo_builtin_vtable_percentage,
     nmo_equals_float_bits, nmo_hash_float_bits,
@@ -1168,6 +1172,62 @@ nmo_status_t nmo_vt_to_string_angle(
     NMO_LOAD_SCALAR(float, rad, value);
     double deg = (double)rad * (180.0 / M_PI);
     snprintf(buffer, buffer_size, "%.6g\xC2\xB0", deg);
+    NMO_RETURN_OK();
+}
+
+/*
+ * An angle in radians from "TURNS:DEGREES" (as Virtools writes angle
+ * defaults, "0:20"), from degrees with a degree sign (as the angle is
+ * written above, "20°"), or from a plain number of radians.
+ */
+nmo_status_t nmo_vt_from_string_angle(
+    void *value, const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    const char *string)
+{
+    (void)type;
+    (void)registry;
+    if (!value || !string) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments for angle from_string");
+    }
+    const char *colon = strchr(string, ':');
+    const char *degree_sign = strstr(string, "\xC2\xB0");
+    if (colon == NULL && degree_sign == NULL) {
+        return nmo_type_float_from_string(value, string);
+    }
+
+    char *end = NULL;
+    double degrees = 0.0;
+    if (colon != NULL) {
+        long turns = strtol(string, &end, 10);
+        if (end != colon) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Invalid angle turns");
+        }
+        degrees = strtod(colon + 1, &end);
+        if (end == colon + 1) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Invalid angle degrees");
+        }
+        /* A negative angle keeps its sign through both parts ("-1:30") */
+        degrees = (double)turns * 360.0 + (turns < 0 || string[0] == '-' ? -degrees : degrees);
+    } else {
+        degrees = strtod(string, &end);
+        if (end != degree_sign) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Invalid angle degrees");
+        }
+        end = (char *)degree_sign + 2;
+    }
+    while (isspace((unsigned char)*end)) {
+        end++;
+    }
+    if (*end != '\0') {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Unexpected text after angle");
+    }
+    NMO_STORE_SCALAR(float, value, (float)(degrees * (M_PI / 180.0)));
     NMO_RETURN_OK();
 }
 
