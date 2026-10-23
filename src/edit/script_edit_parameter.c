@@ -23,6 +23,21 @@ static bool script_edit_is_symbolic_manager_default_type(nmo_guid_t type_guid)
            nmo_guid_equals(type_guid, CKPGUID_ATTRIBUTE);
 }
 
+/*
+ * A prototype default of an enum type that is none of its names: CK2 reads
+ * it as an integer (CKEnumStringFunc falls back to CKIntStringFunc), which
+ * leaves 0 for text like the system font names of a Font Name enum, filled
+ * only at run time. The parameter keeps its zeroed value.
+ */
+static bool script_edit_enum_default_reads_as_zero(nmo_script_edit_tx_t *tx,
+                                                   nmo_guid_t type_guid)
+{
+    const nmo_type_registry_t *registry = nmo_context_get_type_registry(tx->ctx);
+    const nmo_type_descriptor_t *type =
+        registry != NULL ? nmo_type_registry_find_by_guid(registry, type_guid) : NULL;
+    return type != NULL && (type->category & NMO_TYPE_CATEGORY_ENUM) != 0u;
+}
+
 static nmo_status_t script_edit_find_message_manager_value(
     nmo_script_edit_tx_t *tx,
     const char *name,
@@ -374,6 +389,9 @@ nmo_status_t script_edit_create_parameter_object(
             if (default_value[0] != '\0') {
                 rc = nmo_object_edit_set_parameter_value_ex(
                     tx->edit, source_id, default_value, NULL);
+                if (rc != NMO_OK && script_edit_enum_default_reads_as_zero(tx, type_guid)) {
+                    rc = NMO_OK;
+                }
                 if (rc != NMO_OK) {
                     if (!script_edit_is_symbolic_manager_default_type(type_guid)) {
                         return rc;
@@ -446,6 +464,9 @@ nmo_status_t script_edit_create_parameter_object(
         default_value && default_value[0] != '\0') {
         rc = nmo_object_edit_set_parameter_value_ex(
             tx->edit, *out_parameter_id, default_value, NULL);
+        if (rc != NMO_OK && script_edit_enum_default_reads_as_zero(tx, type_guid)) {
+            rc = NMO_OK;
+        }
         if (rc != NMO_OK) {
             if (!script_edit_is_symbolic_manager_default_type(type_guid)) {
                 return rc;
