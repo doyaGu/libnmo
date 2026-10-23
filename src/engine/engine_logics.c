@@ -720,6 +720,82 @@ static int cb_linear_progression(blk_t *b, uint32_t message)
     return NMO_ENGINE_BR_OK;
 }
 
+/*
+ * Bezier Progression: as Linear Progression, with the value following the
+ * Progression Curve from A to B (BezierProgressionTimeBased, its old integer
+ * time version, and BezierProgression in frames). Nothing happens without a
+ * curve.
+ */
+static int bezier_progression(blk_t *b, progression_mode_t mode)
+{
+    size_t curve_size = 0;
+    const void *curve = nmo_engine_block_input_data(b, 3, &curve_size);
+    if (curve == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    float a = get_in_float(b, 1, 0.0f), c = get_in_float(b, 2, 1.0f);
+    float elapsed = 0.0f;
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        if (mode == PROGRESS_TIME) {
+            set_out_float(b, 0, 0.0f);
+        } else {
+            set_out_int(b, 0, 0);
+        }
+        set_out_float(b, 1, a + (c - a) * nmo_engine_curve_y(curve, curve_size, 0.0f));
+        set_out_float(b, 2, 0.0f);
+        if (mode != PROGRESS_FRAMES) {
+            set_out_float(b, 3, 0.0f);
+        }
+    } else {
+        IN_OFF(b, 1);
+        elapsed = mode == PROGRESS_TIME ? get_out_float(b, 0) : (float)get_out_int(b, 0);
+    }
+    float duration;
+    if (mode == PROGRESS_TIME) {
+        elapsed += nmo_engine_block_delta_time(b);
+        set_out_float(b, 0, elapsed);
+        duration = get_in_float(b, 0, 0.0f);
+    } else {
+        int32_t step = mode == PROGRESS_FRAMES ? 1 : (int32_t)nmo_engine_block_delta_time(b);
+        int32_t value = (int32_t)elapsed + step;
+        set_out_int(b, 0, value);
+        elapsed = (float)value;
+        duration = (float)get_in_int(b, 0, 0);
+    }
+    float progression = elapsed / duration;
+    if (progression > 1.0f) {
+        progression = 1.0f;
+    }
+    float value = a + (c - a) * nmo_engine_curve_y(curve, curve_size, progression);
+    float delta = value - get_out_float(b, 1);
+    set_out_float(b, 1, value);
+    set_out_float(b, 2, delta);
+    set_out_float(b, 3, progression);
+    OUT_ON(b, elapsed > duration ? 0 : 1);
+    return NMO_ENGINE_BR_OK;
+}
+
+static int bb_bezier_progression(blk_t *b) { return bezier_progression(b, PROGRESS_TIME); }
+static int bb_bezier_progression_int(blk_t *b) { return bezier_progression(b, PROGRESS_TIME_INT); }
+static int bb_bezier_progression_frames(blk_t *b) { return bezier_progression(b, PROGRESS_FRAMES); }
+
+static int cb_bezier_progression(blk_t *b, uint32_t message)
+{
+    if (message != NMO_ENGINE_MSG_LOAD) {
+        return NMO_ENGINE_BR_OK;
+    }
+    if (get_local_int(b, 0) == 0) {
+        nmo_engine_block_set_function(b, bb_bezier_progression_frames);
+    } else if (nmo_engine_block_version(b) < 0x00010005u &&
+               !nmo_guid_equals(nmo_engine_block_input_parameter_type(b, 0), CKPGUID_TIME)) {
+        nmo_engine_block_set_function(b, bb_bezier_progression_int);
+    } else {
+        nmo_engine_block_set_function(b, bb_bezier_progression);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
 /* Per Second: each output takes its input times the frame time in seconds, float by float. */
 static int bb_per_second(blk_t *b)
 {
@@ -1705,6 +1781,8 @@ static const nmo_engine_block_desc_t eng_logics_blocks[] = {
     {NMO_GUID(0x998f000f, 0xf000f899), "Counter", bb_counter, cb_counter, NULL},
     {NMO_GUID(0xfff45680, 0xaa512a39), "Linear Progression", bb_linear_progression,
      cb_linear_progression, NULL},
+    {NMO_GUID(0x6bb8699a, 0x29fb6a4b), "Bezier Progression", bb_bezier_progression,
+     cb_bezier_progression, NULL},
     {NMO_GUID(0x4587ffee, 0x4587ffdd), "Wait Message", bb_wait_message, NULL, NULL},
     {NMO_GUID(0xa20e8d5b, 0xdf002150), "Send Message", bb_send_message, NULL, NULL},
     {NMO_GUID(0x3d6c4ae1, 0x72ae2cd6), "Broadcast Message", bb_broadcast_message, NULL, NULL},
