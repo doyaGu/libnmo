@@ -322,6 +322,39 @@ NMO_API nmo_object_id_t nmo_engine_group_object(const nmo_engine_t *engine,
                                                 nmo_object_id_t group_id,
                                                 int32_t index);
 
+/* ---- Input ----
+ *
+ * The keyboard and mouse the input manager reports. The host sets what is
+ * down and where the mouse is; the state takes effect at the start of the
+ * next frame, when the keys that changed since the previous frame form the
+ * frame's key buffer and the mouse movement is the difference of positions.
+ * Keys are DirectInput scan codes (Keyboard Key values); mouse buttons are
+ * CK_MOUSEBUTTON values: 0 left, 1 right, 2 middle.
+ */
+
+NMO_API void nmo_engine_set_key(nmo_engine_t *engine, uint32_t key, bool down);
+NMO_API void nmo_engine_set_mouse_position(nmo_engine_t *engine, float x, float y);
+NMO_API void nmo_engine_set_mouse_button(nmo_engine_t *engine, int32_t button, bool down);
+/** Add wheel movement to the next frame. */
+NMO_API void nmo_engine_add_mouse_wheel(nmo_engine_t *engine, float delta);
+
+/** CKInputManager::IsKeyDown during the current frame. */
+NMO_API bool nmo_engine_is_key_down(const nmo_engine_t *engine, uint32_t key);
+/** Keys that changed since the previous frame. */
+NMO_API int32_t nmo_engine_key_buffer_count(const nmo_engine_t *engine);
+/** The `index`th of them (GetKeyFromBuffer): its key, and whether it went down. */
+NMO_API bool nmo_engine_key_buffer_get(const nmo_engine_t *engine,
+                                       int32_t index,
+                                       uint32_t *out_key,
+                                       bool *out_pressed);
+NMO_API void nmo_engine_mouse_position(const nmo_engine_t *engine, float *out_x, float *out_y);
+/** Movement since the previous frame, and the wheel (GetMouseRelativePosition). */
+NMO_API void nmo_engine_mouse_relative(const nmo_engine_t *engine,
+                                       float *out_x,
+                                       float *out_y,
+                                       float *out_wheel);
+NMO_API bool nmo_engine_is_mouse_button_down(const nmo_engine_t *engine, int32_t button);
+
 /** "execute", "link", ... */
 NMO_API const char *nmo_engine_event_kind_name(nmo_engine_event_kind_t kind);
 

@@ -157,6 +157,30 @@ typedef struct eng_map {
 
 #define ENG_VEC(type) struct { type *data; size_t count; size_t capacity; }
 
+#define ENG_KEY_COUNT 256
+
+/* A key that went down or up since the previous frame (the input manager's key buffer). */
+typedef struct eng_key_event {
+    uint32_t key;
+    bool pressed;
+} eng_key_event_t;
+
+/*
+ * What the input manager reports during a frame. The host sets the `next`
+ * state; at the start of a frame it becomes the frame's state and the key
+ * buffer and mouse movement follow from the difference.
+ */
+typedef struct eng_input {
+    uint8_t keys[ENG_KEY_COUNT];
+    uint8_t next_keys[ENG_KEY_COUNT];
+    eng_key_event_t buffer[ENG_KEY_COUNT];
+    uint32_t buffer_count;
+    float mouse[2], next_mouse[2];
+    float relative[3];       /* x, y and the wheel */
+    float next_wheel;
+    bool buttons[3], next_buttons[3]; /* CK_MOUSE_BUTTON: left, right, middle */
+} eng_input_t;
+
 /* A CKDataArray cell: INT, FLOAT and OBJECT hold 32 bits, STRING text, PARAMETER bytes. */
 typedef struct eng_cell {
     uint32_t value;
@@ -216,6 +240,8 @@ struct nmo_engine {
     double time;
     float delta;
     uint64_t random_state;
+
+    eng_input_t input;
 
     nmo_engine_trace_fn trace;
     void *trace_user_data;
@@ -321,6 +347,10 @@ void eng_reset_messages(nmo_engine_t *engine);
 nmo_class_id_t eng_object_class(nmo_engine_t *engine, nmo_object_id_t id);
 /* CKIsChildClassOf for class ids. */
 bool eng_is_child_class(nmo_engine_t *engine, nmo_class_id_t class_id, nmo_class_id_t base);
+
+/* engine_input.c */
+/* InputManager::PreProcess: the host's state becomes the frame's. */
+void eng_input_begin_frame(nmo_engine_t *engine);
 
 /* engine_logics.c */
 nmo_status_t eng_register_logics(nmo_engine_t *engine);
