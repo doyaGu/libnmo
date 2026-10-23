@@ -673,6 +673,8 @@ static void behavior_run_usage(FILE *out) {
     fprintf(out, "  --max-iterations <n>      Iterations per graph and frame (default: 8000)\n");
     fprintf(out, "  --seed <n>                Random seed (default: 1)\n");
     fprintf(out, "  -t, --trace               Show links, operations and graphs too\n");
+    fprintf(out, "  -k, --keys <list>         Keys held down: KEY@FRAME[-FRAME],..., where KEY is\n");
+    fprintf(out, "                            a name (Space, Enter, Up, F1, ...) or a scan code\n");
 }
 
 static void behavior_interface_usage(FILE *out) {

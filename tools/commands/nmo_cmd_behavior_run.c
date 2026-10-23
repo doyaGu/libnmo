@@ -11,6 +11,7 @@
 #include "../nmo_opt.h"
 
 #include "nmo_engine.h"
+#include "behavior/nmo_behavior_view.h"
 #include "behavior/nmo_script_model.h"
 
 #include <stdlib.h>
@@ -25,7 +26,86 @@ typedef struct run_args {
     uint32_t max_iterations;
     uint32_t seed;
     bool trace;
+    const char *keys; /* "Space@30-35,Enter@60": keys and the frames they are down */
 } run_args_t;
+
+/* A key held down from frame `first` to frame `last`. */
+typedef struct run_key {
+    uint32_t key;
+    uint32_t first;
+    uint32_t last;
+} run_key_t;
+
+/* A key: a name nmo_behavior_keyboard_key_name() spells, or a scan code. */
+static uint32_t run_key_code(const char *name, size_t length)
+{
+    char *copy = (char *)malloc(length + 1u);
+    if (copy == NULL) {
+        return 0;
+    }
+    memcpy(copy, name, length);
+    copy[length] = '\0';
+    uint32_t key = nmo_behavior_keyboard_key_from_name(copy);
+    if (key == 0 && length > 0) {
+        char *end = NULL;
+        unsigned long code = strtoul(copy, &end, 0);
+        key = (end != NULL && *end == '\0' && code > 0 && code < 256) ? (uint32_t)code : 0u;
+    }
+    free(copy);
+    return key;
+}
+
+static bool run_frame_number(const char **text, uint32_t *out)
+{
+    const char *start = *text;
+    char *end = NULL;
+    unsigned long value = strtoul(start, &end, 10);
+    if (end == start || value > UINT32_MAX) {
+        return false;
+    }
+    *out = (uint32_t)value;
+    *text = end;
+    return true;
+}
+
+/*
+ * Parse "KEY@FRAME[-FRAME],..." into `out` (when not NULL); the count, or -1
+ * when the text is malformed. A key name ends at its '@', so names with
+ * commas or spaces ("Right Shift") need no quoting inside the list.
+ */
+static long run_parse_keys(const char *spec, run_key_t *out)
+{
+    long count = 0;
+    const char *p = spec;
+    while (p != NULL && *p != '\0') {
+        const char *at = strchr(p, '@');
+        if (at == NULL || at == p) {
+            return -1;
+        }
+        run_key_t entry = {.key = run_key_code(p, (size_t)(at - p))};
+        p = at + 1;
+        if (entry.key == 0 || !run_frame_number(&p, &entry.first)) {
+            return -1;
+        }
+        entry.last = entry.first;
+        if (*p == '-') {
+            p++;
+            if (!run_frame_number(&p, &entry.last) || entry.last < entry.first) {
+                return -1;
+            }
+        }
+        if (*p == ',') {
+            p++;
+        } else if (*p != '\0') {
+            return -1;
+        }
+        if (out != NULL) {
+            out[count] = entry;
+        }
+        count++;
+    }
+    return count;
+}
 
 typedef struct run_unknown {
     nmo_guid_t prototype;
@@ -369,9 +449,27 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
             exit_code = NMO_CLI_EXIT_ARG_ERROR;
         }
     }
+    long key_count = args->keys != NULL ? run_parse_keys(args->keys, NULL) : 0;
+    run_key_t *keys = key_count > 0 ? (run_key_t *)calloc((size_t)key_count, sizeof(run_key_t))
+                                    : NULL;
+    if (key_count > 0 && keys == NULL) {
+        status = NMO_ERR_NOMEM;
+    } else if (keys != NULL) {
+        run_parse_keys(args->keys, keys);
+    }
     for (uint32_t f = 0; status == NMO_OK && f < args->frames; f++) {
+        /* A key is down in a frame one of its ranges covers */
+        for (long k = 0; k < key_count; k++) {
+            bool down = false;
+            for (long j = 0; j < key_count; j++) {
+                down = down || (keys[j].key == keys[k].key && f >= keys[j].first &&
+                                f <= keys[j].last);
+            }
+            nmo_engine_set_key(engine, keys[k].key, down);
+        }
         status = nmo_engine_step(engine, args->delta_ms);
     }
+    free(keys);
     if (status != NMO_OK && exit_code == NMO_CLI_EXIT_SUCCESS) {
         fprintf(stderr, "Error: Behavior engine failed (%s)\n", nmo_error_string(status));
         exit_code = NMO_CLI_EXIT_INTERNAL_ERROR;
@@ -417,9 +515,11 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
         {"--max-iterations", NULL, NMO_OPT_UINT, "Iterations per graph and frame (default: 8000)"},
         {"--seed", NULL, NMO_OPT_UINT, "Random seed (default: 1)"},
         {"--trace", "-t", NMO_OPT_FLAG, "Show links, operations and graphs too"},
+        {"--keys", "-k", NMO_OPT_STRING,
+         "Keys held down: KEY@FRAME[-FRAME],... (names like Space, or scan codes)"},
     };
     enum { OPT_FRAMES, OPT_DELTA, OPT_START, OPT_SCRIPT, OPT_UNKNOWN, OPT_MAX_ITER, OPT_SEED,
-           OPT_TRACE, OPT_COUNT };
+           OPT_TRACE, OPT_KEYS, OPT_COUNT };
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
@@ -437,6 +537,11 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
     out->max_iterations = nmo_opt_uint_or(&vals[OPT_MAX_ITER], NMO_ENGINE_DEFAULT_MAX_ITERATIONS);
     out->seed = nmo_opt_uint_or(&vals[OPT_SEED], 1u);
     out->trace = nmo_opt_flag(&vals[OPT_TRACE]);
+    out->keys = nmo_opt_str(&vals[OPT_KEYS]);
+    if (out->keys != NULL && run_parse_keys(out->keys, NULL) < 0) {
+        fprintf(stderr, "Error: Invalid --keys: %s\n", out->keys);
+        return false;
+    }
     if (out->delta_ms < 0.0f || out->max_iterations > (uint32_t)INT32_MAX) {
         return false;
     }
