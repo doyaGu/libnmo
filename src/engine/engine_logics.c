@@ -820,6 +820,240 @@ static int bb_per_second(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* Get Delta Time: the frame time, in milliseconds (an integer before version 2). */
+static int bb_get_delta_time(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    set_out_float(b, 0, nmo_engine_block_delta_time(b));
+    return NMO_ENGINE_BR_OK;
+}
+
+static int bb_get_delta_time_old(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    set_out_int(b, 0, (int32_t)nmo_engine_block_delta_time(b));
+    return NMO_ENGINE_BR_OK;
+}
+
+static int cb_get_delta_time(blk_t *b, uint32_t message)
+{
+    if (message == NMO_ENGINE_MSG_LOAD) {
+        nmo_engine_block_set_function(b, nmo_engine_block_version(b) == 0x00020000u
+                                             ? bb_get_delta_time
+                                             : bb_get_delta_time_old);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Mini Calculator: a op b, the operator a Binary Operator or the first character of a string. */
+static int bb_mini_calculator(blk_t *b)
+{
+    float a = get_in_float(b, 1, 0.0f), c = get_in_float(b, 2, 0.0f);
+    int32_t op = 1; /* CKADD */
+    if (nmo_guid_equals(nmo_engine_block_input_parameter_type(b, 0), CKPGUID_STRING)) {
+        size_t size = 0;
+        const char *text = (const char *)nmo_engine_block_input_data(b, 0, &size);
+        char sign = text != NULL && size > 0 ? text[0] : '\0';
+        op = sign == '+' ? 1 : sign == '-' ? 2 : sign == '*' ? 3 : sign == '/' ? 4 : 0;
+    } else {
+        op = get_in_int(b, 0, 1);
+    }
+    float x = 0.0f; /* CK2 leaves it unset for another operator */
+    switch (op) {
+    case 1: x = a + c; break;
+    case 2: x = a - c; break;
+    case 3: x = a * c; break;
+    case 4: x = a / c; break;
+    default: break;
+    }
+    set_out_float(b, 0, x);
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * Get Component: the components of a Color, Vector, Euler Angles or 2D
+ * Vector, and a Rectangle or Box as corners, minimum and size, or center and
+ * half size by its "Rectangle/Box Mode" setting.
+ */
+static int bb_get_component(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_guid_t type = nmo_engine_block_input_parameter_type(b, 0);
+    float v[6] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    nmo_engine_block_get_input_value(b, 0, v, sizeof(v));
+    int components = 0;
+    if (nmo_guid_equals(type, CKPGUID_COLOR)) {
+        components = 4;
+    } else if (nmo_guid_equals(type, CKPGUID_VECTOR) || nmo_guid_equals(type, CKPGUID_EULERANGLES)) {
+        components = 3;
+    } else if (nmo_guid_equals(type, CKPGUID_2DVECTOR)) {
+        components = 2;
+    }
+    for (int i = 0; i < components; i++) {
+        set_out_float(b, i, v[i]);
+    }
+    int32_t mode = 1;
+    nmo_engine_block_get_local_value(b, 0, &mode, sizeof(mode));
+    if (nmo_guid_equals(type, CKPGUID_RECT)) {
+        /* left, top, right, bottom */
+        float corner[2] = {v[0], v[1]}, other[2] = {v[2], v[3]};
+        if (mode == 2) {
+            other[0] = v[2] - v[0];
+            other[1] = v[3] - v[1];
+        } else if (mode == 3) {
+            other[0] = (v[2] - v[0]) * 0.5f;
+            other[1] = (v[3] - v[1]) * 0.5f;
+            corner[0] = (v[0] + v[2]) * 0.5f;
+            corner[1] = (v[1] + v[3]) * 0.5f;
+        } else if (mode != 1) {
+            corner[0] = corner[1] = other[0] = other[1] = 0.0f;
+        }
+        nmo_engine_block_set_output_value(b, 0, corner, sizeof(corner));
+        nmo_engine_block_set_output_value(b, 1, other, sizeof(other));
+    } else if (nmo_guid_equals(type, CKPGUID_BOX)) {
+        /* VxBbox: Max, then Min */
+        float first[3] = {v[3], v[4], v[5]}, second[3] = {v[0], v[1], v[2]};
+        for (int k = 0; k < 3; k++) {
+            if (mode == 2) {
+                second[k] = v[k] - v[3 + k];
+            } else if (mode == 3) {
+                first[k] = (v[k] + v[3 + k]) * 0.5f;
+                second[k] = (v[k] - v[3 + k]) * 0.5f;
+            }
+        }
+        nmo_engine_block_set_output_value(b, 0, first, sizeof(first));
+        nmo_engine_block_set_output_value(b, 1, second, sizeof(second));
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/* A block's local parameter `pos` */
+static eng_param_t *block_local(blk_t *b, int pos)
+{
+    const eng_node_t *node = &b->engine->nodes.data[b->node];
+    return eng_node_param(b->engine, node->first_local, node->local_count, pos);
+}
+
+/*
+ * Variation: X less its value at the last In (kept in local 0), and Change
+ * or No Change. Reset stores Reset Value as that value, without an output.
+ */
+static int bb_variation(blk_t *b)
+{
+    eng_param_t *old = block_local(b, 0);
+    if (!IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 1);
+        if (old != NULL && old->size > 0) {
+            uint8_t *value = (uint8_t *)calloc(1, old->size);
+            if (value == NULL) {
+                return NMO_ENGINE_BR_GENERICERROR;
+            }
+            nmo_engine_block_get_input_value(b, 1, value, old->size);
+            eng_param_write(b->engine, old, value, old->size);
+            free(value);
+        }
+        return NMO_ENGINE_BR_OK;
+    }
+    IN_OFF(b, 0);
+    nmo_guid_t type = nmo_engine_block_output_parameter_type(b, 0);
+    int floats = 0;
+    bool old_on_change = true; /* the float case gives OldX on a change, the vectors on none */
+    if (nmo_guid_equals(type, CKPGUID_FLOAT) || nmo_guid_equals(type, CKPGUID_PERCENTAGE) ||
+        nmo_guid_equals(type, CKPGUID_ANGLE)) {
+        floats = 1;
+    } else if (nmo_guid_equals(type, CKPGUID_VECTOR)) {
+        floats = 3;
+        old_on_change = false;
+    } else if (nmo_guid_equals(type, CKPGUID_2DVECTOR)) {
+        floats = 2;
+        old_on_change = false;
+    } else if (nmo_guid_equals(type, CKPGUID_COLOR)) {
+        floats = 4;
+        old_on_change = false;
+    }
+    if (floats > 0) {
+        float x[4] = {0}, previous[4] = {0};
+        nmo_engine_block_get_input_value(b, 0, x, (size_t)floats * sizeof(float));
+        nmo_engine_block_get_local_value(b, 0, previous, (size_t)floats * sizeof(float));
+        nmo_engine_block_set_local_value(b, 0, x, (size_t)floats * sizeof(float));
+        bool changed = false;
+        for (int i = 0; i < floats; i++) {
+            x[i] -= previous[i];
+            changed = changed || x[i] != 0.0f;
+        }
+        nmo_engine_block_set_output_value(b, 0, x, (size_t)floats * sizeof(float));
+        if (changed == old_on_change) {
+            nmo_engine_block_set_output_value(b, 1, previous, (size_t)floats * sizeof(float));
+        }
+        OUT_ON(b, changed ? 0 : 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    if (nmo_guid_equals(type, CKPGUID_INT)) {
+        int32_t x = get_in_int(b, 0, 0), previous = 0;
+        nmo_engine_block_get_local_value(b, 0, &previous, sizeof(previous));
+        nmo_engine_block_set_local_value(b, 0, &x, sizeof(x));
+        x -= previous;
+        set_out_int(b, 0, x);
+        if (x != 0) {
+            set_out_int(b, 1, previous);
+        }
+        OUT_ON(b, x != 0 ? 0 : 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    /* Any other type: a change of its bytes, the old value into OldX */
+    size_t size = 0;
+    const uint8_t *now = (const uint8_t *)nmo_engine_block_input_data(b, 0, &size);
+    if (now == NULL || old == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    size_t compared = size < old->size ? size : old->size;
+    if (compared > 0 && memcmp(now, old->data, compared) != 0) {
+        size_t out_size = nmo_engine_block_output_parameter_size(b, 1);
+        size_t copied = out_size < old->size ? out_size : old->size;
+        if (copied > 0) {
+            nmo_engine_block_set_output_value(b, 1, old->data, copied);
+        }
+        OUT_ON(b, 0);
+    } else {
+        OUT_ON(b, 1);
+    }
+    eng_param_write(b->engine, old, now, size);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Bezier Transform: X through the curve, between the boundaries (a Rectangle, or 4 floats). */
+static int bb_bezier_transform(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    float x = get_in_float(b, 0, 0.0f);
+    size_t curve_size = 0;
+    const void *curve = nmo_engine_block_input_data(b, 1, &curve_size);
+    if (curve == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    float rect[4] = {1.0f, 0.0f, 0.0f, 1.0f}; /* left, top, right, bottom */
+    int32_t four_floats = 0;
+    nmo_engine_block_get_local_value(b, 0, &four_floats, sizeof(four_floats));
+    if (four_floats) {
+        rect[0] = get_in_float(b, 2, rect[0]);
+        rect[2] = get_in_float(b, 3, rect[2]);
+        rect[3] = get_in_float(b, 4, rect[3]);
+        rect[1] = get_in_float(b, 5, rect[1]);
+    } else {
+        nmo_engine_block_get_input_value(b, 2, rect, sizeof(rect));
+    }
+    float y = rect[3] + (rect[1] - rect[3]) *
+                           nmo_engine_curve_y(curve, curve_size, (x - rect[0]) / (rect[2] - rect[0]));
+    set_out_float(b, 0, y);
+    return NMO_ENGINE_BR_OK;
+}
+
 /* Threshold: X against MIN and MAX; the output is X clamped. */
 static int bb_threshold(blk_t *b)
 {
@@ -1801,6 +2035,12 @@ static const nmo_engine_block_desc_t eng_logics_blocks[] = {
     {NMO_GUID(0x46f71e13, 0x13d26f61), "Get Highest", bb_get_highest, NULL, NULL},
     {NMO_GUID(0x58a1210b, 0x14e5715c), "Is In Group", bb_is_in_group, NULL, NULL},
     {NMO_GUID(0x448e54ce, 0x75a655c5), "Per Second", bb_per_second, NULL, NULL},
+    {NMO_GUID(0x47dc3232, 0x64bf203a), "Get Delta Time", bb_get_delta_time, cb_get_delta_time,
+     NULL},
+    {NMO_GUID(0x55bc3115, 0x1dfe1e40), "Mini Calculator", bb_mini_calculator, NULL, NULL},
+    {NMO_GUID(0x2689057b, 0x1a1a446a), "Get Component", bb_get_component, NULL, NULL},
+    {NMO_GUID(0x3e7335d9, 0x29687f36), "Variation", bb_variation, NULL, NULL},
+    {NMO_GUID(0x6d433e1b, 0x191954b4), "Bezier Transform", bb_bezier_transform, NULL, NULL},
     {NMO_GUID(0x655e6af4, 0x08c0596f), "Threshold", bb_threshold, NULL, NULL},
     {NMO_GUID(0x35503950, 0x2dde7a65), "Interpolator", bb_interpolator_float, cb_interpolator,
      NULL},
