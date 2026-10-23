@@ -395,6 +395,7 @@ nmo_status_t eng_register_interface(nmo_engine_t *engine);
 void eng_fonts_clear(nmo_engine_t *engine);
 
 /* engine_strings.c */
+nmo_status_t eng_register_strings(nmo_engine_t *engine);
 /* CKParameter::GetStringValue: a new heap string, NULL when the type has no text. */
 char *eng_param_text(nmo_engine_t *engine, const eng_param_t *param);
 /* CKParameter::SetStringValue: the value read from text, written as an output writes it. */
