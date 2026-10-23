@@ -1234,6 +1234,79 @@ static int bb_array_iterator(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* Clear Array (ArrayClear) */
+static int bb_clear_array(blk_t *b)
+{
+    nmo_object_id_t array = array_target(b);
+    if (array == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    nmo_engine_array_clear(nmo_engine_block_engine(b), array);
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Remove Key Row (RemoveArray): the row whose key equals the input. */
+static int bb_remove_key_row(blk_t *b)
+{
+    nmo_object_id_t array = array_target(b);
+    if (array == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    nmo_engine_t *engine = nmo_engine_block_engine(b);
+    int32_t key_column = nmo_engine_array_key_column(engine, array);
+    if (nmo_engine_block_input_parameter_count(b) < 1 || key_column < 0) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    nmo_engine_cell_t key;
+    array_input_key(b, array, key_column, 0, &key);
+    int32_t row = nmo_engine_array_find_row(engine, array, key_column, &key, 0);
+    IN_OFF(b, 0);
+    if (row < 0) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    nmo_engine_array_remove_row(engine, array, row);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Iterator If (ArrayIteratorIf): the rows whose cell in a column passes a test. */
+static int bb_array_iterator_if(blk_t *b)
+{
+    nmo_object_id_t array = array_target(b);
+    if (array == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    nmo_engine_t *engine = nmo_engine_block_engine(b);
+    int32_t index;
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        index = 0;
+    } else {
+        IN_OFF(b, 1);
+        index = get_out_int(b, 0) + 1;
+    }
+    if (index >= nmo_engine_array_row_count(engine, array)) {
+        OUT_ON(b, 0);
+        return NMO_ENGINE_BR_OK;
+    }
+    int32_t column = get_in_int(b, 0, 0);
+    int32_t op = get_in_int(b, 1, 1); /* CKEQUAL */
+    nmo_engine_cell_t key;
+    array_input_key(b, array, column, 2, &key);
+    int32_t found = nmo_engine_array_find_row_op(engine, array, column, op, &key, index);
+    if (found < 0) {
+        OUT_ON(b, 0);
+        return NMO_ENGINE_BR_OK;
+    }
+    array_write_outputs(b, array, found, 1);
+    set_out_int(b, 0, found);
+    OUT_ON(b, 1);
+    return NMO_ENGINE_BR_OK;
+}
+
 /* ---- Logics/Groups ---- */
 
 static int bb_group_iterator(blk_t *b)
@@ -1308,6 +1381,9 @@ static const nmo_engine_block_desc_t eng_logics_blocks[] = {
     {NMO_GUID(0x62e87901, 0x2df007dd), "Set Row", bb_set_row, NULL, NULL},
     {NMO_GUID(0x1c7e5dc6, 0x3f6423c2), "Add Row", bb_add_row, NULL, NULL},
     {NMO_GUID(0x198f0af9, 0x0268249f), "Iterator", bb_array_iterator, NULL, NULL},
+    {NMO_GUID(0x6bec4be6, 0x12d64c7c), "Iterator If", bb_array_iterator_if, NULL, NULL},
+    {NMO_GUID(0x35c9352f, 0x7b1a193b), "Clear Array", bb_clear_array, NULL, NULL},
+    {NMO_GUID(0x0f8334ea, 0x279a40cd), "Remove Key Row", bb_remove_key_row, NULL, NULL},
     {NMO_GUID(0x6050252f, 0x3aa82d40), "Group Iterator", bb_group_iterator, NULL, NULL},
 };
 
