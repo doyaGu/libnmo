@@ -741,9 +741,10 @@ TEST(type_string, angle_from_string_turns_and_degrees) {
     float value = 0.0f;
     ASSERT_EQ(NMO_OK, test_builtin_from_string(CKPGUID_ANGLE, &value, "0:20"));
     ASSERT_FLOAT_EQ(20.0f * (float)M_PI / 180.0f, value, 0.0001f);
+    /* CK2 adds the turns as degrees */
     ASSERT_EQ(NMO_OK, test_builtin_from_string(CKPGUID_ANGLE, &value, "1:90"));
-    ASSERT_FLOAT_EQ(450.0f * (float)M_PI / 180.0f, value, 0.0001f);
-    ASSERT_EQ(NMO_OK, test_builtin_from_string(CKPGUID_ANGLE, &value, "-0:45"));
+    ASSERT_FLOAT_EQ(91.0f * (float)M_PI / 180.0f, value, 0.0001f);
+    ASSERT_EQ(NMO_OK, test_builtin_from_string(CKPGUID_ANGLE, &value, "0:-45"));
     ASSERT_FLOAT_EQ(-45.0f * (float)M_PI / 180.0f, value, 0.0001f);
     ASSERT_EQ(NMO_OK, test_builtin_from_string(CKPGUID_ANGLE, &value, "1.5"));
     ASSERT_FLOAT_EQ(1.5f, value, 0.0001f);

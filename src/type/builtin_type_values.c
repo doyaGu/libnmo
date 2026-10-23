@@ -1228,8 +1228,11 @@ nmo_status_t nmo_vt_from_string_angle(
             NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                              "Invalid angle degrees");
         }
-        /* A negative angle keeps its sign through both parts ("-1:30") */
-        degrees = (double)turns * 360.0 + (turns < 0 || string[0] == '-' ? -degrees : degrees);
+        /*
+         * As CKAngleStringFunc reads it: the turns are added as degrees, so
+         * "0:20" is 20 degrees but "1:90" is 91 (CK2 writes 450 as "1:90")
+         */
+        degrees = (double)turns + degrees;
     } else {
         degrees = strtod(string, &end);
         if (end != degree_sign) {
