@@ -409,15 +409,16 @@ nmo_status_t nmo_type_flags_from_string(
 
         while (*start) {
             // Skip whitespace
-            while (*start && isspace(*start)) start++;
+            while (*start && isspace((unsigned char)*start)) start++;
             if (!*start) break;
 
-            // Find end of name (| or end of string)
+            // Find end of name: '|', or ',' as Virtools writes flag defaults
             const char *end = start;
-            while (*end && *end != '|') end++;
+            while (*end && *end != '|' && *end != ',') end++;
 
-            // Match name
+            // Match the name without trailing whitespace
             size_t name_len = end - start;
+            while (name_len > 0 && isspace((unsigned char)start[name_len - 1])) name_len--;
             bool found = false;
             for (size_t i = 0; i < metadata->flags_meta.bit_count; i++) {
                 const char *bit_name = metadata->flags_meta.bits[i].name;
@@ -433,7 +434,7 @@ nmo_status_t nmo_type_flags_from_string(
             }
 
             // Move to next
-            start = (*end == '|') ? end + 1 : end;
+            start = (*end == '|' || *end == ',') ? end + 1 : end;
         }
 
         *(uint32_t*)value = flags_result;
