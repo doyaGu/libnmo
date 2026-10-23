@@ -1,11 +1,11 @@
 /**
  * @file engine_attributes.c
- * @brief Object attributes at run time.
+ * @brief Object attributes at run time, and the Logics/Attribute blocks.
  *
  * The engine copies the attributes of every behavioral object from the
  * document: the attribute type (an index into the file's attribute types,
  * the same an Attribute parameter holds) and the value of its parameter.
- * Attributes are set and removed on that copy, as CKBeObject's
+ * Blocks then set and remove attributes on that copy, as CKBeObject's
  * SetAttribute and RemoveAttribute do; the document does not change.
  */
 
@@ -22,6 +22,11 @@
 
 #include <stdlib.h>
 #include <string.h>
+
+typedef nmo_engine_block_t blk_t;
+
+#define IN_OFF(b, i) nmo_engine_block_activate_input((b), (i), false)
+#define OUT_ON(b, i) nmo_engine_block_activate_output((b), (i), true)
 
 /* A parameter holding a value of `type`: zeroes, or the saved state's bytes when given. */
 static bool attribute_value_init(nmo_engine_t *engine, eng_param_t *value, nmo_guid_t type,
@@ -198,4 +203,92 @@ bool nmo_engine_object_remove_attribute(nmo_engine_t *engine, nmo_object_id_t ob
             (engine->attributes.count - index - 1u) * sizeof(eng_attribute_t));
     engine->attributes.count--;
     return true;
+}
+
+/* ============================================================================
+ * Logics/Attribute
+ * ============================================================================ */
+
+static int32_t attribute_input(blk_t *b)
+{
+    int32_t type = -1;
+    nmo_engine_block_get_input_value(b, 0, &type, sizeof(type));
+    return type;
+}
+
+static eng_param_t *block_output(blk_t *b, int pos)
+{
+    const eng_node_t *node = &b->engine->nodes.data[b->node];
+    return eng_node_param(b->engine, node->first_pout, node->pout_count, pos);
+}
+
+/* Has Attribute: True with the attribute's value in the output, or False. */
+static int bb_has_attribute(blk_t *b)
+{
+    IN_OFF(b, 0);
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    eng_attribute_t *attribute =
+        target != 0 ? attribute_find(b->engine, target, attribute_input(b)) : NULL;
+    if (attribute == NULL) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    OUT_ON(b, 0);
+    eng_param_t *out = block_output(b, 0);
+    if (out != NULL && attribute->has_value) {
+        eng_param_copy(b->engine, out, &attribute->value, false);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Set Attribute: the attribute, its value from the input after Attribute. */
+static int bb_set_attribute(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (target == 0) {
+        return NMO_ENGINE_BR_OK;
+    }
+    int32_t type = attribute_input(b);
+    nmo_engine_object_set_attribute(b->engine, target, type);
+    eng_attribute_t *attribute = attribute_find(b->engine, target, type);
+    if (attribute == NULL || !attribute->has_value) {
+        return NMO_ENGINE_BR_OK;
+    }
+    const eng_node_t *node = &b->engine->nodes.data[b->node];
+    eng_param_t *source = eng_param_real_source(
+        b->engine, eng_node_param(b->engine, node->first_pin, node->pin_count, 1));
+    if (source != NULL) {
+        eng_param_copy(b->engine, &attribute->value, source, true);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+static int bb_remove_attribute(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (target != 0) {
+        nmo_engine_object_remove_attribute(b->engine, target, attribute_input(b));
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+static const nmo_engine_block_desc_t eng_attribute_blocks[] = {
+    {NMO_GUID(0x25b54079, 0x6ff90545), "Has Attribute", bb_has_attribute, NULL, NULL},
+    {NMO_GUID(0x373040f2, 0x05e01b34), "Set Attribute", bb_set_attribute, NULL, NULL},
+    {NMO_GUID(0x6b6340c4, 0x61e94a41), "Remove Attribute", bb_remove_attribute, NULL, NULL},
+};
+
+nmo_status_t eng_register_attributes(nmo_engine_t *engine)
+{
+    for (size_t i = 0; i < sizeof(eng_attribute_blocks) / sizeof(eng_attribute_blocks[0]); i++) {
+        nmo_status_t status = nmo_engine_register_block(engine, &eng_attribute_blocks[i]);
+        if (status != NMO_OK) {
+            return status;
+        }
+    }
+    return NMO_OK;
 }

@@ -410,6 +410,7 @@ bool eng_curve_value(const nmo_parameter_state_t *state, uint8_t **out_data, uin
 /* engine_attributes.c */
 nmo_status_t eng_load_attributes(nmo_engine_t *engine);
 void eng_free_attributes(nmo_engine_t *engine);
+nmo_status_t eng_register_attributes(nmo_engine_t *engine);
 
 /* engine_interface.c */
 nmo_status_t eng_register_interface(nmo_engine_t *engine);
