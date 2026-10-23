@@ -239,7 +239,8 @@ nmo_status_t nmo_type_enum_to_string(
 
     /* Search for matching enum value */
     for (size_t i = 0; i < metadata->enum_meta.value_count; i++) {
-        if (metadata->enum_meta.values[i].value == enum_value) {
+        if (metadata->enum_meta.values[i].value == enum_value &&
+            !(metadata->enum_meta.values[i].flags & NMO_ENUM_VALUE_FLAG_ALIAS)) {
             snprintf(buffer, buffer_size, "%s", metadata->enum_meta.values[i].name);
             NMO_RETURN_OK();
         }
@@ -968,8 +969,12 @@ nmo_status_t nmo_type_registry_change_enum_string(
         return result;
     }
 
-    /* New definition must be a superset of the old definition (by name + value). */
+    /* New definition must be a superset of the old definition (by name + value).
+       Aliases are not part of the definition. */
     for (size_t i = 0; i < metadata->enum_meta.value_count; i++) {
+        if (metadata->enum_meta.values[i].flags & NMO_ENUM_VALUE_FLAG_ALIAS) {
+            continue;
+        }
         const char *old_name = metadata->enum_meta.values[i].name;
         int64_t old_value = metadata->enum_meta.values[i].value;
         bool found = false;
@@ -1112,6 +1117,92 @@ nmo_status_t nmo_type_registry_change_enum_string(
     }
 
     nmo_arena_destroy(temp_arena);
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_type_registry_add_enum_value_alias(
+    nmo_type_registry_t *type_registry,
+    nmo_guid_t type_guid,
+    const char *alias,
+    int64_t value
+) {
+    if (!type_registry || nmo_guid_is_null(type_guid) || !alias || alias[0] == '\0') {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Invalid arguments to add_enum_value_alias");
+    }
+    if (value < INT32_MIN || value > INT32_MAX) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Enum value alias '%s' out of 32-bit range", alias);
+    }
+
+    nmo_specialized_metadata_t *metadata = NULL;
+    NMO_RETURN_IF_ERROR(get_change_metadata(
+        type_registry, type_guid,
+        NMO_TYPE_CATEGORY_ENUM, NMO_METADATA_TYPE_ENUM,
+        "Type is not an enum",
+        "Enum type has no specialized metadata",
+        "Enum metadata mismatch",
+        &metadata));
+
+    const size_t old_count = metadata->enum_meta.value_count;
+    for (size_t i = 0; i < old_count; i++) {
+        if (strcmp(metadata->enum_meta.values[i].name, alias) == 0) {
+            if (metadata->enum_meta.values[i].value == value) {
+                NMO_RETURN_OK();
+            }
+            NMO_RETURN_ERROR(NMO_ERR_ALREADY_EXISTS, NMO_SEVERITY_ERROR,
+                                    "Enum value name '%s' already stands for %lld",
+                                    alias, (long long)metadata->enum_meta.values[i].value);
+        }
+    }
+
+    NMO_OWNERSHIP_ASSERT_VALID(metadata->ownership);
+    const bool metadata_is_arena_owned = (metadata->ownership == NMO_OWNERSHIP_ARENA);
+    const nmo_enum_descriptor_t *old_values = metadata->enum_meta.values;
+    nmo_enum_descriptor_t *new_values = NULL;
+    const char *name_copy = NULL;
+
+    if (metadata_is_arena_owned) {
+        new_values = (nmo_enum_descriptor_t *)nmo_arena_alloc(
+            type_registry->arena,
+            sizeof(nmo_enum_descriptor_t) * (old_count + 1),
+            alignof(nmo_enum_descriptor_t));
+        name_copy = nmo_arena_strdup(type_registry->arena, alias);
+    } else {
+        new_values = (nmo_enum_descriptor_t *)nmo_alloc(
+            &type_registry->type_allocator,
+            sizeof(nmo_enum_descriptor_t) * (old_count + 1),
+            alignof(nmo_enum_descriptor_t));
+        name_copy = nmo_strdup(&type_registry->type_allocator, alias);
+    }
+    if (!new_values || !name_copy) {
+        if (!metadata_is_arena_owned) {
+            if (name_copy) {
+                nmo_free(&type_registry->type_allocator, (void *)name_copy);
+            }
+            if (new_values) {
+                nmo_free(&type_registry->type_allocator, (void *)new_values);
+            }
+        }
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to allocate enum value alias");
+    }
+
+    for (size_t i = 0; i < old_count; i++) {
+        new_values[i] = old_values[i];
+    }
+    new_values[old_count].name = name_copy;
+    new_values[old_count].value = value;
+    new_values[old_count].description = NULL;
+    new_values[old_count].flags = NMO_ENUM_VALUE_FLAG_ALIAS;
+
+    metadata->enum_meta.values = new_values;
+    metadata->enum_meta.value_count = old_count + 1;
+
+    if (!metadata_is_arena_owned && old_values) {
+        nmo_free(&type_registry->type_allocator, (void *)old_values);
+    }
+
     NMO_RETURN_OK();
 }
 

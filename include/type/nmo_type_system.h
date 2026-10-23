@@ -104,6 +104,9 @@ typedef struct nmo_enum_descriptor {
     uint32_t flags;                     /* Visibility/deprecated flags */
 } nmo_enum_descriptor_t;
 
+/* Enum value flags */
+#define NMO_ENUM_VALUE_FLAG_ALIAS 0x0001u /* Another name for a value: read, never written */
+
 /**
  * @brief Struct field descriptor
  */

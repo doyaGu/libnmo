@@ -446,6 +446,28 @@ NMO_API nmo_status_t nmo_type_registry_change_enum_string(
 );
 
 /**
+ * @brief Add another name for an existing enum value
+ *
+ * The alias is read as the value by nmo_type_enum_from_string() but never
+ * written by nmo_type_enum_to_string(); it is kept in the type's value list
+ * with NMO_ENUM_VALUE_FLAG_ALIAS set. Adding a name the type already has for
+ * the same value does nothing.
+ *
+ * @param type_registry Type registry
+ * @param type_guid Enum type GUID
+ * @param alias Name to add (copied)
+ * @param value Value the name stands for
+ * @return NMO_OK on success, NMO_ERR_ALREADY_EXISTS if the name stands for
+ *         another value, error code on other failures
+ */
+NMO_API nmo_status_t nmo_type_registry_add_enum_value_alias(
+    nmo_type_registry_t *type_registry,
+    nmo_guid_t type_guid,
+    const char *alias,
+    int64_t value
+);
+
+/**
  * @brief Modify existing flags type definition
  *
  * Updates an existing flags type with new bits. The new definition must be

@@ -8,6 +8,7 @@
 #include "extension/nmo_virtools_loader.h"
 #include "extension/nmo_behavior_registry.h"
 #include "type/nmo_type_system.h"
+#include "type/nmo_dynamic_types.h"
 #include "type/nmo_type_guids.h"
 #include "type/nmo_operation_system.h"
 #include "extension/nmo_extension_registry.h"
@@ -113,6 +114,24 @@ static nmo_status_t register_enum_metadata(nmo_type_registry_t *registry, nmo_ty
     nmo_status_t status = nmo_type_registry_register_metadata(registry, &meta);
     free(descs);
     return status;
+}
+
+/* The engine's names for the values of an enum the library registered itself
+   ("Equal" for CKEQUAL), which enum values are written with. A name the type
+   already has, or one standing for another value, is left as it is. */
+static void add_enum_value_aliases(nmo_type_registry_t *registry, nmo_guid_t guid, yyjson_val *values) {
+    if (!values || !yyjson_is_arr(values)) return;
+
+    yyjson_val *item;
+    yyjson_arr_iter iter;
+    yyjson_arr_iter_init(values, &iter);
+    while ((item = yyjson_arr_iter_next(&iter)) != NULL) {
+        const char *name = get_str(item, "name");
+        if (name != NULL && name[0] != '\0') {
+            (void)nmo_type_registry_add_enum_value_alias(
+                registry, guid, name, get_int(item, "value"));
+        }
+    }
 }
 
 static nmo_status_t register_flags_metadata(nmo_type_registry_t *registry, nmo_type_id_t tid, yyjson_val *values) {
@@ -226,6 +245,11 @@ nmo_status_t nmo_virtools_load_param_types(nmo_type_registry_t *registry, const 
                 engine_name != NULL && engine_name[0] != '\0' &&
                 (existing->name == NULL || strcmp(engine_name, existing->name) != 0)) {
                 (void)nmo_type_registry_add_name_alias(registry, existing_id, engine_name);
+            }
+            const char *cat = get_str(item, "category");
+            if (existing != NULL && (existing->category & NMO_TYPE_CATEGORY_ENUM) &&
+                cat != NULL && strcmp(cat, "enum") == 0) {
+                add_enum_value_aliases(registry, guid, yyjson_obj_get(item, "values"));
             }
             if (existing != NULL && nmo_guid_is_null(existing->base_type) &&
                 !nmo_guid_is_null(derived_from) &&

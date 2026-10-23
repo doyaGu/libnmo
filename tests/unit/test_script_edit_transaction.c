@@ -891,6 +891,80 @@ TEST(script_edit_transaction, add_node_reads_class_names_as_class_ids)
     nmo_context_release(ctx);
 }
 
+TEST(script_edit_transaction, add_node_reads_engine_enum_value_names)
+{
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){ .data_dir = NMO_TEST_DATA_DIR });
+    nmo_session_t *session = NULL;
+    nmo_script_edit_tx_t *tx = NULL;
+    script_control_fixture_t fixture;
+    nmo_object_repository_t *repo = NULL;
+    nmo_object_t *object = NULL;
+    const nmo_behavior_state_t *node_state = NULL;
+    const nmo_parameterin_state_t *operator_state = NULL;
+    const nmo_parameter_state_t *source_state = NULL;
+    nmo_object_id_t node_id = 0;
+    nmo_object_id_t operator_id = 0;
+    nmo_object_id_t source_id = 0;
+    int32_t op = 0;
+
+    ASSERT_NOT_NULL(ctx);
+    session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+    setup_script_control_fixture(session, &fixture);
+
+    /* Test's operator defaults to "Equal", the engine's name for CKEQUAL */
+    ASSERT_EQ(NMO_OK,
+              begin_test_script_edit(ctx, session, "enum-name-default", &tx));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_add_node(
+                  tx,
+                  fixture.root_behavior_id,
+                  nmo_guid_parse("17D66D26-726B7DEC"),
+                  "Test",
+                  &node_id));
+    object = nmo_object_repository_find_by_id(repo, node_id);
+    node_state = object
+        ? (const nmo_behavior_state_t *)nmo_object_get_state(object)
+        : NULL;
+    ASSERT_NOT_NULL(node_state);
+    operator_id = find_named_parameter_in_ids(repo, &node_state->in_parameters, "Test");
+    object = operator_id ? nmo_object_repository_find_by_id(repo, operator_id) : NULL;
+    operator_state = object
+        ? (const nmo_parameterin_state_t *)nmo_object_get_state(object)
+        : NULL;
+    ASSERT_NOT_NULL(operator_state);
+    ASSERT_TRUE(nmo_guid_equals(CKPGUID_COMPOPERATOR, operator_state->type_guid));
+    source_id = nmo_parameterin_source_id(operator_state);
+    object = source_id ? nmo_object_repository_find_by_id(repo, source_id) : NULL;
+    source_state = object ? nmo_parameter_get_state(object) : NULL;
+    ASSERT_NOT_NULL(source_state);
+    ASSERT_EQ(sizeof(op), source_state->buffer_data.count);
+    memcpy(&op, source_state->buffer_data.data, sizeof(op));
+    ASSERT_EQ(1, op);
+
+    /* A value set later takes either name, and numbers still */
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_set_parameter_value(tx, source_id, "Greater than"));
+    memcpy(&op, source_state->buffer_data.data, sizeof(op));
+    ASSERT_EQ(5, op);
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_set_parameter_value(tx, source_id, "CKNOTEQUAL"));
+    memcpy(&op, source_state->buffer_data.data, sizeof(op));
+    ASSERT_EQ(2, op);
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_set_parameter_value(tx, source_id, "4"));
+    memcpy(&op, source_state->buffer_data.data, sizeof(op));
+    ASSERT_EQ(4, op);
+    ASSERT_NE(NMO_OK,
+              nmo_script_edit_set_parameter_value(tx, source_id, "Roughly"));
+
+    nmo_script_edit_rollback(tx);
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(script_edit_transaction, add_node_materializes_targetable_beobject_target)
 {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){ .data_dir = NMO_TEST_DATA_DIR });
@@ -1937,6 +2011,8 @@ TEST_MAIN_BEGIN()
                   add_node_materializes_targetable_beobject_target);
     REGISTER_TEST(script_edit_transaction,
                   add_node_reads_class_names_as_class_ids);
+    REGISTER_TEST(script_edit_transaction,
+                  add_node_reads_engine_enum_value_names);
     REGISTER_TEST(script_edit_transaction,
                   remove_link_then_add_link_keeps_validation_green_within_transaction);
     REGISTER_TEST(script_edit_transaction,
