@@ -20,6 +20,13 @@
 #define GUID_REMOVE_KEY_ROW NMO_GUID(0x0f8334ea, 0x279a40cd)
 #define GUID_GET_HIGHEST NMO_GUID(0x46f71e13, 0x13d26f61)
 #define GUID_IS_IN_GROUP NMO_GUID(0x58a1210b, 0x14e5715c)
+#define GUID_GET_KEY_ROW NMO_GUID(0x49064205, 0x10e72f7a)
+#define GUID_ROW_SEARCH NMO_GUID(0x78863443, 0x45af59b6)
+#define GUID_SHUFFLE_ORDER NMO_GUID(0x270f177a, 0x4ca20023)
+#define GUID_REMOVE_ROW_IF NMO_GUID(0x57865622, 0x662d2fee)
+#define GUID_REMOVE_COLUMN NMO_GUID(0x3f377888, 0x128a7767)
+#define GUID_INSERT_COLUMN NMO_GUID(0x05cb7802, 0x04a64a58)
+#define GUID_COLUMN_SUM NMO_GUID(0x49124252, 0x1be909a4)
 
 /* Columns: Key (int), Weight (float), Name (string), Object (object). */
 static nmo_object_id_t create_array(engine_fixture_t *f, int32_t key_column, uint32_t rows,
@@ -468,6 +475,138 @@ TEST(engine_arrays, group_iterator_walks_the_group)
     fixture_end(&f);
 }
 
+TEST(engine_arrays, get_key_row_and_row_search_find_rows)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t array = create_array(&f, 0, 3, keys, weights, names);
+    ASSERT_TRUE(array != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t get = array_block(&f, GUID_GET_KEY_ROW, "Get Key Row", array);
+    nmo_object_id_t search = array_block(&f, GUID_ROW_SEARCH, "Row Search", array);
+    ASSERT_TRUE(get != 0 && search != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, get, 0), 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, search, 0), 0);
+    nmo_object_id_t key = add_param(&f, get, NMO_SCRIPT_EDIT_PARAM_IN, CKPGUID_INT, "Key");
+    nmo_object_id_t key_out = add_param(&f, get, NMO_SCRIPT_EDIT_PARAM_OUT, CKPGUID_INT, "Key");
+    nmo_object_id_t weight = add_param(&f, get, NMO_SCRIPT_EDIT_PARAM_OUT, CKPGUID_FLOAT, "Weight");
+    nmo_object_id_t reference =
+        add_param(&f, search, NMO_SCRIPT_EDIT_PARAM_IN, CKPGUID_FLOAT, "Reference");
+    ASSERT_TRUE(key != 0 && key_out != 0 && weight != 0 && reference != 0);
+    fixture_input_int(&f, key, 20);
+    fixture_input_int(&f, BLOCK_PIN(&f, search, 0), 1); /* Weight */
+    fixture_input_int(&f, BLOCK_PIN(&f, search, 2), 5); /* Greater */
+    const float one = 1.0f;
+    fixture_input_value(&f, reference, &one, sizeof(one));
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+    int32_t found_key = 0, found_row = -1;
+    float found_weight = 0.0f;
+    read_value(&f, key_out, &found_key, sizeof(found_key));
+    read_value(&f, weight, &found_weight, sizeof(found_weight));
+    read_value(&f, BLOCK_POUT(&f, search, 0), &found_row, sizeof(found_row));
+    ASSERT_EQ(20, found_key);
+    ASSERT_FLOAT_EQ(1.5f, found_weight, 0.0001f);
+    ASSERT_EQ(1, found_row);
+    fixture_end(&f);
+}
+
+TEST(engine_arrays, column_sum_and_remove_row_if)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t array = create_array(&f, 0, 3, keys, weights, names);
+    ASSERT_TRUE(array != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t sum_keys = array_block(&f, GUID_COLUMN_SUM, "Sum Keys", array);
+    nmo_object_id_t sum_weights = array_block(&f, GUID_COLUMN_SUM, "Sum Weights", array);
+    nmo_object_id_t remove = array_block(&f, GUID_REMOVE_ROW_IF, "Remove If", array);
+    ASSERT_TRUE(sum_keys != 0 && sum_weights != 0 && remove != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, sum_keys, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, sum_keys, 0), BLOCK_IN(&f, sum_weights, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, sum_weights, 0), BLOCK_IN(&f, remove, 0), 0);
+    nmo_object_id_t key_total = add_param(&f, sum_keys, NMO_SCRIPT_EDIT_PARAM_OUT, CKPGUID_INT, "Sum");
+    nmo_object_id_t weight_total =
+        add_param(&f, sum_weights, NMO_SCRIPT_EDIT_PARAM_OUT, CKPGUID_FLOAT, "Sum");
+    nmo_object_id_t limit = add_param(&f, remove, NMO_SCRIPT_EDIT_PARAM_IN, CKPGUID_INT, "Limit");
+    ASSERT_TRUE(key_total != 0 && weight_total != 0 && limit != 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, sum_weights, 0), 1);
+    fixture_input_int(&f, BLOCK_PIN(&f, remove, 1), 3); /* Lesser */
+    fixture_input_int(&f, limit, 25);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+    int32_t keys_sum = 0, removed = 0;
+    float weights_sum = 0.0f;
+    read_value(&f, key_total, &keys_sum, sizeof(keys_sum));
+    read_value(&f, weight_total, &weights_sum, sizeof(weights_sum));
+    read_value(&f, BLOCK_POUT(&f, remove, 0), &removed, sizeof(removed));
+    ASSERT_EQ(60, keys_sum);
+    ASSERT_FLOAT_EQ(4.5f, weights_sum, 0.0001f);
+    /* 10 and 20 are under 25 */
+    ASSERT_EQ(2, removed);
+    ASSERT_EQ(1, nmo_engine_array_row_count(f.engine, array));
+    nmo_engine_cell_t cell;
+    ASSERT_EQ(NMO_OK, nmo_engine_array_get_cell(f.engine, array, 0, 0, &cell));
+    ASSERT_EQ(30u, cell.value);
+    fixture_end(&f);
+}
+
+TEST(engine_arrays, shuffle_insert_and_remove_columns)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t array = create_array(&f, 0, 3, keys, weights, names);
+    ASSERT_TRUE(array != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t shuffle = array_block(&f, GUID_SHUFFLE_ORDER, "Shuffle", array);
+    nmo_object_id_t insert = array_block(&f, GUID_INSERT_COLUMN, "Insert", array);
+    nmo_object_id_t remove = array_block(&f, GUID_REMOVE_COLUMN, "Remove", array);
+    ASSERT_TRUE(shuffle != 0 && insert != 0 && remove != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, shuffle, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, shuffle, 0), BLOCK_IN(&f, insert, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, insert, 0), BLOCK_IN(&f, remove, 0), 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, insert, 0), 1); /* an Integer column before Weight */
+    fixture_input_int(&f, BLOCK_PIN(&f, remove, 0), 0); /* then Key goes */
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+    /* New Column, Weight, Name, Object */
+    ASSERT_EQ(3, nmo_engine_array_row_count(f.engine, array));
+    ASSERT_EQ(4, nmo_engine_array_column_count(f.engine, array));
+    ASSERT_EQ(CKARRAYTYPE_INT, nmo_engine_array_column_type(f.engine, array, 0));
+    ASSERT_EQ(CKARRAYTYPE_FLOAT, nmo_engine_array_column_type(f.engine, array, 1));
+    /* Removing the key column leaves the key index where it was */
+    ASSERT_EQ(0, nmo_engine_array_key_column(f.engine, array));
+    /* The rows were shuffled whole: each weight keeps its name, each new cell is 0 */
+    float total = 0.0f;
+    for (int32_t r = 0; r < 3; r++) {
+        nmo_engine_cell_t extra, weight, name;
+        ASSERT_EQ(NMO_OK, nmo_engine_array_get_cell(f.engine, array, r, 0, &extra));
+        ASSERT_EQ(NMO_OK, nmo_engine_array_get_cell(f.engine, array, r, 1, &weight));
+        ASSERT_EQ(NMO_OK, nmo_engine_array_get_cell(f.engine, array, r, 2, &name));
+        ASSERT_EQ(0u, extra.value);
+        float w = 0.0f;
+        memcpy(&w, &weight.value, sizeof(w));
+        total += w;
+        const char *expected = w == 0.5f ? "ten" : w == 1.5f ? "twenty" : NULL;
+        if (expected == NULL) {
+            ASSERT_NULL(name.text);
+        } else {
+            ASSERT_STR_EQ(expected, name.text);
+        }
+    }
+    ASSERT_FLOAT_EQ(4.5f, total, 0.0001f);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_arrays, get_cell_reads_a_cell_or_reports_not_found);
 REGISTER_TEST(engine_arrays, set_cell_and_add_row_change_the_engine_copy);
@@ -479,4 +618,7 @@ REGISTER_TEST(engine_arrays, clear_array_block_empties_the_array);
 REGISTER_TEST(engine_arrays, get_highest_finds_the_highest_row);
 REGISTER_TEST(engine_arrays, is_in_group_tests_membership);
 REGISTER_TEST(engine_arrays, group_iterator_walks_the_group);
+REGISTER_TEST(engine_arrays, get_key_row_and_row_search_find_rows);
+REGISTER_TEST(engine_arrays, column_sum_and_remove_row_if);
+REGISTER_TEST(engine_arrays, shuffle_insert_and_remove_columns);
 TEST_MAIN_END()
