@@ -409,6 +409,26 @@ nmo_status_t nmo_object_edit_ensure_message_manager_entry(
     return NMO_OK;
 }
 
+nmo_status_t nmo_workspace_internal_attribute_types(
+    nmo_workspace_t *workspace,
+    nmo_attributemanager_state_t *out_state)
+{
+    if (workspace == NULL || out_state == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    memset(out_state, 0, sizeof(*out_state));
+    nmo_session_t *session = nmo_workspace_internal_session(workspace);
+    const nmo_file_state_t *file_state =
+        session != NULL ? nmo_session_get_file_state(session) : NULL;
+    for (uint32_t i = 0; file_state != NULL && i < file_state->manager_data_count; ++i) {
+        const nmo_manager_data_t *manager = &file_state->manager_data[i];
+        if (nmo_guid_equals(manager->guid, NMO_MANAGER_GUID_ATTRIBUTE)) {
+            return workspace_edit_read_attribute_manager_state(session, manager, out_state);
+        }
+    }
+    return NMO_OK;
+}
+
 nmo_status_t nmo_object_edit_ensure_attribute_manager_entry(
     nmo_workspace_edit_t *edit,
     const char *name,
