@@ -115,6 +115,16 @@ void nmo_engine_block_set_function(nmo_engine_block_t *block, nmo_engine_block_f
     eng_block_node(block)->fn = fn;
 }
 
+void *nmo_engine_block_state(nmo_engine_block_t *block, size_t size)
+{
+    eng_node_t *node = eng_block_node(block);
+    if (node->state == NULL && size > 0) {
+        node->state = calloc(1, size);
+        node->state_size = node->state != NULL ? size : 0u;
+    }
+    return size <= node->state_size ? node->state : NULL;
+}
+
 double nmo_engine_block_random(nmo_engine_block_t *block)
 {
     /* xorshift64* */

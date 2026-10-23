@@ -71,6 +71,12 @@ NMO_API float nmo_engine_block_delta_time(const nmo_engine_block_t *block);
 NMO_API void *nmo_engine_block_user_data(const nmo_engine_block_t *block);
 /** Pick the function this block runs (a load callback choosing by version). */
 NMO_API void nmo_engine_block_set_function(nmo_engine_block_t *block, nmo_engine_block_fn fn);
+/**
+ * `size` bytes of state the block keeps between executions, zeroed when
+ * first asked for and kept for the engine's lifetime. A block asks with the
+ * same size each time; NULL when out of memory or a larger size is asked.
+ */
+NMO_API void *nmo_engine_block_state(nmo_engine_block_t *block, size_t size);
 /** A random number in [0, 1), from the engine's seeded generator. */
 NMO_API double nmo_engine_block_random(nmo_engine_block_t *block);
 

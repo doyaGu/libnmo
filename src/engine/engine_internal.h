@@ -102,6 +102,8 @@ typedef struct eng_node {
     bool in_stack;                         /* CKBEHAVIOR_RESERVED0 */
 
     uint64_t executions;
+    void *state;            /* nmo_engine_block_state() */
+    size_t state_size;
 } eng_node_t;
 
 typedef struct eng_object {

@@ -201,6 +201,9 @@ void nmo_engine_destroy(nmo_engine_t *engine)
     for (size_t i = 0; i < engine->blocks.count; i++) {
         free(engine->blocks.data[i].name);
     }
+    for (size_t i = 0; i < engine->nodes.count; i++) {
+        free(engine->nodes.data[i].state);
+    }
     free(engine->nodes.data);
     free(engine->ios.data);
     free(engine->links.data);
