@@ -35,8 +35,10 @@
  *
  * Building blocks run C functions registered by prototype GUID (see
  * engine/nmo_engine_block.h). The engine registers ports of the common Logics
- * blocks unless told not to. A building block without a function follows
- * nmo_engine_options_t.unknown_block.
+ * and Narratives blocks unless told not to, and functions for the blocks that
+ * only change the scene, materials, sounds, lights or cameras: those report
+ * an effect event and continue the flow. A building block without a function
+ * follows nmo_engine_options_t.unknown_block.
  *
  * Messages work as the message manager's do: a message sent during a frame
  * is delivered at the end of that frame (CKMessageManager::PostProcess). A
@@ -119,6 +121,9 @@ typedef enum nmo_engine_event_kind {
                                           recipient (0 for a broadcast); result: the type */
     NMO_ENGINE_EVENT_MESSAGE_RECEIVED, /* behavior: the block whose wait it ended;
                                           object: the object it reached; result: the type */
+    NMO_ENGINE_EVENT_EFFECT,           /* behavior: a block whose effect (on the scene, a
+                                          sound, ...) the engine does not simulate;
+                                          object: its target */
 } nmo_engine_event_kind_t;
 
 typedef struct nmo_engine_event {

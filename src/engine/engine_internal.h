@@ -328,4 +328,7 @@ nmo_status_t eng_register_logics(nmo_engine_t *engine);
 /* engine_narratives.c */
 nmo_status_t eng_register_narratives(nmo_engine_t *engine);
 
+/* engine_effects.c */
+nmo_status_t eng_register_effects(nmo_engine_t *engine);
+
 #endif /* NMO_ENGINE_INTERNAL_H */

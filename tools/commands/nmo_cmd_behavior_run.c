@@ -44,6 +44,8 @@ typedef struct run_state {
     uint64_t executions;
     nmo_object_id_t last_unknown;  /* the block an "unknown block" event named last */
     nmo_object_id_t op_behavior;   /* the Op block whose operation ran last */
+    nmo_object_id_t effect_behavior; /* the block an effect event named last */
+    nmo_object_id_t effect_target;
     int32_t op_status;
     bool ok;
 } run_state_t;
@@ -121,13 +123,31 @@ static void run_trace(const nmo_engine_event_t *event, void *user_data)
         run_count_unknown(state, node);
         state->last_unknown = event->behavior_id;
     }
+    if (event->kind == NMO_ENGINE_EVENT_EFFECT) {
+        state->effect_behavior = event->behavior_id;
+        state->effect_target = event->object_id;
+    }
     if (event->kind == NMO_ENGINE_EVENT_OPERATION && event->behavior_id != 0) {
         state->op_behavior = event->behavior_id;
         state->op_status = event->result;
     }
     /* What an execute line notes about the block, from the events just before it */
     const char *note = "";
-    if (event->kind == NMO_ENGINE_EVENT_EXECUTE) {
+    char *effect_note = NULL;
+    if (event->kind == NMO_ENGINE_EVENT_EXECUTE && event->behavior_id == state->effect_behavior) {
+        char *target = state->effect_target != 0
+                           ? run_label_dup(state->model, state->effect_target)
+                           : NULL;
+        const char *shown = target != NULL ? target : "the scene";
+        size_t length = strlen(" (effect on )") + strlen(shown) + 1u;
+        effect_note = (char *)malloc(length);
+        if (effect_note != NULL) {
+            snprintf(effect_note, length, " (effect on %s)", shown);
+            note = effect_note;
+        }
+        free(target);
+        state->effect_behavior = 0;
+    } else if (event->kind == NMO_ENGINE_EVENT_EXECUTE) {
         if (event->behavior_id == state->last_unknown) {
             note = " (no function)";
         } else if (event->behavior_id == state->op_behavior && state->op_status != 0) {
@@ -141,6 +161,7 @@ static void run_trace(const nmo_engine_event_t *event, void *user_data)
         state->op_behavior = 0;
     }
     if (!state->ok || !run_event_shown(state->args, event, node)) {
+        free(effect_note);
         return;
     }
 
@@ -230,6 +251,7 @@ static void run_trace(const nmo_engine_event_t *event, void *user_data)
         break;
     }
     free(behavior);
+    free(effect_note);
     if (!ok || !nmo_cli_record_array_add(state->events, item)) {
         if (!ok) {
             nmo_cli_record_free(item);

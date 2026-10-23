@@ -176,6 +176,9 @@ nmo_status_t nmo_engine_create(nmo_workspace_t *workspace,
     if (status == NMO_OK && !engine->options.no_builtin_blocks) {
         status = eng_register_narratives(engine);
     }
+    if (status == NMO_OK && !engine->options.no_builtin_blocks) {
+        status = eng_register_effects(engine);
+    }
     if (status != NMO_OK) {
         nmo_engine_destroy(engine);
         return status;
@@ -339,6 +342,7 @@ const char *nmo_engine_event_kind_name(nmo_engine_event_kind_t kind)
     case NMO_ENGINE_EVENT_INFINITE_LOOP: return "infinite loop";
     case NMO_ENGINE_EVENT_MESSAGE_SENT: return "message sent";
     case NMO_ENGINE_EVENT_MESSAGE_RECEIVED: return "message received";
+    case NMO_ENGINE_EVENT_EFFECT: return "effect";
     }
     return "?";
 }
