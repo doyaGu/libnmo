@@ -9,6 +9,7 @@ set(NMO_ENGINE_SOURCES
     engine_block.c
     engine_build.c
     engine_controllers.c
+    engine_curve.c
     engine_effects.c
     engine_input.c
     engine_logics.c

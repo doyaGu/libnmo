@@ -115,6 +115,12 @@ NMO_API nmo_status_t nmo_engine_block_get_input_value(nmo_engine_block_t *block,
 NMO_API const void *nmo_engine_block_input_data(nmo_engine_block_t *block,
                                                 int pos,
                                                 size_t *out_size);
+/**
+ * CK2dCurve::GetY: the y of a 2D curve parameter value (the bytes
+ * nmo_engine_block_input_data() gives for one) at `x`, both in [0, 1].
+ * 0 when the bytes hold no curve.
+ */
+NMO_API float nmo_engine_curve_y(const void *curve, size_t size, float x);
 
 NMO_API nmo_status_t nmo_engine_block_get_output_value(const nmo_engine_block_t *block,
                                                        int pos,

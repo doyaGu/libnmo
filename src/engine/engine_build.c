@@ -101,8 +101,13 @@ static bool eng_param_load_value(eng_param_t *param, const nmo_parameter_state_t
 {
     uint8_t *data = NULL;
     uint32_t size = 0;
-    if (!eng_parameter_state_bytes(state, param->type_desc != NULL ? param->type_desc->size : 0u,
-                                   &data, &size)) {
+    /* A 2D curve holds a CK2dCurve, read from its sub-chunk */
+    bool loaded = nmo_guid_equals(param->type, CKPGUID_2DCURVE)
+                      ? eng_curve_value(state, &data, &size)
+                      : eng_parameter_state_bytes(
+                            state, param->type_desc != NULL ? param->type_desc->size : 0u, &data,
+                            &size);
+    if (!loaded) {
         return false;
     }
     free(param->data);

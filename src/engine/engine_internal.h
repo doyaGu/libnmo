@@ -378,6 +378,10 @@ nmo_status_t eng_register_effects(nmo_engine_t *engine);
 /* engine_controllers.c */
 nmo_status_t eng_register_controllers(nmo_engine_t *engine);
 
+/* engine_curve.c */
+/* A 2D curve parameter's value (CK2dCurve::Read): a sorted curve, or (0,0)-(1,1) when none is saved. */
+bool eng_curve_value(const nmo_parameter_state_t *state, uint8_t **out_data, uint32_t *out_size);
+
 /* engine_media.c */
 nmo_status_t eng_register_media(nmo_engine_t *engine);
 /* The sounds move on by the frame time (the sound manager's frame). */
