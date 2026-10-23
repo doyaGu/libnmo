@@ -314,6 +314,32 @@ NMO_API nmo_status_t nmo_engine_array_remove_row(nmo_engine_t *engine,
                                                  int32_t row);
 /** Remove every row (CKDataArray::Clear). */
 NMO_API nmo_status_t nmo_engine_array_clear(nmo_engine_t *engine, nmo_object_id_t array_id);
+/** Exchange rows `a` and `b` (CKDataArray::SwapRows). */
+NMO_API nmo_status_t nmo_engine_array_swap_rows(nmo_engine_t *engine,
+                                                nmo_object_id_t array_id,
+                                                int32_t a,
+                                                int32_t b);
+/**
+ * CKDataArray::Sum: the sum of an Integer column, or the bits of the sum of
+ * a Float column; 0 for other columns.
+ */
+NMO_API uint32_t nmo_engine_array_sum(const nmo_engine_t *engine,
+                                      nmo_object_id_t array_id,
+                                      int32_t column);
+/**
+ * Insert an empty column of `type` (a CK_ARRAYTYPE; `param_type` for a
+ * parameter column) before `column`, or after the last for -1
+ * (CKDataArray::InsertColumn). Columns do not keep their names here.
+ */
+NMO_API nmo_status_t nmo_engine_array_insert_column(nmo_engine_t *engine,
+                                                    nmo_object_id_t array_id,
+                                                    int32_t column,
+                                                    int32_t type,
+                                                    nmo_guid_t param_type);
+/** Remove column `column` and its cells (CKDataArray::RemoveColumn). */
+NMO_API nmo_status_t nmo_engine_array_remove_column(nmo_engine_t *engine,
+                                                    nmo_object_id_t array_id,
+                                                    int32_t column);
 
 /** Objects in group `group_id`; -1 when it is not a group. */
 NMO_API int32_t nmo_engine_group_count(const nmo_engine_t *engine, nmo_object_id_t group_id);

@@ -514,6 +514,169 @@ nmo_status_t nmo_engine_array_clear(nmo_engine_t *engine, nmo_object_id_t array_
     return NMO_OK;
 }
 
+nmo_status_t nmo_engine_array_swap_rows(nmo_engine_t *engine, nmo_object_id_t array_id,
+                                        int32_t a, int32_t b)
+{
+    eng_array_t *array = eng_find_array(engine, array_id);
+    if (array == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    if (a < 0 || b < 0 || (size_t)a >= array->row_count || (size_t)b >= array->row_count) {
+        return NMO_ERR_OUT_OF_BOUNDS;
+    }
+    for (uint32_t c = 0; a != b && c < array->column_count; c++) {
+        eng_cell_t cell = *eng_array_cell(array, (size_t)a, c);
+        *eng_array_cell(array, (size_t)a, c) = *eng_array_cell(array, (size_t)b, c);
+        *eng_array_cell(array, (size_t)b, c) = cell;
+    }
+    return NMO_OK;
+}
+
+uint32_t nmo_engine_array_sum(const nmo_engine_t *engine, nmo_object_id_t array_id,
+                              int32_t column)
+{
+    const eng_array_t *array = eng_find_array(engine, array_id);
+    if (array == NULL || column < 0 || (uint32_t)column >= array->column_count) {
+        return 0u;
+    }
+    int32_t type = array->columns[column].type;
+    if (type == CKARRAYTYPE_INT) {
+        uint32_t sum = 0u;
+        for (size_t r = 0; r < array->row_count; r++) {
+            sum += eng_array_cell(array, r, (size_t)column)->value;
+        }
+        return sum;
+    }
+    if (type != CKARRAYTYPE_FLOAT) {
+        return 0u;
+    }
+    float sum = 0.0f;
+    for (size_t r = 0; r < array->row_count; r++) {
+        float value;
+        memcpy(&value, &eng_array_cell(array, r, (size_t)column)->value, sizeof(value));
+        sum += value;
+    }
+    uint32_t bits;
+    memcpy(&bits, &sum, sizeof(bits));
+    return bits;
+}
+
+/* The cells laid out again for `columns` columns; `map[c]` is the old column of new column c, or -1. */
+static bool eng_array_relayout(nmo_engine_t *engine, eng_array_t *array, eng_column_t *columns,
+                               uint32_t column_count, const int32_t *map)
+{
+    size_t rows = array->row_count > array->row_capacity ? array->row_count : array->row_capacity;
+    eng_cell_t *cells = NULL;
+    if (column_count > 0 && rows > 0) {
+        cells = (eng_cell_t *)calloc(rows * column_count, sizeof(eng_cell_t));
+        if (cells == NULL) {
+            return false;
+        }
+    }
+    for (size_t r = 0; r < array->row_count; r++) {
+        for (uint32_t c = 0; c < column_count; c++) {
+            eng_cell_t *cell = &cells[r * column_count + c];
+            if (map[c] >= 0) {
+                *cell = *eng_array_cell(array, r, (size_t)map[c]);
+            } else if (!eng_cell_init(engine, &columns[c], cell)) {
+                for (size_t k = 0; k < r * column_count + c; k++) {
+                    if (map[k % column_count] < 0) {
+                        eng_cell_clear(&cells[k]);
+                    }
+                }
+                free(cells);
+                return false;
+            }
+        }
+    }
+    free(array->cells);
+    free(array->columns);
+    array->cells = cells;
+    array->columns = columns;
+    array->column_count = column_count;
+    array->row_capacity = cells != NULL ? rows : 0u;
+    return true;
+}
+
+nmo_status_t nmo_engine_array_insert_column(nmo_engine_t *engine, nmo_object_id_t array_id,
+                                            int32_t column, int32_t type, nmo_guid_t param_type)
+{
+    eng_array_t *array = eng_find_array(engine, array_id);
+    if (array == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    /* CKDataArray::InsertColumn: -1 appends; past the last column, nothing */
+    if (column >= (int32_t)array->column_count || column < -1) {
+        return NMO_ERR_OUT_OF_BOUNDS;
+    }
+    uint32_t count = array->column_count + 1u;
+    uint32_t at = column < 0 ? array->column_count : (uint32_t)column;
+    eng_column_t *columns = (eng_column_t *)calloc(count, sizeof(eng_column_t));
+    int32_t *map = (int32_t *)malloc(count * sizeof(int32_t));
+    if (columns == NULL || map == NULL) {
+        free(columns);
+        free(map);
+        return NMO_ERR_NOMEM;
+    }
+    for (uint32_t c = 0; c < count; c++) {
+        if (c == at) {
+            columns[c].type = type;
+            columns[c].param_type = type == CKARRAYTYPE_PARAMETER ? param_type : NMO_GUID(0u, 0u);
+            map[c] = -1;
+        } else {
+            uint32_t old = c < at ? c : c - 1u;
+            columns[c] = array->columns[old];
+            map[c] = (int32_t)old;
+        }
+    }
+    bool ok = eng_array_relayout(engine, array, columns, count, map);
+    free(map);
+    if (!ok) {
+        free(columns);
+        return NMO_ERR_NOMEM;
+    }
+    return NMO_OK;
+}
+
+nmo_status_t nmo_engine_array_remove_column(nmo_engine_t *engine, nmo_object_id_t array_id,
+                                            int32_t column)
+{
+    eng_array_t *array = eng_find_array(engine, array_id);
+    if (array == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    if (column < 0 || (uint32_t)column >= array->column_count) {
+        return NMO_ERR_OUT_OF_BOUNDS;
+    }
+    uint32_t count = array->column_count - 1u;
+    eng_column_t *columns = count > 0 ? (eng_column_t *)calloc(count, sizeof(eng_column_t)) : NULL;
+    int32_t *map = count > 0 ? (int32_t *)malloc(count * sizeof(int32_t)) : NULL;
+    if (count > 0 && (columns == NULL || map == NULL)) {
+        free(columns);
+        free(map);
+        return NMO_ERR_NOMEM;
+    }
+    for (uint32_t c = 0; c < count; c++) {
+        uint32_t old = c < (uint32_t)column ? c : c + 1u;
+        columns[c] = array->columns[old];
+        map[c] = (int32_t)old;
+    }
+    for (size_t r = 0; r < array->row_count; r++) {
+        eng_cell_clear(eng_array_cell(array, r, (size_t)column));
+    }
+    bool ok = eng_array_relayout(engine, array, columns, count, map);
+    free(map);
+    if (!ok) {
+        free(columns);
+        return NMO_ERR_NOMEM;
+    }
+    /* The key column follows its column; removing the key column leaves the index */
+    if (array->key_column > column) {
+        array->key_column--;
+    }
+    return NMO_OK;
+}
+
 /* ============================================================================
  * Groups
  * ============================================================================ */
