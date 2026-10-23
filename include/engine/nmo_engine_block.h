@@ -93,6 +93,8 @@ NMO_API int nmo_engine_block_local_parameter_count(const nmo_engine_block_t *blo
 NMO_API nmo_guid_t nmo_engine_block_input_parameter_type(const nmo_engine_block_t *block, int pos);
 NMO_API nmo_guid_t nmo_engine_block_output_parameter_type(const nmo_engine_block_t *block,
                                                           int pos);
+/** Bytes output parameter `pos` holds now (CKParameter::GetDataSize); 0 when there is none. */
+NMO_API size_t nmo_engine_block_output_parameter_size(const nmo_engine_block_t *block, int pos);
 
 /**
  * Copy the value input `pos` reads into `buffer`, at most `size` bytes,

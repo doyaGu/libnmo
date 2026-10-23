@@ -186,6 +186,12 @@ static eng_param_t *eng_block_local(const nmo_engine_block_t *block, int pos)
     return eng_node_param(block->engine, node->first_local, node->local_count, pos);
 }
 
+size_t nmo_engine_block_output_parameter_size(const nmo_engine_block_t *block, int pos)
+{
+    const eng_param_t *param = eng_block_pout(block, pos);
+    return param != NULL ? param->size : 0u;
+}
+
 int nmo_engine_block_input_parameter_count(const nmo_engine_block_t *block)
 {
     return (int)eng_block_node(block)->pin_count;

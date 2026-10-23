@@ -426,6 +426,54 @@ int32_t nmo_engine_array_find_row_op(const nmo_engine_t *engine, nmo_object_id_t
     return -1;
 }
 
+/* The sort functions of CKDataArray's columns (ArrayIntComp, ...), ascending. */
+static int eng_cell_compare(int32_t type, const eng_cell_t *a, const eng_cell_t *b)
+{
+    switch (type) {
+    case CKARRAYTYPE_FLOAT: {
+        float x, y;
+        memcpy(&x, &a->value, sizeof(x));
+        memcpy(&y, &b->value, sizeof(y));
+        return (x > y) - (x < y);
+    }
+    case CKARRAYTYPE_STRING: {
+        int cmp = strcmp(a->text != NULL ? a->text : "", b->text != NULL ? b->text : "");
+        return (cmp > 0) - (cmp < 0);
+    }
+    case CKARRAYTYPE_PARAMETER: {
+        size_t size = a->size < b->size ? a->size : b->size;
+        if (a->data == NULL || b->data == NULL || size == 0) {
+            return (a->data != NULL) - (b->data != NULL);
+        }
+        int cmp = memcmp(a->data, b->data, size);
+        return (cmp > 0) - (cmp < 0);
+    }
+    default: {
+        int32_t x = (int32_t)a->value, y = (int32_t)b->value;
+        return (x > y) - (x < y);
+    }
+    }
+}
+
+int32_t nmo_engine_array_highest_row(const nmo_engine_t *engine, nmo_object_id_t array_id,
+                                     int32_t column)
+{
+    const eng_array_t *array = eng_find_array(engine, array_id);
+    if (array == NULL || column < 0 || (uint32_t)column >= array->column_count ||
+        array->row_count == 0) {
+        return -1;
+    }
+    int32_t type = array->columns[column].type;
+    size_t highest = 0;
+    for (size_t r = 1; r < array->row_count; r++) {
+        if (eng_cell_compare(type, eng_array_cell(array, r, column),
+                             eng_array_cell(array, highest, column)) > 0) {
+            highest = r;
+        }
+    }
+    return (int32_t)highest;
+}
+
 int32_t nmo_engine_array_find_row(const nmo_engine_t *engine, nmo_object_id_t array_id,
                                   int32_t column, const nmo_engine_cell_t *key, int32_t start)
 {

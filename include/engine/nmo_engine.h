@@ -301,6 +301,13 @@ NMO_API int32_t nmo_engine_array_find_row_op(const nmo_engine_t *engine,
                                              int32_t op,
                                              const nmo_engine_cell_t *key,
                                              int32_t start);
+/**
+ * The row whose cell in `column` is the highest (CKDataArray::GetHighest,
+ * the first of equal ones), or -1 for an empty array.
+ */
+NMO_API int32_t nmo_engine_array_highest_row(const nmo_engine_t *engine,
+                                             nmo_object_id_t array_id,
+                                             int32_t column);
 /** Remove row `row` (CKDataArray::RemoveRow). */
 NMO_API nmo_status_t nmo_engine_array_remove_row(nmo_engine_t *engine,
                                                  nmo_object_id_t array_id,
