@@ -208,7 +208,7 @@ static bool format_message_name(uint32_t index,
 }
 
 /* DirectInput scan code names, as the Windows key name text spells them. */
-static const char *keyboard_key_name(uint32_t key)
+const char *nmo_behavior_keyboard_key_name(uint32_t key)
 {
     static const char *const low[0x59] = {
         [0x01] = "Esc", [0x02] = "1", [0x03] = "2", [0x04] = "3", [0x05] = "4",
@@ -259,9 +259,23 @@ static const char *keyboard_key_name(uint32_t key)
     }
 }
 
+uint32_t nmo_behavior_keyboard_key_from_name(const char *name)
+{
+    if (name == NULL) {
+        return 0;
+    }
+    for (uint32_t key = 1; key < 256; key++) {
+        const char *key_name = nmo_behavior_keyboard_key_name(key);
+        if (key_name != NULL && strcmp(key_name, name) == 0) {
+            return key;
+        }
+    }
+    return 0;
+}
+
 static nmo_status_t format_keyboard_key(uint32_t key, char *buffer, size_t buffer_size)
 {
-    const char *name = keyboard_key_name(key);
+    const char *name = nmo_behavior_keyboard_key_name(key);
     if (key == 0) {
         snprintf(buffer, buffer_size, "(none)");
     } else if (name != NULL) {

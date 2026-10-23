@@ -133,6 +133,11 @@ NMO_API const char *nmo_behavior_param_type_name(
     const nmo_parameter_state_t *param,
     const nmo_type_registry_t *registry);
 
+/** Name of a Keyboard Key value (a DirectInput scan code): "Space", "F1", ...; NULL if none. */
+NMO_API const char *nmo_behavior_keyboard_key_name(uint32_t key);
+/** The scan code a key name spells, as nmo_behavior_keyboard_key_name() writes it; 0 if none. */
+NMO_API uint32_t nmo_behavior_keyboard_key_from_name(const char *name);
+
 NMO_API const char *nmo_behavior_param_mode_to_string(
     nmo_parameter_mode_t mode);
 
