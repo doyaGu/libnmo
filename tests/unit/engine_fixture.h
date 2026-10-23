@@ -167,8 +167,11 @@ static inline void fixture_begin(engine_fixture_t *f)
 static inline nmo_object_id_t fixture_block_in(engine_fixture_t *f, nmo_object_id_t graph,
                                         nmo_guid_t guid, const char *name)
 {
+    /* As in CK2, a message a default names becomes a message type ("NULL" too) */
+    nmo_script_edit_add_node_options_t options = {nmo_manager_entry_options_default()};
+    options.manager_entry.policy = NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING;
     nmo_object_id_t id = 0;
-    return nmo_script_edit_add_node(f->tx, graph, guid, name, &id) == NMO_OK ? id : 0;
+    return nmo_script_edit_add_node_ex(f->tx, graph, guid, name, &options, &id) == NMO_OK ? id : 0;
 }
 
 static inline nmo_object_id_t fixture_block(engine_fixture_t *f, nmo_guid_t guid, const char *name)
