@@ -11,11 +11,14 @@
 #define GUID_BINARY_SWITCH NMO_GUID(0xeb506901, 0x984afccc)
 #define GUID_DELAYER NMO_GUID(0x15d472a5, 0x3bea409f)
 #define GUID_IDENTITY NMO_GUID(0x15151652, 0xaeefffd5)
+#define GUID_SHOW NMO_GUID(0xa85a213a, 0xef78d52a)
 
 typedef struct event_log {
     size_t infinite_loops;
     size_t unknown_blocks;
     size_t operations_run;
+    size_t effects;
+    nmo_object_id_t effect_target;
 } event_log_t;
 
 static void log_event(const nmo_engine_event_t *event, void *user_data)
@@ -24,6 +27,10 @@ static void log_event(const nmo_engine_event_t *event, void *user_data)
     log->infinite_loops += event->kind == NMO_ENGINE_EVENT_INFINITE_LOOP;
     log->unknown_blocks += event->kind == NMO_ENGINE_EVENT_UNKNOWN_BLOCK;
     log->operations_run += event->kind == NMO_ENGINE_EVENT_OPERATION && event->result == NMO_OK;
+    if (event->kind == NMO_ENGINE_EVENT_EFFECT) {
+        log->effects++;
+        log->effect_target = event->object_id;
+    }
 }
 
 /* ========================================================================== */
@@ -214,6 +221,32 @@ TEST(engine, unknown_block_stops_or_passes_the_flow)
     }
 }
 
+TEST(engine, effect_block_reports_its_target_and_continues)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t show = fixture_block(&f, GUID_SHOW, "Show");
+    nmo_object_id_t after = fixture_block(&f, GUID_NOP, "After");
+    ASSERT_TRUE(show != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, show, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, show, 0), BLOCK_IN(&f, after, 0), 0);
+    if (fixture_target(&f, show) != 0) {
+        fixture_input_int(&f, fixture_target(&f, show), (int32_t)f.owner_id);
+    }
+    fixture_commit(&f, NULL);
+
+    event_log_t log = {0};
+    nmo_engine_set_trace(f.engine, log_event, &log);
+    ASSERT_TRUE(nmo_engine_has_block(f.engine, GUID_SHOW));
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+    ASSERT_EQ(1u, log.effects);
+    ASSERT_EQ(f.owner_id, log.effect_target);
+    ASSERT_EQ(0u, log.unknown_blocks);
+    ASSERT_EQ(1u, runs(&f, after));
+    fixture_end(&f);
+}
+
 static int custom_nop_calls;
 
 static int custom_nop(nmo_engine_block_t *block)
@@ -290,6 +323,7 @@ REGISTER_TEST(engine, binary_switch_follows_its_condition);
 REGISTER_TEST(engine, delayer_waits_for_its_time);
 REGISTER_TEST(engine, operation_output_is_computed_when_read);
 REGISTER_TEST(engine, unknown_block_stops_or_passes_the_flow);
+REGISTER_TEST(engine, effect_block_reports_its_target_and_continues);
 REGISTER_TEST(engine, registered_block_replaces_the_builtin);
 REGISTER_TEST(engine, iteration_limit_stops_an_infinite_loop);
 REGISTER_TEST(engine, scripts_start_only_when_asked);

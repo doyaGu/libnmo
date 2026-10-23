@@ -15,6 +15,8 @@
 #define GUID_ADD_ROW NMO_GUID(0x1c7e5dc6, 0x3f6423c2)
 #define GUID_ITERATOR NMO_GUID(0x198f0af9, 0x0268249f)
 #define GUID_GROUP_ITERATOR NMO_GUID(0x6050252f, 0x3aa82d40)
+#define GUID_CLEAR_ARRAY NMO_GUID(0x35c9352f, 0x7b1a193b)
+#define GUID_REMOVE_KEY_ROW NMO_GUID(0x0f8334ea, 0x279a40cd)
 
 /* Columns: Key (int), Weight (float), Name (string), Object (object). */
 static nmo_object_id_t create_array(engine_fixture_t *f, int32_t key_column, uint32_t rows,
@@ -236,6 +238,94 @@ TEST(engine_arrays, iterator_and_get_row_walk_the_rows)
     fixture_end(&f);
 }
 
+TEST(engine_arrays, find_row_compares_as_the_operator_says)
+{
+    /*
+     * Iterator If searches this way. Script edits cannot add an Iterator If
+     * yet: they do not read "Equal", its Operator default, as a comparison
+     * operator.
+     */
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t array = create_array(&f, -1, 3, keys, weights, names);
+    ASSERT_TRUE(array != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    fixture_commit(&f, NULL);
+
+    nmo_engine_cell_t fifteen = {.type = CKARRAYTYPE_INT, .value = 15};
+    ASSERT_EQ(1, nmo_engine_array_find_row_op(f.engine, array, 0, 5 /* CKGREATER */, &fifteen, 0));
+    ASSERT_EQ(2, nmo_engine_array_find_row_op(f.engine, array, 0, 5, &fifteen, 2));
+    ASSERT_EQ(-1, nmo_engine_array_find_row_op(f.engine, array, 0, 1 /* CKEQUAL */, &fifteen, 0));
+    float one = 1.0f;
+    nmo_engine_cell_t weight = {.type = CKARRAYTYPE_FLOAT};
+    memcpy(&weight.value, &one, sizeof(one));
+    ASSERT_EQ(0, nmo_engine_array_find_row_op(f.engine, array, 1, 3 /* CKLESSER */, &weight, 0));
+    /* A missing string compares as "" */
+    nmo_engine_cell_t empty = {.type = CKARRAYTYPE_STRING, .text = ""};
+    ASSERT_EQ(2, nmo_engine_array_find_row(f.engine, array, 2, &empty, 0));
+    nmo_engine_cell_t twenty = {.type = CKARRAYTYPE_STRING, .text = "twenty"};
+    ASSERT_EQ(0, nmo_engine_array_find_row_op(f.engine, array, 2, 3 /* CKLESSER */, &twenty, 0));
+    fixture_end(&f);
+}
+
+TEST(engine_arrays, remove_key_row_and_clear_array_remove_rows)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t array = create_array(&f, 0, 3, keys, weights, names);
+    ASSERT_TRUE(array != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+
+    nmo_object_id_t remove = array_block(&f, GUID_REMOVE_KEY_ROW, "Remove", array);
+    nmo_object_id_t missing = array_block(&f, GUID_REMOVE_KEY_ROW, "Remove Missing", array);
+    nmo_object_id_t not_found = fixture_block(&f, GUID_NOP, "Not Found");
+    ASSERT_TRUE(remove != 0 && missing != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, remove, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, remove, 0), BLOCK_IN(&f, missing, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, missing, 1), BLOCK_IN(&f, not_found, 0), 0);
+    nmo_object_id_t key = add_param(&f, remove, NMO_SCRIPT_EDIT_PARAM_IN, CKPGUID_INT, "Key");
+    nmo_object_id_t other = add_param(&f, missing, NMO_SCRIPT_EDIT_PARAM_IN, CKPGUID_INT, "Key");
+    ASSERT_TRUE(key != 0 && other != 0);
+    fixture_input_int(&f, key, 20);
+    fixture_input_int(&f, other, 99);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+    ASSERT_EQ(2, nmo_engine_array_row_count(f.engine, array));
+    nmo_engine_cell_t cell;
+    ASSERT_EQ(NMO_OK, nmo_engine_array_get_cell(f.engine, array, 1, 0, &cell));
+    ASSERT_EQ(30u, cell.value);
+    ASSERT_EQ(1u, runs(&f, not_found));
+    ASSERT_EQ(NMO_OK, nmo_engine_array_clear(f.engine, array));
+    ASSERT_EQ(0, nmo_engine_array_row_count(f.engine, array));
+    fixture_end(&f);
+}
+
+TEST(engine_arrays, clear_array_block_empties_the_array)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t array = create_array(&f, -1, 3, keys, weights, names);
+    ASSERT_TRUE(array != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t clear = array_block(&f, GUID_CLEAR_ARRAY, "Clear", array);
+    ASSERT_TRUE(clear != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, clear, 0), 0);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+    ASSERT_EQ(0, nmo_engine_array_row_count(f.engine, array));
+    int32_t row = -1;
+    ASSERT_EQ(NMO_OK, nmo_engine_array_insert_row(f.engine, array, -1, &row));
+    ASSERT_EQ(0, row);
+    fixture_end(&f);
+}
+
 TEST(engine_arrays, group_iterator_walks_the_group)
 {
     engine_fixture_t f;
@@ -281,5 +371,8 @@ TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_arrays, get_cell_reads_a_cell_or_reports_not_found);
 REGISTER_TEST(engine_arrays, set_cell_and_add_row_change_the_engine_copy);
 REGISTER_TEST(engine_arrays, iterator_and_get_row_walk_the_rows);
+REGISTER_TEST(engine_arrays, find_row_compares_as_the_operator_says);
+REGISTER_TEST(engine_arrays, remove_key_row_and_clear_array_remove_rows);
+REGISTER_TEST(engine_arrays, clear_array_block_empties_the_array);
 REGISTER_TEST(engine_arrays, group_iterator_walks_the_group);
 TEST_MAIN_END()
