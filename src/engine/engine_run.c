@@ -139,6 +139,7 @@ nmo_status_t nmo_engine_step(nmo_engine_t *engine, float delta_ms)
     }
     engine->delta = delta_ms;
     eng_input_begin_frame(engine);
+    eng_sounds_begin_frame(engine);
     eng_emit(engine, NMO_ENGINE_EVENT_FRAME_BEGIN, -1, 0, 0);
     nmo_status_t status = eng_manager_execute(engine);
     if (status == NMO_OK) {

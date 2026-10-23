@@ -167,6 +167,17 @@ typedef struct eng_key_event {
     bool pressed;
 } eng_key_event_t;
 
+/* A sound as the engine plays it: no audio, only its position in time. */
+typedef struct eng_sound {
+    nmo_object_id_t id;
+    float length;    /* ms, as the file records it; 0 when it does not */
+    float position;  /* ms since it started */
+    float fade_left; /* ms of fade out before it stops; 0 when not stopping */
+    bool playing;
+    bool paused;
+    bool loop;
+} eng_sound_t;
+
 /*
  * What the input manager reports during a frame. The host sets the `next`
  * state; at the start of a frame it becomes the frame's state and the key
@@ -244,6 +255,7 @@ struct nmo_engine {
     uint64_t random_state;
 
     eng_input_t input;
+    ENG_VEC(eng_sound_t) sounds;
 
     nmo_engine_trace_fn trace;
     void *trace_user_data;
@@ -365,5 +377,10 @@ nmo_status_t eng_register_effects(nmo_engine_t *engine);
 
 /* engine_controllers.c */
 nmo_status_t eng_register_controllers(nmo_engine_t *engine);
+
+/* engine_media.c */
+nmo_status_t eng_register_media(nmo_engine_t *engine);
+/* The sounds move on by the frame time (the sound manager's frame). */
+void eng_sounds_begin_frame(nmo_engine_t *engine);
 
 #endif /* NMO_ENGINE_INTERNAL_H */

@@ -355,6 +355,14 @@ NMO_API void nmo_engine_mouse_relative(const nmo_engine_t *engine,
                                        float *out_wheel);
 NMO_API bool nmo_engine_is_mouse_button_down(const nmo_engine_t *engine, int32_t button);
 
+/* ---- Sounds ---- */
+
+/**
+ * True while sound `sound_id` plays, as the engine follows it: Wave Player
+ * starts and stops it, and it ends after the length the file records.
+ */
+NMO_API bool nmo_engine_sound_is_playing(const nmo_engine_t *engine, nmo_object_id_t sound_id);
+
 /** "execute", "link", ... */
 NMO_API const char *nmo_engine_event_kind_name(nmo_engine_event_kind_t kind);
 
