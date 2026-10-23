@@ -1881,6 +1881,160 @@ static int bb_remove_key_row(blk_t *b)
 }
 
 /* Iterator If (ArrayIteratorIf): the rows whose cell in a column passes a test. */
+/* Get Key Row (GetArray): the row whose key column holds the key, into the outputs. */
+static int bb_get_key_row(blk_t *b)
+{
+    nmo_object_id_t array = array_target(b);
+    if (array == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    nmo_engine_t *engine = nmo_engine_block_engine(b);
+    int32_t key_column = nmo_engine_array_key_column(engine, array);
+    if (key_column < 0) {
+        return NMO_ENGINE_BR_PARAMETERERROR; /* "No column criterion defined" */
+    }
+    nmo_engine_cell_t key;
+    array_input_key(b, array, key_column, 0, &key);
+    int32_t row = nmo_engine_array_find_row(engine, array, key_column, &key, 0);
+    IN_OFF(b, 0);
+    if (row < 0) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    array_write_outputs(b, array, row, 0);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Row Search (ArraySearch): the first row from First Search Row whose cell compares true. */
+static int bb_row_search(blk_t *b)
+{
+    nmo_object_id_t array = array_target(b);
+    if (array == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    nmo_engine_t *engine = nmo_engine_block_engine(b);
+    int32_t column = get_in_int(b, 0, 0);
+    int32_t first = get_in_int(b, 1, 0);
+    int32_t op = get_in_int(b, 2, 1); /* CKEQUAL */
+    nmo_engine_cell_t key;
+    array_input_key(b, array, column, 3, &key);
+    int32_t row = nmo_engine_array_find_row_op(engine, array, column, op, &key, first);
+    IN_OFF(b, 0);
+    if (row < 0) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    set_out_int(b, 0, row);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Shuffle Order (CKDataArray::RandomShuffle): each row swapped with a random one. */
+static int bb_shuffle_order(blk_t *b)
+{
+    nmo_object_id_t array = array_target(b);
+    if (array == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    nmo_engine_t *engine = nmo_engine_block_engine(b);
+    int32_t rows = nmo_engine_array_row_count(engine, array);
+    for (int32_t i = 0; i < rows; i++) {
+        int32_t r = (int32_t)(nmo_engine_block_random(b) * 32768.0); /* rand() */
+        nmo_engine_array_swap_rows(engine, array, i, r % rows);
+    }
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Remove Row If (ArrayRemoveIf): every row whose cell compares true, and how many. */
+static int bb_remove_row_if(blk_t *b)
+{
+    nmo_object_id_t array = array_target(b);
+    if (array == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    nmo_engine_t *engine = nmo_engine_block_engine(b);
+    int32_t column = get_in_int(b, 0, 0);
+    int32_t op = get_in_int(b, 1, 1); /* CKEQUAL */
+    nmo_engine_cell_t key;
+    array_input_key(b, array, column, 2, &key);
+    int32_t count = 0;
+    for (int32_t i = 0; i != -1;) {
+        i = nmo_engine_array_find_row_op(engine, array, column, op, &key, i);
+        if (i != -1) {
+            nmo_engine_array_remove_row(engine, array, i);
+            count++;
+            if (i >= nmo_engine_array_row_count(engine, array)) {
+                break;
+            }
+        }
+    }
+    set_out_int(b, 0, count);
+    IN_OFF(b, 0);
+    OUT_ON(b, count == 0 ? 1 : 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+static int bb_remove_column(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_object_id_t array = array_target(b);
+    if (array == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    nmo_engine_array_remove_column(nmo_engine_block_engine(b), array, get_in_int(b, 0, -1));
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * Insert Column: a column of Column Type before Index (-1: after the last).
+ * A parameter column takes the type of the Parameter Type input; a Parameter
+ * Type value is CK's index of a type, which the engine cannot map, so such a
+ * column holds no values.
+ */
+static int bb_insert_column(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_object_id_t array = array_target(b);
+    if (array == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    size_t size = 0;
+    const char *name = (const char *)nmo_engine_block_input_data(b, 1, &size);
+    if (name == NULL || size == 0) {
+        return NMO_ENGINE_BR_OK;
+    }
+    int32_t type = get_in_int(b, 2, CKARRAYTYPE_INT);
+    nmo_guid_t param_type = NMO_GUID(0u, 0u);
+    if (type == CKARRAYTYPE_PARAMETER) {
+        param_type = nmo_engine_block_input_parameter_type(b, 3);
+        if (nmo_guid_equals(param_type, CKPGUID_PARAMETERTYPE)) {
+            param_type = NMO_GUID(0u, 0u);
+        }
+    }
+    nmo_engine_array_insert_column(nmo_engine_block_engine(b), array, get_in_int(b, 0, -1), type,
+                                   param_type);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Column Sum (ArraySum): the sum of an Integer or Float column. */
+static int bb_column_sum(blk_t *b)
+{
+    nmo_object_id_t array = array_target(b);
+    if (array == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    uint32_t sum = nmo_engine_array_sum(nmo_engine_block_engine(b), array, get_in_int(b, 0, 0));
+    nmo_engine_block_set_output_value(b, 0, &sum, sizeof(sum));
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
 static int bb_array_iterator_if(blk_t *b)
 {
     nmo_object_id_t array = array_target(b);
@@ -2031,6 +2185,13 @@ static const nmo_engine_block_desc_t eng_logics_blocks[] = {
     {NMO_GUID(0x6bec4be6, 0x12d64c7c), "Iterator If", bb_array_iterator_if, NULL, NULL},
     {NMO_GUID(0x35c9352f, 0x7b1a193b), "Clear Array", bb_clear_array, NULL, NULL},
     {NMO_GUID(0x0f8334ea, 0x279a40cd), "Remove Key Row", bb_remove_key_row, NULL, NULL},
+    {NMO_GUID(0x49064205, 0x10e72f7a), "Get Key Row", bb_get_key_row, NULL, NULL},
+    {NMO_GUID(0x78863443, 0x45af59b6), "Row Search", bb_row_search, NULL, NULL},
+    {NMO_GUID(0x270f177a, 0x4ca20023), "Shuffle Order", bb_shuffle_order, NULL, NULL},
+    {NMO_GUID(0x57865622, 0x662d2fee), "Remove Row If", bb_remove_row_if, NULL, NULL},
+    {NMO_GUID(0x3f377888, 0x128a7767), "Remove Column", bb_remove_column, NULL, NULL},
+    {NMO_GUID(0x05cb7802, 0x04a64a58), "Insert Column", bb_insert_column, NULL, NULL},
+    {NMO_GUID(0x49124252, 0x1be909a4), "Column Sum", bb_column_sum, NULL, NULL},
     {NMO_GUID(0x6050252f, 0x3aa82d40), "Group Iterator", bb_group_iterator, NULL, NULL},
     {NMO_GUID(0x46f71e13, 0x13d26f61), "Get Highest", bb_get_highest, NULL, NULL},
     {NMO_GUID(0x58a1210b, 0x14e5715c), "Is In Group", bb_is_in_group, NULL, NULL},
