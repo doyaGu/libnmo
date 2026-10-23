@@ -407,6 +407,9 @@ nmo_status_t script_edit_create_parameter_object(
 
         if ((type_desc->category & NMO_TYPE_CATEGORY_OBJECT_REF) != 0u) {
             parameter->mode = CKPARAM_MODE_OBJECT;
+        } else if (nmo_guid_equals(type_guid, CKPGUID_VOIDBUF)) {
+            /* A void buffer has no size of its own: it starts empty */
+            parameter->mode = CKPARAM_MODE_BUFFER;
         } else {
             size_t buffer_size = type_desc->size;
             if (buffer_size == 0u && nmo_guid_equals(type_guid, CKPGUID_STRING)) {
