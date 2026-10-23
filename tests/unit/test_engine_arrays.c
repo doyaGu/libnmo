@@ -14,6 +14,7 @@
 #define GUID_GET_ROW NMO_GUID(0x33b77f41, 0x07b95c45)
 #define GUID_ADD_ROW NMO_GUID(0x1c7e5dc6, 0x3f6423c2)
 #define GUID_ITERATOR NMO_GUID(0x198f0af9, 0x0268249f)
+#define GUID_ITERATOR_IF NMO_GUID(0x6bec4be6, 0x12d64c7c)
 #define GUID_GROUP_ITERATOR NMO_GUID(0x6050252f, 0x3aa82d40)
 #define GUID_CLEAR_ARRAY NMO_GUID(0x35c9352f, 0x7b1a193b)
 #define GUID_REMOVE_KEY_ROW NMO_GUID(0x0f8334ea, 0x279a40cd)
@@ -240,11 +241,7 @@ TEST(engine_arrays, iterator_and_get_row_walk_the_rows)
 
 TEST(engine_arrays, find_row_compares_as_the_operator_says)
 {
-    /*
-     * Iterator If searches this way. Script edits cannot add an Iterator If
-     * yet: they do not read "Equal", its Operator default, as a comparison
-     * operator.
-     */
+    /* Iterator If searches this way */
     engine_fixture_t f;
     fixture_begin_document(&f);
     nmo_object_id_t array = create_array(&f, -1, 3, keys, weights, names);
@@ -266,6 +263,43 @@ TEST(engine_arrays, find_row_compares_as_the_operator_says)
     ASSERT_EQ(2, nmo_engine_array_find_row(f.engine, array, 2, &empty, 0));
     nmo_engine_cell_t twenty = {.type = CKARRAYTYPE_STRING, .text = "twenty"};
     ASSERT_EQ(0, nmo_engine_array_find_row_op(f.engine, array, 2, 3 /* CKLESSER */, &twenty, 0));
+    fixture_end(&f);
+}
+
+TEST(engine_arrays, iterator_if_walks_the_rows_that_pass)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t array = create_array(&f, -1, 3, keys, weights, names);
+    ASSERT_TRUE(array != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+
+    nmo_object_id_t it = array_block(&f, GUID_ITERATOR_IF, "Iterator If", array);
+    nmo_object_id_t body = fixture_block(&f, GUID_NOP, "Body");
+    ASSERT_TRUE(it != 0 && body != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, it, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, it, 1), BLOCK_IN(&f, body, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, body, 0), BLOCK_IN(&f, it, 1), 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, it, 0), 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, it, 1), 5 /* CKGREATER */);
+    nmo_object_id_t reference =
+        add_param(&f, it, NMO_SCRIPT_EDIT_PARAM_IN, CKPGUID_INT, "Reference Value");
+    ASSERT_TRUE(reference != 0);
+    fixture_input_int(&f, reference, 15);
+    nmo_object_id_t key = add_param(&f, it, NMO_SCRIPT_EDIT_PARAM_OUT, CKPGUID_INT, "Key");
+    ASSERT_TRUE(key != 0);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+    /* The keys above 15, 20 and 30, within one frame */
+    ASSERT_EQ(2u, runs(&f, body));
+    int32_t value = 0;
+    read_value(&f, BLOCK_POUT(&f, it, 0), &value, sizeof(value));
+    ASSERT_EQ(2, value);
+    read_value(&f, key, &value, sizeof(value));
+    ASSERT_EQ(30, value);
     fixture_end(&f);
 }
 
@@ -372,6 +406,7 @@ REGISTER_TEST(engine_arrays, get_cell_reads_a_cell_or_reports_not_found);
 REGISTER_TEST(engine_arrays, set_cell_and_add_row_change_the_engine_copy);
 REGISTER_TEST(engine_arrays, iterator_and_get_row_walk_the_rows);
 REGISTER_TEST(engine_arrays, find_row_compares_as_the_operator_says);
+REGISTER_TEST(engine_arrays, iterator_if_walks_the_rows_that_pass);
 REGISTER_TEST(engine_arrays, remove_key_row_and_clear_array_remove_rows);
 REGISTER_TEST(engine_arrays, clear_array_block_empties_the_array);
 REGISTER_TEST(engine_arrays, group_iterator_walks_the_group);
