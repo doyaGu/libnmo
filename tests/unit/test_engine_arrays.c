@@ -82,15 +82,6 @@ static nmo_object_id_t add_param(engine_fixture_t *f, nmo_object_id_t block,
     return nmo_script_edit_add_parameter(f->tx, block, kind, type, name, &id) == NMO_OK ? id : 0;
 }
 
-static void read_value(engine_fixture_t *f, nmo_object_id_t param, void *out, size_t size)
-{
-    const void *data = NULL;
-    size_t data_size = 0;
-    ASSERT_EQ(NMO_OK, nmo_engine_param_value(f->engine, param, &data, &data_size, NULL));
-    ASSERT_TRUE(data_size >= size);
-    memcpy(out, data, size);
-}
-
 static const int32_t keys[] = {10, 20, 30};
 static const float weights[] = {0.5f, 1.5f, 2.5f};
 static const char *const names[] = {"ten", "twenty", NULL};

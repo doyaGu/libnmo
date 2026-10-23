@@ -270,4 +270,14 @@ static inline uint64_t runs(engine_fixture_t *f, nmo_object_id_t id)
     return nmo_engine_behavior_execution_count(f->engine, id);
 }
 
+/* Copy `size` bytes of the value parameter `param` holds in the engine into `out`. */
+static inline void read_value(engine_fixture_t *f, nmo_object_id_t param, void *out, size_t size)
+{
+    const void *data = NULL;
+    size_t data_size = 0;
+    ASSERT_EQ(NMO_OK, nmo_engine_param_value(f->engine, param, &data, &data_size, NULL));
+    ASSERT_TRUE(data_size >= size);
+    memcpy(out, data, size);
+}
+
 #endif /* NMO_TEST_ENGINE_FIXTURE_H */
