@@ -337,6 +337,12 @@ NMO_API void nmo_engine_set_mouse_position(nmo_engine_t *engine, float x, float 
 NMO_API void nmo_engine_set_mouse_button(nmo_engine_t *engine, int32_t button, bool down);
 /** Add wheel movement to the next frame. */
 NMO_API void nmo_engine_add_mouse_wheel(nmo_engine_t *engine, float delta);
+/**
+ * The 2D entity under the mouse from the next frame on, as the renderer picks
+ * it (Pick2D) for the font manager; 0 for none. There is no renderer, so the
+ * host says which.
+ */
+NMO_API void nmo_engine_set_entity_under_mouse(nmo_engine_t *engine, nmo_object_id_t entity);
 
 /** CKInputManager::IsKeyDown during the current frame. */
 NMO_API bool nmo_engine_is_key_down(const nmo_engine_t *engine, uint32_t key);
@@ -354,6 +360,8 @@ NMO_API void nmo_engine_mouse_relative(const nmo_engine_t *engine,
                                        float *out_y,
                                        float *out_wheel);
 NMO_API bool nmo_engine_is_mouse_button_down(const nmo_engine_t *engine, int32_t button);
+/** CKFontManager::GetEntityUnderMouse during the current frame. */
+NMO_API nmo_object_id_t nmo_engine_entity_under_mouse(const nmo_engine_t *engine);
 
 /* ---- Sounds ---- */
 

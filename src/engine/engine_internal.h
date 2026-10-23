@@ -192,6 +192,7 @@ typedef struct eng_input {
     float relative[3];       /* x, y and the wheel */
     float next_wheel;
     bool buttons[3], next_buttons[3]; /* CK_MOUSE_BUTTON: left, right, middle */
+    nmo_object_id_t under_mouse, next_under_mouse;
 } eng_input_t;
 
 /* A CKDataArray cell: INT, FLOAT and OBJECT hold 32 bits, STRING text, PARAMETER bytes. */

@@ -54,6 +54,19 @@ void eng_input_begin_frame(nmo_engine_t *engine)
     in->next_wheel = 0.0f;
     memcpy(in->mouse, in->next_mouse, sizeof(in->mouse));
     memcpy(in->buttons, in->next_buttons, sizeof(in->buttons));
+    in->under_mouse = in->next_under_mouse;
+}
+
+void nmo_engine_set_entity_under_mouse(nmo_engine_t *engine, nmo_object_id_t entity)
+{
+    if (engine != NULL) {
+        engine->input.next_under_mouse = entity;
+    }
+}
+
+nmo_object_id_t nmo_engine_entity_under_mouse(const nmo_engine_t *engine)
+{
+    return engine != NULL ? engine->input.under_mouse : 0;
 }
 
 bool nmo_engine_is_key_down(const nmo_engine_t *engine, uint32_t key)
