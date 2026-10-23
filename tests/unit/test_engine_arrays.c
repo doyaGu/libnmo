@@ -18,6 +18,8 @@
 #define GUID_GROUP_ITERATOR NMO_GUID(0x6050252f, 0x3aa82d40)
 #define GUID_CLEAR_ARRAY NMO_GUID(0x35c9352f, 0x7b1a193b)
 #define GUID_REMOVE_KEY_ROW NMO_GUID(0x0f8334ea, 0x279a40cd)
+#define GUID_GET_HIGHEST NMO_GUID(0x46f71e13, 0x13d26f61)
+#define GUID_IS_IN_GROUP NMO_GUID(0x58a1210b, 0x14e5715c)
 
 /* Columns: Key (int), Weight (float), Name (string), Object (object). */
 static nmo_object_id_t create_array(engine_fixture_t *f, int32_t key_column, uint32_t rows,
@@ -360,6 +362,71 @@ TEST(engine_arrays, clear_array_block_empties_the_array)
     fixture_end(&f);
 }
 
+TEST(engine_arrays, get_highest_finds_the_highest_row)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    static const int32_t unordered[] = {20, 30, 10};
+    nmo_object_id_t array = create_array(&f, -1, 3, unordered, weights, names);
+    ASSERT_TRUE(array != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t highest = array_block(&f, GUID_GET_HIGHEST, "Highest", array);
+    ASSERT_TRUE(highest != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, highest, 0), 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, highest, 0), 0);
+    nmo_object_id_t key = add_param(&f, highest, NMO_SCRIPT_EDIT_PARAM_OUT, CKPGUID_INT, "Key");
+    ASSERT_TRUE(key != 0);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(1, nmo_engine_array_highest_row(f.engine, array, 0));
+    ASSERT_EQ(2, nmo_engine_array_highest_row(f.engine, array, 1));
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+    int32_t value = 0;
+    read_value(&f, BLOCK_POUT(&f, highest, 0), &value, sizeof(value));
+    ASSERT_EQ(1, value);
+    read_value(&f, key, &value, sizeof(value));
+    ASSERT_EQ(30, value);
+    fixture_end(&f);
+}
+
+TEST(engine_arrays, is_in_group_tests_membership)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t a = fixture_create(&f, NMO_CID_3DENTITY, "A");
+    nmo_object_id_t b = fixture_create(&f, NMO_CID_3DENTITY, "B");
+    nmo_object_id_t group = fixture_create(&f, NMO_CID_GROUP, "Group");
+    nmo_group_state_t *state = (nmo_group_state_t *)fixture_state(&f, group);
+    ASSERT_NOT_NULL(state);
+    nmo_ref_t ref = nmo_ref_from_id(a);
+    ASSERT_EQ(NMO_OK, nmo_array_append(&state->object_ids, &ref));
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+
+    nmo_object_id_t test_a = fixture_block(&f, GUID_IS_IN_GROUP, "A In Group");
+    nmo_object_id_t test_b = fixture_block(&f, GUID_IS_IN_GROUP, "B In Group");
+    nmo_object_id_t a_in = fixture_block(&f, GUID_NOP, "A In");
+    nmo_object_id_t b_out = fixture_block(&f, GUID_NOP, "B Out");
+    ASSERT_TRUE(test_a != 0 && test_b != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, test_a, 0), 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, test_b, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, test_a, 0), BLOCK_IN(&f, a_in, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, test_b, 1), BLOCK_IN(&f, b_out, 0), 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, test_a, 0), (int32_t)a);
+    fixture_input_int(&f, BLOCK_PIN(&f, test_a, 1), (int32_t)group);
+    fixture_input_int(&f, BLOCK_PIN(&f, test_b, 0), (int32_t)b);
+    fixture_input_int(&f, BLOCK_PIN(&f, test_b, 1), (int32_t)group);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+    ASSERT_EQ(1u, runs(&f, a_in));
+    ASSERT_EQ(1u, runs(&f, b_out));
+    fixture_end(&f);
+}
+
 TEST(engine_arrays, group_iterator_walks_the_group)
 {
     engine_fixture_t f;
@@ -409,5 +476,7 @@ REGISTER_TEST(engine_arrays, find_row_compares_as_the_operator_says);
 REGISTER_TEST(engine_arrays, iterator_if_walks_the_rows_that_pass);
 REGISTER_TEST(engine_arrays, remove_key_row_and_clear_array_remove_rows);
 REGISTER_TEST(engine_arrays, clear_array_block_empties_the_array);
+REGISTER_TEST(engine_arrays, get_highest_finds_the_highest_row);
+REGISTER_TEST(engine_arrays, is_in_group_tests_membership);
 REGISTER_TEST(engine_arrays, group_iterator_walks_the_group);
 TEST_MAIN_END()

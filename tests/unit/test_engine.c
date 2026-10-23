@@ -12,6 +12,15 @@
 #define GUID_DELAYER NMO_GUID(0x15d472a5, 0x3bea409f)
 #define GUID_IDENTITY NMO_GUID(0x15151652, 0xaeefffd5)
 #define GUID_SHOW NMO_GUID(0xa85a213a, 0xef78d52a)
+#define GUID_PER_SECOND NMO_GUID(0x448e54ce, 0x75a655c5)
+#define GUID_THRESHOLD NMO_GUID(0x655e6af4, 0x08c0596f)
+#define GUID_INTERPOLATOR NMO_GUID(0x35503950, 0x2dde7a65)
+#define GUID_SET_COMPONENT NMO_GUID(0x6e800755, 0x57b64acb)
+
+static void input_float(engine_fixture_t *f, nmo_object_id_t pin, float value)
+{
+    fixture_input_value(f, pin, &value, sizeof(value));
+}
 
 typedef struct event_log {
     size_t infinite_loops;
@@ -247,6 +256,73 @@ TEST(engine, effect_block_reports_its_target_and_continues)
     fixture_end(&f);
 }
 
+TEST(engine, calculator_blocks_compute_their_outputs)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t per_second = fixture_block(&f, GUID_PER_SECOND, "Per Second");
+    nmo_object_id_t interpolator = fixture_block(&f, GUID_INTERPOLATOR, "Interpolator");
+    nmo_object_id_t set_component = fixture_block(&f, GUID_SET_COMPONENT, "Set Component");
+    ASSERT_TRUE(per_second != 0 && interpolator != 0 && set_component != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, per_second, 0), 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, interpolator, 0), 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, set_component, 0), 0);
+    input_float(&f, BLOCK_PIN(&f, per_second, 0), 10.0f);
+    input_float(&f, BLOCK_PIN(&f, interpolator, 0), 2.0f);
+    input_float(&f, BLOCK_PIN(&f, interpolator, 1), 4.0f);
+    input_float(&f, BLOCK_PIN(&f, interpolator, 2), 0.25f);
+    for (int i = 0; i < 3; i++) {
+        input_float(&f, BLOCK_PIN(&f, set_component, (size_t)i), (float)(i + 1));
+    }
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 500.0f));
+    float value = 0.0f;
+    read_value(&f, BLOCK_POUT(&f, per_second, 0), &value, sizeof(value));
+    ASSERT_TRUE(value == 5.0f); /* 10 per second over half a second */
+    read_value(&f, BLOCK_POUT(&f, interpolator, 0), &value, sizeof(value));
+    ASSERT_TRUE(value == 2.5f);
+    float vector[3] = {0};
+    read_value(&f, BLOCK_POUT(&f, set_component, 0), vector, sizeof(vector));
+    ASSERT_TRUE(vector[0] == 1.0f && vector[1] == 2.0f && vector[2] == 3.0f);
+    fixture_end(&f);
+}
+
+TEST(engine, threshold_picks_the_output_and_clamps)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t above = fixture_block(&f, GUID_THRESHOLD, "Above");
+    nmo_object_id_t inside = fixture_block(&f, GUID_THRESHOLD, "Inside");
+    nmo_object_id_t was_above = fixture_block(&f, GUID_NOP, "Was Above");
+    nmo_object_id_t was_inside = fixture_block(&f, GUID_NOP, "Was Inside");
+    ASSERT_TRUE(above != 0 && inside != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, above, 0), 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, inside, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, above, 1), BLOCK_IN(&f, was_above, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, inside, 2), BLOCK_IN(&f, was_inside, 0), 0);
+    const float xs[2] = {12.0f, 5.0f};
+    const nmo_object_id_t blocks[2] = {above, inside};
+    for (int i = 0; i < 2; i++) {
+        input_float(&f, BLOCK_PIN(&f, blocks[i], 0), xs[i]);
+        input_float(&f, BLOCK_PIN(&f, blocks[i], 1), 0.0f);
+        input_float(&f, BLOCK_PIN(&f, blocks[i], 2), 10.0f);
+    }
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+    ASSERT_EQ(1u, runs(&f, was_above));
+    ASSERT_EQ(1u, runs(&f, was_inside));
+    float value = 0.0f;
+    read_value(&f, BLOCK_POUT(&f, above, 0), &value, sizeof(value));
+    ASSERT_TRUE(value == 10.0f);
+    read_value(&f, BLOCK_POUT(&f, inside, 0), &value, sizeof(value));
+    ASSERT_TRUE(value == 5.0f);
+    fixture_end(&f);
+}
+
 static int custom_nop_calls;
 
 static int custom_nop(nmo_engine_block_t *block)
@@ -324,6 +400,8 @@ REGISTER_TEST(engine, delayer_waits_for_its_time);
 REGISTER_TEST(engine, operation_output_is_computed_when_read);
 REGISTER_TEST(engine, unknown_block_stops_or_passes_the_flow);
 REGISTER_TEST(engine, effect_block_reports_its_target_and_continues);
+REGISTER_TEST(engine, calculator_blocks_compute_their_outputs);
+REGISTER_TEST(engine, threshold_picks_the_output_and_clamps);
 REGISTER_TEST(engine, registered_block_replaces_the_builtin);
 REGISTER_TEST(engine, iteration_limit_stops_an_infinite_loop);
 REGISTER_TEST(engine, scripts_start_only_when_asked);
