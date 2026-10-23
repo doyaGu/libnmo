@@ -6,6 +6,7 @@
 set(NMO_ENGINE_SOURCES
     engine.c
     engine_array.c
+    engine_attributes.c
     engine_block.c
     engine_build.c
     engine_controllers.c

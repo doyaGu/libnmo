@@ -195,6 +195,21 @@ typedef struct eng_input {
     nmo_object_id_t under_mouse, next_under_mouse;
 } eng_input_t;
 
+/* An attribute type of the file's Attribute Manager */
+typedef struct eng_attribute_type {
+    bool present;
+    nmo_guid_t parameter_type; /* null for an attribute without a value */
+    int32_t compatible_class_id;
+} eng_attribute_type_t;
+
+/* An attribute an object has at run time, and its parameter's value */
+typedef struct eng_attribute {
+    nmo_object_id_t object;
+    int32_t type;
+    bool has_value;
+    eng_param_t value;
+} eng_attribute_t;
+
 /* A CKTextureFont: only what tells fonts apart, as nothing draws them. */
 typedef struct eng_font {
     char *name;
@@ -264,6 +279,8 @@ struct nmo_engine {
     eng_input_t input;
     ENG_VEC(eng_sound_t) sounds;
     ENG_VEC(eng_font_t) fonts;
+    ENG_VEC(eng_attribute_type_t) attribute_types;
+    ENG_VEC(eng_attribute_t) attributes;
 
     nmo_engine_trace_fn trace;
     void *trace_user_data;
@@ -389,6 +406,10 @@ nmo_status_t eng_register_controllers(nmo_engine_t *engine);
 /* engine_curve.c */
 /* A 2D curve parameter's value (CK2dCurve::Read): a sorted curve, or (0,0)-(1,1) when none is saved. */
 bool eng_curve_value(const nmo_parameter_state_t *state, uint8_t **out_data, uint32_t *out_size);
+
+/* engine_attributes.c */
+nmo_status_t eng_load_attributes(nmo_engine_t *engine);
+void eng_free_attributes(nmo_engine_t *engine);
 
 /* engine_interface.c */
 nmo_status_t eng_register_interface(nmo_engine_t *engine);

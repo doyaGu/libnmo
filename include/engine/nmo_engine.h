@@ -389,6 +389,35 @@ NMO_API bool nmo_engine_is_mouse_button_down(const nmo_engine_t *engine, int32_t
 /** CKFontManager::GetEntityUnderMouse during the current frame. */
 NMO_API nmo_object_id_t nmo_engine_entity_under_mouse(const nmo_engine_t *engine);
 
+/* ---- Attributes ----
+ *
+ * The attributes of behavioral objects, copied from the document when the
+ * engine is made. An attribute type is an index into the file's attribute
+ * types, as an Attribute parameter holds it.
+ */
+
+NMO_API bool nmo_engine_object_has_attribute(const nmo_engine_t *engine,
+                                             nmo_object_id_t object,
+                                             int32_t type);
+/** The value of an attribute's parameter; NMO_ERR_NOT_FOUND without one. */
+NMO_API nmo_status_t nmo_engine_object_attribute_value(const nmo_engine_t *engine,
+                                                       nmo_object_id_t object,
+                                                       int32_t type,
+                                                       const void **out_data,
+                                                       size_t *out_size,
+                                                       nmo_guid_t *out_type);
+/**
+ * CKBeObject::SetAttribute: give the object the attribute, with a zeroed
+ * parameter of the attribute's type when it has one. False when it has the
+ * attribute already, the type is unknown, or its class may not have it.
+ */
+NMO_API bool nmo_engine_object_set_attribute(nmo_engine_t *engine,
+                                             nmo_object_id_t object,
+                                             int32_t type);
+NMO_API bool nmo_engine_object_remove_attribute(nmo_engine_t *engine,
+                                                nmo_object_id_t object,
+                                                int32_t type);
+
 /* ---- Fonts ----
  *
  * The fonts the font manager holds, made by Create Font and Create System
