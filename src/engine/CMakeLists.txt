@@ -20,6 +20,7 @@ set(NMO_ENGINE_SOURCES
     engine_param.c
     engine_run.c
     engine_schedule.c
+    engine_strings.c
 )
 list(TRANSFORM NMO_ENGINE_SOURCES PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/")
 

@@ -394,6 +394,12 @@ bool eng_curve_value(const nmo_parameter_state_t *state, uint8_t **out_data, uin
 nmo_status_t eng_register_interface(nmo_engine_t *engine);
 void eng_fonts_clear(nmo_engine_t *engine);
 
+/* engine_strings.c */
+/* CKParameter::GetStringValue: a new heap string, NULL when the type has no text. */
+char *eng_param_text(nmo_engine_t *engine, const eng_param_t *param);
+/* CKParameter::SetStringValue: the value read from text, written as an output writes it. */
+nmo_status_t eng_param_set_text(nmo_engine_t *engine, eng_param_t *param, const char *text);
+
 /* engine_media.c */
 nmo_status_t eng_register_media(nmo_engine_t *engine);
 /* The sounds move on by the frame time (the sound manager's frame). */

@@ -121,6 +121,20 @@ NMO_API const void *nmo_engine_block_input_data(nmo_engine_block_t *block,
  * 0 when the bytes hold no curve.
  */
 NMO_API float nmo_engine_curve_y(const void *curve, size_t size, float x);
+/**
+ * GetStringValue of the parameter input `pos` reads: its value as text, as
+ * CK2's string function for its type writes it ("%d", "%g", "0:20" angles,
+ * "x,y,z" vectors, enum names, object names...). Copies at most `size` bytes
+ * with the terminator; returns the size the whole text needs, 0 for none.
+ */
+NMO_API size_t nmo_engine_block_input_text(nmo_engine_block_t *block,
+                                           int pos,
+                                           char *buffer,
+                                           size_t size);
+/** SetStringValue of output `pos`: its value read from text, as CK2 reads it. */
+NMO_API nmo_status_t nmo_engine_block_set_output_text(nmo_engine_block_t *block,
+                                                      int pos,
+                                                      const char *text);
 
 NMO_API nmo_status_t nmo_engine_block_get_output_value(const nmo_engine_block_t *block,
                                                        int pos,
