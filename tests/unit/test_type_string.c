@@ -765,6 +765,25 @@ TEST(type_string, angle_roundtrip_through_degrees) {
     teardown();
 }
 
+TEST(type_string, color_from_string_bytes) {
+    setup();
+
+    float value[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    ASSERT_EQ(NMO_OK, test_builtin_from_string(CKPGUID_COLOR, value, "255,51,0,102"));
+    ASSERT_FLOAT_EQ(1.0f, value[0], 0.001f);
+    ASSERT_FLOAT_EQ(0.2f, value[1], 0.001f);
+    ASSERT_FLOAT_EQ(0.0f, value[2], 0.001f);
+    ASSERT_FLOAT_EQ(0.4f, value[3], 0.001f);
+    ASSERT_EQ(NMO_OK, test_builtin_from_string(CKPGUID_COLOR, value, "0,0,255"));
+    ASSERT_FLOAT_EQ(1.0f, value[2], 0.001f);
+    ASSERT_FLOAT_EQ(1.0f, value[3], 0.001f);
+    /* The parenthesized form stays in 0..1 */
+    ASSERT_EQ(NMO_OK, test_builtin_from_string(CKPGUID_COLOR, value, "(0.5, 0.25, 1, 1)"));
+    ASSERT_FLOAT_EQ(0.5f, value[0], 0.001f);
+
+    teardown();
+}
+
 /* ============================================================================
  * Enum Conversion Tests
  * ============================================================================ */
@@ -3185,6 +3204,7 @@ TEST_MAIN_BEGIN()
     // Virtools default text tests
     REGISTER_TEST(type_string, angle_from_string_turns_and_degrees);
     REGISTER_TEST(type_string, angle_roundtrip_through_degrees);
+    REGISTER_TEST(type_string, color_from_string_bytes);
     
     // Enum tests
     REGISTER_TEST(type_string, enum_to_string_by_name);

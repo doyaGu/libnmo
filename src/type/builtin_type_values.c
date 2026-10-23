@@ -946,6 +946,20 @@ nmo_status_t nmo_type_color_from_string(
         nmo_color_from_argb32(argb, (nmo_color_t *)value);
         NMO_RETURN_OK();
     }
+    /* "R,G,B,A" (or "R,G,B", opaque) in bytes, as Virtools writes color defaults */
+    float bytes[4];
+    bool parsed = value && string && nmo_parse_f32_tuple(string, bytes, 4) == NMO_OK;
+    if (!parsed && value && string && nmo_parse_f32_tuple(string, bytes, 3) == NMO_OK) {
+        bytes[3] = 255.0f;
+        parsed = true;
+    }
+    if (parsed) {
+        float *rgba = (float *)value;
+        for (int i = 0; i < 4; i++) {
+            rgba[i] = bytes[i] / 255.0f;
+        }
+        NMO_RETURN_OK();
+    }
     return nmo_float_tuple_from_string(
         value, string, "Color", 4,
         "Invalid arguments for color_from_string");
