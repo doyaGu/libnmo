@@ -720,6 +720,10 @@ static nmo_status_t parse_float_tuple(
     nmo_status_t st = nmo_parse_f32_parenthesized_tuple(
         string, ",;", out, (size_t)count);
     if (st != NMO_OK) {
+        /* Without parentheses, as CK2's vector string functions write ("16,8") */
+        st = nmo_parse_f32_tuple(string, out, (size_t)count);
+    }
+    if (st != NMO_OK) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                          "Invalid %s tuple", kind);
     }

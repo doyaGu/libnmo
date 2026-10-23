@@ -784,6 +784,23 @@ TEST(type_string, color_from_string_bytes) {
     teardown();
 }
 
+TEST(type_string, vectors_from_string_without_parentheses) {
+    setup();
+
+    float vector[3] = {0.0f, 0.0f, 0.0f};
+    ASSERT_EQ(NMO_OK, test_builtin_from_string(CKPGUID_VECTOR, vector, "1.5,-2,3"));
+    ASSERT_FLOAT_EQ(1.5f, vector[0], 0.001f);
+    ASSERT_FLOAT_EQ(-2.0f, vector[1], 0.001f);
+    ASSERT_FLOAT_EQ(3.0f, vector[2], 0.001f);
+    float vector2[2] = {0.0f, 0.0f};
+    ASSERT_EQ(NMO_OK, test_builtin_from_string(CKPGUID_2DVECTOR, vector2, "16,8"));
+    ASSERT_FLOAT_EQ(16.0f, vector2[0], 0.001f);
+    ASSERT_FLOAT_EQ(8.0f, vector2[1], 0.001f);
+    ASSERT_NE(NMO_OK, test_builtin_from_string(CKPGUID_2DVECTOR, vector2, "16"));
+
+    teardown();
+}
+
 /* ============================================================================
  * Enum Conversion Tests
  * ============================================================================ */
@@ -3205,6 +3222,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(type_string, angle_from_string_turns_and_degrees);
     REGISTER_TEST(type_string, angle_roundtrip_through_degrees);
     REGISTER_TEST(type_string, color_from_string_bytes);
+    REGISTER_TEST(type_string, vectors_from_string_without_parentheses);
     
     // Enum tests
     REGISTER_TEST(type_string, enum_to_string_by_name);
