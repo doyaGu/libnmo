@@ -361,31 +361,56 @@ nmo_status_t nmo_engine_array_insert_row(nmo_engine_t *engine, nmo_object_id_t a
     return NMO_OK;
 }
 
-/* The equal functions of CKDataArray's columns, for CKEQUAL. */
-static bool eng_cell_equals(int32_t type, const eng_cell_t *cell, const nmo_engine_cell_t *key)
+/* OpCompare: `cmp` is the sign of a compared with b. */
+static bool eng_op_holds(int32_t op, int cmp)
+{
+    switch (op) {
+    case 1: return cmp == 0;  /* CKEQUAL */
+    case 2: return cmp != 0;  /* CKNOTEQUAL */
+    case 3: return cmp < 0;   /* CKLESSER */
+    case 4: return cmp <= 0;  /* CKLESSEREQUAL */
+    case 5: return cmp > 0;   /* CKGREATER */
+    case 6: return cmp >= 0;  /* CKGREATEREQUAL */
+    default: return false;
+    }
+}
+
+/* The equal functions of CKDataArray's columns (ArrayIntEqual, ...) under `op`. */
+static bool eng_cell_matches(int32_t type, const eng_cell_t *cell, int32_t op,
+                             const nmo_engine_cell_t *key)
 {
     switch (type) {
     case CKARRAYTYPE_FLOAT: {
         float a, b;
         memcpy(&a, &cell->value, sizeof(a));
         memcpy(&b, &key->value, sizeof(b));
-        return a == b;
-    }
-    case CKARRAYTYPE_STRING:
-        if (cell->text == NULL || key->text == NULL) {
-            return cell->text == key->text;
+        if (a != a || b != b) {
+            return op == 2; /* NaN: only "not equal" holds, as with the operators */
         }
-        return strcmp(cell->text, key->text) == 0;
-    case CKARRAYTYPE_PARAMETER:
-        return key->data != NULL && cell->data != NULL && key->size <= cell->size &&
-               memcmp(cell->data, key->data, key->size) == 0;
-    default:
-        return cell->value == key->value;
+        return eng_op_holds(op, (a > b) - (a < b));
+    }
+    case CKARRAYTYPE_STRING: {
+        int cmp = strcmp(cell->text != NULL ? cell->text : "", key->text != NULL ? key->text : "");
+        return eng_op_holds(op, (cmp > 0) - (cmp < 0));
+    }
+    case CKARRAYTYPE_PARAMETER: {
+        size_t size = cell->size < key->size ? cell->size : key->size;
+        if (size == 0 || cell->data == NULL || key->data == NULL) {
+            return false;
+        }
+        int cmp = memcmp(cell->data, key->data, size);
+        return eng_op_holds(op, (cmp > 0) - (cmp < 0));
+    }
+    default: {
+        int32_t a = (int32_t)cell->value, b = (int32_t)key->value;
+        return eng_op_holds(op, (a > b) - (a < b));
+    }
     }
 }
 
-int32_t nmo_engine_array_find_row(const nmo_engine_t *engine, nmo_object_id_t array_id,
-                                  int32_t column, const nmo_engine_cell_t *key, int32_t start)
+int32_t nmo_engine_array_find_row_op(const nmo_engine_t *engine, nmo_object_id_t array_id,
+                                     int32_t column, int32_t op, const nmo_engine_cell_t *key,
+                                     int32_t start)
 {
     const eng_array_t *array = eng_find_array(engine, array_id);
     if (array == NULL || key == NULL || column < 0 || (uint32_t)column >= array->column_count ||
@@ -393,11 +418,52 @@ int32_t nmo_engine_array_find_row(const nmo_engine_t *engine, nmo_object_id_t ar
         return -1;
     }
     for (size_t r = (size_t)start; r < array->row_count; r++) {
-        if (eng_cell_equals(array->columns[column].type, eng_array_cell(array, r, column), key)) {
+        if (eng_cell_matches(array->columns[column].type, eng_array_cell(array, r, column), op,
+                             key)) {
             return (int32_t)r;
         }
     }
     return -1;
+}
+
+int32_t nmo_engine_array_find_row(const nmo_engine_t *engine, nmo_object_id_t array_id,
+                                  int32_t column, const nmo_engine_cell_t *key, int32_t start)
+{
+    return nmo_engine_array_find_row_op(engine, array_id, column, 1 /* CKEQUAL */, key, start);
+}
+
+nmo_status_t nmo_engine_array_remove_row(nmo_engine_t *engine, nmo_object_id_t array_id,
+                                         int32_t row)
+{
+    eng_array_t *array = eng_find_array(engine, array_id);
+    if (array == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    if (row < 0 || (size_t)row >= array->row_count) {
+        return NMO_ERR_OUT_OF_BOUNDS;
+    }
+    for (uint32_t c = 0; c < array->column_count; c++) {
+        eng_cell_clear(eng_array_cell(array, (size_t)row, c));
+    }
+    if (array->column_count > 0) {
+        memmove(eng_array_cell(array, (size_t)row, 0), eng_array_cell(array, (size_t)row + 1u, 0),
+                (array->row_count - (size_t)row - 1u) * array->column_count * sizeof(eng_cell_t));
+    }
+    array->row_count--;
+    return NMO_OK;
+}
+
+nmo_status_t nmo_engine_array_clear(nmo_engine_t *engine, nmo_object_id_t array_id)
+{
+    eng_array_t *array = eng_find_array(engine, array_id);
+    if (array == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    for (size_t c = 0; c < array->row_count * array->column_count; c++) {
+        eng_cell_clear(&array->cells[c]);
+    }
+    array->row_count = 0;
+    return NMO_OK;
 }
 
 /* ============================================================================

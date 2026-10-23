@@ -284,6 +284,24 @@ NMO_API int32_t nmo_engine_array_find_row(const nmo_engine_t *engine,
                                           int32_t column,
                                           const nmo_engine_cell_t *key,
                                           int32_t start);
+/**
+ * The first row from `start` whose cell in `column` compares with `key` as
+ * `op` (a CK_COMPOPERATOR) says, or -1. Strings compare as strcmp() does, a
+ * missing string as ""; parameter values compare byte by byte over the
+ * shorter of the two.
+ */
+NMO_API int32_t nmo_engine_array_find_row_op(const nmo_engine_t *engine,
+                                             nmo_object_id_t array_id,
+                                             int32_t column,
+                                             int32_t op,
+                                             const nmo_engine_cell_t *key,
+                                             int32_t start);
+/** Remove row `row` (CKDataArray::RemoveRow). */
+NMO_API nmo_status_t nmo_engine_array_remove_row(nmo_engine_t *engine,
+                                                 nmo_object_id_t array_id,
+                                                 int32_t row);
+/** Remove every row (CKDataArray::Clear). */
+NMO_API nmo_status_t nmo_engine_array_clear(nmo_engine_t *engine, nmo_object_id_t array_id);
 
 /** Objects in group `group_id`; -1 when it is not a group. */
 NMO_API int32_t nmo_engine_group_count(const nmo_engine_t *engine, nmo_object_id_t group_id);
