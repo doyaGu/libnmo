@@ -363,6 +363,16 @@ NMO_API bool nmo_engine_is_mouse_button_down(const nmo_engine_t *engine, int32_t
 /** CKFontManager::GetEntityUnderMouse during the current frame. */
 NMO_API nmo_object_id_t nmo_engine_entity_under_mouse(const nmo_engine_t *engine);
 
+/* ---- Fonts ----
+ *
+ * The fonts the font manager holds, made by Create Font and Create System
+ * Font. A Font parameter holds a font's position from 1; 0 is no font.
+ */
+
+NMO_API int32_t nmo_engine_font_count(const nmo_engine_t *engine);
+/** The name of font `font`; NULL when there is no such font. */
+NMO_API const char *nmo_engine_font_name(const nmo_engine_t *engine, int32_t font);
+
 /* ---- Sounds ---- */
 
 /**

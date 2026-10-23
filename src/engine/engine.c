@@ -185,6 +185,9 @@ nmo_status_t nmo_engine_create(nmo_workspace_t *workspace,
     if (status == NMO_OK && !engine->options.no_builtin_blocks) {
         status = eng_register_media(engine);
     }
+    if (status == NMO_OK && !engine->options.no_builtin_blocks) {
+        status = eng_register_interface(engine);
+    }
     if (status != NMO_OK) {
         nmo_engine_destroy(engine);
         return status;
@@ -209,6 +212,8 @@ void nmo_engine_destroy(nmo_engine_t *engine)
     }
     free(engine->nodes.data);
     free(engine->sounds.data);
+    eng_fonts_clear(engine);
+    free(engine->fonts.data);
     free(engine->ios.data);
     free(engine->links.data);
     free(engine->params.data);

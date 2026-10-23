@@ -12,6 +12,7 @@ set(NMO_ENGINE_SOURCES
     engine_curve.c
     engine_effects.c
     engine_input.c
+    engine_interface.c
     engine_logics.c
     engine_media.c
     engine_message.c
