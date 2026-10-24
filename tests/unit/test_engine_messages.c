@@ -8,6 +8,9 @@
 #define GUID_SWITCH_ON_MESSAGE NMO_GUID(0x1bb23f1d, 0x17ff14b9)
 #define GUID_EXECUTE_SCRIPT NMO_GUID(0x706c5a40, 0x5bb31a0b)
 #define GUID_DEACTIVATE_SCRIPT NMO_GUID(0x14367c05, 0x635b24f9)
+#define GUID_ACTIVATE_OBJECT NMO_GUID(0x5f003fba, 0x5e574f60)
+#define GUID_DEACTIVATE_OBJECT NMO_GUID(0x160f4b7d, 0x67de224e)
+#define GUID_CALL_SCRIPT NMO_GUID(0x1a7d5b17, 0x70630fed)
 
 /* The message types the fixture document declares; a type is its position. */
 static const char *const message_names[] = {"OnClick", "Message A", "Message B"};
@@ -257,6 +260,143 @@ TEST(engine_messages, deactivate_script_stops_another_script)
     fixture_end(&f);
 }
 
+/* A script on another object; its blocks go in with fixture_block_in(). */
+static nmo_object_id_t add_script_on(engine_fixture_t *f, nmo_object_id_t object, const char *name,
+                                     nmo_object_id_t *out_input)
+{
+    nmo_object_id_t owner = f->owner_id;
+    f->owner_id = object;
+    nmo_object_id_t script = fixture_add_script(f, name, out_input);
+    f->owner_id = owner;
+    return script;
+}
+
+/* A script whose Switch On Message stays active, so it runs every frame. */
+static void make_looper(engine_fixture_t *f, nmo_object_id_t script, nmo_object_id_t input)
+{
+    nmo_object_id_t sw = fixture_block_in(f, script, GUID_SWITCH_ON_MESSAGE, "Switch");
+    fixture_link_in(f, script, input, BLOCK_IN(f, sw, 0), 0);
+}
+
+TEST(engine_messages, deactivated_object_skips_its_scripts)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    fixture_install_messages(&f, message_names, 3);
+    nmo_object_id_t other = fixture_create(&f, NMO_CID_3DENTITY, "Other");
+    nmo_object_id_t main_in = 0, loop_in = 0;
+    f.script_id = fixture_add_script(&f, "Main", &main_in);
+    f.script_in = main_in;
+    nmo_object_id_t looper = add_script_on(&f, other, "Looper", &loop_in);
+    ASSERT_TRUE(f.script_id != 0 && looper != 0);
+    fixture_begin_edit(&f);
+    make_looper(&f, looper, loop_in);
+    nmo_object_id_t off = fixture_block(&f, GUID_DEACTIVATE_OBJECT, "Off");
+    nmo_object_id_t on = fixture_block(&f, GUID_ACTIVATE_OBJECT, "On");
+    ASSERT_TRUE(off != 0 && on != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, off, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, off, 0), BLOCK_IN(&f, on, 0), 3);
+    fixture_input_int(&f, BLOCK_PIN(&f, off, 0), (int32_t)other);
+    fixture_input_int(&f, BLOCK_PIN(&f, on, 0), (int32_t)other);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    /* Off in frame 0 takes effect from frame 1; On in frame 3 from frame 4 */
+    const uint64_t loops[5] = {1u, 1u, 1u, 1u, 2u};
+    for (int frame = 0; frame < 5; frame++) {
+        ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+        ASSERT_EQ(loops[frame], runs(&f, looper));
+        ASSERT_EQ(frame < 3 ? false : true, nmo_engine_object_is_active(f.engine, other));
+    }
+    /* The script kept being active through it */
+    ASSERT_TRUE(nmo_engine_behavior_is_active(f.engine, looper));
+    fixture_end(&f);
+}
+
+TEST(engine_messages, activate_object_can_start_all_its_scripts)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    fixture_install_messages(&f, message_names, 3);
+    nmo_object_id_t other = fixture_create(&f, NMO_CID_3DENTITY, "Other");
+    nmo_object_id_t main_in = 0, loop_in = 0;
+    f.script_id = fixture_add_script(&f, "Main", &main_in);
+    f.script_in = main_in;
+    nmo_object_id_t looper = add_script_on(&f, other, "Looper", &loop_in);
+    ASSERT_TRUE(f.script_id != 0 && looper != 0);
+    fixture_begin_edit(&f);
+    make_looper(&f, looper, loop_in);
+    nmo_object_id_t on = fixture_block(&f, GUID_ACTIVATE_OBJECT, "On");
+    ASSERT_TRUE(on != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, on, 0), 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, on, 0), (int32_t)other);
+    fixture_input_int(&f, BLOCK_PIN(&f, on, 2), 1); /* Activate All Scripts */
+    fixture_input_int(&f, BLOCK_PIN(&f, on, 3), 1); /* Reset Scripts */
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_NONE));
+    ASSERT_EQ(NMO_OK, nmo_engine_activate_script(f.engine, f.script_id, true, true));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+    ASSERT_EQ(0u, runs(&f, looper));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+    ASSERT_EQ(1u, runs(&f, looper));
+    fixture_end(&f);
+}
+
+TEST(engine_messages, call_script_runs_the_script_now)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    fixture_install_messages(&f, message_names, 3);
+    nmo_object_id_t main_in = 0, wait_in = 0, once_in = 0;
+    f.script_id = fixture_add_script(&f, "Main", &main_in);
+    f.script_in = main_in;
+    nmo_object_id_t waited = fixture_add_script(&f, "Waited", &wait_in);
+    nmo_object_id_t once = fixture_add_script(&f, "Once", &once_in);
+    ASSERT_TRUE(f.script_id != 0 && waited != 0 && once != 0);
+    fixture_begin_edit(&f);
+    /* Both scripts wait 50 ms with a Delayer, then reach "Done" */
+    nmo_object_id_t done[2];
+    nmo_object_id_t scripts[2] = {waited, once}, inputs[2] = {wait_in, once_in};
+    for (int i = 0; i < 2; i++) {
+        nmo_object_id_t delayer = fixture_block_in(&f, scripts[i], GUID_DELAYER, "Delayer");
+        done[i] = fixture_block_in(&f, scripts[i], GUID_NOP, "Done");
+        ASSERT_TRUE(delayer != 0 && done[i] != 0);
+        fixture_link_in(&f, scripts[i], inputs[i], BLOCK_IN(&f, delayer, 0), 0);
+        fixture_link_in(&f, scripts[i], BLOCK_OUT(&f, delayer, 0), BLOCK_IN(&f, done[i], 0), 0);
+        const float wait = 50.0f;
+        fixture_input_value(&f, BLOCK_PIN(&f, delayer, 0), &wait, sizeof(wait));
+    }
+    nmo_object_id_t call_waiting = fixture_block(&f, GUID_CALL_SCRIPT, "Call Waiting");
+    nmo_object_id_t call_once = fixture_block(&f, GUID_CALL_SCRIPT, "Call Once");
+    nmo_object_id_t after = fixture_block(&f, GUID_NOP, "After");
+    ASSERT_TRUE(call_waiting != 0 && call_once != 0 && after != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, call_waiting, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, call_waiting, 0), BLOCK_IN(&f, call_once, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, call_once, 0), BLOCK_IN(&f, after, 0), 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, call_waiting, 0), 1); /* Reset */
+    fixture_input_int(&f, BLOCK_PIN(&f, call_waiting, 1), (int32_t)waited);
+    fixture_input_int(&f, BLOCK_PIN(&f, call_waiting, 2), 1); /* Wait For Completion */
+    fixture_input_int(&f, BLOCK_PIN(&f, call_once, 0), 1);
+    fixture_input_int(&f, BLOCK_PIN(&f, call_once, 1), (int32_t)once);
+    fixture_input_int(&f, BLOCK_PIN(&f, call_once, 2), 0);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_NONE));
+    ASSERT_EQ(NMO_OK, nmo_engine_activate_script(f.engine, f.script_id, true, true));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 25.0f));
+    /* Waiting: run until done within the frame, each run a frame's time */
+    ASSERT_EQ(1u, runs(&f, done[0]));
+    ASSERT_TRUE(runs(&f, waited) > 1u);
+    ASSERT_FALSE(nmo_engine_behavior_is_active(f.engine, waited));
+    /* Not waiting: one run, then the script is stopped */
+    ASSERT_EQ(1u, runs(&f, once));
+    ASSERT_EQ(0u, runs(&f, done[1]));
+    ASSERT_FALSE(nmo_engine_behavior_is_active(f.engine, once));
+    ASSERT_EQ(1u, runs(&f, after));
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_messages, sent_message_ends_the_wait_in_the_next_frame);
 REGISTER_TEST(engine_messages, waiting_keeps_the_script_active_until_the_message_comes);
@@ -264,4 +404,7 @@ REGISTER_TEST(engine_messages, broadcast_reaches_waiters_of_the_class);
 REGISTER_TEST(engine_messages, switch_on_message_sees_last_frame_messages);
 REGISTER_TEST(engine_messages, execute_script_waits_for_the_script_to_finish);
 REGISTER_TEST(engine_messages, deactivate_script_stops_another_script);
+REGISTER_TEST(engine_messages, deactivated_object_skips_its_scripts);
+REGISTER_TEST(engine_messages, activate_object_can_start_all_its_scripts);
+REGISTER_TEST(engine_messages, call_script_runs_the_script_now);
 TEST_MAIN_END()
