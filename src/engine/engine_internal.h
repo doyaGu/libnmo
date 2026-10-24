@@ -362,6 +362,8 @@ void eng_behavior_activate(nmo_engine_t *engine, int32_t node, bool active, bool
 void eng_behavior_reset(nmo_engine_t *engine, int32_t node);
 nmo_status_t eng_manager_execute(nmo_engine_t *engine);
 void eng_object_next_frame(nmo_engine_t *engine, int32_t object, int32_t delta);
+/* CKBehavior::Execute, outside the behavior manager (Call Script) */
+int eng_execute_behavior(nmo_engine_t *engine, int32_t node);
 void eng_sort_listed(nmo_engine_t *engine);
 int eng_block_call(nmo_engine_t *engine, int32_t node, nmo_engine_block_fn fn);
 int eng_block_callback(nmo_engine_t *engine, int32_t node, uint32_t message);

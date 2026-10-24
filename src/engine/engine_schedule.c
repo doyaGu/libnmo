@@ -342,6 +342,11 @@ static int eng_execute(nmo_engine_t *engine, int32_t index)
     return result;
 }
 
+int eng_execute_behavior(nmo_engine_t *engine, int32_t node)
+{
+    return eng_execute(engine, node);
+}
+
 /* ============================================================================
  * Behavior manager
  * ============================================================================ */
