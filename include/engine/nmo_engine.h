@@ -173,6 +173,18 @@ NMO_API nmo_status_t nmo_engine_activate_script(nmo_engine_t *engine,
                                                 bool active,
                                                 bool reset);
 
+/**
+ * Activate or deactivate a behavioral object in the scene, as
+ * CKScene::Activate and DeActivate do for one: an inactive object's scripts
+ * do not run (they keep whether they are active), and activating it brings
+ * them back from the next frame on. Objects start active unless their
+ * activity flags say otherwise.
+ */
+NMO_API nmo_status_t nmo_engine_activate_object(nmo_engine_t *engine,
+                                                nmo_object_id_t object_id,
+                                                bool active);
+NMO_API bool nmo_engine_object_is_active(const nmo_engine_t *engine, nmo_object_id_t object_id);
+
 /** Run one frame of `delta_ms` milliseconds. */
 NMO_API nmo_status_t nmo_engine_step(nmo_engine_t *engine, float delta_ms);
 

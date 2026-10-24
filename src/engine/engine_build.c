@@ -485,6 +485,7 @@ static nmo_status_t eng_build_objects(eng_builder_t *b)
         }
         object->id = list[i].owner_id;
         object->order = (uint32_t)(engine->objects.count - 1u);
+        object->active = true;
         nmo_object_t *owner = nmo_object_repository_find_by_id(b->repo, list[i].owner_id);
         const nmo_beobject_state_t *be =
             owner != NULL ? (const nmo_beobject_state_t *)

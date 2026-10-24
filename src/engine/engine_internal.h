@@ -112,6 +112,7 @@ typedef struct eng_object {
     uint32_t order;                    /* position in the document, for a stable sort */
     uint32_t first_script, script_count; /* nodes, in engine->indexes */
     bool listed;                       /* in the behavior manager's list */
+    bool active;                       /* active in the scene (CK_SCENEOBJECT_ACTIVE) */
     int32_t next_frame;                /* > 0 add, < 0 remove at the next frame */
     int32_t waiting;                   /* CKBeObject::SetAsWaitingForMessages count */
 } eng_object_t;
