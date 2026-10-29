@@ -171,8 +171,11 @@ nmo_status_t nmo_engine_start(nmo_engine_t *engine, nmo_engine_start_mode_t mode
      */
     eng_scene_entry_t *scene = NULL;
     size_t scene_count = 0;
-    bool has_scene = mode == NMO_ENGINE_START_SCENE_DEFAULT &&
-                     eng_level_scene(engine, &scene, &scene_count);
+    engine->has_level_scene = eng_level_scene(engine, &scene, &scene_count);
+    for (size_t i = 0; i < scene_count; i++) {
+        eng_add_to_level_scene(engine, scene[i].id);
+    }
+    bool has_scene = mode == NMO_ENGINE_START_SCENE_DEFAULT && engine->has_level_scene;
     for (size_t o = 0; o < engine->objects.count; o++) {
         eng_object_t *object = &engine->objects.data[o];
         object->active = mode != NMO_ENGINE_START_SCENE_DEFAULT ||
@@ -316,12 +319,26 @@ static void eng_add_to_scene(nmo_engine_t *engine, nmo_object_id_t id, bool scri
     }
 }
 
+bool eng_in_scene(const nmo_engine_t *engine, nmo_object_id_t id)
+{
+    return !engine->has_level_scene || eng_map_get(&engine->scene_objects, id) >= 0;
+}
+
+/* CKLevel::AddObject: the object is in the level scene from now on. */
+void eng_add_to_level_scene(nmo_engine_t *engine, nmo_object_id_t id)
+{
+    if (id != 0 && eng_map_get(&engine->scene_objects, id) < 0) {
+        eng_map_put(&engine->scene_objects, id, 1);
+    }
+}
+
 void eng_add_module_to_level(nmo_engine_t *engine, int32_t module)
 {
     /* CKBeObject::AddToScene: the object, then its scripts */
     int32_t count = nmo_engine_loaded_object_count(engine, module);
     for (int32_t i = 0; i < count; i++) {
         nmo_object_id_t id = nmo_engine_loaded_object(engine, module, i);
+        eng_add_to_level_scene(engine, id);
         int32_t index = eng_map_get(&engine->object_map, id);
         if (index < 0) {
             continue; /* no script: nothing for the behavior manager */

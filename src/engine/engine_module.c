@@ -291,6 +291,7 @@ nmo_object_id_t eng_create_object(nmo_engine_t *engine, uint32_t class_id, const
     if (class_id == NMO_CID_DATAARRAY && eng_add_array(engine, id) != NMO_OK) {
         return 0;
     }
+    eng_add_to_level_scene(engine, id);
     return id;
 }
 

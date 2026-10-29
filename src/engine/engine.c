@@ -222,6 +222,7 @@ void nmo_engine_destroy(nmo_engine_t *engine)
     free(engine->nodes.data);
     free(engine->sounds.data);
     free(engine->textures.data);
+    free(engine->op_lookups.data);
     eng_fonts_clear(engine);
     free(engine->fonts.data);
     free(engine->ios.data);
@@ -242,6 +243,7 @@ void nmo_engine_destroy(nmo_engine_t *engine)
     free(engine->param_map.slots);
     free(engine->operation_map.slots);
     free(engine->object_map.slots);
+    free(engine->scene_objects.slots);
     eng_free_modules(engine);
     free(engine);
 }

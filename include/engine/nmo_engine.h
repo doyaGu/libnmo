@@ -390,6 +390,28 @@ NMO_API int32_t nmo_engine_array_find_row_op(const nmo_engine_t *engine,
                                              int32_t op,
                                              const nmo_engine_cell_t *key,
                                              int32_t start);
+/** CKDataArray::GetCount: the rows whose cell compares true, as find_row_op compares. */
+NMO_API int32_t nmo_engine_array_count(const nmo_engine_t *engine,
+                                       nmo_object_id_t array_id,
+                                       int32_t column,
+                                       int32_t op,
+                                       const nmo_engine_cell_t *key);
+/** CKDataArray::TestRow: whether the row's cell compares true. */
+NMO_API bool nmo_engine_array_test_row(const nmo_engine_t *engine,
+                                       nmo_object_id_t array_id,
+                                       int32_t row,
+                                       int32_t column,
+                                       int32_t op,
+                                       const nmo_engine_cell_t *key);
+/**
+ * CKDataArray::Sort: the rows by the column, ascending or not. An array
+ * already sorted ascending on that column, and not changed since, is left
+ * as it is, as CK leaves it. Equal cells keep their order.
+ */
+NMO_API void nmo_engine_array_sort(nmo_engine_t *engine,
+                                   nmo_object_id_t array_id,
+                                   int32_t column,
+                                   bool ascending);
 /**
  * The row whose cell in `column` is the highest (CKDataArray::GetHighest,
  * the first of equal ones), or -1 for an empty array.

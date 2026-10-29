@@ -8,6 +8,7 @@
 #define GUID_HAS_ATTRIBUTE NMO_GUID(0x25b54079, 0x6ff90545)
 #define GUID_SET_ATTRIBUTE NMO_GUID(0x373040f2, 0x05e01b34)
 #define GUID_REMOVE_ATTRIBUTE NMO_GUID(0x6b6340c4, 0x61e94a41)
+#define GUID_OBJECTS_WITH_ATTRIBUTE NMO_GUID(0x6bc1494c, 0x0c816ad3)
 
 /* An attribute type of the file, made in the edit: a float for objects of `class_id` */
 static uint32_t attribute_type(engine_fixture_t *f, const char *name, uint32_t class_id)
@@ -143,7 +144,50 @@ TEST(engine_attributes, set_attribute_follows_the_attribute_type)
     fixture_end(&f);
 }
 
+TEST(engine_attributes, objects_with_attribute_iterator_walks_the_holders)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t other = fixture_create(&f, NMO_CID_3DENTITY, "Other");
+    fixture_create(&f, NMO_CID_3DENTITY, "Without");
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    uint32_t health = attribute_type(&f, "Health", NMO_CID_BEOBJECT);
+    ASSERT_TRUE(health != UINT32_MAX);
+    ASSERT_TRUE(save_attribute(&f, f.owner_id, health, 1.0f));
+    ASSERT_TRUE(save_attribute(&f, other, health, 2.0f));
+    nmo_object_id_t iterate = fixture_block(&f, GUID_OBJECTS_WITH_ATTRIBUTE, "Iterate");
+    nmo_object_id_t each = fixture_block(&f, GUID_NOP, "Each");
+    nmo_object_id_t done = fixture_block(&f, GUID_NOP, "Done");
+    ASSERT_TRUE(iterate != 0 && each != 0 && done != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, iterate, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, iterate, 1), BLOCK_IN(&f, each, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, each, 0), BLOCK_IN(&f, iterate, 1), 0);
+    fixture_link(&f, BLOCK_OUT(&f, iterate, 0), BLOCK_IN(&f, done, 0), 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, iterate, 0), (int32_t)health);
+    /* The value output takes the attribute's type, as its callback makes it */
+    nmo_parameter_state_t *value_out =
+        (nmo_parameter_state_t *)fixture_state(&f, BLOCK_POUT(&f, iterate, 1));
+    ASSERT_NOT_NULL(value_out);
+    value_out->type_guid = CKPGUID_FLOAT;
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(2u, runs(&f, each));
+    ASSERT_EQ(1u, runs(&f, done));
+    /* The last holder and its value */
+    uint32_t object = 0;
+    float value = 0.0f;
+    read_value(&f, BLOCK_POUT(&f, iterate, 0), &object, sizeof(object));
+    read_value(&f, BLOCK_POUT(&f, iterate, 1), &value, sizeof(value));
+    ASSERT_EQ(other, object);
+    ASSERT_FLOAT_EQ(2.0f, value, 0.0001f);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_attributes, blocks_test_set_and_remove_attributes);
 REGISTER_TEST(engine_attributes, set_attribute_follows_the_attribute_type);
+REGISTER_TEST(engine_attributes, objects_with_attribute_iterator_walks_the_holders);
 TEST_MAIN_END()

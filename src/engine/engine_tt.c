@@ -49,6 +49,12 @@ static void set_out(blk_t *b, int pos, const void *value, size_t size)
     nmo_engine_block_set_output_value(b, pos, value, size);
 }
 
+static eng_param_t *block_output(blk_t *b, int pos)
+{
+    const eng_node_t *node = &b->engine->nodes.data[b->node];
+    return eng_node_param(b->engine, node->first_pout, node->pout_count, pos);
+}
+
 /* ============================================================================
  * TT Database Manager
  * ============================================================================ */
@@ -731,6 +737,92 @@ static int bb_push_button2(blk_t *b)
     return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
 }
 
+/*
+ * TT_Timer: the TT Time Manager's time, which every running timer advances
+ * by the frame time (On/Reset and Off restart it, Pause and Play stop and
+ * resume it), in Elapsed Time.
+ */
+static int bb_tt_timer(blk_t *b)
+{
+    nmo_engine_t *engine = nmo_engine_block_engine(b);
+    if (IN_ACTIVE(b, 0)) {
+        engine->tt_timing = true;
+        engine->tt_time = 0.0f;
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+    }
+    if (IN_ACTIVE(b, 1)) {
+        engine->tt_timing = false;
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+    }
+    if (IN_ACTIVE(b, 2)) {
+        engine->tt_timing = true;
+        IN_OFF(b, 2);
+        OUT_ON(b, 2);
+        return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+    }
+    if (IN_ACTIVE(b, 3)) {
+        engine->tt_timing = true;
+        engine->tt_time = 0.0f;
+        IN_OFF(b, 3);
+        OUT_ON(b, 3);
+        return NMO_ENGINE_BR_OK;
+    }
+    float delta = nmo_engine_block_delta_time(b);
+    float elapsed = engine->tt_time + delta;
+    if (engine->tt_timing) {
+        engine->tt_time += delta;
+    }
+    set_out(b, 0, &elapsed, sizeof(elapsed));
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+/*
+ * TT_SplitString: the parts of Text between Delimiters (" " when none) into
+ * the outputs after Elements Found, each as its output's type reads text.
+ */
+static int bb_split_string(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    const char *text = input_string(b, 0);
+    if (text == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    const char *delimiter = input_string(b, 1);
+    if (delimiter == NULL || delimiter[0] == '\0') {
+        delimiter = " ";
+    }
+    size_t delimiter_length = strlen(delimiter);
+    int outputs = nmo_engine_block_output_parameter_count(b);
+    int32_t elements = 0;
+    const char *rest = text;
+    for (const char *p = strstr(rest, delimiter); p != NULL; p = strstr(p + delimiter_length, delimiter)) {
+        if (p != rest) {
+            if (++elements >= outputs) {
+                break;
+            }
+            size_t length = (size_t)(p - rest);
+            char *token = (char *)malloc(length + 1u);
+            if (token == NULL) {
+                break;
+            }
+            memcpy(token, rest, length);
+            token[length] = '\0';
+            eng_param_set_text(b->engine, block_output(b, elements), token);
+            free(token);
+        }
+        rest = p + delimiter_length;
+    }
+    if (rest[0] != '\0' && ++elements < outputs) {
+        eng_param_set_text(b->engine, block_output(b, elements), rest);
+    }
+    set_out(b, 0, &elements, sizeof(elements));
+    return NMO_ENGINE_BR_OK;
+}
+
 /* Time Settings: the time manager's rates and limits (an effect on the scene). */
 static int bb_time_settings(blk_t *b)
 {
@@ -754,6 +846,8 @@ static const nmo_engine_block_desc_t eng_tt_blocks[] = {
     {NMO_GUID(0x460044b5, 0x6e927b66), "TT_ReadRegistry", bb_read_registry, NULL, NULL},
     {NMO_GUID(0x38b84d97, 0x13932f28), "TT Change ScreenMode", bb_change_screen_mode, NULL, NULL},
     {NMO_GUID(0x060a0f8c, 0x09203b5f), "Time Settings", bb_time_settings, NULL, NULL},
+    {NMO_GUID(0x6ac67901, 0x7d2a6059), "TT_Timer", bb_tt_timer, NULL, NULL},
+    {NMO_GUID(0x5ae74e2f, 0x799c49b5), "TT_SplitString", bb_split_string, NULL, NULL},
     {NMO_GUID(0x36691920, 0x3b261630), "TT Sky", bb_sky, NULL, NULL},
     {NMO_GUID(0x14d325d1, 0x6748654e), "TT PushButton2", bb_push_button2, NULL, NULL},
 };
@@ -761,6 +855,7 @@ static const nmo_engine_block_desc_t eng_tt_blocks[] = {
 nmo_status_t eng_register_tt(nmo_engine_t *engine)
 {
     engine->database_crypted = true;
+    engine->tt_timing = true;
     for (size_t i = 0; i < sizeof(eng_tt_blocks) / sizeof(eng_tt_blocks[0]); i++) {
         nmo_status_t status = nmo_engine_register_block(engine, &eng_tt_blocks[i]);
         if (status != NMO_OK) {

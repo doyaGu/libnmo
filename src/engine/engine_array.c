@@ -145,6 +145,8 @@ static nmo_status_t eng_load_array(nmo_engine_t *engine, const eng_module_t *mod
     }
     array->id = id;
     array->key_column = state->key_column;
+    array->sorted = state->order != 0;
+    array->sort_column = (int32_t)state->column_index;
     array->column_count = state->column_count;
     if (array->column_count == 0) {
         return NMO_OK;
@@ -310,6 +312,9 @@ nmo_status_t nmo_engine_array_set_cell(nmo_engine_t *engine, nmo_object_id_t arr
     if (cell == NULL) {
         return NMO_ERR_NOT_FOUND;
     }
+    if (array->sorted && array->sort_column == column) {
+        eng_find_array(engine, array_id)->sorted = false; /* SetElementValue */
+    }
     switch (array->columns[column].type) {
     case CKARRAYTYPE_STRING: {
         char *text = eng_strdup(value->text);
@@ -349,6 +354,7 @@ nmo_status_t nmo_engine_array_insert_row(nmo_engine_t *engine, nmo_object_id_t a
     if (array == NULL) {
         return NMO_ERR_NOT_FOUND;
     }
+    array->sorted = false; /* InsertRow, AddRow */
     if (row < -1 || (row >= 0 && (size_t)row > array->row_count)) {
         return NMO_ERR_OUT_OF_BOUNDS;
     }
@@ -443,6 +449,30 @@ int32_t nmo_engine_array_find_row_op(const nmo_engine_t *engine, nmo_object_id_t
     return -1;
 }
 
+int32_t nmo_engine_array_count(const nmo_engine_t *engine, nmo_object_id_t array_id,
+                               int32_t column, int32_t op, const nmo_engine_cell_t *key)
+{
+    const eng_array_t *array = eng_find_array(engine, array_id);
+    if (array == NULL || key == NULL || column < 0 || (uint32_t)column >= array->column_count) {
+        return 0;
+    }
+    int32_t count = 0;
+    for (size_t r = 0; r < array->row_count; r++) {
+        count += eng_cell_matches(array->columns[column].type, eng_array_cell(array, r, column), op,
+                                  key);
+    }
+    return count;
+}
+
+bool nmo_engine_array_test_row(const nmo_engine_t *engine, nmo_object_id_t array_id, int32_t row,
+                               int32_t column, int32_t op, const nmo_engine_cell_t *key)
+{
+    const eng_array_t *array = NULL;
+    const eng_cell_t *cell = eng_lookup_cell(engine, array_id, row, column, &array);
+    return cell != NULL && key != NULL &&
+           eng_cell_matches(array->columns[column].type, cell, op, key);
+}
+
 /* The sort functions of CKDataArray's columns (ArrayIntComp, ...), ascending. */
 static int eng_cell_compare(int32_t type, const eng_cell_t *a, const eng_cell_t *b)
 {
@@ -480,6 +510,9 @@ int32_t nmo_engine_array_highest_row(const nmo_engine_t *engine, nmo_object_id_t
         array->row_count == 0) {
         return -1;
     }
+    if (array->sorted && array->sort_column == column) {
+        return (int32_t)array->row_count - 1; /* GetHighest trusts the sort */
+    }
     int32_t type = array->columns[column].type;
     size_t highest = 0;
     for (size_t r = 1; r < array->row_count; r++) {
@@ -489,6 +522,40 @@ int32_t nmo_engine_array_highest_row(const nmo_engine_t *engine, nmo_object_id_t
         }
     }
     return (int32_t)highest;
+}
+
+void nmo_engine_array_sort(nmo_engine_t *engine, nmo_object_id_t array_id, int32_t column,
+                           bool ascending)
+{
+    eng_array_t *array = eng_find_array(engine, array_id);
+    if (array == NULL || column < 0 || (uint32_t)column >= array->column_count ||
+        (array->sorted && array->sort_column == column && ascending)) {
+        return;
+    }
+    /* Insertion sort of whole rows: stable, where CK's qsort leaves equal rows in any order */
+    int32_t type = array->columns[column].type;
+    size_t width = array->column_count;
+    eng_cell_t *moving = width > 0 ? (eng_cell_t *)malloc(width * sizeof(eng_cell_t)) : NULL;
+    if (moving == NULL) {
+        return;
+    }
+    for (size_t r = 1; r < array->row_count; r++) {
+        memcpy(moving, eng_array_cell(array, r, 0), width * sizeof(eng_cell_t));
+        size_t at = r;
+        while (at > 0) {
+            int cmp = eng_cell_compare(type, &moving[column], eng_array_cell(array, at - 1u, column));
+            if ((ascending ? cmp : -cmp) >= 0) {
+                break;
+            }
+            memcpy(eng_array_cell(array, at, 0), eng_array_cell(array, at - 1u, 0),
+                   width * sizeof(eng_cell_t));
+            at--;
+        }
+        memcpy(eng_array_cell(array, at, 0), moving, width * sizeof(eng_cell_t));
+    }
+    free(moving);
+    array->sorted = ascending;
+    array->sort_column = column;
 }
 
 int32_t nmo_engine_array_find_row(const nmo_engine_t *engine, nmo_object_id_t array_id,
@@ -664,6 +731,11 @@ nmo_status_t nmo_engine_array_remove_column(nmo_engine_t *engine, nmo_object_id_
     }
     if (column < 0 || (uint32_t)column >= array->column_count) {
         return NMO_ERR_OUT_OF_BOUNDS;
+    }
+    if (array->sorted && array->sort_column == column) {
+        array->sorted = false;
+    } else if (array->sorted && array->sort_column > column) {
+        array->sort_column--;
     }
     uint32_t count = array->column_count - 1u;
     eng_column_t *columns = count > 0 ? (eng_column_t *)calloc(count, sizeof(eng_column_t)) : NULL;

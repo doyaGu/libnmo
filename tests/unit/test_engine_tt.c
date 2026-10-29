@@ -11,6 +11,9 @@
 #define GUID_READ_REGISTRY NMO_GUID(0x460044b5, 0x6e927b66)
 #define GUID_LIST_DRIVER NMO_GUID(0x62d00456, 0x30eb4245)
 #define GUID_LIST_SCREEN_MODES NMO_GUID(0x4e7a0194, 0x040328fd)
+#define GUID_TT_TIMER NMO_GUID(0x6ac67901, 0x7d2a6059)
+#define GUID_SPLIT_STRING NMO_GUID(0x5ae74e2f, 0x799c49b5)
+#define GUID_LOAD_STRING NMO_GUID(0x391555d6, 0x42f2500e)
 
 /* The files the engine loads, from the scratch directory */
 static const char *resolve_scratch(void *user_data, const char *name)
@@ -217,8 +220,60 @@ TEST(engine_tt, drivers_and_screen_modes_fill_their_arrays)
     fixture_end(&f);
 }
 
+TEST(engine_tt, timer_and_strings)
+{
+    FILE *text = fopen(NMO_TEST_SCRATCH_FILE("text.txt"), "wb");
+    ASSERT_NOT_NULL(text);
+    fputs("one\r\ntwo", text);
+    fclose(text);
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t timer = fixture_block(&f, GUID_TT_TIMER, "Timer");
+    nmo_object_id_t split = fixture_block(&f, GUID_SPLIT_STRING, "Split");
+    nmo_object_id_t load = fixture_block(&f, GUID_LOAD_STRING, "Load");
+    ASSERT_TRUE(timer != 0 && split != 0 && load != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, timer, 0), 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, split, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, split, 0), BLOCK_IN(&f, load, 0), 0);
+    input_text(&f, BLOCK_PIN(&f, split, 0), "a,b,,c");
+    input_text(&f, BLOCK_PIN(&f, split, 1), ",");
+    input_text(&f, BLOCK_PIN(&f, load, 0), "text.txt");
+    nmo_object_id_t parts[3];
+    for (int i = 0; i < 3; i++) {
+        ASSERT_EQ(NMO_OK, nmo_script_edit_add_parameter(f.tx, split, NMO_SCRIPT_EDIT_PARAM_OUT,
+                                                        CKPGUID_STRING, "Part", &parts[i]));
+    }
+    fixture_commit(&f, NULL);
+    nmo_engine_set_file_resolver(f.engine, resolve_scratch, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    for (int frame = 0; frame < 3; frame++) {
+        ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    }
+    /* The time manager's time with this frame's, each frame */
+    float elapsed = 0.0f;
+    read_value(&f, BLOCK_POUT(&f, timer, 0), &elapsed, sizeof(elapsed));
+    ASSERT_FLOAT_EQ(60.0f, elapsed, 0.001f);
+    /* Empty parts are skipped */
+    int32_t found = 0;
+    read_value(&f, BLOCK_POUT(&f, split, 0), &found, sizeof(found));
+    ASSERT_EQ(3, found);
+    const char *expected[3] = {"a", "b", "c"};
+    for (int i = 0; i < 3; i++) {
+        const void *data = NULL;
+        ASSERT_EQ(NMO_OK, nmo_engine_param_value(f.engine, parts[i], &data, NULL, NULL));
+        ASSERT_STR_EQ(expected[i], (const char *)data);
+    }
+    /* Read as Windows reads a text file */
+    const void *loaded = NULL;
+    ASSERT_EQ(NMO_OK, nmo_engine_param_value(f.engine, BLOCK_POUT(&f, load, 0), &loaded, NULL, NULL));
+    ASSERT_STR_EQ("one\ntwo", (const char *)loaded);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_tt, load_database_fills_the_array_of_its_name);
 REGISTER_TEST(engine_tt, read_registry_reads_what_the_host_set);
 REGISTER_TEST(engine_tt, drivers_and_screen_modes_fill_their_arrays);
+REGISTER_TEST(engine_tt, timer_and_strings);
 TEST_MAIN_END()

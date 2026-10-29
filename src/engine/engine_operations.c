@@ -8,14 +8,20 @@
  * (CKStringAddStringString, CKStringSetGeneric, CKGenericSetString,
  * CKStringGetNameObject, CKIntGetTypeObject, CKObjectGetObjectByNameString,
  * CKIntGetScriptCountBeObject, CKScriptGetScriptBeObjectInt and ...String,
- * CKIntGetRowCountDataArray, CKIntGetColumnCountDataArray, CKIntGetCountGroup).
- * They are tried before the registry, matched as CK matches an operation:
- * by its GUID, and by the input and output types or the types they derive.
+ * CKIntGetRowCountDataArray, CKIntGetColumnCountDataArray, CKIntGetCountGroup,
+ * CKMeshGetCurrent3dEntity). The registry has no conversions, so the plugin's
+ * between numbers and vectors are here too (CKIntSetFloat and the others).
+ * The engine looks an operation up in this table and in the registry
+ * together, as CK looks one up (see eng_operation_find()).
  */
 
 #include "engine_internal.h"
 
+#include "format/nmo_object.h"
+#include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/nmo_object_enum_defs.h"
+#include "object/nmo_ref.h"
+#include "type/nmo_type_query.h"
 #include "type/nmo_object_guids.h"
 #include "type/nmo_type_guids.h"
 
@@ -35,20 +41,10 @@
 #define OP_GET_COUNT NMO_GUID(0x44df6f61, 0x5f8f55c8)
 #define OP_GET_ROW_COUNT NMO_GUID(0xfb556b23, 0x69b22a75)
 #define OP_GET_COLUMN_COUNT NMO_GUID(0x2b554b23, 0x69b22a72)
+#define OP_GET_CURRENT NMO_GUID(0x6a5c5061, 0x5efe7428)
 
 /* The Script parameter type (a CKBehavior that is a script) */
 #define PGUID_SCRIPT NMO_GUID(0x7ea4176d, 0x1b405d30)
-
-/* Whether `type` is `base` or derives from it */
-static bool type_is(const nmo_engine_t *engine, nmo_guid_t type, nmo_guid_t base)
-{
-    if (nmo_guid_equals(type, base)) {
-        return true;
-    }
-    const nmo_type_descriptor_t *t = nmo_type_registry_find_by_guid(engine->types, type);
-    const nmo_type_descriptor_t *p = nmo_type_registry_find_by_guid(engine->types, base);
-    return t != NULL && p != NULL && nmo_type_get_derivation_depth(engine->types, t->id, p->id) > 0;
-}
 
 static const char *param_string(const eng_param_t *param)
 {
@@ -259,13 +255,142 @@ static nmo_status_t op_get_group_count(nmo_engine_t *engine, eng_param_t *src1, 
     return count >= 0 ? write_u32(engine, out, (uint32_t)count) : NMO_OK;
 }
 
-typedef nmo_status_t (*engine_op_fn)(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
-                                     eng_param_t *out);
+/* CKMeshGetCurrent3dEntity: the entity's current mesh, 0 for none. */
+static nmo_status_t op_get_current_mesh(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                        eng_param_t *out)
+{
+    (void)src2;
+    nmo_object_id_t id = (nmo_object_id_t)param_u32(src1);
+    nmo_object_t *object = eng_find_object(engine, id);
+    const nmo_3dentity_state_t *entity =
+        object != NULL ? (const nmo_3dentity_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
+                             engine->types, object, CKPGUID_3DENTITY)
+                       : NULL;
+    nmo_object_id_t mesh = entity != NULL ? nmo_ref_runtime_id(&entity->current_mesh) : 0u;
+    return write_u32(engine, out,
+                     mesh != 0 ? (uint32_t)eng_module_id(eng_module_of(engine, id, NULL), mesh) : 0u);
+}
+
+/* ============================================================================
+ * Conversions between numbers and vectors
+ * ============================================================================ */
+
+static float param_float(const eng_param_t *param)
+{
+    float value = 0.0f;
+    if (param != NULL && param->size >= sizeof(value)) {
+        memcpy(&value, param->data, sizeof(value));
+    }
+    return value;
+}
+
+/* A Boolean as CK reads it there: its first byte */
+static bool param_bool_byte(const eng_param_t *param)
+{
+    return param != NULL && param->size > 0 && param->data[0] != 0;
+}
+
+static nmo_status_t write_floats(nmo_engine_t *engine, eng_param_t *out, const float *values,
+                                 size_t count)
+{
+    return eng_param_write(engine, out, values, count * sizeof(float));
+}
+
+/* CKIntSetFloat: truncated */
+static nmo_status_t op_int_from_float(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                      eng_param_t *out)
+{
+    (void)src2;
+    return write_u32(engine, out, (uint32_t)(int32_t)param_float(src1));
+}
+
+/* CKIntSetBool, CKBoolSetInt (the value is a whole int there) */
+static nmo_status_t op_int_from_bool(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                     eng_param_t *out)
+{
+    (void)src2;
+    return write_u32(engine, out, param_bool_byte(src1) ? 1u : 0u);
+}
+
+static nmo_status_t op_bool_from_int(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                     eng_param_t *out)
+{
+    (void)src2;
+    return write_u32(engine, out, param_u32(src1) != 0u ? 1u : 0u);
+}
+
+/* CKFloatSetInt, CKFloatSetBool */
+static nmo_status_t op_float_from_int(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                      eng_param_t *out)
+{
+    (void)src2;
+    float value = (float)(int32_t)param_u32(src1);
+    return write_floats(engine, out, &value, 1u);
+}
+
+static nmo_status_t op_float_from_bool(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                       eng_param_t *out)
+{
+    (void)src2;
+    float value = param_bool_byte(src1) ? 1.0f : 0.0f;
+    return write_floats(engine, out, &value, 1u);
+}
+
+/* CKBoolSetFloat */
+static nmo_status_t op_bool_from_float(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                       eng_param_t *out)
+{
+    (void)src2;
+    return write_u32(engine, out, param_float(src1) != 0.0f ? 1u : 0u);
+}
+
+/* CK2dVectorSetFloat, CK2dVectorSetIntInt: x from the first, y from the second */
+static nmo_status_t op_2dvector_from_floats(nmo_engine_t *engine, eng_param_t *src1,
+                                            eng_param_t *src2, eng_param_t *out)
+{
+    const float xy[2] = {param_float(src1), param_float(src2)};
+    return write_floats(engine, out, xy, 2u);
+}
+
+static nmo_status_t op_2dvector_from_ints(nmo_engine_t *engine, eng_param_t *src1,
+                                          eng_param_t *src2, eng_param_t *out)
+{
+    const float xy[2] = {(float)(int32_t)param_u32(src1), (float)(int32_t)param_u32(src2)};
+    return write_floats(engine, out, xy, 2u);
+}
+
+/* The `index`th float of a vector parameter, 0 past its end */
+static float param_component(const eng_param_t *param, size_t index)
+{
+    float value = 0.0f;
+    if (param != NULL && param->size >= (index + 1u) * sizeof(float)) {
+        memcpy(&value, param->data + index * sizeof(float), sizeof(value));
+    }
+    return value;
+}
+
+/* CK2dVectorSetVector: x and y of the vector */
+static nmo_status_t op_2dvector_from_vector(nmo_engine_t *engine, eng_param_t *src1,
+                                            eng_param_t *src2, eng_param_t *out)
+{
+    (void)src2;
+    const float xy[2] = {param_component(src1, 0), param_component(src1, 1)};
+    return write_floats(engine, out, xy, 2u);
+}
+
+/* CKVectorSetVector2DVector: x and y of the 2D vector, z of the vector */
+static nmo_status_t op_vector_from_vector_2dvector(nmo_engine_t *engine, eng_param_t *src1,
+                                                   eng_param_t *src2, eng_param_t *out)
+{
+    const float xyz[3] = {param_component(src2, 0), param_component(src2, 1),
+                          param_component(src1, 2)};
+    return write_floats(engine, out, xyz, 3u);
+}
 
 typedef struct engine_op {
     nmo_guid_t operation;
     nmo_guid_t result, input1, input2; /* a null input2 is no second input */
-    engine_op_fn fn;
+    eng_builtin_op_fn fn;
 } engine_op_t;
 
 static const engine_op_t engine_ops[] = {
@@ -283,36 +408,45 @@ static const engine_op_t engine_ops[] = {
     {OP_GET_COUNT, CKPGUID_INT, CKPGUID_GROUP, {0, 0}, op_get_group_count},
     {OP_GET_ROW_COUNT, CKPGUID_INT, CKPGUID_DATAARRAY, {0, 0}, op_get_row_count},
     {OP_GET_COLUMN_COUNT, CKPGUID_INT, CKPGUID_DATAARRAY, {0, 0}, op_get_column_count},
+    {OP_GET_CURRENT, CKPGUID_MESH, CKPGUID_3DENTITY, {0, 0}, op_get_current_mesh},
+    {OP_CONVERT, CKPGUID_INT, CKPGUID_FLOAT, {0, 0}, op_int_from_float},
+    {OP_CONVERT, CKPGUID_INT, CKPGUID_BOOL, {0, 0}, op_int_from_bool},
+    {OP_CONVERT, CKPGUID_FLOAT, CKPGUID_INT, {0, 0}, op_float_from_int},
+    {OP_CONVERT, CKPGUID_FLOAT, CKPGUID_BOOL, {0, 0}, op_float_from_bool},
+    {OP_CONVERT, CKPGUID_BOOL, CKPGUID_INT, {0, 0}, op_bool_from_int},
+    {OP_CONVERT, CKPGUID_BOOL, CKPGUID_FLOAT, {0, 0}, op_bool_from_float},
+    {OP_CONVERT, CKPGUID_2DVECTOR, CKPGUID_FLOAT, CKPGUID_FLOAT, op_2dvector_from_floats},
+    {OP_CONVERT, CKPGUID_2DVECTOR, CKPGUID_INT, CKPGUID_INT, op_2dvector_from_ints},
+    {OP_CONVERT, CKPGUID_2DVECTOR, CKPGUID_VECTOR, {0, 0}, op_2dvector_from_vector},
+    {OP_CONVERT, CKPGUID_VECTOR, CKPGUID_VECTOR, CKPGUID_2DVECTOR, op_vector_from_vector_2dvector},
 };
 
-bool eng_operation_builtin(nmo_engine_t *engine, nmo_guid_t operation, eng_param_t *in1,
-                           eng_param_t *src1, eng_param_t *in2, eng_param_t *src2,
-                           eng_param_t *out, nmo_status_t *out_status)
+eng_builtin_op_fn eng_operation_builtin(nmo_guid_t operation, nmo_guid_t result,
+                                        nmo_guid_t input1, nmo_guid_t input2)
 {
-    nmo_guid_t t1 = in1 != NULL ? in1->type : NMO_GUID(0u, 0u);
-    nmo_guid_t t2 = in2 != NULL && src2 != NULL ? in2->type : NMO_GUID(0u, 0u);
     for (size_t i = 0; i < sizeof(engine_ops) / sizeof(engine_ops[0]); i++) {
         const engine_op_t *op = &engine_ops[i];
-        if (!nmo_guid_equals(op->operation, operation) || !type_is(engine, out->type, op->result) ||
-            !type_is(engine, t1, op->input1)) {
-            continue;
+        if (nmo_guid_equals(op->operation, operation) && nmo_guid_equals(op->result, result) &&
+            nmo_guid_equals(op->input1, input1) && nmo_guid_equals(op->input2, input2)) {
+            return op->fn;
         }
-        if (nmo_guid_is_null(op->input2) ? !nmo_guid_is_null(t2) : !type_is(engine, t2, op->input2)) {
-            continue;
-        }
-        *out_status = op->fn(engine, src1, src2, out);
-        return true;
     }
+    return NULL;
+}
+
+eng_builtin_op_fn eng_operation_builtin_text(nmo_guid_t operation, nmo_guid_t result,
+                                             nmo_guid_t input1, nmo_guid_t input2)
+{
     /* Convert to text from any type that has text, and from text to one */
-    if (nmo_guid_equals(operation, OP_CONVERT) && nmo_guid_is_null(t2) && src1 != NULL) {
-        if (nmo_guid_equals(out->type, CKPGUID_STRING) && !nmo_guid_equals(t1, CKPGUID_STRING)) {
-            *out_status = op_string_from(engine, src1, NULL, out);
-            return true;
-        }
-        if (nmo_guid_equals(t1, CKPGUID_STRING) && !nmo_guid_equals(out->type, CKPGUID_STRING)) {
-            *out_status = op_from_string(engine, src1, NULL, out);
-            return true;
-        }
+    if (!nmo_guid_equals(operation, OP_CONVERT) || !nmo_guid_is_null(input2) ||
+        nmo_guid_is_null(input1)) {
+        return NULL;
     }
-    return false;
+    if (nmo_guid_equals(result, CKPGUID_STRING) && !nmo_guid_equals(input1, CKPGUID_STRING)) {
+        return op_string_from;
+    }
+    if (nmo_guid_equals(input1, CKPGUID_STRING) && !nmo_guid_equals(result, CKPGUID_STRING)) {
+        return op_from_string;
+    }
+    return NULL;
 }

@@ -259,6 +259,8 @@ typedef struct eng_array {
     size_t row_count;
     size_t row_capacity;
     int32_t key_column;     /* -1 when none */
+    bool sorted;            /* m_Order: sorted ascending on sort_column, and not changed since */
+    int32_t sort_column;    /* m_ColumnIndex */
 } eng_array_t;
 
 struct nmo_engine_block {
@@ -295,6 +297,19 @@ typedef struct eng_group {
     size_t capacity;
 } eng_group_t;
 
+/* An operation function the engine runs itself (engine_operations.c). */
+typedef nmo_status_t (*eng_builtin_op_fn)(nmo_engine_t *engine, eng_param_t *src1,
+                                          eng_param_t *src2, eng_param_t *out);
+
+/* The function an operation found for these types, kept (neither for none). */
+typedef struct eng_op_lookup {
+    nmo_guid_t guid;
+    const nmo_type_descriptor_t *t1, *t2, *tr;
+    const nmo_operation_tree_cell_t *cell;
+    eng_builtin_op_fn builtin;
+    bool swap;
+} eng_op_lookup_t;
+
 /* A registry value: `name` of key `section`, as text. */
 typedef struct eng_registry_value {
     char *section;
@@ -307,6 +322,7 @@ struct nmo_engine {
     ENG_VEC(eng_module_t) modules; /* the first is the document the engine was made for */
     nmo_type_registry_t *types;
     nmo_operation_registry_t *operations_registry;
+    ENG_VEC(eng_op_lookup_t) op_lookups;
     nmo_engine_options_t options;
 
     ENG_VEC(eng_node_t) nodes;
@@ -327,6 +343,9 @@ struct nmo_engine {
     ENG_VEC(eng_group_t) groups;
 
     eng_map_t node_map, io_map, param_map, operation_map, object_map, array_map;
+    /* The objects in the level scene (CKBeObject::IsInScene); every object without one */
+    eng_map_t scene_objects;
+    bool has_level_scene;
 
     bool started;
     uint64_t frame;
@@ -345,6 +364,8 @@ struct nmo_engine {
     void *trace_user_data;
     nmo_engine_resolve_file_fn resolve_file;
     void *resolve_file_user_data;
+    float tt_time;         /* TT Time Manager: TT_Timer's time, and whether it runs */
+    bool tt_timing;
     char *database_file;   /* TT Database Manager: TT Set Database Properties */
     bool database_crypted;
     ENG_VEC(eng_registry_value_t) registry; /* the TT blocks' registry, from the host */
@@ -456,9 +477,10 @@ nmo_status_t eng_operation_run(nmo_engine_t *engine, eng_operation_t *op);
  * Run `operation` when it is one the engine runs itself (strings, objects),
  * its status in `out_status`; false when the registry has to.
  */
-bool eng_operation_builtin(nmo_engine_t *engine, nmo_guid_t operation, eng_param_t *in1,
-                           eng_param_t *src1, eng_param_t *in2, eng_param_t *src2,
-                           eng_param_t *out, nmo_status_t *out_status);
+eng_builtin_op_fn eng_operation_builtin(nmo_guid_t operation, nmo_guid_t result,
+                                        nmo_guid_t input1, nmo_guid_t input2);
+eng_builtin_op_fn eng_operation_builtin_text(nmo_guid_t operation, nmo_guid_t result,
+                                             nmo_guid_t input1, nmo_guid_t input2);
 nmo_status_t eng_operation_execute(nmo_engine_t *engine, nmo_guid_t guid, eng_param_t *in1,
                                    eng_param_t *in2, eng_param_t *out);
 
@@ -469,6 +491,8 @@ nmo_status_t eng_manager_execute(nmo_engine_t *engine);
 void eng_object_next_frame(nmo_engine_t *engine, int32_t object, int32_t delta);
 /* CKLevel::AddObject for every object of document `module` (Object Load) */
 void eng_add_module_to_level(nmo_engine_t *engine, int32_t module);
+bool eng_in_scene(const nmo_engine_t *engine, nmo_object_id_t id);
+void eng_add_to_level_scene(nmo_engine_t *engine, nmo_object_id_t id);
 /* CKBehavior::Execute, outside the behavior manager (Call Script) */
 int eng_execute_behavior(nmo_engine_t *engine, int32_t node);
 void eng_sort_listed(nmo_engine_t *engine);

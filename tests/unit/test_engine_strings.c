@@ -19,6 +19,7 @@
 #define OP_GET_LENGTH NMO_GUID(0x556a69af, 0x076e3f09)
 #define OP_GET_OBJECT_BY_NAME NMO_GUID(0x599203f6, 0x23b06096)
 #define OP_GET_TYPE NMO_GUID(0x35aa0ddb, 0x7a5e3335)
+#define OP_CONVERT NMO_GUID(0x428009b4, 0x1caa5c78)
 #define OP_GET_COUNT NMO_GUID(0x44df6f61, 0x5f8f55c8)
 
 static void input_string(engine_fixture_t *f, nmo_object_id_t pin, const char *text)
@@ -212,6 +213,14 @@ static nmo_object_id_t operation(engine_fixture_t *f, nmo_guid_t guid, nmo_objec
     }
     /* The operation takes its operands' types, as the operation that matches them does */
     in1_state->type_guid = source->type_guid;
+    nmo_parameterin_state_t *in2_state =
+        in2 != 0 ? (nmo_parameterin_state_t *)fixture_state(f, nmo_parameteroperation_in2_id(state))
+                 : NULL;
+    const nmo_parameter_state_t *source2 =
+        in2 != 0 ? (const nmo_parameter_state_t *)fixture_state(f, in2) : NULL;
+    if (in2_state != NULL && source2 != NULL) {
+        in2_state->type_guid = source2->type_guid;
+    }
     out_state->type_guid = type;
     return out;
 }
@@ -316,10 +325,63 @@ TEST(engine_strings, object_operations)
     fixture_end(&f);
 }
 
+/* A local parameter of the script of `type` holding the float `value` */
+static nmo_object_id_t local_float(engine_fixture_t *f, const char *name, nmo_guid_t type,
+                                   float value)
+{
+    nmo_object_id_t param = 0;
+    if (nmo_script_edit_add_parameter(f->tx, f->script_id, NMO_SCRIPT_EDIT_PARAM_LOCAL, type, name,
+                                      &param) != NMO_OK ||
+        nmo_script_edit_set_parameter_bytes(f->tx, param, (const uint8_t *)&value,
+                                            sizeof(value)) != NMO_OK) {
+        return 0;
+    }
+    return param;
+}
+
+TEST(engine_strings, operations_follow_parent_types)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t a = local_float(&f, "A", CKPGUID_TIME, 250.0f);
+    nmo_object_id_t b = local_float(&f, "B", CKPGUID_TIME, 500.0f);
+    nmo_object_id_t half = local_float(&f, "Half", CKPGUID_FLOAT, 0.5f);
+    nmo_object_id_t x = local_float(&f, "X", CKPGUID_FLOAT, 2.0f);
+    nmo_object_id_t y = local_float(&f, "Y", CKPGUID_FLOAT, 3.0f);
+    ASSERT_TRUE(a != 0 && b != 0 && half != 0 && x != 0 && y != 0);
+    /* Time + Time: the Float addition (Time derives from Float) */
+    nmo_object_id_t sum = operation(&f, OP_ADDITION, a, b, CKPGUID_TIME);
+    /* Bool from Float, not the Int conversion Bool derives from */
+    nmo_object_id_t truth = operation(&f, OP_CONVERT, half, 0, CKPGUID_BOOL);
+    nmo_object_id_t xy = operation(&f, OP_CONVERT, x, y, CKPGUID_2DVECTOR);
+    ASSERT_TRUE(sum != 0 && truth != 0 && xy != 0);
+    nmo_object_id_t read_sum = identity_of(&f, sum, CKPGUID_TIME, f.script_in);
+    ASSERT_TRUE(read_sum != 0);
+    nmo_object_id_t read_truth = identity_of(&f, truth, CKPGUID_BOOL, BLOCK_OUT(&f, read_sum, 0));
+    ASSERT_TRUE(read_truth != 0);
+    nmo_object_id_t read_xy = identity_of(&f, xy, CKPGUID_2DVECTOR, BLOCK_OUT(&f, read_truth, 0));
+    ASSERT_TRUE(read_xy != 0);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+    float time = 0.0f, vector[2] = {0.0f, 0.0f};
+    int32_t boolean = 0;
+    read_value(&f, BLOCK_POUT(&f, read_sum, 0), &time, sizeof(time));
+    read_value(&f, BLOCK_POUT(&f, read_truth, 0), &boolean, sizeof(boolean));
+    read_value(&f, BLOCK_POUT(&f, read_xy, 0), vector, sizeof(vector));
+    ASSERT_FLOAT_EQ(750.0f, time, 0.001f);
+    ASSERT_EQ(1, boolean);
+    ASSERT_FLOAT_EQ(2.0f, vector[0], 0.0001f);
+    ASSERT_FLOAT_EQ(3.0f, vector[1], 0.0001f);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_strings, create_string_writes_values_as_ck2_does);
 REGISTER_TEST(engine_strings, create_string_adds_lines_and_clears);
 REGISTER_TEST(engine_strings, substring_scan_and_reverse);
 REGISTER_TEST(engine_strings, string_operations);
 REGISTER_TEST(engine_strings, object_operations);
+REGISTER_TEST(engine_strings, operations_follow_parent_types);
 TEST_MAIN_END()

@@ -1977,6 +1977,106 @@ static int bb_remove_row_if(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* Value Count (ArrayValueCount): how many cells of a column compare true. */
+static int bb_value_count(blk_t *b)
+{
+    nmo_object_id_t array = array_target(b);
+    if (array == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    int32_t column = get_in_int(b, 0, 1);
+    nmo_engine_cell_t key;
+    array_input_key(b, array, column, 2, &key);
+    int32_t op = get_in_int(b, 1, 1); /* CKEQUAL */
+    set_out_int(b, 0, nmo_engine_array_count(nmo_engine_block_engine(b), array, column, op, &key));
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Test Cell (ArrayTestRow): True when the cell compares true. In stays active, as in CK. */
+static int bb_test_cell(blk_t *b)
+{
+    nmo_object_id_t array = array_target(b);
+    if (array == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    int32_t row = get_in_int(b, 0, 0);
+    int32_t column = get_in_int(b, 1, 0);
+    int32_t op = get_in_int(b, 2, 1); /* CKEQUAL */
+    nmo_engine_cell_t key;
+    array_input_key(b, array, column, 3, &key);
+    bool holds = nmo_engine_array_test_row(nmo_engine_block_engine(b), array, row, column, op, &key);
+    OUT_ON(b, holds ? 0 : 1);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Sort Rows (ArraySort): the rows by a column. */
+static int bb_sort_rows(blk_t *b)
+{
+    nmo_object_id_t array = array_target(b);
+    if (array == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    nmo_engine_array_sort(nmo_engine_block_engine(b), array, get_in_int(b, 0, 0),
+                          get_in_int(b, 1, 1) != 0);
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Remove Row (ArrayRemoveLine): Removed, or Not Present for a row it does not have. */
+static int bb_remove_row(blk_t *b)
+{
+    nmo_object_id_t array = array_target(b);
+    if (array == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    nmo_engine_t *engine = nmo_engine_block_engine(b);
+    int32_t row = get_in_int(b, 0, 0);
+    IN_OFF(b, 0);
+    if (row < 0 || row >= nmo_engine_array_row_count(engine, array)) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    nmo_engine_array_remove_row(engine, array, row);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Change Value If (ArrayChangeValueIf): New Value into every cell of a column that compares true. */
+static int bb_change_value_if(blk_t *b)
+{
+    nmo_object_id_t array = array_target(b);
+    if (array == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    nmo_engine_t *engine = nmo_engine_block_engine(b);
+    int32_t column = get_in_int(b, 0, 0);
+    int32_t op = get_in_int(b, 1, 1); /* CKEQUAL */
+    nmo_engine_cell_t key, value;
+    array_input_key(b, array, column, 2, &key);
+    bool has_value = nmo_engine_block_input_parameter_count(b) > 3;
+    if (has_value) {
+        array_input_key(b, array, column, 3, &value);
+    }
+    int32_t count = 0;
+    for (int32_t i = 0; i != -1;) {
+        i = nmo_engine_array_find_row_op(engine, array, column, op, &key, i);
+        if (i != -1) {
+            if (has_value) {
+                nmo_engine_array_set_cell(engine, array, i, column, &value);
+            }
+            i++;
+            count++;
+        }
+    }
+    set_out_int(b, 0, count);
+    IN_OFF(b, 0);
+    OUT_ON(b, count == 0 ? 1 : 0);
+    return NMO_ENGINE_BR_OK;
+}
+
 static int bb_remove_column(blk_t *b)
 {
     IN_OFF(b, 0);
@@ -2155,6 +2255,86 @@ static int bb_add_to_group(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/*
+ * Collection Iterator: each object of a collection (its IDs), Loop Out with
+ * the object and its index, then Out. The index is the Index output's, or
+ * the local's for a block without that output.
+ */
+static int bb_collection_iterator(blk_t *b)
+{
+    size_t size = 0;
+    const uint8_t *ids = (const uint8_t *)nmo_engine_block_input_data(b, 0, &size);
+    if (ids == NULL) {
+        OUT_ON(b, 0);
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    bool index_output = nmo_engine_block_output_parameter_count(b) > 1;
+    int32_t index = 0;
+    if (index_output) {
+        nmo_engine_block_get_output_value(b, 1, &index, sizeof(index));
+    } else {
+        index = get_local_int(b, 0);
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        index = 0;
+    } else {
+        IN_OFF(b, 1);
+        index++;
+    }
+    if (index < 0 || (size_t)index >= size / sizeof(uint32_t)) {
+        OUT_ON(b, 0);
+        return NMO_ENGINE_BR_OK;
+    }
+    uint32_t element = 0;
+    memcpy(&element, ids + (size_t)index * sizeof(element), sizeof(element));
+    nmo_engine_block_set_output_value(b, 0, &element, sizeof(element));
+    if (index_output) {
+        set_out_int(b, 1, index);
+    } else {
+        set_local_int(b, 0, index);
+    }
+    OUT_ON(b, 1);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * Load String: the text of a file, as read in text mode on Windows (CR LF
+ * becomes LF), or File Error.
+ */
+static int bb_load_string(blk_t *b)
+{
+    IN_OFF(b, 0);
+    nmo_engine_t *engine = nmo_engine_block_engine(b);
+    const char *name = input_string(b, 0);
+    const char *path = name != NULL && engine->resolve_file != NULL
+                           ? engine->resolve_file(engine->resolve_file_user_data, name)
+                           : NULL;
+    FILE *file = path != NULL ? fopen(path, "rb") : NULL;
+    if (file == NULL) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    OUT_ON(b, 0);
+    long size = fseek(file, 0, SEEK_END) == 0 ? ftell(file) : 0;
+    char *text = size >= 0 && fseek(file, 0, SEEK_SET) == 0 ? (char *)malloc((size_t)size + 1u)
+                                                              : NULL;
+    size_t length = 0;
+    if (text != NULL) {
+        size_t read = fread(text, 1, (size_t)size, file);
+        for (size_t i = 0; i < read; i++) {
+            if (!(text[i] == '\r' && i + 1 < read && text[i + 1] == '\n')) {
+                text[length++] = text[i];
+            }
+        }
+        text[length] = '\0';
+        nmo_engine_block_set_output_text(b, 0, text);
+    }
+    free(text);
+    fclose(file);
+    return NMO_ENGINE_BR_OK;
+}
+
 /* ============================================================================
  * Registration
  * ============================================================================ */
@@ -2202,6 +2382,13 @@ static const nmo_engine_block_desc_t eng_logics_blocks[] = {
     {NMO_GUID(0x78863443, 0x45af59b6), "Row Search", bb_row_search, NULL, NULL},
     {NMO_GUID(0x270f177a, 0x4ca20023), "Shuffle Order", bb_shuffle_order, NULL, NULL},
     {NMO_GUID(0x57865622, 0x662d2fee), "Remove Row If", bb_remove_row_if, NULL, NULL},
+    {NMO_GUID(0x534377de, 0x75fd478a), "Value Count", bb_value_count, NULL, NULL},
+    {NMO_GUID(0x4e6c6da8, 0x636904fc), "Test Cell", bb_test_cell, NULL, NULL},
+    {NMO_GUID(0x6f623e68, 0x62bb5a98), "Sort Rows", bb_sort_rows, NULL, NULL},
+    {NMO_GUID(0x1fa57136, 0x14310857), "Remove Row", bb_remove_row, NULL, NULL},
+    {NMO_GUID(0x07253edb, 0x4d1237ed), "Change Value If", bb_change_value_if, NULL, NULL},
+    {NMO_GUID(0x419602ec, 0x7822779e), "Collection Iterator", bb_collection_iterator, NULL, NULL},
+    {NMO_GUID(0x391555d6, 0x42f2500e), "Load String", bb_load_string, NULL, NULL},
     {NMO_GUID(0x3f377888, 0x128a7767), "Remove Column", bb_remove_column, NULL, NULL},
     {NMO_GUID(0x05cb7802, 0x04a64a58), "Insert Column", bb_insert_column, NULL, NULL},
     {NMO_GUID(0x49124252, 0x1be909a4), "Column Sum", bb_column_sum, NULL, NULL},

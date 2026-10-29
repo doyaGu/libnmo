@@ -139,28 +139,120 @@ static bool eng_is_none_type(const eng_param_t *param)
            nmo_guid_equals(param->type, CKPGUID_NONE);
 }
 
-/* Find the function of `guid` for the operand types, swapping them as the Op block does. */
-static nmo_status_t eng_operation_find(nmo_engine_t *engine, nmo_guid_t guid,
-                                       const nmo_type_descriptor_t *t1,
-                                       const nmo_type_descriptor_t *t2,
-                                       const nmo_type_descriptor_t *tr,
-                                       const nmo_operation_tree_cell_t **out_cell,
-                                       bool *out_swap)
+/* GetParameterGuidParentGuid: the type a parameter type derives from; NULL for none. */
+static const nmo_type_descriptor_t *eng_type_parent(const nmo_engine_t *engine,
+                                                    const nmo_type_descriptor_t *type)
 {
-    *out_swap = false;
-    if (nmo_operation_registry_find_typed(engine->operations_registry, &guid, t1, t2, tr,
-                                          engine->types, out_cell) == NMO_OK &&
-        *out_cell != NULL) {
-        return NMO_OK;
+    return type != NULL && !nmo_guid_is_null(type->base_type)
+               ? nmo_type_registry_find_by_guid(engine->types, type->base_type)
+               : NULL;
+}
+
+static nmo_guid_t eng_type_guid(const nmo_type_descriptor_t *type)
+{
+    return type != NULL ? type->guid : NMO_GUID(0u, 0u);
+}
+
+/* The function registered for exactly these types: the engine's own, else the registry's. */
+static bool eng_operation_exact(nmo_engine_t *engine, nmo_guid_t guid,
+                                const nmo_type_descriptor_t *tr, const nmo_type_descriptor_t *t1,
+                                const nmo_type_descriptor_t *t2, eng_op_lookup_t *found)
+{
+    found->builtin = eng_operation_builtin(guid, eng_type_guid(tr), eng_type_guid(t1),
+                                           eng_type_guid(t2));
+    if (found->builtin != NULL) {
+        return true;
     }
-    if (t2 != NULL &&
-        nmo_operation_registry_find_typed(engine->operations_registry, &guid, t2, t1, tr,
-                                          engine->types, out_cell) == NMO_OK &&
-        *out_cell != NULL) {
-        *out_swap = true;
-        return NMO_OK;
+    const nmo_operation_tree_cell_t *cell = NULL;
+    if (t1 != NULL && tr != NULL &&
+        nmo_operation_registry_find_typed(engine->operations_registry, &guid, t1, t2, tr, NULL,
+                                          &cell) == NMO_OK &&
+        cell != NULL && cell->desc.function != NULL) {
+        found->cell = cell;
+        return true;
     }
-    return NMO_ERR_NOT_FOUND;
+    return false;
+}
+
+typedef struct eng_type_triple {
+    const nmo_type_descriptor_t *tr, *t1, *t2;
+} eng_type_triple_t;
+
+/* The type triples a lookup found nothing for: a triple fails the same way each time */
+typedef ENG_VEC(eng_type_triple_t) eng_type_triples_t;
+
+/*
+ * CKParameterManager::GetOperationFunction: the function registered for
+ * exactly these types, else for their parents, in CK's order: all three,
+ * both operands, the first operand and the result, the first operand, the
+ * second and the result, the second, then the result alone.
+ */
+static bool eng_operation_lookup(nmo_engine_t *engine, nmo_guid_t guid,
+                                 const nmo_type_descriptor_t *tr, const nmo_type_descriptor_t *t1,
+                                 const nmo_type_descriptor_t *t2, eng_type_triples_t *failed,
+                                 eng_op_lookup_t *found)
+{
+    for (size_t i = 0; i < failed->count; i++) {
+        const eng_type_triple_t *known = &failed->data[i];
+        if (known->tr == tr && known->t1 == t1 && known->t2 == t2) {
+            return false;
+        }
+    }
+    if (eng_operation_exact(engine, guid, tr, t1, t2, found)) {
+        return true;
+    }
+    const nmo_type_descriptor_t *pr = eng_type_parent(engine, tr);
+    const nmo_type_descriptor_t *p1 = eng_type_parent(engine, t1);
+    const nmo_type_descriptor_t *p2 = eng_type_parent(engine, t2);
+    const nmo_type_descriptor_t *tries[7][3] = {
+        {pr, p1, p2}, {tr, p1, p2}, {pr, p1, t2}, {tr, p1, t2},
+        {pr, t1, p2}, {tr, t1, p2}, {pr, t1, t2},
+    };
+    const bool allowed[7] = {
+        p1 && p2 && pr, p1 && p2, p1 && pr, p1 != NULL, p2 && pr, p2 != NULL, pr != NULL,
+    };
+    for (int i = 0; i < 7; i++) {
+        if (allowed[i] &&
+            eng_operation_lookup(engine, guid, tries[i][0], tries[i][1], tries[i][2], failed,
+                                 found)) {
+            return true;
+        }
+    }
+    eng_type_triple_t *slot = NULL;
+    if (ENG_VEC_PUSH(*failed, slot)) {
+        *slot = (eng_type_triple_t){tr, t1, t2};
+    }
+    return false;
+}
+
+/*
+ * Find the function of `guid` for the operand and result types, swapping
+ * the operands as the Op block does; what was found for these types is kept.
+ */
+static const eng_op_lookup_t *eng_operation_find(nmo_engine_t *engine, nmo_guid_t guid,
+                                                 const nmo_type_descriptor_t *t1,
+                                                 const nmo_type_descriptor_t *t2,
+                                                 const nmo_type_descriptor_t *tr)
+{
+    for (size_t i = 0; i < engine->op_lookups.count; i++) {
+        const eng_op_lookup_t *known = &engine->op_lookups.data[i];
+        if (known->t1 == t1 && known->t2 == t2 && known->tr == tr &&
+            nmo_guid_equals(known->guid, guid)) {
+            return known;
+        }
+    }
+    eng_op_lookup_t found = {guid, t1, t2, tr, NULL, NULL, false};
+    eng_type_triples_t failed = {0};
+    if (!eng_operation_lookup(engine, guid, tr, t1, t2, &failed, &found) && t2 != NULL) {
+        found.swap = eng_operation_lookup(engine, guid, tr, t2, t1, &failed, &found);
+    }
+    free(failed.data);
+    eng_op_lookup_t *known = NULL;
+    if (!ENG_VEC_PUSH(engine->op_lookups, known)) {
+        return NULL;
+    }
+    *known = found;
+    return known;
 }
 
 nmo_status_t eng_operation_execute(nmo_engine_t *engine, nmo_guid_t guid, eng_param_t *in1,
@@ -178,23 +270,11 @@ nmo_status_t eng_operation_execute(nmo_engine_t *engine, nmo_guid_t guid, eng_pa
     eng_param_update(engine, src1);
     eng_param_update(engine, src2);
 
-    nmo_status_t builtin_status = NMO_OK;
-    if (eng_operation_builtin(engine, guid, in1, src1, in2, src2, out, &builtin_status)) {
-        return builtin_status;
-    }
-
     const nmo_type_descriptor_t *t1 = src1 != NULL ? in1->type_desc : NULL;
     const nmo_type_descriptor_t *t2 = src2 != NULL ? in2->type_desc : NULL;
-    const nmo_operation_tree_cell_t *cell = NULL;
-    bool swap = false;
-    nmo_status_t status = eng_operation_find(engine, guid, t1, t2, out->type_desc, &cell, &swap);
-    if (status != NMO_OK || cell->desc.function == NULL) {
-        return NMO_ERR_NOT_FOUND;
-    }
-    if (out->type_desc->size > out->size && !eng_param_resize(out, out->type_desc->size)) {
-        return NMO_ERR_NOMEM;
-    }
-    if (swap) {
+    const eng_op_lookup_t *found = eng_operation_find(engine, guid, t1, t2, out->type_desc);
+    eng_builtin_op_fn builtin = found != NULL ? found->builtin : NULL;
+    if (found != NULL && found->swap) {
         eng_param_t *t = src1;
         src1 = src2;
         src2 = t;
@@ -202,9 +282,22 @@ nmo_status_t eng_operation_execute(nmo_engine_t *engine, nmo_guid_t guid, eng_pa
         t1 = t2;
         t2 = tt;
     }
-    status = cell->desc.function(src1 != NULL ? src1->data : NULL, t1,
-                                 src2 != NULL ? src2->data : NULL, t2,
-                                 out->data, out->type_desc, cell->desc.user_data);
+    if (builtin == NULL && (found == NULL || found->cell == NULL)) {
+        builtin = eng_operation_builtin_text(guid, out->type, eng_type_guid(t1), eng_type_guid(t2));
+    }
+    if (builtin != NULL) {
+        return builtin(engine, src1, src2, out);
+    }
+    if (found == NULL || found->cell == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    const nmo_operation_tree_cell_t *cell = found->cell;
+    if (out->type_desc->size > out->size && !eng_param_resize(out, out->type_desc->size)) {
+        return NMO_ERR_NOMEM;
+    }
+    nmo_status_t status = cell->desc.function(src1 != NULL ? src1->data : NULL, t1,
+                                              src2 != NULL ? src2->data : NULL, t2,
+                                              out->data, out->type_desc, cell->desc.user_data);
     if (status == NMO_OK) {
         eng_param_data_changed(engine, out, 0);
     }

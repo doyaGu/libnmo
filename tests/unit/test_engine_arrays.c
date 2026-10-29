@@ -27,6 +27,12 @@
 #define GUID_REMOVE_COLUMN NMO_GUID(0x3f377888, 0x128a7767)
 #define GUID_INSERT_COLUMN NMO_GUID(0x05cb7802, 0x04a64a58)
 #define GUID_COLUMN_SUM NMO_GUID(0x49124252, 0x1be909a4)
+#define GUID_VALUE_COUNT NMO_GUID(0x534377de, 0x75fd478a)
+#define GUID_TEST_CELL NMO_GUID(0x4e6c6da8, 0x636904fc)
+#define GUID_CHANGE_VALUE_IF NMO_GUID(0x07253edb, 0x4d1237ed)
+#define GUID_SORT_ROWS NMO_GUID(0x6f623e68, 0x62bb5a98)
+#define GUID_REMOVE_ROW NMO_GUID(0x1fa57136, 0x14310857)
+#define GUID_COLLECTION_ITERATOR NMO_GUID(0x419602ec, 0x7822779e)
 
 /* Columns: Key (int), Weight (float), Name (string), Object (object). */
 static nmo_object_id_t create_array(engine_fixture_t *f, int32_t key_column, uint32_t rows,
@@ -607,6 +613,139 @@ TEST(engine_arrays, shuffle_insert_and_remove_columns)
     fixture_end(&f);
 }
 
+TEST(engine_arrays, count_test_change_sort_and_remove_rows)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t array = create_array(&f, 0, 3, keys, weights, names);
+    ASSERT_TRUE(array != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t count = array_block(&f, GUID_VALUE_COUNT, "Count", array);
+    nmo_object_id_t test = array_block(&f, GUID_TEST_CELL, "Test", array);
+    nmo_object_id_t change = array_block(&f, GUID_CHANGE_VALUE_IF, "Change", array);
+    nmo_object_id_t sort = array_block(&f, GUID_SORT_ROWS, "Sort", array);
+    nmo_object_id_t remove = array_block(&f, GUID_REMOVE_ROW, "Remove", array);
+    nmo_object_id_t missing = array_block(&f, GUID_REMOVE_ROW, "Missing", array);
+    nmo_object_id_t passed = fixture_block(&f, GUID_NOP, "Passed");
+    nmo_object_id_t absent = fixture_block(&f, GUID_NOP, "Absent");
+    ASSERT_TRUE(count != 0 && test != 0 && change != 0 && sort != 0 && remove != 0 &&
+                missing != 0 && passed != 0 && absent != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, count, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, count, 0), BLOCK_IN(&f, test, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, test, 0), BLOCK_IN(&f, passed, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, passed, 0), BLOCK_IN(&f, change, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, change, 0), BLOCK_IN(&f, sort, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, sort, 0), BLOCK_IN(&f, remove, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, remove, 0), BLOCK_IN(&f, missing, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, missing, 1), BLOCK_IN(&f, absent, 0), 0);
+    /* The reference values the callbacks add, typed by the key column */
+    nmo_object_id_t count_ref = add_param(&f, count, NMO_SCRIPT_EDIT_PARAM_IN, CKPGUID_INT, "Ref");
+    nmo_object_id_t test_ref = add_param(&f, test, NMO_SCRIPT_EDIT_PARAM_IN, CKPGUID_INT, "Ref");
+    nmo_object_id_t change_ref = add_param(&f, change, NMO_SCRIPT_EDIT_PARAM_IN, CKPGUID_INT, "Ref");
+    nmo_object_id_t change_to = add_param(&f, change, NMO_SCRIPT_EDIT_PARAM_IN, CKPGUID_INT, "New");
+    ASSERT_TRUE(count_ref != 0 && test_ref != 0 && change_ref != 0 && change_to != 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, count, 0), 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, count, 1), 5); /* Greater */
+    fixture_input_int(&f, count_ref, 15);
+    fixture_input_int(&f, BLOCK_PIN(&f, test, 0), 1);
+    fixture_input_int(&f, BLOCK_PIN(&f, test, 1), 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, test, 2), 1); /* Equal */
+    fixture_input_int(&f, test_ref, 20);
+    fixture_input_int(&f, BLOCK_PIN(&f, change, 0), 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, change, 1), 1);
+    fixture_input_int(&f, change_ref, 20);
+    fixture_input_int(&f, change_to, 25);
+    fixture_input_int(&f, BLOCK_PIN(&f, sort, 0), 1); /* by Weight */
+    fixture_input_int(&f, BLOCK_PIN(&f, sort, 1), 0); /* descending */
+    fixture_input_int(&f, BLOCK_PIN(&f, remove, 0), 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, missing, 0), 5);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+    int32_t greater = 0, changed = 0;
+    read_value(&f, BLOCK_POUT(&f, count, 0), &greater, sizeof(greater));
+    read_value(&f, BLOCK_POUT(&f, change, 0), &changed, sizeof(changed));
+    ASSERT_EQ(2, greater);  /* 20 and 30 */
+    ASSERT_EQ(1u, runs(&f, passed));
+    ASSERT_EQ(1, changed);  /* 20 became 25 */
+    ASSERT_EQ(1u, runs(&f, absent));
+    /* Sorted by weight, heaviest first (30, 25, 10), then the first row removed */
+    ASSERT_EQ(2, nmo_engine_array_row_count(f.engine, array));
+    nmo_engine_cell_t cell;
+    ASSERT_EQ(NMO_OK, nmo_engine_array_get_cell(f.engine, array, 0, 0, &cell));
+    ASSERT_EQ(25u, cell.value);
+    ASSERT_EQ(NMO_OK, nmo_engine_array_get_cell(f.engine, array, 1, 0, &cell));
+    ASSERT_EQ(10u, cell.value);
+    fixture_end(&f);
+}
+
+TEST(engine_arrays, sort_keeps_equal_rows_and_trusts_an_ascending_sort)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    static const int32_t same[] = {7, 3, 7};
+    nmo_object_id_t array = create_array(&f, 0, 3, same, weights, names);
+    ASSERT_TRUE(array != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    fixture_commit(&f, NULL);
+
+    nmo_engine_array_sort(f.engine, array, 0, true);
+    /* 3, then the two 7s in their order (weights 0.5 then 2.5) */
+    nmo_engine_cell_t cell;
+    ASSERT_EQ(NMO_OK, nmo_engine_array_get_cell(f.engine, array, 0, 0, &cell));
+    ASSERT_EQ(3u, cell.value);
+    float weight = 0.0f;
+    ASSERT_EQ(NMO_OK, nmo_engine_array_get_cell(f.engine, array, 1, 1, &cell));
+    memcpy(&weight, &cell.value, sizeof(weight));
+    ASSERT_FLOAT_EQ(0.5f, weight, 0.0001f);
+    /* Swapping rows is no change CK tracks: GetHighest still trusts the sort */
+    ASSERT_EQ(NMO_OK, nmo_engine_array_swap_rows(f.engine, array, 0, 2));
+    ASSERT_EQ(2, nmo_engine_array_highest_row(f.engine, array, 0));
+    /* Setting a cell of the sort column ends the sort: sorting again moves the 1 first */
+    nmo_engine_cell_t one = {.type = CKARRAYTYPE_INT, .value = 1u};
+    ASSERT_EQ(NMO_OK, nmo_engine_array_set_cell(f.engine, array, 1, 0, &one));
+    nmo_engine_array_sort(f.engine, array, 0, true);
+    ASSERT_EQ(NMO_OK, nmo_engine_array_get_cell(f.engine, array, 0, 0, &cell));
+    ASSERT_EQ(1u, cell.value);
+    fixture_end(&f);
+}
+
+TEST(engine_arrays, collection_iterator_walks_the_objects)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t other = fixture_create(&f, NMO_CID_3DENTITY, "Other");
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t iterate = fixture_block(&f, GUID_COLLECTION_ITERATOR, "Iterate");
+    nmo_object_id_t each = fixture_block(&f, GUID_NOP, "Each");
+    nmo_object_id_t done = fixture_block(&f, GUID_NOP, "Done");
+    ASSERT_TRUE(iterate != 0 && each != 0 && done != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, iterate, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, iterate, 1), BLOCK_IN(&f, each, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, each, 0), BLOCK_IN(&f, iterate, 1), 0);
+    fixture_link(&f, BLOCK_OUT(&f, iterate, 0), BLOCK_IN(&f, done, 0), 0);
+    /* A collection holds the objects' IDs */
+    const uint32_t ids[2] = {(uint32_t)f.owner_id, (uint32_t)other};
+    fixture_input_value(&f, BLOCK_PIN(&f, iterate, 0), ids, sizeof(ids));
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(2u, runs(&f, each));
+    ASSERT_EQ(1u, runs(&f, done));
+    uint32_t element = 0;
+    int32_t index = -1;
+    read_value(&f, BLOCK_POUT(&f, iterate, 0), &element, sizeof(element));
+    read_value(&f, BLOCK_POUT(&f, iterate, 1), &index, sizeof(index));
+    ASSERT_EQ(other, element);
+    ASSERT_EQ(1, index);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_arrays, get_cell_reads_a_cell_or_reports_not_found);
 REGISTER_TEST(engine_arrays, set_cell_and_add_row_change_the_engine_copy);
@@ -621,4 +760,7 @@ REGISTER_TEST(engine_arrays, group_iterator_walks_the_group);
 REGISTER_TEST(engine_arrays, get_key_row_and_row_search_find_rows);
 REGISTER_TEST(engine_arrays, column_sum_and_remove_row_if);
 REGISTER_TEST(engine_arrays, shuffle_insert_and_remove_columns);
+REGISTER_TEST(engine_arrays, count_test_change_sort_and_remove_rows);
+REGISTER_TEST(engine_arrays, sort_keeps_equal_rows_and_trusts_an_ascending_sort);
+REGISTER_TEST(engine_arrays, collection_iterator_walks_the_objects);
 TEST_MAIN_END()
