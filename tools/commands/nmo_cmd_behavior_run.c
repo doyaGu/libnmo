@@ -26,7 +26,9 @@ typedef struct run_args {
     uint32_t max_iterations;
     uint32_t seed;
     bool trace;
+    const char *path; /* --path: where loaded files are found, besides the file's folder */
     const char *keys; /* "Space@30-35,Enter@60": keys and the frames they are down */
+    const char *registry; /* "Software\Game\Settings\Language=1;...": registry values */
 } run_args_t;
 
 /* A key held down from frame `first` to frame `last`. */
@@ -130,13 +132,13 @@ typedef struct run_state {
     bool ok;
 } run_state_t;
 
-/* "Name#id" from the script model, sized for the label; NULL on OOM. */
-static char *run_label_dup(const nmo_script_model_t *model, nmo_object_id_t id)
+/* "Name#id" from the script model of the file the engine runs it from; NULL on OOM. */
+static char *run_label_dup(const nmo_engine_t *engine, nmo_object_id_t id)
 {
-    size_t length = nmo_script_model_label(model, id, NULL, 0);
+    size_t length = nmo_engine_label(engine, id, NULL, 0);
     char *label = (char *)malloc(length + 1u);
     if (label != NULL) {
-        nmo_script_model_label(model, id, label, length + 1u);
+        nmo_engine_label(engine, id, label, length + 1u);
     }
     return label;
 }
@@ -152,6 +154,7 @@ static bool run_event_shown(const run_args_t *args, const nmo_engine_event_t *ev
     case NMO_ENGINE_EVENT_INFINITE_LOOP:
     case NMO_ENGINE_EVENT_MESSAGE_SENT:
     case NMO_ENGINE_EVENT_MESSAGE_RECEIVED:
+    case NMO_ENGINE_EVENT_FILE_LOADED:
         return true;
     case NMO_ENGINE_EVENT_EXECUTE:
         return node != NULL && node->kind == NMO_SCRIPT_NODE_BUILDING_BLOCK;
@@ -160,7 +163,7 @@ static bool run_event_shown(const run_args_t *args, const nmo_engine_event_t *ev
     }
 }
 
-static void run_count_unknown(run_state_t *state, const nmo_script_node_t *node)
+static void run_count_unknown(run_state_t *state, nmo_object_id_t id, const nmo_script_node_t *node)
 {
     if (node == NULL) {
         return;
@@ -184,7 +187,7 @@ static void run_count_unknown(run_state_t *state, const nmo_script_node_t *node)
     }
     state->unknown[state->unknown_count++] = (run_unknown_t){
         .prototype = node->prototype_guid,
-        .first_behavior = node->id,
+        .first_behavior = id,
         .count = 1,
     };
 }
@@ -193,14 +196,14 @@ static void run_trace(const nmo_engine_event_t *event, void *user_data)
 {
     run_state_t *state = (run_state_t *)user_data;
     const nmo_script_node_t *node =
-        event->behavior_id != 0 ? nmo_script_model_find_node(state->model, event->behavior_id)
+        event->behavior_id != 0 ? nmo_engine_script_node(state->engine, event->behavior_id)
                                 : NULL;
     if (event->kind == NMO_ENGINE_EVENT_EXECUTE && node != NULL &&
         node->kind == NMO_SCRIPT_NODE_BUILDING_BLOCK) {
         state->executions++;
     }
     if (event->kind == NMO_ENGINE_EVENT_UNKNOWN_BLOCK) {
-        run_count_unknown(state, node);
+        run_count_unknown(state, event->behavior_id, node);
         state->last_unknown = event->behavior_id;
     }
     if (event->kind == NMO_ENGINE_EVENT_EFFECT) {
@@ -216,7 +219,7 @@ static void run_trace(const nmo_engine_event_t *event, void *user_data)
     char *effect_note = NULL;
     if (event->kind == NMO_ENGINE_EVENT_EXECUTE && event->behavior_id == state->effect_behavior) {
         char *target = state->effect_target != 0
-                           ? run_label_dup(state->model, state->effect_target)
+                           ? run_label_dup(state->engine, state->effect_target)
                            : NULL;
         const char *shown = target != NULL ? target : "the scene";
         size_t length = strlen(" (effect on )") + strlen(shown) + 1u;
@@ -246,7 +249,7 @@ static void run_trace(const nmo_engine_event_t *event, void *user_data)
     }
 
     const char *kind = nmo_engine_event_kind_name(event->kind);
-    char *behavior = event->behavior_id != 0 ? run_label_dup(state->model, event->behavior_id)
+    char *behavior = event->behavior_id != 0 ? run_label_dup(state->engine, event->behavior_id)
                                              : NULL;
     nmo_cli_record_t *item = nmo_cli_record_new();
     bool ok = item != NULL && (event->behavior_id == 0 || behavior != NULL);
@@ -300,7 +303,7 @@ static void run_trace(const nmo_engine_event_t *event, void *user_data)
     case NMO_ENGINE_EVENT_MESSAGE_SENT:
     case NMO_ENGINE_EVENT_MESSAGE_RECEIVED: {
         const char *message = nmo_engine_message_type_name(state->engine, event->result);
-        char *object = event->object_id != 0 ? run_label_dup(state->model, event->object_id)
+        char *object = event->object_id != 0 ? run_label_dup(state->engine, event->object_id)
                                              : NULL;
         ok = ok && (event->object_id == 0 || object != NULL);
         ok = ok && nmo_cli_record_str(item, "message", NULL, message != NULL ? message : "");
@@ -316,6 +319,17 @@ static void run_trace(const nmo_engine_event_t *event, void *user_data)
                 object != NULL ? object : "?", behavior);
         }
         free(object);
+        break;
+    }
+    case NMO_ENGINE_EVENT_FILE_LOADED: {
+        const char *file = nmo_engine_loaded_file_name(state->engine, event->result);
+        ok = ok && nmo_cli_record_str(item, "file", NULL, file != NULL ? file : "");
+        ok = ok && (event->result >= 0
+                        ? nmo_cli_record_set_summary_fmt(item, "[%llu]  load \"%s\"",
+                                                         (unsigned long long)event->frame,
+                                                         file != NULL ? file : "?")
+                        : nmo_cli_record_set_summary_fmt(item, "[%llu]  load failed",
+                                                         (unsigned long long)event->frame));
         break;
     }
     case NMO_ENGINE_EVENT_INFINITE_LOOP:
@@ -350,7 +364,7 @@ static bool run_add_unknown(nmo_cli_record_t *rec, const run_state_t *state)
     nmo_cli_record_array_omit_empty(list);
     for (size_t i = 0; i < state->unknown_count; i++) {
         const run_unknown_t *u = &state->unknown[i];
-        const nmo_script_node_t *node = nmo_script_model_find_node(state->model, u->first_behavior);
+        const nmo_script_node_t *node = nmo_engine_script_node(state->engine, u->first_behavior);
         const char *name = node != NULL && node->prototype_name != NULL ? node->prototype_name
                                                                          : "?";
         char guid[NMO_GUID_STRING_SIZE];
@@ -372,26 +386,26 @@ static bool run_add_unknown(nmo_cli_record_t *rec, const run_state_t *state)
     return true;
 }
 
-static bool run_add_active_scripts(nmo_cli_record_t *rec, const nmo_engine_t *engine,
-                                   const nmo_script_model_t *model)
+static bool run_add_active_scripts(nmo_cli_record_t *rec, const nmo_engine_t *engine)
 {
     nmo_cli_record_array_t *list =
         nmo_cli_record_array(rec, "active_scripts", "Active scripts");
     if (list == NULL) {
         return false;
     }
-    size_t count = 0;
-    const nmo_script_node_t *nodes = nmo_script_model_nodes(model, &count);
-    for (size_t i = 0; i < count; i++) {
-        if (nodes[i].kind != NMO_SCRIPT_NODE_SCRIPT ||
-            !nmo_engine_behavior_is_active(engine, nodes[i].id)) {
+    /* The scripts of every file the engine runs, loaded ones too */
+    int32_t count = nmo_engine_script_count(engine);
+    for (int32_t i = 0; i < count; i++) {
+        nmo_object_id_t id = nmo_engine_script_id(engine, i);
+        if (!nmo_engine_behavior_is_active(engine, id)) {
             continue;
         }
-        char *label = run_label_dup(model, nodes[i].id);
+        const char *name = nmo_engine_object_name(engine, id);
+        char *label = run_label_dup(engine, id);
         nmo_cli_record_t *item = nmo_cli_record_new();
         bool ok = label != NULL && item != NULL &&
-                  nmo_cli_record_uint(item, "id", NULL, nodes[i].id) &&
-                  nmo_cli_record_str(item, "name", NULL, nodes[i].name) &&
+                  nmo_cli_record_uint(item, "id", NULL, id) &&
+                  nmo_cli_record_str(item, "name", NULL, name != NULL ? name : "") &&
                   nmo_cli_record_set_summary_fmt(item, "  %s", label);
         free(label);
         if (!ok || !nmo_cli_record_array_add(list, item)) {
@@ -404,6 +418,106 @@ static bool run_add_active_scripts(nmo_cli_record_t *rec, const nmo_engine_t *en
     return true;
 }
 
+/* Where the files a document loads are found: --path, then the run file's folder. */
+typedef struct run_files {
+    const char *path;
+    char *folder;
+    char *found; /* the path last given to the engine */
+} run_files_t;
+
+static char *run_join(const char *folder, const char *name, size_t name_length)
+{
+    size_t folder_length = folder != NULL ? strlen(folder) : 0u;
+    char *joined = (char *)malloc(folder_length + name_length + 2u);
+    if (joined == NULL) {
+        return NULL;
+    }
+    size_t n = 0;
+    if (folder_length > 0) {
+        memcpy(joined, folder, folder_length);
+        n = folder_length;
+        if (joined[n - 1] != '/') {
+            joined[n++] = '/';
+        }
+    }
+    for (size_t i = 0; i < name_length; i++) {
+        joined[n++] = name[i] == '\\' ? '/' : name[i];
+    }
+    joined[n] = '\0';
+    return joined;
+}
+
+static bool run_file_exists(const char *path)
+{
+    FILE *file = fopen(path, "rb");
+    if (file == NULL) {
+        return false;
+    }
+    fclose(file);
+    return true;
+}
+
+/*
+ * The engine's file resolver: a name relative to the run file's folder (or
+ * --path), with Windows separators; its last part alone as well, for files
+ * copied into one folder. An absolute name (the machine the file was made
+ * on: "E:\\Game\\Database.tdb") or one leaving the folder is found by its
+ * last part only, so nothing outside the folders is read.
+ */
+static const char *run_resolve_file(void *user_data, const char *name)
+{
+    run_files_t *files = (run_files_t *)user_data;
+    free(files->found);
+    files->found = NULL;
+    size_t length = strlen(name);
+    if (length == 0) {
+        return NULL;
+    }
+    bool outside = name[0] == '/' || name[0] == '\\' || (length > 1 && name[1] == ':');
+    for (size_t i = 0; i + 1 < length && !outside; i++) {
+        bool starts = i == 0 || name[i - 1] == '/' || name[i - 1] == '\\';
+        outside = starts && name[i] == '.' && name[i + 1] == '.';
+    }
+    const char *base = name;
+    for (const char *p = name; *p != '\0'; p++) {
+        if (*p == '/' || *p == '\\') {
+            base = p + 1;
+        }
+    }
+    if (base[0] == '\0' || strcmp(base, ".") == 0 || strcmp(base, "..") == 0) {
+        return NULL;
+    }
+    const char *folders[2] = {files->path, files->folder};
+    for (int f = 0; f < 2; f++) {
+        if (f == 0 && files->path == NULL) {
+            continue;
+        }
+        for (int whole = outside ? 0 : 1; whole >= 0; whole--) {
+            const char *part = whole ? name : base;
+            char *candidate = run_join(folders[f], part, strlen(part));
+            if (candidate != NULL && run_file_exists(candidate)) {
+                files->found = candidate;
+                return candidate;
+            }
+            free(candidate);
+        }
+    }
+    return NULL;
+}
+
+/* The folder of `file`, "" for the current one. */
+static char *run_folder_of(const char *file)
+{
+    const char *slash = file != NULL ? strrchr(file, '/') : NULL;
+    size_t length = slash != NULL ? (size_t)(slash - file) : 0u;
+    char *folder = (char *)malloc(length + 1u);
+    if (folder != NULL) {
+        memcpy(folder, file, length);
+        folder[length] = '\0';
+    }
+    return folder;
+}
+
 static const char *run_start_name(nmo_engine_start_mode_t mode)
 {
     switch (mode) {
@@ -411,6 +525,46 @@ static const char *run_start_name(nmo_engine_start_mode_t mode)
     case NMO_ENGINE_START_NONE: return "none";
     default: return "scene";
     }
+}
+
+/*
+ * The registry values of --registry: KEY\NAME=VALUE entries separated by
+ * ';', set in `engine` when given. False when an entry is not one.
+ */
+static bool run_set_registry(nmo_engine_t *engine, const char *text)
+{
+    while (text != NULL && *text != '\0') {
+        const char *end = strchr(text, ';');
+        size_t length = end != NULL ? (size_t)(end - text) : strlen(text);
+        const char *equals = memchr(text, '=', length);
+        const char *slash = NULL;
+        for (const char *p = text; equals != NULL && p < equals; p++) {
+            if (*p == '\\') {
+                slash = p;
+            }
+        }
+        if (slash == NULL || slash == text || slash + 1 == equals) {
+            return false;
+        }
+        if (engine != NULL) {
+            char *entry = (char *)malloc(length + 1u);
+            if (entry == NULL) {
+                return false;
+            }
+            memcpy(entry, text, length);
+            entry[length] = '\0';
+            entry[slash - text] = '\0';
+            entry[equals - text] = '\0';
+            nmo_status_t status = nmo_engine_set_registry_value(
+                engine, entry, entry + (slash - text) + 1, entry + (equals - text) + 1);
+            free(entry);
+            if (status != NMO_OK) {
+                return false;
+            }
+        }
+        text = end != NULL ? end + 1 : NULL;
+    }
+    return true;
 }
 
 static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
@@ -428,6 +582,14 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
     const nmo_script_model_t *model = nmo_engine_script_model(engine);
+    run_files_t files = {.path = args->path, .folder = run_folder_of(ctx->file_path)};
+    nmo_engine_set_file_resolver(engine, run_resolve_file, &files);
+    if (!run_set_registry(engine, args->registry)) {
+        fprintf(stderr, "Error: Out of memory\n");
+        nmo_engine_destroy(engine);
+        free(files.folder);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
 
     nmo_cli_record_t *rec = nmo_cli_record_new();
     run_state_t state = {.model = model, .engine = engine, .args = args, .ok = rec != NULL};
@@ -486,7 +648,7 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
     ok = ok && nmo_cli_record_uint(rec, "block_executions", "Building block executions",
                                    state.executions);
     ok = ok && run_add_unknown(rec, &state);
-    ok = ok && run_add_active_scripts(rec, engine, model);
+    ok = ok && run_add_active_scripts(rec, engine);
 
     if (exit_code == NMO_CLI_EXIT_SUCCESS) {
         if (!ok) {
@@ -499,6 +661,8 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
     }
     free(state.unknown);
     nmo_engine_destroy(engine);
+    free(files.folder);
+    free(files.found);
     return exit_code;
 }
 
@@ -517,9 +681,13 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
         {"--trace", "-t", NMO_OPT_FLAG, "Show links, operations and graphs too"},
         {"--keys", "-k", NMO_OPT_STRING,
          "Keys held down: KEY@FRAME[-FRAME],... (names like Space, or scan codes)"},
+        {"--path", NULL, NMO_OPT_STRING,
+         "Folder of the files the document loads, before its own folder"},
+        {"--registry", NULL, NMO_OPT_STRING,
+         "Registry values the TT blocks read: KEY\\NAME=VALUE;..."},
     };
     enum { OPT_FRAMES, OPT_DELTA, OPT_START, OPT_SCRIPT, OPT_UNKNOWN, OPT_MAX_ITER, OPT_SEED,
-           OPT_TRACE, OPT_KEYS, OPT_COUNT };
+           OPT_TRACE, OPT_KEYS, OPT_PATH, OPT_REGISTRY, OPT_COUNT };
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
@@ -538,6 +706,12 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
     out->seed = nmo_opt_uint_or(&vals[OPT_SEED], 1u);
     out->trace = nmo_opt_flag(&vals[OPT_TRACE]);
     out->keys = nmo_opt_str(&vals[OPT_KEYS]);
+    out->path = nmo_opt_str(&vals[OPT_PATH]);
+    out->registry = nmo_opt_str(&vals[OPT_REGISTRY]);
+    if (!run_set_registry(NULL, out->registry)) {
+        fprintf(stderr, "Error: Invalid --registry: %s\n", out->registry);
+        return false;
+    }
     if (out->keys != NULL && run_parse_keys(out->keys, NULL) < 0) {
         fprintf(stderr, "Error: Invalid --keys: %s\n", out->keys);
         return false;

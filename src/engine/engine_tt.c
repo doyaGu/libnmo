@@ -1,0 +1,688 @@
+/**
+ * @file engine_tt.c
+ * @brief Ports of the Terratools (TT) building blocks Ballance uses, and of
+ *        Time Settings.
+ *
+ * Each function does what the block's function in the TT_*_RT DLLs does (the
+ * reference is the Ballanced source). The database manager reads arrays from
+ * the database file (TT Database Manager), found through the host's file
+ * resolver. What the blocks ask the machine for comes from a fixed machine:
+ * Windows, one render driver with 4:3 screen modes in 16 and 32 bits,
+ * not in interface mode, not in debug mode. The registry holds what the host
+ * set (nmo_engine_set_registry_value()).
+ */
+
+#include "engine_internal.h"
+
+#include "object/nmo_class_ids.h"
+#include "object/nmo_object_enum_defs.h"
+#include "type/nmo_type_guids.h"
+
+#include <ctype.h>
+#include <limits.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+typedef nmo_engine_block_t blk_t;
+
+#define IN_ACTIVE(b, i) nmo_engine_block_is_input_active((b), (i))
+#define IN_OFF(b, i) nmo_engine_block_activate_input((b), (i), false)
+#define OUT_ON(b, i) nmo_engine_block_activate_output((b), (i), true)
+
+static int32_t get_in_int(blk_t *b, int pos, int32_t fallback)
+{
+    int32_t value = fallback;
+    nmo_engine_block_get_input_value(b, pos, &value, sizeof(value));
+    return value;
+}
+
+static const char *input_string(blk_t *b, int pos)
+{
+    size_t size = 0;
+    const char *text = (const char *)nmo_engine_block_input_data(b, pos, &size);
+    return text != NULL && size > 0 && memchr(text, '\0', size) != NULL ? text : NULL;
+}
+
+static void set_out(blk_t *b, int pos, const void *value, size_t size)
+{
+    nmo_engine_block_set_output_value(b, pos, value, size);
+}
+
+/* ============================================================================
+ * TT Database Manager
+ * ============================================================================ */
+
+void eng_free_tt(nmo_engine_t *engine)
+{
+    free(engine->database_file);
+    engine->database_file = NULL;
+    for (size_t i = 0; i < engine->registry.count; i++) {
+        free(engine->registry.data[i].section);
+        free(engine->registry.data[i].name);
+        free(engine->registry.data[i].value);
+    }
+    free(engine->registry.data);
+    engine->registry.data = NULL;
+    engine->registry.count = engine->registry.capacity = 0;
+}
+
+static unsigned char rotl8(unsigned char value, int shift)
+{
+    return (unsigned char)((value << shift) | (value >> (8 - shift)));
+}
+
+static bool read_i32(const unsigned char *data, size_t size, size_t offset, int32_t *out)
+{
+    if (offset > size || size - offset < sizeof(int32_t)) {
+        return false;
+    }
+    memcpy(out, data + offset, sizeof(*out));
+    return true;
+}
+
+/* The size of the string at `offset`, terminator included; 0 when it does not end. */
+static size_t string_size(const unsigned char *data, size_t size, size_t offset)
+{
+    const unsigned char *end = offset < size ? memchr(data + offset, '\0', size - offset) : NULL;
+    return end != NULL ? (size_t)(end - (data + offset)) + 1u : 0u;
+}
+
+/* The whole file a name resolves to; NULL when it is not there. */
+static unsigned char *read_file(nmo_engine_t *engine, const char *name, size_t *out_size)
+{
+    const char *path = engine->resolve_file != NULL
+                           ? engine->resolve_file(engine->resolve_file_user_data, name)
+                           : NULL;
+    FILE *file = path != NULL ? fopen(path, "rb") : NULL;
+    if (file == NULL) {
+        return NULL;
+    }
+    unsigned char *data = NULL;
+    long size = fseek(file, 0, SEEK_END) == 0 ? ftell(file) : -1;
+    if (size > 0 && size < INT_MAX && fseek(file, 0, SEEK_SET) == 0) {
+        data = (unsigned char *)malloc((size_t)size);
+        if (data != NULL && fread(data, 1, (size_t)size, file) != (size_t)size) {
+            free(data);
+            data = NULL;
+        }
+    }
+    fclose(file);
+    *out_size = data != NULL ? (size_t)size : 0u;
+    return data;
+}
+
+/*
+ * DatabaseManager::Load: the array of that name from the database file into
+ * the data array of that name, its columns, key column and rows replaced.
+ * 1 when loaded, 31 when the file cannot be read, 32 when its content is
+ * wrong, 33 when it has no such array (or the engine has no array of that
+ * name, which the original would make).
+ */
+static int database_load(nmo_engine_t *engine, const char *array_name)
+{
+    if (array_name == NULL) {
+        return 33;
+    }
+    if (engine->database_file == NULL || engine->database_file[0] == '\0') {
+        return 31;
+    }
+    size_t size = 0;
+    unsigned char *data = read_file(engine, engine->database_file, &size);
+    if (data == NULL) {
+        return 31;
+    }
+    if (engine->database_crypted) {
+        for (size_t i = 0; i < size; i++) {
+            data[i] = (unsigned char)-(rotl8(data[i], 3) ^ 0xAF);
+        }
+    }
+
+    /* Chunks: a name, the array's size, the array */
+    size_t pos = 0, name_size = 0;
+    int32_t array_size = 0;
+    bool found = false;
+    while (pos < size) {
+        name_size = string_size(data, size, pos);
+        if (name_size == 0 || !read_i32(data, size, pos + name_size, &array_size) ||
+            array_size < 0 || (size_t)array_size > size - pos - name_size - sizeof(int32_t)) {
+            free(data);
+            return 32;
+        }
+        if (strcmp((const char *)data + pos, array_name) == 0) {
+            found = true;
+            break;
+        }
+        pos += name_size + sizeof(int32_t) + (size_t)array_size;
+    }
+    nmo_object_id_t array = found ? eng_object_named(engine, array_name, NMO_CID_DATAARRAY) : 0;
+    if (!found || eng_find_array(engine, array) == NULL) {
+        free(data);
+        return 33;
+    }
+
+    const unsigned char *table = data + pos + name_size + sizeof(int32_t);
+    size_t table_size = (size_t)array_size;
+    int32_t columns = 0, rows = 0, key = 0;
+    if (!read_i32(table, table_size, 0, &columns) || !read_i32(table, table_size, 4, &rows) ||
+        !read_i32(table, table_size, 8, &key) || columns < 0 || rows < 0 || key < -1 ||
+        key >= columns) {
+        free(data);
+        return 32;
+    }
+    nmo_engine_array_clear(engine, array);
+    while (nmo_engine_array_column_count(engine, array) > 0) {
+        nmo_engine_array_remove_column(engine, array, nmo_engine_array_column_count(engine, array) - 1);
+    }
+
+    size_t offset = 12;
+    for (int32_t c = 0; c < columns; c++) {
+        size_t column_name = string_size(table, table_size, offset);
+        int32_t type = 0;
+        if (column_name == 0 || !read_i32(table, table_size, offset + column_name, &type) ||
+            (type != CKARRAYTYPE_INT && type != CKARRAYTYPE_FLOAT &&
+             type != CKARRAYTYPE_STRING)) {
+            free(data);
+            return 32;
+        }
+        nmo_engine_array_insert_column(engine, array, -1, type, NMO_GUID(0u, 0u));
+        offset += column_name + sizeof(int32_t);
+    }
+    eng_find_array(engine, array)->key_column = key;
+    for (int32_t r = 0; r < rows; r++) {
+        nmo_engine_array_insert_row(engine, array, -1, NULL);
+    }
+    /* Column by column */
+    for (int32_t c = 0; c < columns; c++) {
+        int32_t type = nmo_engine_array_column_type(engine, array, c);
+        for (int32_t r = 0; r < rows; r++) {
+            nmo_engine_cell_t cell = {.type = type};
+            if (type == CKARRAYTYPE_STRING) {
+                size_t text_size = string_size(table, table_size, offset);
+                if (text_size == 0) {
+                    free(data);
+                    return 32;
+                }
+                cell.text = (const char *)table + offset;
+                offset += text_size;
+            } else {
+                int32_t value = 0;
+                if (!read_i32(table, table_size, offset, &value)) {
+                    free(data);
+                    return 32;
+                }
+                cell.value = (uint32_t)value;
+                offset += sizeof(int32_t);
+            }
+            nmo_engine_array_set_cell(engine, array, r, c, &cell);
+        }
+    }
+    free(data);
+    return 1;
+}
+
+/* TT Set Database Properties: the database file and whether it is scrambled. */
+static int bb_set_database_properties(blk_t *b)
+{
+    IN_OFF(b, 0);
+    nmo_engine_t *engine = nmo_engine_block_engine(b);
+    const char *file = input_string(b, 0);
+    if (file == NULL || file[0] == '\0') {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    size_t length = strlen(file);
+    char *copy = (char *)malloc(length + 1u);
+    if (copy == NULL) {
+        return NMO_ENGINE_BR_GENERICERROR;
+    }
+    memcpy(copy, file, length + 1u);
+    free(engine->database_file);
+    engine->database_file = copy;
+    engine->database_crypted = get_in_int(b, 1, 1) != 0;
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* TT Load Database: OK when the array loaded, Error otherwise. */
+static int bb_load_database(blk_t *b)
+{
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+    }
+    int result = database_load(nmo_engine_block_engine(b), input_string(b, 1));
+    OUT_ON(b, result == 1 ? 0 : 1);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* ============================================================================
+ * Registry
+ * ============================================================================ */
+
+static char *text_copy(const char *text, size_t length)
+{
+    char *copy = (char *)malloc(length + 1u);
+    if (copy != NULL) {
+        memcpy(copy, text, length);
+        copy[length] = '\0';
+    }
+    return copy;
+}
+
+/* The length of a key without its trailing backslashes. */
+static size_t section_length(const char *section)
+{
+    size_t length = strlen(section);
+    while (length > 0 && section[length - 1] == '\\') {
+        length--;
+    }
+    return length;
+}
+
+static bool same_text(const char *a, size_t a_length, const char *b, size_t b_length)
+{
+    if (a_length != b_length) {
+        return false;
+    }
+    for (size_t i = 0; i < a_length; i++) {
+        if (tolower((unsigned char)a[i]) != tolower((unsigned char)b[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static eng_registry_value_t *registry_find(nmo_engine_t *engine, const char *section,
+                                           const char *name)
+{
+    size_t length = section_length(section);
+    for (size_t i = 0; i < engine->registry.count; i++) {
+        eng_registry_value_t *entry = &engine->registry.data[i];
+        if (same_text(entry->section, strlen(entry->section), section, length) &&
+            same_text(entry->name, strlen(entry->name), name, strlen(name))) {
+            return entry;
+        }
+    }
+    return NULL;
+}
+
+nmo_status_t nmo_engine_set_registry_value(nmo_engine_t *engine, const char *section,
+                                           const char *name, const char *value)
+{
+    if (engine == NULL || section == NULL || name == NULL || value == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    char *copy = text_copy(value, strlen(value));
+    if (copy == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    eng_registry_value_t *entry = registry_find(engine, section, name);
+    if (entry != NULL) {
+        free(entry->value);
+        entry->value = copy;
+        return NMO_OK;
+    }
+    char *section_copy = text_copy(section, section_length(section));
+    char *name_copy = text_copy(name, strlen(name));
+    if (section_copy == NULL || name_copy == NULL || !ENG_VEC_PUSH(engine->registry, entry)) {
+        free(copy);
+        free(section_copy);
+        free(name_copy);
+        return NMO_ERR_NOMEM;
+    }
+    entry->section = section_copy;
+    entry->name = name_copy;
+    entry->value = copy;
+    return NMO_OK;
+}
+
+static const char *registry_value(nmo_engine_t *engine, const char *section, const char *name)
+{
+    const eng_registry_value_t *entry =
+        section != NULL && name != NULL ? registry_find(engine, section, name) : NULL;
+    return entry != NULL ? entry->value : NULL;
+}
+
+/* VxConfig reads a DWORD value; false when the value is not a number. */
+static bool registry_int(nmo_engine_t *engine, const char *section, const char *name,
+                         int32_t *out)
+{
+    const char *text = registry_value(engine, section, name);
+    char *end = NULL;
+    long value = text != NULL ? strtol(text, &end, 0) : 0;
+    if (text == NULL || end == text || *end != '\0') {
+        return false;
+    }
+    *out = (int32_t)value;
+    return true;
+}
+
+static bool registry_float(nmo_engine_t *engine, const char *section, const char *name,
+                           float *out)
+{
+    const char *text = registry_value(engine, section, name);
+    char *end = NULL;
+    float value = text != NULL ? strtof(text, &end) : 0.0f;
+    if (text == NULL || end == text || *end != '\0') {
+        return false;
+    }
+    *out = value;
+    return true;
+}
+
+/* The registry value name of a row: its index. */
+static char *row_entry(int32_t row)
+{
+    int length = snprintf(NULL, 0, "%d", (int)row);
+    char *entry = length > 0 ? (char *)malloc((size_t)length + 1u) : NULL;
+    if (entry != NULL) {
+        snprintf(entry, (size_t)length + 1u, "%d", (int)row);
+    }
+    return entry;
+}
+
+/*
+ * SaveArray-Mode of TT_ReadRegistry: each cell from value <row> of key
+ * <section><array name>\<column>\; false at the first it cannot read.
+ */
+static bool read_registry_array(blk_t *b, const char *section, nmo_object_id_t array,
+                                const char *array_name)
+{
+    nmo_engine_t *engine = nmo_engine_block_engine(b);
+    int32_t columns = nmo_engine_array_column_count(engine, array);
+    int32_t rows = nmo_engine_array_row_count(engine, array);
+    bool ok = true;
+    for (int32_t c = 0; c < columns && ok; c++) {
+        int length = snprintf(NULL, 0, "%s\\%s\\%d\\", section, array_name, (int)c);
+        char *column_section = length > 0 ? (char *)malloc((size_t)length + 1u) : NULL;
+        if (column_section == NULL) {
+            return false;
+        }
+        snprintf(column_section, (size_t)length + 1u, "%s\\%s\\%d\\", section, array_name, (int)c);
+        int32_t type = nmo_engine_array_column_type(engine, array, c);
+        for (int32_t r = 0; r < rows && ok; r++) {
+            char *entry = row_entry(r);
+            nmo_engine_cell_t cell = {.type = type};
+            int32_t value = 0;
+            float number = 0.0f;
+            const char *text = NULL;
+            switch (type) {
+            case CKARRAYTYPE_INT:
+            case CKARRAYTYPE_PARAMETER: /* a Boolean parameter: TT_ReadRegistry refuses others */
+                ok = entry != NULL && registry_int(engine, column_section, entry, &value);
+                cell.value = (uint32_t)value;
+                break;
+            case CKARRAYTYPE_FLOAT:
+                ok = entry != NULL && registry_float(engine, column_section, entry, &number);
+                memcpy(&cell.value, &number, sizeof(number));
+                break;
+            case CKARRAYTYPE_STRING:
+                text = entry != NULL ? registry_value(engine, column_section, entry) : NULL;
+                ok = text != NULL;
+                cell.text = text;
+                break;
+            default:
+                free(entry);
+                continue;
+            }
+            if (ok) {
+                nmo_engine_array_set_cell(engine, array, r, c, &cell);
+            }
+            free(entry);
+        }
+        free(column_section);
+    }
+    return ok;
+}
+
+/* ============================================================================
+ * TT Toolbox and TT Interface Manager
+ * ============================================================================ */
+
+/* TT_Debug: writes only in debug mode, which the engine never is; In stays active then. */
+static int bb_tt_debug(blk_t *b)
+{
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* TT Player Active: Active outside interface mode (In stays active, as in the original). */
+static int bb_player_active(blk_t *b)
+{
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* TT Set_2DSprite: places its 2D frame (an effect). */
+static int bb_set_2d_sprite(blk_t *b)
+{
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+    }
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (target == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, target, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* TT OperationSystem: a Windows of the VXOS_WIN31..VXOS_WINSEVEN range reads as 2, 0, 6. */
+static int bb_operation_system(blk_t *b)
+{
+    const int32_t id = 2, minor = 0, major = 6;
+    set_out(b, 0, &id, sizeof(id));
+    set_out(b, 1, &minor, sizeof(minor));
+    set_out(b, 2, &major, sizeof(major));
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* TT GetMemoryStatus: the fixed machine's memory, in megabytes. */
+static int bb_get_memory_status(blk_t *b)
+{
+    const int32_t load = 50;
+    const float total = 4096.0f, available = 2048.0f, virtual_total = 2048.0f,
+                virtual_available = 1536.0f;
+    set_out(b, 0, &load, sizeof(load));
+    set_out(b, 1, &total, sizeof(total));
+    set_out(b, 2, &available, sizeof(available));
+    set_out(b, 3, &virtual_total, sizeof(virtual_total));
+    set_out(b, 4, &virtual_available, sizeof(virtual_available));
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+static const struct {
+    int32_t width, height, bpp;
+} screen_modes[] = {{640, 480, 16},  {640, 480, 32},  {800, 600, 16},
+                    {800, 600, 32},  {1024, 768, 16}, {1024, 768, 32}};
+
+/* The array an input names, emptied of rows and columns; 0 when it names none. */
+static nmo_object_id_t emptied_array(blk_t *b, int pos)
+{
+    nmo_engine_t *engine = nmo_engine_block_engine(b);
+    nmo_object_id_t array = nmo_engine_block_get_input_object(b, pos);
+    if (array == 0 || eng_find_array(engine, array) == NULL) {
+        return 0;
+    }
+    nmo_engine_array_clear(engine, array);
+    while (nmo_engine_array_column_count(engine, array) > 0) {
+        nmo_engine_array_remove_column(engine, array, 0);
+    }
+    return array;
+}
+
+static void set_int_cell(nmo_engine_t *engine, nmo_object_id_t array, int32_t row, int32_t column,
+                         int32_t value)
+{
+    nmo_engine_cell_t cell = {.type = CKARRAYTYPE_INT, .value = (uint32_t)value};
+    nmo_engine_array_set_cell(engine, array, row, column, &cell);
+}
+
+static void set_text_cell(nmo_engine_t *engine, nmo_object_id_t array, int32_t row,
+                          int32_t column, const char *text)
+{
+    nmo_engine_cell_t cell = {.type = CKARRAYTYPE_STRING, .text = text};
+    nmo_engine_array_set_cell(engine, array, row, column, &cell);
+}
+
+/* TT List Driver: DriverName, DriverID, DriverDesc of each render driver; the driver in use. */
+static int bb_list_driver(blk_t *b)
+{
+    nmo_engine_t *engine = nmo_engine_block_engine(b);
+    nmo_object_id_t drivers = emptied_array(b, 0);
+    if (drivers == 0) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    nmo_engine_array_insert_column(engine, drivers, -1, CKARRAYTYPE_STRING, NMO_GUID(0u, 0u));
+    nmo_engine_array_insert_column(engine, drivers, 0, CKARRAYTYPE_STRING, NMO_GUID(0u, 0u));
+    nmo_engine_array_insert_column(engine, drivers, 1, CKARRAYTYPE_INT, NMO_GUID(0u, 0u));
+    nmo_engine_array_insert_row(engine, drivers, -1, NULL);
+    set_text_cell(engine, drivers, 0, 0, "libnmo");
+    set_int_cell(engine, drivers, 0, 1, 0);
+    set_text_cell(engine, drivers, 0, 2, "No rendering");
+    const int32_t driver = 0;
+    set_out(b, 0, &driver, sizeof(driver));
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* TT List ScreenModes: Mode, Width, Height, Bpp of the driver's modes; the mode in use. */
+static int bb_list_screen_modes(blk_t *b)
+{
+    nmo_engine_t *engine = nmo_engine_block_engine(b);
+    int32_t driver = get_in_int(b, 0, 0);
+    nmo_object_id_t modes = emptied_array(b, 1);
+    if (modes == 0) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    nmo_engine_array_insert_column(engine, modes, -1, CKARRAYTYPE_INT, NMO_GUID(0u, 0u));
+    for (int32_t c = 0; c < 3; c++) {
+        nmo_engine_array_insert_column(engine, modes, c, CKARRAYTYPE_INT, NMO_GUID(0u, 0u));
+    }
+    if (driver != 0) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    for (int32_t i = 0; i < (int32_t)(sizeof(screen_modes) / sizeof(screen_modes[0])); i++) {
+        nmo_engine_array_insert_row(engine, modes, -1, NULL);
+        set_int_cell(engine, modes, i, 0, i);
+        set_int_cell(engine, modes, i, 1, screen_modes[i].width);
+        set_int_cell(engine, modes, i, 2, screen_modes[i].height);
+        set_int_cell(engine, modes, i, 3, screen_modes[i].bpp);
+    }
+    const int32_t mode = 0;
+    set_out(b, 0, &mode, sizeof(mode));
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * TT Change ScreenMode: asks the player for a mode of the driver's list (an
+ * effect); Error for another driver or mode. In stays active, as in the original.
+ */
+static int bb_change_screen_mode(blk_t *b)
+{
+    int32_t driver = get_in_int(b, 0, 0);
+    int32_t mode = get_in_int(b, 1, 0);
+    if (driver != 0 || mode < 0 || mode >= (int32_t)(sizeof(screen_modes) / sizeof(screen_modes[0]))) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, 0, 0);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * TT_ReadRegistry: value Reg-Entry of key Reg-Section into Data, as Data's
+ * type reads it; in SaveArray-Mode, the destination array's cells. OK, or
+ * FAILED when a value is missing (In stays active either way).
+ */
+static int bb_read_registry(blk_t *b)
+{
+    nmo_engine_t *engine = nmo_engine_block_engine(b);
+    bool save_array = false;
+    nmo_engine_block_get_local_value(b, 0, &save_array, sizeof(save_array));
+    const char *section = input_string(b, 0);
+    if (section == NULL) {
+        section = "";
+    }
+    bool ok = false;
+    if (save_array) {
+        nmo_object_id_t array = nmo_engine_block_get_input_object(b, 2);
+        const char *array_name = input_string(b, 3);
+        if (array_name == NULL || array_name[0] == '\0') {
+            array_name = array != 0 ? nmo_engine_object_name(engine, array) : NULL;
+        }
+        ok = array != 0 && eng_find_array(engine, array) != NULL && array_name != NULL &&
+             array_name[0] != '\0' && read_registry_array(b, section, array, array_name);
+    } else {
+        const char *entry = input_string(b, 1);
+        nmo_guid_t type = nmo_engine_block_output_parameter_type(b, 0);
+        if (nmo_guid_equals(type, CKPGUID_INT) || nmo_guid_equals(type, CKPGUID_BOOL)) {
+            int32_t value = 0;
+            ok = registry_int(engine, section, entry, &value);
+            if (ok) {
+                set_out(b, 0, &value, sizeof(value));
+            }
+        } else if (nmo_guid_equals(type, CKPGUID_FLOAT)) {
+            float value = 0.0f;
+            ok = registry_float(engine, section, entry, &value);
+            if (ok) {
+                set_out(b, 0, &value, sizeof(value));
+            }
+        } else if (nmo_guid_equals(type, CKPGUID_STRING)) {
+            const char *value = registry_value(engine, section, entry);
+            ok = value != NULL;
+            if (ok) {
+                nmo_engine_block_set_output_text(b, 0, value);
+            }
+        } else {
+            ok = true; /* nothing to read */
+        }
+    }
+    OUT_ON(b, ok ? 0 : 1);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Time Settings: the time manager's rates and limits (an effect on the scene). */
+static int bb_time_settings(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, 0, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+static const nmo_engine_block_desc_t eng_tt_blocks[] = {
+    {NMO_GUID(0x1436624f, 0x34e1290a), "TT Set Database Properties", bb_set_database_properties,
+     NULL, NULL},
+    {NMO_GUID(0x05441494, 0x38ac7789), "TT Load Database", bb_load_database, NULL, NULL},
+    {NMO_GUID(0x4a446c43, 0x66fa2375), "TT_Debug", bb_tt_debug, NULL, NULL},
+    {NMO_GUID(0x0694658d, 0x7ffd236f), "TT Player Active", bb_player_active, NULL, NULL},
+    {NMO_GUID(0x3c392558, 0x419d2680), "TT Set_2DSprite", bb_set_2d_sprite, NULL, NULL},
+    {NMO_GUID(0x4c94621d, 0x24fe2cf3), "TT OperationSystem", bb_operation_system, NULL, NULL},
+    {NMO_GUID(0x3b826e04, 0x6e764285), "TT GetMemoryStatus", bb_get_memory_status, NULL, NULL},
+    {NMO_GUID(0x62d00456, 0x30eb4245), "TT List Driver", bb_list_driver, NULL, NULL},
+    {NMO_GUID(0x4e7a0194, 0x040328fd), "TT List ScreenModes", bb_list_screen_modes, NULL, NULL},
+    {NMO_GUID(0x460044b5, 0x6e927b66), "TT_ReadRegistry", bb_read_registry, NULL, NULL},
+    {NMO_GUID(0x38b84d97, 0x13932f28), "TT Change ScreenMode", bb_change_screen_mode, NULL, NULL},
+    {NMO_GUID(0x060a0f8c, 0x09203b5f), "Time Settings", bb_time_settings, NULL, NULL},
+};
+
+nmo_status_t eng_register_tt(nmo_engine_t *engine)
+{
+    engine->database_crypted = true;
+    for (size_t i = 0; i < sizeof(eng_tt_blocks) / sizeof(eng_tt_blocks[0]); i++) {
+        nmo_status_t status = nmo_engine_register_block(engine, &eng_tt_blocks[i]);
+        if (status != NMO_OK) {
+            return status;
+        }
+    }
+    return NMO_OK;
+}

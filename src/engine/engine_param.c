@@ -178,6 +178,11 @@ nmo_status_t eng_operation_execute(nmo_engine_t *engine, nmo_guid_t guid, eng_pa
     eng_param_update(engine, src1);
     eng_param_update(engine, src2);
 
+    nmo_status_t builtin_status = NMO_OK;
+    if (eng_operation_builtin(engine, guid, in1, src1, in2, src2, out, &builtin_status)) {
+        return builtin_status;
+    }
+
     const nmo_type_descriptor_t *t1 = src1 != NULL ? in1->type_desc : NULL;
     const nmo_type_descriptor_t *t2 = src2 != NULL ? in2->type_desc : NULL;
     const nmo_operation_tree_cell_t *cell = NULL;

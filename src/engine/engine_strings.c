@@ -154,8 +154,7 @@ static const nmo_specialized_metadata_t *type_metadata(const nmo_engine_t *engin
 
 static nmo_object_t *engine_object(const nmo_engine_t *engine, nmo_object_id_t id)
 {
-    nmo_object_repository_t *repo = nmo_workspace_internal_repository(engine->workspace);
-    return repo != NULL && id != 0 ? nmo_object_repository_find_by_id(repo, id) : NULL;
+    return id != 0 ? eng_find_object(engine, id) : NULL;
 }
 
 /* ============================================================================
@@ -322,40 +321,11 @@ char *eng_param_text(nmo_engine_t *engine, const eng_param_t *param)
  * SetStringValue
  * ============================================================================ */
 
-/* CKMessageManager::AddMessageType: the type of that name, made if new. */
-static int32_t message_type(nmo_engine_t *engine, const char *name)
-{
-    int32_t type = nmo_engine_message_type(engine, name);
-    if (type >= 0) {
-        return type;
-    }
-    char *copy = text_copy(name, strlen(name));
-    char **slot = NULL;
-    if (copy == NULL || !ENG_VEC_PUSH(engine->message_names, slot)) {
-        free(copy);
-        return -1;
-    }
-    *slot = copy;
-    return (int32_t)engine->message_names.count - 1;
-}
-
 /* GetObjectByNameAndParentClass: an object of that name and of the type's class. */
 static nmo_object_id_t object_named(nmo_engine_t *engine, nmo_guid_t type_guid, const char *name)
 {
     const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(engine->types, type_guid);
-    nmo_object_repository_t *repo = nmo_workspace_internal_repository(engine->workspace);
-    size_t count = 0;
-    nmo_object_t **objects = repo != NULL ? nmo_object_repository_get_all(repo, &count) : NULL;
-    for (size_t i = 0; objects != NULL && i < count; i++) {
-        const char *object_name = nmo_object_get_name(objects[i]);
-        if (object_name != NULL && strcmp(object_name, name) == 0 &&
-            (type == NULL || type->class_id == 0 ||
-             nmo_type_registry_is_class_derived_from(
-                 engine->types, (uint32_t)nmo_object_get_class_id(objects[i]), type->class_id))) {
-            return nmo_object_get_id(objects[i]);
-        }
-    }
-    return 0;
+    return eng_object_named(engine, name, type != NULL ? type->class_id : 0u);
 }
 
 nmo_status_t eng_param_set_text(nmo_engine_t *engine, eng_param_t *param, const char *text)
@@ -431,7 +401,7 @@ nmo_status_t eng_param_set_text(nmo_engine_t *engine, eng_param_t *param, const 
         return eng_param_write(engine, param, f, 4 * sizeof(float));
     }
     case TEXT_MESSAGE:
-        i = message_type(engine, text);
+        i = eng_message_type_add(engine, text);
         return eng_param_write(engine, param, &i, sizeof(i));
     case TEXT_ENUM: {
         const nmo_specialized_metadata_t *meta = type_metadata(engine, param->type,

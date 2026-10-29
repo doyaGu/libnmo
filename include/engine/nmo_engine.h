@@ -59,6 +59,7 @@ extern "C" {
 
 typedef struct nmo_workspace nmo_workspace_t;
 typedef struct nmo_script_model nmo_script_model_t;
+typedef struct nmo_script_node nmo_script_node_t;
 typedef struct nmo_engine nmo_engine_t;
 
 /* CK_BEHAVIOR_RETURN: what a building block function returns. */
@@ -124,6 +125,9 @@ typedef enum nmo_engine_event_kind {
     NMO_ENGINE_EVENT_EFFECT,           /* behavior: a block whose effect (on the scene, a
                                           sound, ...) the engine does not simulate;
                                           object: its target */
+    NMO_ENGINE_EVENT_FILE_LOADED,      /* behavior: the block that loaded it, if any;
+                                          result: the loaded file (nmo_engine_load), or -1
+                                          when it could not be loaded */
 } nmo_engine_event_kind_t;
 
 typedef struct nmo_engine_event {
@@ -184,6 +188,79 @@ NMO_API nmo_status_t nmo_engine_activate_object(nmo_engine_t *engine,
                                                 nmo_object_id_t object_id,
                                                 bool active);
 NMO_API bool nmo_engine_object_is_active(const nmo_engine_t *engine, nmo_object_id_t object_id);
+
+/* ---- Loading files ----
+ *
+ * CKContext::Load into the running engine (Object Load). The engine opens no
+ * file by itself: the host's resolver turns the name a document gives
+ * ("3D Entities\MenuLevel.nmo") into a path to load, or refuses it. A loaded
+ * file's objects get engine IDs of their own, after the IDs in use; its
+ * message and attribute types join the engine's by name.
+ */
+
+/** The path to load for `name`, valid until the next call; NULL to refuse it. */
+typedef const char *(*nmo_engine_resolve_file_fn)(void *user_data, const char *name);
+
+NMO_API void nmo_engine_set_file_resolver(nmo_engine_t *engine,
+                                          nmo_engine_resolve_file_fn fn,
+                                          void *user_data);
+/**
+ * Load the file `name` names. With `add_to_level`, its objects are added to
+ * the level as Object Load adds them: each behavioral object, and each of its
+ * scripts, activates or deactivates as its saved activity flags say (an
+ * object without them stays inactive). `out_file` (optional) is the loaded
+ * file, for nmo_engine_loaded_object(). NMO_ERR_NOT_SUPPORTED without a
+ * resolver, NMO_ERR_FILE_NOT_FOUND when it refuses the name.
+ */
+NMO_API nmo_status_t nmo_engine_load(nmo_engine_t *engine,
+                                     const char *name,
+                                     bool add_to_level,
+                                     int32_t *out_file);
+/** The name a loaded file was loaded by; NULL for the engine's own document. */
+NMO_API const char *nmo_engine_loaded_file_name(const nmo_engine_t *engine, int32_t file);
+/** The objects of a loaded file, in the file's order, by engine ID. */
+NMO_API int32_t nmo_engine_loaded_object_count(const nmo_engine_t *engine, int32_t file);
+NMO_API nmo_object_id_t nmo_engine_loaded_object(const nmo_engine_t *engine,
+                                                 int32_t file,
+                                                 int32_t index);
+/** The name of an object of any file the engine runs; NULL when it has none. */
+NMO_API const char *nmo_engine_object_name(const nmo_engine_t *engine, nmo_object_id_t id);
+/**
+ * The script model node of behavior `id` in whichever file the engine runs
+ * it from (the node's own `id` is the file's); NULL when it is none.
+ */
+NMO_API const nmo_script_node_t *nmo_engine_script_node(const nmo_engine_t *engine,
+                                                        nmo_object_id_t id);
+/**
+ * A label for `id` as nmo_script_model_label() makes one ("Name#id"), with
+ * the engine ID; returns its length, writing at most `buffer_size` bytes.
+ */
+NMO_API size_t nmo_engine_label(const nmo_engine_t *engine,
+                                nmo_object_id_t id,
+                                char *buffer,
+                                size_t buffer_size);
+/** The scripts of every file the engine runs, in engine order. */
+NMO_API int32_t nmo_engine_script_count(const nmo_engine_t *engine);
+NMO_API nmo_object_id_t nmo_engine_script_id(const nmo_engine_t *engine, int32_t index);
+/** CK_CLASSID of an object of any file the engine runs; 0 when there is none. */
+NMO_API int32_t nmo_engine_object_class(const nmo_engine_t *engine, nmo_object_id_t id);
+/**
+ * CKContext::DestroyObjects for the engine: a destroyed behavioral object
+ * leaves the behavior manager for good and its scripts stop; a destroyed
+ * script stops.
+ */
+NMO_API void nmo_engine_destroy_object(nmo_engine_t *engine, nmo_object_id_t id);
+
+/**
+ * Set a value of the registry the TT blocks read (HKEY_CURRENT_USER): value
+ * `name` of key `section` ("Software\\Ballance\\Settings"), as text ("1",
+ * "0.5", "Path"). Keys and names compare as the registry compares them,
+ * ignoring case and a key's trailing backslashes. NMO_ERR_NOMEM on failure.
+ */
+NMO_API nmo_status_t nmo_engine_set_registry_value(nmo_engine_t *engine,
+                                                   const char *section,
+                                                   const char *name,
+                                                   const char *value);
 
 /** Run one frame of `delta_ms` milliseconds. */
 NMO_API nmo_status_t nmo_engine_step(nmo_engine_t *engine, float delta_ms);
@@ -447,6 +524,12 @@ NMO_API const char *nmo_engine_font_name(const nmo_engine_t *engine, int32_t fon
  * starts and stops it, and it ends after the length the file records.
  */
 NMO_API bool nmo_engine_sound_is_playing(const nmo_engine_t *engine, nmo_object_id_t sound_id);
+/**
+ * The slot texture `texture_id` shows: the frame of the movie Movie Load
+ * gave it as Movie Player advances it, else the slot the file records.
+ */
+NMO_API int32_t nmo_engine_texture_current_slot(const nmo_engine_t *engine,
+                                                nmo_object_id_t texture_id);
 
 /** "execute", "link", ... */
 NMO_API const char *nmo_engine_event_kind_name(nmo_engine_event_kind_t kind);

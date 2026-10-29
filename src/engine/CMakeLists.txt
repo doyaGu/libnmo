@@ -17,11 +17,14 @@ set(NMO_ENGINE_SOURCES
     engine_logics.c
     engine_media.c
     engine_message.c
+    engine_module.c
     engine_narratives.c
+    engine_operations.c
     engine_param.c
     engine_run.c
     engine_schedule.c
     engine_strings.c
+    engine_tt.c
 )
 list(TRANSFORM NMO_ENGINE_SOURCES PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/")
 

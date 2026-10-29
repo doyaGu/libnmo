@@ -9,15 +9,11 @@
 
 #include "engine_internal.h"
 
-#include "core/nmo_arena.h"
 #include "format/nmo_object.h"
-#include "object/builtin/nmo_group_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_defs.h"
 #include "object/nmo_object_repository.h"
-#include "object/nmo_ref.h"
 #include "type/nmo_type_query.h"
-#include "../runtime/runtime_internal.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -25,35 +21,6 @@
 /* ============================================================================
  * Message types
  * ============================================================================ */
-
-nmo_status_t eng_load_message_names(nmo_engine_t *engine)
-{
-    nmo_arena_t *arena = nmo_arena_create(NULL, 4096u);
-    if (arena == NULL) {
-        return NMO_ERR_NOMEM;
-    }
-    const char **names = NULL;
-    uint32_t count = 0;
-    nmo_status_t status = NMO_OK;
-    /* A file without a message manager declares no message types */
-    if (nmo_workspace_internal_message_names(engine->workspace, arena, &names, &count) == NMO_OK) {
-        for (uint32_t i = 0; status == NMO_OK && i < count; i++) {
-            const char *name = names[i] != NULL ? names[i] : "";
-            size_t length = strlen(name);
-            char **slot = NULL;
-            char *copy = (char *)malloc(length + 1u);
-            if (copy == NULL || !ENG_VEC_PUSH(engine->message_names, slot)) {
-                free(copy);
-                status = NMO_ERR_NOMEM;
-                break;
-            }
-            memcpy(copy, name, length + 1u);
-            *slot = copy;
-        }
-    }
-    nmo_arena_destroy(arena);
-    return status;
-}
 
 void eng_free_messages(nmo_engine_t *engine)
 {
@@ -206,8 +173,7 @@ void eng_reset_messages(nmo_engine_t *engine)
 
 nmo_class_id_t eng_object_class(nmo_engine_t *engine, nmo_object_id_t id)
 {
-    nmo_object_repository_t *repo = nmo_workspace_internal_repository(engine->workspace);
-    nmo_object_t *object = repo != NULL && id != 0 ? nmo_object_repository_find_by_id(repo, id)
+    nmo_object_t *object = id != 0 ? eng_find_object(engine, id)
                                                    : NULL;
     return object != NULL ? nmo_object_get_class_id(object) : 0;
 }
@@ -240,18 +206,6 @@ static bool eng_object_waits_for_messages(nmo_engine_t *engine, nmo_object_id_t 
     return object >= 0 && engine->objects.data[object].waiting > 0;
 }
 
-/* The members of group `id`; NULL when it is not a group. */
-static const nmo_array_t *eng_group_members(nmo_engine_t *engine, nmo_object_id_t id)
-{
-    if (eng_object_class(engine, id) != NMO_CID_GROUP) {
-        return NULL;
-    }
-    nmo_object_repository_t *repo = nmo_workspace_internal_repository(engine->workspace);
-    const nmo_group_state_t *group =
-        (const nmo_group_state_t *)nmo_object_get_state(nmo_object_repository_find_by_id(repo, id));
-    return group != NULL ? &group->object_ids : NULL;
-}
-
 /* CKMessageManager::AddMessageToObject */
 static void eng_deliver_to(nmo_engine_t *engine, nmo_object_id_t id, const eng_message_t *message,
                            uint32_t position, bool recurse, int depth)
@@ -265,18 +219,18 @@ static void eng_deliver_to(nmo_engine_t *engine, nmo_object_id_t id, const eng_m
     if (!recurse || message->sending != ENG_MESSAGE_GROUP) {
         return;
     }
-    const nmo_array_t *members = eng_group_members(engine, id);
-    for (size_t i = 0; members != NULL && i < members->count; i++) {
-        nmo_object_id_t member = nmo_ref_runtime_id(&((const nmo_ref_t *)members->data)[i]);
-        eng_deliver_to(engine, member, message, position, true, depth + 1);
+    int32_t members = nmo_engine_group_count(engine, id);
+    for (int32_t i = 0; i < members; i++) {
+        eng_deliver_to(engine, nmo_engine_group_object(engine, id, i), message, position, true,
+                       depth + 1);
     }
 }
 
 static bool eng_group_has(nmo_engine_t *engine, nmo_object_id_t group, nmo_object_id_t id)
 {
-    const nmo_array_t *members = eng_group_members(engine, group);
-    for (size_t i = 0; members != NULL && i < members->count; i++) {
-        if (nmo_ref_runtime_id(&((const nmo_ref_t *)members->data)[i]) == id) {
+    int32_t members = nmo_engine_group_count(engine, group);
+    for (int32_t i = 0; i < members; i++) {
+        if (nmo_engine_group_object(engine, group, i) == id) {
             return true;
         }
     }

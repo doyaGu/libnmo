@@ -1,6 +1,6 @@
 /**
  * @file engine_media.c
- * @brief Sounds and particle systems, without audio or rendering.
+ * @brief Sounds, textures, movies and particle systems, without audio or rendering.
  *
  * Wave Player and the particle systems are not effects: they stay active and
  * activate outputs later (when a sound ends, when the last particle dies).
@@ -8,18 +8,23 @@
  * plays and ends after the length its CKWaveSound records; a particle system
  * counts its particles as alive until the longest lifespan its inputs allow
  * has passed since it last emitted. Starting a sound or an emission reports
- * an effect event.
+ * an effect event. A texture is its slots, a movie the frames its AVI file
+ * records; Movie Player moves through them as the movie plays.
  */
 
 #include "engine_internal.h"
 
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_sound_schemas.h"
+#include "object/builtin/nmo_texture_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
 #include "type/nmo_object_guids.h"
+#include "type/nmo_type_guids.h"
 #include "../runtime/runtime_internal.h"
 
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 typedef nmo_engine_block_t blk_t;
@@ -54,9 +59,7 @@ static eng_sound_t *eng_sound(nmo_engine_t *engine, nmo_object_id_t id)
             return &engine->sounds.data[i];
         }
     }
-    nmo_object_repository_t *repo = nmo_workspace_internal_repository(engine->workspace);
-    nmo_object_t *object = repo != NULL && id != 0 ? nmo_object_repository_find_by_id(repo, id)
-                                                   : NULL;
+    nmo_object_t *object = id != 0 ? eng_find_object(engine, id) : NULL;
     if (object == NULL || nmo_object_get_class_id(object) != NMO_CID_WAVESOUND) {
         return NULL;
     }
@@ -266,8 +269,244 @@ static int bb_particle_system(blk_t *b)
     return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
 }
 
+/* TT_GetSoundProperties: the gain, pitch and pan of the target sound. */
+static int bb_get_sound_properties(blk_t *b)
+{
+    nmo_object_t *object = eng_find_object(b->engine, nmo_engine_block_target(b));
+    if (object == NULL || nmo_object_get_class_id(object) != NMO_CID_WAVESOUND) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    const nmo_wavesound_state_t *state = (const nmo_wavesound_state_t *)nmo_object_get_state(object);
+    float gain = state != NULL ? state->gain : 1.0f;
+    float pitch = state != NULL ? state->pitch : 1.0f;
+    float pan = state != NULL ? state->pan : 0.0f;
+    nmo_engine_block_set_output_value(b, 0, &gain, sizeof(gain));
+    nmo_engine_block_set_output_value(b, 1, &pitch, sizeof(pitch));
+    nmo_engine_block_set_output_value(b, 2, &pan, sizeof(pan));
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* ============================================================================
+ * Textures and movies
+ * ============================================================================ */
+
+/* The engine's state of texture `id`, made the first time; NULL when `id` is no CKTexture. */
+static eng_texture_t *eng_texture(nmo_engine_t *engine, nmo_object_id_t id)
+{
+    for (size_t i = 0; i < engine->textures.count; i++) {
+        if (engine->textures.data[i].id == id) {
+            return &engine->textures.data[i];
+        }
+    }
+    nmo_object_t *object = id != 0 ? eng_find_object(engine, id) : NULL;
+    if (object == NULL || nmo_object_get_class_id(object) != NMO_CID_TEXTURE) {
+        return NULL;
+    }
+    const nmo_texture_state_t *state = (const nmo_texture_state_t *)nmo_object_get_state(object);
+    eng_texture_t *texture = NULL;
+    if (!ENG_VEC_PUSH(engine->textures, texture)) {
+        return NULL;
+    }
+    texture->id = id;
+    texture->slot_count = state != NULL ? (int32_t)state->slot_count : 0;
+    texture->current_slot = state != NULL && state->has_current_slot ? state->current_slot : 0;
+    return texture;
+}
+
+int32_t nmo_engine_texture_current_slot(const nmo_engine_t *engine, nmo_object_id_t texture_id)
+{
+    for (size_t i = 0; engine != NULL && i < engine->textures.count; i++) {
+        if (engine->textures.data[i].id == texture_id) {
+            return engine->textures.data[i].current_slot;
+        }
+    }
+    nmo_object_t *object = engine != NULL ? eng_find_object(engine, texture_id) : NULL;
+    const nmo_texture_state_t *state =
+        object != NULL && nmo_object_get_class_id(object) == NMO_CID_TEXTURE
+            ? (const nmo_texture_state_t *)nmo_object_get_state(object)
+            : NULL;
+    return state != NULL && state->has_current_slot ? state->current_slot : 0;
+}
+
+/*
+ * The frame count of the AVI movie `name` names (the AVI movie reader's
+ * GetMovieFrameCount, from the main header); -1 when it is none.
+ */
+static int32_t movie_frame_count(nmo_engine_t *engine, const char *name)
+{
+    const char *path = engine->resolve_file != NULL
+                           ? engine->resolve_file(engine->resolve_file_user_data, name)
+                           : NULL;
+    FILE *file = path != NULL ? fopen(path, "rb") : NULL;
+    if (file == NULL) {
+        return -1;
+    }
+    /* RIFF <size> AVI  LIST <size> hdrl avih <size> MainAVIHeader */
+    unsigned char header[52];
+    size_t read = fread(header, 1, sizeof(header), file);
+    fclose(file);
+    if (read != sizeof(header) || memcmp(header, "RIFF", 4) != 0 ||
+        memcmp(header + 8, "AVI ", 4) != 0 || memcmp(header + 12, "LIST", 4) != 0 ||
+        memcmp(header + 20, "hdrl", 4) != 0 || memcmp(header + 24, "avih", 4) != 0) {
+        return -1;
+    }
+    int32_t frames = 0;
+    memcpy(&frames, header + 32 + 16, sizeof(frames)); /* dwTotalFrames */
+    return frames > 0 ? frames : -1;
+}
+
+/* Whether the file `name` names is there to read. */
+static bool media_file_exists(nmo_engine_t *engine, const char *name)
+{
+    const char *path = engine->resolve_file != NULL
+                           ? engine->resolve_file(engine->resolve_file_user_data, name)
+                           : NULL;
+    FILE *file = path != NULL ? fopen(path, "rb") : NULL;
+    if (file != NULL) {
+        fclose(file);
+    }
+    return file != NULL;
+}
+
+/*
+ * Texture Load (TextureLoader): the image file into a slot of the target
+ * texture, which gets that many slots (CKBitmapData::LoadSlotImage); Error
+ * when the file is not there or the texture plays a movie.
+ */
+static int bb_texture_load(blk_t *b)
+{
+    eng_texture_t *texture = eng_texture(b->engine, nmo_engine_block_target(b));
+    if (texture == NULL) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    if (!IN_ACTIVE(b, 0)) {
+        return NMO_ENGINE_BR_OK;
+    }
+    IN_OFF(b, 0);
+    size_t size = 0;
+    const char *name = (const char *)nmo_engine_block_input_data(b, 0, &size);
+    int32_t slot = get_in_int(b, 1, 0);
+    bool loaded = name != NULL && size > 1 && memchr(name, '\0', size) != NULL && name[0] != '\0' &&
+                  slot >= 0 && !texture->movie && media_file_exists(b->engine, name);
+    if (!loaded) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    if (slot >= texture->slot_count) {
+        texture->slot_count = slot + 1;
+    }
+    if (nmo_engine_block_output_parameter_count(b) > 0) {
+        nmo_object_id_t id = texture->id;
+        nmo_engine_block_set_output_value(b, 0, &id, sizeof(id));
+    }
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Movie Load (MovieLoader): the target texture plays the movie file. */
+static int bb_movie_load(blk_t *b)
+{
+    eng_texture_t *texture = eng_texture(b->engine, nmo_engine_block_target(b));
+    if (texture == NULL) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    IN_OFF(b, 0);
+    size_t size = 0;
+    const char *name = (const char *)nmo_engine_block_input_data(b, 0, &size);
+    int32_t frames = name != NULL && size > 0 && memchr(name, '\0', size) != NULL
+                         ? movie_frame_count(b->engine, name)
+                         : -1;
+    if (frames < 0) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    texture->movie = true;
+    texture->slot_count = frames;
+    texture->current_slot = 0;
+    if (nmo_engine_block_output_parameter_count(b) > 0) {
+        nmo_object_id_t id = texture->id;
+        nmo_engine_block_set_output_value(b, 0, &id, sizeof(id));
+    }
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * Movie Player (MoviePlayer): the target texture's slots from Starting Slot
+ * to Ending Slot (all of them when both are 0) over Duration, Synchro Out at
+ * each new slot, One Loop Played at the end of each pass.
+ */
+static int bb_movie_player(blk_t *b)
+{
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    eng_texture_t *texture = target != 0 ? eng_texture(b->engine, target) : NULL;
+    if (texture == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    float duration = 5000.0f;
+    if (nmo_guid_equals(nmo_engine_block_input_parameter_type(b, 0), CKPGUID_INT)) {
+        duration = (float)get_in_int(b, 0, 5000); /* back compatibility */
+    } else {
+        duration = get_in_float(b, 0, 5000.0f);
+    }
+    if (duration == 0.0f) {
+        return NMO_ENGINE_BR_OK;
+    }
+    int32_t capacity = texture->slot_count;
+    if (capacity == 0) {
+        return NMO_ENGINE_BR_OK;
+    }
+    int32_t start = get_in_int(b, 2, 0);
+    start = start < 0 ? 0 : start > capacity - 1 ? capacity : start;
+    int32_t end = get_in_int(b, 3, 0);
+    end = end < 0 ? 0 : end > capacity - 1 ? capacity : end;
+    int32_t slots = start == 0 && end == 0 ? capacity : abs(end - start);
+    float rate = (float)slots / duration;
+
+    float time = 0.0f;
+    int32_t old_slot = -1;
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+    } else {
+        nmo_engine_block_get_local_value(b, 0, &time, sizeof(time));
+        old_slot = (int32_t)(time * rate);
+        time += nmo_engine_block_delta_time(b);
+    }
+    if (time >= duration) {
+        OUT_ON(b, 1);
+        if (get_in_int(b, 1, 1) == 0) {
+            return NMO_ENGINE_BR_OK;
+        }
+        do {
+            time -= duration;
+        } while (time >= duration);
+    }
+    nmo_engine_block_set_local_value(b, 0, &time, sizeof(time));
+    int32_t new_slot = (int32_t)(time * rate);
+    if (new_slot != old_slot) {
+        int32_t slot = start <= end ? start + new_slot : start - 1 - new_slot;
+        texture->current_slot = slot;
+        nmo_engine_block_set_output_value(b, 0, &slot, sizeof(slot));
+        OUT_ON(b, 0);
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
 static const nmo_engine_block_desc_t eng_media_blocks[] = {
     {NMO_GUID(0x5bde0e45, 0x2e2107d5), "Wave Player", bb_wave_player, cb_wave_player, NULL},
+    {NMO_GUID(0x30fa6a70, 0x3b3f728a), "TT_GetSoundProperties", bb_get_sound_properties, NULL,
+     NULL},
+    {NMO_GUID(0x00e85ab1, 0x312a731c), "Texture Load", bb_texture_load, NULL, NULL},
+    {NMO_GUID(0x798e26a9, 0x34e4169e), "Movie Load", bb_movie_load, NULL, NULL},
+    {NMO_GUID(0x778d16d4, 0x1dd60060), "Movie Player", bb_movie_player, NULL, NULL},
     {NMO_GUID(0x506b40f7, 0x30852e46), "Point Particle System", bb_particle_system, NULL, NULL},
     {NMO_GUID(0x1f1e7188, 0x0ec26d1f), "LinearParticleSystem", bb_particle_system, NULL, NULL},
     {NMO_GUID(0x49957bfe, 0x0ff27ffc), "PlanarParticleSystem", bb_particle_system, NULL, NULL},

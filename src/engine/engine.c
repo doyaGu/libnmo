@@ -160,18 +160,15 @@ nmo_status_t nmo_engine_create(nmo_workspace_t *workspace,
     }
     engine->random_state = (uint64_t)engine->options.random_seed * 0x9E3779B97F4A7C15ull + 1u;
 
-    nmo_status_t status = nmo_script_model_build(workspace, &engine->model);
+    nmo_status_t status = eng_module_open(engine, workspace, NULL, NULL, NULL);
     if (status == NMO_OK) {
-        status = eng_build(engine);
+        status = eng_build_module(engine, 0);
     }
     if (status == NMO_OK) {
-        status = eng_load_message_names(engine);
+        status = eng_load_arrays(engine, 0);
     }
     if (status == NMO_OK) {
-        status = eng_load_arrays(engine);
-    }
-    if (status == NMO_OK) {
-        status = eng_load_attributes(engine);
+        status = eng_load_attributes(engine, 0);
     }
     if (status == NMO_OK && !engine->options.no_builtin_blocks) {
         status = eng_register_logics(engine);
@@ -197,6 +194,9 @@ nmo_status_t nmo_engine_create(nmo_workspace_t *workspace,
     if (status == NMO_OK && !engine->options.no_builtin_blocks) {
         status = eng_register_attributes(engine);
     }
+    if (status == NMO_OK && !engine->options.no_builtin_blocks) {
+        status = eng_register_tt(engine);
+    }
     if (status != NMO_OK) {
         nmo_engine_destroy(engine);
         return status;
@@ -221,6 +221,7 @@ void nmo_engine_destroy(nmo_engine_t *engine)
     }
     free(engine->nodes.data);
     free(engine->sounds.data);
+    free(engine->textures.data);
     eng_fonts_clear(engine);
     free(engine->fonts.data);
     free(engine->ios.data);
@@ -235,18 +236,19 @@ void nmo_engine_destroy(nmo_engine_t *engine)
     eng_free_messages(engine);
     eng_free_arrays(engine);
     eng_free_attributes(engine);
+    eng_free_tt(engine);
     free(engine->node_map.slots);
     free(engine->io_map.slots);
     free(engine->param_map.slots);
     free(engine->operation_map.slots);
     free(engine->object_map.slots);
-    nmo_script_model_destroy(engine->model);
+    eng_free_modules(engine);
     free(engine);
 }
 
 const nmo_script_model_t *nmo_engine_script_model(const nmo_engine_t *engine)
 {
-    return engine != NULL ? engine->model : NULL;
+    return engine != NULL && engine->modules.count > 0 ? engine->modules.data[0].model : NULL;
 }
 
 void nmo_engine_set_trace(nmo_engine_t *engine, nmo_engine_trace_fn fn, void *user_data)
@@ -368,6 +370,7 @@ const char *nmo_engine_event_kind_name(nmo_engine_event_kind_t kind)
     case NMO_ENGINE_EVENT_MESSAGE_SENT: return "message sent";
     case NMO_ENGINE_EVENT_MESSAGE_RECEIVED: return "message received";
     case NMO_ENGINE_EVENT_EFFECT: return "effect";
+    case NMO_ENGINE_EVENT_FILE_LOADED: return "file loaded";
     }
     return "?";
 }

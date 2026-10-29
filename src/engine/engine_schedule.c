@@ -14,9 +14,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define ENG_NEXT_FRAME_FLAGS                                                                \
-    (CKBEHAVIOR_ACTIVATENEXTFRAME | CKBEHAVIOR_DEACTIVATENEXTFRAME | CKBEHAVIOR_RESETNEXTFRAME)
-
 static inline eng_node_t *eng_node(nmo_engine_t *engine, int32_t index)
 {
     return &engine->nodes.data[index];
@@ -81,6 +78,7 @@ void eng_object_next_frame(nmo_engine_t *engine, int32_t object, int32_t delta)
 {
     if (object >= 0) {
         engine->objects.data[object].next_frame += delta;
+        engine->objects.data[object].next_frame_asked = true;
     }
 }
 
@@ -324,13 +322,15 @@ static int eng_execute(nmo_engine_t *engine, int32_t index)
     } else {
         eng_check_ios_activation(engine, index);
         int32_t iterations = 0;
-        while (node->stack_count > 0) {
+        /* Not `node`: a sub-behavior that loads a file (Object Load) moves the nodes */
+        while (eng_node(engine, index)->stack_count > 0) {
             if (iterations > engine->options.max_iterations) {
                 eng_emit(engine, NMO_ENGINE_EVENT_INFINITE_LOOP, index, 0, iterations);
                 result = NMO_ENGINE_BR_INFINITELOOP;
                 break;
             }
             iterations++;
+            node = eng_node(engine, index);
             int32_t sub = *eng_index(engine, node->first_stack + --node->stack_count);
             eng_node(engine, sub)->in_stack = false;
             eng_execute(engine, sub);
@@ -378,6 +378,10 @@ static nmo_status_t eng_manage_objects(nmo_engine_t *engine)
     bool changed = false;
     for (size_t i = 0; i < engine->objects.count; i++) {
         eng_object_t *object = &engine->objects.data[i];
+        /* CKBehaviorManager::ManageObjectsActivity: an object asked for joins unless removes won */
+        if (!object->next_frame_asked) {
+            continue;
+        }
         if (object->next_frame < 0 && object->listed) {
             object->listed = false;
             for (size_t k = 0; k < engine->listed.count; k++) {
@@ -388,7 +392,7 @@ static nmo_status_t eng_manage_objects(nmo_engine_t *engine)
                     break;
                 }
             }
-        } else if (object->next_frame > 0 && !object->listed) {
+        } else if (object->next_frame >= 0 && !object->listed) {
             int32_t *slot = NULL;
             if (!ENG_VEC_PUSH(engine->listed, slot)) {
                 return NMO_ERR_NOMEM;
@@ -398,6 +402,7 @@ static nmo_status_t eng_manage_objects(nmo_engine_t *engine)
             changed = true;
         }
         engine->objects.data[i].next_frame = 0;
+        engine->objects.data[i].next_frame_asked = false;
     }
     if (changed) {
         eng_sort_listed(engine);

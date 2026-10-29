@@ -2,8 +2,8 @@
  * @file engine_attributes.c
  * @brief Object attributes at run time, and the Logics/Attribute blocks.
  *
- * The engine copies the attributes of every behavioral object from the
- * document: the attribute type (an index into the file's attribute types,
+ * The engine copies the attributes of every behavioral object of a
+ * document: the attribute type (an index into the engine's attribute types,
  * the same an Attribute parameter holds) and the value of its parameter.
  * Blocks then set and remove attributes on that copy, as CKBeObject's
  * SetAttribute and RemoveAttribute do; the document does not change.
@@ -28,8 +28,9 @@ typedef nmo_engine_block_t blk_t;
 #define IN_OFF(b, i) nmo_engine_block_activate_input((b), (i), false)
 #define OUT_ON(b, i) nmo_engine_block_activate_output((b), (i), true)
 
-/* A parameter holding a value of `type`: zeroes, or the saved state's bytes when given. */
-static bool attribute_value_init(nmo_engine_t *engine, eng_param_t *value, nmo_guid_t type,
+/* A parameter holding a value of `type`: zeroes, or the saved state's bytes (of `module`) when given. */
+static bool attribute_value_init(nmo_engine_t *engine, const eng_module_t *module,
+                                 eng_param_t *value, nmo_guid_t type,
                                  const nmo_parameter_state_t *state)
 {
     memset(value, 0, sizeof(*value));
@@ -42,7 +43,8 @@ static bool attribute_value_init(nmo_engine_t *engine, eng_param_t *value, nmo_g
         return eng_curve_value(state, &value->data, &value->size);
     }
     if (state != NULL) {
-        return eng_parameter_state_bytes(state, value->type_desc != NULL ? value->type_desc->size : 0u,
+        return eng_parameter_state_bytes(module, state,
+                                         value->type_desc != NULL ? value->type_desc->size : 0u,
                                          &value->data, &value->size);
     }
     size_t size = eng_type_size(engine, type);
@@ -51,8 +53,9 @@ static bool attribute_value_init(nmo_engine_t *engine, eng_param_t *value, nmo_g
     return size == 0 || value->data != NULL;
 }
 
-static nmo_status_t attribute_add(nmo_engine_t *engine, nmo_object_id_t object, int32_t type,
-                                  nmo_guid_t value_type, const nmo_parameter_state_t *state)
+static nmo_status_t attribute_add(nmo_engine_t *engine, const eng_module_t *module,
+                                  nmo_object_id_t object, int32_t type, nmo_guid_t value_type,
+                                  const nmo_parameter_state_t *state)
 {
     eng_attribute_t *attribute = NULL;
     if (!ENG_VEC_PUSH(engine->attributes, attribute)) {
@@ -61,30 +64,18 @@ static nmo_status_t attribute_add(nmo_engine_t *engine, nmo_object_id_t object, 
     attribute->object = object;
     attribute->type = type;
     attribute->has_value = !nmo_guid_is_null(value_type);
-    if (attribute->has_value && !attribute_value_init(engine, &attribute->value, value_type, state)) {
+    if (attribute->has_value &&
+        !attribute_value_init(engine, module, &attribute->value, value_type, state)) {
         engine->attributes.count--;
         return NMO_ERR_NOMEM;
     }
     return NMO_OK;
 }
 
-nmo_status_t eng_load_attributes(nmo_engine_t *engine)
+nmo_status_t eng_load_attributes(nmo_engine_t *engine, int32_t module)
 {
-    nmo_attributemanager_state_t types;
-    if (nmo_workspace_internal_attribute_types(engine->workspace, &types) == NMO_OK) {
-        for (uint32_t i = 0; i < types.attribute_count; i++) {
-            eng_attribute_type_t *slot = NULL;
-            if (!ENG_VEC_PUSH(engine->attribute_types, slot)) {
-                return NMO_ERR_NOMEM;
-            }
-            const nmo_attribute_descriptor_t *desc = &types.attributes[i];
-            slot->present = desc->present;
-            slot->parameter_type = desc->parameter_type_guid;
-            slot->compatible_class_id = desc->compatible_class_id;
-        }
-    }
-
-    nmo_object_repository_t *repo = nmo_workspace_internal_repository(engine->workspace);
+    const eng_module_t *owner = &engine->modules.data[module];
+    nmo_object_repository_t *repo = owner->repo;
     size_t count = 0;
     nmo_object_t **objects = repo != NULL ? nmo_object_repository_get_all(repo, &count) : NULL;
     for (size_t i = 0; objects != NULL && i < count; i++) {
@@ -94,7 +85,7 @@ nmo_status_t eng_load_attributes(nmo_engine_t *engine)
         if (be == NULL) {
             continue;
         }
-        nmo_object_id_t id = nmo_object_get_id(objects[i]);
+        nmo_object_id_t id = eng_module_id(owner, nmo_object_get_id(objects[i]));
         for (size_t a = 0; a < be->attributes.count; a++) {
             const nmo_beobject_attribute_t *saved =
                 &((const nmo_beobject_attribute_t *)be->attributes.data)[a];
@@ -104,9 +95,9 @@ nmo_status_t eng_load_attributes(nmo_engine_t *engine)
                 param != NULL ? (const nmo_parameter_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
                                     engine->types, param, CKPGUID_PARAMETER)
                               : NULL;
-            nmo_status_t status = attribute_add(engine, id, (int32_t)saved->type_id,
-                                                state != NULL ? state->type_guid : NMO_GUID(0u, 0u),
-                                                state);
+            nmo_status_t status = attribute_add(
+                engine, owner, id, eng_module_attribute_type(owner, (int32_t)saved->type_id),
+                state != NULL ? state->type_guid : NMO_GUID(0u, 0u), state);
             if (status != NMO_OK) {
                 return status;
             }
@@ -121,6 +112,9 @@ void eng_free_attributes(nmo_engine_t *engine)
         free(engine->attributes.data[i].value.data);
     }
     free(engine->attributes.data);
+    for (size_t i = 0; i < engine->attribute_types.count; i++) {
+        free(engine->attribute_types.data[i].name);
+    }
     free(engine->attribute_types.data);
 }
 
@@ -176,8 +170,7 @@ bool nmo_engine_object_set_attribute(nmo_engine_t *engine, nmo_object_id_t objec
         return false;
     }
     const eng_attribute_type_t *desc = &engine->attribute_types.data[type];
-    nmo_object_repository_t *repo = nmo_workspace_internal_repository(engine->workspace);
-    nmo_object_t *target = repo != NULL ? nmo_object_repository_find_by_id(repo, object) : NULL;
+    nmo_object_t *target = eng_find_object(engine, object);
     if (target == NULL) {
         return false;
     }
@@ -187,7 +180,7 @@ bool nmo_engine_object_set_attribute(nmo_engine_t *engine, nmo_object_id_t objec
                                                  (uint32_t)desc->compatible_class_id)) {
         return false;
     }
-    return attribute_add(engine, object, type, desc->parameter_type, NULL) == NMO_OK;
+    return attribute_add(engine, NULL, object, type, desc->parameter_type, NULL) == NMO_OK;
 }
 
 bool nmo_engine_object_remove_attribute(nmo_engine_t *engine, nmo_object_id_t object,

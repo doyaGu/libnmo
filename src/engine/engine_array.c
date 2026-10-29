@@ -90,7 +90,7 @@ static inline eng_cell_t *eng_array_cell(const eng_array_t *array, size_t row, s
 }
 
 /* A cell's value from the file. */
-static bool eng_cell_load(nmo_engine_t *engine, nmo_object_repository_t *repo,
+static bool eng_cell_load(nmo_engine_t *engine, const eng_module_t *module,
                           const eng_column_t *column, const nmo_dataarray_cell_t *saved,
                           eng_cell_t *cell)
 {
@@ -105,14 +105,14 @@ static bool eng_cell_load(nmo_engine_t *engine, nmo_object_repository_t *repo,
         memcpy(&cell->value, &saved->float_value, sizeof(cell->value));
         return true;
     case CKARRAYTYPE_OBJECT:
-        cell->value = (uint32_t)nmo_ref_runtime_id(&saved->object_ref);
+        cell->value = (uint32_t)eng_module_id(module, nmo_ref_runtime_id(&saved->object_ref));
         return true;
     case CKARRAYTYPE_STRING:
         cell->text = eng_strdup(saved->string_value);
         return saved->string_value == NULL || cell->text != NULL;
     case CKARRAYTYPE_PARAMETER: {
         nmo_object_id_t id = nmo_ref_runtime_id(&saved->parameter.ref);
-        nmo_object_t *object = id != 0 ? nmo_object_repository_find_by_id(repo, id) : NULL;
+        nmo_object_t *object = id != 0 ? nmo_object_repository_find_by_id(module->repo, id) : NULL;
         nmo_class_id_t class_id = object != NULL ? nmo_object_get_class_id(object) : 0;
         if (class_id != NMO_CID_PARAMETEROUT && class_id != NMO_CID_PARAMETER &&
             class_id != NMO_CID_PARAMETERLOCAL) {
@@ -120,7 +120,8 @@ static bool eng_cell_load(nmo_engine_t *engine, nmo_object_repository_t *repo,
         }
         uint8_t *data = NULL;
         uint32_t size = 0;
-        if (!eng_parameter_state_bytes((const nmo_parameter_state_t *)nmo_object_get_state(object),
+        if (!eng_parameter_state_bytes(module,
+                                       (const nmo_parameter_state_t *)nmo_object_get_state(object),
                                        cell->size, &data, &size)) {
             return false;
         }
@@ -134,7 +135,7 @@ static bool eng_cell_load(nmo_engine_t *engine, nmo_object_repository_t *repo,
     }
 }
 
-static nmo_status_t eng_load_array(nmo_engine_t *engine, nmo_object_repository_t *repo,
+static nmo_status_t eng_load_array(nmo_engine_t *engine, const eng_module_t *module,
                                    nmo_object_id_t id, const nmo_dataarray_state_t *state)
 {
     eng_array_t *array = NULL;
@@ -161,7 +162,7 @@ static nmo_status_t eng_load_array(nmo_engine_t *engine, nmo_object_repository_t
         for (uint32_t c = 0; c < array->column_count; c++) {
             eng_cell_t *cell = eng_array_cell(array, r, c);
             bool ok = c < row->column_count
-                          ? eng_cell_load(engine, repo, &array->columns[c], &row->cells[c], cell)
+                          ? eng_cell_load(engine, module, &array->columns[c], &row->cells[c], cell)
                           : eng_cell_init(engine, &array->columns[c], cell);
             if (!ok) {
                 array->row_count = r + 1u; /* the cells so far are freed with the array */
@@ -173,9 +174,9 @@ static nmo_status_t eng_load_array(nmo_engine_t *engine, nmo_object_repository_t
     return NMO_OK;
 }
 
-nmo_status_t eng_load_arrays(nmo_engine_t *engine)
+nmo_status_t eng_load_arrays(nmo_engine_t *engine, int32_t module)
 {
-    nmo_object_repository_t *repo = nmo_workspace_internal_repository(engine->workspace);
+    nmo_object_repository_t *repo = engine->modules.data[module].repo;
     size_t count = repo != NULL ? nmo_object_repository_get_count(repo) : 0u;
     for (size_t i = 0; i < count; i++) {
         nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
@@ -187,7 +188,10 @@ nmo_status_t eng_load_arrays(nmo_engine_t *engine)
         if (state == NULL) {
             continue;
         }
-        nmo_status_t status = eng_load_array(engine, repo, nmo_object_get_id(object), state);
+        /* The arrays vector may move: pass the module by index, read it here */
+        const eng_module_t *owner = &engine->modules.data[module];
+        nmo_status_t status =
+            eng_load_array(engine, owner, eng_module_id(owner, nmo_object_get_id(object)), state);
         if (status != NMO_OK) {
             return status;
         }
@@ -681,31 +685,35 @@ nmo_status_t nmo_engine_array_remove_column(nmo_engine_t *engine, nmo_object_id_
  * Groups
  * ============================================================================ */
 
-static const nmo_group_state_t *eng_group_state(const nmo_engine_t *engine, nmo_object_id_t id)
+static const nmo_group_state_t *eng_group_state(const nmo_engine_t *engine, nmo_object_id_t id,
+                                                const eng_module_t **out_module)
 {
     if (engine == NULL || id == 0) {
         return NULL;
     }
-    nmo_object_repository_t *repo = nmo_workspace_internal_repository(engine->workspace);
-    nmo_object_t *object = repo != NULL ? nmo_object_repository_find_by_id(repo, id) : NULL;
+    nmo_object_t *object = eng_find_object(engine, id);
     if (object == NULL || nmo_object_get_class_id(object) != NMO_CID_GROUP) {
         return NULL;
+    }
+    if (out_module != NULL) {
+        *out_module = eng_module_of(engine, id, NULL);
     }
     return (const nmo_group_state_t *)nmo_object_get_state(object);
 }
 
 int32_t nmo_engine_group_count(const nmo_engine_t *engine, nmo_object_id_t group_id)
 {
-    const nmo_group_state_t *group = eng_group_state(engine, group_id);
+    const nmo_group_state_t *group = eng_group_state(engine, group_id, NULL);
     return group != NULL ? (int32_t)group->object_ids.count : -1;
 }
 
 nmo_object_id_t nmo_engine_group_object(const nmo_engine_t *engine, nmo_object_id_t group_id,
                                         int32_t index)
 {
-    const nmo_group_state_t *group = eng_group_state(engine, group_id);
+    const eng_module_t *module = NULL;
+    const nmo_group_state_t *group = eng_group_state(engine, group_id, &module);
     if (group == NULL || index < 0 || (size_t)index >= group->object_ids.count) {
         return 0;
     }
-    return nmo_ref_runtime_id(&((const nmo_ref_t *)group->object_ids.data)[index]);
+    return eng_module_id(module, nmo_ref_runtime_id(&((const nmo_ref_t *)group->object_ids.data)[index]));
 }

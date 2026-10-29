@@ -5,6 +5,8 @@
 
 #include "engine_internal.h"
 
+#include "format/nmo_object.h"
+
 #include <stdlib.h>
 #include <string.h>
 
@@ -58,9 +60,9 @@ bool nmo_engine_has_block(const nmo_engine_t *engine, nmo_guid_t guid)
 }
 
 /* Give every building block the function registered for its prototype. */
-void eng_bind_blocks(nmo_engine_t *engine)
+void eng_bind_blocks(nmo_engine_t *engine, size_t first_node)
 {
-    for (size_t i = 0; i < engine->nodes.count; i++) {
+    for (size_t i = first_node; i < engine->nodes.count; i++) {
         eng_node_t *node = &engine->nodes.data[i];
         if (!node->is_block) {
             continue;
@@ -320,6 +322,18 @@ nmo_object_id_t nmo_engine_block_target(nmo_engine_block_t *block)
     uint32_t id = 0;
     if (source != NULL && source->size >= sizeof(id)) {
         memcpy(&id, source->data, sizeof(id));
+    }
+    /* CKBehavior::GetTarget: none when the object is not of the target parameter's class */
+    const eng_param_t *param = &block->engine->params.data[node->target];
+    int32_t class_id = param->type_desc != NULL ? (int32_t)param->type_desc->class_id : 0;
+    if (class_id > 0) {
+        nmo_object_t *object = eng_find_object(block->engine, (nmo_object_id_t)id);
+        if (object == NULL ||
+            !nmo_type_registry_is_class_derived_from(block->engine->types,
+                                                     (uint32_t)nmo_object_get_class_id(object),
+                                                     (uint32_t)class_id)) {
+            return 0;
+        }
     }
     return (nmo_object_id_t)id;
 }

@@ -11,6 +11,8 @@
 #define GUID_ACTIVATE_OBJECT NMO_GUID(0x5f003fba, 0x5e574f60)
 #define GUID_DEACTIVATE_OBJECT NMO_GUID(0x160f4b7d, 0x67de224e)
 #define GUID_CALL_SCRIPT NMO_GUID(0x1a7d5b17, 0x70630fed)
+#define GUID_ACTIVATE_SCRIPT NMO_GUID(0x4c7e7bc3, 0x0b693155)
+#define GUID_OBJECT_DELETE NMO_GUID(0x74120ded, 0x76524673)
 
 /* The message types the fixture document declares; a type is its position. */
 static const char *const message_names[] = {"OnClick", "Message A", "Message B"};
@@ -397,6 +399,144 @@ TEST(engine_messages, call_script_runs_the_script_now)
     fixture_end(&f);
 }
 
+/* An Activate Script of `script`, its Awake Object setting to be set to `awake` */
+static nmo_object_id_t activate_script_block(engine_fixture_t *f, const char *name,
+                                             nmo_object_id_t script, nmo_object_id_t *out_awake)
+{
+    nmo_object_id_t block = fixture_block(f, GUID_ACTIVATE_SCRIPT, name);
+    const nmo_behavior_state_t *state = (const nmo_behavior_state_t *)fixture_state(f, block);
+    if (state == NULL || state->local_parameters.count == 0) {
+        return 0;
+    }
+    *out_awake = nmo_behavior_ref_array_get_id(&state->local_parameters, 0);
+    fixture_input_int(f, BLOCK_PIN(f, block, 0), 1);
+    fixture_input_int(f, BLOCK_PIN(f, block, 1), (int32_t)script);
+    return block;
+}
+
+TEST(engine_messages, activate_script_can_awake_an_inactive_owner)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    fixture_install_messages(&f, message_names, 3);
+    nmo_object_id_t woken = fixture_create(&f, NMO_CID_3DENTITY, "Woken");
+    nmo_object_id_t asleep = fixture_create(&f, NMO_CID_3DENTITY, "Asleep");
+    nmo_object_id_t main_in = 0, woken_in = 0, asleep_in = 0;
+    f.script_id = fixture_add_script(&f, "Main", &main_in);
+    f.script_in = main_in;
+    nmo_object_id_t woken_looper = add_script_on(&f, woken, "Woken Looper", &woken_in);
+    nmo_object_id_t asleep_looper = add_script_on(&f, asleep, "Asleep Looper", &asleep_in);
+    ASSERT_TRUE(f.script_id != 0 && woken_looper != 0 && asleep_looper != 0);
+    fixture_begin_edit(&f);
+    make_looper(&f, woken_looper, woken_in);
+    make_looper(&f, asleep_looper, asleep_in);
+    nmo_object_id_t off_woken = fixture_block(&f, GUID_DEACTIVATE_OBJECT, "Off Woken");
+    nmo_object_id_t off_asleep = fixture_block(&f, GUID_DEACTIVATE_OBJECT, "Off Asleep");
+    nmo_object_id_t awake = 0, not_awake = 0;
+    nmo_object_id_t wake = activate_script_block(&f, "Wake", woken_looper, &awake);
+    nmo_object_id_t start = activate_script_block(&f, "Start", asleep_looper, &not_awake);
+    ASSERT_TRUE(off_woken != 0 && off_asleep != 0 && wake != 0 && start != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, off_woken, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, off_woken, 0), BLOCK_IN(&f, off_asleep, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, off_asleep, 0), BLOCK_IN(&f, wake, 0), 2);
+    fixture_link(&f, BLOCK_OUT(&f, wake, 0), BLOCK_IN(&f, start, 0), 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, off_woken, 0), (int32_t)woken);
+    fixture_input_int(&f, BLOCK_PIN(&f, off_asleep, 0), (int32_t)asleep);
+    fixture_commit(&f, NULL);
+    const int32_t yes = 1, no = 0;
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, awake, &yes, sizeof(yes)));
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, not_awake, &no, sizeof(no)));
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_NONE));
+    ASSERT_EQ(NMO_OK, nmo_engine_activate_script(f.engine, f.script_id, true, true));
+    for (int frame = 0; frame < 5; frame++) {
+        ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+    }
+    /* Awake Object activates the owner as CKScene::Activate does; without it the script waits */
+    ASSERT_TRUE(nmo_engine_object_is_active(f.engine, woken));
+    ASSERT_TRUE(runs(&f, woken_looper) > 0u);
+    ASSERT_FALSE(nmo_engine_object_is_active(f.engine, asleep));
+    ASSERT_EQ(0u, runs(&f, asleep_looper));
+    fixture_end(&f);
+}
+
+TEST(engine_messages, object_deactivated_in_the_frame_it_awakes_still_runs)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    fixture_install_messages(&f, message_names, 3);
+    nmo_object_id_t other = fixture_create(&f, NMO_CID_3DENTITY, "Other");
+    nmo_object_id_t main_in = 0, loop_in = 0;
+    f.script_id = fixture_add_script(&f, "Main", &main_in);
+    f.script_in = main_in;
+    nmo_object_id_t looper = add_script_on(&f, other, "Looper", &loop_in);
+    ASSERT_TRUE(f.script_id != 0 && looper != 0);
+    fixture_begin_edit(&f);
+    make_looper(&f, looper, loop_in);
+    nmo_object_id_t off = fixture_block(&f, GUID_DEACTIVATE_OBJECT, "Off");
+    nmo_object_id_t awake = 0;
+    nmo_object_id_t wake = activate_script_block(&f, "Wake", looper, &awake);
+    nmo_object_id_t off_again = fixture_block(&f, GUID_DEACTIVATE_OBJECT, "Off Again");
+    ASSERT_TRUE(off != 0 && wake != 0 && off_again != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, off, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, off, 0), BLOCK_IN(&f, wake, 0), 2);
+    fixture_link(&f, BLOCK_OUT(&f, wake, 0), BLOCK_IN(&f, off_again, 0), 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, off, 0), (int32_t)other);
+    fixture_input_int(&f, BLOCK_PIN(&f, off_again, 0), (int32_t)other);
+    fixture_commit(&f, NULL);
+    const int32_t yes = 1;
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, awake, &yes, sizeof(yes)));
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_NONE));
+    ASSERT_EQ(NMO_OK, nmo_engine_activate_script(f.engine, f.script_id, true, true));
+    for (int frame = 0; frame < 3; frame++) {
+        ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+    }
+    ASSERT_EQ(0u, runs(&f, looper));
+    /*
+     * Awoken and deactivated in frame 2: ManageObjectsActivity removes only
+     * an object asked to leave more than to come, so it enters the list.
+     */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+    ASSERT_EQ(1u, runs(&f, looper));
+    fixture_end(&f);
+}
+
+TEST(engine_messages, object_delete_stops_the_object_for_good)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    fixture_install_messages(&f, message_names, 3);
+    nmo_object_id_t other = fixture_create(&f, NMO_CID_3DENTITY, "Other");
+    nmo_object_id_t main_in = 0, loop_in = 0;
+    f.script_id = fixture_add_script(&f, "Main", &main_in);
+    f.script_in = main_in;
+    nmo_object_id_t looper = add_script_on(&f, other, "Looper", &loop_in);
+    ASSERT_TRUE(f.script_id != 0 && looper != 0);
+    fixture_begin_edit(&f);
+    make_looper(&f, looper, loop_in);
+    nmo_object_id_t delete = fixture_block(&f, GUID_OBJECT_DELETE, "Delete");
+    nmo_object_id_t on = fixture_block(&f, GUID_ACTIVATE_OBJECT, "On");
+    ASSERT_TRUE(delete != 0 && on != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, delete, 0), 1);
+    fixture_link(&f, BLOCK_OUT(&f, delete, 0), BLOCK_IN(&f, on, 0), 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, delete, 0), (int32_t)other);
+    fixture_input_int(&f, BLOCK_PIN(&f, on, 0), (int32_t)other);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    for (int frame = 0; frame < 3; frame++) {
+        ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+    }
+    /* Deleted in frame 1, activating it again changes nothing */
+    uint64_t before = runs(&f, looper);
+    ASSERT_TRUE(before <= 2u);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+    ASSERT_EQ(before, runs(&f, looper));
+    ASSERT_FALSE(nmo_engine_object_is_active(f.engine, other));
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_messages, sent_message_ends_the_wait_in_the_next_frame);
 REGISTER_TEST(engine_messages, waiting_keeps_the_script_active_until_the_message_comes);
@@ -407,4 +547,7 @@ REGISTER_TEST(engine_messages, deactivate_script_stops_another_script);
 REGISTER_TEST(engine_messages, deactivated_object_skips_its_scripts);
 REGISTER_TEST(engine_messages, activate_object_can_start_all_its_scripts);
 REGISTER_TEST(engine_messages, call_script_runs_the_script_now);
+REGISTER_TEST(engine_messages, activate_script_can_awake_an_inactive_owner);
+REGISTER_TEST(engine_messages, object_deactivated_in_the_frame_it_awakes_still_runs);
+REGISTER_TEST(engine_messages, object_delete_stops_the_object_for_good);
 TEST_MAIN_END()

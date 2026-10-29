@@ -6,8 +6,12 @@
 #ifndef NMO_ENGINE_INTERNAL_H
 #define NMO_ENGINE_INTERNAL_H
 
+#include "behavior/nmo_script_model.h"
 #include "engine/nmo_engine.h"
 #include "engine/nmo_engine_block.h"
+#include "object/nmo_object_repository.h"
+#include "runtime/nmo_document.h"
+#include "session/nmo_session.h"
 #include "type/nmo_operation_system.h"
 #include "type/nmo_type_system.h"
 
@@ -15,6 +19,10 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+
+/* The script flags asking for a change at the next frame (CKScene::ActivateScript) */
+#define ENG_NEXT_FRAME_FLAGS                                                                \
+    (CKBEHAVIOR_ACTIVATENEXTFRAME | CKBEHAVIOR_DEACTIVATENEXTFRAME | CKBEHAVIOR_RESETNEXTFRAME)
 
 /* Every index below is a position in the engine array of that kind; -1 is none. */
 
@@ -113,7 +121,9 @@ typedef struct eng_object {
     uint32_t first_script, script_count; /* nodes, in engine->indexes */
     bool listed;                       /* in the behavior manager's list */
     bool active;                       /* active in the scene (CK_SCENEOBJECT_ACTIVE) */
-    int32_t next_frame;                /* > 0 add, < 0 remove at the next frame */
+    bool destroyed;                    /* nmo_engine_destroy_object() */
+    int32_t next_frame;                /* adds less removes asked for the next frame */
+    bool next_frame_asked;             /* asked at all: added unless next_frame < 0 */
     int32_t waiting;                   /* CKBeObject::SetAsWaitingForMessages count */
 } eng_object_t;
 
@@ -179,6 +189,14 @@ typedef struct eng_sound {
     bool loop;
 } eng_sound_t;
 
+/* A texture's bitmap slots as CKBitmapData has them: a loaded movie's frames, or its own. */
+typedef struct eng_texture {
+    nmo_object_id_t id;
+    int32_t slot_count;
+    int32_t current_slot;
+    bool movie;
+} eng_texture_t;
+
 /*
  * What the input manager reports during a frame. The host sets the `next`
  * state; at the start of a frame it becomes the frame's state and the key
@@ -196,9 +214,10 @@ typedef struct eng_input {
     nmo_object_id_t under_mouse, next_under_mouse;
 } eng_input_t;
 
-/* An attribute type of the file's Attribute Manager */
+/* An attribute type of the engine, from a document's Attribute Manager */
 typedef struct eng_attribute_type {
     bool present;
+    char *name;
     nmo_guid_t parameter_type; /* null for an attribute without a value */
     int32_t compatible_class_id;
 } eng_attribute_type_t;
@@ -246,9 +265,36 @@ struct nmo_engine_block {
     int32_t node;
 };
 
+/*
+ * A document the engine runs: the one it was made for, then each file loaded
+ * since. Its objects have engine IDs offset + 1 to limit (its IDs plus the
+ * offset); its message and attribute types map to the engine's.
+ */
+typedef struct eng_module {
+    nmo_workspace_t *workspace;
+    nmo_object_repository_t *repo;
+    nmo_script_model_t *model;
+    nmo_object_id_t offset;
+    nmo_object_id_t limit;
+    int32_t *message_types;
+    uint32_t message_type_count;
+    int32_t *attribute_types;
+    uint32_t attribute_type_count;
+    char *name;              /* a loaded file: the name it was loaded by */
+    nmo_session_t *session;  /* a loaded file: what the engine made to read it */
+    nmo_document_t *document;
+} eng_module_t;
+
+/* A registry value: `name` of key `section`, as text. */
+typedef struct eng_registry_value {
+    char *section;
+    char *name;
+    char *value;
+} eng_registry_value_t;
+
 struct nmo_engine {
     nmo_workspace_t *workspace;
-    nmo_script_model_t *model;
+    ENG_VEC(eng_module_t) modules; /* the first is the document the engine was made for */
     nmo_type_registry_t *types;
     nmo_operation_registry_t *operations_registry;
     nmo_engine_options_t options;
@@ -279,12 +325,18 @@ struct nmo_engine {
 
     eng_input_t input;
     ENG_VEC(eng_sound_t) sounds;
+    ENG_VEC(eng_texture_t) textures;
     ENG_VEC(eng_font_t) fonts;
     ENG_VEC(eng_attribute_type_t) attribute_types;
     ENG_VEC(eng_attribute_t) attributes;
 
     nmo_engine_trace_fn trace;
     void *trace_user_data;
+    nmo_engine_resolve_file_fn resolve_file;
+    void *resolve_file_user_data;
+    char *database_file;   /* TT Database Manager: TT Set Database Properties */
+    bool database_crypted;
+    ENG_VEC(eng_registry_value_t) registry; /* the TT blocks' registry, from the host */
 };
 
 /* engine.c */
@@ -325,18 +377,48 @@ static inline eng_param_t *eng_node_param(nmo_engine_t *engine, uint32_t first, 
     return param >= 0 ? &engine->params.data[param] : NULL;
 }
 
+/* engine_module.c */
+/*
+ * Add a document: its ID range, script model, and message and attribute
+ * types. `session` and `document` are the engine's to free with it (a loaded
+ * file), or NULL.
+ */
+nmo_status_t eng_module_open(nmo_engine_t *engine, nmo_workspace_t *workspace,
+                             nmo_session_t *session, nmo_document_t *document,
+                             int32_t *out_module);
+void eng_free_modules(nmo_engine_t *engine);
+/* The document of engine ID `id`, and its ID there; NULL when none has it. */
+const eng_module_t *eng_module_of(const nmo_engine_t *engine, nmo_object_id_t id,
+                                  nmo_object_id_t *out_local);
+nmo_object_t *eng_find_object(const nmo_engine_t *engine, nmo_object_id_t id);
+/* The first object named `name` (of class `class_id` or one derived, unless 0), in document order */
+nmo_object_id_t eng_object_named(const nmo_engine_t *engine, const char *name, uint32_t class_id);
+/* The engine ID of a document's object ID; 0 stays 0. */
+static inline nmo_object_id_t eng_module_id(const eng_module_t *module, nmo_object_id_t local)
+{
+    return local != 0 && module != NULL ? local + module->offset : local;
+}
+/* A document's message or attribute type as the engine's */
+int32_t eng_module_message_type(const eng_module_t *module, int32_t type);
+int32_t eng_module_attribute_type(const eng_module_t *module, int32_t type);
+/* The engine message type named `name`, made when there is none (AddMessageType). */
+int32_t eng_message_type_add(nmo_engine_t *engine, const char *name);
+
 /* engine_build.c */
-nmo_status_t eng_build(nmo_engine_t *engine);
+/* Build the behaviors, parameters and script owners of document `module`. */
+nmo_status_t eng_build_module(nmo_engine_t *engine, int32_t module);
 typedef struct nmo_parameter_state nmo_parameter_state_t;
 /*
- * The bytes a CKParameter holds in memory, from its saved state, into a new
- * heap block; zeroes of `fallback_size` when the state holds no flat value.
+ * The bytes a CKParameter of document `module` holds in memory, from its
+ * saved state, into a new heap block; zeroes of `fallback_size` when the
+ * state holds no flat value. Object IDs and message and attribute types come
+ * out as the engine's.
  */
-bool eng_parameter_state_bytes(const nmo_parameter_state_t *state, size_t fallback_size,
-                               uint8_t **out_data, uint32_t *out_size);
+bool eng_parameter_state_bytes(const eng_module_t *module, const nmo_parameter_state_t *state,
+                               size_t fallback_size, uint8_t **out_data, uint32_t *out_size);
 
 /* engine_array.c */
-nmo_status_t eng_load_arrays(nmo_engine_t *engine);
+nmo_status_t eng_load_arrays(nmo_engine_t *engine, int32_t module);
 void eng_free_arrays(nmo_engine_t *engine);
 eng_array_t *eng_find_array(const nmo_engine_t *engine, nmo_object_id_t id);
 size_t eng_type_size(const nmo_engine_t *engine, nmo_guid_t type);
@@ -354,6 +436,15 @@ nmo_status_t eng_param_copy(nmo_engine_t *engine, eng_param_t *dest, eng_param_t
                             bool update_source);
 /* Run operation `op` (CKParameterOperation::DoOperation). */
 nmo_status_t eng_operation_run(nmo_engine_t *engine, eng_operation_t *op);
+
+/* engine_operations.c */
+/*
+ * Run `operation` when it is one the engine runs itself (strings, objects),
+ * its status in `out_status`; false when the registry has to.
+ */
+bool eng_operation_builtin(nmo_engine_t *engine, nmo_guid_t operation, eng_param_t *in1,
+                           eng_param_t *src1, eng_param_t *in2, eng_param_t *src2,
+                           eng_param_t *out, nmo_status_t *out_status);
 nmo_status_t eng_operation_execute(nmo_engine_t *engine, nmo_guid_t guid, eng_param_t *in1,
                                    eng_param_t *in2, eng_param_t *out);
 
@@ -362,6 +453,8 @@ void eng_behavior_activate(nmo_engine_t *engine, int32_t node, bool active, bool
 void eng_behavior_reset(nmo_engine_t *engine, int32_t node);
 nmo_status_t eng_manager_execute(nmo_engine_t *engine);
 void eng_object_next_frame(nmo_engine_t *engine, int32_t object, int32_t delta);
+/* CKLevel::AddObject for every object of document `module` (Object Load) */
+void eng_add_module_to_level(nmo_engine_t *engine, int32_t module);
 /* CKBehavior::Execute, outside the behavior manager (Call Script) */
 int eng_execute_behavior(nmo_engine_t *engine, int32_t node);
 void eng_sort_listed(nmo_engine_t *engine);
@@ -369,13 +462,13 @@ int eng_block_call(nmo_engine_t *engine, int32_t node, nmo_engine_block_fn fn);
 int eng_block_callback(nmo_engine_t *engine, int32_t node, uint32_t message);
 
 /* engine_block.c */
-void eng_bind_blocks(nmo_engine_t *engine);
+/* Find the function of every building block from node `first_node` on */
+void eng_bind_blocks(nmo_engine_t *engine, size_t first_node);
 nmo_guid_t eng_block_operation_guid(const nmo_engine_block_t *block);
 /* Run `guid` over the block's first two inputs into its first output (the Op block). */
 nmo_status_t eng_block_run_operation(nmo_engine_block_t *block, nmo_guid_t guid);
 
 /* engine_message.c */
-nmo_status_t eng_load_message_names(nmo_engine_t *engine);
 void eng_free_messages(nmo_engine_t *engine);
 nmo_status_t eng_send(nmo_engine_t *engine, const eng_message_t *message);
 nmo_status_t eng_register_wait(nmo_engine_t *engine, int32_t type, int32_t node, int output_pos,
@@ -411,9 +504,13 @@ nmo_status_t eng_register_controllers(nmo_engine_t *engine);
 bool eng_curve_value(const nmo_parameter_state_t *state, uint8_t **out_data, uint32_t *out_size);
 
 /* engine_attributes.c */
-nmo_status_t eng_load_attributes(nmo_engine_t *engine);
+nmo_status_t eng_load_attributes(nmo_engine_t *engine, int32_t module);
 void eng_free_attributes(nmo_engine_t *engine);
 nmo_status_t eng_register_attributes(nmo_engine_t *engine);
+
+/* engine_tt.c */
+nmo_status_t eng_register_tt(nmo_engine_t *engine);
+void eng_free_tt(nmo_engine_t *engine);
 
 /* engine_interface.c */
 nmo_status_t eng_register_interface(nmo_engine_t *engine);

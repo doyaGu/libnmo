@@ -1,5 +1,9 @@
 #include "engine_fixture.h"
 
+#include "object/builtin/nmo_parameter_schemas.h"
+#include "object/builtin/nmo_parameterin_schemas.h"
+#include "object/builtin/nmo_parameteroperation_schemas.h"
+#include "type/nmo_object_guids.h"
 #include "type/nmo_param_guids.h"
 #include "type/nmo_type_guids.h"
 
@@ -9,6 +13,10 @@
 #define GUID_GET_SUBSTRING NMO_GUID(0x10b16051, 0x26173b39)
 #define GUID_SCAN_STRING NMO_GUID(0x4afa2f11, 0x034872e2)
 #define GUID_REVERSE_STRING NMO_GUID(0x72b17c2e, 0x644e2563)
+#define GUID_IDENTITY NMO_GUID(0x15151652, 0xaeefffd5)
+#define OP_ADDITION NMO_GUID(0x33cc6b49, 0x3589282b)
+#define OP_GET_LENGTH NMO_GUID(0x556a69af, 0x076e3f09)
+#define OP_GET_OBJECT_BY_NAME NMO_GUID(0x599203f6, 0x23b06096)
 
 static void input_string(engine_fixture_t *f, nmo_object_id_t pin, const char *text)
 {
@@ -168,8 +176,92 @@ TEST(engine_strings, substring_scan_and_reverse)
     fixture_end(&f);
 }
 
+/* A local string parameter of the script holding `text` */
+static nmo_object_id_t local_string(engine_fixture_t *f, const char *name, const char *text)
+{
+    nmo_object_id_t id = 0;
+    if (nmo_script_edit_add_parameter(f->tx, f->script_id, NMO_SCRIPT_EDIT_PARAM_LOCAL,
+                                      CKPGUID_STRING, name, &id) != NMO_OK ||
+        nmo_script_edit_set_parameter_bytes(f->tx, id, (const uint8_t *)text, strlen(text) + 1u) !=
+            NMO_OK) {
+        return 0;
+    }
+    return id;
+}
+
+/* An operation on `in1` and `in2`, its output of `type`; the output's ID */
+static nmo_object_id_t operation(engine_fixture_t *f, nmo_guid_t guid, nmo_object_id_t in1,
+                                 nmo_object_id_t in2, nmo_guid_t type)
+{
+    nmo_object_id_t op = 0;
+    if (nmo_script_edit_add_operation(f->tx, f->script_id, guid, in1, in2, 0, &op) != NMO_OK) {
+        return 0;
+    }
+    const nmo_parameteroperation_state_t *state =
+        (const nmo_parameteroperation_state_t *)fixture_state(f, op);
+    nmo_object_id_t out = state != NULL ? nmo_parameteroperation_out_id(state) : 0;
+    nmo_parameter_state_t *out_state = (nmo_parameter_state_t *)fixture_state(f, out);
+    if (out_state == NULL) {
+        return 0;
+    }
+    out_state->type_guid = type;
+    return out;
+}
+
+/* An Identity reading `source` as `type` */
+static nmo_object_id_t identity_of(engine_fixture_t *f, nmo_object_id_t source, nmo_guid_t type,
+                                   nmo_object_id_t after)
+{
+    nmo_object_id_t identity = fixture_block(f, GUID_IDENTITY, "Identity");
+    nmo_parameterin_state_t *pin = (nmo_parameterin_state_t *)fixture_state(f, BLOCK_PIN(f, identity, 0));
+    nmo_parameter_state_t *pout = (nmo_parameter_state_t *)fixture_state(f, BLOCK_POUT(f, identity, 0));
+    if (pin == NULL || pout == NULL) {
+        return 0;
+    }
+    pin->type_guid = type;
+    pout->type_guid = type;
+    if (nmo_script_edit_connect_parameter(f->tx, source, BLOCK_PIN(f, identity, 0)) != NMO_OK) {
+        return 0;
+    }
+    fixture_link(f, after, BLOCK_IN(f, identity, 0), 0);
+    return identity;
+}
+
+TEST(engine_strings, string_operations)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t ab = local_string(&f, "A", "Ab");
+    nmo_object_id_t cd = local_string(&f, "B", "cd");
+    nmo_object_id_t owner_name = local_string(&f, "Name", "Owner");
+    ASSERT_TRUE(ab != 0 && cd != 0 && owner_name != 0);
+    nmo_object_id_t joined = operation(&f, OP_ADDITION, ab, cd, CKPGUID_STRING);
+    ASSERT_TRUE(joined != 0);
+    nmo_object_id_t length = operation(&f, OP_GET_LENGTH, joined, 0, CKPGUID_INT);
+    nmo_object_id_t found = operation(&f, OP_GET_OBJECT_BY_NAME, owner_name, 0, CKPGUID_3DENTITY);
+    ASSERT_TRUE(length != 0 && found != 0);
+    nmo_object_id_t read_length = identity_of(&f, length, CKPGUID_INT, f.script_in);
+    ASSERT_TRUE(read_length != 0);
+    nmo_object_id_t read_found =
+        identity_of(&f, found, CKPGUID_3DENTITY, BLOCK_OUT(&f, read_length, 0));
+    ASSERT_TRUE(read_found != 0);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+    /* "Ab" + "cd" is "Abcd": 4 characters */
+    int32_t count = 0;
+    read_value(&f, BLOCK_POUT(&f, read_length, 0), &count, sizeof(count));
+    ASSERT_EQ(4, count);
+    uint32_t object = 0;
+    read_value(&f, BLOCK_POUT(&f, read_found, 0), &object, sizeof(object));
+    ASSERT_EQ(f.owner_id, object);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_strings, create_string_writes_values_as_ck2_does);
 REGISTER_TEST(engine_strings, create_string_adds_lines_and_clears);
 REGISTER_TEST(engine_strings, substring_scan_and_reverse);
+REGISTER_TEST(engine_strings, string_operations);
 TEST_MAIN_END()

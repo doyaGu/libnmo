@@ -127,7 +127,7 @@ static int bb_create_system_font(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
-/* Create Font: the font of a texture. */
+/* Create Font: the font of a texture. TT_CreateFontEx too: its character coordinates draw. */
 static int bb_create_font(blk_t *b)
 {
     IN_OFF(b, 0);
@@ -301,6 +301,7 @@ static int bb_push_button(blk_t *b)
 static const nmo_engine_block_desc_t eng_interface_blocks[] = {
     {NMO_GUID(0x936334fc, 0xf243684f), "Create System Font", bb_create_system_font, NULL, NULL},
     {NMO_GUID(0x7d644088, 0x40dd0349), "Create Font", bb_create_font, NULL, NULL},
+    {NMO_GUID(0x260e4eb0, 0x0e256b90), "TT_CreateFontEx", bb_create_font, NULL, NULL},
     {NMO_GUID(0x0153342c, 0xe543674f), "Delete Font", bb_delete_font, NULL, NULL},
     {NMO_GUID(0xdacfbd61, 0x7a6e65e7), "Set Font Properties", bb_set_font_properties, NULL, NULL},
     {NMO_GUID(0x055b29fe, 0x662d5ca0), "2D Text", bb_text_2d, NULL, NULL},
