@@ -6,8 +6,9 @@
  * the Parameter Operations plugin that make strings, or need the objects the
  * engine runs, are here, by the functions the plugin registers for them
  * (CKStringAddStringString, CKStringSetGeneric, CKGenericSetString,
- * CKStringGetNameObject, CKObjectGetObjectByNameString,
- * CKIntGetScriptCountBeObject, CKScriptGetScriptBeObjectInt and ...String).
+ * CKStringGetNameObject, CKIntGetTypeObject, CKObjectGetObjectByNameString,
+ * CKIntGetScriptCountBeObject, CKScriptGetScriptBeObjectInt and ...String,
+ * CKIntGetRowCountDataArray, CKIntGetColumnCountDataArray, CKIntGetCountGroup).
  * They are tried before the registry, matched as CK matches an operation:
  * by its GUID, and by the input and output types or the types they derive.
  */
@@ -24,12 +25,16 @@
 #define OP_ADDITION NMO_GUID(0x33cc6b49, 0x3589282b)
 #define OP_CONVERT NMO_GUID(0x428009b4, 0x1caa5c78)
 #define OP_GET_NAME NMO_GUID(0x5939156e, 0x62ab3472)
+#define OP_GET_TYPE NMO_GUID(0x35aa0ddb, 0x7a5e3335)
 #define OP_GET_OBJECT_BY_NAME NMO_GUID(0x599203f6, 0x23b06096)
 #define OP_GET_SCRIPT_COUNT NMO_GUID(0x551c20ba, 0x20da6d50)
 #define OP_GET_SCRIPT NMO_GUID(0x250020d4, 0x10d51b91)
 #define OP_GET_LENGTH NMO_GUID(0x556a69af, 0x076e3f09)
 #define OP_CONTAIN_STRING NMO_GUID(0x5e866012, 0x5860306d)
 #define OP_EQUAL NMO_GUID(0x6c62476b, 0x7a922973)
+#define OP_GET_COUNT NMO_GUID(0x44df6f61, 0x5f8f55c8)
+#define OP_GET_ROW_COUNT NMO_GUID(0xfb556b23, 0x69b22a75)
+#define OP_GET_COLUMN_COUNT NMO_GUID(0x2b554b23, 0x69b22a72)
 
 /* The Script parameter type (a CKBehavior that is a script) */
 #define PGUID_SCRIPT NMO_GUID(0x7ea4176d, 0x1b405d30)
@@ -145,6 +150,15 @@ static nmo_status_t op_get_name(nmo_engine_t *engine, eng_param_t *src1, eng_par
     return write_string(engine, out, name != NULL ? name : "");
 }
 
+/* CKIntGetTypeObject: the object's class, written only for an object there is. */
+static nmo_status_t op_get_type(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                eng_param_t *out)
+{
+    (void)src2;
+    int32_t class_id = nmo_engine_object_class(engine, (nmo_object_id_t)param_u32(src1));
+    return class_id != 0 ? write_u32(engine, out, (uint32_t)class_id) : NMO_OK;
+}
+
 /* CKObjectGetObjectByNameString: the first object of that name of the output's class. */
 static nmo_status_t op_get_object_by_name(nmo_engine_t *engine, eng_param_t *src1,
                                           eng_param_t *src2, eng_param_t *out)
@@ -214,6 +228,37 @@ static nmo_status_t op_get_script_named(nmo_engine_t *engine, eng_param_t *src1,
     return NMO_OK;
 }
 
+/* CKIntGetRowCountDataArray: written only for an array there is. */
+static nmo_status_t op_get_row_count(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                     eng_param_t *out)
+{
+    (void)src2;
+    nmo_object_id_t id = (nmo_object_id_t)param_u32(src1);
+    return eng_find_array(engine, id) != NULL
+               ? write_u32(engine, out, (uint32_t)nmo_engine_array_row_count(engine, id))
+               : NMO_OK;
+}
+
+/* CKIntGetColumnCountDataArray: written only for an array there is. */
+static nmo_status_t op_get_column_count(nmo_engine_t *engine, eng_param_t *src1,
+                                        eng_param_t *src2, eng_param_t *out)
+{
+    (void)src2;
+    nmo_object_id_t id = (nmo_object_id_t)param_u32(src1);
+    return eng_find_array(engine, id) != NULL
+               ? write_u32(engine, out, (uint32_t)nmo_engine_array_column_count(engine, id))
+               : NMO_OK;
+}
+
+/* CKIntGetCountGroup: written only for a group there is. */
+static nmo_status_t op_get_group_count(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                       eng_param_t *out)
+{
+    (void)src2;
+    int32_t count = nmo_engine_group_count(engine, (nmo_object_id_t)param_u32(src1));
+    return count >= 0 ? write_u32(engine, out, (uint32_t)count) : NMO_OK;
+}
+
 typedef nmo_status_t (*engine_op_fn)(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
                                      eng_param_t *out);
 
@@ -229,10 +274,15 @@ static const engine_op_t engine_ops[] = {
     {OP_CONTAIN_STRING, CKPGUID_BOOL, CKPGUID_STRING, CKPGUID_STRING, op_contain_string},
     {OP_EQUAL, CKPGUID_BOOL, CKPGUID_STRING, CKPGUID_STRING, op_string_equal},
     {OP_GET_NAME, CKPGUID_STRING, CKPGUID_OBJECT, {0, 0}, op_get_name},
+    {OP_GET_TYPE, CKPGUID_CLASSID, CKPGUID_OBJECT, {0, 0}, op_get_type},
     {OP_GET_OBJECT_BY_NAME, CKPGUID_OBJECT, CKPGUID_STRING, {0, 0}, op_get_object_by_name},
     {OP_GET_SCRIPT_COUNT, CKPGUID_INT, CKPGUID_BEOBJECT, {0, 0}, op_get_script_count},
     {OP_GET_SCRIPT, PGUID_SCRIPT, CKPGUID_BEOBJECT, CKPGUID_INT, op_get_script_index},
     {OP_GET_SCRIPT, PGUID_SCRIPT, CKPGUID_BEOBJECT, CKPGUID_STRING, op_get_script_named},
+    {OP_GET_COUNT, CKPGUID_INT, CKPGUID_DATAARRAY, {0, 0}, op_get_row_count},
+    {OP_GET_COUNT, CKPGUID_INT, CKPGUID_GROUP, {0, 0}, op_get_group_count},
+    {OP_GET_ROW_COUNT, CKPGUID_INT, CKPGUID_DATAARRAY, {0, 0}, op_get_row_count},
+    {OP_GET_COLUMN_COUNT, CKPGUID_INT, CKPGUID_DATAARRAY, {0, 0}, op_get_column_count},
 };
 
 bool eng_operation_builtin(nmo_engine_t *engine, nmo_guid_t operation, eng_param_t *in1,

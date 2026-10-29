@@ -1,6 +1,7 @@
 /**
  * @file engine_media.c
- * @brief Sounds, textures, movies and particle systems, without audio or rendering.
+ * @brief Sounds, textures, movies, animations and particle systems, without
+ *        audio or rendering.
  *
  * Wave Player and the particle systems are not effects: they stay active and
  * activate outputs later (when a sound ends, when the last particle dies).
@@ -9,7 +10,8 @@
  * counts its particles as alive until the longest lifespan its inputs allow
  * has passed since it last emitted. Starting a sound or an emission reports
  * an effect event. A texture is its slots, a movie the frames its AVI file
- * records; Movie Player moves through them as the movie plays.
+ * records; Movie Player moves through them as the movie plays. Play
+ * Animation 3D Entity keeps its progression, the step the animation shows.
  */
 
 #include "engine_internal.h"
@@ -357,6 +359,31 @@ static int32_t movie_frame_count(nmo_engine_t *engine, const char *name)
     return frames > 0 ? frames : -1;
 }
 
+/*
+ * Change Texture Video Format: the texture's format in video memory. The
+ * engine's render driver has every format, so Success for one of the 14.
+ */
+static int bb_change_texture_video_format(blk_t *b)
+{
+    if (!IN_ACTIVE(b, 0)) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    IN_OFF(b, 0);
+    int32_t format = get_in_int(b, 0, 0);
+    if (format < 0 || format >= 14) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    nmo_object_id_t texture = nmo_engine_block_target(b);
+    if (texture == 0) {
+        return NMO_ENGINE_BR_BEHAVIORERROR;
+    }
+    eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, texture, 0);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
 /* Whether the file `name` names is there to read. */
 static bool media_file_exists(nmo_engine_t *engine, const char *name)
 {
@@ -500,11 +527,66 @@ static int bb_movie_player(blk_t *b)
     return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
 }
 
+/* ============================================================================
+ * Animations
+ * ============================================================================ */
+
+/*
+ * Play Animation 3D Entity (PlayAnimEntity): the animation's progression
+ * from 0 to 1 over Duration, One Loop Played each time it passes 1; without
+ * Loop it stays at 1 and stops. The animation takes that step through the
+ * progression curve (an effect).
+ */
+static int bb_play_animation(blk_t *b)
+{
+    if (nmo_engine_block_get_input_object(b, 0) == 0) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    float duration = 5000.0f;
+    if (nmo_guid_equals(nmo_engine_block_input_parameter_type(b, 1), CKPGUID_INT)) {
+        duration = (float)get_in_int(b, 1, 5000); /* back compatibility */
+    } else {
+        duration = get_in_float(b, 1, 5000.0f);
+    }
+    if (duration < 0.001f) {
+        return NMO_ENGINE_BR_OK;
+    }
+    bool loop = get_in_int(b, 3, 1) != 0;
+    float step = 0.0f;
+    nmo_engine_block_get_local_value(b, 0, &step, sizeof(step));
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    step += nmo_engine_block_delta_time(b) / duration;
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        step = 0.0f;
+        eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, nmo_engine_block_owner(b), 0);
+    }
+    int result = NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+    if (step > 1.0f) {
+        OUT_ON(b, 0);
+        if (loop) {
+            step -= (float)(int)step;
+        } else {
+            step = 1.0f;
+            result = NMO_ENGINE_BR_OK;
+        }
+    }
+    nmo_engine_block_set_local_value(b, 0, &step, sizeof(step));
+    nmo_engine_block_set_output_value(b, 0, &step, sizeof(step));
+    return result;
+}
+
 static const nmo_engine_block_desc_t eng_media_blocks[] = {
     {NMO_GUID(0x5bde0e45, 0x2e2107d5), "Wave Player", bb_wave_player, cb_wave_player, NULL},
     {NMO_GUID(0x30fa6a70, 0x3b3f728a), "TT_GetSoundProperties", bb_get_sound_properties, NULL,
      NULL},
     {NMO_GUID(0x00e85ab1, 0x312a731c), "Texture Load", bb_texture_load, NULL, NULL},
+    {NMO_GUID(0xf56d92ef, 0x41eb20c1), "Change Texture Video Format",
+     bb_change_texture_video_format, NULL, NULL},
+    {NMO_GUID(0x64221225, 0x769a143f), "Play Animation 3D Entity", bb_play_animation, NULL, NULL},
     {NMO_GUID(0x798e26a9, 0x34e4169e), "Movie Load", bb_movie_load, NULL, NULL},
     {NMO_GUID(0x778d16d4, 0x1dd60060), "Movie Player", bb_movie_player, NULL, NULL},
     {NMO_GUID(0x506b40f7, 0x30852e46), "Point Particle System", bb_particle_system, NULL, NULL},

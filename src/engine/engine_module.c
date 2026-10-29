@@ -8,7 +8,8 @@
  * document's offset, and the first document keeps its IDs. Message and
  * attribute types are indexes into a document's own tables; the engine keeps
  * one table of each and maps every document's types into it by name, as
- * the message and attribute managers do when CK loads a file.
+ * the message and attribute managers do when CK loads a file. Objects that
+ * blocks create are in a document of their own, made with the first one.
  */
 
 #include "engine_internal.h"
@@ -16,6 +17,7 @@
 #include "core/nmo_arena.h"
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_attributemanager_schemas.h"
+#include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_defs.h"
 #include "../runtime/runtime_internal.h"
 
@@ -195,8 +197,10 @@ void eng_free_modules(nmo_engine_t *engine)
         free(module->attribute_types);
         free(module->name);
         if (module->session != NULL) {
-            nmo_workspace_destroy(module->workspace);
-            nmo_document_destroy(module->document);
+            if (module->workspace != NULL) {
+                nmo_workspace_destroy(module->workspace);
+                nmo_document_destroy(module->document);
+            }
             nmo_session_destroy(module->session);
         }
     }
@@ -242,6 +246,52 @@ nmo_object_id_t eng_object_named(const nmo_engine_t *engine, const char *name, u
         }
     }
     return 0;
+}
+
+/* The IDs the module of created objects keeps, after the files loaded before its first object */
+#define ENG_CREATED_CAPACITY 0x100000u
+
+/*
+ * CKContext::CreateObject and CKLevel::AddObject: a new object of the class
+ * and name in the module of created objects; 0 when it cannot be made. A new
+ * data array is empty.
+ */
+nmo_object_id_t eng_create_object(nmo_engine_t *engine, uint32_t class_id, const char *name)
+{
+    int32_t index = -1;
+    for (size_t i = 0; i < engine->modules.count; i++) {
+        if (engine->modules.data[i].created) {
+            index = (int32_t)i;
+        }
+    }
+    if (index < 0) {
+        nmo_context_t *ctx = nmo_workspace_internal_context(engine->workspace);
+        nmo_session_t *session = ctx != NULL ? nmo_session_create(ctx) : NULL;
+        eng_module_t *module = NULL;
+        if (session == NULL || !ENG_VEC_PUSH(engine->modules, module)) {
+            nmo_session_destroy(session);
+            return 0;
+        }
+        index = (int32_t)engine->modules.count - 1;
+        module->offset = index > 0 ? engine->modules.data[index - 1].limit : 0u;
+        module->limit = module->offset + ENG_CREATED_CAPACITY;
+        module->repo = nmo_session_get_repository(session);
+        module->session = session;
+        module->created = true;
+    }
+    eng_module_t *module = &engine->modules.data[index];
+    nmo_object_id_t local = 0;
+    if (nmo_session_create_object(module->session, (nmo_class_id_t)class_id,
+                                  name != NULL ? name : "", NMO_GUID(0u, 0u), &local,
+                                  NULL) != NMO_OK ||
+        local == 0 || local > ENG_CREATED_CAPACITY) {
+        return 0;
+    }
+    nmo_object_id_t id = module->offset + local;
+    if (class_id == NMO_CID_DATAARRAY && eng_add_array(engine, id) != NMO_OK) {
+        return 0;
+    }
+    return id;
 }
 
 int32_t eng_module_message_type(const eng_module_t *module, int32_t type)

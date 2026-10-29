@@ -1,5 +1,6 @@
 #include "engine_fixture.h"
 
+#include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/builtin/nmo_parameteroperation_schemas.h"
@@ -17,6 +18,8 @@
 #define OP_ADDITION NMO_GUID(0x33cc6b49, 0x3589282b)
 #define OP_GET_LENGTH NMO_GUID(0x556a69af, 0x076e3f09)
 #define OP_GET_OBJECT_BY_NAME NMO_GUID(0x599203f6, 0x23b06096)
+#define OP_GET_TYPE NMO_GUID(0x35aa0ddb, 0x7a5e3335)
+#define OP_GET_COUNT NMO_GUID(0x44df6f61, 0x5f8f55c8)
 
 static void input_string(engine_fixture_t *f, nmo_object_id_t pin, const char *text)
 {
@@ -201,9 +204,14 @@ static nmo_object_id_t operation(engine_fixture_t *f, nmo_guid_t guid, nmo_objec
         (const nmo_parameteroperation_state_t *)fixture_state(f, op);
     nmo_object_id_t out = state != NULL ? nmo_parameteroperation_out_id(state) : 0;
     nmo_parameter_state_t *out_state = (nmo_parameter_state_t *)fixture_state(f, out);
-    if (out_state == NULL) {
+    nmo_parameterin_state_t *in1_state =
+        (nmo_parameterin_state_t *)fixture_state(f, nmo_parameteroperation_in1_id(state));
+    const nmo_parameter_state_t *source = (const nmo_parameter_state_t *)fixture_state(f, in1);
+    if (out_state == NULL || in1_state == NULL || source == NULL) {
         return 0;
     }
+    /* The operation takes its operands' types, as the operation that matches them does */
+    in1_state->type_guid = source->type_guid;
     out_state->type_guid = type;
     return out;
 }
@@ -259,9 +267,59 @@ TEST(engine_strings, string_operations)
     fixture_end(&f);
 }
 
+/* A local parameter of the script of object type `type`; its object is set in the engine */
+static nmo_object_id_t local_object(engine_fixture_t *f, const char *name, nmo_guid_t type)
+{
+    nmo_object_id_t param = 0;
+    return nmo_script_edit_add_parameter(f->tx, f->script_id, NMO_SCRIPT_EDIT_PARAM_LOCAL, type,
+                                         name, &param) == NMO_OK
+               ? param
+               : 0;
+}
+
+TEST(engine_strings, object_operations)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t other = fixture_create(&f, NMO_CID_3DENTITY, "Other");
+    nmo_object_id_t group = fixture_create(&f, NMO_CID_GROUP, "Group");
+    nmo_group_state_t *state = (nmo_group_state_t *)fixture_state(&f, group);
+    ASSERT_TRUE(other != 0 && state != NULL);
+    nmo_ref_t *members = NULL;
+    ASSERT_EQ(NMO_OK, nmo_array_extend(&state->object_ids, 2u, (void **)&members));
+    members[0] = nmo_ref_from_id(f.owner_id);
+    members[1] = nmo_ref_from_id(other);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t object = local_object(&f, "Object", CKPGUID_3DENTITY);
+    nmo_object_id_t in_group = local_object(&f, "Group", CKPGUID_GROUP);
+    ASSERT_TRUE(object != 0 && in_group != 0);
+    nmo_object_id_t type = operation(&f, OP_GET_TYPE, object, 0, CKPGUID_CLASSID);
+    nmo_object_id_t count = operation(&f, OP_GET_COUNT, in_group, 0, CKPGUID_INT);
+    ASSERT_TRUE(type != 0 && count != 0);
+    nmo_object_id_t read_type = identity_of(&f, type, CKPGUID_CLASSID, f.script_in);
+    ASSERT_TRUE(read_type != 0);
+    nmo_object_id_t read_count = identity_of(&f, count, CKPGUID_INT, BLOCK_OUT(&f, read_type, 0));
+    ASSERT_TRUE(read_count != 0);
+    fixture_commit(&f, NULL);
+    const uint32_t ids[2] = {(uint32_t)other, (uint32_t)group};
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, object, &ids[0], sizeof(ids[0])));
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, in_group, &ids[1], sizeof(ids[1])));
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+    int32_t value = 0;
+    read_value(&f, BLOCK_POUT(&f, read_type, 0), &value, sizeof(value));
+    ASSERT_EQ(NMO_CID_3DENTITY, value);
+    read_value(&f, BLOCK_POUT(&f, read_count, 0), &value, sizeof(value));
+    ASSERT_EQ(2, value);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_strings, create_string_writes_values_as_ck2_does);
 REGISTER_TEST(engine_strings, create_string_adds_lines_and_clears);
 REGISTER_TEST(engine_strings, substring_scan_and_reverse);
 REGISTER_TEST(engine_strings, string_operations);
+REGISTER_TEST(engine_strings, object_operations);
 TEST_MAIN_END()

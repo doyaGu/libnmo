@@ -1,6 +1,7 @@
 #include "engine_fixture.h"
 
 #include "document/nmo_document_save.h"
+#include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_level_schemas.h"
 #include "object/builtin/nmo_scene_schemas.h"
 #include "object/nmo_ref.h"
@@ -10,6 +11,8 @@
 
 #define GUID_NOP NMO_GUID(0x302561c4, 0x0d282980)
 #define GUID_OBJECT_LOAD NMO_GUID(0x7bd977d7, 0x26396c0c)
+#define GUID_OBJECT_CREATE NMO_GUID(0x271538e6, 0x2fae49ac)
+#define GUID_ADD_TO_GROUP NMO_GUID(0x00024125, 0x785420ab)
 
 /* The files the engine loads, from the scratch directory */
 static const char *resolve_scratch(void *user_data, const char *name)
@@ -179,7 +182,56 @@ TEST(engine_loading, level_scene_says_what_starts_active)
     fixture_end(&f);
 }
 
+TEST(engine_loading, object_create_and_add_to_group)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t other = fixture_create(&f, NMO_CID_3DENTITY, "Other");
+    nmo_object_id_t group = fixture_create(&f, NMO_CID_GROUP, "Group");
+    nmo_group_state_t *state = (nmo_group_state_t *)fixture_state(&f, group);
+    ASSERT_TRUE(other != 0 && state != NULL);
+    nmo_ref_t *members = NULL;
+    ASSERT_EQ(NMO_OK, nmo_array_extend(&state->object_ids, 1u, (void **)&members));
+    members[0] = nmo_ref_from_id(other);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t create = fixture_block(&f, GUID_OBJECT_CREATE, "Create");
+    nmo_object_id_t add = fixture_block(&f, GUID_ADD_TO_GROUP, "Add");
+    nmo_object_id_t again = fixture_block(&f, GUID_ADD_TO_GROUP, "Again");
+    ASSERT_TRUE(create != 0 && add != 0 && again != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, create, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, create, 0), BLOCK_IN(&f, add, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, add, 0), BLOCK_IN(&f, again, 0), 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, create, 0), NMO_CID_DATAARRAY);
+    fixture_input_value(&f, BLOCK_PIN(&f, create, 1), "Made", sizeof("Made"));
+    nmo_object_id_t adds[2] = {add, again};
+    for (int i = 0; i < 2; i++) {
+        ASSERT_TRUE(fixture_target(&f, adds[i]) != 0);
+        fixture_input_int(&f, fixture_target(&f, adds[i]), (int32_t)f.owner_id);
+        fixture_input_int(&f, BLOCK_PIN(&f, adds[i], 0), (int32_t)group);
+    }
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(1, nmo_engine_group_count(f.engine, group));
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    /* A new object with an ID of its own; a new data array is empty */
+    uint32_t created = 0;
+    read_value(&f, BLOCK_POUT(&f, create, 0), &created, sizeof(created));
+    ASSERT_TRUE(created != 0 && created != f.owner_id && created != other);
+    ASSERT_STR_EQ("Made", nmo_engine_object_name(f.engine, created));
+    ASSERT_EQ(NMO_CID_DATAARRAY, nmo_engine_object_class(f.engine, created));
+    ASSERT_EQ(0, nmo_engine_array_column_count(f.engine, created));
+    ASSERT_EQ(0, nmo_engine_array_row_count(f.engine, created));
+    /* Added once: CKGroup::AddObject refuses an object already in the group */
+    ASSERT_EQ(2, nmo_engine_group_count(f.engine, group));
+    ASSERT_EQ(other, nmo_engine_group_object(f.engine, group, 0));
+    ASSERT_EQ(f.owner_id, nmo_engine_group_object(f.engine, group, 1));
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_loading, object_load_adds_the_file_to_the_level);
 REGISTER_TEST(engine_loading, level_scene_says_what_starts_active);
+REGISTER_TEST(engine_loading, object_create_and_add_to_group);
 TEST_MAIN_END()

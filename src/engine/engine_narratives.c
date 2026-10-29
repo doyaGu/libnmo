@@ -1,7 +1,7 @@
 /**
  * @file engine_narratives.c
  * @brief Ports of the Narratives building blocks that start and stop scripts
- *        and objects, and load and delete objects.
+ *        and objects, and create, load and delete objects.
  *
  * Each function does what the block's function in Narratives.dll does (the
  * reference is the Ballanced source of the blocks). Activating a script
@@ -286,6 +286,24 @@ static int bb_object_load(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/*
+ * Object Create (ObjectCreator): a new object of the class and name, added
+ * to the level, in the Object output; nothing for a level.
+ */
+static int bb_object_create(blk_t *b)
+{
+    nmo_engine_block_activate_input(b, 0, false);
+    nmo_engine_block_activate_output(b, 0, true);
+    nmo_engine_t *engine = nmo_engine_block_engine(b);
+    uint32_t class_id = (uint32_t)get_in_int(b, 0, NMO_CID_3DENTITY);
+    if (nmo_type_registry_is_class_derived_from(engine->types, class_id, NMO_CID_LEVEL)) {
+        return NMO_ENGINE_BR_OK;
+    }
+    uint32_t id = (uint32_t)eng_create_object(engine, class_id, input_string(b, 1));
+    nmo_engine_block_set_output_value(b, 0, &id, sizeof(id));
+    return NMO_ENGINE_BR_OK;
+}
+
 /* Object Delete (ObjectDeleter): destroys the object (the target, before version 2). */
 static int bb_object_delete(blk_t *b)
 {
@@ -309,6 +327,7 @@ static const nmo_engine_block_desc_t eng_narratives_blocks[] = {
     {NMO_GUID(0x160f4b7d, 0x67de224e), "Deactivate Object", bb_deactivate_object, NULL, NULL},
     {NMO_GUID(0x1a7d5b17, 0x70630fed), "Call Script", bb_call_script, NULL, NULL},
     {NMO_GUID(0x7bd977d7, 0x26396c0c), "Object Load", bb_object_load, NULL, NULL},
+    {NMO_GUID(0x271538e6, 0x2fae49ac), "Object Create", bb_object_create, NULL, NULL},
     {NMO_GUID(0x74120ded, 0x76524673), "Object Delete", bb_object_delete, NULL, NULL},
 };
 

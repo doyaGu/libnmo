@@ -6,6 +6,8 @@
 #define GUID_SET_FONT_PROPERTIES NMO_GUID(0xdacfbd61, 0x7a6e65e7)
 #define GUID_TEXT_2D NMO_GUID(0x055b29fe, 0x662d5ca0)
 #define GUID_PUSH_BUTTON NMO_GUID(0x761b7e64, 0x2b4c6911)
+#define GUID_TT_PUSH_BUTTON2 NMO_GUID(0x14d325d1, 0x6748654e)
+#define GUID_SHOW_MOUSE_CURSOR NMO_GUID(0x16f6368f, 0x506b60fc)
 
 typedef struct effect_log {
     size_t effects;
@@ -162,8 +164,55 @@ TEST(engine_interface, push_button_follows_the_mouse)
     fixture_end(&f);
 }
 
+TEST(engine_interface, tt_push_button2_needs_the_cursor_shown)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t frame = fixture_create(&f, NMO_CID_2DENTITY, "Frame");
+    ASSERT_TRUE(frame != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t button = fixture_block(&f, GUID_TT_PUSH_BUTTON2, "Button");
+    nmo_object_id_t hide = fixture_block(&f, GUID_SHOW_MOUSE_CURSOR, "Hide");
+    ASSERT_TRUE(button != 0 && hide != 0 && fixture_target(&f, button) != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, button, 0), 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, hide, 0), 4);
+    fixture_input_int(&f, fixture_target(&f, button), (int32_t)frame);
+    fixture_input_int(&f, BLOCK_PIN(&f, hide, 0), 0); /* Show: no */
+    /* Released, Roll Over, Mouse Down */
+    nmo_object_id_t outputs[3];
+    for (int i = 0; i < 3; i++) {
+        outputs[i] = fixture_block(&f, GUID_NOP, "Output");
+        ASSERT_TRUE(outputs[i] != 0);
+        fixture_link(&f, BLOCK_OUT(&f, button, (size_t)i), BLOCK_IN(&f, outputs[i], 0), 0);
+    }
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_TRUE(nmo_engine_cursor_is_visible(f.engine));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    nmo_engine_set_entity_under_mouse(f.engine, frame);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f)); /* roll over */
+    ASSERT_EQ(1u, runs(&f, outputs[1]));
+    nmo_engine_set_mouse_button(f.engine, 0, true);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f)); /* mouse down */
+    ASSERT_EQ(1u, runs(&f, outputs[2]));
+    nmo_engine_set_mouse_button(f.engine, 0, false);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(0u, runs(&f, outputs[0]));
+    /* The cursor hidden in frame 4: the mouse is over nothing the button sees */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_FALSE(nmo_engine_cursor_is_visible(f.engine));
+    ASSERT_EQ(1u, runs(&f, outputs[0]));
+    ASSERT_EQ(1u, runs(&f, outputs[1]));
+    ASSERT_EQ(1u, runs(&f, outputs[2]));
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_interface, fonts_are_numbered_by_name);
 REGISTER_TEST(engine_interface, text_2d_draws_until_off);
 REGISTER_TEST(engine_interface, push_button_follows_the_mouse);
+REGISTER_TEST(engine_interface, tt_push_button2_needs_the_cursor_shown);
 TEST_MAIN_END()

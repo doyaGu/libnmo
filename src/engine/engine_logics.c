@@ -2142,6 +2142,19 @@ static int bb_group_iterator(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* Add To Group: the target into the group (CKGroup::AddObject). */
+static int bb_add_to_group(blk_t *b)
+{
+    nmo_object_id_t group = nmo_engine_block_get_input_object(b, 0);
+    if (nmo_engine_group_count(nmo_engine_block_engine(b), group) < 0) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    eng_group_add(nmo_engine_block_engine(b), group, nmo_engine_block_target(b));
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
 /* ============================================================================
  * Registration
  * ============================================================================ */
@@ -2193,6 +2206,7 @@ static const nmo_engine_block_desc_t eng_logics_blocks[] = {
     {NMO_GUID(0x05cb7802, 0x04a64a58), "Insert Column", bb_insert_column, NULL, NULL},
     {NMO_GUID(0x49124252, 0x1be909a4), "Column Sum", bb_column_sum, NULL, NULL},
     {NMO_GUID(0x6050252f, 0x3aa82d40), "Group Iterator", bb_group_iterator, NULL, NULL},
+    {NMO_GUID(0x00024125, 0x785420ab), "Add To Group", bb_add_to_group, NULL, NULL},
     {NMO_GUID(0x46f71e13, 0x13d26f61), "Get Highest", bb_get_highest, NULL, NULL},
     {NMO_GUID(0x58a1210b, 0x14e5715c), "Is In Group", bb_is_in_group, NULL, NULL},
     {NMO_GUID(0x448e54ce, 0x75a655c5), "Per Second", bb_per_second, NULL, NULL},

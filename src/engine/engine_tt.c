@@ -650,6 +650,87 @@ static int bb_read_registry(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/*
+ * TT Sky: On makes the sky around the camera and keeps it there each frame
+ * (an effect), Off hides it.
+ */
+static int bb_sky(blk_t *b)
+{
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+        eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, 0, 0);
+    }
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+/* TT PushButton2: the button state (local 0) and whether the left button was down (local 1) */
+static int32_t get_local_int(blk_t *b, int pos, int32_t fallback)
+{
+    int32_t value = fallback;
+    nmo_engine_block_get_local_value(b, pos, &value, sizeof(value));
+    return value;
+}
+
+static void set_local_int(blk_t *b, int pos, int32_t value)
+{
+    nmo_engine_block_set_local_value(b, pos, &value, sizeof(value));
+}
+
+/*
+ * TT PushButton2: Roll Over when the mouse comes over the target 2D entity
+ * with the cursor shown, Released when it leaves, Mouse Down when the left
+ * button goes down over it.
+ */
+static int bb_push_button2(blk_t *b)
+{
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (target == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    bool turned_on = false;
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        set_local_int(b, 0, 0);
+        set_local_int(b, 1, 0);
+        turned_on = true;
+    }
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    int32_t old_state = get_local_int(b, 0, 0);
+    bool old_down = get_local_int(b, 1, 0) != 0;
+    nmo_engine_t *engine = nmo_engine_block_engine(b);
+    int32_t state = target == nmo_engine_entity_under_mouse(engine) &&
+                            nmo_engine_cursor_is_visible(engine)
+                        ? 1
+                        : 0;
+    bool down = nmo_engine_is_mouse_button_down(engine, 0);
+    bool changed = false;
+    if (turned_on && down) {
+        old_down = true;
+        set_local_int(b, 1, 1);
+    }
+    if (down != old_down) {
+        set_local_int(b, 1, down ? 1 : 0);
+        changed = true;
+    }
+    if (state != old_state) {
+        set_local_int(b, 0, state);
+        OUT_ON(b, state != 0 ? 1 : 0); /* Roll Over, Released */
+    }
+    if (changed && state == 1 && down) {
+        OUT_ON(b, 2); /* Mouse Down */
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
 /* Time Settings: the time manager's rates and limits (an effect on the scene). */
 static int bb_time_settings(blk_t *b)
 {
@@ -673,6 +754,8 @@ static const nmo_engine_block_desc_t eng_tt_blocks[] = {
     {NMO_GUID(0x460044b5, 0x6e927b66), "TT_ReadRegistry", bb_read_registry, NULL, NULL},
     {NMO_GUID(0x38b84d97, 0x13932f28), "TT Change ScreenMode", bb_change_screen_mode, NULL, NULL},
     {NMO_GUID(0x060a0f8c, 0x09203b5f), "Time Settings", bb_time_settings, NULL, NULL},
+    {NMO_GUID(0x36691920, 0x3b261630), "TT Sky", bb_sky, NULL, NULL},
+    {NMO_GUID(0x14d325d1, 0x6748654e), "TT PushButton2", bb_push_button2, NULL, NULL},
 };
 
 nmo_status_t eng_register_tt(nmo_engine_t *engine)

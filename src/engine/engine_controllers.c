@@ -6,6 +6,7 @@
  * TT_Toolbox_RT.dll) does, reading the input state the host gives the engine
  * (nmo_engine_set_key() and the mouse functions) in place of the input
  * manager. There is no window: an action counts as inside the 3D window.
+ * Show Mouse Cursor sets the cursor visibility the engine keeps.
  */
 
 #include "engine_internal.h"
@@ -227,7 +228,18 @@ static int bb_get_mouse_displacement(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* Show Mouse Cursor (Visuals): shows or hides the cursor (CKInputManager::ShowCursor). */
+static int bb_show_mouse_cursor(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_engine_block_engine(b)->input.cursor_hidden = get_in_int(b, 0, 0) == 0;
+    eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, 0, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_controller_blocks[] = {
+    {NMO_GUID(0x16f6368f, 0x506b60fc), "Show Mouse Cursor", bb_show_mouse_cursor, NULL, NULL},
     {NMO_GUID(0x1af2274b, 0x6b8c1524), "Key Event", bb_key_event, NULL, NULL},
     {NMO_GUID(0x016d010b, 0x017d010b), "Key Waiter", bb_key_waiter, cb_key_waiter, NULL},
     {NMO_GUID(0x2ffb3ef0, 0x21807ae3), "TT_Key Waiter", bb_key_waiter, cb_key_waiter, NULL},

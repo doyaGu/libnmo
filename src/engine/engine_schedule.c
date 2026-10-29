@@ -440,9 +440,10 @@ nmo_status_t eng_manager_execute(nmo_engine_t *engine)
 
     for (size_t k = 0; k < engine->listed.count; k++) {
         int32_t object_index = engine->listed.data[k];
-        const eng_object_t *object = &engine->objects.data[object_index];
         bool executed = false;
-        for (uint32_t s = 0; s < object->script_count; s++) {
+        /* Not a pointer to the object: a script that loads a file moves the objects */
+        for (uint32_t s = 0; s < engine->objects.data[object_index].script_count; s++) {
+            const eng_object_t *object = &engine->objects.data[object_index];
             int32_t script = *eng_index(engine, object->first_script + s);
             if ((eng_node(engine, script)->flags & CKBEHAVIOR_ACTIVE) != 0) {
                 executed = true;

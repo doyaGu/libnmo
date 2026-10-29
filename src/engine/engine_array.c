@@ -199,6 +199,15 @@ nmo_status_t eng_load_arrays(nmo_engine_t *engine, int32_t module)
     return NMO_OK;
 }
 
+/* A new CKDataArray: no columns, no rows, no key column. */
+nmo_status_t eng_add_array(nmo_engine_t *engine, nmo_object_id_t id)
+{
+    nmo_dataarray_state_t empty;
+    memset(&empty, 0, sizeof(empty));
+    empty.key_column = -1;
+    return eng_load_array(engine, NULL, id, &empty);
+}
+
 void eng_free_arrays(nmo_engine_t *engine)
 {
     for (size_t i = 0; i < engine->arrays.count; i++) {
@@ -211,6 +220,10 @@ void eng_free_arrays(nmo_engine_t *engine)
     }
     free(engine->arrays.data);
     free(engine->array_map.slots);
+    for (size_t i = 0; i < engine->groups.count; i++) {
+        free(engine->groups.data[i].objects);
+    }
+    free(engine->groups.data);
 }
 
 eng_array_t *eng_find_array(const nmo_engine_t *engine, nmo_object_id_t id)
@@ -701,8 +714,69 @@ static const nmo_group_state_t *eng_group_state(const nmo_engine_t *engine, nmo_
     return (const nmo_group_state_t *)nmo_object_get_state(object);
 }
 
+/* The group's objects as they changed at run time; NULL while they are the file's. */
+static eng_group_t *eng_changed_group(const nmo_engine_t *engine, nmo_object_id_t id)
+{
+    for (size_t i = 0; engine != NULL && i < engine->groups.count; i++) {
+        if (engine->groups.data[i].id == id) {
+            return &engine->groups.data[i];
+        }
+    }
+    return NULL;
+}
+
+/*
+ * CKGroup::AddObject: a behavioral object other than the group, once. The
+ * engine keeps the group's objects from its first change on.
+ */
+bool eng_group_add(nmo_engine_t *engine, nmo_object_id_t group_id, nmo_object_id_t object_id)
+{
+    if (object_id == 0 || object_id == group_id || eng_group_state(engine, group_id, NULL) == NULL) {
+        return false;
+    }
+    nmo_object_t *object = eng_find_object(engine, object_id);
+    if (object == NULL ||
+        !nmo_type_registry_is_class_derived_from(engine->types,
+                                                 (uint32_t)nmo_object_get_class_id(object),
+                                                 NMO_CID_BEOBJECT)) {
+        return false;
+    }
+    int32_t count = nmo_engine_group_count(engine, group_id);
+    for (int32_t i = 0; i < count; i++) {
+        if (nmo_engine_group_object(engine, group_id, i) == object_id) {
+            return false;
+        }
+    }
+    eng_group_t *group = eng_changed_group(engine, group_id);
+    if (group == NULL) {
+        nmo_object_id_t *objects =
+            (nmo_object_id_t *)malloc(((size_t)count + 1u) * sizeof(nmo_object_id_t));
+        if (objects == NULL || !ENG_VEC_PUSH(engine->groups, group)) {
+            free(objects);
+            return false;
+        }
+        for (int32_t i = 0; i < count; i++) {
+            objects[i] = nmo_engine_group_object(engine, group_id, i);
+        }
+        group->id = group_id;
+        group->objects = objects;
+        group->count = (size_t)count;
+        group->capacity = (size_t)count + 1u;
+    }
+    if (!eng_vec_reserve((void **)&group->objects, &group->capacity, group->count + 1u,
+                         sizeof(nmo_object_id_t))) {
+        return false;
+    }
+    group->objects[group->count++] = object_id;
+    return true;
+}
+
 int32_t nmo_engine_group_count(const nmo_engine_t *engine, nmo_object_id_t group_id)
 {
+    const eng_group_t *changed = eng_changed_group(engine, group_id);
+    if (changed != NULL) {
+        return (int32_t)changed->count;
+    }
     const nmo_group_state_t *group = eng_group_state(engine, group_id, NULL);
     return group != NULL ? (int32_t)group->object_ids.count : -1;
 }
@@ -710,6 +784,10 @@ int32_t nmo_engine_group_count(const nmo_engine_t *engine, nmo_object_id_t group
 nmo_object_id_t nmo_engine_group_object(const nmo_engine_t *engine, nmo_object_id_t group_id,
                                         int32_t index)
 {
+    const eng_group_t *changed = eng_changed_group(engine, group_id);
+    if (changed != NULL) {
+        return index >= 0 && (size_t)index < changed->count ? changed->objects[index] : 0;
+    }
     const eng_module_t *module = NULL;
     const nmo_group_state_t *group = eng_group_state(engine, group_id, &module);
     if (group == NULL || index < 0 || (size_t)index >= group->object_ids.count) {

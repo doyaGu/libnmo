@@ -52,7 +52,6 @@ static const nmo_engine_block_desc_t eng_effect_blocks[] = {
     {NMO_GUID(0x3f7e5bff, 0x02326a71), "Set 2D Material", bb_effect, NULL, NULL}, /* Visuals/2D */
     {NMO_GUID(0x31d97d82, 0x78d54d98), "Hide", bb_effect, NULL, NULL}, /* Visuals/Show-Hide */
     {NMO_GUID(0xa85a213a, 0xef78d52a), "Show", bb_effect, NULL, NULL}, /* Visuals/Show-Hide */
-    {NMO_GUID(0x16f6368f, 0x506b60fc), "Show Mouse Cursor", bb_effect, NULL, NULL}, /* Visuals/Show-Hide */
     {NMO_GUID(0xf5faaaaa, 0xfdd5bd00), "Set Background Color", bb_effect, NULL, NULL}, /* World Environments/Background */
     {NMO_GUID(0x151aaaaa, 0xffd5bdbc), "Set Fog", bb_effect, NULL, NULL}, /* World Environments/Global */
 };

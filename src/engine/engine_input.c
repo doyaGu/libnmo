@@ -69,6 +69,11 @@ nmo_object_id_t nmo_engine_entity_under_mouse(const nmo_engine_t *engine)
     return engine != NULL ? engine->input.under_mouse : 0;
 }
 
+bool nmo_engine_cursor_is_visible(const nmo_engine_t *engine)
+{
+    return engine != NULL && !engine->input.cursor_hidden;
+}
+
 bool nmo_engine_is_key_down(const nmo_engine_t *engine, uint32_t key)
 {
     return engine != NULL && key < ENG_KEY_COUNT && engine->input.keys[key] != 0;

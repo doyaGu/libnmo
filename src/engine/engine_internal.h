@@ -212,6 +212,7 @@ typedef struct eng_input {
     float next_wheel;
     bool buttons[3], next_buttons[3]; /* CK_MOUSE_BUTTON: left, right, middle */
     nmo_object_id_t under_mouse, next_under_mouse;
+    bool cursor_hidden; /* CKInputManager::ShowCursor(FALSE); the cursor starts shown */
 } eng_input_t;
 
 /* An attribute type of the engine, from a document's Attribute Manager */
@@ -283,7 +284,16 @@ typedef struct eng_module {
     char *name;              /* a loaded file: the name it was loaded by */
     nmo_session_t *session;  /* a loaded file: what the engine made to read it */
     nmo_document_t *document;
+    bool created;            /* the objects blocks create, in `session` (no workspace) */
 } eng_module_t;
+
+/* A group whose objects changed at run time: its objects now, by engine ID. */
+typedef struct eng_group {
+    nmo_object_id_t id;
+    nmo_object_id_t *objects;
+    size_t count;
+    size_t capacity;
+} eng_group_t;
 
 /* A registry value: `name` of key `section`, as text. */
 typedef struct eng_registry_value {
@@ -314,6 +324,7 @@ struct nmo_engine {
     ENG_VEC(eng_received_t) received;
     ENG_VEC(char *) message_names;   /* the file's message types, by type */
     ENG_VEC(eng_array_t) arrays;
+    ENG_VEC(eng_group_t) groups;
 
     eng_map_t node_map, io_map, param_map, operation_map, object_map, array_map;
 
@@ -393,6 +404,7 @@ const eng_module_t *eng_module_of(const nmo_engine_t *engine, nmo_object_id_t id
 nmo_object_t *eng_find_object(const nmo_engine_t *engine, nmo_object_id_t id);
 /* The first object named `name` (of class `class_id` or one derived, unless 0), in document order */
 nmo_object_id_t eng_object_named(const nmo_engine_t *engine, const char *name, uint32_t class_id);
+nmo_object_id_t eng_create_object(nmo_engine_t *engine, uint32_t class_id, const char *name);
 /* The engine ID of a document's object ID; 0 stays 0. */
 static inline nmo_object_id_t eng_module_id(const eng_module_t *module, nmo_object_id_t local)
 {
@@ -421,6 +433,8 @@ bool eng_parameter_state_bytes(const eng_module_t *module, const nmo_parameter_s
 nmo_status_t eng_load_arrays(nmo_engine_t *engine, int32_t module);
 void eng_free_arrays(nmo_engine_t *engine);
 eng_array_t *eng_find_array(const nmo_engine_t *engine, nmo_object_id_t id);
+nmo_status_t eng_add_array(nmo_engine_t *engine, nmo_object_id_t id);
+bool eng_group_add(nmo_engine_t *engine, nmo_object_id_t group_id, nmo_object_id_t object_id);
 size_t eng_type_size(const nmo_engine_t *engine, nmo_guid_t type);
 
 /* engine_param.c */
