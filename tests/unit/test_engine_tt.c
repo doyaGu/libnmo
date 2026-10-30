@@ -15,6 +15,7 @@
 #define GUID_SPLIT_STRING NMO_GUID(0x5ae74e2f, 0x799c49b5)
 #define GUID_LOAD_STRING NMO_GUID(0x391555d6, 0x42f2500e)
 #define GUID_LINEAR_VOLUME NMO_GUID(0x09b335b3, 0x12d17cdc)
+#define GUID_PRELOAD_TEXTURES NMO_GUID(0x416b4f0e, 0x192d339a)
 
 /* The files the engine loads, from the scratch directory */
 static const char *resolve_scratch(void *user_data, const char *name)
@@ -298,10 +299,36 @@ TEST(engine_tt, linear_volume_maps_the_volume)
     fixture_end(&f);
 }
 
+TEST(engine_tt, preload_textures_counts_each_texture_once)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    ASSERT_TRUE(fixture_create(&f, NMO_CID_TEXTURE, "One") != 0);
+    ASSERT_TRUE(fixture_create(&f, NMO_CID_TEXTURE, "Two") != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t first = fixture_block(&f, GUID_PRELOAD_TEXTURES, "First");
+    nmo_object_id_t again = fixture_block(&f, GUID_PRELOAD_TEXTURES, "Again");
+    ASSERT_TRUE(first != 0 && again != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, first, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, first, 0), BLOCK_IN(&f, again, 0), 0);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    int32_t moved = -1;
+    read_value(&f, BLOCK_POUT(&f, first, 0), &moved, sizeof(moved));
+    ASSERT_EQ(2, moved);
+    read_value(&f, BLOCK_POUT(&f, again, 0), &moved, sizeof(moved));
+    ASSERT_EQ(0, moved); /* in video memory already */
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_tt, load_database_fills_the_array_of_its_name);
 REGISTER_TEST(engine_tt, read_registry_reads_what_the_host_set);
 REGISTER_TEST(engine_tt, drivers_and_screen_modes_fill_their_arrays);
 REGISTER_TEST(engine_tt, timer_and_strings);
 REGISTER_TEST(engine_tt, linear_volume_maps_the_volume);
+REGISTER_TEST(engine_tt, preload_textures_counts_each_texture_once);
 TEST_MAIN_END()

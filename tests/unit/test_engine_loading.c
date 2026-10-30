@@ -13,6 +13,7 @@
 #define GUID_OBJECT_LOAD NMO_GUID(0x7bd977d7, 0x26396c0c)
 #define GUID_OBJECT_CREATE NMO_GUID(0x271538e6, 0x2fae49ac)
 #define GUID_ADD_TO_GROUP NMO_GUID(0x00024125, 0x785420ab)
+#define GUID_FILL_GROUP_BY_CLASS NMO_GUID(0x4445257b, 0x70016c57)
 
 /* The files the engine loads, from the scratch directory */
 static const char *resolve_scratch(void *user_data, const char *name)
@@ -230,8 +231,50 @@ TEST(engine_loading, object_create_and_add_to_group)
     fixture_end(&f);
 }
 
+TEST(engine_loading, fill_group_by_class)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t first = fixture_create(&f, NMO_CID_3DOBJECT, "First");
+    nmo_object_id_t part = fixture_create(&f, NMO_CID_BODYPART, "Part");
+    nmo_object_id_t second = fixture_create(&f, NMO_CID_3DOBJECT, "Second");
+    nmo_object_id_t camera = fixture_create(&f, NMO_CID_CAMERA, "Camera");
+    nmo_object_id_t objects = fixture_create(&f, NMO_CID_GROUP, "Objects");
+    nmo_object_id_t entities = fixture_create(&f, NMO_CID_GROUP, "Entities");
+    ASSERT_TRUE(first != 0 && part != 0 && second != 0 && camera != 0 && objects != 0 &&
+                entities != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t fills[2] = {fixture_block(&f, GUID_FILL_GROUP_BY_CLASS, "Objects"),
+                                fixture_block(&f, GUID_FILL_GROUP_BY_CLASS, "Entities")};
+    nmo_object_id_t groups[2] = {objects, entities};
+    const int32_t classes[2] = {NMO_CID_3DOBJECT, NMO_CID_3DENTITY};
+    for (int i = 0; i < 2; i++) {
+        ASSERT_TRUE(fills[i] != 0 && fixture_target(&f, fills[i]) != 0);
+        fixture_link(&f, f.script_in, BLOCK_IN(&f, fills[i], 0), 0);
+        fixture_input_int(&f, fixture_target(&f, fills[i]), (int32_t)groups[i]);
+        fixture_input_int(&f, BLOCK_PIN(&f, fills[i], 0), classes[i]);
+        fixture_input_int(&f, BLOCK_PIN(&f, fills[i], 1), i); /* Derived Classes for the second */
+    }
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    /* The class and the one after it when it derives from it (body parts), in creation order */
+    ASSERT_EQ(3, nmo_engine_group_count(f.engine, objects));
+    ASSERT_EQ(first, nmo_engine_group_object(f.engine, objects, 0));
+    ASSERT_EQ(second, nmo_engine_group_object(f.engine, objects, 1));
+    ASSERT_EQ(part, nmo_engine_group_object(f.engine, objects, 2));
+    /* Every class deriving from 3D entities: the owner, the camera, the objects, the part */
+    ASSERT_EQ(5, nmo_engine_group_count(f.engine, entities));
+    ASSERT_EQ(f.owner_id, nmo_engine_group_object(f.engine, entities, 0));
+    ASSERT_EQ(camera, nmo_engine_group_object(f.engine, entities, 1));
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_loading, object_load_adds_the_file_to_the_level);
 REGISTER_TEST(engine_loading, level_scene_says_what_starts_active);
 REGISTER_TEST(engine_loading, object_create_and_add_to_group);
+REGISTER_TEST(engine_loading, fill_group_by_class);
 TEST_MAIN_END()

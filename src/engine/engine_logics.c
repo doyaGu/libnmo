@@ -2692,6 +2692,42 @@ static int bb_add_to_group(blk_t *b)
 }
 
 /*
+ * Fill Group By Class: the target group gets each object of the class (and
+ * of the class after it, when that one derives from it), or of every class
+ * deriving from it with Derived Classes; Only In Current Scene, those in
+ * the level scene. In the context's lists' order; private objects are left
+ * out (the engine has none).
+ */
+static int bb_fill_group_by_class(blk_t *b)
+{
+    nmo_engine_t *engine = nmo_engine_block_engine(b);
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_object_id_t group = nmo_engine_block_target(b);
+    if (group == 0) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    int32_t class_id = get_in_int(b, 0, 0);
+    bool derived = get_in_int(b, 1, 0) != 0, in_scene = get_in_int(b, 2, 1) != 0;
+    int32_t first = derived ? 0 : class_id, last = derived ? 55 : class_id + 1;
+    for (int32_t c = first; c <= last; c++) {
+        if (c < 0 || class_id < 0 ||
+            !nmo_type_registry_is_class_derived_from(engine->types, (uint32_t)c, (uint32_t)class_id)) {
+            continue;
+        }
+        nmo_object_id_t *ids = NULL;
+        size_t count = eng_objects_of_class(engine, (uint32_t)c, &ids);
+        for (size_t i = 0; i < count; i++) {
+            if (!in_scene || eng_in_scene(engine, ids[i])) {
+                eng_group_add(engine, group, ids[i]);
+            }
+        }
+        free(ids);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
  * Collection Iterator: each object of a collection (its IDs), Loop Out with
  * the object and its index, then Out. The index is the Index output's, or
  * the local's for a block without that output.
@@ -2836,6 +2872,7 @@ static const nmo_engine_block_desc_t eng_logics_blocks[] = {
     {NMO_GUID(0x47dc3232, 0x64bf203a), "Get Delta Time", bb_get_delta_time, cb_get_delta_time,
      NULL},
     {NMO_GUID(0x55bc3115, 0x1dfe1e40), "Mini Calculator", bb_mini_calculator, NULL, NULL},
+    {NMO_GUID(0x4445257b, 0x70016c57), "Fill Group By Class", bb_fill_group_by_class, NULL, NULL},
     {NMO_GUID(0x4bc209b8, 0x5b3679b0), "Calculator", bb_calculator, NULL, NULL},
     {NMO_GUID(0x2689057b, 0x1a1a446a), "Get Component", bb_get_component, NULL, NULL},
     {NMO_GUID(0x3e7335d9, 0x29687f36), "Variation", bb_variation, NULL, NULL},

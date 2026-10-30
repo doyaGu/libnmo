@@ -473,6 +473,56 @@ static int bb_linear_volume(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/*
+ * TT_ReflectionMapping: the target's mesh mapped as the camera sees it
+ * reflected (its UVs, which the engine does not draw): Off ends it (Exit
+ * Off), On reports it (Exit On), and it stays active while the target has
+ * a mesh.
+ */
+static int bb_reflection_mapping(blk_t *b)
+{
+    if (nmo_engine_block_is_input_active(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (nmo_engine_block_is_input_active(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+        eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, target, 0);
+    }
+    int32_t entity = target != 0 ? eng_entity_index(b->engine, target) : -1;
+    if (target == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    return entity >= 0 && eng_entity_has_mesh(b->engine, entity) ? NMO_ENGINE_BR_ACTIVATENEXTFRAME
+                                                                  : NMO_ENGINE_BR_OK;
+}
+
+/*
+ * TT_PreloadTextures: each texture not in video memory put there; the
+ * count of those moved. The engine's driver takes every texture, so a
+ * texture counts the first time.
+ */
+static int bb_preload_textures(blk_t *b)
+{
+    IN_OFF(b, 0);
+    nmo_object_id_t *ids = NULL;
+    size_t count = eng_objects_of_class(b->engine, NMO_CID_TEXTURE, &ids);
+    int32_t moved = 0;
+    for (size_t i = 0; i < count; i++) {
+        if (eng_map_get(&b->engine->video_textures, ids[i]) < 0 &&
+            eng_map_put(&b->engine->video_textures, ids[i], 1)) {
+            moved++;
+        }
+    }
+    free(ids);
+    nmo_engine_block_set_output_value(b, 0, &moved, sizeof(moved));
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
 /* TT Player Active: Active outside interface mode (In stays active, as in the original). */
 static int bb_player_active(blk_t *b)
 {
@@ -855,6 +905,8 @@ static int bb_time_settings(blk_t *b)
 
 static const nmo_engine_block_desc_t eng_tt_blocks[] = {
     {NMO_GUID(0x09b335b3, 0x12d17cdc), "TT_LinearVolume", bb_linear_volume, NULL, NULL},
+    {NMO_GUID(0x7e212b2f, 0x24db67c6), "TT_ReflectionMapping", bb_reflection_mapping, NULL, NULL},
+    {NMO_GUID(0x416b4f0e, 0x192d339a), "TT_PreloadTextures", bb_preload_textures, NULL, NULL},
     {NMO_GUID(0x1436624f, 0x34e1290a), "TT Set Database Properties", bb_set_database_properties,
      NULL, NULL},
     {NMO_GUID(0x05441494, 0x38ac7789), "TT Load Database", bb_load_database, NULL, NULL},

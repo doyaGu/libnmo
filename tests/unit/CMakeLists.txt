@@ -251,6 +251,8 @@ add_unit_test(test_engine_transform)
 target_link_libraries(test_engine_transform PRIVATE nmo_engine nmo_edit)
 add_unit_test(test_engine_copy)
 target_link_libraries(test_engine_copy PRIVATE nmo_engine nmo_edit)
+add_unit_test(test_engine_physics)
+target_link_libraries(test_engine_physics PRIVATE nmo_engine nmo_edit)
 
 # BB prototype registry (JSON loader now in nmo core)
 add_unit_test(test_bb_registry)

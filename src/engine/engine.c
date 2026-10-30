@@ -194,6 +194,12 @@ nmo_status_t nmo_engine_create(nmo_workspace_t *workspace,
     if (status == NMO_OK && !engine->options.no_builtin_blocks) {
         status = eng_register_3dtrans(engine);
     }
+    if (status == NMO_OK) {
+        eng_physics_init(engine);
+    }
+    if (status == NMO_OK && !engine->options.no_builtin_blocks) {
+        status = eng_register_physics(engine);
+    }
     if (status != NMO_OK) {
         nmo_engine_destroy(engine);
         return status;
@@ -236,12 +242,15 @@ void nmo_engine_destroy(nmo_engine_t *engine)
     eng_free_entities(engine);
     eng_free_attributes(engine);
     eng_free_tt(engine);
+    eng_free_physics(engine);
     free(engine->node_map.slots);
     free(engine->io_map.slots);
     free(engine->param_map.slots);
     free(engine->operation_map.slots);
     free(engine->object_map.slots);
     free(engine->scene_objects.slots);
+    free(engine->destroyed.slots);
+    free(engine->video_textures.slots);
     eng_free_modules(engine);
     free(engine);
 }

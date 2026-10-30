@@ -23,6 +23,7 @@ set(NMO_ENGINE_SOURCES
     engine_narratives.c
     engine_operations.c
     engine_param.c
+    engine_physics.c
     engine_run.c
     engine_schedule.c
     engine_strings.c

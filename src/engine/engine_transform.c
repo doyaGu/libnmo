@@ -752,6 +752,12 @@ static const nmo_mesh_state_t *eng_entity_mesh(nmo_engine_t *engine, int32_t ind
                         : NULL;
 }
 
+/* CK3dEntity::GetCurrentMesh() != NULL */
+bool eng_entity_has_mesh(nmo_engine_t *engine, int32_t index)
+{
+    return eng_entity_mesh(engine, index, NULL) != NULL;
+}
+
 /*
  * GetBaryCenter: the barycenter of the current mesh (the mean of its
  * vertices, as loaded) in world space; the position for an entity without

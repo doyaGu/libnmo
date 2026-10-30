@@ -597,6 +597,101 @@ NMO_API bool nmo_engine_sound_is_playing(const nmo_engine_t *engine, nmo_object_
 NMO_API int32_t nmo_engine_texture_current_slot(const nmo_engine_t *engine,
                                                 nmo_object_id_t texture_id);
 
+/* ---- Physics ----
+ *
+ * The physics blocks (physics_RT: Physicalize, Set Physics Hinge, Slider,
+ * Spring, Ball Joint and Globals, SetPhysicsForce, Physics Impulse, Physics
+ * WakeUp) keep what
+ * CKIpionManager keeps: the physical objects with their parameters, the
+ * constraints between them, the gravity and the time factor. The engine
+ * does not simulate: a host's provider gets these and moves the entities
+ * (nmo_engine_set_entity_world_matrix()) each frame; without one, nothing
+ * moves. Positions and directions are in world space.
+ */
+
+typedef enum nmo_engine_physics_shape {
+    NMO_ENGINE_PHYSICS_BALL = 0,    /* a ball of the radius (no surface name, or ball shapes) */
+    NMO_ENGINE_PHYSICS_POLYGON = 1  /* the convex and concave meshes, by surface name */
+} nmo_engine_physics_shape_t;
+
+typedef struct nmo_engine_physics_object {
+    nmo_object_id_t entity;
+    nmo_engine_physics_shape_t shape;
+    float ball_radius;
+    const nmo_object_id_t *convex;  /* the meshes, in Physicalize's order (0 for none) */
+    int32_t convex_count;
+    const nmo_object_id_t *concave;
+    int32_t concave_count;
+    const char *collision_surface;  /* the name a polygon shape is shared by */
+    const char *collision_group;
+    float scale[3];                 /* the entity's local scale, which polygon shapes take */
+    bool fixed;
+    bool start_frozen;
+    bool enable_collision;          /* false for a ball without a surface name, as in CK */
+    bool automatic_mass_center;
+    float shift_mass_center[3];     /* with automatic_mass_center false */
+    float friction;
+    float elasticity;
+    float mass;
+    float linear_damping;
+    float rotation_damping;
+} nmo_engine_physics_object_t;
+
+typedef enum nmo_engine_physics_constraint_kind {
+    NMO_ENGINE_PHYSICS_HINGE = 0,
+    NMO_ENGINE_PHYSICS_SLIDER = 1,
+    NMO_ENGINE_PHYSICS_SPRING = 2,
+    NMO_ENGINE_PHYSICS_BALL_JOINT = 3,
+    NMO_ENGINE_PHYSICS_FORCE = 4    /* SetPhysicsForce: a constant force on object1 alone */
+} nmo_engine_physics_constraint_kind_t;
+
+typedef struct nmo_engine_physics_constraint {
+    nmo_engine_physics_constraint_kind_t kind;
+    nmo_object_id_t object1;        /* the block's target */
+    nmo_object_id_t object2;
+    float anchor[3];                /* hinge, slider, ball joint: the joint; spring: on object1;
+                                       force: where it pushes, in object1's own space */
+    float anchor2[3];               /* spring: on object2 */
+    float axis[3];                  /* hinge: the rotation axis; slider: second - first point;
+                                       force: the force */
+    bool limited;
+    float lower, upper;             /* hinge: radians; slider: along the axis */
+    float length, constant, damping, global_damping; /* spring */
+} nmo_engine_physics_constraint_t;
+
+typedef struct nmo_engine_physics_provider {
+    void *user_data;
+    /* Each may be NULL. A handle is the provider's; the engine passes it back. */
+    nmo_status_t (*create_object)(void *user_data, const nmo_engine_physics_object_t *object,
+                                  void **out_handle);
+    void (*destroy_object)(void *user_data, void *handle);
+    nmo_status_t (*create_constraint)(void *user_data,
+                                      const nmo_engine_physics_constraint_t *constraint,
+                                      void *object1, void *object2, void **out_handle);
+    void (*destroy_constraint)(void *user_data, void *handle);
+    /* An impulse at a point (Physics Impulse) */
+    void (*push)(void *user_data, void *object, const float position[3], const float impulse[3]);
+    void (*wake_up)(void *user_data, void *object);
+    void (*set_gravity)(void *user_data, const float gravity[3]);
+    /* Set Physics Globals' Clean Physics World: the environment made again */
+    void (*reset)(void *user_data);
+    /* A step of `seconds` (the frame time smoothed, times the time factor) */
+    void (*simulate)(void *user_data, nmo_engine_t *engine, float seconds);
+} nmo_engine_physics_provider_t;
+
+/** Give the engine a physics provider (copied); NULL for none. */
+NMO_API void nmo_engine_set_physics_provider(nmo_engine_t *engine,
+                                             const nmo_engine_physics_provider_t *provider);
+/** Whether `entity` is physical; `out` (optional) its parameters, valid until the next step. */
+NMO_API bool nmo_engine_physics_object(const nmo_engine_t *engine, nmo_object_id_t entity,
+                                       nmo_engine_physics_object_t *out);
+/** The constraints the physics blocks made, in order. */
+NMO_API int32_t nmo_engine_physics_constraint_count(const nmo_engine_t *engine);
+NMO_API bool nmo_engine_physics_constraint(const nmo_engine_t *engine, int32_t index,
+                                           nmo_engine_physics_constraint_t *out);
+/** The gravity Set Physics Globals set: (0, -9.81, 0) until then. */
+NMO_API void nmo_engine_physics_gravity(const nmo_engine_t *engine, float out[3]);
+
 /** "execute", "link", ... */
 NMO_API const char *nmo_engine_event_kind_name(nmo_engine_event_kind_t kind);
 

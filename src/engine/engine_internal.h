@@ -358,6 +358,41 @@ typedef struct eng_registry_value {
     char *value;
 } eng_registry_value_t;
 
+/* A physical object (Physicalize): its parameters and the provider's handle */
+typedef struct eng_physics_object {
+    nmo_engine_physics_object_t desc; /* its arrays and strings are the fields below */
+    nmo_object_id_t *meshes;          /* the convex, then the concave */
+    char *surface;
+    char *group;
+    void *handle;
+} eng_physics_object_t;
+
+typedef struct eng_physics_constraint {
+    nmo_engine_physics_constraint_t desc;
+    void *handle;
+    bool alive; /* not removed by Shutdown */
+} eng_physics_constraint_t;
+
+/* A call kept until its objects are physical: a constraint kind, or -1 for a wake-up */
+typedef struct eng_physics_call {
+    int kind;
+    int32_t node;
+} eng_physics_call_t;
+
+/* CKIpionManager */
+typedef struct eng_physics {
+    ENG_VEC(eng_physics_object_t) objects;
+    ENG_VEC(eng_physics_constraint_t) constraints;
+    ENG_VEC(eng_physics_call_t) calls;
+    ENG_VEC(char *) surfaces; /* the polygon shapes made, by name */
+    nmo_engine_physics_provider_t provider;
+    bool has_provider;
+    float gravity[3];
+    double time_factor;   /* m_PhysicsTimeFactor: the step per ms of frame */
+    double delta;         /* m_DeltaTime: the frame time, smoothed */
+    double physics_delta; /* m_PhysicsDeltaTime: the last step */
+} eng_physics_t;
+
 struct nmo_engine {
     nmo_workspace_t *workspace;
     ENG_VEC(eng_module_t) modules; /* the first is the document the engine was made for */
@@ -388,6 +423,8 @@ struct nmo_engine {
     eng_map_t node_map, io_map, param_map, operation_map, object_map, array_map, group_map;
     /* The objects in the level scene (CKBeObject::IsInScene); every object without one */
     eng_map_t scene_objects;
+    eng_map_t destroyed; /* the objects nmo_engine_destroy_object() deleted */
+    eng_map_t video_textures; /* the textures TT_PreloadTextures put in video memory */
     bool has_level_scene;
 
     bool started;
@@ -412,6 +449,7 @@ struct nmo_engine {
     char *database_file;   /* TT Database Manager: TT Set Database Properties */
     bool database_crypted;
     ENG_VEC(eng_registry_value_t) registry; /* the TT blocks' registry, from the host */
+    eng_physics_t physics;
 };
 
 /* engine.c */
@@ -465,6 +503,8 @@ void eng_free_modules(nmo_engine_t *engine);
 /* The document of engine ID `id`, and its ID there; NULL when none has it. */
 const eng_module_t *eng_module_of(const nmo_engine_t *engine, nmo_object_id_t id,
                                   nmo_object_id_t *out_local);
+/* The objects of class `class_id` (exactly), not deleted, by engine ID (their creation order) */
+size_t eng_objects_of_class(nmo_engine_t *engine, uint32_t class_id, nmo_object_id_t **out_ids);
 nmo_object_t *eng_find_object(const nmo_engine_t *engine, nmo_object_id_t id);
 /* The first object named `name` (of class `class_id` or one derived, unless 0), in document order */
 nmo_object_id_t eng_object_named(const nmo_engine_t *engine, const char *name, uint32_t class_id);
@@ -519,6 +559,7 @@ bool eng_entity_set_parent(nmo_engine_t *engine, int32_t index, int32_t parent,
                            bool keep_world_position);
 void eng_entity_destroy(nmo_engine_t *engine, nmo_object_id_t id);
 bool eng_entity_bary_center(nmo_engine_t *engine, int32_t index, eng_vector_t *out);
+bool eng_entity_has_mesh(nmo_engine_t *engine, int32_t index);
 float eng_entity_radius(nmo_engine_t *engine, int32_t index);
 bool eng_entity_world_box(nmo_engine_t *engine, int32_t index, eng_vector_t *min,
                           eng_vector_t *max);
@@ -552,6 +593,12 @@ void eng_copy_attributes(nmo_engine_t *engine, nmo_object_id_t from, nmo_object_
 void eng_copy_array(nmo_engine_t *engine, nmo_object_id_t from, nmo_object_id_t to);
 void eng_copy_group(nmo_engine_t *engine, nmo_object_id_t from, nmo_object_id_t to,
                     const nmo_object_id_t *originals, const nmo_object_id_t *copies, size_t count);
+
+/* engine_physics.c */
+nmo_status_t eng_register_physics(nmo_engine_t *engine);
+void eng_physics_init(nmo_engine_t *engine);
+void eng_free_physics(nmo_engine_t *engine);
+void eng_physics_post_process(nmo_engine_t *engine);
 
 /* engine_3dtrans.c */
 nmo_status_t eng_register_3dtrans(nmo_engine_t *engine);

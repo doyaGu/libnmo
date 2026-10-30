@@ -286,6 +286,45 @@ nmo_status_t eng_load_range(nmo_engine_t *engine, int32_t module, nmo_object_id_
     return status;
 }
 
+static int compare_engine_ids(const void *a, const void *b)
+{
+    nmo_object_id_t x = *(const nmo_object_id_t *)a, y = *(const nmo_object_id_t *)b;
+    return x < y ? -1 : x > y;
+}
+
+size_t eng_objects_of_class(nmo_engine_t *engine, uint32_t class_id, nmo_object_id_t **out_ids)
+{
+    *out_ids = NULL;
+    size_t count = 0, capacity = 0;
+    nmo_object_id_t *ids = NULL;
+    for (size_t m = 0; m < engine->modules.count; m++) {
+        const eng_module_t *module = &engine->modules.data[m];
+        size_t total = module->repo != NULL ? nmo_object_repository_get_count(module->repo) : 0u;
+        for (size_t i = 0; i < total; i++) {
+            nmo_object_t *object = nmo_object_repository_get_by_index(module->repo, i);
+            nmo_object_id_t local = object != NULL ? nmo_object_get_id(object) : 0u;
+            if (local == 0 || !eng_module_has(module, local) ||
+                (uint32_t)nmo_object_get_class_id(object) != class_id) {
+                continue;
+            }
+            nmo_object_id_t id = eng_module_id(module, local);
+            if (eng_map_get(&engine->destroyed, id) >= 0) {
+                continue;
+            }
+            if (!eng_vec_reserve((void **)&ids, &capacity, count + 1u, sizeof(*ids))) {
+                free(ids);
+                return 0;
+            }
+            ids[count++] = id;
+        }
+    }
+    if (count > 1) {
+        qsort(ids, count, sizeof(*ids), compare_engine_ids);
+    }
+    *out_ids = ids;
+    return count;
+}
+
 nmo_object_t *eng_find_object(const nmo_engine_t *engine, nmo_object_id_t id)
 {
     nmo_object_id_t local = 0;

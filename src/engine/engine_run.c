@@ -357,6 +357,9 @@ void nmo_engine_destroy_object(nmo_engine_t *engine, nmo_object_id_t id)
     if (engine == NULL) {
         return;
     }
+    if (id != 0) {
+        eng_map_put(&engine->destroyed, id, 1);
+    }
     eng_entity_destroy(engine, id);
     eng_forget_object(engine, id);
     int32_t index = eng_map_get(&engine->object_map, id);
@@ -396,6 +399,7 @@ nmo_status_t nmo_engine_step(nmo_engine_t *engine, float delta_ms)
     nmo_status_t status = eng_manager_execute(engine);
     if (status == NMO_OK) {
         eng_dispatch_messages(engine); /* CKMessageManager::PostProcess */
+        eng_physics_post_process(engine); /* CKIpionManager::PostProcess */
     }
     eng_emit(engine, NMO_ENGINE_EVENT_FRAME_END, -1, 0, 0);
     engine->frame++;

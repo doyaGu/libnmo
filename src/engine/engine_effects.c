@@ -43,6 +43,7 @@ static const nmo_engine_block_desc_t eng_effect_blocks[] = {
     {NMO_GUID(0x33613f21, 0x776b185b), "Volume Control", bb_effect, NULL, NULL}, /* Sounds/Control */
     {NMO_GUID(0x7e0f2f58, 0x232d3109), "TT Restore IC", bb_effect, NULL, NULL}, /* TT Toolbox/Object */
     {NMO_GUID(0x30362f34, 0x1935316f), "TT Save IC", bb_effect, NULL, NULL}, /* TT Toolbox/Narratives */
+    {NMO_GUID(0x734f73b4, 0x01fc79ac), "TT_FlushTextures", bb_effect, NULL, NULL}, /* TT Toolbox/Narratives */
     {NMO_GUID(0x3f7e5bff, 0x02326a71), "Set 2D Material", bb_effect, NULL, NULL}, /* Visuals/2D */
     {NMO_GUID(0x31d97d82, 0x78d54d98), "Hide", bb_effect, NULL, NULL}, /* Visuals/Show-Hide */
     {NMO_GUID(0xa85a213a, 0xef78d52a), "Show", bb_effect, NULL, NULL}, /* Visuals/Show-Hide */
