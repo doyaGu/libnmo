@@ -658,6 +658,511 @@ static int bb_speedometer(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/*
+ * TT Extra: an extra-point pickup, as TT_Gravity_RT.dll has it. The target's
+ * children name its parts after their 14th character ("Floor", the shadow;
+ * "Ball0", the center) and its small balls after their 18th ("1" to "8").
+ * Idle, the small balls circle the target, each about its own axis, until
+ * the ball comes within ActivationDistance; then they fly away from where
+ * the ball was for FlyAwayTime, then home in on it, each hit hiding one and
+ * moving the next object of HitFrameGroup there. Showing and hiding are
+ * effect events; the parts' scripts are activated and deactivated in the
+ * scene. The engine has one scene, so the DLL's "no scene" errors cannot
+ * happen.
+ */
+#define EXTRA_MAX_BALLS 8
+
+typedef struct extra_ball {
+    nmo_object_id_t ball;
+    eng_vector_t position; /* where it was last */
+    bool flying;           /* not hit yet */
+    float force;
+} extra_ball_t;
+
+/* The SmallBallList local: the DLL keeps a linked list behind a pointer */
+typedef struct extra_state {
+    int32_t count; /* 0 for no list */
+    extra_ball_t balls[EXTRA_MAX_BALLS];
+} extra_state_t;
+
+enum { EXTRA_IDLE = 0, EXTRA_AWAY = 1, EXTRA_HOMING = 2, EXTRA_READY = 3, EXTRA_NONE = -1 };
+
+static void extra_show(blk_t *b, nmo_object_id_t id, bool show)
+{
+    if (id != 0) {
+        eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, id, show ? 1 : 0);
+    }
+}
+
+/* CKBeObject::GetScript(0) */
+static nmo_object_id_t extra_script(nmo_engine_t *engine, nmo_object_id_t id)
+{
+    int32_t index = id != 0 ? eng_map_get(&engine->object_map, id) : -1;
+    if (index < 0 || engine->objects.data[index].script_count == 0) {
+        return 0;
+    }
+    return engine->nodes.data[*eng_index(engine, engine->objects.data[index].first_script)].id;
+}
+
+/* CKScene::Activate (with a reset) or DeActivate of an object's first script */
+static void extra_script_active(nmo_engine_t *engine, nmo_object_id_t id, bool active)
+{
+    nmo_object_id_t script = extra_script(engine, id);
+    if (script != 0) {
+        nmo_engine_activate_script(engine, script, active, active);
+    }
+}
+
+/* CK3dEntity::GetChild(0); 0 for none */
+static nmo_object_id_t extra_first_child(nmo_engine_t *engine, nmo_object_id_t id)
+{
+    int32_t index = eng_entity_index(engine, id);
+    int32_t child = index >= 0 ? engine->entities.data[index].first_child : -1;
+    return child >= 0 ? engine->entities.data[child].id : 0;
+}
+
+/* GetChildOfObject: the first child whose name has `name` from character `at` on */
+static nmo_object_id_t extra_child(nmo_engine_t *engine, nmo_object_id_t id, size_t at,
+                                   const char *name)
+{
+    int32_t index = eng_entity_index(engine, id);
+    for (int32_t c = index >= 0 ? engine->entities.data[index].first_child : -1; c >= 0;
+         c = engine->entities.data[c].next_sibling) {
+        const char *child = nmo_engine_object_name(engine, engine->entities.data[c].id);
+        size_t length = child != NULL ? strlen(child) : 0u;
+        if (length >= at && strcmp(child + at, name) == 0) {
+            return engine->entities.data[c].id;
+        }
+    }
+    return 0;
+}
+
+static eng_vector_t extra_position(nmo_engine_t *engine, nmo_object_id_t id, int32_t ref)
+{
+    eng_vector_t zero = {0.0f, 0.0f, 0.0f};
+    int32_t index = eng_entity_index(engine, id);
+    return index >= 0 ? eng_entity_position(engine, index, ref) : zero;
+}
+
+static void extra_set_position(nmo_engine_t *engine, nmo_object_id_t id, const eng_vector_t *p,
+                               int32_t ref)
+{
+    int32_t index = eng_entity_index(engine, id);
+    if (index >= 0) {
+        eng_entity_set_position(engine, index, p, ref, false);
+    }
+}
+
+static float extra_distance2(const eng_vector_t *a, const eng_vector_t *b)
+{
+    return (b->z - a->z) * (b->z - a->z) + (b->y - a->y) * (b->y - a->y) +
+           (b->x - a->x) * (b->x - a->x);
+}
+
+static nmo_object_id_t extra_local_object(blk_t *b, int pos)
+{
+    uint32_t id = 0;
+    nmo_engine_block_get_local_value(b, pos, &id, sizeof(id));
+    return id;
+}
+
+static void extra_set_local_int(blk_t *b, int pos, int32_t value)
+{
+    nmo_engine_block_set_local_value(b, pos, &value, sizeof(value));
+}
+
+static void extra_set_local_float(blk_t *b, int pos, float value)
+{
+    nmo_engine_block_set_local_value(b, pos, &value, sizeof(value));
+}
+
+static bool extra_flying(blk_t *b)
+{
+    return (get_in_int(b, 12, 0) & 0xFF) != 0;
+}
+
+/* The list's balls' scripts deactivated, the balls hidden, the list dropped (sub_10001F10) */
+static void extra_free_list(blk_t *b, extra_state_t *state)
+{
+    for (int32_t i = 0; i < state->count; i++) {
+        extra_script_active(b->engine, extra_first_child(b->engine, state->balls[i].ball), false);
+        extra_show(b, state->balls[i].ball, false);
+    }
+    state->count = 0;
+}
+
+/* sub_10001EC0: the list freed, not initialized, no status */
+static void extra_uninitialize(blk_t *b, extra_state_t *state)
+{
+    extra_free_list(b, state);
+    extra_set_local_int(b, 5, 0);
+    extra_set_local_int(b, 4, EXTRA_NONE);
+}
+
+static int extra_initialize(blk_t *b, extra_state_t *state)
+{
+    nmo_engine_t *engine = b->engine;
+    int32_t status = get_local_int(b, 4, EXTRA_NONE);
+    if (status == EXTRA_NONE) {
+        state->count = 0;
+    } else if (status == EXTRA_AWAY) {
+        extra_uninitialize(b, state);
+    } else if (state->count > 0) {
+        return NMO_ENGINE_BR_OK;
+    }
+    int32_t count = get_in_int(b, 1, 6);
+    if (count <= 0) {
+        count = 1;
+    }
+    extra_set_local_int(b, 7, count);
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (eng_entity_index(engine, target) < 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    bool flying = extra_flying(b);
+    nmo_object_id_t floor = extra_child(engine, target, 14, "Floor");
+    nmo_object_id_t center = extra_child(engine, target, 14, "Ball0");
+    if ((!flying && floor == 0) || center == 0) {
+        return NMO_ENGINE_BR_PARAMETERERROR; /* "There is no Floorglowobject in hirachy!" */
+    }
+    nmo_engine_block_set_local_value(b, 2, &floor, sizeof(floor));
+    nmo_engine_block_set_local_value(b, 3, &center, sizeof(center));
+    if (floor != 0) {
+        nmo_engine_activate_object(engine, floor, false);
+        extra_show(b, floor, false);
+    }
+    extra_script_active(engine, extra_first_child(engine, center), false);
+    extra_show(b, center, false);
+    float force = get_in_float(b, 7, 0.06f);
+    float width = get_in_float(b, 9, 0.06f);
+    width = (float)(width / (double)count);
+    force = force - width;
+    extra_state_t list;
+    memset(&list, 0, sizeof(list));
+    for (int32_t i = 0; i < count; i++) {
+        static const char *const names[EXTRA_MAX_BALLS] = {"1", "2", "3", "4", "5", "6", "7", "8"};
+        nmo_object_id_t ball =
+            i < EXTRA_MAX_BALLS ? extra_child(engine, target, 18, names[i]) : 0;
+        if (ball == 0) {
+            return NMO_ENGINE_BR_PARAMETERERROR; /* "Missing one or more Billboards." */
+        }
+        nmo_object_id_t frame = extra_first_child(engine, ball);
+        extra_script_active(engine, frame, false);
+        extra_show(b, ball, false);
+        extra_ball_t *small = &list.balls[list.count++];
+        small->ball = ball;
+        small->position = extra_position(engine, ball, -1);
+        small->flying = true;
+        force = width + force;
+        small->force = force;
+        if (frame == 0 || extra_script(engine, frame) == 0) {
+            return NMO_ENGINE_BR_PARAMETERERROR; /* "There is no Frame..." / no script */
+        }
+        nmo_engine_activate_script(engine, extra_script(engine, frame), false, false);
+    }
+    *state = list;
+    extra_set_local_float(b, 6, get_in_float(b, 10, 1000.0f));
+    extra_set_local_int(b, 5, 1);
+    extra_set_local_int(b, 4, EXTRA_IDLE);
+    return NMO_ENGINE_BR_OK;
+}
+
+static int extra_activate(blk_t *b, extra_state_t *state)
+{
+    if (state->count == 0) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    bool flying = extra_flying(b);
+    nmo_object_id_t shadow = extra_local_object(b, 2), center = extra_local_object(b, 3);
+    extra_show(b, center, true);
+    if (shadow != 0 && !flying) {
+        extra_show(b, shadow, true);
+    }
+    for (int32_t i = 0; i < state->count; i++) {
+        nmo_object_id_t frame = extra_first_child(b->engine, state->balls[i].ball);
+        extra_script_active(b->engine, frame, true);
+        extra_show(b, state->balls[i].ball, true);
+        extra_script_active(b->engine, frame, true);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Idle: the small balls circle the target until the ball comes near */
+static int extra_idle(blk_t *b, extra_state_t *state)
+{
+    nmo_engine_t *engine = b->engine;
+    int32_t target = target_entity(b);
+    if (target < 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    int32_t ball = input_entity(b, 0);
+    if (ball < 0) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    eng_vector_t ball_pos = eng_entity_position(engine, ball, -1);
+    float activation = get_in_float(b, 2, 2.0f);
+    activation = activation * activation;
+    eng_vector_t target_pos = eng_entity_position(engine, target, -1);
+    if (extra_distance2(&target_pos, &ball_pos) > activation) {
+        float speed = get_in_float(b, 4, 5.0f) * get_local_float(b, 8, 0.0f);
+        if (state->count == 0) {
+            return NMO_ENGINE_BR_PARAMETERERROR;
+        }
+        /* Each ball's axis; from the seventh on, the sixth's */
+        static const eng_vector_t axes[6] = {
+            {0.0f, 1.0f, 0.0f},      {0.0f, 0.0f, 1.0f},          {1.0f, 0.0f, 0.0f},
+            {0.5f, 0.5f, 0.70700002f}, {0.70700002f, -0.70700002f, 0.0f}, {-0.5f, -0.5f, 0.70700002f},
+        };
+        for (int32_t i = 0; i < state->count; i++) {
+            const eng_vector_t *axis = &axes[i < 6 ? i : 5];
+            eng_vector_t local = extra_position(engine, state->balls[i].ball, target);
+            eng_matrix_t rotation;
+            eng_matrix_from_rotation(&rotation, axis, speed);
+            eng_vector_t p;
+            eng_vector_rotate(&p, &rotation, &local);
+            double length = sqrt((double)(p.z * p.z + p.y * p.y + p.x * p.x));
+            if (length != 2.0) {
+                /* back on the sphere of radius 2 */
+                double inverse = 1.0 / length;
+                float x = (float)(inverse * p.x), y = (float)(p.y * inverse);
+                float z = (float)(inverse * p.z + inverse * p.z);
+                p.x = x + x;
+                p.y = y + y;
+                p.z = z;
+            }
+            extra_set_position(engine, state->balls[i].ball, &p, target);
+        }
+        return NMO_ENGINE_BR_OK;
+    }
+    extra_set_local_int(b, 4, EXTRA_AWAY);
+    bool flying = extra_flying(b);
+    nmo_object_id_t shadow = extra_local_object(b, 2), center = extra_local_object(b, 3);
+    if (!flying && shadow != 0) {
+        extra_show(b, shadow, false);
+    }
+    if (center != 0) {
+        nmo_object_id_t frame = extra_first_child(engine, center);
+        extra_script_active(engine, frame, false);
+        extra_show(b, center, false);
+        if (frame != 0) {
+            extra_show(b, frame, true);
+            extra_script_active(engine, frame, true);
+        }
+    }
+    if (state->count == 0) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    for (int32_t i = 0; i < state->count; i++) {
+        state->balls[i].position = extra_position(engine, state->balls[i].ball, -1);
+    }
+    int32_t activated = 1;
+    nmo_engine_block_set_output_value(b, 0, &activated, sizeof(activated));
+    OUT_ON(b, 0);
+    ball_pos.y = (float)(ball_pos.y - 2.0999999);
+    nmo_engine_block_set_local_value(b, 10, &ball_pos, sizeof(ball_pos));
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Away: for FlyAwayTime the small balls fly from below where the ball was */
+static int extra_away(blk_t *b, extra_state_t *state)
+{
+    eng_vector_t away = {0.0f, 0.0f, 0.0f};
+    nmo_engine_block_get_local_value(b, 10, &away, sizeof(away));
+    away.y = (float)(away.y - 3.0);
+    float left = (float)(get_local_float(b, 6, 0.0f) - nmo_engine_block_delta_time(b));
+    if (!(left > 0.0f)) {
+        extra_set_local_int(b, 4, EXTRA_HOMING);
+        return NMO_ENGINE_BR_OK;
+    }
+    extra_set_local_float(b, 6, left);
+    float force = get_in_float(b, 5, 50.0f);
+    float damping = get_in_float(b, 6, 0.5f);
+    force = get_local_float(b, 8, 0.0f) * force;
+    if (state->count == 0) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    for (int32_t i = 0; i < state->count; i++) {
+        extra_ball_t *small = &state->balls[i];
+        eng_vector_t old = small->position;
+        eng_vector_t pos = extra_position(b->engine, small->ball, -1);
+        small->position = pos;
+        eng_vector_t next = {(pos.x - old.x) * damping + (pos.x - away.x) * force + pos.x,
+                             (pos.y - old.y) * damping + (pos.y - away.y) * force + pos.y,
+                             (pos.z - old.z) * damping + (pos.z - away.z) * force + pos.z};
+        extra_set_position(b->engine, small->ball, &next, -1);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Homing: the small balls fly to the ball, each one near enough a hit */
+static int extra_homing(blk_t *b, extra_state_t *state)
+{
+    nmo_engine_t *engine = b->engine;
+    int32_t remaining = get_local_int(b, 7, 0);
+    if (remaining <= 0) {
+        extra_set_local_int(b, 4, EXTRA_READY);
+        OUT_ON(b, 2);
+        return NMO_ENGINE_BR_OK;
+    }
+    int32_t ball = input_entity(b, 0);
+    if (ball < 0 || state->count == 0) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    eng_vector_t ball_pos = eng_entity_position(engine, ball, -1);
+    float damping = get_in_float(b, 8, 0.9f);
+    float time = get_local_float(b, 8, 0.0f);
+    int32_t hits = 0;
+    for (int32_t i = 0; i < state->count; i++) {
+        extra_ball_t *small = &state->balls[i];
+        if (!small->flying) {
+            continue;
+        }
+        eng_vector_t pos = extra_position(engine, small->ball, -1);
+        float collision = get_in_float(b, 3, 2.0f);
+        /* The squared distance against the distance itself, as the DLL compares them */
+        if (extra_distance2(&pos, &ball_pos) <= collision) {
+            hits++;
+            small->flying = false;
+            extra_set_local_int(b, 7, --remaining);
+            nmo_object_id_t frame = extra_first_child(engine, small->ball);
+            if (frame != 0) {
+                extra_script_active(engine, frame, false);
+            }
+            extra_show(b, small->ball, false);
+            nmo_object_id_t group = nmo_engine_block_get_input_object(b, 11);
+            nmo_object_id_t hit = group != 0 ? nmo_engine_group_object(engine, group, i) : 0;
+            if (hit != 0) {
+                eng_vector_t at = extra_position(engine, small->ball, -1);
+                extra_set_position(engine, hit, &at, -1);
+                extra_script_active(engine, hit, true);
+            }
+        } else {
+            eng_vector_t old = small->position;
+            small->position = pos;
+            eng_vector_t next = {
+                (ball_pos.x - pos.x) * small->force * time + (pos.x - old.x) * damping + pos.x,
+                (ball_pos.y - pos.y) * small->force * time + (pos.y - old.y) * damping + pos.y,
+                (ball_pos.z - pos.z) * small->force * time + (pos.z - old.z) * damping + pos.z};
+            extra_set_position(engine, small->ball, &next, -1);
+        }
+    }
+    if (hits > 0) {
+        nmo_engine_block_set_output_value(b, 0, &hits, sizeof(hits));
+        OUT_ON(b, 1);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/* DestroyExtra (Off): the parts hidden and their scripts off; the list stays */
+static void extra_destroy(blk_t *b, extra_state_t *state)
+{
+    if (state->count == 0) {
+        return;
+    }
+    bool flying = extra_flying(b);
+    nmo_object_id_t shadow = extra_local_object(b, 2), center = extra_local_object(b, 3);
+    if (center != 0) {
+        extra_script_active(b->engine, extra_first_child(b->engine, center), false);
+        extra_show(b, center, false);
+    }
+    if (shadow != 0 && !flying) {
+        extra_show(b, shadow, false);
+    }
+    for (int32_t i = 0; i < state->count; i++) {
+        extra_script_active(b->engine, extra_first_child(b->engine, state->balls[i].ball), false);
+        extra_show(b, state->balls[i].ball, false);
+    }
+}
+
+static int bb_tt_extra(blk_t *b)
+{
+    extra_state_t *state = (extra_state_t *)nmo_engine_block_state(b, sizeof(extra_state_t));
+    if (state == NULL) {
+        return NMO_ENGINE_BR_GENERICERROR;
+    }
+    bool active = false;
+    if (nmo_engine_block_is_input_active(b, 1)) {
+        IN_OFF(b, 1);
+        extra_set_local_int(b, 0, 0);
+        extra_destroy(b, state);
+        return NMO_ENGINE_BR_OK;
+    }
+    bool initialized = (get_local_int(b, 5, 0) & 0xFF) != 0;
+    bool exactness = (get_local_int(b, 11, 1) & 0xFF) != 0;
+    if (nmo_engine_block_is_input_active(b, 0)) {
+        IN_OFF(b, 0);
+        if (!initialized) {
+            /* "Extra is'nt intialized yet, this could slow all down." */
+            if (extra_initialize(b, state) != NMO_ENGINE_BR_OK) {
+                return NMO_ENGINE_BR_PARAMETERERROR;
+            }
+            initialized = true;
+        }
+        active = true;
+        extra_set_local_int(b, 0, 1);
+        extra_set_local_float(b, 8, (float)(nmo_engine_block_delta_time(b) * 0.001));
+        if (exactness) {
+            extra_set_local_int(b, 9, get_in_int(b, 13, 2));
+        }
+        if (extra_activate(b, state) != NMO_ENGINE_BR_OK) {
+            return NMO_ENGINE_BR_PARAMETERERROR;
+        }
+    } else if (nmo_engine_block_is_input_active(b, 2)) {
+        IN_OFF(b, 2);
+        if (!initialized) {
+            return extra_initialize(b, state) == NMO_ENGINE_BR_OK
+                       ? NMO_ENGINE_BR_OK
+                       : NMO_ENGINE_BR_PARAMETERERROR;
+        }
+    } else {
+        active = (get_local_int(b, 0, 0) & 0xFF) != 0;
+    }
+    if (!active || !initialized) {
+        return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+    }
+    if (exactness) {
+        /* Every Exactness Frame frames, the frame's time is the one the speeds use */
+        uint32_t counter = (uint32_t)get_local_int(b, 9, 0) - 1u;
+        if ((counter & 0x7FFFFFFFu) == 0) { /* read as a float: 0.0 or -0.0 */
+            extra_set_local_float(b, 8, (float)(nmo_engine_block_delta_time(b) * 0.001));
+            counter = (uint32_t)get_in_int(b, 13, 2);
+        }
+        extra_set_local_int(b, 9, (int32_t)counter);
+    }
+    int status = NMO_ENGINE_BR_OK;
+    switch (get_local_int(b, 4, EXTRA_NONE)) {
+    case EXTRA_IDLE: status = extra_idle(b, state); break;
+    case EXTRA_AWAY: status = extra_away(b, state); break;
+    case EXTRA_HOMING: status = extra_homing(b, state); break;
+    default: break;
+    }
+    /* ExecuteExtra maps any failure to a parameter error ("Could'nt execute") */
+    return status == NMO_ENGINE_BR_OK ? NMO_ENGINE_BR_ACTIVATENEXTFRAME
+                                      : NMO_ENGINE_BR_PARAMETERERROR;
+}
+
+/*
+ * TT_ExtraCallback: a reset, a deactivated script or a removed block takes
+ * an initialized Extra down; a load or an attachment starts without a list.
+ */
+static int cb_tt_extra(blk_t *b, uint32_t message)
+{
+    extra_state_t *state = (extra_state_t *)nmo_engine_block_state(b, sizeof(extra_state_t));
+    if (state == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    if (message == NMO_ENGINE_MSG_RESET || message == NMO_ENGINE_MSG_DEACTIVATESCRIPT) {
+        if ((get_local_int(b, 5, 0) & 0xFF) != 0) {
+            extra_uninitialize(b, state);
+        }
+    } else if (message == NMO_ENGINE_MSG_LOAD) {
+        state->count = 0;
+        extra_set_local_int(b, 5, 0);
+        extra_set_local_int(b, 0, 0);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_3dtrans_blocks[] = {
     {NMO_GUID(0xe456e78a, 0x456789aa), "Set Position", bb_set_position, NULL, NULL},
     {NMO_GUID(0xaa4aa6f0, 0xddefdef4), "Set World Matrix", bb_set_world_matrix, NULL, NULL},
@@ -675,6 +1180,7 @@ static const nmo_engine_block_desc_t eng_3dtrans_blocks[] = {
     {NMO_GUID(0x0fd4755f, 0x7de22dc8), "TT Set Dynamic Position", bb_set_dynamic_position, NULL,
      NULL},
     {NMO_GUID(0x51bd5521, 0x672c67bf), "TT SpeedOMeter", bb_speedometer, NULL, NULL},
+    {NMO_GUID(0x36106bd9, 0x51813906), "TT Extra", bb_tt_extra, cb_tt_extra, NULL},
 };
 
 nmo_status_t eng_register_3dtrans(nmo_engine_t *engine)

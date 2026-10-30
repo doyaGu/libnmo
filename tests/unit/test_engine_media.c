@@ -11,6 +11,7 @@
 #define GUID_MOVIE_LOAD NMO_GUID(0x798e26a9, 0x34e4169e)
 #define GUID_MOVIE_PLAYER NMO_GUID(0x778d16d4, 0x1dd60060)
 #define GUID_PLAY_ANIMATION NMO_GUID(0x64221225, 0x769a143f)
+#define GUID_SOUND_LOAD NMO_GUID(0x02bc537c, 0x147c22e0)
 
 static void input_float(engine_fixture_t *f, nmo_object_id_t pin, float value)
 {
@@ -172,6 +173,72 @@ TEST(engine_media, movie_player_shows_the_movie_frames_over_its_duration)
     fixture_end(&f);
 }
 
+/* A WAV file of `data_size` bytes at `bytes_per_second`, an odd-sized chunk before its data */
+static void write_wave(const char *name, uint32_t bytes_per_second, uint32_t data_size)
+{
+    uint8_t wav[12 + 24 + 12 + 8] = {0};
+    memcpy(wav, "RIFF", 4);
+    memcpy(wav + 8, "WAVEfmt ", 8);
+    const uint32_t format_size = 16u, list_size = 3u;
+    memcpy(wav + 16, &format_size, 4);
+    memcpy(wav + 28, &bytes_per_second, 4);
+    memcpy(wav + 36, "LIST", 4);
+    memcpy(wav + 40, &list_size, 4); /* 3 bytes, then a pad byte */
+    memcpy(wav + 48, "data", 4);
+    memcpy(wav + 52, &data_size, 4);
+    char path[512];
+    snprintf(path, sizeof(path), "%s/%s", NMO_TEST_SCRATCH_DIR, name);
+    FILE *out = fopen(path, "wb");
+    ASSERT_NOT_NULL(out);
+    ASSERT_EQ(sizeof(wav), fwrite(wav, 1, sizeof(wav), out));
+    fclose(out);
+}
+
+TEST(engine_media, sound_load_gives_the_sound_its_file_length)
+{
+    write_wave("tick.wav", 1000u, 100u); /* 100 ms */
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t sound = create_sound(&f, 1000);
+    nmo_object_id_t other = create_sound(&f, 1000); /* a failed load stops its sound too */
+    ASSERT_TRUE(sound != 0 && other != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t load = fixture_block(&f, GUID_SOUND_LOAD, "Load");
+    nmo_object_id_t missing = fixture_block(&f, GUID_SOUND_LOAD, "Missing");
+    nmo_object_id_t player = fixture_block(&f, GUID_WAVE_PLAYER, "Wave Player");
+    nmo_object_id_t ended = fixture_block(&f, GUID_NOP, "Ended");
+    nmo_object_id_t failed = fixture_block(&f, GUID_NOP, "Failed");
+    ASSERT_TRUE(load != 0 && missing != 0 && player != 0 && ended != 0 && failed != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, load, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, load, 0), BLOCK_IN(&f, player, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, player, 1), BLOCK_IN(&f, ended, 0), 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, missing, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, missing, 1), BLOCK_IN(&f, failed, 0), 0);
+    nmo_object_id_t targets[3] = {load, missing, player};
+    for (int i = 0; i < 3; i++) {
+        ASSERT_TRUE(fixture_target(&f, targets[i]) != 0);
+        fixture_input_int(&f, fixture_target(&f, targets[i]), (int32_t)(i == 1 ? other : sound));
+    }
+    fixture_input_value(&f, BLOCK_PIN(&f, load, 0), "tick.wav", sizeof("tick.wav"));
+    fixture_input_value(&f, BLOCK_PIN(&f, missing, 0), "none.wav", sizeof("none.wav"));
+    fixture_commit(&f, NULL);
+    nmo_engine_set_file_resolver(f.engine, resolve_scratch, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 25.0f)); /* frame 0: loaded, then played */
+    ASSERT_EQ(1u, runs(&f, failed));
+    ASSERT_TRUE(nmo_engine_sound_is_playing(f.engine, sound));
+    /* 100 ms now, not the 1000 the document records */
+    for (int frame = 1; frame < 4; frame++) {
+        ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 25.0f));
+        ASSERT_EQ(0u, runs(&f, ended));
+    }
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 25.0f));
+    ASSERT_EQ(1u, runs(&f, ended));
+    fixture_end(&f);
+}
+
 TEST(engine_media, play_animation_progresses_over_its_duration)
 {
     engine_fixture_t f;
@@ -216,4 +283,5 @@ REGISTER_TEST(engine_media, wave_player_ends_after_the_sound_length);
 REGISTER_TEST(engine_media, particle_system_exits_off_once_its_particles_died);
 REGISTER_TEST(engine_media, movie_player_shows_the_movie_frames_over_its_duration);
 REGISTER_TEST(engine_media, play_animation_progresses_over_its_duration);
+REGISTER_TEST(engine_media, sound_load_gives_the_sound_its_file_length);
 TEST_MAIN_END()

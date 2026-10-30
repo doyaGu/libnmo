@@ -18,6 +18,7 @@
 #define GUID_SCALEABLE_PROXIMITY NMO_GUID(0x2a2a63ca, 0x00826175)
 #define GUID_SET_DYNAMIC_POSITION NMO_GUID(0x0fd4755f, 0x7de22dc8)
 #define GUID_SPEEDOMETER NMO_GUID(0x51bd5521, 0x672c67bf)
+#define GUID_TT_EXTRA NMO_GUID(0x36106bd9, 0x51813906)
 
 #define PI_F 3.14159265f
 
@@ -407,6 +408,113 @@ TEST(engine_transform, speedometer_measures_the_target_speed)
     fixture_end(&f);
 }
 
+/* A child entity of `parent` at `x, y, z` with a script of its own */
+static nmo_object_id_t scripted_child(engine_fixture_t *f, const char *name, nmo_object_id_t parent,
+                                      float x, float y, float z)
+{
+    nmo_object_id_t id = fixture_create(f, NMO_CID_3DENTITY, name);
+    if (id == 0 || place_entity(f, id, x, y, z, parent) == 0) {
+        return 0;
+    }
+    nmo_object_id_t owner = f->owner_id, input = 0;
+    f->owner_id = id;
+    nmo_object_id_t script = fixture_add_script(f, name, &input);
+    f->owner_id = owner;
+    return script != 0 ? id : 0;
+}
+
+TEST(engine_transform, tt_extra_circles_flies_away_and_homes_in)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t extra = fixture_create(&f, NMO_CID_3DENTITY, "P_Extra_Point_01");
+    nmo_object_id_t ball = fixture_create(&f, NMO_CID_3DENTITY, "Ball");
+    ASSERT_TRUE(place_entity(&f, extra, 0.0f, 0.0f, 0.0f, 0) != 0);
+    ASSERT_TRUE(place_entity(&f, ball, 100.0f, 0.0f, 0.0f, 0) != 0);
+    /* Its parts: named from the 14th character, the small balls from the 18th */
+    nmo_object_id_t floor = fixture_create(&f, NMO_CID_3DENTITY, "P_Extra_Point_Floor");
+    ASSERT_TRUE(floor != 0 && place_entity(&f, floor, 0.0f, 0.0f, 0.0f, extra) != 0);
+    nmo_object_id_t center = fixture_create(&f, NMO_CID_3DENTITY, "P_Extra_Point_Ball0");
+    ASSERT_TRUE(center != 0 && place_entity(&f, center, 0.0f, 0.0f, 0.0f, extra) != 0);
+    ASSERT_TRUE(scripted_child(&f, "Center Frame", center, 0.0f, 0.0f, 0.0f) != 0);
+    nmo_object_id_t small[2] = {fixture_create(&f, NMO_CID_3DENTITY, "P_Extra_Point_Ball1"),
+                                fixture_create(&f, NMO_CID_3DENTITY, "P_Extra_Point_Ball2")};
+    ASSERT_TRUE(small[0] != 0 && place_entity(&f, small[0], 2.0f, 0.0f, 0.0f, extra) != 0);
+    ASSERT_TRUE(small[1] != 0 && place_entity(&f, small[1], 0.0f, 2.0f, 0.0f, extra) != 0);
+    ASSERT_TRUE(scripted_child(&f, "Frame 1", small[0], 2.0f, 0.0f, 0.0f) != 0);
+    ASSERT_TRUE(scripted_child(&f, "Frame 2", small[1], 0.0f, 2.0f, 0.0f) != 0);
+    /* Where the hits show */
+    nmo_object_id_t hits[2] = {fixture_create(&f, NMO_CID_3DENTITY, "Hit 1"),
+                               fixture_create(&f, NMO_CID_3DENTITY, "Hit 2")};
+    ASSERT_TRUE(place_entity(&f, hits[0], 50.0f, 0.0f, 0.0f, 0) != 0);
+    ASSERT_TRUE(place_entity(&f, hits[1], 60.0f, 0.0f, 0.0f, 0) != 0);
+    nmo_object_id_t group = fixture_create(&f, NMO_CID_GROUP, "Hit Frames");
+    nmo_group_state_t *members = (nmo_group_state_t *)fixture_state(&f, group);
+    ASSERT_NOT_NULL(members);
+    nmo_ref_t *refs = NULL;
+    ASSERT_EQ(NMO_OK, nmo_array_extend(&members->object_ids, 2u, (void **)&refs));
+    refs[0] = nmo_ref_from_id(hits[0]);
+    refs[1] = nmo_ref_from_id(hits[1]);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t block = target_block(&f, GUID_TT_EXTRA, "Extra", extra, f.script_in);
+    ASSERT_TRUE(block != 0);
+    /* Activated, Hit, Ready */
+    nmo_object_id_t outputs[3];
+    for (int i = 0; i < 3; i++) {
+        outputs[i] = fixture_block(&f, GUID_NOP, "Output");
+        ASSERT_TRUE(outputs[i] != 0);
+        fixture_link(&f, BLOCK_OUT(&f, block, (size_t)i), BLOCK_IN(&f, outputs[i], 0), 0);
+    }
+    fixture_input_int(&f, BLOCK_PIN(&f, block, 0), (int32_t)ball);
+    fixture_input_int(&f, BLOCK_PIN(&f, block, 1), 2);
+    const float quarter = PI_F / 2.0f, collision = 1000.0f, away_time = 1500.0f, still = 0.0f;
+    fixture_input_value(&f, BLOCK_PIN(&f, block, 3), &collision, sizeof(collision));
+    fixture_input_value(&f, BLOCK_PIN(&f, block, 5), &still, sizeof(still)); /* no AwayForce */
+    fixture_input_value(&f, BLOCK_PIN(&f, block, 4), &quarter, sizeof(quarter));
+    fixture_input_value(&f, BLOCK_PIN(&f, block, 10), &away_time, sizeof(away_time));
+    fixture_input_int(&f, BLOCK_PIN(&f, block, 11), (int32_t)group);
+    fixture_commit(&f, NULL);
+
+    /* Idle (the frame's time is 1 s): a quarter turn each about its axis, 2 from the center */
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 1000.0f));
+    float m[16];
+    world_matrix(&f, small[0], m);
+    ASSERT_FLOAT_EQ(0.0f, m[12], 0.0001f);
+    ASSERT_FLOAT_EQ(2.0f, fabsf(m[14]), 0.0001f); /* about Y */
+    world_matrix(&f, small[1], m);
+    ASSERT_FLOAT_EQ(2.0f, fabsf(m[12]), 0.0001f); /* about Z */
+    ASSERT_FLOAT_EQ(0.0f, m[13], 0.0001f);
+    ASSERT_EQ(0u, runs(&f, outputs[0]));
+
+    /* The ball comes near: Activated, then FlyAwayTime away, then they home in */
+    move_to(&f, ball, 0.0f);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 1000.0f));
+    ASSERT_EQ(1u, runs(&f, outputs[0]));
+    int32_t current = 0;
+    read_value(&f, BLOCK_POUT(&f, block, 0), &current, sizeof(current));
+    ASSERT_EQ(1, current);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 1000.0f)); /* away, 500 ms left */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 1000.0f)); /* time up */
+    ASSERT_EQ(0u, runs(&f, outputs[1]));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 1000.0f)); /* both within the collision */
+    ASSERT_EQ(1u, runs(&f, outputs[1]));
+    read_value(&f, BLOCK_POUT(&f, block, 0), &current, sizeof(current));
+    ASSERT_EQ(2, current);
+    float hit[16];
+    world_matrix(&f, small[0], m);
+    world_matrix(&f, hits[0], hit);
+    ASSERT_FLOAT_EQ(m[12], hit[12], 0.0001f);
+    ASSERT_FLOAT_EQ(m[13], hit[13], 0.0001f);
+    ASSERT_FLOAT_EQ(m[14], hit[14], 0.0001f);
+    ASSERT_EQ(0u, runs(&f, outputs[2]));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 1000.0f));
+    ASSERT_EQ(1u, runs(&f, outputs[2]));
+    ASSERT_TRUE(nmo_engine_behavior_is_active(f.engine, block));
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_transform, loaded_children_keep_their_place_under_the_parent);
 REGISTER_TEST(engine_transform, set_position_and_set_parent);
@@ -414,4 +522,5 @@ REGISTER_TEST(engine_transform, rotate_scale_and_orientation);
 REGISTER_TEST(engine_transform, nearest_in_group_and_proximity);
 REGISTER_TEST(engine_transform, set_dynamic_position_follows_the_object);
 REGISTER_TEST(engine_transform, speedometer_measures_the_target_speed);
+REGISTER_TEST(engine_transform, tt_extra_circles_flies_away_and_homes_in);
 TEST_MAIN_END()

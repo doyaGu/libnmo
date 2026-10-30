@@ -462,7 +462,9 @@ static bool run_file_exists(const char *path)
  * --path), with Windows separators; its last part alone as well, for files
  * copied into one folder. An absolute name (the machine the file was made
  * on: "E:\\Game\\Database.tdb") or one leaving the folder is found by its
- * last part only, so nothing outside the folders is read.
+ * last part only, so nothing outside the folders is read; one that leaves it
+ * only by leading ".." parts (Ballance's "..\\Sounds\\", from its Bin folder)
+ * is also found by the rest of it inside the folders.
  */
 static const char *run_resolve_file(void *user_data, const char *name)
 {
@@ -487,13 +489,27 @@ static const char *run_resolve_file(void *user_data, const char *name)
     if (base[0] == '\0' || strcmp(base, ".") == 0 || strcmp(base, "..") == 0) {
         return NULL;
     }
+    /* The name past its leading ".." parts, when no other part leaves the folder */
+    const char *inner = name;
+    while (inner[0] == '.' && inner[1] == '.' && (inner[2] == '\\' || inner[2] == '/')) {
+        inner += 3;
+    }
+    bool inner_inside = inner != name && inner[0] != '/' && inner[0] != '\\' &&
+                        (inner[0] == '\0' || inner[1] != ':');
+    for (size_t i = 0; inner_inside && inner[i] != '\0' && inner[i + 1] != '\0'; i++) {
+        bool starts = i == 0 || inner[i - 1] == '/' || inner[i - 1] == '\\';
+        inner_inside = !(starts && inner[i] == '.' && inner[i + 1] == '.');
+    }
     const char *folders[2] = {files->path, files->folder};
     for (int f = 0; f < 2; f++) {
         if (f == 0 && files->path == NULL) {
             continue;
         }
-        for (int whole = outside ? 0 : 1; whole >= 0; whole--) {
-            const char *part = whole ? name : base;
+        for (int whole = outside ? (inner_inside ? 2 : 0) : 1; whole >= 0; whole--) {
+            const char *part = whole == 2 ? inner : whole ? name : base;
+            if (whole == 1 && outside) {
+                continue;
+            }
             char *candidate = run_join(folders[f], part, strlen(part));
             if (candidate != NULL && run_file_exists(candidate)) {
                 files->found = candidate;

@@ -20,6 +20,7 @@
 
 #include <ctype.h>
 #include <limits.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -452,6 +453,26 @@ static int bb_tt_debug(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/*
+ * TT_LinearVolume: a volume in [0, 1] made linear, 0.02 * 50^x: 1 above 1,
+ * 0 at 0.01 or below (and for a NaN, as the x87 compares it).
+ */
+static int bb_linear_volume(blk_t *b)
+{
+    IN_OFF(b, 0);
+    float x = 0.0f;
+    nmo_engine_block_get_input_value(b, 0, &x, sizeof(x));
+    float linear = 0.0f;
+    if (x > 1.0f) {
+        linear = 1.0f;
+    } else if ((double)x > 0.01) { /* against the double 0.01 */
+        linear = (float)(pow(50.0, (double)x) * 0.02);
+    }
+    nmo_engine_block_set_output_value(b, 0, &linear, sizeof(linear));
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
 /* TT Player Active: Active outside interface mode (In stays active, as in the original). */
 static int bb_player_active(blk_t *b)
 {
@@ -833,6 +854,7 @@ static int bb_time_settings(blk_t *b)
 }
 
 static const nmo_engine_block_desc_t eng_tt_blocks[] = {
+    {NMO_GUID(0x09b335b3, 0x12d17cdc), "TT_LinearVolume", bb_linear_volume, NULL, NULL},
     {NMO_GUID(0x1436624f, 0x34e1290a), "TT Set Database Properties", bb_set_database_properties,
      NULL, NULL},
     {NMO_GUID(0x05441494, 0x38ac7789), "TT Load Database", bb_load_database, NULL, NULL},

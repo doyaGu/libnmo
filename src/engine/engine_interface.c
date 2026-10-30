@@ -208,6 +208,26 @@ static int bb_text_3d(blk_t *b)
     return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
 }
 
+/*
+ * Text Display: its text sprite shown with On (Exit On), hidden with Off
+ * (Exit Off, tested first); while shown it stays active to draw the text.
+ */
+static int bb_text_display(blk_t *b)
+{
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, 0, 0);
+        return NMO_ENGINE_BR_OK;
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+        eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, 0, 1);
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
 /* ============================================================================
  * PushButton
  * ============================================================================ */
@@ -305,6 +325,7 @@ static const nmo_engine_block_desc_t eng_interface_blocks[] = {
     {NMO_GUID(0x0153342c, 0xe543674f), "Delete Font", bb_delete_font, NULL, NULL},
     {NMO_GUID(0xdacfbd61, 0x7a6e65e7), "Set Font Properties", bb_set_font_properties, NULL, NULL},
     {NMO_GUID(0x055b29fe, 0x662d5ca0), "2D Text", bb_text_2d, NULL, NULL},
+    {NMO_GUID(0xf22d010a, 0xf2cd010a), "Text Display", bb_text_display, NULL, NULL},
     {NMO_GUID(0x1f5b2fe7, 0x6d355175), "3D Text", bb_text_3d, NULL, NULL},
     {NMO_GUID(0x761b7e64, 0x2b4c6911), "PushButton", bb_push_button, NULL, NULL},
 };

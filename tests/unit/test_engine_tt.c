@@ -14,6 +14,7 @@
 #define GUID_TT_TIMER NMO_GUID(0x6ac67901, 0x7d2a6059)
 #define GUID_SPLIT_STRING NMO_GUID(0x5ae74e2f, 0x799c49b5)
 #define GUID_LOAD_STRING NMO_GUID(0x391555d6, 0x42f2500e)
+#define GUID_LINEAR_VOLUME NMO_GUID(0x09b335b3, 0x12d17cdc)
 
 /* The files the engine loads, from the scratch directory */
 static const char *resolve_scratch(void *user_data, const char *name)
@@ -271,9 +272,36 @@ TEST(engine_tt, timer_and_strings)
     fixture_end(&f);
 }
 
+TEST(engine_tt, linear_volume_maps_the_volume)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    /* 1 above 1, 0 at 0.01 or below, 0.02 * 50^x between */
+    const float volumes[4] = {2.0f, 1.0f, 0.5f, 0.01f};
+    const float linear[4] = {1.0f, 1.0f, 0.141421f, 0.0f};
+    nmo_object_id_t blocks[4];
+    for (int i = 0; i < 4; i++) {
+        blocks[i] = fixture_block(&f, GUID_LINEAR_VOLUME, "Volume");
+        ASSERT_TRUE(blocks[i] != 0);
+        fixture_link(&f, f.script_in, BLOCK_IN(&f, blocks[i], 0), 0);
+        fixture_input_value(&f, BLOCK_PIN(&f, blocks[i], 0), &volumes[i], sizeof(volumes[i]));
+    }
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    for (int i = 0; i < 4; i++) {
+        float value = -1.0f;
+        read_value(&f, BLOCK_POUT(&f, blocks[i], 0), &value, sizeof(value));
+        ASSERT_FLOAT_EQ(linear[i], value, 0.0001f);
+    }
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_tt, load_database_fills_the_array_of_its_name);
 REGISTER_TEST(engine_tt, read_registry_reads_what_the_host_set);
 REGISTER_TEST(engine_tt, drivers_and_screen_modes_fill_their_arrays);
 REGISTER_TEST(engine_tt, timer_and_strings);
+REGISTER_TEST(engine_tt, linear_volume_maps_the_volume);
 TEST_MAIN_END()

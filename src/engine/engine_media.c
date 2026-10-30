@@ -271,6 +271,113 @@ static int bb_particle_system(blk_t *b)
     return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
 }
 
+static uint32_t read_le32(const unsigned char *p)
+{
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
+/*
+ * The length in ms of the WAV file `name` names (its data over the average
+ * bytes a second its format records), as the wave reader gives it; -1 when
+ * it is no WAV file.
+ */
+static float wave_length(nmo_engine_t *engine, const char *name)
+{
+    const char *path = engine->resolve_file != NULL
+                           ? engine->resolve_file(engine->resolve_file_user_data, name)
+                           : NULL;
+    FILE *file = path != NULL ? fopen(path, "rb") : NULL;
+    if (file == NULL) {
+        return -1.0f;
+    }
+    unsigned char header[12];
+    uint32_t bytes_per_second = 0, data_size = 0;
+    bool has_format = false, has_data = false;
+    if (fread(header, 1, sizeof(header), file) == sizeof(header) &&
+        memcmp(header, "RIFF", 4) == 0 && memcmp(header + 8, "WAVE", 4) == 0) {
+        unsigned char chunk[16];
+        while (!(has_format && has_data) && fread(chunk, 1, 8, file) == 8) {
+            uint32_t size = read_le32(chunk + 4);
+            if (memcmp(chunk, "fmt ", 4) == 0 && size >= 16) {
+                if (fread(chunk, 1, 16, file) != 16) {
+                    break;
+                }
+                bytes_per_second = read_le32(chunk + 8);
+                has_format = true;
+                size -= 16;
+            } else if (memcmp(chunk, "data", 4) == 0) {
+                data_size = size;
+                has_data = true;
+            }
+            /* chunks are word aligned */
+            if (fseek(file, (long)size + (long)(size & 1u), SEEK_CUR) != 0) {
+                break;
+            }
+        }
+    }
+    fclose(file);
+    if (!has_format || !has_data || bytes_per_second == 0) {
+        return -1.0f;
+    }
+    return (float)((double)data_size * 1000.0 / (double)bytes_per_second);
+}
+
+/* Sound Load's asynchronous load: the result it reports the frame after */
+typedef struct sound_load_state {
+    bool pending;
+    bool loaded;
+} sound_load_state_t;
+
+/*
+ * Sound Load (SoundLoader): the sound file into the target sound, which
+ * stops (CKWaveSound::SetSoundFileName, then SetFileStreaming): Out, or
+ * Failed when it is not a sound file. With "Use asynchonized loading" the
+ * load thread's result comes on a later frame; the engine has it the next.
+ */
+static int bb_sound_load(blk_t *b)
+{
+    eng_sound_t *sound = eng_sound(b->engine, nmo_engine_block_target(b));
+    if (sound == NULL) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    sound_load_state_t *state = (sound_load_state_t *)nmo_engine_block_state(b, sizeof(*state));
+    if (state == NULL) {
+        return NMO_ENGINE_BR_GENERICERROR;
+    }
+    int32_t async = 0;
+    nmo_engine_block_get_local_value(b, 2, &async, sizeof(async));
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        size_t size = 0;
+        const char *name = (const char *)nmo_engine_block_input_data(b, 0, &size);
+        float length = name != NULL && size > 0 && memchr(name, '\0', size) != NULL
+                           ? wave_length(b->engine, name)
+                           : -1.0f;
+        sound_stop(sound, 0.0f);
+        if (length >= 0.0f) {
+            sound->length = length;
+        }
+        if (async == 0) {
+            OUT_ON(b, length >= 0.0f ? 0 : 1);
+            return NMO_ENGINE_BR_OK;
+        }
+        state->pending = true;
+        state->loaded = length >= 0.0f;
+        return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+    }
+    if (nmo_engine_block_input_count(b) > 1 && IN_ACTIVE(b, 1)) {
+        state->pending = false; /* the thread stopped */
+        return NMO_ENGINE_BR_OK;
+    }
+    if (async != 0 && state->pending) {
+        state->pending = false;
+        OUT_ON(b, state->loaded ? 0 : 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
 /* TT_GetSoundProperties: the gain, pitch and pan of the target sound. */
 static int bb_get_sound_properties(blk_t *b)
 {
@@ -581,6 +688,7 @@ static int bb_play_animation(blk_t *b)
 
 static const nmo_engine_block_desc_t eng_media_blocks[] = {
     {NMO_GUID(0x5bde0e45, 0x2e2107d5), "Wave Player", bb_wave_player, cb_wave_player, NULL},
+    {NMO_GUID(0x02bc537c, 0x147c22e0), "Sound Load", bb_sound_load, NULL, NULL},
     {NMO_GUID(0x30fa6a70, 0x3b3f728a), "TT_GetSoundProperties", bb_get_sound_properties, NULL,
      NULL},
     {NMO_GUID(0x00e85ab1, 0x312a731c), "Texture Load", bb_texture_load, NULL, NULL},
