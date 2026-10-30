@@ -265,6 +265,7 @@ bool nmo_engine_mesh_face(const nmo_engine_t *engine, nmo_object_id_t mesh, int3
 #define CALL_WAKE_UP (-1)
 #define CALL_COLL_DETECTION (-2)
 #define CALL_CONTINUOUS_CONTACT (-3)
+#define CALL_DELETE_SURFACES (-4)
 
 /* The constraint a constraint block made (its IVP_Handle local), +1; 0 for none */
 static int32_t *block_constraint(blk_t *b)
@@ -432,6 +433,28 @@ static bool call_wake_up(nmo_engine_t *engine, int32_t node)
     const nmo_engine_physics_provider_t *provider = provider_of(engine);
     if (provider != NULL && provider->wake_up != NULL) {
         provider->wake_up(provider->user_data, engine->physics.objects.data[index].handle);
+    }
+    return true;
+}
+
+/*
+ * PhysicsDeleteCollisionSurfacesCall::Call: the polygon shapes kept by
+ * surface name dropped once nothing is physical ("Please dephysicalize all
+ * objects before calling DeleteCollisionSurfaces!!!" until then).
+ */
+static bool call_delete_surfaces(nmo_engine_t *engine)
+{
+    eng_physics_t *physics = &engine->physics;
+    if (physics->objects.count > 0) {
+        return false;
+    }
+    for (size_t i = 0; i < physics->surfaces.count; i++) {
+        free(physics->surfaces.data[i]);
+    }
+    physics->surfaces.count = 0;
+    const nmo_engine_physics_provider_t *provider = provider_of(engine);
+    if (provider != NULL && provider->delete_surfaces != NULL) {
+        provider->delete_surfaces(provider->user_data);
     }
     return true;
 }
@@ -759,6 +782,7 @@ static bool call_run(nmo_engine_t *engine, const eng_physics_call_t *call)
     case CALL_WAKE_UP: return call_wake_up(engine, call->node);
     case CALL_COLL_DETECTION: return call_coll_detection(engine, call->node);
     case CALL_CONTINUOUS_CONTACT: return call_continuous_contact(engine, call->node);
+    case CALL_DELETE_SURFACES: return call_delete_surfaces(engine);
     default:
         return call_constraint(engine, call->node, (nmo_engine_physics_constraint_kind_t)call->kind);
     }
@@ -1032,6 +1056,34 @@ static int bb_physics_wake_up(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* DeleteCollisionSurfaces: the kept collision surfaces deleted, now or once nothing is physical. */
+static int bb_delete_collision_surfaces(blk_t *b)
+{
+    physics_call(b->engine, CALL_DELETE_SURFACES, b->node);
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * Get Profiler Values: Start puts the number of physical objects in
+ * HasPhysicsCalls (Out); Reset clears the manager's profiling counters,
+ * which the engine does not keep (ResetOut).
+ */
+static int bb_get_profiler_values(blk_t *b)
+{
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    int32_t count = (int32_t)b->engine->physics.objects.count;
+    nmo_engine_block_set_output_value(b, 0, &count, sizeof(count));
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
 /*
  * Set Physics Globals: Set Values sets the gravity and the time factor;
  * Clean Physics World makes the environment again (its gravity the
@@ -1224,6 +1276,9 @@ static const nmo_engine_block_desc_t eng_physics_blocks[] = {
      cb_physics_constraint, NULL},
     {NMO_GUID(0x199e4cf1, 0x545a78fe), "PhysicsContinuousContact", bb_physics_continuous_contact,
      NULL, NULL},
+    {NMO_GUID(0x53bf75aa, 0x770c7021), "DeleteCollisionSurfaces", bb_delete_collision_surfaces,
+     NULL, NULL},
+    {NMO_GUID(0x1c8e61d1, 0x32723c6f), "Get Profiler Values", bb_get_profiler_values, NULL, NULL},
 };
 
 nmo_status_t eng_register_physics(nmo_engine_t *engine)

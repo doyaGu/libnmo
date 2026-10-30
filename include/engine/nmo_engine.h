@@ -682,6 +682,9 @@ typedef struct nmo_engine_physics_provider {
     void (*listen)(void *user_data, void *object, bool listen);
     /* The simulation's time in seconds (IVP_Environment::current_time) */
     double (*time)(void *user_data);
+    /* DeleteCollisionSurfaces: drop the shapes kept by collision surface name (nothing is
+     * physical then) */
+    void (*delete_surfaces)(void *user_data);
 } nmo_engine_physics_provider_t;
 
 /* A collision of a listened object (IVP_Event_Collision before its impact) */

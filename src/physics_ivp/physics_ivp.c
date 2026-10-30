@@ -588,6 +588,18 @@ static void reset(void *user_data)
     environment(p);
 }
 
+/* CKIpionManager::DeleteCollisionSurface: the polygon shapes freed (no object uses them) */
+static void delete_surfaces(void *user_data)
+{
+    nmo_physics_ivp_t *p = (nmo_physics_ivp_t *)user_data;
+    for (size_t i = 0; i < p->shape_count; i++) {
+        ivp_compact_surface_free(NULL, p->shapes[i]->surface);
+        free(p->shapes[i]->name);
+        free(p->shapes[i]);
+    }
+    p->shape_count = 0;
+}
+
 /* simulate_dtime, then each moving object's pose to its entity */
 static void simulate(void *user_data, nmo_engine_t *engine, float seconds)
 {
@@ -641,6 +653,7 @@ nmo_status_t nmo_physics_ivp_attach(nmo_engine_t *engine, nmo_physics_ivp_t **ou
         .simulate = simulate,
         .listen = listen_object,
         .time = now,
+        .delete_surfaces = delete_surfaces,
     };
     nmo_engine_set_physics_provider(engine, &provider);
     *out_physics = p;
@@ -660,11 +673,7 @@ void nmo_physics_ivp_detach(nmo_physics_ivp_t *p)
     for (size_t i = 0; i < p->joint_count; i++) {
         free(p->joints[i]);
     }
-    for (size_t i = 0; i < p->shape_count; i++) {
-        ivp_compact_surface_free(NULL, p->shapes[i]->surface);
-        free(p->shapes[i]->name);
-        free(p->shapes[i]);
-    }
+    delete_surfaces(p);
     free(p->bodies);
     free(p->joints);
     free(p->shapes);

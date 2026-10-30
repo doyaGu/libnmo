@@ -12,6 +12,9 @@
 #define GUID_NOP NMO_GUID(0x302561c4, 0x0d282980)
 #define GUID_OBJECT_COPY NMO_GUID(0x3f6b0ac7, 0x47d20f78)
 #define GUID_OBJECT_DELETE NMO_GUID(0x74120ded, 0x76524673)
+#define GUID_RESTORE_IC NMO_GUID(0x766e4e44, 0x4fac6d52)
+#define GUID_TT_RESTORE_IC NMO_GUID(0x7e0f2f58, 0x232d3109)
+#define GUID_TT_SAVE_IC NMO_GUID(0x30362f34, 0x1935316f)
 
 #define DEPENDENCIES_CHUNK_CUSTOM 0x12248768u
 
@@ -39,8 +42,8 @@ static void place_entity(engine_fixture_t *f, nmo_object_id_t id, float x, nmo_o
 }
 
 /*
- * Save "template.nmo": an entity "Template" at x 3, saved to start active,
- * with a script "Template Script" (one block) saved to start active; its
+ * Save "template.nmo": an entity "Template" at x 3, saved to start active
+ * and with an initial value, with a script "Template Script" (one block) saved to start active; its
  * child "Child" at x 4; and a group "Members" holding the template.
  */
 static void save_template_file(void)
@@ -66,7 +69,7 @@ static void save_template_file(void)
     nmo_behavior_state_t *script = (nmo_behavior_state_t *)fixture_state(&g, g.script_id);
     ASSERT_TRUE(be != NULL && script != NULL);
     be->has_single_activity = 1;
-    be->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE;
+    be->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE | CK_SCENEOBJECT_INTERNAL_IC;
     script->has_single_activity = true;
     script->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE | CK_SCENEOBJECT_START_RESET;
     fixture_begin_edit(&g);
@@ -232,7 +235,127 @@ TEST(engine_copy, object_copy_joins_groups_and_delete_leaves_them)
     fixture_end(&f);
 }
 
+/* The source of the block's target, made for it */
+static nmo_object_id_t target_source(engine_fixture_t *f, nmo_object_id_t block)
+{
+    nmo_object_id_t source = 0;
+    nmo_object_id_t target = fixture_target(f, block);
+    if (target == 0 ||
+        nmo_script_edit_ensure_input_parameter_source(f->tx, target, &source) != NMO_OK) {
+        return 0;
+    }
+    return source;
+}
+
+TEST(engine_copy, object_delete_takes_what_its_options_delete)
+{
+    save_template_file();
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t deleter = fixture_block(&f, GUID_OBJECT_DELETE, "Delete");
+    ASSERT_TRUE(deleter != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, deleter, 0), 0);
+    nmo_object_id_t deleted_pin = 0, options = 0;
+    ASSERT_EQ(NMO_OK, nmo_script_edit_ensure_input_parameter_source(
+                          f.tx, BLOCK_PIN(&f, deleter, 0), &deleted_pin));
+    ASSERT_EQ(NMO_OK, nmo_script_edit_ensure_input_parameter_source(f.tx, BLOCK_PIN(&f, deleter, 1),
+                                                                   &options));
+    fixture_commit(&f, NULL);
+    /* Ballance's level unloading: a group takes its objects along */
+    const uint32_t pairs[] = {NMO_CID_GROUP, 1u};
+    save_dependencies(&f, options, pairs, 1u);
+    nmo_engine_set_file_resolver(f.engine, resolve_scratch, NULL);
+    int32_t file = -1;
+    ASSERT_EQ(NMO_OK, nmo_engine_load(f.engine, "template.nmo", true, &file));
+    nmo_object_id_t original = loaded_named(&f, file, "Template");
+    nmo_object_id_t child = loaded_named(&f, file, "Child");
+    nmo_object_id_t group = loaded_named(&f, file, "Members");
+    nmo_object_id_t script = script_named(&f, "Template Script", 0);
+    ASSERT_TRUE(original != 0 && child != 0 && group != 0 && script != 0);
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, deleted_pin, &group, sizeof(group)));
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_TRUE(nmo_engine_behavior_is_active(f.engine, script));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    /* The group's member went with its script (deleting, always); not the member's child, which
+     * the default delete options leave */
+    float m[16];
+    ASSERT_FALSE(nmo_engine_entity_world_matrix(f.engine, original, m));
+    ASSERT_FALSE(nmo_engine_behavior_is_active(f.engine, script));
+    ASSERT_TRUE(nmo_engine_entity_world_matrix(f.engine, child, m));
+    fixture_end(&f);
+}
+
+TEST(engine_copy, initial_conditions_are_restored)
+{
+    save_template_file();
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t array = fixture_create(&f, NMO_CID_DATAARRAY, "Rows");
+    ASSERT_TRUE(array != 0);
+    /* Frame 0: the template's own initial value back; frame 1: the template and its child, and
+     * the array, saved as they are; frame 2: those back */
+    nmo_object_id_t restore = fixture_block(&f, GUID_RESTORE_IC, "Restore");
+    nmo_object_id_t save = fixture_block(&f, GUID_TT_SAVE_IC, "Save");
+    nmo_object_id_t save_rows = fixture_block(&f, GUID_TT_SAVE_IC, "Save Rows");
+    nmo_object_id_t restore_all = fixture_block(&f, GUID_TT_RESTORE_IC, "Restore All");
+    nmo_object_id_t restore_rows = fixture_block(&f, GUID_RESTORE_IC, "Restore Rows");
+    ASSERT_TRUE(restore != 0 && save != 0 && save_rows != 0 && restore_all != 0 && restore_rows != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, restore, 0), 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, save, 0), 1);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, save_rows, 0), 1);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, restore_all, 0), 2);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, restore_rows, 0), 2);
+    fixture_input_int(&f, BLOCK_PIN(&f, save, 0), 1); /* Hierarchy */
+    fixture_input_int(&f, BLOCK_PIN(&f, restore_all, 0), 1);
+    nmo_object_id_t restore_target = target_source(&f, restore);
+    nmo_object_id_t save_target = target_source(&f, save);
+    nmo_object_id_t restore_all_target = target_source(&f, restore_all);
+    ASSERT_TRUE(restore_target != 0 && save_target != 0 && restore_all_target != 0);
+    fixture_input_int(&f, fixture_target(&f, save_rows), (int32_t)array);
+    fixture_input_int(&f, fixture_target(&f, restore_rows), (int32_t)array);
+    fixture_commit(&f, NULL);
+    nmo_engine_set_file_resolver(f.engine, resolve_scratch, NULL);
+    int32_t file = -1;
+    ASSERT_EQ(NMO_OK, nmo_engine_load(f.engine, "template.nmo", true, &file));
+    nmo_object_id_t original = loaded_named(&f, file, "Template");
+    nmo_object_id_t child = loaded_named(&f, file, "Child");
+    ASSERT_TRUE(original != 0 && child != 0);
+    for (int i = 0; i < 3; i++) {
+        nmo_object_id_t pin = i == 0 ? restore_target : i == 1 ? save_target : restore_all_target;
+        ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, pin, &original, sizeof(original)));
+    }
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    /* Moved with its child: Restore IC puts it back where it was loaded (it was saved with an
+     * initial value), the child keeps its place (it has none) */
+    float m[16];
+    ASSERT_TRUE(nmo_engine_entity_world_matrix(f.engine, original, m));
+    m[12] = 10.0f;
+    ASSERT_EQ(NMO_OK, nmo_engine_set_entity_world_matrix(f.engine, original, m, false));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_FLOAT_EQ(3.0f, position_x(&f, original), 0.0001f);
+    ASSERT_FLOAT_EQ(11.0f, position_x(&f, child), 0.0001f);
+    /* Saved at frame 1 with the hierarchy and an empty array; moved and filled after */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    m[12] = 20.0f;
+    ASSERT_EQ(NMO_OK, nmo_engine_set_entity_world_matrix(f.engine, original, m, false));
+    ASSERT_FLOAT_EQ(28.0f, position_x(&f, child), 0.0001f);
+    ASSERT_EQ(NMO_OK, nmo_engine_array_insert_column(f.engine, array, -1, CKARRAYTYPE_INT,
+                                                     NMO_GUID(0u, 0u)));
+    ASSERT_EQ(NMO_OK, nmo_engine_array_insert_row(f.engine, array, -1, NULL));
+    ASSERT_EQ(1, nmo_engine_array_row_count(f.engine, array));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_FLOAT_EQ(3.0f, position_x(&f, original), 0.0001f);
+    ASSERT_FLOAT_EQ(11.0f, position_x(&f, child), 0.0001f);
+    ASSERT_EQ(0, nmo_engine_array_row_count(f.engine, array));
+    ASSERT_EQ(0, nmo_engine_array_column_count(f.engine, array));
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_copy, copies_take_scripts_children_and_the_original_state);
 REGISTER_TEST(engine_copy, object_copy_joins_groups_and_delete_leaves_them);
+REGISTER_TEST(engine_copy, object_delete_takes_what_its_options_delete);
+REGISTER_TEST(engine_copy, initial_conditions_are_restored);
 TEST_MAIN_END()

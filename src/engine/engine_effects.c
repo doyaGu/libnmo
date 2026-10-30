@@ -36,13 +36,10 @@ static const nmo_engine_block_desc_t eng_effect_blocks[] = {
     {NMO_GUID(0x60415d44, 0x0d0174ea), "Set Prelit Color", bb_effect, NULL, NULL}, /* Materials-Textures/Basic */
     {NMO_GUID(0xeb123eb5, 0x5be321be), "Set Texture", bb_effect, NULL, NULL}, /* Materials-Textures/Basic */
     {NMO_GUID(0x3ebe40f2, 0x3fa41377), "Set MipMap Level", bb_effect, NULL, NULL}, /* Materials-Textures/Texture */
-    {NMO_GUID(0x766e4e44, 0x4fac6d52), "Restore IC", bb_effect, NULL, NULL}, /* Narratives/State */
     {NMO_GUID(0x00283a35, 0x38ef6b48), "Play Sound Instance", bb_effect, NULL, NULL}, /* Sounds/Basic */
     {NMO_GUID(0x6a5f17af, 0x63480864), "Panning Control", bb_effect, NULL, NULL}, /* Sounds/Control */
     {NMO_GUID(0x7b7c731e, 0x175b27a3), "Pitch Control", bb_effect, NULL, NULL}, /* Sounds/Control */
     {NMO_GUID(0x33613f21, 0x776b185b), "Volume Control", bb_effect, NULL, NULL}, /* Sounds/Control */
-    {NMO_GUID(0x7e0f2f58, 0x232d3109), "TT Restore IC", bb_effect, NULL, NULL}, /* TT Toolbox/Object */
-    {NMO_GUID(0x30362f34, 0x1935316f), "TT Save IC", bb_effect, NULL, NULL}, /* TT Toolbox/Narratives */
     {NMO_GUID(0x734f73b4, 0x01fc79ac), "TT_FlushTextures", bb_effect, NULL, NULL}, /* TT Toolbox/Narratives */
     {NMO_GUID(0x3f7e5bff, 0x02326a71), "Set 2D Material", bb_effect, NULL, NULL}, /* Visuals/2D */
     {NMO_GUID(0x31d97d82, 0x78d54d98), "Hide", bb_effect, NULL, NULL}, /* Visuals/Show-Hide */

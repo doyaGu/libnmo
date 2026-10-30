@@ -59,6 +59,7 @@ static bool eng_object_starts_active(nmo_engine_t *engine, nmo_object_id_t id)
 typedef struct eng_scene_entry {
     nmo_object_id_t id;
     uint32_t flags;
+    bool has_ic; /* the scene keeps an initial value for it */
 } eng_scene_entry_t;
 
 static int eng_scene_entry_compare(const void *a, const void *b)
@@ -106,6 +107,7 @@ static bool eng_level_scene(nmo_engine_t *engine, eng_scene_entry_t **out_entrie
         for (size_t i = 0; i < scene.object_descs.count; i++) {
             entries[i].id = descs[i].ref.raw_id;
             entries[i].flags = descs[i].flags;
+            entries[i].has_ic = descs[i].initial_value != NULL;
         }
         *out_count = scene.object_descs.count;
         qsort(entries, *out_count, sizeof(*entries), eng_scene_entry_compare);
@@ -119,7 +121,7 @@ static bool eng_level_scene(nmo_engine_t *engine, eng_scene_entry_t **out_entrie
 static bool eng_scene_starts_active(const eng_scene_entry_t *entries, size_t count,
                                     nmo_object_id_t id)
 {
-    eng_scene_entry_t key = {id, 0u};
+    eng_scene_entry_t key = {id, 0u, false};
     const eng_scene_entry_t *entry = entries != NULL
         ? (const eng_scene_entry_t *)bsearch(&key, entries, count, sizeof(*entries), eng_scene_entry_compare)
         : NULL;
@@ -174,6 +176,10 @@ nmo_status_t nmo_engine_start(nmo_engine_t *engine, nmo_engine_start_mode_t mode
     engine->has_level_scene = eng_level_scene(engine, &scene, &scene_count);
     for (size_t i = 0; i < scene_count; i++) {
         eng_add_to_level_scene(engine, scene[i].id);
+        /* Its initial value: the state it was loaded with stands for the one the scene saved */
+        if (scene[i].has_ic) {
+            eng_save_ic(engine, scene[i].id);
+        }
     }
     bool has_scene = mode == NMO_ENGINE_START_SCENE_DEFAULT && engine->has_level_scene;
     for (size_t o = 0; o < engine->objects.count; o++) {
@@ -339,6 +345,11 @@ void eng_add_module_to_level(nmo_engine_t *engine, int32_t module)
     for (int32_t i = 0; i < count; i++) {
         nmo_object_id_t id = nmo_engine_loaded_object(engine, module, i);
         eng_add_to_level_scene(engine, id);
+        /* CKScene::AddObject: an object saved with an initial value keeps its state now as one */
+        uint32_t flags = 0;
+        if (eng_saved_activity(engine, id, &flags) && (flags & CK_SCENEOBJECT_INTERNAL_IC) != 0) {
+            eng_save_ic(engine, id);
+        }
         int32_t index = eng_map_get(&engine->object_map, id);
         if (index < 0) {
             continue; /* no script: nothing for the behavior manager */

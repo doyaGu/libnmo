@@ -17,6 +17,8 @@
 #define GUID_FORCE NMO_GUID(0x56e20c57, 0x0b926068)
 #define GUID_COLL_DETECTION NMO_GUID(0x7435488d, 0x201d1188)
 #define GUID_CONTINUOUS_CONTACT NMO_GUID(0x199e4cf1, 0x545a78fe)
+#define GUID_DELETE_SURFACES NMO_GUID(0x53bf75aa, 0x770c7021)
+#define GUID_PROFILER_VALUES NMO_GUID(0x1c8e61d1, 0x32723c6f)
 
 /* An entity saved at `x, y, z` with unit axes */
 static nmo_object_id_t place(engine_fixture_t *f, const char *name, float x, float y, float z)
@@ -62,7 +64,7 @@ static void input_float(engine_fixture_t *f, nmo_object_id_t pin, float value)
 /* A provider recording what the engine gives it */
 typedef struct recorder {
     nmo_engine_t *engine;
-    int objects, destroyed, constraints, constraints_destroyed, pushes, wakes;
+    int objects, destroyed, constraints, constraints_destroyed, pushes, wakes, surfaces_deleted;
     nmo_engine_physics_constraint_t last_constraint;
     void *last_object1, *last_object2;
     float gravity[3], push_at[3], push[3];
@@ -118,6 +120,11 @@ static void rec_wake_up(void *user_data, void *object)
 {
     (void)object;
     ((recorder_t *)user_data)->wakes++;
+}
+
+static void rec_delete_surfaces(void *user_data)
+{
+    ((recorder_t *)user_data)->surfaces_deleted++;
 }
 
 static void rec_set_gravity(void *user_data, const float gravity[3])
@@ -510,9 +517,63 @@ TEST(engine_physics, continuous_contact_waits_its_delays)
     fixture_end(&f);
 }
 
+TEST(engine_physics, collision_surfaces_go_once_nothing_is_physical)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t a = place(&f, "A", 0.0f, 0.0f, 0.0f);
+    ASSERT_TRUE(a != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    /* Frame 0: A physical, the surfaces asked to go, the count; frame 2: A not physical */
+    nmo_object_id_t physicalize = block_of(&f, GUID_PHYSICALIZE, "Physicalize", a, 0, 0);
+    nmo_object_id_t unphysicalize = block_of(&f, GUID_PHYSICALIZE, "Unphysicalize", a, 1, 2);
+    nmo_object_id_t delete_surfaces = fixture_block(&f, GUID_DELETE_SURFACES, "Delete");
+    nmo_object_id_t during = fixture_block(&f, GUID_PROFILER_VALUES, "During");
+    nmo_object_id_t after = fixture_block(&f, GUID_PROFILER_VALUES, "After");
+    nmo_object_id_t done = fixture_block(&f, GUID_NOP, "Done");
+    ASSERT_TRUE(physicalize != 0 && unphysicalize != 0 && delete_surfaces != 0 && during != 0 &&
+                after != 0 && done != 0);
+    fixture_link(&f, BLOCK_OUT(&f, physicalize, 0), BLOCK_IN(&f, delete_surfaces, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, delete_surfaces, 0), BLOCK_IN(&f, during, 0), 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, after, 0), 3);
+    fixture_link(&f, BLOCK_OUT(&f, after, 0), BLOCK_IN(&f, done, 0), 0);
+    fixture_commit(&f, NULL);
+    recorder_t r;
+    memset(&r, 0, sizeof(r));
+    nmo_engine_physics_provider_t provider = {
+        .user_data = &r,
+        .create_object = rec_create_object,
+        .destroy_object = rec_destroy_object,
+        .delete_surfaces = rec_delete_surfaces,
+    };
+    nmo_engine_set_physics_provider(f.engine, &provider);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    /* Out at once; the call waits while A is physical */
+    int32_t count = -1;
+    read_value(&f, BLOCK_POUT(&f, during, 0), &count, sizeof(count));
+    ASSERT_EQ(1, count);
+    ASSERT_EQ(0, r.surfaces_deleted);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(0, r.surfaces_deleted);
+    /* Unphysicalized in frame 2's behaviors: the call goes through before its step */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1, r.destroyed);
+    ASSERT_EQ(1, r.surfaces_deleted);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1, r.surfaces_deleted);
+    ASSERT_EQ(1u, runs(&f, done));
+    read_value(&f, BLOCK_POUT(&f, after, 0), &count, sizeof(count));
+    ASSERT_EQ(0, count);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_physics, blocks_feed_the_provider);
 REGISTER_TEST(engine_physics, polygon_shapes_need_a_mesh_or_their_name);
 REGISTER_TEST(engine_physics, coll_detection_reports_collisions);
 REGISTER_TEST(engine_physics, continuous_contact_waits_its_delays);
+REGISTER_TEST(engine_physics, collision_surfaces_go_once_nothing_is_physical);
 TEST_MAIN_END()

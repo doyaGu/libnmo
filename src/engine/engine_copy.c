@@ -81,15 +81,27 @@ void eng_default_copy_dependencies(eng_dependencies_t *deps)
     }
 }
 
+/* The default delete dependencies (mode CK_DEPENDENCIES_DELETE): a 3D entity's object animations */
+static void default_delete_dependencies(eng_dependencies_t *deps)
+{
+    memset(deps, 0, sizeof(*deps));
+    deps->flags = DEPENDENCIES_CUSTOM;
+    deps->classes[NMO_CID_3DENTITY] = 4u;
+}
+
 /*
- * A Copy Dependencies parameter (CKDependenciesSaver): None, Full, or the
- * classes whose dependencies differ from the defaults. The defaults when the
- * parameter saved none.
+ * A Copy or Delete Dependencies parameter (CKDependenciesSaver): None, Full,
+ * or the classes whose dependencies differ from the mode's defaults. The
+ * defaults when the parameter saved none.
  */
-void eng_dependencies_from_param(nmo_engine_t *engine, nmo_object_id_t param_id,
+void eng_dependencies_from_param(nmo_engine_t *engine, nmo_object_id_t param_id, bool deleting,
                                  eng_dependencies_t *deps)
 {
-    eng_default_copy_dependencies(deps);
+    if (deleting) {
+        default_delete_dependencies(deps);
+    } else {
+        eng_default_copy_dependencies(deps);
+    }
     nmo_object_t *object = eng_find_object(engine, param_id);
     const nmo_parameter_state_t *state =
         object != NULL ? (const nmo_parameter_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
@@ -139,7 +151,9 @@ static uint32_t class_dependencies(const eng_dependencies_t *deps, uint32_t clas
 typedef struct copy_set {
     nmo_engine_t *engine;
     const eng_dependencies_t *deps;
-    const eng_module_t *module; /* the originals' module: the session copied in */
+    bool deleting;              /* CK_DEPENDENCIES_DELETE rather than COPY */
+    const eng_module_t *module; /* the originals' module: the session copied in (copying) */
+    const eng_module_t *current; /* the module of the object being prepared */
     ENG_VEC(nmo_object_id_t) ids; /* engine IDs, in the order they were added */
     eng_map_t index;
 } copy_set_t;
@@ -162,7 +176,7 @@ static void prepare_ref(copy_set_t *set, const nmo_ref_t *ref)
 {
     nmo_object_id_t local = nmo_ref_runtime_id(ref);
     if (local != 0) {
-        prepare(set, eng_module_id(set->module, local));
+        prepare(set, eng_module_id(set->current, local));
     }
 }
 
@@ -171,12 +185,15 @@ static void prepare_behavior_array(copy_set_t *set, const nmo_array_t *array)
     for (size_t i = 0; array != NULL && i < array->count; i++) {
         nmo_object_id_t local = nmo_behavior_ref_array_get_id(array, i);
         if (local != 0) {
-            prepare(set, eng_module_id(set->module, local));
+            prepare(set, eng_module_id(set->current, local));
         }
     }
 }
 
-/* CKBeObject::PrepareDependencies: its scripts (not locked) and its attributes' parameters */
+/*
+ * CKBeObject::PrepareDependencies: its scripts (copying, those not locked)
+ * and its attributes' parameters; deleting, both always.
+ */
 static void prepare_beobject(copy_set_t *set, nmo_object_t *object)
 {
     nmo_engine_t *engine = set->engine;
@@ -186,25 +203,25 @@ static void prepare_beobject(copy_set_t *set, nmo_object_t *object)
         return;
     }
     uint32_t mask = class_dependencies(set->deps, NMO_CID_BEOBJECT);
-    if (mask & 1u) {
+    if ((mask & 1u) || set->deleting) {
         for (size_t i = 0; i < be->scripts.count; i++) {
             nmo_object_id_t local = nmo_beobject_script_array_get_id(&be->scripts, i);
-            nmo_object_t *script = local != 0 ? nmo_object_repository_find_by_id(set->module->repo, local)
+            nmo_object_t *script = local != 0 ? nmo_object_repository_find_by_id(set->current->repo, local)
                                               : NULL;
             const nmo_behavior_state_t *state =
                 script != NULL && nmo_object_get_class_id(script) == NMO_CID_BEHAVIOR
                     ? (const nmo_behavior_state_t *)nmo_object_get_state(script)
                     : NULL;
-            if (state != NULL && (state->flags & CKBEHAVIOR_LOCKED) == 0) {
-                prepare(set, eng_module_id(set->module, local));
+            if (state != NULL && (set->deleting || (state->flags & CKBEHAVIOR_LOCKED) == 0)) {
+                prepare(set, eng_module_id(set->current, local));
             }
         }
     }
-    if (mask & 2u) {
+    if ((mask & 2u) || set->deleting) {
         for (size_t a = 0; a < be->attributes.count; a++) {
             const nmo_beobject_attribute_t *attribute =
                 &((const nmo_beobject_attribute_t *)be->attributes.data)[a];
-            int32_t type = eng_module_attribute_type(set->module, (int32_t)attribute->type_id);
+            int32_t type = eng_module_attribute_type(set->current, (int32_t)attribute->type_id);
             uint32_t flags = type >= 0 && (size_t)type < engine->attribute_types.count
                                  ? engine->attribute_types.data[type].flags
                                  : 0u;
@@ -224,7 +241,7 @@ static void prepare_behavior(copy_set_t *set, nmo_object_t *object)
     }
     nmo_object_id_t target = nmo_behavior_target_parameter_id(state);
     if (target != 0) {
-        prepare(set, eng_module_id(set->module, target));
+        prepare(set, eng_module_id(set->current, target));
     }
     prepare_behavior_array(set, &state->inputs);
     prepare_behavior_array(set, &state->outputs);
@@ -246,7 +263,7 @@ static void prepare_operation(copy_set_t *set, nmo_object_t *object)
                               nmo_parameteroperation_out_id(state)};
     for (int i = 0; state != NULL && i < 3; i++) {
         if (ids[i] != 0) {
-            prepare(set, eng_module_id(set->module, ids[i]));
+            prepare(set, eng_module_id(set->current, ids[i]));
         }
     }
 }
@@ -309,7 +326,7 @@ static void prepare_material(copy_set_t *set, nmo_object_t *object)
     prepare_ref(set, &state->effect_parameter);
 }
 
-/* CKGroup::PrepareDependencies: its objects (the engine's) */
+/* CKGroup::PrepareDependencies: its objects (the engine's); deleting, not a level or scene */
 static void prepare_group(copy_set_t *set, nmo_object_id_t id)
 {
     if ((class_dependencies(set->deps, NMO_CID_GROUP) & 1u) == 0) {
@@ -317,7 +334,13 @@ static void prepare_group(copy_set_t *set, nmo_object_id_t id)
     }
     int32_t count = nmo_engine_group_count(set->engine, id);
     for (int32_t i = 0; i < count; i++) {
-        prepare(set, nmo_engine_group_object(set->engine, id, i));
+        nmo_object_id_t member = nmo_engine_group_object(set->engine, id, i);
+        uint32_t class_id = member != 0 ? (uint32_t)nmo_engine_object_class(set->engine, member) : 0u;
+        if (set->deleting && (derives(set->engine, class_id, NMO_CID_LEVEL) ||
+                              derives(set->engine, class_id, NMO_CID_SCENE))) {
+            continue;
+        }
+        prepare(set, member);
     }
 }
 
@@ -349,16 +372,23 @@ static void prepare_array(copy_set_t *set, nmo_object_id_t id)
     }
 }
 
+static void prepare_object(copy_set_t *set, nmo_object_t *object, nmo_object_id_t id);
+
 /*
  * PrepareDependencies of an object: itself once, then what its classes
- * bring along. Only objects of the originals' session can be copied.
+ * bring along. Only objects of the originals' session can be copied;
+ * deleting, any object the engine has not destroyed.
  */
 static void prepare(copy_set_t *set, nmo_object_id_t id)
 {
     nmo_engine_t *engine = set->engine;
     nmo_object_id_t local = 0;
     const eng_module_t *module = eng_module_of(engine, id, &local);
-    if (module == NULL || module->repo != set->module->repo || eng_map_get(&set->index, id) >= 0) {
+    if (module == NULL || eng_map_get(&set->index, id) >= 0) {
+        return;
+    }
+    if (set->deleting ? eng_map_get(&engine->destroyed, id) >= 0
+                      : module->repo != set->module->repo) {
         return;
     }
     nmo_object_t *object = nmo_object_repository_find_by_id(module->repo, local);
@@ -368,6 +398,15 @@ static void prepare(copy_set_t *set, nmo_object_id_t id)
         return;
     }
     *slot = id;
+    const eng_module_t *outer = set->current;
+    set->current = module;
+    prepare_object(set, object, id);
+    set->current = outer;
+}
+
+static void prepare_object(copy_set_t *set, nmo_object_t *object, nmo_object_id_t id)
+{
+    nmo_engine_t *engine = set->engine;
     uint32_t class_id = (uint32_t)nmo_object_get_class_id(object);
     if (class_id == NMO_CID_BEHAVIOR) {
         prepare_behavior(set, object);
@@ -625,6 +664,7 @@ static nmo_status_t copy_session(nmo_engine_t *engine, int32_t source, const nmo
     set.engine = engine;
     set.deps = deps;
     set.module = &engine->modules.data[source];
+    set.current = set.module;
     for (int32_t i = 0; i < count; i++) {
         const eng_module_t *module = eng_module_of(engine, ids[i], NULL);
         if (module != NULL && module->repo == set.module->repo) {
@@ -772,6 +812,29 @@ nmo_status_t eng_copy_objects(nmo_engine_t *engine, const nmo_object_id_t *ids, 
         }
     }
     return NMO_OK;
+}
+
+/*
+ * CKContext::DestroyObject with dependencies: the objects, and what the
+ * options delete with them (PrepareDependencies in CK_DEPENDENCIES_DELETE
+ * mode), destroyed.
+ */
+void eng_destroy_objects(nmo_engine_t *engine, const nmo_object_id_t *ids, int32_t count,
+                         const eng_dependencies_t *deps)
+{
+    copy_set_t set;
+    memset(&set, 0, sizeof(set));
+    set.engine = engine;
+    set.deps = deps;
+    set.deleting = true;
+    for (int32_t i = 0; i < count; i++) {
+        prepare(&set, ids[i]);
+    }
+    for (size_t i = 0; i < set.ids.count; i++) {
+        nmo_engine_destroy_object(engine, set.ids.data[i]);
+    }
+    free(set.ids.data);
+    free(set.index.slots);
 }
 
 nmo_status_t nmo_engine_copy_objects(nmo_engine_t *engine, const nmo_object_id_t *ids,

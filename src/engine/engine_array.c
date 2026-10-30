@@ -203,17 +203,9 @@ nmo_status_t eng_load_arrays(nmo_engine_t *engine, const eng_range_t *range)
     return NMO_OK;
 }
 
-/*
- * CKDataArray::Copy at run time: `to` gets `from`'s columns, cells, key
- * column and sort as the engine has them now.
- */
-void eng_copy_array(nmo_engine_t *engine, nmo_object_id_t from, nmo_object_id_t to)
+/* `source`'s columns, cells and order into `dest` (which holds nothing); false when out of memory */
+bool eng_array_clone(eng_array_t *dest, const eng_array_t *source)
 {
-    const eng_array_t *source = eng_find_array(engine, from);
-    eng_array_t *dest = eng_find_array(engine, to);
-    if (source == NULL || dest == NULL) {
-        return;
-    }
     size_t cell_count = source->row_count * source->column_count;
     eng_column_t *columns = source->column_count > 0
                                 ? (eng_column_t *)malloc(source->column_count * sizeof(eng_column_t))
@@ -222,7 +214,7 @@ void eng_copy_array(nmo_engine_t *engine, nmo_object_id_t from, nmo_object_id_t 
     if ((source->column_count > 0 && columns == NULL) || (cell_count > 0 && cells == NULL)) {
         free(columns);
         free(cells);
-        return;
+        return false;
     }
     if (columns != NULL) {
         memcpy(columns, source->columns, source->column_count * sizeof(eng_column_t));
@@ -241,11 +233,6 @@ void eng_copy_array(nmo_engine_t *engine, nmo_object_id_t from, nmo_object_id_t 
             }
         }
     }
-    for (size_t c = 0; c < dest->row_count * dest->column_count; c++) {
-        eng_cell_clear(&dest->cells[c]);
-    }
-    free(dest->cells);
-    free(dest->columns);
     dest->columns = columns;
     dest->cells = cells;
     dest->column_count = source->column_count;
@@ -254,6 +241,43 @@ void eng_copy_array(nmo_engine_t *engine, nmo_object_id_t from, nmo_object_id_t 
     dest->key_column = source->key_column;
     dest->sorted = source->sorted;
     dest->sort_column = source->sort_column;
+    return true;
+}
+
+/* The array's columns and cells freed; it holds nothing */
+void eng_array_release(eng_array_t *array)
+{
+    for (size_t c = 0; c < array->row_count * array->column_count; c++) {
+        eng_cell_clear(&array->cells[c]);
+    }
+    free(array->cells);
+    free(array->columns);
+    array->cells = NULL;
+    array->columns = NULL;
+    array->column_count = 0;
+    array->row_count = 0;
+    array->row_capacity = 0;
+}
+
+/*
+ * CKDataArray::Copy at run time: `to` gets `from`'s columns, cells, key
+ * column and sort as the engine has them now.
+ */
+void eng_copy_array(nmo_engine_t *engine, nmo_object_id_t from, nmo_object_id_t to)
+{
+    const eng_array_t *source = eng_find_array(engine, from);
+    eng_array_t *dest = eng_find_array(engine, to);
+    if (source == NULL || dest == NULL || source == dest) {
+        return;
+    }
+    eng_array_t copy;
+    memset(&copy, 0, sizeof(copy));
+    if (!eng_array_clone(&copy, source)) {
+        return;
+    }
+    eng_array_release(dest);
+    copy.id = dest->id;
+    *dest = copy;
 }
 
 /* A new CKDataArray: no columns, no rows, no key column. */

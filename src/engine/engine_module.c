@@ -340,12 +340,14 @@ nmo_object_id_t eng_object_named(const nmo_engine_t *engine, const char *name, u
         nmo_object_t **objects = nmo_object_repository_get_all(module->repo, &count);
         for (size_t i = 0; objects != NULL && i < count; i++) {
             const char *object_name = nmo_object_get_name(objects[i]);
-            if (eng_module_has(module, nmo_object_get_id(objects[i])) && object_name != NULL &&
+            nmo_object_id_t local = nmo_object_get_id(objects[i]);
+            if (eng_module_has(module, local) && object_name != NULL &&
                 strcmp(object_name, name) == 0 &&
+                eng_map_get(&engine->destroyed, eng_module_id(module, local)) < 0 &&
                 (class_id == 0 ||
                  nmo_type_registry_is_class_derived_from(
                      engine->types, (uint32_t)nmo_object_get_class_id(objects[i]), class_id))) {
-                return eng_module_id(module, nmo_object_get_id(objects[i]));
+                return eng_module_id(module, local);
             }
         }
     }

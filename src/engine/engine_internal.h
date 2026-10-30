@@ -264,6 +264,19 @@ typedef struct eng_array {
     int32_t sort_column;    /* m_ColumnIndex */
 } eng_array_t;
 
+/*
+ * An object's initial condition in the level scene (CKScene's object
+ * initial value), of what the engine models: an array's columns and cells,
+ * a 3D entity's world matrix.
+ */
+typedef struct eng_ic {
+    nmo_object_id_t id;
+    bool has_array;
+    eng_array_t array;
+    bool has_matrix;
+    float world[16];
+} eng_ic_t;
+
 struct nmo_engine_block {
     nmo_engine_t *engine;
     int32_t node;
@@ -474,6 +487,8 @@ struct nmo_engine {
     eng_input_t input;
     ENG_VEC(eng_sound_t) sounds;
     ENG_VEC(eng_texture_t) textures;
+    ENG_VEC(eng_ic_t) ics; /* the initial conditions of the level scene's objects */
+    eng_map_t ic_map;      /* object -> index in ics */
     ENG_VEC(eng_font_t) fonts;
     ENG_VEC(eng_attribute_type_t) attribute_types;
     ENG_VEC(eng_attribute_t) attributes;
@@ -624,13 +639,17 @@ typedef struct eng_dependencies {
     uint32_t classes[ENG_DEPENDENCY_CLASSES];
 } eng_dependencies_t;
 void eng_default_copy_dependencies(eng_dependencies_t *deps);
-void eng_dependencies_from_param(nmo_engine_t *engine, nmo_object_id_t param_id,
+void eng_dependencies_from_param(nmo_engine_t *engine, nmo_object_id_t param_id, bool deleting,
                                  eng_dependencies_t *deps);
+void eng_destroy_objects(nmo_engine_t *engine, const nmo_object_id_t *ids, int32_t count,
+                         const eng_dependencies_t *deps);
 nmo_status_t eng_copy_objects(nmo_engine_t *engine, const nmo_object_id_t *ids, int32_t count,
                               const eng_dependencies_t *deps, bool activate,
                               nmo_object_id_t *out_copies);
 void eng_copy_attributes(nmo_engine_t *engine, nmo_object_id_t from, nmo_object_id_t to);
 void eng_copy_array(nmo_engine_t *engine, nmo_object_id_t from, nmo_object_id_t to);
+bool eng_array_clone(eng_array_t *dest, const eng_array_t *source);
+void eng_array_release(eng_array_t *array);
 void eng_copy_group(nmo_engine_t *engine, nmo_object_id_t from, nmo_object_id_t to,
                     const nmo_object_id_t *originals, const nmo_object_id_t *copies, size_t count);
 
@@ -767,6 +786,8 @@ nmo_status_t eng_register_logics(nmo_engine_t *engine);
 
 /* engine_narratives.c */
 nmo_status_t eng_register_narratives(nmo_engine_t *engine);
+void eng_save_ic(nmo_engine_t *engine, nmo_object_id_t id);
+void eng_free_ics(nmo_engine_t *engine);
 
 /* engine_effects.c */
 nmo_status_t eng_register_effects(nmo_engine_t *engine);

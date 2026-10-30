@@ -286,6 +286,165 @@ static int bb_object_load(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* ============================================================================
+ * Initial conditions (CKScene::SetObjectInitialValue, GetObjectInitialValue)
+ * ============================================================================ */
+
+/* CKSaveObjectState into the level scene's initial value: what the engine models of the object */
+void eng_save_ic(nmo_engine_t *engine, nmo_object_id_t id)
+{
+    const eng_array_t *array = eng_find_array(engine, id);
+    float world[16];
+    bool has_matrix = nmo_engine_entity_world_matrix(engine, id, world);
+    if (array == NULL && !has_matrix) {
+        return;
+    }
+    int32_t index = eng_map_get(&engine->ic_map, id);
+    eng_ic_t *ic = NULL;
+    if (index >= 0) {
+        ic = &engine->ics.data[index];
+        if (ic->has_array) {
+            eng_array_release(&ic->array);
+        }
+    } else if (ENG_VEC_PUSH(engine->ics, ic)) {
+        if (!eng_map_put(&engine->ic_map, id, (int32_t)(engine->ics.count - 1u))) {
+            engine->ics.count--;
+            return;
+        }
+    } else {
+        return;
+    }
+    memset(ic, 0, sizeof(*ic));
+    ic->id = id;
+    ic->has_array = array != NULL && eng_array_clone(&ic->array, array);
+    ic->has_matrix = has_matrix;
+    if (has_matrix) {
+        memcpy(ic->world, world, sizeof(world));
+    }
+}
+
+/* CKReadObjectState of the object's initial value in the level scene, when it is in it and has one */
+static void restore_ic(nmo_engine_t *engine, nmo_object_id_t id)
+{
+    int32_t index = eng_in_scene(engine, id) ? eng_map_get(&engine->ic_map, id) : -1;
+    if (index < 0) {
+        return;
+    }
+    const eng_ic_t *ic = &engine->ics.data[index];
+    eng_array_t *array = ic->has_array ? eng_find_array(engine, id) : NULL;
+    eng_array_t copy;
+    memset(&copy, 0, sizeof(copy));
+    if (array != NULL && eng_array_clone(&copy, &ic->array)) {
+        eng_array_release(array);
+        copy.id = array->id;
+        *array = copy;
+    }
+    if (ic->has_matrix) {
+        nmo_engine_set_entity_world_matrix(engine, id, ic->world, true);
+    }
+}
+
+void eng_free_ics(nmo_engine_t *engine)
+{
+    for (size_t i = 0; i < engine->ics.count; i++) {
+        if (engine->ics.data[i].has_array) {
+            eng_array_release(&engine->ics.data[i].array);
+        }
+    }
+    free(engine->ics.data);
+    free(engine->ic_map.slots);
+}
+
+/* Restore IC: the target's initial condition in the scene, if it has one. */
+static int bb_restore_ic(blk_t *b)
+{
+    nmo_engine_block_activate_input(b, 0, false);
+    nmo_engine_block_activate_output(b, 0, true);
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (target == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    restore_ic(b->engine, target);
+    eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, target, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* The classes TT Restore IC and TT Save IC take the hierarchy of (the 3D entity classes, as such) */
+static bool tt_ic_hierarchy_class(uint32_t class_id)
+{
+    switch (class_id) {
+    case NMO_CID_3DENTITY:
+    case NMO_CID_CAMERA:
+    case NMO_CID_TARGETCAMERA:
+    case NMO_CID_CURVEPOINT:
+    case NMO_CID_SPRITE3D:
+    case NMO_CID_LIGHT:
+    case NMO_CID_TARGETLIGHT:
+    case NMO_CID_CHARACTER:
+    case NMO_CID_3DOBJECT:
+    case NMO_CID_BODYPART:
+    case NMO_CID_CURVE: return true;
+    default: return false;
+    }
+}
+
+/* CK3dEntity::HierarchyParser: each descendant of the entity, depth first */
+static void tt_ic_descendants(nmo_engine_t *engine, int32_t entity, bool save)
+{
+    for (int32_t c = engine->entities.data[entity].first_child; c >= 0;
+         c = engine->entities.data[c].next_sibling) {
+        nmo_object_id_t id = engine->entities.data[c].id;
+        if (save) {
+            if (eng_in_scene(engine, id)) {
+                eng_save_ic(engine, id);
+            }
+        } else {
+            restore_ic(engine, id);
+        }
+        tt_ic_descendants(engine, c, save);
+    }
+}
+
+/*
+ * TT Restore IC and TT Save IC: the target's initial condition in the
+ * scene restored, or saved from its state now; with Hierarchy, its
+ * descendants' too (a 3D entity's).
+ */
+static int tt_ic(blk_t *b, bool save)
+{
+    nmo_engine_t *engine = b->engine;
+    nmo_engine_block_activate_input(b, 0, false);
+    nmo_engine_block_activate_output(b, 0, true);
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (target == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    if (!save) {
+        restore_ic(engine, target);
+    } else if (eng_in_scene(engine, target)) {
+        eng_save_ic(engine, target);
+    }
+    int32_t entity = eng_entity_index(engine, target);
+    uint8_t hierarchy = 0;
+    nmo_engine_block_get_input_value(b, 0, &hierarchy, sizeof(hierarchy));
+    if (entity >= 0 && hierarchy != 0 &&
+        tt_ic_hierarchy_class((uint32_t)nmo_engine_object_class(engine, target))) {
+        tt_ic_descendants(engine, entity, save);
+    }
+    eng_emit(engine, NMO_ENGINE_EVENT_EFFECT, b->node, target, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+static int bb_tt_restore_ic(blk_t *b)
+{
+    return tt_ic(b, false);
+}
+
+static int bb_tt_save_ic(blk_t *b)
+{
+    return tt_ic(b, true);
+}
+
 /*
  * Object Create (ObjectCreator): a new object of the class and name, added
  * to the level, in the Object output; nothing for a level.
@@ -339,7 +498,7 @@ static int bb_object_copy(blk_t *b)
     const eng_node_t *node = &engine->nodes.data[b->node];
     eng_param_t *pin = eng_node_param(engine, node->first_pin, node->pin_count, 0);
     eng_param_t *source = pin != NULL ? eng_param_real_source(engine, pin) : NULL;
-    eng_dependencies_from_param(engine, source != NULL ? source->id : 0, &deps);
+    eng_dependencies_from_param(engine, source != NULL ? source->id : 0, false, &deps);
     int32_t awake_setting = 1;
     nmo_engine_block_get_local_value(b, 1, &awake_setting, sizeof(awake_setting));
     bool awake = awake_setting != 0 || nmo_engine_block_version(b) < 0x00020000u;
@@ -354,18 +513,27 @@ static int bb_object_copy(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
-/* Object Delete (ObjectDeleter): destroys the object (the target, before version 2). */
+/*
+ * Object Delete (ObjectDeleter): destroys the object (the target, before
+ * version 2) with what its Dependency Options delete along.
+ */
 static int bb_object_delete(blk_t *b)
 {
+    nmo_engine_t *engine = nmo_engine_block_engine(b);
     nmo_engine_block_activate_input(b, 0, false);
     nmo_engine_block_activate_output(b, 0, true);
-    nmo_object_id_t object = nmo_engine_block_input_parameter_count(b) > 1
-                                 ? nmo_engine_block_get_input_object(b, 0)
-                                 : nmo_engine_block_target(b);
+    bool has_object = nmo_engine_block_input_parameter_count(b) > 1;
+    nmo_object_id_t object = has_object ? nmo_engine_block_get_input_object(b, 0)
+                                        : nmo_engine_block_target(b);
     if (object == 0) {
         return NMO_ENGINE_BR_OWNERERROR;
     }
-    nmo_engine_destroy_object(nmo_engine_block_engine(b), object);
+    const eng_node_t *node = &engine->nodes.data[b->node];
+    eng_param_t *pin = eng_node_param(engine, node->first_pin, node->pin_count, has_object ? 1 : 0);
+    eng_param_t *source = pin != NULL ? eng_param_real_source(engine, pin) : NULL;
+    eng_dependencies_t deps;
+    eng_dependencies_from_param(engine, source != NULL ? source->id : 0, true, &deps);
+    eng_destroy_objects(engine, &object, 1, &deps);
     return NMO_ENGINE_BR_OK;
 }
 
@@ -377,6 +545,9 @@ static const nmo_engine_block_desc_t eng_narratives_blocks[] = {
     {NMO_GUID(0x160f4b7d, 0x67de224e), "Deactivate Object", bb_deactivate_object, NULL, NULL},
     {NMO_GUID(0x1a7d5b17, 0x70630fed), "Call Script", bb_call_script, NULL, NULL},
     {NMO_GUID(0x7bd977d7, 0x26396c0c), "Object Load", bb_object_load, NULL, NULL},
+    {NMO_GUID(0x766e4e44, 0x4fac6d52), "Restore IC", bb_restore_ic, NULL, NULL},
+    {NMO_GUID(0x7e0f2f58, 0x232d3109), "TT Restore IC", bb_tt_restore_ic, NULL, NULL},
+    {NMO_GUID(0x30362f34, 0x1935316f), "TT Save IC", bb_tt_save_ic, NULL, NULL},
     {NMO_GUID(0x271538e6, 0x2fae49ac), "Object Create", bb_object_create, NULL, NULL},
     {NMO_GUID(0x3f6b0ac7, 0x47d20f78), "Object Copy", bb_object_copy, NULL, NULL},
     {NMO_GUID(0x74120ded, 0x76524673), "Object Delete", bb_object_delete, NULL, NULL},

@@ -238,6 +238,7 @@ void nmo_engine_destroy(nmo_engine_t *engine)
     free(engine->listed.data);
     free(engine->scratch_io.data);
     eng_free_messages(engine);
+    eng_free_ics(engine);
     eng_free_arrays(engine);
     eng_free_entities(engine);
     eng_free_attributes(engine);
