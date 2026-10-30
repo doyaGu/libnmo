@@ -112,6 +112,12 @@ void eng_free_physics(nmo_engine_t *engine)
         free(physics->surfaces.data[i]);
     }
     free(physics->surfaces.data);
+    for (size_t i = 0; i < physics->contacts.count; i++) {
+        free(physics->contacts.data[i].groups);
+    }
+    free(physics->listeners.data);
+    free(physics->contacts.data);
+    free(physics->records.data);
 }
 
 /* CKIpionManager::GetPhysicsObject; -1 when it is not physical */
@@ -255,8 +261,10 @@ bool nmo_engine_mesh_face(const nmo_engine_t *engine, nmo_object_id_t mesh, int3
  * Calls (PhysicsCallManager)
  * ============================================================================ */
 
-/* A call's kind: a constraint kind, or this */
+/* A call's kind: a constraint kind, or one of these */
 #define CALL_WAKE_UP (-1)
+#define CALL_COLL_DETECTION (-2)
+#define CALL_CONTINUOUS_CONTACT (-3)
 
 /* The constraint a constraint block made (its IVP_Handle local), +1; 0 for none */
 static int32_t *block_constraint(blk_t *b)
@@ -428,11 +436,332 @@ static bool call_wake_up(nmo_engine_t *engine, int32_t node)
     return true;
 }
 
+/* ============================================================================
+ * Collisions and contacts (PhysicsCollDetection, PhysicsContinuousContact)
+ * ============================================================================ */
+
+static double physics_now(const nmo_engine_t *engine)
+{
+    const nmo_engine_physics_provider_t *provider = provider_of(engine);
+    return provider != NULL && provider->time != NULL ? provider->time(provider->user_data)
+                                                      : engine->physics.time;
+}
+
+/* Whether anything listens to the entity's collisions or contacts */
+static bool physics_listened(const nmo_engine_t *engine, nmo_object_id_t entity)
+{
+    for (size_t i = 0; i < engine->physics.listeners.count; i++) {
+        const eng_physics_listener_t *l = &engine->physics.listeners.data[i];
+        if (l->alive && l->entity == entity) {
+            return true;
+        }
+    }
+    for (size_t i = 0; i < engine->physics.contacts.count; i++) {
+        const eng_physics_contacts_t *c = &engine->physics.contacts.data[i];
+        if (c->alive && c->entity == entity) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* add_listener_collision / remove_listener_collision, once per object */
+static void physics_listen(nmo_engine_t *engine, nmo_object_id_t entity, bool listen)
+{
+    const nmo_engine_physics_provider_t *provider = provider_of(engine);
+    int32_t index = physics_object_index(engine, entity);
+    if (provider != NULL && provider->listen != NULL && index >= 0) {
+        provider->listen(provider->user_data, engine->physics.objects.data[index].handle, listen);
+    }
+}
+
+/* PhysicsCollDetectionCall::Call: a listener once the target is physical */
+static bool call_coll_detection(nmo_engine_t *engine, int32_t node)
+{
+    blk_t block = {engine, node};
+    blk_t *b = &block;
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (target == 0) {
+        return true;
+    }
+    float min_speed = get_in_float(b, 0, 0.3f), max_speed = get_in_float(b, 1, 0.3f);
+    float sleep = get_in_float(b, 2, 0.5f);
+    int32_t collision_id = get_in_int(b, 3, 1);
+    if (physics_object_index(engine, target) < 0) {
+        return false;
+    }
+    bool listened = physics_listened(engine, target);
+    eng_physics_listener_t *l = NULL;
+    if (!ENG_VEC_PUSH(engine->physics.listeners, l)) {
+        return true;
+    }
+    *l = (eng_physics_listener_t){node, target, min_speed, max_speed, sleep, collision_id, 0.0, true};
+    int32_t *slot = (int32_t *)nmo_engine_block_state(b, sizeof(int32_t));
+    if (slot != NULL) {
+        *slot = (int32_t)engine->physics.listeners.count;
+    }
+    if (!listened) {
+        physics_listen(engine, target, true);
+    }
+    return true;
+}
+
+/* PhysicsContinuousContactCall::Call: the object's contact data, made once; done either way */
+static bool call_continuous_contact(nmo_engine_t *engine, int32_t node)
+{
+    blk_t block = {engine, node};
+    blk_t *b = &block;
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (target == 0) {
+        return true;
+    }
+    float delay_start = get_in_float(b, 0, 0.1f), delay_end = get_in_float(b, 1, 0.1f);
+    engine->physics.group_output_count = get_local_int(b, 0, 5);
+    if (physics_object_index(engine, target) < 0) {
+        return true;
+    }
+    for (size_t i = 0; i < engine->physics.contacts.count; i++) {
+        if (engine->physics.contacts.data[i].alive && engine->physics.contacts.data[i].entity == target) {
+            return true; /* the object has its contact data already */
+        }
+    }
+    int32_t count = engine->physics.group_output_count > 0 ? engine->physics.group_output_count : 0;
+    eng_contact_group_t *groups =
+        (eng_contact_group_t *)calloc(count > 0 ? (size_t)count : 1u, sizeof(eng_contact_group_t));
+    bool listened = physics_listened(engine, target);
+    eng_physics_contacts_t *c = NULL;
+    if (groups == NULL || !ENG_VEC_PUSH(engine->physics.contacts, c)) {
+        free(groups);
+        return true;
+    }
+    *c = (eng_physics_contacts_t){node, target, delay_start, delay_end, groups, count, true};
+    int32_t *slot = (int32_t *)nmo_engine_block_state(b, sizeof(int32_t));
+    if (slot != NULL) {
+        *slot = (int32_t)engine->physics.contacts.count;
+    }
+    if (!listened) {
+        physics_listen(engine, target, true);
+    }
+    return true;
+}
+
+/* The integer value of `object`'s attribute named `name`; `fallback` without one */
+static int32_t attribute_named(const nmo_engine_t *engine, nmo_object_id_t object, const char *name,
+                               int32_t fallback)
+{
+    for (size_t t = 0; t < engine->attribute_types.count; t++) {
+        const eng_attribute_type_t *type = &engine->attribute_types.data[t];
+        if (type->present && type->name != NULL && strcmp(type->name, name) == 0) {
+            int32_t value = fallback;
+            const void *data = NULL;
+            size_t size = 0;
+            if (nmo_engine_object_attribute_value(engine, object, (int32_t)t, &data, &size, NULL) ==
+                    NMO_OK &&
+                data != NULL && size >= sizeof(value)) {
+                memcpy(&value, data, sizeof(value));
+            }
+            return value;
+        }
+    }
+    return fallback;
+}
+
+/*
+ * PhysicsCollDetectionListener::event_pre_collision: a collision of the
+ * object as fast as Min Speed, Sleep afterwards after the last and while
+ * Collision is not active, with the other object of the Collision ID when
+ * "Use Collision ID": the other object, the speed between Min and Max as
+ * [0, 1], the normal from the object, and the point (its z left 0, as the
+ * DLL leaves it).
+ */
+void nmo_engine_physics_collision(nmo_engine_t *engine, const nmo_engine_physics_collision_t *c)
+{
+    if (engine == NULL || c == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < engine->physics.listeners.count; i++) {
+        eng_physics_listener_t *l = &engine->physics.listeners.data[i];
+        if (!l->alive || l->entity != c->object) {
+            continue;
+        }
+        blk_t block = {engine, l->node};
+        blk_t *b = &block;
+        int32_t other_id = attribute_named(engine, c->other, "Coll Detection ID", -1);
+        bool use_id = get_local_int(b, 1, 0) != 0;
+        if ((use_id && other_id != l->collision_id) || physics_object_index(engine, c->object) < 0) {
+            continue;
+        }
+        double now = physics_now(engine);
+        if (now - l->last_time < l->sleep || nmo_engine_block_is_output_active(b, 0)) {
+            continue;
+        }
+        double magnitude = sqrt((double)c->speed[0] * c->speed[0] + (double)c->speed[1] * c->speed[1] +
+                                (double)c->speed[2] * c->speed[2]);
+        float speed = (float)magnitude;
+        if (!(speed > l->min_speed)) {
+            continue;
+        }
+        float scaled;
+        if (speed <= 0.000099999997f) {
+            scaled = 0.000099999997f;
+        } else if (l->max_speed < 0.000099999997f || (scaled = speed / l->max_speed) > 1.0f) {
+            scaled = 1.0f;
+        }
+        uint32_t other = c->other;
+        float normal[3], position[3] = {c->point[0], c->point[1], 0.0f};
+        for (int k = 0; k < 3; k++) {
+            normal[k] = c->object_first ? c->normal[k] : -c->normal[k];
+        }
+        nmo_engine_block_set_output_value(b, 0, &other, sizeof(other));
+        nmo_engine_block_set_output_value(b, 1, &scaled, sizeof(scaled));
+        nmo_engine_block_set_output_value(b, 2, normal, sizeof(normal));
+        nmo_engine_block_set_output_value(b, 3, position, sizeof(position));
+        l->last_time = now;
+        OUT_ON(b, 0);
+    }
+}
+
+static void record_add(nmo_engine_t *engine, int32_t contacts, int32_t id, double time)
+{
+    eng_contact_record_t *r = NULL;
+    if (ENG_VEC_PUSH(engine->physics.records, r)) {
+        *r = (eng_contact_record_t){contacts, id, time};
+    }
+}
+
+static void record_remove(nmo_engine_t *engine, size_t index)
+{
+    eng_contact_record_t *data = engine->physics.records.data;
+    memmove(&data[index], &data[index + 1],
+            (engine->physics.records.count - index - 1u) * sizeof(*data));
+    engine->physics.records.count--;
+}
+
+/*
+ * PhysicsContinuousContactListener (friction created / deleted): a contact
+ * with an object of a "Continuous Contact ID" counts in its group; the first
+ * one gives "contact on" once Time Delay Start has passed since it started,
+ * the end of the last "contact off" once Time Delay End has.
+ */
+void nmo_engine_physics_contact(nmo_engine_t *engine, nmo_object_id_t object, nmo_object_id_t other,
+                                bool started)
+{
+    if (engine == NULL) {
+        return;
+    }
+    int32_t id = attribute_named(engine, other, "Continuous Contact ID", 0) - 1;
+    if (id < 0 || physics_object_index(engine, object) < 0) {
+        return;
+    }
+    for (size_t i = 0; i < engine->physics.contacts.count; i++) {
+        eng_physics_contacts_t *c = &engine->physics.contacts.data[i];
+        if (!c->alive || c->entity != object || id >= c->group_count) {
+            continue;
+        }
+        eng_contact_group_t *g = &c->groups[id];
+        double now = physics_now(engine);
+        if (!started) {
+            if (--g->number < 0) {
+                g->number = 0;
+            }
+            if (g->number == 0 && g->active) {
+                record_add(engine, (int32_t)i, id, now); /* until the end's delay passes */
+            }
+            continue;
+        }
+        if (++g->number != 1) {
+            continue;
+        }
+        bool resumed = false;
+        for (size_t r = 0; r < engine->physics.records.count;) {
+            eng_contact_record_t *record = &engine->physics.records.data[r];
+            if (record->contacts != (int32_t)i || record->id != id) {
+                r++;
+            } else if (g->active) {
+                record_remove(engine, r); /* the contact goes on: no "contact off" */
+            } else if (c->delay_start < now - record->time) {
+                record_remove(engine, r);
+                g->active = true;
+                blk_t block = {engine, c->node};
+                OUT_ON(&block, 2 * id);
+                resumed = true;
+            } else {
+                r++;
+            }
+        }
+        if (!g->active && !resumed) {
+            record_add(engine, (int32_t)i, id, now);
+        }
+    }
+}
+
+/* PhysicsContactManager::Process, after each step: the delays that passed */
+static void contacts_process(nmo_engine_t *engine)
+{
+    double now = physics_now(engine);
+    for (size_t r = engine->physics.records.count; r-- > 0;) {
+        eng_contact_record_t record = engine->physics.records.data[r];
+        eng_physics_contacts_t *c = &engine->physics.contacts.data[record.contacts];
+        eng_contact_group_t *g = &c->groups[record.id];
+        double elapsed = now - record.time;
+        blk_t block = {engine, c->node};
+        if (g->active) {
+            if (g->number != 0) {
+                record_remove(engine, r);
+            } else if (elapsed > c->delay_end) {
+                g->active = false;
+                OUT_ON(&block, 2 * record.id + 1);
+                record_remove(engine, r);
+            }
+        } else if (g->number <= 0) {
+            if (c->delay_start < elapsed * 0.5) {
+                record_remove(engine, r);
+            }
+        } else if (elapsed > c->delay_start) {
+            g->active = true;
+            OUT_ON(&block, 2 * record.id);
+            record_remove(engine, r);
+        }
+    }
+}
+
+/* A contact data ended: its records dropped */
+static void contacts_stop(nmo_engine_t *engine, int32_t index)
+{
+    engine->physics.contacts.data[index].alive = false;
+    for (size_t r = 0; r < engine->physics.records.count;) {
+        if (engine->physics.records.data[r].contacts == index) {
+            record_remove(engine, r);
+        } else {
+            r++;
+        }
+    }
+}
+
+/* The listeners and contacts of an object no longer physical, gone with its IVP object */
+static void physics_forget_listeners(nmo_engine_t *engine, nmo_object_id_t entity)
+{
+    for (size_t i = 0; i < engine->physics.listeners.count; i++) {
+        if (engine->physics.listeners.data[i].entity == entity) {
+            engine->physics.listeners.data[i].alive = false;
+        }
+    }
+    for (size_t i = 0; i < engine->physics.contacts.count; i++) {
+        if (engine->physics.contacts.data[i].entity == entity) {
+            contacts_stop(engine, (int32_t)i);
+        }
+    }
+}
+
 static bool call_run(nmo_engine_t *engine, const eng_physics_call_t *call)
 {
-    return call->kind == CALL_WAKE_UP
-               ? call_wake_up(engine, call->node)
-               : call_constraint(engine, call->node, (nmo_engine_physics_constraint_kind_t)call->kind);
+    switch (call->kind) {
+    case CALL_WAKE_UP: return call_wake_up(engine, call->node);
+    case CALL_COLL_DETECTION: return call_coll_detection(engine, call->node);
+    case CALL_CONTINUOUS_CONTACT: return call_continuous_contact(engine, call->node);
+    default:
+        return call_constraint(engine, call->node, (nmo_engine_physics_constraint_kind_t)call->kind);
+    }
 }
 
 /* PhysicsCallManager::Process: now, or kept for the steps until it is done */
@@ -469,6 +798,8 @@ void eng_physics_post_process(nmo_engine_t *engine)
     if (provider != NULL && provider->simulate != NULL) {
         provider->simulate(provider->user_data, engine, (float)physics->physics_delta);
     }
+    physics->time += physics->physics_delta;
+    contacts_process(engine);
 }
 
 /* ============================================================================
@@ -504,6 +835,7 @@ static int bb_physicalize(blk_t *b)
     if (!IN_ACTIVE(b, 0)) {
         IN_OFF(b, 1);
         if (existing >= 0) {
+            physics_forget_listeners(engine, target);
             eng_physics_object_t *object = &engine->physics.objects.data[existing];
             if (provider != NULL && provider->destroy_object != NULL) {
                 provider->destroy_object(provider->user_data, object->handle);
@@ -804,6 +1136,75 @@ static int bb_physics_impulse(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/*
+ * PhysicsCollDetection: Create listens to the target's collisions (once
+ * it is physical) and stays active, Collision for each one heard; Stop
+ * ends it.
+ */
+static int bb_physics_coll_detection(blk_t *b)
+{
+    int32_t *slot = (int32_t *)nmo_engine_block_state(b, sizeof(int32_t));
+    if (slot == NULL) {
+        return NMO_ENGINE_BR_GENERICERROR;
+    }
+    if (IN_ACTIVE(b, 0)) {
+        if (*slot == 0) {
+            if (nmo_engine_block_target(b) == 0) {
+                return NMO_ENGINE_BR_OWNERERROR;
+            }
+            physics_call(b->engine, CALL_COLL_DETECTION, b->node);
+        }
+        IN_OFF(b, 0);
+    } else if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        if (*slot != 0) {
+            eng_physics_listener_t *l = &b->engine->physics.listeners.data[*slot - 1];
+            bool was = l->alive;
+            l->alive = false;
+            if (was && !physics_listened(b->engine, l->entity)) {
+                physics_listen(b->engine, l->entity, false);
+            }
+        }
+        return NMO_ENGINE_BR_OK; /* the handle stays, as the DLL leaves it */
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+/*
+ * PhysicsContinuousContact: Create counts the target's contacts by the
+ * other objects' "Continuous Contact ID" (contact on N / contact off N)
+ * and stays active; Stop ends it.
+ */
+static int bb_physics_continuous_contact(blk_t *b)
+{
+    int32_t *slot = (int32_t *)nmo_engine_block_state(b, sizeof(int32_t));
+    if (slot == NULL) {
+        return NMO_ENGINE_BR_GENERICERROR;
+    }
+    if (IN_ACTIVE(b, 0)) {
+        if (*slot == 0) {
+            if (nmo_engine_block_target(b) == 0) {
+                return NMO_ENGINE_BR_OWNERERROR;
+            }
+            physics_call(b->engine, CALL_CONTINUOUS_CONTACT, b->node);
+        }
+        IN_OFF(b, 0);
+    } else if (IN_ACTIVE(b, 1)) {
+        if (*slot != 0) {
+            eng_physics_contacts_t *c = &b->engine->physics.contacts.data[*slot - 1];
+            if (c->alive && physics_object_index(b->engine, c->entity) >= 0) {
+                contacts_stop(b->engine, *slot - 1);
+                if (!physics_listened(b->engine, c->entity)) {
+                    physics_listen(b->engine, c->entity, false);
+                }
+            }
+        }
+        IN_OFF(b, 1);
+        return NMO_ENGINE_BR_OK; /* the handle stays, as the DLL leaves it */
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
 static const nmo_engine_block_desc_t eng_physics_blocks[] = {
     {NMO_GUID(0x7522370e, 0x37ec15ec), "Physicalize", bb_physicalize, NULL, NULL},
     {NMO_GUID(0x0c7e39bb, 0x16db20d5), "Physics Impulse", bb_physics_impulse, NULL, NULL},
@@ -819,6 +1220,10 @@ static const nmo_engine_block_desc_t eng_physics_blocks[] = {
      cb_physics_constraint, NULL},
     {NMO_GUID(0x56e20c57, 0x0b926068), "SetPhysicsForce", bb_physics_force, cb_physics_constraint,
      NULL},
+    {NMO_GUID(0x7435488d, 0x201d1188), "PhysicsCollDetection", bb_physics_coll_detection,
+     cb_physics_constraint, NULL},
+    {NMO_GUID(0x199e4cf1, 0x545a78fe), "PhysicsContinuousContact", bb_physics_continuous_contact,
+     NULL, NULL},
 };
 
 nmo_status_t eng_register_physics(nmo_engine_t *engine)

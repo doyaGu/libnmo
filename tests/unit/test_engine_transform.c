@@ -21,6 +21,7 @@
 #define GUID_SPEEDOMETER NMO_GUID(0x51bd5521, 0x672c67bf)
 #define GUID_TT_EXTRA NMO_GUID(0x36106bd9, 0x51813906)
 #define GUID_RAY_INTERSECTION NMO_GUID(0x671e4a87, 0x383b2912)
+#define GUID_BOX_BOX_INTERSECTION NMO_GUID(0x64154401, 0x76cf37af)
 
 #define PI_F 3.14159265f
 
@@ -620,6 +621,69 @@ TEST(engine_transform, ray_intersection_finds_the_nearest_face)
     fixture_end(&f);
 }
 
+/* A 3D object at (x, 0, 0), turned `degrees` about Y, whose mesh is a cube of half size 0.5 */
+static nmo_object_id_t cube_object(engine_fixture_t *f, const char *name, float x, float degrees)
+{
+    nmo_object_id_t object = fixture_create(f, NMO_CID_3DOBJECT, name);
+    nmo_object_id_t mesh = fixture_create(f, NMO_CID_MESH, name);
+    nmo_3dentity_state_t *entity = (nmo_3dentity_state_t *)fixture_state(f, object);
+    nmo_mesh_state_t *state = (nmo_mesh_state_t *)fixture_state(f, mesh);
+    if (place_entity(f, object, x, 0.0f, 0.0f, 0) == 0 || entity == NULL || state == NULL) {
+        return 0;
+    }
+    float angle = degrees * PI_F / 180.0f;
+    entity->world_matrix[0] = cosf(angle);
+    entity->world_matrix[2] = -sinf(angle);
+    entity->world_matrix[8] = sinf(angle);
+    entity->world_matrix[10] = cosf(angle);
+    state->vertices = (nmo_vertex_t *)nmo_arena_alloc(nmo_session_get_arena(f->session),
+                                                      8u * sizeof(nmo_vertex_t), _Alignof(nmo_vertex_t));
+    if (state->vertices == NULL) {
+        return 0;
+    }
+    memset(state->vertices, 0, 8u * sizeof(nmo_vertex_t));
+    for (int i = 0; i < 8; i++) {
+        state->vertices[i].position =
+            (nmo_vector_t){(i & 1) ? 0.5f : -0.5f, (i & 2) ? 0.5f : -0.5f, (i & 4) ? 0.5f : -0.5f};
+    }
+    state->vertex_count = 8;
+    entity->current_mesh = nmo_ref_from_id(mesh);
+    return object;
+}
+
+TEST(engine_transform, box_box_intersection_tests_oriented_boxes)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t a = cube_object(&f, "A", 0.0f, 0.0f);
+    nmo_object_id_t apart = cube_object(&f, "Apart", 1.1f, 0.0f);   /* 0.1 between them */
+    nmo_object_id_t turned = cube_object(&f, "Turned", 1.1f, 45.0f); /* its corner reaches in */
+    ASSERT_TRUE(a != 0 && apart != 0 && turned != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t others[2] = {apart, turned};
+    nmo_object_id_t outputs[2][2];
+    for (int i = 0; i < 2; i++) {
+        nmo_object_id_t test = fixture_block(&f, GUID_BOX_BOX_INTERSECTION, "Test");
+        ASSERT_TRUE(test != 0);
+        fixture_link(&f, f.script_in, BLOCK_IN(&f, test, 0), 0);
+        fixture_input_int(&f, BLOCK_PIN(&f, test, 0), (int32_t)a);
+        fixture_input_int(&f, BLOCK_PIN(&f, test, 1), (int32_t)others[i]);
+        for (int k = 0; k < 2; k++) {
+            outputs[i][k] = fixture_block(&f, GUID_NOP, "Output");
+            ASSERT_TRUE(outputs[i][k] != 0);
+            fixture_link(&f, BLOCK_OUT(&f, test, (size_t)k), BLOCK_IN(&f, outputs[i][k], 0), 0);
+        }
+    }
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1u, runs(&f, outputs[0][1])); /* False */
+    ASSERT_EQ(1u, runs(&f, outputs[1][0])); /* True */
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_transform, loaded_children_keep_their_place_under_the_parent);
 REGISTER_TEST(engine_transform, set_position_and_set_parent);
@@ -629,4 +693,5 @@ REGISTER_TEST(engine_transform, set_dynamic_position_follows_the_object);
 REGISTER_TEST(engine_transform, speedometer_measures_the_target_speed);
 REGISTER_TEST(engine_transform, tt_extra_circles_flies_away_and_homes_in);
 REGISTER_TEST(engine_transform, ray_intersection_finds_the_nearest_face);
+REGISTER_TEST(engine_transform, box_box_intersection_tests_oriented_boxes);
 TEST_MAIN_END()

@@ -12,7 +12,8 @@
  * entity's scale and kept by surface name. Constraints are IVP templates
  * (set_constraint_ws, limited axes), springs IVP springs, a constant force
  * a controller pushing the core each PSI. After each step the moving
- * objects' poses are written back to their entities, without scale.
+ * objects' poses are written back to their entities, without scale. A
+ * listened object reports its collisions and friction contacts.
  */
 
 #include "engine/nmo_physics_ivp.h"
@@ -27,6 +28,7 @@
 #include <ivp/dynamics/ivp_core.h>
 #include <ivp/dynamics/ivp_environment.h>
 #include <ivp/dynamics/ivp_object.h>
+#include <ivp/events/ivp_listener_collision.h>
 #include <ivp/geometry/ivp_compact_surface.h>
 #include <ivp/geometry/ivp_surman.h>
 #include <ivp/math/ivp_quat.h>
@@ -35,11 +37,14 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* A physical object: the IVP object, and its ball surface manager */
+/* A physical object: the IVP object, its ball surface manager and collision listener */
 typedef struct ivp_body {
+    struct nmo_physics_ivp *owner;
     ivp_object_t *object; /* NULL once its environment is gone */
     nmo_object_id_t entity;
     ivp_surman_ball_t ball;
+    ivp_collision_listener_t listener;
+    bool listening;
 } ivp_body_t;
 
 /* A polygon shape, kept by its surface name */
@@ -251,6 +256,7 @@ static nmo_status_t create_object(void *user_data, const nmo_engine_physics_obje
         free(body);
         return NMO_ERR_NOMEM;
     }
+    body->owner = p;
     body->entity = desc->entity;
     const ivp_surman_t *surman = NULL;
     ivp_object_template_t t;
@@ -312,6 +318,9 @@ static void destroy_object(void *user_data, void *handle)
         return;
     }
     if (body->object != NULL && p->env != NULL) {
+        if (body->listening) {
+            ivp_object_remove_collision_listener(body->object, &body->listener);
+        }
         ivp_environment_destroy_object(p->env, body->object);
     }
     body->object = NULL;
@@ -479,6 +488,81 @@ static void set_gravity(void *user_data, const float gravity[3])
     }
 }
 
+/* The entity of the other object of a contact; 0 for one not physical through the engine */
+static nmo_object_id_t other_entity(const ivp_body_t *body, ivp_object_t *a, ivp_object_t *b)
+{
+    ivp_object_t *other = a == body->object ? b : a;
+    const ivp_body_t *other_body =
+        other != NULL ? (const ivp_body_t *)ivp_object_get_client_data(other) : NULL;
+    return other_body != NULL ? other_body->entity : 0;
+}
+
+static void copy3(float out[3], const ivp_vec3r_t *v)
+{
+    for (int k = 0; k < 3; k++) {
+        out[k] = (float)v->k[k];
+    }
+}
+
+/* event_pre_collision */
+static void heard_collision(void *ctx, const ivp_collision_event_t *event)
+{
+    ivp_body_t *body = (ivp_body_t *)ctx;
+    nmo_engine_physics_collision_t c;
+    memset(&c, 0, sizeof(c));
+    c.object = body->entity;
+    c.other = other_entity(body, event->obj_a, event->obj_b);
+    c.object_first = event->obj_a == body->object;
+    copy3(c.speed, &event->speed);
+    copy3(c.normal, &event->contact_normal);
+    copy3(c.point, &event->contact_point);
+    nmo_engine_physics_collision(body->owner->engine, &c);
+}
+
+/* event_friction_created / event_friction_deleted */
+static void heard_contact_started(void *ctx, const ivp_friction_event_t *event)
+{
+    ivp_body_t *body = (ivp_body_t *)ctx;
+    nmo_engine_physics_contact(body->owner->engine, body->entity,
+                               other_entity(body, event->obj_a, event->obj_b), true);
+}
+
+static void heard_contact_ended(void *ctx, const ivp_friction_event_t *event)
+{
+    ivp_body_t *body = (ivp_body_t *)ctx;
+    nmo_engine_physics_contact(body->owner->engine, body->entity,
+                               other_entity(body, event->obj_a, event->obj_b), false);
+}
+
+/* add_listener_collision (pre collision and friction) / remove_listener_collision */
+static void listen_object(void *user_data, void *object, bool on)
+{
+    ivp_body_t *body = (ivp_body_t *)object;
+    (void)user_data;
+    if (body == NULL || body->object == NULL || body->listening == on) {
+        return;
+    }
+    if (on) {
+        ivp_collision_listener_init(&body->listener,
+                                    IVP_COLLISION_CB_PRE_COLLISION | IVP_COLLISION_CB_FRICTION_CREATED |
+                                        IVP_COLLISION_CB_FRICTION_DELETED,
+                                    body);
+        body->listener.pre_collision_fn = heard_collision;
+        body->listener.friction_created_fn = heard_contact_started;
+        body->listener.friction_deleted_fn = heard_contact_ended;
+        body->listening = ivp_object_add_collision_listener(body->object, &body->listener) == 0;
+    } else {
+        ivp_object_remove_collision_listener(body->object, &body->listener);
+        body->listening = false;
+    }
+}
+
+static double now(void *user_data)
+{
+    nmo_physics_ivp_t *p = (nmo_physics_ivp_t *)user_data;
+    return p->env != NULL ? (double)ivp_environment_get_time(p->env) : 0.0;
+}
+
 /* The environment's objects and controllers gone (their handles stay, inert) */
 static void drop_environment(nmo_physics_ivp_t *p)
 {
@@ -487,6 +571,7 @@ static void drop_environment(nmo_physics_ivp_t *p)
     }
     for (size_t i = 0; i < p->body_count; i++) {
         p->bodies[i]->object = NULL;
+        p->bodies[i]->listening = false;
     }
     if (p->env != NULL) {
         ivp_environment_destroy(p->env);
@@ -554,6 +639,8 @@ nmo_status_t nmo_physics_ivp_attach(nmo_engine_t *engine, nmo_physics_ivp_t **ou
         .set_gravity = set_gravity,
         .reset = reset,
         .simulate = simulate,
+        .listen = listen_object,
+        .time = now,
     };
     nmo_engine_set_physics_provider(engine, &provider);
     *out_physics = p;

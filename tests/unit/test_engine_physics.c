@@ -2,6 +2,9 @@
 
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
+#include "object/builtin/nmo_parameter_schemas.h"
+#include "object/nmo_object_edit.h"
+#include "type/nmo_type_guids.h"
 #include "object/nmo_ref.h"
 
 #include <math.h>
@@ -12,6 +15,8 @@
 #define GUID_GLOBALS NMO_GUID(0x72af347c, 0x03da71e1)
 #define GUID_HINGE NMO_GUID(0x41cd3653, 0x0de60c1d)
 #define GUID_FORCE NMO_GUID(0x56e20c57, 0x0b926068)
+#define GUID_COLL_DETECTION NMO_GUID(0x7435488d, 0x201d1188)
+#define GUID_CONTINUOUS_CONTACT NMO_GUID(0x199e4cf1, 0x545a78fe)
 
 /* An entity saved at `x, y, z` with unit axes */
 static nmo_object_id_t place(engine_fixture_t *f, const char *name, float x, float y, float z)
@@ -317,7 +322,197 @@ TEST(engine_physics, polygon_shapes_need_a_mesh_or_their_name)
     fixture_end(&f);
 }
 
+/* A provider with a clock the test sets, recording what listens */
+typedef struct listening {
+    double now;
+    int listens, unlistens;
+} listening_t;
+
+static void lis_listen(void *user_data, void *object, bool on)
+{
+    listening_t *l = (listening_t *)user_data;
+    (void)object;
+    if (on) {
+        l->listens++;
+    } else {
+        l->unlistens++;
+    }
+}
+
+static double lis_time(void *user_data)
+{
+    return ((listening_t *)user_data)->now;
+}
+
+static nmo_status_t lis_create(void *user_data, const nmo_engine_physics_object_t *object, void **out)
+{
+    (void)object;
+    *out = user_data;
+    return NMO_OK;
+}
+
+static void set_listening(engine_fixture_t *f, listening_t *l)
+{
+    nmo_engine_physics_provider_t provider = {
+        .user_data = l, .create_object = lis_create, .listen = lis_listen, .time = lis_time};
+    nmo_engine_set_physics_provider(f->engine, &provider);
+}
+
+static nmo_engine_physics_collision_t collision(nmo_object_id_t object, nmo_object_id_t other,
+                                                float speed)
+{
+    nmo_engine_physics_collision_t c = {
+        .object = object, .other = other, .object_first = false,
+        .speed = {0.0f, speed, 0.0f}, .normal = {0.0f, 1.0f, 0.0f}, .point = {1.0f, 2.0f, 3.0f}};
+    return c;
+}
+
+TEST(engine_physics, coll_detection_reports_collisions)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t ball = place(&f, "Ball", 0.0f, 0.0f, 0.0f);
+    nmo_object_id_t floor = place(&f, "Floor", 0.0f, -1.0f, 0.0f);
+    ASSERT_TRUE(ball != 0 && floor != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    ASSERT_TRUE(block_of(&f, GUID_PHYSICALIZE, "Physicalize", ball, 0, 0) != 0);
+    nmo_object_id_t detect = block_of(&f, GUID_COLL_DETECTION, "Detect", ball, 0, 0);
+    nmo_object_id_t hit = fixture_block(&f, GUID_NOP, "Hit");
+    ASSERT_TRUE(detect != 0 && hit != 0);
+    fixture_link(&f, BLOCK_OUT(&f, detect, 0), BLOCK_IN(&f, hit, 0), 0);
+    input_float(&f, BLOCK_PIN(&f, detect, 0), 1.0f);  /* Min Speed */
+    input_float(&f, BLOCK_PIN(&f, detect, 1), 10.0f); /* Max Speed */
+    input_float(&f, BLOCK_PIN(&f, detect, 2), 0.5f);  /* Sleep afterwards */
+    fixture_commit(&f, NULL);
+    listening_t l = {0};
+    set_listening(&f, &l);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1, l.listens);
+    /* Too slow, then 5 m/s: the floor, half the speed range, the normal from the ball, z 0 */
+    l.now = 1.0;
+    nmo_engine_physics_collision_t c = collision(ball, floor, 0.5f);
+    nmo_engine_physics_collision(f.engine, &c);
+    c = collision(ball, floor, 5.0f);
+    nmo_engine_physics_collision(f.engine, &c);
+    uint32_t other = 0;
+    float speed = 0.0f, normal[3], position[3];
+    read_value(&f, BLOCK_POUT(&f, detect, 0), &other, sizeof(other));
+    read_value(&f, BLOCK_POUT(&f, detect, 1), &speed, sizeof(speed));
+    read_value(&f, BLOCK_POUT(&f, detect, 2), normal, sizeof(normal));
+    read_value(&f, BLOCK_POUT(&f, detect, 3), position, sizeof(position));
+    ASSERT_EQ(floor, other);
+    ASSERT_FLOAT_EQ(0.5f, speed, 0.0001f);
+    ASSERT_FLOAT_EQ(-1.0f, normal[1], 0.0001f);
+    ASSERT_FLOAT_EQ(2.0f, position[1], 0.0001f);
+    ASSERT_FLOAT_EQ(0.0f, position[2], 0.0001f);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1u, runs(&f, hit));
+    /* Within Sleep afterwards: not heard; after it: heard again */
+    l.now = 1.3;
+    c = collision(ball, floor, 20.0f);
+    nmo_engine_physics_collision(f.engine, &c);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1u, runs(&f, hit));
+    l.now = 1.6;
+    nmo_engine_physics_collision(f.engine, &c);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(2u, runs(&f, hit));
+    read_value(&f, BLOCK_POUT(&f, detect, 1), &speed, sizeof(speed));
+    ASSERT_FLOAT_EQ(1.0f, speed, 0.0001f); /* above Max Speed */
+    fixture_end(&f);
+}
+
+/* An integer attribute type named `name` given to `object` with `value` */
+static bool int_attribute(engine_fixture_t *f, const char *name, nmo_object_id_t object, int32_t value)
+{
+    nmo_manager_entry_create_options_t create = {
+        .enabled = true, .attribute_type_guid = CKPGUID_INT, .category = "Test",
+        .has_compatible_class_id = true, .compatible_class_id = NMO_CID_BEOBJECT,
+        .has_flags = true, .flags = 0u};
+    uint32_t type = UINT32_MAX;
+    if (nmo_object_edit_ensure_attribute_manager_entry(nmo_script_edit_workspace_edit(f->tx), name,
+                                                       &create, &type) != NMO_OK) {
+        return false;
+    }
+    nmo_object_id_t param = fixture_create(f, NMO_CID_PARAMETEROUT, "Attribute Value");
+    nmo_parameter_state_t *state = (nmo_parameter_state_t *)fixture_state(f, param);
+    nmo_beobject_state_t *owner = (nmo_beobject_state_t *)fixture_state(f, object);
+    if (state == NULL || owner == NULL ||
+        nmo_array_alloc(&state->buffer_data, 1u, sizeof(value), NULL) != NMO_OK) {
+        return false;
+    }
+    state->type_guid = CKPGUID_INT;
+    state->mode = CKPARAM_MODE_BUFFER;
+    state->has_state = true;
+    memcpy(state->buffer_data.data, &value, sizeof(value));
+    return nmo_beobject_attribute_array_append(&owner->attributes, param, type, NULL) == NMO_OK;
+}
+
+TEST(engine_physics, continuous_contact_waits_its_delays)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t ball = place(&f, "Ball", 0.0f, 0.0f, 0.0f);
+    nmo_object_id_t rail = place(&f, "Rail", 0.0f, -1.0f, 0.0f);
+    ASSERT_TRUE(ball != 0 && rail != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    ASSERT_TRUE(int_attribute(&f, "Continuous Contact ID", rail, 2)); /* group 2 */
+    ASSERT_TRUE(block_of(&f, GUID_PHYSICALIZE, "Physicalize", ball, 0, 0) != 0);
+    nmo_object_id_t contact = block_of(&f, GUID_CONTINUOUS_CONTACT, "Contact", ball, 0, 0);
+    nmo_object_id_t on = fixture_block(&f, GUID_NOP, "On 2");
+    nmo_object_id_t off = fixture_block(&f, GUID_NOP, "Off 2");
+    ASSERT_TRUE(contact != 0 && on != 0 && off != 0);
+    fixture_link(&f, BLOCK_OUT(&f, contact, 2), BLOCK_IN(&f, on, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, contact, 3), BLOCK_IN(&f, off, 0), 0);
+    fixture_commit(&f, NULL);
+    /* Local 0 is "Number Group Output" in the DLL and the files (the prototype data lists the
+     * setting after the handle) */
+    const nmo_behavior_state_t *state = (const nmo_behavior_state_t *)fixture_state(&f, contact);
+    ASSERT_TRUE(state != NULL && state->local_parameters.count > 0);
+    const int32_t groups = 5;
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(
+                          f.engine, nmo_behavior_ref_array_get_id(&state->local_parameters, 0),
+                          &groups, sizeof(groups)));
+    listening_t l = {0};
+    set_listening(&f, &l);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1, l.listens);
+    /* On once Time Delay Start (0.1 s) has passed since the contact started */
+    l.now = 1.0;
+    nmo_engine_physics_contact(f.engine, ball, rail, true);
+    l.now = 1.05;
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(0u, runs(&f, on));
+    l.now = 1.2;
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1u, runs(&f, on));
+    /* Off once Time Delay End has passed since it ended; a contact without the ID counts not */
+    nmo_engine_physics_contact(f.engine, ball, ball, true);
+    l.now = 2.0;
+    nmo_engine_physics_contact(f.engine, ball, rail, false);
+    l.now = 2.05;
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(0u, runs(&f, off));
+    l.now = 2.2;
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1u, runs(&f, off));
+    ASSERT_EQ(1u, runs(&f, on));
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_physics, blocks_feed_the_provider);
 REGISTER_TEST(engine_physics, polygon_shapes_need_a_mesh_or_their_name);
+REGISTER_TEST(engine_physics, coll_detection_reports_collisions);
+REGISTER_TEST(engine_physics, continuous_contact_waits_its_delays);
 TEST_MAIN_END()

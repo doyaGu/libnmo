@@ -601,7 +601,7 @@ NMO_API int32_t nmo_engine_texture_current_slot(const nmo_engine_t *engine,
  *
  * The physics blocks (physics_RT: Physicalize, Set Physics Hinge, Slider,
  * Spring, Ball Joint and Globals, SetPhysicsForce, Physics Impulse, Physics
- * WakeUp) keep what
+ * WakeUp, PhysicsCollDetection, PhysicsContinuousContact) keep what
  * CKIpionManager keeps: the physical objects with their parameters, the
  * constraints between them, the gravity and the time factor. The engine
  * does not simulate: a host's provider gets these and moves the entities
@@ -677,7 +677,32 @@ typedef struct nmo_engine_physics_provider {
     void (*reset)(void *user_data);
     /* A step of `seconds` (the frame time smoothed, times the time factor) */
     void (*simulate)(void *user_data, nmo_engine_t *engine, float seconds);
+    /* Report the object's collisions and contacts (nmo_engine_physics_collision and
+     * nmo_engine_physics_contact) from now on, or no more */
+    void (*listen)(void *user_data, void *object, bool listen);
+    /* The simulation's time in seconds (IVP_Environment::current_time) */
+    double (*time)(void *user_data);
 } nmo_engine_physics_provider_t;
+
+/* A collision of a listened object (IVP_Event_Collision before its impact) */
+typedef struct nmo_engine_physics_collision {
+    nmo_object_id_t object;  /* the listened object */
+    nmo_object_id_t other;
+    bool object_first;       /* whether it is the contact's first object */
+    float speed[3];          /* the contact's speed: the second object's surface relative to the first */
+    float normal[3];         /* the surface normal, from the first object toward the second */
+    float point[3];          /* where they touch */
+} nmo_engine_physics_collision_t;
+
+/** A provider reports a listened object's collision (PhysicsCollDetection hears it). */
+NMO_API void nmo_engine_physics_collision(nmo_engine_t *engine,
+                                          const nmo_engine_physics_collision_t *collision);
+/**
+ * A provider reports a listened object's contact with `other` starting or
+ * ending (friction created or deleted; PhysicsContinuousContact hears it).
+ */
+NMO_API void nmo_engine_physics_contact(nmo_engine_t *engine, nmo_object_id_t object,
+                                        nmo_object_id_t other, bool started);
 
 /** A mesh's vertices and faces, as loaded (for a provider's shapes); counts are -1 for no mesh. */
 NMO_API int32_t nmo_engine_mesh_vertex_count(const nmo_engine_t *engine, nmo_object_id_t mesh);

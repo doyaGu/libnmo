@@ -794,19 +794,19 @@ float eng_entity_radius(nmo_engine_t *engine, int32_t index)
 }
 
 /*
+ * The local box (GetBoundingBox(TRUE)): the current mesh's vertices' extent;
+ * all zero, and false, without a mesh.
+ *
  * The world box (UpdateBox): the mesh's local box (its vertices' extent)
  * through the world matrix as VxBbox::TransformFrom has it; false without a
  * mesh.
  */
-bool eng_entity_world_box(nmo_engine_t *engine, int32_t index, eng_vector_t *min,
+bool eng_entity_local_box(nmo_engine_t *engine, int32_t index, eng_vector_t *min,
                           eng_vector_t *max)
 {
     const nmo_mesh_state_t *mesh = eng_entity_mesh(engine, index, NULL);
-    if (mesh == NULL) {
-        return false;
-    }
     float low[3] = {0.0f, 0.0f, 0.0f}, high[3] = {0.0f, 0.0f, 0.0f};
-    for (uint32_t i = 0; i < mesh->vertex_count; i++) {
+    for (uint32_t i = 0; mesh != NULL && i < mesh->vertex_count; i++) {
         const float p[3] = {mesh->vertices[i].position.x, mesh->vertices[i].position.y,
                             mesh->vertices[i].position.z};
         for (int k = 0; k < 3; k++) {
@@ -818,6 +818,20 @@ bool eng_entity_world_box(nmo_engine_t *engine, int32_t index, eng_vector_t *min
             }
         }
     }
+    *min = (eng_vector_t){low[0], low[1], low[2]};
+    *max = (eng_vector_t){high[0], high[1], high[2]};
+    return mesh != NULL;
+}
+
+bool eng_entity_world_box(nmo_engine_t *engine, int32_t index, eng_vector_t *min,
+                          eng_vector_t *max)
+{
+    eng_vector_t local_min, local_max;
+    if (!eng_entity_local_box(engine, index, &local_min, &local_max)) {
+        return false;
+    }
+    const float low[3] = {local_min.x, local_min.y, local_min.z};
+    const float high[3] = {local_max.x, local_max.y, local_max.z};
     const eng_matrix_t *m = &eng_entity_at(engine, index)->world;
     eng_vector_t center = {(low[0] + high[0]) * 0.5f, (low[1] + high[1]) * 0.5f,
                            (low[2] + high[2]) * 0.5f};
