@@ -17,6 +17,7 @@
 #define GUID_NEAREST_IN_GROUP NMO_GUID(0x085207eb, 0x584950d8)
 #define GUID_SCALEABLE_PROXIMITY NMO_GUID(0x2a2a63ca, 0x00826175)
 #define GUID_SET_DYNAMIC_POSITION NMO_GUID(0x0fd4755f, 0x7de22dc8)
+#define GUID_SPEEDOMETER NMO_GUID(0x51bd5521, 0x672c67bf)
 
 #define PI_F 3.14159265f
 
@@ -341,10 +342,76 @@ TEST(engine_transform, set_dynamic_position_follows_the_object)
     fixture_end(&f);
 }
 
+/* A TT SpeedOMeter on `target` run each frame; with `relative`, its speed range pins and output */
+static nmo_object_id_t speedometer(engine_fixture_t *f, nmo_object_id_t target, const char *name,
+                                   bool relative, float min, float max)
+{
+    nmo_object_id_t block = target_block(f, GUID_SPEEDOMETER, name, target, f->script_in);
+    if (block == 0) {
+        return 0;
+    }
+    fixture_link(f, BLOCK_OUT(f, block, 0), BLOCK_IN(f, block, 0), 1);
+    if (relative) {
+        nmo_object_id_t pins[2] = {0, 0}, pout = 0;
+        if (nmo_script_edit_add_parameter(f->tx, block, NMO_SCRIPT_EDIT_PARAM_IN, CKPGUID_FLOAT,
+                                          "Minimum Speed", &pins[0]) != NMO_OK ||
+            nmo_script_edit_add_parameter(f->tx, block, NMO_SCRIPT_EDIT_PARAM_IN, CKPGUID_FLOAT,
+                                          "Maximum Speed", &pins[1]) != NMO_OK ||
+            nmo_script_edit_add_parameter(f->tx, block, NMO_SCRIPT_EDIT_PARAM_OUT, CKPGUID_FLOAT,
+                                          "Relative Speed", &pout) != NMO_OK) {
+            return 0;
+        }
+        fixture_input_value(f, pins[0], &min, sizeof(min));
+        fixture_input_value(f, pins[1], &max, sizeof(max));
+    }
+    return block;
+}
+
+static float output_float(engine_fixture_t *f, nmo_object_id_t block, size_t pos)
+{
+    float value = -1.0f;
+    read_value(f, BLOCK_POUT(f, block, pos), &value, sizeof(value));
+    return value;
+}
+
+TEST(engine_transform, speedometer_measures_the_target_speed)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t ball = fixture_create(&f, NMO_CID_3DENTITY, "Ball");
+    ASSERT_TRUE(place_entity(&f, ball, 0.0f, 0.0f, 0.0f, 0) != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t absolute = speedometer(&f, ball, "Absolute", false, 0.0f, 0.0f);
+    nmo_object_id_t relative = speedometer(&f, ball, "Relative", true, 0.0f, 10.0f);
+    nmo_object_id_t flat = speedometer(&f, ball, "No Range", true, 0.0f, 0.0f);
+    ASSERT_TRUE(absolute != 0 && relative != 0 && flat != 0);
+    fixture_commit(&f, NULL);
+    set_local_int(&f, relative, 1, 1);
+    set_local_int(&f, relative, 2, 2); /* the speed over two frames' time */
+    set_local_int(&f, flat, 1, 1);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 1000.0f));
+    ASSERT_FLOAT_EQ(0.0f, output_float(&f, absolute, 0), 0.0001f);
+    ASSERT_FLOAT_EQ(0.0f, output_float(&f, relative, 1), 0.0001f);
+    ASSERT_FLOAT_EQ(1.0f, output_float(&f, flat, 1), 0.0001f); /* 0 / 0: NaN reads as 1 */
+    move_to(&f, ball, 5.0f);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 1000.0f));
+    ASSERT_FLOAT_EQ(5.0f, output_float(&f, absolute, 0), 0.0001f);
+    ASSERT_FLOAT_EQ(2.5f, output_float(&f, relative, 0), 0.0001f);
+    ASSERT_FLOAT_EQ(0.25f, output_float(&f, relative, 1), 0.0001f);
+    ASSERT_EQ(2u, runs(&f, absolute));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 1000.0f));
+    ASSERT_FLOAT_EQ(0.0f, output_float(&f, absolute, 0), 0.0001f); /* not moved since */
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_transform, loaded_children_keep_their_place_under_the_parent);
 REGISTER_TEST(engine_transform, set_position_and_set_parent);
 REGISTER_TEST(engine_transform, rotate_scale_and_orientation);
 REGISTER_TEST(engine_transform, nearest_in_group_and_proximity);
 REGISTER_TEST(engine_transform, set_dynamic_position_follows_the_object);
+REGISTER_TEST(engine_transform, speedometer_measures_the_target_speed);
 TEST_MAIN_END()

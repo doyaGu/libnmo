@@ -621,6 +621,43 @@ static int bb_set_dynamic_position(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/*
+ * TT SpeedOMeter: the target's speed since the last run, in units a second
+ * (the frame's time times Loop-Framedelay above 1), and with "Calculate
+ * relative speed?" where it is between Minimum and Maximum Speed, clamped to
+ * [0, 1]. As TT_Gravity_RT.dll has it, nothing guards a zero time or range.
+ */
+static int bb_speedometer(blk_t *b)
+{
+    int32_t entity = target_entity(b);
+    if (entity < 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    bool relative = (get_local_int(b, 1, 0) & 0xFF) != 0; /* CKBOOL, read by its low byte */
+    int32_t frames = get_local_int(b, 2, 1);
+    float delta = nmo_engine_block_delta_time(b);
+    if (frames > 1) {
+        delta = (float)((double)frames * delta);
+    }
+    eng_vector_t last = {0.0f, 0.0f, 0.0f};
+    nmo_engine_block_get_local_value(b, 0, &last, sizeof(last));
+    eng_vector_t pos = eng_entity_position(b->engine, entity, -1);
+    float dx = pos.x - last.x, dy = pos.y - last.y, dz = pos.z - last.z;
+    float speed = (float)(sqrt((double)(dz * dz + dy * dy + dx * dx)) * 1000.0 / delta);
+    nmo_engine_block_set_output_value(b, 0, &speed, sizeof(speed));
+    if (relative) {
+        float min = get_in_float(b, 0, 0.0f), max = get_in_float(b, 1, 0.0f);
+        double ratio = (double)(speed - min) / (double)(max - min);
+        /* x87: a NaN is not <= 1, so it reads as 1 */
+        speed = ratio <= 1.0 ? (ratio < 0.0 ? 0.0f : (float)ratio) : 1.0f;
+        nmo_engine_block_set_output_value(b, 1, &speed, sizeof(speed));
+    }
+    nmo_engine_block_set_local_value(b, 0, &pos, sizeof(pos));
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_3dtrans_blocks[] = {
     {NMO_GUID(0xe456e78a, 0x456789aa), "Set Position", bb_set_position, NULL, NULL},
     {NMO_GUID(0xaa4aa6f0, 0xddefdef4), "Set World Matrix", bb_set_world_matrix, NULL, NULL},
@@ -637,6 +674,7 @@ static const nmo_engine_block_desc_t eng_3dtrans_blocks[] = {
      NULL},
     {NMO_GUID(0x0fd4755f, 0x7de22dc8), "TT Set Dynamic Position", bb_set_dynamic_position, NULL,
      NULL},
+    {NMO_GUID(0x51bd5521, 0x672c67bf), "TT SpeedOMeter", bb_speedometer, NULL, NULL},
 };
 
 nmo_status_t eng_register_3dtrans(nmo_engine_t *engine)
