@@ -462,6 +462,7 @@ struct nmo_engine {
     eng_map_t scene_objects;
     eng_map_t destroyed; /* the objects nmo_engine_destroy_object() deleted */
     eng_map_t video_textures; /* the textures TT_PreloadTextures put in video memory */
+    int32_t screen_mode;      /* the render context's mode, of the engine's driver's list */
     bool has_level_scene;
 
     bool started;

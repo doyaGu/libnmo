@@ -16,6 +16,9 @@
 #define GUID_LOAD_STRING NMO_GUID(0x391555d6, 0x42f2500e)
 #define GUID_LINEAR_VOLUME NMO_GUID(0x09b335b3, 0x12d17cdc)
 #define GUID_PRELOAD_TEXTURES NMO_GUID(0x416b4f0e, 0x192d339a)
+#define GUID_CHANGE_SCREEN_MODE NMO_GUID(0x38b84d97, 0x13932f28)
+#define GUID_CONVERT_PIXEL NMO_GUID(0x18f96977, 0x18e20f83)
+#define GUID_PLANAR_FILTER NMO_GUID(0x00cd320b, 0x32ed010b)
 
 /* The files the engine loads, from the scratch directory */
 static const char *resolve_scratch(void *user_data, const char *name)
@@ -324,6 +327,77 @@ TEST(engine_tt, preload_textures_counts_each_texture_once)
     fixture_end(&f);
 }
 
+TEST(engine_tt, convert_pixel_uses_the_screen_mode)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t change = fixture_block(&f, GUID_CHANGE_SCREEN_MODE, "Mode");
+    nmo_object_id_t to_homogen = fixture_block(&f, GUID_CONVERT_PIXEL, "To Homogen");
+    nmo_object_id_t to_pixel = fixture_block(&f, GUID_CONVERT_PIXEL, "To Pixel");
+    ASSERT_TRUE(change != 0 && to_homogen != 0 && to_pixel != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, change, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, change, 0), BLOCK_IN(&f, to_homogen, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, to_homogen, 0), BLOCK_IN(&f, to_pixel, 0), 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, change, 0), 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, change, 1), 2); /* 800 x 600 x 16 */
+    const float pixels[2] = {400.0f, 150.0f}, homogen[2] = {0.5f, 0.3333f};
+    fixture_input_value(&f, BLOCK_PIN(&f, to_homogen, 0), pixels, sizeof(pixels));
+    fixture_input_value(&f, BLOCK_PIN(&f, to_pixel, 0), homogen, sizeof(homogen));
+    fixture_commit(&f, NULL);
+    const nmo_behavior_state_t *state = (const nmo_behavior_state_t *)fixture_state(&f, to_pixel);
+    ASSERT_TRUE(state != NULL && state->local_parameters.count > 0);
+    const int32_t pixel_to_homogen = 0;
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(
+                          f.engine, nmo_behavior_ref_array_get_id(&state->local_parameters, 0),
+                          &pixel_to_homogen, sizeof(pixel_to_homogen)));
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    float x = -1.0f, y = -1.0f, v[2] = {-1.0f, -1.0f};
+    read_value(&f, BLOCK_POUT(&f, to_homogen, 0), &x, sizeof(x));
+    read_value(&f, BLOCK_POUT(&f, to_homogen, 1), &y, sizeof(y));
+    read_value(&f, BLOCK_POUT(&f, to_homogen, 2), v, sizeof(v));
+    ASSERT_FLOAT_EQ(0.5f, x, 0.0001f);
+    ASSERT_FLOAT_EQ(0.25f, y, 0.0001f);
+    ASSERT_FLOAT_EQ(0.5f, v[0], 0.0001f);
+    ASSERT_FLOAT_EQ(0.25f, v[1], 0.0001f);
+    /* Pixels truncated */
+    read_value(&f, BLOCK_POUT(&f, to_pixel, 2), v, sizeof(v));
+    ASSERT_FLOAT_EQ(400.0f, v[0], 0.0001f);
+    ASSERT_FLOAT_EQ(199.0f, v[1], 0.0001f);
+    fixture_end(&f);
+}
+
+TEST(engine_tt, planar_filter_stays_on_until_off)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t filter = fixture_block(&f, GUID_PLANAR_FILTER, "Filter");
+    nmo_object_id_t on = fixture_block(&f, GUID_NOP, "On");
+    nmo_object_id_t off = fixture_block(&f, GUID_NOP, "Off");
+    ASSERT_TRUE(filter != 0 && on != 0 && off != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, filter, 0), 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, filter, 1), 3);
+    fixture_link(&f, BLOCK_OUT(&f, filter, 0), BLOCK_IN(&f, on, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, filter, 1), BLOCK_IN(&f, off, 0), 0);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    for (int frame = 0; frame < 2; frame++) {
+        ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    }
+    ASSERT_EQ(1u, runs(&f, on));
+    ASSERT_EQ(0u, runs(&f, off));
+    ASSERT_TRUE(nmo_engine_behavior_is_active(f.engine, filter));
+    for (int frame = 0; frame < 4; frame++) {
+        ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    }
+    ASSERT_EQ(1u, runs(&f, on));
+    ASSERT_EQ(1u, runs(&f, off));
+    ASSERT_FALSE(nmo_engine_behavior_is_active(f.engine, filter));
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_tt, load_database_fills_the_array_of_its_name);
 REGISTER_TEST(engine_tt, read_registry_reads_what_the_host_set);
@@ -331,4 +405,6 @@ REGISTER_TEST(engine_tt, drivers_and_screen_modes_fill_their_arrays);
 REGISTER_TEST(engine_tt, timer_and_strings);
 REGISTER_TEST(engine_tt, linear_volume_maps_the_volume);
 REGISTER_TEST(engine_tt, preload_textures_counts_each_texture_once);
+REGISTER_TEST(engine_tt, convert_pixel_uses_the_screen_mode);
+REGISTER_TEST(engine_tt, planar_filter_stays_on_until_off);
 TEST_MAIN_END()

@@ -652,8 +652,7 @@ static int bb_list_screen_modes(blk_t *b)
         set_int_cell(engine, modes, i, 2, screen_modes[i].height);
         set_int_cell(engine, modes, i, 3, screen_modes[i].bpp);
     }
-    const int32_t mode = 0;
-    set_out(b, 0, &mode, sizeof(mode));
+    set_out(b, 0, &engine->screen_mode, sizeof(engine->screen_mode));
     OUT_ON(b, 0);
     return NMO_ENGINE_BR_OK;
 }
@@ -670,6 +669,7 @@ static int bb_change_screen_mode(blk_t *b)
         OUT_ON(b, 1);
         return NMO_ENGINE_BR_OK;
     }
+    b->engine->screen_mode = mode;
     eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, 0, 0);
     OUT_ON(b, 0);
     return NMO_ENGINE_BR_OK;
@@ -894,6 +894,51 @@ static int bb_split_string(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/*
+ * TT ConvertPixel-Homogen: a 2D vector in pixels of the render context made
+ * homogeneous (divided by its size), or, with local 0 false, a homogeneous
+ * one made pixels (truncated); X, Y and the vector out.
+ */
+static int bb_convert_pixel_homogen(blk_t *b)
+{
+    IN_OFF(b, 0);
+    float v[2] = {0.0f, 0.0f};
+    nmo_engine_block_get_input_value(b, 0, v, sizeof(v));
+    float width = (float)screen_modes[b->engine->screen_mode].width;
+    float height = (float)screen_modes[b->engine->screen_mode].height;
+    if ((get_local_int(b, 0, 1) & 0xff) != 0) {
+        v[0] /= width;
+        v[1] /= height;
+    } else {
+        v[0] = (float)(int32_t)(width * v[0]);
+        v[1] = (float)(int32_t)(height * v[1]);
+    }
+    set_out(b, 0, &v[0], sizeof(v[0]));
+    set_out(b, 1, &v[1], sizeof(v[1]));
+    set_out(b, 2, v, sizeof(v));
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * Planar Filter: On draws the filtering quad over the view after the
+ * sprites each frame (an effect) until Off; Exit On or Exit Off.
+ */
+static int bb_planar_filter(blk_t *b)
+{
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+        eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, 0, 0);
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
 /* Time Settings: the time manager's rates and limits (an effect on the scene). */
 static int bb_time_settings(blk_t *b)
 {
@@ -924,6 +969,9 @@ static const nmo_engine_block_desc_t eng_tt_blocks[] = {
     {NMO_GUID(0x5ae74e2f, 0x799c49b5), "TT_SplitString", bb_split_string, NULL, NULL},
     {NMO_GUID(0x36691920, 0x3b261630), "TT Sky", bb_sky, NULL, NULL},
     {NMO_GUID(0x14d325d1, 0x6748654e), "TT PushButton2", bb_push_button2, NULL, NULL},
+    {NMO_GUID(0x18f96977, 0x18e20f83), "TT ConvertPixel-Homogen", bb_convert_pixel_homogen, NULL,
+     NULL},
+    {NMO_GUID(0x00cd320b, 0x32ed010b), "Planar Filter", bb_planar_filter, NULL, NULL},
 };
 
 nmo_status_t eng_register_tt(nmo_engine_t *engine)
