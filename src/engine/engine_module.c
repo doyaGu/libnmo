@@ -291,6 +291,10 @@ nmo_object_id_t eng_create_object(nmo_engine_t *engine, uint32_t class_id, const
     if (class_id == NMO_CID_DATAARRAY && eng_add_array(engine, id) != NMO_OK) {
         return 0;
     }
+    if (nmo_type_registry_is_class_derived_from(engine->types, class_id, NMO_CID_3DENTITY) &&
+        eng_add_entity(engine, id) != NMO_OK) {
+        return 0;
+    }
     eng_add_to_level_scene(engine, id);
     return id;
 }
@@ -370,6 +374,9 @@ nmo_status_t nmo_engine_load(nmo_engine_t *engine, const char *name, bool add_to
     }
     if (status == NMO_OK) {
         status = eng_load_arrays(engine, module);
+    }
+    if (status == NMO_OK) {
+        status = eng_load_entities(engine, module);
     }
     if (status == NMO_OK) {
         status = eng_load_attributes(engine, module);

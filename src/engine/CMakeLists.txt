@@ -5,6 +5,7 @@
 
 set(NMO_ENGINE_SOURCES
     engine.c
+    engine_3dtrans.c
     engine_array.c
     engine_attributes.c
     engine_block.c
@@ -24,6 +25,7 @@ set(NMO_ENGINE_SOURCES
     engine_run.c
     engine_schedule.c
     engine_strings.c
+    engine_transform.c
     engine_tt.c
 )
 list(TRANSFORM NMO_ENGINE_SOURCES PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/")

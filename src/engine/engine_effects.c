@@ -22,13 +22,6 @@ static int bb_effect(nmo_engine_block_t *block)
 }
 
 static const nmo_engine_block_desc_t eng_effect_blocks[] = {
-    {NMO_GUID(0xffffffee, 0xeeffffff), "Rotate", bb_effect, NULL, NULL}, /* 3D Transformations/Basic */
-    {NMO_GUID(0x41236987, 0xa54a87a6), "Scale", bb_effect, NULL, NULL}, /* 3D Transformations/Basic */
-    {NMO_GUID(0x0c4966d8, 0x6c0c6d14), "Set Euler Orientation", bb_effect, NULL, NULL}, /* 3D Transformations/Basic */
-    {NMO_GUID(0x9d9d9d98, 0x7e7a7f75), "Set Parent", bb_effect, NULL, NULL}, /* 3D Transformations/Basic */
-    {NMO_GUID(0xe456e78a, 0x456789aa), "Set Position", bb_effect, NULL, NULL}, /* 3D Transformations/Basic */
-    {NMO_GUID(0xaa4aa6f0, 0xddefdef4), "Set World Matrix", bb_effect, NULL, NULL}, /* 3D Transformations/Basic */
-    {NMO_GUID(0x26843971, 0x86249317), "Look At", bb_effect, NULL, NULL}, /* 3D Transformations/Constraint */
     {NMO_GUID(0x676776d0, 0x20d457bd), "Position On Curve", bb_effect, NULL, NULL}, /* 3D Transformations/Curve */
     {NMO_GUID(0x652316a2, 0x01aa09a9), "Set Clipping Planes", bb_effect, NULL, NULL}, /* Cameras/Basic */
     {NMO_GUID(0x368f0ab1, 0x2d8957e4), "Set As Active Camera", bb_effect, NULL, NULL}, /* Cameras/Montage */

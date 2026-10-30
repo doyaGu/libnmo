@@ -502,6 +502,33 @@ NMO_API nmo_object_id_t nmo_engine_entity_under_mouse(const nmo_engine_t *engine
 /** CKInputManager::GetCursorVisibility: shown until Show Mouse Cursor hides it. */
 NMO_API bool nmo_engine_cursor_is_visible(const nmo_engine_t *engine);
 
+/* ---- 3D entities ----
+ *
+ * The engine keeps each CK3dEntity's world and local matrices and its
+ * parent, as CK does: the transform blocks change them. A matrix is 16
+ * floats, VxMatrix's rows: the X, Y and Z axes, then the position.
+ */
+
+/** The entity's world matrix; false when `entity_id` is no 3D entity. */
+NMO_API bool nmo_engine_entity_world_matrix(const nmo_engine_t *engine,
+                                            nmo_object_id_t entity_id,
+                                            float out_matrix[16]);
+/** The entity's matrix relative to its parent (its world matrix without one). */
+NMO_API bool nmo_engine_entity_local_matrix(const nmo_engine_t *engine,
+                                            nmo_object_id_t entity_id,
+                                            float out_matrix[16]);
+/** The entity's parent; 0 for none. */
+NMO_API nmo_object_id_t nmo_engine_entity_parent(const nmo_engine_t *engine,
+                                                 nmo_object_id_t entity_id);
+/**
+ * CK3dEntity::SetWorldMatrix from the host: the children move along, or
+ * keep their place with `keep_children`.
+ */
+NMO_API nmo_status_t nmo_engine_set_entity_world_matrix(nmo_engine_t *engine,
+                                                        nmo_object_id_t entity_id,
+                                                        const float matrix[16],
+                                                        bool keep_children);
+
 /* ---- Attributes ----
  *
  * The attributes of behavioral objects, copied from the document when the

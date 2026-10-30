@@ -9,8 +9,11 @@
  * CKStringGetNameObject, CKIntGetTypeObject, CKObjectGetObjectByNameString,
  * CKIntGetScriptCountBeObject, CKScriptGetScriptBeObjectInt and ...String,
  * CKIntGetRowCountDataArray, CKIntGetColumnCountDataArray, CKIntGetCountGroup,
- * CKMeshGetCurrent3dEntity). The registry has no conversions, so the plugin's
- * between numbers and vectors are here too (CKIntSetFloat and the others).
+ * CKMeshGetCurrent3dEntity), and the ones on 3D entities, which read the
+ * engine's matrices (CKVectorGetPosition3dEntity3dEntity and the others).
+ * The registry has no conversions, so the plugin's between numbers and
+ * vectors are here too (CKIntSetFloat and the others), and it has no vector
+ * components either (CKFloatGetXEuler and the others).
  * The engine looks an operation up in this table and in the registry
  * together, as CK looks one up (see eng_operation_find()).
  */
@@ -18,6 +21,7 @@
 #include "engine_internal.h"
 
 #include "format/nmo_object.h"
+#include "object/builtin/nmo_2dentity_schemas.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/nmo_object_enum_defs.h"
 #include "object/nmo_ref.h"
@@ -25,6 +29,7 @@
 #include "type/nmo_object_guids.h"
 #include "type/nmo_type_guids.h"
 
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -42,6 +47,25 @@
 #define OP_GET_ROW_COUNT NMO_GUID(0xfb556b23, 0x69b22a75)
 #define OP_GET_COLUMN_COUNT NMO_GUID(0x2b554b23, 0x69b22a72)
 #define OP_GET_CURRENT NMO_GUID(0x6a5c5061, 0x5efe7428)
+#define OP_GET_X NMO_GUID(0x12926657, 0x6228322e)
+#define OP_GET_Y NMO_GUID(0x389f72bd, 0x7aef3482)
+#define OP_GET_Z NMO_GUID(0x093d5158, 0x53ef47a0)
+#define OP_GET_PARENT NMO_GUID(0x5bf9718f, 0x030b698c)
+#define OP_GET_CHILDREN NMO_GUID(0x0dd635d5, 0x47e62a28)
+#define OP_GET_DISTANCE NMO_GUID(0x265c7d00, 0x5c8f1702)
+#define OP_GET_WORLD_MATRIX NMO_GUID(0x472851ba, 0x5ccc2831)
+#define OP_GET_LOCAL_MATRIX NMO_GUID(0x14a024c7, 0x050d4228)
+#define OP_GET_POSITION NMO_GUID(0x4bc87aea, 0x6b5b643e)
+#define OP_GET_EULER_ANGLES NMO_GUID(0x4faa099f, 0x2dcc48a5)
+#define OP_GET_DIR NMO_GUID(0x48c20ded, 0xfed12252)
+#define OP_GET_UP NMO_GUID(0x48c20ded, 0xfed12457)
+#define OP_GET_RIGHT NMO_GUID(0x48c20ded, 0xf15a5781)
+#define OP_GET_SCALE NMO_GUID(0x25991e7e, 0x32cc55e7)
+#define OP_IS_CHILD_OF NMO_GUID(0x08333942, 0x00973fd1)
+#define OP_TRANSFORM NMO_GUID(0x38865f64, 0x5ec70752)
+#define OP_TRANSFORM_VECTOR NMO_GUID(0x5fd15589, 0x6652037f)
+#define OP_INVERSE_TRANSFORM NMO_GUID(0x09ae53f3, 0x0dc769d6)
+#define OP_INVERSE_TRANSFORM_VECTOR NMO_GUID(0x72213b67, 0x52fb2b56)
 
 /* The Script parameter type (a CKBehavior that is a script) */
 #define PGUID_SCRIPT NMO_GUID(0x7ea4176d, 0x1b405d30)
@@ -387,6 +411,324 @@ static nmo_status_t op_vector_from_vector_2dvector(nmo_engine_t *engine, eng_par
     return write_floats(engine, out, xyz, 3u);
 }
 
+/* ============================================================================
+ * 3D entities
+ * ============================================================================ */
+
+/* The engine's entity an operand names; -1 for none. */
+static int32_t op_entity(nmo_engine_t *engine, const eng_param_t *param)
+{
+    return eng_entity_index(engine, (nmo_object_id_t)param_u32(param));
+}
+
+static nmo_status_t write_vector(nmo_engine_t *engine, eng_param_t *out, eng_vector_t v)
+{
+    const float xyz[3] = {v.x, v.y, v.z};
+    return write_floats(engine, out, xyz, 3u);
+}
+
+static eng_vector_t param_vector(const eng_param_t *param)
+{
+    eng_vector_t v = {param_component(param, 0), param_component(param, 1),
+                      param_component(param, 2)};
+    return v;
+}
+
+/* CKVectorGetPosition3dEntity3dEntity: in the second entity's space given one. */
+static nmo_status_t op_get_position(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                    eng_param_t *out)
+{
+    int32_t entity = op_entity(engine, src1);
+    if (entity < 0) {
+        return NMO_OK;
+    }
+    int32_t ref = src2 != NULL ? op_entity(engine, src2) : -1;
+    return write_vector(engine, out, eng_entity_position(engine, entity, ref));
+}
+
+/*
+ * CK2dVectorGetPosition2dEntity: the top left corner of the entity's
+ * rectangle, as the file has it (the engine does not move 2D entities).
+ */
+static nmo_status_t op_get_position_2d(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                       eng_param_t *out)
+{
+    (void)src2;
+    nmo_object_t *object = eng_find_object(engine, (nmo_object_id_t)param_u32(src1));
+    const nmo_2dentity_state_t *entity =
+        object != NULL ? (const nmo_2dentity_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
+                             engine->types, object, CKPGUID_2DENTITY)
+                       : NULL;
+    if (entity == NULL) {
+        return NMO_OK;
+    }
+    const float xy[2] = {entity->rect.left, entity->rect.top};
+    return write_floats(engine, out, xy, 2u);
+}
+
+/* CKFloatGetDistance3dEntity: between the world positions. */
+static nmo_status_t op_get_distance(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                    eng_param_t *out)
+{
+    int32_t a = op_entity(engine, src1), b = op_entity(engine, src2);
+    if (a < 0 || b < 0) {
+        return NMO_OK;
+    }
+    eng_vector_t pa = eng_entity_position(engine, a, -1), pb = eng_entity_position(engine, b, -1);
+    const float dx = pa.x - pb.x, dy = pa.y - pb.y, dz = pa.z - pb.z;
+    const float distance = sqrtf(dx * dx + dy * dy + dz * dz);
+    return write_floats(engine, out, &distance, 1u);
+}
+
+/* CKVectorGetDistance3dEntity3dEntity: the second's world position minus the first's. */
+static nmo_status_t op_get_distance_vector(nmo_engine_t *engine, eng_param_t *src1,
+                                           eng_param_t *src2, eng_param_t *out)
+{
+    int32_t a = op_entity(engine, src1), b = op_entity(engine, src2);
+    if (a < 0 || b < 0) {
+        return NMO_OK;
+    }
+    eng_vector_t pa = eng_entity_position(engine, a, -1), pb = eng_entity_position(engine, b, -1);
+    eng_vector_t d = {pb.x - pa.x, pb.y - pa.y, pb.z - pa.z};
+    return write_vector(engine, out, d);
+}
+
+/* CKFloatGetX3dEntity and its Y and Z: a world position's component. */
+static nmo_status_t op_entity_component(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *out,
+                                        int component)
+{
+    int32_t entity = op_entity(engine, src1);
+    if (entity < 0) {
+        return NMO_OK;
+    }
+    eng_vector_t p = eng_entity_position(engine, entity, -1);
+    const float v = component == 0 ? p.x : component == 1 ? p.y : p.z;
+    return write_floats(engine, out, &v, 1u);
+}
+
+static nmo_status_t op_get_x_entity(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                    eng_param_t *out)
+{
+    (void)src2;
+    return op_entity_component(engine, src1, out, 0);
+}
+
+static nmo_status_t op_get_y_entity(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                    eng_param_t *out)
+{
+    (void)src2;
+    return op_entity_component(engine, src1, out, 1);
+}
+
+static nmo_status_t op_get_z_entity(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                    eng_param_t *out)
+{
+    (void)src2;
+    return op_entity_component(engine, src1, out, 2);
+}
+
+/* CKFloatGetXEuler (vectors, angles), CKFloatGetX2dVector, ... : a component. */
+static nmo_status_t op_get_x(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                             eng_param_t *out)
+{
+    (void)src2;
+    const float v = param_component(src1, 0);
+    return write_floats(engine, out, &v, 1u);
+}
+
+static nmo_status_t op_get_y(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                             eng_param_t *out)
+{
+    (void)src2;
+    const float v = param_component(src1, 1);
+    return write_floats(engine, out, &v, 1u);
+}
+
+static nmo_status_t op_get_z(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                             eng_param_t *out)
+{
+    (void)src2;
+    const float v = param_component(src1, 2);
+    return write_floats(engine, out, &v, 1u);
+}
+
+/* CKVectorGetScale: the local scale. */
+static nmo_status_t op_get_scale(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                 eng_param_t *out)
+{
+    (void)src2;
+    int32_t entity = op_entity(engine, src1);
+    return entity >= 0 ? write_vector(engine, out, eng_entity_scale(engine, entity, true)) : NMO_OK;
+}
+
+/* CKVectorGetDir3dEntity, ...Up..., ...Right...: a unit world axis. */
+static nmo_status_t op_entity_axis(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *out,
+                                   int axis)
+{
+    int32_t entity = op_entity(engine, src1);
+    if (entity < 0) {
+        return NMO_OK;
+    }
+    eng_vector_t axes[3];
+    eng_entity_orientation(engine, entity, &axes[2], &axes[1], &axes[0], -1);
+    return write_vector(engine, out, axes[axis]);
+}
+
+static nmo_status_t op_get_dir(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                               eng_param_t *out)
+{
+    (void)src2;
+    return op_entity_axis(engine, src1, out, 2);
+}
+
+static nmo_status_t op_get_up(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                              eng_param_t *out)
+{
+    (void)src2;
+    return op_entity_axis(engine, src1, out, 1);
+}
+
+static nmo_status_t op_get_right(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                 eng_param_t *out)
+{
+    (void)src2;
+    return op_entity_axis(engine, src1, out, 0);
+}
+
+/* CKVectorTransformVector3dEntity and the other three: the vector through the entity. */
+static nmo_status_t op_entity_transform(nmo_engine_t *engine, eng_param_t *src1,
+                                        eng_param_t *src2, eng_param_t *out, bool direction,
+                                        bool inverse)
+{
+    int32_t entity = op_entity(engine, src2);
+    if (entity < 0) {
+        return NMO_OK;
+    }
+    eng_vector_t in = param_vector(src1), result;
+    if (direction) {
+        eng_entity_transform_vector(engine, entity, &result, &in, -1, inverse);
+    } else if (inverse) {
+        eng_entity_inverse_transform(engine, entity, &result, &in, -1);
+    } else {
+        eng_entity_transform(engine, entity, &result, &in, -1);
+    }
+    return write_vector(engine, out, result);
+}
+
+static nmo_status_t op_transform(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                 eng_param_t *out)
+{
+    return op_entity_transform(engine, src1, src2, out, false, false);
+}
+
+static nmo_status_t op_transform_vector(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                        eng_param_t *out)
+{
+    return op_entity_transform(engine, src1, src2, out, true, false);
+}
+
+static nmo_status_t op_inverse_transform(nmo_engine_t *engine, eng_param_t *src1,
+                                         eng_param_t *src2, eng_param_t *out)
+{
+    return op_entity_transform(engine, src1, src2, out, false, true);
+}
+
+static nmo_status_t op_inverse_transform_vector(nmo_engine_t *engine, eng_param_t *src1,
+                                                eng_param_t *src2, eng_param_t *out)
+{
+    return op_entity_transform(engine, src1, src2, out, true, true);
+}
+
+/* CKEulerGetEuler3dEntity3dEntity: the angles of the world matrix, in the second's space. */
+static nmo_status_t op_get_euler_angles(nmo_engine_t *engine, eng_param_t *src1,
+                                        eng_param_t *src2, eng_param_t *out)
+{
+    int32_t entity = op_entity(engine, src1);
+    if (entity < 0) {
+        return NMO_OK;
+    }
+    int32_t ref = src2 != NULL ? op_entity(engine, src2) : -1;
+    eng_matrix_t m = engine->entities.data[entity].world;
+    if (ref >= 0) {
+        eng_matrix_t inverse = engine->entities.data[ref].world;
+        eng_matrix_inverse(&inverse, &engine->entities.data[ref].world);
+        eng_matrix_multiply(&m, &inverse, &m);
+    }
+    eng_vector_t angles;
+    eng_matrix_to_euler(&m, &angles.x, &angles.y, &angles.z);
+    return write_vector(engine, out, angles);
+}
+
+/* CKMatrixGetWorldMatrix3dEntity, CKMatrixGetLocalMatrix3dEntity */
+static nmo_status_t op_get_world_matrix(nmo_engine_t *engine, eng_param_t *src1,
+                                        eng_param_t *src2, eng_param_t *out)
+{
+    (void)src2;
+    int32_t entity = op_entity(engine, src1);
+    return entity >= 0 ? eng_param_write(engine, out, engine->entities.data[entity].world.m,
+                                         sizeof(eng_matrix_t))
+                       : NMO_OK;
+}
+
+static nmo_status_t op_get_local_matrix(nmo_engine_t *engine, eng_param_t *src1,
+                                        eng_param_t *src2, eng_param_t *out)
+{
+    (void)src2;
+    int32_t entity = op_entity(engine, src1);
+    return entity >= 0 ? eng_param_write(engine, out, engine->entities.data[entity].local.m,
+                                         sizeof(eng_matrix_t))
+                       : NMO_OK;
+}
+
+/* CKBoolIsChildOf3dEntity3dEntity: whether the second is an ancestor of the first. */
+static nmo_status_t op_is_child_of(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                   eng_param_t *out)
+{
+    int32_t entity = op_entity(engine, src1), ancestor = op_entity(engine, src2);
+    if (entity < 0 || ancestor < 0) {
+        return NMO_OK;
+    }
+    int32_t parent = engine->entities.data[entity].parent;
+    while (parent >= 0 && parent != ancestor) {
+        parent = engine->entities.data[parent].parent;
+    }
+    return write_u32(engine, out, parent >= 0 ? 1u : 0u);
+}
+
+/* CK3dEntityGetParent3dEntity: 0 for none. */
+static nmo_status_t op_get_parent(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                  eng_param_t *out)
+{
+    (void)src2;
+    return write_u32(engine, out,
+                     (uint32_t)nmo_engine_entity_parent(engine, (nmo_object_id_t)param_u32(src1)));
+}
+
+/* CKObjectArrayGetChildren3dEntity: the children's IDs, in order. */
+static nmo_status_t op_get_children(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                    eng_param_t *out)
+{
+    (void)src2;
+    int32_t entity = op_entity(engine, src1);
+    size_t count = 0;
+    for (int32_t c = entity >= 0 ? engine->entities.data[entity].first_child : -1; c >= 0;
+         c = engine->entities.data[c].next_sibling) {
+        count++;
+    }
+    uint32_t *ids = count > 0 ? (uint32_t *)malloc(count * sizeof(uint32_t)) : NULL;
+    if (count > 0 && ids == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    size_t n = 0;
+    for (int32_t c = entity >= 0 ? engine->entities.data[entity].first_child : -1; c >= 0;
+         c = engine->entities.data[c].next_sibling) {
+        ids[n++] = (uint32_t)engine->entities.data[c].id;
+    }
+    nmo_status_t status = eng_param_write(engine, out, ids, n * sizeof(uint32_t));
+    free(ids);
+    return status;
+}
+
 typedef struct engine_op {
     nmo_guid_t operation;
     nmo_guid_t result, input1, input2; /* a null input2 is no second input */
@@ -419,6 +761,38 @@ static const engine_op_t engine_ops[] = {
     {OP_CONVERT, CKPGUID_2DVECTOR, CKPGUID_INT, CKPGUID_INT, op_2dvector_from_ints},
     {OP_CONVERT, CKPGUID_2DVECTOR, CKPGUID_VECTOR, {0, 0}, op_2dvector_from_vector},
     {OP_CONVERT, CKPGUID_VECTOR, CKPGUID_VECTOR, CKPGUID_2DVECTOR, op_vector_from_vector_2dvector},
+    {OP_GET_POSITION, CKPGUID_VECTOR, CKPGUID_3DENTITY, CKPGUID_3DENTITY, op_get_position},
+    {OP_GET_POSITION, CKPGUID_VECTOR, CKPGUID_3DENTITY, {0, 0}, op_get_position},
+    {OP_GET_POSITION, CKPGUID_2DVECTOR, CKPGUID_2DENTITY, {0, 0}, op_get_position_2d},
+    {OP_GET_DISTANCE, CKPGUID_FLOAT, CKPGUID_3DENTITY, CKPGUID_3DENTITY, op_get_distance},
+    {OP_GET_DISTANCE, CKPGUID_VECTOR, CKPGUID_3DENTITY, CKPGUID_3DENTITY, op_get_distance_vector},
+    {OP_GET_X, CKPGUID_FLOAT, CKPGUID_3DENTITY, {0, 0}, op_get_x_entity},
+    {OP_GET_Y, CKPGUID_FLOAT, CKPGUID_3DENTITY, {0, 0}, op_get_y_entity},
+    {OP_GET_Z, CKPGUID_FLOAT, CKPGUID_3DENTITY, {0, 0}, op_get_z_entity},
+    {OP_GET_X, CKPGUID_FLOAT, CKPGUID_VECTOR, {0, 0}, op_get_x},
+    {OP_GET_Y, CKPGUID_FLOAT, CKPGUID_VECTOR, {0, 0}, op_get_y},
+    {OP_GET_Z, CKPGUID_FLOAT, CKPGUID_VECTOR, {0, 0}, op_get_z},
+    {OP_GET_X, CKPGUID_FLOAT, CKPGUID_2DVECTOR, {0, 0}, op_get_x},
+    {OP_GET_Y, CKPGUID_FLOAT, CKPGUID_2DVECTOR, {0, 0}, op_get_y},
+    {OP_GET_X, CKPGUID_FLOAT, CKPGUID_EULERANGLES, {0, 0}, op_get_x},
+    {OP_GET_Y, CKPGUID_FLOAT, CKPGUID_EULERANGLES, {0, 0}, op_get_y},
+    {OP_GET_Z, CKPGUID_FLOAT, CKPGUID_EULERANGLES, {0, 0}, op_get_z},
+    {OP_GET_SCALE, CKPGUID_VECTOR, CKPGUID_3DENTITY, {0, 0}, op_get_scale},
+    {OP_GET_DIR, CKPGUID_VECTOR, CKPGUID_3DENTITY, {0, 0}, op_get_dir},
+    {OP_GET_UP, CKPGUID_VECTOR, CKPGUID_3DENTITY, {0, 0}, op_get_up},
+    {OP_GET_RIGHT, CKPGUID_VECTOR, CKPGUID_3DENTITY, {0, 0}, op_get_right},
+    {OP_TRANSFORM, CKPGUID_VECTOR, CKPGUID_VECTOR, CKPGUID_3DENTITY, op_transform},
+    {OP_TRANSFORM_VECTOR, CKPGUID_VECTOR, CKPGUID_VECTOR, CKPGUID_3DENTITY, op_transform_vector},
+    {OP_INVERSE_TRANSFORM, CKPGUID_VECTOR, CKPGUID_VECTOR, CKPGUID_3DENTITY, op_inverse_transform},
+    {OP_INVERSE_TRANSFORM_VECTOR, CKPGUID_VECTOR, CKPGUID_VECTOR, CKPGUID_3DENTITY,
+     op_inverse_transform_vector},
+    {OP_GET_EULER_ANGLES, CKPGUID_EULERANGLES, CKPGUID_3DENTITY, CKPGUID_3DENTITY,
+     op_get_euler_angles},
+    {OP_GET_WORLD_MATRIX, CKPGUID_MATRIX, CKPGUID_3DENTITY, {0, 0}, op_get_world_matrix},
+    {OP_GET_LOCAL_MATRIX, CKPGUID_MATRIX, CKPGUID_3DENTITY, {0, 0}, op_get_local_matrix},
+    {OP_IS_CHILD_OF, CKPGUID_BOOL, CKPGUID_3DENTITY, CKPGUID_3DENTITY, op_is_child_of},
+    {OP_GET_PARENT, CKPGUID_3DENTITY, CKPGUID_3DENTITY, {0, 0}, op_get_parent},
+    {OP_GET_CHILDREN, CKPGUID_OBJECTARRAY, CKPGUID_3DENTITY, {0, 0}, op_get_children},
 };
 
 eng_builtin_op_fn eng_operation_builtin(nmo_guid_t operation, nmo_guid_t result,

@@ -289,6 +289,30 @@ typedef struct eng_module {
     bool created;            /* the objects blocks create, in `session` (no workspace) */
 } eng_module_t;
 
+/* A VxMatrix: rows 0 to 2 the X, Y and Z axes, row 3 the position. */
+typedef struct eng_matrix {
+    float m[4][4];
+} eng_matrix_t;
+
+typedef struct eng_vector {
+    float x, y, z;
+} eng_vector_t;
+
+/*
+ * A CK3dEntity's matrices and place in the hierarchy: its parent and its
+ * children, in order (indexes into the engine's entities, -1 for none).
+ */
+typedef struct eng_entity {
+    nmo_object_id_t id;
+    eng_matrix_t world;
+    eng_matrix_t local;
+    uint32_t moveable_flags;
+    int32_t parent;
+    int32_t first_child, last_child;
+    int32_t next_sibling, prev_sibling;
+    bool destroyed;
+} eng_entity_t;
+
 /* A group whose objects changed at run time: its objects now, by engine ID. */
 typedef struct eng_group {
     nmo_object_id_t id;
@@ -341,6 +365,8 @@ struct nmo_engine {
     ENG_VEC(char *) message_names;   /* the file's message types, by type */
     ENG_VEC(eng_array_t) arrays;
     ENG_VEC(eng_group_t) groups;
+    ENG_VEC(eng_entity_t) entities;
+    eng_map_t entity_map;
 
     eng_map_t node_map, io_map, param_map, operation_map, object_map, array_map;
     /* The objects in the level scene (CKBeObject::IsInScene); every object without one */
@@ -426,6 +452,58 @@ nmo_object_t *eng_find_object(const nmo_engine_t *engine, nmo_object_id_t id);
 /* The first object named `name` (of class `class_id` or one derived, unless 0), in document order */
 nmo_object_id_t eng_object_named(const nmo_engine_t *engine, const char *name, uint32_t class_id);
 nmo_object_id_t eng_create_object(nmo_engine_t *engine, uint32_t class_id, const char *name);
+
+/* engine_transform.c */
+void eng_matrix_identity(eng_matrix_t *m);
+void eng_matrix_multiply(eng_matrix_t *result, const eng_matrix_t *a, const eng_matrix_t *b);
+void eng_matrix_inverse(eng_matrix_t *result, const eng_matrix_t *a);
+void eng_vector_transform(eng_vector_t *result, const eng_matrix_t *m, const eng_vector_t *v);
+void eng_vector_rotate(eng_vector_t *result, const eng_matrix_t *m, const eng_vector_t *v);
+float eng_vector_magnitude(const eng_vector_t *v);
+void eng_vector_normalize(eng_vector_t *v);
+eng_vector_t eng_vector_cross(const eng_vector_t *a, const eng_vector_t *b);
+void eng_matrix_from_rotation(eng_matrix_t *result, const eng_vector_t *axis, float angle);
+void eng_matrix_from_euler(eng_matrix_t *result, float ax, float ay, float az);
+void eng_matrix_to_euler(const eng_matrix_t *m, float *ax, float *ay, float *az);
+nmo_status_t eng_load_entities(nmo_engine_t *engine, int32_t module);
+void eng_free_entities(nmo_engine_t *engine);
+nmo_status_t eng_add_entity(nmo_engine_t *engine, nmo_object_id_t id);
+int32_t eng_entity_index(const nmo_engine_t *engine, nmo_object_id_t id);
+void eng_entity_set_world_matrix(nmo_engine_t *engine, int32_t index, const eng_matrix_t *m,
+                                 bool keep_children);
+void eng_entity_set_local_matrix(nmo_engine_t *engine, int32_t index, const eng_matrix_t *m,
+                                 bool keep_children);
+void eng_entity_transform(nmo_engine_t *engine, int32_t index, eng_vector_t *dest,
+                          const eng_vector_t *src, int32_t ref);
+void eng_entity_inverse_transform(nmo_engine_t *engine, int32_t index, eng_vector_t *dest,
+                                  const eng_vector_t *src, int32_t ref);
+void eng_entity_transform_vector(nmo_engine_t *engine, int32_t index, eng_vector_t *dest,
+                                 const eng_vector_t *src, int32_t ref, bool inverse_transform);
+void eng_entity_set_position(nmo_engine_t *engine, int32_t index, const eng_vector_t *position,
+                             int32_t ref, bool keep_children);
+eng_vector_t eng_entity_position(nmo_engine_t *engine, int32_t index, int32_t ref);
+void eng_entity_translate(nmo_engine_t *engine, int32_t index, const eng_vector_t *vector,
+                          int32_t ref, bool keep_children);
+void eng_entity_rotate(nmo_engine_t *engine, int32_t index, const eng_vector_t *axis, float angle,
+                       int32_t ref, bool keep_children);
+eng_vector_t eng_entity_scale(nmo_engine_t *engine, int32_t index, bool local);
+void eng_entity_set_scale(nmo_engine_t *engine, int32_t index, const eng_vector_t *scale,
+                          bool keep_children, bool local);
+void eng_entity_add_scale(nmo_engine_t *engine, int32_t index, const eng_vector_t *scale,
+                          bool keep_children, bool local);
+void eng_entity_set_orientation(nmo_engine_t *engine, int32_t index, const eng_vector_t *dir,
+                                const eng_vector_t *up, const eng_vector_t *right, int32_t ref,
+                                bool keep_children);
+void eng_entity_orientation(nmo_engine_t *engine, int32_t index, eng_vector_t *dir,
+                            eng_vector_t *up, eng_vector_t *right, int32_t ref);
+void eng_entity_look_at(nmo_engine_t *engine, int32_t index, const eng_vector_t *position,
+                        int32_t ref, bool keep_children);
+bool eng_entity_set_parent(nmo_engine_t *engine, int32_t index, int32_t parent,
+                           bool keep_world_position);
+void eng_entity_destroy(nmo_engine_t *engine, nmo_object_id_t id);
+
+/* engine_3dtrans.c */
+nmo_status_t eng_register_3dtrans(nmo_engine_t *engine);
 /* The engine ID of a document's object ID; 0 stays 0. */
 static inline nmo_object_id_t eng_module_id(const eng_module_t *module, nmo_object_id_t local)
 {

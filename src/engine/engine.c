@@ -168,6 +168,9 @@ nmo_status_t nmo_engine_create(nmo_workspace_t *workspace,
         status = eng_load_arrays(engine, 0);
     }
     if (status == NMO_OK) {
+        status = eng_load_entities(engine, 0);
+    }
+    if (status == NMO_OK) {
         status = eng_load_attributes(engine, 0);
     }
     if (status == NMO_OK && !engine->options.no_builtin_blocks) {
@@ -196,6 +199,9 @@ nmo_status_t nmo_engine_create(nmo_workspace_t *workspace,
     }
     if (status == NMO_OK && !engine->options.no_builtin_blocks) {
         status = eng_register_tt(engine);
+    }
+    if (status == NMO_OK && !engine->options.no_builtin_blocks) {
+        status = eng_register_3dtrans(engine);
     }
     if (status != NMO_OK) {
         nmo_engine_destroy(engine);
@@ -236,6 +242,7 @@ void nmo_engine_destroy(nmo_engine_t *engine)
     free(engine->scratch_io.data);
     eng_free_messages(engine);
     eng_free_arrays(engine);
+    eng_free_entities(engine);
     eng_free_attributes(engine);
     eng_free_tt(engine);
     free(engine->node_map.slots);

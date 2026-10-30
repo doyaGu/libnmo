@@ -1,5 +1,6 @@
 #include "engine_fixture.h"
 
+#include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
@@ -20,6 +21,11 @@
 #define OP_GET_OBJECT_BY_NAME NMO_GUID(0x599203f6, 0x23b06096)
 #define OP_GET_TYPE NMO_GUID(0x35aa0ddb, 0x7a5e3335)
 #define OP_CONVERT NMO_GUID(0x428009b4, 0x1caa5c78)
+#define OP_GET_POSITION NMO_GUID(0x4bc87aea, 0x6b5b643e)
+#define OP_GET_DISTANCE NMO_GUID(0x265c7d00, 0x5c8f1702)
+#define OP_GET_Y NMO_GUID(0x389f72bd, 0x7aef3482)
+#define OP_IS_CHILD_OF NMO_GUID(0x08333942, 0x00973fd1)
+#define OP_GET_PARENT NMO_GUID(0x5bf9718f, 0x030b698c)
 #define OP_GET_COUNT NMO_GUID(0x44df6f61, 0x5f8f55c8)
 
 static void input_string(engine_fixture_t *f, nmo_object_id_t pin, const char *text)
@@ -377,6 +383,80 @@ TEST(engine_strings, operations_follow_parent_types)
     fixture_end(&f);
 }
 
+/* An entity saved at `x, y, z`, under `parent` (0 for none) */
+static void place_entity(engine_fixture_t *f, nmo_object_id_t id, float x, float y, float z,
+                         nmo_object_id_t parent)
+{
+    nmo_3dentity_state_t *state = (nmo_3dentity_state_t *)fixture_state(f, id);
+    ASSERT_NOT_NULL(state);
+    memset(state->world_matrix, 0, sizeof(state->world_matrix));
+    state->world_matrix[0] = state->world_matrix[5] = state->world_matrix[10] = 1.0f;
+    state->world_matrix[15] = 1.0f;
+    state->world_matrix[12] = x;
+    state->world_matrix[13] = y;
+    state->world_matrix[14] = z;
+    if (parent != 0) {
+        state->parent = nmo_ref_from_id(parent);
+    }
+}
+
+TEST(engine_strings, entity_operations)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t parent = fixture_create(&f, NMO_CID_3DENTITY, "Parent");
+    nmo_object_id_t child = fixture_create(&f, NMO_CID_3DENTITY, "Child");
+    place_entity(&f, parent, 10.0f, 0.0f, 0.0f, 0);
+    place_entity(&f, child, 1.0f, 2.0f, 3.0f, parent);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t a = local_object(&f, "A", CKPGUID_3DENTITY);
+    nmo_object_id_t b = local_object(&f, "B", CKPGUID_3DENTITY);
+    ASSERT_TRUE(a != 0 && b != 0);
+    nmo_object_id_t world = operation(&f, OP_GET_POSITION, a, 0, CKPGUID_VECTOR);
+    nmo_object_id_t local = operation(&f, OP_GET_POSITION, a, b, CKPGUID_VECTOR);
+    nmo_object_id_t distance = operation(&f, OP_GET_DISTANCE, a, b, CKPGUID_FLOAT);
+    nmo_object_id_t is_child = operation(&f, OP_IS_CHILD_OF, a, b, CKPGUID_BOOL);
+    nmo_object_id_t parent_of = operation(&f, OP_GET_PARENT, a, 0, CKPGUID_3DENTITY);
+    ASSERT_TRUE(world != 0 && local != 0 && distance != 0 && is_child != 0 && parent_of != 0);
+    nmo_object_id_t y = operation(&f, OP_GET_Y, world, 0, CKPGUID_FLOAT);
+    ASSERT_TRUE(y != 0);
+    nmo_object_id_t reads[5];
+    const nmo_object_id_t sources[5] = {local, distance, is_child, parent_of, y};
+    const nmo_guid_t types[5] = {CKPGUID_VECTOR, CKPGUID_FLOAT, CKPGUID_BOOL, CKPGUID_3DENTITY,
+                                 CKPGUID_FLOAT};
+    nmo_object_id_t after = f.script_in;
+    for (int i = 0; i < 5; i++) {
+        reads[i] = identity_of(&f, sources[i], types[i], after);
+        ASSERT_TRUE(reads[i] != 0);
+        after = BLOCK_OUT(&f, reads[i], 0);
+    }
+    fixture_commit(&f, NULL);
+    const uint32_t ids[2] = {(uint32_t)child, (uint32_t)parent};
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, a, &ids[0], sizeof(ids[0])));
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, b, &ids[1], sizeof(ids[1])));
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+    /* In the parent's space: the local position */
+    float v[3] = {0.0f, 0.0f, 0.0f}, number = 0.0f;
+    read_value(&f, BLOCK_POUT(&f, reads[0], 0), v, sizeof(v));
+    ASSERT_FLOAT_EQ(-9.0f, v[0], 0.0001f);
+    ASSERT_FLOAT_EQ(2.0f, v[1], 0.0001f);
+    read_value(&f, BLOCK_POUT(&f, reads[1], 0), &number, sizeof(number));
+    ASSERT_FLOAT_EQ(sqrtf(94.0f), number, 0.0001f);
+    int32_t flag = 0;
+    read_value(&f, BLOCK_POUT(&f, reads[2], 0), &flag, sizeof(flag));
+    ASSERT_EQ(1, flag);
+    uint32_t id = 0;
+    read_value(&f, BLOCK_POUT(&f, reads[3], 0), &id, sizeof(id));
+    ASSERT_EQ(parent, id);
+    /* Get Y of the world position */
+    read_value(&f, BLOCK_POUT(&f, reads[4], 0), &number, sizeof(number));
+    ASSERT_FLOAT_EQ(2.0f, number, 0.0001f);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_strings, create_string_writes_values_as_ck2_does);
 REGISTER_TEST(engine_strings, create_string_adds_lines_and_clears);
@@ -384,4 +464,5 @@ REGISTER_TEST(engine_strings, substring_scan_and_reverse);
 REGISTER_TEST(engine_strings, string_operations);
 REGISTER_TEST(engine_strings, object_operations);
 REGISTER_TEST(engine_strings, operations_follow_parent_types);
+REGISTER_TEST(engine_strings, entity_operations);
 TEST_MAIN_END()
