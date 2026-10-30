@@ -292,6 +292,35 @@ static nmo_object_id_t local_object(engine_fixture_t *f, const char *name, nmo_g
                : 0;
 }
 
+TEST(engine_strings, create_string_runs_its_inputs_operations)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    /* "Level" then a number made text by a Convert operation, as Ballance builds file names */
+    nmo_object_id_t number = 0;
+    const int32_t seven = 7;
+    ASSERT_EQ(NMO_OK, nmo_script_edit_add_parameter(f.tx, f.script_id, NMO_SCRIPT_EDIT_PARAM_LOCAL,
+                                                    CKPGUID_INT, "N", &number));
+    ASSERT_EQ(NMO_OK, nmo_script_edit_set_parameter_bytes(f.tx, number, (const uint8_t *)&seven,
+                                                         sizeof(seven)));
+    nmo_object_id_t text = operation(&f, OP_CONVERT, number, 0, CKPGUID_STRING);
+    ASSERT_TRUE(text != 0);
+    nmo_object_id_t create = fixture_block(&f, GUID_CREATE_STRING, "Create String");
+    ASSERT_TRUE(create != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, create, 0), 0);
+    input_string(&f, BLOCK_PIN(&f, create, 0), "");
+    ASSERT_TRUE(add_input(&f, create, CKPGUID_STRING, "Level", 6) != 0);
+    nmo_object_id_t pin = add_param(&f, create, NMO_SCRIPT_EDIT_PARAM_IN, CKPGUID_STRING);
+    ASSERT_TRUE(pin != 0);
+    ASSERT_EQ(NMO_OK, nmo_script_edit_connect_parameter(f.tx, text, pin));
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_STR_EQ("Level7", string_value(&f, BLOCK_POUT(&f, create, 0)));
+    fixture_end(&f);
+}
+
 TEST(engine_strings, object_operations)
 {
     engine_fixture_t f;
@@ -462,6 +491,7 @@ REGISTER_TEST(engine_strings, create_string_writes_values_as_ck2_does);
 REGISTER_TEST(engine_strings, create_string_adds_lines_and_clears);
 REGISTER_TEST(engine_strings, substring_scan_and_reverse);
 REGISTER_TEST(engine_strings, string_operations);
+REGISTER_TEST(engine_strings, create_string_runs_its_inputs_operations);
 REGISTER_TEST(engine_strings, object_operations);
 REGISTER_TEST(engine_strings, operations_follow_parent_types);
 REGISTER_TEST(engine_strings, entity_operations);

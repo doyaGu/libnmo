@@ -565,10 +565,13 @@ static char format_conversion(const char *format)
     return conversion;
 }
 
-/* An element of Create String: input `pos` with its format (the local before it). */
+/*
+ * An element of Create String: input `pos` with its format (the local before
+ * it), its source's operation run first, whatever its type (GetValue).
+ */
 static char *create_string_element(blk_t *b, int pos)
 {
-    eng_param_t *source = input_source(b, pos, false);
+    eng_param_t *source = input_source(b, pos, true);
     if (source == NULL) {
         return NULL;
     }
@@ -583,14 +586,12 @@ static char *create_string_element(blk_t *b, int pos)
     }
     char conversion = format_conversion(format);
     if (nmo_guid_equals(source->type, CKPGUID_INT)) {
-        eng_param_update(b->engine, source);
         if (conversion != 0 && strchr("diouxXc", conversion) != NULL) {
             return text_printf(format, read_int(source));
         }
         return eng_param_text(b->engine, source);
     }
     if (nmo_guid_equals(source->type, CKPGUID_FLOAT)) {
-        eng_param_update(b->engine, source);
         float value = 0.0f;
         read_floats(source, &value, 1);
         if (conversion != 0 && strchr("feEgG", conversion) != NULL) {
