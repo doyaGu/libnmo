@@ -82,6 +82,9 @@ add_executable(nmo_cli
 )
 set_target_properties(nmo_cli PROPERTIES OUTPUT_NAME nmo)
 target_link_libraries(nmo_cli PRIVATE nmo_project nmo_lua nmo_edit nmo_engine nmo yyjson)
+if(TARGET nmo_physics_ivp)
+    target_link_libraries(nmo_cli PRIVATE nmo_physics_ivp)
+endif()
 
 # The analyses `nmo script analyze` bundles, compiled into nmo_cmd_script_analyze.c.
 foreach(_nmo_analysis IN ITEMS summary messages arrays interactions)

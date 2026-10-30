@@ -17,6 +17,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef NMO_HAS_PHYSICS_IVP
+#include "engine/nmo_physics_ivp.h"
+#endif
+
 typedef struct run_args {
     uint32_t frames;
     float delta_ms;
@@ -29,6 +33,7 @@ typedef struct run_args {
     const char *path; /* --path: where loaded files are found, besides the file's folder */
     const char *keys; /* "Space@30-35,Enter@60": keys and the frames they are down */
     const char *registry; /* "Software\Game\Settings\Language=1;...": registry values */
+    bool physics_ivp;     /* --physics ivp: simulate the physics blocks with libivp */
 } run_args_t;
 
 /* A key held down from frame `first` to frame `last`. */
@@ -354,6 +359,42 @@ static void run_trace(const nmo_engine_event_t *event, void *user_data)
     }
 }
 
+/* With --physics: where each movable physical object ended */
+static bool run_add_physics(nmo_cli_record_t *rec, const run_state_t *state)
+{
+    if (!state->args->physics_ivp) {
+        return true;
+    }
+    nmo_cli_record_array_t *list =
+        nmo_cli_record_array(rec, "physics_objects", "Movable physical objects");
+    if (list == NULL) {
+        return false;
+    }
+    for (int32_t i = 0; i < nmo_engine_physics_object_count(state->engine); i++) {
+        nmo_engine_physics_object_t object;
+        float m[16];
+        if (!nmo_engine_physics_object_at(state->engine, i, &object) || object.fixed ||
+            !nmo_engine_entity_world_matrix(state->engine, object.entity, m)) {
+            continue;
+        }
+        const char *name = nmo_engine_object_name(state->engine, object.entity);
+        nmo_cli_record_t *item = nmo_cli_record_new();
+        bool ok = item != NULL &&
+                  nmo_cli_record_uint(item, "id", NULL, object.entity) &&
+                  nmo_cli_record_str(item, "name", NULL, name != NULL ? name : "") &&
+                  nmo_cli_record_set_summary_fmt(item, "  %s#%u at (%.3f, %.3f, %.3f)",
+                                                 name != NULL ? name : "", object.entity,
+                                                 (double)m[12], (double)m[13], (double)m[14]);
+        if (!ok || !nmo_cli_record_array_add(list, item)) {
+            if (!ok) {
+                nmo_cli_record_free(item);
+            }
+            return false;
+        }
+    }
+    return true;
+}
+
 static bool run_add_unknown(nmo_cli_record_t *rec, const run_state_t *state)
 {
     nmo_cli_record_array_t *list =
@@ -597,11 +638,22 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
                 nmo_error_string(status));
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
+#ifdef NMO_HAS_PHYSICS_IVP
+    nmo_physics_ivp_t *physics = NULL;
+    if (args->physics_ivp && nmo_physics_ivp_attach(engine, &physics) != NMO_OK) {
+        fprintf(stderr, "Error: Out of memory\n");
+        nmo_engine_destroy(engine);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+#endif
     const nmo_script_model_t *model = nmo_engine_script_model(engine);
     run_files_t files = {.path = args->path, .folder = run_folder_of(ctx->file_path)};
     nmo_engine_set_file_resolver(engine, run_resolve_file, &files);
     if (!run_set_registry(engine, args->registry)) {
         fprintf(stderr, "Error: Out of memory\n");
+#ifdef NMO_HAS_PHYSICS_IVP
+        nmo_physics_ivp_detach(physics);
+#endif
         nmo_engine_destroy(engine);
         free(files.folder);
         return NMO_CLI_EXIT_INTERNAL_ERROR;
@@ -664,6 +716,7 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
     ok = ok && nmo_cli_record_uint(rec, "block_executions", "Building block executions",
                                    state.executions);
     ok = ok && run_add_unknown(rec, &state);
+    ok = ok && run_add_physics(rec, &state);
     ok = ok && run_add_active_scripts(rec, engine);
 
     if (exit_code == NMO_CLI_EXIT_SUCCESS) {
@@ -676,6 +729,9 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
         nmo_cli_record_free(rec);
     }
     free(state.unknown);
+#ifdef NMO_HAS_PHYSICS_IVP
+    nmo_physics_ivp_detach(physics);
+#endif
     nmo_engine_destroy(engine);
     free(files.folder);
     free(files.found);
@@ -701,9 +757,11 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
          "Folder of the files the document loads, before its own folder"},
         {"--registry", NULL, NMO_OPT_STRING,
          "Registry values the TT blocks read: KEY\\NAME=VALUE;..."},
+        {"--physics", NULL, NMO_OPT_STRING,
+         "Simulate the physics blocks: none or ivp (default: none; ivp when built with libivp)"},
     };
     enum { OPT_FRAMES, OPT_DELTA, OPT_START, OPT_SCRIPT, OPT_UNKNOWN, OPT_MAX_ITER, OPT_SEED,
-           OPT_TRACE, OPT_KEYS, OPT_PATH, OPT_REGISTRY, OPT_COUNT };
+           OPT_TRACE, OPT_KEYS, OPT_PATH, OPT_REGISTRY, OPT_PHYSICS, OPT_COUNT };
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
@@ -749,6 +807,18 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
     } else {
         return false;
     }
+
+    const char *physics = nmo_opt_str(&vals[OPT_PHYSICS]);
+    out->physics_ivp = physics != NULL && strcmp(physics, "ivp") == 0;
+    if (physics != NULL && strcmp(physics, "none") != 0 && !out->physics_ivp) {
+        return false;
+    }
+#ifndef NMO_HAS_PHYSICS_IVP
+    if (out->physics_ivp) {
+        fprintf(stderr, "Error: --physics ivp needs a build with libivp (NMO_IVP_SOURCE_DIR)\n");
+        return false;
+    }
+#endif
 
     const char *unknown = nmo_opt_str(&vals[OPT_UNKNOWN]);
     if (unknown == NULL || strcmp(unknown, "stop") == 0) {

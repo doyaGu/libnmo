@@ -679,12 +679,24 @@ typedef struct nmo_engine_physics_provider {
     void (*simulate)(void *user_data, nmo_engine_t *engine, float seconds);
 } nmo_engine_physics_provider_t;
 
+/** A mesh's vertices and faces, as loaded (for a provider's shapes); counts are -1 for no mesh. */
+NMO_API int32_t nmo_engine_mesh_vertex_count(const nmo_engine_t *engine, nmo_object_id_t mesh);
+NMO_API bool nmo_engine_mesh_vertex(const nmo_engine_t *engine, nmo_object_id_t mesh,
+                                    int32_t index, float out_position[3]);
+NMO_API int32_t nmo_engine_mesh_face_count(const nmo_engine_t *engine, nmo_object_id_t mesh);
+NMO_API bool nmo_engine_mesh_face(const nmo_engine_t *engine, nmo_object_id_t mesh, int32_t index,
+                                  int32_t out_vertices[3]);
+
 /** Give the engine a physics provider (copied); NULL for none. */
 NMO_API void nmo_engine_set_physics_provider(nmo_engine_t *engine,
                                              const nmo_engine_physics_provider_t *provider);
 /** Whether `entity` is physical; `out` (optional) its parameters, valid until the next step. */
 NMO_API bool nmo_engine_physics_object(const nmo_engine_t *engine, nmo_object_id_t entity,
                                        nmo_engine_physics_object_t *out);
+/** The physical objects, in the order they became physical. */
+NMO_API int32_t nmo_engine_physics_object_count(const nmo_engine_t *engine);
+NMO_API bool nmo_engine_physics_object_at(const nmo_engine_t *engine, int32_t index,
+                                          nmo_engine_physics_object_t *out);
 /** The constraints the physics blocks made, in order. */
 NMO_API int32_t nmo_engine_physics_constraint_count(const nmo_engine_t *engine);
 NMO_API bool nmo_engine_physics_constraint(const nmo_engine_t *engine, int32_t index,

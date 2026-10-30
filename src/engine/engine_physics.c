@@ -164,6 +164,23 @@ bool nmo_engine_physics_object(const nmo_engine_t *engine, nmo_object_id_t entit
     return index >= 0;
 }
 
+int32_t nmo_engine_physics_object_count(const nmo_engine_t *engine)
+{
+    return engine != NULL ? (int32_t)engine->physics.objects.count : 0;
+}
+
+bool nmo_engine_physics_object_at(const nmo_engine_t *engine, int32_t index,
+                                  nmo_engine_physics_object_t *out)
+{
+    if (engine == NULL || index < 0 || (size_t)index >= engine->physics.objects.count) {
+        return false;
+    }
+    if (out != NULL) {
+        *out = engine->physics.objects.data[index].desc;
+    }
+    return true;
+}
+
 int32_t nmo_engine_physics_constraint_count(const nmo_engine_t *engine)
 {
     return engine != NULL ? (int32_t)engine->physics.constraints.count : 0;
@@ -186,6 +203,52 @@ void nmo_engine_physics_gravity(const nmo_engine_t *engine, float out[3])
     for (int k = 0; k < 3; k++) {
         out[k] = engine != NULL ? engine->physics.gravity[k] : 0.0f;
     }
+}
+
+static const nmo_mesh_state_t *public_mesh(const nmo_engine_t *engine, nmo_object_id_t id)
+{
+    nmo_object_t *object = engine != NULL && id != 0 ? eng_find_object(engine, id) : NULL;
+    return object != NULL ? (const nmo_mesh_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
+                                engine->types, object, CKPGUID_MESH)
+                          : NULL;
+}
+
+int32_t nmo_engine_mesh_vertex_count(const nmo_engine_t *engine, nmo_object_id_t mesh)
+{
+    const nmo_mesh_state_t *state = public_mesh(engine, mesh);
+    return state != NULL ? (int32_t)state->vertex_count : -1;
+}
+
+bool nmo_engine_mesh_vertex(const nmo_engine_t *engine, nmo_object_id_t mesh, int32_t index,
+                            float out_position[3])
+{
+    const nmo_mesh_state_t *state = public_mesh(engine, mesh);
+    if (state == NULL || index < 0 || (uint32_t)index >= state->vertex_count) {
+        return false;
+    }
+    out_position[0] = state->vertices[index].position.x;
+    out_position[1] = state->vertices[index].position.y;
+    out_position[2] = state->vertices[index].position.z;
+    return true;
+}
+
+int32_t nmo_engine_mesh_face_count(const nmo_engine_t *engine, nmo_object_id_t mesh)
+{
+    const nmo_mesh_state_t *state = public_mesh(engine, mesh);
+    return state != NULL ? (int32_t)state->face_count : -1;
+}
+
+bool nmo_engine_mesh_face(const nmo_engine_t *engine, nmo_object_id_t mesh, int32_t index,
+                          int32_t out_vertices[3])
+{
+    const nmo_mesh_state_t *state = public_mesh(engine, mesh);
+    if (state == NULL || index < 0 || (uint32_t)index >= state->face_count) {
+        return false;
+    }
+    for (int k = 0; k < 3; k++) {
+        out_vertices[k] = state->face_vertex_indices[3u * (uint32_t)index + (uint32_t)k];
+    }
+    return true;
 }
 
 /* ============================================================================
