@@ -218,6 +218,7 @@ typedef struct eng_input {
 /* An attribute type of the engine, from a document's Attribute Manager */
 typedef struct eng_attribute_type {
     bool present;
+    uint32_t flags; /* CK_ATTRIBUT_FLAGS */
     char *name;
     nmo_guid_t parameter_type; /* null for an attribute without a value */
     int32_t compatible_class_id;
@@ -273,21 +274,37 @@ struct nmo_engine_block {
  * since. Its objects have engine IDs offset + 1 to limit (its IDs plus the
  * offset); its message and attribute types map to the engine's.
  */
+/*
+ * A document the engine runs, or part of one: the objects of its session
+ * whose IDs are in [first_local, last_local]. An engine ID is the document
+ * ID plus `offset` (wrapping, so a window far into a session can start right
+ * after the engine's last ID); `limit` is the engine ID of last_local. The
+ * copies Object Copy makes in a loaded file's session are a module of their
+ * own that shares that session.
+ */
 typedef struct eng_module {
+    const struct nmo_engine *engine;
     nmo_workspace_t *workspace;
     nmo_object_repository_t *repo;
     nmo_script_model_t *model;
     nmo_object_id_t offset;
     nmo_object_id_t limit;
+    nmo_object_id_t first_local, last_local;
     int32_t *message_types;
     uint32_t message_type_count;
     int32_t *attribute_types;
     uint32_t attribute_type_count;
     char *name;              /* a loaded file: the name it was loaded by */
-    nmo_session_t *session;  /* a loaded file: what the engine made to read it */
+    nmo_session_t *session;  /* what the engine made (and frees): a loaded file's, the created objects' */
     nmo_document_t *document;
-    bool created;            /* the objects blocks create, in `session` (no workspace) */
+    bool created;            /* the objects blocks create */
 } eng_module_t;
+
+/* Part of a module to build or load: its objects with IDs in [first, last] */
+typedef struct eng_range {
+    int32_t module;
+    nmo_object_id_t first, last;
+} eng_range_t;
 
 /* A VxMatrix: rows 0 to 2 the X, Y and Z axes, row 3 the position. */
 typedef struct eng_matrix {
@@ -313,7 +330,7 @@ typedef struct eng_entity {
     bool destroyed;
 } eng_entity_t;
 
-/* A group whose objects changed at run time: its objects now, by engine ID. */
+/* A CKGroup: its objects now, by engine ID. */
 typedef struct eng_group {
     nmo_object_id_t id;
     nmo_object_id_t *objects;
@@ -368,7 +385,7 @@ struct nmo_engine {
     ENG_VEC(eng_entity_t) entities;
     eng_map_t entity_map;
 
-    eng_map_t node_map, io_map, param_map, operation_map, object_map, array_map;
+    eng_map_t node_map, io_map, param_map, operation_map, object_map, array_map, group_map;
     /* The objects in the level scene (CKBeObject::IsInScene); every object without one */
     eng_map_t scene_objects;
     bool has_level_scene;
@@ -465,7 +482,7 @@ eng_vector_t eng_vector_cross(const eng_vector_t *a, const eng_vector_t *b);
 void eng_matrix_from_rotation(eng_matrix_t *result, const eng_vector_t *axis, float angle);
 void eng_matrix_from_euler(eng_matrix_t *result, float ax, float ay, float az);
 void eng_matrix_to_euler(const eng_matrix_t *m, float *ax, float *ay, float *az);
-nmo_status_t eng_load_entities(nmo_engine_t *engine, int32_t module);
+nmo_status_t eng_load_entities(nmo_engine_t *engine, const eng_range_t *range);
 void eng_free_entities(nmo_engine_t *engine);
 nmo_status_t eng_add_entity(nmo_engine_t *engine, nmo_object_id_t id);
 int32_t eng_entity_index(const nmo_engine_t *engine, nmo_object_id_t id);
@@ -503,13 +520,48 @@ bool eng_entity_set_parent(nmo_engine_t *engine, int32_t index, int32_t parent,
 void eng_entity_destroy(nmo_engine_t *engine, nmo_object_id_t id);
 bool eng_entity_bary_center(nmo_engine_t *engine, int32_t index, eng_vector_t *out);
 
+/* engine_copy.c */
+#define ENG_DEPENDENCY_CLASSES 128
+/* A CKDependencies: CK_DEPENDENCIES_FLAGS, and each class's dependency mask */
+typedef struct eng_dependencies {
+    uint32_t flags;
+    uint32_t classes[ENG_DEPENDENCY_CLASSES];
+} eng_dependencies_t;
+void eng_default_copy_dependencies(eng_dependencies_t *deps);
+void eng_dependencies_from_param(nmo_engine_t *engine, nmo_object_id_t param_id,
+                                 eng_dependencies_t *deps);
+nmo_status_t eng_copy_objects(nmo_engine_t *engine, const nmo_object_id_t *ids, int32_t count,
+                              const eng_dependencies_t *deps, bool activate,
+                              nmo_object_id_t *out_copies);
+void eng_copy_attributes(nmo_engine_t *engine, nmo_object_id_t from, nmo_object_id_t to);
+void eng_copy_array(nmo_engine_t *engine, nmo_object_id_t from, nmo_object_id_t to);
+void eng_copy_group(nmo_engine_t *engine, nmo_object_id_t from, nmo_object_id_t to,
+                    const nmo_object_id_t *originals, const nmo_object_id_t *copies, size_t count);
+
 /* engine_3dtrans.c */
 nmo_status_t eng_register_3dtrans(nmo_engine_t *engine);
+/* The engine ID of an object of a module's session outside its window (engine_module.c) */
+nmo_object_id_t eng_module_id_outside(const eng_module_t *module, nmo_object_id_t local);
 /* The engine ID of a document's object ID; 0 stays 0. */
 static inline nmo_object_id_t eng_module_id(const eng_module_t *module, nmo_object_id_t local)
 {
-    return local != 0 && module != NULL ? local + module->offset : local;
+    if (local == 0 || module == NULL) {
+        return local;
+    }
+    if (local >= module->first_local && local <= module->last_local) {
+        return local + module->offset;
+    }
+    return eng_module_id_outside(module, local);
 }
+static inline bool eng_module_has(const eng_module_t *module, nmo_object_id_t local)
+{
+    return local >= module->first_local && local <= module->last_local;
+}
+nmo_object_id_t eng_next_engine_id(const nmo_engine_t *engine);
+/* The whole window of a module */
+eng_range_t eng_module_range(const nmo_engine_t *engine, int32_t module);
+nmo_status_t eng_load_range(nmo_engine_t *engine, int32_t module, nmo_object_id_t first,
+                            nmo_object_id_t last);
 /* A document's message or attribute type as the engine's */
 int32_t eng_module_message_type(const eng_module_t *module, int32_t type);
 int32_t eng_module_attribute_type(const eng_module_t *module, int32_t type);
@@ -518,7 +570,7 @@ int32_t eng_message_type_add(nmo_engine_t *engine, const char *name);
 
 /* engine_build.c */
 /* Build the behaviors, parameters and script owners of document `module`. */
-nmo_status_t eng_build_module(nmo_engine_t *engine, int32_t module);
+nmo_status_t eng_build_module(nmo_engine_t *engine, const eng_range_t *range);
 typedef struct nmo_parameter_state nmo_parameter_state_t;
 /*
  * The bytes a CKParameter of document `module` holds in memory, from its
@@ -530,10 +582,14 @@ bool eng_parameter_state_bytes(const eng_module_t *module, const nmo_parameter_s
                                size_t fallback_size, uint8_t **out_data, uint32_t *out_size);
 
 /* engine_array.c */
-nmo_status_t eng_load_arrays(nmo_engine_t *engine, int32_t module);
+nmo_status_t eng_load_arrays(nmo_engine_t *engine, const eng_range_t *range);
 void eng_free_arrays(nmo_engine_t *engine);
 eng_array_t *eng_find_array(const nmo_engine_t *engine, nmo_object_id_t id);
 nmo_status_t eng_add_array(nmo_engine_t *engine, nmo_object_id_t id);
+nmo_status_t eng_load_groups(nmo_engine_t *engine, const eng_range_t *range);
+nmo_status_t eng_add_group(nmo_engine_t *engine, nmo_object_id_t id);
+void eng_group_join(nmo_engine_t *engine, nmo_object_id_t original, nmo_object_id_t copy);
+void eng_forget_object(nmo_engine_t *engine, nmo_object_id_t id);
 bool eng_group_add(nmo_engine_t *engine, nmo_object_id_t group_id, nmo_object_id_t object_id);
 size_t eng_type_size(const nmo_engine_t *engine, nmo_guid_t type);
 
@@ -621,7 +677,7 @@ nmo_status_t eng_register_controllers(nmo_engine_t *engine);
 bool eng_curve_value(const nmo_parameter_state_t *state, uint8_t **out_data, uint32_t *out_size);
 
 /* engine_attributes.c */
-nmo_status_t eng_load_attributes(nmo_engine_t *engine, int32_t module);
+nmo_status_t eng_load_attributes(nmo_engine_t *engine, const eng_range_t *range);
 void eng_free_attributes(nmo_engine_t *engine);
 nmo_status_t eng_register_attributes(nmo_engine_t *engine);
 

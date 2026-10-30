@@ -133,6 +133,7 @@ static nmo_status_t module_map_attributes(nmo_engine_t *engine, eng_module_t *mo
                 return NMO_ERR_NOMEM;
             }
             slot->present = desc->present;
+            slot->flags = desc->flags;
             slot->name = desc->name != NULL ? module_strdup(desc->name) : NULL;
             slot->parameter_type = desc->parameter_type_guid;
             slot->compatible_class_id = desc->compatible_class_id;
@@ -141,6 +142,18 @@ static nmo_status_t module_map_attributes(nmo_engine_t *engine, eng_module_t *mo
         module->attribute_types[i] = type;
     }
     return NMO_OK;
+}
+
+/* The engine ID after every module's: where a new module's IDs start. */
+nmo_object_id_t eng_next_engine_id(const nmo_engine_t *engine)
+{
+    nmo_object_id_t last = 0;
+    for (size_t i = 0; i < engine->modules.count; i++) {
+        if (engine->modules.data[i].limit > last) {
+            last = engine->modules.data[i].limit;
+        }
+    }
+    return last + 1u;
 }
 
 nmo_status_t eng_module_open(nmo_engine_t *engine, nmo_workspace_t *workspace,
@@ -152,8 +165,7 @@ nmo_status_t eng_module_open(nmo_engine_t *engine, nmo_workspace_t *workspace,
         return NMO_ERR_INVALID_STATE;
     }
     bool first = engine->modules.count == 0;
-    nmo_object_id_t offset =
-        first ? 0u : engine->modules.data[engine->modules.count - 1u].limit;
+    nmo_object_id_t offset = first ? 0u : eng_next_engine_id(engine) - 1u;
     nmo_object_id_t highest = 0;
     size_t count = nmo_object_repository_get_count(repo);
     for (size_t i = 0; i < count; i++) {
@@ -168,10 +180,13 @@ nmo_status_t eng_module_open(nmo_engine_t *engine, nmo_workspace_t *workspace,
     if (!ENG_VEC_PUSH(engine->modules, module)) {
         return NMO_ERR_NOMEM;
     }
+    module->engine = engine;
     module->workspace = workspace;
     module->repo = repo;
     module->offset = offset;
     module->limit = offset + highest;
+    module->first_local = 1;
+    module->last_local = highest;
     module->session = session;
     module->document = document;
     int32_t index = (int32_t)engine->modules.count - 1;
@@ -212,14 +227,63 @@ const eng_module_t *eng_module_of(const nmo_engine_t *engine, nmo_object_id_t id
 {
     for (size_t i = 0; engine != NULL && id != 0 && i < engine->modules.count; i++) {
         const eng_module_t *module = &engine->modules.data[i];
-        if (id > module->offset && id <= module->limit) {
+        nmo_object_id_t local = id - module->offset;
+        if (eng_module_has(module, local)) {
             if (out_local != NULL) {
-                *out_local = id - module->offset;
+                *out_local = local;
             }
             return module;
         }
     }
     return NULL;
+}
+
+/* An ID of the session outside the module's window: the module of that session owning it. */
+nmo_object_id_t eng_module_id_outside(const eng_module_t *module, nmo_object_id_t local)
+{
+    const nmo_engine_t *engine = module->engine;
+    for (size_t i = 0; engine != NULL && i < engine->modules.count; i++) {
+        const eng_module_t *other = &engine->modules.data[i];
+        if (other->repo == module->repo && eng_module_has(other, local)) {
+            return local + other->offset;
+        }
+    }
+    return local + module->offset;
+}
+
+eng_range_t eng_module_range(const nmo_engine_t *engine, int32_t module)
+{
+    const eng_module_t *m = &engine->modules.data[module];
+    eng_range_t range = {module, m->first_local, m->last_local};
+    return range;
+}
+
+/*
+ * The engine state of a module's objects with IDs in [first, last] (all of
+ * its window for 0, 0): behaviors, arrays, 3D entities and attributes.
+ */
+nmo_status_t eng_load_range(nmo_engine_t *engine, int32_t module, nmo_object_id_t first,
+                            nmo_object_id_t last)
+{
+    eng_range_t range = eng_module_range(engine, module);
+    if (first != 0 || last != 0) {
+        range.first = first;
+        range.last = last;
+    }
+    nmo_status_t status = eng_build_module(engine, &range);
+    if (status == NMO_OK) {
+        status = eng_load_arrays(engine, &range);
+    }
+    if (status == NMO_OK) {
+        status = eng_load_groups(engine, &range);
+    }
+    if (status == NMO_OK) {
+        status = eng_load_entities(engine, &range);
+    }
+    if (status == NMO_OK) {
+        status = eng_load_attributes(engine, &range);
+    }
+    return status;
 }
 
 nmo_object_t *eng_find_object(const nmo_engine_t *engine, nmo_object_id_t id)
@@ -237,7 +301,8 @@ nmo_object_id_t eng_object_named(const nmo_engine_t *engine, const char *name, u
         nmo_object_t **objects = nmo_object_repository_get_all(module->repo, &count);
         for (size_t i = 0; objects != NULL && i < count; i++) {
             const char *object_name = nmo_object_get_name(objects[i]);
-            if (object_name != NULL && strcmp(object_name, name) == 0 &&
+            if (eng_module_has(module, nmo_object_get_id(objects[i])) && object_name != NULL &&
+                strcmp(object_name, name) == 0 &&
                 (class_id == 0 ||
                  nmo_type_registry_is_class_derived_from(
                      engine->types, (uint32_t)nmo_object_get_class_id(objects[i]), class_id))) {
@@ -273,11 +338,19 @@ nmo_object_id_t eng_create_object(nmo_engine_t *engine, uint32_t class_id, const
             return 0;
         }
         index = (int32_t)engine->modules.count - 1;
-        module->offset = index > 0 ? engine->modules.data[index - 1].limit : 0u;
+        module->engine = engine;
+        module->offset = eng_next_engine_id(engine) - 1u;
         module->limit = module->offset + ENG_CREATED_CAPACITY;
+        module->first_local = 1;
+        module->last_local = ENG_CREATED_CAPACITY;
         module->repo = nmo_session_get_repository(session);
         module->session = session;
         module->created = true;
+        /* A workspace too, for the scripts of copies made of created objects */
+        if (nmo_session_borrow_document(session, &module->document) != NMO_OK ||
+            nmo_workspace_create(ctx, module->document, &module->workspace) != NMO_OK) {
+            module->workspace = NULL;
+        }
     }
     eng_module_t *module = &engine->modules.data[index];
     nmo_object_id_t local = 0;
@@ -289,6 +362,9 @@ nmo_object_id_t eng_create_object(nmo_engine_t *engine, uint32_t class_id, const
     }
     nmo_object_id_t id = module->offset + local;
     if (class_id == NMO_CID_DATAARRAY && eng_add_array(engine, id) != NMO_OK) {
+        return 0;
+    }
+    if (class_id == NMO_CID_GROUP && eng_add_group(engine, id) != NMO_OK) {
         return 0;
     }
     if (nmo_type_registry_is_class_derived_from(engine->types, class_id, NMO_CID_3DENTITY) &&
@@ -370,16 +446,7 @@ nmo_status_t nmo_engine_load(nmo_engine_t *engine, const char *name, bool add_to
     nmo_status_t status = module_load(engine, path, &module);
     if (status == NMO_OK) {
         engine->modules.data[module].name = module_strdup(name);
-        status = eng_build_module(engine, module);
-    }
-    if (status == NMO_OK) {
-        status = eng_load_arrays(engine, module);
-    }
-    if (status == NMO_OK) {
-        status = eng_load_entities(engine, module);
-    }
-    if (status == NMO_OK) {
-        status = eng_load_attributes(engine, module);
+        status = eng_load_range(engine, module, 0u, 0u);
     }
     if (status != NMO_OK) {
         eng_emit(engine, NMO_ENGINE_EVENT_FILE_LOADED, -1, 0, -1);
@@ -414,17 +481,30 @@ int32_t nmo_engine_loaded_object_count(const nmo_engine_t *engine, int32_t file)
     if (engine == NULL || file < 0 || (size_t)file >= engine->modules.count) {
         return 0;
     }
-    return (int32_t)nmo_object_repository_get_count(engine->modules.data[file].repo);
+    const eng_module_t *module = &engine->modules.data[file];
+    size_t total = nmo_object_repository_get_count(module->repo);
+    int32_t count = 0;
+    for (size_t i = 0; i < total; i++) {
+        nmo_object_t *object = nmo_object_repository_get_by_index(module->repo, i);
+        count += object != NULL && eng_module_has(module, nmo_object_get_id(object));
+    }
+    return count;
 }
 
 nmo_object_id_t nmo_engine_loaded_object(const nmo_engine_t *engine, int32_t file, int32_t index)
 {
-    if (index < 0 || index >= nmo_engine_loaded_object_count(engine, file)) {
+    if (engine == NULL || file < 0 || (size_t)file >= engine->modules.count || index < 0) {
         return 0;
     }
     const eng_module_t *module = &engine->modules.data[file];
-    nmo_object_t *object = nmo_object_repository_get_by_index(module->repo, (size_t)index);
-    return object != NULL ? eng_module_id(module, nmo_object_get_id(object)) : 0;
+    size_t total = nmo_object_repository_get_count(module->repo);
+    for (size_t i = 0; i < total; i++) {
+        nmo_object_t *object = nmo_object_repository_get_by_index(module->repo, i);
+        if (object != NULL && eng_module_has(module, nmo_object_get_id(object)) && index-- == 0) {
+            return eng_module_id(module, nmo_object_get_id(object));
+        }
+    }
+    return 0;
 }
 
 const char *nmo_engine_object_name(const nmo_engine_t *engine, nmo_object_id_t id)

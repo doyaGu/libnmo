@@ -502,6 +502,21 @@ NMO_API nmo_object_id_t nmo_engine_entity_under_mouse(const nmo_engine_t *engine
 /** CKInputManager::GetCursorVisibility: shown until Show Mouse Cursor hides it. */
 NMO_API bool nmo_engine_cursor_is_visible(const nmo_engine_t *engine);
 
+/**
+ * CKContext::CopyObjects with the default copy dependencies: copies of the
+ * objects and of what their classes copy with them (a behavioral object's
+ * scripts and attributes, a 3D entity's children), sharing the rest (a
+ * mesh), each in the state its original has. `out_copies[i]` is the copy
+ * of `ids[i]`, 0 for one not copied (an object of the engine's own
+ * document). Copies join the level scene with their originals, active with
+ * `activate` or when their originals are.
+ */
+NMO_API nmo_status_t nmo_engine_copy_objects(nmo_engine_t *engine,
+                                             const nmo_object_id_t *ids,
+                                             int32_t count,
+                                             bool activate,
+                                             nmo_object_id_t *out_copies);
+
 /* ---- 3D entities ----
  *
  * The engine keeps each CK3dEntity's world and local matrices and its

@@ -176,13 +176,15 @@ static nmo_status_t eng_load_array(nmo_engine_t *engine, const eng_module_t *mod
     return NMO_OK;
 }
 
-nmo_status_t eng_load_arrays(nmo_engine_t *engine, int32_t module)
+nmo_status_t eng_load_arrays(nmo_engine_t *engine, const eng_range_t *range)
 {
+    int32_t module = range->module;
     nmo_object_repository_t *repo = engine->modules.data[module].repo;
     size_t count = repo != NULL ? nmo_object_repository_get_count(repo) : 0u;
     for (size_t i = 0; i < count; i++) {
         nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
-        if (object == NULL || nmo_object_get_class_id(object) != NMO_CID_DATAARRAY) {
+        if (object == NULL || nmo_object_get_class_id(object) != NMO_CID_DATAARRAY ||
+            nmo_object_get_id(object) < range->first || nmo_object_get_id(object) > range->last) {
             continue;
         }
         const nmo_dataarray_state_t *state =
@@ -199,6 +201,59 @@ nmo_status_t eng_load_arrays(nmo_engine_t *engine, int32_t module)
         }
     }
     return NMO_OK;
+}
+
+/*
+ * CKDataArray::Copy at run time: `to` gets `from`'s columns, cells, key
+ * column and sort as the engine has them now.
+ */
+void eng_copy_array(nmo_engine_t *engine, nmo_object_id_t from, nmo_object_id_t to)
+{
+    const eng_array_t *source = eng_find_array(engine, from);
+    eng_array_t *dest = eng_find_array(engine, to);
+    if (source == NULL || dest == NULL) {
+        return;
+    }
+    size_t cell_count = source->row_count * source->column_count;
+    eng_column_t *columns = source->column_count > 0
+                                ? (eng_column_t *)malloc(source->column_count * sizeof(eng_column_t))
+                                : NULL;
+    eng_cell_t *cells = cell_count > 0 ? (eng_cell_t *)calloc(cell_count, sizeof(eng_cell_t)) : NULL;
+    if ((source->column_count > 0 && columns == NULL) || (cell_count > 0 && cells == NULL)) {
+        free(columns);
+        free(cells);
+        return;
+    }
+    if (columns != NULL) {
+        memcpy(columns, source->columns, source->column_count * sizeof(eng_column_t));
+    }
+    for (size_t c = 0; c < cell_count; c++) {
+        const eng_cell_t *cell = &source->cells[c];
+        cells[c].value = cell->value;
+        cells[c].text = eng_strdup(cell->text);
+        cells[c].size = cell->size;
+        if (cell->data != NULL && cell->size > 0) {
+            cells[c].data = (uint8_t *)malloc(cell->size);
+            if (cells[c].data != NULL) {
+                memcpy(cells[c].data, cell->data, cell->size);
+            } else {
+                cells[c].size = 0;
+            }
+        }
+    }
+    for (size_t c = 0; c < dest->row_count * dest->column_count; c++) {
+        eng_cell_clear(&dest->cells[c]);
+    }
+    free(dest->cells);
+    free(dest->columns);
+    dest->columns = columns;
+    dest->cells = cells;
+    dest->column_count = source->column_count;
+    dest->row_count = source->row_count;
+    dest->row_capacity = source->row_count;
+    dest->key_column = source->key_column;
+    dest->sorted = source->sorted;
+    dest->sort_column = source->sort_column;
 }
 
 /* A new CKDataArray: no columns, no rows, no key column. */
@@ -226,6 +281,7 @@ void eng_free_arrays(nmo_engine_t *engine)
         free(engine->groups.data[i].objects);
     }
     free(engine->groups.data);
+    free(engine->group_map.slots);
 }
 
 eng_array_t *eng_find_array(const nmo_engine_t *engine, nmo_object_id_t id)
@@ -770,70 +826,74 @@ nmo_status_t nmo_engine_array_remove_column(nmo_engine_t *engine, nmo_object_id_
  * Groups
  * ============================================================================ */
 
-static const nmo_group_state_t *eng_group_state(const nmo_engine_t *engine, nmo_object_id_t id,
-                                                const eng_module_t **out_module)
+/* A group the engine keeps: its objects by engine ID, from its load or creation on. */
+static eng_group_t *eng_find_group(const nmo_engine_t *engine, nmo_object_id_t id)
 {
-    if (engine == NULL || id == 0) {
-        return NULL;
-    }
-    nmo_object_t *object = eng_find_object(engine, id);
-    if (object == NULL || nmo_object_get_class_id(object) != NMO_CID_GROUP) {
-        return NULL;
-    }
-    if (out_module != NULL) {
-        *out_module = eng_module_of(engine, id, NULL);
-    }
-    return (const nmo_group_state_t *)nmo_object_get_state(object);
+    int32_t index = engine != NULL ? eng_map_get(&engine->group_map, id) : -1;
+    return index >= 0 ? &engine->groups.data[index] : NULL;
 }
 
-/* The group's objects as they changed at run time; NULL while they are the file's. */
-static eng_group_t *eng_changed_group(const nmo_engine_t *engine, nmo_object_id_t id)
+static nmo_status_t eng_load_group(nmo_engine_t *engine, nmo_object_id_t id,
+                                   const eng_module_t *module, const nmo_group_state_t *state)
 {
-    for (size_t i = 0; engine != NULL && i < engine->groups.count; i++) {
-        if (engine->groups.data[i].id == id) {
-            return &engine->groups.data[i];
+    size_t count = state != NULL ? state->object_ids.count : 0u;
+    nmo_object_id_t *objects =
+        (nmo_object_id_t *)malloc((count > 0 ? count : 1u) * sizeof(nmo_object_id_t));
+    eng_group_t *group = NULL;
+    if (objects == NULL || !ENG_VEC_PUSH(engine->groups, group)) {
+        free(objects);
+        return NMO_ERR_NOMEM;
+    }
+    group->id = id;
+    group->objects = objects;
+    group->count = 0;
+    group->capacity = count > 0 ? count : 1u;
+    for (size_t i = 0; i < count; i++) {
+        nmo_object_id_t local = nmo_ref_runtime_id(&((const nmo_ref_t *)state->object_ids.data)[i]);
+        if (local != 0) {
+            objects[group->count++] = eng_module_id(module, local);
         }
     }
-    return NULL;
+    if (!eng_map_put(&engine->group_map, id, (int32_t)(engine->groups.count - 1u))) {
+        return NMO_ERR_NOMEM;
+    }
+    return NMO_OK;
 }
 
-/*
- * CKGroup::AddObject: a behavioral object other than the group, once. The
- * engine keeps the group's objects from its first change on.
- */
-bool eng_group_add(nmo_engine_t *engine, nmo_object_id_t group_id, nmo_object_id_t object_id)
+nmo_status_t eng_load_groups(nmo_engine_t *engine, const eng_range_t *range)
 {
-    if (object_id == 0 || object_id == group_id || eng_group_state(engine, group_id, NULL) == NULL) {
-        return false;
+    int32_t module = range->module;
+    nmo_object_repository_t *repo = engine->modules.data[module].repo;
+    size_t count = repo != NULL ? nmo_object_repository_get_count(repo) : 0u;
+    for (size_t i = 0; i < count; i++) {
+        nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
+        if (object == NULL || nmo_object_get_class_id(object) != NMO_CID_GROUP ||
+            nmo_object_get_id(object) < range->first || nmo_object_get_id(object) > range->last) {
+            continue;
+        }
+        const eng_module_t *owner = &engine->modules.data[module];
+        nmo_status_t status =
+            eng_load_group(engine, eng_module_id(owner, nmo_object_get_id(object)), owner,
+                           (const nmo_group_state_t *)nmo_object_get_state(object));
+        if (status != NMO_OK) {
+            return status;
+        }
     }
-    nmo_object_t *object = eng_find_object(engine, object_id);
-    if (object == NULL ||
-        !nmo_type_registry_is_class_derived_from(engine->types,
-                                                 (uint32_t)nmo_object_get_class_id(object),
-                                                 NMO_CID_BEOBJECT)) {
-        return false;
-    }
-    int32_t count = nmo_engine_group_count(engine, group_id);
-    for (int32_t i = 0; i < count; i++) {
-        if (nmo_engine_group_object(engine, group_id, i) == object_id) {
+    return NMO_OK;
+}
+
+/* A new CKGroup: no objects. */
+nmo_status_t eng_add_group(nmo_engine_t *engine, nmo_object_id_t id)
+{
+    return eng_load_group(engine, id, NULL, NULL);
+}
+
+static bool eng_group_push(eng_group_t *group, nmo_object_id_t object_id)
+{
+    for (size_t i = 0; i < group->count; i++) {
+        if (group->objects[i] == object_id) {
             return false;
         }
-    }
-    eng_group_t *group = eng_changed_group(engine, group_id);
-    if (group == NULL) {
-        nmo_object_id_t *objects =
-            (nmo_object_id_t *)malloc(((size_t)count + 1u) * sizeof(nmo_object_id_t));
-        if (objects == NULL || !ENG_VEC_PUSH(engine->groups, group)) {
-            free(objects);
-            return false;
-        }
-        for (int32_t i = 0; i < count; i++) {
-            objects[i] = nmo_engine_group_object(engine, group_id, i);
-        }
-        group->id = group_id;
-        group->objects = objects;
-        group->count = (size_t)count;
-        group->capacity = (size_t)count + 1u;
     }
     if (!eng_vec_reserve((void **)&group->objects, &group->capacity, group->count + 1u,
                          sizeof(nmo_object_id_t))) {
@@ -843,27 +903,109 @@ bool eng_group_add(nmo_engine_t *engine, nmo_object_id_t group_id, nmo_object_id
     return true;
 }
 
+/* CKGroup::AddObject: a behavioral object other than the group, once. */
+bool eng_group_add(nmo_engine_t *engine, nmo_object_id_t group_id, nmo_object_id_t object_id)
+{
+    eng_group_t *group = eng_find_group(engine, group_id);
+    if (group == NULL || object_id == 0 || object_id == group_id) {
+        return false;
+    }
+    nmo_object_t *object = eng_find_object(engine, object_id);
+    if (object == NULL ||
+        !nmo_type_registry_is_class_derived_from(engine->types,
+                                                 (uint32_t)nmo_object_get_class_id(object),
+                                                 NMO_CID_BEOBJECT)) {
+        return false;
+    }
+    return eng_group_push(group, object_id);
+}
+
+/*
+ * CKBeObject::Copy with the groups dependency: the copy joins each group its
+ * original is in.
+ */
+void eng_group_join(nmo_engine_t *engine, nmo_object_id_t original, nmo_object_id_t copy)
+{
+    for (size_t g = 0; g < engine->groups.count; g++) {
+        eng_group_t *group = &engine->groups.data[g];
+        for (size_t i = 0; i < group->count; i++) {
+            if (group->objects[i] == original) {
+                if (group->id != copy) {
+                    eng_group_push(group, copy);
+                }
+                break;
+            }
+        }
+    }
+}
+
+/*
+ * Deleting an object: groups drop it (CKGroup::CheckPreDeletion) and object
+ * cells that held it hold none (CKDataArray::CheckPostDeletion).
+ */
+void eng_forget_object(nmo_engine_t *engine, nmo_object_id_t id)
+{
+    for (size_t g = 0; g < engine->groups.count; g++) {
+        eng_group_t *group = &engine->groups.data[g];
+        size_t kept = 0;
+        for (size_t i = 0; i < group->count; i++) {
+            if (group->objects[i] != id) {
+                group->objects[kept++] = group->objects[i];
+            }
+        }
+        group->count = kept;
+    }
+    for (size_t a = 0; a < engine->arrays.count; a++) {
+        eng_array_t *array = &engine->arrays.data[a];
+        for (uint32_t c = 0; c < array->column_count; c++) {
+            if (array->columns[c].type != CKARRAYTYPE_OBJECT) {
+                continue;
+            }
+            for (size_t r = 0; r < array->row_count; r++) {
+                eng_cell_t *cell = eng_array_cell(array, r, c);
+                if (cell->value == id) {
+                    cell->value = 0;
+                }
+            }
+        }
+    }
+}
+
+/*
+ * CKGroup::Copy then RemapDependencies: a copied group has its original's
+ * objects now, the copied ones as their copies.
+ */
+void eng_copy_group(nmo_engine_t *engine, nmo_object_id_t from, nmo_object_id_t to,
+                    const nmo_object_id_t *originals, const nmo_object_id_t *copies, size_t count)
+{
+    const eng_group_t *source = eng_find_group(engine, from);
+    eng_group_t *group = eng_find_group(engine, to);
+    if (source == NULL || group == NULL ||
+        !eng_vec_reserve((void **)&group->objects, &group->capacity, source->count,
+                         sizeof(nmo_object_id_t))) {
+        return;
+    }
+    for (size_t i = 0; i < source->count; i++) {
+        group->objects[i] = source->objects[i];
+        for (size_t k = 0; k < count; k++) {
+            if (originals[k] == group->objects[i]) {
+                group->objects[i] = copies[k];
+                break;
+            }
+        }
+    }
+    group->count = source->count;
+}
+
 int32_t nmo_engine_group_count(const nmo_engine_t *engine, nmo_object_id_t group_id)
 {
-    const eng_group_t *changed = eng_changed_group(engine, group_id);
-    if (changed != NULL) {
-        return (int32_t)changed->count;
-    }
-    const nmo_group_state_t *group = eng_group_state(engine, group_id, NULL);
-    return group != NULL ? (int32_t)group->object_ids.count : -1;
+    const eng_group_t *group = eng_find_group(engine, group_id);
+    return group != NULL ? (int32_t)group->count : -1;
 }
 
 nmo_object_id_t nmo_engine_group_object(const nmo_engine_t *engine, nmo_object_id_t group_id,
                                         int32_t index)
 {
-    const eng_group_t *changed = eng_changed_group(engine, group_id);
-    if (changed != NULL) {
-        return index >= 0 && (size_t)index < changed->count ? changed->objects[index] : 0;
-    }
-    const eng_module_t *module = NULL;
-    const nmo_group_state_t *group = eng_group_state(engine, group_id, &module);
-    if (group == NULL || index < 0 || (size_t)index >= group->object_ids.count) {
-        return 0;
-    }
-    return eng_module_id(module, nmo_ref_runtime_id(&((const nmo_ref_t *)group->object_ids.data)[index]));
+    const eng_group_t *group = eng_find_group(engine, group_id);
+    return group != NULL && index >= 0 && (size_t)index < group->count ? group->objects[index] : 0;
 }

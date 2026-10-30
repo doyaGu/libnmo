@@ -73,13 +73,17 @@ static nmo_status_t attribute_add(nmo_engine_t *engine, const eng_module_t *modu
     return NMO_OK;
 }
 
-nmo_status_t eng_load_attributes(nmo_engine_t *engine, int32_t module)
+nmo_status_t eng_load_attributes(nmo_engine_t *engine, const eng_range_t *range)
 {
-    const eng_module_t *owner = &engine->modules.data[module];
+    const eng_module_t *owner = &engine->modules.data[range->module];
     nmo_object_repository_t *repo = owner->repo;
     size_t count = 0;
     nmo_object_t **objects = repo != NULL ? nmo_object_repository_get_all(repo, &count) : NULL;
     for (size_t i = 0; objects != NULL && i < count; i++) {
+        if (nmo_object_get_id(objects[i]) < range->first ||
+            nmo_object_get_id(objects[i]) > range->last) {
+            continue;
+        }
         const nmo_beobject_state_t *be =
             (const nmo_beobject_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
                 engine->types, objects[i], CKPGUID_BEOBJECT);
@@ -129,6 +133,41 @@ static eng_attribute_t *attribute_find(const nmo_engine_t *engine, nmo_object_id
         }
     }
     return NULL;
+}
+
+/*
+ * CKBeObject::Copy at run time: `to` has `from`'s attributes, with the values
+ * the engine has for them now, in place of the ones it was loaded with.
+ */
+void eng_copy_attributes(nmo_engine_t *engine, nmo_object_id_t from, nmo_object_id_t to)
+{
+    if (from == to) {
+        return;
+    }
+    for (size_t i = 0; i < engine->attributes.count;) {
+        if (engine->attributes.data[i].object == to) {
+            nmo_engine_object_remove_attribute(engine, to, engine->attributes.data[i].type);
+        } else {
+            i++;
+        }
+    }
+    size_t count = engine->attributes.count;
+    for (size_t i = 0; i < count; i++) {
+        const eng_attribute_t *original = &engine->attributes.data[i];
+        if (original->object != from) {
+            continue;
+        }
+        int32_t type = original->type;
+        nmo_guid_t value_type = original->has_value ? original->value.type : NMO_GUID(0u, 0u);
+        if (attribute_add(engine, NULL, to, type, value_type, NULL) != NMO_OK) {
+            return;
+        }
+        eng_attribute_t *copy = &engine->attributes.data[engine->attributes.count - 1u];
+        original = &engine->attributes.data[i];
+        if (original->has_value && copy->has_value) {
+            eng_param_copy(engine, &copy->value, (eng_param_t *)&original->value, false);
+        }
+    }
 }
 
 bool nmo_engine_object_has_attribute(const nmo_engine_t *engine, nmo_object_id_t object,

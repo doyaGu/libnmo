@@ -309,14 +309,18 @@ static void eng_entity_link(nmo_engine_t *engine, int32_t index, int32_t parent_
  * The 3D entities of a loaded file: the world matrix each was saved with,
  * its parent, and the local matrix that makes (SetParent(parent, TRUE)).
  */
-nmo_status_t eng_load_entities(nmo_engine_t *engine, int32_t module)
+nmo_status_t eng_load_entities(nmo_engine_t *engine, const eng_range_t *range)
 {
-    const eng_module_t *owner = &engine->modules.data[module];
+    const eng_module_t *owner = &engine->modules.data[range->module];
     size_t count = 0;
     nmo_object_t **objects =
         owner->repo != NULL ? nmo_object_repository_get_all(owner->repo, &count) : NULL;
     size_t first = engine->entities.count;
     for (size_t i = 0; objects != NULL && i < count; i++) {
+        if (nmo_object_get_id(objects[i]) < range->first ||
+            nmo_object_get_id(objects[i]) > range->last) {
+            continue;
+        }
         const nmo_3dentity_state_t *state =
             (const nmo_3dentity_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
                 engine->types, objects[i], CKPGUID_3DENTITY);
@@ -330,6 +334,10 @@ nmo_status_t eng_load_entities(nmo_engine_t *engine, int32_t module)
     }
     /* The parents, once every entity of the file is there */
     for (size_t i = 0; objects != NULL && i < count; i++) {
+        if (nmo_object_get_id(objects[i]) < range->first ||
+            nmo_object_get_id(objects[i]) > range->last) {
+            continue;
+        }
         const nmo_3dentity_state_t *state =
             (const nmo_3dentity_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
                 engine->types, objects[i], CKPGUID_3DENTITY);

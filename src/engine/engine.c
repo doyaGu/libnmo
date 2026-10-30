@@ -162,16 +162,7 @@ nmo_status_t nmo_engine_create(nmo_workspace_t *workspace,
 
     nmo_status_t status = eng_module_open(engine, workspace, NULL, NULL, NULL);
     if (status == NMO_OK) {
-        status = eng_build_module(engine, 0);
-    }
-    if (status == NMO_OK) {
-        status = eng_load_arrays(engine, 0);
-    }
-    if (status == NMO_OK) {
-        status = eng_load_entities(engine, 0);
-    }
-    if (status == NMO_OK) {
-        status = eng_load_attributes(engine, 0);
+        status = eng_load_range(engine, 0, 0u, 0u);
     }
     if (status == NMO_OK && !engine->options.no_builtin_blocks) {
         status = eng_register_logics(engine);

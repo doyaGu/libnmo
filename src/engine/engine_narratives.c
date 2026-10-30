@@ -1,7 +1,7 @@
 /**
  * @file engine_narratives.c
  * @brief Ports of the Narratives building blocks that start and stop scripts
- *        and objects, and create, load and delete objects.
+ *        and objects, and create, load, copy and delete objects.
  *
  * Each function does what the block's function in Narratives.dll does (the
  * reference is the Ballanced source of the blocks). Activating a script
@@ -304,6 +304,56 @@ static int bb_object_create(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/*
+ * Object Copy (ObjectCopier): copies of the Original inputs (no level), and
+ * of what the Dependency Options copy with them, in the outputs in order;
+ * the copies active with Awake Object (always before version 2).
+ */
+static int bb_object_copy(blk_t *b)
+{
+    nmo_engine_block_activate_input(b, 0, false);
+    nmo_engine_block_activate_output(b, 0, true);
+    nmo_engine_t *engine = nmo_engine_block_engine(b);
+    int count = nmo_engine_block_input_parameter_count(b);
+    nmo_object_id_t *originals =
+        count > 1 ? (nmo_object_id_t *)malloc((size_t)(count - 1) * sizeof(nmo_object_id_t)) : NULL;
+    nmo_object_id_t *copies =
+        count > 1 ? (nmo_object_id_t *)malloc((size_t)(count - 1) * sizeof(nmo_object_id_t)) : NULL;
+    if (count > 1 && (originals == NULL || copies == NULL)) {
+        free(originals);
+        free(copies);
+        return NMO_ENGINE_BR_GENERICERROR;
+    }
+    int32_t n = 0;
+    for (int i = 1; i < count; i++) {
+        nmo_object_id_t id = nmo_engine_block_get_input_object(b, i);
+        int32_t class_id = id != 0 ? nmo_engine_object_class(engine, id) : 0;
+        if (class_id == 0 ||
+            nmo_type_registry_is_class_derived_from(engine->types, (uint32_t)class_id, NMO_CID_LEVEL)) {
+            continue;
+        }
+        originals[n++] = id;
+    }
+    /* The options: the saved CKDependencies the input reads */
+    eng_dependencies_t deps;
+    const eng_node_t *node = &engine->nodes.data[b->node];
+    eng_param_t *pin = eng_node_param(engine, node->first_pin, node->pin_count, 0);
+    eng_param_t *source = pin != NULL ? eng_param_real_source(engine, pin) : NULL;
+    eng_dependencies_from_param(engine, source != NULL ? source->id : 0, &deps);
+    int32_t awake_setting = 1;
+    nmo_engine_block_get_local_value(b, 1, &awake_setting, sizeof(awake_setting));
+    bool awake = awake_setting != 0 || nmo_engine_block_version(b) < 0x00020000u;
+    if (n > 0 && eng_copy_objects(engine, originals, n, &deps, awake, copies) == NMO_OK) {
+        for (int32_t i = 0; i < n; i++) {
+            uint32_t copy = (uint32_t)copies[i];
+            nmo_engine_block_set_output_value(b, i, &copy, sizeof(copy));
+        }
+    }
+    free(originals);
+    free(copies);
+    return NMO_ENGINE_BR_OK;
+}
+
 /* Object Delete (ObjectDeleter): destroys the object (the target, before version 2). */
 static int bb_object_delete(blk_t *b)
 {
@@ -328,6 +378,7 @@ static const nmo_engine_block_desc_t eng_narratives_blocks[] = {
     {NMO_GUID(0x1a7d5b17, 0x70630fed), "Call Script", bb_call_script, NULL, NULL},
     {NMO_GUID(0x7bd977d7, 0x26396c0c), "Object Load", bb_object_load, NULL, NULL},
     {NMO_GUID(0x271538e6, 0x2fae49ac), "Object Create", bb_object_create, NULL, NULL},
+    {NMO_GUID(0x3f6b0ac7, 0x47d20f78), "Object Copy", bb_object_copy, NULL, NULL},
     {NMO_GUID(0x74120ded, 0x76524673), "Object Delete", bb_object_delete, NULL, NULL},
 };
 

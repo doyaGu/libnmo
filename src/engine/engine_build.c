@@ -4,7 +4,9 @@
  *
  * The engine's nodes, IOs, links and operations of a document follow its
  * script model's, after the ones the engine has already; IDs taken from the
- * document become engine IDs (eng_module_id).
+ * document become engine IDs (eng_module_id). A build takes the part of a
+ * module's model whose IDs are in a range: a file's whole window, or the
+ * copies Object Copy made.
  */
 
 #include "engine_internal.h"
@@ -41,12 +43,15 @@ typedef struct eng_builder {
     nmo_engine_t *engine;
     const eng_module_t *module;
     nmo_object_repository_t *repo;
+    nmo_object_id_t first, last; /* the document IDs built */
     /* The engine's counts before the document: its first node, IO, link, operation, param */
     size_t node_base, io_base, link_base, op_base, param_base;
 } eng_builder_t;
 
 /* The engine ID of an ID in the document being built */
 #define B_ID(b, id) eng_module_id((b)->module, (id))
+/* Whether an ID of the document is one the build takes */
+#define B_IN(b, id) ((id) >= (b)->first && (id) <= (b)->last)
 
 /* Reserve `count` index slots set to -1; returns the first, or UINT32_MAX on OOM. */
 static uint32_t eng_alloc_indexes(nmo_engine_t *engine, size_t count)
@@ -277,8 +282,12 @@ static nmo_status_t eng_build_nodes(eng_builder_t *b)
     /* Nodes, IOs, links and operations keep the model's order, after the engine's */
     for (size_t i = 0; i < node_count; i++) {
         eng_node_t *node = NULL;
+        if (!B_IN(b, nodes[i].id)) {
+            continue;
+        }
         if (!ENG_VEC_PUSH(engine->nodes, node) ||
-            !eng_map_put(&engine->node_map, B_ID(b, nodes[i].id), (int32_t)(b->node_base + i))) {
+            !eng_map_put(&engine->node_map, B_ID(b, nodes[i].id),
+                         (int32_t)(engine->nodes.count - 1u))) {
             return NMO_ERR_NOMEM;
         }
         node->id = B_ID(b, nodes[i].id);
@@ -290,19 +299,33 @@ static nmo_status_t eng_build_nodes(eng_builder_t *b)
     }
     for (size_t i = 0; i < io_count; i++) {
         eng_io_t *io = NULL;
+        if (!B_IN(b, ios[i].id)) {
+            continue;
+        }
         if (!ENG_VEC_PUSH(engine->ios, io) ||
-            !eng_map_put(&engine->io_map, B_ID(b, ios[i].id), (int32_t)(b->io_base + i))) {
+            !eng_map_put(&engine->io_map, B_ID(b, ios[i].id), (int32_t)(engine->ios.count - 1u))) {
             return NMO_ERR_NOMEM;
         }
         io->id = B_ID(b, ios[i].id);
         io->node = eng_map_get(&engine->node_map, B_ID(b, ios[i].node_id));
         io->is_output = ios[i].is_output;
     }
+    /* The engine index of each model link (a graph's links are built together) */
+    int32_t *link_index = link_count > 0 ? (int32_t *)malloc(link_count * sizeof(int32_t)) : NULL;
+    if (link_count > 0 && link_index == NULL) {
+        return NMO_ERR_NOMEM;
+    }
     for (size_t i = 0; i < link_count; i++) {
         eng_link_t *link = NULL;
+        link_index[i] = -1;
+        if (!B_IN(b, links[i].id)) {
+            continue;
+        }
         if (!ENG_VEC_PUSH(engine->links, link)) {
+            free(link_index);
             return NMO_ERR_NOMEM;
         }
+        link_index[i] = (int32_t)(engine->links.count - 1u);
         link->id = B_ID(b, links[i].id);
         link->graph = eng_map_get(&engine->node_map, B_ID(b, links[i].graph_id));
         link->source = eng_map_get(&engine->io_map, B_ID(b, links[i].source_io_id));
@@ -310,11 +333,17 @@ static nmo_status_t eng_build_nodes(eng_builder_t *b)
         link->delay = links[i].activation_delay;
         link->initial_delay = links[i].initial_activation_delay;
     }
-    for (size_t i = 0; i < op_count; i++) {
+    nmo_status_t status = NMO_OK;
+    for (size_t i = 0; i < op_count && status == NMO_OK; i++) {
         eng_operation_t *op = NULL;
+        if (!B_IN(b, ops[i].id)) {
+            continue;
+        }
+        int32_t op_index = (int32_t)engine->operations.count;
         if (!ENG_VEC_PUSH(engine->operations, op) ||
-            !eng_map_put(&engine->operation_map, B_ID(b, ops[i].id), (int32_t)(b->op_base + i))) {
-            return NMO_ERR_NOMEM;
+            !eng_map_put(&engine->operation_map, B_ID(b, ops[i].id), op_index)) {
+            status = NMO_ERR_NOMEM;
+            break;
         }
         op->id = B_ID(b, ops[i].id);
         op->guid = ops[i].operation_guid;
@@ -322,24 +351,30 @@ static nmo_status_t eng_build_nodes(eng_builder_t *b)
         int32_t p1 = eng_load_param(b, in1), p2 = eng_load_param(b, in2);
         int32_t po = eng_load_param(b, out);
         if (p1 == -2 || p2 == -2 || po == -2) {
-            return NMO_ERR_NOMEM;
+            status = NMO_ERR_NOMEM;
+            break;
         }
-        op = &engine->operations.data[b->op_base + i];
+        op = &engine->operations.data[op_index];
         op->in1 = p1;
         op->in2 = p2;
         op->out = po;
         if (po >= 0) {
-            engine->params.data[po].operation = (int32_t)(b->op_base + i);
+            engine->params.data[po].operation = op_index;
         }
     }
 
-    for (size_t i = 0; i < node_count; i++) {
+    for (size_t i = 0; i < node_count && status == NMO_OK; i++) {
         const nmo_script_node_t *mnode = &nodes[i];
+        if (!B_IN(b, mnode->id)) {
+            continue;
+        }
         const nmo_behavior_state_t *state = eng_behavior_state(b, mnode->id);
         if (state == NULL) {
-            return NMO_ERR_INVALID_STATE;
+            status = NMO_ERR_INVALID_STATE;
+            break;
         }
-        eng_node_t *node = &engine->nodes.data[b->node_base + i];
+        int32_t index = eng_map_get(&engine->node_map, B_ID(b, mnode->id));
+        eng_node_t *node = &engine->nodes.data[index];
         node->flags = state->flags & ~(uint32_t)ENG_RUNTIME_FLAGS;
         node->priority = state->priority;
         node->version = state->block_version;
@@ -356,7 +391,8 @@ static nmo_status_t eng_build_nodes(eng_builder_t *b)
         if (first_input == UINT32_MAX || first_output == UINT32_MAX ||
             first_child == UINT32_MAX || first_stack == UINT32_MAX ||
             first_delayed == UINT32_MAX) {
-            return NMO_ERR_NOMEM;
+            status = NMO_ERR_NOMEM;
+            break;
         }
         uint32_t first_pin = 0, pin_count = 0, first_pout = 0, pout_count = 0;
         uint32_t first_local = 0, local_count = 0;
@@ -364,10 +400,11 @@ static nmo_status_t eng_build_nodes(eng_builder_t *b)
             !eng_load_param_array(b, &state->out_parameters, &first_pout, &pout_count) ||
             !eng_load_param_array(b, &state->local_parameters, &first_local, &local_count) ||
             eng_load_param(b, nmo_behavior_target_parameter_id(state)) == -2) {
-            return NMO_ERR_NOMEM;
+            status = NMO_ERR_NOMEM;
+            break;
         }
 
-        node = &engine->nodes.data[b->node_base + i];
+        node = &engine->nodes.data[index];
         node->first_input = first_input;
         node->input_count = (uint32_t)state->inputs.count;
         node->first_output = first_output;
@@ -378,7 +415,8 @@ static nmo_status_t eng_build_nodes(eng_builder_t *b)
             uint32_t base = mio->is_output ? first_output : first_input;
             uint32_t limit = mio->is_output ? node->output_count : node->input_count;
             if (mio->index < limit) {
-                engine->indexes.data[base + mio->index] = (int32_t)(b->io_base + k);
+                engine->indexes.data[base + mio->index] =
+                    eng_map_get(&engine->io_map, B_ID(b, mio->id));
             }
         }
         node->first_pin = first_pin;
@@ -396,11 +434,14 @@ static nmo_status_t eng_build_nodes(eng_builder_t *b)
                 eng_map_get(&engine->node_map, B_ID(b, children[mnode->first_child + k]));
         }
         node->first_stack = first_stack;
-        node->first_link = (uint32_t)(b->link_base + mnode->first_link);
+        node->first_link = mnode->link_count > 0 && link_index[mnode->first_link] >= 0
+                               ? (uint32_t)link_index[mnode->first_link]
+                               : (uint32_t)engine->links.count;
         node->link_count = (uint32_t)mnode->link_count;
         node->first_delayed = first_delayed;
     }
-    return NMO_OK;
+    free(link_index);
+    return status;
 }
 
 /* Sub-behaviors in CKBehavior::SortSubs order: higher priority first, stable otherwise. */
@@ -494,7 +535,8 @@ static nmo_status_t eng_build_objects(eng_builder_t *b)
     /* Objects in the order they first own a script; their scripts follow in order */
     size_t first_object = engine->objects.count;
     for (size_t i = 0; i < views.count; i++) {
-        if (eng_map_get(&engine->object_map, B_ID(b, list[i].owner_id)) >= 0) {
+        if (!B_IN(b, list[i].script_id) ||
+            eng_map_get(&engine->object_map, B_ID(b, list[i].owner_id)) >= 0) {
             continue;
         }
         eng_object_t *object = NULL;
@@ -519,7 +561,7 @@ static nmo_status_t eng_build_objects(eng_builder_t *b)
         eng_object_t *object = &engine->objects.data[o];
         uint32_t count = 0;
         for (size_t i = 0; i < views.count; i++) {
-            count += B_ID(b, list[i].owner_id) == object->id;
+            count += B_IN(b, list[i].script_id) && B_ID(b, list[i].owner_id) == object->id;
         }
         uint32_t first = eng_alloc_indexes(engine, count);
         if (first == UINT32_MAX) {
@@ -549,12 +591,14 @@ static nmo_status_t eng_build_objects(eng_builder_t *b)
     return NMO_OK;
 }
 
-nmo_status_t eng_build_module(nmo_engine_t *engine, int32_t module)
+nmo_status_t eng_build_module(nmo_engine_t *engine, const eng_range_t *range)
 {
     eng_builder_t b = {
         .engine = engine,
-        .module = &engine->modules.data[module],
-        .repo = engine->modules.data[module].repo,
+        .module = &engine->modules.data[range->module],
+        .repo = engine->modules.data[range->module].repo,
+        .first = range->first,
+        .last = range->last,
         .node_base = engine->nodes.count,
         .io_base = engine->ios.count,
         .link_base = engine->links.count,
