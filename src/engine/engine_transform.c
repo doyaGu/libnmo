@@ -17,6 +17,7 @@
 
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_mesh_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_defs.h"
 #include "object/nmo_object_repository.h"
@@ -718,6 +719,38 @@ void eng_entity_look_at(nmo_engine_t *engine, int32_t index, const eng_vector_t 
         up.x = -up.x, up.y = -up.y, up.z = -up.z;
     }
     eng_entity_set_orientation(engine, index, &dir, &up, &right, -1, keep_children);
+}
+
+/*
+ * GetBaryCenter: the barycenter of the current mesh (the mean of its
+ * vertices, as loaded) in world space; the position for an entity without
+ * a mesh, and false then.
+ */
+bool eng_entity_bary_center(nmo_engine_t *engine, int32_t index, eng_vector_t *out)
+{
+    nmo_object_id_t id = eng_entity_at(engine, index)->id;
+    nmo_object_t *object = eng_find_object(engine, id);
+    const nmo_3dentity_state_t *state =
+        object != NULL ? (const nmo_3dentity_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
+                             engine->types, object, CKPGUID_3DENTITY)
+                       : NULL;
+    nmo_object_id_t mesh_local = state != NULL ? nmo_ref_runtime_id(&state->current_mesh) : 0u;
+    nmo_object_t *mesh = mesh_local != 0
+                             ? eng_find_object(engine, eng_module_id(eng_module_of(engine, id, NULL),
+                                                                     mesh_local))
+                             : NULL;
+    const nmo_mesh_state_t *mesh_state =
+        mesh != NULL ? (const nmo_mesh_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
+                           engine->types, mesh, CKPGUID_MESH)
+                     : NULL;
+    if (mesh_state == NULL) {
+        *out = eng_matrix_row(&eng_entity_at(engine, index)->world, 3);
+        return false;
+    }
+    eng_vector_t local = {mesh_state->bary_center.x, mesh_state->bary_center.y,
+                          mesh_state->bary_center.z};
+    eng_entity_transform(engine, index, out, &local, -1);
+    return true;
 }
 
 static bool eng_is_place(const nmo_engine_t *engine, nmo_object_id_t id)

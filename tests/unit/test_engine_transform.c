@@ -1,6 +1,7 @@
 #include "engine_fixture.h"
 
 #include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_group_schemas.h"
 #include "object/nmo_ref.h"
 #include "type/nmo_object_guids.h"
 
@@ -12,6 +13,10 @@
 #define GUID_SCALE NMO_GUID(0x41236987, 0xa54a87a6)
 #define GUID_SET_EULER_ORIENTATION NMO_GUID(0x0c4966d8, 0x6c0c6d14)
 #define GUID_LOOK_AT NMO_GUID(0x26843971, 0x86249317)
+#define GUID_NOP NMO_GUID(0x302561c4, 0x0d282980)
+#define GUID_NEAREST_IN_GROUP NMO_GUID(0x085207eb, 0x584950d8)
+#define GUID_SCALEABLE_PROXIMITY NMO_GUID(0x2a2a63ca, 0x00826175)
+#define GUID_SET_DYNAMIC_POSITION NMO_GUID(0x0fd4755f, 0x7de22dc8)
 
 #define PI_F 3.14159265f
 
@@ -216,8 +221,130 @@ TEST(engine_transform, rotate_scale_and_orientation)
     fixture_end(&f);
 }
 
+/* The `pos`th local parameter (or setting) of a block, set in the engine to `value` */
+static void set_local_int(engine_fixture_t *f, nmo_object_id_t block, size_t pos, int32_t value)
+{
+    const nmo_behavior_state_t *state = (const nmo_behavior_state_t *)fixture_state(f, block);
+    ASSERT_TRUE(state != NULL && pos < state->local_parameters.count);
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(
+                          f->engine, nmo_behavior_ref_array_get_id(&state->local_parameters, pos),
+                          &value, sizeof(value)));
+}
+
+static void move_to(engine_fixture_t *f, nmo_object_id_t id, float x)
+{
+    float m[16];
+    world_matrix(f, id, m);
+    m[12] = x;
+    ASSERT_EQ(NMO_OK, nmo_engine_set_entity_world_matrix(f->engine, id, m, false));
+}
+
+TEST(engine_transform, nearest_in_group_and_proximity)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t entities[3];
+    const float xs[3] = {1.0f, 5.0f, 9.0f};
+    for (int i = 0; i < 3; i++) {
+        entities[i] = fixture_create(&f, NMO_CID_3DENTITY, "Member");
+        ASSERT_TRUE(place_entity(&f, entities[i], xs[i], 0.0f, 0.0f, 0) != 0);
+    }
+    nmo_object_id_t group = fixture_create(&f, NMO_CID_GROUP, "Group");
+    nmo_group_state_t *state = (nmo_group_state_t *)fixture_state(&f, group);
+    ASSERT_NOT_NULL(state);
+    nmo_ref_t *members = NULL;
+    ASSERT_EQ(NMO_OK, nmo_array_extend(&state->object_ids, 3u, (void **)&members));
+    for (int i = 0; i < 3; i++) {
+        members[i] = nmo_ref_from_id(entities[i]);
+    }
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t nearest = fixture_block(&f, GUID_NEAREST_IN_GROUP, "Nearest");
+    nmo_object_id_t near = fixture_block(&f, GUID_SCALEABLE_PROXIMITY, "Near");
+    ASSERT_TRUE(nearest != 0 && near != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, nearest, 0), 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, near, 0), 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, nearest, 0), (int32_t)group);
+    const float point[3] = {6.0f, 0.0f, 0.0f};
+    fixture_input_value(&f, BLOCK_PIN(&f, nearest, 1), point, sizeof(point));
+    /* Within 3 of each other, checked every frame */
+    const float three = 3.0f;
+    fixture_input_value(&f, BLOCK_PIN(&f, near, 0), &three, sizeof(three));
+    fixture_input_int(&f, BLOCK_PIN(&f, near, 1), (int32_t)entities[0]);
+    fixture_input_int(&f, BLOCK_PIN(&f, near, 2), (int32_t)entities[1]);
+    fixture_input_int(&f, BLOCK_PIN(&f, near, 6), 1);
+    fixture_input_int(&f, BLOCK_PIN(&f, near, 7), 1);
+    /* In Range, Out Range, Enter Range, Exit Range */
+    nmo_object_id_t outputs[4];
+    for (int i = 0; i < 4; i++) {
+        outputs[i] = fixture_block(&f, GUID_NOP, "Output");
+        ASSERT_TRUE(outputs[i] != 0);
+        fixture_link(&f, BLOCK_OUT(&f, near, (size_t)i), BLOCK_IN(&f, outputs[i], 0), 0);
+    }
+    fixture_commit(&f, NULL);
+    set_local_int(&f, near, 2, 15); /* every output */
+    set_local_int(&f, near, 3, 7);  /* X, Y and Z */
+    set_local_int(&f, near, 4, 1);  /* squared */
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    uint32_t found = 0;
+    float distance = 0.0f;
+    read_value(&f, BLOCK_POUT(&f, nearest, 0), &found, sizeof(found));
+    read_value(&f, BLOCK_POUT(&f, nearest, 1), &distance, sizeof(distance));
+    ASSERT_EQ(entities[1], found);
+    ASSERT_FLOAT_EQ(1.0f, distance, 0.0001f);
+    /* 4 apart: the first check exits (In starts neither in nor out), then stays out */
+    ASSERT_EQ(1u, runs(&f, outputs[3]));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1u, runs(&f, outputs[1]));
+    move_to(&f, entities[1], 2.0f);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1u, runs(&f, outputs[2]));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1u, runs(&f, outputs[0]));
+    float squared = 0.0f;
+    read_value(&f, BLOCK_POUT(&f, near, 0), &squared, sizeof(squared));
+    ASSERT_FLOAT_EQ(1.0f, squared, 0.0001f);
+    fixture_end(&f);
+}
+
+TEST(engine_transform, set_dynamic_position_follows_the_object)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t follower = fixture_create(&f, NMO_CID_3DENTITY, "Follower");
+    nmo_object_id_t leader = fixture_create(&f, NMO_CID_3DENTITY, "Leader");
+    ASSERT_TRUE(place_entity(&f, follower, 0.0f, 0.0f, 0.0f, 0) != 0);
+    ASSERT_TRUE(place_entity(&f, leader, 10.0f, 0.0f, 0.0f, 0) != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t follow =
+        target_block(&f, GUID_SET_DYNAMIC_POSITION, "Follow", follower, f.script_in);
+    ASSERT_TRUE(follow != 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, follow, 0), (int32_t)leader);
+    const float half = 0.5f;
+    for (int axis = 1; axis <= 3; axis++) {
+        fixture_input_value(&f, BLOCK_PIN(&f, follow, (size_t)axis), &half, sizeof(half));
+    }
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 1000.0f)); /* On: where it starts */
+    ASSERT_POSITION(&f, follower, 0.0f, 0.0f, 0.0f);
+    /* Then half the way each second (the force times the seconds) */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 1000.0f));
+    ASSERT_POSITION(&f, follower, 5.0f, 0.0f, 0.0f);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 1000.0f));
+    ASSERT_POSITION(&f, follower, 7.5f, 0.0f, 0.0f);
+    ASSERT_TRUE(nmo_engine_behavior_is_active(f.engine, follow));
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_transform, loaded_children_keep_their_place_under_the_parent);
 REGISTER_TEST(engine_transform, set_position_and_set_parent);
 REGISTER_TEST(engine_transform, rotate_scale_and_orientation);
+REGISTER_TEST(engine_transform, nearest_in_group_and_proximity);
+REGISTER_TEST(engine_transform, set_dynamic_position_follows_the_object);
 TEST_MAIN_END()

@@ -28,7 +28,9 @@ static bool script_edit_is_symbolic_manager_default_type(nmo_guid_t type_guid)
  * CK2 reads an enum's as an integer (CKEnumStringFunc falls back to
  * CKIntStringFunc), which leaves 0 for text like the system font names of a
  * Font Name enum, filled only at run time, and CKFlagsStringFunc skips the
- * names it does not know. The parameter keeps its zeroed value.
+ * names it does not know. An object's names no object of its class
+ * ("NULL" in prototypes): CKObjectStringFunc then stores no object. The
+ * parameter keeps its zeroed value.
  */
 static bool script_edit_named_default_reads_as_zero(nmo_script_edit_tx_t *tx,
                                                     nmo_guid_t type_guid)
@@ -37,7 +39,8 @@ static bool script_edit_named_default_reads_as_zero(nmo_script_edit_tx_t *tx,
     const nmo_type_descriptor_t *type =
         registry != NULL ? nmo_type_registry_find_by_guid(registry, type_guid) : NULL;
     return type != NULL &&
-           (type->category & (NMO_TYPE_CATEGORY_ENUM | NMO_TYPE_CATEGORY_FLAGS)) != 0u;
+           (type->category & (NMO_TYPE_CATEGORY_ENUM | NMO_TYPE_CATEGORY_FLAGS |
+                              NMO_TYPE_CATEGORY_OBJECT_REF)) != 0u;
 }
 
 static nmo_status_t script_edit_find_message_manager_value(

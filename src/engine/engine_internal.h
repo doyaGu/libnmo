@@ -501,6 +501,7 @@ void eng_entity_look_at(nmo_engine_t *engine, int32_t index, const eng_vector_t 
 bool eng_entity_set_parent(nmo_engine_t *engine, int32_t index, int32_t parent,
                            bool keep_world_position);
 void eng_entity_destroy(nmo_engine_t *engine, nmo_object_id_t id);
+bool eng_entity_bary_center(nmo_engine_t *engine, int32_t index, eng_vector_t *out);
 
 /* engine_3dtrans.c */
 nmo_status_t eng_register_3dtrans(nmo_engine_t *engine);
