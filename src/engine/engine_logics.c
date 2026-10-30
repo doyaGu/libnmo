@@ -18,6 +18,7 @@
 
 #include "type/nmo_object_guids.h"
 
+#include <ctype.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -871,6 +872,441 @@ static int bb_mini_calculator(blk_t *b)
     set_out_float(b, 0, x);
     IN_OFF(b, 0);
     OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * Calculator: the arithmetic expression of the first input on the others, 'a'
+ * the second input, 'b' the third, and so on (Calculator.cpp). The
+ * expression is read as CK reads it: upper-cased, spaces removed, made into
+ * a postfix node stack with the operators' precedences, then evaluated from
+ * its top. A syntax error writes no output; an illegal operation writes what
+ * the evaluation got to. CK reads an integer input's bytes as a float.
+ */
+enum {
+    CALC_ADD = 1, CALC_SUB, CALC_MULT, CALC_DIV, CALC_MOD,
+    CALC_POW, CALC_OPEN, CALC_CLOSE, CALC_SIN, CALC_COS,
+    CALC_ABS, CALC_LN, CALC_EXP, CALC_ATAN, CALC_SQRT,
+    CALC_ACOS, CALC_ASIN, CALC_XCOMP, CALC_YCOMP, CALC_ZCOMP,
+    CALC_TAN
+};
+
+typedef struct calc_op {
+    int token;
+    const char *tag;
+    size_t length;
+    int precedence;
+} calc_op_t;
+
+/* op_signification, in its order (the first tag a string starts with wins) */
+static const calc_op_t calc_ops[] = {
+    {CALC_ADD, "+", 1, 2},       {CALC_SUB, "-", 1, 3},       {CALC_MULT, "*", 1, 4},
+    {CALC_DIV, "/", 1, 5},       {CALC_OPEN, "(", 1, 0},      {CALC_CLOSE, ")", 1, 256},
+    {CALC_SIN, "SIN(", 4, 0},    {CALC_COS, "COS(", 4, 0},    {CALC_TAN, "TAN(", 4, 0},
+    {CALC_XCOMP, ".X", 2, 7},    {CALC_YCOMP, ".Y", 2, 7},    {CALC_ZCOMP, ".Z", 2, 7},
+    {CALC_ABS, "ABS(", 4, 0},    {CALC_SQRT, "SQRT(", 5, 0},  {CALC_ASIN, "ASIN(", 5, 0},
+    {CALC_ACOS, "ACOS(", 5, 0},  {CALC_ATAN, "ATAN(", 5, 0},  {CALC_POW, "^", 1, 6},
+    {CALC_LN, "LN(", 3, 0},      {CALC_EXP, "EXP(", 4, 0},    {CALC_MOD, "\\", 1, 5},
+};
+
+enum { CALC_NODE_OP = 1, CALC_FLOAT, CALC_VECTOR, CALC_PIN_FLOAT, CALC_PIN_VECTOR };
+
+typedef struct calc_node {
+    int type;
+    int op;   /* CALC_NODE_OP */
+    int pin;  /* CALC_PIN_*: the input; -1 for one the block does not have */
+    float v[3];
+} calc_node_t;
+
+/* The parse (CreateNodeStack's globals), its stacks sized for the expression */
+typedef struct calc {
+    blk_t *b;
+    calc_node_t *nodes;
+    int node_count;
+    int *ops;
+    int op_count;
+    int parens;
+    char *token;
+    bool cross_fixed; /* version 2's corrected cross product */
+} calc_t;
+
+#define CALC_SUCCESS 0
+#define CALC_CREATION_ERROR (-1)
+#define CALC_RUNTIME_ERROR (-2)
+
+static const calc_op_t *calc_get_op(const char *str)
+{
+    for (size_t i = 0; i < sizeof(calc_ops) / sizeof(calc_ops[0]); i++) {
+        if (strncmp(str, calc_ops[i].tag, calc_ops[i].length) == 0) {
+            return &calc_ops[i];
+        }
+    }
+    return NULL;
+}
+
+static int calc_precedence(int token)
+{
+    for (size_t i = 0; i < sizeof(calc_ops) / sizeof(calc_ops[0]); i++) {
+        if (calc_ops[i].token == token) {
+            return calc_ops[i].precedence;
+        }
+    }
+    return 0;
+}
+
+static void calc_push_op(calc_t *c, int op)
+{
+    if (calc_precedence(op) == 0) {
+        c->parens++;
+    }
+    c->ops[c->op_count++] = op;
+}
+
+static void calc_push_value(calc_t *c, float value)
+{
+    calc_node_t *node = &c->nodes[c->node_count++];
+    memset(node, 0, sizeof(*node));
+    node->type = CALC_FLOAT;
+    node->v[0] = value;
+}
+
+/* PushOpInNodeStack: the last operation into the node stack, but '(' */
+static int calc_pop_op_to_nodes(calc_t *c)
+{
+    if (c->op_count == 0) {
+        return CALC_CREATION_ERROR;
+    }
+    int op = c->ops[--c->op_count];
+    if (op != CALC_OPEN) {
+        calc_node_t *node = &c->nodes[c->node_count++];
+        memset(node, 0, sizeof(*node));
+        node->type = CALC_NODE_OP;
+        node->op = op;
+    }
+    return op;
+}
+
+/* DoParenthesis: operations into the node stack down to the opening one */
+static int calc_close_parenthesis(calc_t *c)
+{
+    if (1 > c->parens--) {
+        return CALC_CREATION_ERROR;
+    }
+    int op;
+    do {
+        op = calc_pop_op_to_nodes(c);
+        if (op < CALC_SUCCESS) {
+            break;
+        }
+    } while (calc_precedence(op) != 0);
+    return op;
+}
+
+/*
+ * GetExpression: the operation `str` starts with, or the operand before the
+ * next operation (a '-' starts a number, or an exponent's sign). A '-' that
+ * negates a non-number reads as 0 minus it.
+ */
+static const char *calc_get_expression(calc_t *c, const char *str)
+{
+    if (strncmp(str, "PI", 2) == 0) {
+        return "PI";
+    }
+    const char *ptr = str;
+    char *out = c->token;
+    while (*ptr) {
+        const calc_op_t *op = calc_get_op(ptr);
+        if (op != NULL) {
+            if (*ptr == '-') {
+                if (str != ptr && (ptr[-1] != 'E' || str == ptr - 1)) {
+                    break;
+                }
+                if (str == ptr && !isdigit((unsigned char)ptr[1]) && ptr[1] != '.') {
+                    calc_push_value(c, 0.0f);
+                    return op->tag;
+                }
+            } else if (str == ptr) {
+                return op->tag;
+            } else {
+                break;
+            }
+        }
+        *out++ = *ptr++;
+    }
+    *out = '\0';
+    return c->token;
+}
+
+/* CreateNodeStack on the upper-cased expression without spaces */
+static int calc_parse(calc_t *c, const char *line)
+{
+    const char *ptr = line;
+    int state = 0; /* 0 expecting an operand, 1 an operation */
+    while (*ptr) {
+        if (state == 0) {
+            const char *str = calc_get_expression(c, ptr);
+            const calc_op_t *op = calc_get_op(str);
+            if (op != NULL && strlen(str) == op->length) {
+                calc_push_op(c, op->token);
+                ptr += op->length;
+                continue;
+            }
+            if (strcmp(str, "-") == 0) {
+                calc_push_op(c, CALC_SUB);
+                ++ptr;
+                continue;
+            }
+            calc_node_t *node = &c->nodes[c->node_count];
+            memset(node, 0, sizeof(*node));
+            if (str[1] == '\0' && str[0] >= 'A' && str[0] <= 'Z') {
+                /* An input by its letter */
+                int pin = str[0] - 'A' + 1;
+                node->type = CALC_FLOAT;
+                node->pin = -1;
+                if (pin < nmo_engine_block_input_parameter_count(c->b)) {
+                    nmo_guid_t type = nmo_engine_block_input_parameter_type(c->b, pin);
+                    if (nmo_guid_equals(type, CKPGUID_INT) || nmo_guid_equals(type, CKPGUID_FLOAT) ||
+                        nmo_guid_equals(type, CKPGUID_PERCENTAGE)) {
+                        node->type = CALC_PIN_FLOAT;
+                    } else if (nmo_guid_equals(type, CKPGUID_VECTOR)) {
+                        node->type = CALC_PIN_VECTOR;
+                    } else {
+                        return CALC_CREATION_ERROR;
+                    }
+                    node->pin = pin;
+                }
+                c->node_count++;
+                ++ptr;
+                state = 1;
+                continue;
+            }
+            node->type = CALC_FLOAT;
+            if (strcmp(str, "PI") == 0) {
+                node->v[0] = 3.1415926535f;
+            } else {
+                node->v[0] = (float)strtod(str, NULL);
+                if (node->v[0] == 0.0f && strchr(str, '0') == NULL) {
+                    return CALC_CREATION_ERROR;
+                }
+            }
+            c->node_count++;
+            ptr += strlen(str);
+            state = 1;
+        } else {
+            const calc_op_t *op = calc_get_op(ptr);
+            if (op == NULL) {
+                return CALC_CREATION_ERROR;
+            }
+            if (*ptr == ')') {
+                int status = calc_close_parenthesis(c);
+                if (status < CALC_SUCCESS) {
+                    return status;
+                }
+            } else {
+                while (c->op_count > 0 && op->precedence <= calc_precedence(c->ops[c->op_count - 1])) {
+                    int status = calc_pop_op_to_nodes(c);
+                    if (status < CALC_SUCCESS) {
+                        return status;
+                    }
+                }
+                calc_push_op(c, op->token);
+                if (op->token != CALC_XCOMP && op->token != CALC_YCOMP && op->token != CALC_ZCOMP) {
+                    state = 0;
+                }
+            }
+            ptr += op->length;
+        }
+    }
+    while (c->op_count > 0) {
+        int status = calc_pop_op_to_nodes(c);
+        if (status < CALC_SUCCESS) {
+            return status;
+        }
+    }
+    return CALC_SUCCESS;
+}
+
+/* EvalNode: the node on top of the stack, popping it and what it operates on */
+static int calc_eval(calc_t *c, float *val, int *type)
+{
+    if (c->node_count == 0) {
+        return CALC_RUNTIME_ERROR;
+    }
+    const calc_node_t *node = &c->nodes[--c->node_count];
+    switch (node->type) {
+    case CALC_FLOAT:
+        val[0] = node->v[0];
+        *type = CALC_FLOAT;
+        return CALC_SUCCESS;
+    case CALC_PIN_FLOAT:
+        nmo_engine_block_get_input_value(c->b, node->pin, val, sizeof(float));
+        *type = CALC_FLOAT;
+        return CALC_SUCCESS;
+    case CALC_PIN_VECTOR:
+        nmo_engine_block_get_input_value(c->b, node->pin, val, 3u * sizeof(float));
+        *type = CALC_VECTOR;
+        return CALC_SUCCESS;
+    case CALC_NODE_OP:
+        break;
+    default:
+        return CALC_RUNTIME_ERROR;
+    }
+
+    int op = node->op;
+    *type = CALC_FLOAT;
+    float a[3] = {0.0f, 0.0f, 0.0f}, l[3] = {0.0f, 0.0f, 0.0f}; /* right, then left operand */
+    int ta = 0, tl = 0;
+    if (op == CALC_OPEN || op == CALC_CLOSE || calc_eval(c, a, &ta) != CALC_SUCCESS) {
+        return CALC_RUNTIME_ERROR;
+    }
+    bool binary = op == CALC_ADD || op == CALC_SUB || op == CALC_MULT || op == CALC_DIV ||
+                  op == CALC_POW || op == CALC_MOD;
+    if (binary && calc_eval(c, l, &tl) != CALC_SUCCESS) {
+        return CALC_RUNTIME_ERROR;
+    }
+    switch (op) {
+    case CALC_XCOMP:
+    case CALC_YCOMP:
+    case CALC_ZCOMP:
+        if (ta != CALC_VECTOR) {
+            return CALC_RUNTIME_ERROR;
+        }
+        val[0] = a[op - CALC_XCOMP];
+        return CALC_SUCCESS;
+    case CALC_ADD:
+    case CALC_SUB:
+        val[0] = op == CALC_ADD ? l[0] + a[0] : l[0] - a[0];
+        if (ta != tl) {
+            return CALC_RUNTIME_ERROR;
+        }
+        if (ta == CALC_VECTOR) {
+            for (int k = 1; k < 3; k++) {
+                val[k] = op == CALC_ADD ? l[k] + a[k] : l[k] - a[k];
+            }
+            *type = CALC_VECTOR;
+        }
+        return CALC_SUCCESS;
+    case CALC_MULT:
+        if (ta == tl) {
+            /* a product, or vectors' dot product */
+            val[0] = ta == CALC_FLOAT ? l[0] * a[0] : l[0] * a[0] + l[1] * a[1] + l[2] * a[2];
+            return CALC_SUCCESS;
+        }
+        *type = CALC_VECTOR;
+        for (int k = 0; k < 3; k++) {
+            val[k] = ta == CALC_FLOAT ? a[0] * l[k] : l[0] * a[k];
+        }
+        return CALC_SUCCESS;
+    case CALC_DIV:
+        if (a[0] == 0.0f || (ta == CALC_VECTOR && (a[1] == 0.0f || a[2] == 0.0f))) {
+            return CALC_RUNTIME_ERROR;
+        }
+        if (ta == tl) {
+            /* a quotient, or the sum of the vectors' component quotients */
+            val[0] = ta == CALC_FLOAT ? l[0] / a[0] : l[0] / a[0] + l[1] / a[1] + l[2] / a[2];
+            return CALC_SUCCESS;
+        }
+        *type = CALC_VECTOR;
+        for (int k = 0; k < 3; k++) {
+            val[k] = ta == CALC_FLOAT ? l[k] / a[0] : l[0] / a[k];
+        }
+        return CALC_SUCCESS;
+    case CALC_POW:
+        if (ta == CALC_VECTOR && tl == CALC_VECTOR) {
+            /* the cross product: left ^ right since version 2, the other way before */
+            const float *p = c->cross_fixed ? l : a, *q = c->cross_fixed ? a : l;
+            val[0] = p[1] * q[2] - q[1] * p[2];
+            val[1] = q[0] * p[2] - p[0] * q[2];
+            val[2] = p[0] * q[1] - q[0] * p[1];
+            *type = CALC_VECTOR;
+            return CALC_SUCCESS;
+        }
+        val[0] = powf(l[0], a[0]);
+        return CALC_SUCCESS;
+    case CALC_MOD:
+        if (a[0] == 0.0f) {
+            return CALC_RUNTIME_ERROR;
+        }
+        val[0] = fmodf(l[0], a[0]);
+        return CALC_SUCCESS;
+    case CALC_ABS:
+        val[0] = fabsf(a[0]);
+        if (ta == CALC_VECTOR) {
+            val[1] = fabsf(a[1]);
+            val[2] = fabsf(a[2]);
+            *type = CALC_VECTOR;
+        }
+        return CALC_SUCCESS;
+    case CALC_SIN: val[0] = sinf(a[0]); return CALC_SUCCESS;
+    case CALC_COS: val[0] = cosf(a[0]); return CALC_SUCCESS;
+    case CALC_TAN: val[0] = tanf(a[0]); return CALC_SUCCESS;
+    case CALC_ATAN: val[0] = atanf(a[0]); return CALC_SUCCESS;
+    case CALC_EXP: val[0] = expf(a[0]); return CALC_SUCCESS;
+    case CALC_SQRT:
+        if (a[0] < 0.0f) {
+            return CALC_RUNTIME_ERROR;
+        }
+        val[0] = sqrtf(a[0]);
+        return CALC_SUCCESS;
+    case CALC_ASIN:
+    case CALC_ACOS:
+        if (a[0] > 1.0f || a[0] < -1.0f) {
+            return CALC_RUNTIME_ERROR;
+        }
+        val[0] = op == CALC_ASIN ? asinf(a[0]) : acosf(a[0]);
+        return CALC_SUCCESS;
+    case CALC_LN:
+        if (a[0] <= 0.0f) {
+            return CALC_RUNTIME_ERROR;
+        }
+        val[0] = logf(a[0]);
+        return CALC_SUCCESS;
+    default:
+        return CALC_RUNTIME_ERROR;
+    }
+}
+
+static int bb_calculator(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    size_t size = 0;
+    const char *expression = (const char *)nmo_engine_block_input_data(b, 0, &size);
+    size_t length = expression != NULL ? strnlen(expression, size) : 0u;
+    /* Each character makes at most an operation and two nodes (a '-' its 0) */
+    calc_t c;
+    memset(&c, 0, sizeof(c));
+    c.b = b;
+    c.cross_fixed = nmo_engine_block_version(b) >= 0x00020000u;
+    char *line = (char *)malloc(length + 1u);
+    c.token = (char *)malloc(length + 1u);
+    c.nodes = (calc_node_t *)malloc((2u * length + 1u) * sizeof(calc_node_t));
+    c.ops = (int *)malloc((length + 1u) * sizeof(int));
+    if (line == NULL || c.token == NULL || c.nodes == NULL || c.ops == NULL) {
+        free(line);
+        free(c.token);
+        free(c.nodes);
+        free(c.ops);
+        return NMO_ENGINE_BR_GENERICERROR;
+    }
+    size_t n = 0;
+    for (size_t i = 0; i < length; i++) {
+        if (!isspace((unsigned char)expression[i])) {
+            line[n++] = (char)toupper((unsigned char)expression[i]);
+        }
+    }
+    line[n] = '\0';
+    if (calc_parse(&c, line) == CALC_SUCCESS && c.node_count > 0) {
+        float x[3] = {0.0f, 0.0f, 0.0f};
+        int type = 0;
+        calc_eval(&c, x, &type); /* "Illegal Operation In CALCULATOR": x as it got */
+        bool vector = nmo_guid_equals(nmo_engine_block_output_parameter_type(b, 0), CKPGUID_VECTOR);
+        nmo_engine_block_set_output_value(b, 0, x, vector ? sizeof(x) : sizeof(x[0]));
+    }
+    free(line);
+    free(c.token);
+    free(c.nodes);
+    free(c.ops);
     return NMO_ENGINE_BR_OK;
 }
 
@@ -2400,6 +2836,7 @@ static const nmo_engine_block_desc_t eng_logics_blocks[] = {
     {NMO_GUID(0x47dc3232, 0x64bf203a), "Get Delta Time", bb_get_delta_time, cb_get_delta_time,
      NULL},
     {NMO_GUID(0x55bc3115, 0x1dfe1e40), "Mini Calculator", bb_mini_calculator, NULL, NULL},
+    {NMO_GUID(0x4bc209b8, 0x5b3679b0), "Calculator", bb_calculator, NULL, NULL},
     {NMO_GUID(0x2689057b, 0x1a1a446a), "Get Component", bb_get_component, NULL, NULL},
     {NMO_GUID(0x3e7335d9, 0x29687f36), "Variation", bb_variation, NULL, NULL},
     {NMO_GUID(0x6d433e1b, 0x191954b4), "Bezier Transform", bb_bezier_transform, NULL, NULL},

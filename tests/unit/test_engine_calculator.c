@@ -4,8 +4,11 @@
 #include "object/builtin/nmo_parameterin_schemas.h"
 #include "type/nmo_type_guids.h"
 
+#include <string.h>
+
 #define GUID_NOP NMO_GUID(0x302561c4, 0x0d282980)
 #define GUID_MINI_CALCULATOR NMO_GUID(0x55bc3115, 0x1dfe1e40)
+#define GUID_CALCULATOR NMO_GUID(0x4bc209b8, 0x5b3679b0)
 #define GUID_GET_DELTA_TIME NMO_GUID(0x47dc3232, 0x64bf203a)
 #define GUID_GET_COMPONENT NMO_GUID(0x2689057b, 0x1a1a446a)
 #define GUID_VARIATION NMO_GUID(0x3e7335d9, 0x29687f36)
@@ -162,9 +165,89 @@ TEST(engine_calculator, bezier_transform_maps_between_boundaries)
     fixture_end(&f);
 }
 
+/*
+ * A Calculator run from the script's start on `expression` with `count`
+ * inputs of `type` (a, b, ...), each `width` floats from `values`.
+ */
+static nmo_object_id_t calculator(engine_fixture_t *f, const char *expression, nmo_guid_t type,
+                                  const float *values, size_t count, size_t width)
+{
+    nmo_object_id_t block = fixture_block(f, GUID_CALCULATOR, expression);
+    if (block == 0) {
+        return 0;
+    }
+    fixture_link(f, f->script_in, BLOCK_IN(f, block, 0), 0);
+    fixture_input_value(f, BLOCK_PIN(f, block, 0), expression, strlen(expression) + 1u);
+    if (!nmo_guid_equals(type, CKPGUID_FLOAT)) {
+        retype_input(f, BLOCK_PIN(f, block, 1), type);
+        retype_output(f, BLOCK_POUT(f, block, 0), type);
+    }
+    for (size_t i = 0; i < count; i++) {
+        nmo_object_id_t pin = BLOCK_PIN(f, block, i + 1u);
+        if (pin == 0 && nmo_script_edit_add_parameter(f->tx, block, NMO_SCRIPT_EDIT_PARAM_IN, type,
+                                                      "p", &pin) != NMO_OK) {
+            return 0;
+        }
+        input_floats(f, pin, values + i * width, width);
+    }
+    return block;
+}
+
+TEST(engine_calculator, calculator_evaluates_expressions)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    const float abc[3] = {10.0f, 2.0f, 3.0f}, two = 2.0f, one = 1.0f, sixteen[2] = {0.0f, 16.0f};
+    /* Ballance's: precedence and parentheses, case and spaces */
+    nmo_object_id_t lives = calculator(&f, "a-(b*c)", CKPGUID_FLOAT, abc, 3, 1);
+    nmo_object_id_t fader = calculator(&f, " A*50 + 1500 ", CKPGUID_FLOAT, &two, 1, 1);
+    /* A leading '-' is 0 minus what follows; '^' binds tighter than '+' */
+    nmo_object_id_t negate = calculator(&f, "-a+2^3", CKPGUID_FLOAT, &one, 1, 1);
+    /* Functions, the modulus '\', a constant and scientific notation (16 bytes at most here) */
+    nmo_object_id_t functions = calculator(&f, "sqrt(b)+7\\2", CKPGUID_FLOAT, sixteen, 2, 1);
+    nmo_object_id_t scientific = calculator(&f, "1e1/4+cos(pi)", CKPGUID_FLOAT, NULL, 0, 1);
+    /* A syntax error writes nothing; dividing by zero writes what was got */
+    nmo_object_id_t syntax = calculator(&f, "a+$", CKPGUID_FLOAT, &two, 1, 1);
+    nmo_object_id_t illegal = calculator(&f, "a/(a-2)", CKPGUID_FLOAT, &two, 1, 1);
+    /* Vectors: the cross product, the dot product and a component */
+    const float axes[6] = {1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f};
+    const float pair[6] = {3.0f, 1.0f, 0.0f, -2.0f, 5.0f, 1.0f};
+    nmo_object_id_t cross = calculator(&f, "a^b", CKPGUID_VECTOR, axes, 2, 3);
+    nmo_object_id_t dot = calculator(&f, "a*b", CKPGUID_VECTOR, pair, 2, 3);
+    nmo_object_id_t component = calculator(&f, "(a+b).Y", CKPGUID_VECTOR, pair, 2, 3);
+    ASSERT_TRUE(lives != 0 && fader != 0 && negate != 0 && functions != 0 && scientific != 0 &&
+                syntax != 0 && illegal != 0 && cross != 0 && dot != 0 && component != 0);
+    retype_output(&f, BLOCK_POUT(&f, dot, 0), CKPGUID_FLOAT);
+    retype_output(&f, BLOCK_POUT(&f, component, 0), CKPGUID_FLOAT);
+    const float preset = 42.0f;
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, BLOCK_POUT(&f, syntax, 0), &preset,
+                                                 sizeof(preset)));
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_FLOAT_EQ(4.0f, output_float(&f, lives, 0), 0.0001f);
+    ASSERT_FLOAT_EQ(1600.0f, output_float(&f, fader, 0), 0.0001f);
+    ASSERT_FLOAT_EQ(7.0f, output_float(&f, negate, 0), 0.0001f);
+    ASSERT_FLOAT_EQ(5.0f, output_float(&f, functions, 0), 0.0001f);
+    ASSERT_FLOAT_EQ(1.5f, output_float(&f, scientific, 0), 0.0001f);
+    ASSERT_FLOAT_EQ(42.0f, output_float(&f, syntax, 0), 0.0001f);
+    ASSERT_FLOAT_EQ(0.0f, output_float(&f, illegal, 0), 0.0001f);
+    ASSERT_EQ(1u, runs(&f, syntax));
+    float v[3] = {0.0f, 0.0f, 0.0f};
+    read_value(&f, BLOCK_POUT(&f, cross, 0), v, sizeof(v));
+    ASSERT_FLOAT_EQ(0.0f, v[0], 0.0001f);
+    ASSERT_FLOAT_EQ(0.0f, v[1], 0.0001f);
+    ASSERT_FLOAT_EQ(1.0f, v[2], 0.0001f);
+    ASSERT_FLOAT_EQ(-1.0f, output_float(&f, dot, 0), 0.0001f);
+    ASSERT_FLOAT_EQ(6.0f, output_float(&f, component, 0), 0.0001f);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_calculator, mini_calculator_and_delta_time);
 REGISTER_TEST(engine_calculator, get_component_of_a_vector_and_a_rectangle);
 REGISTER_TEST(engine_calculator, variation_reports_changes);
 REGISTER_TEST(engine_calculator, bezier_transform_maps_between_boundaries);
+REGISTER_TEST(engine_calculator, calculator_evaluates_expressions);
 TEST_MAIN_END()
