@@ -19,6 +19,7 @@
 #define GUID_CHANGE_SCREEN_MODE NMO_GUID(0x38b84d97, 0x13932f28)
 #define GUID_CONVERT_PIXEL NMO_GUID(0x18f96977, 0x18e20f83)
 #define GUID_PLANAR_FILTER NMO_GUID(0x00cd320b, 0x32ed010b)
+#define GUID_TT_COUNTER NMO_GUID(0x750f20fc, 0x3741186d)
 
 /* The files the engine loads, from the scratch directory */
 static const char *resolve_scratch(void *user_data, const char *name)
@@ -398,6 +399,33 @@ TEST(engine_tt, planar_filter_stays_on_until_off)
     fixture_end(&f);
 }
 
+TEST(engine_tt, counter_wraps_around_its_range)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t counter = fixture_block(&f, GUID_TT_COUNTER, "Counter");
+    ASSERT_TRUE(counter != 0);
+    /* Frame 0: initialized and counted down at once; frames 1 and 2: counted up */
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, counter, 0), 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, counter, 2), 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, counter, 1), 1);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, counter, 1), 2);
+    fixture_input_int(&f, BLOCK_PIN(&f, counter, 0), 5); /* outside [0, 3]: Min */
+    fixture_input_int(&f, BLOCK_PIN(&f, counter, 1), 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, counter, 2), 3);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    const int32_t expected[3] = {3, 0, 1}; /* 0 - 1 wraps to Max, Max + 1 to Min */
+    for (int frame = 0; frame < 3; frame++) {
+        ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+        int32_t count = -1;
+        read_value(&f, BLOCK_POUT(&f, counter, 0), &count, sizeof(count));
+        ASSERT_EQ(expected[frame], count);
+    }
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_tt, load_database_fills_the_array_of_its_name);
 REGISTER_TEST(engine_tt, read_registry_reads_what_the_host_set);
@@ -407,4 +435,5 @@ REGISTER_TEST(engine_tt, linear_volume_maps_the_volume);
 REGISTER_TEST(engine_tt, preload_textures_counts_each_texture_once);
 REGISTER_TEST(engine_tt, convert_pixel_uses_the_screen_mode);
 REGISTER_TEST(engine_tt, planar_filter_stays_on_until_off);
+REGISTER_TEST(engine_tt, counter_wraps_around_its_range);
 TEST_MAIN_END()

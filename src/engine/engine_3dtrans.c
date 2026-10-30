@@ -622,6 +622,47 @@ static int bb_set_dynamic_position(blk_t *b)
 }
 
 /*
+ * TT ProximityVolumeControl: while on, the Sound's gain follows how near
+ * Object #2 is to Object #1: full within Near-Distance, nothing past
+ * Far-Distance, linear in the squared distance between, as CalcGain makes
+ * it (0.02 * 50^x). The engine keeps no gain: CKWaveSound::SetGain is an
+ * effect on the sound.
+ * Off stops it (Off out); On starts it (On out).
+ */
+static int bb_proximity_volume_control(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    int32_t on = 0;
+    if (nmo_engine_block_is_input_active(b, 1)) {
+        IN_OFF(b, 1);
+        nmo_engine_block_set_local_value(b, 0, &on, sizeof(on));
+    } else if (nmo_engine_block_is_input_active(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+        on = 1;
+        nmo_engine_block_set_local_value(b, 0, &on, sizeof(on));
+    } else {
+        on = get_local_int(b, 0, 0) & 0xFF;
+    }
+    nmo_object_id_t object1 = nmo_engine_block_get_input_object(b, 0);
+    nmo_object_id_t object2 = nmo_engine_block_get_input_object(b, 1);
+    if (object1 == 0 || object2 == 0 || eng_entity_index(engine, object1) < 0 ||
+        eng_entity_index(engine, object2) < 0) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    nmo_object_id_t sound = nmo_engine_block_get_input_object(b, 4);
+    if (sound == 0) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    eng_emit(engine, NMO_ENGINE_EVENT_EFFECT, b->node, sound, 0);
+    if (on != 0) {
+        return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+    }
+    OUT_ON(b, 1);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
  * TT SpeedOMeter: the target's speed since the last run, in units a second
  * (the frame's time times Loop-Framedelay above 1), and with "Calculate
  * relative speed?" where it is between Minimum and Maximum Speed, clamped to
@@ -1443,6 +1484,8 @@ static const nmo_engine_block_desc_t eng_3dtrans_blocks[] = {
     {NMO_GUID(0x0fd4755f, 0x7de22dc8), "TT Set Dynamic Position", bb_set_dynamic_position, NULL,
      NULL},
     {NMO_GUID(0x51bd5521, 0x672c67bf), "TT SpeedOMeter", bb_speedometer, NULL, NULL},
+    {NMO_GUID(0x38571b61, 0x64cd2174), "TT ProximityVolumeControl", bb_proximity_volume_control,
+     NULL, NULL},
     {NMO_GUID(0x671e4a87, 0x383b2912), "Ray Intersection", bb_ray_intersection, NULL, NULL},
     {NMO_GUID(0x64154401, 0x76cf37af), "Box Box Intersection", bb_box_box_intersection, NULL, NULL},
     {NMO_GUID(0x7f0517c2, 0x52cc76bb), "TT Simple Shadow", bb_simple_shadow, NULL, NULL},

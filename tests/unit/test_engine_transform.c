@@ -22,6 +22,7 @@
 #define GUID_TT_EXTRA NMO_GUID(0x36106bd9, 0x51813906)
 #define GUID_RAY_INTERSECTION NMO_GUID(0x671e4a87, 0x383b2912)
 #define GUID_BOX_BOX_INTERSECTION NMO_GUID(0x64154401, 0x76cf37af)
+#define GUID_PROXIMITY_VOLUME NMO_GUID(0x38571b61, 0x64cd2174)
 
 #define PI_F 3.14159265f
 
@@ -684,6 +685,63 @@ TEST(engine_transform, box_box_intersection_tests_oriented_boxes)
     fixture_end(&f);
 }
 
+/* A TT ProximityVolumeControl on `sound` between `a` and `b`, on at frame 0 and off at frame 2 */
+static nmo_object_id_t proximity_volume(engine_fixture_t *f, const char *name, nmo_object_id_t a,
+                                        nmo_object_id_t b, nmo_object_id_t sound,
+                                        nmo_object_id_t outs[2])
+{
+    nmo_object_id_t block = fixture_block(f, GUID_PROXIMITY_VOLUME, name);
+    outs[0] = fixture_block(f, GUID_NOP, "On");
+    outs[1] = fixture_block(f, GUID_NOP, "Off");
+    if (block == 0 || outs[0] == 0 || outs[1] == 0) {
+        return 0;
+    }
+    fixture_link(f, f->script_in, BLOCK_IN(f, block, 0), 0);
+    fixture_link(f, f->script_in, BLOCK_IN(f, block, 1), 2);
+    fixture_link(f, BLOCK_OUT(f, block, 0), BLOCK_IN(f, outs[0], 0), 0);
+    fixture_link(f, BLOCK_OUT(f, block, 1), BLOCK_IN(f, outs[1], 0), 0);
+    fixture_input_int(f, BLOCK_PIN(f, block, 0), (int32_t)a);
+    fixture_input_int(f, BLOCK_PIN(f, block, 1), (int32_t)b);
+    fixture_input_int(f, BLOCK_PIN(f, block, 4), (int32_t)sound);
+    return block;
+}
+
+TEST(engine_transform, proximity_volume_control_runs_until_off)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t a = fixture_create(&f, NMO_CID_3DENTITY, "A");
+    nmo_object_id_t b = fixture_create(&f, NMO_CID_3DENTITY, "B");
+    nmo_object_id_t sound = fixture_create(&f, NMO_CID_WAVESOUND, "Hum");
+    ASSERT_TRUE(place_entity(&f, a, 0.0f, 0.0f, 0.0f, 0) != 0 &&
+                place_entity(&f, b, 5.0f, 0.0f, 0.0f, 0) != 0 && sound != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t outs[2], silent_outs[2];
+    nmo_object_id_t control = proximity_volume(&f, "Control", a, b, sound, outs);
+    nmo_object_id_t silent = proximity_volume(&f, "No Sound", a, b, 0, silent_outs);
+    ASSERT_TRUE(control != 0 && silent != 0);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    /* On out, then it runs each frame */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+    ASSERT_EQ(1u, runs(&f, outs[0]));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+    ASSERT_TRUE(nmo_engine_behavior_is_active(f.engine, control));
+    ASSERT_EQ(2u, runs(&f, control));
+    /* Off: Off out, done */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+    ASSERT_EQ(1u, runs(&f, outs[1]));
+    ASSERT_FALSE(nmo_engine_behavior_is_active(f.engine, control));
+    /* Without a sound: On out, then a parameter error ends it; Off errors the same way, before
+     * Off out */
+    ASSERT_EQ(1u, runs(&f, silent_outs[0]));
+    ASSERT_EQ(2u, runs(&f, silent));
+    ASSERT_EQ(0u, runs(&f, silent_outs[1]));
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_transform, loaded_children_keep_their_place_under_the_parent);
 REGISTER_TEST(engine_transform, set_position_and_set_parent);
@@ -694,4 +752,5 @@ REGISTER_TEST(engine_transform, speedometer_measures_the_target_speed);
 REGISTER_TEST(engine_transform, tt_extra_circles_flies_away_and_homes_in);
 REGISTER_TEST(engine_transform, ray_intersection_finds_the_nearest_face);
 REGISTER_TEST(engine_transform, box_box_intersection_tests_oriented_boxes);
+REGISTER_TEST(engine_transform, proximity_volume_control_runs_until_off);
 TEST_MAIN_END()

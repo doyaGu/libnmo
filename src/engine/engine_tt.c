@@ -895,6 +895,42 @@ static int bb_split_string(blk_t *b)
 }
 
 /*
+ * TT_Counter: Initialize sets the count to Start (Min when Start is outside
+ * [Min, Max]); Count Up and Count Down step it, wrapping around [Min, Max].
+ * The count in the local and the output, each call.
+ */
+static int bb_tt_counter(blk_t *b)
+{
+    int32_t start = get_in_int(b, 0, 0), min = get_in_int(b, 1, 0), max = get_in_int(b, 2, 9);
+    int32_t count = get_local_int(b, 0, 0);
+    if (start < min || start > max) {
+        start = min; /* "TT Counter: Start value out of range" */
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        count = start;
+        OUT_ON(b, 0);
+    }
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        if (++count > max) {
+            count = min;
+        }
+        OUT_ON(b, 1);
+    }
+    if (IN_ACTIVE(b, 2)) {
+        IN_OFF(b, 2);
+        if (--count < min) {
+            count = max;
+        }
+        OUT_ON(b, 2);
+    }
+    set_local_int(b, 0, count);
+    set_out(b, 0, &count, sizeof(count));
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
  * TT ConvertPixel-Homogen: a 2D vector in pixels of the render context made
  * homogeneous (divided by its size), or, with local 0 false, a homogeneous
  * one made pixels (truncated); X, Y and the vector out.
@@ -969,6 +1005,7 @@ static const nmo_engine_block_desc_t eng_tt_blocks[] = {
     {NMO_GUID(0x5ae74e2f, 0x799c49b5), "TT_SplitString", bb_split_string, NULL, NULL},
     {NMO_GUID(0x36691920, 0x3b261630), "TT Sky", bb_sky, NULL, NULL},
     {NMO_GUID(0x14d325d1, 0x6748654e), "TT PushButton2", bb_push_button2, NULL, NULL},
+    {NMO_GUID(0x750f20fc, 0x3741186d), "TT_Counter", bb_tt_counter, NULL, NULL},
     {NMO_GUID(0x18f96977, 0x18e20f83), "TT ConvertPixel-Homogen", bb_convert_pixel_homogen, NULL,
      NULL},
     {NMO_GUID(0x00cd320b, 0x32ed010b), "Planar Filter", bb_planar_filter, NULL, NULL},
