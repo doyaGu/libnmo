@@ -1163,6 +1163,150 @@ static int cb_tt_extra(blk_t *b, uint32_t message)
     return NMO_ENGINE_BR_OK;
 }
 
+/*
+ * Ray Intersection (Logics/Test, Logics.dll): the nearest 3D object within
+ * Depth on the ray (in the Referential's space given one), among the
+ * Filter group's objects or all 3D objects, characters and 3D sprites in the
+ * level scene, the owner skipped unless "Skip Owner" is off. Each object is
+ * first tested by its bounding sphere and world box, then its mesh. True
+ * with what it hit (with "Output Param Update": its face, the face's vertex
+ * nearest the hit, the point and normal in world space, the distance),
+ * False otherwise. Characters' body parts and 3D sprites are not hit, and
+ * every object counts as visible for "Skip Transparent".
+ */
+typedef struct ray_best {
+    eng_vector_t origin, dir, end;
+    float depth;
+    nmo_object_id_t object;
+    eng_ray_hit_t hit;
+    float distance2;
+} ray_best_t;
+
+static void ray_test(nmo_engine_t *engine, nmo_object_id_t id, ray_best_t *ray)
+{
+    uint32_t class_id = (uint32_t)nmo_engine_object_class(engine, id);
+    int32_t index = eng_entity_index(engine, id);
+    if (index < 0 || !nmo_type_registry_is_class_derived_from(engine->types, class_id, NMO_CID_3DENTITY) ||
+        !eng_in_scene(engine, id) ||
+        nmo_type_registry_is_class_derived_from(engine->types, class_id, NMO_CID_CHARACTER) ||
+        nmo_type_registry_is_class_derived_from(engine->types, class_id, NMO_CID_SPRITE3D)) {
+        return;
+    }
+    float radius = eng_entity_radius(engine, index);
+    eng_vector_t center;
+    eng_entity_bary_center(engine, index, &center);
+    float dx = center.x - ray->origin.x, dy = center.y - ray->origin.y, dz = center.z - ray->origin.z;
+    float distance2 = dz * dz + dy * dy + dx * dx;
+    float reach = radius + ray->depth;
+    if (!(distance2 < reach * reach)) {
+        return;
+    }
+    double along = (double)dz * ray->dir.z + (double)dy * ray->dir.y + (double)dx * ray->dir.x;
+    if (!(radius + along > 0.0) || !(distance2 - along * along < (double)radius * radius)) {
+        return; /* behind the origin, or beside the ray */
+    }
+    eng_vector_t min, max;
+    if (!eng_entity_world_box(engine, index, &min, &max) || !eng_ray_box(&ray->origin, &ray->dir, &min, &max)) {
+        return;
+    }
+    eng_ray_hit_t hit;
+    if (eng_entity_ray_intersection(engine, index, &ray->origin, &ray->end, &hit) == 0) {
+        return;
+    }
+    eng_vector_t world;
+    eng_entity_transform(engine, index, &world, &hit.point, -1);
+    float wx = world.x - ray->origin.x, wy = world.y - ray->origin.y, wz = world.z - ray->origin.z;
+    float d2 = wz * wz + wy * wy + wx * wx;
+    if (d2 < ray->distance2) {
+        ray->distance2 = d2;
+        ray->object = id;
+        ray->hit = hit;
+    }
+}
+
+static int bb_ray_intersection(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t owner = nmo_engine_block_target(b);
+    if (owner == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    IN_OFF(b, 0);
+    if (get_local_int(b, 1, 1) == 0) {
+        owner = 0; /* "Skip Owner" off */
+    }
+    ray_best_t ray;
+    memset(&ray, 0, sizeof(ray));
+    nmo_engine_block_get_input_value(b, 0, &ray.origin, sizeof(ray.origin));
+    nmo_engine_block_get_input_value(b, 1, &ray.dir, sizeof(ray.dir));
+    int32_t referential = input_entity(b, 2);
+    if (referential >= 0) {
+        eng_entity_transform(engine, referential, &ray.origin, &ray.origin, -1);
+        eng_entity_transform_vector(engine, referential, &ray.dir, &ray.dir, -1, false);
+    }
+    eng_vector_normalize(&ray.dir);
+    ray.depth = get_in_float(b, 3, 100.0f);
+    ray.end = (eng_vector_t){ray.dir.x + ray.origin.x, ray.dir.y + ray.origin.y,
+                             ray.dir.z + ray.origin.z};
+    ray.distance2 = ray.depth * ray.depth;
+    nmo_object_id_t filter = nmo_engine_block_get_input_object(b, 4);
+    if (filter != 0) {
+        int32_t count = nmo_engine_group_count(engine, filter);
+        for (int32_t i = 0; i < count; i++) {
+            nmo_object_id_t id = nmo_engine_group_object(engine, filter, i);
+            if (id != owner) {
+                ray_test(engine, id, &ray);
+            }
+        }
+    } else {
+        /* The context's 3D objects, then characters, then 3D sprites */
+        static const uint32_t classes[3] = {NMO_CID_3DOBJECT, NMO_CID_CHARACTER, NMO_CID_SPRITE3D};
+        for (int c = 0; c < 3; c++) {
+            for (size_t i = 0; i < engine->entities.count; i++) {
+                nmo_object_id_t id = engine->entities.data[i].id;
+                if (!engine->entities.data[i].destroyed && id != owner &&
+                    (uint32_t)nmo_engine_object_class(engine, id) == classes[c]) {
+                    ray_test(engine, id, &ray);
+                }
+            }
+        }
+    }
+    if (ray.object == 0 || !((double)ray.depth * ray.depth > ray.distance2)) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    uint32_t object = ray.object;
+    nmo_engine_block_set_output_value(b, 0, &object, sizeof(object));
+    int32_t index = eng_entity_index(engine, ray.object);
+    if (get_local_int(b, 0, 1) != 0 && index >= 0) {
+        /* The face's vertex nearest the hit (the later one on a tie) */
+        float distances[3];
+        for (int k = 0; k < 3; k++) {
+            float x = ray.hit.corners[k].x - ray.hit.point.x, y = ray.hit.corners[k].y - ray.hit.point.y,
+                  z = ray.hit.corners[k].z - ray.hit.point.z;
+            distances[k] = (float)sqrt((double)(z * z + y * y + x * x));
+        }
+        int32_t nearest;
+        if (distances[0] >= distances[1]) {
+            nearest = distances[1] >= distances[2] ? ray.hit.vertices[2] : ray.hit.vertices[1];
+        } else {
+            nearest = distances[0] < distances[2] ? ray.hit.vertices[0] : ray.hit.vertices[2];
+        }
+        eng_vector_t point, normal;
+        eng_entity_transform(engine, index, &point, &ray.hit.point, -1);
+        eng_entity_transform_vector(engine, index, &normal, &ray.hit.normal, -1, false);
+        eng_vector_normalize(&normal);
+        float distance = (float)sqrt((double)ray.distance2);
+        nmo_engine_block_set_output_value(b, 1, &ray.hit.face, sizeof(ray.hit.face));
+        nmo_engine_block_set_output_value(b, 2, &nearest, sizeof(nearest));
+        nmo_engine_block_set_output_value(b, 3, &point, sizeof(point));
+        nmo_engine_block_set_output_value(b, 4, &normal, sizeof(normal));
+        nmo_engine_block_set_output_value(b, 5, &distance, sizeof(distance));
+    }
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_3dtrans_blocks[] = {
     {NMO_GUID(0xe456e78a, 0x456789aa), "Set Position", bb_set_position, NULL, NULL},
     {NMO_GUID(0xaa4aa6f0, 0xddefdef4), "Set World Matrix", bb_set_world_matrix, NULL, NULL},
@@ -1180,6 +1324,7 @@ static const nmo_engine_block_desc_t eng_3dtrans_blocks[] = {
     {NMO_GUID(0x0fd4755f, 0x7de22dc8), "TT Set Dynamic Position", bb_set_dynamic_position, NULL,
      NULL},
     {NMO_GUID(0x51bd5521, 0x672c67bf), "TT SpeedOMeter", bb_speedometer, NULL, NULL},
+    {NMO_GUID(0x671e4a87, 0x383b2912), "Ray Intersection", bb_ray_intersection, NULL, NULL},
     {NMO_GUID(0x36106bd9, 0x51813906), "TT Extra", bb_tt_extra, cb_tt_extra, NULL},
 };
 

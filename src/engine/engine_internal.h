@@ -519,6 +519,21 @@ bool eng_entity_set_parent(nmo_engine_t *engine, int32_t index, int32_t parent,
                            bool keep_world_position);
 void eng_entity_destroy(nmo_engine_t *engine, nmo_object_id_t id);
 bool eng_entity_bary_center(nmo_engine_t *engine, int32_t index, eng_vector_t *out);
+float eng_entity_radius(nmo_engine_t *engine, int32_t index);
+bool eng_entity_world_box(nmo_engine_t *engine, int32_t index, eng_vector_t *min,
+                          eng_vector_t *max);
+bool eng_ray_box(const eng_vector_t *origin, const eng_vector_t *dir, const eng_vector_t *min,
+                 const eng_vector_t *max);
+/* A ray's hit on an entity's mesh, in the entity's space */
+typedef struct eng_ray_hit {
+    eng_vector_t point;
+    eng_vector_t normal;     /* the vertex normals interpolated, not normalized */
+    int32_t face;
+    int32_t vertices[3];     /* the face's vertex indices */
+    eng_vector_t corners[3]; /* and their positions */
+} eng_ray_hit_t;
+int eng_entity_ray_intersection(nmo_engine_t *engine, int32_t index, const eng_vector_t *pos1,
+                                const eng_vector_t *pos2, eng_ray_hit_t *hit);
 
 /* engine_copy.c */
 #define ENG_DEPENDENCY_CLASSES 128

@@ -17,6 +17,7 @@
 
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_material_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_defs.h"
@@ -729,12 +730,9 @@ void eng_entity_look_at(nmo_engine_t *engine, int32_t index, const eng_vector_t 
     eng_entity_set_orientation(engine, index, &dir, &up, &right, -1, keep_children);
 }
 
-/*
- * GetBaryCenter: the barycenter of the current mesh (the mean of its
- * vertices, as loaded) in world space; the position for an entity without
- * a mesh, and false then.
- */
-bool eng_entity_bary_center(nmo_engine_t *engine, int32_t index, eng_vector_t *out)
+/* The entity's current mesh, as the file has it; NULL for none. */
+static const nmo_mesh_state_t *eng_entity_mesh(nmo_engine_t *engine, int32_t index,
+                                               const eng_module_t **out_module)
 {
     nmo_object_id_t id = eng_entity_at(engine, index)->id;
     nmo_object_t *object = eng_find_object(engine, id);
@@ -743,14 +741,25 @@ bool eng_entity_bary_center(nmo_engine_t *engine, int32_t index, eng_vector_t *o
                              engine->types, object, CKPGUID_3DENTITY)
                        : NULL;
     nmo_object_id_t mesh_local = state != NULL ? nmo_ref_runtime_id(&state->current_mesh) : 0u;
-    nmo_object_t *mesh = mesh_local != 0
-                             ? eng_find_object(engine, eng_module_id(eng_module_of(engine, id, NULL),
-                                                                     mesh_local))
-                             : NULL;
-    const nmo_mesh_state_t *mesh_state =
-        mesh != NULL ? (const nmo_mesh_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
-                           engine->types, mesh, CKPGUID_MESH)
-                     : NULL;
+    const eng_module_t *module = eng_module_of(engine, id, NULL);
+    nmo_object_t *mesh =
+        mesh_local != 0 ? eng_find_object(engine, eng_module_id(module, mesh_local)) : NULL;
+    if (out_module != NULL) {
+        *out_module = module;
+    }
+    return mesh != NULL ? (const nmo_mesh_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
+                              engine->types, mesh, CKPGUID_MESH)
+                        : NULL;
+}
+
+/*
+ * GetBaryCenter: the barycenter of the current mesh (the mean of its
+ * vertices, as loaded) in world space; the position for an entity without
+ * a mesh, and false then.
+ */
+bool eng_entity_bary_center(nmo_engine_t *engine, int32_t index, eng_vector_t *out)
+{
+    const nmo_mesh_state_t *mesh_state = eng_entity_mesh(engine, index, NULL);
     if (mesh_state == NULL) {
         *out = eng_matrix_row(&eng_entity_at(engine, index)->world, 3);
         return false;
@@ -759,6 +768,255 @@ bool eng_entity_bary_center(nmo_engine_t *engine, int32_t index, eng_vector_t *o
                           mesh_state->bary_center.z};
     eng_entity_transform(engine, index, out, &local, -1);
     return true;
+}
+
+/* GetRadius: the mesh's radius times the largest world axis scale; 0 without a mesh. */
+float eng_entity_radius(nmo_engine_t *engine, int32_t index)
+{
+    const nmo_mesh_state_t *mesh = eng_entity_mesh(engine, index, NULL);
+    if (mesh == NULL) {
+        return 0.0f; /* the world box of an entity without a mesh is not valid */
+    }
+    const eng_matrix_t *world = &eng_entity_at(engine, index)->world;
+    float scale[3];
+    for (int row = 0; row < 3; row++) {
+        eng_vector_t axis = eng_matrix_row(world, row);
+        scale[row] = eng_vector_magnitude(&axis) * mesh->radius;
+    }
+    float yz = scale[1] < scale[2] ? scale[2] : scale[1];
+    return scale[0] < yz ? yz : scale[0];
+}
+
+/*
+ * The world box (UpdateBox): the mesh's local box (its vertices' extent)
+ * through the world matrix as VxBbox::TransformFrom has it; false without a
+ * mesh.
+ */
+bool eng_entity_world_box(nmo_engine_t *engine, int32_t index, eng_vector_t *min,
+                          eng_vector_t *max)
+{
+    const nmo_mesh_state_t *mesh = eng_entity_mesh(engine, index, NULL);
+    if (mesh == NULL) {
+        return false;
+    }
+    float low[3] = {0.0f, 0.0f, 0.0f}, high[3] = {0.0f, 0.0f, 0.0f};
+    for (uint32_t i = 0; i < mesh->vertex_count; i++) {
+        const float p[3] = {mesh->vertices[i].position.x, mesh->vertices[i].position.y,
+                            mesh->vertices[i].position.z};
+        for (int k = 0; k < 3; k++) {
+            if (i == 0 || low[k] > p[k]) {
+                low[k] = p[k];
+            }
+            if (i == 0 || high[k] < p[k]) {
+                high[k] = p[k];
+            }
+        }
+    }
+    const eng_matrix_t *m = &eng_entity_at(engine, index)->world;
+    eng_vector_t center = {(low[0] + high[0]) * 0.5f, (low[1] + high[1]) * 0.5f,
+                           (low[2] + high[2]) * 0.5f};
+    eng_vector_t c;
+    eng_vector_transform(&c, m, &center);
+    float half[3];
+    for (int k = 0; k < 3; k++) {
+        half[k] = (fabsf((high[0] - low[0]) * m->m[0][k]) + fabsf((high[1] - low[1]) * m->m[1][k]) +
+                   fabsf((high[2] - low[2]) * m->m[2][k])) *
+                  0.5f;
+    }
+    *min = (eng_vector_t){c.x - half[0], c.y - half[1], c.z - half[2]};
+    *max = (eng_vector_t){c.x + half[0], c.y + half[1], c.z + half[2]};
+    return true;
+}
+
+/* VxIntersect::RayBox: the half-line from `origin` along `dir` meets the box. */
+bool eng_ray_box(const eng_vector_t *origin, const eng_vector_t *dir, const eng_vector_t *min,
+                 const eng_vector_t *max)
+{
+    const float o[3] = {origin->x, origin->y, origin->z}, d[3] = {dir->x, dir->y, dir->z};
+    const float lo[3] = {min->x, min->y, min->z}, hi[3] = {max->x, max->y, max->z};
+    double near_t = 0.0, far_t = 1.7976931348623157e308;
+    for (int k = 0; k < 3; k++) {
+        if (d[k] == 0.0f) {
+            if (o[k] < lo[k] || o[k] > hi[k]) {
+                return false;
+            }
+            continue;
+        }
+        double a = ((double)lo[k] - o[k]) / d[k], b = ((double)hi[k] - o[k]) / d[k];
+        double first = a < b ? a : b, last = a < b ? b : a;
+        if (first > near_t) {
+            near_t = first;
+        }
+        if (last < far_t) {
+            far_t = last;
+        }
+    }
+    return near_t <= far_t;
+}
+
+/* VxIntersect::PointInFace: the projection axes of the face's dominant normal; 0 outside. */
+static int eng_point_in_face(const float *p, const float *a, const float *b, const float *c,
+                             const nmo_vector_t *n, int *i1, int *i2)
+{
+    float largest = fabsf(n->x);
+    *i1 = 1;
+    *i2 = 2;
+    if (largest < fabsf(n->y)) {
+        *i1 = 0;
+        *i2 = 2;
+        largest = fabsf(n->y);
+    }
+    if (largest < fabsf(n->z)) {
+        *i1 = 0;
+        *i2 = 1;
+    }
+    const int u = *i1, v = *i2;
+    const float *vertices[3] = {a, b, c};
+    bool positive = false, negative = false;
+    for (int edge = 0; edge < 3; edge++) {
+        const float *s = vertices[edge], *e = vertices[(edge + 1) % 3];
+        double side = ((double)p[u] - s[u]) * ((double)e[v] - s[v]) -
+                      ((double)p[v] - s[v]) * ((double)e[u] - s[u]);
+        positive = positive || side > 0.0;
+        negative = negative || side < 0.0;
+        if (positive && negative) {
+            return 0;
+        }
+    }
+    if (positive) {
+        return 2;
+    }
+    if (negative) {
+        return 1;
+    }
+    /* collinear: inside the projected extent */
+    for (int k = 0; k < 2; k++) {
+        int axis = k == 0 ? u : v;
+        float lo = fminf(a[axis], fminf(b[axis], c[axis])), hi = fmaxf(a[axis], fmaxf(b[axis], c[axis]));
+        if (p[axis] < lo || p[axis] > hi) {
+            return 0;
+        }
+    }
+    return 2;
+}
+
+/* Whether the material of a material group is two-sided (CKMaterial::IsTwoSided) */
+static bool eng_group_two_sided(nmo_engine_t *engine, const eng_module_t *module,
+                                const nmo_mesh_state_t *mesh, uint32_t group)
+{
+    if (group >= mesh->material_group_count) {
+        return false;
+    }
+    nmo_object_id_t local = nmo_ref_runtime_id(&mesh->material_groups[group].material);
+    nmo_object_t *material = local != 0 ? eng_find_object(engine, eng_module_id(module, local)) : NULL;
+    if (material == NULL || nmo_object_get_class_id(material) != NMO_CID_MATERIAL) {
+        return false;
+    }
+    const nmo_material_state_t *state = (const nmo_material_state_t *)nmo_object_get_state(material);
+    return state != NULL && (state->packed_flags & 1u) != 0;
+}
+
+/*
+ * CK3dEntity::RayIntersection (the default options: a ray, the nearest
+ * face): the ray from `pos1` through `pos2` (world space) on the current
+ * mesh in the entity's space, faces culled from behind unless their
+ * material is two-sided (the face normals built from the vertices, as CK
+ * builds them after a load). The hit is in the entity's space, with the vertex
+ * normals interpolated there. The number of faces the ray meets; 0 without
+ * a mesh. Texture transparency (PreciseTexturePick) is not tested.
+ */
+int eng_entity_ray_intersection(nmo_engine_t *engine, int32_t index, const eng_vector_t *pos1,
+                                const eng_vector_t *pos2, eng_ray_hit_t *hit)
+{
+    const eng_module_t *module = NULL;
+    const nmo_mesh_state_t *mesh = eng_entity_mesh(engine, index, &module);
+    if (mesh == NULL || mesh->face_count == 0 || mesh->vertex_count == 0) {
+        return 0;
+    }
+    eng_vector_t origin, end;
+    eng_entity_inverse_transform(engine, index, &origin, pos1, -1);
+    eng_entity_inverse_transform(engine, index, &end, pos2, -1);
+    const float o[3] = {origin.x, origin.y, origin.z};
+    const float d[3] = {end.x - origin.x, end.y - origin.y, end.z - origin.z};
+    int hits = 0, best_i1 = 0, best_i2 = 0;
+    uint32_t best_face = 0;
+    float best = 1.0e35f;
+    bool found = false;
+    for (uint32_t f = 0; f < mesh->face_count; f++) {
+        const uint16_t *v = &mesh->face_vertex_indices[3u * f];
+        if (v[0] >= mesh->vertex_count || v[1] >= mesh->vertex_count || v[2] >= mesh->vertex_count) {
+            continue;
+        }
+        const nmo_vector_t *p0 = &mesh->vertices[v[0]].position, *p1 = &mesh->vertices[v[1]].position,
+                           *p2 = &mesh->vertices[v[2]].position;
+        /* RCKMesh::BuildFaceNormals, as after a load: the files save none */
+        eng_vector_t e1 = {p1->x - p0->x, p1->y - p0->y, p1->z - p0->z};
+        eng_vector_t e2 = {p2->x - p0->x, p2->y - p0->y, p2->z - p0->z};
+        eng_vector_t cross = eng_vector_cross(&e1, &e2);
+        float length = eng_vector_magnitude(&cross);
+        if (length > 0.0f) {
+            float inverse = 1.0f / length;
+            cross = (eng_vector_t){cross.x * inverse, cross.y * inverse, cross.z * inverse};
+        }
+        const nmo_vector_t normal = {cross.x, cross.y, cross.z};
+        const nmo_vector_t *n = &normal;
+        bool culled = !eng_group_two_sided(engine, module, mesh, mesh->faces[f].material_group_idx);
+        double denominator = (double)n->x * d[0] + (double)n->y * d[1] + (double)n->z * d[2];
+        if (culled ? denominator > -ENG_EPSILON : fabs(denominator) < ENG_EPSILON) {
+            continue;
+        }
+        double numerator = (double)n->x * ((double)p0->x - o[0]) +
+                           (double)n->y * ((double)p0->y - o[1]) + (double)n->z * ((double)p0->z - o[2]);
+        double t = numerator / denominator;
+        if (t < -ENG_EPSILON) {
+            continue;
+        }
+        const float point[3] = {(float)(o[0] + d[0] * t), (float)(o[1] + d[1] * t),
+                                (float)(o[2] + d[2] * t)};
+        const float a[3] = {p0->x, p0->y, p0->z}, b[3] = {p1->x, p1->y, p1->z},
+                    c[3] = {p2->x, p2->y, p2->z};
+        int i1 = 0, i2 = 0;
+        if (eng_point_in_face(point, a, b, c, n, &i1, &i2) == 0) {
+            continue;
+        }
+        hits++;
+        if ((float)t < best) {
+            found = true;
+            best = (float)t;
+            best_face = f;
+            best_i1 = i1;
+            best_i2 = i2;
+        }
+    }
+    if (found && hit != NULL) {
+        const uint16_t *v = &mesh->face_vertex_indices[3u * best_face];
+        const nmo_vertex_t *a = &mesh->vertices[v[0]], *b = &mesh->vertices[v[1]],
+                           *c = &mesh->vertices[v[2]];
+        const float p[3] = {d[0] * best + o[0], d[1] * best + o[1], d[2] * best + o[2]};
+        const float pa[3] = {a->position.x, a->position.y, a->position.z};
+        const float pb[3] = {b->position.x, b->position.y, b->position.z};
+        const float pc[3] = {c->position.x, c->position.y, c->position.z};
+        /* VxIntersect::GetPointCoefficients: each weight its opposite signed area */
+        const double ax = pa[best_i1], ay = pa[best_i2], bx = pb[best_i1], by = pb[best_i2];
+        const double cx = pc[best_i1], cy = pc[best_i2], px = p[best_i1], py = p[best_i2];
+        const double det = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+        const float w0 = (float)(((bx - px) * (cy - py) - (by - py) * (cx - px)) / det);
+        const float w1 = (float)(((px - ax) * (cy - ay) - (py - ay) * (cx - ax)) / det);
+        const float w2 = (float)(((bx - ax) * (py - ay) - (by - ay) * (px - ax)) / det);
+        hit->point = (eng_vector_t){p[0], p[1], p[2]};
+        hit->normal = (eng_vector_t){w0 * a->normal.x + w1 * b->normal.x + w2 * c->normal.x,
+                                     w0 * a->normal.y + w1 * b->normal.y + w2 * c->normal.y,
+                                     w0 * a->normal.z + w1 * b->normal.z + w2 * c->normal.z};
+        hit->face = (int32_t)best_face;
+        hit->vertices[0] = v[0];
+        hit->vertices[1] = v[1];
+        hit->vertices[2] = v[2];
+        for (int k = 0; k < 3; k++) {
+            const nmo_vector_t *q = &mesh->vertices[v[k]].position;
+            hit->corners[k] = (eng_vector_t){q->x, q->y, q->z};
+        }
+    }
+    return found ? hits : 0;
 }
 
 static bool eng_is_place(const nmo_engine_t *engine, nmo_object_id_t id)

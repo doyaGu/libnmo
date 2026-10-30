@@ -2,6 +2,7 @@
 
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_group_schemas.h"
+#include "object/builtin/nmo_mesh_schemas.h"
 #include "object/nmo_ref.h"
 #include "type/nmo_object_guids.h"
 
@@ -19,6 +20,7 @@
 #define GUID_SET_DYNAMIC_POSITION NMO_GUID(0x0fd4755f, 0x7de22dc8)
 #define GUID_SPEEDOMETER NMO_GUID(0x51bd5521, 0x672c67bf)
 #define GUID_TT_EXTRA NMO_GUID(0x36106bd9, 0x51813906)
+#define GUID_RAY_INTERSECTION NMO_GUID(0x671e4a87, 0x383b2912)
 
 #define PI_F 3.14159265f
 
@@ -515,6 +517,109 @@ TEST(engine_transform, tt_extra_circles_flies_away_and_homes_in)
     fixture_end(&f);
 }
 
+/*
+ * A 3D object at the origin whose mesh is a 10 x 10 floor on y = 0: faces
+ * (-5,-5) (-5,5) (5,5) and (-5,-5) (5,5) (5,-5) in x, z, facing up (the
+ * face normals are left for the engine to build, as files leave them).
+ */
+static nmo_object_id_t floor_object(engine_fixture_t *f)
+{
+    nmo_object_id_t object = fixture_create(f, NMO_CID_3DOBJECT, "Floor");
+    nmo_object_id_t mesh = fixture_create(f, NMO_CID_MESH, "Floor Mesh");
+    nmo_3dentity_state_t *entity = (nmo_3dentity_state_t *)fixture_state(f, object);
+    nmo_mesh_state_t *state = (nmo_mesh_state_t *)fixture_state(f, mesh);
+    if (place_entity(f, object, 0.0f, 0.0f, 0.0f, 0) == 0 || entity == NULL || state == NULL) {
+        return 0;
+    }
+    nmo_arena_t *arena = nmo_session_get_arena(f->session);
+    state->vertices = (nmo_vertex_t *)nmo_arena_alloc(arena, 4u * sizeof(nmo_vertex_t), _Alignof(nmo_vertex_t));
+    state->faces = (nmo_face_t *)nmo_arena_alloc(arena, 2u * sizeof(nmo_face_t), _Alignof(nmo_face_t));
+    state->face_vertex_indices = (uint16_t *)nmo_arena_alloc(arena, 6u * sizeof(uint16_t), _Alignof(uint16_t));
+    if (state->vertices == NULL || state->faces == NULL || state->face_vertex_indices == NULL) {
+        return 0;
+    }
+    const float corners[4][2] = {{-5.0f, -5.0f}, {-5.0f, 5.0f}, {5.0f, 5.0f}, {5.0f, -5.0f}};
+    for (int i = 0; i < 4; i++) {
+        memset(&state->vertices[i], 0, sizeof(state->vertices[i]));
+        state->vertices[i].position = (nmo_vector_t){corners[i][0], 0.0f, corners[i][1]};
+        state->vertices[i].normal = (nmo_vector_t){0.0f, 1.0f, 0.0f};
+    }
+    memset(state->faces, 0, 2u * sizeof(nmo_face_t));
+    const uint16_t indices[6] = {0, 1, 2, 0, 2, 3};
+    memcpy(state->face_vertex_indices, indices, sizeof(indices));
+    state->vertex_count = 4;
+    state->face_count = 2;
+    state->bary_center = (nmo_vector_t){0.0f, 0.0f, 0.0f};
+    state->radius = sqrtf(50.0f);
+    entity->current_mesh = nmo_ref_from_id(mesh);
+    return object;
+}
+
+/* A Ray Intersection of the owner from `origin` along `dir` within `depth`, run from the script's start */
+static nmo_object_id_t ray_block(engine_fixture_t *f, const char *name, const float origin[3],
+                                 const float dir[3], float depth)
+{
+    nmo_object_id_t block = target_block(f, GUID_RAY_INTERSECTION, name, f->owner_id, f->script_in);
+    if (block == 0) {
+        return 0;
+    }
+    fixture_input_value(f, BLOCK_PIN(f, block, 0), origin, 3u * sizeof(float));
+    fixture_input_value(f, BLOCK_PIN(f, block, 1), dir, 3u * sizeof(float));
+    fixture_input_value(f, BLOCK_PIN(f, block, 3), &depth, sizeof(depth));
+    return block;
+}
+
+TEST(engine_transform, ray_intersection_finds_the_nearest_face)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t floor = floor_object(&f);
+    ASSERT_TRUE(floor != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    const float above[3] = {2.0f, 2.0f, 1.0f}, below[3] = {2.0f, -2.0f, 1.0f};
+    const float down[3] = {0.0f, -1.0f, 0.0f}, up[3] = {0.0f, 1.0f, 0.0f};
+    nmo_object_id_t hit = ray_block(&f, "Hit", above, down, 3.0f);
+    nmo_object_id_t short_ray = ray_block(&f, "Short", above, down, 1.5f);
+    nmo_object_id_t behind = ray_block(&f, "Behind", below, up, 3.0f); /* the face's back */
+    ASSERT_TRUE(hit != 0 && short_ray != 0 && behind != 0);
+    /* True, False of each */
+    nmo_object_id_t outputs[3][2];
+    nmo_object_id_t blocks[3] = {hit, short_ray, behind};
+    for (int i = 0; i < 3; i++) {
+        for (int k = 0; k < 2; k++) {
+            outputs[i][k] = fixture_block(&f, GUID_NOP, "Output");
+            ASSERT_TRUE(outputs[i][k] != 0);
+            fixture_link(&f, BLOCK_OUT(&f, blocks[i], (size_t)k), BLOCK_IN(&f, outputs[i][k], 0), 0);
+        }
+    }
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1u, runs(&f, outputs[0][0]));
+    ASSERT_EQ(1u, runs(&f, outputs[1][1]));
+    ASSERT_EQ(1u, runs(&f, outputs[2][1]));
+    uint32_t object = 0;
+    int32_t face = -1, vertex = -1;
+    float point[3], normal[3], distance = 0.0f;
+    read_value(&f, BLOCK_POUT(&f, hit, 0), &object, sizeof(object));
+    read_value(&f, BLOCK_POUT(&f, hit, 1), &face, sizeof(face));
+    read_value(&f, BLOCK_POUT(&f, hit, 2), &vertex, sizeof(vertex));
+    read_value(&f, BLOCK_POUT(&f, hit, 3), point, sizeof(point));
+    read_value(&f, BLOCK_POUT(&f, hit, 4), normal, sizeof(normal));
+    read_value(&f, BLOCK_POUT(&f, hit, 5), &distance, sizeof(distance));
+    ASSERT_EQ(floor, object);
+    ASSERT_EQ(1, face);   /* (2, 1) is in the second face */
+    ASSERT_EQ(2, vertex); /* (5, 5): the face's corner nearest the hit */
+    ASSERT_FLOAT_EQ(2.0f, point[0], 0.0001f);
+    ASSERT_FLOAT_EQ(0.0f, point[1], 0.0001f);
+    ASSERT_FLOAT_EQ(1.0f, point[2], 0.0001f);
+    ASSERT_FLOAT_EQ(1.0f, normal[1], 0.0001f);
+    ASSERT_FLOAT_EQ(2.0f, distance, 0.0001f);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_transform, loaded_children_keep_their_place_under_the_parent);
 REGISTER_TEST(engine_transform, set_position_and_set_parent);
@@ -523,4 +628,5 @@ REGISTER_TEST(engine_transform, nearest_in_group_and_proximity);
 REGISTER_TEST(engine_transform, set_dynamic_position_follows_the_object);
 REGISTER_TEST(engine_transform, speedometer_measures_the_target_speed);
 REGISTER_TEST(engine_transform, tt_extra_circles_flies_away_and_homes_in);
+REGISTER_TEST(engine_transform, ray_intersection_finds_the_nearest_face);
 TEST_MAIN_END()
