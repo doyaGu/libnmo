@@ -80,7 +80,12 @@ installation; nothing of them is kept with libnmo.
 
 The start's octagonal platform and the pillars' bases are not the start
 object: in Level_01 they are the floor `A01_Floor_01`, a floor like any other
-(`Floor_Top_Checkpoint` on top).
+(`Floor_Top_Checkpoint` on top), and the round floor with the two flame bowls
+under the first checkpoint is `A02_Floor_01`. Both stand unturned with their
+origins 1.24 below the marker; the start is turned 90 degrees on its platform,
+the checkpoint 180 on its floor, and the track crosses the checkpoint floor
+along its X, between the bowls on its Z sides. `ballance_level_elements.py`
+writes them as `Floor_Start.obj` and `Floor_Checkpoint.obj`.
 
 Each element is in two groups: its kind, and its sector.
 
