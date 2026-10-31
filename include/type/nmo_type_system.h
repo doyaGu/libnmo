@@ -516,10 +516,14 @@ typedef struct nmo_type_descriptor_ext {
 } nmo_type_descriptor_ext_t;
 
 typedef struct nmo_type_descriptor {
-    /* === Core Identity (40 bytes) === */
+    /* === Core Identity (24 bytes) === */
     nmo_guid_t guid;                    /* Type GUID (primary key) */
     nmo_type_id_t id;                   /* Runtime type ID (array index) */
-    uint32_t class_id;                  /* Virtools CK_CLASSID (for objects) */
+    uint32_t class_id;                  /* Virtools CK_CLASSID this type is the schema of */
+    /* CKParameterTypeDesc::Cid, what TypeToClassID gives: the class of the objects a value
+       of this type refers to. Several types may share one (Behavior and Script); registering
+       a type with a class_id and none sets it to the class_id. 0: no object reference. */
+    uint32_t object_class_id;
     uint16_t category;                  /* Type category bit flags */
     uint16_t flags;                     /* Type flags */
 

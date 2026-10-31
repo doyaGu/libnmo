@@ -283,6 +283,10 @@ nmo_status_t nmo_virtools_load_param_types(nmo_type_registry_t *registry, const 
             desc.base_type = CKPGUID_UINT32;
         }
 
+        /* A type that refers to objects is not a class's schema (class_id), and the file's
+           class ids are another Virtools version's for several classes, so its
+           object_class_id is not taken from them: the types CK2 itself gives a class are
+           registered with theirs (Script, the class schemas). */
         if ((desc.category == NMO_TYPE_CATEGORY_OBJECT_REF) ||
             (desc.category == NMO_TYPE_CATEGORY_SCALAR &&
              desc.class_id != 0 &&

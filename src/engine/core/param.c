@@ -5,7 +5,6 @@
 
 #include "../engine_internal.h"
 
-#include "object/nmo_class_ids.h"
 #include "type/nmo_type_guids.h"
 
 #include <stdlib.h>
@@ -133,20 +132,6 @@ nmo_status_t eng_param_write(nmo_engine_t *engine, eng_param_t *param, const voi
 /* ============================================================================
  * Operations
  * ============================================================================ */
-
-/* The Script type, which the type registry keeps as an object reference with no class */
-#define PGUID_SCRIPT NMO_GUID(0x7ea4176d, 0x1b405d30)
-
-uint32_t eng_type_class_id(const nmo_type_descriptor_t *type)
-{
-    if (type == NULL) {
-        return 0u;
-    }
-    if (type->class_id == 0u && nmo_guid_equals(type->guid, PGUID_SCRIPT)) {
-        return NMO_CID_BEHAVIOR; /* CKPGUID_SCRIPT registers with CKCID_BEHAVIOR */
-    }
-    return type->class_id;
-}
 
 static bool eng_is_none_type(const eng_param_t *param)
 {

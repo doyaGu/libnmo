@@ -725,7 +725,7 @@ static bool normalize_id_is_invalid_for_typed_field(
             ? nmo_type_registry_find_by_guid(types, state->type_guid)
             : NULL;
         const nmo_class_id_t expected = parameter_type != NULL
-            ? (nmo_class_id_t)parameter_type->class_id
+            ? (nmo_class_id_t)parameter_type->object_class_id
             : 0;
         return normalize_id_is_invalid(repo, id) ||
             normalize_id_has_wrong_class(repo, types, id, expected);

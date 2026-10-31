@@ -5,6 +5,7 @@
 
 #include "../test_framework.h"
 #include "extension/nmo_virtools_loader.h"
+#include "object/nmo_class_ids.h"
 #include "object/nmo_context.h"
 #include "type/nmo_operations.h"
 #include "type/nmo_type_system.h"
@@ -469,6 +470,16 @@ TEST(vt, script_param_type_loads_as_object_ref_alias) {
     nmo_object_id_t id = 0;
     ASSERT_EQ(NMO_OK, nmo_type_value_from_string(&id, type, reg, "#987"));
     ASSERT_EQ(987u, id);
+
+    /* It refers to behaviors (TypeToClassID) without being the class: CKBehavior's own type
+       stays the one class id 8 finds (ClassIDToType) */
+    ASSERT_EQ(0u, type->class_id);
+    ASSERT_EQ((uint32_t)NMO_CID_BEHAVIOR, type->object_class_id);
+    const nmo_type_descriptor_t *behavior =
+        nmo_type_registry_find_by_class_id(reg, NMO_CID_BEHAVIOR);
+    ASSERT_TRUE(behavior != NULL);
+    ASSERT_TRUE(nmo_guid_equals(behavior->guid, CKPGUID_BEHAVIOR));
+    ASSERT_EQ((uint32_t)NMO_CID_BEHAVIOR, behavior->object_class_id);
 
     nmo_context_release(ctx);
 }

@@ -12,6 +12,8 @@
 #include "object/nmo_object_enums.h"
 #include "object/nmo_object_structs.h"
 #include "type/nmo_operations.h"
+#include "type/nmo_object_guids.h"
+#include "type/nmo_param_guids.h"
 #include "type/nmo_type_guids.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_type_string.h"
@@ -140,6 +142,28 @@ nmo_status_t nmo_register_resource_types(nmo_type_registry_t *registry) {
  * Behavior Types Registration
  * ============================================================================ */
 
+/*
+ * The Script parameter type: a behavior that is a script. Not a class of its
+ * own, it refers to CKBehavior objects, as CK2's parameter manager registers
+ * it (Cid CKCID_BEHAVIOR, derived from Object).
+ */
+static nmo_status_t nmo_register_script_type(nmo_type_registry_t *registry) {
+    const nmo_type_descriptor_t script = {
+        .guid = CKPGUID_SCRIPT_INIT,
+        .id = NMO_TYPE_ID_INVALID,
+        .object_class_id = NMO_CID_BEHAVIOR,
+        .category = NMO_TYPE_CATEGORY_OBJECT_REF,
+        .name = "Script",
+        .description = "A behavior that is a script",
+        .base_type = CKPGUID_OBJECT_INIT,
+        .base_type_id = NMO_TYPE_ID_INVALID,
+        .size = sizeof(nmo_object_id_t),
+        .alignment = _Alignof(nmo_object_id_t),
+        .valid = true,
+    };
+    return nmo_type_registry_register(registry, &script);
+}
+
 nmo_status_t nmo_register_behavior_types(nmo_type_registry_t *registry) {
     NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                "NULL type registry");
@@ -147,6 +171,7 @@ nmo_status_t nmo_register_behavior_types(nmo_type_registry_t *registry) {
     NMO_RETURN_IF_ERROR(nmo_register_behavior_type(registry));
     NMO_RETURN_IF_ERROR(nmo_register_behaviorio_type(registry));
     NMO_RETURN_IF_ERROR(nmo_register_behaviorlink_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_script_type(registry));
 
     NMO_RETURN_OK();
 }

@@ -29,7 +29,6 @@
 #define OP_IS_CHILD_OF NMO_GUID(0x08333942, 0x00973fd1)
 #define OP_GET_PARENT NMO_GUID(0x5bf9718f, 0x030b698c)
 #define OP_GET_COUNT NMO_GUID(0x44df6f61, 0x5f8f55c8)
-#define PGUID_SCRIPT NMO_GUID(0x7ea4176d, 0x1b405d30)
 #define OP_GET_MATERIAL_LIST NMO_GUID(0x765f7aa3, 0x33d679b2)
 #define OP_GET_ELEMENT NMO_GUID(0x660f5c52, 0x0adf7be9)
 #define OP_GET_DIFFUSE NMO_GUID(0x0f9e20cc, 0x6ea10a47)
@@ -380,13 +379,13 @@ TEST(engine_strings, object_by_name_takes_the_script_class)
     nmo_object_id_t script_name = local_string(&f, "B", "Script");
     ASSERT_TRUE(entity_name != 0);
     ASSERT_TRUE(script_name != 0);
-    nmo_object_id_t entity = operation(&f, OP_GET_OBJECT_BY_NAME, entity_name, 0, PGUID_SCRIPT);
-    nmo_object_id_t script = operation(&f, OP_GET_OBJECT_BY_NAME, script_name, 0, PGUID_SCRIPT);
+    nmo_object_id_t entity = operation(&f, OP_GET_OBJECT_BY_NAME, entity_name, 0, CKPGUID_SCRIPT);
+    nmo_object_id_t script = operation(&f, OP_GET_OBJECT_BY_NAME, script_name, 0, CKPGUID_SCRIPT);
     ASSERT_TRUE(entity != 0 && script != 0);
-    nmo_object_id_t read_entity = identity_of(&f, entity, PGUID_SCRIPT, f.script_in);
+    nmo_object_id_t read_entity = identity_of(&f, entity, CKPGUID_SCRIPT, f.script_in);
     ASSERT_TRUE(read_entity != 0);
     nmo_object_id_t read_script =
-        identity_of(&f, script, PGUID_SCRIPT, BLOCK_OUT(&f, read_entity, 0));
+        identity_of(&f, script, CKPGUID_SCRIPT, BLOCK_OUT(&f, read_entity, 0));
     ASSERT_TRUE(read_script != 0);
     fixture_commit(&f, NULL);
 

@@ -1444,6 +1444,9 @@ nmo_status_t nmo_type_registry_register(
     }
     
     memcpy(type, descriptor, sizeof(nmo_type_descriptor_t));
+    if (type->object_class_id == 0 && type->class_id != 0) {
+        type->object_class_id = type->class_id;
+    }
 
     const nmo_type_field_t *source_fields = type->fields;
     size_t source_field_count = type->field_count;

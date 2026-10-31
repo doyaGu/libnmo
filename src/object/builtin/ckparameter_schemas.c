@@ -99,7 +99,7 @@ static void nmo_parameter_check_object_ref(
         types != NULL
             ? nmo_type_registry_find_by_guid(types, parameter_type_guid)
             : NULL;
-    if (parameter_type == NULL || parameter_type->class_id == 0) {
+    if (parameter_type == NULL || parameter_type->object_class_id == 0) {
         return;
     }
     nmo_ref_check_class(
@@ -107,7 +107,7 @@ static void nmo_parameter_check_object_ref(
         (const nmo_object_repository_t *)
             nmo_deserialize_context_get_repository(context),
         types,
-        parameter_type->class_id);
+        parameter_type->object_class_id);
 }
 
 /* =============================================================================

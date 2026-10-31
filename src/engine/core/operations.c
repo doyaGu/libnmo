@@ -29,6 +29,7 @@
 #include "type/nmo_type_query.h"
 #include "type/nmo_object_guids.h"
 #include "type/nmo_operations.h"
+#include "type/nmo_param_guids.h"
 #include "type/nmo_type_guids.h"
 
 #include <math.h>
@@ -79,8 +80,6 @@
 #define OP_INVERSE_TRANSFORM NMO_GUID(0x09ae53f3, 0x0dc769d6)
 #define OP_INVERSE_TRANSFORM_VECTOR NMO_GUID(0x72213b67, 0x52fb2b56)
 
-/* The Script parameter type (a CKBehavior that is a script) */
-#define PGUID_SCRIPT NMO_GUID(0x7ea4176d, 0x1b405d30)
 
 static const char *param_string(const eng_param_t *param)
 {
@@ -197,7 +196,7 @@ static nmo_status_t op_get_object_by_name(nmo_engine_t *engine, eng_param_t *src
 {
     (void)src2;
     const char *name = param_string(src1);
-    uint32_t class_id = eng_type_class_id(out->type_desc);
+    uint32_t class_id = out->type_desc != NULL ? out->type_desc->object_class_id : 0u;
     return write_u32(engine, out, name != NULL ? (uint32_t)eng_object_named(engine, name, class_id)
                                                : 0u);
 }
@@ -949,8 +948,8 @@ static const engine_op_t engine_ops[] = {
     {OP_GET_TYPE, CKPGUID_CLASSID, CKPGUID_OBJECT, {0, 0}, op_get_type},
     {OP_GET_OBJECT_BY_NAME, CKPGUID_OBJECT, CKPGUID_STRING, {0, 0}, op_get_object_by_name},
     {OP_GET_SCRIPT_COUNT, CKPGUID_INT, CKPGUID_BEOBJECT, {0, 0}, op_get_script_count},
-    {OP_GET_SCRIPT, PGUID_SCRIPT, CKPGUID_BEOBJECT, CKPGUID_INT, op_get_script_index},
-    {OP_GET_SCRIPT, PGUID_SCRIPT, CKPGUID_BEOBJECT, CKPGUID_STRING, op_get_script_named},
+    {OP_GET_SCRIPT, CKPGUID_SCRIPT, CKPGUID_BEOBJECT, CKPGUID_INT, op_get_script_index},
+    {OP_GET_SCRIPT, CKPGUID_SCRIPT, CKPGUID_BEOBJECT, CKPGUID_STRING, op_get_script_named},
     {OP_GET_COUNT, CKPGUID_INT, CKPGUID_DATAARRAY, {0, 0}, op_get_row_count},
     {OP_GET_COUNT, CKPGUID_INT, CKPGUID_GROUP, {0, 0}, op_get_group_count},
     {OP_GET_ROW_COUNT, CKPGUID_INT, CKPGUID_DATAARRAY, {0, 0}, op_get_row_count},

@@ -28,6 +28,10 @@ extern "C" {
 #define CKPGUID_OLDMESSAGE         NMO_GUID(0x213661cc, 0x7d1a2d54)
 #define CKPGUID_OLDMESSAGE_INIT    NMO_GUID_INIT(0x213661cc, 0x7d1a2d54)
 
+/* Script: a CKBehavior that is a script (CKParameterTypeDesc::Cid is CKCID_BEHAVIOR) */
+#define CKPGUID_SCRIPT             NMO_GUID(0x7ea4176d, 0x1b405d30)
+#define CKPGUID_SCRIPT_INIT        NMO_GUID_INIT(0x7ea4176d, 0x1b405d30)
+
 /* Attributes */
 #define CKPGUID_ATTRIBUTE          NMO_GUID(0x3ea34ee9, 0x09fa5366)
 #define CKPGUID_ATTRIBUTE_INIT     NMO_GUID_INIT(0x3ea34ee9, 0x09fa5366)
