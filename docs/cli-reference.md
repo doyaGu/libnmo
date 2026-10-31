@@ -141,6 +141,19 @@ nmo data dump <id> <file>            # Data array contents
 nmo data set-cell <id> --row <r> --col <c> --value <val> <file> -o <out>  # Modify a single cell
 ```
 
+## Groups
+
+```
+nmo group list [--member <object>] <file>          # Groups and member counts
+nmo group show <id or name> <file>                 # A group's members, in order
+nmo group add -n <group> [--create] <member>... <file> -o <out>   # Append members
+nmo group remove -n <group> <member>... <file> -o <out>           # Take members out
+```
+
+Members are object ids or exact names. `add` leaves a member the group already holds in place
+and `remove` skips one it does not hold; both report how many changed. `--create` makes the
+named group when the file has none. `list` and `show` also run in the REPL.
+
 ## Scene and Entity
 
 ```

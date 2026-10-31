@@ -197,6 +197,35 @@ nmo patch apply --project manifest.json -o Level_01.NMO
 The generated file also holds a CKScene and an object named after the
 document. They made no difference in the engine runs.
 
+## Checking a Level
+
+```sh
+tools/scripts/ballance_check_level.py [--json] Level_01.NMO
+```
+
+reads a level with the nmo CLI and reports what this document's rules say:
+
+- errors, when the level does not play: no start or end, reset points and
+  checkpoints that do not number `_01`.. or do not add up, no `Phys_Floors`, no
+  `DepthTestCubes` group;
+- warnings, when it plays wrong: an empty or visible fall zone, an element in
+  no sector or not in its kind's group, a reset point away from its checkpoint,
+  a start or checkpoint whose mesh is a placeholder box (the game draws them
+  with the level's own meshes), no `SkyLayer` object (every original level has
+  one);
+- notes, for what the game gets over: missing element or sound groups (one
+  load-time error each), visible floors without sound groups.
+
+It exits with 1 when there are errors. The 13 original levels give no errors
+and no warnings.
+
+Groups can be changed in place with the CLI:
+
+```sh
+nmo group add -n Phys_Floors A01_Floor_07 A01_Floor_08 Level_01.NMO -o Level_01.NMO
+nmo group list --member A01_Floor_07 Level_01.NMO
+```
+
 ## Testing a Level in the Engine
 
 `nmo behavior run` runs `base.cmo`. `--path` puts a folder in front of the
