@@ -8,6 +8,7 @@
 #define GUID_NOP NMO_GUID(0x302561c4, 0x0d282980)
 #define GUID_SET_DATABASE_PROPERTIES NMO_GUID(0x1436624f, 0x34e1290a)
 #define GUID_LOAD_DATABASE NMO_GUID(0x05441494, 0x38ac7789)
+#define GUID_SAVE_DATABASE NMO_GUID(0x5d303e9d, 0x552c0af2)
 #define GUID_READ_REGISTRY NMO_GUID(0x460044b5, 0x6e927b66)
 #define GUID_LIST_DRIVER NMO_GUID(0x62d00456, 0x30eb4245)
 #define GUID_LIST_SCREEN_MODES NMO_GUID(0x4e7a0194, 0x040328fd)
@@ -58,25 +59,40 @@ static void tdb_text(tdb_t *t, const char *text)
     tdb_bytes(t, text, strlen(text) + 1u);
 }
 
-/* The database file TT Database Manager reads: one array, scrambled as TT scrambles it */
+/* The "Scores" array as the database file holds it */
+static void scores_table(tdb_t *array)
+{
+    tdb_int(array, 3); /* columns */
+    tdb_int(array, 2); /* rows */
+    tdb_int(array, 1); /* key column */
+    tdb_text(array, "Name");
+    tdb_int(array, CKARRAYTYPE_STRING);
+    tdb_text(array, "Points");
+    tdb_int(array, CKARRAYTYPE_INT);
+    tdb_text(array, "Ratio");
+    tdb_int(array, CKARRAYTYPE_FLOAT);
+    tdb_text(array, "Ann"); /* column by column */
+    tdb_text(array, "Bob");
+    tdb_int(array, 4200);
+    tdb_int(array, 3100);
+    const float ratios[2] = {0.5f, 0.25f};
+    tdb_bytes(array, ratios, sizeof(ratios));
+}
+
+/* The reader turns b into -(rotl(b, 3) ^ 0xAF); this is its inverse */
+static void scramble(tdb_t *t)
+{
+    for (size_t i = 0; i < t->size; i++) {
+        unsigned char x = (unsigned char)((unsigned char)-t->data[i] ^ 0xAFu);
+        t->data[i] = (unsigned char)((x >> 3) | (x << 5));
+    }
+}
+
+/* The database file TT Database Manager reads: another chunk, then "Scores", scrambled */
 static void write_database(const char *name)
 {
     tdb_t array = {0};
-    tdb_int(&array, 3); /* columns */
-    tdb_int(&array, 2); /* rows */
-    tdb_int(&array, 1); /* key column */
-    tdb_text(&array, "Name");
-    tdb_int(&array, CKARRAYTYPE_STRING);
-    tdb_text(&array, "Points");
-    tdb_int(&array, CKARRAYTYPE_INT);
-    tdb_text(&array, "Ratio");
-    tdb_int(&array, CKARRAYTYPE_FLOAT);
-    tdb_text(&array, "Ann"); /* column by column */
-    tdb_text(&array, "Bob");
-    tdb_int(&array, 4200);
-    tdb_int(&array, 3100);
-    const float ratios[2] = {0.5f, 0.25f};
-    tdb_bytes(&array, ratios, sizeof(ratios));
+    scores_table(&array);
 
     tdb_t file = {0};
     tdb_text(&file, "Other"); /* a chunk before it */
@@ -85,11 +101,7 @@ static void write_database(const char *name)
     tdb_text(&file, "Scores");
     tdb_int(&file, (int32_t)array.size);
     tdb_bytes(&file, array.data, array.size);
-    for (size_t i = 0; i < file.size; i++) {
-        /* The reader turns b into -(rotl(b, 3) ^ 0xAF) */
-        unsigned char x = (unsigned char)((unsigned char)-file.data[i] ^ 0xAFu);
-        file.data[i] = (unsigned char)((x >> 3) | (x << 5));
-    }
+    scramble(&file);
 
     char path[512];
     snprintf(path, sizeof(path), "%s/%s", NMO_TEST_SCRATCH_DIR, name);
@@ -150,6 +162,84 @@ TEST(engine_tt, load_database_fills_the_array_of_its_name)
     memcpy(&ratio, &cell.value, sizeof(ratio));
     ASSERT_FLOAT_EQ(0.25f, ratio, 0.0001f);
     fixture_end(&f);
+}
+
+/* A host writer keeping what was written */
+typedef struct written {
+    char name[64];
+    unsigned char data[512];
+    size_t size;
+    int count;
+} written_t;
+
+static nmo_status_t keep_written(void *user_data, const char *name, const void *data, size_t size)
+{
+    written_t *w = (written_t *)user_data;
+    if (size > sizeof(w->data) || strlen(name) >= sizeof(w->name)) {
+        return NMO_ERR_BUFFER_OVERRUN;
+    }
+    memcpy(w->name, name, strlen(name) + 1u);
+    memcpy(w->data, data, size);
+    w->size = size;
+    w->count++;
+    return NMO_OK;
+}
+
+TEST(engine_tt, save_database_writes_the_registered_arrays)
+{
+    write_database("save.tdb");
+    for (int with_writer = 0; with_writer < 2; with_writer++) {
+        engine_fixture_t f;
+        fixture_begin_document(&f);
+        ASSERT_TRUE(fixture_create(&f, NMO_CID_DATAARRAY, "Scores") != 0);
+        f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+        fixture_begin_edit(&f);
+        /* Loaded with Auto Register (its default), then saved */
+        nmo_object_id_t set = fixture_block(&f, GUID_SET_DATABASE_PROPERTIES, "Set");
+        nmo_object_id_t load = fixture_block(&f, GUID_LOAD_DATABASE, "Load");
+        nmo_object_id_t save = fixture_block(&f, GUID_SAVE_DATABASE, "Save");
+        nmo_object_id_t saved = fixture_block(&f, GUID_NOP, "Saved");
+        nmo_object_id_t failed = fixture_block(&f, GUID_NOP, "Failed");
+        ASSERT_TRUE(set != 0 && load != 0 && save != 0 && saved != 0 && failed != 0);
+        fixture_link(&f, f.script_in, BLOCK_IN(&f, set, 0), 0);
+        fixture_link(&f, BLOCK_OUT(&f, set, 0), BLOCK_IN(&f, load, 0), 0);
+        fixture_link(&f, BLOCK_OUT(&f, load, 0), BLOCK_IN(&f, save, 0), 0);
+        fixture_link(&f, BLOCK_OUT(&f, save, 0), BLOCK_IN(&f, saved, 0), 0);
+        fixture_link(&f, BLOCK_OUT(&f, save, 1), BLOCK_IN(&f, failed, 0), 0);
+        input_text(&f, BLOCK_PIN(&f, set, 0), "save.tdb");
+        input_text(&f, BLOCK_PIN(&f, load, 1), "Scores");
+        fixture_commit(&f, NULL);
+        nmo_engine_set_file_resolver(f.engine, resolve_scratch, NULL);
+        written_t w;
+        memset(&w, 0, sizeof(w));
+        if (with_writer) {
+            nmo_engine_set_file_writer(f.engine, keep_written, &w);
+        }
+
+        ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+        ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+        if (!with_writer) {
+            /* Nowhere to write: an unwritable file */
+            ASSERT_EQ(1u, runs(&f, failed));
+            ASSERT_EQ(0u, runs(&f, saved));
+            fixture_end(&f);
+            continue;
+        }
+        ASSERT_EQ(1u, runs(&f, saved));
+        ASSERT_EQ(1, w.count);
+        ASSERT_STR_EQ("save.tdb", w.name);
+        /* Only the registered array, as it was read: names, types, cells column by column */
+        tdb_t array = {0};
+        scores_table(&array);
+        tdb_t expected = {0};
+        tdb_text(&expected, "Scores");
+        tdb_int(&expected, (int32_t)array.size);
+        tdb_bytes(&expected, array.data, array.size);
+        scramble(&expected);
+        ASSERT_EQ(expected.size, w.size);
+        ASSERT_TRUE(memcmp(expected.data, w.data, w.size) == 0);
+        fixture_end(&f);
+    }
 }
 
 TEST(engine_tt, read_registry_reads_what_the_host_set)
@@ -428,6 +518,7 @@ TEST(engine_tt, counter_wraps_around_its_range)
 
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_tt, load_database_fills_the_array_of_its_name);
+REGISTER_TEST(engine_tt, save_database_writes_the_registered_arrays);
 REGISTER_TEST(engine_tt, read_registry_reads_what_the_host_set);
 REGISTER_TEST(engine_tt, drivers_and_screen_modes_fill_their_arrays);
 REGISTER_TEST(engine_tt, timer_and_strings);

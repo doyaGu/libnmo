@@ -2576,8 +2576,12 @@ static int bb_insert_column(blk_t *b)
             param_type = NMO_GUID(0u, 0u);
         }
     }
-    nmo_engine_array_insert_column(nmo_engine_block_engine(b), array, get_in_int(b, 0, -1), type,
-                                   param_type);
+    int32_t at = get_in_int(b, 0, -1);
+    nmo_engine_t *engine = nmo_engine_block_engine(b);
+    if (nmo_engine_array_insert_column(engine, array, at, type, param_type) == NMO_OK) {
+        int32_t column = at < 0 ? nmo_engine_array_column_count(engine, array) - 1 : at;
+        nmo_engine_array_set_column_name(engine, array, column, name);
+    }
     return NMO_ENGINE_BR_OK;
 }
 

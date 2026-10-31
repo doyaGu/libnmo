@@ -413,6 +413,19 @@ static void is_add(char c, char *str, int *caret, int *length, int size)
     }
 }
 
+/* `length` bytes of `text` and a terminator (none when out of memory) */
+static char *is_copy(const char *text, size_t length)
+{
+    char *copy = (char *)malloc(length + 1u);
+    if (copy != NULL) {
+        if (length > 0) {
+            memcpy(copy, text, length);
+        }
+        copy[length] = '\0';
+    }
+    return copy;
+}
+
 /* The String output: the text, without its caret unless Use Caret */
 static void is_set_string(blk_t *b, const char *str, int caret, bool with_caret)
 {
@@ -429,6 +442,140 @@ static void is_set_string(blk_t *b, const char *str, int caret, bool with_caret)
     free(text);
 }
 
+/* What the frame's keys did to an Input String's text */
+#define IS_EDIT_NONE 0
+#define IS_EDIT_CHANGED 1
+#define IS_EDIT_ENDED 2 /* the end key (the keys after it unread) */
+
+/*
+ * The text edited at the caret by the keys pressed this frame, each one put
+ * in output `key_pos`: arrows and Home/End/Page keys (unless Disable
+ * Keyboard Section leaves them out), Backspace, Delete, the keypad,
+ * Return on several lines, and the characters the keys type. The End Key
+ * on several lines ends the editing, and with `enter_ends` Enter on one.
+ */
+static int is_edit(blk_t *b, char *str, int *caret, int *length, int size, int key_pos,
+                   bool enter_ends)
+{
+    nmo_engine_t *engine = nmo_engine_block_engine(b);
+    bool multi = get_local_int(b, IS_MULTILINE, 0) != 0;
+    uint32_t end_key = multi ? (uint32_t)get_in_int(b, 1, 0) : 0u;
+    int disabled = get_local_int(b, IS_DISABLED, 0);
+    bool changed = false;
+    int count = nmo_engine_key_buffer_count(engine);
+    for (int i = 0; i < count; i++) {
+        uint32_t key = 0;
+        bool pressed = false;
+        if (!nmo_engine_key_buffer_get(engine, i, &key, &pressed) || !pressed) {
+            continue;
+        }
+        nmo_engine_block_set_output_value(b, key_pos, &key, sizeof(key));
+        if (multi ? (end_key != 0 && key == end_key)
+                  : (enter_ends && (key == 0x1C || key == 0x9C))) {
+            return IS_EDIT_ENDED;
+        }
+        /* The keypad's characters, unless Disable Keyboard Section leaves it out */
+        static const struct {
+            uint32_t key;
+            char c;
+        } keypad[] = {{0x37, '*'}, {0x47, '7'}, {0x48, '8'}, {0x49, '9'}, {0x4A, '-'},
+                      {0x4B, '4'}, {0x4C, '5'}, {0x4D, '6'}, {0x4E, '+'}, {0x4F, '1'},
+                      {0x50, '2'}, {0x51, '3'}, {0x52, '0'}, {0x53, '.'}, {0x8D, '='},
+                      {0x9C, '\n'}, {0xB3, ','}, {0xB5, '/'}};
+        size_t k = 0;
+        while (k < sizeof(keypad) / sizeof(keypad[0]) && keypad[k].key != key) {
+            k++;
+        }
+        if (k < sizeof(keypad) / sizeof(keypad[0])) {
+            if ((disabled & IS_NO_NUMPAD) == 0) {
+                is_add(keypad[k].c, str, caret, length, size);
+                changed = true;
+            }
+            continue;
+        }
+        bool arrows = (disabled & IS_NO_ARROWS) == 0;
+        switch (key) {
+        case 0x0E: /* Backspace */
+            if (*caret > 0) {
+                if (*length - 1 == size && *caret == *length - 2) {
+                    str[*caret + 1] = '\0';
+                } else {
+                    memmove(str + *caret - 1, str + *caret, (size_t)(*length - *caret));
+                    --*caret;
+                    str[*length - 1] = '\0';
+                }
+                --*length;
+                changed = true;
+            }
+            break;
+        case 0xD3: /* Delete */
+            if (*length > 1) {
+                if (*length - 1 == size && *caret == *length - 2) {
+                    str[*caret + 1] = '\0';
+                } else if (*caret < *length - 1) {
+                    memmove(str + *caret + 1, str + *caret + 2, (size_t)(*length - *caret - 2));
+                    str[*length - 1] = '\0';
+                } else {
+                    break;
+                }
+                --*length;
+                changed = true;
+            }
+            break;
+        case 0x1C: /* Return types a line break on several lines */
+            if (multi) {
+                is_add('\n', str, caret, length, size);
+                changed = true;
+            }
+            break;
+        case 0xC9: /* Page Up */
+            if (arrows && *caret > 0) {
+                is_page_up(str, caret);
+                changed = true;
+            }
+            break;
+        case 0xC7:
+            if (arrows) {
+                changed = is_home(multi, str, caret);
+            }
+            break;
+        case 0xD1: /* Page Down */
+            if (arrows) {
+                changed = is_page_down(*length, str, caret, size);
+            }
+            break;
+        case 0xCF:
+            if (arrows) {
+                changed = is_end(*length, multi, str, caret, size);
+            }
+            break;
+        case 0xCB: /* Left */
+            if (arrows && *caret > 0) {
+                str[*caret] = str[*caret - 1];
+                str[--*caret] = '\b';
+                changed = true;
+            }
+            break;
+        case 0xCD: /* Right */
+            if (arrows && *caret < *length - 1 && *caret + 1 < size) {
+                str[*caret] = str[*caret + 1];
+                str[++*caret] = '\b';
+                changed = true;
+            }
+            break;
+        default: {
+            char c = scan_code_to_ascii(engine, key);
+            if (c != 0 && c != 27) {
+                is_add(c, str, caret, length, size);
+                changed = true;
+            }
+            break;
+        }
+        }
+    }
+    return changed ? IS_EDIT_CHANGED : IS_EDIT_NONE;
+}
+
 /*
  * Input String (EditString): On starts the text from Reset String (Out On);
  * then each key of the buffer edits it at the caret, Updated String when it
@@ -438,7 +585,6 @@ static void is_set_string(blk_t *b, const char *str, int caret, bool with_caret)
  */
 static int bb_input_string(blk_t *b)
 {
-    nmo_engine_t *engine = nmo_engine_block_engine(b);
     int size = get_local_int(b, IS_MAX_SIZE, 32);
     size = size > 0 ? size : 1;
     int caret = get_local_int(b, IS_CARET, 0);
@@ -491,124 +637,14 @@ static int bb_input_string(blk_t *b)
         OUT_ON(b, 0);
         store = true;
     } else {
-        bool multi = get_local_int(b, IS_MULTILINE, 0) != 0;
-        uint32_t end_key = multi ? (uint32_t)get_in_int(b, 1, 0) : 0u;
-        int disabled = get_local_int(b, IS_DISABLED, 0);
-        bool changed = false;
-        int count = nmo_engine_key_buffer_count(engine);
-        for (int i = 0; i < count; i++) {
-            uint32_t key = 0;
-            bool pressed = false;
-            if (!nmo_engine_key_buffer_get(engine, i, &key, &pressed) || !pressed) {
-                continue;
-            }
-            nmo_engine_block_set_output_value(b, 1, &key, sizeof(key));
-            if (multi ? (end_key != 0 && key == end_key) : (key == 0x1C || key == 0x9C)) {
-                is_set_string(b, str, caret, false);
-                nmo_engine_block_set_local_value(b, IS_CARET, &caret, sizeof(caret));
-                OUT_ON(b, 1);
-                result = NMO_ENGINE_BR_OK;
-                store = true;
-                break;
-            }
-            /* The keypad's characters, unless Disable Keyboard Section leaves it out */
-            static const struct {
-                uint32_t key;
-                char c;
-            } keypad[] = {{0x37, '*'}, {0x47, '7'}, {0x48, '8'}, {0x49, '9'}, {0x4A, '-'},
-                          {0x4B, '4'}, {0x4C, '5'}, {0x4D, '6'}, {0x4E, '+'}, {0x4F, '1'},
-                          {0x50, '2'}, {0x51, '3'}, {0x52, '0'}, {0x53, '.'}, {0x8D, '='},
-                          {0x9C, '\n'}, {0xB3, ','}, {0xB5, '/'}};
-            size_t k = 0;
-            while (k < sizeof(keypad) / sizeof(keypad[0]) && keypad[k].key != key) {
-                k++;
-            }
-            if (k < sizeof(keypad) / sizeof(keypad[0])) {
-                if ((disabled & IS_NO_NUMPAD) == 0) {
-                    is_add(keypad[k].c, str, &caret, &length, size);
-                    changed = true;
-                }
-                continue;
-            }
-            bool arrows = (disabled & IS_NO_ARROWS) == 0;
-            switch (key) {
-            case 0x0E: /* Backspace */
-                if (caret > 0) {
-                    if (length - 1 == size && caret == length - 2) {
-                        str[caret + 1] = '\0';
-                    } else {
-                        memmove(str + caret - 1, str + caret, (size_t)(length - caret));
-                        --caret;
-                        str[length - 1] = '\0';
-                    }
-                    --length;
-                    changed = true;
-                }
-                break;
-            case 0xD3: /* Delete */
-                if (length > 1) {
-                    if (length - 1 == size && caret == length - 2) {
-                        str[caret + 1] = '\0';
-                    } else if (caret < length - 1) {
-                        memmove(str + caret + 1, str + caret + 2, (size_t)(length - caret - 2));
-                        str[length - 1] = '\0';
-                    } else {
-                        break;
-                    }
-                    --length;
-                    changed = true;
-                }
-                break;
-            case 0x1C: /* Return, on several lines */
-                is_add('\n', str, &caret, &length, size);
-                changed = true;
-                break;
-            case 0xC9: /* Page Up */
-                if (arrows && caret > 0) {
-                    is_page_up(str, &caret);
-                    changed = true;
-                }
-                break;
-            case 0xC7:
-                if (arrows) {
-                    changed = is_home(multi, str, &caret);
-                }
-                break;
-            case 0xD1: /* Page Down */
-                if (arrows) {
-                    changed = is_page_down(length, str, &caret, size);
-                }
-                break;
-            case 0xCF:
-                if (arrows) {
-                    changed = is_end(length, multi, str, &caret, size);
-                }
-                break;
-            case 0xCB: /* Left */
-                if (arrows && caret > 0) {
-                    str[caret] = str[caret - 1];
-                    str[--caret] = '\b';
-                    changed = true;
-                }
-                break;
-            case 0xCD: /* Right */
-                if (arrows && caret < length - 1 && caret + 1 < size) {
-                    str[caret] = str[caret + 1];
-                    str[++caret] = '\b';
-                    changed = true;
-                }
-                break;
-            default: {
-                char c = scan_code_to_ascii(engine, key);
-                if (c != 0 && c != 27) {
-                    is_add(c, str, &caret, &length, size);
-                    changed = true;
-                }
-                break;
-            }
-            }
-        }
-        if (result == NMO_ENGINE_BR_ACTIVATENEXTFRAME && changed) {
+        int edit = is_edit(b, str, &caret, &length, size, 1, true);
+        if (edit == IS_EDIT_ENDED) {
+            is_set_string(b, str, caret, false);
+            nmo_engine_block_set_local_value(b, IS_CARET, &caret, sizeof(caret));
+            OUT_ON(b, 1);
+            result = NMO_ENGINE_BR_OK;
+            store = true;
+        } else if (edit == IS_EDIT_CHANGED) {
             nmo_engine_block_set_local_value(b, IS_CARET, &caret, sizeof(caret));
             is_set_string(b, str, caret, get_local_int(b, IS_USE_CARET, 0) != 0);
             OUT_ON(b, 2);
@@ -641,6 +677,110 @@ static int cb_input_string(blk_t *b, uint32_t message)
     return NMO_ENGINE_BR_OK;
 }
 
+/*
+ * TT InputString: as Input String, but Enter only types (a line break on
+ * several lines, and on the keypad) and only the End Key on several lines
+ * ends it; On also gives the Reset String as the second string, and every
+ * change both strings (with the caret when Use Caret, and without).
+ */
+static int bb_tt_input_string(blk_t *b)
+{
+    int size = get_local_int(b, IS_MAX_SIZE, 32);
+    size = size > 0 ? size : 1;
+    int caret = get_local_int(b, IS_CARET, 0);
+    char *str = (char *)calloc((size_t)size + 3u, 1u);
+    if (str == NULL) {
+        return NMO_ENGINE_BR_GENERICERROR;
+    }
+    nmo_engine_block_get_local_value(b, IS_TEXT, str, (size_t)size + 2u);
+    int length = (int)strlen(str);
+    caret = caret < 0 ? 0 : caret > length ? length : caret;
+    int result = NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+    bool store = false;
+    bool ended = false;
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        ended = true;
+    } else if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        size_t reset_size = 0;
+        const char *reset = (const char *)nmo_engine_block_input_data(b, 0, &reset_size);
+        const char *nul = reset != NULL ? (const char *)memchr(reset, '\0', reset_size) : NULL;
+        size_t len = reset == NULL ? 0u : nul != NULL ? (size_t)(nul - reset) : reset_size;
+        char *copy = is_copy(reset, len);
+        if (copy == NULL) {
+            free(str);
+            return NMO_ENGINE_BR_GENERICERROR;
+        }
+        nmo_engine_block_set_output_value(b, 1, copy, len + 1u);
+        if ((int)len >= size) {
+            memcpy(str, copy, (size_t)size);
+            str[size] = str[size - 1];
+            str[size - 1] = '\b';
+            caret = size - 1;
+            str[size + 1] = '\0';
+        } else {
+            memcpy(str, copy, len);
+            str[len] = '\b';
+            caret = (int)len;
+            str[len + 1] = '\0';
+        }
+        free(copy);
+        nmo_engine_block_set_local_value(b, IS_CARET, &caret, sizeof(caret));
+        is_set_string(b, str, caret, get_local_int(b, IS_USE_CARET, 0) != 0);
+        OUT_ON(b, 0);
+        store = true;
+    } else {
+        int edit = is_edit(b, str, &caret, &length, size, 2, false);
+        ended = edit == IS_EDIT_ENDED;
+        if (edit == IS_EDIT_CHANGED) {
+            nmo_engine_block_set_local_value(b, IS_CARET, &caret, sizeof(caret));
+            bool use_caret = get_local_int(b, IS_USE_CARET, 0) != 0;
+            is_set_string(b, str, caret, use_caret);
+            char *plain = is_copy(str, strlen(str));
+            if (plain != NULL) {
+                int c = caret;
+                is_remove_caret(plain, &c, (int)strlen(plain));
+                nmo_engine_block_set_output_value(b, 1, plain, strlen(plain) + 1u);
+                free(plain);
+            }
+            OUT_ON(b, 2);
+            store = true;
+        }
+    }
+    if (ended) {
+        /* Off, or the End Key: the caret taken out of the text itself */
+        is_remove_caret(str, &caret, length);
+        nmo_engine_block_set_local_value(b, IS_CARET, &caret, sizeof(caret));
+        nmo_engine_block_set_output_value(b, 0, str, strlen(str) + 1u);
+        OUT_ON(b, 1);
+        result = NMO_ENGINE_BR_OK;
+        store = true;
+    }
+    if (store) {
+        nmo_engine_block_set_local_value(b, IS_TEXT, str, (size_t)size + 2u);
+    }
+    free(str);
+    return result;
+}
+
+/* Created, loaded or settings edited: an empty String, the caret at 0 */
+static int cb_tt_input_string(blk_t *b, uint32_t message)
+{
+    if (message == NMO_ENGINE_MSG_LOAD || message == NMO_ENGINE_MSG_RESET) {
+        int size = get_local_int(b, IS_MAX_SIZE, 32);
+        size = size > 0 ? size : 1;
+        char *text = (char *)calloc((size_t)size + 2u, 1u);
+        if (text != NULL) {
+            nmo_engine_block_set_output_value(b, 0, text, (size_t)size + 2u);
+            free(text);
+        }
+        int32_t zero = 0;
+        nmo_engine_block_set_local_value(b, IS_CARET, &zero, sizeof(zero));
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
 /* Show Mouse Cursor (Visuals): shows or hides the cursor (CKInputManager::ShowCursor). */
 static int bb_show_mouse_cursor(blk_t *b)
 {
@@ -662,6 +802,8 @@ static const nmo_engine_block_desc_t eng_controller_blocks[] = {
     {NMO_GUID(0x32d26c84, 0x3c741f89), "Get Mouse Displacement", bb_get_mouse_displacement, NULL,
      NULL},
     {NMO_GUID(0x693e7e4b, 0x100104c4), "Input String", bb_input_string, cb_input_string, NULL},
+    {NMO_GUID(0x52fd6294, 0x612f51a5), "TT InputString", bb_tt_input_string, cb_tt_input_string,
+     NULL},
 };
 
 nmo_status_t eng_register_controllers(nmo_engine_t *engine)

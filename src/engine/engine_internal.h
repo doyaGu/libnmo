@@ -251,6 +251,7 @@ typedef struct eng_cell {
 typedef struct eng_column {
     int32_t type;           /* CK_ARRAYTYPE */
     nmo_guid_t param_type;  /* PARAMETER columns */
+    char *name;             /* NULL for none */
 } eng_column_t;
 
 /* A runtime copy of a CKDataArray; cells row by row. */
@@ -503,6 +504,9 @@ struct nmo_engine {
     bool tt_timing;
     char *database_file;   /* TT Database Manager: TT Set Database Properties */
     bool database_crypted;
+    ENG_VEC(char *) database_arrays; /* the arrays it saves (DatabaseManager::Register) */
+    nmo_engine_write_file_fn write_file;
+    void *write_file_user_data;
     ENG_VEC(eng_registry_value_t) registry; /* the TT blocks' registry, from the host */
     eng_physics_t physics;
 };

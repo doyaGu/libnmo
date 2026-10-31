@@ -64,6 +64,12 @@ void eng_free_tt(nmo_engine_t *engine)
 {
     free(engine->database_file);
     engine->database_file = NULL;
+    for (size_t i = 0; i < engine->database_arrays.count; i++) {
+        free(engine->database_arrays.data[i]);
+    }
+    free(engine->database_arrays.data);
+    engine->database_arrays.data = NULL;
+    engine->database_arrays.count = engine->database_arrays.capacity = 0;
     for (size_t i = 0; i < engine->registry.count; i++) {
         free(engine->registry.data[i].section);
         free(engine->registry.data[i].name);
@@ -119,14 +125,37 @@ static unsigned char *read_file(nmo_engine_t *engine, const char *name, size_t *
     return data;
 }
 
+/* DatabaseManager::Register: an array to save, once; 21 when it is already there */
+static int database_register(nmo_engine_t *engine, const char *array_name)
+{
+    for (size_t i = 0; i < engine->database_arrays.count; i++) {
+        if (strcmp(engine->database_arrays.data[i], array_name) == 0) {
+            return 21;
+        }
+    }
+    char **slot = NULL;
+    size_t size = strlen(array_name) + 1u;
+    char *copy = (char *)malloc(size);
+    if (copy != NULL) {
+        memcpy(copy, array_name, size);
+    }
+    if (copy == NULL || !ENG_VEC_PUSH(engine->database_arrays, slot)) {
+        free(copy);
+        return 0;
+    }
+    *slot = copy;
+    return 1;
+}
+
 /*
  * DatabaseManager::Load: the array of that name from the database file into
  * the data array of that name, its columns, key column and rows replaced.
  * 1 when loaded, 31 when the file cannot be read, 32 when its content is
  * wrong, 33 when it has no such array (or the engine has no array of that
- * name, which the original would make).
+ * name, which the original would make). With `auto_register` the array is
+ * registered for saving once found, before it is read.
  */
-static int database_load(nmo_engine_t *engine, const char *array_name)
+static int database_load(nmo_engine_t *engine, const char *array_name, bool auto_register)
 {
     if (array_name == NULL) {
         return 33;
@@ -168,6 +197,9 @@ static int database_load(nmo_engine_t *engine, const char *array_name)
         return 33;
     }
 
+    if (auto_register) {
+        database_register(engine, array_name);
+    }
     const unsigned char *table = data + pos + name_size + sizeof(int32_t);
     size_t table_size = (size_t)array_size;
     int32_t columns = 0, rows = 0, key = 0;
@@ -193,6 +225,7 @@ static int database_load(nmo_engine_t *engine, const char *array_name)
             return 32;
         }
         nmo_engine_array_insert_column(engine, array, -1, type, NMO_GUID(0u, 0u));
+        nmo_engine_array_set_column_name(engine, array, c, (const char *)table + offset);
         offset += column_name + sizeof(int32_t);
     }
     eng_find_array(engine, array)->key_column = key;
@@ -257,8 +290,123 @@ static int bb_load_database(blk_t *b)
     if (IN_ACTIVE(b, 0)) {
         IN_OFF(b, 0);
     }
-    int result = database_load(nmo_engine_block_engine(b), input_string(b, 1));
+    int result = database_load(nmo_engine_block_engine(b), input_string(b, 1),
+                               get_in_int(b, 0, 1) != 0);
     OUT_ON(b, result == 1 ? 0 : 1);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Bytes appended to a growing buffer; false when out of memory */
+typedef struct database_bytes {
+    unsigned char *data;
+    size_t size, capacity;
+} database_bytes_t;
+
+static bool database_put(database_bytes_t *out, const void *bytes, size_t size)
+{
+    if (out->size + size > out->capacity) {
+        size_t capacity = out->capacity > 0 ? out->capacity : 256u;
+        while (capacity < out->size + size) {
+            capacity *= 2u;
+        }
+        unsigned char *grown = (unsigned char *)realloc(out->data, capacity);
+        if (grown == NULL) {
+            return false;
+        }
+        out->data = grown;
+        out->capacity = capacity;
+    }
+    if (size > 0) {
+        memcpy(out->data + out->size, bytes, size);
+    }
+    out->size += size;
+    return true;
+}
+
+static bool database_put_text(database_bytes_t *out, const char *text)
+{
+    return database_put(out, text != NULL ? text : "", (text != NULL ? strlen(text) : 0u) + 1u);
+}
+
+static bool database_put_i32(database_bytes_t *out, int32_t value)
+{
+    return database_put(out, &value, sizeof(value));
+}
+
+/*
+ * DatabaseManager::Save: each registered array as a chunk (its name, the
+ * array's size, columns, rows, key column, each column's name and type,
+ * then the cells column by column: ints and floats as 4 bytes, strings with
+ * their terminator, other types nothing), scrambled unless not crypted, to
+ * the database file through the host's writer. 1 when saved, 41 when there
+ * is no file or it cannot be written, 42 when a registered array is gone.
+ */
+static int database_save(nmo_engine_t *engine)
+{
+    if (engine->database_file == NULL || engine->database_file[0] == '\0') {
+        return 41;
+    }
+    database_bytes_t file = {NULL, 0u, 0u};
+    for (size_t n = 0; n < engine->database_arrays.count; n++) {
+        const char *array_name = engine->database_arrays.data[n];
+        nmo_object_id_t array = eng_object_named(engine, array_name, NMO_CID_DATAARRAY);
+        if (array == 0 || eng_find_array(engine, array) == NULL) {
+            free(file.data);
+            return 42;
+        }
+        int32_t columns = nmo_engine_array_column_count(engine, array);
+        int32_t rows = nmo_engine_array_row_count(engine, array);
+        database_bytes_t table = {NULL, 0u, 0u};
+        bool ok = database_put_i32(&table, columns) && database_put_i32(&table, rows) &&
+                  database_put_i32(&table, nmo_engine_array_key_column(engine, array));
+        for (int32_t c = 0; ok && c < columns; c++) {
+            ok = database_put_text(&table, nmo_engine_array_column_name(engine, array, c)) &&
+                 database_put_i32(&table, nmo_engine_array_column_type(engine, array, c));
+        }
+        for (int32_t c = 0; ok && c < columns; c++) {
+            int32_t type = nmo_engine_array_column_type(engine, array, c);
+            for (int32_t r = 0; ok && r < rows; r++) {
+                nmo_engine_cell_t cell;
+                memset(&cell, 0, sizeof(cell));
+                nmo_engine_array_get_cell(engine, array, r, c, &cell);
+                if (type == CKARRAYTYPE_INT || type == CKARRAYTYPE_FLOAT) {
+                    ok = database_put_i32(&table, (int32_t)cell.value);
+                } else if (type == CKARRAYTYPE_STRING) {
+                    ok = database_put_text(&table, cell.text);
+                }
+            }
+        }
+        ok = ok && database_put_text(&file, array_name) &&
+             database_put_i32(&file, (int32_t)table.size) &&
+             database_put(&file, table.data, table.size);
+        free(table.data);
+        if (!ok) {
+            free(file.data);
+            return 41;
+        }
+    }
+    if (file.data == NULL) {
+        return 41;
+    }
+    if (engine->database_crypted) {
+        for (size_t i = 0; i < file.size; i++) {
+            unsigned char x = (unsigned char)((unsigned char)-file.data[i] ^ 0xAFu);
+            file.data[i] = (unsigned char)((x >> 3) | (x << 5));
+        }
+    }
+    nmo_status_t status = engine->write_file != NULL
+                              ? engine->write_file(engine->write_file_user_data,
+                                                   engine->database_file, file.data, file.size)
+                              : NMO_ERR_NOT_SUPPORTED;
+    free(file.data);
+    return status == NMO_OK ? 1 : 41;
+}
+
+/* TT Save Database: OK when the registered arrays were saved, Error otherwise. */
+static int bb_save_database(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, database_save(nmo_engine_block_engine(b)) == 1 ? 0 : 1);
     return NMO_ENGINE_BR_OK;
 }
 
@@ -991,6 +1139,7 @@ static const nmo_engine_block_desc_t eng_tt_blocks[] = {
     {NMO_GUID(0x1436624f, 0x34e1290a), "TT Set Database Properties", bb_set_database_properties,
      NULL, NULL},
     {NMO_GUID(0x05441494, 0x38ac7789), "TT Load Database", bb_load_database, NULL, NULL},
+    {NMO_GUID(0x5d303e9d, 0x552c0af2), "TT Save Database", bb_save_database, NULL, NULL},
     {NMO_GUID(0x4a446c43, 0x66fa2375), "TT_Debug", bb_tt_debug, NULL, NULL},
     {NMO_GUID(0x0694658d, 0x7ffd236f), "TT Player Active", bb_player_active, NULL, NULL},
     {NMO_GUID(0x3c392558, 0x419d2680), "TT Set_2DSprite", bb_set_2d_sprite, NULL, NULL},

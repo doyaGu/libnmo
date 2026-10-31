@@ -434,6 +434,15 @@ int32_t eng_module_attribute_type(const eng_module_t *module, int32_t type)
  * Loading files
  * ============================================================================ */
 
+void nmo_engine_set_file_writer(nmo_engine_t *engine, nmo_engine_write_file_fn fn,
+                                void *user_data)
+{
+    if (engine != NULL) {
+        engine->write_file = fn;
+        engine->write_file_user_data = user_data;
+    }
+}
+
 void nmo_engine_set_file_resolver(nmo_engine_t *engine, nmo_engine_resolve_file_fn fn,
                                   void *user_data)
 {
@@ -552,6 +561,12 @@ const char *nmo_engine_object_name(const nmo_engine_t *engine, nmo_object_id_t i
 {
     nmo_object_t *object = eng_find_object(engine, id);
     return object != NULL ? nmo_object_get_name(object) : NULL;
+}
+
+nmo_object_id_t nmo_engine_object_named(const nmo_engine_t *engine, const char *name,
+                                        nmo_class_id_t class_id)
+{
+    return eng_object_named(engine, name, (uint32_t)class_id);
 }
 
 int32_t nmo_engine_object_class(const nmo_engine_t *engine, nmo_object_id_t id)

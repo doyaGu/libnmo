@@ -204,6 +204,17 @@ typedef const char *(*nmo_engine_resolve_file_fn)(void *user_data, const char *n
 NMO_API void nmo_engine_set_file_resolver(nmo_engine_t *engine,
                                           nmo_engine_resolve_file_fn fn,
                                           void *user_data);
+
+/** Write `size` bytes as the file `name` names (as a resolver gets names); NMO_OK when written. */
+typedef nmo_status_t (*nmo_engine_write_file_fn)(void *user_data, const char *name,
+                                                 const void *data, size_t size);
+
+/**
+ * Where the files the blocks save go (TT Save Database). The engine writes
+ * nothing itself: without a writer, saving fails as an unwritable file.
+ */
+NMO_API void nmo_engine_set_file_writer(nmo_engine_t *engine, nmo_engine_write_file_fn fn,
+                                        void *user_data);
 /**
  * Load the file `name` names. With `add_to_level`, its objects are added to
  * the level as Object Load adds them: each behavioral object, and each of its
@@ -225,6 +236,13 @@ NMO_API nmo_object_id_t nmo_engine_loaded_object(const nmo_engine_t *engine,
                                                  int32_t index);
 /** The name of an object of any file the engine runs; NULL when it has none. */
 NMO_API const char *nmo_engine_object_name(const nmo_engine_t *engine, nmo_object_id_t id);
+/**
+ * The first object named `name` of class `class_id` (or a subclass; 0 for
+ * any) that is not destroyed, in the order the files were loaded
+ * (CKContext::GetObjectByNameAndClass); 0 when there is none.
+ */
+NMO_API nmo_object_id_t nmo_engine_object_named(const nmo_engine_t *engine, const char *name,
+                                                nmo_class_id_t class_id);
 /**
  * The script model node of behavior `id` in whichever file the engine runs
  * it from (the node's own `id` is the file's); NULL when it is none.
@@ -342,6 +360,13 @@ NMO_API int32_t nmo_engine_array_column_count(const nmo_engine_t *engine,
 /** The column holding the array's keys, or -1. */
 NMO_API int32_t nmo_engine_array_key_column(const nmo_engine_t *engine, nmo_object_id_t array_id);
 /** CK_ARRAYTYPE of a column; 0 when there is none. */
+/** The column's name; NULL for none (or no such column). */
+NMO_API const char *nmo_engine_array_column_name(const nmo_engine_t *engine,
+                                                 nmo_object_id_t array_id, int32_t column);
+/** Name the column (CKDataArray::SetColumnName); NULL for none. */
+NMO_API nmo_status_t nmo_engine_array_set_column_name(nmo_engine_t *engine,
+                                                      nmo_object_id_t array_id, int32_t column,
+                                                      const char *name);
 NMO_API int32_t nmo_engine_array_column_type(const nmo_engine_t *engine,
                                              nmo_object_id_t array_id,
                                              int32_t column);

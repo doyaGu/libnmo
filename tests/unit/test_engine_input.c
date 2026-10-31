@@ -11,6 +11,7 @@
 #define GUID_GET_MOUSE_POSITION NMO_GUID(0x5b1f1381, 0x5c640372)
 #define GUID_TT_KEY_WAITER NMO_GUID(0x2ffb3ef0, 0x21807ae3)
 #define GUID_INPUT_STRING NMO_GUID(0x693e7e4b, 0x100104c4)
+#define GUID_TT_INPUT_STRING NMO_GUID(0x52fd6294, 0x612f51a5)
 
 #define KEY_SPACE 0x39u
 #define KEY_ENTER 0x1Cu
@@ -230,6 +231,69 @@ TEST(engine_input, input_string_edits_until_enter)
     fixture_end(&f);
 }
 
+static const char *output_text(engine_fixture_t *f, nmo_object_id_t block, size_t pos)
+{
+    const void *text = NULL;
+    nmo_engine_param_value(f->engine, BLOCK_POUT(f, block, pos), &text, NULL, NULL);
+    return text != NULL ? (const char *)text : "";
+}
+
+TEST(engine_input, tt_input_string_keeps_editing_past_enter)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t input = fixture_block(&f, GUID_TT_INPUT_STRING, "Input");
+    nmo_object_id_t on = fixture_block(&f, GUID_NOP, "On");
+    nmo_object_id_t off = fixture_block(&f, GUID_NOP, "Off");
+    nmo_object_id_t updated = fixture_block(&f, GUID_NOP, "Updated");
+    ASSERT_TRUE(input != 0 && on != 0 && off != 0 && updated != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, input, 0), 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, input, 1), 8);
+    fixture_link(&f, BLOCK_OUT(&f, input, 0), BLOCK_IN(&f, on, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, input, 1), BLOCK_IN(&f, off, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, input, 2), BLOCK_IN(&f, updated, 0), 0);
+    fixture_input_value(&f, BLOCK_PIN(&f, input, 0), "ab", 3u);
+    fixture_commit(&f, NULL);
+    /* The DLL declares the settings first: local 0 is Max Size, local 2 Multiline */
+    const nmo_behavior_state_t *state = (const nmo_behavior_state_t *)fixture_state(&f, input);
+    ASSERT_TRUE(state != NULL && state->local_parameters.count >= 7);
+    const int32_t max_size = 512, single_line = 0;
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(
+                          f.engine, nmo_behavior_ref_array_get_id(&state->local_parameters, 0),
+                          &max_size, sizeof(max_size)));
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(
+                          f.engine, nmo_behavior_ref_array_get_id(&state->local_parameters, 2),
+                          &single_line, sizeof(single_line)));
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+    /* On: the Reset String in both */
+    ASSERT_EQ(1u, runs(&f, on));
+    ASSERT_STR_EQ("ab", output_text(&f, input, 0));
+    ASSERT_STR_EQ("ab", output_text(&f, input, 1));
+    const uint32_t c[] = {KEY_C}, enter[] = {KEY_ENTER};
+    press(&f, c, 1);
+    ASSERT_STR_EQ("abc", output_text(&f, input, 0));
+    ASSERT_STR_EQ("abc", output_text(&f, input, 1));
+    ASSERT_EQ(1u, runs(&f, updated));
+    /* Enter on one line neither ends it nor types */
+    press(&f, enter, 1);
+    ASSERT_EQ(0u, runs(&f, off));
+    ASSERT_EQ(1u, runs(&f, updated));
+    ASSERT_TRUE(nmo_engine_behavior_is_active(f.engine, input));
+    uint32_t key = 0;
+    read_value(&f, BLOCK_POUT(&f, input, 2), &key, sizeof(key));
+    ASSERT_EQ(KEY_ENTER, key);
+    /* Off (frame 8): the text without its caret */
+    for (int frame = 0; frame < 4; frame++) {
+        ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+    }
+    ASSERT_EQ(1u, runs(&f, off));
+    ASSERT_STR_EQ("abc", output_text(&f, input, 0));
+    ASSERT_FALSE(nmo_engine_behavior_is_active(f.engine, input));
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_input, key_event_reports_presses_and_releases);
 REGISTER_TEST(engine_input, key_waiter_and_switch_on_key);
@@ -237,4 +301,5 @@ REGISTER_TEST(engine_input, mouse_waiter_and_position);
 REGISTER_TEST(engine_input, key_names_round_trip);
 REGISTER_TEST(engine_input, tt_key_waiter_stops_on_off);
 REGISTER_TEST(engine_input, input_string_edits_until_enter);
+REGISTER_TEST(engine_input, tt_input_string_keeps_editing_past_enter);
 TEST_MAIN_END()

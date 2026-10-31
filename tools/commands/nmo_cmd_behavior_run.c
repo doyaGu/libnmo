@@ -31,7 +31,9 @@ typedef struct run_args {
     uint32_t seed;
     bool trace;
     const char *path; /* --path: where loaded files are found, besides the file's folder */
+    const char *write; /* --write: where saved files go, and where loading looks first */
     const char *keys; /* "Space@30-35,Enter@60": keys and the frames they are down */
+    const char *messages; /* "Level_Finish@4000:All_Gameplay,...": messages the host sends */
     const char *registry; /* "Software\Game\Settings\Language=1;...": registry values */
     bool physics_ivp;     /* --physics ivp: simulate the physics blocks with libivp */
 } run_args_t;
@@ -112,6 +114,85 @@ static long run_parse_keys(const char *spec, run_key_t *out)
         count++;
     }
     return count;
+}
+
+/* A message the host sends before frame `frame` steps, to the object named `recipient`. */
+typedef struct run_message {
+    char *name;
+    uint32_t frame;
+    char *recipient;
+} run_message_t;
+
+static char *run_strndup(const char *text, size_t length)
+{
+    char *copy = (char *)malloc(length + 1u);
+    if (copy != NULL) {
+        memcpy(copy, text, length);
+        copy[length] = '\0';
+    }
+    return copy;
+}
+
+/*
+ * Parse "NAME@FRAME:OBJECT,..." into `out` (when not NULL; the names are
+ * allocated); the count, or -1 when the text is malformed. A message name
+ * ends at its '@' and an object name at the next ',', so both may hold
+ * spaces.
+ */
+static long run_parse_messages(const char *spec, run_message_t *out)
+{
+    long count = 0;
+    const char *p = spec;
+    while (p != NULL && *p != '\0') {
+        const char *at = strchr(p, '@');
+        if (at == NULL || at == p) {
+            return -1;
+        }
+        const char *name = p;
+        size_t name_length = (size_t)(at - p);
+        p = at + 1;
+        uint32_t frame = 0;
+        if (!run_frame_number(&p, &frame) || *p != ':') {
+            return -1;
+        }
+        const char *recipient = ++p;
+        const char *end = strchr(p, ',');
+        size_t recipient_length = end != NULL ? (size_t)(end - p) : strlen(p);
+        if (recipient_length == 0) {
+            return -1;
+        }
+        if (out != NULL) {
+            out[count].name = run_strndup(name, name_length);
+            out[count].frame = frame;
+            out[count].recipient = run_strndup(recipient, recipient_length);
+            if (out[count].name == NULL || out[count].recipient == NULL) {
+                return -1;
+            }
+        }
+        count++;
+        p = end != NULL ? end + 1 : NULL;
+    }
+    return count;
+}
+
+/* Send the messages due before frame `frame`; a warning for a type or object the run lacks */
+static void run_send_messages(nmo_engine_t *engine, const run_message_t *messages, long count,
+                              uint32_t frame)
+{
+    for (long i = 0; i < count; i++) {
+        if (messages[i].frame != frame) {
+            continue;
+        }
+        int32_t type = nmo_engine_message_type(engine, messages[i].name);
+        nmo_object_id_t recipient = nmo_engine_object_named(engine, messages[i].recipient, 0);
+        if (type < 0 || recipient == 0) {
+            fprintf(stderr, "Warning: --message %s@%u:%s: no %s of that name at frame %u\n",
+                    messages[i].name, frame, messages[i].recipient,
+                    type < 0 ? "message type" : "object", frame);
+            continue;
+        }
+        nmo_engine_send_message(engine, type, recipient, 0);
+    }
 }
 
 typedef struct run_unknown {
@@ -459,8 +540,12 @@ static bool run_add_active_scripts(nmo_cli_record_t *rec, const nmo_engine_t *en
     return true;
 }
 
-/* Where the files a document loads are found: --path, then the run file's folder. */
+/*
+ * Where the files a document loads are found: --write, --path, then the run
+ * file's folder; and where the files it saves go: --write, or nowhere.
+ */
 typedef struct run_files {
+    const char *write;
     const char *path;
     char *folder;
     char *found; /* the path last given to the engine */
@@ -541,9 +626,9 @@ static const char *run_resolve_file(void *user_data, const char *name)
         bool starts = i == 0 || inner[i - 1] == '/' || inner[i - 1] == '\\';
         inner_inside = !(starts && inner[i] == '.' && inner[i + 1] == '.');
     }
-    const char *folders[2] = {files->path, files->folder};
-    for (int f = 0; f < 2; f++) {
-        if (f == 0 && files->path == NULL) {
+    const char *folders[3] = {files->write, files->path, files->folder};
+    for (int f = 0; f < 3; f++) {
+        if (f < 2 && folders[f] == NULL) {
             continue;
         }
         for (int whole = outside ? (inner_inside ? 2 : 0) : 1; whole >= 0; whole--) {
@@ -560,6 +645,38 @@ static const char *run_resolve_file(void *user_data, const char *name)
         }
     }
     return NULL;
+}
+
+/*
+ * The engine's file writer: a saved file goes into the --write folder under
+ * its name's last part (where the resolver finds it first), never next to the
+ * run file; without --write nothing is written.
+ */
+static nmo_status_t run_write_file(void *user_data, const char *name, const void *data,
+                                   size_t size)
+{
+    const run_files_t *files = (const run_files_t *)user_data;
+    if (files->write == NULL) {
+        return NMO_ERR_NOT_SUPPORTED;
+    }
+    const char *base = name;
+    for (const char *p = name; *p != '\0'; p++) {
+        if (*p == '/' || *p == '\\') {
+            base = p + 1;
+        }
+    }
+    if (base[0] == '\0' || strcmp(base, ".") == 0 || strcmp(base, "..") == 0) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    char *path = run_join(files->write, base, strlen(base));
+    FILE *file = path != NULL ? fopen(path, "wb") : NULL;
+    free(path);
+    if (file == NULL) {
+        return NMO_ERR_CANT_OPEN_FILE;
+    }
+    bool written = size == 0 || fwrite(data, 1, size, file) == size;
+    bool closed = fclose(file) == 0;
+    return written && closed ? NMO_OK : NMO_ERR_CANT_WRITE_FILE;
 }
 
 /* The folder of `file`, "" for the current one. */
@@ -647,8 +764,10 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
     }
 #endif
     const nmo_script_model_t *model = nmo_engine_script_model(engine);
-    run_files_t files = {.path = args->path, .folder = run_folder_of(ctx->file_path)};
+    run_files_t files = {.write = args->write, .path = args->path,
+                         .folder = run_folder_of(ctx->file_path)};
     nmo_engine_set_file_resolver(engine, run_resolve_file, &files);
+    nmo_engine_set_file_writer(engine, run_write_file, &files);
     if (!run_set_registry(engine, args->registry)) {
         fprintf(stderr, "Error: Out of memory\n");
 #ifdef NMO_HAS_PHYSICS_IVP
@@ -687,7 +806,16 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
     } else if (keys != NULL) {
         run_parse_keys(args->keys, keys);
     }
+    long message_count = args->messages != NULL ? run_parse_messages(args->messages, NULL) : 0;
+    run_message_t *messages = message_count > 0
+                                  ? (run_message_t *)calloc((size_t)message_count, sizeof(run_message_t))
+                                  : NULL;
+    if ((message_count > 0 && messages == NULL) ||
+        (messages != NULL && run_parse_messages(args->messages, messages) != message_count)) {
+        status = NMO_ERR_NOMEM;
+    }
     for (uint32_t f = 0; status == NMO_OK && f < args->frames; f++) {
+        run_send_messages(engine, messages, message_count, f);
         /* A key is down in a frame one of its ranges covers */
         for (long k = 0; k < key_count; k++) {
             bool down = false;
@@ -700,6 +828,11 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
         status = nmo_engine_step(engine, args->delta_ms);
     }
     free(keys);
+    for (long i = 0; messages != NULL && i < message_count; i++) {
+        free(messages[i].name);
+        free(messages[i].recipient);
+    }
+    free(messages);
     if (status != NMO_OK && exit_code == NMO_CLI_EXIT_SUCCESS) {
         fprintf(stderr, "Error: Behavior engine failed (%s)\n", nmo_error_string(status));
         exit_code = NMO_CLI_EXIT_INTERNAL_ERROR;
@@ -755,13 +888,18 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
          "Keys held down: KEY@FRAME[-FRAME],... (names like Space, or scan codes)"},
         {"--path", NULL, NMO_OPT_STRING,
          "Folder of the files the document loads, before its own folder"},
+        {"--write", NULL, NMO_OPT_STRING,
+         "Folder the files the document saves go to, read before the others (default: none)"},
+        {"--message", NULL, NMO_OPT_STRING,
+         "Messages the host sends: NAME@FRAME:OBJECT,... (before that frame steps)"},
         {"--registry", NULL, NMO_OPT_STRING,
          "Registry values the TT blocks read: KEY\\NAME=VALUE;..."},
         {"--physics", NULL, NMO_OPT_STRING,
          "Simulate the physics blocks: none or ivp (default: none; ivp when built with libivp)"},
     };
     enum { OPT_FRAMES, OPT_DELTA, OPT_START, OPT_SCRIPT, OPT_UNKNOWN, OPT_MAX_ITER, OPT_SEED,
-           OPT_TRACE, OPT_KEYS, OPT_PATH, OPT_REGISTRY, OPT_PHYSICS, OPT_COUNT };
+           OPT_TRACE, OPT_KEYS, OPT_PATH, OPT_WRITE, OPT_MESSAGE, OPT_REGISTRY, OPT_PHYSICS,
+           OPT_COUNT };
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
@@ -781,6 +919,12 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
     out->trace = nmo_opt_flag(&vals[OPT_TRACE]);
     out->keys = nmo_opt_str(&vals[OPT_KEYS]);
     out->path = nmo_opt_str(&vals[OPT_PATH]);
+    out->write = nmo_opt_str(&vals[OPT_WRITE]);
+    out->messages = nmo_opt_str(&vals[OPT_MESSAGE]);
+    if (out->messages != NULL && run_parse_messages(out->messages, NULL) < 0) {
+        fprintf(stderr, "Error: Invalid --message: %s\n", out->messages);
+        return false;
+    }
     out->registry = nmo_opt_str(&vals[OPT_REGISTRY]);
     if (!run_set_registry(NULL, out->registry)) {
         fprintf(stderr, "Error: Invalid --registry: %s\n", out->registry);

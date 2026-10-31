@@ -158,6 +158,7 @@ static nmo_status_t eng_load_array(nmo_engine_t *engine, const eng_module_t *mod
     for (uint32_t c = 0; c < array->column_count; c++) {
         array->columns[c].type = (int32_t)state->column_formats[c].type;
         array->columns[c].param_type = state->column_formats[c].parameter_type_guid;
+        array->columns[c].name = eng_strdup(state->column_formats[c].name);
     }
     for (uint32_t r = 0; r < state->row_count; r++) {
         const nmo_dataarray_row_t *row = &state->rows[r];
@@ -218,6 +219,9 @@ bool eng_array_clone(eng_array_t *dest, const eng_array_t *source)
     }
     if (columns != NULL) {
         memcpy(columns, source->columns, source->column_count * sizeof(eng_column_t));
+        for (uint32_t c = 0; c < source->column_count; c++) {
+            columns[c].name = eng_strdup(source->columns[c].name);
+        }
     }
     for (size_t c = 0; c < cell_count; c++) {
         const eng_cell_t *cell = &source->cells[c];
@@ -249,6 +253,9 @@ void eng_array_release(eng_array_t *array)
 {
     for (size_t c = 0; c < array->row_count * array->column_count; c++) {
         eng_cell_clear(&array->cells[c]);
+    }
+    for (uint32_t c = 0; c < array->column_count; c++) {
+        free(array->columns[c].name);
     }
     free(array->cells);
     free(array->columns);
@@ -296,6 +303,9 @@ void eng_free_arrays(nmo_engine_t *engine)
         for (size_t c = 0; c < array->row_count * array->column_count; c++) {
             eng_cell_clear(&array->cells[c]);
         }
+        for (uint32_t c = 0; c < array->column_count; c++) {
+            free(array->columns[c].name);
+        }
         free(array->cells);
         free(array->columns);
     }
@@ -322,6 +332,35 @@ int32_t nmo_engine_array_row_count(const nmo_engine_t *engine, nmo_object_id_t a
 {
     const eng_array_t *array = eng_find_array(engine, array_id);
     return array != NULL ? (int32_t)array->row_count : -1;
+}
+
+const char *nmo_engine_array_column_name(const nmo_engine_t *engine, nmo_object_id_t array_id,
+                                         int32_t column)
+{
+    const eng_array_t *array = eng_find_array(engine, array_id);
+    if (array == NULL || column < 0 || (uint32_t)column >= array->column_count) {
+        return NULL;
+    }
+    return array->columns[column].name;
+}
+
+nmo_status_t nmo_engine_array_set_column_name(nmo_engine_t *engine, nmo_object_id_t array_id,
+                                              int32_t column, const char *name)
+{
+    eng_array_t *array = eng_find_array(engine, array_id);
+    if (array == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    if (column < 0 || (uint32_t)column >= array->column_count) {
+        return NMO_ERR_OUT_OF_BOUNDS;
+    }
+    char *copy = NULL;
+    if (name != NULL && (copy = eng_strdup(name)) == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    free(array->columns[column].name);
+    array->columns[column].name = copy;
+    return NMO_OK;
 }
 
 int32_t nmo_engine_array_column_count(const nmo_engine_t *engine, nmo_object_id_t array_id)
@@ -833,12 +872,14 @@ nmo_status_t nmo_engine_array_remove_column(nmo_engine_t *engine, nmo_object_id_
     for (size_t r = 0; r < array->row_count; r++) {
         eng_cell_clear(eng_array_cell(array, r, (size_t)column));
     }
+    char *removed_name = array->columns[column].name;
     bool ok = eng_array_relayout(engine, array, columns, count, map);
     free(map);
     if (!ok) {
         free(columns);
         return NMO_ERR_NOMEM;
     }
+    free(removed_name);
     /* The key column follows its column; removing the key column leaves the index */
     if (array->key_column > column) {
         array->key_column--;
