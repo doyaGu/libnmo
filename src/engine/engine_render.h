@@ -211,6 +211,7 @@ typedef struct eng_render {
     ENG_VEC(eng_mesh_t) meshes;
     ENG_VEC(eng_sky_t) skies;
     ENG_VEC(eng_shadow_t) shadows;
+    ENG_VEC(int32_t) filters; /* the Planar Filter blocks drawing after the sprites */
     ENG_VEC(eng_emitter_t) emitters;
     ENG_VEC(nmo_engine_vertex_t) vertices; /* the frame's triangles */
     ENG_VEC(eng_mesh_copy_t) mesh_copies;
@@ -274,6 +275,8 @@ void eng_free_emitters(nmo_engine_t *engine);
 /* blocks/tt/gravity.c */
 /* The shadows' pre render callbacks: each projected on the floors under its object */
 void eng_update_shadows(nmo_engine_t *engine);
+/* blocks/visuals.c: the Planar Filters' quads over the view (PlanarFilterRender) */
+void eng_draw_filters(nmo_engine_t *engine, float width, float height);
 /* The skies TT Sky shows, placed at the camera: the frame's first draws */
 void eng_draw_skies(nmo_engine_t *engine, const float view[16]);
 

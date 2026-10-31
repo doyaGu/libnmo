@@ -73,6 +73,7 @@ typedef struct nmo_engine_draw {
        unless `blend` is false, no lighting, no culling; world[12..14] is their
        emitter's position, to sort by */
     int32_t first_vertex, vertex_count;
+    /* Triangles, and a quad with no material that sets `blend` (Planar Filter): its blending */
     int32_t source_blend, dest_blend;
     bool blend;
 } nmo_engine_draw_t;

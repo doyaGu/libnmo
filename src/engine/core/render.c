@@ -60,6 +60,7 @@ void eng_free_render(nmo_engine_t *engine)
     free(render->images.data);
     eng_render_begin_frame(engine);
     free(render->texts.data);
+    free(render->filters.data);
     for (size_t i = 0; i < render->meshes.count; i++) {
         eng_mesh_t *mesh = &render->meshes.data[i];
         free(mesh->vertices);
@@ -992,6 +993,7 @@ nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *o
     eng_draw_particles(engine, out->view);
     eng_render_2d_root(engine, false, width, height);
     eng_draw_texts(engine, 0, width, height); /* the font manager's, after the sprites */
+    eng_draw_filters(engine, width, height); /* the post sprite render callbacks */
 
     out->lights = render->frame_lights.data;
     out->light_count = (int32_t)render->frame_lights.count;

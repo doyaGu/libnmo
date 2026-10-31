@@ -629,13 +629,13 @@ static void view_draw_quad(nmo_view_t *view, const nmo_engine_draw_t *draw)
     if (draw->material != 0 && nmo_engine_material(view->engine, draw->material, &material)) {
         view_set_material(view, &material, false, false);
     } else {
-        /* CKTextureFont::SetRenderStates */
+        /* CKTextureFont::SetRenderStates, or a quad's own blending (Planar Filter) */
         memset(&material, 0, sizeof(material));
         material.texture = draw->texture;
         material.texture_blend = 4;
         material.alpha_blend = true;
-        material.source_blend = 5;
-        material.dest_blend = 6;
+        material.source_blend = draw->blend ? draw->source_blend : 5;
+        material.dest_blend = draw->blend ? draw->dest_blend : 6;
         material.two_sided = true;
         material.address_mode = 3;
         material.min_filter = material.mag_filter = draw->nearest ? 1 : 2;

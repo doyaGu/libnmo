@@ -13,23 +13,92 @@
 
 #include "../engine_block_util.h"
 
+/* Add or Remove PostSpriteRenderCallBack(PlanarFilterRender, beh): once each */
+static void planar_filter_drawn(nmo_engine_t *engine, int32_t node, bool drawn)
+{
+    for (size_t i = 0; i < engine->render.filters.count; i++) {
+        if (engine->render.filters.data[i] == node) {
+            if (!drawn) {
+                engine->render.filters.data[i] =
+                    engine->render.filters.data[--engine->render.filters.count];
+            }
+            return;
+        }
+    }
+    int32_t *slot = NULL;
+    if (drawn && ENG_VEC_PUSH(engine->render.filters, slot)) {
+        *slot = node;
+    }
+}
+
 /*
  * Planar Filter: On draws the filtering quad over the view after the
- * sprites each frame (an effect) until Off; Exit On or Exit Off.
+ * sprites each frame until Off; Exit On or Exit Off.
  */
 static int bb_planar_filter(blk_t *b)
 {
     if (IN_ACTIVE(b, 1)) {
         IN_OFF(b, 1);
         OUT_ON(b, 1);
+        planar_filter_drawn(b->engine, b->node, false);
         return NMO_ENGINE_BR_OK;
     }
     if (IN_ACTIVE(b, 0)) {
         IN_OFF(b, 0);
         OUT_ON(b, 0);
+        planar_filter_drawn(b->engine, b->node, true);
         eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, 0, 0);
     }
     return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+/* PlanarFilterCallback: out of the render context when its script stops, back when it runs */
+static int cb_planar_filter(blk_t *b, uint32_t message)
+{
+    if (message == NMO_ENGINE_MSG_RESET || message == NMO_ENGINE_MSG_PAUSE ||
+        message == NMO_ENGINE_MSG_DEACTIVATESCRIPT) {
+        planar_filter_drawn(b->engine, b->node, false);
+    } else if ((message == NMO_ENGINE_MSG_ACTIVATESCRIPT || message == NMO_ENGINE_MSG_RESUME) &&
+               nmo_engine_behavior_is_active(b->engine, block_node(b)->id)) {
+        planar_filter_drawn(b->engine, b->node, true);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * PlanarFilterRender: the view's rect in Filtering Color, textured with
+ * Texture (modulated, its alpha too), blended Source Blend and Dest Blend,
+ * no Z. The Additional Color is the specular one the engine's draws have no
+ * room for.
+ */
+void eng_draw_filters(nmo_engine_t *engine, float width, float height)
+{
+    for (size_t i = 0; i < engine->render.filters.count; i++) {
+        nmo_engine_block_t handle = {engine, engine->render.filters.data[i]};
+        blk_t *b = &handle;
+        float color[4] = {1.0f, 1.0f, 1.0f, 0.5f};
+        nmo_engine_block_get_input_value(b, 0, color, sizeof(color));
+        nmo_engine_draw_t *draw = NULL;
+        if (!ENG_VEC_PUSH(engine->render.draws, draw)) {
+            return;
+        }
+        memset(draw, 0, sizeof(*draw));
+        draw->kind = NMO_ENGINE_DRAW_QUAD;
+        draw->rect[2] = width;
+        draw->rect[3] = height;
+        draw->uv[2] = draw->uv[3] = 1.0f;
+        draw->texture = nmo_engine_block_get_input_object(b, 2);
+        uint32_t argb = 0;
+        for (int c = 0; c < 4; c++) {
+            float v = color[c] < 0.0f ? 0.0f : color[c] > 1.0f ? 1.0f : color[c];
+            argb |= (uint32_t)(v * 255.0f + 0.5f) << (c == 3 ? 24 : 16 - 8 * c);
+        }
+        draw->color = draw->color2 = argb;
+        draw->blend = true;
+        draw->source_blend = get_in_int(b, 3, 5); /* VXBLEND_SRCALPHA */
+        draw->dest_blend = get_in_int(b, 4, 6);   /* VXBLEND_INVSRCALPHA */
+        draw->nearest = get_in_int(b, 5, 2) == 1; /* VXTEXTUREFILTER_NEAREST */
+    }
 }
 
 /*
@@ -166,7 +235,8 @@ static int bb_set_2d_material(blk_t *b)
 }
 
 static const nmo_engine_block_desc_t eng_visuals_blocks[] = {
-    {NMO_GUID(0x00cd320b, 0x32ed010b), "Planar Filter", bb_planar_filter, NULL, NULL},
+    {NMO_GUID(0x00cd320b, 0x32ed010b), "Planar Filter", bb_planar_filter, cb_planar_filter,
+     NULL},
     {NMO_GUID(0x5fb70201, 0x65595af3), "Statistics", bb_statistics, NULL, NULL},
     {NMO_GUID(0x16f6368f, 0x506b60fc), "Show Mouse Cursor", bb_show_mouse_cursor, NULL, NULL},
     {NMO_GUID(0xa85a213a, 0xef78d52a), "Show", bb_show, NULL, NULL},
