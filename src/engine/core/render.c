@@ -23,6 +23,7 @@
 #include "object/builtin/nmo_material_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_object_schemas.h"
+#include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_sprite3d_schemas.h"
 #include "object/builtin/nmo_targetcamera_schemas.h"
 #include "object/builtin/nmo_targetlight_schemas.h"
@@ -221,6 +222,27 @@ bool nmo_engine_object_is_visible(const nmo_engine_t *engine, nmo_object_id_t id
  * Materials
  * ============================================================================ */
 
+#define VXEFFECT_TEXGEN 1
+
+/* The VX_EFFECTTEXGEN a VXEFFECT_TEXGEN material's effect parameter holds (ReadTexGenParameter) */
+static int32_t eng_material_texgen(const nmo_engine_t *engine, nmo_object_id_t id,
+                                   const nmo_material_state_t *state)
+{
+    if (state->effect != VXEFFECT_TEXGEN || !state->has_effect_param) {
+        return 0;
+    }
+    nmo_object_id_t param = eng_object_ref(engine, id, &state->effect_parameter);
+    nmo_object_t *object = param != 0 ? eng_find_object(engine, param) : NULL;
+    const nmo_parameter_state_t *value =
+        object != NULL ? (const nmo_parameter_state_t *)nmo_object_get_state(object) : NULL;
+    int32_t texgen = 0;
+    if (value != NULL && value->buffer_data.data != NULL &&
+        value->buffer_data.count * value->buffer_data.element_size >= sizeof(texgen)) {
+        memcpy(&texgen, value->buffer_data.data, sizeof(texgen));
+    }
+    return texgen;
+}
+
 /* RCKMaterial as it loads: colors, the texture, and the packed modes and flags */
 static void eng_material_from_state(const nmo_engine_t *engine, nmo_object_id_t id,
                                     const nmo_material_state_t *state, nmo_engine_material_t *out)
@@ -250,6 +272,7 @@ static void eng_material_from_state(const nmo_engine_t *engine, nmo_object_id_t 
     out->z_func = (int32_t)((flags >> 8) & 0xFu);
     out->alpha_func = (int32_t)((flags >> 16) & 0xFu);
     out->alpha_ref = (uint8_t)(flags >> 24);
+    out->texgen = eng_material_texgen(engine, id, state);
 }
 
 eng_material_t *eng_material(nmo_engine_t *engine, nmo_object_id_t id)

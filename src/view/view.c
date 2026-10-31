@@ -38,6 +38,12 @@
 #ifndef GL_CLAMP_TO_EDGE
 #define GL_CLAMP_TO_EDGE 0x812F
 #endif
+#ifndef GL_NORMAL_MAP
+#define GL_NORMAL_MAP 0x8511
+#endif
+#ifndef GL_REFLECTION_MAP
+#define GL_REFLECTION_MAP 0x8512
+#endif
 #ifndef GL_MIRRORED_REPEAT
 #define GL_MIRRORED_REPEAT 0x8370
 #endif
@@ -386,6 +392,47 @@ static GLint view_filter(int32_t filter, bool minify)
     }
 }
 
+/*
+ * RCKMaterial::TexGenEffect without a referential: reflect and chrome take
+ * the camera space reflection vector or normal, planar the camera space
+ * position, scaled by 0.4 (0.5 planar) with V flipped, about the texture's
+ * middle. The eye space here is the camera's, so GL's generation is CK's.
+ */
+static void view_set_texgen(int32_t texgen)
+{
+    GLint mode = texgen == 2 ? GL_REFLECTION_MAP : texgen == 3 ? GL_NORMAL_MAP
+                 : texgen == 4 ? GL_EYE_LINEAR : 0;
+    glMatrixMode(GL_TEXTURE);
+    glLoadIdentity();
+    if (mode == 0) {
+        glDisable(GL_TEXTURE_GEN_S);
+        glDisable(GL_TEXTURE_GEN_T);
+        glDisable(GL_TEXTURE_GEN_R);
+        glMatrixMode(GL_MODELVIEW);
+        return;
+    }
+    float scale = texgen == 4 ? 0.5f : 0.4f;
+    glTranslatef(0.5f, 0.5f, 0.0f);
+    glScalef(scale, -scale, scale);
+    glMatrixMode(GL_MODELVIEW);
+    if (mode == GL_EYE_LINEAR) {
+        /* planes taken in eye space: the identity at the time they are given */
+        const float s_plane[4] = {1, 0, 0, 0}, t_plane[4] = {0, 1, 0, 0}, r_plane[4] = {0, 0, 1, 0};
+        glPushMatrix();
+        glLoadIdentity();
+        glTexGenfv(GL_S, GL_EYE_PLANE, s_plane);
+        glTexGenfv(GL_T, GL_EYE_PLANE, t_plane);
+        glTexGenfv(GL_R, GL_EYE_PLANE, r_plane);
+        glPopMatrix();
+    }
+    glTexGeni(GL_S, GL_TEXTURE_GEN_MODE, mode);
+    glTexGeni(GL_T, GL_TEXTURE_GEN_MODE, mode);
+    glTexGeni(GL_R, GL_TEXTURE_GEN_MODE, mode);
+    glEnable(GL_TEXTURE_GEN_S);
+    glEnable(GL_TEXTURE_GEN_T);
+    glEnable(GL_TEXTURE_GEN_R);
+}
+
 /* RCKMaterial::SetAsCurrent: lighting, texture, blending and tests */
 static void view_set_material(nmo_view_t *view, const nmo_engine_material_t *m, bool lit,
                               bool depth)
@@ -409,8 +456,10 @@ static void view_set_material(nmo_view_t *view, const nmo_engine_material_t *m, 
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, (GLint)view_address(m->address_mode));
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, (GLint)view_address(m->address_mode));
         glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, view_texture_env(m->texture_blend));
+        view_set_texgen(m->texgen);
     } else {
         glDisable(GL_TEXTURE_2D);
+        view_set_texgen(0);
     }
     if (m->alpha_blend) {
         glEnable(GL_BLEND);
@@ -683,6 +732,7 @@ static void view_draw_sprite_text(nmo_view_t *view, const nmo_engine_draw_t *dra
     glEnable(GL_TEXTURE_2D);
     glBindTexture(GL_TEXTURE_2D, name);
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+    view_set_texgen(0);
     glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
     glBegin(GL_TRIANGLE_FAN);
     glTexCoord2f(0.0f, 0.0f);

@@ -32,6 +32,7 @@
 #include "type/nmo_type_guids.h"
 
 #include <math.h>
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -59,6 +60,13 @@
 #define OP_GET_LOCAL_MATRIX NMO_GUID(0x14a024c7, 0x050d4228)
 #define OP_GET_BOUNDING_BOX NMO_GUID(0x31a7649f, 0x305e5164)
 #define OP_GET_MATERIAL NMO_GUID(0x6b8c78bd, 0x7b846d3c)
+#define OP_GET_MATERIAL_LIST NMO_GUID(0x765f7aa3, 0x33d679b2)
+#define OP_GET_ELEMENT NMO_GUID(0x660f5c52, 0x0adf7be9)
+#define OP_GET_DIFFUSE NMO_GUID(0x0f9e20cc, 0x6ea10a47)
+#define OP_GET_AMBIENT NMO_GUID(0x62280787, 0x1e5a3cb9)
+#define OP_GET_SPECULAR NMO_GUID(0x5c7d536d, 0x439e65e3)
+#define OP_GET_SPECULAR_POWER NMO_GUID(0x1ddb48ef, 0x0adb4eae)
+#define OP_GET_EMISSIVE NMO_GUID(0x13684596, 0x0ab57f34)
 #define OP_GET_POSITION NMO_GUID(0x4bc87aea, 0x6b5b643e)
 #define OP_GET_EULER_ANGLES NMO_GUID(0x4faa099f, 0x2dcc48a5)
 #define OP_GET_DIR NMO_GUID(0x48c20ded, 0xfed12252)
@@ -831,6 +839,101 @@ static nmo_status_t op_get_material_mesh(nmo_engine_t *engine, eng_param_t *src1
                                                         (int32_t)param_u32(src2) + 1));
 }
 
+/* CKObjectArrayGetMaterialListMesh: CKMesh::GetMaterial of each group past group 0; no mesh
+   leaves the output as it was */
+static nmo_status_t op_get_material_list(nmo_engine_t *engine, eng_param_t *src1,
+                                         eng_param_t *src2, eng_param_t *out)
+{
+    (void)src2;
+    nmo_object_id_t mesh_id = (nmo_object_id_t)param_u32(src1);
+    nmo_engine_mesh_t mesh;
+    if (!nmo_engine_mesh(engine, mesh_id, &mesh)) {
+        return NMO_OK;
+    }
+    size_t count = mesh.material_count > 1 ? (size_t)mesh.material_count - 1u : 0u;
+    uint32_t *ids = count > 0 ? (uint32_t *)malloc(count * sizeof(uint32_t)) : NULL;
+    if (count > 0 && ids == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    for (size_t i = 0; i < count; i++) {
+        ids[i] = (uint32_t)nmo_engine_mesh_material(engine, mesh_id, (int32_t)i + 1);
+    }
+    nmo_status_t status = eng_param_write(engine, out, ids, count * sizeof(uint32_t));
+    free(ids);
+    return status;
+}
+
+/* CKObjectGetElementObjectArrayInt: the object at the index, 0 past the end or for none */
+static nmo_status_t op_get_element_array(nmo_engine_t *engine, eng_param_t *src1,
+                                         eng_param_t *src2, eng_param_t *out)
+{
+    int32_t index = (int32_t)param_u32(src2);
+    uint32_t id = 0;
+    if (src1 != NULL && src1->data != NULL && index >= 0 &&
+        ((size_t)index + 1u) * sizeof(uint32_t) <= src1->size) {
+        memcpy(&id, src1->data + (size_t)index * sizeof(uint32_t), sizeof(id));
+    }
+    return write_u32(engine, out, id != 0 && eng_find_object(engine, id) != NULL ? id : 0u);
+}
+
+/* CKObjectGetElementGroupInt: the group's object at the index, 0 for none */
+static nmo_status_t op_get_element_group(nmo_engine_t *engine, eng_param_t *src1,
+                                         eng_param_t *src2, eng_param_t *out)
+{
+    return write_u32(engine, out,
+                     (uint32_t)nmo_engine_group_object(engine, (nmo_object_id_t)param_u32(src1),
+                                                       (int32_t)param_u32(src2)));
+}
+
+/* CKColorGetDiffuseMaterial and the like: the material's color as it is now; no material
+   leaves the output as it was */
+static nmo_status_t op_material_color(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *out,
+                                      size_t offset)
+{
+    const eng_material_t *material = eng_material(engine, (nmo_object_id_t)param_u32(src1));
+    if (material == NULL) {
+        return NMO_OK;
+    }
+    return write_floats(engine, out, (const float *)((const char *)&material->desc + offset), 4);
+}
+
+static nmo_status_t op_get_diffuse(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                   eng_param_t *out)
+{
+    (void)src2;
+    return op_material_color(engine, src1, out, offsetof(nmo_engine_material_t, diffuse));
+}
+
+static nmo_status_t op_get_ambient(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                   eng_param_t *out)
+{
+    (void)src2;
+    return op_material_color(engine, src1, out, offsetof(nmo_engine_material_t, ambient));
+}
+
+static nmo_status_t op_get_specular(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                    eng_param_t *out)
+{
+    (void)src2;
+    return op_material_color(engine, src1, out, offsetof(nmo_engine_material_t, specular));
+}
+
+static nmo_status_t op_get_emissive(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                    eng_param_t *out)
+{
+    (void)src2;
+    return op_material_color(engine, src1, out, offsetof(nmo_engine_material_t, emissive));
+}
+
+/* CKColorGetSpecularPowerMaterial */
+static nmo_status_t op_get_specular_power(nmo_engine_t *engine, eng_param_t *src1,
+                                          eng_param_t *src2, eng_param_t *out)
+{
+    (void)src2;
+    const eng_material_t *material = eng_material(engine, (nmo_object_id_t)param_u32(src1));
+    return material != NULL ? write_floats(engine, out, &material->desc.power, 1) : NMO_OK;
+}
+
 typedef struct engine_op {
     nmo_guid_t operation;
     nmo_guid_t result, input1, input2; /* a null input2 is no second input */
@@ -902,6 +1005,14 @@ static const engine_op_t engine_ops[] = {
     {NMO_OP_GUID_MAX, CKPGUID_VECTOR, CKPGUID_BOX, {0, 0}, op_max_box},
     {OP_GET_MATERIAL, CKPGUID_MATERIAL, CKPGUID_2DENTITY, {0, 0}, op_get_material_2d},
     {OP_GET_MATERIAL, CKPGUID_MATERIAL, CKPGUID_MESH, CKPGUID_INT, op_get_material_mesh},
+    {OP_GET_MATERIAL_LIST, CKPGUID_OBJECTARRAY, CKPGUID_MESH, {0, 0}, op_get_material_list},
+    {OP_GET_ELEMENT, CKPGUID_OBJECT, CKPGUID_OBJECTARRAY, CKPGUID_INT, op_get_element_array},
+    {OP_GET_ELEMENT, CKPGUID_OBJECT, CKPGUID_GROUP, CKPGUID_INT, op_get_element_group},
+    {OP_GET_DIFFUSE, CKPGUID_COLOR, CKPGUID_MATERIAL, {0, 0}, op_get_diffuse},
+    {OP_GET_AMBIENT, CKPGUID_COLOR, CKPGUID_MATERIAL, {0, 0}, op_get_ambient},
+    {OP_GET_SPECULAR, CKPGUID_COLOR, CKPGUID_MATERIAL, {0, 0}, op_get_specular},
+    {OP_GET_EMISSIVE, CKPGUID_COLOR, CKPGUID_MATERIAL, {0, 0}, op_get_emissive},
+    {OP_GET_SPECULAR_POWER, CKPGUID_FLOAT, CKPGUID_MATERIAL, {0, 0}, op_get_specular_power},
 };
 
 eng_builtin_op_fn eng_operation_builtin(nmo_guid_t operation, nmo_guid_t result,

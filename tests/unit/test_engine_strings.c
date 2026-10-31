@@ -2,6 +2,8 @@
 
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_group_schemas.h"
+#include "object/builtin/nmo_material_schemas.h"
+#include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/builtin/nmo_parameteroperation_schemas.h"
@@ -27,6 +29,10 @@
 #define OP_IS_CHILD_OF NMO_GUID(0x08333942, 0x00973fd1)
 #define OP_GET_PARENT NMO_GUID(0x5bf9718f, 0x030b698c)
 #define OP_GET_COUNT NMO_GUID(0x44df6f61, 0x5f8f55c8)
+#define OP_GET_MATERIAL_LIST NMO_GUID(0x765f7aa3, 0x33d679b2)
+#define OP_GET_ELEMENT NMO_GUID(0x660f5c52, 0x0adf7be9)
+#define OP_GET_DIFFUSE NMO_GUID(0x0f9e20cc, 0x6ea10a47)
+#define OP_GET_EMISSIVE NMO_GUID(0x13684596, 0x0ab57f34)
 
 static void input_string(engine_fixture_t *f, nmo_object_id_t pin, const char *text)
 {
@@ -360,6 +366,86 @@ TEST(engine_strings, object_operations)
     fixture_end(&f);
 }
 
+/* A color operation on `source` (an Object), whose input is a Material as AnimTrafo's are */
+static nmo_object_id_t material_operation(engine_fixture_t *f, nmo_guid_t guid,
+                                          nmo_object_id_t source)
+{
+    nmo_object_id_t op = 0;
+    if (nmo_script_edit_add_operation(f->tx, f->script_id, guid, source, 0, 0, &op) != NMO_OK) {
+        return 0;
+    }
+    const nmo_parameteroperation_state_t *state =
+        (const nmo_parameteroperation_state_t *)fixture_state(f, op);
+    nmo_parameterin_state_t *in1 =
+        (nmo_parameterin_state_t *)fixture_state(f, nmo_parameteroperation_in1_id(state));
+    nmo_object_id_t out = nmo_parameteroperation_out_id(state);
+    nmo_parameter_state_t *out_state = (nmo_parameter_state_t *)fixture_state(f, out);
+    if (in1 == NULL || out_state == NULL) {
+        return 0;
+    }
+    in1->type_guid = CKPGUID_MATERIAL;
+    out_state->type_guid = CKPGUID_COLOR;
+    return out;
+}
+
+/* AnimTrafo's colors: a mesh's material list, its element 1, and that material's colors */
+TEST(engine_strings, material_operations)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t mesh = fixture_create(&f, NMO_CID_MESH, "Mesh");
+    nmo_object_id_t first = fixture_create(&f, NMO_CID_MATERIAL, "First");
+    nmo_object_id_t second = fixture_create(&f, NMO_CID_MATERIAL, "Second");
+    nmo_mesh_state_t *mesh_state = (nmo_mesh_state_t *)fixture_state(&f, mesh);
+    nmo_material_state_t *material = (nmo_material_state_t *)fixture_state(&f, second);
+    ASSERT_TRUE(mesh_state != NULL && material != NULL);
+    material->diffuse_color = 0xFF18EA94u;
+    material->emissive_color = 0xFF003719u;
+    /* group 0 has no material, as CKMesh's first group */
+    mesh_state->material_groups = (nmo_material_group_t *)nmo_arena_alloc(
+        nmo_session_get_arena(f.session), 3u * sizeof(nmo_material_group_t),
+        _Alignof(nmo_material_group_t));
+    ASSERT_NOT_NULL(mesh_state->material_groups);
+    memset(mesh_state->material_groups, 0, 3u * sizeof(nmo_material_group_t));
+    mesh_state->material_groups[0].material = nmo_ref_from_id(0);
+    mesh_state->material_groups[1].material = nmo_ref_from_id(first);
+    mesh_state->material_groups[2].material = nmo_ref_from_id(second);
+    mesh_state->material_group_count = 3;
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t in_mesh = local_object(&f, "Mesh", CKPGUID_MESH);
+    nmo_object_id_t index = 0;
+    const int32_t one = 1;
+    ASSERT_EQ(NMO_OK, nmo_script_edit_add_parameter(f.tx, f.script_id, NMO_SCRIPT_EDIT_PARAM_LOCAL,
+                                                    CKPGUID_INT, "Index", &index));
+    ASSERT_EQ(NMO_OK, nmo_script_edit_set_parameter_bytes(f.tx, index, (const uint8_t *)&one,
+                                                          sizeof(one)));
+    ASSERT_TRUE(in_mesh != 0);
+    nmo_object_id_t list = operation(&f, OP_GET_MATERIAL_LIST, in_mesh, 0, CKPGUID_OBJECTARRAY);
+    nmo_object_id_t element = operation(&f, OP_GET_ELEMENT, list, index, CKPGUID_OBJECT);
+    ASSERT_TRUE(list != 0 && element != 0);
+    nmo_object_id_t diffuse = material_operation(&f, OP_GET_DIFFUSE, element);
+    nmo_object_id_t emissive = material_operation(&f, OP_GET_EMISSIVE, element);
+    ASSERT_TRUE(diffuse != 0 && emissive != 0);
+    nmo_object_id_t read_diffuse = identity_of(&f, diffuse, CKPGUID_COLOR, f.script_in);
+    ASSERT_TRUE(read_diffuse != 0);
+    nmo_object_id_t read_emissive =
+        identity_of(&f, emissive, CKPGUID_COLOR, BLOCK_OUT(&f, read_diffuse, 0));
+    ASSERT_TRUE(read_emissive != 0);
+    fixture_commit(&f, NULL);
+    const uint32_t mesh_id = (uint32_t)mesh;
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, in_mesh, &mesh_id, sizeof(mesh_id)));
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+    float color[4] = {0};
+    read_value(&f, BLOCK_POUT(&f, read_diffuse, 0), color, sizeof(color));
+    ASSERT_TRUE(fabsf(color[1] - 234.0f / 255.0f) < 1e-4f && fabsf(color[2] - 148.0f / 255.0f) < 1e-4f);
+    read_value(&f, BLOCK_POUT(&f, read_emissive, 0), color, sizeof(color));
+    ASSERT_TRUE(fabsf(color[1] - 55.0f / 255.0f) < 1e-4f && fabsf(color[0]) < 1e-4f);
+    fixture_end(&f);
+}
+
 /* A local parameter of the script of `type` holding the float `value` */
 static nmo_object_id_t local_float(engine_fixture_t *f, const char *name, nmo_guid_t type,
                                    float value)
@@ -493,6 +579,7 @@ REGISTER_TEST(engine_strings, substring_scan_and_reverse);
 REGISTER_TEST(engine_strings, string_operations);
 REGISTER_TEST(engine_strings, create_string_runs_its_inputs_operations);
 REGISTER_TEST(engine_strings, object_operations);
+REGISTER_TEST(engine_strings, material_operations);
 REGISTER_TEST(engine_strings, operations_follow_parent_types);
 REGISTER_TEST(engine_strings, entity_operations);
 TEST_MAIN_END()
