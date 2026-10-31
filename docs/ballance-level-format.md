@@ -159,6 +159,37 @@ and textures that stay in the game's `Textures` folder.
   of the same file are one CKTexture, named after the file
   (`Floor_Top_Flat`). The default, `"embedded"`, stores the image.
 
+### Materials
+
+The original levels share one set of 48 materials, named like
+`Floor_Top_Flat`, `Floor_Side`, `Rail`, each the same in every level.
+`tools/ballance/level_materials.json` holds them as manifest materials; it is
+written by
+
+```sh
+tools/scripts/ballance_level_materials.py <GAME_ROOT> -o tools/ballance/level_materials.json
+```
+
+Root `materials` are shared: each becomes one CKMaterial with its own name.
+An object uses one by name (`"material": "Rail"`), and an OBJ mesh uses one
+for each `usemtl` group of the same name, so a mesh exported with the game's
+material names needs nothing else. An object's own `materials` entries win
+over shared ones of the same name.
+
+Besides colors, `texture` and `blend`, a material can set:
+
+| Key | Meaning |
+|-----|---------|
+| `texture_format` | Pixel format the engine keeps the texture in: `argb1555` (the originals' opaque textures), `argb8888` (their textures with alpha), `rgb888`, `rgb565`, `argb4444` |
+| `alpha` | `{"func": "greater", "ref": 1}`: alpha test, on when `func` is not `always` |
+| `two_sided` | Draw both faces |
+| `z_write` | Write depth (on by default) |
+
+Generated from the presets, 46 of the 48 materials match the originals bit
+for bit. `Columns_beige_fade` and `Stick_Bottom` keep an alpha function and
+reference with alpha testing off in the originals; the presets leave both at
+their defaults, which draws the same.
+
 ```sh
 nmo patch apply --project manifest.json -o Level_01.NMO
 ```
