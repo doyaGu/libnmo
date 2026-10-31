@@ -213,6 +213,8 @@ typedef struct eng_input {
     bool buttons[3], next_buttons[3]; /* CK_MOUSE_BUTTON: left, right, middle */
     nmo_object_id_t under_mouse, next_under_mouse;
     bool cursor_hidden; /* CKInputManager::ShowCursor(FALSE); the cursor starts shown */
+    nmo_engine_pick_fn pick; /* the host's CKRenderContext::Pick; NULL for none */
+    void *pick_user_data;
 } eng_input_t;
 
 /* An attribute type of the engine, from a document's Attribute Manager */

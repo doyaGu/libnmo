@@ -1,5 +1,8 @@
 #include "engine_fixture.h"
 
+#include "object/builtin/nmo_group_schemas.h"
+#include "object/nmo_ref.h"
+
 #define GUID_NOP NMO_GUID(0x302561c4, 0x0d282980)
 #define GUID_DELAYER NMO_GUID(0x15d472a5, 0x3bea409f)
 #define GUID_WAIT_MESSAGE NMO_GUID(0x4587ffee, 0x4587ffdd)
@@ -13,6 +16,7 @@
 #define GUID_CALL_SCRIPT NMO_GUID(0x1a7d5b17, 0x70630fed)
 #define GUID_ACTIVATE_SCRIPT NMO_GUID(0x4c7e7bc3, 0x0b693155)
 #define GUID_OBJECT_DELETE NMO_GUID(0x74120ded, 0x76524673)
+#define GUID_SEND_MESSAGE_TO_GROUP NMO_GUID(0x5f906952, 0x6df11649)
 
 /* The message types the fixture document declares; a type is its position. */
 static const char *const message_names[] = {"OnClick", "Message A", "Message B"};
@@ -537,6 +541,45 @@ TEST(engine_messages, object_delete_stops_the_object_for_good)
     fixture_end(&f);
 }
 
+TEST(engine_messages, send_message_to_group_reaches_the_members)
+{
+    for (int member = 0; member < 2; member++) {
+        engine_fixture_t f;
+        fixture_begin_document(&f);
+        fixture_install_messages(&f, message_names, 3);
+        nmo_object_id_t group = fixture_create(&f, NMO_CID_GROUP, "Members");
+        ASSERT_TRUE(group != 0);
+        if (member) {
+            nmo_group_state_t *members = (nmo_group_state_t *)fixture_state(&f, group);
+            ASSERT_NOT_NULL(members);
+            nmo_ref_t *refs = NULL;
+            ASSERT_EQ(NMO_OK, nmo_array_extend(&members->object_ids, 1u, (void **)&refs));
+            refs[0] = nmo_ref_from_id(f.owner_id);
+        }
+        f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+        fixture_begin_edit(&f);
+        nmo_object_id_t after = 0;
+        add_wait(&f, MSG_A, &after);
+        nmo_object_id_t send = fixture_block(&f, GUID_SEND_MESSAGE_TO_GROUP, "Send");
+        ASSERT_TRUE(send != 0);
+        fixture_link(&f, f.script_in, BLOCK_IN(&f, send, 0), 0);
+        fixture_input_int(&f, BLOCK_PIN(&f, send, 0), MSG_A);
+        fixture_input_int(&f, BLOCK_PIN(&f, send, 1), (int32_t)group);
+        if (fixture_target(&f, send) != 0) {
+            fixture_input_int(&f, fixture_target(&f, send), (int32_t)f.owner_id);
+        }
+        fixture_commit(&f, NULL);
+
+        ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+        ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+        ASSERT_EQ(1u, runs(&f, send));
+        ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+        /* The owner waits for it: it arrives only when the owner is in the group */
+        ASSERT_EQ(member ? 1u : 0u, runs(&f, after));
+        fixture_end(&f);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_messages, sent_message_ends_the_wait_in_the_next_frame);
 REGISTER_TEST(engine_messages, waiting_keeps_the_script_active_until_the_message_comes);
@@ -550,4 +593,5 @@ REGISTER_TEST(engine_messages, call_script_runs_the_script_now);
 REGISTER_TEST(engine_messages, activate_script_can_awake_an_inactive_owner);
 REGISTER_TEST(engine_messages, object_deactivated_in_the_frame_it_awakes_still_runs);
 REGISTER_TEST(engine_messages, object_delete_stops_the_object_for_good);
+REGISTER_TEST(engine_messages, send_message_to_group_reaches_the_members);
 TEST_MAIN_END()

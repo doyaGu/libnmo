@@ -7,7 +7,7 @@
  * CreateTextureFont, GetFont, DeleteFont); nothing draws them. A text block
  * stays active as it would to draw each frame, and reports an effect event
  * when it is turned on. PushButton tests the mouse against the 2D entity the
- * host says is under it.
+ * host says is under it, and 2D Picking asks the host's picker.
  */
 
 #include "engine_internal.h"
@@ -318,6 +318,61 @@ static int bb_push_button(blk_t *b)
     return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
 }
 
+/*
+ * 2D Picking: what the render context picks at the mouse (Use Mouse
+ * Coordinates?) or at Pos (in screen coordinates unless window relative):
+ * True with the 3D entity, the point and normal in world space, the UVs,
+ * distance and face, and the sprite; else False and no object. There is no
+ * window, so screen and window coordinates are the same.
+ */
+static int bb_picking_2d(blk_t *b)
+{
+    nmo_engine_t *engine = nmo_engine_block_engine(b);
+    IN_OFF(b, 0);
+    int32_t x = 0, y = 0;
+    if (get_local_int(b, 1, 0) != 0) {
+        float mouse[2] = {0.0f, 0.0f};
+        nmo_engine_mouse_position(engine, &mouse[0], &mouse[1]);
+        x = (int32_t)(int64_t)mouse[0];
+        y = (int32_t)(int64_t)mouse[1];
+    } else if (get_local_int(b, 0, 0) != 0) {
+        float pos[2] = {0.0f, 0.0f};
+        nmo_engine_block_get_input_value(b, 0, pos, sizeof(pos));
+        x = (int32_t)(int64_t)pos[0];
+        y = (int32_t)(int64_t)pos[1];
+    } else {
+        x = get_in_int(b, 0, 0); /* before version 2: X and Y */
+        y = get_in_int(b, 1, 0);
+    }
+    nmo_engine_pick_t pick;
+    memset(&pick, 0, sizeof(pick));
+    bool hit = engine->input.pick != NULL && engine->input.pick(engine->input.pick_user_data, x, y, &pick);
+    if (!hit || (pick.object == 0 && pick.sprite == 0)) {
+        const uint32_t none = 0;
+        nmo_engine_block_set_output_value(b, 0, &none, sizeof(none));
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    uint32_t object = (uint32_t)pick.object;
+    nmo_engine_block_set_output_value(b, 0, &object, sizeof(object));
+    int32_t entity = pick.object != 0 ? eng_entity_index(engine, pick.object) : -1;
+    if (entity >= 0) {
+        eng_vector_t local = {pick.point[0], pick.point[1], pick.point[2]}, world;
+        eng_entity_transform(engine, entity, &world, &local, -1);
+        nmo_engine_block_set_output_value(b, 1, &world, sizeof(world));
+        eng_vector_t normal = {pick.normal[0], pick.normal[1], pick.normal[2]}, world_normal;
+        eng_entity_transform_vector(engine, entity, &world_normal, &normal, -1, false);
+        nmo_engine_block_set_output_value(b, 2, &world_normal, sizeof(world_normal));
+        nmo_engine_block_set_output_value(b, 3, pick.uv, sizeof(pick.uv));
+        nmo_engine_block_set_output_value(b, 4, &pick.distance, sizeof(pick.distance));
+        nmo_engine_block_set_output_value(b, 5, &pick.face, sizeof(pick.face));
+    }
+    uint32_t sprite = (uint32_t)pick.sprite;
+    nmo_engine_block_set_output_value(b, 6, &sprite, sizeof(sprite));
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_interface_blocks[] = {
     {NMO_GUID(0x936334fc, 0xf243684f), "Create System Font", bb_create_system_font, NULL, NULL},
     {NMO_GUID(0x7d644088, 0x40dd0349), "Create Font", bb_create_font, NULL, NULL},
@@ -328,6 +383,7 @@ static const nmo_engine_block_desc_t eng_interface_blocks[] = {
     {NMO_GUID(0xf22d010a, 0xf2cd010a), "Text Display", bb_text_display, NULL, NULL},
     {NMO_GUID(0x1f5b2fe7, 0x6d355175), "3D Text", bb_text_3d, NULL, NULL},
     {NMO_GUID(0x761b7e64, 0x2b4c6911), "PushButton", bb_push_button, NULL, NULL},
+    {NMO_GUID(0x1616120f, 0x5b2f48ce), "2D Picking", bb_picking_2d, NULL, NULL},
 };
 
 nmo_status_t eng_register_interface(nmo_engine_t *engine)

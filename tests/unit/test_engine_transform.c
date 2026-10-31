@@ -23,6 +23,7 @@
 #define GUID_RAY_INTERSECTION NMO_GUID(0x671e4a87, 0x383b2912)
 #define GUID_BOX_BOX_INTERSECTION NMO_GUID(0x64154401, 0x76cf37af)
 #define GUID_PROXIMITY_VOLUME NMO_GUID(0x38571b61, 0x64cd2174)
+#define GUID_TEXTURE_SINE NMO_GUID(0x009c1208, 0x3a8d779e)
 
 #define PI_F 3.14159265f
 
@@ -742,6 +743,45 @@ TEST(engine_transform, proximity_volume_control_runs_until_off)
     fixture_end(&f);
 }
 
+TEST(engine_transform, texture_sine_runs_its_clock_and_checks_the_channel)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t mesh = fixture_create(&f, NMO_CID_MESH, "Water");
+    ASSERT_TRUE(mesh != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    /* Base UVs (channel -1) every frame; channel 0, which the mesh lacks, once */
+    nmo_object_id_t sine = target_block(&f, GUID_TEXTURE_SINE, "Sine", mesh, f.script_in);
+    nmo_object_id_t missing = target_block(&f, GUID_TEXTURE_SINE, "Missing", mesh, f.script_in);
+    nmo_object_id_t again = fixture_block(&f, GUID_NOP, "Again");
+    nmo_object_id_t after_missing = fixture_block(&f, GUID_NOP, "After Missing");
+    ASSERT_TRUE(sine != 0 && missing != 0 && again != 0 && after_missing != 0);
+    fixture_link(&f, BLOCK_OUT(&f, sine, 0), BLOCK_IN(&f, sine, 0), 1);
+    fixture_link(&f, BLOCK_OUT(&f, missing, 0), BLOCK_IN(&f, after_missing, 0), 0);
+    const float velocity = 2.0f;
+    fixture_input_value(&f, BLOCK_PIN(&f, sine, 2), &velocity, sizeof(velocity));
+    fixture_input_int(&f, BLOCK_PIN(&f, sine, 3), -1);
+    fixture_input_int(&f, BLOCK_PIN(&f, missing, 3), 0);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    /* 1 s frames at velocity 2: the clock wraps once time * velocity passes 2 pi */
+    const float expected[4] = {1.0f, 2.0f, 3.0f, 4.0f - 3.14159265f};
+    for (int frame = 0; frame < 4; frame++) {
+        ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 1000.0f));
+        float time = -1.0f;
+        const nmo_behavior_state_t *state = (const nmo_behavior_state_t *)fixture_state(&f, sine);
+        ASSERT_TRUE(state != NULL && state->local_parameters.count > 1);
+        read_value(&f, nmo_behavior_ref_array_get_id(&state->local_parameters, 1), &time, sizeof(time));
+        ASSERT_FLOAT_EQ(expected[frame], time, 0.0001f);
+    }
+    ASSERT_EQ(4u, runs(&f, sine));
+    /* Out even for a missing channel */
+    ASSERT_EQ(1u, runs(&f, after_missing));
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_transform, loaded_children_keep_their_place_under_the_parent);
 REGISTER_TEST(engine_transform, set_position_and_set_parent);
@@ -753,4 +793,5 @@ REGISTER_TEST(engine_transform, tt_extra_circles_flies_away_and_homes_in);
 REGISTER_TEST(engine_transform, ray_intersection_finds_the_nearest_face);
 REGISTER_TEST(engine_transform, box_box_intersection_tests_oriented_boxes);
 REGISTER_TEST(engine_transform, proximity_volume_control_runs_until_off);
+REGISTER_TEST(engine_transform, texture_sine_runs_its_clock_and_checks_the_channel);
 TEST_MAIN_END()

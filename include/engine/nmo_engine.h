@@ -481,6 +481,26 @@ NMO_API void nmo_engine_add_mouse_wheel(nmo_engine_t *engine, float delta);
  */
 NMO_API void nmo_engine_set_entity_under_mouse(nmo_engine_t *engine, nmo_object_id_t entity);
 
+/** What the renderer picks at a point of the window (CKPICKRESULT). */
+typedef struct nmo_engine_pick {
+    nmo_object_id_t object; /* the 3D entity hit; 0 for none */
+    float point[3];         /* where, in the object's space */
+    float normal[3];        /* the surface normal there, in the object's space */
+    float uv[2];            /* the texture coordinates there */
+    float distance;         /* from the viewpoint */
+    int32_t face;           /* the face index */
+    nmo_object_id_t sprite; /* the sprite hit; 0 for none */
+} nmo_engine_pick_t;
+
+/** The host's picking at window coordinates `x, y`; false when nothing is there. */
+typedef bool (*nmo_engine_pick_fn)(void *user_data, int32_t x, int32_t y, nmo_engine_pick_t *out);
+
+/**
+ * CKRenderContext::Pick (2D Picking). There is no renderer, so the host
+ * picks; without a picker nothing is ever under a point.
+ */
+NMO_API void nmo_engine_set_picker(nmo_engine_t *engine, nmo_engine_pick_fn pick, void *user_data);
+
 /** CKInputManager::IsKeyDown during the current frame. */
 NMO_API bool nmo_engine_is_key_down(const nmo_engine_t *engine, uint32_t key);
 /** Keys that changed since the previous frame. */

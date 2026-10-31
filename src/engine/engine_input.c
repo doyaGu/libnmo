@@ -64,6 +64,14 @@ void nmo_engine_set_entity_under_mouse(nmo_engine_t *engine, nmo_object_id_t ent
     }
 }
 
+void nmo_engine_set_picker(nmo_engine_t *engine, nmo_engine_pick_fn pick, void *user_data)
+{
+    if (engine != NULL) {
+        engine->input.pick = pick;
+        engine->input.pick_user_data = user_data;
+    }
+}
+
 nmo_object_id_t nmo_engine_entity_under_mouse(const nmo_engine_t *engine)
 {
     return engine != NULL ? engine->input.under_mouse : 0;

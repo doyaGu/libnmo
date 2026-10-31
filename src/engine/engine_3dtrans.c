@@ -11,7 +11,10 @@
 
 #include "engine_internal.h"
 
+#include "object/builtin/nmo_mesh_schemas.h"
 #include "object/nmo_class_ids.h"
+#include "type/nmo_object_guids.h"
+#include "type/nmo_type_query.h"
 
 #include <math.h>
 #include <string.h>
@@ -618,6 +621,43 @@ static int bb_set_dynamic_position(blk_t *b)
         return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
     }
     OUT_ON(b, 1);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * TT_TextureSine: the target mesh's UVs of Channel (-1: the base UVs)
+ * swayed around their saved values, X/Y Amplitude along a sine wave of
+ * the frame's time times Velocity; the time (local 1) wraps at a period.
+ * The engine keeps no UVs: the move is an effect on the mesh. A channel
+ * the mesh lacks is a parameter error (Out all the same).
+ */
+static int bb_texture_sine(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    float velocity = get_in_float(b, 2, 1.0f);
+    nmo_object_id_t mesh = nmo_engine_block_target(b);
+    nmo_object_t *object = mesh != 0 ? eng_find_object(engine, mesh) : NULL;
+    const nmo_mesh_state_t *state =
+        object != NULL ? (const nmo_mesh_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
+                             engine->types, object, CKPGUID_MESH)
+                       : NULL;
+    if (state == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    int32_t channel = get_in_int(b, 3, -1);
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    if (channel < -1 || channel >= (int32_t)state->material_channel_count) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    eng_emit(engine, NMO_ENGINE_EVENT_EFFECT, b->node, mesh, 0);
+    float time = 0.0f;
+    nmo_engine_block_get_local_value(b, 1, &time, sizeof(time));
+    time = (float)((double)engine->delta * 0.001 + (double)time);
+    if ((double)time * (double)velocity > 6.2831855) {
+        time = (float)((double)time - 6.2831855 / (double)velocity);
+    }
+    nmo_engine_block_set_local_value(b, 1, &time, sizeof(time));
     return NMO_ENGINE_BR_OK;
 }
 
@@ -1484,6 +1524,7 @@ static const nmo_engine_block_desc_t eng_3dtrans_blocks[] = {
     {NMO_GUID(0x0fd4755f, 0x7de22dc8), "TT Set Dynamic Position", bb_set_dynamic_position, NULL,
      NULL},
     {NMO_GUID(0x51bd5521, 0x672c67bf), "TT SpeedOMeter", bb_speedometer, NULL, NULL},
+    {NMO_GUID(0x009c1208, 0x3a8d779e), "TT_TextureSine", bb_texture_sine, NULL, NULL},
     {NMO_GUID(0x38571b61, 0x64cd2174), "TT ProximityVolumeControl", bb_proximity_volume_control,
      NULL, NULL},
     {NMO_GUID(0x671e4a87, 0x383b2912), "Ray Intersection", bb_ray_intersection, NULL, NULL},
