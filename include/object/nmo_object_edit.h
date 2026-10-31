@@ -115,6 +115,12 @@ NMO_API nmo_status_t nmo_object_edit_add_group_member(
     nmo_object_id_t group_id,
     nmo_object_id_t member_id);
 
+/* Take an object out of a CKGroup; NMO_ERR_NOT_FOUND when it is not a member. */
+NMO_API nmo_status_t nmo_object_edit_remove_group_member(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t group_id,
+    nmo_object_id_t member_id);
+
 NMO_API nmo_status_t nmo_object_edit_set_parameter_value(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t parameter_id,

@@ -82,6 +82,8 @@ nmo_status_t workspace_edit_push_bytes_snapshot_or_abort(
     void *target,
     size_t size);
 nmo_status_t workspace_edit_rollback_remove_array_id(nmo_workspace_edit_t *edit, void *payload);
+/* Undo a removal: put the id back at its index (the end if the array shrank). */
+nmo_status_t workspace_edit_rollback_insert_array_id(nmo_workspace_edit_t *edit, void *payload);
 nmo_status_t workspace_edit_action_remove_object(nmo_workspace_edit_t *edit, void *payload);
 nmo_status_t workspace_edit_make_object_id_action(
     nmo_workspace_edit_t *edit,

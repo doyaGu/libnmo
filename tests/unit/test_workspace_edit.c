@@ -2100,6 +2100,33 @@ TEST(workspace_edit, add_group_member_commits_and_rolls_back) {
     ASSERT_EQ(floor_id, nmo_ref_runtime_id(
         (const nmo_ref_t *)nmo_array_get(&state->object_ids, 0)));
 
+    /* Removing puts the member back where it was on rollback. */
+    nmo_object_id_t rail_id = 0;
+    create_object_or_fail(session, NMO_CID_3DOBJECT, "A01_Rail_01", &rail_id);
+    ASSERT_EQ(NMO_OK, begin_workspace_edit_for_session(
+        ctx, session, "group add rail", &edit_scope, &edit));
+    ASSERT_EQ(NMO_OK, nmo_object_edit_add_group_member(edit, group_id, rail_id));
+    ASSERT_EQ(NMO_OK, commit_workspace_edit_scope(&edit_scope));
+    ASSERT_EQ(NMO_OK, begin_workspace_edit_for_session(
+        ctx, session, "group remove rollback", &edit_scope, &edit));
+    ASSERT_EQ(NMO_OK, nmo_object_edit_remove_group_member(edit, group_id, floor_id));
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_object_edit_remove_group_member(edit, group_id, floor_id));
+    ASSERT_EQ(1u, state->object_ids.count);
+    rollback_workspace_edit_scope(&edit_scope);
+    ASSERT_EQ(2u, state->object_ids.count);
+    ASSERT_EQ(floor_id, nmo_ref_runtime_id(
+        (const nmo_ref_t *)nmo_array_get(&state->object_ids, 0)));
+    ASSERT_EQ(rail_id, nmo_ref_runtime_id(
+        (const nmo_ref_t *)nmo_array_get(&state->object_ids, 1)));
+
+    ASSERT_EQ(NMO_OK, begin_workspace_edit_for_session(
+        ctx, session, "group remove", &edit_scope, &edit));
+    ASSERT_EQ(NMO_OK, nmo_object_edit_remove_group_member(edit, group_id, floor_id));
+    ASSERT_EQ(NMO_OK, commit_workspace_edit_scope(&edit_scope));
+    ASSERT_EQ(1u, state->object_ids.count);
+    ASSERT_EQ(rail_id, nmo_ref_runtime_id(
+        (const nmo_ref_t *)nmo_array_get(&state->object_ids, 0)));
+
     nmo_session_destroy(session);
     nmo_context_release(ctx);
 }

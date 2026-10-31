@@ -182,6 +182,32 @@ nmo_status_t workspace_edit_rollback_remove_array_id(nmo_workspace_edit_t *edit,
     return NMO_OK;
 }
 
+nmo_status_t workspace_edit_rollback_insert_array_id(nmo_workspace_edit_t *edit, void *payload)
+{
+    (void)edit;
+    array_id_action_t *action = (array_id_action_t *)payload;
+    if (action == NULL || action->array == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (action->array->element_size == sizeof(nmo_behavior_ref_t)) {
+        nmo_behavior_ref_t value = nmo_behavior_ref_from_id(action->id);
+        if (action->index <= action->array->count) {
+            return nmo_array_insert(action->array, action->index, &value);
+        }
+        return nmo_array_append(action->array, &value);
+    }
+    if (action->array->element_size == sizeof(nmo_ref_t)) {
+        nmo_ref_t value = nmo_ref_from_id(action->id);
+        if (action->index <= action->array->count) {
+            return nmo_array_insert(action->array, action->index, &value);
+        }
+        return nmo_array_append(action->array, &value);
+    }
+    if (action->index <= action->array->count) {
+        return nmo_array_insert(action->array, action->index, &action->id);
+    }
+    return nmo_array_append(action->array, &action->id);
+}
 nmo_status_t workspace_edit_action_remove_object(nmo_workspace_edit_t *edit, void *payload)
 {
     object_id_action_t *action = (object_id_action_t *)payload;

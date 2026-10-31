@@ -240,6 +240,66 @@ nmo_status_t nmo_object_edit_add_group_member(
     return workspace_edit_checkpoint_release_arena(edit, &checkpoint);
 }
 
+nmo_status_t nmo_object_edit_remove_group_member(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t group_id,
+    nmo_object_id_t member_id)
+{
+    if (edit == NULL || edit->finished || group_id == 0u || member_id == 0u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    workspace_edit_checkpoint_t checkpoint = workspace_edit_checkpoint(edit);
+    nmo_object_repository_t *repo = nmo_workspace_internal_repository(edit->workspace);
+    const nmo_type_registry_t *registry = workspace_edit_type_registry(edit);
+    if (repo == NULL || registry == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    nmo_object_t *group_object = nmo_object_repository_find_by_id(repo, group_id);
+    if (group_object == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    if (!workspace_edit_session_object_derives(registry, group_object, NMO_CID_GROUP)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_group_state_t *group = (nmo_group_state_t *)workspace_edit_object_state(
+        registry, group_object, NMO_CID_GROUP, CKPGUID_GROUP);
+    if (group == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    size_t index = 0u;
+    if (nmo_beobject_script_array_find(&group->object_ids, member_id, &index) == 0) {
+        return NMO_ERR_NOT_FOUND;
+    }
+
+    nmo_status_t status = workspace_edit_checkpoint_mark_arena(edit, &checkpoint);
+    if (status != NMO_OK) {
+        return status;
+    }
+    array_id_action_t *rollback = NULL;
+    status = workspace_edit_make_array_id_action(
+        edit, &group->object_ids, member_id, index, &rollback);
+    if (status != NMO_OK) {
+        return workspace_edit_abort_arena_status(edit, checkpoint, status);
+    }
+    status = nmo_array_remove(&group->object_ids, index, NULL);
+    if (status != NMO_OK) {
+        return workspace_edit_abort_arena_status(edit, checkpoint, status);
+    }
+    status = workspace_edit_push_rollback_or_abort(
+        edit, checkpoint, workspace_edit_rollback_insert_array_id, rollback);
+    if (status != NMO_OK) {
+        /* No rollback to undo it later: put the member back now. */
+        (void)workspace_edit_rollback_insert_array_id(edit, rollback);
+        return workspace_edit_abort_arena_status(edit, checkpoint, status);
+    }
+
+    nmo_workspace_edit_mark(
+        edit,
+        NMO_WORKSPACE_EDIT_OBJECT_STATE | NMO_WORKSPACE_EDIT_REFERENCES);
+    return workspace_edit_checkpoint_release_arena(edit, &checkpoint);
+}
+
 nmo_status_t nmo_object_edit_set_fields(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t object_id,
