@@ -12,7 +12,7 @@ across the gap and one along the cell, so a wide road meets a narrow one or
 an area through an X-shaped piece, as in the originals.  Walls hang 5 below
 the outline; floors have no bottom.
 
-The materials are the levels' own (tools/ballance/level_materials.json):
+The materials are the levels' own (apps/ballance/data/level_materials.json):
 Floor_Top_Boderless where a cell is flat, Floor_Top_Profile on the slopes of
 roads, Floor_Top_Flat on the borders of areas, Floor_Top_ProfileFlat on the
 corners and where roads open into areas, Floor_Side on the walls.  Textures

@@ -15,7 +15,7 @@ $ErrorActionPreference = "Stop"
 
 function Resolve-RepoRoot {
     $scriptDir = Split-Path -Parent $PSCommandPath
-    return (Resolve-Path -LiteralPath (Join-Path $scriptDir "..\..")).Path
+    return (Resolve-Path -LiteralPath (Join-Path $scriptDir "..\..\..")).Path
 }
 
 function Resolve-ToolPath {
@@ -45,7 +45,7 @@ $repoRoot = Resolve-RepoRoot
 $nmo = Resolve-ToolPath -RepoRoot $repoRoot -RequestedPath $NmoExe
 
 if ($Manifest -eq "") {
-    $Manifest = Join-Path $repoRoot "tools\ballance\base_ballance_bb_manifest.json"
+    $Manifest = Join-Path $repoRoot "apps\ballance\data\base_ballance_bb_manifest.json"
 }
 
 $manifestPath = (Resolve-Path -LiteralPath $Manifest).Path
