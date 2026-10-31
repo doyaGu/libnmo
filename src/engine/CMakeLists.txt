@@ -1,11 +1,9 @@
 # Engine component: the behavior engine, which runs the behavior graphs of a
-# document frame by frame, and the built-in building block functions. It
-# builds on the core library (nmo); the core does not depend on it. Consumers
-# link nmo::engine (target nmo_engine).
+# document frame by frame. It builds on the core library (nmo); the core does
+# not depend on it. Consumers link nmo::engine (target nmo_engine).
 
-# core/: the CK2 runtime the graphs run in and its managers. blocks/: the
-# building block ports, a file for each DLL (Logics.dll by category), with the
-# managers a DLL brings along.
+# core/: the CK2 runtime the graphs run in, its managers and the manager hooks
+# the block packs (src/bb) add theirs through. The engine registers no blocks.
 set(NMO_ENGINE_SOURCES
     core/array.c
     core/attributes.c
@@ -30,35 +28,6 @@ set(NMO_ENGINE_SOURCES
     core/scene.c
     core/schedule.c
     core/transform.c
-    blocks/3dtransfo.c
-    blocks/addons.c
-    blocks/cameras.c
-    blocks/collisions.c
-    blocks/controllers.c
-    blocks/effects.c
-    blocks/interface.c
-    blocks/lights.c
-    blocks/materials.c
-    blocks/narratives.c
-    blocks/physics.c
-    blocks/sounds.c
-    blocks/visuals.c
-    blocks/world_environments.c
-    blocks/logics/array.c
-    blocks/logics/attribute.c
-    blocks/logics/calculator.c
-    blocks/logics/groups.c
-    blocks/logics/interpolator.c
-    blocks/logics/loops.c
-    blocks/logics/message.c
-    blocks/logics/streaming.c
-    blocks/logics/strings.c
-    blocks/logics/test.c
-    blocks/tt/database.c
-    blocks/tt/gravity.c
-    blocks/tt/interface_manager.c
-    blocks/tt/particles.c
-    blocks/tt/toolbox.c
 )
 list(TRANSFORM NMO_ENGINE_SOURCES PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/")
 

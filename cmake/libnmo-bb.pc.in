@@ -1,0 +1,10 @@
+prefix=${pcfiledir}/../..
+libdir=${prefix}/@CMAKE_INSTALL_LIBDIR@
+includedir=${prefix}/@CMAKE_INSTALL_INCLUDEDIR@
+
+Name: libnmo-bb
+Description: Building block packs for the libnmo behavior engine
+Version: @PROJECT_VERSION@
+Requires: libnmo-engine = @PROJECT_VERSION@
+Cflags: -I${includedir}
+Libs: -L${libdir} @NMO_BB_PC_LIBS@

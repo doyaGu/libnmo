@@ -207,7 +207,6 @@ TEST(engine, operation_output_is_computed_when_read)
 TEST(engine, unknown_block_stops_or_passes_the_flow)
 {
     nmo_engine_options_t options = nmo_engine_options_default();
-    options.no_builtin_blocks = true;
     for (int pass = 0; pass < 2; pass++) {
         engine_fixture_t f;
         fixture_begin(&f);
@@ -216,7 +215,7 @@ TEST(engine, unknown_block_stops_or_passes_the_flow)
         fixture_link(&f, f.script_in, BLOCK_IN(&f, a, 0), 0);
         fixture_link(&f, BLOCK_OUT(&f, a, 0), BLOCK_IN(&f, b, 0), 0);
         options.unknown_block = pass ? NMO_ENGINE_UNKNOWN_BLOCK_PASS : NMO_ENGINE_UNKNOWN_BLOCK_STOP;
-        fixture_commit(&f, &options);
+        fixture_commit_bare(&f, &options);
 
         event_log_t log = {0};
         nmo_engine_set_trace(f.engine, log_event, &log);

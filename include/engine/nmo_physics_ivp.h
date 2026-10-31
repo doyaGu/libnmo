@@ -5,7 +5,7 @@
  *
  * Built only when libnmo is configured with NMO_IVP_SOURCE_DIR (a libivp
  * source tree); the library then defines NMO_HAS_PHYSICS_IVP. Attaching it
- * gives the engine's physics blocks an IVP environment as CKIpionManager
+ * gives the physics pack's blocks an IVP environment as CKIpionManager
  * keeps one: objects, constraints, springs, forces and pushes, stepped by
  * the engine each frame, the moving entities' matrices written back.
  */

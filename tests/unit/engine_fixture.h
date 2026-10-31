@@ -14,6 +14,9 @@
 #include "test_framework.h"
 
 #include "nmo_engine.h"
+#include "bb/nmo_bb_physics.h"
+#include "bb/nmo_bb_terratools.h"
+#include "bb/nmo_bb_virtools.h"
 #include "edit/nmo_script_edit.h"
 #include "core/nmo_arena.h"
 #include "format/nmo_chunk.h"
@@ -239,17 +242,34 @@ static inline void fixture_input_int(engine_fixture_t *f, nmo_object_id_t pin, i
     fixture_input_value(f, pin, &value, sizeof(value));
 }
 
-static inline void fixture_commit(engine_fixture_t *f, const nmo_engine_options_t *options)
+/* Make the engine, with the block packs registered or none */
+static inline void fixture_make_engine(engine_fixture_t *f, const nmo_engine_options_t *options,
+                                       bool packs)
 {
     ASSERT_EQ(NMO_OK, nmo_script_edit_commit(f->tx));
     f->tx = NULL;
     ASSERT_EQ(NMO_OK, nmo_session_borrow_document(f->session, &f->document));
     ASSERT_EQ(NMO_OK, nmo_workspace_create(f->ctx, f->document, &f->workspace));
     ASSERT_EQ(NMO_OK, nmo_engine_create(f->workspace, options, &f->engine));
+    if (packs) {
+        ASSERT_EQ(NMO_OK, nmo_bb_virtools_register(f->engine));
+        ASSERT_EQ(NMO_OK, nmo_bb_physics_register(f->engine));
+        ASSERT_EQ(NMO_OK, nmo_bb_terratools_register(f->engine));
+    }
     for (size_t i = 0; i < f->value_count; i++) {
         ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f->engine, f->values[i].param,
                                                      f->values[i].bytes, f->values[i].size));
     }
+}
+
+static inline void fixture_commit(engine_fixture_t *f, const nmo_engine_options_t *options)
+{
+    fixture_make_engine(f, options, true);
+}
+
+static inline void fixture_commit_bare(engine_fixture_t *f, const nmo_engine_options_t *options)
+{
+    fixture_make_engine(f, options, false);
 }
 
 static inline void fixture_end(engine_fixture_t *f)

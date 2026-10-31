@@ -15,7 +15,7 @@ if(NOT SOURCE_DIR)
 endif()
 
 # Lowest layer first. Must match the README layer table.
-set(layers core io format type extension object export session runtime document chunk behavior engine edit lua project)
+set(layers core io format type extension object export session runtime document chunk behavior engine bb edit lua project)
 
 file(STRINGS "${SOURCE_DIR}/tests/layering_allowlist.txt" allowlist_lines)
 set(allowlist "")
@@ -70,14 +70,15 @@ foreach(source_file IN LISTS source_files)
 endforeach()
 
 # The core's public headers must not pull in the optional components: engine/,
-# edit/, lua/ and project/ headers (and Lua's own lua.h) belong to nmo_engine,
-# nmo_edit, nmo_lua and nmo_project only. The components may include each other's
-# headers downward: engine and edit, then lua and project on top of edit.
+# bb/, edit/, lua/ and project/ headers (and Lua's own lua.h) belong to
+# nmo_engine, the block packs (nmo_bb_*), nmo_edit, nmo_lua and nmo_project
+# only. The components may include each other's headers downward: engine and
+# edit, the packs on top of engine, then lua and project on top of edit.
 file(GLOB_RECURSE public_headers "${SOURCE_DIR}/include/*.h")
 set(component_violations "")
 foreach(header IN LISTS public_headers)
     file(RELATIVE_PATH relative_path "${SOURCE_DIR}" "${header}")
-    if(relative_path MATCHES "^include/(engine|edit|lua|project)/"
+    if(relative_path MATCHES "^include/(engine|bb|edit|lua|project)/"
        OR relative_path STREQUAL "include/nmo_engine.h"
        OR relative_path STREQUAL "include/nmo_edit.h"
        OR relative_path STREQUAL "include/nmo_lua.h"
@@ -85,7 +86,7 @@ foreach(header IN LISTS public_headers)
         continue()
     endif()
     file(STRINGS "${header}" include_lines
-        REGEX "^[ \t]*#[ \t]*include[ \t]*\"(engine|edit|lua|project)/")
+        REGEX "^[ \t]*#[ \t]*include[ \t]*\"(engine|bb|edit|lua|project)/")
     foreach(include_line IN LISTS include_lines)
         string(APPEND component_violations "${relative_path}: ${include_line}\n")
     endforeach()
@@ -94,7 +95,51 @@ if(component_violations)
     message(FATAL_ERROR
         "Layering audit failed: core public header includes an optional component\n"
         "${component_violations}"
-        "Move the declaration into include/engine, include/edit, include/lua or include/project, or forward-declare the type.\n")
+        "Move the declaration into include/engine, include/bb, include/edit, include/lua or include/project, or forward-declare the type.\n")
+endif()
+
+# The engine knows no block pack: its public headers include no bb/ header
+# (the src/ check above covers its sources). Each pack builds on the engine
+# through src/bb/bb_sdk.h and knows no other pack: a file of src/bb/<pack>/
+# includes neither another pack's files nor its public header.
+set(pack_violations "")
+file(GLOB engine_headers "${SOURCE_DIR}/include/engine/*.h" "${SOURCE_DIR}/include/nmo_engine.h")
+foreach(header IN LISTS engine_headers)
+    file(RELATIVE_PATH relative_path "${SOURCE_DIR}" "${header}")
+    file(STRINGS "${header}" include_lines REGEX "^[ \t]*#[ \t]*include[ \t]*\"bb/")
+    foreach(include_line IN LISTS include_lines)
+        string(APPEND pack_violations "${relative_path}: ${include_line}\n")
+    endforeach()
+endforeach()
+file(GLOB pack_dirs LIST_DIRECTORIES true "${SOURCE_DIR}/src/bb/*")
+set(packs "")
+foreach(pack_dir IN LISTS pack_dirs)
+    if(IS_DIRECTORY "${pack_dir}")
+        get_filename_component(pack "${pack_dir}" NAME)
+        list(APPEND packs "${pack}")
+    endif()
+endforeach()
+foreach(pack IN LISTS packs)
+    file(GLOB_RECURSE pack_files "${SOURCE_DIR}/src/bb/${pack}/*.c" "${SOURCE_DIR}/src/bb/${pack}/*.h")
+    foreach(pack_file IN LISTS pack_files)
+        file(RELATIVE_PATH relative_path "${SOURCE_DIR}" "${pack_file}")
+        file(STRINGS "${pack_file}" include_lines REGEX "^[ \t]*#[ \t]*include[ \t]*\"")
+        foreach(include_line IN LISTS include_lines)
+            foreach(other IN LISTS packs)
+                if(NOT other STREQUAL pack AND
+                   (include_line MATCHES "\"bb/nmo_bb_${other}\\.h\"" OR
+                    include_line MATCHES "\"(\\.\\./)+${other}/"))
+                    string(APPEND pack_violations "${relative_path} (${pack}): ${include_line}\n")
+                endif()
+            endforeach()
+        endforeach()
+    endforeach()
+endforeach()
+if(pack_violations)
+    message(FATAL_ERROR
+        "Layering audit failed: the engine includes a block pack, or a pack another pack\n"
+        "${pack_violations}"
+        "Keep the engine free of packs; share what packs need through the engine (src/engine).\n")
 endif()
 
 # Report allowlist entries that no longer exist so the list stays honest.

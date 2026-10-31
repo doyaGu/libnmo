@@ -147,39 +147,6 @@ nmo_engine_options_t nmo_engine_options_default(void)
     return options;
 }
 
-/* The built-in blocks, by the DLL they come from */
-static const eng_register_fn eng_block_sets[] = {
-    eng_register_logics_streaming,
-    eng_register_logics_test,
-    eng_register_logics_calculator,
-    eng_register_logics_interpolator,
-    eng_register_logics_loops,
-    eng_register_logics_message,
-    eng_register_logics_array,
-    eng_register_logics_groups,
-    eng_register_logics_strings,
-    eng_register_logics_attribute,
-    eng_register_narratives,
-    eng_register_effects,
-    eng_register_cameras,
-    eng_register_lights,
-    eng_register_world_environments,
-    eng_register_controllers,
-    eng_register_interface,
-    eng_register_sounds,
-    eng_register_materials,
-    eng_register_visuals,
-    eng_register_addons,
-    eng_register_3dtransfo,
-    eng_register_collisions,
-    eng_register_physics,
-    eng_register_tt_database,
-    eng_register_tt_interface_manager,
-    eng_register_tt_toolbox,
-    eng_register_tt_gravity,
-    eng_register_tt_particles,
-};
-
 nmo_status_t nmo_engine_create(nmo_workspace_t *workspace,
                                const nmo_engine_options_t *options,
                                nmo_engine_t **out_engine)
@@ -220,11 +187,6 @@ nmo_status_t nmo_engine_create(nmo_workspace_t *workspace,
     nmo_status_t status = eng_module_open(engine, workspace, NULL, NULL, NULL);
     if (status == NMO_OK) {
         status = eng_load_range(engine, 0, 0u, 0u);
-    }
-    for (size_t i = 0; status == NMO_OK && !engine->options.no_builtin_blocks &&
-                       i < sizeof(eng_block_sets) / sizeof(eng_block_sets[0]);
-         i++) {
-        status = eng_block_sets[i](engine);
     }
     if (status != NMO_OK) {
         nmo_engine_destroy(engine);

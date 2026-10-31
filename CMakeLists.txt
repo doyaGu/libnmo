@@ -451,6 +451,7 @@ install(DIRECTORY include/
 set(NMO_THIRD_PARTY_DOCDIR "${CMAKE_INSTALL_DOCDIR}/third-party")
 include(cmake/NmoEmbedText.cmake)
 add_subdirectory(src/engine)
+add_subdirectory(src/bb)
 set(NMO_IVP_SOURCE_DIR "" CACHE PATH "libivp source tree: builds the libivp physics provider (nmo_physics_ivp)")
 if(NMO_IVP_SOURCE_DIR)
     add_subdirectory(src/physics_ivp)

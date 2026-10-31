@@ -82,7 +82,8 @@ add_executable(nmo_cli
     commands/nmo_cmd_completion.c
 )
 set_target_properties(nmo_cli PROPERTIES OUTPUT_NAME nmo)
-target_link_libraries(nmo_cli PRIVATE nmo_project nmo_lua nmo_edit nmo_engine nmo yyjson)
+target_link_libraries(nmo_cli PRIVATE nmo_project nmo_lua nmo_edit nmo_bb_virtools nmo_bb_physics
+                      nmo_bb_terratools nmo_engine nmo yyjson)
 if(TARGET nmo_physics_ivp)
     target_link_libraries(nmo_cli PRIVATE nmo_physics_ivp)
 endif()

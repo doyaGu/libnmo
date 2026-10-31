@@ -18,6 +18,7 @@
  */
 
 #include "engine/nmo_physics_ivp.h"
+#include "bb/nmo_bb_physics.h"
 
 #include <ivp/builder/ivp_build_ledge.h>
 #include <ivp/builder/ivp_build_ledge_soup.h>

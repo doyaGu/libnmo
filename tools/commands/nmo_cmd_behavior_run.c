@@ -11,6 +11,9 @@
 #include "../nmo_opt.h"
 
 #include "nmo_engine.h"
+#include "bb/nmo_bb_physics.h"
+#include "bb/nmo_bb_terratools.h"
+#include "bb/nmo_bb_virtools.h"
 #include "behavior/nmo_behavior_view.h"
 #include "behavior/nmo_script_model.h"
 
@@ -819,9 +822,20 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
 
     nmo_engine_t *engine = NULL;
     nmo_status_t status = nmo_engine_create(ctx->workspace, &options, &engine);
+    /* The block packs, as a player loads the building block DLLs */
+    if (status == NMO_OK) {
+        status = nmo_bb_virtools_register(engine);
+    }
+    if (status == NMO_OK) {
+        status = nmo_bb_physics_register(engine);
+    }
+    if (status == NMO_OK) {
+        status = nmo_bb_terratools_register(engine);
+    }
     if (status != NMO_OK) {
         fprintf(stderr, "Error: Failed to create the behavior engine (%s)\n",
                 nmo_error_string(status));
+        nmo_engine_destroy(engine);
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 #ifdef NMO_HAS_PHYSICS_IVP

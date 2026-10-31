@@ -11,6 +11,6 @@ add_subdirectory("${NMO_IVP_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/libivp" EXCLUDE_FR
 
 add_library(nmo_physics_ivp STATIC "${CMAKE_CURRENT_SOURCE_DIR}/physics_ivp.c")
 target_compile_options(nmo_physics_ivp PRIVATE ${_nmo_ivp_options})
-target_link_libraries(nmo_physics_ivp PUBLIC nmo_engine PRIVATE ivp)
+target_link_libraries(nmo_physics_ivp PUBLIC nmo_bb_physics PRIVATE ivp)
 target_compile_definitions(nmo_physics_ivp PUBLIC NMO_HAS_PHYSICS_IVP=1)
 add_library(nmo::physics_ivp ALIAS nmo_physics_ivp)
