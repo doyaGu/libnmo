@@ -237,6 +237,54 @@ TEST(engine_copy, object_copy_joins_groups_and_delete_leaves_them)
     fixture_end(&f);
 }
 
+TEST(engine_copy, unique_name_copies_take_the_next_number)
+{
+    save_template_file();
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t first = fixture_block(&f, GUID_OBJECT_COPY, "Copy");
+    nmo_object_id_t second = fixture_block(&f, GUID_OBJECT_COPY, "Copy Again");
+    ASSERT_TRUE(first != 0 && second != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, first, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, first, 0), BLOCK_IN(&f, second, 0), 0);
+    nmo_object_id_t options[2] = {0}, original_pins[2] = {0};
+    const nmo_object_id_t copiers[2] = {first, second};
+    for (int i = 0; i < 2; i++) {
+        ASSERT_EQ(NMO_OK, nmo_script_edit_ensure_input_parameter_source(
+                              f.tx, BLOCK_PIN(&f, copiers[i], 0), &options[i]));
+        ASSERT_EQ(NMO_OK, nmo_script_edit_ensure_input_parameter_source(
+                              f.tx, BLOCK_PIN(&f, copiers[i], 1), &original_pins[i]));
+    }
+    fixture_commit(&f, NULL);
+    /* CKObject's name with CK_DEPENDENCIES_COPY_OBJECT_UNIQUENAME, the children copied too */
+    const uint32_t pairs[] = {NMO_CID_OBJECT, 3u, NMO_CID_3DENTITY, 7u};
+    save_dependencies(&f, options[0], pairs, 2u);
+    save_dependencies(&f, options[1], pairs, 2u);
+    nmo_engine_set_file_resolver(f.engine, resolve_scratch, NULL);
+    int32_t file = -1;
+    ASSERT_EQ(NMO_OK, nmo_engine_load(f.engine, "template.nmo", true, &file));
+    nmo_object_id_t original = loaded_named(&f, file, "Template");
+    ASSERT_TRUE(original != 0);
+    for (int i = 0; i < 2; i++) {
+        ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, original_pins[i], &original,
+                                                     sizeof(original)));
+    }
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    uint32_t copy1 = 0, copy2 = 0;
+    read_value(&f, BLOCK_POUT(&f, first, 0), &copy1, sizeof(copy1));
+    read_value(&f, BLOCK_POUT(&f, second, 0), &copy2, sizeof(copy2));
+    ASSERT_TRUE(copy1 != 0 && copy2 != 0 && copy1 != copy2);
+    ASSERT_STR_EQ("Template", nmo_engine_object_name(f.engine, original));
+    ASSERT_STR_EQ("Template001", nmo_engine_object_name(f.engine, copy1));
+    ASSERT_STR_EQ("Template002", nmo_engine_object_name(f.engine, copy2));
+    /* The scripts keep their names: CKBehavior's default options skip the check */
+    ASSERT_TRUE(script_named(&f, "Template Script", 0) != 0);
+    ASSERT_EQ(original, nmo_engine_object_named(f.engine, "Template", 0));
+    fixture_end(&f);
+}
+
 /* The source of the block's target, made for it */
 static nmo_object_id_t target_source(engine_fixture_t *f, nmo_object_id_t block)
 {
@@ -394,6 +442,7 @@ TEST(engine_copy, initial_conditions_are_restored)
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_copy, copies_take_scripts_children_and_the_original_state);
 REGISTER_TEST(engine_copy, object_copy_joins_groups_and_delete_leaves_them);
+REGISTER_TEST(engine_copy, unique_name_copies_take_the_next_number);
 REGISTER_TEST(engine_copy, object_delete_takes_what_its_options_delete);
 REGISTER_TEST(engine_copy, delete_dynamic_objects_takes_the_dynamic_ones);
 REGISTER_TEST(engine_copy, initial_conditions_are_restored);

@@ -40,6 +40,8 @@
 #include "type/nmo_type_query.h"
 #include "../../runtime/runtime_internal.h"
 
+#include <ctype.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -651,6 +653,100 @@ static nmo_object_id_t *repository_ids(nmo_object_repository_t *repo, size_t *ou
     return ids;
 }
 
+/* Whether a class's own default options (CKClassRegisterDefaultOptions) have
+   CK_GENERALOPTIONS_NODUPLICATENAMECHECK or _AUTOMATICUSECURRENT: its copies keep their names */
+static bool class_keeps_copy_names(uint32_t class_id)
+{
+    switch (class_id) {
+    case NMO_CID_PARAMETERIN: case NMO_CID_PARAMETEROUT: case NMO_CID_PARAMETEROPERATION:
+    case NMO_CID_BEHAVIORLINK: case NMO_CID_BEHAVIOR: case NMO_CID_BEHAVIORIO:
+    case NMO_CID_KINEMATICCHAIN: case NMO_CID_OBJECTANIMATION: case NMO_CID_LEVEL:
+    case NMO_CID_PARAMETERLOCAL: case NMO_CID_PARAMETER: case NMO_CID_INTERFACEOBJECTMANAGER:
+    case NMO_CID_LAYER:
+        return true;
+    default:
+        return false;
+    }
+}
+
+/*
+ * CKContext::GetObjectSecureName: the name without three trailing digits,
+ * then the next number (three digits at least) after the highest one the
+ * objects of exactly that class carry after it, or the name as it is when
+ * none starts with it. A heap string; NULL out of memory.
+ */
+static char *secure_name(const nmo_engine_t *engine, const char *name, uint32_t class_id)
+{
+    size_t length = strlen(name);
+    int highest = -1;
+    if (length > 3 && isdigit((unsigned char)name[length - 3]) &&
+        isdigit((unsigned char)name[length - 2]) && isdigit((unsigned char)name[length - 1])) {
+        highest = atoi(name + length - 3);
+        length -= 3;
+    }
+    for (size_t m = 0; m < engine->modules.count; m++) {
+        const eng_module_t *module = &engine->modules.data[m];
+        size_t count = 0;
+        nmo_object_t **objects = nmo_object_repository_get_all(module->repo, &count);
+        for (size_t i = 0; objects != NULL && i < count; i++) {
+            const char *other = nmo_object_get_name(objects[i]);
+            nmo_object_id_t local = nmo_object_get_id(objects[i]);
+            if (other == NULL || (uint32_t)nmo_object_get_class_id(objects[i]) != class_id ||
+                !eng_module_has(module, local) ||
+                eng_map_get(&engine->destroyed, eng_module_id(module, local)) >= 0 ||
+                strncmp(other, name, length) != 0) {
+                continue;
+            }
+            int number = other[length] != '\0' ? atoi(other + length) : 0;
+            highest = number > highest ? number : highest;
+        }
+    }
+    int size = highest < 0 ? (int)length : snprintf(NULL, 0, "%.*s%03d", (int)length, name, highest + 1);
+    char *secure = size >= 0 ? (char *)malloc((size_t)size + 1u) : NULL;
+    if (secure != NULL && highest < 0) {
+        memcpy(secure, name, length);
+        secure[length] = '\0';
+    } else if (secure != NULL) {
+        snprintf(secure, (size_t)size + 1u, "%.*s%03d", (int)length, name, highest + 1);
+    }
+    return secure;
+}
+
+/*
+ * CKObject::Copy's name: the original's with CK_DEPENDENCIES_COPY_OBJECT_NAME
+ * (made unique with CK_DEPENDENCIES_COPY_OBJECT_UNIQUENAME, unless the class
+ * keeps names), else none but for shared names and parameter ins and outs.
+ * The dependencies read are CKObject's, whatever the copy's class.
+ */
+static nmo_status_t name_copy(nmo_engine_t *engine, nmo_object_repository_t *repo,
+                              nmo_object_id_t local, const eng_dependencies_t *deps)
+{
+    nmo_object_t *object = nmo_object_repository_find_by_id(repo, local);
+    const char *name = object != NULL ? nmo_object_get_name(object) : NULL;
+    if (name == NULL) {
+        return NMO_OK;
+    }
+    uint32_t class_id = (uint32_t)nmo_object_get_class_id(object);
+    uint32_t dependencies = class_dependencies(deps, NMO_CID_OBJECT);
+    if ((dependencies & 1u) == 0) {
+        if ((nmo_object_get_flags(object) & CK_OBJECT_NAMESHARED) != 0 ||
+            class_id == NMO_CID_PARAMETEROUT || class_id == NMO_CID_PARAMETERIN) {
+            return NMO_OK;
+        }
+        return nmo_object_repository_rename(repo, local, NULL);
+    }
+    if (class_keeps_copy_names(class_id) || (dependencies & 2u) == 0) {
+        return NMO_OK;
+    }
+    char *secure = secure_name(engine, name, class_id);
+    if (secure == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    nmo_status_t status = nmo_object_repository_rename(repo, local, secure);
+    free(secure);
+    return status;
+}
+
 /*
  * Copy the originals of one session with what their dependencies bring;
  * `out_copies[i]` gets the copy of `ids[i]` for each of them in the session.
@@ -718,6 +814,12 @@ static nmo_status_t copy_session(nmo_engine_t *engine, int32_t source, const nmo
         goto done;
     }
     status = eng_load_range(engine, module, first, last);
+    if (status != NMO_OK) {
+        goto done;
+    }
+    for (size_t i = 0; status == NMO_OK && i < n; i++) {
+        status = name_copy(engine, engine->modules.data[module].repo, locals[i], deps);
+    }
     if (status != NMO_OK) {
         goto done;
     }
