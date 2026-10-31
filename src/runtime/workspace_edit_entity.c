@@ -9,6 +9,7 @@
 #include "object/nmo_class_ids.h"
 #include "type/nmo_object_guids.h"
 #include "object/builtin/nmo_character_schemas.h"
+#include "object/builtin/nmo_object_schemas.h"
 #include "object/builtin/nmo_curve_schemas.h"
 #include "object/builtin/nmo_sprite3d_schemas.h"
 #include "object/builtin/nmo_targetcamera_schemas.h"
@@ -179,6 +180,65 @@ nmo_status_t nmo_entity_edit_set_parent(
     nmo_workspace_edit_mark(
         edit,
         NMO_WORKSPACE_EDIT_OBJECT_STATE | NMO_WORKSPACE_EDIT_REFERENCES);
+    return NMO_OK;
+}
+
+nmo_status_t nmo_entity_edit_set_visible(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t object_id,
+    bool visible)
+{
+    if (edit == NULL || edit->finished || object_id == 0u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_object_repository_t *repo =
+        nmo_workspace_internal_repository(edit->workspace);
+    if (repo == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    nmo_object_t *object = nmo_object_repository_find_by_id(repo, object_id);
+    if (object == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    const nmo_type_registry_t *registry = workspace_edit_type_registry(edit);
+    if (!workspace_edit_object_is_entity_target(registry, object)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_3dentity_state_t *state =
+        workspace_edit_entity_state_for_object(registry, object);
+    if (state == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    nmo_status_t status =
+        nmo_workspace_edit_snapshot_bytes(edit, state, sizeof(*state));
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    /* CK3dEntity::Show sets both: the CKObject flag (what CKObject::IsVisible
+       and a save read) and the moveable one. */
+    nmo_object_state_t *object_state = (nmo_object_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(registry, object, CKPGUID_OBJECT);
+    if (object_state == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    status = nmo_workspace_edit_snapshot_bytes(
+        edit, &object_state->visibility_flags, sizeof(object_state->visibility_flags));
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    if (visible) {
+        state->moveable_flags |= (uint32_t)VX_MOVEABLE_VISIBLE;
+        object_state->visibility_flags = NMO_CKOBJECT_VISIBLE;
+    } else {
+        state->moveable_flags &= ~(uint32_t)VX_MOVEABLE_VISIBLE;
+        object_state->visibility_flags = 0u;
+    }
+    nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_OBJECT_STATE);
     return NMO_OK;
 }
 

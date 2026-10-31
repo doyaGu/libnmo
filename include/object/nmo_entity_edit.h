@@ -33,6 +33,12 @@ NMO_API nmo_status_t nmo_entity_edit_set_parent(
     nmo_object_id_t object_id,
     nmo_object_id_t parent_id);
 
+/* Show or hide a 3D entity (VX_MOVEABLE_VISIBLE, CK3dEntity::Show). */
+NMO_API nmo_status_t nmo_entity_edit_set_visible(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t object_id,
+    bool visible);
+
 NMO_API nmo_status_t nmo_entity_edit_set_world_matrix(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t object_id,

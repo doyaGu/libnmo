@@ -7,6 +7,7 @@
 #include "object/builtin/nmo_character_schemas.h"
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_light_schemas.h"
+#include "object/builtin/nmo_object_schemas.h"
 #include "object/builtin/nmo_targetcamera_schemas.h"
 #include "object/builtin/nmo_targetlight_schemas.h"
 #include "object/nmo_class_ids.h"
@@ -503,10 +504,65 @@ TEST(entity_edit, setting_a_target_maintains_the_entity_target_flags)
     entity_edit_fixture_destroy(&fixture);
 }
 
+static void assert_entity_visible(entity_edit_fixture_t *fixture, nmo_object_id_t id, bool visible)
+{
+    nmo_object_t *object = find_object(fixture->document, id);
+    ASSERT_NOT_NULL(object);
+    const nmo_3dentity_state_t *entity = (const nmo_3dentity_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            nmo_context_get_type_registry(fixture->ctx), object, CKPGUID_3DENTITY);
+    const nmo_object_state_t *base = (const nmo_object_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            nmo_context_get_type_registry(fixture->ctx), object, CKPGUID_OBJECT);
+    ASSERT_NOT_NULL(entity);
+    ASSERT_NOT_NULL(base);
+    ASSERT_EQ(visible, (entity->moveable_flags & (uint32_t)VX_MOVEABLE_VISIBLE) != 0u);
+    ASSERT_EQ(visible, (base->visibility_flags & NMO_CKOBJECT_VISIBLE) != 0u);
+}
+
+TEST(entity_edit, sets_visible)
+{
+    entity_edit_fixture_t fixture = {0};
+    entity_edit_fixture_create(&fixture);
+
+    nmo_workspace_edit_t *edit = NULL;
+    nmo_object_id_t entity_id = 0;
+    nmo_object_id_t material_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_begin(fixture.workspace, "hide", &edit));
+    ASSERT_EQ(NMO_OK,
+              nmo_object_edit_create(
+                  edit,
+                  &(nmo_object_create_desc_t){.class_id = NMO_CID_3DOBJECT, .name = "Quader01"},
+                  &entity_id));
+    ASSERT_EQ(NMO_OK,
+              nmo_object_edit_create(
+                  edit,
+                  &(nmo_object_create_desc_t){.class_id = NMO_CID_MATERIAL, .name = "Material"},
+                  &material_id));
+    ASSERT_EQ(NMO_OK, nmo_entity_edit_set_visible(edit, entity_id, false));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, nmo_entity_edit_set_visible(edit, material_id, false));
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(edit));
+    assert_entity_visible(&fixture, entity_id, false);
+
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_begin(fixture.workspace, "show rollback", &edit));
+    ASSERT_EQ(NMO_OK, nmo_entity_edit_set_visible(edit, entity_id, true));
+    assert_entity_visible(&fixture, entity_id, true);
+    nmo_workspace_edit_rollback(edit);
+    assert_entity_visible(&fixture, entity_id, false);
+
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_begin(fixture.workspace, "show", &edit));
+    ASSERT_EQ(NMO_OK, nmo_entity_edit_set_visible(edit, entity_id, true));
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(edit));
+    assert_entity_visible(&fixture, entity_id, true);
+
+    entity_edit_fixture_destroy(&fixture);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(entity_edit, sets_parent);
 REGISTER_TEST(entity_edit, character_without_root_takes_its_first_child);
 REGISTER_TEST(entity_edit, sets_world_matrix);
+REGISTER_TEST(entity_edit, sets_visible);
 REGISTER_TEST(entity_edit, edits_explicit_entity_types);
 REGISTER_TEST(entity_edit, light_leaving_spot_resets_cones);
 REGISTER_TEST(entity_edit, setting_a_target_maintains_the_entity_target_flags);
