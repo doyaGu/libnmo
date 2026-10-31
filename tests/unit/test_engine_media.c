@@ -1,6 +1,7 @@
 #include "engine_fixture.h"
 
 #include "engine/nmo_engine_render.h"
+#include "object/builtin/nmo_animation_schemas.h"
 #include "object/builtin/nmo_sound_schemas.h"
 
 #include <stdio.h>
@@ -411,8 +412,24 @@ TEST(engine_media, play_animation_progresses_over_its_duration)
 {
     engine_fixture_t f;
     fixture_begin_document(&f);
+    nmo_object_id_t entity = fixture_create(&f, NMO_CID_3DENTITY, "Entity");
     nmo_object_id_t animation = fixture_create(&f, NMO_CID_OBJECTANIMATION, "Animation");
-    ASSERT_TRUE(animation != 0);
+    ASSERT_TRUE(entity != 0 && animation != 0);
+    /* Over 10 frames: from the origin to x 10, turning a quarter about Y */
+    static float positions[] = {0.0f, 0.0f, 0.0f, 0.0f, 10.0f, 10.0f, 0.0f, 0.0f};
+    static float rotations[] = {0.0f,  0.0f, 0.0f,        0.0f, 1.0f,
+                                10.0f, 0.0f, 0.70710678f, 0.0f, 0.70710678f};
+    static nmo_objanim_controller_t controllers[] = {
+        {0x637c4301u, 2, sizeof(positions), positions}, /* linear position */
+        {0x49ed4002u, 2, sizeof(rotations), rotations}, /* linear rotation */
+    };
+    nmo_objectanimation_state_t *state = (nmo_objectanimation_state_t *)fixture_state(&f, animation);
+    ASSERT_NOT_NULL(state);
+    state->entity = nmo_ref_from_id(entity);
+    state->has_length = 1;
+    state->length = 10.0f;
+    state->controller_count = 2;
+    state->controllers = controllers;
     f.script_id = fixture_add_script(&f, "Script", &f.script_in);
     fixture_begin_edit(&f);
     nmo_object_id_t play = fixture_block(&f, GUID_PLAY_ANIMATION, "Play");
@@ -433,6 +450,12 @@ TEST(engine_media, play_animation_progresses_over_its_duration)
     float progression = 0.0f;
     read_value(&f, BLOCK_POUT(&f, play, 0), &progression, sizeof(progression));
     ASSERT_FLOAT_EQ(0.5f, progression, 0.0001f);
+    /* Halfway: at x 5, turned an eighth (the rotation's first row is (cos 45, 0, sin 45)) */
+    float world[16];
+    ASSERT_TRUE(nmo_engine_entity_world_matrix(f.engine, entity, world));
+    ASSERT_FLOAT_EQ(5.0f, world[12], 0.0001f);
+    ASSERT_FLOAT_EQ(0.70710678f, world[0], 0.0001f);
+    ASSERT_FLOAT_EQ(0.70710678f, world[2], 0.0001f);
     for (int frame = 3; frame < 5; frame++) {
         ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 25.0f));
     }

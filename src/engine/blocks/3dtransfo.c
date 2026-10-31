@@ -28,11 +28,23 @@
  * Play Animation 3D Entity (PlayAnimEntity): the animation's progression
  * from 0 to 1 over Duration, One Loop Played each time it passes 1; without
  * Loop it stays at 1 and stops. The animation takes that step through the
- * progression curve (an effect).
+ * progression curve (A_CurveInterpolation).
  */
+/* A_CurveInterpolation: the step out, then the animation at the curve's Y of it */
+static void play_animation_step(blk_t *b, nmo_object_id_t animation, float step)
+{
+    nmo_engine_block_set_local_value(b, 0, &step, sizeof(step));
+    nmo_engine_block_set_output_value(b, 0, &step, sizeof(step));
+    size_t curve_size = 0;
+    const void *curve = nmo_engine_block_input_data(b, 2, &curve_size);
+    float y = curve != NULL ? nmo_engine_curve_y(curve, curve_size, step) : step;
+    eng_object_animation_set_step(b->engine, animation, y);
+}
+
 static int bb_play_animation(blk_t *b)
 {
-    if (nmo_engine_block_get_input_object(b, 0) == 0) {
+    nmo_object_id_t animation = nmo_engine_block_get_input_object(b, 0);
+    if (animation == 0) {
         return NMO_ENGINE_BR_PARAMETERERROR;
     }
     float duration = 5000.0f;
@@ -67,8 +79,7 @@ static int bb_play_animation(blk_t *b)
             result = NMO_ENGINE_BR_OK;
         }
     }
-    nmo_engine_block_set_local_value(b, 0, &step, sizeof(step));
-    nmo_engine_block_set_output_value(b, 0, &step, sizeof(step));
+    play_animation_step(b, animation, step);
     return result;
 }
 
