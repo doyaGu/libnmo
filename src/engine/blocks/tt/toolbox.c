@@ -10,6 +10,9 @@
  */
 
 #include "../../engine_block_util.h"
+#include "type/nmo_type_query.h"
+#include "type/nmo_object_guids.h"
+#include "object/builtin/nmo_3dentity_schemas.h"
 
 #include "object/nmo_class_ids.h"
 
@@ -180,13 +183,14 @@ static int bb_linear_volume(blk_t *b)
 }
 
 /*
- * TT_ReflectionMapping: the target's mesh mapped as the camera sees it
- * reflected (its UVs, which the engine does not draw): Off ends it (Exit
- * Off), On reports it (Exit On), and it stays active while the target has
- * a mesh.
+ * TT_ReflectionMapping: each frame the target's current mesh gets the UVs of
+ * the camera's view reflected at each vertex (its base UVs, whatever the
+ * MatChannel input says, as the DLL does): Off ends it (Exit Off), On
+ * reports it (Exit On), and it stays active while the target has a mesh.
  */
 static int bb_reflection_mapping(blk_t *b)
 {
+    nmo_engine_t *engine = b->engine;
     if (nmo_engine_block_is_input_active(b, 1)) {
         IN_OFF(b, 1);
         OUT_ON(b, 1);
@@ -196,15 +200,38 @@ static int bb_reflection_mapping(blk_t *b)
     if (nmo_engine_block_is_input_active(b, 0)) {
         IN_OFF(b, 0);
         OUT_ON(b, 0);
-        eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, target, 0);
+        eng_emit(engine, NMO_ENGINE_EVENT_EFFECT, b->node, target, 0);
     }
-    int32_t entity = target != 0 ? eng_entity_index(b->engine, target) : -1;
-    if (target == 0) {
+    int32_t entity = target != 0 ? eng_entity_index(engine, target) : -1;
+    if (entity < 0) {
         return NMO_ENGINE_BR_OWNERERROR;
     }
-    return entity >= 0 && eng_entity_has_mesh(b->engine, entity) ? NMO_ENGINE_BR_ACTIVATENEXTFRAME
-                                                                  : NMO_ENGINE_BR_OK;
+    const nmo_3dentity_state_t *state =
+        (const nmo_3dentity_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
+            engine->types, eng_find_object(engine, target), CKPGUID_3DENTITY);
+    eng_mesh_copy_t *mesh =
+        state != NULL ? eng_mesh_copy(engine, eng_object_ref(engine, target, &state->current_mesh)) : NULL;
+    nmo_engine_mesh_t desc;
+    if (mesh == NULL || !nmo_engine_mesh(engine, mesh->mesh, &desc)) {
+        return NMO_ENGINE_BR_OK;
+    }
+    int32_t camera = input_entity(b, 1);
+    eng_vector_t eye = camera >= 0 ? eng_entity_position(engine, camera, entity)
+                                   : (eng_vector_t){0.0f, 0.0f, 0.0f};
+    for (int32_t i = 0; i < desc.vertex_count; i++) {
+        nmo_vertex_t *v = &mesh->vertices[i];
+        eng_vector_t e = {eye.x - v->position.x, eye.y - v->position.y, eye.z - v->position.z};
+        eng_vector_normalize(&e);
+        float d = 2.0f * (v->normal.x * e.x + v->normal.y * e.y + v->normal.z * e.z);
+        eng_vector_t r = {d * v->normal.x - e.x, d * v->normal.y - e.y, d * v->normal.z - e.z};
+        eng_vector_normalize(&r);
+        v->uv.x = (r.x + 1.0f) * 0.5f;
+        v->uv.y = (r.z + 1.0f) * 0.5f;
+    }
+    mesh->version = ++engine->render.mesh_version;
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
 }
+
 
 /*
  * TT_PreloadTextures: each texture not in video memory put there; the
@@ -229,18 +256,49 @@ static int bb_preload_textures(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
-/* TT Set_2DSprite: places its 2D frame (an effect). */
+/*
+ * TT Set_2DSprite: its 2D entity in homogeneous coordinates, at Position and
+ * Size (each its own while not an input of the "Add Input" setting), with
+ * the UV-Rect as its source rect when that is an input.
+ */
+#define SPRITE_INPUT_UV 1
+#define SPRITE_INPUT_SIZE 2
+#define SPRITE_INPUT_POSITION 4
+
 static int bb_set_2d_sprite(blk_t *b)
 {
     if (IN_ACTIVE(b, 0)) {
         IN_OFF(b, 0);
         OUT_ON(b, 0);
     }
-    nmo_object_id_t target = nmo_engine_block_target(b);
-    if (target == 0) {
+    eng_2d_t *entity = eng_2d_entity(b->engine, nmo_engine_block_target(b));
+    if (entity == NULL) {
         return NMO_ENGINE_BR_OWNERERROR;
     }
-    eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, target, 0);
+    int32_t inputs = get_local_int(b, 0, 0);
+    int pos = 0;
+    bool homogeneous = (entity->flags & CK_2DENTITY_USEHOMOGENEOUSCOORD) != 0;
+    float position[2] = {0.0f, 0.0f}, size[2] = {0.0f, 0.0f};
+    if (inputs & SPRITE_INPUT_POSITION) {
+        nmo_engine_block_get_input_value(b, pos++, position, sizeof(position));
+    } else if (homogeneous) {
+        position[0] = entity->homogeneous.left;
+        position[1] = entity->homogeneous.top;
+    }
+    if (inputs & SPRITE_INPUT_SIZE) {
+        nmo_engine_block_get_input_value(b, pos++, size, sizeof(size));
+    } else if (homogeneous) {
+        size[0] = entity->homogeneous.right - entity->homogeneous.left;
+        size[1] = entity->homogeneous.bottom - entity->homogeneous.top;
+    }
+    if (inputs & SPRITE_INPUT_UV) {
+        nmo_engine_block_get_input_value(b, pos++, &entity->source, sizeof(entity->source));
+    }
+    /* SetHomogeneousCoordinates, then SetHomogeneousRect */
+    nmo_rect_t rect = {position[0], position[1], position[0] + size[0], position[1] + size[1]};
+    entity->flags |= CK_2DENTITY_USEHOMOGENEOUSCOORD;
+    entity->homogeneous = rect;
+    eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, entity->id, 0);
     return NMO_ENGINE_BR_OK;
 }
 

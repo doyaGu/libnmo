@@ -9,6 +9,7 @@
 
 #include "../../engine_block_util.h"
 
+#include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_camera_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_sound_schemas.h"
@@ -881,28 +882,232 @@ static int cb_tt_extra(blk_t *b, uint32_t message)
 }
 
 /*
- * TT Simple Shadow: the target's shadow drawn on the floors under it (a pre
- * render callback): On (Exit On) starts it and it stays active, Off (Exit
- * Off) ends it. The engine draws nothing; starting and ending are effects.
+ * TT Simple Shadow: On makes the shadow's material (white, its texture
+ * copied and clamped); while active, each frame the render callback projects
+ * it on the floors (objects with the Floor attribute) under the target, as a
+ * material channel multiplying them (ZERO, SRCCOLOR) with UVs from the
+ * target's position over each floor. Off, reset or the script's deactivation
+ * take it off the floors.
  */
+static eng_shadow_t *shadow_of(nmo_engine_t *engine, int32_t node)
+{
+    for (size_t i = 0; i < engine->render.shadows.count; i++) {
+        if (engine->render.shadows.data[i].node == node) {
+            return &engine->render.shadows.data[i];
+        }
+    }
+    return NULL;
+}
+
+/* The floor's mesh copy, where the shadow's channel goes */
+static eng_mesh_copy_t *shadow_floor_mesh(nmo_engine_t *engine, nmo_object_id_t floor)
+{
+    const nmo_3dentity_state_t *state =
+        (const nmo_3dentity_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
+            engine->types, eng_find_object(engine, floor), CKPGUID_3DENTITY);
+    return state != NULL ? eng_mesh_copy(engine, eng_object_ref(engine, floor, &state->current_mesh))
+                         : NULL;
+}
+
+/* A_Delete_SoftShadow_From_Floors */
+static void shadow_remove(nmo_engine_t *engine, eng_shadow_t *shadow)
+{
+    for (int32_t f = 0; f < shadow->floor_count; f++) {
+        eng_mesh_copy_t *mesh = shadow_floor_mesh(engine, shadow->floors[f]);
+        if (mesh != NULL) {
+            eng_mesh_remove_channel(mesh, eng_mesh_channel(mesh, shadow->material));
+            mesh->version = ++engine->render.mesh_version;
+        }
+    }
+    shadow->floor_count = 0;
+}
+
+static void shadow_reset(nmo_engine_t *engine, int32_t node)
+{
+    eng_shadow_t *shadow = shadow_of(engine, node);
+    if (shadow != NULL) {
+        shadow_remove(engine, shadow);
+        shadow->node = -1;
+        shadow->ran = 0;
+    }
+}
+
+static int32_t floor_attribute(const nmo_engine_t *engine)
+{
+    for (size_t t = 0; t < engine->attributes.types.count; t++) {
+        const eng_attribute_type_t *type = &engine->attributes.types.data[t];
+        if (type->present && type->name != NULL && strcmp(type->name, "Floor") == 0) {
+            return (int32_t)t;
+        }
+    }
+    return -1;
+}
+
+/* TTSimpleShadowRenderCallback, with A_GetFloors */
+static void shadow_update(nmo_engine_t *engine, eng_shadow_t *shadow, int32_t node)
+{
+    nmo_engine_block_t handle = {engine, node};
+    blk_t *b = &handle;
+    int32_t entity = eng_entity_index(engine, shadow->entity);
+    eng_material_t *material = eng_material(engine, shadow->material);
+    if (entity < 0 || material == NULL) {
+        return;
+    }
+    material->desc.texture = shadow->texture = nmo_engine_block_get_input_object(b, 0);
+    float zoom = get_in_float(b, 1, 2.0f);
+    float max_height = get_in_float(b, 2, 100.0f);
+    eng_vector_t min, max, wmin, wmax;
+    eng_entity_local_box(engine, entity, &min, &max);
+    eng_vector_t axis = {engine->entities.data[entity].world.m[0][0],
+                         engine->entities.data[entity].world.m[0][1],
+                         engine->entities.data[entity].world.m[0][2]};
+    float width = (max.x - min.x) * eng_vector_magnitude(&axis);
+    if (zoom == 0.0f || width == 0.0f) {
+        return;
+    }
+    float inv_zoom = 1.0f / (zoom * width);
+    eng_entity_world_box(engine, entity, &wmin, &wmax);
+    float get_inv_zoom = 1.0f / (zoom * (wmax.x - wmin.x));
+    nmo_object_id_t old[ENG_SHADOW_FLOORS];
+    int32_t old_count = shadow->floor_count;
+    memcpy(old, shadow->floors, sizeof(old));
+    eng_vector_t positions[ENG_SHADOW_FLOORS], scales[ENG_SHADOW_FLOORS];
+    int32_t count = 0;
+    int32_t type = floor_attribute(engine);
+    for (size_t i = 0; type >= 0 && i < engine->attributes.values.count; i++) {
+        const eng_attribute_t *attribute = &engine->attributes.values.data[i];
+        int32_t floor = attribute->type == type ? eng_entity_index(engine, attribute->object) : -1;
+        if (floor < 0 || engine->entities.data[floor].destroyed ||
+            !nmo_engine_object_is_visible(engine, attribute->object)) {
+            continue;
+        }
+        eng_vector_t fmin, fmax;
+        eng_entity_world_box(engine, floor, &fmin, &fmax);
+        if (fmin.x > wmax.x || fmin.z > wmax.z || fmax.x < wmin.x || fmax.z < wmin.z ||
+            fmin.y > wmax.y || wmin.y - fmax.y > max_height) {
+            continue;
+        }
+        eng_vector_t pos = eng_entity_position(engine, entity, floor);
+        eng_vector_t lmin, lmax;
+        eng_entity_local_box(engine, floor, &lmin, &lmax);
+        eng_vector_t scale = eng_entity_scale(engine, floor, true);
+        float tx = get_inv_zoom * scale.x, tz = get_inv_zoom * scale.z;
+        if ((lmax.x - pos.x) * tx >= -0.5f && (lmin.x - pos.x) * tx <= 0.5f &&
+            (lmax.z - pos.z) * tz >= -0.5f && (lmin.z - pos.z) * tz <= 0.5f &&
+            count < ENG_SHADOW_FLOORS) {
+            positions[count] = pos;
+            scales[count] = scale;
+            shadow->floors[count++] = attribute->object;
+        }
+    }
+    shadow->floor_count = count;
+    /* Off the floors it left */
+    for (int32_t a = 0; a < old_count; a++) {
+        bool kept = false;
+        for (int32_t f = 0; f < count && !kept; f++) {
+            kept = old[a] == shadow->floors[f];
+        }
+        eng_mesh_copy_t *mesh = kept ? NULL : shadow_floor_mesh(engine, old[a]);
+        if (mesh != NULL) {
+            eng_mesh_remove_channel(mesh, eng_mesh_channel(mesh, shadow->material));
+            mesh->version = ++engine->render.mesh_version;
+        }
+    }
+    /* On the floors under it, its UVs from the object's place over each */
+    for (int32_t f = 0; f < count; f++) {
+        eng_mesh_copy_t *mesh = shadow_floor_mesh(engine, shadow->floors[f]);
+        nmo_engine_mesh_t desc;
+        if (mesh == NULL || !nmo_engine_mesh(engine, mesh->mesh, &desc)) {
+            continue;
+        }
+        int32_t channel = eng_mesh_channel(mesh, shadow->material);
+        if (channel < 0) {
+            channel = eng_mesh_add_channel(mesh, shadow->material);
+            if (channel < 0) {
+                continue;
+            }
+            mesh->channels.data[channel].source_blend = VXBLEND_ZERO;
+            mesh->channels.data[channel].dest_blend = VXBLEND_SRCCOLOR;
+        }
+        nmo_engine_channel_t *ch = &mesh->channels.data[channel];
+        float *uvs = (float *)ch->uvs;
+        if (uvs == NULL) {
+            uvs = (float *)malloc((size_t)desc.vertex_count * 2u * sizeof(float));
+            ch->uvs = uvs;
+        }
+        float tx = inv_zoom * scales[f].x, tz = inv_zoom * scales[f].z;
+        float u0 = positions[f].x * tx + 0.5f, v0 = positions[f].z * tz + 0.5f;
+        for (int32_t v = 0; uvs != NULL && v < desc.vertex_count; v++) {
+            uvs[v * 2] = u0 - mesh->vertices[v].position.x * tx;
+            uvs[v * 2 + 1] = v0 - mesh->vertices[v].position.z * tz;
+        }
+        mesh->version = ++engine->render.mesh_version;
+    }
+}
+
+void eng_update_shadows(nmo_engine_t *engine)
+{
+    for (size_t i = 0; i < engine->render.shadows.count; i++) {
+        eng_shadow_t *shadow = &engine->render.shadows.data[i];
+        if (shadow->node >= 0 && shadow->ran == engine->frame) {
+            shadow_update(engine, shadow, shadow->node);
+        }
+    }
+}
+
 static int bb_simple_shadow(blk_t *b)
 {
+    nmo_engine_t *engine = b->engine;
     nmo_object_id_t target = nmo_engine_block_target(b);
     if (target == 0) {
         return NMO_ENGINE_BR_OWNERERROR;
     }
-    if (nmo_engine_block_is_input_active(b, 1)) {
+    if (IN_ACTIVE(b, 1)) {
         IN_OFF(b, 1);
         OUT_ON(b, 1);
-        eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, target, 0);
+        shadow_reset(engine, b->node);
+        eng_emit(engine, NMO_ENGINE_EVENT_EFFECT, b->node, target, 0);
         return NMO_ENGINE_BR_OK;
     }
-    if (nmo_engine_block_is_input_active(b, 0)) {
+    if (IN_ACTIVE(b, 0)) {
         IN_OFF(b, 0);
         OUT_ON(b, 0);
-        eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, target, 1);
+        shadow_reset(engine, b->node);
+        nmo_object_id_t id = eng_create_object(engine, NMO_CID_MATERIAL, "TT_SimpleShadow Material");
+        eng_material_t *material = id != 0 ? eng_material(engine, id) : NULL;
+        if (material == NULL) {
+            material = eng_material_new(engine, id);
+        }
+        eng_shadow_t *shadow = shadow_of(engine, -1);
+        if (material == NULL || (shadow == NULL && !ENG_VEC_PUSH(engine->render.shadows, shadow))) {
+            return NMO_ENGINE_BR_PARAMETERERROR;
+        }
+        const float white[4] = {1.0f, 1.0f, 1.0f, 1.0f}, black[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+        memcpy(material->desc.emissive, white, sizeof(white));
+        memcpy(material->desc.diffuse, white, sizeof(white));
+        memcpy(material->desc.specular, black, sizeof(black));
+        memcpy(material->desc.ambient, black, sizeof(black));
+        material->desc.address_mode = VXTEXTURE_ADDRESSCLAMP;
+        material->desc.texture_blend = VXTEXTUREBLEND_COPY;
+        memset(shadow, 0, sizeof(*shadow));
+        shadow->node = b->node;
+        shadow->material = id;
+        eng_emit(engine, NMO_ENGINE_EVENT_EFFECT, b->node, target, 1);
+    }
+    eng_shadow_t *shadow = shadow_of(engine, b->node);
+    if (shadow != NULL) {
+        shadow->entity = target;
+        shadow->ran = engine->frame + 1; /* AddPreRenderCallBack(..., TRUE) for this frame */
     }
     return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+static int cb_simple_shadow(blk_t *b, uint32_t message)
+{
+    if (message == NMO_ENGINE_MSG_RESET || message == NMO_ENGINE_MSG_DEACTIVATESCRIPT) {
+        shadow_reset(b->engine, b->node);
+    }
+    return NMO_ENGINE_BR_OK;
 }
 
 static const nmo_engine_block_desc_t eng_tt_gravity_blocks[] = {
@@ -913,7 +1118,8 @@ static const nmo_engine_block_desc_t eng_tt_gravity_blocks[] = {
     {NMO_GUID(0x009c1208, 0x3a8d779e), "TT_TextureSine", bb_texture_sine, NULL, NULL},
     {NMO_GUID(0x38571b61, 0x64cd2174), "TT ProximityVolumeControl", bb_proximity_volume_control,
      NULL, NULL},
-    {NMO_GUID(0x7f0517c2, 0x52cc76bb), "TT Simple Shadow", bb_simple_shadow, NULL, NULL},
+    {NMO_GUID(0x7f0517c2, 0x52cc76bb), "TT Simple Shadow", bb_simple_shadow, cb_simple_shadow,
+     NULL},
     {NMO_GUID(0x36106bd9, 0x51813906), "TT Extra", bb_tt_extra, cb_tt_extra, NULL},
 };
 

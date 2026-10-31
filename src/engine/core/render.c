@@ -38,6 +38,10 @@
 #define OBJECT_VISIBLE 0x40
 #define OBJECT_HIERARCHICAL_HIDE 0x200
 #define SHOW_SHOW 1
+/* VXCHANNEL_FLAGS */
+#define VXCHANNEL_ACTIVE 0x00000001u
+#define VXCHANNEL_SAMEUV 0x00800000u
+#define VXCHANNEL_NOTLIT 0x01000000u
 #define SHOW_HIERARCHICAL_HIDE 2
 
 void eng_free_render(nmo_engine_t *engine)
@@ -66,10 +70,20 @@ void eng_free_render(nmo_engine_t *engine)
     }
     free(render->meshes.data);
     free(render->skies.data);
-    for (size_t i = 0; i < render->normals.count; i++) {
-        free(render->normals.data[i].vertices);
+    free(render->shadows.data);
+    for (size_t i = 0; i < render->mesh_copies.count; i++) {
+        eng_mesh_copy_t *copy = &render->mesh_copies.data[i];
+        free(copy->vertices);
+        free(copy->colors);
+        for (size_t c = 0; c < copy->channels.count; c++) {
+            free((void *)copy->channels.data[c].uvs);
+        }
+        free(copy->channels.data);
     }
-    free(render->normals.data);
+    free(render->mesh_copies.data);
+    free(render->camera_planes.data);
+    eng_free_emitters(engine);
+    free(render->vertices.data);
     free(render->draws.data);
     free(render->frame_lights.data);
 }
@@ -268,6 +282,37 @@ eng_material_t *eng_material(nmo_engine_t *engine, nmo_object_id_t id)
     return material;
 }
 
+eng_material_t *eng_material_new(nmo_engine_t *engine, nmo_object_id_t id)
+{
+    eng_material_t *material = NULL;
+    if (id == 0 || !ENG_VEC_PUSH(engine->render.materials, material)) {
+        return NULL;
+    }
+    material->id = id;
+    nmo_engine_material_t *d = &material->desc;
+    const float diffuse[4] = {0.7f, 0.7f, 0.7f, 1.0f}, ambient[4] = {0.3f, 0.3f, 0.3f, 1.0f};
+    const float specular[4] = {0.5f, 0.5f, 0.5f, 1.0f}, emissive[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+    memcpy(d->diffuse, diffuse, sizeof(diffuse));
+    memcpy(d->ambient, ambient, sizeof(ambient));
+    memcpy(d->specular, specular, sizeof(specular));
+    memcpy(d->emissive, emissive, sizeof(emissive));
+    d->texture_blend = VXTEXTUREBLEND_MODULATEALPHA;
+    d->min_filter = d->mag_filter = VXTEXTUREFILTER_LINEAR;
+    d->address_mode = VXTEXTURE_ADDRESSWRAP;
+    d->source_blend = VXBLEND_ONE;
+    d->dest_blend = VXBLEND_ZERO;
+    d->shade_mode = VXSHADE_GOURAUD;
+    d->fill_mode = VXFILL_SOLID;
+    d->z_write = true;
+    d->z_func = VXCMP_LESSEQUAL;
+    d->alpha_func = VXCMP_ALWAYS;
+    if (!eng_map_put(&engine->render.material_map, id, (int32_t)engine->render.materials.count - 1)) {
+        engine->render.materials.count--;
+        return NULL;
+    }
+    return material;
+}
+
 bool nmo_engine_material(const nmo_engine_t *engine, nmo_object_id_t material,
                          nmo_engine_material_t *out)
 {
@@ -300,41 +345,108 @@ static const nmo_mesh_state_t *eng_mesh_state(const nmo_engine_t *engine, nmo_ob
     return (const nmo_mesh_state_t *)eng_typed_state(engine, mesh, CKPGUID_MESH);
 }
 
-/*
- * The mesh's vertices with normals: as the file has them, or, when it saved
- * none, with the smooth normals CK builds from the faces after a load.
- */
-static const nmo_vertex_t *eng_mesh_vertices(nmo_engine_t *engine, nmo_object_id_t mesh,
-                                             const nmo_mesh_state_t *state)
+static eng_mesh_copy_t *eng_find_mesh_copy(const nmo_engine_t *engine, nmo_object_id_t mesh)
 {
-    if (!nmo_mesh_normals_are_derived(state)) {
-        return state->vertices;
-    }
-    eng_render_t *render = &engine->render;
-    for (size_t i = 0; i < render->normals.count; i++) {
-        if (render->normals.data[i].mesh == mesh) {
-            return render->normals.data[i].vertices;
+    for (size_t i = 0; i < engine->render.mesh_copies.count; i++) {
+        if (engine->render.mesh_copies.data[i].mesh == mesh) {
+            return &engine->render.mesh_copies.data[i];
         }
     }
+    return NULL;
+}
+
+/* The copy of the mesh's vertices: with the normals CK builds from the faces when the file saved none */
+static eng_mesh_copy_t *eng_make_mesh_copy(nmo_engine_t *engine, nmo_object_id_t mesh,
+                                           const nmo_mesh_state_t *state)
+{
     size_t count = state->vertex_count;
-    nmo_vertex_t *vertices = (nmo_vertex_t *)malloc(count * sizeof(nmo_vertex_t));
-    nmo_vector_t *normals = (nmo_vector_t *)malloc(count * sizeof(nmo_vector_t));
-    eng_normals_t *entry = NULL;
-    if (vertices == NULL || normals == NULL ||
-        nmo_mesh_build_vertex_normals(state, normals) != NMO_OK ||
-        !ENG_VEC_PUSH(render->normals, entry)) {
+    nmo_vertex_t *vertices = (nmo_vertex_t *)malloc((count > 0 ? count : 1) * sizeof(nmo_vertex_t));
+    eng_mesh_copy_t *copy = NULL;
+    if (vertices == NULL || !ENG_VEC_PUSH(engine->render.mesh_copies, copy)) {
         free(vertices);
-        free(normals);
-        return state->vertices;
+        return NULL;
     }
-    for (size_t v = 0; v < count; v++) {
-        vertices[v] = state->vertices[v];
-        vertices[v].normal = normals[v];
+    if (count > 0) {
+        memcpy(vertices, state->vertices, count * sizeof(nmo_vertex_t));
+    }
+    nmo_vector_t *normals = nmo_mesh_normals_are_derived(state)
+                                ? (nmo_vector_t *)malloc(count * sizeof(nmo_vector_t))
+                                : NULL;
+    if (normals != NULL && nmo_mesh_build_vertex_normals(state, normals) == NMO_OK) {
+        for (size_t v = 0; v < count; v++) {
+            vertices[v].normal = normals[v];
+        }
     }
     free(normals);
-    entry->mesh = mesh;
-    entry->vertices = vertices;
-    return vertices;
+    copy->mesh = mesh;
+    copy->vertices = vertices;
+    copy->prelit = (state->flags & VXMESH_PRELITMODE) != 0;
+    copy->version = ++engine->render.mesh_version;
+    /* The file's channels: a channel without UVs of its own uses the mesh's (VXCHANNEL_SAMEUV) */
+    for (uint32_t c = 0; c < state->material_channel_count; c++) {
+        const nmo_material_channel_t *file = &state->material_channels[c];
+        nmo_engine_channel_t *channel = NULL;
+        if (!ENG_VEC_PUSH(copy->channels, channel)) {
+            break;
+        }
+        channel->material = eng_object_ref(engine, mesh, &file->material);
+        channel->source_blend = (int32_t)file->source_blend;
+        channel->dest_blend = (int32_t)file->dest_blend;
+        channel->active = (file->flags & VXCHANNEL_ACTIVE) != 0;
+        channel->lit = (file->flags & VXCHANNEL_NOTLIT) == 0;
+        channel->mask = c < 16 ? (uint16_t)(1u << c) : 0;
+        if (!(file->flags & VXCHANNEL_SAMEUV) && file->uv_coords != NULL && file->uv_count >= count) {
+            float *uvs = (float *)malloc(count * 2u * sizeof(float));
+            for (size_t v = 0; uvs != NULL && v < count; v++) {
+                uvs[v * 2] = file->uv_coords[v].x;
+                uvs[v * 2 + 1] = file->uv_coords[v].y;
+            }
+            channel->uvs = uvs;
+        }
+    }
+    return copy;
+}
+
+int32_t eng_mesh_channel(const eng_mesh_copy_t *copy, nmo_object_id_t material)
+{
+    for (size_t c = 0; copy != NULL && c < copy->channels.count; c++) {
+        if (copy->channels.data[c].material == material) {
+            return (int32_t)c;
+        }
+    }
+    return -1;
+}
+
+int32_t eng_mesh_add_channel(eng_mesh_copy_t *copy, nmo_object_id_t material)
+{
+    nmo_engine_channel_t *channel = NULL;
+    if (!ENG_VEC_PUSH(copy->channels, channel)) {
+        return -1;
+    }
+    channel->material = material;
+    channel->source_blend = VXBLEND_DESTCOLOR;
+    channel->dest_blend = VXBLEND_ZERO;
+    channel->active = true;
+    channel->lit = true;
+    return (int32_t)copy->channels.count - 1;
+}
+
+void eng_mesh_remove_channel(eng_mesh_copy_t *copy, int32_t channel)
+{
+    if (channel < 0 || (size_t)channel >= copy->channels.count) {
+        return;
+    }
+    free((void *)copy->channels.data[channel].uvs);
+    memmove(&copy->channels.data[channel], &copy->channels.data[channel + 1],
+            (copy->channels.count - (size_t)channel - 1) * sizeof(nmo_engine_channel_t));
+    copy->channels.count--;
+}
+
+eng_mesh_copy_t *eng_mesh_copy(nmo_engine_t *engine, nmo_object_id_t mesh)
+{
+    eng_mesh_copy_t *copy = eng_find_mesh_copy(engine, mesh);
+    const nmo_mesh_state_t *state = copy == NULL ? eng_mesh_state(engine, mesh) : NULL;
+    return copy != NULL ? copy : state != NULL ? eng_make_mesh_copy(engine, mesh, state) : NULL;
 }
 
 bool nmo_engine_mesh(const nmo_engine_t *engine, nmo_object_id_t mesh, nmo_engine_mesh_t *out)
@@ -356,15 +468,22 @@ bool nmo_engine_mesh(const nmo_engine_t *engine, nmo_object_id_t mesh, nmo_engin
     if (state == NULL || out == NULL) {
         return false;
     }
+    eng_mesh_copy_t *copy = eng_find_mesh_copy(engine, mesh);
+    if (copy == NULL && (nmo_mesh_normals_are_derived(state) || state->material_channel_count > 0)) {
+        copy = eng_make_mesh_copy((nmo_engine_t *)engine, mesh, state);
+    }
     memset(out, 0, sizeof(*out));
     out->vertex_count = (int32_t)state->vertex_count;
-    out->vertices = eng_mesh_vertices((nmo_engine_t *)engine, mesh, state);
-    out->colors = state->vertex_colors;
+    out->vertices = copy != NULL ? copy->vertices : state->vertices;
+    out->colors = copy != NULL && copy->colors != NULL ? copy->colors : state->vertex_colors;
+    out->version = copy != NULL ? copy->version : 0;
+    out->channel_count = copy != NULL ? (int32_t)copy->channels.count : 0;
+    out->channels = copy != NULL ? copy->channels.data : NULL;
     out->face_count = (int32_t)state->face_count;
     out->indices = state->face_vertex_indices;
     out->faces = state->faces;
     out->material_count = (int32_t)state->material_group_count;
-    out->prelit = (state->flags & VXMESH_PRELITMODE) != 0;
+    out->prelit = copy != NULL ? copy->prelit : (state->flags & VXMESH_PRELITMODE) != 0;
     out->wrap_u = (state->flags & VXMESH_WRAPU) != 0;
     out->wrap_v = (state->flags & VXMESH_WRAPV) != 0;
     return true;
@@ -785,6 +904,7 @@ nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *o
     float height = (float)mode->height;
 
     eng_prepare_cameras(engine);
+    eng_update_shadows(engine);
     out->camera = render->camera;
     out->fov = 0.5f;
     out->zoom = 1.0f;
@@ -802,6 +922,12 @@ nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *o
         out->zoom = camera_state->orthographic_zoom;
         out->near_plane = camera_state->near_plane;
         out->far_plane = camera_state->far_plane;
+        for (size_t i = 0; i < render->camera_planes.count; i++) {
+            if (render->camera_planes.data[i].id == render->camera) {
+                out->near_plane = render->camera_planes.data[i].near_plane;
+                out->far_plane = render->camera_planes.data[i].far_plane;
+            }
+        }
     } else {
         out->camera = 0;
     }
@@ -842,6 +968,8 @@ nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *o
         memcpy(draw->world, entity->world.m, sizeof(draw->world));
         draw->transparent = transparent;
     }
+    render->vertices.count = 0;
+    eng_draw_particles(engine, out->view);
     eng_render_2d_root(engine, false, width, height);
     eng_draw_texts(engine, 0, width, height); /* the font manager's, after the sprites */
 
@@ -849,6 +977,7 @@ nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *o
     out->light_count = (int32_t)render->frame_lights.count;
     out->draws = render->draws.data;
     out->draw_count = (int32_t)render->draws.count;
+    out->vertices = render->vertices.data;
     return NMO_OK;
 }
 

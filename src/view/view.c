@@ -57,6 +57,7 @@ typedef struct view_mesh {
     uint16_t **indices;
     int32_t *counts;
     uint8_t *colors;
+    uint32_t version; /* the mesh's colors were converted at */
 } view_mesh_t;
 
 struct nmo_view {
@@ -251,10 +252,32 @@ static GLuint view_texture(nmo_view_t *view, nmo_object_id_t id)
     return texture->empty ? 0 : texture->name;
 }
 
+/* The prelit colors as RGBA bytes */
+static void view_mesh_colors(view_mesh_t *cached, const nmo_engine_mesh_t *mesh)
+{
+    free(cached->colors);
+    cached->colors = NULL;
+    cached->version = mesh->version;
+    if (mesh->colors == NULL || mesh->vertex_count <= 0) {
+        return;
+    }
+    cached->colors = (uint8_t *)malloc((size_t)mesh->vertex_count * 4u);
+    for (int32_t v = 0; cached->colors != NULL && v < mesh->vertex_count; v++) {
+        uint32_t c = mesh->colors[v];
+        cached->colors[v * 4 + 0] = (uint8_t)(c >> 16);
+        cached->colors[v * 4 + 1] = (uint8_t)(c >> 8);
+        cached->colors[v * 4 + 2] = (uint8_t)c;
+        cached->colors[v * 4 + 3] = (uint8_t)(c >> 24);
+    }
+}
+
 static view_mesh_t *view_mesh(nmo_view_t *view, nmo_object_id_t id, const nmo_engine_mesh_t *mesh)
 {
     for (size_t i = 0; i < view->mesh_count; i++) {
         if (view->meshes[i].id == id) {
+            if (view->meshes[i].version != mesh->version) {
+                view_mesh_colors(&view->meshes[i], mesh);
+            }
             return &view->meshes[i];
         }
     }
@@ -294,16 +317,7 @@ static view_mesh_t *view_mesh(nmo_view_t *view, nmo_object_id_t id, const nmo_en
                 index < (uint32_t)mesh->vertex_count ? index : 0;
         }
     }
-    if (mesh->colors != NULL && mesh->vertex_count > 0) {
-        cached->colors = (uint8_t *)malloc((size_t)mesh->vertex_count * 4u);
-        for (int32_t v = 0; cached->colors != NULL && v < mesh->vertex_count; v++) {
-            uint32_t c = mesh->colors[v];
-            cached->colors[v * 4 + 0] = (uint8_t)(c >> 16);
-            cached->colors[v * 4 + 1] = (uint8_t)(c >> 8);
-            cached->colors[v * 4 + 2] = (uint8_t)c;
-            cached->colors[v * 4 + 3] = (uint8_t)(c >> 24);
-        }
-    }
+    view_mesh_colors(cached, mesh);
     return cached;
 }
 
@@ -557,6 +571,45 @@ static void view_draw_mesh(nmo_view_t *view, const nmo_engine_frame_t *frame,
         }
         glDrawElements(GL_TRIANGLES, cached->counts[g], GL_UNSIGNED_SHORT, cached->indices[g]);
     }
+    /* The material channels, each over the faces it covers */
+    for (int32_t c = 0; c < mesh.channel_count; c++) {
+        const nmo_engine_channel_t *channel = &mesh.channels[c];
+        nmo_engine_material_t material;
+        if (!channel->active || !nmo_engine_material(view->engine, channel->material, &material)) {
+            continue;
+        }
+        uint16_t *indices = (uint16_t *)malloc((size_t)mesh.face_count * 3u * sizeof(uint16_t));
+        int32_t count = 0;
+        for (int32_t f = 0; indices != NULL && f < mesh.face_count; f++) {
+            if (channel->mask == 0 || mesh.faces == NULL || (mesh.faces[f].channel_mask & channel->mask)) {
+                for (int k = 0; k < 3; k++) {
+                    indices[count++] = mesh.indices[f * 3 + k];
+                }
+            }
+        }
+        bool lit = channel->lit && !prelit;
+        if (lit) {
+            glEnable(GL_LIGHTING);
+        } else {
+            glDisable(GL_LIGHTING);
+            glColor4fv(material.diffuse);
+        }
+        material.alpha_blend = true;
+        material.source_blend = channel->source_blend;
+        material.dest_blend = channel->dest_blend;
+        material.z_write = false;
+        material.z_func = 4;
+        view_set_material(view, &material, lit, true);
+        if (channel->uvs != NULL) {
+            glTexCoordPointer(2, GL_FLOAT, 0, channel->uvs);
+        } else {
+            glTexCoordPointer(2, GL_FLOAT, stride, &mesh.vertices[0].uv);
+        }
+        if (count > 0) {
+            glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_SHORT, indices);
+        }
+        free(indices);
+    }
     glDisableClientState(GL_COLOR_ARRAY);
     glDisableClientState(GL_TEXTURE_COORD_ARRAY);
     glDisableClientState(GL_NORMAL_ARRAY);
@@ -603,6 +656,43 @@ static void view_draw_quad(nmo_view_t *view, const nmo_engine_draw_t *draw)
     glVertex2f(draw->rect[2], draw->rect[3]);
     glTexCoord2f(draw->uv[0], draw->uv[3]);
     glVertex2f(draw->rect[0], draw->rect[3]);
+    glEnd();
+}
+
+/* A particle system's triangles (ParticleEmitter::SetState) */
+static void view_draw_triangles(nmo_view_t *view, const nmo_engine_frame_t *frame,
+                                const nmo_engine_draw_t *draw, const float view_m[16])
+{
+    if (draw->vertex_count <= 0 || frame->vertices == NULL) {
+        return;
+    }
+    nmo_engine_material_t material;
+    memset(&material, 0, sizeof(material));
+    material.texture = draw->texture;
+    material.texture_blend = 4;
+    material.min_filter = 6;
+    material.mag_filter = 2;
+    material.address_mode = 3;
+    material.alpha_blend = draw->blend;
+    material.source_blend = draw->source_blend;
+    material.dest_blend = draw->dest_blend;
+    material.two_sided = true;
+    material.z_write = !draw->blend;
+    material.z_func = 4;
+    material.shade_mode = 1;
+    glDisable(GL_LIGHTING);
+    view_set_material(view, &material, false, true);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadMatrixf(view_m);
+    const nmo_engine_vertex_t *v = &frame->vertices[draw->first_vertex];
+    glBegin(GL_TRIANGLES);
+    for (int32_t i = 0; i < draw->vertex_count; i++) {
+        float color[4];
+        view_color(v[i].color, color);
+        glColor4fv(color);
+        glTexCoord2f(v[i].u, v[i].v);
+        glVertex3f(v[i].x, v[i].y, v[i].z);
+    }
     glEnd();
 }
 
@@ -769,7 +859,7 @@ nmo_status_t nmo_view_draw(nmo_view_t *view)
         view_draw_quad(view, &frame.draws[i]);
     }
     int32_t end_mesh = first_mesh;
-    while (end_mesh < frame.draw_count && frame.draws[end_mesh].kind == NMO_ENGINE_DRAW_MESH) {
+    while (end_mesh < frame.draw_count && frame.draws[end_mesh].kind != NMO_ENGINE_DRAW_QUAD) {
         end_mesh++;
     }
     float view_m[16];
@@ -798,7 +888,12 @@ nmo_status_t nmo_view_draw(nmo_view_t *view)
         }
     }
     for (int32_t i = 0; i < transparent_count; i++) {
-        view_draw_mesh(view, &frame, &frame.draws[transparent[i]], view_m);
+        const nmo_engine_draw_t *draw = &frame.draws[transparent[i]];
+        if (draw->kind == NMO_ENGINE_DRAW_TRIANGLES) {
+            view_draw_triangles(view, &frame, draw, view_m);
+        } else {
+            view_draw_mesh(view, &frame, draw, view_m);
+        }
     }
     free(transparent);
     free(depths);

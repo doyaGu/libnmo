@@ -17,6 +17,7 @@
 
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_curve_schemas.h"
 #include "object/builtin/nmo_material_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/nmo_class_ids.h"
@@ -1145,4 +1146,181 @@ nmo_status_t nmo_engine_set_entity_world_matrix(nmo_engine_t *engine, nmo_object
     memcpy(m.m, matrix, sizeof(m.m));
     eng_entity_set_world_matrix(engine, index, &m, keep_children);
     return NMO_OK;
+}
+
+/* ============================================================================
+ * Curves (CKCurve)
+ * ============================================================================ */
+
+/* A control point as CKCurve::Update leaves it: position in the curve's space, tangents, length so far */
+typedef struct eng_curve_point {
+    eng_vector_t position;
+    eng_vector_t in, out;
+    float length;
+    bool linear;
+} eng_curve_point_t;
+
+static int eng_curve_index(int index, int count, bool opened)
+{
+    if (opened) {
+        return index < 0 ? 0 : index >= count ? count - 1 : index;
+    }
+    return index >= 0 ? index % count : (count + index) % count;
+}
+
+static void eng_hermite(eng_vector_t *out, const eng_vector_t *p0, const eng_vector_t *p1,
+                        const eng_vector_t *m0, const eng_vector_t *m1, float t)
+{
+    float t2 = t * t, t3 = t2 * t;
+    float h00 = 2.0f * t3 - 3.0f * t2 + 1.0f, h10 = t3 - 2.0f * t2 + t;
+    float h01 = -2.0f * t3 + 3.0f * t2, h11 = t3 - t2;
+    out->x = h00 * p0->x + h10 * m0->x + h01 * p1->x + h11 * m1->x;
+    out->y = h00 * p0->y + h10 * m0->y + h01 * p1->y + h11 * m1->y;
+    out->z = h00 * p0->z + h10 * m0->z + h01 * p1->z + h11 * m1->z;
+}
+
+/*
+ * CKCurve::GetPos: the world position at `step` (0..1) of the curve's
+ * length. Update first: the control points in the curve's space, their TCB
+ * or explicit tangents, the fitting pass, and the lengths (100 Hermite
+ * samples a segment). False for a curve of fewer than two points.
+ */
+bool eng_curve_position(nmo_engine_t *engine, nmo_object_id_t curve_id, float step,
+                        eng_vector_t *out)
+{
+    int32_t curve = eng_entity_index(engine, curve_id);
+    const nmo_curve_state_t *state =
+        curve >= 0 ? (const nmo_curve_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
+                         engine->types, eng_find_object(engine, curve_id), CKPGUID_CURVE)
+                   : NULL;
+    int count = state != NULL ? (int)state->control_point_count : 0;
+    if (count < 2) {
+        return false;
+    }
+    eng_curve_point_t *points = (eng_curve_point_t *)calloc((size_t)count, sizeof(*points));
+    const nmo_curvepoint_state_t **descs =
+        (const nmo_curvepoint_state_t **)calloc((size_t)count, sizeof(*descs));
+    if (points == NULL || descs == NULL) {
+        free(points);
+        free(descs);
+        return false;
+    }
+    bool opened = state->opened != 0;
+    const eng_module_t *module = eng_module_of(engine, curve_id, NULL);
+    for (int i = 0; i < count; i++) {
+        nmo_object_id_t id = eng_module_id(module, nmo_ref_runtime_id(&state->control_point_ids[i]));
+        int32_t point = id != 0 ? eng_entity_index(engine, id) : -1;
+        descs[i] = point >= 0 ? (const nmo_curvepoint_state_t *)
+                                    nmo_type_query_object_get_ancestor_state_by_guid(
+                                        engine->types, eng_find_object(engine, id), CKPGUID_CURVEPOINT)
+                              : NULL;
+        if (point >= 0) {
+            eng_vector_t world = eng_matrix_row(&engine->entities.data[point].world, 3);
+            eng_entity_inverse_transform(engine, curve, &points[i].position, &world, -1);
+        }
+        points[i].linear = descs[i] != NULL && descs[i]->linear != 0;
+    }
+    /* GetTangentsByIndex: TCB from the neighbours, or the point's own */
+    for (int i = 0; i < count; i++) {
+        const nmo_curvepoint_state_t *d = descs[i];
+        if (d != NULL && d->tangent_mode != 0) {
+            points[i].in = (eng_vector_t){d->tangent_in.x, d->tangent_in.y, d->tangent_in.z};
+            points[i].out = (eng_vector_t){d->tangent_out.x, d->tangent_out.y, d->tangent_out.z};
+            continue;
+        }
+        float t = d != NULL ? d->tension : 0.0f, c = d != NULL ? d->continuity : 0.0f;
+        float b = d != NULL ? d->bias : 0.0f;
+        const eng_vector_t *p = &points[i].position;
+        const eng_vector_t *prev = &points[eng_curve_index(i - 1, count, opened)].position;
+        const eng_vector_t *next = &points[eng_curve_index(i + 1, count, opened)].position;
+        eng_vector_t dn = {p->x - prev->x, p->y - prev->y, p->z - prev->z};
+        eng_vector_t dp = {next->x - p->x, next->y - p->y, next->z - p->z};
+        float out_dp = (1.0f - t) * (1.0f - c) * (1.0f - b), out_dn = (1.0f - t) * (c + 1.0f) * (b + 1.0f);
+        float in_dp = (1.0f - t) * (c + 1.0f) * (1.0f - b), in_dn = (1.0f - t) * (1.0f - c) * (b + 1.0f);
+        points[i].out = (eng_vector_t){(out_dp * dp.x + out_dn * dn.x) * 0.5f,
+                                       (out_dp * dp.y + out_dn * dn.y) * 0.5f,
+                                       (out_dp * dp.z + out_dn * dn.z) * 0.5f};
+        points[i].in = (eng_vector_t){(in_dn * dn.x + in_dp * dp.x) * 0.5f,
+                                      (in_dn * dn.y + in_dp * dp.y) * 0.5f,
+                                      (in_dn * dn.z + in_dp * dp.z) * 0.5f};
+    }
+    /* The fitting pass moves each point toward its neighbours' middle */
+    if (state->fitting_coeff > 0.0f) {
+        eng_vector_t *reserved = (eng_vector_t *)malloc((size_t)count * sizeof(eng_vector_t));
+        for (int i = 0; reserved != NULL && i < count; i++) {
+            reserved[i] = points[i].position;
+        }
+        for (int i = 0; reserved != NULL && i < count; i++) {
+            const eng_vector_t *prev = &reserved[eng_curve_index(i - 1, count, opened)];
+            const eng_vector_t *next = &reserved[eng_curve_index(i + 1, count, opened)];
+            float k = state->fitting_coeff;
+            points[i].position.x += ((prev->x + next->x) * 0.5f - reserved[i].x) * k;
+            points[i].position.y += ((prev->y + next->y) * 0.5f - reserved[i].y) * k;
+            points[i].position.z += ((prev->z + next->z) * 0.5f - reserved[i].z) * k;
+        }
+        free(reserved);
+    }
+    float length = 0.0f;
+    int segments = opened ? count - 1 : count;
+    for (int i = 0; i < segments; i++) {
+        eng_curve_point_t *start = &points[i];
+        const eng_curve_point_t *end = &points[i + 1 < count ? i + 1 : 0];
+        start->length = length;
+        if (start->linear) {
+            eng_vector_t d = {end->position.x - start->position.x, end->position.y - start->position.y,
+                              end->position.z - start->position.z};
+            length += eng_vector_magnitude(&d);
+        } else {
+            eng_vector_t prev = start->position;
+            for (int j = 1; j <= 100; j++) {
+                eng_vector_t cur;
+                eng_hermite(&cur, &start->position, &end->position, &start->out, &end->in,
+                            (float)j / 100.0f);
+                eng_vector_t d = {cur.x - prev.x, cur.y - prev.y, cur.z - prev.z};
+                length += eng_vector_magnitude(&d);
+                prev = cur;
+            }
+        }
+        if (i != count - 1) {
+            points[i + 1 < count ? i + 1 : 0].length = length;
+        }
+    }
+    /* GetLocalPos */
+    if (opened) {
+        step = step > 1.0f ? 1.0f : step < 0.0f ? 0.0f : step;
+    } else {
+        if (step >= 1.0f) {
+            step -= (float)(int)step;
+        }
+        while (step < 0.0f) {
+            step += 1.0f;
+        }
+    }
+    float target = step * length;
+    int end = opened ? count - 1 : 0;
+    for (int i = 0; i < count; i++) {
+        if (points[i].length > target) {
+            end = i;
+            break;
+        }
+    }
+    int start = end - 1;
+    if (start < 0) {
+        start = opened ? 0 : count - 1;
+    }
+    const eng_curve_point_t *p0 = &points[start], *p1 = &points[end];
+    float l1 = end == 0 ? length : p1->length;
+    float u = l1 - p0->length != 0.0f ? (target - p0->length) / (l1 - p0->length) : 0.0f;
+    eng_vector_t local;
+    if (p0->linear) {
+        local.x = p0->position.x + (p1->position.x - p0->position.x) * u;
+        local.y = p0->position.y + (p1->position.y - p0->position.y) * u;
+        local.z = p0->position.z + (p1->position.z - p0->position.z) * u;
+    } else {
+        eng_hermite(&local, &p0->position, &p1->position, &p0->out, &p1->in, u);
+    }
+    eng_vector_transform(out, &engine->entities.data[curve].world, &local);
+    free(points);
+    free(descs);
+    return true;
 }

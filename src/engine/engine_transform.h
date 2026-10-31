@@ -103,4 +103,7 @@ bool eng_ray_box(const eng_vector_t *origin, const eng_vector_t *dir, const eng_
 int eng_entity_ray_intersection(nmo_engine_t *engine, int32_t index, const eng_vector_t *pos1,
                                 const eng_vector_t *pos2, eng_ray_hit_t *hit);
 
+/* CKCurve::GetPos: the world position at `step` (0..1) of the curve's length */
+bool eng_curve_position(nmo_engine_t *engine, nmo_object_id_t curve, float step, eng_vector_t *out);
+
 #endif /* NMO_ENGINE_TRANSFORM_H */

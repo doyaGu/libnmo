@@ -22,14 +22,6 @@ static int bb_effect(nmo_engine_block_t *block)
 }
 
 static const nmo_engine_block_desc_t eng_effect_blocks[] = {
-    {NMO_GUID(0x676776d0, 0x20d457bd), "Position On Curve", bb_effect, NULL, NULL}, /* 3D Transformations/Curve */
-    {NMO_GUID(0x652316a2, 0x01aa09a9), "Set Clipping Planes", bb_effect, NULL, NULL}, /* Cameras/Basic */
-    {NMO_GUID(0xf11d010a, 0xfb1d010a), "Texture Scroller", bb_effect, NULL, NULL}, /* Materials-Textures/Animation */
-    {NMO_GUID(0x1cb5661e, 0x5b5d3fda), "Set Alpha Test", bb_effect, NULL, NULL}, /* Materials-Textures/Basic */
-    {NMO_GUID(0x2f572a66, 0x6a9a0088), "Set Blend Modes", bb_effect, NULL, NULL}, /* Materials-Textures/Basic */
-    {NMO_GUID(0xaaaa213a, 0xeaa8d52a), "Set Current Slot", bb_effect, NULL, NULL}, /* Materials-Textures/Basic */
-    {NMO_GUID(0x1144022f, 0x68fd055c), "Set Material Z Buffer", bb_effect, NULL, NULL}, /* Materials-Textures/Basic */
-    {NMO_GUID(0x60415d44, 0x0d0174ea), "Set Prelit Color", bb_effect, NULL, NULL}, /* Materials-Textures/Basic */
     {NMO_GUID(0x3ebe40f2, 0x3fa41377), "Set MipMap Level", bb_effect, NULL, NULL}, /* Materials-Textures/Texture */
     {NMO_GUID(0x00283a35, 0x38ef6b48), "Play Sound Instance", bb_effect, NULL, NULL}, /* Sounds/Basic */
     {NMO_GUID(0x6a5f17af, 0x63480864), "Panning Control", bb_effect, NULL, NULL}, /* Sounds/Control */

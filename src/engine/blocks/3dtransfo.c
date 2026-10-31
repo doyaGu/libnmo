@@ -473,7 +473,30 @@ static int bb_tt_look_at(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/*
+ * Position On Curve (SetCurveStep): the target at the curve's position for
+ * Progression. Follow and Bank, which also turn it along the curve, are not
+ * ported (Ballance uses neither).
+ */
+static int bb_position_on_curve(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    int32_t entity = target_entity(b);
+    if (entity < 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    eng_vector_t position;
+    if (!eng_curve_position(b->engine, nmo_engine_block_get_input_object(b, 0),
+                            get_in_float(b, 1, 0.5f), &position)) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    eng_entity_set_position(b->engine, entity, &position, -1, keep_children(b, 6));
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_3dtransfo_blocks[] = {
+    {NMO_GUID(0x676776d0, 0x20d457bd), "Position On Curve", bb_position_on_curve, NULL, NULL},
     {NMO_GUID(0x64221225, 0x769a143f), "Play Animation 3D Entity", bb_play_animation, NULL, NULL},
     {NMO_GUID(0x1c9236e1, 0x42f40996), "Play Global Animation", bb_play_global_animation, NULL,
      NULL},

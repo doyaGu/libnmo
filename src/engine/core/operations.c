@@ -20,6 +20,7 @@
 
 #include "../engine_internal.h"
 
+#include "engine/nmo_engine_render.h"
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_2dentity_schemas.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
@@ -27,6 +28,7 @@
 #include "object/nmo_ref.h"
 #include "type/nmo_type_query.h"
 #include "type/nmo_object_guids.h"
+#include "type/nmo_operations.h"
 #include "type/nmo_type_guids.h"
 
 #include <math.h>
@@ -55,6 +57,8 @@
 #define OP_GET_DISTANCE NMO_GUID(0x265c7d00, 0x5c8f1702)
 #define OP_GET_WORLD_MATRIX NMO_GUID(0x472851ba, 0x5ccc2831)
 #define OP_GET_LOCAL_MATRIX NMO_GUID(0x14a024c7, 0x050d4228)
+#define OP_GET_BOUNDING_BOX NMO_GUID(0x31a7649f, 0x305e5164)
+#define OP_GET_MATERIAL NMO_GUID(0x6b8c78bd, 0x7b846d3c)
 #define OP_GET_POSITION NMO_GUID(0x4bc87aea, 0x6b5b643e)
 #define OP_GET_EULER_ANGLES NMO_GUID(0x4faa099f, 0x2dcc48a5)
 #define OP_GET_DIR NMO_GUID(0x48c20ded, 0xfed12252)
@@ -729,6 +733,104 @@ static nmo_status_t op_get_children(nmo_engine_t *engine, eng_param_t *src1, eng
     return status;
 }
 
+/* A VxBbox: Max, then Min */
+static nmo_status_t write_box(nmo_engine_t *engine, eng_param_t *out, const eng_vector_t *min,
+                              const eng_vector_t *max)
+{
+    const float box[6] = {max->x, max->y, max->z, min->x, min->y, min->z};
+    return eng_param_write(engine, out, box, sizeof(box));
+}
+
+/* CKBoxGetBoundingBox3dEntity: the world box (GetBoundingBox(FALSE)) */
+static nmo_status_t op_get_box_entity(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                      eng_param_t *out)
+{
+    (void)src2;
+    int32_t entity = op_entity(engine, src1);
+    eng_vector_t min = {0.0f, 0.0f, 0.0f}, max = {0.0f, 0.0f, 0.0f};
+    if (entity >= 0) {
+        eng_entity_world_box(engine, entity, &min, &max);
+    }
+    return write_box(engine, out, &min, &max);
+}
+
+/* CKBoxGetBoundingBoxMesh: the mesh's local box */
+static nmo_status_t op_get_box_mesh(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                    eng_param_t *out)
+{
+    (void)src2;
+    nmo_engine_mesh_t mesh;
+    eng_vector_t min = {0.0f, 0.0f, 0.0f}, max = {0.0f, 0.0f, 0.0f};
+    if (nmo_engine_mesh(engine, (nmo_object_id_t)param_u32(src1), &mesh)) {
+        for (int32_t v = 0; v < mesh.vertex_count; v++) {
+            const nmo_vector_t *p = &mesh.vertices[v].position;
+            if (v == 0) {
+                min.x = max.x = p->x, min.y = max.y = p->y, min.z = max.z = p->z;
+            }
+            min.x = fminf(min.x, p->x), min.y = fminf(min.y, p->y), min.z = fminf(min.z, p->z);
+            max.x = fmaxf(max.x, p->x), max.y = fmaxf(max.y, p->y), max.z = fmaxf(max.z, p->z);
+        }
+    }
+    return write_box(engine, out, &min, &max);
+}
+
+/* CKRectGetBoundingBox2dEntity: the entity's rect */
+static nmo_status_t op_get_box_2d(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                  eng_param_t *out)
+{
+    (void)src2;
+    eng_2d_t *entity = eng_2d_entity(engine, (nmo_object_id_t)param_u32(src1));
+    nmo_rect_t rect = {0.0f, 0.0f, 0.0f, 0.0f};
+    if (entity != NULL) {
+        rect = entity->rect;
+    }
+    return eng_param_write(engine, out, &rect, sizeof(rect));
+}
+
+/* CKVectorMinBox, CKVectorMaxBox: a corner of the box */
+static nmo_status_t op_box_corner(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *out,
+                                  int corner)
+{
+    float box[6] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    if (src1 != NULL && src1->data != NULL && src1->size >= sizeof(box)) {
+        memcpy(box, src1->data, sizeof(box));
+    }
+    eng_vector_t v = {box[corner * 3], box[corner * 3 + 1], box[corner * 3 + 2]};
+    return write_vector(engine, out, v);
+}
+
+static nmo_status_t op_min_box(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                               eng_param_t *out)
+{
+    (void)src2;
+    return op_box_corner(engine, src1, out, 1);
+}
+
+static nmo_status_t op_max_box(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                               eng_param_t *out)
+{
+    (void)src2;
+    return op_box_corner(engine, src1, out, 0);
+}
+
+/* CKMaterialGetMaterial2dEntity: the entity's material as it is now */
+static nmo_status_t op_get_material_2d(nmo_engine_t *engine, eng_param_t *src1,
+                                       eng_param_t *src2, eng_param_t *out)
+{
+    (void)src2;
+    eng_2d_t *entity = eng_2d_entity(engine, (nmo_object_id_t)param_u32(src1));
+    return write_u32(engine, out, entity != NULL ? (uint32_t)entity->material : 0u);
+}
+
+/* CKMaterialGetMaterialMeshInt: CKMesh::GetMaterial, past the mesh's no-material group 0 */
+static nmo_status_t op_get_material_mesh(nmo_engine_t *engine, eng_param_t *src1,
+                                         eng_param_t *src2, eng_param_t *out)
+{
+    return write_u32(engine, out,
+                     (uint32_t)nmo_engine_mesh_material(engine, (nmo_object_id_t)param_u32(src1),
+                                                        (int32_t)param_u32(src2) + 1));
+}
+
 typedef struct engine_op {
     nmo_guid_t operation;
     nmo_guid_t result, input1, input2; /* a null input2 is no second input */
@@ -793,6 +895,13 @@ static const engine_op_t engine_ops[] = {
     {OP_IS_CHILD_OF, CKPGUID_BOOL, CKPGUID_3DENTITY, CKPGUID_3DENTITY, op_is_child_of},
     {OP_GET_PARENT, CKPGUID_3DENTITY, CKPGUID_3DENTITY, {0, 0}, op_get_parent},
     {OP_GET_CHILDREN, CKPGUID_OBJECTARRAY, CKPGUID_3DENTITY, {0, 0}, op_get_children},
+    {OP_GET_BOUNDING_BOX, CKPGUID_BOX, CKPGUID_3DENTITY, {0, 0}, op_get_box_entity},
+    {OP_GET_BOUNDING_BOX, CKPGUID_BOX, CKPGUID_MESH, {0, 0}, op_get_box_mesh},
+    {OP_GET_BOUNDING_BOX, CKPGUID_RECT, CKPGUID_2DENTITY, {0, 0}, op_get_box_2d},
+    {NMO_OP_GUID_MIN, CKPGUID_VECTOR, CKPGUID_BOX, {0, 0}, op_min_box},
+    {NMO_OP_GUID_MAX, CKPGUID_VECTOR, CKPGUID_BOX, {0, 0}, op_max_box},
+    {OP_GET_MATERIAL, CKPGUID_MATERIAL, CKPGUID_2DENTITY, {0, 0}, op_get_material_2d},
+    {OP_GET_MATERIAL, CKPGUID_MATERIAL, CKPGUID_MESH, CKPGUID_INT, op_get_material_mesh},
 };
 
 eng_builtin_op_fn eng_operation_builtin(nmo_guid_t operation, nmo_guid_t result,

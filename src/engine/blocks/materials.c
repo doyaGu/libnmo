@@ -9,7 +9,10 @@
 
 #include "../engine_block_util.h"
 
+#include "object/builtin/nmo_3dentity_schemas.h"
+#include "type/nmo_object_guids.h"
 #include "type/nmo_type_guids.h"
+#include "type/nmo_type_query.h"
 
 #include <stdlib.h>
 
@@ -167,6 +170,166 @@ static int bb_set_texture(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* Set Alpha Test: each input given changes the material's alpha test */
+static int bb_set_alpha_test(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    eng_material_t *material = eng_material(b->engine, nmo_engine_block_target(b));
+    if (material == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    int32_t value = 0;
+    if (nmo_engine_block_get_input_value(b, 0, &value, sizeof(value)) == NMO_OK) {
+        material->desc.alpha_test = value != 0;
+    }
+    if (nmo_engine_block_get_input_value(b, 1, &value, sizeof(value)) == NMO_OK) {
+        material->desc.alpha_func = value;
+    }
+    if (nmo_engine_block_get_input_value(b, 2, &value, sizeof(value)) == NMO_OK) {
+        material->desc.alpha_ref = (uint8_t)value;
+    }
+    eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, material->id, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Set Blend Modes: blending, its factors and the texture blend, each when given */
+static int bb_set_blend_modes(blk_t *b)
+{
+    eng_material_t *material = eng_material(b->engine, nmo_engine_block_target(b));
+    if (material == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    int32_t value = 0;
+    if (nmo_engine_block_get_input_value(b, 0, &value, sizeof(value)) == NMO_OK) {
+        material->desc.alpha_blend = value != 0;
+    }
+    if (nmo_engine_block_get_input_value(b, 1, &value, sizeof(value)) == NMO_OK) {
+        material->desc.source_blend = value;
+    }
+    if (nmo_engine_block_get_input_value(b, 2, &value, sizeof(value)) == NMO_OK) {
+        material->desc.dest_blend = value;
+    }
+    if (nmo_engine_block_get_input_value(b, 3, &value, sizeof(value)) == NMO_OK) {
+        material->desc.texture_blend = value;
+    }
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, material->id, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Set Material Z Buffer: Z writes and the Z compare function */
+static int bb_set_material_z_buffer(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    eng_material_t *material = eng_material(b->engine, nmo_engine_block_target(b));
+    if (material == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    material->desc.z_write = get_in_int(b, 0, 1) != 0;
+    material->desc.z_func = get_in_int(b, 1, VXCMP_LESSEQUAL);
+    eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, material->id, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Set Current Slot (ChangeTextureSlot): CKTexture::SetCurrentSlot, for a slot it has */
+static int bb_set_current_slot(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    eng_texture_t *texture = eng_texture(b->engine, nmo_engine_block_target(b));
+    if (texture == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    int32_t slot = get_in_int(b, 0, 0);
+    if (slot >= 0 && slot < texture->slot_count) {
+        texture->current_slot = slot;
+    }
+    eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, texture->id, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+static uint32_t color_argb(const float c[4])
+{
+    uint32_t argb = 0;
+    for (int i = 0; i < 4; i++) {
+        float v = c[i] < 0.0f ? 0.0f : c[i] > 1.0f ? 1.0f : c[i];
+        argb |= (uint32_t)(v * 255.0f + 0.5f) << (i == 3 ? 24 : 16 - 8 * i);
+    }
+    return argb;
+}
+
+/*
+ * Set Prelit Color: the target's current mesh becomes prelit, every vertex
+ * the Filtering Color (the Additional Color is its specular, which the
+ * engine does not keep).
+ */
+static int bb_set_prelit_color(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    nmo_object_t *object = target != 0 ? eng_find_object(engine, target) : NULL;
+    const nmo_3dentity_state_t *state =
+        object != NULL ? (const nmo_3dentity_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
+                             engine->types, object, CKPGUID_3DENTITY)
+                       : NULL;
+    if (state == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    eng_mesh_copy_t *mesh = eng_mesh_copy(engine, eng_object_ref(engine, target, &state->current_mesh));
+    nmo_engine_mesh_t desc;
+    if (mesh == NULL || !nmo_engine_mesh(engine, mesh->mesh, &desc)) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    float color[4] = {1.0f, 1.0f, 1.0f, 0.5f};
+    nmo_engine_block_get_input_value(b, 0, color, sizeof(color));
+    if (mesh->colors == NULL && desc.vertex_count > 0) {
+        mesh->colors = (uint32_t *)malloc((size_t)desc.vertex_count * sizeof(uint32_t));
+    }
+    uint32_t argb = color_argb(color);
+    for (int32_t v = 0; mesh->colors != NULL && v < desc.vertex_count; v++) {
+        mesh->colors[v] = argb;
+    }
+    mesh->prelit = true;
+    mesh->version = ++engine->render.mesh_version;
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    eng_emit(engine, NMO_ENGINE_EVENT_EFFECT, b->node, target, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * Texture Scroller: the target mesh's UVs (channel -1, the base ones) move by
+ * the Scroll Vector, less the whole part of the first vertex's, so they stay
+ * near the texture. The engine keeps the base UVs only.
+ */
+static int bb_texture_scroller(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    eng_mesh_copy_t *mesh = eng_mesh_copy(b->engine, nmo_engine_block_target(b));
+    nmo_engine_mesh_t desc;
+    if (mesh == NULL || !nmo_engine_mesh(b->engine, mesh->mesh, &desc)) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    float scroll[2] = {0.1f, 0.1f};
+    nmo_engine_block_get_input_value(b, 0, scroll, sizeof(scroll));
+    if (get_in_int(b, 1, -1) != -1 || desc.vertex_count == 0) {
+        return NMO_ENGINE_BR_OK;
+    }
+    scroll[0] -= (float)(int)mesh->vertices[0].uv.x;
+    scroll[1] -= (float)(int)mesh->vertices[0].uv.y;
+    for (int32_t v = 0; v < desc.vertex_count; v++) {
+        mesh->vertices[v].uv.x += scroll[0];
+        mesh->vertices[v].uv.y += scroll[1];
+    }
+    mesh->version = ++b->engine->render.mesh_version;
+    eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, mesh->mesh, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_materials_blocks[] = {
     {NMO_GUID(0xf56d92ef, 0x41eb20c1), "Change Texture Video Format",
      bb_change_texture_video_format, NULL, NULL},
@@ -174,6 +337,13 @@ static const nmo_engine_block_desc_t eng_materials_blocks[] = {
     {NMO_GUID(0xe1e1e1e1, 0x1e1e1e1e), "Set Diffuse", bb_set_diffuse, NULL, NULL},
     {NMO_GUID(0xd1d1d1d1, 0x30303030), "Set Emissive", bb_set_emissive, NULL, NULL},
     {NMO_GUID(0xeb123eb5, 0x5be321be), "Set Texture", bb_set_texture, NULL, NULL},
+    {NMO_GUID(0x1cb5661e, 0x5b5d3fda), "Set Alpha Test", bb_set_alpha_test, NULL, NULL},
+    {NMO_GUID(0x2f572a66, 0x6a9a0088), "Set Blend Modes", bb_set_blend_modes, NULL, NULL},
+    {NMO_GUID(0x1144022f, 0x68fd055c), "Set Material Z Buffer", bb_set_material_z_buffer, NULL,
+     NULL},
+    {NMO_GUID(0xaaaa213a, 0xeaa8d52a), "Set Current Slot", bb_set_current_slot, NULL, NULL},
+    {NMO_GUID(0x60415d44, 0x0d0174ea), "Set Prelit Color", bb_set_prelit_color, NULL, NULL},
+    {NMO_GUID(0xf11d010a, 0xfb1d010a), "Texture Scroller", bb_texture_scroller, NULL, NULL},
 };
 
 nmo_status_t eng_register_materials(nmo_engine_t *engine)

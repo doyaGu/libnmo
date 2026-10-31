@@ -32,9 +32,17 @@ extern "C" {
 #endif
 
 typedef enum nmo_engine_draw_kind {
-    NMO_ENGINE_DRAW_MESH = 0, /* a 3D entity's current mesh, at its world matrix */
-    NMO_ENGINE_DRAW_QUAD = 1  /* a 2D entity, or a character of text */
+    NMO_ENGINE_DRAW_MESH = 0,     /* a 3D entity's current mesh, at its world matrix */
+    NMO_ENGINE_DRAW_QUAD = 1,     /* a 2D entity, or a character of text */
+    NMO_ENGINE_DRAW_TRIANGLES = 2 /* world space triangles a particle system draws */
 } nmo_engine_draw_kind_t;
+
+/* A vertex of NMO_ENGINE_DRAW_TRIANGLES: world position, texture coordinates, ARGB color */
+typedef struct nmo_engine_vertex {
+    float x, y, z;
+    float u, v;
+    uint32_t color;
+} nmo_engine_vertex_t;
 
 /*
  * Something to draw. A mesh uses its materials; a quad uses `material`
@@ -60,6 +68,13 @@ typedef struct nmo_engine_draw {
     bool no_z_test, no_z_write; /* VX_MOVEABLE_NOZBUFFERTEST / NOZBUFFERWRITE */
     /* A mesh drawn with a projection of its own (TT Sky's): fov > 0 */
     float fov, near_plane, far_plane;
+    /* Triangles: the frame's vertices from first_vertex, textured with `texture`
+       (modulated, clamped), blended source_blend/dest_blend (VXBLEND_MODE)
+       unless `blend` is false, no lighting, no culling; world[12..14] is their
+       emitter's position, to sort by */
+    int32_t first_vertex, vertex_count;
+    int32_t source_blend, dest_blend;
+    bool blend;
 } nmo_engine_draw_t;
 
 typedef struct nmo_engine_light {
@@ -93,18 +108,33 @@ typedef struct nmo_engine_frame {
     int32_t light_count;
     const nmo_engine_draw_t *draws;
     int32_t draw_count;
+    const nmo_engine_vertex_t *vertices; /* what triangle draws use */
 } nmo_engine_frame_t;
 
 /**
  * The frame as the render context draws it now: background 2D entities,
- * then the visible meshes of the level scene, then the foreground 2D
- * entities with the text drawn on them, each 2D tree in Z order. A target
- * camera turns to its target first (PrepareCameras).
+ * then the visible meshes of the level scene and the particle systems'
+ * triangles, then the foreground 2D entities with the text drawn on them,
+ * each 2D tree in Z order. A target camera turns to its target first
+ * (PrepareCameras).
  */
 NMO_API nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *out);
 
 /** CKObject::IsVisible as the blocks left it. */
 NMO_API bool nmo_engine_object_is_visible(const nmo_engine_t *engine, nmo_object_id_t id);
+
+/*
+ * A material channel of a mesh (CKMesh::AddChannel): drawn over the mesh's
+ * faces with its own material, blended source_blend/dest_blend.
+ */
+typedef struct nmo_engine_channel {
+    nmo_object_id_t material;
+    int32_t source_blend, dest_blend; /* VXBLEND_MODE */
+    bool active;
+    bool lit;          /* not VXCHANNEL_NOTLIT */
+    const float *uvs;  /* two a vertex; NULL: the mesh's own */
+    uint16_t mask;     /* the faces whose channel_mask has it; 0: every face */
+} nmo_engine_channel_t;
 
 typedef struct nmo_engine_mesh {
     int32_t vertex_count;
@@ -116,11 +146,15 @@ typedef struct nmo_engine_mesh {
     int32_t material_count;       /* the material groups */
     bool prelit;                  /* VXMESH_PRELITMODE: colors, not lighting */
     bool wrap_u, wrap_v;
+    uint32_t version;             /* changes when blocks change the vertices or colors */
+    int32_t channel_count;
+    const nmo_engine_channel_t *channels;
 } nmo_engine_mesh_t;
 
 /**
- * A mesh as the file holds it, with the normals CK rebuilds from the faces
- * when the file saved none; false when `mesh` is none.
+ * A mesh as it is now: the file's, with the normals CK rebuilds from the
+ * faces when the file saved none, and the UVs and colors blocks changed
+ * (Texture Scroller, Set Prelit Color); false when `mesh` is none.
  */
 NMO_API bool nmo_engine_mesh(const nmo_engine_t *engine, nmo_object_id_t mesh,
                              nmo_engine_mesh_t *out);

@@ -90,8 +90,9 @@ TEST(engine_media, particle_system_exits_off_once_its_particles_died)
     }
     ASSERT_EQ(1u, runs(&f, exit_on));
     ASSERT_EQ(1u, runs(&f, exit_off));
-    /* Off in the frame ending at 50 ms; the particles of that frame live 100 ms more */
-    ASSERT_EQ(6u, frames);
+    /* The first frame emits (Emission Delay 200 ms, so only then); those particles live
+       100 ms, four updates of 25 ms, and leave in the fifth, after Off at 50 ms */
+    ASSERT_EQ(5u, frames);
     ASSERT_FALSE(nmo_engine_behavior_is_active(f.engine, ps));
     fixture_end(&f);
 }
