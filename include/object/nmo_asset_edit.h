@@ -36,6 +36,12 @@ typedef struct nmo_asset_material_render_flags {
     VXTEXTURE_ADDRESSMODE wrap;
     bool has_alpha_func;
     VXCMPFUNC alpha_func;
+    bool has_alpha_ref;
+    uint8_t alpha_ref;
+    bool has_two_sided;
+    bool two_sided;
+    bool has_z_write;
+    bool z_write;
 } nmo_asset_material_render_flags_t;
 
 typedef struct nmo_asset_material_channels {
@@ -80,6 +86,12 @@ NMO_API nmo_status_t nmo_asset_edit_set_texture_from_file(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t texture_id,
     const char *path);
+
+/* The pixel format the engine converts the texture to (CKTexture::SetDesiredVideoFormat). */
+NMO_API nmo_status_t nmo_asset_edit_set_texture_video_format(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t texture_id,
+    VX_PIXELFORMAT format);
 
 /* Reference an image file by name instead of embedding it (CKTEXTURE_EXTERNAL). */
 NMO_API nmo_status_t nmo_asset_edit_set_texture_external(

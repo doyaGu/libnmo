@@ -389,6 +389,17 @@ nmo_status_t nmo_asset_edit_set_material_render_flags(
             packed_flags |= 0x10u;
         }
     }
+    /* The rest of the flag word: bit 0 two-sided, bit 1 z write, and the
+       alpha test reference in the top byte (RCKMaterial::SetAsCurrent). */
+    if (flags->has_alpha_ref) {
+        packed_flags = (packed_flags & 0x00FFFFFFu) | ((uint32_t)flags->alpha_ref << 24);
+    }
+    if (flags->has_two_sided) {
+        packed_flags = flags->two_sided ? (packed_flags | 0x01u) : (packed_flags & ~0x01u);
+    }
+    if (flags->has_z_write) {
+        packed_flags = flags->z_write ? (packed_flags | 0x02u) : (packed_flags & ~0x02u);
+    }
 
     state->packed_modes = packed_modes;
     state->packed_flags = packed_flags;
@@ -436,6 +447,31 @@ nmo_status_t nmo_asset_edit_set_texture_rgba(
     nmo_workspace_edit_mark(
         edit,
         NMO_WORKSPACE_EDIT_OBJECT_STATE | NMO_WORKSPACE_EDIT_RESOURCES);
+    return NMO_OK;
+}
+
+nmo_status_t nmo_asset_edit_set_texture_video_format(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t texture_id,
+    VX_PIXELFORMAT format)
+{
+    if (edit == NULL || texture_id == 0u || format <= 0) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_texture_state_t *state = NULL;
+    nmo_status_t status = workspace_edit_snapshot_typed_state(
+        edit,
+        texture_id,
+        NMO_CID_TEXTURE,
+        sizeof(*state),
+        (void **)&state);
+    if (status != NMO_OK) {
+        return status;
+    }
+    state->has_desired_video_format = 1;
+    state->desired_video_format = (uint32_t)format;
+    nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_OBJECT_STATE);
     return NMO_OK;
 }
 
