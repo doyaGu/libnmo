@@ -835,11 +835,9 @@ static void view_pick(nmo_view_t *view, const nmo_engine_frame_t *frame)
     nmo_engine_set_entity_under_mouse(view->engine, under);
 }
 
-nmo_status_t nmo_view_draw(nmo_view_t *view)
+/* Draw the engine's current frame into the back buffer. */
+static nmo_status_t view_render(nmo_view_t *view, nmo_engine_frame_t *out_frame)
 {
-    if (view == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
     nmo_engine_frame_t frame;
     nmo_status_t status = nmo_engine_render_frame(view->engine, &frame);
     if (status != NMO_OK) {
@@ -943,6 +941,20 @@ nmo_status_t nmo_view_draw(nmo_view_t *view)
         }
     }
     view_text_end_frame(view->text);
+    *out_frame = frame;
+    return NMO_OK;
+}
+
+nmo_status_t nmo_view_draw(nmo_view_t *view)
+{
+    if (view == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_engine_frame_t frame;
+    nmo_status_t status = view_render(view, &frame);
+    if (status != NMO_OK) {
+        return status;
+    }
     view_pick(view, &frame);
     SDL_GL_SwapWindow(view->window);
     return NMO_OK;
@@ -953,6 +965,13 @@ nmo_status_t nmo_view_screenshot(nmo_view_t *view, const char *path)
     if (view == NULL || path == NULL || view->view_w <= 0 || view->view_h <= 0) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
+    /* The front buffer is undefined once swapped (macOS composites the
+       window), so draw the frame again and read it before any swap. */
+    nmo_engine_frame_t frame;
+    nmo_status_t render_status = view_render(view, &frame);
+    if (render_status != NMO_OK) {
+        return render_status;
+    }
     int window_w = 0, window_h = 0;
     SDL_GetWindowSizeInPixels(view->window, &window_w, &window_h);
     size_t row = (size_t)view->view_w * 4u;
@@ -961,7 +980,7 @@ nmo_status_t nmo_view_screenshot(nmo_view_t *view, const char *path)
     nmo_arena_t *arena = nmo_arena_create(NULL, 1u << 20);
     nmo_status_t status = NMO_ERR_NOMEM;
     if (pixels != NULL && flipped != NULL && arena != NULL) {
-        glReadBuffer(GL_FRONT);
+        glReadBuffer(GL_BACK);
         glPixelStorei(GL_PACK_ALIGNMENT, 1);
         glReadPixels(view->view_x, window_h - view->view_y - view->view_h, view->view_w,
                      view->view_h, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
