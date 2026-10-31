@@ -43,7 +43,7 @@ game runtime must keep the original `CK2.dll` and `VxMath.dll`.
 The manifest is:
 
 ```text
-tools\ballance\base_ballance_bb_manifest.json
+apps\ballance\data\base_ballance_bb_manifest.json
 ```
 
 It folds the base event router:
@@ -79,14 +79,14 @@ port order. The manifest maps candidate output indexes to the verified
 From the libnmo repository:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\ballance\build-base-ballance-bb.ps1 `
+powershell -ExecutionPolicy Bypass -File .\apps\ballance\scripts\build-base-ballance-bb.ps1 `
   -InputCmo <GAME_ROOT>\base_fold_loading_deletes.cmo `
   -OutputCmo <GAME_ROOT>\base_ballance_bb.cmo
 ```
 
 The script:
 
-1. Reads `tools\ballance\base_ballance_bb_manifest.json`.
+1. Reads `apps\ballance\data\base_ballance_bb_manifest.json`.
 2. Writes a temporary strict patch JSON.
 3. Runs `nmo patch diff`.
 4. Runs `nmo patch apply`.
@@ -209,7 +209,7 @@ Before adding any replacement or fold:
 Then add the operation to:
 
 ```text
-tools\ballance\base_ballance_bb_manifest.json
+apps\ballance\data\base_ballance_bb_manifest.json
 ```
 
 Regenerate the CMO and run the Player smoke test before committing.

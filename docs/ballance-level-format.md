@@ -73,7 +73,7 @@ of `PS_FourFlames` and `PC_TwoFlames` hold no mesh: the game draws the start's
 flame pillars and the checkpoints with the level object's own mesh, so these
 two need the game's meshes, not a box.
 
-`tools/scripts/ballance_level_elements.py <GAME_ROOT> -o <dir>` exports one
+`apps/ballance/scripts/ballance_level_elements.py <GAME_ROOT> -o <dir>` exports one
 mesh of each kind from the original levels, and the `SkyLayer` plane, as
 `<Kind>.obj`. The meshes are the game's, so they come from a local
 installation; nothing of them is kept with libnmo.
@@ -220,11 +220,11 @@ and textures that stay in the game's `Textures` folder.
 
 The original levels share one set of 48 materials, named like
 `Floor_Top_Flat`, `Floor_Side`, `Rail`, each the same in every level.
-`tools/ballance/level_materials.json` holds them as manifest materials; it is
+`apps/ballance/data/level_materials.json` holds them as manifest materials; it is
 written by
 
 ```sh
-tools/scripts/ballance_level_materials.py <GAME_ROOT> -o tools/ballance/level_materials.json
+apps/ballance/scripts/ballance_level_materials.py <GAME_ROOT> -o apps/ballance/data/level_materials.json
 ```
 
 Root `materials` are shared: each becomes one CKMaterial with its own name.
@@ -257,7 +257,7 @@ document. They made no difference in the engine runs.
 ## Checking a Level
 
 ```sh
-tools/scripts/ballance_check_level.py [--json] Level_01.NMO
+apps/ballance/scripts/ballance_check_level.py [--json] Level_01.NMO
 ```
 
 reads a level with the nmo CLI and reports what this document's rules say:

@@ -243,7 +243,7 @@ and from layers below it. From lowest to highest:
 
 ```
 core -> io -> format -> type -> extension -> object -> export -> session
-     -> runtime -> document -> chunk -> behavior -> edit -> lua -> project
+     -> runtime -> document -> chunk -> behavior -> engine -> bb -> edit -> lua -> project
 ```
 
 `tests/layering_audit.cmake` (run as `test_layering_audit`) enforces this order, for direct
@@ -251,6 +251,10 @@ includes and for relative includes of another layer's private headers
 (`"../runtime/runtime_internal.h"`). No source file includes a header of a higher layer:
 `tests/layering_allowlist.txt`, where such an include would be listed as debt, is empty. A new
 upward include fails the test, and so does an allowlist entry that is no longer needed.
+The same test keeps the block packs apart: the engine's headers include no `bb/` header, and a
+pack (`src/bb/<pack>/`) includes neither another pack's files nor its public header.
+`tests/layering_calls_audit.py` (`test_layering_calls_audit`) checks the same order on the
+functions a file calls, which an include check cannot see when a header pulls in another layer.
 
 | Layer     | Source           | Headers               | Responsibility                                                                   |
 |-----------|------------------|-----------------------|----------------------------------------------------------------------------------|
@@ -266,19 +270,26 @@ upward include fails the test, and so does an allowlist entry that is no longer 
 | Document  | `src/document/`  | `include/document/`   | Document load and save entry points, stats, comparison, file state, object diff |
 | Chunk     | `src/chunk/`     | `include/chunk/`      | Chunk index and chunk inspection utilities                                       |
 | Behavior  | `src/behavior/`  | `include/behavior/`   | Behavior graph traversal, behavior acceleration and interface views, parameter chains, script walker, script edit graph |
+| Engine    | `src/engine/`    | `include/engine/`     | Behavior engine: the CK2 runtime the graphs run in (behavior, message, render context, scenes, attributes, arrays) and the manager hooks block packs add theirs through; it registers no blocks (library `nmo_engine`) |
+| Block packs | `src/bb/`      | `include/bb/`         | Building block ports, a pack per set of DLLs with the managers they keep: `virtools` (the stock DLLs, font manager), `physics` (physics_RT, the physics manager and the provider API), `terratools` (the TT_* DLLs); each reaches the engine only through `src/bb/bb_sdk.h` (libraries `nmo_bb_virtools`, `nmo_bb_physics`, `nmo_bb_terratools`) |
 | Edit      | `src/edit/`      | `include/edit/`       | Edit plans and their JSON form, script edits, behavior rewrites (replace, fold), semantic validator, probe analyzer, behavior execute (library `nmo_edit`) |
 | Lua       | `src/lua/`       | `include/lua/`        | Lua 5.5 runtime, module system, bindings for all layers, fold-map parser (library `nmo_lua`) |
 | Project   | `src/project/`   | `include/project/`    | Project plan, asset/scene/script authoring, executor, manifest, validator (library `nmo_project`) |
 
 ### Libraries
 
-The Edit, Lua and Project layers are separate libraries built on top of the core; the core
-library does not depend on any of them and contains no edit or Lua code. Lua and Project build
-on the Edit library.
+The Engine, Block pack, Edit, Lua and Project layers are separate libraries built on top of the
+core; the core library does not depend on any of them and contains no engine, edit or Lua code.
+The block packs build on the Engine library, which knows none of them: a host creates an engine
+and registers the packs it wants (`nmo_bb_virtools_register()`, `nmo_bb_physics_register()`,
+`nmo_bb_terratools_register()`), as a player loads building block DLLs. Lua and Project build on
+the Edit library.
 
 | Library       | CMake target   | pkg-config       | Umbrella header | Contents                                  |
 |---------------|----------------|------------------|-----------------|-------------------------------------------|
 | `libnmo`      | `nmo::nmo`     | `libnmo`         | `nmo.h`         | Reading, writing, inspecting, and workspace edits: everything below the Edit layer |
+| `libnmo_engine` | `nmo::engine` | `libnmo-engine` | `nmo_engine.h`  | Behavior engine and its block API (`engine/nmo_engine_block.h`), render frames (`engine/nmo_engine_render.h`) |
+| `libnmo_bb_virtools`, `libnmo_bb_physics`, `libnmo_bb_terratools` | `nmo::bb_virtools`, `nmo::bb_physics`, `nmo::bb_terratools` | `libnmo-bb` | `bb/nmo_bb_<pack>.h` | The block packs, each with its register function |
 | `libnmo_edit` | `nmo::edit`    | `libnmo-edit`    | `nmo_edit.h`    | Edit plans, script edits, behavior rewrites, semantic validator, probe analyzer, behavior execute |
 | `libnmo_lua`  | `nmo::lua`     | `libnmo-lua`     | `nmo_lua.h`     | Lua runtime, bindings, `nmo_behavior_execution_lua_runtime()` |
 | `libnmo_project` | `nmo::project` | `libnmo-project` | `nmo_project.h` | Project plans, authoring, executor, manifest reader |
@@ -286,8 +297,16 @@ on the Edit library.
 `nmo.h` does not include the Edit, Lua or Project headers; include `nmo_edit.h`, `nmo_lua.h` or
 `nmo_project.h` (or the individual `edit/*.h`, `lua/*.h`, `project/*.h` headers) and link the
 matching library. Static builds produce one archive per library; with `NMO_BUILD_SHARED=ON`
-all four are compiled into the single shared `nmo` library and `nmo::edit`, `nmo::lua` and
-`nmo::project` are interface targets on it.
+all of them are compiled into the single shared `nmo` library and `nmo::engine`, the
+`nmo::bb_*` packs, `nmo::edit`, `nmo::lua` and `nmo::project` are interface targets on it.
+
+Two optional hosts build on the engine and the packs: `nmo_physics_ivp` (with
+`NMO_IVP_SOURCE_DIR` set to a libivp source tree) simulates the physics pack's objects, and
+`nmo_view` (with `NMO_VIEWER=ON`) shows the engine's frames in an SDL3/OpenGL window
+(`nmo behavior run --window`).
+
+Tooling for one game lives under `apps/`, outside the libraries, which know nothing of it:
+`apps/ballance/` holds the Ballance level scripts (`scripts/`) and the data they read (`data/`).
 
 ### Key Design Decisions
 
