@@ -191,7 +191,7 @@ typedef struct eng_render {
     eng_map_t material_map;
     ENG_VEC(eng_2d_t) entities_2d;
     eng_map_t entity_2d_map;
-    bool entities_2d_loaded;
+    size_t entities_2d_modules; /* the modules whose 2D entities are in entities_2d */
     ENG_VEC(eng_light_t) lights;
     eng_map_t light_map;
     ENG_VEC(eng_image_t) images;
@@ -240,6 +240,8 @@ void eng_set_object_visibility(nmo_engine_t *engine, nmo_object_id_t id, int32_t
 eng_material_t *eng_material(nmo_engine_t *engine, nmo_object_id_t id);
 /* A material made at run time (CreateObject(CKCID_MATERIAL)), with CKMaterial's defaults */
 eng_material_t *eng_material_new(nmo_engine_t *engine, nmo_object_id_t id);
+/* The 2D entity drawn no more: the object was destroyed */
+void eng_2d_destroy(nmo_engine_t *engine, nmo_object_id_t id);
 /* The 2D entity's run time state; NULL for no CK2dEntity */
 eng_2d_t *eng_2d_entity(nmo_engine_t *engine, nmo_object_id_t id);
 eng_light_t *eng_light(nmo_engine_t *engine, nmo_object_id_t id);

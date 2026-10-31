@@ -378,6 +378,7 @@ void nmo_engine_destroy_object(nmo_engine_t *engine, nmo_object_id_t id)
         eng_map_put(&engine->destroyed, id, 1);
     }
     eng_entity_destroy(engine, id);
+    eng_2d_destroy(engine, id);
     eng_forget_object(engine, id);
     int32_t index = eng_map_get(&engine->object_map, id);
     if (index >= 0) {

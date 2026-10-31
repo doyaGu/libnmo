@@ -596,12 +596,21 @@ eng_2d_t *eng_2d_entity(nmo_engine_t *engine, nmo_object_id_t id)
     entity->z_order = state->has_z_order ? state->z_order : 0;
     entity->material = state->has_material ? eng_object_ref(engine, id, &state->material) : 0;
     entity->parent = state->has_parent ? eng_object_ref(engine, id, &state->parent) : 0;
+    entity->destroyed = eng_map_get(&engine->destroyed, id) >= 0;
     if (!eng_map_put(&engine->render.entity_2d_map, id,
                      (int32_t)engine->render.entities_2d.count - 1)) {
         engine->render.entities_2d.count--;
         return NULL;
     }
     return entity;
+}
+
+void eng_2d_destroy(nmo_engine_t *engine, nmo_object_id_t id)
+{
+    int32_t at = eng_map_get(&engine->render.entity_2d_map, id);
+    if (at >= 0) {
+        engine->render.entities_2d.data[at].destroyed = true;
+    }
 }
 
 static void eng_load_2d_class(nmo_engine_t *engine, uint32_t class_id)
@@ -902,8 +911,9 @@ nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *o
         return NMO_ERR_INVALID_ARGUMENT;
     }
     eng_render_t *render = &engine->render;
-    if (!render->entities_2d_loaded) {
-        render->entities_2d_loaded = true;
+    /* The 2D entities of every file loaded so far */
+    if (render->entities_2d_modules != engine->modules.count) {
+        render->entities_2d_modules = engine->modules.count;
         eng_load_2d_class(engine, NMO_CID_2DENTITY);
     }
     memset(out, 0, sizeof(*out));
