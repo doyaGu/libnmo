@@ -1,0 +1,515 @@
+#!/usr/bin/env python3
+"""Build a Ballance level from a route, as a libnmo project manifest.
+
+A route is the track as the ball rolls it, sector by sector, in JSON:
+
+    {
+      "start": {"x": 0, "z": 0, "heading": "-x"},
+      "sectors": [
+        [{"road": 10},
+         {"area": [25, 25], "exit": "left",
+          "elements": [{"kind": "P_Extra_Point", "at": [12.5, 0]}]},
+         {"road": 30, "width": "wide", "drop": 5},
+         {"turn": "right"},
+         {"trafo": "stone"},
+         {"road": 10}],
+        [...]
+      ]
+    }
+
+The start's marker stands at (x, z), the edges of the road that leaves it at
+height 0, and the track leaves toward heading (+x, -x, +z or -z).  Each
+sector is a list of pieces, laid end to end on the floors' 2.5 grid:
+
+- {"road": length, "width": "narrow" or "wide", "drop": dy} -- a straight
+  road (narrow unless given), coming down dy over its length.
+- {"area": [along, across], "exit": "straight", "left" or "right"} -- a
+  square or oblong area entered at the middle of one side and left at the
+  middle of the opposite side, or of the side to the left or right.  A
+  pillar stands under each corner.
+- {"turn": "left" or "right"} -- a square corner as wide as the road.
+- {"trafo": "paper", "stone" or "wood"} -- a ball changer on its pad, on a
+  narrow road.
+
+Every piece may carry "elements": [{"kind": "P_Box", "at": [along, right]}],
+placed from where the piece starts, along the track and to its right, and
+resting on the floor there as the originals' do (see ELEMENT_LIFT).  Each
+sector but the last ends in a checkpoint and the last in the balloon; both
+are reached from a narrow road, and every sector starts with one.
+
+The level is built as the original levels are (docs/ballance-level-format.md):
+the floors with ballance_floors.py, the start, checkpoints and balloon turned
+with the track, their lantern towers and the balloon's striped poles beside
+it, the fall zone hidden under all of it.  With --elements, it uses the
+meshes apps/ballance/scripts/ballance_level_elements.py exported from a Ballance
+installation; without, boxes stand in for the markers, elements and the
+start's and checkpoints' floors, and there is no scenery and no sky.
+
+The output directory gets manifest.json, the OBJ meshes it names, and
+route_points.json, the points along the middle of the track from the start to
+the balloon, for driving a ball along it.  Turn it into a level file with:
+
+    nmo patch apply --project <out>/manifest.json -o <out>/Level_01.NMO
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import shutil
+import sys
+from pathlib import Path
+
+from ballance_floors import CELL, NARROW, RISE, WALL, Floors, Mesh, funnel, pad
+
+PRESETS = Path(__file__).resolve().parent.parent / "data" / "level_materials.json"
+
+# The groups the game reads by name.  Levelinit iterates the element groups
+# (P_*) and the depth test groups by name too; a missing one costs a single
+# load-time error, as in the original levels, so only the used ones are made.
+LEVEL_GROUPS = [
+    "PS_Levelstart",
+    "PE_Levelende",
+    "PC_Checkpoints",
+    "PR_Resetpoints",
+    "Phys_Floors",
+    "Phys_FloorRails",
+    "Phys_FloorStopper",
+    "Shadow",
+    "DepthTestCubes",
+    "Sound_RollID_01",
+    "Sound_HitID_01",
+    "Sound_RollID_02",
+    "Sound_HitID_02",
+    "Sound_RollID_03",
+    "Sound_HitID_03",
+]
+
+# A stone floor: physics, stone rolling and hit sounds, the ball's shadow.
+STONE_FLOOR_GROUPS = ["Phys_Floors", "Sound_RollID_01", "Sound_HitID_01", "Shadow"]
+
+# The kinds whose meshes --elements supplies (<Kind>.obj).
+MARKERS = ["PS_FourFlames", "PC_TwoFlames", "PR_Resetpoint", "PE_Balloon"]
+ELEMENTS = ["P_Extra_Life", "P_Extra_Point", "P_Trafo_Paper", "P_Trafo_Stone",
+            "P_Trafo_Wood", "P_Ball_Paper", "P_Ball_Stone", "P_Ball_Wood", "P_Box", "P_Dome"]
+# The kinds that only --elements supplies, with nothing standing in for them.
+GAME_ONLY = ["SkyLayer", "Floor_Start", "Floor_Checkpoint", "Pillar", "Tower", "Stick"]
+# The materials of the scenery.
+SCENERY_MATERIALS = [
+    "Colums_blue", "Colums_beige", "Columns_beige_fade", "Tower_Floor_Side",
+    "Tower_Floor_Top_Flat_illu", "TowerRail", "TowerRoof", "TowerRoof_Brim", "Laterne_Glas",
+    "Laterne_Metal", "Laterne_Schatten", "Laterne_Verlauf", "Stick_Bottom", "Stick_Green",
+    "Stick_Rail", "Stick_Red", "Stick_Stripes"]
+
+# How far above the floor under it each element stands, as in the originals:
+# their meshes rest on it.  A ball changer stands 0.1 above its pad.
+ELEMENT_LIFT = {"P_Extra_Point": 2.5, "P_Extra_Life": 2.56, "P_Box": 2.5,
+                "P_Ball_Paper": 2.0, "P_Ball_Stone": 2.0, "P_Ball_Wood": 2.0, "P_Dome": 0.0}
+TRAFO_LIFT = 0.1
+
+# The start and the checkpoints are 1.26 below the edges of the roads that
+# meet their floors.  A narrow road meets those floors through a funnel 5
+# long, from the gap in their rims; at the end, a funnel flattens it under the
+# balloon's planks.  PR_01 is 3.65 above the start and the next reset point
+# 3.33 above its checkpoint.
+ROAD_ABOVE_MARKER = 1.26
+FUNNEL = 5.0
+START_OPENING, START_GAP = 7.39, 1.30
+CHECKPOINT_OPENING, CHECKPOINT_GAP = 4.92, 0.87
+FIRST_RESET_ABOVE, RESET_ABOVE = 3.65, 3.33
+# The balloon's planks reach 22.08 along its +X, back to the road's end, which
+# is 0.01 higher than the balloon.
+BALLOON_REACH = 22.08
+BALLOON_BELOW_ROAD = 0.01
+WIDTHS = {"narrow": NARROW, "wide": 2 * NARROW}
+
+# The scenery, placed as the original levels place it (ballance_level_elements
+# exports one of each: Pillar, the Tower on top of one, Stick).  A pillar
+# under a floor stands 2.5 in from its corner, its top 5 below the floor's
+# edge, where the floor's walls end.  Lantern towers stand in pairs beside
+# the track: (along the track, to its right, top of the pillar above the
+# marker).  The start's are Level_01's, moved back beside the road ahead of
+# it; the checkpoint's are the originals' usual pair 20 ahead.  Around the
+# balloon, Level_01's towers and striped poles, along the balloon's +X (back
+# toward the road).  A tower that would stand on a floor is left out.
+PILLAR_INSET = 2.5
+START_TOWERS = [(17.4, 13.0, -2.42), (17.4, -13.0, -2.42)]
+CHECKPOINT_TOWERS = [(20.0, 12.5, -4.92), (20.0, -12.5, -4.92)]
+BALLOON_TOWERS = [(-50.0, 32.0, -10.0), (-50.0, -32.0, -10.0),
+                  (36.0, 26.0, -14.1), (36.0, -26.0, -14.1)]
+BALLOON_STICKS = [(-56.0, 45.5, 3.7), (-56.0, -45.5, 3.7), (3.0, 30.5, 3.7),
+                  (3.0, -30.5, 3.7), (52.0, 15.5, 3.7), (52.0, -15.5, 3.7)]
+TOWER_HALF = 2.5
+
+# The fall zone reaches this far beyond the floors, from 25 to 60 below them.
+FALL_MARGIN = 60.0
+FALL_TOP, FALL_BOTTOM = 25.0, 60.0
+SKY_BELOW = 180.0
+
+HEADINGS = {"+x": (1, 0), "-x": (-1, 0), "+z": (0, 1), "-z": (0, -1)}
+
+
+def right_of(d: tuple[int, int]) -> tuple[int, int]:
+    """The direction to the right of heading d, looking along it with Y up
+    in Virtools' left-handed space (to the right of -X is +Z)."""
+    return d[1], -d[0]
+
+
+def turn_of(d: tuple[int, int]) -> float:
+    """The turn about Y, in degrees, that points an object's X axis along d."""
+    return math.degrees(math.atan2(-d[1], d[0])) % 360
+
+
+def at(p: tuple[float, float], d: tuple[int, int], along: float,
+       right: float = 0.0) -> tuple[float, float]:
+    r = right_of(d)
+    return p[0] + d[0] * along + r[0] * right, p[1] + d[1] * along + r[1] * right
+
+
+class Builder:
+    """Lays a route out: its floors, by sector, and where everything stands."""
+
+    def __init__(self, route: dict) -> None:
+        start = route.get("start", {})
+        self.start = (float(start.get("x", 0.0)), float(start.get("z", 0.0)))
+        self.heading = HEADINGS[start.get("heading", "-x")]
+        self.marker_y = -ROAD_ABOVE_MARKER  # the start's road edges are at 0
+        self.sectors: list[Floors] = []
+        self.extras: list[list] = []  # per sector: (function, args) writing funnels and pads
+        self.elements: list[tuple[str, int, list[float]]] = []
+        self.towers: list[list[float]] = []
+        self.pillars: list[list[float]] = []
+        self.sticks: list[list[float]] = []
+        self.checkpoints: list[tuple[list[float], tuple[int, int]]] = []
+        self.balloon: tuple[list[float], tuple[int, int]] | None = None
+        self.trafos: set[str] = set()
+        self.points: list[list[float]] = [list(self.start)]
+        self.lows: list[float] = []
+        self._lay(route["sectors"])
+
+    def _lay(self, sectors: list[list[dict]]) -> None:
+        d = self.heading
+        marker = self.start
+        edge = self.marker_y + ROAD_ABOVE_MARKER
+        for index, pieces in enumerate(sectors, start=1):
+            opening, gap = (START_OPENING, START_GAP) if index == 1 else (CHECKPOINT_OPENING,
+                                                                          CHECKPOINT_GAP)
+            p = at(marker, d, opening + FUNNEL)
+            floors = Floors(origin=p)
+            extras = [(funnel, at(marker, d, opening), d, edge, gap)]
+            self.sectors.append(floors)
+            self.extras.append(extras)
+            self._open(floors, p, d)
+            self.points.append(list(p))
+            h = edge - RISE
+            width = NARROW
+            for piece in pieces:
+                p, d, h, width = self._piece(index, floors, extras, piece, p, d, h, width)
+            if width != NARROW:
+                raise ValueError(f"sector {index} must end on a narrow road")
+            edge = h + RISE
+            self._open(floors, p, d)
+            back = (-d[0], -d[1])
+            last = index == len(sectors)
+            extras.append((funnel, at(p, d, FUNNEL), back, edge, None if last else CHECKPOINT_GAP))
+            if last:
+                where = at(p, d, FUNNEL + BALLOON_REACH)
+                self.balloon = ([where[0], edge - BALLOON_BELOW_ROAD, where[1]], d)
+                self.points.append(list(where))
+            else:
+                marker = at(p, d, FUNNEL + CHECKPOINT_OPENING)
+                self.checkpoints.append(([marker[0], edge - ROAD_ABOVE_MARKER, marker[1]], d))
+                self.points.append(list(marker))
+            self.lows.append(min(self._floor_heights(floors)))
+
+    def _open(self, floors: Floors, p: tuple[float, float], d: tuple[int, int]) -> None:
+        a, b = at(p, d, 0, -NARROW / 2), at(p, d, 0, NARROW / 2)
+        floors.open_edge(a[0], a[1], b[0], b[1])
+
+    def _rect(self, p: tuple[float, float], d: tuple[int, int], length: float,
+              width: float) -> tuple[float, float, float, float]:
+        a = at(p, d, 0, -width / 2)
+        b = at(p, d, length, width / 2)
+        return a[0], a[1], b[0], b[1]
+
+    def _piece(self, sector: int, floors: Floors, extras: list, piece: dict,
+               p: tuple[float, float], d: tuple[int, int], h: float, width: float):
+        start, heading = p, d
+        if "road" in piece:
+            length = float(piece["road"])
+            width = WIDTHS[piece.get("width", "narrow")]
+            end = h - float(piece.get("drop", 0.0))
+            floors.road(*self._rect(p, d, length, width), h, end,
+                        along="x" if d[0] else "z")
+            ramp = (h, end, length)
+            p, h = at(p, d, length), end
+            self.points.append(list(p))
+        elif "area" in piece:
+            along, across = (float(v) for v in piece["area"])
+            floors.area(*self._rect(p, d, along, across), h)
+            ramp = (h, h, along)
+            for a in (PILLAR_INSET, along - PILLAR_INSET):
+                for c in (-across / 2 + PILLAR_INSET, across / 2 - PILLAR_INSET):
+                    x, z = at(p, d, a, c)
+                    self.pillars.append([x, h + RISE - WALL, z])
+            exit = piece.get("exit", "straight")
+            if exit == "straight":
+                self.points.append(list(at(p, d, along / 2)))
+                p = at(p, d, along)
+            else:
+                middle = at(p, d, along / 2)
+                self.points.append(list(middle))
+                d = right_of(d) if exit == "right" else (-right_of(d)[0], -right_of(d)[1])
+                p = at(middle, d, across / 2)
+            self.points.append(list(p))
+        elif "turn" in piece:
+            floors.road(*self._rect(p, d, width, width), h, h, along="x" if d[0] else "z")
+            ramp = (h, h, width)
+            corner = at(p, d, width / 2)
+            self.points.append(list(corner))
+            side = right_of(d) if piece["turn"] == "right" else (-right_of(d)[0],
+                                                                  -right_of(d)[1])
+            d = side
+            p = at(corner, d, width / 2)
+            self.points.append(list(p))
+        elif "trafo" in piece:
+            if width != NARROW:
+                raise ValueError("a ball changer stands on a narrow road")
+            kind = piece["trafo"].capitalize()
+            edge = h + RISE
+            self._open(floors, p, d)
+            back = (-d[0], -d[1])
+            middle = at(p, d, FUNNEL + NARROW / 2)
+            extras.append((funnel, at(p, d, FUNNEL), back, edge, None))
+            extras.append((pad, middle, edge, f"Floor_Trafo_{kind}"))
+            extras.append((funnel, at(p, d, FUNNEL + NARROW), d, edge, None))
+            self.elements.append((f"P_Trafo_{kind}", sector,
+                                  [middle[0], edge + TRAFO_LIFT, middle[1]]))
+            self.trafos.add(kind)
+            ramp = (h, h, 2 * FUNNEL + NARROW)
+            p = at(p, d, 2 * FUNNEL + NARROW)
+            self._open(floors, p, d)
+            self.points.append(list(middle))
+            self.points.append(list(p))
+        else:
+            raise ValueError(f"unknown piece {piece}")
+        for element in piece.get("elements", []):
+            a, c = (float(v) for v in element["at"])
+            y0, y1, length = ramp
+            x, z = at(start, heading, a, c)
+            floor = y0 + (y1 - y0) * min(max(a / length, 0.0), 1.0)
+            kind = element["kind"]
+            self.elements.append((kind, sector, [x, floor + ELEMENT_LIFT[kind], z]))
+        return p, d, h, width
+
+    @staticmethod
+    def _floor_heights(floors: Floors) -> list[float]:
+        return [p.y0 for p in floors.pieces] + [p.y1 for p in floors.pieces]
+
+    def _on_floor(self, x: float, z: float, half: float) -> bool:
+        """Whether a square of half width half at (x, z) lies over a floor
+        cell, a pad or a start or checkpoint floor."""
+        for floors in self.sectors:
+            for i, j in floors.cells:
+                cx, cz = floors.ox + (i + 0.5) * CELL, floors.oz + (j + 0.5) * CELL
+                if abs(cx - x) < half + CELL / 2 and abs(cz - z) < half + CELL / 2:
+                    return True
+        for marker in [(self.start[0], 0.0, self.start[1])] + [m for m, _ in self.checkpoints]:
+            if math.hypot(marker[0] - x, marker[2] - z) < START_OPENING + half + 2:
+                return True
+        return False
+
+    def scenery(self) -> None:
+        """Stands the lantern towers and the balloon's poles."""
+        spots = [(self.start, self.marker_y, self.heading, START_TOWERS, 1)]
+        for marker, d in self.checkpoints:
+            spots.append(((marker[0], marker[2]), marker[1], d, CHECKPOINT_TOWERS, 1))
+        if self.balloon is not None:
+            where, d = self.balloon
+            spots.append(((where[0], where[2]), where[1], d, BALLOON_TOWERS, -1))
+        for (px, pz), y, d, towers, sign in spots:
+            for a, c, up in towers:
+                x, z = at((px, pz), d, sign * a, c)
+                if not self._on_floor(x, z, TOWER_HALF):
+                    self.towers.append([x, y + up, z])
+        if self.balloon is not None:
+            where, d = self.balloon
+            for a, c, up in BALLOON_STICKS:
+                x, z = at((where[0], where[2]), d, -a, c)
+                if not self._on_floor(x, z, 1.2):
+                    self.sticks.append([x, where[1] + up, z])
+
+    def write(self, out: Path, pads: bool) -> None:
+        """The floors of each sector, with their funnels and pads, as
+        sector<N>.obj; without pads, boxes as high as the floors' rims stand
+        in for the start's and checkpoints' floors (start_pad.obj,
+        checkpoint_pad.obj)."""
+        for index, (floors, extras) in enumerate(zip(self.sectors, self.extras), start=1):
+            mesh = Mesh()
+            floors.build(mesh)
+            for function, *args in extras:
+                if function is funnel:
+                    (x, z), toward, edge, gap = args
+                    funnel(mesh, x, z, toward, edge, gap)
+                else:
+                    (x, z), top, material = args
+                    pad(mesh, x, z, top, material)
+            mesh.write(out / f"sector{index}.obj")
+        if not pads:
+            for name, half in (("start_pad", START_OPENING), ("checkpoint_pad", CHECKPOINT_OPENING)):
+                write_box(out / f"{name}.obj", -half, half, -WALL, ROAD_ABOVE_MARKER, -half, half)
+
+    def bounds(self) -> tuple[float, float, float, float]:
+        xs = [x for x, _ in self.points]
+        zs = [z for _, z in self.points]
+        return min(xs), max(xs), min(zs), max(zs)
+
+
+def level_object(name: str, mesh: str, position: list[float],
+                 groups: list[str], visible: bool = True, turn: float = 0.0) -> dict:
+    """turn: degrees about Y; 90 turns an object's X axis to -Z (CK's left-handed Y)."""
+    obj = {
+        "name": name,
+        "class": "CK3dObject",
+        "mesh": {"obj": mesh},
+        "transform": {"position": position},
+        "groups": groups,
+    }
+    if turn % 360:
+        obj["transform"]["rotation_euler_deg"] = [0, turn % 360, 0]
+    if not visible:
+        obj["visible"] = False
+    return obj
+
+
+def write_box(path: Path, x0: float, x1: float, y0: float, y1: float,
+              z0: float, z1: float) -> None:
+    corners = [(x, y, z) for x in (x0, x1) for y in (y0, y1) for z in (z0, z1)]
+    faces = [(3, 4, 8, 7), (1, 5, 6, 2), (1, 2, 4, 3), (5, 7, 8, 6), (1, 3, 7, 5), (2, 6, 8, 4)]
+    lines = [f"v {x:g} {y:g} {z:g}" for x, y, z in corners]
+    lines += ["f " + " ".join(map(str, face)) for face in faces]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def build_manifest(presets: dict, meshes: dict[str, str], level: Builder, name: str) -> dict:
+    # The turns are Level_03's, whose road runs along +X, turned with the
+    # track: the start's floor opens along it and the start is turned 90
+    # degrees from it; a reset point's -X looks along the track; the
+    # checkpoints and their floors turn with it, and the balloon's planks
+    # point back along it.
+    heading = turn_of(level.heading)
+    sx, sz = level.start
+    objects = [
+        level_object("PS_FourFlames_01", meshes["PS_FourFlames"], [sx, level.marker_y, sz],
+                     ["PS_Levelstart"], turn=heading - 90),
+        level_object("PR_Resetpoint_01", meshes["PR_Resetpoint"],
+                     [sx, level.marker_y + FIRST_RESET_ABOVE, sz], ["PR_Resetpoints"],
+                     turn=heading + 180),
+        # Touching this box is what makes the ball fall off ("Ball Off"); the
+        # original fall zones are hidden.
+        level_object("Quader01", "depth.obj", [0, 0, 0], ["DepthTestCubes"], visible=False),
+    ]
+    for index in range(1, len(level.sectors) + 1):
+        objects.append(level_object(f"A{index:02d}_Floor_02", f"sector{index}.obj", [0, 0, 0],
+                                    STONE_FLOOR_GROUPS))
+    for index, (marker, d) in enumerate(level.checkpoints, start=1):
+        objects.append(level_object(f"PC_TwoFlames_{index:02d}", meshes["PC_TwoFlames"], marker,
+                                    ["PC_Checkpoints"], turn=turn_of(d)))
+        objects.append(level_object(f"PR_Resetpoint_{index + 1:02d}", meshes["PR_Resetpoint"],
+                                    [marker[0], marker[1] + RESET_ABOVE, marker[2]],
+                                    ["PR_Resetpoints"], turn=turn_of(d) + 180))
+    where, d = level.balloon
+    objects.append(level_object("PE_Balloon_01", meshes["PE_Balloon"], where, ["PE_Levelende"],
+                                turn=turn_of(d) + 180))
+    counts: dict[str, int] = {}
+    for kind, sector, position in level.elements:
+        counts[kind] = counts.get(kind, 0) + 1
+        objects.append(level_object(f"{kind}_{counts[kind]:02d}", meshes[kind], position,
+                                    [kind, f"Sector_{sector:02d}"]))
+    used = {"Floor_Top_Profile", "Floor_Top_ProfileFlat", "Floor_Top_Flat",
+            "Floor_Top_Boderless", "Floor_Side"}
+    used.update(f"Floor_Trafo_{kind}" for kind in level.trafos)
+    pads = [("A01_Floor_01", (sx, level.marker_y, sz), heading, "Floor_Start", "start_pad.obj")]
+    for index, (marker, d) in enumerate(level.checkpoints, start=2):
+        pads.append((f"A{index:02d}_Floor_01", marker, turn_of(d), "Floor_Checkpoint",
+                     "checkpoint_pad.obj"))
+    for name_, position, turn, kind, box in pads:
+        game = kind in meshes
+        objects.append(level_object(name_, meshes[kind] if game else box, list(position),
+                                    STONE_FLOOR_GROUPS, turn=turn if game else 0))
+    if "Floor_Start" in meshes:
+        used.add("Floor_Top_Checkpoint")
+    if "Pillar" in meshes:
+        # Lantern towers are floors the ball can hit, as in the originals;
+        # pillars and poles are only seen.
+        for index, position in enumerate(level.towers, start=1):
+            objects.append(level_object(f"Tower_{index:02d}", meshes["Tower"], position,
+                                        ["Phys_Floors"]))
+        for index, position in enumerate(level.towers + level.pillars, start=1):
+            objects.append(level_object(f"Floor_Columns_{index:02d}", meshes["Pillar"],
+                                        position, []))
+        for index, position in enumerate(level.sticks, start=1):
+            objects.append(level_object(f"Stick_{index:02d}", meshes["Stick"], position, []))
+        used.update(SCENERY_MATERIALS)
+    if "SkyLayer" in meshes:
+        # The cloud plane under the level, as far below as the originals'.
+        x0, x1, z0, z1 = level.bounds()
+        objects.append(level_object("SkyLayer", meshes["SkyLayer"],
+                                    [(x0 + x1) / 2, -SKY_BELOW, (z0 + z1) / 2], []))
+        used.add("SkyLayer")
+    return {
+        "version": 1,
+        "document": {"name": name},
+        "materials": [m for m in presets["materials"] if m["name"] in used],
+        "groups": [{"name": group} for group in LEVEL_GROUPS],
+        "scenes": [{"name": name, "objects": objects}],
+    }
+
+
+def build(route: dict, out: Path, elements: str | None, name: str) -> int:
+    out.mkdir(parents=True, exist_ok=True)
+    level = Builder(route)
+    used_kinds = sorted({kind for kind, _, _ in level.elements})
+    meshes = {kind: "marker.obj" for kind in MARKERS + used_kinds}
+    if elements:
+        for kind in MARKERS + used_kinds + GAME_ONLY:
+            for suffix in (".obj", ".mtl"):
+                source = Path(elements) / f"{kind}{suffix}"
+                if suffix == ".obj" and not source.is_file():
+                    print(f"no {source}", file=sys.stderr)
+                    return 2
+                if source.is_file():
+                    shutil.copyfile(source, out / source.name)
+            meshes[kind] = f"{kind}.obj"
+        level.scenery()
+    level.write(out, "Floor_Start" in meshes)
+    write_box(out / "marker.obj", -0.5, 0.5, 0, 1, -0.5, 0.5)
+    x0, x1, z0, z1 = level.bounds()
+    low = min(level.lows)
+    write_box(out / "depth.obj", x0 - FALL_MARGIN, x1 + FALL_MARGIN, low - FALL_BOTTOM,
+              low - FALL_TOP, z0 - FALL_MARGIN, z1 + FALL_MARGIN)
+    presets = json.loads(PRESETS.read_text(encoding="utf-8"))
+    (out / "manifest.json").write_text(
+        json.dumps(build_manifest(presets, meshes, level, name), indent=2) + "\n",
+        encoding="utf-8")
+    (out / "route_points.json").write_text(json.dumps(level.points) + "\n", encoding="utf-8")
+    print(out / "manifest.json")
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Build a Ballance level from a route, as a project manifest.")
+    parser.add_argument("route", help="The route, as JSON")
+    parser.add_argument("out", help="Directory for manifest.json and the OBJ meshes")
+    parser.add_argument("--elements",
+                        help="Folder of <Kind>.obj meshes from ballance_level_elements.py")
+    parser.add_argument("--name", default="Level", help="The document's name")
+    args = parser.parse_args()
+    route = json.loads(Path(args.route).read_text(encoding="utf-8"))
+    return build(route, Path(args.out), args.elements, args.name)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
