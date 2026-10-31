@@ -199,7 +199,9 @@ static int32_t eng_load_param(eng_builder_t *b, nmo_object_id_t id)
     if (class_id == NMO_CID_PARAMETERLOCAL) {
         const nmo_parameterlocal_state_t *local = (const nmo_parameterlocal_state_t *)state;
         if (local->is_myself) {
-            param->myself_of = B_ID(b, nmo_parameterlocal_owner_id(local));
+            nmo_object_id_t owner = nmo_parameterlocal_owner_id(local);
+            param->myself = true;
+            param->myself_of = owner != 0 ? B_ID(b, owner) : 0;
         }
     }
     if (class_id != NMO_CID_PARAMETEROUT) {
@@ -425,6 +427,14 @@ static nmo_status_t eng_build_nodes(eng_builder_t *b)
         node->pout_count = pout_count;
         node->first_local = first_local;
         node->local_count = local_count;
+        /* CKBehavior::SetOwner: the behavior owns the locals it lists, whatever they saved */
+        for (uint32_t k = 0; k < local_count; k++) {
+            int32_t local = engine->indexes.data[first_local + k];
+            if (local >= 0 && engine->params.data[local].myself &&
+                engine->params.data[local].myself_of == 0) {
+                engine->params.data[local].myself_of = B_ID(b, mnode->id);
+            }
+        }
         nmo_object_id_t target_id = nmo_behavior_target_parameter_id(state);
         node->target = target_id != 0 ? eng_map_get(&engine->param_map, B_ID(b, target_id)) : -1;
         node->first_child = first_child;
@@ -498,17 +508,31 @@ static nmo_status_t eng_build_io_links(nmo_engine_t *engine, size_t first_io, si
     return NMO_OK;
 }
 
-/* "Myself" locals hold the object whose script their behavior is in. */
+/*
+ * "Myself" locals hold the object whose script their behavior is in; one
+ * saved without a type takes the owner's (CKParameterLocal::SetAsMyselfParameter).
+ */
 static void eng_resolve_myself(nmo_engine_t *engine, size_t first_param)
 {
     for (size_t i = first_param; i < engine->params.count; i++) {
         eng_param_t *param = &engine->params.data[i];
         int32_t node = param->myself_of != 0 ? eng_map_get(&engine->node_map, param->myself_of)
                                              : -1;
-        if (node < 0 || param->size < sizeof(uint32_t)) {
+        if (node < 0) {
             continue;
         }
         uint32_t owner = (uint32_t)engine->nodes.data[node].owner;
+        if (param->type_desc == NULL && owner != 0) {
+            const nmo_type_descriptor_t *type = nmo_type_query_find_by_class_id(
+                engine->types, (nmo_class_id_t)nmo_engine_object_class(engine, owner));
+            if (type != NULL) {
+                param->type = type->guid;
+                param->type_desc = type;
+            }
+        }
+        if (param->size < sizeof(uint32_t) && !eng_param_resize(param, sizeof(uint32_t))) {
+            continue;
+        }
         memcpy(param->data, &owner, sizeof(owner));
     }
 }

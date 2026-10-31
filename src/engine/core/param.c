@@ -44,7 +44,7 @@ static bool eng_types_compatible(nmo_engine_t *engine, const eng_param_t *a, con
     return nmo_type_is_compatible(engine->types, a->type_desc->id, b->type_desc->id);
 }
 
-static bool eng_param_resize(eng_param_t *param, size_t size)
+bool eng_param_resize(eng_param_t *param, size_t size)
 {
     if (size == param->size) {
         return true;

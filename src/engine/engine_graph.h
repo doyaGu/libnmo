@@ -35,6 +35,7 @@ typedef struct eng_param {
     bool shared;
     int32_t operation;          /* the operation whose output this is */
     nmo_object_id_t myself_of;  /* a "myself" local: the behavior whose owner it holds */
+    bool myself;
     uint32_t first_destination; /* output: the parameters it writes, in engine->indexes */
     uint32_t destination_count;
 } eng_param_t;
@@ -179,6 +180,7 @@ eng_builtin_op_fn eng_operation_builtin(nmo_guid_t operation, nmo_guid_t result,
                                         nmo_guid_t input1, nmo_guid_t input2);
 eng_builtin_op_fn eng_operation_builtin_text(nmo_guid_t operation, nmo_guid_t result,
                                              nmo_guid_t input1, nmo_guid_t input2);
+bool eng_param_resize(eng_param_t *param, size_t size);
 /* need_sources: CKParameterOperation::DoOperation's refusal of an input with no source */
 nmo_status_t eng_operation_execute(nmo_engine_t *engine, nmo_guid_t guid, eng_param_t *in1,
                                    eng_param_t *in2, eng_param_t *out, bool need_sources);
