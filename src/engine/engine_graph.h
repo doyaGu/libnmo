@@ -158,6 +158,8 @@ void eng_emit(nmo_engine_t *engine, nmo_engine_event_kind_t kind, int32_t node,
               nmo_object_id_t object_id, int32_t result);
 
 /* core/param.c */
+/* CKParameterManager::TypeToClassID: the class a parameter type holds objects of, 0 for none */
+uint32_t eng_type_class_id(const nmo_type_descriptor_t *type);
 /* The parameter holding the value an input reads (GetRealSource); NULL when none. */
 eng_param_t *eng_param_real_source(nmo_engine_t *engine, eng_param_t *param);
 /* Run the operation `param` is the output of, if any (CKParameterOut::Update). */

@@ -197,7 +197,7 @@ static nmo_status_t op_get_object_by_name(nmo_engine_t *engine, eng_param_t *src
 {
     (void)src2;
     const char *name = param_string(src1);
-    uint32_t class_id = out->type_desc != NULL ? out->type_desc->class_id : 0u;
+    uint32_t class_id = eng_type_class_id(out->type_desc);
     return write_u32(engine, out, name != NULL ? (uint32_t)eng_object_named(engine, name, class_id)
                                                : 0u);
 }

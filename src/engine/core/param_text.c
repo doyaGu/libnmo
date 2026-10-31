@@ -287,7 +287,7 @@ char *eng_param_text(nmo_engine_t *engine, const eng_param_t *param)
 static nmo_object_id_t object_named(nmo_engine_t *engine, nmo_guid_t type_guid, const char *name)
 {
     const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(engine->types, type_guid);
-    return eng_object_named(engine, name, type != NULL ? type->class_id : 0u);
+    return eng_object_named(engine, name, eng_type_class_id(type));
 }
 
 nmo_status_t eng_param_set_text(nmo_engine_t *engine, eng_param_t *param, const char *text)

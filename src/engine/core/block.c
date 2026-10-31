@@ -325,7 +325,7 @@ nmo_object_id_t nmo_engine_block_target(nmo_engine_block_t *block)
     }
     /* CKBehavior::GetTarget: none when the object is not of the target parameter's class */
     const eng_param_t *param = &block->engine->params.data[node->target];
-    int32_t class_id = param->type_desc != NULL ? (int32_t)param->type_desc->class_id : 0;
+    int32_t class_id = (int32_t)eng_type_class_id(param->type_desc);
     if (class_id > 0) {
         nmo_object_t *object = eng_find_object(block->engine, (nmo_object_id_t)id);
         if (object == NULL ||

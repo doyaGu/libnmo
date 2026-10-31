@@ -25,7 +25,7 @@ static nmo_class_id_t type_class(blk_t *b, nmo_guid_t type)
 {
     nmo_engine_t *engine = nmo_engine_block_engine(b);
     const nmo_type_descriptor_t *desc = nmo_type_registry_find_by_guid(engine->types, type);
-    return desc != NULL ? (nmo_class_id_t)desc->class_id : 0;
+    return (nmo_class_id_t)eng_type_class_id(desc);
 }
 
 /* WriteOutputParameters: row `row` into the outputs from `first`, where types agree. */

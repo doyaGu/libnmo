@@ -29,6 +29,7 @@
 #define OP_IS_CHILD_OF NMO_GUID(0x08333942, 0x00973fd1)
 #define OP_GET_PARENT NMO_GUID(0x5bf9718f, 0x030b698c)
 #define OP_GET_COUNT NMO_GUID(0x44df6f61, 0x5f8f55c8)
+#define PGUID_SCRIPT NMO_GUID(0x7ea4176d, 0x1b405d30)
 #define OP_GET_MATERIAL_LIST NMO_GUID(0x765f7aa3, 0x33d679b2)
 #define OP_GET_ELEMENT NMO_GUID(0x660f5c52, 0x0adf7be9)
 #define OP_GET_DIFFUSE NMO_GUID(0x0f9e20cc, 0x6ea10a47)
@@ -366,6 +367,39 @@ TEST(engine_strings, object_operations)
     fixture_end(&f);
 }
 
+/* Get Object By Name into a Script takes only a behavior of that name (TypeToClassID): Gameplay
+   looks up Ball_LightningSphere so, next to a parameter of the same name. "Owner" names the
+   fixture's 3D entity. */
+TEST(engine_strings, object_by_name_takes_the_script_class)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t entity_name = local_string(&f, "A", "Owner");
+    nmo_object_id_t script_name = local_string(&f, "B", "Script");
+    ASSERT_TRUE(entity_name != 0);
+    ASSERT_TRUE(script_name != 0);
+    nmo_object_id_t entity = operation(&f, OP_GET_OBJECT_BY_NAME, entity_name, 0, PGUID_SCRIPT);
+    nmo_object_id_t script = operation(&f, OP_GET_OBJECT_BY_NAME, script_name, 0, PGUID_SCRIPT);
+    ASSERT_TRUE(entity != 0 && script != 0);
+    nmo_object_id_t read_entity = identity_of(&f, entity, PGUID_SCRIPT, f.script_in);
+    ASSERT_TRUE(read_entity != 0);
+    nmo_object_id_t read_script =
+        identity_of(&f, script, PGUID_SCRIPT, BLOCK_OUT(&f, read_entity, 0));
+    ASSERT_TRUE(read_script != 0);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+    uint32_t object = 1;
+    read_value(&f, BLOCK_POUT(&f, read_entity, 0), &object, sizeof(object));
+    ASSERT_EQ(0u, object);
+    read_value(&f, BLOCK_POUT(&f, read_script, 0), &object, sizeof(object));
+    ASSERT_EQ((uint32_t)f.script_id, object);
+    fixture_end(&f);
+}
+
 /* A color operation on `source` (an Object), whose input is a Material as AnimTrafo's are */
 static nmo_object_id_t material_operation(engine_fixture_t *f, nmo_guid_t guid,
                                           nmo_object_id_t source)
@@ -580,6 +614,7 @@ REGISTER_TEST(engine_strings, string_operations);
 REGISTER_TEST(engine_strings, create_string_runs_its_inputs_operations);
 REGISTER_TEST(engine_strings, object_operations);
 REGISTER_TEST(engine_strings, material_operations);
+REGISTER_TEST(engine_strings, object_by_name_takes_the_script_class);
 REGISTER_TEST(engine_strings, operations_follow_parent_types);
 REGISTER_TEST(engine_strings, entity_operations);
 TEST_MAIN_END()

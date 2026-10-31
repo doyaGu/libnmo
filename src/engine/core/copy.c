@@ -551,7 +551,7 @@ static void copy_param_value(nmo_engine_t *engine, const copy_set_t *set,
         return;
     }
     eng_param_t *dest = &engine->params.data[to];
-    if (dest->type_desc != NULL && dest->type_desc->class_id > 0 && dest->size >= sizeof(uint32_t)) {
+    if (eng_type_class_id(dest->type_desc) > 0 && dest->size >= sizeof(uint32_t)) {
         uint32_t id = 0;
         memcpy(&id, dest->data, sizeof(id));
         nmo_object_id_t mapped = copy_of(set, copies, id);
