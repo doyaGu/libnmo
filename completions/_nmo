@@ -43,6 +43,8 @@ groups=(
     'tex:Alias for texture'
     'data:Data array inspection'
     'da:Alias for data'
+    'group:Group membership'
+    'grp:Alias for group'
     'scene:Scene/level inspection'
     'sc:Alias for scene'
     'entity:3D entity inspection'
@@ -80,6 +82,7 @@ _nmo_resolve_group() {
         res) echo 'resource' ;;
         tex) echo 'texture' ;;
         da) echo 'data' ;;
+        grp) echo 'group' ;;
         sc) echo 'scene' ;;
         ent) echo 'entity' ;;
         mat) echo 'material' ;;
@@ -273,6 +276,14 @@ _nmo_action_flags() {
         data/d/) echo '-r --row' ;;
         data/set-cell/) echo '-r --row -c --col -v --value -o --output --dry-run' ;;
         data/sc/) echo '-r --row -c --col -v --value -o --output --dry-run' ;;
+        group/list/) echo '-m --member' ;;
+        group/ls/) echo '-m --member' ;;
+        group/show/) echo '' ;;
+        group/s/) echo '' ;;
+        group/add/) echo '-n --name --id --create -o --output --dry-run' ;;
+        group/a/) echo '-n --name --id --create -o --output --dry-run' ;;
+        group/remove/) echo '-n --name --id -o --output --dry-run' ;;
+        group/rm/) echo '-n --name --id -o --output --dry-run' ;;
         scene/list/) echo '' ;;
         scene/ls/) echo '' ;;
         scene/show/) echo '' ;;
@@ -534,6 +545,17 @@ _nmo_actions() {
                 'd:Alias for dump'
                 'set-cell:Modify a single cell'
                 'sc:Alias for set-cell'
+            ) ;;
+        group)
+            acts=(
+                'list:List groups'
+                'ls:Alias for list'
+                'show:Show a group's members'
+                's:Alias for show'
+                'add:Add objects to a group'
+                'a:Alias for add'
+                'remove:Remove objects from a group'
+                'rm:Alias for remove'
             ) ;;
         scene)
             acts=(

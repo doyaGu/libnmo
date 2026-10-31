@@ -13,6 +13,7 @@ $_nmo_groups = @{
     'resource' = @('list', 'ls', 'show', 's', 'extract', 'x', 'import', 'imp', 'replace', 'rep', 'remove', 'rm', 'info')
     'texture' = @('list', 'ls', 'show', 's', 'extract', 'x', 'replace', 'rep')
     'data' = @('list', 'ls', 'show', 's', 'dump', 'd', 'set-cell', 'sc')
+    'group' = @('list', 'ls', 'show', 's', 'add', 'a', 'remove', 'rm')
     'scene' = @('list', 'ls', 'show', 's', 'set')
     'entity' = @('list', 'ls', 'show', 's', 'set-position', 'sp', 'set-parent', 'set-camera', 'sc', 'set-light', 'sl')
     'material' = @('list', 'ls', 'show', 's', 'set')
@@ -40,6 +41,7 @@ $_nmo_aliases = @{
     'res' = 'resource'
     'tex' = 'texture'
     'da' = 'data'
+    'grp' = 'group'
     'sc' = 'scene'
     'ent' = 'entity'
     'mat' = 'material'
@@ -64,6 +66,7 @@ $_nmo_group_descriptions = @{
     'resource' = 'Resource management'
     'texture' = 'Texture management'
     'data' = 'Data array inspection'
+    'group' = 'Group membership'
     'scene' = 'Scene/level inspection'
     'entity' = '3D entity inspection'
     'material' = 'Material inspection'
@@ -273,6 +276,14 @@ $_nmo_action_flags = @{
     'data/d/' = @(@{ Name = '-r'; Desc = 'Dump a single row by index (key-value format)' }, @{ Name = '--row'; Desc = 'Dump a single row by index (key-value format)' })
     'data/set-cell/' = @(@{ Name = '-r'; Desc = 'Row index (0-based, required)' }, @{ Name = '--row'; Desc = 'Row index (0-based, required)' }, @{ Name = '-c'; Desc = 'Column index (0-based, required)' }, @{ Name = '--col'; Desc = 'Column index (0-based, required)' }, @{ Name = '-v'; Desc = 'New cell value (required)' }, @{ Name = '--value'; Desc = 'New cell value (required)' }, @{ Name = '-o'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--output'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--dry-run'; Desc = 'Preview without saving' })
     'data/sc/' = @(@{ Name = '-r'; Desc = 'Row index (0-based, required)' }, @{ Name = '--row'; Desc = 'Row index (0-based, required)' }, @{ Name = '-c'; Desc = 'Column index (0-based, required)' }, @{ Name = '--col'; Desc = 'Column index (0-based, required)' }, @{ Name = '-v'; Desc = 'New cell value (required)' }, @{ Name = '--value'; Desc = 'New cell value (required)' }, @{ Name = '-o'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--output'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--dry-run'; Desc = 'Preview without saving' })
+    'group/list/' = @(@{ Name = '-m'; Desc = 'Only the groups holding this object (id or name)' }, @{ Name = '--member'; Desc = 'Only the groups holding this object (id or name)' })
+    'group/ls/' = @(@{ Name = '-m'; Desc = 'Only the groups holding this object (id or name)' }, @{ Name = '--member'; Desc = 'Only the groups holding this object (id or name)' })
+    'group/show/' = @()
+    'group/s/' = @()
+    'group/add/' = @(@{ Name = '-n'; Desc = 'Group name' }, @{ Name = '--name'; Desc = 'Group name' }, @{ Name = '--id'; Desc = 'Group object ID' }, @{ Name = '--create'; Desc = 'Make the named group when the file has none' }, @{ Name = '-o'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--output'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--dry-run'; Desc = 'Preview without saving' })
+    'group/a/' = @(@{ Name = '-n'; Desc = 'Group name' }, @{ Name = '--name'; Desc = 'Group name' }, @{ Name = '--id'; Desc = 'Group object ID' }, @{ Name = '--create'; Desc = 'Make the named group when the file has none' }, @{ Name = '-o'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--output'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--dry-run'; Desc = 'Preview without saving' })
+    'group/remove/' = @(@{ Name = '-n'; Desc = 'Group name' }, @{ Name = '--name'; Desc = 'Group name' }, @{ Name = '--id'; Desc = 'Group object ID' }, @{ Name = '-o'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--output'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--dry-run'; Desc = 'Preview without saving' })
+    'group/rm/' = @(@{ Name = '-n'; Desc = 'Group name' }, @{ Name = '--name'; Desc = 'Group name' }, @{ Name = '--id'; Desc = 'Group object ID' }, @{ Name = '-o'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--output'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--dry-run'; Desc = 'Preview without saving' })
     'scene/list/' = @()
     'scene/ls/' = @()
     'scene/show/' = @()
@@ -376,7 +387,7 @@ $_nmo_action_flags = @{
 Register-ArgumentCompleter -CommandName nmo -Native -ScriptBlock {
     param($wordToComplete, $commandAst, $cursorPosition)
     $tokens = $commandAst.ToString().Substring(0, $cursorPosition).Trim() -split '\s+'
-    $valueOptions = @('-f','--format','--color','-o','--output','--plugin','--top', '-m', '--max-bytes', '-c', '--class', '--name', '-o', '--output', '-n', '-d', '--depth', '--id', '--type-guid', '--kind', '--max-nodes', '--max-edges', '--bb-guid', '--version', '-p', '--parent', '--nodes', '--guid', '--param-type', '--op-type', '--from', '--max-depth', '--frames', '--delta', '--start', '-s', '--script', '--unknown', '--max-iterations', '--seed', '-k', '--keys', '--to', '--delay', '--project', '--type', '-b', '--owner', '-i', '--index', '--sort', '-t', '--out-dir', '-f', '--format', '-q', '--quality', '--file', '-r', '--row', '--col', '-v', '--value', '--bg-color', '--ambient', '--fog-color', '--camera', '--fov', '--near', '--far', '--diffuse', '--range', '--specular', '--emissive', '--power', '--replace', '--replace-name', '--strip', '--compress', '--max-objects', '--max-fields', '--min-similarity', '--rename-similarity', '--object', '--behavior', '--remove-link', '--from-io', '--to-io', '--message-node', '--parameter', '--dataarray', '--write-node', '--write-operation', '--write-link', '--text')
+    $valueOptions = @('-f','--format','--color','-o','--output','--plugin','--top', '-m', '--max-bytes', '-c', '--class', '--name', '-o', '--output', '-n', '-d', '--depth', '--id', '--type-guid', '--kind', '--max-nodes', '--max-edges', '--bb-guid', '--version', '-p', '--parent', '--nodes', '--guid', '--param-type', '--op-type', '--from', '--max-depth', '--frames', '--delta', '--start', '-s', '--script', '--unknown', '--max-iterations', '--seed', '-k', '--keys', '--to', '--delay', '--project', '--type', '-b', '--owner', '-i', '--index', '--sort', '-t', '--out-dir', '-f', '--format', '-q', '--quality', '--file', '-r', '--row', '--col', '-v', '--value', '--member', '--bg-color', '--ambient', '--fog-color', '--camera', '--fov', '--near', '--far', '--diffuse', '--range', '--specular', '--emissive', '--power', '--replace', '--replace-name', '--strip', '--compress', '--max-objects', '--max-fields', '--min-similarity', '--rename-similarity', '--object', '--behavior', '--remove-link', '--from-io', '--to-io', '--message-node', '--parameter', '--dataarray', '--write-node', '--write-operation', '--write-link', '--text')
     $positional = @()
     $expectValue = $false
     for ($i = 1; $i -lt $tokens.Count; $i++) {

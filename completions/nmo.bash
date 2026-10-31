@@ -13,9 +13,9 @@ _nmo() {
         words=("${COMP_WORDS[@]}")
         cword=$COMP_CWORD
     fi
-    local groups="file f chunk ch object obj behavior beh patch parameter param script resource res texture tex data da scene sc entity ent material mat mesh m animation anim type t validate val convert conv diff d extension ext completion comp debug dbg repl"
+    local groups="file f chunk ch object obj behavior beh patch parameter param script resource res texture tex data da group grp scene sc entity ent material mat mesh m animation anim type t validate val convert conv diff d extension ext completion comp debug dbg repl"
     local global_flags="-h --help -V --version -f --format --color -o --output -v --verbose -q --quiet --strict --fail-on-warning --plugin --batch"
-    local value_options="-f --format --color -o --output --plugin --top -m --max-bytes -c --class --name -o --output -n -d --depth --id --type-guid --kind --max-nodes --max-edges --bb-guid --version -p --parent --nodes --guid --param-type --op-type --from --max-depth --frames --delta --start -s --script --unknown --max-iterations --seed -k --keys --to --delay --project --type -b --owner -i --index --sort -t --out-dir -f --format -q --quality --file -r --row --col -v --value --bg-color --ambient --fog-color --camera --fov --near --far --diffuse --range --specular --emissive --power --replace --replace-name --strip --compress --max-objects --max-fields --min-similarity --rename-similarity --object --behavior --remove-link --from-io --to-io --message-node --parameter --dataarray --write-node --write-operation --write-link --text"
+    local value_options="-f --format --color -o --output --plugin --top -m --max-bytes -c --class --name -o --output -n -d --depth --id --type-guid --kind --max-nodes --max-edges --bb-guid --version -p --parent --nodes --guid --param-type --op-type --from --max-depth --frames --delta --start -s --script --unknown --max-iterations --seed -k --keys --to --delay --project --type -b --owner -i --index --sort -t --out-dir -f --format -q --quality --file -r --row --col -v --value --member --bg-color --ambient --fog-color --camera --fov --near --far --diffuse --range --specular --emissive --power --replace --replace-name --strip --compress --max-objects --max-fields --min-similarity --rename-similarity --object --behavior --remove-link --from-io --to-io --message-node --parameter --dataarray --write-node --write-operation --write-link --text"
     local file_value_options="-o --output --plugin -d --out-dir --file --obj"
 
     case "$prev" in
@@ -36,6 +36,7 @@ _nmo() {
             res) echo 'resource' ;;
             tex) echo 'texture' ;;
             da) echo 'data' ;;
+            grp) echo 'group' ;;
             sc) echo 'scene' ;;
             ent) echo 'entity' ;;
             mat) echo 'material' ;;
@@ -64,6 +65,7 @@ _nmo() {
             resource) echo 'list ls show s extract x import imp replace rep remove rm info' ;;
             texture) echo 'list ls show s extract x replace rep' ;;
             data) echo 'list ls show s dump d set-cell sc' ;;
+            group) echo 'list ls show s add a remove rm' ;;
             scene) echo 'list ls show s set' ;;
             entity) echo 'list ls show s set-position sp set-parent set-camera sc set-light sl' ;;
             material) echo 'list ls show s set' ;;
@@ -266,6 +268,14 @@ _nmo() {
             data/d/) echo '-r --row' ;;
             data/set-cell/) echo '-r --row -c --col -v --value -o --output --dry-run' ;;
             data/sc/) echo '-r --row -c --col -v --value -o --output --dry-run' ;;
+            group/list/) echo '-m --member' ;;
+            group/ls/) echo '-m --member' ;;
+            group/show/) echo '' ;;
+            group/s/) echo '' ;;
+            group/add/) echo '-n --name --id --create -o --output --dry-run' ;;
+            group/a/) echo '-n --name --id --create -o --output --dry-run' ;;
+            group/remove/) echo '-n --name --id -o --output --dry-run' ;;
+            group/rm/) echo '-n --name --id -o --output --dry-run' ;;
             scene/list/) echo '' ;;
             scene/ls/) echo '' ;;
             scene/show/) echo '' ;;

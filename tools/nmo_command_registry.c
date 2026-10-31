@@ -23,6 +23,7 @@
 #include "commands/nmo_cmd_diff.h"
 #include "commands/nmo_cmd_extension.h"
 #include "commands/nmo_cmd_texture.h"
+#include "commands/nmo_cmd_group.h"
 #include "commands/nmo_cmd_data.h"
 #include "commands/nmo_cmd_scene.h"
 #include "commands/nmo_cmd_entity.h"
@@ -910,6 +911,42 @@ static void texture_replace_usage(FILE *out) {
     fprintf(out, "  --dry-run            Preview without saving\n");
 }
 
+/* Group command usage */
+static void group_list_usage(FILE *out) {
+    fprintf(out, "Usage: nmo group list [--member <object>] <file>\n\n");
+    fprintf(out, "List the CKGroup objects with their member counts.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  --member, -m <object>  Only the groups holding this object (id or name)\n");
+}
+
+static void group_show_usage(FILE *out) {
+    fprintf(out, "Usage: nmo group show [--id <id> | --name <name> | <id or name>] <file>\n\n");
+    fprintf(out, "Show a group's members in order: id, class and name.\n");
+}
+
+static void group_add_usage(FILE *out) {
+    fprintf(out, "Usage: nmo group add (--name <group> | --id <id>) [--create] <member>... <file> -o <output> [--dry-run]\n\n");
+    fprintf(out, "Append objects to a group. Members are object ids or exact names and must be\n");
+    fprintf(out, "behavioral objects (CKBeObject); one the group already holds is left as it is.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  --name, -n <group>   Group name\n");
+    fprintf(out, "  --id <id>            Group object ID\n");
+    fprintf(out, "  --create             Make the named group when the file has none\n");
+    fprintf(out, "  -o, --output <path>  Output file (required unless --dry-run)\n");
+    fprintf(out, "  --dry-run            Preview without saving\n");
+}
+
+static void group_remove_usage(FILE *out) {
+    fprintf(out, "Usage: nmo group remove (--name <group> | --id <id>) <member>... <file> -o <output> [--dry-run]\n\n");
+    fprintf(out, "Take objects out of a group. Members are object ids or exact names; one the\n");
+    fprintf(out, "group does not hold is counted and skipped.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  --name, -n <group>   Group name\n");
+    fprintf(out, "  --id <id>            Group object ID\n");
+    fprintf(out, "  -o, --output <path>  Output file (required unless --dry-run)\n");
+    fprintf(out, "  --dry-run            Preview without saving\n");
+}
+
 /* Data array command usage */
 static void data_list_usage(FILE *out) {
     fprintf(out, "Usage: nmo data list <file>\n\n");
@@ -1266,6 +1303,13 @@ static const nmo_cli_action_t texture_actions[] = {
     ACTION("replace", "rep", "Replace texture bitmap data", nmo_cmd_texture_replace, texture_replace_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),
 };
 
+static const nmo_cli_action_t group_actions[] = {
+    ACTION("list", "ls", "List groups", nmo_cmd_group_list, group_list_usage, NMO_REPL_ACTION_READ_SESSION),
+    ACTION("show", "s", "Show a group's members", nmo_cmd_group_show, group_show_usage, NMO_REPL_ACTION_READ_SESSION),
+    ACTION("add", "a", "Add objects to a group", nmo_cmd_group_add, group_add_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),
+    ACTION("remove", "rm", "Remove objects from a group", nmo_cmd_group_remove, group_remove_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),
+};
+
 static const nmo_cli_action_t data_actions[] = {
     ACTION("list", "ls", "List data arrays", nmo_cmd_data_list, data_list_usage, NMO_REPL_ACTION_READ_SESSION),
     ACTION("show", "s", "Show data array schema", nmo_cmd_data_show, data_show_usage, NMO_REPL_ACTION_READ_SESSION),
@@ -1348,6 +1392,7 @@ static const nmo_cli_group_t groups[] = {
     {"resource", "res", "Resource management", resource_actions, ARRAY_SIZE(resource_actions), nmo_cmd_resource_in_session},
     {"texture", "tex", "Texture management", texture_actions, ARRAY_SIZE(texture_actions), nmo_cmd_texture_in_session},
     {"data", "da", "Data array inspection", data_actions, ARRAY_SIZE(data_actions), nmo_cmd_data_in_session},
+    {"group", "grp", "Group membership", group_actions, ARRAY_SIZE(group_actions), nmo_cmd_group_in_session},
     {"scene", "sc", "Scene/level inspection", scene_actions, ARRAY_SIZE(scene_actions), nmo_cmd_scene_in_session},
     {"entity", "ent", "3D entity inspection", entity_actions, ARRAY_SIZE(entity_actions), nmo_cmd_entity_in_session},
     {"material", "mat", "Material inspection", material_actions, ARRAY_SIZE(material_actions), nmo_cmd_material_in_session},

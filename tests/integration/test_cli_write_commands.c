@@ -16,6 +16,7 @@
 #include "object/builtin/nmo_animation_schemas.h"
 #include "object/builtin/nmo_camera_schemas.h"
 #include "object/builtin/nmo_dataarray_schemas.h"
+#include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_light_schemas.h"
 #include "object/builtin/nmo_material_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
@@ -1751,6 +1752,86 @@ TEST(cli_write, entity_position_preserves_3dobject_chunk_and_plugin_dependencies
     write_probe_close(&created);
 }
 
+/* The members of a group, by name and in order. */
+static void assert_group_members(const char *path, const char *group_name,
+                                 const char *const *expected, size_t expected_count)
+{
+    write_semantic_probe_t probe;
+    assert_probe_open(&probe, path);
+    nmo_object_t *group = write_probe_object_by_name(&probe, group_name);
+    ASSERT_NOT_NULL(group);
+    const nmo_group_state_t *state =
+        (const nmo_group_state_t *)write_probe_state(&probe, nmo_object_get_id(group), CKPGUID_GROUP);
+    ASSERT_NOT_NULL(state);
+    ASSERT_EQ(expected_count, state->object_ids.count);
+    for (size_t i = 0; i < expected_count; ++i) {
+        const nmo_ref_t *ref = (const nmo_ref_t *)nmo_array_get(&state->object_ids, i);
+        nmo_object_t *member = write_probe_object_by_id(&probe, nmo_ref_runtime_id(ref));
+        ASSERT_NOT_NULL(member);
+        ASSERT_STR_EQ(expected[i], nmo_object_get_name(member));
+    }
+    write_probe_close(&probe);
+}
+
+TEST(cli_write, group_add_remove_create_list_show) {
+    make_dir("test_cli_write_tmp");
+    ASSERT_TRUE(write_text_file(
+        "test_cli_write_tmp/group_manifest.json",
+        "{\"version\":1,\"document\":{\"name\":\"Groups\"},"
+        "\"groups\":[{\"name\":\"Phys_Floors\",\"objects\":[\"A01_Floor_01\"]}],"
+        "\"scenes\":[{\"name\":\"Level\",\"objects\":["
+        "{\"name\":\"A01_Floor_01\",\"class\":\"CK3dObject\"},"
+        "{\"name\":\"A01_Floor_02\",\"class\":\"CK3dObject\"}]}]}\n"));
+    assert_cli_success(
+        "patch apply --project \"test_cli_write_tmp/group_manifest.json\" "
+        "-o \"test_cli_write_tmp/group_input.nmo\"",
+        NULL);
+
+    assert_cli_success("group list \"test_cli_write_tmp/group_input.nmo\"", "Phys_Floors");
+    assert_cli_success("group list --member A01_Floor_02 \"test_cli_write_tmp/group_input.nmo\"",
+                       "Groups: 0");
+    assert_cli_success("group show Phys_Floors \"test_cli_write_tmp/group_input.nmo\"",
+                       "A01_Floor_01");
+
+    assert_cli_success(
+        "group add -n Phys_Floors A01_Floor_02 A01_Floor_01 "
+        "\"test_cli_write_tmp/group_input.nmo\" -o \"test_cli_write_tmp/group_add.nmo\"",
+        "Added 1 member(s), 1 already in it");
+    assert_validate_ok("test_cli_write_tmp/group_add.nmo");
+    const char *const both[] = {"A01_Floor_01", "A01_Floor_02"};
+    const char *const second[] = {"A01_Floor_02"};
+    assert_group_members("test_cli_write_tmp/group_add.nmo", "Phys_Floors", both, 2u);
+
+    assert_cli_success(
+        "group remove -n Phys_Floors A01_Floor_01 "
+        "\"test_cli_write_tmp/group_add.nmo\" -o \"test_cli_write_tmp/group_remove.nmo\"",
+        "Removed 1 member(s)");
+    assert_group_members("test_cli_write_tmp/group_remove.nmo", "Phys_Floors", second, 1u);
+
+    assert_cli_success(
+        "group add -n Shadow --create A01_Floor_02 "
+        "\"test_cli_write_tmp/group_input.nmo\" -o \"test_cli_write_tmp/group_create.nmo\"",
+        "Added 1 member(s)");
+    assert_validate_ok("test_cli_write_tmp/group_create.nmo");
+    assert_group_members("test_cli_write_tmp/group_create.nmo", "Shadow", second, 1u);
+
+    remove("test_cli_write_tmp/group_dry.nmo");
+    assert_cli_success(
+        "group remove -n Phys_Floors A01_Floor_01 --dry-run "
+        "\"test_cli_write_tmp/group_input.nmo\" -o \"test_cli_write_tmp/group_dry.nmo\"",
+        "dry run");
+    ASSERT_FALSE(file_exists("test_cli_write_tmp/group_dry.nmo"));
+
+    assert_cli_failure(
+        "group add -n Missing A01_Floor_01 "
+        "\"test_cli_write_tmp/group_input.nmo\" -o \"test_cli_write_tmp/group_fail.nmo\"",
+        "not found");
+    assert_cli_failure(
+        "group add -n Phys_Floors NoSuchObject "
+        "\"test_cli_write_tmp/group_input.nmo\" -o \"test_cli_write_tmp/group_fail.nmo\"",
+        "not found");
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(cli_write, object_data_entity_material_texture_parameter_dry_run_preserves_inputs);
     REGISTER_TEST(cli_write, resource_import_replace_dry_run_does_not_write_output);
@@ -1766,5 +1847,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli_write, animation_import_newdata_scale_axis_uses_24_byte_keys);
     REGISTER_TEST(cli_write, parameter_set_persists_typed_object_and_raw_values);
     REGISTER_TEST(cli_write, entity_position_preserves_3dobject_chunk_and_plugin_dependencies);
+    REGISTER_TEST(cli_write, group_add_remove_create_list_show);
 TEST_MAIN_END()
 

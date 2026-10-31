@@ -123,6 +123,7 @@ static const nmo_repl_command_t commands[] = {
     {"extension", "", "Run CLI extension read commands", "extension list|info|check ...", cmd_cli_read},
     {"texture", "", "Run CLI texture read commands", "texture list|show|extract ...", cmd_cli_read},
     {"data", "", "Run CLI data read commands", "data list|show|dump ...", cmd_cli_read},
+    {"group", "", "Run CLI group read commands", "group list|show ...", cmd_cli_read},
     {"scene", "", "Run CLI scene read commands", "scene list|show ...", cmd_cli_read},
     {"entity", "", "Run CLI entity read commands", "entity list|show ...", cmd_cli_read},
     {"material", "", "Run CLI material read commands", "material list|show ...", cmd_cli_read},

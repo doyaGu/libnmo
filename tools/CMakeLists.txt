@@ -73,6 +73,7 @@ add_executable(nmo_cli
     commands/nmo_cmd_extension.c
     commands/nmo_cmd_texture.c
     commands/nmo_cmd_data.c
+    commands/nmo_cmd_group.c
     commands/nmo_cmd_scene.c
     commands/nmo_cmd_entity.c
     commands/nmo_cmd_material.c
