@@ -152,7 +152,7 @@ static char *run_strndup(const char *text, size_t length);
 
 #define STEER_REACH 3.5f
 #define STEER_JUMP 10.0f
-#define STEER_LOOKAHEAD 20.0f /* frames of the ball's speed to allow for */
+#define STEER_LOOKAHEAD 20.0f /* frames of the object's speed to allow for */
 #define STEER_DEAD 0.5f
 
 /* Parse "X,Z;X,Z;...@FRAME" into `out` (points left NULL when only checking). */
@@ -223,10 +223,10 @@ static void run_steer_frame(nmo_engine_t *engine, run_steer_t *steer, uint32_t f
 {
     static const char *const arrows[] = {"Up", "Down", "Left", "Right"};
     bool down[4] = {false, false, false, false};
-    nmo_object_id_t ball = frame >= steer->first ? run_steer_object(engine, steer->objects) : 0;
+    nmo_object_id_t steered = frame >= steer->first ? run_steer_object(engine, steer->objects) : 0;
     float m[16];
     nmo_engine_frame_t view;
-    if (ball != 0 && nmo_engine_entity_world_matrix(engine, ball, m) &&
+    if (steered != 0 && nmo_engine_entity_world_matrix(engine, steered, m) &&
         nmo_engine_render_frame(engine, &view) == NMO_OK) {
         float x = m[12], z = m[14];
         float vx = steer->placed ? x - steer->x : 0.0f, vz = steer->placed ? z - steer->z : 0.0f;
