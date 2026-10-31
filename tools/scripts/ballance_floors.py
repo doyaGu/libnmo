@@ -21,8 +21,8 @@ to the fold in the middle (Profile) or across the whole border (Flat).
 
 Floors.area() and Floors.road() add rectangles of cells; Floors.build()
 writes the floor's triangles to a Mesh.  funnel() writes the piece that
-flattens a narrow road into the rim of a start or checkpoint floor, or ends
-it under the balloon's planks.
+flattens a narrow road into the rim of a start or checkpoint floor, into a
+ball changer's pad (pad()), or ends it under the balloon's planks.
 """
 
 from __future__ import annotations
@@ -375,3 +375,20 @@ def funnel(mesh: Mesh, x: float, z: float, toward: tuple[int, int], edge: float,
             along = point[2] if dx == 0 else point[0]
             corners.append((point, ((edge - y) / REPEAT, along / REPEAT)))
         mesh.quad("Floor_Side", out, *corners)
+
+
+def pad(mesh: Mesh, x: float, z: float, top: float, material: str) -> None:
+    """The 5 by 5 block a ball changer stands on, centred on (x, z), its top
+    at height top (a road's edges), its sides 5 deep, all in material (one of
+    the Floor_Trafo_* materials), one texture repeat on each face.  A narrow
+    road runs into it through funnels on either side."""
+    half = NARROW / 2
+    corners = [(x - half, z - half), (x + half, z - half), (x + half, z + half),
+               (x - half, z + half)]
+    mesh.quad(material, UP, *[((cx, top, cz), uv) for (cx, cz), uv in
+                              zip(corners, ((0.0, 1.0), (1.0, 1.0), (1.0, 0.0), (0.0, 0.0)))])
+    for k in range(4):
+        (ax, az), (bx, bz) = corners[k], corners[(k + 1) % 4]
+        out = ((ax + bx) / 2 - x, 0.0, (az + bz) / 2 - z)
+        mesh.quad(material, out, ((ax, top, az), (0.0, 0.0)), ((bx, top, bz), (1.0, 0.0)),
+                  ((bx, top - WALL, bz), (1.0, 1.0)), ((ax, top - WALL, az), (0.0, 1.0)))
