@@ -4,10 +4,13 @@ The original floors lie on a grid of 2.5-unit cells.  A floor's top is flat
 inside and rises 0.7 to every edge of its outline over one cell, so the same
 rule makes the narrow road (two cells wide: a V), the wide road (four cells:
 two slopes and a flat middle), the square areas with their raised borders,
-and the corners of turns.  Where a road meets an area, the area's edge stays
-raised except for a gap two cells wide in front of the road's middle, so a
-wide road narrows into the area through an X-shaped piece.  Walls hang 5
-below the outline; floors have no bottom.
+and the corners of turns.  Where a road meets an area, or a road of another
+width, the edge between them stays raised except for a gap two cells wide in
+front of the narrower road's middle.  The cells on either side of the gap
+flatten its V: they fan out from the V's bottom, with one texture repeat
+across the gap and one along the cell, so a wide road meets a narrow one or
+an area through an X-shaped piece, as in the originals.  Walls hang 5 below
+the outline; floors have no bottom.
 
 The materials are the levels' own (tools/ballance/level_materials.json):
 Floor_Top_Boderless where a cell is flat, Floor_Top_Profile on the slopes of
@@ -90,6 +93,11 @@ class Piece:
             t = 1.0 - t
         return self.y0 + (self.y1 - self.y0) * t
 
+    def width(self) -> int:
+        """In cells, across the road."""
+        i0, j0, i1, j1 = self.rect
+        return j1 - j0 if self.axis == 0 else i1 - i0
+
     def middle(self) -> float:
         """Twice the cell coordinate of the road's middle line, across it."""
         i0, j0, i1, j1 = self.rect
@@ -168,28 +176,38 @@ class Floors:
         kind, i, j = edge
         return ((i - 1, j), (i, j)) if kind == 0 else ((i, j - 1), (i, j))
 
-    def _edge_kind(self, edge: tuple[int, int, int]) -> str:
-        """none, outline, open (left to another piece), seam (raised between
-        an area and a road beside the road's gap), gap, or inside."""
+    def _join(self, edge: tuple[int, int, int]) -> tuple[str, Piece | None]:
+        """What the edge is: none, outline, open (left to another piece),
+        inside, gap (where a road opens into an area, or into a road of
+        another width: the narrower road's two middle cells) or seam (raised
+        beside a gap); with the road whose middle a gap or seam is set by."""
         a, b = (self.cells.get(c) for c in self._sides(edge))
         if a is None and b is None:
-            return "none"
+            return "none", None
         if a is None or b is None:
-            return "open" if edge in self.open else "outline"
+            return ("open" if edge in self.open else "outline"), None
         if a == b:
-            return "inside"
+            return "inside", None
         pa, pb = self.pieces[a], self.pieces[b]
-        if pa.kind == pb.kind:
-            return "inside"
-        road = pa if pa.kind == "road" else pb
         kind, i, j = edge
-        if kind != road.axis:
-            return "seam"  # the road runs beside the area, not into it
+        if pa.kind == "area" and pb.kind == "area":
+            return "inside", None
+        if pa.kind == "road" and pb.kind == "road":
+            if kind != pa.axis or kind != pb.axis or pa.width() == pb.width():
+                return "inside", None  # a turn, or a road going on
+            road = pa if pa.width() < pb.width() else pb
+        else:
+            road = pa if pa.kind == "road" else pb
+            if kind != road.axis:
+                return "seam", road  # the road runs beside the area, not into it
         # the edge's middle, twice over, across the road
         across = 2 * j + 1 if kind == 0 else 2 * i + 1
         if abs(across - road.middle()) < NARROW / CELL:
-            return "gap"
-        return "seam"
+            return "gap", road
+        return "seam", road
+
+    def _edge_kind(self, edge: tuple[int, int, int]) -> str:
+        return self._join(edge)[0]
 
     def _vertex_edges(self, i: int, j: int) -> list[tuple[int, int, int]]:
         return [(0, i, j - 1), (0, i, j), (1, i - 1, j), (1, i, j)]
@@ -224,48 +242,90 @@ class Floors:
         corners = [(i, j), (i + 1, j), (i + 1, j + 1), (i, j + 1)]
         raised = [self._raised(*c) for c in corners]
         count = sum(raised)
-        edges = [(1, i, j), (0, i + 1, j), (1, i, j + 1), (0, i, j)]  # edge k joins corners k, k+1
-        gap = any(self._edge_kind(e) == "gap" for e in edges)
-        side = None  # the edge (0..3) whose two corners alone are raised
+        # edge k joins corners k and k + 1
+        edges = [(1, i, j), (0, i + 1, j), (1, i, j + 1), (0, i, j)]
+        joins = [self._join(e) for e in edges]
+        gap = next((k for k in range(4) if joins[k][0] == "gap"), None)
+        side = None  # the edge whose two corners alone are raised
         if count == 2:
-            for k in range(4):
-                if raised[k] and raised[(k + 1) % 4]:
-                    side = k
+            side = next((k for k in range(4) if raised[k] and raised[(k + 1) % 4]), None)
+        # A gap cell whose far side is flat flattens the V at the gap: the
+        # area's border cells there, and a wide road's first cells.
+        if gap is not None and (raised[(gap + 2) % 4] or raised[(gap + 3) % 4]):
+            gap = None
         if count == 0:
             material = "Floor_Top_Boderless"
-        elif piece.kind == "area":
-            material = "Floor_Top_ProfileFlat" if gap else "Floor_Top_Flat"
-        elif count == 3 or (gap and side is None):
+        elif gap is not None or count == 3:
             material = "Floor_Top_ProfileFlat"
+        elif piece.kind == "area":
+            material = "Floor_Top_Flat"
         else:
             material = "Floor_Top_Profile"
         across = 1.0 if material == "Floor_Top_Flat" else 0.5
-
-        points = []
-        for k, (ci, cj) in enumerate(corners):
+        xyz = []
+        for ci, cj in corners:
             x, z = self._point(ci, cj)
-            y = self._height(ci, cj)
-            if count == 0:
-                uv = (x / REPEAT, z / REPEAT)
-            elif side is not None:
-                # u from the raised edge (0, or 1 when it is the far one) to
-                # the middle; v along the edge
-                far = side in (1, 2)
-                u = (1.0 if far else 0.0) if raised[k] else (1.0 - across if far else across)
-                v = (z if side in (1, 3) else x) / REPEAT
-                uv = (u, v)
-            else:
-                uv = (0.0 if raised[k] else across, (x + z) / REPEAT)
-            points.append(((x, y, z), uv))
+            xyz.append((x, self._height(ci, cj), z))
 
-        # Split through the corner that differs from the others, as the
-        # originals do; else along the (0, 2) diagonal.
-        odd = 0
-        if count in (1, 3):
+        def axis_of(k0: int, k1: int) -> int:
+            """0 when corners k0 and k1 lie along X, 1 along Z."""
+            return 0 if corners[k0][1] == corners[k1][1] else 1
+
+        def side_uv(k: int, along: int, far: bool) -> tuple[float, float]:
+            x, _, z = xyz[k]
+            if raised[k]:
+                u = 1.0 if far else 0.0
+            else:
+                u = 1.0 - across if far else across
+            return u, (x if along == 0 else z) / REPEAT
+
+        if count == 0:
+            uv = [(x / REPEAT, z / REPEAT) for x, _, z in xyz]
+            triangles = [((0, 1, 2), uv), ((0, 2, 3), uv)]
+        elif gap is not None:
+            # One repeat across the gap's 5 and along the cell: u across, v
+            # from the gap's line to the far side.  The cell is split from the
+            # gap's middle to the far corner beyond the gap's edge, as the
+            # originals' joins fan out from the V's bottom.
+            _, road = joins[gap]
+            k0, k1 = gap, (gap + 1) % 4
+            line = axis_of(k0, k1)
+            offset = self.ox if line == 0 else self.oz
+            start = offset + road.middle() * CELL / 2 - NARROW / 2
+            uv = []
+            for k in range(4):
+                on_line = k in (k0, k1)
+                at = xyz[k][0] if line == 0 else xyz[k][2]
+                uv.append(((at - start) / NARROW, 0.0 if on_line else 1.0))
+            middle = k0 if abs(uv[k0][0] - 0.5) < 1e-6 else k1
+            edge_end = k1 if middle == k0 else k0
+            # the far-side corner across from the gap's edge end
+            far = next(k for k in range(4) if k not in (k0, k1) and
+                       abs(uv[k][0] - uv[edge_end][0]) < 1e-6)
+            rest = [k for k in range(4) if k not in (middle, far)]
+            triangles = [((middle, far, rest[0]), uv), ((middle, far, rest[1]), uv)]
+        elif side is not None:
+            along = axis_of(side, (side + 1) % 4)
+            far = side in (1, 2)
+            uv = [side_uv(k, along, far) for k in range(4)]
+            triangles = [((0, 1, 2), uv), ((0, 2, 3), uv)]
+        elif count in (1, 3):
+            # Split through the corner that differs from the others; each
+            # half is mapped along its own raised edge (for a corner of three,
+            # the edge across from that corner; for one, an edge from it).
             odd = raised.index(count == 1)
-        a, b, c, d = (points[(odd + k) % 4] for k in range(4))
-        mesh.triangle(material, UP, a, b, c)
-        mesh.triangle(material, UP, a, c, d)
+            a, b, c, d = ((odd + k) % 4 for k in range(4))
+            triangles = []
+            for tri in ((a, b, c), (a, c, d)):
+                pair = (tri[1], tri[2]) if count == 3 else (tri[0], tri[1] if tri[1] != c else tri[2])
+                along = axis_of(*pair)
+                uv = [side_uv(k, along, False) for k in range(4)]
+                triangles.append((tri, uv))
+        else:
+            uv = [((0.0 if raised[k] else across), xyz[k][0] / REPEAT) for k in range(4)]
+            triangles = [((0, 1, 2), uv), ((0, 2, 3), uv)]
+        for tri, uv in triangles:
+            mesh.triangle(material, UP, *[(xyz[k], uv[k]) for k in tri])
 
     def _wall(self, mesh: Mesh, edge: tuple[int, int, int], outward: tuple[int, int]) -> None:
         kind, i, j = edge
