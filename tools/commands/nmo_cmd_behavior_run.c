@@ -20,6 +20,9 @@
 #ifdef NMO_HAS_PHYSICS_IVP
 #include "engine/nmo_physics_ivp.h"
 #endif
+#ifdef NMO_HAS_VIEW
+#include "engine/nmo_view.h"
+#endif
 
 typedef struct run_args {
     uint32_t frames;
@@ -36,6 +39,9 @@ typedef struct run_args {
     const char *messages; /* "Level_Finish@4000:All_Gameplay,...": messages the host sends */
     const char *registry; /* "Software\Game\Settings\Language=1;...": registry values */
     bool physics_ivp;     /* --physics ivp: simulate the physics blocks with libivp */
+    bool window;          /* --window: show the frames and take the keyboard and mouse */
+    bool frames_given;    /* -n given: a window closes after that many frames */
+    const char *shots;    /* "menu.png@700,...": frames a window saves */
 } run_args_t;
 
 /* A key held down from frame `first` to frame `last`. */
@@ -692,6 +698,25 @@ static char *run_folder_of(const char *file)
     return folder;
 }
 
+/*
+ * The path manager's paths a game player adds (GamePlayer.cpp): the
+ * document's folder for data, sounds and bitmaps, and its Sounds and
+ * Textures folders.
+ */
+static bool run_add_paths(nmo_engine_t *engine)
+{
+    static const struct {
+        int32_t category; /* 0 bitmaps, 1 data, 2 sounds */
+        const char *path;
+    } paths[] = {{1, "."}, {2, "."}, {2, "Sounds"}, {0, "."}, {0, "Textures"}};
+    for (size_t i = 0; i < sizeof(paths) / sizeof(paths[0]); i++) {
+        if (nmo_engine_add_path(engine, paths[i].category, paths[i].path) != NMO_OK) {
+            return false;
+        }
+    }
+    return true;
+}
+
 static const char *run_start_name(nmo_engine_start_mode_t mode)
 {
     switch (mode) {
@@ -741,6 +766,26 @@ static bool run_set_registry(nmo_engine_t *engine, const char *text)
     return true;
 }
 
+#ifdef NMO_HAS_VIEW
+/* Save the window if the --shot list names frame `frame`: FILE@FRAME,... */
+static void run_take_shots(nmo_view_t *view, const char *shots, uint64_t frame)
+{
+    for (const char *item = shots; item != NULL && *item != '\0';) {
+        const char *end = strchr(item, ',');
+        size_t length = end != NULL ? (size_t)(end - item) : strlen(item);
+        const char *at = memchr(item, '@', length);
+        if (at != NULL && strtoull(at + 1, NULL, 10) == frame) {
+            char *path = run_strndup(item, (size_t)(at - item));
+            if (path != NULL && nmo_view_screenshot(view, path) != NMO_OK) {
+                fprintf(stderr, "Error: Could not save %s\n", path);
+            }
+            free(path);
+        }
+        item = end != NULL ? end + 1 : NULL;
+    }
+}
+#endif
+
 static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
 {
     nmo_engine_options_t options = nmo_engine_options_default();
@@ -763,12 +808,22 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 #endif
+#ifdef NMO_HAS_VIEW
+    nmo_view_t *view = NULL;
+    if (args->window && nmo_view_open(engine, ctx->file_path, 2, &view) != NMO_OK) {
+#ifdef NMO_HAS_PHYSICS_IVP
+        nmo_physics_ivp_detach(physics);
+#endif
+        nmo_engine_destroy(engine);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+#endif
     const nmo_script_model_t *model = nmo_engine_script_model(engine);
     run_files_t files = {.write = args->write, .path = args->path,
                          .folder = run_folder_of(ctx->file_path)};
     nmo_engine_set_file_resolver(engine, run_resolve_file, &files);
     nmo_engine_set_file_writer(engine, run_write_file, &files);
-    if (!run_set_registry(engine, args->registry)) {
+    if (!run_set_registry(engine, args->registry) || !run_add_paths(engine)) {
         fprintf(stderr, "Error: Out of memory\n");
 #ifdef NMO_HAS_PHYSICS_IVP
         nmo_physics_ivp_detach(physics);
@@ -814,7 +869,13 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
         (messages != NULL && run_parse_messages(args->messages, messages) != message_count)) {
         status = NMO_ERR_NOMEM;
     }
-    for (uint32_t f = 0; status == NMO_OK && f < args->frames; f++) {
+    for (uint32_t f = 0; status == NMO_OK && (f < args->frames || (args->window && !args->frames_given));
+         f++) {
+#ifdef NMO_HAS_VIEW
+        if (view != NULL && !nmo_view_poll(view)) {
+            break;
+        }
+#endif
         run_send_messages(engine, messages, message_count, f);
         /* A key is down in a frame one of its ranges covers */
         for (long k = 0; k < key_count; k++) {
@@ -826,6 +887,12 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
             nmo_engine_set_key(engine, keys[k].key, down);
         }
         status = nmo_engine_step(engine, args->delta_ms);
+#ifdef NMO_HAS_VIEW
+        if (status == NMO_OK && view != NULL) {
+            status = nmo_view_draw(view);
+            run_take_shots(view, args->shots, nmo_engine_frame(engine));
+        }
+#endif
         if (status == NMO_OK && nmo_engine_exit_requested(engine)) {
             break; /* the player quits after the frame */
         }
@@ -867,6 +934,9 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
         nmo_cli_record_free(rec);
     }
     free(state.unknown);
+#ifdef NMO_HAS_VIEW
+    nmo_view_close(view);
+#endif
 #ifdef NMO_HAS_PHYSICS_IVP
     nmo_physics_ivp_detach(physics);
 #endif
@@ -901,10 +971,13 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
          "Registry values the TT blocks read: KEY\\NAME=VALUE;..."},
         {"--physics", NULL, NMO_OPT_STRING,
          "Simulate the physics blocks: none or ivp (default: none; ivp when built with libivp)"},
+        {"--window", "-w", NMO_OPT_FLAG,
+         "Show the frames in a window and play with its keyboard and mouse, until it closes"},
+        {"--shot", NULL, NMO_OPT_STRING, "Save the window at frames: FILE.png@FRAME,..."},
     };
     enum { OPT_FRAMES, OPT_DELTA, OPT_START, OPT_SCRIPT, OPT_UNKNOWN, OPT_MAX_ITER, OPT_SEED,
            OPT_TRACE, OPT_KEYS, OPT_PATH, OPT_WRITE, OPT_MESSAGE, OPT_REGISTRY, OPT_PHYSICS,
-           OPT_COUNT };
+           OPT_WINDOW, OPT_SHOT, OPT_COUNT };
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
@@ -917,6 +990,18 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
     }
 
     out->frames = nmo_opt_uint_or(&vals[OPT_FRAMES], 1u);
+    out->frames_given = vals[OPT_FRAMES].present;
+    out->window = nmo_opt_flag(&vals[OPT_WINDOW]);
+    out->shots = nmo_opt_str(&vals[OPT_SHOT]);
+    if (out->shots != NULL) {
+        out->window = true;
+    }
+#ifndef NMO_HAS_VIEW
+    if (out->window) {
+        fprintf(stderr, "Error: --window and --shot need a build with the view (NMO_VIEWER)\n");
+        return false;
+    }
+#endif
     out->delta_ms = nmo_opt_float_or(&vals[OPT_DELTA], 1000.0f / 60.0f);
     out->script_id = nmo_opt_uint_or(&vals[OPT_SCRIPT], 0u);
     out->max_iterations = nmo_opt_uint_or(&vals[OPT_MAX_ITER], NMO_ENGINE_DEFAULT_MAX_ITERATIONS);

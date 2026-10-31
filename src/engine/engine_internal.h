@@ -22,6 +22,7 @@
 #include "engine_message.h"
 #include "engine_module.h"
 #include "engine_physics.h"
+#include "engine_render.h"
 #include "engine_scene.h"
 #include "engine_transform.h"
 #include "engine_tt.h"

@@ -35,6 +35,9 @@ typedef struct eng_host {
 void eng_free_host(nmo_engine_t *engine);
 /* The whole file a name resolves to; NULL when it is not there. */
 unsigned char *eng_read_file(nmo_engine_t *engine, const char *name, size_t *out_size);
+/* The file a name resolves to through the path manager's paths of `category` (0 bitmaps) */
+unsigned char *eng_read_path_file(nmo_engine_t *engine, const char *name, int32_t category,
+                                  size_t *out_size);
 /* A registry value as text; NULL when the host set none */
 const char *eng_registry_value(nmo_engine_t *engine, const char *section, const char *name);
 /* VxConfig reads a DWORD value; false when the value is not a number. */

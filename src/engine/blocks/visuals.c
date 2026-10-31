@@ -4,7 +4,9 @@
  *
  * Each function does what the block's function in Visuals.dll does (the
  * reference is the Ballanced source of the blocks, or the DLL where they
- * differ). Show Mouse Cursor sets the cursor visibility the engine keeps;
+ * differ). Show and Hide change what the render state shows, Set 2D
+ * Material a 2D entity's material. Show Mouse Cursor sets the cursor
+ * visibility the engine keeps;
  * Statistics reports the frame counts CK2 keeps (the engine measures no time
  * but the frame's, and draws nothing).
  */
@@ -98,10 +100,78 @@ static int bb_show_mouse_cursor(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* ShowHierarchy (Hide.cpp): the object, then its 3D or 2D children */
+static void show_hierarchy(nmo_engine_t *engine, nmo_object_id_t id, int32_t show)
+{
+    eng_show(engine, id, show);
+    int32_t entity = eng_entity_index(engine, id);
+    if (entity >= 0) {
+        for (int32_t c = engine->entities.data[entity].first_child; c >= 0;
+             c = engine->entities.data[c].next_sibling) {
+            show_hierarchy(engine, engine->entities.data[c].id, show);
+        }
+        return;
+    }
+    if (eng_2d_entity(engine, id) == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < engine->render.entities_2d.count; i++) {
+        const eng_2d_t *child = &engine->render.entities_2d.data[i];
+        if (child->parent == id && !child->destroyed) {
+            show_hierarchy(engine, child->id, show);
+        }
+    }
+}
+
+/* Show and Hide: the target, with its children when Hierarchy is TRUE */
+static int show_or_hide(blk_t *b, int32_t show)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (target == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    if (get_in_int(b, 0, 0) != 0) {
+        show_hierarchy(b->engine, target, show);
+    } else {
+        eng_show(b->engine, target, show);
+    }
+    eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, target, show);
+    return NMO_ENGINE_BR_OK;
+}
+
+static int bb_show(blk_t *b)
+{
+    return show_or_hide(b, 1); /* CKSHOW */
+}
+
+static int bb_hide(blk_t *b)
+{
+    return show_or_hide(b, 0); /* CKHIDE */
+}
+
+/* Set 2D Material: CK2dEntity::SetMaterial, NULL included */
+static int bb_set_2d_material(blk_t *b)
+{
+    eng_2d_t *entity = eng_2d_entity(b->engine, nmo_engine_block_target(b));
+    if (entity == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    entity->material = nmo_engine_block_get_input_object(b, 0);
+    eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, entity->id, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_visuals_blocks[] = {
     {NMO_GUID(0x00cd320b, 0x32ed010b), "Planar Filter", bb_planar_filter, NULL, NULL},
     {NMO_GUID(0x5fb70201, 0x65595af3), "Statistics", bb_statistics, NULL, NULL},
     {NMO_GUID(0x16f6368f, 0x506b60fc), "Show Mouse Cursor", bb_show_mouse_cursor, NULL, NULL},
+    {NMO_GUID(0xa85a213a, 0xef78d52a), "Show", bb_show, NULL, NULL},
+    {NMO_GUID(0x31d97d82, 0x78d54d98), "Hide", bb_hide, NULL, NULL},
+    {NMO_GUID(0x3f7e5bff, 0x02326a71), "Set 2D Material", bb_set_2d_material, NULL, NULL},
 };
 
 nmo_status_t eng_register_visuals(nmo_engine_t *engine)

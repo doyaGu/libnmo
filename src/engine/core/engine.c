@@ -161,6 +161,9 @@ static const eng_register_fn eng_block_sets[] = {
     eng_register_logics_attribute,
     eng_register_narratives,
     eng_register_effects,
+    eng_register_cameras,
+    eng_register_lights,
+    eng_register_world_environments,
     eng_register_controllers,
     eng_register_interface,
     eng_register_sounds,
@@ -247,7 +250,7 @@ void nmo_engine_destroy(nmo_engine_t *engine)
     }
     free(engine->nodes.data);
     free(engine->media.sounds.data);
-    free(engine->media.textures.data);
+    eng_free_textures(engine);
     free(engine->op_lookups.data);
     eng_fonts_clear(engine);
     free(engine->render.fonts.data);
@@ -276,6 +279,7 @@ void nmo_engine_destroy(nmo_engine_t *engine)
     free(engine->scene_objects.slots);
     free(engine->destroyed.slots);
     free(engine->render.video_textures.slots);
+    eng_free_render(engine);
     free(engine->dynamic.objects.data);
     eng_free_modules(engine);
     free(engine);

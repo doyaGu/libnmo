@@ -219,6 +219,48 @@ int32_t eng_movie_frame_count(nmo_engine_t *engine, const char *name)
 }
 
 /* Whether the file `name` names is there to read. */
+bool eng_texture_load(nmo_engine_t *engine, eng_texture_t *texture, const char *name, int32_t slot)
+{
+    size_t size = 0;
+    unsigned char *data = slot >= 0 ? eng_read_path_file(engine, name, 0, &size) : NULL;
+    if (data == NULL) {
+        return false;
+    }
+    free(data);
+    size_t length = strlen(name);
+    char *copy = (char *)malloc(length + 1);
+    while (copy != NULL && texture->files.count <= (size_t)slot) {
+        char **item = NULL;
+        if (!ENG_VEC_PUSH(texture->files, item)) {
+            free(copy);
+            return false;
+        }
+    }
+    if (copy == NULL) {
+        return false;
+    }
+    memcpy(copy, name, length + 1);
+    free(texture->files.data[slot]);
+    texture->files.data[slot] = copy;
+    if (slot >= texture->slot_count) {
+        texture->slot_count = slot + 1;
+    }
+    eng_texture_changed(engine, texture->id);
+    return true;
+}
+
+void eng_free_textures(nmo_engine_t *engine)
+{
+    for (size_t i = 0; i < engine->media.textures.count; i++) {
+        eng_texture_t *texture = &engine->media.textures.data[i];
+        for (size_t f = 0; f < texture->files.count; f++) {
+            free(texture->files.data[f]);
+        }
+        free(texture->files.data);
+    }
+    free(engine->media.textures.data);
+}
+
 bool eng_media_file_exists(nmo_engine_t *engine, const char *name)
 {
     const char *path = engine->host.resolve_file != NULL

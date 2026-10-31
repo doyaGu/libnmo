@@ -22,21 +22,25 @@ set(NMO_ENGINE_SOURCES
     core/operations.c
     core/param.c
     core/param_text.c
+    core/render.c
     core/run.c
     core/scene.c
     core/schedule.c
     core/transform.c
     blocks/3dtransfo.c
     blocks/addons.c
+    blocks/cameras.c
     blocks/collisions.c
     blocks/controllers.c
     blocks/effects.c
     blocks/interface.c
+    blocks/lights.c
     blocks/materials.c
     blocks/narratives.c
     blocks/physics.c
     blocks/sounds.c
     blocks/visuals.c
+    blocks/world_environments.c
     blocks/logics/array.c
     blocks/logics/attribute.c
     blocks/logics/calculator.c

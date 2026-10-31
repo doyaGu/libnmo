@@ -69,6 +69,31 @@ unsigned char *eng_read_file(nmo_engine_t *engine, const char *name, size_t *out
     return data;
 }
 
+/*
+ * CKPathManager::ResolveFileName: the name as it is, else its file name in
+ * each path of the category, in order.
+ */
+unsigned char *eng_read_path_file(nmo_engine_t *engine, const char *name, int32_t category,
+                                  size_t *out_size)
+{
+    unsigned char *data = eng_read_file(engine, name, out_size);
+    if (data != NULL || category < 0 || category >= ENG_PATH_CATEGORIES) {
+        return data;
+    }
+    const char *base = name;
+    for (const char *p = name; *p != '\0'; p++) {
+        if (*p == '/' || *p == '\\') {
+            base = p + 1;
+        }
+    }
+    for (size_t i = 0; data == NULL && i < engine->host.paths[category].count; i++) {
+        char *joined = eng_text_printf("%s\\%s", engine->host.paths[category].data[i], base);
+        data = joined != NULL ? eng_read_file(engine, joined, out_size) : NULL;
+        free(joined);
+    }
+    return data;
+}
+
 /* ============================================================================
  * Registry
  * ============================================================================ */

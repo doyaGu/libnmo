@@ -85,6 +85,9 @@ target_link_libraries(nmo_cli PRIVATE nmo_project nmo_lua nmo_edit nmo_engine nm
 if(TARGET nmo_physics_ivp)
     target_link_libraries(nmo_cli PRIVATE nmo_physics_ivp)
 endif()
+if(TARGET nmo_view)
+    target_link_libraries(nmo_cli PRIVATE nmo_view)
+endif()
 
 # The analyses `nmo script analyze` bundles, compiled into nmo_cmd_script_analyze.c.
 foreach(_nmo_analysis IN ITEMS summary messages arrays interactions)

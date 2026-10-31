@@ -112,6 +112,12 @@ static bool eng_level_scene(nmo_engine_t *engine, eng_scene_entry_t **out_entrie
         *out_count = scene.object_descs.count;
         qsort(entries, *out_count, sizeof(*entries), eng_scene_entry_compare);
     }
+    if (read) {
+        eng_render_apply_scene(engine, scene.background_color, scene.background_texture.raw_id,
+                               scene.ambient_light_color, (int32_t)scene.fog_mode,
+                               scene.fog_color, scene.fog_start, scene.fog_end,
+                               scene.fog_density, scene.starting_camera.raw_id);
+    }
     nmo_scene_vtable.destroy(&scene, NULL, NULL);
     *out_entries = entries;
     return read;
@@ -434,6 +440,7 @@ nmo_status_t nmo_engine_step(nmo_engine_t *engine, float delta_ms)
     memset(&engine->profile.frame, 0, sizeof(engine->profile.frame));
     eng_input_begin_frame(engine);
     eng_sounds_begin_frame(engine);
+    eng_render_begin_frame(engine);
     eng_emit(engine, NMO_ENGINE_EVENT_FRAME_BEGIN, -1, 0, 0);
     nmo_status_t status = eng_manager_execute(engine);
     if (status == NMO_OK) {

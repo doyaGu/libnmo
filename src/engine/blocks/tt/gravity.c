@@ -9,6 +9,7 @@
 
 #include "../../engine_block_util.h"
 
+#include "object/builtin/nmo_camera_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_sound_schemas.h"
 #include "object/nmo_class_ids.h"
@@ -38,22 +39,225 @@ static int bb_get_sound_properties(blk_t *b)
 }
 
 /*
- * TT Sky: On makes the sky around the camera and keeps it there each frame
- * (an effect), Off hides it.
+ * TT Sky: On makes the sky, a prism of side faces (and a top and a bottom)
+ * around the camera, drawn first without the depth buffer, with a field of
+ * view widened by Distortion. Each frame while active it takes the material
+ * inputs and Vertex Color and shows; Off hides it. Reset or the script's
+ * deactivation destroys it.
  */
+static eng_sky_t *sky_of(nmo_engine_t *engine, int32_t node)
+{
+    for (size_t i = 0; i < engine->render.skies.count; i++) {
+        if (engine->render.skies.data[i].node == node) {
+            return &engine->render.skies.data[i];
+        }
+    }
+    return NULL;
+}
+
+/* The sky's mesh as Sky() builds it */
+static eng_mesh_t *sky_make_mesh(blk_t *b, int32_t sides, bool top, bool bottom)
+{
+    nmo_engine_t *engine = b->engine;
+    float radius = get_in_float(b, 3, 70.0f);
+    bool quadratic = get_in_int(b, 4, 1) != 0;
+    float side_height = quadratic ? 0.0f : get_in_float(b, 5, 0.0f);
+    float sky_y = get_in_float(b, 6, 0.0f);
+    const float pi = 3.14159265358979f;
+    if (quadratic) {
+        float step = 2.0f * pi / (float)sides;
+        float cr = cosf(step) * radius, sr = sinf(step) * radius;
+        side_height = sqrtf(sr * sr + (radius - cr) * (radius - cr));
+    }
+    int32_t side_vertices = 4 + (top ? 3 : 0) + (bottom ? 3 : 0);
+    int32_t side_faces = 2 + (top ? 1 : 0) + (bottom ? 1 : 0);
+    nmo_object_id_t id = eng_create_object(engine, NMO_CID_MESH, "TT_Sky_Mesh");
+    eng_mesh_t *mesh = NULL;
+    if (id == 0 || !ENG_VEC_PUSH(engine->render.meshes, mesh)) {
+        return NULL;
+    }
+    mesh->id = id;
+    mesh->vertex_count = sides * side_vertices;
+    mesh->face_count = sides * side_faces;
+    mesh->material_count = sides + (top ? 1 : 0) + (bottom ? 1 : 0);
+    mesh->vertices = (nmo_vertex_t *)calloc((size_t)mesh->vertex_count, sizeof(nmo_vertex_t));
+    mesh->colors = (uint32_t *)calloc((size_t)mesh->vertex_count, sizeof(uint32_t));
+    mesh->indices = (uint16_t *)calloc((size_t)mesh->face_count * 3u, sizeof(uint16_t));
+    mesh->faces = (nmo_face_t *)calloc((size_t)mesh->face_count, sizeof(nmo_face_t));
+    mesh->materials = (nmo_object_id_t *)calloc((size_t)mesh->material_count, sizeof(nmo_object_id_t));
+    mesh->prelit = true;
+    if (mesh->vertices == NULL || mesh->colors == NULL || mesh->indices == NULL ||
+        mesh->faces == NULL || mesh->materials == NULL) {
+        return mesh;
+    }
+    const float r = sinf(pi / 4.0f);
+    nmo_vertex_t *vx = mesh->vertices;
+    for (int32_t side = 0; side < sides; side++) {
+        float step = 2.0f * pi / (float)sides;
+        float bpi = step * (float)side + 1.25f * pi;
+        float api = step * (float)(side + 1) + 1.25f * pi;
+        float cb = cosf(bpi) * radius, ca = cosf(api) * radius;
+        float sb = sinf(bpi) * radius, sa = sinf(api) * radius;
+        float yt = sky_y + side_height * 0.5f, yb = sky_y - side_height * 0.5f;
+        const float quad[4][5] = {{cb, yb, sb, 1.0f, 1.0f}, {ca, yb, sa, 0.0f, 1.0f},
+                                  {ca, yt, sa, 0.0f, 0.0f}, {cb, yt, sb, 1.0f, 0.0f}};
+        for (int k = 0; k < 4; k++, vx++) {
+            vx->position.x = quad[k][0];
+            vx->position.y = quad[k][1];
+            vx->position.z = quad[k][2];
+            vx->uv.x = quad[k][3];
+            vx->uv.y = quad[k][4];
+        }
+        float ib = 1.0f / sqrtf(sb * sb + cb * cb), ia = 1.0f / sqrtf(sa * sa + ca * ca);
+        const float cap[2][3][5] = {
+            {{cb, yt, sb, cb * ib * r + 0.5f, -sb * ib * r + 0.5f},
+             {ca, yt, sa, ca * ia * r + 0.5f, -sa * ia * r + 0.5f},
+             {0.0f, yt, 0.0f, 0.5f, 0.5f}},
+            {{cb, yb, sb, cb * ib * r + 0.5f, -sb * ib * r + 0.5f},
+             {0.0f, yb, 0.0f, 0.5f, 0.5f},
+             {ca, yb, sa, ca * ia * r + 0.5f, -sa * ia * r + 0.5f}}};
+        for (int c = 0; c < 2; c++) {
+            if (c == 0 ? !top : !bottom) {
+                continue;
+            }
+            for (int k = 0; k < 3; k++, vx++) {
+                vx->position.x = cap[c][k][0];
+                vx->position.y = cap[c][k][1];
+                vx->position.z = cap[c][k][2];
+                vx->uv.x = cap[c][k][3];
+                vx->uv.y = cap[c][k][4];
+            }
+        }
+    }
+    /* SetFaceVertexIndex (c, a, b) and (c, d, a) a side, then (a, b, c) a cap */
+    int32_t a = 0, bb = 1, c = 2, d = 3, f = 0;
+    for (int32_t side = 0; side < sides; side++) {
+        const int32_t faces[2][3] = {{c, a, bb}, {c, d, a}};
+        for (int k = 0; k < 2; k++, f++) {
+            memcpy(&mesh->indices[f * 3], (uint16_t[3]){(uint16_t)faces[k][0], (uint16_t)faces[k][1],
+                                                         (uint16_t)faces[k][2]},
+                   3 * sizeof(uint16_t));
+            mesh->faces[f].material_group_idx = (uint32_t)side;
+        }
+        a += 4, bb += 4, c += 4, d += 4;
+        for (int cap = 0; cap < 2; cap++) {
+            if (cap == 0 ? !top : !bottom) {
+                continue;
+            }
+            mesh->indices[f * 3] = (uint16_t)a;
+            mesh->indices[f * 3 + 1] = (uint16_t)bb;
+            mesh->indices[f * 3 + 2] = (uint16_t)c;
+            mesh->faces[f].material_group_idx = (uint32_t)(sides + (cap == 1 && top ? 1 : 0));
+            f++;
+            a += 3, bb += 3, c += 3, d += 3;
+        }
+    }
+    return mesh;
+}
+
 static int bb_sky(blk_t *b)
 {
+    nmo_engine_t *engine = b->engine;
+    int32_t sides = get_local_int(b, 0, 4);
+    bool top = get_local_int(b, 1, 0) != 0;
+    bool bottom = get_local_int(b, 2, 0) != 0;
     if (IN_ACTIVE(b, 0)) {
         IN_OFF(b, 0);
         OUT_ON(b, 0);
-        eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, 0, 0);
+        eng_sky_t *sky = sky_of(engine, b->node);
+        if (sky == NULL && !ENG_VEC_PUSH(engine->render.skies, sky)) {
+            return NMO_ENGINE_BR_PARAMETERERROR;
+        }
+        sky->node = b->node;
+        float distortion = get_in_float(b, 0, 0.3f);
+        sky->distortion = distortion > 1.0f ? 1.0f : distortion;
+        sky->orientation = nmo_engine_block_get_input_object(b, 2);
+        sky->shown = false;
+        eng_mesh_t *mesh = sides > 0 ? sky_make_mesh(b, sides, top, bottom) : NULL;
+        sky = sky_of(engine, b->node);
+        sky->mesh = mesh != NULL ? mesh->id : 0;
+        eng_emit(engine, NMO_ENGINE_EVENT_EFFECT, b->node, 0, 0);
+    }
+    eng_sky_t *sky = sky_of(engine, b->node);
+    eng_mesh_t *mesh = sky != NULL ? eng_render_mesh(engine, sky->mesh) : NULL;
+    if (mesh == NULL || mesh->materials == NULL || mesh->colors == NULL) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    for (int32_t m = 0; m < mesh->material_count; m++) {
+        mesh->materials[m] = nmo_engine_block_get_input_object(b, 7 + m);
+    }
+    float color[4] = {1.0f, 1.0f, 1.0f, 0.0f};
+    nmo_engine_block_get_input_value(b, 1, color, sizeof(color));
+    uint32_t argb = 0;
+    for (int i = 0; i < 4; i++) {
+        float v = color[i] < 0.0f ? 0.0f : color[i] > 1.0f ? 1.0f : color[i];
+        argb |= (uint32_t)(v * 255.0f + 0.5f) << (i == 3 ? 24 : 16 - 8 * i);
+    }
+    for (int32_t v = 0; v < mesh->vertex_count; v++) {
+        mesh->colors[v] = argb;
     }
     if (IN_ACTIVE(b, 1)) {
         IN_OFF(b, 1);
         OUT_ON(b, 1);
+        sky->shown = false;
         return NMO_ENGINE_BR_OK;
     }
+    sky->shown = true;
     return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+static int cb_sky(blk_t *b, uint32_t message)
+{
+    if (message == NMO_ENGINE_MSG_RESET || message == NMO_ENGINE_MSG_DEACTIVATESCRIPT) {
+        eng_sky_t *sky = sky_of(b->engine, b->node);
+        if (sky != NULL) {
+            sky->shown = false; /* CKDestroyObject(ent) */
+            sky->node = -1;
+        }
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * The skies' pre render callback: the sky at the camera, turned as its
+ * orientation object (or not), its projection's field of view widened from
+ * the camera's, near 1 and far 200.
+ */
+void eng_draw_skies(nmo_engine_t *engine, const float view[16])
+{
+    const eng_render_t *render = &engine->render;
+    const nmo_camera_state_t *camera =
+        render->camera != 0
+            ? (const nmo_camera_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
+                  engine->types, eng_find_object(engine, render->camera), CKPGUID_CAMERA)
+            : NULL;
+    float current_fov = camera != NULL ? camera->fov : 0.5f;
+    const float pi = 3.14159265358979f;
+    for (size_t i = 0; i < render->skies.count; i++) {
+        eng_sky_t sky = render->skies.data[i];
+        if (!sky.shown || sky.mesh == 0) {
+            continue;
+        }
+        nmo_engine_draw_t *draw = eng_render_push(engine);
+        if (draw == NULL) {
+            return;
+        }
+        draw->kind = NMO_ENGINE_DRAW_MESH;
+        draw->mesh = sky.mesh;
+        int32_t orientation = sky.orientation != 0 ? eng_entity_index(engine, sky.orientation) : -1;
+        if (orientation >= 0) {
+            memcpy(draw->world, engine->entities.data[orientation].world.m, sizeof(draw->world));
+        } else {
+            draw->world[0] = draw->world[5] = draw->world[10] = draw->world[15] = 1.0f;
+        }
+        draw->world[12] = view[12];
+        draw->world[13] = view[13];
+        draw->world[14] = view[14];
+        draw->no_z_test = draw->no_z_write = true;
+        draw->fov = current_fov + sky.distortion * (pi - current_fov);
+        draw->near_plane = 1.0f;
+        draw->far_plane = 200.0f;
+    }
 }
 
 /*
@@ -704,7 +908,7 @@ static int bb_simple_shadow(blk_t *b)
 static const nmo_engine_block_desc_t eng_tt_gravity_blocks[] = {
     {NMO_GUID(0x30fa6a70, 0x3b3f728a), "TT_GetSoundProperties", bb_get_sound_properties, NULL,
      NULL},
-    {NMO_GUID(0x36691920, 0x3b261630), "TT Sky", bb_sky, NULL, NULL},
+    {NMO_GUID(0x36691920, 0x3b261630), "TT Sky", bb_sky, cb_sky, NULL},
     {NMO_GUID(0x51bd5521, 0x672c67bf), "TT SpeedOMeter", bb_speedometer, NULL, NULL},
     {NMO_GUID(0x009c1208, 0x3a8d779e), "TT_TextureSine", bb_texture_sine, NULL, NULL},
     {NMO_GUID(0x38571b61, 0x64cd2174), "TT ProximityVolumeControl", bb_proximity_volume_control,

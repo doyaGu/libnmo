@@ -100,13 +100,10 @@ static int bb_texture_load(blk_t *b)
     const char *name = (const char *)nmo_engine_block_input_data(b, 0, &size);
     int32_t slot = get_in_int(b, 1, 0);
     bool loaded = name != NULL && size > 1 && memchr(name, '\0', size) != NULL && name[0] != '\0' &&
-                  slot >= 0 && !texture->movie && eng_media_file_exists(b->engine, name);
+                  slot >= 0 && !texture->movie && eng_texture_load(b->engine, texture, name, slot);
     if (!loaded) {
         OUT_ON(b, 1);
         return NMO_ENGINE_BR_OK;
-    }
-    if (slot >= texture->slot_count) {
-        texture->slot_count = slot + 1;
     }
     if (nmo_engine_block_output_parameter_count(b) > 0) {
         nmo_object_id_t id = texture->id;
