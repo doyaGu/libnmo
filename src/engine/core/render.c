@@ -23,6 +23,7 @@
 #include "object/builtin/nmo_material_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_object_schemas.h"
+#include "object/builtin/nmo_sprite3d_schemas.h"
 #include "object/builtin/nmo_targetcamera_schemas.h"
 #include "object/builtin/nmo_targetlight_schemas.h"
 #include "object/builtin/nmo_texture_schemas.h"
@@ -537,6 +538,92 @@ static bool eng_mesh_transparent(nmo_engine_t *engine, nmo_object_id_t mesh,
 }
 
 /* ============================================================================
+ * 3D sprites
+ * ============================================================================ */
+
+static void eng_normalize3(float v[3])
+{
+    float length = sqrtf(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+    if (length > 0.0f) {
+        v[0] /= length, v[1] /= length, v[2] /= length;
+    }
+}
+
+/*
+ * RCKSprite3D: UpdateOrientation (a billboard takes the camera's axes, an X or
+ * Y rotating one turns about that axis toward it), then FillBatch: the quad
+ * along the world X and Y axes times the sprite's size, from its offset, in
+ * its UV rectangle, with its material's diffuse color (CallSprite3DBatches).
+ */
+static bool eng_draw_sprite3d(nmo_engine_t *engine, const eng_entity_t *entity,
+                              const nmo_sprite3d_state_t *state, const float camera[16])
+{
+    nmo_object_id_t material_id =
+        state->has_data ? eng_object_ref(engine, entity->id, &state->material) : 0;
+    eng_material_t *material = material_id != 0 ? eng_material(engine, material_id) : NULL;
+    if (material == NULL) {
+        return true; /* only a sprite with a material joins a batch */
+    }
+    float x[3] = {entity->world.m[0][0], entity->world.m[0][1], entity->world.m[0][2]};
+    float y[3] = {entity->world.m[1][0], entity->world.m[1][1], entity->world.m[1][2]};
+    if (camera != NULL && state->mode == VXSPRITE3D_BILLBOARD) {
+        memcpy(x, &camera[0], sizeof(x));
+        memcpy(y, &camera[4], sizeof(y));
+    } else if (camera != NULL && state->mode == VXSPRITE3D_XROTATE) {
+        float z[3] = {0.0f, -camera[6], camera[5]};
+        eng_normalize3(z);
+        x[0] = 1.0f, x[1] = 0.0f, x[2] = 0.0f;
+        y[0] = 0.0f, y[1] = z[2], y[2] = -z[1];
+        eng_normalize3(y);
+    } else if (camera != NULL && state->mode == VXSPRITE3D_YROTATE) {
+        x[0] = camera[10], x[1] = 0.0f, x[2] = -camera[8];
+        eng_normalize3(x);
+        y[0] = 0.0f, y[1] = 1.0f, y[2] = 0.0f;
+    }
+    float width = state->half_width * 2.0f, height = state->half_height * 2.0f;
+    float ox = (state->offset.x - 1.0f) * 0.5f, oy = (state->offset.y - 1.0f) * 0.5f;
+    float base[3], corners[4][3];
+    for (int c = 0; c < 3; c++) {
+        x[c] *= width;
+        y[c] *= height;
+        base[c] = entity->world.m[3][c] + x[c] * ox + y[c] * oy;
+        corners[0][c] = base[c];
+        corners[1][c] = base[c] + y[c];
+        corners[2][c] = base[c] + y[c] + x[c];
+        corners[3][c] = base[c] + x[c];
+    }
+    const nmo_rect_t *uv = &state->uv_rect;
+    const float uvs[4][2] = {{uv->left, uv->bottom}, {uv->left, uv->top}, {uv->right, uv->top},
+                             {uv->right, uv->bottom}};
+    uint32_t color = eng_color_argb(material->desc.diffuse);
+    int32_t first = (int32_t)engine->render.vertices.count;
+    static const int order[6] = {0, 1, 2, 0, 2, 3};
+    for (int k = 0; k < 6; k++) {
+        nmo_engine_vertex_t *vertex = NULL;
+        if (!ENG_VEC_PUSH(engine->render.vertices, vertex)) {
+            return false;
+        }
+        const float *p = corners[order[k]];
+        *vertex = (nmo_engine_vertex_t){p[0], p[1], p[2], uvs[order[k]][0], uvs[order[k]][1], color};
+    }
+    nmo_engine_draw_t *draw = eng_render_push(engine);
+    if (draw == NULL) {
+        return false;
+    }
+    memset(draw, 0, sizeof(*draw));
+    draw->kind = NMO_ENGINE_DRAW_SPRITE3D;
+    draw->object = entity->id;
+    draw->material = material_id;
+    draw->texture = material->desc.texture;
+    draw->first_vertex = first;
+    draw->vertex_count = 6;
+    draw->transparent = material->desc.alpha_blend;
+    draw->world[0] = draw->world[5] = draw->world[10] = draw->world[15] = 1.0f;
+    memcpy(&draw->world[12], entity->world.m[3], 3u * sizeof(float));
+    return true;
+}
+
+/* ============================================================================
  * Lights
  * ============================================================================ */
 
@@ -968,6 +1055,7 @@ nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *o
     eng_frame_lights(engine);
 
     render->draws.count = 0;
+    render->vertices.count = 0;
     eng_render_2d_root(engine, true, width, height);
     eng_draw_skies(engine, out->view);
     for (size_t i = 0; i < engine->entities.count; i++) {
@@ -975,6 +1063,14 @@ nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *o
         if (entity->destroyed || !eng_in_scene(engine, entity->id) ||
             !(eng_object_flags(engine, entity->id) & OBJECT_VISIBLE) ||
             eng_hidden_by_parent(engine, entity)) {
+            continue;
+        }
+        const nmo_sprite3d_state_t *sprite =
+            (const nmo_sprite3d_state_t *)eng_typed_state(engine, entity->id, CKPGUID_SPRITE3D);
+        if (sprite != NULL) {
+            if (!eng_draw_sprite3d(engine, entity, sprite, camera >= 0 ? out->view : NULL)) {
+                return NMO_ERR_NOMEM;
+            }
             continue;
         }
         nmo_object_id_t mesh = eng_entity_current_mesh(engine, entity->id);
@@ -994,7 +1090,6 @@ nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *o
         memcpy(draw->world, entity->world.m, sizeof(draw->world));
         draw->transparent = transparent;
     }
-    render->vertices.count = 0;
     eng_draw_particles(engine, out->view);
     eng_render_2d_root(engine, false, width, height);
     eng_draw_sprite_texts(engine);

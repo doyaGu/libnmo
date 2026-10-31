@@ -35,7 +35,8 @@ typedef enum nmo_engine_draw_kind {
     NMO_ENGINE_DRAW_MESH = 0,     /* a 3D entity's current mesh, at its world matrix */
     NMO_ENGINE_DRAW_QUAD = 1,     /* a 2D entity, or a character of text */
     NMO_ENGINE_DRAW_TRIANGLES = 2, /* world space triangles a particle system draws */
-    NMO_ENGINE_DRAW_SPRITE_TEXT = 3 /* a CKSpriteText: text a host draws with a system font */
+    NMO_ENGINE_DRAW_SPRITE_TEXT = 3, /* a CKSpriteText: text a host draws with a system font */
+    NMO_ENGINE_DRAW_SPRITE3D = 4   /* a CKSprite3D: a world space quad with its material, unlit */
 } nmo_engine_draw_kind_t;
 
 /* A vertex of NMO_ENGINE_DRAW_TRIANGLES: world position, texture coordinates, ARGB color */
@@ -74,6 +75,8 @@ typedef struct nmo_engine_draw {
        unless `blend` is false, no lighting, no culling; world[12..14] is their
        emitter's position, to sort by */
     int32_t first_vertex, vertex_count;
+    /* A 3D sprite: two triangles of the frame's vertices from first_vertex, colored with its
+       material's diffuse, drawn with `material` and no lighting */
     /* Triangles, and a quad with no material that sets `blend` (Planar Filter): its blending */
     int32_t source_blend, dest_blend;
     bool blend;
