@@ -15,6 +15,7 @@
 #include "engine/nmo_view.h"
 #include "engine/nmo_engine_render.h"
 #include "view_audio.h"
+#include "view_text.h"
 #include "core/nmo_arena.h"
 #include "format/nmo_image.h"
 #include "format/nmo_stb_adapter.h"
@@ -74,6 +75,7 @@ struct nmo_view {
     uint64_t start;
     bool cursor_shown;
     view_audio_t *audio; /* NULL when there is no audio device */
+    view_text_t *text;   /* the sprite texts' fonts and textures */
 };
 
 /* ============================================================================
@@ -661,6 +663,37 @@ static void view_draw_quad(nmo_view_t *view, const nmo_engine_draw_t *draw)
     glEnd();
 }
 
+/* A sprite text: its sprite's pixels, blended over the frame without Z */
+static void view_draw_sprite_text(nmo_view_t *view, const nmo_engine_draw_t *draw)
+{
+    GLuint name = view_text_texture(view->text, draw);
+    if (name == 0) {
+        return;
+    }
+    glDisable(GL_LIGHTING);
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_ALPHA_TEST);
+    glDisable(GL_FOG);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, name);
+    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+    glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+    glBegin(GL_TRIANGLE_FAN);
+    glTexCoord2f(0.0f, 0.0f);
+    glVertex2f(draw->rect[0], draw->rect[1]);
+    glTexCoord2f(1.0f, 0.0f);
+    glVertex2f(draw->rect[2], draw->rect[1]);
+    glTexCoord2f(1.0f, 1.0f);
+    glVertex2f(draw->rect[2], draw->rect[3]);
+    glTexCoord2f(0.0f, 1.0f);
+    glVertex2f(draw->rect[0], draw->rect[3]);
+    glEnd();
+}
+
 /* A particle system's triangles (ParticleEmitter::SetState) */
 static void view_draw_triangles(nmo_view_t *view, const nmo_engine_frame_t *frame,
                                 const nmo_engine_draw_t *draw, const float view_m[16])
@@ -861,7 +894,8 @@ nmo_status_t nmo_view_draw(nmo_view_t *view)
         view_draw_quad(view, &frame.draws[i]);
     }
     int32_t end_mesh = first_mesh;
-    while (end_mesh < frame.draw_count && frame.draws[end_mesh].kind != NMO_ENGINE_DRAW_QUAD) {
+    while (end_mesh < frame.draw_count && frame.draws[end_mesh].kind != NMO_ENGINE_DRAW_QUAD &&
+           frame.draws[end_mesh].kind != NMO_ENGINE_DRAW_SPRITE_TEXT) {
         end_mesh++;
     }
     float view_m[16];
@@ -902,8 +936,13 @@ nmo_status_t nmo_view_draw(nmo_view_t *view)
     glDisable(GL_LIGHTING);
     view_begin_2d(&frame);
     for (int32_t i = end_mesh; i < frame.draw_count; i++) {
-        view_draw_quad(view, &frame.draws[i]);
+        if (frame.draws[i].kind == NMO_ENGINE_DRAW_SPRITE_TEXT) {
+            view_draw_sprite_text(view, &frame.draws[i]);
+        } else {
+            view_draw_quad(view, &frame.draws[i]);
+        }
     }
+    view_text_end_frame(view->text);
     view_pick(view, &frame);
     SDL_GL_SwapWindow(view->window);
     return NMO_OK;
@@ -1002,6 +1041,7 @@ nmo_status_t nmo_view_open(nmo_engine_t *engine, const char *title, int scale,
     }
     SDL_GL_SetSwapInterval(1);
     view->audio = view_audio_open();
+    view->text = view_text_open();
     view->start = SDL_GetTicksNS();
     view->cursor_shown = true;
     *out_view = view;
@@ -1027,6 +1067,7 @@ void nmo_view_close(nmo_view_t *view)
     }
     free(view->meshes);
     view_audio_close(view->audio);
+    view_text_close(view->text);
     if (view->context != NULL) {
         SDL_GL_DestroyContext(view->context);
     }

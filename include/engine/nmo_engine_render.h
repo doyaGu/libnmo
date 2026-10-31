@@ -34,7 +34,8 @@ extern "C" {
 typedef enum nmo_engine_draw_kind {
     NMO_ENGINE_DRAW_MESH = 0,     /* a 3D entity's current mesh, at its world matrix */
     NMO_ENGINE_DRAW_QUAD = 1,     /* a 2D entity, or a character of text */
-    NMO_ENGINE_DRAW_TRIANGLES = 2 /* world space triangles a particle system draws */
+    NMO_ENGINE_DRAW_TRIANGLES = 2, /* world space triangles a particle system draws */
+    NMO_ENGINE_DRAW_SPRITE_TEXT = 3 /* a CKSpriteText: text a host draws with a system font */
 } nmo_engine_draw_kind_t;
 
 /* A vertex of NMO_ENGINE_DRAW_TRIANGLES: world position, texture coordinates, ARGB color */
@@ -76,6 +77,15 @@ typedef struct nmo_engine_draw {
     /* Triangles, and a quad with no material that sets `blend` (Planar Filter): its blending */
     int32_t source_blend, dest_blend;
     bool blend;
+    /* Sprite text: `text` in `rect`, in `color` on nothing (the sprite's transparent
+       color), with the font `font_name` of `font_size` (points; pixels when negative,
+       as CreateFont takes it), `font_weight` and `italic`, placed by `text_align`
+       (CKSPRITETEXT_ALIGNMENT); valid until the next frame */
+    const char *text;
+    const char *font_name;
+    int32_t font_size, font_weight;
+    bool italic;
+    uint32_t text_align;
 } nmo_engine_draw_t;
 
 typedef struct nmo_engine_light {

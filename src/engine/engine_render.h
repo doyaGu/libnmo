@@ -53,6 +53,17 @@ typedef struct eng_text {
     nmo_object_id_t material;
 } eng_text_t;
 
+/* A CKSpriteText a Text Display block made: what it shows and where */
+typedef struct eng_sprite_text {
+    int32_t node;
+    bool shown;
+    float x, y, width, height;
+    char *text; /* NULL until it is drawn the first time */
+    char *font; /* the face name tdFontInfo holds */
+    int32_t size, weight, style, align;
+    uint32_t color; /* as the text shows: CK passes ARGB where GDI takes ABGR */
+} eng_sprite_text_t;
+
 /* A mesh made at run time (TT Sky's), with what CKMesh would hold */
 typedef struct eng_mesh {
     nmo_object_id_t id;
@@ -212,6 +223,7 @@ typedef struct eng_render {
     ENG_VEC(eng_sky_t) skies;
     ENG_VEC(eng_shadow_t) shadows;
     ENG_VEC(int32_t) filters; /* the Planar Filter blocks drawing after the sprites */
+    ENG_VEC(eng_sprite_text_t) sprite_texts;
     ENG_VEC(eng_emitter_t) emitters;
     ENG_VEC(nmo_engine_vertex_t) vertices; /* the frame's triangles */
     ENG_VEC(eng_mesh_copy_t) mesh_copies;
@@ -275,6 +287,8 @@ void eng_free_emitters(nmo_engine_t *engine);
 /* blocks/tt/gravity.c */
 /* The shadows' pre render callbacks: each projected on the floors under its object */
 void eng_update_shadows(nmo_engine_t *engine);
+/* blocks/interface.c: the shown sprite texts, as 2D entities of the root */
+void eng_draw_sprite_texts(nmo_engine_t *engine);
 /* blocks/visuals.c: the Planar Filters' quads over the view (PlanarFilterRender) */
 void eng_draw_filters(nmo_engine_t *engine, float width, float height);
 /* The skies TT Sky shows, placed at the camera: the frame's first draws */

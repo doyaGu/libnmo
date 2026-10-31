@@ -848,24 +848,161 @@ static int bb_text_3d(blk_t *b)
     return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
 }
 
+/* The block's CKSpriteText, made the first time (the creation callback's) */
+static eng_sprite_text_t *text_display_sprite(blk_t *b)
+{
+    eng_render_t *render = &b->engine->render;
+    for (size_t i = 0; i < render->sprite_texts.count; i++) {
+        if (render->sprite_texts.data[i].node == b->node) {
+            return &render->sprite_texts.data[i];
+        }
+    }
+    eng_sprite_text_t *sprite = NULL;
+    if (!ENG_VEC_PUSH(render->sprite_texts, sprite)) {
+        return NULL;
+    }
+    memset(sprite, 0, sizeof(*sprite));
+    sprite->node = b->node;
+    /* Create(Sprite Size), 320 x 32 by default */
+    float size[2] = {320.0f, 32.0f};
+    nmo_engine_block_get_local_value(b, 4, size, sizeof(size));
+    sprite->width = (float)(int)size[0];
+    sprite->height = (float)(int)size[1];
+    /* tdFontInfo: the face name, the weight and the style; Arial before version 2 */
+    const eng_node_t *node = block_node(b);
+    const eng_param_t *info = eng_node_param(b->engine, node->first_local, node->local_count, 1);
+    const char *face = "Arial";
+    sprite->weight = 400;
+    if (nmo_engine_block_version(b) >= 0x00020000u && info != NULL && info->data != NULL &&
+        info->size >= 64u && memchr(info->data, '\0', 56) != NULL) {
+        face = (const char *)info->data;
+        memcpy(&sprite->weight, info->data + 56, sizeof(int32_t));
+        memcpy(&sprite->style, info->data + 60, sizeof(int32_t));
+    }
+    sprite->font = eng_text_printf("%s", face);
+    return sprite;
+}
+
+/* AppendTextDisplayParameter: a string as it is, anything else as its text, each with a space */
+static char *text_display_string(blk_t *b)
+{
+    char *text = eng_text_printf("%s", "");
+    int count = nmo_engine_block_input_parameter_count(b);
+    for (int i = 4; text != NULL && i < count; i++) {
+        eng_param_t *source = input_source(b, i, true);
+        if (source == NULL) {
+            continue;
+        }
+        char *part = nmo_guid_equals(source->type, CKPGUID_STRING)
+                         ? eng_text_printf("%s", source->data != NULL && source->size > 0 &&
+                                                         memchr(source->data, '\0', source->size)
+                                                     ? (const char *)source->data
+                                                     : "")
+                         : eng_param_text(b->engine, source);
+        if (part != NULL && part[0] != '\0') {
+            char *joined = eng_text_printf("%s%s ", text, part);
+            free(text);
+            text = joined;
+        }
+        free(part);
+    }
+    return text;
+}
+
 /*
- * Text Display: its text sprite shown with On (Exit On), hidden with Off
- * (Exit Off, tested first); while shown it stays active to draw the text.
+ * Text Display: its CKSpriteText shown with On (Exit On), hidden with Off
+ * (Exit Off, tested first). While on it stays active: the sprite at
+ * Offset, and when the text the inputs from the fifth on make changed (or
+ * after On), the Color, Alignment and Size of the font tdFontInfo names
+ * (local 1) with it. The color reaches GDI with red and blue swapped (the
+ * "BUG" the block's source warns of), so the text shows them swapped.
  */
 static int bb_text_display(blk_t *b)
 {
+    eng_sprite_text_t *sprite = text_display_sprite(b);
+    if (sprite == NULL) {
+        return NMO_ENGINE_BR_GENERICERROR;
+    }
+    bool redraw = false;
     if (IN_ACTIVE(b, 1)) {
         IN_OFF(b, 1);
         OUT_ON(b, 1);
+        sprite->shown = false;
         eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, 0, 0);
         return NMO_ENGINE_BR_OK;
     }
     if (IN_ACTIVE(b, 0)) {
         IN_OFF(b, 0);
         OUT_ON(b, 0);
+        sprite->shown = true;
+        redraw = true;
         eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, 0, 1);
     }
+    char *text = text_display_string(b);
+    float offset[2] = {0.0f, 0.0f};
+    nmo_engine_block_get_input_value(b, 0, offset, sizeof(offset));
+    sprite->x = offset[0];
+    sprite->y = offset[1];
+    if (text != NULL && (redraw || sprite->text == NULL || strcmp(text, sprite->text) != 0)) {
+        float color[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+        nmo_engine_block_get_input_value(b, 1, color, sizeof(color));
+        uint32_t channel[4];
+        for (int c = 0; c < 4; c++) {
+            float v = color[c] < 0.0f ? 0.0f : color[c] > 1.0f ? 1.0f : color[c];
+            channel[c] = (uint32_t)(v * 255.0f);
+        }
+        /* RGBAFTOCOLOR gives ARGB; RGB(c & 0xFF, c >> 8 & 0xFF, c >> 16 & 0xFF) reads it as ABGR */
+        sprite->color = 0xFF000000u | channel[2] << 16 | channel[1] << 8 | channel[0];
+        sprite->align = get_in_int(b, 2, 2);
+        sprite->size = get_in_int(b, 3, 12);
+        free(sprite->text);
+        sprite->text = text;
+        text = NULL;
+    }
+    free(text);
     return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+/* TextDisplayCallBackObject: the sprite hides when its script stops and shows when it runs */
+static int cb_text_display(blk_t *b, uint32_t message)
+{
+    eng_sprite_text_t *sprite = text_display_sprite(b);
+    if (sprite == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    if (message == NMO_ENGINE_MSG_RESET || message == NMO_ENGINE_MSG_PAUSE ||
+        message == NMO_ENGINE_MSG_DEACTIVATESCRIPT) {
+        sprite->shown = false;
+    } else if ((message == NMO_ENGINE_MSG_ACTIVATESCRIPT || message == NMO_ENGINE_MSG_RESUME) &&
+               nmo_engine_behavior_is_active(b->engine, block_node(b)->id)) {
+        sprite->shown = true;
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+void eng_draw_sprite_texts(nmo_engine_t *engine)
+{
+    for (size_t i = 0; i < engine->render.sprite_texts.count; i++) {
+        const eng_sprite_text_t *sprite = &engine->render.sprite_texts.data[i];
+        nmo_engine_draw_t *draw = NULL;
+        if (!sprite->shown || sprite->text == NULL || sprite->text[0] == '\0' ||
+            !ENG_VEC_PUSH(engine->render.draws, draw)) {
+            continue;
+        }
+        memset(draw, 0, sizeof(*draw));
+        draw->kind = NMO_ENGINE_DRAW_SPRITE_TEXT;
+        draw->rect[0] = sprite->x;
+        draw->rect[1] = sprite->y;
+        draw->rect[2] = sprite->x + sprite->width;
+        draw->rect[3] = sprite->y + sprite->height;
+        draw->color = draw->color2 = sprite->color;
+        draw->text = sprite->text;
+        draw->font_name = sprite->font;
+        draw->font_size = sprite->size;
+        draw->font_weight = sprite->weight;
+        draw->italic = (sprite->style & 0x1) != 0; /* FONT_ITALIC */
+        draw->text_align = (uint32_t)sprite->align;
+    }
 }
 
 /* ============================================================================
@@ -1020,7 +1157,7 @@ static const nmo_engine_block_desc_t eng_interface_blocks[] = {
     {NMO_GUID(0x0153342c, 0xe543674f), "Delete Font", bb_delete_font, NULL, NULL},
     {NMO_GUID(0xdacfbd61, 0x7a6e65e7), "Set Font Properties", bb_set_font_properties, NULL, NULL},
     {NMO_GUID(0x055b29fe, 0x662d5ca0), "2D Text", bb_text_2d, NULL, NULL},
-    {NMO_GUID(0xf22d010a, 0xf2cd010a), "Text Display", bb_text_display, NULL, NULL},
+    {NMO_GUID(0xf22d010a, 0xf2cd010a), "Text Display", bb_text_display, cb_text_display, NULL},
     {NMO_GUID(0x1f5b2fe7, 0x6d355175), "3D Text", bb_text_3d, NULL, NULL},
     {NMO_GUID(0x761b7e64, 0x2b4c6911), "PushButton", bb_push_button, NULL, NULL},
     {NMO_GUID(0x1616120f, 0x5b2f48ce), "2D Picking", bb_picking_2d, NULL, NULL},
