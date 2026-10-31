@@ -25,7 +25,6 @@
 #include "engine_render.h"
 #include "engine_scene.h"
 #include "engine_transform.h"
-#include "engine_tt.h"
 
 struct nmo_engine {
     nmo_workspace_t *workspace;
@@ -77,7 +76,6 @@ struct nmo_engine {
     eng_input_t input;
     eng_media_t media;
     eng_render_t render;
-    eng_tt_t tt;
     eng_host_t host;
     /* The managers the block packs added, in the order they were added */
     ENG_VEC(eng_manager_t) managers;

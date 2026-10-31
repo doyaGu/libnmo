@@ -94,57 +94,6 @@ typedef struct eng_mesh_copy {
     ENG_VEC(nmo_engine_channel_t) channels;
 } eng_mesh_copy_t;
 
-/* A particle (Particle), in world space */
-typedef struct eng_particle {
-    float pos[3], dir[3];
-    float color[4], dcolor[4];
-    float size, dsize;
-    float angle, dangle;
-    float life;
-    int32_t frame;
-    float frame_time, dframe_time;
-    float dt;             /* the time it last moved by (m_DeltaTime) */
-} eng_particle_t;
-
-/* A particle system's emitter (ParticleEmitter): its particles, and how they draw */
-typedef struct eng_emitter {
-    int32_t node;
-    nmo_object_id_t entity;
-    nmo_object_id_t texture;
-    int32_t render_mode;
-    int32_t source_blend, dest_blend;
-    int32_t frame_count;
-    uint32_t random;      /* the emitter's own rand() */
-    bool shown;           /* ShowParticles */
-    uint64_t updated;     /* the engine frame + 1 it last moved its particles in */
-    /* TimePointEmitter: where the entity was at its last emission, and the time since */
-    float trail_pos[3];
-    float trail_time;
-    bool trail_started;
-    ENG_VEC(eng_particle_t) particles;
-} eng_emitter_t;
-
-/* A TT Simple Shadow: its material, projected on the floors under its object */
-#define ENG_SHADOW_FLOORS 50
-typedef struct eng_shadow {
-    int32_t node;
-    nmo_object_id_t entity;
-    nmo_object_id_t material;
-    nmo_object_id_t texture;
-    nmo_object_id_t floors[ENG_SHADOW_FLOORS];
-    int32_t floor_count;
-    uint64_t ran;          /* the engine frame after its block last ran (its temporary callback) */
-} eng_shadow_t;
-
-/* A TT Sky: its mesh around the camera, drawn first with its own projection */
-typedef struct eng_sky {
-    int32_t node;
-    nmo_object_id_t mesh;
-    nmo_object_id_t orientation;
-    float distortion;
-    bool shown;
-} eng_sky_t;
-
 /* A screen mode of the engine's one render driver (4:3, in 16 and 32 bits) */
 typedef struct eng_screen_mode {
     int32_t width, height, bpp;
@@ -198,7 +147,6 @@ typedef struct eng_image {
 
 typedef struct eng_render {
     int32_t screen_mode;      /* the render context's mode, of the engine's driver's list */
-    eng_map_t video_textures; /* the textures TT_PreloadTextures put in video memory */
     ENG_VEC(eng_font_t) fonts;
 
     /* CKObject::Show at run time: object -> its CK_OBJECT_VISIBLE and HIERACHICALHIDE flags */
@@ -225,11 +173,8 @@ typedef struct eng_render {
 
     ENG_VEC(eng_text_t) texts; /* this frame's */
     ENG_VEC(eng_mesh_t) meshes;
-    ENG_VEC(eng_sky_t) skies;
-    ENG_VEC(eng_shadow_t) shadows;
     ENG_VEC(int32_t) filters; /* the Planar Filter blocks drawing after the sprites */
     ENG_VEC(eng_sprite_text_t) sprite_texts;
-    ENG_VEC(eng_emitter_t) emitters;
     ENG_VEC(nmo_engine_vertex_t) vertices; /* the frame's triangles */
     ENG_VEC(eng_mesh_copy_t) mesh_copies;
     uint32_t mesh_version;
@@ -286,19 +231,9 @@ void eng_fonts_clear(nmo_engine_t *engine);
 /* The texts 2D Text draws on `entity` (0: the Multiple ones), into the frame */
 void eng_draw_texts(nmo_engine_t *engine, nmo_object_id_t entity, float width, float height);
 
-/* blocks/tt/particles.c */
-/* The particles of the emitters shown, as their render modes draw them */
-void eng_draw_particles(nmo_engine_t *engine, const float view[16]);
-void eng_free_emitters(nmo_engine_t *engine);
-
-/* blocks/tt/gravity.c */
-/* The shadows' pre render callbacks: each projected on the floors under its object */
-void eng_update_shadows(nmo_engine_t *engine);
 /* blocks/interface.c: the shown sprite texts, as 2D entities of the root */
 void eng_draw_sprite_texts(nmo_engine_t *engine);
 /* blocks/visuals.c: the Planar Filters' quads over the view (PlanarFilterRender) */
 void eng_draw_filters(nmo_engine_t *engine, float width, float height);
-/* The skies TT Sky shows, placed at the camera: the frame's first draws */
-void eng_draw_skies(nmo_engine_t *engine, const float view[16]);
 
 #endif /* NMO_ENGINE_RENDER_H_INTERNAL */

@@ -10,6 +10,7 @@
  */
 
 #include "../../engine_block_util.h"
+#include "../../engine_tt.h"
 
 #include "object/nmo_object_enum_defs.h"
 #include "type/nmo_type_guids.h"

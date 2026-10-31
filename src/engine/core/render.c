@@ -76,8 +76,6 @@ void eng_free_render(nmo_engine_t *engine)
         free(mesh->materials);
     }
     free(render->meshes.data);
-    free(render->skies.data);
-    free(render->shadows.data);
     for (size_t i = 0; i < render->mesh_copies.count; i++) {
         eng_mesh_copy_t *copy = &render->mesh_copies.data[i];
         free(copy->vertices);

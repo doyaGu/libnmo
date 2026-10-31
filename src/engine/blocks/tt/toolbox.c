@@ -10,6 +10,7 @@
  */
 
 #include "../../engine_block_util.h"
+#include "../../engine_tt.h"
 #include "type/nmo_type_query.h"
 #include "type/nmo_object_guids.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
@@ -31,7 +32,7 @@
  */
 static int bb_tt_debug(blk_t *b)
 {
-    if (get_in_int(b, 3, 0) != 0 && b->engine->tt.debug_mode) {
+    if (get_in_int(b, 3, 0) != 0 && eng_tt(b->engine)->debug_mode) {
         IN_OFF(b, 0);
         eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, 0, 0);
     }
@@ -42,7 +43,7 @@ static int bb_tt_debug(blk_t *b)
 /* TT_DebugON: turns the debug manager's debug mode on. */
 static int bb_debug_on(blk_t *b)
 {
-    b->engine->tt.debug_mode = true;
+    eng_tt(b->engine)->debug_mode = true;
     IN_OFF(b, 0);
     OUT_ON(b, 0);
     return NMO_ENGINE_BR_OK;
@@ -146,7 +147,7 @@ static int bb_texture_info(blk_t *b)
     size_t count = eng_objects_of_class(b->engine, NMO_CID_TEXTURE, &ids);
     int32_t in_video = 0;
     for (size_t i = 0; i < count; i++) {
-        if (eng_map_get(&b->engine->render.video_textures, ids[i]) >= 0) {
+        if (eng_map_get(&eng_tt(b->engine)->video_textures, ids[i]) >= 0) {
             in_video++;
         }
     }
@@ -245,8 +246,8 @@ static int bb_preload_textures(blk_t *b)
     size_t count = eng_objects_of_class(b->engine, NMO_CID_TEXTURE, &ids);
     int32_t moved = 0;
     for (size_t i = 0; i < count; i++) {
-        if (eng_map_get(&b->engine->render.video_textures, ids[i]) < 0 &&
-            eng_map_put(&b->engine->render.video_textures, ids[i], 1)) {
+        if (eng_map_get(&eng_tt(b->engine)->video_textures, ids[i]) < 0 &&
+            eng_map_put(&eng_tt(b->engine)->video_textures, ids[i], 1)) {
             moved++;
         }
     }
@@ -387,34 +388,34 @@ static int bb_tt_timer(blk_t *b)
 {
     nmo_engine_t *engine = nmo_engine_block_engine(b);
     if (IN_ACTIVE(b, 0)) {
-        engine->tt.timing = true;
-        engine->tt.time = 0.0f;
+        eng_tt(engine)->timing = true;
+        eng_tt(engine)->time = 0.0f;
         IN_OFF(b, 0);
         OUT_ON(b, 0);
     }
     if (IN_ACTIVE(b, 1)) {
-        engine->tt.timing = false;
+        eng_tt(engine)->timing = false;
         IN_OFF(b, 1);
         OUT_ON(b, 1);
         return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
     }
     if (IN_ACTIVE(b, 2)) {
-        engine->tt.timing = true;
+        eng_tt(engine)->timing = true;
         IN_OFF(b, 2);
         OUT_ON(b, 2);
         return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
     }
     if (IN_ACTIVE(b, 3)) {
-        engine->tt.timing = true;
-        engine->tt.time = 0.0f;
+        eng_tt(engine)->timing = true;
+        eng_tt(engine)->time = 0.0f;
         IN_OFF(b, 3);
         OUT_ON(b, 3);
         return NMO_ENGINE_BR_OK;
     }
     float delta = nmo_engine_block_delta_time(b);
-    float elapsed = engine->tt.time + delta;
-    if (engine->tt.timing) {
-        engine->tt.time += delta;
+    float elapsed = eng_tt(engine)->time + delta;
+    if (eng_tt(engine)->timing) {
+        eng_tt(engine)->time += delta;
     }
     set_out(b, 0, &elapsed, sizeof(elapsed));
     return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
@@ -755,6 +756,10 @@ static const nmo_engine_block_desc_t eng_tt_toolbox_blocks[] = {
 
 nmo_status_t eng_register_tt_toolbox(nmo_engine_t *engine)
 {
-    engine->tt.timing = true;
+    nmo_status_t status = eng_tt_add(engine);
+    if (status != NMO_OK) {
+        return status;
+    }
+    eng_tt(engine)->timing = true;
     return ENG_REGISTER_BLOCKS(engine, eng_tt_toolbox_blocks);
 }

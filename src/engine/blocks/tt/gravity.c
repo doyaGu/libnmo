@@ -8,6 +8,7 @@
  */
 
 #include "../../engine_block_util.h"
+#include "../../engine_tt.h"
 
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_camera_schemas.h"
@@ -44,9 +45,9 @@ static int bb_get_sound_properties(blk_t *b)
  */
 static eng_sky_t *sky_of(nmo_engine_t *engine, int32_t node)
 {
-    for (size_t i = 0; i < engine->render.skies.count; i++) {
-        if (engine->render.skies.data[i].node == node) {
-            return &engine->render.skies.data[i];
+    for (size_t i = 0; i < eng_tt(engine)->skies.count; i++) {
+        if (eng_tt(engine)->skies.data[i].node == node) {
+            return &eng_tt(engine)->skies.data[i];
         }
     }
     return NULL;
@@ -162,7 +163,7 @@ static int bb_sky(blk_t *b)
         IN_OFF(b, 0);
         OUT_ON(b, 0);
         eng_sky_t *sky = sky_of(engine, b->node);
-        if (sky == NULL && !ENG_VEC_PUSH(engine->render.skies, sky)) {
+        if (sky == NULL && !ENG_VEC_PUSH(eng_tt(engine)->skies, sky)) {
             return NMO_ENGINE_BR_PARAMETERERROR;
         }
         sky->node = b->node;
@@ -230,8 +231,9 @@ void eng_draw_skies(nmo_engine_t *engine, const float view[16])
             : NULL;
     float current_fov = camera != NULL ? camera->fov : 0.5f;
     const float pi = 3.14159265358979f;
-    for (size_t i = 0; i < render->skies.count; i++) {
-        eng_sky_t sky = render->skies.data[i];
+    const eng_tt_t *tt = eng_tt(engine);
+    for (size_t i = 0; i < tt->skies.count; i++) {
+        eng_sky_t sky = tt->skies.data[i];
         if (!sky.shown || sky.mesh == 0) {
             continue;
         }
@@ -938,9 +940,9 @@ static int cb_tt_extra(blk_t *b, uint32_t message)
  */
 static eng_shadow_t *shadow_of(nmo_engine_t *engine, int32_t node)
 {
-    for (size_t i = 0; i < engine->render.shadows.count; i++) {
-        if (engine->render.shadows.data[i].node == node) {
-            return &engine->render.shadows.data[i];
+    for (size_t i = 0; i < eng_tt(engine)->shadows.count; i++) {
+        if (eng_tt(engine)->shadows.data[i].node == node) {
+            return &eng_tt(engine)->shadows.data[i];
         }
     }
     return NULL;
@@ -1094,8 +1096,8 @@ static void shadow_update(nmo_engine_t *engine, eng_shadow_t *shadow, int32_t no
 
 void eng_update_shadows(nmo_engine_t *engine)
 {
-    for (size_t i = 0; i < engine->render.shadows.count; i++) {
-        eng_shadow_t *shadow = &engine->render.shadows.data[i];
+    for (size_t i = 0; i < eng_tt(engine)->shadows.count; i++) {
+        eng_shadow_t *shadow = &eng_tt(engine)->shadows.data[i];
         if (shadow->node >= 0 && shadow->ran == engine->frame) {
             shadow_update(engine, shadow, shadow->node);
         }
@@ -1126,7 +1128,7 @@ static int bb_simple_shadow(blk_t *b)
             material = eng_material_new(engine, id);
         }
         eng_shadow_t *shadow = shadow_of(engine, -1);
-        if (material == NULL || (shadow == NULL && !ENG_VEC_PUSH(engine->render.shadows, shadow))) {
+        if (material == NULL || (shadow == NULL && !ENG_VEC_PUSH(eng_tt(engine)->shadows, shadow))) {
             return NMO_ENGINE_BR_PARAMETERERROR;
         }
         const float white[4] = {1.0f, 1.0f, 1.0f, 1.0f}, black[4] = {0.0f, 0.0f, 0.0f, 1.0f};
@@ -1189,6 +1191,9 @@ static const eng_manager_desc_t gravity_manager = {
 
 nmo_status_t eng_register_tt_gravity(nmo_engine_t *engine)
 {
-    nmo_status_t status = eng_add_manager(engine, &gravity_manager, NULL);
+    nmo_status_t status = eng_tt_add(engine);
+    if (status == NMO_OK) {
+        status = eng_add_manager(engine, &gravity_manager, NULL);
+    }
     return status == NMO_OK ? ENG_REGISTER_BLOCKS(engine, eng_tt_gravity_blocks) : status;
 }

@@ -275,7 +275,6 @@ void nmo_engine_destroy(nmo_engine_t *engine)
     free(engine->object_map.slots);
     free(engine->scene_objects.slots);
     free(engine->destroyed.slots);
-    free(engine->render.video_textures.slots);
     eng_free_render(engine);
     free(engine->dynamic.objects.data);
     free(engine->dynamic.deferred.data);

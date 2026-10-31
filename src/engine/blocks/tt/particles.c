@@ -11,6 +11,7 @@
  */
 
 #include "../../engine_block_util.h"
+#include "../../engine_tt.h"
 
 #include <math.h>
 #include <string.h>
@@ -83,22 +84,22 @@ typedef struct emitter_inputs {
 
 void eng_free_emitters(nmo_engine_t *engine)
 {
-    for (size_t i = 0; i < engine->render.emitters.count; i++) {
-        free(engine->render.emitters.data[i].particles.data);
+    for (size_t i = 0; i < eng_tt(engine)->emitters.count; i++) {
+        free(eng_tt(engine)->emitters.data[i].particles.data);
     }
-    free(engine->render.emitters.data);
+    free(eng_tt(engine)->emitters.data);
 }
 
 static eng_emitter_t *emitter_of(blk_t *b)
 {
-    eng_render_t *render = &b->engine->render;
-    for (size_t i = 0; i < render->emitters.count; i++) {
-        if (render->emitters.data[i].node == b->node) {
-            return &render->emitters.data[i];
+    eng_tt_t *tt = eng_tt(b->engine);
+    for (size_t i = 0; i < tt->emitters.count; i++) {
+        if (tt->emitters.data[i].node == b->node) {
+            return &tt->emitters.data[i];
         }
     }
     eng_emitter_t *emitter = NULL;
-    if (!ENG_VEC_PUSH(render->emitters, emitter)) {
+    if (!ENG_VEC_PUSH(tt->emitters, emitter)) {
         return NULL;
     }
     emitter->node = b->node;
@@ -554,8 +555,9 @@ void eng_draw_particles(nmo_engine_t *engine, const float view[16])
     eng_render_t *render = &engine->render;
     const float right[3] = {view[0], view[1], view[2]}, up[3] = {view[4], view[5], view[6]};
     const float eye_z[3] = {view[8], view[9], view[10]};
-    for (size_t i = 0; i < render->emitters.count; i++) {
-        const eng_emitter_t *e = &render->emitters.data[i];
+    const eng_tt_t *tt = eng_tt(engine);
+    for (size_t i = 0; i < tt->emitters.count; i++) {
+        const eng_emitter_t *e = &tt->emitters.data[i];
         int32_t entity = e->entity != 0 ? eng_entity_index(engine, e->entity) : -1;
         if (!e->shown || e->particles.count == 0 || entity < 0 || !eng_in_scene(engine, e->entity) ||
             !nmo_engine_object_is_visible(engine, e->entity)) {
@@ -664,12 +666,6 @@ static const nmo_engine_block_desc_t eng_tt_particles_blocks[] = {
     {NMO_GUID(0x02da5a18, 0x52227285), "TT WaveParticleSystem", bb_particle_system, NULL, NULL},
 };
 
-static void particle_manager_destroy(nmo_engine_t *engine, void *state)
-{
-    (void)state;
-    eng_free_emitters(engine);
-}
-
 static void particle_manager_render(nmo_engine_t *engine, void *state, eng_render_stage_t stage,
                                     const eng_render_args_t *args)
 {
@@ -682,12 +678,14 @@ static void particle_manager_render(nmo_engine_t *engine, void *state, eng_rende
 /* ParticleManager */
 static const eng_manager_desc_t particle_manager = {
     .name = "Particle Manager",
-    .destroy = particle_manager_destroy,
     .render = particle_manager_render,
 };
 
 nmo_status_t eng_register_tt_particles(nmo_engine_t *engine)
 {
-    nmo_status_t status = eng_add_manager(engine, &particle_manager, NULL);
+    nmo_status_t status = eng_tt_add(engine);
+    if (status == NMO_OK) {
+        status = eng_add_manager(engine, &particle_manager, NULL);
+    }
     return status == NMO_OK ? ENG_REGISTER_BLOCKS(engine, eng_tt_particles_blocks) : status;
 }

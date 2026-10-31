@@ -10,6 +10,7 @@
  */
 
 #include "../../engine_block_util.h"
+#include "../../engine_tt.h"
 
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_defs.h"
@@ -24,20 +25,16 @@
 /* DatabaseManager::Clear: no array registered, no database file */
 static void database_clear(nmo_engine_t *engine)
 {
-    free(engine->tt.database_file);
-    engine->tt.database_file = NULL;
-    for (size_t i = 0; i < engine->tt.database_arrays.count; i++) {
-        free(engine->tt.database_arrays.data[i]);
+    free(eng_tt(engine)->database_file);
+    eng_tt(engine)->database_file = NULL;
+    for (size_t i = 0; i < eng_tt(engine)->database_arrays.count; i++) {
+        free(eng_tt(engine)->database_arrays.data[i]);
     }
-    free(engine->tt.database_arrays.data);
-    engine->tt.database_arrays.data = NULL;
-    engine->tt.database_arrays.count = engine->tt.database_arrays.capacity = 0;
+    free(eng_tt(engine)->database_arrays.data);
+    eng_tt(engine)->database_arrays.data = NULL;
+    eng_tt(engine)->database_arrays.count = eng_tt(engine)->database_arrays.capacity = 0;
 }
 
-void eng_free_tt(nmo_engine_t *engine)
-{
-    database_clear(engine);
-}
 
 static unsigned char rotl8(unsigned char value, int shift)
 {
@@ -63,8 +60,8 @@ static size_t string_size(const unsigned char *data, size_t size, size_t offset)
 /* DatabaseManager::Register: an array to save, once; 21 when it is already there */
 static int database_register(nmo_engine_t *engine, const char *array_name)
 {
-    for (size_t i = 0; i < engine->tt.database_arrays.count; i++) {
-        if (strcmp(engine->tt.database_arrays.data[i], array_name) == 0) {
+    for (size_t i = 0; i < eng_tt(engine)->database_arrays.count; i++) {
+        if (strcmp(eng_tt(engine)->database_arrays.data[i], array_name) == 0) {
             return 21;
         }
     }
@@ -74,7 +71,7 @@ static int database_register(nmo_engine_t *engine, const char *array_name)
     if (copy != NULL) {
         memcpy(copy, array_name, size);
     }
-    if (copy == NULL || !ENG_VEC_PUSH(engine->tt.database_arrays, slot)) {
+    if (copy == NULL || !ENG_VEC_PUSH(eng_tt(engine)->database_arrays, slot)) {
         free(copy);
         return 0;
     }
@@ -95,15 +92,15 @@ static int database_load(nmo_engine_t *engine, const char *array_name, bool auto
     if (array_name == NULL) {
         return 33;
     }
-    if (engine->tt.database_file == NULL || engine->tt.database_file[0] == '\0') {
+    if (eng_tt(engine)->database_file == NULL || eng_tt(engine)->database_file[0] == '\0') {
         return 31;
     }
     size_t size = 0;
-    unsigned char *data = eng_read_file(engine, engine->tt.database_file, &size);
+    unsigned char *data = eng_read_file(engine, eng_tt(engine)->database_file, &size);
     if (data == NULL) {
         return 31;
     }
-    if (engine->tt.database_crypted) {
+    if (eng_tt(engine)->database_crypted) {
         for (size_t i = 0; i < size; i++) {
             data[i] = (unsigned char)-(rotl8(data[i], 3) ^ 0xAF);
         }
@@ -212,9 +209,9 @@ static int bb_set_database_properties(blk_t *b)
         return NMO_ENGINE_BR_GENERICERROR;
     }
     memcpy(copy, file, length + 1u);
-    free(engine->tt.database_file);
-    engine->tt.database_file = copy;
-    engine->tt.database_crypted = get_in_int(b, 1, 1) != 0;
+    free(eng_tt(engine)->database_file);
+    eng_tt(engine)->database_file = copy;
+    eng_tt(engine)->database_crypted = get_in_int(b, 1, 1) != 0;
     OUT_ON(b, 0);
     return NMO_ENGINE_BR_OK;
 }
@@ -278,12 +275,12 @@ static bool database_put_i32(database_bytes_t *out, int32_t value)
  */
 static int database_save(nmo_engine_t *engine)
 {
-    if (engine->tt.database_file == NULL || engine->tt.database_file[0] == '\0') {
+    if (eng_tt(engine)->database_file == NULL || eng_tt(engine)->database_file[0] == '\0') {
         return 41;
     }
     database_bytes_t file = {NULL, 0u, 0u};
-    for (size_t n = 0; n < engine->tt.database_arrays.count; n++) {
-        const char *array_name = engine->tt.database_arrays.data[n];
+    for (size_t n = 0; n < eng_tt(engine)->database_arrays.count; n++) {
+        const char *array_name = eng_tt(engine)->database_arrays.data[n];
         nmo_object_id_t array = eng_object_named(engine, array_name, NMO_CID_DATAARRAY);
         if (array == 0 || eng_find_array(engine, array) == NULL) {
             free(file.data);
@@ -323,7 +320,7 @@ static int database_save(nmo_engine_t *engine)
     if (file.data == NULL) {
         return 41;
     }
-    if (engine->tt.database_crypted) {
+    if (eng_tt(engine)->database_crypted) {
         for (size_t i = 0; i < file.size; i++) {
             unsigned char x = (unsigned char)((unsigned char)-file.data[i] ^ 0xAFu);
             file.data[i] = (unsigned char)((x >> 3) | (x << 5));
@@ -331,7 +328,7 @@ static int database_save(nmo_engine_t *engine)
     }
     nmo_status_t status = engine->host.write_file != NULL
                               ? engine->host.write_file(engine->host.write_file_user_data,
-                                                   engine->tt.database_file, file.data, file.size)
+                                                   eng_tt(engine)->database_file, file.data, file.size)
                               : NMO_ERR_NOT_SUPPORTED;
     free(file.data);
     return status == NMO_OK ? 1 : 41;
@@ -376,19 +373,42 @@ static const nmo_engine_block_desc_t eng_tt_database_blocks[] = {
 
 static void tt_manager_destroy(nmo_engine_t *engine, void *state)
 {
-    (void)state;
-    eng_free_tt(engine);
+    eng_tt_t *tt = (eng_tt_t *)state;
+    database_clear(engine);
+    eng_free_emitters(engine);
+    free(tt->skies.data);
+    free(tt->shadows.data);
+    free(tt->video_textures.slots);
 }
 
-/* The Terratools time, database and debug managers */
+/* The Terratools time, database and debug managers, and what TT Sky, TT Simple Shadow,
+   TT_PreloadTextures and the particle systems keep */
 static const eng_manager_desc_t tt_manager = {
     .name = "TT Managers",
+    .state_size = sizeof(eng_tt_t),
     .destroy = tt_manager_destroy,
 };
 
+eng_tt_t *eng_tt(const nmo_engine_t *engine)
+{
+    return (eng_tt_t *)eng_manager_state(engine, &tt_manager);
+}
+
+nmo_status_t eng_tt_add(nmo_engine_t *engine)
+{
+    if (eng_tt(engine) != NULL) {
+        return NMO_OK;
+    }
+    eng_tt_t *tt = NULL;
+    nmo_status_t status = eng_add_manager(engine, &tt_manager, (void **)&tt);
+    if (status == NMO_OK) {
+        tt->database_crypted = true;
+    }
+    return status;
+}
+
 nmo_status_t eng_register_tt_database(nmo_engine_t *engine)
 {
-    engine->tt.database_crypted = true;
-    nmo_status_t status = eng_add_manager(engine, &tt_manager, NULL);
+    nmo_status_t status = eng_tt_add(engine);
     return status == NMO_OK ? ENG_REGISTER_BLOCKS(engine, eng_tt_database_blocks) : status;
 }
