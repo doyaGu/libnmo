@@ -14,9 +14,11 @@
 #include "bb/nmo_bb_physics.h"
 #include "bb/nmo_bb_terratools.h"
 #include "bb/nmo_bb_virtools.h"
+#include "engine/nmo_engine_render.h"
 #include "behavior/nmo_behavior_view.h"
 #include "behavior/nmo_script_model.h"
 
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -39,6 +41,8 @@ typedef struct run_args {
     const char *path; /* --path: where loaded files are found, besides the file's folder */
     const char *write; /* --write: where saved files go, and where loading looks first */
     const char *keys; /* "Space@30-35,Enter@60": keys and the frames they are down */
+    const char *steer; /* "X,Z;X,Z;...@FRAME": points an object is steered through */
+    const char *steer_objects; /* "NAME,NAME": the objects --steer may steer, first shown */
     const char *messages; /* "Level_Finish@4000:All_Gameplay,...": messages the host sends */
     const char *registry; /* "Software\Game\Settings\Language=1;...": registry values */
     bool physics_ivp;     /* --physics ivp: simulate the physics blocks with libivp */
@@ -125,6 +129,144 @@ static long run_parse_keys(const char *spec, run_key_t *out)
         count++;
     }
     return count;
+}
+
+/*
+ * --steer: from frame `first`, the arrow keys roll an object through the
+ * points in turn, as a player would, in the camera's frame: the first shown
+ * of the objects --steer-object names (a game swaps the object a player
+ * rolls). A point is passed once the object comes within STEER_REACH of it;
+ * after a jump (a respawn), it heads for the point after the nearest one.
+ */
+typedef struct run_steer {
+    float *points; /* x, z */
+    long count;
+    uint32_t first;
+    long next;
+    bool placed;
+    float x, z; /* the object last frame */
+    const char *objects; /* "NAME,NAME" */
+} run_steer_t;
+
+static char *run_strndup(const char *text, size_t length);
+
+#define STEER_REACH 3.5f
+#define STEER_JUMP 10.0f
+#define STEER_LOOKAHEAD 20.0f /* frames of the ball's speed to allow for */
+#define STEER_DEAD 0.5f
+
+/* Parse "X,Z;X,Z;...@FRAME" into `out` (points left NULL when only checking). */
+static bool run_parse_steer(const char *spec, run_steer_t *out)
+{
+    const char *at = strrchr(spec, '@');
+    if (at == NULL) {
+        return false;
+    }
+    const char *p = at + 1;
+    uint32_t first = 0;
+    if (!run_frame_number(&p, &first) || *p != '\0') {
+        return false;
+    }
+    long count = 0;
+    for (const char *q = spec; q < at; q++) {
+        count += *q == ';';
+    }
+    count++;
+    float *points = out != NULL ? (float *)calloc((size_t)count * 2u, sizeof(float)) : NULL;
+    if (out != NULL && points == NULL) {
+        return false;
+    }
+    const char *q = spec;
+    for (long i = 0; i < count; i++) {
+        char *end = NULL;
+        float x = strtof(q, &end);
+        if (end == q || *end != ',') {
+            free(points);
+            return false;
+        }
+        q = end + 1;
+        float z = strtof(q, &end);
+        if (end == q || (*end != ';' && end != at)) {
+            free(points);
+            return false;
+        }
+        q = end + 1;
+        if (points != NULL) {
+            points[i * 2] = x;
+            points[i * 2 + 1] = z;
+        }
+    }
+    if (out != NULL) {
+        *out = (run_steer_t){.points = points, .count = count, .first = first};
+    }
+    return true;
+}
+
+/* The object to steer: the first shown of those named. */
+static nmo_object_id_t run_steer_object(const nmo_engine_t *engine, const char *names)
+{
+    for (const char *item = names; item != NULL && *item != '\0';) {
+        const char *end = strchr(item, ',');
+        size_t length = end != NULL ? (size_t)(end - item) : strlen(item);
+        char *name = run_strndup(item, length);
+        nmo_object_id_t id = name != NULL ? nmo_engine_object_named(engine, name, NMO_CID_3DENTITY) : 0;
+        free(name);
+        if (id != 0 && nmo_engine_object_is_visible(engine, id)) {
+            return id;
+        }
+        item = end != NULL ? end + 1 : NULL;
+    }
+    return 0;
+}
+
+static void run_steer_frame(nmo_engine_t *engine, run_steer_t *steer, uint32_t frame)
+{
+    static const char *const arrows[] = {"Up", "Down", "Left", "Right"};
+    bool down[4] = {false, false, false, false};
+    nmo_object_id_t ball = frame >= steer->first ? run_steer_object(engine, steer->objects) : 0;
+    float m[16];
+    nmo_engine_frame_t view;
+    if (ball != 0 && nmo_engine_entity_world_matrix(engine, ball, m) &&
+        nmo_engine_render_frame(engine, &view) == NMO_OK) {
+        float x = m[12], z = m[14];
+        float vx = steer->placed ? x - steer->x : 0.0f, vz = steer->placed ? z - steer->z : 0.0f;
+        if (!steer->placed || hypotf(vx, vz) > STEER_JUMP) {
+            long nearest = 0;
+            for (long i = 1; i < steer->count; i++) {
+                if (hypotf(steer->points[i * 2] - x, steer->points[i * 2 + 1] - z) <
+                    hypotf(steer->points[nearest * 2] - x, steer->points[nearest * 2 + 1] - z)) {
+                    nearest = i;
+                }
+            }
+            steer->next = nearest + 1 < steer->count ? nearest + 1 : nearest;
+            vx = vz = 0.0f;
+        }
+        steer->placed = true;
+        steer->x = x;
+        steer->z = z;
+        while (steer->next + 1 < steer->count &&
+               hypotf(steer->points[steer->next * 2] - x,
+                      steer->points[steer->next * 2 + 1] - z) < STEER_REACH) {
+            steer->next++;
+        }
+        float dx = steer->points[steer->next * 2] - x - vx * STEER_LOOKAHEAD;
+        float dz = steer->points[steer->next * 2 + 1] - z - vz * STEER_LOOKAHEAD;
+        /* the camera's X and Z axes, flat */
+        float rx = view.view[0], rz = view.view[2], fx = view.view[8], fz = view.view[10];
+        float rl = hypotf(rx, rz), fl = hypotf(fx, fz);
+        if (rl > 0.0f && fl > 0.0f) {
+            float ahead = (dx * fx + dz * fz) / fl, right = (dx * rx + dz * rz) / rl;
+            down[0] = ahead > STEER_DEAD;
+            down[1] = ahead < -STEER_DEAD;
+            down[2] = right < -STEER_DEAD;
+            down[3] = right > STEER_DEAD;
+        }
+    }
+    if (frame >= steer->first) {
+        for (int k = 0; k < 4; k++) {
+            nmo_engine_set_key(engine, run_key_code(arrows[k], strlen(arrows[k])), down[k]);
+        }
+    }
 }
 
 /* A message the host sends before frame `frame` steps, to the object named `recipient`. */
@@ -907,6 +1049,11 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
         (messages != NULL && run_parse_messages(args->messages, messages) != message_count)) {
         status = NMO_ERR_NOMEM;
     }
+    run_steer_t steer = {0};
+    if (args->steer != NULL && !run_parse_steer(args->steer, &steer)) {
+        status = NMO_ERR_NOMEM;
+    }
+    steer.objects = args->steer_objects;
 #ifdef NMO_HAS_VIEW
     double last_frame = view != NULL ? nmo_view_time(view) : 0.0;
 #endif
@@ -926,6 +1073,9 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
                                 f <= keys[j].last);
             }
             nmo_engine_set_key(engine, keys[k].key, down);
+        }
+        if (steer.points != NULL) {
+            run_steer_frame(engine, &steer, f);
         }
         float delta = args->delta_ms;
 #ifdef NMO_HAS_VIEW
@@ -948,6 +1098,7 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
         }
     }
     free(keys);
+    free(steer.points);
     for (long i = 0; messages != NULL && i < message_count; i++) {
         free(messages[i].name);
         free(messages[i].recipient);
@@ -1011,6 +1162,10 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
         {"--trace", "-t", NMO_OPT_FLAG, "Show links, operations and graphs too"},
         {"--keys", "-k", NMO_OPT_STRING,
          "Keys held down: KEY@FRAME[-FRAME],... (names like Space, or scan codes)"},
+        {"--steer", NULL, NMO_OPT_STRING,
+         "From FRAME, roll --steer-object through the points with the arrow keys: X,Z;X,Z;...@FRAME"},
+        {"--steer-object", NULL, NMO_OPT_STRING,
+         "The objects --steer rolls: NAME,NAME,... (the first one shown)"},
         {"--path", NULL, NMO_OPT_STRING,
          "Folder of the files the document loads, before its own folder"},
         {"--write", NULL, NMO_OPT_STRING,
@@ -1027,7 +1182,7 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
         {"--mute", NULL, NMO_OPT_FLAG, "Play no sound in the window"},
     };
     enum { OPT_FRAMES, OPT_DELTA, OPT_START, OPT_SCRIPT, OPT_UNKNOWN, OPT_MAX_ITER, OPT_SEED,
-           OPT_TRACE, OPT_KEYS, OPT_PATH, OPT_WRITE, OPT_MESSAGE, OPT_REGISTRY, OPT_PHYSICS,
+           OPT_TRACE, OPT_KEYS, OPT_STEER, OPT_STEER_OBJECT, OPT_PATH, OPT_WRITE, OPT_MESSAGE, OPT_REGISTRY, OPT_PHYSICS,
            OPT_WINDOW, OPT_SHOT, OPT_MUTE, OPT_COUNT };
 
     nmo_opt_val_t vals[OPT_COUNT];
@@ -1061,6 +1216,16 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
     out->seed = nmo_opt_uint_or(&vals[OPT_SEED], 1u);
     out->trace = nmo_opt_flag(&vals[OPT_TRACE]);
     out->keys = nmo_opt_str(&vals[OPT_KEYS]);
+    out->steer = nmo_opt_str(&vals[OPT_STEER]);
+    out->steer_objects = nmo_opt_str(&vals[OPT_STEER_OBJECT]);
+    if (out->steer != NULL && !run_parse_steer(out->steer, NULL)) {
+        fprintf(stderr, "Error: Invalid --steer: %s\n", out->steer);
+        return false;
+    }
+    if (out->steer != NULL && out->steer_objects == NULL) {
+        fprintf(stderr, "Error: --steer needs --steer-object\n");
+        return false;
+    }
     out->path = nmo_opt_str(&vals[OPT_PATH]);
     out->write = nmo_opt_str(&vals[OPT_WRITE]);
     out->messages = nmo_opt_str(&vals[OPT_MESSAGE]);
