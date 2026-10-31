@@ -233,6 +233,9 @@ nmo_object_id_t eng_object_ref(const nmo_engine_t *engine, nmo_object_id_t owner
                                const nmo_ref_t *ref);
 /* CKObject::Show (CKSHOW, CKHIDE or CKHIERARCHICALHIDE); a group shows its objects too. */
 void eng_show(nmo_engine_t *engine, nmo_object_id_t id, int32_t show);
+/* The object's CK_OBJECT_VISIBLE and HIERACHICALHIDE flags, and setting them on it alone */
+int32_t eng_object_visibility(const nmo_engine_t *engine, nmo_object_id_t id);
+void eng_set_object_visibility(nmo_engine_t *engine, nmo_object_id_t id, int32_t flags);
 /* The material as it is now, made from the file's the first time; NULL for no CKMaterial */
 eng_material_t *eng_material(nmo_engine_t *engine, nmo_object_id_t id);
 /* A material made at run time (CreateObject(CKCID_MATERIAL)), with CKMaterial's defaults */

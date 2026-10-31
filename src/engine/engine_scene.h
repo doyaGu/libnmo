@@ -20,6 +20,7 @@ typedef struct eng_ic {
     eng_array_t array;
     bool has_matrix;
     float world[16];
+    int32_t visibility; /* CK_OBJECT_VISIBLE and HIERACHICALHIDE, which CKObject::Load restores */
 } eng_ic_t;
 
 /* The initial conditions of the level scene's objects */

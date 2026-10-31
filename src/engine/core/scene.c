@@ -44,6 +44,7 @@ void eng_save_ic(nmo_engine_t *engine, nmo_object_id_t id)
     if (has_matrix) {
         memcpy(ic->world, world, sizeof(world));
     }
+    ic->visibility = eng_object_visibility(engine, id);
 }
 
 /* CKReadObjectState of the object's initial value in the level scene, when it is in it and has one */
@@ -62,6 +63,7 @@ void eng_restore_ic(nmo_engine_t *engine, nmo_object_id_t id)
         copy.id = array->id;
         *array = copy;
     }
+    eng_set_object_visibility(engine, id, ic->visibility);
     if (ic->has_matrix) {
         nmo_engine_set_entity_world_matrix(engine, id, ic->world, true);
     }

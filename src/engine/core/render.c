@@ -214,6 +214,16 @@ void eng_show(nmo_engine_t *engine, nmo_object_id_t id, int32_t show)
     }
 }
 
+int32_t eng_object_visibility(const nmo_engine_t *engine, nmo_object_id_t id)
+{
+    return eng_object_flags(engine, id);
+}
+
+void eng_set_object_visibility(nmo_engine_t *engine, nmo_object_id_t id, int32_t flags)
+{
+    eng_map_put(&engine->render.shown, id, flags & (OBJECT_VISIBLE | OBJECT_HIERARCHICAL_HIDE));
+}
+
 bool nmo_engine_object_is_visible(const nmo_engine_t *engine, nmo_object_id_t id)
 {
     return engine != NULL && (eng_object_flags(engine, id) & OBJECT_VISIBLE) != 0;
