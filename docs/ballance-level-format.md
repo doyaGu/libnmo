@@ -65,11 +65,22 @@ A level has as many sectors as reset points, and one checkpoint fewer
 
 ### Elements
 
-Elements are placeholders. The object in the level only gives a position;
-when the level loads, the game copies the real object, with its scripts and
-physics, from a template in `<GAME_ROOT>/3D Entities/PH/` and puts it there.
-The marker objects above work the same way (`PS_FourFlames`, `PE_Balloon`,
-`PC_TwoFlames` have templates too), so any mesh will do for a placeholder.
+Elements are placeholders. The object in the level gives a position; when the
+level loads, the game copies the real object, with its scripts and physics,
+from a template in `<GAME_ROOT>/3D Entities/PH/` and puts it there. The
+templates of `PE_Balloon` and the `P_*` elements bring their own meshes. Those
+of `PS_FourFlames` and `PC_TwoFlames` hold no mesh: the game draws the start's
+flame pillars and the checkpoints with the level object's own mesh, so these
+two need the game's meshes, not a box.
+
+`tools/scripts/ballance_level_elements.py <GAME_ROOT> -o <dir>` exports one
+mesh of each kind from the original levels, and the `SkyLayer` plane, as
+`<Kind>.obj`. The meshes are the game's, so they come from a local
+installation; nothing of them is kept with libnmo.
+
+The start's octagonal platform and the pillars' bases are not the start
+object: in Level_01 they are the floor `A01_Floor_01`, a floor like any other
+(`Floor_Top_Checkpoint` on top).
 
 Each element is in two groups: its kind, and its sector.
 
@@ -113,12 +124,23 @@ them:
 - with the group empty, a ball that leaves the track falls forever;
 - without the group, the depth test reports an error every frame.
 
+The boxes are hidden in the original levels, and they have to be: a visible
+one is drawn (a giant grey box under the track, hiding the sky). Hidden means
+the CKObject visibility flag off, which `"visible": false` sets in a manifest.
+
+### The Sky
+
+Every original level has a `SkyLayer` object: a plane of clouds, about 1900
+units wide, 100 to 180 units below the track, with the `SkyLayer` material.
+The sky box itself comes from `base.cmo` (per level number, see `AllLevel`).
+
 ## Positions
 
 Y is up. Measured on Level_01:
 
-- `PS_FourFlames_01` sits about 1.25 below the floor top.
+- `PS_FourFlames_01` sits about 0.2 below the top of the floor under it.
 - `PR_Resetpoint_01` is 3.65 above `PS_FourFlames_01`.
+- `PC_TwoFlames_N` sits about 0.5 below the floor top.
 - `PR_Resetpoint_{N+1}` has the x and z of `PC_TwoFlames_N` and is 3.33 above
   it.
 - The ball (radius about 2) comes to rest about 2 above the floor top.
@@ -145,7 +167,7 @@ and textures that stay in the game's `Textures` folder.
      "groups": ["Phys_Floors", "Sound_RollID_01", "Sound_HitID_01", "Shadow"]},
     {"name": "PS_FourFlames_01", "class": "CK3dObject",
      "mesh": {"obj": "marker.obj"},
-     "transform": {"position": [0, -1.25, 0]}}
+     "transform": {"position": [0, -0.2, 0]}}
   ]}]
 }
 ```
@@ -154,6 +176,7 @@ and textures that stay in the game's `Textures` folder.
   members by object name or id.
 - An object's `groups` adds it to each group, creating any group that is not
   listed at the root.
+- `"visible": false` saves a 3D object hidden, as the fall zone boxes are.
 - `"texture_save": "external"` stores only the texture's file name, the way the
   original levels do; the game finds the file in its texture folders. Textures
   of the same file are one CKTexture, named after the file
