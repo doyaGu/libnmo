@@ -395,6 +395,30 @@ void nmo_engine_destroy_object(nmo_engine_t *engine, nmo_object_id_t id)
     }
 }
 
+/* The dynamic objects destroyed, when Delete Dynamic Objects asked for it this frame */
+static void eng_delete_dynamic_objects(nmo_engine_t *engine)
+{
+    if (!engine->delete_dynamic_objects) {
+        return;
+    }
+    engine->delete_dynamic_objects = false;
+    nmo_object_id_t *ids = engine->dynamic_objects.data;
+    size_t count = engine->dynamic_objects.count;
+    engine->dynamic_objects.data = NULL;
+    engine->dynamic_objects.count = engine->dynamic_objects.capacity = 0;
+    for (size_t i = 0; i < count; i++) {
+        if (eng_map_get(&engine->destroyed, ids[i]) < 0) {
+            nmo_engine_destroy_object(engine, ids[i]);
+        }
+    }
+    free(ids);
+}
+
+bool nmo_engine_exit_requested(const nmo_engine_t *engine)
+{
+    return engine != NULL && engine->exit_requested;
+}
+
 nmo_status_t nmo_engine_step(nmo_engine_t *engine, float delta_ms)
 {
     if (engine == NULL || delta_ms < 0.0f) {
@@ -404,6 +428,10 @@ nmo_status_t nmo_engine_step(nmo_engine_t *engine, float delta_ms)
         return NMO_ERR_INVALID_STATE;
     }
     engine->delta = delta_ms;
+    /* CKTimeManager::PreProcess: the last frame's statistics become the profile's */
+    engine->profile_stats = engine->stats;
+    engine->profile_stats.frame_time = delta_ms;
+    memset(&engine->stats, 0, sizeof(engine->stats));
     eng_input_begin_frame(engine);
     eng_sounds_begin_frame(engine);
     eng_emit(engine, NMO_ENGINE_EVENT_FRAME_BEGIN, -1, 0, 0);
@@ -411,6 +439,7 @@ nmo_status_t nmo_engine_step(nmo_engine_t *engine, float delta_ms)
     if (status == NMO_OK) {
         eng_dispatch_messages(engine); /* CKMessageManager::PostProcess */
         eng_physics_post_process(engine); /* CKIpionManager::PostProcess */
+        eng_delete_dynamic_objects(engine); /* CKObjectManager::PostProcess */
     }
     eng_emit(engine, NMO_ENGINE_EVENT_FRAME_END, -1, 0, 0);
     engine->frame++;

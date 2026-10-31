@@ -416,6 +416,14 @@ nmo_object_id_t eng_create_object(nmo_engine_t *engine, uint32_t class_id, const
     return id;
 }
 
+void eng_mark_dynamic(nmo_engine_t *engine, nmo_object_id_t id)
+{
+    nmo_object_id_t *slot = NULL;
+    if (id != 0 && ENG_VEC_PUSH(engine->dynamic_objects, slot)) {
+        *slot = id;
+    }
+}
+
 int32_t eng_module_message_type(const eng_module_t *module, int32_t type)
 {
     return module != NULL && type >= 0 && (uint32_t)type < module->message_type_count

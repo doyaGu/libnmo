@@ -657,7 +657,7 @@ static nmo_object_id_t *repository_ids(nmo_object_repository_t *repo, size_t *ou
  */
 static nmo_status_t copy_session(nmo_engine_t *engine, int32_t source, const nmo_object_id_t *ids,
                                  int32_t count, const eng_dependencies_t *deps, bool activate,
-                                 nmo_object_id_t *out_copies)
+                                 bool dynamic, nmo_object_id_t *out_copies)
 {
     copy_set_t set;
     memset(&set, 0, sizeof(set));
@@ -723,6 +723,9 @@ static nmo_status_t copy_session(nmo_engine_t *engine, int32_t source, const nmo
     }
     for (size_t i = 0; i < n; i++) {
         copies[i] = eng_module_id(&engine->modules.data[module], locals[i]);
+        if (dynamic) {
+            eng_mark_dynamic(engine, copies[i]);
+        }
     }
     /* Copies are in no scene until added to one, as after a load */
     for (size_t o = first_object; o < engine->objects.count; o++) {
@@ -784,7 +787,7 @@ done:
 }
 
 nmo_status_t eng_copy_objects(nmo_engine_t *engine, const nmo_object_id_t *ids, int32_t count,
-                              const eng_dependencies_t *deps, bool activate,
+                              const eng_dependencies_t *deps, bool activate, bool dynamic,
                               nmo_object_id_t *out_copies)
 {
     for (int32_t i = 0; i < count; i++) {
@@ -806,7 +809,8 @@ nmo_status_t eng_copy_objects(nmo_engine_t *engine, const nmo_object_id_t *ids, 
         }
         /* The session's owner: the loaded file's or the created objects' module */
         int32_t source = (int32_t)(module - engine->modules.data);
-        nmo_status_t status = copy_session(engine, source, ids, count, deps, activate, out_copies);
+        nmo_status_t status =
+            copy_session(engine, source, ids, count, deps, activate, dynamic, out_copies);
         if (status != NMO_OK) {
             return status;
         }
@@ -845,5 +849,5 @@ nmo_status_t nmo_engine_copy_objects(nmo_engine_t *engine, const nmo_object_id_t
     }
     eng_dependencies_t deps;
     eng_default_copy_dependencies(&deps);
-    return eng_copy_objects(engine, ids, count, &deps, activate, out_copies);
+    return eng_copy_objects(engine, ids, count, &deps, activate, false, out_copies);
 }

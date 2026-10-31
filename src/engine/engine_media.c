@@ -11,12 +11,15 @@
  * has passed since it last emitted. Starting a sound or an emission reports
  * an effect event. A texture is its slots, a movie the frames its AVI file
  * records; Movie Player moves through them as the movie plays. Play
- * Animation 3D Entity keeps its progression, the step the animation shows.
+ * Animation 3D Entity and Play Global Animation keep their progression, the
+ * step the animation shows.
  */
 
 #include "engine_internal.h"
 
 #include "format/nmo_object.h"
+#include "object/builtin/nmo_animation_schemas.h"
+#include "object/builtin/nmo_character_schemas.h"
 #include "object/builtin/nmo_sound_schemas.h"
 #include "object/builtin/nmo_texture_schemas.h"
 #include "object/nmo_class_ids.h"
@@ -686,6 +689,108 @@ static int bb_play_animation(blk_t *b)
     return result;
 }
 
+/* An object a reference of `owner`'s state names, as an engine ID */
+static nmo_object_id_t referenced(const nmo_engine_t *engine, nmo_object_id_t owner,
+                                  const nmo_ref_t *ref)
+{
+    const eng_module_t *module = eng_module_of(engine, owner, NULL);
+    nmo_object_id_t local = nmo_ref_runtime_id(ref);
+    return module != NULL && local != 0 ? eng_module_id(module, local) : 0;
+}
+
+/*
+ * What Play Global Animation's On does to a keyed animation's characters:
+ * the character of each body part it animates (each once in a row) stops
+ * its automatic processing (which the engine does not do) and goes back to
+ * the identity world matrix, its children with it.
+ */
+static void reset_animated_characters(nmo_engine_t *engine, nmo_object_id_t animation)
+{
+    nmo_object_t *object = animation != 0 ? eng_find_object(engine, animation) : NULL;
+    const nmo_keyedanimation_state_t *keyed =
+        object != NULL ? (const nmo_keyedanimation_state_t *)
+                             nmo_type_query_object_get_ancestor_state_by_guid(
+                                 engine->types, object, CKPGUID_KEYEDANIMATION)
+                       : NULL;
+    nmo_object_id_t last = 0;
+    for (uint32_t i = 0; keyed != NULL && i < keyed->animation_count; i++) {
+        nmo_object_id_t part_animation = referenced(engine, animation, &keyed->animation_ids[i]);
+        nmo_object_t *part_object = part_animation != 0 ? eng_find_object(engine, part_animation)
+                                                        : NULL;
+        const nmo_objectanimation_state_t *state =
+            part_object != NULL ? (const nmo_objectanimation_state_t *)
+                                      nmo_type_query_object_get_ancestor_state_by_guid(
+                                          engine->types, part_object, CKPGUID_OBJECTANIMATION)
+                                : NULL;
+        nmo_object_id_t entity = state != NULL ? referenced(engine, part_animation, &state->entity) : 0;
+        nmo_object_t *entity_object = entity != 0 ? eng_find_object(engine, entity) : NULL;
+        const nmo_bodypart_state_t *part =
+            entity_object != NULL ? (const nmo_bodypart_state_t *)
+                                        nmo_type_query_object_get_ancestor_state_by_guid(
+                                            engine->types, entity_object, CKPGUID_BODYPART)
+                                  : NULL;
+        nmo_object_id_t character =
+            part != NULL && part->has_character ? referenced(engine, entity, &part->character) : 0;
+        int32_t index = character != 0 ? eng_entity_index(engine, character) : -1;
+        if (index < 0 || character == last) {
+            continue;
+        }
+        last = character;
+        eng_matrix_t identity;
+        eng_matrix_identity(&identity);
+        eng_entity_set_world_matrix(engine, index, &identity, false);
+    }
+}
+
+/*
+ * Play Global Animation (PlayGlobalAnim): Play Animation 3D Entity for an
+ * animation that moves several entities. On also puts the characters of
+ * the body parts a keyed animation moves back at the origin. Without an
+ * animation the progression is not kept, as in the original.
+ */
+static int bb_play_global_animation(blk_t *b)
+{
+    nmo_object_id_t animation = nmo_engine_block_get_input_object(b, 0);
+    float duration = 5000.0f;
+    if (nmo_guid_equals(nmo_engine_block_input_parameter_type(b, 1), CKPGUID_INT)) {
+        duration = (float)get_in_int(b, 1, 5000); /* back compatibility */
+    } else {
+        duration = get_in_float(b, 1, 5000.0f);
+    }
+    if (duration < 0.001f) {
+        return NMO_ENGINE_BR_OK;
+    }
+    bool loop = get_in_int(b, 3, 1) != 0;
+    float step = 0.0f;
+    nmo_engine_block_get_local_value(b, 0, &step, sizeof(step));
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    step += nmo_engine_block_delta_time(b) / duration;
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        step = 0.0f;
+        reset_animated_characters(b->engine, animation);
+        eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, animation, 0);
+    }
+    int result = NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+    if (step > 1.0f) {
+        OUT_ON(b, 0);
+        if (loop) {
+            step -= (float)(int)step;
+        } else {
+            step = 1.0f;
+            result = NMO_ENGINE_BR_OK;
+        }
+    }
+    if (animation != 0) {
+        nmo_engine_block_set_local_value(b, 0, &step, sizeof(step));
+        nmo_engine_block_set_output_value(b, 0, &step, sizeof(step));
+    }
+    return result;
+}
+
 static const nmo_engine_block_desc_t eng_media_blocks[] = {
     {NMO_GUID(0x5bde0e45, 0x2e2107d5), "Wave Player", bb_wave_player, cb_wave_player, NULL},
     {NMO_GUID(0x02bc537c, 0x147c22e0), "Sound Load", bb_sound_load, NULL, NULL},
@@ -695,6 +800,8 @@ static const nmo_engine_block_desc_t eng_media_blocks[] = {
     {NMO_GUID(0xf56d92ef, 0x41eb20c1), "Change Texture Video Format",
      bb_change_texture_video_format, NULL, NULL},
     {NMO_GUID(0x64221225, 0x769a143f), "Play Animation 3D Entity", bb_play_animation, NULL, NULL},
+    {NMO_GUID(0x1c9236e1, 0x42f40996), "Play Global Animation", bb_play_global_animation, NULL,
+     NULL},
     {NMO_GUID(0x798e26a9, 0x34e4169e), "Movie Load", bb_movie_load, NULL, NULL},
     {NMO_GUID(0x778d16d4, 0x1dd60060), "Movie Player", bb_movie_player, NULL, NULL},
     {NMO_GUID(0x506b40f7, 0x30852e46), "Point Particle System", bb_particle_system, NULL, NULL},

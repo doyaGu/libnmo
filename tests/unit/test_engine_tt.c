@@ -21,6 +21,14 @@
 #define GUID_CONVERT_PIXEL NMO_GUID(0x18f96977, 0x18e20f83)
 #define GUID_PLANAR_FILTER NMO_GUID(0x00cd320b, 0x32ed010b)
 #define GUID_TT_COUNTER NMO_GUID(0x750f20fc, 0x3741186d)
+#define GUID_REGISTER_ARRAY NMO_GUID(0x348773dc, 0x19ae6322)
+#define GUID_TT_DEBUG NMO_GUID(0x4a446c43, 0x66fa2375)
+#define GUID_DEBUG_ON NMO_GUID(0x3d00718f, 0x2c8b33a2)
+#define GUID_EXIT_TO_SYSTEM NMO_GUID(0x5bc50af4, 0x41e92536)
+#define GUID_GET_ENVIRONMENT_VARIABLE NMO_GUID(0x4c6513e9, 0x20e11177)
+#define GUID_GET_CURRENT_DIRECTORY NMO_GUID(0x556e6df3, 0x24207d37)
+#define GUID_REPLACE_PATH NMO_GUID(0x524a6bcb, 0x66f67774)
+#define GUID_STATISTICS NMO_GUID(0x5fb70201, 0x65595af3)
 
 /* The files the engine loads, from the scratch directory */
 static const char *resolve_scratch(void *user_data, const char *name)
@@ -240,6 +248,178 @@ TEST(engine_tt, save_database_writes_the_registered_arrays)
         ASSERT_TRUE(memcmp(expected.data, w.data, w.size) == 0);
         fixture_end(&f);
     }
+}
+
+TEST(engine_tt, register_array_registers_once_and_clear_forgets)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t array = fixture_create(&f, NMO_CID_DATAARRAY, "A");
+    ASSERT_TRUE(array != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t set = fixture_block(&f, GUID_SET_DATABASE_PROPERTIES, "Set");
+    nmo_object_id_t once = fixture_block(&f, GUID_REGISTER_ARRAY, "Register");
+    nmo_object_id_t twice = fixture_block(&f, GUID_REGISTER_ARRAY, "Register Again");
+    nmo_object_id_t save = fixture_block(&f, GUID_SAVE_DATABASE, "Save");
+    nmo_object_id_t clear = fixture_block(&f, GUID_REGISTER_ARRAY, "Clear");
+    nmo_object_id_t save_cleared = fixture_block(&f, GUID_SAVE_DATABASE, "Save Cleared");
+    nmo_object_id_t failed = fixture_block(&f, GUID_NOP, "Failed");
+    ASSERT_TRUE(set != 0 && once != 0 && twice != 0 && save != 0 && clear != 0 &&
+                save_cleared != 0 && failed != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, set, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, set, 0), BLOCK_IN(&f, once, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, once, 0), BLOCK_IN(&f, twice, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, twice, 1), BLOCK_IN(&f, save, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, save, 0), BLOCK_IN(&f, clear, 1), 0);
+    fixture_link(&f, BLOCK_OUT(&f, clear, 0), BLOCK_IN(&f, save_cleared, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, save_cleared, 1), BLOCK_IN(&f, failed, 0), 0);
+    input_text(&f, BLOCK_PIN(&f, set, 0), "registered.tdb");
+    fixture_input_int(&f, BLOCK_PIN(&f, once, 0), (int32_t)array);
+    fixture_input_int(&f, BLOCK_PIN(&f, twice, 0), (int32_t)array);
+    fixture_commit(&f, NULL);
+    written_t w;
+    memset(&w, 0, sizeof(w));
+    nmo_engine_set_file_writer(f.engine, keep_written, &w);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    /* Registered once (the second is an Error): one chunk, the array "A" */
+    ASSERT_EQ(1, w.count);
+    ASSERT_STR_EQ("registered.tdb", w.name);
+    ASSERT_TRUE(w.size > 6);
+    unsigned char plain[512];
+    for (size_t i = 0; i < w.size; i++) {
+        unsigned char r = (unsigned char)((w.data[i] << 3) | (w.data[i] >> 5));
+        plain[i] = (unsigned char)-(r ^ 0xAFu);
+    }
+    ASSERT_TRUE(memcmp(plain, "A", 2) == 0);
+    int32_t chunk_size = 0;
+    memcpy(&chunk_size, plain + 2, sizeof(chunk_size));
+    ASSERT_EQ(w.size, 6u + (size_t)chunk_size);
+    /* Cleared: no array and no file to save to */
+    ASSERT_EQ(1u, runs(&f, failed));
+    ASSERT_EQ(1, w.count);
+    fixture_end(&f);
+}
+
+TEST(engine_tt, system_values_come_from_the_host)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t variable = fixture_block(&f, GUID_GET_ENVIRONMENT_VARIABLE, "Variable");
+    nmo_object_id_t unset = fixture_block(&f, GUID_GET_ENVIRONMENT_VARIABLE, "Unset");
+    nmo_object_id_t directory = fixture_block(&f, GUID_GET_CURRENT_DIRECTORY, "Directory");
+    nmo_object_id_t replace = fixture_block(&f, GUID_REPLACE_PATH, "Replace");
+    nmo_object_id_t no_category = fixture_block(&f, GUID_REPLACE_PATH, "No Category");
+    nmo_object_id_t not_found = fixture_block(&f, GUID_NOP, "Not Found");
+    nmo_object_id_t replaced = fixture_block(&f, GUID_NOP, "Replaced");
+    nmo_object_id_t failed = fixture_block(&f, GUID_NOP, "Failed");
+    ASSERT_TRUE(variable != 0 && unset != 0 && directory != 0 && replace != 0 &&
+                no_category != 0 && not_found != 0 && replaced != 0 && failed != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, variable, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, variable, 0), BLOCK_IN(&f, unset, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, unset, 1), BLOCK_IN(&f, not_found, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, not_found, 0), BLOCK_IN(&f, directory, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, directory, 0), BLOCK_IN(&f, replace, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, replace, 0), BLOCK_IN(&f, replaced, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, replaced, 0), BLOCK_IN(&f, no_category, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, no_category, 1), BLOCK_IN(&f, failed, 0), 0);
+    input_text(&f, BLOCK_PIN(&f, variable, 0), "gravity");
+    input_text(&f, BLOCK_PIN(&f, unset, 0), "Missing");
+    input_text(&f, BLOCK_PIN(&f, replace, 0), "\\Sounds\\");
+    input_text(&f, BLOCK_PIN(&f, replace, 1), "\\Sounds_low\\");
+    input_text(&f, BLOCK_PIN(&f, replace, 2), "C:\\Game");
+    fixture_input_int(&f, BLOCK_PIN(&f, replace, 3), NMO_ENGINE_PATH_SOUND);
+    fixture_input_int(&f, BLOCK_PIN(&f, no_category, 3), 3);
+    fixture_commit(&f, NULL);
+    /* Names compare without case, as Windows compares them */
+    ASSERT_EQ(NMO_OK, nmo_engine_set_environment_variable(f.engine, "Gravity", "C:\\Game\\"));
+    ASSERT_EQ(NMO_OK, nmo_engine_set_current_directory(f.engine, "C:\\Game\\Bin"));
+    ASSERT_EQ(NMO_OK, nmo_engine_add_path(f.engine, NMO_ENGINE_PATH_SOUND, "C:\\Game\\Sounds\\"));
+    ASSERT_EQ(NMO_OK, nmo_engine_add_path(f.engine, NMO_ENGINE_PATH_SOUND, "C:\\Game\\Music\\"));
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    const void *text = NULL;
+    ASSERT_EQ(NMO_OK, nmo_engine_param_value(f.engine, BLOCK_POUT(&f, variable, 0), &text, NULL, NULL));
+    ASSERT_STR_EQ("C:\\Game\\", (const char *)text);
+    ASSERT_EQ(1u, runs(&f, not_found));
+    ASSERT_EQ(NMO_OK, nmo_engine_param_value(f.engine, BLOCK_POUT(&f, directory, 0), &text, NULL, NULL));
+    ASSERT_STR_EQ("C:\\Game\\Bin", (const char *)text);
+    /* The original renames the first path that is not the old one */
+    ASSERT_EQ(1u, runs(&f, replaced));
+    ASSERT_STR_EQ("C:\\Game\\Sounds\\", nmo_engine_path(f.engine, NMO_ENGINE_PATH_SOUND, 0));
+    ASSERT_STR_EQ("C:\\Game\\Sounds_low\\", nmo_engine_path(f.engine, NMO_ENGINE_PATH_SOUND, 1));
+    ASSERT_NULL(nmo_engine_path(f.engine, NMO_ENGINE_PATH_SOUND, 2));
+    ASSERT_EQ(1u, runs(&f, failed));
+    fixture_end(&f);
+}
+
+TEST(engine_tt, debug_mode_and_exit_to_system)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t before = fixture_block(&f, GUID_TT_DEBUG, "Before");
+    nmo_object_id_t debug_on = fixture_block(&f, GUID_DEBUG_ON, "Debug On");
+    nmo_object_id_t after = fixture_block(&f, GUID_TT_DEBUG, "After");
+    nmo_object_id_t exit_block = fixture_block(&f, GUID_EXIT_TO_SYSTEM, "Exit");
+    ASSERT_TRUE(before != 0 && debug_on != 0 && after != 0 && exit_block != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, before, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, before, 0), BLOCK_IN(&f, debug_on, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, debug_on, 0), BLOCK_IN(&f, after, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, after, 0), BLOCK_IN(&f, exit_block, 0), 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, before, 3), 1); /* Enable */
+    fixture_input_int(&f, BLOCK_PIN(&f, after, 3), 1);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_FALSE(nmo_engine_exit_requested(f.engine));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    /* Not in debug mode the first keeps its input; the second writes and takes it */
+    ASSERT_TRUE(nmo_engine_io_is_active(f.engine, BLOCK_IN(&f, before, 0)));
+    ASSERT_FALSE(nmo_engine_io_is_active(f.engine, BLOCK_IN(&f, after, 0)));
+    ASSERT_EQ(1u, runs(&f, exit_block));
+    ASSERT_TRUE(nmo_engine_exit_requested(f.engine));
+    fixture_end(&f);
+}
+
+TEST(engine_tt, statistics_reports_the_last_frame)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t stats = fixture_block(&f, GUID_STATISTICS, "Statistics");
+    ASSERT_TRUE(stats != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, stats, 0), 0);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    /* Each frame runs the script and the block, and parses the script's link; from the
+     * second frame on the profiling counts the object too */
+    const int32_t objects[2] = {0, 1};
+    for (int frame = 0; frame < 2; frame++) {
+        ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+        float fps = 0.0f;
+        read_value(&f, BLOCK_POUT(&f, stats, 0), &fps, sizeof(fps));
+        ASSERT_FLOAT_EQ(50.0f, fps, 0.0001f);
+        float interface_time = 0.0f;
+        read_value(&f, BLOCK_POUT(&f, stats, 1), &interface_time, sizeof(interface_time));
+        ASSERT_FLOAT_EQ(20.0f, interface_time, 0.0001f);
+        if (frame == 0) {
+            continue; /* the counts of the frame before the first */
+        }
+        const int32_t expected[5] = {objects[frame - 1], 2, 1, 1, 0};
+        for (int i = 0; i < 5; i++) {
+            int32_t count = -1;
+            read_value(&f, BLOCK_POUT(&f, stats, 9 + i), &count, sizeof(count));
+            ASSERT_EQ(expected[i], count);
+        }
+    }
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    int32_t active_objects = -1;
+    read_value(&f, BLOCK_POUT(&f, stats, 9), &active_objects, sizeof(active_objects));
+    ASSERT_EQ(objects[1], active_objects);
+    fixture_end(&f);
 }
 
 TEST(engine_tt, read_registry_reads_what_the_host_set)
@@ -519,6 +699,10 @@ TEST(engine_tt, counter_wraps_around_its_range)
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_tt, load_database_fills_the_array_of_its_name);
 REGISTER_TEST(engine_tt, save_database_writes_the_registered_arrays);
+REGISTER_TEST(engine_tt, register_array_registers_once_and_clear_forgets);
+REGISTER_TEST(engine_tt, system_values_come_from_the_host);
+REGISTER_TEST(engine_tt, debug_mode_and_exit_to_system);
+REGISTER_TEST(engine_tt, statistics_reports_the_last_frame);
 REGISTER_TEST(engine_tt, read_registry_reads_what_the_host_set);
 REGISTER_TEST(engine_tt, drivers_and_screen_modes_fill_their_arrays);
 REGISTER_TEST(engine_tt, timer_and_strings);

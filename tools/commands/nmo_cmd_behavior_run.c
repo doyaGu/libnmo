@@ -826,6 +826,9 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
             nmo_engine_set_key(engine, keys[k].key, down);
         }
         status = nmo_engine_step(engine, args->delta_ms);
+        if (status == NMO_OK && nmo_engine_exit_requested(engine)) {
+            break; /* the player quits after the frame */
+        }
     }
     free(keys);
     for (long i = 0; messages != NULL && i < message_count; i++) {
@@ -848,6 +851,8 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
                                                           : run_start_name(args->start));
     ok = ok && nmo_cli_record_uint(rec, "block_executions", "Building block executions",
                                    state.executions);
+    ok = ok && nmo_cli_record_bool(rec, "exited", "Exited to system",
+                                   nmo_engine_exit_requested(engine));
     ok = ok && run_add_unknown(rec, &state);
     ok = ok && run_add_physics(rec, &state);
     ok = ok && run_add_active_scripts(rec, engine);

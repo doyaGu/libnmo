@@ -7,9 +7,12 @@
  * reference is the Ballanced source). The database manager reads arrays from
  * the database file (TT Database Manager), found through the host's file
  * resolver. What the blocks ask the machine for comes from a fixed machine:
- * Windows, one render driver with 4:3 screen modes in 16 and 32 bits,
- * not in interface mode, not in debug mode. The registry holds what the host
- * set (nmo_engine_set_registry_value()).
+ * Windows, one render driver with 4:3 screen modes in 16 and 32 bits, no
+ * video memory, not in interface mode, in debug mode once TT_DebugON turned
+ * it on. The registry, the environment, the current directory and the path
+ * manager's paths hold what the host set (nmo_engine_set_registry_value() and
+ * the like). Statistics reports the frame counts CK2 keeps; the engine
+ * measures no time but the frame's.
  */
 
 #include "engine_internal.h"
@@ -60,7 +63,8 @@ static eng_param_t *block_output(blk_t *b, int pos)
  * TT Database Manager
  * ============================================================================ */
 
-void eng_free_tt(nmo_engine_t *engine)
+/* DatabaseManager::Clear: no array registered, no database file */
+static void database_clear(nmo_engine_t *engine)
 {
     free(engine->database_file);
     engine->database_file = NULL;
@@ -70,6 +74,11 @@ void eng_free_tt(nmo_engine_t *engine)
     free(engine->database_arrays.data);
     engine->database_arrays.data = NULL;
     engine->database_arrays.count = engine->database_arrays.capacity = 0;
+}
+
+void eng_free_tt(nmo_engine_t *engine)
+{
+    database_clear(engine);
     for (size_t i = 0; i < engine->registry.count; i++) {
         free(engine->registry.data[i].section);
         free(engine->registry.data[i].name);
@@ -78,6 +87,23 @@ void eng_free_tt(nmo_engine_t *engine)
     free(engine->registry.data);
     engine->registry.data = NULL;
     engine->registry.count = engine->registry.capacity = 0;
+    for (size_t i = 0; i < engine->environment.count; i++) {
+        free(engine->environment.data[i].name);
+        free(engine->environment.data[i].value);
+    }
+    free(engine->environment.data);
+    engine->environment.data = NULL;
+    engine->environment.count = engine->environment.capacity = 0;
+    free(engine->current_directory);
+    engine->current_directory = NULL;
+    for (int c = 0; c < ENG_PATH_CATEGORIES; c++) {
+        for (size_t i = 0; i < engine->paths[c].count; i++) {
+            free(engine->paths[c].data[i]);
+        }
+        free(engine->paths[c].data);
+        engine->paths[c].data = NULL;
+        engine->paths[c].count = engine->paths[c].capacity = 0;
+    }
 }
 
 static unsigned char rotl8(unsigned char value, int shift)
@@ -410,6 +436,27 @@ static int bb_save_database(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/*
+ * TT Register Array: Register adds the array to the ones TT Save Database
+ * saves, by name (OK; Error without one, or when it is registered already);
+ * Clear forgets them and the database file (OK).
+ */
+static int bb_register_array(blk_t *b)
+{
+    nmo_engine_t *engine = nmo_engine_block_engine(b);
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        nmo_object_id_t array = nmo_engine_block_get_input_object(b, 0);
+        const char *name = array != 0 ? nmo_engine_object_name(engine, array) : NULL;
+        OUT_ON(b, name != NULL && database_register(engine, name) == 1 ? 0 : 1);
+    } else if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        database_clear(engine);
+        OUT_ON(b, 0);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
 /* ============================================================================
  * Registry
  * ============================================================================ */
@@ -525,6 +572,86 @@ static bool registry_float(nmo_engine_t *engine, const char *section, const char
     return true;
 }
 
+/* ============================================================================
+ * Environment, current directory and paths
+ * ============================================================================ */
+
+static eng_registry_value_t *environment_find(nmo_engine_t *engine, const char *name)
+{
+    for (size_t i = 0; i < engine->environment.count; i++) {
+        eng_registry_value_t *entry = &engine->environment.data[i];
+        if (same_text(entry->name, strlen(entry->name), name, strlen(name))) {
+            return entry;
+        }
+    }
+    return NULL;
+}
+
+nmo_status_t nmo_engine_set_environment_variable(nmo_engine_t *engine, const char *name,
+                                                 const char *value)
+{
+    if (engine == NULL || name == NULL || value == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    char *copy = text_copy(value, strlen(value));
+    if (copy == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    eng_registry_value_t *entry = environment_find(engine, name);
+    if (entry != NULL) {
+        free(entry->value);
+        entry->value = copy;
+        return NMO_OK;
+    }
+    char *name_copy = text_copy(name, strlen(name));
+    if (name_copy == NULL || !ENG_VEC_PUSH(engine->environment, entry)) {
+        free(copy);
+        free(name_copy);
+        return NMO_ERR_NOMEM;
+    }
+    entry->name = name_copy;
+    entry->value = copy;
+    return NMO_OK;
+}
+
+nmo_status_t nmo_engine_set_current_directory(nmo_engine_t *engine, const char *path)
+{
+    if (engine == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    char *copy = path != NULL ? text_copy(path, strlen(path)) : NULL;
+    if (path != NULL && copy == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    free(engine->current_directory);
+    engine->current_directory = copy;
+    return NMO_OK;
+}
+
+nmo_status_t nmo_engine_add_path(nmo_engine_t *engine, int32_t category, const char *path)
+{
+    if (engine == NULL || path == NULL || category < 0 || category >= ENG_PATH_CATEGORIES) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    char *copy = text_copy(path, strlen(path));
+    char **slot = NULL;
+    if (copy == NULL || !ENG_VEC_PUSH(engine->paths[category], slot)) {
+        free(copy);
+        return NMO_ERR_NOMEM;
+    }
+    *slot = copy;
+    return NMO_OK;
+}
+
+const char *nmo_engine_path(const nmo_engine_t *engine, int32_t category, int32_t index)
+{
+    if (engine == NULL || category < 0 || category >= ENG_PATH_CATEGORIES || index < 0 ||
+        (size_t)index >= engine->paths[category].count) {
+        return NULL;
+    }
+    return engine->paths[category].data[index];
+}
+
 /* The registry value name of a row: its index. */
 static char *row_entry(int32_t row)
 {
@@ -594,9 +721,151 @@ static bool read_registry_array(blk_t *b, const char *section, nmo_object_id_t a
  * TT Toolbox and TT Interface Manager
  * ============================================================================ */
 
-/* TT_Debug: writes only in debug mode, which the engine never is; In stays active then. */
+/*
+ * TT_Debug: with Enable, in debug mode, writes its text to the console and
+ * the log file (an effect) and takes its input; otherwise In stays active.
+ * Exit either way.
+ */
 static int bb_tt_debug(blk_t *b)
 {
+    if (get_in_int(b, 3, 0) != 0 && b->engine->tt_debug_mode) {
+        IN_OFF(b, 0);
+        eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, 0, 0);
+    }
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* TT_DebugON: turns the debug manager's debug mode on. */
+static int bb_debug_on(blk_t *b)
+{
+    b->engine->tt_debug_mode = true;
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * TT Exit to System: asks the player to quit (nmo_engine_exit_requested());
+ * its input stays active, as in the original.
+ */
+static int bb_exit_to_system(blk_t *b)
+{
+    b->engine->exit_requested = true;
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* TT GetEnvironmentVariable: the variable's value (Found), or Not Found and a parameter error. */
+static int bb_get_environment_variable(blk_t *b)
+{
+    IN_OFF(b, 0);
+    const char *name = input_string(b, 0);
+    const eng_registry_value_t *entry = name != NULL ? environment_find(b->engine, name) : NULL;
+    if (entry == NULL) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    set_out(b, 0, entry->value, strlen(entry->value) + 1u);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* TT_GetCurrentDirectory: the current directory (OK), or empty (Fail); its input stays active. */
+static int bb_get_current_directory(blk_t *b)
+{
+    const char *directory = b->engine->current_directory;
+    if (directory == NULL || directory[0] == '\0') {
+        set_out(b, 0, "", 1u);
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    set_out(b, 0, directory, strlen(directory) + 1u);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * TT_ReplacePath: the first path of category PathIDX (0 bitmap, 1 data,
+ * 2 sound) that is not Current Directory + Old renamed Current Directory +
+ * New (Ok). The original compares that way round: Failed only when every
+ * path is the old one, there is none, or the category is another. Its
+ * input stays active.
+ */
+static int bb_replace_path(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    const char *old_path = input_string(b, 0);
+    const char *new_path = input_string(b, 1);
+    const char *directory = input_string(b, 2);
+    int32_t category = get_in_int(b, 3, 0);
+    if (category < 0 || category >= ENG_PATH_CATEGORIES) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    directory = directory != NULL ? directory : "";
+    old_path = old_path != NULL ? old_path : "";
+    new_path = new_path != NULL ? new_path : "";
+    size_t directory_length = strlen(directory);
+    size_t old_length = strlen(old_path);
+    for (size_t i = 0; i < engine->paths[category].count; i++) {
+        const char *path = engine->paths[category].data[i];
+        if (strlen(path) == directory_length + old_length &&
+            memcmp(path, directory, directory_length) == 0 &&
+            memcmp(path + directory_length, old_path, old_length) == 0) {
+            continue;
+        }
+        size_t new_length = strlen(new_path);
+        char *renamed = (char *)malloc(directory_length + new_length + 1u);
+        if (renamed == NULL) {
+            return NMO_ENGINE_BR_GENERICERROR;
+        }
+        memcpy(renamed, directory, directory_length);
+        memcpy(renamed + directory_length, new_path, new_length + 1u);
+        free(engine->paths[category].data[i]);
+        engine->paths[category].data[i] = renamed;
+        OUT_ON(b, 0);
+        return NMO_ENGINE_BR_OK;
+    }
+    OUT_ON(b, 1);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* TT_SetMipMapping: the target material's texture mipmapped and its filter modes set (an effect). */
+static int bb_set_mip_mapping(blk_t *b)
+{
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+    }
+    eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, nmo_engine_block_target(b), 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * TT_TextureInfo: the driver's video memory (none), the textures, and those
+ * in video memory (TT_PreloadTextures); the engine holds no surfaces, so
+ * the memory they use reads 0 MB.
+ */
+static int bb_texture_info(blk_t *b)
+{
+    IN_OFF(b, 0);
+    nmo_object_id_t *ids = NULL;
+    size_t count = eng_objects_of_class(b->engine, NMO_CID_TEXTURE, &ids);
+    int32_t in_video = 0;
+    for (size_t i = 0; i < count; i++) {
+        if (eng_map_get(&b->engine->video_textures, ids[i]) >= 0) {
+            in_video++;
+        }
+    }
+    free(ids);
+    const int32_t max_video_memory = 0, textures = (int32_t)count;
+    const float no_memory = 0.0f;
+    set_out(b, 0, &max_video_memory, sizeof(max_video_memory));
+    set_out(b, 1, &textures, sizeof(textures));
+    set_out(b, 2, &no_memory, sizeof(no_memory));
+    set_out(b, 3, &in_video, sizeof(in_video));
+    set_out(b, 4, &no_memory, sizeof(no_memory));
     OUT_ON(b, 0);
     return NMO_ENGINE_BR_OK;
 }
@@ -1123,6 +1392,64 @@ static int bb_planar_filter(blk_t *b)
     return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
 }
 
+/*
+ * Statistics (Visuals): the last frame's statistics the settings ask for,
+ * each frame while on; On and Off turn the profiling on and off. The frame
+ * rate comes from the frame's length; the engine measures no other time
+ * (the interface time is the whole frame, as CK2 estimates it) and draws
+ * nothing.
+ */
+static int bb_statistics(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+        engine->profiling = true;
+    } else if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        engine->profiling = false;
+        return NMO_ENGINE_BR_OK;
+    }
+    const eng_stats_t *stats = &engine->profile_stats;
+    int32_t flags = 1;
+    nmo_engine_block_get_local_value(b, 0, &flags, sizeof(flags));
+    if (flags != 0) {
+        float fps = 1000.0f / stats->frame_time;
+        set_out(b, 0, &fps, sizeof(fps));
+    }
+    /* General Time: interface, then processing, rendering, parametric operations,
+       animation, IK, total behavior and behavior code time */
+    flags = 0xFF;
+    nmo_engine_block_get_local_value(b, 1, &flags, sizeof(flags));
+    for (int i = 0; i < 8; i++) {
+        if ((flags & (1 << i)) != 0) {
+            float time = i == 0 ? stats->frame_time : 0.0f;
+            set_out(b, 1 + i, &time, sizeof(time));
+        }
+    }
+    flags = 0x1F;
+    nmo_engine_block_get_local_value(b, 2, &flags, sizeof(flags));
+    const int32_t behavioral[5] = {stats->active_objects_executed, stats->behaviors_executed,
+                                   stats->building_blocks_executed, stats->links_parsed,
+                                   stats->links_delayed};
+    for (int i = 0; i < 5; i++) {
+        if ((flags & (1 << i)) != 0) {
+            set_out(b, 9 + i, &behavioral[i], sizeof(behavioral[i]));
+        }
+    }
+    flags = 0x1F;
+    nmo_engine_block_get_local_value(b, 3, &flags, sizeof(flags));
+    for (int i = 0; i < 5; i++) {
+        if ((flags & (1 << i)) != 0) {
+            const int32_t none = 0;
+            set_out(b, 14 + i, &none, sizeof(none));
+        }
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
 /* Time Settings: the time manager's rates and limits (an effect on the scene). */
 static int bb_time_settings(blk_t *b)
 {
@@ -1140,7 +1467,17 @@ static const nmo_engine_block_desc_t eng_tt_blocks[] = {
      NULL, NULL},
     {NMO_GUID(0x05441494, 0x38ac7789), "TT Load Database", bb_load_database, NULL, NULL},
     {NMO_GUID(0x5d303e9d, 0x552c0af2), "TT Save Database", bb_save_database, NULL, NULL},
+    {NMO_GUID(0x348773dc, 0x19ae6322), "TT Register Array", bb_register_array, NULL, NULL},
     {NMO_GUID(0x4a446c43, 0x66fa2375), "TT_Debug", bb_tt_debug, NULL, NULL},
+    {NMO_GUID(0x3d00718f, 0x2c8b33a2), "TT_DebugON", bb_debug_on, NULL, NULL},
+    {NMO_GUID(0x5bc50af4, 0x41e92536), "TT Exit to System", bb_exit_to_system, NULL, NULL},
+    {NMO_GUID(0x4c6513e9, 0x20e11177), "TT GetEnvironmentVariable", bb_get_environment_variable,
+     NULL, NULL},
+    {NMO_GUID(0x556e6df3, 0x24207d37), "TT_GetCurrentDirectory", bb_get_current_directory, NULL,
+     NULL},
+    {NMO_GUID(0x524a6bcb, 0x66f67774), "TT_ReplacePath", bb_replace_path, NULL, NULL},
+    {NMO_GUID(0x38c34dab, 0x5dd03bdf), "TT_SetMipMapping", bb_set_mip_mapping, NULL, NULL},
+    {NMO_GUID(0x7c663b40, 0x2f4b347e), "TT_TextureInfo", bb_texture_info, NULL, NULL},
     {NMO_GUID(0x0694658d, 0x7ffd236f), "TT Player Active", bb_player_active, NULL, NULL},
     {NMO_GUID(0x3c392558, 0x419d2680), "TT Set_2DSprite", bb_set_2d_sprite, NULL, NULL},
     {NMO_GUID(0x4c94621d, 0x24fe2cf3), "TT OperationSystem", bb_operation_system, NULL, NULL},
@@ -1158,6 +1495,7 @@ static const nmo_engine_block_desc_t eng_tt_blocks[] = {
     {NMO_GUID(0x18f96977, 0x18e20f83), "TT ConvertPixel-Homogen", bb_convert_pixel_homogen, NULL,
      NULL},
     {NMO_GUID(0x00cd320b, 0x32ed010b), "Planar Filter", bb_planar_filter, NULL, NULL},
+    {NMO_GUID(0x5fb70201, 0x65595af3), "Statistics", bb_statistics, NULL, NULL},
 };
 
 nmo_status_t eng_register_tt(nmo_engine_t *engine)

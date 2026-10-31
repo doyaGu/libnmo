@@ -280,6 +280,37 @@ NMO_API nmo_status_t nmo_engine_set_registry_value(nmo_engine_t *engine,
                                                    const char *name,
                                                    const char *value);
 
+/**
+ * Set an environment variable the TT blocks read (TT GetEnvironmentVariable)
+ * as text. Names compare as Windows compares them, ignoring case. The engine
+ * reads nothing of the process's environment itself.
+ */
+NMO_API nmo_status_t nmo_engine_set_environment_variable(nmo_engine_t *engine,
+                                                         const char *name,
+                                                         const char *value);
+/** The current directory the TT blocks read (TT_GetCurrentDirectory); NULL for none. */
+NMO_API nmo_status_t nmo_engine_set_current_directory(nmo_engine_t *engine, const char *path);
+
+/* The path manager's categories (CKPathManager) */
+#define NMO_ENGINE_PATH_BITMAP 0
+#define NMO_ENGINE_PATH_DATA 1
+#define NMO_ENGINE_PATH_SOUND 2
+
+/**
+ * Add a path to a category of the path manager (CKPathManager::AddPath);
+ * blocks may rename it (TT_ReplacePath). The engine resolves no file by
+ * them: a host's resolver reads them with nmo_engine_path().
+ */
+NMO_API nmo_status_t nmo_engine_add_path(nmo_engine_t *engine, int32_t category, const char *path);
+/** Path `index` of a category, as blocks left it; NULL past the last. */
+NMO_API const char *nmo_engine_path(const nmo_engine_t *engine, int32_t category, int32_t index);
+
+/**
+ * Whether a block asked the player to quit (TT Exit to System): the frame
+ * that asked runs to its end, and the host stops stepping.
+ */
+NMO_API bool nmo_engine_exit_requested(const nmo_engine_t *engine);
+
 /** Run one frame of `delta_ms` milliseconds. */
 NMO_API nmo_status_t nmo_engine_step(nmo_engine_t *engine, float delta_ms);
 

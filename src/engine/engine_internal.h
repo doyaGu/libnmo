@@ -172,6 +172,8 @@ typedef struct eng_map {
 
 #define ENG_KEY_COUNT 256
 
+#define ENG_PATH_CATEGORIES 3
+
 /* A key that went down or up since the previous frame (the input manager's key buffer). */
 typedef struct eng_key_event {
     uint32_t key;
@@ -374,6 +376,16 @@ typedef struct eng_registry_value {
     char *value;
 } eng_registry_value_t;
 
+/* CKStats: what a frame executed (counted as CK2 counts it), and its length */
+typedef struct eng_stats {
+    float frame_time; /* ms */
+    int32_t active_objects_executed; /* only while profiling, as CKBeObject counts them */
+    int32_t behaviors_executed;
+    int32_t building_blocks_executed;
+    int32_t links_parsed;
+    int32_t links_delayed;
+} eng_stats_t;
+
 /* A physical object (Physicalize): its parameters and the provider's handle */
 typedef struct eng_physics_object {
     nmo_engine_physics_object_t desc; /* its arrays and strings are the fields below */
@@ -508,6 +520,17 @@ struct nmo_engine {
     nmo_engine_write_file_fn write_file;
     void *write_file_user_data;
     ENG_VEC(eng_registry_value_t) registry; /* the TT blocks' registry, from the host */
+    ENG_VEC(eng_registry_value_t) environment; /* environment variables, from the host (no section) */
+    char *current_directory;                 /* the host's, for TT_GetCurrentDirectory */
+    ENG_VEC(char *) paths[ENG_PATH_CATEGORIES]; /* CKPathManager: bitmap, data and sound paths */
+    bool tt_debug_mode;    /* CTTDebugManager::m_DebugMode, which TT_DebugON sets */
+    bool exit_requested;   /* TT Exit to System posted TT_PLAYER_COMMAND_EXIT_TO_SYSTEM */
+    /* The objects created or loaded as dynamic (CK_OBJECTCREATION_DYNAMIC), in that order */
+    ENG_VEC(nmo_object_id_t) dynamic_objects;
+    bool delete_dynamic_objects; /* CKObjectManager::DeleteAllDynamicObjects, done at frame end */
+    eng_stats_t stats;         /* the frame running */
+    eng_stats_t profile_stats; /* the last frame's (CKContext::GetProfileStats) */
+    bool profiling;            /* CKContext::EnableProfiling */
     eng_physics_t physics;
 };
 
@@ -568,6 +591,8 @@ nmo_object_t *eng_find_object(const nmo_engine_t *engine, nmo_object_id_t id);
 /* The first object named `name` (of class `class_id` or one derived, unless 0), in document order */
 nmo_object_id_t eng_object_named(const nmo_engine_t *engine, const char *name, uint32_t class_id);
 nmo_object_id_t eng_create_object(nmo_engine_t *engine, uint32_t class_id, const char *name);
+/* Count `id` among the dynamic objects (CK_OBJECTCREATION_DYNAMIC) */
+void eng_mark_dynamic(nmo_engine_t *engine, nmo_object_id_t id);
 
 /* engine_transform.c */
 void eng_matrix_identity(eng_matrix_t *m);
@@ -650,7 +675,7 @@ void eng_dependencies_from_param(nmo_engine_t *engine, nmo_object_id_t param_id,
 void eng_destroy_objects(nmo_engine_t *engine, const nmo_object_id_t *ids, int32_t count,
                          const eng_dependencies_t *deps);
 nmo_status_t eng_copy_objects(nmo_engine_t *engine, const nmo_object_id_t *ids, int32_t count,
-                              const eng_dependencies_t *deps, bool activate,
+                              const eng_dependencies_t *deps, bool activate, bool dynamic,
                               nmo_object_id_t *out_copies);
 void eng_copy_attributes(nmo_engine_t *engine, nmo_object_id_t from, nmo_object_id_t to);
 void eng_copy_array(nmo_engine_t *engine, nmo_object_id_t from, nmo_object_id_t to);

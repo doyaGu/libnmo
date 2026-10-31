@@ -12,6 +12,8 @@
 #define GUID_NOP NMO_GUID(0x302561c4, 0x0d282980)
 #define GUID_OBJECT_COPY NMO_GUID(0x3f6b0ac7, 0x47d20f78)
 #define GUID_OBJECT_DELETE NMO_GUID(0x74120ded, 0x76524673)
+#define GUID_OBJECT_CREATE NMO_GUID(0x271538e6, 0x2fae49ac)
+#define GUID_DELETE_DYNAMIC_OBJECTS NMO_GUID(0x0cba3195, 0x53440e4c)
 #define GUID_RESTORE_IC NMO_GUID(0x766e4e44, 0x4fac6d52)
 #define GUID_TT_RESTORE_IC NMO_GUID(0x7e0f2f58, 0x232d3109)
 #define GUID_TT_SAVE_IC NMO_GUID(0x30362f34, 0x1935316f)
@@ -286,6 +288,42 @@ TEST(engine_copy, object_delete_takes_what_its_options_delete)
     fixture_end(&f);
 }
 
+TEST(engine_copy, delete_dynamic_objects_takes_the_dynamic_ones)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t dynamic = fixture_block(&f, GUID_OBJECT_CREATE, "Create Dynamic");
+    nmo_object_id_t kept = fixture_block(&f, GUID_OBJECT_CREATE, "Create Kept");
+    nmo_object_id_t deleter = fixture_block(&f, GUID_DELETE_DYNAMIC_OBJECTS, "Delete");
+    ASSERT_TRUE(dynamic != 0 && kept != 0 && deleter != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, dynamic, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, dynamic, 0), BLOCK_IN(&f, kept, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, kept, 0), BLOCK_IN(&f, deleter, 0), 1);
+    fixture_input_int(&f, BLOCK_PIN(&f, dynamic, 0), NMO_CID_DATAARRAY);
+    fixture_input_value(&f, BLOCK_PIN(&f, dynamic, 1), "Dynamic", 8u);
+    fixture_input_int(&f, BLOCK_PIN(&f, kept, 0), NMO_CID_DATAARRAY);
+    fixture_input_value(&f, BLOCK_PIN(&f, kept, 1), "Kept", 5u);
+    fixture_commit(&f, NULL);
+    /* Local 0 is the Dynamic setting: off for the second */
+    const nmo_behavior_state_t *state = (const nmo_behavior_state_t *)fixture_state(&f, kept);
+    ASSERT_TRUE(state != NULL && state->local_parameters.count >= 1);
+    const int32_t off = 0;
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(
+                          f.engine, nmo_behavior_ref_array_get_id(&state->local_parameters, 0),
+                          &off, sizeof(off)));
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_TRUE(nmo_engine_object_named(f.engine, "Dynamic", NMO_CID_DATAARRAY) != 0);
+    ASSERT_TRUE(nmo_engine_object_named(f.engine, "Kept", NMO_CID_DATAARRAY) != 0);
+    /* Deleted at the end of the frame Delete Dynamic Objects ran in */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1u, runs(&f, deleter));
+    ASSERT_EQ(0u, nmo_engine_object_named(f.engine, "Dynamic", NMO_CID_DATAARRAY));
+    ASSERT_TRUE(nmo_engine_object_named(f.engine, "Kept", NMO_CID_DATAARRAY) != 0);
+    fixture_end(&f);
+}
+
 TEST(engine_copy, initial_conditions_are_restored)
 {
     save_template_file();
@@ -357,5 +395,6 @@ TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_copy, copies_take_scripts_children_and_the_original_state);
 REGISTER_TEST(engine_copy, object_copy_joins_groups_and_delete_leaves_them);
 REGISTER_TEST(engine_copy, object_delete_takes_what_its_options_delete);
+REGISTER_TEST(engine_copy, delete_dynamic_objects_takes_the_dynamic_ones);
 REGISTER_TEST(engine_copy, initial_conditions_are_restored);
 TEST_MAIN_END()

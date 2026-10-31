@@ -11,6 +11,7 @@
 #define GUID_MOVIE_LOAD NMO_GUID(0x798e26a9, 0x34e4169e)
 #define GUID_MOVIE_PLAYER NMO_GUID(0x778d16d4, 0x1dd60060)
 #define GUID_PLAY_ANIMATION NMO_GUID(0x64221225, 0x769a143f)
+#define GUID_PLAY_GLOBAL_ANIMATION NMO_GUID(0x1c9236e1, 0x42f40996)
 #define GUID_SOUND_LOAD NMO_GUID(0x02bc537c, 0x147c22e0)
 
 static void input_float(engine_fixture_t *f, nmo_object_id_t pin, float value)
@@ -278,10 +279,45 @@ TEST(engine_media, play_animation_progresses_over_its_duration)
     fixture_end(&f);
 }
 
+TEST(engine_media, play_global_animation_loops_over_its_duration)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t animation = fixture_create(&f, NMO_CID_KEYEDANIMATION, "Animation");
+    ASSERT_TRUE(animation != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t play = fixture_block(&f, GUID_PLAY_GLOBAL_ANIMATION, "Play");
+    nmo_object_id_t played = fixture_block(&f, GUID_NOP, "Played");
+    ASSERT_TRUE(play != 0 && played != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, play, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, play, 0), BLOCK_IN(&f, played, 0), 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, play, 0), (int32_t)animation);
+    input_float(&f, BLOCK_PIN(&f, play, 1), 100.0f); /* Duration; Loop by default */
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    /* From 0 in the first frame, 0.4 each 40 ms: past 1 at the fourth frame, then on from 0.2 */
+    for (int frame = 0; frame < 3; frame++) {
+        ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 40.0f));
+    }
+    float progression = 0.0f;
+    read_value(&f, BLOCK_POUT(&f, play, 0), &progression, sizeof(progression));
+    ASSERT_FLOAT_EQ(0.8f, progression, 0.0001f);
+    ASSERT_EQ(0u, runs(&f, played));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 40.0f));
+    ASSERT_EQ(1u, runs(&f, played));
+    read_value(&f, BLOCK_POUT(&f, play, 0), &progression, sizeof(progression));
+    ASSERT_FLOAT_EQ(0.2f, progression, 0.0001f);
+    ASSERT_TRUE(nmo_engine_behavior_is_active(f.engine, play));
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_media, wave_player_ends_after_the_sound_length);
 REGISTER_TEST(engine_media, particle_system_exits_off_once_its_particles_died);
 REGISTER_TEST(engine_media, movie_player_shows_the_movie_frames_over_its_duration);
 REGISTER_TEST(engine_media, play_animation_progresses_over_its_duration);
+REGISTER_TEST(engine_media, play_global_animation_loops_over_its_duration);
 REGISTER_TEST(engine_media, sound_load_gives_the_sound_its_file_length);
 TEST_MAIN_END()

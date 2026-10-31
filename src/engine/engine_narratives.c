@@ -221,11 +221,19 @@ static eng_param_t *block_output(blk_t *b, int pos)
     return eng_node_param(b->engine, node->first_pout, node->pout_count, pos);
 }
 
+/* The Dynamic setting of Object Load, Object Copy and Object Create (local 0, TRUE by default) */
+static bool dynamic_setting(blk_t *b)
+{
+    int32_t dynamic = 1;
+    nmo_engine_block_get_local_value(b, 0, &dynamic, sizeof(dynamic));
+    return dynamic != 0;
+}
+
 /*
  * Object Load (ObjectLoader): Load reads the file into the level, Loaded with
  * its objects (an object array output) and the master object (named, or the
  * last root entity of the filter class), or Failed. Unload destroys what the
- * last Load loaded.
+ * last Load loaded. With Dynamic the objects load as dynamic objects.
  */
 static int bb_object_load(blk_t *b)
 {
@@ -242,6 +250,11 @@ static int bb_object_load(blk_t *b)
         }
         nmo_engine_block_activate_output(b, 0, true);
         int32_t count = nmo_engine_loaded_object_count(engine, file);
+        if (dynamic_setting(b)) {
+            for (int32_t i = 0; i < count; i++) {
+                eng_mark_dynamic(engine, nmo_engine_loaded_object(engine, file, i));
+            }
+        }
         uint32_t *ids = (uint32_t *)calloc(count > 0 ? (size_t)count : 1u, sizeof(uint32_t));
         if (ids == NULL) {
             return NMO_ENGINE_BR_GENERICERROR;
@@ -447,7 +460,8 @@ static int bb_tt_save_ic(blk_t *b)
 
 /*
  * Object Create (ObjectCreator): a new object of the class and name, added
- * to the level, in the Object output; nothing for a level.
+ * to the level, in the Object output (a dynamic object with Dynamic);
+ * nothing for a level.
  */
 static int bb_object_create(blk_t *b)
 {
@@ -459,6 +473,9 @@ static int bb_object_create(blk_t *b)
         return NMO_ENGINE_BR_OK;
     }
     uint32_t id = (uint32_t)eng_create_object(engine, class_id, input_string(b, 1));
+    if (dynamic_setting(b)) {
+        eng_mark_dynamic(engine, id);
+    }
     nmo_engine_block_set_output_value(b, 0, &id, sizeof(id));
     return NMO_ENGINE_BR_OK;
 }
@@ -466,7 +483,8 @@ static int bb_object_create(blk_t *b)
 /*
  * Object Copy (ObjectCopier): copies of the Original inputs (no level), and
  * of what the Dependency Options copy with them, in the outputs in order;
- * the copies active with Awake Object (always before version 2).
+ * the copies active with Awake Object (always before version 2), dynamic
+ * objects with Dynamic.
  */
 static int bb_object_copy(blk_t *b)
 {
@@ -502,7 +520,8 @@ static int bb_object_copy(blk_t *b)
     int32_t awake_setting = 1;
     nmo_engine_block_get_local_value(b, 1, &awake_setting, sizeof(awake_setting));
     bool awake = awake_setting != 0 || nmo_engine_block_version(b) < 0x00020000u;
-    if (n > 0 && eng_copy_objects(engine, originals, n, &deps, awake, copies) == NMO_OK) {
+    if (n > 0 && eng_copy_objects(engine, originals, n, &deps, awake, dynamic_setting(b), copies) ==
+                     NMO_OK) {
         for (int32_t i = 0; i < n; i++) {
             uint32_t copy = (uint32_t)copies[i];
             nmo_engine_block_set_output_value(b, i, &copy, sizeof(copy));
@@ -537,6 +556,19 @@ static int bb_object_delete(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/*
+ * Delete Dynamic Objects (DynamicDeleter): every dynamic object (one Object
+ * Load, Object Copy or Object Create made with Dynamic) destroyed at the end
+ * of the frame (CKContext::DestroyAllDynamicObjects).
+ */
+static int bb_delete_dynamic_objects(blk_t *b)
+{
+    nmo_engine_block_activate_input(b, 0, false);
+    nmo_engine_block_activate_output(b, 0, true);
+    nmo_engine_block_engine(b)->delete_dynamic_objects = true;
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_narratives_blocks[] = {
     {NMO_GUID(0x4c7e7bc3, 0x0b693155), "Activate Script", bb_activate_script, NULL, NULL},
     {NMO_GUID(0x14367c05, 0x635b24f9), "Deactivate Script", bb_deactivate_script, NULL, NULL},
@@ -551,6 +583,8 @@ static const nmo_engine_block_desc_t eng_narratives_blocks[] = {
     {NMO_GUID(0x271538e6, 0x2fae49ac), "Object Create", bb_object_create, NULL, NULL},
     {NMO_GUID(0x3f6b0ac7, 0x47d20f78), "Object Copy", bb_object_copy, NULL, NULL},
     {NMO_GUID(0x74120ded, 0x76524673), "Object Delete", bb_object_delete, NULL, NULL},
+    {NMO_GUID(0x0cba3195, 0x53440e4c), "Delete Dynamic Objects", bb_delete_dynamic_objects, NULL,
+     NULL},
 };
 
 nmo_status_t eng_register_narratives(nmo_engine_t *engine)

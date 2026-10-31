@@ -123,6 +123,7 @@ static int eng_execute_function(nmo_engine_t *engine, int32_t index)
     if (node->fn == NULL) {
         return eng_execute_unknown(engine, index);
     }
+    engine->stats.building_blocks_executed++;
     int result = eng_block_call(engine, index, node->fn);
     node = eng_node(engine, index);
     if ((result & NMO_ENGINE_BR_ACTIVATENEXTFRAME) == 0) {
@@ -144,6 +145,7 @@ static void eng_delay_link(nmo_engine_t *engine, eng_node_t *graph, int32_t link
     }
     if (!link->in_delayed_list && graph->delayed_count < graph->link_count) {
         link->in_delayed_list = true;
+        engine->stats.links_delayed++;
         *eng_index(engine, graph->first_delayed + graph->delayed_count++) = link_index;
         eng_emit(engine, NMO_ENGINE_EVENT_LINK_DELAYED, (int32_t)(graph - engine->nodes.data),
                  link->id, link->initial_delay);
@@ -171,6 +173,7 @@ static void eng_check_ios_activation(nmo_engine_t *engine, int32_t index)
     for (uint32_t i = 0; needed > 0 && i < graph->link_count; i++) {
         int32_t link_index = (int32_t)(graph->first_link + i);
         eng_link_t *link = &engine->links.data[link_index];
+        engine->stats.links_parsed++;
         if (link->source < 0 || !engine->ios.data[link->source].active) {
             continue;
         }
@@ -315,6 +318,7 @@ static int eng_execute(nmo_engine_t *engine, int32_t index)
     eng_node_t *node = eng_node(engine, index);
     node->flags |= CKBEHAVIOR_EXECUTEDLASTFRAME;
     node->executions++;
+    engine->stats.behaviors_executed++;
 
     int result = NMO_ENGINE_BR_OK;
     if (node->is_block) {
@@ -441,6 +445,9 @@ nmo_status_t eng_manager_execute(nmo_engine_t *engine)
     for (size_t k = 0; k < engine->listed.count; k++) {
         int32_t object_index = engine->listed.data[k];
         bool executed = false;
+        if (engine->profiling) {
+            engine->stats.active_objects_executed++; /* CKBeObject::ExecuteBehaviors */
+        }
         /* Not a pointer to the object: a script that loads a file moves the objects */
         for (uint32_t s = 0; s < engine->objects.data[object_index].script_count; s++) {
             const eng_object_t *object = &engine->objects.data[object_index];
