@@ -393,7 +393,9 @@ static void view_set_material(nmo_view_t *view, const nmo_engine_material_t *m, 
     if (lit) {
         glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, m->diffuse);
         glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, m->ambient);
-        glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, m->specular);
+        /* VXRENDERSTATE_SPECULARENABLE only above a power of 0.05 */
+        const float none[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+        glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, m->power > 0.05f ? m->specular : none);
         glMaterialfv(GL_FRONT_AND_BACK, GL_EMISSION, m->emissive);
         float power = m->power < 0.0f ? 0.0f : m->power > 128.0f ? 128.0f : m->power;
         glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, power);
@@ -792,6 +794,8 @@ static void view_begin_3d(const nmo_engine_frame_t *frame, float out_view[16])
     glDisable(GL_COLOR_MATERIAL);
     glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_FALSE);
     glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER, GL_TRUE);
+    /* Direct3D adds the specular color after texturing */
+    glLightModeli(GL_LIGHT_MODEL_COLOR_CONTROL, GL_SEPARATE_SPECULAR_COLOR);
     float ambient[4];
     view_color(frame->ambient_light, ambient);
     glLightModelfv(GL_LIGHT_MODEL_AMBIENT, ambient);
