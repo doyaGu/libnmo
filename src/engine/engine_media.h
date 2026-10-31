@@ -20,12 +20,16 @@ typedef struct eng_sound {
     bool loop;
 } eng_sound_t;
 
+/* An AVI movie's frames, decoded as they are asked for */
+typedef struct eng_movie eng_movie_t;
+
 /* A texture's bitmap slots as CKBitmapData has them: a loaded movie's frames, or its own. */
 typedef struct eng_texture {
     nmo_object_id_t id;
     int32_t slot_count;
     int32_t current_slot;
     bool movie;
+    eng_movie_t *movie_reader; /* Movie Load's movie; NULL when it cannot be decoded */
     ENG_VEC(char *) files; /* the file each slot was loaded from at run time (LoadImage); NULL: the file's */
 } eng_texture_t;
 
@@ -56,6 +60,13 @@ eng_texture_t *eng_texture(nmo_engine_t *engine, nmo_object_id_t id);
  * GetMovieFrameCount, from the main header); -1 when it is none.
  */
 int32_t eng_movie_frame_count(nmo_engine_t *engine, const char *name);
+/* core/movie.c */
+/* The movie file `name` names, read whole; NULL when it is no AVI of MS Video 1 at 16 bits. */
+eng_movie_t *eng_movie_open(nmo_engine_t *engine, const char *name);
+void eng_movie_close(eng_movie_t *movie);
+/* Frame `frame` as RGBA, top row first, owned by the movie until the next call */
+bool eng_movie_frame(eng_movie_t *movie, int32_t frame, const uint8_t **out_rgba,
+                     int32_t *out_width, int32_t *out_height);
 /* CKTexture::LoadImage: slot `slot` shows file `name` from now on; false when it cannot be read. */
 bool eng_texture_load(nmo_engine_t *engine, eng_texture_t *texture, const char *name, int32_t slot);
 void eng_free_textures(nmo_engine_t *engine);

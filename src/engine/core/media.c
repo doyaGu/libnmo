@@ -257,6 +257,7 @@ void eng_free_textures(nmo_engine_t *engine)
             free(texture->files.data[f]);
         }
         free(texture->files.data);
+        eng_movie_close(texture->movie_reader);
     }
     free(engine->media.textures.data);
 }

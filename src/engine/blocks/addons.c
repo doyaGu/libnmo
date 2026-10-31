@@ -32,6 +32,9 @@ static int bb_movie_load(blk_t *b)
     texture->movie = true;
     texture->slot_count = frames;
     texture->current_slot = 0;
+    eng_movie_close(texture->movie_reader);
+    texture->movie_reader = eng_movie_open(b->engine, name);
+    eng_texture_changed(b->engine, texture->id);
     if (nmo_engine_block_output_parameter_count(b) > 0) {
         nmo_object_id_t id = texture->id;
         nmo_engine_block_set_output_value(b, 0, &id, sizeof(id));

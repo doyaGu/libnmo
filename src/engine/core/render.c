@@ -1147,6 +1147,19 @@ bool nmo_engine_texture_image(nmo_engine_t *engine, nmo_object_id_t texture,
         image->width = image->height = 0;
         image->slot = slot;
         image->version = ++engine->render.image_version;
+        const uint8_t *frame = NULL;
+        int32_t fw = 0, fh = 0;
+        if (slots->movie && slots->movie_reader != NULL &&
+            eng_movie_frame(slots->movie_reader, slot, &frame, &fw, &fh)) {
+            image->rgba = eng_rgba_copy(frame, fw, fh, 4);
+            image->width = image->rgba != NULL ? fw : 0;
+            image->height = image->rgba != NULL ? fh : 0;
+            out->width = image->width;
+            out->height = image->height;
+            out->rgba = image->rgba;
+            out->version = image->version;
+            return image->rgba != NULL;
+        }
         nmo_arena_t *arena = nmo_arena_create(NULL, 1u << 16);
         int w = 0, h = 0, ch = 0;
         uint8_t *pixels = arena != NULL ? eng_decode_slot(engine, state, slots, slot, arena, &w, &h, &ch)

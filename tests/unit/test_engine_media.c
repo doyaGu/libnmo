@@ -1,5 +1,6 @@
 #include "engine_fixture.h"
 
+#include "engine/nmo_engine_render.h"
 #include "object/builtin/nmo_sound_schemas.h"
 
 #include <stdio.h>
@@ -175,6 +176,120 @@ TEST(engine_media, movie_player_shows_the_movie_frames_over_its_duration)
     fixture_end(&f);
 }
 
+static void put_u32(uint8_t *at, uint32_t value)
+{
+    memcpy(at, &value, 4);
+}
+
+/* A chunk header (a list's when `list` is set) at `at`; its size is set later */
+static uint8_t *put_chunk(uint8_t *at, const char *id, const char *list)
+{
+    memcpy(at, id, 4);
+    if (list != NULL) {
+        memcpy(at + 8, list, 4);
+        return at + 12;
+    }
+    return at + 8;
+}
+
+/*
+ * An AVI of two 8x4 MS Video 1 frames. The first: the left block solid
+ * red, the right one green in its two bottom rows and blue above. The
+ * second skips the left block and fills the right one white.
+ */
+static void write_cram_movie(const char *name)
+{
+    static const uint8_t frame0[] = {0x00, 0xFC,             /* solid 0xFC00: red */
+                                     0xFF, 0x00,             /* flags 0x00FF: two colors */
+                                     0xE0, 0x03, 0x1F, 0x00, /* green, blue */
+                                     0x00, 0x00};
+    static const uint8_t frame1[] = {0x01, 0x84,  /* skip one block */
+                                     0xFF, 0xFF}; /* solid white */
+    uint8_t avi[12 + 12 + 64 + 12 + 64 + 48 + 12 + 8 + sizeof(frame0) + 8 + sizeof(frame1)] = {0};
+    uint8_t *p = put_chunk(avi, "RIFF", "AVI ");
+    uint8_t *hdrl = p;
+    p = put_chunk(p, "LIST", "hdrl");
+    put_u32(p + 4, 56);
+    put_u32(p + 8, 40000);         /* microseconds a frame */
+    put_u32(p + 24, 2);            /* frames */
+    p = put_chunk(p, "avih", NULL) + 56;
+    uint8_t *strl = p;
+    p = put_chunk(p, "LIST", "strl");
+    put_u32(p + 4, 56);
+    memcpy(p + 8, "vidsMSVC", 8);
+    p = put_chunk(p, "strh", NULL) + 56;
+    put_u32(p + 4, 40);
+    put_u32(p + 8, 40);            /* BITMAPINFOHEADER: its size, */
+    put_u32(p + 12, 8);            /* width, */
+    put_u32(p + 16, 4);            /* height, */
+    put_u32(p + 20, 1u | 16u << 16); /* planes and bits, */
+    memcpy(p + 24, "CRAM", 4);     /* compression */
+    p = put_chunk(p, "strf", NULL) + 40;
+    put_u32(strl + 4, (uint32_t)(p - strl) - 8);
+    put_u32(hdrl + 4, (uint32_t)(p - hdrl) - 8);
+    put_u32(p + 4, (uint32_t)(avi + sizeof(avi) - p) - 8);
+    p = put_chunk(p, "LIST", "movi");
+    put_u32(p + 4, sizeof(frame0));
+    memcpy(put_chunk(p, "00dc", NULL), frame0, sizeof(frame0));
+    p += 8 + sizeof(frame0);
+    put_u32(p + 4, sizeof(frame1));
+    memcpy(put_chunk(p, "00dc", NULL), frame1, sizeof(frame1));
+    put_u32(avi + 4, (uint32_t)sizeof(avi) - 8);
+    char path[512];
+    snprintf(path, sizeof(path), "%s/%s", NMO_TEST_SCRATCH_DIR, name);
+    FILE *out = fopen(path, "wb");
+    ASSERT_NOT_NULL(out);
+    ASSERT_EQ(sizeof(avi), fwrite(avi, 1, sizeof(avi), out));
+    fclose(out);
+}
+
+static uint32_t image_pixel(const nmo_engine_image_t *image, int x, int y)
+{
+    const uint8_t *p = &image->rgba[((size_t)y * (size_t)image->width + (size_t)x) * 4u];
+    return (uint32_t)p[0] << 16 | (uint32_t)p[1] << 8 | p[2];
+}
+
+TEST(engine_media, movie_texture_shows_the_decoded_frame_of_its_slot)
+{
+    write_cram_movie("cram.avi");
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t texture = fixture_create(&f, NMO_CID_TEXTURE, "Screen");
+    ASSERT_TRUE(texture != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t load = fixture_block(&f, GUID_MOVIE_LOAD, "Load");
+    nmo_object_id_t player = fixture_block(&f, GUID_MOVIE_PLAYER, "Player");
+    ASSERT_TRUE(load != 0 && player != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, load, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, load, 0), BLOCK_IN(&f, player, 0), 0);
+    fixture_input_int(&f, fixture_target(&f, load), (int32_t)texture);
+    fixture_input_int(&f, fixture_target(&f, player), (int32_t)texture);
+    fixture_input_value(&f, BLOCK_PIN(&f, load, 0), "cram.avi", sizeof("cram.avi"));
+    input_float(&f, BLOCK_PIN(&f, player, 0), 200.0f); /* Duration */
+    fixture_input_int(&f, BLOCK_PIN(&f, player, 1), 0);
+    fixture_commit(&f, NULL);
+    nmo_engine_set_file_resolver(f.engine, resolve_scratch, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 50.0f));
+    ASSERT_EQ(0, nmo_engine_texture_current_slot(f.engine, texture));
+    nmo_engine_image_t image;
+    ASSERT_TRUE(nmo_engine_texture_image(f.engine, texture, &image));
+    ASSERT_EQ(8, image.width);
+    ASSERT_EQ(4, image.height);
+    ASSERT_EQ(0xFF0000u, image_pixel(&image, 0, 0));
+    ASSERT_EQ(0xFF0000u, image_pixel(&image, 3, 3));
+    ASSERT_EQ(0x0000FFu, image_pixel(&image, 4, 0)); /* the right block's top rows */
+    ASSERT_EQ(0x00FF00u, image_pixel(&image, 7, 3)); /* and its bottom ones */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 100.0f));
+    ASSERT_EQ(1, nmo_engine_texture_current_slot(f.engine, texture));
+    ASSERT_TRUE(nmo_engine_texture_image(f.engine, texture, &image));
+    ASSERT_EQ(0xFF0000u, image_pixel(&image, 0, 0)); /* kept from the first frame */
+    ASSERT_EQ(0xFFFFFFu, image_pixel(&image, 4, 0));
+    fixture_end(&f);
+}
+
 /* A WAV file of `data_size` bytes at `bytes_per_second`, an odd-sized chunk before its data */
 static void write_wave(const char *name, uint32_t bytes_per_second, uint32_t data_size)
 {
@@ -318,6 +433,7 @@ TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_media, wave_player_ends_after_the_sound_length);
 REGISTER_TEST(engine_media, particle_system_exits_off_once_its_particles_died);
 REGISTER_TEST(engine_media, movie_player_shows_the_movie_frames_over_its_duration);
+REGISTER_TEST(engine_media, movie_texture_shows_the_decoded_frame_of_its_slot);
 REGISTER_TEST(engine_media, play_animation_progresses_over_its_duration);
 REGISTER_TEST(engine_media, play_global_animation_loops_over_its_duration);
 REGISTER_TEST(engine_media, sound_load_gives_the_sound_its_file_length);
