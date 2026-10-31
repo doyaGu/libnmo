@@ -7,6 +7,8 @@
 
 #define GUID_PHYSICALIZE NMO_GUID(0x7522370e, 0x37ec15ec)
 #define GUID_IMPULSE NMO_GUID(0x0c7e39bb, 0x16db20d5)
+#define GUID_BUOYANCY NMO_GUID(0x2c015f2b, 0x5b147512)
+#define GUID_RESET NMO_GUID(0x5714345e, 0x792262ae)
 
 /* A 3D object at (x, y, z) whose mesh is a box of half sizes `hx, hy, hz` */
 static nmo_object_id_t box(engine_fixture_t *f, const char *name, float x, float y, float z,
@@ -109,6 +111,67 @@ TEST(physics_ivp, a_crate_falls_onto_the_floor_and_is_pushed)
     fixture_end(&f);
 }
 
+TEST(physics_ivp, a_light_crate_floats_in_a_buoyancy_pool)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    /* The pool's water below y = 0; the surface's points ordered so its normal points down */
+    nmo_object_id_t pool = box(&f, "Pool", 0.0f, -5.0f, 0.0f, 10.0f, 5.0f, 10.0f);
+    nmo_object_id_t crate = box(&f, "Crate", 0.0f, 3.0f, 0.0f, 0.5f, 0.5f, 0.5f);
+    nmo_object_id_t p0 = box(&f, "P0", 0.0f, 0.0f, 0.0f, 0.1f, 0.1f, 0.1f);
+    nmo_object_id_t p1 = box(&f, "P1", 0.0f, 0.0f, 1.0f, 0.1f, 0.1f, 0.1f);
+    nmo_object_id_t p2 = box(&f, "P2", 1.0f, 0.0f, 0.0f, 0.1f, 0.1f, 0.1f);
+    ASSERT_TRUE(pool != 0 && crate != 0 && p0 != 0 && p1 != 0 && p2 != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    ASSERT_TRUE(physicalize(&f, pool, true, "Pool") != 0);
+    nmo_object_id_t crate_block = physicalize(&f, crate, false, "Crate");
+    ASSERT_TRUE(crate_block != 0);
+    const float mass = 100.0f; /* a tenth of the water it can push away */
+    fixture_input_value(&f, BLOCK_PIN(&f, crate_block, 3), &mass, sizeof(mass));
+    nmo_object_id_t buoyancy = fixture_block(&f, GUID_BUOYANCY, "Buoyancy");
+    ASSERT_TRUE(buoyancy != 0 && fixture_target(&f, buoyancy) != 0);
+    fixture_input_int(&f, fixture_target(&f, buoyancy), (int32_t)pool);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, buoyancy, 0), 0);
+    const nmo_object_id_t points[5] = {p0, p1, p2, p0, p2};
+    for (size_t i = 0; i < 5; i++) {
+        fixture_input_int(&f, BLOCK_PIN(&f, buoyancy, i), (int32_t)points[i]);
+    }
+    const float still = 0.0f;
+    fixture_input_value(&f, BLOCK_PIN(&f, buoyancy, 5), &still, sizeof(still));
+    /* Frame 600: the crate leaves the physics while in the water; frame 610: Physics Reset with
+       the pool's buoyancy in place */
+    nmo_object_id_t unphysicalize = fixture_block(&f, GUID_PHYSICALIZE, "Unphysicalize");
+    nmo_object_id_t reset = fixture_block(&f, GUID_RESET, "Reset");
+    ASSERT_TRUE(unphysicalize != 0 && fixture_target(&f, unphysicalize) != 0 && reset != 0);
+    fixture_input_int(&f, fixture_target(&f, unphysicalize), (int32_t)crate);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, unphysicalize, 1), 600);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, reset, 0), 610);
+    fixture_commit(&f, NULL);
+    nmo_physics_ivp_t *physics = NULL;
+    ASSERT_EQ(NMO_OK, nmo_physics_ivp_attach(f.engine, &physics));
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    float lowest = 3.0f;
+    for (int frame = 0; frame < 600; frame++) {
+        ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 1000.0f / 60.0f));
+        float y = position(&f, crate, 1);
+        lowest = y < lowest ? y : lowest;
+    }
+    /* It went into the water (the pool is a phantom), then came up: about a tenth under */
+    ASSERT_TRUE(lowest < 0.4f);
+    ASSERT_FLOAT_EQ(0.4f, position(&f, crate, 1), 0.15f);
+    ASSERT_FLOAT_EQ(-5.0f, position(&f, pool, 1), 0.0001f);
+    for (int frame = 0; frame < 20; frame++) {
+        ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 1000.0f / 60.0f));
+    }
+    ASSERT_FALSE(nmo_engine_physics_object(f.engine, crate, NULL));
+    ASSERT_EQ(0, nmo_engine_physics_object_count(f.engine));
+    nmo_physics_ivp_detach(physics);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(physics_ivp, a_crate_falls_onto_the_floor_and_is_pushed);
+REGISTER_TEST(physics_ivp, a_light_crate_floats_in_a_buoyancy_pool);
 TEST_MAIN_END()

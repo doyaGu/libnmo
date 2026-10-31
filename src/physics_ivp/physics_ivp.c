@@ -13,7 +13,8 @@
  * (set_constraint_ws, limited axes), springs IVP springs, a constant force
  * a controller pushing the core each PSI. After each step the moving
  * objects' poses are written back to their entities, without scale. A
- * listened object reports its collisions and friction contacts.
+ * listened object reports its collisions and friction contacts. A buoyancy
+ * makes its object a phantom and floats the cores in it in a liquid.
  */
 
 #include "engine/nmo_physics_ivp.h"
@@ -25,15 +26,19 @@
 #include <ivp/controllers/ivp_constraint.h>
 #include <ivp/controllers/ivp_constraint_types.h>
 #include <ivp/controllers/ivp_controller.h>
+#include <ivp/controllers/ivp_controller_buoyancy.h>
+#include <ivp/controllers/ivp_liquid_surface.h>
 #include <ivp/dynamics/ivp_core.h>
 #include <ivp/dynamics/ivp_environment.h>
 #include <ivp/dynamics/ivp_object.h>
+#include <ivp/dynamics/ivp_phantom.h>
 #include <ivp/events/ivp_listener_collision.h>
 #include <ivp/geometry/ivp_compact_surface.h>
 #include <ivp/geometry/ivp_surman.h>
 #include <ivp/math/ivp_quat.h>
 #include <ivp/math/ivp_transform.h>
 
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -53,6 +58,12 @@ typedef struct ivp_shape {
     ivp_compact_surface_t *surface;
     ivp_surman_polygon_t surman;
 } ivp_shape_t;
+
+/* A buoyancy's liquid surface, and its attacher until that goes */
+typedef struct ivp_liquid {
+    ivp_liquid_surface_simple_t surface;
+    ivp_buoyancy_attacher_t *attacher;
+} ivp_liquid_t;
 
 /* A constraint, spring or force: its IVP state and controller */
 typedef struct ivp_joint {
@@ -77,6 +88,9 @@ struct nmo_physics_ivp {
     size_t body_count;
     ivp_joint_t **joints;
     size_t joint_count;
+    /* CKIpionManager::m_LiquidSurfaces: the liquids' surfaces, which their buoyancy reads */
+    ivp_liquid_t **liquids;
+    size_t liquid_count;
 };
 
 static bool push_pointer(void ***items, size_t *count, void *item)
@@ -563,6 +577,122 @@ static double now(void *user_data)
     return p->env != NULL ? (double)ivp_environment_get_time(p->env) : 0.0;
 }
 
+/* An attacher gone with its phantom's set (the phantom's object deleted) */
+static void attacher_deleted(void *ctx, ivp_buoyancy_attacher_t *attacher)
+{
+    (void)attacher;
+    ((ivp_liquid_t *)ctx)->attacher = NULL;
+}
+
+/*
+ * PhysicsBuoyancyCall::Call: the object a phantom keeping the cores in it,
+ * the plane through the surface points as IVP_U_Float_Hesse makes it
+ * (normal (p2 - p0) x (p1 - p0), normalized; the liquid on its positive
+ * side), and a buoyancy attached to those cores with the block's factors
+ * and IVP_Template_Buoyancy's other values as the DLL sets them.
+ */
+static nmo_status_t add_buoyancy(void *user_data, void *object, const nmo_engine_physics_buoyancy_t *b)
+{
+    nmo_physics_ivp_t *p = (nmo_physics_ivp_t *)user_data;
+    ivp_body_t *body = (ivp_body_t *)object;
+    if (p->env == NULL || body == NULL || body->object == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    ivp_template_phantom_t phantom_template;
+    ivp_template_phantom_init(&phantom_template);
+    phantom_template.manage_intruding_cores = true;
+    ivp_controller_phantom_t *phantom = ivp_object_get_controller_phantom(body->object);
+    if (phantom == NULL) {
+        phantom = ivp_object_convert_to_phantom(body->object, &phantom_template);
+    }
+    if (phantom == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    /* IVP_U_Float_Hesse::calc_hesse and normize, in its float and double steps */
+    const float *p0 = b->surface[0], *p1 = b->surface[1], *p2 = b->surface[2];
+    double a[3], e[3];
+    for (int k = 0; k < 3; k++) {
+        a[k] = (double)p1[k] - p0[k];
+        e[k] = (double)p2[k] - p0[k];
+    }
+    float n[3] = {(float)(e[1] * a[2] - a[1] * e[2]), (float)(e[2] * a[0] - a[2] * e[0]),
+                  (float)(e[0] * a[1] - a[0] * e[1])};
+    float hesse = (float)-((double)n[0] * p0[0] + (double)n[1] * p0[1] + (double)n[2] * p0[2]);
+    double length = sqrt((double)n[0] * n[0] + (double)n[1] * n[1] + (double)n[2] * n[2]);
+    if (length < 1e-12) {
+        n[0] = n[1] = n[2] = 0.0f;
+        hesse = 0.0f;
+    } else {
+        double inv = 1.0 / length;
+        for (int k = 0; k < 3; k++) {
+            n[k] = (float)(n[k] * inv);
+        }
+        hesse = (float)(hesse * inv);
+    }
+    ivp_liquid_t *liquid = (ivp_liquid_t *)calloc(1, sizeof(*liquid));
+    ivp_buoyancy_state_t *t = (ivp_buoyancy_state_t *)calloc(1, sizeof(*t));
+    if (liquid == NULL || t == NULL ||
+        !push_pointer((void ***)&p->liquids, &p->liquid_count, liquid)) {
+        free(liquid);
+        free(t);
+        return NMO_ERR_NOMEM;
+    }
+    /* libivp's plane: the normal out of the liquid, normal . x = height on it */
+    ivp_vec3r_t out_normal = ivp_vec3r(-n[0], -n[1], -n[2]);
+    ivp_liquid_surface_simple_init_plane(&liquid->surface, &out_normal, hesse, b->density);
+    liquid->surface.flow_velocity = vec(b->current);
+    ivp_buoyancy_init_plane(t, &out_normal, hesse, b->density);
+    ivp_buoyancy_set_liquid_surface(t, &liquid->surface.base);
+    t->simulate_wing_behavior = false;
+    t->use_interpolation = false;
+    t->linear_drag = b->damp_factor;
+    t->fluid_density = b->density;
+    t->friction_damp_factor = b->friction_factor;
+    t->buoyancy_eps = 1.0e-10;
+    t->angular_drag = 0.01f;
+    t->max_interpolation_tries = 10;
+    t->max_tries_nr_of_vectors_involved = 15;
+    t->use_stochastic_insertion = true;
+    t->insert_extrapol_only = true;
+    t->mi_weight_current_speed = 1.0;
+    t->mi_weight_surface = 1.0;
+    t->mi_weight_rot_speed = 1.0;
+    t->max_res = 0.01f;
+    t->nr_future_psi_for_extrapolation = 1;
+    t->viscosity_factor = b->viscosity;
+    t->torque_factor = b->torque_factor;
+    t->viscosity_input_factor = b->suction_factor;
+    liquid->attacher =
+        ivp_buoyancy_attacher_create(p->env, t, ivp_controller_phantom_get_intruding_cores(phantom));
+    free(t);
+    if (liquid->attacher == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    ivp_buoyancy_attacher_set_deleted_listener(liquid->attacher, attacher_deleted, liquid);
+    return NMO_OK;
+}
+
+/* The attachers detached before their environment goes: on its deletion an attacher would take
+   the cores out of its phantom's set, which the phantom then removes them from again */
+static void detach_liquids(nmo_physics_ivp_t *p)
+{
+    for (size_t i = 0; i < p->liquid_count; i++) {
+        if (p->liquids[i]->attacher != NULL) {
+            ivp_buoyancy_attacher_destroy(p->liquids[i]->attacher);
+            p->liquids[i]->attacher = NULL;
+        }
+    }
+}
+
+/* The liquids' surfaces freed, once no buoyancy reads them */
+static void drop_liquids(nmo_physics_ivp_t *p)
+{
+    for (size_t i = 0; i < p->liquid_count; i++) {
+        free(p->liquids[i]);
+    }
+    p->liquid_count = 0;
+}
+
 /* The environment's objects and controllers gone (their handles stay, inert) */
 static void drop_environment(nmo_physics_ivp_t *p)
 {
@@ -573,10 +703,12 @@ static void drop_environment(nmo_physics_ivp_t *p)
         p->bodies[i]->object = NULL;
         p->bodies[i]->listening = false;
     }
+    detach_liquids(p);
     if (p->env != NULL) {
         ivp_environment_destroy(p->env);
         p->env = NULL;
     }
+    drop_liquids(p);
 }
 
 /* Set Physics Globals' Clean Physics World: DeleteEnvironment, CreateEnvironment */
@@ -654,6 +786,7 @@ nmo_status_t nmo_physics_ivp_attach(nmo_engine_t *engine, nmo_physics_ivp_t **ou
         .listen = listen_object,
         .time = now,
         .delete_surfaces = delete_surfaces,
+        .add_buoyancy = add_buoyancy,
     };
     nmo_engine_set_physics_provider(engine, &provider);
     *out_physics = p;
@@ -677,5 +810,6 @@ void nmo_physics_ivp_detach(nmo_physics_ivp_t *p)
     free(p->bodies);
     free(p->joints);
     free(p->shapes);
+    free(p->liquids);
     free(p);
 }

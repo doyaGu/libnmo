@@ -719,9 +719,10 @@ NMO_API int32_t nmo_engine_texture_current_slot(const nmo_engine_t *engine,
  *
  * The physics blocks (physics_RT: Physicalize, Set Physics Hinge, Slider,
  * Spring, Ball Joint and Globals, SetPhysicsForce, Physics Impulse, Physics
- * WakeUp, PhysicsCollDetection, PhysicsContinuousContact) keep what
- * CKIpionManager keeps: the physical objects with their parameters, the
- * constraints between them, the gravity and the time factor. The engine
+ * WakeUp, PhysicsCollDetection, PhysicsContinuousContact, PhysicsBuoyancy,
+ * Physics Reset) keep what CKIpionManager keeps: the physical objects with
+ * their parameters, the constraints between them, the gravity and the time
+ * factor. The engine
  * does not simulate: a host's provider gets these and moves the entities
  * (nmo_engine_set_entity_world_matrix()) each frame; without one, nothing
  * moves. Positions and directions are in world space.
@@ -777,6 +778,24 @@ typedef struct nmo_engine_physics_constraint {
     float length, constant, damping, global_damping; /* spring */
 } nmo_engine_physics_constraint_t;
 
+/*
+ * PhysicsBuoyancy: the object becomes a phantom (no collisions, it only
+ * notes the objects in it) whose intruding objects float in a liquid: the
+ * plane through the three surface points (IVP_U_Float_Hesse::calc_hesse,
+ * normalized), with the current flowing at `current`.
+ */
+typedef struct nmo_engine_physics_buoyancy {
+    nmo_object_id_t object;
+    float surface[3][3];      /* three points of the liquid's surface, world space */
+    float current[3];         /* the current's velocity (m/s), world space */
+    float density;            /* medium density, kg/m^3 */
+    float damp_factor;        /* pressure damping */
+    float friction_factor;
+    float viscosity;
+    float torque_factor;      /* "Airplane like factor" */
+    float suction_factor;     /* the viscosity's input factor */
+} nmo_engine_physics_buoyancy_t;
+
 typedef struct nmo_engine_physics_provider {
     void *user_data;
     /* Each may be NULL. A handle is the provider's; the engine passes it back. */
@@ -791,7 +810,8 @@ typedef struct nmo_engine_physics_provider {
     void (*push)(void *user_data, void *object, const float position[3], const float impulse[3]);
     void (*wake_up)(void *user_data, void *object);
     void (*set_gravity)(void *user_data, const float gravity[3]);
-    /* Set Physics Globals' Clean Physics World: the environment made again */
+    /* Set Physics Globals' Clean Physics World and Physics Reset: the environment made
+     * again (Physics Reset then destroys every object and constraint handle) */
     void (*reset)(void *user_data);
     /* A step of `seconds` (the frame time smoothed, times the time factor) */
     void (*simulate)(void *user_data, nmo_engine_t *engine, float seconds);
@@ -803,6 +823,9 @@ typedef struct nmo_engine_physics_provider {
     /* DeleteCollisionSurfaces: drop the shapes kept by collision surface name (nothing is
      * physical then) */
     void (*delete_surfaces)(void *user_data);
+    /* PhysicsBuoyancy: the object a phantom, the liquid in it */
+    nmo_status_t (*add_buoyancy)(void *user_data, void *object,
+                                 const nmo_engine_physics_buoyancy_t *buoyancy);
 } nmo_engine_physics_provider_t;
 
 /* A collision of a listened object (IVP_Event_Collision before its impact) */

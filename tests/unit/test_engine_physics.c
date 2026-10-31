@@ -19,6 +19,8 @@
 #define GUID_CONTINUOUS_CONTACT NMO_GUID(0x199e4cf1, 0x545a78fe)
 #define GUID_DELETE_SURFACES NMO_GUID(0x53bf75aa, 0x770c7021)
 #define GUID_PROFILER_VALUES NMO_GUID(0x1c8e61d1, 0x32723c6f)
+#define GUID_BUOYANCY NMO_GUID(0x2c015f2b, 0x5b147512)
+#define GUID_RESET NMO_GUID(0x5714345e, 0x792262ae)
 
 /* An entity saved at `x, y, z` with unit axes */
 static nmo_object_id_t place(engine_fixture_t *f, const char *name, float x, float y, float z)
@@ -72,6 +74,9 @@ typedef struct recorder {
     int step_count;
     nmo_object_id_t mover; /* moved 1 along X each step */
     int handles[16];
+    int buoyancies, resets;
+    void *buoyant;
+    nmo_engine_physics_buoyancy_t last_buoyancy;
 } recorder_t;
 
 static nmo_status_t rec_create_object(void *user_data, const nmo_engine_physics_object_t *object,
@@ -125,6 +130,21 @@ static void rec_wake_up(void *user_data, void *object)
 static void rec_delete_surfaces(void *user_data)
 {
     ((recorder_t *)user_data)->surfaces_deleted++;
+}
+
+static nmo_status_t rec_add_buoyancy(void *user_data, void *object,
+                                     const nmo_engine_physics_buoyancy_t *buoyancy)
+{
+    recorder_t *r = (recorder_t *)user_data;
+    r->buoyancies++;
+    r->buoyant = object;
+    r->last_buoyancy = *buoyancy;
+    return NMO_OK;
+}
+
+static void rec_reset(void *user_data)
+{
+    ((recorder_t *)user_data)->resets++;
 }
 
 static void rec_set_gravity(void *user_data, const float gravity[3])
@@ -570,10 +590,108 @@ TEST(engine_physics, collision_surfaces_go_once_nothing_is_physical)
     fixture_end(&f);
 }
 
+TEST(engine_physics, buoyancy_waits_for_its_object_and_reset_forgets_it)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t a = place(&f, "A", 0.0f, 5.0f, 0.0f);
+    nmo_object_id_t water = place(&f, "Water", 0.0f, 0.0f, 0.0f);
+    nmo_object_id_t p1 = place(&f, "P1", 0.0f, 1.0f, 0.0f);
+    nmo_object_id_t p2 = place(&f, "P2", 1.0f, 1.0f, 0.0f);
+    nmo_object_id_t p3 = place(&f, "P3", 0.0f, 1.0f, 1.0f);
+    nmo_object_id_t start = place(&f, "Start", 0.0f, 0.0f, 0.0f);
+    nmo_object_id_t end = place(&f, "End", 2.0f, 0.0f, 0.0f);
+    ASSERT_TRUE(a != 0 && water != 0 && p1 != 0 && p2 != 0 && p3 != 0 && start != 0 && end != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    /* Frame 0: globals, A physical with a force, the water's buoyancy (it is not physical yet)
+       and one without a current end; frame 1: the water physical; frame 2: Physics Reset */
+    nmo_object_id_t globals = fixture_block(&f, GUID_GLOBALS, "Globals");
+    ASSERT_TRUE(globals != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, globals, 0), 0);
+    input_vector(&f, BLOCK_PIN(&f, globals, 0), 0.0f, -20.0f, 0.0f);
+    input_float(&f, BLOCK_PIN(&f, globals, 1), 2.0f);
+    nmo_object_id_t physicalize_a = block_of(&f, GUID_PHYSICALIZE, "Physicalize A", a, 0, 0);
+    nmo_object_id_t force = block_of(&f, GUID_FORCE, "Force", a, 0, 0);
+    nmo_object_id_t buoyancy = block_of(&f, GUID_BUOYANCY, "Buoyancy", water, 0, 0);
+    nmo_object_id_t partial = block_of(&f, GUID_BUOYANCY, "Partial", a, 0, 0);
+    nmo_object_id_t physicalize_w = block_of(&f, GUID_PHYSICALIZE, "Physicalize Water", water, 0, 1);
+    nmo_object_id_t reset = fixture_block(&f, GUID_RESET, "Reset");
+    nmo_object_id_t done = fixture_block(&f, GUID_NOP, "Done");
+    nmo_object_id_t floated = fixture_block(&f, GUID_NOP, "Floated");
+    ASSERT_TRUE(physicalize_a != 0 && force != 0 && buoyancy != 0 && partial != 0 &&
+                physicalize_w != 0 && reset != 0 && done != 0 && floated != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, reset, 0), 2);
+    fixture_link(&f, BLOCK_OUT(&f, reset, 0), BLOCK_IN(&f, done, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, buoyancy, 0), BLOCK_IN(&f, floated, 0), 0);
+    input_vector(&f, BLOCK_PIN(&f, force, 2), 0.0f, 3.0f, 0.0f);
+    const nmo_object_id_t points[5] = {p1, p2, p3, start, end};
+    for (size_t i = 0; i < 5; i++) {
+        fixture_input_int(&f, BLOCK_PIN(&f, buoyancy, i), (int32_t)points[i]);
+        if (i < 4) {
+            fixture_input_int(&f, BLOCK_PIN(&f, partial, i), (int32_t)points[i]);
+        }
+    }
+    input_float(&f, BLOCK_PIN(&f, buoyancy, 5), 3.0f);  /* current strength */
+    input_float(&f, BLOCK_PIN(&f, buoyancy, 6), 500.0f); /* density */
+    input_float(&f, BLOCK_PIN(&f, buoyancy, 10), 0.5f); /* airplane like factor */
+    fixture_commit(&f, NULL);
+    recorder_t r;
+    memset(&r, 0, sizeof(r));
+    nmo_engine_physics_provider_t provider = {
+        .user_data = &r,
+        .create_object = rec_create_object,
+        .destroy_object = rec_destroy_object,
+        .create_constraint = rec_create_constraint,
+        .destroy_constraint = rec_destroy_constraint,
+        .set_gravity = rec_set_gravity,
+        .reset = rec_reset,
+        .simulate = rec_simulate,
+        .add_buoyancy = rec_add_buoyancy,
+    };
+    nmo_engine_set_physics_provider(f.engine, &provider);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    /* Out at once; the call waits for the water, the partial one is over */
+    ASSERT_EQ(1u, runs(&f, floated));
+    ASSERT_EQ(0, r.buoyancies);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1, r.buoyancies);
+    ASSERT_EQ(2, r.objects);
+    ASSERT_TRUE(r.buoyant == &r.handles[1]);
+    ASSERT_EQ(water, r.last_buoyancy.object);
+    ASSERT_FLOAT_EQ(1.0f, r.last_buoyancy.surface[1][0], 0.0001f);
+    ASSERT_FLOAT_EQ(1.0f, r.last_buoyancy.surface[2][2], 0.0001f);
+    ASSERT_FLOAT_EQ(3.0f, r.last_buoyancy.current[0], 0.0001f); /* toward End, at its strength */
+    ASSERT_FLOAT_EQ(500.0f, r.last_buoyancy.density, 0.0001f);
+    ASSERT_FLOAT_EQ(1.0f, r.last_buoyancy.damp_factor, 0.0001f);
+    ASSERT_FLOAT_EQ(0.05f, r.last_buoyancy.friction_factor, 0.0001f);
+    ASSERT_FLOAT_EQ(0.5f, r.last_buoyancy.torque_factor, 0.0001f);
+    ASSERT_FLOAT_EQ(0.1f, r.last_buoyancy.suction_factor, 0.0001f);
+    ASSERT_FLOAT_EQ(0.0175f, r.steps[1], 0.00001f); /* (20 + 3 * 5) / 4 * 0.002 */
+
+    /* The reset: nothing physical, the force gone, gravity and time factor back */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1u, runs(&f, done));
+    ASSERT_EQ(1, r.resets);
+    ASSERT_EQ(0, nmo_engine_physics_object_count(f.engine));
+    ASSERT_FALSE(nmo_engine_physics_object(f.engine, a, NULL));
+    ASSERT_EQ(2, r.destroyed);
+    ASSERT_EQ(1, r.constraints_destroyed);
+    float gravity[3];
+    nmo_engine_physics_gravity(f.engine, gravity);
+    ASSERT_FLOAT_EQ(-9.81f, gravity[1], 0.0001f);
+    ASSERT_FLOAT_EQ(0.0115625f, r.steps[2], 0.00001f); /* (20 + 3 * 8.75) / 4 * 0.001 */
+    ASSERT_EQ(1, r.buoyancies);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_physics, blocks_feed_the_provider);
 REGISTER_TEST(engine_physics, polygon_shapes_need_a_mesh_or_their_name);
 REGISTER_TEST(engine_physics, coll_detection_reports_collisions);
 REGISTER_TEST(engine_physics, continuous_contact_waits_its_delays);
 REGISTER_TEST(engine_physics, collision_surfaces_go_once_nothing_is_physical);
+REGISTER_TEST(engine_physics, buoyancy_waits_for_its_object_and_reset_forgets_it);
 TEST_MAIN_END()

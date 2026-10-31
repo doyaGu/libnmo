@@ -232,6 +232,8 @@ bool nmo_engine_mesh_face(const nmo_engine_t *engine, nmo_object_id_t mesh, int3
 #define CALL_COLL_DETECTION (-2)
 #define CALL_CONTINUOUS_CONTACT (-3)
 #define CALL_DELETE_SURFACES (-4)
+#define CALL_BUOYANCY (-5)
+#define CALL_RESET (-6)
 
 /* The constraint a constraint block made (its IVP_Handle local), +1; 0 for none */
 static int32_t *block_constraint(blk_t *b)
@@ -742,9 +744,107 @@ static void physics_forget_listeners(nmo_engine_t *engine, nmo_object_id_t entit
     }
 }
 
+/*
+ * PhysicsBuoyancyCall::Call: once the target is physical, it becomes a
+ * phantom with the liquid of the plane through the three surface points in
+ * it, the current flowing from the start point toward the end point at its
+ * strength. A missing entity input ends the call with nothing done.
+ */
+static bool call_buoyancy(nmo_engine_t *engine, int32_t node)
+{
+    blk_t block = {engine, node};
+    blk_t *b = &block;
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (target == 0) {
+        return true;
+    }
+    int32_t points[5];
+    for (int i = 0; i < 5; i++) {
+        points[i] = entity_of(engine, nmo_engine_block_get_input_object(b, i));
+        if (points[i] < 0) {
+            return true;
+        }
+    }
+    nmo_engine_physics_buoyancy_t buoyancy;
+    memset(&buoyancy, 0, sizeof(buoyancy));
+    buoyancy.object = target;
+    float strength = get_in_float(b, 5, 1.0f);
+    for (int i = 0; i < 3; i++) {
+        set3(buoyancy.surface[i], eng_entity_position(engine, points[i], -1));
+    }
+    eng_vector_t start = eng_entity_position(engine, points[3], -1);
+    eng_vector_t end = eng_entity_position(engine, points[4], -1);
+    double d[3] = {end.x - start.x, end.y - start.y, end.z - start.z};
+    double length = sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+    for (int k = 0; k < 3; k++) {
+        /* IVP_U_Float_Point::normize; still water for points at the same place */
+        buoyancy.current[k] = length > 0.0 ? (float)(d[k] / length * strength) : 0.0f;
+    }
+    buoyancy.density = get_in_float(b, 6, 998.0f);
+    buoyancy.damp_factor = get_in_float(b, 7, 1.0f);
+    buoyancy.friction_factor = get_in_float(b, 8, 0.05f);
+    buoyancy.viscosity = get_in_float(b, 9, 0.01f);
+    buoyancy.torque_factor = get_in_float(b, 10, 0.0f);
+    buoyancy.suction_factor = get_in_float(b, 11, 0.1f);
+    int32_t index = physics_object_index(engine, target);
+    if (index < 0) {
+        return false;
+    }
+    const nmo_engine_physics_provider_t *provider = provider_of(engine);
+    if (provider != NULL && provider->add_buoyancy != NULL) {
+        provider->add_buoyancy(provider->user_data, engine->physics.objects.data[index].handle,
+                               &buoyancy);
+    }
+    return true;
+}
+
+/*
+ * CKIpionManager::Reset (PhysicsResetCall::Call): the environment destroyed
+ * and made again (default gravity, the time factor back to 0.001), every
+ * physical object forgotten and the kept calls with it. The collision
+ * surfaces stay.
+ */
+static bool call_reset(nmo_engine_t *engine)
+{
+    eng_physics_t *physics = &engine->physics;
+    const nmo_engine_physics_provider_t *provider = provider_of(engine);
+    if (provider != NULL && provider->reset != NULL) {
+        provider->reset(provider->user_data);
+    }
+    for (size_t i = 0; i < physics->constraints.count; i++) {
+        eng_physics_constraint_t *c = &physics->constraints.data[i];
+        if (c->alive && provider != NULL && provider->destroy_constraint != NULL) {
+            provider->destroy_constraint(provider->user_data, c->handle);
+        }
+        c->alive = false;
+    }
+    for (size_t i = 0; i < physics->objects.count; i++) {
+        eng_physics_object_t *object = &physics->objects.data[i];
+        if (provider != NULL && provider->destroy_object != NULL) {
+            provider->destroy_object(provider->user_data, object->handle);
+        }
+        physics_free_object(object);
+    }
+    physics->objects.count = 0;
+    physics->calls.count = 0;
+    for (size_t i = 0; i < physics->listeners.count; i++) {
+        physics->listeners.data[i].alive = false;
+    }
+    for (size_t i = 0; i < physics->contacts.count; i++) {
+        contacts_stop(engine, (int32_t)i);
+    }
+    physics->time_factor = 0.001;
+    physics->gravity[0] = 0.0f;
+    physics->gravity[1] = -9.81f;
+    physics->gravity[2] = 0.0f;
+    return true;
+}
+
 static bool call_run(nmo_engine_t *engine, const eng_physics_call_t *call)
 {
     switch (call->kind) {
+    case CALL_BUOYANCY: return call_buoyancy(engine, call->node);
+    case CALL_RESET: return call_reset(engine);
     case CALL_WAKE_UP: return call_wake_up(engine, call->node);
     case CALL_COLL_DETECTION: return call_coll_detection(engine, call->node);
     case CALL_CONTINUOUS_CONTACT: return call_continuous_contact(engine, call->node);
@@ -1022,6 +1122,27 @@ static int bb_physics_wake_up(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* PhysicsBuoyancy: the target a phantom holding a liquid, now or once it is physical (Out; In
+   stays active, as in the DLL). */
+static int bb_physics_buoyancy(blk_t *b)
+{
+    if (nmo_engine_block_target(b) == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    physics_call(b->engine, CALL_BUOYANCY, b->node);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Physics Reset: the physics made again, every object no longer physical. */
+static int bb_physics_reset(blk_t *b)
+{
+    physics_call(b->engine, CALL_RESET, b->node);
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
 /* DeleteCollisionSurfaces: the kept collision surfaces deleted, now or once nothing is physical. */
 static int bb_delete_collision_surfaces(blk_t *b)
 {
@@ -1245,6 +1366,8 @@ static const nmo_engine_block_desc_t eng_physics_blocks[] = {
     {NMO_GUID(0x53bf75aa, 0x770c7021), "DeleteCollisionSurfaces", bb_delete_collision_surfaces,
      NULL, NULL},
     {NMO_GUID(0x1c8e61d1, 0x32723c6f), "Get Profiler Values", bb_get_profiler_values, NULL, NULL},
+    {NMO_GUID(0x2c015f2b, 0x5b147512), "PhysicsBuoyancy", bb_physics_buoyancy, NULL, NULL},
+    {NMO_GUID(0x5714345e, 0x792262ae), "Physics Reset", bb_physics_reset, NULL, NULL},
 };
 
 nmo_status_t eng_register_physics(nmo_engine_t *engine)
