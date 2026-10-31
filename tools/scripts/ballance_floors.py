@@ -145,13 +145,16 @@ class Floors:
         return self._add(Piece("area", self._rect(x0, z0, x1, z1), y, y, 0, False))
 
     def road(self, x0: float, z0: float, x1: float, z1: float, y0: float,
-             y1: float | None = None) -> Piece:
-        """A straight road between the two corners, running along its longer
-        side, from height y0 at the (x0, z0) end to y1 (default y0) at the
-        other."""
+             y1: float | None = None, along: str | None = None) -> Piece:
+        """A straight road between the two corners, running along X or Z
+        (along; by default its longer side), from height y0 at the (x0, z0)
+        end to y1 (default y0) at the other."""
         rect = self._rect(x0, z0, x1, z1)
         i0, j0, i1, j1 = rect
-        axis = 0 if i1 - i0 >= j1 - j0 else 1
+        if along is None:
+            axis = 0 if i1 - i0 >= j1 - j0 else 1
+        else:
+            axis = {"x": 0, "z": 1}[along]
         reverse = (x0 > x1) if axis == 0 else (z0 > z1)
         return self._add(Piece("road", rect, y0, y0 if y1 is None else y1, axis, reverse))
 
@@ -255,10 +258,12 @@ class Floors:
             gap = None
         if count == 0:
             material = "Floor_Top_Boderless"
-        elif gap is not None or count == 3:
+        elif gap is not None:
             material = "Floor_Top_ProfileFlat"
         elif piece.kind == "area":
-            material = "Floor_Top_Flat"
+            material = "Floor_Top_Flat"  # its borders' corners too
+        elif count == 3:
+            material = "Floor_Top_ProfileFlat"
         else:
             material = "Floor_Top_Profile"
         across = 1.0 if material == "Floor_Top_Flat" else 0.5
@@ -309,16 +314,27 @@ class Floors:
             far = side in (1, 2)
             uv = [side_uv(k, along, far) for k in range(4)]
             triangles = [((0, 1, 2), uv), ((0, 2, 3), uv)]
+        elif count == 3 and material == "Floor_Top_ProfileFlat":
+            # A road's raised corner, mapped as the originals' are: brick
+            # band (u 0) along both raised edges, the fold (u 0.5) at the low
+            # corner, and v all but constant, so the texture's V does not
+            # show: 0.76 at the corner across from the low one, 0 elsewhere.
+            odd = raised.index(False)
+            far = (odd + 2) % 4
+            uv = [(0.5 if k == odd else 0.0, 0.76 if k == far else 0.0) for k in range(4)]
+            a, b, c, d = ((odd + k) % 4 for k in range(4))
+            triangles = [((a, b, c), uv), ((a, c, d), uv)]
         elif count in (1, 3):
             # Split through the corner that differs from the others; each
-            # half is mapped along its own raised edge (for a corner of three,
-            # the edge across from that corner; for one, an edge from it).
+            # half goes on mapped as the slope or border it continues, along
+            # its edge away from that corner: for a corner of three, the
+            # raised edge across from it; for an inner corner of one, the
+            # low edge, so each half carries on its own road's slope.
             odd = raised.index(count == 1)
             a, b, c, d = ((odd + k) % 4 for k in range(4))
             triangles = []
             for tri in ((a, b, c), (a, c, d)):
-                pair = (tri[1], tri[2]) if count == 3 else (tri[0], tri[1] if tri[1] != c else tri[2])
-                along = axis_of(*pair)
+                along = axis_of(tri[1], tri[2])
                 uv = [side_uv(k, along, False) for k in range(4)]
                 triangles.append((tri, uv))
         else:
