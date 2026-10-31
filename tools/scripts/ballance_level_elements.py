@@ -3,11 +3,16 @@
 
 A level file places its start, checkpoints, reset points, finish and elements
 as objects with meshes of their own, and the game uses some of these meshes
-as they are: the start platform (PS_FourFlames) and the checkpoints
-(PC_TwoFlames) have no mesh in their 3D Entities/PH templates, so a level
-draws them with its own.  This script takes one mesh of each kind from the
-original levels, and the SkyLayer cloud plane every level has, and writes
-them as <Kind>.obj (with .mtl) for a project manifest to use.
+as they are: the start (PS_FourFlames) and the checkpoints (PC_TwoFlames)
+have no mesh in their 3D Entities/PH templates, so a level draws them with
+its own.  This script takes one mesh of each kind from the original levels,
+and the SkyLayer cloud plane every level has, and writes them as <Kind>.obj
+(with .mtl) for a project manifest to use.
+
+The start platform and the checkpoint's floor are floors of the level, not
+the markers: Level_01 has them as A01_Floor_01 under its start and
+A02_Floor_01 under its first checkpoint, each 1.24 below the marker.  They
+are written as Floor_Start.obj and Floor_Checkpoint.obj.
 
 The meshes are the game's own, so they are written from a local installation
 and not kept with libnmo.  Each is in the object's local space; the original
@@ -34,6 +39,9 @@ ELEMENTS = [
     "P_Modul_41",
 ]
 KINDS = MARKERS + ELEMENTS + ["SkyLayer"]
+# The floors the original start and first checkpoint stand on.
+FLOORS = {"Floor_Start": ("Level_01.NMO", "A01_Floor_01"),
+          "Floor_Checkpoint": ("Level_01.NMO", "A02_Floor_01")}
 
 
 def kind_of(name: str) -> str | None:
@@ -78,6 +86,18 @@ def main() -> int:
     out.mkdir(parents=True, exist_ok=True)
 
     found: dict[str, str] = {}
+    by_name = {level.name.lower(): level for level in levels}
+    for kind, (level_name, object_name) in FLOORS.items():
+        level = by_name.get(level_name.lower())
+        if level is None:
+            continue
+        exported = json.loads(nmo_run(
+            args.nmo, "-f", "json", "object", "export", "--class", "CK3dObject", str(level)))
+        for obj in exported["data"]["objects"]:
+            if obj["name"] == object_name:
+                fields = {f["name"]: f.get("value") for f in obj["fields"]}
+                export_mesh(args.nmo, level, fields["current_mesh"], kind, out)
+                found[kind] = f"{level.name}:{object_name}"
     for level in levels:
         exported = json.loads(nmo_run(
             args.nmo, "-f", "json", "object", "export", "--class", "CK3dObject", str(level)))
@@ -91,12 +111,12 @@ def main() -> int:
                 continue
             export_mesh(args.nmo, level, mesh, kind, out)
             found[kind] = f"{level.name}:{obj['name']}"
-        if len(found) == len(KINDS):
+        if all(kind in found for kind in KINDS):
             break
 
-    for kind in KINDS:
+    for kind in KINDS + list(FLOORS):
         print(f"{kind:16s} {found.get(kind, 'not found')}")
-    return 0 if len(found) == len(KINDS) else 1
+    return 0 if len(found) == len(KINDS) + len(FLOORS) else 1
 
 
 if __name__ == "__main__":
