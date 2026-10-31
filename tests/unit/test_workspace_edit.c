@@ -22,6 +22,7 @@
 #include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/builtin/nmo_beobject_schemas.h"
 #include "object/builtin/nmo_dataarray_schemas.h"
+#include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_parameterout_schemas.h"
 #include "format/nmo_interface_chunk.h"
@@ -2054,6 +2055,55 @@ TEST(workspace_edit, bind_script_uses_explicit_object_types) {
     nmo_context_release(ctx);
 }
 
+TEST(workspace_edit, add_group_member_commits_and_rolls_back) {
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_object_id_t group_id = 0;
+    nmo_object_id_t floor_id = 0;
+    nmo_object_id_t plain_id = 0;
+    create_object_or_fail(session, NMO_CID_GROUP, "Phys_Floors", &group_id);
+    create_object_or_fail(session, NMO_CID_3DOBJECT, "A01_Floor_01", &floor_id);
+    create_object_or_fail(session, NMO_CID_OBJECT, "Not a BeObject", &plain_id);
+    nmo_object_t *group = nmo_object_repository_find_by_id(
+        nmo_session_get_repository(session), group_id);
+    ASSERT_NOT_NULL(group);
+    const nmo_group_state_t *state =
+        (const nmo_group_state_t *)nmo_object_get_state(group);
+    ASSERT_NOT_NULL(state);
+
+    workspace_edit_scope_t edit_scope = {0};
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, begin_workspace_edit_for_session(
+        ctx, session, "group rollback", &edit_scope, &edit));
+    ASSERT_EQ(NMO_OK, nmo_object_edit_add_group_member(edit, group_id, floor_id));
+    ASSERT_EQ(1u, state->object_ids.count);
+    ASSERT_EQ(1u, state->has_group_data);
+    rollback_workspace_edit_scope(&edit_scope);
+    ASSERT_EQ(0u, state->object_ids.count);
+    ASSERT_EQ(0u, state->has_group_data);
+
+    ASSERT_EQ(NMO_OK, begin_workspace_edit_for_session(
+        ctx, session, "group commit", &edit_scope, &edit));
+    ASSERT_EQ(NMO_OK, nmo_object_edit_add_group_member(edit, group_id, floor_id));
+    ASSERT_EQ(NMO_OK, nmo_object_edit_add_group_member(edit, group_id, floor_id));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_object_edit_add_group_member(edit, group_id, plain_id));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_object_edit_add_group_member(edit, floor_id, group_id));
+    ASSERT_EQ(NMO_OK, commit_workspace_edit_scope(&edit_scope));
+
+    ASSERT_EQ(1u, state->object_ids.count);
+    ASSERT_EQ(1u, state->has_group_data);
+    ASSERT_EQ(floor_id, nmo_ref_runtime_id(
+        (const nmo_ref_t *)nmo_array_get(&state->object_ids, 0)));
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(workspace_edit, apply_edit_flags_accepts_known_flags_and_rejects_unknown) {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
     ASSERT_NOT_NULL(ctx);
@@ -2300,6 +2350,7 @@ REGISTER_TEST(workspace_edit, dataarray_parameter_cell_requires_matching_paramet
 REGISTER_TEST(workspace_edit, dataarray_ref_graph_handles_missing_row_metadata);
 REGISTER_TEST(workspace_edit, behavior_graph_flag_rebuilds_behavior_index);
 REGISTER_TEST(workspace_edit, bind_script_uses_explicit_object_types);
+REGISTER_TEST(workspace_edit, add_group_member_commits_and_rolls_back);
 REGISTER_TEST(workspace_edit, apply_edit_flags_accepts_known_flags_and_rejects_unknown);
 REGISTER_TEST(workspace_edit, failed_commit_rolls_back_mutation);
 REGISTER_TEST(workspace_edit, snapshot_bytes_rollback_restores_direct_state);

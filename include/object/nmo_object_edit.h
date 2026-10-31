@@ -109,6 +109,12 @@ NMO_API nmo_status_t nmo_object_edit_bind_script(
     nmo_object_id_t object_id,
     nmo_object_id_t behavior_id);
 
+/* Append a behavioral object to a CKGroup. Adding a member twice is a no-op. */
+NMO_API nmo_status_t nmo_object_edit_add_group_member(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t group_id,
+    nmo_object_id_t member_id);
+
 NMO_API nmo_status_t nmo_object_edit_set_parameter_value(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t parameter_id,

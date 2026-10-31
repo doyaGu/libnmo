@@ -10,6 +10,7 @@
 #include "type/nmo_object_guids.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_dataarray_schemas.h"
+#include "object/builtin/nmo_group_schemas.h"
 #include "type/nmo_reflection.h"
 
 #include "workspace_edit_internal.h"
@@ -161,6 +162,81 @@ nmo_status_t nmo_object_edit_bind_script(
         NMO_WORKSPACE_EDIT_OBJECT_STATE |
             NMO_WORKSPACE_EDIT_REFERENCES |
             NMO_WORKSPACE_EDIT_BEHAVIOR_GRAPH);
+    return workspace_edit_checkpoint_release_arena(edit, &checkpoint);
+}
+
+nmo_status_t nmo_object_edit_add_group_member(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t group_id,
+    nmo_object_id_t member_id)
+{
+    if (edit == NULL || edit->finished || group_id == 0u || member_id == 0u ||
+        group_id == member_id) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    workspace_edit_checkpoint_t checkpoint = workspace_edit_checkpoint(edit);
+    nmo_object_repository_t *repo = nmo_workspace_internal_repository(edit->workspace);
+    const nmo_type_registry_t *registry = workspace_edit_type_registry(edit);
+    if (repo == NULL || registry == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    nmo_object_t *group_object = nmo_object_repository_find_by_id(repo, group_id);
+    nmo_object_t *member_object = nmo_object_repository_find_by_id(repo, member_id);
+    if (group_object == NULL || member_object == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    /* CKGroup::AddObject takes CKBeObjects only. */
+    if (!workspace_edit_session_object_derives(registry, group_object, NMO_CID_GROUP) ||
+        !workspace_edit_session_object_derives(registry, member_object, NMO_CID_BEOBJECT)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_group_state_t *group = (nmo_group_state_t *)workspace_edit_object_state(
+        registry, group_object, NMO_CID_GROUP, CKPGUID_GROUP);
+    if (group == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    if (nmo_beobject_script_array_find(&group->object_ids, member_id, NULL) != 0) {
+        return NMO_OK;
+    }
+
+    nmo_status_t status = workspace_edit_checkpoint_mark_arena(edit, &checkpoint);
+    if (status != NMO_OK) {
+        return status;
+    }
+    /* Only the flag: the array itself is undone by removing the id, since an
+       append can move its data. */
+    status = nmo_workspace_edit_snapshot_bytes(
+        edit, &group->has_group_data, sizeof(group->has_group_data));
+    if (status != NMO_OK) {
+        return workspace_edit_abort_arena_status(edit, checkpoint, status);
+    }
+    status = nmo_beobject_script_array_append(&group->object_ids, member_id);
+    if (status != NMO_OK) {
+        return workspace_edit_abort_arena_status(edit, checkpoint, status);
+    }
+    array_id_action_t *rollback = NULL;
+    status = workspace_edit_make_array_id_action(
+        edit,
+        &group->object_ids,
+        member_id,
+        group->object_ids.count - 1u,
+        &rollback);
+    if (status != NMO_OK) {
+        (void)nmo_array_remove(&group->object_ids, group->object_ids.count - 1u, NULL);
+        return workspace_edit_abort_arena_status(edit, checkpoint, status);
+    }
+    status = workspace_edit_push_rollback_or_abort(
+        edit, checkpoint, workspace_edit_rollback_remove_array_id, rollback);
+    if (status != NMO_OK) {
+        return workspace_edit_abort_arena_status(edit, checkpoint, status);
+    }
+    group->has_group_data = 1u;
+
+    nmo_workspace_edit_mark(
+        edit,
+        NMO_WORKSPACE_EDIT_OBJECT_STATE | NMO_WORKSPACE_EDIT_REFERENCES);
     return workspace_edit_checkpoint_release_arena(edit, &checkpoint);
 }
 
