@@ -494,7 +494,8 @@ static nmo_object_id_t extra_child(nmo_engine_t *engine, nmo_object_id_t id, siz
          c = engine->entities.data[c].next_sibling) {
         const char *child = nmo_engine_object_name(engine, engine->entities.data[c].id);
         size_t length = child != NULL ? strlen(child) : 0u;
-        if (length >= at && strcmp(child + at, name) == 0) {
+        /* GetChildOfObject compares as many characters as `name` has: copies' numbered names match */
+        if (length >= at && strncmp(child + at, name, strlen(name)) == 0) {
             return engine->entities.data[c].id;
         }
     }
