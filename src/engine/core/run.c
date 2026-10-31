@@ -374,6 +374,13 @@ void nmo_engine_destroy_object(nmo_engine_t *engine, nmo_object_id_t id)
     if (engine == NULL) {
         return;
     }
+    if (engine->dynamic.defer) {
+        nmo_object_id_t *slot = NULL;
+        if (id != 0 && ENG_VEC_PUSH(engine->dynamic.deferred, slot)) {
+            *slot = id;
+        }
+        return;
+    }
     if (id != 0) {
         eng_map_put(&engine->destroyed, id, 1);
     }
@@ -402,9 +409,22 @@ void nmo_engine_destroy_object(nmo_engine_t *engine, nmo_object_id_t id)
     }
 }
 
-/* The dynamic objects destroyed, when Delete Dynamic Objects asked for it this frame */
+/*
+ * CKObjectManager::PostProcess: the objects behaviors destroyed this frame,
+ * then the dynamic objects, when Delete Dynamic Objects asked for it.
+ */
 static void eng_delete_dynamic_objects(nmo_engine_t *engine)
 {
+    nmo_object_id_t *deferred = engine->dynamic.deferred.data;
+    size_t deferred_count = engine->dynamic.deferred.count;
+    engine->dynamic.deferred.data = NULL;
+    engine->dynamic.deferred.count = engine->dynamic.deferred.capacity = 0;
+    for (size_t i = 0; i < deferred_count; i++) {
+        if (eng_map_get(&engine->destroyed, deferred[i]) < 0) {
+            nmo_engine_destroy_object(engine, deferred[i]);
+        }
+    }
+    free(deferred);
     if (!engine->dynamic.delete_all) {
         return;
     }
@@ -443,7 +463,9 @@ nmo_status_t nmo_engine_step(nmo_engine_t *engine, float delta_ms)
     eng_sounds_begin_frame(engine);
     eng_render_begin_frame(engine);
     eng_emit(engine, NMO_ENGINE_EVENT_FRAME_BEGIN, -1, 0, 0);
+    engine->dynamic.defer = true;
     nmo_status_t status = eng_manager_execute(engine);
+    engine->dynamic.defer = false;
     if (status == NMO_OK) {
         eng_dispatch_messages(engine); /* CKMessageManager::PostProcess */
         eng_physics_post_process(engine); /* CKIpionManager::PostProcess */

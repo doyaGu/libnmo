@@ -29,11 +29,15 @@ typedef struct eng_ics {
     eng_map_t map; /* object -> index in list */
 } eng_ics_t;
 
-/* CKObjectManager's dynamic objects */
+/* CKObjectManager's dynamic objects and deferred deletions */
 typedef struct eng_dynamic {
     /* The objects created or loaded as dynamic (CK_OBJECTCREATION_DYNAMIC), in that order */
     ENG_VEC(nmo_object_id_t) objects;
     bool delete_all; /* DeleteAllDynamicObjects, done at the end of the frame */
+    /* While behaviors run (m_DeferDestroyObjects), destroyed objects wait here for the
+       end of the frame (CKObjectManager::PostProcess) */
+    bool defer;
+    ENG_VEC(nmo_object_id_t) deferred;
 } eng_dynamic_t;
 
 /* core/schedule.c */

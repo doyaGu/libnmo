@@ -3,6 +3,7 @@
 #include "core/nmo_array.h"
 #include "object/builtin/nmo_dataarray_schemas.h"
 #include "object/builtin/nmo_group_schemas.h"
+#include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/nmo_ref.h"
 #include "type/nmo_object_guids.h"
 #include "type/nmo_param_guids.h"
@@ -16,6 +17,7 @@
 #define GUID_ITERATOR NMO_GUID(0x198f0af9, 0x0268249f)
 #define GUID_ITERATOR_IF NMO_GUID(0x6bec4be6, 0x12d64c7c)
 #define GUID_GROUP_ITERATOR NMO_GUID(0x6050252f, 0x3aa82d40)
+#define GUID_OBJECT_DELETE NMO_GUID(0x74120ded, 0x76524673)
 #define GUID_CLEAR_ARRAY NMO_GUID(0x35c9352f, 0x7b1a193b)
 #define GUID_REMOVE_KEY_ROW NMO_GUID(0x0f8334ea, 0x279a40cd)
 #define GUID_GET_HIGHEST NMO_GUID(0x46f71e13, 0x13d26f61)
@@ -481,6 +483,55 @@ TEST(engine_arrays, group_iterator_walks_the_group)
     fixture_end(&f);
 }
 
+/*
+ * Ballance's "init Resetpoints": each member deleted as the iterator walks
+ * the group. Objects destroyed while behaviors run go at the end of the
+ * frame (m_DeferDestroyObjects), so the group keeps its members until then
+ * and every one is reached.
+ */
+TEST(engine_arrays, group_iterator_deletes_every_member_in_a_frame)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t members[3] = {fixture_create(&f, NMO_CID_3DENTITY, "A"),
+                                  fixture_create(&f, NMO_CID_3DENTITY, "B"),
+                                  fixture_create(&f, NMO_CID_3DENTITY, "C")};
+    nmo_object_id_t group = fixture_create(&f, NMO_CID_GROUP, "Group");
+    nmo_group_state_t *state = (nmo_group_state_t *)fixture_state(&f, group);
+    ASSERT_NOT_NULL(state);
+    for (int i = 0; i < 3; i++) {
+        nmo_ref_t ref = nmo_ref_from_id(members[i]);
+        ASSERT_EQ(NMO_OK, nmo_array_append(&state->object_ids, &ref));
+    }
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t it = fixture_block(&f, GUID_GROUP_ITERATOR, "Group Iterator");
+    nmo_object_id_t deleter = fixture_block(&f, GUID_OBJECT_DELETE, "Delete");
+    ASSERT_TRUE(it != 0 && deleter != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, it, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, it, 1), BLOCK_IN(&f, deleter, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, deleter, 0), BLOCK_IN(&f, it, 1), 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, it, 0), (int32_t)group);
+    /* The Element output (a CKBeObject) into the Object input, typed alike to link them */
+    nmo_parameterin_state_t *object_in =
+        (nmo_parameterin_state_t *)fixture_state(&f, BLOCK_PIN(&f, deleter, 0));
+    ASSERT_NOT_NULL(object_in);
+    object_in->type_guid = CKPGUID_BEOBJECT;
+    ASSERT_EQ(NMO_OK, nmo_script_edit_connect_parameter(f.tx, BLOCK_POUT(&f, it, 0),
+                                                        BLOCK_PIN(&f, deleter, 0)));
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+    ASSERT_EQ(3u, runs(&f, deleter));
+    ASSERT_EQ(0, nmo_engine_group_count(f.engine, group));
+    float m[16];
+    for (int i = 0; i < 3; i++) {
+        ASSERT_FALSE(nmo_engine_entity_world_matrix(f.engine, members[i], m));
+    }
+    fixture_end(&f);
+}
+
 TEST(engine_arrays, get_key_row_and_row_search_find_rows)
 {
     engine_fixture_t f;
@@ -757,6 +808,7 @@ REGISTER_TEST(engine_arrays, clear_array_block_empties_the_array);
 REGISTER_TEST(engine_arrays, get_highest_finds_the_highest_row);
 REGISTER_TEST(engine_arrays, is_in_group_tests_membership);
 REGISTER_TEST(engine_arrays, group_iterator_walks_the_group);
+REGISTER_TEST(engine_arrays, group_iterator_deletes_every_member_in_a_frame);
 REGISTER_TEST(engine_arrays, get_key_row_and_row_search_find_rows);
 REGISTER_TEST(engine_arrays, column_sum_and_remove_row_if);
 REGISTER_TEST(engine_arrays, shuffle_insert_and_remove_columns);
