@@ -110,7 +110,9 @@ def check(level: Path, nmo: str) -> Report:
         return [m["name"] for m in groups.get(name, [])]
 
     def visible(name: str) -> bool:
-        return "VX_MOVEABLE_VISIBLE" in str(entities.get(name, {}).get("moveable_flags", ""))
+        # The CKObject flag decides (CKObject::IsVisible; libnmo shows its bit
+        # as CK_OBJECT_INTERFACEOBJ), whatever the moveable flag says.
+        return "CK_OBJECT_INTERFACEOBJ" in str(entities.get(name, {}).get("visibility_flags", ""))
 
     # What the file holds
     others = sorted({c for c in names_by_class if c not in LEVEL_CLASSES})
