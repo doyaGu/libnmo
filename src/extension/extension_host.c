@@ -126,7 +126,7 @@ static nmo_status_t host_register_types(
         type_desc.size = desc->size;
         type_desc.category = (uint16_t)desc->category;
         type_desc.flags = (uint16_t)desc->flags;
-        type_desc.class_id = desc->class_id;
+        type_desc.object_class_id = desc->class_id;
         type_desc.creator_plugin_guid = plugin_guid;  /* Stamp creator */
 
         /* Deep-copy name into plugin arena */

@@ -1086,7 +1086,10 @@ nmo_status_t nmo_type_registry_class_id_to_guid(
 
 /**
  * @brief Convert GUID to ClassID (O(1) hash lookup + direct access)
- * 
+ *
+ * The class the type is the schema of. A type that only refers to objects of
+ * a class (Script) has none here: its object_class_id holds that class.
+ *
  * @param registry Registry
  * @param guid Type GUID
  * @param out_class_id Output: Virtools CK_CLASSID
@@ -1100,7 +1103,9 @@ nmo_status_t nmo_type_registry_guid_to_class_id(
 
 /**
  * @brief Convert Type ID to ClassID (O(1) array access)
- * 
+ *
+ * The class the type is the schema of, as nmo_type_registry_guid_to_class_id().
+ *
  * @param registry Registry
  * @param type_id Type ID
  * @param out_class_id Output: Virtools CK_CLASSID

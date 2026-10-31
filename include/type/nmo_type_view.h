@@ -27,7 +27,8 @@ typedef struct nmo_type_view {
     nmo_guid_t guid;
     nmo_guid_t base_guid;
     nmo_type_id_t type_id;
-    nmo_class_id_t class_id;
+    nmo_class_id_t class_id;        /* the class this type is the schema of; 0 for none */
+    nmo_class_id_t object_class_id; /* the class its values refer to (TypeToClassID); 0 for none */
     uint16_t category;
     uint16_t flags;
     uint32_t size;

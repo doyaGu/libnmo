@@ -3,6 +3,8 @@
 #include "core/nmo_guid.h"
 #include "lua/nmo_lua_bindings.h"
 #include "lua/nmo_lua_runtime.h"
+#include "object/nmo_class_ids.h"
+#include "type/nmo_param_guids.h"
 #include "type/nmo_type_guids.h"
 
 #include <stdio.h>
@@ -31,10 +33,12 @@ TEST(lua_bindings_type, type_module_works_with_context_and_document_scoped_objec
     TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     char float_guid[32];
+    char script_guid[32];
     char script[2048];
     ASSERT_NOT_NULL(runtime);
 
     format_guid_literal(CKPGUID_FLOAT, float_guid, sizeof(float_guid));
+    format_guid_literal(CKPGUID_SCRIPT, script_guid, sizeof(script_guid));
     ASSERT_EQ(NMO_OK, nmo_lua_register_platform_bindings(runtime));
     snprintf(script,
              sizeof(script),
@@ -48,10 +52,15 @@ TEST(lua_bindings_type, type_module_works_with_context_and_document_scoped_objec
              "local float_view = type_mod.view_from_guid(ctx, '%s')\n"
              "assert(float_view.guid == '%s')\n"
              "local cam_view = type_mod.view_from_object(cam)\n"
-             "assert(cam_view.class_id == object.class_id(cam))\n",
+             "assert(cam_view.class_id == object.class_id(cam))\n"
+             "assert(cam_view.object_class_id == cam_view.class_id)\n"
+             "local script_view = type_mod.view_from_guid(ctx, '%s')\n"
+             "assert(script_view.class_id == 0 and script_view.object_class_id == %d)\n",
              NMO_TEST_DATA_FILE("Ballance/Camera.nmo"),
              float_guid,
-             float_guid);
+             float_guid,
+             script_guid,
+             NMO_CID_BEHAVIOR);
     assert_lua_ok(runtime, script);
 
     nmo_lua_runtime_destroy(runtime);

@@ -10,6 +10,7 @@
 #include "type/nmo_type_system.h"
 #include "format/nmo_manager.h"
 #include "format/nmo_manager_registry.h"
+#include "object/nmo_class_ids.h"
 #include "core/nmo_arena.h"
 
 /* ============================================================================
@@ -85,6 +86,23 @@ static nmo_status_t register_manager_init(const nmo_extension_host_t *host, void
 
     nmo_guid_t plugin_guid = NMO_GUID(0xABCDEF10, 0x00000001);
     return host->register_managers(host_user, plugin_guid, &manager_desc, 1);
+}
+
+/* A type whose values refer to behaviors, as a building block DLL registers one */
+#define EXT_BEHAVIOR_REF_GUID NMO_GUID(0x70270270, 0x27027027)
+
+static nmo_status_t register_object_ref_type_init(const nmo_extension_host_t *host,
+                                                  void *host_user) {
+    if (host == NULL || host->register_types == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_extension_type_desc_t type_desc = {0};
+    type_desc.guid = EXT_BEHAVIOR_REF_GUID;
+    type_desc.name = "ExtBehaviorRef";
+    type_desc.size = sizeof(nmo_object_id_t);
+    type_desc.category = NMO_TYPE_CATEGORY_OBJECT_REF;
+    type_desc.class_id = NMO_CID_BEHAVIOR;
+    return host->register_types(host_user, NMO_GUID(0xABCDEF10, 0x00000002), &type_desc, 1);
 }
 
 static void dummy_shutdown(const nmo_extension_host_t *host, void *host_user) {
@@ -335,6 +353,28 @@ TEST(extension, host_register_manager_callbacks) {
     teardown_registries();
 }
 
+/* A plugin type's class is the one its values refer to: it is no class's schema */
+TEST(extension, host_registers_object_ref_types_with_their_class) {
+    setup_registries();
+    nmo_extension_registry_t *registry = nmo_extension_registry_create(
+        NULL, g_type_registry, NULL, NULL, g_manager_registry);
+    ASSERT_NOT_NULL(registry);
+
+    nmo_extension_plugin_t plugin = create_test_plugin(NMO_GUID(0xABCDEF10, 0x00000002),
+                                                       "ObjectRefTypePlugin");
+    plugin.init = register_object_ref_type_init;
+    ASSERT_EQ(NMO_OK, nmo_extension_registry_register_static(registry, &plugin, 1));
+
+    const nmo_type_descriptor_t *type =
+        nmo_type_registry_find_by_guid(g_type_registry, EXT_BEHAVIOR_REF_GUID);
+    ASSERT_NOT_NULL(type);
+    ASSERT_EQ(0u, type->class_id);
+    ASSERT_EQ((uint32_t)NMO_CID_BEHAVIOR, type->object_class_id);
+
+    nmo_extension_registry_destroy(registry);
+    teardown_registries();
+}
+
 TEST(extension, list_returns_contiguous_info_records) {
     setup_registries();
 
@@ -451,6 +491,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(extension, abi_compatibility_check);
     REGISTER_TEST(extension, rejects_pre_registry_serialization_context_abi_before_init);
     REGISTER_TEST(extension, host_register_manager_callbacks);
+    REGISTER_TEST(extension, host_registers_object_ref_types_with_their_class);
     REGISTER_TEST(extension, list_returns_contiguous_info_records);
     REGISTER_TEST(extension, shutdown_receives_host_context);
     REGISTER_TEST(extension, register_static_error_refinalizes_type_registry);

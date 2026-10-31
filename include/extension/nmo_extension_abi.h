@@ -171,7 +171,8 @@ typedef struct nmo_extension_type_desc {
     /** Type flags */
     uint32_t flags;
 
-    /** Class ID for object types (0 if not an object type) */
+    /** CKParameterTypeDesc::Cid: the class of the objects values of this type refer to
+        (0 if they refer to none). A plugin type is never a class's schema. */
     nmo_class_id_t class_id;
 } nmo_extension_type_desc_t;
 

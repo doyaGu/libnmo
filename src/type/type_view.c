@@ -30,6 +30,7 @@ static nmo_status_t nmo_type_view_fill(
     out_view->base_guid = type->base_type;
     out_view->type_id = type->id;
     out_view->class_id = (nmo_class_id_t)type->class_id;
+    out_view->object_class_id = (nmo_class_id_t)type->object_class_id;
     out_view->category = type->category;
     out_view->flags = type->flags;
     out_view->size = type->size;

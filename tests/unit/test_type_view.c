@@ -1,5 +1,6 @@
 #include "test_framework.h"
 #include "object/nmo_context.h"
+#include "type/nmo_param_guids.h"
 #include "type/nmo_type_guids.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_type_view.h"
@@ -220,6 +221,24 @@ TEST(type_view, from_object_falls_back_when_explicit_type_guid_is_not_visible) {
     nmo_context_release(ctx);
 }
 
+/* A type that refers to objects of a class without being its schema (Script) */
+TEST(type_view, reports_the_class_a_type_refers_to) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    const nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+    ASSERT_NOT_NULL(registry);
+
+    nmo_type_view_t view;
+    ASSERT_EQ(NMO_OK, nmo_type_view_from_guid(registry, CKPGUID_SCRIPT, &view));
+    ASSERT_EQ(0, view.class_id);
+    ASSERT_EQ(NMO_CID_BEHAVIOR, view.object_class_id);
+    ASSERT_EQ(NMO_OK, nmo_type_view_from_guid(registry, CKPGUID_CAMERA, &view));
+    ASSERT_EQ(NMO_CID_CAMERA, view.class_id);
+    ASSERT_EQ(NMO_CID_CAMERA, view.object_class_id);
+
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(type_view, from_class_id_returns_stable_snapshot);
     REGISTER_TEST(type_view, from_guid_reports_scalar_metadata_without_descriptor_pointer);
@@ -230,5 +249,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(type_view, from_guid_hides_invalidated_type);
     REGISTER_TEST(type_view, from_type_id_hides_invalidated_type);
     REGISTER_TEST(type_view, from_object_falls_back_when_explicit_type_guid_is_not_visible);
+    REGISTER_TEST(type_view, reports_the_class_a_type_refers_to);
 TEST_MAIN_END()
 

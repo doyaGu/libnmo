@@ -178,12 +178,13 @@ static void nmo_lua_type_set_guid_field(
 
 static void nmo_lua_type_push_view(lua_State *state, const nmo_type_view_t *view)
 {
-    lua_createtable(state, 0, 13);
+    lua_createtable(state, 0, 14);
 
     nmo_lua_type_set_guid_field(state, "guid", view->guid);
     nmo_lua_type_set_guid_field(state, "base_guid", view->base_guid);
     nmo_lua_set_integer_field(state, "type_id", (lua_Integer)view->type_id);
     nmo_lua_set_integer_field(state, "class_id", (lua_Integer)view->class_id);
+    nmo_lua_set_integer_field(state, "object_class_id", (lua_Integer)view->object_class_id);
     nmo_lua_set_integer_field(state, "category", (lua_Integer)view->category);
     nmo_lua_set_integer_field(state, "flags", (lua_Integer)view->flags);
     nmo_lua_set_integer_field(state, "size", (lua_Integer)view->size);
