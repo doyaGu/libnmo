@@ -2,6 +2,8 @@
 
 #include "engine/nmo_engine_render.h"
 #include "object/builtin/nmo_animation_schemas.h"
+#include "object/builtin/nmo_material_schemas.h"
+#include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_sound_schemas.h"
 
 #include <stdio.h>
@@ -566,6 +568,63 @@ TEST(engine_media, time_settings_bound_and_scale_the_frame_time)
     fixture_end(&f);
 }
 
+/* A CKParameter chunk of CKStructSaver's: a buffer member (state 1) or an object (state 2) */
+static nmo_chunk_t *struct_member(engine_fixture_t *f, uint32_t value, nmo_object_id_t object)
+{
+    nmo_chunk_t *chunk = nmo_chunk_create(nmo_session_get_arena(f->session));
+    if (chunk == NULL || nmo_chunk_start_write(chunk) != NMO_OK ||
+        nmo_chunk_write_identifier(chunk, 0x40u) != NMO_OK ||
+        nmo_chunk_write_guid(chunk, NMO_GUID(0u, 0u)) != NMO_OK ||
+        nmo_chunk_write_dword(chunk, object != 0 ? 2u : 1u) != NMO_OK) {
+        return NULL;
+    }
+    nmo_status_t status = object != 0 ? nmo_chunk_write_object_id(chunk, object)
+                                      : nmo_chunk_write_buffer(chunk, &value, sizeof(value));
+    if (status != NMO_OK) {
+        return NULL;
+    }
+    nmo_chunk_close(chunk);
+    return chunk;
+}
+
+/* VXEFFECT_TEXGENREF: its "Tex coords gen+Referential" struct gives the generation and the entity */
+TEST(engine_media, texgen_ref_material_reads_its_struct)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t material = fixture_create(&f, NMO_CID_MATERIAL, "Chrome");
+    nmo_object_id_t param = fixture_create(&f, NMO_CID_PARAMETER, "TexGen Params");
+    nmo_object_id_t referential = fixture_create(&f, NMO_CID_3DENTITY, "Referential");
+    nmo_material_state_t *material_state = (nmo_material_state_t *)fixture_state(&f, material);
+    nmo_parameter_state_t *param_state = (nmo_parameter_state_t *)fixture_state(&f, param);
+    ASSERT_TRUE(material_state != NULL && param_state != NULL && referential != 0);
+    material_state->effect = 2u;
+    material_state->has_effect = 1;
+    material_state->has_effect_param = 1;
+    material_state->effect_parameter = nmo_ref_from_id(param);
+    nmo_chunk_t *chunk = nmo_chunk_create(nmo_session_get_arena(f.session));
+    nmo_chunk_t *texgen = struct_member(&f, 3u, 0); /* chrome */
+    nmo_chunk_t *entity = struct_member(&f, 0u, referential);
+    ASSERT_TRUE(chunk != NULL && texgen != NULL && entity != NULL);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, 0x12348765u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 2));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_sub_chunk(chunk, texgen));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_sub_chunk(chunk, entity));
+    nmo_chunk_close(chunk);
+    param_state->mode = CKPARAM_MODE_SUBCHUNK;
+    param_state->subchunk = chunk;
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    fixture_commit(&f, NULL);
+
+    nmo_engine_material_t desc;
+    ASSERT_TRUE(nmo_engine_material(f.engine, material, &desc));
+    ASSERT_EQ(3, desc.texgen);
+    ASSERT_EQ(nmo_engine_object_named(f.engine, "Referential", 0), desc.texgen_referential);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_media, wave_player_ends_after_the_sound_length);
 REGISTER_TEST(engine_media, voices_follow_the_sound_settings_and_instances);
@@ -576,4 +635,5 @@ REGISTER_TEST(engine_media, play_animation_progresses_over_its_duration);
 REGISTER_TEST(engine_media, play_global_animation_loops_over_its_duration);
 REGISTER_TEST(engine_media, sound_load_gives_the_sound_its_file_length);
 REGISTER_TEST(engine_media, time_settings_bound_and_scale_the_frame_time);
+REGISTER_TEST(engine_media, texgen_ref_material_reads_its_struct);
 TEST_MAIN_END()

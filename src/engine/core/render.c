@@ -14,6 +14,8 @@
 #include "../engine_block_util.h"
 
 #include "core/nmo_arena.h"
+#include "format/nmo_chunk.h"
+#include "format/nmo_chunk_api.h"
 #include "format/nmo_image.h"
 #include "format/nmo_stb_adapter.h"
 #include "object/builtin/nmo_2dentity_schemas.h"
@@ -223,24 +225,93 @@ bool nmo_engine_object_is_visible(const nmo_engine_t *engine, nmo_object_id_t id
  * ============================================================================ */
 
 #define VXEFFECT_TEXGEN 1
+#define VXEFFECT_TEXGENREF 2
+/* CKStructSaver's subchunk: this identifier, the member count, then a CKParameter chunk each */
+#define CK_STRUCT_IDENTIFIER 0x12348765u
+#define CK_PARAMETER_IDENTIFIER 0x40u
 
-/* The VX_EFFECTTEXGEN a VXEFFECT_TEXGEN material's effect parameter holds (ReadTexGenParameter) */
-static int32_t eng_material_texgen(const nmo_engine_t *engine, nmo_object_id_t id,
-                                   const nmo_material_state_t *state)
+/*
+ * A member of a struct parameter's subchunk (CKParameter::Load): a buffer
+ * (state 1) into `out_buffer`, or an object (state 2) into `out_object`, as
+ * its file ID. False when it holds neither.
+ */
+static bool eng_struct_member(nmo_chunk_t *member, uint32_t *out_buffer, nmo_object_id_t *out_object)
 {
-    if (state->effect != VXEFFECT_TEXGEN || !state->has_effect_param) {
-        return 0;
+    nmo_guid_t guid;
+    uint32_t state = 0;
+    if (nmo_chunk_start_read(member) != NMO_OK ||
+        nmo_chunk_seek_identifier(member, CK_PARAMETER_IDENTIFIER) != NMO_OK ||
+        nmo_chunk_read_guid(member, &guid) != NMO_OK || nmo_chunk_read_dword(member, &state) != NMO_OK) {
+        return false;
+    }
+    if (state == 2) {
+        return nmo_chunk_read_object_id(member, out_object) == NMO_OK;
+    }
+    void *data = NULL;
+    size_t size = 0;
+    if (state != 1 || nmo_chunk_read_buffer(member, &data, &size) != NMO_OK || data == NULL ||
+        size < sizeof(*out_buffer)) {
+        return false;
+    }
+    memcpy(out_buffer, data, sizeof(*out_buffer));
+    return true;
+}
+
+/*
+ * The texture coordinates generation a material's effect sets (ReadTexGenParameter,
+ * ReadTexGenRefParameter): VXEFFECT_TEXGEN's parameter holds the VX_EFFECTTEXGEN,
+ * VXEFFECT_TEXGENREF's is a struct of it and the referential.
+ */
+static void eng_material_texgen(const nmo_engine_t *engine, nmo_object_id_t id,
+                                const nmo_material_state_t *state, nmo_engine_material_t *out)
+{
+    if ((state->effect != VXEFFECT_TEXGEN && state->effect != VXEFFECT_TEXGENREF) ||
+        !state->has_effect_param) {
+        return;
     }
     nmo_object_id_t param = eng_object_ref(engine, id, &state->effect_parameter);
     nmo_object_t *object = param != 0 ? eng_find_object(engine, param) : NULL;
     const nmo_parameter_state_t *value =
         object != NULL ? (const nmo_parameter_state_t *)nmo_object_get_state(object) : NULL;
-    int32_t texgen = 0;
-    if (value != NULL && value->buffer_data.data != NULL &&
-        value->buffer_data.count * value->buffer_data.element_size >= sizeof(texgen)) {
-        memcpy(&texgen, value->buffer_data.data, sizeof(texgen));
+    if (value == NULL) {
+        return;
     }
-    return texgen;
+    if (state->effect == VXEFFECT_TEXGEN) {
+        if (value->buffer_data.data != NULL &&
+            value->buffer_data.count * value->buffer_data.element_size >= sizeof(out->texgen)) {
+            memcpy(&out->texgen, value->buffer_data.data, sizeof(out->texgen));
+        }
+        return;
+    }
+    if (value->mode != CKPARAM_MODE_SUBCHUNK || value->subchunk == NULL) {
+        return;
+    }
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096u);
+    nmo_chunk_t *saved = arena != NULL ? nmo_chunk_clone(value->subchunk, arena) : NULL;
+    int32_t count = 0;
+    if (saved != NULL && nmo_chunk_start_read(saved) == NMO_OK &&
+        nmo_chunk_seek_identifier(saved, CK_STRUCT_IDENTIFIER) == NMO_OK &&
+        nmo_chunk_read_int(saved, &count) == NMO_OK) {
+        for (int32_t i = 0; i < count && i < 2; i++) {
+            nmo_chunk_t *member = NULL;
+            if (nmo_chunk_read_sub_chunk(saved, &member) != NMO_OK || member == NULL) {
+                break;
+            }
+            uint32_t texgen = 0;
+            nmo_object_id_t referential = 0;
+            if (eng_struct_member(member, &texgen, &referential)) {
+                if (i == 0) {
+                    out->texgen = (int32_t)texgen;
+                } else {
+                    const eng_module_t *module = eng_module_of(engine, id, NULL);
+                    out->texgen_referential =
+                        module != NULL && referential != 0 ? eng_module_id(module, referential) : 0;
+                }
+            }
+            nmo_chunk_destroy(member);
+        }
+    }
+    nmo_arena_destroy(arena);
 }
 
 /* RCKMaterial as it loads: colors, the texture, and the packed modes and flags */
@@ -272,7 +343,7 @@ static void eng_material_from_state(const nmo_engine_t *engine, nmo_object_id_t 
     out->z_func = (int32_t)((flags >> 8) & 0xFu);
     out->alpha_func = (int32_t)((flags >> 16) & 0xFu);
     out->alpha_ref = (uint8_t)(flags >> 24);
-    out->texgen = eng_material_texgen(engine, id, state);
+    eng_material_texgen(engine, id, state, out);
 }
 
 eng_material_t *eng_material(nmo_engine_t *engine, nmo_object_id_t id)

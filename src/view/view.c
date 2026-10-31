@@ -392,29 +392,111 @@ static GLint view_filter(int32_t filter, bool minify)
     }
 }
 
-/*
- * RCKMaterial::TexGenEffect without a referential: reflect and chrome take
- * the camera space reflection vector or normal, planar the camera space
- * position, scaled by 0.4 (0.5 planar) with V flipped, about the texture's
- * middle. The eye space here is the camera's, so GL's generation is CK's.
- */
-static void view_set_texgen(int32_t texgen)
+/* The inverse of an affine row-vector matrix (rotation, scale and translation) */
+static bool view_affine_inverse(float out[16], const float m[16])
 {
+    float a = m[0], b = m[1], c = m[2], d = m[4], e = m[5], f = m[6], g = m[8], h = m[9], i = m[10];
+    float det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+    if (fabsf(det) < 1e-12f) {
+        return false;
+    }
+    float inv = 1.0f / det;
+    float r[9] = {(e * i - f * h) * inv, (c * h - b * i) * inv, (b * f - c * e) * inv,
+                  (f * g - d * i) * inv, (a * i - c * g) * inv, (c * d - a * f) * inv,
+                  (d * h - e * g) * inv, (b * g - a * h) * inv, (a * e - b * d) * inv};
+    memset(out, 0, 16 * sizeof(float));
+    for (int row = 0; row < 3; row++) {
+        for (int col = 0; col < 3; col++) {
+            out[row * 4 + col] = r[row * 3 + col];
+        }
+    }
+    for (int col = 0; col < 3; col++) {
+        out[12 + col] = -(m[12] * r[col] + m[13] * r[3 + col] + m[14] * r[6 + col]);
+    }
+    out[15] = 1.0f;
+    return true;
+}
+
+/*
+ * RCKMaterial::TexGenEffect: reflect and chrome take the camera space
+ * reflection vector or normal, planar the camera space position, transform
+ * the mesh's UVs. With a referential, reflect and chrome turn by the basis
+ * looking from it to the object drawn (`world`), planar takes it inverted,
+ * transform takes its matrix; the result is scaled by 0.4 (0.5 planar), V
+ * flipped, about the texture's middle. The eye space here is the camera's,
+ * so GL's generation is CK's, and the matrices are CK's row-vector ones.
+ */
+static void view_set_texgen(nmo_view_t *view, const nmo_engine_material_t *m, const float *world)
+{
+    int32_t texgen = m != NULL ? m->texgen : 0;
     GLint mode = texgen == 2 ? GL_REFLECTION_MAP : texgen == 3 ? GL_NORMAL_MAP
                  : texgen == 4 ? GL_EYE_LINEAR : 0;
+    float ref[16];
+    bool referential = m != NULL && m->texgen_referential != 0 &&
+                       nmo_engine_entity_world_matrix(view->engine, m->texgen_referential, ref);
+    float t[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    if (texgen == 1 && referential) {
+        memcpy(t, ref, sizeof(t));
+    } else if (mode != 0) {
+        if (mode != GL_EYE_LINEAR && referential && world != NULL) {
+            float dir[3] = {world[12] - ref[12], world[13] - ref[13], world[14] - ref[14]};
+            float length = sqrtf(dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2]);
+            if (length == 0.0f) {
+                dir[0] = dir[1] = 0.0f;
+                dir[2] = 1.0f;
+            } else {
+                for (int k = 0; k < 3; k++) {
+                    dir[k] /= length;
+                }
+            }
+            float axis[3] = {0.0f, 1.0f, 0.0f};
+            if (fabsf(dir[1]) > 0.999f) {
+                axis[0] = 1.0f;
+                axis[1] = 0.0f;
+            }
+            float along = axis[0] * dir[0] + axis[1] * dir[1] + axis[2] * dir[2];
+            float up[3] = {axis[0] - dir[0] * along, axis[1] - dir[1] * along,
+                           axis[2] - dir[2] * along};
+            float up_length = sqrtf(up[0] * up[0] + up[1] * up[1] + up[2] * up[2]);
+            for (int k = 0; k < 3; k++) {
+                up[k] /= up_length;
+            }
+            float right[3] = {up[1] * dir[2] - up[2] * dir[1], up[2] * dir[0] - up[0] * dir[2],
+                              up[0] * dir[1] - up[1] * dir[0]};
+            /* the basis' rows are right, up and dir: its inverse is its transpose */
+            for (int k = 0; k < 3; k++) {
+                t[k * 4 + 0] = right[k];
+                t[k * 4 + 1] = up[k];
+                t[k * 4 + 2] = dir[k];
+            }
+        } else if (mode == GL_EYE_LINEAR && referential) {
+            view_affine_inverse(t, ref);
+        }
+        float scale = mode == GL_EYE_LINEAR ? 0.5f : 0.4f;
+        for (int row = 0; row < 4; row++) {
+            t[row * 4 + 0] *= scale;
+            t[row * 4 + 1] *= -scale;
+            t[row * 4 + 2] *= scale;
+        }
+        if (mode == GL_EYE_LINEAR) {
+            t[12] += 0.5f;
+            t[13] += 0.5f;
+        } else {
+            t[12] = 0.5f;
+            t[13] = 0.5f;
+            t[14] = 0.0f;
+            t[15] = 1.0f;
+        }
+    }
     glMatrixMode(GL_TEXTURE);
-    glLoadIdentity();
+    glLoadMatrixf(t);
+    glMatrixMode(GL_MODELVIEW);
     if (mode == 0) {
         glDisable(GL_TEXTURE_GEN_S);
         glDisable(GL_TEXTURE_GEN_T);
         glDisable(GL_TEXTURE_GEN_R);
-        glMatrixMode(GL_MODELVIEW);
         return;
     }
-    float scale = texgen == 4 ? 0.5f : 0.4f;
-    glTranslatef(0.5f, 0.5f, 0.0f);
-    glScalef(scale, -scale, scale);
-    glMatrixMode(GL_MODELVIEW);
     if (mode == GL_EYE_LINEAR) {
         /* planes taken in eye space: the identity at the time they are given */
         const float s_plane[4] = {1, 0, 0, 0}, t_plane[4] = {0, 1, 0, 0}, r_plane[4] = {0, 0, 1, 0};
@@ -435,7 +517,7 @@ static void view_set_texgen(int32_t texgen)
 
 /* RCKMaterial::SetAsCurrent: lighting, texture, blending and tests */
 static void view_set_material(nmo_view_t *view, const nmo_engine_material_t *m, bool lit,
-                              bool depth)
+                              bool depth, const float *world)
 {
     if (lit) {
         glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, m->diffuse);
@@ -456,10 +538,10 @@ static void view_set_material(nmo_view_t *view, const nmo_engine_material_t *m, 
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, (GLint)view_address(m->address_mode));
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, (GLint)view_address(m->address_mode));
         glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, view_texture_env(m->texture_blend));
-        view_set_texgen(m->texgen);
+        view_set_texgen(view, m, world);
     } else {
         glDisable(GL_TEXTURE_2D);
-        view_set_texgen(0);
+        view_set_texgen(view, NULL, NULL);
     }
     if (m->alpha_blend) {
         glEnable(GL_BLEND);
@@ -617,7 +699,7 @@ static void view_draw_mesh(nmo_view_t *view, const nmo_engine_frame_t *frame,
             glEnable(GL_LIGHTING);
             glColor4fv(material.diffuse);
         }
-        view_set_material(view, &material, !prelit, true);
+        view_set_material(view, &material, !prelit, true, draw->world);
         if (draw->no_z_test) {
             glDisable(GL_DEPTH_TEST);
         }
@@ -654,7 +736,7 @@ static void view_draw_mesh(nmo_view_t *view, const nmo_engine_frame_t *frame,
         material.dest_blend = channel->dest_blend;
         material.z_write = false;
         material.z_func = 4;
-        view_set_material(view, &material, lit, true);
+        view_set_material(view, &material, lit, true, draw->world);
         if (channel->uvs != NULL) {
             glTexCoordPointer(2, GL_FLOAT, 0, channel->uvs);
         } else {
@@ -680,7 +762,7 @@ static void view_draw_quad(nmo_view_t *view, const nmo_engine_draw_t *draw)
 {
     nmo_engine_material_t material;
     if (draw->material != 0 && nmo_engine_material(view->engine, draw->material, &material)) {
-        view_set_material(view, &material, false, false);
+        view_set_material(view, &material, false, false, NULL);
     } else {
         /* CKTextureFont::SetRenderStates, or a quad's own blending (Planar Filter) */
         memset(&material, 0, sizeof(material));
@@ -693,7 +775,7 @@ static void view_draw_quad(nmo_view_t *view, const nmo_engine_draw_t *draw)
         material.address_mode = 3;
         material.min_filter = material.mag_filter = draw->nearest ? 1 : 2;
         material.shade_mode = draw->color2 != draw->color ? 2 : 1;
-        view_set_material(view, &material, false, false);
+        view_set_material(view, &material, false, false, NULL);
     }
     glDisable(GL_CULL_FACE);
     glShadeModel(GL_SMOOTH);
@@ -732,7 +814,7 @@ static void view_draw_sprite_text(nmo_view_t *view, const nmo_engine_draw_t *dra
     glEnable(GL_TEXTURE_2D);
     glBindTexture(GL_TEXTURE_2D, name);
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-    view_set_texgen(0);
+    view_set_texgen(view, NULL, NULL);
     glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
     glBegin(GL_TRIANGLE_FAN);
     glTexCoord2f(0.0f, 0.0f);
@@ -772,7 +854,7 @@ static void view_draw_triangles(nmo_view_t *view, const nmo_engine_frame_t *fram
     material.z_func = 4;
     material.shade_mode = 2;
     glDisable(GL_LIGHTING);
-    view_set_material(view, &material, false, true);
+    view_set_material(view, &material, false, true, NULL);
     glMatrixMode(GL_MODELVIEW);
     glLoadMatrixf(view_m);
     const nmo_engine_vertex_t *v = &frame->vertices[draw->first_vertex];
@@ -797,7 +879,7 @@ static void view_draw_sprite3d(nmo_view_t *view, const nmo_engine_frame_t *frame
         return;
     }
     glDisable(GL_LIGHTING);
-    view_set_material(view, &material, false, true);
+    view_set_material(view, &material, false, true, NULL);
     glMatrixMode(GL_MODELVIEW);
     glLoadMatrixf(view_m);
     const nmo_engine_vertex_t *v = &frame->vertices[draw->first_vertex];

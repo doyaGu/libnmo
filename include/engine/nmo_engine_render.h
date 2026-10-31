@@ -198,9 +198,10 @@ typedef struct nmo_engine_material {
     bool alpha_test;
     int32_t alpha_func;
     uint8_t alpha_ref;
-    /* VX_EFFECTTEXGEN the texture coordinates come from (VXEFFECT_TEXGEN): 0 the mesh's,
-       1 transform, 2 reflect, 3 chrome, 4 planar, 5+ cube maps */
+    /* VX_EFFECTTEXGEN the texture coordinates come from (VXEFFECT_TEXGEN, VXEFFECT_TEXGENREF):
+       0 the mesh's, 1 transform, 2 reflect, 3 chrome, 4 planar, 5+ cube maps */
     int32_t texgen;
+    nmo_object_id_t texgen_referential; /* VXEFFECT_TEXGENREF's 3D entity; 0 for the scene's root */
 } nmo_engine_material_t;
 
 /** False when `material` is no CKMaterial. */
