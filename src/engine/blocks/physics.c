@@ -1373,7 +1373,30 @@ static const nmo_engine_block_desc_t eng_physics_blocks[] = {
     {NMO_GUID(0x5714345e, 0x792262ae), "Physics Reset", bb_physics_reset, NULL, NULL},
 };
 
+static void physics_manager_destroy(nmo_engine_t *engine, void *state)
+{
+    (void)state;
+    eng_free_physics(engine);
+}
+
+static void physics_manager_post_process(nmo_engine_t *engine, void *state)
+{
+    (void)state;
+    eng_physics_post_process(engine);
+}
+
+/* CKIpionManager */
+static const eng_manager_desc_t physics_manager = {
+    .name = "Ipion Manager",
+    .destroy = physics_manager_destroy,
+    .post_process = physics_manager_post_process,
+};
+
 nmo_status_t eng_register_physics(nmo_engine_t *engine)
 {
-    return ENG_REGISTER_BLOCKS(engine, eng_physics_blocks);
+    if (eng_manager_state(engine, &physics_manager) == NULL) {
+        eng_physics_init(engine);
+    }
+    nmo_status_t status = eng_add_manager(engine, &physics_manager, NULL);
+    return status == NMO_OK ? ENG_REGISTER_BLOCKS(engine, eng_physics_blocks) : status;
 }

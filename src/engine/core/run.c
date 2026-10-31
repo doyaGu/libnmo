@@ -462,13 +462,14 @@ nmo_status_t nmo_engine_step(nmo_engine_t *engine, float delta_ms)
     eng_input_begin_frame(engine);
     eng_sounds_begin_frame(engine);
     eng_render_begin_frame(engine);
+    eng_managers_pre_process(engine);
     eng_emit(engine, NMO_ENGINE_EVENT_FRAME_BEGIN, -1, 0, 0);
     engine->dynamic.defer = true;
     nmo_status_t status = eng_manager_execute(engine);
     engine->dynamic.defer = false;
     if (status == NMO_OK) {
         eng_dispatch_messages(engine); /* CKMessageManager::PostProcess */
-        eng_physics_post_process(engine); /* CKIpionManager::PostProcess */
+        eng_managers_post_process(engine); /* the packs' managers' PostProcess */
         eng_delete_dynamic_objects(engine); /* CKObjectManager::PostProcess */
     }
     eng_emit(engine, NMO_ENGINE_EVENT_FRAME_END, -1, 0, 0);

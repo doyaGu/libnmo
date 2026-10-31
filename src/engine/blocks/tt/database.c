@@ -374,8 +374,21 @@ static const nmo_engine_block_desc_t eng_tt_database_blocks[] = {
     {NMO_GUID(0x348773dc, 0x19ae6322), "TT Register Array", bb_register_array, NULL, NULL},
 };
 
+static void tt_manager_destroy(nmo_engine_t *engine, void *state)
+{
+    (void)state;
+    eng_free_tt(engine);
+}
+
+/* The Terratools time, database and debug managers */
+static const eng_manager_desc_t tt_manager = {
+    .name = "TT Managers",
+    .destroy = tt_manager_destroy,
+};
+
 nmo_status_t eng_register_tt_database(nmo_engine_t *engine)
 {
     engine->tt.database_crypted = true;
-    return ENG_REGISTER_BLOCKS(engine, eng_tt_database_blocks);
+    nmo_status_t status = eng_add_manager(engine, &tt_manager, NULL);
+    return status == NMO_OK ? ENG_REGISTER_BLOCKS(engine, eng_tt_database_blocks) : status;
 }

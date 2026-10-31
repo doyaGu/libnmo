@@ -664,7 +664,30 @@ static const nmo_engine_block_desc_t eng_tt_particles_blocks[] = {
     {NMO_GUID(0x02da5a18, 0x52227285), "TT WaveParticleSystem", bb_particle_system, NULL, NULL},
 };
 
+static void particle_manager_destroy(nmo_engine_t *engine, void *state)
+{
+    (void)state;
+    eng_free_emitters(engine);
+}
+
+static void particle_manager_render(nmo_engine_t *engine, void *state, eng_render_stage_t stage,
+                                    const eng_render_args_t *args)
+{
+    (void)state;
+    if (stage == ENG_RENDER_SCENE) {
+        eng_draw_particles(engine, args->view);
+    }
+}
+
+/* ParticleManager */
+static const eng_manager_desc_t particle_manager = {
+    .name = "Particle Manager",
+    .destroy = particle_manager_destroy,
+    .render = particle_manager_render,
+};
+
 nmo_status_t eng_register_tt_particles(nmo_engine_t *engine)
 {
-    return ENG_REGISTER_BLOCKS(engine, eng_tt_particles_blocks);
+    nmo_status_t status = eng_add_manager(engine, &particle_manager, NULL);
+    return status == NMO_OK ? ENG_REGISTER_BLOCKS(engine, eng_tt_particles_blocks) : status;
 }

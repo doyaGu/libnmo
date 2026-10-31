@@ -244,7 +244,23 @@ static const nmo_engine_block_desc_t eng_visuals_blocks[] = {
     {NMO_GUID(0x3f7e5bff, 0x02326a71), "Set 2D Material", bb_set_2d_material, NULL, NULL},
 };
 
+/* Planar Filter's full-view quads, the post sprite render callbacks */
+static void visuals_render(nmo_engine_t *engine, void *state, eng_render_stage_t stage,
+                           const eng_render_args_t *args)
+{
+    (void)state;
+    if (stage == ENG_RENDER_POST) {
+        eng_draw_filters(engine, args->width, args->height);
+    }
+}
+
+static const eng_manager_desc_t visuals_manager = {
+    .name = "Visuals Render",
+    .render = visuals_render,
+};
+
 nmo_status_t eng_register_visuals(nmo_engine_t *engine)
 {
-    return ENG_REGISTER_BLOCKS(engine, eng_visuals_blocks);
+    nmo_status_t status = eng_add_manager(engine, &visuals_manager, NULL);
+    return status == NMO_OK ? ENG_REGISTER_BLOCKS(engine, eng_visuals_blocks) : status;
 }

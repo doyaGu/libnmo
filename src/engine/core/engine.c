@@ -221,9 +221,6 @@ nmo_status_t nmo_engine_create(nmo_workspace_t *workspace,
     if (status == NMO_OK) {
         status = eng_load_range(engine, 0, 0u, 0u);
     }
-    if (status == NMO_OK) {
-        eng_physics_init(engine);
-    }
     for (size_t i = 0; status == NMO_OK && !engine->options.no_builtin_blocks &&
                        i < sizeof(eng_block_sets) / sizeof(eng_block_sets[0]);
          i++) {
@@ -252,11 +249,10 @@ void nmo_engine_destroy(nmo_engine_t *engine)
         free(engine->nodes.data[i].state);
     }
     free(engine->nodes.data);
+    eng_free_managers(engine);
     eng_free_sounds(engine);
     eng_free_textures(engine);
     free(engine->op_lookups.data);
-    eng_fonts_clear(engine);
-    free(engine->render.fonts.data);
     free(engine->ios.data);
     free(engine->links.data);
     free(engine->params.data);
@@ -271,9 +267,7 @@ void nmo_engine_destroy(nmo_engine_t *engine)
     eng_free_arrays(engine);
     eng_free_entities(engine);
     eng_free_attributes(engine);
-    eng_free_tt(engine);
     eng_free_host(engine);
-    eng_free_physics(engine);
     free(engine->node_map.slots);
     free(engine->io_map.slots);
     free(engine->param_map.slots);

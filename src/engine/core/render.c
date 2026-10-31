@@ -89,7 +89,6 @@ void eng_free_render(nmo_engine_t *engine)
     }
     free(render->mesh_copies.data);
     free(render->camera_planes.data);
-    eng_free_emitters(engine);
     free(render->vertices.data);
     free(render->draws.data);
     free(render->frame_lights.data);
@@ -914,7 +913,9 @@ static void eng_render_2d(nmo_engine_t *engine, int32_t index, float width, floa
     }
     free(children);
     if (visible) {
-        eng_draw_texts(engine, id, width, height); /* the post render callbacks */
+        /* the post render callbacks */
+        eng_render_args_t args = {NULL, width, height, id};
+        eng_managers_render(engine, ENG_RENDER_ENTITY_2D, &args);
     }
 }
 
@@ -1039,7 +1040,8 @@ nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *o
     float height = (float)mode->height;
 
     eng_prepare_cameras(engine);
-    eng_update_shadows(engine);
+    eng_render_args_t args = {out->view, width, height, 0};
+    eng_managers_render(engine, ENG_RENDER_PREPARE, &args);
     out->camera = render->camera;
     out->fov = 0.5f;
     out->zoom = 1.0f;
@@ -1079,7 +1081,7 @@ nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *o
     render->draws.count = 0;
     render->vertices.count = 0;
     eng_render_2d_root(engine, true, width, height);
-    eng_draw_skies(engine, out->view);
+    eng_managers_render(engine, ENG_RENDER_BACKGROUND, &args);
     for (size_t i = 0; i < engine->entities.count; i++) {
         const eng_entity_t *entity = &engine->entities.data[i];
         if (entity->destroyed || !eng_in_scene(engine, entity->id) ||
@@ -1112,11 +1114,10 @@ nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *o
         memcpy(draw->world, entity->world.m, sizeof(draw->world));
         draw->transparent = transparent;
     }
-    eng_draw_particles(engine, out->view);
+    eng_managers_render(engine, ENG_RENDER_SCENE, &args);
     eng_render_2d_root(engine, false, width, height);
-    eng_draw_sprite_texts(engine);
-    eng_draw_texts(engine, 0, width, height); /* the font manager's, after the sprites */
-    eng_draw_filters(engine, width, height); /* the post sprite render callbacks */
+    eng_managers_render(engine, ENG_RENDER_OVERLAY, &args); /* the post render callbacks */
+    eng_managers_render(engine, ENG_RENDER_POST, &args);    /* the post sprite render callbacks */
 
     out->lights = render->frame_lights.data;
     out->light_count = (int32_t)render->frame_lights.count;

@@ -18,6 +18,7 @@
 #include "engine_graph.h"
 #include "engine_host.h"
 #include "engine_input.h"
+#include "engine_manager.h"
 #include "engine_media.h"
 #include "engine_message.h"
 #include "engine_module.h"
@@ -80,6 +81,8 @@ struct nmo_engine {
     eng_physics_t physics;
     eng_tt_t tt;
     eng_host_t host;
+    /* The managers the block packs added, in the order they were added */
+    ENG_VEC(eng_manager_t) managers;
 };
 
 static inline int32_t *eng_index(nmo_engine_t *engine, uint32_t at)

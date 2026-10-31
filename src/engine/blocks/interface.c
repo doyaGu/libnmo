@@ -1163,7 +1163,35 @@ static const nmo_engine_block_desc_t eng_interface_blocks[] = {
     {NMO_GUID(0x1616120f, 0x5b2f48ce), "2D Picking", bb_picking_2d, NULL, NULL},
 };
 
+static void font_manager_destroy(nmo_engine_t *engine, void *state)
+{
+    (void)state;
+    eng_fonts_clear(engine);
+    free(engine->render.fonts.data);
+}
+
+/* The font manager's texts after each 2D entity and after the sprites; Text Display's sprite texts */
+static void font_manager_render(nmo_engine_t *engine, void *state, eng_render_stage_t stage,
+                                const eng_render_args_t *args)
+{
+    (void)state;
+    if (stage == ENG_RENDER_ENTITY_2D) {
+        eng_draw_texts(engine, args->entity, args->width, args->height);
+    } else if (stage == ENG_RENDER_OVERLAY) {
+        eng_draw_sprite_texts(engine);
+        eng_draw_texts(engine, 0, args->width, args->height);
+    }
+}
+
+/* CKFontManager */
+static const eng_manager_desc_t font_manager = {
+    .name = "Font Manager",
+    .destroy = font_manager_destroy,
+    .render = font_manager_render,
+};
+
 nmo_status_t eng_register_interface(nmo_engine_t *engine)
 {
-    return ENG_REGISTER_BLOCKS(engine, eng_interface_blocks);
+    nmo_status_t status = eng_add_manager(engine, &font_manager, NULL);
+    return status == NMO_OK ? ENG_REGISTER_BLOCKS(engine, eng_interface_blocks) : status;
 }

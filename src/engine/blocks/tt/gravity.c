@@ -1170,7 +1170,25 @@ static const nmo_engine_block_desc_t eng_tt_gravity_blocks[] = {
     {NMO_GUID(0x36106bd9, 0x51813906), "TT Extra", bb_tt_extra, cb_tt_extra, NULL},
 };
 
+/* TT Sky's sky behind the 3D entities, TT Simple Shadow's floors before the draws */
+static void gravity_render(nmo_engine_t *engine, void *state, eng_render_stage_t stage,
+                           const eng_render_args_t *args)
+{
+    (void)state;
+    if (stage == ENG_RENDER_PREPARE) {
+        eng_update_shadows(engine);
+    } else if (stage == ENG_RENDER_BACKGROUND) {
+        eng_draw_skies(engine, args->view);
+    }
+}
+
+static const eng_manager_desc_t gravity_manager = {
+    .name = "TT Gravity Render",
+    .render = gravity_render,
+};
+
 nmo_status_t eng_register_tt_gravity(nmo_engine_t *engine)
 {
-    return ENG_REGISTER_BLOCKS(engine, eng_tt_gravity_blocks);
+    nmo_status_t status = eng_add_manager(engine, &gravity_manager, NULL);
+    return status == NMO_OK ? ENG_REGISTER_BLOCKS(engine, eng_tt_gravity_blocks) : status;
 }
