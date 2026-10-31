@@ -473,8 +473,29 @@ TEST(engine_media, play_global_animation_loops_over_its_duration)
 {
     engine_fixture_t f;
     fixture_begin_document(&f);
+    nmo_object_id_t entity = fixture_create(&f, NMO_CID_3DENTITY, "Entity");
+    nmo_object_id_t part = fixture_create(&f, NMO_CID_OBJECTANIMATION, "Part");
     nmo_object_id_t animation = fixture_create(&f, NMO_CID_KEYEDANIMATION, "Animation");
-    ASSERT_TRUE(animation != 0);
+    ASSERT_TRUE(entity != 0 && part != 0 && animation != 0);
+    /* Its one object animation turns about Y by TCB keys at frames 0, 4 and 10: 0, 90 and 180 degrees */
+    static float keys[] = {
+        0.0f,  0.0f, 0.0f,        0.0f, 1.0f,        0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+        4.0f,  0.0f, 0.70710678f, 0.0f, 0.70710678f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+        10.0f, 0.0f, 1.0f,        0.0f, 0.0f,        0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    };
+    static nmo_objanim_controller_t controllers[] = {{0x45b52a02u, 3, sizeof(keys), keys}};
+    nmo_objectanimation_state_t *part_state = (nmo_objectanimation_state_t *)fixture_state(&f, part);
+    nmo_keyedanimation_state_t *state = (nmo_keyedanimation_state_t *)fixture_state(&f, animation);
+    ASSERT_TRUE(part_state != NULL && state != NULL);
+    part_state->entity = nmo_ref_from_id(entity);
+    part_state->has_length = 1;
+    part_state->length = 10.0f;
+    part_state->controller_count = 1;
+    part_state->controllers = controllers;
+    static nmo_ref_t parts[1];
+    parts[0] = nmo_ref_from_id(part);
+    state->animation_count = 1;
+    state->animation_ids = parts;
     f.script_id = fixture_add_script(&f, "Script", &f.script_in);
     fixture_begin_edit(&f);
     nmo_object_id_t play = fixture_block(&f, GUID_PLAY_GLOBAL_ANIMATION, "Play");
@@ -488,9 +509,18 @@ TEST(engine_media, play_global_animation_loops_over_its_duration)
 
     ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
     /* From 0 in the first frame, 0.4 each 40 ms: past 1 at the fourth frame, then on from 0.2 */
-    for (int frame = 0; frame < 3; frame++) {
+    for (int frame = 0; frame < 2; frame++) {
         ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 40.0f));
     }
+    /* At 0.4, frame 4: the middle key's quarter turn, its first row (0, 0, 1) */
+    float world[16];
+    ASSERT_TRUE(nmo_engine_entity_world_matrix(f.engine, entity, world));
+    ASSERT_FLOAT_EQ(0.0f, world[0], 0.0001f);
+    ASSERT_FLOAT_EQ(1.0f, world[2], 0.0001f);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 40.0f));
+    /* At 0.8, frame 8: on the way to the half turn */
+    ASSERT_TRUE(nmo_engine_entity_world_matrix(f.engine, entity, world));
+    ASSERT_TRUE(world[0] < -0.5f && world[0] > -1.0f);
     float progression = 0.0f;
     read_value(&f, BLOCK_POUT(&f, play, 0), &progression, sizeof(progression));
     ASSERT_FLOAT_EQ(0.8f, progression, 0.0001f);

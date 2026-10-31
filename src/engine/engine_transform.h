@@ -106,6 +106,8 @@ int eng_entity_ray_intersection(nmo_engine_t *engine, int32_t index, const eng_v
 /* core/animation.c */
 /* CKObjectAnimation::SetStep: its entity's local pose at `step` (0..1); false when it has none */
 bool eng_object_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animation, float step);
+/* CKAnimation::SetStep: an object animation's, or each of a keyed animation's */
+bool eng_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animation, float step);
 
 /* CKCurve::GetPos: the world position at `step` (0..1) of the curve's length */
 bool eng_curve_position(nmo_engine_t *engine, nmo_object_id_t curve, float step, eng_vector_t *out);

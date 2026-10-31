@@ -38,7 +38,7 @@ static void play_animation_step(blk_t *b, nmo_object_id_t animation, float step)
     size_t curve_size = 0;
     const void *curve = nmo_engine_block_input_data(b, 2, &curve_size);
     float y = curve != NULL ? nmo_engine_curve_y(curve, curve_size, step) : step;
-    eng_object_animation_set_step(b->engine, animation, y);
+    eng_animation_set_step(b->engine, animation, y);
 }
 
 static int bb_play_animation(blk_t *b)
@@ -179,8 +179,7 @@ static int bb_play_global_animation(blk_t *b)
         }
     }
     if (animation != 0) {
-        nmo_engine_block_set_local_value(b, 0, &step, sizeof(step));
-        nmo_engine_block_set_output_value(b, 0, &step, sizeof(step));
+        play_animation_step(b, animation, step);
     }
     return result;
 }
