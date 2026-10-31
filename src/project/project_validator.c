@@ -416,6 +416,16 @@ static nmo_status_t project_validation_check_objects(
                 "invalid_transform_target",
                 "Project object transform requires a 3D entity-compatible class"));
         }
+        if ((object.flags & NMO_PROJECT_OBJECT_FLAG_HIDDEN) != 0u &&
+            !project_validation_class_is_entity(object.class_id)) {
+            NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
+                report,
+                "invalid_hidden_target",
+                "Project hidden objects must be 3D entity-compatible",
+                "object",
+                object.name,
+                object.source_path));
+        }
         if (object.has_camera && !project_validation_class_is_camera(object.class_id)) {
             NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
                 report,

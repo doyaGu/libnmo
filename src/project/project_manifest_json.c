@@ -2066,7 +2066,7 @@ static nmo_status_t manifest_parse_object_declare(
     static const char *const allowed[] = {
         "id", "name", "class", "parent", "fields", "mesh", "material", "materials",
         "transform", "camera", "light", "sound", "animation", "scripts", "groups",
-        NULL};
+        "visible", NULL};
     const char *id = NULL;
     const char *name = NULL;
     const char *class_name = NULL;
@@ -2087,6 +2087,15 @@ static nmo_status_t manifest_parse_object_declare(
     class_id = nmo_type_query_class_id_from_name(
         nmo_context_get_type_registry(ctx->context),
         class_name);
+    yyjson_val *visible = yyjson_obj_get(object, "visible");
+    if (visible && !yyjson_is_bool(visible)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "manifest object.visible must be a boolean");
+    }
+    uint32_t flags = NMO_PROJECT_OBJECT_FLAG_ACTIVE;
+    if (visible && !yyjson_get_bool(visible)) {
+        flags |= NMO_PROJECT_OBJECT_FLAG_HIDDEN;
+    }
     if (class_id == 0 || class_id == NMO_CLASS_ID_INVALID) {
         NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
                          "manifest object class '%s' is not registered", class_name);
@@ -2113,7 +2122,7 @@ static nmo_status_t manifest_parse_object_declare(
             .scene_handle = scene_handle,
             .class_id = class_id,
             .name = name,
-            .flags = NMO_PROJECT_OBJECT_FLAG_ACTIVE,
+            .flags = flags,
             .fields = fields,
             .field_count = field_count,
         },
@@ -2146,7 +2155,7 @@ static nmo_status_t manifest_parse_object_details(
     static const char *const allowed[] = {
         "id", "name", "class", "parent", "fields", "mesh", "material", "materials",
         "transform", "camera", "light", "sound", "animation", "scripts", "groups",
-        NULL};
+        "visible", NULL};
     const char *parent_ref = NULL;
 
     NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(object, "object", allowed));

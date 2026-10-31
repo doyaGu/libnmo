@@ -470,6 +470,13 @@ nmo_status_t nmo_project_author_scenes(
             }
         }
 
+        if ((object.flags & NMO_PROJECT_OBJECT_FLAG_HIDDEN) != 0u) {
+            status = nmo_entity_edit_set_visible(edit, object_id, false);
+            if (status != NMO_OK) {
+                goto cleanup;
+            }
+        }
+
         if (object.has_camera) {
             status = project_authoring_set_camera(edit, object_id, &object);
             if (status != NMO_OK) {

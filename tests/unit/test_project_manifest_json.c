@@ -1354,6 +1354,35 @@ TEST(project_manifest_json, rejects_bad_texture_format_and_alpha_ref)
     ASSERT_NULL(plan);
 }
 
+TEST(project_manifest_json, parses_hidden_objects)
+{
+    const char *json =
+        "{\"version\":1,\"document\":{\"name\":\"L\"},"
+        "\"scenes\":[{\"name\":\"Level\",\"objects\":["
+        "{\"name\":\"Quader01\",\"class\":\"CK3dObject\",\"visible\":false},"
+        "{\"name\":\"A01_Floor_01\",\"class\":\"CK3dObject\",\"visible\":true},"
+        "{\"name\":\"A01_Floor_02\",\"class\":\"CK3dObject\"}"
+        "]}]}";
+    nmo_project_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    nmo_project_object_desc_t object = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_object(plan, 0u, &object));
+    ASSERT_TRUE((object.flags & NMO_PROJECT_OBJECT_FLAG_HIDDEN) != 0u);
+    ASSERT_TRUE((object.flags & NMO_PROJECT_OBJECT_FLAG_ACTIVE) != 0u);
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_object(plan, 1u, &object));
+    ASSERT_TRUE((object.flags & NMO_PROJECT_OBJECT_FLAG_HIDDEN) == 0u);
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_object(plan, 2u, &object));
+    ASSERT_TRUE((object.flags & NMO_PROJECT_OBJECT_FLAG_HIDDEN) == 0u);
+    nmo_project_plan_destroy(plan);
+
+    const char *invalid =
+        "{\"version\":1,\"document\":{\"name\":\"L\"},"
+        "\"scenes\":[{\"name\":\"Level\",\"objects\":["
+        "{\"name\":\"Q\",\"class\":\"CK3dObject\",\"visible\":\"no\"}]}]}";
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_project_manifest_json_read(invalid, strlen(invalid), &plan));
+    ASSERT_NULL(plan);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(project_manifest_json, parses_minimal_visible_scene);
 REGISTER_TEST(project_manifest_json, parses_named_obj_materials);
@@ -1390,4 +1419,5 @@ REGISTER_TEST(project_manifest_json, rejects_duplicate_and_unknown_group_members
 REGISTER_TEST(project_manifest_json, parses_external_texture_save);
 REGISTER_TEST(project_manifest_json, parses_shared_materials);
 REGISTER_TEST(project_manifest_json, rejects_bad_texture_format_and_alpha_ref);
+REGISTER_TEST(project_manifest_json, parses_hidden_objects);
 TEST_MAIN_END()

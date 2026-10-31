@@ -40,7 +40,9 @@ typedef struct nmo_project_scene_desc {
 } nmo_project_scene_desc_t;
 
 typedef enum nmo_project_object_flags {
-    NMO_PROJECT_OBJECT_FLAG_ACTIVE = 1u << 0
+    NMO_PROJECT_OBJECT_FLAG_ACTIVE = 1u << 0,
+    /* A 3D entity saved hidden (no VX_MOVEABLE_VISIBLE). */
+    NMO_PROJECT_OBJECT_FLAG_HIDDEN = 1u << 1
 } nmo_project_object_flags_t;
 
 typedef struct nmo_project_object_spec {

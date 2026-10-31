@@ -1,6 +1,11 @@
 #include "test_framework.h"
 #include "document/nmo_document_load.h"
 #include "object/builtin/nmo_group_schemas.h"
+#include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_object_schemas.h"
+#include "type/nmo_object_guids.h"
+#include "type/nmo_type_query.h"
+#include "project/nmo_project_validator.h"
 #include "object/builtin/nmo_scene_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_defs.h"
@@ -454,6 +459,90 @@ TEST(scene_authoring, executor_authors_groups)
     remove(output_path);
 }
 
+TEST(scene_authoring, executor_saves_hidden_objects)
+{
+    const char *output_path = "test_scene_authoring_hidden.cmo";
+    remove(output_path);
+
+    nmo_project_plan_t *plan = NULL;
+    uint32_t hidden = 0u;
+    uint32_t shown = 0u;
+    uint32_t group = 0u;
+    ASSERT_EQ(NMO_OK, nmo_project_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_document_name(plan, "GeneratedLevel"));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_object(
+                          plan,
+                          &(nmo_project_object_spec_t){
+                              .class_id = NMO_CID_3DOBJECT,
+                              .name = "Quader01",
+                              .flags = NMO_PROJECT_OBJECT_FLAG_ACTIVE | NMO_PROJECT_OBJECT_FLAG_HIDDEN,
+                          },
+                          &hidden));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_object(
+                          plan,
+                          &(nmo_project_object_spec_t){
+                              .class_id = NMO_CID_3DOBJECT,
+                              .name = "A01_Floor_01",
+                              .flags = NMO_PROJECT_OBJECT_FLAG_ACTIVE,
+                          },
+                          &shown));
+
+    nmo_project_report_t report;
+    nmo_project_report_init(&report);
+    ASSERT_EQ(NMO_OK, nmo_project_executor_execute_to_file(plan, output_path, &report));
+    ASSERT_TRUE(report.ok);
+
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_document_t *doc = NULL;
+    ASSERT_EQ(NMO_OK, nmo_document_load_file(ctx, output_path, NULL, &doc));
+    const char *names[2] = {"Quader01", "A01_Floor_01"};
+    for (size_t i = 0u; i < 2u; ++i) {
+        nmo_object_t *object = NULL;
+        ASSERT_EQ(NMO_OK, nmo_object_query_find_first(
+                              doc,
+                              &(nmo_object_query_t){
+                                  .class_id = NMO_CID_3DOBJECT,
+                                  .name = names[i],
+                                  .name_mode = NMO_OBJECT_QUERY_NAME_EXACT,
+                              },
+                              &object,
+                              NULL));
+        ASSERT_NOT_NULL(object);
+        const nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+        const nmo_3dentity_state_t *entity = (const nmo_3dentity_state_t *)
+            nmo_type_query_object_get_ancestor_state_by_guid(registry, object, CKPGUID_3DENTITY);
+        const nmo_object_state_t *base = (const nmo_object_state_t *)
+            nmo_type_query_object_get_ancestor_state_by_guid(registry, object, CKPGUID_OBJECT);
+        ASSERT_NOT_NULL(entity);
+        ASSERT_NOT_NULL(base);
+        bool visible = i == 1u;
+        ASSERT_EQ(visible, (entity->moveable_flags & (uint32_t)VX_MOVEABLE_VISIBLE) != 0u);
+        ASSERT_EQ(visible, (base->visibility_flags & NMO_CKOBJECT_VISIBLE) != 0u);
+    }
+    nmo_document_destroy(doc);
+    nmo_context_release(ctx);
+    nmo_project_report_dispose(&report);
+
+    /* Only 3D entities can be hidden. */
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_object(
+                          plan,
+                          &(nmo_project_object_spec_t){
+                              .class_id = NMO_CID_GROUP,
+                              .name = "Shadow",
+                              .flags = NMO_PROJECT_OBJECT_FLAG_HIDDEN,
+                          },
+                          &group));
+    nmo_project_validation_report_t validation;
+    nmo_project_validation_report_init(&validation);
+    ASSERT_EQ(NMO_OK, nmo_project_validate_plan(plan, &validation));
+    ASSERT_TRUE(nmo_project_validation_contains(&validation, "invalid_hidden_target"));
+    nmo_project_validation_report_dispose(&validation);
+
+    nmo_project_plan_destroy(plan);
+    remove(output_path);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(scene_authoring, adds_scene_to_project_plan);
 REGISTER_TEST(scene_authoring, clones_scene_metadata);
@@ -464,4 +553,5 @@ REGISTER_TEST(scene_authoring, executor_creates_scene_object);
 REGISTER_TEST(scene_authoring, executor_authors_scene_environment);
 REGISTER_TEST(scene_authoring, stores_and_clones_groups);
 REGISTER_TEST(scene_authoring, executor_authors_groups);
+REGISTER_TEST(scene_authoring, executor_saves_hidden_objects);
 TEST_MAIN_END()
