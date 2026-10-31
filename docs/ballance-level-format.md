@@ -79,13 +79,19 @@ mesh of each kind from the original levels, and the `SkyLayer` plane, as
 installation; nothing of them is kept with libnmo.
 
 The start's octagonal platform and the pillars' bases are not the start
-object: in Level_01 they are the floor `A01_Floor_01`, a floor like any other
-(`Floor_Top_Checkpoint` on top), and the round floor with the two flame bowls
-under the first checkpoint is `A02_Floor_01`. Both stand unturned with their
-origins 1.24 below the marker; the start is turned 90 degrees on its platform,
-the checkpoint 180 on its floor, and the track crosses the checkpoint floor
-along its X, between the bowls on its Z sides. `ballance_level_elements.py`
-writes them as `Floor_Start.obj` and `Floor_Checkpoint.obj`.
+object: they are a floor like any other (`Floor_Top_Checkpoint` on top), and so
+is the round floor with the two flame bowls under a checkpoint. In the
+original levels they are usually part of a larger floor mesh. Their marker
+sits at the middle of the floor's top, and their rims are 1.26 above it.
+Where a road meets them, the rim has a gap, 2.6 wide at the start and 1.74 at
+a checkpoint. Level_01's start and first checkpoint have no such gap for a
+floor road (its checkpoint meets rails), but Level_03's do: its start opens
+on its +X side 7.39 from the marker, and its first checkpoint on both X sides
+4.92 from it. `ballance_level_elements.py` cuts these two out of Level_03's
+floors and writes them around the marker, as `Floor_Start.obj` and
+`Floor_Checkpoint.obj`. In Level_03 the floors are unturned, the road runs
+along +X, the start is turned -90 degrees (its X axis along +Z) and the
+checkpoint is unturned.
 
 Each element is in two groups: its kind, and its sector.
 
@@ -143,14 +149,37 @@ The sky box itself comes from `base.cmo` (per level number, see `AllLevel`).
 
 Y is up. Measured on Level_01:
 
-- `PS_FourFlames_01` sits about 0.2 below the top of the floor under it.
+- `PS_FourFlames_01` and each `PC_TwoFlames_N` sit at the middle of their
+  floor's top, 1.26 below its rim and the edges of the road that meets it.
 - `PR_Resetpoint_01` is 3.65 above `PS_FourFlames_01`.
-- `PC_TwoFlames_N` sits about 0.5 below the floor top.
 - `PR_Resetpoint_{N+1}` has the x and z of `PC_TwoFlames_N` and is 3.33 above
   it.
 - The ball (radius about 2) comes to rest about 2 above the floor top.
 - At a reset point the camera looks along the -X axis of the reset point's
   matrix; Up rolls the ball that way.
+
+## Roads
+
+The floors are built on a 2.5-unit grid, in pieces 5 long, with one texture
+repeat every 5 units. Measured on Level_01 and Level_03:
+
+- The narrow road is a channel 5 wide. Its top is two `Floor_Top_Profile`
+  slopes that dip 0.7 from its edges to its middle, mapped with one repeat
+  across the whole width (u 0 and 1 at the edges, 0.5 in the middle), so the
+  texture's brick bands run along the edges.
+- The wide road is 10 wide: the same two slopes, each 2.5 wide, with a flat
+  `Floor_Top_Boderless` strip 5 wide between them.
+- The walls are `Floor_Side`, 5 deep below the edges; u runs down the wall,
+  one repeat over its depth. A road has no bottom and, where it ends under
+  something else, no end wall.
+- Where a narrow road meets a floor's rim, or ends under the balloon's planks,
+  a `Floor_Top_ProfileFlat` piece 5 long flattens it to the height of its
+  edges, fanning from the channel's middle to the rim's gap. The balloon's
+  planks reach 22.08 along its +X to the road's end, which is 0.01 above the
+  balloon.
+- Wide areas are `Floor_Top_Boderless` with `Floor_Top_Flat` borders 2.5 wide
+  that rise 0.7 to their outer edge. `Floor_Top_Border` is the piece that
+  turns a wide road's end into a flat edge.
 
 ## Writing a Level with libnmo
 
