@@ -13,20 +13,27 @@
 
 #include "../engine_block_util.h"
 
+/* The Planar Filter blocks drawing after the sprites (their PostSpriteRenderCallBacks) */
+typedef struct visuals {
+    ENG_VEC(int32_t) filters;
+} visuals_t;
+
+static const eng_manager_desc_t visuals_manager;
+
 /* Add or Remove PostSpriteRenderCallBack(PlanarFilterRender, beh): once each */
 static void planar_filter_drawn(nmo_engine_t *engine, int32_t node, bool drawn)
 {
-    for (size_t i = 0; i < engine->render.filters.count; i++) {
-        if (engine->render.filters.data[i] == node) {
+    visuals_t *visuals = (visuals_t *)eng_manager_state(engine, &visuals_manager);
+    for (size_t i = 0; i < visuals->filters.count; i++) {
+        if (visuals->filters.data[i] == node) {
             if (!drawn) {
-                engine->render.filters.data[i] =
-                    engine->render.filters.data[--engine->render.filters.count];
+                visuals->filters.data[i] = visuals->filters.data[--visuals->filters.count];
             }
             return;
         }
     }
     int32_t *slot = NULL;
-    if (drawn && ENG_VEC_PUSH(engine->render.filters, slot)) {
+    if (drawn && ENG_VEC_PUSH(visuals->filters, slot)) {
         *slot = node;
     }
 }
@@ -71,10 +78,10 @@ static int cb_planar_filter(blk_t *b, uint32_t message)
  * no Z. The Additional Color is the specular one the engine's draws have no
  * room for.
  */
-void eng_draw_filters(nmo_engine_t *engine, float width, float height)
+static void draw_filters(nmo_engine_t *engine, const visuals_t *visuals, float width, float height)
 {
-    for (size_t i = 0; i < engine->render.filters.count; i++) {
-        nmo_engine_block_t handle = {engine, engine->render.filters.data[i]};
+    for (size_t i = 0; i < visuals->filters.count; i++) {
+        nmo_engine_block_t handle = {engine, visuals->filters.data[i]};
         blk_t *b = &handle;
         float color[4] = {1.0f, 1.0f, 1.0f, 0.5f};
         nmo_engine_block_get_input_value(b, 0, color, sizeof(color));
@@ -248,14 +255,21 @@ static const nmo_engine_block_desc_t eng_visuals_blocks[] = {
 static void visuals_render(nmo_engine_t *engine, void *state, eng_render_stage_t stage,
                            const eng_render_args_t *args)
 {
-    (void)state;
     if (stage == ENG_RENDER_POST) {
-        eng_draw_filters(engine, args->width, args->height);
+        draw_filters(engine, (const visuals_t *)state, args->width, args->height);
     }
+}
+
+static void visuals_destroy(nmo_engine_t *engine, void *state)
+{
+    (void)engine;
+    free(((visuals_t *)state)->filters.data);
 }
 
 static const eng_manager_desc_t visuals_manager = {
     .name = "Visuals Render",
+    .state_size = sizeof(visuals_t),
+    .destroy = visuals_destroy,
     .render = visuals_render,
 };
 

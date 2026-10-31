@@ -59,14 +59,6 @@ void eng_free_render(nmo_engine_t *engine)
         free(render->images.data[i].rgba);
     }
     free(render->images.data);
-    eng_render_begin_frame(engine);
-    free(render->texts.data);
-    free(render->filters.data);
-    for (size_t i = 0; i < render->sprite_texts.count; i++) {
-        free(render->sprite_texts.data[i].text);
-        free(render->sprite_texts.data[i].font);
-    }
-    free(render->sprite_texts.data);
     for (size_t i = 0; i < render->meshes.count; i++) {
         eng_mesh_t *mesh = &render->meshes.data[i];
         free(mesh->vertices);
@@ -90,14 +82,6 @@ void eng_free_render(nmo_engine_t *engine)
     free(render->vertices.data);
     free(render->draws.data);
     free(render->frame_lights.data);
-}
-
-void eng_render_begin_frame(nmo_engine_t *engine)
-{
-    for (size_t i = 0; i < engine->render.texts.count; i++) {
-        free(engine->render.texts.data[i].string);
-    }
-    engine->render.texts.count = 0;
 }
 
 eng_mesh_t *eng_render_mesh(nmo_engine_t *engine, nmo_object_id_t id)

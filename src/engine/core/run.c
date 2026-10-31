@@ -461,7 +461,6 @@ nmo_status_t nmo_engine_step(nmo_engine_t *engine, float delta_ms)
     memset(&engine->profile.frame, 0, sizeof(engine->profile.frame));
     eng_input_begin_frame(engine);
     eng_sounds_begin_frame(engine);
-    eng_render_begin_frame(engine);
     eng_managers_pre_process(engine);
     eng_emit(engine, NMO_ENGINE_EVENT_FRAME_BEGIN, -1, 0, 0);
     engine->dynamic.defer = true;

@@ -40,34 +40,93 @@
 #define HALIGN_LEFT 1
 #define HALIGN_RIGHT 2
 
-void eng_fonts_clear(nmo_engine_t *engine)
+/* Where a character is in a font's texture (CharacterTextureCoordinates), in UVs */
+typedef struct eng_glyph {
+    float ustart, vstart;
+    float uwidth, uprewidth, upostwidth;
+    float vwidth;
+} eng_glyph_t;
+
+/* A CKTextureFont: its characters in its texture, and how Set Font Properties draws them */
+typedef struct eng_font {
+    char *name;
+    nmo_object_id_t texture; /* the texture it reads, 0 for a system font's own */
+    bool created;            /* SpacingProperties CREATED: it draws */
+    float char_number[2];
+    int32_t first_character;
+    nmo_rect_t zone;         /* the part of the texture the characters are in, in pixels */
+    float space_percentage;
+    eng_glyph_t glyphs[256];
+    float leading[2], scale[2], italic;
+    uint32_t start_color, end_color, shadow_color;
+    float shadow_offset[2], shadow_scale[2];
+    nmo_object_id_t material;
+    uint32_t properties;     /* FONT_GRADIENT, FONT_SHADOW, FONT_LIGHTING, FONT_DISABLEFILTER */
+} eng_font_t;
+
+/*
+ * Text a 2D Text block draws this frame: on its 2D entity after the entity
+ * (a temporary post render callback), or with Multiple, as it was when the
+ * block ran (the font manager's text list, drawn after the sprites).
+ */
+typedef struct eng_text {
+    int32_t node;
+    nmo_object_id_t entity;
+    bool multiple;
+    int32_t font, align, flags;
+    char *string;
+    nmo_rect_t zone;
+    nmo_object_id_t material;
+} eng_text_t;
+
+/* A CKSpriteText a Text Display block made: what it shows and where */
+typedef struct eng_sprite_text {
+    int32_t node;
+    bool shown;
+    float x, y, width, height;
+    char *text; /* NULL until it is drawn the first time */
+    char *font; /* the face name tdFontInfo holds */
+    int32_t size, weight, style, align;
+    uint32_t color; /* as the text shows: CK passes ARGB where GDI takes ABGR */
+} eng_sprite_text_t;
+
+/* CKFontManager: the fonts by number; the texts 2D Text draws this frame; Text Display's sprite texts */
+typedef struct font_manager {
+    ENG_VEC(eng_font_t) fonts;
+    ENG_VEC(eng_text_t) texts;
+    ENG_VEC(eng_sprite_text_t) sprite_texts;
+} font_manager_t;
+
+static const eng_manager_desc_t font_manager;
+
+static font_manager_t *fonts_of(const nmo_engine_t *engine)
 {
-    for (size_t i = 0; i < engine->render.fonts.count; i++) {
-        free(engine->render.fonts.data[i].name);
-    }
-    engine->render.fonts.count = 0;
+    return (font_manager_t *)eng_manager_state(engine, &font_manager);
 }
 
 int32_t nmo_engine_font_count(const nmo_engine_t *engine)
 {
-    return engine != NULL ? (int32_t)engine->render.fonts.count : 0;
+    const font_manager_t *fm = fonts_of(engine);
+    return fm != NULL ? (int32_t)fm->fonts.count : 0;
 }
 
 const char *nmo_engine_font_name(const nmo_engine_t *engine, int32_t font)
 {
-    if (engine == NULL || font <= 0 || (size_t)font > engine->render.fonts.count) {
+    const font_manager_t *fm = fonts_of(engine);
+    if (fm == NULL || font <= 0 || (size_t)font > fm->fonts.count) {
         return NULL;
     }
-    return engine->render.fonts.data[font - 1].name;
+    return fm->fonts.data[font - 1].name;
 }
 
 /* CKFontManager::GetFont: a font that was created */
 static eng_font_t *font_get(nmo_engine_t *engine, int32_t index)
 {
-    if (index <= 0 || (size_t)index > engine->render.fonts.count) {
+    font_manager_t *fm = fonts_of(engine);
+    if (index <= 0 || (size_t)index > fm->fonts.count) {
         return NULL;
     }
-    eng_font_t *font = &engine->render.fonts.data[index - 1];
+    eng_font_t *font = &fm->fonts.data[index - 1];
     return font->created ? font : NULL;
 }
 
@@ -185,6 +244,7 @@ static int32_t font_create(nmo_engine_t *engine, const char *name, nmo_object_id
                            const nmo_rect_t *zone, const float char_number[2], bool fixed,
                            int32_t first_character, float space)
 {
+    font_manager_t *fm = fonts_of(engine);
     size_t length = strlen(name);
     char *copy = (char *)malloc(length + 1);
     if (copy == NULL) {
@@ -192,18 +252,18 @@ static int32_t font_create(nmo_engine_t *engine, const char *name, nmo_object_id
     }
     memcpy(copy, name, length + 1);
     eng_font_t *font = NULL;
-    for (size_t i = 0; i < engine->render.fonts.count && font == NULL; i++) {
-        if (strcmp(engine->render.fonts.data[i].name, name) == 0) {
-            font = &engine->render.fonts.data[i];
+    for (size_t i = 0; i < fm->fonts.count && font == NULL; i++) {
+        if (strcmp(fm->fonts.data[i].name, name) == 0) {
+            font = &fm->fonts.data[i];
             free(font->name);
             memset(font, 0, sizeof(*font));
         }
     }
-    if (font == NULL && !ENG_VEC_PUSH(engine->render.fonts, font)) {
+    if (font == NULL && !ENG_VEC_PUSH(fm->fonts, font)) {
         free(copy);
         return -1;
     }
-    int32_t index = (int32_t)(font - engine->render.fonts.data) + 1;
+    int32_t index = (int32_t)(font - fm->fonts.data) + 1;
     font->name = copy;
     font->texture = texture;
     font->scale[0] = font->scale[1] = 1.0f;
@@ -226,13 +286,14 @@ static int32_t font_create(nmo_engine_t *engine, const char *name, nmo_object_id
 /* CKFontManager::DeleteFont: the fonts after it move down one. */
 static void font_delete(nmo_engine_t *engine, int32_t index)
 {
-    if (index <= 0 || (size_t)index > engine->render.fonts.count) {
+    font_manager_t *fm = fonts_of(engine);
+    if (index <= 0 || (size_t)index > fm->fonts.count) {
         return;
     }
-    free(engine->render.fonts.data[index - 1].name);
-    memmove(&engine->render.fonts.data[index - 1], &engine->render.fonts.data[index],
-            (engine->render.fonts.count - (size_t)index) * sizeof(eng_font_t));
-    engine->render.fonts.count--;
+    free(fm->fonts.data[index - 1].name);
+    memmove(&fm->fonts.data[index - 1], &fm->fonts.data[index],
+            (fm->fonts.count - (size_t)index) * sizeof(eng_font_t));
+    fm->fonts.count--;
 }
 
 /* Create System Font: Success with the font, from a system font made into a texture. */
@@ -281,7 +342,7 @@ static int bb_create_font(blk_t *b)
     float space = extended ? 0.3f : get_local_float(b, 0, 0.3f);
     int32_t font = font_create(engine, name, texture, &zone, char_number, !proportional, first, space);
     nmo_engine_block_set_output_value(b, 0, &font, sizeof(font));
-    eng_font_t *created = font > 0 ? &engine->render.fonts.data[font - 1] : NULL;
+    eng_font_t *created = font > 0 ? &fonts_of(engine)->fonts.data[font - 1] : NULL;
     if (created == NULL || !created->created) {
         return extended ? NMO_ENGINE_BR_PARAMETERERROR : NMO_ENGINE_BR_OK;
     }
@@ -758,10 +819,11 @@ static void text_draw_block(nmo_engine_t *engine, const eng_text_t *text, float 
     }
 }
 
-void eng_draw_texts(nmo_engine_t *engine, nmo_object_id_t entity, float width, float height)
+static void draw_texts(nmo_engine_t *engine, nmo_object_id_t entity, float width, float height)
 {
-    for (size_t i = 0; i < engine->render.texts.count; i++) {
-        eng_text_t text = engine->render.texts.data[i];
+    font_manager_t *fm = fonts_of(engine);
+    for (size_t i = 0; i < fm->texts.count; i++) {
+        eng_text_t text = fm->texts.data[i];
         if (entity != 0 ? !text.multiple && text.entity == entity : text.multiple) {
             text_draw_block(engine, &text, width, height);
         }
@@ -772,6 +834,7 @@ void eng_draw_texts(nmo_engine_t *engine, nmo_object_id_t entity, float width, f
 static void text_request(blk_t *b, bool multiple)
 {
     nmo_engine_t *engine = b->engine;
+    font_manager_t *fm = fonts_of(engine);
     nmo_object_id_t target = nmo_engine_block_target(b);
     eng_2d_t *entity = eng_2d_entity(engine, target);
     if (entity == NULL) {
@@ -785,12 +848,12 @@ static void text_request(blk_t *b, bool multiple)
         return;
     }
     eng_text_t *text = NULL;
-    for (size_t i = 0; !multiple && i < engine->render.texts.count; i++) {
-        if (engine->render.texts.data[i].node == b->node && !engine->render.texts.data[i].multiple) {
+    for (size_t i = 0; !multiple && i < fm->texts.count; i++) {
+        if (fm->texts.data[i].node == b->node && !fm->texts.data[i].multiple) {
             return; /* AddPostRenderCallBack once */
         }
     }
-    if (!ENG_VEC_PUSH(engine->render.texts, text)) {
+    if (!ENG_VEC_PUSH(fm->texts, text)) {
         return;
     }
     text->node = b->node;
@@ -851,14 +914,14 @@ static int bb_text_3d(blk_t *b)
 /* The block's CKSpriteText, made the first time (the creation callback's) */
 static eng_sprite_text_t *text_display_sprite(blk_t *b)
 {
-    eng_render_t *render = &b->engine->render;
-    for (size_t i = 0; i < render->sprite_texts.count; i++) {
-        if (render->sprite_texts.data[i].node == b->node) {
-            return &render->sprite_texts.data[i];
+    font_manager_t *fm = fonts_of(b->engine);
+    for (size_t i = 0; i < fm->sprite_texts.count; i++) {
+        if (fm->sprite_texts.data[i].node == b->node) {
+            return &fm->sprite_texts.data[i];
         }
     }
     eng_sprite_text_t *sprite = NULL;
-    if (!ENG_VEC_PUSH(render->sprite_texts, sprite)) {
+    if (!ENG_VEC_PUSH(fm->sprite_texts, sprite)) {
         return NULL;
     }
     memset(sprite, 0, sizeof(*sprite));
@@ -980,10 +1043,11 @@ static int cb_text_display(blk_t *b, uint32_t message)
     return NMO_ENGINE_BR_OK;
 }
 
-void eng_draw_sprite_texts(nmo_engine_t *engine)
+static void draw_sprite_texts(nmo_engine_t *engine)
 {
-    for (size_t i = 0; i < engine->render.sprite_texts.count; i++) {
-        const eng_sprite_text_t *sprite = &engine->render.sprite_texts.data[i];
+    font_manager_t *fm = fonts_of(engine);
+    for (size_t i = 0; i < fm->sprite_texts.count; i++) {
+        const eng_sprite_text_t *sprite = &fm->sprite_texts.data[i];
         nmo_engine_draw_t *draw = NULL;
         if (!sprite->shown || sprite->text == NULL || sprite->text[0] == '\0' ||
             !ENG_VEC_PUSH(engine->render.draws, draw)) {
@@ -1163,11 +1227,31 @@ static const nmo_engine_block_desc_t eng_interface_blocks[] = {
     {NMO_GUID(0x1616120f, 0x5b2f48ce), "2D Picking", bb_picking_2d, NULL, NULL},
 };
 
+/* The texts drawn last frame are dropped (the temporary callbacks) */
+static void font_manager_pre_process(nmo_engine_t *engine, void *state)
+{
+    (void)engine;
+    font_manager_t *fm = (font_manager_t *)state;
+    for (size_t i = 0; i < fm->texts.count; i++) {
+        free(fm->texts.data[i].string);
+    }
+    fm->texts.count = 0;
+}
+
 static void font_manager_destroy(nmo_engine_t *engine, void *state)
 {
-    (void)state;
-    eng_fonts_clear(engine);
-    free(engine->render.fonts.data);
+    font_manager_t *fm = (font_manager_t *)state;
+    font_manager_pre_process(engine, fm);
+    free(fm->texts.data);
+    for (size_t i = 0; i < fm->fonts.count; i++) {
+        free(fm->fonts.data[i].name);
+    }
+    free(fm->fonts.data);
+    for (size_t i = 0; i < fm->sprite_texts.count; i++) {
+        free(fm->sprite_texts.data[i].text);
+        free(fm->sprite_texts.data[i].font);
+    }
+    free(fm->sprite_texts.data);
 }
 
 /* The font manager's texts after each 2D entity and after the sprites; Text Display's sprite texts */
@@ -1176,17 +1260,19 @@ static void font_manager_render(nmo_engine_t *engine, void *state, eng_render_st
 {
     (void)state;
     if (stage == ENG_RENDER_ENTITY_2D) {
-        eng_draw_texts(engine, args->entity, args->width, args->height);
+        draw_texts(engine, args->entity, args->width, args->height);
     } else if (stage == ENG_RENDER_OVERLAY) {
-        eng_draw_sprite_texts(engine);
-        eng_draw_texts(engine, 0, args->width, args->height);
+        draw_sprite_texts(engine);
+        draw_texts(engine, 0, args->width, args->height);
     }
 }
 
 /* CKFontManager */
 static const eng_manager_desc_t font_manager = {
     .name = "Font Manager",
+    .state_size = sizeof(font_manager_t),
     .destroy = font_manager_destroy,
+    .pre_process = font_manager_pre_process,
     .render = font_manager_render,
 };
 

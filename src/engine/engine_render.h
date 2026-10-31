@@ -3,7 +3,7 @@
  * @brief The render manager and render context as the blocks change them:
  *        what is shown, the attached camera, materials, 2D entities and
  *        lights in their run time state, the background, the fog, the
- *        screen mode and the fonts. The host draws (nmo_engine_render.h).
+ *        screen mode. The host draws (nmo_engine_render.h).
  */
 
 #ifndef NMO_ENGINE_RENDER_H_INTERNAL
@@ -13,56 +13,6 @@
 
 #include "core/nmo_math.h"
 #include "engine/nmo_engine_render.h"
-
-/* Where a character is in a font's texture (CharacterTextureCoordinates), in UVs */
-typedef struct eng_glyph {
-    float ustart, vstart;
-    float uwidth, uprewidth, upostwidth;
-    float vwidth;
-} eng_glyph_t;
-
-/* A CKTextureFont: its characters in its texture, and how Set Font Properties draws them */
-typedef struct eng_font {
-    char *name;
-    nmo_object_id_t texture; /* the texture it reads, 0 for a system font's own */
-    bool created;            /* SpacingProperties CREATED: it draws */
-    float char_number[2];
-    int32_t first_character;
-    nmo_rect_t zone;         /* the part of the texture the characters are in, in pixels */
-    float space_percentage;
-    eng_glyph_t glyphs[256];
-    float leading[2], scale[2], italic;
-    uint32_t start_color, end_color, shadow_color;
-    float shadow_offset[2], shadow_scale[2];
-    nmo_object_id_t material;
-    uint32_t properties;     /* FONT_GRADIENT, FONT_SHADOW, FONT_LIGHTING, FONT_DISABLEFILTER */
-} eng_font_t;
-
-/*
- * Text a 2D Text block draws this frame: on its 2D entity after the entity
- * (a temporary post render callback), or with Multiple, as it was when the
- * block ran (the font manager's text list, drawn after the sprites).
- */
-typedef struct eng_text {
-    int32_t node;
-    nmo_object_id_t entity;
-    bool multiple;
-    int32_t font, align, flags;
-    char *string;
-    nmo_rect_t zone;
-    nmo_object_id_t material;
-} eng_text_t;
-
-/* A CKSpriteText a Text Display block made: what it shows and where */
-typedef struct eng_sprite_text {
-    int32_t node;
-    bool shown;
-    float x, y, width, height;
-    char *text; /* NULL until it is drawn the first time */
-    char *font; /* the face name tdFontInfo holds */
-    int32_t size, weight, style, align;
-    uint32_t color; /* as the text shows: CK passes ARGB where GDI takes ABGR */
-} eng_sprite_text_t;
 
 /* A mesh made at run time (TT Sky's), with what CKMesh would hold */
 typedef struct eng_mesh {
@@ -147,7 +97,6 @@ typedef struct eng_image {
 
 typedef struct eng_render {
     int32_t screen_mode;      /* the render context's mode, of the engine's driver's list */
-    ENG_VEC(eng_font_t) fonts;
 
     /* CKObject::Show at run time: object -> its CK_OBJECT_VISIBLE and HIERACHICALHIDE flags */
     eng_map_t shown;
@@ -171,10 +120,7 @@ typedef struct eng_render {
     float fog_start, fog_end, fog_density;
     uint32_t ambient_light;
 
-    ENG_VEC(eng_text_t) texts; /* this frame's */
     ENG_VEC(eng_mesh_t) meshes;
-    ENG_VEC(int32_t) filters; /* the Planar Filter blocks drawing after the sprites */
-    ENG_VEC(eng_sprite_text_t) sprite_texts;
     ENG_VEC(nmo_engine_vertex_t) vertices; /* the frame's triangles */
     ENG_VEC(eng_mesh_copy_t) mesh_copies;
     uint32_t mesh_version;
@@ -211,8 +157,6 @@ eng_light_t *eng_light(nmo_engine_t *engine, nmo_object_id_t id);
 /* A texture's image changed (Texture Load, a slot change): decode it again */
 void eng_texture_changed(nmo_engine_t *engine, nmo_object_id_t texture);
 
-/* Forget the text the blocks asked for last frame (the temporary callbacks) */
-void eng_render_begin_frame(nmo_engine_t *engine);
 eng_mesh_t *eng_render_mesh(nmo_engine_t *engine, nmo_object_id_t id);
 /* A file mesh's run time copy, made the first time a block changes it; NULL for no CKMesh */
 eng_mesh_copy_t *eng_mesh_copy(nmo_engine_t *engine, nmo_object_id_t mesh);
@@ -225,15 +169,5 @@ void eng_mesh_remove_channel(eng_mesh_copy_t *copy, int32_t channel);
 nmo_engine_draw_t *eng_render_push(nmo_engine_t *engine);
 /* A texture with a transparent color: RCKTexture::SetAsCurrent tests alpha > 0 with it */
 bool eng_texture_keyed(const nmo_engine_t *engine, nmo_object_id_t texture);
-
-/* blocks/interface.c (the font manager) */
-void eng_fonts_clear(nmo_engine_t *engine);
-/* The texts 2D Text draws on `entity` (0: the Multiple ones), into the frame */
-void eng_draw_texts(nmo_engine_t *engine, nmo_object_id_t entity, float width, float height);
-
-/* blocks/interface.c: the shown sprite texts, as 2D entities of the root */
-void eng_draw_sprite_texts(nmo_engine_t *engine);
-/* blocks/visuals.c: the Planar Filters' quads over the view (PlanarFilterRender) */
-void eng_draw_filters(nmo_engine_t *engine, float width, float height);
 
 #endif /* NMO_ENGINE_RENDER_H_INTERNAL */
