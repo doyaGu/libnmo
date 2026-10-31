@@ -103,6 +103,7 @@ typedef struct eng_particle {
     float life;
     int32_t frame;
     float frame_time, dframe_time;
+    float dt;             /* the time it last moved by (m_DeltaTime) */
 } eng_particle_t;
 
 /* A particle system's emitter (ParticleEmitter): its particles, and how they draw */
@@ -116,6 +117,10 @@ typedef struct eng_emitter {
     uint32_t random;      /* the emitter's own rand() */
     bool shown;           /* ShowParticles */
     uint64_t updated;     /* the engine frame + 1 it last moved its particles in */
+    /* TimePointEmitter: where the entity was at its last emission, and the time since */
+    float trail_pos[3];
+    float trail_time;
+    bool trail_started;
     ENG_VEC(eng_particle_t) particles;
 } eng_emitter_t;
 
@@ -282,7 +287,7 @@ void eng_fonts_clear(nmo_engine_t *engine);
 void eng_draw_texts(nmo_engine_t *engine, nmo_object_id_t entity, float width, float height);
 
 /* blocks/tt/particles.c */
-/* The particles of the emitters shown, as triangles facing the eye */
+/* The particles of the emitters shown, as their render modes draw them */
 void eng_draw_particles(nmo_engine_t *engine, const float view[16]);
 void eng_free_emitters(nmo_engine_t *engine);
 

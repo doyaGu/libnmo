@@ -36,10 +36,11 @@ typedef enum nmo_engine_draw_kind {
     NMO_ENGINE_DRAW_QUAD = 1,     /* a 2D entity, or a character of text */
     NMO_ENGINE_DRAW_TRIANGLES = 2, /* world space triangles a particle system draws */
     NMO_ENGINE_DRAW_SPRITE_TEXT = 3, /* a CKSpriteText: text a host draws with a system font */
-    NMO_ENGINE_DRAW_SPRITE3D = 4   /* a CKSprite3D: a world space quad with its material, unlit */
+    NMO_ENGINE_DRAW_SPRITE3D = 4,  /* a CKSprite3D: a world space quad with its material, unlit */
+    NMO_ENGINE_DRAW_LINES = 5      /* world space lines a particle system draws */
 } nmo_engine_draw_kind_t;
 
-/* A vertex of NMO_ENGINE_DRAW_TRIANGLES: world position, texture coordinates, ARGB color */
+/* A vertex of NMO_ENGINE_DRAW_TRIANGLES and _LINES: world position, texture coordinates, ARGB color */
 typedef struct nmo_engine_vertex {
     float x, y, z;
     float u, v;
@@ -72,9 +73,12 @@ typedef struct nmo_engine_draw {
     float fov, near_plane, far_plane;
     /* Triangles: the frame's vertices from first_vertex, textured with `texture`
        (modulated, clamped), blended source_blend/dest_blend (VXBLEND_MODE)
-       unless `blend` is false, no lighting, no culling; world[12..14] is their
-       emitter's position, to sort by */
+       unless `blend` is false, no lighting, no culling, alpha tested (alpha > 0)
+       when `alpha_test`; world[12..14] is their emitter's position, to sort by.
+       Lines: pairs of the frame's vertices from first_vertex, untextured, blended
+       the same way, no z write */
     int32_t first_vertex, vertex_count;
+    bool alpha_test;
     /* A 3D sprite: two triangles of the frame's vertices from first_vertex, colored with its
        material's diffuse, drawn with `material` and no lighting */
     /* Triangles, and a quad with no material that sets `blend` (Planar Filter): its blending */

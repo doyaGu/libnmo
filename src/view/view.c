@@ -694,16 +694,18 @@ static void view_draw_sprite_text(nmo_view_t *view, const nmo_engine_draw_t *dra
     glEnd();
 }
 
-/* A particle system's triangles (ParticleEmitter::SetState) */
+/* A particle system's triangles (ParticleEmitter::SetState) or lines (RenderParticles_L);
+   smooth shading, which only an Orientable Sprite's colors need */
 static void view_draw_triangles(nmo_view_t *view, const nmo_engine_frame_t *frame,
                                 const nmo_engine_draw_t *draw, const float view_m[16])
 {
     if (draw->vertex_count <= 0 || frame->vertices == NULL) {
         return;
     }
+    bool lines = draw->kind == NMO_ENGINE_DRAW_LINES;
     nmo_engine_material_t material;
     memset(&material, 0, sizeof(material));
-    material.texture = draw->texture;
+    material.texture = lines ? 0 : draw->texture;
     material.texture_blend = 4;
     material.min_filter = 6;
     material.mag_filter = 2;
@@ -711,16 +713,18 @@ static void view_draw_triangles(nmo_view_t *view, const nmo_engine_frame_t *fram
     material.alpha_blend = draw->blend;
     material.source_blend = draw->source_blend;
     material.dest_blend = draw->dest_blend;
+    material.alpha_test = draw->alpha_test;
+    material.alpha_func = 5;
     material.two_sided = true;
-    material.z_write = !draw->blend;
+    material.z_write = !lines && !draw->blend;
     material.z_func = 4;
-    material.shade_mode = 1;
+    material.shade_mode = 2;
     glDisable(GL_LIGHTING);
     view_set_material(view, &material, false, true);
     glMatrixMode(GL_MODELVIEW);
     glLoadMatrixf(view_m);
     const nmo_engine_vertex_t *v = &frame->vertices[draw->first_vertex];
-    glBegin(GL_TRIANGLES);
+    glBegin(lines ? GL_LINES : GL_TRIANGLES);
     for (int32_t i = 0; i < draw->vertex_count; i++) {
         float color[4];
         view_color(v[i].color, color);
@@ -952,7 +956,7 @@ static nmo_status_t view_render(nmo_view_t *view, nmo_engine_frame_t *out_frame)
     }
     for (int32_t i = 0; i < transparent_count; i++) {
         const nmo_engine_draw_t *draw = &frame.draws[transparent[i]];
-        if (draw->kind == NMO_ENGINE_DRAW_TRIANGLES) {
+        if (draw->kind == NMO_ENGINE_DRAW_TRIANGLES || draw->kind == NMO_ENGINE_DRAW_LINES) {
             view_draw_triangles(view, &frame, draw, view_m);
         } else if (draw->kind == NMO_ENGINE_DRAW_SPRITE3D) {
             view_draw_sprite3d(view, &frame, draw, view_m);
