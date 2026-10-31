@@ -390,6 +390,28 @@ static nmo_status_t manifest_parse_material_render_flags(
     NMO_RETURN_OK();
 }
 
+/* material.texture_save: "embedded" (the default) stores the images in the
+   file, "external" stores their file names for the engine to load. */
+static nmo_status_t manifest_parse_texture_save(
+    yyjson_val *material,
+    const char *context,
+    bool *out_external)
+{
+    *out_external = false;
+    const char *mode = NULL;
+    NMO_RETURN_IF_ERROR(manifest_optional_string(material, "texture_save", &mode));
+    if (!mode || strcmp(mode, "embedded") == 0) {
+        NMO_RETURN_OK();
+    }
+    if (strcmp(mode, "external") == 0) {
+        *out_external = true;
+        NMO_RETURN_OK();
+    }
+    NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                     "manifest %s.texture_save must be \"embedded\" or \"external\"",
+                     context);
+}
+
 static nmo_status_t manifest_parse_material(
     yyjson_val *material,
     bool *out_has_color,
@@ -418,6 +440,7 @@ static nmo_status_t manifest_parse_material(
         "specular_power",
         "texture",
         "textures",
+        "texture_save",
         "blend",
         "filter",
         "wrap",
@@ -584,6 +607,7 @@ static nmo_status_t manifest_parse_obj_material(
         "specular_power",
         "texture",
         "textures",
+        "texture_save",
         "blend",
         "filter",
         "wrap",
@@ -607,6 +631,10 @@ static nmo_status_t manifest_parse_obj_material(
         material,
         "name",
         &out_spec->obj_material_name));
+    NMO_RETURN_IF_ERROR(manifest_parse_texture_save(
+        material,
+        "materials[]",
+        &out_spec->texture_external));
 
     yyjson_val *color = yyjson_obj_get(material, "color");
     yyjson_val *diffuse = yyjson_obj_get(material, "diffuse");
@@ -1766,6 +1794,141 @@ static nmo_status_t manifest_parse_scripts(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t manifest_find_group(
+    const manifest_parse_ctx_t *ctx,
+    const char *name,
+    uint32_t *out_handle)
+{
+    *out_handle = 0u;
+    size_t group_count = nmo_project_plan_group_count(ctx->plan);
+    for (size_t i = 0u; i < group_count; ++i) {
+        nmo_project_group_desc_t group = {0};
+        NMO_RETURN_IF_ERROR(nmo_project_plan_get_group(ctx->plan, i, &group));
+        if (strcmp(group.name, name) == 0) {
+            *out_handle = group.handle;
+            break;
+        }
+    }
+    NMO_RETURN_OK();
+}
+
+/* object.groups: names of the groups the object joins, made on first use. */
+static nmo_status_t manifest_parse_object_groups(
+    manifest_parse_ctx_t *ctx,
+    yyjson_val *groups,
+    uint32_t object_handle)
+{
+    if (!groups) {
+        NMO_RETURN_OK();
+    }
+    if (!yyjson_is_arr(groups)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "manifest object.groups must be an array");
+    }
+    size_t idx = 0u;
+    size_t max = 0u;
+    yyjson_val *item = NULL;
+    yyjson_arr_foreach(groups, idx, max, item) {
+        const char *name = yyjson_get_str(item);
+        if (!name || name[0] == '\0') {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest object.groups entries must be non-empty strings");
+        }
+        uint32_t group_handle = 0u;
+        NMO_RETURN_IF_ERROR(manifest_find_group(ctx, name, &group_handle));
+        if (group_handle == 0u) {
+            NMO_RETURN_IF_ERROR(nmo_project_plan_add_group(ctx->plan, name, &group_handle));
+        }
+        NMO_RETURN_IF_ERROR(nmo_project_plan_add_group_member(
+            ctx->plan,
+            group_handle,
+            object_handle));
+    }
+    NMO_RETURN_OK();
+}
+
+/* Root groups are made before the scenes, so they keep the manifest's order. */
+static nmo_status_t manifest_declare_groups(
+    manifest_parse_ctx_t *ctx,
+    yyjson_val *groups)
+{
+    static const char *const allowed[] = {"name", "objects", NULL};
+    if (!groups) {
+        NMO_RETURN_OK();
+    }
+    if (!yyjson_is_arr(groups)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "manifest groups must be an array");
+    }
+    size_t idx = 0u;
+    size_t max = 0u;
+    yyjson_val *group = NULL;
+    yyjson_arr_foreach(groups, idx, max, group) {
+        const char *name = NULL;
+        NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(group, "group", allowed));
+        NMO_RETURN_IF_ERROR(manifest_required_string(group, "name", &name));
+        uint32_t group_handle = 0u;
+        NMO_RETURN_IF_ERROR(manifest_find_group(ctx, name, &group_handle));
+        if (group_handle != 0u) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest group '%s' is duplicated", name);
+        }
+        NMO_RETURN_IF_ERROR(nmo_project_plan_add_group(ctx->plan, name, &group_handle));
+        char source_path[32];
+        snprintf(source_path, sizeof(source_path), "groups[%zu]", idx);
+        NMO_RETURN_IF_ERROR(nmo_project_plan_set_group_source_path(
+            ctx->plan,
+            group_handle,
+            source_path));
+    }
+    NMO_RETURN_OK();
+}
+
+/* group.objects, once every object is known. */
+static nmo_status_t manifest_parse_group_members(
+    manifest_parse_ctx_t *ctx,
+    yyjson_val *groups)
+{
+    if (!groups) {
+        NMO_RETURN_OK();
+    }
+    size_t idx = 0u;
+    size_t max = 0u;
+    yyjson_val *group = NULL;
+    yyjson_arr_foreach(groups, idx, max, group) {
+        yyjson_val *objects = yyjson_obj_get(group, "objects");
+        if (!objects) {
+            continue;
+        }
+        if (!yyjson_is_arr(objects)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest group.objects must be an array");
+        }
+        uint32_t group_handle = 0u;
+        NMO_RETURN_IF_ERROR(manifest_find_group(
+            ctx,
+            yyjson_get_str(yyjson_obj_get(group, "name")),
+            &group_handle));
+        size_t member_idx = 0u;
+        size_t member_max = 0u;
+        yyjson_val *member = NULL;
+        yyjson_arr_foreach(objects, member_idx, member_max, member) {
+            const char *ref = yyjson_get_str(member);
+            if (!ref) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "manifest group.objects entries must be strings");
+            }
+            uint32_t object_handle = 0u;
+            NMO_RETURN_IF_ERROR(manifest_resolve_object_ref(ctx, ref, &object_handle));
+            NMO_RETURN_IF_ERROR(nmo_project_plan_add_group_member(
+                ctx->plan,
+                group_handle,
+                object_handle));
+        }
+    }
+    NMO_RETURN_OK();
+}
+
 static nmo_status_t manifest_parse_object_declare(
     manifest_parse_ctx_t *ctx,
     yyjson_val *object,
@@ -1775,7 +1938,8 @@ static nmo_status_t manifest_parse_object_declare(
 {
     static const char *const allowed[] = {
         "id", "name", "class", "parent", "fields", "mesh", "material", "materials",
-        "transform", "camera", "light", "sound", "animation", "scripts", NULL};
+        "transform", "camera", "light", "sound", "animation", "scripts", "groups",
+        NULL};
     const char *id = NULL;
     const char *name = NULL;
     const char *class_name = NULL;
@@ -1854,7 +2018,8 @@ static nmo_status_t manifest_parse_object_details(
 {
     static const char *const allowed[] = {
         "id", "name", "class", "parent", "fields", "mesh", "material", "materials",
-        "transform", "camera", "light", "sound", "animation", "scripts", NULL};
+        "transform", "camera", "light", "sound", "animation", "scripts", "groups",
+        NULL};
     const char *parent_ref = NULL;
 
     NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(object, "object", allowed));
@@ -1987,6 +2152,17 @@ static nmo_status_t manifest_parse_object_details(
                 ctx->plan,
                 object_handle,
                 &render_flags));
+        }
+        bool texture_external = false;
+        NMO_RETURN_IF_ERROR(manifest_parse_texture_save(
+            material,
+            "material",
+            &texture_external));
+        if (texture_external) {
+            NMO_RETURN_IF_ERROR(nmo_project_plan_set_material_texture_external(
+                ctx->plan,
+                object_handle,
+                true));
         }
         if (has_texture_slots[0]) {
             NMO_RETURN_IF_ERROR(nmo_project_plan_set_material_texture(
@@ -2376,6 +2552,10 @@ static nmo_status_t manifest_parse_object_details(
         ctx,
         yyjson_obj_get(object, "scripts"),
         object_handle));
+    NMO_RETURN_IF_ERROR(manifest_parse_object_groups(
+        ctx,
+        yyjson_obj_get(object, "groups"),
+        object_handle));
     NMO_RETURN_OK();
 }
 
@@ -2486,7 +2666,7 @@ static nmo_status_t manifest_parse_root(
     nmo_project_manifest_t *out_manifest)
 {
     static const char *const root_allowed[] = {
-        "version", "output", "document", "scenes", NULL};
+        "version", "output", "document", "scenes", "groups", NULL};
     static const char *const document_allowed[] = {"name", NULL};
     NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(root, "root", root_allowed));
 
@@ -2513,11 +2693,11 @@ static nmo_status_t manifest_parse_root(
     NMO_RETURN_IF_ERROR(manifest_required_string(document, "name", &document_name));
     NMO_RETURN_IF_ERROR(nmo_project_plan_set_document_name(ctx->plan, document_name));
 
+    yyjson_val *groups = yyjson_obj_get(root, "groups");
+    NMO_RETURN_IF_ERROR(manifest_declare_groups(ctx, groups));
+
     yyjson_val *scenes = yyjson_obj_get(root, "scenes");
-    if (!scenes) {
-        NMO_RETURN_OK();
-    }
-    if (!yyjson_is_arr(scenes)) {
+    if (scenes && !yyjson_is_arr(scenes)) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                          "manifest scenes must be an array");
     }
@@ -2527,7 +2707,7 @@ static nmo_status_t manifest_parse_root(
     yyjson_arr_foreach(scenes, idx, max, scene) {
         NMO_RETURN_IF_ERROR(manifest_parse_scene(ctx, scene, idx));
     }
-    NMO_RETURN_OK();
+    return manifest_parse_group_members(ctx, groups);
 }
 
 nmo_status_t nmo_project_manifest_json_read_manifest(

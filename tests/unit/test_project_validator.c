@@ -1084,6 +1084,75 @@ TEST(project_validator, reports_invalid_objectanimation_controller_payloads)
     nmo_project_plan_destroy(plan);
 }
 
+TEST(project_validator, accepts_missing_external_texture_file)
+{
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{"
+        "\"name\":\"Level\","
+        "\"objects\":[{"
+        "\"name\":\"Cube\","
+        "\"class\":\"CK3dEntity\","
+        "\"mesh\":{\"primitive\":\"cube\"},"
+        "\"material\":{\"texture\":\"missing.bmp\",\"texture_save\":\"external\"}"
+        "}]"
+        "}]"
+        "}";
+
+    nmo_project_plan_t *plan = NULL;
+    nmo_project_validation_report_t report;
+
+    ASSERT_EQ(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    nmo_project_validation_report_init(&report);
+    ASSERT_EQ(NMO_OK, nmo_project_validate_plan(plan, &report));
+    ASSERT_TRUE(report.ok);
+
+    nmo_project_validation_report_dispose(&report);
+    nmo_project_plan_destroy(plan);
+}
+
+TEST(project_validator, reports_group_issues)
+{
+    nmo_project_plan_t *plan = NULL;
+    uint32_t floor = 0u;
+    uint32_t group = 0u;
+    nmo_project_validation_report_t report;
+
+    ASSERT_EQ(NMO_OK, nmo_project_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_document_name(plan, "Generated"));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_object(
+                          plan,
+                          &(nmo_project_object_spec_t){
+                              .class_id = NMO_CID_3DOBJECT,
+                              .name = "A01_Floor_01",
+                          },
+                          &floor));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_group(plan, "Phys_Floors", &group));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_group_member(plan, group, floor));
+
+    nmo_project_validation_report_init(&report);
+    ASSERT_EQ(NMO_OK, nmo_project_validate_plan(plan, &report));
+    ASSERT_TRUE(report.ok);
+
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_group_member(plan, group, 42u));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_group(plan, "Phys_Floors", &group));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_group_source_path(plan, group, "groups[1]"));
+    ASSERT_EQ(NMO_OK, nmo_project_validate_plan(plan, &report));
+    ASSERT_FALSE(report.ok);
+    ASSERT_TRUE(nmo_project_validation_contains(&report, "missing_group_member"));
+    const nmo_project_validation_issue_t *issue =
+        find_issue(&report, "duplicate_group_name");
+    ASSERT_NOT_NULL(issue);
+    ASSERT_STR_EQ("group", issue->subject_kind);
+    ASSERT_STR_EQ("Phys_Floors", issue->subject_name);
+    ASSERT_STR_EQ("groups[1]", issue->source_path);
+
+    nmo_project_validation_report_dispose(&report);
+    nmo_project_plan_destroy(plan);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(project_validator, rejects_missing_document_name);
 REGISTER_TEST(project_validator, accepts_named_empty_project);
@@ -1108,4 +1177,6 @@ REGISTER_TEST(project_validator, rejects_midisound_authoring_until_file_semantic
 REGISTER_TEST(project_validator, rejects_invalid_objectanimation_authoring);
 REGISTER_TEST(project_validator, reports_invalid_objectanimation_morph_payloads);
 REGISTER_TEST(project_validator, reports_invalid_objectanimation_controller_payloads);
+REGISTER_TEST(project_validator, accepts_missing_external_texture_file);
+REGISTER_TEST(project_validator, reports_group_issues);
 TEST_MAIN_END()

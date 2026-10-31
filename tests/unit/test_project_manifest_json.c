@@ -1151,6 +1151,136 @@ TEST(project_manifest_json, rejects_ambiguous_parent_name)
     ASSERT_NULL(plan);
 }
 
+TEST(project_manifest_json, parses_groups)
+{
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Level_01\"},"
+        "\"groups\":["
+            "{\"name\":\"PS_Levelstart\",\"objects\":[\"PS_FourFlames_01\"]},"
+            "{\"name\":\"PC_Checkpoints\"},"
+            "{\"name\":\"Phys_Floors\",\"objects\":[\"A01_Floor_02\"]}"
+        "],"
+        "\"scenes\":[{"
+            "\"name\":\"Level\","
+            "\"objects\":["
+                "{\"name\":\"A01_Floor_01\",\"class\":\"CK3dObject\","
+                    "\"groups\":[\"Phys_Floors\",\"Shadow\"]},"
+                "{\"name\":\"A01_Floor_02\",\"class\":\"CK3dObject\"},"
+                "{\"name\":\"PS_FourFlames_01\",\"class\":\"CK3dObject\"}"
+            "]"
+        "}]"
+        "}";
+    nmo_project_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NOT_NULL(plan);
+
+    nmo_project_object_desc_t floor1 = {0};
+    nmo_project_object_desc_t floor2 = {0};
+    nmo_project_object_desc_t start = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_object(plan, 0u, &floor1));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_object(plan, 1u, &floor2));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_object(plan, 2u, &start));
+
+    /* Root groups keep their order; an object's groups follow when new. */
+    ASSERT_EQ(4u, nmo_project_plan_group_count(plan));
+    nmo_project_group_desc_t group = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_group(plan, 0u, &group));
+    ASSERT_STR_EQ("PS_Levelstart", group.name);
+    ASSERT_STR_EQ("groups[0]", group.source_path);
+    ASSERT_EQ(1u, group.member_count);
+    ASSERT_EQ(start.handle, group.member_handles[0]);
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_group(plan, 1u, &group));
+    ASSERT_STR_EQ("PC_Checkpoints", group.name);
+    ASSERT_EQ(0u, group.member_count);
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_group(plan, 2u, &group));
+    ASSERT_STR_EQ("Phys_Floors", group.name);
+    ASSERT_EQ(2u, group.member_count);
+    ASSERT_EQ(floor1.handle, group.member_handles[0]);
+    ASSERT_EQ(floor2.handle, group.member_handles[1]);
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_group(plan, 3u, &group));
+    ASSERT_STR_EQ("Shadow", group.name);
+    ASSERT_EQ(1u, group.member_count);
+
+    nmo_project_plan_destroy(plan);
+}
+
+TEST(project_manifest_json, rejects_duplicate_and_unknown_group_members)
+{
+    const char *duplicate =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Level_01\"},"
+        "\"groups\":[{\"name\":\"Shadow\"},{\"name\":\"Shadow\"}]"
+        "}";
+    const char *unknown =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Level_01\"},"
+        "\"groups\":[{\"name\":\"Shadow\",\"objects\":[\"Missing\"]}]"
+        "}";
+
+    nmo_project_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT,
+              nmo_project_manifest_json_read(duplicate, strlen(duplicate), &plan));
+    ASSERT_NULL(plan);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND,
+              nmo_project_manifest_json_read(unknown, strlen(unknown), &plan));
+    ASSERT_NULL(plan);
+}
+
+TEST(project_manifest_json, parses_external_texture_save)
+{
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Level_01\"},"
+        "\"scenes\":[{"
+        "\"name\":\"Level\","
+        "\"objects\":[{"
+        "\"name\":\"A01_Floor_01\","
+        "\"class\":\"CK3dObject\","
+        "\"mesh\":{\"obj\":\"floor.obj\"},"
+        "\"material\":{\"texture\":\"Floor_Top_Flat.bmp\",\"texture_save\":\"external\"},"
+        "\"materials\":["
+            "{\"name\":\"Side\",\"texture\":\"Floor_Side.bmp\",\"texture_save\":\"external\"},"
+            "{\"name\":\"Top\",\"texture\":\"top.png\",\"texture_save\":\"embedded\"}"
+        "]"
+        "}]"
+        "}]"
+        "}";
+    nmo_project_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NOT_NULL(plan);
+
+    nmo_project_asset_desc_t asset = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_asset(plan, 0u, &asset));
+    ASSERT_TRUE(asset.material_texture_external);
+    ASSERT_STR_EQ("Floor_Top_Flat.bmp", asset.material_texture_paths[0]);
+
+    nmo_project_material_spec_t material = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_obj_material(plan, asset.object_handle, 0u, &material));
+    ASSERT_TRUE(material.texture_external);
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_obj_material(plan, asset.object_handle, 1u, &material));
+    ASSERT_FALSE(material.texture_external);
+
+    nmo_project_plan_destroy(plan);
+
+    const char *invalid =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Level_01\"},"
+        "\"scenes\":[{\"name\":\"Level\",\"objects\":[{"
+        "\"name\":\"A01_Floor_01\",\"class\":\"CK3dObject\","
+        "\"material\":{\"texture\":\"a.bmp\",\"texture_save\":\"raw\"}"
+        "}]}]"
+        "}";
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT,
+              nmo_project_manifest_json_read(invalid, strlen(invalid), &plan));
+    ASSERT_NULL(plan);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(project_manifest_json, parses_minimal_visible_scene);
 REGISTER_TEST(project_manifest_json, parses_named_obj_materials);
@@ -1182,4 +1312,7 @@ REGISTER_TEST(project_manifest_json, parses_camera_and_light_targets);
 REGISTER_TEST(project_manifest_json, resolves_parent_id_before_ambiguous_name);
 REGISTER_TEST(project_manifest_json, rejects_duplicate_object_id);
 REGISTER_TEST(project_manifest_json, rejects_ambiguous_parent_name);
+REGISTER_TEST(project_manifest_json, parses_groups);
+REGISTER_TEST(project_manifest_json, rejects_duplicate_and_unknown_group_members);
+REGISTER_TEST(project_manifest_json, parses_external_texture_save);
 TEST_MAIN_END()

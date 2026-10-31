@@ -220,11 +220,111 @@ static nmo_status_t project_authoring_texture_name(
     NMO_RETURN_OK();
 }
 
+void nmo_project_texture_file_stem(
+    const char *path,
+    const char **out_start,
+    size_t *out_length)
+{
+    const char *start = path;
+    for (const char *p = path; *p != '\0'; ++p) {
+        if (*p == '/' || *p == '\\') {
+            start = p + 1;
+        }
+    }
+    const char *dot = strrchr(start, '.');
+    size_t length = dot != NULL && dot != start ? (size_t)(dot - start) : strlen(start);
+    if (length == 0u) {
+        start = path;
+        length = strlen(path);
+    }
+    *out_start = start;
+    *out_length = length;
+}
+
+/* The external textures made so far, by path. */
+typedef struct project_external_textures {
+    const char **paths;
+    nmo_object_id_t *ids;
+    size_t count;
+    size_t capacity;
+} project_external_textures_t;
+
+static void project_external_textures_dispose(project_external_textures_t *textures)
+{
+    free(textures->paths);
+    free(textures->ids);
+}
+
+static nmo_status_t project_authoring_external_texture(
+    nmo_workspace_edit_t *edit,
+    project_external_textures_t *textures,
+    const char *texture_path,
+    nmo_object_id_t *out_texture_id)
+{
+    for (size_t i = 0u; i < textures->count; ++i) {
+        if (strcmp(textures->paths[i], texture_path) == 0) {
+            *out_texture_id = textures->ids[i];
+            NMO_RETURN_OK();
+        }
+    }
+    if (textures->count == textures->capacity) {
+        size_t capacity = textures->capacity ? textures->capacity * 2u : 8u;
+        const char **paths =
+            (const char **)realloc((void *)textures->paths, capacity * sizeof(*paths));
+        if (!paths) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "failed to allocate external texture list");
+        }
+        textures->paths = paths;
+        nmo_object_id_t *ids =
+            (nmo_object_id_t *)realloc(textures->ids, capacity * sizeof(*ids));
+        if (!ids) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "failed to allocate external texture list");
+        }
+        textures->ids = ids;
+        textures->capacity = capacity;
+    }
+
+    const char *stem = NULL;
+    size_t stem_length = 0u;
+    nmo_project_texture_file_stem(texture_path, &stem, &stem_length);
+    char *name = (char *)malloc(stem_length + 1u);
+    if (!name) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate external texture name");
+    }
+    memcpy(name, stem, stem_length);
+    name[stem_length] = '\0';
+
+    nmo_object_id_t texture_id = 0;
+    nmo_status_t status = nmo_object_edit_create(
+        edit,
+        &(nmo_object_create_desc_t){
+            .class_id = NMO_CID_TEXTURE,
+            .name = name,
+            .type_guid = NMO_GUID_NULL,
+        },
+        &texture_id);
+    free(name);
+    NMO_RETURN_IF_ERROR(status);
+    NMO_RETURN_IF_ERROR(nmo_asset_edit_set_texture_external(
+        edit,
+        texture_id,
+        texture_path));
+    textures->paths[textures->count] = texture_path;
+    textures->ids[textures->count] = texture_id;
+    textures->count++;
+    *out_texture_id = texture_id;
+    NMO_RETURN_OK();
+}
+
 static nmo_status_t project_authoring_bind_texture_slot(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t material_id,
     const char *texture_name,
     const char *texture_path,
+    project_external_textures_t *external_textures,
     uint32_t slot)
 {
     if (!edit || material_id == 0u || !texture_name || !texture_path) {
@@ -233,18 +333,26 @@ static nmo_status_t project_authoring_bind_texture_slot(
     }
 
     nmo_object_id_t texture_id = 0;
-    NMO_RETURN_IF_ERROR(nmo_object_edit_create(
-        edit,
-        &(nmo_object_create_desc_t){
-            .class_id = NMO_CID_TEXTURE,
-            .name = texture_name,
-            .type_guid = NMO_GUID_NULL,
-        },
-        &texture_id));
-    NMO_RETURN_IF_ERROR(nmo_asset_edit_set_texture_from_file(
-        edit,
-        texture_id,
-        texture_path));
+    if (external_textures) {
+        NMO_RETURN_IF_ERROR(project_authoring_external_texture(
+            edit,
+            external_textures,
+            texture_path,
+            &texture_id));
+    } else {
+        NMO_RETURN_IF_ERROR(nmo_object_edit_create(
+            edit,
+            &(nmo_object_create_desc_t){
+                .class_id = NMO_CID_TEXTURE,
+                .name = texture_name,
+                .type_guid = NMO_GUID_NULL,
+            },
+            &texture_id));
+        NMO_RETURN_IF_ERROR(nmo_asset_edit_set_texture_from_file(
+            edit,
+            texture_id,
+            texture_path));
+    }
     NMO_RETURN_IF_ERROR(nmo_asset_edit_bind_material_texture(
         edit,
         material_id,
@@ -253,11 +361,12 @@ static nmo_status_t project_authoring_bind_texture_slot(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_project_author_assets(
+static nmo_status_t project_authoring_assets(
     nmo_workspace_edit_t *edit,
     const nmo_project_plan_t *plan,
     const nmo_project_runtime_object_t *objects,
-    size_t object_count)
+    size_t object_count,
+    project_external_textures_t *external_textures)
 {
     if (!edit || !plan || (object_count > 0u && !objects)) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
@@ -324,6 +433,7 @@ nmo_status_t nmo_project_author_assets(
                     material_id,
                     texture_name,
                     texture_path,
+                    asset.material_texture_external ? external_textures : NULL,
                     slot));
             }
         }
@@ -426,6 +536,7 @@ nmo_status_t nmo_project_author_assets(
                         obj_material_id,
                         obj_texture_name,
                         texture_path,
+                        obj_material.texture_external ? external_textures : NULL,
                         slot);
                     if (status != NMO_OK) {
                         free(obj_material_bindings);
@@ -507,4 +618,21 @@ nmo_status_t nmo_project_author_assets(
     }
 
     NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_project_author_assets(
+    nmo_workspace_edit_t *edit,
+    const nmo_project_plan_t *plan,
+    const nmo_project_runtime_object_t *objects,
+    size_t object_count)
+{
+    project_external_textures_t external_textures = {0};
+    nmo_status_t status = project_authoring_assets(
+        edit,
+        plan,
+        objects,
+        object_count,
+        &external_textures);
+    project_external_textures_dispose(&external_textures);
+    return status;
 }

@@ -109,12 +109,22 @@ typedef struct project_asset_record {
     bool has_material_texture_slots[4];
     char *material_texture_paths[4];
     char *material_texture_source_paths[4];
+    bool material_texture_external;
     bool has_material_render_flags;
     nmo_project_material_render_flags_t material_render_flags;
     nmo_project_material_spec_t *obj_materials;
     size_t obj_material_count;
     size_t obj_material_capacity;
 } project_asset_record_t;
+
+typedef struct project_group_record {
+    uint32_t handle;
+    char *name;
+    char *source_path;
+    uint32_t *members;
+    size_t member_count;
+    size_t member_capacity;
+} project_group_record_t;
 
 typedef struct project_script_step_record {
     nmo_project_script_step_kind_t kind;
@@ -144,9 +154,13 @@ struct nmo_project_plan {
     project_script_record_t *scripts;
     size_t script_count;
     size_t script_capacity;
+    project_group_record_t *groups;
+    size_t group_count;
+    size_t group_capacity;
     uint32_t next_scene_handle;
     uint32_t next_object_handle;
     uint32_t next_script_handle;
+    uint32_t next_group_handle;
 };
 
 static char *project_plan_strdup(const char *src)
@@ -414,6 +428,7 @@ nmo_status_t nmo_project_plan_create(nmo_project_plan_t **out_plan)
     plan->next_scene_handle = 1u;
     plan->next_object_handle = 1u;
     plan->next_script_handle = 1u;
+    plan->next_group_handle = 1u;
     *out_plan = plan;
     NMO_RETURN_OK();
 }
@@ -451,10 +466,16 @@ void nmo_project_plan_destroy(nmo_project_plan_t *plan)
             plan->scripts[i].steps,
             plan->scripts[i].step_count);
     }
+    for (size_t i = 0; i < plan->group_count; ++i) {
+        free(plan->groups[i].name);
+        free(plan->groups[i].source_path);
+        free(plan->groups[i].members);
+    }
     free(plan->scenes);
     free(plan->objects);
     project_plan_free_assets(plan->assets, plan->asset_count);
     free(plan->scripts);
+    free(plan->groups);
     free(plan);
 }
 
@@ -814,6 +835,46 @@ nmo_status_t nmo_project_plan_clone(
             clone->script_count++;
         }
     }
+    clone->next_group_handle = plan->next_group_handle;
+    if (plan->group_count > 0u) {
+        clone->groups = (project_group_record_t *)calloc(
+            plan->group_count,
+            sizeof(*clone->groups));
+        if (!clone->groups) {
+            nmo_project_plan_destroy(clone);
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "failed to clone project groups");
+        }
+        clone->group_capacity = plan->group_count;
+        for (size_t i = 0u; i < plan->group_count; ++i) {
+            const project_group_record_t *src = &plan->groups[i];
+            project_group_record_t *dst = &clone->groups[i];
+            clone->group_count++;
+            dst->handle = src->handle;
+            dst->name = project_plan_strdup(src->name);
+            dst->source_path = project_plan_strdup(src->source_path);
+            if ((src->name && !dst->name) ||
+                (src->source_path && !dst->source_path)) {
+                nmo_project_plan_destroy(clone);
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                 "failed to clone project group name");
+            }
+            if (src->member_count > 0u) {
+                dst->members = (uint32_t *)malloc(
+                    src->member_count * sizeof(*dst->members));
+                if (!dst->members) {
+                    nmo_project_plan_destroy(clone);
+                    NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                     "failed to clone project group members");
+                }
+                memcpy(dst->members,
+                       src->members,
+                       src->member_count * sizeof(*dst->members));
+                dst->member_count = src->member_count;
+                dst->member_capacity = src->member_count;
+            }
+        }
+    }
 
     *out_clone = clone;
     NMO_RETURN_OK();
@@ -1067,6 +1128,154 @@ nmo_status_t nmo_project_plan_set_scene_source_path(
     free(source_copy);
     NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
                      "scene handle not found");
+}
+
+static project_group_record_t *project_plan_find_group(
+    nmo_project_plan_t *plan,
+    uint32_t group_handle)
+{
+    for (size_t i = 0u; i < plan->group_count; ++i) {
+        if (plan->groups[i].handle == group_handle) {
+            return &plan->groups[i];
+        }
+    }
+    return NULL;
+}
+
+nmo_status_t nmo_project_plan_add_group(
+    nmo_project_plan_t *plan,
+    const char *name,
+    uint32_t *out_group_handle)
+{
+    if (!plan || !name || name[0] == '\0') {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "plan and non-empty group name are required");
+    }
+
+    if (plan->group_count == plan->group_capacity) {
+        size_t new_capacity = plan->group_capacity ? plan->group_capacity * 2u : 8u;
+        project_group_record_t *new_groups =
+            (project_group_record_t *)realloc(
+                plan->groups,
+                new_capacity * sizeof(*new_groups));
+        if (!new_groups) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "failed to allocate project group");
+        }
+        memset(new_groups + plan->group_capacity,
+               0,
+               (new_capacity - plan->group_capacity) * sizeof(*new_groups));
+        plan->groups = new_groups;
+        plan->group_capacity = new_capacity;
+    }
+
+    char *name_copy = project_plan_strdup(name);
+    if (!name_copy) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate project group name");
+    }
+
+    uint32_t handle = plan->next_group_handle++;
+    project_group_record_t *group = &plan->groups[plan->group_count++];
+    group->handle = handle;
+    group->name = name_copy;
+
+    if (out_group_handle) {
+        *out_group_handle = handle;
+    }
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_project_plan_add_group_member(
+    nmo_project_plan_t *plan,
+    uint32_t group_handle,
+    uint32_t object_handle)
+{
+    if (!plan || group_handle == 0u || object_handle == 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "plan, group handle, and object handle are required");
+    }
+    project_group_record_t *group = project_plan_find_group(plan, group_handle);
+    if (!group) {
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                         "group handle not found");
+    }
+    for (size_t i = 0u; i < group->member_count; ++i) {
+        if (group->members[i] == object_handle) {
+            NMO_RETURN_OK();
+        }
+    }
+
+    if (group->member_count == group->member_capacity) {
+        size_t new_capacity = group->member_capacity ? group->member_capacity * 2u : 8u;
+        uint32_t *new_members = (uint32_t *)realloc(
+            group->members,
+            new_capacity * sizeof(*new_members));
+        if (!new_members) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "failed to allocate project group member");
+        }
+        group->members = new_members;
+        group->member_capacity = new_capacity;
+    }
+    group->members[group->member_count++] = object_handle;
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_project_plan_set_group_source_path(
+    nmo_project_plan_t *plan,
+    uint32_t group_handle,
+    const char *source_path)
+{
+    if (!plan || group_handle == 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "plan and group handle are required");
+    }
+    project_group_record_t *group = project_plan_find_group(plan, group_handle);
+    if (!group) {
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                         "group handle not found");
+    }
+
+    char *source_copy = NULL;
+    if (source_path) {
+        source_copy = project_plan_strdup(source_path);
+        if (!source_copy) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "failed to allocate project group source path");
+        }
+    }
+    free(group->source_path);
+    group->source_path = source_copy;
+    NMO_RETURN_OK();
+}
+
+size_t nmo_project_plan_group_count(const nmo_project_plan_t *plan)
+{
+    return plan ? plan->group_count : 0u;
+}
+
+nmo_status_t nmo_project_plan_get_group(
+    const nmo_project_plan_t *plan,
+    size_t index,
+    nmo_project_group_desc_t *out_group)
+{
+    if (!plan || !out_group) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "plan and out_group are required");
+    }
+    if (index >= plan->group_count) {
+        NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR,
+                         "group index out of bounds");
+    }
+
+    const project_group_record_t *group = &plan->groups[index];
+    out_group->handle = group->handle;
+    out_group->name = group->name;
+    out_group->source_path = group->source_path;
+    out_group->member_handles = group->members;
+    out_group->member_count = group->member_count;
+    NMO_RETURN_OK();
 }
 
 nmo_status_t nmo_project_plan_set_scene_active_camera_source_path(
@@ -1813,6 +2022,17 @@ nmo_status_t nmo_project_plan_set_material_texture_slot(
     return project_plan_set_asset_texture_slot(plan, object_handle, slot, path);
 }
 
+nmo_status_t nmo_project_plan_set_material_texture_external(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    bool external)
+{
+    project_asset_record_t *asset = NULL;
+    NMO_RETURN_IF_ERROR(project_plan_find_or_add_asset(plan, object_handle, &asset));
+    asset->material_texture_external = external;
+    NMO_RETURN_OK();
+}
+
 nmo_status_t nmo_project_plan_set_material_texture_source_path(
     nmo_project_plan_t *plan,
     uint32_t object_handle,
@@ -2239,6 +2459,7 @@ nmo_status_t nmo_project_plan_get_asset(
     memcpy((void *)out_asset->material_texture_source_paths,
            asset->material_texture_source_paths,
            sizeof(out_asset->material_texture_source_paths));
+    out_asset->material_texture_external = asset->material_texture_external;
     out_asset->has_material_render_flags = asset->has_material_render_flags;
     out_asset->material_render_flags = asset->material_render_flags;
     NMO_RETURN_OK();

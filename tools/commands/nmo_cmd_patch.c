@@ -441,7 +441,9 @@ static nmo_status_t patch_resolve_project_manifest_paths(
                 return st;
             }
         }
+        /* An external texture keeps the name the engine resolves. */
         if (asset.has_material_texture &&
+            !asset.material_texture_external &&
             !patch_path_is_absolute(asset.material_texture_path)) {
             char *resolved =
                 patch_join_manifest_path(base_dir, asset.material_texture_path);
@@ -469,6 +471,7 @@ static nmo_status_t patch_resolve_project_manifest_paths(
                 material_index,
                 &material));
             if (material.has_texture &&
+                !material.texture_external &&
                 !patch_path_is_absolute(material.texture_path)) {
                 char *resolved =
                     patch_join_manifest_path(base_dir, material.texture_path);
@@ -969,6 +972,11 @@ static void patch_add_project_report_json(
             created,
             "scripts",
             report ? &report->script_diff : NULL);
+        patch_project_report_add_created_list(
+            doc,
+            created,
+            "groups",
+            report ? &report->group_diff : NULL);
         patch_project_report_add_created_list(
             doc,
             created,

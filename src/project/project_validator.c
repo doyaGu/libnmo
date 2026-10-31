@@ -771,7 +771,8 @@ static nmo_status_t project_validation_check_assets(
                     texture_path = asset.material_texture_path;
                     source_path = asset.material_texture_source_path;
                 }
-                if (texture_path &&
+                /* An external texture is found by the engine at load time. */
+                if (texture_path && !asset.material_texture_external &&
                     !project_validation_file_exists(texture_path)) {
                     NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
                         report,
@@ -812,7 +813,7 @@ static nmo_status_t project_validation_check_assets(
                     texture_path = material.texture_path;
                     source_path = material.texture_source_path;
                 }
-                if (texture_path &&
+                if (texture_path && !material.texture_external &&
                     !project_validation_file_exists(texture_path)) {
                     NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
                         report,
@@ -997,6 +998,45 @@ static nmo_status_t project_validation_check_scripts(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t project_validation_check_groups(
+    const nmo_project_plan_t *plan,
+    nmo_project_validation_report_t *report)
+{
+    size_t group_count = nmo_project_plan_group_count(plan);
+    for (size_t i = 0u; i < group_count; ++i) {
+        nmo_project_group_desc_t group = {0};
+        NMO_RETURN_IF_ERROR(nmo_project_plan_get_group(plan, i, &group));
+
+        for (size_t m = 0u; m < group.member_count; ++m) {
+            if (!project_validation_has_object_handle(plan, group.member_handles[m])) {
+                NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
+                    report,
+                    "missing_group_member",
+                    "Project group references a missing object handle",
+                    "group",
+                    group.name,
+                    group.source_path));
+            }
+        }
+        /* Games find their groups by name, so two of the same name would
+           leave one of them unreachable. */
+        for (size_t j = i + 1u; j < group_count; ++j) {
+            nmo_project_group_desc_t other = {0};
+            NMO_RETURN_IF_ERROR(nmo_project_plan_get_group(plan, j, &other));
+            if (group.name && other.name && strcmp(group.name, other.name) == 0) {
+                NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
+                    report,
+                    "duplicate_group_name",
+                    "Project group names must be unique",
+                    "group",
+                    other.name,
+                    other.source_path));
+            }
+        }
+    }
+    NMO_RETURN_OK();
+}
+
 nmo_status_t nmo_project_validate_plan(
     const nmo_project_plan_t *plan,
     nmo_project_validation_report_t *report)
@@ -1020,6 +1060,7 @@ nmo_status_t nmo_project_validate_plan(
     NMO_RETURN_IF_ERROR(project_validation_check_objects(plan, report));
     NMO_RETURN_IF_ERROR(project_validation_check_assets(plan, report));
     NMO_RETURN_IF_ERROR(project_validation_check_scripts(plan, report));
+    NMO_RETURN_IF_ERROR(project_validation_check_groups(plan, report));
 
     report->ok = report->issue_count == 0u;
     NMO_RETURN_OK();

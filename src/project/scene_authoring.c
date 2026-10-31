@@ -566,3 +566,58 @@ cleanup:
     free(authored_scenes);
     return status;
 }
+
+nmo_status_t nmo_project_author_groups(
+    nmo_workspace_edit_t *edit,
+    const nmo_project_plan_t *plan,
+    const nmo_project_runtime_object_t *objects,
+    size_t object_count)
+{
+    if (!edit || !plan || (object_count > 0u && !objects)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "workspace edit, plan, and object map are required");
+    }
+
+    size_t group_count = nmo_project_plan_group_count(plan);
+    for (size_t i = 0u; i < group_count; ++i) {
+        nmo_project_group_desc_t group = {0};
+        NMO_RETURN_IF_ERROR(nmo_project_plan_get_group(plan, i, &group));
+
+        nmo_object_id_t group_id = 0;
+        NMO_RETURN_IF_ERROR(nmo_object_edit_create(
+            edit,
+            &(nmo_object_create_desc_t){
+                .class_id = NMO_CID_GROUP,
+                .name = group.name,
+                .type_guid = NMO_GUID_NULL,
+            },
+            &group_id));
+        /* CKGroup::Save writes the member list even when it is empty. */
+        NMO_RETURN_IF_ERROR(nmo_object_edit_set_fields(
+            edit,
+            group_id,
+            &(nmo_session_field_edit_t){
+                .field_name = "has_group_data",
+                .value_str = "1",
+            },
+            1u,
+            NULL));
+
+        for (size_t m = 0u; m < group.member_count; ++m) {
+            nmo_object_id_t member_id = project_authoring_find_object_id(
+                objects,
+                object_count,
+                group.member_handles[m]);
+            if (member_id == 0) {
+                NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                                 "group '%s' member object handle not found",
+                                 group.name);
+            }
+            NMO_RETURN_IF_ERROR(nmo_object_edit_add_group_member(
+                edit,
+                group_id,
+                member_id));
+        }
+    }
+    NMO_RETURN_OK();
+}

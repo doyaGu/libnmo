@@ -118,6 +118,7 @@ typedef struct nmo_project_report {
     nmo_project_report_diff_t object_diff;
     nmo_project_report_diff_t asset_diff;
     nmo_project_report_diff_t script_diff;
+    nmo_project_report_diff_t group_diff;
     nmo_project_report_diff_t manager_diff;
     nmo_project_validation_report_t validation;
     nmo_project_report_evidence_t evidence;

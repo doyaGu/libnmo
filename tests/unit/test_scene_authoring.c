@@ -1,5 +1,6 @@
 #include "test_framework.h"
 #include "document/nmo_document_load.h"
+#include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_scene_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_defs.h"
@@ -299,6 +300,160 @@ TEST(scene_authoring, executor_authors_scene_environment)
     remove(output_path);
 }
 
+TEST(scene_authoring, stores_and_clones_groups)
+{
+    nmo_project_plan_t *plan = NULL;
+    uint32_t floor = 0u;
+    uint32_t rail = 0u;
+    uint32_t floors = 0u;
+    uint32_t checkpoints = 0u;
+
+    ASSERT_EQ(NMO_OK, nmo_project_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_object(
+                          plan,
+                          &(nmo_project_object_spec_t){
+                              .class_id = NMO_CID_3DOBJECT,
+                              .name = "A01_Floor_01",
+                          },
+                          &floor));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_object(
+                          plan,
+                          &(nmo_project_object_spec_t){
+                              .class_id = NMO_CID_3DOBJECT,
+                              .name = "A01_Rail_01",
+                          },
+                          &rail));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_group(plan, "Phys_Floors", &floors));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_group(plan, "PC_Checkpoints", &checkpoints));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_group_member(plan, floors, rail));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_group_member(plan, floors, floor));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_group_member(plan, floors, rail));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_group_source_path(plan, floors, "groups[0]"));
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_project_plan_add_group_member(plan, 99u, floor));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, nmo_project_plan_add_group(plan, "", NULL));
+
+    nmo_project_plan_t *clone = NULL;
+    ASSERT_EQ(NMO_OK, nmo_project_plan_clone(plan, &clone));
+    nmo_project_plan_destroy(plan);
+
+    ASSERT_EQ(2u, nmo_project_plan_group_count(clone));
+    nmo_project_group_desc_t group = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_group(clone, 0u, &group));
+    ASSERT_EQ(floors, group.handle);
+    ASSERT_STR_EQ("Phys_Floors", group.name);
+    ASSERT_STR_EQ("groups[0]", group.source_path);
+    ASSERT_EQ(2u, group.member_count);
+    ASSERT_EQ(rail, group.member_handles[0]);
+    ASSERT_EQ(floor, group.member_handles[1]);
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_group(clone, 1u, &group));
+    ASSERT_STR_EQ("PC_Checkpoints", group.name);
+    ASSERT_EQ(0u, group.member_count);
+    ASSERT_EQ(NMO_ERR_OUT_OF_BOUNDS, nmo_project_plan_get_group(clone, 2u, &group));
+
+    uint32_t next = 0u;
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_group(clone, "Shadow", &next));
+    ASSERT_TRUE(next != floors && next != checkpoints);
+
+    nmo_project_plan_destroy(clone);
+}
+
+static const nmo_group_state_t *find_group_state(nmo_document_t *doc, const char *name)
+{
+    nmo_object_t *object = NULL;
+    if (nmo_object_query_find_first(
+            doc,
+            &(nmo_object_query_t){
+                .class_id = NMO_CID_GROUP,
+                .name = name,
+                .name_mode = NMO_OBJECT_QUERY_NAME_EXACT,
+            },
+            &object,
+            NULL) != NMO_OK ||
+        object == NULL) {
+        return NULL;
+    }
+    return (const nmo_group_state_t *)nmo_object_get_state(object);
+}
+
+TEST(scene_authoring, executor_authors_groups)
+{
+    const char *output_path = "test_scene_authoring_groups.cmo";
+    remove(output_path);
+
+    nmo_project_plan_t *plan = NULL;
+    uint32_t floor = 0u;
+    uint32_t start = 0u;
+    uint32_t group = 0u;
+    nmo_project_report_t report;
+
+    ASSERT_EQ(NMO_OK, nmo_project_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_document_name(plan, "GeneratedLevel"));
+    /* No scene: a Ballance level file holds objects and groups only. */
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_object(
+                          plan,
+                          &(nmo_project_object_spec_t){
+                              .class_id = NMO_CID_3DOBJECT,
+                              .name = "A01_Floor_01",
+                          },
+                          &floor));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_object(
+                          plan,
+                          &(nmo_project_object_spec_t){
+                              .class_id = NMO_CID_3DOBJECT,
+                              .name = "PS_FourFlames_01",
+                          },
+                          &start));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_group(plan, "Phys_Floors", &group));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_group_member(plan, group, floor));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_group(plan, "PS_Levelstart", &group));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_group_member(plan, group, start));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_group(plan, "PC_Checkpoints", &group));
+
+    nmo_project_report_init(&report);
+    ASSERT_EQ(NMO_OK, nmo_project_executor_execute_to_file(plan, output_path, &report));
+    ASSERT_TRUE(report.ok);
+    ASSERT_EQ(3u, report.group_diff.created.count);
+    ASSERT_STR_EQ("Phys_Floors", report.group_diff.created.names[0]);
+
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_document_t *doc = NULL;
+    ASSERT_EQ(NMO_OK, nmo_document_load_file(ctx, output_path, NULL, &doc));
+    ASSERT_NOT_NULL(doc);
+
+    nmo_object_t *floor_object = NULL;
+    ASSERT_EQ(NMO_OK,
+              nmo_object_query_find_first(
+                  doc,
+                  &(nmo_object_query_t){
+                      .class_id = NMO_CID_3DOBJECT,
+                      .name = "A01_Floor_01",
+                      .name_mode = NMO_OBJECT_QUERY_NAME_EXACT,
+                  },
+                  &floor_object,
+                  NULL));
+    ASSERT_NOT_NULL(floor_object);
+
+    const nmo_group_state_t *floors = find_group_state(doc, "Phys_Floors");
+    ASSERT_NOT_NULL(floors);
+    ASSERT_EQ(1u, floors->object_ids.count);
+    ASSERT_EQ(nmo_object_get_id(floor_object),
+              nmo_ref_runtime_id((const nmo_ref_t *)nmo_array_get(&floors->object_ids, 0)));
+    const nmo_group_state_t *levelstart = find_group_state(doc, "PS_Levelstart");
+    ASSERT_NOT_NULL(levelstart);
+    ASSERT_EQ(1u, levelstart->object_ids.count);
+    const nmo_group_state_t *checkpoints = find_group_state(doc, "PC_Checkpoints");
+    ASSERT_NOT_NULL(checkpoints);
+    ASSERT_EQ(0u, checkpoints->object_ids.count);
+    ASSERT_EQ(1u, checkpoints->has_group_data);
+
+    nmo_document_destroy(doc);
+    nmo_context_release(ctx);
+    nmo_project_report_dispose(&report);
+    nmo_project_plan_destroy(plan);
+    remove(output_path);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(scene_authoring, adds_scene_to_project_plan);
 REGISTER_TEST(scene_authoring, clones_scene_metadata);
@@ -307,4 +462,6 @@ REGISTER_TEST(scene_authoring, clones_scene_environment);
 REGISTER_TEST(scene_authoring, clones_generic_object_metadata);
 REGISTER_TEST(scene_authoring, executor_creates_scene_object);
 REGISTER_TEST(scene_authoring, executor_authors_scene_environment);
+REGISTER_TEST(scene_authoring, stores_and_clones_groups);
+REGISTER_TEST(scene_authoring, executor_authors_groups);
 TEST_MAIN_END()

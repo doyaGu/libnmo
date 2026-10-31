@@ -60,6 +60,8 @@ typedef struct nmo_project_asset_desc {
     bool has_material_texture_slots[4];
     const char *material_texture_paths[4];
     const char *material_texture_source_paths[4];
+    /* The textures name their files instead of holding the images. */
+    bool material_texture_external;
     bool has_material_render_flags;
     nmo_project_material_render_flags_t material_render_flags;
 } nmo_project_asset_desc_t;
@@ -85,6 +87,7 @@ typedef struct nmo_project_material_spec {
     bool has_texture_slots[4];
     const char *texture_paths[4];
     const char *texture_source_paths[4];
+    bool texture_external;
     bool has_render_flags;
     nmo_project_material_render_flags_t render_flags;
 } nmo_project_material_spec_t;
@@ -164,6 +167,11 @@ NMO_API nmo_status_t nmo_project_plan_set_material_texture_slot(
     uint32_t object_handle,
     uint32_t slot,
     const char *path);
+
+NMO_API nmo_status_t nmo_project_plan_set_material_texture_external(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    bool external);
 
 NMO_API nmo_status_t nmo_project_plan_set_material_texture_source_path(
     nmo_project_plan_t *plan,

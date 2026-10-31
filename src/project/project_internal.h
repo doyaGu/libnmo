@@ -15,6 +15,13 @@ typedef struct nmo_project_runtime_object {
     nmo_object_id_t object_id;
 } nmo_project_runtime_object_t;
 
+/* An external texture is named after its file, folders and extension cut,
+   as the game's own files name theirs; textures of the same file are one. */
+void nmo_project_texture_file_stem(
+    const char *path,
+    const char **out_start,
+    size_t *out_length);
+
 nmo_status_t nmo_project_author_scenes(
     nmo_workspace_edit_t *edit,
     const nmo_project_plan_t *plan,
@@ -22,6 +29,12 @@ nmo_status_t nmo_project_author_scenes(
     size_t *out_object_count);
 
 nmo_status_t nmo_project_author_assets(
+    nmo_workspace_edit_t *edit,
+    const nmo_project_plan_t *plan,
+    const nmo_project_runtime_object_t *objects,
+    size_t object_count);
+
+nmo_status_t nmo_project_author_groups(
     nmo_workspace_edit_t *edit,
     const nmo_project_plan_t *plan,
     const nmo_project_runtime_object_t *objects,

@@ -159,6 +159,15 @@ typedef struct nmo_project_object_desc {
     const nmo_objanim_morph_key_t *animation_morph_keys;
 } nmo_project_object_desc_t;
 
+/* A CKGroup and the plan objects it holds, in order. */
+typedef struct nmo_project_group_desc {
+    uint32_t handle;
+    const char *name;
+    const char *source_path;
+    const uint32_t *member_handles;
+    size_t member_count;
+} nmo_project_group_desc_t;
+
 NMO_API nmo_status_t nmo_project_plan_create(nmo_project_plan_t **out_plan);
 NMO_API void nmo_project_plan_destroy(nmo_project_plan_t *plan);
 
@@ -193,6 +202,30 @@ NMO_API nmo_status_t nmo_project_plan_add_object(
     nmo_project_plan_t *plan,
     const nmo_project_object_spec_t *spec,
     uint32_t *out_object_handle);
+
+NMO_API nmo_status_t nmo_project_plan_add_group(
+    nmo_project_plan_t *plan,
+    const char *name,
+    uint32_t *out_group_handle);
+
+/* Adding an object the group already holds is a no-op. */
+NMO_API nmo_status_t nmo_project_plan_add_group_member(
+    nmo_project_plan_t *plan,
+    uint32_t group_handle,
+    uint32_t object_handle);
+
+NMO_API nmo_status_t nmo_project_plan_set_group_source_path(
+    nmo_project_plan_t *plan,
+    uint32_t group_handle,
+    const char *source_path);
+
+NMO_API size_t nmo_project_plan_group_count(
+    const nmo_project_plan_t *plan);
+
+NMO_API nmo_status_t nmo_project_plan_get_group(
+    const nmo_project_plan_t *plan,
+    size_t index,
+    nmo_project_group_desc_t *out_group);
 
 NMO_API nmo_status_t nmo_project_plan_set_scene_source_path(
     nmo_project_plan_t *plan,

@@ -1,5 +1,11 @@
 #include "test_framework.h"
 
+#include "document/nmo_document_load.h"
+#include "object/builtin/nmo_material_schemas.h"
+#include "object/builtin/nmo_texture_schemas.h"
+#include "object/nmo_context.h"
+#include "object/nmo_object_query.h"
+#include "project/nmo_project_executor.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_defs.h"
 #include "project/nmo_asset_plan.h"
@@ -453,6 +459,110 @@ TEST(asset_authoring, stores_camera_and_light_specs) {
     nmo_project_plan_destroy(plan);
 }
 
+static nmo_object_t *find_named(nmo_document_t *doc, nmo_class_id_t class_id, const char *name)
+{
+    nmo_object_t *object = NULL;
+    if (nmo_object_query_find_first(
+            doc,
+            &(nmo_object_query_t){
+                .class_id = class_id,
+                .name = name,
+                .name_mode = NMO_OBJECT_QUERY_NAME_EXACT,
+            },
+            &object,
+            NULL) != NMO_OK) {
+        return NULL;
+    }
+    return object;
+}
+
+TEST(asset_authoring, executor_shares_external_textures) {
+    const char *output_path = "test_asset_authoring_external_textures.nmo";
+    remove(output_path);
+
+    nmo_project_plan_t *plan = NULL;
+    uint32_t handles[3] = {0u, 0u, 0u};
+    const char *names[3] = {"A01_Floor_01", "A01_Floor_02", "A01_Wall_01"};
+    /* The paths are not files: the engine resolves them when the level loads. */
+    const char *textures[3] = {"Floor_Top_Flat.bmp", "Floor_Top_Flat.bmp", "Textures\\Floor_Side.bmp"};
+
+    ASSERT_EQ(NMO_OK, nmo_project_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_document_name(plan, "GeneratedLevel"));
+    for (size_t i = 0u; i < 3u; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_project_plan_add_object(
+                              plan,
+                              &(nmo_project_object_spec_t){
+                                  .class_id = NMO_CID_3DOBJECT,
+                                  .name = names[i],
+                              },
+                              &handles[i]));
+        ASSERT_EQ(NMO_OK, nmo_project_plan_set_primitive_mesh(plan, handles[i], NMO_PRIMITIVE_CUBE));
+        ASSERT_EQ(NMO_OK, nmo_project_plan_set_material_texture(plan, handles[i], textures[i]));
+        ASSERT_EQ(NMO_OK, nmo_project_plan_set_material_texture_external(plan, handles[i], true));
+    }
+
+    nmo_project_plan_t *clone = NULL;
+    ASSERT_EQ(NMO_OK, nmo_project_plan_clone(plan, &clone));
+    nmo_project_asset_desc_t asset = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_asset(clone, 0u, &asset));
+    ASSERT_TRUE(asset.material_texture_external);
+    nmo_project_plan_destroy(clone);
+
+    nmo_project_report_t report;
+    nmo_project_report_init(&report);
+    ASSERT_EQ(NMO_OK, nmo_project_executor_execute_to_file(plan, output_path, &report));
+    ASSERT_TRUE(report.ok);
+    ASSERT_TRUE(nmo_project_report_diff_has_created_asset(&report, "Floor_Top_Flat"));
+    ASSERT_TRUE(nmo_project_report_diff_has_created_asset(&report, "Floor_Side"));
+    ASSERT_FALSE(nmo_project_report_diff_has_created_asset(&report, "A01_Floor_01_Texture"));
+
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_document_t *doc = NULL;
+    ASSERT_EQ(NMO_OK, nmo_document_load_file(ctx, output_path, NULL, &doc));
+    ASSERT_NOT_NULL(doc);
+
+    size_t texture_count = 0u;
+    ASSERT_EQ(NMO_OK, nmo_object_query_count(
+                          doc,
+                          &(nmo_object_query_t){.class_id = NMO_CID_TEXTURE},
+                          &texture_count));
+    ASSERT_EQ(2u, texture_count);
+
+    nmo_object_t *flat = find_named(doc, NMO_CID_TEXTURE, "Floor_Top_Flat");
+    ASSERT_NOT_NULL(flat);
+    const nmo_texture_state_t *flat_state =
+        (const nmo_texture_state_t *)nmo_object_get_state(flat);
+    ASSERT_NOT_NULL(flat_state);
+    ASSERT_EQ(1u, flat_state->has_slot_filenames);
+    ASSERT_EQ(1u, flat_state->slot_count);
+    ASSERT_STR_EQ("Floor_Top_Flat.bmp", flat_state->slot_filenames[0]);
+    ASSERT_EQ(NMO_CKTEXTURE_EXTERNAL, flat_state->save_options);
+    ASSERT_NULL(flat_state->reader_slots);
+    ASSERT_NULL(flat_state->raw_slots);
+
+    nmo_object_t *side = find_named(doc, NMO_CID_TEXTURE, "Floor_Side");
+    ASSERT_NOT_NULL(side);
+    const nmo_texture_state_t *side_state =
+        (const nmo_texture_state_t *)nmo_object_get_state(side);
+    ASSERT_STR_EQ("Textures\\Floor_Side.bmp", side_state->slot_filenames[0]);
+
+    const char *floor_materials[2] = {"A01_Floor_01_Material", "A01_Floor_02_Material"};
+    for (size_t i = 0u; i < 2u; ++i) {
+        nmo_object_t *material = find_named(doc, NMO_CID_MATERIAL, floor_materials[i]);
+        ASSERT_NOT_NULL(material);
+        const nmo_material_state_t *material_state =
+            (const nmo_material_state_t *)nmo_object_get_state(material);
+        ASSERT_EQ(nmo_object_get_id(flat), nmo_ref_runtime_id(&material_state->textures[0]));
+    }
+
+    nmo_document_destroy(doc);
+    nmo_context_release(ctx);
+    nmo_project_report_dispose(&report);
+    nmo_project_plan_destroy(plan);
+    remove(output_path);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(asset_authoring, stores_primitive_mesh_and_material_specs);
 REGISTER_TEST(asset_authoring, stores_material_texture_slots);
@@ -461,4 +571,5 @@ REGISTER_TEST(asset_authoring, stores_named_obj_material_specs);
 REGISTER_TEST(asset_authoring, stores_named_obj_material_texture_slots);
 REGISTER_TEST(asset_authoring, clones_named_obj_material_specs);
 REGISTER_TEST(asset_authoring, stores_camera_and_light_specs);
+REGISTER_TEST(asset_authoring, executor_shares_external_textures);
 TEST_MAIN_END()

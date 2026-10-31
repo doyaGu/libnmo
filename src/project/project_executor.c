@@ -478,6 +478,7 @@ static void project_report_dispose_diffs(nmo_project_report_t *report)
     project_report_diff_dispose(&report->object_diff);
     project_report_diff_dispose(&report->asset_diff);
     project_report_diff_dispose(&report->script_diff);
+    project_report_diff_dispose(&report->group_diff);
     project_report_diff_dispose(&report->manager_diff);
 }
 
@@ -558,6 +559,23 @@ static nmo_status_t project_report_format_texture_name(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "generated texture evidence name is too long");
     }
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t project_report_format_external_texture_name(
+    const char *texture_path,
+    char *out_name,
+    size_t out_size)
+{
+    const char *stem = NULL;
+    size_t stem_length = 0u;
+    nmo_project_texture_file_stem(texture_path, &stem, &stem_length);
+    if (stem_length >= out_size) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "generated texture evidence name is too long");
+    }
+    memcpy(out_name, stem, stem_length);
+    out_name[stem_length] = '\0';
     NMO_RETURN_OK();
 }
 
@@ -1160,14 +1178,23 @@ static nmo_status_t project_report_populate_diff(
                 if (!texture_path) {
                     continue;
                 }
-                NMO_RETURN_IF_ERROR(project_report_format_texture_name(
-                    object.name,
-                    slot,
-                    asset_name,
-                    sizeof(asset_name)));
-                NMO_RETURN_IF_ERROR(project_report_add_created(
-                    &report->asset_diff,
-                    asset_name));
+                if (asset.material_texture_external) {
+                    NMO_RETURN_IF_ERROR(project_report_format_external_texture_name(
+                        texture_path,
+                        asset_name,
+                        sizeof(asset_name)));
+                } else {
+                    NMO_RETURN_IF_ERROR(project_report_format_texture_name(
+                        object.name,
+                        slot,
+                        asset_name,
+                        sizeof(asset_name)));
+                }
+                if (!project_report_created_contains(&report->asset_diff, asset_name)) {
+                    NMO_RETURN_IF_ERROR(project_report_add_created(
+                        &report->asset_diff,
+                        asset_name));
+                }
                 NMO_RETURN_IF_ERROR(project_report_add_asset_binding_evidence(
                     &report->evidence,
                     object.name,
@@ -1253,14 +1280,23 @@ static nmo_status_t project_report_populate_diff(
                     if (!texture_path) {
                         continue;
                     }
-                    NMO_RETURN_IF_ERROR(project_report_format_texture_name(
-                        texture_base,
-                        slot,
-                        asset_name,
-                        sizeof(asset_name)));
-                    NMO_RETURN_IF_ERROR(project_report_add_created(
-                        &report->asset_diff,
-                        asset_name));
+                    if (material.texture_external) {
+                        NMO_RETURN_IF_ERROR(project_report_format_external_texture_name(
+                            texture_path,
+                            asset_name,
+                            sizeof(asset_name)));
+                    } else {
+                        NMO_RETURN_IF_ERROR(project_report_format_texture_name(
+                            texture_base,
+                            slot,
+                            asset_name,
+                            sizeof(asset_name)));
+                    }
+                    if (!project_report_created_contains(&report->asset_diff, asset_name)) {
+                        NMO_RETURN_IF_ERROR(project_report_add_created(
+                            &report->asset_diff,
+                            asset_name));
+                    }
                     NMO_RETURN_IF_ERROR(project_report_add_asset_binding_evidence(
                         &report->evidence,
                         object.name,
@@ -1288,6 +1324,14 @@ static nmo_status_t project_report_populate_diff(
             script.name,
             script.step_count,
             report->validation.ok));
+    }
+
+    for (size_t i = 0u; i < nmo_project_plan_group_count(plan); ++i) {
+        nmo_project_group_desc_t group = {0};
+        NMO_RETURN_IF_ERROR(nmo_project_plan_get_group(plan, i, &group));
+        NMO_RETURN_IF_ERROR(project_report_add_created(
+            &report->group_diff,
+            group.name));
     }
 
     NMO_RETURN_OK();
@@ -1464,6 +1508,9 @@ nmo_status_t nmo_project_executor_execute_to_file(
     project_report_set_generated_object_ids(report, objects, object_count);
 
     status = nmo_project_author_assets(edit, plan, objects, object_count);
+    if (status == NMO_OK) {
+        status = nmo_project_author_groups(edit, plan, objects, object_count);
+    }
     if (status != NMO_OK) {
         nmo_workspace_edit_rollback(edit);
         free(objects);
