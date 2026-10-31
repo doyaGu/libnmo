@@ -42,6 +42,7 @@ typedef struct run_args {
     bool window;          /* --window: show the frames and take the keyboard and mouse */
     bool frames_given;    /* -n given: a window closes after that many frames */
     const char *shots;    /* "menu.png@700,...": frames a window saves */
+    bool mute;            /* --mute: the window plays no sound */
 } run_args_t;
 
 /* A key held down from frame `first` to frame `last`. */
@@ -890,6 +891,9 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
 #ifdef NMO_HAS_VIEW
         if (status == NMO_OK && view != NULL) {
             status = nmo_view_draw(view);
+            if (!args->mute) {
+                nmo_view_play_sounds(view);
+            }
             run_take_shots(view, args->shots, nmo_engine_frame(engine));
         }
 #endif
@@ -974,10 +978,11 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
         {"--window", "-w", NMO_OPT_FLAG,
          "Show the frames in a window and play with its keyboard and mouse, until it closes"},
         {"--shot", NULL, NMO_OPT_STRING, "Save the window at frames: FILE.png@FRAME,..."},
+        {"--mute", NULL, NMO_OPT_FLAG, "Play no sound in the window"},
     };
     enum { OPT_FRAMES, OPT_DELTA, OPT_START, OPT_SCRIPT, OPT_UNKNOWN, OPT_MAX_ITER, OPT_SEED,
            OPT_TRACE, OPT_KEYS, OPT_PATH, OPT_WRITE, OPT_MESSAGE, OPT_REGISTRY, OPT_PHYSICS,
-           OPT_WINDOW, OPT_SHOT, OPT_COUNT };
+           OPT_WINDOW, OPT_SHOT, OPT_MUTE, OPT_COUNT };
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
@@ -993,6 +998,7 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
     out->frames_given = vals[OPT_FRAMES].present;
     out->window = nmo_opt_flag(&vals[OPT_WINDOW]);
     out->shots = nmo_opt_str(&vals[OPT_SHOT]);
+    out->mute = nmo_opt_flag(&vals[OPT_MUTE]);
     if (out->shots != NULL) {
         out->window = true;
     }

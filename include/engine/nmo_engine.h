@@ -666,6 +666,29 @@ NMO_API const char *nmo_engine_font_name(const nmo_engine_t *engine, int32_t fon
  * starts and stops it, and it ends after the length the file records.
  */
 NMO_API bool nmo_engine_sound_is_playing(const nmo_engine_t *engine, nmo_object_id_t sound_id);
+
+/**
+ * A sound to hear now: a wave sound that plays, or one of its instances
+ * (Play Sound Instance). The engine plays no audio; a host mixes these.
+ */
+typedef struct nmo_engine_voice {
+    uint32_t key;          /* the same while it plays: the sound's ID, or its instance's number */
+    nmo_object_id_t sound;
+    const char *file;      /* the wave file as the sound names it; NULL for none */
+    uint32_t start;        /* changes when it starts again: the host plays it from `position` */
+    float position;        /* ms into the file */
+    float gain;            /* the sound's gain, times its fade in or out; an instance's own */
+    float pitch;           /* the playback rate: 1 for the file's */
+    float pan;             /* -1 left to 1 right */
+    bool loop;
+    bool paused;
+} nmo_engine_voice_t;
+
+/** The voices to hear this frame, `*out_count` of them; valid until the next step. */
+NMO_API const nmo_engine_voice_t *nmo_engine_voices(nmo_engine_t *engine, size_t *out_count);
+/** The whole file a sound names, through the path manager's sound paths; free() it. */
+NMO_API unsigned char *nmo_engine_read_sound_file(nmo_engine_t *engine, const char *name,
+                                                  size_t *out_size);
 /**
  * The slot texture `texture_id` shows: the frame of the movie Movie Load
  * gave it as Movie Player advances it, else the slot the file records.

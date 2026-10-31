@@ -14,6 +14,7 @@
 #include "object/nmo_class_ids.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* ============================================================================
@@ -37,9 +38,44 @@ eng_sound_t *eng_sound(nmo_engine_t *engine, nmo_object_id_t id)
     if (!ENG_VEC_PUSH(engine->media.sounds, sound)) {
         return NULL;
     }
+    memset(sound, 0, sizeof(*sound));
     sound->id = id;
     sound->length = state != NULL && state->has_duration ? (float)state->duration : 0.0f;
+    /* CKWaveSound's settings as the file has them, else its defaults */
+    bool settings = state != NULL && state->has_data2;
+    sound->gain = settings ? state->gain : 1.0f;
+    sound->pitch = settings && state->pitch > 0.0f ? state->pitch : 1.0f;
+    sound->pan = settings ? state->pan : 0.0f;
+    sound->last_instance = -1.0;
+    /* CKSound's file name, else the one older wave sounds kept */
+    if (state != NULL && state->base.file_name != NULL && state->base.file_name[0] != '\0') {
+        eng_sound_set_file(sound, state->base.file_name);
+    } else if (state != NULL && state->has_wave_file_name && state->wave_file_name != NULL &&
+               state->wave_file_name[0] != '\0') {
+        eng_sound_set_file(sound, state->wave_file_name);
+    }
     return sound;
+}
+
+void eng_sound_set_file(eng_sound_t *sound, const char *name)
+{
+    size_t length = strlen(name);
+    char *copy = (char *)malloc(length + 1);
+    if (copy != NULL) {
+        memcpy(copy, name, length + 1);
+        free(sound->file);
+        sound->file = copy;
+    }
+}
+
+void eng_free_sounds(nmo_engine_t *engine)
+{
+    for (size_t i = 0; i < engine->media.sounds.count; i++) {
+        free(engine->media.sounds.data[i].file);
+    }
+    free(engine->media.sounds.data);
+    free(engine->media.instances.data);
+    free(engine->media.voices.data);
 }
 
 void eng_sounds_begin_frame(nmo_engine_t *engine)
@@ -61,6 +97,96 @@ void eng_sounds_begin_frame(nmo_engine_t *engine)
             sound->playing = false;
         }
     }
+    size_t kept = 0;
+    for (size_t i = 0; i < engine->media.instances.count; i++) {
+        eng_sound_instance_t *instance = &engine->media.instances.data[i];
+        instance->position += engine->delta;
+        if (instance->position < instance->length) {
+            engine->media.instances.data[kept++] = *instance;
+        }
+    }
+    engine->media.instances.count = kept;
+}
+
+void eng_sound_play_instance(nmo_engine_t *engine, eng_sound_t *sound, float min_delay, float gain)
+{
+    double now = engine->time;
+    if (sound->last_instance >= 0.0 && now - sound->last_instance < (double)min_delay) {
+        return;
+    }
+    eng_sound_instance_t *instance = NULL;
+    if (sound->length <= 0.0f || !ENG_VEC_PUSH(engine->media.instances, instance)) {
+        return;
+    }
+    sound->last_instance = now;
+    instance->key = ++engine->media.instance_keys;
+    instance->sound = sound->id;
+    instance->position = 0.0f;
+    instance->length = sound->length;
+    instance->gain = gain;
+}
+
+/* The gain a sound plays at now: its own, through its fade in and out */
+static float eng_sound_gain(const eng_sound_t *sound)
+{
+    float gain = sound->gain;
+    if (sound->fade_in > 0.0f && sound->position < sound->fade_in) {
+        gain *= sound->position / sound->fade_in;
+    }
+    if (sound->fade_left > 0.0f && sound->fade_out > 0.0f) {
+        gain *= sound->fade_left / sound->fade_out;
+    }
+    return gain;
+}
+
+static const char *eng_sound_file(nmo_engine_t *engine, nmo_object_id_t id)
+{
+    for (size_t i = 0; i < engine->media.sounds.count; i++) {
+        if (engine->media.sounds.data[i].id == id) {
+            return engine->media.sounds.data[i].file;
+        }
+    }
+    return NULL;
+}
+
+const nmo_engine_voice_t *nmo_engine_voices(nmo_engine_t *engine, size_t *out_count)
+{
+    *out_count = 0;
+    if (engine == NULL) {
+        return NULL;
+    }
+    engine->media.voices.count = 0;
+    for (size_t i = 0; i < engine->media.sounds.count; i++) {
+        const eng_sound_t *sound = &engine->media.sounds.data[i];
+        nmo_engine_voice_t *voice = NULL;
+        if (!sound->playing || sound->file == NULL || !ENG_VEC_PUSH(engine->media.voices, voice)) {
+            continue;
+        }
+        *voice = (nmo_engine_voice_t){sound->id, sound->id, sound->file, sound->starts,
+                                      sound->position, eng_sound_gain(sound), sound->pitch,
+                                      sound->pan, sound->loop, sound->paused};
+    }
+    for (size_t i = 0; i < engine->media.instances.count; i++) {
+        const eng_sound_instance_t *instance = &engine->media.instances.data[i];
+        const char *file = eng_sound_file(engine, instance->sound);
+        eng_sound_t *sound = file != NULL ? eng_sound(engine, instance->sound) : NULL;
+        nmo_engine_voice_t *voice = NULL;
+        if (sound == NULL || !ENG_VEC_PUSH(engine->media.voices, voice)) {
+            continue;
+        }
+        /* Instance keys count apart from object IDs: from the top of the range down */
+        *voice = (nmo_engine_voice_t){UINT32_MAX - instance->key, instance->sound, file, 0u,
+                                      instance->position, instance->gain,
+                                      sound->pitch, sound->pan, false, false};
+    }
+    *out_count = engine->media.voices.count;
+    return engine->media.voices.data;
+}
+
+unsigned char *nmo_engine_read_sound_file(nmo_engine_t *engine, const char *name,
+                                          size_t *out_size)
+{
+    return engine != NULL && name != NULL ? eng_read_path_file(engine, name, 2, out_size) : NULL;
 }
 
 bool nmo_engine_sound_is_playing(const nmo_engine_t *engine, nmo_object_id_t sound_id)
@@ -74,14 +200,16 @@ bool nmo_engine_sound_is_playing(const nmo_engine_t *engine, nmo_object_id_t sou
     return false;
 }
 
-/* CKWaveSound::Play: from the start (a fade in changes only the volume). */
-void eng_sound_play(blk_t *b, eng_sound_t *sound, bool loop)
+/* CKWaveSound::Play: from the start, its gain rising from 0 over `fade_in` ms. */
+void eng_sound_play(blk_t *b, eng_sound_t *sound, bool loop, float fade_in)
 {
     sound->playing = true;
     sound->paused = false;
     sound->position = 0.0f;
     sound->fade_left = 0.0f;
+    sound->fade_in = fade_in > 0.0f ? fade_in : 0.0f;
     sound->loop = loop;
+    sound->starts++;
     eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, sound->id, 0);
 }
 
@@ -90,6 +218,7 @@ void eng_sound_stop(eng_sound_t *sound, float fade_out)
 {
     if (fade_out > 0.0f && sound->playing) {
         sound->fade_left = fade_out;
+        sound->fade_out = fade_out;
     } else {
         sound->playing = false;
     }

@@ -249,7 +249,7 @@ void nmo_engine_destroy(nmo_engine_t *engine)
         free(engine->nodes.data[i].state);
     }
     free(engine->nodes.data);
-    free(engine->media.sounds.data);
+    eng_free_sounds(engine);
     eng_free_textures(engine);
     free(engine->op_lookups.data);
     eng_fonts_clear(engine);

@@ -9,16 +9,30 @@
 
 #include "engine_base.h"
 
-/* A sound as the engine plays it: no audio, only its position in time. */
+/* A sound as the engine plays it: no audio, its position in time and its settings. */
 typedef struct eng_sound {
     nmo_object_id_t id;
-    float length;    /* ms, as the file records it; 0 when it does not */
-    float position;  /* ms since it started */
-    float fade_left; /* ms of fade out before it stops; 0 when not stopping */
+    char *file;       /* the wave file it names (Sound Load's, else the file's); NULL for none */
+    float length;     /* ms, as the file records it; 0 when it does not */
+    float position;   /* ms since it started */
+    float fade_left;  /* ms of fade out before it stops; 0 when not stopping */
+    float fade_out;   /* the fade out's whole length */
+    float fade_in;    /* ms of the fade in, from the start */
+    float gain, pitch, pan;
+    double last_instance; /* the engine time an instance last started; < 0 for never */
+    uint32_t starts;
     bool playing;
     bool paused;
     bool loop;
 } eng_sound_t;
+
+/* An instance of a sound (CKWaveSound::PlayMinion): it plays once, then goes */
+typedef struct eng_sound_instance {
+    uint32_t key;
+    nmo_object_id_t sound;
+    float position, length;
+    float gain;
+} eng_sound_instance_t;
 
 /* An AVI movie's frames, decoded as they are asked for */
 typedef struct eng_movie eng_movie_t;
@@ -35,16 +49,24 @@ typedef struct eng_texture {
 
 typedef struct eng_media {
     ENG_VEC(eng_sound_t) sounds;
+    ENG_VEC(eng_sound_instance_t) instances;
+    uint32_t instance_keys;
+    ENG_VEC(nmo_engine_voice_t) voices;
     ENG_VEC(eng_texture_t) textures;
 } eng_media_t;
 
 /* core/media.c */
 /* The sounds move on by the frame time (the sound manager's frame). */
 void eng_sounds_begin_frame(nmo_engine_t *engine);
+void eng_free_sounds(nmo_engine_t *engine);
 /* The engine's state of sound `id`, made the first time; NULL when `id` is no CKWaveSound. */
 eng_sound_t *eng_sound(nmo_engine_t *engine, nmo_object_id_t id);
-/* CKWaveSound::Play: from the start (a fade in changes only the volume). */
-void eng_sound_play(nmo_engine_block_t *b, eng_sound_t *sound, bool loop);
+/* CKWaveSound::Play: from the start, its gain rising from 0 over `fade_in` ms. */
+void eng_sound_play(nmo_engine_block_t *b, eng_sound_t *sound, bool loop, float fade_in);
+/* CKWaveSound::PlayMinion: an instance at `gain`, unless one started less than `min_delay` ms ago. */
+void eng_sound_play_instance(nmo_engine_t *engine, eng_sound_t *sound, float min_delay, float gain);
+/* Sound Load: the sound plays `name` from now on. */
+void eng_sound_set_file(eng_sound_t *sound, const char *name);
 /* CKWaveSound::Stop: now, or once the fade out is over. */
 void eng_sound_stop(eng_sound_t *sound, float fade_out);
 /*

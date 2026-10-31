@@ -34,6 +34,12 @@ NMO_API void nmo_view_close(nmo_view_t *view);
 NMO_API bool nmo_view_poll(nmo_view_t *view);
 /** Draw the engine's frame and show it. */
 NMO_API nmo_status_t nmo_view_draw(nmo_view_t *view);
+/**
+ * Play the engine's voices (nmo_engine_voices) on the default audio
+ * device: each starts, follows its gain, pitch and pan, and stops as the
+ * engine has it. Nothing plays when there is no device.
+ */
+NMO_API void nmo_view_play_sounds(nmo_view_t *view);
 /** Save what the window shows as a PNG file. */
 NMO_API nmo_status_t nmo_view_screenshot(nmo_view_t *view, const char *path);
 /** Milliseconds since the view opened, by the system clock. */

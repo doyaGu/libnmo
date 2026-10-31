@@ -59,6 +59,7 @@ static int bb_sound_load(blk_t *b)
         eng_sound_stop(sound, 0.0f);
         if (length >= 0.0f) {
             sound->length = length;
+            eng_sound_set_file(sound, name);
         }
         if (async == 0) {
             OUT_ON(b, length >= 0.0f ? 0 : 1);

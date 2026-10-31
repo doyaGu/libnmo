@@ -23,10 +23,6 @@ static int bb_effect(nmo_engine_block_t *block)
 
 static const nmo_engine_block_desc_t eng_effect_blocks[] = {
     {NMO_GUID(0x3ebe40f2, 0x3fa41377), "Set MipMap Level", bb_effect, NULL, NULL}, /* Materials-Textures/Texture */
-    {NMO_GUID(0x00283a35, 0x38ef6b48), "Play Sound Instance", bb_effect, NULL, NULL}, /* Sounds/Basic */
-    {NMO_GUID(0x6a5f17af, 0x63480864), "Panning Control", bb_effect, NULL, NULL}, /* Sounds/Control */
-    {NMO_GUID(0x7b7c731e, 0x175b27a3), "Pitch Control", bb_effect, NULL, NULL}, /* Sounds/Control */
-    {NMO_GUID(0x33613f21, 0x776b185b), "Volume Control", bb_effect, NULL, NULL}, /* Sounds/Control */
     {NMO_GUID(0x734f73b4, 0x01fc79ac), "TT_FlushTextures", bb_effect, NULL, NULL}, /* TT Toolbox/Narratives */
 };
 

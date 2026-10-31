@@ -23,17 +23,13 @@
 /* TT_GetSoundProperties: the gain, pitch and pan of the target sound. */
 static int bb_get_sound_properties(blk_t *b)
 {
-    nmo_object_t *object = eng_find_object(b->engine, nmo_engine_block_target(b));
-    if (object == NULL || nmo_object_get_class_id(object) != NMO_CID_WAVESOUND) {
+    eng_sound_t *sound = eng_sound(b->engine, nmo_engine_block_target(b));
+    if (sound == NULL) {
         return NMO_ENGINE_BR_PARAMETERERROR;
     }
-    const nmo_wavesound_state_t *state = (const nmo_wavesound_state_t *)nmo_object_get_state(object);
-    float gain = state != NULL ? state->gain : 1.0f;
-    float pitch = state != NULL ? state->pitch : 1.0f;
-    float pan = state != NULL ? state->pan : 0.0f;
-    nmo_engine_block_set_output_value(b, 0, &gain, sizeof(gain));
-    nmo_engine_block_set_output_value(b, 1, &pitch, sizeof(pitch));
-    nmo_engine_block_set_output_value(b, 2, &pan, sizeof(pan));
+    nmo_engine_block_set_output_value(b, 0, &sound->gain, sizeof(sound->gain));
+    nmo_engine_block_set_output_value(b, 1, &sound->pitch, sizeof(sound->pitch));
+    nmo_engine_block_set_output_value(b, 2, &sound->pan, sizeof(sound->pan));
     IN_OFF(b, 0);
     OUT_ON(b, 0);
     return NMO_ENGINE_BR_OK;
@@ -302,8 +298,7 @@ static int bb_texture_sine(blk_t *b)
  * TT ProximityVolumeControl: while on, the Sound's gain follows how near
  * Object #2 is to Object #1: full within Near-Distance, nothing past
  * Far-Distance, linear in the squared distance between, as CalcGain makes
- * it (0.02 * 50^x). The engine keeps no gain: CKWaveSound::SetGain is an
- * effect on the sound.
+ * it (0.02 * 50^x), into CKWaveSound::SetGain.
  * Off stops it (Off out); On starts it (On out).
  */
 static int bb_proximity_volume_control(blk_t *b)
@@ -327,11 +322,25 @@ static int bb_proximity_volume_control(blk_t *b)
         eng_entity_index(engine, object2) < 0) {
         return NMO_ENGINE_BR_PARAMETERERROR;
     }
-    nmo_object_id_t sound = nmo_engine_block_get_input_object(b, 4);
-    if (sound == 0) {
+    eng_vector_t pos = eng_entity_position(engine, eng_entity_index(engine, object2),
+                                           eng_entity_index(engine, object1));
+    float distance = pos.z * pos.z + pos.y * pos.y + pos.x * pos.x;
+    float near_distance = get_in_float(b, 2, 0.0f), far_distance = get_in_float(b, 3, 10.0f);
+    near_distance *= near_distance;
+    far_distance *= far_distance;
+    float x = 0.0f;
+    if (distance < far_distance) {
+        x = distance > near_distance
+                ? (float)(1.0 - (double)(distance - near_distance) / (far_distance - near_distance))
+                : 1.0f;
+    }
+    eng_sound_t *sound = eng_sound(engine, nmo_engine_block_get_input_object(b, 4));
+    if (sound == NULL) {
         return NMO_ENGINE_BR_PARAMETERERROR;
     }
-    eng_emit(engine, NMO_ENGINE_EVENT_EFFECT, b->node, sound, 0);
+    /* CalcGain */
+    sound->gain = x > 1.0f ? 1.0f : x >= 0.0f ? (float)(pow(50.0, (double)x) * 0.02) : 0.0f;
+    eng_emit(engine, NMO_ENGINE_EVENT_EFFECT, b->node, sound->id, 0);
     if (on != 0) {
         return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
     }

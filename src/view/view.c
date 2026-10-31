@@ -14,6 +14,7 @@
 
 #include "engine/nmo_view.h"
 #include "engine/nmo_engine_render.h"
+#include "view_audio.h"
 #include "core/nmo_arena.h"
 #include "format/nmo_image.h"
 #include "format/nmo_stb_adapter.h"
@@ -72,6 +73,7 @@ struct nmo_view {
     int view_x, view_y, view_w, view_h; /* where it shows in the window, in pixels */
     uint64_t start;
     bool cursor_shown;
+    view_audio_t *audio; /* NULL when there is no audio device */
 };
 
 /* ============================================================================
@@ -944,6 +946,13 @@ nmo_status_t nmo_view_screenshot(nmo_view_t *view, const char *path)
     return status;
 }
 
+void nmo_view_play_sounds(nmo_view_t *view)
+{
+    if (view != NULL) {
+        view_audio_play(view->audio, view->engine);
+    }
+}
+
 double nmo_view_time(const nmo_view_t *view)
 {
     return view != NULL ? (double)(SDL_GetTicksNS() - view->start) / 1.0e6 : 0.0;
@@ -985,6 +994,7 @@ nmo_status_t nmo_view_open(nmo_engine_t *engine, const char *title, int scale,
         return NMO_ERR_INVALID_STATE;
     }
     SDL_GL_SetSwapInterval(1);
+    view->audio = view_audio_open();
     view->start = SDL_GetTicksNS();
     view->cursor_shown = true;
     *out_view = view;
@@ -1009,6 +1019,7 @@ void nmo_view_close(nmo_view_t *view)
         free(view->meshes[i].colors);
     }
     free(view->meshes);
+    view_audio_close(view->audio);
     if (view->context != NULL) {
         SDL_GL_DestroyContext(view->context);
     }

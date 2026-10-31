@@ -14,6 +14,8 @@
 #define GUID_PLAY_ANIMATION NMO_GUID(0x64221225, 0x769a143f)
 #define GUID_PLAY_GLOBAL_ANIMATION NMO_GUID(0x1c9236e1, 0x42f40996)
 #define GUID_SOUND_LOAD NMO_GUID(0x02bc537c, 0x147c22e0)
+#define GUID_VOLUME_CONTROL NMO_GUID(0x33613f21, 0x776b185b)
+#define GUID_PLAY_SOUND_INSTANCE NMO_GUID(0x00283a35, 0x38ef6b48)
 
 static void input_float(engine_fixture_t *f, nmo_object_id_t pin, float value)
 {
@@ -95,6 +97,55 @@ TEST(engine_media, particle_system_exits_off_once_its_particles_died)
        100 ms, four updates of 25 ms, and leave in the fifth, after Off at 50 ms */
     ASSERT_EQ(5u, frames);
     ASSERT_FALSE(nmo_engine_behavior_is_active(f.engine, ps));
+    fixture_end(&f);
+}
+
+TEST(engine_media, voices_follow_the_sound_settings_and_instances)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t sound = create_sound(&f, 1000);
+    ASSERT_TRUE(sound != 0);
+    nmo_wavesound_state_t *state = (nmo_wavesound_state_t *)fixture_state(&f, sound);
+    ASSERT_NOT_NULL(state);
+    state->base.file_name = (char *)"hit.wav";
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t volume = fixture_block(&f, GUID_VOLUME_CONTROL, "Volume");
+    nmo_object_id_t first = fixture_block(&f, GUID_PLAY_SOUND_INSTANCE, "First");
+    nmo_object_id_t second = fixture_block(&f, GUID_PLAY_SOUND_INSTANCE, "Second");
+    nmo_object_id_t player = fixture_block(&f, GUID_WAVE_PLAYER, "Player");
+    nmo_object_id_t blocks[4] = {volume, first, second, player};
+    for (int i = 0; i < 4; i++) {
+        ASSERT_TRUE(blocks[i] != 0 && fixture_target(&f, blocks[i]) != 0);
+        fixture_input_int(&f, fixture_target(&f, blocks[i]), (int32_t)sound);
+    }
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, volume, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, volume, 0), BLOCK_IN(&f, first, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, first, 0), BLOCK_IN(&f, second, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, second, 0), BLOCK_IN(&f, player, 0), 0);
+    input_float(&f, BLOCK_PIN(&f, volume, 0), 0.5f);
+    for (int i = 1; i <= 2; i++) {
+        input_float(&f, BLOCK_PIN(&f, blocks[i], 4), 50.0f); /* Min Delay */
+        input_float(&f, BLOCK_PIN(&f, blocks[i], 5), 0.8f);  /* Volume */
+    }
+    input_float(&f, BLOCK_PIN(&f, player, 0), 100.0f); /* Fade In */
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 25.0f));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 25.0f));
+    size_t count = 0;
+    const nmo_engine_voice_t *voices = nmo_engine_voices(f.engine, &count);
+    /* The sound, and one instance: the second came within the first's Min Delay */
+    ASSERT_EQ(2u, count);
+    ASSERT_EQ(sound, voices[0].sound);
+    ASSERT_STR_EQ("hit.wav", voices[0].file);
+    ASSERT_FLOAT_EQ(25.0f, voices[0].position, 0.001f);
+    ASSERT_FLOAT_EQ(0.5f * 0.25f, voices[0].gain, 0.0001f); /* a quarter into the fade in */
+    ASSERT_EQ(sound, voices[1].sound);
+    ASSERT_TRUE(voices[1].key != voices[0].key);
+    ASSERT_FLOAT_EQ(0.8f, voices[1].gain, 0.0001f);
     fixture_end(&f);
 }
 
@@ -431,6 +482,7 @@ TEST(engine_media, play_global_animation_loops_over_its_duration)
 
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_media, wave_player_ends_after_the_sound_length);
+REGISTER_TEST(engine_media, voices_follow_the_sound_settings_and_instances);
 REGISTER_TEST(engine_media, particle_system_exits_off_once_its_particles_died);
 REGISTER_TEST(engine_media, movie_player_shows_the_movie_frames_over_its_duration);
 REGISTER_TEST(engine_media, movie_texture_shows_the_decoded_frame_of_its_slot);
