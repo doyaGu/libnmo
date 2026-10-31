@@ -330,6 +330,26 @@ eng_material_t *eng_material_new(nmo_engine_t *engine, nmo_object_id_t id)
     return material;
 }
 
+bool eng_texture_keyed(const nmo_engine_t *engine, nmo_object_id_t texture)
+{
+    nmo_object_t *object = texture != 0 ? eng_find_object(engine, texture) : NULL;
+    const nmo_texture_state_t *state =
+        object != NULL && nmo_object_get_class_id(object) == NMO_CID_TEXTURE
+            ? (const nmo_texture_state_t *)nmo_object_get_state(object)
+            : NULL;
+    return state != NULL && state->is_transparent;
+}
+
+/* RCKMaterial::SetAsCurrent leaves its own alpha test unset when the texture tests alpha */
+static void eng_texture_alpha_test(const nmo_engine_t *engine, nmo_engine_material_t *desc)
+{
+    if (eng_texture_keyed(engine, desc->texture)) {
+        desc->alpha_test = true;
+        desc->alpha_func = VXCMP_GREATER;
+        desc->alpha_ref = 0;
+    }
+}
+
 bool nmo_engine_material(const nmo_engine_t *engine, nmo_object_id_t material,
                          nmo_engine_material_t *out)
 {
@@ -339,6 +359,7 @@ bool nmo_engine_material(const nmo_engine_t *engine, nmo_object_id_t material,
     int32_t at = eng_map_get(&engine->render.material_map, material);
     if (at >= 0) {
         *out = engine->render.materials.data[at].desc;
+        eng_texture_alpha_test(engine, out);
         return true;
     }
     nmo_object_t *object = material != 0 ? eng_find_object(engine, material) : NULL;
@@ -350,6 +371,7 @@ bool nmo_engine_material(const nmo_engine_t *engine, nmo_object_id_t material,
         return false;
     }
     eng_material_from_state(engine, material, state, out);
+    eng_texture_alpha_test(engine, out);
     return true;
 }
 

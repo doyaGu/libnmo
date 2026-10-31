@@ -273,6 +273,8 @@ int32_t eng_mesh_add_channel(eng_mesh_copy_t *copy, nmo_object_id_t material);
 void eng_mesh_remove_channel(eng_mesh_copy_t *copy, int32_t channel);
 /* Add a draw to the frame being made; NULL out of memory */
 nmo_engine_draw_t *eng_render_push(nmo_engine_t *engine);
+/* A texture with a transparent color: RCKTexture::SetAsCurrent tests alpha > 0 with it */
+bool eng_texture_keyed(const nmo_engine_t *engine, nmo_object_id_t texture);
 
 /* blocks/interface.c (the font manager) */
 void eng_fonts_clear(nmo_engine_t *engine);
