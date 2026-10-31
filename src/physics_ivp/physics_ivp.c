@@ -401,7 +401,9 @@ static nmo_status_t create_constraint(void *user_data, const nmo_engine_physics_
         ivp_spring_state_init(&joint->spring);
         ivp_spring_state_setup(&joint->spring, a->object, &a_os, b->object, &b_os, c->constant,
                                c->damping, c->length);
-        ivp_spring_set_rel_pos_damp(&joint->spring, c->global_damping);
+        /* IVP_Template_Spring::rel_pos_damp, taken by the constructor: the setter would wake
+           the objects, and a spring between frozen objects leaves them frozen */
+        joint->spring.rel_pos_damp = (ivp_real_t)(float)c->global_damping;
         joint->controller = ivp_environment_add_controller(p->env, IVP_CP_ACTUATOR,
                                                            ivp_controller_spring, &joint->spring);
     } else if (force) {
