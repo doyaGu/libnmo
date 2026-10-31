@@ -81,6 +81,12 @@ NMO_API nmo_status_t nmo_asset_edit_set_texture_from_file(
     nmo_object_id_t texture_id,
     const char *path);
 
+/* Reference an image file by name instead of embedding it (CKTEXTURE_EXTERNAL). */
+NMO_API nmo_status_t nmo_asset_edit_set_texture_external(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t texture_id,
+    const char *file_name);
+
 NMO_API nmo_status_t nmo_asset_edit_bind_material_texture(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t material_id,

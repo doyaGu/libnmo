@@ -1723,6 +1723,47 @@ nmo_status_t nmo_texture_replace_bitmap(
     return NMO_OK;
 }
 
+nmo_status_t nmo_texture_set_external_file(
+    nmo_texture_state_t *state,
+    nmo_arena_t *arena,
+    const char *file_name) {
+    if (!state || !arena || !file_name || file_name[0] == '\0')
+        return NMO_ERR_INVALID_ARGUMENT;
+
+    char **names = (char **)nmo_arena_alloc(arena, sizeof(char *), _Alignof(char *));
+    const char *name = nmo_arena_strdup(arena, file_name);
+    if (!names || !name)
+        return NMO_ERR_NOMEM;
+    names[0] = (char *)name;
+
+    /* One slot that names its file and holds no image: the engine loads the
+       file through its bitmap paths when the texture loads. */
+    state->has_slot_filenames = 1;
+    state->slot_count = 1;
+    state->slot_filenames = names;
+    state->save_options = NMO_CKTEXTURE_EXTERNAL;
+    state->has_oldtexonly = 1;
+    state->reader_width = 0;
+    state->reader_height = 0;
+    state->reader_bpp = 0;
+    state->bitmap_kind = CKTEXTURE_BITMAP_NONE;
+    state->reader_slots = NULL;
+    state->raw_slots = NULL;
+    state->bitmap2_slots = NULL;
+    state->has_movie_filename = 0;
+    state->movie_filename = NULL;
+    state->is_cubemap = 0;
+    state->has_current_slot = 0;
+    state->current_slot = 0;
+    state->has_save_format = 0;
+    state->save_format_data = NULL;
+    state->save_format_size = 0;
+    state->has_user_mipmaps = 0;
+    state->user_mipmap_count = 0;
+    state->user_mipmaps = NULL;
+    return NMO_OK;
+}
+
 nmo_status_t nmo_bitmap_slots_read(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,

@@ -439,6 +439,46 @@ nmo_status_t nmo_asset_edit_set_texture_rgba(
     return NMO_OK;
 }
 
+nmo_status_t nmo_asset_edit_set_texture_external(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t texture_id,
+    const char *file_name)
+{
+    if (edit == NULL || texture_id == 0u || file_name == NULL || file_name[0] == '\0') {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_texture_state_t *state = NULL;
+    nmo_status_t status = workspace_edit_find_typed_state(
+        edit,
+        texture_id,
+        NMO_CID_TEXTURE,
+        (void **)&state);
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    nmo_arena_t *arena = nmo_workspace_internal_document_arena(edit->workspace);
+    if (arena == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    status = nmo_workspace_edit_snapshot_bytes(edit, state, sizeof(*state));
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    status = nmo_texture_set_external_file(state, arena, file_name);
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    nmo_workspace_edit_mark(
+        edit,
+        NMO_WORKSPACE_EDIT_OBJECT_STATE | NMO_WORKSPACE_EDIT_RESOURCES);
+    return NMO_OK;
+}
+
 nmo_status_t nmo_asset_edit_bind_material_texture(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t material_id,

@@ -186,6 +186,23 @@ NMO_API nmo_status_t nmo_texture_replace_bitmap(
     uint32_t height);
 
 /**
+ * @brief Make a texture a reference to an image file it does not hold.
+ *
+ * Leaves one slot that names @p file_name, drops any image data and sets
+ * CKTEXTURE_EXTERNAL, so a save writes the name only and the engine loads
+ * the file through its bitmap paths.
+ *
+ * @param state     Mutable texture state
+ * @param arena     Arena for the copied name
+ * @param file_name File name as the engine resolves it (e.g. "Floor_Side.bmp")
+ * @return NMO_OK on success
+ */
+NMO_API nmo_status_t nmo_texture_set_external_file(
+    nmo_texture_state_t *state,
+    nmo_arena_t *arena,
+    const char *file_name);
+
+/**
  * @brief Locate the encoded image inside a legacy bitmap2 slot.
  *
  * CKStateChunk::ReadBitmap2 selects the image reader from a five-byte tag in
