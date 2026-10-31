@@ -1174,7 +1174,8 @@ static int bb_get_profiler_values(blk_t *b)
 /*
  * Set Physics Globals: Set Values sets the gravity and the time factor;
  * Clean Physics World makes the environment again (its gravity the
- * default). Out either way.
+ * default; CreateEnvironment's new call and contact managers drop the
+ * kept calls and contact records). Out either way.
  */
 static int bb_set_physics_globals(blk_t *b)
 {
@@ -1196,6 +1197,8 @@ static int bb_set_physics_globals(blk_t *b)
         physics->gravity[0] = 0.0f;
         physics->gravity[1] = -9.81f;
         physics->gravity[2] = 0.0f;
+        physics->calls.count = 0;
+        physics->records.count = 0;
         if (provider != NULL && provider->reset != NULL) {
             provider->reset(provider->user_data);
         }
