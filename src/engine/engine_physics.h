@@ -81,9 +81,4 @@ typedef struct eng_physics {
     double physics_delta; /* m_PhysicsDeltaTime: the last step */
 } eng_physics_t;
 
-/* blocks/physics.c */
-void eng_physics_init(nmo_engine_t *engine);
-void eng_free_physics(nmo_engine_t *engine);
-void eng_physics_post_process(nmo_engine_t *engine);
-
 #endif /* NMO_ENGINE_PHYSICS_H */

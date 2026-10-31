@@ -22,7 +22,6 @@
 #include "engine_media.h"
 #include "engine_message.h"
 #include "engine_module.h"
-#include "engine_physics.h"
 #include "engine_render.h"
 #include "engine_scene.h"
 #include "engine_transform.h"
@@ -78,7 +77,6 @@ struct nmo_engine {
     eng_input_t input;
     eng_media_t media;
     eng_render_t render;
-    eng_physics_t physics;
     eng_tt_t tt;
     eng_host_t host;
     /* The managers the block packs added, in the order they were added */

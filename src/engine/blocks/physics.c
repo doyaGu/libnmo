@@ -16,6 +16,7 @@
  */
 
 #include "../engine_block_util.h"
+#include "../engine_physics.h"
 
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_mesh_schemas.h"
@@ -49,6 +50,14 @@ static char *dup_string(const char *text)
  * The manager
  * ============================================================================ */
 
+/* CKIpionManager: its state is the manager's */
+static const eng_manager_desc_t physics_manager;
+
+static eng_physics_t *physics_of(const nmo_engine_t *engine)
+{
+    return (eng_physics_t *)eng_manager_state(engine, &physics_manager);
+}
+
 static void physics_free_object(eng_physics_object_t *object)
 {
     free(object->meshes);
@@ -56,18 +65,18 @@ static void physics_free_object(eng_physics_object_t *object)
     free(object->group);
 }
 
-void eng_physics_init(nmo_engine_t *engine)
+static void eng_physics_init(nmo_engine_t *engine)
 {
-    eng_physics_t *physics = &engine->physics;
+    eng_physics_t *physics = physics_of(engine);
     physics->gravity[0] = 0.0f;
     physics->gravity[1] = -9.81f;
     physics->gravity[2] = 0.0f;
     physics->time_factor = 0.001; /* ms to s */
 }
 
-void eng_free_physics(nmo_engine_t *engine)
+static void eng_free_physics(nmo_engine_t *engine)
 {
-    eng_physics_t *physics = &engine->physics;
+    eng_physics_t *physics = physics_of(engine);
     for (size_t i = 0; i < physics->objects.count; i++) {
         physics_free_object(&physics->objects.data[i]);
     }
@@ -89,8 +98,8 @@ void eng_free_physics(nmo_engine_t *engine)
 /* CKIpionManager::GetPhysicsObject; -1 when it is not physical */
 static int32_t physics_object_index(const nmo_engine_t *engine, nmo_object_id_t entity)
 {
-    for (size_t i = 0; entity != 0 && i < engine->physics.objects.count; i++) {
-        if (engine->physics.objects.data[i].desc.entity == entity) {
+    for (size_t i = 0; entity != 0 && i < physics_of(engine)->objects.count; i++) {
+        if (physics_of(engine)->objects.data[i].desc.entity == entity) {
             return (int32_t)i;
         }
     }
@@ -99,8 +108,8 @@ static int32_t physics_object_index(const nmo_engine_t *engine, nmo_object_id_t 
 
 static bool physics_has_surface(const nmo_engine_t *engine, const char *name)
 {
-    for (size_t i = 0; i < engine->physics.surfaces.count; i++) {
-        if (strcmp(engine->physics.surfaces.data[i], name) == 0) {
+    for (size_t i = 0; i < physics_of(engine)->surfaces.count; i++) {
+        if (strcmp(physics_of(engine)->surfaces.data[i], name) == 0) {
             return true;
         }
     }
@@ -110,62 +119,63 @@ static bool physics_has_surface(const nmo_engine_t *engine, const char *name)
 void nmo_engine_set_physics_provider(nmo_engine_t *engine,
                                      const nmo_engine_physics_provider_t *provider)
 {
-    if (engine == NULL) {
+    if (physics_of(engine) == NULL) {
         return;
     }
-    engine->physics.has_provider = provider != NULL;
+    physics_of(engine)->has_provider = provider != NULL;
     if (provider != NULL) {
-        engine->physics.provider = *provider;
+        physics_of(engine)->provider = *provider;
     } else {
-        memset(&engine->physics.provider, 0, sizeof(engine->physics.provider));
+        memset(&physics_of(engine)->provider, 0, sizeof(physics_of(engine)->provider));
     }
 }
 
 static const nmo_engine_physics_provider_t *provider_of(const nmo_engine_t *engine)
 {
-    return engine->physics.has_provider ? &engine->physics.provider : NULL;
+    return physics_of(engine) != NULL && physics_of(engine)->has_provider ? &physics_of(engine)->provider : NULL;
 }
 
 bool nmo_engine_physics_object(const nmo_engine_t *engine, nmo_object_id_t entity,
                                nmo_engine_physics_object_t *out)
 {
-    int32_t index = engine != NULL ? physics_object_index(engine, entity) : -1;
+    int32_t index = physics_of(engine) != NULL ? physics_object_index(engine, entity) : -1;
     if (index >= 0 && out != NULL) {
-        *out = engine->physics.objects.data[index].desc;
+        *out = physics_of(engine)->objects.data[index].desc;
     }
     return index >= 0;
 }
 
 int32_t nmo_engine_physics_object_count(const nmo_engine_t *engine)
 {
-    return engine != NULL ? (int32_t)engine->physics.objects.count : 0;
+    return physics_of(engine) != NULL ? (int32_t)physics_of(engine)->objects.count : 0;
 }
 
 bool nmo_engine_physics_object_at(const nmo_engine_t *engine, int32_t index,
                                   nmo_engine_physics_object_t *out)
 {
-    if (engine == NULL || index < 0 || (size_t)index >= engine->physics.objects.count) {
+    if (physics_of(engine) == NULL || index < 0 || (size_t)index >= physics_of(engine)->objects.count) {
         return false;
     }
     if (out != NULL) {
-        *out = engine->physics.objects.data[index].desc;
+        *out = physics_of(engine)->objects.data[index].desc;
     }
     return true;
 }
 
 int32_t nmo_engine_physics_constraint_count(const nmo_engine_t *engine)
 {
-    return engine != NULL ? (int32_t)engine->physics.constraints.count : 0;
+    return physics_of(engine) != NULL ? (int32_t)physics_of(engine)->constraints.count : 0;
 }
 
 bool nmo_engine_physics_constraint(const nmo_engine_t *engine, int32_t index,
                                    nmo_engine_physics_constraint_t *out)
 {
-    if (engine == NULL || index < 0 || (size_t)index >= engine->physics.constraints.count) {
+    if (physics_of(engine) == NULL || index < 0 ||
+        (size_t)index >= physics_of(engine)->constraints.count) {
         return false;
     }
     if (out != NULL) {
-        *out = engine->physics.constraints.data[index].desc;
+        *out = physics_of(engine)->constraints.data[index].desc;
     }
     return true;
 }
@@ -173,54 +183,8 @@ bool nmo_engine_physics_constraint(const nmo_engine_t *engine, int32_t index,
 void nmo_engine_physics_gravity(const nmo_engine_t *engine, float out[3])
 {
     for (int k = 0; k < 3; k++) {
-        out[k] = engine != NULL ? engine->physics.gravity[k] : 0.0f;
+        out[k] = physics_of(engine) != NULL ? physics_of(engine)->gravity[k] : 0.0f;
     }
-}
-
-static const nmo_mesh_state_t *public_mesh(const nmo_engine_t *engine, nmo_object_id_t id)
-{
-    nmo_object_t *object = engine != NULL && id != 0 ? eng_find_object(engine, id) : NULL;
-    return object != NULL ? (const nmo_mesh_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
-                                engine->types, object, CKPGUID_MESH)
-                          : NULL;
-}
-
-int32_t nmo_engine_mesh_vertex_count(const nmo_engine_t *engine, nmo_object_id_t mesh)
-{
-    const nmo_mesh_state_t *state = public_mesh(engine, mesh);
-    return state != NULL ? (int32_t)state->vertex_count : -1;
-}
-
-bool nmo_engine_mesh_vertex(const nmo_engine_t *engine, nmo_object_id_t mesh, int32_t index,
-                            float out_position[3])
-{
-    const nmo_mesh_state_t *state = public_mesh(engine, mesh);
-    if (state == NULL || index < 0 || (uint32_t)index >= state->vertex_count) {
-        return false;
-    }
-    out_position[0] = state->vertices[index].position.x;
-    out_position[1] = state->vertices[index].position.y;
-    out_position[2] = state->vertices[index].position.z;
-    return true;
-}
-
-int32_t nmo_engine_mesh_face_count(const nmo_engine_t *engine, nmo_object_id_t mesh)
-{
-    const nmo_mesh_state_t *state = public_mesh(engine, mesh);
-    return state != NULL ? (int32_t)state->face_count : -1;
-}
-
-bool nmo_engine_mesh_face(const nmo_engine_t *engine, nmo_object_id_t mesh, int32_t index,
-                          int32_t out_vertices[3])
-{
-    const nmo_mesh_state_t *state = public_mesh(engine, mesh);
-    if (state == NULL || index < 0 || (uint32_t)index >= state->face_count) {
-        return false;
-    }
-    for (int k = 0; k < 3; k++) {
-        out_vertices[k] = state->face_vertex_indices[3u * (uint32_t)index + (uint32_t)k];
-    }
-    return true;
 }
 
 /* ============================================================================
@@ -366,7 +330,7 @@ static bool call_constraint(nmo_engine_t *engine, int32_t node,
         set3(c.anchor, to_world(engine, nmo_engine_block_get_input_object(b, 2), p));
     }
     eng_physics_constraint_t *record = NULL;
-    if (!ENG_VEC_PUSH(engine->physics.constraints, record)) {
+    if (!ENG_VEC_PUSH(physics_of(engine)->constraints, record)) {
         return true;
     }
     memset(record, 0, sizeof(*record));
@@ -375,13 +339,13 @@ static bool call_constraint(nmo_engine_t *engine, int32_t node,
     const nmo_engine_physics_provider_t *provider = provider_of(engine);
     if (provider != NULL && provider->create_constraint != NULL) {
         provider->create_constraint(provider->user_data, &c,
-                                    engine->physics.objects.data[first].handle,
-                                    second >= 0 ? engine->physics.objects.data[second].handle : NULL,
+                                    physics_of(engine)->objects.data[first].handle,
+                                    second >= 0 ? physics_of(engine)->objects.data[second].handle : NULL,
                                     &record->handle);
     }
     int32_t *slot = block_constraint(b);
     if (slot != NULL) {
-        *slot = (int32_t)engine->physics.constraints.count;
+        *slot = (int32_t)physics_of(engine)->constraints.count;
     }
     return true;
 }
@@ -400,7 +364,7 @@ static bool call_wake_up(nmo_engine_t *engine, int32_t node)
     }
     const nmo_engine_physics_provider_t *provider = provider_of(engine);
     if (provider != NULL && provider->wake_up != NULL) {
-        provider->wake_up(provider->user_data, engine->physics.objects.data[index].handle);
+        provider->wake_up(provider->user_data, physics_of(engine)->objects.data[index].handle);
     }
     return true;
 }
@@ -412,7 +376,7 @@ static bool call_wake_up(nmo_engine_t *engine, int32_t node)
  */
 static bool call_delete_surfaces(nmo_engine_t *engine)
 {
-    eng_physics_t *physics = &engine->physics;
+    eng_physics_t *physics = physics_of(engine);
     if (physics->objects.count > 0) {
         return false;
     }
@@ -435,20 +399,20 @@ static double physics_now(const nmo_engine_t *engine)
 {
     const nmo_engine_physics_provider_t *provider = provider_of(engine);
     return provider != NULL && provider->time != NULL ? provider->time(provider->user_data)
-                                                      : engine->physics.time;
+                                                      : physics_of(engine)->time;
 }
 
 /* Whether anything listens to the entity's collisions or contacts */
 static bool physics_listened(const nmo_engine_t *engine, nmo_object_id_t entity)
 {
-    for (size_t i = 0; i < engine->physics.listeners.count; i++) {
-        const eng_physics_listener_t *l = &engine->physics.listeners.data[i];
+    for (size_t i = 0; i < physics_of(engine)->listeners.count; i++) {
+        const eng_physics_listener_t *l = &physics_of(engine)->listeners.data[i];
         if (l->alive && l->entity == entity) {
             return true;
         }
     }
-    for (size_t i = 0; i < engine->physics.contacts.count; i++) {
-        const eng_physics_contacts_t *c = &engine->physics.contacts.data[i];
+    for (size_t i = 0; i < physics_of(engine)->contacts.count; i++) {
+        const eng_physics_contacts_t *c = &physics_of(engine)->contacts.data[i];
         if (c->alive && c->entity == entity) {
             return true;
         }
@@ -462,7 +426,7 @@ static void physics_listen(nmo_engine_t *engine, nmo_object_id_t entity, bool li
     const nmo_engine_physics_provider_t *provider = provider_of(engine);
     int32_t index = physics_object_index(engine, entity);
     if (provider != NULL && provider->listen != NULL && index >= 0) {
-        provider->listen(provider->user_data, engine->physics.objects.data[index].handle, listen);
+        provider->listen(provider->user_data, physics_of(engine)->objects.data[index].handle, listen);
     }
 }
 
@@ -483,13 +447,13 @@ static bool call_coll_detection(nmo_engine_t *engine, int32_t node)
     }
     bool listened = physics_listened(engine, target);
     eng_physics_listener_t *l = NULL;
-    if (!ENG_VEC_PUSH(engine->physics.listeners, l)) {
+    if (!ENG_VEC_PUSH(physics_of(engine)->listeners, l)) {
         return true;
     }
     *l = (eng_physics_listener_t){node, target, min_speed, max_speed, sleep, collision_id, 0.0, true};
     int32_t *slot = (int32_t *)nmo_engine_block_state(b, sizeof(int32_t));
     if (slot != NULL) {
-        *slot = (int32_t)engine->physics.listeners.count;
+        *slot = (int32_t)physics_of(engine)->listeners.count;
     }
     if (!listened) {
         physics_listen(engine, target, true);
@@ -507,28 +471,28 @@ static bool call_continuous_contact(nmo_engine_t *engine, int32_t node)
         return true;
     }
     float delay_start = get_in_float(b, 0, 0.1f), delay_end = get_in_float(b, 1, 0.1f);
-    engine->physics.group_output_count = get_local_int(b, 0, 5);
+    physics_of(engine)->group_output_count = get_local_int(b, 0, 5);
     if (physics_object_index(engine, target) < 0) {
         return true;
     }
-    for (size_t i = 0; i < engine->physics.contacts.count; i++) {
-        if (engine->physics.contacts.data[i].alive && engine->physics.contacts.data[i].entity == target) {
+    for (size_t i = 0; i < physics_of(engine)->contacts.count; i++) {
+        if (physics_of(engine)->contacts.data[i].alive && physics_of(engine)->contacts.data[i].entity == target) {
             return true; /* the object has its contact data already */
         }
     }
-    int32_t count = engine->physics.group_output_count > 0 ? engine->physics.group_output_count : 0;
+    int32_t count = physics_of(engine)->group_output_count > 0 ? physics_of(engine)->group_output_count : 0;
     eng_contact_group_t *groups =
         (eng_contact_group_t *)calloc(count > 0 ? (size_t)count : 1u, sizeof(eng_contact_group_t));
     bool listened = physics_listened(engine, target);
     eng_physics_contacts_t *c = NULL;
-    if (groups == NULL || !ENG_VEC_PUSH(engine->physics.contacts, c)) {
+    if (groups == NULL || !ENG_VEC_PUSH(physics_of(engine)->contacts, c)) {
         free(groups);
         return true;
     }
     *c = (eng_physics_contacts_t){node, target, delay_start, delay_end, groups, count, true};
     int32_t *slot = (int32_t *)nmo_engine_block_state(b, sizeof(int32_t));
     if (slot != NULL) {
-        *slot = (int32_t)engine->physics.contacts.count;
+        *slot = (int32_t)physics_of(engine)->contacts.count;
     }
     if (!listened) {
         physics_listen(engine, target, true);
@@ -567,11 +531,11 @@ static int32_t attribute_named(const nmo_engine_t *engine, nmo_object_id_t objec
  */
 void nmo_engine_physics_collision(nmo_engine_t *engine, const nmo_engine_physics_collision_t *c)
 {
-    if (engine == NULL || c == NULL) {
+    if (physics_of(engine) == NULL || c == NULL) {
         return;
     }
-    for (size_t i = 0; i < engine->physics.listeners.count; i++) {
-        eng_physics_listener_t *l = &engine->physics.listeners.data[i];
+    for (size_t i = 0; i < physics_of(engine)->listeners.count; i++) {
+        eng_physics_listener_t *l = &physics_of(engine)->listeners.data[i];
         if (!l->alive || l->entity != c->object) {
             continue;
         }
@@ -615,17 +579,17 @@ void nmo_engine_physics_collision(nmo_engine_t *engine, const nmo_engine_physics
 static void record_add(nmo_engine_t *engine, int32_t contacts, int32_t id, double time)
 {
     eng_contact_record_t *r = NULL;
-    if (ENG_VEC_PUSH(engine->physics.records, r)) {
+    if (ENG_VEC_PUSH(physics_of(engine)->records, r)) {
         *r = (eng_contact_record_t){contacts, id, time};
     }
 }
 
 static void record_remove(nmo_engine_t *engine, size_t index)
 {
-    eng_contact_record_t *data = engine->physics.records.data;
+    eng_contact_record_t *data = physics_of(engine)->records.data;
     memmove(&data[index], &data[index + 1],
-            (engine->physics.records.count - index - 1u) * sizeof(*data));
-    engine->physics.records.count--;
+            (physics_of(engine)->records.count - index - 1u) * sizeof(*data));
+    physics_of(engine)->records.count--;
 }
 
 /*
@@ -637,15 +601,15 @@ static void record_remove(nmo_engine_t *engine, size_t index)
 void nmo_engine_physics_contact(nmo_engine_t *engine, nmo_object_id_t object, nmo_object_id_t other,
                                 bool started)
 {
-    if (engine == NULL) {
+    if (physics_of(engine) == NULL) {
         return;
     }
     int32_t id = attribute_named(engine, other, "Continuous Contact ID", 0) - 1;
     if (id < 0 || physics_object_index(engine, object) < 0) {
         return;
     }
-    for (size_t i = 0; i < engine->physics.contacts.count; i++) {
-        eng_physics_contacts_t *c = &engine->physics.contacts.data[i];
+    for (size_t i = 0; i < physics_of(engine)->contacts.count; i++) {
+        eng_physics_contacts_t *c = &physics_of(engine)->contacts.data[i];
         if (!c->alive || c->entity != object || id >= c->group_count) {
             continue;
         }
@@ -664,8 +628,8 @@ void nmo_engine_physics_contact(nmo_engine_t *engine, nmo_object_id_t object, nm
             continue;
         }
         bool resumed = false;
-        for (size_t r = 0; r < engine->physics.records.count;) {
-            eng_contact_record_t *record = &engine->physics.records.data[r];
+        for (size_t r = 0; r < physics_of(engine)->records.count;) {
+            eng_contact_record_t *record = &physics_of(engine)->records.data[r];
             if (record->contacts != (int32_t)i || record->id != id) {
                 r++;
             } else if (g->active) {
@@ -690,9 +654,9 @@ void nmo_engine_physics_contact(nmo_engine_t *engine, nmo_object_id_t object, nm
 static void contacts_process(nmo_engine_t *engine)
 {
     double now = physics_now(engine);
-    for (size_t r = engine->physics.records.count; r-- > 0;) {
-        eng_contact_record_t record = engine->physics.records.data[r];
-        eng_physics_contacts_t *c = &engine->physics.contacts.data[record.contacts];
+    for (size_t r = physics_of(engine)->records.count; r-- > 0;) {
+        eng_contact_record_t record = physics_of(engine)->records.data[r];
+        eng_physics_contacts_t *c = &physics_of(engine)->contacts.data[record.contacts];
         eng_contact_group_t *g = &c->groups[record.id];
         double elapsed = now - record.time;
         blk_t block = {engine, c->node};
@@ -719,9 +683,9 @@ static void contacts_process(nmo_engine_t *engine)
 /* A contact data ended: its records dropped */
 static void contacts_stop(nmo_engine_t *engine, int32_t index)
 {
-    engine->physics.contacts.data[index].alive = false;
-    for (size_t r = 0; r < engine->physics.records.count;) {
-        if (engine->physics.records.data[r].contacts == index) {
+    physics_of(engine)->contacts.data[index].alive = false;
+    for (size_t r = 0; r < physics_of(engine)->records.count;) {
+        if (physics_of(engine)->records.data[r].contacts == index) {
             record_remove(engine, r);
         } else {
             r++;
@@ -732,13 +696,13 @@ static void contacts_stop(nmo_engine_t *engine, int32_t index)
 /* The listeners and contacts of an object no longer physical, gone with its IVP object */
 static void physics_forget_listeners(nmo_engine_t *engine, nmo_object_id_t entity)
 {
-    for (size_t i = 0; i < engine->physics.listeners.count; i++) {
-        if (engine->physics.listeners.data[i].entity == entity) {
-            engine->physics.listeners.data[i].alive = false;
+    for (size_t i = 0; i < physics_of(engine)->listeners.count; i++) {
+        if (physics_of(engine)->listeners.data[i].entity == entity) {
+            physics_of(engine)->listeners.data[i].alive = false;
         }
     }
-    for (size_t i = 0; i < engine->physics.contacts.count; i++) {
-        if (engine->physics.contacts.data[i].entity == entity) {
+    for (size_t i = 0; i < physics_of(engine)->contacts.count; i++) {
+        if (physics_of(engine)->contacts.data[i].entity == entity) {
             contacts_stop(engine, (int32_t)i);
         }
     }
@@ -792,7 +756,7 @@ static bool call_buoyancy(nmo_engine_t *engine, int32_t node)
     }
     const nmo_engine_physics_provider_t *provider = provider_of(engine);
     if (provider != NULL && provider->add_buoyancy != NULL) {
-        provider->add_buoyancy(provider->user_data, engine->physics.objects.data[index].handle,
+        provider->add_buoyancy(provider->user_data, physics_of(engine)->objects.data[index].handle,
                                &buoyancy);
     }
     return true;
@@ -806,7 +770,7 @@ static bool call_buoyancy(nmo_engine_t *engine, int32_t node)
  */
 static bool call_reset(nmo_engine_t *engine)
 {
-    eng_physics_t *physics = &engine->physics;
+    eng_physics_t *physics = physics_of(engine);
     const nmo_engine_physics_provider_t *provider = provider_of(engine);
     if (provider != NULL && provider->reset != NULL) {
         provider->reset(provider->user_data);
@@ -862,7 +826,7 @@ static void physics_call(nmo_engine_t *engine, int kind, int32_t node)
         return;
     }
     eng_physics_call_t *kept = NULL;
-    if (ENG_VEC_PUSH(engine->physics.calls, kept)) {
+    if (ENG_VEC_PUSH(physics_of(engine)->calls, kept)) {
         *kept = call;
     }
 }
@@ -871,9 +835,9 @@ static void physics_call(nmo_engine_t *engine, int kind, int32_t node)
  * CKIpionManager::PostProcess: the frame time smoothed (a quarter of the
  * new one, three of the last), the kept calls tried again, then a step.
  */
-void eng_physics_post_process(nmo_engine_t *engine)
+static void eng_physics_post_process(nmo_engine_t *engine)
 {
-    eng_physics_t *physics = &engine->physics;
+    eng_physics_t *physics = physics_of(engine);
     physics->delta = (engine->delta + physics->delta * 3.0) * 0.25;
     physics->physics_delta = physics->delta * physics->time_factor;
     size_t kept = 0;
@@ -926,14 +890,14 @@ static int bb_physicalize(blk_t *b)
         IN_OFF(b, 1);
         if (existing >= 0) {
             physics_forget_listeners(engine, target);
-            eng_physics_object_t *object = &engine->physics.objects.data[existing];
+            eng_physics_object_t *object = &physics_of(engine)->objects.data[existing];
             if (provider != NULL && provider->destroy_object != NULL) {
                 provider->destroy_object(provider->user_data, object->handle);
             }
             physics_free_object(object);
             memmove(object, object + 1,
-                    (engine->physics.objects.count - (size_t)existing - 1u) * sizeof(*object));
-            engine->physics.objects.count--;
+                    (physics_of(engine)->objects.count - (size_t)existing - 1u) * sizeof(*object));
+            physics_of(engine)->objects.count--;
         }
         OUT_ON(b, 1);
         return NMO_ENGINE_BR_OK;
@@ -1007,13 +971,13 @@ static int bb_physicalize(blk_t *b)
             char **name = NULL;
             if (shapes == 0) {
                 created = false; /* "Error: incorrect mesh for %s !" */
-            } else if (ENG_VEC_PUSH(engine->physics.surfaces, name)) {
+            } else if (ENG_VEC_PUSH(physics_of(engine)->surfaces, name)) {
                 *name = dup_string(surface);
             }
         }
     }
     eng_physics_object_t *object = NULL;
-    if (!created || !ENG_VEC_PUSH(engine->physics.objects, object)) {
+    if (!created || !ENG_VEC_PUSH(physics_of(engine)->objects, object)) {
         free(meshes);
         OUT_ON(b, 0);
         return NMO_ENGINE_BR_OK;
@@ -1060,7 +1024,7 @@ static int physics_constraint_block(blk_t *b, nmo_engine_physics_constraint_kind
         return NMO_ENGINE_BR_OK;
     }
     if (*slot != 0) {
-        eng_physics_constraint_t *record = &b->engine->physics.constraints.data[*slot - 1];
+        eng_physics_constraint_t *record = &physics_of(b->engine)->constraints.data[*slot - 1];
         const nmo_engine_physics_provider_t *provider = provider_of(b->engine);
         if (record->alive && provider != NULL && provider->destroy_constraint != NULL) {
             provider->destroy_constraint(provider->user_data, record->handle);
@@ -1164,7 +1128,7 @@ static int bb_get_profiler_values(blk_t *b)
         OUT_ON(b, 1);
         return NMO_ENGINE_BR_OK;
     }
-    int32_t count = (int32_t)b->engine->physics.objects.count;
+    int32_t count = (int32_t)physics_of(b->engine)->objects.count;
     nmo_engine_block_set_output_value(b, 0, &count, sizeof(count));
     IN_OFF(b, 0);
     OUT_ON(b, 0);
@@ -1179,7 +1143,7 @@ static int bb_get_profiler_values(blk_t *b)
  */
 static int bb_set_physics_globals(blk_t *b)
 {
-    eng_physics_t *physics = &b->engine->physics;
+    eng_physics_t *physics = physics_of(b->engine);
     eng_vector_t gravity = {0.0f, -9.81f, 0.0f};
     nmo_engine_block_get_input_value(b, 0, &gravity, sizeof(gravity));
     float factor = get_in_float(b, 1, 1.0f);
@@ -1229,10 +1193,10 @@ static int bb_physics_impulse(blk_t *b)
     nmo_object_id_t direction_ref = nmo_engine_block_get_input_object(b, 3);
     double impulse = get_in_float(b, 4, 10.0f);
     if (constant) {
-        impulse = (float)(impulse * engine->physics.physics_delta);
+        impulse = (float)(impulse * physics_of(engine)->physics_delta);
     }
     int32_t index = physics_object_index(engine, target);
-    if (index < 0 || engine->physics.objects.data[index].desc.fixed) {
+    if (index < 0 || physics_of(engine)->objects.data[index].desc.fixed) {
         return NMO_ENGINE_BR_OK;
     }
     eng_vector_t pos = to_world(engine, referential, position);
@@ -1266,7 +1230,7 @@ static int bb_physics_impulse(blk_t *b)
     float at[3];
     set3(at, pos);
     const nmo_engine_physics_provider_t *provider = provider_of(engine);
-    void *handle = engine->physics.objects.data[index].handle;
+    void *handle = physics_of(engine)->objects.data[index].handle;
     if (provider != NULL && provider->wake_up != NULL) {
         provider->wake_up(provider->user_data, handle); /* ensure_in_simulation */
     }
@@ -1300,7 +1264,7 @@ static int bb_physics_coll_detection(blk_t *b)
     } else if (IN_ACTIVE(b, 1)) {
         IN_OFF(b, 1);
         if (*slot != 0) {
-            eng_physics_listener_t *l = &b->engine->physics.listeners.data[*slot - 1];
+            eng_physics_listener_t *l = &physics_of(b->engine)->listeners.data[*slot - 1];
             bool was = l->alive;
             l->alive = false;
             if (was && !physics_listened(b->engine, l->entity)) {
@@ -1333,7 +1297,7 @@ static int bb_physics_continuous_contact(blk_t *b)
         IN_OFF(b, 0);
     } else if (IN_ACTIVE(b, 1)) {
         if (*slot != 0) {
-            eng_physics_contacts_t *c = &b->engine->physics.contacts.data[*slot - 1];
+            eng_physics_contacts_t *c = &physics_of(b->engine)->contacts.data[*slot - 1];
             if (c->alive && physics_object_index(b->engine, c->entity) >= 0) {
                 contacts_stop(b->engine, *slot - 1);
                 if (!physics_listened(b->engine, c->entity)) {
@@ -1385,18 +1349,19 @@ static void physics_manager_post_process(nmo_engine_t *engine, void *state)
     eng_physics_post_process(engine);
 }
 
-/* CKIpionManager */
 static const eng_manager_desc_t physics_manager = {
     .name = "Ipion Manager",
+    .state_size = sizeof(eng_physics_t),
     .destroy = physics_manager_destroy,
     .post_process = physics_manager_post_process,
 };
 
 nmo_status_t eng_register_physics(nmo_engine_t *engine)
 {
-    if (eng_manager_state(engine, &physics_manager) == NULL) {
+    bool added = physics_of(engine) != NULL;
+    nmo_status_t status = eng_add_manager(engine, &physics_manager, NULL);
+    if (status == NMO_OK && !added) {
         eng_physics_init(engine);
     }
-    nmo_status_t status = eng_add_manager(engine, &physics_manager, NULL);
     return status == NMO_OK ? ENG_REGISTER_BLOCKS(engine, eng_physics_blocks) : status;
 }
