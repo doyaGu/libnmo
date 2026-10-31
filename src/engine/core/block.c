@@ -413,6 +413,7 @@ nmo_guid_t eng_block_operation_guid(const nmo_engine_block_t *block)
 
 nmo_status_t eng_block_run_operation(nmo_engine_block_t *block, nmo_guid_t guid)
 {
+    /* The Op block calls the function as it is, with no check of the inputs' sources */
     return eng_operation_execute(block->engine, guid, eng_block_pin(block, 0),
-                                 eng_block_pin(block, 1), eng_block_pout(block, 0));
+                                 eng_block_pin(block, 1), eng_block_pout(block, 0), false);
 }

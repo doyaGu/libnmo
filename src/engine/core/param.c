@@ -255,8 +255,19 @@ static const eng_op_lookup_t *eng_operation_find(nmo_engine_t *engine, nmo_guid_
     return known;
 }
 
+/* The data a registry function reads for an operand: a source-less one reads zeros, as CK's do */
+static const void *eng_operand_data(const eng_param_t *src, const nmo_type_descriptor_t *type,
+                                    void **zeros)
+{
+    if (src != NULL || type == NULL) {
+        return src != NULL ? src->data : NULL;
+    }
+    *zeros = calloc(1, type->size > 0 ? type->size : 1);
+    return *zeros;
+}
+
 nmo_status_t eng_operation_execute(nmo_engine_t *engine, nmo_guid_t guid, eng_param_t *in1,
-                                   eng_param_t *in2, eng_param_t *out)
+                                   eng_param_t *in2, eng_param_t *out, bool need_sources)
 {
     if (out == NULL || out->type_desc == NULL || engine->operations_registry == NULL) {
         return NMO_ERR_NOT_FOUND;
@@ -264,14 +275,16 @@ nmo_status_t eng_operation_execute(nmo_engine_t *engine, nmo_guid_t guid, eng_pa
     /* The operands are the values the inputs read, brought up to date */
     eng_param_t *src1 = eng_is_none_type(in1) ? NULL : eng_param_real_source(engine, in1);
     eng_param_t *src2 = eng_is_none_type(in2) ? NULL : eng_param_real_source(engine, in2);
-    if ((!eng_is_none_type(in1) && src1 == NULL) || (!eng_is_none_type(in2) && src2 == NULL)) {
+    if (need_sources &&
+        ((!eng_is_none_type(in1) && src1 == NULL) || (!eng_is_none_type(in2) && src2 == NULL))) {
         return NMO_ERR_INVALID_STATE; /* CKERR_NOTINITIALIZED */
     }
     eng_param_update(engine, src1);
     eng_param_update(engine, src2);
 
-    const nmo_type_descriptor_t *t1 = src1 != NULL ? in1->type_desc : NULL;
-    const nmo_type_descriptor_t *t2 = src2 != NULL ? in2->type_desc : NULL;
+    /* The function is the one for the inputs' own types, whatever they read */
+    const nmo_type_descriptor_t *t1 = eng_is_none_type(in1) ? NULL : in1->type_desc;
+    const nmo_type_descriptor_t *t2 = eng_is_none_type(in2) ? NULL : in2->type_desc;
     const eng_op_lookup_t *found = eng_operation_find(engine, guid, t1, t2, out->type_desc);
     eng_builtin_op_fn builtin = found != NULL ? found->builtin : NULL;
     if (found != NULL && found->swap) {
@@ -295,9 +308,15 @@ nmo_status_t eng_operation_execute(nmo_engine_t *engine, nmo_guid_t guid, eng_pa
     if (out->type_desc->size > out->size && !eng_param_resize(out, out->type_desc->size)) {
         return NMO_ERR_NOMEM;
     }
-    nmo_status_t status = cell->desc.function(src1 != NULL ? src1->data : NULL, t1,
-                                              src2 != NULL ? src2->data : NULL, t2,
-                                              out->data, out->type_desc, cell->desc.user_data);
+    void *zeros1 = NULL, *zeros2 = NULL;
+    const void *data1 = eng_operand_data(src1, t1, &zeros1);
+    const void *data2 = eng_operand_data(src2, t2, &zeros2);
+    nmo_status_t status = (t1 != NULL && data1 == NULL) || (t2 != NULL && data2 == NULL)
+                              ? NMO_ERR_NOMEM
+                              : cell->desc.function(data1, t1, data2, t2, out->data,
+                                                    out->type_desc, cell->desc.user_data);
+    free(zeros1);
+    free(zeros2);
     if (status == NMO_OK) {
         eng_param_data_changed(engine, out, 0);
     }
@@ -313,7 +332,7 @@ nmo_status_t eng_operation_run(nmo_engine_t *engine, eng_operation_t *op)
     eng_param_t *in1 = op->in1 >= 0 ? &engine->params.data[op->in1] : NULL;
     eng_param_t *in2 = op->in2 >= 0 ? &engine->params.data[op->in2] : NULL;
     eng_param_t *out = op->out >= 0 ? &engine->params.data[op->out] : NULL;
-    nmo_status_t status = eng_operation_execute(engine, op->guid, in1, in2, out);
+    nmo_status_t status = eng_operation_execute(engine, op->guid, in1, in2, out, true);
     op->running = false;
     eng_emit(engine, NMO_ENGINE_EVENT_OPERATION, -1, op->id, (int32_t)status);
     return status;
