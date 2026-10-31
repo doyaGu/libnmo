@@ -1,5 +1,6 @@
 #include "engine_fixture.h"
 
+#include "engine/nmo_engine_render.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
@@ -749,6 +750,14 @@ TEST(engine_transform, texture_sine_runs_its_clock_and_checks_the_channel)
     fixture_begin_document(&f);
     nmo_object_id_t mesh = fixture_create(&f, NMO_CID_MESH, "Water");
     ASSERT_TRUE(mesh != 0);
+    nmo_mesh_state_t *mesh_state = (nmo_mesh_state_t *)fixture_state(&f, mesh);
+    ASSERT_NOT_NULL(mesh_state);
+    mesh_state->vertices = (nmo_vertex_t *)nmo_arena_alloc(nmo_session_get_arena(f.session),
+                                                           2u * sizeof(nmo_vertex_t),
+                                                           _Alignof(nmo_vertex_t));
+    ASSERT_NOT_NULL(mesh_state->vertices);
+    memset(mesh_state->vertices, 0, 2u * sizeof(nmo_vertex_t));
+    mesh_state->vertex_count = 2;
     f.script_id = fixture_add_script(&f, "Script", &f.script_in);
     fixture_begin_edit(&f);
     /* Base UVs (channel -1) every frame; channel 0, which the mesh lacks, once */
@@ -763,13 +772,32 @@ TEST(engine_transform, texture_sine_runs_its_clock_and_checks_the_channel)
     fixture_input_value(&f, BLOCK_PIN(&f, sine, 2), &velocity, sizeof(velocity));
     fixture_input_int(&f, BLOCK_PIN(&f, sine, 3), -1);
     fixture_input_int(&f, BLOCK_PIN(&f, missing, 3), 0);
+    const float amplitude = 0.1f;
+    fixture_input_value(&f, BLOCK_PIN(&f, sine, 0), &amplitude, sizeof(amplitude));
+    fixture_input_value(&f, BLOCK_PIN(&f, sine, 1), &amplitude, sizeof(amplitude));
     fixture_commit(&f, NULL);
+    /* The UVs saved when the block was attached (local 0): (0, 0) and (1, 1) */
+    const nmo_behavior_state_t *sine_state = (const nmo_behavior_state_t *)fixture_state(&f, sine);
+    ASSERT_TRUE(sine_state != NULL && sine_state->local_parameters.count > 1);
+    const float saved[4] = {0.0f, 0.0f, 1.0f, 1.0f};
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(
+                          f.engine, nmo_behavior_ref_array_get_id(&sine_state->local_parameters, 0),
+                          saved, sizeof(saved)));
 
     ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
     /* 1 s frames at velocity 2: the clock wraps once time * velocity passes 2 pi */
     const float expected[4] = {1.0f, 2.0f, 3.0f, 4.0f - 3.14159265f};
     for (int frame = 0; frame < 4; frame++) {
         ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 1000.0f));
+        if (frame == 0) {
+            /* At time 0, each saved UV swayed toward 0.5 by the wave at its place: -2, then 0 */
+            nmo_engine_mesh_t desc;
+            ASSERT_TRUE(nmo_engine_mesh(f.engine, mesh, &desc));
+            ASSERT_FLOAT_EQ(cosf(-2.0f) * 0.5f * 0.1f, desc.vertices[0].uv.x, 0.0001f);
+            ASSERT_FLOAT_EQ(sinf(-2.0f) * 0.5f * 0.1f, desc.vertices[0].uv.y, 0.0001f);
+            ASSERT_FLOAT_EQ(0.95f, desc.vertices[1].uv.x, 0.0001f);
+            ASSERT_FLOAT_EQ(1.0f, desc.vertices[1].uv.y, 0.0001f);
+        }
         float time = -1.0f;
         const nmo_behavior_state_t *state = (const nmo_behavior_state_t *)fixture_state(&f, sine);
         ASSERT_TRUE(state != NULL && state->local_parameters.count > 1);

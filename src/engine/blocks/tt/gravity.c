@@ -259,10 +259,11 @@ void eng_draw_skies(nmo_engine_t *engine, const float view[16])
 
 /*
  * TT_TextureSine: the target mesh's UVs of Channel (-1: the base UVs)
- * swayed around their saved values, X/Y Amplitude along a sine wave of
- * the frame's time times Velocity; the time (local 1) wraps at a period.
- * The engine keeps no UVs: the move is an effect on the mesh. A channel
- * the mesh lacks is a parameter error (Out all the same).
+ * swayed around the UVs saved in local 0 (when the block was attached),
+ * each by X/Y Amplitude times its distance from 0.5, along a wave of the
+ * vertex's place in the mesh plus the time (local 1) times Velocity; the
+ * time wraps at a period. A channel the mesh lacks is a parameter error
+ * (Out all the same).
  */
 static int bb_texture_sine(blk_t *b)
 {
@@ -286,6 +287,42 @@ static int bb_texture_sine(blk_t *b)
     eng_emit(engine, NMO_ENGINE_EVENT_EFFECT, b->node, mesh, 0);
     float time = 0.0f;
     nmo_engine_block_get_local_value(b, 1, &time, sizeof(time));
+    const eng_node_t *node = block_node(b);
+    const eng_param_t *saved = eng_node_param(engine, node->first_local, node->local_count, 0);
+    eng_mesh_copy_t *copy = eng_mesh_copy(engine, mesh);
+    nmo_engine_mesh_t desc;
+    if (saved != NULL && saved->data != NULL && copy != NULL &&
+        nmo_engine_mesh(engine, mesh, &desc)) {
+        int32_t count = desc.vertex_count;
+        if ((size_t)count > saved->size / (2u * sizeof(float))) {
+            count = (int32_t)(saved->size / (2u * sizeof(float)));
+        }
+        float *uvs = NULL; /* a channel's, two floats a vertex; the base ones are in the vertices */
+        if (channel >= 0 && (size_t)channel < copy->channels.count) {
+            nmo_engine_channel_t *ch = &copy->channels.data[channel];
+            if (ch->uvs == NULL) {
+                ch->uvs = calloc((size_t)desc.vertex_count * 2u, sizeof(float));
+            }
+            uvs = (float *)ch->uvs;
+        }
+        float x_amplitude = get_in_float(b, 0, 0.1f), y_amplitude = get_in_float(b, 1, 0.1f);
+        for (int32_t v = 0; v < count && (channel < 0 || uvs != NULL); v++) {
+            float su = 0.0f, sv = 0.0f;
+            memcpy(&su, saved->data + (size_t)v * 8u, sizeof(su));
+            memcpy(&sv, saved->data + (size_t)v * 8u + 4u, sizeof(sv));
+            double angle = ((double)v / (double)desc.vertex_count - 0.5) * 4.0 + time * velocity;
+            float u = (float)(cos(angle) * (0.5 - su) * x_amplitude + su);
+            float w = (float)(sin(angle) * (0.5 - sv) * y_amplitude + sv);
+            if (channel < 0) {
+                copy->vertices[v].uv.x = u;
+                copy->vertices[v].uv.y = w;
+            } else {
+                uvs[v * 2] = u;
+                uvs[v * 2 + 1] = w;
+            }
+        }
+        copy->version = ++engine->render.mesh_version;
+    }
     time = (float)((double)engine->delta * 0.001 + (double)time);
     if ((double)time * (double)velocity > 6.2831855) {
         time = (float)((double)time - 6.2831855 / (double)velocity);
