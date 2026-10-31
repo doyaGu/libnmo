@@ -137,6 +137,12 @@ static nmo_status_t project_authoring_create_material(
                 .wrap = flags->wrap,
                 .has_alpha_func = flags->has_alpha_func,
                 .alpha_func = flags->alpha_func,
+                .has_alpha_ref = flags->has_alpha_ref,
+                .alpha_ref = flags->alpha_ref,
+                .has_two_sided = flags->has_two_sided,
+                .two_sided = flags->two_sided,
+                .has_z_write = flags->has_z_write,
+                .z_write = flags->z_write,
             }));
     }
     *out_material_id = material_id;
@@ -245,6 +251,7 @@ void nmo_project_texture_file_stem(
 typedef struct project_external_textures {
     const char **paths;
     nmo_object_id_t *ids;
+    VX_PIXELFORMAT *formats;
     size_t count;
     size_t capacity;
 } project_external_textures_t;
@@ -253,19 +260,35 @@ static void project_external_textures_dispose(project_external_textures_t *textu
 {
     free(textures->paths);
     free(textures->ids);
+    free(textures->formats);
 }
 
 static nmo_status_t project_authoring_external_texture(
     nmo_workspace_edit_t *edit,
     project_external_textures_t *textures,
     const char *texture_path,
+    VX_PIXELFORMAT format,
     nmo_object_id_t *out_texture_id)
 {
     for (size_t i = 0u; i < textures->count; ++i) {
-        if (strcmp(textures->paths[i], texture_path) == 0) {
-            *out_texture_id = textures->ids[i];
-            NMO_RETURN_OK();
+        if (strcmp(textures->paths[i], texture_path) != 0) {
+            continue;
         }
+        /* One texture per file, so its materials have to agree on a format. */
+        if (format != UNKNOWN_PF && textures->formats[i] != format) {
+            if (textures->formats[i] != UNKNOWN_PF) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                 "external texture '%s' is given two texture formats",
+                                 texture_path);
+            }
+            NMO_RETURN_IF_ERROR(nmo_asset_edit_set_texture_video_format(
+                edit,
+                textures->ids[i],
+                format));
+            textures->formats[i] = format;
+        }
+        *out_texture_id = textures->ids[i];
+        NMO_RETURN_OK();
     }
     if (textures->count == textures->capacity) {
         size_t capacity = textures->capacity ? textures->capacity * 2u : 8u;
@@ -283,6 +306,13 @@ static nmo_status_t project_authoring_external_texture(
                              "failed to allocate external texture list");
         }
         textures->ids = ids;
+        VX_PIXELFORMAT *formats =
+            (VX_PIXELFORMAT *)realloc(textures->formats, capacity * sizeof(*formats));
+        if (!formats) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "failed to allocate external texture list");
+        }
+        textures->formats = formats;
         textures->capacity = capacity;
     }
 
@@ -312,8 +342,15 @@ static nmo_status_t project_authoring_external_texture(
         edit,
         texture_id,
         texture_path));
+    if (format != UNKNOWN_PF) {
+        NMO_RETURN_IF_ERROR(nmo_asset_edit_set_texture_video_format(
+            edit,
+            texture_id,
+            format));
+    }
     textures->paths[textures->count] = texture_path;
     textures->ids[textures->count] = texture_id;
+    textures->formats[textures->count] = format;
     textures->count++;
     *out_texture_id = texture_id;
     NMO_RETURN_OK();
@@ -325,6 +362,7 @@ static nmo_status_t project_authoring_bind_texture_slot(
     const char *texture_name,
     const char *texture_path,
     project_external_textures_t *external_textures,
+    VX_PIXELFORMAT format,
     uint32_t slot)
 {
     if (!edit || material_id == 0u || !texture_name || !texture_path) {
@@ -338,6 +376,7 @@ static nmo_status_t project_authoring_bind_texture_slot(
             edit,
             external_textures,
             texture_path,
+            format,
             &texture_id));
     } else {
         NMO_RETURN_IF_ERROR(nmo_object_edit_create(
@@ -352,6 +391,12 @@ static nmo_status_t project_authoring_bind_texture_slot(
             edit,
             texture_id,
             texture_path));
+        if (format != UNKNOWN_PF) {
+            NMO_RETURN_IF_ERROR(nmo_asset_edit_set_texture_video_format(
+                edit,
+                texture_id,
+                format));
+        }
     }
     NMO_RETURN_IF_ERROR(nmo_asset_edit_bind_material_texture(
         edit,
@@ -361,12 +406,77 @@ static nmo_status_t project_authoring_bind_texture_slot(
     NMO_RETURN_OK();
 }
 
+/* Shared materials are named after their spec and their embedded textures
+   after the material; OBJ meshes find them by their material group names. */
+static nmo_status_t project_authoring_shared_materials(
+    nmo_workspace_edit_t *edit,
+    const nmo_project_plan_t *plan,
+    project_external_textures_t *external_textures,
+    nmo_asset_mesh_material_binding_t *out_materials)
+{
+    size_t count = nmo_project_plan_shared_material_count(plan);
+    for (size_t i = 0u; i < count; ++i) {
+        nmo_project_material_spec_t spec = {0};
+        NMO_RETURN_IF_ERROR(nmo_project_plan_get_shared_material(plan, i, &spec));
+        project_material_authoring_desc_t desc = project_authoring_material_from_obj(&spec);
+        nmo_object_id_t material_id = 0;
+        NMO_RETURN_IF_ERROR(project_authoring_create_material(
+            edit,
+            spec.obj_material_name,
+            &desc,
+            &material_id));
+        for (uint32_t slot = 0u; slot < 4u; ++slot) {
+            const char *texture_path = spec.has_texture_slots[slot]
+                ? spec.texture_paths[slot]
+                : NULL;
+            if (!texture_path && slot == 0u && spec.texture_path) {
+                texture_path = spec.texture_path;
+            }
+            if (!texture_path) {
+                continue;
+            }
+            char texture_name[256];
+            NMO_RETURN_IF_ERROR(project_authoring_texture_name(
+                spec.obj_material_name,
+                slot,
+                texture_name,
+                sizeof(texture_name)));
+            NMO_RETURN_IF_ERROR(project_authoring_bind_texture_slot(
+                edit,
+                material_id,
+                texture_name,
+                texture_path,
+                spec.texture_external ? external_textures : NULL,
+                spec.has_texture_format ? spec.texture_format : UNKNOWN_PF,
+                slot));
+        }
+        out_materials[i].name = spec.obj_material_name;
+        out_materials[i].material_id = material_id;
+    }
+    NMO_RETURN_OK();
+}
+
+static nmo_object_id_t project_authoring_find_shared_material(
+    const nmo_asset_mesh_material_binding_t *materials,
+    size_t count,
+    const char *name)
+{
+    for (size_t i = 0u; i < count; ++i) {
+        if (strcmp(materials[i].name, name) == 0) {
+            return materials[i].material_id;
+        }
+    }
+    return 0;
+}
+
 static nmo_status_t project_authoring_assets(
     nmo_workspace_edit_t *edit,
     const nmo_project_plan_t *plan,
     const nmo_project_runtime_object_t *objects,
     size_t object_count,
-    project_external_textures_t *external_textures)
+    project_external_textures_t *external_textures,
+    const nmo_asset_mesh_material_binding_t *shared_materials,
+    size_t shared_material_count)
 {
     if (!edit || !plan || (object_count > 0u && !objects)) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
@@ -401,7 +511,17 @@ static nmo_status_t project_authoring_assets(
         }
 
         nmo_object_id_t material_id = 0;
-        if (project_authoring_asset_has_material(&asset)) {
+        if (asset.shared_material_name) {
+            material_id = project_authoring_find_shared_material(
+                shared_materials,
+                shared_material_count,
+                asset.shared_material_name);
+            if (material_id == 0) {
+                NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                                 "shared material '%s' is not defined",
+                                 asset.shared_material_name);
+            }
+        } else if (project_authoring_asset_has_material(&asset)) {
             project_material_authoring_desc_t material =
                 project_authoring_material_from_asset(&asset);
             NMO_RETURN_IF_ERROR(project_authoring_create_material(
@@ -434,17 +554,25 @@ static nmo_status_t project_authoring_assets(
                     texture_name,
                     texture_path,
                     asset.material_texture_external ? external_textures : NULL,
+                    asset.has_material_texture_format
+                        ? asset.material_texture_format
+                        : UNKNOWN_PF,
                     slot));
             }
         }
 
         size_t obj_material_count =
             nmo_project_plan_obj_material_count(plan, asset.object_handle);
+        /* The object's own OBJ materials first: the import takes the first
+           binding of a name, so they win over shared ones of the same name. */
+        size_t binding_count = asset.has_external_mesh
+            ? obj_material_count + shared_material_count
+            : obj_material_count;
         nmo_asset_mesh_material_binding_t *obj_material_bindings = NULL;
-        if (obj_material_count > 0u) {
+        if (binding_count > 0u) {
             obj_material_bindings =
                 (nmo_asset_mesh_material_binding_t *)calloc(
-                    obj_material_count,
+                    binding_count,
                     sizeof(*obj_material_bindings));
             if (!obj_material_bindings) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
@@ -537,6 +665,9 @@ static nmo_status_t project_authoring_assets(
                         obj_texture_name,
                         texture_path,
                         obj_material.texture_external ? external_textures : NULL,
+                        obj_material.has_texture_format
+                            ? obj_material.texture_format
+                            : UNKNOWN_PF,
                         slot);
                     if (status != NMO_OK) {
                         free(obj_material_bindings);
@@ -549,6 +680,9 @@ static nmo_status_t project_authoring_assets(
                 obj_material.obj_material_name;
             obj_material_bindings[material_index].material_id =
                 obj_material_id;
+        }
+        for (size_t k = obj_material_count; k < binding_count; ++k) {
+            obj_material_bindings[k] = shared_materials[k - obj_material_count];
         }
 
         if (asset.has_primitive_mesh) {
@@ -602,7 +736,7 @@ static nmo_status_t project_authoring_assets(
                 &(nmo_asset_mesh_import_options_t){
                     .default_material_id = material_id,
                     .materials = obj_material_bindings,
-                    .material_count = obj_material_count,
+                    .material_count = binding_count,
                 });
             if (status != NMO_OK) {
                 free(obj_material_bindings);
@@ -627,12 +761,33 @@ nmo_status_t nmo_project_author_assets(
     size_t object_count)
 {
     project_external_textures_t external_textures = {0};
-    nmo_status_t status = project_authoring_assets(
+    size_t shared_count = nmo_project_plan_shared_material_count(plan);
+    nmo_asset_mesh_material_binding_t *shared_materials = NULL;
+    if (shared_count > 0u) {
+        shared_materials = (nmo_asset_mesh_material_binding_t *)calloc(
+            shared_count,
+            sizeof(*shared_materials));
+        if (!shared_materials) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "failed to allocate shared materials");
+        }
+    }
+    nmo_status_t status = project_authoring_shared_materials(
         edit,
         plan,
-        objects,
-        object_count,
-        &external_textures);
+        &external_textures,
+        shared_materials);
+    if (status == NMO_OK) {
+        status = project_authoring_assets(
+            edit,
+            plan,
+            objects,
+            object_count,
+            &external_textures,
+            shared_materials,
+            shared_count);
+    }
+    free(shared_materials);
     project_external_textures_dispose(&external_textures);
     return status;
 }

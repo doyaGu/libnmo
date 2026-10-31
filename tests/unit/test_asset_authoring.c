@@ -2,6 +2,7 @@
 
 #include "document/nmo_document_load.h"
 #include "object/builtin/nmo_material_schemas.h"
+#include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_texture_schemas.h"
 #include "object/nmo_context.h"
 #include "object/nmo_object_query.h"
@@ -563,6 +564,158 @@ TEST(asset_authoring, executor_shares_external_textures) {
     remove(output_path);
 }
 
+TEST(asset_authoring, executor_binds_shared_materials) {
+    const char *obj_path = "test_asset_authoring_shared.obj";
+    const char *output_path = "test_asset_authoring_shared.nmo";
+    remove(output_path);
+    FILE *obj = fopen(obj_path, "w");
+    ASSERT_NOT_NULL(obj);
+    fputs("v 0 0 0\nv 1 0 0\nv 1 0 1\nv 0 -1 0\n"
+          "usemtl Floor_Top_Flat\nf 1 2 3\n"
+          "usemtl Floor_Side\nf 1 4 2\n",
+          obj);
+    fclose(obj);
+
+    nmo_project_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_project_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_document_name(plan, "GeneratedLevel"));
+
+    nmo_project_material_spec_t top = {
+        .obj_material_name = "Floor_Top_Flat",
+        .has_diffuse = true,
+        .diffuse = {1.0f, 1.0f, 1.0f, 1.0f},
+        .has_texture = true,
+        .texture_path = "Floor_Top_Flat.bmp",
+        .texture_external = true,
+        .has_texture_format = true,
+        .texture_format = _16_ARGB1555,
+    };
+    nmo_project_material_spec_t side = {
+        .obj_material_name = "Floor_Side",
+        .has_diffuse = true,
+        .diffuse = {0.5f, 0.5f, 0.5f, 1.0f},
+    };
+    nmo_project_material_spec_t glass = {
+        .obj_material_name = "Laterne_Verlauf",
+        .has_texture = true,
+        .texture_path = "Laterne_Verlauf.tga",
+        .texture_external = true,
+        .has_texture_format = true,
+        .texture_format = _32_ARGB8888,
+        .has_render_flags = true,
+        .render_flags = {
+            .has_alpha_func = true,
+            .alpha_func = VXCMP_GREATER,
+            .has_alpha_ref = true,
+            .alpha_ref = 1u,
+            .has_two_sided = true,
+            .two_sided = true,
+        },
+    };
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_shared_material(plan, &top));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_shared_material(plan, &side));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_shared_material(plan, &glass));
+
+    uint32_t floors[2] = {0u, 0u};
+    const char *floor_names[2] = {"A01_Floor_01", "A01_Floor_02"};
+    for (size_t i = 0u; i < 2u; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_project_plan_add_object(
+                              plan,
+                              &(nmo_project_object_spec_t){
+                                  .class_id = NMO_CID_3DOBJECT,
+                                  .name = floor_names[i],
+                              },
+                              &floors[i]));
+        ASSERT_EQ(NMO_OK, nmo_project_plan_set_external_mesh(plan, floors[i], obj_path));
+    }
+    uint32_t lamp = 0u;
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_object(
+                          plan,
+                          &(nmo_project_object_spec_t){
+                              .class_id = NMO_CID_3DOBJECT,
+                              .name = "Lamp",
+                          },
+                          &lamp));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_primitive_mesh(plan, lamp, NMO_PRIMITIVE_CUBE));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_object_shared_material(plan, lamp, "Laterne_Verlauf"));
+
+    nmo_project_plan_t *clone = NULL;
+    ASSERT_EQ(NMO_OK, nmo_project_plan_clone(plan, &clone));
+    ASSERT_EQ(3u, nmo_project_plan_shared_material_count(clone));
+    nmo_project_material_spec_t cloned = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_shared_material(clone, 2u, &cloned));
+    ASSERT_STR_EQ("Laterne_Verlauf", cloned.obj_material_name);
+    ASSERT_STR_EQ("Laterne_Verlauf.tga", cloned.texture_path);
+    ASSERT_TRUE(cloned.render_flags.two_sided);
+    ASSERT_EQ(_32_ARGB8888, cloned.texture_format);
+    nmo_project_asset_desc_t lamp_asset = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_asset(clone, 2u, &lamp_asset));
+    ASSERT_STR_EQ("Laterne_Verlauf", lamp_asset.shared_material_name);
+    nmo_project_plan_destroy(clone);
+
+    nmo_project_report_t report;
+    nmo_project_report_init(&report);
+    ASSERT_EQ(NMO_OK, nmo_project_executor_execute_to_file(plan, output_path, &report));
+    ASSERT_TRUE(report.ok);
+    ASSERT_TRUE(nmo_project_report_diff_has_created_asset(&report, "Floor_Side"));
+    ASSERT_TRUE(nmo_project_report_diff_has_created_asset(&report, "Floor_Top_Flat"));
+
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_document_t *doc = NULL;
+    ASSERT_EQ(NMO_OK, nmo_document_load_file(ctx, output_path, NULL, &doc));
+    ASSERT_NOT_NULL(doc);
+
+    /* Three shared materials and nothing per object. */
+    size_t material_count = 0u;
+    ASSERT_EQ(NMO_OK, nmo_object_query_count(
+                          doc,
+                          &(nmo_object_query_t){.class_id = NMO_CID_MATERIAL},
+                          &material_count));
+    ASSERT_EQ(3u, material_count);
+    nmo_object_t *top_material = find_named(doc, NMO_CID_MATERIAL, "Floor_Top_Flat");
+    nmo_object_t *side_material = find_named(doc, NMO_CID_MATERIAL, "Floor_Side");
+    nmo_object_t *glass_material = find_named(doc, NMO_CID_MATERIAL, "Laterne_Verlauf");
+    ASSERT_NOT_NULL(top_material);
+    ASSERT_NOT_NULL(side_material);
+    ASSERT_NOT_NULL(glass_material);
+
+    for (size_t i = 0u; i < 2u; ++i) {
+        const char *mesh_names[2] = {"A01_Floor_01_Mesh", "A01_Floor_02_Mesh"};
+        nmo_object_t *mesh = find_named(doc, NMO_CID_MESH, mesh_names[i]);
+        ASSERT_NOT_NULL(mesh);
+        const nmo_mesh_state_t *mesh_state = (const nmo_mesh_state_t *)nmo_object_get_state(mesh);
+        ASSERT_EQ(2u, mesh_state->material_group_count);
+        ASSERT_EQ(nmo_object_get_id(top_material),
+                  nmo_ref_runtime_id(&mesh_state->material_groups[0].material));
+        ASSERT_EQ(nmo_object_get_id(side_material),
+                  nmo_ref_runtime_id(&mesh_state->material_groups[1].material));
+    }
+
+    const nmo_material_state_t *glass_state =
+        (const nmo_material_state_t *)nmo_object_get_state(glass_material);
+    /* Two-sided, alpha tested above 1: bits 0 and 4, the function in bits
+       16-19 and the reference in the top byte. */
+    ASSERT_EQ(0x01u, glass_state->packed_flags & 0x01u);
+    ASSERT_EQ(0x10u, glass_state->packed_flags & 0x10u);
+    ASSERT_EQ((uint32_t)VXCMP_GREATER, (glass_state->packed_flags >> 16) & 0xFu);
+    ASSERT_EQ(1u, glass_state->packed_flags >> 24);
+
+    nmo_object_t *glass_texture = find_named(doc, NMO_CID_TEXTURE, "Laterne_Verlauf");
+    ASSERT_NOT_NULL(glass_texture);
+    const nmo_texture_state_t *texture_state =
+        (const nmo_texture_state_t *)nmo_object_get_state(glass_texture);
+    ASSERT_EQ(1u, texture_state->has_desired_video_format);
+    ASSERT_EQ((uint32_t)_32_ARGB8888, texture_state->desired_video_format);
+
+    nmo_document_destroy(doc);
+    nmo_context_release(ctx);
+    nmo_project_report_dispose(&report);
+    nmo_project_plan_destroy(plan);
+    remove(output_path);
+    remove(obj_path);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(asset_authoring, stores_primitive_mesh_and_material_specs);
 REGISTER_TEST(asset_authoring, stores_material_texture_slots);
@@ -572,4 +725,5 @@ REGISTER_TEST(asset_authoring, stores_named_obj_material_texture_slots);
 REGISTER_TEST(asset_authoring, clones_named_obj_material_specs);
 REGISTER_TEST(asset_authoring, stores_camera_and_light_specs);
 REGISTER_TEST(asset_authoring, executor_shares_external_textures);
+REGISTER_TEST(asset_authoring, executor_binds_shared_materials);
 TEST_MAIN_END()

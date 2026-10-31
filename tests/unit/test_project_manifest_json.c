@@ -1281,6 +1281,79 @@ TEST(project_manifest_json, parses_external_texture_save)
     ASSERT_NULL(plan);
 }
 
+TEST(project_manifest_json, parses_shared_materials)
+{
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Level_01\"},"
+        "\"materials\":["
+            "{\"name\":\"Floor_Top_Flat\",\"diffuse\":[1,1,1,1],"
+                "\"texture\":\"Floor_Top_Flat.bmp\",\"texture_save\":\"external\","
+                "\"texture_format\":\"argb1555\"},"
+            "{\"name\":\"Laterne_Verlauf\",\"texture\":\"Laterne_Verlauf.tga\","
+                "\"blend\":{\"source\":\"src_alpha\",\"destination\":\"inv_src_alpha\"},"
+                "\"alpha\":{\"func\":\"greater\",\"ref\":1},"
+                "\"two_sided\":true,\"z_write\":false}"
+        "],"
+        "\"scenes\":[{"
+            "\"name\":\"Level\","
+            "\"objects\":["
+                "{\"name\":\"Lamp\",\"class\":\"CK3dObject\","
+                    "\"mesh\":{\"primitive\":\"cube\"},\"material\":\"Laterne_Verlauf\"}"
+            "]"
+        "}]"
+        "}";
+    nmo_project_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NOT_NULL(plan);
+
+    ASSERT_EQ(2u, nmo_project_plan_shared_material_count(plan));
+    nmo_project_material_spec_t material = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_shared_material(plan, 0u, &material));
+    ASSERT_STR_EQ("Floor_Top_Flat", material.obj_material_name);
+    ASSERT_STR_EQ("materials[0]", material.source_path);
+    ASSERT_STR_EQ("materials[0].texture", material.texture_source_path);
+    ASSERT_TRUE(material.texture_external);
+    ASSERT_TRUE(material.has_texture_format);
+    ASSERT_EQ(_16_ARGB1555, material.texture_format);
+
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_shared_material(plan, 1u, &material));
+    ASSERT_FALSE(material.texture_external);
+    ASSERT_TRUE(material.has_render_flags);
+    ASSERT_TRUE(material.render_flags.has_alpha_ref);
+    ASSERT_EQ(1u, material.render_flags.alpha_ref);
+    ASSERT_EQ(VXCMP_GREATER, material.render_flags.alpha_func);
+    ASSERT_TRUE(material.render_flags.has_two_sided);
+    ASSERT_TRUE(material.render_flags.two_sided);
+    ASSERT_TRUE(material.render_flags.has_z_write);
+    ASSERT_FALSE(material.render_flags.z_write);
+
+    nmo_project_asset_desc_t asset = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_asset(plan, 0u, &asset));
+    ASSERT_STR_EQ("Laterne_Verlauf", asset.shared_material_name);
+    ASSERT_FALSE(asset.has_material_texture);
+
+    nmo_project_plan_destroy(plan);
+}
+
+TEST(project_manifest_json, rejects_bad_texture_format_and_alpha_ref)
+{
+    const char *format =
+        "{\"version\":1,\"document\":{\"name\":\"L\"},"
+        "\"materials\":[{\"name\":\"M\",\"texture\":\"a.bmp\",\"texture_format\":\"dxt1\"}]}";
+    const char *ref =
+        "{\"version\":1,\"document\":{\"name\":\"L\"},"
+        "\"materials\":[{\"name\":\"M\",\"diffuse\":[1,1,1,1],\"alpha\":{\"ref\":256}}]}";
+    nmo_project_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT,
+              nmo_project_manifest_json_read(format, strlen(format), &plan));
+    ASSERT_NULL(plan);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT,
+              nmo_project_manifest_json_read(ref, strlen(ref), &plan));
+    ASSERT_NULL(plan);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(project_manifest_json, parses_minimal_visible_scene);
 REGISTER_TEST(project_manifest_json, parses_named_obj_materials);
@@ -1315,4 +1388,6 @@ REGISTER_TEST(project_manifest_json, rejects_ambiguous_parent_name);
 REGISTER_TEST(project_manifest_json, parses_groups);
 REGISTER_TEST(project_manifest_json, rejects_duplicate_and_unknown_group_members);
 REGISTER_TEST(project_manifest_json, parses_external_texture_save);
+REGISTER_TEST(project_manifest_json, parses_shared_materials);
+REGISTER_TEST(project_manifest_json, rejects_bad_texture_format_and_alpha_ref);
 TEST_MAIN_END()

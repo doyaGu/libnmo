@@ -1093,6 +1093,61 @@ static nmo_status_t project_report_populate_diff(
         }
     }
 
+    for (size_t i = 0u; i < nmo_project_plan_shared_material_count(plan); ++i) {
+        nmo_project_material_spec_t material = {0};
+        NMO_RETURN_IF_ERROR(nmo_project_plan_get_shared_material(plan, i, &material));
+        NMO_RETURN_IF_ERROR(project_report_add_created(
+            &report->asset_diff,
+            material.obj_material_name));
+        NMO_RETURN_IF_ERROR(project_report_add_material_channel_evidence(
+            &report->evidence,
+            material.obj_material_name,
+            material.has_color || material.has_diffuse,
+            material.has_ambient,
+            material.has_specular,
+            material.has_emissive,
+            material.has_specular_power));
+        for (uint32_t slot = 0u; slot < 4u; ++slot) {
+            const char *texture_path = material.has_texture_slots[slot]
+                ? material.texture_paths[slot]
+                : NULL;
+            const char *source_path = material.has_texture_slots[slot]
+                ? material.texture_source_paths[slot]
+                : NULL;
+            if (!texture_path && slot == 0u && material.texture_path) {
+                texture_path = material.texture_path;
+                source_path = material.texture_source_path;
+            }
+            if (!texture_path) {
+                continue;
+            }
+            char texture_name[256];
+            if (material.texture_external) {
+                NMO_RETURN_IF_ERROR(project_report_format_external_texture_name(
+                    texture_path,
+                    texture_name,
+                    sizeof(texture_name)));
+            } else {
+                NMO_RETURN_IF_ERROR(project_report_format_texture_name(
+                    material.obj_material_name,
+                    slot,
+                    texture_name,
+                    sizeof(texture_name)));
+            }
+            if (!project_report_created_contains(&report->asset_diff, texture_name)) {
+                NMO_RETURN_IF_ERROR(project_report_add_created(
+                    &report->asset_diff,
+                    texture_name));
+            }
+            NMO_RETURN_IF_ERROR(project_report_add_material_texture_slot_evidence(
+                &report->evidence,
+                material.obj_material_name,
+                slot,
+                texture_name,
+                source_path));
+        }
+    }
+
     for (size_t i = 0u; i < nmo_project_plan_asset_count(plan); ++i) {
         nmo_project_asset_desc_t asset = {0};
         NMO_RETURN_IF_ERROR(nmo_project_plan_get_asset(plan, i, &asset));

@@ -1153,6 +1153,47 @@ TEST(project_validator, reports_group_issues)
     nmo_project_plan_destroy(plan);
 }
 
+TEST(project_validator, reports_shared_material_issues)
+{
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"materials\":["
+            "{\"name\":\"Floor\",\"diffuse\":[1,1,1,1]},"
+            "{\"name\":\"Floor\",\"texture\":\"missing.png\"}"
+        "],"
+        "\"scenes\":[{"
+        "\"name\":\"Level\","
+        "\"objects\":["
+            "{\"name\":\"A\",\"class\":\"CK3dObject\",\"mesh\":{\"primitive\":\"cube\"},"
+                "\"material\":\"Missing\"}"
+        "]"
+        "}]"
+        "}";
+
+    nmo_project_plan_t *plan = NULL;
+    nmo_project_validation_report_t report;
+
+    ASSERT_EQ(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    nmo_project_validation_report_init(&report);
+    ASSERT_EQ(NMO_OK, nmo_project_validate_plan(plan, &report));
+    ASSERT_FALSE(report.ok);
+    ASSERT_TRUE(nmo_project_validation_contains(&report, "duplicate_shared_material"));
+    ASSERT_TRUE(nmo_project_validation_contains(&report, "missing_shared_material"));
+    const nmo_project_validation_issue_t *issue =
+        find_issue(&report, "missing_shared_material_texture_file");
+    ASSERT_NOT_NULL(issue);
+    ASSERT_STR_EQ("materials[1].texture", issue->source_path);
+
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_material_color(plan, 1u, 1.0f, 0.0f, 0.0f, 1.0f));
+    ASSERT_EQ(NMO_OK, nmo_project_validate_plan(plan, &report));
+    ASSERT_TRUE(nmo_project_validation_contains(&report, "shared_material_with_properties"));
+
+    nmo_project_validation_report_dispose(&report);
+    nmo_project_plan_destroy(plan);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(project_validator, rejects_missing_document_name);
 REGISTER_TEST(project_validator, accepts_named_empty_project);
@@ -1179,4 +1220,5 @@ REGISTER_TEST(project_validator, reports_invalid_objectanimation_morph_payloads)
 REGISTER_TEST(project_validator, reports_invalid_objectanimation_controller_payloads);
 REGISTER_TEST(project_validator, accepts_missing_external_texture_file);
 REGISTER_TEST(project_validator, reports_group_issues);
+REGISTER_TEST(project_validator, reports_shared_material_issues);
 TEST_MAIN_END()

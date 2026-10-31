@@ -33,6 +33,12 @@ typedef struct nmo_project_material_render_flags {
     VXTEXTURE_ADDRESSMODE wrap;
     bool has_alpha_func;
     VXCMPFUNC alpha_func;
+    bool has_alpha_ref;
+    uint8_t alpha_ref;
+    bool has_two_sided;
+    bool two_sided;
+    bool has_z_write;
+    bool z_write;
 } nmo_project_material_render_flags_t;
 
 typedef struct nmo_project_asset_desc {
@@ -62,6 +68,10 @@ typedef struct nmo_project_asset_desc {
     const char *material_texture_source_paths[4];
     /* The textures name their files instead of holding the images. */
     bool material_texture_external;
+    bool has_material_texture_format;
+    VX_PIXELFORMAT material_texture_format;
+    /* A shared material the mesh uses instead of a material of its own. */
+    const char *shared_material_name;
     bool has_material_render_flags;
     nmo_project_material_render_flags_t material_render_flags;
 } nmo_project_asset_desc_t;
@@ -88,6 +98,8 @@ typedef struct nmo_project_material_spec {
     const char *texture_paths[4];
     const char *texture_source_paths[4];
     bool texture_external;
+    bool has_texture_format;
+    VX_PIXELFORMAT texture_format;
     bool has_render_flags;
     nmo_project_material_render_flags_t render_flags;
 } nmo_project_material_spec_t;
@@ -173,6 +185,11 @@ NMO_API nmo_status_t nmo_project_plan_set_material_texture_external(
     uint32_t object_handle,
     bool external);
 
+NMO_API nmo_status_t nmo_project_plan_set_material_texture_format(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    VX_PIXELFORMAT format);
+
 NMO_API nmo_status_t nmo_project_plan_set_material_texture_source_path(
     nmo_project_plan_t *plan,
     uint32_t object_handle,
@@ -218,6 +235,31 @@ NMO_API nmo_status_t nmo_project_plan_set_obj_material_source_paths(
     size_t index,
     const char *source_path,
     const char *texture_source_path);
+
+/* Shared materials: one CKMaterial each, named spec->obj_material_name, that
+   objects use by name (nmo_project_plan_set_object_shared_material) and that
+   OBJ meshes use for the material groups of the same name. */
+NMO_API nmo_status_t nmo_project_plan_add_shared_material(
+    nmo_project_plan_t *plan,
+    const nmo_project_material_spec_t *spec);
+
+NMO_API size_t nmo_project_plan_shared_material_count(
+    const nmo_project_plan_t *plan);
+
+NMO_API nmo_status_t nmo_project_plan_get_shared_material(
+    const nmo_project_plan_t *plan,
+    size_t index,
+    nmo_project_material_spec_t *out_spec);
+
+NMO_API nmo_status_t nmo_project_plan_set_shared_material_texture(
+    nmo_project_plan_t *plan,
+    size_t index,
+    const char *path);
+
+NMO_API nmo_status_t nmo_project_plan_set_object_shared_material(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    const char *material_name);
 
 NMO_API size_t nmo_project_plan_asset_count(
     const nmo_project_plan_t *plan);

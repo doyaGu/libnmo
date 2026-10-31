@@ -849,6 +849,7 @@ static nmo_status_t project_validation_check_assets(
         if (asset.has_external_mesh &&
             project_validation_file_exists(asset.external_mesh_path) &&
             obj_material_count > 0u &&
+            !asset.shared_material_name &&
             !asset.has_material_color &&
             !asset.has_material_diffuse &&
             !asset.has_material_ambient &&
@@ -921,6 +922,16 @@ static nmo_status_t project_validation_check_assets(
                         bound = true;
                         break;
                     }
+                }
+                for (size_t shared_index = 0u;
+                     !bound && obj_name && shared_index < nmo_project_plan_shared_material_count(plan);
+                     ++shared_index) {
+                    nmo_project_material_spec_t shared = {0};
+                    NMO_RETURN_IF_ERROR(nmo_project_plan_get_shared_material(
+                        plan,
+                        shared_index,
+                        &shared));
+                    bound = strcmp(obj_name, shared.obj_material_name) == 0;
                 }
                 if (!bound) {
                     NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
@@ -998,6 +1009,102 @@ static nmo_status_t project_validation_check_scripts(
     NMO_RETURN_OK();
 }
 
+static bool project_validation_has_shared_material(
+    const nmo_project_plan_t *plan,
+    const char *name)
+{
+    size_t count = nmo_project_plan_shared_material_count(plan);
+    for (size_t i = 0u; i < count; ++i) {
+        nmo_project_material_spec_t spec = {0};
+        if (nmo_project_plan_get_shared_material(plan, i, &spec) == NMO_OK &&
+            strcmp(spec.obj_material_name, name) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static nmo_status_t project_validation_check_shared_materials(
+    const nmo_project_plan_t *plan,
+    nmo_project_validation_report_t *report)
+{
+    size_t count = nmo_project_plan_shared_material_count(plan);
+    for (size_t i = 0u; i < count; ++i) {
+        nmo_project_material_spec_t spec = {0};
+        NMO_RETURN_IF_ERROR(nmo_project_plan_get_shared_material(plan, i, &spec));
+        for (size_t j = i + 1u; j < count; ++j) {
+            nmo_project_material_spec_t other = {0};
+            NMO_RETURN_IF_ERROR(nmo_project_plan_get_shared_material(plan, j, &other));
+            if (strcmp(spec.obj_material_name, other.obj_material_name) == 0) {
+                NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
+                    report,
+                    "duplicate_shared_material",
+                    "Project shared material names must be unique",
+                    "material",
+                    other.obj_material_name,
+                    other.source_path));
+            }
+        }
+        for (size_t slot = 0u; slot < 4u; ++slot) {
+            const char *texture_path = spec.has_texture_slots[slot]
+                ? spec.texture_paths[slot]
+                : NULL;
+            const char *source_path = spec.has_texture_slots[slot]
+                ? spec.texture_source_paths[slot]
+                : NULL;
+            if (!texture_path && slot == 0u && spec.texture_path) {
+                texture_path = spec.texture_path;
+                source_path = spec.texture_source_path;
+            }
+            if (texture_path && !spec.texture_external &&
+                !project_validation_file_exists(texture_path)) {
+                NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
+                    report,
+                    "missing_shared_material_texture_file",
+                    "Project shared material texture path must exist",
+                    "material",
+                    spec.obj_material_name,
+                    source_path));
+            }
+        }
+    }
+
+    size_t asset_count = nmo_project_plan_asset_count(plan);
+    for (size_t i = 0u; i < asset_count; ++i) {
+        nmo_project_asset_desc_t asset = {0};
+        NMO_RETURN_IF_ERROR(nmo_project_plan_get_asset(plan, i, &asset));
+        if (!asset.shared_material_name) {
+            continue;
+        }
+        nmo_project_object_desc_t object = {0};
+        bool has_object = project_validation_get_object_by_handle(
+            plan, asset.object_handle, &object);
+        if (!project_validation_has_shared_material(plan, asset.shared_material_name)) {
+            NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
+                report,
+                "missing_shared_material",
+                "Project object uses a shared material that is not defined",
+                "object",
+                has_object ? object.name : NULL,
+                has_object ? object.source_path : NULL));
+        }
+        /* The object's mesh takes the shared material as it is. */
+        if (asset.has_material_color || asset.has_material_diffuse ||
+            asset.has_material_ambient || asset.has_material_specular ||
+            asset.has_material_emissive || asset.has_material_specular_power ||
+            asset.has_material_texture || asset.has_material_render_flags) {
+            NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
+                report,
+                "shared_material_with_properties",
+                "Project object with a shared material cannot set material properties",
+                "object",
+                has_object ? object.name : NULL,
+                has_object ? object.source_path : NULL));
+        }
+    }
+    NMO_RETURN_OK();
+}
+
 static nmo_status_t project_validation_check_groups(
     const nmo_project_plan_t *plan,
     nmo_project_validation_report_t *report)
@@ -1061,6 +1168,7 @@ nmo_status_t nmo_project_validate_plan(
     NMO_RETURN_IF_ERROR(project_validation_check_assets(plan, report));
     NMO_RETURN_IF_ERROR(project_validation_check_scripts(plan, report));
     NMO_RETURN_IF_ERROR(project_validation_check_groups(plan, report));
+    NMO_RETURN_IF_ERROR(project_validation_check_shared_materials(plan, report));
 
     report->ok = report->issue_count == 0u;
     NMO_RETURN_OK();

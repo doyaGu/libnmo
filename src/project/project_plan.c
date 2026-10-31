@@ -110,6 +110,9 @@ typedef struct project_asset_record {
     char *material_texture_paths[4];
     char *material_texture_source_paths[4];
     bool material_texture_external;
+    bool has_material_texture_format;
+    VX_PIXELFORMAT material_texture_format;
+    char *shared_material_name;
     bool has_material_render_flags;
     nmo_project_material_render_flags_t material_render_flags;
     nmo_project_material_spec_t *obj_materials;
@@ -157,6 +160,9 @@ struct nmo_project_plan {
     project_group_record_t *groups;
     size_t group_count;
     size_t group_capacity;
+    nmo_project_material_spec_t *shared_materials;
+    size_t shared_material_count;
+    size_t shared_material_capacity;
     uint32_t next_scene_handle;
     uint32_t next_object_handle;
     uint32_t next_script_handle;
@@ -381,6 +387,32 @@ static void project_plan_free_script_steps(
     free(steps);
 }
 
+static nmo_status_t project_plan_append_material_spec(
+    nmo_project_material_spec_t **items,
+    size_t *count,
+    size_t *capacity,
+    const nmo_project_material_spec_t *spec);
+
+static void project_plan_free_material_specs(
+    nmo_project_material_spec_t *specs,
+    size_t count)
+{
+    if (!specs) {
+        return;
+    }
+    for (size_t j = 0u; j < count; ++j) {
+        free((void *)specs[j].obj_material_name);
+        free((void *)specs[j].texture_path);
+        free((void *)specs[j].source_path);
+        free((void *)specs[j].texture_source_path);
+        for (size_t slot = 0u; slot < 4u; ++slot) {
+            free((void *)specs[j].texture_paths[slot]);
+            free((void *)specs[j].texture_source_paths[slot]);
+        }
+    }
+    free(specs);
+}
+
 static void project_plan_free_assets(
     project_asset_record_t *assets,
     size_t asset_count)
@@ -393,21 +425,14 @@ static void project_plan_free_assets(
         free(assets[i].external_mesh_source_path);
         free(assets[i].material_texture_path);
         free(assets[i].material_texture_source_path);
+        free(assets[i].shared_material_name);
         for (size_t slot = 0u; slot < 4u; ++slot) {
             free(assets[i].material_texture_paths[slot]);
             free(assets[i].material_texture_source_paths[slot]);
         }
-        for (size_t j = 0u; j < assets[i].obj_material_count; ++j) {
-            free((void *)assets[i].obj_materials[j].obj_material_name);
-            free((void *)assets[i].obj_materials[j].texture_path);
-            free((void *)assets[i].obj_materials[j].source_path);
-            free((void *)assets[i].obj_materials[j].texture_source_path);
-            for (size_t slot = 0u; slot < 4u; ++slot) {
-                free((void *)assets[i].obj_materials[j].texture_paths[slot]);
-                free((void *)assets[i].obj_materials[j].texture_source_paths[slot]);
-            }
-        }
-        free(assets[i].obj_materials);
+        project_plan_free_material_specs(
+            assets[i].obj_materials,
+            assets[i].obj_material_count);
     }
     free(assets);
 }
@@ -476,6 +501,9 @@ void nmo_project_plan_destroy(nmo_project_plan_t *plan)
     project_plan_free_assets(plan->assets, plan->asset_count);
     free(plan->scripts);
     free(plan->groups);
+    project_plan_free_material_specs(
+        plan->shared_materials,
+        plan->shared_material_count);
     free(plan);
 }
 
@@ -662,6 +690,14 @@ nmo_status_t nmo_project_plan_clone(
             clone->assets[i].obj_materials = NULL;
             clone->assets[i].obj_material_count = 0u;
             clone->assets[i].obj_material_capacity = 0u;
+            clone->assets[i].shared_material_name =
+                project_plan_strdup(plan->assets[i].shared_material_name);
+            if (plan->assets[i].shared_material_name &&
+                !clone->assets[i].shared_material_name) {
+                nmo_project_plan_destroy(clone);
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                 "failed to clone project shared material name");
+            }
             clone->assets[i].external_mesh_path =
                 project_plan_strdup(plan->assets[i].external_mesh_path);
             clone->assets[i].external_mesh_source_path =
@@ -833,6 +869,17 @@ nmo_status_t nmo_project_plan_clone(
                 }
             }
             clone->script_count++;
+        }
+    }
+    for (size_t i = 0u; i < plan->shared_material_count; ++i) {
+        status = project_plan_append_material_spec(
+            &clone->shared_materials,
+            &clone->shared_material_count,
+            &clone->shared_material_capacity,
+            &plan->shared_materials[i]);
+        if (status != NMO_OK) {
+            nmo_project_plan_destroy(clone);
+            return status;
         }
     }
     clone->next_group_handle = plan->next_group_handle;
@@ -2033,6 +2080,43 @@ nmo_status_t nmo_project_plan_set_material_texture_external(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_project_plan_set_material_texture_format(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    VX_PIXELFORMAT format)
+{
+    if (format <= UNKNOWN_PF) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "texture format must be a known pixel format");
+    }
+    project_asset_record_t *asset = NULL;
+    NMO_RETURN_IF_ERROR(project_plan_find_or_add_asset(plan, object_handle, &asset));
+    asset->has_material_texture_format = true;
+    asset->material_texture_format = format;
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_project_plan_set_object_shared_material(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    const char *material_name)
+{
+    if (!material_name || material_name[0] == '\0') {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "shared material name is required");
+    }
+    project_asset_record_t *asset = NULL;
+    NMO_RETURN_IF_ERROR(project_plan_find_or_add_asset(plan, object_handle, &asset));
+    char *name_copy = project_plan_strdup(material_name);
+    if (!name_copy) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate shared material name");
+    }
+    free(asset->shared_material_name);
+    asset->shared_material_name = name_copy;
+    NMO_RETURN_OK();
+}
+
 nmo_status_t nmo_project_plan_set_material_texture_source_path(
     nmo_project_plan_t *plan,
     uint32_t object_handle,
@@ -2095,9 +2179,7 @@ static const project_asset_record_t *project_plan_find_asset_const(
     return NULL;
 }
 
-nmo_status_t nmo_project_plan_add_obj_material(
-    nmo_project_plan_t *plan,
-    uint32_t object_handle,
+static nmo_status_t project_plan_check_material_spec(
     const nmo_project_material_spec_t *spec)
 {
     if (!spec || !spec->obj_material_name || spec->obj_material_name[0] == '\0') {
@@ -2131,24 +2213,32 @@ nmo_status_t nmo_project_plan_add_obj_material(
                          "OBJ material texture path is required");
     }
 
-    project_asset_record_t *asset = NULL;
-    NMO_RETURN_IF_ERROR(project_plan_find_or_add_asset(plan, object_handle, &asset));
-    if (asset->obj_material_count == asset->obj_material_capacity) {
+    NMO_RETURN_OK();
+}
+
+/* Copy a checked material spec, with its strings, to the end of an array. */
+static nmo_status_t project_plan_append_material_spec(
+    nmo_project_material_spec_t **items,
+    size_t *count,
+    size_t *capacity,
+    const nmo_project_material_spec_t *spec)
+{
+    if (*count == *capacity) {
         size_t new_capacity =
-            asset->obj_material_capacity ? asset->obj_material_capacity * 2u : 4u;
+            *capacity ? *capacity * 2u : 4u;
         nmo_project_material_spec_t *new_materials =
             (nmo_project_material_spec_t *)realloc(
-                asset->obj_materials,
+                *items,
                 new_capacity * sizeof(*new_materials));
         if (!new_materials) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                              "failed to allocate project OBJ material");
         }
-        memset(new_materials + asset->obj_material_capacity,
+        memset(new_materials + *capacity,
                0,
-               (new_capacity - asset->obj_material_capacity) * sizeof(*new_materials));
-        asset->obj_materials = new_materials;
-        asset->obj_material_capacity = new_capacity;
+               (new_capacity - *capacity) * sizeof(*new_materials));
+        *items = new_materials;
+        *capacity = new_capacity;
     }
 
     char *name_copy = project_plan_strdup(spec->obj_material_name);
@@ -2236,7 +2326,7 @@ nmo_status_t nmo_project_plan_add_obj_material(
     }
 
     nmo_project_material_spec_t *dst =
-        &asset->obj_materials[asset->obj_material_count++];
+        &(*items)[(*count)++];
     *dst = *spec;
     if (dst->has_color && !dst->has_diffuse) {
         dst->has_diffuse = true;
@@ -2252,6 +2342,90 @@ nmo_status_t nmo_project_plan_add_obj_material(
         dst->texture_paths[slot] = texture_slot_copies[slot];
         dst->texture_source_paths[slot] = texture_source_slot_copies[slot];
     }
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_project_plan_add_obj_material(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    const nmo_project_material_spec_t *spec)
+{
+    NMO_RETURN_IF_ERROR(project_plan_check_material_spec(spec));
+    project_asset_record_t *asset = NULL;
+    NMO_RETURN_IF_ERROR(project_plan_find_or_add_asset(plan, object_handle, &asset));
+    return project_plan_append_material_spec(
+        &asset->obj_materials,
+        &asset->obj_material_count,
+        &asset->obj_material_capacity,
+        spec);
+}
+
+nmo_status_t nmo_project_plan_add_shared_material(
+    nmo_project_plan_t *plan,
+    const nmo_project_material_spec_t *spec)
+{
+    if (!plan) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "plan is required");
+    }
+    NMO_RETURN_IF_ERROR(project_plan_check_material_spec(spec));
+    return project_plan_append_material_spec(
+        &plan->shared_materials,
+        &plan->shared_material_count,
+        &plan->shared_material_capacity,
+        spec);
+}
+
+size_t nmo_project_plan_shared_material_count(const nmo_project_plan_t *plan)
+{
+    return plan ? plan->shared_material_count : 0u;
+}
+
+nmo_status_t nmo_project_plan_get_shared_material(
+    const nmo_project_plan_t *plan,
+    size_t index,
+    nmo_project_material_spec_t *out_spec)
+{
+    if (!plan || !out_spec) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "plan and out_spec are required");
+    }
+    if (index >= plan->shared_material_count) {
+        NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR,
+                         "shared material index out of bounds");
+    }
+    *out_spec = plan->shared_materials[index];
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_project_plan_set_shared_material_texture(
+    nmo_project_plan_t *plan,
+    size_t index,
+    const char *path)
+{
+    if (!plan || !path || path[0] == '\0') {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "plan and shared material texture path are required");
+    }
+    if (index >= plan->shared_material_count) {
+        NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR,
+                         "shared material index out of bounds");
+    }
+    nmo_project_material_spec_t *spec = &plan->shared_materials[index];
+    char *path_copy = project_plan_strdup(path);
+    char *alias_copy = project_plan_strdup(path);
+    if (!path_copy || !alias_copy) {
+        free(path_copy);
+        free(alias_copy);
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate shared material texture path");
+    }
+    free((void *)spec->texture_paths[0]);
+    free((void *)spec->texture_path);
+    spec->texture_paths[0] = path_copy;
+    spec->texture_path = alias_copy;
+    spec->has_texture_slots[0] = true;
+    spec->has_texture = true;
     NMO_RETURN_OK();
 }
 
@@ -2460,6 +2634,9 @@ nmo_status_t nmo_project_plan_get_asset(
            asset->material_texture_source_paths,
            sizeof(out_asset->material_texture_source_paths));
     out_asset->material_texture_external = asset->material_texture_external;
+    out_asset->has_material_texture_format = asset->has_material_texture_format;
+    out_asset->material_texture_format = asset->material_texture_format;
+    out_asset->shared_material_name = asset->shared_material_name;
     out_asset->has_material_render_flags = asset->has_material_render_flags;
     out_asset->material_render_flags = asset->material_render_flags;
     NMO_RETURN_OK();

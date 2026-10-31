@@ -367,16 +367,50 @@ static nmo_status_t manifest_parse_material_render_flags(
 
     yyjson_val *alpha = yyjson_obj_get(material, "alpha");
     if (alpha) {
-        static const char *const allowed[] = {"func", NULL};
+        static const char *const allowed[] = {"func", "ref", NULL};
         NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(alpha, "material.alpha", allowed));
         yyjson_val *func = yyjson_obj_get(alpha, "func");
-        if (!yyjson_is_str(func)) {
+        yyjson_val *ref = yyjson_obj_get(alpha, "ref");
+        if (!func && !ref) {
             NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                             "manifest %s.alpha.func must be a string", context);
+                             "manifest %s.alpha needs func or ref", context);
         }
-        NMO_RETURN_IF_ERROR(manifest_parse_alpha_func(
-            yyjson_get_str(func), &out_flags->alpha_func));
-        out_flags->has_alpha_func = true;
+        if (func) {
+            if (!yyjson_is_str(func)) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "manifest %s.alpha.func must be a string", context);
+            }
+            NMO_RETURN_IF_ERROR(manifest_parse_alpha_func(
+                yyjson_get_str(func), &out_flags->alpha_func));
+            out_flags->has_alpha_func = true;
+        }
+        if (ref) {
+            if (!yyjson_is_uint(ref) || yyjson_get_uint(ref) > 255u) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "manifest %s.alpha.ref must be 0..255", context);
+            }
+            out_flags->has_alpha_ref = true;
+            out_flags->alpha_ref = (uint8_t)yyjson_get_uint(ref);
+        }
+    }
+
+    yyjson_val *two_sided = yyjson_obj_get(material, "two_sided");
+    if (two_sided) {
+        if (!yyjson_is_bool(two_sided)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest %s.two_sided must be a boolean", context);
+        }
+        out_flags->has_two_sided = true;
+        out_flags->two_sided = yyjson_get_bool(two_sided);
+    }
+    yyjson_val *z_write = yyjson_obj_get(material, "z_write");
+    if (z_write) {
+        if (!yyjson_is_bool(z_write)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest %s.z_write must be a boolean", context);
+        }
+        out_flags->has_z_write = true;
+        out_flags->z_write = yyjson_get_bool(z_write);
     }
 
     *out_has_flags =
@@ -386,7 +420,10 @@ static nmo_status_t manifest_parse_material_render_flags(
         out_flags->has_min_filter ||
         out_flags->has_mag_filter ||
         out_flags->has_wrap ||
-        out_flags->has_alpha_func;
+        out_flags->has_alpha_func ||
+        out_flags->has_alpha_ref ||
+        out_flags->has_two_sided ||
+        out_flags->has_z_write;
     NMO_RETURN_OK();
 }
 
@@ -410,6 +447,42 @@ static nmo_status_t manifest_parse_texture_save(
     NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                      "manifest %s.texture_save must be \"embedded\" or \"external\"",
                      context);
+}
+
+/* material.texture_format: the pixel format the engine keeps the textures in. */
+static nmo_status_t manifest_parse_texture_format(
+    yyjson_val *material,
+    const char *context,
+    bool *out_has_format,
+    VX_PIXELFORMAT *out_format)
+{
+    static const struct {
+        const char *name;
+        VX_PIXELFORMAT format;
+    } formats[] = {
+        {"argb8888", _32_ARGB8888},
+        {"rgb888", _32_RGB888},
+        {"rgb565", _16_RGB565},
+        {"argb1555", _16_ARGB1555},
+        {"argb4444", _16_ARGB4444},
+    };
+    *out_has_format = false;
+    const char *name = NULL;
+    NMO_RETURN_IF_ERROR(manifest_optional_string(material, "texture_format", &name));
+    if (!name) {
+        NMO_RETURN_OK();
+    }
+    for (size_t i = 0u; i < sizeof(formats) / sizeof(formats[0]); ++i) {
+        if (strcmp(name, formats[i].name) == 0) {
+            *out_has_format = true;
+            *out_format = formats[i].format;
+            NMO_RETURN_OK();
+        }
+    }
+    NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                     "manifest %s.texture_format '%s' is not one of argb8888, rgb888, "
+                     "rgb565, argb1555, argb4444",
+                     context, name);
 }
 
 static nmo_status_t manifest_parse_material(
@@ -441,10 +514,13 @@ static nmo_status_t manifest_parse_material(
         "texture",
         "textures",
         "texture_save",
+        "texture_format",
         "blend",
         "filter",
         "wrap",
         "alpha",
+        "two_sided",
+        "z_write",
         NULL};
     NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(material, "material", allowed));
 
@@ -608,10 +684,13 @@ static nmo_status_t manifest_parse_obj_material(
         "texture",
         "textures",
         "texture_save",
+        "texture_format",
         "blend",
         "filter",
         "wrap",
         "alpha",
+        "two_sided",
+        "z_write",
         NULL};
     if (!out_spec) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
@@ -635,6 +714,11 @@ static nmo_status_t manifest_parse_obj_material(
         material,
         "materials[]",
         &out_spec->texture_external));
+    NMO_RETURN_IF_ERROR(manifest_parse_texture_format(
+        material,
+        "materials[]",
+        &out_spec->has_texture_format,
+        &out_spec->texture_format));
 
     yyjson_val *color = yyjson_obj_get(material, "color");
     yyjson_val *diffuse = yyjson_obj_get(material, "diffuse");
@@ -1847,6 +1931,49 @@ static nmo_status_t manifest_parse_object_groups(
     NMO_RETURN_OK();
 }
 
+/* Root materials: shared, one CKMaterial each, in the manifest's order. */
+static nmo_status_t manifest_parse_shared_materials(
+    manifest_parse_ctx_t *ctx,
+    yyjson_val *materials)
+{
+    if (!materials) {
+        NMO_RETURN_OK();
+    }
+    if (!yyjson_is_arr(materials)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "manifest materials must be an array");
+    }
+    size_t idx = 0u;
+    size_t max = 0u;
+    yyjson_val *item = NULL;
+    yyjson_arr_foreach(materials, idx, max, item) {
+        nmo_project_material_spec_t spec = {0};
+        size_t texture_indices[4] = {0};
+        NMO_RETURN_IF_ERROR(manifest_parse_obj_material(item, &spec, texture_indices));
+        bool has_texture_shorthand = yyjson_obj_get(item, "texture") != NULL;
+        char source_path[48];
+        char texture_source_paths[4][80];
+        snprintf(source_path, sizeof(source_path), "materials[%zu]", idx);
+        spec.source_path = source_path;
+        for (size_t slot = 0u; slot < 4u; ++slot) {
+            if (!spec.has_texture_slots[slot]) {
+                continue;
+            }
+            if (slot == 0u && has_texture_shorthand) {
+                snprintf(texture_source_paths[slot], sizeof(texture_source_paths[slot]),
+                         "materials[%zu].texture", idx);
+                spec.texture_source_path = texture_source_paths[slot];
+            } else {
+                snprintf(texture_source_paths[slot], sizeof(texture_source_paths[slot]),
+                         "materials[%zu].textures[%zu].path", idx, texture_indices[slot]);
+            }
+            spec.texture_source_paths[slot] = texture_source_paths[slot];
+        }
+        NMO_RETURN_IF_ERROR(nmo_project_plan_add_shared_material(ctx->plan, &spec));
+    }
+    NMO_RETURN_OK();
+}
+
 /* Root groups are made before the scenes, so they keep the manifest's order. */
 static nmo_status_t manifest_declare_groups(
     manifest_parse_ctx_t *ctx,
@@ -2070,7 +2197,13 @@ static nmo_status_t manifest_parse_object_details(
     }
 
     yyjson_val *material = yyjson_obj_get(object, "material");
-    if (material) {
+    if (yyjson_is_str(material)) {
+        /* The name of a shared material from the root "materials". */
+        NMO_RETURN_IF_ERROR(nmo_project_plan_set_object_shared_material(
+            ctx->plan,
+            object_handle,
+            yyjson_get_str(material)));
+    } else if (material) {
         bool has_color = false;
         float color[4] = {0.0f, 0.0f, 0.0f, 1.0f};
         bool has_ambient = false;
@@ -2163,6 +2296,19 @@ static nmo_status_t manifest_parse_object_details(
                 ctx->plan,
                 object_handle,
                 true));
+        }
+        bool has_texture_format = false;
+        VX_PIXELFORMAT texture_format = UNKNOWN_PF;
+        NMO_RETURN_IF_ERROR(manifest_parse_texture_format(
+            material,
+            "material",
+            &has_texture_format,
+            &texture_format));
+        if (has_texture_format) {
+            NMO_RETURN_IF_ERROR(nmo_project_plan_set_material_texture_format(
+                ctx->plan,
+                object_handle,
+                texture_format));
         }
         if (has_texture_slots[0]) {
             NMO_RETURN_IF_ERROR(nmo_project_plan_set_material_texture(
@@ -2666,7 +2812,7 @@ static nmo_status_t manifest_parse_root(
     nmo_project_manifest_t *out_manifest)
 {
     static const char *const root_allowed[] = {
-        "version", "output", "document", "scenes", "groups", NULL};
+        "version", "output", "document", "materials", "scenes", "groups", NULL};
     static const char *const document_allowed[] = {"name", NULL};
     NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(root, "root", root_allowed));
 
@@ -2693,6 +2839,9 @@ static nmo_status_t manifest_parse_root(
     NMO_RETURN_IF_ERROR(manifest_required_string(document, "name", &document_name));
     NMO_RETURN_IF_ERROR(nmo_project_plan_set_document_name(ctx->plan, document_name));
 
+    NMO_RETURN_IF_ERROR(manifest_parse_shared_materials(
+        ctx,
+        yyjson_obj_get(root, "materials")));
     yyjson_val *groups = yyjson_obj_get(root, "groups");
     NMO_RETURN_IF_ERROR(manifest_declare_groups(ctx, groups));
 
