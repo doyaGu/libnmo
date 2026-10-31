@@ -1,0 +1,1516 @@
+{
+  "materials": [
+    {
+      "ambient": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "blend": {
+        "destination": "inv_src_alpha",
+        "source": "src_alpha"
+      },
+      "diffuse": [
+        0.913725,
+        0.913725,
+        0.913725,
+        1.0
+      ],
+      "emissive": [
+        0.313726,
+        0.313726,
+        0.313726,
+        1.0
+      ],
+      "name": "Columns_beige_fade",
+      "specular": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "specular_power": 0.0,
+      "texture": "Column_beige_fade.tga",
+      "texture_format": "argb8888",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "diffuse": [
+        0.913725,
+        0.913725,
+        0.913725,
+        1.0
+      ],
+      "emissive": [
+        0.313726,
+        0.313726,
+        0.313726,
+        1.0
+      ],
+      "name": "Colums_beige",
+      "specular": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "specular_power": 0.0,
+      "texture": "Column_beige.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "diffuse": [
+        0.819608,
+        0.819608,
+        0.819608,
+        1.0
+      ],
+      "emissive": [
+        0.313726,
+        0.313726,
+        0.313726,
+        1.0
+      ],
+      "name": "Colums_blue",
+      "specular": [
+        0.588235,
+        0.588235,
+        0.588235,
+        1.0
+      ],
+      "specular_power": 31.0,
+      "texture": "Column_blue.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "diffuse": [
+        0.478431,
+        0.478431,
+        0.478431,
+        1.0
+      ],
+      "emissive": [
+        0.407843,
+        0.407843,
+        0.407843,
+        1.0
+      ],
+      "name": "Floor_Side",
+      "specular": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "specular_power": 0.0,
+      "texture": "Floor_Side.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "diffuse": [
+        0.729412,
+        0.729412,
+        0.729412,
+        1.0
+      ],
+      "emissive": [
+        0.254902,
+        0.254902,
+        0.254902,
+        1.0
+      ],
+      "name": "Floor_Stopper_Wood",
+      "specular": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "specular_power": 0.0,
+      "texture": "E_Holzbeschlag.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "diffuse": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "emissive": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "name": "Floor_Top_Boderless",
+      "specular": [
+        0.313726,
+        0.313726,
+        0.313726,
+        1.0
+      ],
+      "specular_power": 100.0,
+      "texture": "Floor_Top_Borderless.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "diffuse": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "emissive": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "name": "Floor_Top_Border",
+      "specular": [
+        0.313726,
+        0.313726,
+        0.313726,
+        1.0
+      ],
+      "specular_power": 100.0,
+      "texture": "Floor_Top_Border.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "diffuse": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "emissive": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "name": "Floor_Top_Checkpoint",
+      "specular": [
+        0.313726,
+        0.313726,
+        0.313726,
+        1.0
+      ],
+      "specular_power": 100.0,
+      "texture": "floor_top_Checkpoint.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "diffuse": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "emissive": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "name": "Floor_Top_Flat",
+      "specular": [
+        0.313726,
+        0.313726,
+        0.313726,
+        1.0
+      ],
+      "specular_power": 100.0,
+      "texture": "Floor_Top_Flat.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "diffuse": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "emissive": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "name": "Floor_Top_Profile",
+      "specular": [
+        0.313726,
+        0.313726,
+        0.313726,
+        1.0
+      ],
+      "specular_power": 100.0,
+      "texture": "Floor_Top_Profil.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "diffuse": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "emissive": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "name": "Floor_Top_ProfileFlat",
+      "specular": [
+        0.313726,
+        0.313726,
+        0.313726,
+        1.0
+      ],
+      "specular_power": 100.0,
+      "texture": "Floor_Top_ProfilFlat.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.098039,
+        0.098039,
+        0.098039,
+        1.0
+      ],
+      "diffuse": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "emissive": [
+        0.392157,
+        0.392157,
+        0.392157,
+        1.0
+      ],
+      "name": "Floor_Trafo_Paper",
+      "specular": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "specular_power": 0.0,
+      "texture": "Ball_Paper.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "diffuse": [
+        0.745098,
+        0.745098,
+        0.745098,
+        1.0
+      ],
+      "emissive": [
+        0.392157,
+        0.392157,
+        0.392157,
+        1.0
+      ],
+      "name": "Floor_Trafo_Stone",
+      "specular": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "specular_power": 0.0,
+      "texture": "Ball_Stone.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "diffuse": [
+        0.745098,
+        0.745098,
+        0.745098,
+        1.0
+      ],
+      "emissive": [
+        0.392157,
+        0.392157,
+        0.392157,
+        1.0
+      ],
+      "name": "Floor_Trafo_Wood",
+      "specular": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "specular_power": 0.0,
+      "texture": "Ball_Wood.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.007843,
+        0.007843,
+        0.007843,
+        1.0
+      ],
+      "diffuse": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "emissive": [
+        0.117647,
+        0.117647,
+        0.117647,
+        1.0
+      ],
+      "name": "Floor_Wood",
+      "specular": [
+        0.231373,
+        0.231373,
+        0.231373,
+        1.0
+      ],
+      "specular_power": 25.0,
+      "texture": "Wood_Panel.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.098039,
+        0.098039,
+        0.098039,
+        1.0
+      ],
+      "diffuse": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "emissive": [
+        0.196078,
+        0.196078,
+        0.196078,
+        1.0
+      ],
+      "name": "Halfpipe_Wood",
+      "specular": [
+        0.392157,
+        0.392157,
+        0.392157,
+        1.0
+      ],
+      "specular_power": 50.0,
+      "texture": "Wood_Plain2.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "diffuse": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "emissive": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "name": "Laterne_Glas",
+      "specular": [
+        0.898039,
+        0.898039,
+        0.898039,
+        1.0
+      ],
+      "specular_power": 0.0,
+      "texture": "Laterne_Glas.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "diffuse": [
+        0.454902,
+        0.454902,
+        0.454902,
+        1.0
+      ],
+      "emissive": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "name": "Laterne_Metal",
+      "specular": [
+        0.898039,
+        0.898039,
+        0.898039,
+        1.0
+      ],
+      "specular_power": 78.0
+    },
+    {
+      "alpha": {
+        "func": "greater",
+        "ref": 1
+      },
+      "ambient": [
+        0.098039,
+        0.098039,
+        0.098039,
+        1.0
+      ],
+      "blend": {
+        "destination": "inv_src_alpha",
+        "source": "src_alpha"
+      },
+      "diffuse": [
+        0.007843,
+        0.007843,
+        0.007843,
+        1.0
+      ],
+      "emissive": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "name": "Laterne_Schatten",
+      "specular": [
+        0.898039,
+        0.898039,
+        0.898039,
+        1.0
+      ],
+      "specular_power": 0.0,
+      "texture": "Laterne_Schatten.tga",
+      "texture_format": "argb8888",
+      "texture_save": "external"
+    },
+    {
+      "alpha": {
+        "func": "greater",
+        "ref": 1
+      },
+      "ambient": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "blend": {
+        "destination": "inv_src_alpha",
+        "source": "src_alpha"
+      },
+      "diffuse": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "emissive": [
+        0.231373,
+        0.231373,
+        0.231373,
+        1.0
+      ],
+      "name": "Laterne_Verlauf",
+      "specular": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "specular_power": 0.0,
+      "texture": "Laterne_Verlauf.tga",
+      "texture_format": "argb8888",
+      "texture_save": "external",
+      "two_sided": true
+    },
+    {
+      "ambient": [
+        0.098039,
+        0.098039,
+        0.098039,
+        1.0
+      ],
+      "diffuse": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "emissive": [
+        0.254902,
+        0.254902,
+        0.254902,
+        1.0
+      ],
+      "name": "Misc_MetalButtons",
+      "specular": [
+        0.898039,
+        0.898039,
+        0.898039,
+        1.0
+      ],
+      "specular_power": 7.0,
+      "texture": "Metal_stained.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.098039,
+        0.098039,
+        0.098039,
+        1.0
+      ],
+      "diffuse": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "emissive": [
+        0.156863,
+        0.156863,
+        0.156863,
+        1.0
+      ],
+      "name": "Misc_Schelle",
+      "specular": [
+        0.898039,
+        0.898039,
+        0.898039,
+        1.0
+      ],
+      "specular_power": 0.0,
+      "texture": "Wood_Metal.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.098039,
+        0.098039,
+        0.098039,
+        1.0
+      ],
+      "diffuse": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "emissive": [
+        0.235294,
+        0.235294,
+        0.235294,
+        1.0
+      ],
+      "name": "Modul01_Floor",
+      "specular": [
+        0.898039,
+        0.898039,
+        0.898039,
+        1.0
+      ],
+      "specular_power": 0.0,
+      "texture": "Brick.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.098039,
+        0.098039,
+        0.098039,
+        1.0
+      ],
+      "diffuse": [
+        0.831373,
+        0.831373,
+        0.831373,
+        1.0
+      ],
+      "emissive": [
+        0.27451,
+        0.27451,
+        0.27451,
+        1.0
+      ],
+      "name": "Modul01_FloorRinne",
+      "specular": [
+        0.313726,
+        0.313726,
+        0.313726,
+        1.0
+      ],
+      "specular_power": 100.0,
+      "texture": "Floor_Top_Borderless.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "alpha": {
+        "func": "greater",
+        "ref": 1
+      },
+      "ambient": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "blend": {
+        "destination": "inv_src_alpha",
+        "source": "src_alpha"
+      },
+      "diffuse": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "emissive": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "name": "Modul18_Gitter",
+      "specular": [
+        0.898039,
+        0.898039,
+        0.898039,
+        1.0
+      ],
+      "specular_power": 25.0,
+      "texture": "Modul18_Gitter.tga",
+      "texture_format": "argb8888",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "diffuse": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "emissive": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "name": "Modul18_Top",
+      "specular": [
+        0.898039,
+        0.898039,
+        0.898039,
+        1.0
+      ],
+      "specular_power": 25.0,
+      "texture": "Modul18.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.035294,
+        0.035294,
+        0.035294,
+        1.0
+      ],
+      "diffuse": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "emissive": [
+        0.27451,
+        0.27451,
+        0.27451,
+        1.0
+      ],
+      "name": "Modul_11_Wood01",
+      "specular": [
+        0.392157,
+        0.392157,
+        0.392157,
+        1.0
+      ],
+      "specular_power": 50.0,
+      "texture": "Modul11_13_Wood.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.035294,
+        0.035294,
+        0.035294,
+        1.0
+      ],
+      "diffuse": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "emissive": [
+        0.196078,
+        0.196078,
+        0.196078,
+        1.0
+      ],
+      "name": "Modul_11_Wood02",
+      "specular": [
+        0.392157,
+        0.392157,
+        0.392157,
+        1.0
+      ],
+      "specular_power": 50.0,
+      "texture": "Modul11_Wood.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.098039,
+        0.098039,
+        0.098039,
+        1.0
+      ],
+      "diffuse": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "emissive": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "name": "Modul_13_Metal",
+      "specular": [
+        0.898039,
+        0.898039,
+        0.898039,
+        1.0
+      ],
+      "specular_power": 25.0,
+      "texture": "E_Holzbeschlag.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.098039,
+        0.098039,
+        0.098039,
+        1.0
+      ],
+      "diffuse": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "emissive": [
+        0.196078,
+        0.196078,
+        0.196078,
+        1.0
+      ],
+      "name": "Modul_13_Wood",
+      "specular": [
+        0.392157,
+        0.392157,
+        0.392157,
+        1.0
+      ],
+      "specular_power": 50.0,
+      "texture": "Modul11_13_Wood.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.098039,
+        0.098039,
+        0.098039,
+        1.0
+      ],
+      "diffuse": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "emissive": [
+        0.333333,
+        0.333333,
+        0.333333,
+        1.0
+      ],
+      "name": "Modul_15_Stone",
+      "specular": [
+        0.392157,
+        0.392157,
+        0.392157,
+        1.0
+      ],
+      "specular_power": 100.0,
+      "texture": "Modul15.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.098039,
+        0.098039,
+        0.098039,
+        1.0
+      ],
+      "diffuse": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "emissive": [
+        0.364706,
+        0.364706,
+        0.364706,
+        1.0
+      ],
+      "name": "Modul_15_Wood",
+      "specular": [
+        0.392157,
+        0.392157,
+        0.392157,
+        1.0
+      ],
+      "specular_power": 0.0,
+      "texture": "Wood_Panel.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.062745,
+        0.062745,
+        0.062745,
+        1.0
+      ],
+      "diffuse": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "emissive": [
+        0.27451,
+        0.27451,
+        0.27451,
+        1.0
+      ],
+      "name": "Modul_16",
+      "specular": [
+        0.392157,
+        0.392157,
+        0.392157,
+        1.0
+      ],
+      "specular_power": 100.0,
+      "texture": "Modul16.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "diffuse": [
+        0.392157,
+        0.462745,
+        0.521569,
+        1.0
+      ],
+      "emissive": [
+        0.486275,
+        0.52549,
+        0.588235,
+        1.0
+      ],
+      "name": "Rail",
+      "specular": [
+        0.823529,
+        0.823529,
+        0.823529,
+        1.0
+      ],
+      "specular_power": 10.0,
+      "texture": "Rail_Environment.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "diffuse": [
+        0.556863,
+        0.556863,
+        0.556863,
+        1.0
+      ],
+      "emissive": [
+        0.466667,
+        0.466667,
+        0.466667,
+        1.0
+      ],
+      "name": "Rail_Level10",
+      "specular": [
+        0.811765,
+        0.772549,
+        0.345098,
+        1.0
+      ],
+      "specular_power": 10.0,
+      "texture": "Rail_Environment.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.211765,
+        0.062745,
+        0.121569,
+        1.0
+      ],
+      "diffuse": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "emissive": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "name": "SkyLayer",
+      "specular": [
+        0.898039,
+        0.898039,
+        0.898039,
+        1.0
+      ],
+      "specular_power": 25.0,
+      "texture": "SkyLayer.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.211765,
+        0.062745,
+        0.121569,
+        1.0
+      ],
+      "diffuse": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "emissive": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "name": "Sky_Vortex",
+      "specular": [
+        0.898039,
+        0.898039,
+        0.898039,
+        1.0
+      ],
+      "specular_power": 25.0,
+      "texture": "Sky_Vortex.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.098039,
+        0.098039,
+        0.098039,
+        1.0
+      ],
+      "blend": {
+        "destination": "inv_src_alpha",
+        "source": "src_alpha"
+      },
+      "diffuse": [
+        0.392157,
+        0.462745,
+        0.521569,
+        1.0
+      ],
+      "emissive": [
+        0.486275,
+        0.52549,
+        0.588235,
+        1.0
+      ],
+      "name": "Stick_Bottom",
+      "specular": [
+        0.823529,
+        0.823529,
+        0.823529,
+        1.0
+      ],
+      "specular_power": 13.0,
+      "texture": "Stick_Bottom.tga",
+      "texture_format": "argb8888",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.098039,
+        0.098039,
+        0.098039,
+        1.0
+      ],
+      "diffuse": [
+        0.0,
+        0.52549,
+        0.184314,
+        1.0
+      ],
+      "emissive": [
+        0.188235,
+        0.188235,
+        0.188235,
+        1.0
+      ],
+      "name": "Stick_Green",
+      "specular": [
+        0.898039,
+        0.898039,
+        0.898039,
+        1.0
+      ],
+      "specular_power": 30.0
+    },
+    {
+      "ambient": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "diffuse": [
+        0.392157,
+        0.462745,
+        0.521569,
+        1.0
+      ],
+      "emissive": [
+        0.486275,
+        0.52549,
+        0.588235,
+        1.0
+      ],
+      "name": "Stick_Rail",
+      "specular": [
+        0.823529,
+        0.823529,
+        0.823529,
+        1.0
+      ],
+      "specular_power": 10.0,
+      "texture": "Rail_Environment.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.098039,
+        0.098039,
+        0.098039,
+        1.0
+      ],
+      "diffuse": [
+        0.564706,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "emissive": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "name": "Stick_Red",
+      "specular": [
+        0.898039,
+        0.898039,
+        0.898039,
+        1.0
+      ],
+      "specular_power": 10.0
+    },
+    {
+      "ambient": [
+        0.098039,
+        0.098039,
+        0.098039,
+        1.0
+      ],
+      "diffuse": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "emissive": [
+        0.415686,
+        0.415686,
+        0.415686,
+        1.0
+      ],
+      "name": "Stick_Stripes",
+      "specular": [
+        0.898039,
+        0.898039,
+        0.898039,
+        1.0
+      ],
+      "specular_power": 4.0,
+      "texture": "Stick_Stripes.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "diffuse": [
+        0.392157,
+        0.462745,
+        0.521569,
+        1.0
+      ],
+      "emissive": [
+        0.486275,
+        0.52549,
+        0.588235,
+        1.0
+      ],
+      "name": "TowerRail",
+      "specular": [
+        0.823529,
+        0.823529,
+        0.823529,
+        1.0
+      ],
+      "specular_power": 10.0,
+      "texture": "Rail_Environment.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.098039,
+        0.098039,
+        0.098039,
+        1.0
+      ],
+      "diffuse": [
+        0.854902,
+        0.854902,
+        0.854902,
+        1.0
+      ],
+      "emissive": [
+        0.403922,
+        0.403922,
+        0.403922,
+        1.0
+      ],
+      "name": "TowerRoof",
+      "specular": [
+        0.25098,
+        0.25098,
+        0.25098,
+        1.0
+      ],
+      "specular_power": 100.0,
+      "texture": "Tower_Roof.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.098039,
+        0.098039,
+        0.098039,
+        1.0
+      ],
+      "diffuse": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "emissive": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "name": "TowerRoof_Brim",
+      "specular": [
+        0.898039,
+        0.898039,
+        0.898039,
+        1.0
+      ],
+      "specular_power": 25.0,
+      "texture": "Metal_stained.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "diffuse": [
+        0.478431,
+        0.478431,
+        0.478431,
+        1.0
+      ],
+      "emissive": [
+        0.407843,
+        0.407843,
+        0.407843,
+        1.0
+      ],
+      "name": "Tower_Floor_Side",
+      "specular": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "specular_power": 0.0,
+      "texture": "Floor_Side.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "diffuse": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "emissive": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "name": "Tower_Floor_Top_Flat",
+      "specular": [
+        0.313726,
+        0.313726,
+        0.313726,
+        1.0
+      ],
+      "specular_power": 100.0,
+      "texture": "Floor_Top_Flat.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    },
+    {
+      "ambient": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "diffuse": [
+        0.203922,
+        0.203922,
+        0.203922,
+        1.0
+      ],
+      "emissive": [
+        0.72549,
+        0.694118,
+        0.654902,
+        1.0
+      ],
+      "name": "Tower_Floor_Top_Flat_illu",
+      "specular": [
+        0.313726,
+        0.313726,
+        0.313726,
+        1.0
+      ],
+      "specular_power": 100.0,
+      "texture": "Floor_Top_Flat.bmp",
+      "texture_format": "argb1555",
+      "texture_save": "external"
+    }
+  ]
+}
