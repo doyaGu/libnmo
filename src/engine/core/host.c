@@ -1,0 +1,255 @@
+/**
+ * @file host.c
+ * @brief What the host gives the engine: the files it reads, the registry and
+ *        environment the TT blocks read, the current directory and the path
+ *        manager's paths.
+ *
+ * Keys and names compare as Windows compares them, ignoring case (and a key's
+ * trailing backslashes).
+ */
+
+#include "../engine_internal.h"
+
+#include <ctype.h>
+#include <limits.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+void eng_free_host(nmo_engine_t *engine)
+{
+    for (size_t i = 0; i < engine->host.registry.count; i++) {
+        free(engine->host.registry.data[i].section);
+        free(engine->host.registry.data[i].name);
+        free(engine->host.registry.data[i].value);
+    }
+    free(engine->host.registry.data);
+    engine->host.registry.data = NULL;
+    engine->host.registry.count = engine->host.registry.capacity = 0;
+    for (size_t i = 0; i < engine->host.environment.count; i++) {
+        free(engine->host.environment.data[i].name);
+        free(engine->host.environment.data[i].value);
+    }
+    free(engine->host.environment.data);
+    engine->host.environment.data = NULL;
+    engine->host.environment.count = engine->host.environment.capacity = 0;
+    free(engine->host.current_directory);
+    engine->host.current_directory = NULL;
+    for (int c = 0; c < ENG_PATH_CATEGORIES; c++) {
+        for (size_t i = 0; i < engine->host.paths[c].count; i++) {
+            free(engine->host.paths[c].data[i]);
+        }
+        free(engine->host.paths[c].data);
+        engine->host.paths[c].data = NULL;
+        engine->host.paths[c].count = engine->host.paths[c].capacity = 0;
+    }
+}
+
+/* The whole file a name resolves to; NULL when it is not there. */
+unsigned char *eng_read_file(nmo_engine_t *engine, const char *name, size_t *out_size)
+{
+    const char *path = engine->host.resolve_file != NULL
+                           ? engine->host.resolve_file(engine->host.resolve_file_user_data, name)
+                           : NULL;
+    FILE *file = path != NULL ? fopen(path, "rb") : NULL;
+    if (file == NULL) {
+        return NULL;
+    }
+    unsigned char *data = NULL;
+    long size = fseek(file, 0, SEEK_END) == 0 ? ftell(file) : -1;
+    if (size > 0 && size < INT_MAX && fseek(file, 0, SEEK_SET) == 0) {
+        data = (unsigned char *)malloc((size_t)size);
+        if (data != NULL && fread(data, 1, (size_t)size, file) != (size_t)size) {
+            free(data);
+            data = NULL;
+        }
+    }
+    fclose(file);
+    *out_size = data != NULL ? (size_t)size : 0u;
+    return data;
+}
+
+/* ============================================================================
+ * Registry
+ * ============================================================================ */
+
+/* The length of a key without its trailing backslashes. */
+static size_t section_length(const char *section)
+{
+    size_t length = strlen(section);
+    while (length > 0 && section[length - 1] == '\\') {
+        length--;
+    }
+    return length;
+}
+
+static bool same_text(const char *a, size_t a_length, const char *b, size_t b_length)
+{
+    if (a_length != b_length) {
+        return false;
+    }
+    for (size_t i = 0; i < a_length; i++) {
+        if (tolower((unsigned char)a[i]) != tolower((unsigned char)b[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static eng_registry_value_t *registry_find(nmo_engine_t *engine, const char *section,
+                                           const char *name)
+{
+    size_t length = section_length(section);
+    for (size_t i = 0; i < engine->host.registry.count; i++) {
+        eng_registry_value_t *entry = &engine->host.registry.data[i];
+        if (same_text(entry->section, strlen(entry->section), section, length) &&
+            same_text(entry->name, strlen(entry->name), name, strlen(name))) {
+            return entry;
+        }
+    }
+    return NULL;
+}
+
+nmo_status_t nmo_engine_set_registry_value(nmo_engine_t *engine, const char *section,
+                                           const char *name, const char *value)
+{
+    if (engine == NULL || section == NULL || name == NULL || value == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    char *copy = eng_text_copy(value, strlen(value));
+    if (copy == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    eng_registry_value_t *entry = registry_find(engine, section, name);
+    if (entry != NULL) {
+        free(entry->value);
+        entry->value = copy;
+        return NMO_OK;
+    }
+    char *section_copy = eng_text_copy(section, section_length(section));
+    char *name_copy = eng_text_copy(name, strlen(name));
+    if (section_copy == NULL || name_copy == NULL || !ENG_VEC_PUSH(engine->host.registry, entry)) {
+        free(copy);
+        free(section_copy);
+        free(name_copy);
+        return NMO_ERR_NOMEM;
+    }
+    entry->section = section_copy;
+    entry->name = name_copy;
+    entry->value = copy;
+    return NMO_OK;
+}
+
+const char *eng_registry_value(nmo_engine_t *engine, const char *section, const char *name)
+{
+    const eng_registry_value_t *entry =
+        section != NULL && name != NULL ? registry_find(engine, section, name) : NULL;
+    return entry != NULL ? entry->value : NULL;
+}
+
+/* VxConfig reads a DWORD value; false when the value is not a number. */
+bool eng_registry_int(nmo_engine_t *engine, const char *section, const char *name,
+                      int32_t *out)
+{
+    const char *text = eng_registry_value(engine, section, name);
+    char *end = NULL;
+    long value = text != NULL ? strtol(text, &end, 0) : 0;
+    if (text == NULL || end == text || *end != '\0') {
+        return false;
+    }
+    *out = (int32_t)value;
+    return true;
+}
+
+bool eng_registry_float(nmo_engine_t *engine, const char *section, const char *name,
+                        float *out)
+{
+    const char *text = eng_registry_value(engine, section, name);
+    char *end = NULL;
+    float value = text != NULL ? strtof(text, &end) : 0.0f;
+    if (text == NULL || end == text || *end != '\0') {
+        return false;
+    }
+    *out = value;
+    return true;
+}
+
+/* ============================================================================
+ * Environment, current directory and paths
+ * ============================================================================ */
+
+eng_registry_value_t *eng_environment_find(nmo_engine_t *engine, const char *name)
+{
+    for (size_t i = 0; i < engine->host.environment.count; i++) {
+        eng_registry_value_t *entry = &engine->host.environment.data[i];
+        if (same_text(entry->name, strlen(entry->name), name, strlen(name))) {
+            return entry;
+        }
+    }
+    return NULL;
+}
+
+nmo_status_t nmo_engine_set_environment_variable(nmo_engine_t *engine, const char *name,
+                                                 const char *value)
+{
+    if (engine == NULL || name == NULL || value == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    char *copy = eng_text_copy(value, strlen(value));
+    if (copy == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    eng_registry_value_t *entry = eng_environment_find(engine, name);
+    if (entry != NULL) {
+        free(entry->value);
+        entry->value = copy;
+        return NMO_OK;
+    }
+    char *name_copy = eng_text_copy(name, strlen(name));
+    if (name_copy == NULL || !ENG_VEC_PUSH(engine->host.environment, entry)) {
+        free(copy);
+        free(name_copy);
+        return NMO_ERR_NOMEM;
+    }
+    entry->name = name_copy;
+    entry->value = copy;
+    return NMO_OK;
+}
+
+nmo_status_t nmo_engine_set_current_directory(nmo_engine_t *engine, const char *path)
+{
+    if (engine == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    char *copy = path != NULL ? eng_text_copy(path, strlen(path)) : NULL;
+    if (path != NULL && copy == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    free(engine->host.current_directory);
+    engine->host.current_directory = copy;
+    return NMO_OK;
+}
+
+nmo_status_t nmo_engine_add_path(nmo_engine_t *engine, int32_t category, const char *path)
+{
+    if (engine == NULL || path == NULL || category < 0 || category >= ENG_PATH_CATEGORIES) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    char *copy = eng_text_copy(path, strlen(path));
+    char **slot = NULL;
+    if (copy == NULL || !ENG_VEC_PUSH(engine->host.paths[category], slot)) {
+        free(copy);
+        return NMO_ERR_NOMEM;
+    }
+    *slot = copy;
+    return NMO_OK;
+}
+
+const char *nmo_engine_path(const nmo_engine_t *engine, int32_t category, int32_t index)
+{
+    if (engine == NULL || category < 0 || category >= ENG_PATH_CATEGORIES || index < 0 ||
+        (size_t)index >= engine->host.paths[category].count) {
+        return NULL;
+    }
+    return engine->host.paths[category].data[index];
+}
