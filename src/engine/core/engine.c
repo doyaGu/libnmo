@@ -213,6 +213,9 @@ nmo_status_t nmo_engine_create(nmo_workspace_t *workspace,
         engine->options.max_iterations = NMO_ENGINE_DEFAULT_MAX_ITERATIONS;
     }
     engine->random_state = (uint64_t)engine->options.random_seed * 0x9E3779B97F4A7C15ull + 1u;
+    /* CKTimeManager's constructor */
+    engine->time_settings = (nmo_engine_time_settings_t){0x10u | 0x1u, 60.0f, 60.0f, 1.0f, 1.0f,
+                                                         200.0f};
 
     nmo_status_t status = eng_module_open(engine, workspace, NULL, NULL, NULL);
     if (status == NMO_OK) {
@@ -302,6 +305,24 @@ void nmo_engine_set_trace(nmo_engine_t *engine, nmo_engine_trace_fn fn, void *us
 uint64_t nmo_engine_frame(const nmo_engine_t *engine)
 {
     return engine != NULL ? engine->frame : 0u;
+}
+
+void nmo_engine_time_settings(const nmo_engine_t *engine, nmo_engine_time_settings_t *out_settings)
+{
+    if (engine != NULL && out_settings != NULL) {
+        *out_settings = engine->time_settings;
+    }
+}
+
+float nmo_engine_frame_delta(const nmo_engine_t *engine, float elapsed_ms)
+{
+    if (engine == NULL) {
+        return elapsed_ms;
+    }
+    const nmo_engine_time_settings_t *t = &engine->time_settings;
+    float delta = elapsed_ms < t->min_delta ? t->min_delta : elapsed_ms;
+    delta = delta > t->max_delta ? t->max_delta : delta;
+    return delta * t->time_scale;
 }
 
 double nmo_engine_time(const nmo_engine_t *engine)

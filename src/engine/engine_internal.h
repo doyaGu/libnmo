@@ -66,6 +66,7 @@ struct nmo_engine {
     float delta;
     uint64_t random_state;
     eng_profile_t profile;
+    nmo_engine_time_settings_t time_settings; /* CKTimeManager's */
 
     nmo_engine_trace_fn trace;
     void *trace_user_data;

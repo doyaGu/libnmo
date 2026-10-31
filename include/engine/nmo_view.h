@@ -42,6 +42,8 @@ NMO_API nmo_status_t nmo_view_draw(nmo_view_t *view);
 NMO_API void nmo_view_play_sounds(nmo_view_t *view);
 /** Save what the window shows as a PNG file. */
 NMO_API nmo_status_t nmo_view_screenshot(nmo_view_t *view, const char *path);
+/** Wait `ms` milliseconds (a frame rate limit). */
+NMO_API void nmo_view_wait(const nmo_view_t *view, double ms);
 /** Milliseconds since the view opened, by the system clock. */
 NMO_API double nmo_view_time(const nmo_view_t *view);
 

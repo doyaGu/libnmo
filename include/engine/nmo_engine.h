@@ -315,6 +315,25 @@ NMO_API bool nmo_engine_exit_requested(const nmo_engine_t *engine);
 NMO_API nmo_status_t nmo_engine_step(nmo_engine_t *engine, float delta_ms);
 
 NMO_API uint64_t nmo_engine_frame(const nmo_engine_t *engine);
+
+/** CKTimeManager's settings, as Time Settings leaves them (CK's defaults before). */
+typedef struct nmo_engine_time_settings {
+    uint32_t limit_options;    /* CK_FRAMERATE_LIMITS: frames 0x10 synchronized to the screen,
+                                  0x20 free, 0x40 limited; behaviors 0x1 with the frames,
+                                  0x4 limited */
+    float frame_rate_limit;    /* frames a second, when limited */
+    float behavior_rate_limit; /* behavior frames a second, when limited */
+    float time_scale;
+    float min_delta, max_delta; /* ms */
+} nmo_engine_time_settings_t;
+
+NMO_API void nmo_engine_time_settings(const nmo_engine_t *engine,
+                                      nmo_engine_time_settings_t *out_settings);
+/**
+ * CKTimeManager::PreProcess: the frame time a host steps by after
+ * `elapsed_ms` of real time: kept within the minimum and maximum, then scaled.
+ */
+NMO_API float nmo_engine_frame_delta(const nmo_engine_t *engine, float elapsed_ms);
 NMO_API double nmo_engine_time(const nmo_engine_t *engine);
 
 /** CKBEHAVIOR_* flags of a behavior now; 0 when the engine does not hold it. */

@@ -17,6 +17,7 @@
 #define GUID_SOUND_LOAD NMO_GUID(0x02bc537c, 0x147c22e0)
 #define GUID_VOLUME_CONTROL NMO_GUID(0x33613f21, 0x776b185b)
 #define GUID_PLAY_SOUND_INSTANCE NMO_GUID(0x00283a35, 0x38ef6b48)
+#define GUID_TIME_SETTINGS NMO_GUID(0x060a0f8c, 0x09203b5f)
 
 static void input_float(engine_fixture_t *f, nmo_object_id_t pin, float value)
 {
@@ -533,6 +534,38 @@ TEST(engine_media, play_global_animation_loops_over_its_duration)
     fixture_end(&f);
 }
 
+TEST(engine_media, time_settings_bound_and_scale_the_frame_time)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t settings = fixture_block(&f, GUID_TIME_SETTINGS, "Time Settings");
+    ASSERT_TRUE(settings != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, settings, 0), 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, settings, 0), 3);  /* Frame Rate: limit */
+    fixture_input_int(&f, BLOCK_PIN(&f, settings, 1), 30); /* Frame Limit Value */
+    input_float(&f, BLOCK_PIN(&f, settings, 2), 2.0f);     /* Scale Time Value */
+    input_float(&f, BLOCK_PIN(&f, settings, 5), 5.0f);     /* Min Delta Time */
+    input_float(&f, BLOCK_PIN(&f, settings, 6), 100.0f);   /* Max Delta Time */
+    fixture_commit(&f, NULL);
+
+    /* CKTimeManager's defaults until it runs: synchronized to the screen, 1 to 200 ms */
+    nmo_engine_time_settings_t t;
+    nmo_engine_time_settings(f.engine, &t);
+    ASSERT_EQ(0x11u, t.limit_options);
+    ASSERT_FLOAT_EQ(150.0f, nmo_engine_frame_delta(f.engine, 150.0f), 0.0001f);
+    ASSERT_FLOAT_EQ(200.0f, nmo_engine_frame_delta(f.engine, 250.0f), 0.0001f);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+    nmo_engine_time_settings(f.engine, &t);
+    ASSERT_EQ(0x40u, t.limit_options & 0xF0u);
+    ASSERT_FLOAT_EQ(30.0f, t.frame_rate_limit, 0.0001f);
+    /* Within 5 to 100 ms, then twice as long */
+    ASSERT_FLOAT_EQ(10.0f, nmo_engine_frame_delta(f.engine, 1.0f), 0.0001f);
+    ASSERT_FLOAT_EQ(40.0f, nmo_engine_frame_delta(f.engine, 20.0f), 0.0001f);
+    ASSERT_FLOAT_EQ(200.0f, nmo_engine_frame_delta(f.engine, 500.0f), 0.0001f);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_media, wave_player_ends_after_the_sound_length);
 REGISTER_TEST(engine_media, voices_follow_the_sound_settings_and_instances);
@@ -542,4 +575,5 @@ REGISTER_TEST(engine_media, movie_texture_shows_the_decoded_frame_of_its_slot);
 REGISTER_TEST(engine_media, play_animation_progresses_over_its_duration);
 REGISTER_TEST(engine_media, play_global_animation_loops_over_its_duration);
 REGISTER_TEST(engine_media, sound_load_gives_the_sound_its_file_length);
+REGISTER_TEST(engine_media, time_settings_bound_and_scale_the_frame_time);
 TEST_MAIN_END()

@@ -953,6 +953,13 @@ void nmo_view_play_sounds(nmo_view_t *view)
     }
 }
 
+void nmo_view_wait(const nmo_view_t *view, double ms)
+{
+    if (view != NULL && ms > 0.0) {
+        SDL_DelayPrecise((Uint64)(ms * 1.0e6));
+    }
+}
+
 double nmo_view_time(const nmo_view_t *view)
 {
     return view != NULL ? (double)(SDL_GetTicksNS() - view->start) / 1.0e6 : 0.0;

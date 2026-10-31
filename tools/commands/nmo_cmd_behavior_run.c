@@ -43,6 +43,7 @@ typedef struct run_args {
     bool frames_given;    /* -n given: a window closes after that many frames */
     const char *shots;    /* "menu.png@700,...": frames a window saves */
     bool mute;            /* --mute: the window plays no sound */
+    bool real_time;       /* a window with no --delta or --shot: frames take the time that passed */
 } run_args_t;
 
 /* A key held down from frame `first` to frame `last`. */
@@ -769,6 +770,28 @@ static bool run_set_registry(nmo_engine_t *engine, const char *text)
 
 #ifdef NMO_HAS_VIEW
 /* Save the window if the --shot list names frame `frame`: FILE@FRAME,... */
+/*
+ * The player's loop (CGamePlayer, CKTimeManager): wait out the frame rate
+ * limit when the game set one (vertical sync paces the others), then step
+ * by the time that passed, as the time manager bounds and scales it.
+ */
+static float run_real_time_delta(nmo_engine_t *engine, nmo_view_t *view, double *last_frame)
+{
+    nmo_engine_time_settings_t settings;
+    nmo_engine_time_settings(engine, &settings);
+    double now = nmo_view_time(view);
+    if ((settings.limit_options & 0x40u) != 0 && settings.frame_rate_limit > 0.0f) {
+        double wait = 1000.0 / settings.frame_rate_limit - (now - *last_frame);
+        if (wait > 0.0) {
+            nmo_view_wait(view, wait);
+            now = nmo_view_time(view);
+        }
+    }
+    float delta = nmo_engine_frame_delta(engine, (float)(now - *last_frame));
+    *last_frame = now;
+    return delta;
+}
+
 static void run_take_shots(nmo_view_t *view, const char *shots, uint64_t frame)
 {
     for (const char *item = shots; item != NULL && *item != '\0';) {
@@ -870,6 +893,9 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
         (messages != NULL && run_parse_messages(args->messages, messages) != message_count)) {
         status = NMO_ERR_NOMEM;
     }
+#ifdef NMO_HAS_VIEW
+    double last_frame = view != NULL ? nmo_view_time(view) : 0.0;
+#endif
     for (uint32_t f = 0; status == NMO_OK && (f < args->frames || (args->window && !args->frames_given));
          f++) {
 #ifdef NMO_HAS_VIEW
@@ -887,7 +913,13 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
             }
             nmo_engine_set_key(engine, keys[k].key, down);
         }
-        status = nmo_engine_step(engine, args->delta_ms);
+        float delta = args->delta_ms;
+#ifdef NMO_HAS_VIEW
+        if (view != NULL && args->real_time) {
+            delta = run_real_time_delta(engine, view, &last_frame);
+        }
+#endif
+        status = nmo_engine_step(engine, delta);
 #ifdef NMO_HAS_VIEW
         if (status == NMO_OK && view != NULL) {
             status = nmo_view_draw(view);
@@ -1009,6 +1041,7 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
     }
 #endif
     out->delta_ms = nmo_opt_float_or(&vals[OPT_DELTA], 1000.0f / 60.0f);
+    out->real_time = out->window && out->shots == NULL && !vals[OPT_DELTA].present;
     out->script_id = nmo_opt_uint_or(&vals[OPT_SCRIPT], 0u);
     out->max_iterations = nmo_opt_uint_or(&vals[OPT_MAX_ITER], NMO_ENGINE_DEFAULT_MAX_ITERATIONS);
     out->seed = nmo_opt_uint_or(&vals[OPT_SEED], 1u);
