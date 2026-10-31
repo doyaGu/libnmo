@@ -29,7 +29,8 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
   pillar stands under each corner.
 - {"turn": "left" or "right"} -- a square corner as wide as the road.
 - {"trafo": "paper", "stone" or "wood"} -- a ball changer on its pad, on a
-  narrow road.
+  narrow road.  The original levels all turn the ball back to wood before
+  the balloon; the builder warns when a route does not.
 
 Every piece may carry "elements": [{"kind": "P_Box", "at": [along, right]}],
 placed from where the piece starts, along the track and to its right, and
@@ -184,6 +185,7 @@ class Builder:
         self.checkpoints: list[tuple[list[float], tuple[int, int]]] = []
         self.balloon: tuple[list[float], tuple[int, int]] | None = None
         self.trafos: set[str] = set()
+        self.last_ball = "Wood"  # the ball the track hands the player last
         self.points: list[list[float]] = [list(self.start)]
         self.lows: list[float] = []
         self._lay(route["sectors"])
@@ -287,6 +289,7 @@ class Builder:
             self.elements.append((f"P_Trafo_{kind}", sector,
                                   [middle[0], edge + TRAFO_LIFT, middle[1]]))
             self.trafos.add(kind)
+            self.last_ball = kind
             ramp = (h, h, 2 * FUNNEL + NARROW)
             p = at(p, d, 2 * FUNNEL + NARROW)
             self._open(floors, p, d)
@@ -470,6 +473,11 @@ def build_manifest(presets: dict, meshes: dict[str, str], level: Builder, name: 
 def build(route: dict, out: Path, elements: str | None, name: str) -> int:
     out.mkdir(parents=True, exist_ok=True)
     level = Builder(route)
+    if level.last_ball != "Wood":
+        # Every original level turns the ball back to wood before the
+        # balloon; none lets a paper or stone ball reach its bridge.
+        print(f"warning: the ball reaches the balloon as {level.last_ball.lower()}; "
+              "the original levels always turn it back to wood first", file=sys.stderr)
     used_kinds = sorted({kind for kind, _, _ in level.elements})
     meshes = {kind: "marker.obj" for kind in MARKERS + used_kinds}
     if elements:
