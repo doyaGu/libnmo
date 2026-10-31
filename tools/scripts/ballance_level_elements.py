@@ -10,9 +10,12 @@ and the SkyLayer cloud plane every level has, and writes them as <Kind>.obj
 (with .mtl) for a project manifest to use.
 
 The start platform and the checkpoint's floor are floors of the level, not
-the markers: Level_01 has them as A01_Floor_01 under its start and
-A02_Floor_01 under its first checkpoint, each 1.24 below the marker.  They
-are written as Floor_Start.obj and Floor_Checkpoint.obj.
+the markers.  Level_03's are cut out of the floors they are part of: the
+octagon under its start, which opens to a road on its +X side, and the round
+floor with two flame bowls under its first checkpoint, which opens on both X
+sides.  They are written as Floor_Start.obj and Floor_Checkpoint.obj, around
+the marker: placed at the marker's position, unturned, they stand as in
+Level_03.
 
 The meshes are the game's own, so they are written from a local installation
 and not kept with libnmo.  Each is in the object's local space; the original
@@ -39,9 +42,10 @@ ELEMENTS = [
     "P_Modul_41",
 ]
 KINDS = MARKERS + ELEMENTS + ["SkyLayer"]
-# The floors the original start and first checkpoint stand on.
-FLOORS = {"Floor_Start": ("Level_01.NMO", "A01_Floor_01"),
-          "Floor_Checkpoint": ("Level_01.NMO", "A02_Floor_01")}
+# The floors the original start and first checkpoint stand on: (level, floor,
+# marker, half extents along X and Z of the part under the marker).
+FLOORS = {"Floor_Start": ("Level_03.NMO", "A01_Floor_01", "PS_FourFlames_01", 8.07, 9.3),
+          "Floor_Checkpoint": ("Level_03.NMO", "A02_Floor_01", "PC_TwoFlames_01", 4.93, 9.3)}
 
 
 def kind_of(name: str) -> str | None:
@@ -55,6 +59,54 @@ def kind_of(name: str) -> str | None:
 
 def nmo_run(nmo: str, *args: str) -> str:
     return subprocess.run([nmo, *args], check=True, capture_output=True, text=True).stdout
+
+
+def world_matrix(fields: dict) -> list[float]:
+    return [float(n) for n in re.findall(r"-?[\d.]+(?:e-?\d+)?", fields["world_matrix"])]
+
+
+def export_cut(nmo: str, level: Path, mesh_id: int, floor: list[float], marker: list[float],
+               half_x: float, half_z: float, kind: str, out: Path) -> None:
+    """Writes the faces of a floor's mesh within half_x/half_z of the marker,
+    moved so the marker is at the origin."""
+    def point(m: list[float], x: float, y: float, z: float, w: float) -> tuple:
+        return tuple(x * m[i] + y * m[4 + i] + z * m[8 + i] + w * m[12 + i] for i in range(3))
+
+    with tempfile.TemporaryDirectory() as work:
+        nmo_run(nmo, "mesh", "export", "--id", str(mesh_id), "-d", work, str(level))
+        obj = next(Path(work).glob("*.obj"))
+        mtl = next(Path(work).glob("*.mtl"))
+        vs, vts, vns = [], [], []
+        lines = [f"mtllib {kind}.mtl"]
+        material = None
+        for line in obj.read_text(encoding="utf-8").splitlines():
+            tokens = line.split()
+            if not tokens:
+                continue
+            if tokens[0] == "v":
+                x, y, z = point(floor, *map(float, tokens[1:4]), 1.0)
+                vs.append((x - marker[12], y - marker[13], z - marker[14]))
+            elif tokens[0] == "vt":
+                vts.append(tokens[1:3])
+            elif tokens[0] == "vn":
+                vns.append(point(floor, *map(float, tokens[1:4]), 0.0))
+            elif tokens[0] == "usemtl":
+                material = tokens[1]
+            elif tokens[0] == "f":
+                refs = [[int(n) for n in t.split("/")] for t in tokens[1:]]
+                if not all(abs(vs[r[0] - 1][0]) <= half_x and abs(vs[r[0] - 1][2]) <= half_z
+                           for r in refs):
+                    continue
+                if material is not None:
+                    lines.append(f"usemtl {material}")
+                    material = None
+                for v, vt, vn in refs:
+                    lines.append("v %.6f %.6f %.6f" % vs[v - 1])
+                    lines.append("vt %s %s" % tuple(vts[vt - 1]))
+                    lines.append("vn %.6f %.6f %.6f" % vns[vn - 1])
+                lines.append("f " + " ".join(f"{i}/{i}/{i}" for i in range(-len(refs), 0)))
+        (out / f"{kind}.mtl").write_text(mtl.read_text(encoding="utf-8"), encoding="utf-8")
+        (out / f"{kind}.obj").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def export_mesh(nmo: str, level: Path, mesh_id: int, kind: str, out: Path) -> None:
@@ -87,17 +139,19 @@ def main() -> int:
 
     found: dict[str, str] = {}
     by_name = {level.name.lower(): level for level in levels}
-    for kind, (level_name, object_name) in FLOORS.items():
+    for kind, (level_name, floor_name, marker_name, half_x, half_z) in FLOORS.items():
         level = by_name.get(level_name.lower())
         if level is None:
             continue
         exported = json.loads(nmo_run(
             args.nmo, "-f", "json", "object", "export", "--class", "CK3dObject", str(level)))
-        for obj in exported["data"]["objects"]:
-            if obj["name"] == object_name:
-                fields = {f["name"]: f.get("value") for f in obj["fields"]}
-                export_mesh(args.nmo, level, fields["current_mesh"], kind, out)
-                found[kind] = f"{level.name}:{object_name}"
+        objects = {obj["name"]: {f["name"]: f.get("value") for f in obj["fields"]}
+                   for obj in exported["data"]["objects"]}
+        if floor_name in objects and marker_name in objects:
+            floor = objects[floor_name]
+            export_cut(args.nmo, level, floor["current_mesh"], world_matrix(floor),
+                       world_matrix(objects[marker_name]), half_x, half_z, kind, out)
+            found[kind] = f"{level.name}:{floor_name}"
     for level in levels:
         exported = json.loads(nmo_run(
             args.nmo, "-f", "json", "object", "export", "--class", "CK3dObject", str(level)))
