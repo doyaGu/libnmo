@@ -1,8 +1,10 @@
-"""Points for `nmo behavior run --steer`: "X,Z[,Y[,F]]" joined by ";".
+"""Points for `nmo behavior run --steer`: "X,Z[,Y[,F[,NAME,WX,WZ,R]]]"
+joined by ";".
 
 A point with a height Y is passed only once the ball is that high there; one
-with frames F only after it has pushed toward it that long; at either, the
-autopilot stops the ball.  A found path becomes the fewest points that stay
+with frames F only after it has pushed toward it that long; one with an
+object NAME only once that object is within R of WX,WZ (a swing's seat come
+round); at any of them, the autopilot stops the ball.  A found path becomes the fewest points that stay
 within TOLERANCE of it (Ramer-Douglas-Peucker, on X and Z).
 """
 
@@ -22,13 +24,17 @@ class SteerPoint:
     z: float
     y: float | None = None  # the height to wait for
     hold: int = 0           # the frames to keep pushing there
+    wait: tuple[str, float, float, float] | None = None  # an object, where, within
 
     def __str__(self) -> str:
         text = f"{self.x:g},{self.z:g}"
-        if self.y is not None or self.hold:
+        if self.y is not None or self.hold or self.wait:
             text += "," + (f"{self.y:g}" if self.y is not None else "")
-        if self.hold:
-            text += f",{self.hold}"
+        if self.hold or self.wait:
+            text += "," + (f"{self.hold}" if self.hold else "")
+        if self.wait:
+            name, x, z, reach = self.wait
+            text += f",{name},{x:g},{z:g},{reach:g}"
         return text
 
 
@@ -38,8 +44,10 @@ def parse(text: str) -> list[SteerPoint]:
     for part in text.split(";"):
         fields = part.split(",")
         y = float(fields[2]) if len(fields) > 2 and fields[2] else None
+        wait = ((fields[4], float(fields[5]), float(fields[6]), float(fields[7]))
+                if len(fields) > 7 else None)
         points.append(SteerPoint(float(fields[0]), float(fields[1]), y,
-                                 int(fields[3]) if len(fields) > 3 else 0))
+                                 int(fields[3]) if len(fields) > 3 and fields[3] else 0, wait))
     return points
 
 

@@ -155,13 +155,16 @@ static long run_parse_keys(const char *spec, run_key_t *out)
  * (STEER_STOP_REACH of one it must stop at), and, if the point has a height,
  * is at least that high there (it waits to be lifted), and, if it has a frame
  * count, after that many more frames heading for it (it keeps pushing
- * there); after a jump (a respawn), it heads for the point after the nearest
- * one.  Between points it follows the path without
+ * there), and, if it names an object, once that object is within a reach of
+ * a place (it waits for something moving to come by); after a jump (a
+ * respawn), it heads for the point after the nearest one.  Between points it follows the path without
  * stopping, slowing down only as much as the bends ahead need
  * (run_steer_heading).
  */
 typedef struct run_steer {
     float *points; /* x, z, y (-INFINITY: any height), frames to hold */
+    char **waits;  /* each point's object to wait for, or NULL */
+    float *wait_at; /* where it is waited for: x, z, reach */
     long count;
     uint32_t first, last;
     long next;
@@ -188,11 +191,12 @@ static char *run_strndup(const char *text, size_t length);
 #define STEER_TRACK 1.0f  /* how hard it is pulled back onto the path, a unit off */
 
 /* Whether the object must stop at point i: the last, or one with a height to
- * wait for or frames to hold. */
+ * wait for, frames to hold or an object to wait for. */
 static bool run_steer_stops(const run_steer_t *steer, long i)
 {
     const float *point = &steer->points[i * 4];
-    return i + 1 >= steer->count || isfinite(point[2]) || point[3] > 0.0f;
+    return i + 1 >= steer->count || isfinite(point[2]) || point[3] > 0.0f ||
+           steer->waits[i] != NULL;
 }
 
 /* The speed point i may be passed at: STEER_FAST where the path goes on
@@ -293,6 +297,31 @@ static void run_steer_heading(const run_steer_t *steer, float x, float z, float 
 
 /* Parse "X,Z[,Y[,F]];...@FRAME[-FRAME]" into `out` (points left NULL when only checking);
  * Y may be left empty ("X,Z,,F"). */
+/* A number that is all of text[0..length). */
+static bool run_steer_number(const char *text, size_t length, float *out)
+{
+    char *end = NULL;
+    float value = strtof(text, &end);
+    if (length == 0 || end != text + length || !isfinite(value)) {
+        return false;
+    }
+    *out = value;
+    return true;
+}
+
+static void run_free_steer(run_steer_t *steer)
+{
+    for (long i = 0; steer->waits != NULL && i < steer->count; i++) {
+        free(steer->waits[i]);
+    }
+    free(steer->waits);
+    free(steer->wait_at);
+    free(steer->points);
+    steer->waits = NULL;
+    steer->wait_at = NULL;
+    steer->points = NULL;
+}
+
 static bool run_parse_steer(const char *spec, run_steer_t *out)
 {
     const char *at = strrchr(spec, '@');
@@ -315,52 +344,73 @@ static bool run_parse_steer(const char *spec, run_steer_t *out)
         count += *q == ';';
     }
     count++;
-    float *points = out != NULL ? (float *)calloc((size_t)count * 4u, sizeof(float)) : NULL;
-    if (out != NULL && points == NULL) {
-        return false;
+    run_steer_t steer = {.count = count, .first = first, .last = last};
+    if (out != NULL) {
+        steer.points = (float *)calloc((size_t)count * 4u, sizeof(float));
+        steer.waits = (char **)calloc((size_t)count, sizeof(char *));
+        steer.wait_at = (float *)calloc((size_t)count * 3u, sizeof(float));
+        if (steer.points == NULL || steer.waits == NULL || steer.wait_at == NULL) {
+            run_free_steer(&steer);
+            return false;
+        }
     }
     const char *q = spec;
     for (long i = 0; i < count; i++) {
-        char *end = NULL;
-        float x = strtof(q, &end);
-        if (end == q || *end != ',') {
-            free(points);
+        /* X,Z[,Y[,F[,NAME,X,Z,REACH]]] */
+        const char *stop = memchr(q, ';', (size_t)(at - q));
+        if (stop == NULL) {
+            stop = at;
+        }
+        const char *fields[8];
+        size_t lengths[8];
+        int n = 0;
+        for (const char *f = q;;) {
+            const char *comma = memchr(f, ',', (size_t)(stop - f));
+            const char *end = comma != NULL ? comma : stop;
+            if (n == 8) {
+                run_free_steer(&steer);
+                return false;
+            }
+            fields[n] = f;
+            lengths[n] = (size_t)(end - f);
+            n++;
+            if (comma == NULL) {
+                break;
+            }
+            f = comma + 1;
+        }
+        float x = 0.0f, z = 0.0f, y = -INFINITY, hold = 0.0f, wait[3] = {0.0f, 0.0f, 0.0f};
+        bool ok = (n == 2 || n == 3 || n == 4 || n == 8) &&
+                  run_steer_number(fields[0], lengths[0], &x) &&
+                  run_steer_number(fields[1], lengths[1], &z) &&
+                  (n < 3 || lengths[2] == 0 || run_steer_number(fields[2], lengths[2], &y)) &&
+                  (n < 4 || (n == 8 && lengths[3] == 0) ||
+                   (run_steer_number(fields[3], lengths[3], &hold) && hold >= 0.0f));
+        for (int k = 0; ok && n == 8 && k < 3; k++) {
+            ok = run_steer_number(fields[5 + k], lengths[5 + k], &wait[k]);
+        }
+        if (!ok || (n == 8 && (lengths[4] == 0 || wait[2] <= 0.0f))) {
+            run_free_steer(&steer);
             return false;
         }
-        q = end + 1;
-        float z = strtof(q, &end);
-        float y = -INFINITY, hold = 0.0f;
-        if (end != q && *end == ',') {
-            q = end + 1;
-            if (*q == ',') {
-                end = (char *)q; /* no height */
-            } else {
-                y = strtof(q, &end);
-            }
-            if (end != q - 1 && *end == ',') {
-                const char *h = end + 1;
-                hold = strtof(h, &end);
-                if (end == h || hold < 0.0f) {
-                    free(points);
+        if (out != NULL) {
+            steer.points[i * 4] = x;
+            steer.points[i * 4 + 1] = z;
+            steer.points[i * 4 + 2] = y;
+            steer.points[i * 4 + 3] = hold;
+            if (n == 8) {
+                steer.waits[i] = run_strndup(fields[4], lengths[4]);
+                if (steer.waits[i] == NULL) {
+                    run_free_steer(&steer);
                     return false;
                 }
-                q = h;
+                memcpy(&steer.wait_at[i * 3], wait, sizeof(wait));
             }
         }
-        if (end == q || (*end != ';' && end != at)) {
-            free(points);
-            return false;
-        }
-        q = end + 1;
-        if (points != NULL) {
-            points[i * 4] = x;
-            points[i * 4 + 1] = z;
-            points[i * 4 + 2] = y;
-            points[i * 4 + 3] = hold;
-        }
+        q = stop + 1;
     }
     if (out != NULL) {
-        *out = (run_steer_t){.points = points, .count = count, .first = first, .last = last};
+        *out = steer;
     }
     return true;
 }
@@ -380,6 +430,20 @@ static nmo_object_id_t run_steer_object(const nmo_engine_t *engine, const char *
         item = end != NULL ? end + 1 : NULL;
     }
     return 0;
+}
+
+/* Whether point i's object to wait for, if it has one, is within its reach
+ * of its place, on X and Z. */
+static bool run_steer_waited(const nmo_engine_t *engine, const run_steer_t *steer, long i)
+{
+    if (steer->waits[i] == NULL) {
+        return true;
+    }
+    nmo_object_id_t id = nmo_engine_object_named(engine, steer->waits[i], NMO_CID_3DENTITY);
+    float m[16];
+    const float *at = &steer->wait_at[i * 3];
+    return id != 0 && nmo_engine_entity_world_matrix(engine, id, m) &&
+           hypotf(m[12] - at[0], m[14] - at[1]) <= at[2];
 }
 
 static void run_steer_frame(nmo_engine_t *engine, run_steer_t *steer, uint32_t frame)
@@ -417,7 +481,8 @@ static void run_steer_frame(nmo_engine_t *engine, run_steer_t *steer, uint32_t f
                hypotf(steer->points[steer->next * 4] - x,
                       steer->points[steer->next * 4 + 1] - z) <
                    (run_steer_stops(steer, steer->next) ? STEER_STOP_REACH : STEER_REACH) &&
-               m[13] >= steer->points[steer->next * 4 + 2]) {
+               m[13] >= steer->points[steer->next * 4 + 2] &&
+               run_steer_waited(engine, steer, steer->next)) {
             if ((float)steer->held < steer->points[steer->next * 4 + 3]) {
                 steer->held++;
                 break;
@@ -1355,7 +1420,7 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
         }
     }
     free(keys);
-    free(steer.points);
+    run_free_steer(&steer);
     if (steer.log != NULL) {
         fclose(steer.log);
     }
@@ -1423,8 +1488,9 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
          "Keys held down: KEY@FRAME[-FRAME],... (names like Space, or scan codes)"},
         {"--steer", NULL, NMO_OPT_STRING,
          "From FRAME (to FRAME), roll --steer-object through the points with the arrow keys, "
-         "waiting at a point with a Y until it is that high, and with an F for F more frames: "
-         "X,Z[,Y[,F]];...@FRAME[-FRAME] (X,Z,,F: no height)"},
+         "waiting at a point with a Y until it is that high, with an F for F more frames, and "
+         "with a NAME until that object is within REACH of WX,WZ: "
+         "X,Z[,Y[,F[,NAME,WX,WZ,REACH]]];...@FRAME[-FRAME] (empty Y or F: none)"},
         {"--steer-object", NULL, NMO_OPT_STRING,
          "The objects --steer rolls: NAME,NAME,... (the first one shown)"},
         {"--steer-log", NULL, NMO_OPT_STRING,

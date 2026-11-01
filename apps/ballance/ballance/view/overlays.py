@@ -64,7 +64,8 @@ class Label(Text):
 
 def route_overlays(route: list[list[float]], floor_y: Callable[[float, float], float]) -> list:
     """A route_points.json: the path along its points, numbered; the points
-    the ball stops at (a height to be lifted to, frames to hold) ringed."""
+    the ball stops at (a height to be lifted to, frames to hold, an object to
+    wait for) ringed."""
     out, points = [], []
     for i, point in enumerate(route):
         x, z = point[0], point[1]
@@ -73,7 +74,9 @@ def route_overlays(route: list[list[float]], floor_y: Callable[[float, float], f
         stop = len(point) > 2
         out.append(Dot(p, STOP if stop else ROUTE, 6 if stop else 3))
         label = str(i)
-        if len(point) > 3 and point[3]:
+        if len(point) > 4:
+            label += f" wait {point[4]}"
+        elif len(point) > 3 and point[3]:
             label += f" hold {point[3]:g}"
         elif len(point) > 2:
             label += f" wait y {point[2]:g}"
