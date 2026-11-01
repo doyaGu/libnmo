@@ -19,8 +19,9 @@ from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, 
                              LIFT_TOP, LIFT_WALLS, PILLAR_INSET, PUSHERS_ASIDE, PUSHERS_LENGTH,
                              PUSHERS_MODULES, PUSHERS_PATH, RAIL_FALL, RAIL_OVERHANG, SACK_ABOVE,
                              STONEBOX_LENGTH, STONEBOX_MODULE, STONEBOX_PATH, STONEBOX_RISE,
-                             STONEBOX_TRAFO, SWITCH_AREA, SWITCH_CROSS, SWITCH_HOLD, SWITCH_MODULE,
-                             SWITCH_SPUR, SWITCH_TARGET, TRAFO_LIFT)
+                             STONEBOX_TRAFO, SWING_ABOVE, SWING_FAR, SWING_GO, SWING_HALF,
+                             SWING_SEAT, SWING_WAIT, SWITCH_AREA, SWITCH_CROSS, SWITCH_HOLD,
+                             SWITCH_MODULE, SWITCH_SPUR, SWITCH_TARGET, TRAFO_LIFT)
 from ..kit.floors import CELL, NARROW, RISE, WALL
 from ..kit.pieces import channel, funnel, pad, strip
 from ..kit.rails import ABOVE_V, BEND_RADIUS, Ring, bend
@@ -203,6 +204,8 @@ def lay_module(layout: Layout, sector: int, part: Sector, piece: dict,
         return lay_flaps(layout, sector, part, piece, track)
     if kind == "P_Modul_03":
         return lay_lift(layout, sector, part, piece, track)
+    if kind == "P_Modul_08":
+        return lay_swing(layout, sector, part, piece, track)
     if track.width != NARROW or track.floor != "road":
         raise ValueError("a module stands on a narrow road")
     fewest, most = MODULES[kind]
@@ -326,6 +329,35 @@ def lay_arms(layout: Layout, sector: int, part: Sector, piece: dict, track: Trac
     layout.points.append(list(track.p))
     track.floor = "module"
     return h, h, ARMS_LENGTH
+
+
+def lay_swing(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:
+    """{"module": "P_Modul_08"}: the swing over the gap in its flat road, as
+    Level_09 has them (see SWING_* in ballance.game.measures), the road
+    entered and left through funnels from and onto a narrow road."""
+    if track.width != NARROW or track.floor not in ("road", "trafo"):
+        raise ValueError("the swing is entered from a narrow road")
+    check_ball(layout, "P_Modul_08")
+    p, d, h = track.p, track.d, track.h
+    edge = h + RISE
+    layout.open(layout.floors, p, d)
+    part.extras.append((funnel, at(p, d, FUNNEL), back_of(d), edge, None))
+    module = at(p, d, FUNNEL + SWING_HALF)
+    layout.modules.append(("P_Modul_08", sector, [module[0], edge - SWING_ABOVE, module[1]],
+                           turn_of(d)))
+    layout.module_floors.append(layout.modules[-1])
+    wait = at(p, d, FUNNEL + SWING_HALF - SWING_WAIT)
+    for along, reach in (SWING_FAR, SWING_GO):
+        seat = at(p, d, FUNNEL + SWING_HALF + along)
+        layout.points.append([wait[0], wait[1], h - 20.0, 0, SWING_SEAT, seat[0], seat[1], reach])
+    length = FUNNEL + 2 * SWING_HALF
+    part.extras.append((funnel, at(p, d, length), d, edge, None))
+    track.p = at(p, d, length + FUNNEL)
+    layout.floors = part.grid(track.p)
+    layout.open(layout.floors, track.p, d)
+    layout.points.append(list(track.p))
+    track.floor = "module"
+    return h, h, length + FUNNEL
 
 
 def lay_lift(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:

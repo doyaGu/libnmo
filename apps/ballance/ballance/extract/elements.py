@@ -78,6 +78,7 @@ SNAP = {
     "Floor_Modul_17_Far": ([11.21, 8.71, 13.71], [5.43, 6.13], [8.72, 1.28]),
     "Floor_Modul_19": ([7.53, 14.12, 9.12, 2.47, 3.32, 8.34], [0.0, 0.7], [2.5, 7.5, 12.5]),
     "Floor_Stopper_19": ([9.12, 8.12, 2.32, 3.32], [0.53, 1.03], [2.5, 7.5, 12.5]),
+    "Floor_Modul_08": ([12.5, 10.0, 7.5], [3.5, 1.5], [0.0, 2.5]),
     # Level_07's platform lies 0.07 off the lift's middle, across
     "Floor_Modul_03": ([10.95, 15.94, 20.94, 25.94, 30.94, 35.94], [1.884, 6.884],
                        [(0.0, 0.1), (2.5, 0.1), (7.5, 0.1)]),
@@ -222,6 +223,8 @@ CUTS: list[Cut] = [
               (-14.2, 7.6, -5.1, 0.1, -12.6, 7.6)),
     ModuleCut("Floor_Stopper_19", "Level_09.NMO", "A01_Floor_Stopper", "P_Modul_19_01",
               (-14.2, 7.6, -1.1, -0.4, -12.6, 7.6)),
+    ModuleCut("Floor_Modul_08", "Level_09.NMO", "A03_Floor_01", "P_Modul_08_01",
+              (-12.6, 12.6, -3.6, 1.6, -2.6, 2.6)),
     ModuleCut("Floor_Modul_03", "Level_07.NMO", "A05_Floor_03", "P_Modul_03_01",
               (-36.0, -10.9, 1.8, 7.0, -7.7, 7.7)),
     ModuleCut("Floor_Stopper_17", "Level_03.NMO", "A01_Floor_Stopper_01", "P_Modul_17_01",

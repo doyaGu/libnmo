@@ -9,14 +9,14 @@ from ..game.measures import (DRAWBRIDGE_FLOORS, DRAWBRIDGE_HINGE, SACK_STEP, SLA
                              STONEBOX_LENGTH, STONEBOX_MODULE, SWITCH_CROSS)
 
 # The modules that stand on the track, and how many in a row.  Each but the
-# switch, the stone on a box, the pushers, the rotating arm, the flaps and
-# the lift (which come with floors of their own) and the bridges (plates and
+# switch, the stone on a box, the pushers, the rotating arm, the flaps, the
+# lift and the swing (which come with floors of their own) and the bridges (plates and
 # seesaw, over a gap narrow roads run to) stands between funnels that lead a
 # narrow road onto it at the road's edge height and off it again.
-MODULES = {"P_Modul_01": (2, 2), "P_Modul_03": (1, 1), "P_Modul_17": (1, 1),
-           "P_Modul_19": (1, 1), "P_Modul_25": (1, 1), "P_Modul_26": (1, 4),
-           "P_Modul_29": (1, 1), "P_Modul_30": (1, 1), "P_Modul_34": (1, 1),
-           "P_Modul_37": (1, 1), "P_Modul_41": (2, 8)}
+MODULES = {"P_Modul_01": (2, 2), "P_Modul_03": (1, 1), "P_Modul_08": (1, 1),
+           "P_Modul_17": (1, 1), "P_Modul_19": (1, 1), "P_Modul_25": (1, 1),
+           "P_Modul_26": (1, 4), "P_Modul_29": (1, 1), "P_Modul_30": (1, 1),
+           "P_Modul_34": (1, 1), "P_Modul_37": (1, 1), "P_Modul_41": (2, 8)}
 
 # The modules only some balls get past: (those balls, what happens with
 # another).
@@ -28,6 +28,8 @@ NEEDS_BALL = {
     "P_Modul_17": ({"Wood", "Stone"}, "can't turn {kind}'s arm; a wood or stone ball does"),
     "P_Modul_03": ({"Wood"}, "can't ride {kind} up: stone sinks it and falls off, paper "
                              "can't push its walls off (in Level_12 too); a wood ball does"),
+    "P_Modul_08": ({"Wood", "Paper"}, "falls off {kind}'s seat (in Level_09 too); a wood or "
+                                      "paper ball rides it across"),
     "P_Modul_19": ({"Wood", "Stone"}, "can't push {kind}'s flap over (in Level_09 too); "
                                       "a wood or stone ball does"),
 }
@@ -56,6 +58,10 @@ class ModuleFloor:
 
 
 MODULE_FLOORS = {
+    # in the stand-in, the road either side of the gap
+    "P_Modul_08": [
+        ModuleFloor("Floor_Modul_08", STONE_FLOOR_GROUPS,
+                    [(-12.5, -7.5, -3.5, 1.5, -2.5, 2.5), (7.5, 12.5, -3.5, 1.5, -2.5, 2.5)])],
     # in the stand-in, the platform the lift rises to
     "P_Modul_03": [
         ModuleFloor("Floor_Modul_03", STONE_FLOOR_GROUPS,

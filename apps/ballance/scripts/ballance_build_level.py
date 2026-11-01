@@ -37,6 +37,10 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
   far side, whose flat middle a funnel turns back into a narrow road, 56.81
   on from where the first funnel begins.  Only a wood ball gets up, in the
   originals too.
+- {"module": "P_Modul_08"} -- the swing, as Level_09 has it: a seat hung
+  over a gap 15 long in a flat road 25 long, which funnels lead onto and off
+  a narrow road; the ball rides the seat across from the near end of its
+  swing.  A stone ball falls off it, in Level_09 too.
 - {"module": "P_Modul_19"} -- the flaps, as Level_09 has them: an axle
   across two roads 15 apart, each with a gap the flap over it bridges.  A
   funnel leads the road onto its flat road to the gap, where the flap
@@ -123,7 +127,8 @@ start's and checkpoints' floors, and there is no scenery and no sky.
 The output directory gets manifest.json, the OBJ meshes it names, and
 route_points.json, the points along the middle of the track from the start to
 the balloon, for driving a ball along it; a point over a fan has a third
-value, the height to wait there for.  Turn it into a level file with:
+value, the height to wait there for, and one before a swing four more, the
+seat to wait for and where, within a reach (`nmo behavior run --steer`).  Turn it into a level file with:
 
     nmo patch apply --project <out>/manifest.json -o <out>/Level_01.NMO
 """

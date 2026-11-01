@@ -166,6 +166,18 @@ LIFT_ENTRY, LIFT_BELOW, LIFT_TOP, LIFT_EXIT, LIFT_RIDE = 15.87, 10.76, 6.884, 35
 LIFT_WALLS = [(-7.78, 7.78), (0.0, 11.0), (7.78, 7.78), (11.0, 0.0), (7.78, -7.78),
               (0.0, -11.0), (-7.78, -7.78)]
 
+# P_Modul_08, the swing (Level_09's P_Modul_08_01): a seat hung from a frame
+# over a gap 15 long in a flat road, pushed across the road every half
+# second.  The road's flat top is 1.5 above the module and runs 12.5 either
+# side of it; Level_09 reaches it from a trafo's pad, here a funnel.
+SWING_HALF, SWING_ABOVE = 12.5, 1.5
+# The seat swings along the road, a little under 5 either way.  The ball
+# crosses on it from the near end of its swing: it waits 14 before the
+# module until the seat has been within 0.8 of 4.3 beyond it and swung back
+# to within 1 of 1 beyond it, then rolls on, reaching the gap as the seat
+# does.  (along, reach)
+SWING_SEAT, SWING_WAIT, SWING_FAR, SWING_GO = "P_Modul_08_Schaukel", 14.0, (4.3, 0.8), (1.0, 1.0)
+
 # --- Scenery ---------------------------------------------------------------
 
 # A pillar under a floor stands 2.5 in from its corner, its top 5 below the
