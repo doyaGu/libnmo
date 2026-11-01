@@ -38,6 +38,13 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
 - {"module": "P_Modul_26", "count": n} -- n (1 to 4) sacks swinging over a
   flat road at a narrow road's edge height, 15 apart, between funnels, as
   levels 8 to 13 hang them.
+- {"module": "P_Modul_37", "side": "left" or "right"} -- the switch, as
+  Level_05 has it: the track crosses a gap between two blocks, and a stone
+  ball rolled down a spur onto the target beside it tips a plank across the
+  gap.  The piece is a square area the track enters and leaves straight on
+  toward the gap, and a spur from its side that turns twice to end at the
+  target; the ball goes down the spur, pushes the target until the plank
+  falls, comes back and goes on.  A wood ball does not tip it.
 - {"module": "P_Modul_41", "count": n} -- a row of n (2 to 8) slabs on axles
   across the track, between funnels, as levels 7 to 11 lay them.  Only a
   paper ball crosses them: a wood or stone ball tips them and falls.
@@ -83,7 +90,8 @@ import shutil
 import sys
 from pathlib import Path
 
-from ballance_floors import CELL, NARROW, RISE, WALL, Floors, Mesh, funnel, pad, strip
+from ballance_floors import (CELL, NARROW, RISE, WALL, Floors, Mesh, channel, funnel, pad,
+                             strip)
 from ballance_rails import ABOVE_V, BEND_RADIUS, Rails, Ring, bend
 
 PRESETS = Path(__file__).resolve().parent.parent / "data" / "level_materials.json"
@@ -149,9 +157,18 @@ FAN_REACH = 16.0
 # above it; the levels hang them 10 to 16 apart over flat roads at a narrow
 # road's edge height (Floor_Top_Flat squares), 2.68 below the module, turned
 # every other one the other way.
-MODULES = {"P_Modul_25": (1, 1), "P_Modul_26": (1, 4), "P_Modul_41": (2, 8)}  # how many in a row
+MODULES = {"P_Modul_25": (1, 1), "P_Modul_26": (1, 4), "P_Modul_37": (1, 1),
+           "P_Modul_41": (2, 8)}  # how many in a row
 SLAB, SLAB_GAP = 5.0, 1.0
 SACK_STEP, SACK_ABOVE = 15.0, 2.68
+# P_Modul_37, the switch (Level_05's P_Modul_37_02): its plank, hinged at a
+# target block 5 long, falls across a gap 10 long onto the middle of a cross
+# piece whose two blocks funnel down to narrow roads 9.75 from its middle, so
+# that the track crossing it runs on over the plank.  The target block lies
+# 12.5 to 17.5 to the side of the track, the module 13.77; a stone ball
+# pushing the target from the far side tips the plank (about 300 frames).
+SWITCH_CROSS, SWITCH_MODULE, SWITCH_TARGET = 9.75, 13.77, 17.5
+SWITCH_AREA, SWITCH_SPUR, SWITCH_HOLD = 15.0, 32.5, 500
 
 
 def module_layout(kind: str, count: int) -> tuple[float, list[float], bool]:
@@ -166,7 +183,13 @@ def module_layout(kind: str, count: int) -> tuple[float, list[float], bool]:
 # The floors cut out for each module (ballance_level_elements.py), with their
 # groups, and the stand-in boxes (x0, x1, y0, y1, z0, z1 in the module's frame)
 # written without them.
-MODULE_FLOORS = {"P_Modul_25": [
+MODULE_FLOORS = {
+    "P_Modul_37": [
+    ("Floor_Modul_37", STONE_FLOOR_GROUPS, [(-16.27, -11.27, -5, 0, -9.75, -4.75),
+                                            (-16.27, -11.27, -5, 0, 4.75, 9.75),
+                                            (-1.27, 3.73, -5, 0, -2.5, 2.5)]),
+    ("Floor_Stopper_37", ["Phys_FloorStopper"], [(-16.27, -11.27, -1, -0.5, -4.75, 4.75)])],
+    "P_Modul_25": [
     ("Floor_Modul_25", STONE_FLOOR_GROUPS, [(-15, -10, -5, 0, -2.5, 2.5), (0, 5, -5, 0, -2.5, 2.5)]),
     ("Floor_Stopper_25", ["Phys_FloorStopper"], [(-10, -9, -1, -0.5, -2.5, 2.5)])]}
 
@@ -426,6 +449,10 @@ class Builder:
             self.points.append(list(middle))
             self.points.append(list(p))
             self.floor = "trafo"
+        elif piece.get("module") == "P_Modul_37":
+            p, d = self._switch(sector, extras, piece, p, d, h)
+            ramp = (h, h, SWITCH_AREA)
+            self.floor = "module"
         elif "module" in piece:
             kind = piece["module"]
             if kind not in MODULES:
@@ -485,6 +512,72 @@ class Builder:
             self.elements.append((kind, sector, [x, floor + ELEMENT_LIFT[kind], z]))
         return p, d, h, width
 
+    def _switch(self, sector: int, extras: list, piece: dict, p: tuple[float, float],
+                d: tuple[int, int], h: float) -> tuple[tuple[float, float], tuple[int, int]]:
+        """Lays P_Modul_37 out (see SWITCH_*); returns where the track goes on."""
+        if self.floor != "road":
+            raise ValueError("the switch is entered from a narrow road")
+        if self.last_ball != "Stone":
+            print(f"warning: a {self.last_ball.lower()} ball does not tip P_Modul_37's plank; "
+                  "a stone ball does", file=sys.stderr)
+        side = piece.get("side")
+        if side not in ("left", "right"):
+            raise ValueError("P_Modul_37 needs a side for its spur, left or right")
+        sign = 1 if side == "right" else -1
+        out = (right_of(d)[0] * sign, right_of(d)[1] * sign)  # toward the spur
+        back_out = (-out[0], -out[1])
+
+        def at_(a: float, r: float) -> tuple[float, float]:
+            return at(p, d, a, sign * r)
+
+        def axis(t: tuple[int, int]) -> str:
+            return "x" if t[0] else "z"
+
+        floors, edge = self.floors, h + RISE
+        half = SWITCH_AREA / 2
+        cross = SWITCH_AREA + 10.0 + SWITCH_CROSS  # the cross piece's middle, along
+        # the area, the track on to the cross piece, and the spur's first leg and
+        # turn, on the grid behind
+        floors.area(*self._rect(p, d, SWITCH_AREA, SWITCH_AREA), h)
+        floors.road(*self._rect(at_(SWITCH_AREA, 0), d, 10.0, NARROW), h, along=axis(d))
+        self._open(floors, at_(SWITCH_AREA + 10.0, 0), d)
+        leg = SWITCH_SPUR - NARROW / 2 - half
+        floors.road(*self._rect(at_(half, half), out, leg, NARROW), h, along=axis(out))
+        floors.road(*self._rect(at_(half, half + leg), out, NARROW, NARROW), h,
+                    along=axis(out))
+        grid_end = half + NARROW / 2 + CELL * math.floor(
+            (cross - NARROW / 2 - half - NARROW / 2) / CELL)
+        floors.road(*self._rect(at_(half + NARROW / 2, SWITCH_SPUR), d,
+                                grid_end - half - NARROW / 2, NARROW), h, along=axis(d))
+        self._open(floors, at_(grid_end, SWITCH_SPUR), d)
+        # off the grid, up to the spur's second turn
+        turn = cross - NARROW / 2
+        extras.append((channel, at_(grid_end, SWITCH_SPUR), d, turn - grid_end, edge))
+        spur = Floors(origin=at_(turn, SWITCH_SPUR - NARROW / 2))
+        self.sectors[-1].append(spur)
+        spur.road(*self._rect(at_(turn, SWITCH_SPUR), d, NARROW, NARROW), h, along=axis(d))
+        self._open(spur, at_(turn, SWITCH_SPUR), d)
+        last = SWITCH_SPUR - NARROW / 2 - (SWITCH_TARGET + FUNNEL)
+        spur.road(*self._rect(at_(cross, SWITCH_SPUR - NARROW / 2), back_out, last, NARROW), h,
+                  along=axis(out))
+        self._open(spur, at_(cross, SWITCH_TARGET + FUNNEL), back_out)
+        extras.append((funnel, at_(cross, SWITCH_TARGET), out, edge, None))
+        where = at_(cross, SWITCH_MODULE)
+        self.modules.append(("P_Modul_37", sector, [where[0], edge, where[1]], turn_of(out)))
+        # down the spur, push the target, back, and on over the plank
+        corner1, corner2 = at_(half, SWITCH_SPUR), at_(cross, SWITCH_SPUR)
+        target = at_(cross, SWITCH_TARGET - 4.0)
+        self.points += [list(at_(half, 0)), list(corner1), list(corner2),
+                        [target[0], target[1], h - 10.0, SWITCH_HOLD],
+                        list(corner2), list(corner1), list(at_(half, 0)),
+                        list(at_(cross, 0))]
+        p = at_(cross + SWITCH_CROSS, 0)
+        self.floors = Floors(origin=p)
+        self.sectors[-1].append(self.floors)
+        self._open(self.floors, p, d)
+        self.points.append(list(p))
+        return p, d
+
     @staticmethod
     def _floor_heights(floors: Floors) -> list[float]:
         return [p.y0 for p in floors.pieces] + [p.y1 for p in floors.pieces]
@@ -533,7 +626,7 @@ class Builder:
             for floors in sector:
                 floors.build(mesh)
             for function, *args in extras:
-                if function in (funnel, strip):
+                if function in (funnel, strip, channel):
                     (x, z), *rest = args
                     function(mesh, x, z, *rest)
                 else:
