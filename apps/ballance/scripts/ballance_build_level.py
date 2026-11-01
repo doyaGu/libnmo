@@ -28,6 +28,8 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
   middle of the opposite side, or of the side to the left or right.  A
   pillar stands under each corner.
 - {"turn": "left" or "right"} -- a square corner as wide as the road.
+- {"plank": true} -- the arched wood plank over a gap 10 long, as Level_03
+  has it, with funnels flattening a narrow road to its ends and back.
 - {"trafo": "paper", "stone" or "wood"} -- a ball changer on its pad, on a
   narrow road.  The original levels all turn the ball back to wood before
   the balloon; the builder warns when a route does not.

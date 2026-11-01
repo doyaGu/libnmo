@@ -54,7 +54,8 @@ def build(route: dict, out: Path, elements: Path | None, name: str) -> int:
     kinds = sorted({kind for kind, _, _ in layout.elements} |
                    {kind for kind, _, _, _ in layout.modules})
     try:
-        assets = Assets(out, kinds, [kind for kind, _, _, _ in layout.modules], elements)
+        assets = Assets(out, kinds,
+                        [kind for kind, _, _, _ in layout.modules + layout.module_floors], elements)
     except MissingMesh as error:
         print(error, file=sys.stderr)
         return 2

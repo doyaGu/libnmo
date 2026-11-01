@@ -166,6 +166,12 @@ LIFT_ENTRY, LIFT_BELOW, LIFT_TOP, LIFT_EXIT, LIFT_RIDE = 15.87, 10.76, 6.884, 35
 LIFT_WALLS = [(-7.78, 7.78), (0.0, 11.0), (7.78, 7.78), (11.0, 0.0), (7.78, -7.78),
               (0.0, -11.0), (-7.78, -7.78)]
 
+# Modul27, the arched wood plank (Level_03's A04_Modul_27; 19 in the
+# originals, never two in a row): 10 long and 5 wide, without walls, over a
+# gap 10 long between flat floors at a narrow road's edge height, its ends
+# flush with them 1.25 below its middle, 1.22 under its top.
+PLANK_LENGTH, PLANK_BELOW = 10.0, 1.25
+
 # P_Modul_08, the swing (Level_09's P_Modul_08_01): a seat hung from a frame
 # over a gap 15 long in a flat road, pushed across the road every half
 # second.  The road's flat top is 1.5 above the module and runs 12.5 either

@@ -48,6 +48,8 @@ LEVEL_GROUPS = [
 
 # A stone floor: physics, stone rolling and hit sounds, the ball's shadow.
 STONE_FLOOR_GROUPS = ["Phys_Floors", "Sound_RollID_01", "Sound_HitID_01", "Shadow"]
+# A wood floor: physics, wood rolling and hit sounds, the ball's shadow.
+WOOD_FLOOR_GROUPS = ["Phys_Floors", "Sound_RollID_02", "Sound_HitID_02", "Shadow"]
 # Rails: physics and the metal sounds, no shadow, as the originals' have.
 RAIL_GROUPS = ["Phys_FloorRails", "Sound_RollID_03", "Sound_HitID_03"]
 # Stoppers collide with the ball only, and make no sound.

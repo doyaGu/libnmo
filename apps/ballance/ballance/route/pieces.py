@@ -16,12 +16,13 @@ from ..core.geometry import across, at, axis_of, back_of, left_of, rect, side_of
 from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, ARMS_PATH, BRIDGES,
                              ELEMENT_LIFT, FAN_BELOW, FAN_REACH, FLAPS_COUNTERWEIGHT, FLAPS_LENGTH,
                              FLAPS_MODULE, FUNNEL, LIFT_BELOW, LIFT_ENTRY, LIFT_EXIT, LIFT_RIDE,
-                             LIFT_TOP, LIFT_WALLS, PILLAR_INSET, PUSHERS_ASIDE, PUSHERS_LENGTH,
-                             PUSHERS_MODULES, PUSHERS_PATH, RAIL_FALL, RAIL_OVERHANG, SACK_ABOVE,
-                             STONEBOX_LENGTH, STONEBOX_MODULE, STONEBOX_PATH, STONEBOX_RISE,
-                             STONEBOX_TRAFO, SWING_ABOVE, SWING_FAR, SWING_GO, SWING_HALF,
-                             SWING_SEAT, SWING_WAIT, SWITCH_AREA, SWITCH_CROSS, SWITCH_HOLD,
-                             SWITCH_MODULE, SWITCH_SPUR, SWITCH_TARGET, TRAFO_LIFT)
+                             LIFT_TOP, LIFT_WALLS, PILLAR_INSET, PLANK_BELOW, PLANK_LENGTH,
+                             PUSHERS_ASIDE, PUSHERS_LENGTH, PUSHERS_MODULES, PUSHERS_PATH,
+                             RAIL_FALL, RAIL_OVERHANG, SACK_ABOVE, STONEBOX_LENGTH, STONEBOX_MODULE,
+                             STONEBOX_PATH, STONEBOX_RISE, STONEBOX_TRAFO, SWING_ABOVE, SWING_FAR,
+                             SWING_GO, SWING_HALF, SWING_SEAT, SWING_WAIT, SWITCH_AREA,
+                             SWITCH_CROSS, SWITCH_HOLD, SWITCH_MODULE, SWITCH_SPUR, SWITCH_TARGET,
+                             TRAFO_LIFT)
 from ..kit.floors import CELL, NARROW, RISE, WALL
 from ..kit.pieces import channel, funnel, pad, strip
 from ..kit.rails import ABOVE_V, BEND_RADIUS, Ring, bend
@@ -148,6 +149,29 @@ def lay_turn(layout: Layout, sector: int, part: Sector, piece: dict, track: Trac
     layout.points.append(list(track.p))
     track.floor = "turn"
     return track.h, track.h, width
+
+
+def lay_plank(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:
+    """{"plank": true}: the arched wood plank over a gap, as Level_03 has it
+    (see PLANK_* in ballance.game.measures), between funnels that flatten a
+    narrow road to it and back."""
+    if track.width != NARROW:
+        raise ValueError("the wood plank lies on a narrow road")
+    p, d, h = track.p, track.d, track.h
+    edge = h + RISE
+    layout.open(layout.floors, p, d)
+    part.extras.append((funnel, at(p, d, FUNNEL), back_of(d), edge, None))
+    middle = at(p, d, FUNNEL + PLANK_LENGTH / 2)
+    layout.module_floors.append(("Modul27", sector, [middle[0], edge + PLANK_BELOW, middle[1]],
+                                 turn_of(d)))
+    length = FUNNEL + PLANK_LENGTH
+    part.extras.append((funnel, at(p, d, length), d, edge, None))
+    track.p = at(p, d, length + FUNNEL)
+    layout.floors = part.grid(track.p)
+    layout.open(layout.floors, track.p, d)
+    layout.points.append(list(track.p))
+    track.floor = "road"
+    return h, h, length + FUNNEL
 
 
 def lay_trafo(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:
@@ -524,6 +548,7 @@ PIECES: dict[str, Callable] = {
     "area": lay_area,
     "turn": lay_turn,
     "trafo": lay_trafo,
+    "plank": lay_plank,
     "module": lay_module,
 }
 

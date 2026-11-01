@@ -4,7 +4,7 @@ come with."""
 from __future__ import annotations
 
 from ..core.obj import Box
-from ..game.catalog import STONE_FLOOR_GROUPS, STOPPER_GROUPS
+from ..game.catalog import STONE_FLOOR_GROUPS, STOPPER_GROUPS, WOOD_FLOOR_GROUPS
 from ..game.measures import (DRAWBRIDGE_FLOORS, DRAWBRIDGE_HINGE, SACK_STEP, SLAB, SLAB_GAP,
                              STONEBOX_LENGTH, STONEBOX_MODULE, SWITCH_CROSS)
 
@@ -58,6 +58,8 @@ class ModuleFloor:
 
 
 MODULE_FLOORS = {
+    # not a module: the arched wood plank, a floor of its own
+    "Modul27": [ModuleFloor("Modul27", WOOD_FLOOR_GROUPS, [(-5, 5, -2.78, -0.03, -2.5, 2.5)])],
     # in the stand-in, the road either side of the gap
     "P_Modul_08": [
         ModuleFloor("Floor_Modul_08", STONE_FLOOR_GROUPS,
