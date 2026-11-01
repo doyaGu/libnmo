@@ -49,6 +49,7 @@ and not kept with libnmo.
 
 from __future__ import annotations
 
+import math
 import re
 import tempfile
 from pathlib import Path
@@ -64,6 +65,9 @@ KINDS = MARKERS + ELEMENT_KINDS + ["SkyLayer"]
 # both signs; a value given with its own tolerance, (value, tolerance), uses
 # that one.
 SNAP_TOLERANCE = 0.06
+# The walls closing a cut floor: as deep as the floors' (ballance.kit.floors),
+# one texture repeat every 5.
+WALL_DEPTH, REPEAT_UNITS = 5.0, 5.0
 SNAP = {
     "Floor_Start": ([7.39], [1.26, 3.74], [2.5, 1.3]),
     "Floor_Checkpoint": ([4.92], [1.26, 3.74], [2.5, 0.87]),
@@ -171,8 +175,11 @@ class ModuleCut(Cut):
         if self.floor not in objects or self.module not in objects:
             return None
         faces, mtl = levels.faces(path, objects[self.floor])
-        write_faces(in_frame(faces, matrix_of(objects[self.module]["world_matrix"]), self.box),
-                    [mtl], self.origin, self.kind, out)
+        matrix = matrix_of(objects[self.module]["world_matrix"])
+        cut = in_frame(faces, matrix, self.box)
+        if self.kind.startswith("Floor_"):
+            cut += closing_walls(cut)
+        write_faces(cut, [mtl], self.origin, self.kind, out)
         return f"{path.name}:{self.floor}"
 
 
@@ -362,6 +369,62 @@ def near(faces: list[Face], center: tuple[float, float], half_x: float,
     return [(m, corners) for m, corners in faces
             if all(abs(p[0] - center[0]) <= half_x and abs(p[2] - center[1]) <= half_z
                    for p, _, _ in corners)]
+
+
+def closing_walls(cut: list[Face]) -> list[Face]:
+    """Walls hanging WALL_DEPTH below the edges of a cut floor's top that
+    end it with no wall: where the cut ends a floor the level carried on
+    (in the same object or another); Floor_Side, facing away from the top
+    face, one texture repeat every 5 as the floors' walls.  Where a piece
+    of the track goes on from such an edge, its wall is hidden under it."""
+    def key(p):
+        return tuple(round(c, 2) for c in p)
+
+    def edges(face):
+        corners = [p for p, _, _ in face[1]]
+        return [tuple(sorted((key(corners[k]), key(corners[(k + 1) % 3])))) for k in range(3)]
+
+    def is_top(face):
+        return abs(face[1][0][2][1]) > 0.3
+
+    used: dict[tuple, list] = {}
+    walled = set()
+    for face in cut:
+        for e in edges(face):
+            if is_top(face):
+                used.setdefault(e, []).append(face)
+            else:
+                walled.add(e)
+    walls = []
+    for e, faces in used.items():
+        if len(faces) != 1 or e in walled:
+            continue
+        (ax, ay, az), (bx, by, bz) = e
+        corners = [p for p, _, _ in faces[0][1]]
+        cx, cz = sum(p[0] for p in corners) / 3, sum(p[2] for p in corners) / 3
+        # outward: square to the edge, away from the face
+        nx, nz = bz - az, -(bx - ax)
+        length = math.hypot(nx, nz)
+        if length < 1e-6:
+            continue
+        nx, nz = nx / length, nz / length
+        if nx * ((ax + bx) / 2 - cx) + nz * ((az + bz) / 2 - cz) < 0:
+            nx, nz = -nx, -nz
+        normal = (nx, 0.0, nz)
+        along = lambda x, z: (x * -nz + z * nx) / REPEAT_UNITS
+        quad = [((ax, ay, az), (0.0, along(ax, az))), ((bx, by, bz), (0.0, along(bx, bz))),
+                ((bx, by - WALL_DEPTH, bz), (1.0, along(bx, bz))),
+                ((ax, ay - WALL_DEPTH, az), (1.0, along(ax, az)))]
+        for tri in ((0, 1, 2), (0, 2, 3)):
+            pts = [quad[i] for i in tri]
+            (p0, _), (p1, _), (p2, _) = pts
+            u = [p1[i] - p0[i] for i in range(3)]
+            v = [p2[i] - p0[i] for i in range(3)]
+            facing = (u[1] * v[2] - u[2] * v[1]) * nx + (u[0] * v[1] - u[1] * v[0]) * nz
+            if facing < 0:
+                pts = [pts[0], pts[2], pts[1]]
+            walls.append(("Floor_Side", [(p, uv, normal) for p, uv in pts]))
+    return walls
 
 
 def in_frame(faces: list[Face], matrix: list[float], box: tuple) -> list[Face]:
