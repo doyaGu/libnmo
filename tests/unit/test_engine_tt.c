@@ -292,7 +292,7 @@ TEST(engine_tt, register_array_registers_once_and_clear_forgets)
     unsigned char plain[512];
     for (size_t i = 0; i < w.size; i++) {
         unsigned char r = (unsigned char)((w.data[i] << 3) | (w.data[i] >> 5));
-        plain[i] = (unsigned char)-(r ^ 0xAFu);
+        plain[i] = (unsigned char)(0u - (r ^ 0xAFu));
     }
     ASSERT_TRUE(memcmp(plain, "A", 2) == 0);
     int32_t chunk_size = 0;

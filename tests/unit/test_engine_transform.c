@@ -443,12 +443,12 @@ TEST(engine_transform, tt_extra_circles_flies_away_and_homes_in)
     nmo_object_id_t center = fixture_create(&f, NMO_CID_3DENTITY, "P_Extra_Point_Ball0");
     ASSERT_TRUE(center != 0 && place_entity(&f, center, 0.0f, 0.0f, 0.0f, extra) != 0);
     ASSERT_TRUE(scripted_child(&f, "Center Frame", center, 0.0f, 0.0f, 0.0f) != 0);
-    nmo_object_id_t small[2] = {fixture_create(&f, NMO_CID_3DENTITY, "P_Extra_Point_Ball1"),
+    nmo_object_id_t balls[2] = {fixture_create(&f, NMO_CID_3DENTITY, "P_Extra_Point_Ball1"),
                                 fixture_create(&f, NMO_CID_3DENTITY, "P_Extra_Point_Ball2")};
-    ASSERT_TRUE(small[0] != 0 && place_entity(&f, small[0], 2.0f, 0.0f, 0.0f, extra) != 0);
-    ASSERT_TRUE(small[1] != 0 && place_entity(&f, small[1], 0.0f, 2.0f, 0.0f, extra) != 0);
-    ASSERT_TRUE(scripted_child(&f, "Frame 1", small[0], 2.0f, 0.0f, 0.0f) != 0);
-    ASSERT_TRUE(scripted_child(&f, "Frame 2", small[1], 0.0f, 2.0f, 0.0f) != 0);
+    ASSERT_TRUE(balls[0] != 0 && place_entity(&f, balls[0], 2.0f, 0.0f, 0.0f, extra) != 0);
+    ASSERT_TRUE(balls[1] != 0 && place_entity(&f, balls[1], 0.0f, 2.0f, 0.0f, extra) != 0);
+    ASSERT_TRUE(scripted_child(&f, "Frame 1", balls[0], 2.0f, 0.0f, 0.0f) != 0);
+    ASSERT_TRUE(scripted_child(&f, "Frame 2", balls[1], 0.0f, 2.0f, 0.0f) != 0);
     /* Where the hits show */
     nmo_object_id_t hits[2] = {fixture_create(&f, NMO_CID_3DENTITY, "Hit 1"),
                                fixture_create(&f, NMO_CID_3DENTITY, "Hit 2")};
@@ -487,12 +487,12 @@ TEST(engine_transform, tt_extra_circles_flies_away_and_homes_in)
     ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 1000.0f));
     ASSERT_TRUE(nmo_engine_object_is_visible(f.engine, center));
     ASSERT_TRUE(nmo_engine_object_is_visible(f.engine, floor));
-    ASSERT_TRUE(nmo_engine_object_is_visible(f.engine, small[0]));
+    ASSERT_TRUE(nmo_engine_object_is_visible(f.engine, balls[0]));
     float m[16];
-    world_matrix(&f, small[0], m);
+    world_matrix(&f, balls[0], m);
     ASSERT_FLOAT_EQ(0.0f, m[12], 0.0001f);
     ASSERT_FLOAT_EQ(2.0f, fabsf(m[14]), 0.0001f); /* about Y */
-    world_matrix(&f, small[1], m);
+    world_matrix(&f, balls[1], m);
     ASSERT_FLOAT_EQ(2.0f, fabsf(m[12]), 0.0001f); /* about Z */
     ASSERT_FLOAT_EQ(0.0f, m[13], 0.0001f);
     ASSERT_EQ(0u, runs(&f, outputs[0]));
@@ -511,12 +511,12 @@ TEST(engine_transform, tt_extra_circles_flies_away_and_homes_in)
     ASSERT_EQ(0u, runs(&f, outputs[1]));
     ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 1000.0f)); /* both within the collision */
     ASSERT_EQ(1u, runs(&f, outputs[1]));
-    ASSERT_FALSE(nmo_engine_object_is_visible(f.engine, small[0]));
-    ASSERT_FALSE(nmo_engine_object_is_visible(f.engine, small[1]));
+    ASSERT_FALSE(nmo_engine_object_is_visible(f.engine, balls[0]));
+    ASSERT_FALSE(nmo_engine_object_is_visible(f.engine, balls[1]));
     read_value(&f, BLOCK_POUT(&f, block, 0), &current, sizeof(current));
     ASSERT_EQ(2, current);
     float hit[16];
-    world_matrix(&f, small[0], m);
+    world_matrix(&f, balls[0], m);
     world_matrix(&f, hits[0], hit);
     ASSERT_FLOAT_EQ(m[12], hit[12], 0.0001f);
     ASSERT_FLOAT_EQ(m[13], hit[13], 0.0001f);
@@ -533,8 +533,8 @@ TEST(engine_transform, tt_extra_circles_flies_away_and_homes_in)
     move_to(&f, ball, 100.0f);
     ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 1000.0f));
     ASSERT_TRUE(nmo_engine_object_is_visible(f.engine, center));
-    ASSERT_TRUE(nmo_engine_object_is_visible(f.engine, small[0]));
-    ASSERT_TRUE(nmo_engine_object_is_visible(f.engine, small[1]));
+    ASSERT_TRUE(nmo_engine_object_is_visible(f.engine, balls[0]));
+    ASSERT_TRUE(nmo_engine_object_is_visible(f.engine, balls[1]));
     move_to(&f, ball, 0.0f);
     ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 1000.0f));
     ASSERT_EQ(2u, runs(&f, outputs[0]));
