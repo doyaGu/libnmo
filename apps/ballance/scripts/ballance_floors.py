@@ -113,6 +113,7 @@ class Floors:
         self.pieces: list[Piece] = []
         self.cells: dict[tuple[int, int], int] = {}
         self.open: set[tuple[int, int, int]] = set()
+        self.docks: dict[tuple[int, int, int], Piece] = {}
 
     def _grid(self, value: float, offset: float) -> int:
         cells = (value - offset) / CELL
@@ -170,6 +171,22 @@ class Floors:
         else:
             raise ValueError("an open edge runs along X or Z")
 
+    def dock(self, x0: float, z0: float, x1: float, z1: float) -> None:
+        """Opens the outline between the two points, two cells, to a rail, as
+        if a narrow road met the floor there: a narrow road's V runs on to its
+        end, an area or a wide road opens through a gap.  The wall under it
+        follows the V, its bottom level 5 below the edges."""
+        i0, i1 = sorted((self._grid(x0, self.ox), self._grid(x1, self.ox)))
+        j0, j1 = sorted((self._grid(z0, self.oz), self._grid(z1, self.oz)))
+        if i0 == i1 and j1 - j0 == 2:
+            road = Piece("road", (i0, j0, i0 + 1, j1), 0.0, 0.0, 0, False)
+            self.docks.update(((0, i0, j), road) for j in range(j0, j1))
+        elif j0 == j1 and i1 - i0 == 2:
+            road = Piece("road", (i0, j0, i1, j0 + 1), 0.0, 0.0, 1, False)
+            self.docks.update(((1, i, j0), road) for i in range(i0, i1))
+        else:
+            raise ValueError("a rail meets a floor across two cells, along X or Z")
+
     # An edge is (0, i, j): from vertex (i, j) to (i, j + 1), between cells
     # (i - 1, j) and (i, j); or (1, i, j): from (i, j) to (i + 1, j), between
     # cells (i, j - 1) and (i, j).
@@ -181,14 +198,23 @@ class Floors:
 
     def _join(self, edge: tuple[int, int, int]) -> tuple[str, Piece | None]:
         """What the edge is: none, outline, open (left to another piece),
-        inside, gap (where a road opens into an area, or into a road of
-        another width: the narrower road's two middle cells) or seam (raised
+        dock (where a narrow road ends at a rail), inside, gap (where a road
+        opens into an area, or into a road of another width: the narrower
+        road's two middle cells; or a rail into either) or seam (raised
         beside a gap); with the road whose middle a gap or seam is set by."""
         a, b = (self.cells.get(c) for c in self._sides(edge))
         if a is None and b is None:
             return "none", None
         if a is None or b is None:
-            return ("open" if edge in self.open else "outline"), None
+            if edge in self.open:
+                return "open", None
+            rail = self.docks.get(edge)
+            if rail is None:
+                return "outline", None
+            piece = self.pieces[a if b is None else b]
+            if piece.kind == "road" and piece.axis == edge[0] and piece.width() == rail.width():
+                return "dock", None
+            return "gap", rail
         if a == b:
             return "inside", None
         pa, pb = self.pieces[a], self.pieces[b]
@@ -240,6 +266,8 @@ class Floors:
                                   ((1, i, j), (0, -1)), ((1, i, j + 1), (0, 1))):
                 if self._edge_kind(edge) == "outline":
                     self._wall(mesh, edge, outward)
+                elif edge in self.docks:
+                    self._wall(mesh, edge, outward, level=True)
 
     def _cell(self, mesh: Mesh, i: int, j: int, piece: Piece) -> None:
         corners = [(i, j), (i + 1, j), (i + 1, j + 1), (i, j + 1)]
@@ -343,19 +371,23 @@ class Floors:
         for tri, uv in triangles:
             mesh.triangle(material, UP, *[(xyz[k], uv[k]) for k in tri])
 
-    def _wall(self, mesh: Mesh, edge: tuple[int, int, int], outward: tuple[int, int]) -> None:
+    def _wall(self, mesh: Mesh, edge: tuple[int, int, int], outward: tuple[int, int],
+              level: bool = False) -> None:
+        """A wall WALL deep under the edge; with level, its bottom is level,
+        WALL below the edge's higher end."""
         kind, i, j = edge
         ends = [(i, j), (i, j + 1)] if kind == 0 else [(i, j), (i + 1, j)]
         top = [self._height(*e) for e in ends]
+        bottom = [max(top) - WALL] * 2 if level else [y - WALL for y in top]
         corners = []
         for (ei, ej), y in zip(ends, top):
             x, z = self._point(ei, ej)
             along = (z if kind == 0 else x) / REPEAT
             corners.append(((x, y, z), (0.0, along)))
-        for (ei, ej), y in reversed(list(zip(ends, top))):
+        for (ei, ej), y, low in reversed(list(zip(ends, top, bottom))):
             x, z = self._point(ei, ej)
             along = (z if kind == 0 else x) / REPEAT
-            corners.append(((x, y - WALL, z), (WALL / REPEAT, along)))
+            corners.append(((x, low, z), ((y - low) / REPEAT, along)))
         mesh.quad("Floor_Side", (float(outward[0]), 0.0, float(outward[1])), *corners)
 
 
