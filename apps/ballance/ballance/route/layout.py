@@ -100,8 +100,9 @@ class Layout:
             edge = track.h + RISE
             self.open(self.floors, p, d)
             last = index == len(sectors)
+            # the last road flattens under the balloon's planks, its end walled
             sector.extras.append((funnel, at(p, d, FUNNEL), back_of(d), edge,
-                                  None if last else CHECKPOINT_GAP))
+                                  None if last else CHECKPOINT_GAP, last))
             if last:
                 where = at(p, d, FUNNEL + BALLOON_REACH)
                 self.balloon = ([where[0], edge - BALLOON_BELOW_ROAD, where[1]], d)

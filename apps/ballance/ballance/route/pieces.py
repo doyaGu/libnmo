@@ -285,12 +285,12 @@ def lay_plank(layout: Layout, sector: int, part: Sector, piece: dict, track: Tra
     p, d, h = track.p, track.d, track.h
     edge = h + RISE
     layout.open(layout.floors, p, d)
-    part.extras.append((funnel, at(p, d, FUNNEL), back_of(d), edge, None))
+    part.extras.append((funnel, at(p, d, FUNNEL), back_of(d), edge, None, True))
     middle = at(p, d, FUNNEL + PLANK_LENGTH / 2)
     layout.module_floors.append(("Modul27", sector, [middle[0], edge + PLANK_BELOW, middle[1]],
                                  turn_of(d)))
     length = FUNNEL + PLANK_LENGTH
-    part.extras.append((funnel, at(p, d, length), d, edge, None))
+    part.extras.append((funnel, at(p, d, length), d, edge, None, True))
     track.p = at(p, d, length + FUNNEL)
     layout.floors = part.grid(track.p)
     layout.open(layout.floors, track.p, d)
@@ -309,12 +309,12 @@ def lay_walkway(layout: Layout, sector: int, part: Sector, piece: dict,
     p, d, h = track.p, track.d, track.h
     edge = h + RISE
     layout.open(layout.floors, p, d)
-    part.extras.append((funnel, at(p, d, FUNNEL), back_of(d), edge, None))
+    part.extras.append((funnel, at(p, d, FUNNEL), back_of(d), edge, None, True))
     middle = at(p, d, FUNNEL + WALKWAY_LENGTH / 2)
     layout.module_floors.append(("Modul42", sector, [middle[0], edge - WALKWAY_ABOVE, middle[1]],
                                  turn_of(d)))
     length = FUNNEL + WALKWAY_LENGTH
-    part.extras.append((funnel, at(p, d, length), d, edge, None))
+    part.extras.append((funnel, at(p, d, length), d, edge, None, True))
     track.p = at(p, d, length + FUNNEL)
     layout.floors = part.grid(track.p)
     layout.open(layout.floors, track.p, d)
@@ -360,7 +360,7 @@ def lay_jump(layout: Layout, sector: int, part: Sector, piece: dict, track: Trac
     p, d, h = track.p, track.d, track.h
     edge = h + RISE
     layout.open(layout.floors, p, d)
-    part.extras.append((funnel, at(p, d, FUNNEL), back_of(d), edge, None))
+    part.extras.append((funnel, at(p, d, FUNNEL), back_of(d), edge, None, True))
     start = FUNNEL + JUMP_HALF  # the jump's middle
     middle = at(p, d, start)
     layout.module_floors.append(("Modul02", sector, [middle[0], edge - JUMP_ABOVE, middle[1]],
@@ -602,7 +602,7 @@ def lay_lift(layout: Layout, sector: int, part: Sector, piece: dict, track: Trac
     p, d, h = track.p, track.d, track.h
     edge = h + RISE
     layout.open(layout.floors, p, d)
-    part.extras.append((funnel, at(p, d, FUNNEL), back_of(d), edge, None))
+    part.extras.append((funnel, at(p, d, FUNNEL), back_of(d), edge, None, True))
     module = at(p, d, LIFT_ENTRY)
     y = edge + LIFT_BELOW
     layout.modules.append(("P_Modul_03", sector, [module[0], y, module[1]], turn_of(back_of(d))))

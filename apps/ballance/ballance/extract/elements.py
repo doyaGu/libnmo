@@ -176,9 +176,11 @@ class ModuleCut(Cut):
             return None
         faces, mtl = levels.faces(path, objects[self.floor])
         matrix = matrix_of(objects[self.module]["world_matrix"])
-        cut = in_frame(faces, matrix, self.box)
         if self.kind.startswith("Floor_"):
+            cut = clipped_in_frame(faces, matrix, self.box)
             cut += closing_walls(cut)
+        else:
+            cut = in_frame(faces, matrix, self.box)
         write_faces(cut, [mtl], self.origin, self.kind, out)
         return f"{path.name}:{self.floor}"
 
@@ -371,6 +373,53 @@ def near(faces: list[Face], center: tuple[float, float], half_x: float,
                    for p, _, _ in corners)]
 
 
+SLIVER = 0.15  # what is left of a face this close to a box's side is dropped
+
+
+def clipped_in_frame(faces: list[Face], matrix: list[float], box: tuple) -> list[Face]:
+    """The faces in a box of an object's frame, as in_frame(), but those
+    across the box's sides cut at them rather than left out (all but the
+    slivers less than SLIVER deep), so that a wall the box ends goes on to
+    its side instead of breaking off with a triangle missing."""
+    planes = [(axis, bound, sign) for axis in range(3)
+              for bound, sign in ((box[2 * axis], 1.0), (box[2 * axis + 1], -1.0))]
+    out = []
+    for m, corners in faces:
+        poly = [(into(matrix, p, 1.0), uv, into(matrix, n, 0.0)) for p, uv, n in corners]
+        cut_by = []
+        for axis, bound, sign in planes:
+            inside = [sign * (p[axis] - bound) >= 0 for p, _, _ in poly]
+            if all(inside):
+                continue
+            cut_by.append((axis, bound, sign))
+            poly = _clip(poly, axis, bound, sign)
+            if len(poly) < 3:
+                break
+        if len(poly) < 3:
+            continue
+        if any(max(sign * (p[axis] - bound) for p, _, _ in poly) < SLIVER
+               for axis, bound, sign in cut_by):
+            continue
+        for k in range(1, len(poly) - 1):
+            out.append((m, [poly[0], poly[k], poly[k + 1]]))
+    return out
+
+
+def _clip(poly: list, axis: int, bound: float, sign: float) -> list:
+    """The part of a polygon (corners of position, uv, normal) on the side
+    of the plane at bound on axis that sign points to (Sutherland-Hodgman)."""
+    out = []
+    for k, a in enumerate(poly):
+        b = poly[(k + 1) % len(poly)]
+        da, db = sign * (a[0][axis] - bound), sign * (b[0][axis] - bound)
+        if da >= 0:
+            out.append(a)
+        if (da >= 0) != (db >= 0):
+            t = da / (da - db)
+            out.append(tuple(tuple(x + (y - x) * t for x, y in zip(u, v)) for u, v in zip(a, b)))
+    return out
+
+
 def closing_walls(cut: list[Face]) -> list[Face]:
     """Walls hanging WALL_DEPTH below the edges of a cut floor's top that
     end it with no wall: where the cut ends a floor the level carried on
@@ -379,6 +428,9 @@ def closing_walls(cut: list[Face]) -> list[Face]:
     of the track goes on from such an edge, its wall is hidden under it."""
     def key(p):
         return tuple(round(c, 2) for c in p)
+
+    # each corner as it is, so that the walls snap as the faces do
+    exact = {key(p): p for face in cut for p, _, _ in face[1]}
 
     def edges(face):
         corners = [p for p, _, _ in face[1]]
@@ -399,7 +451,7 @@ def closing_walls(cut: list[Face]) -> list[Face]:
     for e, faces in used.items():
         if len(faces) != 1 or e in walled:
             continue
-        (ax, ay, az), (bx, by, bz) = e
+        (ax, ay, az), (bx, by, bz) = exact[e[0]], exact[e[1]]
         corners = [p for p, _, _ in faces[0][1]]
         cx, cz = sum(p[0] for p in corners) / 3, sum(p[2] for p in corners) / 3
         # outward: square to the edge, away from the face
