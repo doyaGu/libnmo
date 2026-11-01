@@ -17,6 +17,9 @@ sides.  They are written as Floor_Start.obj and Floor_Checkpoint.obj, around
 the marker: placed at the marker's position, unturned, they stand as in
 Level_03.  So is the fan's housing (Floor_Modul_18.obj), the 5 by 5 pit with
 a grille the fan blows through, set into the middle of an area 0.35 above it.
+The drawbridge's (P_Modul_25) two flat blocks and its stopper lip are cut out
+in the module's own frame (Floor_Modul_25.obj, Floor_Stopper_25.obj): placed
+and turned as the module, they stand as in Level_03.
 
 The scenery is cut out of Level_01: one of the pillars beside its start, with
 the shaft that fades out below it, as Pillar.obj; the lantern tower on top of
@@ -54,6 +57,17 @@ KINDS = MARKERS + ELEMENTS + ["SkyLayer"]
 FLOORS = {"Floor_Start": ("Level_03.NMO", "A01_Floor_01", "PS_FourFlames_01", 8.07, 9.3),
           "Floor_Checkpoint": ("Level_03.NMO", "A02_Floor_01", "PC_TwoFlames_01", 4.93, 9.3),
           "Floor_Modul_18": ("Level_03.NMO", "A05_Floor_02", "P_Modul_18_03", 2.52, 2.52)}
+# The floors a module (P_Modul_*) needs, in the module's own frame: (level,
+# floor object, module, the box of the module's frame they lie in: x0, x1, y0,
+# y1, z0, z1).  P_Modul_25's plank stands at the edge of a gap 10 long; the
+# ball rolls along its -X from a 5-long flat block over the gap to another,
+# where it falls onto a stopper lip (an object of its own).
+MODULE_FLOORS = {
+    "Floor_Modul_25": ("Level_03.NMO", "A05_Floor_02", "P_Modul_25_03",
+                       (-15.1, 5.1, -5.1, 0.1, -2.6, 2.6)),
+    "Floor_Stopper_25": ("Level_03.NMO", "A01_Floor_Stopper_01", "P_Modul_25_03",
+                         (-15.1, 5.1, -5.1, 0.1, -2.6, 2.6)),
+}
 # The scenery: one pillar of Level_01's start (its shaft fading below, too),
 # the lantern tower on top of it, and a striped pole by its balloon: (level,
 # objects, a point near its middle on X and Z, how far it reaches from there).
@@ -145,6 +159,22 @@ def cut(faces: list, center: tuple[float, float], half_x: float, half_z: float) 
                    for p, _, _ in corners)]
 
 
+def local_faces(faces: list, matrix: list[float], box: tuple) -> list:
+    """The faces lying in box, in the frame of an object placed by matrix
+    (unscaled), with their normals turned into it."""
+    def into(p: tuple, w: float) -> tuple:
+        d = [p[i] - matrix[12 + i] * w for i in range(3)]
+        return tuple(sum(d[k] * matrix[4 * i + k] for k in range(3)) for i in range(3))
+
+    x0, x1, y0, y1, z0, z1 = box
+    out = []
+    for m, corners in faces:
+        moved = [(into(p, 1.0), uv, into(n, 0.0)) for p, uv, n in corners]
+        if all(x0 <= p[0] <= x1 and y0 <= p[1] <= y1 and z0 <= p[2] <= z1 for p, _, _ in moved):
+            out.append((m, moved))
+    return out
+
+
 def export_mesh(nmo: str, level: Path, mesh_id: int, kind: str, out: Path) -> None:
     with tempfile.TemporaryDirectory() as work:
         nmo_run(nmo, "mesh", "export", "--id", str(mesh_id), "-d", work, str(level))
@@ -191,6 +221,20 @@ def main() -> int:
             write_faces(cut(faces, (marker[12], marker[14]), half_x, half_z), [mtl],
                         (marker[12], marker[13], marker[14]), kind, out)
             found[kind] = f"{level.name}:{floor_name}"
+    for kind, (level_name, floor_name, module_name, box) in MODULE_FLOORS.items():
+        level = by_name.get(level_name.lower())
+        if level is None:
+            continue
+        exported = json.loads(nmo_run(
+            args.nmo, "-f", "json", "object", "export", "--class", "CK3dObject", str(level)))
+        objects = {obj["name"]: {f["name"]: f.get("value") for f in obj["fields"]}
+                   for obj in exported["data"]["objects"]}
+        if floor_name in objects and module_name in objects:
+            floor = objects[floor_name]
+            faces, mtl = world_faces(args.nmo, level, floor["current_mesh"], world_matrix(floor))
+            write_faces(local_faces(faces, world_matrix(objects[module_name]), box), [mtl],
+                        (0.0, 0.0, 0.0), kind, out)
+            found[kind] = f"{level.name}:{floor_name}"
     for kind, (level_name, names, near, radius) in DECOR.items():
         level = by_name.get(level_name.lower())
         if level is None:
@@ -234,9 +278,10 @@ def main() -> int:
         if all(kind in found for kind in KINDS):
             break
 
-    for kind in KINDS + list(FLOORS) + list(DECOR):
+    every = KINDS + list(FLOORS) + list(MODULE_FLOORS) + list(DECOR)
+    for kind in every:
         print(f"{kind:16s} {found.get(kind, 'not found')}")
-    return 0 if len(found) == len(KINDS) + len(FLOORS) + len(DECOR) else 1
+    return 0 if len(found) == len(every) else 1
 
 
 if __name__ == "__main__":
