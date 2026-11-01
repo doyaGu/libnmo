@@ -285,6 +285,9 @@ CUTS: list[Cut] = [
               (-7.45, 8.0, -2.0, 9.6, -8.0, 3.84)),
     ModuleCut("Misc_Cradle", "Level_01.NMO", "A01_Misc_Schelle04", "A01_Floor_05",
               (-8.0, 8.0, -3.0, 3.0, -9.0, 9.0)),
+    # the trough with holes in its bottom
+    ModuleCut("Trough_Holes", "Level_04.NMO", "A01_Halfpipe_04", "A01_Halfpipe_04",
+              (-175.1, 175.1, -3.0, 3.0, -9.4, 9.4)),
     # troughs and logs of 1 to 8 segments, each one mesh
     ChainCut("Trough", "Level_04.NMO", "A01_Halfpipe_01", (-50.05, 0.05, -3.0, 3.0, -9.4, 9.4),
              (99.95, 100.05, -3.0, 3.0, -9.4, 9.4), 50.0, 8),

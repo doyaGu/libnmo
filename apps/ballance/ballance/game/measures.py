@@ -61,6 +61,13 @@ LOG_MOST = 8
 TROUGH_SEGMENT, TROUGH_BOTTOM, TROUGH_ASIDE, TROUGH_LAND = 50.0, 2.36, 19.6, 10.0
 TROUGH_HOP = [(-27.0, 0.0, False), (18.0, -8.0, False), (48.0, TROUGH_ASIDE, True)]
 TROUGH_LOG_GAP = 0.5
+# Level_04's A01_Halfpipe_04 is a trough 350 long with five holes 11.8 long
+# in its bottom, every 50 from 75 to 275 along it; the ball rides past each
+# up a wall, 6.3 out, to its right first and then by turns (as the extra
+# points Level_04 sets there have it), heading for each from the trough's
+# middle 48 along it.
+HOLED_TROUGH, TROUGH_HOLES, TROUGH_DODGE = 350.0, [75.0, 125.0, 175.0, 225.0, 275.0], 6.3
+TROUGH_HOLES_FROM = 48.0
 # A rail meets a wide road's end as Level_01's A01_Rail_07 meets A01_Floor_03:
 # through a piece 5 long whose slopes go on as the road's while its flat
 # middle sinks to a narrow road's V, 0.7 deep at the rail; the tubes' middles

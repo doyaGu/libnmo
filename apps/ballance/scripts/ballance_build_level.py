@@ -130,6 +130,8 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
   trough's open end, its top level with the trough's bottom, and a fall
   drops the ball off it.  Only a wood ball can be counted on to hop: on
   Level_04's, a stone ball never gets over and a paper one only sometimes.
+  With "holes": true, the trough is Level_04's with five holes in its
+  bottom, 350 long; the ball rides past each up a wall, by turns.
 - {"cradle": true} -- the rail bends straight down into a cradle on a 15 by
   15 block, as Level_01's A01_Rail_09 does, 9.09 below the rail; the track
   leaves the block to the right, from a narrow road's end on it, 7.5 from

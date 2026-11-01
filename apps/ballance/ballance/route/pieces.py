@@ -17,16 +17,17 @@ from ..core.geometry import (across, at, axis_of, back_of, left_of, rect, right_
 from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, ARMS_PATH, BRIDGES,
                              CRADLE_EXIT, CRADLE_RING, CRADLE_TOP, ELEMENT_LIFT, FAN_BELOW,
                              FAN_REACH, FLAPS_COUNTERWEIGHT, FLAPS_LENGTH, FLAPS_MODULE, FUNNEL,
-                             JUMP_ABOVE, JUMP_AREA, JUMP_DOWN, JUMP_HALF, LIFT_BELOW, LIFT_ENTRY,
-                             LIFT_EXIT, LIFT_RIDE, LIFT_TOP, LIFT_WALLS, LOG_CROSS, LOG_MOST,
-                             LOG_SEGMENT, LOG_TOP, PILLAR_INSET, PLANK_BELOW, PLANK_LENGTH,
-                             PUSHERS_ASIDE, PUSHERS_LENGTH, PUSHERS_MODULES, PUSHERS_PATH,
-                             RAIL_DOCK_BELOW, RAIL_DOCK_LENGTH, RAIL_FALL, RAIL_OVERHANG,
-                             SACK_ABOVE, STONEBOX_LENGTH, STONEBOX_MODULE, STONEBOX_PATH,
-                             STONEBOX_RISE, STONEBOX_TRAFO, SWING_ABOVE, SWING_FAR, SWING_GO,
-                             SWING_HALF, SWING_SEAT, SWING_WAIT, SWITCH_AREA, SWITCH_CROSS,
-                             SWITCH_HOLD, SWITCH_MODULE, SWITCH_SPUR, SWITCH_TARGET, TRAFO_LIFT,
-                             TROUGH_ASIDE, TROUGH_BOTTOM, TROUGH_HOP, TROUGH_LAND, TROUGH_LOG_GAP,
+                             HOLED_TROUGH, JUMP_ABOVE, JUMP_AREA, JUMP_DOWN, JUMP_HALF, LIFT_BELOW,
+                             LIFT_ENTRY, LIFT_EXIT, LIFT_RIDE, LIFT_TOP, LIFT_WALLS, LOG_CROSS,
+                             LOG_MOST, LOG_SEGMENT, LOG_TOP, PILLAR_INSET, PLANK_BELOW,
+                             PLANK_LENGTH, PUSHERS_ASIDE, PUSHERS_LENGTH, PUSHERS_MODULES,
+                             PUSHERS_PATH, RAIL_DOCK_BELOW, RAIL_DOCK_LENGTH, RAIL_FALL,
+                             RAIL_OVERHANG, SACK_ABOVE, STONEBOX_LENGTH, STONEBOX_MODULE,
+                             STONEBOX_PATH, STONEBOX_RISE, STONEBOX_TRAFO, SWING_ABOVE, SWING_FAR,
+                             SWING_GO, SWING_HALF, SWING_SEAT, SWING_WAIT, SWITCH_AREA,
+                             SWITCH_CROSS, SWITCH_HOLD, SWITCH_MODULE, SWITCH_SPUR, SWITCH_TARGET,
+                             TRAFO_LIFT, TROUGH_ASIDE, TROUGH_BOTTOM, TROUGH_DODGE, TROUGH_HOLES,
+                             TROUGH_HOLES_FROM, TROUGH_HOP, TROUGH_LAND, TROUGH_LOG_GAP,
                              TROUGH_SEGMENT, TWIST_ASIDE, TWIST_BELOW, TWIST_HALF, TWIST_PATH,
                              WALKWAY_ABOVE, WALKWAY_LENGTH)
 from ..kit.floors import CELL, NARROW, RISE, WALL
@@ -152,7 +153,8 @@ def lay_trough(layout: Layout, sector: int, part: Sector, piece: dict, track: Tr
     {"trough": length, "hop": "left" or "right"} one beside the last, which
     the ball swings over into (as Level_04's A01_Halfpipe_* are; see
     TROUGH_* in ballance.game.measures).  The length is a whole number of
-    segments, and a trough hopped from is 100 long at least."""
+    segments, and a trough hopped from is 100 long at least.  With "holes":
+    true, it is Level_04's trough with holes in its bottom, 350 long."""
     length = float(piece["trough"])
     segments = round(length / TROUGH_SEGMENT)
     if segments < 1 or abs(segments * TROUGH_SEGMENT - length) > 1e-6:
@@ -176,9 +178,16 @@ def lay_trough(layout: Layout, sector: int, part: Sector, piece: dict, track: Tr
             layout.points.append(list(p) + [None, "rush"] if rush else list(p))
     if segments > LOG_MOST:
         raise ValueError(f"a trough is {LOG_MOST} segments long at most")
+    holes = piece.get("holes", False)
+    if holes and length != HOLED_TROUGH:
+        raise ValueError(f"the trough with holes is {HOLED_TROUGH:g} long")
     middle = at(start, d, length / 2)
-    layout.module_floors.append((f"Trough_{segments}", sector,
+    layout.module_floors.append(("Trough_Holes" if holes else f"Trough_{segments}", sector,
                                  [middle[0], bottom + TROUGH_BOTTOM, middle[1]], turn_of(d)))
+    if holes:
+        layout.points.append(list(at(start, d, TROUGH_HOLES_FROM)))
+        for k, hole in enumerate(TROUGH_HOLES):
+            layout.points.append(list(at(start, d, hole, TROUGH_DODGE * (-1) ** k)))
     end = at(start, d, length)
     track.p, track.h, track.floor, track.trough = end, bottom, "trough", length
     return bottom, bottom, length

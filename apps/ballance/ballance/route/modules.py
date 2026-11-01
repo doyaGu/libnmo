@@ -151,6 +151,9 @@ MODULE_FLOORS = {
         ModuleFloor("Floor_Stopper_25", STOPPER_GROUPS, [(-10, -9, -1, -0.5, -2.5, 2.5)])],
 }
 
+# not a module: the trough with holes in its bottom, 350 long along X
+MODULE_FLOORS["Trough_Holes"] = [ModuleFloor("Trough_Holes", WOOD_FLOOR_GROUPS,
+                                             [(-175, 175, -2.9, -2.36, -9.29, 9.29)])]
 # not modules: troughs and logs of 1 to 8 segments of 50, along X, each one
 # mesh round its middle
 for _n in range(1, 9):
