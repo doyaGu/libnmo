@@ -37,6 +37,11 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
   Rails run from a narrow road or an area to a narrow road or an area
   (ballance_rails.py).
 
+An area may hold a fan, {"kind": "P_Modul_18", "at": [along, right]} among
+its elements, on the corner of four of its flat inside cells, and then
+"rise": dy: the fan lifts a paper ball onto the next piece, dy higher (at
+most 16), which starts at the area's exit as Level_03's do.
+
 Every piece may carry "elements": [{"kind": "P_Box", "at": [along, right]}],
 placed from where the piece starts, along the track and to its right, and
 resting on the floor there as the originals' do (see ELEMENT_LIFT).  Each
@@ -53,7 +58,8 @@ start's and checkpoints' floors, and there is no scenery and no sky.
 
 The output directory gets manifest.json, the OBJ meshes it names, and
 route_points.json, the points along the middle of the track from the start to
-the balloon, for driving a ball along it.  Turn it into a level file with:
+the balloon, for driving a ball along it; a point over a fan has a third
+value, the height to wait there for.  Turn it into a level file with:
 
     nmo patch apply --project <out>/manifest.json -o <out>/Level_01.NMO
 """
@@ -103,7 +109,8 @@ MARKERS = ["PS_FourFlames", "PC_TwoFlames", "PR_Resetpoint", "PE_Balloon"]
 ELEMENTS = ["P_Extra_Life", "P_Extra_Point", "P_Trafo_Paper", "P_Trafo_Stone",
             "P_Trafo_Wood", "P_Ball_Paper", "P_Ball_Stone", "P_Ball_Wood", "P_Box", "P_Dome"]
 # The kinds that only --elements supplies, with nothing standing in for them.
-GAME_ONLY = ["SkyLayer", "Floor_Start", "Floor_Checkpoint", "Pillar", "Tower", "Stick"]
+GAME_ONLY = ["SkyLayer", "Floor_Start", "Floor_Checkpoint", "Floor_Modul_18", "Pillar", "Tower",
+             "Stick"]
 # The materials of the scenery.
 SCENERY_MATERIALS = [
     "Colums_blue", "Colums_beige", "Columns_beige_fade", "Tower_Floor_Side",
@@ -114,8 +121,14 @@ SCENERY_MATERIALS = [
 # How far above the floor under it each element stands, as in the originals:
 # their meshes rest on it.  A ball changer stands 0.1 above its pad.
 ELEMENT_LIFT = {"P_Extra_Point": 2.5, "P_Extra_Life": 2.56, "P_Box": 2.5,
-                "P_Ball_Paper": 2.0, "P_Ball_Stone": 2.0, "P_Ball_Wood": 2.0, "P_Dome": 0.0}
+                "P_Ball_Paper": 2.0, "P_Ball_Stone": 2.0, "P_Ball_Wood": 2.0, "P_Dome": 0.0,
+                "P_Modul_18": -0.35}
 TRAFO_LIFT = 0.1
+# A fan (P_Modul_18) stands on the grille of its housing, 0.35 below the
+# floor around it; its wind reaches 21.4 up, so it lifts a paper ball onto
+# floors up to 16 higher (Level_03's lift it 13.5).
+FAN_BELOW = 0.35
+FAN_REACH = 16.0
 
 # The start and the checkpoints are 1.26 below the edges of the roads that
 # meet their floors.  A narrow road meets those floors through a funnel 5
@@ -186,7 +199,10 @@ class Builder:
         self.start = (float(start.get("x", 0.0)), float(start.get("z", 0.0)))
         self.heading = HEADINGS[start.get("heading", "-x")]
         self.marker_y = -ROAD_ABOVE_MARKER  # the start's road edges are at 0
-        self.sectors: list[Floors] = []
+        # per sector, its floors: one grid for each height a fan lifts the
+        # ball to
+        self.sectors: list[list[Floors]] = []
+        self.housings: list[tuple[int, list[float]]] = []  # fans' (sector, position)
         self.rails: list[Rails] = []
         self.extras: list[list] = []  # per sector: (function, args) writing funnels and pads
         self.elements: list[tuple[str, int, list[float]]] = []
@@ -209,23 +225,23 @@ class Builder:
             opening, gap = (START_OPENING, START_GAP) if index == 1 else (CHECKPOINT_OPENING,
                                                                           CHECKPOINT_GAP)
             p = at(marker, d, opening + FUNNEL)
-            floors = Floors(origin=p)
+            self.floors = Floors(origin=p)
             extras = [(funnel, at(marker, d, opening), d, edge, gap)]
-            self.sectors.append(floors)
+            self.sectors.append([self.floors])
             self.rails.append(Rails())
             self.extras.append(extras)
-            self._open(floors, p, d)
+            self._open(self.floors, p, d)
             self.points.append(list(p))
             h = edge - RISE
             width = NARROW
             self.floor = "road"  # what the last piece left the track on
             self.run: list[Ring] | None = None
             for piece in pieces:
-                p, d, h, width = self._piece(index, floors, extras, piece, p, d, h, width)
+                p, d, h, width = self._piece(index, extras, piece, p, d, h, width)
             if width != NARROW or self.run is not None:
                 raise ValueError(f"sector {index} must end on a narrow road")
             edge = h + RISE
-            self._open(floors, p, d)
+            self._open(self.floors, p, d)
             back = (-d[0], -d[1])
             last = index == len(sectors)
             extras.append((funnel, at(p, d, FUNNEL), back, edge, None if last else CHECKPOINT_GAP))
@@ -237,7 +253,8 @@ class Builder:
                 marker = at(p, d, FUNNEL + CHECKPOINT_OPENING)
                 self.checkpoints.append(([marker[0], edge - ROAD_ABOVE_MARKER, marker[1]], d))
                 self.points.append(list(marker))
-            self.lows.append(min(self._floor_heights(floors)))
+            self.lows.append(min(y for floors in self.sectors[-1]
+                                 for y in self._floor_heights(floors)))
 
     def _open(self, floors: Floors, p: tuple[float, float], d: tuple[int, int]) -> None:
         a, b = at(p, d, 0, -NARROW / 2), at(p, d, 0, NARROW / 2)
@@ -253,8 +270,9 @@ class Builder:
         a, b = at(p, d, 0, -NARROW / 2), at(p, d, 0, NARROW / 2)
         floors.dock(a[0], a[1], b[0], b[1])
 
-    def _piece(self, sector: int, floors: Floors, extras: list, piece: dict,
+    def _piece(self, sector: int, extras: list, piece: dict,
                p: tuple[float, float], d: tuple[int, int], h: float, width: float):
+        floors = self.floors
         start, heading = p, d
         rail = "rail" in piece or "rail_turn" in piece
         if rail and self.run is None:
@@ -307,14 +325,32 @@ class Builder:
                     x, z = at(p, d, a, c)
                     self.pillars.append([x, h + RISE - WALL, z])
             exit = piece.get("exit", "straight")
+            middle = at(p, d, along / 2)
             if exit == "straight":
-                self.points.append(list(at(p, d, along / 2)))
                 p = at(p, d, along)
             else:
-                middle = at(p, d, along / 2)
-                self.points.append(list(middle))
                 d = right_of(d) if exit == "right" else (-right_of(d)[0], -right_of(d)[1])
                 p = at(middle, d, across / 2)
+            rise = float(piece.get("rise", 0.0))
+            fans = [e for e in piece.get("elements", []) if e["kind"] == "P_Modul_18"]
+            if rise:
+                # The fan lifts the ball onto floors beside the area, rise
+                # higher, as Level_03's do; they are floors of their own.
+                if not fans:
+                    raise ValueError("an area rises only with a fan (P_Modul_18) in it")
+                if not 0 < rise <= FAN_REACH:
+                    raise ValueError(f"a fan lifts the ball at most {FAN_REACH}")
+                if self.last_ball != "Paper":
+                    print("warning: only a paper ball rides a fan's wind; the ball reaches "
+                          f"it as {self.last_ball.lower()}", file=sys.stderr)
+                fan = at(start, heading, *(float(v) for v in fans[0]["at"]))
+                # wait over the fan until the ball is above the floors ahead
+                self.points.append([fan[0], fan[1], h + rise + RISE + 1.0])
+                h += rise
+                self.floors = Floors(origin=p)
+                self.sectors[-1].append(self.floors)
+            else:
+                self.points.append(list(middle))
             self.points.append(list(p))
             self.floor = "area"
         elif "turn" in piece:
@@ -357,6 +393,13 @@ class Builder:
             x, z = at(start, heading, a, c)
             floor = y0 + (y1 - y0) * min(max(a / length, 0.0), 1.0)
             kind = element["kind"]
+            if kind == "P_Modul_18":
+                # A fan stands in a housing set into an area's flat inside,
+                # two cells square, whose rim is flush with the floor.
+                if "area" not in piece:
+                    raise ValueError("a fan stands in an area")
+                floors.hole(x - NARROW / 2, z - NARROW / 2, x + NARROW / 2, z + NARROW / 2)
+                self.housings.append((sector, [x, floor - FAN_BELOW, z]))
             self.elements.append((kind, sector, [x, floor + ELEMENT_LIFT[kind], z]))
         return p, d, h, width
 
@@ -367,7 +410,7 @@ class Builder:
     def _on_floor(self, x: float, z: float, half: float) -> bool:
         """Whether a square of half width half at (x, z) lies over a floor
         cell, a pad or a start or checkpoint floor."""
-        for floors in self.sectors:
+        for floors in (f for sector in self.sectors for f in sector):
             for i, j in floors.cells:
                 cx, cz = floors.ox + (i + 0.5) * CELL, floors.oz + (j + 0.5) * CELL
                 if abs(cx - x) < half + CELL / 2 and abs(cz - z) < half + CELL / 2:
@@ -401,10 +444,12 @@ class Builder:
         """The floors of each sector, with their funnels and pads, as
         sector<N>.obj, and its rails as rails<N>.obj; without pads, boxes
         as high as the floors' rims stand in for the start's and checkpoints'
-        floors (start_pad.obj, checkpoint_pad.obj)."""
-        for index, (floors, extras) in enumerate(zip(self.sectors, self.extras), start=1):
+        floors and the fans' housings (start_pad.obj, checkpoint_pad.obj,
+        fan_pad.obj)."""
+        for index, (sector, extras) in enumerate(zip(self.sectors, self.extras), start=1):
             mesh = Mesh()
-            floors.build(mesh)
+            for floors in sector:
+                floors.build(mesh)
             for function, *args in extras:
                 if function is funnel:
                     (x, z), toward, edge, gap = args
@@ -418,10 +463,13 @@ class Builder:
         if not pads:
             for name, half in (("start_pad", START_OPENING), ("checkpoint_pad", CHECKPOINT_OPENING)):
                 write_box(out / f"{name}.obj", -half, half, -WALL, ROAD_ABOVE_MARKER, -half, half)
+            # a fan's housing: its rim flush with the floor, 3 deep
+            half = NARROW / 2
+            write_box(out / "fan_pad.obj", -half, half, FAN_BELOW - 3.4, FAN_BELOW, -half, half)
 
     def bounds(self) -> tuple[float, float, float, float]:
-        xs = [x for x, _ in self.points]
-        zs = [z for _, z in self.points]
+        xs = [point[0] for point in self.points]
+        zs = [point[1] for point in self.points]
         return min(xs), max(xs), min(zs), max(zs)
 
 
@@ -475,6 +523,10 @@ def build_manifest(presets: dict, meshes: dict[str, str], level: Builder, name: 
         if level.rails[index - 1].runs:
             objects.append(level_object(f"A{index:02d}_Rail_01", f"rails{index}.obj", [0, 0, 0],
                                         RAIL_GROUPS))
+    for index, (sector, position) in enumerate(level.housings, start=1):
+        objects.append(level_object(f"A{sector:02d}_Floor_Modul_18_{index:02d}",
+                                    meshes.get("Floor_Modul_18", "fan_pad.obj"), position,
+                                    STONE_FLOOR_GROUPS))
     for index, (marker, d) in enumerate(level.checkpoints, start=1):
         objects.append(level_object(f"PC_TwoFlames_{index:02d}", meshes["PC_TwoFlames"], marker,
                                     ["PC_Checkpoints"], turn=turn_of(d)))
@@ -494,6 +546,8 @@ def build_manifest(presets: dict, meshes: dict[str, str], level: Builder, name: 
     used.update(f"Floor_Trafo_{kind}" for kind in level.trafos)
     if any(rails.runs for rails in level.rails):
         used.add("Rail")
+    if level.housings and "Floor_Modul_18" in meshes:
+        used.update(("Modul18_Top", "Modul18_Gitter"))
     pads = [("A01_Floor_01", (sx, level.marker_y, sz), heading, "Floor_Start", "start_pad.obj")]
     for index, (marker, d) in enumerate(level.checkpoints, start=2):
         pads.append((f"A{index:02d}_Floor_01", marker, turn_of(d), "Floor_Checkpoint",
