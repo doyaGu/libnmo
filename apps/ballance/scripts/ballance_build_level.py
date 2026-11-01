@@ -32,6 +32,9 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
   has it, with funnels flattening a narrow road to its ends and back.
 - {"walkway": true} -- the wavy wood walkway 70.32 long, as Level_08 has
   it, with funnels flattening a narrow road to its ends and back.
+- {"twist": true} -- the wood twist, a chute 58.66 long turning the ball
+  once round, as Level_07 has it, its mouths on flat floors that funnels
+  lead a narrow road onto and off.
 - {"trafo": "paper", "stone" or "wood"} -- a ball changer on its pad, on a
   narrow road.  The original levels all turn the ball back to wood before
   the balloon; the builder warns when a route does not.

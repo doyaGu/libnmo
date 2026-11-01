@@ -58,7 +58,13 @@ class ModuleFloor:
 
 
 MODULE_FLOORS = {
-    # not modules: the arched wood plank and the wavy walkway, floors of their own
+    # not modules: the arched wood plank, the wavy walkway and the twist
+    # (with the floors at its mouths), floors of their own
+    "Modul11": [ModuleFloor("Modul11", WOOD_FLOOR_GROUPS,
+                            [(-5.38, 6.62, -3.61, -3.19, -29.33, 29.33)]),
+                ModuleFloor("Floor_Modul11", STONE_FLOOR_GROUPS,
+                            [(-1.88, 3.12, -8.19, -3.19, -29.33, -24.33),
+                             (-1.88, 3.12, -8.19, -3.19, 24.33, 29.33)])],
     "Modul27": [ModuleFloor("Modul27", WOOD_FLOOR_GROUPS, [(-5, 5, -2.78, -0.03, -2.5, 2.5)])],
     "Modul42": [ModuleFloor("Modul42", WOOD_FLOOR_GROUPS,
                             [(-35.16, 35.16, -2.04, 0.41, -2.5, 2.5)])],

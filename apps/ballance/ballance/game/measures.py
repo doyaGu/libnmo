@@ -178,6 +178,17 @@ PLANK_LENGTH, PLANK_BELOW = 10.0, 1.25
 # above, flush with flat floors at a narrow road's edge height, over nothing.
 WALKWAY_LENGTH, WALKWAY_ABOVE = 70.32, 0.41
 
+# Modul11, the wood twist (Level_07's A01_Modul11, the same in Level_09 and
+# Level_11): a chute 58.66 long that turns the ball once round, its mouths
+# lying on flat floors 5 wide which end 24.33 either side of it, over
+# nothing between; the floors' tops are 3.19 below the module, and their
+# middle line 0.62 to its X side.  (half length, aside, below)  The chute's
+# bottom stays level with the floors, 2.2 to the module's -X side for its
+# first half and 3.5 to its X side for its second, and the ball follows it:
+# rolling straight along it, it falls out, in Level_09 too.  (X, Z)
+TWIST_HALF, TWIST_ASIDE, TWIST_BELOW = 29.33, 0.62, 3.19
+TWIST_PATH = [(-2.2, -24.0), (-2.2, -8.0), (3.4, 6.0), (3.5, 24.0)]
+
 # P_Modul_08, the swing (Level_09's P_Modul_08_01): a seat hung from a frame
 # over a gap 15 long in a flat road, pushed across the road every half
 # second.  The road's flat top is 1.5 above the module and runs 12.5 either
