@@ -154,7 +154,9 @@ static long run_parse_keys(const char *spec, run_key_t *out)
  * and, if the point has a height, is at least that high there (it waits to be
  * lifted), and, if it has a frame count, after that many more frames heading
  * for it (it keeps pushing there); after a jump (a respawn), it heads for the
- * point after the nearest one.
+ * point after the nearest one.  Between points it follows the path without
+ * stopping, slowing down only as much as the bends ahead need
+ * (run_steer_heading).
  */
 typedef struct run_steer {
     float *points; /* x, z, y (-INFINITY: any height), frames to hold */
@@ -173,6 +175,104 @@ static char *run_strndup(const char *text, size_t length);
 #define STEER_JUMP 10.0f
 #define STEER_LOOKAHEAD 20.0f /* frames of the object's speed to allow for */
 #define STEER_DEAD 0.5f
+#define STEER_CARROT 6.0f /* how far along the path ahead of the object to aim */
+#define STEER_PLAN 40.0f  /* how far along the path to look for bends to slow down for */
+#define STEER_FAST 0.45f  /* speeds, a frame: on straight road */
+#define STEER_SLOW 0.1f   /* through a right-angled bend */
+#define STEER_BRAKE 0.006f /* how much speed braking takes off a frame */
+#define STEER_EASE 0.02f  /* how far off the speed wanted to push or brake */
+
+/* Whether the object must stop at point i: the last, or one with a height to
+ * wait for or frames to hold. */
+static bool run_steer_stops(const run_steer_t *steer, long i)
+{
+    const float *point = &steer->points[i * 4];
+    return i + 1 >= steer->count || isfinite(point[2]) || point[3] > 0.0f;
+}
+
+/* The speed point i may be passed at: STEER_FAST where the path goes on
+ * straight, less the sharper it bends there, down to STEER_SLOW at a right
+ * angle; 0 where it must stop. */
+static float run_steer_corner_speed(const run_steer_t *steer, long i, float x, float z)
+{
+    if (run_steer_stops(steer, i)) {
+        return 0.0f;
+    }
+    const float *point = &steer->points[i * 4];
+    float ax = i > 0 ? point[-4] : x, az = i > 0 ? point[-3] : z;
+    float ux = point[0] - ax, uz = point[1] - az, wx = point[4] - point[0], wz = point[5] - point[1];
+    float ul = hypotf(ux, uz), wl = hypotf(wx, wz);
+    if (ul <= 0.0f || wl <= 0.0f) {
+        return STEER_SLOW;
+    }
+    float bend = acosf(fmaxf(-1.0f, fminf(1.0f, (ux * wx + uz * wz) / (ul * wl))));
+    float t = fminf(bend / 1.5707964f, 1.0f); /* of a right angle */
+    return STEER_FAST + (STEER_SLOW - STEER_FAST) * t;
+}
+
+/*
+ * Where to push from (x, z), moving (vx, vz) a frame.  The object aims at the
+ * point STEER_CARROT ahead along the path, so it rounds the path's bends
+ * rather than stopping at each point, and never past a point it must stop at;
+ * its drift across that aim is taken off as it would carry it over
+ * STEER_LOOKAHEAD frames.  Along the aim, it speeds up, coasts or brakes
+ * toward the speed it may have now: the least, over the points within
+ * STEER_PLAN ahead, of what still lets it brake down to their speed by then.
+ * At a point it must stop at, within reach, it heads for the point itself.
+ */
+static void run_steer_heading(const run_steer_t *steer, float x, float z, float vx, float vz,
+                              float *dx, float *dz)
+{
+    long i = steer->next;
+    const float *point = &steer->points[i * 4];
+    float left = hypotf(point[0] - x, point[1] - z);
+    if (run_steer_stops(steer, i) && left < STEER_REACH) {
+        *dx = point[0] - x - vx * STEER_LOOKAHEAD;
+        *dz = point[1] - z - vz * STEER_LOOKAHEAD;
+        return;
+    }
+    /* the aim: STEER_CARROT along the path, or the first point it must stop
+     * at if that comes sooner; and the speed it may have now */
+    float tx = point[0], tz = point[1], walked = left, wanted = STEER_FAST;
+    bool aimed = left >= STEER_CARROT;
+    for (long k = i; k < steer->count; k++) {
+        const float *pk = &steer->points[k * 4];
+        if (k > i) {
+            float seg = hypotf(pk[0] - pk[-4], pk[1] - pk[-3]);
+            walked += seg;
+            if (!aimed && walked >= STEER_CARROT && seg > 0.0f) {
+                float back = walked - STEER_CARROT;
+                tx = pk[0] - (pk[0] - pk[-4]) / seg * back;
+                tz = pk[1] - (pk[1] - pk[-3]) / seg * back;
+                aimed = true;
+            }
+        }
+        float corner = run_steer_corner_speed(steer, k, x, z);
+        wanted = fminf(wanted, sqrtf(corner * corner + 2.0f * STEER_BRAKE * walked));
+        if (run_steer_stops(steer, k)) {
+            if (!aimed) {
+                tx = pk[0];
+                tz = pk[1];
+            }
+            break;
+        }
+        if (walked > STEER_PLAN) {
+            break;
+        }
+    }
+    float cx = tx - x, cz = tz - z, cl = hypotf(cx, cz);
+    if (cl <= 0.0f) {
+        *dx = -vx * STEER_LOOKAHEAD;
+        *dz = -vz * STEER_LOOKAHEAD;
+        return;
+    }
+    float ux = cx / cl, uz = cz / cl;
+    float along = vx * ux + vz * uz;
+    float sx = vx - ux * along, sz = vz - uz * along; /* drift across the aim */
+    float push = along < wanted - STEER_EASE ? 1.0f : along > wanted + STEER_EASE ? -1.0f : 0.0f;
+    *dx = ux * push * STEER_DEAD * 4.0f - sx * STEER_LOOKAHEAD;
+    *dz = uz * push * STEER_DEAD * 4.0f - sz * STEER_LOOKAHEAD;
+}
 
 /* Parse "X,Z[,Y[,F]];...@FRAME[-FRAME]" into `out` (points left NULL when only checking);
  * Y may be left empty ("X,Z,,F"). */
@@ -304,8 +404,8 @@ static void run_steer_frame(nmo_engine_t *engine, run_steer_t *steer, uint32_t f
             steer->next++;
             steer->held = 0;
         }
-        float dx = steer->points[steer->next * 4] - x - vx * STEER_LOOKAHEAD;
-        float dz = steer->points[steer->next * 4 + 1] - z - vz * STEER_LOOKAHEAD;
+        float dx, dz;
+        run_steer_heading(steer, x, z, vx, vz, &dx, &dz);
         /* the camera's X and Z axes, flat */
         float rx = view.view[0], rz = view.view[2], fx = view.view[8], fz = view.view[10];
         float rl = hypotf(rx, rz), fl = hypotf(fx, fz);
