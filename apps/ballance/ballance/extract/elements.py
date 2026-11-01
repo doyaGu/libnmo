@@ -80,6 +80,7 @@ SNAP = {
     "Floor_Stopper_19": ([9.12, 8.12, 2.32, 3.32], [0.53, 1.03], [2.5, 7.5, 12.5]),
     "Modul27": ([5.0], [], [2.5]),
     "Modul42": ([35.16], [0.41], [2.5]),
+    "Floor_Cradle": ([7.5, 5.0, 2.5], [2.5, 1.8, 1.1], [7.5, 5.0, 2.5]),
     "Modul02": ([28.2], [11.84], [2.5]),
     "Floor_Modul02": ([42.49, 44.99, 47.49, 52.49, 54.99, 57.49], [13.18, 18.18],
                       [2.5, 5.0, 7.5]),
@@ -235,6 +236,15 @@ CUTS: list[Cut] = [
               (-5.1, 5.1, -3.0, 0.1, -2.6, 2.6)),
     ModuleCut("Modul42", "Level_08.NMO", "A02_Modul42", "A02_Modul42",
               (-35.3, 35.3, -2.2, 2.2, -2.6, 2.6)),
+    # the cradle a rail drops the ball into: the block, the rail's end bent
+    # down to it with the tubes holding the ball and the railing, and the
+    # railing's clamps
+    ModuleCut("Floor_Cradle", "Level_01.NMO", "A01_Floor_05", "A01_Floor_05",
+              (-7.6, 7.6, -2.6, 2.6, -7.6, 7.6)),
+    ModuleCut("Rail_Cradle", "Level_01.NMO", "A01_Rail_09", "A01_Floor_05",
+              (-7.45, 8.0, -2.0, 9.6, -8.0, 3.84)),
+    ModuleCut("Misc_Cradle", "Level_01.NMO", "A01_Misc_Schelle04", "A01_Floor_05",
+              (-8.0, 8.0, -3.0, 3.0, -9.0, 9.0)),
     # the tubes parting at a rail's end, from its last straight ring on
     ModuleCut("Rail_Split", "Level_01.NMO", "A01_Rail_02_01", "A01_Rail_02_01",
               (-13.5, -3.0, -0.5, 0.4, -12.0, 12.0), (-3.089, -0.101, 0.0)),

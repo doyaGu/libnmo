@@ -15,16 +15,17 @@ from typing import TYPE_CHECKING, Callable
 from ..core.geometry import (across, at, axis_of, back_of, left_of, rect, right_of, side_of,
                              turn_of)
 from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, ARMS_PATH, BRIDGES,
-                             ELEMENT_LIFT, FAN_BELOW, FAN_REACH, FLAPS_COUNTERWEIGHT, FLAPS_LENGTH,
-                             FLAPS_MODULE, FUNNEL, JUMP_ABOVE, JUMP_AREA, JUMP_DOWN, JUMP_HALF,
-                             LIFT_BELOW, LIFT_ENTRY, LIFT_EXIT, LIFT_RIDE, LIFT_TOP, LIFT_WALLS,
-                             PILLAR_INSET, PLANK_BELOW, PLANK_LENGTH, PUSHERS_ASIDE, PUSHERS_LENGTH,
-                             PUSHERS_MODULES, PUSHERS_PATH, RAIL_FALL, RAIL_OVERHANG, SACK_ABOVE,
-                             STONEBOX_LENGTH, STONEBOX_MODULE, STONEBOX_PATH, STONEBOX_RISE,
-                             STONEBOX_TRAFO, SWING_ABOVE, SWING_FAR, SWING_GO, SWING_HALF,
-                             SWING_SEAT, SWING_WAIT, SWITCH_AREA, SWITCH_CROSS, SWITCH_HOLD,
-                             SWITCH_MODULE, SWITCH_SPUR, SWITCH_TARGET, TRAFO_LIFT, TWIST_ASIDE,
-                             TWIST_BELOW, TWIST_HALF, TWIST_PATH, WALKWAY_ABOVE, WALKWAY_LENGTH)
+                             CRADLE_EXIT, CRADLE_RING, CRADLE_TOP, ELEMENT_LIFT, FAN_BELOW,
+                             FAN_REACH, FLAPS_COUNTERWEIGHT, FLAPS_LENGTH, FLAPS_MODULE, FUNNEL,
+                             JUMP_ABOVE, JUMP_AREA, JUMP_DOWN, JUMP_HALF, LIFT_BELOW, LIFT_ENTRY,
+                             LIFT_EXIT, LIFT_RIDE, LIFT_TOP, LIFT_WALLS, PILLAR_INSET, PLANK_BELOW,
+                             PLANK_LENGTH, PUSHERS_ASIDE, PUSHERS_LENGTH, PUSHERS_MODULES,
+                             PUSHERS_PATH, RAIL_FALL, RAIL_OVERHANG, SACK_ABOVE, STONEBOX_LENGTH,
+                             STONEBOX_MODULE, STONEBOX_PATH, STONEBOX_RISE, STONEBOX_TRAFO,
+                             SWING_ABOVE, SWING_FAR, SWING_GO, SWING_HALF, SWING_SEAT, SWING_WAIT,
+                             SWITCH_AREA, SWITCH_CROSS, SWITCH_HOLD, SWITCH_MODULE, SWITCH_SPUR,
+                             SWITCH_TARGET, TRAFO_LIFT, TWIST_ASIDE, TWIST_BELOW, TWIST_HALF,
+                             TWIST_PATH, WALKWAY_ABOVE, WALKWAY_LENGTH)
 from ..kit.floors import CELL, NARROW, RISE, WALL
 from ..kit.pieces import channel, funnel, pad, strip
 from ..kit.rails import ABOVE_V, BEND_RADIUS, Ring, bend
@@ -100,6 +101,32 @@ def lay_fall(layout: Layout, sector: int, part: Sector, piece: dict, track: Trac
     track.h -= fall
     track.p = at(track.p, track.d, -RAIL_OVERHANG)
     track.floor = "fall"
+
+
+def lay_cradle(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:
+    """{"cradle": true}: the rail bends straight down into the cradle, as
+    Level_01's A01_Rail_09 does (see CRADLE_* in ballance.game.measures),
+    and the track leaves it to the right, from a narrow road's end on its
+    block."""
+    check_ball(layout, "Cradle")
+    end, d = track.run[-1], track.d
+    part.rails.runs.append(track.run)
+    track.run = None
+    x, y, z = CRADLE_RING
+    left, right = left_of(d), right_of(d)
+    # the block's X to the track's left, its Z back along it
+    middle = (end.x - x * left[0] + z * d[0], end.z - x * left[1] + z * d[1])
+    below = end.y - y
+    layout.module_floors.append(("Cradle", sector, [middle[0], below, middle[1]], turn_of(left)))
+    layout.points.append(list(middle))
+    track.p = (middle[0] + CRADLE_EXIT * right[0], middle[1] + CRADLE_EXIT * right[1])
+    track.d = right
+    track.h = below + CRADLE_TOP - RISE
+    layout.floors = part.grid(track.p)
+    layout.open(layout.floors, track.p, track.d)
+    layout.points.append(list(track.p))
+    track.floor = "road"
+    return track.h, track.h, 0.0
 
 
 def lay_area(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:
@@ -634,6 +661,7 @@ PIECES: dict[str, Callable] = {
     "rail": lay_rail,
     "rail_turn": lay_rail_turn,
     "fall": lay_fall,
+    "cradle": lay_cradle,
     "area": lay_area,
     "turn": lay_turn,
     "trafo": lay_trafo,
@@ -650,7 +678,7 @@ def lay_piece(layout: Layout, sector: int, part: Sector, piece: dict, track: Tra
     floors = layout.floors
     start, heading = track.p, track.d
     rail = "rail" in piece or "rail_turn" in piece
-    if "fall" in piece and track.run is None:
+    if ("fall" in piece or "cradle" in piece) and track.run is None:
         raise ValueError("the ball falls from a rail's end")
     if track.floor == "fall" and "area" not in piece:
         raise ValueError("a rail's fall lands in an area")
@@ -661,7 +689,7 @@ def lay_piece(layout: Layout, sector: int, part: Sector, piece: dict, track: Tra
             raise ValueError("a rail starts from a narrow road or an area")
         layout.dock(floors, track.p, track.d)
         track.run = [Ring(track.p[0], track.h + ABOVE_V, track.p[1], track.d[0], track.d[1])]
-    elif not rail and "fall" not in piece and track.run is not None:
+    elif not rail and "fall" not in piece and "cradle" not in piece and track.run is not None:
         if not ("area" in piece or ("road" in piece and
                                     piece.get("width", "narrow") == "narrow")):
             raise ValueError("a rail ends at a narrow road or an area")

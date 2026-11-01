@@ -115,8 +115,12 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
   end, its rim closed (as Level_01's rails drop the ball into its pits).
   With "split": true, the rail's tubes part at its end instead, the ball
   dropping between them, as Level_01's A01_Rail_02_01 do.
-  Rails run from a narrow road or an area to a narrow road, an area or a
-  fall (ballance.kit.rails).
+- {"cradle": true} -- the rail bends straight down into a cradle on a 15 by
+  15 block, as Level_01's A01_Rail_09 does, 9.09 below the rail; the track
+  leaves the block to the right, from a narrow road's end on it, 7.5 from
+  its middle.  A stone ball can't climb out of the pocket.
+  Rails run from a narrow road or an area to a narrow road, an area, a fall
+  or a cradle (ballance.kit.rails).
 
 An area may hold a fan, {"kind": "P_Modul_18", "at": [along, right]} among
 its elements, on the corner of four of its flat inside cells, and then

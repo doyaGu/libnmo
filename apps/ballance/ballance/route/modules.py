@@ -28,6 +28,8 @@ NEEDS_BALL = {
     "P_Modul_17": ({"Wood", "Stone"}, "can't turn {kind}'s arm; a wood or stone ball does"),
     "P_Modul_03": ({"Wood"}, "can't ride {kind} up: stone sinks it and falls off, paper "
                              "can't push its walls off (in Level_12 too); a wood ball does"),
+    "Cradle": ({"Wood", "Paper"}, "can't climb out of the cradle's pocket; a wood or paper "
+                                  "ball does"),
     "Modul02": ({"Wood", "Stone"}, "falls short of {kind}'s landing (in Level_09 too); a wood "
                                    "or stone ball makes it"),
     "P_Modul_08": ({"Wood", "Paper"}, "falls off {kind}'s seat (in Level_09 too); a wood or "
@@ -60,6 +62,12 @@ class ModuleFloor:
 
 
 MODULE_FLOORS = {
+    # not a module: the cradle a rail drops the ball into, with the rail's
+    # end and the railing
+    "Cradle": [ModuleFloor("Floor_Cradle", STONE_FLOOR_GROUPS,
+                           [(-7.5, 7.5, -2.5, 1.8, -7.5, 7.5)]),
+               ModuleFloor("Rail_Cradle", RAIL_GROUPS, [(-2.25, 2.25, -1.3, 9.4, -2.5, 3.84)]),
+               ModuleFloor("Misc_Cradle", [], [(4.0, 6.0, 1.0, 1.5, -8.0, -3.0)])],
     # not a module: a rail's end whose tubes part (its last straight ring at
     # the origin, the rail coming along X)
     "Rail_Split": [ModuleFloor("Rail_Split", RAIL_GROUPS,

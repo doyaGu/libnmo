@@ -37,6 +37,14 @@ TRAFO_LIFT = 0.1
 # 4.5 in over the area's inside.  The builder hangs a rail's end two cells
 # over the area and lets it fall at most 15.
 RAIL_OVERHANG, RAIL_FALL = 5.0, 15.0
+# Level_01's A01_Rail_09 ends in a cradle: a 15 by 15 block whose top is
+# 2.5 above its middle, with a 5 by 5 pocket there.  The rail comes in high
+# along its Z (its last straight ring at (-0.05, 9.09, 3.84) of the block,
+# the rail heading -Z), bends straight down to the pocket's edge, and two
+# short tubes across the pocket's bottom hold the ball.  A narrow road's V
+# leads out of the pocket to the block's -X side, 7.5 from its middle,
+# turning the track to the right; a railing stands on the block's far side.
+CRADLE_RING, CRADLE_EXIT, CRADLE_TOP = (-0.05, 9.0935, 3.838), 7.5, 2.5
 # Level_01's A01_Rail_02_01 ends otherwise: past its last straight ring its
 # tubes bend apart, 20 apart 10.35 on, and the ball drops between them
 # onto the walled plaza 13.3 below.
