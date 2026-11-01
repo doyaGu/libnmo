@@ -90,7 +90,8 @@ void eng_free_emitters(nmo_engine_t *engine)
     free(eng_tt(engine)->emitters.data);
 }
 
-static eng_emitter_t *emitter_of(blk_t *b)
+/* The block's emitter; NULL before it first ran */
+static eng_emitter_t *emitter_find(blk_t *b)
 {
     eng_tt_t *tt = eng_tt(b->engine);
     for (size_t i = 0; i < tt->emitters.count; i++) {
@@ -98,7 +99,16 @@ static eng_emitter_t *emitter_of(blk_t *b)
             return &tt->emitters.data[i];
         }
     }
-    eng_emitter_t *emitter = NULL;
+    return NULL;
+}
+
+static eng_emitter_t *emitter_of(blk_t *b)
+{
+    eng_emitter_t *emitter = emitter_find(b);
+    if (emitter != NULL) {
+        return emitter;
+    }
+    eng_tt_t *tt = eng_tt(b->engine);
     if (!ENG_VEC_PUSH(tt->emitters, emitter)) {
         return NULL;
     }
@@ -468,6 +478,28 @@ static int bb_particle_system(blk_t *b)
     return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
 }
 
+/*
+ * GeneralParticleSystemCallback: a reset empties the emitter; a pause or
+ * the script's deactivation stops drawing its particles, which stay where
+ * they are; the script's activation or a resume draws them again.
+ */
+static int cb_particle_system(blk_t *b, uint32_t message)
+{
+    eng_emitter_t *e = emitter_find(b);
+    if (e == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    if (message == NMO_ENGINE_MSG_RESET) {
+        e->particles.count = 0; /* InitParticleSystem */
+    } else if (message == NMO_ENGINE_MSG_PAUSE || message == NMO_ENGINE_MSG_DEACTIVATESCRIPT) {
+        e->shown = false;
+    } else if ((message == NMO_ENGINE_MSG_ACTIVATESCRIPT || message == NMO_ENGINE_MSG_RESUME) &&
+               nmo_engine_parent_script_is_active(b->engine, block_node(b)->id)) {
+        e->shown = true;
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
 static uint32_t particle_color(const float c[4])
 {
     uint32_t argb = 0;
@@ -651,19 +683,28 @@ void eng_draw_particles(nmo_engine_t *engine, const float view[16])
 }
 
 static const nmo_engine_block_desc_t eng_tt_particles_blocks[] = {
-    {NMO_GUID(0x506b40f7, 0x30852e46), "Point Particle System", bb_particle_system, NULL, NULL},
-    {NMO_GUID(0x1f1e7188, 0x0ec26d1f), "LinearParticleSystem", bb_particle_system, NULL, NULL},
-    {NMO_GUID(0x49957bfe, 0x0ff27ffc), "PlanarParticleSystem", bb_particle_system, NULL, NULL},
-    {NMO_GUID(0x3d7453f9, 0x1dba691f), "CubicParticleSystem", bb_particle_system, NULL, NULL},
-    {NMO_GUID(0x3fb65480, 0x6ca450e2), "DiscParticleSystem", bb_particle_system, NULL, NULL},
-    {NMO_GUID(0x13172f30, 0x3a7876ed), "ObjectParticleSystem", bb_particle_system, NULL, NULL},
-    {NMO_GUID(0x4a6524c4, 0x13b55824), "CurveParticleSystem", bb_particle_system, NULL, NULL},
-    {NMO_GUID(0x67c90f47, 0x1480721e), "CylindricalParticleSystem", bb_particle_system, NULL,
-     NULL},
-    {NMO_GUID(0x67c88f47, 0x8880721e), "SphericalParticleSystem", bb_particle_system, NULL, NULL},
+    {NMO_GUID(0x506b40f7, 0x30852e46), "Point Particle System", bb_particle_system,
+     cb_particle_system, NULL},
+    {NMO_GUID(0x1f1e7188, 0x0ec26d1f), "LinearParticleSystem", bb_particle_system,
+     cb_particle_system, NULL},
+    {NMO_GUID(0x49957bfe, 0x0ff27ffc), "PlanarParticleSystem", bb_particle_system,
+     cb_particle_system, NULL},
+    {NMO_GUID(0x3d7453f9, 0x1dba691f), "CubicParticleSystem", bb_particle_system,
+     cb_particle_system, NULL},
+    {NMO_GUID(0x3fb65480, 0x6ca450e2), "DiscParticleSystem", bb_particle_system,
+     cb_particle_system, NULL},
+    {NMO_GUID(0x13172f30, 0x3a7876ed), "ObjectParticleSystem", bb_particle_system,
+     cb_particle_system, NULL},
+    {NMO_GUID(0x4a6524c4, 0x13b55824), "CurveParticleSystem", bb_particle_system,
+     cb_particle_system, NULL},
+    {NMO_GUID(0x67c90f47, 0x1480721e), "CylindricalParticleSystem", bb_particle_system,
+     cb_particle_system, NULL},
+    {NMO_GUID(0x67c88f47, 0x8880721e), "SphericalParticleSystem", bb_particle_system,
+     cb_particle_system, NULL},
     {NMO_GUID(0x569d2cc2, 0x3bcb01b9), "TT_TimedependentPointParticlesystem", bb_particle_system,
-     NULL, NULL},
-    {NMO_GUID(0x02da5a18, 0x52227285), "TT WaveParticleSystem", bb_particle_system, NULL, NULL},
+     cb_particle_system, NULL},
+    {NMO_GUID(0x02da5a18, 0x52227285), "TT WaveParticleSystem", bb_particle_system,
+     cb_particle_system, NULL},
 };
 
 static void particle_manager_render(nmo_engine_t *engine, void *state, eng_render_stage_t stage,
