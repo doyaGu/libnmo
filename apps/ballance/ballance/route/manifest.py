@@ -76,7 +76,11 @@ def build_manifest(presets: list[dict], assets: Assets, layout: Layout, name: st
         "version": 1,
         "document": {"name": name},
         "materials": [m for m in presets if m["name"] in manifest.materials],
-        "groups": [{"name": group} for group in LEVEL_GROUPS],
+        # every sector's group, even one with no element in it: without
+        # Sector_01 the game never sets the balloon up, and the ball falls
+        # through where its planks should be
+        "groups": [{"name": group} for group in LEVEL_GROUPS] +
+                  [{"name": f"Sector_{index:02d}"} for index in range(1, len(layout.sectors) + 1)],
         "scenes": [{"name": name, "objects": manifest.objects}],
     }
 
