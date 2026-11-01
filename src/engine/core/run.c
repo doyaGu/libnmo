@@ -214,6 +214,7 @@ nmo_status_t nmo_engine_start(nmo_engine_t *engine, nmo_engine_start_mode_t mode
                 break; /* reset all the same, so a later activation without reset starts it */
             }
             eng_behavior_activate(engine, script, active, true);
+            engine->nodes.data[script].scene_active = active; /* CKScene::Launch: no callback */
             if (active) {
                 any_active = true;
                 eng_emit(engine, NMO_ENGINE_EVENT_ACTIVATE, script, 0, 1);
@@ -240,7 +241,10 @@ nmo_status_t nmo_engine_activate_script(nmo_engine_t *engine, nmo_object_id_t sc
     }
     eng_node_t *node = &engine->nodes.data[index];
     int32_t object = eng_map_get(&engine->object_map, node->owner);
-    /* CKScene::ActivateScript in the current scene: its owner joins if active there */
+    /*
+     * CKScene::ActivateScript in the current scene: its owner joins if active
+     * there; the script's blocks hear of it when its activity in the scene changes.
+     */
     if (active) {
         if (object >= 0 && engine->objects.data[object].active &&
             !engine->objects.data[object].destroyed) {
@@ -255,6 +259,11 @@ nmo_status_t nmo_engine_activate_script(nmo_engine_t *engine, nmo_object_id_t sc
         node->flags |= CKBEHAVIOR_DEACTIVATENEXTFRAME;
         node->flags &= ~(uint32_t)(CKBEHAVIOR_ACTIVATENEXTFRAME | CKBEHAVIOR_RESETNEXTFRAME);
     }
+    if (node->scene_active != active) {
+        node->scene_active = active;
+        eng_graph_callback(engine, index,
+                           active ? NMO_ENGINE_MSG_ACTIVATESCRIPT : NMO_ENGINE_MSG_DEACTIVATESCRIPT);
+    }
     return NMO_OK;
 }
 
@@ -268,11 +277,17 @@ nmo_status_t nmo_engine_activate_object(nmo_engine_t *engine, nmo_object_id_t ob
     if (index < 0) {
         return NMO_OK; /* no script: nothing for the behavior manager to do */
     }
-    /* CKScene::ActivateBeObject in the current scene */
+    /* CKScene::ActivateBeObject in the current scene: its scripts' blocks hear of it */
     eng_object_t *object = &engine->objects.data[index];
     if (object->active != active && !object->destroyed) {
         object->active = active;
         eng_object_next_frame(engine, index, active ? 1 : -1);
+        for (uint32_t s = 0; s < engine->objects.data[index].script_count; s++) {
+            int32_t script = *eng_index(engine, engine->objects.data[index].first_script + s);
+            eng_graph_callback(engine, script,
+                               active ? NMO_ENGINE_MSG_ACTIVATESCRIPT
+                                      : NMO_ENGINE_MSG_DEACTIVATESCRIPT);
+        }
     }
     return NMO_OK;
 }
@@ -334,6 +349,26 @@ static void eng_add_to_scene(nmo_engine_t *engine, nmo_object_id_t id, bool scri
 bool eng_in_scene(const nmo_engine_t *engine, nmo_object_id_t id)
 {
     return !engine->has_level_scene || eng_map_get(&engine->scene_objects, id) >= 0;
+}
+
+bool nmo_engine_parent_script_is_active(const nmo_engine_t *engine, nmo_object_id_t behavior_id)
+{
+    int32_t index = engine != NULL ? eng_map_get(&engine->node_map, behavior_id) : -1;
+    const eng_node_t *node = index >= 0 ? &engine->nodes.data[index] : NULL;
+    if (node == NULL || node->owner == 0) {
+        return false;
+    }
+    nmo_object_t *owner = eng_find_object(engine, node->owner);
+    if (owner != NULL && nmo_object_get_class_id(owner) == NMO_CID_LEVEL) {
+        return true;
+    }
+    if (!eng_in_scene(engine, node->owner)) {
+        return false;
+    }
+    while (node->parent >= 0) {
+        node = &engine->nodes.data[node->parent];
+    }
+    return node->scene_active;
 }
 
 /* CKLevel::AddObject: the object is in the level scene from now on. */

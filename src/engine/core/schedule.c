@@ -102,6 +102,18 @@ int eng_block_callback(nmo_engine_t *engine, int32_t node, uint32_t message)
     return n->block->desc.callback(&block, message);
 }
 
+void eng_graph_callback(nmo_engine_t *engine, int32_t node, uint32_t message)
+{
+    if (eng_node(engine, node)->is_block) {
+        eng_block_callback(engine, node, message);
+        return;
+    }
+    for (uint32_t i = 0; i < eng_node(engine, node)->child_count; i++) {
+        eng_graph_callback(engine, *eng_index(engine, eng_node(engine, node)->first_child + i),
+                           message);
+    }
+}
+
 /* A building block without a function, as nmo_engine_options_t.unknown_block says. */
 static int eng_execute_unknown(nmo_engine_t *engine, int32_t index)
 {

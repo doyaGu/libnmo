@@ -66,7 +66,8 @@ static int cb_planar_filter(blk_t *b, uint32_t message)
         message == NMO_ENGINE_MSG_DEACTIVATESCRIPT) {
         planar_filter_drawn(b->engine, b->node, false);
     } else if ((message == NMO_ENGINE_MSG_ACTIVATESCRIPT || message == NMO_ENGINE_MSG_RESUME) &&
-               nmo_engine_behavior_is_active(b->engine, block_node(b)->id)) {
+               nmo_engine_behavior_is_active(b->engine, block_node(b)->id) &&
+               nmo_engine_parent_script_is_active(b->engine, block_node(b)->id)) {
         planar_filter_drawn(b->engine, b->node, true);
     }
     return NMO_ENGINE_BR_OK;

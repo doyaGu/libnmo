@@ -82,6 +82,7 @@ typedef struct eng_node {
     nmo_object_id_t owner;  /* the object whose script holds it */
     bool is_block;
     bool unknown_reported;
+    bool scene_active;      /* a script: CK_SCENEOBJECT_ACTIVE in the level scene */
     const eng_block_entry_t *block;
     nmo_engine_block_fn fn;
     nmo_guid_t op_guid;     /* an Op building block's operation */
@@ -210,6 +211,8 @@ int eng_execute_behavior(nmo_engine_t *engine, int32_t node);
 void eng_sort_listed(nmo_engine_t *engine);
 int eng_block_call(nmo_engine_t *engine, int32_t node, nmo_engine_block_fn fn);
 int eng_block_callback(nmo_engine_t *engine, int32_t node, uint32_t message);
+/* CKBehavior::CallSubBehaviorsCallbackFunction: every block of the graph, depth first */
+void eng_graph_callback(nmo_engine_t *engine, int32_t node, uint32_t message);
 
 /* core/block.c */
 /* Find the function of every building block from node `first_node` on */

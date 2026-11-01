@@ -339,6 +339,12 @@ NMO_API double nmo_engine_time(const nmo_engine_t *engine);
 NMO_API uint32_t nmo_engine_behavior_flags(const nmo_engine_t *engine, nmo_object_id_t behavior_id);
 NMO_API bool nmo_engine_behavior_is_active(const nmo_engine_t *engine,
                                            nmo_object_id_t behavior_id);
+/**
+ * CKBehavior::IsParentScriptActiveInScene: whether the script holding the
+ * behavior is active in the level scene (always, for the level's scripts).
+ */
+NMO_API bool nmo_engine_parent_script_is_active(const nmo_engine_t *engine,
+                                                nmo_object_id_t behavior_id);
 NMO_API bool nmo_engine_io_is_active(const nmo_engine_t *engine, nmo_object_id_t io_id);
 /** Executions of a behavior since start. */
 NMO_API uint64_t nmo_engine_behavior_execution_count(const nmo_engine_t *engine,

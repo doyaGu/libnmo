@@ -1,5 +1,6 @@
 #include "engine_fixture.h"
 
+#include "engine/nmo_engine_render.h"
 #include "type/nmo_type_guids.h"
 
 #include <stdio.h>
@@ -669,6 +670,46 @@ TEST(engine_tt, planar_filter_stays_on_until_off)
     fixture_end(&f);
 }
 
+/* The draws of the frame now; -1 when it cannot be made */
+static int32_t frame_draws(engine_fixture_t *f)
+{
+    nmo_engine_frame_t frame;
+    return nmo_engine_render_frame(f->engine, &frame) == NMO_OK ? frame.draw_count : -1;
+}
+
+/* CKScene::ActivateScript and ActivateBeObject call the script's blocks back at once */
+TEST(engine_tt, planar_filter_leaves_with_its_script_and_comes_back)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t filter = fixture_block(&f, GUID_PLANAR_FILTER, "Filter");
+    ASSERT_TRUE(filter != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, filter, 0), 0);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    int32_t before = frame_draws(&f);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    int32_t drawn = frame_draws(&f);
+    ASSERT_EQ(before + 1, drawn);
+
+    /* Not after the next frame: the deactivation takes it out now */
+    ASSERT_EQ(NMO_OK, nmo_engine_activate_script(f.engine, f.script_id, false, false));
+    ASSERT_EQ(before, frame_draws(&f));
+    ASSERT_TRUE(nmo_engine_behavior_is_active(f.engine, filter));
+    ASSERT_FALSE(nmo_engine_parent_script_is_active(f.engine, filter));
+    ASSERT_EQ(NMO_OK, nmo_engine_activate_script(f.engine, f.script_id, true, false));
+    ASSERT_EQ(drawn, frame_draws(&f));
+    ASSERT_TRUE(nmo_engine_parent_script_is_active(f.engine, filter));
+
+    /* The owner's deactivation tells its scripts too, its activation brings the filter back */
+    ASSERT_EQ(NMO_OK, nmo_engine_activate_object(f.engine, f.owner_id, false));
+    ASSERT_EQ(before, frame_draws(&f));
+    ASSERT_EQ(NMO_OK, nmo_engine_activate_object(f.engine, f.owner_id, true));
+    ASSERT_EQ(drawn, frame_draws(&f));
+    fixture_end(&f);
+}
+
 TEST(engine_tt, counter_wraps_around_its_range)
 {
     engine_fixture_t f;
@@ -710,5 +751,6 @@ REGISTER_TEST(engine_tt, linear_volume_maps_the_volume);
 REGISTER_TEST(engine_tt, preload_textures_counts_each_texture_once);
 REGISTER_TEST(engine_tt, convert_pixel_uses_the_screen_mode);
 REGISTER_TEST(engine_tt, planar_filter_stays_on_until_off);
+REGISTER_TEST(engine_tt, planar_filter_leaves_with_its_script_and_comes_back);
 REGISTER_TEST(engine_tt, counter_wraps_around_its_range);
 TEST_MAIN_END()

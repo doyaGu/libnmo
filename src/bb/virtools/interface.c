@@ -1037,7 +1037,8 @@ static int cb_text_display(blk_t *b, uint32_t message)
         message == NMO_ENGINE_MSG_DEACTIVATESCRIPT) {
         sprite->shown = false;
     } else if ((message == NMO_ENGINE_MSG_ACTIVATESCRIPT || message == NMO_ENGINE_MSG_RESUME) &&
-               nmo_engine_behavior_is_active(b->engine, block_node(b)->id)) {
+               nmo_engine_behavior_is_active(b->engine, block_node(b)->id) &&
+               nmo_engine_parent_script_is_active(b->engine, block_node(b)->id)) {
         sprite->shown = true;
     }
     return NMO_ENGINE_BR_OK;
