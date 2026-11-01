@@ -10,9 +10,13 @@ level was built in (manifest.json and its OBJ meshes, as
 ballance_build_level.py writes them).  The objects are drawn in their world
 places, orthographically, with a depth buffer and flat light, coloured by
 what they are: floors (Phys_Floors) as stone, their walls darker, rails
-(Phys_FloorRails) as steel, stoppers as wood, elements (P_*) and markers
-(PS/PC/PR/PE) in colours of their own, the rest grey; with --textures (the
-game's Textures folder) the materials' own textures are drawn instead.
+(Phys_FloorRails) as steel, stoppers as wood, the rest grey; with --textures
+(the game's Textures folder) the materials' own textures are drawn instead.
+Each mechanism, element and marker (MECHANISMS: the P_* groups the game
+fills from 3D Entities/PH, and the start, checkpoints, reset points and
+balloon) is drawn in a colour of its own and named beside it in every view,
+with its sector; a legend under the views lists those in the image, how
+many, and what is known of how each plays.
 Hidden objects (the fall zone, the PH placeholders the game hides) are left
 out, and so is the SkyLayer.
 
@@ -57,9 +61,40 @@ PRESETS = Path(__file__).resolve().parent.parent / "data" / "level_materials.jso
 # Colours (r, g, b) by what an object is.
 FLOOR, WALL, RAIL, STOPPER, OTHER = (205, 190, 155), (140, 120, 95), (175, 185, 210), \
     (150, 100, 55), (130, 130, 130)
-ELEMENT = {"P_Extra": (240, 210, 40), "P_Trafo": (210, 80, 210), "P_Ball": (240, 140, 40),
-           "P_Box": (160, 110, 60), "P_Modul": (60, 190, 200), "P_Dome": (90, 170, 90)}
-MARKER = (220, 50, 50)
+# The mechanisms, elements and markers: (group, or name prefix for the
+# markers; short name; colour; how it plays, as far as known).
+MECHANISMS = [
+    ("P_Modul_01", "pusher", (255, 120, 60),
+     "stone key in a groove under the road and a frame with a target; woken near the ball"),
+    ("P_Modul_03", "gate", (190, 140, 255), "walls and a gate on a floor of its own"),
+    ("P_Modul_08", "swing", (120, 220, 120), "a swing hung from a fixed frame"),
+    ("P_Modul_17", "rotating arms", (255, 90, 160), "arms turning over the track"),
+    ("P_Modul_18", "fan", (80, 200, 255), "lifts a paper ball 21 up"),
+    ("P_Modul_19", "flaps", (230, 200, 90), "flaps on an axle"),
+    ("P_Modul_25", "drawbridge", (255, 170, 60), "plank the ball pushes over a gap 10 long"),
+    ("P_Modul_26", "sack", (200, 120, 70), "swings across the track"),
+    ("P_Modul_29", "plates", (140, 200, 200), "nine plates"),
+    ("P_Modul_30", "seesaw", (170, 230, 70), "a seesaw"),
+    ("P_Modul_34", "stone on box", (180, 180, 220),
+     "stands on a box in a lower channel; drops flush when the box is pushed out"),
+    ("P_Modul_37", "switch", (255, 60, 60),
+     "a stone ball on the target tips the plank across the cross track's gap"),
+    ("P_Modul_41", "slabs", (60, 220, 200), "tip under a wood or stone ball; paper crosses"),
+    ("P_Trafo_Paper", "to paper", (245, 245, 245), "ball changer"),
+    ("P_Trafo_Stone", "to stone", (150, 150, 160), "ball changer"),
+    ("P_Trafo_Wood", "to wood", (190, 130, 70), "ball changer"),
+    ("P_Ball_Paper", "paper ball", (235, 235, 210), "loose ball to push"),
+    ("P_Ball_Stone", "stone ball", (120, 120, 130), "loose ball to push"),
+    ("P_Ball_Wood", "wood ball", (170, 110, 50), "loose ball to push"),
+    ("P_Box", "box", (150, 95, 50), "box to push"),
+    ("P_Dome", "dome", (90, 170, 90), "dome"),
+    ("P_Extra_Point", "extra point", (250, 220, 40), "points"),
+    ("P_Extra_Life", "extra life", (250, 120, 200), "a life"),
+    ("PS_", "start", (230, 40, 40), "the level starts here"),
+    ("PC_", "checkpoint", (230, 40, 40), "ends a sector"),
+    ("PR_", "reset point", (240, 110, 110), "the ball comes back here"),
+    ("PE_", "balloon", (230, 40, 40), "the level ends here"),
+]
 BACKGROUND = (24, 26, 32)
 LIGHT = np.array([0.35, 0.8, -0.5]) / np.linalg.norm([0.35, 0.8, -0.5])
 
@@ -169,14 +204,27 @@ def load_project(folder: Path) -> list[dict]:
     return scene
 
 
+def mechanism_of(obj: dict) -> tuple | None:
+    """The MECHANISMS entry the object is, if any."""
+    for entry in MECHANISMS:
+        key = entry[0]
+        if key.endswith("_") and obj["name"].startswith(key) or key in obj["groups"]:
+            return entry
+    return None
+
+
+def sector_of(obj: dict) -> str:
+    for group in obj["groups"]:
+        if group.startswith("Sector_"):
+            return "S" + group[len("Sector_"):].lstrip("0")
+    return ""
+
+
 def colour_of(obj: dict, material: str | None) -> tuple[int, int, int]:
-    name, groups = obj["name"], obj["groups"]
-    if name.startswith(("PS_", "PC_", "PR_", "PE_")):
-        return MARKER
-    for group in groups:
-        for prefix, colour in ELEMENT.items():
-            if group.startswith(prefix):
-                return colour
+    groups = obj["groups"]
+    mechanism = mechanism_of(obj)
+    if mechanism is not None:
+        return mechanism[2]
     if "Phys_FloorRails" in groups:
         return RAIL
     if "Phys_FloorStopper" in groups:
@@ -311,6 +359,14 @@ def render(scene: list[dict], textures: Textures, yaw: float, pitch: float, scal
             _, point, colour, text = overlay
             x, y = to_px(point)
             draw.text((x + 4, y - 12), text, fill=colour)
+        elif kind == "label":
+            _, point, colour, text = overlay
+            x, y = to_px(point)
+            box = draw.textbbox((x + 6, y - 14), text)
+            draw.rectangle([box[0] - 2, box[1] - 1, box[2] + 2, box[3] + 1], fill=(10, 10, 14),
+                           outline=colour)
+            draw.text((x + 6, y - 14), text, fill=colour)
+            draw.line([(x, y), (box[0] - 2, box[3])], fill=colour, width=1)
     return out
 
 
@@ -419,7 +475,21 @@ def main() -> int:
         near = [p[1] for p in inside if abs(p[0] - x) < 3 and abs(p[2] - z) < 3]
         return (max(near) if near else (y0 + y1) / 2) + 0.3
 
-    overlays = route_overlays(route, floor_y) + trace_overlays(trace)
+    # the mechanisms in the box, named over their tops
+    labels, present = [], {}
+    for obj in scene:
+        mechanism = mechanism_of(obj)
+        if mechanism is None or not obj["tris"]:
+            continue
+        pts = np.array([p for _, points, _ in obj["tris"] for p in points])
+        cx, cz = float(pts[:, 0].mean()), float(pts[:, 2].mean())
+        if not (x0 <= cx <= x1 and z0 <= cz <= z1):
+            continue
+        sector = sector_of(obj)
+        labels.append(("label", (cx, float(pts[:, 1].max()) + 0.5, cz), mechanism[2],
+                       mechanism[1] + (f" {sector}" if sector else "")))
+        present[mechanism] = present.get(mechanism, 0) + 1
+    overlays = route_overlays(route, floor_y) + trace_overlays(trace) + labels
     textures = Textures(Path(args.textures) if args.textures else None)
     rows = []
     for view in args.views.split(","):
@@ -438,8 +508,12 @@ def main() -> int:
             rows.append([panel + (len(panels) == 1,) for panel in panels])
 
     gap, label = 8, 18
+    legend = [(entry, count) for entry, count in present.items()]
+    legend.sort(key=lambda item: MECHANISMS.index(item[0]))
+    legend_h = (len(legend) * 16 + gap * 2) if legend else 0
     width = max(sum(p.width for _, p, _ in row) + gap * (len(row) + 1) for row in rows)
-    height = sum(max(p.height for _, p, _ in row) + label + gap for row in rows) + gap
+    height = sum(max(p.height for _, p, _ in row) + label + gap for row in rows) + gap + legend_h
+    width = max(width, 560 if legend else 0)
     sheet = Image.new("RGB", (width, height), (12, 12, 16))
     draw = ImageDraw.Draw(sheet)
     y = gap
@@ -450,6 +524,11 @@ def main() -> int:
             sheet.paste(image, (x, y + label))
             x += image.width + gap
         y += max(p.height for _, p, _ in row) + label + gap
+    for (key, name, colour, note), count in legend:
+        draw.rectangle([gap, y + 2, gap + 10, y + 12], fill=colour)
+        draw.text((gap + 16, y), f"{name} ({key.rstrip('_')}) x{count}: {note}",
+                  fill=(220, 220, 220))
+        y += 16
     sheet.save(args.output)
     print(args.output)
     return 0
