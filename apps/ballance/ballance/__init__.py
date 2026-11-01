@@ -15,7 +15,10 @@ The package is layered; each layer uses only those above it in this list:
 - extract: what is read out of the game -- element meshes (elements), the
   materials (materials), and checks of a level file (check);
 - view: drawing a level -- its objects (scene), the rasteriser (render),
-  routes and ball paths over it (overlays), the image (sheet).
+  routes and ball paths over it (overlays), the image (sheet);
+- autoplay: playing a level by itself -- its ground on a grid (terrain), a
+  path for the ball over it (search), a plan of legs (plan), the points for
+  the autopilot (steer).
 
 The command line tools in apps/ballance/scripts are thin: they parse their
 arguments and call into here.
