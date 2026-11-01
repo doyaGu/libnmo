@@ -474,6 +474,36 @@ def strip(mesh: Mesh, x: float, z: float, toward: tuple[int, int], length: float
         mesh.quad("Floor_Side", out, *corners)
 
 
+def channel(mesh: Mesh, x: float, z: float, toward: tuple[int, int], length: float,
+            edge: float) -> None:
+    """A narrow road of any length, off the grid, whose edges are at height
+    edge, from (x, z) along toward (one of +-X, +-Z): the two
+    Floor_Top_Profile slopes of the grid's narrow road, mapped as they are
+    (u 0 and 1 at the edges, 0.5 at the fold, v along), with walls 5 deep
+    along its sides and its ends open, to join roads on other grids."""
+    dx, dz = toward
+    half = NARROW / 2
+
+    def at(a: float, c: float, y: float) -> tuple[float, float, float]:
+        return (x + dx * a + abs(dz) * c, y, z + dz * a + abs(dx) * c)
+
+    def along(point: tuple[float, float, float]) -> float:
+        return (point[2] if dx == 0 else point[0]) / REPEAT
+
+    for c, u in ((-half, 0.0), (half, 1.0)):
+        corners = [at(0.0, c, edge), at(length, c, edge), at(length, 0.0, edge - RISE),
+                   at(0.0, 0.0, edge - RISE)]
+        uvs = [u, u, 0.5, 0.5]
+        mesh.quad("Floor_Top_Profile", UP,
+                  *[(p, (uu, along(p))) for p, uu in zip(corners, uvs)])
+        out = (abs(dz) * c, 0.0, abs(dx) * c)
+        corners = []
+        for a, y in ((0.0, edge), (length, edge), (length, edge - WALL), (0.0, edge - WALL)):
+            point = at(a, c, y)
+            corners.append((point, ((edge - y) / REPEAT, along(point))))
+        mesh.quad("Floor_Side", out, *corners)
+
+
 def pad(mesh: Mesh, x: float, z: float, top: float, material: str) -> None:
     """The 5 by 5 block a ball changer stands on, centred on (x, z), its top
     at height top (a road's edges), its sides 5 deep, all in material (one of
