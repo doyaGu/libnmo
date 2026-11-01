@@ -31,6 +31,11 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
 - {"trafo": "paper", "stone" or "wood"} -- a ball changer on its pad, on a
   narrow road.  The original levels all turn the ball back to wood before
   the balloon; the builder warns when a route does not.
+- {"rail": length, "drop": dy} -- a straight rail, coming down dy.
+- {"rail_turn": "left" or "right"} -- the originals' rail bend, with a
+  straight 1.9 before and after it so that it ends 10 along and 10 aside.
+  Rails run from a narrow road or an area to a narrow road or an area
+  (ballance_rails.py).
 
 Every piece may carry "elements": [{"kind": "P_Box", "at": [along, right]}],
 placed from where the piece starts, along the track and to its right, and
@@ -63,6 +68,7 @@ import sys
 from pathlib import Path
 
 from ballance_floors import CELL, NARROW, RISE, WALL, Floors, Mesh, funnel, pad
+from ballance_rails import ABOVE_V, BEND_RADIUS, Rails, Ring, bend
 
 PRESETS = Path(__file__).resolve().parent.parent / "data" / "level_materials.json"
 
@@ -89,6 +95,8 @@ LEVEL_GROUPS = [
 
 # A stone floor: physics, stone rolling and hit sounds, the ball's shadow.
 STONE_FLOOR_GROUPS = ["Phys_Floors", "Sound_RollID_01", "Sound_HitID_01", "Shadow"]
+# Rails: physics and the metal sounds, no shadow, as the originals' have.
+RAIL_GROUPS = ["Phys_FloorRails", "Sound_RollID_03", "Sound_HitID_03"]
 
 # The kinds whose meshes --elements supplies (<Kind>.obj).
 MARKERS = ["PS_FourFlames", "PC_TwoFlames", "PR_Resetpoint", "PE_Balloon"]
@@ -124,6 +132,8 @@ FIRST_RESET_ABOVE, RESET_ABOVE = 3.65, 3.33
 BALLOON_REACH = 22.08
 BALLOON_BELOW_ROAD = 0.01
 WIDTHS = {"narrow": NARROW, "wide": 2 * NARROW}
+# A rail bend, with its straights, ends 10 along and 10 aside: on the grid.
+BEND_SPAN = 4 * CELL
 
 # The scenery, placed as the original levels place it (ballance_level_elements
 # exports one of each: Pillar, the Tower on top of one, Stick).  A pillar
@@ -177,6 +187,7 @@ class Builder:
         self.heading = HEADINGS[start.get("heading", "-x")]
         self.marker_y = -ROAD_ABOVE_MARKER  # the start's road edges are at 0
         self.sectors: list[Floors] = []
+        self.rails: list[Rails] = []
         self.extras: list[list] = []  # per sector: (function, args) writing funnels and pads
         self.elements: list[tuple[str, int, list[float]]] = []
         self.towers: list[list[float]] = []
@@ -201,14 +212,17 @@ class Builder:
             floors = Floors(origin=p)
             extras = [(funnel, at(marker, d, opening), d, edge, gap)]
             self.sectors.append(floors)
+            self.rails.append(Rails())
             self.extras.append(extras)
             self._open(floors, p, d)
             self.points.append(list(p))
             h = edge - RISE
             width = NARROW
+            self.floor = "road"  # what the last piece left the track on
+            self.run: list[Ring] | None = None
             for piece in pieces:
                 p, d, h, width = self._piece(index, floors, extras, piece, p, d, h, width)
-            if width != NARROW:
+            if width != NARROW or self.run is not None:
                 raise ValueError(f"sector {index} must end on a narrow road")
             edge = h + RISE
             self._open(floors, p, d)
@@ -235,9 +249,30 @@ class Builder:
         b = at(p, d, length, width / 2)
         return a[0], a[1], b[0], b[1]
 
+    def _dock(self, floors: Floors, p: tuple[float, float], d: tuple[int, int]) -> None:
+        a, b = at(p, d, 0, -NARROW / 2), at(p, d, 0, NARROW / 2)
+        floors.dock(a[0], a[1], b[0], b[1])
+
     def _piece(self, sector: int, floors: Floors, extras: list, piece: dict,
                p: tuple[float, float], d: tuple[int, int], h: float, width: float):
         start, heading = p, d
+        rail = "rail" in piece or "rail_turn" in piece
+        if rail and self.run is None:
+            # Rails meet floors as the originals' do: at a narrow road's end
+            # or through a gap in an area's rim.
+            if self.floor not in ("road", "area"):
+                raise ValueError("a rail starts from a narrow road or an area")
+            self._dock(floors, p, d)
+            self.run = [Ring(p[0], h + ABOVE_V, p[1], d[0], d[1])]
+        elif not rail and self.run is not None:
+            if not ("area" in piece or ("road" in piece and
+                                        piece.get("width", "narrow") == "narrow")):
+                raise ValueError("a rail ends at a narrow road or an area")
+            self._dock(floors, p, d)
+            self.rails[sector - 1].runs.append(self.run)
+            self.run = None
+        if rail and piece.get("elements"):
+            raise ValueError("elements stand on floors, not on rails")
         if "road" in piece:
             length = float(piece["road"])
             width = WIDTHS[piece.get("width", "narrow")]
@@ -247,6 +282,22 @@ class Builder:
             ramp = (h, end, length)
             p, h = at(p, d, length), end
             self.points.append(list(p))
+            self.floor = "road" if width == NARROW else "wide"
+        elif "rail" in piece:
+            p, h = at(p, d, float(piece["rail"])), h - float(piece.get("drop", 0.0))
+            self.run.append(Ring(p[0], h + ABOVE_V, p[1], d[0], d[1]))
+            self.points.append(list(p))
+            self.floor = "rail"
+        elif "rail_turn" in piece:
+            sign = 1 if piece["rail_turn"] == "right" else -1
+            side = (right_of(d)[0] * sign, right_of(d)[1] * sign)
+            a = at(p, d, BEND_SPAN - BEND_RADIUS)
+            rings = bend(a[0], h + ABOVE_V, a[1], d, side)
+            p = at(p, d, BEND_SPAN, sign * BEND_SPAN)
+            d = side
+            self.run += rings + [Ring(p[0], h + ABOVE_V, p[1], d[0], d[1])]
+            self.points += [[r.x, r.z] for r in rings[3::3]] + [list(p)]
+            self.floor = "rail"
         elif "area" in piece:
             along, across = (float(v) for v in piece["area"])
             floors.area(*self._rect(p, d, along, across), h)
@@ -265,6 +316,7 @@ class Builder:
                 d = right_of(d) if exit == "right" else (-right_of(d)[0], -right_of(d)[1])
                 p = at(middle, d, across / 2)
             self.points.append(list(p))
+            self.floor = "area"
         elif "turn" in piece:
             floors.road(*self._rect(p, d, width, width), h, h, along="x" if d[0] else "z")
             ramp = (h, h, width)
@@ -275,6 +327,7 @@ class Builder:
             d = side
             p = at(corner, d, width / 2)
             self.points.append(list(p))
+            self.floor = "turn"
         elif "trafo" in piece:
             if width != NARROW:
                 raise ValueError("a ball changer stands on a narrow road")
@@ -295,6 +348,7 @@ class Builder:
             self._open(floors, p, d)
             self.points.append(list(middle))
             self.points.append(list(p))
+            self.floor = "trafo"
         else:
             raise ValueError(f"unknown piece {piece}")
         for element in piece.get("elements", []):
@@ -345,9 +399,9 @@ class Builder:
 
     def write(self, out: Path, pads: bool) -> None:
         """The floors of each sector, with their funnels and pads, as
-        sector<N>.obj; without pads, boxes as high as the floors' rims stand
-        in for the start's and checkpoints' floors (start_pad.obj,
-        checkpoint_pad.obj)."""
+        sector<N>.obj, and its rails as rails<N>.obj; without pads, boxes
+        as high as the floors' rims stand in for the start's and checkpoints'
+        floors (start_pad.obj, checkpoint_pad.obj)."""
         for index, (floors, extras) in enumerate(zip(self.sectors, self.extras), start=1):
             mesh = Mesh()
             floors.build(mesh)
@@ -359,6 +413,8 @@ class Builder:
                     (x, z), top, material = args
                     pad(mesh, x, z, top, material)
             mesh.write(out / f"sector{index}.obj")
+            if self.rails[index - 1].runs:
+                self.rails[index - 1].write(out / f"rails{index}.obj")
         if not pads:
             for name, half in (("start_pad", START_OPENING), ("checkpoint_pad", CHECKPOINT_OPENING)):
                 write_box(out / f"{name}.obj", -half, half, -WALL, ROAD_ABOVE_MARKER, -half, half)
@@ -416,6 +472,9 @@ def build_manifest(presets: dict, meshes: dict[str, str], level: Builder, name: 
     for index in range(1, len(level.sectors) + 1):
         objects.append(level_object(f"A{index:02d}_Floor_02", f"sector{index}.obj", [0, 0, 0],
                                     STONE_FLOOR_GROUPS))
+        if level.rails[index - 1].runs:
+            objects.append(level_object(f"A{index:02d}_Rail_01", f"rails{index}.obj", [0, 0, 0],
+                                        RAIL_GROUPS))
     for index, (marker, d) in enumerate(level.checkpoints, start=1):
         objects.append(level_object(f"PC_TwoFlames_{index:02d}", meshes["PC_TwoFlames"], marker,
                                     ["PC_Checkpoints"], turn=turn_of(d)))
@@ -433,6 +492,8 @@ def build_manifest(presets: dict, meshes: dict[str, str], level: Builder, name: 
     used = {"Floor_Top_Profile", "Floor_Top_ProfileFlat", "Floor_Top_Flat",
             "Floor_Top_Boderless", "Floor_Side"}
     used.update(f"Floor_Trafo_{kind}" for kind in level.trafos)
+    if any(rails.runs for rails in level.rails):
+        used.add("Rail")
     pads = [("A01_Floor_01", (sx, level.marker_y, sz), heading, "Floor_Start", "start_pad.obj")]
     for index, (marker, d) in enumerate(level.checkpoints, start=2):
         pads.append((f"A{index:02d}_Floor_01", marker, turn_of(d), "Floor_Checkpoint",
