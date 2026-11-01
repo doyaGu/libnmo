@@ -43,6 +43,9 @@ void eng_save_ic(nmo_engine_t *engine, nmo_object_id_t id)
     ic->has_matrix = has_matrix;
     if (has_matrix) {
         memcpy(ic->world, world, sizeof(world));
+        int32_t entity = eng_entity_index(engine, id);
+        int32_t parent = entity >= 0 ? engine->entities.data[entity].parent : -1;
+        ic->parent = parent >= 0 ? engine->entities.data[parent].id : 0;
     }
     ic->visibility = eng_object_visibility(engine, id);
 }
@@ -65,6 +68,12 @@ void eng_restore_ic(nmo_engine_t *engine, nmo_object_id_t id)
     }
     eng_set_object_visibility(engine, id, ic->visibility);
     if (ic->has_matrix) {
+        /* CK3dEntity::Load: the parent (keeping where it is), then the world matrix */
+        int32_t entity = eng_entity_index(engine, id);
+        if (entity >= 0) {
+            eng_entity_set_parent(engine, entity,
+                                  ic->parent != 0 ? eng_entity_index(engine, ic->parent) : -1, true);
+        }
         nmo_engine_set_entity_world_matrix(engine, id, ic->world, true);
     }
 }

@@ -16,6 +16,7 @@
 #define GUID_DELETE_DYNAMIC_OBJECTS NMO_GUID(0x0cba3195, 0x53440e4c)
 #define GUID_RESTORE_IC NMO_GUID(0x766e4e44, 0x4fac6d52)
 #define GUID_TT_RESTORE_IC NMO_GUID(0x7e0f2f58, 0x232d3109)
+#define GUID_SET_PARENT NMO_GUID(0x9d9d9d98, 0x7e7a7f75)
 #define GUID_TT_SAVE_IC NMO_GUID(0x30362f34, 0x1935316f)
 
 #define DEPENDENCIES_CHUNK_CUSTOM 0x12248768u
@@ -386,18 +387,26 @@ TEST(engine_copy, initial_conditions_are_restored)
     nmo_object_id_t save_rows = fixture_block(&f, GUID_TT_SAVE_IC, "Save Rows");
     nmo_object_id_t restore_all = fixture_block(&f, GUID_TT_RESTORE_IC, "Restore All");
     nmo_object_id_t restore_rows = fixture_block(&f, GUID_RESTORE_IC, "Restore Rows");
-    ASSERT_TRUE(restore != 0 && save != 0 && save_rows != 0 && restore_all != 0 && restore_rows != 0);
+    nmo_object_id_t detach = fixture_block(&f, GUID_SET_PARENT, "Detach"); /* after the save */
+    nmo_object_id_t restore_child = fixture_block(&f, GUID_RESTORE_IC, "Restore Child");
+    ASSERT_TRUE(restore != 0 && save != 0 && save_rows != 0 && restore_all != 0 && restore_rows != 0 &&
+                detach != 0 && restore_child != 0);
     fixture_link(&f, f.script_in, BLOCK_IN(&f, restore, 0), 0);
     fixture_link(&f, f.script_in, BLOCK_IN(&f, save, 0), 1);
     fixture_link(&f, f.script_in, BLOCK_IN(&f, save_rows, 0), 1);
     fixture_link(&f, f.script_in, BLOCK_IN(&f, restore_all, 0), 2);
     fixture_link(&f, f.script_in, BLOCK_IN(&f, restore_rows, 0), 2);
+    fixture_link(&f, BLOCK_OUT(&f, save, 0), BLOCK_IN(&f, detach, 0), 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, restore_child, 0), 2);
     fixture_input_int(&f, BLOCK_PIN(&f, save, 0), 1); /* Hierarchy */
     fixture_input_int(&f, BLOCK_PIN(&f, restore_all, 0), 1);
     nmo_object_id_t restore_target = target_source(&f, restore);
     nmo_object_id_t save_target = target_source(&f, save);
     nmo_object_id_t restore_all_target = target_source(&f, restore_all);
-    ASSERT_TRUE(restore_target != 0 && save_target != 0 && restore_all_target != 0);
+    nmo_object_id_t detach_target = target_source(&f, detach);
+    nmo_object_id_t restore_child_target = target_source(&f, restore_child);
+    ASSERT_TRUE(restore_target != 0 && save_target != 0 && restore_all_target != 0 &&
+                detach_target != 0 && restore_child_target != 0);
     fixture_input_int(&f, fixture_target(&f, save_rows), (int32_t)array);
     fixture_input_int(&f, fixture_target(&f, restore_rows), (int32_t)array);
     fixture_commit(&f, NULL);
@@ -411,6 +420,9 @@ TEST(engine_copy, initial_conditions_are_restored)
         nmo_object_id_t pin = i == 0 ? restore_target : i == 1 ? save_target : restore_all_target;
         ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, pin, &original, sizeof(original)));
     }
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, detach_target, &child, sizeof(child)));
+    ASSERT_EQ(NMO_OK,
+              nmo_engine_set_param_value(f.engine, restore_child_target, &child, sizeof(child)));
 
     ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
     /* Moved with its child: Restore IC puts it back where it was loaded (it was saved with an
@@ -422,11 +434,13 @@ TEST(engine_copy, initial_conditions_are_restored)
     ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
     ASSERT_FLOAT_EQ(3.0f, position_x(&f, original), 0.0001f);
     ASSERT_FLOAT_EQ(11.0f, position_x(&f, child), 0.0001f);
-    /* Saved at frame 1 with the hierarchy and an empty array; moved and filled after */
+    /* Saved at frame 1 with the hierarchy and an empty array, the child then detached; moved
+     * and filled after */
     ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(0u, nmo_engine_entity_parent(f.engine, child));
     m[12] = 20.0f;
     ASSERT_EQ(NMO_OK, nmo_engine_set_entity_world_matrix(f.engine, original, m, false));
-    ASSERT_FLOAT_EQ(28.0f, position_x(&f, child), 0.0001f);
+    ASSERT_FLOAT_EQ(11.0f, position_x(&f, child), 0.0001f);
     ASSERT_EQ(NMO_OK, nmo_engine_array_insert_column(f.engine, array, -1, CKARRAYTYPE_INT,
                                                      NMO_GUID(0u, 0u)));
     ASSERT_EQ(NMO_OK, nmo_engine_array_insert_row(f.engine, array, -1, NULL));
@@ -434,6 +448,11 @@ TEST(engine_copy, initial_conditions_are_restored)
     ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
     ASSERT_FLOAT_EQ(3.0f, position_x(&f, original), 0.0001f);
     ASSERT_FLOAT_EQ(11.0f, position_x(&f, child), 0.0001f);
+    /* Its own Restore IC gives the child its parent back (CK3dEntity::Load): it moves with it */
+    ASSERT_EQ(original, nmo_engine_entity_parent(f.engine, child));
+    m[12] = 5.0f;
+    ASSERT_EQ(NMO_OK, nmo_engine_set_entity_world_matrix(f.engine, original, m, false));
+    ASSERT_FLOAT_EQ(13.0f, position_x(&f, child), 0.0001f);
     ASSERT_EQ(0, nmo_engine_array_row_count(f.engine, array));
     ASSERT_EQ(0, nmo_engine_array_column_count(f.engine, array));
     fixture_end(&f);

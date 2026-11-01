@@ -20,6 +20,7 @@ typedef struct eng_ic {
     eng_array_t array;
     bool has_matrix;
     float world[16];
+    nmo_object_id_t parent; /* a 3D entity's parent then (0 for none), which CK3dEntity::Load sets */
     int32_t visibility; /* CK_OBJECT_VISIBLE and HIERACHICALHIDE, which CKObject::Load restores */
 } eng_ic_t;
 
