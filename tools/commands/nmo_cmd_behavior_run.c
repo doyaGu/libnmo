@@ -151,11 +151,12 @@ static long run_parse_keys(const char *spec, run_key_t *out)
  * --steer: from frame `first` (to `last`), the arrow keys roll an object through the
  * points in turn, as a player would, in the camera's frame: the first shown
  * of the objects --steer-object names (a game swaps the object a player
- * rolls). A point is passed once the object comes within STEER_REACH of it,
- * and, if the point has a height, is at least that high there (it waits to be
- * lifted), and, if it has a frame count, after that many more frames heading
- * for it (it keeps pushing there); after a jump (a respawn), it heads for the
- * point after the nearest one.  Between points it follows the path without
+ * rolls). A point is passed once the object comes within STEER_REACH of it
+ * (STEER_STOP_REACH of one it must stop at), and, if the point has a height,
+ * is at least that high there (it waits to be lifted), and, if it has a frame
+ * count, after that many more frames heading for it (it keeps pushing
+ * there); after a jump (a respawn), it heads for the point after the nearest
+ * one.  Between points it follows the path without
  * stopping, slowing down only as much as the bends ahead need
  * (run_steer_heading).
  */
@@ -174,6 +175,7 @@ typedef struct run_steer {
 static char *run_strndup(const char *text, size_t length);
 
 #define STEER_REACH 3.5f
+#define STEER_STOP_REACH 1.5f
 #define STEER_JUMP 10.0f
 #define STEER_LOOKAHEAD 20.0f /* frames of the object's speed to allow for */
 #define STEER_DEAD 0.5f
@@ -183,6 +185,7 @@ static char *run_strndup(const char *text, size_t length);
 #define STEER_SLOW 0.1f   /* through a right-angled bend */
 #define STEER_BRAKE 0.006f /* how much speed braking takes off a frame */
 #define STEER_EASE 0.02f  /* how far off the speed wanted to push or brake */
+#define STEER_TRACK 1.0f  /* how hard it is pulled back onto the path, a unit off */
 
 /* Whether the object must stop at point i: the last, or one with a height to
  * wait for or frames to hold. */
@@ -274,6 +277,18 @@ static void run_steer_heading(const run_steer_t *steer, float x, float z, float 
     float push = along < wanted - STEER_EASE ? 1.0f : along > wanted + STEER_EASE ? -1.0f : 0.0f;
     *dx = ux * push * STEER_DEAD * 4.0f - sx * STEER_LOOKAHEAD;
     *dz = uz * push * STEER_DEAD * 4.0f - sz * STEER_LOOKAHEAD;
+    /* away from the next point, off the line to it from the point before,
+     * it is pulled back across: the aim alone lets it settle as far off as
+     * the keys' dead zone */
+    if (i > 0 && left > STEER_CARROT) {
+        const float *from = &steer->points[(i - 1) * 4];
+        float px = point[0] - from[0], pz = point[1] - from[1], pl = hypotf(px, pz);
+        if (pl > 0.0f) {
+            float off = ((x - from[0]) * pz - (z - from[1]) * px) / pl;
+            *dx -= pz / pl * off * STEER_TRACK;
+            *dz += px / pl * off * STEER_TRACK;
+        }
+    }
 }
 
 /* Parse "X,Z[,Y[,F]];...@FRAME[-FRAME]" into `out` (points left NULL when only checking);
@@ -400,7 +415,8 @@ static void run_steer_frame(nmo_engine_t *engine, run_steer_t *steer, uint32_t f
         steer->z = z;
         while (steer->next + 1 < steer->count &&
                hypotf(steer->points[steer->next * 4] - x,
-                      steer->points[steer->next * 4 + 1] - z) < STEER_REACH &&
+                      steer->points[steer->next * 4 + 1] - z) <
+                   (run_steer_stops(steer, steer->next) ? STEER_STOP_REACH : STEER_REACH) &&
                m[13] >= steer->points[steer->next * 4 + 2]) {
             if ((float)steer->held < steer->points[steer->next * 4 + 3]) {
                 steer->held++;
