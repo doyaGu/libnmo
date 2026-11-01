@@ -41,7 +41,7 @@ typedef struct run_args {
     const char *path; /* --path: where loaded files are found, besides the file's folder */
     const char *write; /* --write: where saved files go, and where loading looks first */
     const char *keys; /* "Space@30-35,Enter@60": keys and the frames they are down */
-    const char *steer; /* "X,Z;X,Z;...@FRAME": points an object is steered through */
+    const char *steer; /* "X,Z;X,Z;...@FRAME[-FRAME]": points an object is steered through */
     const char *steer_objects; /* "NAME,NAME": the objects --steer may steer, first shown */
     const char *messages; /* "Level_Finish@4000:All_Gameplay,...": messages the host sends */
     const char *registry; /* "Software\Game\Settings\Language=1;...": registry values */
@@ -133,7 +133,7 @@ static long run_parse_keys(const char *spec, run_key_t *out)
 }
 
 /*
- * --steer: from frame `first`, the arrow keys roll an object through the
+ * --steer: from frame `first` (to `last`), the arrow keys roll an object through the
  * points in turn, as a player would, in the camera's frame: the first shown
  * of the objects --steer-object names (a game swaps the object a player
  * rolls). A point is passed once the object comes within STEER_REACH of it;
@@ -142,7 +142,7 @@ static long run_parse_keys(const char *spec, run_key_t *out)
 typedef struct run_steer {
     float *points; /* x, z */
     long count;
-    uint32_t first;
+    uint32_t first, last;
     long next;
     bool placed;
     float x, z; /* the object last frame */
@@ -156,7 +156,7 @@ static char *run_strndup(const char *text, size_t length);
 #define STEER_LOOKAHEAD 20.0f /* frames of the object's speed to allow for */
 #define STEER_DEAD 0.5f
 
-/* Parse "X,Z;X,Z;...@FRAME" into `out` (points left NULL when only checking). */
+/* Parse "X,Z;X,Z;...@FRAME[-FRAME]" into `out` (points left NULL when only checking). */
 static bool run_parse_steer(const char *spec, run_steer_t *out)
 {
     const char *at = strrchr(spec, '@');
@@ -164,8 +164,14 @@ static bool run_parse_steer(const char *spec, run_steer_t *out)
         return false;
     }
     const char *p = at + 1;
-    uint32_t first = 0;
-    if (!run_frame_number(&p, &first) || *p != '\0') {
+    uint32_t first = 0, last = UINT32_MAX;
+    if (!run_frame_number(&p, &first)) {
+        return false;
+    }
+    if (*p == '-' && (++p, !run_frame_number(&p, &last) || last < first)) {
+        return false;
+    }
+    if (*p != '\0') {
         return false;
     }
     long count = 0;
@@ -198,7 +204,7 @@ static bool run_parse_steer(const char *spec, run_steer_t *out)
         }
     }
     if (out != NULL) {
-        *out = (run_steer_t){.points = points, .count = count, .first = first};
+        *out = (run_steer_t){.points = points, .count = count, .first = first, .last = last};
     }
     return true;
 }
@@ -224,7 +230,9 @@ static void run_steer_frame(nmo_engine_t *engine, run_steer_t *steer, uint32_t f
 {
     static const char *const arrows[] = {"Up", "Down", "Left", "Right"};
     bool down[4] = {false, false, false, false};
-    nmo_object_id_t steered = frame >= steer->first ? run_steer_object(engine, steer->objects) : 0;
+    nmo_object_id_t steered = frame >= steer->first && frame <= steer->last
+                                  ? run_steer_object(engine, steer->objects)
+                                  : 0;
     float m[16];
     nmo_engine_frame_t view;
     if (steered != 0 && nmo_engine_entity_world_matrix(engine, steered, m) &&
@@ -1164,7 +1172,8 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
         {"--keys", "-k", NMO_OPT_STRING,
          "Keys held down: KEY@FRAME[-FRAME],... (names like Space, or scan codes)"},
         {"--steer", NULL, NMO_OPT_STRING,
-         "From FRAME, roll --steer-object through the points with the arrow keys: X,Z;X,Z;...@FRAME"},
+         "From FRAME (to FRAME), roll --steer-object through the points with the arrow keys: "
+         "X,Z;X,Z;...@FRAME[-FRAME]"},
         {"--steer-object", NULL, NMO_OPT_STRING,
          "The objects --steer rolls: NAME,NAME,... (the first one shown)"},
         {"--path", NULL, NMO_OPT_STRING,
