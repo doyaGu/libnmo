@@ -35,6 +35,15 @@
 #ifndef GL_GENERATE_MIPMAP
 #define GL_GENERATE_MIPMAP 0x8191
 #endif
+#ifndef GL_TEXTURE_MAX_ANISOTROPY_EXT
+#define GL_TEXTURE_MAX_ANISOTROPY_EXT 0x84FE
+#endif
+#ifndef GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT
+#define GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT 0x84FF
+#endif
+#ifndef GL_MULTISAMPLE
+#define GL_MULTISAMPLE 0x809D
+#endif
 #ifndef GL_CLAMP_TO_EDGE
 #define GL_CLAMP_TO_EDGE 0x812F
 #endif
@@ -77,6 +86,7 @@ struct nmo_view {
     view_mesh_t *meshes;
     size_t mesh_count, mesh_capacity;
     int frame_width, frame_height;   /* the render context */
+    float anisotropy;                /* the driver's most for mipmapped textures; 0 for none */
     int view_x, view_y, view_w, view_h; /* where it shows in the window, in pixels */
     uint64_t start;
     bool cursor_shown;
@@ -533,7 +543,15 @@ static void view_set_material(nmo_view_t *view, const nmo_engine_material_t *m, 
     if (texture != 0) {
         glEnable(GL_TEXTURE_2D);
         glBindTexture(GL_TEXTURE_2D, texture);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, view_filter(m->min_filter, true));
+        GLint min_filter = view_filter(m->min_filter, true);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, min_filter);
+        /* The window has many more pixels than CK's render context: mipmaps seen at a
+           slant stay sharp */
+        if (view->anisotropy > 1.0f) {
+            bool mipmapped = min_filter != GL_NEAREST && min_filter != GL_LINEAR;
+            glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT,
+                            mipmapped ? view->anisotropy : 1.0f);
+        }
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, view_filter(m->mag_filter, false));
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, (GLint)view_address(m->address_mode));
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, (GLint)view_address(m->address_mode));
@@ -1276,16 +1294,32 @@ nmo_status_t nmo_view_open(nmo_engine_t *engine, const char *title, int scale,
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    view->window = SDL_CreateWindow(title != NULL ? title : "nmo", 640 * scale, 480 * scale,
-                                    SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE |
-                                        SDL_WINDOW_HIGH_PIXEL_DENSITY);
-    view->context = view->window != NULL ? SDL_GL_CreateContext(view->window) : NULL;
+    /* Edges smoothed with 4 samples a pixel, or none when the driver has no such format */
+    for (int samples = 4; samples >= 0 && view->context == NULL; samples -= 4) {
+        SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, samples > 0 ? 1 : 0);
+        SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, samples);
+        view->window = SDL_CreateWindow(title != NULL ? title : "nmo", 640 * scale, 480 * scale,
+                                        SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE |
+                                            SDL_WINDOW_HIGH_PIXEL_DENSITY);
+        view->context = view->window != NULL ? SDL_GL_CreateContext(view->window) : NULL;
+        if (view->context == NULL && view->window != NULL && samples > 0) {
+            SDL_DestroyWindow(view->window);
+            view->window = NULL;
+        }
+    }
     if (view->context == NULL) {
         fprintf(stderr, "Error: Could not open an OpenGL window (%s)\n", SDL_GetError());
         nmo_view_close(view);
         return NMO_ERR_INVALID_STATE;
     }
     SDL_GL_SetSwapInterval(1);
+    glEnable(GL_MULTISAMPLE);
+    const char *extensions = (const char *)glGetString(GL_EXTENSIONS);
+    if (extensions != NULL && strstr(extensions, "GL_EXT_texture_filter_anisotropic") != NULL) {
+        GLfloat most = 0.0f;
+        glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &most);
+        view->anisotropy = most > 8.0f ? 8.0f : most;
+    }
     view->audio = view_audio_open();
     view->text = view_text_open();
     view->start = SDL_GetTicksNS();
