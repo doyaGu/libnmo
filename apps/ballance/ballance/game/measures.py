@@ -45,6 +45,22 @@ RAIL_OVERHANG, RAIL_FALL = 5.0, 15.0
 # The builder crosses the next 25 from a log's far end, 25 from its own near
 # end; the ball lands on the first one 5 past the rail's end it falls from.
 LOG_SEGMENT, LOG_TOP, LOG_CROSS = 50.0, 2.26, 25.0
+# Logs and troughs are exported 1 to 8 segments long, each length one mesh.
+LOG_MOST = 8
+# Troughs (Level_04's A01_Halfpipe_01 to _04): wooden U troughs 18.58 wide,
+# open at both ends, their bottoms 2.36 below their axes and their rims 2.86
+# above, built of 50-long segments.  Level_04 lays them side by side, each
+# 19.6 aside of the last at the same height and overlapping its last 50;
+# the ball swings up the far wall and over the rim into the next (a stone
+# ball never gets over, a paper one only sometimes).  Its way over, from
+# where the next trough starts (along, aside toward the next, rush): back
+# 27 in the middle, 18 on up the far wall 8 out, rushing to the next one's
+# middle 48 on (worked out on Level_04).  The ball drops into the first 10
+# past its near end, and leaves the last over its open end, onto a log
+# whose top is level with its bottom 0.5 on (A01_Halfpipe_05) or off it.
+TROUGH_SEGMENT, TROUGH_BOTTOM, TROUGH_ASIDE, TROUGH_LAND = 50.0, 2.36, 19.6, 10.0
+TROUGH_HOP = [(-27.0, 0.0, False), (18.0, -8.0, False), (48.0, TROUGH_ASIDE, True)]
+TROUGH_LOG_GAP = 0.5
 # A rail meets a wide road's end as Level_01's A01_Rail_07 meets A01_Floor_03:
 # through a piece 5 long whose slopes go on as the road's while its flat
 # middle sinks to a narrow road's V, 0.7 deep at the rail; the tubes' middles

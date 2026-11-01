@@ -121,6 +121,15 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
   crossing dy below the last log, 25 from its far end, that the ball rolls
   off the last onto, as Level_12's logs do.  A fall from a log's end drops
   the ball into an area.
+- {"trough": length} -- a wooden U trough (Level_04's "halfpipes"), a
+  whole number of 50-long segments, open at both ends, that a fall drops
+  the ball into 10 past its near end; {"trough": length, "hop": "left" or
+  "right"} -- one 19.6 beside the last at the same height, overlapping its
+  last 50, that the ball swings over the rim into, as Level_04's do (the
+  trough hopped from 100 long at least).  A log goes straight on out of a
+  trough's open end, its top level with the trough's bottom, and a fall
+  drops the ball off it.  Only a wood ball can be counted on to hop: on
+  Level_04's, a stone ball never gets over and a paper one only sometimes.
 - {"cradle": true} -- the rail bends straight down into a cradle on a 15 by
   15 block, as Level_01's A01_Rail_09 does, 9.09 below the rail; the track
   leaves the block to the right, from a narrow road's end on it, 7.5 from

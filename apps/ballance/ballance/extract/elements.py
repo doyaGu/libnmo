@@ -81,8 +81,6 @@ SNAP = {
     "Modul27": ([5.0], [], [2.5]),
     "Modul42": ([35.16], [0.41], [2.5]),
     "Floor_Cradle": ([7.5, 5.0, 2.5], [2.5, 1.8, 1.1], [7.5, 5.0, 2.5]),
-    "Log": ([25.0], [], []),
-    "Log_End": ([0.0], [], []),
     "Floor_RailDock": ([5.0, 2.5], [0.7, 0.58], [5.0]),
     "Modul02": ([28.2], [11.84], [2.5]),
     "Floor_Modul02": ([42.49, 44.99, 47.49, 52.49, 54.99, 57.49], [13.18, 18.18],
@@ -178,6 +176,45 @@ class ModuleCut(Cut):
         return f"{path.name}:{self.floor}"
 
 
+class ChainCut(Cut):
+    """A floor that repeats along its X, as a log or a trough does: each
+    length from one segment to `most`, as <kind>_<n>.obj, n segments of
+    `step` (the part of the floor in segment, a box of its own frame) one
+    after the other around the origin, with the face in end (a box there,
+    facing X) at either end, so that each length is one mesh, without the
+    seams between segments the ball would knock against."""
+
+    def __init__(self, kind: str, level: str, floor: str, segment: tuple, end: tuple,
+                 step: float, most: int) -> None:
+        super().__init__(kind, level)
+        self.floor, self.segment, self.end, self.step, self.most = floor, segment, end, step, most
+
+    def take(self, levels, path, out, centers):
+        objects = levels.objects(path)
+        if self.floor not in objects:
+            return None
+        faces, mtl = levels.faces(path, objects[self.floor])
+        matrix = matrix_of(objects[self.floor]["world_matrix"])
+        segment = in_frame(faces, matrix, self.segment)
+        end = in_frame(faces, matrix, self.end)
+        middle = (self.segment[0] + self.segment[1]) / 2
+        tip = (self.end[0] + self.end[1]) / 2
+        for n in range(1, self.most + 1):
+            chain = []
+            for k in range(n):
+                shift = self.step * (k - (n - 1) / 2) - middle
+                chain += [(m, [((p[0] + shift, p[1], p[2]), uv, nm) for p, uv, nm in corners])
+                          for m, corners in segment]
+            half = self.step * n / 2
+            for sign in (1.0, -1.0):
+                # the far face as it is, the near one turned about Y
+                chain += [(m, [((sign * (p[0] - tip + half), p[1], sign * p[2]), uv,
+                                (sign * nm[0], nm[1], sign * nm[2])) for p, uv, nm in corners])
+                          for m, corners in end]
+            write_faces(chain, [mtl], (0.0, 0.0, 0.0), f"{self.kind}_{n}", out)
+        return f"{path.name}:{self.floor}"
+
+
 class DecorCut(Cut):
     """Objects' faces within reach of a point (X, Z), around the top of their
     middle, or around another cut's (on)."""
@@ -248,11 +285,11 @@ CUTS: list[Cut] = [
               (-7.45, 8.0, -2.0, 9.6, -8.0, 3.84)),
     ModuleCut("Misc_Cradle", "Level_01.NMO", "A01_Misc_Schelle04", "A01_Floor_05",
               (-8.0, 8.0, -3.0, 3.0, -9.0, 9.0)),
-    # a log's middle segment, and the face at its end
-    ModuleCut("Log", "Level_12.NMO", "A08_Halfpipe_02", "A08_Halfpipe_02",
-              (-25.05, 25.05, -2.4, 2.4, -8.5, 8.5)),
-    ModuleCut("Log_End", "Level_12.NMO", "A08_Halfpipe_02", "A08_Halfpipe_02",
-              (74.95, 75.05, -2.4, 2.4, -8.5, 8.5), (75.0, 0.0, 0.0)),
+    # troughs and logs of 1 to 8 segments, each one mesh
+    ChainCut("Trough", "Level_04.NMO", "A01_Halfpipe_01", (-50.05, 0.05, -3.0, 3.0, -9.4, 9.4),
+             (99.95, 100.05, -3.0, 3.0, -9.4, 9.4), 50.0, 8),
+    ChainCut("Log", "Level_12.NMO", "A08_Halfpipe_02", (-25.05, 25.05, -2.4, 2.4, -8.5, 8.5),
+             (74.95, 75.05, -2.4, 2.4, -8.5, 8.5), 50.0, 8),
     # a wide road's end narrowing to a rail, its flat middle at the origin
     ModuleCut("Floor_RailDock", "Level_01.NMO", "A01_Floor_03", "A01_Rail_07",
               (-5.1, 5.1, -6.0, 1.4, 12.8, 17.95), (0.0, 0.58, 17.88)),
@@ -388,4 +425,6 @@ def every_kind() -> list[str]:
     marker_cuts = [c.kind for c in CUTS if isinstance(c, MarkerCut)]
     module_cuts = [c.kind for c in CUTS if isinstance(c, ModuleCut)]
     decor = [c.kind for c in CUTS if isinstance(c, DecorCut)]
-    return KINDS + marker_cuts + module_cuts + decor
+    chains = [f"{c.kind}_{n}" for c in CUTS if isinstance(c, ChainCut)
+              for n in range(1, c.most + 1)]
+    return KINDS + marker_cuts + module_cuts + decor + chains

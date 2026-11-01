@@ -18,15 +18,17 @@ from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, 
                              CRADLE_EXIT, CRADLE_RING, CRADLE_TOP, ELEMENT_LIFT, FAN_BELOW,
                              FAN_REACH, FLAPS_COUNTERWEIGHT, FLAPS_LENGTH, FLAPS_MODULE, FUNNEL,
                              JUMP_ABOVE, JUMP_AREA, JUMP_DOWN, JUMP_HALF, LIFT_BELOW, LIFT_ENTRY,
-                             LIFT_EXIT, LIFT_RIDE, LIFT_TOP, LIFT_WALLS, LOG_CROSS, LOG_SEGMENT,
-                             LOG_TOP, PILLAR_INSET, PLANK_BELOW, PLANK_LENGTH, PUSHERS_ASIDE,
-                             PUSHERS_LENGTH, PUSHERS_MODULES, PUSHERS_PATH, RAIL_DOCK_BELOW,
-                             RAIL_DOCK_LENGTH, RAIL_FALL, RAIL_OVERHANG, SACK_ABOVE,
-                             STONEBOX_LENGTH, STONEBOX_MODULE, STONEBOX_PATH, STONEBOX_RISE,
-                             STONEBOX_TRAFO, SWING_ABOVE, SWING_FAR, SWING_GO, SWING_HALF,
-                             SWING_SEAT, SWING_WAIT, SWITCH_AREA, SWITCH_CROSS, SWITCH_HOLD,
-                             SWITCH_MODULE, SWITCH_SPUR, SWITCH_TARGET, TRAFO_LIFT, TWIST_ASIDE,
-                             TWIST_BELOW, TWIST_HALF, TWIST_PATH, WALKWAY_ABOVE, WALKWAY_LENGTH)
+                             LIFT_EXIT, LIFT_RIDE, LIFT_TOP, LIFT_WALLS, LOG_CROSS, LOG_MOST,
+                             LOG_SEGMENT, LOG_TOP, PILLAR_INSET, PLANK_BELOW, PLANK_LENGTH,
+                             PUSHERS_ASIDE, PUSHERS_LENGTH, PUSHERS_MODULES, PUSHERS_PATH,
+                             RAIL_DOCK_BELOW, RAIL_DOCK_LENGTH, RAIL_FALL, RAIL_OVERHANG,
+                             SACK_ABOVE, STONEBOX_LENGTH, STONEBOX_MODULE, STONEBOX_PATH,
+                             STONEBOX_RISE, STONEBOX_TRAFO, SWING_ABOVE, SWING_FAR, SWING_GO,
+                             SWING_HALF, SWING_SEAT, SWING_WAIT, SWITCH_AREA, SWITCH_CROSS,
+                             SWITCH_HOLD, SWITCH_MODULE, SWITCH_SPUR, SWITCH_TARGET, TRAFO_LIFT,
+                             TROUGH_ASIDE, TROUGH_BOTTOM, TROUGH_HOP, TROUGH_LAND, TROUGH_LOG_GAP,
+                             TROUGH_SEGMENT, TWIST_ASIDE, TWIST_BELOW, TWIST_HALF, TWIST_PATH,
+                             WALKWAY_ABOVE, WALKWAY_LENGTH)
 from ..kit.floors import CELL, NARROW, RISE, WALL
 from ..kit.pieces import channel, funnel, pad, strip
 from ..kit.rails import ABOVE_V, BEND_RADIUS, Ring, bend
@@ -124,23 +126,62 @@ def lay_log(layout: Layout, sector: int, part: Sector, piece: dict, track: Track
         d, top = track.d, track.h
         land = at(track.p, d, RAIL_OVERHANG)
         start = at(land, d, -LOG_CROSS)
+    elif track.floor == "trough":
+        # on out of the trough's open end, level with its bottom
+        d, top = track.d, track.h
+        start = at(track.p, d, TROUGH_LOG_GAP)
     else:
         if "turn" not in piece or "drop" not in piece:
             raise ValueError("a log after a log turns and drops under it")
         cross = at(track.p, track.d, -LOG_CROSS)
         d, top = side_of(track.d, piece["turn"]), track.h - float(piece["drop"])
         start = at(cross, d, -LOG_CROSS)
-    for k in range(segments):
-        middle = at(start, d, LOG_SEGMENT * (k + 0.5))
-        layout.module_floors.append(("Log", sector, [middle[0], top - LOG_TOP, middle[1]],
-                                     turn_of(d)))
+    if segments > LOG_MOST:
+        raise ValueError(f"a log is {LOG_MOST} segments long at most")
+    middle = at(start, d, length / 2)
+    layout.module_floors.append((f"Log_{segments}", sector, [middle[0], top - LOG_TOP, middle[1]],
+                                 turn_of(d)))
     end = at(start, d, length)
-    for p, out in ((start, back_of(d)), (end, d)):
-        layout.module_floors.append(("Log_End", sector, [p[0], top - LOG_TOP, p[1]],
-                                     turn_of(out)))
     layout.points.append(list(at(end, d, -LOG_CROSS)))
     track.p, track.d, track.h, track.floor = end, d, top, "log"
     return top, top, length
+
+
+def lay_trough(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:
+    """{"trough": length}: a trough the ball drops into from a fall, or
+    {"trough": length, "hop": "left" or "right"} one beside the last, which
+    the ball swings over into (as Level_04's A01_Halfpipe_* are; see
+    TROUGH_* in ballance.game.measures).  The length is a whole number of
+    segments, and a trough hopped from is 100 long at least."""
+    length = float(piece["trough"])
+    segments = round(length / TROUGH_SEGMENT)
+    if segments < 1 or abs(segments * TROUGH_SEGMENT - length) > 1e-6:
+        raise ValueError(f"a trough is a whole number of {TROUGH_SEGMENT:g}-long segments")
+    d = track.d
+    if track.floor == "fall":
+        bottom = track.h
+        start = at(track.p, d, RAIL_OVERHANG - TROUGH_LAND)
+    else:
+        if track.floor != "trough" or "hop" not in piece:
+            raise ValueError("a trough after a trough is hopped into, to its left or right")
+        if track.trough < 2 * TROUGH_SEGMENT:
+            raise ValueError("a trough hopped from is 100 long at least")
+        check_ball(layout, "Trough")
+        sign = 1 if piece["hop"] == "right" else -1
+        bottom = track.h
+        start = at(track.p, d, -TROUGH_SEGMENT, sign * TROUGH_ASIDE)
+        back = at(track.p, d, -TROUGH_SEGMENT)  # the next trough's start, in the last
+        for along, aside, rush in TROUGH_HOP:
+            p = at(back, d, along, sign * aside)
+            layout.points.append(list(p) + [None, "rush"] if rush else list(p))
+    if segments > LOG_MOST:
+        raise ValueError(f"a trough is {LOG_MOST} segments long at most")
+    middle = at(start, d, length / 2)
+    layout.module_floors.append((f"Trough_{segments}", sector,
+                                 [middle[0], bottom + TROUGH_BOTTOM, middle[1]], turn_of(d)))
+    end = at(start, d, length)
+    track.p, track.h, track.floor, track.trough = end, bottom, "trough", length
+    return bottom, bottom, length
 
 
 def lay_cradle(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:
@@ -703,6 +744,7 @@ PIECES: dict[str, Callable] = {
     "fall": lay_fall,
     "cradle": lay_cradle,
     "log": lay_log,
+    "trough": lay_trough,
     "area": lay_area,
     "turn": lay_turn,
     "trafo": lay_trafo,
@@ -721,12 +763,14 @@ def lay_piece(layout: Layout, sector: int, part: Sector, piece: dict, track: Tra
     rail = "rail" in piece or "rail_turn" in piece
     if "cradle" in piece and track.run is None:
         raise ValueError("the ball drops into the cradle from a rail's end")
-    if "fall" in piece and track.run is None and track.floor != "log":
-        raise ValueError("the ball falls from a rail's or a log's end")
-    if track.floor == "fall" and "area" not in piece and "log" not in piece:
-        raise ValueError("a fall lands in an area or on a log")
+    if "fall" in piece and track.run is None and track.floor not in ("log", "trough"):
+        raise ValueError("the ball falls from a rail's, a log's or a trough's end")
+    if track.floor == "fall" and not ("area" in piece or "log" in piece or "trough" in piece):
+        raise ValueError("a fall lands in an area, on a log or in a trough")
     if track.floor == "log" and "log" not in piece and "fall" not in piece:
         raise ValueError("a log goes on to another log or a fall")
+    if track.floor == "trough" and not ("trough" in piece or "log" in piece or "fall" in piece):
+        raise ValueError("a trough goes on to another trough, a log or a fall")
     if rail and track.run is None:
         # Rails meet floors as the originals' do: at a narrow road's end,
         # through a gap in an area's rim, or through a wide road's dock.

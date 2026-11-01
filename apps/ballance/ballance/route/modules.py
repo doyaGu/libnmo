@@ -28,6 +28,9 @@ NEEDS_BALL = {
     "P_Modul_17": ({"Wood", "Stone"}, "can't turn {kind}'s arm; a wood or stone ball does"),
     "P_Modul_03": ({"Wood"}, "can't ride {kind} up: stone sinks it and falls off, paper "
                              "can't push its walls off (in Level_12 too); a wood ball does"),
+    "Trough": ({"Wood"}, "can't be counted on to swing over into the next trough (on Level_04's, "
+                         "a stone ball never does and a paper one only sometimes); a wood ball "
+                         "does"),
     "Cradle": ({"Wood", "Paper"}, "can't climb out of the cradle's pocket; a wood or paper "
                                   "ball does"),
     "Modul02": ({"Wood", "Stone"}, "falls short of {kind}'s landing (in Level_09 too); a wood "
@@ -62,9 +65,6 @@ class ModuleFloor:
 
 
 MODULE_FLOORS = {
-    # not modules: a log's segment along X, and the face at its end (facing X)
-    "Log": [ModuleFloor("Log", WOOD_FLOOR_GROUPS, [(-25, 25, -2.26, 2.26, -8.42, 8.42)])],
-    "Log_End": [ModuleFloor("Log_End", WOOD_FLOOR_GROUPS, [(-0.05, 0, -2.26, 2.26, -8.42, 8.42)])],
     # not a module: a wide road's end narrowing to a rail (the road's flat
     # middle at the origin, the road along Z, the rail at -Z)
     "RailDock": [ModuleFloor("Floor_RailDock", STONE_FLOOR_GROUPS,
@@ -150,3 +150,11 @@ MODULE_FLOORS = {
                     [(-15, -10, -5, 0, -2.5, 2.5), (0, 5, -5, 0, -2.5, 2.5)]),
         ModuleFloor("Floor_Stopper_25", STOPPER_GROUPS, [(-10, -9, -1, -0.5, -2.5, 2.5)])],
 }
+
+# not modules: troughs and logs of 1 to 8 segments of 50, along X, each one
+# mesh round its middle
+for _n in range(1, 9):
+    MODULE_FLOORS[f"Trough_{_n}"] = [ModuleFloor(
+        f"Trough_{_n}", WOOD_FLOOR_GROUPS, [(-25 * _n, 25 * _n, -2.9, -2.36, -9.29, 9.29)])]
+    MODULE_FLOORS[f"Log_{_n}"] = [ModuleFloor(
+        f"Log_{_n}", WOOD_FLOOR_GROUPS, [(-25 * _n, 25 * _n, -2.26, 2.26, -8.42, 8.42)])]

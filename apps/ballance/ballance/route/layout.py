@@ -33,6 +33,7 @@ class Track:
     width: float = NARROW
     floor: str = "road"
     run: list[Ring] | None = None
+    trough: float = 0.0  # the length of the trough it is in
 
 
 @dataclass
