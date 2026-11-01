@@ -499,6 +499,52 @@ TEST(engine_physics, coll_detection_reports_collisions)
     fixture_end(&f);
 }
 
+/* "BallNav deactivate" then "activate": Stop drops the listener, the next Create makes a new one */
+TEST(engine_physics, coll_detection_listens_again_after_stop)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t ball = place(&f, "Ball", 0.0f, 0.0f, 0.0f);
+    nmo_object_id_t floor = place(&f, "Floor", 0.0f, -1.0f, 0.0f);
+    ASSERT_TRUE(ball != 0 && floor != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    ASSERT_TRUE(block_of(&f, GUID_PHYSICALIZE, "Physicalize", ball, 0, 0) != 0);
+    nmo_object_id_t detect = block_of(&f, GUID_COLL_DETECTION, "Detect", ball, 0, 0);
+    nmo_object_id_t hit = fixture_block(&f, GUID_NOP, "Hit");
+    ASSERT_TRUE(detect != 0 && hit != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, detect, 1), 2); /* Stop */
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, detect, 0), 4); /* Create again */
+    fixture_link(&f, BLOCK_OUT(&f, detect, 0), BLOCK_IN(&f, hit, 0), 0);
+    input_float(&f, BLOCK_PIN(&f, detect, 0), 1.0f);  /* Min Speed */
+    input_float(&f, BLOCK_PIN(&f, detect, 1), 10.0f); /* Max Speed */
+    input_float(&f, BLOCK_PIN(&f, detect, 2), 0.5f);  /* Sleep afterwards */
+    fixture_commit(&f, NULL);
+    listening_t l = {0};
+    set_listening(&f, &l);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    for (int frame = 0; frame < 3; frame++) {
+        ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    }
+    ASSERT_EQ(1, l.listens);
+    ASSERT_EQ(1, l.unlistens);
+    l.now = 1.0;
+    nmo_engine_physics_collision_t c = collision(ball, floor, 5.0f);
+    nmo_engine_physics_collision(f.engine, &c);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(0u, runs(&f, hit));
+    for (int frame = 0; frame < 2; frame++) {
+        ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    }
+    ASSERT_EQ(2, l.listens);
+    l.now = 2.0;
+    nmo_engine_physics_collision(f.engine, &c);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1u, runs(&f, hit));
+    fixture_end(&f);
+}
+
 /* An integer attribute type named `name` given to `object` with `value` */
 static bool int_attribute(engine_fixture_t *f, const char *name, nmo_object_id_t object, int32_t value)
 {
@@ -738,6 +784,7 @@ TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_physics, blocks_feed_the_provider);
 REGISTER_TEST(engine_physics, polygon_shapes_need_a_mesh_or_their_name);
 REGISTER_TEST(engine_physics, coll_detection_reports_collisions);
+REGISTER_TEST(engine_physics, coll_detection_listens_again_after_stop);
 REGISTER_TEST(engine_physics, continuous_contact_waits_its_delays);
 REGISTER_TEST(engine_physics, collision_surfaces_go_once_nothing_is_physical);
 REGISTER_TEST(engine_physics, buoyancy_waits_for_its_object_and_reset_forgets_it);

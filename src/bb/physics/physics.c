@@ -1273,8 +1273,9 @@ static int bb_physics_coll_detection(blk_t *b)
             if (was && !physics_listened(b->engine, l->entity)) {
                 physics_listen(b->engine, l->entity, false);
             }
+            *slot = 0; /* the listener's destructor clears the local: Create listens anew */
         }
-        return NMO_ENGINE_BR_OK; /* the handle stays, as the DLL leaves it */
+        return NMO_ENGINE_BR_OK;
     }
     return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
 }
@@ -1299,17 +1300,30 @@ static int bb_physics_continuous_contact(blk_t *b)
         }
         IN_OFF(b, 0);
     } else if (IN_ACTIVE(b, 1)) {
-        if (*slot != 0) {
+        /*
+         * The contact data goes with its listener; its destructor gives the
+         * groups still in contact their "contact off" and clears the local,
+         * so that Create makes new data.
+         */
+        if (*slot != 0 && nmo_engine_block_target(b) != 0) {
             eng_physics_contacts_t *c = &physics_of(b->engine)->contacts.data[*slot - 1];
-            if (c->alive && physics_object_index(b->engine, c->entity) >= 0) {
+            if (c->alive) {
                 contacts_stop(b->engine, *slot - 1);
-                if (!physics_listened(b->engine, c->entity)) {
+                for (int32_t g = 0; g < c->group_count; g++) {
+                    if (c->groups[g].active) {
+                        c->groups[g].active = false;
+                        OUT_ON(b, 2 * g + 1);
+                    }
+                }
+                if (physics_object_index(b->engine, c->entity) >= 0 &&
+                    !physics_listened(b->engine, c->entity)) {
                     physics_listen(b->engine, c->entity, false);
                 }
             }
+            *slot = 0;
         }
         IN_OFF(b, 1);
-        return NMO_ENGINE_BR_OK; /* the handle stays, as the DLL leaves it */
+        return NMO_ENGINE_BR_OK;
     }
     return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
 }
