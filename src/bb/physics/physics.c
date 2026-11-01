@@ -51,7 +51,15 @@ static char *dup_string(const char *text)
  * ============================================================================ */
 
 /* CKIpionManager: its state is the manager's */
-static const eng_manager_desc_t physics_manager;
+static void physics_manager_destroy(nmo_engine_t *engine, void *state);
+static void physics_manager_post_process(nmo_engine_t *engine, void *state);
+
+static const eng_manager_desc_t physics_manager = {
+    .name = "Ipion Manager",
+    .state_size = sizeof(eng_physics_t),
+    .destroy = physics_manager_destroy,
+    .post_process = physics_manager_post_process,
+};
 
 static eng_physics_t *physics_of(const nmo_engine_t *engine)
 {
@@ -1365,13 +1373,6 @@ static void physics_manager_post_process(nmo_engine_t *engine, void *state)
     (void)state;
     eng_physics_post_process(engine);
 }
-
-static const eng_manager_desc_t physics_manager = {
-    .name = "Ipion Manager",
-    .state_size = sizeof(eng_physics_t),
-    .destroy = physics_manager_destroy,
-    .post_process = physics_manager_post_process,
-};
 
 nmo_status_t nmo_bb_physics_register(nmo_engine_t *engine)
 {

@@ -268,31 +268,31 @@ TEST(engine_transform, nearest_in_group_and_proximity)
     f.script_id = fixture_add_script(&f, "Script", &f.script_in);
     fixture_begin_edit(&f);
     nmo_object_id_t nearest = fixture_block(&f, GUID_NEAREST_IN_GROUP, "Nearest");
-    nmo_object_id_t near = fixture_block(&f, GUID_SCALEABLE_PROXIMITY, "Near");
-    ASSERT_TRUE(nearest != 0 && near != 0);
+    nmo_object_id_t proximity = fixture_block(&f, GUID_SCALEABLE_PROXIMITY, "Near");
+    ASSERT_TRUE(nearest != 0 && proximity != 0);
     fixture_link(&f, f.script_in, BLOCK_IN(&f, nearest, 0), 0);
-    fixture_link(&f, f.script_in, BLOCK_IN(&f, near, 0), 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, proximity, 0), 0);
     fixture_input_int(&f, BLOCK_PIN(&f, nearest, 0), (int32_t)group);
     const float point[3] = {6.0f, 0.0f, 0.0f};
     fixture_input_value(&f, BLOCK_PIN(&f, nearest, 1), point, sizeof(point));
     /* Within 3 of each other, checked every frame */
     const float three = 3.0f;
-    fixture_input_value(&f, BLOCK_PIN(&f, near, 0), &three, sizeof(three));
-    fixture_input_int(&f, BLOCK_PIN(&f, near, 1), (int32_t)entities[0]);
-    fixture_input_int(&f, BLOCK_PIN(&f, near, 2), (int32_t)entities[1]);
-    fixture_input_int(&f, BLOCK_PIN(&f, near, 6), 1);
-    fixture_input_int(&f, BLOCK_PIN(&f, near, 7), 1);
+    fixture_input_value(&f, BLOCK_PIN(&f, proximity, 0), &three, sizeof(three));
+    fixture_input_int(&f, BLOCK_PIN(&f, proximity, 1), (int32_t)entities[0]);
+    fixture_input_int(&f, BLOCK_PIN(&f, proximity, 2), (int32_t)entities[1]);
+    fixture_input_int(&f, BLOCK_PIN(&f, proximity, 6), 1);
+    fixture_input_int(&f, BLOCK_PIN(&f, proximity, 7), 1);
     /* In Range, Out Range, Enter Range, Exit Range */
     nmo_object_id_t outputs[4];
     for (int i = 0; i < 4; i++) {
         outputs[i] = fixture_block(&f, GUID_NOP, "Output");
         ASSERT_TRUE(outputs[i] != 0);
-        fixture_link(&f, BLOCK_OUT(&f, near, (size_t)i), BLOCK_IN(&f, outputs[i], 0), 0);
+        fixture_link(&f, BLOCK_OUT(&f, proximity, (size_t)i), BLOCK_IN(&f, outputs[i], 0), 0);
     }
     fixture_commit(&f, NULL);
-    set_local_int(&f, near, 2, 15); /* every output */
-    set_local_int(&f, near, 3, 7);  /* X, Y and Z */
-    set_local_int(&f, near, 4, 1);  /* squared */
+    set_local_int(&f, proximity, 2, 15); /* every output */
+    set_local_int(&f, proximity, 3, 7);  /* X, Y and Z */
+    set_local_int(&f, proximity, 4, 1);  /* squared */
 
     ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
     ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
@@ -312,7 +312,7 @@ TEST(engine_transform, nearest_in_group_and_proximity)
     ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
     ASSERT_EQ(1u, runs(&f, outputs[0]));
     float squared = 0.0f;
-    read_value(&f, BLOCK_POUT(&f, near, 0), &squared, sizeof(squared));
+    read_value(&f, BLOCK_POUT(&f, proximity, 0), &squared, sizeof(squared));
     ASSERT_FLOAT_EQ(1.0f, squared, 0.0001f);
     fixture_end(&f);
 }

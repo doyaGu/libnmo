@@ -18,7 +18,16 @@ typedef struct visuals {
     ENG_VEC(int32_t) filters;
 } visuals_t;
 
-static const eng_manager_desc_t visuals_manager;
+static void visuals_destroy(nmo_engine_t *engine, void *state);
+static void visuals_render(nmo_engine_t *engine, void *state, eng_render_stage_t stage,
+                           const eng_render_args_t *args);
+
+static const eng_manager_desc_t visuals_manager = {
+    .name = "Visuals Render",
+    .state_size = sizeof(visuals_t),
+    .destroy = visuals_destroy,
+    .render = visuals_render,
+};
 
 /* Add or Remove PostSpriteRenderCallBack(PlanarFilterRender, beh): once each */
 static void planar_filter_drawn(nmo_engine_t *engine, int32_t node, bool drawn)
@@ -266,13 +275,6 @@ static void visuals_destroy(nmo_engine_t *engine, void *state)
     (void)engine;
     free(((visuals_t *)state)->filters.data);
 }
-
-static const eng_manager_desc_t visuals_manager = {
-    .name = "Visuals Render",
-    .state_size = sizeof(visuals_t),
-    .destroy = visuals_destroy,
-    .render = visuals_render,
-};
 
 nmo_status_t eng_register_visuals(nmo_engine_t *engine)
 {

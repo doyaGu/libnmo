@@ -97,7 +97,19 @@ typedef struct font_manager {
     ENG_VEC(eng_sprite_text_t) sprite_texts;
 } font_manager_t;
 
-static const eng_manager_desc_t font_manager;
+static void font_manager_destroy(nmo_engine_t *engine, void *state);
+static void font_manager_pre_process(nmo_engine_t *engine, void *state);
+static void font_manager_render(nmo_engine_t *engine, void *state, eng_render_stage_t stage,
+                                const eng_render_args_t *args);
+
+/* CKFontManager */
+static const eng_manager_desc_t font_manager = {
+    .name = "Font Manager",
+    .state_size = sizeof(font_manager_t),
+    .destroy = font_manager_destroy,
+    .pre_process = font_manager_pre_process,
+    .render = font_manager_render,
+};
 
 static font_manager_t *fonts_of(const nmo_engine_t *engine)
 {
@@ -1267,15 +1279,6 @@ static void font_manager_render(nmo_engine_t *engine, void *state, eng_render_st
         draw_texts(engine, 0, args->width, args->height);
     }
 }
-
-/* CKFontManager */
-static const eng_manager_desc_t font_manager = {
-    .name = "Font Manager",
-    .state_size = sizeof(font_manager_t),
-    .destroy = font_manager_destroy,
-    .pre_process = font_manager_pre_process,
-    .render = font_manager_render,
-};
 
 nmo_status_t eng_register_interface(nmo_engine_t *engine)
 {
