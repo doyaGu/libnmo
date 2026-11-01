@@ -211,8 +211,8 @@ static int bb_ray_intersection(blk_t *b)
 }
 
 static const nmo_engine_block_desc_t eng_logics_test_blocks[] = {
-    {NMO_GUID(0x17d66d26, 0x726b7dec), "Test", bb_test, NULL, NULL},
-    {NMO_GUID(0x671e4a87, 0x383b2912), "Ray Intersection", bb_ray_intersection, NULL, NULL},
+    {NMO_GUID_INIT(0x17d66d26, 0x726b7dec), "Test", bb_test, NULL, NULL},
+    {NMO_GUID_INIT(0x671e4a87, 0x383b2912), "Ray Intersection", bb_ray_intersection, NULL, NULL},
 };
 
 nmo_status_t eng_register_logics_test(nmo_engine_t *engine)

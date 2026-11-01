@@ -568,7 +568,8 @@ static int bb_calculator(blk_t *b)
     OUT_ON(b, 0);
     size_t size = 0;
     const char *expression = (const char *)nmo_engine_block_input_data(b, 0, &size);
-    size_t length = expression != NULL ? strnlen(expression, size) : 0u;
+    const char *nul = expression != NULL ? memchr(expression, '\0', size) : NULL;
+    size_t length = expression == NULL ? 0u : nul != NULL ? (size_t)(nul - expression) : size;
     /* Each character makes at most an operation and two nodes (a '-' its 0) */
     calc_t c;
     memset(&c, 0, sizeof(c));
@@ -862,19 +863,19 @@ static int bb_set_component(blk_t *b)
 }
 
 static const nmo_engine_block_desc_t eng_logics_calculator_blocks[] = {
-    {NMO_GUID(0x2d5d6d01, 0x6a353eb0), "Op", bb_op, NULL, NULL},
-    {NMO_GUID(0x15151652, 0xaeefffd5), "Identity", bb_identity, NULL, NULL},
-    {NMO_GUID(0x0c622386, 0x1c3054f7), "Random", bb_random, NULL, NULL},
-    {NMO_GUID(0x448e54ce, 0x75a655c5), "Per Second", bb_per_second, NULL, NULL},
-    {NMO_GUID(0x47dc3232, 0x64bf203a), "Get Delta Time", bb_get_delta_time, cb_get_delta_time,
+    {NMO_GUID_INIT(0x2d5d6d01, 0x6a353eb0), "Op", bb_op, NULL, NULL},
+    {NMO_GUID_INIT(0x15151652, 0xaeefffd5), "Identity", bb_identity, NULL, NULL},
+    {NMO_GUID_INIT(0x0c622386, 0x1c3054f7), "Random", bb_random, NULL, NULL},
+    {NMO_GUID_INIT(0x448e54ce, 0x75a655c5), "Per Second", bb_per_second, NULL, NULL},
+    {NMO_GUID_INIT(0x47dc3232, 0x64bf203a), "Get Delta Time", bb_get_delta_time, cb_get_delta_time,
      NULL},
-    {NMO_GUID(0x55bc3115, 0x1dfe1e40), "Mini Calculator", bb_mini_calculator, NULL, NULL},
-    {NMO_GUID(0x4bc209b8, 0x5b3679b0), "Calculator", bb_calculator, NULL, NULL},
-    {NMO_GUID(0x2689057b, 0x1a1a446a), "Get Component", bb_get_component, NULL, NULL},
-    {NMO_GUID(0x3e7335d9, 0x29687f36), "Variation", bb_variation, NULL, NULL},
-    {NMO_GUID(0x6d433e1b, 0x191954b4), "Bezier Transform", bb_bezier_transform, NULL, NULL},
-    {NMO_GUID(0x655e6af4, 0x08c0596f), "Threshold", bb_threshold, NULL, NULL},
-    {NMO_GUID(0x6e800755, 0x57b64acb), "Set Component", bb_set_component, NULL, NULL},
+    {NMO_GUID_INIT(0x55bc3115, 0x1dfe1e40), "Mini Calculator", bb_mini_calculator, NULL, NULL},
+    {NMO_GUID_INIT(0x4bc209b8, 0x5b3679b0), "Calculator", bb_calculator, NULL, NULL},
+    {NMO_GUID_INIT(0x2689057b, 0x1a1a446a), "Get Component", bb_get_component, NULL, NULL},
+    {NMO_GUID_INIT(0x3e7335d9, 0x29687f36), "Variation", bb_variation, NULL, NULL},
+    {NMO_GUID_INIT(0x6d433e1b, 0x191954b4), "Bezier Transform", bb_bezier_transform, NULL, NULL},
+    {NMO_GUID_INIT(0x655e6af4, 0x08c0596f), "Threshold", bb_threshold, NULL, NULL},
+    {NMO_GUID_INIT(0x6e800755, 0x57b64acb), "Set Component", bb_set_component, NULL, NULL},
 };
 
 nmo_status_t eng_register_logics_calculator(nmo_engine_t *engine)

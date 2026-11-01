@@ -585,7 +585,7 @@ static void text_draw(nmo_engine_t *engine, eng_font_t *font, const char *string
                       bool version2, const nmo_rect_t *clip, float frame_width, float frame_height,
                       nmo_rect_t *out_extents, int32_t *out_lines)
 {
-    text_draw_t t = {engine, font, {0.0f, 0.0f}, 0.0f, 0.0f, 0.0f, {0}, options};
+    text_draw_t t = {engine, font, {0.0f, 0.0f}, 0.0f, 0.0f, 0.0f, {0.0f, 0.0f, 0.0f, 0.0f}, options};
     if (clip != NULL) {
         t.clip = *clip;
     }
@@ -1216,16 +1216,16 @@ static int bb_picking_2d(blk_t *b)
 }
 
 static const nmo_engine_block_desc_t eng_interface_blocks[] = {
-    {NMO_GUID(0x936334fc, 0xf243684f), "Create System Font", bb_create_system_font, NULL, NULL},
-    {NMO_GUID(0x7d644088, 0x40dd0349), "Create Font", bb_create_font, NULL, NULL},
-    {NMO_GUID(0x260e4eb0, 0x0e256b90), "TT_CreateFontEx", bb_create_font, NULL, NULL},
-    {NMO_GUID(0x0153342c, 0xe543674f), "Delete Font", bb_delete_font, NULL, NULL},
-    {NMO_GUID(0xdacfbd61, 0x7a6e65e7), "Set Font Properties", bb_set_font_properties, NULL, NULL},
-    {NMO_GUID(0x055b29fe, 0x662d5ca0), "2D Text", bb_text_2d, NULL, NULL},
-    {NMO_GUID(0xf22d010a, 0xf2cd010a), "Text Display", bb_text_display, cb_text_display, NULL},
-    {NMO_GUID(0x1f5b2fe7, 0x6d355175), "3D Text", bb_text_3d, NULL, NULL},
-    {NMO_GUID(0x761b7e64, 0x2b4c6911), "PushButton", bb_push_button, NULL, NULL},
-    {NMO_GUID(0x1616120f, 0x5b2f48ce), "2D Picking", bb_picking_2d, NULL, NULL},
+    {NMO_GUID_INIT(0x936334fc, 0xf243684f), "Create System Font", bb_create_system_font, NULL, NULL},
+    {NMO_GUID_INIT(0x7d644088, 0x40dd0349), "Create Font", bb_create_font, NULL, NULL},
+    {NMO_GUID_INIT(0x260e4eb0, 0x0e256b90), "TT_CreateFontEx", bb_create_font, NULL, NULL},
+    {NMO_GUID_INIT(0x0153342c, 0xe543674f), "Delete Font", bb_delete_font, NULL, NULL},
+    {NMO_GUID_INIT(0xdacfbd61, 0x7a6e65e7), "Set Font Properties", bb_set_font_properties, NULL, NULL},
+    {NMO_GUID_INIT(0x055b29fe, 0x662d5ca0), "2D Text", bb_text_2d, NULL, NULL},
+    {NMO_GUID_INIT(0xf22d010a, 0xf2cd010a), "Text Display", bb_text_display, cb_text_display, NULL},
+    {NMO_GUID_INIT(0x1f5b2fe7, 0x6d355175), "3D Text", bb_text_3d, NULL, NULL},
+    {NMO_GUID_INIT(0x761b7e64, 0x2b4c6911), "PushButton", bb_push_button, NULL, NULL},
+    {NMO_GUID_INIT(0x1616120f, 0x5b2f48ce), "2D Picking", bb_picking_2d, NULL, NULL},
 };
 
 /* The texts drawn last frame are dropped (the temporary callbacks) */

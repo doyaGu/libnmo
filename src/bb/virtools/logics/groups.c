@@ -166,11 +166,11 @@ static int bb_get_nearest_in_group(blk_t *b)
 }
 
 static const nmo_engine_block_desc_t eng_logics_groups_blocks[] = {
-    {NMO_GUID(0x6050252f, 0x3aa82d40), "Group Iterator", bb_group_iterator, NULL, NULL},
-    {NMO_GUID(0x00024125, 0x785420ab), "Add To Group", bb_add_to_group, NULL, NULL},
-    {NMO_GUID(0x58a1210b, 0x14e5715c), "Is In Group", bb_is_in_group, NULL, NULL},
-    {NMO_GUID(0x4445257b, 0x70016c57), "Fill Group By Class", bb_fill_group_by_class, NULL, NULL},
-    {NMO_GUID(0x085207eb, 0x584950d8), "Get Nearest In Group", bb_get_nearest_in_group, NULL,
+    {NMO_GUID_INIT(0x6050252f, 0x3aa82d40), "Group Iterator", bb_group_iterator, NULL, NULL},
+    {NMO_GUID_INIT(0x00024125, 0x785420ab), "Add To Group", bb_add_to_group, NULL, NULL},
+    {NMO_GUID_INIT(0x58a1210b, 0x14e5715c), "Is In Group", bb_is_in_group, NULL, NULL},
+    {NMO_GUID_INIT(0x4445257b, 0x70016c57), "Fill Group By Class", bb_fill_group_by_class, NULL, NULL},
+    {NMO_GUID_INIT(0x085207eb, 0x584950d8), "Get Nearest In Group", bb_get_nearest_in_group, NULL,
      NULL},
 };
 

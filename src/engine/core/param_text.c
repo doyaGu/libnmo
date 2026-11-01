@@ -53,20 +53,20 @@ static const struct {
     nmo_guid_t guid;
     text_kind_t kind;
 } text_kinds[] = {
-    {CKPGUID_STRING, TEXT_STRING},
-    {CKPGUID_BOOL, TEXT_BOOL},
-    {CKPGUID_PERCENTAGE, TEXT_PERCENTAGE},
-    {CKPGUID_ANGLE, TEXT_ANGLE},
-    {CKPGUID_TIME, TEXT_TIME},
-    {CKPGUID_FLOAT, TEXT_FLOAT},
-    {CKPGUID_INT, TEXT_INT},
-    {CKPGUID_2DVECTOR, TEXT_VECTOR2},
-    {CKPGUID_VECTOR, TEXT_VECTOR},
-    {CKPGUID_QUATERNION, TEXT_QUATERNION},
-    {CKPGUID_EULERANGLES, TEXT_EULER},
-    {CKPGUID_RECT, TEXT_RECT},
-    {CKPGUID_COLOR, TEXT_COLOR},
-    {CKPGUID_MESSAGE, TEXT_MESSAGE},
+    {CKPGUID_STRING_INIT, TEXT_STRING},
+    {CKPGUID_BOOL_INIT, TEXT_BOOL},
+    {CKPGUID_PERCENTAGE_INIT, TEXT_PERCENTAGE},
+    {CKPGUID_ANGLE_INIT, TEXT_ANGLE},
+    {CKPGUID_TIME_INIT, TEXT_TIME},
+    {CKPGUID_FLOAT_INIT, TEXT_FLOAT},
+    {CKPGUID_INT_INIT, TEXT_INT},
+    {CKPGUID_2DVECTOR_INIT, TEXT_VECTOR2},
+    {CKPGUID_VECTOR_INIT, TEXT_VECTOR},
+    {CKPGUID_QUATERNION_INIT, TEXT_QUATERNION},
+    {CKPGUID_EULERANGLES_INIT, TEXT_EULER},
+    {CKPGUID_RECT_INIT, TEXT_RECT},
+    {CKPGUID_COLOR_INIT, TEXT_COLOR},
+    {CKPGUID_MESSAGE_INIT, TEXT_MESSAGE},
 };
 
 /* The string function a type uses: its own, or the nearest one it derives. */
@@ -204,12 +204,15 @@ char *eng_param_text(nmo_engine_t *engine, const eng_param_t *param)
     }
     float f[6];
     switch (text_kind(engine, param->type)) {
-    case TEXT_STRING:
+    case TEXT_STRING: {
         /* CKStringStringFunc: the bytes; no string without them */
         if (param->data == NULL || param->size == 0) {
             return NULL;
         }
-        return eng_text_copy((const char *)param->data, strnlen((const char *)param->data, param->size));
+        const char *text = (const char *)param->data;
+        const char *nul = memchr(text, '\0', param->size);
+        return eng_text_copy(text, nul != NULL ? (size_t)(nul - text) : param->size);
+    }
     case TEXT_INT:
         return eng_text_printf("%d", eng_param_read_int(param));
     case TEXT_BOOL:

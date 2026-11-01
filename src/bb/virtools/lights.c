@@ -23,7 +23,7 @@ static int bb_set_light_color(blk_t *b)
 }
 
 static const nmo_engine_block_desc_t eng_lights_blocks[] = {
-    {NMO_GUID(0x32115590, 0x78951230), "Set Light Color", bb_set_light_color, NULL, NULL},
+    {NMO_GUID_INIT(0x32115590, 0x78951230), "Set Light Color", bb_set_light_color, NULL, NULL},
 };
 
 nmo_status_t eng_register_lights(nmo_engine_t *engine)

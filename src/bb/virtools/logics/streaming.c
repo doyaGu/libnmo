@@ -337,19 +337,19 @@ static int bb_random_switch(blk_t *b)
 }
 
 static const nmo_engine_block_desc_t eng_logics_streaming_blocks[] = {
-    {NMO_GUID(0xeb506901, 0x984afccc), "Binary Switch", bb_binary_switch, NULL, NULL},
-    {NMO_GUID(0x302561c4, 0x0d282980), "Nop", bb_nop, NULL, NULL},
-    {NMO_GUID(0x63eb2b0c, 0x27e2767e), "Parameter Selector", bb_parameter_selector, NULL, NULL},
-    {NMO_GUID(0x4c42aace, 0x1da45635), "Switch On Parameter", bb_switch_on_parameter, NULL, NULL},
-    {NMO_GUID(0x42530844, 0x257b6053), "Sequencer", bb_sequencer, cb_sequencer, NULL},
-    {NMO_GUID(0xd02d67dd, 0x10211fdd), "Binary Memory", bb_binary_memory, NULL, NULL},
-    {NMO_GUID(0xc044a999, 0xfdfefaf7), "Wait For All", bb_wait_for_all, NULL, NULL},
-    {NMO_GUID(0x1f0b52bf, 0x4c3342dd), "Streaming Event", bb_streaming_event, cb_streaming_event,
+    {NMO_GUID_INIT(0xeb506901, 0x984afccc), "Binary Switch", bb_binary_switch, NULL, NULL},
+    {NMO_GUID_INIT(0x302561c4, 0x0d282980), "Nop", bb_nop, NULL, NULL},
+    {NMO_GUID_INIT(0x63eb2b0c, 0x27e2767e), "Parameter Selector", bb_parameter_selector, NULL, NULL},
+    {NMO_GUID_INIT(0x4c42aace, 0x1da45635), "Switch On Parameter", bb_switch_on_parameter, NULL, NULL},
+    {NMO_GUID_INIT(0x42530844, 0x257b6053), "Sequencer", bb_sequencer, cb_sequencer, NULL},
+    {NMO_GUID_INIT(0xd02d67dd, 0x10211fdd), "Binary Memory", bb_binary_memory, NULL, NULL},
+    {NMO_GUID_INIT(0xc044a999, 0xfdfefaf7), "Wait For All", bb_wait_for_all, NULL, NULL},
+    {NMO_GUID_INIT(0x1f0b52bf, 0x4c3342dd), "Streaming Event", bb_streaming_event, cb_streaming_event,
      NULL},
-    {NMO_GUID(0x7160133a, 0x1f2532fe), "Keep Active", bb_keep_active, NULL, NULL},
-    {NMO_GUID(0x271b61af, 0x41b44d43), "One At A Time", bb_one_at_a_time, cb_one_at_a_time, NULL},
-    {NMO_GUID(0x7ebc16ce, 0x75ba1301), "All But One", bb_all_but_one, NULL, NULL},
-    {NMO_GUID(0x79d72fde, 0x2e9d0912), "Random Switch", bb_random_switch, NULL, NULL},
+    {NMO_GUID_INIT(0x7160133a, 0x1f2532fe), "Keep Active", bb_keep_active, NULL, NULL},
+    {NMO_GUID_INIT(0x271b61af, 0x41b44d43), "One At A Time", bb_one_at_a_time, cb_one_at_a_time, NULL},
+    {NMO_GUID_INIT(0x7ebc16ce, 0x75ba1301), "All But One", bb_all_but_one, NULL, NULL},
+    {NMO_GUID_INIT(0x79d72fde, 0x2e9d0912), "Random Switch", bb_random_switch, NULL, NULL},
 };
 
 nmo_status_t eng_register_logics_streaming(nmo_engine_t *engine)

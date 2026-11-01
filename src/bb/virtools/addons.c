@@ -97,8 +97,8 @@ static int bb_time_settings(blk_t *b)
 }
 
 static const nmo_engine_block_desc_t eng_addons_blocks[] = {
-    {NMO_GUID(0x798e26a9, 0x34e4169e), "Movie Load", bb_movie_load, NULL, NULL},
-    {NMO_GUID(0x060a0f8c, 0x09203b5f), "Time Settings", bb_time_settings, NULL, NULL},
+    {NMO_GUID_INIT(0x798e26a9, 0x34e4169e), "Movie Load", bb_movie_load, NULL, NULL},
+    {NMO_GUID_INIT(0x060a0f8c, 0x09203b5f), "Time Settings", bb_time_settings, NULL, NULL},
 };
 
 nmo_status_t eng_register_addons(nmo_engine_t *engine)

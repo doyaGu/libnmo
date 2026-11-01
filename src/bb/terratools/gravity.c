@@ -1162,16 +1162,16 @@ static int cb_simple_shadow(blk_t *b, uint32_t message)
 }
 
 static const nmo_engine_block_desc_t eng_tt_gravity_blocks[] = {
-    {NMO_GUID(0x30fa6a70, 0x3b3f728a), "TT_GetSoundProperties", bb_get_sound_properties, NULL,
+    {NMO_GUID_INIT(0x30fa6a70, 0x3b3f728a), "TT_GetSoundProperties", bb_get_sound_properties, NULL,
      NULL},
-    {NMO_GUID(0x36691920, 0x3b261630), "TT Sky", bb_sky, cb_sky, NULL},
-    {NMO_GUID(0x51bd5521, 0x672c67bf), "TT SpeedOMeter", bb_speedometer, NULL, NULL},
-    {NMO_GUID(0x009c1208, 0x3a8d779e), "TT_TextureSine", bb_texture_sine, NULL, NULL},
-    {NMO_GUID(0x38571b61, 0x64cd2174), "TT ProximityVolumeControl", bb_proximity_volume_control,
+    {NMO_GUID_INIT(0x36691920, 0x3b261630), "TT Sky", bb_sky, cb_sky, NULL},
+    {NMO_GUID_INIT(0x51bd5521, 0x672c67bf), "TT SpeedOMeter", bb_speedometer, NULL, NULL},
+    {NMO_GUID_INIT(0x009c1208, 0x3a8d779e), "TT_TextureSine", bb_texture_sine, NULL, NULL},
+    {NMO_GUID_INIT(0x38571b61, 0x64cd2174), "TT ProximityVolumeControl", bb_proximity_volume_control,
      NULL, NULL},
-    {NMO_GUID(0x7f0517c2, 0x52cc76bb), "TT Simple Shadow", bb_simple_shadow, cb_simple_shadow,
+    {NMO_GUID_INIT(0x7f0517c2, 0x52cc76bb), "TT Simple Shadow", bb_simple_shadow, cb_simple_shadow,
      NULL},
-    {NMO_GUID(0x36106bd9, 0x51813906), "TT Extra", bb_tt_extra, cb_tt_extra, NULL},
+    {NMO_GUID_INIT(0x36106bd9, 0x51813906), "TT Extra", bb_tt_extra, cb_tt_extra, NULL},
 };
 
 /* TT Sky's sky behind the 3D entities, TT Simple Shadow's floors before the draws */

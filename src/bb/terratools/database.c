@@ -364,11 +364,11 @@ static int bb_register_array(blk_t *b)
 }
 
 static const nmo_engine_block_desc_t eng_tt_database_blocks[] = {
-    {NMO_GUID(0x1436624f, 0x34e1290a), "TT Set Database Properties", bb_set_database_properties,
+    {NMO_GUID_INIT(0x1436624f, 0x34e1290a), "TT Set Database Properties", bb_set_database_properties,
      NULL, NULL},
-    {NMO_GUID(0x05441494, 0x38ac7789), "TT Load Database", bb_load_database, NULL, NULL},
-    {NMO_GUID(0x5d303e9d, 0x552c0af2), "TT Save Database", bb_save_database, NULL, NULL},
-    {NMO_GUID(0x348773dc, 0x19ae6322), "TT Register Array", bb_register_array, NULL, NULL},
+    {NMO_GUID_INIT(0x05441494, 0x38ac7789), "TT Load Database", bb_load_database, NULL, NULL},
+    {NMO_GUID_INIT(0x5d303e9d, 0x552c0af2), "TT Save Database", bb_save_database, NULL, NULL},
+    {NMO_GUID_INIT(0x348773dc, 0x19ae6322), "TT Register Array", bb_register_array, NULL, NULL},
 };
 
 static void tt_manager_destroy(nmo_engine_t *engine, void *state)

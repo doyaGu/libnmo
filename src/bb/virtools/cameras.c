@@ -47,8 +47,8 @@ static int bb_set_clipping_planes(blk_t *b)
 }
 
 static const nmo_engine_block_desc_t eng_cameras_blocks[] = {
-    {NMO_GUID(0x652316a2, 0x01aa09a9), "Set Clipping Planes", bb_set_clipping_planes, NULL, NULL},
-    {NMO_GUID(0x368f0ab1, 0x2d8957e4), "Set As Active Camera", bb_set_as_active_camera, NULL, NULL},
+    {NMO_GUID_INIT(0x652316a2, 0x01aa09a9), "Set Clipping Planes", bb_set_clipping_planes, NULL, NULL},
+    {NMO_GUID_INIT(0x368f0ab1, 0x2d8957e4), "Set As Active Camera", bb_set_as_active_camera, NULL, NULL},
 };
 
 nmo_status_t eng_register_cameras(nmo_engine_t *engine)

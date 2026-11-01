@@ -322,14 +322,14 @@ static int bb_collection_iterator(blk_t *b)
 }
 
 static const nmo_engine_block_desc_t eng_logics_loops_blocks[] = {
-    {NMO_GUID(0x15d472a5, 0x3bea409f), "Delayer", bb_delayer, NULL, NULL},
-    {NMO_GUID(0xa2a5a63a, 0xe4e7e8e5), "Timer", bb_timer, cb_timer, NULL},
-    {NMO_GUID(0x998f000f, 0xf000f899), "Counter", bb_counter, cb_counter, NULL},
-    {NMO_GUID(0xfff45680, 0xaa512a39), "Linear Progression", bb_linear_progression,
+    {NMO_GUID_INIT(0x15d472a5, 0x3bea409f), "Delayer", bb_delayer, NULL, NULL},
+    {NMO_GUID_INIT(0xa2a5a63a, 0xe4e7e8e5), "Timer", bb_timer, cb_timer, NULL},
+    {NMO_GUID_INIT(0x998f000f, 0xf000f899), "Counter", bb_counter, cb_counter, NULL},
+    {NMO_GUID_INIT(0xfff45680, 0xaa512a39), "Linear Progression", bb_linear_progression,
      cb_linear_progression, NULL},
-    {NMO_GUID(0x6bb8699a, 0x29fb6a4b), "Bezier Progression", bb_bezier_progression,
+    {NMO_GUID_INIT(0x6bb8699a, 0x29fb6a4b), "Bezier Progression", bb_bezier_progression,
      cb_bezier_progression, NULL},
-    {NMO_GUID(0x419602ec, 0x7822779e), "Collection Iterator", bb_collection_iterator, NULL, NULL},
+    {NMO_GUID_INIT(0x419602ec, 0x7822779e), "Collection Iterator", bb_collection_iterator, NULL, NULL},
 };
 
 nmo_status_t eng_register_logics_loops(nmo_engine_t *engine)

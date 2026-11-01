@@ -64,8 +64,8 @@ static int bb_set_fog(blk_t *b)
 }
 
 static const nmo_engine_block_desc_t eng_world_environments_blocks[] = {
-    {NMO_GUID(0xf5faaaaa, 0xfdd5bd00), "Set Background Color", bb_set_background_color, NULL, NULL},
-    {NMO_GUID(0x151aaaaa, 0xffd5bdbc), "Set Fog", bb_set_fog, NULL, NULL},
+    {NMO_GUID_INIT(0xf5faaaaa, 0xfdd5bd00), "Set Background Color", bb_set_background_color, NULL, NULL},
+    {NMO_GUID_INIT(0x151aaaaa, 0xffd5bdbc), "Set Fog", bb_set_fog, NULL, NULL},
 };
 
 nmo_status_t eng_register_world_environments(nmo_engine_t *engine)

@@ -120,12 +120,12 @@ static int cb_switch_on_message(blk_t *b, uint32_t message)
 }
 
 static const nmo_engine_block_desc_t eng_logics_message_blocks[] = {
-    {NMO_GUID(0x4587ffee, 0x4587ffdd), "Wait Message", bb_wait_message, NULL, NULL},
-    {NMO_GUID(0xa20e8d5b, 0xdf002150), "Send Message", bb_send_message, NULL, NULL},
-    {NMO_GUID(0x3d6c4ae1, 0x72ae2cd6), "Broadcast Message", bb_broadcast_message, NULL, NULL},
-    {NMO_GUID(0x5f906952, 0x6df11649), "Send Message To Group", bb_send_message_to_group, NULL,
+    {NMO_GUID_INIT(0x4587ffee, 0x4587ffdd), "Wait Message", bb_wait_message, NULL, NULL},
+    {NMO_GUID_INIT(0xa20e8d5b, 0xdf002150), "Send Message", bb_send_message, NULL, NULL},
+    {NMO_GUID_INIT(0x3d6c4ae1, 0x72ae2cd6), "Broadcast Message", bb_broadcast_message, NULL, NULL},
+    {NMO_GUID_INIT(0x5f906952, 0x6df11649), "Send Message To Group", bb_send_message_to_group, NULL,
      NULL},
-    {NMO_GUID(0x1bb23f1d, 0x17ff14b9), "Switch On Message", bb_switch_on_message,
+    {NMO_GUID_INIT(0x1bb23f1d, 0x17ff14b9), "Switch On Message", bb_switch_on_message,
      cb_switch_on_message, NULL},
 };
 

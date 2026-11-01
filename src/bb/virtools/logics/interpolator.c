@@ -216,7 +216,7 @@ static int cb_interpolator(blk_t *b, uint32_t message)
 }
 
 static const nmo_engine_block_desc_t eng_logics_interpolator_blocks[] = {
-    {NMO_GUID(0x35503950, 0x2dde7a65), "Interpolator", bb_interpolator_float, cb_interpolator,
+    {NMO_GUID_INIT(0x35503950, 0x2dde7a65), "Interpolator", bb_interpolator_float, cb_interpolator,
      NULL},
 };
 

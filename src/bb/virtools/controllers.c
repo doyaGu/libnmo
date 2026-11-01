@@ -759,16 +759,16 @@ static int cb_tt_input_string(blk_t *b, uint32_t message)
 }
 
 static const nmo_engine_block_desc_t eng_controller_blocks[] = {
-    {NMO_GUID(0x1af2274b, 0x6b8c1524), "Key Event", bb_key_event, NULL, NULL},
-    {NMO_GUID(0x016d010b, 0x017d010b), "Key Waiter", bb_key_waiter, cb_key_waiter, NULL},
-    {NMO_GUID(0x2ffb3ef0, 0x21807ae3), "TT_Key Waiter", bb_tt_key_waiter, cb_tt_key_waiter, NULL},
-    {NMO_GUID(0x1f49612e, 0x6cd63de0), "Switch On Key", bb_switch_on_key, NULL, NULL},
-    {NMO_GUID(0x014d010b, 0x015d010b), "Mouse Waiter", bb_mouse_waiter, NULL, NULL},
-    {NMO_GUID(0x5b1f1381, 0x5c640372), "Get Mouse Position", bb_get_mouse_position, NULL, NULL},
-    {NMO_GUID(0x32d26c84, 0x3c741f89), "Get Mouse Displacement", bb_get_mouse_displacement, NULL,
+    {NMO_GUID_INIT(0x1af2274b, 0x6b8c1524), "Key Event", bb_key_event, NULL, NULL},
+    {NMO_GUID_INIT(0x016d010b, 0x017d010b), "Key Waiter", bb_key_waiter, cb_key_waiter, NULL},
+    {NMO_GUID_INIT(0x2ffb3ef0, 0x21807ae3), "TT_Key Waiter", bb_tt_key_waiter, cb_tt_key_waiter, NULL},
+    {NMO_GUID_INIT(0x1f49612e, 0x6cd63de0), "Switch On Key", bb_switch_on_key, NULL, NULL},
+    {NMO_GUID_INIT(0x014d010b, 0x015d010b), "Mouse Waiter", bb_mouse_waiter, NULL, NULL},
+    {NMO_GUID_INIT(0x5b1f1381, 0x5c640372), "Get Mouse Position", bb_get_mouse_position, NULL, NULL},
+    {NMO_GUID_INIT(0x32d26c84, 0x3c741f89), "Get Mouse Displacement", bb_get_mouse_displacement, NULL,
      NULL},
-    {NMO_GUID(0x693e7e4b, 0x100104c4), "Input String", bb_input_string, cb_input_string, NULL},
-    {NMO_GUID(0x52fd6294, 0x612f51a5), "TT InputString", bb_tt_input_string, cb_tt_input_string,
+    {NMO_GUID_INIT(0x693e7e4b, 0x100104c4), "Input String", bb_input_string, cb_input_string, NULL},
+    {NMO_GUID_INIT(0x52fd6294, 0x612f51a5), "TT InputString", bb_tt_input_string, cb_tt_input_string,
      NULL},
 };
 

@@ -254,12 +254,12 @@ static int bb_read_registry(blk_t *b)
 }
 
 static const nmo_engine_block_desc_t eng_tt_interface_manager_blocks[] = {
-    {NMO_GUID(0x5bc50af4, 0x41e92536), "TT Exit to System", bb_exit_to_system, NULL, NULL},
-    {NMO_GUID(0x0694658d, 0x7ffd236f), "TT Player Active", bb_player_active, NULL, NULL},
-    {NMO_GUID(0x62d00456, 0x30eb4245), "TT List Driver", bb_list_driver, NULL, NULL},
-    {NMO_GUID(0x4e7a0194, 0x040328fd), "TT List ScreenModes", bb_list_screen_modes, NULL, NULL},
-    {NMO_GUID(0x460044b5, 0x6e927b66), "TT_ReadRegistry", bb_read_registry, NULL, NULL},
-    {NMO_GUID(0x38b84d97, 0x13932f28), "TT Change ScreenMode", bb_change_screen_mode, NULL, NULL},
+    {NMO_GUID_INIT(0x5bc50af4, 0x41e92536), "TT Exit to System", bb_exit_to_system, NULL, NULL},
+    {NMO_GUID_INIT(0x0694658d, 0x7ffd236f), "TT Player Active", bb_player_active, NULL, NULL},
+    {NMO_GUID_INIT(0x62d00456, 0x30eb4245), "TT List Driver", bb_list_driver, NULL, NULL},
+    {NMO_GUID_INIT(0x4e7a0194, 0x040328fd), "TT List ScreenModes", bb_list_screen_modes, NULL, NULL},
+    {NMO_GUID_INIT(0x460044b5, 0x6e927b66), "TT_ReadRegistry", bb_read_registry, NULL, NULL},
+    {NMO_GUID_INIT(0x38b84d97, 0x13932f28), "TT Change ScreenMode", bb_change_screen_mode, NULL, NULL},
 };
 
 nmo_status_t eng_register_tt_interface_manager(nmo_engine_t *engine)

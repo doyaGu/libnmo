@@ -107,7 +107,7 @@ static int bb_box_box_intersection(blk_t *b)
 }
 
 static const nmo_engine_block_desc_t eng_collisions_blocks[] = {
-    {NMO_GUID(0x64154401, 0x76cf37af), "Box Box Intersection", bb_box_box_intersection, NULL, NULL},
+    {NMO_GUID_INIT(0x64154401, 0x76cf37af), "Box Box Intersection", bb_box_box_intersection, NULL, NULL},
 };
 
 nmo_status_t eng_register_collisions(nmo_engine_t *engine)

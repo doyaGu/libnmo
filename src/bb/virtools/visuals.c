@@ -243,13 +243,13 @@ static int bb_set_2d_material(blk_t *b)
 }
 
 static const nmo_engine_block_desc_t eng_visuals_blocks[] = {
-    {NMO_GUID(0x00cd320b, 0x32ed010b), "Planar Filter", bb_planar_filter, cb_planar_filter,
+    {NMO_GUID_INIT(0x00cd320b, 0x32ed010b), "Planar Filter", bb_planar_filter, cb_planar_filter,
      NULL},
-    {NMO_GUID(0x5fb70201, 0x65595af3), "Statistics", bb_statistics, NULL, NULL},
-    {NMO_GUID(0x16f6368f, 0x506b60fc), "Show Mouse Cursor", bb_show_mouse_cursor, NULL, NULL},
-    {NMO_GUID(0xa85a213a, 0xef78d52a), "Show", bb_show, NULL, NULL},
-    {NMO_GUID(0x31d97d82, 0x78d54d98), "Hide", bb_hide, NULL, NULL},
-    {NMO_GUID(0x3f7e5bff, 0x02326a71), "Set 2D Material", bb_set_2d_material, NULL, NULL},
+    {NMO_GUID_INIT(0x5fb70201, 0x65595af3), "Statistics", bb_statistics, NULL, NULL},
+    {NMO_GUID_INIT(0x16f6368f, 0x506b60fc), "Show Mouse Cursor", bb_show_mouse_cursor, NULL, NULL},
+    {NMO_GUID_INIT(0xa85a213a, 0xef78d52a), "Show", bb_show, NULL, NULL},
+    {NMO_GUID_INIT(0x31d97d82, 0x78d54d98), "Hide", bb_hide, NULL, NULL},
+    {NMO_GUID_INIT(0x3f7e5bff, 0x02326a71), "Set 2D Material", bb_set_2d_material, NULL, NULL},
 };
 
 /* Planar Filter's full-view quads, the post sprite render callbacks */

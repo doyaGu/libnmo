@@ -188,13 +188,13 @@ static int bb_play_sound_instance(blk_t *b)
 }
 
 static const nmo_engine_block_desc_t eng_sounds_blocks[] = {
-    {NMO_GUID(0x5bde0e45, 0x2e2107d5), "Wave Player", bb_wave_player, cb_wave_player, NULL},
-    {NMO_GUID(0x33613f21, 0x776b185b), "Volume Control", bb_volume_control, cb_volume_control,
+    {NMO_GUID_INIT(0x5bde0e45, 0x2e2107d5), "Wave Player", bb_wave_player, cb_wave_player, NULL},
+    {NMO_GUID_INIT(0x33613f21, 0x776b185b), "Volume Control", bb_volume_control, cb_volume_control,
      NULL},
-    {NMO_GUID(0x7b7c731e, 0x175b27a3), "Pitch Control", bb_pitch_control, cb_pitch_control, NULL},
-    {NMO_GUID(0x6a5f17af, 0x63480864), "Panning Control", bb_panning_control, cb_panning_control,
+    {NMO_GUID_INIT(0x7b7c731e, 0x175b27a3), "Pitch Control", bb_pitch_control, cb_pitch_control, NULL},
+    {NMO_GUID_INIT(0x6a5f17af, 0x63480864), "Panning Control", bb_panning_control, cb_panning_control,
      NULL},
-    {NMO_GUID(0x00283a35, 0x38ef6b48), "Play Sound Instance", bb_play_sound_instance, NULL, NULL},
+    {NMO_GUID_INIT(0x00283a35, 0x38ef6b48), "Play Sound Instance", bb_play_sound_instance, NULL, NULL},
 };
 
 nmo_status_t eng_register_sounds(nmo_engine_t *engine)

@@ -126,10 +126,10 @@ static int bb_objects_with_attribute(blk_t *b)
 }
 
 static const nmo_engine_block_desc_t eng_logics_attribute_blocks[] = {
-    {NMO_GUID(0x25b54079, 0x6ff90545), "Has Attribute", bb_has_attribute, NULL, NULL},
-    {NMO_GUID(0x373040f2, 0x05e01b34), "Set Attribute", bb_set_attribute, NULL, NULL},
-    {NMO_GUID(0x6b6340c4, 0x61e94a41), "Remove Attribute", bb_remove_attribute, NULL, NULL},
-    {NMO_GUID(0x6bc1494c, 0x0c816ad3), "Objects With Attribute Iterator", bb_objects_with_attribute,
+    {NMO_GUID_INIT(0x25b54079, 0x6ff90545), "Has Attribute", bb_has_attribute, NULL, NULL},
+    {NMO_GUID_INIT(0x373040f2, 0x05e01b34), "Set Attribute", bb_set_attribute, NULL, NULL},
+    {NMO_GUID_INIT(0x6b6340c4, 0x61e94a41), "Remove Attribute", bb_remove_attribute, NULL, NULL},
+    {NMO_GUID_INIT(0x6bc1494c, 0x0c816ad3), "Objects With Attribute Iterator", bb_objects_with_attribute,
      NULL, NULL},
 };
 

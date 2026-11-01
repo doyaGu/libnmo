@@ -313,11 +313,11 @@ static int bb_load_string(blk_t *b)
 }
 
 static const nmo_engine_block_desc_t eng_logics_strings_blocks[] = {
-    {NMO_GUID(0x4bcd2f9d, 0x382652e2), "Create String", bb_create_string, NULL, NULL},
-    {NMO_GUID(0x10b16051, 0x26173b39), "Get SubString", bb_get_substring, NULL, NULL},
-    {NMO_GUID(0x4afa2f11, 0x034872e2), "Scan String", bb_scan_string, NULL, NULL},
-    {NMO_GUID(0x72b17c2e, 0x644e2563), "Reverse String", bb_reverse_string, NULL, NULL},
-    {NMO_GUID(0x391555d6, 0x42f2500e), "Load String", bb_load_string, NULL, NULL},
+    {NMO_GUID_INIT(0x4bcd2f9d, 0x382652e2), "Create String", bb_create_string, NULL, NULL},
+    {NMO_GUID_INIT(0x10b16051, 0x26173b39), "Get SubString", bb_get_substring, NULL, NULL},
+    {NMO_GUID_INIT(0x4afa2f11, 0x034872e2), "Scan String", bb_scan_string, NULL, NULL},
+    {NMO_GUID_INIT(0x72b17c2e, 0x644e2563), "Reverse String", bb_reverse_string, NULL, NULL},
+    {NMO_GUID_INIT(0x391555d6, 0x42f2500e), "Load String", bb_load_string, NULL, NULL},
 };
 
 nmo_status_t eng_register_logics_strings(nmo_engine_t *engine)

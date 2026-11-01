@@ -331,19 +331,19 @@ static int bb_texture_scroller(blk_t *b)
 }
 
 static const nmo_engine_block_desc_t eng_materials_blocks[] = {
-    {NMO_GUID(0xf56d92ef, 0x41eb20c1), "Change Texture Video Format",
+    {NMO_GUID_INIT(0xf56d92ef, 0x41eb20c1), "Change Texture Video Format",
      bb_change_texture_video_format, NULL, NULL},
-    {NMO_GUID(0x778d16d4, 0x1dd60060), "Movie Player", bb_movie_player, NULL, NULL},
-    {NMO_GUID(0xe1e1e1e1, 0x1e1e1e1e), "Set Diffuse", bb_set_diffuse, NULL, NULL},
-    {NMO_GUID(0xd1d1d1d1, 0x30303030), "Set Emissive", bb_set_emissive, NULL, NULL},
-    {NMO_GUID(0xeb123eb5, 0x5be321be), "Set Texture", bb_set_texture, NULL, NULL},
-    {NMO_GUID(0x1cb5661e, 0x5b5d3fda), "Set Alpha Test", bb_set_alpha_test, NULL, NULL},
-    {NMO_GUID(0x2f572a66, 0x6a9a0088), "Set Blend Modes", bb_set_blend_modes, NULL, NULL},
-    {NMO_GUID(0x1144022f, 0x68fd055c), "Set Material Z Buffer", bb_set_material_z_buffer, NULL,
+    {NMO_GUID_INIT(0x778d16d4, 0x1dd60060), "Movie Player", bb_movie_player, NULL, NULL},
+    {NMO_GUID_INIT(0xe1e1e1e1, 0x1e1e1e1e), "Set Diffuse", bb_set_diffuse, NULL, NULL},
+    {NMO_GUID_INIT(0xd1d1d1d1, 0x30303030), "Set Emissive", bb_set_emissive, NULL, NULL},
+    {NMO_GUID_INIT(0xeb123eb5, 0x5be321be), "Set Texture", bb_set_texture, NULL, NULL},
+    {NMO_GUID_INIT(0x1cb5661e, 0x5b5d3fda), "Set Alpha Test", bb_set_alpha_test, NULL, NULL},
+    {NMO_GUID_INIT(0x2f572a66, 0x6a9a0088), "Set Blend Modes", bb_set_blend_modes, NULL, NULL},
+    {NMO_GUID_INIT(0x1144022f, 0x68fd055c), "Set Material Z Buffer", bb_set_material_z_buffer, NULL,
      NULL},
-    {NMO_GUID(0xaaaa213a, 0xeaa8d52a), "Set Current Slot", bb_set_current_slot, NULL, NULL},
-    {NMO_GUID(0x60415d44, 0x0d0174ea), "Set Prelit Color", bb_set_prelit_color, NULL, NULL},
-    {NMO_GUID(0xf11d010a, 0xfb1d010a), "Texture Scroller", bb_texture_scroller, NULL, NULL},
+    {NMO_GUID_INIT(0xaaaa213a, 0xeaa8d52a), "Set Current Slot", bb_set_current_slot, NULL, NULL},
+    {NMO_GUID_INIT(0x60415d44, 0x0d0174ea), "Set Prelit Color", bb_set_prelit_color, NULL, NULL},
+    {NMO_GUID_INIT(0xf11d010a, 0xfb1d010a), "Texture Scroller", bb_texture_scroller, NULL, NULL},
 };
 
 nmo_status_t eng_register_materials(nmo_engine_t *engine)

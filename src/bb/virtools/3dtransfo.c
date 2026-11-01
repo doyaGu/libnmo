@@ -506,19 +506,19 @@ static int bb_position_on_curve(blk_t *b)
 }
 
 static const nmo_engine_block_desc_t eng_3dtransfo_blocks[] = {
-    {NMO_GUID(0x676776d0, 0x20d457bd), "Position On Curve", bb_position_on_curve, NULL, NULL},
-    {NMO_GUID(0x64221225, 0x769a143f), "Play Animation 3D Entity", bb_play_animation, NULL, NULL},
-    {NMO_GUID(0x1c9236e1, 0x42f40996), "Play Global Animation", bb_play_global_animation, NULL,
+    {NMO_GUID_INIT(0x676776d0, 0x20d457bd), "Position On Curve", bb_position_on_curve, NULL, NULL},
+    {NMO_GUID_INIT(0x64221225, 0x769a143f), "Play Animation 3D Entity", bb_play_animation, NULL, NULL},
+    {NMO_GUID_INIT(0x1c9236e1, 0x42f40996), "Play Global Animation", bb_play_global_animation, NULL,
      NULL},
-    {NMO_GUID(0xe456e78a, 0x456789aa), "Set Position", bb_set_position, NULL, NULL},
-    {NMO_GUID(0xaa4aa6f0, 0xddefdef4), "Set World Matrix", bb_set_world_matrix, NULL, NULL},
-    {NMO_GUID(0x41236987, 0xa54a87a6), "Scale", bb_scale, NULL, NULL},
-    {NMO_GUID(0x9d9d9d98, 0x7e7a7f75), "Set Parent", bb_set_parent, NULL, NULL},
-    {NMO_GUID(0xffffffee, 0xeeffffff), "Rotate", bb_rotate, NULL, NULL},
-    {NMO_GUID(0x0c4966d8, 0x6c0c6d14), "Set Euler Orientation", bb_set_euler_orientation, NULL,
+    {NMO_GUID_INIT(0xe456e78a, 0x456789aa), "Set Position", bb_set_position, NULL, NULL},
+    {NMO_GUID_INIT(0xaa4aa6f0, 0xddefdef4), "Set World Matrix", bb_set_world_matrix, NULL, NULL},
+    {NMO_GUID_INIT(0x41236987, 0xa54a87a6), "Scale", bb_scale, NULL, NULL},
+    {NMO_GUID_INIT(0x9d9d9d98, 0x7e7a7f75), "Set Parent", bb_set_parent, NULL, NULL},
+    {NMO_GUID_INIT(0xffffffee, 0xeeffffff), "Rotate", bb_rotate, NULL, NULL},
+    {NMO_GUID_INIT(0x0c4966d8, 0x6c0c6d14), "Set Euler Orientation", bb_set_euler_orientation, NULL,
      NULL},
-    {NMO_GUID(0x26843971, 0x86249317), "Look At", bb_look_at, NULL, NULL},
-    {NMO_GUID(0x3d4861f8, 0x2861703d), "TT LookAt", bb_tt_look_at, NULL, NULL},
+    {NMO_GUID_INIT(0x26843971, 0x86249317), "Look At", bb_look_at, NULL, NULL},
+    {NMO_GUID_INIT(0x3d4861f8, 0x2861703d), "TT LookAt", bb_tt_look_at, NULL, NULL},
 };
 
 nmo_status_t eng_register_3dtransfo(nmo_engine_t *engine)
