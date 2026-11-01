@@ -35,6 +35,9 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
   pushes over a gap 10 long, between flat blocks a narrow road runs into
   through funnels, as Level_03's are.  The original levels bring a wood or
   stone ball to it.
+- {"module": "P_Modul_41", "count": n} -- a row of n (2 to 8) slabs on axles
+  across the track, between funnels, as levels 7 to 11 lay them.  Only a
+  paper ball crosses them: a wood or stone ball tips them and falls.
 - {"rail": length, "drop": dy} -- a straight rail, coming down dy.
 - {"rail_turn": "left" or "right"} -- the originals' rail bend, with a
   straight 1.9 before and after it so that it ends 10 along and 10 aside.
@@ -133,12 +136,24 @@ TRAFO_LIFT = 0.1
 # floors up to 16 higher (Level_03's lift it 13.5).
 FAN_BELOW = 0.35
 FAN_REACH = 16.0
-# The modules that stand on the track: (the floors' length along it, how far
-# the module stands from where they start).  P_Modul_25's floors run along its
-# -X: a flat block 5 long, the gap 10 long its plank falls across, another
-# block 5 long holding the stopper the plank lands on, all at a road's edge
-# height; funnels lead a narrow road onto and off them.
-MODULES = {"P_Modul_25": (20.0, 5.0)}
+# The modules that stand on the track, between funnels that lead a narrow road
+# onto them at its edges' height and off them again.  P_Modul_25's floors run
+# along its -X: a flat block 5 long, the gap 10 long its plank falls across,
+# another block 5 long holding the stopper the plank lands on.  P_Modul_41 is
+# a slab 5 square on an axle across the track; the originals lay 2 to 8 in a
+# row, 6 apart, with a gap of 1 on either side of each, and close the
+# funnels' ends with a wall.
+MODULES = {"P_Modul_25": (1, 1), "P_Modul_41": (2, 8)}  # how many in a row
+SLAB, SLAB_GAP = 5.0, 1.0
+
+
+def module_layout(kind: str, count: int) -> tuple[float, list[float], bool]:
+    """The length between a module's funnels, where each module stands from
+    their start, and whether the funnels end in walls."""
+    if kind == "P_Modul_25":
+        return 20.0, [5.0], False
+    step = SLAB + SLAB_GAP
+    return step * count + SLAB_GAP, [SLAB_GAP + SLAB / 2 + step * k for k in range(count)], True
 # The floors cut out for each module (ballance_level_elements.py), with their
 # groups, and the stand-in boxes (x0, x1, y0, y1, z0, z1 in the module's frame)
 # written without them.
@@ -408,19 +423,31 @@ class Builder:
                 raise ValueError(f"unknown module {kind}; known: {', '.join(MODULES)}")
             if width != NARROW or self.floor != "road":
                 raise ValueError("a module stands on a narrow road")
-            length, offset = MODULES[kind]
+            fewest, most = MODULES[kind]
+            count = int(piece.get("count", fewest))
+            if not fewest <= count <= most:
+                raise ValueError(f"{kind} comes {fewest} to {most} in a row")
+            length, offsets, walls = module_layout(kind, count)
+            if kind == "P_Modul_41" and self.last_ball != "Paper":
+                print(f"warning: a {self.last_ball.lower()} ball tips {kind}'s slabs and falls; "
+                      "only a paper ball crosses them", file=sys.stderr)
             edge = h + RISE
             self._open(floors, p, d)
             back = (-d[0], -d[1])
-            extras.append((funnel, at(p, d, FUNNEL), back, edge, None))
-            extras.append((funnel, at(p, d, FUNNEL + length), d, edge, None))
-            where = at(p, d, FUNNEL + offset)
-            # the ball rolls along the module's -X
-            self.modules.append((kind, sector, [where[0], edge, where[1]], turn_of(back)))
+            extras.append((funnel, at(p, d, FUNNEL), back, edge, None, walls))
+            extras.append((funnel, at(p, d, FUNNEL + length), d, edge, None, walls))
+            for offset in offsets:
+                where = at(p, d, FUNNEL + offset)
+                # the ball rolls along the module's -X
+                self.modules.append((kind, sector, [where[0], edge, where[1]], turn_of(back)))
             ramp = (h, h, 2 * FUNNEL + length)
-            self.points += [list(where), list(at(p, d, FUNNEL + length))]
+            self.points += [list(at(p, d, FUNNEL + offsets[0])),
+                            list(at(p, d, FUNNEL + length))]
             p = at(p, d, 2 * FUNNEL + length)
-            self._open(floors, p, d)
+            # the road beyond, off the grid behind it
+            self.floors = Floors(origin=p)
+            self.sectors[-1].append(self.floors)
+            self._open(self.floors, p, d)
             self.points.append(list(p))
             self.floor = "module"
         else:
@@ -490,8 +517,8 @@ class Builder:
                 floors.build(mesh)
             for function, *args in extras:
                 if function is funnel:
-                    (x, z), toward, edge, gap = args
-                    funnel(mesh, x, z, toward, edge, gap)
+                    (x, z), *rest = args
+                    funnel(mesh, x, z, *rest)
                 else:
                     (x, z), top, material = args
                     pad(mesh, x, z, top, material)
@@ -586,7 +613,7 @@ def build_manifest(presets: dict, meshes: dict[str, str], level: Builder, name: 
         objects.append(level_object(f"{kind}_{counts[kind]:02d}", meshes[kind], position,
                                     [kind, f"Sector_{sector:02d}"], turn=turn))
     for kind, sector, position, turn in level.modules:
-        for floor, groups, _ in MODULE_FLOORS[kind]:
+        for floor, groups, _ in MODULE_FLOORS.get(kind, []):
             counts[floor] = counts.get(floor, 0) + 1
             objects.append(level_object(f"A{sector:02d}_{floor}_{counts[floor]:02d}",
                                         meshes[floor], position, groups, turn=turn))
@@ -647,10 +674,10 @@ def build(route: dict, out: Path, elements: str | None, name: str) -> int:
     used_kinds = sorted({kind for kind, _, _ in level.elements} |
                         {kind for kind, _, _, _ in level.modules})
     floors = [floor for kind in sorted({m[0] for m in level.modules})
-              for floor, _, _ in MODULE_FLOORS[kind]]
+              for floor, _, _ in MODULE_FLOORS.get(kind, [])]
     meshes = {kind: "marker.obj" for kind in MARKERS + used_kinds}
     for kind in sorted({m[0] for m in level.modules}):
-        for floor, _, boxes in MODULE_FLOORS[kind]:
+        for floor, _, boxes in MODULE_FLOORS.get(kind, []):
             meshes[floor] = f"{floor}.obj"
             write_boxes(out / f"{floor}.obj", boxes)
     if elements:
