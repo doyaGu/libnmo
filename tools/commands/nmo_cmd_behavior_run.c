@@ -1,3 +1,10 @@
+#if !defined(_WIN32) && !defined(_XOPEN_SOURCE)
+#define _XOPEN_SOURCE 700 /* mkdtemp */
+#endif
+#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
+#define _DARWIN_C_SOURCE /* where Darwin declares mkdtemp */
+#endif
+
 /**
  * @file nmo_cmd_behavior_run.c
  * @brief CLI behavior run: execute the behavior graphs of a file frame by frame
@@ -19,8 +26,15 @@
 #include "behavior/nmo_script_model.h"
 
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef _WIN32
+#include <direct.h>
+#else
+#include <unistd.h>
+#endif
 
 #ifdef NMO_HAS_PHYSICS_IVP
 #include "engine/nmo_physics_ivp.h"
@@ -711,6 +725,10 @@ typedef struct run_files {
     const char *path;
     char *folder;
     char *found; /* the path last given to the engine */
+    /* A window run without --write saves into a folder of its own, removed at the end */
+    char *temporary;
+    char **written; /* the files saved there */
+    size_t written_count;
 } run_files_t;
 
 static char *run_join(const char *folder, const char *name, size_t name_length)
@@ -812,12 +830,13 @@ static const char *run_resolve_file(void *user_data, const char *name)
 /*
  * The engine's file writer: a saved file goes into the --write folder under
  * its name's last part (where the resolver finds it first), never next to the
- * run file; without --write nothing is written.
+ * run file; without --write nothing is written (a window run has a temporary
+ * folder instead, whose files it remembers to remove).
  */
 static nmo_status_t run_write_file(void *user_data, const char *name, const void *data,
                                    size_t size)
 {
-    const run_files_t *files = (const run_files_t *)user_data;
+    run_files_t *files = (run_files_t *)user_data;
     if (files->write == NULL) {
         return NMO_ERR_NOT_SUPPORTED;
     }
@@ -832,13 +851,71 @@ static nmo_status_t run_write_file(void *user_data, const char *name, const void
     }
     char *path = run_join(files->write, base, strlen(base));
     FILE *file = path != NULL ? fopen(path, "wb") : NULL;
-    free(path);
     if (file == NULL) {
+        free(path);
         return NMO_ERR_CANT_OPEN_FILE;
     }
     bool written = size == 0 || fwrite(data, 1, size, file) == size;
     bool closed = fclose(file) == 0;
+    bool listed = false;
+    for (size_t i = 0; files->temporary != NULL && i < files->written_count && !listed; i++) {
+        listed = strcmp(files->written[i], path) == 0;
+    }
+    char **grown = files->temporary != NULL && !listed
+                       ? (char **)realloc(files->written,
+                                          (files->written_count + 1u) * sizeof(*grown))
+                       : NULL;
+    if (grown != NULL) {
+        files->written = grown;
+        files->written[files->written_count++] = path;
+        path = NULL;
+    }
+    free(path);
     return written && closed ? NMO_OK : NMO_ERR_CANT_WRITE_FILE;
+}
+
+/* A new empty folder for a window run's saves; NULL when none could be made */
+static char *run_make_temporary_folder(void)
+{
+#ifdef _WIN32
+    char *name = _tempnam(NULL, "nmo-run-");
+    if (name != NULL && _mkdir(name) != 0) {
+        free(name);
+        name = NULL;
+    }
+    return name;
+#else
+    const char *base = getenv("TMPDIR");
+    if (base == NULL || base[0] == '\0') {
+        base = "/tmp";
+    }
+    char *name = run_join(base, "nmo-run-XXXXXX", strlen("nmo-run-XXXXXX"));
+    if (name != NULL && mkdtemp(name) == NULL) {
+        free(name);
+        name = NULL;
+    }
+    return name;
+#endif
+}
+
+/* What run_files_t holds, with the temporary folder and the files saved in it removed */
+static void run_files_release(run_files_t *files)
+{
+    for (size_t i = 0; i < files->written_count; i++) {
+        remove(files->written[i]);
+        free(files->written[i]);
+    }
+    free(files->written);
+    if (files->temporary != NULL) {
+#ifdef _WIN32
+        _rmdir(files->temporary);
+#else
+        rmdir(files->temporary);
+#endif
+        free(files->temporary);
+    }
+    free(files->folder);
+    free(files->found);
 }
 
 /* The folder of `file`, "" for the current one. */
@@ -1010,6 +1087,10 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
     const nmo_script_model_t *model = nmo_engine_script_model(engine);
     run_files_t files = {.write = args->write, .path = args->path,
                          .folder = run_folder_of(ctx->file_path)};
+    if (files.write == NULL && args->window) {
+        files.temporary = run_make_temporary_folder();
+        files.write = files.temporary;
+    }
     nmo_engine_set_file_resolver(engine, run_resolve_file, &files);
     nmo_engine_set_file_writer(engine, run_write_file, &files);
     if (!run_set_registry(engine, args->registry) || !run_add_paths(engine)) {
@@ -1018,7 +1099,7 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
         nmo_physics_ivp_detach(physics);
 #endif
         nmo_engine_destroy(engine);
-        free(files.folder);
+        run_files_release(&files);
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
@@ -1151,8 +1232,7 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
     nmo_physics_ivp_detach(physics);
 #endif
     nmo_engine_destroy(engine);
-    free(files.folder);
-    free(files.found);
+    run_files_release(&files);
     return exit_code;
 }
 
@@ -1179,7 +1259,8 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
         {"--path", NULL, NMO_OPT_STRING,
          "Folder of the files the document loads, before its own folder"},
         {"--write", NULL, NMO_OPT_STRING,
-         "Folder the files the document saves go to, read before the others (default: none)"},
+         "Folder the files the document saves go to, read before the others (default: none; "
+         "a window run saves into a temporary folder removed at the end)"},
         {"--message", NULL, NMO_OPT_STRING,
          "Messages the host sends: NAME@FRAME:OBJECT,... (before that frame steps)"},
         {"--registry", NULL, NMO_OPT_STRING,
