@@ -646,6 +646,19 @@ static void view_load_projection(const nmo_engine_frame_t *frame, bool orthograp
     glLoadMatrixf(projection);
 }
 
+/*
+ * RCKMesh folds a lit channel that multiplies (ZERO/SRCCOLOR or DESTCOLOR/ZERO)
+ * into the mesh's pass as a texture stage: only its texture modulates the lit
+ * color, the channel material's own lighting takes no part.
+ */
+static bool view_channel_folds(const nmo_engine_channel_t *channel,
+                               const nmo_engine_material_t *material, bool prelit)
+{
+    return channel->lit && !prelit && material->texture != 0 &&
+           ((channel->source_blend == 1 && channel->dest_blend == 3) ||
+            (channel->source_blend == 9 && channel->dest_blend == 1));
+}
+
 static void view_draw_mesh(nmo_view_t *view, const nmo_engine_frame_t *frame,
                            const nmo_engine_draw_t *draw, const float view_m[16])
 {
@@ -678,6 +691,14 @@ static void view_draw_mesh(nmo_view_t *view, const nmo_engine_frame_t *frame,
         glEnableClientState(GL_COLOR_ARRAY);
         glColorPointer(4, GL_UNSIGNED_BYTE, 0, cached->colors);
     }
+    /* With a folded channel the device adds the specular after the texture stages */
+    bool folded = false;
+    for (int32_t c = 0; c < mesh.channel_count && !folded; c++) {
+        nmo_engine_material_t channel_material;
+        folded = mesh.channels[c].active &&
+                 nmo_engine_material(view->engine, mesh.channels[c].material, &channel_material) &&
+                 view_channel_folds(&mesh.channels[c], &channel_material, prelit);
+    }
     for (int32_t g = 0; g < cached->group_count; g++) {
         if (cached->counts[g] == 0) {
             continue;
@@ -685,9 +706,12 @@ static void view_draw_mesh(nmo_view_t *view, const nmo_engine_frame_t *frame,
         nmo_engine_material_t material;
         nmo_object_id_t material_id = nmo_engine_mesh_material(view->engine, draw->mesh, g);
         if (material_id == 0 || !nmo_engine_material(view->engine, material_id, &material)) {
+            /* RCKRenderManager's default material: CKMaterial's defaults */
             memset(&material, 0, sizeof(material));
             material.diffuse[0] = material.diffuse[1] = material.diffuse[2] = 0.7f;
             material.diffuse[3] = 1.0f;
+            material.ambient[0] = material.ambient[1] = material.ambient[2] = 0.3f;
+            material.ambient[3] = 1.0f;
             material.z_write = true;
             material.z_func = 4;
             material.source_blend = 2;
@@ -698,6 +722,9 @@ static void view_draw_mesh(nmo_view_t *view, const nmo_engine_frame_t *frame,
         } else {
             glEnable(GL_LIGHTING);
             glColor4fv(material.diffuse);
+        }
+        if (folded) {
+            material.power = 0.0f; /* its specular comes after the channels */
         }
         view_set_material(view, &material, !prelit, true, draw->world);
         if (draw->no_z_test) {
@@ -725,6 +752,13 @@ static void view_draw_mesh(nmo_view_t *view, const nmo_engine_frame_t *frame,
             }
         }
         bool lit = channel->lit && !prelit;
+        if (view_channel_folds(channel, &material, prelit)) {
+            lit = false;
+            for (int k = 0; k < 4; k++) {
+                material.diffuse[k] = 1.0f;
+            }
+            material.texture_blend = 4; /* MODULATEALPHA: the texture times white */
+        }
         if (lit) {
             glEnable(GL_LIGHTING);
         } else {
@@ -746,6 +780,28 @@ static void view_draw_mesh(nmo_view_t *view, const nmo_engine_frame_t *frame,
             glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_SHORT, indices);
         }
         free(indices);
+    }
+    /* The specular the folded channels left out, added over what they drew */
+    for (int32_t g = 0; folded && g < cached->group_count; g++) {
+        nmo_engine_material_t material;
+        nmo_object_id_t material_id = nmo_engine_mesh_material(view->engine, draw->mesh, g);
+        if (cached->counts[g] == 0 || material_id == 0 ||
+            !nmo_engine_material(view->engine, material_id, &material) || !(material.power > 0.05f)) {
+            continue;
+        }
+        for (int k = 0; k < 4; k++) {
+            material.diffuse[k] = material.ambient[k] = material.emissive[k] = 0.0f;
+        }
+        material.texture = 0;
+        material.texgen = 0;
+        material.alpha_blend = true;
+        material.source_blend = 2; /* ONE */
+        material.dest_blend = 2;
+        material.z_write = false;
+        material.z_func = 4;
+        glEnable(GL_LIGHTING);
+        view_set_material(view, &material, true, true, draw->world);
+        glDrawElements(GL_TRIANGLES, cached->counts[g], GL_UNSIGNED_SHORT, cached->indices[g]);
     }
     glDisableClientState(GL_COLOR_ARRAY);
     glDisableClientState(GL_TEXTURE_COORD_ARRAY);
