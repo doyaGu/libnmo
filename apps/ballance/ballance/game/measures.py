@@ -81,8 +81,8 @@ SWITCH_AREA, SWITCH_SPUR, SWITCH_HOLD = 15.0, 32.5, 500
 # channel through the middle of the box, shoves it out from under the stone,
 # which drops flush into the gap.  The ball's path, (along, to the right,
 # frames to hold): the trafo; back up the walkway and down the right ramp;
-# the push, and on to send the box into the far corner; back up the other
-# ramp and over the stone.
+# the push, and on to send the box into the far corner; straight up the
+# other ramp to the rim, turning only there, and over the stone.
 STONEBOX_LENGTH, STONEBOX_MODULE, STONEBOX_TRAFO = 55.0, 24.6, 2.5
 STONEBOX_RISE = 2.1
 STONEBOX_PATH = [(2.5, 0, 0), (6.75, 0, 0), (15.75, 8.75, 0), (17.75, 9.75, 0),
@@ -90,8 +90,8 @@ STONEBOX_PATH = [(2.5, 0, 0), (6.75, 0, 0), (15.75, 8.75, 0), (17.75, 9.75, 0),
                  (23.75, 14.75, 0), (24.25, 15.25, 0), (32.25, 16.25, 25), (32.25, -5.75, 0),
                  (41.25, -15.75, 20), (42.75, -17.25, 0), (45.75, -14.25, 0),
                  (45.75, -9.25, 0), (43.75, -7.25, 0), (33.75, -7.25, 0), (32.75, -8.25, 0),
-                 (26.75, -8.25, 0), (25.75, -9.25, 0), (15.75, -9.25, 0), (13.75, -7.25, 0),
-                 (13.75, -3.25, 0), (16.75, 0, 0), (51.75, 0, 0)]
+                 (26.75, -8.25, 0), (25.75, -9.25, 0), (11.75, -9.25, 0), (9.75, -7.25, 0),
+                 (9.75, -3.25, 0), (12.75, 0, 0), (51.75, 0, 0)]
 
 # P_Modul_01, a pair of pushers (Level_01's and their plaza): a corridor 5
 # wide at a narrow road's edge height, 52.5 long, its last 5 narrowing into
