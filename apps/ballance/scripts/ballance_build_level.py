@@ -31,6 +31,10 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
 - {"trafo": "paper", "stone" or "wood"} -- a ball changer on its pad, on a
   narrow road.  The original levels all turn the ball back to wood before
   the balloon; the builder warns when a route does not.
+- {"module": "P_Modul_25"} -- the drawbridge: an upright plank the ball
+  pushes over a gap 10 long, between flat blocks a narrow road runs into
+  through funnels, as Level_03's are.  The original levels bring a wood or
+  stone ball to it.
 - {"rail": length, "drop": dy} -- a straight rail, coming down dy.
 - {"rail_turn": "left" or "right"} -- the originals' rail bend, with a
   straight 1.9 before and after it so that it ends 10 along and 10 aside.
@@ -129,6 +133,18 @@ TRAFO_LIFT = 0.1
 # floors up to 16 higher (Level_03's lift it 13.5).
 FAN_BELOW = 0.35
 FAN_REACH = 16.0
+# The modules that stand on the track: (the floors' length along it, how far
+# the module stands from where they start).  P_Modul_25's floors run along its
+# -X: a flat block 5 long, the gap 10 long its plank falls across, another
+# block 5 long holding the stopper the plank lands on, all at a road's edge
+# height; funnels lead a narrow road onto and off them.
+MODULES = {"P_Modul_25": (20.0, 5.0)}
+# The floors cut out for each module (ballance_level_elements.py), with their
+# groups, and the stand-in boxes (x0, x1, y0, y1, z0, z1 in the module's frame)
+# written without them.
+MODULE_FLOORS = {"P_Modul_25": [
+    ("Floor_Modul_25", STONE_FLOOR_GROUPS, [(-15, -10, -5, 0, -2.5, 2.5), (0, 5, -5, 0, -2.5, 2.5)]),
+    ("Floor_Stopper_25", ["Phys_FloorStopper"], [(-10, -9, -1, -0.5, -2.5, 2.5)])]}
 
 # The start and the checkpoints are 1.26 below the edges of the roads that
 # meet their floors.  A narrow road meets those floors through a funnel 5
@@ -206,6 +222,7 @@ class Builder:
         self.rails: list[Rails] = []
         self.extras: list[list] = []  # per sector: (function, args) writing funnels and pads
         self.elements: list[tuple[str, int, list[float]]] = []
+        self.modules: list[tuple[str, int, list[float], float]] = []  # and their turns
         self.towers: list[list[float]] = []
         self.pillars: list[list[float]] = []
         self.sticks: list[list[float]] = []
@@ -385,6 +402,27 @@ class Builder:
             self.points.append(list(middle))
             self.points.append(list(p))
             self.floor = "trafo"
+        elif "module" in piece:
+            kind = piece["module"]
+            if kind not in MODULES:
+                raise ValueError(f"unknown module {kind}; known: {', '.join(MODULES)}")
+            if width != NARROW or self.floor != "road":
+                raise ValueError("a module stands on a narrow road")
+            length, offset = MODULES[kind]
+            edge = h + RISE
+            self._open(floors, p, d)
+            back = (-d[0], -d[1])
+            extras.append((funnel, at(p, d, FUNNEL), back, edge, None))
+            extras.append((funnel, at(p, d, FUNNEL + length), d, edge, None))
+            where = at(p, d, FUNNEL + offset)
+            # the ball rolls along the module's -X
+            self.modules.append((kind, sector, [where[0], edge, where[1]], turn_of(back)))
+            ramp = (h, h, 2 * FUNNEL + length)
+            self.points += [list(where), list(at(p, d, FUNNEL + length))]
+            p = at(p, d, 2 * FUNNEL + length)
+            self._open(floors, p, d)
+            self.points.append(list(p))
+            self.floor = "module"
         else:
             raise ValueError(f"unknown piece {piece}")
         for element in piece.get("elements", []):
@@ -492,10 +530,16 @@ def level_object(name: str, mesh: str, position: list[float],
 
 def write_box(path: Path, x0: float, x1: float, y0: float, y1: float,
               z0: float, z1: float) -> None:
-    corners = [(x, y, z) for x in (x0, x1) for y in (y0, y1) for z in (z0, z1)]
+    write_boxes(path, [(x0, x1, y0, y1, z0, z1)])
+
+
+def write_boxes(path: Path, boxes: list) -> None:
     faces = [(3, 4, 8, 7), (1, 5, 6, 2), (1, 2, 4, 3), (5, 7, 8, 6), (1, 3, 7, 5), (2, 6, 8, 4)]
-    lines = [f"v {x:g} {y:g} {z:g}" for x, y, z in corners]
-    lines += ["f " + " ".join(map(str, face)) for face in faces]
+    lines = []
+    for k, (x0, x1, y0, y1, z0, z1) in enumerate(boxes):
+        corners = [(x, y, z) for x in (x0, x1) for y in (y0, y1) for z in (z0, z1)]
+        lines += [f"v {x:g} {y:g} {z:g}" for x, y, z in corners]
+        lines += ["f " + " ".join(str(8 * k + i) for i in face) for face in faces]
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -537,13 +581,20 @@ def build_manifest(presets: dict, meshes: dict[str, str], level: Builder, name: 
     objects.append(level_object("PE_Balloon_01", meshes["PE_Balloon"], where, ["PE_Levelende"],
                                 turn=turn_of(d) + 180))
     counts: dict[str, int] = {}
-    for kind, sector, position in level.elements:
+    for kind, sector, position, turn in [e + (0.0,) for e in level.elements] + level.modules:
         counts[kind] = counts.get(kind, 0) + 1
         objects.append(level_object(f"{kind}_{counts[kind]:02d}", meshes[kind], position,
-                                    [kind, f"Sector_{sector:02d}"]))
+                                    [kind, f"Sector_{sector:02d}"], turn=turn))
+    for kind, sector, position, turn in level.modules:
+        for floor, groups, _ in MODULE_FLOORS[kind]:
+            counts[floor] = counts.get(floor, 0) + 1
+            objects.append(level_object(f"A{sector:02d}_{floor}_{counts[floor]:02d}",
+                                        meshes[floor], position, groups, turn=turn))
     used = {"Floor_Top_Profile", "Floor_Top_ProfileFlat", "Floor_Top_Flat",
             "Floor_Top_Boderless", "Floor_Side"}
     used.update(f"Floor_Trafo_{kind}" for kind in level.trafos)
+    if level.modules:
+        used.add("Floor_Stopper_Wood")
     if any(rails.runs for rails in level.rails):
         used.add("Rail")
     if level.housings and "Floor_Modul_18" in meshes:
@@ -593,10 +644,17 @@ def build(route: dict, out: Path, elements: str | None, name: str) -> int:
         # balloon; none lets a paper or stone ball reach its bridge.
         print(f"warning: the ball reaches the balloon as {level.last_ball.lower()}; "
               "the original levels always turn it back to wood first", file=sys.stderr)
-    used_kinds = sorted({kind for kind, _, _ in level.elements})
+    used_kinds = sorted({kind for kind, _, _ in level.elements} |
+                        {kind for kind, _, _, _ in level.modules})
+    floors = [floor for kind in sorted({m[0] for m in level.modules})
+              for floor, _, _ in MODULE_FLOORS[kind]]
     meshes = {kind: "marker.obj" for kind in MARKERS + used_kinds}
+    for kind in sorted({m[0] for m in level.modules}):
+        for floor, _, boxes in MODULE_FLOORS[kind]:
+            meshes[floor] = f"{floor}.obj"
+            write_boxes(out / f"{floor}.obj", boxes)
     if elements:
-        for kind in MARKERS + used_kinds + GAME_ONLY:
+        for kind in MARKERS + used_kinds + GAME_ONLY + floors:
             for suffix in (".obj", ".mtl"):
                 source = Path(elements) / f"{kind}{suffix}"
                 if suffix == ".obj" and not source.is_file():
