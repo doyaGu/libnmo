@@ -81,6 +81,8 @@ SNAP = {
     "Modul27": ([5.0], [], [2.5]),
     "Modul42": ([35.16], [0.41], [2.5]),
     "Floor_Cradle": ([7.5, 5.0, 2.5], [2.5, 1.8, 1.1], [7.5, 5.0, 2.5]),
+    "Log": ([25.0], [], []),
+    "Log_End": ([0.0], [], []),
     "Floor_RailDock": ([5.0, 2.5], [0.7, 0.58], [5.0]),
     "Modul02": ([28.2], [11.84], [2.5]),
     "Floor_Modul02": ([42.49, 44.99, 47.49, 52.49, 54.99, 57.49], [13.18, 18.18],
@@ -246,6 +248,11 @@ CUTS: list[Cut] = [
               (-7.45, 8.0, -2.0, 9.6, -8.0, 3.84)),
     ModuleCut("Misc_Cradle", "Level_01.NMO", "A01_Misc_Schelle04", "A01_Floor_05",
               (-8.0, 8.0, -3.0, 3.0, -9.0, 9.0)),
+    # a log's middle segment, and the face at its end
+    ModuleCut("Log", "Level_12.NMO", "A08_Halfpipe_02", "A08_Halfpipe_02",
+              (-25.05, 25.05, -2.4, 2.4, -8.5, 8.5)),
+    ModuleCut("Log_End", "Level_12.NMO", "A08_Halfpipe_02", "A08_Halfpipe_02",
+              (74.95, 75.05, -2.4, 2.4, -8.5, 8.5), (75.0, 0.0, 0.0)),
     # a wide road's end narrowing to a rail, its flat middle at the origin
     ModuleCut("Floor_RailDock", "Level_01.NMO", "A01_Floor_03", "A01_Rail_07",
               (-5.1, 5.1, -6.0, 1.4, 12.8, 17.95), (0.0, 0.58, 17.88)),

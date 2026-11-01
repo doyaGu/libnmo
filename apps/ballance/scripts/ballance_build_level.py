@@ -115,6 +115,12 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
   end, its rim closed (as Level_01's rails drop the ball into its pits).
   With "split": true, the rail's tubes part at its end instead, the ball
   dropping between them, as Level_01's A01_Rail_02_01 do.
+- {"log": length} -- a half log (Level_12's "halfpipes"), a whole number of
+  50-long segments, that a rail's fall drops the ball onto 5 past the
+  rail's end; {"log": length, "turn": "left" or "right", "drop": dy} -- one
+  crossing dy below the last log, 25 from its far end, that the ball rolls
+  off the last onto, as Level_12's logs do.  A fall from a log's end drops
+  the ball into an area.
 - {"cradle": true} -- the rail bends straight down into a cradle on a 15 by
   15 block, as Level_01's A01_Rail_09 does, 9.09 below the rail; the track
   leaves the block to the right, from a narrow road's end on it, 7.5 from

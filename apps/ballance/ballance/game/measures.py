@@ -37,6 +37,14 @@ TRAFO_LIFT = 0.1
 # 4.5 in over the area's inside.  The builder hangs a rail's end two cells
 # over the area and lets it fall at most 15.
 RAIL_OVERHANG, RAIL_FALL = 5.0, 15.0
+# Logs (Level_12's A08_Halfpipe_*, "halfpipes" in the levels' names): half
+# logs 16.84 wide, their tops 2.26 above their axes, built of 50-long
+# segments with a flat face at either end.  Level_12 lays them crossing at
+# right angles, each about 10.3 below the last: the ball rolls along one,
+# off its side where the next crosses under it, and on along that one.
+# The builder crosses the next 25 from a log's far end, 25 from its own near
+# end; the ball lands on the first one 5 past the rail's end it falls from.
+LOG_SEGMENT, LOG_TOP, LOG_CROSS = 50.0, 2.26, 25.0
 # A rail meets a wide road's end as Level_01's A01_Rail_07 meets A01_Floor_03:
 # through a piece 5 long whose slopes go on as the road's while its flat
 # middle sinks to a narrow road's V, 0.7 deep at the rail; the tubes' middles

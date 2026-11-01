@@ -62,6 +62,9 @@ class ModuleFloor:
 
 
 MODULE_FLOORS = {
+    # not modules: a log's segment along X, and the face at its end (facing X)
+    "Log": [ModuleFloor("Log", WOOD_FLOOR_GROUPS, [(-25, 25, -2.26, 2.26, -8.42, 8.42)])],
+    "Log_End": [ModuleFloor("Log_End", WOOD_FLOOR_GROUPS, [(-0.05, 0, -2.26, 2.26, -8.42, 8.42)])],
     # not a module: a wide road's end narrowing to a rail (the road's flat
     # middle at the origin, the road along Z, the rail at -Z)
     "RailDock": [ModuleFloor("Floor_RailDock", STONE_FLOOR_GROUPS,

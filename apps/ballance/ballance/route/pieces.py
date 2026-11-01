@@ -18,15 +18,15 @@ from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, 
                              CRADLE_EXIT, CRADLE_RING, CRADLE_TOP, ELEMENT_LIFT, FAN_BELOW,
                              FAN_REACH, FLAPS_COUNTERWEIGHT, FLAPS_LENGTH, FLAPS_MODULE, FUNNEL,
                              JUMP_ABOVE, JUMP_AREA, JUMP_DOWN, JUMP_HALF, LIFT_BELOW, LIFT_ENTRY,
-                             LIFT_EXIT, LIFT_RIDE, LIFT_TOP, LIFT_WALLS, PILLAR_INSET, PLANK_BELOW,
-                             PLANK_LENGTH, PUSHERS_ASIDE, PUSHERS_LENGTH, PUSHERS_MODULES,
-                             PUSHERS_PATH, RAIL_DOCK_BELOW, RAIL_DOCK_LENGTH, RAIL_FALL,
-                             RAIL_OVERHANG, SACK_ABOVE, STONEBOX_LENGTH, STONEBOX_MODULE,
-                             STONEBOX_PATH, STONEBOX_RISE, STONEBOX_TRAFO, SWING_ABOVE, SWING_FAR,
-                             SWING_GO, SWING_HALF, SWING_SEAT, SWING_WAIT, SWITCH_AREA,
-                             SWITCH_CROSS, SWITCH_HOLD, SWITCH_MODULE, SWITCH_SPUR, SWITCH_TARGET,
-                             TRAFO_LIFT, TWIST_ASIDE, TWIST_BELOW, TWIST_HALF, TWIST_PATH,
-                             WALKWAY_ABOVE, WALKWAY_LENGTH)
+                             LIFT_EXIT, LIFT_RIDE, LIFT_TOP, LIFT_WALLS, LOG_CROSS, LOG_SEGMENT,
+                             LOG_TOP, PILLAR_INSET, PLANK_BELOW, PLANK_LENGTH, PUSHERS_ASIDE,
+                             PUSHERS_LENGTH, PUSHERS_MODULES, PUSHERS_PATH, RAIL_DOCK_BELOW,
+                             RAIL_DOCK_LENGTH, RAIL_FALL, RAIL_OVERHANG, SACK_ABOVE,
+                             STONEBOX_LENGTH, STONEBOX_MODULE, STONEBOX_PATH, STONEBOX_RISE,
+                             STONEBOX_TRAFO, SWING_ABOVE, SWING_FAR, SWING_GO, SWING_HALF,
+                             SWING_SEAT, SWING_WAIT, SWITCH_AREA, SWITCH_CROSS, SWITCH_HOLD,
+                             SWITCH_MODULE, SWITCH_SPUR, SWITCH_TARGET, TRAFO_LIFT, TWIST_ASIDE,
+                             TWIST_BELOW, TWIST_HALF, TWIST_PATH, WALKWAY_ABOVE, WALKWAY_LENGTH)
 from ..kit.floors import CELL, NARROW, RISE, WALL
 from ..kit.pieces import channel, funnel, pad, strip
 from ..kit.rails import ABOVE_V, BEND_RADIUS, Ring, bend
@@ -93,6 +93,12 @@ def lay_fall(layout: Layout, sector: int, part: Sector, piece: dict, track: Trac
     fall = float(piece["fall"])
     if not 0 < fall <= RAIL_FALL:
         raise ValueError(f"a rail drops the ball at most {RAIL_FALL}")
+    if track.run is None:
+        # off a log's end
+        track.h -= fall
+        track.p = at(track.p, track.d, -RAIL_OVERHANG)
+        track.floor = "fall"
+        return
     if piece.get("split"):
         end = track.run[-1]
         layout.module_floors.append(("Rail_Split", sector, [end.x, end.y, end.z],
@@ -102,6 +108,39 @@ def lay_fall(layout: Layout, sector: int, part: Sector, piece: dict, track: Trac
     track.h -= fall
     track.p = at(track.p, track.d, -RAIL_OVERHANG)
     track.floor = "fall"
+
+
+def lay_log(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:
+    """{"log": length}: a log the ball lands on from a rail's fall, or
+    {"log": length, "turn": "left" or "right", "drop": dy} one crossing dy
+    under the last log, which the ball rolls off onto it (as Level_12's
+    A08_Halfpipe_* do; see LOG_* in ballance.game.measures).  The length is
+    a whole number of segments."""
+    length = float(piece["log"])
+    segments = round(length / LOG_SEGMENT)
+    if segments < 1 or abs(segments * LOG_SEGMENT - length) > 1e-6:
+        raise ValueError(f"a log is a whole number of {LOG_SEGMENT:g}-long segments")
+    if track.floor == "fall":
+        d, top = track.d, track.h
+        land = at(track.p, d, RAIL_OVERHANG)
+        start = at(land, d, -LOG_CROSS)
+    else:
+        if "turn" not in piece or "drop" not in piece:
+            raise ValueError("a log after a log turns and drops under it")
+        cross = at(track.p, track.d, -LOG_CROSS)
+        d, top = side_of(track.d, piece["turn"]), track.h - float(piece["drop"])
+        start = at(cross, d, -LOG_CROSS)
+    for k in range(segments):
+        middle = at(start, d, LOG_SEGMENT * (k + 0.5))
+        layout.module_floors.append(("Log", sector, [middle[0], top - LOG_TOP, middle[1]],
+                                     turn_of(d)))
+    end = at(start, d, length)
+    for p, out in ((start, back_of(d)), (end, d)):
+        layout.module_floors.append(("Log_End", sector, [p[0], top - LOG_TOP, p[1]],
+                                     turn_of(out)))
+    layout.points.append(list(at(end, d, -LOG_CROSS)))
+    track.p, track.d, track.h, track.floor = end, d, top, "log"
+    return top, top, length
 
 
 def lay_cradle(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:
@@ -663,6 +702,7 @@ PIECES: dict[str, Callable] = {
     "rail_turn": lay_rail_turn,
     "fall": lay_fall,
     "cradle": lay_cradle,
+    "log": lay_log,
     "area": lay_area,
     "turn": lay_turn,
     "trafo": lay_trafo,
@@ -679,10 +719,14 @@ def lay_piece(layout: Layout, sector: int, part: Sector, piece: dict, track: Tra
     floors = layout.floors
     start, heading = track.p, track.d
     rail = "rail" in piece or "rail_turn" in piece
-    if ("fall" in piece or "cradle" in piece) and track.run is None:
-        raise ValueError("the ball falls from a rail's end")
-    if track.floor == "fall" and "area" not in piece:
-        raise ValueError("a rail's fall lands in an area")
+    if "cradle" in piece and track.run is None:
+        raise ValueError("the ball drops into the cradle from a rail's end")
+    if "fall" in piece and track.run is None and track.floor != "log":
+        raise ValueError("the ball falls from a rail's or a log's end")
+    if track.floor == "fall" and "area" not in piece and "log" not in piece:
+        raise ValueError("a fall lands in an area or on a log")
+    if track.floor == "log" and "log" not in piece and "fall" not in piece:
+        raise ValueError("a log goes on to another log or a fall")
     if rail and track.run is None:
         # Rails meet floors as the originals' do: at a narrow road's end,
         # through a gap in an area's rim, or through a wide road's dock.
