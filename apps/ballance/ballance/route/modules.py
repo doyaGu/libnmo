@@ -9,17 +9,22 @@ from ..game.measures import (DRAWBRIDGE_FLOORS, DRAWBRIDGE_HINGE, SACK_STEP, SLA
                              STONEBOX_LENGTH, STONEBOX_MODULE, SWITCH_CROSS)
 
 # The modules that stand on the track, and how many in a row.  Each but the
-# switch, the stone on a box and the pushers (which come with plazas of
-# their own) stands between funnels that lead a narrow road onto it at the
-# road's edge height and off it again.
-MODULES = {"P_Modul_01": (2, 2), "P_Modul_25": (1, 1), "P_Modul_26": (1, 4), "P_Modul_34": (1, 1),
+# switch, the stone on a box, the pushers and the rotating arm (which come
+# with floors of their own) and the bridges (plates and seesaw, over a gap narrow roads run
+# to) stands between funnels that lead a narrow road onto it at the road's
+# edge height and off it again.
+MODULES = {"P_Modul_01": (2, 2), "P_Modul_17": (1, 1), "P_Modul_25": (1, 1), "P_Modul_26": (1, 4),
+           "P_Modul_29": (1, 1), "P_Modul_30": (1, 1), "P_Modul_34": (1, 1),
            "P_Modul_37": (1, 1), "P_Modul_41": (2, 8)}
 
-# The modules only a paper ball, or a stone ball, gets past: (ball, what
-# happens with another).
+# The modules only some balls get past: (those balls, what happens with
+# another).
 NEEDS_BALL = {
-    "P_Modul_41": ("Paper", "tips {kind}'s slabs and falls; only a paper ball crosses them"),
-    "P_Modul_37": ("Stone", "does not tip {kind}'s plank; a stone ball does"),
+    "P_Modul_41": ({"Paper"}, "tips {kind}'s slabs and falls; only a paper ball crosses them"),
+    "P_Modul_37": ({"Stone"}, "does not tip {kind}'s plank; a stone ball does"),
+    "P_Modul_29": ({"Paper", "Wood"}, "falls through {kind}'s plates (in Ballanced too); "
+                                      "a paper or wood ball crosses them"),
+    "P_Modul_17": ({"Wood", "Stone"}, "can't turn {kind}'s arm; a wood or stone ball does"),
 }
 
 
@@ -46,6 +51,21 @@ class ModuleFloor:
 
 
 MODULE_FLOORS = {
+    # in the stand-ins, the lower road either side of the gap, the loop's
+    # column and upper road, and the arm's block
+    "P_Modul_17": [
+        ModuleFloor("Floor_Modul_17", STONE_FLOOR_GROUPS,
+                    [(-13.71, -8.71, -10.43, -5.43, 11.35, 24.61),
+                     (-23.74, 13.8, -10.43, -5.43, 17.11, 22.11),
+                     (6.29, 11.29, -10.43, -5.43, -5.39, 22.11),
+                     (-2.5, 2.5, -9.0, -4.1, -2.5, 2.5)]),
+        ModuleFloor("Floor_Modul_17_Far", STONE_FLOOR_GROUPS,
+                    [(-13.71, -8.71, -10.43, -5.43, -8.72, 1.28)]),
+        ModuleFloor("Floor_Stopper_17", STOPPER_GROUPS,
+                    [(-13.71, -8.71, -6.43, -5.93, 10.35, 11.35)])],
+    "P_Modul_30": [
+        ModuleFloor("Floor_Stopper_30", STOPPER_GROUPS,
+                    [(-7.4, -6.4, -0.5, 0, -2.5, 2.5), (6.4, 7.4, -0.5, 0, -2.5, 2.5)])],
     # in the stand-ins, the corridor and the low ground south of it
     "P_Modul_01": [
         ModuleFloor("Floor_Modul_01", STONE_FLOOR_GROUPS,

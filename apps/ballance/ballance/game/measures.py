@@ -115,6 +115,31 @@ PUSHERS_PATH = [(6.9, 0, 0), (20.9, 0, 0), (23.9, 6.8, 0), (25.9, 12.8, 0), (27.
                 (3.9, 2.8, 0), (5.9, 0.8, 0), (25.9, 0.8, 0), (26.9, 1.8, 0), (28.9, 1.8, 0),
                 (29.9, 0.8, 0), (35.9, 0.8, 0), (36.9, 1.8, 0), (38.9, 1.8, 0), (39.9, 0.8, 0)]
 
+# P_Modul_29 and P_Modul_30 bridge a gap that two narrow roads' V's run to
+# (Level_03's): nine plates hung on hinges like a rope bridge, over a gap
+# 15.33 long, the module 6.87 from its near end and 0.17 below the roads'
+# edges; a seesaw over a gap 14.8 long, in its middle, 0.5 below the edges,
+# its plank resting on a stopper lip at either end.  The ball crosses both
+# along the module's +X; a stone ball falls through the plates, in Ballanced
+# too.  (gap, module along it, module below the edges)
+BRIDGES = {"P_Modul_29": (15.33, 6.87, 0.17), "P_Modul_30": (14.8, 7.4, 0.5)}
+
+# P_Modul_17, a rotating arm, with the drawbridge it tips (Level_03's
+# P_Modul_17_01 and P_Modul_25_05): a road runs 33.33 to and across the
+# drawbridge's gap, whose plank stands on the far side; the ball can't push
+# it from this side.  Beside the road a loop of road climbs to an upper road
+# where the arm, a bar 23.2 long on a pivot block 11.21 to the left, 24.61
+# along and 5.43 above the road's edges, reaches over both roads.  The ball
+# pushes the arm's paddle along the upper road; the arm turns, and its other
+# paddle knocks the plank down across the gap (a paper ball can't turn the
+# arm; wood and stone do).  The drawbridge stands 23.33
+# along.  The ball's path, (along, to the right, frames to hold): up the
+# loop, along the upper road past the paddle to its end, back, and over the
+# plank.
+ARMS_LENGTH, ARMS_MODULE, ARMS_ABOVE, ARMS_BRIDGE = 33.33, (24.61, -11.21), 5.43, 23.33
+ARMS_PATH = [(5, 0, 0), (5, -20, 0), (20, -20, 0), (28, -20, 60), (5, -20, 0), (5, 0, 0),
+             (20, 0, 0)]
+
 # --- Scenery ---------------------------------------------------------------
 
 # A pillar under a floor stands 2.5 in from its corner, its top 5 below the

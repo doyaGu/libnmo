@@ -13,7 +13,8 @@ import math
 from typing import TYPE_CHECKING, Callable
 
 from ..core.geometry import across, at, axis_of, back_of, left_of, rect, side_of, turn_of
-from ..game.measures import (ELEMENT_LIFT, FAN_BELOW, FAN_REACH, FUNNEL, PILLAR_INSET,
+from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, ARMS_PATH,
+                             BRIDGES, ELEMENT_LIFT, FAN_BELOW, FAN_REACH, FUNNEL, PILLAR_INSET,
                              PUSHERS_ASIDE, PUSHERS_LENGTH, PUSHERS_MODULES, PUSHERS_PATH,
                              RAIL_FALL, RAIL_OVERHANG,
                              SACK_ABOVE, STONEBOX_LENGTH, STONEBOX_MODULE, STONEBOX_PATH,
@@ -176,12 +177,13 @@ def lay_trafo(layout: Layout, sector: int, part: Sector, piece: dict, track: Tra
 def check_ball(layout: Layout, kind: str) -> None:
     """Warns when the ball the track brings cannot get past the module."""
     if kind in NEEDS_BALL:
-        ball, text = NEEDS_BALL[kind]
-        if layout.last_ball != ball:
+        balls, text = NEEDS_BALL[kind]
+        if layout.last_ball not in balls:
             layout.warn(f"a {layout.last_ball.lower()} ball " + text.format(kind=kind))
 
 
-def lay_module(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:
+def lay_module(layout: Layout, sector: int, part: Sector, piece: dict,
+               track: Track) -> Ramp | None:
     """{"module": kind, "count": n}: a module, or a row of them, between
     funnels; the road beyond goes on on a grid of its own."""
     kind = piece["module"]
@@ -193,6 +195,10 @@ def lay_module(layout: Layout, sector: int, part: Sector, piece: dict, track: Tr
         return lay_stonebox(layout, sector, part, piece, track)
     if kind == "P_Modul_01":
         return lay_pushers(layout, sector, part, piece, track)
+    if kind in BRIDGES:
+        return lay_bridge(layout, sector, part, piece, track)
+    if kind == "P_Modul_17":
+        return lay_arms(layout, sector, part, piece, track)
     if track.width != NARROW or track.floor != "road":
         raise ValueError("a module stands on a narrow road")
     fewest, most = MODULES[kind]
@@ -261,6 +267,61 @@ def lay_stonebox(layout: Layout, sector: int, part: Sector, piece: dict, track: 
     layout.points.append(list(track.p))
     track.floor = "wide"
     return h, h, start + STONEBOX_LENGTH
+
+
+def lay_bridge(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> None:
+    """{"module": "P_Modul_29" or "P_Modul_30"}: the plates or the seesaw
+    over a gap, as Level_03 has them (BRIDGES in ballance.game.measures): the
+    narrow road's V runs to the gap's edge and on from its far edge, on a
+    grid of its own."""
+    if track.width != NARROW or track.floor != "road":
+        raise ValueError("a bridge spans a gap between narrow roads")
+    if piece.get("elements"):
+        raise ValueError("elements stand on floors, not on a bridge")
+    kind = piece["module"]
+    check_ball(layout, kind)
+    gap, along, below = BRIDGES[kind]
+    p, d, h = track.p, track.d, track.h
+    layout.dock(layout.floors, p, d)
+    where = at(p, d, along)
+    layout.modules.append((kind, sector, [where[0], h + RISE - below, where[1]], turn_of(d)))
+    if kind in MODULE_FLOORS:
+        layout.module_floors.append(layout.modules[-1])
+    track.p = at(p, d, gap)
+    layout.floors = part.grid(track.p)
+    layout.dock(layout.floors, track.p, d)
+    layout.points.append(list(track.p))
+    track.floor = "module"
+
+
+def lay_arms(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:
+    """{"module": "P_Modul_17"}: a rotating arm and the drawbridge it tips,
+    with the loop of road to it, as Level_03 has them (see ARMS_* in
+    ballance.game.measures), entered from a narrow road, whose V runs on
+    into it, and left the same way, on a grid of its own."""
+    if track.width != NARROW or track.floor not in ("road", "trafo"):
+        raise ValueError("the rotating arm is entered from a narrow road")
+    check_ball(layout, "P_Modul_17")
+    p, d, h = track.p, track.d, track.h
+    edge = h + RISE
+    layout.open(layout.floors, p, d)
+    # the arm's X runs across the track, to its left; the drawbridge's along it
+    along, right = ARMS_MODULE
+    arm = at(p, d, along, right)
+    layout.modules.append(("P_Modul_17", sector, [arm[0], edge + ARMS_ABOVE, arm[1]],
+                           turn_of(left_of(d))))
+    layout.module_floors.append(layout.modules[-1])
+    bridge = at(p, d, ARMS_BRIDGE)
+    layout.modules.append(("P_Modul_25", sector, [bridge[0], edge, bridge[1]], turn_of(d)))
+    for along, right, hold in ARMS_PATH:
+        where = at(p, d, along, right)
+        layout.points.append([where[0], where[1], h - 20.0, hold] if hold else list(where))
+    track.p = at(p, d, ARMS_LENGTH)
+    layout.floors = part.grid(track.p)
+    layout.open(layout.floors, track.p, d)
+    layout.points.append(list(track.p))
+    track.floor = "module"
+    return h, h, ARMS_LENGTH
 
 
 def lay_pushers(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:

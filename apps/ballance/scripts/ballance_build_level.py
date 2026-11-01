@@ -45,6 +45,19 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
   pushes each frame's target until its crossbar has moved aside, comes back
   up the ramp of the road round the plaza and goes on along the corridor's
   right side, past the crossbars.
+- {"module": "P_Modul_17"} -- a rotating arm and the drawbridge it tips, as
+  Level_03 has them: the narrow road runs 33.33 to and across a gap whose
+  plank stands on the far side, and a loop of road beside it climbs to an
+  upper road the arm reaches over.  The ball pushes the arm round on the
+  upper road, the arm's other end knocks the plank across the gap, and the
+  ball comes back down and crosses.  A paper ball can't turn the arm.
+- {"module": "P_Modul_29"} -- nine plates hung on hinges like a rope
+  bridge over a gap 15.33 long, as Level_03 has them: the narrow road's V
+  runs to the gap and on from its far side.  A stone ball falls through
+  them.
+- {"module": "P_Modul_30"} -- a seesaw over a gap 14.8 long, its plank
+  resting on a stopper lip at either end, as Level_03 has it; the road runs
+  to and from it as to the plates.
 - {"module": "P_Modul_34"} -- the stone on a box, with Level_01's plaza
   around it: a funnel leads the road onto a walkway 5 wide over a pit 45
   wide, with a stone trafo on its first 5; the stone stands in a gap in the
