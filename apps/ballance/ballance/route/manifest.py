@@ -3,6 +3,8 @@ materials, for `nmo patch apply --project`."""
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from ..core.geometry import turn_of
 from ..game.catalog import LEVEL_GROUPS, RAIL_GROUPS, STONE_FLOOR_GROUPS
 from ..game.measures import FIRST_RESET_ABOVE, RESET_ABOVE, SKY_BELOW
@@ -140,9 +142,17 @@ def _elements(manifest: Manifest, assets: Assets, layout: Layout) -> None:
         for floor in MODULE_FLOORS[kind]:
             manifest.add(f"A{sector:02d}_{floor.name}_{manifest.number(floor.name):02d}",
                          assets.mesh(floor.name), position, floor.groups, turn=turn)
+            # a floor cut from a level brings the level's materials with it
+            manifest.materials.update(_mesh_materials(assets.out / assets.mesh(floor.name)))
     manifest.materials.update(f"Floor_Trafo_{kind}" for kind in layout.trafos)
     if layout.modules:
         manifest.materials.add("Floor_Stopper_Wood")
+
+
+def _mesh_materials(path: Path) -> set[str]:
+    """The materials an OBJ mesh uses."""
+    return {line.split()[1] for line in path.read_text(encoding="utf-8").splitlines()
+            if line.startswith("usemtl ")}
 
 
 def _pads(manifest: Manifest, assets: Assets, layout: Layout) -> None:
