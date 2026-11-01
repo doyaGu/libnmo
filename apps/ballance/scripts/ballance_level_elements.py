@@ -15,7 +15,8 @@ octagon under its start, which opens to a road on its +X side, and the round
 floor with two flame bowls under its first checkpoint, which opens on both X
 sides.  They are written as Floor_Start.obj and Floor_Checkpoint.obj, around
 the marker: placed at the marker's position, unturned, they stand as in
-Level_03.
+Level_03.  So is the fan's housing (Floor_Modul_18.obj), the 5 by 5 pit with
+a grille the fan blows through, set into the middle of an area 0.35 above it.
 
 The scenery is cut out of Level_01: one of the pillars beside its start, with
 the shaft that fades out below it, as Pillar.obj; the lantern tower on top of
@@ -51,7 +52,8 @@ KINDS = MARKERS + ELEMENTS + ["SkyLayer"]
 # The floors the original start and first checkpoint stand on: (level, floor,
 # marker, half extents along X and Z of the part under the marker).
 FLOORS = {"Floor_Start": ("Level_03.NMO", "A01_Floor_01", "PS_FourFlames_01", 8.07, 9.3),
-          "Floor_Checkpoint": ("Level_03.NMO", "A02_Floor_01", "PC_TwoFlames_01", 4.93, 9.3)}
+          "Floor_Checkpoint": ("Level_03.NMO", "A02_Floor_01", "PC_TwoFlames_01", 4.93, 9.3),
+          "Floor_Modul_18": ("Level_03.NMO", "A05_Floor_02", "P_Modul_18_03", 2.52, 2.52)}
 # The scenery: one pillar of Level_01's start (its shaft fading below, too),
 # the lantern tower on top of it, and a striped pole by its balloon: (level,
 # objects, a point near its middle on X and Z, how far it reaches from there).
