@@ -55,7 +55,7 @@ typedef struct run_args {
     const char *path; /* --path: where loaded files are found, besides the file's folder */
     const char *write; /* --write: where saved files go, and where loading looks first */
     const char *keys; /* "Space@30-35,Enter@60": keys and the frames they are down */
-    const char *steer; /* "X,Z[,Y];...@FRAME[-FRAME]": points an object is steered through */
+    const char *steer; /* "X,Z[,Y[,F]];...@FRAME[-FRAME]": points an object is steered through */
     const char *steer_objects; /* "NAME,NAME": the objects --steer may steer, first shown */
     const char *messages; /* "Level_Finish@4000:All_Gameplay,...": messages the host sends */
     const char *registry; /* "Software\Game\Settings\Language=1;...": registry values */
@@ -152,14 +152,16 @@ static long run_parse_keys(const char *spec, run_key_t *out)
  * of the objects --steer-object names (a game swaps the object a player
  * rolls). A point is passed once the object comes within STEER_REACH of it,
  * and, if the point has a height, is at least that high there (it waits to be
- * lifted); after a jump (a respawn), it heads for the point after the nearest
- * one.
+ * lifted), and, if it has a frame count, after that many more frames heading
+ * for it (it keeps pushing there); after a jump (a respawn), it heads for the
+ * point after the nearest one.
  */
 typedef struct run_steer {
-    float *points; /* x, z, y (-INFINITY: any height) */
+    float *points; /* x, z, y (-INFINITY: any height), frames to hold */
     long count;
     uint32_t first, last;
     long next;
+    long held; /* frames spent at the next point since reaching it */
     bool placed;
     float x, z; /* the object last frame */
     const char *objects; /* "NAME,NAME" */
@@ -172,7 +174,8 @@ static char *run_strndup(const char *text, size_t length);
 #define STEER_LOOKAHEAD 20.0f /* frames of the object's speed to allow for */
 #define STEER_DEAD 0.5f
 
-/* Parse "X,Z[,Y];X,Z[,Y];...@FRAME[-FRAME]" into `out` (points left NULL when only checking). */
+/* Parse "X,Z[,Y[,F]];...@FRAME[-FRAME]" into `out` (points left NULL when only checking);
+ * Y may be left empty ("X,Z,,F"). */
 static bool run_parse_steer(const char *spec, run_steer_t *out)
 {
     const char *at = strrchr(spec, '@');
@@ -195,7 +198,7 @@ static bool run_parse_steer(const char *spec, run_steer_t *out)
         count += *q == ';';
     }
     count++;
-    float *points = out != NULL ? (float *)calloc((size_t)count * 3u, sizeof(float)) : NULL;
+    float *points = out != NULL ? (float *)calloc((size_t)count * 4u, sizeof(float)) : NULL;
     if (out != NULL && points == NULL) {
         return false;
     }
@@ -209,10 +212,23 @@ static bool run_parse_steer(const char *spec, run_steer_t *out)
         }
         q = end + 1;
         float z = strtof(q, &end);
-        float y = -INFINITY;
+        float y = -INFINITY, hold = 0.0f;
         if (end != q && *end == ',') {
             q = end + 1;
-            y = strtof(q, &end);
+            if (*q == ',') {
+                end = (char *)q; /* no height */
+            } else {
+                y = strtof(q, &end);
+            }
+            if (end != q - 1 && *end == ',') {
+                const char *h = end + 1;
+                hold = strtof(h, &end);
+                if (end == h || hold < 0.0f) {
+                    free(points);
+                    return false;
+                }
+                q = h;
+            }
         }
         if (end == q || (*end != ';' && end != at)) {
             free(points);
@@ -220,9 +236,10 @@ static bool run_parse_steer(const char *spec, run_steer_t *out)
         }
         q = end + 1;
         if (points != NULL) {
-            points[i * 3] = x;
-            points[i * 3 + 1] = z;
-            points[i * 3 + 2] = y;
+            points[i * 4] = x;
+            points[i * 4 + 1] = z;
+            points[i * 4 + 2] = y;
+            points[i * 4 + 3] = hold;
         }
     }
     if (out != NULL) {
@@ -264,25 +281,31 @@ static void run_steer_frame(nmo_engine_t *engine, run_steer_t *steer, uint32_t f
         if (!steer->placed || hypotf(vx, vz) > STEER_JUMP) {
             long nearest = 0;
             for (long i = 1; i < steer->count; i++) {
-                if (hypotf(steer->points[i * 3] - x, steer->points[i * 3 + 1] - z) <
-                    hypotf(steer->points[nearest * 3] - x, steer->points[nearest * 3 + 1] - z)) {
+                if (hypotf(steer->points[i * 4] - x, steer->points[i * 4 + 1] - z) <
+                    hypotf(steer->points[nearest * 4] - x, steer->points[nearest * 4 + 1] - z)) {
                     nearest = i;
                 }
             }
             steer->next = nearest + 1 < steer->count ? nearest + 1 : nearest;
+            steer->held = 0;
             vx = vz = 0.0f;
         }
         steer->placed = true;
         steer->x = x;
         steer->z = z;
         while (steer->next + 1 < steer->count &&
-               hypotf(steer->points[steer->next * 3] - x,
-                      steer->points[steer->next * 3 + 1] - z) < STEER_REACH &&
-               m[13] >= steer->points[steer->next * 3 + 2]) {
+               hypotf(steer->points[steer->next * 4] - x,
+                      steer->points[steer->next * 4 + 1] - z) < STEER_REACH &&
+               m[13] >= steer->points[steer->next * 4 + 2]) {
+            if ((float)steer->held < steer->points[steer->next * 4 + 3]) {
+                steer->held++;
+                break;
+            }
             steer->next++;
+            steer->held = 0;
         }
-        float dx = steer->points[steer->next * 3] - x - vx * STEER_LOOKAHEAD;
-        float dz = steer->points[steer->next * 3 + 1] - z - vz * STEER_LOOKAHEAD;
+        float dx = steer->points[steer->next * 4] - x - vx * STEER_LOOKAHEAD;
+        float dz = steer->points[steer->next * 4 + 1] - z - vz * STEER_LOOKAHEAD;
         /* the camera's X and Z axes, flat */
         float rx = view.view[0], rz = view.view[2], fx = view.view[8], fz = view.view[10];
         float rl = hypotf(rx, rz), fl = hypotf(fx, fz);
@@ -1262,7 +1285,8 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
          "Keys held down: KEY@FRAME[-FRAME],... (names like Space, or scan codes)"},
         {"--steer", NULL, NMO_OPT_STRING,
          "From FRAME (to FRAME), roll --steer-object through the points with the arrow keys, "
-         "waiting at a point with a Y until it is that high: X,Z[,Y];X,Z[,Y];...@FRAME[-FRAME]"},
+         "waiting at a point with a Y until it is that high, and with an F for F more frames: "
+         "X,Z[,Y[,F]];...@FRAME[-FRAME] (X,Z,,F: no height)"},
         {"--steer-object", NULL, NMO_OPT_STRING,
          "The objects --steer rolls: NAME,NAME,... (the first one shown)"},
         {"--path", NULL, NMO_OPT_STRING,
