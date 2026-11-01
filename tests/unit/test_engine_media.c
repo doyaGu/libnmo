@@ -5,6 +5,7 @@
 #include "object/builtin/nmo_material_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_sound_schemas.h"
+#include "object/builtin/nmo_texture_schemas.h"
 
 #include <stdio.h>
 
@@ -345,6 +346,60 @@ TEST(engine_media, movie_texture_shows_the_decoded_frame_of_its_slot)
     fixture_end(&f);
 }
 
+/* CKBitmapData keeps black as the transparent color when the file saves none */
+TEST(engine_media, transparent_texture_clears_black_without_a_saved_color)
+{
+    /* A 2 x 1 24-bit BMP: black, then white (bottom-up BGR rows padded to 4 bytes) */
+    uint8_t bmp[54 + 8];
+    memset(bmp, 0, sizeof(bmp));
+    bmp[0] = 'B';
+    bmp[1] = 'M';
+    put_u32(bmp + 2, sizeof(bmp));
+    put_u32(bmp + 10, 54);
+    put_u32(bmp + 14, 40);
+    put_u32(bmp + 18, 2);
+    put_u32(bmp + 22, 1);
+    put_u32(bmp + 26, 1u | 24u << 16);
+    memset(bmp + 57, 0xFF, 3);
+    char path[512];
+    snprintf(path, sizeof(path), "%s/%s", NMO_TEST_SCRATCH_DIR, "key.bmp");
+    FILE *out = fopen(path, "wb");
+    ASSERT_NOT_NULL(out);
+    ASSERT_EQ(sizeof(bmp), fwrite(bmp, 1, sizeof(bmp), out));
+    fclose(out);
+
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t texture = fixture_create(&f, NMO_CID_TEXTURE, "Keyed");
+    nmo_texture_state_t *state = (nmo_texture_state_t *)fixture_state(&f, texture);
+    ASSERT_NOT_NULL(state);
+    nmo_arena_t *arena = nmo_session_get_arena(f.session);
+    char **names = (char **)nmo_arena_alloc(arena, sizeof(char *), _Alignof(char *));
+    ASSERT_NOT_NULL(names);
+    names[0] = (char *)nmo_arena_alloc(arena, sizeof("key.bmp"), 1);
+    ASSERT_NOT_NULL(names[0]);
+    memcpy(names[0], "key.bmp", sizeof("key.bmp"));
+    state->slot_count = 1;
+    state->slot_filenames = names;
+    state->has_slot_filenames = 1;
+    state->is_transparent = 1;
+    state->has_transparent_color = 0;
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    fixture_commit(&f, NULL);
+    nmo_engine_set_file_resolver(f.engine, resolve_scratch, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    nmo_engine_image_t image;
+    ASSERT_TRUE(nmo_engine_texture_image(f.engine, texture, &image));
+    ASSERT_EQ(2, image.width);
+    ASSERT_EQ(0x000000u, image_pixel(&image, 0, 0));
+    ASSERT_EQ(0, image.rgba[3]);
+    ASSERT_EQ(0xFFFFFFu, image_pixel(&image, 1, 0));
+    ASSERT_EQ(255, image.rgba[7]);
+    fixture_end(&f);
+}
+
 /* A WAV file of `data_size` bytes at `bytes_per_second`, an odd-sized chunk before its data */
 static void write_wave(const char *name, uint32_t bytes_per_second, uint32_t data_size)
 {
@@ -631,6 +686,7 @@ REGISTER_TEST(engine_media, voices_follow_the_sound_settings_and_instances);
 REGISTER_TEST(engine_media, particle_system_exits_off_once_its_particles_died);
 REGISTER_TEST(engine_media, movie_player_shows_the_movie_frames_over_its_duration);
 REGISTER_TEST(engine_media, movie_texture_shows_the_decoded_frame_of_its_slot);
+REGISTER_TEST(engine_media, transparent_texture_clears_black_without_a_saved_color);
 REGISTER_TEST(engine_media, play_animation_progresses_over_its_duration);
 REGISTER_TEST(engine_media, play_global_animation_loops_over_its_duration);
 REGISTER_TEST(engine_media, sound_load_gives_the_sound_its_file_length);

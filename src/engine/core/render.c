@@ -1373,9 +1373,9 @@ bool nmo_engine_texture_image(nmo_engine_t *engine, nmo_object_id_t texture,
         if (image->rgba != NULL) {
             image->width = w;
             image->height = h;
-            /* CKBitmapData's transparent color: those pixels are clear */
-            if (state->is_transparent && state->has_transparent_color) {
-                uint32_t key = state->transparent_color;
+            /* CKBitmapData's transparent color (black unless saved): those pixels are clear */
+            if (state->is_transparent) {
+                uint32_t key = state->has_transparent_color ? state->transparent_color : 0u;
                 uint8_t r = (uint8_t)(key >> 16), g = (uint8_t)(key >> 8), b = (uint8_t)key;
                 size_t count = (size_t)w * (size_t)h;
                 for (size_t i = 0; i < count; i++) {
