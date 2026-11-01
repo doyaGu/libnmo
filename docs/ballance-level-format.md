@@ -238,11 +238,21 @@ it:
   top is as high as the road's edges. A narrow road runs into it from either
   side through the same 5-long `Floor_Top_ProfileFlat` funnel that ends a
   road under the balloon.
-- `P_Modul_18` stands on `Modul18_Top` floors and `P_Modul_01` on
-  `Modul01_Floor`; `P_Modul_03`, `_08`, `_19`, `_29`, `_30` and `_41` hang
-  over gaps with no floor under them.
+- `P_Modul_18`, the fan (132 of them in 12 levels), stands in a housing that
+  is part of the floor: a 5 by 5 pit, 3.4 deep, with a `Modul18_Gitter`
+  grille and a round `Modul18_Top` rim flush with the floor around it. The
+  fan stands on the grille, 0.35 below the floor; its wind box reaches 21.4
+  up. Fans are set into areas' flat insides, over rails, halfpipes and wood
+  floors; in Level_03 a 15 by 15 area holds one in its middle and the next
+  15 by 15 area adjoins it 13.5 higher, so a paper ball rides the wind up
+  and rolls across. `P_Modul_01` stands on `Modul01_Floor`; `P_Modul_03`,
+  `_08`, `_19`, `_29`, `_30` and `_41` hang over gaps with no floor under
+  them.
 
-`ballance_floors.py` builds the ball changer's block with `pad()`.
+`ballance_floors.py` builds the ball changer's block with `pad()` and leaves
+a fan housing's cells out of an area with `Floors.hole()`;
+`ballance_level_elements.py` cuts the housing out of Level_03 as
+`Floor_Modul_18.obj`.
 
 ## Scenery
 
@@ -344,7 +354,8 @@ document. They made no difference in the engine runs.
 `apps/ballance/scripts/ballance_build_level.py <route.json> <out> [--elements <dir>]`
 builds a level from a route: its pieces sector by sector (roads narrow or
 wide and coming down, areas left from the side, turns, ball changers, rails
-straight or bent), with elements placed on the floors. It lays them out on the floors' 2.5 grid with
+straight or bent, fans lifting the ball to the next area), with elements
+placed on the floors. It lays them out on the floors' 2.5 grid with
 `ballance_floors.py`, turns the start, the checkpoints and the balloon with
 the track, stands the scenery as above, hides the fall zone under all of it,
 and writes `route_points.json`, the points along the middle of the track.
@@ -406,16 +417,18 @@ points of `route_points.json` with the arrow keys, as a player would:
 ```sh
 nmo behavior run --physics ivp --path <out> -n 4500 \
     --keys 'Enter@800-805,Enter@900-905' \
-    --steer "$(python3 -c "import json; print(';'.join('%g,%g' % (x, z) for x, z in json.load(open('<out>/route_points.json'))))")@2760" \
+    --steer "$(python3 -c "import json; print(';'.join(','.join('%g' % v for v in point) for point in json.load(open('<out>/route_points.json'))))")@2760" \
     --steer-object Ball_Wood,Ball_Stone,Ball_Paper \
     --registry 'Software\Ballance\Settings\Language=1' base.cmo
 ```
 
-The sample plays to the finish this way (frame 4598): an extra point, the
-first checkpoint, the stone ball changer, the extra life, the second
-checkpoint, the rails, the third sector's extra point, the wood ball changer
-and the balloon.
+A point over a fan has a height (`X,Z,Y`): the ball waits there until the
+wind has lifted it that high. The sample plays to the finish this way (frame
+4963): an extra point, the first checkpoint, the stone ball changer, the
+extra life, the second checkpoint, the paper ball changer, the rails, the
+fan, the extra point on the area above it, the wood ball changer and the
+balloon.
 
 Not covered yet: levels generated this way have not been loaded in the
-original game, the moving modules (`P_Modul_*`) are not placed, and rails
-neither meet wide roads nor end over nothing.
+original game, the moving modules other than the fan (`P_Modul_*`) are not
+placed, and rails neither meet wide roads nor end over nothing.
