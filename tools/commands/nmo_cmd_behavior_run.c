@@ -50,6 +50,7 @@ typedef struct run_args {
     bool frames_given;    /* -n given: a window closes after that many frames */
     const char *shots;    /* "menu.png@700,...": frames a window saves */
     bool mute;            /* --mute: the window plays no sound */
+    bool quiet;           /* --quiet, or a window played until it closes: no events listed */
     bool real_time;       /* a window with no --delta or --shot: frames take the time that passed */
 } run_args_t;
 
@@ -482,7 +483,7 @@ static void run_trace(const nmo_engine_event_t *event, void *user_data)
         state->last_unknown = 0;
         state->op_behavior = 0;
     }
-    if (!state->ok || !run_event_shown(state->args, event, node)) {
+    if (!state->ok || state->args->quiet || !run_event_shown(state->args, event, node)) {
         free(effect_note);
         return;
     }
@@ -1180,10 +1181,12 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
          "Show the frames in a window and play with its keyboard and mouse, until it closes"},
         {"--shot", NULL, NMO_OPT_STRING, "Save the window at frames: FILE.png@FRAME,..."},
         {"--mute", NULL, NMO_OPT_FLAG, "Play no sound in the window"},
+        {"--quiet", "-q", NMO_OPT_FLAG,
+         "List no events, only the summary (the default for a window played until it closes)"},
     };
     enum { OPT_FRAMES, OPT_DELTA, OPT_START, OPT_SCRIPT, OPT_UNKNOWN, OPT_MAX_ITER, OPT_SEED,
            OPT_TRACE, OPT_KEYS, OPT_STEER, OPT_STEER_OBJECT, OPT_PATH, OPT_WRITE, OPT_MESSAGE, OPT_REGISTRY, OPT_PHYSICS,
-           OPT_WINDOW, OPT_SHOT, OPT_MUTE, OPT_COUNT };
+           OPT_WINDOW, OPT_SHOT, OPT_MUTE, OPT_QUIET, OPT_COUNT };
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
@@ -1203,6 +1206,8 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
     if (out->shots != NULL) {
         out->window = true;
     }
+    /* A played window runs for minutes: listing its events would grow without end */
+    out->quiet = nmo_opt_flag(&vals[OPT_QUIET]) || (out->window && !out->frames_given);
 #ifndef NMO_HAS_VIEW
     if (out->window) {
         fprintf(stderr, "Error: --window and --shot need a build with the view (NMO_VIEWER)\n");
