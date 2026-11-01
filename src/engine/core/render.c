@@ -724,6 +724,42 @@ static bool eng_draw_sprite3d(nmo_engine_t *engine, const eng_entity_t *entity,
  * Lights
  * ============================================================================ */
 
+bool eng_camera_planes(nmo_engine_t *engine, nmo_object_id_t id, float *near_plane,
+                       float *far_plane)
+{
+    const nmo_camera_state_t *state =
+        (const nmo_camera_state_t *)eng_typed_state(engine, id, CKPGUID_CAMERA);
+    if (state == NULL) {
+        return false;
+    }
+    *near_plane = state->near_plane;
+    *far_plane = state->far_plane;
+    for (size_t i = 0; i < engine->render.camera_planes.count; i++) {
+        if (engine->render.camera_planes.data[i].id == id) {
+            *near_plane = engine->render.camera_planes.data[i].near_plane;
+            *far_plane = engine->render.camera_planes.data[i].far_plane;
+        }
+    }
+    return true;
+}
+
+void eng_set_camera_planes(nmo_engine_t *engine, nmo_object_id_t id, float near_plane,
+                           float far_plane)
+{
+    eng_camera_planes_t *planes = NULL;
+    for (size_t i = 0; i < engine->render.camera_planes.count && planes == NULL; i++) {
+        if (engine->render.camera_planes.data[i].id == id) {
+            planes = &engine->render.camera_planes.data[i];
+        }
+    }
+    if (planes == NULL && !ENG_VEC_PUSH(engine->render.camera_planes, planes)) {
+        return;
+    }
+    planes->id = id;
+    planes->near_plane = near_plane;
+    planes->far_plane = far_plane;
+}
+
 eng_light_t *eng_light(nmo_engine_t *engine, nmo_object_id_t id)
 {
     int32_t at = eng_map_get(&engine->render.light_map, id);

@@ -154,6 +154,11 @@ void eng_2d_destroy(nmo_engine_t *engine, nmo_object_id_t id);
 /* The 2D entity's run time state; NULL for no CK2dEntity */
 eng_2d_t *eng_2d_entity(nmo_engine_t *engine, nmo_object_id_t id);
 eng_light_t *eng_light(nmo_engine_t *engine, nmo_object_id_t id);
+/* A camera's front and back planes now (Set Clipping Planes', else the file's); false for none */
+bool eng_camera_planes(nmo_engine_t *engine, nmo_object_id_t id, float *near_plane,
+                       float *far_plane);
+void eng_set_camera_planes(nmo_engine_t *engine, nmo_object_id_t id, float near_plane,
+                           float far_plane);
 /* A texture's image changed (Texture Load, a slot change): decode it again */
 void eng_texture_changed(nmo_engine_t *engine, nmo_object_id_t texture);
 

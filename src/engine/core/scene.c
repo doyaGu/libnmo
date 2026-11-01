@@ -6,6 +6,9 @@
 
 #include "../engine_internal.h"
 
+#include "format/nmo_object.h"
+#include "object/nmo_class_ids.h"
+
 #include <stdlib.h>
 #include <string.h>
 
@@ -19,7 +22,13 @@ void eng_save_ic(nmo_engine_t *engine, nmo_object_id_t id)
     const eng_array_t *array = eng_find_array(engine, id);
     float world[16];
     bool has_matrix = nmo_engine_entity_world_matrix(engine, id, world);
-    if (array == NULL && !has_matrix) {
+    float near_plane = 0.0f, far_plane = 0.0f;
+    bool has_planes = eng_camera_planes(engine, id, &near_plane, &far_plane);
+    nmo_object_t *object = eng_find_object(engine, id);
+    uint32_t class_id = object != NULL ? nmo_object_get_class_id(object) : 0u;
+    const eng_material_t *material = class_id == NMO_CID_MATERIAL ? eng_material(engine, id) : NULL;
+    const eng_light_t *light = has_matrix ? eng_light(engine, id) : NULL;
+    if (array == NULL && !has_matrix && material == NULL) {
         return;
     }
     int32_t index = eng_map_get(&engine->ics.map, id);
@@ -46,6 +55,18 @@ void eng_save_ic(nmo_engine_t *engine, nmo_object_id_t id)
         int32_t entity = eng_entity_index(engine, id);
         int32_t parent = entity >= 0 ? engine->entities.data[entity].parent : -1;
         ic->parent = parent >= 0 ? engine->entities.data[parent].id : 0;
+    }
+    ic->has_planes = has_planes;
+    ic->near_plane = near_plane;
+    ic->far_plane = far_plane;
+    if (material != NULL) {
+        ic->has_material = true;
+        ic->material = material->desc;
+    }
+    if (light != NULL) {
+        ic->has_light = true;
+        memcpy(ic->light_color, light->color, sizeof(ic->light_color));
+        ic->light_active = light->active;
     }
     ic->visibility = eng_object_visibility(engine, id);
 }
@@ -75,6 +96,19 @@ void eng_restore_ic(nmo_engine_t *engine, nmo_object_id_t id)
                                   ic->parent != 0 ? eng_entity_index(engine, ic->parent) : -1, true);
         }
         nmo_engine_set_entity_world_matrix(engine, id, ic->world, true);
+    }
+    /* CKCamera, CKMaterial and CKLight's own members */
+    if (ic->has_planes) {
+        eng_set_camera_planes(engine, id, ic->near_plane, ic->far_plane);
+    }
+    eng_material_t *material = ic->has_material ? eng_material(engine, id) : NULL;
+    if (material != NULL) {
+        material->desc = ic->material;
+    }
+    eng_light_t *light = ic->has_light ? eng_light(engine, id) : NULL;
+    if (light != NULL) {
+        memcpy(light->color, ic->light_color, sizeof(light->color));
+        light->active = ic->light_active;
     }
 }
 

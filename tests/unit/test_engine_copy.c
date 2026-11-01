@@ -1,7 +1,9 @@
 #include "engine_fixture.h"
 
 #include "document/nmo_document_save.h"
+#include "engine/nmo_engine_render.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_camera_schemas.h"
 #include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/nmo_ref.h"
@@ -18,6 +20,8 @@
 #define GUID_TT_RESTORE_IC NMO_GUID(0x7e0f2f58, 0x232d3109)
 #define GUID_SET_PARENT NMO_GUID(0x9d9d9d98, 0x7e7a7f75)
 #define GUID_TT_SAVE_IC NMO_GUID(0x30362f34, 0x1935316f)
+#define GUID_SET_AS_ACTIVE_CAMERA NMO_GUID(0x368f0ab1, 0x2d8957e4)
+#define GUID_SET_CLIPPING_PLANES NMO_GUID(0x652316a2, 0x01aa09a9)
 
 #define DEPENDENCIES_CHUNK_CUSTOM 0x12248768u
 
@@ -458,6 +462,62 @@ TEST(engine_copy, initial_conditions_are_restored)
     fixture_end(&f);
 }
 
+static void input_float_value(engine_fixture_t *f, nmo_object_id_t pin, float value)
+{
+    fixture_input_value(f, pin, &value, sizeof(value));
+}
+
+/* A camera's initial value holds its clipping planes too (CKCamera::Load) */
+TEST(engine_copy, initial_condition_restores_camera_planes)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t camera = fixture_create(&f, NMO_CID_CAMERA, "Camera");
+    ASSERT_TRUE(camera != 0);
+    place_entity(&f, camera, 0.0f, 0);
+    nmo_camera_state_t *state = (nmo_camera_state_t *)fixture_state(&f, camera);
+    ASSERT_NOT_NULL(state);
+    state->fov = 1.0f;
+    state->orthographic_zoom = 1.0f;
+    state->projection_type = 1u;
+    state->near_plane = 1.0f;
+    state->far_plane = 200.0f;
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    /* Frame 0: active, planes 2-300; frame 1: saved; frame 2: planes 4-2500; frame 3: restored */
+    nmo_object_id_t active = fixture_block(&f, GUID_SET_AS_ACTIVE_CAMERA, "Active");
+    nmo_object_id_t first = fixture_block(&f, GUID_SET_CLIPPING_PLANES, "First Planes");
+    nmo_object_id_t save = fixture_block(&f, GUID_TT_SAVE_IC, "Save");
+    nmo_object_id_t later = fixture_block(&f, GUID_SET_CLIPPING_PLANES, "Later Planes");
+    nmo_object_id_t restore = fixture_block(&f, GUID_RESTORE_IC, "Restore");
+    nmo_object_id_t blocks[5] = {active, first, save, later, restore};
+    const uint32_t delays[5] = {0, 0, 1, 2, 3};
+    for (int i = 0; i < 5; i++) {
+        ASSERT_TRUE(blocks[i] != 0 && fixture_target(&f, blocks[i]) != 0);
+        fixture_input_int(&f, fixture_target(&f, blocks[i]), (int32_t)camera);
+        fixture_link(&f, f.script_in, BLOCK_IN(&f, blocks[i], 0), delays[i]);
+    }
+    input_float_value(&f, BLOCK_PIN(&f, first, 0), 2.0f);
+    input_float_value(&f, BLOCK_PIN(&f, first, 1), 300.0f);
+    input_float_value(&f, BLOCK_PIN(&f, later, 0), 4.0f);
+    input_float_value(&f, BLOCK_PIN(&f, later, 1), 2500.0f);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    nmo_engine_frame_t frame;
+    for (int i = 0; i < 3; i++) {
+        ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    }
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_EQ(camera, frame.camera);
+    ASSERT_FLOAT_EQ(2500.0f, frame.far_plane, 0.001f);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_FLOAT_EQ(2.0f, frame.near_plane, 0.001f);
+    ASSERT_FLOAT_EQ(300.0f, frame.far_plane, 0.001f);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_copy, copies_take_scripts_children_and_the_original_state);
 REGISTER_TEST(engine_copy, object_copy_joins_groups_and_delete_leaves_them);
@@ -465,4 +525,5 @@ REGISTER_TEST(engine_copy, unique_name_copies_take_the_next_number);
 REGISTER_TEST(engine_copy, object_delete_takes_what_its_options_delete);
 REGISTER_TEST(engine_copy, delete_dynamic_objects_takes_the_dynamic_ones);
 REGISTER_TEST(engine_copy, initial_conditions_are_restored);
+REGISTER_TEST(engine_copy, initial_condition_restores_camera_planes);
 TEST_MAIN_END()

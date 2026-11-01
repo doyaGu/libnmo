@@ -21,6 +21,13 @@ typedef struct eng_ic {
     bool has_matrix;
     float world[16];
     nmo_object_id_t parent; /* a 3D entity's parent then (0 for none), which CK3dEntity::Load sets */
+    bool has_planes;        /* a camera's front and back planes */
+    float near_plane, far_plane;
+    bool has_material;      /* a material's members */
+    nmo_engine_material_t material;
+    bool has_light;         /* a light's color and activity */
+    float light_color[4];
+    bool light_active;
     int32_t visibility; /* CK_OBJECT_VISIBLE and HIERACHICALHIDE, which CKObject::Load restores */
 } eng_ic_t;
 
