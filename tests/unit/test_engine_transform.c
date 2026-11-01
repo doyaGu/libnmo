@@ -485,6 +485,9 @@ TEST(engine_transform, tt_extra_circles_flies_away_and_homes_in)
     /* Idle (the frame's time is 1 s): a quarter turn each about its axis, 2 from the center */
     ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
     ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 1000.0f));
+    ASSERT_TRUE(nmo_engine_object_is_visible(f.engine, center));
+    ASSERT_TRUE(nmo_engine_object_is_visible(f.engine, floor));
+    ASSERT_TRUE(nmo_engine_object_is_visible(f.engine, small[0]));
     float m[16];
     world_matrix(&f, small[0], m);
     ASSERT_FLOAT_EQ(0.0f, m[12], 0.0001f);
@@ -498,6 +501,8 @@ TEST(engine_transform, tt_extra_circles_flies_away_and_homes_in)
     move_to(&f, ball, 0.0f);
     ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 1000.0f));
     ASSERT_EQ(1u, runs(&f, outputs[0]));
+    ASSERT_FALSE(nmo_engine_object_is_visible(f.engine, center));
+    ASSERT_FALSE(nmo_engine_object_is_visible(f.engine, floor));
     int32_t current = 0;
     read_value(&f, BLOCK_POUT(&f, block, 0), &current, sizeof(current));
     ASSERT_EQ(1, current);
@@ -506,6 +511,8 @@ TEST(engine_transform, tt_extra_circles_flies_away_and_homes_in)
     ASSERT_EQ(0u, runs(&f, outputs[1]));
     ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 1000.0f)); /* both within the collision */
     ASSERT_EQ(1u, runs(&f, outputs[1]));
+    ASSERT_FALSE(nmo_engine_object_is_visible(f.engine, small[0]));
+    ASSERT_FALSE(nmo_engine_object_is_visible(f.engine, small[1]));
     read_value(&f, BLOCK_POUT(&f, block, 0), &current, sizeof(current));
     ASSERT_EQ(2, current);
     float hit[16];
@@ -518,6 +525,19 @@ TEST(engine_transform, tt_extra_circles_flies_away_and_homes_in)
     ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 1000.0f));
     ASSERT_EQ(1u, runs(&f, outputs[2]));
     ASSERT_TRUE(nmo_engine_behavior_is_active(f.engine, block));
+
+    /* Its script's deactivation takes it down; restarted, it shows and is collected again */
+    ASSERT_EQ(NMO_OK, nmo_engine_activate_script(f.engine, f.script_id, false, false));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 1000.0f));
+    ASSERT_EQ(NMO_OK, nmo_engine_activate_script(f.engine, f.script_id, true, true));
+    move_to(&f, ball, 100.0f);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 1000.0f));
+    ASSERT_TRUE(nmo_engine_object_is_visible(f.engine, center));
+    ASSERT_TRUE(nmo_engine_object_is_visible(f.engine, small[0]));
+    ASSERT_TRUE(nmo_engine_object_is_visible(f.engine, small[1]));
+    move_to(&f, ball, 0.0f);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 1000.0f));
+    ASSERT_EQ(2u, runs(&f, outputs[0]));
     fixture_end(&f);
 }
 

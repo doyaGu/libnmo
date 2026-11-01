@@ -453,9 +453,11 @@ typedef struct extra_state {
 
 enum { EXTRA_IDLE = 0, EXTRA_AWAY = 1, EXTRA_HOMING = 2, EXTRA_READY = 3, EXTRA_NONE = -1 };
 
+/* CKObject::Show(CKSHOW) or Show(CKHIDE): the object alone */
 static void extra_show(blk_t *b, nmo_object_id_t id, bool show)
 {
     if (id != 0) {
+        eng_show(b->engine, id, show ? 1 : 0);
         eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, id, show ? 1 : 0);
     }
 }
