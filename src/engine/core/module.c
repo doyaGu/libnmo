@@ -211,6 +211,7 @@ void eng_free_modules(nmo_engine_t *engine)
         free(module->message_types);
         free(module->attribute_types);
         free(module->name);
+        free(module->loaded);
         if (module->session != NULL) {
             if (module->workspace != NULL) {
                 nmo_workspace_destroy(module->workspace);
@@ -534,35 +535,47 @@ nmo_status_t nmo_engine_load(nmo_engine_t *engine, const char *name, bool add_to
     return NMO_OK;
 }
 
-int32_t nmo_engine_loaded_object_count(const nmo_engine_t *engine, int32_t file)
+/* The module's objects in repository order, made again when the repository or window changed */
+static const eng_module_t *module_loaded(const nmo_engine_t *engine, int32_t file)
 {
     if (engine == NULL || file < 0 || (size_t)file >= engine->modules.count) {
-        return 0;
+        return NULL;
     }
-    const eng_module_t *module = &engine->modules.data[file];
+    eng_module_t *module = (eng_module_t *)&engine->modules.data[file]; /* only the cache changes */
     size_t total = nmo_object_repository_get_count(module->repo);
-    int32_t count = 0;
+    if (module->loaded != NULL && module->loaded_repo_count == total &&
+        module->loaded_first == module->first_local && module->loaded_last == module->last_local) {
+        return module;
+    }
+    nmo_object_id_t *loaded = (nmo_object_id_t *)realloc(module->loaded, (total > 0 ? total : 1u) *
+                                                                             sizeof(*loaded));
+    if (loaded == NULL) {
+        return NULL;
+    }
+    module->loaded = loaded;
+    module->loaded_count = 0;
     for (size_t i = 0; i < total; i++) {
         nmo_object_t *object = nmo_object_repository_get_by_index(module->repo, i);
-        count += object != NULL && eng_module_has(module, nmo_object_get_id(object));
+        if (object != NULL && eng_module_has(module, nmo_object_get_id(object))) {
+            loaded[module->loaded_count++] = eng_module_id(module, nmo_object_get_id(object));
+        }
     }
-    return count;
+    module->loaded_repo_count = total;
+    module->loaded_first = module->first_local;
+    module->loaded_last = module->last_local;
+    return module;
+}
+
+int32_t nmo_engine_loaded_object_count(const nmo_engine_t *engine, int32_t file)
+{
+    const eng_module_t *module = module_loaded(engine, file);
+    return module != NULL ? module->loaded_count : 0;
 }
 
 nmo_object_id_t nmo_engine_loaded_object(const nmo_engine_t *engine, int32_t file, int32_t index)
 {
-    if (engine == NULL || file < 0 || (size_t)file >= engine->modules.count || index < 0) {
-        return 0;
-    }
-    const eng_module_t *module = &engine->modules.data[file];
-    size_t total = nmo_object_repository_get_count(module->repo);
-    for (size_t i = 0; i < total; i++) {
-        nmo_object_t *object = nmo_object_repository_get_by_index(module->repo, i);
-        if (object != NULL && eng_module_has(module, nmo_object_get_id(object)) && index-- == 0) {
-            return eng_module_id(module, nmo_object_get_id(object));
-        }
-    }
-    return 0;
+    const eng_module_t *module = module_loaded(engine, file);
+    return module != NULL && index >= 0 && index < module->loaded_count ? module->loaded[index] : 0;
 }
 
 const char *nmo_engine_object_name(const nmo_engine_t *engine, nmo_object_id_t id)

@@ -40,6 +40,12 @@ typedef struct eng_module {
     nmo_session_t *session;  /* what the engine made (and frees): a loaded file's, the created objects' */
     nmo_document_t *document;
     bool created;            /* the objects blocks create */
+    /* Cache of the module's engine IDs in repository order, made for the window and
+       repository size it was made with (the engine never removes repository objects) */
+    nmo_object_id_t *loaded;
+    int32_t loaded_count;
+    size_t loaded_repo_count;
+    nmo_object_id_t loaded_first, loaded_last;
 } eng_module_t;
 
 /* Part of a module to build or load: its objects with IDs in [first, last] */
