@@ -172,6 +172,12 @@ LIFT_WALLS = [(-7.78, 7.78), (0.0, 11.0), (7.78, 7.78), (11.0, 0.0), (7.78, -7.7
 # flush with them 1.25 below its middle, 1.22 under its top.
 PLANK_LENGTH, PLANK_BELOW = 10.0, 1.25
 
+# Modul42, the wavy wood walkway (Level_08's A02_Modul42, as long in
+# Level_07 and Level_11): 70.32 long and 5 wide, without walls, its top
+# waving from 1.04 below its middle to 2.04 above every 20, its ends 0.41
+# above, flush with flat floors at a narrow road's edge height, over nothing.
+WALKWAY_LENGTH, WALKWAY_ABOVE = 70.32, 0.41
+
 # P_Modul_08, the swing (Level_09's P_Modul_08_01): a seat hung from a frame
 # over a gap 15 long in a flat road, pushed across the road every half
 # second.  The road's flat top is 1.5 above the module and runs 12.5 either

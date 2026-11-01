@@ -58,8 +58,10 @@ class ModuleFloor:
 
 
 MODULE_FLOORS = {
-    # not a module: the arched wood plank, a floor of its own
+    # not modules: the arched wood plank and the wavy walkway, floors of their own
     "Modul27": [ModuleFloor("Modul27", WOOD_FLOOR_GROUPS, [(-5, 5, -2.78, -0.03, -2.5, 2.5)])],
+    "Modul42": [ModuleFloor("Modul42", WOOD_FLOOR_GROUPS,
+                            [(-35.16, 35.16, -2.04, 0.41, -2.5, 2.5)])],
     # in the stand-in, the road either side of the gap
     "P_Modul_08": [
         ModuleFloor("Floor_Modul_08", STONE_FLOOR_GROUPS,

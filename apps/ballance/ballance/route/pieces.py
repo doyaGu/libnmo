@@ -22,7 +22,7 @@ from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, 
                              STONEBOX_PATH, STONEBOX_RISE, STONEBOX_TRAFO, SWING_ABOVE, SWING_FAR,
                              SWING_GO, SWING_HALF, SWING_SEAT, SWING_WAIT, SWITCH_AREA,
                              SWITCH_CROSS, SWITCH_HOLD, SWITCH_MODULE, SWITCH_SPUR, SWITCH_TARGET,
-                             TRAFO_LIFT)
+                             TRAFO_LIFT, WALKWAY_ABOVE, WALKWAY_LENGTH)
 from ..kit.floors import CELL, NARROW, RISE, WALL
 from ..kit.pieces import channel, funnel, pad, strip
 from ..kit.rails import ABOVE_V, BEND_RADIUS, Ring, bend
@@ -165,6 +165,30 @@ def lay_plank(layout: Layout, sector: int, part: Sector, piece: dict, track: Tra
     layout.module_floors.append(("Modul27", sector, [middle[0], edge + PLANK_BELOW, middle[1]],
                                  turn_of(d)))
     length = FUNNEL + PLANK_LENGTH
+    part.extras.append((funnel, at(p, d, length), d, edge, None))
+    track.p = at(p, d, length + FUNNEL)
+    layout.floors = part.grid(track.p)
+    layout.open(layout.floors, track.p, d)
+    layout.points.append(list(track.p))
+    track.floor = "road"
+    return h, h, length + FUNNEL
+
+
+def lay_walkway(layout: Layout, sector: int, part: Sector, piece: dict,
+                track: Track) -> Ramp:
+    """{"walkway": true}: the wavy wood walkway, as Level_08 has it (see
+    WALKWAY_* in ballance.game.measures), between funnels that flatten a
+    narrow road to it and back."""
+    if track.width != NARROW:
+        raise ValueError("the wood walkway lies on a narrow road")
+    p, d, h = track.p, track.d, track.h
+    edge = h + RISE
+    layout.open(layout.floors, p, d)
+    part.extras.append((funnel, at(p, d, FUNNEL), back_of(d), edge, None))
+    middle = at(p, d, FUNNEL + WALKWAY_LENGTH / 2)
+    layout.module_floors.append(("Modul42", sector, [middle[0], edge - WALKWAY_ABOVE, middle[1]],
+                                 turn_of(d)))
+    length = FUNNEL + WALKWAY_LENGTH
     part.extras.append((funnel, at(p, d, length), d, edge, None))
     track.p = at(p, d, length + FUNNEL)
     layout.floors = part.grid(track.p)
@@ -549,6 +573,7 @@ PIECES: dict[str, Callable] = {
     "turn": lay_turn,
     "trafo": lay_trafo,
     "plank": lay_plank,
+    "walkway": lay_walkway,
     "module": lay_module,
 }
 
