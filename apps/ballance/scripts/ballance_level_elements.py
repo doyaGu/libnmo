@@ -5,7 +5,8 @@ One mesh of each marker and element kind, and the SkyLayer cloud plane, as
 <Kind>.obj (with .mtl), taken from the original levels; and the floors cut
 out of them that generated levels need: the start's and the checkpoints'
 floors, a fan's housing, the drawbridge's and the switch's floors and
-stoppers, and the scenery (pillar, lantern tower, striped pole).  What each
+stoppers, the plazas of the pushers and the stone on a box, and the scenery
+(pillar, lantern tower, striped pole).  What each
 is and how it is cut: ballance.extract.elements.
 
 The meshes are the game's own, so they are written from a local installation

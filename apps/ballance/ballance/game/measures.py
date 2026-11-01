@@ -30,6 +30,14 @@ ELEMENT_LIFT = {"P_Extra_Point": 2.5, "P_Extra_Life": 2.56, "P_Box": 2.5,
                 "P_Modul_18": -0.35}
 TRAFO_LIFT = 0.1
 
+# --- Rails -----------------------------------------------------------------
+
+# A rail may end in the air over a lower area, the ball falling into it:
+# Level_01's drop it 12 to 14.4 (A02_Rail_02, A03_Rail_01), their ends 1.2 to
+# 4.5 in over the area's inside.  The builder hangs a rail's end two cells
+# over the area and lets it fall at most 15.
+RAIL_OVERHANG, RAIL_FALL = 5.0, 15.0
+
 # --- Modules ---------------------------------------------------------------
 
 # A fan (P_Modul_18) stands on the grille of its housing, 0.35 below the
@@ -63,6 +71,49 @@ SACK_STEP, SACK_ABOVE = 15.0, 2.68
 SWITCH_CROSS, SWITCH_MODULE, SWITCH_TARGET = 9.75, 13.77, 17.5
 # The generated switch: a square area, a spur 32.5 aside, frames to push.
 SWITCH_AREA, SWITCH_SPUR, SWITCH_HOLD = 15.0, 32.5, 500
+
+# P_Modul_34, a stone on a box (Level_01's P_Modul_34_01 and its plaza): a
+# walkway 5 wide at a narrow road's edge height runs from a stone trafo's
+# platform over the module, which stands in a gap in it 24.6 along, to a wide
+# road leaving the plaza 55 along, 2.1 higher and climbing 1.3 every 5.  On
+# either side of the walkway lies a pit 45 wide, ramps down into it from the
+# rim, and the channel under the gap.  Only a stone ball, pushing along the
+# channel through the middle of the box, shoves it out from under the stone,
+# which drops flush into the gap.  The ball's path, (along, to the right,
+# frames to hold): the trafo; back up the walkway and down the right ramp;
+# the push, and on to send the box into the far corner; back up the other
+# ramp and over the stone.
+STONEBOX_LENGTH, STONEBOX_MODULE, STONEBOX_TRAFO = 55.0, 24.6, 2.5
+STONEBOX_RISE = 2.1
+STONEBOX_PATH = [(2.5, 0, 0), (6.75, 0, 0), (15.75, 8.75, 0), (17.75, 9.75, 0),
+                 (19.75, 9.75, 0), (20.75, 10.75, 0), (22.75, 10.75, 0), (23.75, 11.75, 0),
+                 (23.75, 14.75, 0), (24.25, 15.25, 0), (32.25, 16.25, 25), (32.25, -5.75, 0),
+                 (41.25, -15.75, 20), (42.75, -17.25, 0), (45.75, -14.25, 0),
+                 (45.75, -9.25, 0), (43.75, -7.25, 0), (33.75, -7.25, 0), (32.75, -8.25, 0),
+                 (26.75, -8.25, 0), (25.75, -9.25, 0), (15.75, -9.25, 0), (13.75, -7.25, 0),
+                 (13.75, -3.25, 0), (16.75, 0, 0), (51.75, 0, 0)]
+
+# P_Modul_01, a pair of pushers (Level_01's and their plaza): a corridor 5
+# wide at a narrow road's edge height, 52.5 long, its last 5 narrowing into
+# a narrow road's V, crosses a plaza; a ring
+# road round it meets its start, and the pushers stand 28.15 and 38.15 along
+# it, 2.5 to its right.  Each pusher is a frame on a key that slides in a
+# groove across the corridor; its crossbar stands in the corridor until the
+# ball pushes the frame's target, south of it on the low ground, as far as
+# it goes (2.65).  The ball's path, (along, to the right, frames to hold):
+# off the corridor down to the low ground, each target pushed, back by the
+# ring road's ramp, and along the corridor past the crossbars, close to its
+# right edge.  The ball rams each target twice, at speed, from a stop 9 back
+# from it: a slow push moves a frame too little, and one ram 1.7 to 2.2.
+PUSHERS_LENGTH, PUSHERS_ASIDE = 52.5, 2.5
+PUSHERS_MODULES = [28.15, 38.15]
+PUSHERS_PATH = [(6.9, 0, 0), (20.9, 0, 0), (23.9, 6.8, 0), (25.9, 12.8, 0), (27.9, 13.8, 0),
+                (27.5, 14.3, 10), (27.5, 5, 0), (27.5, 14.3, 10), (27.5, 5, 0), (27.9, 6.8, 0),
+                (32.9, 11.8, 0), (33.9, 11.8, 0), (34.9, 12.8, 0), (36.9, 12.8, 0),
+                (37.9, 13.8, 0), (37.5, 14.3, 10), (37.5, 5, 0), (37.5, 14.3, 10), (37.5, 5, 0),
+                (32.9, 10.8, 0), (29.9, 11.8, 0), (17.9, 23.8, 0), (5.9, 23.8, 0), (3.9, 21.8, 0),
+                (3.9, 2.8, 0), (5.9, 0.8, 0), (25.9, 0.8, 0), (26.9, 1.8, 0), (28.9, 1.8, 0),
+                (29.9, 0.8, 0), (35.9, 0.8, 0), (36.9, 1.8, 0), (38.9, 1.8, 0), (39.9, 0.8, 0)]
 
 # --- Scenery ---------------------------------------------------------------
 

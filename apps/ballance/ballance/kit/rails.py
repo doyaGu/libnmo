@@ -89,9 +89,10 @@ def _tube(mesh: Mesh, run: list[Ring], side: float) -> None:
                 mesh.triangle("Rail", corners[0][2], *corners)
 
 
-def bend(x: float, y: float, z: float, d: tuple[int, int], side: tuple[int, int]) -> list[Ring]:
+def bend(x: float, y: float, z: float, d: tuple[int, int], side: tuple[int, int],
+         drop: float = 0.0) -> list[Ring]:
     """The rings of the originals' bend, from (x, y, z) heading d, turning
-    toward side (a unit heading square to d)."""
+    toward side (a unit heading square to d), coming down drop along it."""
     cx, cz = x + side[0] * BEND_RADIUS, z + side[1] * BEND_RADIUS
     rings = []
     steps = round(90.0 / BEND_STEP)
@@ -100,5 +101,6 @@ def bend(x: float, y: float, z: float, d: tuple[int, int], side: tuple[int, int]
         c, s = math.cos(t), math.sin(t)
         px = cx - side[0] * BEND_RADIUS * c + d[0] * BEND_RADIUS * s
         pz = cz - side[1] * BEND_RADIUS * c + d[1] * BEND_RADIUS * s
-        rings.append(Ring(px, y, pz, d[0] * c + side[0] * s, d[1] * c + side[1] * s))
+        rings.append(Ring(px, y - drop * k / steps, pz, d[0] * c + side[0] * s,
+                          d[1] * c + side[1] * s))
     return rings

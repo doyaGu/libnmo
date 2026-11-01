@@ -130,8 +130,8 @@ def _elements(manifest: Manifest, assets: Assets, layout: Layout) -> None:
     for kind, sector, position, turn in [e + (0.0,) for e in layout.elements] + layout.modules:
         manifest.add(f"{kind}_{manifest.number(kind):02d}", assets.mesh(kind), position,
                      [kind, f"Sector_{sector:02d}"], turn=turn)
-    for kind, sector, position, turn in layout.modules:
-        for floor in MODULE_FLOORS.get(kind, []):
+    for kind, sector, position, turn in layout.module_floors:
+        for floor in MODULE_FLOORS[kind]:
             manifest.add(f"A{sector:02d}_{floor.name}_{manifest.number(floor.name):02d}",
                          assets.mesh(floor.name), position, floor.groups, turn=turn)
     manifest.materials.update(f"Floor_Trafo_{kind}" for kind in layout.trafos)

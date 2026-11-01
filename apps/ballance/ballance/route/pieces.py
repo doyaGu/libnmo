@@ -12,14 +12,18 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING, Callable
 
-from ..core.geometry import at, axis_of, back_of, rect, side_of, turn_of
+from ..core.geometry import across, at, axis_of, back_of, left_of, rect, side_of, turn_of
 from ..game.measures import (ELEMENT_LIFT, FAN_BELOW, FAN_REACH, FUNNEL, PILLAR_INSET,
-                             SACK_ABOVE, SWITCH_AREA, SWITCH_CROSS, SWITCH_HOLD, SWITCH_MODULE,
-                             SWITCH_SPUR, SWITCH_TARGET, TRAFO_LIFT)
+                             PUSHERS_ASIDE, PUSHERS_LENGTH, PUSHERS_MODULES, PUSHERS_PATH,
+                             RAIL_FALL, RAIL_OVERHANG,
+                             SACK_ABOVE, STONEBOX_LENGTH, STONEBOX_MODULE, STONEBOX_PATH,
+                             STONEBOX_RISE, STONEBOX_TRAFO, SWITCH_AREA, SWITCH_CROSS,
+                             SWITCH_HOLD, SWITCH_MODULE, SWITCH_SPUR, SWITCH_TARGET,
+                             TRAFO_LIFT)
 from ..kit.floors import CELL, NARROW, RISE, WALL
 from ..kit.pieces import channel, funnel, pad, strip
 from ..kit.rails import ABOVE_V, BEND_RADIUS, Ring, bend
-from .modules import MODULES, NEEDS_BALL, module_layout
+from .modules import MODULE_FLOORS, MODULES, NEEDS_BALL, module_layout
 
 if TYPE_CHECKING:
     from .layout import Layout, Sector, Track
@@ -55,24 +59,47 @@ def lay_rail(layout: Layout, sector: int, part: Sector, piece: dict, track: Trac
 
 
 def lay_rail_turn(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> None:
-    """{"rail_turn": "left" or "right"}"""
+    """{"rail_turn": "left" or "right", "drop": dy}: the bend, coming down dy
+    evenly along it and its straights."""
     sign = 1 if piece["rail_turn"] == "right" else -1
     side = side_of(track.d, piece["rail_turn"])
-    a = at(track.p, track.d, BEND_SPAN - BEND_RADIUS)
-    rings = bend(a[0], track.h + ABOVE_V, a[1], track.d, side)
+    drop = float(piece.get("drop", 0.0))
+    straight = BEND_SPAN - BEND_RADIUS
+    arc = BEND_RADIUS * math.pi / 2
+    per = drop / (2 * straight + arc)  # a unit along it
+    a = at(track.p, track.d, straight)
+    rings = bend(a[0], track.h + ABOVE_V - per * straight, a[1], track.d, side, per * arc)
     track.p = at(track.p, track.d, BEND_SPAN, sign * BEND_SPAN)
     track.d = side
+    track.h -= drop
     track.run += rings + [Ring(track.p[0], track.h + ABOVE_V, track.p[1], side[0], side[1])]
     layout.points += [[r.x, r.z] for r in rings[3::3]] + [list(track.p)]
     track.floor = "rail"
 
 
+def lay_fall(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> None:
+    """{"fall": dy}: the rail ends in the air, and the ball falls dy onto the
+    area that comes next, which starts RAIL_OVERHANG back under the rail's
+    end (as Level_01's rails drop the ball into its pits)."""
+    fall = float(piece["fall"])
+    if not 0 < fall <= RAIL_FALL:
+        raise ValueError(f"a rail drops the ball at most {RAIL_FALL}")
+    part.rails.runs.append(track.run)
+    track.run = None
+    track.h -= fall
+    track.p = at(track.p, track.d, -RAIL_OVERHANG)
+    track.floor = "fall"
+
+
 def lay_area(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:
     """{"area": [along, across], "exit": "straight", "left" or "right",
     "rise": dy}; with a rise, a fan among its elements lifts the ball onto the
-    next piece, dy higher, on a grid of its own (as Level_03's do)."""
+    next piece, dy higher, on a grid of its own (as Level_03's do).  After a
+    rail's fall it starts on a grid of its own, its rim closed."""
     along, across = (float(v) for v in piece["area"])
     p, d, h = track.p, track.d, track.h
+    if track.floor == "fall":
+        layout.floors = part.grid(p)
     layout.floors.area(*rect(p, d, along, across), h)
     for a in (PILLAR_INSET, along - PILLAR_INSET):
         for c in (-across / 2 + PILLAR_INSET, across / 2 - PILLAR_INSET):
@@ -162,6 +189,10 @@ def lay_module(layout: Layout, sector: int, part: Sector, piece: dict, track: Tr
         raise ValueError(f"unknown module {kind}; known: {', '.join(MODULES)}")
     if kind == "P_Modul_37":
         return lay_switch(layout, sector, part, piece, track)
+    if kind == "P_Modul_34":
+        return lay_stonebox(layout, sector, part, piece, track)
+    if kind == "P_Modul_01":
+        return lay_pushers(layout, sector, part, piece, track)
     if track.width != NARROW or track.floor != "road":
         raise ValueError("a module stands on a narrow road")
     fewest, most = MODULES[kind]
@@ -186,6 +217,8 @@ def lay_module(layout: Layout, sector: int, part: Sector, piece: dict, track: Tr
             layout.modules.append((kind, sector, [where[0], edge + SACK_ABOVE, where[1]], turn))
         else:
             layout.modules.append((kind, sector, [where[0], edge, where[1]], turn_of(back)))
+        if kind in MODULE_FLOORS:
+            layout.module_floors.append(layout.modules[-1])
     # no point at the module itself: driving at it, the ball would slow down
     # where it has to push or roll over it
     layout.points.append(list(at(p, d, FUNNEL + length)))
@@ -195,6 +228,67 @@ def lay_module(layout: Layout, sector: int, part: Sector, piece: dict, track: Tr
     layout.points.append(list(track.p))
     track.floor = "module"
     return h, h, 2 * FUNNEL + length
+
+
+def lay_stonebox(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:
+    """{"module": "P_Modul_34"}: the stone on a box with its plaza, as
+    Level_01 has it (see STONEBOX_* in ballance.game.measures), entered from
+    a narrow road through a funnel onto the walkway, its stone trafo first;
+    the track leaves it on a wide road, climbing, which the route goes on
+    with."""
+    if track.width != NARROW or track.floor != "road":
+        raise ValueError("the stone on a box is entered from a narrow road")
+    p, d, h = track.p, track.d, track.h
+    edge = h + RISE
+    start = FUNNEL  # the walkway's end, where the plaza's floor begins
+    layout.open(layout.floors, p, d)
+    part.extras.append((funnel, at(p, d, start), back_of(d), edge, None))
+    module = at(p, d, start + STONEBOX_MODULE)
+    layout.modules.append(("P_Modul_34", sector, [module[0], edge, module[1]], turn_of(back_of(d))))
+    layout.module_floors.append(layout.modules[-1])
+    trafo = at(p, d, start + STONEBOX_TRAFO)
+    layout.elements.append(("P_Trafo_Stone", sector, [trafo[0], edge + TRAFO_LIFT, trafo[1]]))
+    layout.trafos.add("Stone")
+    layout.last_ball = "Stone"
+    for along, right, hold in STONEBOX_PATH:
+        where = at(p, d, start + along, right)
+        layout.points.append([where[0], where[1], h - 20.0, hold] if hold else list(where))
+    track.p = at(p, d, start + STONEBOX_LENGTH)
+    track.h = edge + STONEBOX_RISE
+    track.width = 2 * NARROW
+    layout.floors = part.grid(track.p)
+    layout.floors.open_edge(*across(track.p, d, 2 * NARROW))
+    layout.points.append(list(track.p))
+    track.floor = "wide"
+    return h, h, start + STONEBOX_LENGTH
+
+
+def lay_pushers(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:
+    """{"module": "P_Modul_01"}: a pair of pushers with their plaza, as
+    Level_01 has them (see PUSHERS_* in ballance.game.measures), entered from
+    a narrow road through a funnel onto the corridor, whose far end flattens
+    into a narrow road's V, where the road goes on on a grid of its own."""
+    if track.width != NARROW or track.floor != "road":
+        raise ValueError("the pushers are entered from a narrow road")
+    p, d, h = track.p, track.d, track.h
+    edge = h + RISE
+    layout.open(layout.floors, p, d)
+    part.extras.append((funnel, at(p, d, FUNNEL), back_of(d), edge, None))
+    # the pushers' X runs across the track, to its left
+    for along in PUSHERS_MODULES:
+        where = at(p, d, FUNNEL + along, PUSHERS_ASIDE)
+        layout.modules.append(("P_Modul_01", sector, [where[0], edge, where[1]],
+                               turn_of(left_of(d))))
+    layout.module_floors.append(layout.modules[-len(PUSHERS_MODULES)])
+    for along, right, hold in PUSHERS_PATH:
+        where = at(p, d, FUNNEL + along, right)
+        layout.points.append([where[0], where[1], h - 20.0, hold] if hold else list(where))
+    track.p = at(p, d, FUNNEL + PUSHERS_LENGTH)
+    layout.floors = part.grid(track.p)
+    layout.open(layout.floors, track.p, d)
+    layout.points.append(list(track.p))
+    track.floor = "module"
+    return h, h, FUNNEL + PUSHERS_LENGTH
 
 
 def lay_switch(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:
@@ -247,6 +341,7 @@ def lay_switch(layout: Layout, sector: int, part: Sector, piece: dict, track: Tr
     part.extras.append((funnel, at_(cross, SWITCH_TARGET), out, edge, None))
     where = at_(cross, SWITCH_MODULE)
     layout.modules.append(("P_Modul_37", sector, [where[0], edge, where[1]], turn_of(out)))
+    layout.module_floors.append(layout.modules[-1])
     # down the spur, push the target, back, and on over the plank
     corner1, corner2 = at_(half, SWITCH_SPUR), at_(cross, SWITCH_SPUR)
     target = at_(cross, SWITCH_TARGET - 4.0)
@@ -266,6 +361,7 @@ PIECES: dict[str, Callable] = {
     "road": lay_road,
     "rail": lay_rail,
     "rail_turn": lay_rail_turn,
+    "fall": lay_fall,
     "area": lay_area,
     "turn": lay_turn,
     "trafo": lay_trafo,
@@ -278,6 +374,10 @@ def lay_piece(layout: Layout, sector: int, part: Sector, piece: dict, track: Tra
     floors = layout.floors
     start, heading = track.p, track.d
     rail = "rail" in piece or "rail_turn" in piece
+    if "fall" in piece and track.run is None:
+        raise ValueError("the ball falls from a rail's end")
+    if track.floor == "fall" and "area" not in piece:
+        raise ValueError("a rail's fall lands in an area")
     if rail and track.run is None:
         # Rails meet floors as the originals' do: at a narrow road's end or
         # through a gap in an area's rim.
@@ -285,7 +385,7 @@ def lay_piece(layout: Layout, sector: int, part: Sector, piece: dict, track: Tra
             raise ValueError("a rail starts from a narrow road or an area")
         layout.dock(floors, track.p, track.d)
         track.run = [Ring(track.p[0], track.h + ABOVE_V, track.p[1], track.d[0], track.d[1])]
-    elif not rail and track.run is not None:
+    elif not rail and "fall" not in piece and track.run is not None:
         if not ("area" in piece or ("road" in piece and
                                     piece.get("width", "narrow") == "narrow")):
             raise ValueError("a rail ends at a narrow road or an area")

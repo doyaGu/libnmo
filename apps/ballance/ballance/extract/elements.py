@@ -17,8 +17,16 @@ Some floors are cut out of the floors they are part of (Cut):
   the marker's position, unturned, they stand as in Level_03.
 - in a module's own frame (ModuleCut): the drawbridge's (P_Modul_25) two flat
   blocks and its stopper lip, from Level_03; the switch's (P_Modul_37) target
-  block, cross piece and lip, from Level_05.  Placed and turned as the module,
-  they stand as in the level.
+  block, cross piece and lip, from Level_05; the stone on a box's
+  (P_Modul_34) whole plaza from Level_01: the walkway from a stone trafo's
+  platform over the box's gap and on up out of the plaza, the pit on either
+  side of it, the channel under the gap and the ramps down from the rim; the
+  pushers' (P_Modul_01, a pair) plaza from Level_01, in the first one's
+  frame: the corridor through both, the low ground south of it their targets
+  are pushed from, the pit north of it, and the ring road round both with its
+  ramps, cut where the corridor, narrowing into a narrow road's V, meets
+  the platform beyond.
+  Placed and turned as the module, they stand as in the level.
 - the scenery from Level_01 (DecorCut): one of the pillars beside its start,
   with the shaft that fades out below it (Pillar); the lantern tower on top
   of it (Tower); one of the striped poles by its balloon (Stick).  Pillar and
@@ -58,6 +66,8 @@ SNAP = {
     "Floor_Modul_25": ([5.0, 0.0, 10.0, 15.0], [0.0], [2.5]),
     # Level_05's target block lies from -2.4 to 2.6 across
     "Floor_Modul_37": ([3.73, 1.27, 11.27, 16.27], [0.0], [(2.5, 0.11), 4.75, 9.75]),
+    "Floor_Modul_34": ([24.6, 30.4], [0.0, 2.1, 2.8], [2.5, 5.0]),
+    "Floor_Modul_01": ([0.0, 2.5, 5.0], [0.0, 0.7], [28.15, 24.35]),
 }
 
 Face = tuple[str, list[tuple[tuple, tuple, tuple]]]  # material, (position, uv, normal) x 3
@@ -185,6 +195,10 @@ CUTS: list[Cut] = [
               (-16.3, 3.8, -5.1, 0.1, -9.8, 9.8)),
     ModuleCut("Floor_Stopper_37", "Level_05.NMO", "A01_Floor_Stopper", "P_Modul_37_02",
               (-16.3, 3.8, -5.1, 0.1, -9.8, 9.8)),
+    ModuleCut("Floor_Modul_34", "Level_01.NMO", "A02_Floor_03", "P_Modul_34_01",
+              (-30.45, 24.65, -20.0, 3.0, -22.8, 22.8)),
+    ModuleCut("Floor_Modul_01", "Level_01.NMO", "A03_Floor_02", "P_Modul_01_01",
+              (-25.1, 30.1, -10.0, 0.2, -24.4, 28.2)),
     DecorCut("Pillar", "Level_01.NMO", ["A01_Floor_Columns_Top", "A01_Floor_Colums_Bottom"],
              (31.8, -167.7), 3.0),
     DecorCut("Tower", "Level_01.NMO", ["A01_Tower"], (31.8, -167.7), 4.5, on="Pillar"),

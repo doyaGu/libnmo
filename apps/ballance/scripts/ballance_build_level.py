@@ -38,6 +38,21 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
 - {"module": "P_Modul_26", "count": n} -- n (1 to 4) sacks swinging over a
   flat road at a narrow road's edge height, 15 apart, between funnels, as
   levels 8 to 13 hang them.
+- {"module": "P_Modul_01"} -- two pushers, with Level_01's plaza around
+  them: a funnel leads the road onto a corridor 52.5 long, which narrows
+  back into the road at its end.  A frame stands across the corridor at each pusher, 28.15
+  and 38.15 on; the ball drops off the corridor to the low ground beside it,
+  pushes each frame's target until its crossbar has moved aside, comes back
+  up the ramp of the road round the plaza and goes on along the corridor's
+  right side, past the crossbars.
+- {"module": "P_Modul_34"} -- the stone on a box, with Level_01's plaza
+  around it: a funnel leads the road onto a walkway 5 wide over a pit 45
+  wide, with a stone trafo on its first 5; the stone stands in a gap in the
+  walkway 24.6 on, on a box in a channel under it.  The ball, made stone,
+  goes down into the pit, pushes the box out along the channel so that the
+  stone drops flush into the gap, comes back up and crosses.  The track
+  leaves the plaza 55 on, 2.1 higher, on a wide road, which the route goes
+  on with (Level_01's climbs on 1.3 every 5).
 - {"module": "P_Modul_37", "side": "left" or "right"} -- the switch, as
   Level_05 has it: the track crosses a gap between two blocks, and a stone
   ball rolled down a spur onto the target beside it tips a plank across the
@@ -49,10 +64,15 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
   across the track, between funnels, as levels 7 to 11 lay them.  Only a
   paper ball crosses them: a wood or stone ball tips them and falls.
 - {"rail": length, "drop": dy} -- a straight rail, coming down dy.
-- {"rail_turn": "left" or "right"} -- the originals' rail bend, with a
-  straight 1.9 before and after it so that it ends 10 along and 10 aside.
-  Rails run from a narrow road or an area to a narrow road or an area
-  (ballance.kit.rails).
+- {"rail_turn": "left" or "right", "drop": dy} -- the originals' rail
+  bend, with a straight 1.9 before and after it so that it ends 10 along and
+  10 aside, coming down dy evenly along it (Level_01's spiral comes down 1.26
+  a bend).
+- {"fall": dy} -- the rail ends in the air and the ball falls dy (at most
+  15) into the area that comes next, which starts 5 back under the rail's
+  end, its rim closed (as Level_01's rails drop the ball into its pits).
+  Rails run from a narrow road or an area to a narrow road, an area or a
+  fall (ballance.kit.rails).
 
 An area may hold a fan, {"kind": "P_Modul_18", "at": [along, right]} among
 its elements, on the corner of four of its flat inside cells, and then

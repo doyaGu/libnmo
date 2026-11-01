@@ -63,6 +63,8 @@ class Layout:
         self.housings: list[tuple[int, list[float]]] = []  # fans' (sector, position)
         self.elements: list[tuple[str, int, list[float]]] = []  # kind, sector, position
         self.modules: list[tuple[str, int, list[float], float]] = []  # and their turns
+        # where the floors cut for a module kind stand: kind, sector, place, turn
+        self.module_floors: list[tuple[str, int, list[float], float]] = []
         self.pillars: list[list[float]] = []
         self.checkpoints: list[tuple[list[float], Heading]] = []
         self.balloon: tuple[list[float], Heading] | None = None

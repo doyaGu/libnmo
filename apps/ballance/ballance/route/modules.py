@@ -6,13 +6,14 @@ from __future__ import annotations
 from ..core.obj import Box
 from ..game.catalog import STONE_FLOOR_GROUPS, STOPPER_GROUPS
 from ..game.measures import (DRAWBRIDGE_FLOORS, DRAWBRIDGE_HINGE, SACK_STEP, SLAB, SLAB_GAP,
-                             SWITCH_CROSS)
+                             STONEBOX_LENGTH, STONEBOX_MODULE, SWITCH_CROSS)
 
 # The modules that stand on the track, and how many in a row.  Each but the
-# switch stands between funnels that lead a narrow road onto it at the road's
-# edge height and off it again.
-MODULES = {"P_Modul_25": (1, 1), "P_Modul_26": (1, 4), "P_Modul_37": (1, 1),
-           "P_Modul_41": (2, 8)}
+# switch, the stone on a box and the pushers (which come with plazas of
+# their own) stands between funnels that lead a narrow road onto it at the
+# road's edge height and off it again.
+MODULES = {"P_Modul_01": (2, 2), "P_Modul_25": (1, 1), "P_Modul_26": (1, 4), "P_Modul_34": (1, 1),
+           "P_Modul_37": (1, 1), "P_Modul_41": (2, 8)}
 
 # The modules only a paper ball, or a stone ball, gets past: (ball, what
 # happens with another).
@@ -45,6 +46,17 @@ class ModuleFloor:
 
 
 MODULE_FLOORS = {
+    # in the stand-ins, the corridor and the low ground south of it
+    "P_Modul_01": [
+        ModuleFloor("Floor_Modul_01", STONE_FLOOR_GROUPS,
+                    [(0, 5, -5, 0, -24.35, 28.15), (-20, 0, -7.5, -2.5, -22.5, 12.5)])],
+    # in the stand-ins, the plaza's walkway either side of the module's gap
+    # and the pit's floor; the ramps down from the rim are left out
+    "P_Modul_34": [
+        ModuleFloor("Floor_Modul_34", STONE_FLOOR_GROUPS,
+                    [(-5.2, STONEBOX_MODULE, -5, 0, -2.5, 2.5),
+                     (STONEBOX_MODULE - STONEBOX_LENGTH, -10.2, -5, 0, -2.5, 2.5),
+                     (STONEBOX_MODULE - STONEBOX_LENGTH, 18.0, -9.5, -5, -22.5, 22.5)])],
     "P_Modul_37": [
         ModuleFloor("Floor_Modul_37", STONE_FLOOR_GROUPS,
                     [(-16.27, -11.27, -5, 0, -SWITCH_CROSS, -4.75),
