@@ -466,6 +466,19 @@ changer, the extra life, the drawbridge, the second checkpoint, the paper
 ball changer, the slabs, the rails, the fan, the extra point on the area
 above it, the wood ball changer and the balloon.
 
+`--steer-log steer.csv` writes the steered ball's frames (position, speed,
+the point it heads for, the keys held). `apps/ballance/scripts/ballance_map_view.py`
+draws a level, an original's file or a built folder, from above, from the
+front and side and from four corners, with the game's textures if given; it
+names each mechanism, element and marker with its sector, lists them in a
+legend with what is known of how they play, and draws the route and such a
+log on top:
+
+```sh
+apps/ballance/scripts/ballance_map_view.py <out> --trace steer.csv --views top,iso \
+    --around P_Modul_37_01 35 --textures <game>/Textures -o view.png
+```
+
 Not covered yet: levels generated this way have not been loaded in the
 original game, the moving modules other than the fan, the drawbridge, the
 switch, the slabs and the sacks (`P_Modul_*`) are not placed, and rails neither meet wide
