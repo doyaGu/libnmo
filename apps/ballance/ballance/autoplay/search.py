@@ -83,12 +83,12 @@ def clearance(ground: Terrain) -> dict[Node, float]:
     return clear
 
 
-def nearest(ground: Terrain, p: Point3) -> Node | None:
-    """The node nearest a point, within four cells of it."""
+def nearest(ground: Terrain, p: Point3, reach: int = 4) -> Node | None:
+    """The node nearest a point, within reach cells of it."""
     i, j = math.floor(p[0] / CELL), math.floor(p[2] / CELL)
     best = None
-    for di in range(-4, 5):
-        for dj in range(-4, 5):
+    for di in range(-reach, reach + 1):
+        for dj in range(-reach, reach + 1):
             for k, h in enumerate(ground.layers.get((i + di, j + dj), [])):
                 d = math.hypot(di, dj) + abs(h - p[1]) * 0.5
                 if best is None or d < best[0]:

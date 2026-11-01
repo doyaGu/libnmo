@@ -7,7 +7,8 @@
 
 The ball starts at a marker and goes through the legs in turn.  A leg with
 "to" is searched for, from where the last ended to a marker or element (by
-name) or a point; the ground is the level's, with "floors" ([x0, x1, z0,
+name) or a point (one off the ground, as the balloon is, from the ground
+nearest it, within 30); the ground is the level's, with "floors" ([x0, x1, z0,
 z1, height], solid) as a mechanism has left them by then, and without the
 ground within 5 (or r) of each "avoid" (a name, or [x, z] or [x, z, r]): a
 trafo not to touch, where a pushed box ends up.  A leg with "steer" is given
@@ -15,7 +16,9 @@ trafo not to touch, where a pushed box ends up.  A leg with "steer" is given
 say why in a "note".
 
 "fixes" then replace a run of the points in a box with points by hand,
-where the autopilot can't follow the path found closely enough.
+where the autopilot can't follow the path found closely enough.  A level
+the ball plays through without doing anything on the way needs no plan of
+its own (default_plan).
 """
 
 from __future__ import annotations
@@ -30,6 +33,18 @@ from .steer import SteerPoint, fix, parse, simplify
 from .terrain import Point3, Terrain, terrain
 
 AVOID_REACH = 5.0
+OFF_GROUND = 30  # cells: how far a target off the ground may be from it
+
+
+def default_plan(scene: list[SceneObject]) -> dict:
+    """The plan for a level the ball plays through without doing anything
+    on the way: from the first reset point to each checkpoint in turn, then
+    the balloon."""
+    names = {obj.name for obj in scene}
+    checkpoints = sorted(name for name in names if name.startswith("PC_TwoFlames_"))
+    balloon = sorted(name for name in names if name.startswith("PE_Balloon_"))
+    return {"start": "PR_Resetpoint_01",
+            "legs": [{"to": name} for name in checkpoints + balloon]}
 
 
 def play(scene: list[SceneObject], plan: dict,
@@ -51,13 +66,19 @@ def play(scene: list[SceneObject], plan: dict,
             grounds[key] = _ground(scene, leg)
         ground, clear = grounds[key]
         start = nearest(ground, _where(ground, at))
-        goal = nearest(ground, _where(ground, leg["to"]))
+        target = _where(ground, leg["to"])
+        goal = nearest(ground, target)
+        off = goal is None   # off the ground (the balloon): to the ground nearest it
+        if off:
+            goal = nearest(ground, target, OFF_GROUND)
         path = find_path(ground, clear, start, goal) if start and goal else None
         log(f"{at} -> {leg['to']}: {len(path) if path else 'no'} cells")
         if path is None:
             raise ValueError(f"no path from {at} to {leg['to']}")
         found = simplify(path)
         points += found if not points else found[1:]
+        if off:
+            points.append(SteerPoint(target[0], target[2]))
         at = leg["to"]
     for f in plan.get("fixes", []):
         points = fix(points, tuple(f["box"]), parse(f["points"]), f.get("run", 0))
