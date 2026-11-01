@@ -250,6 +250,7 @@ if(TARGET nmo_cli)
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_data.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_scene.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_entity.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_group.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_material.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_mesh.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_animation.c
@@ -265,7 +266,8 @@ if(TARGET nmo_cli)
     add_dependencies(test_repl_write_commands nmo_cli)
     target_include_directories(test_repl_write_commands PRIVATE ${PROJECT_SOURCE_DIR}/tools
                                ${PROJECT_BINARY_DIR}/tools)
-    target_link_libraries(test_repl_write_commands PRIVATE nmo_project nmo_lua nmo_engine nmo test_framework yyjson)
+    target_link_libraries(test_repl_write_commands PRIVATE nmo_project nmo_lua nmo_bb_virtools
+                          nmo_bb_physics nmo_bb_terratools nmo_engine nmo test_framework yyjson)
     add_test(NAME test_repl_write_commands COMMAND test_repl_write_commands)
     set_tests_properties(test_repl_write_commands PROPERTIES SKIP_RETURN_CODE 77)
     set_tests_properties(test_repl_write_commands PROPERTIES
@@ -282,7 +284,8 @@ if(TARGET nmo_cli)
     target_compile_definitions(test_repl_read_commands PRIVATE
         NMO_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
     )
-    target_link_libraries(test_repl_read_commands PRIVATE nmo_project nmo_lua nmo_engine nmo test_framework yyjson)
+    target_link_libraries(test_repl_read_commands PRIVATE nmo_project nmo_lua nmo_bb_virtools
+                          nmo_bb_physics nmo_bb_terratools nmo_engine nmo test_framework yyjson)
     add_test(NAME test_repl_read_commands COMMAND test_repl_read_commands)
     set_tests_properties(test_repl_read_commands PROPERTIES SKIP_RETURN_CODE 77)
     set_tests_properties(test_repl_read_commands PROPERTIES
