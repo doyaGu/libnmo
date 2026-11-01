@@ -29,7 +29,8 @@ Some floors are cut out of the floors they are part of (Cut):
   Level_03, at the ends of the gap it spans; the rotating arm's (P_Modul_17)
   floors from Level_03, in its frame: the road to a drawbridge's gap with the
   loop beside it that leads to the arm, the stopper lip, and the gap's far
-  block (cut on its own: the floor beyond it goes on elsewhere).
+  block (cut on its own: the floor beyond it goes on elsewhere); the flaps'
+  (P_Modul_19) two roads with their gaps and stopper lips from Level_09.
   Placed and turned as the module, they stand as in the level.
 - the scenery from Level_01 (DecorCut): one of the pillars beside its start,
   with the shaft that fades out below it (Pillar); the lantern tower on top
@@ -75,6 +76,8 @@ SNAP = {
     "Floor_Stopper_30": ([7.4, 6.4], [0.0, 0.5], [2.5]),
     "Floor_Modul_17": ([11.21, 8.71, 13.71], [5.43, 6.13], [24.61]),
     "Floor_Modul_17_Far": ([11.21, 8.71, 13.71], [5.43, 6.13], [8.72, 1.28]),
+    "Floor_Modul_19": ([7.53, 14.12, 9.12, 2.47, 3.32, 8.34], [0.0, 0.7], [2.5, 7.5, 12.5]),
+    "Floor_Stopper_19": ([9.12, 8.12, 2.32, 3.32], [0.53, 1.03], [2.5, 7.5, 12.5]),
 }
 
 Face = tuple[str, list[tuple[tuple, tuple, tuple]]]  # material, (position, uv, normal) x 3
@@ -212,6 +215,10 @@ CUTS: list[Cut] = [
               (-24.0, 15.5, -11.0, -0.5, -8.78, 24.62)),
     ModuleCut("Floor_Modul_17_Far", "Level_03.NMO", "A04_Floor_02", "P_Modul_17_01",
               (-13.8, -8.6, -11.0, -0.5, -8.78, 24.62)),
+    ModuleCut("Floor_Modul_19", "Level_09.NMO", "A01_Floor_01", "P_Modul_19_01",
+              (-14.2, 7.6, -5.1, 0.1, -12.6, 7.6)),
+    ModuleCut("Floor_Stopper_19", "Level_09.NMO", "A01_Floor_Stopper", "P_Modul_19_01",
+              (-14.2, 7.6, -1.1, -0.4, -12.6, 7.6)),
     ModuleCut("Floor_Stopper_17", "Level_03.NMO", "A01_Floor_Stopper_01", "P_Modul_17_01",
               (-24.0, 15.5, -11.0, -0.5, -8.78, 24.62)),
     DecorCut("Pillar", "Level_01.NMO", ["A01_Floor_Columns_Top", "A01_Floor_Colums_Bottom"],

@@ -31,6 +31,13 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
 - {"trafo": "paper", "stone" or "wood"} -- a ball changer on its pad, on a
   narrow road.  The original levels all turn the ball back to wood before
   the balloon; the builder warns when a route does not.
+- {"module": "P_Modul_19"} -- the flaps, as Level_09 has them: an axle
+  across two roads 15 apart, each with a gap the flap over it bridges.  A
+  funnel leads the road onto its flat road to the gap, where the flap
+  stands up; the other road, to the left, has its flap down with a stone
+  ball on it.  The ball pushes the upright flap over and crosses, throwing
+  the stone ball off; the road goes on 21.65 on.  A paper ball can't push
+  the flap over, in Level_09 too.
 - {"module": "P_Modul_25"} -- the drawbridge: an upright plank the ball
   pushes over a gap 10 long, between flat blocks a narrow road runs into
   through funnels, as Level_03's are.  The original levels bring a wood or

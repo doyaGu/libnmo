@@ -13,14 +13,13 @@ import math
 from typing import TYPE_CHECKING, Callable
 
 from ..core.geometry import across, at, axis_of, back_of, left_of, rect, side_of, turn_of
-from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, ARMS_PATH,
-                             BRIDGES, ELEMENT_LIFT, FAN_BELOW, FAN_REACH, FUNNEL, PILLAR_INSET,
-                             PUSHERS_ASIDE, PUSHERS_LENGTH, PUSHERS_MODULES, PUSHERS_PATH,
-                             RAIL_FALL, RAIL_OVERHANG,
-                             SACK_ABOVE, STONEBOX_LENGTH, STONEBOX_MODULE, STONEBOX_PATH,
-                             STONEBOX_RISE, STONEBOX_TRAFO, SWITCH_AREA, SWITCH_CROSS,
-                             SWITCH_HOLD, SWITCH_MODULE, SWITCH_SPUR, SWITCH_TARGET,
-                             TRAFO_LIFT)
+from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, ARMS_PATH, BRIDGES,
+                             ELEMENT_LIFT, FAN_BELOW, FAN_REACH, FLAPS_COUNTERWEIGHT, FLAPS_LENGTH,
+                             FLAPS_MODULE, FUNNEL, PILLAR_INSET, PUSHERS_ASIDE, PUSHERS_LENGTH,
+                             PUSHERS_MODULES, PUSHERS_PATH, RAIL_FALL, RAIL_OVERHANG, SACK_ABOVE,
+                             STONEBOX_LENGTH, STONEBOX_MODULE, STONEBOX_PATH, STONEBOX_RISE,
+                             STONEBOX_TRAFO, SWITCH_AREA, SWITCH_CROSS, SWITCH_HOLD, SWITCH_MODULE,
+                             SWITCH_SPUR, SWITCH_TARGET, TRAFO_LIFT)
 from ..kit.floors import CELL, NARROW, RISE, WALL
 from ..kit.pieces import channel, funnel, pad, strip
 from ..kit.rails import ABOVE_V, BEND_RADIUS, Ring, bend
@@ -199,6 +198,8 @@ def lay_module(layout: Layout, sector: int, part: Sector, piece: dict,
         return lay_bridge(layout, sector, part, piece, track)
     if kind == "P_Modul_17":
         return lay_arms(layout, sector, part, piece, track)
+    if kind == "P_Modul_19":
+        return lay_flaps(layout, sector, part, piece, track)
     if track.width != NARROW or track.floor != "road":
         raise ValueError("a module stands on a narrow road")
     fewest, most = MODULES[kind]
@@ -322,6 +323,34 @@ def lay_arms(layout: Layout, sector: int, part: Sector, piece: dict, track: Trac
     layout.points.append(list(track.p))
     track.floor = "module"
     return h, h, ARMS_LENGTH
+
+
+def lay_flaps(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:
+    """{"module": "P_Modul_19"}: the flaps with both roads they bridge, as
+    Level_09 has them (see FLAPS_* in ballance.game.measures), entered from
+    a narrow road through a funnel onto the flat road to the gap, and left
+    where it is a narrow road's V again, on a grid of its own."""
+    if track.width != NARROW or track.floor not in ("road", "trafo"):
+        raise ValueError("the flaps are entered from a narrow road")
+    check_ball(layout, "P_Modul_19")
+    p, d, h = track.p, track.d, track.h
+    edge = h + RISE
+    start = FUNNEL  # where the cut road begins
+    layout.open(layout.floors, p, d)
+    part.extras.append((funnel, at(p, d, start), back_of(d), edge, None))
+    along, right = FLAPS_MODULE
+    module = at(p, d, start + along, right)
+    layout.modules.append(("P_Modul_19", sector, [module[0], edge, module[1]], turn_of(back_of(d))))
+    layout.module_floors.append(layout.modules[-1])
+    along, right, above = FLAPS_COUNTERWEIGHT
+    ball = at(p, d, start + along, right)
+    layout.elements.append(("P_Ball_Stone", sector, [ball[0], edge + above, ball[1]]))
+    track.p = at(p, d, start + FLAPS_LENGTH)
+    layout.floors = part.grid(track.p)
+    layout.open(layout.floors, track.p, d)
+    layout.points.append(list(track.p))
+    track.floor = "module"
+    return h, h, start + FLAPS_LENGTH
 
 
 def lay_pushers(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:

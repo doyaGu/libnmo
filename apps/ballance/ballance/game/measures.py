@@ -140,6 +140,19 @@ ARMS_LENGTH, ARMS_MODULE, ARMS_ABOVE, ARMS_BRIDGE = 33.33, (24.61, -11.21), 5.43
 ARMS_PATH = [(5, 0, 0), (5, -20, 0), (20, -20, 0), (28, -20, 60), (5, -20, 0), (5, 0, 0),
              (20, 0, 0)]
 
+# P_Modul_19, the flaps (Level_09's P_Modul_19_01): an axle 20 long across
+# two roads 15 apart, a flap 6.08 long at either end, square to each other.
+# Each road has a gap the flap over it bridges, falling onto a stopper lip at
+# the gap's far edge.  On the track's road (21.65 from where its flat road
+# begins to where it is a narrow road's V again) the flap stands up at the
+# gap's near edge, 10 on; on the other road, to the left, it lies across its
+# gap with a stone ball on it.  The ball pushes the upright flap over and
+# crosses; the turn throws the stone ball off.  The module stands 7.53 on
+# and 5 to the left of the track, the stone ball 8.7 on, 14.85 to the left,
+# 3.13 above the edges.  (along, right)
+FLAPS_LENGTH, FLAPS_MODULE = 21.65, (7.53, -5.0)
+FLAPS_COUNTERWEIGHT = (8.7, -14.85, 3.13)
+
 # --- Scenery ---------------------------------------------------------------
 
 # A pillar under a floor stands 2.5 in from its corner, its top 5 below the

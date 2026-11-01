@@ -9,11 +9,12 @@ from ..game.measures import (DRAWBRIDGE_FLOORS, DRAWBRIDGE_HINGE, SACK_STEP, SLA
                              STONEBOX_LENGTH, STONEBOX_MODULE, SWITCH_CROSS)
 
 # The modules that stand on the track, and how many in a row.  Each but the
-# switch, the stone on a box, the pushers and the rotating arm (which come
-# with floors of their own) and the bridges (plates and seesaw, over a gap narrow roads run
-# to) stands between funnels that lead a narrow road onto it at the road's
-# edge height and off it again.
-MODULES = {"P_Modul_01": (2, 2), "P_Modul_17": (1, 1), "P_Modul_25": (1, 1), "P_Modul_26": (1, 4),
+# switch, the stone on a box, the pushers, the rotating arm and the flaps
+# (which come with floors of their own) and the bridges (plates and seesaw,
+# over a gap narrow roads run to) stands between funnels that lead a narrow
+# road onto it at the road's edge height and off it again.
+MODULES = {"P_Modul_01": (2, 2), "P_Modul_17": (1, 1), "P_Modul_19": (1, 1),
+           "P_Modul_25": (1, 1), "P_Modul_26": (1, 4),
            "P_Modul_29": (1, 1), "P_Modul_30": (1, 1), "P_Modul_34": (1, 1),
            "P_Modul_37": (1, 1), "P_Modul_41": (2, 8)}
 
@@ -25,6 +26,8 @@ NEEDS_BALL = {
     "P_Modul_29": ({"Paper", "Wood"}, "falls through {kind}'s plates (in Ballanced too); "
                                       "a paper or wood ball crosses them"),
     "P_Modul_17": ({"Wood", "Stone"}, "can't turn {kind}'s arm; a wood or stone ball does"),
+    "P_Modul_19": ({"Wood", "Stone"}, "can't push {kind}'s flap over (in Level_09 too); "
+                                      "a wood or stone ball does"),
 }
 
 
@@ -51,6 +54,14 @@ class ModuleFloor:
 
 
 MODULE_FLOORS = {
+    # in the stand-ins, the two roads either side of their gaps, and the lips
+    "P_Modul_19": [
+        ModuleFloor("Floor_Modul_19", STONE_FLOOR_GROUPS,
+                    [(-2.47, 7.53, -5, 0, 2.5, 7.5), (-14.12, -9.12, -5, 0, 2.5, 7.5),
+                     (3.32, 7.53, -5, 0, -12.5, -7.5), (-8.34, -3.34, -5, 0, -12.5, -7.5)]),
+        ModuleFloor("Floor_Stopper_19", STOPPER_GROUPS,
+                    [(-9.12, -8.12, -1.03, -0.53, 2.5, 7.5),
+                     (2.32, 3.32, -1.03, -0.53, -12.5, -7.5)])],
     # in the stand-ins, the lower road either side of the gap, the loop's
     # column and upper road, and the arm's block
     "P_Modul_17": [
