@@ -81,6 +81,7 @@ SNAP = {
     "Modul27": ([5.0], [], [2.5]),
     "Modul42": ([35.16], [0.41], [2.5]),
     "Floor_Cradle": ([7.5, 5.0, 2.5], [2.5, 1.8, 1.1], [7.5, 5.0, 2.5]),
+    "Floor_RailDock": ([5.0, 2.5], [0.7, 0.58], [5.0]),
     "Modul02": ([28.2], [11.84], [2.5]),
     "Floor_Modul02": ([42.49, 44.99, 47.49, 52.49, 54.99, 57.49], [13.18, 18.18],
                       [2.5, 5.0, 7.5]),
@@ -245,6 +246,9 @@ CUTS: list[Cut] = [
               (-7.45, 8.0, -2.0, 9.6, -8.0, 3.84)),
     ModuleCut("Misc_Cradle", "Level_01.NMO", "A01_Misc_Schelle04", "A01_Floor_05",
               (-8.0, 8.0, -3.0, 3.0, -9.0, 9.0)),
+    # a wide road's end narrowing to a rail, its flat middle at the origin
+    ModuleCut("Floor_RailDock", "Level_01.NMO", "A01_Floor_03", "A01_Rail_07",
+              (-5.1, 5.1, -6.0, 1.4, 12.8, 17.95), (0.0, 0.58, 17.88)),
     # the tubes parting at a rail's end, from its last straight ring on
     ModuleCut("Rail_Split", "Level_01.NMO", "A01_Rail_02_01", "A01_Rail_02_01",
               (-13.5, -3.0, -0.5, 0.4, -12.0, 12.0), (-3.089, -0.101, 0.0)),

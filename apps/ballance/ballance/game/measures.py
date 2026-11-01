@@ -37,6 +37,11 @@ TRAFO_LIFT = 0.1
 # 4.5 in over the area's inside.  The builder hangs a rail's end two cells
 # over the area and lets it fall at most 15.
 RAIL_OVERHANG, RAIL_FALL = 5.0, 15.0
+# A rail meets a wide road's end as Level_01's A01_Rail_07 meets A01_Floor_03:
+# through a piece 5 long whose slopes go on as the road's while its flat
+# middle sinks to a narrow road's V, 0.7 deep at the rail; the tubes' middles
+# are 0.58 below the road's flat middle there.
+RAIL_DOCK_LENGTH, RAIL_DOCK_BELOW = 5.0, 0.58
 # Level_01's A01_Rail_09 ends in a cradle: a 15 by 15 block whose top is
 # 2.5 above its middle, with a 5 by 5 pocket there.  The rail comes in high
 # along its Z (its last straight ring at (-0.05, 9.09, 3.84) of the block,

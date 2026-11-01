@@ -62,6 +62,10 @@ class ModuleFloor:
 
 
 MODULE_FLOORS = {
+    # not a module: a wide road's end narrowing to a rail (the road's flat
+    # middle at the origin, the road along Z, the rail at -Z)
+    "RailDock": [ModuleFloor("Floor_RailDock", STONE_FLOOR_GROUPS,
+                             [(-5, 5, -5, 0.7, -5, 0)])],
     # not a module: the cradle a rail drops the ball into, with the rail's
     # end and the railing
     "Cradle": [ModuleFloor("Floor_Cradle", STONE_FLOOR_GROUPS,

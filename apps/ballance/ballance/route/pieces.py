@@ -20,12 +20,13 @@ from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, 
                              JUMP_ABOVE, JUMP_AREA, JUMP_DOWN, JUMP_HALF, LIFT_BELOW, LIFT_ENTRY,
                              LIFT_EXIT, LIFT_RIDE, LIFT_TOP, LIFT_WALLS, PILLAR_INSET, PLANK_BELOW,
                              PLANK_LENGTH, PUSHERS_ASIDE, PUSHERS_LENGTH, PUSHERS_MODULES,
-                             PUSHERS_PATH, RAIL_FALL, RAIL_OVERHANG, SACK_ABOVE, STONEBOX_LENGTH,
-                             STONEBOX_MODULE, STONEBOX_PATH, STONEBOX_RISE, STONEBOX_TRAFO,
-                             SWING_ABOVE, SWING_FAR, SWING_GO, SWING_HALF, SWING_SEAT, SWING_WAIT,
-                             SWITCH_AREA, SWITCH_CROSS, SWITCH_HOLD, SWITCH_MODULE, SWITCH_SPUR,
-                             SWITCH_TARGET, TRAFO_LIFT, TWIST_ASIDE, TWIST_BELOW, TWIST_HALF,
-                             TWIST_PATH, WALKWAY_ABOVE, WALKWAY_LENGTH)
+                             PUSHERS_PATH, RAIL_DOCK_BELOW, RAIL_DOCK_LENGTH, RAIL_FALL,
+                             RAIL_OVERHANG, SACK_ABOVE, STONEBOX_LENGTH, STONEBOX_MODULE,
+                             STONEBOX_PATH, STONEBOX_RISE, STONEBOX_TRAFO, SWING_ABOVE, SWING_FAR,
+                             SWING_GO, SWING_HALF, SWING_SEAT, SWING_WAIT, SWITCH_AREA,
+                             SWITCH_CROSS, SWITCH_HOLD, SWITCH_MODULE, SWITCH_SPUR, SWITCH_TARGET,
+                             TRAFO_LIFT, TWIST_ASIDE, TWIST_BELOW, TWIST_HALF, TWIST_PATH,
+                             WALKWAY_ABOVE, WALKWAY_LENGTH)
 from ..kit.floors import CELL, NARROW, RISE, WALL
 from ..kit.pieces import channel, funnel, pad, strip
 from ..kit.rails import ABOVE_V, BEND_RADIUS, Ring, bend
@@ -683,19 +684,24 @@ def lay_piece(layout: Layout, sector: int, part: Sector, piece: dict, track: Tra
     if track.floor == "fall" and "area" not in piece:
         raise ValueError("a rail's fall lands in an area")
     if rail and track.run is None:
-        # Rails meet floors as the originals' do: at a narrow road's end or
-        # through a gap in an area's rim.
-        if track.floor not in ("road", "area"):
-            raise ValueError("a rail starts from a narrow road or an area")
-        layout.dock(floors, track.p, track.d)
-        track.run = [Ring(track.p[0], track.h + ABOVE_V, track.p[1], track.d[0], track.d[1])]
+        # Rails meet floors as the originals' do: at a narrow road's end,
+        # through a gap in an area's rim, or through a wide road's dock.
+        if track.floor == "wide":
+            dock_wide(layout, sector, part, track)
+        elif track.floor not in ("road", "area"):
+            raise ValueError("a rail starts from a narrow road, a wide one or an area")
+        else:
+            layout.dock(floors, track.p, track.d)
+            track.run = [Ring(track.p[0], track.h + ABOVE_V, track.p[1], track.d[0], track.d[1])]
     elif not rail and "fall" not in piece and "cradle" not in piece and track.run is not None:
-        if not ("area" in piece or ("road" in piece and
-                                    piece.get("width", "narrow") == "narrow")):
-            raise ValueError("a rail ends at a narrow road or an area")
-        layout.dock(floors, track.p, track.d)
-        part.rails.runs.append(track.run)
-        track.run = None
+        if "road" in piece and piece.get("width") == "wide":
+            dock_wide(layout, sector, part, track)
+        elif not ("area" in piece or "road" in piece):
+            raise ValueError("a rail ends at a narrow road, a wide one or an area")
+        else:
+            layout.dock(floors, track.p, track.d)
+            part.rails.runs.append(track.run)
+            track.run = None
     if rail and piece.get("elements"):
         raise ValueError("elements stand on floors, not on rails")
     kind = next((key for key in PIECES if key in piece), None)
@@ -704,6 +710,34 @@ def lay_piece(layout: Layout, sector: int, part: Sector, piece: dict, track: Tra
     ramp = PIECES[kind](layout, sector, part, piece, track)
     for element in piece.get("elements", []):
         place_element(layout, sector, floors, piece, element, start, heading, ramp)
+
+
+def dock_wide(layout: Layout, sector: int, part: Sector, track: Track) -> None:
+    """A rail meets a wide road's end through the originals' dock (see
+    RAIL_DOCK_* in ballance.game.measures): from the road onto a rail when
+    no rail is being laid, else from the rail onto the road."""
+    d = track.d
+    if track.run is None:
+        layout.floors.open_edge(*across(track.p, d, 2 * NARROW))
+        # the dock's Z back along the track, from the road to the rail
+        layout.module_floors.append(("RailDock", sector, [track.p[0], track.h, track.p[1]],
+                                     turn_of(left_of(d))))
+        track.p = at(track.p, d, RAIL_DOCK_LENGTH)
+        track.h -= RAIL_DOCK_BELOW + ABOVE_V
+        track.run = [Ring(track.p[0], track.h + ABOVE_V, track.p[1], d[0], d[1])]
+        return
+    end = track.run[-1]
+    part.rails.runs.append(track.run)
+    track.run = None
+    track.p = at((end.x, end.z), d, RAIL_DOCK_LENGTH)
+    track.h = end.y + RAIL_DOCK_BELOW
+    # the dock's Z along the track, from the rail to the road
+    layout.module_floors.append(("RailDock", sector, [track.p[0], track.h, track.p[1]],
+                                 turn_of(right_of(d))))
+    layout.floors = part.grid(track.p)
+    layout.floors.open_edge(*across(track.p, d, 2 * NARROW))
+    layout.points.append(list(track.p))
+    track.width, track.floor = 2 * NARROW, "wide"
 
 
 def place_element(layout: Layout, sector: int, floors, piece: dict, element: dict,
