@@ -522,7 +522,7 @@ static int32_t attribute_named(const nmo_engine_t *engine, nmo_object_id_t objec
 }
 
 /*
- * PhysicsCollDetectionListener::event_pre_collision: a collision of the
+ * PhysicsCollDetectionListener::event_post_collision: a collision of the
  * object as fast as Min Speed, Sleep afterwards after the last and while
  * Collision is not active, with the other object of the Collision ID when
  * "Use Collision ID": the other object, the speed between Min and Max as

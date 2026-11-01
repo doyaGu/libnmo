@@ -9,6 +9,8 @@
 #define GUID_IMPULSE NMO_GUID(0x0c7e39bb, 0x16db20d5)
 #define GUID_BUOYANCY NMO_GUID(0x2c015f2b, 0x5b147512)
 #define GUID_RESET NMO_GUID(0x5714345e, 0x792262ae)
+#define GUID_COLL_DETECTION NMO_GUID(0x7435488d, 0x201d1188)
+#define GUID_NOP NMO_GUID(0x302561c4, 0x0d282980)
 
 /* A 3D object at (x, y, z) whose mesh is a box of half sizes `hx, hy, hz` */
 static nmo_object_id_t box(engine_fixture_t *f, const char *name, float x, float y, float z,
@@ -171,7 +173,51 @@ TEST(physics_ivp, a_light_crate_floats_in_a_buoyancy_pool)
     fixture_end(&f);
 }
 
+/* A landing is heard after the impact, with its speed (event_post_collision): the hit sounds'
+   PhysicsCollDetection blocks need it over their Min Speed */
+TEST(physics_ivp, a_landing_is_heard_with_its_speed)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t floor = box(&f, "Floor", 0.0f, 0.0f, 0.0f, 10.0f, 0.5f, 10.0f);
+    nmo_object_id_t crate = box(&f, "Crate", 0.0f, 5.0f, 0.0f, 0.5f, 0.5f, 0.5f);
+    ASSERT_TRUE(floor != 0 && crate != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    ASSERT_TRUE(physicalize(&f, floor, true, "Floor") != 0);
+    ASSERT_TRUE(physicalize(&f, crate, false, "Crate") != 0);
+    nmo_object_id_t detect = fixture_block(&f, GUID_COLL_DETECTION, "Detect");
+    nmo_object_id_t hit = fixture_block(&f, GUID_NOP, "Hit");
+    ASSERT_TRUE(detect != 0 && hit != 0 && fixture_target(&f, detect) != 0);
+    fixture_input_int(&f, fixture_target(&f, detect), (int32_t)crate);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, detect, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, detect, 0), BLOCK_IN(&f, hit, 0), 0);
+    const float min_speed = 1.0f, max_speed = 20.0f, sleep = 0.1f;
+    fixture_input_value(&f, BLOCK_PIN(&f, detect, 0), &min_speed, sizeof(min_speed));
+    fixture_input_value(&f, BLOCK_PIN(&f, detect, 1), &max_speed, sizeof(max_speed));
+    fixture_input_value(&f, BLOCK_PIN(&f, detect, 2), &sleep, sizeof(sleep));
+    fixture_commit(&f, NULL);
+    nmo_physics_ivp_t *physics = NULL;
+    ASSERT_EQ(NMO_OK, nmo_physics_ivp_attach(f.engine, &physics));
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    for (int frame = 0; frame < 120 && runs(&f, hit) == 0; frame++) {
+        ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 1000.0f / 60.0f));
+    }
+    /* The first impact: falling about 4 under gravity 9.81, about 8.5 m/s, 0.43 of the range */
+    ASSERT_EQ(1u, runs(&f, hit));
+    uint32_t other = 0;
+    float speed = 0.0f;
+    read_value(&f, BLOCK_POUT(&f, detect, 0), &other, sizeof(other));
+    read_value(&f, BLOCK_POUT(&f, detect, 1), &speed, sizeof(speed));
+    ASSERT_EQ(floor, other);
+    ASSERT_TRUE(speed > 0.3f && speed < 0.5f);
+    nmo_physics_ivp_detach(physics);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(physics_ivp, a_crate_falls_onto_the_floor_and_is_pushed);
 REGISTER_TEST(physics_ivp, a_light_crate_floats_in_a_buoyancy_pool);
+REGISTER_TEST(physics_ivp, a_landing_is_heard_with_its_speed);
 TEST_MAIN_END()

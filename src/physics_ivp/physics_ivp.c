@@ -561,10 +561,11 @@ static void listen_object(void *user_data, void *object, bool on)
     }
     if (on) {
         ivp_collision_listener_init(&body->listener,
-                                    IVP_COLLISION_CB_PRE_COLLISION | IVP_COLLISION_CB_FRICTION_CREATED |
+                                    IVP_COLLISION_CB_POST_COLLISION | IVP_COLLISION_CB_FRICTION_CREATED |
                                         IVP_COLLISION_CB_FRICTION_DELETED,
                                     body);
-        body->listener.pre_collision_fn = heard_collision;
+        /* PhysicsCollDetectionListener::event_post_collision: the impact's speed is known */
+        body->listener.post_collision_fn = heard_collision;
         body->listener.friction_created_fn = heard_contact_started;
         body->listener.friction_deleted_fn = heard_contact_ended;
         body->listening = ivp_object_add_collision_listener(body->object, &body->listener) == 0;
