@@ -395,29 +395,24 @@ static int collect_sample_files_recursive(sample_file_list_t *list, const char *
             continue;
         }
 
-        char full_path[1024];
-        snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, entry->d_name);
-
-        struct stat st;
-        if (stat(full_path, &st) != 0) {
+        char *full_path = test_join_path(dir_path, entry->d_name);
+        if (full_path == NULL) {
             closedir(dir);
             return -1;
         }
 
-        if (S_ISDIR(st.st_mode)) {
-            if (collect_sample_files_recursive(list, full_path) != 0) {
-                closedir(dir);
-                return -1;
-            }
-            continue;
+        struct stat st;
+        int status = 0;
+        if (stat(full_path, &st) != 0) {
+            status = -1;
+        } else if (S_ISDIR(st.st_mode)) {
+            status = collect_sample_files_recursive(list, full_path);
+        } else if (has_supported_extension(entry->d_name) &&
+                   !should_skip_sample(entry->d_name)) {
+            status = sample_file_list_push(list, full_path);
         }
-
-        if (!has_supported_extension(entry->d_name) ||
-            should_skip_sample(entry->d_name)) {
-            continue;
-        }
-
-        if (sample_file_list_push(list, full_path) != 0) {
+        free(full_path);
+        if (status != 0) {
             closedir(dir);
             return -1;
         }

@@ -112,20 +112,20 @@ static size_t collect_and_scan_ext(const char *dir, const char *ext) {
     while ((entry = readdir(d)) != NULL) {
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
 
-        char full_path[512];
-        snprintf(full_path, sizeof(full_path), "%s/%s", dir, entry->d_name);
+        char *full_path = test_join_path(dir, entry->d_name);
+        if (full_path == NULL) continue;
 
         struct stat st;
-        if (stat(full_path, &st) != 0) continue;
-
-        if (S_ISDIR(st.st_mode)) {
-            loaded += collect_and_scan_ext(full_path, ext);
-            continue;
+        if (stat(full_path, &st) == 0) {
+            size_t nlen = strlen(entry->d_name);
+            if (S_ISDIR(st.st_mode)) {
+                loaded += collect_and_scan_ext(full_path, ext);
+            } else if (nlen >= elen && strcmp(entry->d_name + nlen - elen, ext) == 0 &&
+                       load_and_scan(full_path)) {
+                loaded++;
+            }
         }
-
-        size_t nlen = strlen(entry->d_name);
-        if (nlen < elen || strcmp(entry->d_name + nlen - elen, ext) != 0) continue;
-        if (load_and_scan(full_path)) loaded++;
+        free(full_path);
     }
     closedir(d);
     return loaded;

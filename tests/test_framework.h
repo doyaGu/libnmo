@@ -146,6 +146,9 @@ int test_file_exists(const char *path);
 typedef void (*test_corpus_visit_fn)(const char *path, void *user);
 int test_corpus_walk(const char *dir, test_corpus_visit_fn visit, void *user);
 
+/* "dir/name" in a malloc'd string the caller frees, or NULL when out of memory */
+char *test_join_path(const char *dir, const char *name);
+
 /* Utility functions */
 double test_get_time_ms(void);
 int test_should_run_test(const char *suite, const char *name, test_category_t category);

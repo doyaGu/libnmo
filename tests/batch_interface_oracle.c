@@ -243,23 +243,36 @@ static void scan_dir(const char *dir_path, oracle_stats_t *stats) {
     FindClose(h);
 }
 #else
+/* "dir/name" in a malloc'd string, or NULL */
+static char *join_path(const char *dir, const char *name) {
+    size_t dir_len = strlen(dir), name_len = strlen(name);
+    char *path = (char *)malloc(dir_len + 1 + name_len + 1);
+    if (!path) return NULL;
+    memcpy(path, dir, dir_len);
+    path[dir_len] = '/';
+    memcpy(path + dir_len + 1, name, name_len + 1);
+    return path;
+}
+
 static void scan_dir(const char *dir_path, oracle_stats_t *stats) {
     DIR *dir = opendir(dir_path);
     if (!dir) return;
     struct dirent *e;
     while ((e = readdir(dir)) != NULL) {
         if (e->d_name[0] == '.') continue;
-        char full[1024];
-        snprintf(full, sizeof(full), "%s/%s", dir_path, e->d_name);
+        char *full = join_path(dir_path, e->d_name);
+        if (!full) continue;
         struct stat st;
-        if (stat(full, &st) != 0) continue;
-        if (S_ISDIR(st.st_mode)) {
-            scan_dir(full, stats);
-        } else if (has_ext(e->d_name, ".cmo") ||
-                   has_ext(e->d_name, ".nmo") ||
-                   has_ext(e->d_name, ".vmo")) {
-            verify_file(full, stats);
+        if (stat(full, &st) == 0) {
+            if (S_ISDIR(st.st_mode)) {
+                scan_dir(full, stats);
+            } else if (has_ext(e->d_name, ".cmo") ||
+                       has_ext(e->d_name, ".nmo") ||
+                       has_ext(e->d_name, ".vmo")) {
+                verify_file(full, stats);
+            }
         }
+        free(full);
     }
     closedir(dir);
 }

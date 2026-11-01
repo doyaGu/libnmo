@@ -87,7 +87,7 @@ static int test_has_corpus_extension(const char *name) {
 #endif
 }
 
-static char *test_join_path(const char *dir, const char *name) {
+char *test_join_path(const char *dir, const char *name) {
     size_t dir_len = strlen(dir);
     size_t name_len = strlen(name);
     char *path = (char *)malloc(dir_len + 1 + name_len + 1);

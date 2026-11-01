@@ -443,8 +443,10 @@ static int scan_directory_recursive(const char *dir_path, void (*callback)(const
             continue;
         }
 
-        char full_path[512];
-        snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, entry->d_name);
+        char *full_path = test_join_path(dir_path, entry->d_name);
+        if (full_path == NULL) {
+            continue;
+        }
 
         struct stat st;
         if (stat(full_path, &st) == 0) {
@@ -457,6 +459,7 @@ static int scan_directory_recursive(const char *dir_path, void (*callback)(const
                 }
             }
         }
+        free(full_path);
     }
 
     closedir(dir);

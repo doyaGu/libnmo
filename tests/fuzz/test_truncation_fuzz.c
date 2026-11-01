@@ -225,20 +225,18 @@ static void collect_nmo_files(const char *dir, char ***out_files, size_t *out_co
     while ((entry = readdir(d)) != NULL) {
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
 
-        char full_path[512];
-        snprintf(full_path, sizeof(full_path), "%s/%s", dir, entry->d_name);
+        char *full_path = test_join_path(dir, entry->d_name);
+        if (full_path == NULL) continue;
 
         struct stat st;
-        if (stat(full_path, &st) != 0) continue;
-
-        if (S_ISDIR(st.st_mode)) {
-            collect_nmo_files(full_path, out_files, out_count);
-            continue;
+        if (stat(full_path, &st) == 0) {
+            if (S_ISDIR(st.st_mode)) {
+                collect_nmo_files(full_path, out_files, out_count);
+            } else if (has_composition_extension(entry->d_name)) {
+                (void)append_file_path(out_files, out_count, full_path);
+            }
         }
-
-        if (!has_composition_extension(entry->d_name)) continue;
-
-        (void)append_file_path(out_files, out_count, full_path);
+        free(full_path);
     }
     closedir(d);
 }
