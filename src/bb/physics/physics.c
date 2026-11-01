@@ -1216,17 +1216,20 @@ static int bb_physics_impulse(blk_t *b)
         dir[1] = v.y;
         dir[2] = v.z;
     }
+    /* IVP_U_Point::normize, (1, 0, 0) for no direction */
     double length = sqrt(dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2]);
+    if (length * length <= 0.0001) {
+        dir[0] = 1.0;
+        dir[1] = dir[2] = 0.0;
+        length = 1.0;
+    }
     for (int k = 0; k < 3; k++) {
-        dir[k] = length > 0.0 ? dir[k] / length * impulse : 0.0;
+        dir[k] = dir[k] / length * impulse;
     }
+    /* Both are in world space now. With the object as its own referential CK pushes its core
+       at the object space point (async_push_core): the same push when the core sits at the
+       object's origin, as it does without an automatic mass center (the ball pieces'). */
     float push[3] = {(float)dir[0], (float)dir[1], (float)dir[2]};
-    if (referential == target) {
-        /* the object's own point and direction, turned into world space */
-        eng_vector_t local = {push[0], push[1], push[2]}, world;
-        eng_entity_transform_vector(engine, entity_of(engine, target), &world, &local, -1, false);
-        set3(push, world);
-    }
     float at[3];
     set3(at, pos);
     const nmo_engine_physics_provider_t *provider = provider_of(engine);

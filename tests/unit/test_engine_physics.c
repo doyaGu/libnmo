@@ -286,6 +286,53 @@ TEST(engine_physics, blocks_feed_the_provider)
     fixture_end(&f);
 }
 
+/* An object pushed in its own space (Referential and Direction Ref itself), as the ball pieces
+   are: the point and direction turned into world space once */
+TEST(engine_physics, impulse_in_the_object_space_turns_once)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t piece = place(&f, "Piece", 3.0f, 4.0f, 0.0f);
+    ASSERT_TRUE(piece != 0);
+    /* turned half way about Z: its Y axis points down */
+    nmo_3dentity_state_t *state = (nmo_3dentity_state_t *)fixture_state(&f, piece);
+    ASSERT_NOT_NULL(state);
+    state->world_matrix[0] = -1.0f;
+    state->world_matrix[5] = -1.0f;
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t physicalize = block_of(&f, GUID_PHYSICALIZE, "Physicalize", piece, 0, 0);
+    nmo_object_id_t impulse = block_of(&f, GUID_IMPULSE, "Impulse", piece, 0, 1);
+    ASSERT_TRUE(physicalize != 0 && impulse != 0);
+    input_vector(&f, BLOCK_PIN(&f, impulse, 0), 0.0f, 1.0f, 0.0f);
+    fixture_input_int(&f, BLOCK_PIN(&f, impulse, 1), (int32_t)piece);
+    input_vector(&f, BLOCK_PIN(&f, impulse, 2), 0.0f, 1.0f, 0.0f);
+    fixture_input_int(&f, BLOCK_PIN(&f, impulse, 3), (int32_t)piece);
+    input_float(&f, BLOCK_PIN(&f, impulse, 4), 5.0f);
+    fixture_commit(&f, NULL);
+    recorder_t r;
+    memset(&r, 0, sizeof(r));
+    nmo_engine_physics_provider_t provider = {
+        .user_data = &r,
+        .create_object = rec_create_object,
+        .destroy_object = rec_destroy_object,
+        .push = rec_push,
+        .wake_up = rec_wake_up,
+    };
+    nmo_engine_set_physics_provider(f.engine, &provider);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1, r.pushes);
+    /* at its point one below it, down */
+    ASSERT_FLOAT_EQ(3.0f, r.push_at[0], 0.0001f);
+    ASSERT_FLOAT_EQ(3.0f, r.push_at[1], 0.0001f);
+    ASSERT_FLOAT_EQ(0.0f, r.push[0], 0.0001f);
+    ASSERT_FLOAT_EQ(-5.0f, r.push[1], 0.0001f);
+    fixture_end(&f);
+}
+
 /* A mesh with a vertex, for a polygon shape */
 static nmo_object_id_t small_mesh(engine_fixture_t *f)
 {
@@ -694,4 +741,5 @@ REGISTER_TEST(engine_physics, coll_detection_reports_collisions);
 REGISTER_TEST(engine_physics, continuous_contact_waits_its_delays);
 REGISTER_TEST(engine_physics, collision_surfaces_go_once_nothing_is_physical);
 REGISTER_TEST(engine_physics, buoyancy_waits_for_its_object_and_reset_forgets_it);
+REGISTER_TEST(engine_physics, impulse_in_the_object_space_turns_once);
 TEST_MAIN_END()
