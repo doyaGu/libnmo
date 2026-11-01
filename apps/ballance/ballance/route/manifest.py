@@ -19,6 +19,11 @@ SCENERY_MATERIALS = [
     "Tower_Floor_Top_Flat_illu", "TowerRail", "TowerRoof", "TowerRoof_Brim", "Laterne_Glas",
     "Laterne_Metal", "Laterne_Schatten", "Laterne_Verlauf", "Stick_Bottom", "Stick_Green",
     "Stick_Rail", "Stick_Red", "Stick_Stripes"]
+# The start's flames take their texture by name from the checkpoints' file
+# (PH/PC_TwoFlames.nmo), which the game loads only for a level with a
+# checkpoint; a level without one carries it, or its flames are white.
+FLAMES_TEXTURE = {"name": "Particle_Flames", "texture": "Particle_Flames.bmp",
+                  "texture_format": "rgb565", "texture_save": "external"}
 
 
 def level_object(name: str, mesh: str, position: list[float],
@@ -75,7 +80,8 @@ def build_manifest(presets: list[dict], assets: Assets, layout: Layout, name: st
     return {
         "version": 1,
         "document": {"name": name},
-        "materials": [m for m in presets if m["name"] in manifest.materials],
+        "materials": [m for m in presets if m["name"] in manifest.materials] +
+                     ([] if layout.checkpoints else [FLAMES_TEXTURE]),
         # every sector's group, even one with no element in it: without
         # Sector_01 the game never sets the balloon up, and the ball falls
         # through where its planks should be
