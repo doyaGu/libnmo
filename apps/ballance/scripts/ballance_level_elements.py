@@ -19,7 +19,8 @@ Level_03.  So is the fan's housing (Floor_Modul_18.obj), the 5 by 5 pit with
 a grille the fan blows through, set into the middle of an area 0.35 above it.
 The drawbridge's (P_Modul_25) two flat blocks and its stopper lip are cut out
 in the module's own frame (Floor_Modul_25.obj, Floor_Stopper_25.obj): placed
-and turned as the module, they stand as in Level_03.
+and turned as the module, they stand as in Level_03.  So are the wide
+drawbridge's (P_Modul_37) block, cross piece and lip, from Level_05.
 
 The scenery is cut out of Level_01: one of the pillars beside its start, with
 the shaft that fades out below it, as Pillar.obj; the lantern tower on top of
@@ -61,25 +62,34 @@ FLOORS = {"Floor_Start": ("Level_03.NMO", "A01_Floor_01", "PS_FourFlames_01", 8.
 # floor object, module, the box of the module's frame they lie in: x0, x1, y0,
 # y1, z0, z1).  P_Modul_25's plank stands at the edge of a gap 10 long; the
 # ball rolls along its -X from a 5-long flat block over the gap to another,
-# where it falls onto a stopper lip (an object of its own).
+# where it falls onto a stopper lip (an object of its own).  P_Modul_37's
+# wider plank falls across a gap 10 long onto a cross piece that funnels down
+# to narrow roads on both sides.
 MODULE_FLOORS = {
     "Floor_Modul_25": ("Level_03.NMO", "A05_Floor_02", "P_Modul_25_03",
                        (-15.1, 5.1, -5.1, 0.1, -2.6, 2.6)),
     "Floor_Stopper_25": ("Level_03.NMO", "A01_Floor_Stopper_01", "P_Modul_25_03",
                          (-15.1, 5.1, -5.1, 0.1, -2.6, 2.6)),
+    "Floor_Modul_37": ("Level_05.NMO", "A02_Floor_02", "P_Modul_37_02",
+                       (-16.3, 3.8, -5.1, 0.1, -9.8, 9.8)),
+    "Floor_Stopper_37": ("Level_05.NMO", "A01_Floor_Stopper", "P_Modul_37_02",
+                         (-16.3, 3.8, -5.1, 0.1, -9.8, 9.8)),
 }
 # Where a cut floor meets the floors a level builds, its edges must lie
 # exactly where the builder puts theirs, or the joins show thin cracks.  The
 # originals miss by up to 0.04 (Level_03's checkpoint opens from -0.869 to
 # 0.906 where its road is 1.74 wide), so the cut floors' coordinates within
 # SNAP_TOLERANCE of these are moved onto them: per kind, the values along X,
-# Y and Z in its own frame, mirrored to both signs.
+# Y and Z in its own frame, mirrored to both signs; a value given with its
+# own tolerance, (value, tolerance), uses that one.
 SNAP_TOLERANCE = 0.06
 SNAP = {
     "Floor_Start": ([7.39], [1.26, 3.74], [2.5, 1.3]),
     "Floor_Checkpoint": ([4.92], [1.26, 3.74], [2.5, 0.87]),
     "Floor_Modul_18": ([2.5], [0.35], [2.5]),
     "Floor_Modul_25": ([5.0, 0.0, 10.0, 15.0], [0.0], [2.5]),
+    # Level_05's target block lies from -2.4 to 2.6 across
+    "Floor_Modul_37": ([3.73, 1.27, 11.27, 16.27], [0.0], [(2.5, 0.11), 4.75, 9.75]),
 }
 # The scenery: one pillar of Level_01's start (its shaft fading below, too),
 # the lantern tower on top of it, and a striped pole by its balloon: (level,
@@ -140,10 +150,11 @@ def world_faces(nmo: str, level: Path, mesh_id: int, matrix: list[float]) -> tup
     return faces, mtl
 
 
-def snapped(value: float, targets: list[float]) -> float:
+def snapped(value: float, targets: list) -> float:
     for target in targets:
+        target, tolerance = target if isinstance(target, tuple) else (target, SNAP_TOLERANCE)
         for signed in (target, -target):
-            if abs(value - signed) <= SNAP_TOLERANCE:
+            if abs(value - signed) <= tolerance:
                 return signed
     return value
 
