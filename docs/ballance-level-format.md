@@ -190,8 +190,9 @@ the area's edge stays raised, so a wide road narrows into the area through an
 X-shaped `Floor_Top_ProfileFlat` piece with raised shoulders, and the area's
 border cells at the gap are `Floor_Top_ProfileFlat` too. Where a wide road
 goes on as a narrow one, its end cells beside the narrow one are raised
-corners. `apps/ballance/scripts/ballance_floors.py` builds floors by this rule from
-rectangles of areas and roads, which may slope along their length.
+corners. `ballance.kit.floors` (in `apps/ballance/ballance`) builds floors by
+this rule from rectangles of areas and roads, which may slope along their
+length.
 
 ## Rails
 
@@ -217,8 +218,8 @@ Measured on all 13 levels:
 - Some `*_Rail_*` objects are not rails but railings: thinner tubes along a
   floor's edge.
 
-`apps/ballance/scripts/ballance_rails.py` builds rails by these rules, and
-`Floors.dock()` opens a floor to one.
+`ballance.kit.rails` builds rails by these rules, and `Floors.dock()` opens a
+floor to one.
 
 ## Elements on the Floor
 
@@ -279,15 +280,14 @@ it:
   `_08`, `_19`, `_29`, `_30` and `_41` hang over gaps with no floor under
   them.
 
-`ballance_floors.py` builds the ball changer's block with `pad()` and leaves
-a fan housing's cells out of an area with `Floors.hole()`;
+`ballance.kit.pieces` builds the ball changer's block (`pad()`), the flat
+road under the sacks (`strip()`) and a narrow road of any length off the
+grid, where a piece lands between grid lines (`channel()`);
+`Floors.hole()` leaves a fan housing's cells out of an area.
 `ballance_level_elements.py` cuts the housing out of Level_03 as
 `Floor_Modul_18.obj`, and the drawbridges' blocks and stoppers, in the
 modules' own frames, as `Floor_Modul_25.obj` and `Floor_Stopper_25.obj`
 (Level_03) and `Floor_Modul_37.obj` and `Floor_Stopper_37.obj` (Level_05).
-`channel()` lays a narrow road of any length off the grid, where a piece
-lands between grid lines.
-`strip()` builds the flat road under the sacks.
 
 ## Scenery
 
@@ -390,16 +390,24 @@ document. They made no difference in the engine runs.
 builds a level from a route: its pieces sector by sector (roads narrow or
 wide and coming down, areas left from the side, turns, ball changers, rails
 straight or bent, fans lifting the ball to the next area, drawbridges, a
-switch, rows of slabs, swinging sacks), with elements placed on the floors. It lays them
-out on the floors' 2.5 grid with
-`ballance_floors.py`, turns the start, the checkpoints and the balloon with
-the track, stands the scenery as above, hides the fall zone under all of it,
-and writes `route_points.json`, the points along the middle of the track.
+switch, rows of slabs, swinging sacks), with elements placed on the floors.
+It lays them out on the floors' 2.5 grid with `ballance.kit`, turns the
+start, the checkpoints and the balloon with the track, stands the scenery as
+above, hides the fall zone under all of it, and writes `route_points.json`,
+the points along the middle of the track.
 With the meshes `ballance_level_elements.py` exported, it uses the game's
 start, checkpoint and element meshes, opens the road into Level_03's start
 and checkpoint floors and adds the `SkyLayer`; without, boxes stand in for
 the markers, elements and those floors, and there is no scenery and no sky.
 The script's docstring describes the route format.
+
+The scripts in `apps/ballance/scripts` are thin; the work is in the
+`ballance` package beside them (`apps/ballance/ballance`), in layers each
+using only those before it: `core` (headings on the XZ plane, OBJ meshes,
+the nmo CLI), `game` (the groups, kinds and mechanisms, the measured
+dimensions, the materials), `kit` (floors, the pieces off their grid,
+rails), `route` (a route laid out and written as a level), `extract`
+(element meshes, materials, level checks) and `view` (drawing levels).
 
 ## Checking a Level
 
