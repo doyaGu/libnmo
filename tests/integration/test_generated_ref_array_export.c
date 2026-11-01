@@ -56,7 +56,7 @@
 #define EDITED_FILE TMP_DIR "/group_edited.json"
 #define OUTPUT_FILE TMP_DIR "/group_imported.nmo"
 
-#define GROUP_NAME "Group_Members"
+#define MEMBER_GROUP_NAME "Group_Members"
 
 static const char *const k_member_names[] = {
     "Member_A", "Member_B", "Member_C", "Member_D"
@@ -180,7 +180,7 @@ static bool create_group_fixture(void)
                                        (nmo_guid_t){0, 0}, &members[i], NULL) == NMO_OK;
     }
     nmo_object_id_t group_id = 0;
-    ok = ok && nmo_session_create_object(session, NMO_CID_GROUP, GROUP_NAME,
+    ok = ok && nmo_session_create_object(session, NMO_CID_GROUP, MEMBER_GROUP_NAME,
                                          (nmo_guid_t){0, 0}, &group_id, NULL) == NMO_OK;
 
     nmo_object_t *group = ok ? nmo_object_repository_find_by_id(
@@ -248,7 +248,7 @@ static bool load_group(const char *path, loaded_group_t *out)
     for (size_t i = 0; i < MEMBER_COUNT; ++i) {
         out->member_ids[i] = find_id_by_name(out->session, k_member_names[i]);
     }
-    out->group_id = find_id_by_name(out->session, GROUP_NAME);
+    out->group_id = find_id_by_name(out->session, MEMBER_GROUP_NAME);
     nmo_object_t *group = nmo_object_repository_find_by_id(
         nmo_session_get_repository(out->session), out->group_id);
     const nmo_group_state_t *state =
