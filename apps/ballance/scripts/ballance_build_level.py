@@ -35,6 +35,9 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
   pushes over a gap 10 long, between flat blocks a narrow road runs into
   through funnels, as Level_03's are.  The original levels bring a wood or
   stone ball to it.
+- {"module": "P_Modul_26", "count": n} -- n (1 to 4) sacks swinging over a
+  flat road at a narrow road's edge height, 15 apart, between funnels, as
+  levels 8 to 13 hang them.
 - {"module": "P_Modul_41", "count": n} -- a row of n (2 to 8) slabs on axles
   across the track, between funnels, as levels 7 to 11 lay them.  Only a
   paper ball crosses them: a wood or stone ball tips them and falls.
@@ -80,7 +83,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from ballance_floors import CELL, NARROW, RISE, WALL, Floors, Mesh, funnel, pad
+from ballance_floors import CELL, NARROW, RISE, WALL, Floors, Mesh, funnel, pad, strip
 from ballance_rails import ABOVE_V, BEND_RADIUS, Rails, Ring, bend
 
 PRESETS = Path(__file__).resolve().parent.parent / "data" / "level_materials.json"
@@ -142,9 +145,13 @@ FAN_REACH = 16.0
 # another block 5 long holding the stopper the plank lands on.  P_Modul_41 is
 # a slab 5 square on an axle across the track; the originals lay 2 to 8 in a
 # row, 6 apart, with a gap of 1 on either side of each, and close the
-# funnels' ends with a wall.
-MODULES = {"P_Modul_25": (1, 1), "P_Modul_41": (2, 8)}  # how many in a row
+# funnels' ends with a wall.  P_Modul_26 is a sack on a rope, hung from 15
+# above it; the levels hang them 10 to 16 apart over flat roads at a narrow
+# road's edge height (Floor_Top_Flat squares), 2.68 below the module, turned
+# every other one the other way.
+MODULES = {"P_Modul_25": (1, 1), "P_Modul_26": (1, 4), "P_Modul_41": (2, 8)}  # how many in a row
 SLAB, SLAB_GAP = 5.0, 1.0
+SACK_STEP, SACK_ABOVE = 15.0, 2.68
 
 
 def module_layout(kind: str, count: int) -> tuple[float, list[float], bool]:
@@ -152,6 +159,8 @@ def module_layout(kind: str, count: int) -> tuple[float, list[float], bool]:
     their start, and whether the funnels end in walls."""
     if kind == "P_Modul_25":
         return 20.0, [5.0], False
+    if kind == "P_Modul_26":
+        return SACK_STEP * count, [SACK_STEP * (k + 0.5) for k in range(count)], False
     step = SLAB + SLAB_GAP
     return step * count + SLAB_GAP, [SLAB_GAP + SLAB / 2 + step * k for k in range(count)], True
 # The floors cut out for each module (ballance_level_elements.py), with their
@@ -436,13 +445,21 @@ class Builder:
             back = (-d[0], -d[1])
             extras.append((funnel, at(p, d, FUNNEL), back, edge, None, walls))
             extras.append((funnel, at(p, d, FUNNEL + length), d, edge, None, walls))
-            for offset in offsets:
+            if kind == "P_Modul_26":
+                extras.append((strip, at(p, d, FUNNEL), d, length, edge))
+            for k, offset in enumerate(offsets):
                 where = at(p, d, FUNNEL + offset)
-                # the ball rolls along the module's -X
-                self.modules.append((kind, sector, [where[0], edge, where[1]], turn_of(back)))
+                # the ball rolls along the module's -X; sacks turn every other
+                if kind == "P_Modul_26":
+                    turn = turn_of(back if k % 2 == 0 else d)
+                    self.modules.append((kind, sector, [where[0], edge + SACK_ABOVE, where[1]],
+                                         turn))
+                else:
+                    self.modules.append((kind, sector, [where[0], edge, where[1]], turn_of(back)))
             ramp = (h, h, 2 * FUNNEL + length)
-            self.points += [list(at(p, d, FUNNEL + offsets[0])),
-                            list(at(p, d, FUNNEL + length))]
+            # no point at the module itself: driving at it, the ball would
+            # slow down where it has to push or roll over it
+            self.points.append(list(at(p, d, FUNNEL + length)))
             p = at(p, d, 2 * FUNNEL + length)
             # the road beyond, off the grid behind it
             self.floors = Floors(origin=p)
@@ -516,9 +533,9 @@ class Builder:
             for floors in sector:
                 floors.build(mesh)
             for function, *args in extras:
-                if function is funnel:
+                if function in (funnel, strip):
                     (x, z), *rest = args
-                    funnel(mesh, x, z, *rest)
+                    function(mesh, x, z, *rest)
                 else:
                     (x, z), top, material = args
                     pad(mesh, x, z, top, material)
