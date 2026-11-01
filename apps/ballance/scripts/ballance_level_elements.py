@@ -68,6 +68,19 @@ MODULE_FLOORS = {
     "Floor_Stopper_25": ("Level_03.NMO", "A01_Floor_Stopper_01", "P_Modul_25_03",
                          (-15.1, 5.1, -5.1, 0.1, -2.6, 2.6)),
 }
+# Where a cut floor meets the floors a level builds, its edges must lie
+# exactly where the builder puts theirs, or the joins show thin cracks.  The
+# originals miss by up to 0.04 (Level_03's checkpoint opens from -0.869 to
+# 0.906 where its road is 1.74 wide), so the cut floors' coordinates within
+# SNAP_TOLERANCE of these are moved onto them: per kind, the values along X,
+# Y and Z in its own frame, mirrored to both signs.
+SNAP_TOLERANCE = 0.06
+SNAP = {
+    "Floor_Start": ([7.39], [1.26, 3.74], [2.5, 1.3]),
+    "Floor_Checkpoint": ([4.92], [1.26, 3.74], [2.5, 0.87]),
+    "Floor_Modul_18": ([2.5], [0.35], [2.5]),
+    "Floor_Modul_25": ([5.0, 0.0, 10.0, 15.0], [0.0], [2.5]),
+}
 # The scenery: one pillar of Level_01's start (its shaft fading below, too),
 # the lantern tower on top of it, and a striped pole by its balloon: (level,
 # objects, a point near its middle on X and Z, how far it reaches from there).
@@ -127,9 +140,19 @@ def world_faces(nmo: str, level: Path, mesh_id: int, matrix: list[float]) -> tup
     return faces, mtl
 
 
+def snapped(value: float, targets: list[float]) -> float:
+    for target in targets:
+        for signed in (target, -target):
+            if abs(value - signed) <= SNAP_TOLERANCE:
+                return signed
+    return value
+
+
 def write_faces(faces: list, mtls: list[str], center: tuple[float, float, float], kind: str,
                 out: Path) -> None:
-    """Writes faces moved so center is at the origin, as <kind>.obj and .mtl."""
+    """Writes faces moved so center is at the origin, as <kind>.obj and .mtl,
+    their coordinates snapped as SNAP says for kind."""
+    snap = SNAP.get(kind, ([], [], []))
     lines = [f"mtllib {kind}.mtl"]
     material = None
     for face_material, corners in faces:
@@ -137,7 +160,8 @@ def write_faces(faces: list, mtls: list[str], center: tuple[float, float, float]
             lines.append(f"usemtl {face_material}")
             material = face_material
         for position, uv, normal in corners:
-            lines.append("v %.6f %.6f %.6f" % tuple(position[i] - center[i] for i in range(3)))
+            lines.append("v %.6f %.6f %.6f" % tuple(snapped(position[i] - center[i], snap[i])
+                                                    for i in range(3)))
             lines.append("vt %s %s" % uv)
             lines.append("vn %.6f %.6f %.6f" % normal)
         lines.append("f " + " ".join(f"{i}/{i}/{i}" for i in range(-len(corners), 0)))
