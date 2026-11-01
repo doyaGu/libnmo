@@ -146,6 +146,13 @@ if(TARGET nmo_cli)
         ENVIRONMENT "NMO_DATA_DIR=${PROJECT_SOURCE_DIR}/data"
     )
 
+    add_executable(test_generated_ref_array_export test_generated_ref_array_export.c)
+    target_link_libraries(test_generated_ref_array_export PRIVATE nmo test_framework yyjson)
+    add_dependencies(test_generated_ref_array_export nmo_cli)
+    target_compile_definitions(test_generated_ref_array_export PRIVATE NMO_CLI_PATH="$<TARGET_FILE:nmo_cli>")
+    add_test(NAME test_generated_ref_array_export COMMAND test_generated_ref_array_export)
+    set_tests_properties(test_generated_ref_array_export PROPERTIES SKIP_RETURN_CODE 77)
+
     add_executable(test_generated_advanced_subsystem_probes test_generated_advanced_subsystem_probes.c)
     target_link_libraries(test_generated_advanced_subsystem_probes PRIVATE nmo test_framework)
     add_dependencies(test_generated_advanced_subsystem_probes nmo_cli)
