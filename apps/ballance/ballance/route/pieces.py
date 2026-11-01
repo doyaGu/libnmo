@@ -15,7 +15,8 @@ from typing import TYPE_CHECKING, Callable
 from ..core.geometry import across, at, axis_of, back_of, left_of, rect, side_of, turn_of
 from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, ARMS_PATH, BRIDGES,
                              ELEMENT_LIFT, FAN_BELOW, FAN_REACH, FLAPS_COUNTERWEIGHT, FLAPS_LENGTH,
-                             FLAPS_MODULE, FUNNEL, PILLAR_INSET, PUSHERS_ASIDE, PUSHERS_LENGTH,
+                             FLAPS_MODULE, FUNNEL, LIFT_BELOW, LIFT_ENTRY, LIFT_EXIT, LIFT_RIDE,
+                             LIFT_TOP, LIFT_WALLS, PILLAR_INSET, PUSHERS_ASIDE, PUSHERS_LENGTH,
                              PUSHERS_MODULES, PUSHERS_PATH, RAIL_FALL, RAIL_OVERHANG, SACK_ABOVE,
                              STONEBOX_LENGTH, STONEBOX_MODULE, STONEBOX_PATH, STONEBOX_RISE,
                              STONEBOX_TRAFO, SWITCH_AREA, SWITCH_CROSS, SWITCH_HOLD, SWITCH_MODULE,
@@ -200,6 +201,8 @@ def lay_module(layout: Layout, sector: int, part: Sector, piece: dict,
         return lay_arms(layout, sector, part, piece, track)
     if kind == "P_Modul_19":
         return lay_flaps(layout, sector, part, piece, track)
+    if kind == "P_Modul_03":
+        return lay_lift(layout, sector, part, piece, track)
     if track.width != NARROW or track.floor != "road":
         raise ValueError("a module stands on a narrow road")
     fewest, most = MODULES[kind]
@@ -323,6 +326,40 @@ def lay_arms(layout: Layout, sector: int, part: Sector, piece: dict, track: Trac
     layout.points.append(list(track.p))
     track.floor = "module"
     return h, h, ARMS_LENGTH
+
+
+def lay_lift(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:
+    """{"module": "P_Modul_03"}: the lift, with the platform it rises to, as
+    Level_07 has them (see LIFT_* in ballance.game.measures), entered from a
+    narrow road through a funnel up to its gate, and left from the
+    platform's flat middle through a funnel onto a narrow road again, on a
+    grid of its own."""
+    if track.width != NARROW or track.floor not in ("road", "trafo"):
+        raise ValueError("the lift is entered from a narrow road")
+    check_ball(layout, "P_Modul_03")
+    p, d, h = track.p, track.d, track.h
+    edge = h + RISE
+    layout.open(layout.floors, p, d)
+    part.extras.append((funnel, at(p, d, FUNNEL), back_of(d), edge, None))
+    module = at(p, d, LIFT_ENTRY)
+    y = edge + LIFT_BELOW
+    layout.modules.append(("P_Modul_03", sector, [module[0], y, module[1]], turn_of(back_of(d))))
+    layout.module_floors.append(layout.modules[-1])
+    layout.points.append(list(module))
+    for along, right in LIFT_WALLS:
+        layout.points.append(list(at(p, d, LIFT_ENTRY + along, right)))
+        layout.points.append(list(module))
+    layout.points.append([module[0], module[1], y + LIFT_RIDE, 0])
+    length = LIFT_ENTRY + LIFT_EXIT
+    out = at(p, d, length)
+    layout.floors = part.grid(out)
+    part.extras.append((funnel, out, d, y + LIFT_TOP, None))
+    track.p = at(p, d, length + FUNNEL)
+    track.h = y + LIFT_TOP - RISE
+    layout.open(layout.floors, track.p, d)
+    layout.points.append(list(track.p))
+    track.floor = "module"
+    return h, h, length + FUNNEL
 
 
 def lay_flaps(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:

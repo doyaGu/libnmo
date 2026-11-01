@@ -31,6 +31,12 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
 - {"trafo": "paper", "stone" or "wood"} -- a ball changer on its pad, on a
   narrow road.  The original levels all turn the ball back to wood before
   the balloon; the builder warns when a route does not.
+- {"module": "P_Modul_03"} -- the lift, as Level_07 has it: a narrow road
+  runs through a funnel to its gate; the ball pushes its seven walls off,
+  rolling out to each, and rides its floor up 17.64 to the platform on the
+  far side, whose flat middle a funnel turns back into a narrow road, 56.81
+  on from where the first funnel begins.  Only a wood ball gets up, in the
+  originals too.
 - {"module": "P_Modul_19"} -- the flaps, as Level_09 has them: an axle
   across two roads 15 apart, each with a gap the flap over it bridges.  A
   funnel leads the road onto its flat road to the gap, where the flap

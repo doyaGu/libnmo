@@ -153,6 +153,19 @@ ARMS_PATH = [(5, 0, 0), (5, -20, 0), (20, -20, 0), (28, -20, 60), (5, -20, 0), (
 FLAPS_LENGTH, FLAPS_MODULE = 21.65, (7.53, -5.0)
 FLAPS_COUNTERWEIGHT = (8.7, -14.85, 3.13)
 
+# P_Modul_03, the lift (Level_07's and Level_10's P_Modul_03_01): a floor in
+# a cage of seven walls and a gate, hung from a spring.  The track's narrow
+# road runs through a funnel up to the gate, the module 15.87 on from where
+# the funnel begins (the road's edges 10.76 below it); the platform the lift
+# brings the ball up to is on the far side, its top 6.884 above the module,
+# its flat middle running on to 35.94 beyond it.  The floor and the walls are
+# too heavy for the spring: it rises only once the ball has pushed the walls
+# off, rolling out 11 toward each and back, and the ball rides it up to 7
+# above the module.  (along, right) from the module
+LIFT_ENTRY, LIFT_BELOW, LIFT_TOP, LIFT_EXIT, LIFT_RIDE = 15.87, 10.76, 6.884, 35.94, 7.0
+LIFT_WALLS = [(-7.78, 7.78), (0.0, 11.0), (7.78, 7.78), (11.0, 0.0), (7.78, -7.78),
+              (0.0, -11.0), (-7.78, -7.78)]
+
 # --- Scenery ---------------------------------------------------------------
 
 # A pillar under a floor stands 2.5 in from its corner, its top 5 below the
