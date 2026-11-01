@@ -245,14 +245,49 @@ it:
   up. Fans are set into areas' flat insides, over rails, halfpipes and wood
   floors; in Level_03 a 15 by 15 area holds one in its middle and the next
   15 by 15 area adjoins it 13.5 higher, so a paper ball rides the wind up
-  and rolls across. `P_Modul_01` stands on `Modul01_Floor`; `P_Modul_03`,
+  and rolls across.
+- `P_Modul_25`, the drawbridge (35 in 12 levels), is an upright plank 9.6
+  tall hinged at the edge of a gap 10 long. The ball rolls along the
+  module's -X: a narrow road flattens through a funnel onto a flat
+  `Floor_Top_Flat` block 5 long at its edges' height, the ball pushes the
+  plank over the gap, and it lands on a `Floor_Stopper_Wood` lip (an object
+  of its own, only in `Phys_FloorStopper`) at the start of a second block 5
+  long, from which a funnel leads back to the road. The module stands at the
+  first block's far edge, as high as it.
+- `P_Modul_37`, the switch (22 in 8 levels), is a plank 9 wide and 13 tall,
+  hinged 3.73 into a target block 5 long at the end of a spur, with a
+  bullseye on its arm. A stone ball pushing the target tips it over (in
+  about 300 frames; a wood ball does not): it falls across a gap 10 long and
+  lands, on a `Floor_Stopper_Wood` lip, in the gap 9.5 wide between the two
+  blocks of a cross piece, which funnel down to narrow roads 9.75 from its
+  middle. The track runs across the cross piece, over the plank. In Level_05
+  (`P_Modul_37_02`) the spur comes down a rail ramp and loose stone balls
+  wait near its top.
+- `P_Modul_26` (22, in levels 8 to 13) is a sack on a rope, hung from 15
+  above it, that swings across the track. The levels hang 1 to 4 in a row,
+  10 to 16 apart, every other one turned the other way, 2.68 above a flat
+  road 5 wide at a narrow road's edge height (`Floor_Top_Flat` squares of
+  5, one texture repeat each) or over rails.
+- `P_Modul_41` (43, in levels 7 to 11) is a slab 5 square and 1.7 thick on
+  an axle across the track. The levels lay 2 to 8 in a row along the
+  module's X, 6 apart, at a road's edge height, with a gap of 1 on either
+  side of each: the floors before and after the row (a flat strip, or a
+  funnel up from a narrow road) stop 3.5 from the end slabs' middles, closed
+  by a wall 5 deep. In the engine only the paper ball crosses a row; a wood
+  or stone ball tips the slabs and falls between them.
+- `P_Modul_01` stands on `Modul01_Floor`; `P_Modul_03`,
   `_08`, `_19`, `_29`, `_30` and `_41` hang over gaps with no floor under
   them.
 
 `ballance_floors.py` builds the ball changer's block with `pad()` and leaves
 a fan housing's cells out of an area with `Floors.hole()`;
 `ballance_level_elements.py` cuts the housing out of Level_03 as
-`Floor_Modul_18.obj`.
+`Floor_Modul_18.obj`, and the drawbridges' blocks and stoppers, in the
+modules' own frames, as `Floor_Modul_25.obj` and `Floor_Stopper_25.obj`
+(Level_03) and `Floor_Modul_37.obj` and `Floor_Stopper_37.obj` (Level_05).
+`channel()` lays a narrow road of any length off the grid, where a piece
+lands between grid lines.
+`strip()` builds the flat road under the sacks.
 
 ## Scenery
 
@@ -354,8 +389,9 @@ document. They made no difference in the engine runs.
 `apps/ballance/scripts/ballance_build_level.py <route.json> <out> [--elements <dir>]`
 builds a level from a route: its pieces sector by sector (roads narrow or
 wide and coming down, areas left from the side, turns, ball changers, rails
-straight or bent, fans lifting the ball to the next area), with elements
-placed on the floors. It lays them out on the floors' 2.5 grid with
+straight or bent, fans lifting the ball to the next area, drawbridges, a
+switch, rows of slabs, swinging sacks), with elements placed on the floors. It lays them
+out on the floors' 2.5 grid with
 `ballance_floors.py`, turns the start, the checkpoints and the balloon with
 the track, stands the scenery as above, hides the fall zone under all of it,
 and writes `route_points.json`, the points along the middle of the track.
@@ -423,12 +459,14 @@ nmo behavior run --physics ivp --path <out> -n 4500 \
 ```
 
 A point over a fan has a height (`X,Z,Y`): the ball waits there until the
-wind has lifted it that high. The sample plays to the finish this way (frame
-4963): an extra point, the first checkpoint, the stone ball changer, the
-extra life, the second checkpoint, the paper ball changer, the rails, the
-fan, the extra point on the area above it, the wood ball changer and the
-balloon.
+wind has lifted it that high. The point at a switch's target has a frame
+count too (`X,Z,Y,F`): the ball keeps pushing there for F frames. The sample plays to the finish this way (frame
+5449): an extra point, the sacks, the first checkpoint, the stone ball
+changer, the extra life, the drawbridge, the second checkpoint, the paper
+ball changer, the slabs, the rails, the fan, the extra point on the area
+above it, the wood ball changer and the balloon.
 
 Not covered yet: levels generated this way have not been loaded in the
-original game, the moving modules other than the fan (`P_Modul_*`) are not
-placed, and rails neither meet wide roads nor end over nothing.
+original game, the moving modules other than the fan, the drawbridge, the
+switch, the slabs and the sacks (`P_Modul_*`) are not placed, and rails neither meet wide
+roads nor end over nothing.
