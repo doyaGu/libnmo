@@ -181,6 +181,93 @@ repeat every 5 units. Measured on Level_01 and Level_03:
   that rise 0.7 to their outer edge. `Floor_Top_Border` is the piece that
   turns a wide road's end into a flat edge.
 
+All of these follow one rule: a floor's top is flat inside and rises 0.7 to
+every edge of its outline over one 2.5 cell. Two cells wide, that is the
+narrow road; four, the wide road; a rectangle, an area with its border; an L,
+a turn, whose outer corner is a `Floor_Top_ProfileFlat` cell. A road enters
+an area only through a gap two cells wide in front of its middle: the rest of
+the area's edge stays raised, so a wide road narrows into the area through an
+X-shaped `Floor_Top_ProfileFlat` piece with raised shoulders, and the area's
+border cells at the gap are `Floor_Top_ProfileFlat` too. Where a wide road
+goes on as a narrow one, its end cells beside the narrow one are raised
+corners. `apps/ballance/scripts/ballance_floors.py` builds floors by this rule from
+rectangles of areas and roads, which may slope along their length.
+
+## Rails
+
+The rails the ball rolls on (in `Phys_FloorRails`, `Sound_RollID_03`,
+`Sound_HitID_03`, no `Shadow`) are two tubes whose middles are 3.8 apart.
+Measured on all 13 levels:
+
+- A tube is an octagon 0.35 in radius whose two lowest faces are left out.
+  Its normals are smooth; the two at the open bottom lean as their one face
+  does. The rings stand upright, square to the track, so a straight rail is
+  a ring at each end and a slope changes at a kink.
+- A bend is always the same: 90 degrees about a point 8.1 to the side of the
+  track's middle (the inner tube 6.2 from it, the outer 10), in nine steps of
+  10 degrees.
+- Where a rail meets a floor, it stops at the floor's edge with no cap, the
+  tubes' middles 0.14 above the bottom of a V the floor opens to it: a narrow
+  road's V runs on to its end, an area opens through the same two-cell gap a
+  narrow road enters by, and a floor flat at its edges' height meets it
+  through the 5-long funnel. The wall under the edge follows the V, its
+  bottom level 5 below the edges. A rail that ends over nothing is capped.
+- Their UVs follow no rule: Levelinit's "set Env. Mapping" maps every object
+  in `Phys_FloorRails` to the environment at load.
+- Some `*_Rail_*` objects are not rails but railings: thinner tubes along a
+  floor's edge.
+
+`apps/ballance/scripts/ballance_rails.py` builds rails by these rules, and
+`Floors.dock()` opens a floor to one.
+
+## Elements on the Floor
+
+Measured on all 13 levels, from each element's position to the floor under
+it:
+
+- `P_Extra_Point` 2.5 above it, `P_Extra_Life` 2.56: their meshes rest on it.
+- `P_Box` (5 wide) and the balls `P_Ball_*` (radius 2) rest on it.
+- `P_Dome` (13 wide, 3.55 high) stands on a flat floor.
+- The ball changer nearest the balloon turns the ball back to wood in every
+  original level: no level lets a paper or stone ball onto the balloon's
+  bridge, a chain of 0.5-mass planks between the platform (mass 4, hung from
+  a spring of constant 20) and the road. The balls weigh 0.2 (paper), 1.9
+  (wood) and 10 (stone) (`Physicalize_GameBall` in `Balls.nmo`).
+- A ball changer (`P_Trafo_*`) stands 0.1 above a 5 by 5 block of its own,
+  whose top and sides are `Floor_Trafo_Paper`, `_Stone` or `_Wood` and whose
+  top is as high as the road's edges. A narrow road runs into it from either
+  side through the same 5-long `Floor_Top_ProfileFlat` funnel that ends a
+  road under the balloon.
+- `P_Modul_18` stands on `Modul18_Top` floors and `P_Modul_01` on
+  `Modul01_Floor`; `P_Modul_03`, `_08`, `_19`, `_29`, `_30` and `_41` hang
+  over gaps with no floor under them.
+
+`ballance_floors.py` builds the ball changer's block with `pad()`.
+
+## Scenery
+
+Around the track the originals stand pillars, lantern towers and striped
+poles, each a copy of the same meshes, moved (measured on all 13 levels):
+
+- A pillar is a blue cap 4.7 wide and 4.3 tall, a shaft 3.9 wide down to 20
+  below its top, a shaft 2.7 wide down to 98.6 below, and a third that fades
+  out down to 328 below (`Floor_Colums_Bottom`, `Columns_beige_fade`).
+  Pillars and their shafts are in no group.
+- Under a floor, a pillar stands 2.5 in from a corner of an area, its top 5
+  below the floor's edge, where the floor's walls end. No original stands one
+  under a start or a checkpoint.
+- A lantern tower (`*_Tower`) stands on a pillar's top: a 5 by 5 base, four
+  posts, a lantern and a roof, 17.7 tall. Towers are in `Phys_Floors`, in no
+  sound group. They stand in pairs beside the track: 24 to 28 ahead of the
+  start, 13 to either side, about 2.4 below it; about 20 ahead of a
+  checkpoint, 11 to 15 to either side, about 5 below it; and around the
+  balloon.
+- Level_01, Level_02, Level_04 and Level_13 stand three pairs of striped
+  poles (`Stick_Top`, `Stick_Bottom`) by the balloon.
+
+`ballance_level_elements.py` cuts one pillar, one tower and one pole out of
+Level_01 as `Pillar.obj`, `Tower.obj` and `Stick.obj`.
+
 ## Writing a Level with libnmo
 
 A project manifest describes the whole level: meshes from OBJ files, groups,
@@ -254,6 +341,19 @@ nmo patch apply --project manifest.json -o Level_01.NMO
 The generated file also holds a CKScene and an object named after the
 document. They made no difference in the engine runs.
 
+`apps/ballance/scripts/ballance_build_level.py <route.json> <out> [--elements <dir>]`
+builds a level from a route: its pieces sector by sector (roads narrow or
+wide and coming down, areas left from the side, turns, ball changers, rails
+straight or bent), with elements placed on the floors. It lays them out on the floors' 2.5 grid with
+`ballance_floors.py`, turns the start, the checkpoints and the balloon with
+the track, stands the scenery as above, hides the fall zone under all of it,
+and writes `route_points.json`, the points along the middle of the track.
+With the meshes `ballance_level_elements.py` exported, it uses the game's
+start, checkpoint and element meshes, opens the road into Level_03's start
+and checkpoint floors and adds the `SkyLayer`; without, boxes stand in for
+the markers, elements and those floors, and there is no scenery and no sky.
+The script's docstring describes the route format.
+
 ## Checking a Level
 
 ```sh
@@ -298,10 +398,24 @@ nmo behavior run --physics ivp --path <out> -n 3300 \
 `--physics ivp` needs a build with libivp. The two Enter presses start
 level 1; the ball spawns around frame 2700. The log names the messages the
 level's events send to `All_Gameplay`: `Extrapoint`, `Checkpoint reached`,
-`Ball Off` (a fall), `Level_Finish`. The sample level sends all of them; steer
-off the track with `Left` after the checkpoint to see a fall and a respawn at
-`PR_Resetpoint_02`.
+`Ball Off` (a fall), `Level_Finish`.
+
+A track that turns needs steering: `--steer` rolls the ball through the
+points of `route_points.json` with the arrow keys, as a player would:
+
+```sh
+nmo behavior run --physics ivp --path <out> -n 4500 \
+    --keys 'Enter@800-805,Enter@900-905' \
+    --steer "$(python3 -c "import json; print(';'.join('%g,%g' % (x, z) for x, z in json.load(open('<out>/route_points.json'))))")@2760" \
+    --steer-object Ball_Wood,Ball_Stone,Ball_Paper \
+    --registry 'Software\Ballance\Settings\Language=1' base.cmo
+```
+
+The sample plays to the finish this way (frame 4598): an extra point, the
+first checkpoint, the stone ball changer, the extra life, the second
+checkpoint, the rails, the third sector's extra point, the wood ball changer
+and the balloon.
 
 Not covered yet: levels generated this way have not been loaded in the
-original game, and the moving elements (boxes, modules, trafos) have not been
-driven in a generated level.
+original game, the moving modules (`P_Modul_*`) are not placed, and rails
+neither meet wide roads nor end over nothing.
