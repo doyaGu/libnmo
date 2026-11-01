@@ -11,7 +11,10 @@ ballance_build_level.py writes them).  The objects are drawn in their world
 places, orthographically, with a depth buffer and flat light, coloured by
 what they are: floors (Phys_Floors) as stone, their walls darker, rails
 (Phys_FloorRails) as steel, stoppers as wood, the rest grey; with --textures
-(the game's Textures folder) the materials' own textures are drawn instead.
+(the game's Textures folder) the materials' own textures are drawn instead,
+except on rails: the game maps their environment texture at run time, so
+their UVs follow no rule, and they are drawn as polished steel, shaded
+smoothly by their normals with a highlight.
 Each mechanism, element and marker (MECHANISMS: the P_* groups the game
 fills from 3D Entities/PH, and the start, checkpoints, reset points and
 balloon) is drawn in a colour of its own and named beside it in every view,
@@ -104,9 +107,10 @@ def nmo_json(nmo: str, *args: str) -> dict:
     return json.loads(out.stdout)["data"]
 
 
-def read_obj(path: Path) -> list[tuple[str, list, list]]:
-    """The OBJ's triangles: (material, three points, three uvs or None)."""
-    vs, vts, tris, material = [], [], [], None
+def read_obj(path: Path) -> list[tuple[str, list, list, list]]:
+    """The OBJ's triangles: (material, three points, three uvs or None, three
+    normals or None)."""
+    vs, vts, vns, tris, material = [], [], [], [], None
     for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
         t = line.split()
         if not t:
@@ -115,6 +119,8 @@ def read_obj(path: Path) -> list[tuple[str, list, list]]:
             vs.append(tuple(float(x) for x in t[1:4]))
         elif t[0] == "vt":
             vts.append(tuple(float(x) for x in t[1:3]))
+        elif t[0] == "vn":
+            vns.append(tuple(float(x) for x in t[1:4]))
         elif t[0] == "usemtl":
             material = t[1]
         elif t[0] == "f":
@@ -123,12 +129,16 @@ def read_obj(path: Path) -> list[tuple[str, list, list]]:
                 parts = w.split("/")
                 v = int(parts[0])
                 vt = int(parts[1]) if len(parts) > 1 and parts[1] else None
+                vn = int(parts[2]) if len(parts) > 2 and parts[2] else None
                 refs.append((vs[v - 1 if v > 0 else len(vs) + v],
-                             None if vt is None else vts[vt - 1 if vt > 0 else len(vts) + vt]))
+                             None if vt is None else vts[vt - 1 if vt > 0 else len(vts) + vt],
+                             None if vn is None else vns[vn - 1 if vn > 0 else len(vns) + vn]))
             for k in range(1, len(refs) - 1):
                 corner = [refs[0], refs[k], refs[k + 1]]
                 uvs = [c[1] for c in corner]
-                tris.append((material, [c[0] for c in corner], None if None in uvs else uvs))
+                normals = [c[2] for c in corner]
+                tris.append((material, [c[0] for c in corner], None if None in uvs else uvs,
+                             None if None in normals else normals))
     return tris
 
 
@@ -171,11 +181,15 @@ def load_level(path: Path, nmo: str) -> list[dict]:
             continue
         m = obj["matrix"]
         tris = []
-        for material, points, uvs in read_obj(meshes[int(mesh)]):
+        for material, points, uvs, normals in read_obj(meshes[int(mesh)]):
             world = [(p[0] * m[0] + p[1] * m[4] + p[2] * m[8] + m[12],
                       p[0] * m[1] + p[1] * m[5] + p[2] * m[9] + m[13],
                       p[0] * m[2] + p[1] * m[6] + p[2] * m[10] + m[14]) for p in points]
-            tris.append((material, world, uvs))
+            if normals:
+                normals = [(n[0] * m[0] + n[1] * m[4] + n[2] * m[8],
+                            n[0] * m[1] + n[1] * m[5] + n[2] * m[9],
+                            n[0] * m[2] + n[1] * m[6] + n[2] * m[10]) for n in normals]
+            tris.append((material, world, uvs, normals))
         scene.append({"name": obj["name"], "groups": obj["groups"], "tris": tris,
                       "at": (m[12], m[13], m[14])})
     return scene
@@ -194,11 +208,13 @@ def load_project(folder: Path) -> list[dict]:
             turn = obj.get("transform", {}).get("rotation_euler_deg", [0, 0, 0])[1]
             c, s = math.cos(math.radians(turn)), math.sin(math.radians(turn))
             tris = []
-            for material, points, uvs in read_obj(folder / mesh):
+            for material, points, uvs, normals in read_obj(folder / mesh):
                 # a turn about Y: 90 degrees takes X to -Z
                 world = [(p[0] * c + p[2] * s + pos[0], p[1] + pos[1], -p[0] * s + p[2] * c + pos[2])
                          for p in points]
-                tris.append((material, world, uvs))
+                if normals:
+                    normals = [(n[0] * c + n[2] * s, n[1], -n[0] * s + n[2] * c) for n in normals]
+                tris.append((material, world, uvs, normals))
             scene.append({"name": obj["name"], "groups": obj.get("groups", []), "tris": tris,
                           "at": tuple(pos)})
     return scene
@@ -288,7 +304,7 @@ def render(scene: list[dict], textures: Textures, yaw: float, pitch: float, scal
     image = np.full((h, w, 3), BACKGROUND, dtype=np.float32)
     depth = np.full((h, w), -np.inf)
     for obj in scene:
-        for material, points, uvs in obj["tris"]:
+        for material, points, uvs, normals in obj["tris"]:
             p = np.array(points)
             if (p[:, 0].max() < x0 or p[:, 0].min() > x1 or p[:, 2].max() < z0 or
                     p[:, 2].min() > z1 or p[:, 1].max() < y0 - 50 or p[:, 1].min() > y1 + 50):
@@ -298,6 +314,9 @@ def render(scene: list[dict], textures: Textures, yaw: float, pitch: float, scal
             if length < 1e-9:
                 continue
             shade = 0.55 + 0.45 * abs(float(np.dot(normal / length, LIGHT)))
+            # smooth surfaces (rails) shade by their vertex normals, across the face
+            smooth = normals is not None and any(
+                np.dot(np.array(n), normal) < 0.999 * np.linalg.norm(n) * length for n in normals)
             s = p @ rot.T
             sx = (s[:, 0] - left) * scale
             sy = (top - s[:, 1]) * scale
@@ -318,8 +337,31 @@ def render(scene: list[dict], textures: Textures, yaw: float, pitch: float, scal
             ok = inside & (z > region)
             if not ok.any():
                 continue
-            texture = textures.get(material) if uvs else None
-            if texture is not None:
+            if smooth:
+                vn = np.array(normals, dtype=float)
+                nx = l1 * vn[0, 0] + l2 * vn[1, 0] + l3 * vn[2, 0]
+                ny = l1 * vn[0, 1] + l2 * vn[1, 1] + l3 * vn[2, 1]
+                nz = l1 * vn[0, 2] + l2 * vn[1, 2] + l3 * vn[2, 2]
+                lit = np.abs(nx * LIGHT[0] + ny * LIGHT[1] + nz * LIGHT[2]) / np.maximum(
+                    np.sqrt(nx * nx + ny * ny + nz * nz), 1e-9)
+                shade = (0.55 + 0.45 * lit[ok])[:, None]
+            rail = "Phys_FloorRails" in obj["groups"] or (material or "").startswith("Rail")
+            texture = textures.get(material) if uvs and not rail else None
+            if rail:
+                # polished steel: diffuse plus a highlight toward the viewer
+                if smooth:
+                    vn = np.array(normals, dtype=float)
+                    n = np.stack([l1 * vn[0, k] + l2 * vn[1, k] + l3 * vn[2, k]
+                                  for k in range(3)], axis=-1)[ok]
+                else:
+                    n = np.repeat((normal / length)[None, :], int(ok.sum()), axis=0)
+                n = n / np.maximum(np.linalg.norm(n, axis=1, keepdims=True), 1e-9)
+                half = LIGHT + rot[2]
+                half = half / np.linalg.norm(half)
+                highlight = np.abs(n @ half) ** 24
+                colour = (np.array(RAIL, dtype=np.float32) * (0.45 + 0.55 * np.abs(n @ LIGHT))[:, None]
+                          + 220.0 * highlight[:, None])
+            elif texture is not None:
                 uv = np.array(uvs)
                 u = l1 * uv[0, 0] + l2 * uv[1, 0] + l3 * uv[2, 0]
                 v = l1 * uv[0, 1] + l2 * uv[1, 1] + l3 * uv[2, 1]
@@ -448,7 +490,7 @@ def main() -> int:
             trace = list(csv.DictReader(f))
 
     floors = [p for obj in scene if "Phys_Floors" in obj["groups"]
-              for _, points, _ in obj["tris"] for p in points]
+              for _, points, _, _ in obj["tris"] for p in points]
     if args.box:
         x0, x1, z0, z1 = args.box
     elif args.around:
@@ -481,7 +523,7 @@ def main() -> int:
         mechanism = mechanism_of(obj)
         if mechanism is None or not obj["tris"]:
             continue
-        pts = np.array([p for _, points, _ in obj["tris"] for p in points])
+        pts = np.array([p for _, points, _, _ in obj["tris"] for p in points])
         cx, cz = float(pts[:, 0].mean()), float(pts[:, 2].mean())
         if not (x0 <= cx <= x1 and z0 <= cz <= z1):
             continue
