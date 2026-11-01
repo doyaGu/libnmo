@@ -114,6 +114,7 @@ class Floors:
         self.cells: dict[tuple[int, int], int] = {}
         self.open: set[tuple[int, int, int]] = set()
         self.docks: dict[tuple[int, int, int], Piece] = {}
+        self.holes: set[tuple[int, int]] = set()
 
     def _grid(self, value: float, offset: float) -> int:
         cells = (value - offset) / CELL
@@ -187,6 +188,18 @@ class Floors:
         else:
             raise ValueError("a rail meets a floor across two cells, along X or Z")
 
+    def hole(self, x0: float, z0: float, x1: float, z1: float) -> None:
+        """Leaves the flat cells between the two corners out, for a piece of
+        another mesh set into the floor (a fan's housing): the floor around
+        them is built as if they were there."""
+        i0, j0, i1, j1 = self._rect(x0, z0, x1, z1)
+        for i in range(i0, i1):
+            for j in range(j0, j1):
+                if (i, j) not in self.cells or any(
+                        self._raised(ci, cj) for ci in (i, i + 1) for cj in (j, j + 1)):
+                    raise ValueError(f"a hole goes in a floor's flat inside, not at {(i, j)}")
+                self.holes.add((i, j))
+
     # An edge is (0, i, j): from vertex (i, j) to (i, j + 1), between cells
     # (i - 1, j) and (i, j); or (1, i, j): from (i, j) to (i + 1, j), between
     # cells (i, j - 1) and (i, j).
@@ -257,7 +270,7 @@ class Floors:
         """Writes the floors' cells and walls (only those of pieces, if given)."""
         wanted = None if pieces is None else {self.pieces.index(p) for p in pieces}
         for (i, j), index in sorted(self.cells.items()):
-            if wanted is None or index in wanted:
+            if (wanted is None or index in wanted) and (i, j) not in self.holes:
                 self._cell(mesh, i, j, self.pieces[index])
         for (i, j), index in sorted(self.cells.items()):
             if wanted is not None and index not in wanted:
