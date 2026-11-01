@@ -35,6 +35,11 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
 - {"twist": true} -- the wood twist, a chute 58.66 long turning the ball
   once round, as Level_07 has it, its mouths on flat floors that funnels
   lead a narrow road onto and off.
+- {"jump": true} -- the wood jump, as Level_09 has it: a funnel flattens a
+  narrow road to the top of a wooden slope 56.4 long, which drops the ball
+  and throws it 14.29 over a gap into a 15 by 15 area 25.02 lower; a funnel
+  turns the area's way out into a narrow road again.  A paper ball falls
+  short, in Level_09 too.
 - {"trafo": "paper", "stone" or "wood"} -- a ball changer on its pad, on a
   narrow road.  The original levels all turn the ball back to wood before
   the balloon; the builder warns when a route does not.
@@ -134,8 +139,10 @@ start's and checkpoints' floors, and there is no scenery and no sky.
 The output directory gets manifest.json, the OBJ meshes it names, and
 route_points.json, the points along the middle of the track from the start to
 the balloon, for driving a ball along it; a point over a fan has a third
-value, the height to wait there for, and one before a swing four more, the
-seat to wait for and where, within a reach (`nmo behavior run --steer`).  Turn it into a level file with:
+value, the height to wait there for, one before a swing four more, the
+seat to wait for and where, within a reach, and one over a jump's gap a
+fourth, "rush", with no height (null): run at flat out to it (`nmo
+behavior run --steer`).  Turn it into a level file with:
 
     nmo patch apply --project <out>/manifest.json -o <out>/Level_01.NMO
 """

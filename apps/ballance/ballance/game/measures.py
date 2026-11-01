@@ -189,6 +189,15 @@ WALKWAY_LENGTH, WALKWAY_ABOVE = 70.32, 0.41
 TWIST_HALF, TWIST_ASIDE, TWIST_BELOW = 29.33, 0.62, 3.19
 TWIST_PATH = [(-2.2, -24.0), (-2.2, -8.0), (3.4, 6.0), (3.5, 24.0)]
 
+# Modul02, the wood jump (Level_09's A05_Modul02, the same in Level_05,
+# Level_10 and Level_11): a slope 56.4 long and 5 wide, without walls, from a
+# flat floor at a narrow road's edge height 11.84 above its middle, down to
+# 10.84 below and up again to 9.03 below at its lip; the ball flies 14.29
+# from there to a 15 by 15 area whose rim is 25.02 below the floor it left,
+# 42.49 to 57.49 from the middle, and leaves it along a flat road.
+JUMP_HALF, JUMP_ABOVE, JUMP_DOWN = 28.2, 11.84, 25.02
+JUMP_AREA = (42.49, 57.49)
+
 # P_Modul_08, the swing (Level_09's P_Modul_08_01): a seat hung from a frame
 # over a gap 15 long in a flat road, pushed across the road every half
 # second.  The road's flat top is 1.5 above the module and runs 12.5 either

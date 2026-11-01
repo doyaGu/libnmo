@@ -28,6 +28,8 @@ NEEDS_BALL = {
     "P_Modul_17": ({"Wood", "Stone"}, "can't turn {kind}'s arm; a wood or stone ball does"),
     "P_Modul_03": ({"Wood"}, "can't ride {kind} up: stone sinks it and falls off, paper "
                              "can't push its walls off (in Level_12 too); a wood ball does"),
+    "Modul02": ({"Wood", "Stone"}, "falls short of {kind}'s landing (in Level_09 too); a wood "
+                                   "or stone ball makes it"),
     "P_Modul_08": ({"Wood", "Paper"}, "falls off {kind}'s seat (in Level_09 too); a wood or "
                                       "paper ball rides it across"),
     "P_Modul_19": ({"Wood", "Stone"}, "can't push {kind}'s flap over (in Level_09 too); "
@@ -58,8 +60,13 @@ class ModuleFloor:
 
 
 MODULE_FLOORS = {
-    # not modules: the arched wood plank, the wavy walkway and the twist
-    # (with the floors at its mouths), floors of their own
+    # not modules: the arched wood plank, the wavy walkway, the twist (with
+    # the floors at its mouths) and the jump (with the area it lands in),
+    # floors of their own
+    "Modul02": [ModuleFloor("Modul02", WOOD_FLOOR_GROUPS,
+                            [(-28.2, 28.2, -11.84, 11.84, -2.5, 2.5)]),
+                ModuleFloor("Floor_Modul02", STONE_FLOOR_GROUPS,
+                            [(42.49, 57.49, -18.18, -13.18, -7.5, 7.5)])],
     "Modul11": [ModuleFloor("Modul11", WOOD_FLOOR_GROUPS,
                             [(-5.38, 6.62, -3.61, -3.19, -29.33, 29.33)]),
                 ModuleFloor("Floor_Modul11", STONE_FLOOR_GROUPS,

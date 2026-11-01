@@ -16,15 +16,15 @@ from ..core.geometry import (across, at, axis_of, back_of, left_of, rect, right_
                              turn_of)
 from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, ARMS_PATH, BRIDGES,
                              ELEMENT_LIFT, FAN_BELOW, FAN_REACH, FLAPS_COUNTERWEIGHT, FLAPS_LENGTH,
-                             FLAPS_MODULE, FUNNEL, LIFT_BELOW, LIFT_ENTRY, LIFT_EXIT, LIFT_RIDE,
-                             LIFT_TOP, LIFT_WALLS, PILLAR_INSET, PLANK_BELOW, PLANK_LENGTH,
-                             PUSHERS_ASIDE, PUSHERS_LENGTH, PUSHERS_MODULES, PUSHERS_PATH,
-                             RAIL_FALL, RAIL_OVERHANG, SACK_ABOVE, STONEBOX_LENGTH, STONEBOX_MODULE,
-                             STONEBOX_PATH, STONEBOX_RISE, STONEBOX_TRAFO, SWING_ABOVE, SWING_FAR,
-                             SWING_GO, SWING_HALF, SWING_SEAT, SWING_WAIT, SWITCH_AREA,
-                             SWITCH_CROSS, SWITCH_HOLD, SWITCH_MODULE, SWITCH_SPUR, SWITCH_TARGET,
-                             TRAFO_LIFT, TWIST_ASIDE, TWIST_BELOW, TWIST_HALF, TWIST_PATH,
-                             WALKWAY_ABOVE, WALKWAY_LENGTH)
+                             FLAPS_MODULE, FUNNEL, JUMP_ABOVE, JUMP_AREA, JUMP_DOWN, JUMP_HALF,
+                             LIFT_BELOW, LIFT_ENTRY, LIFT_EXIT, LIFT_RIDE, LIFT_TOP, LIFT_WALLS,
+                             PILLAR_INSET, PLANK_BELOW, PLANK_LENGTH, PUSHERS_ASIDE, PUSHERS_LENGTH,
+                             PUSHERS_MODULES, PUSHERS_PATH, RAIL_FALL, RAIL_OVERHANG, SACK_ABOVE,
+                             STONEBOX_LENGTH, STONEBOX_MODULE, STONEBOX_PATH, STONEBOX_RISE,
+                             STONEBOX_TRAFO, SWING_ABOVE, SWING_FAR, SWING_GO, SWING_HALF,
+                             SWING_SEAT, SWING_WAIT, SWITCH_AREA, SWITCH_CROSS, SWITCH_HOLD,
+                             SWITCH_MODULE, SWITCH_SPUR, SWITCH_TARGET, TRAFO_LIFT, TWIST_ASIDE,
+                             TWIST_BELOW, TWIST_HALF, TWIST_PATH, WALKWAY_ABOVE, WALKWAY_LENGTH)
 from ..kit.floors import CELL, NARROW, RISE, WALL
 from ..kit.pieces import channel, funnel, pad, strip
 from ..kit.rails import ABOVE_V, BEND_RADIUS, Ring, bend
@@ -219,6 +219,37 @@ def lay_twist(layout: Layout, sector: int, part: Sector, piece: dict, track: Tra
     length = FUNNEL + 2 * TWIST_HALF
     part.extras.append((funnel, at(p, d, length), d, edge, None))
     track.p = at(p, d, length + FUNNEL)
+    layout.floors = part.grid(track.p)
+    layout.open(layout.floors, track.p, d)
+    layout.points.append(list(track.p))
+    track.floor = "road"
+    return h, h, length + FUNNEL
+
+
+def lay_jump(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:
+    """{"jump": true}: the wood jump and the area it lands in, as Level_09
+    has them (see JUMP_* in ballance.game.measures), a funnel flattening a
+    narrow road to its top and another the road out of the area; the track
+    goes on JUMP_DOWN lower."""
+    if track.width != NARROW:
+        raise ValueError("the wood jump starts from a narrow road")
+    check_ball(layout, "Modul02")
+    p, d, h = track.p, track.d, track.h
+    edge = h + RISE
+    layout.open(layout.floors, p, d)
+    part.extras.append((funnel, at(p, d, FUNNEL), back_of(d), edge, None))
+    start = FUNNEL + JUMP_HALF  # the jump's middle
+    middle = at(p, d, start)
+    layout.module_floors.append(("Modul02", sector, [middle[0], edge - JUMP_ABOVE, middle[1]],
+                                 turn_of(d)))
+    near, far = JUMP_AREA
+    # run at flat out down the slope and over the gap, as a player does
+    layout.points.append(list(at(p, d, start + (near + far) / 2)) + [None, "rush"])
+    length = start + far
+    edge -= JUMP_DOWN
+    part.extras.append((funnel, at(p, d, length), d, edge, None))
+    track.p = at(p, d, length + FUNNEL)
+    track.h = edge - RISE
     layout.floors = part.grid(track.p)
     layout.open(layout.floors, track.p, d)
     layout.points.append(list(track.p))
@@ -603,6 +634,7 @@ PIECES: dict[str, Callable] = {
     "plank": lay_plank,
     "walkway": lay_walkway,
     "twist": lay_twist,
+    "jump": lay_jump,
     "module": lay_module,
 }
 
