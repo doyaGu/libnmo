@@ -113,6 +113,8 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
 - {"fall": dy} -- the rail ends in the air and the ball falls dy (at most
   15) into the area that comes next, which starts 5 back under the rail's
   end, its rim closed (as Level_01's rails drop the ball into its pits).
+  With "split": true, the rail's tubes part at its end instead, the ball
+  dropping between them, as Level_01's A01_Rail_02_01 do.
   Rails run from a narrow road or an area to a narrow road, an area or a
   fall (ballance.kit.rails).
 

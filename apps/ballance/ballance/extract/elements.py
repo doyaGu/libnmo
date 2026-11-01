@@ -156,11 +156,13 @@ class MarkerCut(Cut):
 
 
 class ModuleCut(Cut):
-    """The part of a floor within a box of a module's frame, in that frame."""
+    """The part of a floor within a box of a module's frame, in that frame
+    (moved so origin, a point of it, is at its origin)."""
 
-    def __init__(self, kind: str, level: str, floor: str, module: str, box: tuple) -> None:
+    def __init__(self, kind: str, level: str, floor: str, module: str, box: tuple,
+                 origin: tuple = (0.0, 0.0, 0.0)) -> None:
         super().__init__(kind, level)
-        self.floor, self.module, self.box = floor, module, box
+        self.floor, self.module, self.box, self.origin = floor, module, box, origin
 
     def take(self, levels, path, out, centers):
         objects = levels.objects(path)
@@ -168,7 +170,7 @@ class ModuleCut(Cut):
             return None
         faces, mtl = levels.faces(path, objects[self.floor])
         write_faces(in_frame(faces, matrix_of(objects[self.module]["world_matrix"]), self.box),
-                    [mtl], (0.0, 0.0, 0.0), self.kind, out)
+                    [mtl], self.origin, self.kind, out)
         return f"{path.name}:{self.floor}"
 
 
@@ -233,6 +235,9 @@ CUTS: list[Cut] = [
               (-5.1, 5.1, -3.0, 0.1, -2.6, 2.6)),
     ModuleCut("Modul42", "Level_08.NMO", "A02_Modul42", "A02_Modul42",
               (-35.3, 35.3, -2.2, 2.2, -2.6, 2.6)),
+    # the tubes parting at a rail's end, from its last straight ring on
+    ModuleCut("Rail_Split", "Level_01.NMO", "A01_Rail_02_01", "A01_Rail_02_01",
+              (-13.5, -3.0, -0.5, 0.4, -12.0, 12.0), (-3.089, -0.101, 0.0)),
     ModuleCut("Modul02", "Level_09.NMO", "A05_Modul02", "A05_Modul02",
               (-28.3, 28.3, -12.0, 12.0, -2.6, 2.6)),
     ModuleCut("Floor_Modul02", "Level_09.NMO", "A05_Floor_03", "A05_Modul02",

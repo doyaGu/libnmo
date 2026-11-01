@@ -4,7 +4,7 @@ come with."""
 from __future__ import annotations
 
 from ..core.obj import Box
-from ..game.catalog import STONE_FLOOR_GROUPS, STOPPER_GROUPS, WOOD_FLOOR_GROUPS
+from ..game.catalog import RAIL_GROUPS, STONE_FLOOR_GROUPS, STOPPER_GROUPS, WOOD_FLOOR_GROUPS
 from ..game.measures import (DRAWBRIDGE_FLOORS, DRAWBRIDGE_HINGE, SACK_STEP, SLAB, SLAB_GAP,
                              STONEBOX_LENGTH, STONEBOX_MODULE, SWITCH_CROSS)
 
@@ -60,6 +60,11 @@ class ModuleFloor:
 
 
 MODULE_FLOORS = {
+    # not a module: a rail's end whose tubes part (its last straight ring at
+    # the origin, the rail coming along X)
+    "Rail_Split": [ModuleFloor("Rail_Split", RAIL_GROUPS,
+                               [(-10.35, 0, -0.35, 0.35, -11.9, -1.55),
+                                (-10.35, 0, -0.35, 0.35, 1.55, 11.9)])],
     # not modules: the arched wood plank, the wavy walkway, the twist (with
     # the floors at its mouths) and the jump (with the area it lands in),
     # floors of their own

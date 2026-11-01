@@ -83,12 +83,18 @@ def lay_rail_turn(layout: Layout, sector: int, part: Sector, piece: dict, track:
 
 
 def lay_fall(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> None:
-    """{"fall": dy}: the rail ends in the air, and the ball falls dy onto the
-    area that comes next, which starts RAIL_OVERHANG back under the rail's
-    end (as Level_01's rails drop the ball into its pits)."""
+    """{"fall": dy, "split": true}: the rail ends in the air, and the ball
+    falls dy onto the area that comes next, which starts RAIL_OVERHANG back
+    under the rail's end (as Level_01's rails drop the ball into its pits);
+    with split, the rail's tubes part there, the ball dropping between them,
+    as Level_01's A01_Rail_02_01 do."""
     fall = float(piece["fall"])
     if not 0 < fall <= RAIL_FALL:
         raise ValueError(f"a rail drops the ball at most {RAIL_FALL}")
+    if piece.get("split"):
+        end = track.run[-1]
+        layout.module_floors.append(("Rail_Split", sector, [end.x, end.y, end.z],
+                                     turn_of(back_of(track.d))))
     part.rails.runs.append(track.run)
     track.run = None
     track.h -= fall

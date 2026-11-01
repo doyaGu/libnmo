@@ -37,6 +37,9 @@ TRAFO_LIFT = 0.1
 # 4.5 in over the area's inside.  The builder hangs a rail's end two cells
 # over the area and lets it fall at most 15.
 RAIL_OVERHANG, RAIL_FALL = 5.0, 15.0
+# Level_01's A01_Rail_02_01 ends otherwise: past its last straight ring its
+# tubes bend apart, 20 apart 10.35 on, and the ball drops between them
+# onto the walled plaza 13.3 below.
 
 # --- Modules ---------------------------------------------------------------
 
