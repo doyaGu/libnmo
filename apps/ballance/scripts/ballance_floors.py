@@ -405,12 +405,13 @@ class Floors:
 
 
 def funnel(mesh: Mesh, x: float, z: float, toward: tuple[int, int], edge: float,
-           gap: float | None) -> None:
+           gap: float | None, end_wall: bool = False) -> None:
     """The 5-long piece that flattens a narrow road, whose edges are at height
     edge, at (x, z): the road's middle line runs through it toward the
     direction given (one of +-X, +-Z), and the road's channel starts 5 units
     away.  gap is the half width of the opening in the rim it meets, or None
-    where it meets none (the balloon's end)."""
+    where it meets none (the balloon's end).  With end_wall, a wall 5 deep
+    closes its flat end, where it stops at a gap."""
     dx, dz = toward
     half = NARROW / 2
 
@@ -436,6 +437,13 @@ def funnel(mesh: Mesh, x: float, z: float, toward: tuple[int, int], edge: float,
             along = point[2] if dx == 0 else point[0]
             corners.append((point, ((edge - y) / REPEAT, along / REPEAT)))
         mesh.quad("Floor_Side", out, *corners)
+    if end_wall:
+        corners = []
+        for c, y in ((-half, edge), (half, edge), (half, edge - WALL), (-half, edge - WALL)):
+            point, _ = at(0.0, c, y, 0.0, 0.0)
+            along = point[2] if dx != 0 else point[0]
+            corners.append((point, ((edge - y) / REPEAT, along / REPEAT)))
+        mesh.quad("Floor_Side", (-float(dx), 0.0, -float(dz)), *corners)
 
 
 def pad(mesh: Mesh, x: float, z: float, top: float, material: str) -> None:
