@@ -446,6 +446,34 @@ def funnel(mesh: Mesh, x: float, z: float, toward: tuple[int, int], edge: float,
         mesh.quad("Floor_Side", (-float(dx), 0.0, -float(dz)), *corners)
 
 
+def strip(mesh: Mesh, x: float, z: float, toward: tuple[int, int], length: float,
+          top: float) -> None:
+    """A flat road 5 wide at height top (a narrow road's edges), from (x, z)
+    along toward (one of +-X, +-Z) for length, as the originals lay one under
+    P_Modul_26: Floor_Top_Flat squares of 5, each one texture repeat (u
+    across, v along), with walls 5 deep along its sides."""
+    dx, dz = toward
+    half = NARROW / 2
+
+    def at(a: float, c: float, y: float) -> tuple[float, float, float]:
+        return (x + dx * a + abs(dz) * c, y, z + dz * a + abs(dx) * c)
+
+    squares = round(length / NARROW)
+    for k in range(squares):
+        a0, a1 = k * NARROW, (k + 1) * NARROW
+        mesh.quad("Floor_Top_Flat", UP, (at(a0, -half, top), (0.0, 0.0)),
+                  (at(a1, -half, top), (0.0, 1.0)), (at(a1, half, top), (1.0, 1.0)),
+                  (at(a0, half, top), (1.0, 0.0)))
+    for c in (-half, half):
+        out = (abs(dz) * c, 0.0, abs(dx) * c)
+        corners = []
+        for a, y in ((0.0, top), (length, top), (length, top - WALL), (0.0, top - WALL)):
+            point = at(a, c, y)
+            along = point[2] if dx == 0 else point[0]
+            corners.append((point, ((top - y) / REPEAT, along / REPEAT)))
+        mesh.quad("Floor_Side", out, *corners)
+
+
 def pad(mesh: Mesh, x: float, z: float, top: float, material: str) -> None:
     """The 5 by 5 block a ball changer stands on, centred on (x, z), its top
     at height top (a road's edges), its sides 5 deep, all in material (one of
