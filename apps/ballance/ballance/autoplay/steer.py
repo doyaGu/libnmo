@@ -4,7 +4,8 @@ joined by ";".
 A point with a height Y is passed only once the ball is that high there; one
 with frames F only after it has pushed toward it that long; one with an
 object NAME only once that object is within R of WX,WZ (a swing's seat come
-round); at any of them, the autopilot stops the ball.  A found path becomes the fewest points that stay
+round); at any of them, the autopilot stops the ball.  One whose F is "rush"
+is run at flat out, never braking (a jump's run-up).  A found path becomes the fewest points that stay
 within TOLERANCE of it (Ramer-Douglas-Peucker, on X and Z).
 """
 
@@ -23,7 +24,7 @@ class SteerPoint:
     x: float
     z: float
     y: float | None = None  # the height to wait for
-    hold: int = 0           # the frames to keep pushing there
+    hold: int = 0           # the frames to keep pushing there; -1: rush to it
     wait: tuple[str, float, float, float] | None = None  # an object, where, within
 
     def __str__(self) -> str:
@@ -31,7 +32,7 @@ class SteerPoint:
         if self.y is not None or self.hold or self.wait:
             text += "," + (f"{self.y:g}" if self.y is not None else "")
         if self.hold or self.wait:
-            text += "," + (f"{self.hold}" if self.hold else "")
+            text += "," + ("rush" if self.hold < 0 else f"{self.hold}" if self.hold else "")
         if self.wait:
             name, x, z, reach = self.wait
             text += f",{name},{x:g},{z:g},{reach:g}"
@@ -46,8 +47,9 @@ def parse(text: str) -> list[SteerPoint]:
         y = float(fields[2]) if len(fields) > 2 and fields[2] else None
         wait = ((fields[4], float(fields[5]), float(fields[6]), float(fields[7]))
                 if len(fields) > 7 else None)
-        points.append(SteerPoint(float(fields[0]), float(fields[1]), y,
-                                 int(fields[3]) if len(fields) > 3 and fields[3] else 0, wait))
+        hold = (-1 if len(fields) > 3 and fields[3] == "rush" else
+                int(fields[3]) if len(fields) > 3 and fields[3] else 0)
+        points.append(SteerPoint(float(fields[0]), float(fields[1]), y, hold, wait))
     return points
 
 

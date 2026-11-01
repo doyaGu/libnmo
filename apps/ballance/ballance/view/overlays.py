@@ -71,10 +71,13 @@ def route_overlays(route: list[list[float]], floor_y: Callable[[float, float], f
         x, z = point[0], point[1]
         p = (x, floor_y(x, z), z)
         points.append(p)
-        stop = len(point) > 2
+        rush = len(point) > 3 and point[3] == "rush"
+        stop = len(point) > 2 and not rush
         out.append(Dot(p, STOP if stop else ROUTE, 6 if stop else 3))
         label = str(i)
-        if len(point) > 4:
+        if rush:
+            label += " rush"
+        elif len(point) > 4:
             label += f" wait {point[4]}"
         elif len(point) > 3 and point[3]:
             label += f" hold {point[3]:g}"

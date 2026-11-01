@@ -157,12 +157,14 @@ static long run_parse_keys(const char *spec, run_key_t *out)
  * count, after that many more frames heading for it (it keeps pushing
  * there), and, if it names an object, once that object is within a reach of
  * a place (it waits for something moving to come by); after a jump (a
- * respawn), it heads for the point after the nearest one.  Between points it follows the path without
+ * respawn), it heads for the point after the nearest one.  A point whose
+ * frame count is "rush" is run at flat out, never braking, as a jump's
+ * run-up is.  Between points it follows the path without
  * stopping, slowing down only as much as the bends ahead need
  * (run_steer_heading).
  */
 typedef struct run_steer {
-    float *points; /* x, z, y (-INFINITY: any height), frames to hold */
+    float *points; /* x, z, y (-INFINITY: any height), frames to hold (-1: rush) */
     char **waits;  /* each point's object to wait for, or NULL */
     float *wait_at; /* where it is waited for: x, z, reach */
     long count;
@@ -268,6 +270,9 @@ static void run_steer_heading(const run_steer_t *steer, float x, float z, float 
         if (walked > STEER_PLAN) {
             break;
         }
+    }
+    if (point[3] < 0.0f) {
+        wanted = INFINITY; /* a run-up */
     }
     float cx = tx - x, cz = tz - z, cl = hypotf(cx, cz);
     if (cl <= 0.0f) {
@@ -380,12 +385,16 @@ static bool run_parse_steer(const char *spec, run_steer_t *out)
             f = comma + 1;
         }
         float x = 0.0f, z = 0.0f, y = -INFINITY, hold = 0.0f, wait[3] = {0.0f, 0.0f, 0.0f};
+        bool rush = n >= 4 && lengths[3] == 4 && memcmp(fields[3], "rush", 4) == 0;
         bool ok = (n == 2 || n == 3 || n == 4 || n == 8) &&
                   run_steer_number(fields[0], lengths[0], &x) &&
                   run_steer_number(fields[1], lengths[1], &z) &&
                   (n < 3 || lengths[2] == 0 || run_steer_number(fields[2], lengths[2], &y)) &&
-                  (n < 4 || (n == 8 && lengths[3] == 0) ||
+                  (n < 4 || rush || (n == 8 && lengths[3] == 0) ||
                    (run_steer_number(fields[3], lengths[3], &hold) && hold >= 0.0f));
+        if (rush) {
+            hold = -1.0f;
+        }
         for (int k = 0; ok && n == 8 && k < 3; k++) {
             ok = run_steer_number(fields[5 + k], lengths[5 + k], &wait[k]);
         }
@@ -1489,8 +1498,8 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
         {"--steer", NULL, NMO_OPT_STRING,
          "From FRAME (to FRAME), roll --steer-object through the points with the arrow keys, "
          "waiting at a point with a Y until it is that high, with an F for F more frames, and "
-         "with a NAME until that object is within REACH of WX,WZ: "
-         "X,Z[,Y[,F[,NAME,WX,WZ,REACH]]];...@FRAME[-FRAME] (empty Y or F: none)"},
+         "with a NAME until that object is within REACH of WX,WZ, and run at flat out where F "
+         "is rush: X,Z[,Y[,F[,NAME,WX,WZ,REACH]]];...@FRAME[-FRAME] (empty Y or F: none)"},
         {"--steer-object", NULL, NMO_OPT_STRING,
          "The objects --steer rolls: NAME,NAME,... (the first one shown)"},
         {"--steer-log", NULL, NMO_OPT_STRING,
