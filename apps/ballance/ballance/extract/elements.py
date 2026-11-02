@@ -72,6 +72,7 @@ SNAP = {
     "Floor_Start": ([7.39], [1.26, 3.74], [2.5, 1.3]),
     "Floor_Checkpoint": ([4.92], [1.26, 3.74], [2.5, 0.87]),
     "Floor_Modul_18": ([2.5], [0.35], [2.5]),
+    "Floor_Diamond": ([8.12], [0.0, 0.7, 5.0], [2.5]),
     "Floor_Octagon": ([0.0, 2.5, 5.0, 7.5], [0.0, 0.7, 5.0], [0.0, 2.5, 5.0, 7.5]),
     "Floor_Modul_25": ([5.0, 0.0, 10.0, 15.0], [0.0], [2.5]),
     # Level_05's target block lies from -2.4 to 2.6 across
@@ -299,6 +300,10 @@ CUTS: list[Cut] = [
     # the node's one shut side (OCTAGON_HALF in ballance.game.measures)
     ModuleCut("Floor_Octagon", "Level_05.NMO", "A01_Floor_01", "A01_Floor_01",
               (4.1114, 19.1114, -6.0, 0.5, -19.0174, -4.0174), (11.6114, 0.0, -11.5174)),
+    # Level_05's diamond, in the frame of its floor, whose X points from its
+    # shut tip to its open one (DIAMOND_* in ballance.game.measures)
+    ModuleCut("Floor_Diamond", "Level_05.NMO", "A01_Floor_03", "A01_Floor_03",
+              (-54.45, -35.63, -3.5, 3.0, -24.1, -2.8), (-43.749, 2.503, -13.448)),
     # Level_10's maze, cut where the track enters and leaves it (MAZE_* in
     # ballance.game.measures)
     ModuleCut("Floor_Maze_34", "Level_10.NMO", "A01_Floor_04", "P_Modul_34_01",

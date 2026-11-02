@@ -17,26 +17,27 @@ from ..core.geometry import (Heading, Point, across, at, axis_of, back_of, left_
 from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, ARMS_PATH,
                              BOX_PILE, BRIDGES, CLIMB_DROP, CLIMB_END, CLIMB_FANS, CLIMB_HOLD,
                              CLIMB_LENGTH, CLIMB_TOPS, CLIMB_TRAFO, CRADLE_BALL, CRADLE_EXIT,
-                             CRADLE_RING, CRADLE_TOP, CREST_POINT, ELEMENT_LIFT, FAN_BELOW,
-                             FAN_BLOCK_FAN, FAN_BLOCK_RING, FAN_BLOCK_TOP, FAN_REACH,
-                             FAN_TOWER_FLOOR, FAN_TOWER_HALF, FAN_TOWER_HOLD, FAN_TOWER_PILLAR,
-                             FAN_TOWER_RING, FAN_TOWER_ROCK, FLAPS_COUNTERWEIGHT, FLAPS_LENGTH,
-                             FLAPS_MODULE, FUNNEL, HAIRPIN_GAP, HOLED_TROUGH, JUMP_ABOVE,
-                             JUMP_AREA, JUMP_DOWN, JUMP_HALF, LIFT_BELOW, LIFT_ENTRY, LIFT_EXIT,
-                             LIFT_RIDE, LIFT_TOP, LIFT_WALLS, LOG_CROSS, LOG_MOST, LOG_SEGMENT,
-                             LOG_TOP, MAZE_BELOW, MAZE_ENTRY, MAZE_EXIT, MAZE_PATH, MAZE_POINT,
-                             MAZE_STEP, OCTAGON_HALF, PILLAR_INSET, PLANK_BELOW, PLANK_LENGTH,
-                             PUSHERS_ASIDE, PUSHERS_LENGTH, PUSHERS_MODULES, PUSHERS_PATH,
-                             RAILING_ARM, RAILING_BRIDGE, RAILING_INSET, RAIL_DOCK_BELOW,
-                             RAIL_DOCK_LENGTH, RAIL_FALL, RAIL_OVERHANG, RAIL_RING_STEP,
-                             SACK_ABOVE, SACK_HANG, SPIRAL_OUT, SPIRAL_PATH, STONEBOX_LENGTH,
-                             STONEBOX_MODULE, STONEBOX_PATH, STONEBOX_RISE, STONEBOX_TRAFO,
-                             SWING_ABOVE, SWING_FAR, SWING_GO, SWING_HALF, SWING_SEAT, SWING_WAIT,
-                             SWITCH_AREA, SWITCH_CROSS, SWITCH_HOLD, SWITCH_MODULE, SWITCH_SPUR,
-                             SWITCH_TARGET, TRAFO_LIFT, TROUGH_ASIDE, TROUGH_BOTTOM, TROUGH_DODGE,
-                             TROUGH_HOLES, TROUGH_HOLES_FROM, TROUGH_HOP, TROUGH_LAND,
-                             TROUGH_LOG_GAP, TROUGH_SEGMENT, TWIST_ASIDE, TWIST_BELOW, TWIST_HALF,
-                             TWIST_PATH, WALKWAY_ABOVE, WALKWAY_LENGTH, WALKWAY_LONG)
+                             CRADLE_RING, CRADLE_TOP, CREST_POINT, DIAMOND_EXIT, DIAMOND_OUT,
+                             ELEMENT_LIFT, FAN_BELOW, FAN_BLOCK_FAN, FAN_BLOCK_RING, FAN_BLOCK_TOP,
+                             FAN_REACH, FAN_TOWER_FLOOR, FAN_TOWER_HALF, FAN_TOWER_HOLD,
+                             FAN_TOWER_PILLAR, FAN_TOWER_RING, FAN_TOWER_ROCK, FLAPS_COUNTERWEIGHT,
+                             FLAPS_LENGTH, FLAPS_MODULE, FUNNEL, HAIRPIN_GAP, HOLED_TROUGH,
+                             JUMP_ABOVE, JUMP_AREA, JUMP_DOWN, JUMP_HALF, LIFT_BELOW, LIFT_ENTRY,
+                             LIFT_EXIT, LIFT_RIDE, LIFT_TOP, LIFT_WALLS, LOG_CROSS, LOG_MOST,
+                             LOG_SEGMENT, LOG_TOP, MAZE_BELOW, MAZE_ENTRY, MAZE_EXIT, MAZE_PATH,
+                             MAZE_POINT, MAZE_STEP, OCTAGON_HALF, PILLAR_INSET, PLANK_BELOW,
+                             PLANK_LENGTH, PUSHERS_ASIDE, PUSHERS_LENGTH, PUSHERS_MODULES,
+                             PUSHERS_PATH, RAILING_ARM, RAILING_BRIDGE, RAILING_INSET,
+                             RAIL_DOCK_BELOW, RAIL_DOCK_LENGTH, RAIL_FALL, RAIL_OVERHANG,
+                             RAIL_RING_STEP, SACK_ABOVE, SACK_HANG, SPIRAL_OUT, SPIRAL_PATH,
+                             STONEBOX_LENGTH, STONEBOX_MODULE, STONEBOX_PATH, STONEBOX_RISE,
+                             STONEBOX_TRAFO, SWING_ABOVE, SWING_FAR, SWING_GO, SWING_HALF,
+                             SWING_SEAT, SWING_WAIT, SWITCH_AREA, SWITCH_CROSS, SWITCH_HOLD,
+                             SWITCH_MODULE, SWITCH_SPUR, SWITCH_TARGET, TRAFO_LIFT, TROUGH_ASIDE,
+                             TROUGH_BOTTOM, TROUGH_DODGE, TROUGH_HOLES, TROUGH_HOLES_FROM,
+                             TROUGH_HOP, TROUGH_LAND, TROUGH_LOG_GAP, TROUGH_SEGMENT, TWIST_ASIDE,
+                             TWIST_BELOW, TWIST_HALF, TWIST_PATH, WALKWAY_ABOVE, WALKWAY_LENGTH,
+                             WALKWAY_LONG)
 from ..kit.floors import CELL, NARROW, RISE, WALL
 from ..kit.pieces import channel, funnel, pad, strip
 from ..kit.railings import OUT
@@ -484,9 +485,13 @@ def lay_node(layout: Layout, sector: int, part: Sector, piece: dict, track: Trac
     [branch]}: Level_05's octagon node (see OCTAGON_HALF in
     ballance.game.measures), entered from a narrow road; the track leaves by
     its exit and the one branch (as an area's, ballance.route.layout) by
-    another side, each onto a narrow road, the third side shut."""
+    another side, each onto a narrow road, the third side shut.
+    {"node": "diamond"}: Level_05's diamond, which a rail's fall drops the
+    ball into (see DIAMOND_*), left straight on onto a narrow road."""
+    if piece["node"] == "diamond":
+        return lay_diamond(layout, sector, part, piece, track)
     if piece["node"] != "octagon":
-        raise ValueError(f"unknown node {piece['node']}; known: octagon")
+        raise ValueError(f"unknown node {piece['node']}; known: octagon, diamond")
     if track.width != NARROW or track.floor != "road":
         raise ValueError("an octagon is entered from a narrow road")
     exit, branches = piece.get("exit", "straight"), piece.get("branches", [])
@@ -515,6 +520,26 @@ def lay_node(layout: Layout, sector: int, part: Sector, piece: dict, track: Trac
     layout.points.append(list(track.p))
     track.floor = "node"
     return h, h, 2 * OCTAGON_HALF
+
+
+def lay_diamond(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:
+    if track.floor != "fall" or track.off_floor:
+        raise ValueError("a diamond is fallen into from a rail's end")
+    if piece.get("branches") or piece.get("exit", "straight") != "straight":
+        raise ValueError("a diamond is left straight on, without branches")
+    d, h = track.d, track.h
+    edge = h + RISE
+    end = at(track.p, d, RAIL_OVERHANG)  # the rail's end, over the shut tip
+    out = at(end, d, DIAMOND_OUT)
+    centre = at(out, d, -DIAMOND_EXIT)
+    layout.module_floors.append(("Diamond", sector, [centre[0], edge, centre[1]], turn_of(d)))
+    layout.pillars.append([centre[0], edge - WALL, centre[1]])
+    layout.points += [list(centre), list(out)]
+    track.p = out
+    layout.floors = part.grid(out)
+    layout.open(layout.floors, out, d)
+    track.floor = "node"
+    return h, h, DIAMOND_OUT - RAIL_OVERHANG
 
 
 def lay_railing(layout: Layout, sector: int, part: Sector, posts: list[Point],
@@ -1164,8 +1189,9 @@ def lay_piece(layout: Layout, sector: int, part: Sector, piece: dict, track: Tra
         track.railed = 0.0
     if "fall" in piece and track.run is None and track.floor not in ("log", "trough"):
         raise ValueError("the ball falls from a rail's, a log's or a trough's end")
-    if track.floor == "fall" and not ("area" in piece or "log" in piece or "trough" in piece):
-        raise ValueError("a fall lands in an area, on a log or in a trough")
+    if track.floor == "fall" and not ("area" in piece or "log" in piece or "trough" in piece
+                                      or piece.get("node") == "diamond"):
+        raise ValueError("a fall lands in an area, a diamond, on a log or in a trough")
     if track.floor == "log" and "log" not in piece and "fall" not in piece:
         raise ValueError("a log goes on to another log or a fall")
     if track.floor == "node" and ("road" not in piece or piece.get("width", "narrow") != "narrow"):

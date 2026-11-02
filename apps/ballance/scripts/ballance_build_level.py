@@ -34,6 +34,10 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
   5 by 5, entered from a narrow road: the track leaves by its exit and one
   branch (as an area's, below) by another side, each onto a narrow road, the
   third side shut, as Level_05's spur to its three ball changers leaves one.
+- {"node": "diamond"} -- Level_05's diamond, a square 15 a side turned 45
+  degrees, after a rail's fall: the rail's end hangs over its shut tip, the
+  ball drops into it and leaves by its other tip onto a narrow road, 17.5
+  on from the rail's end.
 - {"turn": "left" or "right"} -- a square corner as wide as the road; with
   "railing": true, a narrow road's has a railing round its outer corner, as
   Level_01's and Level_05's do.  Railings are the originals' tube, bent

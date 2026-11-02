@@ -245,6 +245,13 @@ MAZE_PATH = [(-7.67, -12.5), (-7.67, 15.0), (7.66, 15.0), (7.66, -15.0), (23.1, 
 # its rim; each side's straight middle is 5, a narrow road's V opening onto
 # it, and three are open, a T: the track leaves by one, a branch by another.
 OCTAGON_HALF = 7.5
+# Level_05's diamond (A01_Floor_03 round (286.4, -96.91)): a square 15 a
+# side turned 45 degrees, its inside a V bottom down from its rim, landed in
+# from a rail's end 5 or so above, 1.22 in over its shut tip, 10.6 behind its
+# middle; it is left from its other tip, cut off where it narrows to 5,
+# DIAMOND_EXIT ahead of its middle, through a funnel onto a narrow road
+# DIAMOND_OUT on from the rail's end.
+DIAMOND_EXIT, DIAMOND_OUT = 8.12, 17.5
 
 # P_Modul_01, a pair of pushers (Level_01's and their plaza): a corridor 5
 # wide at a narrow road's edge height, 52.5 long, its last 5 narrowing into
