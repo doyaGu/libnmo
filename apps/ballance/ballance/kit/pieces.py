@@ -124,3 +124,31 @@ def pad(mesh: Mesh, x: float, z: float, top: float, material: str) -> None:
         out = ((ax + bx) / 2 - x, 0.0, (az + bz) / 2 - z)
         mesh.quad(material, out, ((ax, top, az), (0.0, 0.0)), ((bx, top, bz), (1.0, 0.0)),
                   ((bx, top - WALL, bz), (1.0, 1.0)), ((ax, top - WALL, az), (0.0, 1.0)))
+
+
+# Level_08's stepped blocks (A02_Floor_02): 5 square and 5 a step high, their
+# flat tops in four triangles from the middle, the brick band (u 0) along
+# every edge, their sides one repeat each way.
+TOP_MIDDLE, TOP_EDGE = (0.63, 0.471), (0.874, 0.068)
+
+
+def block(mesh: Mesh, x: float, z: float, bottom: float, top: float) -> None:
+    """A block 5 square standing on a floor, its middle at (x, z), from
+    height bottom to top: its top mapped as Level_08's blocks' are, its sides
+    in bands 5 high."""
+    half = NARROW / 2
+    corners = [(x - half, z - half), (x + half, z - half), (x + half, z + half),
+               (x - half, z + half)]
+    middle = ((x, top, z), TOP_MIDDLE)
+    for k in range(4):
+        (ax, az), (bx, bz) = corners[k], corners[(k + 1) % 4]
+        mesh.triangle("Floor_Top_Flat", UP, ((ax, top, az), (0.0, TOP_EDGE[0])),
+                      ((bx, top, bz), (0.0, TOP_EDGE[1])), middle)
+        out = ((ax + bx) / 2 - x, 0.0, (az + bz) / 2 - z)
+        y = top
+        while y > bottom + 1e-6:
+            low = max(bottom, y - REPEAT)
+            mesh.quad("Floor_Side", out, ((ax, y, az), (0.0, 0.0)), ((bx, y, bz), (0.0, 1.0)),
+                      ((bx, low, bz), ((y - low) / REPEAT, 1.0)),
+                      ((ax, low, az), ((y - low) / REPEAT, 0.0)))
+            y = low

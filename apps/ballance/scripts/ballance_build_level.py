@@ -29,6 +29,10 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
   middle of the opposite side, or of the side to the left or right.  A
   pillar stands under each corner; with "railings": true, a railing stands
   round each corner too, as Level_01's do (an area 15 across at least).
+  "blocks": [[along, right, height], ...] stands blocks 5 square on its
+  inside, clear of its border, as Level_08 steps its blocks up (5 a step,
+  their tops and sides mapped as its are); the builder warns of one in the
+  ball's way through the area's middle.
 - {"node": "octagon", "exit": "straight", "left" or "right", "branches":
   [branch]} -- Level_05's octagon node, 15 across with its corners cut off
   5 by 5, entered from a narrow road: the track leaves by its exit and one

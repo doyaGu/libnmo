@@ -29,6 +29,8 @@ ELEMENT_LIFT = {"P_Extra_Point": 2.5, "P_Extra_Life": 2.56, "P_Box": 2.5,
                 "P_Ball_Paper": 2.0, "P_Ball_Stone": 2.0, "P_Ball_Wood": 2.0, "P_Dome": 0.0,
                 "P_Modul_18": -0.35}
 TRAFO_LIFT = 0.1
+# The balls are 4 across, about.
+BALL_RADIUS = 2.0
 # Boxes piled up stand 5.0 to 5.6 apart in Level_08's and Level_12's piles
 # (two to four high), a box being 5 tall: they settle onto one another.
 BOX_PILE = 5.4

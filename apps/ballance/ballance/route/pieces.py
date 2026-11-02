@@ -15,31 +15,31 @@ from typing import TYPE_CHECKING, Callable
 from ..core.geometry import (Heading, Point, across, at, axis_of, back_of, left_of, rect,
                              right_of, side_of, turn_of)
 from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, ARMS_PATH,
-                             BOX_PILE, BRIDGES, CLIMB_DROP, CLIMB_END, CLIMB_FANS, CLIMB_HOLD,
-                             CLIMB_LENGTH, CLIMB_TOPS, CLIMB_TRAFO, CRADLE_BALL, CRADLE_EXIT,
-                             CRADLE_RING, CRADLE_TOP, CREST_POINT, DIAMOND_EXIT, DIAMOND_OUT,
-                             ELEMENT_LIFT, FAN_BELOW, FAN_BLOCK_FAN, FAN_BLOCK_RING, FAN_BLOCK_TOP,
-                             FAN_REACH, FAN_TOWER_FLOOR, FAN_TOWER_HALF, FAN_TOWER_HOLD,
-                             FAN_TOWER_PILLAR, FAN_TOWER_RING, FAN_TOWER_ROCK, FLAPS_COUNTERWEIGHT,
-                             FLAPS_LENGTH, FLAPS_MODULE, FUNNEL, HAIRPIN_GAP, HOLED_TROUGH,
-                             JUMP_ABOVE, JUMP_AREA, JUMP_DOWN, JUMP_HALF, LIFT_BELOW, LIFT_ENTRY,
-                             LIFT_EXIT, LIFT_RIDE, LIFT_TOP, LIFT_WALLS, LOG_CROSS, LOG_MOST,
-                             LOG_SEGMENT, LOG_TOP, MAZE_BELOW, MAZE_ENTRY, MAZE_EXIT, MAZE_PATH,
-                             MAZE_POINT, MAZE_STEP, OCTAGON_HALF, PILLAR_INSET, PLANK_BELOW,
-                             PLANK_LENGTH, PUSHERS_ASIDE, PUSHERS_LENGTH, PUSHERS_MODULES,
-                             PUSHERS_PATH, RAILING_ARM, RAILING_BRIDGE, RAILING_INSET,
-                             RAIL_DOCK_BELOW, RAIL_DOCK_LENGTH, RAIL_FALL, RAIL_OVERHANG,
-                             RAIL_RING_STEP, SACK_ABOVE, SACK_HANG, SPIRAL_OUT, SPIRAL_PATH,
-                             STONEBOX_LENGTH, STONEBOX_MODULE, STONEBOX_PATH, STONEBOX_RISE,
-                             STONEBOX_TRAFO, SWING_ABOVE, SWING_FAR, SWING_GO, SWING_HALF,
-                             SWING_SEAT, SWING_WAIT, SWITCH_AREA, SWITCH_CROSS, SWITCH_HOLD,
-                             SWITCH_MODULE, SWITCH_SPUR, SWITCH_TARGET, TRAFO_LIFT, TROUGH_ASIDE,
-                             TROUGH_BOTTOM, TROUGH_DODGE, TROUGH_HOLES, TROUGH_HOLES_FROM,
-                             TROUGH_HOP, TROUGH_LAND, TROUGH_LOG_GAP, TROUGH_SEGMENT, TWIST_ASIDE,
-                             TWIST_BELOW, TWIST_HALF, TWIST_PATH, WALKWAY_ABOVE, WALKWAY_LENGTH,
-                             WALKWAY_LONG)
+                             BALL_RADIUS, BOX_PILE, BRIDGES, CLIMB_DROP, CLIMB_END, CLIMB_FANS,
+                             CLIMB_HOLD, CLIMB_LENGTH, CLIMB_TOPS, CLIMB_TRAFO, CRADLE_BALL,
+                             CRADLE_EXIT, CRADLE_RING, CRADLE_TOP, CREST_POINT, DIAMOND_EXIT,
+                             DIAMOND_OUT, ELEMENT_LIFT, FAN_BELOW, FAN_BLOCK_FAN, FAN_BLOCK_RING,
+                             FAN_BLOCK_TOP, FAN_REACH, FAN_TOWER_FLOOR, FAN_TOWER_HALF,
+                             FAN_TOWER_HOLD, FAN_TOWER_PILLAR, FAN_TOWER_RING, FAN_TOWER_ROCK,
+                             FLAPS_COUNTERWEIGHT, FLAPS_LENGTH, FLAPS_MODULE, FUNNEL, HAIRPIN_GAP,
+                             HOLED_TROUGH, JUMP_ABOVE, JUMP_AREA, JUMP_DOWN, JUMP_HALF, LIFT_BELOW,
+                             LIFT_ENTRY, LIFT_EXIT, LIFT_RIDE, LIFT_TOP, LIFT_WALLS, LOG_CROSS,
+                             LOG_MOST, LOG_SEGMENT, LOG_TOP, MAZE_BELOW, MAZE_ENTRY, MAZE_EXIT,
+                             MAZE_PATH, MAZE_POINT, MAZE_STEP, OCTAGON_HALF, PILLAR_INSET,
+                             PLANK_BELOW, PLANK_LENGTH, PUSHERS_ASIDE, PUSHERS_LENGTH,
+                             PUSHERS_MODULES, PUSHERS_PATH, RAILING_ARM, RAILING_BRIDGE,
+                             RAILING_INSET, RAIL_DOCK_BELOW, RAIL_DOCK_LENGTH, RAIL_FALL,
+                             RAIL_OVERHANG, RAIL_RING_STEP, SACK_ABOVE, SACK_HANG, SPIRAL_OUT,
+                             SPIRAL_PATH, STONEBOX_LENGTH, STONEBOX_MODULE, STONEBOX_PATH,
+                             STONEBOX_RISE, STONEBOX_TRAFO, SWING_ABOVE, SWING_FAR, SWING_GO,
+                             SWING_HALF, SWING_SEAT, SWING_WAIT, SWITCH_AREA, SWITCH_CROSS,
+                             SWITCH_HOLD, SWITCH_MODULE, SWITCH_SPUR, SWITCH_TARGET, TRAFO_LIFT,
+                             TROUGH_ASIDE, TROUGH_BOTTOM, TROUGH_DODGE, TROUGH_HOLES,
+                             TROUGH_HOLES_FROM, TROUGH_HOP, TROUGH_LAND, TROUGH_LOG_GAP,
+                             TROUGH_SEGMENT, TWIST_ASIDE, TWIST_BELOW, TWIST_HALF, TWIST_PATH,
+                             WALKWAY_ABOVE, WALKWAY_LENGTH, WALKWAY_LONG)
 from ..kit.floors import CELL, NARROW, RISE, WALL
-from ..kit.pieces import channel, funnel, pad, strip
+from ..kit.pieces import block, channel, funnel, pad, strip
 from ..kit.railings import OUT
 from ..kit.rails import ABOVE_V, BEND_RADIUS, Ring, bend
 from .modules import MODULE_FLOORS, MODULES, NEEDS_BALL, module_layout
@@ -432,6 +432,9 @@ def lay_area(layout: Layout, sector: int, part: Sector, piece: dict, track: Trac
             into_across = right_of(d) if c < 0 else left_of(d)
             lay_corner_railing(layout, sector, part, at(p, d, a, c * across / 2),
                                (into_along, into_across), h + RISE)
+    for a, c, height in piece.get("blocks", []):
+        lay_block(layout, part, p, d, h, (along, across), piece.get("exit", "straight"),
+                  float(a), float(c), float(height))
     for a in (PILLAR_INSET, along - PILLAR_INSET):
         for c in (-across / 2 + PILLAR_INSET, across / 2 - PILLAR_INSET):
             x, z = at(p, d, a, c)
@@ -540,6 +543,32 @@ def lay_diamond(layout: Layout, sector: int, part: Sector, piece: dict, track: T
     layout.open(layout.floors, out, d)
     track.floor = "node"
     return h, h, DIAMOND_OUT - RAIL_OVERHANG
+
+
+def lay_block(layout: Layout, part: Sector, p: Point, d: Heading, h: float,
+              size: tuple[float, float], exit: str, a: float, c: float, height: float) -> None:
+    """A block 5 square (ballance.kit.pieces.block) standing height high on
+    an area's inside, its middle a along the area and c to the right, clear
+    of the area's border; the builder warns when it stands on the ball's way
+    across the area, from where it enters to the middle and on to its exit."""
+    along, across = size
+    half = NARROW / 2
+    if not (CELL + half <= a <= along - CELL - half and abs(c) <= across / 2 - CELL - half):
+        raise ValueError(f"a block in an area stands clear of its border, {CELL:g} in")
+    if height <= 0:
+        raise ValueError("a block stands above the floor")
+    reach = half + BALL_RADIUS
+    middle = along / 2
+    out = {"straight": ((middle, 0.0), (along, 0.0)),
+           "left": ((middle, -across / 2), (middle, 0.0)),
+           "right": ((middle, 0.0), (middle, across / 2))}[exit]
+    for (a0, c0), (a1, c1) in (((0.0, 0.0), (middle, 0.0)), out):
+        if a0 - reach < a < a1 + reach and c0 - reach < c < c1 + reach:
+            layout.warn(f"a block {a:g} along the area and {c:g} to the right stands in the "
+                        "ball's way through its middle; leave it a lane")
+            break
+    x, z = at(p, d, a, c)
+    part.extras.append((block, (x, z), h, h + height))
 
 
 def lay_railing(layout: Layout, sector: int, part: Sector, posts: list[Point],
