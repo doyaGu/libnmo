@@ -40,6 +40,11 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
   and throws it 14.29 over a gap into a 15 by 15 area 25.02 lower; a funnel
   turns the area's way out into a narrow road again.  A paper ball falls
   short, in Level_09 too.
+- {"spiral": true} -- Level_01's wood spiral, off a wide road: the road's
+  last 10 turns the ball right onto a wood ramp 10 wide with rails for
+  railings, rising 0.4 a unit round stone pads twice, and it comes out
+  52.82 on, 83.41 to the right and 80.05 up onto a wide road heading as the
+  first came in.  A stone ball can't climb it.
 - {"trafo": "paper", "stone" or "wood"} -- a ball changer on its pad, on a
   narrow road.  The original levels all turn the ball back to wood before
   the balloon; the builder warns when a route does not.

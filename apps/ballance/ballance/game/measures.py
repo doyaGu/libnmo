@@ -45,6 +45,18 @@ RAIL_OVERHANG, RAIL_FALL = 5.0, 15.0
 # The builder crosses the next 25 from a log's far end, 25 from its own near
 # end; the ball lands on the first one 5 past the rail's end it falls from.
 LOG_SEGMENT, LOG_TOP, LOG_CROSS = 50.0, 2.26, 25.0
+# Level_01's wood spiral up to its last floor (A04_Floor_Wood_01 and _02 on
+# A04_Floor_02's pads): a wide road's last 10 turns the ball right onto a
+# wood ramp 10 wide that rises 0.4 a unit from the road's middle, round the
+# stone pads at its corners twice (inside the first round the second time),
+# rails for its railings.  It comes out 52.82 on from where the road's last
+# 10 starts and 83.41 to the right, heading as the road came in, its end
+# level with the rim of a wide road whose middle is 80.05 above the first's.
+# From that start: the middles of the road's last 10 and of the pads (along,
+# to the right), and where it comes out (along, to the right, up).
+SPIRAL_PATH = [(5.0, 0.0), (5.0, 58.94), (45.58, 58.94), (45.58, 24.47), (17.23, 24.47),
+               (17.23, 83.41)]
+SPIRAL_OUT = (52.82, 83.41, 80.05)
 # Level_06's logs climbing with fans (A_02_Wood_04 to _14): a log the ball
 # comes in along, under three more that start 0, 50 and 150 on and whose
 # tops are 11, 21 and 31 up (12.21 wide, on 16.84 wide undersides), each but

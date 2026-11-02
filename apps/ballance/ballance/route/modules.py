@@ -33,6 +33,8 @@ NEEDS_BALL = {
                          "does"),
     "Cradle": ({"Wood", "Stone"}, "can hardly push the wood ball on the rail into the "
                                   "cradle; a wood or stone ball does"),
+    "Spiral": ({"Wood", "Paper"}, "can't climb the wood spiral's ramps and rolls back to its "
+                                  "foot; a wood or paper ball climbs them"),
     "Modul02": ({"Wood", "Stone"}, "falls short of {kind}'s landing (in Level_09 too); a wood "
                                    "or stone ball makes it"),
     "P_Modul_08": ({"Wood", "Paper"}, "falls off {kind}'s seat (in Level_09 too); a wood or "
@@ -158,6 +160,19 @@ MODULE_FLOORS = {
 # not a module: the trough with holes in its bottom, 350 long along X
 MODULE_FLOORS["Trough_Holes"] = [ModuleFloor("Trough_Holes", WOOD_FLOOR_GROUPS,
                                              [(-175, 175, -2.9, -2.36, -9.29, 9.29)])]
+# not a module: Level_01's wood spiral, from where the road it leaves comes in
+# along X (to its right at -Z), its pads, the road's corner, its railings and
+# their clamps
+MODULE_FLOORS["Spiral"] = [
+    ModuleFloor("Spiral", WOOD_FLOOR_GROUPS, [(0, 10, -0.8, 0, -88.41, -5.0)]),
+    ModuleFloor("Spiral_Pads", STONE_FLOOR_GROUPS,
+                [(x - 5, x + 5, y - 5, y, -z - 5, -z + 5)
+                 for x, z, y in [(5.0, 58.94, 19.58), (45.58, 58.94, 31.81),
+                                 (45.58, 24.47, 41.6), (17.23, 24.47, 48.94),
+                                 (17.23, 83.41, 68.52)]]),
+    ModuleFloor("Floor_Spiral_Corner", STONE_FLOOR_GROUPS, [(0, 10, -5.0, 0, -5.0, 5.0)]),
+    ModuleFloor("Spiral_Rails", RAIL_GROUPS, [(0, 0.5, 0, 0.5, 5.0, 5.5)]),
+    ModuleFloor("Spiral_Clamps", [], [(0, 0.5, -0.2, 0.3, 5.2, 5.7)])]
 # not a module: Level_06's logs climbing with fans, from where the ball comes
 # in on the lower log's top along -Z, the hidden funnels and wall, and the
 # wall's rail and poles

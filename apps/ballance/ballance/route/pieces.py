@@ -24,14 +24,14 @@ from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, 
                              LIFT_WALLS, LOG_CROSS, LOG_MOST, LOG_SEGMENT, LOG_TOP, PILLAR_INSET,
                              PLANK_BELOW, PLANK_LENGTH, PUSHERS_ASIDE, PUSHERS_LENGTH,
                              PUSHERS_MODULES, PUSHERS_PATH, RAIL_DOCK_BELOW, RAIL_DOCK_LENGTH,
-                             RAIL_FALL, RAIL_OVERHANG, SACK_ABOVE, STONEBOX_LENGTH,
-                             STONEBOX_MODULE, STONEBOX_PATH, STONEBOX_RISE, STONEBOX_TRAFO,
-                             SWING_ABOVE, SWING_FAR, SWING_GO, SWING_HALF, SWING_SEAT, SWING_WAIT,
-                             SWITCH_AREA, SWITCH_CROSS, SWITCH_HOLD, SWITCH_MODULE, SWITCH_SPUR,
-                             SWITCH_TARGET, TRAFO_LIFT, TROUGH_ASIDE, TROUGH_BOTTOM, TROUGH_DODGE,
-                             TROUGH_HOLES, TROUGH_HOLES_FROM, TROUGH_HOP, TROUGH_LAND,
-                             TROUGH_LOG_GAP, TROUGH_SEGMENT, TWIST_ASIDE, TWIST_BELOW, TWIST_HALF,
-                             TWIST_PATH, WALKWAY_ABOVE, WALKWAY_LENGTH)
+                             RAIL_FALL, RAIL_OVERHANG, SACK_ABOVE, SPIRAL_OUT, SPIRAL_PATH,
+                             STONEBOX_LENGTH, STONEBOX_MODULE, STONEBOX_PATH, STONEBOX_RISE,
+                             STONEBOX_TRAFO, SWING_ABOVE, SWING_FAR, SWING_GO, SWING_HALF,
+                             SWING_SEAT, SWING_WAIT, SWITCH_AREA, SWITCH_CROSS, SWITCH_HOLD,
+                             SWITCH_MODULE, SWITCH_SPUR, SWITCH_TARGET, TRAFO_LIFT, TROUGH_ASIDE,
+                             TROUGH_BOTTOM, TROUGH_DODGE, TROUGH_HOLES, TROUGH_HOLES_FROM,
+                             TROUGH_HOP, TROUGH_LAND, TROUGH_LOG_GAP, TROUGH_SEGMENT, TWIST_ASIDE,
+                             TWIST_BELOW, TWIST_HALF, TWIST_PATH, WALKWAY_ABOVE, WALKWAY_LENGTH)
 from ..kit.floors import CELL, NARROW, RISE, WALL
 from ..kit.pieces import channel, funnel, pad, strip
 from ..kit.rails import ABOVE_V, BEND_RADIUS, Ring, bend
@@ -415,6 +415,29 @@ def lay_twist(layout: Layout, sector: int, part: Sector, piece: dict, track: Tra
     layout.points.append(list(track.p))
     track.floor = "road"
     return h, h, length + FUNNEL
+
+
+def lay_spiral(layout: Layout, sector: int, part: Sector, piece: dict,
+               track: Track) -> Ramp:
+    """{"spiral": true}: Level_01's wood spiral, leaving a wide road to its
+    right at its last 10 and coming out higher onto a wide road heading the
+    same way (see SPIRAL_* in ballance.game.measures)."""
+    if track.floor != "wide":
+        raise ValueError("the wood spiral leaves a wide road")
+    check_ball(layout, "Spiral")
+    p, d, h = track.p, track.d, track.h
+    layout.open(layout.floors, p, d, track.width)
+    # its X along the track, its Z to the track's left
+    layout.module_floors.append(("Spiral", sector, [p[0], h, p[1]], turn_of(d)))
+    for along, right in SPIRAL_PATH:
+        layout.points.append(list(at(p, d, along, right)))
+    along, right, up = SPIRAL_OUT
+    track.p, track.h = at(p, d, along, right), h + up
+    # the spiral's end is level with the rim of the road it comes out on,
+    # which stays closed (as Level_01's does)
+    layout.floors = part.grid(track.p)
+    layout.points.append(list(track.p))
+    return h, h, along
 
 
 def lay_jump(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:
@@ -830,6 +853,7 @@ PIECES: dict[str, Callable] = {
     "walkway": lay_walkway,
     "twist": lay_twist,
     "jump": lay_jump,
+    "spiral": lay_spiral,
     "module": lay_module,
 }
 

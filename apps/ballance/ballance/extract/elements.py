@@ -260,6 +260,11 @@ class DecorCut(Cut):
         return f"{path.name}:{'+'.join(self.names)}"
 
 
+# Level_01's wood spiral, in the frame of its pads: all of it, the corner of
+# the road it leaves (to the start of the corner), and where the road comes in
+SPIRAL_BOX, SPIRAL_CORNER = (-27.0, 30.0, -52.0, 46.0, -36.0, 63.0), \
+    (-25.29, -15.2, -52.0, -35.0, 44.8, 62.9)
+SPIRAL_ORIGIN = (-25.29, -41.55, 53.94)
 # Level_06's climbing logs, in the frame of their first fan: all of them,
 # and where the ball comes in
 CLIMB_BOX, CLIMB_ORIGIN = (-13.0, 13.0, -230.0, 60.0, -255.7, 77.7), (0.0, 0.845, 77.66)
@@ -324,6 +329,19 @@ CUTS: list[Cut] = [
               CLIMB_ORIGIN),
     ModuleCut("Log_Climb_Poles", "Level_06.NMO", "A02_Poles", "P_Modul_18_04", CLIMB_BOX,
               CLIMB_ORIGIN),
+    # Level_01's wood spiral, from where the road comes in along X: its
+    # ramps, its pads, the road's corner it leaves, its railings and their
+    # clamps
+    ModuleCut("Spiral", "Level_01.NMO", ["A04_Floor_Wood_01", "A04_Floor_Wood_02"],
+              "A04_Floor_02", SPIRAL_BOX, SPIRAL_ORIGIN),
+    ModuleCut("Spiral_Pads", "Level_01.NMO", "A04_Floor_02", "A04_Floor_02", SPIRAL_BOX,
+              SPIRAL_ORIGIN),
+    ModuleCut("Floor_Spiral_Corner", "Level_01.NMO", "A04_Floor_01", "A04_Floor_02",
+              SPIRAL_CORNER, SPIRAL_ORIGIN),
+    ModuleCut("Spiral_Rails", "Level_01.NMO", ["A04_Rail_01", "A04_Rail_02"], "A04_Floor_02",
+              SPIRAL_BOX, SPIRAL_ORIGIN),
+    ModuleCut("Spiral_Clamps", "Level_01.NMO", ["A04_Misc_Schelle_01", "A04_Misc_Schelle_02"],
+              "A04_Floor_02", SPIRAL_BOX, SPIRAL_ORIGIN),
     # the fan's housing block a rail ends in, its bottom's middle at the origin
     ModuleCut("Floor_FanBlock", "Level_05.NMO", "A03_Floor_Modul18", "A03_Floor_Modul18",
               (-2.6, 2.6, -0.1, 5.1, -2.6, 2.6)),

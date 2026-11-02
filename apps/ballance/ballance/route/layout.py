@@ -118,10 +118,10 @@ class Layout:
         self.warnings.append(message)
 
     @staticmethod
-    def open(floors: Floors, p: Point, d: Heading) -> None:
-        """Leaves a narrow road's end at p open, for a piece off the grid to
-        go on from."""
-        floors.open_edge(*across(p, d, NARROW))
+    def open(floors: Floors, p: Point, d: Heading, width: float = NARROW) -> None:
+        """Leaves a road's end at p open (a narrow one's unless width says),
+        for a piece off the grid to go on from."""
+        floors.open_edge(*across(p, d, width))
 
     @staticmethod
     def dock(floors: Floors, p: Point, d: Heading) -> None:
