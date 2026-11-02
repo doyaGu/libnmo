@@ -81,6 +81,12 @@ RAIL_DOCK_LENGTH, RAIL_DOCK_BELOW = 5.0, 0.58
 # leads out of the pocket to the block's -X side, 7.5 from its middle,
 # turning the track to the right; a railing stands on the block's far side.
 CRADLE_RING, CRADLE_EXIT, CRADLE_TOP = (-0.05, 9.0935, 3.838), 7.5, 2.5
+# A wood ball lies on the rail 6.43 before its last straight ring, 2.08
+# above its middle (P_Ball_Wood_03): the ball rolling down the rail pushes it
+# on, it drops into the pocket first and fills it, and the ball lands on it
+# and rolls straight out, where from the pocket's bottom it would have to
+# climb.  (back, above)
+CRADLE_BALL = (6.43, 2.08)
 # Level_01's A01_Rail_02_01 ends otherwise: past its last straight ring its
 # tubes bend apart, 20 apart 10.35 on, and the ball drops between them
 # onto the walled plaza 13.3 below.

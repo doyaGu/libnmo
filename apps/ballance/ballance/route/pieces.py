@@ -15,11 +15,11 @@ from typing import TYPE_CHECKING, Callable
 from ..core.geometry import (across, at, axis_of, back_of, left_of, rect, right_of, side_of,
                              turn_of)
 from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, ARMS_PATH, BRIDGES,
-                             CRADLE_EXIT, CRADLE_RING, CRADLE_TOP, ELEMENT_LIFT, FAN_BELOW,
-                             FAN_REACH, FLAPS_COUNTERWEIGHT, FLAPS_LENGTH, FLAPS_MODULE, FUNNEL,
-                             HOLED_TROUGH, JUMP_ABOVE, JUMP_AREA, JUMP_DOWN, JUMP_HALF, LIFT_BELOW,
-                             LIFT_ENTRY, LIFT_EXIT, LIFT_RIDE, LIFT_TOP, LIFT_WALLS, LOG_CROSS,
-                             LOG_MOST, LOG_SEGMENT, LOG_TOP, PILLAR_INSET, PLANK_BELOW,
+                             CRADLE_BALL, CRADLE_EXIT, CRADLE_RING, CRADLE_TOP, ELEMENT_LIFT,
+                             FAN_BELOW, FAN_REACH, FLAPS_COUNTERWEIGHT, FLAPS_LENGTH, FLAPS_MODULE,
+                             FUNNEL, HOLED_TROUGH, JUMP_ABOVE, JUMP_AREA, JUMP_DOWN, JUMP_HALF,
+                             LIFT_BELOW, LIFT_ENTRY, LIFT_EXIT, LIFT_RIDE, LIFT_TOP, LIFT_WALLS,
+                             LOG_CROSS, LOG_MOST, LOG_SEGMENT, LOG_TOP, PILLAR_INSET, PLANK_BELOW,
                              PLANK_LENGTH, PUSHERS_ASIDE, PUSHERS_LENGTH, PUSHERS_MODULES,
                              PUSHERS_PATH, RAIL_DOCK_BELOW, RAIL_DOCK_LENGTH, RAIL_FALL,
                              RAIL_OVERHANG, SACK_ABOVE, STONEBOX_LENGTH, STONEBOX_MODULE,
@@ -200,6 +200,9 @@ def lay_cradle(layout: Layout, sector: int, part: Sector, piece: dict, track: Tr
     block."""
     check_ball(layout, "Cradle")
     end, d = track.run[-1], track.d
+    back, above = CRADLE_BALL
+    layout.elements.append(("P_Ball_Wood", sector,
+                            [end.x - back * d[0], end.y + above, end.z - back * d[1]]))
     part.rails.runs.append(track.run)
     track.run = None
     x, y, z = CRADLE_RING

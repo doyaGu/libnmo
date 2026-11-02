@@ -135,7 +135,9 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
 - {"cradle": true} -- the rail bends straight down into a cradle on a 15 by
   15 block, as Level_01's A01_Rail_09 does, 9.09 below the rail; the track
   leaves the block to the right, from a narrow road's end on it, 7.5 from
-  its middle.  A stone ball can't climb out of the pocket.
+  its middle.  A wood ball lies on the rail before it, as in Level_01: the
+  ball pushes it into the pocket and lands on it; a paper ball can hardly
+  push it.
   Rails run from a narrow road, a wide one or an area to a narrow road, a
   wide one, an area, a fall or a cradle (ballance.kit.rails); a wide road
   meets a rail through a piece 5 long whose middle narrows to a V, as

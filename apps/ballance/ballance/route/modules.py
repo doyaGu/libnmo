@@ -31,8 +31,8 @@ NEEDS_BALL = {
     "Trough": ({"Wood"}, "can't be counted on to swing over into the next trough (on Level_04's, "
                          "a stone ball never does and a paper one only sometimes); a wood ball "
                          "does"),
-    "Cradle": ({"Wood", "Paper"}, "can't climb out of the cradle's pocket; a wood or paper "
-                                  "ball does"),
+    "Cradle": ({"Wood", "Stone"}, "can hardly push the wood ball on the rail into the "
+                                  "cradle; a wood or stone ball does"),
     "Modul02": ({"Wood", "Stone"}, "falls short of {kind}'s landing (in Level_09 too); a wood "
                                    "or stone ball makes it"),
     "P_Modul_08": ({"Wood", "Paper"}, "falls off {kind}'s seat (in Level_09 too); a wood or "
