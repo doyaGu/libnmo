@@ -302,6 +302,9 @@ CUTS: list[Cut] = [
              (99.95, 100.05, -3.0, 3.0, -9.4, 9.4), 50.0, 8),
     ChainCut("Log", "Level_12.NMO", "A08_Halfpipe_02", (-25.05, 25.05, -2.4, 2.4, -8.5, 8.5),
              (74.95, 75.05, -2.4, 2.4, -8.5, 8.5), 50.0, 8),
+    # the fan's housing block a rail ends in, its bottom's middle at the origin
+    ModuleCut("Floor_FanBlock", "Level_05.NMO", "A03_Floor_Modul18", "A03_Floor_Modul18",
+              (-2.6, 2.6, -0.1, 5.1, -2.6, 2.6)),
     # a wide road's end narrowing to a rail, its flat middle at the origin
     ModuleCut("Floor_RailDock", "Level_01.NMO", "A01_Floor_03", "A01_Rail_07",
               (-5.1, 5.1, -6.0, 1.4, 12.8, 17.95), (0.0, 0.58, 17.88)),

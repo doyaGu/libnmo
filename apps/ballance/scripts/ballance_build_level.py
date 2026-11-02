@@ -132,6 +132,9 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
   Level_04's, a stone ball never gets over and a paper one only sometimes.
   With "holes": true, the trough is Level_04's with five holes in its
   bottom, 350 long; the ball rides past each up a wall, by turns.
+- {"fan": dy} -- the rail ends in a fan's housing block, as Level_05's and
+  Level_13's do, and the fan lifts a paper ball dy (at most 16) onto the
+  next piece, which starts at the block's far side.
 - {"cradle": true} -- the rail bends straight down into a cradle on a 15 by
   15 block, as Level_01's A01_Rail_09 does, 9.09 below the rail; the track
   leaves the block to the right, from a narrow road's end on it, 7.5 from
@@ -139,9 +142,9 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
   ball pushes it into the pocket and lands on it; a paper ball can hardly
   push it.
   Rails run from a narrow road, a wide one or an area to a narrow road, a
-  wide one, an area, a fall or a cradle (ballance.kit.rails); a wide road
-  meets a rail through a piece 5 long whose middle narrows to a V, as
-  Level_01's A01_Floor_03 meets A01_Rail_07.
+  wide one, an area, a fall, a cradle or a fan's block (ballance.kit.rails);
+  a wide road meets a rail through a piece 5 long whose middle narrows to a
+  V, as Level_01's A01_Floor_03 meets A01_Rail_07.
 
 An area may hold a fan, {"kind": "P_Modul_18", "at": [along, right]} among
 its elements, on the corner of four of its flat inside cells, and then

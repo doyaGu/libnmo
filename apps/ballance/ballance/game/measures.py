@@ -68,6 +68,13 @@ TROUGH_LOG_GAP = 0.5
 # middle 48 along it.
 HOLED_TROUGH, TROUGH_HOLES, TROUGH_DODGE = 350.0, [75.0, 125.0, 175.0, 225.0, 275.0], 6.3
 TROUGH_HOLES_FROM = 48.0
+# A rail ends in a fan's housing block (Level_05's A03_Floor_Modul18, as
+# Level_13 sets many): a 5 by 5 block 5 deep, its top 5 above its bottom,
+# sloping into the housing whose grille the fan stands on 4.66 up; the rail's
+# last ring stands at the middle of one of its sides, 0.36 below the top,
+# heading into it.  The fan lifts a paper ball onto the next piece, which
+# starts at the far side.  (ring, fan, top, above its bottom)
+FAN_BLOCK_RING, FAN_BLOCK_FAN, FAN_BLOCK_TOP = 4.64, 4.66, 5.0
 # A rail meets a wide road's end as Level_01's A01_Rail_07 meets A01_Floor_03:
 # through a piece 5 long whose slopes go on as the road's while its flat
 # middle sinks to a narrow road's V, 0.7 deep at the rail; the tubes' middles

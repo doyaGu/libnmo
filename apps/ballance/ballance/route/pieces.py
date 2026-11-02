@@ -16,17 +16,18 @@ from ..core.geometry import (across, at, axis_of, back_of, left_of, rect, right_
                              turn_of)
 from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, ARMS_PATH, BRIDGES,
                              CRADLE_BALL, CRADLE_EXIT, CRADLE_RING, CRADLE_TOP, ELEMENT_LIFT,
-                             FAN_BELOW, FAN_REACH, FLAPS_COUNTERWEIGHT, FLAPS_LENGTH, FLAPS_MODULE,
-                             FUNNEL, HOLED_TROUGH, JUMP_ABOVE, JUMP_AREA, JUMP_DOWN, JUMP_HALF,
-                             LIFT_BELOW, LIFT_ENTRY, LIFT_EXIT, LIFT_RIDE, LIFT_TOP, LIFT_WALLS,
-                             LOG_CROSS, LOG_MOST, LOG_SEGMENT, LOG_TOP, PILLAR_INSET, PLANK_BELOW,
-                             PLANK_LENGTH, PUSHERS_ASIDE, PUSHERS_LENGTH, PUSHERS_MODULES,
-                             PUSHERS_PATH, RAIL_DOCK_BELOW, RAIL_DOCK_LENGTH, RAIL_FALL,
-                             RAIL_OVERHANG, SACK_ABOVE, STONEBOX_LENGTH, STONEBOX_MODULE,
-                             STONEBOX_PATH, STONEBOX_RISE, STONEBOX_TRAFO, SWING_ABOVE, SWING_FAR,
-                             SWING_GO, SWING_HALF, SWING_SEAT, SWING_WAIT, SWITCH_AREA,
-                             SWITCH_CROSS, SWITCH_HOLD, SWITCH_MODULE, SWITCH_SPUR, SWITCH_TARGET,
-                             TRAFO_LIFT, TROUGH_ASIDE, TROUGH_BOTTOM, TROUGH_DODGE, TROUGH_HOLES,
+                             FAN_BELOW, FAN_BLOCK_FAN, FAN_BLOCK_RING, FAN_BLOCK_TOP, FAN_REACH,
+                             FLAPS_COUNTERWEIGHT, FLAPS_LENGTH, FLAPS_MODULE, FUNNEL, HOLED_TROUGH,
+                             JUMP_ABOVE, JUMP_AREA, JUMP_DOWN, JUMP_HALF, LIFT_BELOW, LIFT_ENTRY,
+                             LIFT_EXIT, LIFT_RIDE, LIFT_TOP, LIFT_WALLS, LOG_CROSS, LOG_MOST,
+                             LOG_SEGMENT, LOG_TOP, PILLAR_INSET, PLANK_BELOW, PLANK_LENGTH,
+                             PUSHERS_ASIDE, PUSHERS_LENGTH, PUSHERS_MODULES, PUSHERS_PATH,
+                             RAIL_DOCK_BELOW, RAIL_DOCK_LENGTH, RAIL_FALL, RAIL_OVERHANG,
+                             SACK_ABOVE, STONEBOX_LENGTH, STONEBOX_MODULE, STONEBOX_PATH,
+                             STONEBOX_RISE, STONEBOX_TRAFO, SWING_ABOVE, SWING_FAR, SWING_GO,
+                             SWING_HALF, SWING_SEAT, SWING_WAIT, SWITCH_AREA, SWITCH_CROSS,
+                             SWITCH_HOLD, SWITCH_MODULE, SWITCH_SPUR, SWITCH_TARGET, TRAFO_LIFT,
+                             TROUGH_ASIDE, TROUGH_BOTTOM, TROUGH_DODGE, TROUGH_HOLES,
                              TROUGH_HOLES_FROM, TROUGH_HOP, TROUGH_LAND, TROUGH_LOG_GAP,
                              TROUGH_SEGMENT, TWIST_ASIDE, TWIST_BELOW, TWIST_HALF, TWIST_PATH,
                              WALKWAY_ABOVE, WALKWAY_LENGTH)
@@ -191,6 +192,38 @@ def lay_trough(layout: Layout, sector: int, part: Sector, piece: dict, track: Tr
     end = at(start, d, length)
     track.p, track.h, track.floor, track.trough = end, bottom, "trough", length
     return bottom, bottom, length
+
+
+def lay_fan(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:
+    """{"fan": dy}: the rail ends in a fan's housing block, as Level_05's and
+    Level_13's do (see FAN_BLOCK_* in ballance.game.measures), and the fan
+    lifts the ball onto the next piece, which starts at the block's far side
+    dy above its top."""
+    rise = float(piece["fan"])
+    if not 0 < rise <= FAN_REACH:
+        raise ValueError(f"a fan lifts the ball at most {FAN_REACH}")
+    if layout.last_ball != "Paper":
+        layout.warn("only a paper ball rides a fan's wind; the ball reaches it as "
+                    f"{layout.last_ball.lower()}")
+    end, d = track.run[-1], track.d
+    part.rails.runs.append(track.run)
+    track.run = None
+    middle = at((end.x, end.z), d, NARROW / 2)
+    bottom = end.y - FAN_BLOCK_RING
+    # the block's X to the track's left, its Z back along it
+    layout.module_floors.append(("FanBlock", sector, [middle[0], bottom, middle[1]],
+                                 turn_of(left_of(d))))
+    layout.elements.append(("P_Modul_18", sector, [middle[0], bottom + FAN_BLOCK_FAN, middle[1]]))
+    top = bottom + FAN_BLOCK_TOP
+    # wait over the fan until the ball is above the floor ahead
+    layout.points.append([middle[0], middle[1], top + rise + RISE + 1.0])
+    track.p = at((end.x, end.z), d, NARROW)
+    track.h = top + rise - RISE
+    # the ball comes in over the next piece's rim, which stays closed
+    layout.floors = part.grid(track.p)
+    layout.points.append(list(track.p))
+    track.floor = "area"
+    return track.h, track.h, NARROW
 
 
 def lay_cradle(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:
@@ -755,6 +788,7 @@ PIECES: dict[str, Callable] = {
     "rail_turn": lay_rail_turn,
     "fall": lay_fall,
     "cradle": lay_cradle,
+    "fan": lay_fan,
     "log": lay_log,
     "trough": lay_trough,
     "area": lay_area,
@@ -773,8 +807,8 @@ def lay_piece(layout: Layout, sector: int, part: Sector, piece: dict, track: Tra
     floors = layout.floors
     start, heading = track.p, track.d
     rail = "rail" in piece or "rail_turn" in piece
-    if "cradle" in piece and track.run is None:
-        raise ValueError("the ball drops into the cradle from a rail's end")
+    if ("cradle" in piece or "fan" in piece) and track.run is None:
+        raise ValueError("the ball comes into the cradle or the fan's block on a rail")
     if "fall" in piece and track.run is None and track.floor not in ("log", "trough"):
         raise ValueError("the ball falls from a rail's, a log's or a trough's end")
     if track.floor == "fall" and not ("area" in piece or "log" in piece or "trough" in piece):
@@ -793,7 +827,8 @@ def lay_piece(layout: Layout, sector: int, part: Sector, piece: dict, track: Tra
         else:
             layout.dock(floors, track.p, track.d)
             track.run = [Ring(track.p[0], track.h + ABOVE_V, track.p[1], track.d[0], track.d[1])]
-    elif not rail and "fall" not in piece and "cradle" not in piece and track.run is not None:
+    elif not rail and not ("fall" in piece or "cradle" in piece or "fan" in piece) \
+            and track.run is not None:
         if "road" in piece and piece.get("width") == "wide":
             dock_wide(layout, sector, part, track)
         elif not ("area" in piece or "road" in piece):

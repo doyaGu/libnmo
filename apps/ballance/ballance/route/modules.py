@@ -65,6 +65,9 @@ class ModuleFloor:
 
 
 MODULE_FLOORS = {
+    # not a module: the fan's housing block a rail ends in (the rail along -Z)
+    "FanBlock": [ModuleFloor("Floor_FanBlock", STONE_FLOOR_GROUPS,
+                             [(-2.5, 2.5, 0, 5.0, -2.5, 2.5)])],
     # not a module: a wide road's end narrowing to a rail (the road's flat
     # middle at the origin, the road along Z, the rail at -Z)
     "RailDock": [ModuleFloor("Floor_RailDock", STONE_FLOOR_GROUPS,
