@@ -110,9 +110,10 @@ class Layout:
         self.floors: Floors | None = None  # the grid the track is on
         self.parts: list[Part] = []  # what each piece laid, in turn
         self._claimed: dict[str, int] = {}
-        # named areas, for branches to come back to: grid, height, step, and
-        # the sides no track leaves by, each its middle and the way out
-        self.nodes: dict[str, tuple[Floors, float, int, list[tuple[Point, Heading]]]] = {}
+        # named areas, for branches to come back to: grid, height, step, the
+        # sides no track leaves by (each its middle and the way out), and the
+        # index of its first point
+        self.nodes: dict[str, tuple[Floors, float, int, list[tuple[Point, Heading]], int]] = {}
         self._waiting: dict[str, list[tuple]] = {}  # branches to areas not yet laid
         self._named: dict[str, tuple] = {}  # areas named by the piece being laid
         self._lay(route["sectors"])
@@ -199,41 +200,52 @@ class Layout:
         back to."""
         if name in self.nodes or name in self._named:
             raise ValueError(f"two areas are named {name}")
-        self._named[name] = (floors, h, sides)
+        self._named[name] = (floors, h, sides, len(self.points))
 
     def _branch(self, sector_index: int, sector: Sector, track: Track, number: int) -> None:
         """Lays the branches the piece just laid left, and those waiting for
         an area it named."""
-        for name, (floors, h, sides) in self._named.items():
-            self.nodes[name] = (floors, h, track.step, sides)
+        for name, (floors, h, sides, first) in self._named.items():
+            self.nodes[name] = (floors, h, track.step, sides, first)
         self._named.clear()
         forks, track.forks = track.forks, []
+        waiting = []
         for fork in forks:
             target = fork[4].get("to")
             if target and target not in self.nodes:
-                self._waiting.setdefault(target, []).append((sector_index, sector, number, fork,
-                                                             track.step))
+                waiting.append((target, fork))
             else:
                 self._lay_branch(sector_index, sector, number, fork, track.step)
+        for target, fork in waiting:
+            # a branch the ball takes leaves by the point the piece is left by
+            self._waiting.setdefault(target, []).append(
+                (sector_index, sector, number, fork, track.step, len(self.points) - 1))
         for name in [name for name in self._waiting if name in self.nodes]:
             for waiting in self._waiting.pop(name):
                 self._lay_branch(*waiting)
 
     def _lay_branch(self, sector_index: int, sector: Sector, number: int, fork: tuple,
-                    node: int) -> None:
+                    node: int, leave: int | None = None) -> None:
         """A branch off piece number (step node): its pieces from the side
         it leaves, on the area's grid.  A branch the ball goes down ("visit":
         true) and back up has its points in the route before the area's way
         out; another's are left out, and the ball it would turn the ball into.
         A branch to an area ("to": NAME) ends at the middle of one of its
-        free sides, heading into it, at its height, and opens to it there."""
+        free sides, heading into it, at its height, and opens to it there.
+        The ball takes such a branch ("take": true) instead of the track
+        from the area it leaves (whose point there is leave) to that one: the
+        branch's points stand for the track's, and the ball it ends as goes
+        on (the track between changes none)."""
         p, d, h, floors, branch, floor = fork
         route, target, visit = branch.get("route"), branch.get("to"), branch.get("visit", False)
+        take = branch.get("take", False)
         if not route:
             raise ValueError("a branch has a route of pieces")
         if visit and target:
             raise ValueError("the ball goes down a branch and back, or the branch comes back "
                              "to an area by itself, not both")
+        if take and (not target or leave is None):
+            raise ValueError("the ball takes a branch to an area laid after the one it leaves")
         main_floors, ball = self.floors, self.last_ball
         way_out = self.points.pop() if visit else None
         mark = len(self.points)
@@ -256,13 +268,17 @@ class Layout:
                 self.points.pop()  # its far side is shut: the ball turns in its middle
             there = [point[:2] for point in self.points[mark:]]
             self.points += there[-2::-1] + [way_out]
+        elif take:
+            taken = self.points[mark:]
+            del self.points[mark:]
+            self.points[leave:self.nodes[target][4]] = taken
         else:
             del self.points[mark:]
             self.last_ball = ball
         self.floors = main_floors
 
     def _join(self, name: str, t: Track, sector: Sector) -> None:
-        floors, h, _, sides = self.nodes[name]
+        floors, h, _, sides, _ = self.nodes[name]
         for side in sides:
             q, out = side
             if abs(q[0] - t.p[0]) < 1e-6 and abs(q[1] - t.p[1]) < 1e-6 and out == back_of(t.d):
