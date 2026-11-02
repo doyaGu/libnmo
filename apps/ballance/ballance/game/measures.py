@@ -120,10 +120,12 @@ SACK_STEP, SACK_ABOVE = 15.0, 2.68
 # piece whose two blocks funnel down to narrow roads 9.75 from its middle, so
 # that the track crossing it runs on over the plank.  The target block lies
 # 12.5 to 17.5 to the side of the track, the module 13.77; a stone ball
-# pushing the target from the far side tips the plank (about 300 frames).
+# pushing the target from the far side tips the plank (about 300 frames),
+# and one ramming it, as the autopilot does, at once.
 SWITCH_CROSS, SWITCH_MODULE, SWITCH_TARGET = 9.75, 13.77, 17.5
-# The generated switch: a square area, a spur 32.5 aside, frames to push.
-SWITCH_AREA, SWITCH_SPUR, SWITCH_HOLD = 15.0, 32.5, 500
+# The generated switch: a square area, a spur 32.5 aside, frames to push
+# (the ball stops at the target and turns straight back).
+SWITCH_AREA, SWITCH_SPUR, SWITCH_HOLD = 15.0, 32.5, 1
 
 # P_Modul_34, a stone on a box (Level_01's P_Modul_34_01 and its plaza): a
 # walkway 5 wide at a narrow road's edge height runs from a stone trafo's
@@ -156,14 +158,17 @@ STONEBOX_PATH = [(2.5, 0, 0), (6.75, 0, 0), (15.75, 8.75, 0), (17.75, 9.75, 0),
 # it goes (2.65).  The ball's path, (along, to the right, frames to hold):
 # off the corridor down to the low ground, each target pushed, back by the
 # ring road's ramp, and along the corridor past the crossbars, close to its
-# right edge.  The ball rams each target twice, at speed, from a stop 9 back
-# from it: a slow push moves a frame too little, and one ram 1.7 to 2.2.
+# right edge.  The ball rams each target four times, at speed, from a stop 9
+# back from it: a slow push moves a frame too little, and one ram 1.7 to 2.2;
+# rammed twice, the first crossbar still stops the ball for 4 seconds.
 PUSHERS_LENGTH, PUSHERS_ASIDE = 52.5, 2.5
 PUSHERS_MODULES = [28.15, 38.15]
 PUSHERS_PATH = [(6.9, 0, 0), (20.9, 0, 0), (23.9, 6.8, 0), (25.9, 12.8, 0), (27.9, 13.8, 0),
+                (27.5, 14.3, 10), (27.5, 5, 0), (27.5, 14.3, 10), (27.5, 5, 0),
                 (27.5, 14.3, 10), (27.5, 5, 0), (27.5, 14.3, 10), (27.5, 5, 0), (27.9, 6.8, 0),
                 (32.9, 11.8, 0), (33.9, 11.8, 0), (34.9, 12.8, 0), (36.9, 12.8, 0),
                 (37.9, 13.8, 0), (37.5, 14.3, 10), (37.5, 5, 0), (37.5, 14.3, 10), (37.5, 5, 0),
+                (37.5, 14.3, 10), (37.5, 5, 0), (37.5, 14.3, 10), (37.5, 5, 0),
                 (32.9, 10.8, 0), (29.9, 11.8, 0), (17.9, 23.8, 0), (5.9, 23.8, 0), (3.9, 21.8, 0),
                 (3.9, 2.8, 0), (5.9, 0.8, 0), (25.9, 0.8, 0), (26.9, 1.8, 0), (28.9, 1.8, 0),
                 (29.9, 0.8, 0), (35.9, 0.8, 0), (36.9, 1.8, 0), (38.9, 1.8, 0), (39.9, 0.8, 0)]
@@ -190,7 +195,7 @@ BRIDGES = {"P_Modul_29": (15.33, 6.87, 0.17), "P_Modul_30": (14.8, 7.4, 0.5)}
 # loop, along the upper road past the paddle to its end, back, and over the
 # plank.
 ARMS_LENGTH, ARMS_MODULE, ARMS_ABOVE, ARMS_BRIDGE = 33.33, (24.61, -11.21), 5.43, 23.33
-ARMS_PATH = [(5, 0, 0), (5, -20, 0), (20, -20, 0), (28, -20, 60), (5, -20, 0), (5, 0, 0),
+ARMS_PATH = [(5, 0, 0), (5, -20, 0), (20, -20, 0), (28, -20, 1), (5, -20, 0), (5, 0, 0),
              (20, 0, 0)]
 
 # P_Modul_19, the flaps (Level_09's P_Modul_19_01): an axle 20 long across
