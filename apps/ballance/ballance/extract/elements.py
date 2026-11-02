@@ -162,27 +162,32 @@ class MarkerCut(Cut):
 
 
 class ModuleCut(Cut):
-    """The part of a floor within a box of a module's frame, in that frame
-    (moved so origin, a point of it, is at its origin)."""
+    """The part of a floor (or of several, as one mesh) within a box of a
+    module's frame, in that frame (moved so origin, a point of it, is at its
+    origin)."""
 
-    def __init__(self, kind: str, level: str, floor: str, module: str, box: tuple,
+    def __init__(self, kind: str, level: str, floor: str | list[str], module: str, box: tuple,
                  origin: tuple = (0.0, 0.0, 0.0)) -> None:
         super().__init__(kind, level)
-        self.floor, self.module, self.box, self.origin = floor, module, box, origin
+        self.floors = [floor] if isinstance(floor, str) else floor
+        self.module, self.box, self.origin = module, box, origin
 
     def take(self, levels, path, out, centers):
         objects = levels.objects(path)
-        if self.floor not in objects or self.module not in objects:
+        if not all(name in objects for name in self.floors + [self.module]):
             return None
-        faces, mtl = levels.faces(path, objects[self.floor])
         matrix = matrix_of(objects[self.module]["world_matrix"])
-        if self.kind.startswith("Floor_"):
-            cut = clipped_in_frame(faces, matrix, self.box)
-            cut += closing_walls(cut)
-        else:
-            cut = in_frame(faces, matrix, self.box)
-        write_faces(cut, [mtl], self.origin, self.kind, out)
-        return f"{path.name}:{self.floor}"
+        cut, mtls = [], []
+        for name in self.floors:
+            faces, mtl = levels.faces(path, objects[name])
+            if self.kind.startswith("Floor_"):
+                part = clipped_in_frame(faces, matrix, self.box)
+                cut += part + closing_walls(part)
+            else:
+                cut += in_frame(faces, matrix, self.box)
+            mtls.append(mtl)
+        write_faces(cut, mtls, self.origin, self.kind, out)
+        return f"{path.name}:{'+'.join(self.floors)}"
 
 
 class ChainCut(Cut):
@@ -255,6 +260,10 @@ class DecorCut(Cut):
         return f"{path.name}:{'+'.join(self.names)}"
 
 
+# Level_06's climbing logs, in the frame of their first fan: all of them,
+# and where the ball comes in
+CLIMB_BOX, CLIMB_ORIGIN = (-13.0, 13.0, -230.0, 60.0, -255.7, 77.7), (0.0, 0.845, 77.66)
+
 CUTS: list[Cut] = [
     MarkerCut("Floor_Start", "Level_03.NMO", "A01_Floor_01", "PS_FourFlames_01", 8.07, 9.3),
     MarkerCut("Floor_Checkpoint", "Level_03.NMO", "A02_Floor_01", "PC_TwoFlames_01", 4.93, 9.3),
@@ -302,6 +311,19 @@ CUTS: list[Cut] = [
              (99.95, 100.05, -3.0, 3.0, -9.4, 9.4), 50.0, 8),
     ChainCut("Log", "Level_12.NMO", "A08_Halfpipe_02", (-25.05, 25.05, -2.4, 2.4, -8.5, 8.5),
              (74.95, 75.05, -2.4, 2.4, -8.5, 8.5), 50.0, 8),
+    # Level_06's logs climbing with fans, from where the ball comes in on
+    # the lower log's top, along -Z: the logs, the hidden funnels under the
+    # holes the fans blow the ball up through and the wall at the top log's
+    # end, and the rail and poles of that wall
+    ModuleCut("Log_Climb", "Level_06.NMO", [f"A_02_Wood_{n:02d}" for n in range(4, 15)],
+              "P_Modul_18_04", CLIMB_BOX, CLIMB_ORIGIN),
+    ModuleCut("Log_Climb_Hidden", "Level_06.NMO",
+              [f"A02_inv_Coll_{n:02d}" for n in range(5)], "P_Modul_18_04", CLIMB_BOX,
+              CLIMB_ORIGIN),
+    ModuleCut("Log_Climb_Rail", "Level_06.NMO", "A_02_Rail_01", "P_Modul_18_04", CLIMB_BOX,
+              CLIMB_ORIGIN),
+    ModuleCut("Log_Climb_Poles", "Level_06.NMO", "A02_Poles", "P_Modul_18_04", CLIMB_BOX,
+              CLIMB_ORIGIN),
     # the fan's housing block a rail ends in, its bottom's middle at the origin
     ModuleCut("Floor_FanBlock", "Level_05.NMO", "A03_Floor_Modul18", "A03_Floor_Modul18",
               (-2.6, 2.6, -0.1, 5.1, -2.6, 2.6)),

@@ -119,8 +119,12 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
   50-long segments, that a rail's fall drops the ball onto 5 past the
   rail's end; {"log": length, "turn": "left" or "right", "drop": dy} -- one
   crossing dy below the last log, 25 from its far end, that the ball rolls
-  off the last onto, as Level_12's logs do.  A fall from a log's end drops
-  the ball into an area.
+  off the last onto, as Level_12's logs do.  With "climb": true the log
+  goes on into Level_06's logs climbing with fans: a paper ball is blown up
+  three logs, turned to wood on the top one, and drops through a hole
+  before its end onto a log 20 above the first that ends 333.3 on (warned
+  for a ball that is not paper).  A fall from a log's end drops the ball
+  into an area.
 - {"trough": length} -- a wooden U trough (Level_04's "halfpipes"), a
   whole number of 50-long segments, open at both ends, that a fall drops
   the ball into 10 past its near end; {"trough": length, "hop": "left" or

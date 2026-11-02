@@ -12,25 +12,26 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING, Callable
 
-from ..core.geometry import (across, at, axis_of, back_of, left_of, rect, right_of, side_of,
-                             turn_of)
+from ..core.geometry import (Heading, Point, across, at, axis_of, back_of, left_of, rect,
+                             right_of, side_of, turn_of)
 from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, ARMS_PATH, BRIDGES,
-                             CRADLE_BALL, CRADLE_EXIT, CRADLE_RING, CRADLE_TOP, ELEMENT_LIFT,
-                             FAN_BELOW, FAN_BLOCK_FAN, FAN_BLOCK_RING, FAN_BLOCK_TOP, FAN_REACH,
-                             FLAPS_COUNTERWEIGHT, FLAPS_LENGTH, FLAPS_MODULE, FUNNEL, HOLED_TROUGH,
-                             JUMP_ABOVE, JUMP_AREA, JUMP_DOWN, JUMP_HALF, LIFT_BELOW, LIFT_ENTRY,
-                             LIFT_EXIT, LIFT_RIDE, LIFT_TOP, LIFT_WALLS, LOG_CROSS, LOG_MOST,
-                             LOG_SEGMENT, LOG_TOP, PILLAR_INSET, PLANK_BELOW, PLANK_LENGTH,
-                             PUSHERS_ASIDE, PUSHERS_LENGTH, PUSHERS_MODULES, PUSHERS_PATH,
-                             RAIL_DOCK_BELOW, RAIL_DOCK_LENGTH, RAIL_FALL, RAIL_OVERHANG,
-                             SACK_ABOVE, STONEBOX_LENGTH, STONEBOX_MODULE, STONEBOX_PATH,
-                             STONEBOX_RISE, STONEBOX_TRAFO, SWING_ABOVE, SWING_FAR, SWING_GO,
-                             SWING_HALF, SWING_SEAT, SWING_WAIT, SWITCH_AREA, SWITCH_CROSS,
-                             SWITCH_HOLD, SWITCH_MODULE, SWITCH_SPUR, SWITCH_TARGET, TRAFO_LIFT,
-                             TROUGH_ASIDE, TROUGH_BOTTOM, TROUGH_DODGE, TROUGH_HOLES,
-                             TROUGH_HOLES_FROM, TROUGH_HOP, TROUGH_LAND, TROUGH_LOG_GAP,
-                             TROUGH_SEGMENT, TWIST_ASIDE, TWIST_BELOW, TWIST_HALF, TWIST_PATH,
-                             WALKWAY_ABOVE, WALKWAY_LENGTH)
+                             CLIMB_DROP, CLIMB_END, CLIMB_FANS, CLIMB_HOLD, CLIMB_LENGTH,
+                             CLIMB_TOPS, CLIMB_TRAFO, CRADLE_BALL, CRADLE_EXIT, CRADLE_RING,
+                             CRADLE_TOP, ELEMENT_LIFT, FAN_BELOW, FAN_BLOCK_FAN, FAN_BLOCK_RING,
+                             FAN_BLOCK_TOP, FAN_REACH, FLAPS_COUNTERWEIGHT, FLAPS_LENGTH,
+                             FLAPS_MODULE, FUNNEL, HOLED_TROUGH, JUMP_ABOVE, JUMP_AREA, JUMP_DOWN,
+                             JUMP_HALF, LIFT_BELOW, LIFT_ENTRY, LIFT_EXIT, LIFT_RIDE, LIFT_TOP,
+                             LIFT_WALLS, LOG_CROSS, LOG_MOST, LOG_SEGMENT, LOG_TOP, PILLAR_INSET,
+                             PLANK_BELOW, PLANK_LENGTH, PUSHERS_ASIDE, PUSHERS_LENGTH,
+                             PUSHERS_MODULES, PUSHERS_PATH, RAIL_DOCK_BELOW, RAIL_DOCK_LENGTH,
+                             RAIL_FALL, RAIL_OVERHANG, SACK_ABOVE, STONEBOX_LENGTH,
+                             STONEBOX_MODULE, STONEBOX_PATH, STONEBOX_RISE, STONEBOX_TRAFO,
+                             SWING_ABOVE, SWING_FAR, SWING_GO, SWING_HALF, SWING_SEAT, SWING_WAIT,
+                             SWITCH_AREA, SWITCH_CROSS, SWITCH_HOLD, SWITCH_MODULE, SWITCH_SPUR,
+                             SWITCH_TARGET, TRAFO_LIFT, TROUGH_ASIDE, TROUGH_BOTTOM, TROUGH_DODGE,
+                             TROUGH_HOLES, TROUGH_HOLES_FROM, TROUGH_HOP, TROUGH_LAND,
+                             TROUGH_LOG_GAP, TROUGH_SEGMENT, TWIST_ASIDE, TWIST_BELOW, TWIST_HALF,
+                             TWIST_PATH, WALKWAY_ABOVE, WALKWAY_LENGTH)
 from ..kit.floors import CELL, NARROW, RISE, WALL
 from ..kit.pieces import channel, funnel, pad, strip
 from ..kit.rails import ABOVE_V, BEND_RADIUS, Ring, bend
@@ -144,9 +145,40 @@ def lay_log(layout: Layout, sector: int, part: Sector, piece: dict, track: Track
     layout.module_floors.append((f"Log_{segments}", sector, [middle[0], top - LOG_TOP, middle[1]],
                                  turn_of(d)))
     end = at(start, d, length)
+    if piece.get("climb"):
+        end, top = lay_climb(layout, sector, end, d, top)
+        length += CLIMB_LENGTH
     layout.points.append(list(at(end, d, -LOG_CROSS)))
     track.p, track.d, track.h, track.floor = end, d, top, "log"
     return top, top, length
+
+
+def lay_climb(layout: Layout, sector: int, p: Point, d: Heading, top: float
+              ) -> tuple[Point, float]:
+    """Level_06's logs climbing with fans from a log's end p, its top at top
+    (see CLIMB_* in ballance.game.measures); the last log's end and top."""
+    if layout.last_ball != "Paper":
+        layout.warn("only a paper ball rides the climbing logs' fans; the ball reaches them "
+                    f"as {layout.last_ball.lower()}")
+    # the logs' Z back along the track
+    layout.module_floors.append(("LogClimb", sector, [p[0], top, p[1]], turn_of(left_of(d))))
+    for (along, up), above in zip(CLIMB_FANS, CLIMB_TOPS):
+        fan = at(p, d, along)
+        layout.elements.append(("P_Modul_18", sector, [fan[0], top + up, fan[1]]))
+        # over the fan until the ball is above the log the fan blows it onto
+        layout.points.append([fan[0], fan[1], top + above + 2.0])
+    along, up = CLIMB_TRAFO
+    trafo = at(p, d, along)
+    layout.elements.append(("P_Trafo_Wood", sector, [trafo[0], top + up, trafo[1]]))
+    layout.trafos.add("Wood")
+    layout.last_ball = "Wood"
+    layout.points.append(list(trafo))
+    along, up = CLIMB_DROP
+    hole = at(p, d, along)
+    layout.elements.append(("P_Modul_18", sector, [hole[0], top + up, hole[1]]))
+    # held over the hole until the ball drops through it
+    layout.points.append([hole[0], hole[1], None, CLIMB_HOLD])
+    return at(p, d, CLIMB_LENGTH), top + CLIMB_END
 
 
 def lay_trough(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:

@@ -45,6 +45,25 @@ RAIL_OVERHANG, RAIL_FALL = 5.0, 15.0
 # The builder crosses the next 25 from a log's far end, 25 from its own near
 # end; the ball lands on the first one 5 past the rail's end it falls from.
 LOG_SEGMENT, LOG_TOP, LOG_CROSS = 50.0, 2.26, 25.0
+# Level_06's logs climbing with fans (A_02_Wood_04 to _14): a log the ball
+# comes in along, under three more that start 0, 50 and 150 on and whose
+# tops are 11, 21 and 31 up (12.21 wide, on 16.84 wide undersides), each but
+# the top one with a fan set in it whose wind blows a paper ball up through
+# a hole in the log above (a hidden funnel under the hole leads it in).  On
+# the top log a ball changer turns the ball to wood 19 back from where the
+# last fan lifts it; the log ends in a wall 300 on, and before the wall the
+# wood ball drops through a hole, over a fan too weak for it, onto a log 20
+# up that goes on 33.3 past the wall.  From where the ball comes in on the
+# lower log's top: each fan lifting the ball (along, up) and the top of the
+# log it lifts it onto, the ball changer, the hole (along, its fan up), and
+# the last log's end and top.
+CLIMB_FANS = [(77.66, -0.845), (127.70, 10.261), (177.69, 20.265)]
+CLIMB_TOPS = [11.0, 21.0, 31.0]
+CLIMB_TRAFO = (158.6, 31.057)
+CLIMB_DROP = (272.30, 19.219)
+# The frames the autopilot holds the ball over the hole.
+CLIMB_HOLD = 30
+CLIMB_LENGTH, CLIMB_END = 333.3, 20.0
 # Logs and troughs are exported 1 to 8 segments long, each length one mesh.
 LOG_MOST = 8
 # Troughs (Level_04's A01_Halfpipe_01 to _04): wooden U troughs 18.58 wide,

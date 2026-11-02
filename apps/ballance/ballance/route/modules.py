@@ -60,8 +60,9 @@ class ModuleFloor:
     <name>.obj), its groups, and the boxes (x0, x1, y0, y1, z0, z1 in the
     module's frame) that stand in for it without the game's meshes."""
 
-    def __init__(self, name: str, groups: list[str], boxes: list[Box]) -> None:
-        self.name, self.groups, self.boxes = name, groups, boxes
+    def __init__(self, name: str, groups: list[str], boxes: list[Box],
+                 visible: bool = True) -> None:
+        self.name, self.groups, self.boxes, self.visible = name, groups, boxes, visible
 
 
 MODULE_FLOORS = {
@@ -157,6 +158,19 @@ MODULE_FLOORS = {
 # not a module: the trough with holes in its bottom, 350 long along X
 MODULE_FLOORS["Trough_Holes"] = [ModuleFloor("Trough_Holes", WOOD_FLOOR_GROUPS,
                                              [(-175, 175, -2.9, -2.36, -9.29, 9.29)])]
+# not a module: Level_06's logs climbing with fans, from where the ball comes
+# in on the lower log's top along -Z, the hidden funnels and wall, and the
+# wall's rail and poles
+MODULE_FLOORS["LogClimb"] = [
+    ModuleFloor("Log_Climb", WOOD_FLOOR_GROUPS,
+                [(-8.42, 8.42, -4.53, 0, -96.55, 0), (-8.42, 8.42, 6.47, 11.0, -141.13, 0),
+                 (-8.42, 8.42, 16.47, 21.0, -191.13, -100.0),
+                 (-8.42, 8.42, 26.47, 31.0, -300.0, -150.0),
+                 (-8.42, 8.42, 15.47, 20.0, -333.3, -258.87)]),
+    ModuleFloor("Log_Climb_Hidden", ["Phys_Floors"], [(-11.8, 11.8, 31.0, 39.0, -300.7, -299.3)],
+                visible=False),
+    ModuleFloor("Log_Climb_Rail", RAIL_GROUPS, [(-11.0, 11.0, 34.0, 34.4, -300.4, -299.6)]),
+    ModuleFloor("Log_Climb_Poles", [], [(-12.2, 12.2, -10.0, 46.0, -300.6, -299.4)])]
 # not modules: troughs and logs of 1 to 8 segments of 50, along X, each one
 # mesh round its middle
 for _n in range(1, 9):
