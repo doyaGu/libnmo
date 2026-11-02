@@ -108,7 +108,10 @@ A route that cannot be laid stops the build with an error that says why,
 such as a fall that lands anywhere but in an area, a diamond, on a log or
 in a trough; an octagon left by anything but a narrow road; a rail that
 starts or ends anywhere but on a road or an area; a branch to an area that
-it does not reach at its side's middle and height.
+it does not reach at its side's middle and height; a switch that no branch
+pushes a stone ball to; a beam that does not go on from a rail, or that
+goes on to anything but a beam, a rail or a fall; a sack or an extra point
+over a crest asked of a rail rather than a beam.
 
 The warnings are for levels that build but play wrong:
 
@@ -123,14 +126,17 @@ The warnings are for levels that build but play wrong:
 - pieces in one another's way (`ballance.route.clashes`): anything within
   4.5 above a floor, or 3.6 above a rail's middle, of a piece that does not
   follow it. A rail may pass under another, or a log reach back under the
-  rail it is dropped from.
+  rail it is dropped from; sacks (`P_Modul_26`) swing into the way on
+  purpose.
 
 ## Verifying a Level
 
 `ballance_verify_level.py SOURCE` checks the floors of a built folder or a
 level file (`ballance.verify.geometry`): walls left open at their ends,
 holes in floor tops, and tops of two objects lying on one another. Some are
-meant: the cradle's pocket is a hole, and Level_01 has 21 open wall ends.
+meant: the cradle's pocket is a hole, the fan tower's way out leaves two
+wall ends open against its block's end wall, and Level_01 has 21 open
+wall ends.
 
 With `--play FRAMES --game <GAME_ROOT>`, it patches the level into
 `Level_01.NMO` in the folder and plays it headless with libivp physics, the
@@ -238,5 +244,7 @@ using only those before it:
 - The ball does not come near a reward hung over a fan, past a fan's
   block, under a fall or in a trough's bottom, so such rewards go
   untaken. Rewards belong on floors the ball rolls along.
+- The beams are played only by the autopilot; how hard they are for a
+  player at the keys is not known.
 - No box pits: a ball that falls into a pit 5 deep cannot get out, and a
   pit 5 long is rolled over.
