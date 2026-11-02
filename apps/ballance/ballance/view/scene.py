@@ -26,14 +26,15 @@ class SceneObject:
     at: tuple[float, float, float]  # its position
 
 
-def load(source: Path, nmo: Nmo) -> list[SceneObject]:
+def load(source: Path, nmo: Nmo, hidden: bool = False) -> list[SceneObject]:
     """The visible objects of a level file, or of a folder holding a built
-    level's manifest.json."""
-    scene = load_project(source) if source.is_dir() else load_level(source, nmo)
+    level's manifest.json; with hidden, the hidden ones too (the invisible
+    floors the ball still rolls against)."""
+    scene = load_project(source, hidden) if source.is_dir() else load_level(source, nmo, hidden)
     return [obj for obj in scene if obj.name not in LEFT_OUT]
 
 
-def load_level(path: Path, nmo: Nmo) -> list[SceneObject]:
+def load_level(path: Path, nmo: Nmo, hidden: bool = False) -> list[SceneObject]:
     cache = Path(tempfile.gettempdir()) / "ballance_map_view" / \
         f"{path.stem}-{int(path.stat().st_mtime)}"
     if not (cache / "objects.json").exists():
@@ -60,7 +61,7 @@ def load_level(path: Path, nmo: Nmo) -> list[SceneObject]:
     scene = []
     for obj in objects:
         mesh, m = obj["mesh"], obj["matrix"]
-        if not obj["visible"] or not mesh or int(mesh) not in meshes or len(m) < 16:
+        if not (obj["visible"] or hidden) or not mesh or int(mesh) not in meshes or len(m) < 16:
             continue
         triangles = [Triangle(t.material, [place(m, p) for p in t.points], t.uvs,
                               [turn(m, n) for n in t.normals] if t.normals else t.normals)
@@ -69,13 +70,14 @@ def load_level(path: Path, nmo: Nmo) -> list[SceneObject]:
     return scene
 
 
-def load_project(folder: Path) -> list[SceneObject]:
+def load_project(folder: Path, hidden: bool = False) -> list[SceneObject]:
     manifest = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
     scene = []
     for scn in manifest.get("scenes", []):
         for obj in scn.get("objects", []):
             mesh = (obj.get("mesh") or {}).get("obj")
-            if not mesh or obj.get("visible") is False or not (folder / mesh).exists():
+            if not mesh or (obj.get("visible") is False and not hidden) or \
+                    not (folder / mesh).exists():
                 continue
             pos = obj.get("transform", {}).get("position", [0, 0, 0])
             angle = obj.get("transform", {}).get("rotation_euler_deg", [0, 0, 0])[1]
