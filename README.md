@@ -306,7 +306,8 @@ Two optional hosts build on the engine and the packs: `nmo_physics_ivp` (with
 (`nmo behavior run --window`).
 
 Tooling for one game lives under `apps/`, outside the libraries, which know nothing of it:
-`apps/ballance/` holds the Ballance level scripts (`scripts/`) and the data they read (`data/`).
+`apps/ballance/` holds the Ballance level scripts (`scripts/`) and the data they read (`data/`);
+[docs/ballance-level-builder.md](docs/ballance-level-builder.md) describes them.
 
 ### Key Design Decisions
 
@@ -446,6 +447,10 @@ cc app.c $(pkg-config --cflags libnmo-lua libnmo-project) $(pkg-config --static 
 - [API Documentation](docs/api.md): C entry points by area.
 - [API Tiers](docs/api-tiers.md): which public APIs are stable and what
   each tier promises.
+- [Ballance Level Format](docs/ballance-level-format.md): what a Ballance
+  level file holds, measured on the 13 original levels.
+- [Ballance Level Builder](docs/ballance-level-builder.md): building,
+  checking and playing levels with `apps/ballance`.
 
 ---
 

@@ -284,10 +284,12 @@ it:
 road under the sacks (`strip()`) and a narrow road of any length off the
 grid, where a piece lands between grid lines (`channel()`);
 `Floors.hole()` leaves a fan housing's cells out of an area.
-`ballance_level_elements.py` cuts the housing out of Level_03 as
-`Floor_Modul_18.obj`, and the drawbridges' blocks and stoppers, in the
-modules' own frames, as `Floor_Modul_25.obj` and `Floor_Stopper_25.obj`
-(Level_03) and `Floor_Modul_37.obj` and `Floor_Stopper_37.obj` (Level_05).
+`ballance_level_elements.py` cuts the floors the modules stand on out of the
+originals, in the modules' own frames: the fan's housing as
+`Floor_Modul_18.obj`, the drawbridge's blocks and stopper as
+`Floor_Modul_25.obj` and `Floor_Stopper_25.obj` (Level_03), the switch's as
+`Floor_Modul_37.obj` and `Floor_Stopper_37.obj` (Level_05), and the rest as
+`ballance.extract.elements` lists them.
 
 ## Scenery
 
@@ -386,28 +388,11 @@ nmo patch apply --project manifest.json -o Level_01.NMO
 The generated file also holds a CKScene and an object named after the
 document. They made no difference in the engine runs.
 
-`apps/ballance/scripts/ballance_build_level.py <route.json> <out> [--elements <dir>]`
-builds a level from a route: its pieces sector by sector (roads narrow or
-wide and coming down, areas left from the side, turns, ball changers, rails
-straight or bent, fans lifting the ball to the next area, drawbridges, a
-switch, rows of slabs, swinging sacks), with elements placed on the floors.
-It lays them out on the floors' 2.5 grid with `ballance.kit`, turns the
-start, the checkpoints and the balloon with the track, stands the scenery as
-above, hides the fall zone under all of it, and writes `route_points.json`,
-the points along the middle of the track.
-With the meshes `ballance_level_elements.py` exported, it uses the game's
-start, checkpoint and element meshes, opens the road into Level_03's start
-and checkpoint floors and adds the `SkyLayer`; without, boxes stand in for
-the markers, elements and those floors, and there is no scenery and no sky.
-The script's docstring describes the route format.
-
-The scripts in `apps/ballance/scripts` are thin; the work is in the
-`ballance` package beside them (`apps/ballance/ballance`), in layers each
-using only those before it: `core` (headings on the XZ plane, OBJ meshes,
-the nmo CLI), `game` (the groups, kinds and mechanisms, the measured
-dimensions, the materials), `kit` (floors, the pieces off their grid,
-rails), `route` (a route laid out and written as a level), `extract`
-(element meshes, materials, level checks) and `view` (drawing levels).
+`apps/ballance/scripts/ballance_build_level.py` writes such a manifest from
+a route, the track as the ball rolls it, following the rules in this
+document. [ballance-level-builder.md](ballance-level-builder.md) describes
+it and the tools around it: routes, checks, playing a level through and
+watching it.
 
 ## Checking a Level
 
@@ -445,49 +430,21 @@ game's own, so a `Level_01.NMO` there replaces level 1:
 
 ```sh
 cd <GAME_ROOT>
-nmo behavior run --physics ivp --path <out> -n 3300 \
-    --keys 'Enter@800-805,Enter@900-905,Up@2760-3300' \
+nmo behavior run --physics ivp --path <out> -n 1600 \
+    --keys 'Enter@700-705,Enter@725-730,Q@860-1000,Up@1000-1600' \
     --registry 'Software\Ballance\Settings\Language=1' base.cmo
 ```
 
 `--physics ivp` needs a build with libivp. The two Enter presses start
-level 1; the ball spawns around frame 2700. The log names the messages the
-level's events send to `All_Gameplay`: `Extrapoint`, `Checkpoint reached`,
-`Ball Off` (a fall), `Level_Finish`.
+level 1 as soon as the menu takes them, and Q skips the tutorial; the ball
+rolls from about frame 1055. The log names the messages the level's events
+send to `All_Gameplay`: `Extrapoint`, `Checkpoint reached`, `Ball Off` (a
+fall), `Level_Finish`.
 
-A track that turns needs steering: `--steer` rolls the ball through the
-points of `route_points.json` with the arrow keys, as a player would:
+A track that turns needs steering: `--steer` rolls the ball through a list
+of points with the arrow keys, as a player would, and `--steer-log` writes
+the ball's frames. `--window` shows the run. How the builder's levels are
+steered, played through and watched is in
+[ballance-level-builder.md](ballance-level-builder.md).
 
-```sh
-nmo behavior run --physics ivp --path <out> -n 4500 \
-    --keys 'Enter@800-805,Enter@900-905' \
-    --steer "$(python3 -c "import json; print(';'.join(','.join('%g' % v for v in point) for point in json.load(open('<out>/route_points.json'))))")@2760" \
-    --steer-object Ball_Wood,Ball_Stone,Ball_Paper \
-    --registry 'Software\Ballance\Settings\Language=1' base.cmo
-```
-
-A point over a fan has a height (`X,Z,Y`): the ball waits there until the
-wind has lifted it that high. The point at a switch's target has a frame
-count too (`X,Z,Y,F`): the ball keeps pushing there for F frames. The sample plays to the finish this way (frame
-5449): an extra point, the sacks, the first checkpoint, the stone ball
-changer, the extra life, the drawbridge, the second checkpoint, the paper
-ball changer, the slabs, the rails, the fan, the extra point on the area
-above it, the wood ball changer and the balloon.
-
-`--steer-log steer.csv` writes the steered ball's frames (position, speed,
-the point it heads for, the keys held). `apps/ballance/scripts/ballance_map_view.py`
-draws a level, an original's file or a built folder, from above, from the
-front and side and from four corners, with the game's textures if given; it
-names each mechanism, element and marker with its sector, lists them in a
-legend with what is known of how they play, and draws the route and such a
-log on top:
-
-```sh
-apps/ballance/scripts/ballance_map_view.py <out> --trace steer.csv --views top,iso \
-    --around P_Modul_37_01 35 --textures <game>/Textures -o view.png
-```
-
-Not covered yet: levels generated this way have not been loaded in the
-original game, the moving modules other than the fan, the drawbridge, the
-switch, the slabs and the sacks (`P_Modul_*`) are not placed, and rails neither meet wide
-roads nor end over nothing.
+No level generated this way has been loaded in the original game yet.
