@@ -173,10 +173,22 @@ its elements, on the corner of four of its flat inside cells, and then
 "rise": dy: the fan lifts a paper ball onto the next piece, dy higher (at
 most 16), which starts at the area's exit as Level_03's do.
 
+An area may also have "branches": [{"side": "left", "route": [pieces]}],
+each laid from the middle of a side the track neither enters nor leaves by,
+as the originals' spurs and second ways leave their nodes.  The ball goes
+down a branch with "visit": true and comes back (a spur to a ball changer
+or an extra point; a spur ends on a road or an area, shut).  A branch with
+"to": NAME comes back by itself to a later area of the sector named NAME
+("name": NAME), ending at the middle of one of its free sides, heading into
+it, at its height: a road opens onto it, a rail docks in it (Level_05's
+rails part from a node and come back to another).
+
 Every piece may carry "elements": [{"kind": "P_Box", "at": [along, right]}],
 placed from where the piece starts, along the track and to its right, and
 resting on the floor there as the originals' do (ELEMENT_LIFT in
-ballance.game.measures).  Each
+ballance.game.measures); with "up": dy, it hangs dy above it (an extra
+point over a fan or a sack's swing), and "pile": n piles n boxes up, as
+Level_08's are.  Each
 sector but the last ends in a checkpoint and the last in the balloon; both
 are reached from a narrow road, and every sector starts with one.
 

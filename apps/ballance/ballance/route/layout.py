@@ -36,6 +36,9 @@ class Track:
     trough: float = 0.0  # the length of the trough it is in
     railed: float = 0.0  # how long a road the railings of the rail it is on reach onto
     off_floor: bool = False  # the fall it is in is off a log's or a trough's end
+    # branches to lay from the last piece: point, heading, height, grid, branch
+    forks: list[tuple] = field(default_factory=list)
+    step: int | None = None  # the last Part laid on it
 
 
 @dataclass
@@ -67,6 +70,9 @@ class Part:
     sector: int
     what: str  # the piece's kind ("road", "rail"...), or "start" or "end"
     index: int = 0  # the piece's number in its sector, from 1
+    branch: int = 0  # in a branch off piece index, its number there, from 1
+    after: int | None = None  # the step of the part it goes on from
+    joins: int | None = None  # the step of the area a branch comes back to
     floors: list[tuple[Floors, object]] = field(default_factory=list)
     extras: list[tuple] = field(default_factory=list)
     module_floors: list[tuple] = field(default_factory=list)
@@ -103,6 +109,11 @@ class Layout:
         self.floors: Floors | None = None  # the grid the track is on
         self.parts: list[Part] = []  # what each piece laid, in turn
         self._claimed: dict[str, int] = {}
+        # named areas, for branches to come back to: grid, height, step, and
+        # the sides no track leaves by, each its middle and the way out
+        self.nodes: dict[str, tuple[Floors, float, int, list[tuple[Point, Heading]]]] = {}
+        self._waiting: dict[str, list[tuple]] = {}  # branches to areas not yet laid
+        self._named: dict[str, tuple] = {}  # areas named by the piece being laid
         self._lay(route["sectors"])
 
     def _lay(self, sectors: list[list[dict]]) -> None:
@@ -128,6 +139,10 @@ class Layout:
                 lay_piece(self, index, sector, piece, track)
                 what = piece.get("module", next(iter(piece)))
                 self._claim(index, what, sector, track).index = number
+                self._branch(index, sector, track, number)
+            if self._waiting:
+                names = ", ".join(sorted(self._waiting))
+                raise ValueError(f"sector {index} has branches to no area of its own named {names}")
             if track.width != NARROW or track.run is not None:
                 raise ValueError(f"sector {index} must end on a narrow road")
             p, d = track.p, track.d
@@ -151,7 +166,9 @@ class Layout:
 
     def _claim(self, sector_index: int, what: str, sector: Sector, track: Track) -> Part:
         """A Part with what was laid since the last was claimed."""
-        part = Part(len(self.parts), sector_index, what, end=(track.p, track.h, track.d))
+        part = Part(len(self.parts), sector_index, what, end=(track.p, track.h, track.d),
+                    after=track.step)
+        track.step = part.step
         self.parts.append(part)
         seen = self._claimed
         for name in ("elements", "modules", "module_floors"):
@@ -175,14 +192,104 @@ class Layout:
                     seen[key] = 1
         return part
 
+    def name_node(self, name: str, floors: Floors, h: float,
+                  sides: list[tuple[Point, Heading]]) -> None:
+        """Names the area being laid, whose free sides a branch may come
+        back to."""
+        if name in self.nodes or name in self._named:
+            raise ValueError(f"two areas are named {name}")
+        self._named[name] = (floors, h, sides)
+
+    def _branch(self, sector_index: int, sector: Sector, track: Track, number: int) -> None:
+        """Lays the branches the piece just laid left, and those waiting for
+        an area it named."""
+        for name, (floors, h, sides) in self._named.items():
+            self.nodes[name] = (floors, h, track.step, sides)
+        self._named.clear()
+        forks, track.forks = track.forks, []
+        for fork in forks:
+            target = fork[-1].get("to")
+            if target and target not in self.nodes:
+                self._waiting.setdefault(target, []).append((sector_index, sector, number, fork,
+                                                             track.step))
+            else:
+                self._lay_branch(sector_index, sector, number, fork, track.step)
+        for name in [name for name in self._waiting if name in self.nodes]:
+            for waiting in self._waiting.pop(name):
+                self._lay_branch(*waiting)
+
+    def _lay_branch(self, sector_index: int, sector: Sector, number: int, fork: tuple,
+                    node: int) -> None:
+        """A branch off piece number (step node): its pieces from the side
+        it leaves, on the area's grid.  A branch the ball goes down ("visit":
+        true) and back up has its points in the route before the area's way
+        out; another's are left out, and the ball it would turn the ball into.
+        A branch to an area ("to": NAME) ends at the middle of one of its
+        free sides, heading into it, at its height, and opens to it there."""
+        p, d, h, floors, branch = fork
+        route, target, visit = branch.get("route"), branch.get("to"), branch.get("visit", False)
+        if not route:
+            raise ValueError("a branch has a route of pieces")
+        if visit and target:
+            raise ValueError("the ball goes down a branch and back, or the branch comes back "
+                             "to an area by itself, not both")
+        main_floors, ball = self.floors, self.last_ball
+        way_out = self.points.pop() if visit else None
+        mark = len(self.points)
+        self.floors = floors
+        t = Track(p, d, h, floor="area", step=node)
+        self.points.append(list(p))
+        for k, piece in enumerate(route, start=1):
+            lay_piece(self, sector_index, sector, piece, t)
+            what = piece.get("module", next(iter(piece)))
+            part = self._claim(sector_index, what, sector, t)
+            part.index, part.branch = number, k
+            self._branch(sector_index, sector, t, number)
+        if target:
+            self._join(target, t, sector)
+            self.parts[t.step].joins = self.nodes[target][2]
+        elif t.run is not None or t.floor not in ("road", "wide", "area"):
+            raise ValueError("a branch that comes back to no area ends on a road or an area")
+        if visit:
+            if t.floor == "area":
+                self.points.pop()  # its far side is shut: the ball turns in its middle
+            there = [point[:2] for point in self.points[mark:]]
+            self.points += there[-2::-1] + [way_out]
+        else:
+            del self.points[mark:]
+            self.last_ball = ball
+        self.floors = main_floors
+
+    def _join(self, name: str, t: Track, sector: Sector) -> None:
+        floors, h, _, sides = self.nodes[name]
+        for side in sides:
+            q, out = side
+            if abs(q[0] - t.p[0]) < 1e-6 and abs(q[1] - t.p[1]) < 1e-6 and out == back_of(t.d):
+                break
+        else:
+            raise ValueError(f"a branch to {name} ends at ({t.p[0]:g}, {t.p[1]:g}) heading "
+                             f"{t.d}, not at the middle of a free side heading into it")
+        if abs(t.h - h) > 1e-6:
+            raise ValueError(f"a branch to {name} comes to it {t.h - h:+g} off its height")
+        sides.remove(side)
+        if t.run is not None:
+            self.dock(floors, q, t.d)
+            sector.rails.runs.append(t.run)
+            t.run = None
+        else:
+            self.open(floors, q, t.d, t.width)
+            self.open(self.floors, q, t.d, t.width)
+
     def plan(self) -> str:
         """Where each piece leaves the track, as a table: its sector and
-        number, kind, point, height (of the floor's inside) and heading."""
+        number (N.K for a branch's piece K off piece N), kind, point, height
+        (of the floor's inside) and heading."""
         names = {d: name for name, d in HEADINGS.items()}
         lines = ["sector piece kind              x        z   height heading"]
         for part in self.parts:
             (x, z), h, d = part.end
-            lines.append(f"{part.sector:>6} {part.index or '':>5} {part.what:<10} {x:8.2f} "
+            index = f"{part.index}.{part.branch}" if part.branch else part.index or ""
+            lines.append(f"{part.sector:>6} {index:>5} {part.what:<10} {x:8.2f} "
                          f"{z:8.2f} {h:8.2f} {names.get(d, '')}")
         return "\n".join(lines) + "\n"
 

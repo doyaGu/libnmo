@@ -5,10 +5,10 @@ piece of the route (ballance.route.layout.Part) takes up boxes: its floors,
 pieces off the grid, cut floors, rails, elements, pads and balloon, as they
 stand.  The room the ball rolls through is CLASH_HEADROOM above the floors
 and rails a piece lays, and the room its elements move in is what they take
-up.  A piece's boxes in that room over another piece's
-floors are in the ball's way, unless the two follow one another, or only
-rails and falls come between them (a rail's end over the area it drops
-into, a log reaching back under the rail it is dropped onto from)."""
+up.  A piece's boxes in that room over another piece's floors are in the
+ball's way, unless one goes on from the other (or a branch comes back to
+it), or only rails and falls come between them (a rail's end over the area
+it drops into, a log reaching back under the rail it is dropped onto from)."""
 
 from __future__ import annotations
 
@@ -134,9 +134,32 @@ def _overlap(a: Box, b: Box) -> float:
 
 
 def _name(part: Part) -> str:
+    if part.branch:
+        return (f"sector {part.sector}'s piece {part.branch} ({part.what}) of the branch off "
+                f"piece {part.index}")
     if part.index:
         return f"sector {part.sector}'s piece {part.index} ({part.what})"
     return f"sector {part.sector}'s {part.what}"
+
+
+def _neighbours(parts: list[Part], a: Part, b: Part) -> bool:
+    """Whether one part goes on from the other (or a branch comes back to
+    it) with only rails and falls between them."""
+    before: dict[int, list[int]] = {}
+    for part in parts:
+        if part.after is not None:
+            before.setdefault(part.step, []).append(part.after)
+        if part.joins is not None:
+            before.setdefault(part.joins, []).append(part.step)
+    for later, earlier in ((a, b), (b, a)):
+        steps = list(before.get(later.step, []))
+        while steps:
+            step = steps.pop()
+            if step == earlier.step:
+                return True
+            if parts[step].what in FLOWN:
+                steps += before.get(step, [])
+    return a is b
 
 
 def clashes(layout: Layout, assets: Assets) -> list[str]:
@@ -145,8 +168,7 @@ def clashes(layout: Layout, assets: Assets) -> list[str]:
     found = []
     for part, solid, _ in boxes:
         for other, _, room in boxes:
-            a, b = sorted((part.step, other.step))
-            if all(between.what in FLOWN for between in layout.parts[a + 1:b]):
+            if _neighbours(layout.parts, part, other):
                 continue
             hits = [(a, b) for a in solid for b in room if _overlap(a, b) > CLASH_OVERLAP]
             if hits:

@@ -14,8 +14,8 @@ from typing import TYPE_CHECKING, Callable
 
 from ..core.geometry import (Heading, Point, across, at, axis_of, back_of, left_of, rect,
                              right_of, side_of, turn_of)
-from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, ARMS_PATH, BRIDGES,
-                             CLIMB_DROP, CLIMB_END, CLIMB_FANS, CLIMB_HOLD, CLIMB_LENGTH,
+from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, ARMS_PATH, BOX_PILE,
+                             BRIDGES, CLIMB_DROP, CLIMB_END, CLIMB_FANS, CLIMB_HOLD, CLIMB_LENGTH,
                              CLIMB_TOPS, CLIMB_TRAFO, CRADLE_BALL, CRADLE_EXIT, CRADLE_RING,
                              CRADLE_TOP, ELEMENT_LIFT, FAN_BELOW, FAN_BLOCK_FAN, FAN_BLOCK_RING,
                              FAN_BLOCK_TOP, FAN_REACH, FAN_TOWER_FLOOR, FAN_TOWER_HALF,
@@ -362,11 +362,15 @@ def lay_cradle(layout: Layout, sector: int, part: Sector, piece: dict, track: Tr
 
 def lay_area(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:
     """{"area": [along, across], "exit": "straight", "left" or "right",
-    "rise": dy, "railings": true}; with railings, Level_01's railing stands
-    round each of its corners (as Level_05's do); with a rise, a fan among
-    its elements lifts the ball onto the next piece, dy higher, on a grid of
-    its own (as Level_03's do).  After a rail's fall it starts on a grid of
-    its own, its rim closed."""
+    "rise": dy, "railings": true, "branches": [...], "name": NAME}; with
+    railings, Level_01's railing stands round each of its corners (as
+    Level_05's do); with a rise, a fan among its elements lifts the ball onto
+    the next piece, dy higher, on a grid of its own (as Level_03's do).
+    After a rail's fall it starts on a grid of its own, its rim closed.
+
+    A branch ({"side": ..., "route": [pieces]}) leaves a side the track
+    doesn't, as the originals' spurs and second ways do (ballance.route.layout
+    lays it); a named area is one a branch may come back to."""
     along, across = (float(v) for v in piece["area"])
     p, d, h = track.p, track.d, track.h
     if track.floor == "fall":
@@ -387,11 +391,26 @@ def lay_area(layout: Layout, sector: int, part: Sector, piece: dict, track: Trac
             layout.pillars.append([x, h + RISE - WALL, z])
     exit = piece.get("exit", "straight")
     middle = at(p, d, along / 2)
-    if exit == "straight":
-        track.p = at(p, d, along)
-    else:
-        track.d = side_of(d, exit)
-        track.p = at(middle, track.d, across / 2)
+    # the middles of its sides, each with the way out of it
+    sides = {"straight": (at(p, d, along), d),
+             "left": (at(middle, left_of(d), across / 2), left_of(d)),
+             "right": (at(middle, right_of(d), across / 2), right_of(d))}
+    if exit not in sides:
+        raise ValueError(f"an area's exit is straight, left or right, not {exit}")
+    used = {exit}
+    for branch in piece.get("branches", []):
+        side = branch.get("side")
+        if side not in sides or side in used:
+            raise ValueError(f"a branch leaves a side of an area no track leaves (straight, "
+                             f"left or right), not {side}")
+        if piece.get("rise"):
+            raise ValueError("a branch leaves an area that doesn't rise")
+        used.add(side)
+        track.forks.append((*sides[side], h, layout.floors, branch))
+    if "name" in piece:
+        layout.name_node(piece["name"], layout.floors, h,
+                         [place for side, place in sides.items() if side not in used])
+    track.p, track.d = sides[exit]
     rise = float(piece.get("rise", 0.0))
     fans = [e for e in piece.get("elements", []) if e["kind"] == "P_Modul_18"]
     if rise:
@@ -1084,9 +1103,12 @@ def dock_wide(layout: Layout, sector: int, part: Sector, track: Track) -> None:
 
 def place_element(layout: Layout, sector: int, floors, piece: dict, element: dict,
                   start, heading, ramp: Ramp) -> None:
-    """{"kind": kind, "at": [along, right]}: an element on the piece, resting
-    on the floor there; a fan (P_Modul_18) stands in a housing set into an
-    area's flat inside, two cells square, its rim flush with the floor."""
+    """{"kind": kind, "at": [along, right], "up": dy, "pile": n}: an element
+    on the piece, resting on the floor there or dy above it (the originals
+    hang extra points over a fan or a sack's swing); n boxes piled up, as
+    Level_08's and Level_12's are.  A fan (P_Modul_18) stands in a housing
+    set into an area's flat inside, two cells square, its rim flush with the
+    floor."""
     a, c = (float(v) for v in element["at"])
     y0, y1, length = ramp
     x, z = at(start, heading, a, c)
@@ -1097,4 +1119,10 @@ def place_element(layout: Layout, sector: int, floors, piece: dict, element: dic
             raise ValueError("a fan stands in an area")
         floors.hole(x - NARROW / 2, z - NARROW / 2, x + NARROW / 2, z + NARROW / 2)
         layout.housings.append((sector, [x, floor - FAN_BELOW, z]))
-    layout.elements.append((kind, sector, [x, floor + ELEMENT_LIFT[kind], z]))
+    pile = int(element.get("pile", 1))
+    if pile > 1 and kind != "P_Box":
+        raise ValueError("only boxes are piled up")
+    up = float(element.get("up", 0.0))
+    for k in range(pile):
+        layout.elements.append((kind, sector,
+                                [x, floor + ELEMENT_LIFT[kind] + up + k * BOX_PILE, z]))
