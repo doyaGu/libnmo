@@ -22,7 +22,6 @@ static int bb_effect(nmo_engine_block_t *block)
 }
 
 static const nmo_engine_block_desc_t eng_effect_blocks[] = {
-    {NMO_GUID_INIT(0x3ebe40f2, 0x3fa41377), "Set MipMap Level", bb_effect, NULL, NULL}, /* Materials-Textures/Texture */
     {NMO_GUID_INIT(0x734f73b4, 0x01fc79ac), "TT_FlushTextures", bb_effect, NULL, NULL}, /* TT Toolbox/Narratives */
 };
 

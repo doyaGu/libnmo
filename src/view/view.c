@@ -65,6 +65,7 @@ typedef struct view_texture {
     GLuint name;
     uint32_t version;
     bool empty; /* no image: drawn untextured */
+    bool mipmapped; /* uploaded with its mipmaps */
 } view_texture_t;
 
 /* A mesh's faces split by material group, and its prelit colors as RGBA bytes */
@@ -261,15 +262,28 @@ static GLuint view_texture(nmo_view_t *view, nmo_object_id_t id)
         texture->version = has_image ? image.version - 1 : 0;
         texture->empty = true;
     }
-    if (has_image && image.version != texture->version) {
+    if (has_image && (image.version != texture->version || image.mipmapped != texture->mipmapped)) {
         texture->version = image.version;
         texture->empty = false;
+        texture->mipmapped = image.mipmapped;
         glBindTexture(GL_TEXTURE_2D, texture->name);
-        glTexParameteri(GL_TEXTURE_2D, GL_GENERATE_MIPMAP, GL_TRUE);
+        /* RCKTexture::SystemToVideoMemory: mipmaps only for a texture that uses them */
+        glTexParameteri(GL_TEXTURE_2D, GL_GENERATE_MIPMAP, image.mipmapped ? GL_TRUE : GL_FALSE);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image.width, image.height, 0, GL_RGBA,
                      GL_UNSIGNED_BYTE, image.rgba);
     }
     return texture->empty ? 0 : texture->name;
+}
+
+/* Whether the texture view_texture() last gave has its mipmaps */
+static bool view_texture_mipmapped(const nmo_view_t *view, nmo_object_id_t id)
+{
+    for (size_t i = 0; i < view->texture_count; i++) {
+        if (view->textures[i].id == id) {
+            return view->textures[i].mipmapped;
+        }
+    }
+    return false;
 }
 
 /* The prelit colors as RGBA bytes */
@@ -544,13 +558,22 @@ static void view_set_material(nmo_view_t *view, const nmo_engine_material_t *m, 
         glEnable(GL_TEXTURE_2D);
         glBindTexture(GL_TEXTURE_2D, texture);
         GLint min_filter = view_filter(m->min_filter, true);
+        /* Without mipmaps the device samples the image itself, whatever the mip filter */
+        bool mipmapped = view_texture_mipmapped(view, m->texture);
+        if (!mipmapped) {
+            min_filter = min_filter == GL_NEAREST || min_filter == GL_NEAREST_MIPMAP_NEAREST ||
+                                 min_filter == GL_NEAREST_MIPMAP_LINEAR
+                             ? GL_NEAREST
+                             : GL_LINEAR;
+        }
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, min_filter);
         /* The window has many more pixels than CK's render context: mipmaps seen at a
            slant stay sharp */
         if (view->anisotropy > 1.0f) {
-            bool mipmapped = min_filter != GL_NEAREST && min_filter != GL_LINEAR;
             glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT,
-                            mipmapped ? view->anisotropy : 1.0f);
+                            mipmapped && min_filter != GL_NEAREST && min_filter != GL_LINEAR
+                                ? view->anisotropy
+                                : 1.0f);
         }
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, view_filter(m->mag_filter, false));
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, (GLint)view_address(m->address_mode));

@@ -212,6 +212,7 @@ typedef struct nmo_engine_image {
     int32_t width, height;
     const uint8_t *rgba;  /* the engine's until the texture changes */
     uint32_t version;     /* changes when the image does */
+    bool mipmapped;       /* CKTexture::GetMipmapCount() != 0: the device builds its mipmaps */
 } nmo_engine_image_t;
 
 /**

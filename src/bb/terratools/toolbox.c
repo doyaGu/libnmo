@@ -124,12 +124,21 @@ static int bb_replace_path(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
-/* TT_SetMipMapping: the target material's texture mipmapped and its filter modes set (an effect). */
+/*
+ * TT_SetMipMapping: the target material's texture uses MipMap Count levels
+ * (CKTexture::UseMipmap), and the material takes Filter Min and Filter Mag.
+ */
 static int bb_set_mip_mapping(blk_t *b)
 {
     if (IN_ACTIVE(b, 0)) {
         IN_OFF(b, 0);
         OUT_ON(b, 0);
+    }
+    eng_material_t *material = eng_material(b->engine, nmo_engine_block_target(b));
+    if (material != NULL && material->desc.texture != 0) {
+        eng_texture_use_mipmap(b->engine, material->desc.texture, get_in_int(b, 2, 1));
+        material->desc.min_filter = get_in_int(b, 0, 7); /* VXTEXTUREFILTER_ANISOTROPIC */
+        material->desc.mag_filter = get_in_int(b, 1, 7);
     }
     eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, nmo_engine_block_target(b), 0);
     return NMO_ENGINE_BR_OK;

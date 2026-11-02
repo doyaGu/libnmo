@@ -170,6 +170,20 @@ static int bb_set_texture(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* Set MipMap Level: the target texture with its mipmaps or without (CKTexture::UseMipmap) */
+static int bb_set_mipmap_level(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_object_id_t texture = nmo_engine_block_target(b);
+    if (texture == 0) {
+        return NMO_ENGINE_BR_OK;
+    }
+    eng_texture_use_mipmap(b->engine, texture, get_in_int(b, 0, 1) != 0 ? 1 : 0);
+    eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, texture, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
 /* Set Alpha Test: each input given changes the material's alpha test */
 static int bb_set_alpha_test(blk_t *b)
 {
@@ -337,6 +351,7 @@ static const nmo_engine_block_desc_t eng_materials_blocks[] = {
     {NMO_GUID_INIT(0xe1e1e1e1, 0x1e1e1e1e), "Set Diffuse", bb_set_diffuse, NULL, NULL},
     {NMO_GUID_INIT(0xd1d1d1d1, 0x30303030), "Set Emissive", bb_set_emissive, NULL, NULL},
     {NMO_GUID_INIT(0xeb123eb5, 0x5be321be), "Set Texture", bb_set_texture, NULL, NULL},
+    {NMO_GUID_INIT(0x3ebe40f2, 0x3fa41377), "Set MipMap Level", bb_set_mipmap_level, NULL, NULL},
     {NMO_GUID_INIT(0x1cb5661e, 0x5b5d3fda), "Set Alpha Test", bb_set_alpha_test, NULL, NULL},
     {NMO_GUID_INIT(0x2f572a66, 0x6a9a0088), "Set Blend Modes", bb_set_blend_modes, NULL, NULL},
     {NMO_GUID_INIT(0x1144022f, 0x68fd055c), "Set Material Z Buffer", bb_set_material_z_buffer, NULL,

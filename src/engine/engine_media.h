@@ -45,6 +45,7 @@ typedef struct eng_texture {
     bool movie;
     eng_movie_t *movie_reader; /* Movie Load's movie; NULL when it cannot be decoded */
     ENG_VEC(char *) files; /* the file each slot was loaded from at run time (LoadImage); NULL: the file's */
+    int32_t mipmap_level;  /* CKTexture's: 0 none, -1 as many as the size gives, else that many */
 } eng_texture_t;
 
 typedef struct eng_media {
@@ -77,6 +78,8 @@ void eng_sound_stop(eng_sound_t *sound, float fade_out);
 float eng_wave_length(nmo_engine_t *engine, const char *name);
 /* The engine's state of texture `id`, made the first time; NULL when `id` is no CKTexture. */
 eng_texture_t *eng_texture(nmo_engine_t *engine, nmo_object_id_t id);
+/* CKTexture::UseMipmap: 1 or less than 0 for all the levels, more than 1 that many, 0 none */
+void eng_texture_use_mipmap(nmo_engine_t *engine, nmo_object_id_t id, int32_t use);
 /*
  * The frame count of the AVI movie `name` names (the AVI movie reader's
  * GetMovieFrameCount, from the main header); -1 when it is none.

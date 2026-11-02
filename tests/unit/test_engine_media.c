@@ -6,6 +6,7 @@
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_sound_schemas.h"
 #include "object/builtin/nmo_texture_schemas.h"
+#include "object/nmo_ref.h"
 
 #include <stdio.h>
 
@@ -21,6 +22,7 @@
 #define GUID_VOLUME_CONTROL NMO_GUID(0x33613f21, 0x776b185b)
 #define GUID_PLAY_SOUND_INSTANCE NMO_GUID(0x00283a35, 0x38ef6b48)
 #define GUID_TIME_SETTINGS NMO_GUID(0x060a0f8c, 0x09203b5f)
+#define GUID_TT_SET_MIP_MAPPING NMO_GUID(0x38c34dab, 0x5dd03bdf)
 
 static void input_float(engine_fixture_t *f, nmo_object_id_t pin, float value)
 {
@@ -346,10 +348,10 @@ TEST(engine_media, movie_texture_shows_the_decoded_frame_of_its_slot)
     fixture_end(&f);
 }
 
-/* CKBitmapData keeps black as the transparent color when the file saves none */
-TEST(engine_media, transparent_texture_clears_black_without_a_saved_color)
+/* "key.bmp" in the scratch folder: a 2 x 1 24-bit BMP, black then white (bottom-up BGR rows
+ * padded to 4 bytes) */
+static void write_key_bmp(void)
 {
-    /* A 2 x 1 24-bit BMP: black, then white (bottom-up BGR rows padded to 4 bytes) */
     uint8_t bmp[54 + 8];
     memset(bmp, 0, sizeof(bmp));
     bmp[0] = 'B';
@@ -367,23 +369,39 @@ TEST(engine_media, transparent_texture_clears_black_without_a_saved_color)
     ASSERT_NOT_NULL(out);
     ASSERT_EQ(sizeof(bmp), fwrite(bmp, 1, sizeof(bmp), out));
     fclose(out);
+}
 
-    engine_fixture_t f;
-    fixture_begin_document(&f);
-    nmo_object_id_t texture = fixture_create(&f, NMO_CID_TEXTURE, "Keyed");
-    nmo_texture_state_t *state = (nmo_texture_state_t *)fixture_state(&f, texture);
-    ASSERT_NOT_NULL(state);
-    nmo_arena_t *arena = nmo_session_get_arena(f.session);
+/* A texture of key.bmp, transparent with the file's default color */
+static nmo_object_id_t key_texture(engine_fixture_t *f)
+{
+    nmo_object_id_t texture = fixture_create(f, NMO_CID_TEXTURE, "Keyed");
+    nmo_texture_state_t *state = (nmo_texture_state_t *)fixture_state(f, texture);
+    nmo_arena_t *arena = nmo_session_get_arena(f->session);
     char **names = (char **)nmo_arena_alloc(arena, sizeof(char *), _Alignof(char *));
-    ASSERT_NOT_NULL(names);
+    if (state == NULL || names == NULL) {
+        return 0;
+    }
     names[0] = (char *)nmo_arena_alloc(arena, sizeof("key.bmp"), 1);
-    ASSERT_NOT_NULL(names[0]);
+    if (names[0] == NULL) {
+        return 0;
+    }
     memcpy(names[0], "key.bmp", sizeof("key.bmp"));
     state->slot_count = 1;
     state->slot_filenames = names;
     state->has_slot_filenames = 1;
     state->is_transparent = 1;
     state->has_transparent_color = 0;
+    return texture;
+}
+
+/* CKBitmapData keeps black as the transparent color when the file saves none */
+TEST(engine_media, transparent_texture_clears_black_without_a_saved_color)
+{
+    write_key_bmp();
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t texture = key_texture(&f);
+    ASSERT_TRUE(texture != 0);
     f.script_id = fixture_add_script(&f, "Script", &f.script_in);
     fixture_begin_edit(&f);
     fixture_commit(&f, NULL);
@@ -397,6 +415,46 @@ TEST(engine_media, transparent_texture_clears_black_without_a_saved_color)
     ASSERT_EQ(0, image.rgba[3]);
     ASSERT_EQ(0xFFFFFFu, image_pixel(&image, 1, 0));
     ASSERT_EQ(255, image.rgba[7]);
+    fixture_end(&f);
+}
+
+/* CKTexture::UseMipmap: a texture saved without mipmaps gets them from TT_SetMipMapping,
+ * which also sets its material's filters */
+TEST(engine_media, set_mip_mapping_gives_the_texture_its_mipmaps)
+{
+    write_key_bmp();
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t texture = key_texture(&f);
+    nmo_object_id_t material = fixture_create(&f, NMO_CID_MATERIAL, "Keyed Material");
+    nmo_material_state_t *material_state = (nmo_material_state_t *)fixture_state(&f, material);
+    ASSERT_TRUE(texture != 0 && material_state != NULL);
+    material_state->textures[0] = nmo_ref_from_id(texture);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t mip = fixture_block(&f, GUID_TT_SET_MIP_MAPPING, "Mip");
+    ASSERT_TRUE(mip != 0 && fixture_target(&f, mip) != 0);
+    fixture_input_int(&f, fixture_target(&f, mip), (int32_t)material);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, mip, 0), 1);
+    fixture_input_int(&f, BLOCK_PIN(&f, mip, 0), 6); /* LINEARMIPLINEAR */
+    fixture_input_int(&f, BLOCK_PIN(&f, mip, 1), 2); /* LINEAR */
+    fixture_input_int(&f, BLOCK_PIN(&f, mip, 2), 1);
+    fixture_commit(&f, NULL);
+    nmo_engine_set_file_resolver(f.engine, resolve_scratch, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    nmo_engine_image_t image;
+    ASSERT_TRUE(nmo_engine_texture_image(f.engine, texture, &image));
+    ASSERT_FALSE(image.mipmapped);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1u, runs(&f, mip));
+    ASSERT_TRUE(nmo_engine_texture_image(f.engine, texture, &image));
+    ASSERT_TRUE(image.mipmapped);
+    nmo_engine_material_t desc;
+    ASSERT_TRUE(nmo_engine_material(f.engine, material, &desc));
+    ASSERT_EQ(6, desc.min_filter);
+    ASSERT_EQ(2, desc.mag_filter);
     fixture_end(&f);
 }
 
@@ -687,6 +745,7 @@ REGISTER_TEST(engine_media, particle_system_exits_off_once_its_particles_died);
 REGISTER_TEST(engine_media, movie_player_shows_the_movie_frames_over_its_duration);
 REGISTER_TEST(engine_media, movie_texture_shows_the_decoded_frame_of_its_slot);
 REGISTER_TEST(engine_media, transparent_texture_clears_black_without_a_saved_color);
+REGISTER_TEST(engine_media, set_mip_mapping_gives_the_texture_its_mipmaps);
 REGISTER_TEST(engine_media, play_animation_progresses_over_its_duration);
 REGISTER_TEST(engine_media, play_global_animation_loops_over_its_duration);
 REGISTER_TEST(engine_media, sound_load_gives_the_sound_its_file_length);

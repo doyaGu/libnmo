@@ -302,7 +302,17 @@ eng_texture_t *eng_texture(nmo_engine_t *engine, nmo_object_id_t id)
     texture->id = id;
     texture->slot_count = state != NULL ? (int32_t)state->slot_count : 0;
     texture->current_slot = state != NULL && state->has_current_slot ? state->current_slot : 0;
+    /* The file's level count; 0xFF stands for every level */
+    texture->mipmap_level = state == NULL ? 0 : state->mipmap_level == 0xFF ? -1 : state->mipmap_level;
     return texture;
+}
+
+void eng_texture_use_mipmap(nmo_engine_t *engine, nmo_object_id_t id, int32_t use)
+{
+    eng_texture_t *texture = eng_texture(engine, id);
+    if (texture != NULL) {
+        texture->mipmap_level = use == 1 || use < 0 ? -1 : use > 1 ? use : 0;
+    }
 }
 
 int32_t nmo_engine_texture_current_slot(const nmo_engine_t *engine, nmo_object_id_t texture_id)

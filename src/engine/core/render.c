@@ -1396,6 +1396,7 @@ bool nmo_engine_texture_image(nmo_engine_t *engine, nmo_object_id_t texture,
             out->height = image->height;
             out->rgba = image->rgba;
             out->version = image->version;
+            out->mipmapped = slots->mipmap_level != 0;
             return image->rgba != NULL;
         }
         nmo_arena_t *arena = nmo_arena_create(NULL, 1u << 16);
@@ -1427,6 +1428,7 @@ bool nmo_engine_texture_image(nmo_engine_t *engine, nmo_object_id_t texture,
     out->height = image->height;
     out->rgba = image->rgba;
     out->version = image->version;
+    out->mipmapped = slots->mipmap_level != 0;
     return image->rgba != NULL;
 }
 
