@@ -62,6 +62,10 @@ void eng_free_render(nmo_engine_t *engine)
         free(render->images.data[i].rgba);
     }
     free(render->images.data);
+    for (size_t i = 0; i < render->user_mipmaps.count; i++) {
+        free(render->user_mipmaps.data[i].rgba);
+    }
+    free(render->user_mipmaps.data);
     for (size_t i = 0; i < render->meshes.count; i++) {
         eng_mesh_t *mesh = &render->meshes.data[i];
         free(mesh->vertices);
@@ -1339,6 +1343,23 @@ static uint8_t *eng_decode_slot(nmo_engine_t *engine, const nmo_texture_state_t 
     return pixels;
 }
 
+/* CKBitmapData's transparent color (black unless saved): those pixels are clear */
+static void eng_key_image(const nmo_texture_state_t *state, uint8_t *rgba, int w, int h)
+{
+    if (!state->is_transparent || rgba == NULL) {
+        return;
+    }
+    uint32_t key = state->has_transparent_color ? state->transparent_color : 0u;
+    uint8_t r = (uint8_t)(key >> 16), g = (uint8_t)(key >> 8), b = (uint8_t)key;
+    size_t count = (size_t)w * (size_t)h;
+    for (size_t i = 0; i < count; i++) {
+        uint8_t *p = &rgba[i * 4];
+        if (p[0] == r && p[1] == g && p[2] == b) {
+            p[3] = 0;
+        }
+    }
+}
+
 static eng_image_t *eng_find_image(nmo_engine_t *engine, nmo_object_id_t texture)
 {
     for (size_t i = 0; i < engine->render.images.count; i++) {
@@ -1410,18 +1431,7 @@ bool nmo_engine_texture_image(nmo_engine_t *engine, nmo_object_id_t texture,
         if (image->rgba != NULL) {
             image->width = w;
             image->height = h;
-            /* CKBitmapData's transparent color (black unless saved): those pixels are clear */
-            if (state->is_transparent) {
-                uint32_t key = state->has_transparent_color ? state->transparent_color : 0u;
-                uint8_t r = (uint8_t)(key >> 16), g = (uint8_t)(key >> 8), b = (uint8_t)key;
-                size_t count = (size_t)w * (size_t)h;
-                for (size_t i = 0; i < count; i++) {
-                    uint8_t *p = &image->rgba[i * 4];
-                    if (p[0] == r && p[1] == g && p[2] == b) {
-                        p[3] = 0;
-                    }
-                }
-            }
+            eng_key_image(state, image->rgba, w, h);
         }
     }
     out->width = image->width;
@@ -1430,6 +1440,72 @@ bool nmo_engine_texture_image(nmo_engine_t *engine, nmo_object_id_t texture,
     out->version = image->version;
     out->mipmapped = slots->mipmap_level != 0;
     return image->rgba != NULL;
+}
+
+static const nmo_texture_state_t *eng_texture_state(const nmo_engine_t *engine,
+                                                   nmo_object_id_t texture)
+{
+    nmo_object_t *object = engine != NULL && texture != 0 ? eng_find_object(engine, texture) : NULL;
+    return object != NULL && nmo_object_get_class_id(object) == NMO_CID_TEXTURE
+               ? (const nmo_texture_state_t *)nmo_object_get_state(object)
+               : NULL;
+}
+
+int32_t nmo_engine_texture_user_mipmap_count(const nmo_engine_t *engine, nmo_object_id_t texture)
+{
+    const nmo_texture_state_t *state = eng_texture_state(engine, texture);
+    return state != NULL && state->has_user_mipmaps && state->user_mipmaps != NULL
+               ? (int32_t)state->user_mipmap_count
+               : 0;
+}
+
+bool nmo_engine_texture_user_mipmap(nmo_engine_t *engine, nmo_object_id_t texture, int32_t level,
+                                    nmo_engine_image_t *out)
+{
+    if (out == NULL || level < 1 || level > nmo_engine_texture_user_mipmap_count(engine, texture)) {
+        return false;
+    }
+    eng_image_t *image = NULL;
+    for (size_t i = 0; i < engine->render.user_mipmaps.count && image == NULL; i++) {
+        eng_image_t *cached = &engine->render.user_mipmaps.data[i];
+        if (cached->texture == texture && cached->slot == level) {
+            image = cached;
+        }
+    }
+    if (image == NULL) {
+        const nmo_texture_state_t *state = eng_texture_state(engine, texture);
+        const nmo_texture_raw_slot_t *rs = &state->user_mipmaps[level - 1];
+        nmo_arena_t *arena = nmo_arena_create(NULL, 1u << 16);
+        uint8_t *pixels = NULL;
+        int channels = 0;
+        if (arena == NULL || (rs->compression & 0xFu) != 0 || rs->width <= 0 || rs->height <= 0 ||
+            nmo_image_reconstruct_pixels(rs->red_data, rs->green_data, rs->blue_data,
+                                         rs->alpha_data, rs->red_size, rs->green_size,
+                                         rs->blue_size, rs->alpha_size, rs->width, rs->height,
+                                         rs->bits_per_pixel, arena, &pixels, &channels) != NMO_OK) {
+            nmo_arena_destroy(arena);
+            return false;
+        }
+        uint8_t *rgba = eng_rgba_copy(pixels, rs->width, rs->height, channels);
+        nmo_arena_destroy(arena);
+        if (rgba == NULL || !ENG_VEC_PUSH(engine->render.user_mipmaps, image)) {
+            free(rgba);
+            return false;
+        }
+        image->texture = texture;
+        image->slot = level;
+        image->width = rs->width;
+        image->height = rs->height;
+        image->rgba = rgba;
+        /* RCKTexture::Restore keys the levels as it keys the image */
+        eng_key_image(state, rgba, rs->width, rs->height);
+    }
+    out->width = image->width;
+    out->height = image->height;
+    out->rgba = image->rgba;
+    out->version = image->version;
+    out->mipmapped = true;
+    return true;
 }
 
 /* ============================================================================

@@ -458,6 +458,54 @@ TEST(engine_media, set_mip_mapping_gives_the_texture_its_mipmaps)
     fixture_end(&f);
 }
 
+/* A texture saving its own mipmap levels uses them (CKTexture::Load: SetUserMipMapMode), keyed
+ * as its image is */
+TEST(engine_media, user_mipmaps_are_decoded_and_keyed)
+{
+    write_key_bmp();
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t texture = key_texture(&f);
+    nmo_texture_state_t *state = (nmo_texture_state_t *)fixture_state(&f, texture);
+    ASSERT_TRUE(texture != 0 && state != NULL);
+    /* Level 1 of the 2 x 1 image: one black texel, the transparent color */
+    nmo_arena_t *arena = nmo_session_get_arena(f.session);
+    nmo_texture_raw_slot_t *level = (nmo_texture_raw_slot_t *)nmo_arena_alloc(
+        arena, sizeof(*level), _Alignof(nmo_texture_raw_slot_t));
+    uint8_t *planes = (uint8_t *)nmo_arena_alloc(arena, 4u, 1);
+    ASSERT_TRUE(level != NULL && planes != NULL);
+    memset(level, 0, sizeof(*level));
+    planes[0] = planes[1] = planes[2] = 0;
+    planes[3] = 255;
+    level->bits_per_pixel = 32;
+    level->width = level->height = 1;
+    level->blue_size = level->green_size = level->red_size = level->alpha_size = 1;
+    level->blue_data = &planes[0];
+    level->green_data = &planes[1];
+    level->red_data = &planes[2];
+    level->alpha_data = &planes[3];
+    state->has_user_mipmaps = 1;
+    state->user_mipmap_count = 1;
+    state->user_mipmaps = level;
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    fixture_commit(&f, NULL);
+    nmo_engine_set_file_resolver(f.engine, resolve_scratch, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    nmo_engine_image_t image;
+    ASSERT_TRUE(nmo_engine_texture_image(f.engine, texture, &image));
+    ASSERT_TRUE(image.mipmapped);
+    ASSERT_EQ(1, nmo_engine_texture_user_mipmap_count(f.engine, texture));
+    ASSERT_TRUE(nmo_engine_texture_user_mipmap(f.engine, texture, 1, &image));
+    ASSERT_EQ(1, image.width);
+    ASSERT_EQ(1, image.height);
+    ASSERT_EQ(0x000000u, image_pixel(&image, 0, 0));
+    ASSERT_EQ(0, image.rgba[3]);
+    ASSERT_FALSE(nmo_engine_texture_user_mipmap(f.engine, texture, 2, &image));
+    fixture_end(&f);
+}
+
 /* A WAV file of `data_size` bytes at `bytes_per_second`, an odd-sized chunk before its data */
 static void write_wave(const char *name, uint32_t bytes_per_second, uint32_t data_size)
 {
@@ -746,6 +794,7 @@ REGISTER_TEST(engine_media, movie_player_shows_the_movie_frames_over_its_duratio
 REGISTER_TEST(engine_media, movie_texture_shows_the_decoded_frame_of_its_slot);
 REGISTER_TEST(engine_media, transparent_texture_clears_black_without_a_saved_color);
 REGISTER_TEST(engine_media, set_mip_mapping_gives_the_texture_its_mipmaps);
+REGISTER_TEST(engine_media, user_mipmaps_are_decoded_and_keyed);
 REGISTER_TEST(engine_media, play_animation_progresses_over_its_duration);
 REGISTER_TEST(engine_media, play_global_animation_loops_over_its_duration);
 REGISTER_TEST(engine_media, sound_load_gives_the_sound_its_file_length);

@@ -222,6 +222,15 @@ typedef struct nmo_engine_image {
  */
 NMO_API bool nmo_engine_texture_image(nmo_engine_t *engine, nmo_object_id_t texture,
                                       nmo_engine_image_t *out);
+/** The mipmap levels the texture's file saves (CKTexture's user mipmaps); 0 for none. */
+NMO_API int32_t nmo_engine_texture_user_mipmap_count(const nmo_engine_t *engine,
+                                                     nmo_object_id_t texture);
+/**
+ * A saved mipmap level (1 is half the image), RGBA with the transparent
+ * color made transparent; false when the texture saves no such level.
+ */
+NMO_API bool nmo_engine_texture_user_mipmap(nmo_engine_t *engine, nmo_object_id_t texture,
+                                            int32_t level, nmo_engine_image_t *out);
 
 #ifdef __cplusplus
 }

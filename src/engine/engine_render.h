@@ -108,6 +108,7 @@ typedef struct eng_render {
     ENG_VEC(eng_light_t) lights;
     eng_map_t light_map;
     ENG_VEC(eng_image_t) images;
+    ENG_VEC(eng_image_t) user_mipmaps; /* a texture's saved mipmap levels, `slot` their level */
     uint32_t image_version;
 
     /* The render context (CKRenderContext / CKRenderedScene) */
