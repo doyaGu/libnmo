@@ -12,6 +12,9 @@ the tube; the two at its open bottom lean as the face beside them does.
 Where a rail meets a floor it stops at the floor's edge, open, with the tubes'
 middles 0.14 above the bottom of the V the floor opens to it there
 (ballance.kit.floors.Floors.dock()).
+
+A beam (Level_12's) is one tube the ball rolls along on top of: the same
+octagon 0.35 in radius, whole, turned so that a face lies flat on top.
 """
 
 from __future__ import annotations
@@ -34,6 +37,9 @@ REPEAT = 5.0
 ANGLES = [0.0, 45.0, 90.0, 135.0, 180.0, 225.0, 315.0]
 NORMALS = [0.0, 45.0, 90.0, 135.0, 180.0, 202.5, 337.5]
 FACES = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (6, 0)]
+# A beam's corners, from its right side up and over, and its faces, all round.
+BEAM_ANGLES = [22.5 + 45.0 * k for k in range(8)]
+BEAM_FACES = [(k, (k + 1) % 8) for k in range(8)]
 
 
 class Ring:
@@ -45,8 +51,13 @@ class Ring:
         self.dx, self.dz = dx, dz
 
 
+class Beam(list):
+    """A run of rings a beam passes through, rather than a rail."""
+
+
 class Rails:
-    """The rails of one floor object, each a list of rings from end to end."""
+    """The rails of one floor object, each a list of rings from end to end
+    (a Beam for a beam)."""
 
     def __init__(self) -> None:
         self.runs: list[list[Ring]] = []
@@ -54,6 +65,9 @@ class Rails:
     def write(self, path: Path) -> None:
         mesh = Mesh()
         for run in self.runs:
+            if isinstance(run, Beam):
+                _beam(mesh, run)
+                continue
             for side in (-1.0, 1.0):
                 _tube(mesh, run, side)
         mesh.write(path)
@@ -87,6 +101,30 @@ def _tube(mesh: Mesh, run: list[Ring], side: float) -> None:
                 corners = [((point, (u, v), normal)) for (point, normal, u), v in
                            (quad[t] for t in tri)]
                 # outward: as the first corner's normal leans
+                mesh.triangle("Rail", corners[0][2], *corners)
+
+
+def _beam(mesh: Mesh, run: list[Ring]) -> None:
+    """The beam along the run's middle."""
+    rings = []
+    along = 0.0
+    for k, r in enumerate(run):
+        if k:
+            p = run[k - 1]
+            along += math.dist((p.x, p.y, p.z), (r.x, r.y, r.z))
+        rx, rz = r.dz, -r.dx
+        corners = []
+        for a in BEAM_ANGLES:
+            ca, sa = math.cos(math.radians(a)), math.sin(math.radians(a))
+            corners.append(((r.x + rx * ca * TUBE, r.y + sa * TUBE, r.z + rz * ca * TUBE),
+                            (rx * ca, sa, rz * ca), a / 360.0))
+        rings.append((corners, along / REPEAT))
+    for (a, va), (b, vb) in zip(rings, rings[1:]):
+        for i, j in BEAM_FACES:
+            quad = [(a[i], va), (a[j], va), (b[j], vb), (b[i], vb)]
+            for tri in ((0, 1, 2), (0, 2, 3)):
+                corners = [((point, (u, v), normal)) for (point, normal, u), v in
+                           (quad[t] for t in tri)]
                 mesh.triangle("Rail", corners[0][2], *corners)
 
 

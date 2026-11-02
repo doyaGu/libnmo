@@ -15,23 +15,24 @@ from typing import TYPE_CHECKING, Callable
 from ..core.geometry import (Heading, Point, across, at, axis_of, back_of, left_of, rect,
                              right_of, side_of, turn_of)
 from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, ARMS_PATH,
-                             BALL_RADIUS, BOX_PILE, BRIDGES, CLIMB_DROP, CLIMB_END, CLIMB_FANS,
-                             CLIMB_HOLD, CLIMB_LENGTH, CLIMB_TOPS, CLIMB_TRAFO, CRADLE_BALL,
-                             CRADLE_EXIT, CRADLE_RING, CRADLE_TOP, CREST_POINT, DIAMOND_EXIT,
-                             DIAMOND_OUT, ELEMENT_LIFT, FAN_BELOW, FAN_BLOCK_FAN, FAN_BLOCK_RING,
-                             FAN_BLOCK_TOP, FAN_REACH, FAN_TOWER_EXIT, FAN_TOWER_HOLD,
-                             FAN_TOWER_LIFT, FAN_TOWER_PATH, FAN_TOWER_PILLAR, FAN_TOWER_RING,
-                             FAN_TOWER_ROCK, FAN_TOWER_RUN, FLAPS_COUNTERWEIGHT, FLAPS_LENGTH,
-                             FLAPS_MODULE, FUNNEL, HAIRPIN_GAP, HOLED_TROUGH, JUMP_ABOVE, JUMP_AREA,
-                             JUMP_DOWN, JUMP_HALF, LIFT_BELOW, LIFT_ENTRY, LIFT_EXIT, LIFT_RIDE,
-                             LIFT_TOP, LIFT_WALLS, LOG_CROSS, LOG_MOST, LOG_SEGMENT, LOG_TOP,
-                             MAZE_BELOW, MAZE_ENTRY, MAZE_EXIT, MAZE_PATH, MAZE_POINT, MAZE_STEP,
-                             OCTAGON_HALF, PILLAR_INSET, PLANK_BELOW, PLANK_LENGTH,
-                             PUSHED_BALL_BACK, PUSHED_BALL_HOLD, PUSHED_BALL_IN, PUSHED_BALL_REACH,
-                             PUSHERS_ASIDE, PUSHERS_LENGTH, PUSHERS_MODULES, PUSHERS_PATH,
-                             RAILING_ARM, RAILING_BRIDGE, RAILING_INSET, RAIL_DOCK_BELOW,
-                             RAIL_DOCK_LENGTH, RAIL_FALL, RAIL_OVERHANG, RAIL_RING_STEP, SACK_ABOVE,
-                             SACK_HANG, SPIRAL_OUT, SPIRAL_PATH, STONEBOX_LENGTH, STONEBOX_MODULE,
+                             BALL_RADIUS, BEAM_BELOW, BEAM_JOIN, BEAM_TURN_GAP, BEAM_TURN_RUN,
+                             BOX_PILE, BRIDGES, CLIMB_DROP, CLIMB_END, CLIMB_FANS, CLIMB_HOLD,
+                             CLIMB_LENGTH, CLIMB_TOPS, CLIMB_TRAFO, CRADLE_BALL, CRADLE_EXIT,
+                             CRADLE_RING, CRADLE_TOP, CREST_POINT, DIAMOND_EXIT, DIAMOND_OUT,
+                             ELEMENT_LIFT, FAN_BELOW, FAN_BLOCK_FAN, FAN_BLOCK_RING, FAN_BLOCK_TOP,
+                             FAN_REACH, FAN_TOWER_EXIT, FAN_TOWER_HOLD, FAN_TOWER_LIFT,
+                             FAN_TOWER_PATH, FAN_TOWER_PILLAR, FAN_TOWER_RING, FAN_TOWER_ROCK,
+                             FAN_TOWER_RUN, FLAPS_COUNTERWEIGHT, FLAPS_LENGTH, FLAPS_MODULE, FUNNEL,
+                             HAIRPIN_GAP, HOLED_TROUGH, JUMP_ABOVE, JUMP_AREA, JUMP_DOWN, JUMP_HALF,
+                             LIFT_BELOW, LIFT_ENTRY, LIFT_EXIT, LIFT_RIDE, LIFT_TOP, LIFT_WALLS,
+                             LOG_CROSS, LOG_MOST, LOG_SEGMENT, LOG_TOP, MAZE_BELOW, MAZE_ENTRY,
+                             MAZE_EXIT, MAZE_PATH, MAZE_POINT, MAZE_STEP, OCTAGON_HALF,
+                             PILLAR_INSET, PLANK_BELOW, PLANK_LENGTH, PUSHED_BALL_BACK,
+                             PUSHED_BALL_HOLD, PUSHED_BALL_IN, PUSHED_BALL_REACH, PUSHERS_ASIDE,
+                             PUSHERS_LENGTH, PUSHERS_MODULES, PUSHERS_PATH, RAILING_ARM,
+                             RAILING_BRIDGE, RAILING_INSET, RAIL_DOCK_BELOW, RAIL_DOCK_LENGTH,
+                             RAIL_FALL, RAIL_OVERHANG, RAIL_RING_STEP, SACK_ABOVE, SACK_HANG,
+                             SPIRAL_OUT, SPIRAL_PATH, STONEBOX_LENGTH, STONEBOX_MODULE,
                              STONEBOX_PATH, STONEBOX_RISE, STONEBOX_TRAFO, SWING_ABOVE, SWING_FAR,
                              SWING_GO, SWING_HALF, SWING_SEAT, SWING_WAIT, SWITCH_CROSS,
                              SWITCH_LAND, SWITCH_MODULE, SWITCH_SPAN, SWITCH_WAIT, TRAFO_LIFT,
@@ -43,7 +44,7 @@ from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, 
 from ..kit.floors import CELL, NARROW, RISE, WALL
 from ..kit.pieces import block, channel, funnel, pad, strip
 from ..kit.railings import OUT
-from ..kit.rails import ABOVE_V, BEND_RADIUS, Ring, bend
+from ..kit.rails import ABOVE_V, BEND_RADIUS, BEND_STEP, Beam, Ring, bend
 from .modules import MODULE_FLOORS, MODULES, NEEDS_BALL, module_layout
 
 if TYPE_CHECKING:
@@ -75,19 +76,17 @@ def lay_road(layout: Layout, sector: int, part: Sector, piece: dict, track: Trac
 
 
 def lay_rail(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> None:
-    """{"rail": length, "drop": dy, "railings": true, "hump": dy, "sack":
-    true, "point": true}: with railings, the rail crosses a gap between
-    narrow roads with railings either side, as Level_05's A01_Rail_01 does,
-    from RAILING_BRIDGE back on the road before to as far on the road after.
-    With a hump, it rises dy over its middle (or dips, dy below 0) and comes
-    back down as Level_12's zigzag does, a sack hanging under the crest and
-    an extra point over it if asked (see RAIL_RING_STEP, SACK_HANG in
-    ballance.game.measures)."""
+    """{"rail": length, "drop": dy, "railings": true, "hump": dy}: with
+    railings, the rail crosses a gap between narrow roads with railings either
+    side, as Level_05's A01_Rail_01 does, from RAILING_BRIDGE back on the road
+    before to as far on the road after.  With a hump, it rises dy over its
+    middle (or dips, dy below 0) and comes back down, a ring every
+    RAIL_RING_STEP.  After a beam, the rail starts BEAM_JOIN back over the
+    beam's end, BEAM_BELOW higher (see BEAM_* in ballance.game.measures)."""
     length = float(piece["rail"])
-    hump = float(piece.get("hump", 0.0))
-    if (piece.get("sack") or piece.get("point")) and not hump:
-        raise ValueError("a sack or an extra point hangs over a rail's hump")
-    if hump and piece.get("railings"):
+    if piece.get("sack") or piece.get("point"):
+        raise ValueError("a sack hangs and an extra point floats over a beam's hump, not a rail's")
+    if piece.get("hump") and piece.get("railings"):
         raise ValueError("a rail with railings is straight")
     if piece.get("railings"):
         last = layout.parts[-1]
@@ -100,7 +99,26 @@ def lay_rail(layout: Layout, sector: int, part: Sector, piece: dict, track: Trac
                           length + 2 * RAILING_BRIDGE, NARROW,
                           (track.h + RISE, track.h - drop + RISE), "both", 0.0)
         track.railed = RAILING_BRIDGE
+    if isinstance(track.run, Beam):
+        part.rails.runs.append(track.run)
+        back = at(track.p, track.d, -BEAM_JOIN)
+        track.h += BEAM_BELOW
+        track.run = [Ring(back[0], height_back(track.run, BEAM_JOIN) + BEAM_BELOW, back[1],
+                          track.d[0], track.d[1]),
+                     Ring(track.p[0], track.h + ABOVE_V, track.p[1], track.d[0], track.d[1])]
+    lay_run(layout, sector, piece, track, length)
+    track.floor = "rail"
+
+
+def lay_run(layout: Layout, sector: int, piece: dict, track: Track, length: float) -> None:
+    """The run of a rail or a beam on, length long, coming down "drop", with
+    a "hump" (a dip below 0) over its middle; a sack hanging under a hump's
+    crest and an extra point over it if asked, as Level_12's beams have them
+    (see SACK_HANG, CREST_POINT in ballance.game.measures)."""
     p, d, h, drop = track.p, track.d, track.h, float(piece.get("drop", 0.0))
+    hump = float(piece.get("hump", 0.0))
+    if (piece.get("sack") or piece.get("point")) and not hump:
+        raise ValueError("a sack hangs and an extra point floats over a beam's hump")
     steps = max(1, round(length / RAIL_RING_STEP)) if hump else 1
     for k in range(1, steps + 1):
         u = k / steps
@@ -119,7 +137,70 @@ def lay_rail(layout: Layout, sector: int, part: Sector, piece: dict, track: Trac
     track.p = at(p, d, length)
     track.h = h - drop
     layout.points.append(list(track.p))
-    track.floor = "rail"
+
+
+def height_back(run: list[Ring], back: float) -> float:
+    """The height of a run's middle line back along it from its end."""
+    left = back
+    for b, a in zip(run[::-1], run[-2::-1]):
+        step = math.hypot(b.x - a.x, b.z - a.z)
+        if step >= left:
+            return b.y + (a.y - b.y) * (left / step if step else 0.0)
+        left -= step
+    return run[0].y
+
+
+def lay_beam(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> None:
+    """{"beam": length, "drop": dy, "hump": dy, "sack": true, "point":
+    true}: a beam, Level_12's single tube the ball rolls along on top of,
+    laid as a rail is (lay_run), its hump with a sack under the crest and an
+    extra point over it if asked.  After a rail, it starts BEAM_JOIN back
+    under the rail's end, BEAM_BELOW lower, as Level_12's A01_Rail_02 leaves
+    A01_Rail_01 (see BEAM_* in ballance.game.measures)."""
+    if not isinstance(track.run, Beam):
+        part.rails.runs.append(track.run)
+        back = at(track.p, track.d, -BEAM_JOIN)
+        track.h -= BEAM_BELOW
+        track.run = Beam([Ring(back[0], height_back(track.run, BEAM_JOIN) - BEAM_BELOW, back[1],
+                               track.d[0], track.d[1]),
+                          Ring(track.p[0], track.h + ABOVE_V, track.p[1], track.d[0], track.d[1])])
+    lay_run(layout, sector, piece, track, float(piece["beam"]))
+    track.floor = "beam"
+
+
+def lay_beam_turn(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> None:
+    """{"beam_turn": "left" or "right"}: Level_12's turn at a beam's end
+    onto a beam beside it heading back, BEAM_TURN_GAP aside: a rail from
+    BEAM_TURN_RUN back over the beam's end, BEAM_BELOW higher, round half a
+    circle and as far back over the next beam's start, level."""
+    if not isinstance(track.run, Beam):
+        raise ValueError("a beam_turn turns a beam; a rail turns through rail_turn")
+    sign = 1 if piece["beam_turn"] == "right" else -1
+    side = side_of(track.d, piece["beam_turn"])
+    p, d = track.p, track.d
+    part.rails.runs.append(track.run)
+    y = track.h + ABOVE_V + BEAM_BELOW
+    radius = BEAM_TURN_GAP / 2
+    centre = at(p, d, 0.0, sign * radius)
+    start = at(p, d, -BEAM_TURN_RUN)
+    rings = [Ring(start[0], height_back(track.run, BEAM_TURN_RUN) + BEAM_BELOW, start[1],
+                  d[0], d[1])]
+    steps = round(180.0 / BEND_STEP)
+    for k in range(steps + 1):
+        t = math.radians(k * BEND_STEP)
+        c, s = math.cos(t), math.sin(t)
+        x = centre[0] - side[0] * radius * c + d[0] * radius * s
+        z = centre[1] - side[1] * radius * c + d[1] * radius * s
+        rings.append(Ring(x, y, z, d[0] * c + side[0] * s, d[1] * c + side[1] * s))
+    back = back_of(d)
+    there = at(p, d, 0.0, sign * BEAM_TURN_GAP)
+    end = at(there, back, BEAM_TURN_RUN)
+    rings.append(Ring(end[0], y, end[1], back[0], back[1]))
+    part.rails.runs.append(rings)
+    layout.points += [[r.x, r.z] for r in rings[1:-1:3]] + [list(there)]
+    track.p, track.d = there, back
+    track.run = Beam([Ring(there[0], track.h + ABOVE_V, there[1], back[0], back[1])])
+    track.floor = "beam"
 
 
 def _road_length(part) -> float:
@@ -1189,6 +1270,8 @@ PIECES: dict[str, Callable] = {
     "road": lay_road,
     "rail": lay_rail,
     "rail_turn": lay_rail_turn,
+    "beam": lay_beam,
+    "beam_turn": lay_beam_turn,
     "fall": lay_fall,
     "cradle": lay_cradle,
     "fan": lay_fan,
@@ -1213,6 +1296,11 @@ def lay_piece(layout: Layout, sector: int, part: Sector, piece: dict, track: Tra
     floors = layout.floors
     start, heading = track.p, track.d
     rail = "rail" in piece or "rail_turn" in piece
+    beam = "beam" in piece or "beam_turn" in piece
+    if beam and track.run is None:
+        raise ValueError("a beam goes on from a rail")
+    if isinstance(track.run, Beam) and not ("rail" in piece or beam or "fall" in piece):
+        raise ValueError("a beam goes on to a beam, a beam_turn, a rail or a fall")
     if ("cradle" in piece or "fan" in piece or "tower" in piece) and track.run is None:
         raise ValueError("the ball comes into the cradle, the fan's block or the fan's tower "
                          "on a rail")
@@ -1245,8 +1333,12 @@ def lay_piece(layout: Layout, sector: int, part: Sector, piece: dict, track: Tra
         else:
             layout.dock(floors, track.p, track.d)
             track.run = [Ring(track.p[0], track.h + ABOVE_V, track.p[1], track.d[0], track.d[1])]
-    elif not rail and not ("fall" in piece or "cradle" in piece or "fan" in piece
-                           or "tower" in piece) and track.run is not None:
+    elif not rail and not beam and not ("fall" in piece or "cradle" in piece or "fan" in piece
+                                        or "tower" in piece) and track.run is not None:
+        if not on_grid(floors, track.p):
+            # a rail off the grid (one that went by beams 8 apart) meets
+            # the floor on a grid of its own
+            layout.floors = floors = part.grid(track.p)
         if "road" in piece and piece.get("width") == "wide":
             dock_wide(layout, sector, part, track)
         elif not ("area" in piece or "road" in piece):
@@ -1255,14 +1347,20 @@ def lay_piece(layout: Layout, sector: int, part: Sector, piece: dict, track: Tra
             layout.dock(floors, track.p, track.d)
             part.rails.runs.append(track.run)
             track.run = None
-    if rail and piece.get("elements"):
-        raise ValueError("elements stand on floors, not on rails")
+    if (rail or beam) and piece.get("elements"):
+        raise ValueError("elements stand on floors, not on rails or beams")
     kind = next((key for key in PIECES if key in piece), None)
     if kind is None:
         raise ValueError(f"unknown piece {piece}")
     ramp = PIECES[kind](layout, sector, part, piece, track)
     for element in piece.get("elements", []):
         place_element(layout, sector, floors, piece, element, start, heading, ramp)
+
+
+def on_grid(floors, p: Point) -> bool:
+    """Whether p lies on the floors' grid."""
+    return all(abs((v - o) / CELL - round((v - o) / CELL)) < 1e-6
+               for v, o in ((p[0], floors.ox), (p[1], floors.oz)))
 
 
 def dock_wide(layout: Layout, sector: int, part: Sector, track: Track) -> None:

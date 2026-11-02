@@ -143,12 +143,23 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
   "railings": true, it crosses a gap between narrow roads with railings
   either side, as Level_05's A01_Rail_01 does, from 5.64 back on the road
   before (at least that long) to as far on the road after.  With "hump":
-  dy, it rises dy over its middle and comes back down (or dips, dy below 0),
-  as the lanes of Level_12's zigzag do (12.9 over 116); "sack": true hangs a
-  sack under the crest, swinging across into the lanes beside, and "point":
-  true an extra point over it.  A dip of 5 takes a rail under another
-  crossing it, as Level_05's A01_Rail_01 passes under the rail bridging a
-  gap in its road (the builder warns when the ball's room is less).
+  dy, it rises dy over its middle and comes back down (or dips, dy below 0).
+  A dip of 5 takes a rail under another crossing it, as Level_05's
+  A01_Rail_01 passes under the rail bridging a gap in its road (the builder
+  warns when the ball's room is less).
+- {"beam": length, "drop": dy, "hump": dy} -- a beam, Level_12's single
+  tube the ball rolls along on top of, laid as a rail is.  It goes on from
+  a rail, starting 11.4 back under the rail's end, 0.935 below it, and a
+  rail after it starts as far back over its end.  With a hump, "sack": true
+  hangs a sack under the crest and "point": true floats an extra point over
+  it, as Level_12's zigzag has them: its lanes rise 12.9 over 116 or dip as
+  low, and a straight beam crossing them square 5.7 below their ends runs
+  under the crests, past the swinging sacks, and over the dips.  A beam
+  goes on to a beam, a beam_turn, a rail or a fall.
+- {"beam_turn": "left" or "right"} -- Level_12's turn at a beam's end onto
+  a beam 8 aside heading back: half a circle of rail 4 in radius, level,
+  from 6.75 back over the one beam's end to as far over the next one's
+  start.
 - {"rail_turn": "left" or "right", "drop": dy} -- the originals' rail
   bend, with a straight 1.9 before and after it so that it ends 10 along and
   10 aside, coming down dy evenly along it (Level_01's spiral comes down 1.26

@@ -42,17 +42,24 @@ BOX_PILE = 5.4
 # 4.5 in over the area's inside.  The builder hangs a rail's end two cells
 # over the area and lets it fall at most 15.
 RAIL_OVERHANG, RAIL_FALL = 5.0, 15.0
-# Level_12's first sector zigzags on rails (A01_Rail_02 to _05): its lanes
-# rise over a hump 12.9 high or dip as low, a raised cosine 116 long with
-# rings every 5 along it, and turn back through hairpins 16 across.  The
-# builder's hairpin is two of the bends with a straight of 1.3 between them,
+# Level_12's first sector zigzags on beams, single tubes the ball rolls along
+# on top of (A01_Rail_02 to _05): A01_Rail_01's rail hands the ball to a beam
+# that starts 11.4 back under its end, 0.935 below its middle line, and so
+# does every rail meeting a beam.  Its lanes, 8 apart, rise over a hump 12.9
+# high or dip as low, a raised cosine 116 long with rings every 5 along it,
+# and turn back at their ends through half a circle of rail 4 in radius,
+# level, which starts 6.75 back over one beam's end and stops as far over the
+# next one's start.  A straight beam crossing the lanes square, 5.7 below
+# their ends, runs under the crests and over the dips.  The builder's
+# hairpin for rails is two of the bends with a straight of 1.3 between them,
 # its lanes 17.5 apart, on the grid.
 RAIL_RING_STEP, HAIRPIN_GAP = 5.0, 1.3
-# A sack (P_Modul_26) hangs under each of its humps' crests, its rope from
-# the rail's middle line 15.16 above the module, its X across the lane (over
-# a road the levels turn it along the track); an extra point floats 2.98
-# above the rail's middle there.
-SACK_HANG, CREST_POINT = 15.16, 2.98
+BEAM_JOIN, BEAM_BELOW, BEAM_TURN_GAP, BEAM_TURN_RUN = 11.4, 0.935, 8.0, 6.75
+# A sack (P_Modul_26) hangs under each crest of the lanes, its rope from the
+# beam's middle 15.39 above the module, its X across the lane, swinging into
+# the crossing beam's way (over a road the levels turn it along the track);
+# an extra point floats 2.75 over the beam's middle there.
+SACK_HANG, CREST_POINT = 15.39, 2.75
 # Logs (Level_12's A08_Halfpipe_*, "halfpipes" in the levels' names): half
 # logs 16.84 wide, their tops 2.26 above their axes, built of 50-long
 # segments with a flat face at either end.  Level_12 lays them crossing at

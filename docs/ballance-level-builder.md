@@ -73,12 +73,17 @@ its measurements; in short:
   Level_05's diamond catches a ball a rail drops.
 - **Wood pieces:** Level_03's arched plank, Level_08's and Level_11's
   walkways, Level_07's twist, Level_09's jump and Level_01's spiral.
-- **Rails:** straight, coming down, humped or dipped (Level_12's zigzag,
-  with sacks hung under the crests), bent, or turned back on themselves
-  through a hairpin. A rail ends on a floor, in a fall into an area, a log,
-  a trough or a diamond, in Level_01's cradle, in a fan's block, or in
-  Level_04's fan tower, whose three channels wind down round its shaft to a
-  way out on the left.
+- **Rails:** straight, coming down, humped or dipped, bent, or turned back
+  on themselves through a hairpin. A rail ends on a floor, in a fall into an
+  area, a log, a trough or a diamond, in Level_01's cradle, in a fan's
+  block, or in Level_04's fan tower, whose three channels wind down round
+  its shaft to a way out on the left.
+- **Beams:** Level_12's single tubes the ball balances along on top of,
+  going on from a rail and back onto one, humped or dipped, and turned back
+  onto a beam 8 aside through a small half circle of rail. Level_12's
+  zigzag is built of them: lanes 8 apart rising and dipping by turns, an
+  extra point over each crest and a sack under it, swinging into a beam that
+  crosses the lanes below the crests and above the dips.
 - **Logs and troughs:** Level_12's half logs crossing one under another,
   Level_06's logs climbing with fans, and Level_04's troughs, hopped between
   or with holes in their bottoms and an extra point by each of the first four,

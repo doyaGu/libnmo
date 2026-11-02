@@ -27,8 +27,10 @@ from .modules import MODULE_FLOORS
 
 # Pieces the ball flies along, not rolling on a floor.
 FLOWN = ("rail", "rail_turn", "fall")
-# Elements the ball passes through or that are not in its way.
-PASSED = ("P_Extra_Point", "P_Extra_Life", "P_Trafo_")
+# Elements the ball passes through or that are not in its way, and the
+# sacks, which swing into it on purpose (over a road, or under a beam's crest
+# into the beam crossing below).
+PASSED = ("P_Extra_Point", "P_Extra_Life", "P_Trafo_", "P_Modul_26")
 
 
 def _bounds(points: list[tuple[float, float, float]]) -> Box | None:
