@@ -12,6 +12,7 @@ from ..game.materials import load_presets
 from . import scenery
 from .falls import write_fall_zones
 from .assets import Assets, MissingMesh
+from .clashes import clashes
 from .layout import Layout, Sector
 from .manifest import build_manifest, level_object
 
@@ -62,7 +63,10 @@ def build(route: dict, out: Path, elements: Path | None, name: str) -> int:
     for index, mesh in enumerate(write_fall_zones(objects, out), start=1):
         objects.append(level_object(f"Quader{index:02d}", mesh, [0, 0, 0], ["DepthTestCubes"],
                                     visible=False))
+    for message in clashes(layout, assets):
+        print(f"warning: {message}", file=sys.stderr)
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     (out / "route_points.json").write_text(json.dumps(layout.points) + "\n", encoding="utf-8")
+    (out / "route_plan.txt").write_text(layout.plan(), encoding="utf-8")
     print(out / "manifest.json")
     return 0

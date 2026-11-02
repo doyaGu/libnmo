@@ -187,7 +187,11 @@ the balloon, for driving a ball along it; a point over a fan has a third
 value, the height to wait there for, one before a swing four more, the
 seat to wait for and where, within a reach, and one over a jump's gap a
 fourth, "rush", with no height (null): run at flat out to it (`nmo
-behavior run --steer`).  Turn it into a level file with:
+behavior run --steer`); and route_plan.txt, where each piece leaves the
+track (its point, the height of the floor's inside there and its heading),
+for laying a route out against what it passes.  Pieces that stand in one
+another's way (anything within 4.5 above a floor of a piece that does not
+follow it) are warned of.  Turn it into a level file with:
 
     nmo patch apply --project <out>/manifest.json -o <out>/Level_01.NMO
 """

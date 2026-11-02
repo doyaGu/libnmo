@@ -352,4 +352,10 @@ TOWER_HALF, STICK_HALF = 2.5, 1.2
 FALL_MARGIN = 60.0
 FALL_TOP, FALL_BOTTOM = 25.0, 60.0
 FALL_TILE, FALL_STEP = 100.0, 30.0
+
+# The ball, 4 across, rolls through this much room above a floor's rim;
+# what stands more than CLASH_OVERLAP into that room is in its way.
+# A sloping rail is looked at CLASH_RAIL_STEP at a time, a sloping road a
+# cell at a time.
+CLASH_HEADROOM, CLASH_OVERLAP, CLASH_RAIL_STEP = 4.5, 0.25, 5.0
 SKY_BELOW = 180.0
