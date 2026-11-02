@@ -16,7 +16,9 @@ With --play, the built level is patched into Level_01.NMO in its folder and
 played for FRAMES in the game installed in DIR (`nmo behavior run`, physics
 by ivp), the ball steered along route_points.json; the checkpoints, the
 finish and any fall are reported, and where the ball stood still a while
-(the ball changers hold it 126 frames; a point that waits says what for).
+(the ball changers hold it 126 frames; a point that waits says what for),
+and each extra point or life the ball never came near enough to take before
+the finish (every reward should lie where a ball can get to it).
 The exit status is 1 if the level does not finish or the ball falls.
 """
 
@@ -57,6 +59,8 @@ def main() -> int:
         print(f"[{frame}] {what}")
     for stall in result.stalls:
         print(stall)
+    for name, (x, y, z), near in result.missed:
+        print(f"{name} at ({x:.1f}, {y:.1f}, {z:.1f}) not taken: the ball came {near:.1f} near")
     if result.finished is None:
         print(f"the level did not finish in {args.play} frames")
     return 0 if result.finished is not None and not result.falls else 1

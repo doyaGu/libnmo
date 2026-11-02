@@ -2,7 +2,8 @@
 Level_01.NMO, the game run headless (`nmo behavior run`, physics by ivp)
 with the autopilot steering the ball along the builder's points, and what
 came of it read back: when the checkpoints were reached, the level
-finished or the ball fell off, and where the ball stood still.
+finished or the ball fell off, where the ball stood still, and the rewards
+(extra points and lives) it never came near enough to take.
 
 The game starts level 1 as soon as its main menu takes Enter, and Q skips
 the tutorial; the ball is steered from frame STEER_FROM.
@@ -25,6 +26,8 @@ BALLS = "Ball_Wood,Ball_Stone,Ball_Paper"
 REGISTRY = r"Software\Ballance\Settings\Language=1"
 STILL = 0.02       # the ball moves less than this in a frame: it stands still
 STALL = 60         # frames standing still worth telling of
+REACH = 4.0        # the ball takes a reward its middle comes this near
+REWARDS = ("P_Extra_Point", "P_Extra_Life")
 EVENTS = ("Checkpoint reached", "Level_Finish", "Ball Off")
 SENT = re.compile(r'^\[(\d+)\]\s+Send Message#\d+ sends "([^"]+)" to All_Gameplay')
 
@@ -49,6 +52,9 @@ class Play:
     events: list[tuple[int, str]] = field(default_factory=list)
     stalls: list[Stall] = field(default_factory=list)
     frames: int = 0
+    # rewards the ball never came within REACH of before the finish: name,
+    # where it is, and how near the ball came
+    missed: list[tuple[str, list[float], float]] = field(default_factory=list)
 
     @property
     def finished(self) -> int | None:
@@ -101,11 +107,14 @@ def play(folder: Path, frames: int, nmo: Nmo, game: Path) -> Play:
             if sent and sent.group(2) in EVENTS:
                 result.events.append((int(sent.group(1)), sent.group(2)))
     still_from, last = None, None
+    trace = []
     for line in (folder / "steer.csv").read_text(encoding="utf-8").splitlines():
         if not line[:1].isdigit():
             continue
         values = line.split(",")
         frame, where, point = int(values[0]), tuple(float(v) for v in values[1:4]), int(values[5])
+        if result.finished is None or frame <= result.finished:
+            trace.append(where)
         if last is not None and math.dist(where, last[1]) < STILL:
             still_from = still_from or last
         else:
@@ -117,4 +126,11 @@ def play(folder: Path, frames: int, nmo: Nmo, game: Path) -> Play:
         last = (frame, where, point)
     if still_from and last[0] - still_from[0] >= STALL:
         result.stalls.append(Stall(still_from[0], last[0], still_from[1], still_from[2], ""))
+    manifest = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
+    for obj in manifest["scenes"][0]["objects"]:
+        if obj["name"].startswith(REWARDS):
+            at = obj["transform"]["position"]
+            near = min((math.dist(at, where) for where in trace), default=math.inf)
+            if near > REACH:
+                result.missed.append((obj["name"], at, near))
     return result
