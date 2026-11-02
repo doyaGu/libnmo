@@ -19,21 +19,21 @@ from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, 
                              CLIMB_TOPS, CLIMB_TRAFO, CRADLE_BALL, CRADLE_EXIT, CRADLE_RING,
                              CRADLE_TOP, ELEMENT_LIFT, FAN_BELOW, FAN_BLOCK_FAN, FAN_BLOCK_RING,
                              FAN_BLOCK_TOP, FAN_REACH, FAN_TOWER_FLOOR, FAN_TOWER_HALF,
-                             FAN_TOWER_PILLAR, FAN_TOWER_RING, FLAPS_COUNTERWEIGHT, FLAPS_LENGTH,
-                             FLAPS_MODULE, FUNNEL, HOLED_TROUGH, JUMP_ABOVE, JUMP_AREA, JUMP_DOWN,
-                             JUMP_HALF, LIFT_BELOW, LIFT_ENTRY, LIFT_EXIT, LIFT_RIDE, LIFT_TOP,
-                             LIFT_WALLS, LOG_CROSS, LOG_MOST, LOG_SEGMENT, LOG_TOP, PILLAR_INSET,
-                             PLANK_BELOW, PLANK_LENGTH, PUSHERS_ASIDE, PUSHERS_LENGTH,
-                             PUSHERS_MODULES, PUSHERS_PATH, RAIL_DOCK_BELOW, RAIL_DOCK_LENGTH,
-                             RAIL_FALL, RAIL_OVERHANG, SACK_ABOVE, SPIRAL_OUT, SPIRAL_PATH,
-                             STONEBOX_LENGTH, STONEBOX_MODULE, STONEBOX_PATH, STONEBOX_RISE,
-                             STONEBOX_TRAFO, SWING_ABOVE, SWING_FAR, SWING_GO, SWING_HALF,
-                             SWING_SEAT, SWING_WAIT, SWITCH_AREA, SWITCH_CROSS, SWITCH_HOLD,
-                             SWITCH_MODULE, SWITCH_SPUR, SWITCH_TARGET, TRAFO_LIFT, TROUGH_ASIDE,
-                             TROUGH_BOTTOM, TROUGH_DODGE, TROUGH_HOLES, TROUGH_HOLES_FROM,
-                             TROUGH_HOP, TROUGH_LAND, TROUGH_LOG_GAP, TROUGH_SEGMENT, TWIST_ASIDE,
-                             TWIST_BELOW, TWIST_HALF, TWIST_PATH, WALKWAY_ABOVE, WALKWAY_LENGTH,
-                             WALKWAY_LONG)
+                             FAN_TOWER_HOLD, FAN_TOWER_PILLAR, FAN_TOWER_RING, FAN_TOWER_ROCK,
+                             FLAPS_COUNTERWEIGHT, FLAPS_LENGTH, FLAPS_MODULE, FUNNEL, HOLED_TROUGH,
+                             JUMP_ABOVE, JUMP_AREA, JUMP_DOWN, JUMP_HALF, LIFT_BELOW, LIFT_ENTRY,
+                             LIFT_EXIT, LIFT_RIDE, LIFT_TOP, LIFT_WALLS, LOG_CROSS, LOG_MOST,
+                             LOG_SEGMENT, LOG_TOP, PILLAR_INSET, PLANK_BELOW, PLANK_LENGTH,
+                             PUSHERS_ASIDE, PUSHERS_LENGTH, PUSHERS_MODULES, PUSHERS_PATH,
+                             RAIL_DOCK_BELOW, RAIL_DOCK_LENGTH, RAIL_FALL, RAIL_OVERHANG,
+                             SACK_ABOVE, SPIRAL_OUT, SPIRAL_PATH, STONEBOX_LENGTH, STONEBOX_MODULE,
+                             STONEBOX_PATH, STONEBOX_RISE, STONEBOX_TRAFO, SWING_ABOVE, SWING_FAR,
+                             SWING_GO, SWING_HALF, SWING_SEAT, SWING_WAIT, SWITCH_AREA,
+                             SWITCH_CROSS, SWITCH_HOLD, SWITCH_MODULE, SWITCH_SPUR, SWITCH_TARGET,
+                             TRAFO_LIFT, TROUGH_ASIDE, TROUGH_BOTTOM, TROUGH_DODGE, TROUGH_HOLES,
+                             TROUGH_HOLES_FROM, TROUGH_HOP, TROUGH_LAND, TROUGH_LOG_GAP,
+                             TROUGH_SEGMENT, TWIST_ASIDE, TWIST_BELOW, TWIST_HALF, TWIST_PATH,
+                             WALKWAY_ABOVE, WALKWAY_LENGTH, WALKWAY_LONG)
 from ..kit.floors import CELL, NARROW, RISE, WALL
 from ..kit.pieces import channel, funnel, pad, strip
 from ..kit.rails import ABOVE_V, BEND_RADIUS, Ring, bend
@@ -137,9 +137,17 @@ def lay_tower(layout: Layout, sector: int, part: Sector, piece: dict, track: Tra
     layout.elements.append(("P_Modul_18", sector, [fan[0], above, fan[1]]))
     layout.pillars.append([fan[0], above + FAN_TOWER_PILLAR, fan[1]])
     track.d, track.h = back_of(d), above + FAN_TOWER_FLOOR
-    # flat out into the bend (braking, it stops at the bottom), and over
-    # the fan until the ball is above the floor round the shaft
-    layout.points.append([fan[0], fan[1], track.h + 2 * RISE + 4.0, "rush"])
+    # flat out from the rail's end into the bend (braking, it stops at the
+    # bottom), and over the fan until the ball is above the floor round the
+    # shaft
+    layout.points[-1] = layout.points[-1][:2] + [None, "rush"]
+    layout.points.append(list(fan) + [None, "rush"])
+    # The fan blows only once the ball's bounding box, which grows and
+    # shrinks as the ball turns, reaches its wind; resting in the bend the
+    # ball is just short of it, so it is rocked across the rail to turn it.
+    for aside in (FAN_TOWER_ROCK, -FAN_TOWER_ROCK, FAN_TOWER_ROCK, -FAN_TOWER_ROCK):
+        layout.points.append(list(at(fan, d, 0.0, aside)) + [None, FAN_TOWER_HOLD])
+    layout.points.append([fan[0], fan[1], track.h + 2 * RISE + 4.0])
     track.p = at(fan, track.d, FAN_TOWER_HALF)
     layout.floors = part.grid(track.p)
     layout.points.append(list(at(track.p, track.d, NARROW)))

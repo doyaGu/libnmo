@@ -114,7 +114,12 @@ FAN_BLOCK_RING, FAN_BLOCK_FAN, FAN_BLOCK_TOP = 4.64, 4.66, 5.0
 # middle is 11.67 above the fan.  In the fan's frame, the rail coming in
 # along its Z: the rail's first ring, the shaft's half width with its
 # walls, the floor round it and the pillar's top.
-FAN_TOWER_RING = (0.283, -4.363, -3.655)
+FAN_TOWER_RING = (0.283, -4.462, -3.655)
+# How far across the rail, and how many frames, the autopilot rocks the
+# ball in the bend (the fan blows once the ball's turning bounding box
+# reaches its wind box, 1.14 above it, which a ball resting there is just
+# short of).
+FAN_TOWER_ROCK, FAN_TOWER_HOLD = 1.5, 40
 FAN_TOWER_HALF, FAN_TOWER_FLOOR, FAN_TOWER_PILLAR = 3.6, 11.67, -1.62
 # A rail meets a wide road's end as Level_01's A01_Rail_07 meets A01_Floor_03:
 # through a piece 5 long whose slopes go on as the road's while its flat
