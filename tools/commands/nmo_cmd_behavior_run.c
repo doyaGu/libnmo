@@ -367,8 +367,8 @@ static bool run_parse_steer(const char *spec, run_steer_t *out)
         if (stop == NULL) {
             stop = at;
         }
-        const char *fields[8];
-        size_t lengths[8];
+        const char *fields[8] = {NULL};
+        size_t lengths[8] = {0};
         int n = 0;
         for (const char *f = q;;) {
             const char *comma = memchr(f, ',', (size_t)(stop - f));
