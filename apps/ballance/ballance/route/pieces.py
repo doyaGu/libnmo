@@ -36,9 +36,10 @@ from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, 
                              SWING_GO, SWING_HALF, SWING_SEAT, SWING_WAIT, SWITCH_CROSS,
                              SWITCH_LAND, SWITCH_MODULE, SWITCH_SPAN, SWITCH_WAIT, TRAFO_LIFT,
                              TROUGH_ASIDE, TROUGH_BOTTOM, TROUGH_DODGE, TROUGH_HOLES,
-                             TROUGH_HOLES_FROM, TROUGH_HOP, TROUGH_LAND, TROUGH_LOG_GAP,
-                             TROUGH_SEGMENT, TWIST_ASIDE, TWIST_BELOW, TWIST_HALF, TWIST_PATH,
-                             WALKWAY_ABOVE, WALKWAY_LENGTH, WALKWAY_LONG)
+                             TROUGH_HOLES_FROM, TROUGH_HOLE_POINTS, TROUGH_HOP, TROUGH_LAND,
+                             TROUGH_LOG_GAP, TROUGH_POINT_ABOVE, TROUGH_SEGMENT, TWIST_ASIDE,
+                             TWIST_BELOW, TWIST_HALF, TWIST_PATH, WALKWAY_ABOVE, WALKWAY_LENGTH,
+                             WALKWAY_LONG)
 from ..kit.floors import CELL, NARROW, RISE, WALL
 from ..kit.pieces import block, channel, funnel, pad, strip
 from ..kit.railings import OUT
@@ -316,7 +317,9 @@ def lay_trough(layout: Layout, sector: int, part: Sector, piece: dict, track: Tr
     the ball swings over into (as Level_04's A01_Halfpipe_* are; see
     TROUGH_* in ballance.game.measures).  The length is a whole number of
     segments, and a trough hopped from is 100 long at least.  With "holes":
-    true, it is Level_04's trough with holes in its bottom, 350 long."""
+    true, it is Level_04's trough with holes in its bottom, 350 long, and an
+    extra point by each of the first four, on the side the ball rides past it
+    by, as Level_04 sets them."""
     length = float(piece["trough"])
     segments = round(length / TROUGH_SEGMENT)
     if segments < 1 or abs(segments * TROUGH_SEGMENT - length) > 1e-6:
@@ -351,7 +354,12 @@ def lay_trough(layout: Layout, sector: int, part: Sector, piece: dict, track: Tr
     if holes:
         layout.points.append(list(at(start, d, TROUGH_HOLES_FROM)))
         for k, hole in enumerate(TROUGH_HOLES):
-            layout.points.append(list(at(start, d, hole, TROUGH_DODGE * (-1) ** k)))
+            x, z = at(start, d, hole, TROUGH_DODGE * (-1) ** k)
+            layout.points.append([x, z])
+            if k < TROUGH_HOLE_POINTS:
+                # by the hole, up the wall the ball rides past it on
+                layout.elements.append(("P_Extra_Point", sector,
+                                        [x, bottom + TROUGH_BOTTOM + TROUGH_POINT_ABOVE, z]))
     end = at(start, d, length)
     track.p, track.h, track.floor, track.trough = end, bottom, "trough", length
     return bottom, bottom, length

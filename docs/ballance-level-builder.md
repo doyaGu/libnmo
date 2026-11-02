@@ -80,7 +80,8 @@ its measurements; in short:
   way out on the left.
 - **Logs and troughs:** Level_12's half logs crossing one under another,
   Level_06's logs climbing with fans, and Level_04's troughs, hopped between
-  or with holes in their bottoms.
+  or with holes in their bottoms and an extra point by each of the first four,
+  up the wall the ball rides past it on.
 - **Modules:** the pushers (`P_Modul_01`), lift (`_03`), swing (`_08`),
   rotating arm (`_17`), flaps (`_19`), drawbridge (`_25`), sacks (`_26`),
   hung plates (`_29`), seesaw (`_30`), stone on a box or Level_10's maze of

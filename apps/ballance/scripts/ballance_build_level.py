@@ -179,7 +179,8 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
   drops the ball off it.  Only a wood ball can be counted on to hop: on
   Level_04's, a stone ball never gets over and a paper one only sometimes.
   With "holes": true, the trough is Level_04's with five holes in its
-  bottom, 350 long; the ball rides past each up a wall, by turns.
+  bottom, 350 long; the ball rides past each up a wall, by turns, taking an
+  extra point by each of the first four, as Level_04 sets them.
 - {"fan": dy} -- the rail ends in a fan's housing block, as Level_05's and
   Level_13's do, and the fan lifts a paper ball dy (at most 16) onto the
   next piece, which starts at the block's far side.

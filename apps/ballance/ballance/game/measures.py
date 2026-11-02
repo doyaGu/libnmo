@@ -110,11 +110,12 @@ TROUGH_HOP = [(-27.0, 0.0, False), (18.0, -8.0, False), (48.0, TROUGH_ASIDE, Tru
 TROUGH_LOG_GAP = 0.5
 # Level_04's A01_Halfpipe_04 is a trough 350 long with five holes 11.8 long
 # in its bottom, every 50 from 75 to 275 along it; the ball rides past each
-# up a wall, 6.3 out, to its right first and then by turns (as the extra
-# points Level_04 sets there have it), heading for each from the trough's
-# middle 48 along it.
+# up a wall, 6.3 out, to its right first and then by turns, heading for each
+# from the trough's middle 48 along it.  Level_04 sets an extra point there
+# by each of the first four holes, 4.5 above the trough's frame (whose
+# origin is TROUGH_BOTTOM above its bottom).
 HOLED_TROUGH, TROUGH_HOLES, TROUGH_DODGE = 350.0, [75.0, 125.0, 175.0, 225.0, 275.0], 6.3
-TROUGH_HOLES_FROM = 48.0
+TROUGH_HOLES_FROM, TROUGH_HOLE_POINTS, TROUGH_POINT_ABOVE = 48.0, 4, 4.5
 # A rail ends in a fan's housing block (Level_05's A03_Floor_Modul18, as
 # Level_13 sets many): a 5 by 5 block 5 deep, its top 5 above its bottom,
 # sloping into the housing whose grille the fan stands on 4.66 up; the rail's
