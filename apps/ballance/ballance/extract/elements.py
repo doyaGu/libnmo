@@ -84,6 +84,7 @@ SNAP = {
     "Floor_Stopper_19": ([9.12, 8.12, 2.32, 3.32], [0.53, 1.03], [2.5, 7.5, 12.5]),
     "Modul27": ([5.0], [], [2.5]),
     "Modul42": ([35.16], [0.41], [2.5]),
+    "Modul42_Long": ([2.5], [0.41], [65.045]),
     "Floor_Cradle": ([7.5, 5.0, 2.5], [2.5, 1.8, 1.1], [7.5, 5.0, 2.5]),
     "Floor_RailDock": ([5.0, 2.5], [0.7, 0.58], [5.0]),
     "Modul02": ([28.2], [11.84], [2.5]),
@@ -299,6 +300,9 @@ CUTS: list[Cut] = [
               (-5.1, 5.1, -3.0, 0.1, -2.6, 2.6)),
     ModuleCut("Modul42", "Level_08.NMO", "A02_Modul42", "A02_Modul42",
               (-35.3, 35.3, -2.2, 2.2, -2.6, 2.6)),
+    # the long one, along Z
+    ModuleCut("Modul42_Long", "Level_11.NMO", "A01_Modul42_01", "A01_Modul42_01",
+              (-2.6, 2.6, -2.2, 2.2, -65.2, 65.2)),
     # the cradle a rail drops the ball into: the block, the rail's end bent
     # down to it with the tubes holding the ball and the railing, and the
     # railing's clamps

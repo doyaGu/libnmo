@@ -273,6 +273,9 @@ PLANK_LENGTH, PLANK_BELOW = 10.0, 1.25
 # waving from 1.04 below its middle to 2.04 above every 20, its ends 0.41
 # above, flush with flat floors at a narrow road's edge height, over nothing.
 WALKWAY_LENGTH, WALKWAY_ABOVE = 70.32, 0.41
+# Level_11's A01_Modul42_01 is the same, 130.09 long (six and a half waves
+# where Level_08's has three and a half).
+WALKWAY_LONG = 130.09
 
 # Modul11, the wood twist (Level_07's A01_Modul11, the same in Level_09 and
 # Level_11): a chute 58.66 long that turns the ball once round, its mouths

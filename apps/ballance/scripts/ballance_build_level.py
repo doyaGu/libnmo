@@ -31,7 +31,8 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
 - {"plank": true} -- the arched wood plank over a gap 10 long, as Level_03
   has it, with funnels flattening a narrow road to its ends and back.
 - {"walkway": true} -- the wavy wood walkway 70.32 long, as Level_08 has
-  it, with funnels flattening a narrow road to its ends and back.
+  it, with funnels flattening a narrow road to its ends and back; with
+  "long": true, Level_11's, 130.09 long.
 - {"twist": true} -- the wood twist, a chute 58.66 long turning the ball
   once round, as Level_07 has it, its mouths on flat floors that funnels
   lead a narrow road onto and off.

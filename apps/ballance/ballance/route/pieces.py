@@ -31,7 +31,8 @@ from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, 
                              SWITCH_MODULE, SWITCH_SPUR, SWITCH_TARGET, TRAFO_LIFT, TROUGH_ASIDE,
                              TROUGH_BOTTOM, TROUGH_DODGE, TROUGH_HOLES, TROUGH_HOLES_FROM,
                              TROUGH_HOP, TROUGH_LAND, TROUGH_LOG_GAP, TROUGH_SEGMENT, TWIST_ASIDE,
-                             TWIST_BELOW, TWIST_HALF, TWIST_PATH, WALKWAY_ABOVE, WALKWAY_LENGTH)
+                             TWIST_BELOW, TWIST_HALF, TWIST_PATH, WALKWAY_ABOVE, WALKWAY_LENGTH,
+                             WALKWAY_LONG)
 from ..kit.floors import CELL, NARROW, RISE, WALL
 from ..kit.pieces import channel, funnel, pad, strip
 from ..kit.rails import ABOVE_V, BEND_RADIUS, Ring, bend
@@ -371,17 +372,22 @@ def lay_walkway(layout: Layout, sector: int, part: Sector, piece: dict,
                 track: Track) -> Ramp:
     """{"walkway": true}: the wavy wood walkway, as Level_08 has it (see
     WALKWAY_* in ballance.game.measures), between funnels that flatten a
-    narrow road to it and back."""
+    narrow road to it and back; with "long": true, Level_11's longer one."""
     if track.width != NARROW:
         raise ValueError("the wood walkway lies on a narrow road")
     p, d, h = track.p, track.d, track.h
     edge = h + RISE
     layout.open(layout.floors, p, d)
     part.extras.append((funnel, at(p, d, FUNNEL), back_of(d), edge, None, True))
-    middle = at(p, d, FUNNEL + WALKWAY_LENGTH / 2)
-    layout.module_floors.append(("Modul42", sector, [middle[0], edge - WALKWAY_ABOVE, middle[1]],
-                                 turn_of(d)))
-    length = FUNNEL + WALKWAY_LENGTH
+    if piece.get("long"):
+        # Level_11's, along its Z
+        kind, walkway, turn = "Modul42_Long", WALKWAY_LONG, turn_of(right_of(d))
+    else:
+        kind, walkway, turn = "Modul42", WALKWAY_LENGTH, turn_of(d)
+    middle = at(p, d, FUNNEL + walkway / 2)
+    layout.module_floors.append((kind, sector, [middle[0], edge - WALKWAY_ABOVE, middle[1]],
+                                 turn))
+    length = FUNNEL + walkway
     part.extras.append((funnel, at(p, d, length), d, edge, None, True))
     track.p = at(p, d, length + FUNNEL)
     layout.floors = part.grid(track.p)

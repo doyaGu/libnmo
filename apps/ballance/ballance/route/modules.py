@@ -101,6 +101,9 @@ MODULE_FLOORS = {
     "Modul27": [ModuleFloor("Modul27", WOOD_FLOOR_GROUPS, [(-5, 5, -2.78, -0.03, -2.5, 2.5)])],
     "Modul42": [ModuleFloor("Modul42", WOOD_FLOOR_GROUPS,
                             [(-35.16, 35.16, -2.04, 0.41, -2.5, 2.5)])],
+    # the long one, along Z
+    "Modul42_Long": [ModuleFloor("Modul42_Long", WOOD_FLOOR_GROUPS,
+                                 [(-2.5, 2.5, -2.04, 0.41, -65.045, 65.045)])],
     # in the stand-in, the road either side of the gap
     "P_Modul_08": [
         ModuleFloor("Floor_Modul_08", STONE_FLOOR_GROUPS,
