@@ -34,16 +34,19 @@ class Track:
     floor: str = "road"
     run: list[Ring] | None = None
     trough: float = 0.0  # the length of the trough it is in
+    railed: float = 0.0  # how long a road the railings of the rail it is on reach onto
 
 
 @dataclass
 class Sector:
     """What one sector builds: its floors, one grid each; the pieces off the
-    grid, as (function, (x, z), arguments...) for ballance.kit.pieces; and its
-    rails."""
+    grid, as (function, (x, z), arguments...) for ballance.kit.pieces; its
+    rails; and its railings, each the points (x, rim, z) its top runs over
+    (ballance.kit.railings)."""
     floors: list[Floors] = field(default_factory=list)
     extras: list[tuple] = field(default_factory=list)
     rails: Rails = field(default_factory=Rails)
+    railings: list[list[tuple[float, float, float]]] = field(default_factory=list)
 
     def grid(self, origin: Point) -> Floors:
         """A new grid of floors, corner at origin."""
@@ -56,8 +59,9 @@ class Sector:
 class Part:
     """What one piece of the route laid, or a sector's start or end: its
     step along the route, its sector, what it is, and the floors (each a
-    grid's piece), pieces off the grid, cut floors, elements, modules and
-    rail segments it made, and the pads and balloon (kind, place, turn)."""
+    grid's piece), pieces off the grid, cut floors, elements, modules, rail
+    segments and railings it made, and the pads and balloon (kind, place,
+    turn)."""
     step: int
     sector: int
     what: str  # the piece's kind ("road", "rail"...), or "start" or "end"
@@ -68,6 +72,7 @@ class Part:
     elements: list[tuple] = field(default_factory=list)
     modules: list[tuple] = field(default_factory=list)
     segments: list[tuple[Ring, Ring]] = field(default_factory=list)
+    railings: list[list[tuple[float, float, float]]] = field(default_factory=list)
     marks: list[tuple[str, list[float], float]] = field(default_factory=list)
     # where it left the track: point, height of the floor's inside, heading
     end: tuple[Point, float, Heading] | None = None
@@ -152,9 +157,11 @@ class Layout:
             items = getattr(self, name)
             getattr(part, name).extend(items[seen.get(name, 0):])
             seen[name] = len(items)
-        key = f"extras{id(sector)}"
-        part.extras.extend(sector.extras[seen.get(key, 0):])
-        seen[key] = len(sector.extras)
+        for name in ("extras", "railings"):
+            key = f"{name}{id(sector)}"
+            items = getattr(sector, name)
+            getattr(part, name).extend(items[seen.get(key, 0):])
+            seen[key] = len(items)
         for grid in sector.floors:
             key = f"grid{id(grid)}"
             part.floors.extend((grid, piece) for piece in grid.pieces[seen.get(key, 0):])

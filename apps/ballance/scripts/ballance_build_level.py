@@ -22,15 +22,17 @@ height 0, and the track leaves toward heading (+x, -x, +z or -z).  Each
 sector is a list of pieces, laid end to end on the floors' 2.5 grid:
 
 - {"road": length, "width": "narrow" or "wide", "drop": dy} -- a straight
-  road (narrow unless given), coming down dy over its length.
+  road (narrow unless given), coming down dy over its length; with
+  "railings": "left", "right" or "both", railings run along those sides.
 - {"area": [along, across], "exit": "straight", "left" or "right"} -- a
   square or oblong area entered at the middle of one side and left at the
   middle of the opposite side, or of the side to the left or right.  A
-  pillar stands under each corner; with "railings": true, Level_01's railing
-  stands round each corner too (an area 15 across at least).
+  pillar stands under each corner; with "railings": true, a railing stands
+  round each corner too, as Level_01's do (an area 15 across at least).
 - {"turn": "left" or "right"} -- a square corner as wide as the road; with
-  "railing": true, a narrow road's has Level_01's railing round its outer
-  corner, its feet clamped to the walls.
+  "railing": true, a narrow road's has a railing round its outer corner, as
+  Level_01's and Level_05's do.  Railings are the originals' tube, bent
+  as theirs are, standing outside the walls, their posts clamped to them.
 - {"plank": true} -- the arched wood plank over a gap 10 long, as Level_03
   has it, with funnels flattening a narrow road to its ends and back.
 - {"walkway": true} -- the wavy wood walkway 70.32 long, as Level_08 has
@@ -114,7 +116,10 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
 - {"module": "P_Modul_41", "count": n} -- a row of n (2 to 8) slabs on axles
   across the track, between funnels, as levels 7 to 11 lay them.  Only a
   paper ball crosses them: a wood or stone ball tips them and falls.
-- {"rail": length, "drop": dy} -- a straight rail, coming down dy.
+- {"rail": length, "drop": dy} -- a straight rail, coming down dy; with
+  "railings": true, it crosses a gap between narrow roads with railings
+  either side, as Level_05's A01_Rail_01 does, from 5.64 back on the road
+  before (at least that long) to as far on the road after.
 - {"rail_turn": "left" or "right", "drop": dy} -- the originals' rail
   bend, with a straight 1.9 before and after it so that it ends 10 along and
   10 aside, coming down dy evenly along it (Level_01's spiral comes down 1.26

@@ -175,14 +175,10 @@ MODULE_FLOORS = {
 # not a module: the trough with holes in its bottom, 350 long along X
 MODULE_FLOORS["Trough_Holes"] = [ModuleFloor("Trough_Holes", WOOD_FLOOR_GROUPS,
                                              [(-175, 175, -2.9, -2.36, -9.29, 9.29)])]
-# not a module: Level_01's railing round a floor's corner and the clamps on
-# its feet, the corner of the floor's walls at its rim at the origin and the
-# floor toward +X and +Z (as Level_01's A01_Rail_04, it rings no sound as
-# the ball rolls on it, only as it hits it)
-MODULE_FLOORS["RailingCorner"] = [
-    ModuleFloor("Railing_Corner", ["Phys_FloorRails", "Sound_HitID_03"],
-                [(-0.49, 0.0, -1.77, 3.1, -0.46, 5.03), (-0.49, 4.99, 2.6, 3.1, -0.46, 0.0)]),
-    ModuleFloor("Railing_Corner_Clamps", [], [(-0.63, 0.0, -0.86, -0.43, 4.4, 5.37)])]
+# not a module: a clamp holding a railing's post to a floor's wall (Level_01's
+# A01_Misc_Schelle03), the post's middle at the rim at the origin, the wall
+# along X and the floor toward +Z
+MODULE_FLOORS["Clamp"] = [ModuleFloor("Railing_Clamp", [], [(-0.9, 0.55, -0.45, 0.0, -0.4, 0.2)])]
 # not a module: Level_01's wood spiral, from where the road it leaves comes in
 # along X (to its right at -Z), its pads, the road's corner, its railings and
 # their clamps

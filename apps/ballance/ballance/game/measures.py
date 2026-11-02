@@ -121,10 +121,12 @@ FAN_TOWER_RING = (0.283, -4.462, -3.655)
 # short of).
 FAN_TOWER_ROCK, FAN_TOWER_HOLD = 1.5, 40
 FAN_TOWER_HALF, FAN_TOWER_FLOOR, FAN_TOWER_PILLAR = 3.6, 11.67, -1.62
-# Level_01's railing round a floor's corner (A01_Rail_04) stands outside its
-# walls, 3.1 above its rim, each arm 5 along a wall, its feet clamped to the
-# walls 1.77 below the rim.
-RAILING_ARM = 5.0
+# Railings (ballance.kit.railings): Level_01's round a floor's corner
+# (A01_Rail_04) has its posts 4.76 along the walls from the corner, as a
+# railing along a road has them 0.24 in from its ends; Level_05's beside a
+# rail across a gap (A01_Rail_01) have them 5.64 back on the roads at either
+# end.
+RAILING_ARM, RAILING_INSET, RAILING_BRIDGE = 4.76, 0.24, 5.64
 # A rail meets a wide road's end as Level_01's A01_Rail_07 meets A01_Floor_03:
 # through a piece 5 long whose slopes go on as the road's while its flat
 # middle sinks to a narrow road's V, 0.7 deep at the rail; the tubes' middles

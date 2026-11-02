@@ -25,17 +25,19 @@ from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, 
                              LIFT_EXIT, LIFT_RIDE, LIFT_TOP, LIFT_WALLS, LOG_CROSS, LOG_MOST,
                              LOG_SEGMENT, LOG_TOP, PILLAR_INSET, PLANK_BELOW, PLANK_LENGTH,
                              PUSHERS_ASIDE, PUSHERS_LENGTH, PUSHERS_MODULES, PUSHERS_PATH,
-                             RAILING_ARM, RAIL_DOCK_BELOW, RAIL_DOCK_LENGTH, RAIL_FALL,
-                             RAIL_OVERHANG, SACK_ABOVE, SPIRAL_OUT, SPIRAL_PATH, STONEBOX_LENGTH,
-                             STONEBOX_MODULE, STONEBOX_PATH, STONEBOX_RISE, STONEBOX_TRAFO,
-                             SWING_ABOVE, SWING_FAR, SWING_GO, SWING_HALF, SWING_SEAT, SWING_WAIT,
-                             SWITCH_AREA, SWITCH_CROSS, SWITCH_HOLD, SWITCH_MODULE, SWITCH_SPUR,
-                             SWITCH_TARGET, TRAFO_LIFT, TROUGH_ASIDE, TROUGH_BOTTOM, TROUGH_DODGE,
-                             TROUGH_HOLES, TROUGH_HOLES_FROM, TROUGH_HOP, TROUGH_LAND,
-                             TROUGH_LOG_GAP, TROUGH_SEGMENT, TWIST_ASIDE, TWIST_BELOW, TWIST_HALF,
-                             TWIST_PATH, WALKWAY_ABOVE, WALKWAY_LENGTH, WALKWAY_LONG)
+                             RAILING_ARM, RAILING_BRIDGE, RAILING_INSET, RAIL_DOCK_BELOW,
+                             RAIL_DOCK_LENGTH, RAIL_FALL, RAIL_OVERHANG, SACK_ABOVE, SPIRAL_OUT,
+                             SPIRAL_PATH, STONEBOX_LENGTH, STONEBOX_MODULE, STONEBOX_PATH,
+                             STONEBOX_RISE, STONEBOX_TRAFO, SWING_ABOVE, SWING_FAR, SWING_GO,
+                             SWING_HALF, SWING_SEAT, SWING_WAIT, SWITCH_AREA, SWITCH_CROSS,
+                             SWITCH_HOLD, SWITCH_MODULE, SWITCH_SPUR, SWITCH_TARGET, TRAFO_LIFT,
+                             TROUGH_ASIDE, TROUGH_BOTTOM, TROUGH_DODGE, TROUGH_HOLES,
+                             TROUGH_HOLES_FROM, TROUGH_HOP, TROUGH_LAND, TROUGH_LOG_GAP,
+                             TROUGH_SEGMENT, TWIST_ASIDE, TWIST_BELOW, TWIST_HALF, TWIST_PATH,
+                             WALKWAY_ABOVE, WALKWAY_LENGTH, WALKWAY_LONG)
 from ..kit.floors import CELL, NARROW, RISE, WALL
 from ..kit.pieces import channel, funnel, pad, strip
+from ..kit.railings import OUT
 from ..kit.rails import ABOVE_V, BEND_RADIUS, Ring, bend
 from .modules import MODULE_FLOORS, MODULES, NEEDS_BALL, module_layout
 
@@ -50,12 +52,16 @@ BEND_SPAN = 4 * CELL
 
 
 def lay_road(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:
-    """{"road": length, "width": "narrow" or "wide", "drop": dy}"""
+    """{"road": length, "width": "narrow" or "wide", "drop": dy, "railings":
+    "left", "right" or "both"}: with railings, they run along its sides."""
     length = float(piece["road"])
     width = WIDTHS[piece.get("width", "narrow")]
     end = track.h - float(piece.get("drop", 0.0))
     layout.floors.road(*rect(track.p, track.d, length, width), track.h, end,
                        along=axis_of(track.d))
+    if piece.get("railings"):
+        lay_side_railings(layout, sector, part, track.p, track.d, length, width,
+                          (track.h + RISE, end + RISE), piece["railings"])
     ramp = (track.h, end, length)
     track.p, track.h, track.width = at(track.p, track.d, length), end, width
     layout.points.append(list(track.p))
@@ -64,12 +70,34 @@ def lay_road(layout: Layout, sector: int, part: Sector, piece: dict, track: Trac
 
 
 def lay_rail(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> None:
-    """{"rail": length, "drop": dy}"""
-    track.p = at(track.p, track.d, float(piece["rail"]))
+    """{"rail": length, "drop": dy, "railings": true}: with railings, the
+    rail crosses a gap between narrow roads with railings either side, as
+    Level_05's A01_Rail_01 does, from RAILING_BRIDGE back on the road before
+    to as far on the road after."""
+    length = float(piece["rail"])
+    if piece.get("railings"):
+        last = layout.parts[-1]
+        if last.what != "road" or track.width != NARROW or \
+                _road_length(last) < RAILING_BRIDGE:
+            raise ValueError(f"a rail with railings leaves a narrow road {RAILING_BRIDGE:g} "
+                             "long at least")
+        drop = float(piece.get("drop", 0.0))
+        lay_side_railings(layout, sector, part, at(track.p, track.d, -RAILING_BRIDGE), track.d,
+                          length + 2 * RAILING_BRIDGE, NARROW,
+                          (track.h + RISE, track.h - drop + RISE), "both", 0.0)
+        track.railed = RAILING_BRIDGE
+    track.p = at(track.p, track.d, length)
     track.h -= float(piece.get("drop", 0.0))
     track.run.append(Ring(track.p[0], track.h + ABOVE_V, track.p[1], track.d[0], track.d[1]))
     layout.points.append(list(track.p))
     track.floor = "rail"
+
+
+def _road_length(part) -> float:
+    """How long the road a part laid is."""
+    _, piece = part.floors[-1]
+    i0, j0, i1, j1 = piece.rect
+    return CELL * (i1 - i0 if piece.axis == 0 else j1 - j0)
 
 
 def lay_rail_turn(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> None:
@@ -340,14 +368,14 @@ def lay_area(layout: Layout, sector: int, part: Sector, piece: dict, track: Trac
         layout.floors = part.grid(p)
     layout.floors.area(*rect(p, d, along, across), h)
     if piece.get("railings"):
-        if min(along, across) < 2 * RAILING_ARM + NARROW:
+        if min(along, across) < 2 * RAILING_ARM + NARROW - 1e-6:
             raise ValueError(f"an area with railings is {2 * RAILING_ARM + NARROW:g} "
                              "across at least, for a road between them")
         for a, c in ((0.0, -1), (0.0, 1), (along, -1), (along, 1)):
             into_along = d if a == 0.0 else back_of(d)
             into_across = right_of(d) if c < 0 else left_of(d)
-            lay_railing(layout, sector, at(p, d, a, c * across / 2), (into_along, into_across),
-                        h + RISE)
+            lay_corner_railing(layout, sector, part, at(p, d, a, c * across / 2),
+                               (into_along, into_across), h + RISE)
     for a in (PILLAR_INSET, along - PILLAR_INSET):
         for c in (-across / 2 + PILLAR_INSET, across / 2 - PILLAR_INSET):
             x, z = at(p, d, a, c)
@@ -381,15 +409,45 @@ def lay_area(layout: Layout, sector: int, part: Sector, piece: dict, track: Trac
     return h, h, along
 
 
-def lay_railing(layout: Layout, sector: int, corner: Point, inward: tuple[Heading, Heading],
-                rim: float) -> None:
+def lay_railing(layout: Layout, sector: int, part: Sector, posts: list[Point],
+                rims: list[float], inward: tuple[Heading, Heading]) -> None:
+    """A railing whose top runs over posts (the first and last its posts,
+    the rest its corners), outside floor walls whose rims are at rims there,
+    each post clamped to its wall: inward from the first post and from the
+    last lies the floor."""
+    part.railings.append([(x, rim, z) for (x, z), rim in zip(posts, rims)])
+    for (x, z), rim, into in ((posts[0], rims[0], inward[0]), (posts[-1], rims[-1], inward[1])):
+        # the clamp's wall along its X, the floor toward its Z
+        layout.module_floors.append(("Clamp", sector, [x, rim, z], turn_of(right_of(into))))
+
+
+def lay_corner_railing(layout: Layout, sector: int, part: Sector, corner: Point,
+                       inward: tuple[Heading, Heading], rim: float) -> None:
     """Level_01's railing round a floor's corner, whose walls meet at corner
     and whose floor lies inward along both headings, its rim at rim."""
     u, v = inward
-    # the railing's X and Z along the walls, Z to the left of X
-    x = u if v == left_of(u) else v
-    layout.module_floors.append(("RailingCorner", sector, [corner[0], rim, corner[1]],
-                                 turn_of(x)))
+    cx, cz = corner
+
+    def point(along_u: float, along_v: float) -> Point:
+        return cx + u[0] * along_u + v[0] * along_v, cz + u[1] * along_u + v[1] * along_v
+
+    # outside both walls, a post along each
+    posts = [point(RAILING_ARM, -OUT), point(-OUT, -OUT), point(-OUT, RAILING_ARM)]
+    lay_railing(layout, sector, part, posts, [rim] * 3, (v, u))
+
+
+def lay_side_railings(layout: Layout, sector: int, part: Sector, start: Point, d: Heading,
+                      length: float, width: float, rims: tuple[float, float], sides: str,
+                      inset: float = RAILING_INSET) -> None:
+    """Railings along a road's sides ("left", "right" or "both"), from
+    start along d for length, outside its walls width apart, their posts
+    inset from the ends, the rims at the ends at rims."""
+    for sign, side in ((1, "right"), (-1, "left")):
+        if sides in (side, "both"):
+            aside = sign * (width / 2 + OUT)
+            posts = [at(start, d, inset, aside), at(start, d, length - inset, aside)]
+            into = left_of(d) if sign > 0 else right_of(d)
+            lay_railing(layout, sector, part, posts, list(rims), (into, into))
 
 
 def lay_turn(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:
@@ -404,7 +462,8 @@ def lay_turn(layout: Layout, sector: int, part: Sector, piece: dict, track: Trac
             raise ValueError("a railing stands round a narrow road's corner")
         side = side_of(track.d, piece["turn"])
         outer = at(track.p, track.d, width, width / 2 * (-1 if side == right_of(track.d) else 1))
-        lay_railing(layout, sector, outer, (back_of(track.d), side), track.h + RISE)
+        lay_corner_railing(layout, sector, part, outer, (back_of(track.d), side),
+                           track.h + RISE)
     corner = at(track.p, track.d, width / 2)
     layout.points.append(list(corner))
     track.d = side_of(track.d, piece["turn"])
@@ -944,6 +1003,14 @@ def lay_piece(layout: Layout, sector: int, part: Sector, piece: dict, track: Tra
                          "on a rail")
     if track.floor == "tower" and "area" not in piece:
         raise ValueError("the fan's tower throws the ball into an area")
+    if track.railed:
+        if "rail" in piece or "rail_turn" in piece:
+            raise ValueError("a rail with railings goes straight on to a narrow road")
+        if "road" not in piece or piece.get("width", "narrow") != "narrow" or \
+                float(piece["road"]) < track.railed:
+            raise ValueError(f"a rail with railings ends on a narrow road {track.railed:g} "
+                             "long at least")
+        track.railed = 0.0
     if "fall" in piece and track.run is None and track.floor not in ("log", "trough"):
         raise ValueError("the ball falls from a rail's, a log's or a trough's end")
     if track.floor == "fall" and not ("area" in piece or "log" in piece or "trough" in piece):

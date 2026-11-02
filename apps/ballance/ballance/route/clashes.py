@@ -17,6 +17,7 @@ from pathlib import Path
 from ..core.obj import Box, Mesh
 from ..game.measures import CLASH_HEADROOM, CLASH_OVERLAP, CLASH_RAIL_STEP
 from ..kit.floors import CELL, RISE, WALL
+from ..kit.railings import RADIUS, centre_line
 from ..kit.rails import GAUGE, TUBE
 from .assets import Assets
 from .layout import Layout, Part
@@ -99,6 +100,12 @@ def _boxes(part: Part, assets: Assets) -> tuple[list[Box], list[Box]]:
         if box:
             solid.append(box)
             room.append(_room(box))
+    for path in part.railings:
+        line = centre_line(path)
+        for a, b in zip(line, line[1:]):
+            solid.append((min(a[0], b[0]) - RADIUS, max(a[0], b[0]) + RADIUS,
+                          min(a[1], b[1]) - RADIUS, max(a[1], b[1]) + RADIUS,
+                          min(a[2], b[2]) - RADIUS, max(a[2], b[2]) + RADIUS))
     reach = GAUGE / 2 + TUBE
     for a, b in part.segments:
         # a sloping rail a few units at a time

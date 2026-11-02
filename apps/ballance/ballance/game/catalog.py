@@ -52,6 +52,9 @@ STONE_FLOOR_GROUPS = ["Phys_Floors", "Sound_RollID_01", "Sound_HitID_01", "Shado
 WOOD_FLOOR_GROUPS = ["Phys_Floors", "Sound_RollID_02", "Sound_HitID_02", "Shadow"]
 # Rails: physics and the metal sounds, no shadow, as the originals' have.
 RAIL_GROUPS = ["Phys_FloorRails", "Sound_RollID_03", "Sound_HitID_03"]
+# Railings ring as the ball hits them but make no rolling sound, as Level_01's
+# A01_Rail_04 has it.
+RAILING_GROUPS = ["Phys_FloorRails", "Sound_HitID_03"]
 # Stoppers collide with the ball only, and make no sound.
 STOPPER_GROUPS = ["Phys_FloorStopper"]
 

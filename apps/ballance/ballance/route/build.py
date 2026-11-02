@@ -9,6 +9,7 @@ from pathlib import Path
 
 from ..core.obj import Mesh
 from ..game.materials import load_presets
+from ..kit.railings import railing
 from . import scenery
 from .falls import write_fall_zones
 from .assets import Assets, MissingMesh
@@ -19,7 +20,7 @@ from .manifest import build_manifest, level_object
 
 def write_sector(sector: Sector, index: int, out: Path) -> None:
     """The sector's floors, with the pieces off their grid, as sector<N>.obj,
-    and its rails as rails<N>.obj."""
+    its rails as rails<N>.obj and its railings as railings<N>.obj."""
     mesh = Mesh()
     for floors in sector.floors:
         floors.build(mesh)
@@ -28,6 +29,11 @@ def write_sector(sector: Sector, index: int, out: Path) -> None:
     mesh.write(out / f"sector{index}.obj")
     if sector.rails.runs:
         sector.rails.write(out / f"rails{index}.obj")
+    if sector.railings:
+        mesh = Mesh()
+        for path in sector.railings:
+            railing(mesh, path)
+        mesh.write(out / f"railings{index}.obj")
 
 
 def build(route: dict, out: Path, elements: Path | None, name: str) -> int:

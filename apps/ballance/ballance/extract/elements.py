@@ -261,10 +261,11 @@ class DecorCut(Cut):
         return f"{path.name}:{'+'.join(self.names)}"
 
 
-# Level_01's railing round a floor's corner (A01_Rail_04's first), in its
-# rail object's frame: round the corner, the corner of its walls at the rim
-RAILING_BOX = (-22.4, -15.9, -1.0, 5.2, -13.5, -7.0)
-RAILING_CORNER = (-21.3794, 1.5767, -12.5006)
+# One of the clamps holding Level_01's railings to the walls (on
+# A01_Rail_04's first), in the rail object's frame: round it, and its post's
+# middle at the floor's rim
+CLAMP_BOX = (-17.58, -16.08, 0.67, 1.18, -13.16, -12.45)
+CLAMP_POST = (-16.6374, 1.5767, -12.7156)
 # Level_04's fan tower, in its fan's frame: the shaft, the rail in it, and
 # the cap and the hidden plates under it
 FAN_TOWER_SHAFT = (-3.6, 3.6, -12.0, 14.0, -3.6, 3.6)
@@ -355,13 +356,10 @@ CUTS: list[Cut] = [
               SPIRAL_BOX, SPIRAL_ORIGIN),
     ModuleCut("Spiral_Clamps", "Level_01.NMO", ["A04_Misc_Schelle_01", "A04_Misc_Schelle_02"],
               "A04_Floor_02", SPIRAL_BOX, SPIRAL_ORIGIN),
-    # Level_01's railing round a floor's corner, and the clamps holding its
-    # feet to the floor's walls, the corner of the walls at the rim at the
-    # origin and the floor toward +X and +Z
-    ModuleCut("Railing_Corner", "Level_01.NMO", "A01_Rail_04", "A01_Rail_04", RAILING_BOX,
-              RAILING_CORNER),
-    ModuleCut("Railing_Corner_Clamps", "Level_01.NMO", "A01_Misc_Schelle03", "A01_Rail_04",
-              RAILING_BOX, RAILING_CORNER),
+    # a clamp holding a railing's post to a floor's wall, the post's middle
+    # at the rim at the origin, the wall along X and the floor toward +Z
+    ModuleCut("Railing_Clamp", "Level_01.NMO", "A01_Misc_Schelle03", "A01_Rail_04", CLAMP_BOX,
+              CLAMP_POST),
     # Level_04's fan tower, round its fan: the shaft, the rail bending up
     # into it, the cap, and the hidden plates under the cap
     ModuleCut("Floor_FanTower", "Level_04.NMO", "A04_Floor_01", "P_Modul_18_05", FAN_TOWER_SHAFT),

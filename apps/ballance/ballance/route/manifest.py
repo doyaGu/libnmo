@@ -6,7 +6,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..core.geometry import turn_of
-from ..game.catalog import LEVEL_GROUPS, RAIL_GROUPS, STONE_FLOOR_GROUPS
+from ..game.catalog import LEVEL_GROUPS, RAIL_GROUPS, RAILING_GROUPS, STONE_FLOOR_GROUPS
 from ..game.measures import FIRST_RESET_ABOVE, RESET_ABOVE, SKY_BELOW
 from .assets import Assets
 from .layout import Layout
@@ -112,6 +112,10 @@ def _floors(manifest: Manifest, assets: Assets, layout: Layout) -> None:
                      STONE_FLOOR_GROUPS)
         if sector.rails.runs:
             manifest.add(f"A{index:02d}_Rail_01", f"rails{index}.obj", [0, 0, 0], RAIL_GROUPS)
+            manifest.materials.add("Rail")
+        if sector.railings:
+            manifest.add(f"A{index:02d}_Railing_01", f"railings{index}.obj", [0, 0, 0],
+                         RAILING_GROUPS)
             manifest.materials.add("Rail")
     for index, (sector, position) in enumerate(layout.housings, start=1):
         manifest.add(f"A{sector:02d}_Floor_Modul_18_{index:02d}", assets.mesh("Floor_Modul_18"),
