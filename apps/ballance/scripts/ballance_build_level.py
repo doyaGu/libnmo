@@ -26,8 +26,11 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
 - {"area": [along, across], "exit": "straight", "left" or "right"} -- a
   square or oblong area entered at the middle of one side and left at the
   middle of the opposite side, or of the side to the left or right.  A
-  pillar stands under each corner.
-- {"turn": "left" or "right"} -- a square corner as wide as the road.
+  pillar stands under each corner; with "railings": true, Level_01's railing
+  stands round each corner too (an area 15 across at least).
+- {"turn": "left" or "right"} -- a square corner as wide as the road; with
+  "railing": true, a narrow road's has Level_01's railing round its outer
+  corner, its feet clamped to the walls.
 - {"plank": true} -- the arched wood plank over a gap 10 long, as Level_03
   has it, with funnels flattening a narrow road to its ends and back.
 - {"walkway": true} -- the wavy wood walkway 70.32 long, as Level_08 has
