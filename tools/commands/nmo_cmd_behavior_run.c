@@ -1255,6 +1255,23 @@ static float run_real_time_delta(nmo_engine_t *engine, nmo_view_t *view, double 
     return delta;
 }
 
+/*
+ * A window stepping a fixed time a frame (--delta, --shot) shows each frame
+ * for that long, so that it plays at the game's own speed rather than at
+ * the display's refresh rate, evenly.
+ */
+static void run_pace(nmo_view_t *view, float delta, double *last_frame)
+{
+    double now = nmo_view_time(view);
+    double wait = (double)delta - (now - *last_frame);
+    if (wait > 0.0) {
+        nmo_view_wait(view, wait);
+        *last_frame += (double)delta;
+    } else {
+        *last_frame = now; /* behind: start afresh rather than rush to catch up */
+    }
+}
+
 static void run_take_shots(nmo_view_t *view, const char *shots, uint64_t frame)
 {
     for (const char *item = shots; item != NULL && *item != '\0';) {
@@ -1412,6 +1429,8 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
 #ifdef NMO_HAS_VIEW
         if (view != NULL && args->real_time) {
             delta = run_real_time_delta(engine, view, &last_frame);
+        } else if (view != NULL) {
+            run_pace(view, delta, &last_frame);
         }
 #endif
         status = nmo_engine_step(engine, delta);
