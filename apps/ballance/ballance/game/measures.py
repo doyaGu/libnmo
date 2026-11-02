@@ -220,6 +220,25 @@ STONEBOX_PATH = [(2.5, 0, 0), (6.75, 0, 0), (15.75, 8.75, 0), (17.75, 9.75, 0),
                  (45.75, -9.25, 0), (43.75, -7.25, 0), (33.75, -7.25, 0), (32.75, -8.25, 0),
                  (26.75, -8.25, 0), (25.75, -9.25, 0), (11.75, -9.25, 0), (9.75, -7.25, 0),
                  (9.75, -3.25, 0), (12.75, 0, 0), (51.75, 0, 0)]
+# Level_10's maze of them (A01_Floor_04 and A01_Rail_02 in P_Modul_34_01's
+# frame): three stand 15.4 apart along X over gaps 5.4 long in a flat road,
+# its top level with the modules; a road 5 lower winds under the gaps, up
+# under the first, down under the second and up under the third, each box in
+# its way.  A stone ball going round it pushes each box out from under its
+# stone, which drops in behind it flush with the road above, and from the
+# lower road's end a rail climbs 5 back to the flat road's start, which the
+# ball then crosses on the stones (a wood ball moves a box 1.5 and stops).
+# The track comes in at the lower road's start, heading along Z, and leaves
+# at the flat road's end, heading along X, where the builder's cut ends on
+# the grid.  The ball's way round, (X, Z) in the frame: up the legs and along
+# the bars between them, through the middles of the boxes, and round the
+# rail's bends to the flat road.
+MAZE_STEP, MAZE_BELOW = 15.4, 5.0
+MAZE_ENTRY, MAZE_EXIT = (-7.67, -17.5), 44.83
+MAZE_POINT = (15.68, 0.0)  # its extra point, between the second gap and the third
+MAZE_PATH = [(-7.67, -12.5), (-7.67, 15.0), (7.66, 15.0), (7.66, -15.0), (23.1, -15.0),
+             (23.1, 25.0), (15.6, 25.0), (-30.3, 25.0), (-36.0, 22.6), (-38.4, 16.9),
+             (-38.4, 8.1), (-36.0, 2.4), (-30.3, 0.0), (-20.4, 0.0)]
 
 # P_Modul_01, a pair of pushers (Level_01's and their plaza): a corridor 5
 # wide at a narrow road's edge height, 52.5 long, its last 5 narrowing into

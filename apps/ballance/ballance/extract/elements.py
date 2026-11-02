@@ -294,6 +294,12 @@ CUTS: list[Cut] = [
               (-16.3, 3.8, -5.1, 0.1, -9.8, 9.8)),
     ModuleCut("Floor_Modul_34", "Level_01.NMO", "A02_Floor_03", "P_Modul_34_01",
               (-30.45, 24.65, -20.0, 3.0, -22.8, 22.8)),
+    # Level_10's maze, cut where the track enters and leaves it (MAZE_* in
+    # ballance.game.measures)
+    ModuleCut("Floor_Maze_34", "Level_10.NMO", "A01_Floor_04", "P_Modul_34_01",
+              (-20.4, 44.83, -11.0, 1.0, -17.5, 27.5)),
+    ModuleCut("Rail_Maze_34", "Level_10.NMO", "A01_Rail_02", "P_Modul_34_01",
+              (-41.0, 16.0, -6.0, 1.0, -3.0, 28.0)),
     ModuleCut("Floor_Modul_01", "Level_01.NMO", "A03_Floor_02", "P_Modul_01_01",
               (-25.1, 30.1, -10.0, 0.2, -24.4, 28.2)),
     ModuleCut("Floor_Stopper_30", "Level_03.NMO", "A01_Floor_Stopper_01", "P_Modul_30_01",

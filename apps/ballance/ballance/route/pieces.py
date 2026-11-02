@@ -24,7 +24,8 @@ from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, 
                              FLAPS_MODULE, FUNNEL, HAIRPIN_GAP, HOLED_TROUGH, JUMP_ABOVE,
                              JUMP_AREA, JUMP_DOWN, JUMP_HALF, LIFT_BELOW, LIFT_ENTRY, LIFT_EXIT,
                              LIFT_RIDE, LIFT_TOP, LIFT_WALLS, LOG_CROSS, LOG_MOST, LOG_SEGMENT,
-                             LOG_TOP, PILLAR_INSET, PLANK_BELOW, PLANK_LENGTH, PUSHERS_ASIDE,
+                             LOG_TOP, MAZE_BELOW, MAZE_ENTRY, MAZE_EXIT, MAZE_PATH, MAZE_POINT,
+                             MAZE_STEP, PILLAR_INSET, PLANK_BELOW, PLANK_LENGTH, PUSHERS_ASIDE,
                              PUSHERS_LENGTH, PUSHERS_MODULES, PUSHERS_PATH, RAILING_ARM,
                              RAILING_BRIDGE, RAILING_INSET, RAIL_DOCK_BELOW, RAIL_DOCK_LENGTH,
                              RAIL_FALL, RAIL_OVERHANG, RAIL_RING_STEP, SACK_ABOVE, SACK_HANG,
@@ -717,6 +718,8 @@ def lay_module(layout: Layout, sector: int, part: Sector, piece: dict,
     if kind == "P_Modul_37":
         return lay_switch(layout, sector, part, piece, track)
     if kind == "P_Modul_34":
+        if piece.get("maze"):
+            return lay_maze(layout, sector, part, piece, track)
         return lay_stonebox(layout, sector, part, piece, track)
     if kind == "P_Modul_01":
         return lay_pushers(layout, sector, part, piece, track)
@@ -798,6 +801,46 @@ def lay_stonebox(layout: Layout, sector: int, part: Sector, piece: dict, track: 
     layout.points.append(list(track.p))
     track.floor = "wide"
     return h, h, start + STONEBOX_LENGTH
+
+
+def lay_maze(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:
+    """{"module": "P_Modul_34", "maze": true}: Level_10's maze of three
+    stones on boxes (see MAZE_* in ballance.game.measures), entered from a
+    narrow road through a funnel into its lower road; the track leaves its
+    flat road, MAZE_BELOW higher, turned to the right, through a funnel onto
+    a narrow road again, on a grid of its own."""
+    if track.width != NARROW or track.floor != "road":
+        raise ValueError("the maze is entered from a narrow road")
+    check_ball(layout, "Maze_34")
+    p, d, h = track.p, track.d, track.h
+    edge = h + RISE
+    right = right_of(d)
+    layout.open(layout.floors, p, d)
+    part.extras.append((funnel, at(p, d, FUNNEL), back_of(d), edge, None))
+    x, z = MAZE_ENTRY
+    origin = at(at(p, d, FUNNEL), d, -z, -x)
+    top = edge + MAZE_BELOW
+    turn = turn_of(right)  # the frame's X to the track's right, its Z along it
+
+    def place(fx: float, fz: float) -> Point:
+        return at(origin, d, fz, fx)
+
+    for k in range(3):
+        where = place(k * MAZE_STEP, 0.0)
+        layout.modules.append(("P_Modul_34", sector, [where[0], top, where[1]], turn))
+    layout.module_floors.append(("Maze_34", sector, [origin[0], top, origin[1]], turn))
+    point = place(*MAZE_POINT)
+    layout.elements.append(("P_Extra_Point", sector,
+                            [point[0], top + ELEMENT_LIFT["P_Extra_Point"], point[1]]))
+    layout.points += [list(place(fx, fz)) for fx, fz in MAZE_PATH]
+    end = place(MAZE_EXIT, 0.0)
+    part.extras.append((funnel, end, right, top, None))
+    track.p, track.d, track.h = at(end, right, FUNNEL), right, top - RISE
+    layout.floors = part.grid(track.p)
+    layout.open(layout.floors, track.p, right)
+    layout.points.append(list(track.p))
+    track.floor = "module"
+    return h, h, FUNNEL
 
 
 def lay_bridge(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> None:

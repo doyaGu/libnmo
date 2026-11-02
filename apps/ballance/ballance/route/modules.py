@@ -5,8 +5,8 @@ from __future__ import annotations
 
 from ..core.obj import Box
 from ..game.catalog import RAIL_GROUPS, STONE_FLOOR_GROUPS, STOPPER_GROUPS, WOOD_FLOOR_GROUPS
-from ..game.measures import (DRAWBRIDGE_FLOORS, DRAWBRIDGE_HINGE, SACK_STEP, SLAB, SLAB_GAP,
-                             STONEBOX_LENGTH, STONEBOX_MODULE, SWITCH_CROSS)
+from ..game.measures import (DRAWBRIDGE_FLOORS, DRAWBRIDGE_HINGE, MAZE_EXIT, SACK_STEP, SLAB,
+                             SLAB_GAP, STONEBOX_LENGTH, STONEBOX_MODULE, SWITCH_CROSS)
 
 # The modules that stand on the track, and how many in a row.  Each but the
 # switch, the stone on a box, the pushers, the rotating arm, the flaps, the
@@ -23,6 +23,8 @@ MODULES = {"P_Modul_01": (2, 2), "P_Modul_03": (1, 1), "P_Modul_08": (1, 1),
 NEEDS_BALL = {
     "P_Modul_41": ({"Paper"}, "tips {kind}'s slabs and falls; only a paper ball crosses them"),
     "P_Modul_37": ({"Stone"}, "does not tip {kind}'s plank; a stone ball does"),
+    "Maze_34": ({"Stone"}, "can't push the maze's boxes out from under their stones "
+                           "(in Level_10 too); a stone ball does"),
     "P_Modul_29": ({"Paper", "Wood"}, "falls through {kind}'s plates (in Ballanced too); "
                                       "a paper or wood ball crosses them"),
     "P_Modul_17": ({"Wood", "Stone"}, "can't turn {kind}'s arm; a wood or stone ball does"),
@@ -159,6 +161,17 @@ MODULE_FLOORS = {
                     [(-5.2, STONEBOX_MODULE, -5, 0, -2.5, 2.5),
                      (STONEBOX_MODULE - STONEBOX_LENGTH, -10.2, -5, 0, -2.5, 2.5),
                      (STONEBOX_MODULE - STONEBOX_LENGTH, 18.0, -9.5, -5, -22.5, 22.5)])],
+    # not a module of its own: Level_10's maze of three (in the stand-ins, the
+    # flat road and the lower road's legs and bars)
+    "Maze_34": [
+        ModuleFloor("Floor_Maze_34", STONE_FLOOR_GROUPS,
+                    [(-20.4, MAZE_EXIT, -5, 0, -2.5, 2.5),
+                     (-10.17, 10.16, -10, -5, 12.5, 17.5), (5.16, 25.6, -10, -5, -17.5, -12.5),
+                     (-10.17, -5.17, -10, -5, -17.5, 12.5), (5.16, 10.16, -10, -5, -12.5, 12.5),
+                     (20.6, 25.6, -10, -5, -12.5, 27.5), (15.6, 20.6, -10, -5, 22.5, 27.5)]),
+        ModuleFloor("Rail_Maze_34", RAIL_GROUPS, [(-40.65, 15.6, -5, 0, 22.75, 27.25),
+                                                  (-40.65, -36.15, -1, 0, -2.25, 27.25),
+                                                  (-40.65, -20.4, -1, 0, -2.25, 2.25)])],
     "P_Modul_37": [
         ModuleFloor("Floor_Modul_37", STONE_FLOOR_GROUPS,
                     [(-16.27, -11.27, -5, 0, -SWITCH_CROSS, -4.75),

@@ -105,7 +105,15 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
   goes down into the pit, pushes the box out along the channel so that the
   stone drops flush into the gap, comes back up and crosses.  The track
   leaves the plaza 55 on, 2.1 higher, on a wide road, which the route goes
-  on with (Level_01's climbs on 1.3 every 5).
+  on with (Level_01's climbs on 1.3 every 5).  With "maze": true, it is
+  Level_10's maze of three instead, as light as the originals mostly have
+  them: a funnel leads the road into a road 5 lower that winds up, down and
+  up again under three gaps 15.4 apart in a flat road above, a box under
+  each stone in its way.  A stone ball going round pushes each box out, the
+  stones dropping in behind it flush with the road above, rides a rail
+  climbing back to that road's start and crosses on the stones; the track
+  leaves the flat road's end 22.5 on and 57.5 to the right, heading right,
+  5 higher, through a funnel onto a narrow road.
 - {"module": "P_Modul_37", "side": "left" or "right"} -- the switch, as
   Level_05 has it: the track crosses a gap between two blocks, and a stone
   ball rolled down a spur onto the target beside it tips a plank across the
