@@ -119,11 +119,16 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
 - {"rail": length, "drop": dy} -- a straight rail, coming down dy; with
   "railings": true, it crosses a gap between narrow roads with railings
   either side, as Level_05's A01_Rail_01 does, from 5.64 back on the road
-  before (at least that long) to as far on the road after.
+  before (at least that long) to as far on the road after.  With "hump":
+  dy, it rises dy over its middle and comes back down (or dips, dy below 0),
+  as the lanes of Level_12's zigzag do (12.9 over 116); "sack": true hangs a
+  sack under the crest, swinging across into the lanes beside, and "point":
+  true an extra point over it.
 - {"rail_turn": "left" or "right", "drop": dy} -- the originals' rail
   bend, with a straight 1.9 before and after it so that it ends 10 along and
   10 aside, coming down dy evenly along it (Level_01's spiral comes down 1.26
-  a bend).
+  a bend); with "hairpin": true, two bends turn the rail back on itself,
+  the way back 17.5 aside.
 - {"fall": dy} -- the rail ends in the air and the ball falls dy (at most
   15) into the area that comes next, which starts 5 back under the rail's
   end, its rim closed (as Level_01's rails drop the ball into its pits).

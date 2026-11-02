@@ -3,7 +3,8 @@
 A rail is two tubes whose middles are 3.8 apart, each an octagon 0.35 in
 radius with its two lowest faces left out, in the Rail material.  The tubes'
 rings stand upright, square to the track: a straight rail has one at each
-end, so a slope changes at a kink, and a bend is the originals' one bend, 90
+end, so a slope changes at a kink (a hump has one every few units, as
+Level_12's do), and a bend is the originals' one bend, 90
 degrees about a point 8.1 to the side of the track's middle (the inner tube
 6.2, the outer 10), in nine steps of 10 degrees.  Normals are smooth around
 the tube; the two at its open bottom lean as the face beside them does.

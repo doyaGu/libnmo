@@ -14,24 +14,25 @@ from typing import TYPE_CHECKING, Callable
 
 from ..core.geometry import (Heading, Point, across, at, axis_of, back_of, left_of, rect,
                              right_of, side_of, turn_of)
-from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, ARMS_PATH, BOX_PILE,
-                             BRIDGES, CLIMB_DROP, CLIMB_END, CLIMB_FANS, CLIMB_HOLD, CLIMB_LENGTH,
-                             CLIMB_TOPS, CLIMB_TRAFO, CRADLE_BALL, CRADLE_EXIT, CRADLE_RING,
-                             CRADLE_TOP, ELEMENT_LIFT, FAN_BELOW, FAN_BLOCK_FAN, FAN_BLOCK_RING,
-                             FAN_BLOCK_TOP, FAN_REACH, FAN_TOWER_FLOOR, FAN_TOWER_HALF,
-                             FAN_TOWER_HOLD, FAN_TOWER_PILLAR, FAN_TOWER_RING, FAN_TOWER_ROCK,
-                             FLAPS_COUNTERWEIGHT, FLAPS_LENGTH, FLAPS_MODULE, FUNNEL, HOLED_TROUGH,
-                             JUMP_ABOVE, JUMP_AREA, JUMP_DOWN, JUMP_HALF, LIFT_BELOW, LIFT_ENTRY,
-                             LIFT_EXIT, LIFT_RIDE, LIFT_TOP, LIFT_WALLS, LOG_CROSS, LOG_MOST,
-                             LOG_SEGMENT, LOG_TOP, PILLAR_INSET, PLANK_BELOW, PLANK_LENGTH,
-                             PUSHERS_ASIDE, PUSHERS_LENGTH, PUSHERS_MODULES, PUSHERS_PATH,
-                             RAILING_ARM, RAILING_BRIDGE, RAILING_INSET, RAIL_DOCK_BELOW,
-                             RAIL_DOCK_LENGTH, RAIL_FALL, RAIL_OVERHANG, SACK_ABOVE, SPIRAL_OUT,
-                             SPIRAL_PATH, STONEBOX_LENGTH, STONEBOX_MODULE, STONEBOX_PATH,
-                             STONEBOX_RISE, STONEBOX_TRAFO, SWING_ABOVE, SWING_FAR, SWING_GO,
-                             SWING_HALF, SWING_SEAT, SWING_WAIT, SWITCH_AREA, SWITCH_CROSS,
-                             SWITCH_HOLD, SWITCH_MODULE, SWITCH_SPUR, SWITCH_TARGET, TRAFO_LIFT,
-                             TROUGH_ASIDE, TROUGH_BOTTOM, TROUGH_DODGE, TROUGH_HOLES,
+from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, ARMS_PATH,
+                             BOX_PILE, BRIDGES, CLIMB_DROP, CLIMB_END, CLIMB_FANS, CLIMB_HOLD,
+                             CLIMB_LENGTH, CLIMB_TOPS, CLIMB_TRAFO, CRADLE_BALL, CRADLE_EXIT,
+                             CRADLE_RING, CRADLE_TOP, CREST_POINT, ELEMENT_LIFT, FAN_BELOW,
+                             FAN_BLOCK_FAN, FAN_BLOCK_RING, FAN_BLOCK_TOP, FAN_REACH,
+                             FAN_TOWER_FLOOR, FAN_TOWER_HALF, FAN_TOWER_HOLD, FAN_TOWER_PILLAR,
+                             FAN_TOWER_RING, FAN_TOWER_ROCK, FLAPS_COUNTERWEIGHT, FLAPS_LENGTH,
+                             FLAPS_MODULE, FUNNEL, HAIRPIN_GAP, HOLED_TROUGH, JUMP_ABOVE,
+                             JUMP_AREA, JUMP_DOWN, JUMP_HALF, LIFT_BELOW, LIFT_ENTRY, LIFT_EXIT,
+                             LIFT_RIDE, LIFT_TOP, LIFT_WALLS, LOG_CROSS, LOG_MOST, LOG_SEGMENT,
+                             LOG_TOP, PILLAR_INSET, PLANK_BELOW, PLANK_LENGTH, PUSHERS_ASIDE,
+                             PUSHERS_LENGTH, PUSHERS_MODULES, PUSHERS_PATH, RAILING_ARM,
+                             RAILING_BRIDGE, RAILING_INSET, RAIL_DOCK_BELOW, RAIL_DOCK_LENGTH,
+                             RAIL_FALL, RAIL_OVERHANG, RAIL_RING_STEP, SACK_ABOVE, SACK_HANG,
+                             SPIRAL_OUT, SPIRAL_PATH, STONEBOX_LENGTH, STONEBOX_MODULE,
+                             STONEBOX_PATH, STONEBOX_RISE, STONEBOX_TRAFO, SWING_ABOVE, SWING_FAR,
+                             SWING_GO, SWING_HALF, SWING_SEAT, SWING_WAIT, SWITCH_AREA,
+                             SWITCH_CROSS, SWITCH_HOLD, SWITCH_MODULE, SWITCH_SPUR, SWITCH_TARGET,
+                             TRAFO_LIFT, TROUGH_ASIDE, TROUGH_BOTTOM, TROUGH_DODGE, TROUGH_HOLES,
                              TROUGH_HOLES_FROM, TROUGH_HOP, TROUGH_LAND, TROUGH_LOG_GAP,
                              TROUGH_SEGMENT, TWIST_ASIDE, TWIST_BELOW, TWIST_HALF, TWIST_PATH,
                              WALKWAY_ABOVE, WALKWAY_LENGTH, WALKWAY_LONG)
@@ -70,11 +71,20 @@ def lay_road(layout: Layout, sector: int, part: Sector, piece: dict, track: Trac
 
 
 def lay_rail(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> None:
-    """{"rail": length, "drop": dy, "railings": true}: with railings, the
-    rail crosses a gap between narrow roads with railings either side, as
-    Level_05's A01_Rail_01 does, from RAILING_BRIDGE back on the road before
-    to as far on the road after."""
+    """{"rail": length, "drop": dy, "railings": true, "hump": dy, "sack":
+    true, "point": true}: with railings, the rail crosses a gap between
+    narrow roads with railings either side, as Level_05's A01_Rail_01 does,
+    from RAILING_BRIDGE back on the road before to as far on the road after.
+    With a hump, it rises dy over its middle (or dips, dy below 0) and comes
+    back down as Level_12's zigzag does, a sack hanging under the crest and
+    an extra point over it if asked (see RAIL_RING_STEP, SACK_HANG in
+    ballance.game.measures)."""
     length = float(piece["rail"])
+    hump = float(piece.get("hump", 0.0))
+    if (piece.get("sack") or piece.get("point")) and not hump:
+        raise ValueError("a sack or an extra point hangs over a rail's hump")
+    if hump and piece.get("railings"):
+        raise ValueError("a rail with railings is straight")
     if piece.get("railings"):
         last = layout.parts[-1]
         if last.what != "road" or track.width != NARROW or \
@@ -86,9 +96,24 @@ def lay_rail(layout: Layout, sector: int, part: Sector, piece: dict, track: Trac
                           length + 2 * RAILING_BRIDGE, NARROW,
                           (track.h + RISE, track.h - drop + RISE), "both", 0.0)
         track.railed = RAILING_BRIDGE
-    track.p = at(track.p, track.d, length)
-    track.h -= float(piece.get("drop", 0.0))
-    track.run.append(Ring(track.p[0], track.h + ABOVE_V, track.p[1], track.d[0], track.d[1]))
+    p, d, h, drop = track.p, track.d, track.h, float(piece.get("drop", 0.0))
+    steps = max(1, round(length / RAIL_RING_STEP)) if hump else 1
+    for k in range(1, steps + 1):
+        u = k / steps
+        x, z = at(p, d, length * u)
+        y = h - drop * u + hump * (1 - math.cos(2 * math.pi * u)) / 2
+        track.run.append(Ring(x, y + ABOVE_V, z, d[0], d[1]))
+    if hump:
+        x, z = at(p, d, length / 2)
+        crest = h - drop / 2 + hump + ABOVE_V
+        if piece.get("sack"):
+            # the rope across the lane, as Level_12's sacks
+            layout.modules.append(("P_Modul_26", sector, [x, crest - SACK_HANG, z],
+                                   turn_of(right_of(d))))
+        if piece.get("point"):
+            layout.elements.append(("P_Extra_Point", sector, [x, crest + CREST_POINT, z]))
+    track.p = at(p, d, length)
+    track.h = h - drop
     layout.points.append(list(track.p))
     track.floor = "rail"
 
@@ -102,10 +127,15 @@ def _road_length(part) -> float:
 
 def lay_rail_turn(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> None:
     """{"rail_turn": "left" or "right", "drop": dy}: the bend, coming down dy
-    evenly along it and its straights."""
+    evenly along it and its straights; with "hairpin": true, the rail turns
+    back on itself through two bends (see HAIRPIN_GAP in
+    ballance.game.measures), the way back 17.5 aside."""
     sign = 1 if piece["rail_turn"] == "right" else -1
     side = side_of(track.d, piece["rail_turn"])
     drop = float(piece.get("drop", 0.0))
+    if piece.get("hairpin"):
+        lay_hairpin(layout, track, side, sign, drop)
+        return
     straight = BEND_SPAN - BEND_RADIUS
     arc = BEND_RADIUS * math.pi / 2
     per = drop / (2 * straight + arc)  # a unit along it
@@ -116,6 +146,21 @@ def lay_rail_turn(layout: Layout, sector: int, part: Sector, piece: dict, track:
     track.h -= drop
     track.run += rings + [Ring(track.p[0], track.h + ABOVE_V, track.p[1], side[0], side[1])]
     layout.points += [[r.x, r.z] for r in rings[3::3]] + [list(track.p)]
+    track.floor = "rail"
+
+
+def lay_hairpin(layout: Layout, track: Track, side: Heading, sign: int, drop: float) -> None:
+    arc = BEND_RADIUS * math.pi / 2
+    per = drop / (2 * arc + HAIRPIN_GAP)  # a unit along it
+    p, d, y = track.p, track.d, track.h + ABOVE_V
+    first = bend(p[0], y, p[1], d, side, per * arc)
+    q = at(p, d, BEND_RADIUS, sign * (BEND_RADIUS + HAIRPIN_GAP))
+    second = bend(q[0], y - per * (arc + HAIRPIN_GAP), q[1], side, back_of(d), per * arc)
+    track.p = at(p, d, 0.0, sign * (2 * BEND_RADIUS + HAIRPIN_GAP))
+    track.d = back_of(d)
+    track.h -= drop
+    track.run += first + second
+    layout.points += [[r.x, r.z] for r in (first + second)[4::5]] + [list(track.p)]
     track.floor = "rail"
 
 
