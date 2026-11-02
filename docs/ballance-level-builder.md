@@ -36,6 +36,7 @@ apps/ballance/scripts/ballance_build_level.py <route.json> <out> --elements <ele
 nmo patch apply --project <out>/manifest.json -o <out>/Level_01.NMO
 apps/ballance/scripts/ballance_check_level.py <out>/Level_01.NMO
 apps/ballance/scripts/ballance_verify_level.py <out> --play 12000 --game <GAME_ROOT>
+apps/ballance/scripts/ballance_play_level.py <out>
 ```
 
 `ballance_build_level.py` lays the route out and writes into `<out>`:
@@ -157,25 +158,35 @@ ball has to wait or rush:
 
 ## Watching a Level
 
-In a window, with the same keys and autopilot the verifier uses, from the
-game's folder:
+Set the game's folder and the nmo CLI built with libivp and the window once,
+in the shell's profile:
 
 ```sh
-cd <GAME_ROOT>
-nmo behavior run --window --mute --physics ivp --path <out> -n 12000 \
-    --keys 'Enter@700-705,Enter@725-730,Q@860-1000' \
-    --steer "$(PYTHONPATH=<libnmo>/apps/ballance python3 -c 'import json, sys; from ballance.verify.play import steer_text; print(steer_text(json.load(open(sys.argv[1]))))' <out>/route_points.json)@1000" \
-    --steer-object Ball_Wood,Ball_Stone,Ball_Paper \
-    --shot <dir>/f4000.png@4000,<dir>/f8000.png@8000 \
-    --registry 'Software\Ballance\Settings\Language=1' base.cmo
+export BALLANCE=<GAME_ROOT>
+export NMO=<build>/tools/nmo
 ```
 
-`--path` puts the folder before the game's own, so its `Level_01.NMO`
-replaces level 1. The two Enters start level 1 as soon as the menu takes
-them, and Q skips the tutorial, which otherwise holds the ball 25 seconds.
-`--shot` saves frames, and runs with it step a fixed 60 Hz so their frame
-numbers repeat. Without `--steer`, the ball is the keyboard's. Leave
-`--window` out to run headless.
+Then one command opens a built level (or a level file) in a window, and the
+autopilot plays it as the verifier does; with `--self`, you roll the ball
+with the arrow keys:
+
+```sh
+apps/ballance/scripts/ballance_play_level.py <out>
+apps/ballance/scripts/ballance_play_level.py <out> --self
+```
+
+The level plays as level 1 until the window is closed: the game starts it
+and skips the tutorial by itself. The autopilot steps a fixed 1/60 s a frame,
+as the verifier's headless runs do, so the ball goes the same way; in real
+time a marginal mechanism can go otherwise (the fan tower's ball may stay in
+its bend). `--mute` turns the sound off.
+
+Underneath it is `nmo behavior run --window --delta 16.667 --path <dir>
+--keys 'Enter@700-705,Enter@725-730,Q@860-1000' --steer POINTS@1000
+--steer-object Ball_Wood,Ball_Stone,Ball_Paper` run in the game's folder:
+`--path` puts a folder holding `Level_01.NMO` before the game's own, the
+Enters start level 1, Q skips the tutorial, and `--shot FILE@FRAME,...`
+saves frames.
 
 `ballance_map_view.py` draws a level, built or original, from above, the
 sides, the corners or any angle, with the game's textures if given. It names

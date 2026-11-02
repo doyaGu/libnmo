@@ -6,7 +6,8 @@ finished or the ball fell off, where the ball stood still, and the rewards
 (extra points and lives) it never came near enough to take.
 
 The game starts level 1 as soon as its main menu takes Enter, and Q skips
-the tutorial; the ball is steered from frame STEER_FROM.
+the tutorial; the ball is steered from frame STEER_FROM.  A level can also
+be watched in a window (watch), the autopilot playing it or a player.
 """
 
 from __future__ import annotations
@@ -14,7 +15,9 @@ from __future__ import annotations
 import json
 import math
 import re
+import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -22,6 +25,7 @@ from ..core.nmo import Nmo
 
 KEYS = "Enter@700-705,Enter@725-730,Q@860-1000"
 STEER_FROM = 1000
+FRAME_MS = "16.667"  # the time a frame steps, as headless runs step it
 BALLS = "Ball_Wood,Ball_Stone,Ball_Paper"
 REGISTRY = r"Software\Ballance\Settings\Language=1"
 STILL = 0.02       # the ball moves less than this in a frame: it stands still
@@ -84,6 +88,25 @@ def _waits(point: list) -> str:
     if len(point) > 2 and point[2] is not None:
         return f"to be lifted to {point[2]:g}"
     return ""
+
+
+def watch(level: Path, route: Path | None, nmo: Nmo, game: Path, mute: bool = False) -> int:
+    """Plays level (a Level_NN.NMO) as level 1 in a window until it is
+    closed: with route (a builder's route_points.json) the autopilot rolls
+    the ball, a fixed time a frame as the verifier's runs step, so that it
+    plays as they did; without, the arrow keys do, in real time."""
+    with tempfile.TemporaryDirectory() as folder:
+        shutil.copyfile(level, Path(folder) / "Level_01.NMO")
+        command = [nmo.executable, "behavior", "run", "--window", "--physics", "ivp",
+                   "--path", folder, "--keys", KEYS, "--registry", REGISTRY]
+        if route is not None:
+            points = json.loads(route.read_text(encoding="utf-8"))
+            command += ["--delta", FRAME_MS, "--steer", f"{steer_text(points)}@{STEER_FROM}",
+                        "--steer-object", BALLS]
+        if mute:
+            command.append("--mute")
+        return subprocess.run([*command, "base.cmo"], cwd=game, stdout=subprocess.DEVNULL,
+                              check=False).returncode
 
 
 def play(folder: Path, frames: int, nmo: Nmo, game: Path) -> Play:
