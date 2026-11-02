@@ -25,18 +25,18 @@ from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, 
                              JUMP_AREA, JUMP_DOWN, JUMP_HALF, LIFT_BELOW, LIFT_ENTRY, LIFT_EXIT,
                              LIFT_RIDE, LIFT_TOP, LIFT_WALLS, LOG_CROSS, LOG_MOST, LOG_SEGMENT,
                              LOG_TOP, MAZE_BELOW, MAZE_ENTRY, MAZE_EXIT, MAZE_PATH, MAZE_POINT,
-                             MAZE_STEP, PILLAR_INSET, PLANK_BELOW, PLANK_LENGTH, PUSHERS_ASIDE,
-                             PUSHERS_LENGTH, PUSHERS_MODULES, PUSHERS_PATH, RAILING_ARM,
-                             RAILING_BRIDGE, RAILING_INSET, RAIL_DOCK_BELOW, RAIL_DOCK_LENGTH,
-                             RAIL_FALL, RAIL_OVERHANG, RAIL_RING_STEP, SACK_ABOVE, SACK_HANG,
-                             SPIRAL_OUT, SPIRAL_PATH, STONEBOX_LENGTH, STONEBOX_MODULE,
-                             STONEBOX_PATH, STONEBOX_RISE, STONEBOX_TRAFO, SWING_ABOVE, SWING_FAR,
-                             SWING_GO, SWING_HALF, SWING_SEAT, SWING_WAIT, SWITCH_AREA,
-                             SWITCH_CROSS, SWITCH_HOLD, SWITCH_MODULE, SWITCH_SPUR, SWITCH_TARGET,
-                             TRAFO_LIFT, TROUGH_ASIDE, TROUGH_BOTTOM, TROUGH_DODGE, TROUGH_HOLES,
-                             TROUGH_HOLES_FROM, TROUGH_HOP, TROUGH_LAND, TROUGH_LOG_GAP,
-                             TROUGH_SEGMENT, TWIST_ASIDE, TWIST_BELOW, TWIST_HALF, TWIST_PATH,
-                             WALKWAY_ABOVE, WALKWAY_LENGTH, WALKWAY_LONG)
+                             MAZE_STEP, OCTAGON_HALF, PILLAR_INSET, PLANK_BELOW, PLANK_LENGTH,
+                             PUSHERS_ASIDE, PUSHERS_LENGTH, PUSHERS_MODULES, PUSHERS_PATH,
+                             RAILING_ARM, RAILING_BRIDGE, RAILING_INSET, RAIL_DOCK_BELOW,
+                             RAIL_DOCK_LENGTH, RAIL_FALL, RAIL_OVERHANG, RAIL_RING_STEP,
+                             SACK_ABOVE, SACK_HANG, SPIRAL_OUT, SPIRAL_PATH, STONEBOX_LENGTH,
+                             STONEBOX_MODULE, STONEBOX_PATH, STONEBOX_RISE, STONEBOX_TRAFO,
+                             SWING_ABOVE, SWING_FAR, SWING_GO, SWING_HALF, SWING_SEAT, SWING_WAIT,
+                             SWITCH_AREA, SWITCH_CROSS, SWITCH_HOLD, SWITCH_MODULE, SWITCH_SPUR,
+                             SWITCH_TARGET, TRAFO_LIFT, TROUGH_ASIDE, TROUGH_BOTTOM, TROUGH_DODGE,
+                             TROUGH_HOLES, TROUGH_HOLES_FROM, TROUGH_HOP, TROUGH_LAND,
+                             TROUGH_LOG_GAP, TROUGH_SEGMENT, TWIST_ASIDE, TWIST_BELOW, TWIST_HALF,
+                             TWIST_PATH, WALKWAY_ABOVE, WALKWAY_LENGTH, WALKWAY_LONG)
 from ..kit.floors import CELL, NARROW, RISE, WALL
 from ..kit.pieces import channel, funnel, pad, strip
 from ..kit.railings import OUT
@@ -452,7 +452,7 @@ def lay_area(layout: Layout, sector: int, part: Sector, piece: dict, track: Trac
         if piece.get("rise"):
             raise ValueError("a branch leaves an area that doesn't rise")
         used.add(side)
-        track.forks.append((*sides[side], h, layout.floors, branch))
+        track.forks.append((*sides[side], h, layout.floors, branch, "area"))
     if "name" in piece:
         layout.name_node(piece["name"], layout.floors, h,
                          [place for side, place in sides.items() if side not in used])
@@ -477,6 +477,44 @@ def lay_area(layout: Layout, sector: int, part: Sector, piece: dict, track: Trac
     layout.points.append(list(track.p))
     track.floor = "area"
     return h, h, along
+
+
+def lay_node(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:
+    """{"node": "octagon", "exit": "straight", "left" or "right", "branches":
+    [branch]}: Level_05's octagon node (see OCTAGON_HALF in
+    ballance.game.measures), entered from a narrow road; the track leaves by
+    its exit and the one branch (as an area's, ballance.route.layout) by
+    another side, each onto a narrow road, the third side shut."""
+    if piece["node"] != "octagon":
+        raise ValueError(f"unknown node {piece['node']}; known: octagon")
+    if track.width != NARROW or track.floor != "road":
+        raise ValueError("an octagon is entered from a narrow road")
+    exit, branches = piece.get("exit", "straight"), piece.get("branches", [])
+    sides = {"straight", "left", "right"}
+    if len(branches) != 1 or exit not in sides or branches[0].get("side") not in sides - {exit}:
+        raise ValueError("an octagon is left by its exit and by one branch from another side "
+                         "(straight, left or right)")
+    p, d, h = track.p, track.d, track.h
+    edge = h + RISE
+    out = {"straight": d, "left": left_of(d), "right": right_of(d)}
+    shut = (sides - {exit, branches[0]["side"]}).pop()
+    layout.open(layout.floors, p, d)
+    centre = at(p, d, OCTAGON_HALF)
+    layout.module_floors.append(("Octagon", sector, [centre[0], edge, centre[1]],
+                                 turn_of(out[shut])))
+    layout.pillars.append([centre[0], edge - WALL, centre[1]])
+    q = at(centre, out[branches[0]["side"]], OCTAGON_HALF)
+    grid = part.grid(q)
+    layout.open(grid, q, out[branches[0]["side"]])
+    track.forks.append((q, out[branches[0]["side"]], h, grid, branches[0], "node"))
+    layout.points.append(list(centre))
+    track.d = out[exit]
+    track.p = at(centre, track.d, OCTAGON_HALF)
+    layout.floors = part.grid(track.p)
+    layout.open(layout.floors, track.p, track.d)
+    layout.points.append(list(track.p))
+    track.floor = "node"
+    return h, h, 2 * OCTAGON_HALF
 
 
 def lay_railing(layout: Layout, sector: int, part: Sector, posts: list[Point],
@@ -1094,6 +1132,7 @@ PIECES: dict[str, Callable] = {
     "log": lay_log,
     "trough": lay_trough,
     "area": lay_area,
+    "node": lay_node,
     "turn": lay_turn,
     "trafo": lay_trafo,
     "plank": lay_plank,
@@ -1129,6 +1168,8 @@ def lay_piece(layout: Layout, sector: int, part: Sector, piece: dict, track: Tra
         raise ValueError("a fall lands in an area, on a log or in a trough")
     if track.floor == "log" and "log" not in piece and "fall" not in piece:
         raise ValueError("a log goes on to another log or a fall")
+    if track.floor == "node" and ("road" not in piece or piece.get("width", "narrow") != "narrow"):
+        raise ValueError("an octagon is left by a narrow road")
     if track.floor == "trough" and not ("trough" in piece or "log" in piece or "fall" in piece):
         raise ValueError("a trough goes on to another trough, a log or a fall")
     if rail and track.run is None:

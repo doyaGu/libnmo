@@ -36,7 +36,8 @@ class Track:
     trough: float = 0.0  # the length of the trough it is in
     railed: float = 0.0  # how long a road the railings of the rail it is on reach onto
     off_floor: bool = False  # the fall it is in is off a log's or a trough's end
-    # branches to lay from the last piece: point, heading, height, grid, branch
+    # branches to lay from the last piece: point, heading, height, grid,
+    # branch, and what the branch starts from ("area" or "node")
     forks: list[tuple] = field(default_factory=list)
     step: int | None = None  # the last Part laid on it
 
@@ -208,7 +209,7 @@ class Layout:
         self._named.clear()
         forks, track.forks = track.forks, []
         for fork in forks:
-            target = fork[-1].get("to")
+            target = fork[4].get("to")
             if target and target not in self.nodes:
                 self._waiting.setdefault(target, []).append((sector_index, sector, number, fork,
                                                              track.step))
@@ -226,7 +227,7 @@ class Layout:
         out; another's are left out, and the ball it would turn the ball into.
         A branch to an area ("to": NAME) ends at the middle of one of its
         free sides, heading into it, at its height, and opens to it there."""
-        p, d, h, floors, branch = fork
+        p, d, h, floors, branch, floor = fork
         route, target, visit = branch.get("route"), branch.get("to"), branch.get("visit", False)
         if not route:
             raise ValueError("a branch has a route of pieces")
@@ -237,7 +238,7 @@ class Layout:
         way_out = self.points.pop() if visit else None
         mark = len(self.points)
         self.floors = floors
-        t = Track(p, d, h, floor="area", step=node)
+        t = Track(p, d, h, floor=floor, step=node)
         self.points.append(list(p))
         for k, piece in enumerate(route, start=1):
             lay_piece(self, sector_index, sector, piece, t)

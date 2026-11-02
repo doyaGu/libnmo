@@ -240,6 +240,12 @@ MAZE_PATH = [(-7.67, -12.5), (-7.67, 15.0), (7.66, 15.0), (7.66, -15.0), (23.1, 
              (23.1, 25.0), (15.6, 25.0), (-30.3, 25.0), (-36.0, 22.6), (-38.4, 16.9),
              (-38.4, 8.1), (-36.0, 2.4), (-30.3, 0.0), (-20.4, 0.0)]
 
+# Level_05's octagon node (A01_Floor_01 round (68.9, 0)): a square 15 across,
+# its corners cut off 5 by 5, its inside a narrow road's V bottom down from
+# its rim; each side's straight middle is 5, a narrow road's V opening onto
+# it, and three are open, a T: the track leaves by one, a branch by another.
+OCTAGON_HALF = 7.5
+
 # P_Modul_01, a pair of pushers (Level_01's and their plaza): a corridor 5
 # wide at a narrow road's edge height, 52.5 long, its last 5 narrowing into
 # a narrow road's V, crosses a plaza; a ring

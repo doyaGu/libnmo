@@ -29,6 +29,11 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
   middle of the opposite side, or of the side to the left or right.  A
   pillar stands under each corner; with "railings": true, a railing stands
   round each corner too, as Level_01's do (an area 15 across at least).
+- {"node": "octagon", "exit": "straight", "left" or "right", "branches":
+  [branch]} -- Level_05's octagon node, 15 across with its corners cut off
+  5 by 5, entered from a narrow road: the track leaves by its exit and one
+  branch (as an area's, below) by another side, each onto a narrow road, the
+  third side shut, as Level_05's spur to its three ball changers leaves one.
 - {"turn": "left" or "right"} -- a square corner as wide as the road; with
   "railing": true, a narrow road's has a railing round its outer corner, as
   Level_01's and Level_05's do.  Railings are the originals' tube, bent

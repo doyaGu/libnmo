@@ -161,6 +161,9 @@ MODULE_FLOORS = {
                     [(-5.2, STONEBOX_MODULE, -5, 0, -2.5, 2.5),
                      (STONEBOX_MODULE - STONEBOX_LENGTH, -10.2, -5, 0, -2.5, 2.5),
                      (STONEBOX_MODULE - STONEBOX_LENGTH, 18.0, -9.5, -5, -22.5, 22.5)])],
+    # not a module: Level_05's octagon node (its X at its shut side)
+    "Octagon": [ModuleFloor("Floor_Octagon", STONE_FLOOR_GROUPS,
+                            [(-7.5, 7.5, -5, -0.7, -7.5, 7.5)])],
     # not a module of its own: Level_10's maze of three (in the stand-ins, the
     # flat road and the lower road's legs and bars)
     "Maze_34": [
