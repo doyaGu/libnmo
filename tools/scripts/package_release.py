@@ -13,7 +13,8 @@ find_package(libnmo).  The archive is a .zip for Windows platforms and a
 .tar.gz elsewhere, written next to a .sha256 file.
 
 Extra CMake arguments after "--" go to both the libnmo and the consumer
-configure step, e.g. "-- -DCMAKE_OSX_ARCHITECTURES=arm64;x86_64".
+configure step, e.g. "-- -DCMAKE_OSX_ARCHITECTURES=arm64;x86_64", except
+libnmo's own -DNMO_* options, which only the libnmo step gets.
 """
 
 from __future__ import annotations
@@ -154,9 +155,11 @@ def verify_consumer(args: argparse.Namespace, package_root: Path, build_dir: Pat
     step("Build consumer against the package")
     consumer_dir = build_dir / "_package_consumer"
     remove_tree(consumer_dir, build_dir)
+    # libnmo's own options mean nothing to the consumer, and CMake warns about them
+    consumer_args = [arg for arg in args.cmake_args if not arg.startswith("-DNMO_")]
     run("cmake", "-S", CONSUMER_SOURCE, "-B", consumer_dir, "-G", args.generator,
         "-DCMAKE_BUILD_TYPE=Release", f"-DCMAKE_PREFIX_PATH={package_root.as_posix()}",
-        *args.cmake_args)
+        *consumer_args)
     run("cmake", "--build", consumer_dir, "--config", "Release")
     name = "package_consumer.exe" if os.name == "nt" else "package_consumer"
     candidates = [consumer_dir / name, consumer_dir / "Release" / name]
