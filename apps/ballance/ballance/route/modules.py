@@ -71,6 +71,18 @@ MODULE_FLOORS = {
     # not a module: the fan's housing block a rail ends in (the rail along -Z)
     "FanBlock": [ModuleFloor("Floor_FanBlock", STONE_FLOOR_GROUPS,
                              [(-2.5, 2.5, 0, 5.0, -2.5, 2.5)])],
+    # not a module: Level_04's fan tower round its fan (the rail coming in
+    # along Z): the shaft, the rail bending up into it, the cap and the
+    # hidden plates under it
+    "FanTower": [
+        ModuleFloor("Floor_FanTower", STONE_FLOOR_GROUPS,
+                    [(-3.6, 3.6, 2.41, 12.38, -3.6, -3.05), (-3.6, 3.6, 2.41, 12.38, 3.05, 3.6),
+                     (-3.6, -3.05, 2.41, 12.38, -3.05, 3.05),
+                     (3.05, 3.6, 2.41, 12.38, -3.05, 3.05)]),
+        ModuleFloor("Rail_FanTower", RAIL_GROUPS, [(-1.9, 2.5, -4.7, 21.0, -3.6, -3.0)]),
+        ModuleFloor("FanTower_Cap", [], [(-3.5, 3.7, 21.1, 29.6, -3.8, 3.6)]),
+        ModuleFloor("FanTower_Hidden", ["Phys_Floors"], [(-3.5, 3.7, 29.0, 29.1, -3.8, 3.6)],
+                    visible=False)],
     # not a module: a wide road's end narrowing to a rail (the road's flat
     # middle at the origin, the road along Z, the rail at -Z)
     "RailDock": [ModuleFloor("Floor_RailDock", STONE_FLOOR_GROUPS,

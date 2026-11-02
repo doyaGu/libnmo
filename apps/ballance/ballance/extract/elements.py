@@ -261,6 +261,11 @@ class DecorCut(Cut):
         return f"{path.name}:{'+'.join(self.names)}"
 
 
+# Level_04's fan tower, in its fan's frame: the shaft, the rail in it, and
+# the cap and the hidden plates under it
+FAN_TOWER_SHAFT = (-3.6, 3.6, -12.0, 14.0, -3.6, 3.6)
+FAN_TOWER_RAIL = (-3.6, 3.6, -8.0, 22.0, -6.0, 3.6)
+FAN_TOWER_CAP = (-4.5, 4.5, 15.0, 31.0, -5.0, 4.5)
 # Level_01's wood spiral, in the frame of its pads: all of it, the corner of
 # the road it leaves (to the start of the corner), and where the road comes in
 SPIRAL_BOX, SPIRAL_CORNER = (-27.0, 30.0, -52.0, 46.0, -36.0, 63.0), \
@@ -346,6 +351,13 @@ CUTS: list[Cut] = [
               SPIRAL_BOX, SPIRAL_ORIGIN),
     ModuleCut("Spiral_Clamps", "Level_01.NMO", ["A04_Misc_Schelle_01", "A04_Misc_Schelle_02"],
               "A04_Floor_02", SPIRAL_BOX, SPIRAL_ORIGIN),
+    # Level_04's fan tower, round its fan: the shaft, the rail bending up
+    # into it, the cap, and the hidden plates under the cap
+    ModuleCut("Floor_FanTower", "Level_04.NMO", "A04_Floor_01", "P_Modul_18_05", FAN_TOWER_SHAFT),
+    ModuleCut("Rail_FanTower", "Level_04.NMO", "A04_Rail_03", "P_Modul_18_05", FAN_TOWER_RAIL),
+    ModuleCut("FanTower_Cap", "Level_04.NMO", "A04_Towers", "P_Modul_18_05", FAN_TOWER_CAP),
+    ModuleCut("FanTower_Hidden", "Level_04.NMO", ["A04_invisibleColl1", "A04_invisibleColl2"],
+              "P_Modul_18_05", FAN_TOWER_CAP),
     # the fan's housing block a rail ends in, its bottom's middle at the origin
     ModuleCut("Floor_FanBlock", "Level_05.NMO", "A03_Floor_Modul18", "A03_Floor_Modul18",
               (-2.6, 2.6, -0.1, 5.1, -2.6, 2.6)),

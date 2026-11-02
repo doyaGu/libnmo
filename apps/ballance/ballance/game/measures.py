@@ -106,6 +106,16 @@ TROUGH_HOLES_FROM = 48.0
 # heading into it.  The fan lifts a paper ball onto the next piece, which
 # starts at the far side.  (ring, fan, top, above its bottom)
 FAN_BLOCK_RING, FAN_BLOCK_FAN, FAN_BLOCK_TOP = 4.64, 4.66, 5.0
+# Level_04's fan towers (P_Modul_18_05 with A04_Rail_03): a rail comes in
+# low and bends straight up round a fan that stands on a pillar, its tubes
+# going on up a shaft 6.1 wide to a cap 21 above the fan.  The fan blows a
+# paper ball up between them, a hidden plate under the cap throws it back
+# the way the rail came, and it lands on the floor round the shaft, whose
+# middle is 11.67 above the fan.  In the fan's frame, the rail coming in
+# along its Z: the rail's first ring, the shaft's half width with its
+# walls, the floor round it and the pillar's top.
+FAN_TOWER_RING = (0.283, -4.363, -3.655)
+FAN_TOWER_HALF, FAN_TOWER_FLOOR, FAN_TOWER_PILLAR = 3.6, 11.67, -1.62
 # A rail meets a wide road's end as Level_01's A01_Rail_07 meets A01_Floor_03:
 # through a piece 5 long whose slopes go on as the road's while its flat
 # middle sinks to a narrow road's V, 0.7 deep at the rail; the tubes' middles

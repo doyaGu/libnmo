@@ -145,6 +145,10 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
 - {"fan": dy} -- the rail ends in a fan's housing block, as Level_05's and
   Level_13's do, and the fan lifts a paper ball dy (at most 16) onto the
   next piece, which starts at the block's far side.
+- {"tower": true} -- the rail ends in Level_04's fan tower: it bends
+  straight up round a fan into a shaft, the fan blows a paper ball up it,
+  and the cap 21 above throws it back over the rail into an area (the next
+  piece, which must be one) whose middle is 11.67 above the fan.
 - {"cradle": true} -- the rail bends straight down into a cradle on a 15 by
   15 block, as Level_01's A01_Rail_09 does, 9.09 below the rail; the track
   leaves the block to the right, from a narrow road's end on it, 7.5 from
