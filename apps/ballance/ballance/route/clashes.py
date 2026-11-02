@@ -4,7 +4,8 @@ The builder keeps one grid's floors apart; everything else meets here.  Each
 piece of the route (ballance.route.layout.Part) takes up boxes: its floors,
 pieces off the grid, cut floors, rails, elements, pads and balloon, as they
 stand.  The room the ball rolls through is CLASH_HEADROOM above the floors
-and rails a piece lays.  A piece's boxes in that room over another piece's
+and rails a piece lays, and the room its elements move in is what they take
+up.  A piece's boxes in that room over another piece's
 floors are in the ball's way, unless the two follow one another, or only
 rails and falls come between them (a rail's end over the area it drops
 into, a log reaching back under the rail it is dropped onto from)."""
@@ -94,7 +95,10 @@ def _boxes(part: Part, assets: Assets) -> tuple[list[Box], list[Box]]:
         if not kind.startswith(PASSED):
             box = _placed(assets.out / assets.mesh(kind), position, turn[0] if turn else 0.0)
             if box:
+                # what moves needs its room too: a drawbridge's plank stands
+                # 9.6 up before it falls
                 solid.append(box)
+                room.append(box)
     for kind, position, turn in part.marks:
         box = _placed(assets.out / assets.mesh(kind), position, turn)
         if box:
