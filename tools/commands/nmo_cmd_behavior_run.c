@@ -65,6 +65,7 @@ typedef struct run_args {
     bool frames_given;    /* -n given: a window closes after that many frames */
     const char *shots;    /* "menu.png@700,...": frames a window saves */
     bool mute;            /* --mute: the window plays no sound */
+    bool mipmaps;         /* --mipmaps: the window mipmaps every texture */
     bool quiet;           /* --quiet, or a window played until it closes: no events listed */
     bool real_time;       /* a window with no --delta or --shot: frames take the time that passed */
 } run_args_t;
@@ -1332,6 +1333,7 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
         nmo_engine_destroy(engine);
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
+    nmo_view_set_mipmaps(view, args->mipmaps);
 #endif
     const nmo_script_model_t *model = nmo_engine_script_model(engine);
     run_files_t files = {.write = args->write, .path = args->path,
@@ -1539,12 +1541,14 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
          "Show the frames in a window and play with its keyboard and mouse, until it closes"},
         {"--shot", NULL, NMO_OPT_STRING, "Save the window at frames: FILE.png@FRAME,..."},
         {"--mute", NULL, NMO_OPT_FLAG, "Play no sound in the window"},
+        {"--mipmaps", NULL, NMO_OPT_FLAG,
+         "Mipmap every texture in the window but cutouts (default: only those CK mipmaps)"},
         {"--quiet", "-q", NMO_OPT_FLAG,
          "List no events, only the summary (the default for a window played until it closes)"},
     };
     enum { OPT_FRAMES, OPT_DELTA, OPT_START, OPT_SCRIPT, OPT_UNKNOWN, OPT_MAX_ITER, OPT_SEED,
            OPT_TRACE, OPT_KEYS, OPT_STEER, OPT_STEER_OBJECT, OPT_STEER_LOG, OPT_PATH, OPT_WRITE, OPT_MESSAGE, OPT_REGISTRY, OPT_PHYSICS,
-           OPT_WINDOW, OPT_SHOT, OPT_MUTE, OPT_QUIET, OPT_COUNT };
+           OPT_WINDOW, OPT_SHOT, OPT_MUTE, OPT_MIPMAPS, OPT_QUIET, OPT_COUNT };
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
@@ -1561,6 +1565,7 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
     out->window = nmo_opt_flag(&vals[OPT_WINDOW]);
     out->shots = nmo_opt_str(&vals[OPT_SHOT]);
     out->mute = nmo_opt_flag(&vals[OPT_MUTE]);
+    out->mipmaps = nmo_opt_flag(&vals[OPT_MIPMAPS]);
     if (out->shots != NULL) {
         out->window = true;
     }

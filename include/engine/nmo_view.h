@@ -40,6 +40,12 @@ NMO_API nmo_status_t nmo_view_draw(nmo_view_t *view);
  * engine has it. Nothing plays when there is no device.
  */
 NMO_API void nmo_view_play_sounds(nmo_view_t *view);
+/**
+ * Mipmap every texture but cutouts (`all`: those with clear texels, a
+ * transparent color's, keep CK's sampling), or only those CK mipmaps (the
+ * default: a texture whose mipmap level is not 0, as Ballance has none).
+ */
+NMO_API void nmo_view_set_mipmaps(nmo_view_t *view, bool all);
 /** Save what the window shows as a PNG file. */
 NMO_API nmo_status_t nmo_view_screenshot(nmo_view_t *view, const char *path);
 /** Wait `ms` milliseconds (a frame rate limit). */

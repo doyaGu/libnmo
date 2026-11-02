@@ -32,8 +32,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifndef GL_GENERATE_MIPMAP
-#define GL_GENERATE_MIPMAP 0x8191
+#ifndef GL_TEXTURE_MAX_LEVEL
+#define GL_TEXTURE_MAX_LEVEL 0x813D
 #endif
 #ifndef GL_TEXTURE_MAX_ANISOTROPY_EXT
 #define GL_TEXTURE_MAX_ANISOTROPY_EXT 0x84FE
@@ -66,6 +66,7 @@ typedef struct view_texture {
     uint32_t version;
     bool empty; /* no image: drawn untextured */
     bool mipmapped; /* uploaded with its mipmaps */
+    bool forced;    /* mipmapped by nmo_view_set_mipmaps, not by CK */
 } view_texture_t;
 
 /* A mesh's faces split by material group, and its prelit colors as RGBA bytes */
@@ -88,6 +89,7 @@ struct nmo_view {
     size_t mesh_count, mesh_capacity;
     int frame_width, frame_height;   /* the render context */
     float anisotropy;                /* the driver's most for mipmapped textures; 0 for none */
+    bool mipmap_all;                 /* mipmap every texture, not only CK's mipmapped ones */
     int view_x, view_y, view_w, view_h; /* where it shows in the window, in pixels */
     uint64_t start;
     bool cursor_shown;
@@ -230,6 +232,105 @@ static GLenum view_address(int32_t mode)
 }
 
 /* The GL texture of a CKTexture, uploaded again when its image changes; 0 for none */
+/*
+ * The next mipmap level of an RGBA image: each texel the mean of the up to 2 x 2
+ * it covers, its color weighted by their alpha, so that the clear texels of a
+ * transparent color lend it nothing (a box filter would darken the edges by them).
+ * With `binary` (an image whose alpha is 0 or 255, a transparent color's) the
+ * alpha stays so: a texel is there when at least half of what it covers is, as
+ * the alpha test would have it, so no partly clear edge widens the shape.
+ */
+static uint8_t *view_half_image(const uint8_t *rgba, int width, int height, bool binary,
+                                int *out_w, int *out_h)
+{
+    int w = width > 1 ? width / 2 : 1, h = height > 1 ? height / 2 : 1;
+    uint8_t *half = (uint8_t *)malloc((size_t)w * (size_t)h * 4u);
+    if (half == NULL) {
+        return NULL;
+    }
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            unsigned sum[4] = {0, 0, 0, 0}, plain[3] = {0, 0, 0}, count = 0;
+            for (int dy = 0; dy < 2; dy++) {
+                for (int dx = 0; dx < 2; dx++) {
+                    int sx = x * 2 + dx < width ? x * 2 + dx : width - 1;
+                    int sy = y * 2 + dy < height ? y * 2 + dy : height - 1;
+                    const uint8_t *p = &rgba[((size_t)sy * (size_t)width + (size_t)sx) * 4u];
+                    for (int c = 0; c < 3; c++) {
+                        sum[c] += (unsigned)p[c] * p[3];
+                        plain[c] += p[c];
+                    }
+                    sum[3] += p[3];
+                    count++;
+                }
+            }
+            uint8_t *q = &half[((size_t)y * (size_t)w + (size_t)x) * 4u];
+            for (int c = 0; c < 3; c++) {
+                q[c] = (uint8_t)(sum[3] > 0 ? (sum[c] + sum[3] / 2u) / sum[3]
+                                            : (plain[c] + count / 2u) / count);
+            }
+            q[3] = (uint8_t)((sum[3] + count / 2u) / count);
+            if (binary) {
+                q[3] = q[3] >= 128 ? 255 : 0;
+            }
+        }
+    }
+    *out_w = w;
+    *out_h = h;
+    return half;
+}
+
+/* The bound texture's levels below the image: its file's own (CKTexture's user mipmaps), else
+   made from it down to 1 x 1; how many there are */
+static int view_upload_mipmaps(nmo_view_t *view, nmo_object_id_t id,
+                               const nmo_engine_image_t *image)
+{
+    int saved = nmo_engine_texture_user_mipmap_count(view->engine, id);
+    if (saved > 0) {
+        int level = 0;
+        nmo_engine_image_t mip;
+        while (level < saved && nmo_engine_texture_user_mipmap(view->engine, id, level + 1, &mip)) {
+            level++;
+            glTexImage2D(GL_TEXTURE_2D, level, GL_RGBA, mip.width, mip.height, 0, GL_RGBA,
+                         GL_UNSIGNED_BYTE, mip.rgba);
+        }
+        return level;
+    }
+    int w = image->width, h = image->height, level = 0;
+    const uint8_t *source = image->rgba;
+    bool binary = true;
+    for (size_t i = 0; binary && i < (size_t)w * (size_t)h; i++) {
+        binary = source[i * 4 + 3] == 0 || source[i * 4 + 3] == 255;
+    }
+    uint8_t *made = NULL;
+    while (w > 1 || h > 1) {
+        int next_w = 0, next_h = 0;
+        uint8_t *half = view_half_image(source, w, h, binary, &next_w, &next_h);
+        free(made);
+        if (half == NULL) {
+            break;
+        }
+        made = half;
+        source = half;
+        w = next_w;
+        h = next_h;
+        level++;
+        glTexImage2D(GL_TEXTURE_2D, level, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, half);
+    }
+    free(made);
+    return level;
+}
+
+static bool view_has_clear_texels(const nmo_engine_image_t *image)
+{
+    for (size_t i = 0; i < (size_t)image->width * (size_t)image->height; i++) {
+        if (image->rgba[i * 4 + 3] == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static GLuint view_texture(nmo_view_t *view, nmo_object_id_t id)
 {
     if (id == 0) {
@@ -262,28 +363,34 @@ static GLuint view_texture(nmo_view_t *view, nmo_object_id_t id)
         texture->version = has_image ? image.version - 1 : 0;
         texture->empty = true;
     }
-    if (has_image && (image.version != texture->version || image.mipmapped != texture->mipmapped)) {
+    /* Forced mipmaps leave out cutouts (clear texels, a transparent color's): small sprites
+       of them would gather their dark edges into rings, which CK draws without */
+    bool mipmapped = has_image && (image.mipmapped ||
+                                   (view->mipmap_all && !view_has_clear_texels(&image)));
+    if (has_image && (image.version != texture->version || mipmapped != texture->mipmapped)) {
         texture->version = image.version;
         texture->empty = false;
-        texture->mipmapped = image.mipmapped;
+        texture->mipmapped = mipmapped;
+        texture->forced = mipmapped && !image.mipmapped;
         glBindTexture(GL_TEXTURE_2D, texture->name);
-        /* RCKTexture::SystemToVideoMemory: mipmaps only for a texture that uses them */
-        glTexParameteri(GL_TEXTURE_2D, GL_GENERATE_MIPMAP, image.mipmapped ? GL_TRUE : GL_FALSE);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image.width, image.height, 0, GL_RGBA,
                      GL_UNSIGNED_BYTE, image.rgba);
+        /* RCKTexture::SystemToVideoMemory: mipmaps only for a texture that uses them */
+        int levels = mipmapped ? view_upload_mipmaps(view, id, &image) : 0;
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, levels);
     }
     return texture->empty ? 0 : texture->name;
 }
 
-/* Whether the texture view_texture() last gave has its mipmaps */
-static bool view_texture_mipmapped(const nmo_view_t *view, nmo_object_id_t id)
+/* The texture view_texture() last gave, as it was uploaded; NULL for none */
+static const view_texture_t *view_uploaded(const nmo_view_t *view, nmo_object_id_t id)
 {
     for (size_t i = 0; i < view->texture_count; i++) {
         if (view->textures[i].id == id) {
-            return view->textures[i].mipmapped;
+            return &view->textures[i];
         }
     }
-    return false;
+    return NULL;
 }
 
 /* The prelit colors as RGBA bytes */
@@ -558,9 +665,15 @@ static void view_set_material(nmo_view_t *view, const nmo_engine_material_t *m, 
         glEnable(GL_TEXTURE_2D);
         glBindTexture(GL_TEXTURE_2D, texture);
         GLint min_filter = view_filter(m->min_filter, true);
-        /* Without mipmaps the device samples the image itself, whatever the mip filter */
-        bool mipmapped = view_texture_mipmapped(view, m->texture);
-        if (!mipmapped) {
+        /* Without mipmaps the device samples the image itself, whatever the mip filter; forced
+           ones are sampled even under a filter that has no mip part */
+        const view_texture_t *uploaded = view_uploaded(view, m->texture);
+        bool mipmapped = uploaded != NULL && uploaded->mipmapped;
+        if (uploaded != NULL && uploaded->forced) {
+            min_filter = min_filter == GL_NEAREST ? GL_NEAREST_MIPMAP_LINEAR
+                         : min_filter == GL_LINEAR ? GL_LINEAR_MIPMAP_LINEAR
+                                                   : min_filter;
+        } else if (!mipmapped) {
             min_filter = min_filter == GL_NEAREST || min_filter == GL_NEAREST_MIPMAP_NEAREST ||
                                  min_filter == GL_NEAREST_MIPMAP_LINEAR
                              ? GL_NEAREST
@@ -1226,6 +1339,13 @@ nmo_status_t nmo_view_draw(nmo_view_t *view)
     view_pick(view, &frame);
     SDL_GL_SwapWindow(view->window);
     return NMO_OK;
+}
+
+void nmo_view_set_mipmaps(nmo_view_t *view, bool all)
+{
+    if (view != NULL) {
+        view->mipmap_all = all;
+    }
 }
 
 nmo_status_t nmo_view_screenshot(nmo_view_t *view, const char *path)
