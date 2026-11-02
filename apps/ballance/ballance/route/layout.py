@@ -35,6 +35,7 @@ class Track:
     run: list[Ring] | None = None
     trough: float = 0.0  # the length of the trough it is in
     railed: float = 0.0  # how long a road the railings of the rail it is on reach onto
+    off_floor: bool = False  # the fall it is in is off a log's or a trough's end
 
 
 @dataclass

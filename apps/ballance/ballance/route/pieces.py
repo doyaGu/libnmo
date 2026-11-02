@@ -129,11 +129,13 @@ def lay_fall(layout: Layout, sector: int, part: Sector, piece: dict, track: Trac
     if not 0 < fall <= RAIL_FALL:
         raise ValueError(f"a rail drops the ball at most {RAIL_FALL}")
     if track.run is None:
-        # off a log's end
+        # off a log's or a trough's end
         track.h -= fall
         track.p = at(track.p, track.d, -RAIL_OVERHANG)
         track.floor = "fall"
+        track.off_floor = True
         return
+    track.off_floor = False
     if piece.get("split"):
         end = track.run[-1]
         layout.module_floors.append(("Rail_Split", sector, [end.x, end.y, end.z],
@@ -250,7 +252,8 @@ def lay_climb(layout: Layout, sector: int, p: Point, d: Heading, top: float
 
 
 def lay_trough(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:
-    """{"trough": length}: a trough the ball drops into from a fall, or
+    """{"trough": length}: a trough the ball drops into from a fall (under a
+    rail's end, or past a log's), or
     {"trough": length, "hop": "left" or "right"} one beside the last, which
     the ball swings over into (as Level_04's A01_Halfpipe_* are; see
     TROUGH_* in ballance.game.measures).  The length is a whole number of
@@ -263,7 +266,9 @@ def lay_trough(layout: Layout, sector: int, part: Sector, piece: dict, track: Tr
     d = track.d
     if track.floor == "fall":
         bottom = track.h
-        start = at(track.p, d, RAIL_OVERHANG - TROUGH_LAND)
+        # under a rail's end; past a log's or a trough's, whose body would
+        # stand in its walls
+        start = at(track.p, d, RAIL_OVERHANG - (0.0 if track.off_floor else TROUGH_LAND))
     else:
         if track.floor != "trough" or "hop" not in piece:
             raise ValueError("a trough after a trough is hopped into, to its left or right")
