@@ -123,7 +123,9 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
   dy, it rises dy over its middle and comes back down (or dips, dy below 0),
   as the lanes of Level_12's zigzag do (12.9 over 116); "sack": true hangs a
   sack under the crest, swinging across into the lanes beside, and "point":
-  true an extra point over it.
+  true an extra point over it.  A dip of 5 takes a rail under another
+  crossing it, as Level_05's A01_Rail_01 passes under the rail bridging a
+  gap in its road (the builder warns when the ball's room is less).
 - {"rail_turn": "left" or "right", "drop": dy} -- the originals' rail
   bend, with a straight 1.9 before and after it so that it ends 10 along and
   10 aside, coming down dy evenly along it (Level_01's spiral comes down 1.26

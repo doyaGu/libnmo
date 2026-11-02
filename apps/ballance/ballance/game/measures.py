@@ -378,4 +378,7 @@ FALL_TILE, FALL_STEP = 100.0, 30.0
 # A sloping rail is looked at CLASH_RAIL_STEP at a time, a sloping road a
 # cell at a time.
 CLASH_HEADROOM, CLASH_OVERLAP, CLASH_RAIL_STEP = 4.5, 0.25, 5.0
+# On a rail the ball's top is 3.4 above the tubes' middles; Level_05's
+# A01_Rail_01 runs a rail under another's tubes 4.0 above its own.
+CLASH_RAIL_ROOM = 3.6
 SKY_BELOW = 180.0

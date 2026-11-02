@@ -4,11 +4,12 @@ The builder keeps one grid's floors apart; everything else meets here.  Each
 piece of the route (ballance.route.layout.Part) takes up boxes: its floors,
 pieces off the grid, cut floors, rails, elements, pads and balloon, as they
 stand.  The room the ball rolls through is CLASH_HEADROOM above the floors
-and rails a piece lays, and the room its elements move in is what they take
-up.  A piece's boxes in that room over another piece's floors are in the
-ball's way, unless one goes on from the other (or a branch comes back to
-it), or only rails and falls come between them (a rail's end over the area
-it drops into, a log reaching back under the rail it is dropped onto from)."""
+a piece lays and CLASH_RAIL_ROOM above its rails' middles, and the room its
+elements move in is what they take up.  A piece's boxes in that room over
+another piece's floors are in the ball's way, unless one goes on from the
+other (or a branch comes back to it), or only rails and falls come between
+them (a rail's end over the area it drops into, a log reaching back under
+the rail it is dropped onto from)."""
 
 from __future__ import annotations
 
@@ -16,7 +17,7 @@ import math
 from pathlib import Path
 
 from ..core.obj import Box, Mesh
-from ..game.measures import CLASH_HEADROOM, CLASH_OVERLAP, CLASH_RAIL_STEP
+from ..game.measures import CLASH_HEADROOM, CLASH_OVERLAP, CLASH_RAIL_ROOM, CLASH_RAIL_STEP
 from ..kit.floors import CELL, RISE, WALL
 from ..kit.railings import RADIUS, centre_line
 from ..kit.rails import GAUGE, TUBE
@@ -117,10 +118,14 @@ def _boxes(part: Part, assets: Assets) -> tuple[list[Box], list[Box]]:
         for k in range(steps):
             p, q = ([a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t]
                     for t in (k / steps, (k + 1) / steps))
-            box = (min(p[0], q[0]) - reach, max(p[0], q[0]) + reach, min(p[1], q[1]) - TUBE,
-                   max(p[1], q[1]) + TUBE, min(p[2], q[2]) - reach, max(p[2], q[2]) + reach)
+            # the tubes reach across the rail, not along it
+            rx = reach if abs(b.z - a.z) > 1e-6 else TUBE
+            rz = reach if abs(b.x - a.x) > 1e-6 else TUBE
+            box = (min(p[0], q[0]) - rx, max(p[0], q[0]) + rx, min(p[1], q[1]) - TUBE,
+                   max(p[1], q[1]) + TUBE, min(p[2], q[2]) - rz, max(p[2], q[2]) + rz)
             solid.append(box)
-            room.append(_room(box))
+            room.append((box[0], box[1], box[2], max(p[1], q[1]) + CLASH_RAIL_ROOM,
+                         box[4], box[5]))
     return solid, room
 
 
