@@ -104,9 +104,6 @@ def _markers(manifest: Manifest, assets: Assets, layout: Layout) -> None:
     manifest.add("PR_Resetpoint_01", assets.mesh("PR_Resetpoint"),
                  [sx, layout.marker_y + FIRST_RESET_ABOVE, sz], ["PR_Resetpoints"],
                  turn=heading + 180)
-    # Touching this box is what makes the ball fall off ("Ball Off"); the
-    # original fall zones are hidden.
-    manifest.add("Quader01", "depth.obj", [0, 0, 0], ["DepthTestCubes"], visible=False)
 
 
 def _floors(manifest: Manifest, assets: Assets, layout: Layout) -> None:

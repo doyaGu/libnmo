@@ -175,7 +175,8 @@ are reached from a narrow road, and every sector starts with one.
 The level is built as the original levels are (docs/ballance-level-format.md):
 the floors with ballance.kit, the start, checkpoints and balloon turned
 with the track, their lantern towers and the balloon's striped poles beside
-it, the fall zone hidden under all of it.  With --elements, it uses the
+it, and hidden fall zones under each part of it, 25 to 55 below its floors
+(and one under all of them).  With --elements, it uses the
 meshes apps/ballance/scripts/ballance_level_elements.py exported from a Ballance
 installation; without, boxes stand in for the markers, elements and the
 start's and checkpoints' floors, and there is no scenery and no sky.

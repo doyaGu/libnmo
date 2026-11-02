@@ -344,8 +344,12 @@ TOWER_HALF, STICK_HALF = 2.5, 1.2
 
 # --- Below the level -------------------------------------------------------
 
-# The fall zone reaches this far beyond the floors, from 25 to 60 below them;
-# the cloud plane is as far below as the originals'.
+# The fall zones lie 25 to 55 below the floors above them, square by square
+# of 100, their tops rounded down to 30 so that squares join into a few (the
+# originals' are 20 to 120 deep, a few to a level, each under a part of it,
+# from 20 to 60 below its floors); the last catches the ball 60 beyond them.
+# The cloud plane is as far below as the originals'.
 FALL_MARGIN = 60.0
 FALL_TOP, FALL_BOTTOM = 25.0, 60.0
+FALL_TILE, FALL_STEP = 100.0, 30.0
 SKY_BELOW = 180.0

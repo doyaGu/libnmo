@@ -7,13 +7,13 @@ import json
 import sys
 from pathlib import Path
 
-from ..core.obj import Mesh, write_box
+from ..core.obj import Mesh
 from ..game.materials import load_presets
-from ..game.measures import FALL_BOTTOM, FALL_MARGIN, FALL_TOP
 from . import scenery
+from .falls import write_fall_zones
 from .assets import Assets, MissingMesh
 from .layout import Layout, Sector
-from .manifest import build_manifest
+from .manifest import build_manifest, level_object
 
 
 def write_sector(sector: Sector, index: int, out: Path) -> None:
@@ -27,14 +27,6 @@ def write_sector(sector: Sector, index: int, out: Path) -> None:
     mesh.write(out / f"sector{index}.obj")
     if sector.rails.runs:
         sector.rails.write(out / f"rails{index}.obj")
-
-
-def write_fall_zone(layout: Layout, out: Path) -> None:
-    """The box under the whole level that catches a falling ball (depth.obj)."""
-    x0, x1, z0, z1 = layout.bounds()
-    low = min(layout.lows)
-    write_box(out / "depth.obj", (x0 - FALL_MARGIN, x1 + FALL_MARGIN, low - FALL_BOTTOM,
-                                  low - FALL_TOP, z0 - FALL_MARGIN, z1 + FALL_MARGIN))
 
 
 def build(route: dict, out: Path, elements: Path | None, name: str) -> int:
@@ -63,8 +55,13 @@ def build(route: dict, out: Path, elements: Path | None, name: str) -> int:
     sticks = scenery.sticks(layout) if assets.game else []
     for index, sector in enumerate(layout.sectors, start=1):
         write_sector(sector, index, out)
-    write_fall_zone(layout, out)
     manifest = build_manifest(load_presets(), assets, layout, name, towers, sticks)
+    # Touching one of these boxes is what makes the ball fall off ("Ball
+    # Off"); the original fall zones are hidden.
+    objects = manifest["scenes"][0]["objects"]
+    for index, mesh in enumerate(write_fall_zones(objects, out), start=1):
+        objects.append(level_object(f"Quader{index:02d}", mesh, [0, 0, 0], ["DepthTestCubes"],
+                                    visible=False))
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     (out / "route_points.json").write_text(json.dumps(layout.points) + "\n", encoding="utf-8")
     print(out / "manifest.json")

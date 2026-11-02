@@ -72,7 +72,6 @@ class Layout:
         self.trafos: set[str] = set()
         self.last_ball = "Wood"  # the ball the track hands the player last
         self.points: list[list[float]] = [list(self.start)]
-        self.lows: list[float] = []  # each sector's lowest floor
         self.warnings: list[str] = []
         self.floors: Floors | None = None  # the grid the track is on
         self._lay(route["sectors"])
@@ -111,8 +110,6 @@ class Layout:
                 marker = at(p, d, FUNNEL + CHECKPOINT_OPENING)
                 self.checkpoints.append(([marker[0], edge - ROAD_ABOVE_MARKER, marker[1]], d))
                 self.points.append(list(marker))
-            self.lows.append(min(y for floors in sector.floors for piece in floors.pieces
-                                 for y in (piece.y0, piece.y1)))
 
     def warn(self, message: str) -> None:
         self.warnings.append(message)
