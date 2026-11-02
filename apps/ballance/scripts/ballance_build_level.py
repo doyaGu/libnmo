@@ -127,13 +127,15 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
   climbing back to that road's start and crosses on the stones; the track
   leaves the flat road's end 22.5 on and 57.5 to the right, heading right,
   5 higher, through a funnel onto a narrow road.
-- {"module": "P_Modul_37", "side": "left" or "right"} -- the switch, as
-  Level_05 has it: the track crosses a gap between two blocks, and a stone
-  ball rolled down a spur onto the target beside it tips a plank across the
-  gap.  The piece is a square area the track enters and leaves straight on
-  toward the gap, and a spur from its side that turns twice to end at the
-  target; the ball goes down the spur, pushes the target until the plank
-  falls, comes back and goes on.  A wood ball does not tip it.
+- {"module": "P_Modul_37", "side": "left" or "right", "name": NAME} -- the
+  switch, as Level_05 has it: the track crosses a gap between two blocks
+  over 20 (with a narrow road 0.25 long either side, putting its middle on
+  the grid), and a stone ball rolling down a rail onto the target, 12.5 to
+  17.5 to the given side, tips a plank across the gap.  The rail is a
+  branch to NAME ("push": true, below), which ends at the flat block beyond
+  the target, 22.5 to the side, heading to the track, coming down to it
+  from at least 0.99 above the track's floor (its tubes' middles end 0.43
+  above the block).  The ball waits at the gap until the plank is down.
 - {"module": "P_Modul_41", "count": n} -- a row of n (2 to 8) slabs on axles
   across the track, between funnels, as levels 7 to 11 lay them.  Only a
   paper ball crosses them: a wood or stone ball tips them and falls.
@@ -181,10 +183,13 @@ sector is a list of pieces, laid end to end on the floors' 2.5 grid:
 - {"fan": dy} -- the rail ends in a fan's housing block, as Level_05's and
   Level_13's do, and the fan lifts a paper ball dy (at most 16) onto the
   next piece, which starts at the block's far side.
-- {"tower": true} -- the rail ends in Level_04's fan tower: it bends
-  straight up round a fan into a shaft, the fan blows a paper ball up it,
-  and the cap 21 above throws it back over the rail into an area (the next
-  piece, which must be one) whose middle is 11.67 above the fan.
+- {"tower": true} -- the rail runs on level for 15 and ends in Level_04's
+  fan tower: it bends straight up round a fan into a shaft, the fan blows a
+  paper ball up it, and the cap 21 above throws it back over the rail into
+  three channels that wind down round the shaft, railed where the ball is
+  thrown.  They let the ball out 17.9 to the rail's left, 0.11 above the
+  fan, where a funnel turns their flat way out into a narrow road heading
+  left.
 - {"cradle": true} -- the rail bends straight down into a cradle on a 15 by
   15 block, as Level_01's A01_Rail_09 does, 9.09 below the rail; the track
   leaves the block to the right, from a narrow road's end on it, 7.5 from
@@ -209,7 +214,11 @@ or an extra point; a spur ends on a road or an area, shut).  A branch with
 "to": NAME comes back by itself to a later area of the sector named NAME
 ("name": NAME), ending at the middle of one of its free sides, heading into
 it, at its height: a road opens onto it, a rail docks in it (Level_05's
-rails part from a node and come back to another).
+rails part from a node and come back to another).  The ball takes it, in
+place of the track between the two areas, with "take": true.  A branch
+with "push": true is a rail to a switch named NAME: a stone ball waits 5 in
+from the side it leaves by, and the ball pushes it down the rail, as
+Level_05's nodes send their stone balls down to its switch and pushers.
 
 Every piece may carry "elements": [{"kind": "P_Box", "at": [along, right]}],
 placed from where the piece starts, along the track and to its right, and

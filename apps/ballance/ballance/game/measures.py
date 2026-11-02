@@ -126,17 +126,27 @@ FAN_BLOCK_RING, FAN_BLOCK_FAN, FAN_BLOCK_TOP = 4.64, 4.66, 5.0
 # low and bends straight up round a fan that stands on a pillar, its tubes
 # going on up a shaft 6.1 wide to a cap 21 above the fan.  The fan blows a
 # paper ball up between them, a hidden plate under the cap throws it back
-# the way the rail came, and it lands on the floor round the shaft, whose
-# middle is 11.67 above the fan.  In the fan's frame, the rail coming in
-# along its Z: the rail's first ring, the shaft's half width with its
-# walls, the floor round it and the pillar's top.
-FAN_TOWER_RING = (0.283, -4.462, -3.655)
+# the way the rail came, and it lands in the innermost of three square
+# channels round the shaft, which wind down round it, railed on the side the
+# ball is thrown to, to a flat way out 17.9 to the rail's left, 0.11 above
+# the fan.  The rail comes in level under the channels (the generated one
+# for FAN_TOWER_RUN before the bend).  In the fan's frame, the rail coming in
+# along its Z: the rail's first ring and the pillar's top; the height the
+# ball is lifted to, and the way down the channels (x, z) to the way out's
+# middle (x, top, z).  The way down leaves the shaft's top to the left, off
+# the rail: steered straight back, the ball may stick against the plate
+# under the cap (in two of three runs).
+FAN_TOWER_RING, FAN_TOWER_RUN = (0.283, -4.462, -3.655), 15.0
+FAN_TOWER_PILLAR, FAN_TOWER_LIFT = -1.62, 17.07
+FAN_TOWER_PATH = [(-4.6, -2.3), (-4.6, 6.7), (-0.6, 10.7), (-7.6, 10.7), (-10.6, 7.7),
+                  (-10.6, -11.3), (15.4, -11.3), (15.4, 12.7), (12.4, 15.7), (-13.6, 15.7),
+                  (-15.6, 13.7), (-15.6, 0.5)]
+FAN_TOWER_EXIT = (-17.9, 0.11, 0.48)
 # How far across the rail, and how many frames, the autopilot rocks the
 # ball in the bend (the fan blows once the ball's turning bounding box
 # reaches its wind box, 1.14 above it, which a ball resting there is just
 # short of).
 FAN_TOWER_ROCK, FAN_TOWER_HOLD = 1.5, 40
-FAN_TOWER_HALF, FAN_TOWER_FLOOR, FAN_TOWER_PILLAR = 3.6, 11.67, -1.62
 # Railings (ballance.kit.railings): Level_01's round a floor's corner
 # (A01_Rail_04) has its posts 4.76 along the walls from the corner, as a
 # railing along a road has them 0.24 in from its ends; Level_05's beside a
@@ -194,13 +204,20 @@ SACK_STEP, SACK_ABOVE = 15.0, 2.68
 # target block 5 long, falls across a gap 10 long onto the middle of a cross
 # piece whose two blocks funnel down to narrow roads 9.75 from its middle, so
 # that the track crossing it runs on over the plank.  The target block lies
-# 12.5 to 17.5 to the side of the track, the module 13.77; a stone ball
-# pushing the target from the far side tips the plank (about 300 frames),
-# and one ramming it, as the autopilot does, at once.
-SWITCH_CROSS, SWITCH_MODULE, SWITCH_TARGET = 9.75, 13.77, 17.5
-# The generated switch: a square area, a spur 32.5 aside, frames to push
-# (the ball stops at the target and turns straight back).
-SWITCH_AREA, SWITCH_SPUR, SWITCH_HOLD = 15.0, 32.5, 1
+# 12.5 to 17.5 to the side of the track, the module 13.77, and a flat block
+# 5 long goes on from it to 22.5, where a rail coming down from a node ends,
+# its tubes' middles 0.43 above the block: a stone ball pushed off the node
+# rolls down onto the target and tips the plank at once (one pushing it
+# tips it in about 300 frames; a wood ball does not).  The generated switch
+# has its middle 10 on, on the grid, and how long the autopilot waits at
+# the gap for the plank.
+SWITCH_CROSS, SWITCH_MODULE, SWITCH_LAND, SWITCH_SPAN = 9.75, 13.77, 22.5, 10.0
+SWITCH_RAIL_ABOVE, SWITCH_WAIT = 0.43, 400
+# A stone ball waiting at a node's side for the ball to push it down a
+# branch: how far in from the side it lies; the autopilot stops this far in
+# from the side, behind it, then runs into it on to this far short of the
+# side, stopping this many frames at each.
+PUSHED_BALL_IN, PUSHED_BALL_BACK, PUSHED_BALL_REACH, PUSHED_BALL_HOLD = 5.0, 12.5, 2.5, 40
 
 # P_Modul_34, a stone on a box (Level_01's P_Modul_34_01 and its plaza): a
 # walkway 5 wide at a narrow road's edge height runs from a stone trafo's
@@ -233,12 +250,15 @@ STONEBOX_PATH = [(2.5, 0, 0), (6.75, 0, 0), (15.75, 8.75, 0), (17.75, 9.75, 0),
 # The track comes in at the lower road's start, heading along Z, and leaves
 # at the flat road's end, heading along X, where the builder's cut ends on
 # the grid.  The ball's way round, (X, Z) in the frame: up the legs and along
-# the bars between them, through the middles of the boxes, and round the
-# rail's bends to the flat road.
+# the bars between them, through the middles of the boxes (pushing the
+# first two a unit further at their legs' ends, or one may stay there, out
+# of its hole, and be pushed on into the next leg; the last leg ends where
+# the rail goes back, which the ball would overrun), and round the rail's
+# bends to the flat road.
 MAZE_STEP, MAZE_BELOW = 15.4, 5.0
 MAZE_ENTRY, MAZE_EXIT = (-7.67, -17.5), 44.83
 MAZE_POINT = (15.68, 0.0)  # its extra point, between the second gap and the third
-MAZE_PATH = [(-7.67, -12.5), (-7.67, 15.0), (7.66, 15.0), (7.66, -15.0), (23.1, -15.0),
+MAZE_PATH = [(-7.67, -12.5), (-7.67, 16.0), (7.66, 15.0), (7.66, -16.0), (23.1, -15.0),
              (23.1, 25.0), (15.6, 25.0), (-30.3, 25.0), (-36.0, 22.6), (-38.4, 16.9),
              (-38.4, 8.1), (-36.0, 2.4), (-30.3, 0.0), (-20.4, 0.0)]
 

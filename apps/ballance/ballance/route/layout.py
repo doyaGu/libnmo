@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from ..core.geometry import HEADINGS, Heading, Point, across, at, back_of, turn_of
 from ..game.measures import (BALLOON_BELOW_ROAD, BALLOON_REACH, CHECKPOINT_GAP,
                              CHECKPOINT_OPENING, FUNNEL, ROAD_ABOVE_MARKER, START_GAP,
-                             START_OPENING)
+                             START_OPENING, SWITCH_RAIL_ABOVE)
 from ..kit.floors import NARROW, RISE, Floors
 from ..kit.pieces import funnel
 from ..kit.rails import Rails, Ring
@@ -112,8 +112,11 @@ class Layout:
         self._claimed: dict[str, int] = {}
         # named areas, for branches to come back to: grid, height, step, the
         # sides no track leaves by (each its middle and the way out), and the
-        # index of its first point
-        self.nodes: dict[str, tuple[Floors, float, int, list[tuple[Point, Heading]], int]] = {}
+        # index of its first point; a switch's grid is None, its one side the
+        # block beyond its target
+        self.nodes: dict[str, tuple[Floors | None, float, int, list[tuple[Point, Heading]],
+                                    int]] = {}
+        self.switches: list[str] = []  # the switches' names
         self._waiting: dict[str, list[tuple]] = {}  # branches to areas not yet laid
         self._named: dict[str, tuple] = {}  # areas named by the piece being laid
         self._lay(route["sectors"])
@@ -145,6 +148,9 @@ class Layout:
             if self._waiting:
                 names = ", ".join(sorted(self._waiting))
                 raise ValueError(f"sector {index} has branches to no area of its own named {names}")
+            for name in self.switches:
+                if self.nodes[name][3]:
+                    raise ValueError(f"no branch brings a stone ball to the switch {name}")
             if track.width != NARROW or track.run is not None:
                 raise ValueError(f"sector {index} must end on a narrow road")
             p, d = track.p, track.d
@@ -202,6 +208,15 @@ class Layout:
             raise ValueError(f"two areas are named {name}")
         self._named[name] = (floors, h, sides, len(self.points))
 
+    def name_switch(self, name: str, h: float, land: Point, out: Heading) -> None:
+        """Names the switch being laid (the track's height h at it), whose
+        target a branch's rail brings a stone ball to, ending over the block
+        beyond it, at land, heading back from out."""
+        if name in self.nodes or name in self._named:
+            raise ValueError(f"two areas are named {name}")
+        self._named[name] = (None, h, [(land, out)], len(self.points))
+        self.switches.append(name)
+
     def _branch(self, sector_index: int, sector: Sector, track: Track, number: int) -> None:
         """Lays the branches the piece just laid left, and those waiting for
         an area it named."""
@@ -246,6 +261,9 @@ class Layout:
                              "to an area by itself, not both")
         if take and (not target or leave is None):
             raise ValueError("the ball takes a branch to an area laid after the one it leaves")
+        if branch.get("push") and (target not in self.switches or visit or take):
+            raise ValueError("a stone ball is pushed down a branch to a switch, which the ball "
+                             "neither visits nor takes")
         main_floors, ball = self.floors, self.last_ball
         way_out = self.points.pop() if visit else None
         mark = len(self.points)
@@ -286,6 +304,20 @@ class Layout:
         else:
             raise ValueError(f"a branch to {name} ends at ({t.p[0]:g}, {t.p[1]:g}) heading "
                              f"{t.d}, not at the middle of a free side heading into it")
+        if floors is None:
+            # a switch's target: the rail comes down to the block beyond it,
+            # its middle over the block's top
+            if t.run is None:
+                raise ValueError(f"a branch comes to the switch {name} by rail")
+            end = h + RISE + SWITCH_RAIL_ABOVE
+            if t.run[-1].y < end - 1e-6:
+                raise ValueError(f"a branch to the switch {name} comes to it "
+                                 f"{end - t.run[-1].y:g} too low")
+            sides.remove(side)
+            t.run[-1].y = end
+            sector.rails.runs.append(t.run)
+            t.run = None
+            return
         if abs(t.h - h) > 1e-6:
             raise ValueError(f"a branch to {name} comes to it {t.h - h:+g} off its height")
         sides.remove(side)

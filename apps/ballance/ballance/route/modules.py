@@ -22,7 +22,6 @@ MODULES = {"P_Modul_01": (2, 2), "P_Modul_03": (1, 1), "P_Modul_08": (1, 1),
 # another).
 NEEDS_BALL = {
     "P_Modul_41": ({"Paper"}, "tips {kind}'s slabs and falls; only a paper ball crosses them"),
-    "P_Modul_37": ({"Stone"}, "does not tip {kind}'s plank; a stone ball does"),
     "Maze_34": ({"Stone"}, "can't push the maze's boxes out from under their stones "
                            "(in Level_10 too); a stone ball does"),
     "P_Modul_29": ({"Paper", "Wood"}, "falls through {kind}'s plates (in Ballanced too); "
@@ -74,14 +73,19 @@ MODULE_FLOORS = {
     "FanBlock": [ModuleFloor("Floor_FanBlock", STONE_FLOOR_GROUPS,
                              [(-2.5, 2.5, 0, 5.0, -2.5, 2.5)])],
     # not a module: Level_04's fan tower round its fan (the rail coming in
-    # along Z): the shaft, the rail bending up into it, the cap and the
-    # hidden plates under it
+    # along Z): the shaft and the channels winding down round it (stood in
+    # for by the shaft and the way out), the rail bending up into the shaft,
+    # the channels' railings and clamps, the cap and the hidden plates under
+    # it
     "FanTower": [
         ModuleFloor("Floor_FanTower", STONE_FLOOR_GROUPS,
                     [(-3.6, 3.6, 2.41, 12.38, -3.6, -3.05), (-3.6, 3.6, 2.41, 12.38, 3.05, 3.6),
                      (-3.6, -3.05, 2.41, 12.38, -3.05, 3.05),
-                     (3.05, 3.6, 2.41, 12.38, -3.05, 3.05)]),
+                     (3.05, 3.6, 2.41, 12.38, -3.05, 3.05),
+                     (-17.9, -12.9, -4.89, 0.11, -2.02, 2.98)]),
         ModuleFloor("Rail_FanTower", RAIL_GROUPS, [(-1.9, 2.5, -4.7, 21.0, -3.6, -3.0)]),
+        ModuleFloor("Railing_FanTower", RAIL_GROUPS, [(-15.0, 17.5, 7.5, 10.0, -13.6, -13.1)]),
+        ModuleFloor("Clamps_FanTower", [], [(-15.0, -14.0, 6.1, 6.6, -9.3, -7.5)]),
         ModuleFloor("FanTower_Cap", [], [(-3.5, 3.7, 21.1, 29.6, -3.8, 3.6)]),
         ModuleFloor("FanTower_Hidden", ["Phys_Floors"], [(-3.5, 3.7, 29.0, 29.1, -3.8, 3.6)],
                     visible=False)],
@@ -182,7 +186,7 @@ MODULE_FLOORS = {
         ModuleFloor("Floor_Modul_37", STONE_FLOOR_GROUPS,
                     [(-16.27, -11.27, -5, 0, -SWITCH_CROSS, -4.75),
                      (-16.27, -11.27, -5, 0, 4.75, SWITCH_CROSS),
-                     (-1.27, 3.73, -5, 0, -2.5, 2.5)]),
+                     (-1.27, 8.73, -5, 0, -2.5, 2.5)]),
         ModuleFloor("Floor_Stopper_37", STOPPER_GROUPS,
                     [(-16.27, -11.27, -1, -0.5, -4.75, 4.75)])],
     "P_Modul_25": [

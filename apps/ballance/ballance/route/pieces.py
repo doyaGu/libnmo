@@ -19,21 +19,22 @@ from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, 
                              CLIMB_HOLD, CLIMB_LENGTH, CLIMB_TOPS, CLIMB_TRAFO, CRADLE_BALL,
                              CRADLE_EXIT, CRADLE_RING, CRADLE_TOP, CREST_POINT, DIAMOND_EXIT,
                              DIAMOND_OUT, ELEMENT_LIFT, FAN_BELOW, FAN_BLOCK_FAN, FAN_BLOCK_RING,
-                             FAN_BLOCK_TOP, FAN_REACH, FAN_TOWER_FLOOR, FAN_TOWER_HALF,
-                             FAN_TOWER_HOLD, FAN_TOWER_PILLAR, FAN_TOWER_RING, FAN_TOWER_ROCK,
-                             FLAPS_COUNTERWEIGHT, FLAPS_LENGTH, FLAPS_MODULE, FUNNEL, HAIRPIN_GAP,
-                             HOLED_TROUGH, JUMP_ABOVE, JUMP_AREA, JUMP_DOWN, JUMP_HALF, LIFT_BELOW,
-                             LIFT_ENTRY, LIFT_EXIT, LIFT_RIDE, LIFT_TOP, LIFT_WALLS, LOG_CROSS,
-                             LOG_MOST, LOG_SEGMENT, LOG_TOP, MAZE_BELOW, MAZE_ENTRY, MAZE_EXIT,
-                             MAZE_PATH, MAZE_POINT, MAZE_STEP, OCTAGON_HALF, PILLAR_INSET,
-                             PLANK_BELOW, PLANK_LENGTH, PUSHERS_ASIDE, PUSHERS_LENGTH,
-                             PUSHERS_MODULES, PUSHERS_PATH, RAILING_ARM, RAILING_BRIDGE,
-                             RAILING_INSET, RAIL_DOCK_BELOW, RAIL_DOCK_LENGTH, RAIL_FALL,
-                             RAIL_OVERHANG, RAIL_RING_STEP, SACK_ABOVE, SACK_HANG, SPIRAL_OUT,
-                             SPIRAL_PATH, STONEBOX_LENGTH, STONEBOX_MODULE, STONEBOX_PATH,
-                             STONEBOX_RISE, STONEBOX_TRAFO, SWING_ABOVE, SWING_FAR, SWING_GO,
-                             SWING_HALF, SWING_SEAT, SWING_WAIT, SWITCH_AREA, SWITCH_CROSS,
-                             SWITCH_HOLD, SWITCH_MODULE, SWITCH_SPUR, SWITCH_TARGET, TRAFO_LIFT,
+                             FAN_BLOCK_TOP, FAN_REACH, FAN_TOWER_EXIT, FAN_TOWER_HOLD,
+                             FAN_TOWER_LIFT, FAN_TOWER_PATH, FAN_TOWER_PILLAR, FAN_TOWER_RING,
+                             FAN_TOWER_ROCK, FAN_TOWER_RUN, FLAPS_COUNTERWEIGHT, FLAPS_LENGTH,
+                             FLAPS_MODULE, FUNNEL, HAIRPIN_GAP, HOLED_TROUGH, JUMP_ABOVE, JUMP_AREA,
+                             JUMP_DOWN, JUMP_HALF, LIFT_BELOW, LIFT_ENTRY, LIFT_EXIT, LIFT_RIDE,
+                             LIFT_TOP, LIFT_WALLS, LOG_CROSS, LOG_MOST, LOG_SEGMENT, LOG_TOP,
+                             MAZE_BELOW, MAZE_ENTRY, MAZE_EXIT, MAZE_PATH, MAZE_POINT, MAZE_STEP,
+                             OCTAGON_HALF, PILLAR_INSET, PLANK_BELOW, PLANK_LENGTH,
+                             PUSHED_BALL_BACK, PUSHED_BALL_HOLD, PUSHED_BALL_IN, PUSHED_BALL_REACH,
+                             PUSHERS_ASIDE, PUSHERS_LENGTH, PUSHERS_MODULES, PUSHERS_PATH,
+                             RAILING_ARM, RAILING_BRIDGE, RAILING_INSET, RAIL_DOCK_BELOW,
+                             RAIL_DOCK_LENGTH, RAIL_FALL, RAIL_OVERHANG, RAIL_RING_STEP, SACK_ABOVE,
+                             SACK_HANG, SPIRAL_OUT, SPIRAL_PATH, STONEBOX_LENGTH, STONEBOX_MODULE,
+                             STONEBOX_PATH, STONEBOX_RISE, STONEBOX_TRAFO, SWING_ABOVE, SWING_FAR,
+                             SWING_GO, SWING_HALF, SWING_SEAT, SWING_WAIT, SWITCH_CROSS,
+                             SWITCH_LAND, SWITCH_MODULE, SWITCH_SPAN, SWITCH_WAIT, TRAFO_LIFT,
                              TROUGH_ASIDE, TROUGH_BOTTOM, TROUGH_DODGE, TROUGH_HOLES,
                              TROUGH_HOLES_FROM, TROUGH_HOP, TROUGH_LAND, TROUGH_LOG_GAP,
                              TROUGH_SEGMENT, TWIST_ASIDE, TWIST_BELOW, TWIST_HALF, TWIST_PATH,
@@ -195,14 +196,20 @@ def lay_fall(layout: Layout, sector: int, part: Sector, piece: dict, track: Trac
 
 
 def lay_tower(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:
-    """{"tower": true}: the rail ends in Level_04's fan tower (see FAN_TOWER_* in
-    ballance.game.measures): it bends up round a fan into a shaft the fan
-    blows the ball up, and a cap throws the ball back over the rail onto an
-    area round the shaft, which comes next."""
+    """{"tower": true}: the rail runs on level and ends in Level_04's fan
+    tower (see FAN_TOWER_* in ballance.game.measures): it bends up round a
+    fan into a shaft the fan blows the ball up, and a cap throws the ball
+    back over the rail into the channels winding down round the shaft, which
+    let it out on the rail's left through a funnel onto a narrow road."""
     if layout.last_ball != "Paper":
         layout.warn("only a paper ball rides a fan's wind; the ball reaches it as "
                     f"{layout.last_ball.lower()}")
+    # level under the channels, as Level_04's rail comes in
     end, d = track.run[-1], track.d
+    x, z = at((end.x, end.z), d, FAN_TOWER_RUN)
+    track.run.append(Ring(x, end.y, z, d[0], d[1]))
+    layout.points.append([x, z])
+    end = track.run[-1]
     part.rails.runs.append(track.run)
     track.run = None
     x, y, z = FAN_TOWER_RING
@@ -213,10 +220,8 @@ def lay_tower(layout: Layout, sector: int, part: Sector, piece: dict, track: Tra
                                  turn_of(right_of(d))))
     layout.elements.append(("P_Modul_18", sector, [fan[0], above, fan[1]]))
     layout.pillars.append([fan[0], above + FAN_TOWER_PILLAR, fan[1]])
-    track.d, track.h = back_of(d), above + FAN_TOWER_FLOOR
     # flat out from the rail's end into the bend (braking, it stops at the
-    # bottom), and over the fan until the ball is above the floor round the
-    # shaft
+    # bottom), and over the fan until the ball is up the shaft
     layout.points[-1] = layout.points[-1][:2] + [None, "rush"]
     layout.points.append(list(fan) + [None, "rush"])
     # The fan blows only once the ball's bounding box, which grows and
@@ -224,12 +229,18 @@ def lay_tower(layout: Layout, sector: int, part: Sector, piece: dict, track: Tra
     # ball is just short of it, so it is rocked across the rail to turn it.
     for aside in (FAN_TOWER_ROCK, -FAN_TOWER_ROCK, FAN_TOWER_ROCK, -FAN_TOWER_ROCK):
         layout.points.append(list(at(fan, d, 0.0, aside)) + [None, FAN_TOWER_HOLD])
-    layout.points.append([fan[0], fan[1], track.h + 2 * RISE + 4.0])
-    track.p = at(fan, track.d, FAN_TOWER_HALF)
+    layout.points.append([fan[0], fan[1], above + FAN_TOWER_LIFT])
+    layout.points += [list(at(fan, d, z, x)) for x, z in FAN_TOWER_PATH]
+    x, top, z = FAN_TOWER_EXIT
+    out, track.d = at(fan, d, z, x), left_of(d)
+    part.extras.append((funnel, out, track.d, above + top, None))
+    track.p = at(out, track.d, FUNNEL)
+    track.h = above + top - RISE
     layout.floors = part.grid(track.p)
-    layout.points.append(list(at(track.p, track.d, NARROW)))
-    track.floor = "tower"
-    return track.h, track.h, NARROW
+    layout.open(layout.floors, track.p, track.d)
+    layout.points.append(list(track.p))
+    track.floor = "module"
+    return track.h, track.h, FUNNEL
 
 
 def lay_log(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:
@@ -478,9 +489,27 @@ def lay_area(layout: Layout, sector: int, part: Sector, piece: dict, track: Trac
         layout.floors = part.grid(track.p)
     else:
         layout.points.append(list(middle))
+        for branch in piece.get("branches", []):
+            if branch.get("push"):
+                push_ball(layout, sector, sides[branch["side"]], h)
     layout.points.append(list(track.p))
     track.floor = "area"
     return h, h, along
+
+
+def push_ball(layout: Layout, sector: int, side: tuple[Point, Heading], h: float) -> None:
+    """A stone ball waiting by the side of an area a branch ("push": true)
+    leaves by, for the ball to push it down the branch to a switch: stopping
+    behind it, whichever way the ball came into the area, and running into it
+    on to short of the side, pushing there a while, and back (see
+    PUSHED_BALL_* in ballance.game.measures)."""
+    p, d = side
+    ball = at(p, d, -PUSHED_BALL_IN)
+    layout.elements.append(("P_Ball_Stone", sector,
+                            [ball[0], h + ELEMENT_LIFT["P_Ball_Stone"], ball[1]]))
+    behind, short = at(p, d, -PUSHED_BALL_BACK), at(p, d, -PUSHED_BALL_REACH)
+    layout.points += [[behind[0], behind[1], h - 20.0, PUSHED_BALL_HOLD],
+                      [short[0], short[1], h - 20.0, PUSHED_BALL_HOLD], list(behind)]
 
 
 def lay_node(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:
@@ -1110,68 +1139,41 @@ def lay_pushers(layout: Layout, sector: int, part: Sector, piece: dict, track: T
 
 
 def lay_switch(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> Ramp:
-    """{"module": "P_Modul_37", "side": "left" or "right"}: the switch, as
-    Level_05 has it (see SWITCH_* in ballance.game.measures).  A square area
-    the track enters and leaves straight on toward the cross piece, and a spur
-    from its side that turns twice to end at the target; the ball goes down
-    the spur, pushes the target until the plank falls, comes back and goes on
-    over the plank."""
-    if track.floor != "road":
+    """{"module": "P_Modul_37", "side": "left" or "right", "name": NAME}: the
+    switch, as Level_05 has it (see SWITCH_* in ballance.game.measures).  The
+    track runs on across the cross piece, over the gap the plank falls into;
+    the target stands to the given side, and a branch's rail to NAME (from
+    an area before it, "push": true) ends at the block beyond it, bringing
+    the stone ball that tips the plank.  The ball waits at the gap until the
+    plank is down."""
+    if track.width != NARROW or track.floor not in ("road", "trafo"):
         raise ValueError("the switch is entered from a narrow road")
-    check_ball(layout, "P_Modul_37")
-    side = piece.get("side")
+    side, name = piece.get("side"), piece.get("name")
     if side not in ("left", "right"):
-        raise ValueError("P_Modul_37 needs a side for its spur, left or right")
+        raise ValueError("P_Modul_37 needs a side for its target, left or right")
+    if not name:
+        raise ValueError("P_Modul_37 is named, for the branch that brings it a stone ball")
     sign = 1 if side == "right" else -1
     p, d, h = track.p, track.d, track.h
-    out = side_of(d, side)  # toward the spur
-    back_out = back_of(out)
-
-    def at_(a: float, r: float) -> tuple[float, float]:
-        return at(p, d, a, sign * r)
-
-    floors, edge = layout.floors, h + RISE
-    half = SWITCH_AREA / 2
-    cross = SWITCH_AREA + 10.0 + SWITCH_CROSS  # the cross piece's middle, along
-    # the area, the track on to the cross piece, and the spur's first leg and
-    # turn, on the grid behind
-    floors.area(*rect(p, d, SWITCH_AREA, SWITCH_AREA), h)
-    floors.road(*rect(at_(SWITCH_AREA, 0), d, 10.0, NARROW), h, along=axis_of(d))
-    layout.open(floors, at_(SWITCH_AREA + 10.0, 0), d)
-    leg = SWITCH_SPUR - NARROW / 2 - half
-    floors.road(*rect(at_(half, half), out, leg, NARROW), h, along=axis_of(out))
-    floors.road(*rect(at_(half, half + leg), out, NARROW, NARROW), h, along=axis_of(out))
-    grid_end = half + NARROW / 2 + CELL * math.floor(
-        (cross - NARROW / 2 - half - NARROW / 2) / CELL)
-    floors.road(*rect(at_(half + NARROW / 2, SWITCH_SPUR), d, grid_end - half - NARROW / 2,
-                      NARROW), h, along=axis_of(d))
-    layout.open(floors, at_(grid_end, SWITCH_SPUR), d)
-    # off the grid, up to the spur's second turn
-    turn = cross - NARROW / 2
-    part.extras.append((channel, at_(grid_end, SWITCH_SPUR), d, turn - grid_end, edge))
-    spur = part.grid(at_(turn, SWITCH_SPUR - NARROW / 2))
-    spur.road(*rect(at_(turn, SWITCH_SPUR), d, NARROW, NARROW), h, along=axis_of(d))
-    layout.open(spur, at_(turn, SWITCH_SPUR), d)
-    last = SWITCH_SPUR - NARROW / 2 - (SWITCH_TARGET + FUNNEL)
-    spur.road(*rect(at_(cross, SWITCH_SPUR - NARROW / 2), back_out, last, NARROW), h,
-              along=axis_of(out))
-    layout.open(spur, at_(cross, SWITCH_TARGET + FUNNEL), back_out)
-    part.extras.append((funnel, at_(cross, SWITCH_TARGET), out, edge, None))
-    where = at_(cross, SWITCH_MODULE)
+    out = side_of(d, side)  # toward the target
+    edge = h + RISE
+    layout.open(layout.floors, p, d)
+    # a narrow road's end either side brings the cross piece's middle onto the
+    # grid
+    pad = SWITCH_SPAN - SWITCH_CROSS
+    part.extras.append((channel, p, d, pad, edge))
+    part.extras.append((channel, at(p, d, SWITCH_SPAN + SWITCH_CROSS), d, pad, edge))
+    where = at(p, d, SWITCH_SPAN, sign * SWITCH_MODULE)
     layout.modules.append(("P_Modul_37", sector, [where[0], edge, where[1]], turn_of(out)))
     layout.module_floors.append(layout.modules[-1])
-    # down the spur, push the target, back, and on over the plank
-    corner1, corner2 = at_(half, SWITCH_SPUR), at_(cross, SWITCH_SPUR)
-    target = at_(cross, SWITCH_TARGET - 4.0)
-    layout.points += [list(at_(half, 0)), list(corner1), list(corner2),
-                      [target[0], target[1], h - 10.0, SWITCH_HOLD],
-                      list(corner2), list(corner1), list(at_(half, 0)), list(at_(cross, 0))]
-    track.p = at_(cross + SWITCH_CROSS, 0)
+    layout.name_switch(name, h, at(p, d, SWITCH_SPAN, sign * SWITCH_LAND), out)
+    layout.points.append([p[0], p[1], h - 20.0, SWITCH_WAIT])
+    track.p = at(p, d, 2 * SWITCH_SPAN)
     layout.floors = part.grid(track.p)
     layout.open(layout.floors, track.p, d)
     layout.points.append(list(track.p))
     track.floor = "module"
-    return h, h, SWITCH_AREA
+    return h, h, 2 * SWITCH_SPAN
 
 
 # The pieces, by the key that names them.
@@ -1206,8 +1208,6 @@ def lay_piece(layout: Layout, sector: int, part: Sector, piece: dict, track: Tra
     if ("cradle" in piece or "fan" in piece or "tower" in piece) and track.run is None:
         raise ValueError("the ball comes into the cradle, the fan's block or the fan's tower "
                          "on a rail")
-    if track.floor == "tower" and "area" not in piece:
-        raise ValueError("the fan's tower throws the ball into an area")
     if track.railed:
         if "rail" in piece or "rail_turn" in piece:
             raise ValueError("a rail with railings goes straight on to a narrow road")

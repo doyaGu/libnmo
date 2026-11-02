@@ -66,22 +66,27 @@ its measurements; in short:
   side. A branch with `"visit": true` is a spur the ball goes down and comes
   back from. A branch with `"to": NAME` comes back by itself to a later area
   of the sector, by road or rail; the autopilot takes it with
-  `"take": true`. Level_05's diamond catches a ball a rail drops.
+  `"take": true`. A branch with `"push": true` is a rail to a named
+  switch: a stone ball waits by the side it leaves from, and the ball
+  pushes it down onto the switch's target, as Level_05's nodes send theirs.
+  Level_05's diamond catches a ball a rail drops.
 - **Wood pieces:** Level_03's arched plank, Level_08's and Level_11's
   walkways, Level_07's twist, Level_09's jump and Level_01's spiral.
 - **Rails:** straight, coming down, humped or dipped (Level_12's zigzag,
   with sacks hung under the crests), bent, or turned back on themselves
   through a hairpin. A rail ends on a floor, in a fall into an area, a log,
   a trough or a diamond, in Level_01's cradle, in a fan's block, or in
-  Level_04's fan tower.
+  Level_04's fan tower, whose three channels wind down round its shaft to a
+  way out on the left.
 - **Logs and troughs:** Level_12's half logs crossing one under another,
   Level_06's logs climbing with fans, and Level_04's troughs, hopped between
   or with holes in their bottoms.
 - **Modules:** the pushers (`P_Modul_01`), lift (`_03`), swing (`_08`),
   rotating arm (`_17`), flaps (`_19`), drawbridge (`_25`), sacks (`_26`),
   hung plates (`_29`), seesaw (`_30`), stone on a box or Level_10's maze of
-  three (`_34`), switch (`_37`) and slabs (`_41`), each laid with the floors
-  its original stands on. Fans (`P_Modul_18`) stand in areas or end rails.
+  three (`_34`), switch (`_37`, its target off the track, for a pushed stone
+  ball) and slabs (`_41`), each laid with the floors its original stands
+  on. Fans (`P_Modul_18`) stand in areas or end rails.
 - **Elements:** extra points and lives, boxes, domes, loose balls, placed
   along and across a piece, resting on its floor as the originals' do, or
   hung up (`"up"`) or piled (`"pile"`).
@@ -102,7 +107,7 @@ The warnings are for levels that build but play wrong:
 
 - a ball that cannot get past a mechanism (`NEEDS_BALL` in
   `ballance.route.modules`): only paper rides a fan or crosses the slabs,
-  only stone tips the switch or clears the maze, only wood rides the lift up
+  only stone clears the maze, only wood rides the lift up
   or is sure to hop between troughs, and stone falls through the hung
   plates;
 - a ball that reaches the balloon other than wood (every original turns it

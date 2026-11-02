@@ -270,9 +270,10 @@ CLAMP_BOX = (-17.58, -16.08, 0.67, 1.18, -13.16, -12.45)
 CLAMP_POST = (-16.6374, 1.5767, -12.7156)
 # Level_04's fan tower, in its fan's frame: the shaft, the rail in it, and
 # the cap and the hidden plates under it
-FAN_TOWER_SHAFT = (-3.6, 3.6, -12.0, 14.0, -3.6, 3.6)
+FAN_TOWER_SPIRAL = (-17.95, 18.3, -6.0, 14.0, -13.2, 18.1)
 FAN_TOWER_RAIL = (-3.6, 3.6, -8.0, 22.0, -6.0, 3.6)
 FAN_TOWER_CAP = (-4.5, 4.5, 15.0, 31.0, -5.0, 4.5)
+FAN_TOWER_GUARD = (-16.0, 19.0, 2.4, 16.0, -14.0, -2.9)
 # Level_01's wood spiral, in the frame of its pads: all of it, the corner of
 # the road it leaves (to the start of the corner), and where the road comes in
 SPIRAL_BOX, SPIRAL_CORNER = (-27.0, 30.0, -52.0, 46.0, -36.0, 63.0), \
@@ -291,7 +292,7 @@ CUTS: list[Cut] = [
     ModuleCut("Floor_Stopper_25", "Level_03.NMO", "A01_Floor_Stopper_01", "P_Modul_25_03",
               (-15.1, 5.1, -5.1, 0.1, -2.6, 2.6)),
     ModuleCut("Floor_Modul_37", "Level_05.NMO", "A02_Floor_02", "P_Modul_37_02",
-              (-16.3, 3.8, -5.1, 0.1, -9.8, 9.8)),
+              (-16.3, 8.8, -5.1, 0.1, -9.8, 9.8)),
     ModuleCut("Floor_Stopper_37", "Level_05.NMO", "A01_Floor_Stopper", "P_Modul_37_02",
               (-16.3, 3.8, -5.1, 0.1, -9.8, 9.8)),
     ModuleCut("Floor_Modul_34", "Level_01.NMO", "A02_Floor_03", "P_Modul_34_01",
@@ -376,10 +377,17 @@ CUTS: list[Cut] = [
     # at the rim at the origin, the wall along X and the floor toward +Z
     ModuleCut("Railing_Clamp", "Level_01.NMO", "A01_Misc_Schelle03", "A01_Rail_04", CLAMP_BOX,
               CLAMP_POST),
-    # Level_04's fan tower, round its fan: the shaft, the rail bending up
-    # into it, the cap, and the hidden plates under the cap
-    ModuleCut("Floor_FanTower", "Level_04.NMO", "A04_Floor_01", "P_Modul_18_05", FAN_TOWER_SHAFT),
+    # Level_04's fan tower, round its fan: the shaft with the channels
+    # winding down round it, the rail bending up into the shaft, the
+    # railings on the channels and their clamps, the cap, and the hidden
+    # plates under the cap
+    ModuleCut("Floor_FanTower", "Level_04.NMO", "A04_Floor_01", "P_Modul_18_05",
+              FAN_TOWER_SPIRAL),
     ModuleCut("Rail_FanTower", "Level_04.NMO", "A04_Rail_03", "P_Modul_18_05", FAN_TOWER_RAIL),
+    ModuleCut("Railing_FanTower", "Level_04.NMO", "A04_Rail_03", "P_Modul_18_05",
+              FAN_TOWER_GUARD),
+    ModuleCut("Clamps_FanTower", "Level_04.NMO", "A05_Schelle", "P_Modul_18_05",
+              FAN_TOWER_GUARD),
     ModuleCut("FanTower_Cap", "Level_04.NMO", "A04_Towers", "P_Modul_18_05", FAN_TOWER_CAP),
     ModuleCut("FanTower_Hidden", "Level_04.NMO", ["A04_invisibleColl1", "A04_invisibleColl2"],
               "P_Modul_18_05", FAN_TOWER_CAP),
