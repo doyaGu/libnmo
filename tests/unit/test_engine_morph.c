@@ -1,6 +1,7 @@
 #include "engine_fixture.h"
 #include "../../src/engine/engine_transform.h"
 #include "engine/nmo_engine_render.h"
+#include "document/nmo_document_load.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_animation_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
@@ -20,12 +21,16 @@ static nmo_object_id_t morph_mesh(engine_fixture_t *f, uint32_t count)
     state->vertex_count = count;
     state->vertices = nmo_arena_alloc(nmo_session_get_arena(f->session),
                                       count * sizeof(*state->vertices), _Alignof(nmo_vertex_t));
-    if (state->vertices == NULL) return 0;
+    state->vertex_colors = nmo_arena_alloc(nmo_session_get_arena(f->session), count * sizeof(uint32_t), 4);
+    state->vertex_specular = nmo_arena_alloc(nmo_session_get_arena(f->session), count * sizeof(uint32_t), 4);
+    if (state->vertices == NULL || state->vertex_colors == NULL || state->vertex_specular == NULL) return 0;
     memset(state->vertices, 0, count * sizeof(*state->vertices));
     for (uint32_t v = 0; v < count; v++) {
         state->vertices[v].position = (nmo_vector_t){123, 234, 345};
         state->vertices[v].normal = (nmo_vector_t){0, 1, 0};
         state->vertices[v].uv = (nmo_vector2_t){0.125f * (float)v, 0.75f};
+        state->vertex_colors[v] = 0xffffffffu;
+        state->vertex_specular[v] = 0;
     }
     entity->current_mesh = nmo_ref_from_id(mesh);
     return mesh;
@@ -312,9 +317,121 @@ TEST(engine_morph, separate_keys_convert_legacy_normals_and_replace_optional_sec
     }
 }
 
+TEST(engine_morph, saved_global_playback_supports_all_morph_storage_formats)
+{
+    const nmo_objectanimation_format_t formats[] = {CKOBJANIM_FORMAT_CONTROLLERS,
+        CKOBJANIM_FORMAT_NEWDATA, CKOBJANIM_FORMAT_NEWDATA, CKOBJANIM_FORMAT_LEGACY};
+    for (size_t c = 0; c < COUNT(formats); c++) {
+        engine_fixture_t f;
+        fixture_begin_document(&f);
+        nmo_object_id_t mesh = morph_mesh(&f, 4);
+        nmo_object_id_t part = fixture_create(&f, NMO_CID_OBJECTANIMATION, "Part");
+        nmo_object_id_t global = fixture_create(&f, NMO_CID_KEYEDANIMATION, "Global");
+        ASSERT_TRUE(mesh != 0 && part != 0 && global != 0);
+        nmo_objectanimation_state_t *state = fixture_state(&f, part);
+        nmo_keyedanimation_state_t *keyed = fixture_state(&f, global);
+        state->entity = nmo_ref_from_id(f.owner_id);
+        state->format = formats[c];
+        state->has_length = 1;
+        state->length = 24;
+        nmo_objanim_controller_t controller = {NMO_OBJANIM_CONTROLLER_MORPH, 0,
+                                               sizeof(PackedNormalsWords), (void *)PackedNormalsWords};
+        if (c == 0) {
+            state->controller_count = 1;
+            state->controllers = &controller;
+        } else {
+            ASSERT_TRUE(separate_morph(&f, state, c == 3 ? 0 : (int)c));
+        }
+        if (c == 3) {
+            nmo_object_t *object = nmo_object_repository_find_by_id(f.repo, part);
+            object->chunk = nmo_chunk_create(nmo_session_get_arena(f.session));
+            ASSERT_NOT_NULL(object->chunk);
+            object->chunk->class_id = NMO_CID_OBJECTANIMATION;
+            object->chunk->data_version = 0;
+        }
+        nmo_ref_t part_ref = nmo_ref_from_id(part);
+        keyed->animation_count = 1;
+        keyed->animation_ids = &part_ref;
+        f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+        fixture_begin_edit(&f);
+        nmo_object_id_t play = fixture_block(&f, NMO_GUID(0x1c9236e1, 0x42f40996), "Play");
+        ASSERT_TRUE(play != 0);
+        fixture_link(&f, f.script_in, BLOCK_IN(&f, play, 0), 0);
+        const nmo_object_id_t pins[] = {BLOCK_PIN(&f, play, 0), BLOCK_PIN(&f, play, 1)};
+        char global_id[32];
+        snprintf(global_id, sizeof(global_id), "%u", global);
+        const char *values[] = {global_id, "8"};
+        for (size_t i = 0; i < COUNT(pins); i++) {
+            nmo_object_id_t source = 0;
+            ASSERT_EQ(NMO_OK, nmo_script_edit_ensure_input_parameter_source(f.tx, pins[i], &source));
+            ASSERT_EQ(NMO_OK, nmo_script_edit_set_parameter_value(f.tx, source, values[i]));
+        }
+        fixture_commit(&f, NULL);
+        const char *path = NMO_TEST_SCRATCH_FILE("engine_morph.cmo");
+        nmo_status_t status = nmo_session_save_file(f.session, path, NULL, NULL);
+        if (status != NMO_OK) fprintf(stderr, "Morph format %zu save: %s\n", c, nmo_last_error_message());
+        ASSERT_EQ(NMO_OK, status);
+        nmo_document_t *document = NULL;
+        nmo_workspace_t *workspace = NULL;
+        nmo_engine_t *engine = NULL;
+        ASSERT_EQ(NMO_OK, nmo_document_load_file(f.ctx, path, NULL, &document));
+        ASSERT_EQ(NMO_OK, nmo_workspace_create(f.ctx, document, &workspace));
+        ASSERT_EQ(NMO_OK, nmo_engine_create(workspace, NULL, &engine));
+        ASSERT_EQ(NMO_OK, nmo_bb_virtools_register(engine));
+        ASSERT_EQ(NMO_OK, nmo_engine_start(engine, NMO_ENGINE_START_ALL));
+        nmo_object_id_t loaded_mesh = nmo_engine_object_named(engine, "Mesh", NMO_CID_MESH);
+        nmo_object_id_t loaded_part = nmo_engine_object_named(engine, "Part", NMO_CID_OBJECTANIMATION);
+        ASSERT_TRUE(loaded_mesh != 0 && loaded_part != 0);
+        const nmo_object_repository_t *repo = nmo_document_get_repository(document);
+        const nmo_mesh_state_t *original = nmo_object_get_state(nmo_object_repository_find_by_id(repo, loaded_mesh));
+        const nmo_objectanimation_state_t *saved = nmo_object_get_state(nmo_object_repository_find_by_id(repo, loaded_part));
+        ASSERT_EQ(formats[c], saved->format);
+        nmo_vertex_t vertices[4];
+        memcpy(vertices, original->vertices, sizeof(vertices));
+        ASSERT_EQ(NMO_OK, nmo_engine_step(engine, 2));
+        ASSERT_EQ(NMO_OK, nmo_engine_step(engine, 2));
+        nmo_engine_mesh_t runtime;
+        ASSERT_TRUE(nmo_engine_mesh(engine, loaded_mesh, &runtime));
+        for (int v = 0; v < 4; v++) {
+            const nmo_vector_t *p = &runtime.vertices[v].position;
+            ASSERT_FLOAT_EQ(PackedNormalsSamples[6].positions[v][0], p->x, 0.00001f);
+            ASSERT_FLOAT_EQ(PackedNormalsSamples[6].positions[v][1], p->y, 0.00001f);
+            ASSERT_FLOAT_EQ(PackedNormalsSamples[6].positions[v][2], p->z, 0.00001f);
+            nmo_vector_t n = c == 3 ? (nmo_vector_t){0} : expected_normal(PackedNormalsSamples[6].normals[v]);
+            ASSERT_FLOAT_EQ(n.x, runtime.vertices[v].normal.x, 0.000001f);
+            ASSERT_FLOAT_EQ(n.y, runtime.vertices[v].normal.y, 0.000001f);
+            ASSERT_FLOAT_EQ(n.z, runtime.vertices[v].normal.z, 0.000001f);
+        }
+        uint32_t version = runtime.version;
+        ASSERT_EQ(NMO_OK, nmo_engine_step(engine, 6));
+        ASSERT_TRUE(nmo_engine_mesh(engine, loaded_mesh, &runtime));
+        ASSERT_TRUE(runtime.version > version);
+        ASSERT_FLOAT_EQ(3, runtime.vertices[0].position.x, 0.00001f);
+        ASSERT_FLOAT_EQ(7, runtime.vertices[0].position.y, 0.00001f);
+        ASSERT_FLOAT_EQ(-4, runtime.vertices[0].position.z, 0.00001f);
+        ASSERT_EQ(0, memcmp(vertices, original->vertices, sizeof(vertices)));
+        if (c == 0) {
+            ASSERT_EQ(sizeof(PackedNormalsWords), saved->controllers[0].data_size);
+            ASSERT_EQ(0, memcmp(PackedNormalsWords, saved->controllers[0].data, sizeof(PackedNormalsWords)));
+        } else {
+            ASSERT_EQ(3u, saved->morph_key_parsed_count);
+            for (uint32_t i = 0; i < saved->morph_key_parsed_count; i++) {
+                ASSERT_EQ(state->morph_keys[i].data_size, saved->morph_keys[i].data_size);
+                ASSERT_EQ(0, memcmp(state->morph_keys[i].data, saved->morph_keys[i].data, saved->morph_keys[i].data_size));
+            }
+        }
+        nmo_engine_destroy(engine);
+        nmo_workspace_destroy(workspace);
+        nmo_document_destroy(document);
+        fixture_end(&f);
+        remove(path);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_morph, controller_positions_and_packed_normals_match_reference_samples);
 REGISTER_TEST(engine_morph, invalid_or_ignored_morphs_leave_the_mesh_unchanged);
 REGISTER_TEST(engine_morph, deformed_geometry_drives_normals_bounds_and_ray_hits);
 REGISTER_TEST(engine_morph, separate_keys_convert_legacy_normals_and_replace_optional_sections);
+REGISTER_TEST(engine_morph, saved_global_playback_supports_all_morph_storage_formats);
 TEST_MAIN_END()
