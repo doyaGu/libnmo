@@ -85,6 +85,10 @@ target_compile_definitions(test_reference_alignment_matrix PRIVATE
 )
 add_integration_test(test_manager_lane_runtime_events)
 
+add_integration_test(test_engine_replay)
+target_link_libraries(test_engine_replay PRIVATE nmo_bb_virtools nmo_bb_physics
+                      nmo_bb_terratools nmo_engine nmo_edit)
+
 # CLI tests
 if(TARGET nmo_cli)
     add_executable(test_cli_behavior_run test_cli_behavior_run.c)
