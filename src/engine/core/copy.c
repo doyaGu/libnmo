@@ -532,6 +532,27 @@ static int32_t copies_module(nmo_engine_t *engine, int32_t source, nmo_object_id
     return (int32_t)engine->modules.count - 1;
 }
 
+nmo_object_id_t eng_create_related_object(nmo_engine_t *engine, nmo_object_id_t model, uint32_t class_id)
+{
+    const eng_module_t *module = eng_module_of(engine, model, NULL);
+    if (module == NULL) return 0;
+    int32_t source = (int32_t)(module-engine->modules.data);
+    /* A range over an owned session borrows its owner's arena and repository. */
+    for (size_t i = 0; i < engine->modules.count; i++) {
+        if (engine->modules.data[i].repo == module->repo && engine->modules.data[i].session != NULL) {
+            source = (int32_t)i;
+            break;
+        }
+    }
+    if (eng_own_module(engine, source) != NMO_OK) return 0;
+    nmo_object_id_t local = 0;
+    if (nmo_session_create_object(engine->modules.data[source].session, (nmo_class_id_t)class_id,
+                                  "", NMO_GUID(0,0), &local, NULL) != NMO_OK) return 0;
+    int32_t range = copies_module(engine, source, local, local);
+    if (range < 0 || eng_load_range(engine, range, local, local) != NMO_OK) return 0;
+    return eng_module_id(&engine->modules.data[range], local);
+}
+
 /* CKBehavior::Copy and friends: the runtime state of the behaviors, IOs and links. */
 static void copy_behavior_state(nmo_engine_t *engine, nmo_object_id_t original, nmo_object_id_t copy)
 {

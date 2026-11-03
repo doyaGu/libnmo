@@ -7,6 +7,26 @@
 
 typedef struct eng_range eng_range_t;
 
+enum { ENG_ANIM_POSITION=1, ENG_ANIM_ROTATION=2, ENG_ANIM_SCALE=4, ENG_ANIM_AXIS=8 };
+typedef struct eng_animation_pose {
+    uint32_t present;
+    nmo_vector_t position, scale;
+    nmo_vector4_t rotation, axis;
+} eng_animation_pose_t;
+
+/* Bound sampled velocity keys and best-frame search work. */
+#define ENG_TRANSITION_MAX_SAMPLES 65536u
+eng_animation_pose_t eng_animation_sample_pose(nmo_engine_t *engine, nmo_object_id_t animation, float frame);
+nmo_status_t eng_object_animation_transition(nmo_engine_t *engine, nmo_object_id_t result,
+    nmo_object_id_t from, float from_step, nmo_object_id_t to, float to_step, float length,
+    bool velocity, bool dont_turn, const eng_animation_pose_t *starting);
+struct nmo_arena;
+struct nmo_arena *eng_animation_edit_arena(nmo_engine_t *engine, nmo_object_id_t animation);
+bool eng_animation_local_ref(const nmo_engine_t *engine, nmo_object_id_t owner, nmo_object_id_t target, nmo_ref_t *out);
+nmo_status_t eng_animation_transition_morph(nmo_engine_t *engine, nmo_object_id_t from, float from_frame,
+    nmo_object_id_t to, float to_frame, struct nmo_arena *arena,
+    const nmo_objectanimation_state_t *previous, nmo_objectanimation_state_t *result);
+
 typedef struct eng_animation_member { nmo_object_id_t id, entity; } eng_animation_member_t;
 typedef struct eng_animation_channel { nmo_object_id_t id; float contribution; } eng_animation_channel_t;
 typedef struct eng_animation_clock { nmo_object_id_t id; float step; } eng_animation_clock_t;

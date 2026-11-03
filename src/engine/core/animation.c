@@ -14,6 +14,7 @@
 
 #include "object/builtin/nmo_animation_schemas.h"
 #include "object/nmo_class_ids.h"
+#include "core/nmo_arena.h"
 
 #include <math.h>
 #include <float.h>
@@ -895,6 +896,114 @@ bool eng_animation_position(nmo_engine_t *engine, nmo_object_id_t animation, flo
     if (!anim_sample(engine, animation, ANIM_POSITION, frame, &value)) return false;
     *out = (nmo_vector_t){value.vector.x,value.vector.y,value.vector.z};
     return true;
+}
+
+eng_animation_pose_t eng_animation_sample_pose(nmo_engine_t *engine, nmo_object_id_t animation, float frame)
+{
+    eng_animation_pose_t pose = {.scale={1,1,1},.rotation={0,0,0,1},.axis={0,0,0,1}};
+    if (!isfinite(frame)) return pose;
+    anim_value_t value;
+    if (anim_sample(engine,animation,ANIM_POSITION,frame,&value)) {
+        pose.present |= ENG_ANIM_POSITION;
+        pose.position = (nmo_vector_t){value.vector.x,value.vector.y,value.vector.z};
+    }
+    if (anim_sample(engine,animation,ANIM_SCALE,frame,&value)) {
+        pose.present |= ENG_ANIM_SCALE;
+        pose.scale = (nmo_vector_t){value.vector.x,value.vector.y,value.vector.z};
+    }
+    if (anim_sample(engine,animation,ANIM_ROTATION,frame,&value)) {
+        pose.present |= ENG_ANIM_ROTATION;
+        pose.rotation = (nmo_vector4_t){value.quaternion.x,value.quaternion.y,value.quaternion.z,value.quaternion.w};
+    }
+    if (anim_sample(engine,animation,ANIM_AXIS,frame,&value)) {
+        pose.present |= ENG_ANIM_AXIS;
+        pose.axis = (nmo_vector4_t){value.quaternion.x,value.quaternion.y,value.quaternion.z,value.quaternion.w};
+    }
+    return pose;
+}
+
+static nmo_vector_t anim_velocity(nmo_engine_t *engine, nmo_object_id_t animation, float step, float length)
+{
+    float frame = step*length, other = frame+1 < length ? frame+1 : frame-1;
+    float next_step = length != 0 ? other/length : 0;
+    nmo_vector_t a = {0}, b = {0};
+    eng_animation_position(engine,animation,fminf(fmaxf(step,0),1)*length,&a);
+    eng_animation_position(engine,animation,fminf(fmaxf(next_step,0),1)*length,&b);
+    float sign = step < next_step ? 0.4f : -0.4f;
+    return (nmo_vector_t){sign*(b.x-a.x),sign*(b.y-a.y),sign*(b.z-a.z)};
+}
+
+nmo_status_t eng_object_animation_transition(nmo_engine_t *engine, nmo_object_id_t result,
+    nmo_object_id_t from, float from_step, nmo_object_id_t to, float to_step, float length,
+    bool velocity, bool dont_turn, const eng_animation_pose_t *starting)
+{
+    eng_animation_source_t a, b;
+    if (anim_state(engine,result) == NULL || !eng_animation_source(engine,from,&a) || !eng_animation_source(engine,to,&b) ||
+        !isfinite(length) || length <= 0 || !isfinite(from_step) || !isfinite(to_step) ||
+        !isfinite(a.length*from_step) || !isfinite(b.length*to_step)) return NMO_ERR_INVALID_ARGUMENT;
+    if (velocity && length >= ENG_TRANSITION_MAX_SAMPLES) return NMO_ERR_NOT_SUPPORTED;
+    eng_animation_pose_t first = eng_animation_sample_pose(engine,from,a.length*from_step);
+    eng_animation_pose_t last = eng_animation_sample_pose(engine,to,b.length*to_step);
+    uint32_t present = first.present & last.present;
+    if (starting != NULL) first = *starting;
+    if (dont_turn && (present & ENG_ANIM_ROTATION)) {
+        anim_value_t initial = {.quaternion={0,0,0,1}}, current = initial;
+        anim_sample(engine,from,ANIM_ROTATION,0,&initial);
+        anim_sample(engine,from,ANIM_ROTATION,a.length*from_step,&current);
+        initial.quaternion.w = -initial.quaternion.w;
+        anim_quat_t heading = anim_quat_multiply(current.quaternion,initial.quaternion);
+        heading.x = heading.z = 0;
+        double magnitude = sqrt((double)heading.y*heading.y+(double)heading.w*heading.w);
+        first.rotation = magnitude > 0 ? (nmo_vector4_t){0,(float)(heading.y/magnitude),0,(float)(-heading.w/magnitude)} : (nmo_vector4_t){0,0,0,1};
+    }
+    nmo_object_id_t entity = eng_object_ref(engine,to,&b.state->entity);
+    nmo_vector_t va = {0}, vb = {0};
+    if (velocity && (present & ENG_ANIM_POSITION)) {
+        va = anim_velocity(engine,from,from_step,a.length);
+        vb = anim_velocity(engine,to,to_step,b.length);
+    }
+    nmo_arena_t *arena = eng_animation_edit_arena(engine,result);
+    if (arena == NULL) return NMO_ERR_NOMEM;
+    nmo_objectanimation_state_t *target = nmo_object_get_state(eng_find_object(engine,result));
+    nmo_objectanimation_state_t generated = {.base=target->base,.format=CKOBJANIM_FORMAT_CONTROLLERS,
+        .flags=target->flags & ~CK_OBJECTANIMATION_MERGED,.has_length=1,.length=length,.merge_factor=0.5f};
+    if (!eng_animation_local_ref(engine,result,entity,&generated.entity)) return NMO_ERR_INVALID_ARGUMENT;
+    generated.controllers = nmo_arena_alloc(arena,5*sizeof(*generated.controllers),_Alignof(nmo_objanim_controller_t));
+    if (generated.controllers == NULL) return NMO_ERR_NOMEM;
+    const uint32_t masks[] = {ENG_ANIM_POSITION,ENG_ANIM_ROTATION,ENG_ANIM_SCALE,ENG_ANIM_AXIS};
+    const uint32_t types[] = {ANIM_LINEAR_POSITION,ANIM_LINEAR_ROTATION,ANIM_LINEAR_SCALE,ANIM_LINEAR_SCALE_AXIS};
+    for (size_t i = 0; i < 4; i++) {
+        if (!(present & masks[i])) continue;
+        uint32_t stride = i == 0 || i == 2 ? 4 : 5;
+        uint32_t intervals = velocity && i == 0 ? (length < 1 ? 1 : (uint32_t)length) : 1;
+        uint32_t count = intervals+1, bytes = count*stride*sizeof(float);
+        float *keys = nmo_arena_alloc(arena,bytes,_Alignof(float));
+        if (keys == NULL) return NMO_ERR_NOMEM;
+        nmo_vector_t displacement = {0};
+        for (uint32_t k = 0; k < count; k++) {
+            float phase = (float)k/intervals;
+            float *key = keys+k*stride;
+            key[0] = phase*length;
+            if (i == 0 && velocity) {
+                key[1] = displacement.x; key[2] = displacement.y; key[3] = displacement.z;
+                float dt = fminf(length,1);
+                displacement.x += dt*(va.x+phase*(vb.x-va.x));
+                displacement.y += dt*(va.y+phase*(vb.y-va.y));
+                displacement.z += dt*(va.z+phase*(vb.z-va.z));
+            } else if (stride == 4) {
+                nmo_vector_t value = i == 0 ? (k == 0 ? first.position : last.position) : (k == 0 ? first.scale : last.scale);
+                key[1] = value.x; key[2] = value.y; key[3] = value.z;
+            } else {
+                nmo_vector4_t value = i == 1 ? (k == 0 ? first.rotation : last.rotation) : (k == 0 ? first.axis : last.axis);
+                key[1] = value.x; key[2] = value.y; key[3] = value.z; key[4] = value.w;
+            }
+        }
+        generated.controllers[generated.controller_count++] = (nmo_objanim_controller_t){types[i],count,bytes,keys};
+    }
+    nmo_status_t status = eng_animation_transition_morph(engine,from,a.length*from_step,to,b.length*to_step,arena,target,&generated);
+    if (status != NMO_OK) return status;
+    *target = generated;
+    return NMO_OK;
 }
 
 void eng_animation_yaw(nmo_engine_t *engine, nmo_object_id_t animation, float frame, eng_matrix_t *out)

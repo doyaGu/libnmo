@@ -75,6 +75,8 @@ nmo_object_t *eng_find_object(const nmo_engine_t *engine, nmo_object_id_t id);
 /* The first object named `name` (of class `class_id` or one derived, unless 0), in document order */
 nmo_object_id_t eng_object_named(const nmo_engine_t *engine, const char *name, uint32_t class_id);
 nmo_object_id_t eng_create_object(nmo_engine_t *engine, uint32_t class_id, const char *name);
+/* A generated animation in its model's session, with ordinary local references. */
+nmo_object_id_t eng_create_related_object(nmo_engine_t *engine, nmo_object_id_t model, uint32_t class_id);
 /* The engine ID of an object of a module's session outside its window */
 nmo_object_id_t eng_module_id_outside(const eng_module_t *module, nmo_object_id_t local);
 /* The engine ID of a document's object ID; 0 stays 0. */

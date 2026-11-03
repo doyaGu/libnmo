@@ -33,6 +33,7 @@ set(NMO_ENGINE_SOURCES
     core/scene.c
     core/schedule.c
     core/transform.c
+    core/transition.c
 )
 list(TRANSFORM NMO_ENGINE_SOURCES PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/")
 

@@ -7,6 +7,7 @@
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "type/nmo_object_guids.h"
 #include "type/nmo_type_query.h"
+#include "core/nmo_arena.h"
 
 #include <math.h>
 #include <limits.h>
@@ -261,6 +262,94 @@ static morph_result_t morph_evaluate(const nmo_engine_t *engine, const eng_anima
         }
     }
     return (morph_result_t){true, positions, normals};
+}
+
+static uint32_t morph_compress(nmo_vector_t normal)
+{
+    double length = sqrt((double)normal.x*normal.x+(double)normal.y*normal.y+(double)normal.z*normal.z);
+    if (!(length > 0)) return 0;
+    double unit = 16384.0/6.28318530717958647692;
+    int pitch = (int)(-asin(fmax(-1,fmin(1,normal.y/length)))*unit);
+    int yaw = (int)(atan2(normal.x,normal.z)*unit);
+    return ((uint32_t)pitch & 16383u) | (((uint32_t)yaw & 16383u)<<16);
+}
+
+static void morph_retain(const nmo_objectanimation_state_t *previous, nmo_objectanimation_state_t *result)
+{
+    for (uint32_t i = 0; previous->controllers != NULL && i < previous->controller_count; i++) {
+        if (previous->controllers[i].type == NMO_OBJANIM_CONTROLLER_MORPH) {
+            result->controllers[result->controller_count++] = previous->controllers[i];
+            return;
+        }
+    }
+    result->has_morph_counts = previous->has_morph_counts;
+    result->morph_vertex_count = previous->morph_vertex_count;
+    result->morph_key_count = previous->morph_key_count;
+    result->morph_key_parsed_count = previous->morph_key_parsed_count;
+    result->morph_keys = previous->morph_keys;
+    result->morph_comp_count = previous->morph_comp_count;
+    result->morph_comp_sizes = previous->morph_comp_sizes;
+    result->morph_comp_data = previous->morph_comp_data;
+    result->morph_normals_count = previous->morph_normals_count;
+    result->morph_normals_sizes = previous->morph_normals_sizes;
+    result->morph_normals_data = previous->morph_normals_data;
+}
+
+nmo_status_t eng_animation_transition_morph(nmo_engine_t *engine, nmo_object_id_t from, float from_frame,
+    nmo_object_id_t to, float to_frame, nmo_arena_t *arena,
+    const nmo_objectanimation_state_t *previous, nmo_objectanimation_state_t *result)
+{
+    eng_animation_source_t a, b;
+    if (!eng_animation_source(engine,from,&a) || !eng_animation_source(engine,to,&b)) return NMO_ERR_INVALID_ARGUMENT;
+    uint32_t work = ENG_ANIMATION_WORK_LIMIT;
+    uint32_t count = morph_count(engine,&b,NULL,&work);
+    if (count == 0) return NMO_OK;
+    work = ENG_ANIMATION_WORK_LIMIT;
+    uint32_t in_count = morph_count(engine,&a,NULL,&work);
+    if (in_count != 0 && in_count != count) { morph_retain(previous,result); return NMO_OK; }
+    if ((uint64_t)count*32+20 > UINT32_MAX) return NMO_ERR_NOMEM;
+    morph_vertex_t *samples = calloc((size_t)count*2,sizeof(*samples));
+    if (samples == NULL) return NMO_ERR_NOMEM;
+    morph_vertex_t *first = samples, *last = samples+count;
+    work = ENG_ANIMATION_WORK_LIMIT;
+    morph_result_t rb = morph_evaluate(engine,&b,to_frame,count,last,NULL,&work), ra = {0};
+    if (in_count != 0) {
+        work = ENG_ANIMATION_WORK_LIMIT;
+        ra = morph_evaluate(engine,&a,from_frame,count,first,NULL,&work);
+    } else {
+        nmo_object_id_t entity = eng_object_ref(engine,to,&b.state->entity);
+        const nmo_3dentity_state_t *target = morph_state(engine,entity,CKPGUID_3DENTITY);
+        nmo_object_id_t mesh = target != NULL ? eng_object_ref(engine,entity,&target->current_mesh) : 0;
+        const nmo_mesh_state_t *original = morph_state(engine,mesh,CKPGUID_MESH);
+        if (original == NULL || original->vertices == NULL || original->vertex_count > count) {
+            free(samples); morph_retain(previous,result); return NMO_OK;
+        }
+        const eng_mesh_copy_t *copy = eng_mesh_copy_find(engine,mesh);
+        const nmo_vertex_t *vertices = copy != NULL ? copy->vertices : original->vertices;
+        for (uint32_t v = 0; v < original->vertex_count; v++) {
+            first[v].position = vertices[v].position;
+            first[v].normal = morph_compress(vertices[v].normal);
+        }
+        ra = (morph_result_t){true,true,true};
+    }
+    if (!ra.success || !rb.success) { free(samples); return NMO_ERR_VALIDATION_FAILED; }
+    bool normals = ra.normals && rb.normals;
+    uint32_t bytes = 20+count*(normals ? 32u : 24u);
+    uint8_t *data = nmo_arena_alloc(arena,bytes,_Alignof(uint32_t));
+    if (data == NULL) { free(samples); return NMO_ERR_NOMEM; }
+    uint32_t header[] = {2,count,normals};
+    memcpy(data,header,sizeof(header));
+    uint8_t *cursor = data+sizeof(header);
+    for (size_t k = 0; k < 2; k++) {
+        float time = k == 0 ? 0 : result->length;
+        memcpy(cursor,&time,sizeof(time)); cursor += sizeof(time);
+        const morph_vertex_t *key = k == 0 ? first : last;
+        for (uint32_t v = 0; v < count; v++) { memcpy(cursor,&key[v].position,12); cursor += 12; }
+        if (normals) for (uint32_t v = 0; v < count; v++) { memcpy(cursor,&key[v].normal,4); cursor += 4; }
+    }
+    result->controllers[result->controller_count++] = (nmo_objanim_controller_t){NMO_OBJANIM_CONTROLLER_MORPH,0,bytes,data};
+    free(samples);
+    return NMO_OK;
 }
 
 static void morph_bounds(eng_mesh_copy_t *copy, uint32_t count)
