@@ -62,7 +62,7 @@ class Label(Text):
             draw.line([(x, y), (box[0] - 2, box[3])], fill=self.colour, width=1)
 
 
-def route_overlays(route: list[list[float]], floor_y: Callable[[float, float], float]) -> list:
+def route_overlays(route: list[list], floor_y: Callable[[float, float], float]) -> list:
     """A route_points.json: the path along its points, numbered; the points
     the ball stops at (a height to be lifted to, frames to hold, an object to
     wait for) ringed."""
@@ -79,9 +79,11 @@ def route_overlays(route: list[list[float]], floor_y: Callable[[float, float], f
             label += " rush"
         elif len(point) > 4:
             label += f" wait {point[4]}"
+        elif len(point) > 3 and isinstance(point[3], str) and point[3].startswith("push:"):
+            label += f" push {point[3][5:]}"
         elif len(point) > 3 and point[3]:
             label += f" hold {point[3]:g}"
-        elif len(point) > 2:
+        elif len(point) > 2 and point[2] is not None:
             label += f" wait y {point[2]:g}"
         out.append(Text(p, ROUTE, label))
     return [Line(points, ROUTE, 2)] + out
