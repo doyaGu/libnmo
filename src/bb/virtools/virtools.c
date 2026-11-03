@@ -21,6 +21,7 @@ static nmo_status_t (*const virtools_sets[])(nmo_engine_t *engine) = {
     eng_register_effects,
     eng_register_cameras,
     eng_register_characters,
+    eng_register_animation_sync,
     eng_register_lights,
     eng_register_world_environments,
     eng_register_controllers,
