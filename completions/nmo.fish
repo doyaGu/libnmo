@@ -429,6 +429,7 @@ complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = beha
 complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = behavior or test (__nmo_group) = beh); and (test (__nmo_action) = run)' -l start -r -d 'Scripts to start: scene, all or none (default: scene)'
 complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = behavior or test (__nmo_group) = beh); and (test (__nmo_action) = run)' -s s -l script -r -d 'Start only this script (reset)'
 complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = behavior or test (__nmo_group) = beh); and (test (__nmo_action) = run)' -l unknown -r -d 'Blocks without a function: stop or pass (default: stop)'
+complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = behavior or test (__nmo_group) = beh); and (test (__nmo_action) = run)' -l strict -d 'Stop on an unknown block, execution error or iteration limit; exit 3'
 complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = behavior or test (__nmo_group) = beh); and (test (__nmo_action) = run)' -l max-iterations -r -d 'Iterations per graph and frame (default: 8000)'
 complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = behavior or test (__nmo_group) = beh); and (test (__nmo_action) = run)' -l seed -r -d 'Random seed (default: 1)'
 complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = behavior or test (__nmo_group) = beh); and (test (__nmo_action) = run)' -s t -l trace -d 'Show links, operations and graphs too'

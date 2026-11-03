@@ -52,6 +52,7 @@ typedef struct run_args {
     uint32_t max_iterations;
     uint32_t seed;
     bool trace;
+    bool strict;
     const char *path; /* --path: where loaded files are found, besides the file's folder */
     const char *write; /* --write: where saved files go, and where loading looks first */
     const char *keys; /* "Space@30-35,Enter@60": keys and the frames they are down */
@@ -917,6 +918,38 @@ static bool run_add_physics(nmo_cli_record_t *rec, const run_state_t *state)
     return true;
 }
 
+static bool run_add_failure(nmo_cli_record_t *rec, const nmo_engine_t *engine)
+{
+    nmo_engine_event_t event;
+    bool failed = nmo_engine_failure(engine, &event);
+    if (!nmo_cli_record_bool(rec, "failed", "Failed", failed)) {
+        return false;
+    }
+    if (!failed) {
+        return true;
+    }
+    nmo_cli_record_t *failure = nmo_cli_record_object(rec, "failure");
+    char *behavior = event.behavior_id != 0 ? run_label_dup(engine, event.behavior_id) : NULL;
+    char *object = event.object_id != 0 ? run_label_dup(engine, event.object_id) : NULL;
+    bool ok = failure != NULL && (event.behavior_id == 0 || behavior != NULL) &&
+              (event.object_id == 0 || object != NULL) &&
+              nmo_cli_record_str(failure, "kind", "Failure kind", nmo_engine_event_kind_name(event.kind)) &&
+              nmo_cli_record_uint(failure, "frame", "Failure frame", event.frame) &&
+              nmo_cli_record_real(failure, "time_ms", NULL, event.time, "%.3f") &&
+              nmo_cli_record_uint(failure, "behavior_id", NULL, event.behavior_id) &&
+              nmo_cli_record_uint(failure, "object_id", NULL, event.object_id) &&
+              nmo_cli_record_int(failure, "result", "Failure result", event.result);
+    if (ok && behavior != NULL) {
+        ok = nmo_cli_record_str(failure, "behavior", "Failure behavior", behavior);
+    }
+    if (ok && object != NULL) {
+        ok = nmo_cli_record_str(failure, "object", "Failure object", object);
+    }
+    free(behavior);
+    free(object);
+    return ok;
+}
+
 static bool run_add_unknown(nmo_cli_record_t *rec, const run_state_t *state)
 {
     nmo_cli_record_array_t *list =
@@ -1329,6 +1362,7 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
     options.unknown_block = args->unknown;
     options.max_iterations = (int32_t)args->max_iterations;
     options.random_seed = args->seed;
+    options.fail_on = args->strict ? NMO_ENGINE_FAIL_ALL : 0;
 
     nmo_engine_t *engine = NULL;
     nmo_status_t status = nmo_engine_create(ctx->workspace, &options, &engine);
@@ -1492,12 +1526,17 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
     }
     free(messages);
     if (status != NMO_OK && exit_code == NMO_CLI_EXIT_SUCCESS) {
-        fprintf(stderr, "Error: Behavior engine failed (%s)\n", nmo_error_string(status));
-        exit_code = NMO_CLI_EXIT_INTERNAL_ERROR;
+        if (status == NMO_ERR_VALIDATION_FAILED && nmo_engine_failure(engine, NULL)) {
+            exit_code = NMO_CLI_EXIT_STRICT_FAILURE;
+        } else {
+            fprintf(stderr, "Error: Behavior engine failed (%s)\n", nmo_error_string(status));
+            exit_code = NMO_CLI_EXIT_INTERNAL_ERROR;
+        }
     }
     nmo_engine_set_trace(engine, NULL, NULL);
 
-    bool ok = state.ok && exit_code == NMO_CLI_EXIT_SUCCESS;
+    bool report = exit_code == NMO_CLI_EXIT_SUCCESS || exit_code == NMO_CLI_EXIT_STRICT_FAILURE;
+    bool ok = state.ok && report;
     ok = ok && nmo_cli_record_uint(rec, "frames", "Frames", nmo_engine_frame(engine));
     ok = ok && nmo_cli_record_real(rec, "delta_ms", "Frame time (ms)", args->delta_ms, "%.3f");
     ok = ok && nmo_cli_record_real(rec, "time_ms", "Time (ms)", nmo_engine_time(engine), "%.3f");
@@ -1508,16 +1547,20 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
                                    state.executions);
     ok = ok && nmo_cli_record_bool(rec, "exited", "Exited to system",
                                    nmo_engine_exit_requested(engine));
+    ok = ok && run_add_failure(rec, engine);
     ok = ok && run_add_unknown(rec, &state);
     ok = ok && run_add_physics(rec, &state);
     ok = ok && run_add_active_scripts(rec, engine);
 
-    if (exit_code == NMO_CLI_EXIT_SUCCESS) {
+    if (report) {
         if (!ok) {
             nmo_cli_record_free(rec);
             rec = NULL;
         }
-        exit_code = nmo_cmd_ctx_emit_record(ctx, rec, "behavior.run", 0, false);
+        int output_status = nmo_cmd_ctx_emit_record(ctx, rec, "behavior.run", 0, false);
+        if (output_status != NMO_CLI_EXIT_SUCCESS) {
+            exit_code = output_status;
+        }
     } else {
         nmo_cli_record_free(rec);
     }
@@ -1543,6 +1586,8 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
         {"--script", "-s", NMO_OPT_UINT, "Start only this script (reset)"},
         {"--unknown", NULL, NMO_OPT_STRING,
          "Building blocks without a function: stop or pass (default: stop)"},
+        {"--strict", NULL, NMO_OPT_FLAG,
+         "Exit with code 3 on an unknown block, execution error or iteration limit"},
         {"--max-iterations", NULL, NMO_OPT_UINT, "Iterations per graph and frame (default: 8000)"},
         {"--seed", NULL, NMO_OPT_UINT, "Random seed (default: 1)"},
         {"--trace", "-t", NMO_OPT_FLAG, "Show links, operations and graphs too"},
@@ -1579,7 +1624,7 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
         {"--quiet", "-q", NMO_OPT_FLAG,
          "List no events, only the summary (the default for a window played until it closes)"},
     };
-    enum { OPT_FRAMES, OPT_DELTA, OPT_START, OPT_SCRIPT, OPT_UNKNOWN, OPT_MAX_ITER, OPT_SEED,
+    enum { OPT_FRAMES, OPT_DELTA, OPT_START, OPT_SCRIPT, OPT_UNKNOWN, OPT_STRICT, OPT_MAX_ITER, OPT_SEED,
            OPT_TRACE, OPT_KEYS, OPT_STEER, OPT_STEER_OBJECT, OPT_STEER_LOG, OPT_PATH, OPT_WRITE, OPT_MESSAGE, OPT_REGISTRY, OPT_PHYSICS,
            OPT_WINDOW, OPT_SHOT, OPT_MUTE, OPT_MIPMAPS, OPT_QUIET, OPT_COUNT };
 
@@ -1616,6 +1661,7 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
     out->max_iterations = nmo_opt_uint_or(&vals[OPT_MAX_ITER], NMO_ENGINE_DEFAULT_MAX_ITERATIONS);
     out->seed = nmo_opt_uint_or(&vals[OPT_SEED], 1u);
     out->trace = nmo_opt_flag(&vals[OPT_TRACE]);
+    out->strict = nmo_opt_flag(&vals[OPT_STRICT]) || (c->global != NULL && c->global->strict_mode);
     out->keys = nmo_opt_str(&vals[OPT_KEYS]);
     out->steer = nmo_opt_str(&vals[OPT_STEER]);
     out->steer_objects = nmo_opt_str(&vals[OPT_STEER_OBJECT]);

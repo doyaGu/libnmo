@@ -87,6 +87,13 @@ add_integration_test(test_manager_lane_runtime_events)
 
 # CLI tests
 if(TARGET nmo_cli)
+    add_executable(test_cli_behavior_run test_cli_behavior_run.c)
+    target_link_libraries(test_cli_behavior_run PRIVATE nmo_bb_virtools nmo_bb_physics
+                          nmo_bb_terratools nmo_engine nmo_edit test_framework yyjson)
+    add_dependencies(test_cli_behavior_run nmo_cli)
+    target_compile_definitions(test_cli_behavior_run PRIVATE NMO_CLI_PATH="$<TARGET_FILE:nmo_cli>")
+    add_test(NAME test_cli_behavior_run COMMAND test_cli_behavior_run)
+
     add_executable(test_cli_behavior_graph test_cli_behavior_graph.c write_semantic_probe.c)
     target_link_libraries(test_cli_behavior_graph PRIVATE nmo test_framework yyjson)
     add_dependencies(test_cli_behavior_graph nmo_cli)

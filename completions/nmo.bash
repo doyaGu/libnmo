@@ -163,7 +163,7 @@ _nmo() {
             behavior/f/) echo '--name --guid --param-type --op-type --scripts --bbs' ;;
             behavior/trace/) echo '--from --max-depth' ;;
             behavior/tr/) echo '--from --max-depth' ;;
-            behavior/run/) echo '-n --frames --delta --start -s --script --unknown --max-iterations --seed -t --trace -k --keys' ;;
+            behavior/run/) echo '-n --frames --delta --start -s --script --unknown --strict --max-iterations --seed -t --trace -k --keys' ;;
             behavior/add-link/) echo '-p --parent --from --to -d --delay -o --output --dry-run' ;;
             behavior/remove-link/) echo '-p --parent -o --output --dry-run' ;;
             behavior/interface/) echo '' ;;

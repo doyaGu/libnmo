@@ -671,6 +671,7 @@ static void behavior_run_usage(FILE *out) {
     fprintf(out, "  --start <mode>            Scripts to start: scene, all or none (default: scene)\n");
     fprintf(out, "  -s, --script <id>         Start only this script (reset)\n");
     fprintf(out, "  --unknown <mode>          Blocks without a function: stop or pass (default: stop)\n");
+    fprintf(out, "  --strict                  Stop on an unknown block, execution error or iteration limit; exit 3\n");
     fprintf(out, "  --max-iterations <n>      Iterations per graph and frame (default: 8000)\n");
     fprintf(out, "  --seed <n>                Random seed (default: 1)\n");
     fprintf(out, "  -t, --trace               Show links, operations and graphs too\n");
