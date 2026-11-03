@@ -30,6 +30,7 @@ typedef struct eng_entity {
     eng_matrix_t local;
     uint32_t moveable_flags;
     float animation_lod; /* CKCharacter's runtime animation LOD; initially one */
+    nmo_object_id_t exclusive_animation; /* BodyPart's secondary animation gate */
     int32_t parent;
     int32_t first_child, last_child;
     int32_t next_sibling, prev_sibling;
@@ -113,6 +114,7 @@ int eng_entity_ray_intersection(nmo_engine_t *engine, int32_t index, const eng_v
 /* CKObjectAnimation::SetStep: its entity's local pose at `step` (0..1);
  * false when no target or a missing transform channel cannot be recovered. */
 bool eng_object_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animation, float step);
+bool eng_object_animation_apply_step(nmo_engine_t *engine, nmo_object_id_t animation, float step, nmo_object_id_t keyed);
 /* CKAnimation::SetStep: an object animation's, or each of a keyed animation's */
 bool eng_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animation, float step);
 

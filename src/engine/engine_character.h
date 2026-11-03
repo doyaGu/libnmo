@@ -4,10 +4,17 @@
 #include "engine_base.h"
 
 typedef struct eng_range eng_range_t;
+typedef struct eng_secondary_animation {
+    nmo_object_id_t id;
+    uint32_t flags, loops;
+    ENG_VEC(nmo_object_id_t) bodies;
+} eng_secondary_animation_t;
+
 typedef struct eng_character {
     nmo_object_id_t id, root, active, next;
     float frame_dest;
     bool automatic;
+    ENG_VEC(eng_secondary_animation_t) secondary;
 } eng_character_t;
 
 typedef struct eng_characters {
@@ -23,6 +30,12 @@ nmo_status_t eng_character_set_active_animation(nmo_engine_t *engine, nmo_object
 nmo_status_t eng_character_set_next_animation(nmo_engine_t *engine, nmo_object_id_t character, nmo_object_id_t animation, uint32_t mode);
 nmo_status_t eng_character_process(nmo_engine_t *engine, nmo_object_id_t character, float delta);
 bool eng_character_automatic(nmo_engine_t *engine, nmo_object_id_t character);
+nmo_status_t eng_character_play_secondary(nmo_engine_t *engine, nmo_object_id_t character,
+                                          nmo_object_id_t animation, float frame, uint32_t flags, uint32_t loops);
+nmo_status_t eng_character_stop_secondary(nmo_engine_t *engine, nmo_object_id_t character, nmo_object_id_t animation);
+void eng_character_flush_secondary(nmo_engine_t *engine, nmo_object_id_t character);
+size_t eng_character_secondary_count(nmo_engine_t *engine, nmo_object_id_t character);
+nmo_object_id_t eng_character_secondary_animation(nmo_engine_t *engine, nmo_object_id_t character, size_t index);
 void eng_copy_character(nmo_engine_t *engine, nmo_object_id_t source, nmo_object_id_t target,
                           const nmo_object_id_t *originals, const nmo_object_id_t *copies, size_t count, bool copy_next);
 

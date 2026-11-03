@@ -6,6 +6,7 @@
 
 const nmo_animation_state_t *eng_animation_state(const nmo_engine_t *engine, nmo_object_id_t animation)
 {
+    if (eng_map_get(&engine->destroyed, animation) >= 0) return NULL;
     nmo_object_t *object = eng_find_object(engine, animation);
     uint32_t type = object != NULL ? nmo_object_get_class_id(object) : 0;
     return type == NMO_CID_ANIMATION || type == NMO_CID_KEYEDANIMATION ? nmo_object_get_state(object) : NULL;

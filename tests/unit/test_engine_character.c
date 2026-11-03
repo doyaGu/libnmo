@@ -77,6 +77,16 @@ static void prepare(nmo_engine_t *engine, nmo_object_id_t animation)
     ASSERT_TRUE(eng_animation_set_frame(engine, animation, 0));
 }
 
+static nmo_object_id_t limb(engine_fixture_t *f, nmo_object_id_t actor)
+{
+    nmo_object_id_t id = fixture_create(f,NMO_CID_BODYPART,"Limb");
+    nmo_bodypart_state_t *part = fixture_state(f,id);
+    ((nmo_3dentity_state_t *)part)->parent = nmo_ref_from_id(actor);
+    part->has_character = 1;
+    part->character = nmo_ref_from_id(actor);
+    return id;
+}
+
 TEST(engine_character, clocks_restore_saved_cursors_and_separate_cursor_updates_from_pose)
 {
     engine_fixture_t f;
@@ -384,6 +394,243 @@ TEST(engine_character, copied_characters_remap_the_live_primary_and_keep_indepen
     fixture_end(&f);
 }
 
+TEST(engine_character, secondary_one_shots_hold_exact_endpoints_and_expire_without_a_forward_terminal_sample)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t root, actor = character(&f,&root), bone = limb(&f,actor);
+    nmo_object_id_t a = clip(&f,"Secondary",actor,bone,10,0,10);
+    fixture_begin_edit(&f);
+    fixture_commit_bare(&f,NULL);
+    ASSERT_EQ(NMO_OK,eng_character_play_secondary(f.engine,actor,a,3,CKSECONDARYANIMATION_ONESHOT,0));
+    ASSERT_FLOAT_EQ(3,x(f.engine,bone),0);
+    ASSERT_EQ(NMO_OK,eng_character_process(f.engine,actor,7));
+    ASSERT_EQ(1,eng_character_secondary_count(f.engine,actor));
+    ASSERT_FLOAT_EQ(10,x(f.engine,bone),0);
+    ASSERT_EQ(NMO_OK,eng_character_process(f.engine,actor,1));
+    ASSERT_EQ(0,eng_character_secondary_count(f.engine,actor));
+    ASSERT_EQ(NMO_OK,eng_character_play_secondary(f.engine,actor,a,3,0,0));
+    ASSERT_EQ(NMO_OK,eng_character_process(f.engine,actor,100));
+    ASSERT_EQ(0,eng_character_secondary_count(f.engine,actor));
+    ASSERT_FLOAT_EQ(3,frame(f.engine,a),0);
+    ASSERT_FLOAT_EQ(3,x(f.engine,bone),0);
+    fixture_end(&f);
+}
+
+TEST(engine_character, secondary_loops_consume_large_overruns_and_finite_counts_hold_the_terminal_pose)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t root, actor = character(&f,&root), bone = limb(&f,actor);
+    nmo_object_id_t a = clip(&f,"Loop",actor,bone,10,0,10);
+    fixture_begin_edit(&f);
+    fixture_commit_bare(&f,NULL);
+    ASSERT_EQ(NMO_OK,eng_character_play_secondary(f.engine,actor,a,0,CKSECONDARYANIMATION_LOOP,0));
+    ASSERT_EQ(NMO_OK,eng_character_process(f.engine,actor,30));
+    ASSERT_FLOAT_EQ(10,frame(f.engine,a),0);
+    ASSERT_EQ(NMO_OK,eng_character_process(f.engine,actor,2));
+    ASSERT_FLOAT_EQ(2,frame(f.engine,a),1e-6f);
+    eng_character_flush_secondary(f.engine,actor);
+    ASSERT_EQ(NMO_OK,eng_character_play_secondary(f.engine,actor,a,0,CKSECONDARYANIMATION_LOOPNTIMES|CKSECONDARYANIMATION_LASTFRAME,3));
+    ASSERT_EQ(NMO_OK,eng_character_process(f.engine,actor,20));
+    ASSERT_FLOAT_EQ(10,frame(f.engine,a),0);
+    ASSERT_EQ(NMO_OK,eng_character_process(f.engine,actor,9));
+    ASSERT_FLOAT_EQ(9,frame(f.engine,a),1e-6f);
+    ASSERT_EQ(NMO_OK,eng_character_process(f.engine,actor,2));
+    ASSERT_FLOAT_EQ(10,frame(f.engine,a),0);
+    ASSERT_EQ(1,eng_character_secondary_count(f.engine,actor));
+    ASSERT_EQ(NMO_OK,eng_character_process(f.engine,actor,FLT_MAX));
+    ASSERT_FLOAT_EQ(10,frame(f.engine,a),0);
+    eng_character_flush_secondary(f.engine,actor);
+    ASSERT_EQ(NMO_OK,eng_character_play_secondary(f.engine,actor,a,2,CKSECONDARYANIMATION_LOOPNTIMES,UINT32_MAX));
+    ASSERT_EQ(NMO_OK,eng_character_process(f.engine,actor,FLT_MAX));
+    ASSERT_EQ(0,eng_character_secondary_count(f.engine,actor));
+    ASSERT_FLOAT_EQ(2,x(f.engine,bone),1e-6f);
+    fixture_end(&f);
+}
+
+TEST(engine_character, secondary_reverse_unlinked_and_zero_length_playback_keep_strict_boundaries)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t root, actor = character(&f,&root), bone = limb(&f,actor);
+    nmo_object_id_t reverse = clip(&f,"Reverse",actor,bone,10,0,10);
+    nmo_object_id_t unlinked = clip(&f,"Unlinked",actor,bone,2,20,22);
+    nmo_object_id_t zero = clip(&f,"Zero",actor,bone,0,30,30);
+    ((nmo_keyedanimation_state_t *)fixture_state(&f,reverse))->base.frame_rate = -1000;
+    ((nmo_keyedanimation_state_t *)fixture_state(&f,unlinked))->base.flags = 0;
+    fixture_begin_edit(&f);
+    fixture_commit_bare(&f,NULL);
+    ASSERT_EQ(NMO_OK,eng_character_play_secondary(f.engine,actor,reverse,2,CKSECONDARYANIMATION_LOOP,0));
+    ASSERT_EQ(NMO_OK,eng_character_process(f.engine,actor,22));
+    ASSERT_FLOAT_EQ(0,frame(f.engine,reverse),0);
+    ASSERT_EQ(NMO_OK,eng_character_process(f.engine,actor,1));
+    ASSERT_FLOAT_EQ(9,frame(f.engine,reverse),1e-6f);
+    ASSERT_EQ(NMO_OK,eng_character_stop_secondary(f.engine,actor,reverse));
+    ASSERT_EQ(NMO_OK,eng_character_play_secondary(f.engine,actor,reverse,2,CKSECONDARYANIMATION_ONESHOT,0));
+    ASSERT_EQ(NMO_OK,eng_character_process(f.engine,actor,3));
+    ASSERT_EQ(0,eng_character_secondary_count(f.engine,actor));
+    ASSERT_FLOAT_EQ(0,x(f.engine,bone),0);
+    ASSERT_EQ(NMO_OK,eng_character_play_secondary(f.engine,actor,unlinked,0,0,0));
+    ASSERT_EQ(NMO_OK,eng_character_process(f.engine,actor,0));
+    ASSERT_FLOAT_EQ(1,frame(f.engine,unlinked),0);
+    ASSERT_EQ(NMO_OK,eng_character_process(f.engine,actor,0));
+    ASSERT_FLOAT_EQ(2,frame(f.engine,unlinked),0);
+    ASSERT_EQ(1,eng_character_secondary_count(f.engine,actor));
+    ASSERT_EQ(NMO_OK,eng_character_process(f.engine,actor,0));
+    ASSERT_EQ(0,eng_character_secondary_count(f.engine,actor));
+    ASSERT_EQ(NMO_OK,eng_character_play_secondary(f.engine,actor,zero,0,CKSECONDARYANIMATION_LOOPNTIMES,2));
+    ASSERT_EQ(NMO_OK,eng_character_process(f.engine,actor,1));
+    ASSERT_EQ(1,eng_character_secondary_count(f.engine,actor));
+    ASSERT_EQ(NMO_OK,eng_character_process(f.engine,actor,1));
+    ASSERT_EQ(0,eng_character_secondary_count(f.engine,actor));
+    fixture_end(&f);
+}
+
+TEST(engine_character, secondary_bones_exclude_other_clips_and_release_only_their_own_gates)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t root, actor = character(&f,&root), bone = limb(&f,actor);
+    nmo_object_id_t a = clip(&f,"Older",actor,bone,10,10,20);
+    nmo_object_id_t b = clip(&f,"Newer",actor,bone,10,20,30);
+    nmo_object_id_t other = clip(&f,"Other",actor,bone,10,100,110);
+    const nmo_keyedanimation_state_t *state = fixture_state(&f,other);
+    nmo_object_id_t channel = nmo_ref_runtime_id(&state->animation_ids[0]);
+    fixture_begin_edit(&f);
+    fixture_commit_bare(&f,NULL);
+    ASSERT_EQ(NMO_OK,eng_character_play_secondary(f.engine,actor,a,1,CKSECONDARYANIMATION_LOOP,0));
+    ASSERT_FLOAT_EQ(11,x(f.engine,bone),1e-6f);
+    ASSERT_TRUE(eng_animation_set_frame(f.engine,other,5));
+    ASSERT_TRUE(eng_object_animation_set_step(f.engine,channel,1));
+    ASSERT_FLOAT_EQ(11,x(f.engine,bone),1e-6f);
+    ASSERT_EQ(NMO_OK,eng_character_play_secondary(f.engine,actor,b,2,CKSECONDARYANIMATION_LOOP,0));
+    /* The older gate blocks B's entry pose; B owns the next processed pose. */
+    ASSERT_FLOAT_EQ(11,x(f.engine,bone),1e-6f);
+    ASSERT_EQ(NMO_OK,eng_character_stop_secondary(f.engine,actor,a));
+    ASSERT_TRUE(eng_animation_set_frame(f.engine,other,5));
+    ASSERT_FLOAT_EQ(11,x(f.engine,bone),1e-6f);
+    ASSERT_EQ(NMO_OK,eng_character_process(f.engine,actor,1));
+    ASSERT_FLOAT_EQ(23,x(f.engine,bone),1e-6f);
+    ASSERT_EQ(NMO_OK,eng_character_play_secondary(f.engine,actor,b,9,0,0));
+    ASSERT_FLOAT_EQ(3,frame(f.engine,b),1e-6f);
+    ASSERT_EQ(1,eng_character_secondary_count(f.engine,actor));
+    eng_character_flush_secondary(f.engine,actor);
+    ASSERT_TRUE(eng_object_animation_set_step(f.engine,channel,1));
+    ASSERT_FLOAT_EQ(110,x(f.engine,bone),0);
+    fixture_end(&f);
+}
+
+TEST(engine_character, secondary_removal_processes_shifted_entries_and_releases_deleted_channels)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t root, actor = character(&f,&root), bone = limb(&f,actor);
+    nmo_object_id_t a = clip(&f,"Short",actor,bone,1,0,1);
+    nmo_object_id_t b = clip(&f,"Long",actor,bone,10,10,20);
+    nmo_object_id_t other = clip(&f,"Other",actor,bone,10,100,110);
+    const nmo_keyedanimation_state_t *state = fixture_state(&f,b);
+    nmo_object_id_t channel = nmo_ref_runtime_id(&state->animation_ids[0]);
+    fixture_begin_edit(&f);
+    fixture_commit_bare(&f,NULL);
+    ASSERT_EQ(NMO_OK,eng_character_play_secondary(f.engine,actor,a,0,0,0));
+    ASSERT_EQ(NMO_OK,eng_character_play_secondary(f.engine,actor,b,0,CKSECONDARYANIMATION_LOOP,0));
+    ASSERT_EQ(NMO_OK,eng_character_process(f.engine,actor,2));
+    ASSERT_EQ(1,eng_character_secondary_count(f.engine,actor));
+    ASSERT_EQ(b,eng_character_secondary_animation(f.engine,actor,0));
+    ASSERT_EQ(0,eng_character_secondary_animation(f.engine,actor,1));
+    ASSERT_FLOAT_EQ(12,x(f.engine,bone),1e-6f);
+    nmo_engine_destroy_object(f.engine,channel);
+    ASSERT_EQ(NMO_OK,eng_character_stop_secondary(f.engine,actor,b));
+    ASSERT_TRUE(eng_animation_set_frame(f.engine,other,5));
+    ASSERT_FLOAT_EQ(105,x(f.engine,bone),0);
+    ASSERT_EQ(NMO_OK,eng_character_play_secondary(f.engine,actor,a,0,CKSECONDARYANIMATION_LOOP,0));
+    nmo_engine_destroy_object(f.engine,a);
+    ASSERT_EQ(NMO_OK,eng_character_process(f.engine,actor,2));
+    ASSERT_EQ(0,eng_character_secondary_count(f.engine,actor));
+    ASSERT_TRUE(eng_animation_set_frame(f.engine,other,10));
+    ASSERT_FLOAT_EQ(110,x(f.engine,bone),0);
+    fixture_end(&f);
+}
+
+TEST(engine_character, secondary_presets_and_invalid_requests_preserve_existing_playback)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t root, actor = character(&f,&root), bone = limb(&f,actor);
+    nmo_object_id_t foreign_root, foreign = character(&f,&foreign_root);
+    nmo_object_id_t a = clip(&f,"Preset",actor,bone,10,0,10);
+    nmo_object_id_t b = clip(&f,"Warp",actor,bone,10,20,30);
+    ((nmo_keyedanimation_state_t *)fixture_state(&f,a))->base.flags |= CKSECONDARYANIMATION_LASTFRAME<<16;
+    fixture_begin_edit(&f);
+    fixture_commit_bare(&f,NULL);
+    ASSERT_EQ(NMO_OK,eng_character_play_secondary(f.engine,actor,a,4,CKSECONDARYANIMATION_FROMANIMATION,0));
+    ASSERT_EQ(NMO_ERR_NOT_SUPPORTED,eng_character_play_secondary(f.engine,actor,b,8,CKSECONDARYANIMATION_DOWARP,0));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,eng_character_play_secondary(f.engine,foreign,a,0,0,0));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,eng_character_stop_secondary(f.engine,foreign,a));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,eng_character_play_secondary(f.engine,actor,b,NAN,0,0));
+    ASSERT_FLOAT_EQ(4,x(f.engine,bone),0);
+    ASSERT_FLOAT_EQ(0,frame(f.engine,b),0);
+    ASSERT_EQ(1,eng_character_secondary_count(f.engine,actor));
+    ASSERT_EQ(NMO_OK,eng_character_process(f.engine,actor,100));
+    ASSERT_FLOAT_EQ(10,x(f.engine,bone),0);
+    ASSERT_EQ(1,eng_character_secondary_count(f.engine,actor));
+    fixture_end(&f);
+}
+
+TEST(engine_character, secondary_gates_are_copied_and_remapped_without_copying_playback_slots)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t root, actor = character(&f,&root), bone = limb(&f,actor);
+    nmo_object_id_t a = clip(&f,"Secondary",actor,bone,10,0,10);
+    nmo_object_id_t other = clip(&f,"Other",actor,bone,10,100,110);
+    fixture_begin_edit(&f);
+    fixture_commit_bare(&f,NULL);
+    ASSERT_EQ(NMO_OK,eng_character_play_secondary(f.engine,actor,a,2,CKSECONDARYANIMATION_LOOP,0));
+    nmo_object_id_t originals[] = {actor,bone,a,other}, copies[COUNT(originals)] = {0};
+    ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(f.engine,originals,COUNT(originals),false,copies));
+    ASSERT_EQ(0,eng_character_secondary_count(f.engine,copies[0]));
+    ASSERT_TRUE(eng_animation_set_frame(f.engine,copies[3],5));
+    ASSERT_FLOAT_EQ(2,x(f.engine,copies[1]),1e-6f);
+    ASSERT_EQ(NMO_OK,eng_character_stop_secondary(f.engine,actor,a));
+    ASSERT_TRUE(eng_animation_set_frame(f.engine,other,5));
+    ASSERT_FLOAT_EQ(105,x(f.engine,bone),0);
+    ASSERT_TRUE(eng_animation_set_frame(f.engine,copies[3],5));
+    ASSERT_FLOAT_EQ(2,x(f.engine,copies[1]),1e-6f);
+    nmo_engine_destroy_object(f.engine,copies[2]);
+    ASSERT_TRUE(eng_animation_set_frame(f.engine,copies[3],5));
+    ASSERT_FLOAT_EQ(105,x(f.engine,copies[1]),0);
+    fixture_end(&f);
+}
+
+TEST(engine_character, automatic_processing_advances_primary_then_secondary_and_plain_entities_have_no_gate)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t root, actor = character(&f,&root), bone = limb(&f,actor);
+    nmo_object_id_t primary = clip(&f,"Primary",actor,root,10,0,0);
+    nmo_object_id_t secondary = clip(&f,"Secondary",actor,bone,10,20,30);
+    nmo_object_id_t plain = fixture_create(&f,NMO_CID_3DENTITY,"Plain");
+    nmo_object_id_t plain_a = clip(&f,"Plain A",actor,plain,10,0,10);
+    nmo_object_id_t plain_b = clip(&f,"Plain B",actor,plain,10,100,110);
+    nmo_character_state_t *state = fixture_state(&f,actor);
+    state->base.entity_flags |= CK_3DENTITY_CHARACTERDOPROCESS;
+    state->active_animation = nmo_ref_from_id(primary);
+    fixture_begin_edit(&f);
+    fixture_commit_bare(&f,NULL);
+    ASSERT_EQ(NMO_OK,nmo_engine_start(f.engine,NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK,eng_character_play_secondary(f.engine,actor,secondary,2,CKSECONDARYANIMATION_LOOP,0));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,3));
+    ASSERT_FLOAT_EQ(3,frame(f.engine,primary),1e-6f);
+    ASSERT_FLOAT_EQ(5,frame(f.engine,secondary),0);
+    ASSERT_FLOAT_EQ(25,x(f.engine,bone),0);
+    ASSERT_EQ(NMO_OK,eng_character_play_secondary(f.engine,actor,plain_a,2,CKSECONDARYANIMATION_LOOP,0));
+    ASSERT_TRUE(eng_animation_set_frame(f.engine,plain_b,5));
+    ASSERT_FLOAT_EQ(105,x(f.engine,plain),0);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_character, clocks_restore_saved_cursors_and_separate_cursor_updates_from_pose);
 REGISTER_TEST(engine_character, linked_unlinked_paused_and_reverse_clocks_follow_native_frame_rules);
@@ -396,4 +643,12 @@ REGISTER_TEST(engine_character, terminal_yaw_is_transferred_after_motion_in_the_
 REGISTER_TEST(engine_character, automatic_scriptless_characters_run_each_frame_and_respect_object_activity);
 REGISTER_TEST(engine_character, automatic_processing_precedes_the_characters_own_script);
 REGISTER_TEST(engine_character, copied_characters_remap_the_live_primary_and_keep_independent_clocks);
+REGISTER_TEST(engine_character, secondary_one_shots_hold_exact_endpoints_and_expire_without_a_forward_terminal_sample);
+REGISTER_TEST(engine_character, secondary_loops_consume_large_overruns_and_finite_counts_hold_the_terminal_pose);
+REGISTER_TEST(engine_character, secondary_reverse_unlinked_and_zero_length_playback_keep_strict_boundaries);
+REGISTER_TEST(engine_character, secondary_bones_exclude_other_clips_and_release_only_their_own_gates);
+REGISTER_TEST(engine_character, secondary_removal_processes_shifted_entries_and_releases_deleted_channels);
+REGISTER_TEST(engine_character, secondary_presets_and_invalid_requests_preserve_existing_playback);
+REGISTER_TEST(engine_character, secondary_gates_are_copied_and_remapped_without_copying_playback_slots);
+REGISTER_TEST(engine_character, automatic_processing_advances_primary_then_secondary_and_plain_entities_have_no_gate);
 TEST_MAIN_END()

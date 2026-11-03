@@ -909,7 +909,7 @@ void eng_animation_yaw(nmo_engine_t *engine, nmo_object_id_t animation, float fr
     else eng_matrix_identity(out);
 }
 
-bool eng_object_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animation, float step)
+bool eng_object_animation_apply_step(nmo_engine_t *engine, nmo_object_id_t animation, float step, nmo_object_id_t keyed)
 {
     eng_animation_source_t source;
     if (!eng_animation_source(engine, animation, &source)) return false;
@@ -919,6 +919,8 @@ bool eng_object_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animati
         return false; /* CKERR_NOTINITIALIZED */
     }
     if (engine->entities.data[entity].moveable_flags & CK_3DENTITY_IGNOREANIMATION) return true;
+    nmo_object_id_t exclusive = engine->entities.data[entity].exclusive_animation;
+    if (exclusive != 0 && exclusive != keyed && eng_animation_state(engine, exclusive) != NULL) return true;
     float frame = step * source.length;
     anim_value_t axis, rotation, position, scaling;
     bool has_axis = anim_sample(engine, animation, ANIM_AXIS, frame, &axis);
@@ -988,6 +990,11 @@ bool eng_object_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animati
     eng_entity_set_local_matrix(engine, entity, &local, false);
     eng_animation_morph(engine, animation, engine->entities.data[entity].id, frame);
     return true;
+}
+
+bool eng_object_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animation, float step)
+{
+    return eng_object_animation_apply_step(engine, animation, step, 0);
 }
 
 bool eng_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animation, float step)

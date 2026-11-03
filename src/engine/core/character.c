@@ -1,4 +1,4 @@
-/* CKCharacter's non-warp primary playback and root-motion handoff. */
+/* CKCharacter's non-warp playback, root-motion handoff and secondary gates. */
 #include "../engine_internal.h"
 #include "object/builtin/nmo_character_schemas.h"
 #include "object/nmo_class_ids.h"
@@ -7,6 +7,7 @@
 
 static const nmo_character_state_t *character_state(const nmo_engine_t *engine, nmo_object_id_t id)
 {
+    if (eng_map_get(&engine->destroyed, id) >= 0) return NULL;
     nmo_object_t *object = eng_find_object(engine, id);
     return object != NULL && nmo_object_get_class_id(object) == NMO_CID_CHARACTER ? nmo_object_get_state(object) : NULL;
 }
@@ -69,6 +70,11 @@ nmo_status_t eng_load_characters(nmo_engine_t *engine, const eng_range_t *range)
 
 void eng_free_characters(nmo_engine_t *engine)
 {
+    for (size_t i = 0; i < engine->characters.entries.count; i++) {
+        eng_character_t *runtime = &engine->characters.entries.data[i];
+        for (size_t j = 0; j < runtime->secondary.count; j++) free(runtime->secondary.data[j].bodies.data);
+        free(runtime->secondary.data);
+    }
     free(engine->characters.entries.data);
     free(engine->characters.map.slots);
 }
@@ -207,7 +213,7 @@ static void character_terminal(nmo_engine_t *engine, eng_character_t *runtime, f
         eng_animation_position(engine, channel, current, &from);
         eng_animation_position(engine, channel, endpoint, &to);
         float length = eng_animation_length(eng_animation_state(engine, runtime->active));
-        eng_object_animation_set_step(engine, channel, endpoint == 0 || length <= 0 ? 0 : 1);
+        eng_object_animation_apply_step(engine, channel, endpoint == 0 || length <= 0 ? 0 : 1, runtime->active);
         eng_entity_set_position(engine, root, &position, -1, false);
         eng_vector_t delta = {to.x-from.x,to.y-from.y,to.z-from.z};
         eng_entity_translate(engine, root, &delta, actor, false);
@@ -228,6 +234,151 @@ static float character_remainder(const nmo_animation_state_t *source, const nmo_
         if (b) remaining *= delta*target->frame_rate*0.001f;
     }
     return remaining;
+}
+
+static bool character_secondary_bodies(nmo_engine_t *engine, eng_secondary_animation_t *entry)
+{
+    if (!character_keyed(engine, entry->id)) return true;
+    const nmo_keyedanimation_state_t *state = nmo_object_get_state(eng_find_object(engine, entry->id));
+    for (uint32_t i = 0; state->animation_ids != NULL && i < state->animation_count; i++) {
+        nmo_object_id_t channel = eng_object_ref(engine, entry->id, &state->animation_ids[i]);
+        nmo_object_t *object = eng_find_object(engine, channel);
+        if (object == NULL || nmo_object_get_class_id(object) != NMO_CID_OBJECTANIMATION) continue;
+        const nmo_objectanimation_state_t *part = nmo_object_get_state(object);
+        nmo_object_id_t body = eng_object_ref(engine, channel, &part->entity);
+        if (!nmo_type_registry_is_class_derived_from(engine->types, nmo_engine_object_class(engine, body), NMO_CID_BODYPART)) continue;
+        nmo_object_id_t *slot = NULL;
+        if (!ENG_VEC_PUSH(entry->bodies, slot)) return false;
+        *slot = body;
+    }
+    return true;
+}
+
+/* Retain the claimed targets so deleting a channel cannot leave a stale gate.
+ * Releasing an older secondary must preserve a later secondary's ownership. */
+static void character_secondary_gate(nmo_engine_t *engine, const eng_secondary_animation_t *entry, bool claim)
+{
+    for (size_t i = 0; i < entry->bodies.count; i++) {
+        int32_t body = eng_entity_index(engine, entry->bodies.data[i]);
+        if (body < 0) continue;
+        if (claim || engine->entities.data[body].exclusive_animation == entry->id) {
+            engine->entities.data[body].exclusive_animation = claim ? entry->id : 0;
+        }
+    }
+}
+
+static void character_remove_secondary(nmo_engine_t *engine, eng_character_t *runtime, size_t index)
+{
+    character_secondary_gate(engine, &runtime->secondary.data[index], false);
+    free(runtime->secondary.data[index].bodies.data);
+    runtime->secondary.count--;
+    memmove(&runtime->secondary.data[index], &runtime->secondary.data[index+1],
+            (runtime->secondary.count-index)*sizeof(*runtime->secondary.data));
+}
+
+nmo_status_t eng_character_play_secondary(nmo_engine_t *engine, nmo_object_id_t character,
+                                          nmo_object_id_t animation, float frame, uint32_t flags, uint32_t loops)
+{
+    eng_character_t *runtime = character_runtime(engine, character);
+    const nmo_animation_state_t *state = eng_animation_state(engine, animation);
+    if (runtime == NULL || state == NULL || eng_object_ref(engine, animation, &state->character) != character || !isfinite(frame)) return NMO_ERR_INVALID_ARGUMENT;
+    if (flags & CKSECONDARYANIMATION_FROMANIMATION) {
+        uint32_t preset = (state->flags & CKANIMATION_SECONDARY_ALL) >> 16;
+        if (preset != 0) flags = preset;
+    }
+    for (size_t i = 0; i < runtime->secondary.count; i++) if (runtime->secondary.data[i].id == animation) return NMO_OK;
+    if (flags & CKSECONDARYANIMATION_DOWARP) return NMO_ERR_NOT_SUPPORTED;
+    float length = eng_animation_length(state);
+    if (!isfinite(length) || length < 0) return NMO_ERR_VALIDATION_FAILED;
+    eng_secondary_animation_t entry = {.id=animation,.flags=flags,.loops=loops};
+    if (!character_secondary_bodies(engine, &entry) ||
+        !eng_vec_reserve((void **)&runtime->secondary.data, &runtime->secondary.capacity,
+                         runtime->secondary.count+1, sizeof(*runtime->secondary.data))) {
+        free(entry.bodies.data);
+        return NMO_ERR_NOMEM;
+    }
+    /* The entry pose is sampled before claiming exclusive bone ownership. */
+    if (!eng_animation_set_frame(engine, animation, frame)) { free(entry.bodies.data); return NMO_ERR_VALIDATION_FAILED; }
+    character_secondary_gate(engine, &entry, true);
+    runtime->secondary.data[runtime->secondary.count++] = entry;
+    return NMO_OK;
+}
+
+nmo_status_t eng_character_stop_secondary(nmo_engine_t *engine, nmo_object_id_t character, nmo_object_id_t animation)
+{
+    eng_character_t *runtime = character_runtime(engine, character);
+    if (runtime == NULL || animation == 0) return NMO_ERR_INVALID_ARGUMENT;
+    const nmo_animation_state_t *state = eng_animation_state(engine, animation);
+    if (state != NULL && eng_object_ref(engine, animation, &state->character) != character) return NMO_ERR_INVALID_ARGUMENT;
+    for (size_t i = 0; i < runtime->secondary.count; i++) {
+        if (runtime->secondary.data[i].id == animation) { character_remove_secondary(engine, runtime, i); return NMO_OK; }
+    }
+    return state != NULL ? NMO_OK : NMO_ERR_INVALID_ARGUMENT;
+}
+
+void eng_character_flush_secondary(nmo_engine_t *engine, nmo_object_id_t character)
+{
+    eng_character_t *runtime = character_runtime(engine, character);
+    if (runtime != NULL) while (runtime->secondary.count != 0) character_remove_secondary(engine, runtime, runtime->secondary.count-1);
+}
+
+size_t eng_character_secondary_count(nmo_engine_t *engine, nmo_object_id_t character)
+{
+    eng_character_t *runtime = character_runtime(engine, character);
+    return runtime != NULL ? runtime->secondary.count : 0;
+}
+
+nmo_object_id_t eng_character_secondary_animation(nmo_engine_t *engine, nmo_object_id_t character, size_t index)
+{
+    eng_character_t *runtime = character_runtime(engine, character);
+    return runtime != NULL && index < runtime->secondary.count ? runtime->secondary.data[index].id : 0;
+}
+
+static nmo_status_t character_process_secondary(nmo_engine_t *engine, eng_character_t *runtime, float delta)
+{
+    for (size_t i = 0; i < runtime->secondary.count;) {
+        eng_secondary_animation_t *entry = &runtime->secondary.data[i];
+        const nmo_animation_state_t *state = eng_animation_state(engine, entry->id);
+        if (state == NULL) { character_remove_secondary(engine, runtime, i); continue; }
+        float length = eng_animation_length(state), next;
+        if (!isfinite(length) || length < 0 || !eng_animation_next_frame(engine, entry->id, delta, &next)) return NMO_ERR_VALIDATION_FAILED;
+        bool reverse_end = next < 0;
+        if (!reverse_end && next <= length) {
+            if (!eng_animation_set_frame(engine, entry->id, next)) return NMO_ERR_VALIDATION_FAILED;
+            i++;
+            continue;
+        }
+        float terminal = reverse_end ? 0 : length;
+        float loop_frame = reverse_end ? next : next-length;
+        double completed = 1;
+        if (length > 0 && (entry->flags & (CKSECONDARYANIMATION_LOOP | CKSECONDARYANIMATION_LOOPNTIMES))) {
+            loop_frame = fmodf(next, length);
+            if (reverse_end) {
+                completed = ceil(-(double)next/length);
+                if (loop_frame < 0) loop_frame += length;
+            } else {
+                completed = floor((double)next/length);
+                if (loop_frame == 0) { loop_frame = length; completed -= 1; }
+            }
+        }
+        bool remove = false;
+        float pose = terminal;
+        if (entry->flags & CKSECONDARYANIMATION_LOOP) pose = loop_frame;
+        else if (entry->flags & CKSECONDARYANIMATION_LOOPNTIMES) {
+            if (completed < entry->loops) { entry->loops -= (uint32_t)completed; pose = loop_frame; }
+            else {
+                entry->loops = 0;
+                if (entry->flags & CKSECONDARYANIMATION_LASTFRAME) entry->flags &= ~CKSECONDARYANIMATION_LOOPNTIMES;
+                else remove = true;
+            }
+        } else if (!(entry->flags & CKSECONDARYANIMATION_LASTFRAME)) remove = true;
+        /* Forward one-shots keep the last applied pose on expiry; reverse
+         * playback samples its first pose before releasing its bones. */
+        if ((!remove || reverse_end) && !eng_animation_set_frame(engine, entry->id, remove ? 0 : pose)) return NMO_ERR_VALIDATION_FAILED;
+        if (remove) character_remove_secondary(engine, runtime, i);
+        else i++;
+    }
+    return NMO_OK;
 }
 
 nmo_status_t eng_character_process(nmo_engine_t *engine, nmo_object_id_t character, float delta)
@@ -294,6 +445,8 @@ nmo_status_t eng_character_process(nmo_engine_t *engine, nmo_object_id_t charact
             }
         }
     }
+    nmo_status_t status = character_process_secondary(engine, runtime, delta);
+    if (status != NMO_OK) return status;
     int32_t actor = eng_entity_index(engine, character);
     if (actor >= 0) engine->entities.data[actor].moveable_flags &= ~VX_MOVEABLE_CHARACTERRENDERED;
     return NMO_OK;

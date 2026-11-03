@@ -294,7 +294,7 @@ bool eng_keyed_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animatio
     }
     step = step > 1 ? 1 : step < 0 ? 0 : step;
     for (size_t i = 0; i < count; i++) {
-        eng_object_animation_set_step(engine, runtime->order.data[i].id, step);
+        eng_object_animation_apply_step(engine, runtime->order.data[i].id, step, animation);
     }
     return eng_animation_set_current_step(engine, animation, step);
 }
