@@ -476,6 +476,97 @@ static const nmo_objanim_controller_t *anim_controller(const nmo_objectanimation
     return NULL;
 }
 
+static const nmo_objanim_controller_t *anim_score_controller(const nmo_objectanimation_state_t *state,
+                                                              const uint32_t *types, size_t count)
+{
+    for (size_t type = 0; type < count; type++) {
+        for (uint32_t i = 0; state->controllers != NULL && i < state->controller_count; i++) {
+            const nmo_objanim_controller_t *controller = &state->controllers[i];
+            size_t bytes;
+            if (controller->type == types[type] && controller->key_count > 0 && controller->data != NULL &&
+                nmo_objanim_controller_keys_size(controller->type, state->format, controller->data,
+                    controller->data_size, controller->key_count, &bytes) && bytes == controller->data_size) return controller;
+        }
+    }
+    return NULL;
+}
+
+static float anim_vector_contribution(const nmo_objectanimation_state_t *state, bool scale)
+{
+    const uint32_t types[] = {scale ? ANIM_LINEAR_SCALE : ANIM_LINEAR_POSITION,
+        scale ? ANIM_TCB_SCALE : ANIM_TCB_POSITION, scale ? ANIM_BEZIER_SCALE : ANIM_BEZIER_POSITION};
+    const nmo_objanim_controller_t *controller = anim_score_controller(state, types, 3);
+    if (controller == NULL) return 0;
+    const uint8_t *key = controller->data;
+    size_t remaining = controller->data_size;
+    bool bezier = controller->type == ANIM_BEZIER_POSITION || controller->type == ANIM_BEZIER_SCALE;
+    uint32_t stride = nmo_objanim_controller_format_key_size(controller->type, state->format);
+    float first[3], extent = 0;
+    memcpy(first, key + sizeof(float), sizeof(first));
+    for (uint32_t i = 0; i < controller->key_count; i++) {
+        float value[3];
+        memcpy(value, key + sizeof(float), sizeof(value));
+        double sum = ((double)first[0] - value[0]) + ((double)first[1] - value[1]) + ((double)first[2] - value[2]);
+        float difference = (float)fabs(sum);
+        if (difference > extent) extent = difference;
+        size_t bytes = bezier ? nmo_objanim_bezier_key_decode(key, remaining, NULL) : stride;
+        key += bytes;
+        remaining -= bytes;
+    }
+    return extent;
+}
+
+static float anim_rotation_contribution(const nmo_objectanimation_state_t *state)
+{
+    const uint32_t types[] = {ANIM_LINEAR_ROTATION,ANIM_TCB_ROTATION};
+    const nmo_objanim_controller_t *controller = anim_score_controller(state, types, 2);
+    if (controller == NULL) return 0;
+    uint32_t stride = nmo_objanim_controller_format_key_size(controller->type, state->format);
+    float extent = 0;
+    for (uint32_t i = 0; i < controller->key_count; i++) {
+        float a[4];
+        memcpy(a, (const uint8_t *)controller->data + (size_t)i*stride + sizeof(float), sizeof(a));
+        for (uint32_t j = i + 1; j < controller->key_count; j++) {
+            float b[4];
+            memcpy(b, (const uint8_t *)controller->data + (size_t)j*stride + sizeof(float), sizeof(b));
+            double dot = (double)a[0]*b[0] + (double)a[1]*b[1] + (double)a[2]*b[2] + (double)a[3]*b[3];
+            float difference = (float)((1.0 - fabs(dot))*1000.0);
+            if (difference > extent) extent = difference;
+        }
+    }
+    return extent;
+}
+
+/* CKKeyedAnimation::ComputeAnimationContribution uses raw keys, independently
+ * of ignore flags, duration and merge factor. Shared data keeps its own layout. */
+static float anim_contribution(nmo_engine_t *engine, nmo_object_id_t animation,
+                                const eng_animation_path_t *path, uint32_t *work)
+{
+    eng_animation_source_t source;
+    if (!eng_animation_visit(path, animation, work) || !eng_animation_source(engine, animation, &source)) return 0;
+    if (source.state->flags & CK_OBJECTANIMATION_MERGED) {
+        eng_animation_path_t current = {animation,path != NULL ? path->depth + 1 : 1,path};
+        float a = anim_contribution(engine, eng_object_ref(engine, animation, &source.state->anim1), &current, work);
+        float b = anim_contribution(engine, eng_object_ref(engine, animation, &source.state->anim2), &current, work);
+        return (float)(((double)a + b)*0.5);
+    }
+    if (source.keys == NULL) return 0;
+    float score = anim_vector_contribution(source.keys, false) + anim_vector_contribution(source.keys, true);
+    score += anim_rotation_contribution(source.keys);
+    bool morph = source.keys->morph_key_parsed_count > 0 && source.keys->morph_keys != NULL;
+    for (uint32_t i = 0; source.keys->controllers != NULL && i < source.keys->controller_count; i++) {
+        nmo_objanim_morph_info_t info;
+        if (nmo_objanim_morph_controller_info(&source.keys->controllers[i], &info)) morph = true;
+    }
+    return score + (morph ? 1000 : 0);
+}
+
+float eng_animation_contribution(nmo_engine_t *engine, nmo_object_id_t animation)
+{
+    uint32_t work = ENG_ANIMATION_WORK_LIMIT;
+    return anim_contribution(engine, animation, NULL, &work);
+}
+
 enum {
     ANIM_BEZIER_SMOOTH = 1, ANIM_BEZIER_LINEAR = 2, ANIM_BEZIER_STEP = 4,
     ANIM_BEZIER_FAST = 8, ANIM_BEZIER_SLOW = 16, ANIM_BEZIER_EXPLICIT = 32,

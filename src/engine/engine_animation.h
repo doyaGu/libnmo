@@ -29,6 +29,7 @@ bool eng_keyed_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animatio
 bool eng_animation_position(nmo_engine_t *engine, nmo_object_id_t animation, float frame, nmo_vector_t *out);
 bool eng_keyed_animation_center(nmo_engine_t *engine, nmo_object_id_t animation, float frame);
 bool eng_animation_root_offset(const nmo_engine_t *engine, nmo_object_id_t animation, nmo_vector_t *out);
+float eng_animation_contribution(nmo_engine_t *engine, nmo_object_id_t animation);
 
 typedef struct eng_animation_source {
     nmo_object_id_t id;
