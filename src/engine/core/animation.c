@@ -10,6 +10,7 @@
  */
 
 #include "../engine_internal.h"
+#include "../engine_animation.h"
 
 #include "object/builtin/nmo_animation_schemas.h"
 #include "object/nmo_class_ids.h"
@@ -31,6 +32,39 @@
 typedef struct anim_quat {
     float x, y, z, w;
 } anim_quat_t;
+
+static const nmo_objectanimation_state_t *anim_state(const nmo_engine_t *engine, nmo_object_id_t id)
+{
+    nmo_object_t *object = eng_find_object(engine, id);
+    return object != NULL && nmo_object_get_class_id(object) == NMO_CID_OBJECTANIMATION
+        ? (const nmo_objectanimation_state_t *)nmo_object_get_state(object) : NULL;
+}
+
+static nmo_object_id_t anim_shared_next(const nmo_engine_t *engine, nmo_object_id_t id)
+{
+    const nmo_objectanimation_state_t *state = anim_state(engine, id);
+    return state != NULL && state->format == CKOBJANIM_FORMAT_SHARED
+        ? eng_object_ref(engine, id, &state->shared_anim) : 0;
+}
+
+bool eng_animation_source(const nmo_engine_t *engine, nmo_object_id_t animation,
+                            eng_animation_source_t *out)
+{
+    const nmo_objectanimation_state_t *state = anim_state(engine, animation);
+    if (state == NULL) return false;
+    *out = (eng_animation_source_t){animation, state, state, 0};
+    nmo_object_id_t current = animation, slow = animation, fast = animation;
+    while (out->keys != NULL && out->keys->format == CKOBJANIM_FORMAT_SHARED) {
+        current = anim_shared_next(engine, current);
+        out->keys = anim_state(engine, current);
+        slow = anim_shared_next(engine, slow);
+        fast = anim_shared_next(engine, anim_shared_next(engine, fast));
+        if (slow != 0 && slow == fast) { out->keys = NULL; break; }
+    }
+    /* ShareDataFrom(NULL) allocates empty native keyframe data of length 100. */
+    out->length = out->keys != NULL ? (out->keys->has_length ? out->keys->length : 0) : 100;
+    return true;
+}
 
 /* The segment of keys around `time`: the one ending at an exact interior key (0x1004B8DF) */
 static void anim_segment(const float *keys, uint32_t stride, uint32_t count, float time,
@@ -670,24 +704,22 @@ static bool anim_vector(const nmo_objectanimation_state_t *state, bool scaling,
 
 bool eng_object_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animation, float step)
 {
-    nmo_object_t *object = eng_find_object(engine, animation);
-    if (object == NULL || nmo_object_get_class_id(object) != NMO_CID_OBJECTANIMATION) {
-        return false;
-    }
-    const nmo_objectanimation_state_t *state = (const nmo_objectanimation_state_t *)nmo_object_get_state(object);
-    int32_t entity = state != NULL ? eng_entity_index(engine, eng_object_ref(engine, animation,
-                                                                                &state->entity))
-                                   : -1;
+    eng_animation_source_t source;
+    if (!eng_animation_source(engine, animation, &source)) return false;
+    const nmo_objectanimation_state_t *state = source.state;
+    int32_t entity = eng_entity_index(engine, eng_object_ref(engine, animation, &state->entity));
     if (entity < 0) {
         return false; /* CKERR_NOTINITIALIZED */
     }
-    float frame = step * (state->has_length ? state->length : 0.0f);
-    const nmo_objanim_controller_t *rotation = anim_controller(state, ANIM_LINEAR_ROTATION, 20);
-    const nmo_objanim_controller_t *tcb_rotation = anim_controller(state, ANIM_TCB_ROTATION, 40);
+    float frame = step * source.length;
+    const nmo_objectanimation_state_t empty = {0};
+    const nmo_objectanimation_state_t *keys = source.keys != NULL ? source.keys : &empty;
+    const nmo_objanim_controller_t *rotation = anim_controller(keys, ANIM_LINEAR_ROTATION, 20);
+    const nmo_objanim_controller_t *tcb_rotation = anim_controller(keys, ANIM_TCB_ROTATION, 40);
     if (state->flags & CK_OBJECTANIMATION_IGNOREROT) rotation = tcb_rotation = NULL;
-    uint32_t axis_stride = nmo_objanim_controller_format_key_size(ANIM_LINEAR_SCALE_AXIS, state->format);
-    const nmo_objanim_controller_t *axis = anim_controller(state, ANIM_LINEAR_SCALE_AXIS, axis_stride);
-    const nmo_objanim_controller_t *tcb_axis = anim_controller(state, ANIM_TCB_SCALE_AXIS, 40);
+    uint32_t axis_stride = nmo_objanim_controller_format_key_size(ANIM_LINEAR_SCALE_AXIS, keys->format);
+    const nmo_objanim_controller_t *axis = anim_controller(keys, ANIM_LINEAR_SCALE_AXIS, axis_stride);
+    const nmo_objanim_controller_t *tcb_axis = anim_controller(keys, ANIM_TCB_SCALE_AXIS, 40);
     if (state->flags & CK_OBJECTANIMATION_IGNORESCALEROT) axis = tcb_axis = NULL;
     anim_quat_t scale_axis = {0, 0, 0, 1};
     if (axis != NULL) scale_axis = anim_linear_rotation(axis, frame, axis_stride / sizeof(float));
@@ -697,10 +729,10 @@ bool eng_object_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animati
     eng_matrix_t local = engine->entities.data[entity].local;
     eng_vector_t pos = {local.m[3][0], local.m[3][1], local.m[3][2]};
     eng_vector_t scale = {1.0f, 1.0f, 1.0f};
-    bool has_position = !(state->flags & CK_OBJECTANIMATION_IGNOREPOS) && anim_vector(state, false, frame, &pos);
-    bool has_scaling = !(state->flags & CK_OBJECTANIMATION_IGNORESCALE) && anim_vector(state, true, frame, &scale);
+    bool has_position = !(state->flags & CK_OBJECTANIMATION_IGNOREPOS) && anim_vector(keys, false, frame, &pos);
+    bool has_scaling = !(state->flags & CK_OBJECTANIMATION_IGNORESCALE) && anim_vector(keys, true, frame, &scale);
     if (!has_position && !has_scaling && rotation == NULL && tcb_rotation == NULL && !has_axis) {
-        eng_animation_morph(engine, state, engine->entities.data[entity].id, frame);
+        eng_animation_morph(engine, animation, engine->entities.data[entity].id, frame);
         return true;
     }
     if (rotation != NULL || tcb_rotation != NULL || has_scaling || has_axis) {
@@ -751,7 +783,7 @@ bool eng_object_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animati
     local.m[3][1] = pos.y;
     local.m[3][2] = pos.z;
     eng_entity_set_local_matrix(engine, entity, &local, false);
-    eng_animation_morph(engine, state, engine->entities.data[entity].id, frame);
+    eng_animation_morph(engine, animation, engine->entities.data[entity].id, frame);
     return true;
 }
 

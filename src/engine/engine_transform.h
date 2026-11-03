@@ -10,11 +10,6 @@
 #include "engine_base.h"
 
 typedef struct eng_range eng_range_t;
-struct nmo_objectanimation_state;
-
-/* Apply morph keys to the current mesh's runtime vertices. */
-void eng_animation_morph(nmo_engine_t *engine, const struct nmo_objectanimation_state *state,
-                          nmo_object_id_t entity, float frame);
 
 /* A VxMatrix: rows 0 to 2 the X, Y and Z axes, row 3 the position. */
 typedef struct eng_matrix {

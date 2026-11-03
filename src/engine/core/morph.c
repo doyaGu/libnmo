@@ -1,5 +1,6 @@
 /* CKObjectAnimation's morph channel, applied to an engine-owned mesh copy. */
 #include "../engine_internal.h"
+#include "../engine_animation.h"
 
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_animation_schemas.h"
@@ -143,14 +144,16 @@ static void morph_bounds(eng_mesh_copy_t *copy, uint32_t count)
     copy->geometry_changed = true;
 }
 
-void eng_animation_morph(nmo_engine_t *engine, const nmo_objectanimation_state_t *state,
+void eng_animation_morph(nmo_engine_t *engine, nmo_object_id_t animation,
                           nmo_object_id_t entity, float frame)
 {
-    if (!isfinite(frame) || (state->flags & CK_OBJECTANIMATION_IGNOREMORPH)) return;
+    eng_animation_source_t animation_source;
+    if (!eng_animation_source(engine, animation, &animation_source) || !isfinite(frame) ||
+        (animation_source.state->flags & CK_OBJECTANIMATION_IGNOREMORPH) || animation_source.keys == NULL) return;
     const nmo_3dentity_state_t *target = (const nmo_3dentity_state_t *)morph_state(engine, entity, CKPGUID_3DENTITY);
     if (target == NULL || target->skin != NULL) return;
     morph_source_t source;
-    if (!morph_source(state, &source)) return;
+    if (!morph_source(animation_source.keys, &source)) return;
     /* Validate all times before touching the runtime mesh, even at an endpoint. */
     float previous = -INFINITY;
     uint32_t high = source.info.key_count - 1;

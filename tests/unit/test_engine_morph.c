@@ -428,10 +428,53 @@ TEST(engine_morph, saved_global_playback_supports_all_morph_storage_formats)
     }
 }
 
+TEST(engine_morph, shared_morph_data_uses_the_alias_target_and_ignore_flag)
+{
+    for (int old = 0; old < 2; old++) {
+        engine_fixture_t f;
+        fixture_begin_document(&f);
+        nmo_object_id_t mesh = morph_mesh(&f, 4);
+        nmo_object_id_t owner = fixture_create(&f, NMO_CID_OBJECTANIMATION, "Keys");
+        nmo_object_id_t alias = fixture_create(&f, NMO_CID_OBJECTANIMATION, "Alias");
+        nmo_objectanimation_state_t *keys = fixture_state(&f, owner), *state = fixture_state(&f, alias);
+        nmo_objanim_controller_t controller = {NMO_OBJANIM_CONTROLLER_MORPH, 0,
+                                               sizeof(PackedNormalsWords), (void *)PackedNormalsWords};
+        keys->has_length = 1;
+        keys->length = 24;
+        keys->flags = CK_OBJECTANIMATION_IGNOREMORPH;
+        if (old) ASSERT_TRUE(separate_morph(&f, keys, 2));
+        else { keys->controller_count = 1; keys->controllers = &controller; }
+        state->format = CKOBJANIM_FORMAT_SHARED;
+        state->has_shared_anim = 1;
+        state->shared_anim = nmo_ref_from_id(owner);
+        state->entity = nmo_ref_from_id(f.owner_id);
+        fixture_begin_edit(&f);
+        fixture_commit(&f, NULL);
+        ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+        ASSERT_TRUE(eng_object_animation_set_step(f.engine, alias, 0.25f));
+        nmo_engine_mesh_t runtime;
+        ASSERT_TRUE(nmo_engine_mesh(f.engine, mesh, &runtime));
+        for (int v = 0; v < 4; v++) {
+            ASSERT_FLOAT_EQ(PackedNormalsSamples[6].positions[v][0], runtime.vertices[v].position.x, 0.000001f);
+            nmo_vector_t normal = expected_normal(PackedNormalsSamples[6].normals[v]);
+            ASSERT_FLOAT_EQ(normal.x, runtime.vertices[v].normal.x, 0.000001f);
+            ASSERT_FLOAT_EQ(normal.y, runtime.vertices[v].normal.y, 0.000001f);
+            ASSERT_FLOAT_EQ(normal.z, runtime.vertices[v].normal.z, 0.000001f);
+        }
+        uint32_t version = runtime.version;
+        state->flags = CK_OBJECTANIMATION_IGNOREMORPH;
+        ASSERT_TRUE(eng_object_animation_set_step(f.engine, alias, 1));
+        ASSERT_TRUE(nmo_engine_mesh(f.engine, mesh, &runtime));
+        ASSERT_EQ(version, runtime.version);
+        fixture_end(&f);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_morph, controller_positions_and_packed_normals_match_reference_samples);
 REGISTER_TEST(engine_morph, invalid_or_ignored_morphs_leave_the_mesh_unchanged);
 REGISTER_TEST(engine_morph, deformed_geometry_drives_normals_bounds_and_ray_hits);
 REGISTER_TEST(engine_morph, separate_keys_convert_legacy_normals_and_replace_optional_sections);
 REGISTER_TEST(engine_morph, saved_global_playback_supports_all_morph_storage_formats);
+REGISTER_TEST(engine_morph, shared_morph_data_uses_the_alias_target_and_ignore_flag);
 TEST_MAIN_END()
