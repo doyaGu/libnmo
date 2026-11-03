@@ -550,7 +550,11 @@ nmo_object_id_t eng_create_related_object(nmo_engine_t *engine, nmo_object_id_t 
                                   "", NMO_GUID(0,0), &local, NULL) != NMO_OK) return 0;
     int32_t range = copies_module(engine, source, local, local);
     if (range < 0 || eng_load_range(engine, range, local, local) != NMO_OK) return 0;
-    return eng_module_id(&engine->modules.data[range], local);
+    nmo_object_id_t id = eng_module_id(&engine->modules.data[range], local);
+    for (size_t i = 0; i < engine->dynamic.objects.count; i++) {
+        if (engine->dynamic.objects.data[i] == model) { eng_mark_dynamic(engine,id); break; }
+    }
+    return id;
 }
 
 /* CKBehavior::Copy and friends: the runtime state of the behaviors, IOs and links. */
