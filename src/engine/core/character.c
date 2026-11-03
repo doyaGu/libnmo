@@ -1,7 +1,8 @@
-/* CKCharacter's non-warp playback, root-motion handoff and secondary gates. */
+/* CKCharacter playback, generated primary transitions and secondary gates. */
 #include "../engine_internal.h"
 #include "object/builtin/nmo_character_schemas.h"
 #include "object/nmo_class_ids.h"
+#include "format/nmo_object.h"
 
 #include <math.h>
 
@@ -152,10 +153,101 @@ nmo_status_t eng_character_set_active_animation(nmo_engine_t *engine, nmo_object
     return NMO_OK;
 }
 
+nmo_object_id_t eng_character_warper(nmo_engine_t *engine, nmo_object_id_t character)
+{
+    eng_character_t *runtime = character_runtime(engine,character);
+    if (runtime == NULL) return 0;
+    if (runtime->warper != 0) return eng_animation_state(engine,runtime->warper) != NULL ? runtime->warper : 0;
+    nmo_object_id_t id = eng_create_related_object(engine,character,NMO_CID_KEYEDANIMATION);
+    if (id == 0) return 0;
+    nmo_object_t *object = eng_find_object(engine,id);
+    nmo_keyedanimation_state_t *state = nmo_object_get_state(object);
+    state->base.has_character = state->base.has_root_entity = state->base.has_data = 1;
+    state->base.flags |= CKANIMATION_ALLOWTURN;
+    if (!eng_animation_local_ref(engine,id,character,&state->base.character) ||
+        !eng_animation_local_ref(engine,id,runtime->root,&state->base.root_entity)) {
+        nmo_engine_destroy_object(engine,id);
+        return 0;
+    }
+    object->flags |= CK_OBJECT_NOTTOBELISTEDANDSAVED;
+    eng_keyed_animation_refresh(engine,id);
+    runtime->warper = id;
+    return id;
+}
+
+bool eng_character_warper_parameters(nmo_engine_t *engine, nmo_object_id_t character,
+    uint32_t *mode, nmo_object_id_t *source, float *from, nmo_object_id_t *target, float *to)
+{
+    eng_character_t *runtime = character_runtime(engine,character);
+    if (runtime == NULL) return false;
+    if (mode != NULL) *mode = runtime->transition_mode;
+    if (source != NULL) *source = eng_animation_state(engine,runtime->source) != NULL ? runtime->source : 0;
+    if (from != NULL) *from = runtime->frame_src;
+    if (target != NULL) *target = eng_character_next_animation(engine,character);
+    if (to != NULL) *to = runtime->frame_dest;
+    return true;
+}
+
+static nmo_status_t character_start_warp(nmo_engine_t *engine, eng_character_t *runtime,
+    nmo_object_id_t animation, uint32_t mode, float length)
+{
+    if (runtime->next == animation) return NMO_OK;
+    bool keyed = character_keyed(engine,animation);
+    if (keyed && runtime->active == animation) return NMO_ERR_INVALID_ARGUMENT;
+    const nmo_animation_state_t *pending = eng_animation_state(engine,runtime->next);
+    if (runtime->active == runtime->warper && pending != NULL && !(pending->flags & CKANIMATION_CANBEBREAK)) return NMO_OK;
+    const nmo_animation_state_t *source = eng_animation_state(engine,runtime->active);
+    float frame, duration = eng_animation_length(source);
+    if (!eng_animation_frame(engine,runtime->active,&frame) || !isfinite(frame) || !isfinite(duration) || duration < 0 || !isfinite(source->frame_rate)) return NMO_ERR_VALIDATION_FAILED;
+    bool ready = (source->flags & CKANIMATION_CANBEBREAK) != 0;
+    if (!ready) {
+        if (source->flags & CKANIMATION_LINKTOFRAMERATE) ready = source->frame_rate < 0 ? frame == 0 : frame >= duration-.3f;
+        else ready = frame == duration;
+    }
+    if (!ready) return NMO_OK;
+    if (!keyed || !character_keyed(engine,runtime->active)) {
+        runtime->active = animation;
+        if (keyed) {
+            eng_keyed_animation_center(engine,animation,0);
+            eng_animation_set_step(engine,animation,0);
+        }
+        runtime->next = 0; runtime->frame_dest = 0;
+        return NMO_OK;
+    }
+    if (eng_object_ref(engine,runtime->active,&source->character) != runtime->id) return NMO_ERR_INVALID_ARGUMENT;
+    nmo_object_id_t warper = eng_character_warper(engine,runtime->id);
+    if (warper == 0) return runtime->warper != 0 ? NMO_ERR_INVALID_ARGUMENT : NMO_ERR_NOMEM;
+    /* Capture the old alignment so a failed builder leaves playback intact. */
+    eng_keyed_animation_root(engine,runtime->active);
+    int32_t index = eng_map_get(&engine->animations.keyed_map,runtime->active);
+    nmo_vector_t offset = index >= 0 ? engine->animations.keyed.data[index].offset : (nmo_vector_t){0};
+    int32_t actor = eng_entity_index(engine,runtime->id);
+    eng_matrix_t world;
+    if (actor >= 0) world = engine->entities.data[actor].world;
+    character_align(engine,runtime);
+    float entry = 0;
+    nmo_status_t status = eng_keyed_animation_transition(engine,warper,runtime->active,animation,mode,length,0,&entry);
+    if (status != NMO_OK) {
+        if (actor >= 0) eng_entity_set_world_matrix(engine,actor,&world,true);
+        if (index >= 0) engine->animations.keyed.data[index].offset = offset;
+        return status;
+    }
+    eng_keyed_animation_center(engine,warper,0);
+    eng_animation_set_step(engine,warper,0);
+    runtime->source = runtime->active; runtime->frame_src = frame; runtime->transition_mode = mode;
+    runtime->active = warper; runtime->next = animation; runtime->frame_dest = entry;
+    return NMO_OK;
+}
+
 nmo_status_t eng_character_set_next_animation(nmo_engine_t *engine, nmo_object_id_t character, nmo_object_id_t animation, uint32_t mode)
 {
+    return eng_character_set_next_animation_warp(engine,character,animation,mode,0);
+}
+
+nmo_status_t eng_character_set_next_animation_warp(nmo_engine_t *engine, nmo_object_id_t character, nmo_object_id_t animation, uint32_t mode, float length)
+{
     eng_character_t *runtime = character_runtime(engine, character);
-    if (runtime == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    if (runtime == NULL || !isfinite(length)) return NMO_ERR_INVALID_ARGUMENT;
     const nmo_animation_state_t *source = eng_animation_state(engine, runtime->active);
     if (source == NULL) runtime->active = 0;
     if (animation == 0) {
@@ -191,7 +283,7 @@ nmo_status_t eng_character_set_next_animation(nmo_engine_t *engine, nmo_object_i
                 runtime->next = 0;
             }
         } else if (mode & CK_TRANSITION_TOSTART) runtime->next = animation;
-        else if (mode & CK_TRANSITION_WARPMASK) return NMO_ERR_NOT_SUPPORTED;
+        else if (mode & CK_TRANSITION_WARPMASK) return character_start_warp(engine,runtime,animation,mode,length);
         else runtime->next = animation;
     }
     runtime->frame_dest = 0;

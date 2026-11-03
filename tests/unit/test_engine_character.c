@@ -285,8 +285,9 @@ TEST(engine_character, queued_entry_promotes_without_advancing_and_immediate_swi
     ASSERT_FLOAT_EQ(9,x(f.engine,actor),0);
     ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,eng_character_set_next_animation(f.engine,actor,0,0));
     ASSERT_EQ(b,eng_character_active_animation(f.engine,actor)); /* B is unbreakable. */
-    ASSERT_EQ(NMO_ERR_NOT_SUPPORTED,eng_character_set_next_animation(f.engine,actor,a,CK_TRANSITION_WARPTOSTART));
+    ASSERT_EQ(NMO_OK,eng_character_set_next_animation(f.engine,actor,a,CK_TRANSITION_WARPTOSTART));
     ASSERT_EQ(b,eng_character_active_animation(f.engine,actor));
+    ASSERT_EQ(0,eng_character_next_animation(f.engine,actor)); /* Retry when B reaches its interruption boundary. */
     fixture_end(&f);
 }
 

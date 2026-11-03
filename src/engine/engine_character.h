@@ -12,7 +12,10 @@ typedef struct eng_secondary_animation {
 
 typedef struct eng_character {
     nmo_object_id_t id, root, active, next;
+    nmo_object_id_t warper, source;
     float frame_dest;
+    float frame_src;
+    uint32_t transition_mode;
     bool automatic;
     ENG_VEC(eng_secondary_animation_t) secondary;
 } eng_character_t;
@@ -28,6 +31,10 @@ nmo_object_id_t eng_character_active_animation(nmo_engine_t *engine, nmo_object_
 nmo_object_id_t eng_character_next_animation(nmo_engine_t *engine, nmo_object_id_t character);
 nmo_status_t eng_character_set_active_animation(nmo_engine_t *engine, nmo_object_id_t character, nmo_object_id_t animation);
 nmo_status_t eng_character_set_next_animation(nmo_engine_t *engine, nmo_object_id_t character, nmo_object_id_t animation, uint32_t mode);
+nmo_status_t eng_character_set_next_animation_warp(nmo_engine_t *engine, nmo_object_id_t character, nmo_object_id_t animation, uint32_t mode, float length);
+nmo_object_id_t eng_character_warper(nmo_engine_t *engine, nmo_object_id_t character);
+bool eng_character_warper_parameters(nmo_engine_t *engine, nmo_object_id_t character,
+    uint32_t *mode, nmo_object_id_t *source, float *from, nmo_object_id_t *target, float *to);
 nmo_status_t eng_character_process(nmo_engine_t *engine, nmo_object_id_t character, float delta);
 bool eng_character_automatic(nmo_engine_t *engine, nmo_object_id_t character);
 nmo_status_t eng_character_play_secondary(nmo_engine_t *engine, nmo_object_id_t character,

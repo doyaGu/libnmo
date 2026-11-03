@@ -209,6 +209,9 @@ TEST(engine_transition, a_missing_source_morph_starts_from_the_current_runtime_m
     nmo_engine_mesh_t runtime;
     ASSERT_TRUE(nmo_engine_mesh(f.engine,mesh,&runtime));
     ASSERT_FLOAT_EQ(32.5f,runtime.vertices[0].position.x,1e-6f);
+    ASSERT_FLOAT_EQ(sinf(56.25f*(float)acos(-1)/180),runtime.vertices[0].normal.x,.001f);
+    ASSERT_FLOAT_EQ(0,runtime.vertices[0].normal.y,.001f);
+    ASSERT_FLOAT_EQ(cosf(56.25f*(float)acos(-1)/180),runtime.vertices[0].normal.z,.001f);
     ASSERT_FLOAT_EQ(7,state->vertices[0].position.x,0);
     fixture_end(&f);
 }
@@ -311,6 +314,249 @@ TEST(engine_transition, channel_matching_uses_the_last_source_and_clears_unmatch
     fixture_end(&f);
 }
 
+typedef struct warp_rig {
+    engine_fixture_t f;
+    nmo_object_id_t actor, root, limb, from, to, third, plain, warper;
+} warp_rig_t;
+
+static void warp_rig_begin(warp_rig_t *r, float source_rate, bool breakable, float target_rate, bool linked)
+{
+    r->warper = 0;
+    engine_fixture_t *f = &r->f;
+    fixture_begin_document(f);
+    r->actor = fixture_create(f,NMO_CID_CHARACTER,"Actor");
+    r->root = fixture_create(f,NMO_CID_BODYPART,"Root");
+    r->limb = fixture_create(f,NMO_CID_BODYPART,"Limb");
+    nmo_character_state_t *actor = fixture_state(f,r->actor);
+    actor->root_body_part = nmo_ref_from_id(r->root);
+    nmo_object_id_t entities[] = {r->actor,r->root,r->limb};
+    for (size_t i = 0; i < COUNT(entities); i++) {
+        nmo_3dentity_state_t *entity = fixture_state(f,entities[i]);
+        entity->world_matrix[12] = 100;
+        entity->moveable_flags &= ~VX_MOVEABLE_WORLDALIGNED;
+        if (i != 0) {
+            entity->parent = nmo_ref_from_id(i == 1 ? r->actor : r->root);
+            nmo_bodypart_state_t *body = fixture_state(f,entities[i]);
+            body->has_character = 1; body->character = nmo_ref_from_id(r->actor);
+        }
+    }
+    nmo_object_id_t a[] = {curve(f,r->root,10,5,15),curve(f,r->limb,10,10,20)};
+    nmo_object_id_t b[] = {curve(f,r->root,10,100,120),curve(f,r->limb,10,20,40)};
+    nmo_object_id_t c[] = {curve(f,r->root,10,200,230),curve(f,r->limb,10,40,60)};
+    r->from = group(f,r->actor,r->root,a,COUNT(a),10,source_rate);
+    r->to = group(f,r->actor,r->root,b,COUNT(b),10,target_rate);
+    r->third = group(f,r->actor,r->root,c,COUNT(c),10,1000);
+    if (!breakable) ((nmo_keyedanimation_state_t *)fixture_state(f,r->from))->base.flags &= ~CKANIMATION_CANBEBREAK;
+    nmo_keyedanimation_state_t *to = fixture_state(f,r->to);
+    to->base.flags &= ~CKANIMATION_CANBEBREAK;
+    if (!linked) to->base.flags &= ~CKANIMATION_LINKTOFRAMERATE;
+    r->plain = fixture_create(f,NMO_CID_ANIMATION,"Plain");
+    nmo_animation_state_t *plain = fixture_state(f,r->plain);
+    plain->has_character = plain->has_length = plain->has_data = 1;
+    plain->character = nmo_ref_from_id(r->actor); plain->length = 10; plain->frame_rate = 1000;
+    fixture_begin_edit(f); fixture_commit_bare(f,NULL);
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK,nmo_engine_render_frame(f->engine,&frame));
+    ASSERT_TRUE(eng_keyed_animation_center(f->engine,r->from,0));
+    ASSERT_TRUE(eng_animation_set_frame(f->engine,r->from,0));
+    ASSERT_EQ(NMO_OK,eng_character_set_active_animation(f->engine,r->actor,r->from));
+}
+
+static void warp_tick(warp_rig_t *r, float delta)
+{
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK,nmo_engine_render_frame(r->f.engine,&frame));
+    ASSERT_EQ(NMO_OK,eng_character_process(r->f.engine,r->actor,delta));
+}
+
+static void warp_pose(warp_rig_t *r, float world, float local)
+{
+    ASSERT_FLOAT_EQ(world,x(r->f.engine,r->actor),.0001f);
+    ASSERT_FLOAT_EQ(world,x(r->f.engine,r->root),.0001f);
+    ASSERT_FLOAT_EQ(world+local,x(r->f.engine,r->limb),.0001f);
+    float matrix[16];
+    ASSERT_TRUE(nmo_engine_entity_local_matrix(r->f.engine,r->root,matrix));
+    ASSERT_FLOAT_EQ(0,matrix[12],.0001f);
+    ASSERT_TRUE(nmo_engine_entity_local_matrix(r->f.engine,r->limb,matrix));
+    ASSERT_FLOAT_EQ(local,matrix[12],.0001f);
+    ASSERT_EQ(r->actor,nmo_engine_entity_parent(r->f.engine,r->root));
+    ASSERT_EQ(r->root,nmo_engine_entity_parent(r->f.engine,r->limb));
+}
+
+static void warp_start(warp_rig_t *r)
+{
+    ASSERT_EQ(NMO_OK,eng_character_set_next_animation_warp(r->f.engine,r->actor,r->to,CK_TRANSITION_WARPSAMEPOS,2));
+    nmo_object_id_t warper = eng_character_warper(r->f.engine,r->actor);
+    ASSERT_EQ(warper,eng_character_active_animation(r->f.engine,r->actor));
+    uint32_t mode = 0; nmo_object_id_t source = 0, target = 0; float from = NAN, to = NAN;
+    ASSERT_TRUE(eng_character_warper_parameters(r->f.engine,r->actor,&mode,&source,&from,&target,&to));
+    ASSERT_EQ(CK_TRANSITION_WARPSAMEPOS,mode); ASSERT_EQ(r->from,source); ASSERT_EQ(r->to,target);
+    ASSERT_FLOAT_EQ(2,from,1e-6f); ASSERT_FLOAT_EQ(2,to,1e-6f);
+    r->warper = warper;
+}
+
+static void warp_clock(warp_rig_t *r, nmo_object_id_t id, bool linked, float rate)
+{
+    nmo_animation_state_t *state = (nmo_animation_state_t *)eng_animation_state(r->f.engine,id);
+    state->flags = (state->flags & ~CKANIMATION_LINKTOFRAMERATE) | (linked ? CKANIMATION_LINKTOFRAMERATE : 0);
+    state->frame_rate = rate;
+}
+
+TEST(engine_transition, primary_warps_transfer_root_motion_and_signed_or_paused_target_remainders)
+{
+    const float rates[] = {1000,-1000,0}, frames[] = {4,0,2}, worlds[] = {203,195,199}, locals[] = {28,20,24};
+    for (size_t i = 0; i < COUNT(rates); i++) {
+        warp_rig_t r;
+        warp_rig_begin(&r,1000,true,rates[i],true);
+        warp_tick(&r,2); warp_pose(&r,102,12);
+        warp_start(&r);
+        nmo_object_id_t warper = r.warper;
+        warp_clock(&r,warper,true,1000);
+        warp_pose(&r,102,12);
+        warp_tick(&r,1); warp_pose(&r,150.5f,18);
+        warp_tick(&r,3); warp_pose(&r,worlds[i],locals[i]);
+        ASSERT_EQ(r.to,eng_character_active_animation(r.f.engine,r.actor));
+        ASSERT_EQ(0,eng_character_next_animation(r.f.engine,r.actor));
+        float frame;
+        ASSERT_TRUE(eng_animation_frame(r.f.engine,r.to,&frame));
+        ASSERT_FLOAT_EQ(frames[i],frame,1e-6f);
+        ASSERT_TRUE(eng_animation_frame(r.f.engine,r.from,&frame));
+        ASSERT_FLOAT_EQ(2,frame,1e-6f);
+        fixture_end(&r.f);
+    }
+}
+
+TEST(engine_transition, reverse_warps_use_the_actual_entry_and_mixed_clocks_share_unused_time)
+{
+    for (size_t reverse = 0; reverse < 2; reverse++) {
+        warp_rig_t r;
+        warp_rig_begin(&r,1000,true,reverse ? -1000 : 1000,true);
+        warp_tick(&r,2);
+        warp_start(&r);
+        nmo_object_id_t warper = r.warper;
+        warp_tick(&r,1); warp_pose(&r,150.5f,18);
+        warp_clock(&r,warper,true,-1000);
+        warp_tick(&r,2); warp_pose(&r,reverse ? 100 : 104,reverse ? 22 : 26);
+        float frame; ASSERT_TRUE(eng_animation_frame(r.f.engine,r.to,&frame));
+        ASSERT_FLOAT_EQ(reverse ? 1 : 3,frame,1e-6f);
+        fixture_end(&r.f);
+    }
+    warp_rig_t r;
+    warp_rig_begin(&r,1000,true,1000,false);
+    warp_tick(&r,2);
+    warp_start(&r);
+    nmo_object_id_t warper = r.warper;
+    warp_clock(&r,warper,true,1000);
+    warp_tick(&r,1); warp_tick(&r,2); warp_pose(&r,200,25);
+    fixture_end(&r.f);
+    warp_rig_begin(&r,1000,true,1000,true);
+    warp_tick(&r,2); warp_start(&r); warper = r.warper;
+    warp_tick(&r,1.5f); warp_pose(&r,174.75f,21);
+    warp_clock(&r,warper,false,0);
+    warp_tick(&r,4); warp_pose(&r,203,28);
+    fixture_end(&r.f);
+}
+
+TEST(engine_transition, warp_requests_respect_source_readiness_and_preserve_plain_target_cursors)
+{
+    warp_rig_t r;
+    warp_rig_begin(&r,1000,false,1000,true);
+    warp_tick(&r,2);
+    ASSERT_EQ(NMO_OK,eng_character_set_next_animation_warp(r.f.engine,r.actor,r.to,CK_TRANSITION_WARPSTART,2));
+    ASSERT_EQ(r.from,eng_character_active_animation(r.f.engine,r.actor));
+    ASSERT_EQ(0,eng_character_next_animation(r.f.engine,r.actor));
+    warp_pose(&r,102,12);
+    ASSERT_TRUE(eng_animation_set_current_step(r.f.engine,r.plain,.3f));
+    ASSERT_EQ(NMO_OK,eng_character_set_next_animation_warp(r.f.engine,r.actor,r.plain,CK_TRANSITION_WARPSTART,2));
+    ASSERT_EQ(r.from,eng_character_active_animation(r.f.engine,r.actor));
+    warp_tick(&r,7.8f);
+    ASSERT_EQ(NMO_OK,eng_character_set_next_animation_warp(r.f.engine,r.actor,r.plain,CK_TRANSITION_WARPSTART,2));
+    ASSERT_EQ(r.plain,eng_character_active_animation(r.f.engine,r.actor));
+    float frame; ASSERT_TRUE(eng_animation_frame(r.f.engine,r.plain,&frame)); ASSERT_FLOAT_EQ(3,frame,1e-6f);
+    ASSERT_FLOAT_EQ(109.8f,x(r.f.engine,r.actor),.0001f);
+    ASSERT_EQ(NMO_OK,eng_character_set_next_animation_warp(r.f.engine,r.actor,r.to,CK_TRANSITION_WARPSTART,2));
+    ASSERT_EQ(r.to,eng_character_active_animation(r.f.engine,r.actor));
+    ASSERT_TRUE(eng_animation_frame(r.f.engine,r.to,&frame)); ASSERT_FLOAT_EQ(0,frame,0);
+    fixture_end(&r.f);
+}
+
+TEST(engine_transition, pending_unbreakable_targets_win_and_in_place_retargeting_keeps_the_current_pose)
+{
+    warp_rig_t r;
+    warp_rig_begin(&r,1000,true,1000,true);
+    warp_tick(&r,2);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,eng_character_set_next_animation_warp(r.f.engine,r.actor,r.from,CK_TRANSITION_WARPSTART,2));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,eng_character_set_next_animation_warp(r.f.engine,r.actor,r.to,CK_TRANSITION_WARPSTART,NAN));
+    warp_pose(&r,102,12);
+    warp_start(&r);
+    nmo_object_id_t warper = r.warper;
+    warp_tick(&r,1); warp_pose(&r,150.5f,18);
+    ASSERT_EQ(NMO_OK,eng_character_set_next_animation_warp(r.f.engine,r.actor,r.third,CK_TRANSITION_WARPSTART,2));
+    ASSERT_EQ(r.to,eng_character_next_animation(r.f.engine,r.actor));
+    ASSERT_EQ(NMO_OK,eng_character_set_next_animation_warp(r.f.engine,r.actor,r.plain,CK_TRANSITION_WARPSTART,2));
+    ASSERT_EQ(warper,eng_character_active_animation(r.f.engine,r.actor));
+    ((nmo_animation_state_t *)eng_animation_state(r.f.engine,r.to))->flags |= CKANIMATION_CANBEBREAK;
+    ASSERT_EQ(NMO_OK,eng_character_set_next_animation_warp(r.f.engine,r.actor,r.third,CK_TRANSITION_WARPSTART,2));
+    ASSERT_EQ(warper,eng_character_active_animation(r.f.engine,r.actor));
+    ASSERT_EQ(r.third,eng_character_next_animation(r.f.engine,r.actor));
+    warp_pose(&r,150.5f,18);
+    warp_tick(&r,1); warp_pose(&r,222.75f,29);
+    fixture_end(&r.f);
+}
+
+TEST(engine_transition, unbreakable_reverse_sources_wait_for_zero_and_forward_sources_can_warp_near_the_end)
+{
+    warp_rig_t r;
+    warp_rig_begin(&r,-1000,false,1000,true);
+    ASSERT_TRUE(eng_keyed_animation_center(r.f.engine,r.from,10));
+    ASSERT_TRUE(eng_animation_set_frame(r.f.engine,r.from,10));
+    ASSERT_EQ(NMO_OK,eng_character_set_next_animation_warp(r.f.engine,r.actor,r.to,CK_TRANSITION_WARPSTART,2));
+    ASSERT_EQ(r.from,eng_character_active_animation(r.f.engine,r.actor));
+    warp_tick(&r,2);
+    ASSERT_EQ(NMO_OK,eng_character_set_next_animation_warp(r.f.engine,r.actor,r.to,CK_TRANSITION_WARPSTART,2));
+    ASSERT_EQ(r.from,eng_character_active_animation(r.f.engine,r.actor));
+    warp_tick(&r,8); warp_pose(&r,90,10);
+    ASSERT_EQ(NMO_OK,eng_character_set_next_animation_warp(r.f.engine,r.actor,r.to,CK_TRANSITION_WARPSTART,2));
+    ASSERT_EQ(r.to,eng_character_active_animation(r.f.engine,r.actor));
+    ASSERT_FLOAT_EQ(90,x(r.f.engine,r.actor),.0001f);
+    fixture_end(&r.f);
+    warp_rig_begin(&r,1000,false,1000,true);
+    warp_tick(&r,9.8f);
+    ASSERT_EQ(NMO_OK,eng_character_set_next_animation_warp(r.f.engine,r.actor,r.to,CK_TRANSITION_WARPSTART,2));
+    ASSERT_EQ(eng_character_warper(r.f.engine,r.actor),eng_character_active_animation(r.f.engine,r.actor));
+    ASSERT_EQ(r.to,eng_character_next_animation(r.f.engine,r.actor));
+    ASSERT_FLOAT_EQ(109.8f,x(r.f.engine,r.actor),.0001f);
+    fixture_end(&r.f);
+}
+
+TEST(engine_transition, velocity_warps_integrate_root_motion_and_failed_builds_preserve_playback)
+{
+    warp_rig_t r;
+    warp_rig_begin(&r,1000,true,1000,true);
+    warp_tick(&r,2);
+    ASSERT_EQ(NMO_ERR_NOT_SUPPORTED,eng_character_set_next_animation_warp(r.f.engine,r.actor,r.to,
+        CK_TRANSITION_WARPSAMEPOS|CK_TRANSITION_USEVELOCITY,FLT_MAX));
+    ASSERT_EQ(r.from,eng_character_active_animation(r.f.engine,r.actor));
+    ASSERT_EQ(0,eng_character_next_animation(r.f.engine,r.actor));
+    warp_pose(&r,102,12);
+    ASSERT_EQ(NMO_OK,eng_character_set_next_animation_warp(r.f.engine,r.actor,r.to,
+        CK_TRANSITION_WARPSAMEPOS|CK_TRANSITION_USEVELOCITY,2));
+    warp_tick(&r,1); warp_pose(&r,102.4f,18);
+    warp_tick(&r,1); warp_pose(&r,103,24);
+    ASSERT_EQ(r.to,eng_character_active_animation(r.f.engine,r.actor));
+    ASSERT_TRUE((((const nmo_keyedanimation_state_t *)fixture_state(&r.f,r.to))->base.flags & CKANIMATION_CANBEBREAK) == 0);
+    fixture_end(&r.f);
+    warp_rig_begin(&r,1000,true,1000,true);
+    warp_tick(&r,2);
+    nmo_object_id_t warper = eng_character_warper(r.f.engine,r.actor);
+    ASSERT_TRUE(warper != 0);
+    nmo_engine_destroy_object(r.f.engine,warper);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,eng_character_set_next_animation_warp(r.f.engine,r.actor,r.to,CK_TRANSITION_WARPSTART,2));
+    ASSERT_EQ(0,eng_character_warper(r.f.engine,r.actor));
+    warp_pose(&r,102,12);
+    fixture_end(&r.f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_transition, generated_pose_channels_sample_raw_frames_and_preserve_the_borrowed_model);
 REGISTER_TEST(engine_transition, velocity_sampling_handles_fractional_duration_and_in_place_rebuilds);
@@ -320,4 +566,10 @@ REGISTER_TEST(engine_transition, a_missing_source_morph_starts_from_the_current_
 REGISTER_TEST(engine_transition, keyed_transitions_keep_signed_entry_frames_and_the_targets_clock_direction);
 REGISTER_TEST(engine_transition, best_entry_sums_all_matching_channels_and_keeps_the_earliest_tie);
 REGISTER_TEST(engine_transition, channel_matching_uses_the_last_source_and_clears_unmatched_and_reused_outputs);
+REGISTER_TEST(engine_transition, primary_warps_transfer_root_motion_and_signed_or_paused_target_remainders);
+REGISTER_TEST(engine_transition, reverse_warps_use_the_actual_entry_and_mixed_clocks_share_unused_time);
+REGISTER_TEST(engine_transition, warp_requests_respect_source_readiness_and_preserve_plain_target_cursors);
+REGISTER_TEST(engine_transition, pending_unbreakable_targets_win_and_in_place_retargeting_keeps_the_current_pose);
+REGISTER_TEST(engine_transition, unbreakable_reverse_sources_wait_for_zero_and_forward_sources_can_warp_near_the_end);
+REGISTER_TEST(engine_transition, velocity_warps_integrate_root_motion_and_failed_builds_preserve_playback);
 TEST_MAIN_END()
