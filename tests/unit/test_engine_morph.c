@@ -609,6 +609,127 @@ TEST(engine_morph, merged_sparse_keys_preserve_the_current_vertices_before_blend
     fixture_end(&f);
 }
 
+TEST(engine_morph, loaded_global_composition_blends_pose_and_mesh_in_all_formats)
+{
+    const nmo_objectanimation_format_t formats[] = {CKOBJANIM_FORMAT_CONTROLLERS,
+        CKOBJANIM_FORMAT_NEWDATA, CKOBJANIM_FORMAT_LEGACY, CKOBJANIM_FORMAT_SHARED};
+    for (size_t c = 0; c < COUNT(formats); c++) {
+        engine_fixture_t f;
+        fixture_begin_document(&f);
+        nmo_object_id_t mesh = morph_mesh(&f, 2);
+        nmo_object_id_t a = fixture_create(&f, NMO_CID_OBJECTANIMATION, "A");
+        nmo_object_id_t b = fixture_create(&f, NMO_CID_OBJECTANIMATION, "B");
+        nmo_object_id_t merged = morph_blend(&f, a, b, 40);
+        nmo_object_id_t global = fixture_create(&f, NMO_CID_KEYEDANIMATION, "Global");
+        ASSERT_TRUE(mesh != 0 && merged != 0 && global != 0);
+        float pa[] = {0, 0,0,0, 8, 8,0,0}, pb[] = {0, 100,0,0, 20, 120,0,0};
+        struct { uint32_t header[3]; struct { float time, positions[2][3]; uint32_t normals[2]; } keys[2]; } blobs[2] = {
+            {{2,2,1}, {{0,{{0,0,0},{1,0,0}},{0,0}}, {8,{{8,0,0},{9,0,0}},{0,0}}}},
+            {{2,2,1}, {{0,{{100,0,0},{101,0,0}},{0x10000000u,0x10000000u}},
+                      {20,{{120,0,0},{121,0,0}},{0x10000000u,0x10000000u}}}},
+        };
+        nmo_objanim_controller_t ca[] = {{0x637c4301u,2,sizeof(pa),pa},
+            {NMO_OBJANIM_CONTROLLER_MORPH,0,sizeof(blobs[0]),&blobs[0]}};
+        nmo_objanim_controller_t cb[] = {{0x637c4301u,2,sizeof(pb),pb},
+            {NMO_OBJANIM_CONTROLLER_MORPH,0,sizeof(blobs[1]),&blobs[1]}};
+        nmo_objectanimation_state_t *first = fixture_state(&f, a), *second = fixture_state(&f, b), *blend = fixture_state(&f, merged);
+        first->format = second->format = CKOBJANIM_FORMAT_CONTROLLERS;
+        first->has_length = second->has_length = 1;
+        first->length = 8; second->length = 20;
+        first->controller_count = second->controller_count = 2;
+        first->controllers = ca; second->controllers = cb;
+        blend->format = formats[c];
+        blend->merge_factor = 0.25f;
+        if (formats[c] == CKOBJANIM_FORMAT_SHARED) {
+            nmo_object_id_t owner = fixture_create(&f, NMO_CID_OBJECTANIMATION, "Shared Keys");
+            nmo_objectanimation_state_t *keys = fixture_state(&f, owner);
+            keys->format = CKOBJANIM_FORMAT_CONTROLLERS;
+            keys->has_length = 1;
+            keys->length = 40;
+            keys->flags = CK_OBJECTANIMATION_IGNOREPOS | CK_OBJECTANIMATION_IGNOREMORPH;
+            blend->has_shared_anim = 1;
+            blend->shared_anim = nmo_ref_from_id(owner);
+        }
+        if (formats[c] == CKOBJANIM_FORMAT_LEGACY) {
+            nmo_object_t *object = nmo_object_repository_find_by_id(f.repo, merged);
+            object->chunk = nmo_chunk_create(nmo_session_get_arena(f.session));
+            ASSERT_NOT_NULL(object->chunk);
+            object->chunk->class_id = NMO_CID_OBJECTANIMATION;
+            object->chunk->data_version = 0;
+        }
+        nmo_keyedanimation_state_t *keyed = fixture_state(&f, global);
+        nmo_ref_t part = nmo_ref_from_id(merged);
+        keyed->animation_count = 1;
+        keyed->animation_ids = &part;
+        f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+        fixture_begin_edit(&f);
+        nmo_object_id_t play = fixture_block(&f, NMO_GUID(0x1c9236e1,0x42f40996), "Play");
+        ASSERT_TRUE(play != 0);
+        fixture_link(&f, f.script_in, BLOCK_IN(&f, play, 0), 0);
+        char global_id[32];
+        snprintf(global_id, sizeof(global_id), "%u", global);
+        const char *values[] = {global_id,"8"};
+        for (uint32_t pin = 0; pin < 2; pin++) {
+            nmo_object_id_t source = 0;
+            ASSERT_EQ(NMO_OK, nmo_script_edit_ensure_input_parameter_source(f.tx, BLOCK_PIN(&f, play, pin), &source));
+            ASSERT_EQ(NMO_OK, nmo_script_edit_set_parameter_value(f.tx, source, values[pin]));
+        }
+        fixture_commit(&f, NULL);
+        const char *path = NMO_TEST_SCRATCH_FILE("engine_composition.cmo");
+        ASSERT_EQ(NMO_OK, nmo_session_save_file(f.session, path, NULL, NULL));
+        nmo_document_t *document = NULL;
+        nmo_workspace_t *workspace = NULL;
+        nmo_engine_t *engine = NULL;
+        ASSERT_EQ(NMO_OK, nmo_document_load_file(f.ctx, path, NULL, &document));
+        ASSERT_EQ(NMO_OK, nmo_workspace_create(f.ctx, document, &workspace));
+        ASSERT_EQ(NMO_OK, nmo_engine_create(workspace, NULL, &engine));
+        ASSERT_EQ(NMO_OK, nmo_bb_virtools_register(engine));
+        ASSERT_EQ(NMO_OK, nmo_engine_start(engine, NMO_ENGINE_START_ALL));
+        ASSERT_EQ(NMO_OK, nmo_engine_step(engine, 2));
+        ASSERT_EQ(NMO_OK, nmo_engine_step(engine, 2));
+        nmo_object_id_t loaded_mesh = nmo_engine_object_named(engine, "Mesh", NMO_CID_MESH);
+        nmo_object_id_t target = nmo_engine_object_named(engine, "Owner", NMO_CID_3DENTITY);
+        nmo_object_id_t loaded_blend = nmo_engine_object_named(engine, "Blend", NMO_CID_OBJECTANIMATION);
+        ASSERT_TRUE(loaded_mesh != 0 && target != 0 && loaded_blend != 0);
+        const nmo_object_repository_t *repo = nmo_document_get_repository(document);
+        const nmo_objectanimation_state_t *saved = nmo_object_get_state(nmo_object_repository_find_by_id(repo, loaded_blend));
+        ASSERT_EQ(formats[c], saved->format);
+        ASSERT_TRUE(saved->has_merge);
+        ASSERT_FLOAT_EQ(0.25f, saved->merge_factor, 0);
+        nmo_engine_mesh_t runtime;
+        float matrix[16];
+        ASSERT_TRUE(nmo_engine_mesh(engine, loaded_mesh, &runtime));
+        ASSERT_TRUE(nmo_engine_entity_world_matrix(engine, target, matrix));
+        ASSERT_FLOAT_EQ(27.75f, matrix[12], 0.00001f);
+        nmo_vector_t normal = expected_normal(1024u << 16);
+        for (int v = 0; v < 2; v++) {
+            ASSERT_FLOAT_EQ(27.75f+v, runtime.vertices[v].position.x, 0.00001f);
+            ASSERT_FLOAT_EQ(normal.x, runtime.vertices[v].normal.x, 0.000001f);
+            ASSERT_FLOAT_EQ(normal.z, runtime.vertices[v].normal.z, 0.000001f);
+        }
+        uint32_t version = runtime.version;
+        ASSERT_EQ(NMO_OK, nmo_engine_step(engine, 6));
+        ASSERT_TRUE(nmo_engine_mesh(engine, loaded_mesh, &runtime));
+        ASSERT_TRUE(runtime.version > version);
+        ASSERT_FLOAT_EQ(36, runtime.vertices[0].position.x, 0.00001f);
+        ASSERT_TRUE(nmo_engine_entity_world_matrix(engine, target, matrix));
+        ASSERT_FLOAT_EQ(36, matrix[12], 0.00001f);
+        const nmo_mesh_state_t *original = nmo_object_get_state(nmo_object_repository_find_by_id(repo, loaded_mesh));
+        ASSERT_FLOAT_EQ(123, original->vertices[0].position.x, 0);
+        nmo_object_id_t loaded_first = nmo_engine_object_named(engine, "A", NMO_CID_OBJECTANIMATION);
+        const nmo_objectanimation_state_t *saved_first = nmo_object_get_state(nmo_object_repository_find_by_id(repo, loaded_first));
+        ASSERT_NOT_NULL(saved_first);
+        ASSERT_EQ(2u, saved_first->controller_count);
+        ASSERT_EQ(sizeof(blobs[0]), saved_first->controllers[1].data_size);
+        ASSERT_EQ(0, memcmp(&blobs[0], saved_first->controllers[1].data, sizeof(blobs[0])));
+        nmo_engine_destroy(engine);
+        nmo_workspace_destroy(workspace);
+        nmo_document_destroy(document);
+        fixture_end(&f);
+        remove(path);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_morph, controller_positions_and_packed_normals_match_reference_samples);
 REGISTER_TEST(engine_morph, invalid_or_ignored_morphs_leave_the_mesh_unchanged);
@@ -619,4 +740,5 @@ REGISTER_TEST(engine_morph, shared_morph_data_uses_the_alias_target_and_ignore_f
 REGISTER_TEST(engine_morph, merged_vertices_map_time_and_normals_blend_in_packed_angle_space);
 REGISTER_TEST(engine_morph, unequal_vertex_counts_prefer_the_first_source_at_unscaled_time);
 REGISTER_TEST(engine_morph, merged_sparse_keys_preserve_the_current_vertices_before_blending);
+REGISTER_TEST(engine_morph, loaded_global_composition_blends_pose_and_mesh_in_all_formats);
 TEST_MAIN_END()
