@@ -73,8 +73,12 @@ void eng_free_characters(nmo_engine_t *engine)
 {
     for (size_t i = 0; i < engine->characters.entries.count; i++) {
         eng_character_t *runtime = &engine->characters.entries.data[i];
-        for (size_t j = 0; j < runtime->secondary.count; j++) free(runtime->secondary.data[j].bodies.data);
+        for (size_t j = 0; j < runtime->secondary.count; j++) {
+            free(runtime->secondary.data[j].gate.bodies.data);
+            free(runtime->secondary.data[j].warp_gate.bodies.data);
+        }
         free(runtime->secondary.data);
+        free(runtime->secondary_warpers.data);
     }
     free(engine->characters.entries.data);
     free(engine->characters.map.slots);
@@ -328,19 +332,19 @@ static float character_remainder(const nmo_animation_state_t *source, const nmo_
     return remaining;
 }
 
-static bool character_secondary_bodies(nmo_engine_t *engine, eng_secondary_animation_t *entry)
+static bool character_secondary_bodies(nmo_engine_t *engine, eng_secondary_gate_t *gate)
 {
-    if (!character_keyed(engine, entry->id)) return true;
-    const nmo_keyedanimation_state_t *state = nmo_object_get_state(eng_find_object(engine, entry->id));
+    if (!character_keyed(engine, gate->animation)) return true;
+    const nmo_keyedanimation_state_t *state = nmo_object_get_state(eng_find_object(engine, gate->animation));
     for (uint32_t i = 0; state->animation_ids != NULL && i < state->animation_count; i++) {
-        nmo_object_id_t channel = eng_object_ref(engine, entry->id, &state->animation_ids[i]);
+        nmo_object_id_t channel = eng_object_ref(engine, gate->animation, &state->animation_ids[i]);
         nmo_object_t *object = eng_find_object(engine, channel);
         if (object == NULL || nmo_object_get_class_id(object) != NMO_CID_OBJECTANIMATION) continue;
         const nmo_objectanimation_state_t *part = nmo_object_get_state(object);
         nmo_object_id_t body = eng_object_ref(engine, channel, &part->entity);
         if (!nmo_type_registry_is_class_derived_from(engine->types, nmo_engine_object_class(engine, body), NMO_CID_BODYPART)) continue;
         nmo_object_id_t *slot = NULL;
-        if (!ENG_VEC_PUSH(entry->bodies, slot)) return false;
+        if (!ENG_VEC_PUSH(gate->bodies, slot)) return false;
         *slot = body;
     }
     return true;
@@ -348,21 +352,23 @@ static bool character_secondary_bodies(nmo_engine_t *engine, eng_secondary_anima
 
 /* Retain the claimed targets so deleting a channel cannot leave a stale gate.
  * Releasing an older secondary must preserve a later secondary's ownership. */
-static void character_secondary_gate(nmo_engine_t *engine, const eng_secondary_animation_t *entry, bool claim)
+static void character_secondary_gate(nmo_engine_t *engine, const eng_secondary_gate_t *gate, bool claim)
 {
-    for (size_t i = 0; i < entry->bodies.count; i++) {
-        int32_t body = eng_entity_index(engine, entry->bodies.data[i]);
+    for (size_t i = 0; i < gate->bodies.count; i++) {
+        int32_t body = eng_entity_index(engine, gate->bodies.data[i]);
         if (body < 0) continue;
-        if (claim || engine->entities.data[body].exclusive_animation == entry->id) {
-            engine->entities.data[body].exclusive_animation = claim ? entry->id : 0;
+        if (claim || engine->entities.data[body].exclusive_animation == gate->animation) {
+            engine->entities.data[body].exclusive_animation = claim ? gate->animation : 0;
         }
     }
 }
 
 static void character_remove_secondary(nmo_engine_t *engine, eng_character_t *runtime, size_t index)
 {
-    character_secondary_gate(engine, &runtime->secondary.data[index], false);
-    free(runtime->secondary.data[index].bodies.data);
+    character_secondary_gate(engine, &runtime->secondary.data[index].gate, false);
+    character_secondary_gate(engine, &runtime->secondary.data[index].warp_gate, false);
+    free(runtime->secondary.data[index].gate.bodies.data);
+    free(runtime->secondary.data[index].warp_gate.bodies.data);
     runtime->secondary.count--;
     memmove(&runtime->secondary.data[index], &runtime->secondary.data[index+1],
             (runtime->secondary.count-index)*sizeof(*runtime->secondary.data));
@@ -371,27 +377,76 @@ static void character_remove_secondary(nmo_engine_t *engine, eng_character_t *ru
 nmo_status_t eng_character_play_secondary(nmo_engine_t *engine, nmo_object_id_t character,
                                           nmo_object_id_t animation, float frame, uint32_t flags, uint32_t loops)
 {
+    return eng_character_play_secondary_warp(engine,character,animation,frame,flags,0,loops);
+}
+
+static bool character_owned_keyed(nmo_engine_t *engine, eng_character_t *runtime, nmo_object_id_t animation)
+{
+    const nmo_animation_state_t *state = eng_animation_state(engine,animation);
+    return state != NULL && character_keyed(engine,animation) && eng_object_ref(engine,animation,&state->character) == runtime->id;
+}
+
+static nmo_object_id_t character_secondary_warper(nmo_engine_t *engine, eng_character_t *runtime)
+{
+    for (size_t i = 0; i < runtime->secondary_warpers.count; i++) {
+        nmo_object_id_t id = runtime->secondary_warpers.data[i];
+        if (eng_animation_state(engine,id) == NULL) continue;
+        bool used = false;
+        for (size_t j = 0; j < runtime->secondary.count; j++) if (runtime->secondary.data[j].warper == id) used = true;
+        if (!used) return id;
+    }
+    if (!eng_vec_reserve((void **)&runtime->secondary_warpers.data,&runtime->secondary_warpers.capacity,
+                         runtime->secondary_warpers.count+1,sizeof(*runtime->secondary_warpers.data))) return 0;
+    nmo_object_id_t id = eng_create_related_object(engine,runtime->id,NMO_CID_KEYEDANIMATION);
+    if (id == 0) return 0;
+    nmo_keyedanimation_state_t *state = nmo_object_get_state(eng_find_object(engine,id));
+    state->base.flags |= CKANIMATION_SECONDARYWARPER;
+    runtime->secondary_warpers.data[runtime->secondary_warpers.count++] = id;
+    return id;
+}
+
+nmo_status_t eng_character_play_secondary_warp(nmo_engine_t *engine, nmo_object_id_t character,
+    nmo_object_id_t animation, float frame, uint32_t flags, float warp_length, uint32_t loops)
+{
     eng_character_t *runtime = character_runtime(engine, character);
     const nmo_animation_state_t *state = eng_animation_state(engine, animation);
-    if (runtime == NULL || state == NULL || eng_object_ref(engine, animation, &state->character) != character || !isfinite(frame)) return NMO_ERR_INVALID_ARGUMENT;
+    if (runtime == NULL || state == NULL || eng_object_ref(engine, animation, &state->character) != character ||
+        !isfinite(frame) || !isfinite(warp_length)) return NMO_ERR_INVALID_ARGUMENT;
     if (flags & CKSECONDARYANIMATION_FROMANIMATION) {
         uint32_t preset = (state->flags & CKANIMATION_SECONDARY_ALL) >> 16;
         if (preset != 0) flags = preset;
     }
     for (size_t i = 0; i < runtime->secondary.count; i++) if (runtime->secondary.data[i].id == animation) return NMO_OK;
-    if (flags & CKSECONDARYANIMATION_DOWARP) return NMO_ERR_NOT_SUPPORTED;
     float length = eng_animation_length(state);
     if (!isfinite(length) || length < 0) return NMO_ERR_VALIDATION_FAILED;
-    eng_secondary_animation_t entry = {.id=animation,.flags=flags,.loops=loops};
-    if (!character_secondary_bodies(engine, &entry) ||
+    eng_secondary_animation_t entry = {.id=animation,.flags=flags,.loops=loops,.starting_frame=frame,.gate={.animation=animation}};
+    if (!character_secondary_bodies(engine, &entry.gate) ||
         !eng_vec_reserve((void **)&runtime->secondary.data, &runtime->secondary.capacity,
                          runtime->secondary.count+1, sizeof(*runtime->secondary.data))) {
-        free(entry.bodies.data);
+        free(entry.gate.bodies.data);
         return NMO_ERR_NOMEM;
     }
-    /* The entry pose is sampled before claiming exclusive bone ownership. */
-    if (!eng_animation_set_frame(engine, animation, frame)) { free(entry.bodies.data); return NMO_ERR_VALIDATION_FAILED; }
-    character_secondary_gate(engine, &entry, true);
+    nmo_status_t status = NMO_OK;
+    bool warp = (flags & CKSECONDARYANIMATION_DOWARP) && character_keyed(engine,animation) &&
+        runtime->active != animation && character_owned_keyed(engine,runtime,runtime->active);
+    if (warp) {
+        entry.warper = character_secondary_warper(engine,runtime);
+        float target_frame;
+        status = entry.warper != 0 ? eng_keyed_animation_transition(engine,entry.warper,runtime->active,animation,0,warp_length,frame,&target_frame) : NMO_ERR_NOMEM;
+        entry.warp_gate.animation = entry.warper;
+        if (status == NMO_OK && !character_secondary_bodies(engine,&entry.warp_gate)) status = NMO_ERR_NOMEM;
+        if (status == NMO_OK && !eng_animation_set_frame(engine,entry.warper,0)) status = NMO_ERR_VALIDATION_FAILED;
+        if (status == NMO_OK) {
+            entry.phase = ENG_SECONDARY_ENTERING;
+            entry.warp_length = warp_length;
+            character_secondary_gate(engine,&entry.warp_gate,true);
+        }
+    } else {
+        /* The entry pose is sampled before claiming exclusive bone ownership. */
+        if (!eng_animation_set_frame(engine,animation,frame)) status = NMO_ERR_VALIDATION_FAILED;
+        else character_secondary_gate(engine,&entry.gate,true);
+    }
+    if (status != NMO_OK) { free(entry.gate.bodies.data); free(entry.warp_gate.bodies.data); return status; }
     runtime->secondary.data[runtime->secondary.count++] = entry;
     return NMO_OK;
 }
@@ -423,13 +478,40 @@ size_t eng_character_secondary_count(nmo_engine_t *engine, nmo_object_id_t chara
 nmo_object_id_t eng_character_secondary_animation(nmo_engine_t *engine, nmo_object_id_t character, size_t index)
 {
     eng_character_t *runtime = character_runtime(engine, character);
-    return runtime != NULL && index < runtime->secondary.count ? runtime->secondary.data[index].id : 0;
+    nmo_object_id_t id = runtime != NULL && index < runtime->secondary.count ? runtime->secondary.data[index].id : 0;
+    return eng_animation_state(engine,id) != NULL ? id : 0;
+}
+
+nmo_object_id_t eng_character_secondary_warper(nmo_engine_t *engine, nmo_object_id_t character, size_t index)
+{
+    eng_character_t *runtime = character_runtime(engine, character);
+    nmo_object_id_t id = runtime != NULL && index < runtime->secondary.count ? runtime->secondary.data[index].warper : 0;
+    return eng_animation_state(engine,id) != NULL ? id : 0;
 }
 
 static nmo_status_t character_process_secondary(nmo_engine_t *engine, eng_character_t *runtime, float delta)
 {
     for (size_t i = 0; i < runtime->secondary.count;) {
         eng_secondary_animation_t *entry = &runtime->secondary.data[i];
+        if (entry->phase == ENG_SECONDARY_ENTERING) {
+            const nmo_animation_state_t *warp = eng_animation_state(engine,entry->warper);
+            float current, next;
+            if (warp == NULL) { character_remove_secondary(engine,runtime,i); continue; }
+            if (!eng_animation_frame(engine,entry->warper,&current) || !eng_animation_next_frame(engine,entry->warper,delta,&next)) return NMO_ERR_VALIDATION_FAILED;
+            float remaining = next-eng_animation_length(warp);
+            if (remaining <= 0) {
+                if (!eng_animation_set_frame(engine,entry->warper,next)) return NMO_ERR_VALIDATION_FAILED;
+            } else {
+                const nmo_animation_state_t *source = eng_animation_state(engine,entry->id);
+                if (source == NULL) { character_remove_secondary(engine,runtime,i); continue; }
+                remaining = character_remainder(warp,source,remaining,next-current,delta);
+                character_secondary_gate(engine,&entry->gate,true);
+                if (!eng_animation_set_frame(engine,entry->id,entry->starting_frame+remaining)) return NMO_ERR_VALIDATION_FAILED;
+                entry->phase = ENG_SECONDARY_PLAYING;
+            }
+            i++;
+            continue;
+        }
         const nmo_animation_state_t *state = eng_animation_state(engine, entry->id);
         if (state == NULL) { character_remove_secondary(engine, runtime, i); continue; }
         float length = eng_animation_length(state), next;

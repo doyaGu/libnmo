@@ -571,7 +571,7 @@ TEST(engine_character, secondary_presets_and_invalid_requests_preserve_existing_
     fixture_begin_edit(&f);
     fixture_commit_bare(&f,NULL);
     ASSERT_EQ(NMO_OK,eng_character_play_secondary(f.engine,actor,a,4,CKSECONDARYANIMATION_FROMANIMATION,0));
-    ASSERT_EQ(NMO_ERR_NOT_SUPPORTED,eng_character_play_secondary(f.engine,actor,b,8,CKSECONDARYANIMATION_DOWARP,0));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,eng_character_play_secondary_warp(f.engine,actor,b,8,CKSECONDARYANIMATION_DOWARP,NAN,0));
     ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,eng_character_play_secondary(f.engine,foreign,a,0,0,0));
     ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,eng_character_stop_secondary(f.engine,foreign,a));
     ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,eng_character_play_secondary(f.engine,actor,b,NAN,0,0));
