@@ -451,14 +451,144 @@ nmo_status_t eng_character_play_secondary_warp(nmo_engine_t *engine, nmo_object_
     return NMO_OK;
 }
 
+static nmo_status_t character_secondary_refresh_gate(nmo_engine_t *engine, eng_secondary_animation_t *entry, bool claim)
+{
+    eng_secondary_gate_t gate = {.animation=entry->warper};
+    if (!character_secondary_bodies(engine,&gate)) { free(gate.bodies.data); return NMO_ERR_NOMEM; }
+    character_secondary_gate(engine,&entry->warp_gate,false);
+    free(entry->warp_gate.bodies.data);
+    entry->warp_gate = gate;
+    if (claim) character_secondary_gate(engine,&entry->warp_gate,true);
+    return NMO_OK;
+}
+
+static void character_secondary_clock(nmo_engine_t *engine, nmo_object_id_t warper, bool linked, float rate)
+{
+    nmo_animation_state_t *state = (nmo_animation_state_t *)eng_animation_state(engine,warper);
+    state->flags = (state->flags & ~CKANIMATION_LINKTOFRAMERATE) | (linked ? CKANIMATION_LINKTOFRAMERATE : 0);
+    state->frame_rate = rate;
+}
+
+typedef struct character_return_target {
+    nmo_object_id_t id, track;
+    float frame, rate;
+    bool linked;
+} character_return_target_t;
+
+static nmo_status_t character_secondary_target(nmo_engine_t *engine, eng_character_t *runtime,
+    float warp_length, character_return_target_t *target)
+{
+    const nmo_animation_state_t *active = eng_animation_state(engine,runtime->active);
+    float frame, length = eng_animation_length(active), duration = fmaxf(warp_length,1);
+    if (!eng_animation_frame(engine,runtime->active,&frame) || !isfinite(frame) ||
+        !isfinite(length) || length < 0 || !isfinite(active->frame_rate)) return NMO_ERR_VALIDATION_FAILED;
+    *target = (character_return_target_t){.id=runtime->active,.frame=frame+warp_length,
+        .linked=(active->flags & CKANIMATION_LINKTOFRAMERATE) != 0,.rate=active->frame_rate};
+    if (!isfinite(target->frame)) return NMO_ERR_VALIDATION_FAILED;
+    if (length > 0) {
+        if (target->linked && target->rate == 0) target->frame = frame;
+        else if (target->linked && target->rate < 0) {
+            target->frame = frame-duration;
+            if (target->frame < 0) {
+                if (runtime->next == runtime->active) target->frame += length;
+                if (target->frame < 0) target->frame = 0;
+            }
+        } else if (target->frame > length) {
+            target->frame = fmodf(target->frame,length);
+            if (target->frame == 0) target->frame = length;
+        }
+    } else target->frame = 0;
+    const nmo_animation_state_t *queued = eng_animation_state(engine,runtime->next);
+    bool distinct = runtime->next != runtime->active && character_owned_keyed(engine,runtime,runtime->next);
+    bool queued_linked = distinct && (queued->flags & CKANIMATION_LINKTOFRAMERATE);
+    if (length > 0 && target->linked && target->rate != 0 && queued_linked) {
+        float future = frame+(target->rate < 0 ? -duration : duration);
+        bool crossing = target->rate < 0 ? future < 0 : future >= length &&
+            (frame != length || (active->flags & CKANIMATION_CANBEBREAK));
+        if (crossing) {
+            float queued_length = eng_animation_length(queued);
+            if (!isfinite(queued_length) || queued_length < 0 || !isfinite(queued->frame_rate)) return NMO_ERR_VALIDATION_FAILED;
+            float remaining = target->rate < 0 ? future : future-length;
+            float entry = runtime->frame_dest+remaining*(queued->frame_rate/target->rate);
+            if (!isfinite(entry)) return NMO_ERR_VALIDATION_FAILED;
+            target->id = runtime->next;
+            target->frame = fminf(fmaxf(entry,0),queued_length);
+        }
+    }
+    bool held = frame == length && !(active->flags & CKANIMATION_CANBEBREAK) && !(target->linked && target->rate < 0);
+    if (held || (distinct && target->linked != queued_linked)) {
+        target->track = runtime->active;
+        target->frame = frame;
+    }
+    return NMO_OK;
+}
+
+static nmo_status_t character_secondary_return(nmo_engine_t *engine, eng_character_t *runtime,
+    eng_secondary_animation_t *entry, float length, bool *warped)
+{
+    *warped = entry->phase == ENG_SECONDARY_LEAVING;
+    if (*warped || !character_owned_keyed(engine,runtime,runtime->active)) return NMO_OK;
+    nmo_object_id_t from = entry->phase == ENG_SECONDARY_PLAYING ? entry->id : entry->warper;
+    if (from == runtime->active || !character_owned_keyed(engine,runtime,from)) return NMO_OK;
+    character_return_target_t target;
+    nmo_status_t status = character_secondary_target(engine,runtime,length,&target);
+    if (status != NMO_OK) return status;
+    if (eng_animation_state(engine,entry->warper) == NULL) entry->warper = character_secondary_warper(engine,runtime);
+    if (entry->warper == 0) return NMO_ERR_NOMEM;
+    float ignored;
+    if (from == target.id) {
+        float frame = 0;
+        eng_animation_frame(engine,runtime->active,&frame);
+        status = eng_keyed_animation_transition(engine,entry->warper,from,runtime->active,0,length,frame,&ignored);
+        if (status == NMO_OK) {
+            eng_animation_set_current_step(engine,entry->warper,0);
+            from = entry->warper;
+        }
+    }
+    if (status == NMO_OK) status = eng_keyed_animation_transition(engine,entry->warper,from,target.id,0,length,target.frame,&ignored);
+    if (status == NMO_OK) status = character_secondary_refresh_gate(engine,entry,false);
+    if (status != NMO_OK) return status;
+    if (target.id != runtime->active) character_secondary_clock(engine,entry->warper,target.linked,fabsf(target.rate));
+    if (!eng_animation_set_frame(engine,entry->warper,0)) return NMO_ERR_VALIDATION_FAILED;
+    character_secondary_gate(engine,&entry->warp_gate,true);
+    entry->flags |= CKSECONDARYANIMATION_DOWARP;
+    entry->warp_length = length;
+    entry->track = target.track;
+    entry->phase = ENG_SECONDARY_LEAVING;
+    *warped = true;
+    return NMO_OK;
+}
+
 nmo_status_t eng_character_stop_secondary(nmo_engine_t *engine, nmo_object_id_t character, nmo_object_id_t animation)
 {
+    return eng_character_stop_secondary_warp(engine,character,animation,false,0);
+}
+
+nmo_status_t eng_character_stop_secondary_from_animation(nmo_engine_t *engine, nmo_object_id_t character,
+    nmo_object_id_t animation, float length)
+{
+    const nmo_animation_state_t *state = eng_animation_state(engine,animation);
+    uint32_t flags = state != NULL ? (state->flags & CKANIMATION_SECONDARY_ALL)>>16 : 0;
+    return eng_character_stop_secondary_warp(engine,character,animation,(flags & CKSECONDARYANIMATION_DOWARP) != 0,length);
+}
+
+nmo_status_t eng_character_stop_secondary_warp(nmo_engine_t *engine, nmo_object_id_t character,
+    nmo_object_id_t animation, bool warp, float length)
+{
     eng_character_t *runtime = character_runtime(engine, character);
-    if (runtime == NULL || animation == 0) return NMO_ERR_INVALID_ARGUMENT;
+    if (runtime == NULL || animation == 0 || !isfinite(length)) return NMO_ERR_INVALID_ARGUMENT;
     const nmo_animation_state_t *state = eng_animation_state(engine, animation);
     if (state != NULL && eng_object_ref(engine, animation, &state->character) != character) return NMO_ERR_INVALID_ARGUMENT;
     for (size_t i = 0; i < runtime->secondary.count; i++) {
-        if (runtime->secondary.data[i].id == animation) { character_remove_secondary(engine, runtime, i); return NMO_OK; }
+        if (runtime->secondary.data[i].id == animation) {
+            bool warped = false;
+            if (warp && state != NULL) {
+                nmo_status_t status = character_secondary_return(engine,runtime,&runtime->secondary.data[i],length,&warped);
+                if (status != NMO_OK) return status;
+            }
+            if (!warped) character_remove_secondary(engine,runtime,i);
+            return NMO_OK;
+        }
     }
     return state != NULL ? NMO_OK : NMO_ERR_INVALID_ARGUMENT;
 }
@@ -493,6 +623,41 @@ static nmo_status_t character_process_secondary(nmo_engine_t *engine, eng_charac
 {
     for (size_t i = 0; i < runtime->secondary.count;) {
         eng_secondary_animation_t *entry = &runtime->secondary.data[i];
+        if (entry->phase == ENG_SECONDARY_LEAVING) {
+            const nmo_animation_state_t *warp = eng_animation_state(engine,entry->warper);
+            float next;
+            if (warp == NULL) { character_remove_secondary(engine,runtime,i); continue; }
+            float duration = eng_animation_length(warp);
+            if (!eng_animation_next_frame(engine,entry->warper,delta,&next)) return NMO_ERR_VALIDATION_FAILED;
+            bool live = false;
+            if (entry->track != 0) {
+                bool stopped = eng_animation_state(engine,runtime->active) == NULL;
+                nmo_object_id_t target = stopped ? entry->track : runtime->active;
+                if (character_owned_keyed(engine,runtime,target) && target != entry->warper) {
+                    const nmo_animation_state_t *state = eng_animation_state(engine,target);
+                    bool linked = (warp->flags & CKANIMATION_LINKTOFRAMERATE) != 0;
+                    float rate = warp->frame_rate, frame = 0, step = 0;
+                    eng_animation_frame(engine,target,&frame);
+                    if (stopped) frame = (state->flags & CKANIMATION_LINKTOFRAMERATE) && state->frame_rate < 0 ? 0 : eng_animation_length(state);
+                    eng_animation_current_step(engine,entry->warper,&step);
+                    eng_animation_set_current_step(engine,entry->warper,0);
+                    float ignored;
+                    nmo_status_t status = eng_keyed_animation_transition(engine,entry->warper,entry->warper,target,0,duration,frame,&ignored);
+                    if (status != NMO_OK) { eng_animation_set_current_step(engine,entry->warper,step); return status; }
+                    character_secondary_clock(engine,entry->warper,linked,rate);
+                    status = character_secondary_refresh_gate(engine,entry,true);
+                    if (status != NMO_OK) return status;
+                    if (!eng_animation_set_frame(engine,entry->warper,fminf(next,duration))) return NMO_ERR_VALIDATION_FAILED;
+                    entry->track = target;
+                    live = true;
+                }
+            }
+            if (next <= duration) {
+                if (!live && !eng_animation_set_frame(engine,entry->warper,next)) return NMO_ERR_VALIDATION_FAILED;
+                i++;
+            } else character_remove_secondary(engine,runtime,i);
+            continue;
+        }
         if (entry->phase == ENG_SECONDARY_ENTERING) {
             const nmo_animation_state_t *warp = eng_animation_state(engine,entry->warper);
             float current, next;

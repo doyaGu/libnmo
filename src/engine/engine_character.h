@@ -52,6 +52,10 @@ nmo_status_t eng_character_play_secondary(nmo_engine_t *engine, nmo_object_id_t 
 nmo_status_t eng_character_play_secondary_warp(nmo_engine_t *engine, nmo_object_id_t character,
     nmo_object_id_t animation, float frame, uint32_t flags, float length, uint32_t loops);
 nmo_status_t eng_character_stop_secondary(nmo_engine_t *engine, nmo_object_id_t character, nmo_object_id_t animation);
+nmo_status_t eng_character_stop_secondary_warp(nmo_engine_t *engine, nmo_object_id_t character,
+    nmo_object_id_t animation, bool warp, float length);
+nmo_status_t eng_character_stop_secondary_from_animation(nmo_engine_t *engine, nmo_object_id_t character,
+    nmo_object_id_t animation, float length);
 void eng_character_flush_secondary(nmo_engine_t *engine, nmo_object_id_t character);
 size_t eng_character_secondary_count(nmo_engine_t *engine, nmo_object_id_t character);
 nmo_object_id_t eng_character_secondary_animation(nmo_engine_t *engine, nmo_object_id_t character, size_t index);
