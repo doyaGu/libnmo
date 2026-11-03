@@ -24,6 +24,7 @@ nmo_status_t eng_register_narratives(nmo_engine_t *engine);
 nmo_status_t eng_register_effects(nmo_engine_t *engine);
 nmo_status_t eng_register_cameras(nmo_engine_t *engine);
 nmo_status_t eng_register_characters(nmo_engine_t *engine);
+nmo_status_t eng_register_unlimited_controller(nmo_engine_t *engine);
 nmo_status_t eng_register_lights(nmo_engine_t *engine);
 nmo_status_t eng_register_world_environments(nmo_engine_t *engine);
 nmo_status_t eng_register_controllers(nmo_engine_t *engine);

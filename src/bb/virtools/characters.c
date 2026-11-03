@@ -79,5 +79,6 @@ static const nmo_engine_block_desc_t character_blocks[] = {
 
 nmo_status_t eng_register_characters(nmo_engine_t *engine)
 {
-    return ENG_REGISTER_BLOCKS(engine,character_blocks);
+    nmo_status_t status = ENG_REGISTER_BLOCKS(engine,character_blocks);
+    return status == NMO_OK ? eng_register_unlimited_controller(engine) : status;
 }
