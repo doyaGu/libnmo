@@ -7,7 +7,18 @@
 #include "../engine_internal.h"
 
 #include "format/nmo_object.h"
+#include "format/nmo_chunk_api.h"
+#include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_camera_schemas.h"
+#include "object/builtin/nmo_dataarray_schemas.h"
+#include "object/builtin/nmo_light_schemas.h"
+#include "object/builtin/nmo_material_schemas.h"
+#include "object/builtin/nmo_object_schemas.h"
+#include "object/nmo_deserialize_context.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_statesave_ids.h"
+#include "type/nmo_object_guids.h"
+#include "type/nmo_type_query.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -15,6 +26,105 @@
 /* ============================================================================
  * Initial conditions (CKScene::SetObjectInitialValue, GetObjectInitialValue)
  * ============================================================================ */
+
+/* Take ownership of the value only after its replacement can be stored. */
+static nmo_status_t eng_store_ic(nmo_engine_t *engine, const eng_ic_t *value)
+{
+    int32_t index = eng_map_get(&engine->ics.map, value->id);
+    eng_ic_t *ic = NULL;
+    if (index >= 0) {
+        ic = &engine->ics.list.data[index];
+        if (ic->has_array) eng_array_release(&ic->array);
+    } else if (ENG_VEC_PUSH(engine->ics.list, ic)) {
+        if (!eng_map_put(&engine->ics.map, value->id, (int32_t)(engine->ics.list.count - 1u))) {
+            engine->ics.list.count--;
+            return NMO_ERR_NOMEM;
+        }
+    } else {
+        return NMO_ERR_NOMEM;
+    }
+    *ic = *value;
+    return NMO_OK;
+}
+
+nmo_status_t eng_load_ic(nmo_engine_t *engine, nmo_object_id_t id, nmo_chunk_t *chunk)
+{
+    nmo_object_t *object = eng_find_object(engine, id);
+    if (object == NULL || (eng_entity_index(engine, id) < 0 &&
+                          object->class_id != NMO_CID_DATAARRAY && object->class_id != NMO_CID_MATERIAL)) {
+        return NMO_OK; /* The engine does not model this object's initial values. */
+    }
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_class_id(engine->types, object->class_id);
+    if (type == NULL || type->vtable == NULL || type->vtable->deserialize == NULL) {
+        return NMO_ERR_NOT_SUPPORTED;
+    }
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    if (arena == NULL) return NMO_ERR_NOMEM;
+    nmo_object_t decoded = {.id = object->id, .class_id = object->class_id,
+                            .type_guid = object->type_guid, .state_size = object->state_size};
+    decoded.state = nmo_arena_alloc(arena, decoded.state_size, NMO_MAX_ALIGN);
+    nmo_chunk_t *saved = nmo_chunk_clone(chunk, arena);
+    nmo_status_t status = decoded.state != NULL && saved != NULL ? NMO_OK : NMO_ERR_NOMEM;
+    const eng_module_t *module = eng_module_of(engine, id, NULL);
+    const nmo_type_runtime_t runtime = {.types = engine->types, .ops = engine->operations_registry};
+    nmo_deserialize_context_t context = nmo_deserialize_context_create(arena, module->repo, &runtime, 0);
+    context.object = &decoded;
+    bool created = false;
+    if (status == NMO_OK) {
+        memset(decoded.state, 0, decoded.state_size);
+        status = type->vtable->create != NULL ? type->vtable->create(decoded.state, type, &context) : NMO_OK;
+        created = status == NMO_OK;
+    }
+    if (status == NMO_OK) status = nmo_chunk_start_read(saved);
+    if (status == NMO_OK) status = type->vtable->deserialize(decoded.state, saved, type, &context);
+    eng_ic_t ic = {.id = id};
+    if (status == NMO_OK) {
+        const nmo_object_state_t *base = nmo_type_query_object_get_ancestor_state_by_guid(
+            engine->types, &decoded, CKPGUID_OBJECT);
+        ic.visibility = base != NULL && (base->visibility_flags & NMO_CKOBJECT_VISIBLE) ? 0x40 : 0;
+        if (base != NULL && (base->visibility_flags & NMO_CKOBJECT_HIERARCHICAL)) ic.visibility |= 0x200;
+        const nmo_3dentity_state_t *entity = nmo_type_query_object_get_ancestor_state_by_guid(
+            engine->types, &decoded, CKPGUID_3DENTITY);
+        if (entity != NULL) {
+            ic.has_matrix = entity->has_entityndata_chunk || entity->has_matrix_chunk;
+            memcpy(ic.world, entity->world_matrix, sizeof(ic.world));
+            ic.has_parent = entity->has_entityndata_chunk || entity->has_parent_chunk;
+            ic.parent = eng_module_id(module, nmo_ref_runtime_id(&entity->parent));
+        }
+        const nmo_camera_state_t *camera = nmo_type_query_object_get_ancestor_state_by_guid(
+            engine->types, &decoded, CKPGUID_CAMERA);
+        if (camera != NULL) {
+            ic.has_planes = camera->has_cameraonly_chunk || camera->has_planes_chunk;
+            ic.near_plane = camera->near_plane;
+            ic.far_plane = camera->far_plane;
+        }
+        const nmo_light_state_t *light = nmo_type_query_object_get_ancestor_state_by_guid(
+            engine->types, &decoded, CKPGUID_LIGHT);
+        if (light != NULL && light->has_light_data_chunk) {
+            ic.has_light = true;
+            ic.light_color[0] = light->light_data.diffuse.r;
+            ic.light_color[1] = light->light_data.diffuse.g;
+            ic.light_color[2] = light->light_data.diffuse.b;
+            ic.light_color[3] = light->light_data.diffuse.a;
+            ic.light_active = (light->flags & NMO_LIGHT_FLAG_ACTIVE) != 0;
+        }
+        if (object->class_id == NMO_CID_MATERIAL) {
+            const nmo_material_state_t *material = decoded.state;
+            ic.has_material = material->has_material_data != 0;
+            if (ic.has_material) eng_material_from_state(engine, id, material, &ic.material);
+        }
+        if (object->class_id == NMO_CID_DATAARRAY &&
+            nmo_chunk_seek_identifier(saved, CK_STATESAVE_DATAARRAYFORMAT) == NMO_OK) {
+            ic.has_array = true;
+            status = eng_array_from_state(engine, module, id, decoded.state, &ic.array);
+        }
+        if (status == NMO_OK) status = eng_store_ic(engine, &ic);
+    }
+    if (status != NMO_OK && ic.has_array) eng_array_release(&ic.array);
+    if (created && type->vtable->destroy != NULL) type->vtable->destroy(decoded.state, type, &context);
+    nmo_arena_destroy(arena);
+    return status;
+}
 
 /* CKSaveObjectState into the level scene's initial value: what the engine models of the object */
 void eng_save_ic(nmo_engine_t *engine, nmo_object_id_t id)
@@ -31,25 +141,14 @@ void eng_save_ic(nmo_engine_t *engine, nmo_object_id_t id)
     if (array == NULL && !has_matrix && material == NULL) {
         return;
     }
-    int32_t index = eng_map_get(&engine->ics.map, id);
-    eng_ic_t *ic = NULL;
-    if (index >= 0) {
-        ic = &engine->ics.list.data[index];
-        if (ic->has_array) {
-            eng_array_release(&ic->array);
-        }
-    } else if (ENG_VEC_PUSH(engine->ics.list, ic)) {
-        if (!eng_map_put(&engine->ics.map, id, (int32_t)(engine->ics.list.count - 1u))) {
-            engine->ics.list.count--;
-            return;
-        }
-    } else {
-        return;
-    }
-    memset(ic, 0, sizeof(*ic));
+    eng_ic_t value;
+    memset(&value, 0, sizeof(value));
+    eng_ic_t *ic = &value;
     ic->id = id;
     ic->has_array = array != NULL && eng_array_clone(&ic->array, array);
+    if (array != NULL && !ic->has_array) return;
     ic->has_matrix = has_matrix;
+    ic->has_parent = has_matrix;
     if (has_matrix) {
         memcpy(ic->world, world, sizeof(world));
         int32_t entity = eng_entity_index(engine, id);
@@ -69,6 +168,7 @@ void eng_save_ic(nmo_engine_t *engine, nmo_object_id_t id)
         ic->light_active = light->active;
     }
     ic->visibility = eng_object_visibility(engine, id);
+    if (eng_store_ic(engine, ic) != NMO_OK && ic->has_array) eng_array_release(&ic->array);
 }
 
 /* CKReadObjectState of the object's initial value in the level scene, when it is in it and has one */
@@ -88,15 +188,15 @@ void eng_restore_ic(nmo_engine_t *engine, nmo_object_id_t id)
         *array = copy;
     }
     eng_set_object_visibility(engine, id, ic->visibility);
-    if (ic->has_matrix) {
+    if (ic->has_parent) {
         /* CK3dEntity::Load: the parent (keeping where it is), then the world matrix */
         int32_t entity = eng_entity_index(engine, id);
         if (entity >= 0) {
             eng_entity_set_parent(engine, entity,
                                   ic->parent != 0 ? eng_entity_index(engine, ic->parent) : -1, true);
         }
-        nmo_engine_set_entity_world_matrix(engine, id, ic->world, true);
     }
+    if (ic->has_matrix) nmo_engine_set_entity_world_matrix(engine, id, ic->world, true);
     /* CKCamera, CKMaterial and CKLight's own members */
     if (ic->has_planes) {
         eng_set_camera_planes(engine, id, ic->near_plane, ic->far_plane);

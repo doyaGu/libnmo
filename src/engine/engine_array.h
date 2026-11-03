@@ -10,6 +10,8 @@
 #include "engine_base.h"
 
 typedef struct eng_range eng_range_t;
+typedef struct eng_module eng_module_t;
+typedef struct nmo_dataarray_state nmo_dataarray_state_t;
 
 /* A CKDataArray cell: INT, FLOAT and OBJECT hold 32 bits, STRING text, PARAMETER bytes. */
 typedef struct eng_cell {
@@ -51,6 +53,9 @@ void eng_free_arrays(nmo_engine_t *engine);
 eng_array_t *eng_find_array(const nmo_engine_t *engine, nmo_object_id_t id);
 nmo_status_t eng_add_array(nmo_engine_t *engine, nmo_object_id_t id);
 bool eng_array_clone(eng_array_t *dest, const eng_array_t *source);
+nmo_status_t eng_array_from_state(nmo_engine_t *engine, const eng_module_t *module,
+                                   nmo_object_id_t id, const nmo_dataarray_state_t *state,
+                                   eng_array_t *array);
 void eng_array_release(eng_array_t *array);
 nmo_status_t eng_load_groups(nmo_engine_t *engine, const eng_range_t *range);
 nmo_status_t eng_add_group(nmo_engine_t *engine, nmo_object_id_t id);

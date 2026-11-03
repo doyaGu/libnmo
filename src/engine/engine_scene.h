@@ -20,6 +20,7 @@ typedef struct eng_ic {
     eng_array_t array;
     bool has_matrix;
     float world[16];
+    bool has_parent;
     nmo_object_id_t parent; /* a 3D entity's parent then (0 for none), which CK3dEntity::Load sets */
     bool has_planes;        /* a camera's front and back planes */
     float near_plane, far_plane;
@@ -57,6 +58,8 @@ void eng_add_to_level_scene(nmo_engine_t *engine, nmo_object_id_t id);
 /* core/scene.c */
 /* CKScene::SetObjectInitialValue: what the engine models of the object */
 void eng_save_ic(nmo_engine_t *engine, nmo_object_id_t id);
+/* Decode the object's non-file initial value without changing the document. */
+nmo_status_t eng_load_ic(nmo_engine_t *engine, nmo_object_id_t id, struct nmo_chunk *chunk);
 /* CKReadObjectState of the object's initial value in the level scene, when it is in it and has one */
 void eng_restore_ic(nmo_engine_t *engine, nmo_object_id_t id);
 void eng_free_ics(nmo_engine_t *engine);

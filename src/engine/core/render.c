@@ -319,7 +319,7 @@ static void eng_material_texgen(const nmo_engine_t *engine, nmo_object_id_t id,
 }
 
 /* RCKMaterial as it loads: colors, the texture, and the packed modes and flags */
-static void eng_material_from_state(const nmo_engine_t *engine, nmo_object_id_t id,
+void eng_material_from_state(const nmo_engine_t *engine, nmo_object_id_t id,
                                     const nmo_material_state_t *state, nmo_engine_material_t *out)
 {
     memset(out, 0, sizeof(*out));

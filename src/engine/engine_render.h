@@ -14,6 +14,8 @@
 #include "core/nmo_math.h"
 #include "engine/nmo_engine_render.h"
 
+struct nmo_material_state;
+
 /* A mesh made at run time (TT Sky's), with what CKMesh would hold */
 typedef struct eng_mesh {
     nmo_object_id_t id;
@@ -148,6 +150,9 @@ int32_t eng_object_visibility(const nmo_engine_t *engine, nmo_object_id_t id);
 void eng_set_object_visibility(nmo_engine_t *engine, nmo_object_id_t id, int32_t flags);
 /* The material as it is now, made from the file's the first time; NULL for no CKMaterial */
 eng_material_t *eng_material(nmo_engine_t *engine, nmo_object_id_t id);
+/* Decode a material's saved members, including references in its module. */
+void eng_material_from_state(const nmo_engine_t *engine, nmo_object_id_t id,
+                              const struct nmo_material_state *state, nmo_engine_material_t *out);
 /* A material made at run time (CreateObject(CKCID_MATERIAL)), with CKMaterial's defaults */
 eng_material_t *eng_material_new(nmo_engine_t *engine, nmo_object_id_t id);
 /* The 2D entity drawn no more: the object was destroyed */

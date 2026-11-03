@@ -75,10 +75,11 @@ static int eng_scene_entry_compare(const void *a, const void *b)
  * chunk holds runtime IDs (see nmo_level_state_t).
  */
 static bool eng_level_scene(nmo_engine_t *engine, eng_scene_entry_t **out_entries,
-                            size_t *out_count)
+                            size_t *out_count, nmo_status_t *out_status)
 {
     *out_entries = NULL;
     *out_count = 0;
+    *out_status = NMO_OK;
     const eng_module_t *module = &engine->modules.data[0];
     size_t count = 0;
     nmo_object_t **objects =
@@ -92,11 +93,14 @@ static bool eng_level_scene(nmo_engine_t *engine, eng_scene_entry_t **out_entrie
     }
     nmo_scene_state_t scene;
     memset(&scene, 0, sizeof(scene));
-    if (chunk == NULL || nmo_scene_vtable.create(&scene, NULL, NULL) != NMO_OK) {
+    if (chunk == NULL) {
         return false;
     }
-    bool read = nmo_chunk_start_read(chunk) == NMO_OK &&
-                nmo_scene_deserialize(&scene, chunk, NULL, NULL) == NMO_OK;
+    *out_status = nmo_scene_vtable.create(&scene, NULL, NULL);
+    if (*out_status != NMO_OK) return false;
+    *out_status = nmo_chunk_start_read(chunk);
+    if (*out_status == NMO_OK) *out_status = nmo_scene_deserialize(&scene, chunk, NULL, NULL);
+    bool read = *out_status == NMO_OK;
     (void)nmo_chunk_start_read(chunk);
     eng_scene_entry_t *entries =
         read && scene.object_descs.count > 0
@@ -108,11 +112,17 @@ static bool eng_level_scene(nmo_engine_t *engine, eng_scene_entry_t **out_entrie
             entries[i].id = descs[i].ref.raw_id;
             entries[i].flags = descs[i].flags;
             entries[i].has_ic = descs[i].initial_value != NULL;
+            if (entries[i].has_ic) {
+                *out_status = eng_load_ic(engine, entries[i].id, descs[i].initial_value);
+                if (*out_status != NMO_OK) break;
+            }
         }
         *out_count = scene.object_descs.count;
-        qsort(entries, *out_count, sizeof(*entries), eng_scene_entry_compare);
+        if (*out_status == NMO_OK) qsort(entries, *out_count, sizeof(*entries), eng_scene_entry_compare);
+    } else if (read && scene.object_descs.count > 0) {
+        *out_status = NMO_ERR_NOMEM;
     }
-    if (read) {
+    if (read && *out_status == NMO_OK) {
         eng_render_apply_scene(engine, scene.background_color, scene.background_texture.raw_id,
                                scene.ambient_light_color, (int32_t)scene.fog_mode,
                                scene.fog_color, scene.fog_start, scene.fog_end,
@@ -179,12 +189,17 @@ nmo_status_t nmo_engine_start(nmo_engine_t *engine, nmo_engine_start_mode_t mode
      */
     eng_scene_entry_t *scene = NULL;
     size_t scene_count = 0;
-    engine->has_level_scene = eng_level_scene(engine, &scene, &scene_count);
+    nmo_status_t scene_status = NMO_OK;
+    engine->has_level_scene = eng_level_scene(engine, &scene, &scene_count, &scene_status);
+    if (scene_status != NMO_OK) {
+        free(scene);
+        engine->started = false;
+        return scene_status;
+    }
     for (size_t i = 0; i < scene_count; i++) {
         eng_add_to_level_scene(engine, scene[i].id);
-        /* Its initial value: the state it was loaded with stands for the one the scene saved */
         if (scene[i].has_ic) {
-            eng_save_ic(engine, scene[i].id);
+            eng_restore_ic(engine, scene[i].id);
         }
     }
     bool has_scene = mode == NMO_ENGINE_START_SCENE_DEFAULT && engine->has_level_scene;

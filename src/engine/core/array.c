@@ -135,14 +135,11 @@ static bool eng_cell_load(nmo_engine_t *engine, const eng_module_t *module,
     }
 }
 
-static nmo_status_t eng_load_array(nmo_engine_t *engine, const eng_module_t *module,
-                                   nmo_object_id_t id, const nmo_dataarray_state_t *state)
+nmo_status_t eng_array_from_state(nmo_engine_t *engine, const eng_module_t *module,
+                                   nmo_object_id_t id, const nmo_dataarray_state_t *state,
+                                   eng_array_t *array)
 {
-    eng_array_t *array = NULL;
-    if (!ENG_VEC_PUSH(engine->arrays, array) ||
-        !eng_map_put(&engine->array_map, id, (int32_t)(engine->arrays.count - 1u))) {
-        return NMO_ERR_NOMEM;
-    }
+    memset(array, 0, sizeof(*array));
     array->id = id;
     array->key_column = state->key_column;
     array->sorted = state->order != 0;
@@ -154,6 +151,9 @@ static nmo_status_t eng_load_array(nmo_engine_t *engine, const eng_module_t *mod
     array->columns = (eng_column_t *)calloc(array->column_count, sizeof(eng_column_t));
     if (array->columns == NULL || !eng_array_reserve(array, state->row_count)) {
         return NMO_ERR_NOMEM;
+    }
+    if (array->cells != NULL) {
+        memset(array->cells, 0, array->row_capacity * array->column_count * sizeof(*array->cells));
     }
     for (uint32_t c = 0; c < array->column_count; c++) {
         array->columns[c].type = (int32_t)state->column_formats[c].type;
@@ -175,6 +175,17 @@ static nmo_status_t eng_load_array(nmo_engine_t *engine, const eng_module_t *mod
         array->row_count = r + 1u;
     }
     return NMO_OK;
+}
+
+static nmo_status_t eng_load_array(nmo_engine_t *engine, const eng_module_t *module,
+                                   nmo_object_id_t id, const nmo_dataarray_state_t *state)
+{
+    eng_array_t *array = NULL;
+    if (!ENG_VEC_PUSH(engine->arrays, array) ||
+        !eng_map_put(&engine->array_map, id, (int32_t)(engine->arrays.count - 1u))) {
+        return NMO_ERR_NOMEM;
+    }
+    return eng_array_from_state(engine, module, id, state, array);
 }
 
 nmo_status_t eng_load_arrays(nmo_engine_t *engine, const eng_range_t *range)
