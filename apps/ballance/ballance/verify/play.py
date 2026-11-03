@@ -5,9 +5,10 @@ came of it read back: when the checkpoints were reached, the level
 finished or the ball fell off, where the ball stood still, and the rewards
 (extra points and lives) it never came near enough to take.
 
-The game starts level 1 as soon as its main menu takes Enter, and Q skips
-the tutorial; the ball is steered from frame STEER_FROM.  A level can also
-be watched in a window (watch), the autopilot playing it or a player.
+The level is played in the harness (ballance.verify.harness) rather than
+the game's base.cmo: it goes straight into the level, with no tutorial, and
+the ball can be steered by frame STEER_FROM.  A level can also be watched
+in a window (watch), the autopilot playing it or a player.
 """
 
 from __future__ import annotations
@@ -22,12 +23,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..core.nmo import Nmo
+from . import harness
 
-KEYS = "Enter@700-705,Enter@725-730,Q@860-1000"
-STEER_FROM = 1000
+STEER_FROM = 360   # past the camera's flight in (the ball takes no keys before about 280)
 FRAME_MS = "16.667"  # the time a frame steps, as headless runs step it
 BALLS = "Ball_Wood,Ball_Stone,Ball_Paper"
-REGISTRY = r"Software\Ballance\Settings\Language=1"
 STILL = 0.02       # the ball moves less than this in a frame: it stands still
 STALL = 60         # frames standing still worth telling of
 REACH = 4.0        # the ball takes a reward its middle comes this near
@@ -83,6 +83,8 @@ def _waits(point: list) -> str:
         return f"for {point[4]} to come by"
     if len(point) > 3 and point[3] == "rush":
         return ""
+    if len(point) > 3 and str(point[3]).startswith("push:"):
+        return f"rocked {point[3][5:]} frames, or lifted to {point[2]:g}"
     if len(point) > 3 and point[3]:
         return f"{point[3]} frames"
     if len(point) > 2 and point[2] is not None:
@@ -90,38 +92,62 @@ def _waits(point: list) -> str:
     return ""
 
 
-def watch(level: Path, route: Path | None, nmo: Nmo, game: Path, mute: bool = False) -> int:
-    """Plays level (a Level_NN.NMO) as level 1 in a window until it is
-    closed: with route (a builder's route_points.json) the autopilot rolls
-    the ball, a fixed time a frame as the verifier's runs step, so that it
-    plays as they did; without, the arrow keys do, in real time."""
+def sector_start(folder: Path, sector: int) -> str:
+    """The ball the player has at sector's start, from the builder's
+    route_sectors.json in folder."""
+    sectors = json.loads((folder / "route_sectors.json").read_text(encoding="utf-8"))
+    if not 1 <= sector <= len(sectors):
+        raise ValueError(f"the level has sectors 1 to {len(sectors)}, not {sector}")
+    return sectors[sector - 1]["ball"]
+
+
+def steer_from(sector: int) -> int:
+    """The frame the autopilot starts at: past the harness's setup of sector."""
+    return STEER_FROM + math.ceil(harness.setup_ms(sector) / float(FRAME_MS))
+
+
+def base_for(folder: Path, nmo: Nmo, sector: int) -> Path:
+    """The harness that starts the level built in folder at sector."""
+    return harness.ensure(nmo, sector, sector_start(folder, sector) if sector > 1 else "Wood")
+
+
+def watch(level: Path, route: Path | None, nmo: Nmo, game: Path, mute: bool = False,
+          sector: int = 1) -> int:
+    """Plays level (a Level_NN.NMO) as level 1, from sector, in a window until
+    it is closed: with route (a builder's route_points.json) the autopilot
+    rolls the ball, a fixed time a frame as the verifier's runs step, so that
+    it plays as they did; without, the arrow keys do, in real time."""
+    base = base_for(level.parent, nmo, sector) if sector > 1 else harness.ensure(nmo)
     with tempfile.TemporaryDirectory() as folder:
         shutil.copyfile(level, Path(folder) / "Level_01.NMO")
         command = [nmo.executable, "behavior", "run", "--window", "--physics", "ivp",
-                   "--path", folder, "--keys", KEYS, "--registry", REGISTRY]
+                   "--write", folder, "--path", str(game)]
         if route is not None:
             points = json.loads(route.read_text(encoding="utf-8"))
-            command += ["--delta", FRAME_MS, "--steer", f"{steer_text(points)}@{STEER_FROM}",
+            command += ["--delta", FRAME_MS,
+                        "--steer", f"{steer_text(points)}@{steer_from(sector)}",
                         "--steer-object", BALLS]
         if mute:
             command.append("--mute")
-        return subprocess.run([*command, "base.cmo"], cwd=game, stdout=subprocess.DEVNULL,
+        return subprocess.run([*command, str(base)], cwd=game, stdout=subprocess.DEVNULL,
                               check=False).returncode
 
 
-def play(folder: Path, frames: int, nmo: Nmo, game: Path) -> Play:
-    """Plays the level built in folder for frames, writing Level_01.NMO,
-    run.log and steer.csv there."""
+def play(folder: Path, frames: int, nmo: Nmo, game: Path, sector: int = 1) -> Play:
+    """Plays the level built in folder for frames, from sector, writing
+    Level_01.NMO, run.log and steer.csv there.  The rewards of the sectors
+    before are not looked for."""
     folder = folder.resolve()
     nmo.run("patch", "apply", "--project", str(folder / "manifest.json"),
             "-o", str(folder / "Level_01.NMO"))
     points = json.loads((folder / "route_points.json").read_text(encoding="utf-8"))
+    base = base_for(folder, nmo, sector)
     with open(folder / "run.log", "wb") as log:
         subprocess.run([nmo.executable, "behavior", "run", "--physics", "ivp",
-                        "--path", str(folder), "-n", str(frames), "--keys", KEYS,
-                        "--steer", f"{steer_text(points)}@{STEER_FROM}",
+                        "--write", str(folder), "--path", str(game), "-n", str(frames),
+                        "--steer", f"{steer_text(points)}@{steer_from(sector)}",
                         "--steer-object", BALLS, "--steer-log", str(folder / "steer.csv"),
-                        "--registry", REGISTRY, "base.cmo"],
+                        str(base)],
                        cwd=game, stdout=log, stderr=subprocess.STDOUT, check=False)
     result = Play(frames=frames)
     with open(folder / "run.log", encoding="utf-8", errors="replace") as log:
@@ -150,8 +176,9 @@ def play(folder: Path, frames: int, nmo: Nmo, game: Path) -> Play:
     if still_from and last[0] - still_from[0] >= STALL:
         result.stalls.append(Stall(still_from[0], last[0], still_from[1], still_from[2], ""))
     manifest = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
+    skipped = {f"Sector_{n:02d}" for n in range(1, sector)}
     for obj in manifest["scenes"][0]["objects"]:
-        if obj["name"].startswith(REWARDS):
+        if obj["name"].startswith(REWARDS) and not skipped & set(obj.get("groups", [])):
             at = obj["transform"]["position"]
             near = min((math.dist(at, where) for where in trace), default=math.inf)
             if near > REACH:

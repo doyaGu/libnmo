@@ -105,6 +105,9 @@ class Layout:
         self.balloon: tuple[list[float], Heading] | None = None
         self.trafos: set[str] = set()
         self.last_ball = "Wood"  # the ball the track hands the player last
+        # each sector's start: the ball the player has there, and the index of
+        # its first point
+        self.sector_starts: list[dict] = []
         self.points: list[list[float]] = [list(self.start)]
         self.warnings: list[str] = []
         self.floors: Floors | None = None  # the grid the track is on
@@ -131,6 +134,7 @@ class Layout:
             p = at(marker, d, opening + FUNNEL)
             sector = Sector()
             self.sectors.append(sector)
+            self.sector_starts.append({"ball": self.last_ball, "point": len(self.points) - 1})
             self.floors = sector.grid(p)
             sector.extras.append((funnel, at(marker, d, opening), d, edge, gap))
             self.open(self.floors, p, d)

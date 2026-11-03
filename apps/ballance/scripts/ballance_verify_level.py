@@ -2,7 +2,7 @@
 """Check a level: its floors' geometry, and (for a built one) a run of the
 game along the builder's points.
 
-    ballance_verify_level.py SOURCE [--play FRAMES --game DIR]
+    ballance_verify_level.py SOURCE [--play FRAMES --game DIR [--sector N]]
 
 SOURCE is a folder a level was built in (manifest.json and its OBJ meshes,
 as ballance_build_level.py writes them) or a level file (Level_NN.NMO, read
@@ -13,8 +13,11 @@ and the originals have some too (Level_01: 21 open wall ends, and that
 pocket).
 
 With --play, the built level is patched into Level_01.NMO in its folder and
-played for FRAMES in the game installed in DIR (`nmo behavior run`, physics
-by ivp), the ball steered along route_points.json; the checkpoints, the
+played for FRAMES with the game's files in DIR (`nmo behavior run`, physics
+by ivp, in libnmo's test base rather than the game's base.cmo: straight
+into the level), the ball steered along route_points.json; with --sector,
+from sector N's start, with the ball the player has there, its rewards
+and those after looked for only.  The checkpoints, the
 finish and any fall are reported, and where the ball stood still a while
 (the ball changers hold it 126 frames; a point that waits says what for),
 and each extra point or life the ball never came near enough to take before
@@ -41,7 +44,9 @@ def main() -> int:
     parser.add_argument("source", help="A built level's folder, or Level_NN.NMO")
     parser.add_argument("--play", type=int, metavar="FRAMES",
                         help="Play the built level for FRAMES and report how it went")
-    parser.add_argument("--game", help="Ballance installation folder (holds base.cmo)")
+    parser.add_argument("--game", help="Ballance installation folder (holds 3D Entities)")
+    parser.add_argument("--sector", type=int, default=1,
+                        help="Play from this sector's start (default: 1)")
     add_nmo_argument(parser)
     args = parser.parse_args()
 
@@ -54,7 +59,10 @@ def main() -> int:
         return 0
     if not source.is_dir() or not args.game:
         parser.error("--play needs a built level's folder and --game")
-    result = play(source, args.play, nmo, Path(args.game))
+    try:
+        result = play(source, args.play, nmo, Path(args.game), args.sector)
+    except ValueError as error:
+        parser.error(str(error))
     for frame, what in result.events:
         print(f"[{frame}] {what}")
     for stall in result.stalls:

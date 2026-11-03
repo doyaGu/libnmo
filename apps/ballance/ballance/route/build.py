@@ -73,6 +73,8 @@ def build(route: dict, out: Path, elements: Path | None, name: str) -> int:
         print(f"warning: {message}", file=sys.stderr)
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     (out / "route_points.json").write_text(json.dumps(layout.points) + "\n", encoding="utf-8")
+    (out / "route_sectors.json").write_text(json.dumps(layout.sector_starts) + "\n",
+                                            encoding="utf-8")
     (out / "route_plan.txt").write_text(layout.plan(), encoding="utf-8")
     print(out / "manifest.json")
     return 0

@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """Watch a level played in a window, or play it yourself.
 
-    ballance_play_level.py LEVEL [--self] [--mute] [--game DIR] [--nmo NMO]
+    ballance_play_level.py LEVEL [--sector N] [--self] [--mute] [--game DIR] [--nmo NMO]
 
 LEVEL is a folder a level was built in (as ballance_build_level.py writes
 it; its Level_01.NMO is patched from manifest.json first when that is newer)
-or a level file (Level_NN.NMO).  The level is played as level 1 of the game
-installed in DIR ($BALLANCE unless given), with libivp physics (the nmo CLI
-built with NMO_IVP_SOURCE_DIR and NMO_VIEWER, $NMO unless given), until the
-window is closed.  The game starts the level and skips the tutorial by
-itself.
+or a level file (Level_NN.NMO).  The level is played as level 1 with the
+game's files in DIR ($BALLANCE unless given), with libivp physics (the nmo
+CLI built with NMO_IVP_SOURCE_DIR and NMO_VIEWER, $NMO unless given), until
+the window is closed.  It runs in libnmo's test base, not the game's
+base.cmo: straight into the level, with no menu or tutorial; with --sector,
+from that sector's start with the ball the player has there (a built
+level's folder only).
 
 With a route_points.json beside the level, the builder's autopilot rolls
 the ball through the level as the verifier plays it, a frame stepping a
@@ -35,6 +37,12 @@ def main() -> int:
     )
     parser.add_argument('level', help="A built level's folder, or Level_NN.NMO")
     parser.add_argument(
+        '--sector',
+        type=int,
+        default=1,
+        help="Start at this sector (a built level's folder only)",
+    )
+    parser.add_argument(
         '--self',
         action='store_true',
         dest='by_hand',
@@ -49,9 +57,10 @@ def main() -> int:
     add_nmo_argument(parser)
     args = parser.parse_args()
 
-    if not args.game or not (Path(args.game) / 'base.cmo').is_file():
+    if not args.game or not (Path(args.game) / '3D Entities').is_dir():
         parser.error(
-            'give the Ballance installation folder (holding base.cmo) with --game or $BALLANCE'
+            'give the Ballance installation folder (holding 3D Entities) with --game '
+            'or $BALLANCE'
         )
     source, nmo = Path(args.level), Nmo(args.nmo)
     folder = source if source.is_dir() else source.parent
@@ -71,7 +80,12 @@ def main() -> int:
     elif not route.is_file():
         print(f'no {route.name} beside the level: roll the ball with the arrow keys')
         route = None
-    return watch(level, route, nmo, Path(args.game), args.mute)
+    if args.sector > 1 and not source.is_dir():
+        parser.error("--sector needs a built level's folder")
+    try:
+        return watch(level, route, nmo, Path(args.game), args.mute, args.sector)
+    except ValueError as error:
+        parser.error(str(error))
 
 
 if __name__ == '__main__':

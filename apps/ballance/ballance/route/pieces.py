@@ -20,9 +20,11 @@ from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, 
                              CLIMB_LENGTH, CLIMB_TOPS, CLIMB_TRAFO, CRADLE_BALL, CRADLE_EXIT,
                              CRADLE_RING, CRADLE_TOP, CREST_POINT, DIAMOND_EXIT, DIAMOND_OUT,
                              ELEMENT_LIFT, FAN_BELOW, FAN_BLOCK_FAN, FAN_BLOCK_RING, FAN_BLOCK_TOP,
-                             FAN_REACH, FAN_TOWER_EXIT, FAN_TOWER_HOLD, FAN_TOWER_LIFT,
-                             FAN_TOWER_PATH, FAN_TOWER_PILLAR, FAN_TOWER_RING, FAN_TOWER_ROCK,
-                             FAN_TOWER_RUN, FLAPS_COUNTERWEIGHT, FLAPS_LENGTH, FLAPS_MODULE, FUNNEL,
+                             FAN_REACH, FAN_TOWER_ASIDE, FAN_TOWER_BACK, FAN_TOWER_BACK_FRAMES,
+                             FAN_TOWER_CAUGHT, FAN_TOWER_EXIT, FAN_TOWER_IN_FRAMES, FAN_TOWER_LIFT,
+                             FAN_TOWER_PAST, FAN_TOWER_PATH, FAN_TOWER_PILLAR, FAN_TOWER_RING,
+                             FAN_TOWER_RUN, FAN_TOWER_TRIES,
+                             FLAPS_COUNTERWEIGHT, FLAPS_LENGTH, FLAPS_MODULE, FUNNEL,
                              HAIRPIN_GAP, HOLED_TROUGH, JUMP_ABOVE, JUMP_AREA, JUMP_DOWN, JUMP_HALF,
                              LIFT_BELOW, LIFT_ENTRY, LIFT_EXIT, LIFT_RIDE, LIFT_TOP, LIFT_WALLS,
                              LOG_CROSS, LOG_MOST, LOG_SEGMENT, LOG_TOP, MAZE_BELOW, MAZE_ENTRY,
@@ -32,6 +34,8 @@ from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, 
                              PUSHERS_LENGTH, PUSHERS_MODULES, PUSHERS_PATH, RAILING_ARM,
                              RAILING_BRIDGE, RAILING_INSET, RAIL_DOCK_BELOW, RAIL_DOCK_LENGTH,
                              RAIL_FALL, RAIL_OVERHANG, RAIL_RING_STEP, SACK_ABOVE, SACK_HANG,
+                             SACK_CLEAR, SACK_NEAR, SACK_REACH, SACK_SEAT, SACK_SWING,
+                             SACK_WAIT_BACK,
                              SPIRAL_OUT, SPIRAL_PATH, STONEBOX_LENGTH, STONEBOX_MODULE,
                              STONEBOX_PATH, STONEBOX_RISE, STONEBOX_TRAFO, SWING_ABOVE, SWING_FAR,
                              SWING_GO, SWING_HALF, SWING_SEAT, SWING_WAIT, SWITCH_CROSS,
@@ -134,9 +138,32 @@ def lay_run(layout: Layout, sector: int, piece: dict, track: Track, length: floa
                                    turn_of(right_of(d))))
         if piece.get("point"):
             layout.elements.append(("P_Extra_Point", sector, [x, crest + CREST_POINT, z]))
+    if isinstance(track.run, Beam) and not hump:
+        wait_for_sacks(layout, p, d, h, drop, length)
     track.p = at(p, d, length)
     track.h = h - drop
     layout.points.append(list(track.p))
+
+
+def wait_for_sacks(layout: Layout, p: Point, d: Heading, h: float, drop: float,
+                   length: float) -> None:
+    """Points before each sack a straight beam from p passes under, waiting
+    for it to swing aside (see SACK_* in ballance.game.measures)."""
+    sacks = [where for kind, _, where, _ in layout.modules if kind == "P_Modul_26"]
+    waits = []
+    for n, (x, y, z) in enumerate(sacks):
+        along = (x - p[0]) * d[0] + (z - p[1]) * d[1]
+        across = (x - p[0]) * -d[1] + (z - p[1]) * d[0]
+        ball = h - drop * along / length + ABOVE_V + BALL_RADIUS if length else h
+        if SACK_WAIT_BACK < along < length and abs(across) < SACK_NEAR and \
+                abs(y - ball) < SACK_NEAR + BALL_RADIUS:
+            seat = SACK_SEAT if n == 0 else f"{SACK_SEAT}{n:03d}"
+            wait = list(at(p, d, along - SACK_WAIT_BACK))
+            for aside in (SACK_SWING, -SACK_CLEAR):
+                there = at((x, z), d, 0.0, aside)
+                waits.append((along, aside < 0, wait + [None, 0, seat, there[0], there[1],
+                                                        SACK_REACH]))
+    layout.points += [point for *_, point in sorted(waits)]
 
 
 def height_back(run: list[Ring], back: float) -> float:
@@ -308,9 +335,14 @@ def lay_tower(layout: Layout, sector: int, part: Sector, piece: dict, track: Tra
     layout.points.append(list(fan) + [None, "rush"])
     # The fan blows only once the ball's bounding box, which grows and
     # shrinks as the ball turns, reaches its wind; resting in the bend the
-    # ball is just short of it, so it is rocked across the rail to turn it.
-    for aside in (FAN_TOWER_ROCK, -FAN_TOWER_ROCK, FAN_TOWER_ROCK, -FAN_TOWER_ROCK):
-        layout.points.append(list(at(fan, d, 0.0, aside)) + [None, FAN_TOWER_HOLD])
+    # ball may be just short of it, so it is backed up and run in again.
+    caught = above + FAN_TOWER_CAUGHT
+    for k in range(FAN_TOWER_TRIES):
+        aside = FAN_TOWER_ASIDE if k % 2 == 0 else -FAN_TOWER_ASIDE
+        layout.points.append(list(at(fan, d, -FAN_TOWER_BACK, aside)) +
+                             [caught, f"push:{FAN_TOWER_BACK_FRAMES}"])
+        layout.points.append(list(at(fan, d, FAN_TOWER_PAST, aside)) +
+                             [caught, f"push:{FAN_TOWER_IN_FRAMES}"])
     layout.points.append([fan[0], fan[1], above + FAN_TOWER_LIFT])
     layout.points += [list(at(fan, d, z, x)) for x, z in FAN_TOWER_PATH]
     x, top, z = FAN_TOWER_EXIT

@@ -60,6 +60,18 @@ BEAM_JOIN, BEAM_BELOW, BEAM_TURN_GAP, BEAM_TURN_RUN = 11.4, 0.935, 8.0, 6.75
 # the crossing beam's way (over a road the levels turn it along the track);
 # an extra point floats 2.75 over the beam's middle there.
 SACK_HANG, CREST_POINT = 15.39, 2.75
+# A sack swings across the lane it hangs under, 5.8 each way from where it
+# hangs, a swing taking 70 to 95 frames (P_Modul_26's force turns every
+# 1.5 s); it is off a beam under it but for the 2.5 either side, for about
+# 57 frames a swing.  On a beam passing under one (within SACK_NEAR of it,
+# across and up), the autopilot waits SACK_WAIT_BACK before it, first for
+# the sack at one end of its swing (within SACK_REACH of SACK_SWING to the
+# side), then for it SACK_CLEAR out on the other side: going out, as it
+# must be, which leaves the ball, starting from rest, 45 frames to pass.
+# The game names the copies of P_Modul_26's sack SACK_SEAT, SACK_SEAT001,
+# ... in the order they are laid.
+SACK_NEAR, SACK_WAIT_BACK, SACK_SWING, SACK_CLEAR, SACK_REACH = 2.0, 5.0, 5.5, 3.3, 0.8
+SACK_SEAT = "P_Modul_26_Sack"
 # Logs (Level_12's A08_Halfpipe_*, "halfpipes" in the levels' names): half
 # logs 16.84 wide, their tops 2.26 above their axes, built of 50-long
 # segments with a flat face at either end.  Level_12 lays them crossing at
@@ -150,11 +162,18 @@ FAN_TOWER_PATH = [(-4.6, -2.3), (-4.6, 6.7), (-0.6, 10.7), (-7.6, 10.7), (-10.6,
                   (-10.6, -11.3), (15.4, -11.3), (15.4, 12.7), (12.4, 15.7), (-13.6, 15.7),
                   (-15.6, 13.7), (-15.6, 0.5)]
 FAN_TOWER_EXIT = (-17.9, 0.11, 0.48)
-# How far across the rail, and how many frames, the autopilot rocks the
-# ball in the bend (the fan blows once the ball's turning bounding box
-# reaches its wind box, 1.14 above it, which a ball resting there is just
-# short of).
-FAN_TOWER_ROCK, FAN_TOWER_HOLD = 1.5, 40
+# The fan blows once the ball's turning bounding box reaches its wind box,
+# 1.14 above it, which a ball resting in the bend may be just short of, and
+# wedged.  The autopilot then backs the ball up the rail and runs it in
+# again, at most FAN_TOWER_TRIES times: back FAN_TOWER_BACK for
+# FAN_TOWER_BACK_FRAMES, in at a point FAN_TOWER_PAST past the fan and
+# FAN_TOWER_ASIDE to one side, the sides by turns (the wind takes a ball
+# rolling in off the middle), for FAN_TOWER_IN_FRAMES; each push is over at
+# once when the ball is FAN_TOWER_CAUGHT above the fan's level (the wind
+# has it).
+FAN_TOWER_BACK, FAN_TOWER_BACK_FRAMES, FAN_TOWER_IN_FRAMES = 6.0, 40, 60
+FAN_TOWER_PAST, FAN_TOWER_ASIDE = 1.5, 0.8
+FAN_TOWER_TRIES, FAN_TOWER_CAUGHT = 6, 1.0
 # Railings (ballance.kit.railings): Level_01's round a floor's corner
 # (A01_Rail_04) has its posts 4.76 along the walls from the corner, as a
 # railing along a road has them 0.24 in from its ends; Level_05's beside a

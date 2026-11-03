@@ -11,7 +11,9 @@ kept with libnmo.
 
 ## What You Need
 
-- A Ballance installation, `<GAME_ROOT>`, with `base.cmo`.
+- A Ballance installation, `<GAME_ROOT>`, with its `3D Entities`. Its
+  `base.cmo` is not needed: levels are played in libnmo's own test base
+  (see [The Test Base](#the-test-base)).
 - The `nmo` CLI. Playing a level needs it built with libivp
   (`-DNMO_IVP_SOURCE_DIR=<libivp>`); watching it in a window needs
   `-DNMO_VIEWER=ON` and SDL3.
@@ -45,6 +47,7 @@ apps/ballance/scripts/ballance_play_level.py <out>
 |------|----------|
 | `manifest.json` | The level as a libnmo project manifest, with the OBJ meshes it names |
 | `route_points.json` | The points along the middle of the track, start to balloon, for the autopilot |
+| `route_sectors.json` | Each sector's start: the ball the player has there and the index of its first point |
 | `route_plan.txt` | Where each piece leaves the track: its point, the floor's height there and the heading |
 
 It prints a warning for each thing that builds but plays wrong (see
@@ -139,9 +142,11 @@ wall ends open against its block's end wall, and Level_01 has 21 open
 wall ends.
 
 With `--play FRAMES --game <GAME_ROOT>`, it patches the level into
-`Level_01.NMO` in the folder and plays it headless with libivp physics, the
-autopilot steering the ball along `route_points.json`. It writes `run.log`
-and `steer.csv` there and reports:
+`Level_01.NMO` in the folder and plays it headless with libivp physics in
+the test base, the autopilot steering the ball along `route_points.json`
+from frame 360. With `--sector N` the level starts at sector N, with the
+ball the player has there, and the rewards of the sectors before are not
+looked for. It writes `run.log` and `steer.csv` there and reports:
 
 - the checkpoints, the finish and any fall, with their frames;
 - where the ball stood still a while, and what the point it headed for
@@ -162,7 +167,8 @@ ball has to wait or rush:
 | `[x, z, y]` | Over a fan: wait there until the wind has lifted the ball to height `y` |
 | `[x, z, y, frames]` | Hold there for `frames`: a target pushed (switch, pusher, arm), the climbing logs' hole |
 | `[x, z, null, "rush"]` | Over a jump's gap: run at it flat out |
-| `[x, z, y, 0, seat, sx, sz, reach]` | Before a swing: wait until object `seat` comes within `reach` of `(sx, sz)` |
+| `[x, z, y, "push:N"]` | Head for it N frames, reached or not, or until the ball is `y` high: in the fan tower's bend, the ball backed up and run in again, off the middle by turns, till the wind takes it |
+| `[x, z, y, 0, seat, sx, sz, reach]` | Before a swing, or before a sack a beam passes under: wait until object `seat` comes within `reach` of `(sx, sz)` (a sack twice: at one end of its swing, then going out the other side) |
 
 `nmo behavior run --steer` takes them as `X,Z[,...];...@FRAME`.
 `ballance.verify.play.steer_text()` formats them that way.
@@ -184,20 +190,45 @@ with the arrow keys:
 ```sh
 apps/ballance/scripts/ballance_play_level.py <out>
 apps/ballance/scripts/ballance_play_level.py <out> --self
+apps/ballance/scripts/ballance_play_level.py <out> --sector 3
 ```
 
-The level plays as level 1 until the window is closed: the game starts it
-and skips the tutorial by itself. The autopilot steps a fixed 1/60 s a frame,
+The level plays as level 1, in the test base, until the window is closed;
+`--sector N` starts it at sector N. The autopilot steps a fixed 1/60 s a frame,
 as the verifier's headless runs do, so the ball goes the same way; in real
 time a marginal mechanism can go otherwise (the fan tower's ball may stay in
 its bend). `--mute` turns the sound off.
 
-Underneath it is `nmo behavior run --window --delta 16.667 --path <dir>
---keys 'Enter@700-705,Enter@725-730,Q@860-1000' --steer POINTS@1000
---steer-object Ball_Wood,Ball_Stone,Ball_Paper` run in the game's folder:
-`--path` puts a folder holding `Level_01.NMO` before the game's own, the
-Enters start level 1, Q skips the tutorial, and `--shot FILE@FRAME,...`
-saves frames.
+Underneath it is `nmo behavior run --window --delta 16.667 --write <dir>
+--path <GAME_ROOT> --steer POINTS@360 --steer-object
+Ball_Wood,Ball_Stone,Ball_Paper <test base>`: the files are looked for in
+`--write` (a folder holding `Level_01.NMO`), then in `--path` (the game's
+`3D Entities`), and `--shot FILE@FRAME,...` saves frames.
+
+## The Test Base
+
+`ballance.verify.harness` writes a composition of libnmo's own to play a
+level in, in place of the game's `base.cmo`: no intro, no menu, no
+tutorial, the level built and started at once (the ball rolls by frame
+280, where the game's menu took 1000). The level's gameplay is the game's
+own files in `3D Entities` (Gameplay, Levelinit, Balls, Sound, Menu for its
+fonts and keys, the PH modules), loaded as `base.cmo` loads them. What
+those files ask of `base.cmo`, all by name, the test base has: the `Level`
+object their messages go to, the arrays `GameSettings`, `DB_Options`,
+`Loading_Parameter` and `RegisterNMO`, and the script `Loading_Manager`,
+which Levelinit runs to load the level's modules. `GameSettings` has the
+tutorial off and Godmode on, so the game's debug keys work: 3 finishes the
+level, 2 gives a life.
+
+A start at sector N goes as the game's own start does: before the level is
+built, `AllLevel` is given the ball the player has at sector N and its
+reset point, so the ball starts there. The checkpoints before it are then
+reached as the game reaches them, all but the last by the test base, which
+the ball, standing on it, reaches itself; the skipped ones are stopped.
+
+It is written once to the system's temporary folder (`ballance-harness`,
+one file a sector start) with `nmo patch apply`: a project manifest for its
+objects, `nmo data fill` for its arrays and an edit plan for its scripts.
 
 `ballance_map_view.py` draws a level, built or original, from above, the
 sides, the corners or any angle, with the game's textures if given. It names
