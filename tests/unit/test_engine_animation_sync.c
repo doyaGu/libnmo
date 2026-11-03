@@ -202,8 +202,135 @@ TEST(engine_animation_sync, malformed_blocks_fail_before_rebinding_or_sending_me
     }
 }
 
+TEST(engine_animation_sync, frame_windows_preserve_endpoint_pause_loop_reverse_and_unlinked_rules)
+{
+    const struct { float frame, delta, fps; bool linked; size_t messages; } cases[] = {
+        {5.5f,2,1000,true,2}, {5,100,0,true,1}, {5,1000000,30,false,2},
+        {5,0,30,false,2}, {10,5,1000,true,5}, {10,100,0,true,0},
+        {0,2,1000,true,1}, {1,15,1000,true,2}, {5,2,-1000,true,0},
+        {5,0,-1000,true,1}, {-2.5f,1,1000,true,0}, {-.5f,2,1000,true,0},
+        {FLT_MAX,0,30,false,0},
+    };
+    for (size_t c = 0; c < COUNT(cases); c++) {
+        engine_fixture_t f;
+        begin(&f);
+        nmo_object_id_t clip = animation(&f,"Primary",10);
+        sync_config_t config; config_begin(&config); config_animation(&config,0);
+        const uint8_t keys[] = {1,1,1,1,1,0xff,1,1,1,1,1};
+        config_message(&config,"Tick",keys,COUNT(keys));
+        nmo_object_id_t block = synchronizer(&f,&clip,1,&config);
+        ASSERT_TRUE(block != 0);
+        message_log_t log = {0}; commit(&f,&log);
+        ASSERT_EQ(NMO_OK,eng_character_set_active_animation(f.engine,f.owner_id,clip));
+        ASSERT_TRUE(eng_animation_set_current_step(f.engine,clip,cases[c].frame/10));
+        ASSERT_TRUE(eng_animation_set_playback(f.engine,clip,CKANIMATION_LINKTOFRAMERATE,
+            cases[c].linked ? CKANIMATION_LINKTOFRAMERATE : 0,cases[c].fps));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,cases[c].delta));
+        ASSERT_EQ(cases[c].messages,log.count);
+        ASSERT_FLOAT_EQ(1000,eng_animation_state(f.engine,clip)->frame_rate,0);
+        fixture_end(&f);
+    }
+}
+
+TEST(engine_animation_sync, primary_and_secondary_membership_marks_each_configured_record_once)
+{
+    engine_fixture_t f;
+    begin(&f);
+    nmo_object_id_t a = animation(&f,"Primary",10), b = animation(&f,"Secondary",10), inactive = animation(&f,"Inactive",10);
+    nmo_object_id_t clips[] = {a,b,inactive,UINT32_MAX,a};
+    sync_config_t config; config_begin(&config);
+    const uint8_t keys[] = {1,1,1,1,1,1,1,1,1,1,1};
+    for (int32_t i = 0; i < 5; i++) {
+        config_animation(&config,i);
+        config_message(&config,i == 1 ? "Secondary Tick" : "Primary Tick",keys,COUNT(keys));
+    }
+    nmo_object_id_t block = synchronizer(&f,clips,COUNT(clips),&config);
+    ASSERT_TRUE(block != 0);
+    message_log_t log = {0}; commit(&f,&log);
+    ASSERT_EQ(NMO_OK,eng_character_set_active_animation(f.engine,f.owner_id,a));
+    ASSERT_EQ(NMO_OK,eng_character_play_secondary(f.engine,f.owner_id,a,2.5f,CKSECONDARYANIMATION_LASTFRAME,0));
+    ASSERT_EQ(NMO_OK,eng_character_play_secondary(f.engine,f.owner_id,b,4.5f,CKSECONDARYANIMATION_LASTFRAME,0));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,1));
+    ASSERT_EQ(3u,log.count);
+    ASSERT_EQ(nmo_engine_message_type(f.engine,"Secondary Tick"),log.types[1]);
+    nmo_engine_destroy_object(f.engine,b);
+    log.count = 0;
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,1));
+    ASSERT_EQ(2u,log.count);
+    eng_character_flush_secondary(f.engine,f.owner_id);
+    ASSERT_EQ(NMO_OK,eng_character_set_active_animation(f.engine,f.owner_id,0));
+    log.count = 0;
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,1));
+    ASSERT_EQ(0u,log.count);
+    fixture_end(&f);
+}
+
+TEST(engine_animation_sync, primary_warps_only_emit_for_the_current_warper)
+{
+    engine_fixture_t f;
+    begin(&f);
+    nmo_object_id_t clips[] = {animation(&f,"Source",10),animation(&f,"Destination",10)};
+    sync_config_t config; config_begin(&config);
+    const uint8_t keys[] = {1,1,1,1};
+    config_animation(&config,0); config_message(&config,"Source Tick",keys,COUNT(keys));
+    config_animation(&config,1); config_message(&config,"Destination Tick",keys,COUNT(keys));
+    nmo_object_id_t block = synchronizer(&f,clips,COUNT(clips),&config);
+    ASSERT_TRUE(block != 0);
+    message_log_t log = {0}; commit(&f,&log);
+    ASSERT_EQ(NMO_OK,eng_character_set_active_animation(f.engine,f.owner_id,clips[0]));
+    ASSERT_TRUE(eng_animation_set_frame(f.engine,clips[0],2));
+    ASSERT_TRUE(eng_animation_set_playback(f.engine,clips[0],CKANIMATION_CANBEBREAK,CKANIMATION_CANBEBREAK,1000));
+    ASSERT_EQ(NMO_OK,eng_character_set_next_animation_warp(f.engine,f.owner_id,clips[1],CK_TRANSITION_WARPSTART,2));
+    nmo_object_id_t warper = eng_character_warper(f.engine,f.owner_id);
+    ASSERT_TRUE(warper != 0); ASSERT_EQ(warper,eng_character_active_animation(f.engine,f.owner_id));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,1));
+    ASSERT_EQ(0u,log.count);
+    ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(f.engine,local(&f,block,0),&warper,4));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,1));
+    ASSERT_EQ(1u,log.count);
+    ASSERT_EQ(nmo_engine_message_type(f.engine,"Source Tick"),log.types[0]);
+    nmo_engine_destroy_object(f.engine,warper);
+    log.count = 0;
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,1));
+    ASSERT_EQ(0u,log.count);
+    fixture_end(&f);
+}
+
+TEST(engine_animation_sync, off_stops_synchronization_without_stopping_automatic_character_playback)
+{
+    engine_fixture_t f;
+    begin(&f);
+    nmo_object_id_t clip = animation(&f,"Primary",10);
+    sync_config_t config; config_begin(&config); config_animation(&config,0);
+    const uint8_t keys[] = {1,1,1,1,1,1,1,1,1,1,1};
+    config_message(&config,"Tick",keys,COUNT(keys));
+    nmo_object_id_t block = synchronizer(&f,&clip,1,&config);
+    ASSERT_TRUE(block != 0);
+    fixture_link(&f,f.script_in,BLOCK_IN(&f,block,1),1);
+    message_log_t log = {0}; commit(&f,&log);
+    ASSERT_TRUE(eng_character_set_automatic(f.engine,f.owner_id,true));
+    ASSERT_EQ(NMO_OK,eng_character_set_active_animation(f.engine,f.owner_id,clip));
+    ASSERT_TRUE(eng_animation_set_frame(f.engine,clip,5));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0));
+    ASSERT_EQ(1u,log.count);
+    /* Off takes priority even if the configuration is damaged meanwhile. */
+    uint8_t invalid[7] = {0};
+    ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(f.engine,local(&f,block,1),invalid,sizeof(invalid)));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,1));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,2));
+    ASSERT_EQ(2u,runs(&f,block)); ASSERT_EQ(1u,log.count);
+    ASSERT_FALSE(nmo_engine_behavior_is_active(f.engine,block));
+    ASSERT_TRUE(eng_character_automatic(f.engine,f.owner_id));
+    float frame = 0; ASSERT_TRUE(eng_animation_frame(f.engine,clip,&frame)); ASSERT_FLOAT_EQ(8,frame,0);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_animation_sync, linked_primary_frames_send_each_marked_key_in_message_order);
 REGISTER_TEST(engine_animation_sync, empty_unconfigured_blocks_keep_running_without_messages);
 REGISTER_TEST(engine_animation_sync, malformed_blocks_fail_before_rebinding_or_sending_messages);
+REGISTER_TEST(engine_animation_sync, frame_windows_preserve_endpoint_pause_loop_reverse_and_unlinked_rules);
+REGISTER_TEST(engine_animation_sync, primary_and_secondary_membership_marks_each_configured_record_once);
+REGISTER_TEST(engine_animation_sync, primary_warps_only_emit_for_the_current_warper);
+REGISTER_TEST(engine_animation_sync, off_stops_synchronization_without_stopping_automatic_character_playback);
 TEST_MAIN_END()
