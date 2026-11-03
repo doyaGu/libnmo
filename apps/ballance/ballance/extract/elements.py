@@ -616,7 +616,11 @@ def export_elements(levels: Levels, out: Path) -> dict[str, str]:
         if path is not None:
             source = cut.take(levels, path, out, centers)
             if source is not None:
-                found[cut.kind] = source
+                if isinstance(cut, ChainCut):
+                    for n in range(1, cut.most + 1):
+                        found[f"{cut.kind}_{n}"] = source
+                else:
+                    found[cut.kind] = source
     for path in levels.files:
         for name, fields in levels.objects(path).items():
             kind = kind_of(name)
