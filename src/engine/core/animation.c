@@ -4,8 +4,8 @@
  *        animation's keys (CK2_3D's RCKObjectAnimation, VxMath's VxQuaternion).
  *
  * The engine evaluates the linear and TCB position, rotation and scale
- * controllers, and Bezier position and scale; scale-axis and morph controllers
- * change nothing.
+ * controllers, Bezier position and scale, and linear/TCB scale axes.
+ * Morph controllers change nothing.
  * A keyed animation steps each of its object animations (CKKeyedAnimation::SetStep).
  */
 
@@ -25,6 +25,8 @@
 #define ANIM_TCB_SCALE 0x1b545904u
 #define ANIM_BEZIER_POSITION 0x921ab801u
 #define ANIM_BEZIER_SCALE 0x18ab4404u
+#define ANIM_LINEAR_SCALE_AXIS 0x2f200b08u
+#define ANIM_TCB_SCALE_AXIS 0x32595908u
 
 typedef struct anim_quat {
     float x, y, z, w;
@@ -88,21 +90,23 @@ static anim_quat_t anim_slerp(double t, anim_quat_t a, anim_quat_t b)
 }
 
 /* RCKLinearRotationController::Evaluate: time, quaternion */
-static anim_quat_t anim_linear_rotation(const nmo_objanim_controller_t *c, float time)
+static anim_quat_t anim_linear_rotation(const nmo_objanim_controller_t *c, float time, uint32_t stride)
 {
     const float *keys = (const float *)c->data;
+    uint32_t offset = stride - 4; /* Legacy scale-axis keys have an unused float after time. */
     uint32_t last = c->key_count - 1;
     if (time <= keys[0]) {
-        return (anim_quat_t){keys[1], keys[2], keys[3], keys[4]};
+        return (anim_quat_t){keys[offset], keys[offset+1], keys[offset+2], keys[offset+3]};
     }
-    if (time >= keys[last * 5]) {
-        const float *k = &keys[last * 5];
-        return (anim_quat_t){k[1], k[2], k[3], k[4]};
+    if (time >= keys[last * stride]) {
+        const float *k = &keys[last * stride + offset];
+        return (anim_quat_t){k[0], k[1], k[2], k[3]};
     }
     uint32_t low = 0, high = 0;
-    anim_segment(keys, 5, c->key_count, time, &low, &high);
-    const float *a = &keys[low * 5], *b = &keys[high * 5];
-    anim_quat_t q1 = {a[1], a[2], a[3], a[4]}, q2 = {b[1], b[2], b[3], b[4]};
+    anim_segment(keys, stride, c->key_count, time, &low, &high);
+    const float *a = &keys[low * stride], *b = &keys[high * stride];
+    anim_quat_t q1 = {a[offset], a[offset+1], a[offset+2], a[offset+3]};
+    anim_quat_t q2 = {b[offset], b[offset+1], b[offset+2], b[offset+3]};
     /* The phase from the nearer end; from the right one, the left one's hemisphere kept */
     double elapsed = (double)time - a[0], remaining = (double)b[0] - time;
     bool reversed = elapsed > remaining;
@@ -680,36 +684,64 @@ bool eng_object_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animati
     float frame = step * (state->has_length ? state->length : 0.0f);
     const nmo_objanim_controller_t *rotation = anim_controller(state, ANIM_LINEAR_ROTATION, 20);
     const nmo_objanim_controller_t *tcb_rotation = anim_controller(state, ANIM_TCB_ROTATION, 40);
+    if (state->flags & CK_OBJECTANIMATION_IGNOREROT) rotation = tcb_rotation = NULL;
+    uint32_t axis_stride = nmo_objanim_controller_format_key_size(ANIM_LINEAR_SCALE_AXIS, state->format);
+    const nmo_objanim_controller_t *axis = anim_controller(state, ANIM_LINEAR_SCALE_AXIS, axis_stride);
+    const nmo_objanim_controller_t *tcb_axis = anim_controller(state, ANIM_TCB_SCALE_AXIS, 40);
+    if (state->flags & CK_OBJECTANIMATION_IGNORESCALEROT) axis = tcb_axis = NULL;
+    anim_quat_t scale_axis = {0, 0, 0, 1};
+    if (axis != NULL) scale_axis = anim_linear_rotation(axis, frame, axis_stride / sizeof(float));
+    else if (tcb_axis != NULL) scale_axis = anim_tcb_rotation(tcb_axis, frame);
+    bool has_axis = axis != NULL || tcb_axis != NULL;
+    bool use_axis = has_axis && (scale_axis.x != 0 || scale_axis.y != 0 || scale_axis.z != 0);
     eng_matrix_t local = engine->entities.data[entity].local;
     eng_vector_t pos = {local.m[3][0], local.m[3][1], local.m[3][2]};
     eng_vector_t scale = {1.0f, 1.0f, 1.0f};
-    bool has_position = anim_vector(state, false, frame, &pos);
-    bool has_scaling = anim_vector(state, true, frame, &scale);
-    if (!has_position && !has_scaling && rotation == NULL && tcb_rotation == NULL) return true;
-    if (rotation != NULL || tcb_rotation != NULL || has_scaling) {
+    bool has_position = !(state->flags & CK_OBJECTANIMATION_IGNOREPOS) && anim_vector(state, false, frame, &pos);
+    bool has_scaling = !(state->flags & CK_OBJECTANIMATION_IGNORESCALE) && anim_vector(state, true, frame, &scale);
+    if (!has_position && !has_scaling && rotation == NULL && tcb_rotation == NULL && !has_axis) return true;
+    if (rotation != NULL || tcb_rotation != NULL || has_scaling || has_axis) {
         /* The channels the animation lacks, from the local matrix as it is */
         eng_matrix_t rot;
         eng_matrix_identity(&rot);
-        float *axes[3] = {&scale.x, &scale.y, &scale.z};
-        for (int r = 0; r < 3; r++) {
-            float length = sqrtf(local.m[r][0] * local.m[r][0] + local.m[r][1] * local.m[r][1] +
-                                 local.m[r][2] * local.m[r][2]);
-            if (!has_scaling) *axes[r] = length;
-            for (int c = 0; c < 3; c++) {
-                rot.m[r][c] = length > 0.0f ? local.m[r][c] / length : (r == c ? 1.0f : 0.0f);
+        if (has_axis) {
+            bool need_rotation = rotation == NULL && tcb_rotation == NULL;
+            if ((need_rotation || !has_scaling) &&
+                !eng_matrix_decompose(&local, use_axis, need_rotation ? &rot : NULL,
+                                       has_scaling ? NULL : &scale)) return false;
+        } else {
+            float *axes[3] = {&scale.x, &scale.y, &scale.z};
+            for (int r = 0; r < 3; r++) {
+                float length = sqrtf(local.m[r][0] * local.m[r][0] + local.m[r][1] * local.m[r][1] +
+                                     local.m[r][2] * local.m[r][2]);
+                if (!has_scaling) *axes[r] = length;
+                for (int c = 0; c < 3; c++) {
+                    rot.m[r][c] = length > 0.0f ? local.m[r][c] / length : (r == c ? 1.0f : 0.0f);
+                }
             }
         }
         if (rotation != NULL) {
-            anim_quat_matrix(anim_linear_rotation(rotation, frame), &rot);
+            anim_quat_matrix(anim_linear_rotation(rotation, frame, 5), &rot);
         } else if (tcb_rotation != NULL) {
             anim_quat_matrix(anim_tcb_rotation(tcb_rotation, frame), &rot);
         }
         /* The stretch before the rotation */
         eng_matrix_t stretch;
         eng_matrix_identity(&stretch);
-        stretch.m[0][0] = scale.x;
-        stretch.m[1][1] = scale.y;
-        stretch.m[2][2] = scale.z;
+        if (use_axis) {
+            eng_matrix_t basis;
+            anim_quat_matrix(scale_axis, &basis);
+            const float values[3] = {scale.x, scale.y, scale.z};
+            for (int r = 0; r < 3; r++) for (int c = 0; c < 3; c++) {
+                double sum = 0;
+                for (int k = 0; k < 3; k++) sum += (double)basis.m[r][k] * basis.m[c][k] * values[k];
+                stretch.m[r][c] = (float)sum;
+            }
+        } else {
+            stretch.m[0][0] = scale.x;
+            stretch.m[1][1] = scale.y;
+            stretch.m[2][2] = scale.z;
+        }
         eng_matrix_multiply(&local, &rot, &stretch);
     }
     local.m[3][0] = pos.x;
