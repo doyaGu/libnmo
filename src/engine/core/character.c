@@ -34,6 +34,12 @@ static eng_character_t *character_runtime(nmo_engine_t *engine, nmo_object_id_t 
     return runtime;
 }
 
+bool eng_character_automatic(nmo_engine_t *engine, nmo_object_id_t character)
+{
+    eng_character_t *runtime = character_runtime(engine, character);
+    return runtime != NULL && runtime->automatic;
+}
+
 nmo_status_t eng_load_characters(nmo_engine_t *engine, const eng_range_t *range)
 {
     const eng_module_t *module = &engine->modules.data[range->module];
@@ -43,7 +49,20 @@ nmo_status_t eng_load_characters(nmo_engine_t *engine, const eng_range_t *range)
         if (object == NULL) continue;
         nmo_object_id_t id = nmo_object_get_id(object);
         if (id < range->first || id > range->last || nmo_object_get_class_id(object) != NMO_CID_CHARACTER) continue;
-        if (character_runtime(engine, eng_module_id(module, id)) == NULL) return NMO_ERR_NOMEM;
+        nmo_object_id_t runtime_id = eng_module_id(module, id);
+        eng_character_t *runtime = character_runtime(engine, runtime_id);
+        if (runtime == NULL) return NMO_ERR_NOMEM;
+        /* Automatic characters remain behavior-manager objects even without
+         * scripts. Existing script owners retain their place and priority. */
+        if (runtime->automatic && eng_map_get(&engine->object_map, runtime_id) < 0) {
+            const nmo_character_state_t *state = nmo_object_get_state(object);
+            eng_object_t *entry = NULL;
+            int32_t index = (int32_t)engine->objects.count;
+            if (!ENG_VEC_PUSH(engine->objects, entry) || !eng_map_put(&engine->object_map, runtime_id, index)) return NMO_ERR_NOMEM;
+            entry->id = runtime_id;
+            entry->priority = ((const nmo_beobject_state_t *)state)->priority;
+            entry->order = (uint32_t)index;
+        }
     }
     return NMO_OK;
 }

@@ -469,6 +469,12 @@ nmo_status_t eng_manager_execute(nmo_engine_t *engine)
         if (engine->profile.enabled) {
             engine->profile.frame.active_objects_executed++; /* CKBeObject::ExecuteBehaviors */
         }
+        nmo_object_id_t owner = engine->objects.data[object_index].id;
+        if (engine->objects.data[object_index].active && eng_character_automatic(engine, owner)) {
+            status = eng_character_process(engine, owner, engine->delta);
+            if (status != NMO_OK) return status;
+            executed = true;
+        }
         /* Not a pointer to the object: a script that loads a file moves the objects */
         for (uint32_t s = 0; s < engine->objects.data[object_index].script_count; s++) {
             const eng_object_t *object = &engine->objects.data[object_index];

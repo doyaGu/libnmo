@@ -235,7 +235,7 @@ nmo_status_t nmo_engine_start(nmo_engine_t *engine, nmo_engine_start_mode_t mode
                 eng_emit(engine, NMO_ENGINE_EVENT_ACTIVATE, script, 0, 1);
             }
         }
-        if (any_active && object->active) {
+        if ((any_active || eng_character_automatic(engine, object->id)) && object->active) {
             eng_list_object(engine, (int32_t)o);
         }
     }

@@ -305,6 +305,58 @@ TEST(engine_character, terminal_yaw_is_transferred_after_motion_in_the_old_world
     fixture_end(&f);
 }
 
+TEST(engine_character, automatic_scriptless_characters_run_each_frame_and_respect_object_activity)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t body, actor = character(&f,&body);
+    nmo_object_id_t a = clip(&f,"A",actor,body,10,0,10);
+    nmo_character_state_t *state = fixture_state(&f,actor);
+    state->base.entity_flags |= CK_3DENTITY_CHARACTERDOPROCESS;
+    state->active_animation = nmo_ref_from_id(a);
+    fixture_begin_edit(&f);
+    fixture_commit_bare(&f,NULL);
+    ASSERT_EQ(NMO_OK,nmo_engine_start(f.engine,NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,2));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,3));
+    ASSERT_FLOAT_EQ(5,frame(f.engine,a),0);
+    ASSERT_FLOAT_EQ(5,x(f.engine,actor),0);
+    ASSERT_EQ(NMO_OK,nmo_engine_activate_object(f.engine,actor,false));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,1));
+    ASSERT_FLOAT_EQ(5,frame(f.engine,a),0);
+    ASSERT_EQ(NMO_OK,nmo_engine_activate_object(f.engine,actor,true));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,1));
+    ASSERT_FLOAT_EQ(6,frame(f.engine,a),0);
+    fixture_end(&f);
+}
+
+TEST(engine_character, automatic_processing_precedes_the_characters_own_script)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t body, actor = character(&f,&body);
+    nmo_object_id_t a = clip(&f,"A",actor,body,10,0,10);
+    nmo_character_state_t *state = fixture_state(&f,actor);
+    state->base.entity_flags |= CK_3DENTITY_CHARACTERDOPROCESS;
+    state->active_animation = nmo_ref_from_id(a);
+    f.owner_id = actor;
+    f.script_id = fixture_add_script(&f,"Script",&f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t set = fixture_block(&f,NMO_GUID(0xe456e78a,0x456789aa),"Set Position");
+    fixture_input_int(&f,fixture_target(&f,set),(int32_t)actor);
+    fixture_link(&f,f.script_in,BLOCK_IN(&f,set,0),0);
+    float target[] = {100,0,0};
+    fixture_input_value(&f,BLOCK_PIN(&f,set,0),target,sizeof(target));
+    fixture_commit(&f,NULL);
+    ASSERT_EQ(NMO_OK,nmo_engine_start(f.engine,NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,2));
+    ASSERT_FLOAT_EQ(100,x(f.engine,actor),0);
+    ASSERT_FLOAT_EQ(100,x(f.engine,body),0);
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,2));
+    ASSERT_FLOAT_EQ(102,x(f.engine,actor),0);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_character, clocks_restore_saved_cursors_and_separate_cursor_updates_from_pose);
 REGISTER_TEST(engine_character, linked_unlinked_paused_and_reverse_clocks_follow_native_frame_rules);
@@ -314,4 +366,6 @@ REGISTER_TEST(engine_character, primary_handoff_carries_time_across_linked_and_m
 REGISTER_TEST(engine_character, queued_self_is_consumed_once_and_reverse_playback_finishes_the_source_start);
 REGISTER_TEST(engine_character, queued_entry_promotes_without_advancing_and_immediate_switch_preserves_world_position);
 REGISTER_TEST(engine_character, terminal_yaw_is_transferred_after_motion_in_the_old_world_basis);
+REGISTER_TEST(engine_character, automatic_scriptless_characters_run_each_frame_and_respect_object_activity);
+REGISTER_TEST(engine_character, automatic_processing_precedes_the_characters_own_script);
 TEST_MAIN_END()
