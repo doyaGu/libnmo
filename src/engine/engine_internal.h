@@ -12,6 +12,7 @@
 #define NMO_ENGINE_INTERNAL_H
 
 #include "engine_array.h"
+#include "engine_animation.h"
 #include "engine_attributes.h"
 #include "engine_base.h"
 #include "engine_graph.h"
@@ -50,6 +51,7 @@ struct nmo_engine {
     ENG_VEC(eng_array_t) arrays;
     ENG_VEC(eng_group_t) groups;
     ENG_VEC(eng_entity_t) entities;
+    eng_animations_t animations;
     eng_map_t array_map, group_map, entity_map;
     /* The objects in the level scene (CKBeObject::IsInScene); every object without one */
     eng_map_t scene_objects;

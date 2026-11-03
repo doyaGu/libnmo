@@ -819,6 +819,12 @@ bool eng_object_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animati
     bool has_position = anim_sample(engine, animation, ANIM_POSITION, frame, &position);
     bool has_scaling = anim_sample(engine, animation, ANIM_SCALE, frame, &scaling);
     if (has_position) pos = position.vector;
+    nmo_vector_t offset;
+    if (has_position && eng_animation_root_offset(engine, animation, &offset)) {
+        pos.x += offset.x;
+        pos.y += offset.y;
+        pos.z += offset.z;
+    }
     if (has_scaling) scale = scaling.vector;
     if (!has_position && !has_scaling && !has_rotation && !has_axis) {
         eng_animation_morph(engine, animation, engine->entities.data[entity].id, frame);
@@ -878,15 +884,5 @@ bool eng_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animation, flo
     if (object == NULL || nmo_object_get_class_id(object) != NMO_CID_KEYEDANIMATION) {
         return eng_object_animation_set_step(engine, animation, step);
     }
-    const nmo_keyedanimation_state_t *state =
-        (const nmo_keyedanimation_state_t *)nmo_object_get_state(object);
-    if (state == NULL) {
-        return false;
-    }
-    step = step > 1.0f ? 1.0f : step < 0.0f ? 0.0f : step;
-    for (uint32_t i = 0; i < state->animation_count; i++) {
-        eng_object_animation_set_step(engine, eng_object_ref(engine, animation, &state->animation_ids[i]),
-                                      step);
-    }
-    return true;
+    return eng_keyed_animation_set_step(engine, animation, step);
 }

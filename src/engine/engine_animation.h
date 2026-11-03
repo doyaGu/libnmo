@@ -5,6 +5,26 @@
 #include "engine_base.h"
 #include "object/builtin/nmo_animation_schemas.h"
 
+typedef struct eng_range eng_range_t;
+
+typedef struct eng_keyed_animation {
+    nmo_object_id_t id, root_entity, root_animation;
+    nmo_vector_t offset;
+    bool ready;
+} eng_keyed_animation_t;
+
+typedef struct eng_animations {
+    ENG_VEC(eng_keyed_animation_t) keyed;
+    eng_map_t keyed_map;
+    eng_map_t parents;   /* ObjectAnimation ID -> parent keyed index */
+    eng_map_t consumed;  /* Saved root vectors transferred from these objects */
+} eng_animations_t;
+
+nmo_status_t eng_load_animations(nmo_engine_t *engine, const eng_range_t *range);
+void eng_free_animations(nmo_engine_t *engine);
+bool eng_keyed_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animation, float step);
+bool eng_animation_root_offset(const nmo_engine_t *engine, nmo_object_id_t animation, nmo_vector_t *out);
+
 typedef struct eng_animation_source {
     nmo_object_id_t id;
     const nmo_objectanimation_state_t *state;
