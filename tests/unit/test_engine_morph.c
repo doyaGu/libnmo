@@ -205,6 +205,72 @@ TEST(engine_morph, invalid_or_ignored_morphs_leave_the_mesh_unchanged)
     fixture_end(&f);
 }
 
+TEST(engine_morph, deformed_geometry_drives_normals_bounds_and_ray_hits)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t mesh = morph_mesh(&f, 3);
+    nmo_object_id_t animation = fixture_create(&f, NMO_CID_OBJECTANIMATION, "Morph");
+    nmo_mesh_state_t *geometry = fixture_state(&f, mesh);
+    nmo_objectanimation_state_t *state = fixture_state(&f, animation);
+    struct { uint32_t keys, vertices, normals; float data[20]; } blob = {
+        2, 3, 0, {0, 0,0,0, 0,0,2, 2,0,0, 8, 10,4,20, 10,6,20, 12,4,20}
+    };
+    nmo_objanim_controller_t controller = {NMO_OBJANIM_CONTROLLER_MORPH, 0, sizeof(blob), &blob};
+    uint16_t indices[] = {0, 1, 2};
+    nmo_face_t face = {0};
+    geometry->face_count = 1;
+    geometry->face_vertex_indices = indices;
+    geometry->faces = &face;
+    state->entity = nmo_ref_from_id(f.owner_id);
+    state->has_length = 1;
+    state->length = 8;
+    state->controller_count = 1;
+    state->controllers = &controller;
+    fixture_begin_edit(&f);
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_TRUE(eng_object_animation_set_step(f.engine, animation, 0.5f));
+    nmo_engine_mesh_t runtime;
+    ASSERT_TRUE(nmo_engine_mesh(f.engine, mesh, &runtime));
+    for (int v = 0; v < 3; v++) {
+        ASSERT_FLOAT_EQ(0, runtime.vertices[v].normal.x, 0.000001f);
+        ASSERT_FLOAT_EQ(sqrtf(0.5f), runtime.vertices[v].normal.y, 0.000001f);
+        ASSERT_FLOAT_EQ(-sqrtf(0.5f), runtime.vertices[v].normal.z, 0.000001f);
+    }
+    uint32_t version = runtime.version;
+    ASSERT_TRUE(eng_object_animation_set_step(f.engine, animation, 1));
+    ASSERT_TRUE(nmo_engine_mesh(f.engine, mesh, &runtime));
+    ASSERT_TRUE(runtime.version > version);
+    float host_position[3];
+    ASSERT_TRUE(nmo_engine_mesh_vertex(f.engine, mesh, 0, host_position));
+    ASSERT_FLOAT_EQ(10, host_position[0], 0);
+    ASSERT_FLOAT_EQ(4, host_position[1], 0);
+    ASSERT_FLOAT_EQ(20, host_position[2], 0);
+    int32_t entity = eng_entity_index(f.engine, f.owner_id);
+    eng_vector_t low, high, center;
+    ASSERT_TRUE(eng_entity_local_box(f.engine, entity, &low, &high));
+    ASSERT_FLOAT_EQ(10, low.x, 0);
+    ASSERT_FLOAT_EQ(4, low.y, 0);
+    ASSERT_FLOAT_EQ(20, low.z, 0);
+    ASSERT_FLOAT_EQ(12, high.x, 0);
+    ASSERT_FLOAT_EQ(6, high.y, 0);
+    ASSERT_FLOAT_EQ(20, high.z, 0);
+    ASSERT_TRUE(eng_entity_bary_center(f.engine, entity, &center));
+    ASSERT_FLOAT_EQ(10 + 2.0f/3, center.x, 0.000001f);
+    ASSERT_FLOAT_EQ(4 + 2.0f/3, center.y, 0.000001f);
+    ASSERT_FLOAT_EQ(20, center.z, 0.000001f);
+    ASSERT_FLOAT_EQ(sqrtf(20.0f/9), eng_entity_radius(f.engine, entity), 0.000001f);
+    eng_ray_hit_t hit;
+    const eng_vector_t from = {10.5f, 4.5f, 10}, to = {10.5f, 4.5f, 30};
+    ASSERT_EQ(1, eng_entity_ray_intersection(f.engine, entity, &from, &to, &hit));
+    ASSERT_FLOAT_EQ(20, hit.point.z, 0.000001f);
+    ASSERT_FLOAT_EQ(-1, hit.normal.z, 0.000001f);
+    ASSERT_FLOAT_EQ(20, hit.corners[0].z, 0.000001f);
+    ASSERT_FLOAT_EQ(123, geometry->vertices[0].position.x, 0);
+    fixture_end(&f);
+}
+
 TEST(engine_morph, separate_keys_convert_legacy_normals_and_replace_optional_sections)
 {
     for (int mode = 0; mode < 4; mode++) {
@@ -249,5 +315,6 @@ TEST(engine_morph, separate_keys_convert_legacy_normals_and_replace_optional_sec
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_morph, controller_positions_and_packed_normals_match_reference_samples);
 REGISTER_TEST(engine_morph, invalid_or_ignored_morphs_leave_the_mesh_unchanged);
+REGISTER_TEST(engine_morph, deformed_geometry_drives_normals_bounds_and_ray_hits);
 REGISTER_TEST(engine_morph, separate_keys_convert_legacy_normals_and_replace_optional_sections);
 TEST_MAIN_END()

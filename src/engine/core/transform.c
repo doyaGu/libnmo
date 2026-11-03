@@ -731,9 +731,10 @@ void eng_entity_look_at(nmo_engine_t *engine, int32_t index, const eng_vector_t 
     eng_entity_set_orientation(engine, index, &dir, &up, &right, -1, keep_children);
 }
 
-/* The entity's current mesh, as the file has it; NULL for none. */
+/* The entity's current mesh, with its runtime geometry when requested. */
 static const nmo_mesh_state_t *eng_entity_mesh(nmo_engine_t *engine, int32_t index,
-                                               const eng_module_t **out_module)
+                                               const eng_module_t **out_module,
+                                               nmo_mesh_state_t *runtime)
 {
     nmo_object_id_t id = eng_entity_at(engine, index)->id;
     nmo_object_t *object = eng_find_object(engine, id);
@@ -743,30 +744,42 @@ static const nmo_mesh_state_t *eng_entity_mesh(nmo_engine_t *engine, int32_t ind
                        : NULL;
     nmo_object_id_t mesh_local = state != NULL ? nmo_ref_runtime_id(&state->current_mesh) : 0u;
     const eng_module_t *module = eng_module_of(engine, id, NULL);
-    nmo_object_t *mesh =
-        mesh_local != 0 ? eng_find_object(engine, eng_module_id(module, mesh_local)) : NULL;
+    nmo_object_id_t mesh_id = mesh_local != 0 ? eng_module_id(module, mesh_local) : 0;
+    nmo_object_t *mesh = mesh_id != 0 ? eng_find_object(engine, mesh_id) : NULL;
     if (out_module != NULL) {
         *out_module = module;
     }
-    return mesh != NULL ? (const nmo_mesh_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
-                              engine->types, mesh, CKPGUID_MESH)
-                        : NULL;
+    const nmo_mesh_state_t *file = mesh != NULL
+        ? (const nmo_mesh_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(engine->types, mesh, CKPGUID_MESH)
+        : NULL;
+    if (file == NULL || runtime == NULL) return file;
+    *runtime = *file;
+    const eng_mesh_copy_t *copy = eng_mesh_copy_find(engine, mesh_id);
+    if (copy != NULL) {
+        runtime->vertices = copy->vertices;
+        if (copy->geometry_changed) {
+            runtime->bary_center = copy->bary_center;
+            runtime->radius = copy->radius;
+        }
+    }
+    return runtime;
 }
 
 /* CK3dEntity::GetCurrentMesh() != NULL */
 bool eng_entity_has_mesh(nmo_engine_t *engine, int32_t index)
 {
-    return eng_entity_mesh(engine, index, NULL) != NULL;
+    return eng_entity_mesh(engine, index, NULL, NULL) != NULL;
 }
 
 /*
  * GetBaryCenter: the barycenter of the current mesh (the mean of its
- * vertices, as loaded) in world space; the position for an entity without
+ * vertices) in world space; the position for an entity without
  * a mesh, and false then.
  */
 bool eng_entity_bary_center(nmo_engine_t *engine, int32_t index, eng_vector_t *out)
 {
-    const nmo_mesh_state_t *mesh_state = eng_entity_mesh(engine, index, NULL);
+    nmo_mesh_state_t runtime;
+    const nmo_mesh_state_t *mesh_state = eng_entity_mesh(engine, index, NULL, &runtime);
     if (mesh_state == NULL) {
         *out = eng_matrix_row(&eng_entity_at(engine, index)->world, 3);
         return false;
@@ -780,7 +793,8 @@ bool eng_entity_bary_center(nmo_engine_t *engine, int32_t index, eng_vector_t *o
 /* GetRadius: the mesh's radius times the largest world axis scale; 0 without a mesh. */
 float eng_entity_radius(nmo_engine_t *engine, int32_t index)
 {
-    const nmo_mesh_state_t *mesh = eng_entity_mesh(engine, index, NULL);
+    nmo_mesh_state_t runtime;
+    const nmo_mesh_state_t *mesh = eng_entity_mesh(engine, index, NULL, &runtime);
     if (mesh == NULL) {
         return 0.0f; /* the world box of an entity without a mesh is not valid */
     }
@@ -805,7 +819,8 @@ float eng_entity_radius(nmo_engine_t *engine, int32_t index)
 bool eng_entity_local_box(nmo_engine_t *engine, int32_t index, eng_vector_t *min,
                           eng_vector_t *max)
 {
-    const nmo_mesh_state_t *mesh = eng_entity_mesh(engine, index, NULL);
+    nmo_mesh_state_t runtime;
+    const nmo_mesh_state_t *mesh = eng_entity_mesh(engine, index, NULL, &runtime);
     float low[3] = {0.0f, 0.0f, 0.0f}, high[3] = {0.0f, 0.0f, 0.0f};
     for (uint32_t i = 0; mesh != NULL && i < mesh->vertex_count; i++) {
         const float p[3] = {mesh->vertices[i].position.x, mesh->vertices[i].position.y,
@@ -950,7 +965,8 @@ int eng_entity_ray_intersection(nmo_engine_t *engine, int32_t index, const eng_v
                                 const eng_vector_t *pos2, eng_ray_hit_t *hit)
 {
     const eng_module_t *module = NULL;
-    const nmo_mesh_state_t *mesh = eng_entity_mesh(engine, index, &module);
+    nmo_mesh_state_t runtime;
+    const nmo_mesh_state_t *mesh = eng_entity_mesh(engine, index, &module, &runtime);
     if (mesh == NULL || mesh->face_count == 0 || mesh->vertex_count == 0) {
         return 0;
     }

@@ -1533,9 +1533,11 @@ bool nmo_engine_mesh_vertex(const nmo_engine_t *engine, nmo_object_id_t mesh, in
     if (state == NULL || index < 0 || (uint32_t)index >= state->vertex_count) {
         return false;
     }
-    out_position[0] = state->vertices[index].position.x;
-    out_position[1] = state->vertices[index].position.y;
-    out_position[2] = state->vertices[index].position.z;
+    const eng_mesh_copy_t *copy = eng_mesh_copy_find(engine, mesh);
+    const nmo_vertex_t *vertices = copy != NULL ? copy->vertices : state->vertices;
+    out_position[0] = vertices[index].position.x;
+    out_position[1] = vertices[index].position.y;
+    out_position[2] = vertices[index].position.z;
     return true;
 }
 
