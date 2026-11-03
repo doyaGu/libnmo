@@ -627,6 +627,10 @@ nmo_status_t nmo_object_repository_add(nmo_object_repository_t *repo, nmo_object
         return result;
     }
 
+    /* Imported objects keep their IDs; later creations follow their range. */
+    if (obj->id >= repo->next_runtime_id) {
+        repo->next_runtime_id = obj->id + 1u;
+    }
     *obj_ref = NULL;
     nmo_object_repository_notify_mutation(
         repo, NMO_OBJECT_REPOSITORY_MUTATION_MEMBERSHIP);

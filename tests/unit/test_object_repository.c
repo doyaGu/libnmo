@@ -117,6 +117,27 @@ TEST(object_repository, explicit_ids) {
     nmo_object_repository_destroy(repo);
 }
 
+TEST(object_repository, auto_assign_follows_sparse_imported_ids) {
+    nmo_allocator_t allocator = nmo_allocator_default();
+    nmo_object_repository_t *repo = nmo_object_repository_create(&allocator);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_t *high = create_test_object(&allocator, 10, "High", 200);
+    nmo_object_t *low = create_test_object(&allocator, 3, "Low", 200);
+    nmo_object_t *created = create_test_object(&allocator, 0, "Created", 200);
+    ASSERT_NOT_NULL(high);
+    ASSERT_NOT_NULL(low);
+    ASSERT_NOT_NULL(created);
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &high));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &low));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_remove(repo, 10));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &created));
+    ASSERT_NOT_NULL(nmo_object_repository_find_by_id(repo, 11));
+    ASSERT_NULL(nmo_object_repository_find_by_id(repo, 1));
+
+    nmo_object_repository_destroy(repo);
+}
+
 TEST(object_repository, find_by_id) {
     nmo_allocator_t allocator = nmo_allocator_default();
     nmo_object_repository_t *repo = nmo_object_repository_create(&allocator);
@@ -474,6 +495,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_repository, create_destroy);
     REGISTER_TEST(object_repository, auto_assign_ids);
     REGISTER_TEST(object_repository, explicit_ids);
+    REGISTER_TEST(object_repository, auto_assign_follows_sparse_imported_ids);
     REGISTER_TEST(object_repository, find_by_id);
     REGISTER_TEST(object_repository, find_by_name);
     REGISTER_TEST(object_repository, find_by_class);
