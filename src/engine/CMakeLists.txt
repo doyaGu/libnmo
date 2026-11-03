@@ -5,6 +5,7 @@
 # core/: the CK2 runtime the graphs run in, its managers and the manager hooks
 # the block packs (src/bb) add theirs through. The engine registers no blocks.
 set(NMO_ENGINE_SOURCES
+    core/affine.c
     core/array.c
     core/attributes.c
     core/block.c

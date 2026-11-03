@@ -47,6 +47,11 @@ typedef struct eng_ray_hit {
 void eng_matrix_identity(eng_matrix_t *m);
 void eng_matrix_multiply(eng_matrix_t *result, const eng_matrix_t *a, const eng_matrix_t *b);
 void eng_matrix_inverse(eng_matrix_t *result, const eng_matrix_t *a);
+/* Recover missing animation channels. Principal axes use polar/spectral
+ * decomposition; otherwise use CK's normalized-row decomposition. Outputs
+ * may be NULL and are left unchanged if no finite decomposition is found. */
+bool eng_matrix_decompose(const eng_matrix_t *matrix, bool principal_axes,
+                            eng_matrix_t *rotation, eng_vector_t *scale);
 void eng_vector_transform(eng_vector_t *result, const eng_matrix_t *m, const eng_vector_t *v);
 void eng_vector_rotate(eng_vector_t *result, const eng_matrix_t *m, const eng_vector_t *v);
 float eng_vector_magnitude(const eng_vector_t *v);
