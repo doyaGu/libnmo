@@ -463,7 +463,7 @@ static const nmo_mesh_state_t *eng_mesh_state(const nmo_engine_t *engine, nmo_ob
     return (const nmo_mesh_state_t *)eng_typed_state(engine, mesh, CKPGUID_MESH);
 }
 
-static eng_mesh_copy_t *eng_find_mesh_copy(const nmo_engine_t *engine, nmo_object_id_t mesh)
+eng_mesh_copy_t *eng_mesh_copy_find(const nmo_engine_t *engine, nmo_object_id_t mesh)
 {
     for (size_t i = 0; i < engine->render.mesh_copies.count; i++) {
         if (engine->render.mesh_copies.data[i].mesh == mesh) {
@@ -562,7 +562,7 @@ void eng_mesh_remove_channel(eng_mesh_copy_t *copy, int32_t channel)
 
 eng_mesh_copy_t *eng_mesh_copy(nmo_engine_t *engine, nmo_object_id_t mesh)
 {
-    eng_mesh_copy_t *copy = eng_find_mesh_copy(engine, mesh);
+    eng_mesh_copy_t *copy = eng_mesh_copy_find(engine, mesh);
     const nmo_mesh_state_t *state = copy == NULL ? eng_mesh_state(engine, mesh) : NULL;
     return copy != NULL ? copy : state != NULL ? eng_make_mesh_copy(engine, mesh, state) : NULL;
 }
@@ -586,7 +586,7 @@ bool nmo_engine_mesh(const nmo_engine_t *engine, nmo_object_id_t mesh, nmo_engin
     if (state == NULL || out == NULL) {
         return false;
     }
-    eng_mesh_copy_t *copy = eng_find_mesh_copy(engine, mesh);
+    eng_mesh_copy_t *copy = eng_mesh_copy_find(engine, mesh);
     if (copy == NULL && (nmo_mesh_normals_are_derived(state) || state->material_channel_count > 0)) {
         copy = eng_make_mesh_copy((nmo_engine_t *)engine, mesh, state);
     }

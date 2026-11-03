@@ -5,7 +5,7 @@
  *
  * The engine evaluates the linear and TCB position, rotation and scale
  * controllers, Bezier position and scale, and linear/TCB scale axes.
- * Morph controllers change nothing.
+ * Morph keys update the current mesh's vertices and normals.
  * A keyed animation steps each of its object animations (CKKeyedAnimation::SetStep).
  */
 
@@ -699,7 +699,10 @@ bool eng_object_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animati
     eng_vector_t scale = {1.0f, 1.0f, 1.0f};
     bool has_position = !(state->flags & CK_OBJECTANIMATION_IGNOREPOS) && anim_vector(state, false, frame, &pos);
     bool has_scaling = !(state->flags & CK_OBJECTANIMATION_IGNORESCALE) && anim_vector(state, true, frame, &scale);
-    if (!has_position && !has_scaling && rotation == NULL && tcb_rotation == NULL && !has_axis) return true;
+    if (!has_position && !has_scaling && rotation == NULL && tcb_rotation == NULL && !has_axis) {
+        eng_animation_morph(engine, state, engine->entities.data[entity].id, frame);
+        return true;
+    }
     if (rotation != NULL || tcb_rotation != NULL || has_scaling || has_axis) {
         /* The channels the animation lacks, from the local matrix as it is */
         eng_matrix_t rot;
@@ -748,6 +751,7 @@ bool eng_object_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animati
     local.m[3][1] = pos.y;
     local.m[3][2] = pos.z;
     eng_entity_set_local_matrix(engine, entity, &local, false);
+    eng_animation_morph(engine, state, engine->entities.data[entity].id, frame);
     return true;
 }
 

@@ -17,6 +17,7 @@ set(NMO_ENGINE_SOURCES
     core/input.c
     core/manager.c
     core/animation.c
+    core/morph.c
     core/media.c
     core/movie.c
     core/message.c

@@ -41,6 +41,9 @@ typedef struct eng_mesh_copy {
     uint32_t *colors;   /* NULL: the file's */
     bool prelit;
     uint32_t version;   /* bumped by each change */
+    bool geometry_changed;
+    nmo_vector_t bary_center;
+    float radius;
     /* Its material channels: the file's, then the ones blocks added; each channel's
        uvs (owned) are NULL when it uses the mesh's own */
     ENG_VEC(nmo_engine_channel_t) channels;
@@ -171,6 +174,8 @@ void eng_texture_changed(nmo_engine_t *engine, nmo_object_id_t texture);
 eng_mesh_t *eng_render_mesh(nmo_engine_t *engine, nmo_object_id_t id);
 /* A file mesh's run time copy, made the first time a block changes it; NULL for no CKMesh */
 eng_mesh_copy_t *eng_mesh_copy(nmo_engine_t *engine, nmo_object_id_t mesh);
+/* Look up a mesh copy without allocating one. */
+eng_mesh_copy_t *eng_mesh_copy_find(const nmo_engine_t *engine, nmo_object_id_t mesh);
 /* CKMesh::GetChannelByMaterial; -1 for none */
 int32_t eng_mesh_channel(const eng_mesh_copy_t *copy, nmo_object_id_t material);
 /* CKMesh::AddChannel(material, FALSE): UVs of its own, every face; -1 out of memory */
