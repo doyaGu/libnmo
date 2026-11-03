@@ -2,6 +2,7 @@
 #include "../../src/engine/engine_animation.h"
 #include "../../src/engine/engine_transform.h"
 #include "../../src/engine/engine_render.h"
+#include "../../src/engine/engine_character.h"
 #include "object/builtin/nmo_character_schemas.h"
 
 #include <float.h>
@@ -12,6 +13,20 @@
 #define POSITION 0x637c4301u
 #define SCALE 0x654a3a04u
 #define ROTATION 0x49ed4002u
+#define GUID_LOD NMO_GUID(0x200d6501,0x4cf61e52)
+#define GUID_FLOOR NMO_GUID(0x0ad75ccb,0x0cd1369a)
+
+static void controls(engine_fixture_t *f)
+{
+    f->script_id = fixture_add_script(f,"Character Controls",&f->script_in);
+    ASSERT_TRUE(f->script_id != 0);
+    fixture_begin_edit(f);
+}
+
+static void input_float(engine_fixture_t *f, nmo_object_id_t block, uint32_t pin, float value)
+{
+    fixture_input_value(f,BLOCK_PIN(f,block,pin),&value,sizeof(value));
+}
 
 static nmo_object_id_t animation(engine_fixture_t *f, const char *name,
                                 nmo_objanim_controller_t *controllers, uint32_t count)
@@ -330,7 +345,7 @@ TEST(engine_animation_lod, membership_target_and_floor_changes_rebuild_the_priva
     /* Both root channels now tie. C precedes R in source order, so R writes last. */
     ASSERT_FLOAT_EQ(0.5f, x(f.engine, root), 0);
     changed->entity = nmo_ref_from_id(added);
-    actor->floor_ref = nmo_ref_from_id(low);
+    ASSERT_TRUE(eng_character_set_floor_reference(f.engine,character,low));
     ASSERT_TRUE(eng_character_set_animation_lod(f.engine, character, 0));
     ASSERT_TRUE(eng_animation_set_step(f.engine, keyed, 1));
     ASSERT_FLOAT_EQ(2, x(f.engine, low), 0);
@@ -579,6 +594,131 @@ TEST(engine_animation_lod, loaded_global_playback_uses_character_lod_and_render_
     }
 }
 
+TEST(engine_animation_lod, lod_block_uses_camera_space_and_preserves_native_clamping)
+{
+    const float cases[][5] = { /* World x, min distance, max distance, min LOD, expected. */
+        {300,0,200,0,.5f}, {50,0,200,0,.875f}, {700,0,200,.25f,.25f},
+        {300,150,200,0,1}, {300,100,100,0,.6f}, {500,100,100,0,0},
+        {100,100,100,0,1}, {300,0,200,1.25f,1.25f},
+    };
+    for (size_t i = 0; i < COUNT(cases); i++) {
+        engine_fixture_t f;
+        fixture_begin_document(&f);
+        nmo_object_id_t actor = fixture_create(&f,NMO_CID_CHARACTER,"Character");
+        ((nmo_3dentity_state_t *)fixture_state(&f,actor))->world_matrix[12] = cases[i][0];
+        nmo_object_id_t camera = fixture_create(&f,NMO_CID_CAMERA,"Camera");
+        nmo_3dentity_state_t *view = fixture_state(&f,camera);
+        view->world_matrix[12] = 100; view->world_matrix[0] = 2;
+        controls(&f);
+        nmo_object_id_t attach = fixture_block(&f,NMO_GUID(0x368f0ab1,0x2d8957e4),"Camera");
+        nmo_object_id_t lod = fixture_block(&f,GUID_LOD,"LOD");
+        fixture_input_int(&f,fixture_target(&f,attach),(int32_t)camera);
+        fixture_input_int(&f,fixture_target(&f,lod),(int32_t)actor);
+        for (uint32_t pin = 0; pin < 3; pin++) input_float(&f,lod,pin,cases[i][pin+1]);
+        fixture_link(&f,f.script_in,BLOCK_IN(&f,attach,0),0);
+        fixture_link(&f,BLOCK_OUT(&f,attach,0),BLOCK_IN(&f,lod,0),0);
+        nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL;
+        fixture_commit(&f,&options);
+        ASSERT_TRUE(eng_character_set_animation_lod(f.engine,actor,.6f));
+        ASSERT_EQ(NMO_OK,nmo_engine_start(f.engine,NMO_ENGINE_START_ALL));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0));
+        ASSERT_EQ(1u,runs(&f,lod));
+        ASSERT_FLOAT_EQ(cases[i][4],eng_character_animation_lod(f.engine,actor),1e-6f);
+        fixture_end(&f);
+    }
+}
+
+TEST(engine_animation_lod, floor_block_reorders_live_channels_and_null_input_keeps_the_reference)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t actor = fixture_create(&f,NMO_CID_CHARACTER,"Character");
+    nmo_character_state_t *state = fixture_state(&f,actor);
+    state->base.moveable_flags |= VX_MOVEABLE_CHARACTERRENDERED;
+    nmo_object_id_t root = entity(&f,"Root",actor), low = entity(&f,"Low",actor), floor = entity(&f,"Floor",actor);
+    nmo_ref_t members[] = {nmo_ref_from_id(curve(&f,"Low Curve",low,0,2)),
+        nmo_ref_from_id(curve(&f,"Floor Curve",floor,0,4)),nmo_ref_from_id(curve(&f,"Root Curve",root,0,1))};
+    nmo_object_id_t keyed = group(&f,actor,root,members,COUNT(members));
+    controls(&f);
+    nmo_object_id_t set = fixture_block(&f,GUID_FLOOR,"Floor");
+    nmo_object_id_t empty = fixture_block(&f,GUID_FLOOR,"Null Floor");
+    nmo_object_id_t lod = fixture_block(&f,GUID_LOD,"LOD");
+    nmo_object_id_t pose = fixture_block(&f,NMO_GUID(0x120127aa,0x960added),"Pose");
+    const nmo_object_id_t blocks[] = {set,empty,lod,pose};
+    for (size_t i = 0; i < COUNT(blocks); i++) {
+        fixture_input_int(&f,fixture_target(&f,blocks[i]),(int32_t)actor);
+        fixture_link(&f,i == 0 ? f.script_in : BLOCK_OUT(&f,blocks[i-1],0),BLOCK_IN(&f,blocks[i],0),0);
+    }
+    fixture_input_int(&f,BLOCK_PIN(&f,set,0),(int32_t)floor);
+    fixture_input_int(&f,BLOCK_PIN(&f,empty,0),0);
+    input_float(&f,lod,0,-100); input_float(&f,lod,1,-50); input_float(&f,lod,2,0);
+    input_float(&f,pose,0,.5f); fixture_input_int(&f,BLOCK_PIN(&f,pose,1),(int32_t)keyed);
+    fixture_commit(&f,NULL);
+    ASSERT_EQ(NMO_OK,nmo_engine_start(f.engine,NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0));
+    ASSERT_EQ(floor,eng_character_floor_reference(f.engine,actor));
+    ASSERT_EQ(1u,runs(&f,empty)); ASSERT_EQ(1u,runs(&f,pose));
+    ASSERT_FLOAT_EQ(0,eng_character_animation_lod(f.engine,actor),0);
+    ASSERT_FLOAT_EQ(.5f,x(f.engine,root),0); ASSERT_FLOAT_EQ(2,x(f.engine,floor),0); ASSERT_FLOAT_EQ(0,x(f.engine,low),0);
+    ASSERT_TRUE(eng_character_set_floor_reference(f.engine,actor,low));
+    ASSERT_TRUE(eng_animation_set_step(f.engine,keyed,1));
+    ASSERT_FLOAT_EQ(1,x(f.engine,root),0); ASSERT_FLOAT_EQ(2,x(f.engine,low),0); ASSERT_FLOAT_EQ(2,x(f.engine,floor),0);
+    ASSERT_EQ(0u,nmo_ref_runtime_id(&state->floor_ref));
+    nmo_engine_destroy_object(f.engine,low);
+    ASSERT_EQ(0u,eng_character_floor_reference(f.engine,actor));
+    ASSERT_TRUE(eng_animation_set_step(f.engine,keyed,.75f));
+    ASSERT_FLOAT_EQ(.75f,x(f.engine,root),0); ASSERT_FLOAT_EQ(2,x(f.engine,floor),0);
+    ASSERT_TRUE(eng_character_set_floor_reference(f.engine,actor,0));
+    ASSERT_FALSE(eng_character_set_floor_reference(f.engine,actor,keyed));
+    fixture_end(&f);
+}
+
+TEST(engine_animation_lod, character_copy_includes_the_live_external_floor_dependency)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t actor = fixture_create(&f,NMO_CID_CHARACTER,"Character");
+    nmo_object_id_t saved = entity(&f,"Saved Floor",0), live = entity(&f,"Live Floor",0);
+    nmo_character_state_t *state = fixture_state(&f,actor);
+    state->floor_ref = nmo_ref_from_id(saved);
+    ((nmo_3dentity_state_t *)fixture_state(&f,live))->world_matrix[12] = 37;
+    fixture_begin_edit(&f); fixture_commit_bare(&f,NULL);
+    ASSERT_EQ(saved,eng_character_floor_reference(f.engine,actor));
+    ASSERT_TRUE(eng_character_set_floor_reference(f.engine,actor,live));
+    nmo_object_id_t copy = 0;
+    ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(f.engine,&actor,1,false,&copy));
+    nmo_object_id_t floor = eng_character_floor_reference(f.engine,copy);
+    ASSERT_TRUE(floor != 0 && floor != live && floor != saved);
+    ASSERT_FLOAT_EQ(37,x(f.engine,floor),0);
+    ASSERT_EQ(0u,nmo_engine_entity_parent(f.engine,floor));
+    ASSERT_EQ(live,eng_character_floor_reference(f.engine,actor));
+    ASSERT_EQ(saved,nmo_ref_runtime_id(&state->floor_ref));
+    nmo_engine_destroy_object(f.engine,live);
+    ASSERT_EQ(0u,eng_character_floor_reference(f.engine,actor));
+    ASSERT_EQ(floor,eng_character_floor_reference(f.engine,copy));
+    fixture_end(&f);
+}
+
+TEST(engine_animation_lod, character_lod_and_floor_blocks_reject_non_character_targets)
+{
+    const nmo_guid_t guids[] = {GUID_LOD,GUID_FLOOR};
+    for (size_t i = 0; i < COUNT(guids); i++) {
+        engine_fixture_t f;
+        fixture_begin_document(&f); controls(&f);
+        nmo_object_id_t bad = fixture_block(&f,guids[i],"Invalid Target");
+        fixture_input_int(&f,fixture_target(&f,bad),(int32_t)f.owner_id);
+        fixture_link(&f,f.script_in,BLOCK_IN(&f,bad,0),0);
+        nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL;
+        fixture_commit(&f,&options);
+        ASSERT_EQ(NMO_OK,nmo_engine_start(f.engine,NMO_ENGINE_START_ALL));
+        ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,nmo_engine_step(f.engine,0));
+        nmo_engine_event_t event;
+        ASSERT_TRUE(nmo_engine_failure(f.engine,&event));
+        ASSERT_EQ(bad,event.behavior_id); ASSERT_EQ(NMO_ENGINE_BR_OWNERERROR,event.result);
+        fixture_end(&f);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_animation_lod, contribution_reads_all_vector_layouts_and_ignores_tangents_and_axis_keys);
 REGISTER_TEST(engine_animation_lod, contribution_preserves_wide_cancellation_and_small_raw_quaternion_motion);
@@ -591,4 +731,8 @@ REGISTER_TEST(engine_animation_lod, ignored_selected_entities_keep_their_pose_an
 REGISTER_TEST(engine_animation_lod, rendering_feeds_next_frame_lod_and_hierarchy_hide_stops_visibility_feedback);
 REGISTER_TEST(engine_animation_lod, deleted_channels_are_pruned_before_counting_the_lod_prefix);
 REGISTER_TEST(engine_animation_lod, loaded_global_playback_uses_character_lod_and_render_feedback_in_all_formats);
+REGISTER_TEST(engine_animation_lod, lod_block_uses_camera_space_and_preserves_native_clamping);
+REGISTER_TEST(engine_animation_lod, floor_block_reorders_live_channels_and_null_input_keeps_the_reference);
+REGISTER_TEST(engine_animation_lod, character_copy_includes_the_live_external_floor_dependency);
+REGISTER_TEST(engine_animation_lod, character_lod_and_floor_blocks_reject_non_character_targets);
 TEST_MAIN_END()

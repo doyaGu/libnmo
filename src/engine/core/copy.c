@@ -458,6 +458,7 @@ static void prepare_object(copy_set_t *set, nmo_object_t *object, nmo_object_id_
     } else if (derives(engine, class_id, NMO_CID_DATAARRAY)) {
         prepare_array(set, id);
     }
+    if (class_id == NMO_CID_CHARACTER) prepare(set,eng_character_floor_reference(engine,id));
 }
 
 /* ============================================================================

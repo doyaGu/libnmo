@@ -31,6 +31,7 @@ static eng_character_t *character_runtime(nmo_engine_t *engine, nmo_object_id_t 
     }
     runtime->active = eng_object_ref(engine, id, &state->active_animation);
     runtime->next = eng_object_ref(engine, id, &state->anim_dest);
+    runtime->floor = eng_object_ref(engine, id, &state->floor_ref);
     runtime->automatic = (state->base.entity_flags & CK_3DENTITY_CHARACTERDOPROCESS) != 0;
     if (!eng_map_put(&engine->characters.map, id, index)) return NULL;
     return runtime;
@@ -40,6 +41,20 @@ bool eng_character_automatic(nmo_engine_t *engine, nmo_object_id_t character)
 {
     eng_character_t *runtime = character_runtime(engine, character);
     return runtime != NULL && runtime->automatic;
+}
+
+nmo_object_id_t eng_character_floor_reference(nmo_engine_t *engine, nmo_object_id_t character)
+{
+    eng_character_t *runtime = character_runtime(engine,character);
+    return runtime != NULL && eng_entity_index(engine,runtime->floor) >= 0 ? runtime->floor : 0;
+}
+
+bool eng_character_set_floor_reference(nmo_engine_t *engine, nmo_object_id_t character, nmo_object_id_t floor)
+{
+    eng_character_t *runtime = character_runtime(engine,character);
+    if (runtime == NULL || (floor != 0 && eng_entity_index(engine,floor) < 0)) return false;
+    runtime->floor = floor;
+    return true;
 }
 
 nmo_status_t eng_load_characters(nmo_engine_t *engine, const eng_range_t *range)
@@ -99,6 +114,7 @@ void eng_copy_character(nmo_engine_t *engine, nmo_object_id_t source, nmo_object
     eng_character_t snapshot = engine->characters.entries.data[from];
     eng_character_t *copy = &engine->characters.entries.data[to];
     copy->root = character_copy_ref(snapshot.root, originals, copies, count);
+    copy->floor = character_copy_ref(snapshot.floor, originals, copies, count);
     copy->active = character_copy_ref(snapshot.active, originals, copies, count);
     copy->next = copy_next ? character_copy_ref(snapshot.next, originals, copies, count) : 0;
     copy->frame_dest = snapshot.frame_dest;

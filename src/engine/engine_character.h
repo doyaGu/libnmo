@@ -20,7 +20,7 @@ typedef struct eng_secondary_animation {
 } eng_secondary_animation_t;
 
 typedef struct eng_character {
-    nmo_object_id_t id, root, active, next;
+    nmo_object_id_t id, root, floor, active, next;
     nmo_object_id_t warper, source;
     float frame_dest;
     float frame_src;
@@ -47,6 +47,8 @@ bool eng_character_warper_parameters(nmo_engine_t *engine, nmo_object_id_t chara
     uint32_t *mode, nmo_object_id_t *source, float *from, nmo_object_id_t *target, float *to);
 nmo_status_t eng_character_process(nmo_engine_t *engine, nmo_object_id_t character, float delta);
 bool eng_character_automatic(nmo_engine_t *engine, nmo_object_id_t character);
+nmo_object_id_t eng_character_floor_reference(nmo_engine_t *engine, nmo_object_id_t character);
+bool eng_character_set_floor_reference(nmo_engine_t *engine, nmo_object_id_t character, nmo_object_id_t floor);
 nmo_status_t eng_character_play_secondary(nmo_engine_t *engine, nmo_object_id_t character,
                                           nmo_object_id_t animation, float frame, uint32_t flags, uint32_t loops);
 nmo_status_t eng_character_play_secondary_warp(nmo_engine_t *engine, nmo_object_id_t character,

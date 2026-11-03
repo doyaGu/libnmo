@@ -302,7 +302,7 @@ bool eng_keyed_animation_channels(nmo_engine_t *engine, nmo_object_id_t animatio
     nmo_object_id_t character = eng_object_ref(engine, animation, &state->base.character);
     const nmo_character_state_t *actor = keyed_state(engine, character, NMO_CID_CHARACTER);
     if (actor == NULL) character = 0;
-    nmo_object_id_t floor = actor != NULL ? eng_object_ref(engine, character, &actor->floor_ref) : 0;
+    nmo_object_id_t floor = actor != NULL ? eng_character_floor_reference(engine,character) : 0;
     if (eng_entity_index(engine, floor) < 0) floor = 0;
     if (!keyed_order(engine, runtime, state, character, floor)) return false;
     *out = runtime->order.data;
@@ -318,7 +318,7 @@ bool eng_keyed_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animatio
     const nmo_keyedanimation_state_t *state = keyed_state(engine,animation,NMO_CID_KEYEDANIMATION);
     nmo_object_id_t character = eng_object_ref(engine,animation,&state->base.character);
     const nmo_character_state_t *actor = keyed_state(engine,character,NMO_CID_CHARACTER);
-    nmo_object_id_t floor = actor != NULL ? eng_object_ref(engine,character,&actor->floor_ref) : 0;
+    nmo_object_id_t floor = actor != NULL ? eng_character_floor_reference(engine,character) : 0;
     if (actor == NULL) character = 0;
     if (eng_entity_index(engine,floor) < 0) floor = 0;
     int32_t character_index = eng_entity_index(engine, character);
