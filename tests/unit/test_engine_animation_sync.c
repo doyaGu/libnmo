@@ -4,6 +4,7 @@
 #include "object/builtin/nmo_character_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "core/nmo_utils.h"
+#include "format/nmo_chunk_api.h"
 
 #include <float.h>
 #include <math.h>
@@ -22,6 +23,7 @@ typedef struct sync_config {
 
 typedef struct message_log {
     nmo_object_id_t block, recipient;
+    nmo_object_id_t recipients[128];
     int32_t types[128];
     size_t count;
 } message_log_t;
@@ -31,7 +33,10 @@ static void log_messages(const nmo_engine_event_t *event, void *user_data)
     message_log_t *log = user_data;
     if (event->kind != NMO_ENGINE_EVENT_MESSAGE_SENT) return;
     log->block = event->behavior_id; log->recipient = event->object_id;
-    if (log->count < COUNT(log->types)) log->types[log->count] = event->result;
+    if (log->count < COUNT(log->types)) {
+        log->types[log->count] = event->result;
+        log->recipients[log->count] = event->object_id;
+    }
     log->count++;
 }
 
@@ -325,6 +330,186 @@ TEST(engine_animation_sync, off_stops_synchronization_without_stopping_automatic
     fixture_end(&f);
 }
 
+static void saved_input(engine_fixture_t *f, nmo_object_id_t pin, const char *text)
+{
+    nmo_object_id_t source = 0;
+    ASSERT_EQ(NMO_OK,nmo_script_edit_ensure_input_parameter_source(f->tx,pin,&source));
+    ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(f->tx,source,text));
+}
+
+static void saved_object(engine_fixture_t *f, nmo_object_id_t pin, nmo_object_id_t object)
+{
+    char text[32]; snprintf(text,sizeof(text),"%u",object);
+    saved_input(f,pin,text);
+}
+
+static void native_collection(engine_fixture_t *f, nmo_object_id_t block,
+    const nmo_object_id_t *animations, size_t count)
+{
+    nmo_parameter_state_t *state = fixture_state(f,local(f,block,0));
+    state->mode = CKPARAM_MODE_SUBCHUNK;
+    state->subchunk = nmo_chunk_create(nmo_session_get_arena(f->session));
+    ASSERT_NOT_NULL(state->subchunk);
+    state->subchunk->class_id = NMO_CID_OBJECTARRAY;
+    ASSERT_EQ(NMO_OK,nmo_chunk_start_write(state->subchunk));
+    ASSERT_EQ(NMO_OK,nmo_chunk_write_identifier(state->subchunk,0x50));
+    ASSERT_EQ(NMO_OK,nmo_chunk_write_object_id_array(state->subchunk,animations,count));
+    nmo_chunk_close(state->subchunk);
+}
+
+static const char *resolve_file(void *data, const char *name)
+{
+    (void)name;
+    return data;
+}
+
+TEST(engine_animation_sync, loaded_native_collections_rebind_messages_and_copies_follow_their_own_clocks)
+{
+    engine_fixture_t f;
+    begin(&f);
+    const char *const names[] = {"OnClick","Unused","Tick","Unused B","Footstep"};
+    fixture_install_messages(&f,names,COUNT(names));
+    nmo_object_id_t clips[] = {animation(&f,"Inactive",10),animation(&f,"Saved Primary",10)};
+    nmo_character_state_t *actor = fixture_state(&f,f.owner_id);
+    actor->base.entity_flags |= CK_3DENTITY_CHARACTERDOPROCESS;
+    actor->base.has_entityndata_chunk = 1;
+    actor->active_animation = nmo_ref_from_id(clips[1]);
+    sync_config_t config; config_begin(&config); config_animation(&config,0);
+    const uint8_t all[] = {1,1,1,1,1,1,1}, tick[] = {1,0,1,0,0,0,1}, foot[] = {0,1,0,1,0,0,0};
+    config_message(&config,"Inactive Tick",all,COUNT(all));
+    config_animation(&config,1);
+    config_message(&config,"Tick",tick,COUNT(tick)); config_message(&config,"Footstep",foot,COUNT(foot));
+    nmo_object_id_t block = synchronizer(&f,clips,COUNT(clips),&config);
+    ASSERT_TRUE(block != 0);
+    native_collection(&f,block,clips,COUNT(clips));
+    nmo_object_id_t wait = fixture_block(&f,GUID_WAIT,"Footstep Wait"), after = fixture_block(&f,GUID_NOP,"After Footstep");
+    ASSERT_TRUE(wait != 0 && after != 0);
+    saved_input(&f,BLOCK_PIN(&f,wait,0),"Footstep");
+    saved_object(&f,fixture_target(&f,wait),f.owner_id);
+    fixture_link(&f,f.script_in,BLOCK_IN(&f,wait,0),0);
+    fixture_link(&f,BLOCK_OUT(&f,wait,0),BLOCK_IN(&f,after,0),0);
+    fixture_commit(&f,NULL);
+    nmo_beobject_state_t *activity = fixture_state(&f,f.owner_id);
+    activity->has_single_activity = 1; activity->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE;
+    nmo_behavior_state_t *script = fixture_state(&f,f.script_id);
+    script->has_single_activity = 1; script->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE | CK_SCENEOBJECT_START_RESET;
+    const char *path = NMO_TEST_SCRATCH_FILE("engine_animation_sync.cmo");
+    ASSERT_EQ(NMO_OK,nmo_session_save_file(f.session,path,NULL,NULL));
+    for (int started = 0; started < 2; started++) {
+        engine_fixture_t host;
+        fixture_begin_document(&host);
+        const char *const host_names[] = {"Footstep","Host Only","Tick","OnClick"};
+        fixture_install_messages(&host,host_names,COUNT(host_names));
+        fixture_begin_edit(&host);
+        nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL;
+        fixture_commit(&host,&options);
+        if (started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_ALL));
+        nmo_engine_set_file_resolver(host.engine,resolve_file,(void *)path);
+        int32_t file;
+        ASSERT_EQ(NMO_OK,nmo_engine_load(host.engine,"sync.cmo",true,&file));
+        ASSERT_TRUE(file > 0);
+        if (!started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_SCENE_DEFAULT));
+        nmo_object_id_t loaded_actor = nmo_engine_object_named(host.engine,"Actor",NMO_CID_CHARACTER);
+        nmo_object_id_t loaded_primary = nmo_engine_object_named(host.engine,"Saved Primary",NMO_CID_KEYEDANIMATION);
+        nmo_object_id_t loaded_block = nmo_engine_object_named(host.engine,"Synchronizer",NMO_CID_BEHAVIOR);
+        nmo_object_id_t loaded_after = nmo_engine_object_named(host.engine,"After Footstep",NMO_CID_BEHAVIOR);
+        ASSERT_TRUE(loaded_actor != 0 && loaded_actor != f.owner_id && loaded_primary != 0 && loaded_after != 0);
+        message_log_t log = {0}; nmo_engine_set_trace(host.engine,log_messages,&log);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,2));
+        ASSERT_EQ(3u,log.count); ASSERT_EQ(loaded_block,log.block); ASSERT_EQ(loaded_actor,log.recipient);
+        ASSERT_EQ(nmo_engine_message_type(host.engine,"Tick"),log.types[0]);
+        ASSERT_EQ(0,log.types[2]); /* Footstep was type 4 in the file. */
+        ASSERT_EQ(0u,runs(&host,loaded_after));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,1));
+        ASSERT_EQ(1u,runs(&host,loaded_after)); ASSERT_EQ(5u,log.count);
+        nmo_object_id_t originals[] = {loaded_actor,loaded_primary,
+            nmo_engine_object_named(host.engine,"Synchronizer Script",NMO_CID_BEHAVIOR)};
+        nmo_object_id_t copies[COUNT(originals)] = {0};
+        ASSERT_TRUE(originals[2] != 0);
+        ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(host.engine,originals,COUNT(originals),true,copies));
+        log.count = 0;
+        ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,1));
+        ASSERT_EQ(2u,log.count);
+        ASSERT_TRUE((log.recipients[0] == loaded_actor && log.recipients[1] == copies[0]) ||
+                    (log.recipients[1] == loaded_actor && log.recipients[0] == copies[0]));
+        ASSERT_EQ(copies[1],eng_character_active_animation(host.engine,copies[0]));
+        nmo_engine_destroy_object(host.engine,copies[1]);
+        log.count = 0;
+        ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,1));
+        ASSERT_EQ(0u,log.count);
+        ASSERT_EQ(loaded_primary,eng_character_active_animation(host.engine,loaded_actor));
+        ASSERT_EQ(0,memcmp(config.bytes,((const nmo_parameter_state_t *)fixture_state(&f,local(&f,block,1)))->buffer_data.data,config.size));
+        fixture_end(&host);
+    }
+    fixture_end(&f); remove(path);
+}
+
+TEST(engine_animation_sync, synchronized_messages_drive_unlimited_controller_in_the_next_frame)
+{
+    engine_fixture_t f;
+    begin(&f);
+    const char *const names[] = {"OnClick","Switch"}; fixture_install_messages(&f,names,COUNT(names));
+    nmo_object_id_t clips[] = {animation(&f,"Idle",10),animation(&f,"Run",10)};
+    sync_config_t config; config_begin(&config); config_animation(&config,0);
+    const uint8_t keys[] = {0,0,1}; config_message(&config,"Switch",keys,COUNT(keys));
+    nmo_object_id_t sync = synchronizer(&f,clips,COUNT(clips),&config);
+    ASSERT_TRUE(sync != 0);
+    nmo_object_id_t control = fixture_block(&f,NMO_GUID(0x59537e89,0x79d02f25),"Controller");
+    ASSERT_TRUE(control != 0);
+    parameter_bytes(&f,local(&f,control,0),clips,sizeof(clips));
+    uint8_t records[2][152] = {{0}};
+    for (int i = 0; i < 2; i++) {
+        nmo_write_u32_le(records[i],(uint32_t)(i == 0 ? 1 : 0));
+        memset(records[i]+56,0xff,16);
+        nmo_write_u16_le(records[i]+148,2|128); /* Interruptible, time based. */
+        const float fps = 1000; uint32_t word; memcpy(&word,&fps,4); nmo_write_u32_le(records[i]+140,word);
+    }
+    memcpy(records[0]+72,"Switch",7);
+    parameter_bytes(&f,local(&f,control,1),records,sizeof(records));
+    ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(f.tx,local(&f,control,2),"2"));
+    ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(f.tx,local(&f,control,3),"FALSE"));
+    fixture_link(&f,f.script_in,BLOCK_IN(&f,control,0),0);
+    nmo_object_id_t wait = fixture_block(&f,GUID_WAIT,"Switch Wait"), after = fixture_block(&f,GUID_NOP,"After Switch");
+    saved_input(&f,BLOCK_PIN(&f,wait,0),"Switch");
+    saved_object(&f,fixture_target(&f,wait),f.owner_id);
+    fixture_link(&f,f.script_in,BLOCK_IN(&f,wait,0),0);
+    fixture_link(&f,BLOCK_OUT(&f,wait,0),BLOCK_IN(&f,after,0),0);
+    message_log_t log = {0}; commit(&f,&log);
+    ASSERT_EQ(NMO_OK,eng_character_set_active_animation(f.engine,f.owner_id,clips[0]));
+    ASSERT_TRUE(eng_animation_set_frame(f.engine,clips[0],1));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,1)); ASSERT_EQ(0u,log.count);
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,1));
+    ASSERT_EQ(1u,log.count); ASSERT_EQ(sync,log.block); ASSERT_EQ(f.owner_id,log.recipient);
+    ASSERT_EQ(clips[0],eng_character_active_animation(f.engine,f.owner_id)); ASSERT_EQ(0u,runs(&f,after));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0));
+    ASSERT_EQ(clips[1],eng_character_active_animation(f.engine,f.owner_id)); ASSERT_EQ(1u,runs(&f,after));
+    nmo_object_id_t current = 0; read_value(&f,BLOCK_POUT(&f,control,0),&current,4); ASSERT_EQ(clips[1],current);
+    fixture_end(&f);
+}
+
+TEST(engine_animation_sync, payload_sizes_skip_inactive_records_and_full_width_names_are_bounded)
+{
+    engine_fixture_t f;
+    begin(&f);
+    nmo_object_id_t clips[] = {animation(&f,"Inactive",10),animation(&f,"Primary",10)};
+    sync_config_t config; config_begin(&config); config_animation(&config,0);
+    const uint8_t skipped[] = {1,1,1,1,1,1,1,1}, key[] = {1};
+    config_message(&config,"Inactive",skipped,COUNT(skipped));
+    config_animation(&config,1); config_message(&config,"Placeholder",key,COUNT(key));
+    memset(config.bytes+config.block+12,'x',64);
+    nmo_write_u32_le(config.bytes,(uint32_t)config.size-4);
+    nmo_object_id_t block = synchronizer(&f,clips,COUNT(clips),&config);
+    ASSERT_TRUE(block != 0);
+    message_log_t log = {0}; commit(&f,&log);
+    ASSERT_EQ(NMO_OK,eng_character_set_active_animation(f.engine,f.owner_id,clips[1]));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,1));
+    ASSERT_EQ(1u,log.count);
+    const char *name = nmo_engine_message_type_name(f.engine,log.types[0]);
+    ASSERT_NOT_NULL(name); ASSERT_EQ(64u,strlen(name));
+    for (int i = 0; i < 64; i++) ASSERT_EQ('x',name[i]);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_animation_sync, linked_primary_frames_send_each_marked_key_in_message_order);
 REGISTER_TEST(engine_animation_sync, empty_unconfigured_blocks_keep_running_without_messages);
@@ -333,4 +518,7 @@ REGISTER_TEST(engine_animation_sync, frame_windows_preserve_endpoint_pause_loop_
 REGISTER_TEST(engine_animation_sync, primary_and_secondary_membership_marks_each_configured_record_once);
 REGISTER_TEST(engine_animation_sync, primary_warps_only_emit_for_the_current_warper);
 REGISTER_TEST(engine_animation_sync, off_stops_synchronization_without_stopping_automatic_character_playback);
+REGISTER_TEST(engine_animation_sync, loaded_native_collections_rebind_messages_and_copies_follow_their_own_clocks);
+REGISTER_TEST(engine_animation_sync, synchronized_messages_drive_unlimited_controller_in_the_next_frame);
+REGISTER_TEST(engine_animation_sync, payload_sizes_skip_inactive_records_and_full_width_names_are_bounded);
 TEST_MAIN_END()
