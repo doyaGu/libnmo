@@ -6,13 +6,14 @@
   (gaps open to the air: one over another floor is not found);
 - overlaps: floor tops of two objects lying on one another (they flicker).
 
-Only the floors count (Phys_Floors), hidden ones too; the lantern towers are
-left out, being shaped otherwise.
+Only the floors count (Phys_Floors), hidden ones too; lantern towers and
+decorative column tops are left out, being shaped otherwise.
 """
 
 from __future__ import annotations
 
 import math
+import re
 from collections import defaultdict
 from dataclasses import dataclass
 
@@ -43,7 +44,8 @@ class Finding:
 
 def _floors(scene: list[SceneObject]) -> list[SceneObject]:
     return [obj for obj in scene
-            if "Phys_Floors" in obj.groups and "Tower" not in obj.name]
+            if "Phys_Floors" in obj.groups and
+            not re.search(r"(?:^|_)(?:Tower|Floor_Columns_Top)(?:_?\d+)?$", obj.name)]
 
 
 def _up(t) -> float:
@@ -59,25 +61,100 @@ def _up(t) -> float:
     return n[1] / (math.sqrt(sum(q * q for q in n)) or 1.0)
 
 
+def _face_interval(lo: Point3, hi: Point3, t) -> tuple[float, float] | None:
+    """Part of an edge whose projection falls on a nearby wall triangle."""
+    a, b, c = t.points
+    u = tuple(b[i] - a[i] for i in range(3))
+    v = tuple(c[i] - a[i] for i in range(3))
+    n = (u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2],
+         u[0] * v[1] - u[1] * v[0])
+
+    def dot(x, y):
+        return sum(x[i] * y[i] for i in range(3))
+
+    uu, uv, vv = dot(u, u), dot(u, v), dot(v, v)
+    den = uu * vv - uv * uv
+    if den <= 1e-12:
+        return None
+    distance = SAME_SPOT * math.sqrt(dot(n, n))
+
+    def constraints(p):
+        w = tuple(p[i] - a[i] for i in range(3))
+        wu, wv = dot(w, u), dot(w, v)
+        s, r = (wu * vv - wv * uv) / den, (wv * uu - wu * uv) / den
+        plane = dot(w, n)
+        return (s + 1e-7, r + 1e-7, 1 - s - r + 1e-7,
+                distance - plane, distance + plane)
+
+    start, end = 0.0, 1.0
+    for x, y in zip(constraints(lo), constraints(hi)):
+        if x < 0 and y < 0:
+            return None
+        if x < 0:
+            start = max(start, -x / (y - x))
+        elif y < 0:
+            end = min(end, x / (x - y))
+        if start >= end:
+            return None
+    return start, end
+
+
+def _covered_length(intervals: list[tuple[float, float]]) -> float:
+    """Length of the union, counting overlapping spans only once."""
+    if not intervals:
+        return 0.0
+    ordered = sorted(intervals)
+    covered = 0.0
+    start, end = ordered[0]
+    for a, b in ordered[1:]:
+        if a > end:
+            covered += end - start
+            start, end = a, b
+        else:
+            end = max(end, b)
+    return covered + end - start
+
+
+def _face_covered(lo: Point3, hi: Point3, source, walls: list) -> bool:
+    """Whether wall faces cover most of an edge, including T-junctions."""
+    intervals = []
+    for t, bounds in walls:
+        if t is source or any(max(lo[i], hi[i]) + SAME_SPOT < bounds[i][0] or
+                              min(lo[i], hi[i]) - SAME_SPOT > bounds[i][1]
+                              for i in range(3)):
+            continue
+        interval = _face_interval(lo, hi, t)
+        if interval:
+            intervals.append(interval)
+    return _covered_length(intervals) > COVERED
+
+
 def open_walls(scene: list[SceneObject]) -> list[Finding]:
     """Upright wall edges that no other wall meets (or stands on or under)."""
     q = SAME_SPOT
-    columns: dict[tuple[int, int], list[tuple[float, float, str]]] = defaultdict(list)
+    columns = defaultdict(list)
+    walls = []
     for obj in _floors(scene):
         for t in obj.triangles:
             if abs(_up(t)) > UPRIGHT:
                 continue
+            bounds = [(min(p[i] for p in t.points), max(p[i] for p in t.points))
+                      for i in range(3)]
+            walls.append((t, bounds))
             for p, r in zip(t.points, t.points[1:] + t.points[:1]):
                 if abs(p[1] - r[1]) > EDGE_RISE and math.hypot(p[0] - r[0], p[2] - r[2]) < q:
                     lo, hi = sorted((p, r), key=lambda s: s[1])
-                    columns[(round(lo[0] / q), round(lo[2] / q))].append((lo[1], hi[1], obj.name))
+                    columns[(round(lo[0] / q), round(lo[2] / q))].append((lo, hi, obj.name, t))
     found = []
     for (i, j), spans in columns.items():
-        for k, (y0, y1, name) in enumerate(spans):
-            others = [(s0, s1) for n, (s0, s1, _) in enumerate(spans) if n != k]
-            cover = sum(max(0.0, min(y1, s1) - max(y0, s0)) for s0, s1 in others)
+        for k, (lo, hi, name, source) in enumerate(spans):
+            y0, y1 = lo[1], hi[1]
+            others = [(a[1], b[1]) for n, (a, b, _, _) in enumerate(spans) if n != k]
+            cover = _covered_length([(max(y0, s0), min(y1, s1)) for s0, s1 in others
+                                     if min(y1, s1) > max(y0, s0)])
             stacked = any(abs(s1 - y0) < q or abs(s0 - y1) < q for s0, s1 in others)
-            if cover <= COVERED * (y1 - y0) and not stacked:
+            if cover <= COVERED * (y1 - y0) and not stacked and \
+                    not _face_covered(lo, hi, source, walls):
                 found.append(Finding("open wall", (i * q, y1, j * q), name))
     return found
 
