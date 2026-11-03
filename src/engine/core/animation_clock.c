@@ -32,6 +32,30 @@ static eng_animation_clock_t *animation_clock(nmo_engine_t *engine, nmo_object_i
     return clock;
 }
 
+const nmo_animation_state_t *eng_animation_playback_state(const nmo_engine_t *engine, nmo_object_id_t animation)
+{
+    const nmo_animation_state_t *state = eng_animation_state(engine,animation);
+    int32_t clock = eng_map_get(&engine->animations.clock_map,animation);
+    return state != NULL && clock >= 0 && engine->animations.clocks.data[clock].playback != NULL
+        ? engine->animations.clocks.data[clock].playback : state;
+}
+
+bool eng_animation_set_playback(nmo_engine_t *engine, nmo_object_id_t animation,
+    uint32_t mask, uint32_t flags, float frame_rate)
+{
+    if (!isfinite(frame_rate)) return false;
+    eng_animation_clock_t *clock = animation_clock(engine,animation);
+    if (clock == NULL) return false;
+    if (clock->playback == NULL) {
+        clock->playback = malloc(sizeof(*clock->playback));
+        if (clock->playback == NULL) return false;
+        *clock->playback = *eng_animation_state(engine,animation);
+    }
+    clock->playback->flags = (clock->playback->flags & ~mask) | (flags & mask);
+    clock->playback->frame_rate = frame_rate;
+    return true;
+}
+
 bool eng_animation_current_step(nmo_engine_t *engine, nmo_object_id_t animation, float *out)
 {
     eng_animation_clock_t *clock = animation_clock(engine, animation);
@@ -69,7 +93,7 @@ bool eng_animation_set_frame(nmo_engine_t *engine, nmo_object_id_t animation, fl
 
 bool eng_animation_next_frame(nmo_engine_t *engine, nmo_object_id_t animation, float delta, float *out)
 {
-    const nmo_animation_state_t *state = eng_animation_state(engine, animation);
+    const nmo_animation_state_t *state = eng_animation_playback_state(engine, animation);
     float current, step;
     if (state == NULL || !isfinite(delta) || delta < 0 || !eng_animation_frame(engine, animation, &current)) return false;
     if (state->flags & CKANIMATION_LINKTOFRAMERATE) {

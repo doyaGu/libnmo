@@ -38,7 +38,11 @@ nmo_status_t eng_animation_transition_morph(nmo_engine_t *engine, nmo_object_id_
 
 typedef struct eng_animation_member { nmo_object_id_t id, entity; } eng_animation_member_t;
 typedef struct eng_animation_channel { nmo_object_id_t id; float contribution; } eng_animation_channel_t;
-typedef struct eng_animation_clock { nmo_object_id_t id; float step; } eng_animation_clock_t;
+typedef struct eng_animation_clock {
+    nmo_object_id_t id;
+    float step;
+    nmo_animation_state_t *playback;
+} eng_animation_clock_t;
 
 typedef struct eng_keyed_animation {
     nmo_object_id_t id, root_entity, root_animation;
@@ -60,6 +64,10 @@ typedef struct eng_animations {
 } eng_animations_t;
 
 const nmo_animation_state_t *eng_animation_state(const nmo_engine_t *engine, nmo_object_id_t animation);
+/* Mutable playback settings stay separate from the loaded object state. */
+const nmo_animation_state_t *eng_animation_playback_state(const nmo_engine_t *engine, nmo_object_id_t animation);
+bool eng_animation_set_playback(nmo_engine_t *engine, nmo_object_id_t animation,
+    uint32_t mask, uint32_t flags, float frame_rate);
 bool eng_animation_current_step(nmo_engine_t *engine, nmo_object_id_t animation, float *out);
 bool eng_animation_set_current_step(nmo_engine_t *engine, nmo_object_id_t animation, float step);
 bool eng_animation_frame(nmo_engine_t *engine, nmo_object_id_t animation, float *out);

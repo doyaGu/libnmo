@@ -59,8 +59,8 @@ nmo_status_t eng_keyed_animation_transition(nmo_engine_t *engine, nmo_object_id_
         nmo_engine_object_class(engine,result) != NMO_CID_KEYEDANIMATION ||
         nmo_engine_object_class(engine,from) != NMO_CID_KEYEDANIMATION ||
         nmo_engine_object_class(engine,to) != NMO_CID_KEYEDANIMATION) return NMO_ERR_INVALID_ARGUMENT;
-    const nmo_animation_state_t *a = eng_animation_state(engine,from), *b = eng_animation_state(engine,to);
-    if (a == NULL || b == NULL || eng_animation_state(engine,result) == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    const nmo_animation_state_t *a = eng_animation_playback_state(engine,from), *b = eng_animation_playback_state(engine,to);
+    if (a == NULL || b == NULL || eng_animation_playback_state(engine,result) == NULL) return NMO_ERR_INVALID_ARGUMENT;
     nmo_object_id_t character = eng_object_ref(engine,to,&b->character);
     if (eng_object_ref(engine,from,&a->character) != character) return NMO_ERR_INVALID_ARGUMENT;
     float step, out_length = eng_animation_length(b);

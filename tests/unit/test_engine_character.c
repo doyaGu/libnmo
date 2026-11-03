@@ -1073,6 +1073,71 @@ TEST(engine_character, loaded_character_controls_remap_parameters_and_execute_al
     }
 }
 
+TEST(engine_character, runtime_playback_settings_drive_clocks_interrupts_and_copies_without_editing_sources)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t body, actor = character(&f,&body);
+    nmo_object_id_t a = clip(&f,"A",actor,body,10,0,10), b = clip(&f,"B",actor,body,10,100,110);
+    fixture_begin_edit(&f); fixture_commit_bare(&f,NULL);
+    ASSERT_TRUE(eng_animation_set_playback(f.engine,a,CKANIMATION_LINKTOFRAMERATE | CKANIMATION_CANBEBREAK,
+        CKANIMATION_LINKTOFRAMERATE,500));
+    ASSERT_EQ(NMO_OK,eng_character_set_active_animation(f.engine,actor,a));
+    ASSERT_EQ(NMO_OK,eng_character_process(f.engine,actor,4));
+    ASSERT_FLOAT_EQ(2,frame(f.engine,a),0);
+    ASSERT_EQ(NMO_OK,eng_character_set_next_animation(f.engine,actor,b,CK_TRANSITION_FROMNOW));
+    ASSERT_EQ(a,eng_character_active_animation(f.engine,actor));
+    ASSERT_EQ(b,eng_character_next_animation(f.engine,actor));
+    ASSERT_TRUE(eng_animation_set_playback(f.engine,a,CKANIMATION_CANBEBREAK,CKANIMATION_CANBEBREAK,500));
+    ASSERT_EQ(NMO_OK,eng_character_set_next_animation(f.engine,actor,b,CK_TRANSITION_FROMNOW));
+    ASSERT_EQ(b,eng_character_active_animation(f.engine,actor));
+    const nmo_animation_state_t *saved = eng_animation_state(f.engine,a);
+    ASSERT_FLOAT_EQ(1000,saved->frame_rate,0);
+    ASSERT_EQ(0u,saved->flags & CKANIMATION_CANBEBREAK);
+    nmo_object_id_t copy = 0;
+    ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(f.engine,&a,1,false,&copy));
+    ASSERT_FLOAT_EQ(500,eng_animation_playback_state(f.engine,copy)->frame_rate,0);
+    ASSERT_TRUE(eng_animation_set_playback(f.engine,copy,CKANIMATION_LINKTOFRAMERATE,0,30));
+    float next = 0;
+    ASSERT_TRUE(eng_animation_next_frame(f.engine,copy,4000,&next));
+    ASSERT_FLOAT_EQ(3,next,0);
+    ASSERT_FLOAT_EQ(500,eng_animation_playback_state(f.engine,a)->frame_rate,0);
+    ASSERT_FALSE(eng_animation_set_playback(f.engine,a,0,0,NAN));
+    fixture_end(&f);
+}
+
+TEST(engine_character, automatic_processing_can_resume_and_register_a_late_scriptless_character)
+{
+    for (int before_start = 0; before_start < 2; before_start++) {
+        engine_fixture_t f;
+        fixture_begin_document(&f);
+        nmo_object_id_t body, actor = character(&f,&body);
+        nmo_object_id_t a = clip(&f,"A",actor,body,10,0,10);
+        ((nmo_character_state_t *)fixture_state(&f,actor))->active_animation = nmo_ref_from_id(a);
+        fixture_begin_edit(&f); fixture_commit_bare(&f,NULL);
+        if (before_start) ASSERT_TRUE(eng_character_set_automatic(f.engine,actor,true));
+        ASSERT_EQ(NMO_OK,nmo_engine_start(f.engine,NMO_ENGINE_START_ALL));
+        ASSERT_TRUE(eng_character_set_automatic(f.engine,actor,true));
+        ASSERT_TRUE(eng_character_set_automatic(f.engine,actor,true));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,2));
+        ASSERT_FLOAT_EQ(2,frame(f.engine,a),0);
+        ASSERT_TRUE(eng_character_set_automatic(f.engine,actor,false));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,2));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,2));
+        ASSERT_FLOAT_EQ(2,frame(f.engine,a),0);
+        ASSERT_TRUE(eng_character_set_automatic(f.engine,actor,true));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,3));
+        ASSERT_FLOAT_EQ(5,frame(f.engine,a),0);
+        ASSERT_EQ(NMO_OK,nmo_engine_activate_object(f.engine,actor,false));
+        ASSERT_TRUE(eng_character_set_automatic(f.engine,actor,true));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,1));
+        ASSERT_FLOAT_EQ(5,frame(f.engine,a),0);
+        ASSERT_FALSE(eng_character_set_automatic(f.engine,body,true));
+        ASSERT_EQ(0u,((const nmo_character_state_t *)fixture_state(&f,actor))->base.entity_flags & CK_3DENTITY_CHARACTERDOPROCESS);
+        fixture_end(&f);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_character, clocks_restore_saved_cursors_and_separate_cursor_updates_from_pose);
 REGISTER_TEST(engine_character, linked_unlinked_paused_and_reverse_clocks_follow_native_frame_rules);
@@ -1101,4 +1166,6 @@ REGISTER_TEST(engine_character, bodypart_frame_bypasses_exclusion_uses_child_dur
 REGISTER_TEST(engine_character, forced_bodypart_frames_keep_secondary_exclusivity_and_zero_length_channels_unchanged);
 REGISTER_TEST(engine_character, global_playback_takes_over_automatic_characters_without_stopping_their_scripts);
 REGISTER_TEST(engine_character, loaded_character_controls_remap_parameters_and_execute_all_animation_formats);
+REGISTER_TEST(engine_character, runtime_playback_settings_drive_clocks_interrupts_and_copies_without_editing_sources);
+REGISTER_TEST(engine_character, automatic_processing_can_resume_and_register_a_late_scriptless_character);
 TEST_MAIN_END()

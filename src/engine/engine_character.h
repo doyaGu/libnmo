@@ -47,6 +47,7 @@ bool eng_character_warper_parameters(nmo_engine_t *engine, nmo_object_id_t chara
     uint32_t *mode, nmo_object_id_t *source, float *from, nmo_object_id_t *target, float *to);
 nmo_status_t eng_character_process(nmo_engine_t *engine, nmo_object_id_t character, float delta);
 bool eng_character_automatic(nmo_engine_t *engine, nmo_object_id_t character);
+bool eng_character_set_automatic(nmo_engine_t *engine, nmo_object_id_t character, bool automatic);
 void eng_character_stop_automatic(nmo_engine_t *engine, nmo_object_id_t character);
 nmo_object_id_t eng_character_floor_reference(nmo_engine_t *engine, nmo_object_id_t character);
 bool eng_character_set_floor_reference(nmo_engine_t *engine, nmo_object_id_t character, nmo_object_id_t floor);

@@ -71,6 +71,7 @@ void eng_free_animations(nmo_engine_t *engine)
     free(engine->animations.keyed_map.slots);
     free(engine->animations.parents.slots);
     free(engine->animations.consumed.slots);
+    for (size_t i = 0; i < engine->animations.clocks.count; i++) free(engine->animations.clocks.data[i].playback);
     free(engine->animations.clocks.data);
     free(engine->animations.clock_map.slots);
 }
@@ -79,7 +80,11 @@ void eng_copy_animation(nmo_engine_t *engine, nmo_object_id_t source, nmo_object
                           const nmo_object_id_t *originals, const nmo_object_id_t *copies, size_t count)
 {
     int32_t clock = eng_map_get(&engine->animations.clock_map, source);
-    if (clock >= 0) eng_animation_set_current_step(engine, target, engine->animations.clocks.data[clock].step);
+    if (clock >= 0) {
+        const nmo_animation_state_t *settings = engine->animations.clocks.data[clock].playback;
+        eng_animation_set_current_step(engine,target,engine->animations.clocks.data[clock].step);
+        if (settings != NULL) eng_animation_set_playback(engine,target,UINT32_MAX,settings->flags,settings->frame_rate);
+    }
     int32_t from = eng_map_get(&engine->animations.keyed_map, source);
     int32_t to = eng_map_get(&engine->animations.keyed_map, target);
     if (from < 0 || to < 0) return;

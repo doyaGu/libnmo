@@ -49,6 +49,27 @@ void eng_character_stop_automatic(nmo_engine_t *engine, nmo_object_id_t characte
     if (runtime != NULL) runtime->automatic = false;
 }
 
+bool eng_character_set_automatic(nmo_engine_t *engine, nmo_object_id_t character, bool automatic)
+{
+    eng_character_t *runtime = character_runtime(engine,character);
+    if (runtime == NULL) return false;
+    int32_t index = eng_map_get(&engine->object_map,character);
+    if (automatic && index < 0) {
+        eng_object_t *entry = NULL;
+        index = (int32_t)engine->objects.count;
+        if (!ENG_VEC_PUSH(engine->objects,entry) || !eng_map_put(&engine->object_map,character,index)) return false;
+        entry->id = character;
+        entry->priority = ((const nmo_beobject_state_t *)character_state(engine,character))->priority;
+        entry->order = (uint32_t)index;
+        entry->active = engine->started && eng_in_scene(engine,character);
+    }
+    runtime->automatic = automatic;
+    if (automatic && engine->started && index >= 0 && engine->objects.data[index].active &&
+        !engine->objects.data[index].listed && !engine->objects.data[index].next_frame_asked)
+        eng_object_next_frame(engine,index,1);
+    return true;
+}
+
 nmo_object_id_t eng_character_floor_reference(nmo_engine_t *engine, nmo_object_id_t character)
 {
     eng_character_t *runtime = character_runtime(engine,character);
@@ -130,13 +151,13 @@ void eng_copy_character(nmo_engine_t *engine, nmo_object_id_t source, nmo_object
 nmo_object_id_t eng_character_active_animation(nmo_engine_t *engine, nmo_object_id_t character)
 {
     eng_character_t *runtime = character_runtime(engine, character);
-    return runtime != NULL && eng_animation_state(engine, runtime->active) != NULL ? runtime->active : 0;
+    return runtime != NULL && eng_animation_playback_state(engine, runtime->active) != NULL ? runtime->active : 0;
 }
 
 nmo_object_id_t eng_character_next_animation(nmo_engine_t *engine, nmo_object_id_t character)
 {
     eng_character_t *runtime = character_runtime(engine, character);
-    return runtime != NULL && eng_animation_state(engine, runtime->next) != NULL ? runtime->next : 0;
+    return runtime != NULL && eng_animation_playback_state(engine, runtime->next) != NULL ? runtime->next : 0;
 }
 
 static bool character_keyed(const nmo_engine_t *engine, nmo_object_id_t animation)
@@ -160,7 +181,7 @@ static void character_align(nmo_engine_t *engine, eng_character_t *runtime)
     float frame = 0;
     eng_animation_frame(engine, runtime->active, &frame);
     int32_t actor = eng_entity_index(engine, runtime->id), root = eng_entity_index(engine, runtime->root);
-    const nmo_animation_state_t *state = eng_animation_state(engine, runtime->active);
+    const nmo_animation_state_t *state = eng_animation_playback_state(engine, runtime->active);
     if (actor >= 0 && root >= 0 && state != NULL && (state->flags & CKANIMATION_ALIGNORIENTATION)) {
         eng_matrix_t turn, world;
         eng_animation_yaw(engine, eng_keyed_animation_root(engine, runtime->active), frame, &turn);
@@ -174,7 +195,7 @@ static void character_align(nmo_engine_t *engine, eng_character_t *runtime)
 nmo_status_t eng_character_set_active_animation(nmo_engine_t *engine, nmo_object_id_t character, nmo_object_id_t animation)
 {
     eng_character_t *runtime = character_runtime(engine, character);
-    if (runtime == NULL || (animation != 0 && eng_animation_state(engine, animation) == NULL)) return NMO_ERR_INVALID_ARGUMENT;
+    if (runtime == NULL || (animation != 0 && eng_animation_playback_state(engine, animation) == NULL)) return NMO_ERR_INVALID_ARGUMENT;
     runtime->active = animation;
     return NMO_OK;
 }
@@ -183,7 +204,7 @@ nmo_object_id_t eng_character_warper(nmo_engine_t *engine, nmo_object_id_t chara
 {
     eng_character_t *runtime = character_runtime(engine,character);
     if (runtime == NULL) return 0;
-    if (runtime->warper != 0) return eng_animation_state(engine,runtime->warper) != NULL ? runtime->warper : 0;
+    if (runtime->warper != 0) return eng_animation_playback_state(engine,runtime->warper) != NULL ? runtime->warper : 0;
     nmo_object_id_t id = eng_create_related_object(engine,character,NMO_CID_KEYEDANIMATION);
     if (id == 0) return 0;
     nmo_object_t *object = eng_find_object(engine,id);
@@ -207,7 +228,7 @@ bool eng_character_warper_parameters(nmo_engine_t *engine, nmo_object_id_t chara
     eng_character_t *runtime = character_runtime(engine,character);
     if (runtime == NULL) return false;
     if (mode != NULL) *mode = runtime->transition_mode;
-    if (source != NULL) *source = eng_animation_state(engine,runtime->source) != NULL ? runtime->source : 0;
+    if (source != NULL) *source = eng_animation_playback_state(engine,runtime->source) != NULL ? runtime->source : 0;
     if (from != NULL) *from = runtime->frame_src;
     if (target != NULL) *target = eng_character_next_animation(engine,character);
     if (to != NULL) *to = runtime->frame_dest;
@@ -220,9 +241,9 @@ static nmo_status_t character_start_warp(nmo_engine_t *engine, eng_character_t *
     if (runtime->next == animation) return NMO_OK;
     bool keyed = character_keyed(engine,animation);
     if (keyed && runtime->active == animation) return NMO_ERR_INVALID_ARGUMENT;
-    const nmo_animation_state_t *pending = eng_animation_state(engine,runtime->next);
+    const nmo_animation_state_t *pending = eng_animation_playback_state(engine,runtime->next);
     if (runtime->active == runtime->warper && pending != NULL && !(pending->flags & CKANIMATION_CANBEBREAK)) return NMO_OK;
-    const nmo_animation_state_t *source = eng_animation_state(engine,runtime->active);
+    const nmo_animation_state_t *source = eng_animation_playback_state(engine,runtime->active);
     float frame, duration = eng_animation_length(source);
     if (!eng_animation_frame(engine,runtime->active,&frame) || !isfinite(frame) || !isfinite(duration) || duration < 0 || !isfinite(source->frame_rate)) return NMO_ERR_VALIDATION_FAILED;
     bool ready = (source->flags & CKANIMATION_CANBEBREAK) != 0;
@@ -274,14 +295,14 @@ nmo_status_t eng_character_set_next_animation_warp(nmo_engine_t *engine, nmo_obj
 {
     eng_character_t *runtime = character_runtime(engine, character);
     if (runtime == NULL || !isfinite(length)) return NMO_ERR_INVALID_ARGUMENT;
-    const nmo_animation_state_t *source = eng_animation_state(engine, runtime->active);
+    const nmo_animation_state_t *source = eng_animation_playback_state(engine, runtime->active);
     if (source == NULL) runtime->active = 0;
     if (animation == 0) {
         runtime->next = 0;
         if (source != NULL && (source->flags & CKANIMATION_CANBEBREAK)) runtime->active = 0;
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    const nmo_animation_state_t *target = eng_animation_state(engine, animation);
+    const nmo_animation_state_t *target = eng_animation_playback_state(engine, animation);
     if (target == NULL || eng_object_ref(engine, animation, &target->character) != character) return NMO_ERR_INVALID_ARGUMENT;
     if (mode & CK_TRANSITION_FROMANIMATION) {
         uint32_t preset = (target->flags & CKANIMATION_TRANSITION_ALL) >> 8;
@@ -330,7 +351,7 @@ static void character_terminal(nmo_engine_t *engine, eng_character_t *runtime, f
         nmo_vector_t from = {0}, to = {0};
         eng_animation_position(engine, channel, current, &from);
         eng_animation_position(engine, channel, endpoint, &to);
-        float length = eng_animation_length(eng_animation_state(engine, runtime->active));
+        float length = eng_animation_length(eng_animation_playback_state(engine, runtime->active));
         eng_object_animation_apply_step(engine, channel, endpoint == 0 || length <= 0 ? 0 : 1, runtime->active);
         eng_entity_set_position(engine, root, &position, -1, false);
         eng_vector_t delta = {to.x-from.x,to.y-from.y,to.z-from.z};
@@ -404,7 +425,7 @@ nmo_status_t eng_character_play_secondary(nmo_engine_t *engine, nmo_object_id_t 
 
 static bool character_owned_keyed(nmo_engine_t *engine, eng_character_t *runtime, nmo_object_id_t animation)
 {
-    const nmo_animation_state_t *state = eng_animation_state(engine,animation);
+    const nmo_animation_state_t *state = eng_animation_playback_state(engine,animation);
     return state != NULL && character_keyed(engine,animation) && eng_object_ref(engine,animation,&state->character) == runtime->id;
 }
 
@@ -412,7 +433,7 @@ static nmo_object_id_t character_secondary_warper(nmo_engine_t *engine, eng_char
 {
     for (size_t i = 0; i < runtime->secondary_warpers.count; i++) {
         nmo_object_id_t id = runtime->secondary_warpers.data[i];
-        if (eng_animation_state(engine,id) == NULL) continue;
+        if (eng_animation_playback_state(engine,id) == NULL) continue;
         bool used = false;
         for (size_t j = 0; j < runtime->secondary.count; j++) if (runtime->secondary.data[j].warper == id) used = true;
         if (!used) return id;
@@ -431,7 +452,7 @@ nmo_status_t eng_character_play_secondary_warp(nmo_engine_t *engine, nmo_object_
     nmo_object_id_t animation, float frame, uint32_t flags, float warp_length, uint32_t loops)
 {
     eng_character_t *runtime = character_runtime(engine, character);
-    const nmo_animation_state_t *state = eng_animation_state(engine, animation);
+    const nmo_animation_state_t *state = eng_animation_playback_state(engine, animation);
     if (runtime == NULL || state == NULL || eng_object_ref(engine, animation, &state->character) != character ||
         !isfinite(frame) || !isfinite(warp_length)) return NMO_ERR_INVALID_ARGUMENT;
     if (flags & CKSECONDARYANIMATION_FROMANIMATION) {
@@ -486,7 +507,7 @@ static nmo_status_t character_secondary_refresh_gate(nmo_engine_t *engine, eng_s
 
 static void character_secondary_clock(nmo_engine_t *engine, nmo_object_id_t warper, bool linked, float rate)
 {
-    nmo_animation_state_t *state = (nmo_animation_state_t *)eng_animation_state(engine,warper);
+    nmo_animation_state_t *state = (nmo_animation_state_t *)eng_animation_playback_state(engine,warper);
     state->flags = (state->flags & ~CKANIMATION_LINKTOFRAMERATE) | (linked ? CKANIMATION_LINKTOFRAMERATE : 0);
     state->frame_rate = rate;
 }
@@ -500,7 +521,7 @@ typedef struct character_return_target {
 static nmo_status_t character_secondary_target(nmo_engine_t *engine, eng_character_t *runtime,
     float warp_length, character_return_target_t *target)
 {
-    const nmo_animation_state_t *active = eng_animation_state(engine,runtime->active);
+    const nmo_animation_state_t *active = eng_animation_playback_state(engine,runtime->active);
     float frame, length = eng_animation_length(active), duration = fmaxf(warp_length,1);
     if (!eng_animation_frame(engine,runtime->active,&frame) || !isfinite(frame) ||
         !isfinite(length) || length < 0 || !isfinite(active->frame_rate)) return NMO_ERR_VALIDATION_FAILED;
@@ -520,7 +541,7 @@ static nmo_status_t character_secondary_target(nmo_engine_t *engine, eng_charact
             if (target->frame == 0) target->frame = length;
         }
     } else target->frame = 0;
-    const nmo_animation_state_t *queued = eng_animation_state(engine,runtime->next);
+    const nmo_animation_state_t *queued = eng_animation_playback_state(engine,runtime->next);
     bool distinct = runtime->next != runtime->active && character_owned_keyed(engine,runtime,runtime->next);
     bool queued_linked = distinct && (queued->flags & CKANIMATION_LINKTOFRAMERATE);
     if (length > 0 && target->linked && target->rate != 0 && queued_linked) {
@@ -555,7 +576,7 @@ static nmo_status_t character_secondary_return(nmo_engine_t *engine, eng_charact
     character_return_target_t target;
     nmo_status_t status = character_secondary_target(engine,runtime,length,&target);
     if (status != NMO_OK) return status;
-    if (eng_animation_state(engine,entry->warper) == NULL) entry->warper = character_secondary_warper(engine,runtime);
+    if (eng_animation_playback_state(engine,entry->warper) == NULL) entry->warper = character_secondary_warper(engine,runtime);
     if (entry->warper == 0) return NMO_ERR_NOMEM;
     float ignored;
     if (from == target.id) {
@@ -589,7 +610,7 @@ nmo_status_t eng_character_stop_secondary(nmo_engine_t *engine, nmo_object_id_t 
 nmo_status_t eng_character_stop_secondary_from_animation(nmo_engine_t *engine, nmo_object_id_t character,
     nmo_object_id_t animation, float length)
 {
-    const nmo_animation_state_t *state = eng_animation_state(engine,animation);
+    const nmo_animation_state_t *state = eng_animation_playback_state(engine,animation);
     uint32_t flags = state != NULL ? (state->flags & CKANIMATION_SECONDARY_ALL)>>16 : 0;
     return eng_character_stop_secondary_warp(engine,character,animation,(flags & CKSECONDARYANIMATION_DOWARP) != 0,length);
 }
@@ -599,7 +620,7 @@ nmo_status_t eng_character_stop_secondary_warp(nmo_engine_t *engine, nmo_object_
 {
     eng_character_t *runtime = character_runtime(engine, character);
     if (runtime == NULL || animation == 0 || !isfinite(length)) return NMO_ERR_INVALID_ARGUMENT;
-    const nmo_animation_state_t *state = eng_animation_state(engine, animation);
+    const nmo_animation_state_t *state = eng_animation_playback_state(engine, animation);
     if (state != NULL && eng_object_ref(engine, animation, &state->character) != character) return NMO_ERR_INVALID_ARGUMENT;
     for (size_t i = 0; i < runtime->secondary.count; i++) {
         if (runtime->secondary.data[i].id == animation) {
@@ -631,14 +652,14 @@ nmo_object_id_t eng_character_secondary_animation(nmo_engine_t *engine, nmo_obje
 {
     eng_character_t *runtime = character_runtime(engine, character);
     nmo_object_id_t id = runtime != NULL && index < runtime->secondary.count ? runtime->secondary.data[index].id : 0;
-    return eng_animation_state(engine,id) != NULL ? id : 0;
+    return eng_animation_playback_state(engine,id) != NULL ? id : 0;
 }
 
 nmo_object_id_t eng_character_secondary_warper(nmo_engine_t *engine, nmo_object_id_t character, size_t index)
 {
     eng_character_t *runtime = character_runtime(engine, character);
     nmo_object_id_t id = runtime != NULL && index < runtime->secondary.count ? runtime->secondary.data[index].warper : 0;
-    return eng_animation_state(engine,id) != NULL ? id : 0;
+    return eng_animation_playback_state(engine,id) != NULL ? id : 0;
 }
 
 static nmo_status_t character_process_secondary(nmo_engine_t *engine, eng_character_t *runtime, float delta)
@@ -646,17 +667,17 @@ static nmo_status_t character_process_secondary(nmo_engine_t *engine, eng_charac
     for (size_t i = 0; i < runtime->secondary.count;) {
         eng_secondary_animation_t *entry = &runtime->secondary.data[i];
         if (entry->phase == ENG_SECONDARY_LEAVING) {
-            const nmo_animation_state_t *warp = eng_animation_state(engine,entry->warper);
+            const nmo_animation_state_t *warp = eng_animation_playback_state(engine,entry->warper);
             float next;
             if (warp == NULL) { character_remove_secondary(engine,runtime,i); continue; }
             float duration = eng_animation_length(warp);
             if (!eng_animation_next_frame(engine,entry->warper,delta,&next)) return NMO_ERR_VALIDATION_FAILED;
             bool live = false;
             if (entry->track != 0) {
-                bool stopped = eng_animation_state(engine,runtime->active) == NULL;
+                bool stopped = eng_animation_playback_state(engine,runtime->active) == NULL;
                 nmo_object_id_t target = stopped ? entry->track : runtime->active;
                 if (character_owned_keyed(engine,runtime,target) && target != entry->warper) {
-                    const nmo_animation_state_t *state = eng_animation_state(engine,target);
+                    const nmo_animation_state_t *state = eng_animation_playback_state(engine,target);
                     bool linked = (warp->flags & CKANIMATION_LINKTOFRAMERATE) != 0;
                     float rate = warp->frame_rate, frame = 0, step = 0;
                     eng_animation_frame(engine,target,&frame);
@@ -681,7 +702,7 @@ static nmo_status_t character_process_secondary(nmo_engine_t *engine, eng_charac
             continue;
         }
         if (entry->phase == ENG_SECONDARY_ENTERING) {
-            const nmo_animation_state_t *warp = eng_animation_state(engine,entry->warper);
+            const nmo_animation_state_t *warp = eng_animation_playback_state(engine,entry->warper);
             float current, next;
             if (warp == NULL) { character_remove_secondary(engine,runtime,i); continue; }
             if (!eng_animation_frame(engine,entry->warper,&current) || !eng_animation_next_frame(engine,entry->warper,delta,&next)) return NMO_ERR_VALIDATION_FAILED;
@@ -689,7 +710,7 @@ static nmo_status_t character_process_secondary(nmo_engine_t *engine, eng_charac
             if (remaining <= 0) {
                 if (!eng_animation_set_frame(engine,entry->warper,next)) return NMO_ERR_VALIDATION_FAILED;
             } else {
-                const nmo_animation_state_t *source = eng_animation_state(engine,entry->id);
+                const nmo_animation_state_t *source = eng_animation_playback_state(engine,entry->id);
                 if (source == NULL) { character_remove_secondary(engine,runtime,i); continue; }
                 remaining = character_remainder(warp,source,remaining,next-current,delta);
                 character_secondary_gate(engine,&entry->gate,true);
@@ -699,7 +720,7 @@ static nmo_status_t character_process_secondary(nmo_engine_t *engine, eng_charac
             i++;
             continue;
         }
-        const nmo_animation_state_t *state = eng_animation_state(engine, entry->id);
+        const nmo_animation_state_t *state = eng_animation_playback_state(engine, entry->id);
         if (state == NULL) { character_remove_secondary(engine, runtime, i); continue; }
         float length = eng_animation_length(state), next;
         if (!isfinite(length) || length < 0 || !eng_animation_next_frame(engine, entry->id, delta, &next)) return NMO_ERR_VALIDATION_FAILED;
@@ -755,7 +776,7 @@ nmo_status_t eng_character_process(nmo_engine_t *engine, nmo_object_id_t charact
     if (runtime == NULL) return NMO_ERR_INVALID_ARGUMENT;
     runtime->active = eng_character_active_animation(engine, character);
     runtime->next = eng_character_next_animation(engine, character);
-    const nmo_animation_state_t *source = eng_animation_state(engine, runtime->active);
+    const nmo_animation_state_t *source = eng_animation_playback_state(engine, runtime->active);
     if (source == NULL) {
         runtime->active = runtime->next;
         character_align(engine, runtime);
@@ -782,7 +803,7 @@ nmo_status_t eng_character_process(nmo_engine_t *engine, nmo_object_id_t charact
                 character_terminal(engine, runtime, current, reverse ? 0 : length);
                 runtime->active = runtime->next;
                 runtime->next = 0;
-                const nmo_animation_state_t *target = eng_animation_state(engine, runtime->active);
+                const nmo_animation_state_t *target = eng_animation_playback_state(engine, runtime->active);
                 if (target != NULL) {
                     float remaining = !reverse && length > 0 ? next-length : next;
                     remaining = character_remainder(source, target, remaining, next-current, delta);
