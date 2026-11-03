@@ -266,7 +266,19 @@ static bool keyed_order(nmo_engine_t *engine, eng_keyed_animation_t *runtime,
     return true;
 }
 
-bool eng_keyed_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animation, float step)
+void eng_keyed_animation_refresh(nmo_engine_t *engine, nmo_object_id_t animation)
+{
+    int32_t index = eng_map_get(&engine->animations.keyed_map,animation);
+    const nmo_keyedanimation_state_t *state = keyed_state(engine,animation,NMO_CID_KEYEDANIMATION);
+    if (index < 0 || state == NULL) return;
+    eng_keyed_animation_t *runtime = &engine->animations.keyed.data[index];
+    runtime->root_entity = eng_object_ref(engine,animation,&state->base.root_entity);
+    runtime->root_animation = 0;
+    runtime->sorted = runtime->ready = false;
+}
+
+bool eng_keyed_animation_channels(nmo_engine_t *engine, nmo_object_id_t animation,
+    const eng_animation_channel_t **out, size_t *count)
 {
     eng_keyed_animation_t *runtime = keyed_runtime(engine, animation);
     const nmo_keyedanimation_state_t *state = keyed_state(engine, animation, NMO_CID_KEYEDANIMATION);
@@ -279,7 +291,22 @@ bool eng_keyed_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animatio
     nmo_object_id_t floor = actor != NULL ? eng_object_ref(engine, character, &actor->floor_ref) : 0;
     if (eng_entity_index(engine, floor) < 0) floor = 0;
     if (!keyed_order(engine, runtime, state, character, floor)) return false;
-    size_t count = runtime->order.count;
+    *out = runtime->order.data;
+    *count = runtime->order.count;
+    return true;
+}
+
+bool eng_keyed_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animation, float step)
+{
+    const eng_animation_channel_t *channels;
+    size_t count;
+    if (!eng_keyed_animation_channels(engine,animation,&channels,&count)) return false;
+    const nmo_keyedanimation_state_t *state = keyed_state(engine,animation,NMO_CID_KEYEDANIMATION);
+    nmo_object_id_t character = eng_object_ref(engine,animation,&state->base.character);
+    const nmo_character_state_t *actor = keyed_state(engine,character,NMO_CID_CHARACTER);
+    nmo_object_id_t floor = actor != NULL ? eng_object_ref(engine,character,&actor->floor_ref) : 0;
+    if (actor == NULL) character = 0;
+    if (eng_entity_index(engine,floor) < 0) floor = 0;
     int32_t character_index = eng_entity_index(engine, character);
     if (character_index >= 0 && count != 0) {
         size_t required = floor != 0 ? 2 : 1;
@@ -294,7 +321,7 @@ bool eng_keyed_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animatio
     }
     step = step > 1 ? 1 : step < 0 ? 0 : step;
     for (size_t i = 0; i < count; i++) {
-        eng_object_animation_apply_step(engine, runtime->order.data[i].id, step, animation);
+        eng_object_animation_apply_step(engine, channels[i].id, step, animation);
     }
     return eng_animation_set_current_step(engine, animation, step);
 }

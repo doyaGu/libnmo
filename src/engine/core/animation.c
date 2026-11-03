@@ -933,9 +933,9 @@ static nmo_vector_t anim_velocity(nmo_engine_t *engine, nmo_object_id_t animatio
     return (nmo_vector_t){sign*(b.x-a.x),sign*(b.y-a.y),sign*(b.z-a.z)};
 }
 
-nmo_status_t eng_object_animation_transition(nmo_engine_t *engine, nmo_object_id_t result,
+nmo_status_t eng_object_animation_capture_transition(nmo_engine_t *engine, nmo_object_id_t result,
     nmo_object_id_t from, float from_step, nmo_object_id_t to, float to_step, float length,
-    bool velocity, bool dont_turn, const eng_animation_pose_t *starting)
+    bool velocity, bool dont_turn, const eng_animation_pose_t *starting, nmo_objectanimation_state_t *out)
 {
     eng_animation_source_t a, b;
     if (anim_state(engine,result) == NULL || !eng_animation_source(engine,from,&a) || !eng_animation_source(engine,to,&b) ||
@@ -1002,8 +1002,18 @@ nmo_status_t eng_object_animation_transition(nmo_engine_t *engine, nmo_object_id
     }
     nmo_status_t status = eng_animation_transition_morph(engine,from,a.length*from_step,to,b.length*to_step,arena,target,&generated);
     if (status != NMO_OK) return status;
-    *target = generated;
+    *out = generated;
     return NMO_OK;
+}
+
+nmo_status_t eng_object_animation_transition(nmo_engine_t *engine, nmo_object_id_t result,
+    nmo_object_id_t from, float from_step, nmo_object_id_t to, float to_step, float length,
+    bool velocity, bool dont_turn, const eng_animation_pose_t *starting)
+{
+    nmo_objectanimation_state_t generated;
+    nmo_status_t status = eng_object_animation_capture_transition(engine,result,from,from_step,to,to_step,length,velocity,dont_turn,starting,&generated);
+    if (status == NMO_OK) *(nmo_objectanimation_state_t *)nmo_object_get_state(eng_find_object(engine,result)) = generated;
+    return status;
 }
 
 void eng_animation_yaw(nmo_engine_t *engine, nmo_object_id_t animation, float frame, eng_matrix_t *out)

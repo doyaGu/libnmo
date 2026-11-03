@@ -213,10 +213,111 @@ TEST(engine_transition, a_missing_source_morph_starts_from_the_current_runtime_m
     fixture_end(&f);
 }
 
+static nmo_object_id_t group(engine_fixture_t *f, nmo_object_id_t character, nmo_object_id_t root,
+                             const nmo_object_id_t *parts, size_t count, float length, float fps)
+{
+    nmo_object_id_t id = fixture_create(f,NMO_CID_KEYEDANIMATION,"Group");
+    nmo_keyedanimation_state_t *state = fixture_state(f,id);
+    state->base.has_data = state->base.has_length = state->base.has_character = state->base.has_root_entity = 1;
+    state->base.length = length; state->base.frame_rate = fps;
+    state->base.flags = CKANIMATION_LINKTOFRAMERATE|CKANIMATION_CANBEBREAK;
+    state->base.character = nmo_ref_from_id(character); state->base.root_entity = nmo_ref_from_id(root);
+    state->animation_count = (uint32_t)count;
+    state->animation_ids = nmo_arena_alloc(nmo_session_get_arena(f->session),count*sizeof(nmo_ref_t),_Alignof(nmo_ref_t));
+    if (count != 0 && state->animation_ids == NULL) return 0;
+    for (size_t i = 0; i < count; i++) state->animation_ids[i] = nmo_ref_from_id(parts[i]);
+    return id;
+}
+
+TEST(engine_transition, keyed_transitions_keep_signed_entry_frames_and_the_targets_clock_direction)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t a = curve(&f,f.owner_id,8,0,8), b = curve(&f,f.owner_id,20,10,30);
+    nmo_object_id_t from = group(&f,0,f.owner_id,&a,1,8,1000), to = group(&f,0,f.owner_id,&b,1,20,-60);
+    fixture_begin_edit(&f); fixture_commit_bare(&f,NULL);
+    nmo_object_id_t result = eng_create_related_object(f.engine,to,NMO_CID_KEYEDANIMATION);
+    ASSERT_TRUE(result != 0);
+    ASSERT_TRUE(eng_animation_set_current_step(f.engine,from,.25f));
+    float entry = NAN;
+    ASSERT_EQ(NMO_OK,eng_keyed_animation_transition(f.engine,result,from,to,CK_TRANSITION_WARPTOSAMEPOS,.25f,0,&entry));
+    ASSERT_FLOAT_EQ(5,entry,0);
+    const nmo_animation_state_t *state = eng_animation_state(f.engine,result);
+    ASSERT_FLOAT_EQ(1,eng_animation_length(state),0); ASSERT_FLOAT_EQ(60,state->frame_rate,0);
+    ASSERT_TRUE(state->flags & CKANIMATION_LINKTOFRAMERATE);
+    nmo_object_id_t root = eng_keyed_animation_root(f.engine,result);
+    ASSERT_FLOAT_EQ(2,eng_animation_sample_pose(f.engine,root,0).position.x,0);
+    ASSERT_FLOAT_EQ(15,eng_animation_sample_pose(f.engine,root,1).position.x,0);
+    ASSERT_TRUE(eng_animation_set_current_step(f.engine,from,-.25f));
+    ASSERT_EQ(NMO_OK,eng_keyed_animation_transition(f.engine,result,from,to,CK_TRANSITION_WARPTOSAMEPOS,2,0,&entry));
+    ASSERT_FLOAT_EQ(-5,entry,0);
+    ASSERT_FLOAT_EQ(0,x(f.engine,f.owner_id),0);
+    ASSERT_FLOAT_EQ(0,((const nmo_keyedanimation_state_t *)fixture_state(&f,to))->base.current_step,0);
+    fixture_end(&f);
+}
+
+TEST(engine_transition, best_entry_sums_all_matching_channels_and_keeps_the_earliest_tie)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t limb = fixture_create(&f,NMO_CID_3DENTITY,"Limb");
+    nmo_object_id_t a[] = {curve(&f,f.owner_id,8,0,0),curve(&f,limb,8,4,4)};
+    nmo_object_id_t b[] = {curve(&f,f.owner_id,8,0,16),curve(&f,limb,8,5,-3)};
+    nmo_object_id_t from = group(&f,0,f.owner_id,a,COUNT(a),8,1000), to = group(&f,0,f.owner_id,b,COUNT(b),8,1000);
+    fixture_begin_edit(&f); fixture_commit_bare(&f,NULL);
+    nmo_object_id_t result = eng_create_related_object(f.engine,to,NMO_CID_KEYEDANIMATION);
+    float entry = NAN;
+    ASSERT_EQ(NMO_OK,eng_keyed_animation_transition(f.engine,result,from,to,CK_TRANSITION_WARPTOBEST,2,6,&entry));
+    ASSERT_FLOAT_EQ(0,entry,0);
+    const eng_animation_channel_t *parts; size_t count;
+    ASSERT_TRUE(eng_keyed_animation_channels(f.engine,result,&parts,&count));
+    ASSERT_EQ(2,count);
+    ASSERT_FLOAT_EQ(0,eng_animation_sample_pose(f.engine,parts[0].id,2).position.x,0);
+    ASSERT_FLOAT_EQ(5,eng_animation_sample_pose(f.engine,parts[1].id,2).position.x,0);
+    entry = 99;
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,eng_keyed_animation_transition(f.engine,result,from,from,0,2,0,&entry));
+    ASSERT_FLOAT_EQ(99,entry,0);
+    fixture_end(&f);
+}
+
+TEST(engine_transition, channel_matching_uses_the_last_source_and_clears_unmatched_and_reused_outputs)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t limb = fixture_create(&f,NMO_CID_3DENTITY,"Limb");
+    nmo_object_id_t a[] = {curve(&f,f.owner_id,10,0,10),curve(&f,f.owner_id,10,0,20)};
+    nmo_object_id_t b[] = {curve(&f,f.owner_id,10,100,120),curve(&f,limb,10,20,30),0};
+    nmo_object_id_t from = group(&f,0,f.owner_id,a,COUNT(a),10,1000), to = group(&f,0,f.owner_id,b,COUNT(b),10,1000);
+    nmo_object_id_t small = group(&f,0,f.owner_id,b,1,10,1000);
+    fixture_begin_edit(&f); fixture_commit_bare(&f,NULL);
+    nmo_object_id_t result = eng_create_related_object(f.engine,to,NMO_CID_KEYEDANIMATION);
+    ASSERT_TRUE(eng_animation_set_current_step(f.engine,from,.5f));
+    float entry;
+    ASSERT_EQ(NMO_OK,eng_keyed_animation_transition(f.engine,result,from,to,0,4,0,&entry));
+    const eng_animation_channel_t *parts; size_t count;
+    ASSERT_TRUE(eng_keyed_animation_channels(f.engine,result,&parts,&count));
+    ASSERT_EQ(3,count);
+    nmo_object_id_t root = parts[0].id;
+    ASSERT_FLOAT_EQ(10,eng_animation_sample_pose(f.engine,root,0).position.x,0);
+    ASSERT_EQ(0u,eng_animation_sample_pose(f.engine,parts[1].id,4).present);
+    ASSERT_EQ(0u,eng_animation_sample_pose(f.engine,parts[2].id,4).present);
+    ASSERT_TRUE(eng_animation_set_current_step(f.engine,result,.5f));
+    ASSERT_EQ(NMO_OK,eng_keyed_animation_transition(f.engine,result,result,small,0,2,0,&entry));
+    ASSERT_EQ(root,eng_keyed_animation_root(f.engine,result));
+    ASSERT_FLOAT_EQ(55,eng_animation_sample_pose(f.engine,root,0).position.x,1e-6f);
+    ASSERT_FLOAT_EQ(100,eng_animation_sample_pose(f.engine,root,2).position.x,0);
+    ASSERT_TRUE(eng_keyed_animation_channels(f.engine,result,&parts,&count));
+    ASSERT_EQ(3,count);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_transition, generated_pose_channels_sample_raw_frames_and_preserve_the_borrowed_model);
 REGISTER_TEST(engine_transition, velocity_sampling_handles_fractional_duration_and_in_place_rebuilds);
 REGISTER_TEST(engine_transition, morph_endpoints_survive_in_place_rebuilds_and_mismatched_vertex_sets);
 REGISTER_TEST(engine_transition, root_heading_is_removed_and_ignored_channels_do_not_generate_keys);
 REGISTER_TEST(engine_transition, a_missing_source_morph_starts_from_the_current_runtime_mesh);
+REGISTER_TEST(engine_transition, keyed_transitions_keep_signed_entry_frames_and_the_targets_clock_direction);
+REGISTER_TEST(engine_transition, best_entry_sums_all_matching_channels_and_keeps_the_earliest_tie);
+REGISTER_TEST(engine_transition, channel_matching_uses_the_last_source_and_clears_unmatched_and_reused_outputs);
 TEST_MAIN_END()

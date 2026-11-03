@@ -6,6 +6,7 @@
 #include "object/builtin/nmo_animation_schemas.h"
 
 typedef struct eng_range eng_range_t;
+struct eng_animation_channel;
 
 enum { ENG_ANIM_POSITION=1, ENG_ANIM_ROTATION=2, ENG_ANIM_SCALE=4, ENG_ANIM_AXIS=8 };
 typedef struct eng_animation_pose {
@@ -20,6 +21,14 @@ eng_animation_pose_t eng_animation_sample_pose(nmo_engine_t *engine, nmo_object_
 nmo_status_t eng_object_animation_transition(nmo_engine_t *engine, nmo_object_id_t result,
     nmo_object_id_t from, float from_step, nmo_object_id_t to, float to_step, float length,
     bool velocity, bool dont_turn, const eng_animation_pose_t *starting);
+nmo_status_t eng_object_animation_capture_transition(nmo_engine_t *engine, nmo_object_id_t result,
+    nmo_object_id_t from, float from_step, nmo_object_id_t to, float to_step, float length,
+    bool velocity, bool dont_turn, const eng_animation_pose_t *starting, nmo_objectanimation_state_t *out);
+nmo_status_t eng_keyed_animation_transition(nmo_engine_t *engine, nmo_object_id_t result,
+    nmo_object_id_t from, nmo_object_id_t to, uint32_t mode, float length, float frame_to, float *entry);
+bool eng_keyed_animation_channels(nmo_engine_t *engine, nmo_object_id_t animation,
+    const struct eng_animation_channel **out, size_t *count);
+void eng_keyed_animation_refresh(nmo_engine_t *engine, nmo_object_id_t animation);
 struct nmo_arena;
 struct nmo_arena *eng_animation_edit_arena(nmo_engine_t *engine, nmo_object_id_t animation);
 bool eng_animation_local_ref(const nmo_engine_t *engine, nmo_object_id_t owner, nmo_object_id_t target, nmo_ref_t *out);
