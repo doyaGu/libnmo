@@ -132,6 +132,11 @@ TEST(engine_character, linked_unlinked_paused_and_reverse_clocks_follow_native_f
     ASSERT_TRUE(eng_animation_next_frame(f.engine, id, 100, &next));
     ASSERT_FLOAT_EQ(8, next, 0);
     state->frame_rate = -1000;
+    ASSERT_TRUE(eng_animation_set_current_step(f.engine,id,.8f));
+    ASSERT_TRUE(eng_animation_next_frame(f.engine,id,8,&next));
+    ASSERT_FLOAT_EQ(0,next,0);
+    ASSERT_TRUE(eng_animation_set_frame(f.engine,id,5));
+    state->frame_rate = -1000;
     ASSERT_TRUE(eng_animation_next_frame(f.engine, id, 2, &next));
     ASSERT_FLOAT_EQ(3, next, 0);
     state->frame_rate = 0;

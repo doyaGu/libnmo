@@ -75,7 +75,11 @@ bool eng_animation_next_frame(nmo_engine_t *engine, nmo_object_id_t animation, f
     if (state->flags & CKANIMATION_LINKTOFRAMERATE) {
         if (!isfinite(state->frame_rate) || !eng_animation_current_step(engine, animation, &step)) return false;
         double frame = isfinite(current) ? current : (double)step * eng_animation_length(state);
-        *out = (float)(frame + (double)delta * state->frame_rate * 0.001);
+        /* Round the millisecond advance before accumulating it. Contracting
+         * this into an FMA can turn an exact reverse endpoint into a tiny
+         * negative frame, prematurely consuming a strict playback boundary. */
+        volatile double advance = (double)delta * state->frame_rate * 0.001;
+        *out = (float)(frame + advance);
     } else *out = current + 1;
     return isfinite(*out);
 }
