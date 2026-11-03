@@ -2,12 +2,14 @@
 
 #include "../../src/engine/engine_transform.h"
 #include "../fixtures/engine_bezier_samples.h"
+#include "document/nmo_document_load.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_animation_schemas.h"
 
 #include <math.h>
 #include <stdio.h>
 
+#define GUID_PLAY_GLOBAL_ANIMATION NMO_GUID(0x1c9236e1, 0x42f40996)
 #define ANIM_BEZIER_POSITION 0x921ab801u
 #define ANIM_BEZIER_SCALE 0x18ab4404u
 #define ANIM_LINEAR_ROTATION 0x49ed4002u
@@ -151,7 +153,106 @@ TEST(engine_bezier, invalid_packed_keys_preserve_the_pose_and_unaligned_keys_are
     fixture_end(&f);
 }
 
+TEST(engine_bezier, saved_global_animation_plays_variable_size_keys_without_changing_the_document)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t part = fixture_create(&f, NMO_CID_OBJECTANIMATION, "Part");
+    nmo_object_id_t global = fixture_create(&f, NMO_CID_KEYEDANIMATION, "Global");
+    struct packed_key {
+        float time, value[3];
+        uint32_t flags;
+    } positions[] = {{0, {0, 2, -4}, 0x00100010u}, {8, {8, 6, 4}, 0x00100010u}};
+    struct packed_explicit_key {
+        float time, value[3];
+        uint32_t flags;
+        float in[3], out[3];
+    } scales[] = {{0, {1, 2, 3}, 0x00200020u, {0, 0, 0}, {1, 0, 0}},
+                   {8, {9, 6, 7}, 0x00200020u, {-1, 0, 0}, {0, 0, 0}}};
+    _Static_assert(sizeof(positions[0]) == 20 && sizeof(scales[0]) == 44, "Packed Bezier keys");
+    nmo_objanim_controller_t controllers[] = {
+        {ANIM_BEZIER_POSITION, 2, sizeof(positions), positions},
+        {ANIM_BEZIER_SCALE, 2, sizeof(scales), scales},
+    };
+    nmo_objectanimation_state_t *state = fixture_state(&f, part);
+    nmo_keyedanimation_state_t *keyed = fixture_state(&f, global);
+    ASSERT_TRUE(state != NULL && keyed != NULL);
+    state->entity = nmo_ref_from_id(f.owner_id);
+    state->format = CKOBJANIM_FORMAT_CONTROLLERS;
+    state->has_length = 1;
+    state->length = 8;
+    state->controller_count = COUNT(controllers);
+    state->controllers = controllers;
+    nmo_ref_t part_ref = nmo_ref_from_id(part);
+    keyed->animation_count = 1;
+    keyed->animation_ids = &part_ref;
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t play = fixture_block(&f, GUID_PLAY_GLOBAL_ANIMATION, "Play");
+    ASSERT_TRUE(play != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, play, 0), 0);
+    const nmo_object_id_t pins[] = {BLOCK_PIN(&f, play, 0), BLOCK_PIN(&f, play, 1),
+                                   BLOCK_PIN(&f, play, 3)};
+    char global_id[32];
+    snprintf(global_id, sizeof(global_id), "%u", global);
+    const char *values[] = {global_id, "8", "FALSE"};
+    for (size_t i = 0; i < COUNT(pins); i++) {
+        nmo_object_id_t source = 0;
+        ASSERT_EQ(NMO_OK, nmo_script_edit_ensure_input_parameter_source(f.tx, pins[i], &source));
+        ASSERT_EQ(NMO_OK, nmo_script_edit_set_parameter_value(f.tx, source, values[i]));
+    }
+    fixture_commit(&f, NULL);
+    const char *path = NMO_TEST_SCRATCH_FILE("engine_animation_bezier.cmo");
+    ASSERT_EQ(NMO_OK, nmo_session_save_file(f.session, path, NULL, NULL));
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
+    nmo_engine_t *engine = NULL;
+    ASSERT_EQ(NMO_OK, nmo_document_load_file(f.ctx, path, NULL, &document));
+    ASSERT_EQ(NMO_OK, nmo_workspace_create(f.ctx, document, &workspace));
+    ASSERT_EQ(NMO_OK, nmo_engine_create(workspace, NULL, &engine));
+    ASSERT_EQ(NMO_OK, nmo_bb_virtools_register(engine));
+    nmo_object_id_t owner = nmo_engine_object_named(engine, "Owner", NMO_CID_3DENTITY);
+    nmo_object_id_t loaded_part = nmo_engine_object_named(engine, "Part", NMO_CID_OBJECTANIMATION);
+    ASSERT_TRUE(owner != 0 && loaded_part != 0);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(engine, 2));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(engine, 2));
+    float world[16];
+    ASSERT_TRUE(nmo_engine_entity_world_matrix(engine, owner, world));
+    /* Slow position has smoothstep weight 5/32; the scale X has explicit
+     * unit derivatives and is linear, while scale Y and Z have zero derivatives. */
+    const float quarter[] = {1.25f, 2.625f, -2.75f, 3, 2.625f, 3.625f};
+    const size_t members[] = {12, 13, 14, 0, 5, 10};
+    for (size_t i = 0; i < COUNT(members); i++) {
+        ASSERT_FLOAT_EQ(quarter[i], world[members[i]], 0.0001f);
+    }
+    ASSERT_EQ(NMO_OK, nmo_engine_step(engine, 6));
+    ASSERT_TRUE(nmo_engine_entity_world_matrix(engine, owner, world));
+    const float end[] = {8, 6, 4, 9, 6, 7};
+    for (size_t i = 0; i < COUNT(members); i++) {
+        ASSERT_FLOAT_EQ(end[i], world[members[i]], 0.0001f);
+    }
+    nmo_object_repository_t *repo = nmo_document_get_repository(document);
+    const nmo_objectanimation_state_t *saved = nmo_object_get_state(
+        nmo_object_repository_find_by_id(repo, loaded_part));
+    ASSERT_NOT_NULL(saved);
+    ASSERT_EQ(2u, saved->controller_count);
+    ASSERT_EQ(sizeof(positions), saved->controllers[0].data_size);
+    ASSERT_EQ(sizeof(scales), saved->controllers[1].data_size);
+    ASSERT_EQ(0, memcmp(positions, saved->controllers[0].data, sizeof(positions)));
+    ASSERT_EQ(0, memcmp(scales, saved->controllers[1].data, sizeof(scales)));
+    const nmo_3dentity_state_t *saved_entity = nmo_object_get_state(nmo_object_repository_find_by_id(repo, owner));
+    ASSERT_NOT_NULL(saved_entity);
+    ASSERT_FLOAT_EQ(0, saved_entity->world_matrix[12], 0.0001f);
+    nmo_engine_destroy(engine);
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
+    fixture_end(&f);
+    remove(path);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_bezier, position_and_scale_match_native_samples);
 REGISTER_TEST(engine_bezier, invalid_packed_keys_preserve_the_pose_and_unaligned_keys_are_readable);
+REGISTER_TEST(engine_bezier, saved_global_animation_plays_variable_size_keys_without_changing_the_document);
 TEST_MAIN_END()
