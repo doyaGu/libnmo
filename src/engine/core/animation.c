@@ -3,10 +3,9 @@
  * @brief CKObjectAnimation::SetStep: an entity's local pose from its
  *        animation's keys (CK2_3D's RCKObjectAnimation, VxMath's VxQuaternion).
  *
- * The engine evaluates the linear position, rotation and scale controllers
- * and the TCB rotation one; the TCB position and scale, Bezier, scale-axis
- * and morph controllers change nothing. A keyed animation steps each of its
- * object animations (CKKeyedAnimation::SetStep).
+ * The engine evaluates the linear and TCB position, rotation and scale
+ * controllers; Bezier, scale-axis and morph controllers change nothing.
+ * A keyed animation steps each of its object animations (CKKeyedAnimation::SetStep).
  */
 
 #include "../engine_internal.h"
@@ -20,7 +19,9 @@
 #define ANIM_LINEAR_POSITION 0x637c4301u
 #define ANIM_LINEAR_ROTATION 0x49ed4002u
 #define ANIM_LINEAR_SCALE 0x654a3a04u
+#define ANIM_TCB_POSITION 0x347e4a01u
 #define ANIM_TCB_ROTATION 0x45b52a02u
+#define ANIM_TCB_SCALE 0x1b545904u
 
 typedef struct anim_quat {
     float x, y, z, w;
@@ -163,7 +164,7 @@ static anim_quat_t anim_squad(float t, anim_quat_t q1, anim_quat_t a, anim_quat_
 }
 
 /* ApplyEaseParameters: the ease out of one key and into the next */
-static float anim_ease(float t, float ease_from, float ease_to)
+static double anim_ease(double t, float ease_from, float ease_to)
 {
     double from = ease_from, to = ease_to, total = from + to;
     if (t == 0.0f || t == 1.0f || total == 0.0) {
@@ -175,13 +176,123 @@ static float anim_ease(float t, float ease_from, float ease_to)
     }
     double scale = 1.0 / (2.0 - from - to);
     if (t < from) {
-        return (float)((scale / from) * t * t);
+        return (scale / from) * t * t;
     }
     if (t < 1.0 - to) {
-        return (float)((2.0 * t - from) * scale);
+        return (2.0 * t - from) * scale;
     }
     double remaining = 1.0 - t;
-    return (float)(1.0 - (scale / to) * remaining * remaining);
+    return 1.0 - (scale / to) * remaining * remaining;
+}
+
+/* ComputeTCBTimeWeights: unequal key intervals, adjusted by continuity. */
+static void anim_tcb_time_weights(float previous, float time, float next, float continuity,
+                                   float *weight_previous, float *weight_next)
+{
+    double duration = (double)next - previous;
+    *weight_previous = (float)(((double)time - previous) * 2.0 / duration);
+    *weight_next = (float)(((double)next - time) * 2.0 / duration);
+    float magnitude = fabsf(continuity);
+    *weight_previous = *weight_previous + magnitude - magnitude * *weight_previous;
+    *weight_next = *weight_next + magnitude - magnitude * *weight_next;
+}
+
+typedef struct anim_tcb_factors {
+    float in_previous, in_next, out_previous, out_next;
+} anim_tcb_factors_t;
+
+static anim_tcb_factors_t anim_tcb_factors(float tension, float continuity, float bias,
+                                          float weight_previous, float weight_next)
+{
+    float half_tension = (1.0f - tension) * 0.5f;
+    float continuity_minus = 1.0f - continuity, continuity_plus = 2.0f - continuity_minus;
+    float bias_minus = 1.0f - bias, bias_plus = 2.0f - bias_minus;
+    float minus = half_tension * continuity_minus, plus = half_tension * continuity_plus;
+    return (anim_tcb_factors_t){minus * bias_plus * weight_previous,
+                                plus * bias_minus * weight_previous,
+                                plus * bias_plus * weight_next,
+                                minus * bias_minus * weight_next};
+}
+
+/* CKTCBPositionKey and CKTCBScaleKey share the same 36-byte layout. */
+typedef struct anim_tcb_vector_key {
+    float time, value[3];
+    float tension, continuity, bias, ease_to, ease_from;
+} anim_tcb_vector_key_t;
+
+_Static_assert(sizeof(anim_tcb_vector_key_t) == 36, "TCB vector key layout");
+
+/* Compute only the tangent needed by the current segment, without a cache.
+ * The native last endpoint uses its neighbor's incoming tangent. */
+static void anim_tcb_vector_tangent(const anim_tcb_vector_key_t *keys, uint32_t count,
+                                    uint32_t index, bool outgoing, float tangent[3])
+{
+    if (count == 2) {
+        for (size_t c = 0; c < 3; c++) {
+            tangent[c] = (float)((1.0f - keys[index].tension) *
+                                 ((double)keys[1].value[c] - keys[0].value[c]));
+        }
+        return;
+    }
+    if (index == 0 || index + 1 == count) {
+        bool first = index == 0;
+        uint32_t neighbor = first ? 1 : index - 1;
+        anim_tcb_vector_tangent(keys, count, neighbor, false, tangent);
+        float factor = (1.0f - keys[index].tension) * (first ? 0.5f : -0.5f);
+        for (size_t c = 0; c < 3; c++) {
+            double delta = (double)keys[neighbor].value[c] - keys[index].value[c];
+            tangent[c] = (float)((3.0 * delta - tangent[c]) * factor);
+        }
+        return;
+    }
+    const anim_tcb_vector_key_t *key = &keys[index];
+    float previous, next;
+    anim_tcb_time_weights(keys[index - 1].time, key->time, keys[index + 1].time,
+                          key->continuity, &previous, &next);
+    anim_tcb_factors_t factors = anim_tcb_factors(key->tension, key->continuity, key->bias,
+                                                previous, next);
+    for (size_t c = 0; c < 3; c++) {
+        double left = (double)key->value[c] - keys[index - 1].value[c];
+        double right = (double)keys[index + 1].value[c] - key->value[c];
+        tangent[c] = (float)(outgoing ? factors.out_previous * left + factors.out_next * right
+                                      : factors.in_previous * left + factors.in_next * right);
+    }
+}
+
+/* RCKTCBPositionController::Evaluate, also used by the scale controller. */
+static void anim_tcb_vector(const nmo_objanim_controller_t *controller, float time, eng_vector_t *out)
+{
+    const anim_tcb_vector_key_t *keys = controller->data;
+    uint32_t last = controller->key_count - 1;
+    if (time <= keys[0].time || time >= keys[last].time) {
+        const float *value = time <= keys[0].time ? keys[0].value : keys[last].value;
+        *out = (eng_vector_t){value[0], value[1], value[2]};
+        return;
+    }
+    uint32_t low, high;
+    anim_segment(controller->data, 9, controller->key_count, time, &low, &high);
+    const anim_tcb_vector_key_t *a = &keys[low], *b = &keys[high];
+    double elapsed = (double)time - a->time, remaining = (double)b->time - time;
+    bool reversed = elapsed > remaining;
+    double t = (reversed ? remaining : elapsed) / ((double)b->time - a->time);
+    t = reversed ? anim_ease(t, b->ease_to, a->ease_from) : anim_ease(t, a->ease_from, b->ease_to);
+    double squared = t * t;
+    double near_position = (2.0 * t - 3.0) * squared + 1.0;
+    double far_position = (3.0 - 2.0 * t) * squared;
+    double near_tangent = ((t - 2.0) * t + 1.0) * t;
+    double far_tangent = (t - 1.0) * squared;
+    double h1 = reversed ? far_position : near_position;
+    double h2 = reversed ? near_position : far_position;
+    double h3 = reversed ? -far_tangent : near_tangent;
+    double h4 = reversed ? -near_tangent : far_tangent;
+    float outgoing[3], incoming[3], value[3];
+    anim_tcb_vector_tangent(keys, controller->key_count, low, true, outgoing);
+    anim_tcb_vector_tangent(keys, controller->key_count, high, false, incoming);
+    for (size_t c = 0; c < 3; c++) {
+        value[c] = (float)(h1 * a->value[c] + h2 * b->value[c] +
+                           h3 * outgoing[c] + h4 * incoming[c]);
+    }
+    *out = (eng_vector_t){value[0], value[1], value[2]};
 }
 
 /*
@@ -223,26 +334,17 @@ static void anim_tcb_tangents(const anim_tcb_key_t *keys, uint32_t count, uint32
     /* ComputeTCBTimeWeights, then ComputeTCBCoefficients */
     float weight_previous = 1.0f, weight_next = 1.0f;
     if (i > 0 && i + 1 < count) {
-        double duration = (double)keys[i + 1].time - keys[i - 1].time;
-        weight_previous = (float)(((double)key->time - keys[i - 1].time) * 2.0 / duration);
-        weight_next = (float)(((double)keys[i + 1].time - key->time) * 2.0 / duration);
-        float magnitude = fabsf(key->continuity);
-        weight_previous = weight_previous + magnitude - magnitude * weight_previous;
-        weight_next = weight_next + magnitude - magnitude * weight_next;
+        anim_tcb_time_weights(keys[i - 1].time, key->time, keys[i + 1].time, key->continuity,
+                              &weight_previous, &weight_next);
     }
-    float half_tension = (1.0f - key->tension) * 0.5f;
-    float continuity_minus = 1.0f - key->continuity, continuity_plus = 2.0f - continuity_minus;
-    float bias_minus = 1.0f - key->bias, bias_plus = 2.0f - bias_minus;
-    float minus = half_tension * continuity_minus, plus = half_tension * continuity_plus;
-    float in_previous = minus * bias_plus * weight_previous;
-    float in_next = plus * bias_minus * weight_previous;
-    float out_previous = plus * bias_plus * weight_next;
-    float out_next = minus * bias_minus * weight_next;
-    anim_quat_t a = anim_quat_scale(1.0f - in_previous, previous), b = anim_quat_scale(in_next, next);
+    anim_tcb_factors_t factors = anim_tcb_factors(key->tension, key->continuity, key->bias,
+                                                weight_previous, weight_next);
+    anim_quat_t a = anim_quat_scale(1.0f - factors.in_previous, previous);
+    anim_quat_t b = anim_quat_scale(factors.in_next, next);
     anim_quat_t incoming = {0.5f * (a.x - b.x), 0.5f * (a.y - b.y), 0.5f * (a.z - b.z),
                             0.5f * (a.w - b.w)};
-    a = anim_quat_scale(out_previous, previous);
-    b = anim_quat_scale(out_next - 1.0f, next);
+    a = anim_quat_scale(factors.out_previous, previous);
+    b = anim_quat_scale(factors.out_next - 1.0f, next);
     anim_quat_t outgoing = {0.5f * (a.x + b.x), 0.5f * (a.y + b.y), 0.5f * (a.z + b.z),
                             0.5f * (a.w + b.w)};
     *in = anim_quat_multiply(key->rot, anim_quat_exp(incoming));
@@ -305,7 +407,7 @@ static const nmo_objanim_controller_t *anim_controller(const nmo_objectanimation
     for (uint32_t i = 0; i < state->controller_count; i++) {
         const nmo_objanim_controller_t *c = &state->controllers[i];
         if (c->type == type && c->key_count > 0 && c->data != NULL &&
-            c->data_size == c->key_count * key_size) {
+            c->data_size == (uint64_t)c->key_count * key_size) {
             return c;
         }
     }
@@ -327,18 +429,23 @@ bool eng_object_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animati
     }
     float frame = step * (state->has_length ? state->length : 0.0f);
     const nmo_objanim_controller_t *position = anim_controller(state, ANIM_LINEAR_POSITION, 16);
+    const nmo_objanim_controller_t *tcb_position = anim_controller(state, ANIM_TCB_POSITION, 36);
     const nmo_objanim_controller_t *rotation = anim_controller(state, ANIM_LINEAR_ROTATION, 20);
     const nmo_objanim_controller_t *tcb_rotation = anim_controller(state, ANIM_TCB_ROTATION, 40);
     const nmo_objanim_controller_t *scaling = anim_controller(state, ANIM_LINEAR_SCALE, 16);
-    if (position == NULL && rotation == NULL && tcb_rotation == NULL && scaling == NULL) {
+    const nmo_objanim_controller_t *tcb_scaling = anim_controller(state, ANIM_TCB_SCALE, 36);
+    if (position == NULL && tcb_position == NULL && rotation == NULL && tcb_rotation == NULL &&
+        scaling == NULL && tcb_scaling == NULL) {
         return true;
     }
     eng_matrix_t local = engine->entities.data[entity].local;
     eng_vector_t pos = {local.m[3][0], local.m[3][1], local.m[3][2]};
     if (position != NULL) {
         anim_linear_vector(position, frame, &pos);
+    } else if (tcb_position != NULL) {
+        anim_tcb_vector(tcb_position, frame, &pos);
     }
-    if (rotation != NULL || tcb_rotation != NULL || scaling != NULL) {
+    if (rotation != NULL || tcb_rotation != NULL || scaling != NULL || tcb_scaling != NULL) {
         /* The channels the animation lacks, from the local matrix as it is */
         eng_vector_t scale = {1.0f, 1.0f, 1.0f};
         eng_matrix_t rot;
@@ -359,6 +466,8 @@ bool eng_object_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animati
         }
         if (scaling != NULL) {
             anim_linear_vector(scaling, frame, &scale);
+        } else if (tcb_scaling != NULL) {
+            anim_tcb_vector(tcb_scaling, frame, &scale);
         }
         /* The stretch before the rotation */
         eng_matrix_t stretch;
