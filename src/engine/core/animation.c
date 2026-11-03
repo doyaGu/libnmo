@@ -897,6 +897,18 @@ bool eng_animation_position(nmo_engine_t *engine, nmo_object_id_t animation, flo
     return true;
 }
 
+void eng_animation_yaw(nmo_engine_t *engine, nmo_object_id_t animation, float frame, eng_matrix_t *out)
+{
+    anim_value_t first = {.quaternion = {0,0,0,1}}, current = first;
+    anim_sample(engine, animation, ANIM_ROTATION, 0, &first);
+    anim_sample(engine, animation, ANIM_ROTATION, frame, &current);
+    first.quaternion.w = -first.quaternion.w;
+    anim_quat_t yaw = anim_quat_multiply(current.quaternion, first.quaternion);
+    yaw.x = yaw.z = 0;
+    if ((double)yaw.y*yaw.y + (double)yaw.w*yaw.w > 0) anim_quat_matrix(yaw, out);
+    else eng_matrix_identity(out);
+}
+
 bool eng_object_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animation, float step)
 {
     eng_animation_source_t source;

@@ -256,6 +256,7 @@ void nmo_engine_destroy(nmo_engine_t *engine)
     eng_free_arrays(engine);
     eng_free_entities(engine);
     eng_free_animations(engine);
+    eng_free_characters(engine);
     eng_free_attributes(engine);
     eng_free_host(engine);
     free(engine->node_map.slots);

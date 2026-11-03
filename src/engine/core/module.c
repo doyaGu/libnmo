@@ -359,6 +359,9 @@ nmo_status_t eng_load_range(nmo_engine_t *engine, int32_t module, nmo_object_id_
         status = eng_load_animations(engine, &range);
     }
     if (status == NMO_OK) {
+        status = eng_load_characters(engine, &range);
+    }
+    if (status == NMO_OK) {
         status = eng_load_attributes(engine, &range);
     }
     return status;

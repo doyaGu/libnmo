@@ -164,6 +164,16 @@ bool eng_animation_root_offset(const nmo_engine_t *engine, nmo_object_id_t anima
     return true;
 }
 
+nmo_object_id_t eng_keyed_animation_root(nmo_engine_t *engine, nmo_object_id_t animation)
+{
+    eng_keyed_animation_t *runtime = keyed_runtime(engine, animation);
+    const nmo_keyedanimation_state_t *state = keyed_state(engine, animation, NMO_CID_KEYEDANIMATION);
+    if (runtime == NULL || state == NULL) return 0;
+    nmo_object_id_t root = keyed_root(engine, runtime, state);
+    if (root != 0 && !eng_map_put(&engine->animations.parents, root, (int32_t)(runtime-engine->animations.keyed.data))) return 0;
+    return root;
+}
+
 bool eng_keyed_animation_center(nmo_engine_t *engine, nmo_object_id_t animation, float frame)
 {
     if (!isfinite(frame)) return false;

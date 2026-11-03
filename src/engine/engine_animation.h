@@ -47,6 +47,9 @@ bool eng_keyed_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animatio
 bool eng_animation_position(nmo_engine_t *engine, nmo_object_id_t animation, float frame, nmo_vector_t *out);
 bool eng_keyed_animation_center(nmo_engine_t *engine, nmo_object_id_t animation, float frame);
 bool eng_animation_root_offset(const nmo_engine_t *engine, nmo_object_id_t animation, nmo_vector_t *out);
+nmo_object_id_t eng_keyed_animation_root(nmo_engine_t *engine, nmo_object_id_t animation);
+struct eng_matrix;
+void eng_animation_yaw(nmo_engine_t *engine, nmo_object_id_t animation, float frame, struct eng_matrix *out);
 float eng_animation_contribution(nmo_engine_t *engine, nmo_object_id_t animation);
 float eng_character_animation_lod(const nmo_engine_t *engine, nmo_object_id_t character);
 bool eng_character_set_animation_lod(nmo_engine_t *engine, nmo_object_id_t character, float lod);
