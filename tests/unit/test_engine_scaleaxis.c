@@ -1,6 +1,7 @@
 #include "engine_fixture.h"
 #include "../../src/engine/engine_transform.h"
 #include "../fixtures/engine_scaleaxis_samples.h"
+#include "document/nmo_document_load.h"
 #include "object/builtin/nmo_animation_schemas.h"
 
 #include <math.h>
@@ -11,6 +12,7 @@
 #define ANIM_POSITION 0x637c4301u
 #define ANIM_ROTATION 0x49ed4002u
 #define ANIM_SCALE 0x654a3a04u
+#define GUID_PLAY_GLOBAL_ANIMATION NMO_GUID(0x1c9236e1, 0x42f40996)
 #define COUNT(a) (sizeof(a) / sizeof((a)[0]))
 
 /* Rotate each principal unit vector by q, form its weighted outer product,
@@ -185,8 +187,110 @@ TEST(engine_scaleaxis, tiny_axis_phases_keep_finite_shear_with_large_principal_s
     }
 }
 
+TEST(engine_scaleaxis, saved_playback_supports_controller_and_legacy_axis_layouts)
+{
+    const nmo_objectanimation_format_t formats[] = {CKOBJANIM_FORMAT_CONTROLLERS, CKOBJANIM_FORMAT_NEWDATA,
+                                                    CKOBJANIM_FORMAT_LEGACY, CKOBJANIM_FORMAT_CONTROLLERS};
+    for (size_t c = 0; c < COUNT(formats); c++) {
+        bool tcb = c == 3, legacy = c == 1 || c == 2;
+        engine_fixture_t f;
+        fixture_begin_document(&f);
+        nmo_object_id_t part = fixture_create(&f, NMO_CID_OBJECTANIMATION, "Part");
+        nmo_object_id_t global = fixture_create(&f, NMO_CID_KEYEDANIMATION, "Global");
+        float linear[] = {0, 0, 0, 0, 1, 8, 0, 0, 0.70710678f, 0.70710678f};
+        float old[] = {0, 123, 0, 0, 0, 1, 8, 456, 0, 0, 0.70710678f, 0.70710678f};
+        float spline[] = {0, 0, 0, 0, 1, 0.5f, 0, 0, 0, 0,
+                          8, 0, 0, 0.70710678f, 0.70710678f, -0.5f, 0, 0, 0, 0};
+        float position[] = {0, 5, 6, 7}, scale[] = {0, 2, 4, 6};
+        float rotation[] = {0, 0.70710678f, 0, 0, 0.70710678f};
+        nmo_objanim_controller_t controllers[] = {
+            {tcb ? ANIM_TCB_AXIS : ANIM_LINEAR_AXIS, 2,
+             tcb ? sizeof(spline) : legacy ? sizeof(old) : sizeof(linear), tcb ? spline : legacy ? old : linear},
+            {ANIM_POSITION, 1, sizeof(position), position}, {ANIM_SCALE, 1, sizeof(scale), scale},
+            {ANIM_ROTATION, 1, sizeof(rotation), rotation},
+        };
+        nmo_objectanimation_state_t *state = fixture_state(&f, part);
+        nmo_keyedanimation_state_t *keyed = fixture_state(&f, global);
+        ASSERT_TRUE(state != NULL && keyed != NULL);
+        state->entity = nmo_ref_from_id(f.owner_id);
+        state->format = formats[c];
+        state->has_length = 1;
+        state->length = 8;
+        state->controllers = controllers;
+        state->controller_count = COUNT(controllers);
+        if (formats[c] == CKOBJANIM_FORMAT_LEGACY) {
+            nmo_object_t *object = nmo_object_repository_find_by_id(f.repo, part);
+            ASSERT_NOT_NULL(object);
+            object->chunk = nmo_chunk_create(nmo_session_get_arena(f.session));
+            ASSERT_NOT_NULL(object->chunk);
+            object->chunk->class_id = NMO_CID_OBJECTANIMATION;
+            object->chunk->data_version = 0;
+        }
+        nmo_ref_t part_ref = nmo_ref_from_id(part);
+        keyed->animation_count = 1;
+        keyed->animation_ids = &part_ref;
+        f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+        fixture_begin_edit(&f);
+        nmo_object_id_t play = fixture_block(&f, GUID_PLAY_GLOBAL_ANIMATION, "Play");
+        ASSERT_TRUE(play != 0);
+        fixture_link(&f, f.script_in, BLOCK_IN(&f, play, 0), 0);
+        const nmo_object_id_t pins[] = {BLOCK_PIN(&f, play, 0), BLOCK_PIN(&f, play, 1)};
+        char global_id[32];
+        snprintf(global_id, sizeof(global_id), "%u", global);
+        const char *values[] = {global_id, "8"};
+        for (size_t i = 0; i < COUNT(pins); i++) {
+            nmo_object_id_t source = 0;
+            ASSERT_EQ(NMO_OK, nmo_script_edit_ensure_input_parameter_source(f.tx, pins[i], &source));
+            ASSERT_EQ(NMO_OK, nmo_script_edit_set_parameter_value(f.tx, source, values[i]));
+        }
+        fixture_commit(&f, NULL);
+        const char *path = NMO_TEST_SCRATCH_FILE("engine_scaleaxis.cmo");
+        nmo_status_t status = nmo_session_save_file(f.session, path, NULL, NULL);
+        if (status != NMO_OK) fprintf(stderr, "Scale-axis format %zu save: %s\n", c, nmo_last_error_message());
+        ASSERT_EQ(NMO_OK, status);
+        nmo_document_t *document = NULL;
+        nmo_workspace_t *workspace = NULL;
+        nmo_engine_t *engine = NULL;
+        ASSERT_EQ(NMO_OK, nmo_document_load_file(f.ctx, path, NULL, &document));
+        ASSERT_EQ(NMO_OK, nmo_workspace_create(f.ctx, document, &workspace));
+        ASSERT_EQ(NMO_OK, nmo_engine_create(workspace, NULL, &engine));
+        ASSERT_EQ(NMO_OK, nmo_bb_virtools_register(engine));
+        ASSERT_EQ(NMO_OK, nmo_engine_start(engine, NMO_ENGINE_START_ALL));
+        ASSERT_EQ(NMO_OK, nmo_engine_step(engine, 4));
+        ASSERT_EQ(NMO_OK, nmo_engine_step(engine, 4));
+        nmo_object_id_t owner = nmo_engine_object_named(engine, "Owner", NMO_CID_3DENTITY);
+        ASSERT_TRUE(owner != 0);
+        float world[16], expected[16];
+        double half_angle = (tcb ? 33.75 : 45) * 3.14159265358979323846 / 360;
+        const float axis[] = {0, 0, (float)sin(half_angle), (float)cos(half_angle)};
+        expected_pose(expected, axis, scale+1, position+1, false);
+        ASSERT_TRUE(nmo_engine_entity_world_matrix(engine, owner, world));
+        for (size_t i = 0; i < COUNT(world); i++) ASSERT_FLOAT_EQ(expected[i], world[i], 0.0001f);
+        nmo_object_id_t loaded_part = nmo_engine_object_named(engine, "Part", NMO_CID_OBJECTANIMATION);
+        const nmo_objectanimation_state_t *saved = nmo_object_get_state(nmo_object_repository_find_by_id(
+            nmo_document_get_repository(document), loaded_part));
+        ASSERT_NOT_NULL(saved);
+        ASSERT_EQ(formats[c], saved->format);
+        bool found = false;
+        for (uint32_t i = 0; i < saved->controller_count; i++) {
+            if (saved->controllers[i].type == controllers[0].type) {
+                ASSERT_EQ(controllers[0].data_size, saved->controllers[i].data_size);
+                ASSERT_EQ(0, memcmp(controllers[0].data, saved->controllers[i].data, controllers[0].data_size));
+                found = true;
+            }
+        }
+        ASSERT_TRUE(found);
+        nmo_engine_destroy(engine);
+        nmo_workspace_destroy(workspace);
+        nmo_document_destroy(document);
+        fixture_end(&f);
+        remove(path);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_scaleaxis, linear_and_tcb_axes_match_native_samples_before_object_rotation);
 REGISTER_TEST(engine_scaleaxis, missing_or_ignored_channels_are_recovered_from_the_current_pose);
 REGISTER_TEST(engine_scaleaxis, tiny_axis_phases_keep_finite_shear_with_large_principal_scales);
+REGISTER_TEST(engine_scaleaxis, saved_playback_supports_controller_and_legacy_axis_layouts);
 TEST_MAIN_END()
