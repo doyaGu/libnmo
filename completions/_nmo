@@ -276,6 +276,7 @@ _nmo_action_flags() {
         data/d/) echo '-r --row' ;;
         data/set-cell/) echo '-r --row -c --col -v --value -o --output --dry-run' ;;
         data/sc/) echo '-r --row -c --col -v --value -o --output --dry-run' ;;
+        data/fill/) echo '-t --table -o --output --dry-run' ;;
         group/list/) echo '-m --member' ;;
         group/ls/) echo '-m --member' ;;
         group/show/) echo '' ;;
@@ -545,6 +546,7 @@ _nmo_actions() {
                 'd:Alias for dump'
                 'set-cell:Modify a single cell'
                 'sc:Alias for set-cell'
+                'fill:Fill an empty data array from a table'
             ) ;;
         group)
             acts=(

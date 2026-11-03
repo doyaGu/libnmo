@@ -965,6 +965,20 @@ static void data_dump_usage(FILE *out) {
     fprintf(out, "  --row, -r <n>   Dump a single row by index (key-value format)\n");
 }
 
+static void data_fill_usage(FILE *out) {
+    fprintf(out, "Usage: nmo data fill [--id <id> | --name <name> | <id>] --table <table.json> <file> -o <output>\n\n");
+    fprintf(out, "Give an empty CKDataArray the columns and rows of a JSON table:\n");
+    fprintf(out, "  {\"columns\": [{\"name\": \"Level\", \"type\": \"int\"},\n");
+    fprintf(out, "               {\"name\": \"On?\", \"type\": \"parameter\", \"parameter\": \"Boolean\"}],\n");
+    fprintf(out, "   \"rows\": [[1, true]]}\n\n");
+    fprintf(out, "Column types: int, float, string, object (cells name an object in the file)\n");
+    fprintf(out, "and parameter (each cell a new parameter of that type holding the value).\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  -t, --table <path>   The JSON table (required)\n");
+    fprintf(out, "  -o, --output <path>  Output file (required unless --dry-run)\n");
+    fprintf(out, "  --dry-run            Preview without saving\n");
+}
+
 static void data_set_cell_usage(FILE *out) {
     fprintf(out, "Usage: nmo data set-cell [--id <id> | --name <name> | <id>] --row <r> --col <c> --value <val> <file> -o <output>\n\n");
     fprintf(out, "Modify a single cell in a CKDataArray.\n\n");
@@ -1315,6 +1329,7 @@ static const nmo_cli_action_t data_actions[] = {
     ACTION("show", "s", "Show data array schema", nmo_cmd_data_show, data_show_usage, NMO_REPL_ACTION_READ_SESSION),
     ACTION("dump", "d", "Dump data array contents", nmo_cmd_data_dump, data_dump_usage, NMO_REPL_ACTION_READ_SESSION),
     ACTION("set-cell", "sc", "Modify a single cell", nmo_cmd_data_set_cell, data_set_cell_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),
+    ACTION("fill", NULL, "Fill an empty data array from a table", nmo_cmd_data_fill, data_fill_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),
 };
 
 static const nmo_cli_action_t scene_actions[] = {

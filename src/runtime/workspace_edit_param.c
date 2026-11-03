@@ -870,3 +870,270 @@ nmo_status_t nmo_object_edit_set_dataarray_cell(
     }
     return workspace_edit_checkpoint_release_arena(edit, &checkpoint);
 }
+
+typedef struct dataarray_layout_snapshot {
+    nmo_dataarray_state_t *state;
+    uint32_t column_count;
+    nmo_dataarray_column_format_t *column_formats;
+    uint32_t row_count;
+    nmo_dataarray_row_t *rows;
+} dataarray_layout_snapshot_t;
+
+static nmo_status_t rollback_dataarray_layout(nmo_workspace_edit_t *edit, void *payload)
+{
+    (void)edit;
+    dataarray_layout_snapshot_t *snapshot = (dataarray_layout_snapshot_t *)payload;
+    if (snapshot == NULL || snapshot->state == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    snapshot->state->column_count = snapshot->column_count;
+    snapshot->state->column_formats = snapshot->column_formats;
+    snapshot->state->row_count = snapshot->row_count;
+    snapshot->state->rows = snapshot->rows;
+    return NMO_OK;
+}
+
+static nmo_status_t workspace_edit_dataarray_state(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t dataarray_id,
+    nmo_dataarray_state_t **out_state)
+{
+    nmo_object_repository_t *repo = nmo_workspace_internal_repository(edit->workspace);
+    if (repo == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    nmo_object_t *object = nmo_object_repository_find_by_id(repo, dataarray_id);
+    if (object == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    const nmo_type_registry_t *registry = workspace_edit_type_registry(edit);
+    if (!workspace_edit_session_object_derives(registry, object, NMO_CID_DATAARRAY)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    *out_state = (nmo_dataarray_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, object, CKPGUID_DATAARRAY);
+    return *out_state != NULL ? NMO_OK : NMO_ERR_INVALID_STATE;
+}
+
+/* Remembers the state's layout, to put back if the edit rolls back. */
+static nmo_status_t workspace_edit_snapshot_dataarray_layout(
+    nmo_workspace_edit_t *edit,
+    workspace_edit_checkpoint_t checkpoint,
+    nmo_dataarray_state_t *state)
+{
+    dataarray_layout_snapshot_t *snapshot =
+        (dataarray_layout_snapshot_t *)nmo_workspace_edit_alloc(
+            edit, sizeof(*snapshot), _Alignof(dataarray_layout_snapshot_t));
+    if (snapshot == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    *snapshot = (dataarray_layout_snapshot_t){
+        .state = state,
+        .column_count = state->column_count,
+        .column_formats = state->column_formats,
+        .row_count = state->row_count,
+        .rows = state->rows,
+    };
+    return workspace_edit_push_rollback_or_abort(
+        edit, checkpoint, rollback_dataarray_layout, snapshot);
+}
+
+nmo_status_t nmo_object_edit_add_dataarray_column(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t dataarray_id,
+    const char *name,
+    uint32_t column_type,
+    nmo_guid_t parameter_type_guid)
+{
+    if (edit == NULL || edit->finished || name == NULL ||
+        column_type < CKARRAYTYPE_INT || column_type > CKARRAYTYPE_PARAMETER ||
+        (column_type == CKARRAYTYPE_PARAMETER && nmo_guid_is_null(parameter_type_guid))) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_dataarray_state_t *state = NULL;
+    nmo_status_t status = workspace_edit_dataarray_state(edit, dataarray_id, &state);
+    if (status != NMO_OK) {
+        return status;
+    }
+    workspace_edit_checkpoint_t checkpoint = workspace_edit_checkpoint(edit);
+    status = workspace_edit_checkpoint_mark_arena(edit, &checkpoint);
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    nmo_arena_t *arena = nmo_workspace_internal_document_arena(edit->workspace);
+    uint32_t count = state->column_count;
+    size_t name_size = strlen(name) + 1u;
+    nmo_dataarray_column_format_t *formats = (nmo_dataarray_column_format_t *)
+        nmo_arena_alloc(arena, sizeof(*formats) * (count + 1u),
+                        _Alignof(nmo_dataarray_column_format_t));
+    char *name_copy = (char *)nmo_arena_alloc(arena, name_size, 1u);
+    nmo_dataarray_row_t *rows = state->row_count > 0u
+        ? (nmo_dataarray_row_t *)nmo_arena_alloc(
+              arena, sizeof(*rows) * state->row_count, _Alignof(nmo_dataarray_row_t))
+        : NULL;
+    if (formats == NULL || name_copy == NULL || (state->row_count > 0u && rows == NULL)) {
+        return workspace_edit_abort_arena_status(edit, checkpoint, NMO_ERR_NOMEM);
+    }
+    if (count > 0u) {
+        memcpy(formats, state->column_formats, sizeof(*formats) * count);
+    }
+    memcpy(name_copy, name, name_size);
+    formats[count] = (nmo_dataarray_column_format_t){
+        .name = name_copy,
+        .type = (CK_ARRAYTYPE)column_type,
+        .parameter_type_guid = column_type == CKARRAYTYPE_PARAMETER
+            ? parameter_type_guid
+            : NMO_GUID_NULL,
+    };
+    for (uint32_t r = 0u; r < state->row_count; ++r) {
+        nmo_dataarray_cell_t *cells = (nmo_dataarray_cell_t *)nmo_arena_alloc(
+            arena, sizeof(*cells) * (count + 1u), _Alignof(nmo_dataarray_cell_t));
+        if (cells == NULL) {
+            return workspace_edit_abort_arena_status(edit, checkpoint, NMO_ERR_NOMEM);
+        }
+        if (count > 0u) {
+            memcpy(cells, state->rows[r].cells, sizeof(*cells) * count);
+        }
+        memset(&cells[count], 0, sizeof(cells[count]));
+        rows[r] = (nmo_dataarray_row_t){.column_count = count + 1u, .cells = cells};
+    }
+
+    status = workspace_edit_snapshot_dataarray_layout(edit, checkpoint, state);
+    if (status != NMO_OK) {
+        return workspace_edit_abort_arena_status(edit, checkpoint, status);
+    }
+    state->column_formats = formats;
+    state->column_count = count + 1u;
+    if (state->row_count > 0u) {
+        state->rows = rows;
+    }
+    nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_OBJECT_STATE);
+    return workspace_edit_checkpoint_release_arena(edit, &checkpoint);
+}
+
+nmo_status_t nmo_object_edit_add_dataarray_row(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t dataarray_id,
+    uint32_t *out_row)
+{
+    if (edit == NULL || edit->finished) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_dataarray_state_t *state = NULL;
+    nmo_status_t status = workspace_edit_dataarray_state(edit, dataarray_id, &state);
+    if (status != NMO_OK) {
+        return status;
+    }
+    workspace_edit_checkpoint_t checkpoint = workspace_edit_checkpoint(edit);
+    status = workspace_edit_checkpoint_mark_arena(edit, &checkpoint);
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    nmo_arena_t *arena = nmo_workspace_internal_document_arena(edit->workspace);
+    uint32_t count = state->row_count;
+    nmo_dataarray_row_t *rows = (nmo_dataarray_row_t *)nmo_arena_alloc(
+        arena, sizeof(*rows) * (count + 1u), _Alignof(nmo_dataarray_row_t));
+    nmo_dataarray_cell_t *cells = state->column_count > 0u
+        ? (nmo_dataarray_cell_t *)nmo_arena_alloc(
+              arena, sizeof(*cells) * state->column_count, _Alignof(nmo_dataarray_cell_t))
+        : NULL;
+    if (rows == NULL || (state->column_count > 0u && cells == NULL)) {
+        return workspace_edit_abort_arena_status(edit, checkpoint, NMO_ERR_NOMEM);
+    }
+    if (count > 0u) {
+        memcpy(rows, state->rows, sizeof(*rows) * count);
+    }
+    if (cells != NULL) {
+        memset(cells, 0, sizeof(*cells) * state->column_count);
+    }
+    rows[count] = (nmo_dataarray_row_t){.column_count = state->column_count, .cells = cells};
+
+    status = workspace_edit_snapshot_dataarray_layout(edit, checkpoint, state);
+    if (status != NMO_OK) {
+        return workspace_edit_abort_arena_status(edit, checkpoint, status);
+    }
+    state->rows = rows;
+    state->row_count = count + 1u;
+    if (out_row != NULL) {
+        *out_row = count;
+    }
+    nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_OBJECT_STATE);
+    return workspace_edit_checkpoint_release_arena(edit, &checkpoint);
+}
+
+nmo_status_t nmo_object_edit_create_parameter(
+    nmo_workspace_edit_t *edit,
+    const char *name,
+    nmo_guid_t type_guid,
+    nmo_object_id_t *out_parameter_id)
+{
+    if (out_parameter_id != NULL) {
+        *out_parameter_id = 0;
+    }
+    if (edit == NULL || edit->finished || out_parameter_id == NULL ||
+        nmo_guid_is_null(type_guid)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    const nmo_type_registry_t *registry = workspace_edit_type_registry(edit);
+    const nmo_type_descriptor_t *type = registry != NULL
+        ? nmo_type_registry_find_by_guid(registry, type_guid)
+        : NULL;
+    if (type == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    bool is_object = (type->category & NMO_TYPE_CATEGORY_OBJECT_REF) != 0u;
+    size_t size = type->size;
+    if (size == 0u && nmo_guid_equals(type_guid, CKPGUID_STRING)) {
+        size = 1u;
+    }
+    if (!is_object && size == 0u) {
+        return NMO_ERR_NOT_SUPPORTED;
+    }
+
+    nmo_object_id_t parameter_id = 0;
+    nmo_status_t status = nmo_object_edit_create(
+        edit,
+        &(nmo_object_create_desc_t){
+            .class_id = NMO_CID_PARAMETER,
+            .name = name,
+            .type_guid = NMO_GUID_NULL,
+        },
+        &parameter_id);
+    if (status != NMO_OK) {
+        return status;
+    }
+    nmo_object_t *object = nmo_object_repository_find_by_id(
+        nmo_workspace_internal_repository(edit->workspace), parameter_id);
+    nmo_parameter_state_t *state = object != NULL
+        ? workspace_edit_parameter_state(registry, object)
+        : NULL;
+    if (state == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    /* A new object: rolling the edit back destroys it, state and all */
+    state->type_guid = type_guid;
+    state->has_state = true;
+    state->manager_guid = NMO_GUID_NULL;
+    state->manager_value = 0;
+    state->subchunk = NULL;
+    state->object_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+    nmo_array_dispose(&state->buffer_data);
+    if (is_object) {
+        state->mode = CKPARAM_MODE_OBJECT;
+    } else {
+        state->mode = CKPARAM_MODE_BUFFER;
+        status = nmo_array_alloc(&state->buffer_data, sizeof(uint8_t), size, NULL);
+        if (status != NMO_OK) {
+            return status;
+        }
+        memset(state->buffer_data.data, 0, size);
+    }
+    nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_OBJECT_STATE);
+    *out_parameter_id = parameter_id;
+    return NMO_OK;
+}

@@ -25,6 +25,9 @@
 #include "object/builtin/nmo_dataarray_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/nmo_object_enum_defs.h"
+#include "object/nmo_object_edit.h"
+#include "type/nmo_type_system.h"
+#include "yyjson.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -929,3 +932,319 @@ int nmo_cmd_data_set_cell(int argc, char **argv, const nmo_cli_global_opts_t *gl
     return rc;
 }
 
+
+/* ============================================================================
+ * data fill
+ * ============================================================================ */
+
+typedef struct data_fill_args {
+    nmo_core_object_selector_t selector;
+    const char *table_path;
+    nmo_object_id_t obj_id;
+    const char *name;
+    uint32_t column_count;
+    uint32_t row_count;
+} data_fill_args_t;
+
+static bool data_fill_column_type(const char *text, uint32_t *out_type)
+{
+    static const struct {
+        const char *name;
+        uint32_t type;
+    } types[] = {
+        {"int", CKARRAYTYPE_INT},
+        {"float", CKARRAYTYPE_FLOAT},
+        {"string", CKARRAYTYPE_STRING},
+        {"object", CKARRAYTYPE_OBJECT},
+        {"parameter", CKARRAYTYPE_PARAMETER},
+    };
+    for (size_t i = 0; i < sizeof(types) / sizeof(types[0]); ++i) {
+        if (strcmp(text, types[i].name) == 0) {
+            *out_type = types[i].type;
+            return true;
+        }
+    }
+    return false;
+}
+
+/* A cell's JSON value as the text set-cell takes (malloc'd). */
+static char *data_fill_cell_text(yyjson_val *value)
+{
+    if (yyjson_is_str(value)) {
+        return nmo_tool_strdup(yyjson_get_str(value));
+    }
+    if (yyjson_is_bool(value)) {
+        return nmo_tool_strdup(yyjson_get_bool(value) ? "TRUE" : "FALSE");
+    }
+    if (yyjson_is_int(value)) {
+        return nmo_tool_strdup_fmt("%lld", (long long)yyjson_get_sint(value));
+    }
+    if (yyjson_is_real(value)) {
+        return nmo_tool_strdup_fmt("%.9g", yyjson_get_real(value));
+    }
+    return NULL;
+}
+
+/* Plans cell (row, col) set from text: an object cell takes an object's name,
+ * and a parameter cell a new parameter of the column's type holding text. */
+static nmo_status_t data_fill_set_cell(
+    nmo_cmd_ctx_t *c,
+    nmo_workspace_edit_t *edit,
+    nmo_edit_plan_t *plan,
+    nmo_object_id_t array_id,
+    const nmo_dataarray_column_format_t *column,
+    uint32_t row,
+    uint32_t col,
+    const char *text)
+{
+    char *cell_text = NULL;
+    if (column->type == CKARRAYTYPE_OBJECT) {
+        nmo_object_t *object = text[0] != '\0'
+            ? nmo_object_repository_find_by_name(nmo_tool_owner_repository(c->workspace), text)
+            : NULL;
+        if (text[0] != '\0' && object == NULL) {
+            fprintf(stderr, "Error: No object named '%s' for column '%s'\n", text,
+                    column->name);
+            return NMO_ERR_NOT_FOUND;
+        }
+        cell_text = nmo_tool_strdup_fmt("object:%u", object ? nmo_object_get_id(object) : 0u);
+    } else if (column->type == CKARRAYTYPE_PARAMETER) {
+        nmo_object_id_t parameter_id = 0;
+        nmo_status_t status = nmo_object_edit_create_parameter(
+            edit, column->name, column->parameter_type_guid, &parameter_id);
+        if (status == NMO_OK) {
+            status = nmo_object_edit_set_parameter_value(edit, parameter_id, text);
+        }
+        if (status != NMO_OK) {
+            fprintf(stderr, "Error: Cannot make a parameter of '%s' for column '%s'\n", text,
+                    column->name);
+            return status;
+        }
+        cell_text = nmo_tool_strdup_fmt("object:%u", parameter_id);
+    } else {
+        cell_text = nmo_tool_strdup(text);
+    }
+    if (cell_text == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    nmo_status_t status = nmo_edit_plan_add_data_cell(plan, array_id, row, col, cell_text);
+    free(cell_text);
+    return status;
+}
+
+/* The table's columns and rows added in edit (with the parameters its
+ * parameter cells hold), its cells in plan. */
+static nmo_status_t data_fill_table(
+    nmo_cmd_ctx_t *c,
+    nmo_workspace_edit_t *edit,
+    nmo_edit_plan_t *plan,
+    data_fill_args_t *args,
+    yyjson_val *table)
+{
+    yyjson_val *columns = yyjson_obj_get(table, "columns");
+    yyjson_val *rows = yyjson_obj_get(table, "rows");
+    if (!yyjson_is_arr(columns) || (rows != NULL && !yyjson_is_arr(rows))) {
+        fprintf(stderr, "Error: The table needs a \"columns\" array and may have a \"rows\" array\n");
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    size_t index = 0, max = 0;
+    yyjson_val *column = NULL;
+    yyjson_arr_foreach(columns, index, max, column) {
+        const char *name = yyjson_get_str(yyjson_obj_get(column, "name"));
+        const char *type_text = yyjson_get_str(yyjson_obj_get(column, "type"));
+        const char *parameter = yyjson_get_str(yyjson_obj_get(column, "parameter"));
+        uint32_t type = 0;
+        nmo_guid_t parameter_guid = NMO_GUID_NULL;
+        if (name == NULL || type_text == NULL || !data_fill_column_type(type_text, &type)) {
+            fprintf(stderr, "Error: Column %zu needs a name and a type "
+                            "(int, float, string, object or parameter)\n", index);
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
+        if (type == CKARRAYTYPE_PARAMETER &&
+            (parameter == NULL ||
+             (nmo_type_registry_name_to_guid(c->registry, parameter, &parameter_guid) != NMO_OK &&
+              nmo_guid_is_null(parameter_guid = nmo_guid_parse(parameter))))) {
+            fprintf(stderr, "Error: Column '%s' needs a known parameter type\n", name);
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
+        NMO_RETURN_IF_ERROR(nmo_object_edit_add_dataarray_column(
+            edit, args->obj_id, name, type, parameter_guid));
+    }
+
+    nmo_object_t *array = nmo_object_repository_find_by_id(
+        nmo_tool_owner_repository(c->workspace), args->obj_id);
+    const nmo_dataarray_state_t *state = (const nmo_dataarray_state_t *)nmo_object_get_state(array);
+    yyjson_val *row = NULL;
+    yyjson_arr_foreach(rows, index, max, row) {
+        if (!yyjson_is_arr(row) || yyjson_arr_size(row) > state->column_count) {
+            fprintf(stderr, "Error: Row %zu is not an array of at most %u cells\n", index,
+                    state->column_count);
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
+        uint32_t row_index = 0;
+        NMO_RETURN_IF_ERROR(nmo_object_edit_add_dataarray_row(edit, args->obj_id, &row_index));
+        size_t col = 0, col_max = 0;
+        yyjson_val *value = NULL;
+        yyjson_arr_foreach(row, col, col_max, value) {
+            char *text = data_fill_cell_text(value);
+            if (text == NULL) {
+                fprintf(stderr, "Error: Row %zu cell %zu is not a string, number or boolean\n",
+                        index, col);
+                return NMO_ERR_INVALID_ARGUMENT;
+            }
+            nmo_status_t status = data_fill_set_cell(
+                c, edit, plan, args->obj_id, &state->column_formats[col], row_index,
+                (uint32_t)col, text);
+            free(text);
+            NMO_RETURN_IF_ERROR(status);
+        }
+    }
+    args->column_count = state->column_count;
+    args->row_count = state->row_count;
+    return NMO_OK;
+}
+
+static int data_fill_mutate(nmo_cmd_ctx_t *c, bool dry_run, const char *output_path,
+                            void *user_data)
+{
+    (void)output_path;
+    data_fill_args_t *args = (data_fill_args_t *)user_data;
+    nmo_object_t *obj = NULL;
+    int resolve_rc = nmo_core_resolve_one_object(c, &args->selector, &obj, &args->obj_id);
+    if (resolve_rc != NMO_CLI_EXIT_SUCCESS) {
+        return resolve_rc;
+    }
+    args->name = nmo_object_get_name(obj);
+    const nmo_dataarray_state_t *state = (const nmo_dataarray_state_t *)nmo_object_get_state(obj);
+    if (state == NULL || state->column_count != 0) {
+        fprintf(stderr, "Error: Data array #%u already has columns; fill takes an empty one\n",
+                args->obj_id);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    yyjson_read_err error;
+    yyjson_doc *doc = yyjson_read_file(args->table_path, 0, NULL, &error);
+    if (doc == NULL) {
+        fprintf(stderr, "Error: Cannot read %s: %s\n", args->table_path, error.msg);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    nmo_workspace_edit_t *edit = NULL;
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t status = nmo_edit_plan_create(&plan);
+    if (status == NMO_OK) {
+        status = nmo_workspace_edit_begin(c->workspace, "data fill layout", &edit);
+    }
+    if (status == NMO_OK) {
+        status = data_fill_table(c, edit, plan, args, yyjson_doc_get_root(doc));
+        if (status == NMO_OK) {
+            status = nmo_workspace_edit_commit(edit);
+        } else {
+            nmo_workspace_edit_rollback(edit);
+        }
+    }
+    if (status == NMO_OK) {
+        nmo_edit_report_t report;
+        status = nmo_edit_report_init(&report);
+        if (status == NMO_OK) {
+            nmo_edit_executor_options_t options = nmo_edit_executor_options_default();
+            options.dry_run = dry_run;
+            status = nmo_edit_executor_execute(c->workspace, plan, &options, &report);
+            if (status != NMO_OK) {
+                fprintf(stderr, "Error: Cannot set the table's cells: %s\n",
+                        nmo_last_error_message());
+            }
+            nmo_edit_report_dispose(&report);
+        }
+    }
+    nmo_edit_plan_destroy(plan);
+    yyjson_doc_free(doc);
+    if (status != NMO_OK) {
+        return status == NMO_ERR_NOMEM ? NMO_CLI_EXIT_INTERNAL_ERROR : NMO_CLI_EXIT_ARG_ERROR;
+    }
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+static int data_fill_report(nmo_cmd_ctx_t *c, bool dry_run, const char *output_path,
+                            void *user_data)
+{
+    data_fill_args_t *args = (data_fill_args_t *)user_data;
+    const bool named = args->name && args->name[0];
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL &&
+              nmo_cli_record_uint(rec, "id", NULL, args->obj_id) &&
+              nmo_cli_record_str(rec, "name", NULL, named ? args->name : "") &&
+              nmo_cli_record_uint(rec, "columns", NULL, args->column_count) &&
+              nmo_cli_record_uint(rec, "rows", NULL, args->row_count) &&
+              nmo_cli_record_raw_fmt(rec, "Data array #%u", args->obj_id) &&
+              (named ? nmo_cli_record_raw_fmt(rec, " (%s)", args->name) : true) &&
+              nmo_cli_record_raw_fmt(rec, ": %u columns, %u rows\n", args->column_count,
+                                     args->row_count);
+    if (ok && dry_run) {
+        ok = nmo_cli_record_raw(rec, "  (dry run - not saved)\n");
+    } else if (ok && output_path) {
+        ok = nmo_cli_record_str(rec, "output", NULL, output_path) &&
+             nmo_cli_record_raw_fmt(rec, "Saved to: %s\n", output_path);
+    }
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        rec = NULL;
+    }
+    return nmo_cmd_ctx_emit_record(c, rec, "data.fill", 0, c->colorize);
+}
+
+int nmo_cmd_data_fill(int argc, char **argv, const nmo_cli_global_opts_t *global)
+{
+    static const nmo_opt_def_t opts[] = {
+        NMO_OPT_DEF_WRITE_OUTPUT,
+        {"--table", "-t", NMO_OPT_STRING, "JSON table: columns and rows"},
+        NMO_OPT_DEF_DRY_RUN,
+        {"--id", NULL, NMO_OPT_UINT, "Data array object ID"},
+        {"--name", "-n", NMO_OPT_STRING, "Data array object name"},
+    };
+    enum { OPT_OUTPUT, OPT_TABLE, OPT_DRYRUN, OPT_ID, OPT_NAME, OPT_COUNT };
+
+    nmo_cli_global_opts_t local_global = *global;
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[16];
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
+    if (nmo_cli_parse_args(argc, argv, opts, OPT_COUNT, &r, &local_global) != NMO_CLI_EXIT_SUCCESS)
+        return NMO_CLI_EXIT_ARG_ERROR;
+
+    bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
+    const char *positional_id = NULL;
+    const char *file_path = NULL;
+    if (has_selector_opt) {
+        if (r.pos_count >= 1) {
+            file_path = r.pos_args[r.pos_count - 1];
+        }
+    } else if (r.pos_count >= 2) {
+        positional_id = r.pos_args[0];
+        file_path = r.pos_args[r.pos_count - 1];
+    }
+    const char *table_path = nmo_opt_str(&vals[OPT_TABLE]);
+    if ((!has_selector_opt && positional_id == NULL) || table_path == NULL || file_path == NULL) {
+        fprintf(stderr, "Usage: nmo data fill [--id <id> | --name <name> | <id>] --table <table.json> <file> -o <output>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    data_fill_args_t args = {
+        .selector = {
+            .has_id = vals[OPT_ID].present,
+            .id = nmo_opt_uint_or(&vals[OPT_ID], 0),
+            .positional_id = positional_id,
+            .name = nmo_opt_str(&vals[OPT_NAME]),
+            .required_base_class = NMO_CID_DATAARRAY,
+            .selector_label = "Data array",
+            .type_label = "CKDataArray",
+        },
+        .table_path = table_path,
+    };
+    const nmo_cli_write_spec_t spec = {
+        .command_name = "data.fill",
+        .output_required_unless_dry_run = true,
+    };
+    return nmo_cli_run_write_command(file_path, nmo_opt_str(&vals[OPT_OUTPUT]),
+                                     nmo_opt_flag(&vals[OPT_DRYRUN]), &local_global, &spec,
+                                     data_fill_mutate, data_fill_report, &args);
+}

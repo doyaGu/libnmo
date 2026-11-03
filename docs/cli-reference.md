@@ -139,6 +139,7 @@ nmo data list <file>                 # List data arrays
 nmo data show <id> <file>            # Data array schema
 nmo data dump <id> <file>            # Data array contents
 nmo data set-cell <id> --row <r> --col <c> --value <val> <file> -o <out>  # Modify a single cell
+nmo data fill <id> --table <table.json> <file> -o <out>  # Give an empty array columns and rows
 ```
 
 ## Groups

@@ -1875,6 +1875,71 @@ TEST(workspace_edit, dataarray_object_cell_commit_and_rollback) {
     nmo_context_release(ctx);
 }
 
+TEST(workspace_edit, dataarray_columns_rows_and_parameter_cells) {
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_id_t dataarray_id = 0;
+    create_object_or_fail(session, NMO_CID_DATAARRAY, "table", &dataarray_id);
+    nmo_dataarray_state_t *state = (nmo_dataarray_state_t *)nmo_object_get_state(
+        nmo_object_repository_find_by_id(repo, dataarray_id));
+    ASSERT_NOT_NULL(state);
+
+    workspace_edit_scope_t scope = {0};
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, begin_workspace_edit_for_session(ctx, session, "table", &scope, &edit));
+    ASSERT_EQ(NMO_OK, nmo_object_edit_add_dataarray_column(
+        edit, dataarray_id, "Level", CKARRAYTYPE_INT, NMO_GUID_NULL));
+    uint32_t row = 99u;
+    ASSERT_EQ(NMO_OK, nmo_object_edit_add_dataarray_row(edit, dataarray_id, &row));
+    ASSERT_EQ(0u, row);
+    /* A column added to a table with rows reaches every row */
+    ASSERT_EQ(NMO_OK, nmo_object_edit_add_dataarray_column(
+        edit, dataarray_id, "On?", CKARRAYTYPE_PARAMETER, CKPGUID_BOOL));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, nmo_object_edit_add_dataarray_column(
+        edit, dataarray_id, "Typeless", CKARRAYTYPE_PARAMETER, NMO_GUID_NULL));
+    ASSERT_EQ(NMO_OK, nmo_object_edit_set_dataarray_cell(edit, dataarray_id, 0, 0, "7"));
+    nmo_object_id_t on_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_object_edit_create_parameter(edit, "On?", CKPGUID_BOOL, &on_id));
+    ASSERT_EQ(NMO_OK, nmo_object_edit_set_parameter_value(edit, on_id, "TRUE"));
+    char on_text[32];
+    snprintf(on_text, sizeof(on_text), "object:%u", on_id);
+    ASSERT_EQ(NMO_OK, nmo_object_edit_set_dataarray_cell(edit, dataarray_id, 0, 1, on_text));
+    ASSERT_EQ(NMO_OK, commit_workspace_edit_scope(&scope));
+
+    ASSERT_EQ(2u, state->column_count);
+    ASSERT_EQ(1u, state->row_count);
+    ASSERT_EQ(2u, state->rows[0].column_count);
+    ASSERT_STR_EQ("On?", state->column_formats[1].name);
+    ASSERT_EQ(CKARRAYTYPE_PARAMETER, state->column_formats[1].type);
+    ASSERT_TRUE(nmo_guid_equals(CKPGUID_BOOL, state->column_formats[1].parameter_type_guid));
+    ASSERT_EQ(7, state->rows[0].cells[0].int_value);
+    ASSERT_EQ(on_id, nmo_ref_runtime_id(&state->rows[0].cells[1].parameter.ref));
+    const nmo_parameter_state_t *on = (const nmo_parameter_state_t *)nmo_object_get_state(
+        nmo_object_repository_find_by_id(repo, on_id));
+    ASSERT_NOT_NULL(on);
+    ASSERT_TRUE(nmo_guid_equals(CKPGUID_BOOL, on->type_guid));
+    ASSERT_TRUE(on->buffer_data.count > 0u);
+    ASSERT_EQ(1u, ((const uint8_t *)on->buffer_data.data)[0]);
+
+    /* A rolled back edit leaves the layout as it was */
+    ASSERT_EQ(NMO_OK, begin_workspace_edit_for_session(ctx, session, "undone", &scope, &edit));
+    ASSERT_EQ(NMO_OK, nmo_object_edit_add_dataarray_row(edit, dataarray_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_object_edit_add_dataarray_column(
+        edit, dataarray_id, "Name", CKARRAYTYPE_STRING, NMO_GUID_NULL));
+    rollback_workspace_edit_scope(&scope);
+    ASSERT_EQ(2u, state->column_count);
+    ASSERT_EQ(1u, state->row_count);
+    ASSERT_EQ(7, state->rows[0].cells[0].int_value);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(workspace_edit, behavior_graph_flag_rebuilds_behavior_index) {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
     ASSERT_NOT_NULL(ctx);
@@ -2375,6 +2440,7 @@ REGISTER_TEST(workspace_edit, parameterout_object_mode_commit_sets_reference);
 REGISTER_TEST(workspace_edit, dataarray_object_cell_commit_and_rollback);
 REGISTER_TEST(workspace_edit, dataarray_parameter_cell_requires_matching_parameter_type);
 REGISTER_TEST(workspace_edit, dataarray_ref_graph_handles_missing_row_metadata);
+REGISTER_TEST(workspace_edit, dataarray_columns_rows_and_parameter_cells);
 REGISTER_TEST(workspace_edit, behavior_graph_flag_rebuilds_behavior_index);
 REGISTER_TEST(workspace_edit, bind_script_uses_explicit_object_types);
 REGISTER_TEST(workspace_edit, add_group_member_commits_and_rolls_back);

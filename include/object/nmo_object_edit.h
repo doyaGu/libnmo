@@ -152,6 +152,29 @@ NMO_API nmo_status_t nmo_object_edit_set_dataarray_cell(
     uint32_t col,
     const char *value_str);
 
+/* Creates a CKParameter of type_guid holding its type's zero value (an
+ * object reference parameter holds no object). */
+NMO_API nmo_status_t nmo_object_edit_create_parameter(
+    nmo_workspace_edit_t *edit,
+    const char *name,
+    nmo_guid_t type_guid,
+    nmo_object_id_t *out_parameter_id);
+
+/* Appends a column (column_type a CK_ARRAYTYPE; parameter_type_guid the
+ * parameter type of a CKARRAYTYPE_PARAMETER column) to every row. */
+NMO_API nmo_status_t nmo_object_edit_add_dataarray_column(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t dataarray_id,
+    const char *name,
+    uint32_t column_type,
+    nmo_guid_t parameter_type_guid);
+
+/* Appends a row of zeroed cells; out_row (may be NULL) is its index. */
+NMO_API nmo_status_t nmo_object_edit_add_dataarray_row(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t dataarray_id,
+    uint32_t *out_row);
+
 NMO_API nmo_status_t nmo_object_edit_ensure_message_manager_entry(
     nmo_workspace_edit_t *edit,
     const char *name,

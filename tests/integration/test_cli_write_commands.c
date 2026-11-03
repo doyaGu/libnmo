@@ -908,6 +908,38 @@ TEST(cli_write, object_export_import_snapshot_round_trips_mesh_and_matrix) {
         "Unknown action");
 }
 
+TEST(cli_write, data_fill_gives_an_empty_array_its_table) {
+    make_dir("test_cli_write_tmp");
+    ASSERT_TRUE(write_text_file(
+        "test_cli_write_tmp/fill_manifest.json",
+        "{\"version\":1,\"document\":{\"name\":\"Fill\"},\"scenes\":[{\"name\":\"Scene\","
+        "\"objects\":[{\"name\":\"Table\",\"class\":\"CKDataArray\"},"
+        "{\"name\":\"Hub\",\"class\":\"CKBeObject\"}]}]}"));
+    ASSERT_TRUE(write_text_file(
+        "test_cli_write_tmp/fill_table.json",
+        "{\"columns\":[{\"name\":\"Level\",\"type\":\"int\"},"
+        "{\"name\":\"Ball\",\"type\":\"string\"},"
+        "{\"name\":\"On?\",\"type\":\"parameter\",\"parameter\":\"bool\"},"
+        "{\"name\":\"Owner\",\"type\":\"object\"}],"
+        "\"rows\":[[3,\"Ball_Paper\",true,\"Hub\"]]}"));
+    assert_cli_success(
+        "patch apply --project test_cli_write_tmp/fill_manifest.json "
+        "-o test_cli_write_tmp/fill_in.cmo",
+        "Saved to:");
+    assert_cli_success(
+        "data fill --name Table --table test_cli_write_tmp/fill_table.json "
+        "test_cli_write_tmp/fill_in.cmo -o test_cli_write_tmp/fill_out.cmo",
+        "4 columns, 1 rows");
+    assert_validate_ok("test_cli_write_tmp/fill_out.cmo");
+    assert_cli_success("data dump --name Table test_cli_write_tmp/fill_out.cmo", "Ball_Paper");
+    assert_cli_success("data dump --name Table test_cli_write_tmp/fill_out.cmo", "(Hub)");
+    /* A table goes into an empty array only */
+    assert_cli_failure(
+        "data fill --name Table --table test_cli_write_tmp/fill_table.json "
+        "test_cli_write_tmp/fill_out.cmo -o test_cli_write_tmp/fill_twice.cmo",
+        "already has columns");
+}
+
 TEST(cli_write, data_entity_material_texture_animation_save_and_validate) {
     TEST_REQUIRE_FIXTURE("BBSamples/Narratives/Add To Scene-Remove From Scene.cmo");
     TEST_REQUIRE_FIXTURE("BBSamples/Narratives/Open File Image.png");
@@ -1834,6 +1866,7 @@ TEST(cli_write, group_add_remove_create_list_show) {
 
 TEST_MAIN_BEGIN()
     REGISTER_TEST(cli_write, object_data_entity_material_texture_parameter_dry_run_preserves_inputs);
+    REGISTER_TEST(cli_write, data_fill_gives_an_empty_array_its_table);
     REGISTER_TEST(cli_write, resource_import_replace_dry_run_does_not_write_output);
     REGISTER_TEST(cli_write, resource_import_replace_remove_save_and_validate);
     REGISTER_TEST(cli_write, resource_replace_warns_for_texture_named_payload);
