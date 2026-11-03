@@ -191,6 +191,16 @@ bool eng_character_set_animation_lod(nmo_engine_t *engine, nmo_object_id_t chara
     return true;
 }
 
+void eng_animations_end_frame(nmo_engine_t *engine)
+{
+    for (size_t i = 0; i < engine->entities.count; i++) {
+        eng_entity_t *entity = &engine->entities.data[i];
+        if (!entity->destroyed && nmo_engine_object_class(engine, entity->id) == NMO_CID_CHARACTER) {
+            entity->moveable_flags &= ~VX_MOVEABLE_CHARACTERRENDERED;
+        }
+    }
+}
+
 /* Keep the sorted list private. Membership, target rebinding and root/floor
  * changes invalidate it; loading never trusts the file's SUBANIMSSORTED bit. */
 static bool keyed_order(nmo_engine_t *engine, eng_keyed_animation_t *runtime,

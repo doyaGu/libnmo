@@ -1201,10 +1201,16 @@ nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *o
     for (size_t i = 0; i < engine->entities.count; i++) {
         const eng_entity_t *entity = &engine->entities.data[i];
         if (entity->destroyed || !eng_in_scene(engine, entity->id) ||
-            !(eng_object_flags(engine, entity->id) & OBJECT_VISIBLE) ||
             eng_hidden_by_parent(engine, entity)) {
             continue;
         }
+        uint32_t flags = eng_object_flags(engine, entity->id);
+        /* Scene traversal sees a character even without a mesh of its own.
+         * A plain Hide can leave its children traversable; hierarchy hide cannot. */
+        if (!(flags & OBJECT_HIERARCHICAL_HIDE) && nmo_engine_object_class(engine, entity->id) == NMO_CID_CHARACTER) {
+            engine->entities.data[i].moveable_flags |= VX_MOVEABLE_CHARACTERRENDERED;
+        }
+        if (!(flags & OBJECT_VISIBLE)) continue;
         const nmo_sprite3d_state_t *sprite =
             (const nmo_sprite3d_state_t *)eng_typed_state(engine, entity->id, CKPGUID_SPRITE3D);
         if (sprite != NULL) {

@@ -1,6 +1,7 @@
 #include "engine_fixture.h"
 #include "../../src/engine/engine_animation.h"
 #include "../../src/engine/engine_transform.h"
+#include "../../src/engine/engine_render.h"
 #include "object/builtin/nmo_character_schemas.h"
 
 #include <float.h>
@@ -378,6 +379,51 @@ TEST(engine_animation_lod, ignored_selected_entities_keep_their_pose_and_charact
     fixture_end(&f);
 }
 
+TEST(engine_animation_lod, rendering_feeds_next_frame_lod_and_hierarchy_hide_stops_visibility_feedback)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t parent = entity(&f, "Parent", 0);
+    nmo_object_id_t character = fixture_create(&f, NMO_CID_CHARACTER, "Character");
+    nmo_character_state_t *actor = fixture_state(&f, character);
+    actor->base.parent = nmo_ref_from_id(parent);
+    nmo_object_id_t root = entity(&f, "Root", character), limb = entity(&f, "Limb", character);
+    nmo_object_id_t r = curve(&f, "Root Curve", root, 0,1), l = curve(&f, "Limb Curve", limb, 0,20);
+    nmo_ref_t members[] = {nmo_ref_from_id(l),nmo_ref_from_id(r)};
+    nmo_object_id_t keyed = group(&f, character, root, members, COUNT(members));
+    fixture_begin_edit(&f);
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_TRUE(eng_animation_set_step(f.engine, keyed, 1));
+    ASSERT_FLOAT_EQ(0, x(f.engine, limb), 0);
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_TRUE(eng_animation_set_step(f.engine, keyed, 0.5f));
+    ASSERT_FLOAT_EQ(10, x(f.engine, limb), 0);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 1)); /* No renderer since processing consumed visibility. */
+    ASSERT_TRUE(eng_animation_set_step(f.engine, keyed, 1));
+    ASSERT_FLOAT_EQ(10, x(f.engine, limb), 0);
+    eng_show(f.engine, character, 2); /* Hierarchy hide. */
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_TRUE(eng_animation_set_step(f.engine, keyed, 1));
+    ASSERT_FLOAT_EQ(10, x(f.engine, limb), 0);
+    eng_show(f.engine, character, 0); /* A plain Hide still traverses its hierarchy. */
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_TRUE(eng_animation_set_step(f.engine, keyed, 0.75f));
+    ASSERT_FLOAT_EQ(15, x(f.engine, limb), 0);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 1));
+    eng_show(f.engine, parent, 2);
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_TRUE(eng_animation_set_step(f.engine, keyed, 1));
+    ASSERT_FLOAT_EQ(15, x(f.engine, limb), 0);
+    eng_show(f.engine, parent, 1);
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_TRUE(eng_animation_set_step(f.engine, keyed, 1));
+    ASSERT_FLOAT_EQ(20, x(f.engine, limb), 0);
+    ASSERT_EQ(0u, actor->base.moveable_flags & VX_MOVEABLE_CHARACTERRENDERED);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_animation_lod, contribution_reads_all_vector_layouts_and_ignores_tangents_and_axis_keys);
 REGISTER_TEST(engine_animation_lod, contribution_preserves_wide_cancellation_and_small_raw_quaternion_motion);
@@ -387,4 +433,5 @@ REGISTER_TEST(engine_animation_lod, lod_truncates_the_wide_product_and_full_lod_
 REGISTER_TEST(engine_animation_lod, mixed_channels_sort_stably_ahead_of_unbound_and_empty_slots);
 REGISTER_TEST(engine_animation_lod, membership_target_and_floor_changes_rebuild_the_private_order);
 REGISTER_TEST(engine_animation_lod, ignored_selected_entities_keep_their_pose_and_character_lod_copies_independently);
+REGISTER_TEST(engine_animation_lod, rendering_feeds_next_frame_lod_and_hierarchy_hide_stops_visibility_feedback);
 TEST_MAIN_END()

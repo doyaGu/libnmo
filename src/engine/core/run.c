@@ -523,6 +523,7 @@ nmo_status_t nmo_engine_step(nmo_engine_t *engine, float delta_ms)
         eng_dispatch_messages(engine); /* CKMessageManager::PostProcess */
         eng_managers_post_process(engine); /* the packs' managers' PostProcess */
         eng_delete_dynamic_objects(engine); /* CKObjectManager::PostProcess */
+        if (!engine->failed) eng_animations_end_frame(engine);
     }
     if (engine->failed) {
         status = NMO_ERR_VALIDATION_FAILED;

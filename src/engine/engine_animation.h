@@ -39,6 +39,8 @@ bool eng_animation_root_offset(const nmo_engine_t *engine, nmo_object_id_t anima
 float eng_animation_contribution(nmo_engine_t *engine, nmo_object_id_t animation);
 float eng_character_animation_lod(const nmo_engine_t *engine, nmo_object_id_t character);
 bool eng_character_set_animation_lod(nmo_engine_t *engine, nmo_object_id_t character, float lod);
+/* Consume the previous render traversal's character visibility after processing. */
+void eng_animations_end_frame(nmo_engine_t *engine);
 
 typedef struct eng_animation_source {
     nmo_object_id_t id;
