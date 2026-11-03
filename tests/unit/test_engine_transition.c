@@ -1014,6 +1014,166 @@ TEST(engine_transition, secondary_stop_presets_and_unavailable_return_sources_re
     fixture_end(&r.f);
 }
 
+static void natural_secondary_begin(warp_rig_t *r, bool reverse)
+{
+    secondary_rig_begin(r,reverse ? -1000 : 1000,true);
+    ASSERT_EQ(NMO_OK,eng_character_play_secondary_warp(r->f.engine,r->actor,r->secondary,reverse ? 2 : 6,
+        CKSECONDARYANIMATION_DOWARP|CKSECONDARYANIMATION_ONESHOT,2,0));
+    r->warper = eng_character_secondary_warper(r->f.engine,r->actor,0);
+    ASSERT_TRUE(r->warper != 0);
+    warp_tick(r,2); warp_tick(r,1);
+    ASSERT_FLOAT_EQ(reverse ? 1 : 7,animation_frame(r->f.engine,r->secondary),1e-6f);
+    warp_pose(r,105,reverse ? 110 : 170);
+}
+
+static void natural_primary_frame(warp_rig_t *r, float frame)
+{
+    warp_clock(r,r->secondary,true,0);
+    ASSERT_TRUE(eng_animation_set_frame(r->f.engine,r->from,frame));
+    warp_tick(r,0);
+    warp_clock(r,r->secondary,true,1000);
+}
+
+TEST(engine_transition, natural_secondary_returns_keep_the_forward_pose_and_sample_reverse_zero)
+{
+    for (size_t reverse = 0; reverse < 2; reverse++) {
+        warp_rig_t r;
+        natural_secondary_begin(&r,reverse != 0);
+        warp_tick(&r,2); warp_pose(&r,107,reverse ? 100 : 170);
+        ASSERT_EQ(r.warper,eng_character_secondary_warper(r.f.engine,r.actor,0));
+        ASSERT_FLOAT_EQ(0,animation_frame(r.f.engine,r.warper),0);
+        ASSERT_FLOAT_EQ(reverse ? 0 : 7,animation_frame(r.f.engine,r.secondary),1e-6f);
+        warp_tick(&r,1); warp_pose(&r,108,reverse ? 59.5f : 94.5f);
+        warp_tick(&r,1); warp_pose(&r,109,19);
+        ASSERT_EQ(1,eng_character_secondary_count(r.f.engine,r.actor));
+        warp_tick(&r,1); warp_pose(&r,110,19);
+        ASSERT_EQ(0,eng_character_secondary_count(r.f.engine,r.actor));
+        warp_tick(&r,1); warp_pose(&r,111,21);
+        fixture_end(&r.f);
+    }
+}
+
+TEST(engine_transition, finite_loops_return_only_after_exhaustion_and_last_frame_holds_until_stopped)
+{
+    for (size_t hold = 0; hold < 2; hold++) {
+        warp_rig_t r;
+        secondary_rig_begin(&r,1000,true);
+        uint32_t flags = CKSECONDARYANIMATION_DOWARP|CKSECONDARYANIMATION_LOOPNTIMES;
+        if (hold) flags |= CKSECONDARYANIMATION_LASTFRAME;
+        ASSERT_EQ(NMO_OK,eng_character_play_secondary_warp(r.f.engine,r.actor,r.secondary,7,flags,2,2));
+        warp_tick(&r,3); warp_tick(&r,1);
+        ASSERT_FLOAT_EQ(1,animation_frame(r.f.engine,r.secondary),1e-6f);
+        warp_tick(&r,8);
+        ASSERT_EQ(1,eng_character_secondary_count(r.f.engine,r.actor));
+        if (hold) {
+            ASSERT_FLOAT_EQ(8,animation_frame(r.f.engine,r.secondary),0);
+            warp_tick(&r,1); warp_pose(&r,115,180);
+            ASSERT_EQ(NMO_OK,eng_character_stop_secondary_warp(r.f.engine,r.actor,r.secondary,true,2));
+            warp_tick(&r,2); warp_pose(&r,117,27);
+        } else {
+            ASSERT_FLOAT_EQ(1,animation_frame(r.f.engine,r.secondary),1e-6f);
+            warp_pose(&r,114,110);
+            warp_tick(&r,2); warp_pose(&r,116,26);
+        }
+        warp_tick(&r,1);
+        ASSERT_EQ(0,eng_character_secondary_count(r.f.engine,r.actor));
+        fixture_end(&r.f);
+    }
+    warp_rig_t r;
+    secondary_rig_begin(&r,1000,true);
+    ASSERT_EQ(NMO_OK,eng_character_play_secondary_warp(r.f.engine,r.actor,r.secondary,7,
+        CKSECONDARYANIMATION_DOWARP|CKSECONDARYANIMATION_LOOP,2,0));
+    warp_tick(&r,3); warp_tick(&r,20); warp_pose(&r,125,140);
+    ASSERT_FLOAT_EQ(4,animation_frame(r.f.engine,r.secondary),1e-6f);
+    ASSERT_EQ(1,eng_character_secondary_count(r.f.engine,r.actor));
+    fixture_end(&r.f);
+}
+
+TEST(engine_transition, natural_return_builds_from_the_primary_already_reached_on_the_expiry_call)
+{
+    for (size_t backwards = 0; backwards < 2; backwards++) {
+        warp_rig_t r;
+        natural_secondary_begin(&r,false);
+        natural_primary_frame(&r,backwards ? 1 : 99);
+        warp_clock(&r,r.from,true,backwards ? -1000 : 1000);
+        warp_clock(&r,r.to,true,500);
+        ASSERT_EQ(NMO_OK,eng_character_set_next_animation(r.f.engine,r.actor,r.to,CK_TRANSITION_TOSTART));
+        warp_tick(&r,2);
+        ASSERT_EQ(r.to,eng_character_active_animation(r.f.engine,r.actor));
+        ASSERT_EQ(0,eng_character_next_animation(r.f.engine,r.actor));
+        ASSERT_FLOAT_EQ(.5f,animation_frame(r.f.engine,r.to),1e-6f);
+        ASSERT_FLOAT_EQ(500,eng_animation_state(r.f.engine,r.warper)->frame_rate,0);
+        warp_pose(&r,backwards ? 101 : 201,170);
+        warp_tick(&r,2); warp_pose(&r,backwards ? 103 : 203,97.5f);
+        warp_tick(&r,2); warp_pose(&r,backwards ? 105 : 205,25);
+        fixture_end(&r.f);
+    }
+}
+
+TEST(engine_transition, natural_return_can_capture_the_secondary_queued_as_the_future_primary)
+{
+    warp_rig_t r;
+    natural_secondary_begin(&r,false);
+    natural_primary_frame(&r,96);
+    ASSERT_EQ(NMO_OK,eng_character_set_next_animation(r.f.engine,r.actor,r.secondary,CK_TRANSITION_TOSTART));
+    warp_tick(&r,2); warp_pose(&r,198,170);
+    ASSERT_EQ(r.from,eng_character_active_animation(r.f.engine,r.actor));
+    ASSERT_EQ(r.secondary,eng_character_next_animation(r.f.engine,r.actor));
+    ASSERT_FLOAT_EQ(7,animation_frame(r.f.engine,r.secondary),1e-6f);
+    warp_tick(&r,1); warp_pose(&r,199,135);
+    warp_tick(&r,1); warp_pose(&r,200,100);
+    ASSERT_EQ(r.secondary,eng_character_active_animation(r.f.engine,r.actor));
+    ASSERT_FLOAT_EQ(0,animation_frame(r.f.engine,r.secondary),0);
+    warp_tick(&r,1); warp_pose(&r,200,100);
+    ASSERT_EQ(0,eng_character_secondary_count(r.f.engine,r.actor));
+    ASSERT_FLOAT_EQ(1,animation_frame(r.f.engine,r.secondary),1e-6f);
+    fixture_end(&r.f);
+}
+
+TEST(engine_transition, mixed_identity_returns_retain_the_start_pose_while_the_secondary_becomes_primary)
+{
+    warp_rig_t r;
+    natural_secondary_begin(&r,false);
+    natural_primary_frame(&r,96);
+    warp_clock(&r,r.secondary,false,-1000);
+    ASSERT_EQ(NMO_OK,eng_character_set_next_animation(r.f.engine,r.actor,r.secondary,CK_TRANSITION_TOSTART));
+    warp_tick(&r,2);
+    ASSERT_FLOAT_EQ(8,animation_frame(r.f.engine,r.secondary),0);
+    warp_tick(&r,1); warp_pose(&r,199,180);
+    warp_tick(&r,1); warp_pose(&r,200,140);
+    warp_tick(&r,0); warp_pose(&r,200,145);
+    ASSERT_FLOAT_EQ(1,animation_frame(r.f.engine,r.warper),1e-6f);
+    warp_tick(&r,1); warp_pose(&r,200,120);
+    warp_tick(&r,0); warp_pose(&r,200,130);
+    ASSERT_EQ(1,eng_character_secondary_count(r.f.engine,r.actor));
+    warp_tick(&r,1); warp_pose(&r,200,140);
+    ASSERT_EQ(0,eng_character_secondary_count(r.f.engine,r.actor));
+    fixture_end(&r.f);
+}
+
+TEST(engine_transition, unavailable_natural_returns_release_gates_and_a_later_primary_can_supply_the_return)
+{
+    warp_rig_t r;
+    natural_secondary_begin(&r,false);
+    warp_tick(&r,100);
+    ASSERT_EQ(0,eng_character_active_animation(r.f.engine,r.actor));
+    ASSERT_EQ(0,eng_character_secondary_count(r.f.engine,r.actor));
+    ASSERT_FLOAT_EQ(7,animation_frame(r.f.engine,r.secondary),1e-6f);
+    fixture_end(&r.f);
+    secondary_rig_begin(&r,1000,true);
+    ASSERT_EQ(NMO_OK,eng_character_set_active_animation(r.f.engine,r.actor,0));
+    ASSERT_EQ(NMO_OK,eng_character_play_secondary_warp(r.f.engine,r.actor,r.secondary,6,
+        CKSECONDARYANIMATION_DOWARP|CKSECONDARYANIMATION_ONESHOT,4,0));
+    ASSERT_EQ(0,eng_character_secondary_warper(r.f.engine,r.actor,0));
+    ASSERT_EQ(NMO_OK,eng_character_set_active_animation(r.f.engine,r.actor,r.from));
+    warp_tick(&r,3); warp_pose(&r,105,160);
+    nmo_object_id_t warper = eng_character_secondary_warper(r.f.engine,r.actor,0);
+    ASSERT_TRUE(warper != 0);
+    ASSERT_FLOAT_EQ(1,eng_animation_length(eng_animation_state(r.f.engine,warper)),0);
+    warp_tick(&r,1); warp_pose(&r,106,15);
+    fixture_end(&r.f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_transition, generated_pose_channels_sample_raw_frames_and_preserve_the_borrowed_model);
 REGISTER_TEST(engine_transition, velocity_sampling_handles_fractional_duration_and_in_place_rebuilds);
@@ -1042,4 +1202,10 @@ REGISTER_TEST(engine_transition, return_warps_sample_queued_clips_without_consum
 REGISTER_TEST(engine_transition, mixed_clock_returns_follow_the_primary_pose_on_the_strict_release_tick);
 REGISTER_TEST(engine_transition, held_primary_returns_follow_entry_only_handoffs_or_the_retained_terminal_pose);
 REGISTER_TEST(engine_transition, secondary_stop_presets_and_unavailable_return_sources_respect_existing_playback);
+REGISTER_TEST(engine_transition, natural_secondary_returns_keep_the_forward_pose_and_sample_reverse_zero);
+REGISTER_TEST(engine_transition, finite_loops_return_only_after_exhaustion_and_last_frame_holds_until_stopped);
+REGISTER_TEST(engine_transition, natural_return_builds_from_the_primary_already_reached_on_the_expiry_call);
+REGISTER_TEST(engine_transition, natural_return_can_capture_the_secondary_queued_as_the_future_primary);
+REGISTER_TEST(engine_transition, mixed_identity_returns_retain_the_start_pose_while_the_secondary_becomes_primary);
+REGISTER_TEST(engine_transition, unavailable_natural_returns_release_gates_and_a_later_primary_can_supply_the_return);
 TEST_MAIN_END()

@@ -714,6 +714,12 @@ static nmo_status_t character_process_secondary(nmo_engine_t *engine, eng_charac
         /* Forward one-shots keep the last applied pose on expiry; reverse
          * playback samples its first pose before releasing its bones. */
         if ((!remove || reverse_end) && !eng_animation_set_frame(engine, entry->id, remove ? 0 : pose)) return NMO_ERR_VALIDATION_FAILED;
+        if (remove && (entry->flags & CKSECONDARYANIMATION_DOWARP)) {
+            bool warped;
+            nmo_status_t status = character_secondary_return(engine,runtime,entry,entry->warp_length,&warped);
+            if (status != NMO_OK) return status;
+            if (warped) { i++; continue; }
+        }
         if (remove) character_remove_secondary(engine, runtime, i);
         else i++;
     }
