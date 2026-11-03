@@ -19,6 +19,7 @@
 #include "object/builtin/nmo_attributemanager_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_defs.h"
+#include "type/nmo_type_query.h"
 #include "../../runtime/runtime_internal.h"
 
 #include <stdio.h>
@@ -221,6 +222,79 @@ void eng_free_modules(nmo_engine_t *engine)
         }
     }
     free(engine->modules.data);
+}
+
+/* Preserve the primary document's IDs in a private session. Copies can then
+ * share its dependencies without mutating the workspace the host owns. */
+nmo_status_t eng_own_module(nmo_engine_t *engine, int32_t index)
+{
+    eng_module_t *module = &engine->modules.data[index];
+    if (module->session != NULL) return NMO_OK;
+    nmo_context_t *ctx = nmo_workspace_internal_context(engine->workspace);
+    nmo_session_t *session = ctx != NULL ? nmo_session_create(ctx) : NULL;
+    if (session == NULL) return NMO_ERR_NOMEM;
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_arena_t *arena = nmo_session_get_arena(session);
+    nmo_status_t status = NMO_OK;
+    size_t count = nmo_object_repository_get_count(module->repo);
+    for (size_t i = 0; i < count && status == NMO_OK; i++) {
+        const nmo_object_t *source = nmo_object_repository_get_by_index(module->repo, i);
+        if (source == NULL) continue;
+        nmo_object_t *copy = nmo_object_create(nmo_context_get_allocator(ctx), source->id, source->class_id);
+        if (copy == NULL) {
+            status = NMO_ERR_NOMEM;
+            break;
+        }
+        copy->flags = source->flags;
+        copy->creation_flags = source->creation_flags;
+        copy->save_flags = source->save_flags;
+        copy->type_guid = source->type_guid;
+        copy->file_id = source->file_id;
+        copy->file_index = source->file_index;
+        if (source->name != NULL) status = nmo_object_set_name(copy, source->name);
+        if (status == NMO_OK && source->chunk != NULL) {
+            copy->chunk = nmo_chunk_clone(source->chunk, arena);
+            if (copy->chunk == NULL) status = NMO_ERR_NOMEM;
+        }
+        const nmo_type_descriptor_t *type = nmo_type_query_find_for_object(engine->types, source);
+        bool copied = false;
+        if (status == NMO_OK && source->state != NULL && source->state_size > 0) {
+            status = nmo_object_alloc_state(copy, source->state_size);
+            if (status == NMO_OK) {
+                if (type != NULL && type->vtable != NULL && type->vtable->copy != NULL) {
+                    status = type->vtable->copy(source->state, copy->state, type, arena);
+                    copied = status == NMO_OK;
+                } else {
+                    memcpy(copy->state, source->state, source->state_size);
+                }
+            }
+        }
+        if (status == NMO_OK) status = nmo_object_repository_add(repo, &copy);
+        if (copy != NULL) {
+            if (copied && type->vtable->destroy != NULL) type->vtable->destroy(copy->state, type, session);
+            nmo_object_destroy(copy);
+        }
+    }
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
+    nmo_script_model_t *model = NULL;
+    if (status == NMO_OK) status = nmo_session_borrow_document(session, &document);
+    if (status == NMO_OK) status = nmo_workspace_create(ctx, document, &workspace);
+    if (status == NMO_OK) status = nmo_script_model_build(workspace, &model);
+    if (status != NMO_OK) {
+        nmo_script_model_destroy(model);
+        nmo_workspace_destroy(workspace);
+        nmo_document_destroy(document);
+        nmo_session_destroy(session);
+        return status;
+    }
+    nmo_script_model_destroy(module->model);
+    module->model = model;
+    module->repo = repo;
+    module->session = session;
+    module->document = document;
+    module->workspace = workspace;
+    return NMO_OK;
 }
 
 const eng_module_t *eng_module_of(const nmo_engine_t *engine, nmo_object_id_t id,

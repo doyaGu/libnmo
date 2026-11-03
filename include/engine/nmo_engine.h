@@ -629,8 +629,9 @@ NMO_API bool nmo_engine_cursor_is_visible(const nmo_engine_t *engine);
  * objects and of what their classes copy with them (a behavioral object's
  * scripts and attributes, a 3D entity's children), sharing the rest (a
  * mesh), each in the state its original has. `out_copies[i]` is the copy
- * of `ids[i]`, 0 for one not copied (an object of the engine's own
- * document). Copies join the level scene with their originals, active with
+ * of `ids[i]`, 0 for one not copied (an unknown object ID). A copy of an
+ * object of the initial document leaves the host's document unchanged.
+ * Copies join the level scene with their originals, active with
  * `activate` or when their originals are.
  */
 NMO_API nmo_status_t nmo_engine_copy_objects(nmo_engine_t *engine,

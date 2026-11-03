@@ -5,8 +5,10 @@
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_camera_schemas.h"
 #include "object/builtin/nmo_group_schemas.h"
+#include "object/builtin/nmo_material_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/nmo_ref.h"
+#include "type/nmo_object_guids.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -161,7 +163,7 @@ TEST(engine_copy, copies_take_scripts_children_and_the_original_state)
     ASSERT_EQ(NMO_OK, nmo_engine_copy_objects(f.engine, ids, 2, false, copies));
     nmo_object_id_t copy = copies[0];
     ASSERT_TRUE(copy != 0 && copy != original);
-    ASSERT_EQ(0u, copies[1]); /* the engine's own document copies nothing */
+    ASSERT_TRUE(copies[1] != 0 && copies[1] != f.owner_id);
     ASSERT_STR_EQ("Template", nmo_engine_object_name(f.engine, copy));
     ASSERT_FLOAT_EQ(10.0f, position_x(&f, copy), 0.0001f);
     /* The child is copied under the copy (3D entity children), the original keeps its own */
@@ -180,6 +182,87 @@ TEST(engine_copy, copies_take_scripts_children_and_the_original_state)
     ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
     ASSERT_EQ(1u, runs(&f, script_copy));
     ASSERT_EQ(1u, runs(&f, script));
+    fixture_end(&f);
+}
+
+TEST(engine_copy, primary_document_copies_keep_runtime_state_and_leave_the_document_unchanged)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t gap = fixture_create(&f, NMO_CID_OBJECT, "Removed");
+    nmo_object_id_t child = fixture_create(&f, NMO_CID_3DENTITY, "Child");
+    ASSERT_TRUE(gap != 0 && child != 0);
+    ASSERT_EQ(NMO_OK, nmo_object_repository_remove(f.repo, gap));
+    place_entity(&f, f.owner_id, 3, 0);
+    place_entity(&f, child, 4, f.owner_id);
+    f.script_id = fixture_add_script(&f, "Primary Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t nop = fixture_block(&f, GUID_NOP, "Nop");
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, nop, 0), 0);
+    nmo_object_id_t reference = 0;
+    ASSERT_EQ(NMO_OK, nmo_script_edit_add_parameter(f.tx, f.script_id, NMO_SCRIPT_EDIT_PARAM_LOCAL,
+                                                    CKPGUID_3DENTITY, "Child Reference", &reference));
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, reference, &child, sizeof(child)));
+    float matrix[16];
+    ASSERT_TRUE(nmo_engine_entity_world_matrix(f.engine, f.owner_id, matrix));
+    matrix[12] = 10;
+    ASSERT_EQ(NMO_OK, nmo_engine_set_entity_world_matrix(f.engine, f.owner_id, matrix, false));
+    size_t count = nmo_object_repository_get_count(f.repo);
+    nmo_object_id_t originals[] = {f.owner_id, child, reference};
+    nmo_object_id_t copies[3] = {0};
+    ASSERT_EQ(NMO_OK, nmo_engine_copy_objects(f.engine, originals, 3, false, copies));
+    ASSERT_TRUE(copies[0] != 0 && copies[1] != 0 && copies[2] != 0);
+    ASSERT_NE(copies[0], copies[1]);
+    ASSERT_EQ(copies[0], nmo_engine_entity_parent(f.engine, copies[1]));
+    ASSERT_FLOAT_EQ(10, position_x(&f, copies[0]), 0.0001f);
+    ASSERT_FLOAT_EQ(11, position_x(&f, copies[1]), 0.0001f);
+    nmo_object_id_t remapped = 0;
+    read_value(&f, copies[2], &remapped, sizeof(remapped));
+    ASSERT_EQ(copies[1], remapped);
+    nmo_object_id_t script_copy = script_named(&f, "Primary Script", f.script_id);
+    ASSERT_TRUE(script_copy != 0);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20));
+    ASSERT_EQ(1u, runs(&f, script_copy));
+    ASSERT_EQ(1u, runs(&f, f.script_id));
+    nmo_object_id_t again = 0;
+    ASSERT_EQ(NMO_OK, nmo_engine_copy_objects(f.engine, &f.owner_id, 1, false, &again));
+    ASSERT_TRUE(again != 0 && again != copies[0]);
+    ASSERT_EQ(count, nmo_object_repository_get_count(f.repo));
+    ASSERT_NULL(nmo_object_repository_find_by_id(f.repo, copies[0]));
+    ASSERT_FLOAT_EQ(3, ((const nmo_3dentity_state_t *)fixture_state(&f, f.owner_id))->world_matrix[12], 0.0001f);
+    ASSERT_FLOAT_EQ(4, ((const nmo_3dentity_state_t *)fixture_state(&f, child))->world_matrix[12], 0.0001f);
+    fixture_end(&f);
+}
+
+TEST(engine_copy, copies_of_primary_copies_keep_shared_dependencies)
+{
+    save_template_file();
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t texture = fixture_create(&f, NMO_CID_TEXTURE, "Shared Texture");
+    nmo_object_id_t material = fixture_create(&f, NMO_CID_MATERIAL, "Material");
+    ASSERT_TRUE(texture != 0 && material != 0);
+    nmo_material_state_t *state = fixture_state(&f, material);
+    ASSERT_NOT_NULL(state);
+    state->textures[0] = nmo_ref_from_id(texture);
+    fixture_begin_edit(&f);
+    fixture_commit(&f, NULL);
+    nmo_engine_set_file_resolver(f.engine, resolve_scratch, NULL);
+    int32_t file = -1;
+    ASSERT_EQ(NMO_OK, nmo_engine_load(f.engine, "template.nmo", true, &file));
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    nmo_object_id_t first = 0, second = 0;
+    ASSERT_EQ(NMO_OK, nmo_engine_copy_objects(f.engine, &material, 1, false, &first));
+    ASSERT_TRUE(first != 0);
+    ASSERT_EQ(NMO_OK, nmo_engine_copy_objects(f.engine, &first, 1, false, &second));
+    ASSERT_TRUE(second != 0 && second != first);
+    nmo_engine_material_t desc;
+    ASSERT_TRUE(nmo_engine_material(f.engine, first, &desc));
+    ASSERT_EQ(texture, desc.texture);
+    ASSERT_TRUE(nmo_engine_material(f.engine, second, &desc));
+    ASSERT_EQ(texture, desc.texture);
     fixture_end(&f);
 }
 
@@ -239,6 +322,42 @@ TEST(engine_copy, object_copy_joins_groups_and_delete_leaves_them)
     ASSERT_EQ(1, nmo_engine_group_count(f.engine, group));
     ASSERT_EQ(copy, nmo_engine_group_object(f.engine, group, 0));
     ASSERT_TRUE(nmo_engine_object_is_active(f.engine, copy));
+    fixture_end(&f);
+}
+
+TEST(engine_copy, primary_object_copy_runs_inside_a_script)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t original = fixture_create(&f, NMO_CID_3DENTITY, "Primary Template");
+    ASSERT_TRUE(original != 0);
+    place_entity(&f, original, 3, 0);
+    f.script_id = fixture_add_script(&f, "Copier", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t first = fixture_block(&f, GUID_OBJECT_COPY, "First Copy");
+    nmo_object_id_t second = fixture_block(&f, GUID_OBJECT_COPY, "Second Copy");
+    nmo_object_id_t after = fixture_block(&f, GUID_NOP, "After Copies");
+    ASSERT_TRUE(first != 0 && second != 0 && after != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, first, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, first, 0), BLOCK_IN(&f, second, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, second, 0), BLOCK_IN(&f, after, 0), 0);
+    fixture_input_value(&f, BLOCK_PIN(&f, first, 1), &original, sizeof(original));
+    fixture_input_value(&f, BLOCK_PIN(&f, second, 1), &original, sizeof(original));
+    fixture_commit(&f, NULL);
+    size_t count = nmo_object_repository_get_count(f.repo);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20));
+    nmo_object_id_t copies[2] = {0};
+    read_value(&f, BLOCK_POUT(&f, first, 0), &copies[0], sizeof(copies[0]));
+    read_value(&f, BLOCK_POUT(&f, second, 0), &copies[1], sizeof(copies[1]));
+    ASSERT_TRUE(copies[0] != 0 && copies[1] != 0);
+    ASSERT_NE(copies[0], copies[1]);
+    ASSERT_NE(original, copies[0]);
+    ASSERT_NE(original, copies[1]);
+    ASSERT_FLOAT_EQ(3, position_x(&f, copies[0]), 0.0001f);
+    ASSERT_FLOAT_EQ(3, position_x(&f, copies[1]), 0.0001f);
+    ASSERT_EQ(1u, runs(&f, after));
+    ASSERT_EQ(count, nmo_object_repository_get_count(f.repo));
     fixture_end(&f);
 }
 
@@ -520,7 +639,10 @@ TEST(engine_copy, initial_condition_restores_camera_planes)
 
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_copy, copies_take_scripts_children_and_the_original_state);
+REGISTER_TEST(engine_copy, primary_document_copies_keep_runtime_state_and_leave_the_document_unchanged);
+REGISTER_TEST(engine_copy, copies_of_primary_copies_keep_shared_dependencies);
 REGISTER_TEST(engine_copy, object_copy_joins_groups_and_delete_leaves_them);
+REGISTER_TEST(engine_copy, primary_object_copy_runs_inside_a_script);
 REGISTER_TEST(engine_copy, unique_name_copies_take_the_next_number);
 REGISTER_TEST(engine_copy, object_delete_takes_what_its_options_delete);
 REGISTER_TEST(engine_copy, delete_dynamic_objects_takes_the_dynamic_ones);

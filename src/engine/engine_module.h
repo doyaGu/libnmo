@@ -64,6 +64,8 @@ nmo_status_t eng_module_open(nmo_engine_t *engine, nmo_workspace_t *workspace,
                              nmo_session_t *session, nmo_document_t *document,
                              int32_t *out_module);
 void eng_free_modules(nmo_engine_t *engine);
+/* Give a borrowed module an engine-owned repository before copying into it. */
+nmo_status_t eng_own_module(nmo_engine_t *engine, int32_t module);
 /* The document of engine ID `id`, and its ID there; NULL when none has it. */
 const eng_module_t *eng_module_of(const nmo_engine_t *engine, nmo_object_id_t id,
                                   nmo_object_id_t *out_local);

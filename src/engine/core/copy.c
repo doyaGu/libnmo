@@ -16,7 +16,7 @@
  * which clones the states and remaps the references between the copies).
  * Copies of a loaded file's objects become a module of their own over that
  * session; copies of created objects stay in the created objects' module.
- * Objects of the engine's own document (which the host owns) are not copied.
+ * A borrowed document gets a private session before its objects are copied.
  */
 
 #include "../engine_internal.h"
@@ -899,8 +899,24 @@ nmo_status_t eng_copy_objects(nmo_engine_t *engine, const nmo_object_id_t *ids, 
     /* Each session the originals are in, once, in the order the originals come */
     for (int32_t i = 0; i < count; i++) {
         const eng_module_t *module = eng_module_of(engine, ids[i], NULL);
-        if (module == NULL || out_copies[i] != 0 || module->session == NULL) {
+        if (module == NULL || out_copies[i] != 0) {
             continue;
+        }
+        int32_t source = (int32_t)(module - engine->modules.data);
+        if (module->session == NULL) {
+            /* A copies window shares the session its original module owns. */
+            for (size_t m = 0; m < engine->modules.count; m++) {
+                if (engine->modules.data[m].repo == module->repo &&
+                    engine->modules.data[m].session != NULL) {
+                    source = (int32_t)m;
+                    break;
+                }
+            }
+            if (engine->modules.data[source].session == NULL) {
+                nmo_status_t status = eng_own_module(engine, source);
+                if (status != NMO_OK) return status;
+            }
+            module = &engine->modules.data[source];
         }
         bool done = false;
         for (int32_t k = 0; k < i && !done; k++) {
@@ -911,7 +927,6 @@ nmo_status_t eng_copy_objects(nmo_engine_t *engine, const nmo_object_id_t *ids, 
             continue;
         }
         /* The session's owner: the loaded file's or the created objects' module */
-        int32_t source = (int32_t)(module - engine->modules.data);
         nmo_status_t status =
             copy_session(engine, source, ids, count, deps, activate, dynamic, out_copies);
         if (status != NMO_OK) {
