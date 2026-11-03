@@ -5,6 +5,9 @@
 #include "object/builtin/nmo_character_schemas.h"
 #include "core/nmo_utils.h"
 #include "object/builtin/nmo_parameter_schemas.h"
+#include "object/builtin/nmo_mesh_schemas.h"
+#include "object/nmo_object_edit.h"
+#include "type/nmo_param_guids.h"
 
 #include <float.h>
 #include <math.h>
@@ -1181,15 +1184,21 @@ static void controller_data(engine_fixture_t *f, nmo_object_id_t block,
     ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(f->tx,controller_local(f,block,3),"FALSE"));
 }
 
+static nmo_object_id_t controller_block(engine_fixture_t *f,
+    const nmo_object_id_t *animations, size_t count, const uint8_t *records, int32_t primary_count)
+{
+    nmo_object_id_t block = fixture_block(f,NMO_GUID(0x59537e89,0x79d02f25),"Controller");
+    controller_data(f,block,animations,count,records,primary_count);
+    fixture_link(f,f->script_in,BLOCK_IN(f,block,0),0);
+    return block;
+}
+
 static nmo_object_id_t controller(engine_fixture_t *f, nmo_object_id_t actor,
     const nmo_object_id_t *animations, size_t count, const uint8_t *records, int32_t primary_count)
 {
     f->owner_id = actor;
     character_script(f);
-    nmo_object_id_t block = fixture_block(f,NMO_GUID(0x59537e89,0x79d02f25),"Controller");
-    controller_data(f,block,animations,count,records,primary_count);
-    fixture_link(f,f->script_in,BLOCK_IN(f,block,0),0);
-    return block;
+    return controller_block(f,animations,count,records,primary_count);
 }
 
 TEST(engine_character, unlimited_primary_uses_message_order_fallback_and_runtime_playback_settings)
@@ -1413,6 +1422,111 @@ TEST(engine_character, unlimited_turning_uses_active_animation_permissions_and_l
     }
 }
 
+static nmo_object_id_t controller_floor(engine_fixture_t *f, float height, bool down)
+{
+    nmo_object_id_t id = fixture_create(f,NMO_CID_3DOBJECT,"Floor");
+    nmo_object_id_t mesh = fixture_create(f,NMO_CID_MESH,"Floor Mesh");
+    nmo_3dentity_state_t *entity = fixture_state(f,id);
+    nmo_mesh_state_t *state = fixture_state(f,mesh);
+    nmo_arena_t *arena = nmo_session_get_arena(f->session);
+    state->vertices = nmo_arena_alloc(arena,4*sizeof(*state->vertices),_Alignof(nmo_vertex_t));
+    state->faces = nmo_arena_alloc(arena,2*sizeof(*state->faces),_Alignof(nmo_face_t));
+    state->face_vertex_indices = nmo_arena_alloc(arena,6*sizeof(uint16_t),_Alignof(uint16_t));
+    if (state->vertices == NULL || state->faces == NULL || state->face_vertex_indices == NULL) return 0;
+    memset(state->vertices,0,4*sizeof(*state->vertices)); memset(state->faces,0,2*sizeof(*state->faces));
+    const float xz[4][2] = {{-5,-5},{-5,5},{5,5},{5,-5}};
+    for (int i = 0; i < 4; i++) state->vertices[i].position = (nmo_vector_t){xz[i][0],0,xz[i][1]};
+    const uint16_t up[] = {0,1,2,0,2,3}, reversed[] = {2,1,0,3,2,0};
+    memcpy(state->face_vertex_indices,down ? reversed : up,sizeof(up));
+    state->vertex_count = 4; state->face_count = 2;
+    entity->current_mesh = nmo_ref_from_id(mesh); entity->world_matrix[13] = height;
+    return id;
+}
+
+static void controller_floor_attribute(engine_fixture_t *f, nmo_object_id_t floor, bool box)
+{
+    nmo_manager_entry_create_options_t options = {.enabled=true,.attribute_type_guid=CKPGUID_FLOAT,
+        .category="Test",.has_compatible_class_id=true,.compatible_class_id=NMO_CID_3DENTITY,.has_flags=true,.flags=0};
+    uint32_t type;
+    ASSERT_EQ(NMO_OK,nmo_object_edit_ensure_attribute_manager_entry(nmo_script_edit_workspace_edit(f->tx),"Floor",&options,&type));
+    nmo_object_id_t parameter = fixture_create(f,NMO_CID_PARAMETEROUT,"Floor Attribute");
+    nmo_parameter_state_t *state = fixture_state(f,parameter);
+    state->has_state = true; state->mode = CKPARAM_MODE_BUFFER;
+    state->type_guid = box ? CKPGUID_FLOOR : CKPGUID_FLOAT;
+    ASSERT_EQ(NMO_OK,nmo_array_alloc(&state->buffer_data,1,box ? 20 : 4,NULL));
+    memset(state->buffer_data.data,0,state->buffer_data.count);
+    if (box) {
+        nmo_object_id_t field = fixture_create(f,NMO_CID_PARAMETERLOCAL,"Floor Geometry");
+        nmo_parameter_state_t *geometry = fixture_state(f,field);
+        geometry->has_state = true; geometry->mode = CKPARAM_MODE_BUFFER; geometry->type_guid = CKPGUID_INT;
+        ASSERT_EQ(NMO_OK,nmo_array_alloc(&geometry->buffer_data,1,4,NULL));
+        int32_t value = CKFLOOR_BOX; memcpy(geometry->buffer_data.data,&value,4);
+        memcpy(state->buffer_data.data,&field,4);
+    }
+    ASSERT_EQ(NMO_OK,nmo_beobject_attribute_array_append(&((nmo_beobject_state_t *)fixture_state(f,floor))->attributes,parameter,type,NULL));
+}
+
+TEST(engine_character, unlimited_floor_uses_reference_or_hierarchy_bottom_and_prefers_an_upper_floor)
+{
+    for (int reference = 0; reference < 2; reference++) for (int enabled = 0; enabled < 2; enabled++) {
+        engine_fixture_t f;
+        fixture_begin_document(&f);
+        nmo_object_id_t body, actor = character(&f,&body), foot = limb(&f,actor);
+        nmo_character_state_t *state = fixture_state(&f,actor);
+        state->base.world_matrix[13] = 5;
+        ((nmo_3dentity_state_t *)fixture_state(&f,body))->world_matrix[13] = 3;
+        ((nmo_3dentity_state_t *)fixture_state(&f,foot))->world_matrix[13] = 1;
+        if (reference) state->floor_ref = nmo_ref_from_id(body);
+        nmo_object_id_t upper = controller_floor(&f,6,false), lower = controller_floor(&f,0,false);
+        f.owner_id = actor; character_script(&f);
+        controller_floor_attribute(&f,upper,false); controller_floor_attribute(&f,lower,false);
+        nmo_object_id_t block = controller_block(&f,NULL,0,NULL,0);
+        ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(f.tx,controller_local(&f,block,3),enabled ? "TRUE" : "FALSE"));
+        ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(f.tx,controller_local(&f,block,8),"0.25"));
+        fixture_commit(&f,NULL);
+        ASSERT_EQ(NMO_OK,nmo_engine_start(f.engine,NMO_ENGINE_START_ALL));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0));
+        float matrix[16]; ASSERT_TRUE(nmo_engine_entity_world_matrix(f.engine,actor,matrix));
+        ASSERT_FLOAT_EQ(enabled ? (reference ? 8 : 10) : 5,matrix[13],1e-6f);
+        eng_character_stop_automatic(f.engine,actor);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0));
+        ASSERT_TRUE(nmo_engine_entity_world_matrix(f.engine,actor,matrix));
+        ASSERT_FLOAT_EQ(enabled ? (reference ? 8 : 10) : 5,matrix[13],1e-6f);
+        nmo_engine_destroy_object(f.engine,upper);
+        const eng_vector_t position = {0,5,0}; eng_entity_set_position(f.engine,eng_entity_index(f.engine,actor),&position,-1,false);
+        eng_character_stop_automatic(f.engine,actor);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0));
+        ASSERT_TRUE(nmo_engine_entity_world_matrix(f.engine,actor,matrix));
+        ASSERT_FLOAT_EQ(enabled ? (reference ? 2 : 4) : 5,matrix[13],1e-6f);
+        ASSERT_FLOAT_EQ(5,state->base.world_matrix[13],0);
+        fixture_end(&f);
+    }
+}
+
+TEST(engine_character, unlimited_floor_respects_face_orientation_and_box_geometry)
+{
+    for (int box = 0; box < 2; box++) {
+        engine_fixture_t f;
+        fixture_begin_document(&f);
+        nmo_object_id_t body, actor = character(&f,&body), floor = controller_floor(&f,3,true);
+        f.owner_id = actor; character_script(&f);
+        controller_floor_attribute(&f,floor,box != 0);
+        nmo_object_id_t block = controller_block(&f,NULL,0,NULL,0);
+        ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(f.tx,controller_local(&f,block,3),"TRUE"));
+        fixture_commit(&f,NULL);
+        if (box) {
+            float height = 0; const eng_vector_t point = {0,0,0};
+            ASSERT_TRUE(eng_entity_floor_height(f.engine,eng_entity_index(f.engine,floor),&point,true,false,&height));
+            ASSERT_FLOAT_EQ(3,height,0);
+        }
+        ASSERT_EQ(NMO_OK,nmo_engine_start(f.engine,NMO_ENGINE_START_ALL));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0));
+        float matrix[16]; ASSERT_TRUE(nmo_engine_entity_world_matrix(f.engine,actor,matrix));
+        ASSERT_FLOAT_EQ(box ? 3 : 0,matrix[13],1e-6f);
+        fixture_end(&f);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_character, clocks_restore_saved_cursors_and_separate_cursor_updates_from_pose);
 REGISTER_TEST(engine_character, linked_unlinked_paused_and_reverse_clocks_follow_native_frame_rules);
@@ -1450,4 +1564,6 @@ REGISTER_TEST(engine_character, unlimited_secondary_messages_process_every_match
 REGISTER_TEST(engine_character, unlimited_dynamic_inputs_override_current_records_and_old_versions_ignore_them);
 REGISTER_TEST(engine_character, unlimited_primary_warp_modes_reach_the_transition_builder);
 REGISTER_TEST(engine_character, unlimited_turning_uses_active_animation_permissions_and_linked_rate);
+REGISTER_TEST(engine_character, unlimited_floor_uses_reference_or_hierarchy_bottom_and_prefers_an_upper_floor);
+REGISTER_TEST(engine_character, unlimited_floor_respects_face_orientation_and_box_geometry);
 TEST_MAIN_END()

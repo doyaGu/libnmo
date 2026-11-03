@@ -2,6 +2,10 @@
 #include "virtools.h"
 #include "core/nmo_utils.h"
 #include "object/nmo_class_ids.h"
+#include "object/builtin/nmo_parameter_schemas.h"
+#include "type/nmo_param_guids.h"
+#include "type/nmo_object_guids.h"
+#include "type/nmo_type_query.h"
 
 #include <math.h>
 #include <string.h>
@@ -200,6 +204,75 @@ static void uc_rotate(blk_t *b, nmo_object_id_t owner)
     if (uc_received(b,owner,messages[0])) eng_entity_rotate(b->engine,entity,&up,angle,-1,false);
 }
 
+static int32_t uc_floor_setting(blk_t *b, const eng_attribute_t *attribute, uint32_t field, int32_t fallback)
+{
+    if (!nmo_guid_equals(attribute->value.type,CKPGUID_FLOOR) || attribute->value.size/4 <= field) return fallback;
+    nmo_object_id_t local;
+    memcpy(&local,attribute->value.data+4*field,4);
+    const eng_module_t *module = eng_module_of(b->engine,attribute->object,NULL);
+    nmo_object_id_t id = module != NULL ? eng_module_id(module,local) : 0;
+    int32_t param = eng_map_get(&b->engine->param_map,id);
+    if (param >= 0) return eng_param_read_int(&b->engine->params.data[param]);
+    const nmo_parameter_state_t *state = nmo_type_query_object_get_ancestor_state_by_guid(
+        b->engine->types,eng_find_object(b->engine,id),CKPGUID_PARAMETER);
+    uint8_t *bytes = NULL;
+    uint32_t size = 0;
+    if (state != NULL && eng_parameter_state_bytes(module,state,4,&bytes,&size) && size >= 4) memcpy(&fallback,bytes,4);
+    free(bytes);
+    return fallback;
+}
+
+static eng_vector_t uc_bottom(blk_t *b, int32_t root)
+{
+    eng_vector_t min = eng_entity_position(b->engine,root,-1), max = min;
+    int32_t index = root;
+    for (size_t visited = 0; index >= 0 && visited < b->engine->entities.count; visited++) {
+        eng_vector_t low, high;
+        if (!eng_entity_world_box(b->engine,index,&low,&high)) low = high = eng_entity_position(b->engine,index,-1);
+        min.x = fminf(min.x,low.x); min.y = fminf(min.y,low.y); min.z = fminf(min.z,low.z);
+        max.x = fmaxf(max.x,high.x); max.y = fmaxf(max.y,high.y); max.z = fmaxf(max.z,high.z);
+        if (b->engine->entities.data[index].first_child >= 0) index = b->engine->entities.data[index].first_child;
+        else {
+            while (index != root && b->engine->entities.data[index].next_sibling < 0) index = b->engine->entities.data[index].parent;
+            if (index == root) break;
+            index = b->engine->entities.data[index].next_sibling;
+        }
+    }
+    return (eng_vector_t){(min.x+max.x)*.5f,min.y,(min.z+max.z)*.5f};
+}
+
+static void uc_floor(blk_t *b, nmo_object_id_t owner)
+{
+    if (!get_local_int(b,3,1)) return;
+    int32_t actor = eng_entity_index(b->engine,owner);
+    int32_t reference = eng_entity_index(b->engine,eng_character_floor_reference(b->engine,owner));
+    eng_vector_t position = reference >= 0 ? eng_entity_position(b->engine,reference,-1) : uc_bottom(b,actor);
+    float offset = get_local_float(b,8,0);
+    position.y += offset;
+    if (!isfinite(position.x) || !isfinite(position.y) || !isfinite(position.z)) return;
+    float above = INFINITY, below = -INFINITY;
+    for (size_t i = 0; i < b->engine->attributes.values.count; i++) {
+        const eng_attribute_t *attribute = &b->engine->attributes.values.data[i];
+        if (attribute->type < 0 || (size_t)attribute->type >= b->engine->attributes.types.count) continue;
+        const eng_attribute_type_t *type = &b->engine->attributes.types.data[attribute->type];
+        if (!type->present || type->name == NULL || strcmp(type->name,"Floor") != 0) continue;
+        int32_t floor = eng_entity_index(b->engine,attribute->object);
+        float height;
+        if (floor < 0 || !eng_entity_floor_height(b->engine,floor,&position,
+            uc_floor_setting(b,attribute,0,CKFLOOR_FACES) == CKFLOOR_BOX,uc_floor_setting(b,attribute,4,0) != 0,&height)) continue;
+        float distance = height-position.y;
+        if (distance > 0) above = fminf(above,distance);
+        else below = fmaxf(below,distance);
+    }
+    /* The original prefers an upper floor whenever both sides exist. */
+    float distance = isfinite(above) ? above : below;
+    if (isfinite(distance)) {
+        eng_vector_t current = eng_entity_position(b->engine,actor,-1);
+        current.y += distance+offset;
+        eng_entity_set_position(b->engine,actor,&current,-1,false);
+    }
+}
+
 static int uc_execute(blk_t *b)
 {
     if (!uc_valid(b,1,2) || !uc_valid(b,6,7)) return NMO_ENGINE_BR_GENERICERROR;
@@ -230,6 +303,7 @@ static int uc_execute(blk_t *b)
         if (uc_received(b,owner,(int32_t)nmo_read_u32_le(r+136)) && !uc_secondary(b,owner,r)) return NMO_ENGINE_BR_GENERICERROR;
     }
     uc_rotate(b,owner);
+    uc_floor(b,owner);
     nmo_object_id_t current = eng_character_active_animation(b->engine,owner);
     float step = 0, frame = 0;
     eng_animation_current_step(b->engine,current,&step); eng_animation_frame(b->engine,current,&frame);

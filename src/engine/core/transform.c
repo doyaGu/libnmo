@@ -970,6 +970,69 @@ static bool eng_group_two_sided(nmo_engine_t *engine, const eng_module_t *module
     return state != NULL && (state->packed_flags & 1u) != 0;
 }
 
+bool eng_entity_floor_height(nmo_engine_t *engine, int32_t index, const eng_vector_t *position,
+    bool box, bool first, float *height)
+{
+    nmo_mesh_state_t runtime;
+    const nmo_mesh_state_t *mesh = eng_entity_mesh(engine,index,NULL,&runtime);
+    if (mesh == NULL || mesh->vertex_count == 0 || mesh->vertices == NULL || mesh->face_count == 0) return false;
+    eng_vector_t min, max;
+    eng_entity_world_box(engine,index,&min,&max);
+    if (position->x < min.x || position->x > max.x || position->z < min.z || position->z > max.z) return false;
+    eng_vector_t origin, direction, up = {0,1,0};
+    eng_entity_inverse_transform(engine,index,&origin,position,-1);
+    eng_entity_transform_vector(engine,index,&direction,&up,-1,true);
+    double best = 1e100;
+    bool found = false;
+    if (box) {
+        eng_entity_local_box(engine,index,&min,&max);
+        const float o[] = {origin.x,origin.y,origin.z}, d[] = {direction.x,direction.y,direction.z};
+        const float low[] = {min.x,min.y,min.z}, high[] = {max.x,max.y,max.z};
+        double near = -1e100, far = 1e100;
+        for (int k = 0; k < 3; k++) {
+            if (fabsf(d[k]) < ENG_EPSILON) {
+                if (o[k] < low[k] || o[k] > high[k]) return false;
+            } else {
+                double a = ((double)low[k]-o[k])/d[k], b = ((double)high[k]-o[k])/d[k];
+                near = fmax(near,fmin(a,b)); far = fmin(far,fmax(a,b));
+            }
+        }
+        if (near > far) return false;
+        best = near < 0 && (far <= 0 || fabs(far) < fabs(near)) ? far : near;
+        found = true;
+    } else {
+        if (mesh->face_vertex_indices == NULL) return false;
+        float magnitude = eng_vector_magnitude(&direction);
+        if (!(magnitude > 0)) return false;
+        direction = (eng_vector_t){direction.x/magnitude,direction.y/magnitude,direction.z/magnitude};
+        for (uint32_t f = 0; f < mesh->face_count; f++) {
+            const uint16_t *v = mesh->face_vertex_indices+(size_t)f*3;
+            if (v[0] >= mesh->vertex_count || v[1] >= mesh->vertex_count || v[2] >= mesh->vertex_count) continue;
+            const nmo_vector_t *a = &mesh->vertices[v[0]].position, *b = &mesh->vertices[v[1]].position, *c = &mesh->vertices[v[2]].position;
+            eng_vector_t ab = {b->x-a->x,b->y-a->y,b->z-a->z}, ac = {c->x-a->x,c->y-a->y,c->z-a->z};
+            eng_vector_t normal = eng_vector_cross(&ab,&ac);
+            float length = eng_vector_magnitude(&normal);
+            if (!(length > 0)) continue;
+            normal = (eng_vector_t){normal.x/length,normal.y/length,normal.z/length};
+            double denominator = (double)normal.x*direction.x+(double)normal.y*direction.y+(double)normal.z*direction.z;
+            if (denominator < 0.17364818f) continue; /* cos(80 degrees), FloorManager's default. */
+            double t = ((double)normal.x*(a->x-origin.x)+(double)normal.y*(a->y-origin.y)+(double)normal.z*(a->z-origin.z))/denominator;
+            const float point[] = {(float)(origin.x+t*direction.x),(float)(origin.y+t*direction.y),(float)(origin.z+t*direction.z)};
+            const float va[] = {a->x,a->y,a->z}, vb[] = {b->x,b->y,b->z}, vc[] = {c->x,c->y,c->z};
+            const nmo_vector_t n = {normal.x,normal.y,normal.z};
+            int i1, i2;
+            if (!eng_point_in_face(point,va,vb,vc,&n,&i1,&i2)) continue;
+            if (fabs(t) < fabs(best)) { best = t; found = true; }
+            if (first) break;
+        }
+    }
+    if (!found) return false;
+    eng_vector_t local = {(float)(origin.x+best*direction.x),(float)(origin.y+best*direction.y),(float)(origin.z+best*direction.z)}, world;
+    eng_entity_transform(engine,index,&world,&local,-1);
+    *height = world.y;
+    return isfinite(*height);
+}
+
 /*
  * CK3dEntity::RayIntersection (the default options: a ray, the nearest
  * face): the ray from `pos1` through `pos2` (world space) on the current
