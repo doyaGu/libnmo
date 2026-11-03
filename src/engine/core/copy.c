@@ -589,6 +589,14 @@ static void copy_param_value(nmo_engine_t *engine, const copy_set_t *set,
         return;
     }
     eng_param_t *dest = &engine->params.data[to];
+    if (nmo_guid_equals(dest->type,CKPGUID_OBJECTARRAY)) {
+        for (size_t i = 0; i < dest->size/4; i++) {
+            nmo_object_id_t id;
+            memcpy(&id,dest->data+4*i,4);
+            nmo_object_id_t mapped = copy_of(set,copies,id);
+            if (mapped != 0) memcpy(dest->data+4*i,&mapped,4);
+        }
+    }
     if (dest->type_desc != NULL && dest->type_desc->object_class_id > 0 &&
         dest->size >= sizeof(uint32_t)) {
         uint32_t id = 0;

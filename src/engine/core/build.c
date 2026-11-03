@@ -15,6 +15,7 @@
 #include "behavior/nmo_script_model.h"
 #include "core/nmo_array.h"
 #include "format/nmo_object.h"
+#include "format/nmo_chunk_api.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_beobject_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
@@ -72,9 +73,40 @@ static uint32_t eng_alloc_indexes(nmo_engine_t *engine, size_t count)
  * Parameters
  * ============================================================================ */
 
+/* CKCollectionSaver: identifier 0x50, then an XObjectArray object sequence. */
+static bool eng_collection_value(const eng_module_t *module, const nmo_parameter_state_t *state,
+    uint8_t **out_data, uint32_t *out_size)
+{
+    nmo_arena_t *arena = NULL;
+    nmo_object_id_t *ids = NULL;
+    size_t count = 0;
+    if (state->mode == CKPARAM_MODE_SUBCHUNK && state->subchunk != NULL) {
+        arena = nmo_arena_create(NULL,4096);
+        nmo_chunk_t *chunk = arena != NULL ? nmo_chunk_clone(state->subchunk,arena) : NULL;
+        if (chunk == NULL || nmo_chunk_start_read(chunk) != NMO_OK) { nmo_arena_destroy(arena); return false; }
+        nmo_status_t status = nmo_chunk_seek_identifier(chunk,0x50);
+        if (status == NMO_OK) status = nmo_chunk_read_object_id_array(chunk,&ids,&count,arena);
+        if (status != NMO_OK && status != NMO_ERR_NOT_FOUND) { nmo_arena_destroy(arena); return false; }
+    } else if (state->mode == CKPARAM_MODE_BUFFER) count = state->buffer_data.count/4;
+    if (count > UINT32_MAX/4) { nmo_arena_destroy(arena); return false; }
+    uint8_t *bytes = count != 0 ? malloc(count*4) : NULL;
+    if (count != 0 && bytes == NULL) { nmo_arena_destroy(arena); return false; }
+    for (size_t i = 0; i < count; i++) {
+        nmo_object_id_t local;
+        if (ids != NULL) local = ids[i];
+        else memcpy(&local,(const uint8_t *)state->buffer_data.data+4*i,4);
+        nmo_object_id_t id = eng_module_id(module,local);
+        memcpy(bytes+4*i,&id,4);
+    }
+    nmo_arena_destroy(arena);
+    *out_data = bytes; *out_size = (uint32_t)count*4;
+    return true;
+}
+
 bool eng_parameter_state_bytes(const eng_module_t *module, const nmo_parameter_state_t *state,
                                size_t fallback_size, uint8_t **out_data, uint32_t *out_size)
 {
+    if (nmo_guid_equals(state->type_guid,CKPGUID_OBJECTARRAY)) return eng_collection_value(module,state,out_data,out_size);
     const void *source = NULL;
     size_t size = fallback_size;
     uint32_t value = 0;

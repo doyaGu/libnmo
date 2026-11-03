@@ -17,6 +17,8 @@ enum {
     UC_STAY = 1024, UC_WARPSTART = 2048, UC_WARPSAME = 4096,
 };
 
+typedef struct uc_state { bool initialized; } uc_state_t;
+
 static eng_param_t *uc_local(blk_t *b, int pos)
 {
     const eng_node_t *node = &b->engine->nodes.data[b->node];
@@ -75,6 +77,9 @@ static int uc_callback(blk_t *b, uint32_t message)
     int32_t rotation[] = {eng_message_type_add(b->engine,"Joy_Left"),eng_message_type_add(b->engine,"Joy_Right")};
     nmo_engine_block_set_local_value(b,5,rotation,sizeof(rotation));
     uc_restore(b,1,2); uc_restore(b,6,7);
+    uc_state_t *state = nmo_engine_block_state(b,sizeof(*state));
+    if (state == NULL) return NMO_ENGINE_BR_GENERICERROR;
+    state->initialized = false;
     nmo_engine_block_set_waiting_for_messages(b,owner,true);
     return NMO_ENGINE_BR_OK;
 }
@@ -285,6 +290,14 @@ static int uc_execute(blk_t *b)
         return NMO_ENGINE_BR_OK;
     }
     if (IN_ACTIVE(b,0)) { IN_OFF(b,0); OUT_ON(b,0); }
+    uc_state_t *state = nmo_engine_block_state(b,sizeof(*state));
+    if (state == NULL) return NMO_ENGINE_BR_GENERICERROR;
+    if (!state->initialized) {
+        /* Copies take runtime parameter bytes after LOAD. Rebuild their
+         * non-reference caches after the collection values are remapped. */
+        uc_restore(b,1,2); uc_restore(b,6,7);
+        state->initialized = true;
+    }
     uc_check(b,1,2,owner); uc_check(b,6,7,owner);
     if (!eng_character_set_automatic(b->engine,owner,true)) return NMO_ENGINE_BR_GENERICERROR;
     eng_param_t *primary = uc_local(b,1);

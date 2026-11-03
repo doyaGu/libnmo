@@ -8,6 +8,7 @@
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/nmo_object_edit.h"
 #include "type/nmo_param_guids.h"
+#include "format/nmo_chunk_api.h"
 
 #include <float.h>
 #include <math.h>
@@ -1527,6 +1528,155 @@ TEST(engine_character, unlimited_floor_respects_face_orientation_and_box_geometr
     }
 }
 
+static void controller_collection(engine_fixture_t *f, nmo_object_id_t block, const nmo_object_id_t *ids, size_t count)
+{
+    nmo_parameter_state_t *state = fixture_state(f,controller_local(f,block,0));
+    state->mode = CKPARAM_MODE_SUBCHUNK;
+    state->subchunk = nmo_chunk_create(nmo_session_get_arena(f->session));
+    ASSERT_NOT_NULL(state->subchunk);
+    state->subchunk->class_id = NMO_CID_OBJECTARRAY;
+    ASSERT_EQ(NMO_OK,nmo_chunk_start_write(state->subchunk));
+    ASSERT_EQ(NMO_OK,nmo_chunk_write_identifier(state->subchunk,0x50));
+    ASSERT_EQ(NMO_OK,nmo_chunk_write_object_id_array(state->subchunk,ids,count));
+    nmo_chunk_close(state->subchunk);
+}
+
+static void controller_format(engine_fixture_t *f, nmo_object_id_t animation, nmo_objectanimation_format_t format)
+{
+    const nmo_keyedanimation_state_t *keyed = fixture_state(f,animation);
+    nmo_object_id_t channel = nmo_ref_runtime_id(&keyed->animation_ids[0]);
+    nmo_objectanimation_state_t *part = fixture_state(f,channel);
+    if (format == CKOBJANIM_FORMAT_SHARED) {
+        nmo_object_id_t shared = fixture_create(f,NMO_CID_OBJECTANIMATION,"Shared Controller Keys");
+        nmo_objectanimation_state_t *keys = fixture_state(f,shared);
+        *keys = *part; keys->entity = nmo_ref_from_id(0);
+        part->has_shared_anim = 1; part->shared_anim = nmo_ref_from_id(shared);
+        part->controllers = NULL; part->controller_count = 0;
+    } else if (format == CKOBJANIM_FORMAT_LEGACY) {
+        nmo_object_t *object = nmo_object_repository_find_by_id(f->repo,channel);
+        object->chunk = nmo_chunk_create(nmo_session_get_arena(f->session));
+        ASSERT_NOT_NULL(object->chunk);
+        object->chunk->class_id = NMO_CID_OBJECTANIMATION; object->chunk->data_version = 0;
+    }
+    part->format = format;
+}
+
+TEST(engine_character, loaded_unlimited_controllers_read_native_collections_and_copies_rebind_their_caches)
+{
+    const nmo_objectanimation_format_t formats[] = {CKOBJANIM_FORMAT_CONTROLLERS,
+        CKOBJANIM_FORMAT_NEWDATA,CKOBJANIM_FORMAT_LEGACY,CKOBJANIM_FORMAT_SHARED};
+    for (size_t i = 0; i < COUNT(formats); i++) {
+        engine_fixture_t f;
+        fixture_begin_document(&f);
+        nmo_object_id_t body, actor = character(&f,&body), bone = limb(&f,actor);
+        nmo_object_id_t animations[] = {clip(&f,"Saved Idle",actor,body,10,0,0),
+            clip(&f,"Saved Run",actor,body,10,0,10),clip(&f,"Saved Action",actor,bone,10,100,110)};
+        for (size_t j = 0; j < COUNT(animations); j++) controller_format(&f,animations[j],formats[i]);
+        uint8_t primary[2][152];
+        controller_record(primary[0],1,"Run",2|128,500); controller_record(primary[1],0,"",2|128,500);
+        nmo_object_id_t block = controller(&f,actor,animations,3,primary[0],2);
+        controller_collection(&f,block,animations,3);
+        uint8_t secondary[152]; controller_record(secondary,2,"Run",16|128|512|1024,1000);
+        const float start = 1.25f; uint32_t word; memcpy(&word,&start,4); nmo_write_u32_le(secondary+4,word);
+        nmo_write_u16_le(secondary+150,2);
+        controller_bytes(&f,block,6,secondary,sizeof(secondary));
+        ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(f.tx,controller_local(&f,block,7),"1"));
+        fixture_commit(&f,NULL);
+        nmo_beobject_state_t *owner = fixture_state(&f,actor);
+        owner->has_single_activity = 1; owner->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE;
+        nmo_behavior_state_t *script = fixture_state(&f,f.script_id);
+        script->has_single_activity = 1; script->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE | CK_SCENEOBJECT_START_RESET;
+        const char *path = NMO_TEST_SCRATCH_FILE("engine_unlimited.cmo");
+        ASSERT_EQ(NMO_OK,nmo_session_save_file(f.session,path,NULL,NULL));
+        engine_fixture_t host;
+        fixture_begin_document(&host); fixture_begin_edit(&host);
+        nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL;
+        fixture_commit(&host,&options);
+        ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_ALL));
+        nmo_engine_set_file_resolver(host.engine,resolve_file,(void *)path);
+        int32_t file;
+        ASSERT_EQ(NMO_OK,nmo_engine_load(host.engine,"controller.cmo",true,&file));
+        ASSERT_TRUE(file > 0);
+        nmo_object_id_t loaded_actor = nmo_engine_object_named(host.engine,"Character",NMO_CID_CHARACTER);
+        nmo_object_id_t idle = nmo_engine_object_named(host.engine,"Saved Idle",NMO_CID_KEYEDANIMATION);
+        nmo_object_id_t run = nmo_engine_object_named(host.engine,"Saved Run",NMO_CID_KEYEDANIMATION);
+        nmo_object_id_t action = nmo_engine_object_named(host.engine,"Saved Action",NMO_CID_KEYEDANIMATION);
+        ASSERT_TRUE(loaded_actor != 0 && loaded_actor != actor && idle != 0 && run != 0 && action != 0);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
+        ASSERT_EQ(idle,eng_character_active_animation(host.engine,loaded_actor));
+        controller_send(&host,loaded_actor,"Run");
+        ASSERT_EQ(run,eng_character_active_animation(host.engine,loaded_actor));
+        ASSERT_EQ(1u,eng_character_secondary_count(host.engine,loaded_actor));
+        ASSERT_FLOAT_EQ(1.25f,frame(host.engine,action),0);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,2));
+        ASSERT_FLOAT_EQ(3.25f,frame(host.engine,action),0);
+        eng_animation_source_t source;
+        ASSERT_TRUE(eng_animation_source(host.engine,eng_keyed_animation_root(host.engine,run),&source));
+        ASSERT_EQ(formats[i],source.state->format);
+        ASSERT_FLOAT_EQ(1000,eng_animation_state(host.engine,run)->frame_rate,0);
+        nmo_object_id_t originals[] = {loaded_actor,nmo_engine_object_named(host.engine,"Body",NMO_CID_BODYPART),
+            nmo_engine_object_named(host.engine,"Limb",NMO_CID_BODYPART),idle,run,action,
+            nmo_engine_object_named(host.engine,"Character Controls",NMO_CID_BEHAVIOR),
+            nmo_engine_object_named(host.engine,"Current Anim",NMO_CID_PARAMETEROUT)};
+        nmo_object_id_t copies[COUNT(originals)] = {0};
+        for (size_t j = 0; j < COUNT(originals); j++) ASSERT_TRUE(originals[j] != 0);
+        ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(host.engine,originals,COUNT(originals),true,copies));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
+        ASSERT_EQ(copies[3],eng_character_active_animation(host.engine,copies[0]));
+        ASSERT_EQ(copies[0],nmo_engine_entity_parent(host.engine,copies[1]));
+        nmo_object_id_t current = 0; read_value(&host,copies[7],&current,4);
+        ASSERT_EQ(copies[3],current);
+        ASSERT_EQ(idle,eng_character_active_animation(host.engine,loaded_actor));
+        ASSERT_EQ(0xdeadbeefu,nmo_read_u32_le(primary[0]+48));
+        fixture_end(&host); fixture_end(&f); remove(path);
+    }
+}
+
+TEST(engine_character, unlimited_secondary_input_overrides_control_warp_entry_loop_count_and_last_frame)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t root, actor = character(&f,&root), bone = limb(&f,actor);
+    nmo_object_id_t animations[] = {clip(&f,"Idle",actor,root,10,0,0),
+        clip(&f,"Unused",actor,bone,10,100,110),clip(&f,"Selected",actor,bone,10,200,210)};
+    uint8_t primary[152]; controller_record(primary,0,"",2|128,1000);
+    nmo_object_id_t block = controller(&f,actor,animations,3,primary,1);
+    uint8_t secondary[152]; controller_record(secondary,1,"Action",0,30);
+    const uint32_t fields[] = {0,1,2,4,5,8,9,10,11};
+    const nmo_guid_t types[] = {CKPGUID_ANIMATION,CKPGUID_BOOL,CKPGUID_FLOAT,CKPGUID_BOOL,
+        CKPGUID_FLOAT,CKPGUID_INT,CKPGUID_BOOL,CKPGUID_FLOAT,CKPGUID_INT};
+    uint16_t mask = 0;
+    for (uint32_t i = 0; i < COUNT(fields); i++) {
+        mask |= (uint16_t)(1u<<fields[i]); secondary[56+fields[i]] = (uint8_t)i;
+        nmo_object_id_t pin = 0;
+        ASSERT_EQ(NMO_OK,nmo_script_edit_add_parameter(f.tx,block,NMO_SCRIPT_EDIT_PARAM_IN,types[i],"Secondary Override",&pin));
+        if (i == 0) fixture_input_int(&f,pin,(int32_t)animations[2]);
+        else if (i == 2 || i == 4 || i == 7) {
+            float value = i == 2 ? 2 : i == 4 ? 500 : 1.5f; fixture_input_value(&f,pin,&value,4);
+        } else fixture_input_int(&f,pin,i == 5 ? CKSECONDARYANIMATION_LOOPNTIMES : 1);
+    }
+    nmo_write_u16_le(secondary+54,mask);
+    controller_bytes(&f,block,6,secondary,sizeof(secondary));
+    ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(f.tx,controller_local(&f,block,7),"1"));
+    fixture_commit(&f,NULL);
+    ASSERT_EQ(NMO_OK,nmo_engine_start(f.engine,NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0)); ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0));
+    controller_send(&f,actor,"Action");
+    ASSERT_EQ(1u,eng_character_secondary_count(f.engine,actor));
+    ASSERT_EQ(animations[2],eng_character_secondary_animation(f.engine,actor,0));
+    nmo_object_id_t warper = eng_character_secondary_warper(f.engine,actor,0);
+    ASSERT_TRUE(warper != 0);
+    ASSERT_FLOAT_EQ(2,eng_animation_length(eng_animation_playback_state(f.engine,warper)),0);
+    ASSERT_FLOAT_EQ(500,eng_animation_playback_state(f.engine,animations[2])->frame_rate,0);
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,100));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,2));
+    ASSERT_EQ(1u,eng_character_secondary_count(f.engine,actor));
+    ASSERT_FLOAT_EQ(10,frame(f.engine,animations[2]),0);
+    ASSERT_FLOAT_EQ(0,frame(f.engine,animations[1]),0);
+    ASSERT_FLOAT_EQ(1000,eng_animation_state(f.engine,animations[2])->frame_rate,0);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_character, clocks_restore_saved_cursors_and_separate_cursor_updates_from_pose);
 REGISTER_TEST(engine_character, linked_unlinked_paused_and_reverse_clocks_follow_native_frame_rules);
@@ -1566,4 +1716,6 @@ REGISTER_TEST(engine_character, unlimited_primary_warp_modes_reach_the_transitio
 REGISTER_TEST(engine_character, unlimited_turning_uses_active_animation_permissions_and_linked_rate);
 REGISTER_TEST(engine_character, unlimited_floor_uses_reference_or_hierarchy_bottom_and_prefers_an_upper_floor);
 REGISTER_TEST(engine_character, unlimited_floor_respects_face_orientation_and_box_geometry);
+REGISTER_TEST(engine_character, loaded_unlimited_controllers_read_native_collections_and_copies_rebind_their_caches);
+REGISTER_TEST(engine_character, unlimited_secondary_input_overrides_control_warp_entry_loop_count_and_last_frame);
 TEST_MAIN_END()
