@@ -162,6 +162,44 @@ static bool uc_primary(blk_t *b, nmo_object_id_t owner, const uint8_t *r)
     return true;
 }
 
+static bool uc_secondary(blk_t *b, nmo_object_id_t owner, const uint8_t *r)
+{
+    nmo_object_id_t animation = uc_animation(b,r);
+    if (animation == 0) return true;
+    uint16_t flags = nmo_read_u16_le(r+148);
+    uint32_t mode = flags & UC_PLAY ? CKSECONDARYANIMATION_ONESHOT : 0;
+    if (flags & UC_LOOP) mode = CKSECONDARYANIMATION_LOOP;
+    if (flags & UC_LOOPN) mode = CKSECONDARYANIMATION_LOOPNTIMES;
+    mode = (uint32_t)uc_int(b,r,8,(int32_t)mode);
+    bool warp = uc_int(b,r,1,flags & UC_WARP) != 0;
+    float length = uc_input_float(b,r,2,uc_float(r+144));
+    if (mode != 0) {
+        uint32_t clock = uc_int(b,r,4,flags & UC_TIME) ? CKANIMATION_LINKTOFRAMERATE : 0;
+        if (!eng_animation_set_playback(b->engine,animation,CKANIMATION_LINKTOFRAMERATE,clock,
+            uc_input_float(b,r,5,uc_float(r+140)))) return false;
+        if (uc_int(b,r,9,flags & UC_STAY)) mode |= CKSECONDARYANIMATION_LASTFRAME;
+        if (warp) mode |= CKSECONDARYANIMATION_DOWARP;
+        eng_character_play_secondary_warp(b->engine,owner,animation,uc_input_float(b,r,10,uc_float(r+4)),
+            mode,length,(uint32_t)uc_int(b,r,11,nmo_read_u16_le(r+150)));
+    } else eng_character_stop_secondary_warp(b->engine,owner,animation,warp,length);
+    return true;
+}
+
+static void uc_rotate(blk_t *b, nmo_object_id_t owner)
+{
+    nmo_object_id_t current = eng_character_active_animation(b->engine,owner);
+    const nmo_animation_state_t *state = eng_animation_playback_state(b->engine,current);
+    if (state == NULL || !(state->flags & CKANIMATION_ALLOWTURN)) return;
+    int32_t messages[2] = {-1,-1};
+    nmo_engine_block_get_local_value(b,5,messages,sizeof(messages));
+    float angle = get_local_float(b,4,.06f)*nmo_engine_block_delta_time(b)*state->frame_rate*.001f;
+    if (!isfinite(angle)) return;
+    int32_t entity = eng_entity_index(b->engine,owner);
+    const eng_vector_t up = {0,1,0};
+    if (uc_received(b,owner,messages[1])) eng_entity_rotate(b->engine,entity,&up,-angle,-1,false);
+    if (uc_received(b,owner,messages[0])) eng_entity_rotate(b->engine,entity,&up,angle,-1,false);
+}
+
 static int uc_execute(blk_t *b)
 {
     if (!uc_valid(b,1,2) || !uc_valid(b,6,7)) return NMO_ENGINE_BR_GENERICERROR;
@@ -186,6 +224,12 @@ static int uc_execute(blk_t *b)
     }
     if (selected == NULL) selected = fallback;
     if (selected != NULL && !uc_primary(b,owner,selected)) return NMO_ENGINE_BR_GENERICERROR;
+    for (int32_t i = 0, n = get_local_int(b,7,0); i < n; i++) {
+        /* A Warp can add objects and move the parameter table. */
+        const uint8_t *r = uc_local(b,6)->data+(size_t)i*UC_RECORD;
+        if (uc_received(b,owner,(int32_t)nmo_read_u32_le(r+136)) && !uc_secondary(b,owner,r)) return NMO_ENGINE_BR_GENERICERROR;
+    }
+    uc_rotate(b,owner);
     nmo_object_id_t current = eng_character_active_animation(b->engine,owner);
     float step = 0, frame = 0;
     eng_animation_current_step(b->engine,current,&step); eng_animation_frame(b->engine,current,&frame);

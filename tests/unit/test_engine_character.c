@@ -1289,6 +1289,130 @@ TEST(engine_character, unlimited_off_stops_automatic_processing_and_invalid_coun
     }
 }
 
+static void controller_send(engine_fixture_t *f, nmo_object_id_t actor, const char *name)
+{
+    int32_t message = nmo_engine_message_type(f->engine,name);
+    ASSERT_TRUE(message >= 0);
+    ASSERT_EQ(NMO_OK,nmo_engine_send_message(f->engine,message,actor,0));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f->engine,0));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f->engine,0));
+}
+
+TEST(engine_character, unlimited_secondary_messages_process_every_matching_record_and_warp_stops)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t root, actor = character(&f,&root), a_body = limb(&f,actor), b_body = limb(&f,actor);
+    nmo_object_id_t animations[] = {clip(&f,"Idle",actor,root,10,0,0),
+        clip(&f,"A",actor,a_body,10,100,110),clip(&f,"B",actor,b_body,10,200,210)};
+    uint8_t primary[152]; controller_record(primary,0,"",2|128,1000);
+    nmo_object_id_t block = controller(&f,actor,animations,3,primary,1);
+    uint8_t secondary[4][152];
+    for (int i = 0; i < 4; i++) {
+        controller_record(secondary[i],1+i%2,i < 2 ? "Action" : "Stop",i < 2 ? 1|128 : 8,1000);
+        float start = 1.25f; uint32_t word; memcpy(&word,&start,4); nmo_write_u32_le(secondary[i]+4,word);
+    }
+    controller_bytes(&f,block,6,secondary,sizeof(secondary));
+    ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(f.tx,controller_local(&f,block,7),"4"));
+    fixture_commit(&f,NULL);
+    ASSERT_EQ(NMO_OK,nmo_engine_start(f.engine,NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0)); ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0));
+    controller_send(&f,actor,"Action");
+    ASSERT_EQ(2u,eng_character_secondary_count(f.engine,actor));
+    ASSERT_FLOAT_EQ(1.25f,frame(f.engine,animations[1]),0); ASSERT_FLOAT_EQ(1.25f,frame(f.engine,animations[2]),0);
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,2));
+    ASSERT_FLOAT_EQ(103.25f,x(f.engine,a_body),1e-5f); ASSERT_FLOAT_EQ(203.25f,x(f.engine,b_body),1e-5f);
+    controller_send(&f,actor,"Stop");
+    ASSERT_EQ(2u,eng_character_secondary_count(f.engine,actor));
+    ASSERT_TRUE(eng_character_secondary_warper(f.engine,actor,0) != 0);
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,3));
+    ASSERT_EQ(0u,eng_character_secondary_count(f.engine,actor));
+    ASSERT_FLOAT_EQ(1000,eng_animation_state(f.engine,animations[1])->frame_rate,0);
+    fixture_end(&f);
+}
+
+TEST(engine_character, unlimited_dynamic_inputs_override_current_records_and_old_versions_ignore_them)
+{
+    for (int legacy = 0; legacy < 2; legacy++) {
+        engine_fixture_t f;
+        fixture_begin_document(&f);
+        nmo_object_id_t root, actor = character(&f,&root);
+        nmo_object_id_t animations[] = {clip(&f,"A",actor,root,10,0,10),clip(&f,"B",actor,root,10,100,110)};
+        uint8_t record[152]; controller_record(record,0,"",0,30);
+        nmo_write_u16_le(record+54,1|8|16|32|64|128);
+        record[56] = 0; record[59] = 1; record[60] = 2; record[61] = 3; record[62] = 4; record[63] = 5;
+        nmo_object_id_t block = controller(&f,actor,animations,2,record,1);
+        if (legacy) ((nmo_behavior_state_t *)fixture_state(&f,block))->block_version = 0x10000;
+        const nmo_guid_t types[] = {CKPGUID_ANIMATION,CKPGUID_BOOL,CKPGUID_BOOL,CKPGUID_FLOAT,CKPGUID_BOOL,CKPGUID_BOOL};
+        for (uint32_t i = 0; i < COUNT(types); i++) {
+            nmo_object_id_t pin = 0;
+            ASSERT_EQ(NMO_OK,nmo_script_edit_add_parameter(f.tx,block,NMO_SCRIPT_EDIT_PARAM_IN,types[i],"Override",&pin));
+            if (i == 0) fixture_input_int(&f,pin,(int32_t)animations[1]);
+            else if (i == 3) { float fps = 250; fixture_input_value(&f,pin,&fps,4); }
+            else fixture_input_int(&f,pin,1);
+        }
+        fixture_commit(&f,NULL);
+        ASSERT_EQ(NMO_OK,nmo_engine_start(f.engine,NMO_ENGINE_START_ALL));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0));
+        nmo_object_id_t selected = animations[legacy ? 0 : 1];
+        ASSERT_EQ(selected,eng_character_next_animation(f.engine,actor));
+        const nmo_animation_state_t *settings = eng_animation_playback_state(f.engine,selected);
+        ASSERT_FLOAT_EQ(legacy ? 30 : 250,settings->frame_rate,0);
+        uint32_t mask = CKANIMATION_CANBEBREAK | CKANIMATION_LINKTOFRAMERATE | CKANIMATION_ALLOWTURN | CKANIMATION_ALIGNORIENTATION;
+        ASSERT_EQ(legacy ? 0u : mask,settings->flags & mask);
+        ASSERT_FLOAT_EQ(1000,eng_animation_state(f.engine,selected)->frame_rate,0);
+        fixture_end(&f);
+    }
+}
+
+TEST(engine_character, unlimited_primary_warp_modes_reach_the_transition_builder)
+{
+    const uint16_t flags[] = {8,8|2048,8|4096};
+    const uint32_t modes[] = {CK_TRANSITION_WARPBEST,CK_TRANSITION_WARPSTART,CK_TRANSITION_WARPSAMEPOS};
+    for (size_t i = 0; i < COUNT(flags); i++) {
+        engine_fixture_t f;
+        fixture_begin_document(&f);
+        nmo_object_id_t body, actor = character(&f,&body);
+        nmo_object_id_t animations[] = {clip(&f,"A",actor,body,10,0,10),clip(&f,"B",actor,body,10,100,110)};
+        uint8_t record[152]; controller_record(record,1,"",flags[i]|2|128,500);
+        controller(&f,actor,animations,2,record,1);
+        fixture_commit(&f,NULL);
+        ASSERT_EQ(NMO_OK,nmo_engine_start(f.engine,NMO_ENGINE_START_ALL));
+        ASSERT_TRUE(eng_animation_set_playback(f.engine,animations[0],CKANIMATION_CANBEBREAK,CKANIMATION_CANBEBREAK,1000));
+        ASSERT_EQ(NMO_OK,eng_character_set_active_animation(f.engine,actor,animations[0]));
+        ASSERT_TRUE(eng_animation_set_frame(f.engine,animations[0],2));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0));
+        ASSERT_EQ(eng_character_warper(f.engine,actor),eng_character_active_animation(f.engine,actor));
+        uint32_t mode = 0;
+        ASSERT_TRUE(eng_character_warper_parameters(f.engine,actor,&mode,NULL,NULL,NULL,NULL));
+        ASSERT_EQ(modes[i]|CK_TRANSITION_USEVELOCITY|CK_TRANSITION_LOOPIFEQUAL,mode);
+        ASSERT_FLOAT_EQ(500,eng_animation_playback_state(f.engine,animations[1])->frame_rate,0);
+        fixture_end(&f);
+    }
+}
+
+TEST(engine_character, unlimited_turning_uses_active_animation_permissions_and_linked_rate)
+{
+    for (int turn = 0; turn < 2; turn++) {
+        engine_fixture_t f;
+        fixture_begin_document(&f);
+        nmo_object_id_t body, actor = character(&f,&body), animation = clip(&f,"Idle",actor,body,10,0,0);
+        uint8_t record[152]; controller_record(record,0,"",2|(turn ? 32 : 0),30);
+        nmo_object_id_t block = controller(&f,actor,&animation,1,record,1);
+        fixture_commit(&f,NULL);
+        ASSERT_EQ(NMO_OK,nmo_engine_start(f.engine,NMO_ENGINE_START_ALL));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0)); ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0));
+        int32_t left = nmo_engine_message_type(f.engine,"Joy_Left");
+        ASSERT_EQ(NMO_OK,nmo_engine_send_message(f.engine,left,actor,0));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0)); ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,100));
+        float matrix[16]; ASSERT_TRUE(nmo_engine_entity_world_matrix(f.engine,actor,matrix));
+        ASSERT_FLOAT_EQ(turn ? cosf(.18f) : 1,matrix[0],1e-6f);
+        ASSERT_FLOAT_EQ(turn ? sinf(.18f) : 0,matrix[2],1e-6f);
+        ASSERT_EQ(4u,runs(&f,block));
+        fixture_end(&f);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_character, clocks_restore_saved_cursors_and_separate_cursor_updates_from_pose);
 REGISTER_TEST(engine_character, linked_unlinked_paused_and_reverse_clocks_follow_native_frame_rules);
@@ -1322,4 +1446,8 @@ REGISTER_TEST(engine_character, automatic_processing_can_resume_and_register_a_l
 REGISTER_TEST(engine_character, unlimited_primary_uses_message_order_fallback_and_runtime_playback_settings);
 REGISTER_TEST(engine_character, unlimited_animation_cache_follows_reordering_and_deletion);
 REGISTER_TEST(engine_character, unlimited_off_stops_automatic_processing_and_invalid_counts_fail_before_activation);
+REGISTER_TEST(engine_character, unlimited_secondary_messages_process_every_matching_record_and_warp_stops);
+REGISTER_TEST(engine_character, unlimited_dynamic_inputs_override_current_records_and_old_versions_ignore_them);
+REGISTER_TEST(engine_character, unlimited_primary_warp_modes_reach_the_transition_builder);
+REGISTER_TEST(engine_character, unlimited_turning_uses_active_animation_permissions_and_linked_rate);
 TEST_MAIN_END()
