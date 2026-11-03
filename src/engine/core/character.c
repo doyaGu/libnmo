@@ -43,6 +43,12 @@ bool eng_character_automatic(nmo_engine_t *engine, nmo_object_id_t character)
     return runtime != NULL && runtime->automatic;
 }
 
+void eng_character_stop_automatic(nmo_engine_t *engine, nmo_object_id_t character)
+{
+    eng_character_t *runtime = character_runtime(engine,character);
+    if (runtime != NULL) runtime->automatic = false;
+}
+
 nmo_object_id_t eng_character_floor_reference(nmo_engine_t *engine, nmo_object_id_t character)
 {
     eng_character_t *runtime = character_runtime(engine,character);

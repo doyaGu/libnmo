@@ -920,6 +920,55 @@ TEST(engine_character, forced_bodypart_frames_keep_secondary_exclusivity_and_zer
     fixture_end(&f);
 }
 
+TEST(engine_character, global_playback_takes_over_automatic_characters_without_stopping_their_scripts)
+{
+    for (int own_script = 0; own_script < 2; own_script++) {
+        engine_fixture_t f;
+        fixture_begin_document(&f);
+        nmo_object_id_t body, actor = character(&f,&body);
+        nmo_object_id_t primary = clip(&f,"Primary",actor,body,10,0,10);
+        nmo_object_id_t manual = clip(&f,"Manual",actor,body,10,100,110);
+        nmo_character_state_t *state = fixture_state(&f,actor);
+        state->base.entity_flags |= CK_3DENTITY_CHARACTERDOPROCESS;
+        state->active_animation = nmo_ref_from_id(primary);
+        if (own_script) f.owner_id = actor;
+        character_script(&f);
+        nmo_object_id_t play = fixture_block(&f,NMO_GUID(0x1c9236e1,0x42f40996),"Global");
+        fixture_input_int(&f,BLOCK_PIN(&f,play,0),(int32_t)manual);
+        const float duration = 10;
+        fixture_input_value(&f,BLOCK_PIN(&f,play,1),&duration,sizeof(duration));
+        fixture_input_int(&f,BLOCK_PIN(&f,play,3),0);
+        fixture_link(&f,f.script_in,BLOCK_IN(&f,play,0),0);
+        nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL;
+        fixture_commit(&f,&options);
+        ASSERT_EQ(NMO_OK,nmo_engine_start(f.engine,NMO_ENGINE_START_NONE));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,2));
+        ASSERT_FLOAT_EQ(2,frame(f.engine,primary),0); ASSERT_FLOAT_EQ(2,x(f.engine,actor),0);
+        ASSERT_EQ(NMO_OK,nmo_engine_activate_script(f.engine,f.script_id,true,true));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0));
+        ASSERT_FALSE(eng_character_automatic(f.engine,actor));
+        ASSERT_TRUE(nmo_engine_object_is_active(f.engine,actor));
+        ASSERT_EQ(primary,eng_character_active_animation(f.engine,actor));
+        ASSERT_FLOAT_EQ(0,x(f.engine,actor),0); ASSERT_FLOAT_EQ(100,x(f.engine,body),0);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,2));
+        ASSERT_EQ(2u,runs(&f,play));
+        ASSERT_FLOAT_EQ(2,frame(f.engine,primary),0);
+        ASSERT_FLOAT_EQ(102,x(f.engine,body),1e-5f); ASSERT_FLOAT_EQ(0,x(f.engine,actor),0);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,9));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,1));
+        ASSERT_EQ(3u,runs(&f,play));
+        ASSERT_FLOAT_EQ(110,x(f.engine,body),0); ASSERT_FLOAT_EQ(2,frame(f.engine,primary),0);
+        ASSERT_TRUE((state->base.entity_flags & CK_3DENTITY_CHARACTERDOPROCESS) != 0);
+        nmo_object_id_t originals[] = {actor,body,primary}, copies[COUNT(originals)] = {0};
+        ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(f.engine,originals,COUNT(originals),true,copies));
+        ASSERT_FALSE(eng_character_automatic(f.engine,copies[0]));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,1));
+        ASSERT_FLOAT_EQ(2,frame(f.engine,copies[2]),0);
+        ASSERT_FLOAT_EQ(0,x(f.engine,copies[0]),0);
+        fixture_end(&f);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_character, clocks_restore_saved_cursors_and_separate_cursor_updates_from_pose);
 REGISTER_TEST(engine_character, linked_unlinked_paused_and_reverse_clocks_follow_native_frame_rules);
@@ -946,4 +995,5 @@ REGISTER_TEST(engine_character, pose_blocks_allow_plain_animation_cursors_and_mi
 REGISTER_TEST(engine_character, pose_blocks_report_native_owner_and_parameter_errors_in_strict_mode);
 REGISTER_TEST(engine_character, bodypart_frame_bypasses_exclusion_uses_child_duration_and_preserves_the_keyed_cursor);
 REGISTER_TEST(engine_character, forced_bodypart_frames_keep_secondary_exclusivity_and_zero_length_channels_unchanged);
+REGISTER_TEST(engine_character, global_playback_takes_over_automatic_characters_without_stopping_their_scripts);
 TEST_MAIN_END()

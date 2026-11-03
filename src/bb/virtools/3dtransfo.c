@@ -95,7 +95,7 @@ static nmo_object_id_t referenced(const nmo_engine_t *engine, nmo_object_id_t ow
 /*
  * What Play Global Animation's On does to a keyed animation's characters:
  * the character of each body part it animates (each once in a row) stops
- * its automatic processing (which the engine does not do) and goes back to
+ * its automatic processing and goes back to
  * the identity world matrix, its children with it.
  */
 static void reset_animated_characters(nmo_engine_t *engine, nmo_object_id_t animation)
@@ -130,6 +130,7 @@ static void reset_animated_characters(nmo_engine_t *engine, nmo_object_id_t anim
             continue;
         }
         last = character;
+        eng_character_stop_automatic(engine,character);
         eng_matrix_t identity;
         eng_matrix_identity(&identity);
         eng_entity_set_world_matrix(engine, index, &identity, false);
