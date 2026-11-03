@@ -331,22 +331,26 @@ static nmo_status_t edit_plan_add_behavior_link_core(
 static nmo_status_t edit_plan_add_connect_parameter_core(
     nmo_edit_plan_t *plan,
     nmo_object_id_t source_parameter_id,
+    edit_plan_handle_ref_t source_ref,
     nmo_object_id_t target_parameter_id,
     edit_plan_handle_ref_t target_ref)
 {
     nmo_edit_op_t *op = NULL;
-    if (source_parameter_id == 0u ||
+    if ((source_parameter_id == 0u && !source_ref.has_ref) ||
         (target_parameter_id == 0u && !target_ref.has_ref)) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
     nmo_object_id_t primary_id =
         target_ref.has_ref ? source_parameter_id : target_parameter_id;
-    NMO_RETURN_IF_ERROR(edit_plan_append_blank(
-        plan, NMO_EDIT_OP_CONNECT_PARAMETER, primary_id, &op));
+    /* Both ends handles of earlier operations: no id is known yet */
+    NMO_RETURN_IF_ERROR(edit_plan_append_op(
+        plan, NMO_EDIT_OP_CONNECT_PARAMETER, primary_id,
+        target_ref.has_ref && source_ref.has_ref, &op));
     op->data.connect_parameter.source_parameter_id = source_parameter_id;
     op->data.connect_parameter.target_parameter_id = target_parameter_id;
     edit_plan_handle_ref_clone_slot_t refs[] = {
         {&op->data.connect_parameter.target_parameter_ref, &target_ref},
+        {&op->data.connect_parameter.source_parameter_ref, &source_ref},
     };
     nmo_status_t st = edit_op_clone_handle_ref_slots_or_dispose(
         op, refs, sizeof(refs) / sizeof(refs[0]));
@@ -668,12 +672,26 @@ nmo_status_t nmo_edit_plan_add_parameter(
     nmo_guid_t type_guid,
     const char *name)
 {
+    return nmo_edit_plan_add_parameter_ex(
+        plan, owner_behavior_id, NULL, kind, type_guid, name);
+}
+
+nmo_status_t nmo_edit_plan_add_parameter_ex(
+    nmo_edit_plan_t *plan,
+    nmo_object_id_t owner_behavior_id,
+    const nmo_edit_handle_ref_t *owner_ref,
+    nmo_script_edit_parameter_kind_t kind,
+    nmo_guid_t type_guid,
+    const char *name)
+{
     nmo_edit_op_t *op = NULL;
-    if (nmo_guid_is_null(type_guid) || name == NULL) {
+    edit_plan_handle_ref_t owner = edit_plan_ref_or_none(owner_ref);
+    if (nmo_guid_is_null(type_guid) || name == NULL ||
+        (owner_behavior_id == 0u && !owner.has_ref)) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    NMO_RETURN_IF_ERROR(edit_plan_append_blank(
-        plan, NMO_EDIT_OP_ADD_PARAMETER, owner_behavior_id, &op));
+    NMO_RETURN_IF_ERROR(edit_plan_append_op(
+        plan, NMO_EDIT_OP_ADD_PARAMETER, owner_behavior_id, owner.has_ref, &op));
     op->data.add_parameter.owner_behavior_id = owner_behavior_id;
     op->data.add_parameter.kind = kind;
     op->data.add_parameter.type_guid = type_guid;
@@ -682,6 +700,11 @@ nmo_status_t nmo_edit_plan_add_parameter(
         edit_op_dispose(op);
         return NMO_ERR_NOMEM;
     }
+    edit_plan_handle_ref_clone_slot_t refs[] = {
+        {&op->data.add_parameter.owner_ref, &owner},
+    };
+    NMO_RETURN_IF_ERROR(edit_op_clone_handle_ref_slots_or_dispose(
+        op, refs, sizeof(refs) / sizeof(refs[0])));
     plan->count++;
     return NMO_OK;
 }
@@ -695,6 +718,22 @@ nmo_status_t nmo_edit_plan_add_connect_parameter(
     return edit_plan_add_connect_parameter_core(
         plan,
         source_parameter_id,
+        edit_plan_ref_or_none(NULL),
+        target_parameter_id,
+        edit_plan_ref_or_none(target_parameter_ref));
+}
+
+nmo_status_t nmo_edit_plan_add_connect_parameter_ex(
+    nmo_edit_plan_t *plan,
+    nmo_object_id_t source_parameter_id,
+    const nmo_edit_handle_ref_t *source_parameter_ref,
+    nmo_object_id_t target_parameter_id,
+    const nmo_edit_handle_ref_t *target_parameter_ref)
+{
+    return edit_plan_add_connect_parameter_core(
+        plan,
+        source_parameter_id,
+        edit_plan_ref_or_none(source_parameter_ref),
         target_parameter_id,
         edit_plan_ref_or_none(target_parameter_ref));
 }

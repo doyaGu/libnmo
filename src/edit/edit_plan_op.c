@@ -275,9 +275,12 @@ void edit_op_dispose(nmo_edit_op_t *op)
         edit_plan_handle_ref_dispose(&op->data.add_link.to_io_ref);
     } else if (op->kind == NMO_EDIT_OP_ADD_PARAMETER) {
         free((void *)op->data.add_parameter.name);
+        edit_plan_handle_ref_dispose(&op->data.add_parameter.owner_ref);
     } else if (op->kind == NMO_EDIT_OP_CONNECT_PARAMETER) {
         edit_plan_handle_ref_dispose(
             &op->data.connect_parameter.target_parameter_ref);
+        edit_plan_handle_ref_dispose(
+            &op->data.connect_parameter.source_parameter_ref);
     } else if (op->kind == NMO_EDIT_OP_ADD_OPERATION) {
         edit_plan_handle_ref_dispose(
             &op->data.add_operation.in1_parameter_ref);
@@ -360,9 +363,11 @@ static void edit_op_clear_owned_pointers(nmo_edit_op_t *op)
         break;
     case NMO_EDIT_OP_ADD_PARAMETER:
         op->data.add_parameter.name = NULL;
+        op->data.add_parameter.owner_ref.handle_name = NULL;
         break;
     case NMO_EDIT_OP_CONNECT_PARAMETER:
         op->data.connect_parameter.target_parameter_ref.handle_name = NULL;
+        op->data.connect_parameter.source_parameter_ref.handle_name = NULL;
         break;
     case NMO_EDIT_OP_ADD_OPERATION:
         op->data.add_operation.in1_parameter_ref.handle_name = NULL;
@@ -511,6 +516,15 @@ nmo_status_t edit_op_copy(
         if (src->data.add_parameter.name && !dst->data.add_parameter.name) {
             return NMO_ERR_NOMEM;
         }
+        NMO_RETURN_IF_ERROR(edit_op_clone_handle_ref_slots_or_dispose(
+            dst,
+            (edit_plan_handle_ref_clone_slot_t[]){
+                {
+                    &dst->data.add_parameter.owner_ref,
+                    &src->data.add_parameter.owner_ref,
+                },
+            },
+            1u));
         break;
     case NMO_EDIT_OP_CONNECT_PARAMETER:
         NMO_RETURN_IF_ERROR(edit_op_clone_handle_ref_slots_or_dispose(
@@ -520,8 +534,12 @@ nmo_status_t edit_op_copy(
                     &dst->data.connect_parameter.target_parameter_ref,
                     &src->data.connect_parameter.target_parameter_ref,
                 },
+                {
+                    &dst->data.connect_parameter.source_parameter_ref,
+                    &src->data.connect_parameter.source_parameter_ref,
+                },
             },
-            1u));
+            2u));
         break;
     case NMO_EDIT_OP_ADD_OPERATION:
         NMO_RETURN_IF_ERROR(edit_op_clone_handle_ref_slots_or_dispose(

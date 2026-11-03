@@ -29,6 +29,7 @@
 #include "runtime/nmo_workspace.h"
 #include "session/nmo_session.h"
 #include "type/nmo_type_guids.h"
+#include "type/nmo_param_guids.h"
 #include "type/nmo_type_query.h"
 
 #include <math.h>
@@ -1966,6 +1967,90 @@ TEST(edit_plan, executor_connects_parameter_to_prior_node_handle) {
         }
     }
     ASSERT_TRUE(reported_source_endpoint);
+
+    nmo_edit_report_dispose(&report);
+    nmo_edit_plan_destroy(plan);
+    edit_plan_fixture_dispose(&fixture);
+}
+
+static nmo_object_id_t edit_plan_test_report_handle(
+    const nmo_edit_report_t *report,
+    size_t operation_index,
+    const char *name)
+{
+    const nmo_edit_operation_result_t *op = &report->operations[operation_index];
+    for (size_t i = 0; i < op->handle_count; ++i) {
+        if (strcmp(op->handles[i].name, name) == 0) {
+            return op->handles[i].id;
+        }
+    }
+    return 0u;
+}
+
+TEST(edit_plan, executor_wires_graph_through_handles_only) {
+    edit_plan_fixture_t fixture;
+    edit_plan_fixture_init(&fixture);
+
+    nmo_object_id_t owner_id = 0;
+    nmo_object_id_t root_id = 0;
+    create_object_or_fail(fixture.session, NMO_CID_3DENTITY, "Owner", &owner_id);
+    create_object_or_fail(fixture.session, NMO_CID_BEHAVIOR, "Root", &root_id);
+    nmo_beobject_state_t *owner_state = (nmo_beobject_state_t *)nmo_object_get_state(
+        nmo_object_repository_find_by_id(fixture.repo, owner_id));
+    nmo_behavior_state_t *root_state = (nmo_behavior_state_t *)nmo_object_get_state(
+        nmo_object_repository_find_by_id(fixture.repo, root_id));
+    ASSERT_NOT_NULL(owner_state);
+    ASSERT_NOT_NULL(root_state);
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(&owner_state->scripts, root_id));
+    root_state->flags |= 0x00000002u;
+    nmo_behavior_set_owner_id(root_state, owner_id);
+
+    nmo_edit_plan_t *plan = NULL;
+    nmo_edit_report_t report;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    /* 0: an Activate Script; 1: an output added to it, named by its handle */
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_node(
+        plan, root_id, nmo_guid_parse("4C7E7BC3-0B693155"), "Start"));
+    nmo_edit_handle_ref_t node_ref = edit_plan_test_handle_ref(0u, "node");
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_parameter_ex(
+        plan, 0u, &node_ref, NMO_SCRIPT_EDIT_PARAM_OUT, CKPGUID_STRING, "Added Out"));
+    /* 2, 3: a name and a Script local; 4: Get Object By Name on the name,
+     * giving a Script (the local picks the signature) */
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_parameter(
+        plan, root_id, NMO_SCRIPT_EDIT_PARAM_LOCAL, CKPGUID_STRING, "Name"));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_parameter(
+        plan, root_id, NMO_SCRIPT_EDIT_PARAM_LOCAL, CKPGUID_SCRIPT, "Result"));
+    nmo_edit_handle_ref_t name_ref = edit_plan_test_handle_ref(2u, "parameter");
+    nmo_edit_handle_ref_t result_ref = edit_plan_test_handle_ref(3u, "parameter");
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_operation(
+        plan, root_id, nmo_guid_parse("599203F6-23B06096"), 0u, &name_ref, 0u, NULL, 0u,
+        &result_ref));
+    /* 5: the Activate Script's Script reads the operation's output */
+    nmo_edit_handle_ref_t out_ref = edit_plan_test_handle_ref(4u, "out");
+    nmo_edit_handle_ref_t script_ref = edit_plan_test_handle_ref(0u, "input_param:Script");
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_connect_parameter_ex(
+        plan, 0u, &out_ref, 0u, &script_ref));
+
+    ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
+    ASSERT_TRUE(report.ok);
+    ASSERT_EQ(6u, report.operation_count);
+
+    nmo_object_id_t node_id = report.operations[0].result_id;
+    nmo_behavior_state_t *node_state = (nmo_behavior_state_t *)nmo_object_get_state(
+        nmo_object_repository_find_by_id(fixture.repo, node_id));
+    ASSERT_NOT_NULL(node_state);
+    ASSERT_TRUE(nmo_behavior_ref_array_find(
+        &node_state->out_parameters, report.operations[1].result_id, NULL));
+
+    nmo_object_id_t pout_id = edit_plan_test_report_handle(&report, 4u, "out");
+    nmo_object_id_t pin_id = edit_plan_test_report_handle(&report, 0u, "input_param:Script");
+    ASSERT_TRUE(pout_id != 0u);
+    ASSERT_TRUE(edit_plan_test_report_handle(&report, 4u, "in1") != 0u);
+    nmo_parameterin_state_t *pin_state = (nmo_parameterin_state_t *)nmo_object_get_state(
+        nmo_object_repository_find_by_id(fixture.repo, pin_id));
+    ASSERT_NOT_NULL(pin_state);
+    ASSERT_EQ(pout_id, nmo_parameterin_source_id(pin_state));
 
     nmo_edit_report_dispose(&report);
     nmo_edit_plan_destroy(plan);
@@ -4848,6 +4933,7 @@ REGISTER_TEST(edit_plan, executor_resolves_parameter_value_from_prior_handle);
 REGISTER_TEST(edit_plan, executor_materializes_input_source_for_handle_value);
 REGISTER_TEST(edit_plan, executor_materializes_input_source_for_handle_bytes);
 REGISTER_TEST(edit_plan, executor_connects_parameter_to_prior_node_handle);
+REGISTER_TEST(edit_plan, executor_wires_graph_through_handles_only);
 REGISTER_TEST(edit_plan, executor_resolves_behavior_link_io_handles);
 REGISTER_TEST(edit_plan, executor_reports_remove_node_detached_link_impact);
 REGISTER_TEST(edit_plan, executor_reports_remove_node_parameter_edge_impact);

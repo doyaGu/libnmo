@@ -134,11 +134,13 @@ typedef struct nmo_edit_op {
             nmo_script_edit_parameter_kind_t kind;
             nmo_guid_t type_guid;
             const char *name;
+            nmo_edit_handle_ref_t owner_ref;
         } add_parameter;
         struct {
             nmo_object_id_t source_parameter_id;
             nmo_object_id_t target_parameter_id;
             nmo_edit_handle_ref_t target_parameter_ref;
+            nmo_edit_handle_ref_t source_parameter_ref;
         } connect_parameter;
         struct {
             nmo_object_id_t target_parameter_id;
@@ -428,9 +430,28 @@ NMO_API nmo_status_t nmo_edit_plan_add_parameter(
     nmo_guid_t type_guid,
     const char *name);
 
+/* As nmo_edit_plan_add_parameter, the owner also given by a handle of an
+ * earlier operation (the node an add_node made, say). */
+NMO_API nmo_status_t nmo_edit_plan_add_parameter_ex(
+    nmo_edit_plan_t *plan,
+    nmo_object_id_t owner_behavior_id,
+    const nmo_edit_handle_ref_t *owner_ref,
+    nmo_script_edit_parameter_kind_t kind,
+    nmo_guid_t type_guid,
+    const char *name);
+
 NMO_API nmo_status_t nmo_edit_plan_add_connect_parameter(
     nmo_edit_plan_t *plan,
     nmo_object_id_t source_parameter_id,
+    nmo_object_id_t target_parameter_id,
+    const nmo_edit_handle_ref_t *target_parameter_ref);
+
+/* As nmo_edit_plan_add_connect_parameter, the source also given by a handle
+ * of an earlier operation (a node's output parameter, say). */
+NMO_API nmo_status_t nmo_edit_plan_add_connect_parameter_ex(
+    nmo_edit_plan_t *plan,
+    nmo_object_id_t source_parameter_id,
+    const nmo_edit_handle_ref_t *source_parameter_ref,
     nmo_object_id_t target_parameter_id,
     const nmo_edit_handle_ref_t *target_parameter_ref);
 

@@ -382,6 +382,13 @@ nmo_status_t edit_report_add_node_child_handles(
     size_t operation_index,
     nmo_object_id_t node_id);
 
+/* Handles "in1", "in2" and "out" for an added operation's own parameters. */
+nmo_status_t edit_report_add_operation_slot_handles(
+    nmo_script_edit_tx_t *tx,
+    nmo_edit_report_t *report,
+    size_t operation_index,
+    nmo_object_id_t parameter_operation_id);
+
 nmo_status_t edit_report_resolve_operation_handle(
     const nmo_edit_report_t *report,
     size_t operation_index,

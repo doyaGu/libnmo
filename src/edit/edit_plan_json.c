@@ -823,7 +823,8 @@ static nmo_status_t build_remove_link(nmo_edit_plan_t *plan,
 }
 
 static const edit_op_json_field_t ADD_PARAMETER_FIELDS[] = {
-    OP_FIELD("owner_id", ID, add_parameter.owner_behavior_id),
+    OP_REF(REF, "owner", "owner_id", OP_DATA(add_parameter.owner_behavior_id),
+           add_parameter.owner_ref),
     OP_ENUM("kind", ENUM, add_parameter.kind, PARAMETER_KIND_NAMES),
     OP_FIELD("type_guid", GUID, add_parameter.type_guid),
     OP_FIELD("name", STRING, add_parameter.name),
@@ -832,14 +833,17 @@ static const edit_op_json_field_t ADD_PARAMETER_FIELDS[] = {
 static nmo_status_t build_add_parameter(nmo_edit_plan_t *plan,
                                         const nmo_edit_op_t *op)
 {
-    return nmo_edit_plan_add_parameter(
+    return nmo_edit_plan_add_parameter_ex(
         plan, op->data.add_parameter.owner_behavior_id,
+        edit_op_ref_or_null(&op->data.add_parameter.owner_ref),
         op->data.add_parameter.kind, op->data.add_parameter.type_guid,
         op->data.add_parameter.name);
 }
 
 static const edit_op_json_field_t CONNECT_PARAMETER_FIELDS[] = {
-    OP_FIELD("source_id", ID, connect_parameter.source_parameter_id),
+    OP_REF(REF, "source", "source_id",
+           OP_DATA(connect_parameter.source_parameter_id),
+           connect_parameter.source_parameter_ref),
     OP_REF(REF, "target", "target_id",
            OP_DATA(connect_parameter.target_parameter_id),
            connect_parameter.target_parameter_ref),
@@ -848,8 +852,9 @@ static const edit_op_json_field_t CONNECT_PARAMETER_FIELDS[] = {
 static nmo_status_t build_connect_parameter(nmo_edit_plan_t *plan,
                                             const nmo_edit_op_t *op)
 {
-    return nmo_edit_plan_add_connect_parameter(
+    return nmo_edit_plan_add_connect_parameter_ex(
         plan, op->data.connect_parameter.source_parameter_id,
+        edit_op_ref_or_null(&op->data.connect_parameter.source_parameter_ref),
         op->data.connect_parameter.target_parameter_id,
         edit_op_ref_or_null(&op->data.connect_parameter.target_parameter_ref));
 }

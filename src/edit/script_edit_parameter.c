@@ -493,7 +493,8 @@ static bool script_edit_is_parameter_owner_kind(nmo_port_kind_t kind)
 {
     return kind == NMO_PORT_PARAM_IN ||
            kind == NMO_PORT_PARAM_OUT ||
-           kind == NMO_PORT_PARAM_LOCAL;
+           kind == NMO_PORT_PARAM_LOCAL ||
+           kind == NMO_PORT_PARAM_TARGET;
 }
 
 bool script_edit_find_parameter_owner(

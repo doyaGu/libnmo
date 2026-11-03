@@ -272,12 +272,13 @@ static bool script_edit_type_matches_operation_guid(
                                          actual_id, expected_id) >= 0;
 }
 
-static const nmo_operation_tree_cell_t *script_edit_find_operation_match(
+static const nmo_operation_tree_cell_t *script_edit_find_operation_match_in(
     const nmo_operation_family_t *family,
     const nmo_type_registry_t *type_registry,
     const nmo_type_descriptor_t *in1_type,
     const nmo_type_descriptor_t *in2_type,
-    const nmo_type_descriptor_t *out_type)
+    const nmo_type_descriptor_t *out_type,
+    bool exact_result)
 {
     if (!family) {
         return NULL;
@@ -317,8 +318,10 @@ static const nmo_operation_tree_cell_t *script_edit_find_operation_match(
                     continue;
                 }
                 if (out_type &&
-                    !script_edit_type_matches_operation_guid(type_registry, out_type,
-                                                             cell->desc.result_type_guid)) {
+                    (exact_result
+                         ? !nmo_guid_equals(out_type->guid, cell->desc.result_type_guid)
+                         : !script_edit_type_matches_operation_guid(
+                               type_registry, out_type, cell->desc.result_type_guid))) {
                     continue;
                 }
                 return cell;
@@ -327,6 +330,25 @@ static const nmo_operation_tree_cell_t *script_edit_find_operation_match(
     }
 
     return NULL;
+}
+
+/* The signature for these types: one giving out_type itself if there is
+ * one (Get Object By Name gives a Script as well as any object), else one
+ * giving a type out_type derives from. */
+static const nmo_operation_tree_cell_t *script_edit_find_operation_match(
+    const nmo_operation_family_t *family,
+    const nmo_type_registry_t *type_registry,
+    const nmo_type_descriptor_t *in1_type,
+    const nmo_type_descriptor_t *in2_type,
+    const nmo_type_descriptor_t *out_type)
+{
+    const nmo_operation_tree_cell_t *cell = out_type
+        ? script_edit_find_operation_match_in(
+              family, type_registry, in1_type, in2_type, out_type, true)
+        : NULL;
+    return cell ? cell
+                : script_edit_find_operation_match_in(
+                      family, type_registry, in1_type, in2_type, out_type, false);
 }
 
 static nmo_status_t script_edit_validate_operation_signature(

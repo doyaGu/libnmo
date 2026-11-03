@@ -1331,6 +1331,44 @@ nmo_status_t edit_report_add_node_child_handles(
     return NMO_OK;
 }
 
+nmo_status_t edit_report_add_operation_slot_handles(
+    nmo_script_edit_tx_t *tx,
+    nmo_edit_report_t *report,
+    size_t operation_index,
+    nmo_object_id_t parameter_operation_id)
+{
+    if (tx == NULL || report == NULL || parameter_operation_id == 0u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_workspace_t *workspace = nmo_script_edit_workspace(tx);
+    nmo_object_repository_t *repo =
+        workspace != NULL ? nmo_workspace_internal_repository(workspace) : NULL;
+    nmo_object_t *object = repo != NULL
+        ? nmo_object_repository_find_by_id(repo, parameter_operation_id)
+        : NULL;
+    const nmo_parameteroperation_state_t *state = object != NULL
+        ? (const nmo_parameteroperation_state_t *)nmo_object_get_state(object)
+        : NULL;
+    if (state == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    const struct {
+        const char *name;
+        nmo_object_id_t id;
+    } slots[] = {
+        {"in1", nmo_parameteroperation_in1_id(state)},
+        {"in2", nmo_parameteroperation_in2_id(state)},
+        {"out", nmo_parameteroperation_out_id(state)},
+    };
+    for (size_t i = 0; i < sizeof(slots) / sizeof(slots[0]); ++i) {
+        if (slots[i].id != 0u) {
+            NMO_RETURN_IF_ERROR(nmo_edit_report_add_operation_handle(
+                report, operation_index, slots[i].name, slots[i].id));
+        }
+    }
+    return NMO_OK;
+}
+
 nmo_status_t edit_report_resolve_operation_handle(
     const nmo_edit_report_t *report,
     size_t operation_index,

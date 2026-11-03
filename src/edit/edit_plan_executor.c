@@ -532,10 +532,20 @@ static nmo_status_t edit_apply_add_parameter(const edit_apply_env_t *env)
     nmo_script_edit_tx_t *tx = env->tx;
     const nmo_edit_op_t *op = env->op;
     nmo_object_id_t *out_result_id = env->out_result_id;
+    nmo_object_id_t owner_id = op->data.add_parameter.owner_behavior_id;
+    edit_executor_handle_slot_t owner_slot = {
+        .ref = &op->data.add_parameter.owner_ref,
+        .id = &owner_id,
+        .diagnostic_code = "handle_not_found",
+        .diagnostic_message = "Referenced edit operation owner handle was not found",
+    };
+    NMO_RETURN_IF_ERROR(edit_executor_resolve_handle_slots(
+        tx, env->report, &owner_slot, 1u, env->out_diagnostic_code,
+        env->out_diagnostic_message));
 
     return nmo_script_edit_add_parameter(
         tx,
-        op->data.add_parameter.owner_behavior_id,
+        owner_id,
         op->data.add_parameter.kind,
         op->data.add_parameter.type_guid,
         op->data.add_parameter.name,
@@ -553,25 +563,36 @@ static nmo_status_t edit_apply_connect_parameter(const edit_apply_env_t *env)
 
     nmo_object_id_t target_parameter_id =
         op->data.connect_parameter.target_parameter_id;
-    edit_executor_handle_slot_t target_slot = {
-        .ref = &op->data.connect_parameter.target_parameter_ref,
-        .id = &target_parameter_id,
-        .diagnostic_code = "handle_not_found",
-        .diagnostic_message =
-            "Referenced edit operation parameter handle was not found",
+    nmo_object_id_t source_parameter_id =
+        op->data.connect_parameter.source_parameter_id;
+    edit_executor_handle_slot_t slots[] = {
+        {
+            .ref = &op->data.connect_parameter.target_parameter_ref,
+            .id = &target_parameter_id,
+            .diagnostic_code = "handle_not_found",
+            .diagnostic_message =
+                "Referenced edit operation parameter handle was not found",
+        },
+        {
+            .ref = &op->data.connect_parameter.source_parameter_ref,
+            .id = &source_parameter_id,
+            .diagnostic_code = "handle_not_found",
+            .diagnostic_message =
+                "Referenced edit operation source parameter handle was not found",
+        },
     };
     NMO_RETURN_IF_ERROR(edit_executor_resolve_handle_slots(
         tx,
         report,
-        &target_slot,
-        1u,
+        slots,
+        sizeof(slots) / sizeof(slots[0]),
         out_diagnostic_code,
         out_diagnostic_message));
     nmo_object_id_t before_source_parameter_id =
         edit_plan_get_parameterin_source(tx, target_parameter_id);
     nmo_status_t rc = nmo_script_edit_connect_parameter(
         tx,
-        op->data.connect_parameter.source_parameter_id,
+        source_parameter_id,
         target_parameter_id);
     if (rc != NMO_OK) {
         return rc;
@@ -605,7 +626,7 @@ static nmo_status_t edit_apply_connect_parameter(const edit_apply_env_t *env)
     return edit_report_note_parameter_edge_source(
         report,
         NMO_EDIT_OP_CONNECT_PARAMETER,
-        op->data.connect_parameter.source_parameter_id);
+        source_parameter_id);
 }
 
 static nmo_status_t edit_apply_disconnect_parameter(const edit_apply_env_t *env)
@@ -1471,16 +1492,19 @@ nmo_status_t nmo_edit_executor_execute_transaction(
                 report->status = handle_rc;
                 return handle_rc;
             }
-            if (op->kind == NMO_EDIT_OP_ADD_NODE) {
+            if (op->kind == NMO_EDIT_OP_ADD_OPERATION) {
+                handle_rc = edit_report_add_operation_slot_handles(
+                    tx, report, i, result_id);
+            } else if (op->kind == NMO_EDIT_OP_ADD_NODE) {
                 handle_rc = edit_report_add_node_child_handles(
                     tx, report, i, result_id);
-                if (handle_rc != NMO_OK) {
-                    edit_plan_manager_snapshot_dispose(&manager_after);
-                    edit_plan_manager_snapshot_dispose(&manager_before);
-                    report->ok = false;
-                    report->status = handle_rc;
-                    return handle_rc;
-                }
+            }
+            if (handle_rc != NMO_OK) {
+                edit_plan_manager_snapshot_dispose(&manager_after);
+                edit_plan_manager_snapshot_dispose(&manager_before);
+                report->ok = false;
+                report->status = handle_rc;
+                return handle_rc;
             }
         }
         bool noted_created_objects = false;

@@ -2417,7 +2417,13 @@ static nmo_status_t semantic_validate_add_parameter(const semantic_op_env_t *env
     nmo_behavior_semantic_risk_t **risks = env->risks;
     size_t *risk_count = env->risk_count;
     const nmo_type_registry_t *registry = env->registry;
+    const nmo_edit_handle_ref_t *owner_ref = &op->data.add_parameter.owner_ref;
 
+    if (owner_ref->has_ref) {
+        return semantic_validate_handle_ref(
+            env->ctx, env->plan, env->op_index, owner_ref->operation_index,
+            owner_ref->handle_name, op->primary_id, risks, risk_count);
+    }
     NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
         repo, risks, risk_count,
         op->data.add_parameter.owner_behavior_id));
@@ -2436,7 +2442,32 @@ static nmo_status_t semantic_validate_connect_parameter(const semantic_op_env_t 
     nmo_behavior_semantic_risk_t **risks = env->risks;
     size_t *risk_count = env->risk_count;
     const nmo_type_registry_t *registry = env->registry;
+    const nmo_edit_handle_ref_t *source_ref =
+        &op->data.connect_parameter.source_parameter_ref;
 
+    if (source_ref->has_ref) {
+        /* The source is an earlier operation's parameter: check that handle,
+         * and the target as an id or a handle */
+        NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
+            ctx, plan, op_index, source_ref->operation_index, source_ref->handle_name,
+            op->primary_id, risks, risk_count));
+        NMO_RETURN_IF_ERROR(semantic_add_parameter_handle_ref_risk(
+            plan, source_ref->operation_index, source_ref->handle_name,
+            op->primary_id, risks, risk_count));
+        const nmo_edit_handle_ref_t *target_ref =
+            &op->data.connect_parameter.target_parameter_ref;
+        if (target_ref->has_ref) {
+            return semantic_validate_handle_ref(
+                ctx, plan, op_index, target_ref->operation_index, target_ref->handle_name,
+                op->primary_id, risks, risk_count);
+        }
+        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+            repo, risks, risk_count,
+            op->data.connect_parameter.target_parameter_id));
+        return semantic_add_parameterin_ref_risk(
+            registry, repo, risks, risk_count,
+            op->data.connect_parameter.target_parameter_id);
+    }
     NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
         repo, risks, risk_count,
         op->data.connect_parameter.source_parameter_id));
