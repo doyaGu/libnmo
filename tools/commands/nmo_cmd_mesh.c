@@ -26,6 +26,7 @@
 #include "object/nmo_object_struct_defs.h"
 #include "format/nmo_obj_parser.h"
 #include "core/nmo_arena.h"
+#include "../../src/export/export_json_util_internal.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -113,7 +114,7 @@ static char *mesh_export_basename_dup(const char *name, uint32_t id) {
     if (!name || !name[0]) {
         return nmo_tool_strdup_fmt("unnamed_%u", (unsigned)id);
     }
-    char *safe = nmo_tool_strdup(name);
+    char *safe = nmo_text_utf8_dup(name);
     if (!safe) {
         return NULL;
     }
@@ -407,7 +408,13 @@ static int write_mtl_file(const nmo_cmd_ctx_t *c,
         if (!mat_name || !mat_name[0]) {
             fprintf(f, "newmtl material_%u\n", gi);
         } else {
-            fprintf(f, "newmtl %s\n", mat_name);
+            char *utf8_name = nmo_text_utf8_dup(mat_name);
+            if (!utf8_name) {
+                fclose(f);
+                return -1;
+            }
+            fprintf(f, "newmtl %s\n", utf8_name);
+            free(utf8_name);
         }
 
         if (mat) {
@@ -428,8 +435,11 @@ static int write_mtl_file(const nmo_cmd_ctx_t *c,
         fprintf(f, "\n");
     }
 
-    fclose(f);
-    return 0;
+    int failed = ferror(f);
+    if (fclose(f) != 0) {
+        failed = 1;
+    }
+    return failed ? -1 : 0;
 }
 
 static int write_obj_file(const nmo_cmd_ctx_t *c,
@@ -503,7 +513,13 @@ static int write_obj_file(const nmo_cmd_ctx_t *c,
                     nmo_ref_runtime_id(&ms->material_groups[gi].material);
                 const char *mname = resolve_name(c, mid);
                 if (mname && mname[0]) {
-                    fprintf(f, "usemtl %s\n", mname);
+                    char *utf8_name = nmo_text_utf8_dup(mname);
+                    if (!utf8_name) {
+                        fclose(f);
+                        return -1;
+                    }
+                    fprintf(f, "usemtl %s\n", utf8_name);
+                    free(utf8_name);
                 } else {
                     fprintf(f, "usemtl material_%u\n", gi);
                 }
@@ -529,8 +545,11 @@ static int write_obj_file(const nmo_cmd_ctx_t *c,
         }
     }
 
-    fclose(f);
-    return 0;
+    int failed = ferror(f);
+    if (fclose(f) != 0) {
+        failed = 1;
+    }
+    return failed ? -1 : 0;
 }
 
 /* Returns 0 on success, -1 on an export error, -2 when out of memory. */
@@ -540,6 +559,10 @@ static int export_single_mesh(const nmo_cmd_ctx_t *c,
                               nmo_cli_record_array_t *entries) {
     nmo_object_id_t id = nmo_object_get_id(obj);
     const char *name = nmo_object_get_name(obj);
+    char *display_name = name && name[0] ? nmo_text_utf8_dup(name) : NULL;
+    if (name && name[0] && !display_name) {
+        return -2;
+    }
     const nmo_mesh_state_t *ms =
         (const nmo_mesh_state_t *)nmo_object_get_state(obj);
 
@@ -550,7 +573,8 @@ static int export_single_mesh(const nmo_cmd_ctx_t *c,
                   nmo_cli_record_str(e, "status", NULL, "skip") &&
                   nmo_cli_record_str(e, "reason", NULL, "no_geometry") &&
                   nmo_cli_record_raw_fmt(e, "  [SKIP] %u %s -> no geometry\n",
-                                         id, (name && name[0]) ? name : "(unnamed)");
+                                         id, display_name ? display_name : "(unnamed)");
+        free(display_name);
         if (!ok) {
             nmo_cli_record_free(e);
             return -2;
@@ -566,6 +590,7 @@ static int export_single_mesh(const nmo_cmd_ctx_t *c,
     char *obj_path = obj_fname ? mesh_join_path(out_dir, obj_fname) : NULL;
     char *mtl_path = mtl_fname ? mesh_join_path(out_dir, mtl_fname) : NULL;
     if (!obj_path || !mtl_path) {
+        free(display_name);
         free(obj_fname);
         free(mtl_fname);
         free(obj_path);
@@ -576,6 +601,7 @@ static int export_single_mesh(const nmo_cmd_ctx_t *c,
     /* Write MTL if material groups exist */
     if (ms->material_group_count > 0) {
         if (write_mtl_file(c, ms, mtl_path) < 0) {
+            free(display_name);
             free(obj_fname);
             free(mtl_fname);
             free(obj_path);
@@ -587,6 +613,7 @@ static int export_single_mesh(const nmo_cmd_ctx_t *c,
     /* Write OBJ */
     const char *mtl_ref = ms->material_group_count > 0 ? mtl_fname : NULL;
     if (write_obj_file(c, ms, obj_path, mtl_ref) < 0) {
+        free(display_name);
         free(obj_fname);
         free(mtl_fname);
         free(obj_path);
@@ -604,12 +631,13 @@ static int export_single_mesh(const nmo_cmd_ctx_t *c,
               nmo_cli_record_uint(e, "faces", NULL, ms->face_count) &&
               nmo_cli_record_str(e, "status", NULL, "ok") &&
               nmo_cli_record_raw_fmt(e, "  [OK]   %u %s -> %s (%u verts, %u faces)\n",
-                                     id, (name && name[0]) ? name : "(unnamed)",
+                                     id, display_name ? display_name : "(unnamed)",
                                      obj_fname, ms->vertex_count, ms->face_count);
     if (!ok) {
         nmo_cli_record_free(e);
     }
 
+    free(display_name);
     free(obj_fname);
     free(mtl_fname);
     free(obj_path);
@@ -786,7 +814,7 @@ static int mesh_export_run(nmo_cmd_ctx_t *ctx, const mesh_export_args_t *args,
     uint32_t exported = export_data.exported;
     uint32_t errors = export_data.errors;
 
-    int exit_code = (errors > 0 && exported == 0)
+    int exit_code = (errors > 0)
                   ? NMO_CLI_EXIT_IO_ERROR : NMO_CLI_EXIT_SUCCESS;
 
     if (!nmo_cli_record_raw_fmt(rec, "\nExported: %u, Errors: %u\n",

@@ -99,6 +99,26 @@ static char *bytes_to_utf8_latin1(const unsigned char *bytes, size_t len) {
     return out;
 }
 
+char *nmo_text_utf8_dup(const char *str) {
+    if (!str) {
+        return NULL;
+    }
+    const unsigned char *bytes = (const unsigned char *)str;
+    size_t len = strlen(str);
+    for (size_t i = 0; i < len;) {
+        size_t n = utf8_char_len(bytes + i, len - i);
+        if (!n) {
+            return bytes_to_utf8_latin1(bytes, len);
+        }
+        i += n;
+    }
+    char *copy = (char *)malloc(len + 1);
+    if (copy) {
+        memcpy(copy, str, len + 1);
+    }
+    return copy;
+}
+
 yyjson_mut_val *nmo_json_make_str_safe(yyjson_mut_doc *doc, const char *str) {
     if (!doc) {
         return NULL;

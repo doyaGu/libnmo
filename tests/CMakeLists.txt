@@ -28,6 +28,16 @@ add_test(
 
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND)
+    if(TARGET nmo_cli)
+        add_test(
+            NAME test_ballance_tools
+            COMMAND ${CMAKE_COMMAND} -E env
+                    "NMO_TEST_CLI=$<TARGET_FILE:nmo_cli>"
+                    "PYTHONDONTWRITEBYTECODE=1"
+                    ${Python3_EXECUTABLE} -m unittest discover
+                    -s "${PROJECT_SOURCE_DIR}/apps/ballance/tests" -v
+        )
+    endif()
     add_test(
         NAME test_layering_calls_audit
         COMMAND ${Python3_EXECUTABLE}

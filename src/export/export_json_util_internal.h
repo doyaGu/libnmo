@@ -19,6 +19,9 @@ extern "C" {
 typedef struct yyjson_mut_doc yyjson_mut_doc;
 typedef struct yyjson_mut_val yyjson_mut_val;
 
+/* Preserve valid UTF-8; otherwise map legacy single-byte text as Latin-1.
+ * The caller owns the returned string. */
+NMO_API char *nmo_text_utf8_dup(const char *str);
 NMO_API yyjson_mut_val *nmo_json_make_str_safe(yyjson_mut_doc *doc, const char *str);
 NMO_API bool nmo_json_add_str_safe(yyjson_mut_doc *doc, yyjson_mut_val *obj,
                                    const char *key, const char *str);
