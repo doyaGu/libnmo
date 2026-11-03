@@ -631,6 +631,116 @@ TEST(engine_character, automatic_processing_advances_primary_then_secondary_and_
     fixture_end(&f);
 }
 
+static const char *resolve_file(void *data, const char *name)
+{
+    (void)name;
+    return data;
+}
+
+TEST(engine_character, loaded_scriptless_characters_restore_primary_queues_and_keep_file_state_immutable)
+{
+    const nmo_objectanimation_format_t formats[] = {CKOBJANIM_FORMAT_CONTROLLERS,
+        CKOBJANIM_FORMAT_NEWDATA,CKOBJANIM_FORMAT_LEGACY,CKOBJANIM_FORMAT_SHARED};
+    for (size_t c = 0; c < COUNT(formats); c++) {
+        engine_fixture_t f;
+        fixture_begin_document(&f);
+        nmo_object_id_t root, actor = character(&f,&root);
+        nmo_object_id_t a = clip(&f,"Saved Primary",actor,root,10,0,10);
+        nmo_object_id_t b = clip(&f,"Saved Next",actor,root,20,100,140);
+        nmo_character_state_t *character_state = fixture_state(&f,actor);
+        character_state->base.entity_flags |= CK_3DENTITY_CHARACTERDOPROCESS;
+        character_state->active_animation = nmo_ref_from_id(a);
+        character_state->anim_dest = nmo_ref_from_id(b);
+        character_state->base.has_entityndata_chunk = 1;
+        character_state->base.world_matrix[12] = 2;
+        nmo_3dentity_state_t *body = fixture_state(&f,root);
+        body->has_entityndata_chunk = 1;
+        body->world_matrix[12] = 2;
+        nmo_beobject_state_t *activity = (nmo_beobject_state_t *)character_state;
+        activity->has_single_activity = 1;
+        activity->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE;
+        nmo_keyedanimation_state_t *primary = fixture_state(&f,a);
+        primary->base.has_current_step = 1;
+        primary->base.current_step = 0.2f;
+        ((nmo_keyedanimation_state_t *)fixture_state(&f,b))->base.frame_rate = 2000;
+        nmo_object_id_t channel = nmo_ref_runtime_id(&primary->animation_ids[0]);
+        nmo_objectanimation_state_t *part = fixture_state(&f,channel);
+        part->has_root_pos = 1;
+        part->root_pos.x = -2;
+        part->format = formats[c];
+        if (formats[c] == CKOBJANIM_FORMAT_SHARED) {
+            nmo_object_id_t shared_group = clip(&f,"Shared",0,0,10,0,10);
+            const nmo_keyedanimation_state_t *shared = fixture_state(&f,shared_group);
+            part->has_shared_anim = 1;
+            part->shared_anim = shared->animation_ids[0];
+            part->controller_count = 0;
+            part->controllers = NULL;
+        } else if (formats[c] == CKOBJANIM_FORMAT_LEGACY) {
+            nmo_object_t *object = nmo_object_repository_find_by_id(f.repo,channel);
+            object->chunk = nmo_chunk_create(nmo_session_get_arena(f.session));
+            ASSERT_NOT_NULL(object->chunk);
+            object->chunk->class_id = NMO_CID_OBJECTANIMATION;
+            object->chunk->data_version = 0;
+        }
+        fixture_begin_edit(&f);
+        fixture_commit_bare(&f,NULL);
+        const char *path = NMO_TEST_SCRATCH_FILE("engine_character.cmo");
+        ASSERT_EQ(NMO_OK,nmo_session_save_file(f.session,path,NULL,NULL));
+        for (size_t started = 0; started < 2; started++) {
+            engine_fixture_t host;
+            fixture_begin_document(&host);
+            fixture_begin_edit(&host);
+            fixture_commit_bare(&host,NULL);
+            if (started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_ALL));
+            nmo_engine_set_file_resolver(host.engine,resolve_file,(void *)path);
+            int32_t file = -1;
+            ASSERT_EQ(NMO_OK,nmo_engine_load(host.engine,"character.cmo",true,&file));
+            ASSERT_TRUE(file > 0);
+            if (!started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_SCENE_DEFAULT));
+            nmo_object_id_t loaded_actor = nmo_engine_object_named(host.engine,"Character",NMO_CID_CHARACTER);
+            nmo_object_id_t loaded_body = nmo_engine_object_named(host.engine,"Body",NMO_CID_BODYPART);
+            nmo_object_id_t loaded_a = nmo_engine_object_named(host.engine,"Saved Primary",NMO_CID_KEYEDANIMATION);
+            nmo_object_id_t loaded_b = nmo_engine_object_named(host.engine,"Saved Next",NMO_CID_KEYEDANIMATION);
+            ASSERT_TRUE(loaded_actor != 0 && loaded_actor != actor && loaded_body != 0 && loaded_a != 0 && loaded_b != 0);
+            ASSERT_EQ(loaded_a,eng_character_active_animation(host.engine,loaded_actor));
+            ASSERT_EQ(loaded_b,eng_character_next_animation(host.engine,loaded_actor));
+            ASSERT_TRUE(eng_character_automatic(host.engine,loaded_actor));
+            ASSERT_TRUE(nmo_engine_object_is_active(host.engine,loaded_actor));
+            ASSERT_FLOAT_EQ(2,frame(host.engine,loaded_a),0);
+            ASSERT_FLOAT_EQ(2,x(host.engine,loaded_actor),0);
+            ASSERT_FLOAT_EQ(2,x(host.engine,loaded_body),0);
+            ASSERT_EQ(loaded_actor,nmo_engine_entity_parent(host.engine,loaded_body));
+            ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,3));
+            ASSERT_FLOAT_EQ(5,x(host.engine,loaded_actor),1e-6f);
+            ASSERT_FLOAT_EQ(5,x(host.engine,loaded_body),1e-6f);
+            ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,6));
+            ASSERT_EQ(loaded_b,eng_character_active_animation(host.engine,loaded_actor));
+            ASSERT_EQ(0,eng_character_next_animation(host.engine,loaded_actor));
+            ASSERT_FLOAT_EQ(2,frame(host.engine,loaded_b),1e-6f);
+            ASSERT_FLOAT_EQ(14,x(host.engine,loaded_actor),1e-6f);
+            ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,2));
+            ASSERT_FLOAT_EQ(22,x(host.engine,loaded_actor),1e-6f);
+            ASSERT_FLOAT_EQ(22,x(host.engine,loaded_body),1e-6f);
+            ASSERT_FLOAT_EQ(0,x(host.engine,host.owner_id),0);
+            const nmo_animation_state_t *saved = eng_animation_state(host.engine,loaded_a);
+            ASSERT_FLOAT_EQ(0.2f,saved->current_step,0);
+            nmo_object_id_t loaded_channel = eng_keyed_animation_root(host.engine,loaded_a);
+            eng_animation_source_t loaded;
+            ASSERT_TRUE(eng_animation_source(host.engine,loaded_channel,&loaded));
+            ASSERT_EQ(formats[c],loaded.state->format);
+            ASSERT_FLOAT_EQ(-2,loaded.state->root_pos.x,0);
+            fixture_end(&host);
+        }
+        ASSERT_FLOAT_EQ(0.2f,primary->base.current_step,0);
+        ASSERT_FLOAT_EQ(-2,part->root_pos.x,0);
+        ASSERT_FLOAT_EQ(2,character_state->base.world_matrix[12],0);
+        ASSERT_EQ(a,nmo_ref_runtime_id(&character_state->active_animation));
+        ASSERT_EQ(b,nmo_ref_runtime_id(&character_state->anim_dest));
+        fixture_end(&f);
+        remove(path);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_character, clocks_restore_saved_cursors_and_separate_cursor_updates_from_pose);
 REGISTER_TEST(engine_character, linked_unlinked_paused_and_reverse_clocks_follow_native_frame_rules);
@@ -651,4 +761,5 @@ REGISTER_TEST(engine_character, secondary_removal_processes_shifted_entries_and_
 REGISTER_TEST(engine_character, secondary_presets_and_invalid_requests_preserve_existing_playback);
 REGISTER_TEST(engine_character, secondary_gates_are_copied_and_remapped_without_copying_playback_slots);
 REGISTER_TEST(engine_character, automatic_processing_advances_primary_then_secondary_and_plain_entities_have_no_gate);
+REGISTER_TEST(engine_character, loaded_scriptless_characters_restore_primary_queues_and_keep_file_state_immutable);
 TEST_MAIN_END()
