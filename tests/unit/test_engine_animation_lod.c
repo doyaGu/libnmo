@@ -6,6 +6,7 @@
 
 #include <float.h>
 #include <math.h>
+#include <stdio.h>
 
 #define COUNT(a) (sizeof(a) / sizeof((a)[0]))
 #define POSITION 0x637c4301u
@@ -451,6 +452,133 @@ TEST(engine_animation_lod, deleted_channels_are_pruned_before_counting_the_lod_p
     fixture_end(&f);
 }
 
+static const char *resolve_file(void *data, const char *name)
+{
+    (void)name;
+    return data;
+}
+
+static void global_playback(engine_fixture_t *f, nmo_object_id_t keyed)
+{
+    f->script_id = fixture_add_script(f, "LOD Script", &f->script_in);
+    fixture_begin_edit(f);
+    nmo_object_id_t play = fixture_block(f, NMO_GUID(0x1c9236e1,0x42f40996), "Play");
+    ASSERT_TRUE(play != 0);
+    fixture_link(f, f->script_in, BLOCK_IN(f, play, 0), 0);
+    char id[32];
+    snprintf(id, sizeof(id), "%u", keyed);
+    const uint32_t pins[] = {0,1,3};
+    const char *values[] = {id,"8","FALSE"};
+    for (size_t i = 0; i < COUNT(pins); i++) {
+        nmo_object_id_t source = 0;
+        ASSERT_EQ(NMO_OK, nmo_script_edit_ensure_input_parameter_source(f->tx, BLOCK_PIN(f, play, pins[i]), &source));
+        ASSERT_EQ(NMO_OK, nmo_script_edit_set_parameter_value(f->tx, source, values[i]));
+    }
+    fixture_commit(f, NULL);
+    nmo_beobject_state_t *driver = fixture_state(f, f->owner_id);
+    driver->has_single_activity = 1;
+    driver->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE;
+    nmo_behavior_state_t *script = fixture_state(f, f->script_id);
+    script->has_single_activity = true;
+    script->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE | CK_SCENEOBJECT_START_RESET;
+}
+
+TEST(engine_animation_lod, loaded_global_playback_uses_character_lod_and_render_feedback_in_all_formats)
+{
+    const nmo_objectanimation_format_t formats[] = {CKOBJANIM_FORMAT_CONTROLLERS,
+        CKOBJANIM_FORMAT_NEWDATA,CKOBJANIM_FORMAT_LEGACY,CKOBJANIM_FORMAT_SHARED};
+    for (size_t c = 0; c < COUNT(formats); c++) {
+        engine_fixture_t f;
+        fixture_begin_document(&f);
+        nmo_object_id_t character = fixture_create(&f, NMO_CID_CHARACTER, "LOD Character");
+        nmo_character_state_t *actor = fixture_state(&f, character);
+        nmo_object_id_t root = entity(&f, "LOD Root", character), floor = entity(&f, "LOD Floor", character);
+        nmo_object_id_t low = entity(&f, "LOD Low", character), high = entity(&f, "LOD High", character);
+        actor->floor_ref = nmo_ref_from_id(floor);
+        nmo_object_id_t a = curve(&f, "Low Curve", low, 0,2), b = curve(&f, "High Curve", high, 0,20);
+        nmo_object_id_t r = curve(&f, "Root Curve", root, 0,1), floor_curve = curve(&f, "Floor Curve", floor, 0,2);
+        nmo_objectanimation_state_t *state = fixture_state(&f, b);
+        state->format = formats[c];
+        if (formats[c] == CKOBJANIM_FORMAT_SHARED) {
+            nmo_object_id_t owner = curve(&f, "Shared High Keys", 0, 0,20);
+            nmo_objectanimation_state_t *keys = fixture_state(&f, owner);
+            keys->flags = CK_OBJECTANIMATION_IGNOREPOS;
+            state->has_shared_anim = 1;
+            state->shared_anim = nmo_ref_from_id(owner);
+            state->controller_count = 0;
+            state->controllers = NULL;
+        }
+        if (formats[c] == CKOBJANIM_FORMAT_LEGACY) {
+            nmo_object_t *object = nmo_object_repository_find_by_id(f.repo, b);
+            object->chunk = nmo_chunk_create(nmo_session_get_arena(f.session));
+            ASSERT_NOT_NULL(object->chunk);
+            object->chunk->class_id = NMO_CID_OBJECTANIMATION;
+            object->chunk->data_version = 0;
+        }
+        nmo_ref_t members[] = {nmo_ref_from_id(a),nmo_ref_from_id(b),nmo_ref_from_id(floor_curve),nmo_ref_from_id(r)};
+        nmo_ref_t saved[COUNT(members)];
+        memcpy(saved, members, sizeof(saved));
+        nmo_object_id_t keyed = group(&f, character, root, members, COUNT(members));
+        nmo_keyedanimation_state_t *keyed_state = fixture_state(&f, keyed);
+        keyed_state->base.has_data = keyed_state->base.has_length = 1;
+        keyed_state->base.frame_rate = 30;
+        keyed_state->base.length = 8;
+        global_playback(&f, keyed);
+        const char *path = NMO_TEST_SCRATCH_FILE("engine_animation_lod.cmo");
+        ASSERT_EQ(NMO_OK, nmo_session_save_file(f.session, path, NULL, NULL));
+        engine_fixture_t host;
+        fixture_begin_document(&host);
+        fixture_begin_edit(&host);
+        fixture_commit(&host, NULL);
+        ASSERT_EQ(NMO_OK, nmo_engine_start(host.engine, NMO_ENGINE_START_ALL));
+        nmo_engine_set_file_resolver(host.engine, resolve_file, (void *)path);
+        int32_t file = -1;
+        ASSERT_EQ(NMO_OK, nmo_engine_load(host.engine, "lod.cmo", true, &file));
+        ASSERT_TRUE(file > 0);
+        nmo_object_id_t loaded_character = nmo_engine_object_named(host.engine, "LOD Character", NMO_CID_CHARACTER);
+        nmo_object_id_t loaded_root = nmo_engine_object_named(host.engine, "LOD Root", NMO_CID_3DENTITY);
+        nmo_object_id_t loaded_floor = nmo_engine_object_named(host.engine, "LOD Floor", NMO_CID_3DENTITY);
+        nmo_object_id_t loaded_low = nmo_engine_object_named(host.engine, "LOD Low", NMO_CID_3DENTITY);
+        nmo_object_id_t loaded_high = nmo_engine_object_named(host.engine, "LOD High", NMO_CID_3DENTITY);
+        ASSERT_TRUE(loaded_character != 0 && loaded_character != character);
+        ASSERT_TRUE(loaded_root != 0 && loaded_floor != 0 && loaded_low != 0 && loaded_high != 0);
+        ASSERT_EQ(NMO_OK, nmo_engine_step(host.engine, 2));
+        ASSERT_EQ(NMO_OK, nmo_engine_step(host.engine, 2));
+        ASSERT_FLOAT_EQ(0.25f, x(host.engine, loaded_root), 0.00001f);
+        ASSERT_FLOAT_EQ(0.5f, x(host.engine, loaded_floor), 0.00001f);
+        ASSERT_FLOAT_EQ(0, x(host.engine, loaded_low), 0);
+        ASSERT_FLOAT_EQ(0, x(host.engine, loaded_high), 0);
+        nmo_engine_frame_t frame;
+        ASSERT_EQ(NMO_OK, nmo_engine_render_frame(host.engine, &frame));
+        ASSERT_EQ(NMO_OK, nmo_engine_step(host.engine, 2));
+        ASSERT_FLOAT_EQ(10, x(host.engine, loaded_high), 0.00001f);
+        ASSERT_FLOAT_EQ(1, x(host.engine, loaded_low), 0.00001f);
+        ASSERT_EQ(NMO_OK, nmo_engine_step(host.engine, 2));
+        ASSERT_FLOAT_EQ(0.75f, x(host.engine, loaded_root), 0.00001f);
+        ASSERT_FLOAT_EQ(1.5f, x(host.engine, loaded_floor), 0.00001f);
+        ASSERT_FLOAT_EQ(10, x(host.engine, loaded_high), 0.00001f);
+        ASSERT_FLOAT_EQ(1, x(host.engine, loaded_low), 0.00001f);
+        ASSERT_TRUE(eng_character_set_animation_lod(host.engine, loaded_character, 0.5f));
+        ASSERT_EQ(NMO_OK, nmo_engine_render_frame(host.engine, &frame));
+        ASSERT_EQ(NMO_OK, nmo_engine_step(host.engine, 2));
+        ASSERT_FLOAT_EQ(1, x(host.engine, loaded_root), 0.00001f);
+        ASSERT_FLOAT_EQ(2, x(host.engine, loaded_floor), 0.00001f);
+        ASSERT_FLOAT_EQ(20, x(host.engine, loaded_high), 0.00001f);
+        ASSERT_FLOAT_EQ(1, x(host.engine, loaded_low), 0.00001f);
+        ASSERT_FLOAT_EQ(0, x(host.engine, host.owner_id), 0);
+        ASSERT_EQ(0, memcmp(saved, members, sizeof(saved)));
+        ASSERT_EQ(0u, actor->base.moveable_flags & VX_MOVEABLE_CHARACTERRENDERED);
+        nmo_object_id_t loaded_curve = nmo_engine_object_named(host.engine, "High Curve", NMO_CID_OBJECTANIMATION);
+        eng_animation_source_t source;
+        ASSERT_TRUE(eng_animation_source(host.engine, loaded_curve, &source));
+        ASSERT_EQ(formats[c], source.state->format);
+        ASSERT_FLOAT_EQ(20, eng_animation_contribution(host.engine, loaded_curve), 0);
+        fixture_end(&host);
+        fixture_end(&f);
+        remove(path);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_animation_lod, contribution_reads_all_vector_layouts_and_ignores_tangents_and_axis_keys);
 REGISTER_TEST(engine_animation_lod, contribution_preserves_wide_cancellation_and_small_raw_quaternion_motion);
@@ -462,4 +590,5 @@ REGISTER_TEST(engine_animation_lod, membership_target_and_floor_changes_rebuild_
 REGISTER_TEST(engine_animation_lod, ignored_selected_entities_keep_their_pose_and_character_lod_copies_independently);
 REGISTER_TEST(engine_animation_lod, rendering_feeds_next_frame_lod_and_hierarchy_hide_stops_visibility_feedback);
 REGISTER_TEST(engine_animation_lod, deleted_channels_are_pruned_before_counting_the_lod_prefix);
+REGISTER_TEST(engine_animation_lod, loaded_global_playback_uses_character_lod_and_render_feedback_in_all_formats);
 TEST_MAIN_END()
