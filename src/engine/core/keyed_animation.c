@@ -215,11 +215,16 @@ static bool keyed_order(nmo_engine_t *engine, eng_keyed_animation_t *runtime,
     if (!changed) return true;
     if (!eng_vec_reserve((void **)&runtime->members.data, &runtime->members.capacity, state->animation_count, sizeof(*runtime->members.data)) ||
         !eng_vec_reserve((void **)&runtime->order.data, &runtime->order.capacity, state->animation_count, sizeof(*runtime->order.data))) return false;
-    runtime->members.count = runtime->order.count = state->animation_count;
+    runtime->members.count = state->animation_count;
+    runtime->order.count = 0;
     for (uint32_t i = 0; i < state->animation_count; i++) {
         nmo_object_id_t id = eng_object_ref(engine, runtime->id, &state->animation_ids[i]);
         nmo_object_id_t entity = keyed_entity(engine, id);
         runtime->members.data[i] = (eng_animation_member_t){id,entity};
+        /* CheckPreDeletion removes dead object references from the runtime
+         * list. Keep explicit empty snapshot slots, without counting a dead
+         * channel toward the LOD budget or rewriting the saved membership. */
+        if (id == 0 && nmo_ref_runtime_id(&state->animation_ids[i]) != 0) continue;
         float contribution = -1e30f;
         if (character != 0 && keyed_part(engine, id) != NULL) {
             contribution = -1e10f;
@@ -227,7 +232,7 @@ static bool keyed_order(nmo_engine_t *engine, eng_keyed_animation_t *runtime,
                 contribution = entity == runtime->root_entity || entity == floor ? 1e30f : eng_animation_contribution(engine, id);
             }
         }
-        runtime->order.data[i] = (eng_animation_channel_t){id,contribution};
+        runtime->order.data[runtime->order.count++] = (eng_animation_channel_t){id,contribution};
     }
     if (character != 0) {
         for (size_t i = 1; i < runtime->order.count; i++) {

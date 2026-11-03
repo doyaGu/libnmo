@@ -424,6 +424,33 @@ TEST(engine_animation_lod, rendering_feeds_next_frame_lod_and_hierarchy_hide_sto
     fixture_end(&f);
 }
 
+TEST(engine_animation_lod, deleted_channels_are_pruned_before_counting_the_lod_prefix)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t character = fixture_create(&f, NMO_CID_CHARACTER, "Character");
+    nmo_character_state_t *actor = fixture_state(&f, character);
+    actor->base.moveable_flags |= VX_MOVEABLE_CHARACTERRENDERED;
+    nmo_object_id_t root = entity(&f, "Root", character), low = entity(&f, "Low", character);
+    nmo_object_id_t medium = entity(&f, "Medium", character), high = entity(&f, "High", character);
+    nmo_object_id_t r = curve(&f, "Root Curve", root, 0,1), a = curve(&f, "Low Curve", low, 0,2);
+    nmo_object_id_t b = curve(&f, "Medium Curve", medium, 0,4), c = curve(&f, "High Curve", high, 0,6);
+    nmo_ref_t members[] = {nmo_ref_from_id(a),nmo_ref_from_id(b),nmo_ref_from_id(c),nmo_ref_from_id(r)};
+    nmo_object_id_t keyed = group(&f, character, root, members, COUNT(members));
+    fixture_begin_edit(&f);
+    fixture_commit(&f, NULL);
+    ASSERT_TRUE(eng_character_set_animation_lod(f.engine, character, 0.75f));
+    ASSERT_TRUE(eng_animation_set_step(f.engine, keyed, 0)); /* Populate the cached order. */
+    nmo_engine_destroy_object(f.engine, c);
+    ASSERT_TRUE(eng_animation_set_step(f.engine, keyed, 1));
+    ASSERT_FLOAT_EQ(1, x(f.engine, root), 0);
+    ASSERT_FLOAT_EQ(4, x(f.engine, medium), 0);
+    ASSERT_FLOAT_EQ(0, x(f.engine, low), 0);
+    ASSERT_FLOAT_EQ(0, x(f.engine, high), 0);
+    ASSERT_EQ(4u, ((const nmo_keyedanimation_state_t *)fixture_state(&f, keyed))->animation_count);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_animation_lod, contribution_reads_all_vector_layouts_and_ignores_tangents_and_axis_keys);
 REGISTER_TEST(engine_animation_lod, contribution_preserves_wide_cancellation_and_small_raw_quaternion_motion);
@@ -434,4 +461,5 @@ REGISTER_TEST(engine_animation_lod, mixed_channels_sort_stably_ahead_of_unbound_
 REGISTER_TEST(engine_animation_lod, membership_target_and_floor_changes_rebuild_the_private_order);
 REGISTER_TEST(engine_animation_lod, ignored_selected_entities_keep_their_pose_and_character_lod_copies_independently);
 REGISTER_TEST(engine_animation_lod, rendering_feeds_next_frame_lod_and_hierarchy_hide_stops_visibility_feedback);
+REGISTER_TEST(engine_animation_lod, deleted_channels_are_pruned_before_counting_the_lod_prefix);
 TEST_MAIN_END()
