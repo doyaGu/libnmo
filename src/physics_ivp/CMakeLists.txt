@@ -9,6 +9,11 @@ set(IVP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(IVP_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
 add_subdirectory("${NMO_IVP_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/libivp" EXCLUDE_FROM_ALL)
 
+# Report the selected libivp policy, including values migrated from old caches.
+if(DEFINED IVP_STABLE_INTERNAL_STATE)
+    message(STATUS "  libivp stable internal state: ${IVP_STABLE_INTERNAL_STATE}")
+endif()
+
 add_library(nmo_physics_ivp STATIC "${CMAKE_CURRENT_SOURCE_DIR}/physics_ivp.c")
 target_compile_options(nmo_physics_ivp PRIVATE ${_nmo_ivp_options})
 target_link_libraries(nmo_physics_ivp PUBLIC nmo_bb_physics PRIVATE ivp)

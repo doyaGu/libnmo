@@ -305,6 +305,25 @@ Two optional hosts build on the engine and the packs: `nmo_physics_ivp` (with
 `nmo_view` (with `NMO_VIEWER=ON`) shows the engine's frames in an SDL3/OpenGL window
 (`nmo behavior run --window`).
 
+The IVP provider uses libivp's build options directly. A fresh build with a
+current libivp defaults to reference-compatible internal state:
+
+```bash
+cmake -S . -B build -DNMO_IVP_SOURCE_DIR=/path/to/libivp
+cmake --build build
+```
+
+To make physics independent of incidental container and allocator history,
+configure with `-DIVP_STABLE_INTERNAL_STATE=ON`. This changes some trajectories
+from the reference. `IVP_EDIT_LOCALITY=ON` also requires that option.
+
+CMake preserves options in existing build directories. When libivp migrates a
+cache containing the old `IVP_REFERENCE_INTERNAL_STATE` option, it preserves
+the old behavior by setting the inverse value of `IVP_STABLE_INTERNAL_STATE`.
+To switch an existing build to the new reference-compatible default, reconfigure
+it with `-DIVP_STABLE_INTERNAL_STATE=OFF`. The configuration output reports
+the selected stable-internal-state value.
+
 Tooling for one game lives under `apps/`, outside the libraries, which know nothing of it:
 `apps/ballance/` holds the Ballance level scripts (`scripts/`) and the data they read (`data/`);
 [docs/ballance-level-builder.md](docs/ballance-level-builder.md) describes them.
