@@ -77,6 +77,7 @@ bool eng_animation_position(nmo_engine_t *engine, nmo_object_id_t animation, flo
 bool eng_keyed_animation_center(nmo_engine_t *engine, nmo_object_id_t animation, float frame);
 bool eng_animation_root_offset(const nmo_engine_t *engine, nmo_object_id_t animation, nmo_vector_t *out);
 nmo_object_id_t eng_keyed_animation_root(nmo_engine_t *engine, nmo_object_id_t animation);
+nmo_object_id_t eng_keyed_animation_part(nmo_engine_t *engine, nmo_object_id_t animation, nmo_object_id_t entity);
 struct eng_matrix;
 void eng_animation_yaw(nmo_engine_t *engine, nmo_object_id_t animation, float frame, struct eng_matrix *out);
 float eng_animation_contribution(nmo_engine_t *engine, nmo_object_id_t animation);

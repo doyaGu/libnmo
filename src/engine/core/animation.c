@@ -1037,7 +1037,8 @@ bool eng_object_animation_apply_step(nmo_engine_t *engine, nmo_object_id_t anima
     if (entity < 0) {
         return false; /* CKERR_NOTINITIALIZED */
     }
-    if (engine->entities.data[entity].moveable_flags & CK_3DENTITY_IGNOREANIMATION) return true;
+    if (keyed == NMO_OBJECT_ID_INVALID) keyed = 0; /* FORCESETSTEP bypasses IgnoreAnimations only. */
+    else if (engine->entities.data[entity].moveable_flags & CK_3DENTITY_IGNOREANIMATION) return true;
     nmo_object_id_t exclusive = engine->entities.data[entity].exclusive_animation;
     if (exclusive != 0 && exclusive != keyed && eng_animation_state(engine, exclusive) != NULL) return true;
     float frame = step * source.length;
@@ -1114,6 +1115,15 @@ bool eng_object_animation_apply_step(nmo_engine_t *engine, nmo_object_id_t anima
 bool eng_object_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animation, float step)
 {
     return eng_object_animation_apply_step(engine, animation, step, 0);
+}
+
+bool eng_object_animation_set_frame(nmo_engine_t *engine, nmo_object_id_t animation, float frame, bool force)
+{
+    eng_animation_source_t source;
+    if (!isfinite(frame) || !eng_animation_source(engine,animation,&source) ||
+        !isfinite(source.length) || source.length == 0) return false;
+    float step = frame/source.length;
+    return isfinite(step) && eng_object_animation_apply_step(engine,animation,step,force ? NMO_OBJECT_ID_INVALID : 0);
 }
 
 bool eng_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animation, float step)

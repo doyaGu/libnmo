@@ -441,6 +441,23 @@ static void eng_entity_local_changed(nmo_engine_t *engine, int32_t index, bool k
     eng_entity_children_follow(engine, index, keep_children);
 }
 
+void eng_entity_ignore_animations(nmo_engine_t *engine, int32_t index, bool ignore, bool hierarchy)
+{
+    int32_t root = index;
+    for (size_t visited = 0; index >= 0 && visited < engine->entities.count; visited++) {
+        eng_entity_t *entity = &engine->entities.data[index];
+        if (ignore) entity->moveable_flags |= CK_3DENTITY_IGNOREANIMATION;
+        else entity->moveable_flags &= ~CK_3DENTITY_IGNOREANIMATION;
+        if (!hierarchy) break;
+        if (entity->first_child >= 0) index = entity->first_child;
+        else {
+            while (index != root && engine->entities.data[index].next_sibling < 0) index = engine->entities.data[index].parent;
+            if (index == root) break;
+            index = engine->entities.data[index].next_sibling;
+        }
+    }
+}
+
 void eng_entity_set_world_matrix(nmo_engine_t *engine, int32_t index, const eng_matrix_t *m,
                                  bool keep_children)
 {

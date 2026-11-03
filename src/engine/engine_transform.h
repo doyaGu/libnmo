@@ -115,6 +115,8 @@ int eng_entity_ray_intersection(nmo_engine_t *engine, int32_t index, const eng_v
  * false when no target or a missing transform channel cannot be recovered. */
 bool eng_object_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animation, float step);
 bool eng_object_animation_apply_step(nmo_engine_t *engine, nmo_object_id_t animation, float step, nmo_object_id_t keyed);
+bool eng_object_animation_set_frame(nmo_engine_t *engine, nmo_object_id_t animation, float frame, bool force);
+void eng_entity_ignore_animations(nmo_engine_t *engine, int32_t entity, bool ignore, bool hierarchy);
 /* CKAnimation::SetStep: an object animation's, or each of a keyed animation's */
 bool eng_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animation, float step);
 

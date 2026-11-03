@@ -8,6 +8,10 @@
 #include <math.h>
 
 #define COUNT(a) (sizeof(a) / sizeof((a)[0]))
+#define GUID_ANIMATION_FRAME NMO_GUID(0x0e579636,0xa3b6e7f0)
+#define GUID_ANIMATION_STEP NMO_GUID(0x120127aa,0x960added)
+#define GUID_BODYPART_FRAME NMO_GUID(0x55f045c7,0x6cb3417b)
+#define GUID_EXCLUDE_ANIMATION NMO_GUID(0x4d3f515b,0x450c20c6)
 
 static float frame(nmo_engine_t *engine, nmo_object_id_t animation)
 {
@@ -747,6 +751,175 @@ TEST(engine_character, loaded_scriptless_characters_restore_primary_queues_and_k
     }
 }
 
+static void character_script(engine_fixture_t *f)
+{
+    f->script_id = fixture_add_script(f,"Character Controls",&f->script_in);
+    ASSERT_TRUE(f->script_id != 0);
+    fixture_begin_edit(f);
+}
+
+static void animation_inputs(engine_fixture_t *f, nmo_object_id_t block, nmo_object_id_t target,
+                              nmo_object_id_t animation, float value)
+{
+    ASSERT_TRUE(block != 0);
+    fixture_input_int(f,fixture_target(f,block),(int32_t)target);
+    fixture_input_value(f,BLOCK_PIN(f,block,0),&value,sizeof(value));
+    fixture_input_int(f,BLOCK_PIN(f,block,1),(int32_t)animation);
+}
+
+TEST(engine_character, pose_blocks_use_fractional_frames_and_normalized_steps_without_selecting_an_active_clip)
+{
+    const nmo_guid_t guids[] = {GUID_ANIMATION_FRAME,GUID_ANIMATION_STEP};
+    for (size_t i = 0; i < COUNT(guids); i++) {
+        engine_fixture_t f;
+        fixture_begin_document(&f);
+        nmo_object_id_t body, actor = character(&f,&body);
+        nmo_object_id_t foreign_body, foreign = character(&f,&foreign_body);
+        nmo_object_id_t animation = clip(&f,"Pose",foreign,foreign_body,10,0,10);
+        character_script(&f);
+        nmo_object_id_t set = fixture_block(&f,guids[i],"Pose");
+        animation_inputs(&f,set,actor,animation,i == 0 ? 3.5f : .35f);
+        fixture_link(&f,f.script_in,BLOCK_IN(&f,set,0),0);
+        nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL;
+        fixture_commit(&f,&options);
+        ASSERT_EQ(NMO_OK,nmo_engine_start(f.engine,NMO_ENGINE_START_ALL));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0));
+        ASSERT_FLOAT_EQ(3.5f,frame(f.engine,animation),1e-6f);
+        ASSERT_FLOAT_EQ(3.5f,x(f.engine,foreign_body),1e-6f);
+        ASSERT_FLOAT_EQ(0,x(f.engine,body),0);
+        ASSERT_EQ(0,eng_character_active_animation(f.engine,actor));
+        ASSERT_EQ(0,eng_character_active_animation(f.engine,foreign));
+        ASSERT_EQ(1u,runs(&f,set));
+        fixture_end(&f);
+    }
+}
+
+TEST(engine_character, pose_blocks_allow_plain_animation_cursors_and_missing_animation_keeps_control_flow)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t body, actor = character(&f,&body);
+    nmo_object_id_t animation = fixture_create(&f,NMO_CID_ANIMATION,"Plain");
+    nmo_animation_state_t *state = fixture_state(&f,animation);
+    state->has_length = 1; state->length = 10;
+    character_script(&f);
+    nmo_object_id_t missing = fixture_block(&f,GUID_ANIMATION_FRAME,"Missing");
+    nmo_object_id_t set = fixture_block(&f,GUID_ANIMATION_STEP,"Plain Step");
+    animation_inputs(&f,missing,actor,0,5);
+    animation_inputs(&f,set,actor,animation,1.25f);
+    fixture_link(&f,f.script_in,BLOCK_IN(&f,missing,0),0);
+    fixture_link(&f,BLOCK_OUT(&f,missing,0),BLOCK_IN(&f,set,0),0);
+    nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL;
+    fixture_commit(&f,&options);
+    ASSERT_EQ(NMO_OK,nmo_engine_start(f.engine,NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,1));
+    ASSERT_EQ(1u,runs(&f,missing)); ASSERT_EQ(1u,runs(&f,set));
+    ASSERT_FLOAT_EQ(12.5f,frame(f.engine,animation),0);
+    ASSERT_FLOAT_EQ(0,x(f.engine,body),0);
+    fixture_end(&f);
+}
+
+TEST(engine_character, pose_blocks_report_native_owner_and_parameter_errors_in_strict_mode)
+{
+    const nmo_guid_t guids[] = {GUID_ANIMATION_FRAME,GUID_ANIMATION_STEP,GUID_BODYPART_FRAME};
+    for (size_t i = 0; i < COUNT(guids); i++) {
+        engine_fixture_t f;
+        fixture_begin_document(&f);
+        nmo_object_id_t body, actor = character(&f,&body);
+        nmo_object_id_t plain = fixture_create(&f,NMO_CID_ANIMATION,"Plain");
+        nmo_object_id_t animation = clip(&f,"Pose",actor,body,10,0,10);
+        character_script(&f);
+        nmo_object_id_t bad = fixture_block(&f,guids[i],"Invalid");
+        nmo_object_id_t after = fixture_block(&f,GUID_ANIMATION_FRAME,"After");
+        animation_inputs(&f,bad,i == 2 ? body : 0,plain,5);
+        animation_inputs(&f,after,actor,animation,5);
+        fixture_link(&f,f.script_in,BLOCK_IN(&f,bad,0),0);
+        fixture_link(&f,BLOCK_OUT(&f,bad,0),BLOCK_IN(&f,after,0),0);
+        nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL;
+        fixture_commit(&f,&options);
+        ASSERT_EQ(NMO_OK,nmo_engine_start(f.engine,NMO_ENGINE_START_ALL));
+        ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,nmo_engine_step(f.engine,1));
+        nmo_engine_event_t failure;
+        ASSERT_TRUE(nmo_engine_failure(f.engine,&failure));
+        ASSERT_EQ(bad,failure.behavior_id);
+        ASSERT_EQ(i == 2 ? NMO_ENGINE_BR_PARAMETERERROR : NMO_ENGINE_BR_OWNERERROR,failure.result);
+        ASSERT_EQ(0u,runs(&f,after));
+        fixture_end(&f);
+    }
+}
+
+TEST(engine_character, bodypart_frame_bypasses_exclusion_uses_child_duration_and_preserves_the_keyed_cursor)
+{
+    for (size_t hierarchy = 0; hierarchy < 2; hierarchy++) {
+        engine_fixture_t f;
+        fixture_begin_document(&f);
+        nmo_object_id_t root, actor = character(&f,&root), bone = limb(&f,actor);
+        ((nmo_3dentity_state_t *)fixture_state(&f,bone))->parent = nmo_ref_from_id(root);
+        nmo_object_id_t a = clip(&f,"Root",0,root,10,0,10), b = clip(&f,"Limb",0,bone,10,10,30);
+        nmo_keyedanimation_state_t *group = fixture_state(&f,b);
+        nmo_object_id_t channel = nmo_ref_runtime_id(&group->animation_ids[0]);
+        nmo_objectanimation_state_t *part = fixture_state(&f,channel);
+        part->length = 20; ((float *)part->controllers[0].data)[4] = 20;
+        character_script(&f);
+        nmo_object_id_t exclude = fixture_block(&f,GUID_EXCLUDE_ANIMATION,"Exclude");
+        nmo_object_id_t whole = fixture_block(&f,GUID_ANIMATION_FRAME,"Whole");
+        nmo_object_id_t body = fixture_block(&f,GUID_BODYPART_FRAME,"Body");
+        fixture_input_int(&f,fixture_target(&f,exclude),(int32_t)root);
+        fixture_input_int(&f,BLOCK_PIN(&f,exclude,1),(int32_t)hierarchy);
+        animation_inputs(&f,whole,actor,a,5);
+        animation_inputs(&f,body,bone,b,5);
+        fixture_link(&f,f.script_in,BLOCK_IN(&f,exclude,0),0);
+        fixture_link(&f,BLOCK_OUT(&f,exclude,0),BLOCK_IN(&f,whole,0),0);
+        fixture_link(&f,BLOCK_OUT(&f,whole,0),BLOCK_IN(&f,body,0),0);
+        nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL;
+        fixture_commit(&f,&options);
+        ASSERT_EQ(NMO_OK,nmo_engine_start(f.engine,NMO_ENGINE_START_ALL));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,1));
+        ASSERT_FLOAT_EQ(0,x(f.engine,root),0); ASSERT_FLOAT_EQ(15,x(f.engine,bone),1e-6f);
+        ASSERT_FLOAT_EQ(5,frame(f.engine,a),0); ASSERT_FLOAT_EQ(0,frame(f.engine,b),0);
+        ASSERT_TRUE(eng_animation_set_frame(f.engine,b,8));
+        ASSERT_FLOAT_EQ(hierarchy ? 15 : 26,x(f.engine,bone),1e-6f);
+        ASSERT_EQ(0u,((const nmo_3dentity_state_t *)fixture_state(&f,root))->moveable_flags & CK_3DENTITY_IGNOREANIMATION);
+        if (hierarchy) {
+            nmo_object_id_t originals[] = {actor,root,bone,b}, copies[COUNT(originals)] = {0};
+            ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(f.engine,originals,COUNT(originals),false,copies));
+            ASSERT_TRUE(eng_animation_set_frame(f.engine,copies[3],10));
+            ASSERT_FLOAT_EQ(15,x(f.engine,copies[2]),1e-6f);
+            ASSERT_TRUE(eng_object_animation_set_frame(f.engine,eng_keyed_animation_part(f.engine,copies[3],copies[2]),6,true));
+            ASSERT_FLOAT_EQ(16,x(f.engine,copies[2]),1e-6f);
+            ASSERT_FLOAT_EQ(15,x(f.engine,bone),1e-6f);
+        }
+        fixture_end(&f);
+    }
+}
+
+TEST(engine_character, forced_bodypart_frames_keep_secondary_exclusivity_and_zero_length_channels_unchanged)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t root, actor = character(&f,&root), bone = limb(&f,actor);
+    nmo_object_id_t secondary = clip(&f,"Secondary",actor,bone,10,100,110);
+    nmo_object_id_t pose = clip(&f,"Pose",0,bone,10,10,20), zero = clip(&f,"Zero",0,bone,0,30,30);
+    character_script(&f);
+    nmo_object_id_t exclude = fixture_block(&f,GUID_EXCLUDE_ANIMATION,"Exclude");
+    nmo_object_id_t set = fixture_block(&f,GUID_BODYPART_FRAME,"Body");
+    fixture_input_int(&f,fixture_target(&f,exclude),(int32_t)bone);
+    animation_inputs(&f,set,bone,pose,5);
+    fixture_link(&f,f.script_in,BLOCK_IN(&f,exclude,0),0);
+    fixture_link(&f,BLOCK_OUT(&f,exclude,0),BLOCK_IN(&f,set,0),0);
+    fixture_commit(&f,NULL);
+    ASSERT_EQ(NMO_OK,eng_character_play_secondary(f.engine,actor,secondary,2,CKSECONDARYANIMATION_LOOP,0));
+    ASSERT_EQ(NMO_OK,nmo_engine_start(f.engine,NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,1));
+    ASSERT_FLOAT_EQ(102,x(f.engine,bone),0);
+    ASSERT_EQ(NMO_OK,eng_character_stop_secondary(f.engine,actor,secondary));
+    ASSERT_TRUE(eng_object_animation_set_frame(f.engine,eng_keyed_animation_part(f.engine,pose,bone),5,true));
+    ASSERT_FLOAT_EQ(15,x(f.engine,bone),1e-6f);
+    ASSERT_FALSE(eng_object_animation_set_frame(f.engine,eng_keyed_animation_part(f.engine,zero,bone),0,true));
+    ASSERT_FLOAT_EQ(15,x(f.engine,bone),1e-6f);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_character, clocks_restore_saved_cursors_and_separate_cursor_updates_from_pose);
 REGISTER_TEST(engine_character, linked_unlinked_paused_and_reverse_clocks_follow_native_frame_rules);
@@ -768,4 +941,9 @@ REGISTER_TEST(engine_character, secondary_presets_and_invalid_requests_preserve_
 REGISTER_TEST(engine_character, secondary_gates_are_copied_and_remapped_without_copying_playback_slots);
 REGISTER_TEST(engine_character, automatic_processing_advances_primary_then_secondary_and_plain_entities_have_no_gate);
 REGISTER_TEST(engine_character, loaded_scriptless_characters_restore_primary_queues_and_keep_file_state_immutable);
+REGISTER_TEST(engine_character, pose_blocks_use_fractional_frames_and_normalized_steps_without_selecting_an_active_clip);
+REGISTER_TEST(engine_character, pose_blocks_allow_plain_animation_cursors_and_missing_animation_keeps_control_flow);
+REGISTER_TEST(engine_character, pose_blocks_report_native_owner_and_parameter_errors_in_strict_mode);
+REGISTER_TEST(engine_character, bodypart_frame_bypasses_exclusion_uses_child_duration_and_preserves_the_keyed_cursor);
+REGISTER_TEST(engine_character, forced_bodypart_frames_keep_secondary_exclusivity_and_zero_length_channels_unchanged);
 TEST_MAIN_END()

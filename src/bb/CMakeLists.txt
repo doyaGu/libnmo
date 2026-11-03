@@ -13,6 +13,7 @@ set(NMO_BB_VIRTOOLS_SOURCES
     virtools/3dtransfo.c
     virtools/addons.c
     virtools/cameras.c
+    virtools/characters.c
     virtools/collisions.c
     virtools/controllers.c
     virtools/effects.c

@@ -190,6 +190,20 @@ bool eng_keyed_animation_center(nmo_engine_t *engine, nmo_object_id_t animation,
     return true;
 }
 
+nmo_object_id_t eng_keyed_animation_part(nmo_engine_t *engine, nmo_object_id_t animation, nmo_object_id_t entity)
+{
+    eng_keyed_animation_t *runtime = keyed_runtime(engine,animation);
+    const nmo_keyedanimation_state_t *state = keyed_state(engine,animation,NMO_CID_KEYEDANIMATION);
+    if (runtime == NULL || state == NULL || entity == 0) return 0;
+    if (entity == runtime->root_entity) return eng_keyed_animation_root(engine,animation);
+    size_t count = runtime->sorted ? runtime->order.count : state->animation_count;
+    for (size_t i = 0; i < count; i++) {
+        nmo_object_id_t id = runtime->sorted ? runtime->order.data[i].id : eng_object_ref(engine,animation,&state->animation_ids[i]);
+        if (eng_map_get(&engine->destroyed,id) < 0 && keyed_entity(engine,id) == entity) return id;
+    }
+    return 0;
+}
+
 float eng_character_animation_lod(const nmo_engine_t *engine, nmo_object_id_t character)
 {
     int32_t index = eng_entity_index(engine, character);
