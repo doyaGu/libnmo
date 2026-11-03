@@ -27,6 +27,7 @@
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_beobject_schemas.h"
+#include "object/builtin/nmo_character_schemas.h"
 #include "object/builtin/nmo_material_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
@@ -410,6 +411,17 @@ static void prepare_object(copy_set_t *set, nmo_object_t *object, nmo_object_id_
 {
     nmo_engine_t *engine = set->engine;
     uint32_t class_id = (uint32_t)nmo_object_get_class_id(object);
+    /* RCKKeyedAnimation::PrepareDependencies always brings its channels,
+     * including when no class dependency mask was requested. */
+    if (class_id == NMO_CID_KEYEDANIMATION) {
+        const nmo_keyedanimation_state_t *state = nmo_object_get_state(object);
+        if (state != NULL) {
+            for (uint32_t i = 0; state->animation_ids != NULL && i < state->animation_count; i++) {
+                prepare_ref(set, &state->animation_ids[i]);
+            }
+        }
+        return;
+    }
     if (class_id == NMO_CID_BEHAVIOR) {
         prepare_behavior(set, object);
         return;
@@ -846,6 +858,9 @@ static nmo_status_t copy_session(nmo_engine_t *engine, int32_t source, const nmo
         eng_copy_array(engine, original, copy);
         eng_copy_group(engine, original, copy, set.ids.data, copies, n);
         eng_copy_animation(engine, original, copy, set.ids.data, copies, n);
+        eng_copy_character(engine, original, copy, set.ids.data, copies, n,
+            (class_dependencies(deps, NMO_CID_3DENTITY) & 4u) != 0 ||
+            (class_dependencies(deps, NMO_CID_CHARACTER) & 1u) != 0);
     }
     if ((class_dependencies(deps, NMO_CID_BEOBJECT) & 4u) != 0) {
         for (size_t i = 0; i < n; i++) {

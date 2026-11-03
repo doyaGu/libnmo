@@ -73,6 +73,27 @@ void eng_free_characters(nmo_engine_t *engine)
     free(engine->characters.map.slots);
 }
 
+static nmo_object_id_t character_copy_ref(nmo_object_id_t id, const nmo_object_id_t *originals,
+                                          const nmo_object_id_t *copies, size_t count)
+{
+    for (size_t i = 0; i < count; i++) if (originals[i] == id) return copies[i];
+    return id;
+}
+
+void eng_copy_character(nmo_engine_t *engine, nmo_object_id_t source, nmo_object_id_t target,
+                          const nmo_object_id_t *originals, const nmo_object_id_t *copies, size_t count, bool copy_next)
+{
+    int32_t from = eng_map_get(&engine->characters.map, source), to = eng_map_get(&engine->characters.map, target);
+    if (from < 0 || to < 0) return;
+    eng_character_t snapshot = engine->characters.entries.data[from];
+    eng_character_t *copy = &engine->characters.entries.data[to];
+    copy->root = character_copy_ref(snapshot.root, originals, copies, count);
+    copy->active = character_copy_ref(snapshot.active, originals, copies, count);
+    copy->next = copy_next ? character_copy_ref(snapshot.next, originals, copies, count) : 0;
+    copy->frame_dest = snapshot.frame_dest;
+    copy->automatic = snapshot.automatic;
+}
+
 nmo_object_id_t eng_character_active_animation(nmo_engine_t *engine, nmo_object_id_t character)
 {
     eng_character_t *runtime = character_runtime(engine, character);

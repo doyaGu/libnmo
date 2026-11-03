@@ -357,6 +357,33 @@ TEST(engine_character, automatic_processing_precedes_the_characters_own_script)
     fixture_end(&f);
 }
 
+TEST(engine_character, copied_characters_remap_the_live_primary_and_keep_independent_clocks)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t body, actor = character(&f,&body);
+    nmo_object_id_t a = clip(&f,"A",actor,body,10,0,10);
+    fixture_begin_edit(&f);
+    fixture_commit_bare(&f,NULL);
+    prepare(f.engine,a);
+    ASSERT_EQ(NMO_OK,eng_character_set_active_animation(f.engine,actor,a));
+    ASSERT_EQ(NMO_OK,eng_character_process(f.engine,actor,2));
+    nmo_object_id_t originals[] = {actor,body,a}, copies[3] = {0};
+    ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(f.engine,originals,COUNT(originals),false,copies));
+    ASSERT_EQ(copies[2],eng_character_active_animation(f.engine,copies[0]));
+    ASSERT_FLOAT_EQ(2,frame(f.engine,copies[2]),0);
+    ASSERT_EQ(NMO_OK,eng_character_process(f.engine,copies[0],3));
+    ASSERT_FLOAT_EQ(5,x(f.engine,copies[0]),0);
+    ASSERT_FLOAT_EQ(5,x(f.engine,copies[1]),0);
+    ASSERT_FLOAT_EQ(2,frame(f.engine,a),0);
+    ASSERT_FLOAT_EQ(2,x(f.engine,actor),0);
+    ASSERT_FLOAT_EQ(2,x(f.engine,body),0);
+    ASSERT_EQ(NMO_OK,eng_character_process(f.engine,actor,1));
+    ASSERT_FLOAT_EQ(3,x(f.engine,actor),0);
+    ASSERT_FLOAT_EQ(5,x(f.engine,copies[1]),0);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_character, clocks_restore_saved_cursors_and_separate_cursor_updates_from_pose);
 REGISTER_TEST(engine_character, linked_unlinked_paused_and_reverse_clocks_follow_native_frame_rules);
@@ -368,4 +395,5 @@ REGISTER_TEST(engine_character, queued_entry_promotes_without_advancing_and_imme
 REGISTER_TEST(engine_character, terminal_yaw_is_transferred_after_motion_in_the_old_world_basis);
 REGISTER_TEST(engine_character, automatic_scriptless_characters_run_each_frame_and_respect_object_activity);
 REGISTER_TEST(engine_character, automatic_processing_precedes_the_characters_own_script);
+REGISTER_TEST(engine_character, copied_characters_remap_the_live_primary_and_keep_independent_clocks);
 TEST_MAIN_END()

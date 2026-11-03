@@ -23,5 +23,7 @@ nmo_status_t eng_character_set_active_animation(nmo_engine_t *engine, nmo_object
 nmo_status_t eng_character_set_next_animation(nmo_engine_t *engine, nmo_object_id_t character, nmo_object_id_t animation, uint32_t mode);
 nmo_status_t eng_character_process(nmo_engine_t *engine, nmo_object_id_t character, float delta);
 bool eng_character_automatic(nmo_engine_t *engine, nmo_object_id_t character);
+void eng_copy_character(nmo_engine_t *engine, nmo_object_id_t source, nmo_object_id_t target,
+                          const nmo_object_id_t *originals, const nmo_object_id_t *copies, size_t count, bool copy_next);
 
 #endif
