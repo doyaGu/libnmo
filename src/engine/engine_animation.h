@@ -22,6 +22,8 @@ typedef struct eng_animations {
 
 nmo_status_t eng_load_animations(nmo_engine_t *engine, const eng_range_t *range);
 void eng_free_animations(nmo_engine_t *engine);
+void eng_copy_animation(nmo_engine_t *engine, nmo_object_id_t source, nmo_object_id_t target,
+                          const nmo_object_id_t *originals, const nmo_object_id_t *copies, size_t count);
 bool eng_keyed_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animation, float step);
 /* Sample raw position keys at an absolute frame, without parent centering. */
 bool eng_animation_position(nmo_engine_t *engine, nmo_object_id_t animation, float frame, nmo_vector_t *out);

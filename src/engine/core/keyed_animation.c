@@ -68,6 +68,23 @@ void eng_free_animations(nmo_engine_t *engine)
     free(engine->animations.consumed.slots);
 }
 
+void eng_copy_animation(nmo_engine_t *engine, nmo_object_id_t source, nmo_object_id_t target,
+                          const nmo_object_id_t *originals, const nmo_object_id_t *copies, size_t count)
+{
+    int32_t from = eng_map_get(&engine->animations.keyed_map, source);
+    int32_t to = eng_map_get(&engine->animations.keyed_map, target);
+    if (from < 0 || to < 0) return;
+    eng_keyed_animation_t snapshot = engine->animations.keyed.data[from];
+    eng_keyed_animation_t *copy = &engine->animations.keyed.data[to];
+    copy->offset = snapshot.offset;
+    copy->root_entity = snapshot.root_entity;
+    for (size_t i = 0; i < count; i++) {
+        if (originals[i] == copy->root_entity) { copy->root_entity = copies[i]; break; }
+    }
+    /* RCKKeyedAnimation::Copy invalidates the selected root channel. */
+    copy->root_animation = 0;
+}
+
 static nmo_object_id_t keyed_entity(const nmo_engine_t *engine, nmo_object_id_t part)
 {
     const nmo_objectanimation_state_t *state = keyed_part(engine, part);

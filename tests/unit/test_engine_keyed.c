@@ -312,6 +312,39 @@ TEST(engine_keyed, centering_samples_shared_and_merged_root_positions_before_app
     }
 }
 
+TEST(engine_keyed, object_copies_preserve_runtime_centering_and_remap_the_discovered_root)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    float keys[] = {0,0,0,0, 8,8,0,0};
+    nmo_object_id_t root = part(&f, "Root", f.owner_id, keys, sizeof(keys));
+    offset(&f, root, -20,0,0);
+    nmo_ref_t reference = nmo_ref_from_id(root);
+    nmo_object_id_t keyed = group(&f, "Global", &reference, 1, 0);
+    fixture_begin_edit(&f);
+    fixture_commit(&f, NULL);
+    ASSERT_TRUE(eng_keyed_animation_center(f.engine, keyed, 2));
+    ASSERT_TRUE(eng_animation_set_step(f.engine, keyed, 0.5f));
+    position(f.engine, f.owner_id, 2,0,0);
+    nmo_object_id_t originals[] = {f.owner_id,root,keyed}, copies[3] = {0};
+    ASSERT_EQ(NMO_OK, nmo_engine_copy_objects(f.engine, originals, COUNT(originals), false, copies));
+    for (size_t i = 0; i < COUNT(copies); i++) ASSERT_TRUE(copies[i] != 0 && copies[i] != originals[i]);
+    ASSERT_TRUE(eng_animation_set_step(f.engine, copies[2], 0.5f));
+    position(f.engine, copies[0], 2,0,0);
+    ASSERT_TRUE(eng_keyed_animation_center(f.engine, copies[2], 4));
+    ASSERT_TRUE(eng_animation_set_step(f.engine, copies[2], 0.5f));
+    position(f.engine, copies[0], 0,0,0);
+    ASSERT_TRUE(eng_animation_set_step(f.engine, keyed, 0.5f));
+    position(f.engine, f.owner_id, 2,0,0);
+    nmo_object_id_t again[3] = {0};
+    ASSERT_EQ(NMO_OK, nmo_engine_copy_objects(f.engine, copies, COUNT(copies), false, again));
+    ASSERT_TRUE(eng_animation_set_step(f.engine, again[2], 1));
+    position(f.engine, again[0], 4,0,0);
+    const nmo_objectanimation_state_t *source = fixture_state(&f, root);
+    ASSERT_FLOAT_EQ(-20, source->root_pos.x, 0);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_keyed, saved_vectors_transfer_once_in_list_order_and_only_offset_the_root);
 REGISTER_TEST(engine_keyed, channels_shared_by_two_groups_transfer_saved_offsets_only_once);
@@ -320,4 +353,5 @@ REGISTER_TEST(engine_keyed, an_offset_does_not_create_a_missing_or_ignored_posit
 REGISTER_TEST(engine_keyed, centering_samples_absolute_frames_without_moving_entities_or_changing_keys);
 REGISTER_TEST(engine_keyed, centering_revalidates_membership_and_rebound_channels);
 REGISTER_TEST(engine_keyed, centering_samples_shared_and_merged_root_positions_before_applying_offsets);
+REGISTER_TEST(engine_keyed, object_copies_preserve_runtime_centering_and_remap_the_discovered_root);
 TEST_MAIN_END()
