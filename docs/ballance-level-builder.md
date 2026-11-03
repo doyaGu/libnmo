@@ -136,10 +136,21 @@ The warnings are for levels that build but play wrong:
 
 `ballance_verify_level.py SOURCE` checks the floors of a built folder or a
 level file (`ballance.verify.geometry`): walls left open at their ends,
-holes in floor tops, and tops of two objects lying on one another. Some are
-meant: the cradle's pocket is a hole, the fan tower's way out leaves two
-wall ends open against its block's end wall, and Level_01 has 21 open
-wall ends.
+holes in floor tops, and tops of two objects lying on one another. Findings
+can reflect original geometry: the cradle's pocket is a hole, and Level_01
+has open wall ends.
+At the fan tower's exit, the road's side walls meet the tower block's end
+wall; those joins are not open wall ends.
+
+The original Level_13 has 16 reported wall ends: 12 on the sector 2
+switchback and four on the road around the sector 3 checkpoint. In libnmo's
+test base, a stone ball rolled near each: the switchback ends and one road
+end were probed using relocated reset points and checkpoints in temporary
+copies; the other three road ends were approached from the checkpoint. None
+of those runs reported a fall. A separate sector 2 autoplay stalled after
+the switchback for an unknown reason. These local runs do not establish how
+every ball or trajectory behaves in the original game, and the wall ends
+remain reported.
 
 With `--play FRAMES --game <GAME_ROOT>`, it patches the level into
 `Level_01.NMO` in the folder and plays it headless with libivp physics in
