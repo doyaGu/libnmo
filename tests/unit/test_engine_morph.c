@@ -470,6 +470,145 @@ TEST(engine_morph, shared_morph_data_uses_the_alias_target_and_ignore_flag)
     }
 }
 
+static nmo_object_id_t morph_blend(engine_fixture_t *f, nmo_object_id_t a, nmo_object_id_t b, float length)
+{
+    nmo_object_id_t id = fixture_create(f, NMO_CID_OBJECTANIMATION, "Blend");
+    nmo_objectanimation_state_t *state = fixture_state(f, id);
+    if (state == NULL) return 0;
+    state->format = CKOBJANIM_FORMAT_CONTROLLERS;
+    state->entity = nmo_ref_from_id(f->owner_id);
+    state->has_length = state->has_merge = 1;
+    state->length = length;
+    state->flags = CK_OBJECTANIMATION_MERGED;
+    state->merge_factor = 0.5f;
+    state->anim1 = nmo_ref_from_id(a);
+    state->anim2 = nmo_ref_from_id(b);
+    return id;
+}
+
+TEST(engine_morph, merged_vertices_map_time_and_normals_blend_in_packed_angle_space)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t mesh = morph_mesh(&f, 4);
+    nmo_object_id_t a = fixture_create(&f, NMO_CID_OBJECTANIMATION, "A");
+    nmo_object_id_t b = fixture_create(&f, NMO_CID_OBJECTANIMATION, "B");
+    nmo_object_id_t merged = morph_blend(&f, a, b, 40);
+    uint32_t words[COUNT(PackedNormalsWords)];
+    memcpy(words, PackedNormalsWords, sizeof(words));
+    for (int k = 0; k < 3; k++) for (int v = 0; v < 4; v++) words[16 + 17*k + v] = 400u << 16;
+    struct { uint32_t header[3]; struct { float time, positions[4][3]; uint32_t normals[4]; } keys[2]; } blob = {{2,4,1}, {{0}}};
+    for (int k = 0; k < 2; k++) {
+        blob.keys[k].time = (float)k * 8;
+        for (int v = 0; v < 4; v++) {
+            for (int c = 0; c < 3; c++) blob.keys[k].positions[v][c] = (float)((c+1)*(100+16*k)+v);
+            blob.keys[k].normals[v] = (16000u << 16) | 4096u;
+        }
+    }
+    nmo_objanim_controller_t ca = {NMO_OBJANIM_CONTROLLER_MORPH,0,sizeof(words),words};
+    nmo_objanim_controller_t cb = {NMO_OBJANIM_CONTROLLER_MORPH,0,sizeof(blob),&blob};
+    nmo_objectanimation_state_t *first = fixture_state(&f, a), *second = fixture_state(&f, b), *blend = fixture_state(&f, merged);
+    first->has_length = second->has_length = 1;
+    first->length = 24; second->length = 8;
+    first->controller_count = second->controller_count = 1;
+    first->controllers = &ca; second->controllers = &cb;
+    fixture_begin_edit(&f);
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    const float factors[] = {-0.5f,0,0.25f,0.5f,1,1.5f};
+    for (size_t i = 0; i < COUNT(factors); i++) {
+        float t = blend->merge_factor = factors[i];
+        ASSERT_TRUE(eng_object_animation_set_step(f.engine, merged, 0.25f));
+        nmo_engine_mesh_t runtime;
+        ASSERT_TRUE(nmo_engine_mesh(f.engine, mesh, &runtime));
+        int pitch = (int)(4096*t), yaw = 400 - (int)(784*t);
+        nmo_vector_t normal = expected_normal((uint16_t)pitch | ((uint32_t)(uint16_t)yaw << 16));
+        for (int v = 0; v < 4; v++) {
+            float p[] = {runtime.vertices[v].position.x, runtime.vertices[v].position.y, runtime.vertices[v].position.z};
+            for (int c = 0; c < 3; c++) ASSERT_FLOAT_EQ(PackedNormalsSamples[6].positions[v][c]*(1-t) + ((c+1)*104+v)*t, p[c], 0.00002f);
+            ASSERT_FLOAT_EQ(normal.x, runtime.vertices[v].normal.x, 0.000001f);
+            ASSERT_FLOAT_EQ(normal.y, runtime.vertices[v].normal.y, 0.000001f);
+            ASSERT_FLOAT_EQ(normal.z, runtime.vertices[v].normal.z, 0.000001f);
+        }
+    }
+    /* Morph still falls back at factor one when that source is ignored. */
+    blend->merge_factor = 1;
+    second->flags = CK_OBJECTANIMATION_IGNOREMORPH;
+    ASSERT_TRUE(eng_object_animation_set_step(f.engine, merged, 0.25f));
+    nmo_engine_mesh_t runtime;
+    ASSERT_TRUE(nmo_engine_mesh(f.engine, mesh, &runtime));
+    ASSERT_FLOAT_EQ(-2, runtime.vertices[0].position.x, 0.000001f);
+    uint32_t version = runtime.version;
+    blend->merge_factor = NAN;
+    ASSERT_TRUE(eng_object_animation_set_step(f.engine, merged, 0.25f));
+    ASSERT_TRUE(nmo_engine_mesh(f.engine, mesh, &runtime));
+    ASSERT_EQ(version, runtime.version);
+    fixture_end(&f);
+}
+
+TEST(engine_morph, unequal_vertex_counts_prefer_the_first_source_at_unscaled_time)
+{
+    for (uint32_t count = 2; count <= 4; count += 2) {
+        engine_fixture_t f;
+        fixture_begin_document(&f);
+        nmo_object_id_t mesh = morph_mesh(&f, count);
+        nmo_object_id_t a = fixture_create(&f, NMO_CID_OBJECTANIMATION, "A");
+        nmo_object_id_t b = fixture_create(&f, NMO_CID_OBJECTANIMATION, "B");
+        nmo_object_id_t merged = morph_blend(&f, a, b, 40);
+        struct { uint32_t header[3]; float keys[14]; } blob = {{2,2,0}, {0, 0,0,0, 1,0,0, 8, 16,0,0, 17,0,0}};
+        nmo_objanim_controller_t ca = {NMO_OBJANIM_CONTROLLER_MORPH,0,sizeof(blob),&blob};
+        nmo_objanim_controller_t cb = {NMO_OBJANIM_CONTROLLER_MORPH,0,sizeof(PackedNormalsWords),(void *)PackedNormalsWords};
+        nmo_objectanimation_state_t *first = fixture_state(&f, a), *second = fixture_state(&f, b), *blend = fixture_state(&f, merged);
+        first->has_length = second->has_length = 1;
+        first->length = 8; second->length = 24;
+        first->controller_count = second->controller_count = 1;
+        first->controllers = &ca; second->controllers = &cb;
+        blend->merge_factor = 1;
+        fixture_begin_edit(&f);
+        fixture_commit(&f, NULL);
+        ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+        ASSERT_TRUE(eng_object_animation_set_step(f.engine, merged, 0.25f));
+        nmo_engine_mesh_t runtime;
+        ASSERT_TRUE(nmo_engine_mesh(f.engine, mesh, &runtime));
+        ASSERT_FLOAT_EQ(count == 2 ? 16 : 123, runtime.vertices[0].position.x, 0.000001f);
+        /* A recursion edge is unavailable; the remaining source uses raw frame 10. */
+        blend->anim1 = nmo_ref_from_id(merged);
+        ASSERT_TRUE(eng_object_animation_set_step(f.engine, merged, 0.25f));
+        ASSERT_TRUE(nmo_engine_mesh(f.engine, mesh, &runtime));
+        ASSERT_FLOAT_EQ(-5, runtime.vertices[0].position.x, 0.000001f);
+        fixture_end(&f);
+    }
+}
+
+TEST(engine_morph, merged_sparse_keys_preserve_the_current_vertices_before_blending)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t mesh = morph_mesh(&f, 4);
+    nmo_object_id_t a = fixture_create(&f, NMO_CID_OBJECTANIMATION, "A");
+    nmo_object_id_t b = fixture_create(&f, NMO_CID_OBJECTANIMATION, "B");
+    nmo_object_id_t merged = morph_blend(&f, a, b, 24);
+    nmo_objectanimation_state_t *first = fixture_state(&f, a), *second = fixture_state(&f, b);
+    ASSERT_TRUE(separate_morph(&f, first, 1));
+    ASSERT_TRUE(separate_morph(&f, second, 0));
+    first->has_length = second->has_length = 1;
+    first->length = second->length = 24;
+    first->morph_keys[0].data = NULL;
+    first->morph_keys[0].data_size = 0;
+    fixture_begin_edit(&f);
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_TRUE(eng_object_animation_set_step(f.engine, merged, 0.25f));
+    nmo_engine_mesh_t runtime;
+    ASSERT_TRUE(nmo_engine_mesh(f.engine, mesh, &runtime));
+    ASSERT_FLOAT_EQ((123-2)*0.5f, runtime.vertices[0].position.x, 0.000001f);
+    nmo_vector_t normal = expected_normal(PackedNormalsSamples[6].normals[0]);
+    ASSERT_FLOAT_EQ(normal.x, runtime.vertices[0].normal.x, 0.000001f);
+    ASSERT_FLOAT_EQ(normal.y, runtime.vertices[0].normal.y, 0.000001f);
+    ASSERT_FLOAT_EQ(normal.z, runtime.vertices[0].normal.z, 0.000001f);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_morph, controller_positions_and_packed_normals_match_reference_samples);
 REGISTER_TEST(engine_morph, invalid_or_ignored_morphs_leave_the_mesh_unchanged);
@@ -477,4 +616,7 @@ REGISTER_TEST(engine_morph, deformed_geometry_drives_normals_bounds_and_ray_hits
 REGISTER_TEST(engine_morph, separate_keys_convert_legacy_normals_and_replace_optional_sections);
 REGISTER_TEST(engine_morph, saved_global_playback_supports_all_morph_storage_formats);
 REGISTER_TEST(engine_morph, shared_morph_data_uses_the_alias_target_and_ignore_flag);
+REGISTER_TEST(engine_morph, merged_vertices_map_time_and_normals_blend_in_packed_angle_space);
+REGISTER_TEST(engine_morph, unequal_vertex_counts_prefer_the_first_source_at_unscaled_time);
+REGISTER_TEST(engine_morph, merged_sparse_keys_preserve_the_current_vertices_before_blending);
 TEST_MAIN_END()
