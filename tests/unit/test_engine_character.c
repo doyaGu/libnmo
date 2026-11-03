@@ -767,6 +767,20 @@ static void animation_inputs(engine_fixture_t *f, nmo_object_id_t block, nmo_obj
     fixture_input_int(f,BLOCK_PIN(f,block,1),(int32_t)animation);
 }
 
+static void saved_input(engine_fixture_t *f, nmo_object_id_t pin, const char *text)
+{
+    nmo_object_id_t source = 0;
+    ASSERT_EQ(NMO_OK,nmo_script_edit_ensure_input_parameter_source(f->tx,pin,&source));
+    ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(f->tx,source,text));
+}
+
+static void saved_object(engine_fixture_t *f, nmo_object_id_t pin, nmo_object_id_t object)
+{
+    char value[32];
+    snprintf(value,sizeof(value),"%u",object);
+    saved_input(f,pin,value);
+}
+
 TEST(engine_character, pose_blocks_use_fractional_frames_and_normalized_steps_without_selecting_an_active_clip)
 {
     const nmo_guid_t guids[] = {GUID_ANIMATION_FRAME,GUID_ANIMATION_STEP};
@@ -969,6 +983,96 @@ TEST(engine_character, global_playback_takes_over_automatic_characters_without_s
     }
 }
 
+TEST(engine_character, loaded_character_controls_remap_parameters_and_execute_all_animation_formats)
+{
+    const nmo_objectanimation_format_t formats[] = {CKOBJANIM_FORMAT_CONTROLLERS,
+        CKOBJANIM_FORMAT_NEWDATA,CKOBJANIM_FORMAT_LEGACY,CKOBJANIM_FORMAT_SHARED};
+    for (size_t c = 0; c < COUNT(formats); c++) {
+        engine_fixture_t f;
+        fixture_begin_document(&f);
+        nmo_object_id_t body, actor = character(&f,&body);
+        nmo_object_id_t animation = clip(&f,"Saved Pose",actor,body,10,0,10);
+        nmo_keyedanimation_state_t *keyed = fixture_state(&f,animation);
+        nmo_object_id_t channel = nmo_ref_runtime_id(&keyed->animation_ids[0]);
+        nmo_objectanimation_state_t *part = fixture_state(&f,channel);
+        part->format = formats[c];
+        if (formats[c] == CKOBJANIM_FORMAT_SHARED) {
+            nmo_object_id_t shared = clip(&f,"Shared Keys",0,0,10,0,10);
+            part->has_shared_anim = 1;
+            part->shared_anim = ((nmo_keyedanimation_state_t *)fixture_state(&f,shared))->animation_ids[0];
+            part->controllers = NULL; part->controller_count = 0;
+        } else if (formats[c] == CKOBJANIM_FORMAT_LEGACY) {
+            nmo_object_t *object = nmo_object_repository_find_by_id(f.repo,channel);
+            object->chunk = nmo_chunk_create(nmo_session_get_arena(f.session));
+            ASSERT_NOT_NULL(object->chunk);
+            object->chunk->class_id = NMO_CID_OBJECTANIMATION;
+            object->chunk->data_version = 0;
+        }
+        character_script(&f);
+        nmo_object_id_t floor = fixture_block(&f,NMO_GUID(0x0ad75ccb,0x0cd1369a),"Saved Floor");
+        nmo_object_id_t lod = fixture_block(&f,NMO_GUID(0x200d6501,0x4cf61e52),"Saved LOD");
+        nmo_object_id_t exclude = fixture_block(&f,GUID_EXCLUDE_ANIMATION,"Saved Exclude");
+        nmo_object_id_t set_frame = fixture_block(&f,GUID_ANIMATION_FRAME,"Saved Frame");
+        nmo_object_id_t step = fixture_block(&f,GUID_ANIMATION_STEP,"Saved Step");
+        nmo_object_id_t force = fixture_block(&f,GUID_BODYPART_FRAME,"Saved Force");
+        const nmo_object_id_t blocks[] = {floor,lod,exclude,set_frame,step,force};
+        for (size_t i = 0; i < COUNT(blocks); i++) {
+            saved_object(&f,fixture_target(&f,blocks[i]),i == 2 || i == 5 ? body : actor);
+            fixture_link(&f,i == 0 ? f.script_in : BLOCK_OUT(&f,blocks[i-1],0),BLOCK_IN(&f,blocks[i],0),0);
+        }
+        saved_object(&f,BLOCK_PIN(&f,floor,0),body);
+        saved_input(&f,BLOCK_PIN(&f,lod,0),"-100"); saved_input(&f,BLOCK_PIN(&f,lod,1),"-50");
+        saved_input(&f,BLOCK_PIN(&f,lod,2),"0%");
+        const nmo_object_id_t poses[] = {set_frame,step,force};
+        const char *values[] = {"3","50%","4"};
+        for (size_t i = 0; i < COUNT(poses); i++) {
+            saved_input(&f,BLOCK_PIN(&f,poses[i],0),values[i]);
+            saved_object(&f,BLOCK_PIN(&f,poses[i],1),animation);
+        }
+        fixture_commit(&f,NULL);
+        nmo_beobject_state_t *driver = fixture_state(&f,f.owner_id);
+        driver->has_single_activity = 1;
+        driver->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE;
+        nmo_behavior_state_t *script = fixture_state(&f,f.script_id);
+        script->has_single_activity = true;
+        script->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE | CK_SCENEOBJECT_START_RESET;
+        const char *path = NMO_TEST_SCRATCH_FILE("engine_character_controls.cmo");
+        ASSERT_EQ(NMO_OK,nmo_session_save_file(f.session,path,NULL,NULL));
+        engine_fixture_t host;
+        fixture_begin_document(&host); fixture_begin_edit(&host);
+        nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL;
+        fixture_commit(&host,&options);
+        ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_ALL));
+        nmo_engine_set_file_resolver(host.engine,resolve_file,(void *)path);
+        int32_t file = -1;
+        ASSERT_EQ(NMO_OK,nmo_engine_load(host.engine,"controls.cmo",true,&file));
+        ASSERT_TRUE(file > 0);
+        nmo_object_id_t loaded_actor = nmo_engine_object_named(host.engine,"Character",NMO_CID_CHARACTER);
+        nmo_object_id_t loaded_body = nmo_engine_object_named(host.engine,"Body",NMO_CID_BODYPART);
+        nmo_object_id_t loaded_pose = nmo_engine_object_named(host.engine,"Saved Pose",NMO_CID_KEYEDANIMATION);
+        ASSERT_TRUE(loaded_actor != 0 && loaded_actor != actor && loaded_body != 0 && loaded_pose != 0);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
+        for (size_t i = 0; i < COUNT(blocks); i++) {
+            nmo_object_id_t loaded = nmo_engine_object_named(host.engine,nmo_object_get_name(nmo_object_repository_find_by_id(f.repo,blocks[i])),NMO_CID_BEHAVIOR);
+            ASSERT_TRUE(loaded != 0); ASSERT_EQ(1u,runs(&host,loaded));
+        }
+        ASSERT_EQ(loaded_body,eng_character_floor_reference(host.engine,loaded_actor));
+        ASSERT_FLOAT_EQ(0,eng_character_animation_lod(host.engine,loaded_actor),0);
+        ASSERT_FLOAT_EQ(5,frame(host.engine,loaded_pose),1e-6f);
+        ASSERT_FLOAT_EQ(4,x(host.engine,loaded_body),1e-6f);
+        ASSERT_TRUE(eng_animation_set_frame(host.engine,loaded_pose,6));
+        ASSERT_FLOAT_EQ(4,x(host.engine,loaded_body),1e-6f);
+        ASSERT_FLOAT_EQ(0,eng_animation_state(host.engine,loaded_pose)->current_step,0);
+        eng_animation_source_t source;
+        ASSERT_TRUE(eng_animation_source(host.engine,eng_keyed_animation_root(host.engine,loaded_pose),&source));
+        ASSERT_EQ(formats[c],source.state->format);
+        ASSERT_EQ(0u,((const nmo_3dentity_state_t *)fixture_state(&f,body))->moveable_flags & CK_3DENTITY_IGNOREANIMATION);
+        ASSERT_EQ(0u,nmo_ref_runtime_id(&((const nmo_character_state_t *)fixture_state(&f,actor))->floor_ref));
+        ASSERT_FLOAT_EQ(0,x(host.engine,host.owner_id),0);
+        fixture_end(&host); fixture_end(&f); remove(path);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_character, clocks_restore_saved_cursors_and_separate_cursor_updates_from_pose);
 REGISTER_TEST(engine_character, linked_unlinked_paused_and_reverse_clocks_follow_native_frame_rules);
@@ -996,4 +1100,5 @@ REGISTER_TEST(engine_character, pose_blocks_report_native_owner_and_parameter_er
 REGISTER_TEST(engine_character, bodypart_frame_bypasses_exclusion_uses_child_duration_and_preserves_the_keyed_cursor);
 REGISTER_TEST(engine_character, forced_bodypart_frames_keep_secondary_exclusivity_and_zero_length_channels_unchanged);
 REGISTER_TEST(engine_character, global_playback_takes_over_automatic_characters_without_stopping_their_scripts);
+REGISTER_TEST(engine_character, loaded_character_controls_remap_parameters_and_execute_all_animation_formats);
 TEST_MAIN_END()
