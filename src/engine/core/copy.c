@@ -577,6 +577,7 @@ static void copy_entity(nmo_engine_t *engine, const copy_set_t *set, const nmo_o
     int32_t new_parent = eng_entity_index(engine, parent_copy != 0 ? parent_copy : parent_id);
     eng_entity_set_parent(engine, to, new_parent, true);
     eng_matrix_t world = engine->entities.data[from].world;
+    engine->entities.data[to].animation_lod = engine->entities.data[from].animation_lod;
     eng_entity_set_world_matrix(engine, to, &world, true);
 }
 

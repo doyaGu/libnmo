@@ -7,10 +7,17 @@
 
 typedef struct eng_range eng_range_t;
 
+typedef struct eng_animation_member { nmo_object_id_t id, entity; } eng_animation_member_t;
+typedef struct eng_animation_channel { nmo_object_id_t id; float contribution; } eng_animation_channel_t;
+
 typedef struct eng_keyed_animation {
     nmo_object_id_t id, root_entity, root_animation;
     nmo_vector_t offset;
     bool ready;
+    bool sorted;
+    nmo_object_id_t sort_character, sort_root, sort_floor;
+    ENG_VEC(eng_animation_member_t) members;
+    ENG_VEC(eng_animation_channel_t) order;
 } eng_keyed_animation_t;
 
 typedef struct eng_animations {
@@ -30,6 +37,8 @@ bool eng_animation_position(nmo_engine_t *engine, nmo_object_id_t animation, flo
 bool eng_keyed_animation_center(nmo_engine_t *engine, nmo_object_id_t animation, float frame);
 bool eng_animation_root_offset(const nmo_engine_t *engine, nmo_object_id_t animation, nmo_vector_t *out);
 float eng_animation_contribution(nmo_engine_t *engine, nmo_object_id_t animation);
+float eng_character_animation_lod(const nmo_engine_t *engine, nmo_object_id_t character);
+bool eng_character_set_animation_lod(nmo_engine_t *engine, nmo_object_id_t character, float lod);
 
 typedef struct eng_animation_source {
     nmo_object_id_t id;

@@ -906,6 +906,7 @@ bool eng_object_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animati
     if (entity < 0) {
         return false; /* CKERR_NOTINITIALIZED */
     }
+    if (engine->entities.data[entity].moveable_flags & CK_3DENTITY_IGNOREANIMATION) return true;
     float frame = step * source.length;
     anim_value_t axis, rotation, position, scaling;
     bool has_axis = anim_sample(engine, animation, ANIM_AXIS, frame, &axis);

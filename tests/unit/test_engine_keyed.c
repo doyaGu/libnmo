@@ -132,6 +132,8 @@ TEST(engine_keyed, lazy_roots_walk_past_empty_slots_to_standalone_or_character_a
         if (character) {
             nmo_3dentity_state_t *root_state = fixture_state(&f, f.owner_id);
             root_state->parent = nmo_ref_from_id(actor);
+            nmo_3dentity_state_t *actor_state = fixture_state(&f, actor);
+            actor_state->moveable_flags |= VX_MOVEABLE_CHARACTERRENDERED;
         }
         nmo_object_id_t leaf = fixture_create(&f, NMO_CID_3DENTITY, "Leaf");
         nmo_3dentity_state_t *leaf_state = fixture_state(&f, leaf);

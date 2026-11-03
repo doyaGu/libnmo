@@ -1,6 +1,7 @@
 #include "engine_fixture.h"
 #include "../../src/engine/engine_animation.h"
 #include "../../src/engine/engine_transform.h"
+#include "object/builtin/nmo_character_schemas.h"
 
 #include <float.h>
 #include <math.h>
@@ -22,6 +23,61 @@ static nmo_object_id_t animation(engine_fixture_t *f, const char *name,
     state->controllers = controllers;
     state->controller_count = count;
     return id;
+}
+
+static nmo_object_id_t entity(engine_fixture_t *f, const char *name, nmo_object_id_t parent)
+{
+    nmo_object_id_t id = fixture_create(f, NMO_CID_3DENTITY, name);
+    nmo_3dentity_state_t *state = fixture_state(f, id);
+    if (state != NULL) state->parent = nmo_ref_from_id(parent);
+    return id;
+}
+
+static nmo_object_id_t curve(engine_fixture_t *f, const char *name, nmo_object_id_t target, float start, float end)
+{
+    nmo_arena_t *arena = nmo_session_get_arena(f->session);
+    float *keys = nmo_arena_alloc(arena, 8*sizeof(float), _Alignof(float));
+    nmo_objanim_controller_t *controller = nmo_arena_alloc(arena, sizeof(*controller), _Alignof(nmo_objanim_controller_t));
+    if (keys == NULL || controller == NULL) return 0;
+    const float values[] = {0,start,0,0, 8,end,0,0};
+    memcpy(keys, values, sizeof(values));
+    *controller = (nmo_objanim_controller_t){POSITION,2,sizeof(values),keys};
+    nmo_object_id_t id = animation(f, name, controller, 1);
+    nmo_objectanimation_state_t *state = fixture_state(f, id);
+    if (state != NULL) state->entity = nmo_ref_from_id(target);
+    return id;
+}
+
+static nmo_object_id_t group(engine_fixture_t *f, nmo_object_id_t character, nmo_object_id_t root,
+                             nmo_ref_t *members, uint32_t count)
+{
+    nmo_object_id_t id = fixture_create(f, NMO_CID_KEYEDANIMATION, "Global");
+    nmo_keyedanimation_state_t *state = fixture_state(f, id);
+    if (state == NULL) return 0;
+    state->animation_ids = members;
+    state->animation_count = count;
+    state->base.has_character = state->base.has_root_entity = 1;
+    state->base.character = nmo_ref_from_id(character);
+    state->base.root_entity = nmo_ref_from_id(root);
+    state->base.flags = CKANIMATION_SUBANIMSSORTED; /* Load must invalidate this saved hint. */
+    return id;
+}
+
+static float x(const nmo_engine_t *engine, nmo_object_id_t target)
+{
+    float matrix[16];
+    return nmo_engine_entity_world_matrix(engine, target, matrix) ? matrix[12] : NAN;
+}
+
+static void append_controller(engine_fixture_t *f, nmo_object_id_t id, nmo_objanim_controller_t controller)
+{
+    nmo_objectanimation_state_t *state = fixture_state(f, id);
+    nmo_objanim_controller_t *array = nmo_arena_alloc(nmo_session_get_arena(f->session),
+        (state->controller_count+1)*sizeof(*array), _Alignof(nmo_objanim_controller_t));
+    ASSERT_NOT_NULL(array);
+    memcpy(array, state->controllers, state->controller_count*sizeof(*array));
+    array[state->controller_count++] = controller;
+    state->controllers = array;
 }
 
 TEST(engine_animation_lod, contribution_reads_all_vector_layouts_and_ignores_tangents_and_axis_keys)
@@ -130,8 +186,205 @@ TEST(engine_animation_lod, merged_contribution_averages_sources_independently_of
     fixture_end(&f);
 }
 
+TEST(engine_animation_lod, invisible_characters_update_the_root_and_optional_floor_prefix)
+{
+    for (int floor_present = 0; floor_present < 2; floor_present++) {
+        engine_fixture_t f;
+        fixture_begin_document(&f);
+        nmo_object_id_t character = fixture_create(&f, NMO_CID_CHARACTER, "Character");
+        nmo_object_id_t root = entity(&f, "Root", character), low = entity(&f, "Low", character), high = entity(&f, "High", character);
+        nmo_object_id_t floor = floor_present ? entity(&f, "Floor", character) : 0;
+        nmo_character_state_t *actor = fixture_state(&f, character);
+        actor->floor_ref = nmo_ref_from_id(floor);
+        nmo_object_id_t a = curve(&f, "Low Curve", low, 0,2), b = curve(&f, "High Curve", high, 0,20);
+        nmo_object_id_t r = curve(&f, "Root Curve", root, 0,1);
+        nmo_object_id_t floor_curve = floor_present ? curve(&f, "Floor Curve", floor, 0,2) : 0;
+        nmo_ref_t members[] = {nmo_ref_from_id(a),nmo_ref_from_id(b),nmo_ref_from_id(floor_present ? floor_curve : r),nmo_ref_from_id(r)};
+        nmo_object_id_t keyed = group(&f, character, root, members, floor_present ? 4 : 3);
+        fixture_begin_edit(&f);
+        fixture_commit(&f, NULL);
+        ASSERT_FLOAT_EQ(1, eng_character_animation_lod(f.engine, character), 0);
+        ASSERT_TRUE(eng_animation_set_step(f.engine, keyed, 1));
+        ASSERT_FLOAT_EQ(1, x(f.engine, root), 0);
+        if (floor_present) ASSERT_FLOAT_EQ(2, x(f.engine, floor), 0);
+        ASSERT_FLOAT_EQ(0, x(f.engine, high), 0);
+        ASSERT_FLOAT_EQ(0, x(f.engine, low), 0);
+        fixture_end(&f);
+    }
+}
+
+TEST(engine_animation_lod, lod_truncates_the_wide_product_and_full_lod_updates_remaining_channels)
+{
+    for (int floor_present = 0; floor_present < 2; floor_present++) {
+        engine_fixture_t f;
+        fixture_begin_document(&f);
+        nmo_object_id_t character = fixture_create(&f, NMO_CID_CHARACTER, "Character");
+        nmo_character_state_t *actor = fixture_state(&f, character);
+        actor->base.moveable_flags |= VX_MOVEABLE_CHARACTERRENDERED;
+        nmo_object_id_t root = entity(&f, "Root", character), limbs[25];
+        nmo_object_id_t floor = floor_present ? entity(&f, "Floor", character) : 0;
+        actor->floor_ref = nmo_ref_from_id(floor);
+        nmo_ref_t members[27], saved[27];
+        for (int i = 0; i < 25; i++) {
+            limbs[i] = entity(&f, "Limb", character);
+            members[i] = nmo_ref_from_id(curve(&f, "Limb Curve", limbs[i], 0,(float)(100-i)));
+        }
+        uint32_t count = 25;
+        if (floor_present) members[count++] = nmo_ref_from_id(curve(&f, "Floor Curve", floor, 0,2));
+        members[count++] = nmo_ref_from_id(curve(&f, "Root Curve", root, 0,1));
+        memcpy(saved, members, count*sizeof(*members));
+        nmo_object_id_t keyed = group(&f, character, root, members, count);
+        fixture_begin_edit(&f);
+        fixture_commit(&f, NULL);
+        ASSERT_TRUE(eng_character_set_animation_lod(f.engine, character, 0.04f));
+        ASSERT_TRUE(eng_animation_set_step(f.engine, keyed, 1));
+        ASSERT_FLOAT_EQ(1, x(f.engine, root), 0);
+        if (floor_present) ASSERT_FLOAT_EQ(2, x(f.engine, floor), 0);
+        for (int i = 0; i < 25; i++) ASSERT_FLOAT_EQ(0, x(f.engine, limbs[i]), 0);
+        ASSERT_TRUE(eng_character_set_animation_lod(f.engine, character, nextafterf(0.04f,1)));
+        ASSERT_TRUE(eng_animation_set_step(f.engine, keyed, 1));
+        ASSERT_FLOAT_EQ(100, x(f.engine, limbs[0]), 0);
+        for (int i = 1; i < 25; i++) ASSERT_FLOAT_EQ(0, x(f.engine, limbs[i]), 0);
+        ASSERT_TRUE(eng_character_set_animation_lod(f.engine, character, 1));
+        ASSERT_FALSE(eng_character_set_animation_lod(f.engine, character, NAN));
+        ASSERT_FALSE(eng_character_set_animation_lod(f.engine, root, 0.5f));
+        ASSERT_TRUE(eng_animation_set_step(f.engine, keyed, 0.5f));
+        for (int i = 0; i < 25; i++) ASSERT_FLOAT_EQ((float)(100-i)*0.5f, x(f.engine, limbs[i]), 0.000001f);
+        ASSERT_EQ(0, memcmp(saved, members, count*sizeof(*members)));
+        const nmo_keyedanimation_state_t *source = fixture_state(&f, keyed);
+        ASSERT_EQ(CKANIMATION_SUBANIMSSORTED, source->base.flags);
+        fixture_end(&f);
+    }
+}
+
+TEST(engine_animation_lod, mixed_channels_sort_stably_ahead_of_unbound_and_empty_slots)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t character = fixture_create(&f, NMO_CID_CHARACTER, "Character");
+    nmo_character_state_t *actor = fixture_state(&f, character);
+    actor->base.moveable_flags |= VX_MOVEABLE_CHARACTERRENDERED;
+    nmo_object_id_t root = entity(&f, "Root", character), targets[5], channels[5];
+    for (int i = 0; i < 5; i++) {
+        targets[i] = entity(&f, "Target", character);
+        channels[i] = curve(&f, "Channel", targets[i], (float)(i+1)*10, (float)(i+1)*10);
+    }
+    nmo_objectanimation_state_t *moving = fixture_state(&f, channels[0]);
+    ((float *)moving->controllers[0].data)[1] = 0; /* Position score 10. */
+    float scale[] = {0,1,1,1, 8,21,1,1}, rotation[] = {0,0,0,0,1, 8,0,1,0,0};
+    float axis[] = {0,0,0,0,1, 8,0,0,0.70710678f,0.70710678f};
+    uint32_t morph[] = {0,4,0};
+    append_controller(&f, channels[1], (nmo_objanim_controller_t){SCALE,2,sizeof(scale),scale});
+    append_controller(&f, channels[2], (nmo_objanim_controller_t){ROTATION,2,sizeof(rotation),rotation});
+    append_controller(&f, channels[3], (nmo_objanim_controller_t){NMO_OBJANIM_CONTROLLER_MORPH,0,sizeof(morph),morph});
+    append_controller(&f, channels[4], (nmo_objanim_controller_t){0x2f200b08u,2,sizeof(axis),axis});
+    nmo_object_id_t r = curve(&f, "Root Curve", root, 0,1), unbound = animation(&f, "Unbound", NULL,0);
+    nmo_ref_t members[] = {nmo_ref_from_id(0),nmo_ref_from_id(unbound),nmo_ref_from_id(channels[0]),
+        nmo_ref_from_id(channels[1]),nmo_ref_from_id(channels[2]),nmo_ref_from_id(channels[3]),nmo_ref_from_id(channels[4]),nmo_ref_from_id(r)};
+    nmo_object_id_t keyed = group(&f, character, root, members, COUNT(members));
+    fixture_begin_edit(&f);
+    fixture_commit(&f, NULL);
+    ASSERT_TRUE(eng_character_set_animation_lod(f.engine, character, 0.2f));
+    ASSERT_TRUE(eng_animation_set_step(f.engine, keyed, 1));
+    ASSERT_FLOAT_EQ(30, x(f.engine, targets[2]), 0);
+    ASSERT_FLOAT_EQ(0, x(f.engine, targets[3]), 0); /* Equal scores retain rotation-before-morph order. */
+    ASSERT_TRUE(eng_character_set_animation_lod(f.engine, character, 0.4f));
+    ASSERT_TRUE(eng_animation_set_step(f.engine, keyed, 1));
+    ASSERT_FLOAT_EQ(40, x(f.engine, targets[3]), 0);
+    ASSERT_FLOAT_EQ(0, x(f.engine, targets[1]), 0);
+    ASSERT_FLOAT_EQ(0, x(f.engine, targets[0]), 0);
+    ASSERT_FLOAT_EQ(0, x(f.engine, targets[4]), 0);
+    ASSERT_TRUE(eng_character_set_animation_lod(f.engine, character, 1));
+    ASSERT_TRUE(eng_animation_set_step(f.engine, keyed, 1));
+    for (int i = 0; i < 5; i++) ASSERT_FLOAT_EQ((float)(i+1)*10, x(f.engine, targets[i]), 0.00001f);
+    fixture_end(&f);
+}
+
+TEST(engine_animation_lod, membership_target_and_floor_changes_rebuild_the_private_order)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t character = fixture_create(&f, NMO_CID_CHARACTER, "Character");
+    nmo_character_state_t *actor = fixture_state(&f, character);
+    actor->base.moveable_flags |= VX_MOVEABLE_CHARACTERRENDERED;
+    nmo_object_id_t root = entity(&f, "Root", character), low = entity(&f, "Low", character);
+    nmo_object_id_t high = entity(&f, "High", character), added = entity(&f, "Added", character);
+    nmo_object_id_t a = curve(&f, "A", low, 0,2), b = curve(&f, "B", high, 0,10);
+    nmo_object_id_t c = curve(&f, "C", added, 0,20), r = curve(&f, "Root Curve", root, 0,1);
+    nmo_ref_t members[] = {nmo_ref_from_id(a),nmo_ref_from_id(b),nmo_ref_from_id(r)};
+    nmo_object_id_t keyed = group(&f, character, root, members, COUNT(members));
+    fixture_begin_edit(&f);
+    fixture_commit(&f, NULL);
+    ASSERT_TRUE(eng_character_set_animation_lod(f.engine, character, 0.5f));
+    ASSERT_TRUE(eng_animation_set_step(f.engine, keyed, 1));
+    ASSERT_FLOAT_EQ(10, x(f.engine, high), 0);
+    ASSERT_FLOAT_EQ(0, x(f.engine, low), 0);
+    members[1] = nmo_ref_from_id(c);
+    ASSERT_TRUE(eng_animation_set_step(f.engine, keyed, 0.5f));
+    ASSERT_FLOAT_EQ(10, x(f.engine, added), 0);
+    nmo_objectanimation_state_t *changed = fixture_state(&f, c);
+    changed->entity = nmo_ref_from_id(root);
+    ASSERT_TRUE(eng_animation_set_step(f.engine, keyed, 0.5f));
+    /* Both root channels now tie. C precedes R in source order, so R writes last. */
+    ASSERT_FLOAT_EQ(0.5f, x(f.engine, root), 0);
+    changed->entity = nmo_ref_from_id(added);
+    actor->floor_ref = nmo_ref_from_id(low);
+    ASSERT_TRUE(eng_character_set_animation_lod(f.engine, character, 0));
+    ASSERT_TRUE(eng_animation_set_step(f.engine, keyed, 1));
+    ASSERT_FLOAT_EQ(2, x(f.engine, low), 0);
+    ASSERT_FLOAT_EQ(1, x(f.engine, root), 0);
+    ASSERT_FLOAT_EQ(10, x(f.engine, added), 0);
+    fixture_end(&f);
+}
+
+TEST(engine_animation_lod, ignored_selected_entities_keep_their_pose_and_character_lod_copies_independently)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t character = fixture_create(&f, NMO_CID_CHARACTER, "Character");
+    nmo_character_state_t *actor = fixture_state(&f, character);
+    actor->base.moveable_flags |= VX_MOVEABLE_CHARACTERRENDERED;
+    nmo_object_id_t root = entity(&f, "Root", character), low = entity(&f, "Low", character), high = entity(&f, "Ignored", character);
+    nmo_3dentity_state_t *ignored = fixture_state(&f, high);
+    ignored->moveable_flags |= CK_3DENTITY_IGNOREANIMATION;
+    ignored->world_matrix[12] = 7;
+    nmo_object_id_t a = curve(&f, "Low Curve", low, 0,2), b = curve(&f, "High Curve", high, 0,20);
+    nmo_object_id_t r = curve(&f, "Root Curve", root, 0,1);
+    nmo_ref_t members[] = {nmo_ref_from_id(a),nmo_ref_from_id(b),nmo_ref_from_id(r)};
+    nmo_object_id_t keyed = group(&f, character, root, members, COUNT(members));
+    fixture_begin_edit(&f);
+    fixture_commit(&f, NULL);
+    ASSERT_TRUE(eng_character_set_animation_lod(f.engine, character, 0.5f));
+    ASSERT_TRUE(eng_animation_set_step(f.engine, keyed, 1));
+    ASSERT_FLOAT_EQ(1, x(f.engine, root), 0);
+    ASSERT_FLOAT_EQ(7, x(f.engine, high), 0);
+    ASSERT_FLOAT_EQ(0, x(f.engine, low), 0);
+    ASSERT_TRUE(eng_character_set_animation_lod(f.engine, character, -1));
+    ASSERT_FALSE(eng_character_set_animation_lod(f.engine, character, INFINITY));
+    ASSERT_TRUE(eng_animation_set_step(f.engine, keyed, 0.5f));
+    ASSERT_FLOAT_EQ(0.5f, x(f.engine, root), 0);
+    ASSERT_FLOAT_EQ(7, x(f.engine, high), 0);
+    ASSERT_FLOAT_EQ(0, x(f.engine, low), 0);
+    nmo_object_id_t copy = 0;
+    ASSERT_EQ(NMO_OK, nmo_engine_copy_objects(f.engine, &character, 1, false, &copy));
+    ASSERT_TRUE(copy != 0 && copy != character);
+    ASSERT_FLOAT_EQ(-1, eng_character_animation_lod(f.engine, copy), 0);
+    ASSERT_TRUE(eng_character_set_animation_lod(f.engine, copy, 0.75f));
+    ASSERT_FLOAT_EQ(-1, eng_character_animation_lod(f.engine, character), 0);
+    nmo_engine_t *other = NULL;
+    ASSERT_EQ(NMO_OK, nmo_engine_create(f.workspace, NULL, &other));
+    ASSERT_FLOAT_EQ(1, eng_character_animation_lod(other, character), 0);
+    nmo_engine_destroy(other);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_animation_lod, contribution_reads_all_vector_layouts_and_ignores_tangents_and_axis_keys);
 REGISTER_TEST(engine_animation_lod, contribution_preserves_wide_cancellation_and_small_raw_quaternion_motion);
 REGISTER_TEST(engine_animation_lod, merged_contribution_averages_sources_independently_of_weight_and_guards_cycles);
+REGISTER_TEST(engine_animation_lod, invisible_characters_update_the_root_and_optional_floor_prefix);
+REGISTER_TEST(engine_animation_lod, lod_truncates_the_wide_product_and_full_lod_updates_remaining_channels);
+REGISTER_TEST(engine_animation_lod, mixed_channels_sort_stably_ahead_of_unbound_and_empty_slots);
+REGISTER_TEST(engine_animation_lod, membership_target_and_floor_changes_rebuild_the_private_order);
+REGISTER_TEST(engine_animation_lod, ignored_selected_entities_keep_their_pose_and_character_lod_copies_independently);
 TEST_MAIN_END()

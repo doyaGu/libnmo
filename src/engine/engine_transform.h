@@ -29,6 +29,7 @@ typedef struct eng_entity {
     eng_matrix_t world;
     eng_matrix_t local;
     uint32_t moveable_flags;
+    float animation_lod; /* CKCharacter's runtime animation LOD; initially one */
     int32_t parent;
     int32_t first_child, last_child;
     int32_t next_sibling, prev_sibling;

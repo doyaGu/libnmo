@@ -266,6 +266,7 @@ static int32_t eng_entity_add(nmo_engine_t *engine, nmo_object_id_t id, const fl
     }
     entity->local = entity->world;
     entity->moveable_flags = moveable_flags;
+    entity->animation_lod = 1;
     entity->parent = entity->first_child = entity->last_child = -1;
     entity->next_sibling = entity->prev_sibling = -1;
     return index;

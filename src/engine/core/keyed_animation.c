@@ -2,6 +2,7 @@
 #include "../engine_internal.h"
 
 #include "object/nmo_class_ids.h"
+#include "object/builtin/nmo_character_schemas.h"
 
 #include <math.h>
 
@@ -62,6 +63,10 @@ nmo_status_t eng_load_animations(nmo_engine_t *engine, const eng_range_t *range)
 
 void eng_free_animations(nmo_engine_t *engine)
 {
+    for (size_t i = 0; i < engine->animations.keyed.count; i++) {
+        free(engine->animations.keyed.data[i].members.data);
+        free(engine->animations.keyed.data[i].order.data);
+    }
     free(engine->animations.keyed.data);
     free(engine->animations.keyed_map.slots);
     free(engine->animations.parents.slots);
@@ -83,6 +88,7 @@ void eng_copy_animation(nmo_engine_t *engine, nmo_object_id_t source, nmo_object
     }
     /* RCKKeyedAnimation::Copy invalidates the selected root channel. */
     copy->root_animation = 0;
+    copy->sorted = false;
 }
 
 static nmo_object_id_t keyed_entity(const nmo_engine_t *engine, nmo_object_id_t part)
@@ -170,6 +176,67 @@ bool eng_keyed_animation_center(nmo_engine_t *engine, nmo_object_id_t animation,
     return true;
 }
 
+float eng_character_animation_lod(const nmo_engine_t *engine, nmo_object_id_t character)
+{
+    int32_t index = eng_entity_index(engine, character);
+    return index >= 0 && nmo_engine_object_class(engine, character) == NMO_CID_CHARACTER
+        ? engine->entities.data[index].animation_lod : 0;
+}
+
+bool eng_character_set_animation_lod(nmo_engine_t *engine, nmo_object_id_t character, float lod)
+{
+    int32_t index = eng_entity_index(engine, character);
+    if (index < 0 || nmo_engine_object_class(engine, character) != NMO_CID_CHARACTER || !isfinite(lod)) return false;
+    engine->entities.data[index].animation_lod = lod;
+    return true;
+}
+
+/* Keep the sorted list private. Membership, target rebinding and root/floor
+ * changes invalidate it; loading never trusts the file's SUBANIMSSORTED bit. */
+static bool keyed_order(nmo_engine_t *engine, eng_keyed_animation_t *runtime,
+                         const nmo_keyedanimation_state_t *state, nmo_object_id_t character, nmo_object_id_t floor)
+{
+    bool changed = !runtime->sorted || runtime->members.count != state->animation_count ||
+        runtime->sort_character != character || runtime->sort_root != runtime->root_entity || runtime->sort_floor != floor;
+    for (uint32_t i = 0; !changed && i < state->animation_count; i++) {
+        nmo_object_id_t id = eng_object_ref(engine, runtime->id, &state->animation_ids[i]);
+        if (runtime->members.data[i].id != id || runtime->members.data[i].entity != keyed_entity(engine, id)) changed = true;
+    }
+    if (!changed) return true;
+    if (!eng_vec_reserve((void **)&runtime->members.data, &runtime->members.capacity, state->animation_count, sizeof(*runtime->members.data)) ||
+        !eng_vec_reserve((void **)&runtime->order.data, &runtime->order.capacity, state->animation_count, sizeof(*runtime->order.data))) return false;
+    runtime->members.count = runtime->order.count = state->animation_count;
+    for (uint32_t i = 0; i < state->animation_count; i++) {
+        nmo_object_id_t id = eng_object_ref(engine, runtime->id, &state->animation_ids[i]);
+        nmo_object_id_t entity = keyed_entity(engine, id);
+        runtime->members.data[i] = (eng_animation_member_t){id,entity};
+        float contribution = -1e30f;
+        if (character != 0 && keyed_part(engine, id) != NULL) {
+            contribution = -1e10f;
+            if (entity != 0 && eng_find_object(engine, entity) != NULL && eng_entity_index(engine, entity) >= 0) {
+                contribution = entity == runtime->root_entity || entity == floor ? 1e30f : eng_animation_contribution(engine, id);
+            }
+        }
+        runtime->order.data[i] = (eng_animation_channel_t){id,contribution};
+    }
+    if (character != 0) {
+        for (size_t i = 1; i < runtime->order.count; i++) {
+            eng_animation_channel_t value = runtime->order.data[i];
+            size_t j = i;
+            while (j > 0 && runtime->order.data[j-1].contribution < value.contribution) {
+                runtime->order.data[j] = runtime->order.data[j-1];
+                j--;
+            }
+            runtime->order.data[j] = value;
+        }
+    }
+    runtime->sort_character = character;
+    runtime->sort_root = runtime->root_entity;
+    runtime->sort_floor = floor;
+    runtime->sorted = true;
+    return true;
+}
+
 bool eng_keyed_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animation, float step)
 {
     eng_keyed_animation_t *runtime = keyed_runtime(engine, animation);
@@ -177,9 +244,28 @@ bool eng_keyed_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animatio
     if (runtime == NULL || state == NULL) return false;
     nmo_object_id_t root = keyed_root(engine, runtime, state);
     if (root != 0 && !eng_map_put(&engine->animations.parents, root, (int32_t)(runtime - engine->animations.keyed.data))) return false;
+    nmo_object_id_t character = eng_object_ref(engine, animation, &state->base.character);
+    const nmo_character_state_t *actor = keyed_state(engine, character, NMO_CID_CHARACTER);
+    if (actor == NULL) character = 0;
+    nmo_object_id_t floor = actor != NULL ? eng_object_ref(engine, character, &actor->floor_ref) : 0;
+    if (eng_entity_index(engine, floor) < 0) floor = 0;
+    if (!keyed_order(engine, runtime, state, character, floor)) return false;
+    size_t count = runtime->order.count;
+    int32_t character_index = eng_entity_index(engine, character);
+    if (character_index >= 0 && count != 0) {
+        size_t required = floor != 0 ? 2 : 1;
+        float lod = (engine->entities.data[character_index].moveable_flags & VX_MOVEABLE_CHARACTERRENDERED)
+            ? eng_character_animation_lod(engine, character) : 0;
+        if (count > required && lod < 1) {
+            /* Preserve the native wide product before truncating. Negative
+             * finite LODs keep the required prefix instead of underflowing. */
+            double additional = (double)(count-required) * fmaxf(lod, 0);
+            count = (size_t)additional + required;
+        }
+    }
     step = step > 1 ? 1 : step < 0 ? 0 : step;
-    for (uint32_t i = 0; i < state->animation_count; i++) {
-        eng_object_animation_set_step(engine, eng_object_ref(engine, animation, &state->animation_ids[i]), step);
+    for (size_t i = 0; i < count; i++) {
+        eng_object_animation_set_step(engine, runtime->order.data[i].id, step);
     }
     return true;
 }
