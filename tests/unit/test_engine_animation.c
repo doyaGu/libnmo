@@ -1,5 +1,6 @@
 #include "engine_fixture.h"
 
+#include "document/nmo_document_load.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_animation_schemas.h"
 
@@ -7,6 +8,7 @@
 #include <stdio.h>
 
 #define GUID_PLAY_ANIMATION NMO_GUID(0x64221225, 0x769a143f)
+#define GUID_PLAY_GLOBAL_ANIMATION NMO_GUID(0x1c9236e1, 0x42f40996)
 #define ANIM_TCB_POSITION 0x347e4a01u
 #define ANIM_TCB_SCALE 0x1b545904u
 #define ANIM_LINEAR_ROTATION 0x49ed4002u
@@ -244,8 +246,80 @@ TEST(engine_animation, malformed_tcb_keys_preserve_the_missing_channel)
     }
 }
 
+TEST(engine_animation, saved_global_animation_plays_tcb_channels_after_loading)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t part = fixture_create(&f, NMO_CID_OBJECTANIMATION, "Part");
+    nmo_object_id_t global = fixture_create(&f, NMO_CID_KEYEDANIMATION, "Global");
+    nmo_objectanimation_state_t *state = fixture_state(&f, part);
+    nmo_keyedanimation_state_t *keyed = fixture_state(&f, global);
+    ASSERT_TRUE(state != NULL && keyed != NULL);
+    static float position[] = {0, 1, 2, 3, 0.5f, 0.3f, -0.2f, 0, 0,
+                               10, 9, 4, 7, -0.5f, -0.1f, 0.2f, 0, 0};
+    static float scale[] = {0, 1, 2, 3, 0.5f, 0.3f, -0.2f, 0, 0,
+                            10, 9, 4, 7, -0.5f, -0.1f, 0.2f, 0, 0};
+    nmo_objanim_controller_t controllers[] = {
+        {ANIM_TCB_POSITION, 2, sizeof(position), position},
+        {ANIM_TCB_SCALE, 2, sizeof(scale), scale},
+    };
+    state->entity = nmo_ref_from_id(f.owner_id);
+    state->format = CKOBJANIM_FORMAT_CONTROLLERS;
+    state->has_length = 1;
+    state->length = 10;
+    state->controller_count = COUNT(controllers);
+    state->controllers = controllers;
+    nmo_ref_t part_ref = nmo_ref_from_id(part);
+    keyed->animation_count = 1;
+    keyed->animation_ids = &part_ref;
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t play = fixture_block(&f, GUID_PLAY_GLOBAL_ANIMATION, "Play");
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, play, 0), 0);
+    const nmo_object_id_t pins[] = {BLOCK_PIN(&f, play, 0), BLOCK_PIN(&f, play, 1),
+                                   BLOCK_PIN(&f, play, 3)};
+    char global_id[32];
+    snprintf(global_id, sizeof(global_id), "%u", global);
+    const char *values[] = {global_id, "10", "FALSE"};
+    for (size_t i = 0; i < COUNT(pins); i++) {
+        nmo_object_id_t source = 0;
+        ASSERT_EQ(NMO_OK, nmo_script_edit_ensure_input_parameter_source(f.tx, pins[i], &source));
+        ASSERT_EQ(NMO_OK, nmo_script_edit_set_parameter_value(f.tx, source, values[i]));
+    }
+    fixture_commit(&f, NULL);
+    const char *path = NMO_TEST_SCRATCH_FILE("engine_animation_tcb.cmo");
+    ASSERT_EQ(NMO_OK, nmo_session_save_file(f.session, path, NULL, NULL));
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
+    nmo_engine_t *engine = NULL;
+    ASSERT_EQ(NMO_OK, nmo_document_load_file(f.ctx, path, NULL, &document));
+    ASSERT_EQ(NMO_OK, nmo_workspace_create(f.ctx, document, &workspace));
+    ASSERT_EQ(NMO_OK, nmo_engine_create(workspace, NULL, &engine));
+    ASSERT_EQ(NMO_OK, nmo_bb_virtools_register(engine));
+    nmo_object_id_t owner = nmo_engine_object_named(engine, "Owner", NMO_CID_3DENTITY);
+    ASSERT_TRUE(owner != 0);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(engine, 5));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(engine, 5));
+    /* Two-key Hermite at 1/2 with tensions +1/2, -1/2: weight 3/8. */
+    float world[16];
+    ASSERT_TRUE(nmo_engine_entity_world_matrix(engine, owner, world));
+    ASSERT_FLOAT_EQ(4, world[12], 0.0001f);
+    ASSERT_FLOAT_EQ(2.75f, world[13], 0.0001f);
+    ASSERT_FLOAT_EQ(4.5f, world[14], 0.0001f);
+    ASSERT_FLOAT_EQ(4, world[0], 0.0001f);
+    ASSERT_FLOAT_EQ(2.75f, world[5], 0.0001f);
+    ASSERT_FLOAT_EQ(4.5f, world[10], 0.0001f);
+    nmo_engine_destroy(engine);
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
+    fixture_end(&f);
+    remove(path);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_animation, tcb_vectors_match_native_samples_through_play_animation);
 REGISTER_TEST(engine_animation, single_tcb_scale_key_clamps_and_preserves_unanimated_channels);
 REGISTER_TEST(engine_animation, malformed_tcb_keys_preserve_the_missing_channel);
+REGISTER_TEST(engine_animation, saved_global_animation_plays_tcb_channels_after_loading);
 TEST_MAIN_END()
