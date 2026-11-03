@@ -16,6 +16,7 @@
 #include "object/nmo_class_ids.h"
 
 #include <math.h>
+#include <float.h>
 #include <string.h>
 
 #define ANIM_LINEAR_POSITION 0x637c4301u
@@ -63,6 +64,26 @@ bool eng_animation_source(const nmo_engine_t *engine, nmo_object_id_t animation,
     }
     /* ShareDataFrom(NULL) allocates empty native keyframe data of length 100. */
     out->length = out->keys != NULL ? (out->keys->has_length ? out->keys->length : 0) : 100;
+    return true;
+}
+
+bool eng_animation_visit(const eng_animation_path_t *path, nmo_object_id_t id, uint32_t *work)
+{
+    if (*work == 0 || (path != NULL && path->depth >= 128)) return false;
+    --*work;
+    for (const eng_animation_path_t *p = path; p != NULL; p = p->parent) {
+        if (p->id == id) return false;
+    }
+    return true;
+}
+
+bool eng_animation_map_time(const eng_animation_source_t *parent,
+                              const eng_animation_source_t *child, float frame, float *out)
+{
+    if (!isfinite(frame) || !isfinite(parent->length) || !isfinite(child->length)) return false;
+    double time = parent->length == 0 || child->length == 0 ? 0 : (double)frame * child->length / parent->length;
+    if (time < -FLT_MAX || time > FLT_MAX) return false;
+    *out = (float)time;
     return true;
 }
 
@@ -702,6 +723,81 @@ static bool anim_vector(const nmo_objectanimation_state_t *state, bool scaling,
     return false;
 }
 
+typedef enum anim_channel { ANIM_POSITION, ANIM_ROTATION, ANIM_SCALE, ANIM_AXIS } anim_channel_t;
+typedef union anim_value { eng_vector_t vector; anim_quat_t quaternion; } anim_value_t;
+
+static bool anim_evaluate(nmo_engine_t *engine, nmo_object_id_t animation, anim_channel_t channel,
+                           float frame, const eng_animation_path_t *path, uint32_t *work, anim_value_t *out);
+
+static bool anim_child(nmo_engine_t *engine, const eng_animation_source_t *parent,
+                        const nmo_ref_t *reference, anim_channel_t channel, float frame,
+                        const eng_animation_path_t *path, uint32_t *work, anim_value_t *out)
+{
+    nmo_object_id_t id = eng_object_ref(engine, parent->id, reference);
+    eng_animation_source_t child;
+    float time;
+    return eng_animation_source(engine, id, &child) && eng_animation_map_time(parent, &child, frame, &time) &&
+        anim_evaluate(engine, id, channel, time, path, work, out);
+}
+
+/* Sample channels without touching either source's entity or playback cursor. */
+static bool anim_evaluate(nmo_engine_t *engine, nmo_object_id_t animation, anim_channel_t channel,
+                           float frame, const eng_animation_path_t *path, uint32_t *work, anim_value_t *out)
+{
+    eng_animation_source_t source;
+    if (!isfinite(frame) || !eng_animation_visit(path, animation, work) ||
+        !eng_animation_source(engine, animation, &source)) return false;
+    static const uint32_t ignored[] = {CK_OBJECTANIMATION_IGNOREPOS, CK_OBJECTANIMATION_IGNOREROT,
+        CK_OBJECTANIMATION_IGNORESCALE, CK_OBJECTANIMATION_IGNORESCALEROT};
+    if (source.state->flags & ignored[channel]) return false;
+    if (source.state->flags & CK_OBJECTANIMATION_MERGED) {
+        float factor = source.state->merge_factor;
+        if (!isfinite(source.length) || !isfinite(factor)) return false;
+        eng_animation_path_t current = {animation, path != NULL ? path->depth + 1 : 1, path};
+        bool endpoint = channel == ANIM_POSITION || channel == ANIM_ROTATION;
+        if (endpoint && (factor == 0 || factor == 1)) {
+            return anim_child(engine, &source, factor == 0 ? &source.state->anim1 : &source.state->anim2,
+                                channel, frame, &current, work, out);
+        }
+        anim_value_t a, b;
+        bool first = anim_child(engine, &source, &source.state->anim1, channel, frame, &current, work, &a);
+        bool second = anim_child(engine, &source, &source.state->anim2, channel, frame, &current, work, &b);
+        if (!first && !second) return false;
+        if (!first || !second) { *out = first ? a : b; return true; }
+        if (channel == ANIM_POSITION || channel == ANIM_SCALE) {
+            double left = 1.0 - factor;
+            out->vector = (eng_vector_t){(float)(a.vector.x * left + b.vector.x * factor),
+                (float)(a.vector.y * left + b.vector.y * factor), (float)(a.vector.z * left + b.vector.z * factor)};
+        } else {
+            out->quaternion = anim_slerp(factor, a.quaternion, b.quaternion);
+        }
+        return true;
+    }
+    if (source.keys == NULL) return false;
+    if (channel == ANIM_POSITION || channel == ANIM_SCALE) {
+        return anim_vector(source.keys, channel == ANIM_SCALE, frame, &out->vector);
+    }
+    bool axis = channel == ANIM_AXIS;
+    uint32_t stride = axis ? nmo_objanim_controller_format_key_size(ANIM_LINEAR_SCALE_AXIS, source.keys->format) : 20;
+    const nmo_objanim_controller_t *controller = anim_controller(source.keys,
+        axis ? ANIM_LINEAR_SCALE_AXIS : ANIM_LINEAR_ROTATION, stride);
+    if (controller != NULL) {
+        out->quaternion = anim_linear_rotation(controller, frame, stride / sizeof(float));
+        return true;
+    }
+    controller = anim_controller(source.keys, axis ? ANIM_TCB_SCALE_AXIS : ANIM_TCB_ROTATION, 40);
+    if (controller == NULL) return false;
+    out->quaternion = anim_tcb_rotation(controller, frame);
+    return true;
+}
+
+static bool anim_sample(nmo_engine_t *engine, nmo_object_id_t animation, anim_channel_t channel,
+                         float frame, anim_value_t *out)
+{
+    uint32_t work = ENG_ANIMATION_WORK_LIMIT;
+    return anim_evaluate(engine, animation, channel, frame, NULL, &work, out);
+}
+
 bool eng_object_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animation, float step)
 {
     eng_animation_source_t source;
@@ -712,35 +808,28 @@ bool eng_object_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animati
         return false; /* CKERR_NOTINITIALIZED */
     }
     float frame = step * source.length;
-    const nmo_objectanimation_state_t empty = {0};
-    const nmo_objectanimation_state_t *keys = source.keys != NULL ? source.keys : &empty;
-    const nmo_objanim_controller_t *rotation = anim_controller(keys, ANIM_LINEAR_ROTATION, 20);
-    const nmo_objanim_controller_t *tcb_rotation = anim_controller(keys, ANIM_TCB_ROTATION, 40);
-    if (state->flags & CK_OBJECTANIMATION_IGNOREROT) rotation = tcb_rotation = NULL;
-    uint32_t axis_stride = nmo_objanim_controller_format_key_size(ANIM_LINEAR_SCALE_AXIS, keys->format);
-    const nmo_objanim_controller_t *axis = anim_controller(keys, ANIM_LINEAR_SCALE_AXIS, axis_stride);
-    const nmo_objanim_controller_t *tcb_axis = anim_controller(keys, ANIM_TCB_SCALE_AXIS, 40);
-    if (state->flags & CK_OBJECTANIMATION_IGNORESCALEROT) axis = tcb_axis = NULL;
-    anim_quat_t scale_axis = {0, 0, 0, 1};
-    if (axis != NULL) scale_axis = anim_linear_rotation(axis, frame, axis_stride / sizeof(float));
-    else if (tcb_axis != NULL) scale_axis = anim_tcb_rotation(tcb_axis, frame);
-    bool has_axis = axis != NULL || tcb_axis != NULL;
+    anim_value_t axis, rotation, position, scaling;
+    bool has_axis = anim_sample(engine, animation, ANIM_AXIS, frame, &axis);
+    bool has_rotation = anim_sample(engine, animation, ANIM_ROTATION, frame, &rotation);
+    anim_quat_t scale_axis = has_axis ? axis.quaternion : (anim_quat_t){0, 0, 0, 1};
     bool use_axis = has_axis && (scale_axis.x != 0 || scale_axis.y != 0 || scale_axis.z != 0);
     eng_matrix_t local = engine->entities.data[entity].local;
     eng_vector_t pos = {local.m[3][0], local.m[3][1], local.m[3][2]};
     eng_vector_t scale = {1.0f, 1.0f, 1.0f};
-    bool has_position = !(state->flags & CK_OBJECTANIMATION_IGNOREPOS) && anim_vector(keys, false, frame, &pos);
-    bool has_scaling = !(state->flags & CK_OBJECTANIMATION_IGNORESCALE) && anim_vector(keys, true, frame, &scale);
-    if (!has_position && !has_scaling && rotation == NULL && tcb_rotation == NULL && !has_axis) {
+    bool has_position = anim_sample(engine, animation, ANIM_POSITION, frame, &position);
+    bool has_scaling = anim_sample(engine, animation, ANIM_SCALE, frame, &scaling);
+    if (has_position) pos = position.vector;
+    if (has_scaling) scale = scaling.vector;
+    if (!has_position && !has_scaling && !has_rotation && !has_axis) {
         eng_animation_morph(engine, animation, engine->entities.data[entity].id, frame);
         return true;
     }
-    if (rotation != NULL || tcb_rotation != NULL || has_scaling || has_axis) {
+    if (has_rotation || has_scaling || has_axis) {
         /* The channels the animation lacks, from the local matrix as it is */
         eng_matrix_t rot;
         eng_matrix_identity(&rot);
         if (has_axis) {
-            bool need_rotation = rotation == NULL && tcb_rotation == NULL;
+            bool need_rotation = !has_rotation;
             if ((need_rotation || !has_scaling) &&
                 !eng_matrix_decompose(&local, use_axis, need_rotation ? &rot : NULL,
                                        has_scaling ? NULL : &scale)) return false;
@@ -755,11 +844,7 @@ bool eng_object_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animati
                 }
             }
         }
-        if (rotation != NULL) {
-            anim_quat_matrix(anim_linear_rotation(rotation, frame, 5), &rot);
-        } else if (tcb_rotation != NULL) {
-            anim_quat_matrix(anim_tcb_rotation(tcb_rotation, frame), &rot);
-        }
+        if (has_rotation) anim_quat_matrix(rotation.quaternion, &rot);
         /* The stretch before the rotation */
         eng_matrix_t stretch;
         eng_matrix_identity(&stretch);

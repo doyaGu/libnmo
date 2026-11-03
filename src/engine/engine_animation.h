@@ -12,6 +12,18 @@ typedef struct eng_animation_source {
     float length;
 } eng_animation_source_t;
 
+/* Bound cyclic/deep input graphs and repeated work in a merge DAG. */
+#define ENG_ANIMATION_WORK_LIMIT 4096u
+typedef struct eng_animation_path {
+    nmo_object_id_t id;
+    uint32_t depth;
+    const struct eng_animation_path *parent;
+} eng_animation_path_t;
+
+bool eng_animation_visit(const eng_animation_path_t *path, nmo_object_id_t id, uint32_t *work);
+bool eng_animation_map_time(const eng_animation_source_t *parent,
+                              const eng_animation_source_t *child, float frame, float *out);
+
 bool eng_animation_source(const nmo_engine_t *engine, nmo_object_id_t animation,
                             eng_animation_source_t *out);
 void eng_animation_morph(nmo_engine_t *engine, nmo_object_id_t animation,
