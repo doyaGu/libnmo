@@ -4,7 +4,8 @@
  *        animation's keys (CK2_3D's RCKObjectAnimation, VxMath's VxQuaternion).
  *
  * The engine evaluates the linear and TCB position, rotation and scale
- * controllers; Bezier, scale-axis and morph controllers change nothing.
+ * controllers, and Bezier position and scale; scale-axis and morph controllers
+ * change nothing.
  * A keyed animation steps each of its object animations (CKKeyedAnimation::SetStep).
  */
 
@@ -22,6 +23,8 @@
 #define ANIM_TCB_POSITION 0x347e4a01u
 #define ANIM_TCB_ROTATION 0x45b52a02u
 #define ANIM_TCB_SCALE 0x1b545904u
+#define ANIM_BEZIER_POSITION 0x921ab801u
+#define ANIM_BEZIER_SCALE 0x18ab4404u
 
 typedef struct anim_quat {
     float x, y, z, w;
@@ -414,6 +417,253 @@ static const nmo_objanim_controller_t *anim_controller(const nmo_objectanimation
     return NULL;
 }
 
+enum {
+    ANIM_BEZIER_SMOOTH = 1, ANIM_BEZIER_LINEAR = 2, ANIM_BEZIER_STEP = 4,
+    ANIM_BEZIER_FAST = 8, ANIM_BEZIER_SLOW = 16, ANIM_BEZIER_EXPLICIT = 32,
+};
+
+static uint32_t anim_bezier_mode(const nmo_objanim_bezier_key_t *key, size_t side)
+{
+    return (key->flags >> (side * 16)) & 0xffffu;
+}
+
+/* CKBezierPositionController::ComputeKeyDistance, including the wrap interval. */
+static double anim_bezier_span(const nmo_objanim_bezier_key_t *keys, float length,
+                                uint32_t first, uint32_t second)
+{
+    return second <= first ? (double)keys[second].time + length - keys[first].time
+                            : (double)keys[second].time - keys[first].time;
+}
+
+/* ComputeBezierForward: an endpoint derivative or a linear side whose neighbor
+ * has another mode. Only the first key's incoming side is also cleared. */
+static void anim_bezier_forward(nmo_objanim_bezier_key_t *keys, uint32_t count,
+                                 float length, uint32_t index)
+{
+    nmo_objanim_bezier_key_t *key = &keys[index];
+    if (count == 1) {
+        memset(key->tangent, 0, sizeof(key->tangent));
+        return;
+    }
+    double span = anim_bezier_span(keys, length, index, index + 1);
+    if (span == 0.0) span = 1.0;
+    double next_span = 1.0, ratio = 0.0;
+    if (index != count - 2) {
+        next_span = anim_bezier_span(keys, length, index + 1, index + 2);
+        if (next_span == 0.0) next_span = 1.0;
+        ratio = span / (span + next_span);
+    }
+    for (size_t c = 0; c < 3; c++) {
+        double delta = (double)keys[index + 1].position[c] - key->position[c];
+        double derivative = delta / span;
+        if (index != count - 2) {
+            double next = (double)keys[index + 2].position[c] - keys[index + 1].position[c];
+            derivative = ((ratio + 1.0) / span) * delta - (ratio / next_span) * next;
+        }
+        key->tangent[1][c] = (float)derivative;
+    }
+    if (index == 0) memset(key->tangent[0], 0, sizeof(key->tangent[0]));
+}
+
+static void anim_bezier_backward(nmo_objanim_bezier_key_t *keys, uint32_t count,
+                                  float length, uint32_t index)
+{
+    nmo_objanim_bezier_key_t *key = &keys[index];
+    if (count == 1) {
+        memset(key->tangent, 0, sizeof(key->tangent));
+        return;
+    }
+    double span = anim_bezier_span(keys, length, index - 1, index);
+    if (span == 0.0) span = 1.0;
+    double previous_span = 1.0, ratio = 0.0;
+    if (index != 1) {
+        previous_span = anim_bezier_span(keys, length, index - 2, index - 1);
+        if (previous_span == 0.0) previous_span = 1.0;
+        ratio = previous_span / (previous_span + span);
+    }
+    for (size_t c = 0; c < 3; c++) {
+        double delta = (double)key->position[c] - keys[index - 1].position[c];
+        double derivative = -delta / span;
+        if (index != 1) {
+            double previous = (double)keys[index - 1].position[c] - keys[index - 2].position[c];
+            derivative = -(((ratio - 1.0) / previous_span) * previous +
+                            ((2.0 - ratio) / span) * delta);
+        }
+        key->tangent[0][c] = (float)derivative;
+    }
+    if (index == count - 1) memset(key->tangent[1], 0, sizeof(key->tangent[1]));
+}
+
+static void anim_bezier_smooth(nmo_objanim_bezier_key_t *keys, uint32_t count,
+                                float length, uint32_t index)
+{
+    nmo_objanim_bezier_key_t *key = &keys[index];
+    uint32_t in_mode = anim_bezier_mode(key, 0), out_mode = anim_bezier_mode(key, 1);
+    bool smooth_in = in_mode == ANIM_BEZIER_SMOOTH, smooth_out = out_mode == ANIM_BEZIER_SMOOTH;
+    uint32_t previous = index == 0 ? count - 1 : index - 1;
+    uint32_t next = index == count - 1 ? 0 : index + 1;
+    double previous_span = anim_bezier_span(keys, length, previous, index);
+    double next_span = anim_bezier_span(keys, length, index, next);
+    if (previous_span == 0.0 || next_span == 0.0 || index == 0 || index == count - 1) {
+        if (smooth_out) {
+            if (index == 0) anim_bezier_forward(keys, count, length, index);
+            else memset(key->tangent[1], 0, sizeof(key->tangent[1]));
+        }
+        if (smooth_in) {
+            if (index == count - 1) anim_bezier_backward(keys, count, length, index);
+            else memset(key->tangent[0], 0, sizeof(key->tangent[0]));
+        }
+    } else if (smooth_in && smooth_out) {
+        double ratio = previous_span / (previous_span + next_span);
+        for (size_t c = 0; c < 3; c++) {
+            double before = (double)key->position[c] - keys[previous].position[c];
+            double after = (double)keys[next].position[c] - key->position[c];
+            double tangent = ((1.0 - ratio) / previous_span) * before + (ratio / next_span) * after;
+            key->tangent[0][c] = (float)-tangent;
+            key->tangent[1][c] = (float)tangent;
+        }
+    } else {
+        uint32_t mode = smooth_in ? out_mode : in_mode;
+        size_t side = smooth_in ? 0 : 1;
+        for (size_t c = 0; c < 3; c++) {
+            if (mode == ANIM_BEZIER_LINEAR || mode == ANIM_BEZIER_FAST ||
+                mode == ANIM_BEZIER_SLOW || mode == ANIM_BEZIER_EXPLICIT) {
+                key->tangent[side][c] = -key->tangent[1 - side][c];
+            } else if (mode == ANIM_BEZIER_STEP) {
+                key->tangent[side][c] = 0;
+            }
+        }
+    }
+}
+
+/* ComputeBezierPts dispatches both modes, then smooths that key. Endpoint
+ * helpers can change the opposite side, so the order matters for mixed modes. */
+static void anim_bezier_tangents(nmo_objanim_bezier_key_t *keys, uint32_t count, float length)
+{
+    for (uint32_t i = 0; i < count; i++) {
+        nmo_objanim_bezier_key_t *key = &keys[i];
+        uint32_t previous = i == 0 ? count - 1 : i - 1;
+        uint32_t next = i == count - 1 ? 0 : i + 1;
+        uint32_t in_mode = anim_bezier_mode(key, 0), out_mode = anim_bezier_mode(key, 1);
+        for (size_t side = 0; side < 2; side++) {
+            uint32_t mode = side == 0 ? in_mode : out_mode;
+            uint32_t neighbor = side == 0 ? previous : next;
+            if (mode == ANIM_BEZIER_LINEAR || mode == ANIM_BEZIER_FAST) {
+                bool endpoint = side == 0 ? i == 0 : i == count - 1;
+                if (mode == ANIM_BEZIER_FAST || endpoint ||
+                    anim_bezier_mode(&keys[neighbor], 1 - side) == ANIM_BEZIER_LINEAR) {
+                    double span = side == 0 ? anim_bezier_span(keys, length, previous, i)
+                                            : anim_bezier_span(keys, length, i, next);
+                    if (span == 0.0) span = 1.0;
+                    double scale = (mode == ANIM_BEZIER_FAST ? 2.0 : 1.0) / span;
+                    for (size_t c = 0; c < 3; c++) {
+                        key->tangent[side][c] = (float)(scale *
+                            ((double)keys[neighbor].position[c] - key->position[c]));
+                    }
+                } else if (side == 0) {
+                    anim_bezier_backward(keys, count, length, i);
+                } else {
+                    anim_bezier_forward(keys, count, length, i);
+                }
+            } else if (mode == ANIM_BEZIER_STEP || mode == ANIM_BEZIER_SLOW) {
+                memset(key->tangent[side], 0, sizeof(key->tangent[side]));
+            }
+        }
+        if (in_mode == ANIM_BEZIER_SMOOTH || out_mode == ANIM_BEZIER_SMOOTH) {
+            anim_bezier_smooth(keys, count, length, i);
+        }
+    }
+}
+
+/* Decode into temporary keys: tangent computation must not alter the document. */
+static bool anim_bezier_vector(const nmo_objanim_controller_t *controller, float length,
+                                float time, eng_vector_t *out)
+{
+    uint32_t count = controller->key_count;
+    if (count == 0 || controller->data == NULL || !isfinite(time) ||
+        count > controller->data_size / 20u ||
+        (uint64_t)count * sizeof(nmo_objanim_bezier_key_t) > SIZE_MAX) {
+        return false;
+    }
+    nmo_objanim_bezier_key_t *keys = malloc((size_t)count * sizeof(*keys));
+    if (keys == NULL) return false;
+    size_t offset = 0;
+    for (uint32_t i = 0; i < count; i++) {
+        size_t size = nmo_objanim_bezier_key_decode((const uint8_t *)controller->data + offset,
+                                                    controller->data_size - offset, &keys[i]);
+        if (size == 0 || !isfinite(keys[i].time) || (i > 0 && keys[i].time < keys[i - 1].time)) {
+            free(keys);
+            return false;
+        }
+        offset += size;
+    }
+    if (offset != controller->data_size) {
+        free(keys);
+        return false;
+    }
+    float value[3];
+    if (time <= keys[0].time || time >= keys[count - 1].time) {
+        memcpy(value, time <= keys[0].time ? keys[0].position : keys[count - 1].position,
+               sizeof(value));
+    } else {
+        uint32_t low = 0, high = count - 1;
+        while (low + 1 < high) {
+            uint32_t mid = low + (high - low) / 2;
+            if (keys[mid].time < time) low = mid;
+            else high = mid;
+        }
+        const nmo_objanim_bezier_key_t *a = &keys[low], *b = &keys[high];
+        if (anim_bezier_mode(a, 1) == ANIM_BEZIER_STEP || anim_bezier_mode(b, 0) == ANIM_BEZIER_STEP) {
+            memcpy(value, time == b->time ? b->position : a->position, sizeof(value));
+        } else {
+            anim_bezier_tangents(keys, count, length);
+            double elapsed = (double)time - a->time, remaining = (double)b->time - time;
+            bool reversed = elapsed > remaining;
+            double duration = (double)b->time - a->time;
+            double t = (reversed ? remaining : elapsed) / duration, squared = t * t, omt = 1.0 - t;
+            double near_weight = (2.0 * t - 3.0) * squared + 1.0;
+            double far_weight = (3.0 - 2.0 * t) * squared;
+            double outgoing = 3.0 * (reversed ? omt * squared : omt * omt * t);
+            double incoming = 3.0 * (reversed ? omt * omt * t : omt * squared);
+            double handle = duration * (double)0.33333331f;
+            for (size_t c = 0; c < 3; c++) {
+                double derivative = outgoing * a->tangent[1][c] + incoming * b->tangent[0][c];
+                value[c] = (float)(near_weight * (reversed ? b : a)->position[c] +
+                                   far_weight * (reversed ? a : b)->position[c] + handle * derivative);
+            }
+        }
+    }
+    free(keys);
+    *out = (eng_vector_t){value[0], value[1], value[2]};
+    return true;
+}
+
+/* Evaluate one vector channel; a missing or malformed channel preserves its value. */
+static bool anim_vector(const nmo_objectanimation_state_t *state, bool scaling,
+                         float frame, eng_vector_t *out)
+{
+    const nmo_objanim_controller_t *controller = anim_controller(
+        state, scaling ? ANIM_LINEAR_SCALE : ANIM_LINEAR_POSITION, 16);
+    if (controller != NULL) {
+        anim_linear_vector(controller, frame, out);
+        return true;
+    }
+    controller = anim_controller(state, scaling ? ANIM_TCB_SCALE : ANIM_TCB_POSITION, 36);
+    if (controller != NULL) {
+        anim_tcb_vector(controller, frame, out);
+        return true;
+    }
+    uint32_t type = scaling ? ANIM_BEZIER_SCALE : ANIM_BEZIER_POSITION;
+    for (uint32_t i = 0; i < state->controller_count; i++) {
+        controller = &state->controllers[i];
+        if (controller->type == type && anim_bezier_vector(controller,
+                state->has_length ? state->length : 0, frame, out)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool eng_object_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animation, float step)
 {
     nmo_object_t *object = eng_find_object(engine, animation);
@@ -428,33 +678,23 @@ bool eng_object_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animati
         return false; /* CKERR_NOTINITIALIZED */
     }
     float frame = step * (state->has_length ? state->length : 0.0f);
-    const nmo_objanim_controller_t *position = anim_controller(state, ANIM_LINEAR_POSITION, 16);
-    const nmo_objanim_controller_t *tcb_position = anim_controller(state, ANIM_TCB_POSITION, 36);
     const nmo_objanim_controller_t *rotation = anim_controller(state, ANIM_LINEAR_ROTATION, 20);
     const nmo_objanim_controller_t *tcb_rotation = anim_controller(state, ANIM_TCB_ROTATION, 40);
-    const nmo_objanim_controller_t *scaling = anim_controller(state, ANIM_LINEAR_SCALE, 16);
-    const nmo_objanim_controller_t *tcb_scaling = anim_controller(state, ANIM_TCB_SCALE, 36);
-    if (position == NULL && tcb_position == NULL && rotation == NULL && tcb_rotation == NULL &&
-        scaling == NULL && tcb_scaling == NULL) {
-        return true;
-    }
     eng_matrix_t local = engine->entities.data[entity].local;
     eng_vector_t pos = {local.m[3][0], local.m[3][1], local.m[3][2]};
-    if (position != NULL) {
-        anim_linear_vector(position, frame, &pos);
-    } else if (tcb_position != NULL) {
-        anim_tcb_vector(tcb_position, frame, &pos);
-    }
-    if (rotation != NULL || tcb_rotation != NULL || scaling != NULL || tcb_scaling != NULL) {
+    eng_vector_t scale = {1.0f, 1.0f, 1.0f};
+    bool has_position = anim_vector(state, false, frame, &pos);
+    bool has_scaling = anim_vector(state, true, frame, &scale);
+    if (!has_position && !has_scaling && rotation == NULL && tcb_rotation == NULL) return true;
+    if (rotation != NULL || tcb_rotation != NULL || has_scaling) {
         /* The channels the animation lacks, from the local matrix as it is */
-        eng_vector_t scale = {1.0f, 1.0f, 1.0f};
         eng_matrix_t rot;
         eng_matrix_identity(&rot);
         float *axes[3] = {&scale.x, &scale.y, &scale.z};
         for (int r = 0; r < 3; r++) {
             float length = sqrtf(local.m[r][0] * local.m[r][0] + local.m[r][1] * local.m[r][1] +
                                  local.m[r][2] * local.m[r][2]);
-            *axes[r] = length;
+            if (!has_scaling) *axes[r] = length;
             for (int c = 0; c < 3; c++) {
                 rot.m[r][c] = length > 0.0f ? local.m[r][c] / length : (r == c ? 1.0f : 0.0f);
             }
@@ -463,11 +703,6 @@ bool eng_object_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animati
             anim_quat_matrix(anim_linear_rotation(rotation, frame), &rot);
         } else if (tcb_rotation != NULL) {
             anim_quat_matrix(anim_tcb_rotation(tcb_rotation, frame), &rot);
-        }
-        if (scaling != NULL) {
-            anim_linear_vector(scaling, frame, &scale);
-        } else if (tcb_scaling != NULL) {
-            anim_tcb_vector(tcb_scaling, frame, &scale);
         }
         /* The stretch before the rotation */
         eng_matrix_t stretch;
