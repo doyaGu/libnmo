@@ -345,6 +345,119 @@ TEST(engine_keyed, object_copies_preserve_runtime_centering_and_remap_the_discov
     fixture_end(&f);
 }
 
+static const char *resolve_file(void *data, const char *name)
+{
+    (void)name;
+    return data;
+}
+
+static void global_playback(engine_fixture_t *f, nmo_object_id_t keyed)
+{
+    f->script_id = fixture_add_script(f, "Root Motion Script", &f->script_in);
+    fixture_begin_edit(f);
+    nmo_object_id_t play = fixture_block(f, NMO_GUID(0x1c9236e1,0x42f40996), "Play");
+    ASSERT_TRUE(play != 0);
+    fixture_link(f, f->script_in, BLOCK_IN(f, play, 0), 0);
+    char id[32];
+    snprintf(id, sizeof(id), "%u", keyed);
+    const uint32_t pins[] = {0,1,3};
+    const char *values[] = {id,"8","FALSE"};
+    for (size_t i = 0; i < COUNT(pins); i++) {
+        nmo_object_id_t source = 0;
+        ASSERT_EQ(NMO_OK, nmo_script_edit_ensure_input_parameter_source(f->tx, BLOCK_PIN(f, play, pins[i]), &source));
+        ASSERT_EQ(NMO_OK, nmo_script_edit_set_parameter_value(f->tx, source, values[i]));
+    }
+    fixture_commit(f, NULL);
+}
+
+TEST(engine_keyed, loaded_global_playback_restores_root_offsets_in_all_storage_formats)
+{
+    const nmo_objectanimation_format_t formats[] = {CKOBJANIM_FORMAT_CONTROLLERS,
+        CKOBJANIM_FORMAT_NEWDATA,CKOBJANIM_FORMAT_LEGACY,CKOBJANIM_FORMAT_SHARED};
+    for (size_t c = 0; c < COUNT(formats); c++) {
+        engine_fixture_t f;
+        fixture_begin_document(&f);
+        nmo_object_t *root_object = nmo_object_repository_find_by_id(f.repo, f.owner_id);
+        ASSERT_EQ(NMO_OK, nmo_object_set_name(root_object, "Animated Root"));
+        nmo_object_id_t child = fixture_create(&f, NMO_CID_3DENTITY, "Child");
+        nmo_3dentity_state_t *child_state = fixture_state(&f, child);
+        child_state->parent = nmo_ref_from_id(f.owner_id);
+        float root_keys[] = {0,0,1,2, 8,8,9,10}, child_keys[] = {0,10,20,30};
+        nmo_object_id_t root = part(&f, "Root Channel", f.owner_id, root_keys, sizeof(root_keys));
+        nmo_object_id_t leaf = part(&f, "Leaf Channel", child, child_keys, sizeof(child_keys));
+        offset(&f, root, -2,3,-4);
+        nmo_objectanimation_state_t *state = fixture_state(&f, root);
+        state->format = formats[c];
+        if (formats[c] == CKOBJANIM_FORMAT_SHARED) {
+            nmo_object_id_t owner = part(&f, "Shared Keys", 0, root_keys, sizeof(root_keys));
+            nmo_objectanimation_state_t *keys = fixture_state(&f, owner);
+            keys->flags = CK_OBJECTANIMATION_IGNOREPOS;
+            offset(&f, owner, 100,200,300); /* Shared data does not share the saved root vector. */
+            state->has_shared_anim = 1;
+            state->shared_anim = nmo_ref_from_id(owner);
+            state->controller_count = 0;
+            state->controllers = NULL;
+        }
+        if (formats[c] == CKOBJANIM_FORMAT_LEGACY) {
+            nmo_object_t *object = nmo_object_repository_find_by_id(f.repo, root);
+            object->chunk = nmo_chunk_create(nmo_session_get_arena(f.session));
+            ASSERT_NOT_NULL(object->chunk);
+            object->chunk->class_id = NMO_CID_OBJECTANIMATION;
+            object->chunk->data_version = 0;
+        }
+        nmo_ref_t parts[] = {nmo_ref_from_id(leaf),nmo_ref_from_id(root)};
+        nmo_object_id_t keyed = group(&f, "Global", parts, COUNT(parts), f.owner_id);
+        global_playback(&f, keyed);
+        nmo_beobject_state_t *active = fixture_state(&f, f.owner_id);
+        active->has_single_activity = 1;
+        active->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE;
+        nmo_behavior_state_t *script = fixture_state(&f, f.script_id);
+        script->has_single_activity = true;
+        script->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE | CK_SCENEOBJECT_START_RESET;
+        const char *path = NMO_TEST_SCRATCH_FILE("engine_root_motion.cmo");
+        ASSERT_EQ(NMO_OK, nmo_session_save_file(f.session, path, NULL, NULL));
+        engine_fixture_t host;
+        fixture_begin_document(&host);
+        fixture_begin_edit(&host);
+        fixture_commit(&host, NULL);
+        ASSERT_EQ(NMO_OK, nmo_engine_start(host.engine, NMO_ENGINE_START_ALL));
+        nmo_engine_set_file_resolver(host.engine, resolve_file, (void *)path);
+        int32_t file = -1;
+        ASSERT_EQ(NMO_OK, nmo_engine_load(host.engine, "root-motion.cmo", true, &file));
+        ASSERT_TRUE(file > 0);
+        nmo_object_id_t loaded_root = nmo_engine_object_named(host.engine, "Animated Root", NMO_CID_3DENTITY);
+        nmo_object_id_t loaded_leaf = nmo_engine_object_named(host.engine, "Child", NMO_CID_3DENTITY);
+        nmo_object_id_t loaded_channel = nmo_engine_object_named(host.engine, "Root Channel", NMO_CID_OBJECTANIMATION);
+        nmo_object_id_t loaded_group = nmo_engine_object_named(host.engine, "Global", NMO_CID_KEYEDANIMATION);
+        ASSERT_TRUE(loaded_root != 0 && loaded_root != f.owner_id && loaded_root != host.owner_id);
+        ASSERT_TRUE(loaded_leaf != 0 && loaded_channel != 0 && loaded_group != 0);
+        ASSERT_EQ(NMO_OK, nmo_engine_step(host.engine, 2));
+        ASSERT_EQ(NMO_OK, nmo_engine_step(host.engine, 2));
+        position(host.engine, loaded_root, 0,6,0);
+        position(host.engine, loaded_leaf, 10,26,30);
+        position(host.engine, host.owner_id, 0,0,0);
+        ASSERT_EQ(NMO_OK, nmo_engine_step(host.engine, 6));
+        position(host.engine, loaded_root, 6,12,6);
+        position(host.engine, loaded_leaf, 16,32,36);
+        ASSERT_TRUE(eng_keyed_animation_center(host.engine, loaded_group, 4));
+        ASSERT_TRUE(eng_animation_set_step(host.engine, loaded_group, 0.5f));
+        position(host.engine, loaded_root, 0,0,0);
+        position(host.engine, loaded_leaf, 10,20,30);
+        eng_animation_source_t loaded;
+        ASSERT_TRUE(eng_animation_source(host.engine, loaded_channel, &loaded));
+        ASSERT_EQ(formats[c], loaded.state->format);
+        ASSERT_FLOAT_EQ(-2, loaded.state->root_pos.x, 0);
+        ASSERT_FLOAT_EQ(3, loaded.state->root_pos.y, 0);
+        ASSERT_FLOAT_EQ(-4, loaded.state->root_pos.z, 0);
+        ASSERT_NOT_NULL(loaded.keys);
+        ASSERT_EQ(sizeof(root_keys), loaded.keys->controllers[0].data_size);
+        ASSERT_EQ(0, memcmp(root_keys, loaded.keys->controllers[0].data, sizeof(root_keys)));
+        fixture_end(&host);
+        fixture_end(&f);
+        remove(path);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_keyed, saved_vectors_transfer_once_in_list_order_and_only_offset_the_root);
 REGISTER_TEST(engine_keyed, channels_shared_by_two_groups_transfer_saved_offsets_only_once);
@@ -354,4 +467,5 @@ REGISTER_TEST(engine_keyed, centering_samples_absolute_frames_without_moving_ent
 REGISTER_TEST(engine_keyed, centering_revalidates_membership_and_rebound_channels);
 REGISTER_TEST(engine_keyed, centering_samples_shared_and_merged_root_positions_before_applying_offsets);
 REGISTER_TEST(engine_keyed, object_copies_preserve_runtime_centering_and_remap_the_discovered_root);
+REGISTER_TEST(engine_keyed, loaded_global_playback_restores_root_offsets_in_all_storage_formats);
 TEST_MAIN_END()
