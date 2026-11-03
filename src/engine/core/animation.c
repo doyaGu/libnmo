@@ -798,6 +798,14 @@ static bool anim_sample(nmo_engine_t *engine, nmo_object_id_t animation, anim_ch
     return anim_evaluate(engine, animation, channel, frame, NULL, &work, out);
 }
 
+bool eng_animation_position(nmo_engine_t *engine, nmo_object_id_t animation, float frame, nmo_vector_t *out)
+{
+    anim_value_t value;
+    if (!anim_sample(engine, animation, ANIM_POSITION, frame, &value)) return false;
+    *out = (nmo_vector_t){value.vector.x,value.vector.y,value.vector.z};
+    return true;
+}
+
 bool eng_object_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animation, float step)
 {
     eng_animation_source_t source;

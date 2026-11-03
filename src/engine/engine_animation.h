@@ -23,6 +23,9 @@ typedef struct eng_animations {
 nmo_status_t eng_load_animations(nmo_engine_t *engine, const eng_range_t *range);
 void eng_free_animations(nmo_engine_t *engine);
 bool eng_keyed_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animation, float step);
+/* Sample raw position keys at an absolute frame, without parent centering. */
+bool eng_animation_position(nmo_engine_t *engine, nmo_object_id_t animation, float frame, nmo_vector_t *out);
+bool eng_keyed_animation_center(nmo_engine_t *engine, nmo_object_id_t animation, float frame);
 bool eng_animation_root_offset(const nmo_engine_t *engine, nmo_object_id_t animation, nmo_vector_t *out);
 
 typedef struct eng_animation_source {
