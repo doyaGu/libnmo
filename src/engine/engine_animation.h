@@ -9,6 +9,7 @@ typedef struct eng_range eng_range_t;
 
 typedef struct eng_animation_member { nmo_object_id_t id, entity; } eng_animation_member_t;
 typedef struct eng_animation_channel { nmo_object_id_t id; float contribution; } eng_animation_channel_t;
+typedef struct eng_animation_clock { nmo_object_id_t id; float step; } eng_animation_clock_t;
 
 typedef struct eng_keyed_animation {
     nmo_object_id_t id, root_entity, root_animation;
@@ -25,7 +26,17 @@ typedef struct eng_animations {
     eng_map_t keyed_map;
     eng_map_t parents;   /* ObjectAnimation ID -> parent keyed index */
     eng_map_t consumed;  /* Saved root vectors transferred from these objects */
+    ENG_VEC(eng_animation_clock_t) clocks;
+    eng_map_t clock_map;
 } eng_animations_t;
+
+const nmo_animation_state_t *eng_animation_state(const nmo_engine_t *engine, nmo_object_id_t animation);
+bool eng_animation_current_step(nmo_engine_t *engine, nmo_object_id_t animation, float *out);
+bool eng_animation_set_current_step(nmo_engine_t *engine, nmo_object_id_t animation, float step);
+bool eng_animation_frame(nmo_engine_t *engine, nmo_object_id_t animation, float *out);
+bool eng_animation_set_frame(nmo_engine_t *engine, nmo_object_id_t animation, float frame);
+bool eng_animation_next_frame(nmo_engine_t *engine, nmo_object_id_t animation, float delta, float *out);
+float eng_animation_length(const nmo_animation_state_t *state);
 
 nmo_status_t eng_load_animations(nmo_engine_t *engine, const eng_range_t *range);
 void eng_free_animations(nmo_engine_t *engine);

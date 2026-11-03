@@ -981,6 +981,9 @@ bool eng_object_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animati
 bool eng_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animation, float step)
 {
     nmo_object_t *object = eng_find_object(engine, animation);
+    if (object != NULL && nmo_object_get_class_id(object) == NMO_CID_ANIMATION) {
+        return eng_animation_set_current_step(engine, animation, step);
+    }
     if (object == NULL || nmo_object_get_class_id(object) != NMO_CID_KEYEDANIMATION) {
         return eng_object_animation_set_step(engine, animation, step);
     }
