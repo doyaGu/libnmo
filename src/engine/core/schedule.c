@@ -327,6 +327,9 @@ static void eng_check_activity(nmo_engine_t *engine, int32_t index)
 
 static int eng_execute(nmo_engine_t *engine, int32_t index)
 {
+    if (engine->failed) {
+        return NMO_ENGINE_BR_BEHAVIORERROR;
+    }
     eng_node_t *node = eng_node(engine, index);
     node->flags |= CKBEHAVIOR_EXECUTEDLASTFRAME;
     node->executions++;
@@ -339,7 +342,7 @@ static int eng_execute(nmo_engine_t *engine, int32_t index)
         eng_check_ios_activation(engine, index);
         int32_t iterations = 0;
         /* Not `node`: a sub-behavior that loads a file (Object Load) moves the nodes */
-        while (eng_node(engine, index)->stack_count > 0) {
+        while (!engine->failed && eng_node(engine, index)->stack_count > 0) {
             if (iterations > engine->options.max_iterations) {
                 eng_emit(engine, NMO_ENGINE_EVENT_INFINITE_LOOP, index, 0, iterations);
                 result = NMO_ENGINE_BR_INFINITELOOP;
@@ -350,9 +353,15 @@ static int eng_execute(nmo_engine_t *engine, int32_t index)
             int32_t sub = *eng_index(engine, node->first_stack + --node->stack_count);
             eng_node(engine, sub)->in_stack = false;
             eng_execute(engine, sub);
-            eng_find_next(engine, index, sub);
+            if (!engine->failed) {
+                eng_find_next(engine, index, sub);
+            }
         }
-        eng_check_activity(engine, index);
+        if (!engine->failed) {
+            eng_check_activity(engine, index);
+        } else if (result == NMO_ENGINE_BR_OK) {
+            result = NMO_ENGINE_BR_BEHAVIORERROR;
+        }
     }
     eng_emit(engine, NMO_ENGINE_EVENT_EXECUTE, index, 0, result);
     return result;
@@ -467,6 +476,9 @@ nmo_status_t eng_manager_execute(nmo_engine_t *engine)
             if ((eng_node(engine, script)->flags & CKBEHAVIOR_ACTIVE) != 0) {
                 executed = true;
                 eng_execute(engine, script);
+                if (engine->failed) {
+                    return NMO_ERR_VALIDATION_FAILED;
+                }
             }
         }
         if (!executed) {

@@ -59,6 +59,8 @@ struct nmo_engine {
     eng_dynamic_t dynamic;
 
     bool started;
+    bool failed;
+    nmo_engine_event_t failure;
     uint64_t frame;
     double time;
     float delta;

@@ -117,7 +117,7 @@ char *eng_text_printf(const char *format, ...)
 void eng_emit(nmo_engine_t *engine, nmo_engine_event_kind_t kind, int32_t node,
               nmo_object_id_t object_id, int32_t result)
 {
-    if (engine->trace == NULL) {
+    if (engine->trace == NULL && engine->options.fail_on == 0) {
         return;
     }
     nmo_engine_event_t event = {
@@ -129,7 +129,34 @@ void eng_emit(nmo_engine_t *engine, nmo_engine_event_kind_t kind, int32_t node,
         .result = result,
         .depth = node >= 0 ? engine->nodes.data[node].depth : 0,
     };
-    engine->trace(&event, engine->trace_user_data);
+    uint64_t fail_on = 0;
+    switch (kind) {
+    case NMO_ENGINE_EVENT_UNKNOWN_BLOCK:
+        fail_on = NMO_ENGINE_FAIL_UNKNOWN_BLOCK;
+        break;
+    case NMO_ENGINE_EVENT_INFINITE_LOOP:
+        fail_on = NMO_ENGINE_FAIL_INFINITE_LOOP;
+        break;
+    case NMO_ENGINE_EVENT_OPERATION:
+        fail_on = result != NMO_OK ? NMO_ENGINE_FAIL_OPERATION_ERROR : 0;
+        break;
+    case NMO_ENGINE_EVENT_EXECUTE:
+        if (result == NMO_ENGINE_BR_INFINITELOOP) {
+            fail_on = NMO_ENGINE_FAIL_INFINITE_LOOP;
+        } else if (result != NMO_ENGINE_BR_OK && result != NMO_ENGINE_BR_ACTIVATENEXTFRAME) {
+            fail_on = NMO_ENGINE_FAIL_BLOCK_ERROR;
+        }
+        break;
+    default:
+        break;
+    }
+    if (!engine->failed && (engine->options.fail_on & fail_on) != 0) {
+        engine->failed = true;
+        engine->failure = event;
+    }
+    if (engine->trace != NULL) {
+        engine->trace(&event, engine->trace_user_data);
+    }
 }
 
 /* ============================================================================
@@ -255,6 +282,17 @@ void nmo_engine_set_trace(nmo_engine_t *engine, nmo_engine_trace_fn fn, void *us
         engine->trace = fn;
         engine->trace_user_data = user_data;
     }
+}
+
+bool nmo_engine_failure(const nmo_engine_t *engine, nmo_engine_event_t *out_event)
+{
+    if (engine == NULL || !engine->failed) {
+        return false;
+    }
+    if (out_event != NULL) {
+        *out_event = engine->failure;
+    }
+    return true;
 }
 
 uint64_t nmo_engine_frame(const nmo_engine_t *engine)

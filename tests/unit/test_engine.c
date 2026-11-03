@@ -16,6 +16,7 @@
 #define GUID_THRESHOLD NMO_GUID(0x655e6af4, 0x08c0596f)
 #define GUID_INTERPOLATOR NMO_GUID(0x35503950, 0x2dde7a65)
 #define GUID_SET_COMPONENT NMO_GUID(0x6e800755, 0x57b64acb)
+#define GUID_CALL_SCRIPT NMO_GUID(0x1a7d5b17, 0x70630fed)
 
 static void input_float(engine_fixture_t *f, nmo_object_id_t pin, float value)
 {
@@ -390,6 +391,231 @@ TEST(engine, scripts_start_only_when_asked)
     fixture_end(&f);
 }
 
+TEST(engine, strict_unknown_stops_flow_and_other_scripts_without_a_trace)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    f.script_id = fixture_add_script(&f, "First", &f.script_in);
+    nmo_object_id_t other_in = 0;
+    nmo_object_id_t other_script = fixture_add_script(&f, "Other", &other_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t unknown = fixture_block(&f, GUID_NOP, "Unknown");
+    nmo_object_id_t after = fixture_block(&f, GUID_NOP, "After");
+    nmo_object_id_t other = fixture_block_in(&f, other_script, GUID_NOP, "Other Block");
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, unknown, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, unknown, 0), BLOCK_IN(&f, after, 0), 0);
+    fixture_link_in(&f, other_script, other_in, BLOCK_IN(&f, other, 0), 0);
+    nmo_engine_options_t options = nmo_engine_options_default();
+    options.unknown_block = NMO_ENGINE_UNKNOWN_BLOCK_PASS;
+    options.fail_on = NMO_ENGINE_FAIL_UNKNOWN_BLOCK;
+    fixture_commit_bare(&f, &options);
+
+    ASSERT_FALSE(nmo_engine_failure(f.engine, NULL));
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_engine_step(f.engine, 16.0f));
+    ASSERT_EQ(1u, runs(&f, unknown));
+    ASSERT_EQ(0u, runs(&f, after));
+    ASSERT_EQ(0u, runs(&f, other));
+    nmo_engine_event_t failure;
+    ASSERT_TRUE(nmo_engine_failure(f.engine, &failure));
+    ASSERT_EQ(NMO_ENGINE_EVENT_UNKNOWN_BLOCK, failure.kind);
+    ASSERT_EQ(unknown, failure.behavior_id);
+    ASSERT_EQ(0u, failure.frame);
+    ASSERT_EQ(1u, nmo_engine_frame(f.engine));
+    ASSERT_TRUE(nmo_engine_time(f.engine) == 16.0);
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_engine_step(f.engine, 16.0f));
+    ASSERT_EQ(1u, nmo_engine_frame(f.engine));
+    ASSERT_EQ(1u, runs(&f, unknown));
+    ASSERT_TRUE(nmo_engine_failure(f.engine, &failure));
+    ASSERT_EQ(unknown, failure.behavior_id);
+    fixture_end(&f);
+}
+
+static int block_return_value(nmo_engine_block_t *block)
+{
+    nmo_engine_block_activate_input(block, 0, false);
+    nmo_engine_block_activate_output(block, 0, true);
+    return *(const int *)nmo_engine_block_user_data(block);
+}
+
+static void count_simulation(void *user_data, nmo_engine_t *engine, float seconds)
+{
+    (void)engine;
+    (void)seconds;
+    (*(int *)user_data)++;
+}
+
+TEST(engine, strict_block_results_keep_success_and_fail_on_errors)
+{
+    int results[] = {NMO_ENGINE_BR_OK, NMO_ENGINE_BR_ACTIVATENEXTFRAME,
+                     NMO_ENGINE_BR_GENERICERROR, NMO_ENGINE_BR_GENERICERROR | 1,
+                     NMO_ENGINE_BR_BREAK, NMO_ENGINE_BR_INFINITELOOP,
+                     NMO_ENGINE_BR_INFINITELOOP, NMO_ENGINE_BR_GENERICERROR};
+    for (size_t i = 0; i < sizeof(results) / sizeof(results[0]); i++) {
+        engine_fixture_t f;
+        fixture_begin(&f);
+        nmo_object_id_t block = fixture_block(&f, GUID_NOP, "Result");
+        nmo_object_id_t after = fixture_block(&f, GUID_NOP, "After");
+        fixture_link(&f, f.script_in, BLOCK_IN(&f, block, 0), 0);
+        fixture_link(&f, BLOCK_OUT(&f, block, 0), BLOCK_IN(&f, after, 0), 0);
+        nmo_engine_options_t options = nmo_engine_options_default();
+        options.fail_on = i < 6 ? NMO_ENGINE_FAIL_ALL : i == 6 ? NMO_ENGINE_FAIL_BLOCK_ERROR
+                                                               : NMO_ENGINE_FAIL_INFINITE_LOOP;
+        fixture_commit_bare(&f, &options);
+        int simulations = 0;
+        ASSERT_EQ(NMO_OK, nmo_bb_physics_register(f.engine));
+        nmo_engine_physics_provider_t provider = {.user_data = &simulations,
+                                                 .simulate = count_simulation};
+        nmo_engine_set_physics_provider(f.engine, &provider);
+        nmo_engine_block_desc_t desc = {.guid = GUID_NOP, .name = "Result",
+                                       .function = block_return_value, .user_data = &results[i]};
+        ASSERT_EQ(NMO_OK, nmo_engine_register_block(f.engine, &desc));
+        ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+        bool fails = i < 6 && results[i] != NMO_ENGINE_BR_OK &&
+                     results[i] != NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+        ASSERT_EQ(fails ? NMO_ERR_VALIDATION_FAILED : NMO_OK,
+                  nmo_engine_step(f.engine, 16.0f));
+        ASSERT_EQ(fails ? 0u : 1u, runs(&f, after));
+        ASSERT_EQ(fails ? 0 : 1, simulations);
+        nmo_engine_event_t failure;
+        ASSERT_EQ(fails, nmo_engine_failure(f.engine, &failure));
+        if (fails) {
+            ASSERT_EQ(NMO_ENGINE_EVENT_EXECUTE, failure.kind);
+            ASSERT_EQ(block, failure.behavior_id);
+            ASSERT_EQ(results[i], failure.result);
+        }
+        fixture_end(&f);
+    }
+}
+
+TEST(engine, strict_call_script_stops_on_nested_errors_and_its_own_iteration_limit)
+{
+    for (int loop = 0; loop < 2; loop++) {
+        engine_fixture_t f;
+        fixture_begin_document(&f);
+        f.script_id = fixture_add_script(&f, "Main", &f.script_in);
+        nmo_object_id_t nested_in = 0;
+        nmo_object_id_t nested = fixture_add_script(&f, "Nested", &nested_in);
+        fixture_begin_edit(&f);
+        nmo_object_id_t call = fixture_block(&f, GUID_CALL_SCRIPT, "Call");
+        nmo_object_id_t after = fixture_block(&f, GUID_NOP, "After");
+        nmo_object_id_t inner = fixture_block_in(&f, nested, loop ? GUID_DELAYER : GUID_NOP, "Inner");
+        fixture_link(&f, f.script_in, BLOCK_IN(&f, call, 0), 0);
+        fixture_link(&f, BLOCK_OUT(&f, call, 0), BLOCK_IN(&f, after, 0), 0);
+        fixture_link_in(&f, nested, nested_in, BLOCK_IN(&f, inner, 0), 0);
+        fixture_input_int(&f, BLOCK_PIN(&f, call, 0), 1);
+        fixture_input_int(&f, BLOCK_PIN(&f, call, 1), (int32_t)nested);
+        fixture_input_int(&f, BLOCK_PIN(&f, call, 2), 1);
+        if (loop) {
+            input_float(&f, BLOCK_PIN(&f, inner, 0), 1000.0f);
+        }
+        nmo_engine_options_t options = nmo_engine_options_default();
+        options.fail_on = NMO_ENGINE_FAIL_ALL;
+        options.max_iterations = 3;
+        fixture_commit(&f, &options);
+        int result = NMO_ENGINE_BR_PARAMETERERROR;
+        if (!loop) {
+            nmo_engine_block_desc_t desc = {.guid = GUID_NOP, .name = "Error",
+                                           .function = block_return_value, .user_data = &result};
+            ASSERT_EQ(NMO_OK, nmo_engine_register_block(f.engine, &desc));
+        }
+        ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_NONE));
+        ASSERT_EQ(NMO_OK, nmo_engine_activate_script(f.engine, f.script_id, true, true));
+        ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_engine_step(f.engine, 16.0f));
+        ASSERT_EQ(0u, runs(&f, after));
+        ASSERT_EQ(loop ? 4u : 1u, runs(&f, inner));
+        nmo_engine_event_t failure;
+        ASSERT_TRUE(nmo_engine_failure(f.engine, &failure));
+        ASSERT_EQ(loop ? NMO_ENGINE_EVENT_INFINITE_LOOP : NMO_ENGINE_EVENT_EXECUTE, failure.kind);
+        ASSERT_EQ(loop ? nested : inner, failure.behavior_id);
+        fixture_end(&f);
+    }
+}
+
+TEST(engine, strict_iteration_limit_returns_failure)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t block = fixture_block(&f, GUID_NOP, "Loop");
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, block, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, block, 0), BLOCK_IN(&f, block, 0), 0);
+    nmo_engine_options_t options = nmo_engine_options_default();
+    options.max_iterations = 3;
+    options.fail_on = NMO_ENGINE_FAIL_INFINITE_LOOP;
+    fixture_commit(&f, &options);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_engine_step(f.engine, 16.0f));
+    nmo_engine_event_t failure;
+    ASSERT_TRUE(nmo_engine_failure(f.engine, &failure));
+    ASSERT_EQ(NMO_ENGINE_EVENT_INFINITE_LOOP, failure.kind);
+    ASSERT_EQ(f.script_id, failure.behavior_id);
+    ASSERT_EQ(4, failure.result);
+    fixture_end(&f);
+}
+
+TEST(engine, strict_parameter_operation_failure_keeps_the_original_event)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t identity = fixture_block(&f, GUID_IDENTITY, "Identity");
+    nmo_object_id_t after = fixture_block(&f, GUID_NOP, "After");
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, identity, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, identity, 0), BLOCK_IN(&f, after, 0), 0);
+    nmo_object_id_t a = 0, b = 0, op = 0;
+    ASSERT_EQ(NMO_OK, nmo_script_edit_add_parameter(f.tx, f.script_id,
+                          NMO_SCRIPT_EDIT_PARAM_LOCAL, CKPGUID_FLOAT, "A", &a));
+    ASSERT_EQ(NMO_OK, nmo_script_edit_add_parameter(f.tx, f.script_id,
+                          NMO_SCRIPT_EDIT_PARAM_LOCAL, CKPGUID_FLOAT, "B", &b));
+    ASSERT_EQ(NMO_OK, nmo_script_edit_add_operation(f.tx, f.script_id, NMO_OP_GUID_ADD, a, b,
+                                                    0, &op));
+    nmo_parameteroperation_state_t *state = fixture_state(&f, op);
+    ASSERT_NOT_NULL(state);
+    ASSERT_EQ(NMO_OK, nmo_script_edit_connect_parameter(f.tx, nmo_parameteroperation_out_id(state),
+                                                        BLOCK_PIN(&f, identity, 0)));
+    state->operation_guid = NMO_GUID(0xdeadbeef, 0x12345678);
+    nmo_engine_options_t options = nmo_engine_options_default();
+    options.fail_on = NMO_ENGINE_FAIL_ALL;
+    fixture_commit(&f, &options);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_engine_step(f.engine, 16.0f));
+    ASSERT_EQ(0u, runs(&f, after));
+    nmo_engine_event_t failure;
+    ASSERT_TRUE(nmo_engine_failure(f.engine, &failure));
+    ASSERT_EQ(NMO_ENGINE_EVENT_OPERATION, failure.kind);
+    ASSERT_EQ(op, failure.object_id);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, failure.result);
+    fixture_end(&f);
+}
+
+TEST(engine, failure_policies_are_opt_in_and_preserve_old_option_sizes)
+{
+    struct old_options {
+        size_t struct_size;
+        int32_t max_iterations;
+        nmo_engine_unknown_block_t unknown_block;
+        uint32_t random_seed;
+    };
+    _Static_assert(offsetof(nmo_engine_options_t, fail_on) >= sizeof(struct old_options),
+                   "Old options padding must not enable failure policies");
+    for (int old = 0; old < 2; old++) {
+        engine_fixture_t f;
+        fixture_begin(&f);
+        nmo_object_id_t unknown = fixture_block(&f, GUID_NOP, "Unknown");
+        fixture_link(&f, f.script_in, BLOCK_IN(&f, unknown, 0), 0);
+        nmo_engine_options_t options = nmo_engine_options_default();
+        ASSERT_EQ(0u, options.fail_on);
+        options.fail_on = old ? NMO_ENGINE_FAIL_ALL : NMO_ENGINE_FAIL_BLOCK_ERROR;
+        if (old) {
+            options.struct_size = sizeof(struct old_options);
+        }
+        fixture_commit_bare(&f, &options);
+        ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+        ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+        ASSERT_FALSE(nmo_engine_failure(f.engine, NULL));
+        fixture_end(&f);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine, script_start_runs_first_block_and_finishes);
 REGISTER_TEST(engine, delayed_link_activates_its_target_after_the_delay);
@@ -404,4 +630,10 @@ REGISTER_TEST(engine, threshold_picks_the_output_and_clamps);
 REGISTER_TEST(engine, registered_block_replaces_the_builtin);
 REGISTER_TEST(engine, iteration_limit_stops_an_infinite_loop);
 REGISTER_TEST(engine, scripts_start_only_when_asked);
+REGISTER_TEST(engine, strict_unknown_stops_flow_and_other_scripts_without_a_trace);
+REGISTER_TEST(engine, strict_block_results_keep_success_and_fail_on_errors);
+REGISTER_TEST(engine, strict_call_script_stops_on_nested_errors_and_its_own_iteration_limit);
+REGISTER_TEST(engine, strict_iteration_limit_returns_failure);
+REGISTER_TEST(engine, strict_parameter_operation_failure_keeps_the_original_event);
+REGISTER_TEST(engine, failure_policies_are_opt_in_and_preserve_old_option_sizes);
 TEST_MAIN_END()

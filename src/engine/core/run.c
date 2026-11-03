@@ -489,6 +489,9 @@ nmo_status_t nmo_engine_step(nmo_engine_t *engine, float delta_ms)
     if (!engine->started) {
         return NMO_ERR_INVALID_STATE;
     }
+    if (engine->failed) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
     engine->delta = delta_ms;
     /* CKTimeManager::PreProcess: the last frame's statistics become the profile's */
     engine->profile.last = engine->profile.frame;
@@ -499,14 +502,17 @@ nmo_status_t nmo_engine_step(nmo_engine_t *engine, float delta_ms)
     eng_managers_pre_process(engine);
     eng_emit(engine, NMO_ENGINE_EVENT_FRAME_BEGIN, -1, 0, 0);
     engine->dynamic.defer = true;
-    nmo_status_t status = eng_manager_execute(engine);
+    nmo_status_t status = engine->failed ? NMO_ERR_VALIDATION_FAILED : eng_manager_execute(engine);
     engine->dynamic.defer = false;
     if (status == NMO_OK) {
         eng_dispatch_messages(engine); /* CKMessageManager::PostProcess */
         eng_managers_post_process(engine); /* the packs' managers' PostProcess */
         eng_delete_dynamic_objects(engine); /* CKObjectManager::PostProcess */
     }
-    eng_emit(engine, NMO_ENGINE_EVENT_FRAME_END, -1, 0, 0);
+    if (engine->failed) {
+        status = NMO_ERR_VALIDATION_FAILED;
+    }
+    eng_emit(engine, NMO_ENGINE_EVENT_FRAME_END, -1, 0, (int32_t)status);
     engine->frame++;
     engine->time += delta_ms;
     return status;

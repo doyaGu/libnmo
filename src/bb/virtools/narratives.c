@@ -249,10 +249,12 @@ static int bb_call_script(blk_t *b)
     if (get_in_int(b, 2, 1) != 0) {
         for (int32_t loop = 0;; loop++) {
             if (loop > engine->options.max_iterations) {
+                eng_emit(engine, NMO_ENGINE_EVENT_INFINITE_LOOP, script, 0, loop);
                 eng_behavior_activate(engine, script, false, false);
                 break;
             }
-            if (eng_execute_behavior(engine, script) == NMO_ENGINE_BR_INFINITELOOP) {
+            int result = eng_execute_behavior(engine, script);
+            if (engine->failed || result == NMO_ENGINE_BR_INFINITELOOP) {
                 eng_behavior_activate(engine, script, false, false);
                 break;
             }

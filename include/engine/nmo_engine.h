@@ -83,6 +83,14 @@ typedef enum nmo_engine_unknown_block {
     NMO_ENGINE_UNKNOWN_BLOCK_PASS,
 } nmo_engine_unknown_block_t;
 
+/* Failures that stop execution; combine them in nmo_engine_options_t.fail_on. */
+#define NMO_ENGINE_FAIL_UNKNOWN_BLOCK (1u << 0)
+#define NMO_ENGINE_FAIL_BLOCK_ERROR (1u << 1)
+#define NMO_ENGINE_FAIL_OPERATION_ERROR (1u << 2)
+#define NMO_ENGINE_FAIL_INFINITE_LOOP (1u << 3)
+#define NMO_ENGINE_FAIL_ALL (NMO_ENGINE_FAIL_UNKNOWN_BLOCK | NMO_ENGINE_FAIL_BLOCK_ERROR | \
+                             NMO_ENGINE_FAIL_OPERATION_ERROR | NMO_ENGINE_FAIL_INFINITE_LOOP)
+
 typedef struct nmo_engine_options {
     size_t struct_size;
     /* Iterations a graph may run in one frame; 0 for the default. */
@@ -90,6 +98,12 @@ typedef struct nmo_engine_options {
     nmo_engine_unknown_block_t unknown_block;
     /* Seed of the engine's random numbers (Random, Random Switch, ...). */
     uint32_t random_seed;
+    /* NMO_ENGINE_FAIL_* flags; 0 keeps reporting failures through the trace only.
+       A block error is any return except OK, ACTIVATENEXTFRAME or INFINITELOOP
+       (which has its own flag). The first selected failure stops subsequent
+       behaviors and frame post-processing. The current C block finishes its
+       call; changes already made are not rolled back. */
+    uint64_t fail_on;
 } nmo_engine_options_t;
 
 NMO_API nmo_engine_options_t nmo_engine_options_default(void);
@@ -310,8 +324,16 @@ NMO_API const char *nmo_engine_path(const nmo_engine_t *engine, int32_t category
  */
 NMO_API bool nmo_engine_exit_requested(const nmo_engine_t *engine);
 
-/** Run one frame of `delta_ms` milliseconds. */
+/**
+ * Run one frame of `delta_ms` milliseconds. A failure selected by `fail_on`
+ * returns NMO_ERR_VALIDATION_FAILED and is available through nmo_engine_failure().
+ * The failed frame counts toward frame/time; later steps return the same error
+ * without advancing. Create another engine to run again after a failure.
+ */
 NMO_API nmo_status_t nmo_engine_step(nmo_engine_t *engine, float delta_ms);
+
+/** Copy the first selected failure event; false when none (out_event may be NULL). */
+NMO_API bool nmo_engine_failure(const nmo_engine_t *engine, nmo_engine_event_t *out_event);
 
 NMO_API uint64_t nmo_engine_frame(const nmo_engine_t *engine);
 

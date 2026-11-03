@@ -269,6 +269,9 @@ static const void *eng_operand_data(const eng_param_t *src, const nmo_type_descr
 nmo_status_t eng_operation_execute(nmo_engine_t *engine, nmo_guid_t guid, eng_param_t *in1,
                                    eng_param_t *in2, eng_param_t *out, bool need_sources)
 {
+    if (engine->failed) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
     if (out == NULL || out->type_desc == NULL || engine->operations_registry == NULL) {
         return NMO_ERR_NOT_FOUND;
     }
@@ -280,7 +283,13 @@ nmo_status_t eng_operation_execute(nmo_engine_t *engine, nmo_guid_t guid, eng_pa
         return NMO_ERR_INVALID_STATE; /* CKERR_NOTINITIALIZED */
     }
     eng_param_update(engine, src1);
+    if (engine->failed) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
     eng_param_update(engine, src2);
+    if (engine->failed) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
 
     /* The function is the one for the inputs' own types, whatever they read */
     const nmo_type_descriptor_t *t1 = eng_is_none_type(in1) ? NULL : in1->type_desc;
@@ -326,6 +335,7 @@ nmo_status_t eng_operation_execute(nmo_engine_t *engine, nmo_guid_t guid, eng_pa
 nmo_status_t eng_operation_run(nmo_engine_t *engine, eng_operation_t *op)
 {
     if (op->running) {
+        eng_emit(engine, NMO_ENGINE_EVENT_OPERATION, -1, op->id, NMO_ERR_INVALID_STATE);
         return NMO_ERR_INVALID_STATE;
     }
     op->running = true;
