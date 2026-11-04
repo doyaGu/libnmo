@@ -3,6 +3,10 @@
 How to build, check and play a Ballance level with the tools in
 `apps/ballance`. What a level file holds, and the measurements the builder
 follows, are in [ballance-level-format.md](ballance-level-format.md).
+For curves, multiway platforms, connectors and scenery attachment rules,
+see [Free-form Ballance geometry](ballance-freeform.md). Named mechanisms,
+extraction provenance and motion checks are covered in
+[Ballance native resources and motion](ballance-native-resources.md).
 
 The tools are Python scripts. They read and write levels through the `nmo`
 CLI (`--nmo`, or `$NMO`, or `nmo` on `PATH`) and take the game's meshes and
@@ -20,7 +24,7 @@ kept with libnmo.
 - The element meshes, exported once from the original levels:
 
 ```sh
-apps/ballance/scripts/ballance_level_elements.py <GAME_ROOT> -o <elements>
+apps/ballance/scripts/ballance_level_elements.py <GAME_ROOT> -o <elements> --nmo <path-to-nmo>
 ```
 
   These are one mesh of each marker and element kind, the `SkyLayer` plane,
@@ -28,8 +32,11 @@ apps/ballance/scripts/ballance_level_elements.py <GAME_ROOT> -o <elements>
   checkpoints' floors, the fan's housing, the modules' blocks and stoppers,
   the plazas of Level_01, Level_10's maze, and Level_05's octagon and
   diamond. `ballance.extract.elements` says what each is and where it is cut
-  from. Without them the builder stands boxes in for the markers, elements
-  and cut floors, and lays no scenery and no sky.
+  from. Extraction also writes `resource_index.json`, which native builds
+  require to check description, source and exported-mesh hashes. Refresh
+  the extraction when these inputs change; use `--resources NAME ...` to
+  refresh selected descriptions. Without native elements, the builder uses
+  boxes for markers, elements and cut floors, and lays no scenery or sky.
 
 ## From a Route to a Level
 
@@ -46,6 +53,14 @@ apps/ballance/scripts/ballance_play_level.py <out>
 | File | Contents |
 |------|----------|
 | `manifest.json` | The level as a libnmo project manifest, with the OBJ meshes it names |
+| `route.json`, `build_info.json` | Source route snapshot, generator identity and hashes of the generation's inputs |
+| `build_attempt.json` | Present while a build is pending or after failure; absent from a successful generation |
+| `source_map.json` | Generated objects and route entities mapped to authored pieces |
+| `connections.json` | Ports, joins and explicit transitions |
+| `spatial_constraints.json`, `scenery_placement.json` | Spatial reservations, attachment bindings and placement decisions |
+| `resources.json` | Native descriptions, source provenance and placed instances |
+| `gameplay_contracts.json` | Resolved passage conditions, events and dependencies |
+| `death_zones.json` | Death-zone policy and generated volumes |
 | `route_points.json` | The points along the middle of the track, start to balloon, for the autopilot |
 | `route_sectors.json` | Each sector's start: the ball the player has there and the index of its first point |
 | `route_plan.txt` | Where each piece leaves the track: its point, the floor's height there and the heading |
@@ -55,10 +70,24 @@ It prints a warning for each thing that builds but plays wrong (see
 turns the manifest into the level file. A level is always built for slot 1:
 its sky, music and start ball belong to the level number, not to the file.
 
+Builds are staged in a separate directory and published only after their
+checks succeed. Earlier generations move into `<out>/.history/`. A failed
+build keeps the previous generation, records the failure in
+`build_attempt.json`, and marks prior validation reports as superseded.
+Publication uses directory renames; readers may briefly see no output path,
+but never a mixture of two generations. Use a dedicated output directory.
+
+The manifest is the mesh inventory. Repacking reads its current files;
+unused OBJ files left in the folder do not become part of the level.
+Verification checks recorded inputs and generator hashes before gameplay.
+Rebuild after source or route changes instead of editing generated files
+and relying on an older successful report.
+
 ## Routes
 
 A route is JSON: the start's place and heading, then the track sector by
-sector, each a list of pieces laid end to end on the floors' 2.5 grid. The
+sector, each a list of pieces laid end to end. Native floors use a 2.5-unit
+grid; free-form paths and polygons can leave it. The
 docstring of `ballance_build_level.py` gives every piece and option with
 its measurements; in short:
 
@@ -139,6 +168,8 @@ level file (`ballance.verify.geometry`): walls left open at their ends,
 holes in floor tops, and tops of two objects lying on one another. Findings
 can reflect original geometry: the cradle's pocket is a hole, and Level_01
 has open wall ends.
+Decorative lantern towers are excluded from floor topology checks. The
+fan tower's playable housing remains included.
 At the fan tower's exit, the road's side walls meet the tower block's end
 wall; those joins are not open wall ends.
 
@@ -147,17 +178,26 @@ switchback and four on the road around the sector 3 checkpoint. In libnmo's
 test base, a stone ball rolled near each: the switchback ends and one road
 end were probed using relocated reset points and checkpoints in temporary
 copies; the other three road ends were approached from the checkpoint. None
-of those runs reported a fall. A separate sector 2 autoplay stalled after
-the switchback for an unknown reason. These local runs do not establish how
-every ball or trajectory behaves in the original game, and the wall ends
-remain reported.
+of those runs reported a fall. These local runs do not establish how every
+ball or trajectory behaves in the original game, and the wall ends remain
+reported.
+
+For a built folder, verification also checks build identity, native resource
+provenance, connections, scenery attachments and mechanism reservations.
+Older folders without the route snapshot or build record retain explicit
+skipped or unavailable checks; rebuild them to obtain current coverage.
+An original NMO file supports static geometry checks. `--play` requires a
+built folder with steering points; use the
+[native motion probes](ballance-native-resources.md#probing-the-seven-assemblies-in-original-levels)
+for local tests of original mechanisms.
 
 With `--play FRAMES --game <GAME_ROOT>`, it patches the level into
 `Level_01.NMO` in the folder and plays it headless with libivp physics in
 the test base, the autopilot steering the ball along `route_points.json`
-from frame 360. With `--sector N` the level starts at sector N, with the
+from frame 360 for sector 1, with additional setup time for later sectors.
+With `--sector N` the level starts at sector N, with the
 ball the player has there, and the rewards of the sectors before are not
-looked for. It writes `run.log` and `steer.csv` there and reports:
+looked for. It writes `run.log`, `steer.csv` and `physics.csv` there and reports:
 
 - the checkpoints, the finish and any fall, with their frames;
 - where the ball stood still a while, and what the point it headed for
@@ -166,7 +206,31 @@ looked for. It writes `run.log` and `steer.csv` there and reports:
 - each extra point or life the ball never came within 4 of before the
   finish. Every reward should lie where a ball can get to it.
 
-It exits with 1 if the level does not finish or the ball falls.
+Gameplay conditions and recorded mechanism poses are checked through the
+finish frame. Reward checks measure proximity, not changes to the score.
+
+`validation.json` keeps each check's status and findings. `--report FILE`
+chooses another output path, including for original NMO files; `--json`
+prints the structured report. The command returns:
+
+| Exit | Meaning |
+| --- | --- |
+| 0 | `passed`, or `review` with findings that need inspection |
+| 1 | A failed check, including an unfinished run or a fall |
+| 2 | An invocation or input error |
+
+Geometry findings normally produce `review`; `--strict` makes them failures.
+Unsupported or unbounded motion, missing native coverage and missed rewards
+can also require review. Read the report status rather than interpreting
+exit 0 as complete coverage.
+
+Reports, traces and previews carry `.evidence.json` sidecars. They bind an
+artifact to its recorded inputs, generator sources, CLI and available native
+resource dependencies. Check whether a saved result still applies:
+
+This command returns 0 for `current`, 1 for `stale` and 2 for `unavailable`.
+A current report can still contain failures or review findings: freshness
+and validation outcome are separate checks.
 
 ## The Autopilot's Points
 
@@ -177,11 +241,13 @@ ball has to wait or rush:
 |-------|---------|
 | `[x, z, y]` | Over a fan: wait there until the wind has lifted the ball to height `y` |
 | `[x, z, y, frames]` | Hold there for `frames`: a target pushed (switch, pusher, arm), the climbing logs' hole |
+| `[x, z, null, "precision"]` | Track a narrow single beam with shorter lookahead and slower control |
 | `[x, z, null, "rush"]` | Over a jump's gap: run at it flat out |
 | `[x, z, y, "push:N"]` | Head for it N frames, reached or not, or until the ball is `y` high: in the fan tower's bend, the ball backed up and run in again, off the middle by turns, till the wind takes it |
 | `[x, z, y, 0, seat, sx, sz, reach]` | Before a swing, or before a sack a beam passes under: wait until object `seat` comes within `reach` of `(sx, sz)` (a sack twice: at one end of its swing, then going out the other side) |
 
-`nmo behavior run --steer` takes them as `X,Z[,...];...@FRAME`.
+`nmo behavior run --steer` takes them as `X,Z[,...];...@FRAME[-FRAME]`.
+An explicit end frame releases the arrow keys back to the window user.
 `ballance.verify.play.steer_text()` formats them that way.
 
 ## Watching a Level
@@ -205,10 +271,13 @@ apps/ballance/scripts/ballance_play_level.py <out> --sector 3
 ```
 
 The level plays as level 1, in the test base, until the window is closed;
-`--sector N` starts it at sector N. The autopilot steps a fixed 1/60 s a frame,
-as the verifier's headless runs do, so the ball goes the same way; in real
+`--sector N` starts it at sector N. The autopilot steps a fixed 16.667 ms a frame,
+as the verifier's headless runs do; in real
 time a marginal mechanism can go otherwise (the fan tower's ball may stay in
 its bend). `--mute` turns the sound off.
+
+To inspect a finish approach manually, let the driver reach it and then
+release control at a known frame:
 
 Underneath it is `nmo behavior run --window --delta 16.667 --write <dir>
 --path <GAME_ROOT> --steer POINTS@360 --steer-object
@@ -238,8 +307,12 @@ reached as the game reaches them, all but the last by the test base, which
 the ball, standing on it, reaches itself; the skipped ones are stopped.
 
 It is written once to the system's temporary folder (`ballance-harness`,
-one file a sector start) with `nmo patch apply`: a project manifest for its
+one file per sector and starting ball) with `nmo patch apply`: a project manifest for its
 objects, `nmo data fill` for its arrays and an edit plan for its scripts.
+The [test-base implementation record](plans/2026-11-02-ballance-test-base.md)
+describes loading, sector setup and isolated contact probes.
+
+## Drawing a Level
 
 `ballance_map_view.py` draws a level, built or original, from above, the
 sides, the corners or any angle, with the game's textures if given. It names
@@ -253,10 +326,19 @@ apps/ballance/scripts/ballance_map_view.py <out> --trace <out>/steer.csv --views
 
 ## Playing an Original Level
 
+The optional physics regression starts each ball at sector 2 in the test
+base. It needs the game's files and an `nmo` built with libivp:
+
+```sh
+BALLANCE=<GAME_ROOT> NMO_TEST_PHYSICS=1 NMO_TEST_CLI=<path-to-nmo> \
+  python3 -m unittest discover -s apps/ballance/tests -p test_autoplay.py -v
+```
+
 ## The Data
 
 | File | Contents |
 |------|----------|
+| `resource_catalog.json`, `motion_catalog.json` | Native resource descriptions and measured motion recipes |
 | `level_materials.json` | The originals' 48 shared materials, as manifest materials (`ballance_level_materials.py`) |
 | `base_ballance_bb_manifest.json` | For rebuilding `base.cmo` ([ballance-base-bb-rewrite.md](ballance-base-bb-rewrite.md)) |
 
@@ -268,13 +350,13 @@ using only those before it:
 
 | Layer | Contents |
 |-------|----------|
-| `core` | Headings on the XZ plane, OBJ meshes, the nmo CLI |
+| `core` | Frames, paths, ports, polygon triangulation, motion and spatial queries, project identity, evidence and the nmo CLI |
 | `game` | The groups, element kinds and mechanisms, the measured dimensions (`measures.py`), the materials |
 | `kit` | Floors on the 2.5 grid, pieces off the grid, rails, railings |
 | `route` | A route laid out (`layout`, `pieces`, `modules`), its fall zones and clashes, written as a manifest |
 | `extract` | The element meshes and floors cut from the originals, the materials, the level checks |
 | `autoplay` | Paths over a level's ground, as autopilot points |
-| `verify` | Floor faults, and a level played through |
+| `verify` | Geometry, resources, scenery, motion, gameplay contracts, original-level probes and full-route play |
 | `view` | Drawing levels |
 
 ## Not Covered Yet
