@@ -4,11 +4,14 @@
 #include "../../src/engine/engine_transform.h"
 #include "object/builtin/nmo_character_schemas.h"
 #include "object/builtin/nmo_curve_schemas.h"
+#include "object/builtin/nmo_parameterin_schemas.h"
 
 #include <math.h>
 #include <stdio.h>
 
 #define COUNT(a) (sizeof(a)/sizeof((a)[0]))
+#define GUID_FOLLOW NMO_GUID(0x4212cabd,0xeafbcda6)
+#define GUID_NOP NMO_GUID(0x302561c4,0x0d282980)
 
 static nmo_object_id_t curve(engine_fixture_t *f, const eng_vector_t *points, size_t count,
     const float *world, nmo_object_id_t *ids)
@@ -110,7 +113,142 @@ TEST(engine_character_curve, aligning_a_character_keeps_root_pose_and_recenters_
     fixture_end(&f);
 }
 
+typedef struct follow_fixture {
+    engine_fixture_t f;
+    nmo_object_id_t root, path, block, done, again, path_parameter;
+    size_t messages;
+} follow_fixture_t;
+
+static nmo_object_id_t local(engine_fixture_t *f, nmo_object_id_t block, size_t index)
+{
+    const nmo_behavior_state_t *state = fixture_state(f,block);
+    return state != NULL ? nmo_behavior_ref_array_get_id(&state->local_parameters,index) : 0;
+}
+
+static void log_messages(const nmo_engine_event_t *event, void *data)
+{
+    follow_fixture_t *g = data;
+    if (event->kind != NMO_ENGINE_EVENT_MESSAGE_SENT) return;
+    ASSERT_EQ(g->block,event->behavior_id); ASSERT_EQ(g->f.owner_id,event->object_id);
+    ASSERT_EQ(nmo_engine_message_type(g->f.engine,"Joy_Up"),event->result); g->messages++;
+}
+
+static void follow_begin(follow_fixture_t *g, const eng_vector_t *points, size_t count)
+{
+    memset(g,0,sizeof(*g)); fixture_begin_document(&g->f);
+    g->f.owner_id = character(&g->f,&g->root); ASSERT_TRUE(g->f.owner_id != 0);
+    nmo_3dentity_state_t *actor = fixture_state(&g->f,g->f.owner_id), *root = fixture_state(&g->f,g->root);
+    actor->world_matrix[12] = 50; actor->world_matrix[13] = 1; actor->world_matrix[14] = 50;
+    root->world_matrix[12] = 55; root->world_matrix[13] = 3; root->world_matrix[14] = 50;
+    g->path = curve(&g->f,points,count,NULL,NULL); ASSERT_TRUE(g->path != 0);
+    g->f.script_id = fixture_add_script(&g->f,"Follow script",&g->f.script_in); fixture_begin_edit(&g->f);
+    g->block = fixture_block(&g->f,GUID_FOLLOW,"Follow");
+    g->done = fixture_block(&g->f,GUID_NOP,"Done"); g->again = fixture_block(&g->f,GUID_NOP,"Again");
+    ASSERT_TRUE(g->block != 0 && g->done != 0 && g->again != 0);
+    fixture_input_int(&g->f,fixture_target(&g->f,g->block),(int32_t)g->f.owner_id);
+    fixture_input_int(&g->f,BLOCK_PIN(&g->f,g->block,0),(int32_t)g->path);
+    g->path_parameter = nmo_parameterin_source_id(fixture_state(&g->f,BLOCK_PIN(&g->f,g->block,0)));
+    fixture_link(&g->f,g->f.script_in,BLOCK_IN(&g->f,g->block,0),0);
+    fixture_link(&g->f,BLOCK_OUT(&g->f,g->block,1),BLOCK_IN(&g->f,g->block,1),1);
+    fixture_link(&g->f,BLOCK_OUT(&g->f,g->block,0),BLOCK_IN(&g->f,g->done,0),0);
+    fixture_link(&g->f,BLOCK_OUT(&g->f,g->block,1),BLOCK_IN(&g->f,g->again,0),0);
+}
+
+static void follow_commit(follow_fixture_t *g)
+{
+    nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL;
+    fixture_commit(&g->f,&options); ASSERT_TRUE(nmo_engine_has_block(g->f.engine,GUID_FOLLOW));
+    nmo_engine_set_trace(g->f.engine,log_messages,g);
+    ASSERT_EQ(NMO_OK,nmo_engine_start(g->f.engine,NMO_ENGINE_START_ALL));
+}
+
+static float progression(follow_fixture_t *g)
+{
+    float value = -1; read_value(&g->f,BLOCK_POUT(&g->f,g->block,0),&value,sizeof(value)); return value;
+}
+
+TEST(engine_character_curve, initial_follow_keeps_root_height_and_native_vector_direction_order)
+{
+    const struct { eng_vector_t axis; float xx,xz,zx,zz; } cases[] = {
+        {{1,0,0},1,0,0,1}, {{-1,0,0},-1,0,0,-1}, {{0,0,1},0,-1,1,0},
+        {{0,0,-1},0,1,-1,0}, {{0,1,0},1,0,0,1}, {{1,0,-1},-1,0,0,-1},
+    };
+    const eng_vector_t points[] = {{0,20,0},{10,20,0}};
+    for (size_t i = 0; i < COUNT(cases); i++) {
+        follow_fixture_t g; follow_begin(&g,points,COUNT(points));
+        float start = .25f; fixture_input_value(&g.f,BLOCK_PIN(&g.f,g.block,1),&start,sizeof(start));
+        fixture_input_value(&g.f,BLOCK_PIN(&g.f,g.block,2),&cases[i].axis,sizeof(cases[i].axis));
+        follow_commit(&g); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0));
+        position(g.f.engine,g.f.owner_id,2.5f,3,0); ASSERT_FLOAT_EQ(.25f,progression(&g),0);
+        float matrix[16]; ASSERT_TRUE(nmo_engine_entity_world_matrix(g.f.engine,g.f.owner_id,matrix));
+        ASSERT_FLOAT_EQ(cases[i].xx,matrix[0],1e-5f); ASSERT_FLOAT_EQ(cases[i].xz,matrix[2],1e-5f);
+        ASSERT_FLOAT_EQ(cases[i].zx,matrix[8],1e-5f); ASSERT_FLOAT_EQ(cases[i].zz,matrix[10],1e-5f);
+        eng_vector_t previous; read_value(&g.f,local(&g.f,g.block,1),&previous,sizeof(previous)); ASSERT_FLOAT_EQ(3,previous.y,0);
+        ASSERT_EQ(1u,g.messages); ASSERT_EQ(1u,runs(&g.f,g.again)); ASSERT_EQ(0u,runs(&g.f,g.done));
+        fixture_end(&g.f);
+    }
+}
+
+TEST(engine_character_curve, loop_progress_uses_horizontal_travel_and_finishes_without_endpoint_snap)
+{
+    const eng_vector_t points[] = {{0,20,0},{10,20,0},{10,20,10}};
+    follow_fixture_t g; follow_begin(&g,points,COUNT(points));
+    float start = .25f; fixture_input_value(&g.f,BLOCK_PIN(&g.f,g.block,1),&start,sizeof(start));
+    follow_commit(&g); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); position(g.f.engine,g.f.owner_id,5,3,0);
+    const eng_vector_t moves[] = {{8,33,0},{8,44,4},{10,70,30}};
+    const float steps[] = {.4f,.6f,1};
+    const eng_vector_t expected[] = {{8,33,0},{10,44,2},{10,70,30}};
+    for (size_t i = 0; i < COUNT(moves); i++) {
+        eng_entity_set_position(g.f.engine,eng_entity_index(g.f.engine,g.f.owner_id),&moves[i],-1,false);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_FLOAT_EQ(steps[i],progression(&g),1e-6f);
+        position(g.f.engine,g.f.owner_id,expected[i].x,expected[i].y,expected[i].z);
+        eng_vector_t previous; read_value(&g.f,local(&g.f,g.block,1),&previous,sizeof(previous)); ASSERT_FLOAT_EQ(20,previous.y,0);
+    }
+    ASSERT_EQ(4u,g.messages); ASSERT_EQ(1u,runs(&g.f,g.done)); ASSERT_EQ(3u,runs(&g.f,g.again));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(4u,runs(&g.f,g.block));
+    fixture_end(&g.f);
+}
+
+TEST(engine_character_curve, missing_curves_distinguish_initial_and_loop_control_flow)
+{
+    const eng_vector_t points[] = {{0,0,0},{10,0,0}};
+    for (int initial = 0; initial < 2; initial++) {
+        follow_fixture_t g; follow_begin(&g,points,COUNT(points));
+        if (initial) fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,0),0);
+        follow_commit(&g); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0));
+        if (initial) { ASSERT_EQ(1u,runs(&g.f,g.done)); ASSERT_EQ(0u,g.messages); }
+        else {
+            nmo_engine_destroy_object(g.f.engine,g.path);
+            ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(0u,runs(&g.f,g.done));
+            ASSERT_EQ(1u,runs(&g.f,g.again)); ASSERT_EQ(1u,g.messages);
+        }
+        fixture_end(&g.f);
+    }
+    follow_fixture_t g; const eng_vector_t zero[] = {{1,2,3},{1,2,3}};
+    follow_begin(&g,zero,COUNT(zero)); follow_commit(&g);
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0));
+    ASSERT_FLOAT_EQ(1,progression(&g),0); ASSERT_EQ(1u,runs(&g.f,g.done)); ASSERT_EQ(2u,g.messages);
+    fixture_end(&g.f);
+}
+
+TEST(engine_character_curve, missing_owner_reports_before_consuming_the_input)
+{
+    const eng_vector_t points[] = {{0,0,0},{10,0,0}};
+    follow_fixture_t g; follow_begin(&g,points,COUNT(points));
+    fixture_input_int(&g.f,fixture_target(&g.f,g.block),0); follow_commit(&g);
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,nmo_engine_step(g.f.engine,0));
+    nmo_engine_event_t failure; ASSERT_TRUE(nmo_engine_failure(g.f.engine,&failure));
+    ASSERT_EQ(g.block,failure.behavior_id); ASSERT_EQ(NMO_ENGINE_BR_OWNERERROR,failure.result);
+    ASSERT_TRUE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,0)));
+    ASSERT_EQ(0u,g.messages); ASSERT_EQ(0u,runs(&g.f,g.done)); ASSERT_EQ(0u,runs(&g.f,g.again));
+    fixture_end(&g.f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_character_curve, curve_length_uses_fitted_local_points_and_live_geometry);
 REGISTER_TEST(engine_character_curve, aligning_a_character_keeps_root_pose_and_recenters_active_keys);
+REGISTER_TEST(engine_character_curve, initial_follow_keeps_root_height_and_native_vector_direction_order);
+REGISTER_TEST(engine_character_curve, loop_progress_uses_horizontal_travel_and_finishes_without_endpoint_snap);
+REGISTER_TEST(engine_character_curve, missing_curves_distinguish_initial_and_loop_control_flow);
+REGISTER_TEST(engine_character_curve, missing_owner_reports_before_consuming_the_input);
 TEST_MAIN_END()
