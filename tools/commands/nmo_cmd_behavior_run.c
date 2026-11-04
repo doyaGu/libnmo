@@ -479,6 +479,9 @@ static bool run_steer_waited(const nmo_engine_t *engine, const run_steer_t *stee
 
 static void run_steer_frame(nmo_engine_t *engine, run_steer_t *steer, uint32_t frame)
 {
+    if (frame < steer->first || frame > steer->last) {
+        return;
+    }
     static const char *const arrows[] = {"Up", "Down", "Left", "Right"};
     bool down[4] = {false, false, false, false};
     nmo_object_id_t steered = frame >= steer->first && frame <= steer->last
@@ -1475,6 +1478,14 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
 #endif
     for (uint32_t f = 0; status == NMO_OK && (f < args->frames || (args->window && !args->frames_given));
          f++) {
+        /* Release steering once, before collecting this frame's player
+           input. Later frames must leave the player's arrow keys alone. */
+        if (steer.points != NULL && f > steer.last && f - steer.last == 1) {
+            const char *const arrows[] = {"Up", "Down", "Left", "Right"};
+            for (int k = 0; k < 4; k++) {
+                nmo_engine_set_key(engine, run_key_code(arrows[k], strlen(arrows[k])), false);
+            }
+        }
 #ifdef NMO_HAS_VIEW
         if (view != NULL && !nmo_view_poll(view)) {
             break;

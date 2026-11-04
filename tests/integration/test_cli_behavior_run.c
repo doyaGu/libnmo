@@ -15,6 +15,7 @@
 #define GUID_NOP NMO_GUID(0x302561c4, 0x0d282980)
 #define GUID_TRANSLATE NMO_GUID(0x000d000d, 0x000d000d)
 #define GUID_OP NMO_GUID(0x2d5d6d01, 0x6a353eb0)
+#define GUID_KEY_EVENT NMO_GUID(0x1af2274b, 0x6b8c1524)
 
 typedef enum run_fixture_kind {
     RUN_UNKNOWN, RUN_LOOP, RUN_OPERATION, RUN_OK
@@ -142,8 +143,59 @@ TEST(cli_behavior_run, strict_text_names_the_failure)
     remove(path);
 }
 
+TEST(cli_behavior_run, finite_steering_returns_arrow_keys_to_the_player)
+{
+    const char *path = NMO_TEST_SCRATCH_FILE("cli_behavior_run_handoff.cmo");
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t event = fixture_block(&f, GUID_KEY_EVENT, "Watch Up");
+    nmo_object_id_t pressed = fixture_block(&f, GUID_NOP, "Manual Up");
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, event, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, event, 0), BLOCK_IN(&f, pressed, 0), 0);
+    nmo_object_id_t source = 0;
+    ASSERT_EQ(NMO_OK, nmo_script_edit_ensure_input_parameter_source(
+                          f.tx, BLOCK_PIN(&f, event, 0), &source));
+    const uint8_t up[] = {0xc8, 0, 0, 0};
+    ASSERT_EQ(NMO_OK, nmo_script_edit_set_parameter_bytes(f.tx, source, up, sizeof(up)));
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_session_save_file(f.session, path, NULL, NULL));
+    fixture_end(&f);
+
+    /* The injected keys use the same input state as the window. Check
+       before, during, immediately after and well after the steering range. */
+    const char *keys[] = {"Up@1", "Up@4", "Up@5", "Up@7", "Up@3-7"};
+    const unsigned frames[] = {1, 4, 5, 7, 5};
+    for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++) {
+        char args[1024];
+        snprintf(args, sizeof(args),
+                 "-f json behavior run --start all --frames 9 --keys %s "
+                 "--steer \"0,0;10,0@3-4\" --steer-object Absent \"%s\"", keys[i], path);
+        run_result_t result = run_cli(args);
+        ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+        yyjson_doc *doc = yyjson_read(result.output, strlen(result.output), 0);
+        ASSERT_NOT_NULL(doc);
+        yyjson_val *data = yyjson_obj_get(yyjson_doc_get_root(doc), "data");
+        yyjson_val *events = yyjson_obj_get(data, "events");
+        size_t index, count;
+        yyjson_val *item;
+        unsigned presses = 0;
+        yyjson_arr_foreach(events, index, count, item) {
+            const char *kind = yyjson_get_str(yyjson_obj_get(item, "kind"));
+            if (kind != NULL && strcmp(kind, "execute") == 0 &&
+                yyjson_get_uint(yyjson_obj_get(item, "behavior_id")) == pressed) {
+                ASSERT_EQ(frames[i], yyjson_get_uint(yyjson_obj_get(item, "frame")));
+                presses++;
+            }
+        }
+        ASSERT_EQ(frames[i] == 4 ? 0u : 1u, presses);
+        yyjson_doc_free(doc);
+    }
+    remove(path);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(cli_behavior_run, strict_reports_failures_in_json_even_when_quiet);
 REGISTER_TEST(cli_behavior_run, default_unknown_policy_and_successful_strict_runs_still_succeed);
 REGISTER_TEST(cli_behavior_run, strict_text_names_the_failure);
+REGISTER_TEST(cli_behavior_run, finite_steering_returns_arrow_keys_to_the_player);
 TEST_MAIN_END()

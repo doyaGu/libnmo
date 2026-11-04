@@ -205,6 +205,15 @@ bool nmo_view_poll(nmo_view_t *view)
             break;
         }
     }
+    /* Steering temporarily overrides the arrows in the engine. Refresh
+       their physical state even without a new key-down event, so a key
+       held across the handoff resumes control immediately. */
+    const SDL_Scancode arrows[] = {SDL_SCANCODE_UP, SDL_SCANCODE_DOWN,
+                                  SDL_SCANCODE_LEFT, SDL_SCANCODE_RIGHT};
+    const bool *held = SDL_GetKeyboardState(NULL);
+    for (size_t i = 0; i < sizeof(arrows) / sizeof(arrows[0]); i++) {
+        nmo_engine_set_key(view->engine, view_scan_code(arrows[i]), held[arrows[i]]);
+    }
     bool cursor = nmo_engine_cursor_is_visible(view->engine);
     if (cursor != view->cursor_shown) {
         view->cursor_shown = cursor;
