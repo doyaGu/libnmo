@@ -327,6 +327,54 @@ static void affine_rotation(const float q[4], eng_matrix_t *rotation)
     rotation->m[2][2] = (float)(1 - factor * (x*x + y*y));
 }
 
+bool eng_quaternion_from_matrix(const eng_matrix_t *matrix, nmo_quaternion_t *out)
+{
+    if (matrix == NULL || out == NULL) return false;
+    float rows[3][3], q[4];
+    for (int r = 0; r < 2; r++) {
+        for (int c = 0; c < 3; c++) if (!isfinite(matrix->m[r][c])) return false;
+        double length = hypot(hypot(matrix->m[r][0],matrix->m[r][1]),matrix->m[r][2]);
+        if (length == 0) return false;
+        for (int c = 0; c < 3; c++) rows[r][c] = (float)(matrix->m[r][c]/length);
+    }
+    for (int c = 0; c < 3; c++) {
+        int a = (c+1)%3, b = (c+2)%3;
+        rows[2][c] = (float)((double)rows[0][a]*rows[1][b]-(double)rows[0][b]*rows[1][a]);
+    }
+    affine_quaternion(rows,q);
+    for (int i = 0; i < 4; i++) if (!isfinite(q[i])) return false;
+    *out = (nmo_quaternion_t){q[0],q[1],q[2],q[3]};
+    return true;
+}
+
+bool eng_matrix_from_quaternion(eng_matrix_t *matrix, const nmo_quaternion_t *quaternion)
+{
+    if (matrix == NULL || quaternion == NULL) return false;
+    const float q[] = {quaternion->x,quaternion->y,quaternion->z,quaternion->w};
+    double norm = 0;
+    for (int i = 0; i < 4; i++) {
+        if (!isfinite(q[i])) return false;
+        norm += (double)q[i]*q[i];
+    }
+    if (norm == 0) return false;
+    affine_rotation(q,matrix);
+    return true;
+}
+
+nmo_quaternion_t eng_quaternion_slerp(float step, nmo_quaternion_t a, nmo_quaternion_t b)
+{
+    double t = step;
+    double dot = (((double)a.z*b.z+(double)a.y*b.y)+(double)a.x*b.x)+(double)a.w*b.w;
+    double sign = dot < 0 ? -1 : 1, cosine = dot < 0 ? -dot : dot;
+    double left = 1-t, right = sign*t;
+    if (cosine < .99) {
+        double angle = acos(cosine), inverse = 1/sin(angle);
+        left = sin((1-t)*angle)*inverse; right = sign*sin(t*angle)*inverse;
+    }
+    return (nmo_quaternion_t){(float)(a.x*left+b.x*right),(float)(a.y*left+b.y*right),
+        (float)(a.z*left+b.z*right),(float)(a.w*left+b.w*right)};
+}
+
 /* Vx3DQuaternionSnuggle's scale permutation. Its returned quaternion is not
  * needed when a scale-axis controller supplies the replacement orientation. */
 static void affine_permute_scale(float q[4], float scale[3])

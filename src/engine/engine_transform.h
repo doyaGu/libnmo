@@ -8,6 +8,7 @@
 #define NMO_ENGINE_TRANSFORM_H
 
 #include "engine_base.h"
+#include "core/nmo_math.h"
 
 typedef struct eng_range eng_range_t;
 
@@ -54,6 +55,12 @@ void eng_matrix_inverse(eng_matrix_t *result, const eng_matrix_t *a);
  * may be NULL and are left unchanged if no finite decomposition is found. */
 bool eng_matrix_decompose(const eng_matrix_t *matrix, bool principal_axes,
                             eng_matrix_t *rotation, eng_vector_t *scale);
+/* CK's non-unit matrix conversion normalizes X and Y and rebuilds Z.
+ * Failed conversions leave outputs unchanged. */
+bool eng_quaternion_from_matrix(const eng_matrix_t *matrix, nmo_quaternion_t *out);
+bool eng_matrix_from_quaternion(eng_matrix_t *matrix, const nmo_quaternion_t *quaternion);
+/* Shortest-arc Slerp; close inputs use the native unnormalized linear blend. */
+nmo_quaternion_t eng_quaternion_slerp(float step, nmo_quaternion_t a, nmo_quaternion_t b);
 void eng_vector_transform(eng_vector_t *result, const eng_matrix_t *m, const eng_vector_t *v);
 void eng_vector_rotate(eng_vector_t *result, const eng_matrix_t *m, const eng_vector_t *v);
 float eng_vector_magnitude(const eng_vector_t *v);
@@ -83,6 +90,11 @@ void eng_entity_translate(nmo_engine_t *engine, int32_t index, const eng_vector_
                           int32_t ref, bool keep_children);
 void eng_entity_rotate(nmo_engine_t *engine, int32_t index, const eng_vector_t *axis, float angle,
                        int32_t ref, bool keep_children);
+bool eng_entity_quaternion(nmo_engine_t *engine, int32_t index, nmo_quaternion_t *out, int32_t ref);
+/* KeepScale restores local scale after propagating the new world rotation;
+ * that restoration follows children even when KeepChildren was requested. */
+bool eng_entity_set_quaternion(nmo_engine_t *engine, int32_t index, const nmo_quaternion_t *quaternion,
+    int32_t ref, bool keep_children, bool keep_scale);
 eng_vector_t eng_entity_scale(nmo_engine_t *engine, int32_t index, bool local);
 void eng_entity_set_scale(nmo_engine_t *engine, int32_t index, const eng_vector_t *scale,
                           bool keep_children, bool local);
