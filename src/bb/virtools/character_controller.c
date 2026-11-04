@@ -5,21 +5,31 @@
 #include <math.h>
 #include <string.h>
 
+typedef struct controller_state { bool listening; } controller_state_t;
+
 static int controller_callback(blk_t *b, uint32_t message)
 {
-    if (message != NMO_ENGINE_MSG_LOAD) return NMO_ENGINE_BR_OK;
-    const char *names[] = {"Joy_Left","Joy_Right","Joy_Up","Joy_Down","Joy_Button1","Joy_Button2"};
-    int32_t messages[7] = {0};
-    for (size_t i = 0; i < sizeof(names)/sizeof(names[0]); i++) {
-        messages[i] = eng_message_type_add(b->engine,names[i]);
-        if (messages[i] < 0) return NMO_ENGINE_BR_GENERICERROR;
+    if (message != NMO_ENGINE_MSG_LOAD && message != NMO_ENGINE_MSG_ACTIVATESCRIPT) return NMO_ENGINE_BR_OK;
+    if (message == NMO_ENGINE_MSG_LOAD) {
+        const char *names[] = {"Joy_Left","Joy_Right","Joy_Up","Joy_Down","Joy_Button1","Joy_Button2"};
+        int32_t messages[7] = {0};
+        for (size_t i = 0; i < sizeof(names)/sizeof(names[0]); i++) {
+            messages[i] = eng_message_type_add(b->engine,names[i]);
+            if (messages[i] < 0) return NMO_ENGINE_BR_GENERICERROR;
+        }
+        if (nmo_engine_block_set_local_value(b,0,messages,sizeof(messages)) != NMO_OK)
+            return NMO_ENGINE_BR_PARAMETERERROR;
     }
-    if (nmo_engine_block_set_local_value(b,0,messages,sizeof(messages)) != NMO_OK)
-        return NMO_ENGINE_BR_PARAMETERERROR;
     nmo_object_id_t owner = nmo_engine_block_owner(b);
     if (eng_entity_index(b->engine,owner) < 0 || nmo_engine_object_class(b->engine,owner) != NMO_CID_CHARACTER)
         return NMO_ENGINE_BR_OWNERERROR;
-    nmo_engine_block_set_waiting_for_messages(b,owner,true);
+    /* Copies are activated without LOAD; activation supplies the native ATTACH registration. */
+    controller_state_t *state = nmo_engine_block_state(b,sizeof(*state));
+    if (state == NULL) return NMO_ENGINE_BR_GENERICERROR;
+    if (!state->listening) {
+        nmo_engine_block_set_waiting_for_messages(b,owner,true);
+        state->listening = true;
+    }
     return NMO_ENGINE_BR_OK;
 }
 

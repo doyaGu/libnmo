@@ -2,6 +2,7 @@
 #include "../../src/engine/engine_internal.h"
 #include "object/builtin/nmo_character_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
+#include "object/builtin/nmo_parameter_schemas.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -231,6 +232,96 @@ TEST(engine_character_controller, non_character_owners_report_owner_error_withou
     ASSERT_TRUE(nmo_engine_io_is_active(f.engine,BLOCK_IN(&f,block,0))); fixture_end(&f);
 }
 
+static nmo_object_id_t saved_animation(controller_fixture_t *g, size_t index)
+{
+    nmo_object_id_t source = 0; char text[32]; snprintf(text,sizeof(text),"%u",g->animations[index]);
+    if (nmo_script_edit_ensure_input_parameter_source(g->f.tx,BLOCK_PIN(&g->f,g->block,index),&source) != NMO_OK ||
+        nmo_script_edit_set_parameter_value(g->f.tx,source,text) != NMO_OK) return 0;
+    return source;
+}
+
+static const char *resolve_file(void *data, const char *name)
+{
+    (void)name; return data;
+}
+
+static void expect_message_table(nmo_engine_t *engine, nmo_object_id_t block)
+{
+    const nmo_behavior_state_t *state = nmo_object_get_state(eng_find_object(engine,block));
+    nmo_object_id_t parameter = eng_module_id(eng_module_of(engine,block,NULL),nmo_behavior_ref_array_get_id(&state->local_parameters,0));
+    const void *data = NULL; size_t size = 0;
+    ASSERT_EQ(NMO_OK,nmo_engine_param_value(engine,parameter,&data,&size,NULL)); ASSERT_EQ(7*sizeof(int32_t),size);
+    int32_t table[7]; memcpy(table,data,sizeof(table));
+    const char *names[] = {"Joy_Left","Joy_Right","Joy_Up","Joy_Down","Joy_Button1","Joy_Button2"};
+    for (size_t i = 0; i < COUNT(names); i++) ASSERT_EQ(nmo_engine_message_type(engine,names[i]),table[i]);
+    ASSERT_EQ(0,table[6]);
+}
+
+TEST(engine_character_controller, loaded_and_copied_controllers_rebind_messages_and_animation_references)
+{
+    controller_fixture_t g; begin(&g,true);
+    nmo_object_id_t sources[4];
+    for (size_t i = 0; i < COUNT(sources); i++) { sources[i] = saved_animation(&g,i); ASSERT_TRUE(sources[i] != 0); }
+    const int32_t obsolete[] = {123456,123457,123458,123459,123460,123461,99};
+    nmo_parameter_state_t *saved = fixture_state(&g.f,local(&g)); ASSERT_NOT_NULL(saved);
+    nmo_array_dispose(&saved->buffer_data); ASSERT_EQ(NMO_OK,nmo_array_alloc(&saved->buffer_data,1,sizeof(obsolete),NULL));
+    memcpy(saved->buffer_data.data,obsolete,sizeof(obsolete)); saved->mode = CKPARAM_MODE_BUFFER; saved->has_state = true;
+    fixture_commit_bare(&g.f,NULL);
+    nmo_beobject_state_t *owner = fixture_state(&g.f,g.f.owner_id);
+    owner->has_single_activity = 1; owner->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE;
+    nmo_behavior_state_t *script = fixture_state(&g.f,g.f.script_id);
+    script->has_single_activity = 1; script->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE | CK_SCENEOBJECT_START_RESET;
+    const char *path = NMO_TEST_SCRATCH_FILE("engine_character_controller.cmo");
+    ASSERT_EQ(NMO_OK,nmo_session_save_file(g.f.session,path,NULL,NULL));
+    for (int started = 0; started < 2; started++) {
+        engine_fixture_t host; fixture_begin_document(&host);
+        const char *names[] = {"Joy_Button1","Joy_Down","Host Only","Joy_Left","Joy_Up","Joy_Right","Joy_Button2"};
+        fixture_install_messages(&host,names,COUNT(names)); fixture_begin_edit(&host);
+        nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL;
+        fixture_commit(&host,&options);
+        if (started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_ALL));
+        nmo_engine_set_file_resolver(host.engine,resolve_file,(void *)path);
+        int32_t file = -1; ASSERT_EQ(NMO_OK,nmo_engine_load(host.engine,"controller.cmo",true,&file));
+        if (!started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_SCENE_DEFAULT));
+        nmo_object_id_t ids[16], copies[16] = {0};
+        ids[0] = nmo_engine_object_named(host.engine,"Actor",NMO_CID_CHARACTER);
+        ids[1] = nmo_engine_object_named(host.engine,"Root",NMO_CID_BODYPART);
+        ids[2] = nmo_engine_object_named(host.engine,"Controller Script",NMO_CID_BEHAVIOR);
+        ids[3] = nmo_engine_object_named(host.engine,"Controller",NMO_CID_BEHAVIOR);
+        ASSERT_TRUE(ids[0] != 0 && ids[0] != g.f.owner_id && ids[3] != 0); ASSERT_EQ(ids[1],eng_character_root(host.engine,ids[0]));
+        const eng_module_t *module = eng_module_of(host.engine,ids[3],NULL);
+        for (size_t i = 0; i < COUNT(sources); i++) {
+            ids[4+i] = eng_module_id(module,g.animations[i]);
+            const nmo_keyedanimation_state_t *animation = fixture_state(&g.f,g.animations[i]);
+            ids[8+i] = eng_module_id(module,nmo_ref_runtime_id(&animation->animation_ids[0]));
+            ids[12+i] = eng_module_id(module,sources[i]);
+        }
+        expect_message_table(host.engine,ids[3]);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0)); ASSERT_EQ(ids[4],eng_character_next_animation(host.engine,ids[0]));
+        ASSERT_EQ(NMO_OK,nmo_engine_send_message(host.engine,nmo_engine_message_type(host.engine,"Joy_Button1"),ids[0],0));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
+        ASSERT_EQ(ids[7],eng_character_active_animation(host.engine,ids[0]));
+        ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(host.engine,ids,COUNT(ids),false,copies));
+        ASSERT_EQ(copies[1],eng_character_root(host.engine,copies[0])); expect_message_table(host.engine,copies[3]);
+        ASSERT_EQ(copies[7],eng_character_active_animation(host.engine,copies[0]));
+        for (size_t i = 0; i < COUNT(sources); i++) {
+            ASSERT_EQ(copies[0],eng_animation_character(host.engine,copies[4+i]));
+            ASSERT_EQ(copies[1],eng_object_animation_entity(host.engine,copies[8+i]));
+        }
+        ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[2],true,true));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0)); ASSERT_EQ(copies[4],eng_character_active_animation(host.engine,copies[0]));
+        ASSERT_EQ(NMO_OK,nmo_engine_send_message(host.engine,nmo_engine_message_type(host.engine,"Joy_Up"),ids[0],0));
+        ASSERT_EQ(NMO_OK,nmo_engine_send_message(host.engine,nmo_engine_message_type(host.engine,"Joy_Down"),copies[0],0));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
+        ASSERT_EQ(ids[5],eng_character_active_animation(host.engine,ids[0]));
+        ASSERT_EQ(copies[6],eng_character_active_animation(host.engine,copies[0]));
+        ASSERT_EQ(0u,eng_animation_playback_state(host.engine,copies[7])->flags & CKANIMATION_CANBEBREAK);
+        ASSERT_TRUE(eng_animation_state(host.engine,copies[7])->flags & CKANIMATION_CANBEBREAK);
+        fixture_end(&host);
+    }
+    fixture_end(&g.f); remove(path);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_character_controller, message_presence_selects_animations_in_native_priority_order);
 REGISTER_TEST(engine_character_controller, turns_use_active_rates_without_permission_or_clock_gates_and_prefer_right);
@@ -240,4 +331,5 @@ REGISTER_TEST(engine_character_controller, off_wins_simultaneous_inputs_without_
 REGISTER_TEST(engine_character_controller, missing_deleted_and_wrong_class_animations_become_null_stop_requests);
 REGISTER_TEST(engine_character_controller, invalid_message_tables_fail_after_enabling_processing_and_protecting_run);
 REGISTER_TEST(engine_character_controller, non_character_owners_report_owner_error_without_consuming_inputs);
+REGISTER_TEST(engine_character_controller, loaded_and_copied_controllers_rebind_messages_and_animation_references);
 TEST_MAIN_END()
