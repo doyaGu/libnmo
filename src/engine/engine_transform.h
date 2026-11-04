@@ -125,5 +125,7 @@ bool eng_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animation, flo
 
 /* CKCurve::GetPos: the world position at `step` (0..1) of the curve's length */
 bool eng_curve_position(nmo_engine_t *engine, nmo_object_id_t curve, float step, eng_vector_t *out);
+/* CKCurve::GetLength, in the curve's local space after fitting and tangents. */
+bool eng_curve_length(nmo_engine_t *engine, nmo_object_id_t curve, float *out);
 
 #endif /* NMO_ENGINE_TRANSFORM_H */

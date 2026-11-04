@@ -1282,8 +1282,8 @@ static void eng_hermite(eng_vector_t *out, const eng_vector_t *p0, const eng_vec
  * or explicit tangents, the fitting pass, and the lengths (100 Hermite
  * samples a segment). False for a curve of fewer than two points.
  */
-bool eng_curve_position(nmo_engine_t *engine, nmo_object_id_t curve_id, float step,
-                        eng_vector_t *out)
+static bool eng_curve_sample(nmo_engine_t *engine, nmo_object_id_t curve_id, float step,
+                            eng_vector_t *out, float *out_length)
 {
     int32_t curve = eng_entity_index(engine, curve_id);
     const nmo_curve_state_t *state =
@@ -1292,6 +1292,7 @@ bool eng_curve_position(nmo_engine_t *engine, nmo_object_id_t curve_id, float st
                    : NULL;
     int count = state != NULL ? (int)state->control_point_count : 0;
     if (count < 2) {
+        if (state != NULL && out_length != NULL) { *out_length = 0; return out == NULL; }
         return false;
     }
     eng_curve_point_t *points = (eng_curve_point_t *)calloc((size_t)count, sizeof(*points));
@@ -1382,6 +1383,8 @@ bool eng_curve_position(nmo_engine_t *engine, nmo_object_id_t curve_id, float st
             points[i + 1 < count ? i + 1 : 0].length = length;
         }
     }
+    if (out_length != NULL) *out_length = length;
+    if (out == NULL) { free(points); free(descs); return true; }
     /* GetLocalPos */
     if (opened) {
         step = step > 1.0f ? 1.0f : step < 0.0f ? 0.0f : step;
@@ -1420,4 +1423,14 @@ bool eng_curve_position(nmo_engine_t *engine, nmo_object_id_t curve_id, float st
     free(points);
     free(descs);
     return true;
+}
+
+bool eng_curve_position(nmo_engine_t *engine, nmo_object_id_t curve, float step, eng_vector_t *out)
+{
+    return out != NULL && eng_curve_sample(engine,curve,step,out,NULL);
+}
+
+bool eng_curve_length(nmo_engine_t *engine, nmo_object_id_t curve, float *out)
+{
+    return out != NULL && eng_curve_sample(engine,curve,0,NULL,out);
 }

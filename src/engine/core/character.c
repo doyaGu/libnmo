@@ -278,6 +278,14 @@ static void character_align(nmo_engine_t *engine, eng_character_t *runtime)
     eng_keyed_animation_center(engine, runtime->active, frame);
 }
 
+bool eng_character_align_root(nmo_engine_t *engine, nmo_object_id_t character)
+{
+    eng_character_t *runtime = character_runtime(engine,character);
+    if (runtime == NULL) return false;
+    character_align(engine,runtime);
+    return true;
+}
+
 nmo_status_t eng_character_set_active_animation(nmo_engine_t *engine, nmo_object_id_t character, nmo_object_id_t animation)
 {
     eng_character_t *runtime = character_runtime(engine, character);

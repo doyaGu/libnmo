@@ -39,6 +39,7 @@ typedef struct eng_characters {
 nmo_status_t eng_load_characters(nmo_engine_t *engine, const eng_range_t *range);
 void eng_free_characters(nmo_engine_t *engine);
 nmo_object_id_t eng_character_root(nmo_engine_t *engine, nmo_object_id_t character);
+bool eng_character_align_root(nmo_engine_t *engine, nmo_object_id_t character);
 size_t eng_character_animation_count(nmo_engine_t *engine, nmo_object_id_t character);
 nmo_object_id_t eng_character_animation(nmo_engine_t *engine, nmo_object_id_t character, size_t index);
 size_t eng_character_bodypart_count(const nmo_engine_t *engine, nmo_object_id_t character);
