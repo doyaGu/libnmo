@@ -303,6 +303,25 @@ static int bb_rotate(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* Rotate Around updates orientation before sampling the position in Ref. */
+static int bb_rotate_around(blk_t *b)
+{
+    int32_t entity = target_entity(b);
+    if (entity < 0) return NMO_ENGINE_BR_OWNERERROR;
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    eng_vector_t axis = get_in_vector(b,0,0,1,0);
+    float angle = get_in_float(b,1,0);
+    int32_t reference = input_entity(b,2);
+    bool keep = keep_children(b,4);
+    if (!get_in_int(b,3,1)) eng_entity_rotate(b->engine,entity,&axis,angle,reference,keep);
+    eng_vector_t position = eng_entity_position(b->engine,entity,reference), rotated;
+    eng_matrix_t rotation; eng_matrix_from_rotation(&rotation,&axis,angle);
+    eng_vector_rotate(&rotated,&rotation,&position);
+    eng_entity_set_position(b->engine,entity,&rotated,reference,keep);
+    return NMO_ENGINE_BR_OK;
+}
+
 /*
  * Set Euler Orientation: the axes of the angles' rotation. An old block
  * (Merge Angles Params off, with four inputs or more) has the three angles
@@ -590,6 +609,7 @@ static const nmo_engine_block_desc_t eng_3dtransfo_blocks[] = {
     {NMO_GUID_INIT(0x41236987, 0xa54a87a6), "Scale", bb_scale, NULL, NULL},
     {NMO_GUID_INIT(0x9d9d9d98, 0x7e7a7f75), "Set Parent", bb_set_parent, NULL, NULL},
     {NMO_GUID_INIT(0xffffffee, 0xeeffffff), "Rotate", bb_rotate, NULL, NULL},
+    {NMO_GUID_INIT(0xfdfd999e, 0xdefeded8), "Rotate Around", bb_rotate_around, NULL, NULL},
     {NMO_GUID_INIT(0x0c4966d8, 0x6c0c6d14), "Set Euler Orientation", bb_set_euler_orientation, NULL,
      NULL},
     {NMO_GUID_INIT(0x26843971, 0x86249317), "Look At", bb_look_at, NULL, NULL},
