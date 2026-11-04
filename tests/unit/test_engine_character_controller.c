@@ -322,6 +322,39 @@ TEST(engine_character_controller, loaded_and_copied_controllers_rebind_messages_
     fixture_end(&g.f); remove(path);
 }
 
+static float actor_x(controller_fixture_t *g)
+{
+    float matrix[16]; return nmo_engine_entity_world_matrix(g->f.engine,g->f.owner_id,matrix) ? matrix[12] : NAN;
+}
+
+TEST(engine_character_controller, goto_messages_drive_root_motion_until_arrival_then_return_to_stand)
+{
+    controller_fixture_t g; begin(&g,true);
+    nmo_object_id_t target = fixture_create(&g.f,NMO_CID_3DENTITY,"Destination");
+    ((nmo_3dentity_state_t *)fixture_state(&g.f,target))->world_matrix[12] = 20;
+    nmo_object_id_t go = fixture_block(&g.f,GUID_GOTO,"Go To"), arrived = fixture_block(&g.f,GUID_NOP,"Arrived");
+    ASSERT_TRUE(go != 0 && arrived != 0);
+    fixture_input_int(&g.f,fixture_target(&g.f,go),(int32_t)g.f.owner_id);
+    fixture_input_int(&g.f,BLOCK_PIN(&g.f,go,0),(int32_t)target);
+    float distance = 4; fixture_input_value(&g.f,BLOCK_PIN(&g.f,go,1),&distance,sizeof(distance));
+    fixture_link(&g.f,g.f.script_in,BLOCK_IN(&g.f,go,0),0);
+    fixture_link(&g.f,BLOCK_OUT(&g.f,go,2),BLOCK_IN(&g.f,go,1),1);
+    fixture_link(&g.f,BLOCK_OUT(&g.f,go,0),BLOCK_IN(&g.f,arrived,0),0); commit(&g);
+    bool walked = false;
+    for (int step = 0; step < 80 && runs(&g.f,arrived) == 0; step++) {
+        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,1));
+        if (eng_character_active_animation(g.f.engine,g.f.owner_id) == g.animations[1]) walked = true;
+    }
+    ASSERT_TRUE(walked); ASSERT_EQ(1u,runs(&g.f,arrived)); ASSERT_TRUE(actor_x(&g) >= 16 && actor_x(&g) <= 24);
+    uint64_t queries = runs(&g.f,go); ASSERT_TRUE(queries > 1);
+    for (int step = 0; step < 10; step++) ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,1));
+    ASSERT_EQ(g.animations[0],eng_character_active_animation(g.f.engine,g.f.owner_id)); ASSERT_EQ(queries,runs(&g.f,go));
+    ASSERT_EQ(1u,runs(&g.f,arrived)); float stopped = actor_x(&g); ASSERT_TRUE(stopped >= 16 && stopped <= 26);
+    for (int step = 0; step < 5; step++) ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,1));
+    ASSERT_FLOAT_EQ(stopped,actor_x(&g),1e-5f); ASSERT_TRUE(eng_character_automatic(g.f.engine,g.f.owner_id));
+    fixture_end(&g.f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_character_controller, message_presence_selects_animations_in_native_priority_order);
 REGISTER_TEST(engine_character_controller, turns_use_active_rates_without_permission_or_clock_gates_and_prefer_right);
@@ -332,4 +365,5 @@ REGISTER_TEST(engine_character_controller, missing_deleted_and_wrong_class_anima
 REGISTER_TEST(engine_character_controller, invalid_message_tables_fail_after_enabling_processing_and_protecting_run);
 REGISTER_TEST(engine_character_controller, non_character_owners_report_owner_error_without_consuming_inputs);
 REGISTER_TEST(engine_character_controller, loaded_and_copied_controllers_rebind_messages_and_animation_references);
+REGISTER_TEST(engine_character_controller, goto_messages_drive_root_motion_until_arrival_then_return_to_stand);
 TEST_MAIN_END()
