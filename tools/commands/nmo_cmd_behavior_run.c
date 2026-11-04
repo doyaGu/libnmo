@@ -59,6 +59,7 @@ typedef struct run_args {
     const char *steer; /* "X,Z[,Y[,F]];...@FRAME[-FRAME]": points an object is steered through */
     const char *steer_objects; /* "NAME,NAME": the objects --steer may steer, first shown */
     const char *steer_log;     /* CSV file of the steered object's frames, or NULL */
+    const char *physics_log;   /* CSV world matrices of movable physical bodies */
     const char *messages; /* "Level_Finish@4000:All_Gameplay,...": messages the host sends */
     const char *registry; /* "Software\Game\Settings\Language=1;...": registry values */
     bool physics_ivp;     /* --physics ivp: simulate the physics blocks with libivp */
@@ -572,9 +573,17 @@ static void run_steer_frame(nmo_engine_t *engine, run_steer_t *steer, uint32_t f
             nmo_engine_set_key(engine, run_key_code(arrows[k], strlen(arrows[k])), down[k]);
         }
         if (steer->log != NULL && steered != 0 && steer->placed) {
-            fprintf(steer->log, "%u,%.3f,%.3f,%.3f,%.4f,%ld,%d,%d,%d,%d\n", frame, m[12], m[13],
+            fprintf(steer->log, "%u,%.3f,%.3f,%.3f,%.4f,%ld,%d,%d,%d,%d,%u,\"", frame, m[12], m[13],
                     m[14], hypotf(vx_last, vz_last), steer->next, down[0], down[1], down[2],
-                    down[3]);
+                    down[3], steered);
+            const char *name = nmo_engine_object_name(engine, steered);
+            for (const char *p = name != NULL ? name : ""; *p; p++) {
+                if (*p == '"') {
+                    fputc('"', steer->log);
+                }
+                fputc(*p, steer->log);
+            }
+            fputs("\"\n", steer->log);
         }
     }
 }
@@ -904,6 +913,32 @@ static void run_trace(const nmo_engine_event_t *event, void *user_data)
 }
 
 /* With --physics: where each movable physical object ended */
+static bool run_log_physics(FILE *log, nmo_engine_t *engine)
+{
+    for (int32_t i = 0; i < nmo_engine_physics_object_count(engine); i++) {
+        nmo_engine_physics_object_t object;
+        float m[16];
+        if (!nmo_engine_physics_object_at(engine, i, &object) || object.fixed ||
+            !nmo_engine_entity_world_matrix(engine, object.entity, m)) {
+            continue;
+        }
+        fprintf(log, "%llu,%u,\"", (unsigned long long)nmo_engine_frame(engine), object.entity);
+        const char *name = nmo_engine_object_name(engine, object.entity);
+        for (const char *p = name != NULL ? name : ""; *p; p++) {
+            if (*p == '"') {
+                fputc('"', log);
+            }
+            fputc(*p, log);
+        }
+        fputc('"', log);
+        for (int k = 0; k < 16; k++) {
+            fprintf(log, ",%.9g", (double)m[k]);
+        }
+        fputc('\n', log);
+    }
+    return !ferror(log);
+}
+
 static bool run_add_physics(nmo_cli_record_t *rec, const run_state_t *state)
 {
     if (!state->args->physics_ivp) {
@@ -1482,13 +1517,23 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
         status = NMO_ERR_NOMEM;
     }
     steer.objects = args->steer_objects;
+    FILE *physics_log = NULL;
+    if (status == NMO_OK && args->physics_log != NULL) {
+        physics_log = fopen(args->physics_log, "w");
+        if (physics_log == NULL) {
+            fprintf(stderr, "Error: cannot write %s\n", args->physics_log);
+            status = NMO_ERR_INVALID_ARGUMENT;
+        } else {
+            fputs("frame,id,name,m0,m1,m2,m3,m4,m5,m6,m7,m8,m9,m10,m11,m12,m13,m14,m15\n", physics_log);
+        }
+    }
     if (status == NMO_OK && args->steer_log != NULL) {
         steer.log = fopen(args->steer_log, "w");
         if (steer.log == NULL) {
             fprintf(stderr, "Error: cannot write %s\n", args->steer_log);
             status = NMO_ERR_INVALID_ARGUMENT;
         } else {
-            fputs("frame,x,y,z,speed,next,up,down,left,right\n", steer.log);
+            fputs("frame,x,y,z,speed,next,up,down,left,right,object_id,object_name\n", steer.log);
         }
     }
 #ifdef NMO_HAS_VIEW
@@ -1531,6 +1576,9 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
         }
 #endif
         status = nmo_engine_step(engine, delta);
+        if (status == NMO_OK && physics_log != NULL && !run_log_physics(physics_log, engine)) {
+            status = NMO_ERR_INVALID_ARGUMENT;
+        }
 #ifdef NMO_HAS_VIEW
         if (status == NMO_OK && view != NULL) {
             status = nmo_view_draw(view);
@@ -1547,7 +1595,15 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
     free(keys);
     run_free_steer(&steer);
     if (steer.log != NULL) {
-        fclose(steer.log);
+        bool failed = ferror(steer.log) != 0;
+        if (fclose(steer.log) != 0 || failed) {
+            fprintf(stderr, "Error: cannot finish writing %s\n", args->steer_log);
+            status = NMO_ERR_INVALID_ARGUMENT;
+        }
+    }
+    if (physics_log != NULL && fclose(physics_log) != 0) {
+        fprintf(stderr, "Error: cannot finish writing %s\n", args->physics_log);
+        status = NMO_ERR_INVALID_ARGUMENT;
     }
     for (long i = 0; messages != NULL && i < message_count; i++) {
         free(messages[i].name);
@@ -1634,6 +1690,8 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
         {"--steer-log", NULL, NMO_OPT_STRING,
          "Write the steered object's frames to a CSV file: frame, x, y, z, speed, the point "
          "it heads for, and the arrow keys held"},
+        {"--physics-log", NULL, NMO_OPT_STRING,
+         "Write movable physical bodies after every step: CSV frame, id, name, and 16 world matrix values"},
         {"--path", NULL, NMO_OPT_STRING,
          "Folder of the files the document loads, before its own folder"},
         {"--write", NULL, NMO_OPT_STRING,
@@ -1655,7 +1713,7 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
          "List no events, only the summary (the default for a window played until it closes)"},
     };
     enum { OPT_FRAMES, OPT_DELTA, OPT_START, OPT_SCRIPT, OPT_UNKNOWN, OPT_STRICT, OPT_MAX_ITER, OPT_SEED,
-           OPT_TRACE, OPT_KEYS, OPT_STEER, OPT_STEER_OBJECT, OPT_STEER_LOG, OPT_PATH, OPT_WRITE, OPT_MESSAGE, OPT_REGISTRY, OPT_PHYSICS,
+           OPT_TRACE, OPT_KEYS, OPT_STEER, OPT_STEER_OBJECT, OPT_STEER_LOG, OPT_PHYSICS_LOG, OPT_PATH, OPT_WRITE, OPT_MESSAGE, OPT_REGISTRY, OPT_PHYSICS,
            OPT_WINDOW, OPT_SHOT, OPT_MUTE, OPT_MIPMAPS, OPT_QUIET, OPT_COUNT };
 
     nmo_opt_val_t vals[OPT_COUNT];
@@ -1696,6 +1754,7 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
     out->steer = nmo_opt_str(&vals[OPT_STEER]);
     out->steer_objects = nmo_opt_str(&vals[OPT_STEER_OBJECT]);
     out->steer_log = nmo_opt_str(&vals[OPT_STEER_LOG]);
+    out->physics_log = nmo_opt_str(&vals[OPT_PHYSICS_LOG]);
     if (out->steer_log != NULL && out->steer == NULL) {
         fprintf(stderr, "Error: --steer-log needs --steer\n");
         return false;

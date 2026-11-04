@@ -193,9 +193,37 @@ TEST(cli_behavior_run, finite_steering_returns_arrow_keys_to_the_player)
     remove(path);
 }
 
+TEST(cli_behavior_run, physics_trace_reports_output_failures)
+{
+    const char *path = NMO_TEST_SCRATCH_FILE("cli_behavior_run_physics.cmo");
+    const char *log = NMO_TEST_SCRATCH_FILE("cli_behavior_run_physics.csv");
+    nmo_object_id_t behavior = 0;
+    write_run_fixture(path, RUN_OK, &behavior);
+    char args[2048];
+    snprintf(args, sizeof(args), "behavior run --physics none --frames 2 --physics-log \"%s\" \"%s\"", log, path);
+    run_result_t result = run_cli(args);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    FILE *stream = fopen(log, "r");
+    ASSERT_NOT_NULL(stream);
+    char header[256];
+    ASSERT_NOT_NULL(fgets(header, sizeof(header), stream));
+    ASSERT_NOT_NULL(strstr(header, "frame,id,name,m0,m1,m2,m3"));
+    ASSERT_NOT_NULL(strstr(header, ",m15\n"));
+    ASSERT_EQ(EOF, fgetc(stream));
+    fclose(stream);
+    /* An existing file cannot be used as the directory of a log. */
+    snprintf(args, sizeof(args), "behavior run --physics-log \"%s/no.csv\" \"%s\"", log, path);
+    result = run_cli(args);
+    ASSERT_TRUE(result.exit_code != NMO_CLI_EXIT_SUCCESS);
+    ASSERT_NOT_NULL(strstr(result.output, "cannot write"));
+    remove(log);
+    remove(path);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(cli_behavior_run, strict_reports_failures_in_json_even_when_quiet);
 REGISTER_TEST(cli_behavior_run, default_unknown_policy_and_successful_strict_runs_still_succeed);
 REGISTER_TEST(cli_behavior_run, strict_text_names_the_failure);
 REGISTER_TEST(cli_behavior_run, finite_steering_returns_arrow_keys_to_the_player);
+REGISTER_TEST(cli_behavior_run, physics_trace_reports_output_failures);
 TEST_MAIN_END()
