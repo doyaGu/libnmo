@@ -20,6 +20,8 @@
 #include "type/nmo_type_guids.h"
 #include "type/nmo_type_query.h"
 
+#include <math.h>
+
 /* ============================================================================
  * Animations
  * ============================================================================ */
@@ -321,8 +323,8 @@ static eng_vector_t vector_toward(const eng_vector_t *from, const eng_vector_t *
  * even modes the opposite) turned `speed` of the way toward `dir`, about the
  * up vector, then rolled about it; the local scale kept.
  */
-static void orientate(nmo_engine_t *engine, int32_t entity, eng_vector_t dir, int32_t dir_mode,
-                      float roll, eng_vector_t up, float speed)
+static eng_vector_t orientate(nmo_engine_t *engine, int32_t entity, eng_vector_t dir, int32_t dir_mode,
+                      float roll, eng_vector_t up, float speed, bool keep)
 {
     eng_vector_t scale = eng_entity_scale(engine, entity, true);
     if ((dir_mode & 1) == 0) {
@@ -344,10 +346,10 @@ static void orientate(nmo_engine_t *engine, int32_t entity, eng_vector_t dir, in
         eng_vector_normalize(&dir);
         eng_vector_normalize(&right);
         eng_vector_normalize(&up);
-        eng_entity_set_orientation(engine, entity, &dir, &up, &right, -1, false);
+        eng_entity_set_orientation(engine, entity, &dir, &up, &right, -1, keep);
         if (roll != 0.0f) {
             const eng_vector_t axis = {0.0f, 0.0f, 1.0f};
-            eng_entity_rotate(engine, entity, &axis, roll, entity, false);
+            eng_entity_rotate(engine, entity, &axis, roll, entity, keep);
         }
         break;
     case 1: /* X */
@@ -362,10 +364,10 @@ static void orientate(nmo_engine_t *engine, int32_t entity, eng_vector_t dir, in
         eng_vector_normalize(&dir);
         eng_vector_normalize(&right);
         eng_vector_normalize(&up);
-        eng_entity_set_orientation(engine, entity, &right, &up, &dir, -1, false);
+        eng_entity_set_orientation(engine, entity, &right, &up, &dir, -1, keep);
         if (roll != 0.0f) {
             const eng_vector_t axis = {1.0f, 0.0f, 0.0f};
-            eng_entity_rotate(engine, entity, &axis, roll, entity, false);
+            eng_entity_rotate(engine, entity, &axis, roll, entity, keep);
         }
         break;
     case 3: /* Y */
@@ -380,16 +382,17 @@ static void orientate(nmo_engine_t *engine, int32_t entity, eng_vector_t dir, in
         eng_vector_normalize(&dir);
         eng_vector_normalize(&right);
         eng_vector_normalize(&up);
-        eng_entity_set_orientation(engine, entity, &right, &dir, &up, -1, false);
+        eng_entity_set_orientation(engine, entity, &right, &dir, &up, -1, keep);
         if (roll != 0.0f) {
             const eng_vector_t axis = {0.0f, 1.0f, 0.0f};
-            eng_entity_rotate(engine, entity, &axis, roll, entity, false);
+            eng_entity_rotate(engine, entity, &axis, roll, entity, keep);
         }
         break;
     default:
         break;
     }
     eng_entity_set_scale(engine, entity, &scale, false, true);
+    return up;
 }
 
 /* The Following Speed of a Look At: per 1/0.07 ms when Time Based, at most all the way. */
@@ -438,7 +441,7 @@ static int bb_look_at(blk_t *b)
         eng_vector_normalize(&dir);
         const eng_vector_t up = {0.0f, 1.0f, 0.0f};
         orientate(engine, entity, dir, get_local_int(b, 1, 5), get_local_float(b, 2, 0.0f), up,
-                  speed);
+                  speed, false);
     }
     IN_OFF(b, 0);
     OUT_ON(b, 0);
@@ -477,18 +480,23 @@ static int bb_tt_look_at(blk_t *b)
         }
         const eng_vector_t up = {0.0f, 1.0f, 0.0f};
         orientate(engine, entity, dir, get_local_int(b, 1, 5), get_local_float(b, 2, 0.0f), up,
-                  speed);
+                  speed, false);
     }
     IN_OFF(b, 0);
     OUT_ON(b, 0);
     return NMO_ENGINE_BR_OK;
 }
 
-/*
- * Position On Curve (SetCurveStep): the target at the curve's position for
- * Progression. Follow and Bank, which also turn it along the curve, are not
- * ported (Ballance uses neither).
- */
+static int position_on_curve_callback(blk_t *b, uint32_t message)
+{
+    if (message == NMO_ENGINE_MSG_RESET) {
+        const eng_vector_t up = {99,0,0};
+        if (nmo_engine_block_set_local_value(b,0,&up,sizeof(up)) != NMO_OK) return NMO_ENGINE_BR_GENERICERROR;
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Position On Curve follows a sampled tangent, then banks about its chosen local axis. */
 static int bb_position_on_curve(blk_t *b)
 {
     IN_OFF(b, 0);
@@ -497,17 +505,51 @@ static int bb_position_on_curve(blk_t *b)
     if (entity < 0) {
         return NMO_ENGINE_BR_OWNERERROR;
     }
+    nmo_object_id_t curve = nmo_engine_block_get_input_object(b,0);
+    float step = get_in_float(b,1,.5f);
+    bool follow = get_in_int(b,2,0) != 0, bank = get_in_int(b,3,0) != 0;
+    bool keep = keep_children(b,6);
+    float roll = get_local_float(b,1,0);
     eng_vector_t position;
-    if (!eng_curve_position(b->engine, nmo_engine_block_get_input_object(b, 0),
-                            get_in_float(b, 1, 0.5f), &position)) {
+    if (!eng_curve_position(b->engine,curve,step,&position)) {
         return NMO_ENGINE_BR_PARAMETERERROR;
     }
-    eng_entity_set_position(b->engine, entity, &position, -1, keep_children(b, 6));
+    eng_entity_set_position(b->engine,entity,&position,-1,keep);
+    if (!follow && !bank) return NMO_ENGINE_BR_OK;
+    int32_t axis = 5;
+    if (nmo_guid_equals(nmo_engine_block_input_parameter_type(b,5),CKPGUID_VECTOR)) {
+        eng_vector_t vector = get_in_vector(b,5,0,0,0);
+        /* Historical vectors select the first nonzero component, ignoring its sign. */
+        axis = vector.x != 0 ? 1 : vector.y != 0 ? 3 : vector.z != 0 ? 5 : 0;
+    } else axis = get_in_int(b,5,5);
+    if (axis < 1 || axis > 6) return NMO_ENGINE_BR_PARAMETERERROR;
+    eng_vector_t next, previous;
+    if (!eng_curve_position(b->engine,curve,step+.01f,&next) ||
+        !eng_curve_position(b->engine,curve,step-.01f,&previous)) return NMO_ENGINE_BR_PARAMETERERROR;
+    eng_vector_t up = {0,1,0}; nmo_engine_block_get_local_value(b,0,&up,sizeof(up));
+    if (follow) {
+        eng_vector_t direction = {next.x-previous.x,next.y-previous.y,next.z-previous.z};
+        eng_vector_normalize(&direction);
+        up = orientate(b->engine,entity,direction,axis,roll,up,1,keep);
+        if (nmo_engine_block_set_local_value(b,0,&up,sizeof(up)) != NMO_OK) return NMO_ENGINE_BR_GENERICERROR;
+    }
+    if (bank) {
+        float amount = get_in_float(b,4,1);
+        eng_vector_t to = {next.x-position.x,0,next.z-position.z}, back = {previous.x-position.x,0,previous.z-position.z};
+        if (eng_vector_magnitude(&to) > 0 && eng_vector_magnitude(&back) > 0) {
+            eng_vector_normalize(&to); eng_vector_normalize(&back);
+            eng_vector_t cross = eng_vector_cross(&to,&back);
+            float angle = asinf(eng_vector_magnitude(&cross));
+            if (!(cross.x*up.x+cross.y*up.y+cross.z*up.z > 0)) angle = -angle;
+            static const eng_vector_t axes[] = {{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}};
+            if (angle != 0) eng_entity_rotate(b->engine,entity,&axes[axis-1],amount*angle,entity,keep);
+        }
+    }
     return NMO_ENGINE_BR_OK;
 }
 
 static const nmo_engine_block_desc_t eng_3dtransfo_blocks[] = {
-    {NMO_GUID_INIT(0x676776d0, 0x20d457bd), "Position On Curve", bb_position_on_curve, NULL, NULL},
+    {NMO_GUID_INIT(0x676776d0, 0x20d457bd), "Position On Curve", bb_position_on_curve, position_on_curve_callback, NULL},
     {NMO_GUID_INIT(0x64221225, 0x769a143f), "Play Animation 3D Entity", bb_play_animation, NULL, NULL},
     {NMO_GUID_INIT(0x1c9236e1, 0x42f40996), "Play Global Animation", bb_play_global_animation, NULL,
      NULL},
