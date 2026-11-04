@@ -47,6 +47,10 @@ typedef struct eng_animation_clock {
     float step;
     nmo_animation_state_t *playback;
 } eng_animation_clock_t;
+typedef struct eng_animation_blend {
+    nmo_object_id_t id;
+    float factor;
+} eng_animation_blend_t;
 
 typedef struct eng_keyed_animation {
     nmo_object_id_t id, root_entity, root_animation;
@@ -67,7 +71,13 @@ typedef struct eng_animations {
     eng_map_t clock_map;
     ENG_VEC(eng_animation_binding_t) bindings;
     eng_map_t binding_map;
+    ENG_VEC(eng_animation_blend_t) blends;
+    eng_map_t blend_map;
 } eng_animations_t;
+
+float eng_animation_merge_factor(const nmo_engine_t *engine, nmo_object_id_t animation);
+bool eng_animation_set_merge_factor(nmo_engine_t *engine, nmo_object_id_t animation, float factor);
+void eng_copy_animation_blend(nmo_engine_t *engine, nmo_object_id_t source, nmo_object_id_t target);
 
 const nmo_animation_state_t *eng_animation_state(const nmo_engine_t *engine, nmo_object_id_t animation);
 nmo_object_id_t eng_animation_character(const nmo_engine_t *engine, nmo_object_id_t animation);

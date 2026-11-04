@@ -57,6 +57,15 @@ static int bb_set_animation_frame(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+static int bb_set_blended_animation_factor(blk_t *b)
+{
+    nmo_object_id_t animation = nmo_engine_block_get_input_object(b,0);
+    if (animation != 0 && !eng_animation_set_merge_factor(b->engine,animation,get_in_float(b,1,.5f)))
+        return NMO_ENGINE_BR_GENERICERROR;
+    OUT_ON(b,0);
+    return NMO_ENGINE_BR_OK;
+}
+
 static int bb_set_animation_step(blk_t *b)
 {
     if (nmo_engine_block_target(b) == 0) return NMO_ENGINE_BR_OWNERERROR;
@@ -116,6 +125,7 @@ static int bb_set_floor_reference(blk_t *b)
 
 static const nmo_engine_block_desc_t character_blocks[] = {
     {NMO_GUID_INIT(0x6a794228,0x77197f5e),"Add Animation",bb_add_animation,NULL,NULL},
+    {NMO_GUID_INIT(0x7afc20a3,0x6d367a99),"Set Blended Animation Factor",bb_set_blended_animation_factor,NULL,NULL},
     {NMO_GUID_INIT(0x0e579636,0xa3b6e7f0),"Set Animation Frame",bb_set_animation_frame,NULL,NULL},
     {NMO_GUID_INIT(0x120127aa,0x960added),"Set Animation Step",bb_set_animation_step,NULL,NULL},
     {NMO_GUID_INIT(0x55f045c7,0x6cb3417b),"Set Bodypart Animation Frame",bb_set_bodypart_animation_frame,NULL,NULL},

@@ -843,7 +843,7 @@ static bool anim_evaluate(nmo_engine_t *engine, nmo_object_id_t animation, anim_
         CK_OBJECTANIMATION_IGNORESCALE, CK_OBJECTANIMATION_IGNORESCALEROT};
     if (source.state->flags & ignored[channel]) return false;
     if (source.state->flags & CK_OBJECTANIMATION_MERGED) {
-        float factor = source.state->merge_factor;
+        float factor = eng_animation_merge_factor(engine,animation);
         if (!isfinite(source.length) || !isfinite(factor)) return false;
         eng_animation_path_t current = {animation, path != NULL ? path->depth + 1 : 1, path};
         bool endpoint = channel == ANIM_POSITION || channel == ANIM_ROTATION;

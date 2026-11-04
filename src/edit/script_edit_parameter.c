@@ -16,6 +16,21 @@
 #include "type/nmo_type_guids.h"
 
 #include <string.h>
+#include <stdio.h>
+
+/* Prototype defaults use CKPercentageStringFunc's percent units; the public
+ * value editor also accepts bare fractions, so keep this conversion here. */
+static nmo_status_t script_edit_set_default_value(nmo_script_edit_tx_t *tx,
+    nmo_object_id_t id, nmo_guid_t type, const char *text)
+{
+    if (nmo_guid_equals(type,CKPGUID_PERCENTAGE)) {
+        float value = 0;
+        if (sscanf(text,"%f",&value) != 1) return NMO_ERR_INVALID_FORMAT;
+        value *= .01f;
+        return nmo_object_edit_set_parameter_bytes_ex(tx->edit,id,(const uint8_t *)&value,sizeof(value),NULL);
+    }
+    return nmo_object_edit_set_parameter_value_ex(tx->edit,id,text,NULL);
+}
 
 static bool script_edit_is_symbolic_manager_default_type(nmo_guid_t type_guid)
 {
@@ -392,8 +407,7 @@ nmo_status_t script_edit_create_parameter_object(
                 return rc;
             }
             if (default_value[0] != '\0') {
-                rc = nmo_object_edit_set_parameter_value_ex(
-                    tx->edit, source_id, default_value, NULL);
+                rc = script_edit_set_default_value(tx,source_id,type_guid,default_value);
                 if (rc != NMO_OK && script_edit_named_default_reads_as_zero(tx, type_guid)) {
                     rc = NMO_OK;
                 }
@@ -467,8 +481,7 @@ nmo_status_t script_edit_create_parameter_object(
 
     if (class_id != NMO_CID_PARAMETERIN &&
         default_value && default_value[0] != '\0') {
-        rc = nmo_object_edit_set_parameter_value_ex(
-            tx->edit, *out_parameter_id, default_value, NULL);
+        rc = script_edit_set_default_value(tx,*out_parameter_id,type_guid,default_value);
         if (rc != NMO_OK && script_edit_named_default_reads_as_zero(tx, type_guid)) {
             rc = NMO_OK;
         }

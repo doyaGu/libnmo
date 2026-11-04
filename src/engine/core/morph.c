@@ -180,7 +180,7 @@ static morph_result_t morph_merge(const nmo_engine_t *engine, const eng_animatio
                                    const eng_animation_path_t *path, uint32_t *work)
 {
     const morph_result_t failed = {0};
-    float factor = animation->state->merge_factor;
+    float factor = eng_animation_merge_factor(engine,animation->id);
     double coefficient = (double)(65536.0f * factor);
     if (!isfinite(animation->length) || !isfinite(coefficient) || coefficient < INT_MIN || coefficient > INT_MAX) return failed;
     eng_animation_source_t first, second;

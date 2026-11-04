@@ -1,5 +1,6 @@
 #include "engine_fixture.h"
 #include "../../src/engine/engine_transform.h"
+#include "../../src/engine/engine_animation.h"
 #include "engine/nmo_engine_render.h"
 #include "document/nmo_document_load.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
@@ -517,7 +518,9 @@ TEST(engine_morph, merged_vertices_map_time_and_normals_blend_in_packed_angle_sp
     ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
     const float factors[] = {-0.5f,0,0.25f,0.5f,1,1.5f};
     for (size_t i = 0; i < COUNT(factors); i++) {
-        float t = blend->merge_factor = factors[i];
+        float t = factors[i];
+        ASSERT_TRUE(eng_animation_set_merge_factor(f.engine,merged,t));
+        ASSERT_FLOAT_EQ(.5f,blend->merge_factor,0);
         ASSERT_TRUE(eng_object_animation_set_step(f.engine, merged, 0.25f));
         nmo_engine_mesh_t runtime;
         ASSERT_TRUE(nmo_engine_mesh(f.engine, mesh, &runtime));
@@ -532,14 +535,14 @@ TEST(engine_morph, merged_vertices_map_time_and_normals_blend_in_packed_angle_sp
         }
     }
     /* Morph still falls back at factor one when that source is ignored. */
-    blend->merge_factor = 1;
+    ASSERT_TRUE(eng_animation_set_merge_factor(f.engine,merged,1));
     second->flags = CK_OBJECTANIMATION_IGNOREMORPH;
     ASSERT_TRUE(eng_object_animation_set_step(f.engine, merged, 0.25f));
     nmo_engine_mesh_t runtime;
     ASSERT_TRUE(nmo_engine_mesh(f.engine, mesh, &runtime));
     ASSERT_FLOAT_EQ(-2, runtime.vertices[0].position.x, 0.000001f);
     uint32_t version = runtime.version;
-    blend->merge_factor = NAN;
+    ASSERT_TRUE(eng_animation_set_merge_factor(f.engine,merged,NAN));
     ASSERT_TRUE(eng_object_animation_set_step(f.engine, merged, 0.25f));
     ASSERT_TRUE(nmo_engine_mesh(f.engine, mesh, &runtime));
     ASSERT_EQ(version, runtime.version);
