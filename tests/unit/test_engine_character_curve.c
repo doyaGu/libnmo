@@ -2,9 +2,11 @@
 #include "../../src/engine/engine_animation.h"
 #include "../../src/engine/engine_character.h"
 #include "../../src/engine/engine_transform.h"
+#include "../../src/engine/engine_module.h"
 #include "object/builtin/nmo_character_schemas.h"
 #include "object/builtin/nmo_curve_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
+#include "object/builtin/nmo_parameter_schemas.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -244,6 +246,88 @@ TEST(engine_character_curve, missing_owner_reports_before_consuming_the_input)
     fixture_end(&g.f);
 }
 
+static nmo_object_id_t saved_object(engine_fixture_t *f, nmo_object_id_t pin, nmo_object_id_t id)
+{
+    char text[32]; snprintf(text,sizeof(text),"%u",id);
+    nmo_object_id_t source = 0;
+    if (nmo_script_edit_ensure_input_parameter_source(f->tx,pin,&source) != NMO_OK ||
+        nmo_script_edit_set_parameter_value(f->tx,source,text) != NMO_OK) return 0;
+    return source;
+}
+
+static const char *resolve_file(void *data, const char *name)
+{
+    (void)name; return data;
+}
+
+static nmo_object_id_t runtime_param(nmo_engine_t *engine, nmo_object_id_t block, bool is_local, size_t index)
+{
+    const nmo_behavior_state_t *state = nmo_object_get_state(eng_find_object(engine,block));
+    nmo_object_id_t id = nmo_behavior_ref_array_get_id(is_local ? &state->local_parameters : &state->out_parameters,index);
+    return eng_module_id(eng_module_of(engine,block,NULL),id);
+}
+
+TEST(engine_character_curve, loaded_followers_rebind_messages_and_copies_keep_independent_paths)
+{
+    const eng_vector_t points[] = {{0,20,0},{10,20,0},{10,20,10}};
+    follow_fixture_t source; follow_begin(&source,points,COUNT(points));
+    nmo_object_id_t actor_parameter = saved_object(&source.f,fixture_target(&source.f,source.block),source.f.owner_id);
+    nmo_object_id_t path_parameter = saved_object(&source.f,BLOCK_PIN(&source.f,source.block,0),source.path);
+    ASSERT_TRUE(actor_parameter != 0 && path_parameter != 0);
+    nmo_object_id_t start_parameter = 0;
+    ASSERT_EQ(NMO_OK,nmo_script_edit_ensure_input_parameter_source(source.f.tx,BLOCK_PIN(&source.f,source.block,1),&start_parameter));
+    ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(source.f.tx,start_parameter,"25%"));
+    nmo_parameter_state_t *message = fixture_state(&source.f,local(&source.f,source.block,0)); ASSERT_NOT_NULL(message);
+    nmo_array_dispose(&message->buffer_data); ASSERT_EQ(NMO_OK,nmo_array_alloc(&message->buffer_data,1,sizeof(int32_t),NULL));
+    int32_t obsolete = 123456; memcpy(message->buffer_data.data,&obsolete,sizeof(obsolete)); message->mode = CKPARAM_MODE_BUFFER; message->has_state = true;
+    fixture_commit_bare(&source.f,NULL);
+    nmo_beobject_state_t *owner = fixture_state(&source.f,source.f.owner_id);
+    owner->has_single_activity = 1; owner->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE;
+    nmo_behavior_state_t *script = fixture_state(&source.f,source.f.script_id);
+    script->has_single_activity = 1; script->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE | CK_SCENEOBJECT_START_RESET;
+    const char *path = NMO_TEST_SCRATCH_FILE("engine_character_curve.cmo");
+    ASSERT_EQ(NMO_OK,nmo_session_save_file(source.f.session,path,NULL,NULL));
+    for (int started = 0; started < 2; started++) {
+        follow_fixture_t host = {0}; fixture_begin_document(&host.f);
+        const char *names[] = {"Host Only","Another","Joy_Up"}; fixture_install_messages(&host.f,names,COUNT(names));
+        fixture_begin_edit(&host.f);
+        nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL;
+        fixture_commit(&host.f,&options);
+        if (started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.f.engine,NMO_ENGINE_START_ALL));
+        nmo_engine_set_file_resolver(host.f.engine,resolve_file,(void *)path);
+        int32_t file = -1; ASSERT_EQ(NMO_OK,nmo_engine_load(host.f.engine,"curve.cmo",true,&file));
+        if (!started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.f.engine,NMO_ENGINE_START_SCENE_DEFAULT));
+        nmo_object_id_t actor = nmo_engine_object_named(host.f.engine,"Actor",NMO_CID_CHARACTER);
+        nmo_object_id_t root = nmo_engine_object_named(host.f.engine,"Root",NMO_CID_BODYPART);
+        nmo_object_id_t curve_id = nmo_engine_object_named(host.f.engine,"Path",NMO_CID_CURVE);
+        nmo_object_id_t block = nmo_engine_object_named(host.f.engine,"Follow",NMO_CID_BEHAVIOR);
+        nmo_object_id_t loaded_script = nmo_engine_object_named(host.f.engine,"Follow script",NMO_CID_BEHAVIOR);
+        ASSERT_TRUE(actor != 0 && actor != source.f.owner_id && block != 0);
+        host.f.owner_id = actor; host.block = block; nmo_engine_set_trace(host.f.engine,log_messages,&host);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(host.f.engine,0)); ASSERT_EQ(1u,host.messages); position(host.f.engine,actor,5,3,0);
+        float value = -1; read_value(&host.f,runtime_param(host.f.engine,block,false,0),&value,sizeof(value)); ASSERT_FLOAT_EQ(.25f,value,0);
+        ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.f.engine,loaded_script,false,false));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(host.f.engine,0));
+        const eng_module_t *module = eng_module_of(host.f.engine,block,NULL);
+        /* External parameter sources are copied explicitly for independent targets. */
+        nmo_object_id_t ids[] = {actor,root,curve_id,loaded_script,block,eng_module_id(module,actor_parameter),eng_module_id(module,path_parameter)}, copies[COUNT(ids)] = {0};
+        ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(host.f.engine,ids,COUNT(ids),false,copies));
+        ASSERT_EQ(copies[1],eng_character_root(host.f.engine,copies[0]));
+        float length = 0; ASSERT_TRUE(eng_curve_length(host.f.engine,copies[2],&length)); ASSERT_FLOAT_EQ(20,length,1e-5f);
+        const eng_vector_t moved = {100,0,0}; eng_entity_set_position(host.f.engine,eng_entity_index(host.f.engine,copies[2]),&moved,-1,false);
+        host.f.owner_id = copies[0]; host.block = copies[4]; host.messages = 0;
+        ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.f.engine,copies[3],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.f.engine,0));
+        position(host.f.engine,copies[0],105,3,0); position(host.f.engine,actor,5,3,0); ASSERT_EQ(1u,host.messages);
+        const eng_vector_t advance = {107,13,0}; eng_entity_set_position(host.f.engine,eng_entity_index(host.f.engine,copies[0]),&advance,-1,false);
+        nmo_engine_destroy_object(host.f.engine,curve_id);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(host.f.engine,0)); position(host.f.engine,copies[0],107,13,0); ASSERT_EQ(2u,host.messages);
+        read_value(&host.f,runtime_param(host.f.engine,copies[4],false,0),&value,sizeof(value)); ASSERT_FLOAT_EQ(.35f,value,1e-6f);
+        read_value(&host.f,runtime_param(host.f.engine,block,false,0),&value,sizeof(value)); ASSERT_FLOAT_EQ(.25f,value,0);
+        fixture_end(&host.f);
+    }
+    fixture_end(&source.f); remove(path);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_character_curve, curve_length_uses_fitted_local_points_and_live_geometry);
 REGISTER_TEST(engine_character_curve, aligning_a_character_keeps_root_pose_and_recenters_active_keys);
@@ -251,4 +335,5 @@ REGISTER_TEST(engine_character_curve, initial_follow_keeps_root_height_and_nativ
 REGISTER_TEST(engine_character_curve, loop_progress_uses_horizontal_travel_and_finishes_without_endpoint_snap);
 REGISTER_TEST(engine_character_curve, missing_curves_distinguish_initial_and_loop_control_flow);
 REGISTER_TEST(engine_character_curve, missing_owner_reports_before_consuming_the_input);
+REGISTER_TEST(engine_character_curve, loaded_followers_rebind_messages_and_copies_keep_independent_paths);
 TEST_MAIN_END()

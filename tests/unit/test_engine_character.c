@@ -3,6 +3,7 @@
 #include "../../src/engine/engine_transform.h"
 #include "../../src/engine/engine_character.h"
 #include "object/builtin/nmo_character_schemas.h"
+#include "object/builtin/nmo_curve_schemas.h"
 #include "core/nmo_utils.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
@@ -1459,6 +1460,50 @@ TEST(engine_character, goto_messages_drive_unlimited_root_motion_until_arrival_s
     fixture_end(&f);
 }
 
+TEST(engine_character, curve_follow_uses_unlimited_root_motion_to_turn_a_corner_and_finish)
+{
+    engine_fixture_t f; fixture_begin_document(&f);
+    nmo_object_id_t body, actor = character(&f,&body), path = fixture_create(&f,NMO_CID_CURVE,"Corner path");
+    nmo_curve_state_t *curve = fixture_state(&f,path);
+    const nmo_vector_t points[] = {{0,20,0},{4,20,0},{4,20,4}};
+    curve->control_point_count = COUNT(points);
+    curve->control_point_ids = nmo_arena_alloc(nmo_session_get_arena(f.session),sizeof(nmo_ref_t)*COUNT(points),_Alignof(nmo_ref_t));
+    ASSERT_NOT_NULL(curve->control_point_ids);
+    for (size_t i = 0; i < COUNT(points); i++) {
+        nmo_object_id_t id = fixture_create(&f,NMO_CID_CURVEPOINT,"Point");
+        nmo_curvepoint_state_t *point = fixture_state(&f,id); ASSERT_NOT_NULL(point);
+        point->base.parent = nmo_ref_from_id(path); point->base.has_entityndata_chunk = 1;
+        point->curve = nmo_ref_from_id(path); point->linear = 1;
+        nmo_curvepoint_set_position(point,points[i].x,points[i].y,points[i].z); curve->control_point_ids[i] = nmo_ref_from_id(id);
+    }
+    nmo_object_id_t animations[] = {clip(&f,"Idle",actor,body,10,0,0),clip(&f,"Walk",actor,body,10,0,10)};
+    uint8_t records[2][152]; controller_record(records[0],0,"",2|128,1000); controller_record(records[1],1,"Joy_Up",2|128,1000);
+    controller(&f,actor,animations,COUNT(animations),records[0],2);
+    nmo_object_id_t follow = fixture_block(&f,NMO_GUID(0x4212cabd,0xeafbcda6),"Follow path");
+    nmo_object_id_t done = fixture_block(&f,NMO_GUID(0x302561c4,0x0d282980),"Done"); ASSERT_TRUE(follow != 0 && done != 0);
+    fixture_input_int(&f,fixture_target(&f,follow),(int32_t)actor); fixture_input_int(&f,BLOCK_PIN(&f,follow,0),(int32_t)path);
+    fixture_link(&f,f.script_in,BLOCK_IN(&f,follow,0),0);
+    fixture_link(&f,BLOCK_OUT(&f,follow,1),BLOCK_IN(&f,follow,1),1);
+    fixture_link(&f,BLOCK_OUT(&f,follow,0),BLOCK_IN(&f,done,0),0);
+    nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL;
+    fixture_commit(&f,&options); ASSERT_EQ(NMO_OK,nmo_engine_start(f.engine,NMO_ENGINE_START_ALL));
+    bool walked = false, turned = false;
+    for (int step = 0; step < 24 && runs(&f,done) == 0; step++) {
+        ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,1));
+        if (eng_character_active_animation(f.engine,actor) == animations[1]) walked = true;
+        float matrix[16]; ASSERT_TRUE(nmo_engine_entity_world_matrix(f.engine,actor,matrix));
+        if (matrix[2] > .99f) turned = true;
+        ASSERT_FLOAT_EQ(0,matrix[13],1e-5f);
+    }
+    ASSERT_TRUE(walked); ASSERT_TRUE(turned); ASSERT_EQ(1u,runs(&f,done));
+    float progress = 0; read_value(&f,BLOCK_POUT(&f,follow,0),&progress,sizeof(progress)); ASSERT_FLOAT_EQ(1,progress,0);
+    uint64_t queries = runs(&f,follow); ASSERT_TRUE(queries > 2);
+    for (int step = 0; step < 4; step++) ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,1));
+    ASSERT_EQ(queries,runs(&f,follow)); ASSERT_EQ(1u,runs(&f,done)); ASSERT_EQ(animations[0],eng_character_active_animation(f.engine,actor));
+    ASSERT_FLOAT_EQ(4,x(f.engine,actor),1e-4f);
+    fixture_end(&f);
+}
+
 static nmo_object_id_t controller_floor(engine_fixture_t *f, float height, bool down)
 {
     nmo_object_id_t id = fixture_create(f,NMO_CID_3DOBJECT,"Floor");
@@ -1751,6 +1796,7 @@ REGISTER_TEST(engine_character, unlimited_dynamic_inputs_override_current_record
 REGISTER_TEST(engine_character, unlimited_primary_warp_modes_reach_the_transition_builder);
 REGISTER_TEST(engine_character, unlimited_turning_uses_active_animation_permissions_and_linked_rate);
 REGISTER_TEST(engine_character, goto_messages_drive_unlimited_root_motion_until_arrival_stops_loop_feedback);
+REGISTER_TEST(engine_character, curve_follow_uses_unlimited_root_motion_to_turn_a_corner_and_finish);
 REGISTER_TEST(engine_character, unlimited_floor_uses_reference_or_hierarchy_bottom_and_prefers_an_upper_floor);
 REGISTER_TEST(engine_character, unlimited_floor_respects_face_orientation_and_box_geometry);
 REGISTER_TEST(engine_character, loaded_unlimited_controllers_read_native_collections_and_copies_rebind_their_caches);
