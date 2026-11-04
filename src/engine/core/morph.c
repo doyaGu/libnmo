@@ -148,9 +148,9 @@ typedef struct morph_vertex { nmo_vector_t position; uint32_t normal; } morph_ve
 typedef struct morph_result { bool success, positions, normals; } morph_result_t;
 
 static bool morph_child(const nmo_engine_t *engine, const eng_animation_source_t *parent,
-                          const nmo_ref_t *reference, eng_animation_source_t *out)
+                          bool second, eng_animation_source_t *out)
 {
-    return eng_animation_source(engine, eng_object_ref(engine, parent->id, reference), out);
+    return eng_animation_source(engine, eng_animation_merge_source(engine,parent->id,second), out);
 }
 
 /* GetMorphVertexCount inspects data even on ignored sources. */
@@ -162,8 +162,8 @@ static uint32_t morph_count(const nmo_engine_t *engine, const eng_animation_sour
         eng_animation_path_t current = {animation->id, path != NULL ? path->depth + 1 : 1, path};
         eng_animation_source_t child;
         uint32_t a = 0, b = 0;
-        if (morph_child(engine, animation, &animation->state->anim1, &child)) a = morph_count(engine, &child, &current, work);
-        if (morph_child(engine, animation, &animation->state->anim2, &child)) b = morph_count(engine, &child, &current, work);
+        if (morph_child(engine, animation, false, &child)) a = morph_count(engine, &child, &current, work);
+        if (morph_child(engine, animation, true, &child)) b = morph_count(engine, &child, &current, work);
         return a > b ? a : b;
     }
     morph_source_t source;
@@ -184,8 +184,8 @@ static morph_result_t morph_merge(const nmo_engine_t *engine, const eng_animatio
     double coefficient = (double)(65536.0f * factor);
     if (!isfinite(animation->length) || !isfinite(coefficient) || coefficient < INT_MIN || coefficient > INT_MAX) return failed;
     eng_animation_source_t first, second;
-    bool has_first = morph_child(engine, animation, &animation->state->anim1, &first);
-    bool has_second = morph_child(engine, animation, &animation->state->anim2, &second);
+    bool has_first = morph_child(engine, animation, false, &first);
+    bool has_second = morph_child(engine, animation, true, &second);
     uint32_t a = 0, b = 0;
     if (has_first) a = morph_count(engine, &first, path, work);
     if (has_second) b = morph_count(engine, &second, path, work);

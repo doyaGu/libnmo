@@ -38,7 +38,7 @@ typedef struct anim_quat {
 static const nmo_objectanimation_state_t *anim_state(const nmo_engine_t *engine, nmo_object_id_t id)
 {
     nmo_object_t *object = eng_find_object(engine, id);
-    return object != NULL && nmo_object_get_class_id(object) == NMO_CID_OBJECTANIMATION
+    return eng_map_get(&engine->destroyed,id) < 0 && object != NULL && nmo_object_get_class_id(object) == NMO_CID_OBJECTANIMATION
         ? (const nmo_objectanimation_state_t *)nmo_object_get_state(object) : NULL;
 }
 
@@ -547,8 +547,8 @@ static float anim_contribution(nmo_engine_t *engine, nmo_object_id_t animation,
     if (!eng_animation_visit(path, animation, work) || !eng_animation_source(engine, animation, &source)) return 0;
     if (source.state->flags & CK_OBJECTANIMATION_MERGED) {
         eng_animation_path_t current = {animation,path != NULL ? path->depth + 1 : 1,path};
-        float a = anim_contribution(engine, eng_object_ref(engine, animation, &source.state->anim1), &current, work);
-        float b = anim_contribution(engine, eng_object_ref(engine, animation, &source.state->anim2), &current, work);
+        float a = anim_contribution(engine, eng_animation_merge_source(engine,animation,false), &current, work);
+        float b = anim_contribution(engine, eng_animation_merge_source(engine,animation,true), &current, work);
         return (float)(((double)a + b)*0.5);
     }
     if (source.keys == NULL) return 0;
@@ -822,10 +822,10 @@ static bool anim_evaluate(nmo_engine_t *engine, nmo_object_id_t animation, anim_
                            float frame, const eng_animation_path_t *path, uint32_t *work, anim_value_t *out);
 
 static bool anim_child(nmo_engine_t *engine, const eng_animation_source_t *parent,
-                        const nmo_ref_t *reference, anim_channel_t channel, float frame,
+                        bool second, anim_channel_t channel, float frame,
                         const eng_animation_path_t *path, uint32_t *work, anim_value_t *out)
 {
-    nmo_object_id_t id = eng_object_ref(engine, parent->id, reference);
+    nmo_object_id_t id = eng_animation_merge_source(engine,parent->id,second);
     eng_animation_source_t child;
     float time;
     return eng_animation_source(engine, id, &child) && eng_animation_map_time(parent, &child, frame, &time) &&
@@ -848,12 +848,12 @@ static bool anim_evaluate(nmo_engine_t *engine, nmo_object_id_t animation, anim_
         eng_animation_path_t current = {animation, path != NULL ? path->depth + 1 : 1, path};
         bool endpoint = channel == ANIM_POSITION || channel == ANIM_ROTATION;
         if (endpoint && (factor == 0 || factor == 1)) {
-            return anim_child(engine, &source, factor == 0 ? &source.state->anim1 : &source.state->anim2,
+            return anim_child(engine, &source, factor == 1,
                                 channel, frame, &current, work, out);
         }
         anim_value_t a, b;
-        bool first = anim_child(engine, &source, &source.state->anim1, channel, frame, &current, work, &a);
-        bool second = anim_child(engine, &source, &source.state->anim2, channel, frame, &current, work, &b);
+        bool first = anim_child(engine, &source, false, channel, frame, &current, work, &a);
+        bool second = anim_child(engine, &source, true, channel, frame, &current, work, &b);
         if (!first && !second) return false;
         if (!first || !second) { *out = first ? a : b; return true; }
         if (channel == ANIM_POSITION || channel == ANIM_SCALE) {

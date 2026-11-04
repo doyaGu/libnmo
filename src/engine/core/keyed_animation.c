@@ -84,7 +84,7 @@ void eng_copy_animation(nmo_engine_t *engine, nmo_object_id_t source, nmo_object
                           const nmo_object_id_t *originals, const nmo_object_id_t *copies, size_t count)
 {
     eng_copy_animation_bindings(engine,source,target,originals,copies,count);
-    eng_copy_animation_blend(engine,source,target);
+    eng_copy_animation_blend(engine,source,target,originals,copies,count);
     int32_t clock = eng_map_get(&engine->animations.clock_map, source);
     if (clock >= 0) {
         const nmo_animation_state_t *settings = engine->animations.clocks.data[clock].playback;

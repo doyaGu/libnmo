@@ -50,6 +50,8 @@ typedef struct eng_animation_clock {
 typedef struct eng_animation_blend {
     nmo_object_id_t id;
     float factor;
+    nmo_object_id_t first, second;
+    bool has_sources;
 } eng_animation_blend_t;
 
 typedef struct eng_keyed_animation {
@@ -77,7 +79,13 @@ typedef struct eng_animations {
 
 float eng_animation_merge_factor(const nmo_engine_t *engine, nmo_object_id_t animation);
 bool eng_animation_set_merge_factor(nmo_engine_t *engine, nmo_object_id_t animation, float factor);
-void eng_copy_animation_blend(nmo_engine_t *engine, nmo_object_id_t source, nmo_object_id_t target);
+nmo_object_id_t eng_animation_merge_source(const nmo_engine_t *engine, nmo_object_id_t animation, bool second);
+bool eng_animation_set_merge_sources(nmo_engine_t *engine, nmo_object_id_t animation,
+    nmo_object_id_t first, nmo_object_id_t second);
+void eng_copy_animation_blend(nmo_engine_t *engine, nmo_object_id_t source, nmo_object_id_t target,
+    const nmo_object_id_t *originals, const nmo_object_id_t *copies, size_t count);
+nmo_object_id_t eng_keyed_animation_merge(nmo_engine_t *engine, nmo_object_id_t first,
+    nmo_object_id_t second, bool intersection);
 
 const nmo_animation_state_t *eng_animation_state(const nmo_engine_t *engine, nmo_object_id_t animation);
 nmo_object_id_t eng_animation_character(const nmo_engine_t *engine, nmo_object_id_t animation);

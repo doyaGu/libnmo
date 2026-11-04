@@ -20,6 +20,7 @@ set(NMO_ENGINE_SOURCES
     core/animation_clock.c
     core/animation_binding.c
     core/animation_blend.c
+    core/animation_merge.c
     core/character.c
     core/keyed_animation.c
     core/morph.c
