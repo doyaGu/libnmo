@@ -55,7 +55,7 @@ RAIL_GROUPS = ["Phys_FloorRails", "Sound_RollID_03", "Sound_HitID_03"]
 # Railings ring as the ball hits them but make no rolling sound, as Level_01's
 # A01_Rail_04 has it.
 RAILING_GROUPS = ["Phys_FloorRails", "Sound_HitID_03"]
-# Stoppers collide with the ball only, and make no sound.
+# Stoppers stop mechanisms, but exclude the ball via its no-collision group.
 STOPPER_GROUPS = ["Phys_FloorStopper"]
 
 

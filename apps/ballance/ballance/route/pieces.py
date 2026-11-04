@@ -22,7 +22,7 @@ from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, 
                              ELEMENT_LIFT, FAN_BELOW, FAN_BLOCK_FAN, FAN_BLOCK_RING, FAN_BLOCK_TOP,
                              FAN_REACH, FAN_TOWER_ASIDE, FAN_TOWER_BACK, FAN_TOWER_BACK_FRAMES,
                              FAN_TOWER_CAUGHT, FAN_TOWER_EXIT, FAN_TOWER_IN_FRAMES, FAN_TOWER_LIFT,
-                             FAN_TOWER_PAST, FAN_TOWER_PATH, FAN_TOWER_PILLAR, FAN_TOWER_RING,
+                             FAN_TOWER_PAST, FAN_TOWER_PATH, FAN_TOWER_RING,
                              FAN_TOWER_RUN, FAN_TOWER_TRIES,
                              FLAPS_COUNTERWEIGHT, FLAPS_LENGTH, FLAPS_MODULE, FUNNEL,
                              HAIRPIN_GAP, HOLED_TROUGH, JUMP_ABOVE, JUMP_AREA, JUMP_DOWN, JUMP_HALF,
@@ -39,7 +39,7 @@ from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, 
                              SPIRAL_OUT, SPIRAL_PATH, STONEBOX_LENGTH, STONEBOX_MODULE,
                              STONEBOX_PATH, STONEBOX_RISE, STONEBOX_TRAFO, SWING_ABOVE, SWING_FAR,
                              SWING_GO, SWING_HALF, SWING_SEAT, SWING_WAIT, SWITCH_CROSS,
-                             SWITCH_LAND, SWITCH_MODULE, SWITCH_SPAN, SWITCH_WAIT, TRAFO_LIFT,
+                             SWITCH_LAND, SWITCH_MODULE, SWITCH_SPAN, SWITCH_WAIT, TRAFO_LIFTS,
                              TROUGH_ASIDE, TROUGH_BOTTOM, TROUGH_DODGE, TROUGH_HOLES,
                              TROUGH_HOLES_FROM, TROUGH_HOLE_POINTS, TROUGH_HOP, TROUGH_LAND,
                              TROUGH_LOG_GAP, TROUGH_POINT_ABOVE, TROUGH_SEGMENT, TWIST_ASIDE,
@@ -310,7 +310,9 @@ def lay_tower(layout: Layout, sector: int, part: Sector, piece: dict, track: Tra
     fan into a shaft the fan blows the ball up, and a cap throws the ball
     back over the rail into the channels winding down round the shaft, which
     let it out on the rail's left through a funnel onto a narrow road."""
-    if layout.last_ball != "Paper":
+    from ..game.resources import resource
+    description = resource("FanTower")
+    if layout.last_ball not in description["needs_ball"]:
         layout.warn("only a paper ball rides a fan's wind; the ball reaches it as "
                     f"{layout.last_ball.lower()}")
     # level under the channels, as Level_04's rail comes in
@@ -327,8 +329,7 @@ def lay_tower(layout: Layout, sector: int, part: Sector, piece: dict, track: Tra
     # the fan's X to the track's right, its Z along it
     layout.module_floors.append(("FanTower", sector, [fan[0], above, fan[1]],
                                  turn_of(right_of(d))))
-    layout.elements.append(("P_Modul_18", sector, [fan[0], above, fan[1]]))
-    layout.pillars.append([fan[0], above + FAN_TOWER_PILLAR, fan[1]])
+    layout.elements.append((description["runtime"]["motion_recipe"], sector, [fan[0], above, fan[1]]))
     # flat out from the rail's end into the bend (braking, it stops at the
     # bottom), and over the fan until the ball is up the shaft
     layout.points[-1] = layout.points[-1][:2] + [None, "rush"]
@@ -399,7 +400,9 @@ def lay_climb(layout: Layout, sector: int, p: Point, d: Heading, top: float
               ) -> tuple[Point, float]:
     """Level_06's logs climbing with fans from a log's end p, its top at top
     (see CLIMB_* in ballance.game.measures); the last log's end and top."""
-    if layout.last_ball != "Paper":
+    from ..game.resources import resource
+    description = resource("FanTower")
+    if layout.last_ball not in description["needs_ball"]:
         layout.warn("only a paper ball rides the climbing logs' fans; the ball reaches them "
                     f"as {layout.last_ball.lower()}")
     # the logs' Z back along the track
@@ -486,7 +489,9 @@ def lay_fan(layout: Layout, sector: int, part: Sector, piece: dict, track: Track
     rise = float(piece["fan"])
     if not 0 < rise <= FAN_REACH:
         raise ValueError(f"a fan lifts the ball at most {FAN_REACH}")
-    if layout.last_ball != "Paper":
+    from ..game.resources import resource
+    description = resource("FanTower")
+    if layout.last_ball not in description["needs_ball"]:
         layout.warn("only a paper ball rides a fan's wind; the ball reaches it as "
                     f"{layout.last_ball.lower()}")
     end, d = track.run[-1], track.d
@@ -931,7 +936,7 @@ def lay_trafo(layout: Layout, sector: int, part: Sector, piece: dict, track: Tra
     part.extras.append((pad, middle, edge, f"Floor_Trafo_{kind}"))
     part.extras.append((funnel, at(p, d, FUNNEL + NARROW), d, edge, None))
     layout.elements.append((f"P_Trafo_{kind}", sector,
-                            [middle[0], edge + TRAFO_LIFT, middle[1]]))
+                            [middle[0], edge + TRAFO_LIFTS[kind], middle[1]]))
     layout.trafos.add(kind)
     layout.last_ball = kind
     track.p = at(p, d, 2 * FUNNEL + NARROW)
@@ -1029,7 +1034,7 @@ def lay_stonebox(layout: Layout, sector: int, part: Sector, piece: dict, track: 
     layout.modules.append(("P_Modul_34", sector, [module[0], edge, module[1]], turn_of(back_of(d))))
     layout.module_floors.append(layout.modules[-1])
     trafo = at(p, d, start + STONEBOX_TRAFO)
-    layout.elements.append(("P_Trafo_Stone", sector, [trafo[0], edge + TRAFO_LIFT, trafo[1]]))
+    layout.elements.append(("P_Trafo_Stone", sector, [trafo[0], edge + TRAFO_LIFTS['Stone'], trafo[1]]))
     layout.trafos.add("Stone")
     layout.last_ball = "Stone"
     for along, right, hold in STONEBOX_PATH:

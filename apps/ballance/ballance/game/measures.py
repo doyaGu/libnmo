@@ -4,6 +4,11 @@ wall) is the kit's (ballance.kit.floors)."""
 
 from __future__ import annotations
 
+from .resources import resource, elements as resource_elements
+
+_FAN_TOWER = resource("FanTower")
+_BALLOON = resource("Balloon")
+
 # --- The start, the checkpoints, the balloon -------------------------------
 
 # The start and the checkpoints are 1.26 below the edges of the roads that
@@ -18,17 +23,17 @@ CHECKPOINT_OPENING, CHECKPOINT_GAP = 4.92, 0.87
 FIRST_RESET_ABOVE, RESET_ABOVE = 3.65, 3.33
 # The balloon's planks reach 22.08 along its +X, back to the road's end, which
 # is 0.01 higher than the balloon.
-BALLOON_REACH = 22.08
-BALLOON_BELOW_ROAD = 0.01
+BALLOON_REACH = _BALLOON["ports"]["entry"]["position"][0]
+BALLOON_BELOW_ROAD = _BALLOON["ports"]["entry"]["position"][1]
 
 # --- Elements --------------------------------------------------------------
 
 # How far above the floor under it each element stands, as in the originals:
 # their meshes rest on it.  A ball changer stands 0.1 above its pad.
-ELEMENT_LIFT = {"P_Extra_Point": 2.5, "P_Extra_Life": 2.56, "P_Box": 2.5,
-                "P_Ball_Paper": 2.0, "P_Ball_Stone": 2.0, "P_Ball_Wood": 2.0, "P_Dome": 0.0,
-                "P_Modul_18": -0.35}
-TRAFO_LIFT = 0.1
+ELEMENT_LIFT = {kind: spec["placement"]["lift"] for kind, (_, spec) in resource_elements().items()
+                if "element" in spec["placement"] and not kind.startswith("P_Trafo_")}
+TRAFO_LIFTS = {kind: resource(kind+'Changer')['placement']['lift'] for kind in ('Paper','Stone','Wood')}
+TRAFO_LIFT = TRAFO_LIFTS['Paper']  # compatibility for callers using the shared original height
 # The balls are 4 across, about.
 BALL_RADIUS = 2.0
 # Boxes piled up stand 5.0 to 5.6 apart in Level_08's and Level_12's piles
@@ -151,29 +156,24 @@ FAN_BLOCK_RING, FAN_BLOCK_FAN, FAN_BLOCK_TOP = 4.64, 4.66, 5.0
 # ball is thrown to, to a flat way out 17.9 to the rail's left, 0.11 above
 # the fan.  The rail comes in level under the channels (the generated one
 # for FAN_TOWER_RUN before the bend).  In the fan's frame, the rail coming in
-# along its Z: the rail's first ring and the pillar's top; the height the
+# along its Z: the rail's first ring; the height the
 # ball is lifted to, and the way down the channels (x, z) to the way out's
 # middle (x, top, z).  The way down leaves the shaft's top to the left, off
 # the rail: steered straight back, the ball may stick against the plate
 # under the cap (in two of three runs).
-FAN_TOWER_RING, FAN_TOWER_RUN = (0.283, -4.462, -3.655), 15.0
-FAN_TOWER_PILLAR, FAN_TOWER_LIFT = -1.62, 17.07
-FAN_TOWER_PATH = [(-4.6, -2.3), (-4.6, 6.7), (-0.6, 10.7), (-7.6, 10.7), (-10.6, 7.7),
-                  (-10.6, -11.3), (15.4, -11.3), (15.4, 12.7), (12.4, 15.7), (-13.6, 15.7),
-                  (-15.6, 13.7), (-15.6, 0.5)]
-FAN_TOWER_EXIT = (-17.9, 0.11, 0.48)
-# The fan blows once the ball's turning bounding box reaches its wind box,
-# 1.14 above it, which a ball resting in the bend may be just short of, and
-# wedged.  The autopilot then backs the ball up the rail and runs it in
-# again, at most FAN_TOWER_TRIES times: back FAN_TOWER_BACK for
-# FAN_TOWER_BACK_FRAMES, in at a point FAN_TOWER_PAST past the fan and
-# FAN_TOWER_ASIDE to one side, the sides by turns (the wind takes a ball
-# rolling in off the middle), for FAN_TOWER_IN_FRAMES; each push is over at
-# once when the ball is FAN_TOWER_CAUGHT above the fan's level (the wind
-# has it).
-FAN_TOWER_BACK, FAN_TOWER_BACK_FRAMES, FAN_TOWER_IN_FRAMES = 6.0, 40, 60
-FAN_TOWER_PAST, FAN_TOWER_ASIDE = 1.5, 0.8
-FAN_TOWER_TRIES, FAN_TOWER_CAUGHT = 6, 1.0
+# Compatibility names: the resource description owns these measurements.
+FAN_TOWER_RING = tuple(_FAN_TOWER['ports']['entry']['position'])
+FAN_TOWER_EXIT = tuple(_FAN_TOWER['ports']['exit']['position'])
+FAN_TOWER_RUN = _FAN_TOWER['placement']['approach_run']
+FAN_TOWER_LIFT = _FAN_TOWER['autoplay']['lift']
+FAN_TOWER_PATH = [tuple(p) for p in _FAN_TOWER['autoplay']['path']]
+FAN_TOWER_BACK = _FAN_TOWER['autoplay']['back']
+FAN_TOWER_BACK_FRAMES = _FAN_TOWER['autoplay']['back_frames']
+FAN_TOWER_IN_FRAMES = _FAN_TOWER['autoplay']['in_frames']
+FAN_TOWER_PAST = _FAN_TOWER['autoplay']['past']
+FAN_TOWER_ASIDE = _FAN_TOWER['autoplay']['aside']
+FAN_TOWER_TRIES = _FAN_TOWER['autoplay']['tries']
+FAN_TOWER_CAUGHT = _FAN_TOWER['autoplay']['caught']
 # Railings (ballance.kit.railings): Level_01's round a floor's corner
 # (A01_Rail_04) has its posts 4.76 along the walls from the corner, as a
 # railing along a road has them 0.24 in from its ends; Level_05's beside a
@@ -437,11 +437,17 @@ SWING_SEAT, SWING_WAIT, SWING_FAR, SWING_GO = "P_Modul_08_Schaukel", 14.0, (4.3,
 PILLAR_INSET = 2.5
 START_TOWERS = [(17.4, 13.0, -2.42), (17.4, -13.0, -2.42)]
 CHECKPOINT_TOWERS = [(20.0, 12.5, -4.92), (20.0, -12.5, -4.92)]
-BALLOON_TOWERS = [(-50.0, 32.0, -10.0), (-50.0, -32.0, -10.0),
-                  (36.0, 26.0, -14.1), (36.0, -26.0, -14.1)]
-BALLOON_STICKS = [(-56.0, 45.5, 3.7), (-56.0, -45.5, 3.7), (3.0, 30.5, 3.7),
-                  (3.0, -30.5, 3.7), (52.0, 15.5, 3.7), (52.0, -15.5, 3.7)]
+BALLOON_TOWERS = [tuple(p) for p in _BALLOON['attachments']['lamps']['offsets']]
+BALLOON_STICKS = [tuple(p) for p in _BALLOON['attachments']['poles']['offsets']]
 TOWER_HALF, STICK_HALF = 2.5, 1.2
+
+# PH/PE_Balloon: the basket is 17.4 across, its four balloons reach 16.7
+# either side and 8.9 above, and the bridge reaches 21.8 back toward the
+# road. The departure slider follows local -X. A 31-second native finish
+# trace travels 102 units and rises 8; reserve 150 forward, with extra room
+# for the suspended balloons, spring motion and the folding bridge.
+# (along min/max, height min/max, across min/max), relative to the marker.
+BALLOON_DEPARTURE = tuple(_BALLOON['runtime']['departure']['bounds'])
 
 # --- Below the level -------------------------------------------------------
 

@@ -3,6 +3,8 @@ materials, for `nmo patch apply --project`."""
 
 from __future__ import annotations
 
+from ..game.resources import resource, elements as resource_elements
+
 from pathlib import Path
 
 from ..core.geometry import turn_of
@@ -14,7 +16,7 @@ from .modules import MODULE_FLOORS
 
 # The materials every level's floors use.
 FLOOR_MATERIALS = {"Floor_Top_Profile", "Floor_Top_ProfileFlat", "Floor_Top_Flat",
-                   "Floor_Top_Boderless", "Floor_Side"}
+                   "Floor_Top_Boderless", "Floor_Top_Border", "Floor_Side"}
 # The materials of the scenery.
 SCENERY_MATERIALS = [
     "Colums_blue", "Colums_beige", "Columns_beige_fade", "Tower_Floor_Side",
@@ -108,6 +110,9 @@ def _markers(manifest: Manifest, assets: Assets, layout: Layout) -> None:
 
 def _floors(manifest: Manifest, assets: Assets, layout: Layout) -> None:
     for index, sector in enumerate(layout.sectors, start=1):
+        if sector.decoration.count:
+            manifest.add(f"Support_Ribs_{index:02d}", f"ribs{index}.obj", [0,0,0], [])
+            manifest.materials.add('Rail')
         manifest.add(f"A{index:02d}_Floor_02", f"sector{index}.obj", [0, 0, 0],
                      STONE_FLOOR_GROUPS)
         if sector.rails.runs:
@@ -131,21 +136,31 @@ def _floors(manifest: Manifest, assets: Assets, layout: Layout) -> None:
                      [marker[0], marker[1] + RESET_ABOVE, marker[2]], ["PR_Resetpoints"],
                      turn=turn_of(d) + 180)
     where, d = layout.balloon
-    manifest.add("PE_Balloon_01", assets.mesh("PE_Balloon"), where, ["PE_Levelende"],
-                 turn=turn_of(d) + 180)
+    balloon = resource('Balloon')
+    marker = balloon['parts'][0]
+    manifest.add("PE_Balloon_01", assets.mesh(marker['name']), where, marker['groups'],
+                 turn=turn_of(d) + balloon['placement']['yaw_offset'])
 
 
 def _elements(manifest: Manifest, assets: Assets, layout: Layout) -> None:
+    descriptions = resource_elements()
     for kind, sector, position, turn in [e + (0.0,) for e in layout.elements] + layout.modules:
+        groups = descriptions[kind][1]['parts'][0]['groups'] if kind in descriptions else [kind]
         manifest.add(f"{kind}_{manifest.number(kind):02d}", assets.mesh(kind), position,
-                     [kind, f"Sector_{sector:02d}"], turn=turn)
+                     [*groups, f"Sector_{sector:02d}"], turn=turn)
     for kind, sector, position, turn in layout.module_floors:
         for floor in MODULE_FLOORS[kind]:
+            if floor.support:
+                continue
             manifest.add(f"A{sector:02d}_{floor.name}_{manifest.number(floor.name):02d}",
                          assets.mesh(floor.name), position, floor.groups,
                          visible=floor.visible, turn=turn)
             # a floor cut from a level brings the level's materials with it
             manifest.materials.update(_mesh_materials(assets.out / assets.mesh(floor.name)))
+    for kind, sector, position, turn in layout.supports:
+        manifest.add(f"A{sector:02d}_{kind}_{manifest.number(kind):02d}",
+                     assets.mesh(kind), position, [], turn=turn)
+        manifest.materials.update(_mesh_materials(assets.out / assets.mesh(kind)))
     manifest.materials.update(f"Floor_Trafo_{kind}" for kind in layout.trafos)
     if layout.modules:
         manifest.materials.add("Floor_Stopper_Wood")
@@ -176,10 +191,14 @@ def _scenery(manifest: Manifest, assets: Assets, layout: Layout, towers: list[li
              sticks: list[list[float]]) -> None:
     # Lantern towers are floors the ball can hit, as in the originals; pillars
     # and poles are only seen.
+    parts = {p['name']: p for name in ('LanternTower', 'Column', 'FinishPole') for p in resource(name)['parts']}
     for index, position in enumerate(towers, start=1):
-        manifest.add(f"Tower_{index:02d}", assets.mesh("Tower"), position, ["Phys_Floors"])
+        manifest.add(f"Tower_{index:02d}", assets.mesh("Tower"), position, parts['Tower']['groups'])
     for index, position in enumerate(towers + layout.pillars, start=1):
-        manifest.add(f"Floor_Columns_{index:02d}", assets.mesh("Pillar"), position, [])
+        manifest.add(f"Floor_Columns_{index:02d}", assets.mesh("Pillar"), position, parts['Pillar']['groups'])
     for index, position in enumerate(sticks, start=1):
-        manifest.add(f"Stick_{index:02d}", assets.mesh("Stick"), position, [])
+        manifest.add(f"Stick_{index:02d}", assets.mesh("Stick"), position, parts['Stick']['groups'])
+    if assets.has('Scenery_Braces'):
+        manifest.add('Support_Scenery', assets.mesh('Scenery_Braces'), [0, 0, 0], [])
+        manifest.materials.add('Rail')
     manifest.materials.update(SCENERY_MATERIALS)

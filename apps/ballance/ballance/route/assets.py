@@ -5,6 +5,9 @@ stand in for them."""
 from __future__ import annotations
 
 import shutil
+import json
+
+from ..game.resources import INDEX, check_export, elements as resource_elements, assemblies, catalog
 from pathlib import Path
 
 from ..core.obj import write_box, write_boxes
@@ -45,6 +48,21 @@ class Assets:
         the kinds of module it holds, whose floors it needs too."""
         self.out = out
         self.game = elements is not None
+        self.resource_records = {}
+        if elements is not None:
+            path = elements/INDEX
+            if not path.is_file():
+                raise MissingMesh(f'no {path}; refresh --elements with ballance_level_elements.py')
+            index = json.loads(path.read_text(encoding='utf-8'))
+            if index.get('schema_version') != 1:
+                raise ValueError('unsupported native resource extraction record')
+            required = {'Balloon', 'LanternTower', 'Column', 'FinishPole'}
+            required.update(name for kind, (name, _) in resource_elements().items() if kind in kinds or kind in modules)
+            required.update(name for kind, (name, _) in assemblies().items() if kind in modules)
+            required.update(name for name,spec in catalog().items() if len(spec['parts'])==1 and
+                            spec['parts'][0]['name'] in MARKERS+GAME_ONLY)
+            for name in sorted(required):
+                self.resource_records[name] = check_export(elements,name,index.get('resources',{}).get(name,{}))
         self.meshes: dict[str, str] = {kind: "marker.obj" for kind in MARKERS + kinds}
         floors = [floor for kind in sorted(set(modules)) for floor in MODULE_FLOORS.get(kind, [])]
         for floor in floors:
@@ -62,10 +80,25 @@ class Assets:
         for suffix in (".obj", ".mtl"):
             source = folder / f"{kind}{suffix}"
             if suffix == ".obj" and not source.is_file():
-                raise MissingMesh(f"no {source}")
+                raise MissingMesh(f"no {source}; refresh --elements with ballance_level_elements.py")
             if source.is_file():
                 shutil.copyfile(source, self.out / source.name)
         self.meshes[kind] = f"{kind}.obj"
+
+    @classmethod
+    def existing(cls, folder: Path):
+        """Read-only adapter for generated native or stand-in asset folders."""
+        from ..game.catalog import ELEMENT_KINDS
+        result=cls.__new__(cls)
+        result.out=folder
+        result.game=(folder/'Pillar.obj').is_file()
+        record=folder/'resources.json'
+        result.resource_records = ({name:item['native'] for name,item in json.loads(record.read_text())['resources'].items()
+                                    if item['native'] is not None} if record.is_file() else {})
+        result.meshes={p.stem:p.name for p in folder.glob('*.obj')}
+        for kind in MARKERS+ELEMENT_KINDS:
+            result.meshes.setdefault(kind,'marker.obj')
+        return result
 
     def has(self, kind: str) -> bool:
         return kind in self.meshes
