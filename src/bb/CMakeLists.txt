@@ -16,6 +16,7 @@ set(NMO_BB_VIRTOOLS_SOURCES
     virtools/characters.c
     virtools/character_goto.c
     virtools/character_curve.c
+    virtools/enhanced_character_curve.c
     virtools/animation_sync.c
     virtools/unlimited_controller.c
     virtools/collisions.c

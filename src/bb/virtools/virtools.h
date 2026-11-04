@@ -26,6 +26,7 @@ nmo_status_t eng_register_cameras(nmo_engine_t *engine);
 nmo_status_t eng_register_characters(nmo_engine_t *engine);
 nmo_status_t eng_register_character_goto(nmo_engine_t *engine);
 nmo_status_t eng_register_character_curve(nmo_engine_t *engine);
+nmo_status_t eng_register_enhanced_character_curve(nmo_engine_t *engine);
 nmo_status_t eng_register_animation_sync(nmo_engine_t *engine);
 nmo_status_t eng_register_unlimited_controller(nmo_engine_t *engine);
 nmo_status_t eng_register_lights(nmo_engine_t *engine);

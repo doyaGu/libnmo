@@ -84,5 +84,6 @@ static int bb_character_curve(blk_t *b)
 nmo_status_t eng_register_character_curve(nmo_engine_t *engine)
 {
     const nmo_engine_block_desc_t block = {NMO_GUID_INIT(0x4212cabd,0xeafbcda6),"Character Curve Follow",bb_character_curve,curve_callback,NULL};
-    return nmo_engine_register_block(engine,&block);
+    nmo_status_t status = nmo_engine_register_block(engine,&block);
+    return status == NMO_OK ? eng_register_enhanced_character_curve(engine) : status;
 }
