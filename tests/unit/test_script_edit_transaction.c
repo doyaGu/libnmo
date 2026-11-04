@@ -616,7 +616,8 @@ TEST(script_edit_transaction, add_node_keeps_ballance_script_edit_validation_gre
         ASSERT_EQ(CKPARAM_MODE_BUFFER, source_state->mode);
         ASSERT_TRUE(source_state->buffer_data.count >= sizeof(caret_value));
         memcpy(&caret_value, source_state->buffer_data.data, sizeof(caret_value));
-        ASSERT_TRUE(fabsf(caret_value - 10.0f) < 0.0001f);
+        ASSERT_TRUE(nmo_guid_equals(source_state->type_guid,CKPGUID_PERCENTAGE));
+        ASSERT_TRUE(fabsf(caret_value - 0.1f) < 0.0001f);
     }
     {
         ASSERT_TRUE(node_state->inputs.count > 0u);

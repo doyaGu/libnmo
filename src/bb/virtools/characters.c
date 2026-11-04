@@ -66,6 +66,19 @@ static int bb_set_blended_animation_factor(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+static int bb_create_blended_animation(blk_t *b)
+{
+    IN_OFF(b,0); OUT_ON(b,0);
+    nmo_object_id_t first = nmo_engine_block_get_input_object(b,0), second = nmo_engine_block_get_input_object(b,1);
+    nmo_object_id_t result = (nmo_object_id_t)get_out_int(b,0), character = nmo_engine_block_target(b);
+    if (eng_animation_state(b->engine,result) == NULL) result = 0;
+    if (eng_animation_state(b->engine,first) != NULL && eng_animation_state(b->engine,second) != NULL)
+        result = eng_keyed_animation_merge(b->engine,first,second,get_local_int(b,0,1) != 0);
+    if (result != 0 && character != 0 && get_local_int(b,1,1) != 0 &&
+        eng_character_add_animation(b->engine,character,result) != NMO_OK) return NMO_ENGINE_BR_GENERICERROR;
+    return nmo_engine_block_set_output_value(b,0,&result,sizeof(result)) == NMO_OK ? NMO_ENGINE_BR_OK : NMO_ENGINE_BR_GENERICERROR;
+}
+
 static int bb_set_animation_step(blk_t *b)
 {
     if (nmo_engine_block_target(b) == 0) return NMO_ENGINE_BR_OWNERERROR;
@@ -126,6 +139,7 @@ static int bb_set_floor_reference(blk_t *b)
 static const nmo_engine_block_desc_t character_blocks[] = {
     {NMO_GUID_INIT(0x6a794228,0x77197f5e),"Add Animation",bb_add_animation,NULL,NULL},
     {NMO_GUID_INIT(0x7afc20a3,0x6d367a99),"Set Blended Animation Factor",bb_set_blended_animation_factor,NULL,NULL},
+    {NMO_GUID_INIT(0x56864d6d,0x159b5d1e),"Create Blended Animation 2",bb_create_blended_animation,NULL,NULL},
     {NMO_GUID_INIT(0x0e579636,0xa3b6e7f0),"Set Animation Frame",bb_set_animation_frame,NULL,NULL},
     {NMO_GUID_INIT(0x120127aa,0x960added),"Set Animation Step",bb_set_animation_step,NULL,NULL},
     {NMO_GUID_INIT(0x55f045c7,0x6cb3417b),"Set Bodypart Animation Frame",bb_set_bodypart_animation_frame,NULL,NULL},
