@@ -137,6 +137,27 @@ static int bb_set_floor_reference(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+static int bb_get_nearest_object(blk_t *b)
+{
+    IN_OFF(b,0); OUT_ON(b,0);
+    int32_t character = target_entity(b);
+    if (character < 0) return NMO_ENGINE_BR_OWNERERROR;
+    eng_vector_t origin = eng_entity_position(b->engine,character,-1);
+    nmo_object_id_t group = nmo_engine_block_get_input_object(b,0), nearest = 0;
+    float minimum = 100000000.0f;
+    int32_t count = eng_map_get(&b->engine->destroyed,group) < 0 ? nmo_engine_group_count(b->engine,group) : 0;
+    for (int32_t i = 0; i < count; i++) {
+        nmo_object_id_t id = nmo_engine_group_object(b->engine,group,i);
+        int32_t entity = eng_entity_index(b->engine,id);
+        if (entity < 0) continue;
+        eng_vector_t position = eng_entity_position(b->engine,entity,-1);
+        eng_vector_t delta = {position.x-origin.x,position.y-origin.y,position.z-origin.z};
+        float distance = eng_vector_magnitude(&delta);
+        if (distance < minimum) { minimum = distance; nearest = id; }
+    }
+    return nmo_engine_block_set_output_value(b,0,&nearest,sizeof(nearest)) == NMO_OK ? NMO_ENGINE_BR_OK : NMO_ENGINE_BR_GENERICERROR;
+}
+
 static const nmo_engine_block_desc_t character_blocks[] = {
     {NMO_GUID_INIT(0x6a794228,0x77197f5e),"Add Animation",bb_add_animation,NULL,NULL},
     {NMO_GUID_INIT(0x7afc20a3,0x6d367a99),"Set Blended Animation Factor",bb_set_blended_animation_factor,NULL,NULL},
@@ -147,6 +168,7 @@ static const nmo_engine_block_desc_t character_blocks[] = {
     {NMO_GUID_INIT(0x4d3f515b,0x450c20c6),"Exclude From Animation",bb_exclude_from_animation,NULL,NULL},
     {NMO_GUID_INIT(0x200d6501,0x4cf61e52),"LOD Character Animation",bb_animation_lod,NULL,NULL},
     {NMO_GUID_INIT(0x0ad75ccb,0x0cd1369a),"Set Floor Reference Object",bb_set_floor_reference,NULL,NULL},
+    {NMO_GUID_INIT(0x4321abcd,0x0eeaabdd),"Get Nearest Object",bb_get_nearest_object,NULL,NULL},
 };
 
 nmo_status_t eng_register_characters(nmo_engine_t *engine)

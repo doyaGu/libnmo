@@ -1,9 +1,12 @@
 #include "engine_fixture.h"
+#include "../../src/engine/engine_array.h"
 
 #include "engine/nmo_engine_render.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_character_schemas.h"
 #include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
+#include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/nmo_ref.h"
 #include "type/nmo_object_guids.h"
 
@@ -25,6 +28,7 @@
 #define GUID_BOX_BOX_INTERSECTION NMO_GUID(0x64154401, 0x76cf37af)
 #define GUID_PROXIMITY_VOLUME NMO_GUID(0x38571b61, 0x64cd2174)
 #define GUID_TEXTURE_SINE NMO_GUID(0x009c1208, 0x3a8d779e)
+#define GUID_CHARACTER_NEAREST NMO_GUID(0x4321abcd, 0x0eeaabdd)
 
 #define PI_F 3.14159265f
 
@@ -73,6 +77,124 @@ static nmo_object_id_t target_block(engine_fixture_t *f, nmo_guid_t guid, const 
     fixture_input_int(f, fixture_target(f, block), (int32_t)target);
     fixture_link(f, after, BLOCK_IN(f, block, 0), 0);
     return block;
+}
+
+static nmo_object_id_t object_group(engine_fixture_t *f, const char *name,
+    const nmo_object_id_t *ids, size_t count)
+{
+    nmo_object_id_t group = fixture_create(f,NMO_CID_GROUP,name);
+    nmo_group_state_t *state = fixture_state(f,group);
+    nmo_ref_t *members = NULL;
+    if (state == NULL || nmo_array_extend(&state->object_ids,count,(void **)&members) != NMO_OK) return 0;
+    for (size_t i = 0; i < count; i++) members[i] = nmo_ref_from_id(ids[i]);
+    return group;
+}
+
+static void query_nearest(engine_fixture_t *f, nmo_object_id_t block, nmo_object_id_t expected)
+{
+    ASSERT_EQ(NMO_OK,nmo_engine_activate_script(f->engine,f->script_id,true,true));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f->engine,0));
+    nmo_object_id_t result = 0;
+    read_value(f,BLOCK_POUT(f,block,0),&result,sizeof(result));
+    ASSERT_EQ(expected,result);
+}
+
+static void commit_nearest(engine_fixture_t *f)
+{
+    nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL;
+    fixture_commit(f,&options);
+    ASSERT_TRUE(nmo_engine_has_block(f->engine,GUID_CHARACTER_NEAREST));
+    ASSERT_EQ(NMO_OK,nmo_engine_start(f->engine,NMO_ENGINE_START_ALL));
+}
+
+TEST(engine_transform, character_nearest_uses_world_distance_group_order_and_live_members)
+{
+    engine_fixture_t f; fixture_begin_document(&f);
+    nmo_object_id_t parent = fixture_create(&f,NMO_CID_3DENTITY,"Parent");
+    nmo_object_id_t actor = fixture_create(&f,NMO_CID_CHARACTER,"Character");
+    nmo_object_id_t root = fixture_create(&f,NMO_CID_BODYPART,"Root");
+    nmo_object_id_t far = fixture_create(&f,NMO_CID_3DENTITY,"Far");
+    nmo_object_id_t camera = fixture_create(&f,NMO_CID_CAMERA,"First at five");
+    nmo_object_id_t tie = fixture_create(&f,NMO_CID_LIGHT,"Second at five");
+    nmo_object_id_t projected = fixture_create(&f,NMO_CID_3DENTITY,"Far above");
+    nmo_object_id_t material = fixture_create(&f,NMO_CID_MATERIAL,"Nonentity");
+    ASSERT_TRUE(place_entity(&f,parent,1000,2000,3000,0) != 0);
+    ASSERT_TRUE(place_entity(&f,actor,10,20,30,parent) != 0);
+    ASSERT_TRUE(place_entity(&f,root,10,25,30,actor) != 0);
+    ((nmo_character_state_t *)fixture_state(&f,actor))->root_body_part = nmo_ref_from_id(root);
+    ASSERT_TRUE(place_entity(&f,far,10,26,30,0) != 0);
+    ASSERT_TRUE(place_entity(&f,camera,13,20,34,parent) != 0);
+    ASSERT_TRUE(place_entity(&f,tie,10,25,30,0) != 0);
+    ASSERT_TRUE(place_entity(&f,projected,10,100,30,0) != 0);
+    nmo_object_id_t nested = object_group(&f,"Nested",&root,1);
+    nmo_object_id_t ids[] = {material,projected,nested,far,camera,tie};
+    nmo_object_id_t group = object_group(&f,"Candidates",ids,sizeof(ids)/sizeof(ids[0])); ASSERT_TRUE(group != 0);
+    f.script_id = fixture_add_script(&f,"Nearest script",&f.script_in); fixture_begin_edit(&f);
+    nmo_object_id_t block = target_block(&f,GUID_CHARACTER_NEAREST,"Character nearest",actor,f.script_in);
+    nmo_object_id_t after = fixture_block(&f,GUID_NOP,"After nearest"); ASSERT_TRUE(block != 0 && after != 0);
+    fixture_input_int(&f,BLOCK_PIN(&f,block,0),(int32_t)group);
+    fixture_link(&f,BLOCK_OUT(&f,block,0),BLOCK_IN(&f,after,0),0);
+    commit_nearest(&f);
+    query_nearest(&f,block,camera);
+    float matrix[16]; ASSERT_TRUE(nmo_engine_entity_world_matrix(f.engine,actor,matrix));
+    matrix[13] = 25; ASSERT_EQ(NMO_OK,nmo_engine_set_entity_world_matrix(f.engine,actor,matrix,false));
+    query_nearest(&f,block,tie);
+    nmo_engine_destroy_object(f.engine,tie); query_nearest(&f,block,far);
+    ASSERT_TRUE(eng_group_add(f.engine,group,actor)); query_nearest(&f,block,actor);
+    ASSERT_EQ(4u,runs(&f,block)); ASSERT_EQ(4u,runs(&f,after));
+    fixture_end(&f);
+}
+
+TEST(engine_transform, character_nearest_keeps_native_range_and_clears_absent_or_deleted_groups)
+{
+    engine_fixture_t f; fixture_begin_document(&f);
+    nmo_object_id_t actor = fixture_create(&f,NMO_CID_CHARACTER,"Character");
+    nmo_object_id_t boundary = fixture_create(&f,NMO_CID_3DENTITY,"At limit");
+    nmo_object_id_t beyond = fixture_create(&f,NMO_CID_3DENTITY,"Beyond limit");
+    nmo_object_id_t inside = fixture_create(&f,NMO_CID_3DENTITY,"Inside limit");
+    ASSERT_TRUE(place_entity(&f,boundary,100000000.0f,0,0,0) != 0);
+    ASSERT_TRUE(place_entity(&f,beyond,nextafterf(100000000.0f,INFINITY),0,0,0) != 0);
+    ASSERT_TRUE(place_entity(&f,inside,nextafterf(100000000.0f,0),0,0,0) != 0);
+    nmo_object_id_t ids[] = {boundary,beyond}, group = object_group(&f,"Candidates",ids,2);
+    nmo_object_id_t empty = object_group(&f,"Empty",NULL,0); ASSERT_TRUE(group != 0 && empty != 0);
+    f.script_id = fixture_add_script(&f,"Nearest script",&f.script_in); fixture_begin_edit(&f);
+    nmo_object_id_t block = target_block(&f,GUID_CHARACTER_NEAREST,"Character nearest",actor,f.script_in); ASSERT_TRUE(block != 0);
+    fixture_input_int(&f,BLOCK_PIN(&f,block,0),(int32_t)group);
+    nmo_object_id_t input = nmo_parameterin_source_id(fixture_state(&f,BLOCK_PIN(&f,block,0)));
+    commit_nearest(&f);
+    query_nearest(&f,block,0);
+    ASSERT_TRUE(eng_group_add(f.engine,group,inside)); query_nearest(&f,block,inside);
+    nmo_object_id_t inputs[] = {0,empty,actor,group};
+    for (size_t i = 0; i < sizeof(inputs)/sizeof(inputs[0]); i++) {
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(f.engine,input,&inputs[i],sizeof(inputs[i])));
+        query_nearest(&f,block,inputs[i] == group ? inside : 0);
+    }
+    nmo_engine_destroy_object(f.engine,group); query_nearest(&f,block,0);
+    fixture_end(&f);
+}
+
+TEST(engine_transform, character_nearest_reports_missing_owners_without_replacing_the_last_result)
+{
+    for (int deleted = 0; deleted < 2; deleted++) {
+        engine_fixture_t f; fixture_begin_document(&f);
+        nmo_object_id_t actor = fixture_create(&f,NMO_CID_CHARACTER,"Character");
+        nmo_object_id_t group = object_group(&f,"Candidates",&f.owner_id,1);
+        f.script_id = fixture_add_script(&f,"Nearest script",&f.script_in); fixture_begin_edit(&f);
+        nmo_object_id_t block = target_block(&f,GUID_CHARACTER_NEAREST,"Character nearest",actor,f.script_in); ASSERT_TRUE(block != 0);
+        fixture_input_int(&f,BLOCK_PIN(&f,block,0),(int32_t)group);
+        nmo_object_id_t input = nmo_parameterin_source_id(fixture_state(&f,fixture_target(&f,block)));
+        commit_nearest(&f); query_nearest(&f,block,f.owner_id);
+        if (deleted) nmo_engine_destroy_object(f.engine,actor);
+        else {
+            nmo_object_id_t none = 0; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(f.engine,input,&none,sizeof(none)));
+        }
+        ASSERT_EQ(NMO_OK,nmo_engine_activate_script(f.engine,f.script_id,true,true));
+        ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,nmo_engine_step(f.engine,0));
+        nmo_engine_event_t failure; ASSERT_TRUE(nmo_engine_failure(f.engine,&failure));
+        ASSERT_EQ(block,failure.behavior_id); ASSERT_EQ(NMO_ENGINE_BR_OWNERERROR,failure.result);
+        nmo_object_id_t result = 0; read_value(&f,BLOCK_POUT(&f,block,0),&result,sizeof(result)); ASSERT_EQ(f.owner_id,result);
+        fixture_end(&f);
+    }
 }
 
 TEST(engine_transform, loaded_children_keep_their_place_under_the_parent)
@@ -835,6 +957,9 @@ REGISTER_TEST(engine_transform, loaded_children_keep_their_place_under_the_paren
 REGISTER_TEST(engine_transform, set_position_and_set_parent);
 REGISTER_TEST(engine_transform, rotate_scale_and_orientation);
 REGISTER_TEST(engine_transform, nearest_in_group_and_proximity);
+REGISTER_TEST(engine_transform, character_nearest_uses_world_distance_group_order_and_live_members);
+REGISTER_TEST(engine_transform, character_nearest_keeps_native_range_and_clears_absent_or_deleted_groups);
+REGISTER_TEST(engine_transform, character_nearest_reports_missing_owners_without_replacing_the_last_result);
 REGISTER_TEST(engine_transform, set_dynamic_position_follows_the_object);
 REGISTER_TEST(engine_transform, speedometer_measures_the_target_speed);
 REGISTER_TEST(engine_transform, tt_extra_circles_flies_away_and_homes_in);
