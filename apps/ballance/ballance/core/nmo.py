@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -17,7 +18,11 @@ class Nmo:
     """One nmo executable, run on files."""
 
     def __init__(self, executable: str | None = None) -> None:
-        self.executable = executable or os.environ.get("NMO", "nmo")
+        executable = executable or os.environ.get("NMO", "nmo")
+        # Gameplay changes cwd to the installation directory. Resolve the
+        # caller's relative CLI path before that happens.
+        found = shutil.which(executable)
+        self.executable = str(Path(found or executable).resolve()) if found or os.path.dirname(executable) else executable
 
     def run(self, *args: str) -> str:
         result = subprocess.run([self.executable, *args], capture_output=True, text=True)

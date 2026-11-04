@@ -72,11 +72,14 @@ def route_overlays(route: list[list], floor_y: Callable[[float, float], float]) 
         p = (x, floor_y(x, z), z)
         points.append(p)
         rush = len(point) > 3 and point[3] == "rush"
-        stop = len(point) > 2 and not rush
+        precise = len(point) > 3 and point[3] == "precision"
+        stop = len(point) > 2 and not (rush or precise)
         out.append(Dot(p, STOP if stop else ROUTE, 6 if stop else 3))
         label = str(i)
         if rush:
             label += " rush"
+        elif precise:
+            label += " precision"
         elif len(point) > 4:
             label += f" wait {point[4]}"
         elif len(point) > 3 and isinstance(point[3], str) and point[3].startswith("push:"):

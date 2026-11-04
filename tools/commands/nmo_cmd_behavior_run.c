@@ -161,7 +161,8 @@ static long run_parse_keys(const char *spec, run_key_t *out)
  * a place (it waits for something moving to come by); after a jump (a
  * respawn), it heads for the point after the nearest one.  A point whose
  * frame count is "rush" is run at flat out, never braking, as a jump's
- * run-up is, and one whose count is "push:N" is headed for N frames,
+ * run-up is; "precision" follows narrow beams slowly with tighter tracking.
+ * One whose count is "push:N" is headed for N frames,
  * reached or not, or until the object is as high as its height, and passed
  * then (a ball rocked where it may stick till something lifts it).  Between points it follows the path without
  * stopping, slowing down only as much as the bends ahead need
@@ -172,6 +173,7 @@ static long run_parse_keys(const char *spec, run_key_t *out)
  */
 typedef struct run_steer {
     float *points; /* x, z, y (-INFINITY: any height), frames to hold (-1: rush;
+                      -1.25: precision;
                       -1 - N: push for N frames) */
     char **waits;  /* each point's object to wait for, or NULL */
     float *wait_at; /* where it is waited for: x, z, reach */
@@ -201,6 +203,12 @@ static char *run_strndup(const char *text, size_t length);
 #define STEER_EASE 0.02f  /* how far off the speed wanted to push or brake */
 #define STEER_TRACK 1.0f  /* how hard it is pulled back onto the path, a unit off */
 #define STEER_NUDGE 30    /* frames held still before the keys are let go of */
+#define STEER_PRECISION -1.25f /* point action: narrow single-beam tracking */
+
+static bool run_steer_precise(const run_steer_t *steer, long i)
+{
+    return steer->points[i * 4 + 3] == STEER_PRECISION;
+}
 
 /* Whether the object must stop at point i: the last, or one with a height to
  * wait for, frames to hold or an object to wait for. */
@@ -235,7 +243,8 @@ static float run_steer_corner_speed(const run_steer_t *steer, long i, float x, f
     }
     float bend = acosf(fmaxf(-1.0f, fminf(1.0f, (ux * wx + uz * wz) / (ul * wl))));
     float t = fminf(bend / 1.5707964f, 1.0f); /* of a right angle */
-    return STEER_FAST + (STEER_SLOW - STEER_FAST) * t;
+    float fast = run_steer_precise(steer, i) ? 0.22f : STEER_FAST;
+    return fast + (STEER_SLOW - fast) * t;
 }
 
 /*
@@ -253,6 +262,10 @@ static void run_steer_heading(const run_steer_t *steer, float x, float z, float 
 {
     long i = steer->next;
     const float *point = &steer->points[i * 4];
+    bool precise = run_steer_precise(steer, i);
+    float carrot = precise ? 2.0f : STEER_CARROT;
+    float lookahead = precise ? 14.0f : STEER_LOOKAHEAD;
+    float dead = precise ? 0.12f : STEER_DEAD;
     float left = hypotf(point[0] - x, point[1] - z);
     if (run_steer_stops(steer, i) && left < STEER_REACH) {
         *dx = point[0] - x - vx * STEER_LOOKAHEAD;
@@ -261,15 +274,15 @@ static void run_steer_heading(const run_steer_t *steer, float x, float z, float 
     }
     /* the aim: STEER_CARROT along the path, or the first point it must stop
      * at if that comes sooner; and the speed it may have now */
-    float tx = point[0], tz = point[1], walked = left, wanted = STEER_FAST;
-    bool aimed = left >= STEER_CARROT;
+    float tx = point[0], tz = point[1], walked = left, wanted = precise ? 0.22f : STEER_FAST;
+    bool aimed = left >= carrot;
     for (long k = i; k < steer->count; k++) {
         const float *pk = &steer->points[k * 4];
         if (k > i) {
             float seg = hypotf(pk[0] - pk[-4], pk[1] - pk[-3]);
             walked += seg;
-            if (!aimed && walked >= STEER_CARROT && seg > 0.0f) {
-                float back = walked - STEER_CARROT;
+            if (!aimed && walked >= carrot && seg > 0.0f) {
+                float back = walked - carrot;
                 tx = pk[0] - (pk[0] - pk[-4]) / seg * back;
                 tz = pk[1] - (pk[1] - pk[-3]) / seg * back;
                 aimed = true;
@@ -301,12 +314,12 @@ static void run_steer_heading(const run_steer_t *steer, float x, float z, float 
     float along = vx * ux + vz * uz;
     float sx = vx - ux * along, sz = vz - uz * along; /* drift across the aim */
     float push = along < wanted - STEER_EASE ? 1.0f : along > wanted + STEER_EASE ? -1.0f : 0.0f;
-    *dx = ux * push * STEER_DEAD * 4.0f - sx * STEER_LOOKAHEAD;
-    *dz = uz * push * STEER_DEAD * 4.0f - sz * STEER_LOOKAHEAD;
+    *dx = ux * push * dead * 4.0f - sx * lookahead;
+    *dz = uz * push * dead * 4.0f - sz * lookahead;
     /* away from the next point, off the line to it from the point before,
      * it is pulled back across: the aim alone lets it settle as far off as
      * the keys' dead zone */
-    if (i > 0 && left > STEER_CARROT) {
+    if (i > 0 && (precise || left > STEER_CARROT)) {
         const float *from = &steer->points[(i - 1) * 4];
         float px = point[0] - from[0], pz = point[1] - from[1], pl = hypotf(px, pz);
         if (pl > 0.0f) {
@@ -403,6 +416,7 @@ static bool run_parse_steer(const char *spec, run_steer_t *out)
         }
         float x = 0.0f, z = 0.0f, y = -INFINITY, hold = 0.0f, wait[3] = {0.0f, 0.0f, 0.0f};
         bool rush = n >= 4 && lengths[3] == 4 && memcmp(fields[3], "rush", 4) == 0;
+        bool precise = n == 4 && lengths[3] == 9 && memcmp(fields[3], "precision", 9) == 0;
         float push = 0.0f;
         bool pushed = n >= 4 && lengths[3] > 5 && memcmp(fields[3], "push:", 5) == 0 &&
                       run_steer_number(fields[3] + 5, lengths[3] - 5, &push) && push >= 1.0f;
@@ -410,12 +424,14 @@ static bool run_parse_steer(const char *spec, run_steer_t *out)
                   run_steer_number(fields[0], lengths[0], &x) &&
                   run_steer_number(fields[1], lengths[1], &z) &&
                   (n < 3 || lengths[2] == 0 || run_steer_number(fields[2], lengths[2], &y)) &&
-                  (n < 4 || rush || pushed || (n == 8 && lengths[3] == 0) ||
+                  (n < 4 || rush || pushed || precise || (n == 8 && lengths[3] == 0) ||
                    (run_steer_number(fields[3], lengths[3], &hold) && hold >= 0.0f));
         if (rush) {
             hold = -1.0f;
         } else if (pushed) {
             hold = -1.0f - floorf(push);
+        } else if (precise) {
+            hold = STEER_PRECISION;
         }
         for (int k = 0; ok && n == 8 && k < 3; k++) {
             ok = run_steer_number(fields[5 + k], lengths[5 + k], &wait[k]);
@@ -520,7 +536,8 @@ static void run_steer_frame(nmo_engine_t *engine, run_steer_t *steer, uint32_t f
         while (steer->next + 1 < steer->count && run_steer_push(steer, steer->next) == 0 &&
                hypotf(steer->points[steer->next * 4] - x,
                       steer->points[steer->next * 4 + 1] - z) <
-                   (run_steer_stops(steer, steer->next) ? STEER_STOP_REACH : STEER_REACH) &&
+                   (run_steer_stops(steer, steer->next) ? STEER_STOP_REACH :
+                    run_steer_precise(steer, steer->next) ? 1.0f : STEER_REACH) &&
                m[13] >= steer->points[steer->next * 4 + 2] &&
                run_steer_waited(engine, steer, steer->next)) {
             if ((float)steer->held < steer->points[steer->next * 4 + 3]) {
@@ -537,10 +554,11 @@ static void run_steer_frame(nmo_engine_t *engine, run_steer_t *steer, uint32_t f
         float rl = hypotf(rx, rz), fl = hypotf(fx, fz);
         if (rl > 0.0f && fl > 0.0f) {
             float ahead = (dx * fx + dz * fz) / fl, right = (dx * rx + dz * rz) / rl;
-            down[0] = ahead > STEER_DEAD;
-            down[1] = ahead < -STEER_DEAD;
-            down[2] = right < -STEER_DEAD;
-            down[3] = right > STEER_DEAD;
+            float dead = run_steer_precise(steer, steer->next) ? 0.12f : STEER_DEAD;
+            down[0] = ahead > dead;
+            down[1] = ahead < -dead;
+            down[2] = right < -dead;
+            down[3] = right > dead;
         }
         bool pushed = down[0] || down[1] || down[2] || down[3];
         steer->still = pushed && vx_last == 0.0f && vz_last == 0.0f ? steer->still + 1 : 0;
@@ -1608,7 +1626,8 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
          "From FRAME (to FRAME), roll --steer-object through the points with the arrow keys, "
          "waiting at a point with a Y until it is that high, with an F for F more frames, and "
          "with a NAME until that object is within REACH of WX,WZ, run at flat out where F "
-         "is rush, and head for it N frames, reached or not (or till Y), where F is push:N: "
+         "is rush, track narrow beams slowly where F is precision, and head for it N frames, "
+         "reached or not (or till Y), where F is push:N: "
          "X,Z[,Y[,F[,NAME,WX,WZ,REACH]]];...@FRAME[-FRAME] (empty Y or F: none)"},
         {"--steer-object", NULL, NMO_OPT_STRING,
          "The objects --steer rolls: NAME,NAME,... (the first one shown)"},
