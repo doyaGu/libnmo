@@ -1,8 +1,10 @@
 #include "engine_fixture.h"
 #include "../../src/engine/engine_character.h"
 #include "../../src/engine/engine_transform.h"
+#include "../../src/engine/engine_module.h"
 #include "object/builtin/nmo_character_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
+#include "object/builtin/nmo_parameter_schemas.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -175,10 +177,96 @@ TEST(engine_character_goto, missing_owners_report_owner_error_after_consuming_in
     }
 }
 
+static nmo_object_id_t local(engine_fixture_t *f, nmo_object_id_t block)
+{
+    const nmo_behavior_state_t *state = fixture_state(f,block);
+    return state != NULL ? nmo_behavior_ref_array_get_id(&state->local_parameters,0) : 0;
+}
+
+static nmo_object_id_t saved_object(engine_fixture_t *f, nmo_object_id_t pin, nmo_object_id_t id)
+{
+    nmo_object_id_t source = 0; char text[32]; snprintf(text,sizeof(text),"%u",id);
+    if (nmo_script_edit_ensure_input_parameter_source(f->tx,pin,&source) != NMO_OK ||
+        nmo_script_edit_set_parameter_value(f->tx,source,text) != NMO_OK) return 0;
+    return source;
+}
+
+static const char *resolve_file(void *data, const char *name)
+{
+    (void)name; return data;
+}
+
+static nmo_object_id_t runtime_local(nmo_engine_t *engine, nmo_object_id_t block)
+{
+    const nmo_behavior_state_t *state = nmo_object_get_state(eng_find_object(engine,block));
+    return eng_module_id(eng_module_of(engine,block,NULL),nmo_behavior_ref_array_get_id(&state->local_parameters,0));
+}
+
+TEST(engine_character_goto, loaded_and_copied_graphs_rebind_messages_and_keep_live_roots)
+{
+    goto_fixture_t g; begin(&g,30,0,0);
+    nmo_object_id_t actor_parameter = saved_object(&g.f,fixture_target(&g.f,g.block),g.f.owner_id);
+    nmo_object_id_t target_parameter = saved_object(&g.f,BLOCK_PIN(&g.f,g.block,0),g.target);
+    ASSERT_TRUE(actor_parameter != 0 && target_parameter != 0);
+    const int32_t obsolete[] = {123456,123457,123458,123459};
+    nmo_parameter_state_t *saved = fixture_state(&g.f,local(&g.f,g.block)); ASSERT_NOT_NULL(saved);
+    nmo_array_dispose(&saved->buffer_data); ASSERT_EQ(NMO_OK,nmo_array_alloc(&saved->buffer_data,1,sizeof(obsolete),NULL));
+    memcpy(saved->buffer_data.data,obsolete,sizeof(obsolete)); saved->mode = CKPARAM_MODE_BUFFER; saved->has_state = true;
+    fixture_link(&g.f,g.f.script_in,BLOCK_IN(&g.f,g.block,0),0); fixture_commit_bare(&g.f,NULL);
+    nmo_beobject_state_t *owner = fixture_state(&g.f,g.f.owner_id);
+    owner->has_single_activity = 1; owner->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE;
+    nmo_behavior_state_t *script = fixture_state(&g.f,g.f.script_id);
+    script->has_single_activity = 1; script->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE | CK_SCENEOBJECT_START_RESET;
+    const char *path = NMO_TEST_SCRATCH_FILE("engine_character_goto.cmo");
+    ASSERT_EQ(NMO_OK,nmo_session_save_file(g.f.session,path,NULL,NULL));
+    for (int started = 0; started < 2; started++) {
+        engine_fixture_t host; fixture_begin_document(&host);
+        const char *names[] = {"Joy_Left","Host Only","Joy_Right","Joy_Up","Joy_Down"};
+        fixture_install_messages(&host,names,COUNT(names)); fixture_begin_edit(&host);
+        nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL;
+        fixture_commit(&host,&options);
+        if (started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_ALL));
+        nmo_engine_set_file_resolver(host.engine,resolve_file,(void *)path);
+        int32_t file = -1; ASSERT_EQ(NMO_OK,nmo_engine_load(host.engine,"goto.cmo",true,&file));
+        if (!started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_SCENE_DEFAULT));
+        nmo_object_id_t actor = nmo_engine_object_named(host.engine,"Actor",NMO_CID_CHARACTER);
+        nmo_object_id_t body = nmo_engine_object_named(host.engine,"Root",NMO_CID_BODYPART);
+        nmo_object_id_t target = nmo_engine_object_named(host.engine,"Destination",NMO_CID_3DENTITY);
+        nmo_object_id_t block = nmo_engine_object_named(host.engine,"Go To",NMO_CID_BEHAVIOR);
+        nmo_object_id_t loaded_script = nmo_engine_object_named(host.engine,"Go To Script",NMO_CID_BEHAVIOR);
+        ASSERT_TRUE(actor != 0 && actor != g.f.owner_id && block != 0); ASSERT_EQ(body,eng_character_root(host.engine,actor));
+        message_log_t log = {0}; nmo_engine_set_trace(host.engine,log_messages,&log);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0)); ASSERT_EQ(1u,log.count);
+        ASSERT_EQ(nmo_engine_message_type(host.engine,"Joy_Up"),log.types[0]); ASSERT_EQ(actor,log.recipients[0]); ASSERT_EQ(block,log.blocks[0]);
+        nmo_object_id_t messages = runtime_local(host.engine,block);
+        const void *data = NULL; size_t size = 0;
+        ASSERT_EQ(NMO_OK,nmo_engine_param_value(host.engine,messages,&data,&size,NULL)); ASSERT_EQ(sizeof(obsolete),size);
+        const char *expected[] = {"Joy_Up","Joy_Down","Joy_Left","Joy_Right"};
+        int32_t table[4]; memcpy(table,data,sizeof(table));
+        for (size_t i = 0; i < COUNT(table); i++) ASSERT_EQ(nmo_engine_message_type(host.engine,expected[i]),table[i]);
+        const eng_module_t *module = eng_module_of(host.engine,block,NULL);
+        nmo_object_id_t ids[] = {actor,body,target,loaded_script,block,eng_module_id(module,actor_parameter),eng_module_id(module,target_parameter)}, copies[COUNT(ids)] = {0};
+        ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(host.engine,ids,COUNT(ids),false,copies));
+        ASSERT_EQ(copies[1],eng_character_root(host.engine,copies[0]));
+        eng_vector_t position = {0,0,30}; eng_entity_set_position(host.engine,eng_entity_index(host.engine,copies[2]),&position,-1,false);
+        memset(&log,0,sizeof(log));
+        ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[3],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
+        ASSERT_EQ(1u,log.count); ASSERT_EQ(nmo_engine_message_type(host.engine,"Joy_Left"),log.types[0]);
+        ASSERT_EQ(copies[0],log.recipients[0]); ASSERT_EQ(copies[4],log.blocks[0]);
+        nmo_engine_destroy_object(host.engine,body); ASSERT_EQ(0u,eng_character_root(host.engine,actor));
+        memset(&log,0,sizeof(log));
+        ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[3],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
+        ASSERT_EQ(1u,log.count); ASSERT_EQ(copies[0],log.recipients[0]); ASSERT_EQ(nmo_engine_message_type(host.engine,"Joy_Left"),log.types[0]);
+        fixture_end(&host);
+    }
+    fixture_end(&g.f); remove(path);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_character_goto, directions_reverse_and_message_order_match_native_steering);
 REGISTER_TEST(engine_character_goto, arrival_boundaries_and_angle_clamp_preserve_turning);
 REGISTER_TEST(engine_character_goto, orientation_projects_normalized_world_axes_without_horizontal_renormalization);
 REGISTER_TEST(engine_character_goto, missing_or_deleted_targets_and_roots_take_no_object);
 REGISTER_TEST(engine_character_goto, missing_owners_report_owner_error_after_consuming_inputs);
+REGISTER_TEST(engine_character_goto, loaded_and_copied_graphs_rebind_messages_and_keep_live_roots);
 TEST_MAIN_END()

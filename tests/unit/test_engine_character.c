@@ -1423,6 +1423,42 @@ TEST(engine_character, unlimited_turning_uses_active_animation_permissions_and_l
     }
 }
 
+TEST(engine_character, goto_messages_drive_unlimited_root_motion_until_arrival_stops_loop_feedback)
+{
+    engine_fixture_t f; fixture_begin_document(&f);
+    nmo_object_id_t body, actor = character(&f,&body);
+    nmo_object_id_t target = fixture_create(&f,NMO_CID_3DENTITY,"Destination");
+    ((nmo_3dentity_state_t *)fixture_state(&f,target))->world_matrix[12] = 8;
+    nmo_object_id_t animations[] = {clip(&f,"Idle",actor,body,10,0,0),clip(&f,"Walk",actor,body,10,0,10)};
+    uint8_t records[2][152];
+    controller_record(records[0],0,"",2|128,1000);
+    controller_record(records[1],1,"Joy_Up",2|128,1000);
+    nmo_object_id_t control = controller(&f,actor,animations,COUNT(animations),records[0],2);
+    nmo_object_id_t go = fixture_block(&f,NMO_GUID(0x11223344,0xaabbccdd),"Go To");
+    nmo_object_id_t arrived = fixture_block(&f,NMO_GUID(0x302561c4,0x0d282980),"Arrived"); ASSERT_TRUE(go != 0 && arrived != 0);
+    fixture_input_int(&f,fixture_target(&f,go),(int32_t)actor);
+    fixture_input_int(&f,BLOCK_PIN(&f,go,0),(int32_t)target);
+    float distance = 1; fixture_input_value(&f,BLOCK_PIN(&f,go,1),&distance,sizeof(distance));
+    fixture_link(&f,f.script_in,BLOCK_IN(&f,go,0),0);
+    fixture_link(&f,BLOCK_OUT(&f,go,2),BLOCK_IN(&f,go,1),1);
+    fixture_link(&f,BLOCK_OUT(&f,go,0),BLOCK_IN(&f,arrived,0),0);
+    nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL;
+    fixture_commit(&f,&options); ASSERT_EQ(NMO_OK,nmo_engine_start(f.engine,NMO_ENGINE_START_ALL));
+    bool walked = false;
+    for (int step = 0; step < 20 && runs(&f,arrived) == 0; step++) {
+        ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,1));
+        if (eng_character_active_animation(f.engine,actor) == animations[1]) walked = true;
+    }
+    ASSERT_TRUE(walked); ASSERT_EQ(1u,runs(&f,arrived));
+    ASSERT_TRUE(x(f.engine,actor) >= 7 && x(f.engine,actor) <= 9);
+    uint64_t queries = runs(&f,go); ASSERT_TRUE(queries > 1);
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,1)); ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,1));
+    ASSERT_EQ(queries,runs(&f,go)); ASSERT_EQ(1u,runs(&f,arrived));
+    ASSERT_EQ(animations[0],eng_character_active_animation(f.engine,actor));
+    int32_t message = -2; read_value(&f,BLOCK_POUT(&f,control,1),&message,sizeof(message)); ASSERT_EQ(-1,message);
+    fixture_end(&f);
+}
+
 static nmo_object_id_t controller_floor(engine_fixture_t *f, float height, bool down)
 {
     nmo_object_id_t id = fixture_create(f,NMO_CID_3DOBJECT,"Floor");
@@ -1714,6 +1750,7 @@ REGISTER_TEST(engine_character, unlimited_secondary_messages_process_every_match
 REGISTER_TEST(engine_character, unlimited_dynamic_inputs_override_current_records_and_old_versions_ignore_them);
 REGISTER_TEST(engine_character, unlimited_primary_warp_modes_reach_the_transition_builder);
 REGISTER_TEST(engine_character, unlimited_turning_uses_active_animation_permissions_and_linked_rate);
+REGISTER_TEST(engine_character, goto_messages_drive_unlimited_root_motion_until_arrival_stops_loop_feedback);
 REGISTER_TEST(engine_character, unlimited_floor_uses_reference_or_hierarchy_bottom_and_prefers_an_upper_floor);
 REGISTER_TEST(engine_character, unlimited_floor_respects_face_orientation_and_box_geometry);
 REGISTER_TEST(engine_character, loaded_unlimited_controllers_read_native_collections_and_copies_rebind_their_caches);
