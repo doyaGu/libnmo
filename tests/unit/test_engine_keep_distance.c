@@ -1,6 +1,7 @@
 #include "engine_fixture.h"
 #include "../../src/engine/engine_internal.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_curve_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
 
 #include <math.h>
@@ -68,6 +69,7 @@ static void commit(distance_fixture_t *g)
 static void position(distance_fixture_t *g, nmo_object_id_t id, eng_vector_t expected)
 {
     float matrix[16]; ASSERT_TRUE(nmo_engine_entity_world_matrix(g->f.engine,id,matrix));
+    ASSERT_TRUE(isfinite(matrix[12]) && isfinite(matrix[13]) && isfinite(matrix[14]));
     ASSERT_FLOAT_EQ(expected.x,matrix[12],1e-4f); ASSERT_FLOAT_EQ(expected.y,matrix[13],1e-4f); ASSERT_FLOAT_EQ(expected.z,matrix[14],1e-4f);
 }
 
@@ -212,6 +214,120 @@ TEST(engine_keep_distance, samples_descendant_references_before_propagating_the_
     }
 }
 
+static nmo_object_id_t saved_input(distance_fixture_t *g, nmo_object_id_t pin, const char *text)
+{
+    nmo_object_id_t parameter = 0;
+    if (nmo_script_edit_ensure_input_parameter_source(g->f.tx,pin,&parameter) != NMO_OK ||
+        nmo_script_edit_set_parameter_value(g->f.tx,parameter,text) != NMO_OK) return 0;
+    return parameter;
+}
+
+static const char *resolve_file(void *data, const char *name)
+{
+    (void)name; return data;
+}
+
+static void expect_position(nmo_engine_t *engine, nmo_object_id_t id, eng_vector_t expected)
+{
+    eng_vector_t actual = eng_entity_position(engine,eng_entity_index(engine,id),-1);
+    ASSERT_TRUE(isfinite(actual.x) && isfinite(actual.y) && isfinite(actual.z));
+    ASSERT_FLOAT_EQ(expected.x,actual.x,1e-4f); ASSERT_FLOAT_EQ(expected.y,actual.y,1e-4f); ASSERT_FLOAT_EQ(expected.z,actual.z,1e-4f);
+}
+
+TEST(engine_keep_distance, loaded_and_copied_constraints_keep_reference_bindings_and_attenuation_settings_independent)
+{
+    for (int legacy = 0; legacy < 2; legacy++) for (int time = 0; time < 2; time++) {
+        distance_fixture_t g; begin(&g,legacy,time);
+        nmo_object_id_t parameters[6]; char text[32];
+        snprintf(text,sizeof(text),"%u",g.target); parameters[0] = saved_input(&g,fixture_target(&g.f,g.block),text);
+        snprintf(text,sizeof(text),"%u",g.reference); parameters[1] = saved_input(&g,BLOCK_PIN(&g.f,g.block,g.offset),text);
+        parameters[2] = saved_input(&g,BLOCK_PIN(&g.f,g.block,1+g.offset),"4"); parameters[3] = saved_input(&g,BLOCK_PIN(&g.f,g.block,2+g.offset),"1");
+        parameters[4] = saved_input(&g,BLOCK_PIN(&g.f,g.block,3+g.offset),"TRUE");
+        if (!legacy) parameters[5] = saved_input(&g,BLOCK_PIN(&g.f,g.block,0),"2,0,0");
+        size_t count = legacy ? 5 : 6;
+        for (size_t i = 0; i < count; i++) ASSERT_TRUE(parameters[i] != 0);
+        nmo_3dentity_state_t *reference = fixture_state(&g.f,g.reference);
+        reference->world_matrix[0] = 0; reference->world_matrix[1] = 3;
+        reference->world_matrix[4] = -1; reference->world_matrix[5] = 0; reference->world_matrix[12] = 8;
+        fixture_commit_bare(&g.f,NULL);
+        nmo_beobject_state_t *owner = fixture_state(&g.f,g.f.owner_id);
+        owner->has_single_activity = 1; owner->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE;
+        nmo_behavior_state_t *script = fixture_state(&g.f,g.f.script_id);
+        script->has_single_activity = 1; script->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE | CK_SCENEOBJECT_START_RESET;
+        const char *path = NMO_TEST_SCRATCH_FILE("engine_keep_distance.cmo"); ASSERT_EQ(NMO_OK,nmo_session_save_file(g.f.session,path,NULL,NULL));
+        for (int started = 0; started < 2; started++) {
+            engine_fixture_t host; fixture_begin_document(&host); fixture_begin_edit(&host);
+            nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL; fixture_commit(&host,&options);
+            if (started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_ALL));
+            nmo_engine_set_file_resolver(host.engine,resolve_file,(void *)path);
+            int32_t file = -1; ASSERT_EQ(NMO_OK,nmo_engine_load(host.engine,"distance.cmo",true,&file));
+            if (!started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_SCENE_DEFAULT));
+            nmo_object_id_t block = nmo_engine_object_named(host.engine,"Keep Distance",NMO_CID_BEHAVIOR); ASSERT_TRUE(block != 0);
+            const eng_module_t *module = eng_module_of(host.engine,block,NULL);
+            const nmo_object_id_t original[] = {g.f.owner_id,g.parent,g.target,g.child,g.reference,g.f.script_id,g.block,g.out};
+            nmo_object_id_t ids[14] = {0}, copies[14] = {0};
+            for (size_t i = 0; i < COUNT(original); i++) { ids[i] = eng_module_id(module,original[i]); ASSERT_TRUE(ids[i] != 0); }
+            for (size_t i = 0; i < count; i++) ids[8+i] = eng_module_id(module,parameters[i]);
+            ASSERT_TRUE(ids[2] != g.target); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,10));
+            expect_position(host.engine,ids[2],legacy ? (eng_vector_t){2,0,0} : (eng_vector_t){2.4f,1.8f,0});
+            ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(host.engine,ids,8+count,false,copies));
+            ASSERT_EQ(copies[1],nmo_engine_entity_parent(host.engine,copies[2])); ASSERT_EQ(copies[2],nmo_engine_entity_parent(host.engine,copies[3]));
+            eng_vector_t anchor = legacy ? (eng_vector_t){12,0,0} : (eng_vector_t){10.4f,1.8f,0};
+            eng_entity_set_position(host.engine,eng_entity_index(host.engine,copies[4]),&anchor,-1,false);
+            ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,ids[5],true,true));
+            ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[5],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,20));
+            eng_vector_t a = legacy ? (eng_vector_t){time ? 10.0f/3 : 3,0,0} : time ? (eng_vector_t){4,3,0} : (eng_vector_t){3.6f,2.7f,0};
+            eng_vector_t b = legacy ? (eng_vector_t){time ? 6 : 5,0,0} : time ? (eng_vector_t){5.6f,4.2f,0} : (eng_vector_t){4.8f,3.6f,0};
+            expect_position(host.engine,ids[2],a); expect_position(host.engine,copies[2],b);
+            expect_position(host.engine,copies[3],(eng_vector_t){b.x+2,b.y+3,4});
+            float distance = 2, attenuation = 0; eng_vector_t zero = {0,0,0};
+            ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[10],&distance,sizeof(distance)));
+            ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[11],&attenuation,sizeof(attenuation)));
+            if (!legacy) ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[13],&zero,sizeof(zero)));
+            nmo_engine_destroy_object(host.engine,ids[2]); nmo_engine_destroy_object(host.engine,ids[4]); nmo_engine_destroy_object(host.engine,ids[1]);
+            anchor = (eng_vector_t){100,0,0}; eng_entity_set_position(host.engine,eng_entity_index(host.engine,copies[4]),&anchor,-1,false);
+            eng_entity_set_position(host.engine,eng_entity_index(host.engine,copies[2]),&zero,-1,false);
+            ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[5],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,10));
+            expect_position(host.engine,copies[2],(eng_vector_t){98,0,0}); expect_position(host.engine,copies[3],(eng_vector_t){100,3,4}); fixture_end(&host);
+        }
+        ASSERT_FLOAT_EQ(0,((nmo_3dentity_state_t *)fixture_state(&g.f,g.target))->world_matrix[12],0); fixture_end(&g.f); remove(path);
+    }
+}
+
+TEST(engine_keep_distance, curve_follow_outputs_drive_the_constraint_in_the_same_frame_and_stop_after_completion)
+{
+    for (int legacy = 0; legacy < 2; legacy++) {
+        distance_fixture_t g; begin(&g,legacy,true);
+        ((nmo_3dentity_state_t *)fixture_state(&g.f,g.target))->world_matrix[12] = -10;
+        ((nmo_3dentity_state_t *)fixture_state(&g.f,g.child))->world_matrix[12] = -8;
+        nmo_object_id_t path_id = fixture_create(&g.f,NMO_CID_CURVE,"Motion Path");
+        nmo_curve_state_t *path = fixture_state(&g.f,path_id); ASSERT_NOT_NULL(path); path->opened = 1; path->control_point_count = 2;
+        path->control_point_ids = nmo_arena_alloc(nmo_session_get_arena(g.f.session),2*sizeof(nmo_ref_t),_Alignof(nmo_ref_t)); ASSERT_NOT_NULL(path->control_point_ids);
+        for (size_t i = 0; i < 2; i++) {
+            nmo_object_id_t id = fixture_create(&g.f,NMO_CID_CURVEPOINT,"Point"); nmo_curvepoint_state_t *point = fixture_state(&g.f,id); ASSERT_NOT_NULL(point);
+            point->base.parent = nmo_ref_from_id(path_id); point->base.has_entityndata_chunk = 1; point->curve = nmo_ref_from_id(path_id); point->linear = 1;
+            nmo_curvepoint_set_position(point,i ? 20 : 0,0,0); path->control_point_ids[i] = nmo_ref_from_id(id);
+        }
+        const nmo_behavior_state_t *script = fixture_state(&g.f,g.f.script_id);
+        nmo_object_id_t first_link = nmo_behavior_ref_array_get_id(&script->sub_behavior_links,0);
+        ASSERT_EQ(NMO_OK,nmo_script_edit_remove_behavior_link(g.f.tx,g.f.script_id,first_link));
+        nmo_object_id_t driver = fixture_block(&g.f,NMO_GUID(0x00ed010b,0x00fd010b),"Move Reference"); ASSERT_TRUE(driver != 0);
+        fixture_input_int(&g.f,fixture_target(&g.f,driver),(int32_t)g.reference); fixture_input_int(&g.f,BLOCK_PIN(&g.f,driver,0),(int32_t)path_id);
+        float duration = 40; fixture_input_value(&g.f,BLOCK_PIN(&g.f,driver,1),&duration,sizeof(duration));
+        nmo_object_id_t curve = 0; ASSERT_EQ(NMO_OK,nmo_script_edit_ensure_input_parameter_source(g.f.tx,BLOCK_PIN(&g.f,driver,2),&curve));
+        fixture_link(&g.f,g.f.script_in,BLOCK_IN(&g.f,driver,0),0); fixture_link(&g.f,BLOCK_OUT(&g.f,driver,1),BLOCK_IN(&g.f,driver,1),1);
+        for (int output = 0; output < 2; output++) fixture_link(&g.f,BLOCK_OUT(&g.f,driver,output),BLOCK_IN(&g.f,g.block,0),0);
+        commit(&g);
+        for (int step = 1; step <= 5; step++) {
+            float x = step < 4 ? (float)step*5 : 20;
+            ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,10)); position(&g,g.reference,(eng_vector_t){x,0,0});
+            position(&g,g.target,(eng_vector_t){x-4,0,0}); position(&g,g.child,(eng_vector_t){x-2,3,4});
+        }
+        ASSERT_EQ(5u,runs(&g.f,driver)); ASSERT_EQ(5u,runs(&g.f,g.block)); ASSERT_EQ(5u,runs(&g.f,g.out));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,10)); ASSERT_EQ(5u,runs(&g.f,g.block)); fixture_end(&g.f);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_keep_distance, adjusts_toward_or_away_from_the_anchor_with_signed_distances);
 REGISTER_TEST(engine_keep_distance, transforms_points_with_the_reference_world_matrix_and_reads_live_inputs);
@@ -224,4 +340,6 @@ REGISTER_TEST(engine_keep_distance, zero_delta_preserves_native_infinite_and_nan
 REGISTER_TEST(engine_keep_distance, missing_and_deleted_targets_report_owner_errors_after_setting_io);
 REGISTER_TEST(engine_keep_distance, disconnected_optional_inputs_keep_native_distance_attenuation_and_hierarchy_defaults);
 REGISTER_TEST(engine_keep_distance, samples_descendant_references_before_propagating_the_target_translation);
+REGISTER_TEST(engine_keep_distance, loaded_and_copied_constraints_keep_reference_bindings_and_attenuation_settings_independent);
+REGISTER_TEST(engine_keep_distance, curve_follow_outputs_drive_the_constraint_in_the_same_frame_and_stop_after_completion);
 TEST_MAIN_END()
