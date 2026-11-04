@@ -1,16 +1,16 @@
 """Headings and points on the XZ plane, as Virtools' left-handed, Y-up space
 has them.
 
-A heading is one of the four unit steps along X or Z, (dx, dz); a point is
-(x, z).  Looking along a heading with Y up, to its right is (dz, -dx): to the
-right of -X is +Z.
+A heading is a horizontal unit vector (dx, dz); grid-based pieces require
+one of the four cardinal headings. A point is (x, z). Looking along a
+heading with Y up, to its right is (dz, -dx): to the right of -X is +Z.
 """
 
 from __future__ import annotations
 
 import math
 
-Heading = tuple[int, int]
+Heading = tuple[float, float]
 Point = tuple[float, float]
 
 HEADINGS: dict[str, Heading] = {"+x": (1, 0), "-x": (-1, 0), "+z": (0, 1), "-z": (0, -1)}

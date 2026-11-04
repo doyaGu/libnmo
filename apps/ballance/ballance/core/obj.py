@@ -9,6 +9,13 @@ Vec3 = tuple[float, float, float]
 UV = tuple[float, float]
 
 
+def decimal(value: float) -> str:
+    # Trigonometric axes can multiply two rounding residues into e-48.
+    # strtof rejects these underflows; they are geometrically zero. Nine
+    # significant digits also preserve float32 vertices on large maps.
+    return "0" if abs(value) < 1e-12 else f"{value:.9g}"
+
+
 class Triangle(NamedTuple):
     material: str | None
     points: list[Vec3]
@@ -80,10 +87,10 @@ class Mesh:
             self.material = material
         for corner in corners:
             (x, y, z), (u, v) = corner[0], corner[1]
-            self.lines.append(f"v {x:g} {y:g} {z:g}")
-            self.lines.append(f"vt {u:g} {v:g}")
+            self.lines.append("v " + " ".join(map(decimal, (x, y, z))))
+            self.lines.append("vt " + " ".join(map(decimal, (u, v))))
             if len(corner) > 2:
-                self.lines.append("vn {:g} {:g} {:g}".format(*corner[2]))
+                self.lines.append("vn " + " ".join(map(decimal, corner[2])))
         refs = [self.count + i for i in (1, 2, 3)]
         form = "{0}/{0}/{0}" if len(corners[0]) > 2 else "{0}/{0}"
         self.lines.append("f " + " ".join(form.format(r) for r in refs))

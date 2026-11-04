@@ -46,9 +46,16 @@ class Ring:
     """Where a rail's middle line passes: a point and the level heading
     there, as a unit (dx, dz)."""
 
-    def __init__(self, x: float, y: float, z: float, dx: float, dz: float) -> None:
+    def __init__(self, x: float, y: float, z: float, dx: float, dz: float,
+                 bank: float = 0.0, gauge: float = GAUGE, radius: float = TUBE) -> None:
         self.x, self.y, self.z = x, y, z
         self.dx, self.dz = dx, dz
+        self.bank, self.gauge, self.radius = bank, gauge, radius
+
+    def axes(self):
+        """Banked right and up vectors; positive bank raises the right tube."""
+        c, s = math.cos(math.radians(self.bank)), math.sin(math.radians(self.bank))
+        return (self.dz * c, s, -self.dx * c), (-self.dz * s, c, self.dx * s)
 
 
 class Beam(list):
@@ -83,16 +90,16 @@ def _tube(mesh: Mesh, run: list[Ring], side: float) -> None:
             along += math.dist((p.x, p.y, p.z), (r.x, r.y, r.z))
         # to the right of heading (dx, dz), as Virtools' left-handed Y-up
         # space has it: (dz, -dx)
-        rx, rz = r.dz, -r.dx
-        cx, cz = r.x + rx * side * GAUGE / 2, r.z + rz * side * GAUGE / 2
+        right, up = r.axes()
+        centre = tuple(v + side * r.gauge / 2 * q for v, q in zip((r.x, r.y, r.z), right))
         corners = []
         for a, n in zip(ANGLES, NORMALS):
             # angle 0 points away from the other tube
             ca, sa = math.cos(math.radians(a)), math.sin(math.radians(a))
             cn, sn = math.cos(math.radians(n)), math.sin(math.radians(n))
-            corners.append(((cx + rx * side * ca * TUBE, r.y + sa * TUBE,
-                             cz + rz * side * ca * TUBE),
-                            (rx * side * cn, sn, rz * side * cn), a / 360.0))
+            corners.append((tuple(centre[j] + r.radius * (right[j] * side * ca + up[j] * sa)
+                                  for j in range(3)),
+                            tuple(right[j] * side * cn + up[j] * sn for j in range(3)), a / 360.0))
         rings.append((corners, along / REPEAT))
     for (a, va), (b, vb) in zip(rings, rings[1:]):
         for i, j in FACES:
@@ -112,12 +119,13 @@ def _beam(mesh: Mesh, run: list[Ring]) -> None:
         if k:
             p = run[k - 1]
             along += math.dist((p.x, p.y, p.z), (r.x, r.y, r.z))
-        rx, rz = r.dz, -r.dx
+        right, up = r.axes()
         corners = []
         for a in BEAM_ANGLES:
             ca, sa = math.cos(math.radians(a)), math.sin(math.radians(a))
-            corners.append(((r.x + rx * ca * TUBE, r.y + sa * TUBE, r.z + rz * ca * TUBE),
-                            (rx * ca, sa, rz * ca), a / 360.0))
+            normal = tuple(right[j] * ca + up[j] * sa for j in range(3))
+            corners.append((tuple(v + r.radius * n for v, n in zip((r.x, r.y, r.z), normal)),
+                            normal, a / 360.0))
         rings.append((corners, along / REPEAT))
     for (a, va), (b, vb) in zip(rings, rings[1:]):
         for i, j in BEAM_FACES:
