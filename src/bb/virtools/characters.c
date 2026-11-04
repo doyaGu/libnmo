@@ -177,5 +177,6 @@ nmo_status_t eng_register_characters(nmo_engine_t *engine)
     if (status == NMO_OK) status = eng_register_character_goto(engine);
     if (status == NMO_OK) status = eng_register_character_curve(engine);
     if (status == NMO_OK) status = eng_register_character_controller(engine);
+    if (status == NMO_OK) status = eng_register_ik_position(engine);
     return status == NMO_OK ? eng_register_unlimited_controller(engine) : status;
 }

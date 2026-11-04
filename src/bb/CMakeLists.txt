@@ -15,6 +15,7 @@ set(NMO_BB_VIRTOOLS_SOURCES
     virtools/cameras.c
     virtools/characters.c
     virtools/character_controller.c
+    virtools/ik_position.c
     virtools/character_goto.c
     virtools/character_curve.c
     virtools/enhanced_character_curve.c
