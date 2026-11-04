@@ -1,0 +1,465 @@
+# Free-form Ballance geometry
+
+Use the [builder workflow](ballance-level-builder.md#from-a-route-to-a-level)
+for extraction, build records and report status conventions.
+
+## Three-dimensional paths
+
+Paths start at the preceding piece's exit. Coordinates are local
+`[forward, right, up]`, relative to that start. Line and Bezier endpoints
+are absolute within these local coordinates. Arcs continue from the current
+endpoint and tangent. The analytic families below do too.
+
+```json
+{
+  "rail_path": {
+    "segments": [
+      {"line": [10, 0, 0]},
+      {"bezier": [[20, 0, 0], [30, 15, -5], [40, 15, -5]]},
+      {"arc": {"radius": 20, "angle": 90, "rise": 8}}
+    ],
+    "bank": [[0, 0], [0.4, 8], [0.7, -8], [1, 0]],
+    "gauge": 3.8,
+    "radius": 0.35,
+    "step": 2,
+    "tolerance": 0.025
+  }
+}
+```
+
+- `line` gives an endpoint.
+- `bezier` gives two control points and an endpoint. Adjacent segments
+  must meet with matching horizontal tangents.
+- `arc` gives a radius, signed angle in degrees and optional rise.
+  Positive angles turn right. A 360-degree arc with a rise is a helix;
+  one segment can turn up to four times.
+- `bank` rolls the cross section in degrees; positive raises its right side.
+- `gauge` is the distance between the two rail tubes' centres; `radius`
+  is each tube's radius.
+
+`bank`, `gauge` and `radius` accept constants or `[[fraction, value], ...]`
+stations. Fractions increase from 0 to 1 and refer to distance along the
+sampled 3D curve. Values interpolate linearly; every station is included
+in the mesh. Tubes that overlap are rejected. A valid mesh with an unusual
+gauge may still be impassable for the ball.
+
+`step` limits sample spacing. `tolerance` limits the distance of Bezier
+control points from each subdivided chord and an arc's chord deviation.
+Cross sections stay upright on slopes, then rotate by `bank`. Vertical
+tangents and upside-down tracks are not supported.
+
+`beam_path` uses the same curve segments for a single tube. It joins a
+standard unguarded rail with the original overlapped height transition and
+can continue into `beam_turn`, another beam, or a standard rail. Its entry
+and exit headings must be cardinal and its end radii must be 0.35. It
+accepts bank and radius stations, but not gauge or decorative ribs.
+
+`beam_turn` accepts a numeric `gap` from 8 to 80 units, defaulting to 8.
+It sets the separation of the incoming and returning lanes; the turn radius
+is half that separation. Subsequent pieces start at the new exit position.
+
+Single-beam steering points use the opt-in `precision` action: slower
+arrow-key control with a shorter lookahead and smaller tracking tolerance.
+This changes the automatic driver, not the map physics or manual play.
+The clearance checker reserves room for a ball sitting on top of a single
+tube; the lower clearance used between double rails is insufficient there.
+
+## Analytic shapes and structure
+
+These bounded families generate geometry directly; they do not evaluate
+arbitrary expressions. They work on both rail and floor paths, and mirror
+with templates. With `u` ranging from 0 to 1:
+
+- `wave`: `{"length": 160, "amplitude": 12, "cycles": 1, "rise": -42,
+  "crest": 6}`. Forward distance is `length*u`; lateral offset is
+  `amplitude*sin(2*pi*cycles*u)^3`. Height combines a smoothstep rise with
+  `crest*sin(pi*u)^2`. Lateral slope and curvature vanish at the ends,
+  allowing a smooth transition into a straight.
+- `weave`: `{"length": 170, "width": 100, "lift": 16, "rise": -12}`.
+  The horizontal figure eight uses `length/2*sin(t), width/2*sin(2*t)`,
+  rotated to meet the incoming tangent. Height is
+  `lift*(1-cos(t)) + rise*smoothstep(u)`. The three visits to its centre
+  are at heights 0, 26 and -12 for these values. Separation must still
+  account for the ball, supporting structure and intersecting approaches.
+  `hand: -1` reflects the curve.
+- `eased_turn`: `{"length": 100, "angle": 90, "rise": -18}`. Heading is
+  `angle*(3*u*u-2*u*u*u)`; integrating it gives the horizontal curve.
+  Curvature starts and ends at zero. The implementation uses deterministic
+  Simpson integration, then adapts sampling to spacing and deviation.
+
+Periodic families seed 128 intervals before adaptive subdivision, preventing
+repeated lobes from disappearing when endpoints and midpoints coincide.
+
+## Death zones and recovery
+
+Omitting `death_zones` preserves the legacy layout. An explicit object enables
+surface-following zones:
+
+```json
+{
+  "death_zones": {
+    "tile": 25, "clearance": 18, "quantum": 5, "depth": 35, "margin": 80
+  }
+}
+```
+
+Each occupied cell uses the lowest nearby collision surface. Triangle
+footprints are covered in full, including the middle of a long straight
+rail. Four units of horizontal padding protect the rotating ball's bounding
+box from a neighbouring cell's higher death plane. Decorative lantern
+towers and noncolliding braces do not set the height. Lower landings keep
+their descent columns clear, with a final global box beneath the map.
+
+For a deliberate recovery volume that the surfaces cannot describe, add
+`"keepouts": [{"box": [x0,x1,y0,y1,z0,z1], "reason": "..."}]`. The box
+is subtracted from every death volume, including the global one; reserve
+only the space actually needed for recovery. The generated `death_zones.json`
+records the policy and exact boxes for inspection. Geometry alone cannot
+certify a jump: verify intended drops and an intentional failed trajectory
+in the gameplay harness.
+
+## Variable-width floors
+
+`floor_path` accepts the same path segments and bank settings:
+
+```json
+{
+  "floor_path": {
+    "segments": [
+      {"bezier": [[15, 0, 0], [25, 20, 4], [40, 20, 4]]},
+      {"bezier": [[55, 20, 4], [65, 0, 0], [80, 0, 0]]}
+    ],
+    "width": [[0, 5], [0.25, 12], [0.75, 3], [1, 5]],
+    "section": "v",
+    "depth": 5
+  },
+  "elements": [{"kind": "P_Extra_Point", "at": [35, 0]}]
+}
+```
+
+`width` accepts a constant or distance stations. `section` is `"v"`
+(the standard road), `"flat"`, or ordered `[width fraction, height]`
+pairs from -0.5 at the left edge to 0.5 at the right. Extra points create
+ridges, gutters or asymmetric sections. `end_section` morphs toward a
+section with the same width fractions. `depth` is the thickness beneath
+the section; side walls and a bottom are generated.
+
+For example, `"section": "v", "end_section": "flat"` transitions into
+a flat road. Reverse it before reconnecting to a standard road. The
+builder rejects a floor whose inner edge folds backward around a tight
+bend; widen the turn or narrow the floor. This local check does not prove
+that a whole path avoids itself or other geometry.
+
+Path elements use `[distance, lateral offset]`. Distance follows the 3D
+centreline; positive offset is right. Placement follows the curve's height,
+bank and section. Rewards, boxes and loose balls are supported; fans still
+need existing housing pieces.
+
+## Concave platforms, holes and multiway connections
+
+`floor_polygon` triangulates a simple convex or concave outline without
+filling its notches. Self-intersecting outlines, repeated vertices and
+ports too wide for their edge are errors.
+
+```json
+{
+  "floor_polygon": {
+    "outline": [[0,-5], [10,-5], [10,-12], [30,-12], [30,5], [0,5]],
+    "entry": {"edge": 5},
+    "exit": {"edge": 3, "at": 0.7058823529411765},
+    "depth": 5
+  },
+  "elements": [{"kind": "P_Extra_Life", "at": [20, 0]}]
+}
+```
+
+Outline coordinates are `[forward, right]`. Edge indices are zero-based;
+the final edge returns to the first vertex. `at` locates the port along
+its edge (default 0.5). Each port accepts its own `width` (default 5,
+range 0.5..100); the whole opening must fit its edge. The entry must be centred at
+`[0,0]`, facing backward. The exit follows its edge's outward normal,
+including diagonal normals.
+
+The builder adds a 5-unit V-to-flat adapter before the outline and a
+5-unit flat-to-V adapter after the exit. Each adapter consists of a
+2.5-unit V neck and the native 2.5-unit flattening, triangulated from the
+low V point on both halves. The outline therefore begins 5
+units beyond the preceding piece. Its top is at the incoming road's edge
+height. Port openings are removed from its walls. Elements use the
+outline's local coordinates and rest on its flat top.
+
+For an indirect route, supply `"path": [[forward, right], ...]` interior
+waypoints. Every segment from entry through these points to exit is
+checked against the outline and all holes. The surface is flat; holes and
+named branch ports share the same local coordinate system:
+
+```json
+{
+  "id": "hub",
+  "floor_polygon": {
+    "outline": [[0,-15], [40,-15], [40,15], [0,15]],
+    "holes": [[[15,4], [25,4], [25,10], [15,10]]],
+    "entry": {"edge": 3},
+    "exit": {"edge": 1},
+    "ports": {"paper": {"edge": 0, "path": [[20,0]]}}
+  },
+  "branches": [{
+    "id": "paper-spur", "port": "paper", "visit": true,
+    "route": [{"id": "approach", "road": 10},
+              {"id": "change", "trafo": "paper"},
+              {"id": "return", "road": 5}]
+  }]
+}
+```
+
+Up to 32 simple holes may be supplied in either winding. They must lie
+strictly inside the outer contour, without touching, overlapping or nesting.
+Their brick borders must also fit without intersecting the outer border or
+each other. Tops and undersides leave the holes empty; inward-facing walls
+close their thickness. Elements and authored paths cannot occupy a hole.
+`supports: [[forward, right], ...]` requests platform-owned columns; their
+capitals and any permitted braces still undergo attachment checks.
+
+Each named port accepts `edge`, `at`, `width` and an optional `path` from
+the entry to that port. Entry, exit and named ports currently require
+distinct outer edges; holes cannot host ports. Each outlet owns a five-unit
+flat/V adapter and a normal port contract, so branches may start with a
+matching floor connector or standard rail. Different port widths and
+non-cardinal edges are supported through free paths; legacy grid pieces
+still require cardinal standard ports. Mirror operations transform holes,
+paths and support points while preserving port names and edge indices.
+
+A branch selects its outlet with `port`, replacing the legacy `side` field.
+`visit: true` follows the port's internal path and returns along it before
+continuing to the main exit. Several visits execute in authored order.
+To merge into another polygon, give the destination piece a `name` and
+use `to: "destination-name", to_port: "port-name"` on the source branch.
+`take: true` selects that branch as the playable route instead of the main
+route between the platforms. The destination's internal port path is
+traversed in reverse to join its main route. Position, heading and section
+must match exactly; the builder does not solve an arbitrary connecting
+curve. Every declared port must have one branch connection. Missing,
+duplicate and mismatched connections fail the build.
+
+`connections.json` includes platform identities, world-space hole contours,
+ports and source locations. An authored void is a real opening in collision
+geometry; centreline validation alone does not prove that the ball has
+enough room around it. Verify the intended traversal with actual physics.
+
+## Connections and autopilot
+
+Free pieces may join at arbitrary horizontal headings. Their widths,
+banks and sections must match. Rail-to-floor connections require standard
+ports. Connecting back to legacy pieces requires a cardinal heading,
+zero bank, and either a 5-wide V floor or rails with gauge 3.8 and radius
+0.35. Put a narrow road between a free floor and a legacy area.
+
+Mesh and steering points share sampled curves. The autopilot still needs
+braking instructions for some tight bends. Either path can include
+`"stops": [[0.25, 30], [0.75, 30]]`: each pair is a distance fraction and
+frames to hold. These affect the autopilot only, not manual play.
+
+Polygon tops have a brick perimeter by default (`border: 0.75`; zero
+omits it). The border is a partition of the surface, not a coplanar decal.
+Its miters turn into both sides of each port, closing the concave corners
+while leaving the centre open. Invalid insets and borders that close a
+port are rejected. Wider V floors keep the native brick scale at their
+edges and tile their stone interiors rather than stretching one bitmap.
+Wide V-to-flat platform mouths use the same fixed-width edge bands.
+
+## Explicit connectors
+
+A `connector` inherits the preceding floor or double rail's section and
+morphs it to `to`. Only the end values need to be specified:
+
+```json
+{
+  "schema_version": 1,
+  "sectors": [[
+    {"id": "entry", "road": 10},
+    {"id": "widen", "connector": {"length": 15, "to": {"width": 8, "bank": 3}}},
+    {"id": "level", "connector": {"length": 10, "to": {"bank": 0}}},
+    {"id": "platform", "floor_polygon": {
+      "outline": [[0,-8], [20,-8], [20,8], [0,8]],
+      "entry": {"edge": 3, "width": 8},
+      "exit": {"edge": 1, "width": 10}
+    }},
+    {"id": "narrow", "connector": {"length": 15, "to": {"width": 5}}},
+    {"id": "exit", "road": 10}
+  ]]
+}
+```
+
+Use exactly one of a positive `length` (a straight, level connector) or
+`segments` (the same local curves as a path). Floors accept target `width`,
+`bank` and `section`; double rails accept `gauge`, `radius` and `bank`.
+Omitted values retain the incoming section. Values change linearly with
+sampled arc distance. Custom floor profiles are resampled at the union of
+their width fractions, preserving each endpoint's piecewise linear shape.
+`step`, `tolerance`, `stops`, and rail-only `ribs` retain their path meanings.
+Template mirroring reflects the curve, target bank and custom profile.
+
+Connectors retain the incoming kind and floor depth. To change from floor
+to rail or back, first reach a standard port, then start the other path
+kind; the native docking rule applies. Beam overlaps, ballistic transfers,
+module interiors and nonstandard legacy wide docks retain their measured
+adapters. The connector does not solve arbitrary endpoints or force slope
+continuity. Unusual gauges and cross sections still require gameplay tests.
+
+The builder writes `connections.json`: endpoint positions, horizontal
+headings, banked up vectors, cross sections, source IDs, opening policy,
+UV policy and authored transitions. Positions use the route's V-bottom
+datum, with rail centres offset above it. Direct joints check positions,
+horizontal headings and sections at tolerance `1e-6`; intentional slope
+changes remain allowed. A failure names both ports and their source locations.
+
+Consecutive free floors carry their cumulative UV distance through the
+joint. The native grid and the platform's ProfileFlat image retain explicit
+material phase resets. This does not promise seamless texture phase across
+every native module. Platform openings and connector mouths share their
+width; neither emits an internal end cap. Arbitrary custom profiles retain
+the existing borderless surface material rather than acquiring a new theme.
+
+## Spatial constraints and scenery attachments
+
+Native builds (`--elements`) use the same spatial query for placement and
+exported-scene validation. It covers rail tubes, the ball's swept clearance,
+the balloon's departure envelope, and separation between scenery assemblies.
+Rail and ball sweeps use conservative inflated boxes; they are not exact
+mesh collision tests. Route clearance includes a 0.5-unit margin. The
+balloon envelope has a `finish` state and is checked during placement even
+though the balloon has not yet departed.
+
+The builder writes `spatial_constraints.json` with volume owners, rules,
+states, source locations, and attachment bindings. `scenery_placement.json`
+records changes and their causes. After exporting, the builder checks the
+actual meshes and transforms before publishing the generation. An invalid
+attachment or unresolved conflict fails the build and retains the previous
+generation. Stand-in builds do not validate native scenery attachments;
+using placement rules without native assets produces a warning.
+
+Use `scenery.rules` to configure an accessory by its ID from the bindings:
+
+There are three placement modes:
+
+- `locked` keeps the original frame. Native module supports use this default.
+- `nearby` moves a lamp and its supporting column together, preserving height.
+  Lamps use this default and cannot be reparented.
+- `attached` permits a platform pillar to move only while its capital remains
+  under its declared parent. Platform pillars use this default. A different
+  `parent` must name an existing route entity; supports cannot use `nearby`
+  to discard their attachment.
+
+Platform contact uses the declared parent's region plus triangle probes at
+the capital's four corners and centre. Native floors often omit underside
+faces; in that case the check uses the measured floor thickness below the
+sampled surface. This is a conservative attachment check, not proof of full
+surface contact or structural support. An unrelated platform cannot satisfy
+the attachment merely because a relocated column is beneath it.
+
+Two explicitly authored finish poles must lie symmetrically on opposite
+sides of the balloon. They are locked as a pair; automatic fitting cannot
+move or discard one. An empty `finish_poles` list still removes them.
+Lamp IDs use marker and accessory indices, so inserting a checkpoint can
+change checkpoint lamp IDs. Platform accessory IDs derive from the route
+entity ID and its local index; preserve both when editing rules.
+
+Native motion recipes extend this query through finite per-body envelopes.
+Free bodies, unlimited sliders, camera envelopes and complete floor traversal
+volumes remain separate coverage limits; a passing spatial report is not a full gameplay
+or visibility guarantee.
+
+## Native resources and mechanisms
+
+Named resources share the route adapters, extraction provenance and placement
+checks described in [Ballance native resources and motion](ballance-native-resources.md).
+That reference covers all 67 descriptions, the thirteen motion recipes,
+per-body envelopes, intentional interactions and original-level probes.
+
+## Gameplay conditions
+
+`gameplay.contracts` declares required passage conditions and native events:
+
+```json
+{
+  "gameplay": {
+    "contracts": [
+      {"id": "paper-ready", "at": "route/id/paper-exit", "ball": "Paper"},
+      {"id": "lift-exit", "at": "route/id/fan", "ball": "Paper", "after": ["paper-ready"]},
+      {"id": "checkpoint", "event": "Checkpoint reached", "sector": 1, "after": ["lift-exit"]}
+    ]
+  }
+}
+```
+
+`at` resolves a route entity's exit, with a ball-centre height offset. Its
+3D observation radius defaults to 4 units and must be in `(0, 10]`; choose
+a passage beyond the transformer, not its activation centre. Ball names
+are `Wood`, `Stone` and `Paper`. Native events currently include
+`Checkpoint reached`, `Level_Finish`, `Ball Off`, `Life_Up` and `Extrapoint`,
+received by `All_Gameplay`. Events carry their actual sender and recipient
+IDs. Repeated score messages are not interpreted as distinct collected items.
+
+Dependencies name earlier contracts and cannot point into a later sector.
+The builder rejects unresolved entities, invalid conditions and cycles;
+`gameplay_contracts.json` stores resolved positions and source locations.
+The CLI appends `object_id` and CSV-escaped `object_name` to `steer.csv`.
+Checks use this observed identity, not the ball type predicted by the route.
+A wrong-ball visit, missing passage or event before its prerequisites fails
+even if the run reaches the finish. Later visits cannot erase an earlier
+violation. Checkpoint messages delimit sectors, preventing another layer or
+an earlier sector visit from satisfying a condition.
+
+`--play` adds a `gameplay` check. No contracts or no fresh run is explicitly
+skipped. A partial-sector run marks earlier contracts as skipped setup
+assumptions. Endpoint observations do not establish mechanism completion,
+continuous passage, arbitrary shortcut exclusion or successful recovery;
+those require additional event sources and execution scenarios.
+
+## Parameterized templates
+
+Top-level `definitions` hold reusable local sequences:
+
+```json
+{
+  "definitions": {
+    "bend": {
+      "parameters": {"radius": 20, "angle": 90},
+      "pieces": [{"rail_path": {"segments": [
+        {"arc": {"radius": "${radius}", "angle": "${angle}"}}
+      ]}}]
+    }
+  },
+  "sectors": [[
+    {"road": 10},
+    {"use": "bend", "with": {"radius": 30}, "repeat": 2, "mirror": true},
+    {"road": 10}
+  ]]
+}
+```
+
+An exact `${parameter}` string substitutes its JSON value, including a
+number, list or object. No expressions or code are evaluated. Templates
+can call other templates and appear inside branches. Recursion and
+unknown parameters are errors; expansion is limited to 4,096 pieces.
+
+`mirror` swaps left/right and reflects coordinates, banks, cross sections,
+elements and branches. `repeat` continues each copy from the previous
+copy's exit. Parameterize named branch targets to keep repeated names unique.
+
+## Build and validate
+
+Geometry and route tests do not need a game installation:
+
+```sh
+python3 -m unittest discover -s apps/ballance/tests -p test_freeform.py -v
+```
+
+The optional physics regression traverses a helix, mirrored banked floor
+bends and a concave platform in the real gameplay harness:
+
+```sh
+BALLANCE=<GAME_ROOT> BALLANCE_ELEMENTS=<extracted-elements> \
+NMO_TEST_CLI=<absolute-path-to-nmo> NMO_TEST_PHYSICS=1 \
+python3 -m unittest discover -s apps/ballance/tests -p test_freeform_physics.py -v
+```
