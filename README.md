@@ -470,6 +470,12 @@ cc app.c $(pkg-config --cflags libnmo-lua libnmo-project) $(pkg-config --static 
   level file holds, measured on the 13 original levels.
 - [Ballance Level Builder](docs/ballance-level-builder.md): building,
   checking and playing levels with `apps/ballance`.
+- [Free-form Ballance Geometry](docs/ballance-freeform.md): rail and floor
+  paths, connectors, holed platforms, scenery attachments and route templates.
+- [Ballance Native Resources and Motion](docs/ballance-native-resources.md):
+  extraction provenance, placement entries, motion contracts and original-level probes.
+- [Ballance Test Base](docs/plans/2026-11-02-ballance-test-base.md): implemented
+  native gameplay loading, sector starts and local contact probes.
 
 ---
 
