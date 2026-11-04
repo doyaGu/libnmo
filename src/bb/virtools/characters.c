@@ -2,6 +2,52 @@
 #include "virtools.h"
 #include "object/nmo_class_ids.h"
 
+#include <string.h>
+
+static int bb_add_animation(blk_t *b)
+{
+    IN_OFF(b,0); OUT_ON(b,0);
+    nmo_object_id_t character = nmo_engine_block_target(b), animation = nmo_engine_block_get_input_object(b,0);
+    if (character == 0 || eng_animation_state(b->engine,animation) == NULL) return NMO_ENGINE_BR_OK;
+    if (eng_character_add_animation(b->engine,character,animation) != NMO_OK) return NMO_ENGINE_BR_GENERICERROR;
+    if (nmo_engine_object_class(b->engine,animation) != NMO_CID_KEYEDANIMATION) return NMO_ENGINE_BR_OK;
+    const nmo_keyedanimation_state_t *state = nmo_object_get_state(eng_find_object(b->engine,animation));
+    size_t parts = eng_character_bodypart_count(b->engine,character), attributed = 0;
+    eng_map_t exact = {0};
+    int result = NMO_ENGINE_BR_OK;
+    for (int pass = 0; pass < 2; pass++) {
+        if (pass && attributed == state->animation_count) break;
+        for (uint32_t i = 0; i < state->animation_count; i++) {
+            nmo_object_id_t channel = eng_object_ref(b->engine,animation,&state->animation_ids[i]);
+            if (nmo_engine_object_class(b->engine,channel) != NMO_CID_OBJECTANIMATION ||
+                (pass && eng_map_get(&exact,channel) >= 0)) continue;
+            const char *name = nmo_engine_object_name(b->engine,channel);
+            if (name == NULL) continue;
+            size_t length = strlen(name);
+            nmo_object_id_t previous = eng_object_animation_entity(b->engine,channel);
+            for (size_t k = 0; k < parts; k++) {
+                nmo_object_id_t part = eng_character_bodypart(b->engine,character,k);
+                const char *part_name = nmo_engine_object_name(b->engine,part);
+                if (part == 0 || part == previous || part_name == NULL) continue;
+                size_t part_length = strlen(part_name);
+                bool match = !pass ? part_length == length && strcmp(part_name,name) == 0 :
+                    part_length >= 3 && part_length-3 == length && strncmp(part_name,name,length) == 0 &&
+                    part_name[length] >= '0' && part_name[length] <= '9' &&
+                    part_name[length+1] >= '0' && part_name[length+1] <= '9';
+                /* The historical suffix test checks its first two characters;
+                 * the third character is intentionally unconstrained. */
+                if (!match) continue;
+                if ((!pass && !eng_map_put(&exact,channel,1)) ||
+                    !eng_object_animation_set_entity(b->engine,channel,part)) { result = NMO_ENGINE_BR_GENERICERROR; goto done; }
+                if (!pass) attributed++;
+            }
+        }
+    }
+done:
+    free(exact.slots);
+    return result;
+}
+
 static int bb_set_animation_frame(blk_t *b)
 {
     if (nmo_engine_block_target(b) == 0) return NMO_ENGINE_BR_OWNERERROR;
@@ -69,6 +115,7 @@ static int bb_set_floor_reference(blk_t *b)
 }
 
 static const nmo_engine_block_desc_t character_blocks[] = {
+    {NMO_GUID_INIT(0x6a794228,0x77197f5e),"Add Animation",bb_add_animation,NULL,NULL},
     {NMO_GUID_INIT(0x0e579636,0xa3b6e7f0),"Set Animation Frame",bb_set_animation_frame,NULL,NULL},
     {NMO_GUID_INIT(0x120127aa,0x960added),"Set Animation Step",bb_set_animation_step,NULL,NULL},
     {NMO_GUID_INIT(0x55f045c7,0x6cb3417b),"Set Bodypart Animation Frame",bb_set_bodypart_animation_frame,NULL,NULL},

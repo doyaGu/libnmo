@@ -26,6 +26,7 @@ typedef struct eng_character {
     float frame_src;
     uint32_t transition_mode;
     bool automatic;
+    ENG_VEC(nmo_object_id_t) animations;
     ENG_VEC(eng_secondary_animation_t) secondary;
     ENG_VEC(nmo_object_id_t) secondary_warpers;
 } eng_character_t;
@@ -37,6 +38,11 @@ typedef struct eng_characters {
 
 nmo_status_t eng_load_characters(nmo_engine_t *engine, const eng_range_t *range);
 void eng_free_characters(nmo_engine_t *engine);
+size_t eng_character_animation_count(nmo_engine_t *engine, nmo_object_id_t character);
+nmo_object_id_t eng_character_animation(nmo_engine_t *engine, nmo_object_id_t character, size_t index);
+size_t eng_character_bodypart_count(const nmo_engine_t *engine, nmo_object_id_t character);
+nmo_object_id_t eng_character_bodypart(const nmo_engine_t *engine, nmo_object_id_t character, size_t index);
+nmo_status_t eng_character_add_animation(nmo_engine_t *engine, nmo_object_id_t character, nmo_object_id_t animation);
 nmo_object_id_t eng_character_active_animation(nmo_engine_t *engine, nmo_object_id_t character);
 nmo_object_id_t eng_character_next_animation(nmo_engine_t *engine, nmo_object_id_t character);
 nmo_status_t eng_character_set_active_animation(nmo_engine_t *engine, nmo_object_id_t character, nmo_object_id_t animation);

@@ -33,8 +33,81 @@ static eng_character_t *character_runtime(nmo_engine_t *engine, nmo_object_id_t 
     runtime->next = eng_object_ref(engine, id, &state->anim_dest);
     runtime->floor = eng_object_ref(engine, id, &state->floor_ref);
     runtime->automatic = (state->base.entity_flags & CK_3DENTITY_CHARACTERDOPROCESS) != 0;
+    for (size_t i = 0; i < state->animations.count; i++) {
+        nmo_object_id_t *slot = NULL;
+        if (!ENG_VEC_PUSH(runtime->animations,slot)) return NULL;
+        *slot = eng_object_ref(engine,id,&((const nmo_ref_t *)state->animations.data)[i]);
+    }
     if (!eng_map_put(&engine->characters.map, id, index)) return NULL;
     return runtime;
+}
+
+size_t eng_character_animation_count(nmo_engine_t *engine, nmo_object_id_t character)
+{
+    eng_character_t *runtime = character_runtime(engine,character);
+    if (runtime == NULL) return 0;
+    size_t kept = 0;
+    for (size_t i = 0; i < runtime->animations.count; i++) {
+        nmo_object_id_t id = runtime->animations.data[i];
+        if (id == 0 || eng_animation_state(engine,id) != NULL) runtime->animations.data[kept++] = id;
+    }
+    return runtime->animations.count = kept;
+}
+
+nmo_object_id_t eng_character_animation(nmo_engine_t *engine, nmo_object_id_t character, size_t index)
+{
+    if (index >= eng_character_animation_count(engine,character)) return 0;
+    return character_runtime(engine,character)->animations.data[index];
+}
+
+size_t eng_character_bodypart_count(const nmo_engine_t *engine, nmo_object_id_t character)
+{
+    const nmo_character_state_t *state = character_state(engine,character);
+    return state != NULL ? state->body_parts.count : 0;
+}
+
+nmo_object_id_t eng_character_bodypart(const nmo_engine_t *engine, nmo_object_id_t character, size_t index)
+{
+    const nmo_character_state_t *state = character_state(engine,character);
+    if (state == NULL || index >= state->body_parts.count) return 0;
+    nmo_object_id_t id = eng_object_ref(engine,character,&((const nmo_character_part_t *)state->body_parts.data)[index].ref);
+    return eng_entity_index(engine,id) >= 0 && nmo_type_registry_is_class_derived_from(engine->types,
+        nmo_engine_object_class(engine,id),NMO_CID_BODYPART) ? id : 0;
+}
+
+nmo_status_t eng_character_add_animation(nmo_engine_t *engine, nmo_object_id_t character, nmo_object_id_t animation)
+{
+    eng_character_t *runtime = character_runtime(engine,character);
+    if (runtime == NULL || eng_animation_state(engine,animation) == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    bool keyed = nmo_engine_object_class(engine,animation) == NMO_CID_KEYEDANIMATION;
+    nmo_object_id_t root = 0;
+    if (keyed && !eng_keyed_animation_update_root(engine,animation,runtime->root,&root)) return NMO_ERR_NOMEM;
+    bool present = false;
+    for (size_t i = 0; i < runtime->animations.count; i++) if (runtime->animations.data[i] == animation) present = true;
+    if (!present) {
+        if (!eng_vec_reserve((void **)&runtime->animations.data,&runtime->animations.capacity,
+            runtime->animations.count+1,sizeof(*runtime->animations.data))) return NMO_ERR_NOMEM;
+        nmo_object_id_t old = eng_animation_character(engine,animation);
+        if (!eng_animation_set_character(engine,animation,character)) return NMO_ERR_NOMEM;
+        if (old != 0 && old != character) {
+            eng_character_t *previous = character_runtime(engine,old);
+            size_t kept = 0;
+            if (previous != NULL) {
+                for (size_t i = 0; i < previous->animations.count; i++)
+                    if (previous->animations.data[i] != animation) previous->animations.data[kept++] = previous->animations.data[i];
+                previous->animations.count = kept;
+            }
+        }
+        /* Initializing the previous owner can move the character table. */
+        runtime = character_runtime(engine,character);
+        runtime->animations.data[runtime->animations.count++] = animation;
+    }
+    if (keyed) {
+        if (eng_entity_index(engine,runtime->root) < 0) runtime->root = root;
+        float frame = 0;
+        if (eng_animation_frame(engine,animation,&frame)) eng_keyed_animation_center(engine,animation,frame);
+    }
+    return NMO_OK;
 }
 
 bool eng_character_automatic(nmo_engine_t *engine, nmo_object_id_t character)
@@ -121,6 +194,7 @@ void eng_free_characters(nmo_engine_t *engine)
         }
         free(runtime->secondary.data);
         free(runtime->secondary_warpers.data);
+        free(runtime->animations.data);
     }
     free(engine->characters.entries.data);
     free(engine->characters.map.slots);
@@ -146,6 +220,12 @@ void eng_copy_character(nmo_engine_t *engine, nmo_object_id_t source, nmo_object
     copy->next = copy_next ? character_copy_ref(snapshot.next, originals, copies, count) : 0;
     copy->frame_dest = snapshot.frame_dest;
     copy->automatic = snapshot.automatic;
+    if (eng_vec_reserve((void **)&copy->animations.data,&copy->animations.capacity,
+        snapshot.animations.count,sizeof(*copy->animations.data))) {
+        copy->animations.count = snapshot.animations.count;
+        for (size_t i = 0; i < snapshot.animations.count; i++)
+            copy->animations.data[i] = character_copy_ref(snapshot.animations.data[i],originals,copies,count);
+    }
 }
 
 nmo_object_id_t eng_character_active_animation(nmo_engine_t *engine, nmo_object_id_t character)

@@ -181,6 +181,20 @@ nmo_object_id_t eng_keyed_animation_root(nmo_engine_t *engine, nmo_object_id_t a
     return root;
 }
 
+bool eng_keyed_animation_update_root(nmo_engine_t *engine, nmo_object_id_t animation,
+    nmo_object_id_t fallback, nmo_object_id_t *root)
+{
+    eng_keyed_animation_t *runtime = keyed_runtime(engine,animation);
+    const nmo_keyedanimation_state_t *state = keyed_state(engine,animation,NMO_CID_KEYEDANIMATION);
+    if (runtime == NULL || state == NULL) return false;
+    runtime->root_entity = keyed_hierarchy_root(engine,animation,state);
+    if (runtime->root_entity == 0 && eng_entity_index(engine,fallback) >= 0) runtime->root_entity = fallback;
+    runtime->root_animation = 0;
+    runtime->sorted = false;
+    *root = runtime->root_entity;
+    return true;
+}
+
 bool eng_keyed_animation_center(nmo_engine_t *engine, nmo_object_id_t animation, float frame)
 {
     if (!isfinite(frame)) return false;
