@@ -19,8 +19,9 @@ static eng_vector_t mimic_vector(eng_vector_t a, eng_vector_t c, float amount)
 static int bb_mimic(blk_t *b)
 {
     IN_OFF(b,0); OUT_ON(b,0);
-    int32_t target = target_entity(b), source = input_entity(b,0);
+    int32_t target = target_entity(b);
     if (target < 0) return NMO_ENGINE_BR_OWNERERROR;
+    int32_t source = input_entity(b,0);
     if (source < 0) return NMO_ENGINE_BR_OK;
     bool keep = keep_children(b,7), time = get_local_int(b,0,0) != 0;
     float speed = 0;
