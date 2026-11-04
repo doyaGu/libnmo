@@ -201,6 +201,37 @@ static int bb_set_position(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* Keep At Constant Distance also accepts the old layout without Position. */
+static int bb_keep_at_constant_distance(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    int32_t entity = target_entity(b);
+    if (entity < 0) return NMO_ENGINE_BR_OWNERERROR;
+    int offset = nmo_guid_equals(nmo_engine_block_input_parameter_type(b,0),CKPGUID_VECTOR) ? 1 : 0;
+    eng_vector_t point = offset ? get_in_vector(b,0,0,0,0) : (eng_vector_t){0,0,0};
+    int32_t reference = input_entity(b,offset);
+    if (reference >= 0) {
+        if (point.x == 0 && point.y == 0 && point.z == 0) point = eng_entity_position(b->engine,reference,-1);
+        else eng_entity_transform(b->engine,reference,&point,&point,-1);
+    }
+    eng_vector_t here = eng_entity_position(b->engine,entity,-1);
+    float distance = get_in_float(b,1+offset,1);
+    eng_vector_t travel = {point.x-here.x,point.y-here.y,point.z-here.z};
+    float current = eng_vector_magnitude(&travel);
+    if (current < .001f) { current = .001f; travel = (eng_vector_t){0,0,.001f}; }
+    float attenuation = get_in_float(b,2+offset,0);
+    if (attenuation < 0) attenuation = 0;
+    if (get_local_int(b,0,0)) attenuation /= nmo_engine_block_delta_time(b)*.1f;
+    float denominator = current*(attenuation+1);
+    if (denominator != 0) {
+        float factor = (current-distance)/denominator;
+        travel.x *= factor; travel.y *= factor; travel.z *= factor;
+    }
+    eng_entity_translate(b->engine,entity,&travel,-1,keep_children(b,3+offset));
+    return NMO_ENGINE_BR_OK;
+}
+
 /* Set World Matrix */
 static int bb_set_world_matrix(blk_t *b)
 {
@@ -554,6 +585,7 @@ static const nmo_engine_block_desc_t eng_3dtransfo_blocks[] = {
     {NMO_GUID_INIT(0x1c9236e1, 0x42f40996), "Play Global Animation", bb_play_global_animation, NULL,
      NULL},
     {NMO_GUID_INIT(0xe456e78a, 0x456789aa), "Set Position", bb_set_position, NULL, NULL},
+    {NMO_GUID_INIT(0xb7e6398a, 0x113c66dd), "Keep At Constant Distance", bb_keep_at_constant_distance, NULL, NULL},
     {NMO_GUID_INIT(0xaa4aa6f0, 0xddefdef4), "Set World Matrix", bb_set_world_matrix, NULL, NULL},
     {NMO_GUID_INIT(0x41236987, 0xa54a87a6), "Scale", bb_scale, NULL, NULL},
     {NMO_GUID_INIT(0x9d9d9d98, 0x7e7a7f75), "Set Parent", bb_set_parent, NULL, NULL},
