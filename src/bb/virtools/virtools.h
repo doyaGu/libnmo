@@ -40,6 +40,7 @@ nmo_status_t eng_register_materials(nmo_engine_t *engine);
 nmo_status_t eng_register_visuals(nmo_engine_t *engine);
 nmo_status_t eng_register_addons(nmo_engine_t *engine);
 nmo_status_t eng_register_3dtransfo(nmo_engine_t *engine);
+nmo_status_t eng_register_move_to(nmo_engine_t *engine);
 nmo_status_t eng_register_collisions(nmo_engine_t *engine);
 
 #endif /* NMO_BB_VIRTOOLS_INTERNAL_H */

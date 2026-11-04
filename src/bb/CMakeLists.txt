@@ -11,6 +11,7 @@
 set(NMO_BB_VIRTOOLS_SOURCES
     virtools/virtools.c
     virtools/3dtransfo.c
+    virtools/move_to.c
     virtools/addons.c
     virtools/cameras.c
     virtools/characters.c

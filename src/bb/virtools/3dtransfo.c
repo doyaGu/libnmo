@@ -524,5 +524,6 @@ static const nmo_engine_block_desc_t eng_3dtransfo_blocks[] = {
 
 nmo_status_t eng_register_3dtransfo(nmo_engine_t *engine)
 {
-    return ENG_REGISTER_BLOCKS(engine, eng_3dtransfo_blocks);
+    nmo_status_t status = ENG_REGISTER_BLOCKS(engine, eng_3dtransfo_blocks);
+    return status == NMO_OK ? eng_register_move_to(engine) : status;
 }
