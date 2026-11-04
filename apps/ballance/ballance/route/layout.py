@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ..core.geometry import HEADINGS, Heading, Point, across, at, back_of, turn_of
+from ..core.obj import Mesh
 from ..game.measures import (BALLOON_BELOW_ROAD, BALLOON_REACH, CHECKPOINT_GAP,
                              CHECKPOINT_OPENING, FUNNEL, ROAD_ABOVE_MARKER, START_GAP,
                              START_OPENING, SWITCH_RAIL_ABOVE)
@@ -19,6 +20,10 @@ from ..kit.floors import NARROW, RISE, Floors
 from ..kit.pieces import funnel
 from ..kit.rails import Rails, Ring
 from .pieces import lay_piece
+from .templates import expand
+from .identity import Origin
+from .ports import Port
+from .modules import MODULE_FLOORS
 
 
 @dataclass
@@ -40,6 +45,7 @@ class Track:
     # branch, and what the branch starts from ("area" or "node")
     forks: list[tuple] = field(default_factory=list)
     step: int | None = None  # the last Part laid on it
+    free_port: Port | None = None
 
 
 @dataclass
@@ -51,6 +57,7 @@ class Sector:
     floors: list[Floors] = field(default_factory=list)
     extras: list[tuple] = field(default_factory=list)
     rails: Rails = field(default_factory=Rails)
+    decoration: Mesh = field(default_factory=Mesh)
     railings: list[list[tuple[float, float, float]]] = field(default_factory=list)
 
     def grid(self, origin: Point) -> Floors:
@@ -79,17 +86,20 @@ class Part:
     module_floors: list[tuple] = field(default_factory=list)
     elements: list[tuple] = field(default_factory=list)
     modules: list[tuple] = field(default_factory=list)
+    pillars: list[list[float]] = field(default_factory=list)
     segments: list[tuple[Ring, Ring]] = field(default_factory=list)
     railings: list[list[tuple[float, float, float]]] = field(default_factory=list)
     marks: list[tuple[str, list[float], float]] = field(default_factory=list)
     # where it left the track: point, height of the floor's inside, heading
     end: tuple[Point, float, Heading] | None = None
+    origin: Origin | None = None
 
 
 class Layout:
     """A route laid out."""
 
     def __init__(self, route: dict) -> None:
+        self.mechanism_settings = route.get('mechanisms', {})
         start = route.get("start", {})
         self.start: Point = (float(start.get("x", 0.0)), float(start.get("z", 0.0)))
         self.heading: Heading = HEADINGS[start.get("heading", "-x")]
@@ -112,6 +122,11 @@ class Layout:
         self.warnings: list[str] = []
         self.floors: Floors | None = None  # the grid the track is on
         self.parts: list[Part] = []  # what each piece laid, in turn
+        self.connections = []
+        self.transitions = []
+        self.scenery_bindings = []
+        self.platforms = []
+        self.polygon_nodes = {}
         self._claimed: dict[str, int] = {}
         # named areas, for branches to come back to: grid, height, step, the
         # sides no track leaves by (each its middle and the way out), and the
@@ -122,7 +137,12 @@ class Layout:
         self.switches: list[str] = []  # the switches' names
         self._waiting: dict[str, list[tuple]] = {}  # branches to areas not yet laid
         self._named: dict[str, tuple] = {}  # areas named by the piece being laid
-        self._lay(route["sectors"])
+        self._lay(expand(route))
+        # Module columns have their own placement, so a shaft can move
+        # without moving the playable housing and its physics together.
+        self.supports = [(floor.name, sector, list(position), turn)
+                         for kind, sector, position, turn in self.module_floors
+                         for floor in MODULE_FLOORS[kind] if floor.support]
 
     def _lay(self, sectors: list[list[dict]]) -> None:
         d = self.heading
@@ -145,18 +165,29 @@ class Layout:
                 start.marks.append(("Floor_Start", [marker[0], self.marker_y, marker[1]],
                                     turn_of(d)))
             for number, piece in enumerate(pieces, start=1):
-                lay_piece(self, index, sector, piece, track)
-                what = piece.get("module", next(iter(piece)))
-                self._claim(index, what, sector, track).index = number
+                try:
+                    lay_piece(self, index, sector, piece, track)
+                except ValueError as error:
+                    raise ValueError(f"sector {index}, piece {number} "
+                                     f"[{piece.origin.entity_id} at {piece.origin.pointer}]: {error}") from error
+                what = piece.get("module", next(key for key in piece if key != 'id'))
+                claimed = self._claim(index, what, sector, track)
+                claimed.index, claimed.origin = number, piece.origin
                 self._branch(index, sector, track, number)
             if self._waiting:
                 names = ", ".join(sorted(self._waiting))
                 raise ValueError(f"sector {index} has branches to no area of its own named {names}")
+            for name, entries in self.polygon_nodes.items():
+                unused = [key for key,value in entries.items() if value["sector"]==index and not value["used"]]
+                if unused:
+                    raise ValueError(f"platform {name} has unconnected ports: {unused}")
             for name in self.switches:
                 if self.nodes[name][3]:
                     raise ValueError(f"no branch brings a stone ball to the switch {name}")
             if track.width != NARROW or track.run is not None:
                 raise ValueError(f"sector {index} must end on a narrow road")
+            from .freeform import prepare_grid
+            prepare_grid(self, sector, track)
             p, d = track.p, track.d
             edge = track.h + RISE
             self.open(self.floors, p, d)
@@ -183,7 +214,7 @@ class Layout:
         track.step = part.step
         self.parts.append(part)
         seen = self._claimed
-        for name in ("elements", "modules", "module_floors"):
+        for name in ("elements", "modules", "module_floors", "pillars"):
             items = getattr(self, name)
             getattr(part, name).extend(items[seen.get(name, 0):])
             seen[name] = len(items)
@@ -238,7 +269,8 @@ class Layout:
         for target, fork in waiting:
             # a branch the ball takes leaves by the point the piece is left by
             self._waiting.setdefault(target, []).append(
-                (sector_index, sector, number, fork, track.step, len(self.points) - 1))
+                (sector_index, sector, number, fork, track.step,
+                 len(self.points)-fork[6]["main_tail"] if len(fork)>6 and fork[4].get("take") else len(self.points)-1))
         for name in [name for name in self._waiting if name in self.nodes]:
             for waiting in self._waiting.pop(name):
                 self._lay_branch(*waiting)
@@ -255,7 +287,8 @@ class Layout:
         from the area it leaves (whose point there is leave) to that one: the
         branch's points stand for the track's, and the ball it ends as goes
         on (the track between changes none)."""
-        p, d, h, floors, branch, floor = fork
+        p, d, h, floors, branch, floor = fork[:6]
+        attachment = fork[6] if len(fork)>6 else None
         route, target, visit = branch.get("route"), branch.get("to"), branch.get("visit", False)
         take = branch.get("take", False)
         if not route:
@@ -269,19 +302,33 @@ class Layout:
             raise ValueError("a stone ball is pushed down a branch to a switch, which the ball "
                              "neither visits nor takes")
         main_floors, ball = self.floors, self.last_ball
-        way_out = self.points.pop() if visit else None
+        resume = None
+        if visit and attachment:
+            count = attachment['main_tail']
+            resume = self.points[-count:]
+            del self.points[-count:]
+        way_out = self.points.pop() if visit and not attachment else None
         mark = len(self.points)
+        if (visit or take) and attachment:
+            self.points.extend(attachment['approach'])
         self.floors = floors
         t = Track(p, d, h, floor=floor, step=node)
+        if attachment:
+            t.free_port = attachment["port"]
+            t.width = t.free_port.section.width
         self.points.append(list(p))
         for k, piece in enumerate(route, start=1):
-            lay_piece(self, sector_index, sector, piece, t)
-            what = piece.get("module", next(iter(piece)))
+            try:
+                lay_piece(self, sector_index, sector, piece, t)
+            except ValueError as error:
+                raise ValueError(f'{piece.origin.entity_id} at {piece.origin.pointer}: {error}') from error
+            what = piece.get("module", next(key for key in piece if key != 'id'))
             part = self._claim(sector_index, what, sector, t)
             part.index, part.branch = number, k
+            part.origin = piece.origin
             self._branch(sector_index, sector, t, number)
         if target:
-            self._join(target, t, sector)
+            self._join(target, t, sector, branch.get("to_port"))
             self.parts[t.step].joins = self.nodes[target][2]
         elif t.run is not None or t.floor not in ("road", "wide", "area"):
             raise ValueError("a branch that comes back to no area ends on a road or an area")
@@ -289,7 +336,7 @@ class Layout:
             if t.floor == "area":
                 self.points.pop()  # its far side is shut: the ball turns in its middle
             there = [point[:2] for point in self.points[mark:]]
-            self.points += there[-2::-1] + [way_out]
+            self.points += there[-2::-1] + (resume if resume is not None else [way_out])
         elif take:
             taken = self.points[mark:]
             del self.points[mark:]
@@ -299,7 +346,28 @@ class Layout:
             self.last_ball = ball
         self.floors = main_floors
 
-    def _join(self, name: str, t: Track, sector: Sector) -> None:
+    def _join(self, name: str, t: Track, sector: Sector, port_name=None) -> None:
+        if name in self.polygon_nodes:
+            from dataclasses import replace
+            from . import ports
+            selected = self.polygon_nodes[name].get(port_name)
+            if selected is None or selected['used']:
+                raise ValueError(f'branch to {name} needs an unused to_port')
+            outward = selected['port']
+            incoming = replace(outward,heading=back_of(outward.heading))
+            self.connections.append(ports.connect(ports.incoming(self,t),incoming))
+            if t.run is not None:
+                sector.rails.runs.append(t.run)
+                t.run = None
+            elif t.free_port is None:
+                self.open(self.floors,t.p,t.d,t.width)
+            selected['used'] = True
+            self.points.extend(selected['approach'][-2::-1])
+            return
+        if port_name is not None:
+            raise ValueError('to_port is only valid for a named polygon platform')
+        from .freeform import prepare_grid
+        prepare_grid(self, sector, t)
         floors, h, _, sides, _ = self.nodes[name]
         for side in sides:
             q, out = side
@@ -343,8 +411,31 @@ class Layout:
             (x, z), h, d = part.end
             index = f"{part.index}.{part.branch}" if part.branch else part.index or ""
             lines.append(f"{part.sector:>6} {index:>5} {part.what:<10} {x:8.2f} "
-                         f"{z:8.2f} {h:8.2f} {names.get(d, '')}")
+                         f"{z:8.2f} {h:8.2f} {names.get(d, f'{turn_of(d):.1f}deg')}")
         return "\n".join(lines) + "\n"
+
+    def source_map(self) -> dict:
+        """Route entities and actual laid-out adjacency, independent of NMO names.
+
+        Sector start/end IDs remain positional until sectors have authored IDs.
+        Meshes are still batched per sector; this map does not claim face ownership.
+        """
+        ids = {p.step: p.origin.entity_id if p.origin else f'sector/{p.sector}/{p.what}'
+               for p in self.parts}
+        return {'schema_version': 1, 'source': 'route.json', 'entities': [
+            {'id': ids[p.step], 'kind': p.what, 'sector': p.sector,
+             'source': p.origin.data() if p.origin else None,
+             'after': ids.get(p.after), 'joins': ids.get(p.joins),
+             'end': {'position': [p.end[0][0], p.end[1], p.end[0][1]], 'heading': p.end[2]}}
+            for p in self.parts]}
+
+    def connection_report(self) -> dict:
+        return {'schema_version': 1, 'datum': 'route V bottom; rail centres are ABOVE_V higher',
+                'scope': 'Free paths, polygon mouths and standard native entry adapters. '
+                         'Native module interiors, beam overlaps and ballistic transfers retain measured rules. '
+                         'Checks require position, horizontal heading and section continuity; slope changes are allowed.',
+                'connections': [c.data() for c in self.connections], 'transitions': self.transitions,
+                'platforms': self.platforms}
 
     def warn(self, message: str) -> None:
         self.warnings.append(message)

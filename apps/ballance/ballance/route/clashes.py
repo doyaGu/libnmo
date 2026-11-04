@@ -17,16 +17,15 @@ import math
 from pathlib import Path
 
 from ..core.obj import Box, Mesh
-from ..game.measures import CLASH_HEADROOM, CLASH_OVERLAP, CLASH_RAIL_ROOM, CLASH_RAIL_STEP
+from ..game.measures import BALL_RADIUS, CLASH_HEADROOM, CLASH_OVERLAP, CLASH_RAIL_ROOM, CLASH_RAIL_STEP
 from ..kit.floors import CELL, RISE, WALL
 from ..kit.railings import RADIUS, centre_line
-from ..kit.rails import GAUGE, TUBE
 from .assets import Assets
 from .layout import Layout, Part
 from .modules import MODULE_FLOORS
 
 # Pieces the ball flies along, not rolling on a floor.
-FLOWN = ("rail", "rail_turn", "fall")
+FLOWN = ("rail", "rail_turn", "rail_path", "fall")
 # Elements the ball passes through or that are not in its way, and the
 # sacks, which swing into it on purpose (over a road, or under a beam's crest
 # into the beam crossing below).
@@ -60,7 +59,7 @@ def _room(box: Box, top: float | None = None) -> Box:
     return (x0, x1, y0, (y1 if top is None else top) + CLASH_HEADROOM, z0, z1)
 
 
-def _boxes(part: Part, assets: Assets) -> tuple[list[Box], list[Box]]:
+def part_boxes(part: Part, assets: Assets) -> tuple[list[Box], list[Box]]:
     """What a part takes up, and the room the ball rolls through on it."""
     solid: list[Box] = []
     room: list[Box] = []
@@ -90,6 +89,8 @@ def _boxes(part: Part, assets: Assets) -> tuple[list[Box], list[Box]]:
             room.append(_room(box))
     for kind, _, position, turn in part.module_floors:
         for floor in MODULE_FLOORS[kind]:
+            if floor.support:
+                continue  # independently placed and checked by scenery.fit
             box = _placed(assets.out / assets.mesh(floor.name), position, turn)
             if box:
                 solid.append(box)
@@ -113,21 +114,44 @@ def _boxes(part: Part, assets: Assets) -> tuple[list[Box], list[Box]]:
             solid.append((min(a[0], b[0]) - RADIUS, max(a[0], b[0]) + RADIUS,
                           min(a[1], b[1]) - RADIUS, max(a[1], b[1]) + RADIUS,
                           min(a[2], b[2]) - RADIUS, max(a[2], b[2]) + RADIUS))
-    reach = GAUGE / 2 + TUBE
-    for a, b in part.segments:
+    rails, clearance = rail_boxes(part.segments)
+    solid.extend(rails)
+    room.extend(clearance)
+    return solid, room
+
+
+def rail_boxes(segments):
+    """Rail solids and the swept space of a ball above each segment."""
+    solid, room = [], []
+    for a, b in segments:
+        reach = max(a.gauge / 2 + a.radius, b.gauge / 2 + b.radius)
+        bank_height = max(abs(math.sin(math.radians(r.bank))) * r.gauge / 2
+                          for r in (a, b))
+        tube = max(a.radius, b.radius)
         # a sloping rail a few units at a time
         steps = max(1, math.ceil(math.dist((a.x, a.z), (b.x, b.z)) / CLASH_RAIL_STEP))
         for k in range(steps):
             p, q = ([a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t]
                     for t in (k / steps, (k + 1) / steps))
             # the tubes reach across the rail, not along it
-            rx = reach if abs(b.z - a.z) > 1e-6 else TUBE
-            rz = reach if abs(b.x - a.x) > 1e-6 else TUBE
-            box = (min(p[0], q[0]) - rx, max(p[0], q[0]) + rx, min(p[1], q[1]) - TUBE,
-                   max(p[1], q[1]) + TUBE, min(p[2], q[2]) - rz, max(p[2], q[2]) + rz)
+            rx = reach if abs(b.z - a.z) > 1e-6 else tube
+            rz = reach if abs(b.x - a.x) > 1e-6 else tube
+            box = (min(p[0], q[0]) - rx, max(p[0], q[0]) + rx,
+                   min(p[1], q[1]) - tube - bank_height,
+                   max(p[1], q[1]) + tube + bank_height,
+                   min(p[2], q[2]) - rz, max(p[2], q[2]) + rz)
             solid.append(box)
-            room.append((box[0], box[1], box[2], max(p[1], q[1]) + CLASH_RAIL_ROOM,
-                         box[4], box[5]))
+            beam = a.gauge == b.gauge == 0
+            # On a single beam the ball sits on the tube, rather than
+            # between two tubes. Its top reaches radius + diameter above
+            # the centre, and its sides extend beyond the thin beam.
+            clearance = max(CLASH_RAIL_ROOM, tube + 2 * BALL_RADIUS + .15) if beam else CLASH_RAIL_ROOM
+            # The ball overhangs a tube along the track as well as across
+            # it, including at an endpoint entering the next piece.
+            room_x, room_z = max(rx, BALL_RADIUS), max(rz, BALL_RADIUS)
+            room.append((min(p[0], q[0]) - room_x, max(p[0], q[0]) + room_x, box[2],
+                         max(p[1], q[1]) + bank_height + clearance,
+                         min(p[2], q[2]) - room_z, max(p[2], q[2]) + room_z))
     return solid, room
 
 
@@ -171,7 +195,7 @@ def _neighbours(parts: list[Part], a: Part, b: Part) -> bool:
 
 def clashes(layout: Layout, assets: Assets) -> list[str]:
     """What is in the ball's way, one line for each pair of pieces."""
-    boxes = [(part, *_boxes(part, assets)) for part in layout.parts]
+    boxes = [(part, *part_boxes(part, assets)) for part in layout.parts]
     found = []
     for part, solid, _ in boxes:
         for other, _, room in boxes:

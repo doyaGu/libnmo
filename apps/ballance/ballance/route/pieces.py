@@ -48,7 +48,7 @@ from ..game.measures import (ARMS_ABOVE, ARMS_BRIDGE, ARMS_LENGTH, ARMS_MODULE, 
 from ..kit.floors import CELL, NARROW, RISE, WALL
 from ..kit.pieces import block, channel, funnel, pad, strip
 from ..kit.railings import OUT
-from ..kit.rails import ABOVE_V, BEND_RADIUS, BEND_STEP, Beam, Ring, bend
+from ..kit.rails import ABOVE_V, BEND_RADIUS, BEND_STEP, GAUGE, Beam, Ring, bend
 from .modules import MODULE_FLOORS, MODULES, NEEDS_BALL, module_layout
 
 if TYPE_CHECKING:
@@ -128,7 +128,8 @@ def lay_run(layout: Layout, sector: int, piece: dict, track: Track, length: floa
         u = k / steps
         x, z = at(p, d, length * u)
         y = h - drop * u + hump * (1 - math.cos(2 * math.pi * u)) / 2
-        track.run.append(Ring(x, y + ABOVE_V, z, d[0], d[1]))
+        track.run.append(Ring(x, y + ABOVE_V, z, d[0], d[1],
+                              gauge=0 if isinstance(track.run, Beam) else GAUGE))
     if hump:
         x, z = at(p, d, length / 2)
         crest = h - drop / 2 + hump + ABOVE_V
@@ -189,25 +190,28 @@ def lay_beam(layout: Layout, sector: int, part: Sector, piece: dict, track: Trac
         back = at(track.p, track.d, -BEAM_JOIN)
         track.h -= BEAM_BELOW
         track.run = Beam([Ring(back[0], height_back(track.run, BEAM_JOIN) - BEAM_BELOW, back[1],
-                               track.d[0], track.d[1]),
-                          Ring(track.p[0], track.h + ABOVE_V, track.p[1], track.d[0], track.d[1])])
+                              track.d[0], track.d[1], gauge=0),
+                          Ring(track.p[0], track.h + ABOVE_V, track.p[1], track.d[0], track.d[1], gauge=0)])
     lay_run(layout, sector, piece, track, float(piece["beam"]))
     track.floor = "beam"
 
 
 def lay_beam_turn(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> None:
     """{"beam_turn": "left" or "right"}: Level_12's turn at a beam's end
-    onto a beam beside it heading back, BEAM_TURN_GAP aside: a rail from
+    onto a beam beside it heading back, gap (default BEAM_TURN_GAP) aside: a rail from
     BEAM_TURN_RUN back over the beam's end, BEAM_BELOW higher, round half a
     circle and as far back over the next beam's start, level."""
     if not isinstance(track.run, Beam):
         raise ValueError("a beam_turn turns a beam; a rail turns through rail_turn")
+    gap=piece.get('gap',BEAM_TURN_GAP)
+    if isinstance(gap,bool) or not isinstance(gap,(int,float)) or not math.isfinite(gap) or not BEAM_TURN_GAP<=gap<=80:
+        raise ValueError('beam_turn gap must be within 8..80')
     sign = 1 if piece["beam_turn"] == "right" else -1
     side = side_of(track.d, piece["beam_turn"])
     p, d = track.p, track.d
     part.rails.runs.append(track.run)
     y = track.h + ABOVE_V + BEAM_BELOW
-    radius = BEAM_TURN_GAP / 2
+    radius = gap / 2
     centre = at(p, d, 0.0, sign * radius)
     start = at(p, d, -BEAM_TURN_RUN)
     rings = [Ring(start[0], height_back(track.run, BEAM_TURN_RUN) + BEAM_BELOW, start[1],
@@ -220,13 +224,13 @@ def lay_beam_turn(layout: Layout, sector: int, part: Sector, piece: dict, track:
         z = centre[1] - side[1] * radius * c + d[1] * radius * s
         rings.append(Ring(x, y, z, d[0] * c + side[0] * s, d[1] * c + side[1] * s))
     back = back_of(d)
-    there = at(p, d, 0.0, sign * BEAM_TURN_GAP)
+    there = at(p, d, 0.0, sign * gap)
     end = at(there, back, BEAM_TURN_RUN)
     rings.append(Ring(end[0], y, end[1], back[0], back[1]))
     part.rails.runs.append(rings)
     layout.points += [[r.x, r.z] for r in rings[1:-1:3]] + [list(there)]
     track.p, track.d = there, back
-    track.run = Beam([Ring(there[0], track.h + ABOVE_V, there[1], back[0], back[1])])
+    track.run = Beam([Ring(there[0], track.h + ABOVE_V, there[1], back[0], back[1], gauge=0)])
     track.floor = "beam"
 
 
@@ -400,9 +404,7 @@ def lay_climb(layout: Layout, sector: int, p: Point, d: Heading, top: float
               ) -> tuple[Point, float]:
     """Level_06's logs climbing with fans from a log's end p, its top at top
     (see CLIMB_* in ballance.game.measures); the last log's end and top."""
-    from ..game.resources import resource
-    description = resource("FanTower")
-    if layout.last_ball not in description["needs_ball"]:
+    if layout.last_ball != "Paper":
         layout.warn("only a paper ball rides the climbing logs' fans; the ball reaches them "
                     f"as {layout.last_ball.lower()}")
     # the logs' Z back along the track
@@ -489,9 +491,7 @@ def lay_fan(layout: Layout, sector: int, part: Sector, piece: dict, track: Track
     rise = float(piece["fan"])
     if not 0 < rise <= FAN_REACH:
         raise ValueError(f"a fan lifts the ball at most {FAN_REACH}")
-    from ..game.resources import resource
-    description = resource("FanTower")
-    if layout.last_ball not in description["needs_ball"]:
+    if layout.last_ball != "Paper":
         layout.warn("only a paper ball rides a fan's wind; the ball reaches it as "
                     f"{layout.last_ball.lower()}")
     end, d = track.run[-1], track.d
@@ -1330,6 +1330,25 @@ PIECES: dict[str, Callable] = {
 
 def lay_piece(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> None:
     """Lays one piece of sector number sector, and the elements on it."""
+    from . import freeform
+    kinds = [key for key in (*PIECES, *freeform.KINDS) if key in piece]
+    if len(kinds) != 1:
+        raise ValueError("each route piece needs exactly one piece kind")
+    if kinds[0] in freeform.KINDS:
+        freeform.lay(layout, sector, part, piece, track)
+        return
+    if track.free_port is None and not isinstance(track.run, Beam):
+        # Standard measured rail/floor joins share the same port contract.
+        # Wide docks, drops and beam overlaps retain their native adapters.
+        from . import ports
+        if (track.run is not None or (track.width == NARROW and track.floor in
+                ('road', 'turn', 'module', 'trafo'))) and kinds[0] in (
+                    'road', 'turn', 'trafo', 'rail', 'rail_turn', 'module'):
+            before = ports.incoming(layout, track)
+            after = ports.entry(piece, track, ports.Section(
+                'rail' if kinds[0] in ('rail', 'rail_turn') else 'floor'))
+            layout.connections.append(ports.connect(before, after, grid=True))
+    freeform.prepare_grid(layout, part, track, piece)
     floors = layout.floors
     start, heading = track.p, track.d
     rail = "rail" in piece or "rail_turn" in piece
