@@ -1,0 +1,5768 @@
+{
+  "schema_version": 1,
+  "resources": {
+    "FanTower": {
+      "frame": "Native P_Modul_18_05 frame in Level_04; +Y up, +Z incoming rail direction.",
+      "parts": [
+        {
+          "name": "Floor_FanTower",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_01",
+            "Sound_HitID_01",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -3.6,
+              3.6,
+              2.41,
+              12.38,
+              -3.6,
+              -3.05
+            ],
+            [
+              -3.6,
+              3.6,
+              2.41,
+              12.38,
+              3.05,
+              3.6
+            ],
+            [
+              -3.6,
+              -3.05,
+              2.41,
+              12.38,
+              -3.05,
+              3.05
+            ],
+            [
+              3.05,
+              3.6,
+              2.41,
+              12.38,
+              -3.05,
+              3.05
+            ],
+            [
+              -17.9,
+              -12.9,
+              -4.89,
+              0.11,
+              -2.02,
+              2.98
+            ]
+          ],
+          "extract": {
+            "method": "clip-and-close",
+            "file": "3D Entities/Level/Level_04.NMO",
+            "objects": [
+              "A04_Floor_01"
+            ],
+            "frame_object": "P_Modul_18_05",
+            "box": [
+              -17.95,
+              18.3,
+              -6.0,
+              14.0,
+              -13.2,
+              18.1
+            ],
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        },
+        {
+          "name": "Rail_FanTower",
+          "role": "surface",
+          "groups": [
+            "Phys_FloorRails",
+            "Sound_RollID_03",
+            "Sound_HitID_03"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -1.9,
+              2.5,
+              -4.7,
+              21.0,
+              -3.6,
+              -3.0
+            ]
+          ],
+          "extract": {
+            "method": "contained-faces",
+            "file": "3D Entities/Level/Level_04.NMO",
+            "objects": [
+              "A04_Rail_03"
+            ],
+            "frame_object": "P_Modul_18_05",
+            "box": [
+              -3.6,
+              3.6,
+              -8.0,
+              22.0,
+              -6.0,
+              3.6
+            ],
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        },
+        {
+          "name": "Railing_FanTower",
+          "role": "surface",
+          "groups": [
+            "Phys_FloorRails",
+            "Sound_RollID_03",
+            "Sound_HitID_03"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -15.0,
+              17.5,
+              7.5,
+              10.0,
+              -13.6,
+              -13.1
+            ]
+          ],
+          "extract": {
+            "method": "contained-faces",
+            "file": "3D Entities/Level/Level_04.NMO",
+            "objects": [
+              "A04_Rail_03"
+            ],
+            "frame_object": "P_Modul_18_05",
+            "box": [
+              -16.0,
+              19.0,
+              2.4,
+              16.0,
+              -14.0,
+              -2.9
+            ],
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        },
+        {
+          "name": "Clamps_FanTower",
+          "role": "decoration",
+          "groups": [],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -15.0,
+              -14.0,
+              6.1,
+              6.6,
+              -9.3,
+              -7.5
+            ]
+          ],
+          "extract": {
+            "method": "contained-faces",
+            "file": "3D Entities/Level/Level_04.NMO",
+            "objects": [
+              "A05_Schelle"
+            ],
+            "frame_object": "P_Modul_18_05",
+            "box": [
+              -16.0,
+              19.0,
+              2.4,
+              16.0,
+              -14.0,
+              -2.9
+            ],
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        },
+        {
+          "name": "FanTower_Cap",
+          "role": "decoration",
+          "groups": [],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -3.5,
+              3.7,
+              21.1,
+              29.6,
+              -3.8,
+              3.6
+            ]
+          ],
+          "extract": {
+            "method": "contained-faces",
+            "file": "3D Entities/Level/Level_04.NMO",
+            "objects": [
+              "A04_Towers"
+            ],
+            "frame_object": "P_Modul_18_05",
+            "box": [
+              -4.5,
+              4.5,
+              15.0,
+              31.0,
+              -5.0,
+              4.5
+            ],
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        },
+        {
+          "name": "FanTower_Pillar",
+          "role": "support",
+          "groups": [],
+          "visible": true,
+          "support": true,
+          "fallback_boxes": [
+            [
+              -3.34,
+              -0.62,
+              -325.2,
+              -1.62,
+              1.14,
+              3.86
+            ]
+          ],
+          "extract": {
+            "method": "contained-faces",
+            "file": "3D Entities/Level/Level_04.NMO",
+            "objects": [
+              "A04_Floor_Columns_Top",
+              "A04_Floor_Colums_Bottom"
+            ],
+            "frame_object": "P_Modul_18_05",
+            "box": [
+              -3.5,
+              -0.5,
+              -400.0,
+              0.0,
+              1.0,
+              4.0
+            ],
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        },
+        {
+          "name": "FanTower_Hidden",
+          "role": "collision",
+          "groups": [
+            "Phys_Floors"
+          ],
+          "visible": false,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -3.5,
+              3.7,
+              29.0,
+              29.1,
+              -3.8,
+              3.6
+            ]
+          ],
+          "extract": {
+            "method": "contained-faces",
+            "file": "3D Entities/Level/Level_04.NMO",
+            "objects": [
+              "A04_invisibleColl1",
+              "A04_invisibleColl2"
+            ],
+            "frame_object": "P_Modul_18_05",
+            "box": [
+              -4.5,
+              4.5,
+              15.0,
+              31.0,
+              -5.0,
+              4.5
+            ],
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      ],
+      "ports": {
+        "entry": {
+          "kind": "rail",
+          "datum": "tube centre",
+          "position": [
+            0.283,
+            -4.462,
+            -3.655
+          ],
+          "direction": [
+            0,
+            0,
+            1
+          ],
+          "gauge": 3.8
+        },
+        "exit": {
+          "kind": "floor",
+          "datum": "flat surface",
+          "position": [
+            -17.9,
+            0.11,
+            0.48
+          ],
+          "direction": [
+            -1,
+            0,
+            0
+          ],
+          "width": 5
+        }
+      },
+      "needs_ball": [
+        "Paper"
+      ],
+      "placement": {
+        "approach_run": 15.0,
+        "module_floor": "FanTower",
+        "route": {
+          "tower": true
+        },
+        "parameters": [
+          "elements"
+        ]
+      },
+      "autoplay": {
+        "lift": 17.07,
+        "path": [
+          [
+            -4.6,
+            -2.3
+          ],
+          [
+            -4.6,
+            6.7
+          ],
+          [
+            -0.6,
+            10.7
+          ],
+          [
+            -7.6,
+            10.7
+          ],
+          [
+            -10.6,
+            7.7
+          ],
+          [
+            -10.6,
+            -11.3
+          ],
+          [
+            15.4,
+            -11.3
+          ],
+          [
+            15.4,
+            12.7
+          ],
+          [
+            12.4,
+            15.7
+          ],
+          [
+            -13.6,
+            15.7
+          ],
+          [
+            -15.6,
+            13.7
+          ],
+          [
+            -15.6,
+            0.5
+          ]
+        ],
+        "back": 6.0,
+        "back_frames": 40,
+        "in_frames": 60,
+        "past": 1.5,
+        "aside": 0.8,
+        "tries": 6,
+        "caught": 1.0
+      },
+      "runtime": {
+        "template": "3D Entities/PH/P_Modul_18.nmo",
+        "motion_recipe": "P_Modul_18",
+        "states": [
+          "inactive",
+          "ready",
+          "moving"
+        ],
+        "dependencies": [
+          "3D Entities/Levelinit.nmo"
+        ],
+        "limits": "The rotor and force field use the shared measured motion recipe; they are not physical-body observations."
+      },
+      "attachments": {
+        "FanTower_Pillar": {
+          "mode": "locked",
+          "optional": true,
+          "omit_setting": "scenery.omit_supports"
+        }
+      }
+    },
+    "Balloon": {
+      "frame": "Native PE_Balloon marker: +X points toward the approach road; native departure follows -X.",
+      "parts": [
+        {
+          "name": "PE_Balloon",
+          "role": "placement_marker",
+          "groups": [
+            "PE_Levelende"
+          ],
+          "visible": true,
+          "support": false,
+          "extract": {
+            "method": "mesh",
+            "file": "3D Entities/Level/Level_01.NMO",
+            "object": "PE_Balloon_01"
+          }
+        }
+      ],
+      "ports": {
+        "entry": {
+          "kind": "floor",
+          "datum": "flat surface",
+          "position": [
+            22.08,
+            0.01,
+            0
+          ],
+          "direction": [
+            -1,
+            0,
+            0
+          ],
+          "width": 5
+        }
+      },
+      "needs_ball": [
+        "Wood"
+      ],
+      "placement": {
+        "yaw_offset": 180
+      },
+      "attachments": {
+        "lamps": {
+          "offsets": [
+            [
+              -50.0,
+              32.0,
+              -10.0
+            ],
+            [
+              -50.0,
+              -32.0,
+              -10.0
+            ],
+            [
+              36.0,
+              26.0,
+              -14.1
+            ],
+            [
+              36.0,
+              -26.0,
+              -14.1
+            ]
+          ],
+          "mode": "nearby",
+          "frame": "back toward approach, right, up"
+        },
+        "poles": {
+          "offsets": [
+            [
+              -56.0,
+              45.5,
+              3.7
+            ],
+            [
+              -56.0,
+              -45.5,
+              3.7
+            ],
+            [
+              3.0,
+              30.5,
+              3.7
+            ],
+            [
+              3.0,
+              -30.5,
+              3.7
+            ],
+            [
+              52.0,
+              15.5,
+              3.7
+            ],
+            [
+              52.0,
+              -15.5,
+              3.7
+            ]
+          ],
+          "mode": "locked",
+          "pair_rule": "opposite symmetric sides when two are authored",
+          "override": "scenery.finish_poles"
+        }
+      },
+      "runtime": {
+        "template": "3D Entities/PH/PE_Balloon.nmo",
+        "dependencies": [
+          "3D Entities/Levelinit.nmo"
+        ],
+        "states": [
+          "parked",
+          "departing"
+        ],
+        "trigger": "Level_Finish",
+        "departure": {
+          "frame": "route forward, up, right (native -X is forward)",
+          "bounds": [
+            -22.0,
+            150.0,
+            -5.0,
+            22.0,
+            -20.0,
+            20.0
+          ],
+          "step": 5,
+          "basis": "Measured PH basket/bridge/balloons and a 31-second finish trace (~102 units travel, ~8 rise), enlarged to a conservative 150-unit visible departure corridor."
+        },
+        "limits": "Finite conservative departure reservation; not an unlimited-flight or UFO ending model."
+      }
+    },
+    "RotatingArm": {
+      "category": "mechanism",
+      "frame": "Native P_Modul_17 marker frame; +Y up. Measured route adapter supplies the approach and exit.",
+      "parts": [
+        {
+          "name": "P_Modul_17",
+          "role": "placement_marker",
+          "groups": [
+            "P_Modul_17"
+          ],
+          "visible": true,
+          "support": false,
+          "extract": {
+            "method": "mesh",
+            "file": "3D Entities/Level/Level_03.NMO",
+            "object": "P_Modul_17_01"
+          }
+        },
+        {
+          "name": "Floor_Modul_17",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_01",
+            "Sound_HitID_01",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -13.71,
+              -8.71,
+              -10.43,
+              -5.43,
+              11.35,
+              24.61
+            ],
+            [
+              -23.74,
+              13.8,
+              -10.43,
+              -5.43,
+              17.11,
+              22.11
+            ],
+            [
+              6.29,
+              11.29,
+              -10.43,
+              -5.43,
+              -5.39,
+              22.11
+            ],
+            [
+              -2.5,
+              2.5,
+              -9.0,
+              -4.1,
+              -2.5,
+              2.5
+            ]
+          ],
+          "extract": {
+            "method": "clip-and-close",
+            "file": "3D Entities/Level/Level_03.NMO",
+            "objects": [
+              "A04_Floor_01"
+            ],
+            "frame_object": "P_Modul_17_01",
+            "box": [
+              -24.0,
+              15.5,
+              -11.0,
+              -0.5,
+              -8.78,
+              24.62
+            ],
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "snap": [
+              [
+                11.21,
+                8.71,
+                13.71
+              ],
+              [
+                5.43,
+                6.13
+              ],
+              [
+                24.61
+              ]
+            ]
+          }
+        },
+        {
+          "name": "Floor_Modul_17_Far",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_01",
+            "Sound_HitID_01",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -13.71,
+              -8.71,
+              -10.43,
+              -5.43,
+              -8.72,
+              1.28
+            ]
+          ],
+          "extract": {
+            "method": "clip-and-close",
+            "file": "3D Entities/Level/Level_03.NMO",
+            "objects": [
+              "A04_Floor_02"
+            ],
+            "frame_object": "P_Modul_17_01",
+            "box": [
+              -13.8,
+              -8.6,
+              -11.0,
+              -0.5,
+              -8.78,
+              24.62
+            ],
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "snap": [
+              [
+                11.21,
+                8.71,
+                13.71
+              ],
+              [
+                5.43,
+                6.13
+              ],
+              [
+                8.72,
+                1.28
+              ]
+            ]
+          }
+        },
+        {
+          "name": "Floor_Stopper_17",
+          "role": "stopper",
+          "groups": [
+            "Phys_FloorStopper"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -13.71,
+              -8.71,
+              -6.43,
+              -5.93,
+              10.35,
+              11.35
+            ]
+          ],
+          "extract": {
+            "method": "clip-and-close",
+            "file": "3D Entities/Level/Level_03.NMO",
+            "objects": [
+              "A01_Floor_Stopper_01"
+            ],
+            "frame_object": "P_Modul_17_01",
+            "box": [
+              -24.0,
+              15.5,
+              -11.0,
+              -0.5,
+              -8.78,
+              24.62
+            ],
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      ],
+      "ports": {},
+      "needs_ball": [
+        "Stone",
+        "Wood"
+      ],
+      "placement": {
+        "module": "P_Modul_17",
+        "parameters": [
+          "count",
+          "side",
+          "name",
+          "elements"
+        ],
+        "count_range": [
+          1,
+          1
+        ]
+      },
+      "runtime": {
+        "template": "3D Entities/PH/P_Modul_17.nmo",
+        "dependencies": [
+          "3D Entities/Levelinit.nmo"
+        ],
+        "motion_recipe": "P_Modul_17",
+        "states": [
+          "inactive",
+          "ready",
+          "moving"
+        ],
+        "limits": "State-dependent bounds use the measured motion recipe, not a completion guarantee."
+      },
+      "attachments": {},
+      "ball_warning": "can't turn {kind}'s arm; a wood or stone ball does"
+    },
+    "Drawbridge": {
+      "category": "mechanism",
+      "frame": "Native P_Modul_25 marker frame; +Y up. Measured route adapter supplies the approach and exit.",
+      "parts": [
+        {
+          "name": "P_Modul_25",
+          "role": "placement_marker",
+          "groups": [
+            "P_Modul_25"
+          ],
+          "visible": true,
+          "support": false,
+          "extract": {
+            "method": "mesh",
+            "file": "3D Entities/Level/Level_02.NMO",
+            "object": "P_Modul_25_01"
+          }
+        },
+        {
+          "name": "Floor_Modul_25",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_01",
+            "Sound_HitID_01",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -15,
+              -10,
+              -5,
+              0,
+              -2.5,
+              2.5
+            ],
+            [
+              0,
+              5,
+              -5,
+              0,
+              -2.5,
+              2.5
+            ]
+          ],
+          "extract": {
+            "method": "clip-and-close",
+            "file": "3D Entities/Level/Level_03.NMO",
+            "objects": [
+              "A05_Floor_02"
+            ],
+            "frame_object": "P_Modul_25_03",
+            "box": [
+              -15.1,
+              5.1,
+              -5.1,
+              0.1,
+              -2.6,
+              2.6
+            ],
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "snap": [
+              [
+                5.0,
+                0.0,
+                10.0,
+                15.0
+              ],
+              [
+                0.0
+              ],
+              [
+                2.5
+              ]
+            ]
+          }
+        },
+        {
+          "name": "Floor_Stopper_25",
+          "role": "stopper",
+          "groups": [
+            "Phys_FloorStopper"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -10,
+              -9,
+              -1,
+              -0.5,
+              -2.5,
+              2.5
+            ]
+          ],
+          "extract": {
+            "method": "clip-and-close",
+            "file": "3D Entities/Level/Level_03.NMO",
+            "objects": [
+              "A01_Floor_Stopper_01"
+            ],
+            "frame_object": "P_Modul_25_03",
+            "box": [
+              -15.1,
+              5.1,
+              -5.1,
+              0.1,
+              -2.6,
+              2.6
+            ],
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      ],
+      "ports": {},
+      "needs_ball": [
+        "Paper",
+        "Stone",
+        "Wood"
+      ],
+      "placement": {
+        "module": "P_Modul_25",
+        "parameters": [
+          "count",
+          "side",
+          "name",
+          "elements"
+        ],
+        "count_range": [
+          1,
+          1
+        ]
+      },
+      "runtime": {
+        "template": "3D Entities/PH/P_Modul_25.nmo",
+        "dependencies": [
+          "3D Entities/Levelinit.nmo"
+        ],
+        "motion_recipe": "P_Modul_25",
+        "states": [
+          "inactive",
+          "ready",
+          "moving"
+        ],
+        "limits": "State-dependent bounds use the measured motion recipe, not a completion guarantee."
+      },
+      "attachments": {},
+      "variants": {
+        "standalone": {
+          "parts": [
+            "P_Modul_25",
+            "Floor_Modul_25",
+            "Floor_Stopper_25"
+          ]
+        },
+        "embedded": {
+          "parts": [
+            "P_Modul_25"
+          ],
+          "surface_owner_module": "P_Modul_17",
+          "basis": "The rotating-arm route adapter puts a bridge across its own far landing; it supplies the static surfaces."
+        }
+      }
+    },
+    "SwitchBridge": {
+      "category": "mechanism",
+      "frame": "Native P_Modul_37 marker frame; +Y up. Measured route adapter supplies the approach and exit.",
+      "parts": [
+        {
+          "name": "P_Modul_37",
+          "role": "placement_marker",
+          "groups": [
+            "P_Modul_37"
+          ],
+          "visible": true,
+          "support": false,
+          "extract": {
+            "method": "mesh",
+            "file": "3D Entities/Level/Level_03.NMO",
+            "object": "P_Modul_37_01"
+          }
+        },
+        {
+          "name": "Floor_Modul_37",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_01",
+            "Sound_HitID_01",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -16.27,
+              -11.27,
+              -5,
+              0,
+              -9.75,
+              -4.75
+            ],
+            [
+              -16.27,
+              -11.27,
+              -5,
+              0,
+              4.75,
+              9.75
+            ],
+            [
+              -1.27,
+              8.73,
+              -5,
+              0,
+              -2.5,
+              2.5
+            ]
+          ],
+          "extract": {
+            "method": "clip-and-close",
+            "file": "3D Entities/Level/Level_05.NMO",
+            "objects": [
+              "A02_Floor_02"
+            ],
+            "frame_object": "P_Modul_37_02",
+            "box": [
+              -16.3,
+              8.8,
+              -5.1,
+              0.1,
+              -9.8,
+              9.8
+            ],
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "snap": [
+              [
+                3.73,
+                1.27,
+                11.27,
+                16.27
+              ],
+              [
+                0.0
+              ],
+              [
+                [
+                  2.5,
+                  0.11
+                ],
+                4.75,
+                9.75
+              ]
+            ]
+          }
+        },
+        {
+          "name": "Floor_Stopper_37",
+          "role": "stopper",
+          "groups": [
+            "Phys_FloorStopper"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -16.27,
+              -11.27,
+              -1,
+              -0.5,
+              -4.75,
+              4.75
+            ]
+          ],
+          "extract": {
+            "method": "clip-and-close",
+            "file": "3D Entities/Level/Level_05.NMO",
+            "objects": [
+              "A01_Floor_Stopper"
+            ],
+            "frame_object": "P_Modul_37_02",
+            "box": [
+              -16.3,
+              3.8,
+              -5.1,
+              0.1,
+              -9.8,
+              9.8
+            ],
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      ],
+      "ports": {},
+      "needs_ball": [
+        "Paper",
+        "Stone",
+        "Wood"
+      ],
+      "placement": {
+        "module": "P_Modul_37",
+        "parameters": [
+          "count",
+          "side",
+          "name",
+          "elements"
+        ],
+        "count_range": [
+          1,
+          1
+        ]
+      },
+      "runtime": {
+        "template": "3D Entities/PH/P_Modul_37.nmo",
+        "dependencies": [
+          "3D Entities/Levelinit.nmo"
+        ],
+        "motion_recipe": "P_Modul_37",
+        "states": [
+          "inactive",
+          "ready",
+          "moving"
+        ],
+        "limits": "State-dependent bounds use the measured motion recipe, not a completion guarantee."
+      },
+      "attachments": {}
+    },
+    "TiltingSlab": {
+      "category": "mechanism",
+      "frame": "Native P_Modul_41 marker frame; +Y up. Measured route adapter supplies the approach and exit.",
+      "parts": [
+        {
+          "name": "P_Modul_41",
+          "role": "placement_marker",
+          "groups": [
+            "P_Modul_41"
+          ],
+          "visible": true,
+          "support": false,
+          "extract": {
+            "method": "mesh",
+            "file": "3D Entities/Level/Level_07.NMO",
+            "object": "P_Modul_41_01"
+          }
+        }
+      ],
+      "ports": {},
+      "needs_ball": [
+        "Paper"
+      ],
+      "placement": {
+        "module": "P_Modul_41",
+        "parameters": [
+          "count",
+          "side",
+          "name",
+          "elements"
+        ],
+        "count_range": [
+          2,
+          8
+        ]
+      },
+      "runtime": {
+        "template": "3D Entities/PH/P_Modul_41.nmo",
+        "dependencies": [
+          "3D Entities/Levelinit.nmo"
+        ],
+        "motion_recipe": "P_Modul_41",
+        "states": [
+          "inactive",
+          "ready",
+          "moving"
+        ],
+        "limits": "State-dependent bounds use the measured motion recipe, not a completion guarantee."
+      },
+      "attachments": {},
+      "ball_warning": "tips {kind}'s slabs; use paper for a stable crossing"
+    },
+    "Sack": {
+      "category": "mechanism",
+      "frame": "Native P_Modul_26 marker frame; +Y up. Measured route adapter supplies the approach and exit.",
+      "parts": [
+        {
+          "name": "P_Modul_26",
+          "role": "placement_marker",
+          "groups": [
+            "P_Modul_26"
+          ],
+          "visible": true,
+          "support": false,
+          "extract": {
+            "method": "mesh",
+            "file": "3D Entities/Level/Level_08.NMO",
+            "object": "P_Modul_26_01"
+          }
+        }
+      ],
+      "ports": {},
+      "needs_ball": [
+        "Paper",
+        "Stone",
+        "Wood"
+      ],
+      "placement": {
+        "module": "P_Modul_26",
+        "parameters": [
+          "count",
+          "side",
+          "name",
+          "elements"
+        ],
+        "count_range": [
+          1,
+          4
+        ]
+      },
+      "runtime": {
+        "template": "3D Entities/PH/P_Modul_26.nmo",
+        "dependencies": [
+          "3D Entities/Levelinit.nmo"
+        ],
+        "motion_recipe": "P_Modul_26",
+        "states": [
+          "inactive",
+          "ready",
+          "moving"
+        ],
+        "limits": "State-dependent bounds use the measured motion recipe, not a completion guarantee."
+      },
+      "attachments": {}
+    },
+    "Fan": {
+      "category": "mechanism",
+      "frame": "Native P_Modul_18 marker frame; +Y up. Measured route adapter supplies the approach and exit.",
+      "parts": [
+        {
+          "name": "P_Modul_18",
+          "role": "placement_marker",
+          "groups": [
+            "P_Modul_18"
+          ],
+          "visible": true,
+          "support": false,
+          "extract": {
+            "method": "mesh",
+            "file": "3D Entities/Level/Level_02.NMO",
+            "object": "P_Modul_18_01"
+          }
+        }
+      ],
+      "ports": {},
+      "needs_ball": [
+        "Paper"
+      ],
+      "placement": {
+        "element": "P_Modul_18",
+        "lift": -0.35
+      },
+      "runtime": {
+        "template": "3D Entities/PH/P_Modul_18.nmo",
+        "dependencies": [
+          "3D Entities/Levelinit.nmo"
+        ],
+        "motion_recipe": "P_Modul_18",
+        "states": [
+          "inactive",
+          "ready",
+          "moving"
+        ],
+        "limits": "State-dependent bounds use the measured motion recipe, not a completion guarantee."
+      },
+      "attachments": {}
+    },
+    "LanternTower": {
+      "category": "decoration",
+      "frame": "Common native origin at the top centre of the column/pole; +Y up.",
+      "parts": [
+        {
+          "name": "Pillar",
+          "role": "support",
+          "groups": [],
+          "visible": true,
+          "support": true,
+          "extract": {
+            "method": "decoration",
+            "file": "3D Entities/Level/Level_01.NMO",
+            "objects": [
+              "A01_Floor_Columns_Top",
+              "A01_Floor_Colums_Bottom"
+            ],
+            "point": [
+              31.8,
+              -167.7
+            ],
+            "reach": 3.0,
+            "on": null
+          }
+        },
+        {
+          "name": "Tower",
+          "role": "decoration",
+          "groups": [
+            "Phys_Floors"
+          ],
+          "visible": true,
+          "support": false,
+          "extract": {
+            "method": "decoration",
+            "file": "3D Entities/Level/Level_01.NMO",
+            "objects": [
+              "A01_Tower"
+            ],
+            "point": [
+              31.8,
+              -167.7
+            ],
+            "reach": 4.5,
+            "on": "Pillar"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "role": "lamp",
+        "mode": "nearby",
+        "authorable": true
+      },
+      "attachments": {
+        "assembly": {
+          "mode": "nearby",
+          "parts": [
+            "Tower",
+            "Pillar"
+          ]
+        }
+      },
+      "limits": "Columns must support their owning platform; lanterns move together with their column."
+    },
+    "Column": {
+      "category": "decoration",
+      "frame": "Common native origin at the top centre of the column/pole; +Y up.",
+      "parts": [
+        {
+          "name": "Pillar",
+          "role": "support",
+          "groups": [],
+          "visible": true,
+          "support": true,
+          "extract": {
+            "method": "decoration",
+            "file": "3D Entities/Level/Level_01.NMO",
+            "objects": [
+              "A01_Floor_Columns_Top",
+              "A01_Floor_Colums_Bottom"
+            ],
+            "point": [
+              31.8,
+              -167.7
+            ],
+            "reach": 3.0,
+            "on": null
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "role": "pillar",
+        "mode": "attached",
+        "authorable": true
+      },
+      "attachments": {
+        "assembly": {
+          "mode": "attached",
+          "parts": [
+            "Pillar"
+          ]
+        }
+      },
+      "limits": "Columns must support their owning platform; lanterns move together with their column."
+    },
+    "FinishPole": {
+      "category": "decoration",
+      "frame": "Common native origin at the top centre of the column/pole; +Y up.",
+      "parts": [
+        {
+          "name": "Stick",
+          "role": "decoration",
+          "groups": [],
+          "visible": true,
+          "support": false,
+          "extract": {
+            "method": "decoration",
+            "file": "3D Entities/Level/Level_01.NMO",
+            "objects": [
+              "A04_Stick_Top",
+              "A04_Stick_Bottom"
+            ],
+            "point": [
+              680.2,
+              -889.6
+            ],
+            "reach": 1.5,
+            "on": null
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "role": "pole",
+        "mode": "locked",
+        "authorable": false
+      },
+      "attachments": {
+        "assembly": {
+          "mode": "locked",
+          "parts": [
+            "Stick"
+          ]
+        }
+      },
+      "limits": "Finish poles belong to the balloon; author them through scenery.finish_poles."
+    },
+    "Pusher": {
+      "category": "mechanism",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "P_Modul_01",
+          "role": "placement_marker",
+          "groups": [
+            "P_Modul_01"
+          ],
+          "visible": true,
+          "support": false,
+          "extract": {
+            "method": "mesh",
+            "file": "3D Entities/Level/Level_01.NMO",
+            "object": "P_Modul_01_01"
+          }
+        },
+        {
+          "name": "Floor_Modul_01",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_01",
+            "Sound_HitID_01",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              0,
+              5,
+              -5,
+              0,
+              -24.35,
+              28.15
+            ],
+            [
+              -20,
+              0,
+              -7.5,
+              -2.5,
+              -22.5,
+              12.5
+            ]
+          ],
+          "extract": {
+            "method": "clip-and-close",
+            "objects": [
+              "A03_Floor_02"
+            ],
+            "frame_object": "P_Modul_01_01",
+            "box": [
+              -25.1,
+              30.1,
+              -10.0,
+              0.2,
+              -24.4,
+              28.2
+            ],
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "file": "3D Entities/Level/Level_01.NMO",
+            "snap": [
+              [
+                0.0,
+                2.5,
+                5.0
+              ],
+              [
+                0.0,
+                0.7
+              ],
+              [
+                28.15,
+                24.35
+              ]
+            ]
+          },
+          "placement_frame": "parent_module_floor"
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module": "P_Modul_01",
+        "parameters": [
+          "count",
+          "side",
+          "name",
+          "elements"
+        ],
+        "count_range": [
+          2,
+          2
+        ]
+      },
+      "attachments": {},
+      "runtime": {
+        "template": "3D Entities/PH/P_Modul_01.nmo",
+        "dependencies": [
+          "3D Entities/Levelinit.nmo"
+        ],
+        "states": [
+          "inactive",
+          "ready",
+          "moving"
+        ],
+        "motion_recipe": "P_Modul_01",
+        "limits": "Native per-body physicalization and unlimited joints; plate reach includes split state. Free bodies and unlimited sliders explicitly have no finite global envelope."
+      }
+    },
+    "Lift": {
+      "category": "mechanism",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "P_Modul_03",
+          "role": "placement_marker",
+          "groups": [
+            "P_Modul_03"
+          ],
+          "visible": true,
+          "support": false,
+          "extract": {
+            "method": "mesh",
+            "file": "3D Entities/Level/Level_07.NMO",
+            "object": "P_Modul_03_01"
+          }
+        },
+        {
+          "name": "Floor_Modul_03",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_01",
+            "Sound_HitID_01",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -30.94,
+              -15.94,
+              1.884,
+              6.884,
+              -7.5,
+              7.5
+            ],
+            [
+              -35.94,
+              -10.95,
+              1.884,
+              6.884,
+              -2.5,
+              2.5
+            ]
+          ],
+          "extract": {
+            "method": "clip-and-close",
+            "objects": [
+              "A05_Floor_03"
+            ],
+            "frame_object": "P_Modul_03_01",
+            "box": [
+              -36.0,
+              -10.9,
+              1.8,
+              7.0,
+              -7.7,
+              7.7
+            ],
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "file": "3D Entities/Level/Level_07.NMO",
+            "snap": [
+              [
+                10.95,
+                15.94,
+                20.94,
+                25.94,
+                30.94,
+                35.94
+              ],
+              [
+                1.884,
+                6.884
+              ],
+              [
+                [
+                  0.0,
+                  0.1
+                ],
+                [
+                  2.5,
+                  0.1
+                ],
+                [
+                  7.5,
+                  0.1
+                ]
+              ]
+            ]
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module": "P_Modul_03",
+        "parameters": [
+          "count",
+          "side",
+          "name",
+          "elements"
+        ],
+        "count_range": [
+          1,
+          1
+        ]
+      },
+      "attachments": {},
+      "runtime": {
+        "template": "3D Entities/PH/P_Modul_03.nmo",
+        "dependencies": [
+          "3D Entities/Levelinit.nmo"
+        ],
+        "states": [
+          "inactive",
+          "ready",
+          "moving"
+        ],
+        "motion_recipe": "P_Modul_03",
+        "limits": "Native per-body physicalization and unlimited joints; plate reach includes split state. Free bodies and unlimited sliders explicitly have no finite global envelope."
+      },
+      "needs_ball": [
+        "Wood"
+      ],
+      "ball_warning": "can't ride {kind} up: stone sinks it and falls off, paper can't push its walls off (in Level_12 too); a wood ball does"
+    },
+    "Swing": {
+      "category": "mechanism",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "P_Modul_08",
+          "role": "placement_marker",
+          "groups": [
+            "P_Modul_08"
+          ],
+          "visible": true,
+          "support": false,
+          "extract": {
+            "method": "mesh",
+            "file": "3D Entities/Level/Level_08.NMO",
+            "object": "P_Modul_08_01"
+          }
+        },
+        {
+          "name": "Floor_Modul_08",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_01",
+            "Sound_HitID_01",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -12.5,
+              -7.5,
+              -3.5,
+              1.5,
+              -2.5,
+              2.5
+            ],
+            [
+              7.5,
+              12.5,
+              -3.5,
+              1.5,
+              -2.5,
+              2.5
+            ]
+          ],
+          "extract": {
+            "method": "clip-and-close",
+            "objects": [
+              "A03_Floor_01"
+            ],
+            "frame_object": "P_Modul_08_01",
+            "box": [
+              -12.6,
+              12.6,
+              -3.6,
+              1.6,
+              -2.6,
+              2.6
+            ],
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "file": "3D Entities/Level/Level_09.NMO",
+            "snap": [
+              [
+                12.5,
+                10.0,
+                7.5
+              ],
+              [
+                3.5,
+                1.5
+              ],
+              [
+                0.0,
+                2.5
+              ]
+            ]
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module": "P_Modul_08",
+        "parameters": [
+          "count",
+          "side",
+          "name",
+          "elements"
+        ],
+        "count_range": [
+          1,
+          1
+        ]
+      },
+      "attachments": {},
+      "runtime": {
+        "template": "3D Entities/PH/P_Modul_08.nmo",
+        "dependencies": [
+          "3D Entities/Levelinit.nmo"
+        ],
+        "states": [
+          "inactive",
+          "ready",
+          "moving"
+        ],
+        "motion_recipe": "P_Modul_08",
+        "limits": "Native per-body physicalization and unlimited joints; plate reach includes split state. Free bodies and unlimited sliders explicitly have no finite global envelope."
+      },
+      "needs_ball": [
+        "Paper",
+        "Wood"
+      ],
+      "ball_warning": "falls off {kind}'s seat (in Level_09 too); a wood or paper ball rides it across"
+    },
+    "Flaps": {
+      "category": "mechanism",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "P_Modul_19",
+          "role": "placement_marker",
+          "groups": [
+            "P_Modul_19"
+          ],
+          "visible": true,
+          "support": false,
+          "extract": {
+            "method": "mesh",
+            "file": "3D Entities/Level/Level_09.NMO",
+            "object": "P_Modul_19_01"
+          }
+        },
+        {
+          "name": "Floor_Modul_19",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_01",
+            "Sound_HitID_01",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -2.47,
+              7.53,
+              -5,
+              0,
+              2.5,
+              7.5
+            ],
+            [
+              -14.12,
+              -9.12,
+              -5,
+              0,
+              2.5,
+              7.5
+            ],
+            [
+              3.32,
+              7.53,
+              -5,
+              0,
+              -12.5,
+              -7.5
+            ],
+            [
+              -8.34,
+              -3.34,
+              -5,
+              0,
+              -12.5,
+              -7.5
+            ]
+          ],
+          "extract": {
+            "method": "clip-and-close",
+            "objects": [
+              "A01_Floor_01"
+            ],
+            "frame_object": "P_Modul_19_01",
+            "box": [
+              -14.2,
+              7.6,
+              -5.1,
+              0.1,
+              -12.6,
+              7.6
+            ],
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "file": "3D Entities/Level/Level_09.NMO",
+            "snap": [
+              [
+                7.53,
+                14.12,
+                9.12,
+                2.47,
+                3.32,
+                8.34
+              ],
+              [
+                0.0,
+                0.7
+              ],
+              [
+                2.5,
+                7.5,
+                12.5
+              ]
+            ]
+          }
+        },
+        {
+          "name": "Floor_Stopper_19",
+          "role": "stopper",
+          "groups": [
+            "Phys_FloorStopper"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -9.12,
+              -8.12,
+              -1.03,
+              -0.53,
+              2.5,
+              7.5
+            ],
+            [
+              2.32,
+              3.32,
+              -1.03,
+              -0.53,
+              -12.5,
+              -7.5
+            ]
+          ],
+          "extract": {
+            "method": "clip-and-close",
+            "objects": [
+              "A01_Floor_Stopper"
+            ],
+            "frame_object": "P_Modul_19_01",
+            "box": [
+              -14.2,
+              7.6,
+              -1.1,
+              -0.4,
+              -12.6,
+              7.6
+            ],
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "file": "3D Entities/Level/Level_09.NMO",
+            "snap": [
+              [
+                9.12,
+                8.12,
+                2.32,
+                3.32
+              ],
+              [
+                0.53,
+                1.03
+              ],
+              [
+                2.5,
+                7.5,
+                12.5
+              ]
+            ]
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module": "P_Modul_19",
+        "parameters": [
+          "count",
+          "side",
+          "name",
+          "elements"
+        ],
+        "count_range": [
+          1,
+          1
+        ]
+      },
+      "attachments": {},
+      "runtime": {
+        "template": "3D Entities/PH/P_Modul_19.nmo",
+        "dependencies": [
+          "3D Entities/Levelinit.nmo"
+        ],
+        "states": [
+          "inactive",
+          "ready",
+          "moving"
+        ],
+        "motion_recipe": "P_Modul_19",
+        "limits": "Native per-body physicalization and unlimited joints; plate reach includes split state. Free bodies and unlimited sliders explicitly have no finite global envelope."
+      },
+      "needs_ball": [
+        "Stone",
+        "Wood"
+      ],
+      "ball_warning": "can't push {kind}'s flap over (in Level_09 too); a wood or stone ball does"
+    },
+    "Plates": {
+      "category": "mechanism",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "P_Modul_29",
+          "role": "placement_marker",
+          "groups": [
+            "P_Modul_29"
+          ],
+          "visible": true,
+          "support": false,
+          "extract": {
+            "method": "mesh",
+            "file": "3D Entities/Level/Level_02.NMO",
+            "object": "P_Modul_29_01"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module": "P_Modul_29",
+        "parameters": [
+          "count",
+          "side",
+          "name",
+          "elements"
+        ],
+        "count_range": [
+          1,
+          1
+        ]
+      },
+      "attachments": {},
+      "runtime": {
+        "template": "3D Entities/PH/P_Modul_29.nmo",
+        "dependencies": [
+          "3D Entities/Levelinit.nmo"
+        ],
+        "states": [
+          "inactive",
+          "ready",
+          "moving",
+          "split"
+        ],
+        "motion_recipe": "P_Modul_29",
+        "limits": "Native per-body physicalization and unlimited joints; plate reach includes split state. Free bodies and unlimited sliders explicitly have no finite global envelope."
+      },
+      "needs_ball": [
+        "Paper",
+        "Wood"
+      ],
+      "ball_warning": "falls through {kind}'s plates (in Ballanced too); a paper or wood ball crosses them"
+    },
+    "Seesaw": {
+      "category": "mechanism",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "P_Modul_30",
+          "role": "placement_marker",
+          "groups": [
+            "P_Modul_30"
+          ],
+          "visible": true,
+          "support": false,
+          "extract": {
+            "method": "mesh",
+            "file": "3D Entities/Level/Level_02.NMO",
+            "object": "P_Modul_30_01"
+          }
+        },
+        {
+          "name": "Floor_Stopper_30",
+          "role": "stopper",
+          "groups": [
+            "Phys_FloorStopper"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -7.4,
+              -6.4,
+              -0.5,
+              0,
+              -2.5,
+              2.5
+            ],
+            [
+              6.4,
+              7.4,
+              -0.5,
+              0,
+              -2.5,
+              2.5
+            ]
+          ],
+          "extract": {
+            "method": "clip-and-close",
+            "objects": [
+              "A01_Floor_Stopper_01"
+            ],
+            "frame_object": "P_Modul_30_01",
+            "box": [
+              -7.5,
+              7.5,
+              -0.6,
+              0.1,
+              -2.6,
+              2.6
+            ],
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "file": "3D Entities/Level/Level_03.NMO",
+            "snap": [
+              [
+                7.4,
+                6.4
+              ],
+              [
+                0.0,
+                0.5
+              ],
+              [
+                2.5
+              ]
+            ]
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module": "P_Modul_30",
+        "parameters": [
+          "count",
+          "side",
+          "name",
+          "elements"
+        ],
+        "count_range": [
+          1,
+          1
+        ]
+      },
+      "attachments": {},
+      "runtime": {
+        "template": "3D Entities/PH/P_Modul_30.nmo",
+        "dependencies": [
+          "3D Entities/Levelinit.nmo"
+        ],
+        "states": [
+          "inactive",
+          "ready",
+          "moving"
+        ],
+        "motion_recipe": "P_Modul_30",
+        "limits": "Native per-body physicalization and unlimited joints; plate reach includes split state. Free bodies and unlimited sliders explicitly have no finite global envelope."
+      }
+    },
+    "StoneBox": {
+      "category": "mechanism",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "P_Modul_34",
+          "role": "placement_marker",
+          "groups": [
+            "P_Modul_34"
+          ],
+          "visible": true,
+          "support": false,
+          "extract": {
+            "method": "mesh",
+            "file": "3D Entities/Level/Level_01.NMO",
+            "object": "P_Modul_34_01"
+          }
+        },
+        {
+          "name": "Floor_Modul_34",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_01",
+            "Sound_HitID_01",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -5.2,
+              24.6,
+              -5,
+              0,
+              -2.5,
+              2.5
+            ],
+            [
+              -30.4,
+              -10.2,
+              -5,
+              0,
+              -2.5,
+              2.5
+            ],
+            [
+              -30.4,
+              18.0,
+              -9.5,
+              -5,
+              -22.5,
+              22.5
+            ]
+          ],
+          "extract": {
+            "method": "clip-and-close",
+            "objects": [
+              "A02_Floor_03"
+            ],
+            "frame_object": "P_Modul_34_01",
+            "box": [
+              -30.45,
+              24.65,
+              -20.0,
+              3.0,
+              -22.8,
+              22.8
+            ],
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "file": "3D Entities/Level/Level_01.NMO",
+            "snap": [
+              [
+                24.6,
+                30.4
+              ],
+              [
+                0.0,
+                2.1,
+                2.8
+              ],
+              [
+                2.5,
+                5.0
+              ]
+            ]
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module": "P_Modul_34",
+        "parameters": [
+          "count",
+          "side",
+          "name",
+          "elements",
+          "maze"
+        ],
+        "count_range": [
+          1,
+          1
+        ]
+      },
+      "attachments": {},
+      "runtime": {
+        "template": "3D Entities/PH/P_Modul_34.nmo",
+        "dependencies": [
+          "3D Entities/Levelinit.nmo"
+        ],
+        "states": [
+          "inactive",
+          "ready",
+          "moving"
+        ],
+        "motion_recipe": "P_Modul_34",
+        "limits": "Native per-body physicalization and unlimited joints; plate reach includes split state. Free bodies and unlimited sliders explicitly have no finite global envelope."
+      },
+      "variants": {
+        "standalone": {
+          "parts": [
+            "P_Modul_34",
+            "Floor_Modul_34"
+          ]
+        },
+        "embedded": {
+          "parts": [
+            "P_Modul_34"
+          ],
+          "surface_owner_module": "Maze_34",
+          "basis": "Three stone-box mechanisms share the measured maze floor."
+        }
+      }
+    },
+    "ExtraLife": {
+      "category": "element",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "P_Extra_Life",
+          "role": "placement_marker",
+          "groups": [
+            "P_Extra_Life"
+          ],
+          "visible": true,
+          "support": false,
+          "extract": {
+            "method": "mesh",
+            "file": "3D Entities/Level/Level_01.NMO",
+            "object": "P_Extra_Life_04"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "element": "P_Extra_Life",
+        "lift": 2.56
+      },
+      "attachments": {},
+      "runtime": {
+        "template": "3D Entities/PH/P_Extra_Life.nmo",
+        "dependencies": [
+          "3D Entities/Levelinit.nmo"
+        ],
+        "limits": "Native behavior is retained; runtime mesh bounds are not a reachability or contact model."
+      }
+    },
+    "ExtraPoint": {
+      "category": "element",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "P_Extra_Point",
+          "role": "placement_marker",
+          "groups": [
+            "P_Extra_Point"
+          ],
+          "visible": true,
+          "support": false,
+          "extract": {
+            "method": "mesh",
+            "file": "3D Entities/Level/Level_01.NMO",
+            "object": "P_Extra_Point_01"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "element": "P_Extra_Point",
+        "lift": 2.5
+      },
+      "attachments": {},
+      "runtime": {
+        "template": "3D Entities/PH/P_Extra_Point.nmo",
+        "dependencies": [
+          "3D Entities/Levelinit.nmo"
+        ],
+        "limits": "Native behavior is retained; runtime mesh bounds are not a reachability or contact model."
+      }
+    },
+    "Box": {
+      "category": "element",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "P_Box",
+          "role": "placement_marker",
+          "groups": [
+            "P_Box"
+          ],
+          "visible": true,
+          "support": false,
+          "extract": {
+            "method": "mesh",
+            "file": "3D Entities/Level/Level_01.NMO",
+            "object": "P_Box_04"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "element": "P_Box",
+        "lift": 2.5
+      },
+      "attachments": {},
+      "runtime": {
+        "template": "3D Entities/PH/P_Box.nmo",
+        "dependencies": [
+          "3D Entities/Levelinit.nmo"
+        ],
+        "limits": "Native behavior is retained; runtime mesh bounds are not a reachability or contact model."
+      }
+    },
+    "Dome": {
+      "category": "element",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "P_Dome",
+          "role": "placement_marker",
+          "groups": [
+            "P_Dome"
+          ],
+          "visible": true,
+          "support": false,
+          "extract": {
+            "method": "mesh",
+            "file": "3D Entities/Level/Level_01.NMO",
+            "object": "P_Dome_01"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "element": "P_Dome",
+        "lift": 0.0
+      },
+      "attachments": {},
+      "runtime": {
+        "template": "3D Entities/PH/P_Dome.nmo",
+        "dependencies": [
+          "3D Entities/Levelinit.nmo"
+        ],
+        "limits": "Native behavior is retained; runtime mesh bounds are not a reachability or contact model."
+      }
+    },
+    "PaperBall": {
+      "category": "element",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "P_Ball_Paper",
+          "role": "placement_marker",
+          "groups": [
+            "P_Ball_Paper"
+          ],
+          "visible": true,
+          "support": false,
+          "extract": {
+            "method": "mesh",
+            "file": "3D Entities/Level/Level_01.NMO",
+            "object": "P_Ball_Paper_01"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "element": "P_Ball_Paper",
+        "lift": 2.0
+      },
+      "attachments": {},
+      "runtime": {
+        "template": "3D Entities/PH/P_Ball_Paper.nmo",
+        "dependencies": [
+          "3D Entities/Levelinit.nmo"
+        ],
+        "limits": "Native behavior is retained; runtime mesh bounds are not a reachability or contact model."
+      }
+    },
+    "StoneBall": {
+      "category": "element",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "P_Ball_Stone",
+          "role": "placement_marker",
+          "groups": [
+            "P_Ball_Stone"
+          ],
+          "visible": true,
+          "support": false,
+          "extract": {
+            "method": "mesh",
+            "file": "3D Entities/Level/Level_01.NMO",
+            "object": "P_Ball_Stone_01"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "element": "P_Ball_Stone",
+        "lift": 2.0
+      },
+      "attachments": {},
+      "runtime": {
+        "template": "3D Entities/PH/P_Ball_Stone.nmo",
+        "dependencies": [
+          "3D Entities/Levelinit.nmo"
+        ],
+        "limits": "Native behavior is retained; runtime mesh bounds are not a reachability or contact model."
+      }
+    },
+    "WoodBall": {
+      "category": "element",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "P_Ball_Wood",
+          "role": "placement_marker",
+          "groups": [
+            "P_Ball_Wood"
+          ],
+          "visible": true,
+          "support": false,
+          "extract": {
+            "method": "mesh",
+            "file": "3D Entities/Level/Level_01.NMO",
+            "object": "P_Ball_Wood_01"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "element": "P_Ball_Wood",
+        "lift": 2.0
+      },
+      "attachments": {},
+      "runtime": {
+        "template": "3D Entities/PH/P_Ball_Wood.nmo",
+        "dependencies": [
+          "3D Entities/Levelinit.nmo"
+        ],
+        "limits": "Native behavior is retained; runtime mesh bounds are not a reachability or contact model."
+      }
+    },
+    "PaperChanger": {
+      "category": "element",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "P_Trafo_Paper",
+          "role": "placement_marker",
+          "groups": [
+            "P_Trafo_Paper"
+          ],
+          "visible": true,
+          "support": false,
+          "extract": {
+            "method": "mesh",
+            "file": "3D Entities/Level/Level_02.NMO",
+            "object": "P_Trafo_Paper_01"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "lift": 0.1,
+        "route": {
+          "trafo": "paper"
+        },
+        "parameters": [
+          "elements"
+        ],
+        "marker": "P_Trafo_Paper"
+      },
+      "attachments": {},
+      "runtime": {
+        "template": "3D Entities/PH/P_Trafo_Paper.nmo",
+        "dependencies": [
+          "3D Entities/Levelinit.nmo"
+        ],
+        "limits": "Native behavior is retained; runtime mesh bounds are not a reachability or contact model."
+      }
+    },
+    "StoneChanger": {
+      "category": "element",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "P_Trafo_Stone",
+          "role": "placement_marker",
+          "groups": [
+            "P_Trafo_Stone"
+          ],
+          "visible": true,
+          "support": false,
+          "extract": {
+            "method": "mesh",
+            "file": "3D Entities/Level/Level_01.NMO",
+            "object": "P_Trafo_Stone_01"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "lift": 0.1,
+        "route": {
+          "trafo": "stone"
+        },
+        "parameters": [
+          "elements"
+        ],
+        "marker": "P_Trafo_Stone"
+      },
+      "attachments": {},
+      "runtime": {
+        "template": "3D Entities/PH/P_Trafo_Stone.nmo",
+        "dependencies": [
+          "3D Entities/Levelinit.nmo"
+        ],
+        "limits": "Native behavior is retained; runtime mesh bounds are not a reachability or contact model."
+      }
+    },
+    "WoodChanger": {
+      "category": "element",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "P_Trafo_Wood",
+          "role": "placement_marker",
+          "groups": [
+            "P_Trafo_Wood"
+          ],
+          "visible": true,
+          "support": false,
+          "extract": {
+            "method": "mesh",
+            "file": "3D Entities/Level/Level_01.NMO",
+            "object": "P_Trafo_Wood_01"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "lift": 0.1,
+        "route": {
+          "trafo": "wood"
+        },
+        "parameters": [
+          "elements"
+        ],
+        "marker": "P_Trafo_Wood"
+      },
+      "attachments": {},
+      "runtime": {
+        "template": "3D Entities/PH/P_Trafo_Wood.nmo",
+        "dependencies": [
+          "3D Entities/Levelinit.nmo"
+        ],
+        "limits": "Native behavior is retained; runtime mesh bounds are not a reachability or contact model."
+      }
+    },
+    "FanBlock": {
+      "category": "assembly",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "Floor_FanBlock",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_01",
+            "Sound_HitID_01",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -2.5,
+              2.5,
+              0,
+              5.0,
+              -2.5,
+              2.5
+            ]
+          ],
+          "extract": {
+            "method": "clip-and-close",
+            "objects": [
+              "A03_Floor_Modul18"
+            ],
+            "frame_object": "A03_Floor_Modul18",
+            "box": [
+              -2.6,
+              2.6,
+              -0.1,
+              5.1,
+              -2.6,
+              2.6
+            ],
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "file": "3D Entities/Level/Level_05.NMO"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module_floor": "FanBlock",
+        "route": {
+          "fan": 10
+        },
+        "parameters": [
+          "elements",
+          "rise"
+        ],
+        "argument": {
+          "rise": "fan"
+        }
+      },
+      "attachments": {}
+    },
+    "RailDock": {
+      "category": "assembly",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "Floor_RailDock",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_01",
+            "Sound_HitID_01",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -5,
+              5,
+              -5,
+              0.7,
+              -5,
+              0
+            ]
+          ],
+          "extract": {
+            "method": "clip-and-close",
+            "objects": [
+              "A01_Floor_03"
+            ],
+            "frame_object": "A01_Rail_07",
+            "box": [
+              -5.1,
+              5.1,
+              -6.0,
+              1.4,
+              12.8,
+              17.95
+            ],
+            "origin": [
+              0.0,
+              0.58,
+              17.88
+            ],
+            "file": "3D Entities/Level/Level_01.NMO",
+            "snap": [
+              [
+                5.0,
+                2.5
+              ],
+              [
+                0.7,
+                0.58
+              ],
+              [
+                5.0
+              ]
+            ]
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module_floor": "RailDock",
+        "generated_by": "wide-road rail transition"
+      },
+      "attachments": {}
+    },
+    "Cradle": {
+      "category": "assembly",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "Floor_Cradle",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_01",
+            "Sound_HitID_01",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -7.5,
+              7.5,
+              -2.5,
+              1.8,
+              -7.5,
+              7.5
+            ]
+          ],
+          "extract": {
+            "method": "clip-and-close",
+            "objects": [
+              "A01_Floor_05"
+            ],
+            "frame_object": "A01_Floor_05",
+            "box": [
+              -7.6,
+              7.6,
+              -2.6,
+              2.6,
+              -7.6,
+              7.6
+            ],
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "file": "3D Entities/Level/Level_01.NMO",
+            "snap": [
+              [
+                7.5,
+                5.0,
+                2.5
+              ],
+              [
+                2.5,
+                1.8,
+                1.1
+              ],
+              [
+                7.5,
+                5.0,
+                2.5
+              ]
+            ]
+          }
+        },
+        {
+          "name": "Rail_Cradle",
+          "role": "surface",
+          "groups": [
+            "Phys_FloorRails",
+            "Sound_RollID_03",
+            "Sound_HitID_03"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -2.25,
+              2.25,
+              -1.3,
+              9.4,
+              -2.5,
+              3.84
+            ]
+          ],
+          "extract": {
+            "method": "contained-faces",
+            "objects": [
+              "A01_Rail_09"
+            ],
+            "frame_object": "A01_Floor_05",
+            "box": [
+              -7.45,
+              8.0,
+              -2.0,
+              9.6,
+              -8.0,
+              3.84
+            ],
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "file": "3D Entities/Level/Level_01.NMO"
+          }
+        },
+        {
+          "name": "Misc_Cradle",
+          "role": "decoration",
+          "groups": [],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              4.0,
+              6.0,
+              1.0,
+              1.5,
+              -8.0,
+              -3.0
+            ]
+          ],
+          "extract": {
+            "method": "contained-faces",
+            "objects": [
+              "A01_Misc_Schelle04"
+            ],
+            "frame_object": "A01_Floor_05",
+            "box": [
+              -8.0,
+              8.0,
+              -3.0,
+              3.0,
+              -9.0,
+              9.0
+            ],
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "file": "3D Entities/Level/Level_01.NMO"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module_floor": "Cradle",
+        "route": {
+          "cradle": true
+        },
+        "parameters": [
+          "elements"
+        ]
+      },
+      "attachments": {},
+      "needs_ball": [
+        "Stone",
+        "Wood"
+      ],
+      "ball_warning": "can hardly push the wood ball on the rail into the cradle; a wood or stone ball does"
+    },
+    "RailSplit": {
+      "category": "assembly",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "Rail_Split",
+          "role": "surface",
+          "groups": [
+            "Phys_FloorRails",
+            "Sound_RollID_03",
+            "Sound_HitID_03"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -10.35,
+              0,
+              -0.35,
+              0.35,
+              -11.9,
+              -1.55
+            ],
+            [
+              -10.35,
+              0,
+              -0.35,
+              0.35,
+              1.55,
+              11.9
+            ]
+          ],
+          "extract": {
+            "method": "contained-faces",
+            "objects": [
+              "A01_Rail_02_01"
+            ],
+            "frame_object": "A01_Rail_02_01",
+            "box": [
+              -13.5,
+              -3.0,
+              -0.5,
+              0.4,
+              -12.0,
+              12.0
+            ],
+            "origin": [
+              -3.089,
+              -0.101,
+              0.0
+            ],
+            "file": "3D Entities/Level/Level_01.NMO"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module_floor": "Rail_Split",
+        "route": {
+          "fall": 10,
+          "split": true
+        },
+        "parameters": [
+          "elements",
+          "drop"
+        ],
+        "argument": {
+          "drop": "fall"
+        }
+      },
+      "attachments": {}
+    },
+    "Jump": {
+      "category": "assembly",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "Modul02",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_02",
+            "Sound_HitID_02",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -28.2,
+              28.2,
+              -11.84,
+              11.84,
+              -2.5,
+              2.5
+            ]
+          ],
+          "extract": {
+            "method": "contained-faces",
+            "objects": [
+              "A05_Modul02"
+            ],
+            "frame_object": "A05_Modul02",
+            "box": [
+              -28.3,
+              28.3,
+              -12.0,
+              12.0,
+              -2.6,
+              2.6
+            ],
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "file": "3D Entities/Level/Level_09.NMO",
+            "snap": [
+              [
+                28.2
+              ],
+              [
+                11.84
+              ],
+              [
+                2.5
+              ]
+            ]
+          }
+        },
+        {
+          "name": "Floor_Modul02",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_01",
+            "Sound_HitID_01",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              42.49,
+              57.49,
+              -18.18,
+              -13.18,
+              -7.5,
+              7.5
+            ]
+          ],
+          "extract": {
+            "method": "clip-and-close",
+            "objects": [
+              "A05_Floor_03"
+            ],
+            "frame_object": "A05_Modul02",
+            "box": [
+              42.4,
+              57.6,
+              -18.3,
+              -13.1,
+              -7.6,
+              7.6
+            ],
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "file": "3D Entities/Level/Level_09.NMO",
+            "snap": [
+              [
+                42.49,
+                44.99,
+                47.49,
+                52.49,
+                54.99,
+                57.49
+              ],
+              [
+                13.18,
+                18.18
+              ],
+              [
+                2.5,
+                5.0,
+                7.5
+              ]
+            ]
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module_floor": "Modul02",
+        "route": {
+          "jump": true
+        },
+        "parameters": [
+          "elements"
+        ]
+      },
+      "attachments": {},
+      "needs_ball": [
+        "Stone",
+        "Wood"
+      ],
+      "ball_warning": "falls short of {kind}'s landing (in Level_09 too); a wood or stone ball makes it"
+    },
+    "Twist": {
+      "category": "assembly",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "Modul11",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_02",
+            "Sound_HitID_02",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -5.38,
+              6.62,
+              -3.61,
+              -3.19,
+              -29.33,
+              29.33
+            ]
+          ],
+          "extract": {
+            "method": "contained-faces",
+            "objects": [
+              "A01_Modul11"
+            ],
+            "frame_object": "A01_Modul11",
+            "box": [
+              -5.5,
+              6.7,
+              -3.7,
+              3.7,
+              -29.4,
+              29.4
+            ],
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "file": "3D Entities/Level/Level_07.NMO"
+          }
+        },
+        {
+          "name": "Floor_Modul11",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_01",
+            "Sound_HitID_01",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -1.88,
+              3.12,
+              -8.19,
+              -3.19,
+              -29.33,
+              -24.33
+            ],
+            [
+              -1.88,
+              3.12,
+              -8.19,
+              -3.19,
+              24.33,
+              29.33
+            ]
+          ],
+          "extract": {
+            "method": "clip-and-close",
+            "objects": [
+              "A01_Floor_02"
+            ],
+            "frame_object": "A01_Modul11",
+            "box": [
+              -1.9,
+              3.2,
+              -8.3,
+              -3.1,
+              -29.4,
+              29.4
+            ],
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "file": "3D Entities/Level/Level_07.NMO",
+            "snap": [
+              [
+                1.88,
+                3.12,
+                0.62
+              ],
+              [
+                3.19,
+                8.19
+              ],
+              [
+                24.33,
+                26.83,
+                29.33
+              ]
+            ]
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module_floor": "Modul11",
+        "route": {
+          "twist": true
+        },
+        "parameters": [
+          "elements"
+        ]
+      },
+      "attachments": {}
+    },
+    "ArchedPlank": {
+      "category": "assembly",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "Modul27",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_02",
+            "Sound_HitID_02",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -5,
+              5,
+              -2.78,
+              -0.03,
+              -2.5,
+              2.5
+            ]
+          ],
+          "extract": {
+            "method": "contained-faces",
+            "objects": [
+              "A04_Modul_27"
+            ],
+            "frame_object": "A04_Modul_27",
+            "box": [
+              -5.1,
+              5.1,
+              -3.0,
+              0.1,
+              -2.6,
+              2.6
+            ],
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "file": "3D Entities/Level/Level_03.NMO",
+            "snap": [
+              [
+                5.0
+              ],
+              [],
+              [
+                2.5
+              ]
+            ]
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module_floor": "Modul27",
+        "route": {
+          "plank": true
+        },
+        "parameters": [
+          "elements"
+        ]
+      },
+      "attachments": {}
+    },
+    "WaveWalkway": {
+      "category": "assembly",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "Modul42",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_02",
+            "Sound_HitID_02",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -35.16,
+              35.16,
+              -2.04,
+              0.41,
+              -2.5,
+              2.5
+            ]
+          ],
+          "extract": {
+            "method": "contained-faces",
+            "objects": [
+              "A02_Modul42"
+            ],
+            "frame_object": "A02_Modul42",
+            "box": [
+              -35.3,
+              35.3,
+              -2.2,
+              2.2,
+              -2.6,
+              2.6
+            ],
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "file": "3D Entities/Level/Level_08.NMO",
+            "snap": [
+              [
+                35.16
+              ],
+              [
+                0.41
+              ],
+              [
+                2.5
+              ]
+            ]
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module_floor": "Modul42",
+        "route": {
+          "walkway": true
+        },
+        "parameters": [
+          "elements",
+          "long"
+        ]
+      },
+      "attachments": {}
+    },
+    "LongWaveWalkway": {
+      "category": "assembly",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "Modul42_Long",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_02",
+            "Sound_HitID_02",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -2.5,
+              2.5,
+              -2.04,
+              0.41,
+              -65.045,
+              65.045
+            ]
+          ],
+          "extract": {
+            "method": "contained-faces",
+            "objects": [
+              "A01_Modul42_01"
+            ],
+            "frame_object": "A01_Modul42_01",
+            "box": [
+              -2.6,
+              2.6,
+              -2.2,
+              2.2,
+              -65.2,
+              65.2
+            ],
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "file": "3D Entities/Level/Level_11.NMO",
+            "snap": [
+              [
+                2.5
+              ],
+              [
+                0.41
+              ],
+              [
+                65.045
+              ]
+            ]
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module_floor": "Modul42_Long",
+        "route": {
+          "walkway": true,
+          "long": true
+        },
+        "parameters": [
+          "elements"
+        ]
+      },
+      "attachments": {}
+    },
+    "Diamond": {
+      "category": "assembly",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "Floor_Diamond",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_01",
+            "Sound_HitID_01",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -10.6,
+              8.12,
+              -5,
+              -0.7,
+              -7.5,
+              7.5
+            ]
+          ],
+          "extract": {
+            "method": "clip-and-close",
+            "objects": [
+              "A01_Floor_03"
+            ],
+            "frame_object": "A01_Floor_03",
+            "box": [
+              -54.45,
+              -35.63,
+              -3.5,
+              3.0,
+              -24.1,
+              -2.8
+            ],
+            "origin": [
+              -43.749,
+              2.503,
+              -13.448
+            ],
+            "file": "3D Entities/Level/Level_05.NMO",
+            "snap": [
+              [
+                8.12
+              ],
+              [
+                0.0,
+                0.7,
+                5.0
+              ],
+              [
+                2.5
+              ]
+            ]
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module_floor": "Diamond",
+        "route": {
+          "node": "diamond"
+        },
+        "parameters": [
+          "elements",
+          "name",
+          "branches"
+        ]
+      },
+      "attachments": {}
+    },
+    "Octagon": {
+      "category": "assembly",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "Floor_Octagon",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_01",
+            "Sound_HitID_01",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -7.5,
+              7.5,
+              -5,
+              -0.7,
+              -7.5,
+              7.5
+            ]
+          ],
+          "extract": {
+            "method": "clip-and-close",
+            "objects": [
+              "A01_Floor_01"
+            ],
+            "frame_object": "A01_Floor_01",
+            "box": [
+              4.1114,
+              19.1114,
+              -6.0,
+              0.5,
+              -19.0174,
+              -4.0174
+            ],
+            "origin": [
+              11.6114,
+              0.0,
+              -11.5174
+            ],
+            "file": "3D Entities/Level/Level_05.NMO",
+            "snap": [
+              [
+                0.0,
+                2.5,
+                5.0,
+                7.5
+              ],
+              [
+                0.0,
+                0.7,
+                5.0
+              ],
+              [
+                0.0,
+                2.5,
+                5.0,
+                7.5
+              ]
+            ]
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module_floor": "Octagon",
+        "route": {
+          "node": "octagon"
+        },
+        "parameters": [
+          "elements",
+          "exit",
+          "name",
+          "branches"
+        ]
+      },
+      "attachments": {}
+    },
+    "BoxMaze": {
+      "category": "assembly",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "Floor_Maze_34",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_01",
+            "Sound_HitID_01",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -20.4,
+              44.83,
+              -5,
+              0,
+              -2.5,
+              2.5
+            ],
+            [
+              -10.17,
+              10.16,
+              -10,
+              -5,
+              12.5,
+              17.5
+            ],
+            [
+              5.16,
+              25.6,
+              -10,
+              -5,
+              -17.5,
+              -12.5
+            ],
+            [
+              -10.17,
+              -5.17,
+              -10,
+              -5,
+              -17.5,
+              12.5
+            ],
+            [
+              5.16,
+              10.16,
+              -10,
+              -5,
+              -12.5,
+              12.5
+            ],
+            [
+              20.6,
+              25.6,
+              -10,
+              -5,
+              -12.5,
+              27.5
+            ],
+            [
+              15.6,
+              20.6,
+              -10,
+              -5,
+              22.5,
+              27.5
+            ]
+          ],
+          "extract": {
+            "method": "clip-and-close",
+            "objects": [
+              "A01_Floor_04"
+            ],
+            "frame_object": "P_Modul_34_01",
+            "box": [
+              -20.4,
+              44.83,
+              -11.0,
+              1.0,
+              -17.5,
+              27.5
+            ],
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "file": "3D Entities/Level/Level_10.NMO"
+          }
+        },
+        {
+          "name": "Rail_Maze_34",
+          "role": "surface",
+          "groups": [
+            "Phys_FloorRails",
+            "Sound_RollID_03",
+            "Sound_HitID_03"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -40.65,
+              15.6,
+              -5,
+              0,
+              22.75,
+              27.25
+            ],
+            [
+              -40.65,
+              -36.15,
+              -1,
+              0,
+              -2.25,
+              27.25
+            ],
+            [
+              -40.65,
+              -20.4,
+              -1,
+              0,
+              -2.25,
+              2.25
+            ]
+          ],
+          "extract": {
+            "method": "contained-faces",
+            "objects": [
+              "A01_Rail_02"
+            ],
+            "frame_object": "P_Modul_34_01",
+            "box": [
+              -41.0,
+              16.0,
+              -6.0,
+              1.0,
+              -3.0,
+              28.0
+            ],
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "file": "3D Entities/Level/Level_10.NMO"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module_floor": "Maze_34",
+        "route": {
+          "module": "P_Modul_34",
+          "maze": true
+        },
+        "parameters": [
+          "elements"
+        ]
+      },
+      "attachments": {},
+      "needs_ball": [
+        "Stone"
+      ],
+      "ball_warning": "can't push the maze's boxes out from under their stones (in Level_10 too); a stone ball does"
+    },
+    "PerforatedTrough": {
+      "category": "assembly",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "Trough_Holes",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_02",
+            "Sound_HitID_02",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -175,
+              175,
+              -2.9,
+              -2.36,
+              -9.29,
+              9.29
+            ]
+          ],
+          "extract": {
+            "method": "contained-faces",
+            "objects": [
+              "A01_Halfpipe_04"
+            ],
+            "frame_object": "A01_Halfpipe_04",
+            "box": [
+              -175.1,
+              175.1,
+              -3.0,
+              3.0,
+              -9.4,
+              9.4
+            ],
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "file": "3D Entities/Level/Level_04.NMO"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module_floor": "Trough_Holes",
+        "route": {
+          "trough": 350,
+          "holes": true
+        },
+        "parameters": [
+          "elements",
+          "hop"
+        ]
+      },
+      "attachments": {}
+    },
+    "RailingClamp": {
+      "category": "assembly",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "Railing_Clamp",
+          "role": "decoration",
+          "groups": [],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -0.9,
+              0.55,
+              -0.45,
+              0.0,
+              -0.4,
+              0.2
+            ]
+          ],
+          "extract": {
+            "method": "contained-faces",
+            "objects": [
+              "A01_Misc_Schelle03"
+            ],
+            "frame_object": "A01_Rail_04",
+            "box": [
+              -17.58,
+              -16.08,
+              0.67,
+              1.18,
+              -13.16,
+              -12.45
+            ],
+            "origin": [
+              -16.6374,
+              1.5767,
+              -12.7156
+            ],
+            "file": "3D Entities/Level/Level_01.NMO"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module_floor": "Clamp",
+        "generated_by": "road/area railings"
+      },
+      "attachments": {}
+    },
+    "Spiral": {
+      "category": "assembly",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "Spiral",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_02",
+            "Sound_HitID_02",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              0,
+              10,
+              -0.8,
+              0,
+              -88.41,
+              -5.0
+            ]
+          ],
+          "extract": {
+            "method": "contained-faces",
+            "objects": [
+              "A04_Floor_Wood_01",
+              "A04_Floor_Wood_02"
+            ],
+            "frame_object": "A04_Floor_02",
+            "box": [
+              -27.0,
+              30.0,
+              -52.0,
+              46.0,
+              -36.0,
+              63.0
+            ],
+            "origin": [
+              -25.29,
+              -41.55,
+              53.94
+            ],
+            "file": "3D Entities/Level/Level_01.NMO"
+          }
+        },
+        {
+          "name": "Spiral_Pads",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_01",
+            "Sound_HitID_01",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              0.0,
+              10.0,
+              14.579999999999998,
+              19.58,
+              -63.94,
+              -53.94
+            ],
+            [
+              40.58,
+              50.58,
+              26.81,
+              31.81,
+              -63.94,
+              -53.94
+            ],
+            [
+              40.58,
+              50.58,
+              36.6,
+              41.6,
+              -29.47,
+              -19.47
+            ],
+            [
+              12.23,
+              22.23,
+              43.94,
+              48.94,
+              -29.47,
+              -19.47
+            ],
+            [
+              12.23,
+              22.23,
+              63.519999999999996,
+              68.52,
+              -88.41,
+              -78.41
+            ]
+          ],
+          "extract": {
+            "method": "contained-faces",
+            "objects": [
+              "A04_Floor_02"
+            ],
+            "frame_object": "A04_Floor_02",
+            "box": [
+              -27.0,
+              30.0,
+              -52.0,
+              46.0,
+              -36.0,
+              63.0
+            ],
+            "origin": [
+              -25.29,
+              -41.55,
+              53.94
+            ],
+            "file": "3D Entities/Level/Level_01.NMO"
+          }
+        },
+        {
+          "name": "Floor_Spiral_Corner",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_01",
+            "Sound_HitID_01",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              0,
+              10,
+              -5.0,
+              0,
+              -5.0,
+              5.0
+            ]
+          ],
+          "extract": {
+            "method": "clip-and-close",
+            "objects": [
+              "A04_Floor_01"
+            ],
+            "frame_object": "A04_Floor_02",
+            "box": [
+              -25.29,
+              -15.2,
+              -52.0,
+              -35.0,
+              44.8,
+              62.9
+            ],
+            "origin": [
+              -25.29,
+              -41.55,
+              53.94
+            ],
+            "file": "3D Entities/Level/Level_01.NMO"
+          }
+        },
+        {
+          "name": "Spiral_Rails",
+          "role": "surface",
+          "groups": [
+            "Phys_FloorRails",
+            "Sound_RollID_03",
+            "Sound_HitID_03"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              0,
+              0.5,
+              0,
+              0.5,
+              5.0,
+              5.5
+            ]
+          ],
+          "extract": {
+            "method": "contained-faces",
+            "objects": [
+              "A04_Rail_01",
+              "A04_Rail_02"
+            ],
+            "frame_object": "A04_Floor_02",
+            "box": [
+              -27.0,
+              30.0,
+              -52.0,
+              46.0,
+              -36.0,
+              63.0
+            ],
+            "origin": [
+              -25.29,
+              -41.55,
+              53.94
+            ],
+            "file": "3D Entities/Level/Level_01.NMO"
+          }
+        },
+        {
+          "name": "Spiral_Clamps",
+          "role": "decoration",
+          "groups": [],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              0,
+              0.5,
+              -0.2,
+              0.3,
+              5.2,
+              5.7
+            ]
+          ],
+          "extract": {
+            "method": "contained-faces",
+            "objects": [
+              "A04_Misc_Schelle_01",
+              "A04_Misc_Schelle_02"
+            ],
+            "frame_object": "A04_Floor_02",
+            "box": [
+              -27.0,
+              30.0,
+              -52.0,
+              46.0,
+              -36.0,
+              63.0
+            ],
+            "origin": [
+              -25.29,
+              -41.55,
+              53.94
+            ],
+            "file": "3D Entities/Level/Level_01.NMO"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module_floor": "Spiral",
+        "route": {
+          "spiral": true
+        },
+        "parameters": [
+          "elements"
+        ]
+      },
+      "attachments": {},
+      "needs_ball": [
+        "Paper",
+        "Wood"
+      ],
+      "ball_warning": "can't climb the wood spiral's ramps and rolls back to its foot; a wood or paper ball climbs them"
+    },
+    "LogClimb": {
+      "category": "assembly",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "Log_Climb",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_02",
+            "Sound_HitID_02",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -8.42,
+              8.42,
+              -4.53,
+              0,
+              -96.55,
+              0
+            ],
+            [
+              -8.42,
+              8.42,
+              6.47,
+              11.0,
+              -141.13,
+              0
+            ],
+            [
+              -8.42,
+              8.42,
+              16.47,
+              21.0,
+              -191.13,
+              -100.0
+            ],
+            [
+              -8.42,
+              8.42,
+              26.47,
+              31.0,
+              -300.0,
+              -150.0
+            ],
+            [
+              -8.42,
+              8.42,
+              15.47,
+              20.0,
+              -333.3,
+              -258.87
+            ]
+          ],
+          "extract": {
+            "method": "contained-faces",
+            "objects": [
+              "A_02_Wood_04",
+              "A_02_Wood_05",
+              "A_02_Wood_06",
+              "A_02_Wood_07",
+              "A_02_Wood_08",
+              "A_02_Wood_09",
+              "A_02_Wood_10",
+              "A_02_Wood_11",
+              "A_02_Wood_12",
+              "A_02_Wood_13",
+              "A_02_Wood_14"
+            ],
+            "frame_object": "P_Modul_18_04",
+            "box": [
+              -13.0,
+              13.0,
+              -230.0,
+              60.0,
+              -255.7,
+              77.7
+            ],
+            "origin": [
+              0.0,
+              0.845,
+              77.66
+            ],
+            "file": "3D Entities/Level/Level_06.NMO"
+          }
+        },
+        {
+          "name": "Log_Climb_Hidden",
+          "role": "collision",
+          "groups": [
+            "Phys_Floors"
+          ],
+          "visible": false,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -11.8,
+              11.8,
+              31.0,
+              39.0,
+              -300.7,
+              -299.3
+            ]
+          ],
+          "extract": {
+            "method": "contained-faces",
+            "objects": [
+              "A02_inv_Coll_00",
+              "A02_inv_Coll_01",
+              "A02_inv_Coll_02",
+              "A02_inv_Coll_03",
+              "A02_inv_Coll_04"
+            ],
+            "frame_object": "P_Modul_18_04",
+            "box": [
+              -13.0,
+              13.0,
+              -230.0,
+              60.0,
+              -255.7,
+              77.7
+            ],
+            "origin": [
+              0.0,
+              0.845,
+              77.66
+            ],
+            "file": "3D Entities/Level/Level_06.NMO"
+          }
+        },
+        {
+          "name": "Log_Climb_Rail",
+          "role": "surface",
+          "groups": [
+            "Phys_FloorRails",
+            "Sound_RollID_03",
+            "Sound_HitID_03"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -11.0,
+              11.0,
+              34.0,
+              34.4,
+              -300.4,
+              -299.6
+            ]
+          ],
+          "extract": {
+            "method": "contained-faces",
+            "objects": [
+              "A_02_Rail_01"
+            ],
+            "frame_object": "P_Modul_18_04",
+            "box": [
+              -13.0,
+              13.0,
+              -230.0,
+              60.0,
+              -255.7,
+              77.7
+            ],
+            "origin": [
+              0.0,
+              0.845,
+              77.66
+            ],
+            "file": "3D Entities/Level/Level_06.NMO"
+          }
+        },
+        {
+          "name": "Log_Climb_Poles",
+          "role": "decoration",
+          "groups": [],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -12.2,
+              12.2,
+              -10.0,
+              46.0,
+              -300.6,
+              -299.4
+            ]
+          ],
+          "extract": {
+            "method": "contained-faces",
+            "objects": [
+              "A02_Poles"
+            ],
+            "frame_object": "P_Modul_18_04",
+            "box": [
+              -13.0,
+              13.0,
+              -230.0,
+              60.0,
+              -255.7,
+              77.7
+            ],
+            "origin": [
+              0.0,
+              0.845,
+              77.66
+            ],
+            "file": "3D Entities/Level/Level_06.NMO"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module_floor": "LogClimb",
+        "route": {
+          "log": 50,
+          "climb": true
+        },
+        "parameters": [
+          "elements",
+          "length",
+          "turn",
+          "drop"
+        ],
+        "argument": {
+          "length": "log"
+        }
+      },
+      "attachments": {}
+    },
+    "Trough_1": {
+      "category": "assembly",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "Trough_1",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_02",
+            "Sound_HitID_02",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -25,
+              25,
+              -2.9,
+              -2.36,
+              -9.29,
+              9.29
+            ]
+          ],
+          "extract": {
+            "method": "chain",
+            "object": "A01_Halfpipe_01",
+            "segment": [
+              -50.05,
+              0.05,
+              -3.0,
+              3.0,
+              -9.4,
+              9.4
+            ],
+            "end": [
+              99.95,
+              100.05,
+              -3.0,
+              3.0,
+              -9.4,
+              9.4
+            ],
+            "step": 50.0,
+            "count": 1,
+            "base": "Trough",
+            "file": "3D Entities/Level/Level_04.NMO"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module_floor": "Trough_1",
+        "route": {
+          "trough": 50
+        },
+        "parameters": [
+          "elements",
+          "turn",
+          "drop",
+          "hop",
+          "climb"
+        ]
+      },
+      "attachments": {}
+    },
+    "Log_1": {
+      "category": "assembly",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "Log_1",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_02",
+            "Sound_HitID_02",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -25,
+              25,
+              -2.26,
+              2.26,
+              -8.42,
+              8.42
+            ]
+          ],
+          "extract": {
+            "method": "chain",
+            "object": "A08_Halfpipe_02",
+            "segment": [
+              -25.05,
+              25.05,
+              -2.4,
+              2.4,
+              -8.5,
+              8.5
+            ],
+            "end": [
+              74.95,
+              75.05,
+              -2.4,
+              2.4,
+              -8.5,
+              8.5
+            ],
+            "step": 50.0,
+            "count": 1,
+            "base": "Log",
+            "file": "3D Entities/Level/Level_12.NMO"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module_floor": "Log_1",
+        "route": {
+          "log": 50
+        },
+        "parameters": [
+          "elements",
+          "turn",
+          "drop",
+          "hop",
+          "climb"
+        ]
+      },
+      "attachments": {}
+    },
+    "Trough_2": {
+      "category": "assembly",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "Trough_2",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_02",
+            "Sound_HitID_02",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -50,
+              50,
+              -2.9,
+              -2.36,
+              -9.29,
+              9.29
+            ]
+          ],
+          "extract": {
+            "method": "chain",
+            "object": "A01_Halfpipe_01",
+            "segment": [
+              -50.05,
+              0.05,
+              -3.0,
+              3.0,
+              -9.4,
+              9.4
+            ],
+            "end": [
+              99.95,
+              100.05,
+              -3.0,
+              3.0,
+              -9.4,
+              9.4
+            ],
+            "step": 50.0,
+            "count": 2,
+            "base": "Trough",
+            "file": "3D Entities/Level/Level_04.NMO"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module_floor": "Trough_2",
+        "route": {
+          "trough": 100
+        },
+        "parameters": [
+          "elements",
+          "turn",
+          "drop",
+          "hop",
+          "climb"
+        ]
+      },
+      "attachments": {}
+    },
+    "Log_2": {
+      "category": "assembly",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "Log_2",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_02",
+            "Sound_HitID_02",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -50,
+              50,
+              -2.26,
+              2.26,
+              -8.42,
+              8.42
+            ]
+          ],
+          "extract": {
+            "method": "chain",
+            "object": "A08_Halfpipe_02",
+            "segment": [
+              -25.05,
+              25.05,
+              -2.4,
+              2.4,
+              -8.5,
+              8.5
+            ],
+            "end": [
+              74.95,
+              75.05,
+              -2.4,
+              2.4,
+              -8.5,
+              8.5
+            ],
+            "step": 50.0,
+            "count": 2,
+            "base": "Log",
+            "file": "3D Entities/Level/Level_12.NMO"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module_floor": "Log_2",
+        "route": {
+          "log": 100
+        },
+        "parameters": [
+          "elements",
+          "turn",
+          "drop",
+          "hop",
+          "climb"
+        ]
+      },
+      "attachments": {}
+    },
+    "Trough_3": {
+      "category": "assembly",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "Trough_3",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_02",
+            "Sound_HitID_02",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -75,
+              75,
+              -2.9,
+              -2.36,
+              -9.29,
+              9.29
+            ]
+          ],
+          "extract": {
+            "method": "chain",
+            "object": "A01_Halfpipe_01",
+            "segment": [
+              -50.05,
+              0.05,
+              -3.0,
+              3.0,
+              -9.4,
+              9.4
+            ],
+            "end": [
+              99.95,
+              100.05,
+              -3.0,
+              3.0,
+              -9.4,
+              9.4
+            ],
+            "step": 50.0,
+            "count": 3,
+            "base": "Trough",
+            "file": "3D Entities/Level/Level_04.NMO"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module_floor": "Trough_3",
+        "route": {
+          "trough": 150
+        },
+        "parameters": [
+          "elements",
+          "turn",
+          "drop",
+          "hop",
+          "climb"
+        ]
+      },
+      "attachments": {}
+    },
+    "Log_3": {
+      "category": "assembly",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "Log_3",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_02",
+            "Sound_HitID_02",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -75,
+              75,
+              -2.26,
+              2.26,
+              -8.42,
+              8.42
+            ]
+          ],
+          "extract": {
+            "method": "chain",
+            "object": "A08_Halfpipe_02",
+            "segment": [
+              -25.05,
+              25.05,
+              -2.4,
+              2.4,
+              -8.5,
+              8.5
+            ],
+            "end": [
+              74.95,
+              75.05,
+              -2.4,
+              2.4,
+              -8.5,
+              8.5
+            ],
+            "step": 50.0,
+            "count": 3,
+            "base": "Log",
+            "file": "3D Entities/Level/Level_12.NMO"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module_floor": "Log_3",
+        "route": {
+          "log": 150
+        },
+        "parameters": [
+          "elements",
+          "turn",
+          "drop",
+          "hop",
+          "climb"
+        ]
+      },
+      "attachments": {}
+    },
+    "Trough_4": {
+      "category": "assembly",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "Trough_4",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_02",
+            "Sound_HitID_02",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -100,
+              100,
+              -2.9,
+              -2.36,
+              -9.29,
+              9.29
+            ]
+          ],
+          "extract": {
+            "method": "chain",
+            "object": "A01_Halfpipe_01",
+            "segment": [
+              -50.05,
+              0.05,
+              -3.0,
+              3.0,
+              -9.4,
+              9.4
+            ],
+            "end": [
+              99.95,
+              100.05,
+              -3.0,
+              3.0,
+              -9.4,
+              9.4
+            ],
+            "step": 50.0,
+            "count": 4,
+            "base": "Trough",
+            "file": "3D Entities/Level/Level_04.NMO"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module_floor": "Trough_4",
+        "route": {
+          "trough": 200
+        },
+        "parameters": [
+          "elements",
+          "turn",
+          "drop",
+          "hop",
+          "climb"
+        ]
+      },
+      "attachments": {}
+    },
+    "Log_4": {
+      "category": "assembly",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "Log_4",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_02",
+            "Sound_HitID_02",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -100,
+              100,
+              -2.26,
+              2.26,
+              -8.42,
+              8.42
+            ]
+          ],
+          "extract": {
+            "method": "chain",
+            "object": "A08_Halfpipe_02",
+            "segment": [
+              -25.05,
+              25.05,
+              -2.4,
+              2.4,
+              -8.5,
+              8.5
+            ],
+            "end": [
+              74.95,
+              75.05,
+              -2.4,
+              2.4,
+              -8.5,
+              8.5
+            ],
+            "step": 50.0,
+            "count": 4,
+            "base": "Log",
+            "file": "3D Entities/Level/Level_12.NMO"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module_floor": "Log_4",
+        "route": {
+          "log": 200
+        },
+        "parameters": [
+          "elements",
+          "turn",
+          "drop",
+          "hop",
+          "climb"
+        ]
+      },
+      "attachments": {}
+    },
+    "Trough_5": {
+      "category": "assembly",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "Trough_5",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_02",
+            "Sound_HitID_02",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -125,
+              125,
+              -2.9,
+              -2.36,
+              -9.29,
+              9.29
+            ]
+          ],
+          "extract": {
+            "method": "chain",
+            "object": "A01_Halfpipe_01",
+            "segment": [
+              -50.05,
+              0.05,
+              -3.0,
+              3.0,
+              -9.4,
+              9.4
+            ],
+            "end": [
+              99.95,
+              100.05,
+              -3.0,
+              3.0,
+              -9.4,
+              9.4
+            ],
+            "step": 50.0,
+            "count": 5,
+            "base": "Trough",
+            "file": "3D Entities/Level/Level_04.NMO"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module_floor": "Trough_5",
+        "route": {
+          "trough": 250
+        },
+        "parameters": [
+          "elements",
+          "turn",
+          "drop",
+          "hop",
+          "climb"
+        ]
+      },
+      "attachments": {}
+    },
+    "Log_5": {
+      "category": "assembly",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "Log_5",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_02",
+            "Sound_HitID_02",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -125,
+              125,
+              -2.26,
+              2.26,
+              -8.42,
+              8.42
+            ]
+          ],
+          "extract": {
+            "method": "chain",
+            "object": "A08_Halfpipe_02",
+            "segment": [
+              -25.05,
+              25.05,
+              -2.4,
+              2.4,
+              -8.5,
+              8.5
+            ],
+            "end": [
+              74.95,
+              75.05,
+              -2.4,
+              2.4,
+              -8.5,
+              8.5
+            ],
+            "step": 50.0,
+            "count": 5,
+            "base": "Log",
+            "file": "3D Entities/Level/Level_12.NMO"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module_floor": "Log_5",
+        "route": {
+          "log": 250
+        },
+        "parameters": [
+          "elements",
+          "turn",
+          "drop",
+          "hop",
+          "climb"
+        ]
+      },
+      "attachments": {}
+    },
+    "Trough_6": {
+      "category": "assembly",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "Trough_6",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_02",
+            "Sound_HitID_02",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -150,
+              150,
+              -2.9,
+              -2.36,
+              -9.29,
+              9.29
+            ]
+          ],
+          "extract": {
+            "method": "chain",
+            "object": "A01_Halfpipe_01",
+            "segment": [
+              -50.05,
+              0.05,
+              -3.0,
+              3.0,
+              -9.4,
+              9.4
+            ],
+            "end": [
+              99.95,
+              100.05,
+              -3.0,
+              3.0,
+              -9.4,
+              9.4
+            ],
+            "step": 50.0,
+            "count": 6,
+            "base": "Trough",
+            "file": "3D Entities/Level/Level_04.NMO"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module_floor": "Trough_6",
+        "route": {
+          "trough": 300
+        },
+        "parameters": [
+          "elements",
+          "turn",
+          "drop",
+          "hop",
+          "climb"
+        ]
+      },
+      "attachments": {}
+    },
+    "Log_6": {
+      "category": "assembly",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "Log_6",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_02",
+            "Sound_HitID_02",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -150,
+              150,
+              -2.26,
+              2.26,
+              -8.42,
+              8.42
+            ]
+          ],
+          "extract": {
+            "method": "chain",
+            "object": "A08_Halfpipe_02",
+            "segment": [
+              -25.05,
+              25.05,
+              -2.4,
+              2.4,
+              -8.5,
+              8.5
+            ],
+            "end": [
+              74.95,
+              75.05,
+              -2.4,
+              2.4,
+              -8.5,
+              8.5
+            ],
+            "step": 50.0,
+            "count": 6,
+            "base": "Log",
+            "file": "3D Entities/Level/Level_12.NMO"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module_floor": "Log_6",
+        "route": {
+          "log": 300
+        },
+        "parameters": [
+          "elements",
+          "turn",
+          "drop",
+          "hop",
+          "climb"
+        ]
+      },
+      "attachments": {}
+    },
+    "Trough_7": {
+      "category": "assembly",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "Trough_7",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_02",
+            "Sound_HitID_02",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -175,
+              175,
+              -2.9,
+              -2.36,
+              -9.29,
+              9.29
+            ]
+          ],
+          "extract": {
+            "method": "chain",
+            "object": "A01_Halfpipe_01",
+            "segment": [
+              -50.05,
+              0.05,
+              -3.0,
+              3.0,
+              -9.4,
+              9.4
+            ],
+            "end": [
+              99.95,
+              100.05,
+              -3.0,
+              3.0,
+              -9.4,
+              9.4
+            ],
+            "step": 50.0,
+            "count": 7,
+            "base": "Trough",
+            "file": "3D Entities/Level/Level_04.NMO"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module_floor": "Trough_7",
+        "route": {
+          "trough": 350
+        },
+        "parameters": [
+          "elements",
+          "turn",
+          "drop",
+          "hop",
+          "climb"
+        ]
+      },
+      "attachments": {}
+    },
+    "Log_7": {
+      "category": "assembly",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "Log_7",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_02",
+            "Sound_HitID_02",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -175,
+              175,
+              -2.26,
+              2.26,
+              -8.42,
+              8.42
+            ]
+          ],
+          "extract": {
+            "method": "chain",
+            "object": "A08_Halfpipe_02",
+            "segment": [
+              -25.05,
+              25.05,
+              -2.4,
+              2.4,
+              -8.5,
+              8.5
+            ],
+            "end": [
+              74.95,
+              75.05,
+              -2.4,
+              2.4,
+              -8.5,
+              8.5
+            ],
+            "step": 50.0,
+            "count": 7,
+            "base": "Log",
+            "file": "3D Entities/Level/Level_12.NMO"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module_floor": "Log_7",
+        "route": {
+          "log": 350
+        },
+        "parameters": [
+          "elements",
+          "turn",
+          "drop",
+          "hop",
+          "climb"
+        ]
+      },
+      "attachments": {}
+    },
+    "Trough_8": {
+      "category": "assembly",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "Trough_8",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_02",
+            "Sound_HitID_02",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -200,
+              200,
+              -2.9,
+              -2.36,
+              -9.29,
+              9.29
+            ]
+          ],
+          "extract": {
+            "method": "chain",
+            "object": "A01_Halfpipe_01",
+            "segment": [
+              -50.05,
+              0.05,
+              -3.0,
+              3.0,
+              -9.4,
+              9.4
+            ],
+            "end": [
+              99.95,
+              100.05,
+              -3.0,
+              3.0,
+              -9.4,
+              9.4
+            ],
+            "step": 50.0,
+            "count": 8,
+            "base": "Trough",
+            "file": "3D Entities/Level/Level_04.NMO"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module_floor": "Trough_8",
+        "route": {
+          "trough": 400
+        },
+        "parameters": [
+          "elements",
+          "turn",
+          "drop",
+          "hop",
+          "climb"
+        ]
+      },
+      "attachments": {}
+    },
+    "Log_8": {
+      "category": "assembly",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "Log_8",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_02",
+            "Sound_HitID_02",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "fallback_boxes": [
+            [
+              -200,
+              200,
+              -2.26,
+              2.26,
+              -8.42,
+              8.42
+            ]
+          ],
+          "extract": {
+            "method": "chain",
+            "object": "A08_Halfpipe_02",
+            "segment": [
+              -25.05,
+              25.05,
+              -2.4,
+              2.4,
+              -8.5,
+              8.5
+            ],
+            "end": [
+              74.95,
+              75.05,
+              -2.4,
+              2.4,
+              -8.5,
+              8.5
+            ],
+            "step": 50.0,
+            "count": 8,
+            "base": "Log",
+            "file": "3D Entities/Level/Level_12.NMO"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "module_floor": "Log_8",
+        "route": {
+          "log": 400
+        },
+        "parameters": [
+          "elements",
+          "turn",
+          "drop",
+          "hop",
+          "climb"
+        ]
+      },
+      "attachments": {}
+    },
+    "StartFlames": {
+      "category": "marker",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "PS_FourFlames",
+          "role": "placement_marker",
+          "groups": [
+            "PS_Levelstart"
+          ],
+          "visible": true,
+          "support": false,
+          "extract": {
+            "method": "mesh",
+            "file": "3D Entities/Level/Level_01.NMO",
+            "object": "PS_FourFlames_01"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "generated_by": "sector boundaries"
+      },
+      "attachments": {},
+      "runtime": {
+        "template": "3D Entities/PH/PS_FourFlames.nmo",
+        "dependencies": [
+          "3D Entities/Levelinit.nmo"
+        ]
+      }
+    },
+    "CheckpointFlames": {
+      "category": "marker",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "PC_TwoFlames",
+          "role": "placement_marker",
+          "groups": [
+            "PC_Checkpoints"
+          ],
+          "visible": true,
+          "support": false,
+          "extract": {
+            "method": "mesh",
+            "file": "3D Entities/Level/Level_01.NMO",
+            "object": "PC_TwoFlames_01"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "generated_by": "sector boundaries"
+      },
+      "attachments": {},
+      "runtime": {
+        "template": "3D Entities/PH/PC_TwoFlames.nmo",
+        "dependencies": [
+          "3D Entities/Levelinit.nmo"
+        ]
+      }
+    },
+    "ResetPoint": {
+      "category": "marker",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "PR_Resetpoint",
+          "role": "placement_marker",
+          "groups": [
+            "PR_Resetpoints"
+          ],
+          "visible": true,
+          "support": false,
+          "extract": {
+            "method": "mesh",
+            "file": "3D Entities/Level/Level_01.NMO",
+            "object": "PR_Resetpoint_01"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "generated_by": "sector boundaries"
+      },
+      "attachments": {}
+    },
+    "SkyLayer": {
+      "category": "environment",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "SkyLayer",
+          "role": "decoration",
+          "groups": [],
+          "visible": true,
+          "support": false,
+          "extract": {
+            "method": "mesh",
+            "file": "3D Entities/Level/Level_01.NMO",
+            "object": "SkyLayer"
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "generated_by": "level bounds"
+      },
+      "attachments": {}
+    },
+    "StartPad": {
+      "category": "assembly",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "Floor_Start",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_01",
+            "Sound_HitID_01",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "extract": {
+            "method": "marker-cut",
+            "file": "3D Entities/Level/Level_03.NMO",
+            "object": "A01_Floor_01",
+            "frame_object": "PS_FourFlames_01",
+            "half_x": 8.07,
+            "half_z": 9.3,
+            "snap": [
+              [
+                7.39
+              ],
+              [
+                1.26,
+                3.74
+              ],
+              [
+                2.5,
+                1.3
+              ]
+            ]
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "generated_by": "sector boundaries"
+      },
+      "attachments": {}
+    },
+    "CheckpointPad": {
+      "category": "assembly",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "Floor_Checkpoint",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_01",
+            "Sound_HitID_01",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "extract": {
+            "method": "marker-cut",
+            "file": "3D Entities/Level/Level_03.NMO",
+            "object": "A02_Floor_01",
+            "frame_object": "PC_TwoFlames_01",
+            "half_x": 4.93,
+            "half_z": 9.3,
+            "snap": [
+              [
+                4.92
+              ],
+              [
+                1.26,
+                3.74
+              ],
+              [
+                2.5,
+                0.87
+              ]
+            ]
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "generated_by": "sector boundaries"
+      },
+      "attachments": {}
+    },
+    "FanHousing": {
+      "category": "assembly",
+      "frame": "Native local frame, +Y up; the measured route adapter defines entry, exit and placement datum.",
+      "parts": [
+        {
+          "name": "Floor_Modul_18",
+          "role": "surface",
+          "groups": [
+            "Phys_Floors",
+            "Sound_RollID_01",
+            "Sound_HitID_01",
+            "Shadow"
+          ],
+          "visible": true,
+          "support": false,
+          "extract": {
+            "method": "marker-cut",
+            "file": "3D Entities/Level/Level_03.NMO",
+            "object": "A05_Floor_02",
+            "frame_object": "P_Modul_18_03",
+            "half_x": 2.52,
+            "half_z": 2.52,
+            "snap": [
+              [
+                2.5
+              ],
+              [
+                0.35
+              ],
+              [
+                2.5
+              ]
+            ]
+          }
+        }
+      ],
+      "ports": {},
+      "placement": {
+        "generated_by": "fan element on area"
+      },
+      "attachments": {}
+    }
+  }
+}

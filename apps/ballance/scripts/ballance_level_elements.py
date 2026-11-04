@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from ballance.core.nmo import Nmo, add_nmo_argument  # noqa: E402
 from ballance.extract.elements import Levels, every_kind, export_elements  # noqa: E402
+from ballance.game.resources import catalog  # noqa: E402
 
 
 def main() -> int:
@@ -30,6 +31,8 @@ def main() -> int:
         description="Export Ballance's level element meshes as OBJ files.")
     parser.add_argument("game", help="Ballance installation folder (holds '3D Entities')")
     parser.add_argument("-o", "--output", required=True, help="Folder for <Kind>.obj files")
+    parser.add_argument("--resources", nargs="+", choices=tuple(catalog()),
+                        help="Refresh only the named unified resources and their source record")
     add_nmo_argument(parser)
     args = parser.parse_args()
 
@@ -37,8 +40,13 @@ def main() -> int:
     if not levels.files:
         print(f"no Level_*.NMO under {args.game}", file=sys.stderr)
         return 2
-    found = export_elements(levels, Path(args.output))
-    every = every_kind()
+    if args.resources:
+        from ballance.extract.resources import export_resources
+        found = export_resources(levels, Path(args.output), args.resources)
+        every = list(found)
+    else:
+        found = export_elements(levels, Path(args.output))
+        every = every_kind()
     for kind in every:
         print(f"{kind:16s} {found.get(kind, 'not found')}")
     return 0 if len(found) == len(every) else 1

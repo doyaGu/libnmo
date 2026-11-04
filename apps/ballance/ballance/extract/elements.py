@@ -57,6 +57,7 @@ from pathlib import Path
 from ..core.nmo import Nmo, field_values, into, matrix_of, place, turn
 from ..core.obj import read_obj
 from ..game.catalog import ELEMENT_KINDS, MARKERS
+from ..game.resources import catalog
 
 KINDS = MARKERS + ELEMENT_KINDS + ["SkyLayer"]
 
@@ -68,36 +69,8 @@ SNAP_TOLERANCE = 0.06
 # The walls closing a cut floor: as deep as the floors' (ballance.kit.floors),
 # one texture repeat every 5.
 WALL_DEPTH, REPEAT_UNITS = 5.0, 5.0
-SNAP = {
-    "Floor_Start": ([7.39], [1.26, 3.74], [2.5, 1.3]),
-    "Floor_Checkpoint": ([4.92], [1.26, 3.74], [2.5, 0.87]),
-    "Floor_Modul_18": ([2.5], [0.35], [2.5]),
-    "Floor_Diamond": ([8.12], [0.0, 0.7, 5.0], [2.5]),
-    "Floor_Octagon": ([0.0, 2.5, 5.0, 7.5], [0.0, 0.7, 5.0], [0.0, 2.5, 5.0, 7.5]),
-    "Floor_Modul_25": ([5.0, 0.0, 10.0, 15.0], [0.0], [2.5]),
-    # Level_05's target block lies from -2.4 to 2.6 across
-    "Floor_Modul_37": ([3.73, 1.27, 11.27, 16.27], [0.0], [(2.5, 0.11), 4.75, 9.75]),
-    "Floor_Modul_34": ([24.6, 30.4], [0.0, 2.1, 2.8], [2.5, 5.0]),
-    "Floor_Modul_01": ([0.0, 2.5, 5.0], [0.0, 0.7], [28.15, 24.35]),
-    "Floor_Stopper_30": ([7.4, 6.4], [0.0, 0.5], [2.5]),
-    "Floor_Modul_17": ([11.21, 8.71, 13.71], [5.43, 6.13], [24.61]),
-    "Floor_Modul_17_Far": ([11.21, 8.71, 13.71], [5.43, 6.13], [8.72, 1.28]),
-    "Floor_Modul_19": ([7.53, 14.12, 9.12, 2.47, 3.32, 8.34], [0.0, 0.7], [2.5, 7.5, 12.5]),
-    "Floor_Stopper_19": ([9.12, 8.12, 2.32, 3.32], [0.53, 1.03], [2.5, 7.5, 12.5]),
-    "Modul27": ([5.0], [], [2.5]),
-    "Modul42": ([35.16], [0.41], [2.5]),
-    "Modul42_Long": ([2.5], [0.41], [65.045]),
-    "Floor_Cradle": ([7.5, 5.0, 2.5], [2.5, 1.8, 1.1], [7.5, 5.0, 2.5]),
-    "Floor_RailDock": ([5.0, 2.5], [0.7, 0.58], [5.0]),
-    "Modul02": ([28.2], [11.84], [2.5]),
-    "Floor_Modul02": ([42.49, 44.99, 47.49, 52.49, 54.99, 57.49], [13.18, 18.18],
-                      [2.5, 5.0, 7.5]),
-    "Floor_Modul11": ([1.88, 3.12, 0.62], [3.19, 8.19], [24.33, 26.83, 29.33]),
-    "Floor_Modul_08": ([12.5, 10.0, 7.5], [3.5, 1.5], [0.0, 2.5]),
-    # Level_07's platform lies 0.07 off the lift's middle, across
-    "Floor_Modul_03": ([10.95, 15.94, 20.94, 25.94, 30.94, 35.94], [1.884, 6.884],
-                       [(0.0, 0.1), (2.5, 0.1), (7.5, 0.1)]),
-}
+SNAP = {p["name"]: p["extract"]["snap"] for s in catalog().values() for p in s["parts"]
+        if "snap" in p["extract"]}
 
 Face = tuple[str, list[tuple[tuple, tuple, tuple]]]  # material, (position, uv, normal) x 3
 
@@ -106,6 +79,7 @@ class Levels:
     """The original level files, with their objects exported once each."""
 
     def __init__(self, game: Path, nmo: Nmo) -> None:
+        self.game = game.resolve()
         self.files = sorted((game / "3D Entities" / "Level").glob("Level_*.NMO"))
         self.by_name = {path.name.lower(): path for path in self.files}
         self.nmo = nmo
@@ -143,6 +117,10 @@ class Cut:
         """Writes the cut; returns what it was cut from, or None."""
         raise NotImplementedError
 
+    @property
+    def output_names(self):
+        return [self.kind]
+
 
 class MarkerCut(Cut):
     """The part of a floor within half extents (X, Z) of a marker, around the
@@ -170,10 +148,13 @@ class ModuleCut(Cut):
     origin)."""
 
     def __init__(self, kind: str, level: str, floor: str | list[str], module: str, box: tuple,
-                 origin: tuple = (0.0, 0.0, 0.0)) -> None:
+                 origin: tuple = (0.0, 0.0, 0.0), *, method: str | None = None) -> None:
         super().__init__(kind, level)
         self.floors = [floor] if isinstance(floor, str) else floor
         self.module, self.box, self.origin = module, box, origin
+        self.method = method or ("clip-and-close" if kind.startswith("Floor_") else "contained-faces")
+        if self.method not in ("clip-and-close", "contained-faces"):
+            raise ValueError(f"unknown module extraction method: {self.method}")
 
     def take(self, levels, path, out, centers):
         objects = levels.objects(path)
@@ -183,7 +164,7 @@ class ModuleCut(Cut):
         cut, mtls = [], []
         for name in self.floors:
             faces, mtl = levels.faces(path, objects[name])
-            if self.kind.startswith("Floor_"):
+            if self.method == "clip-and-close":
                 part = clipped_in_frame(faces, matrix, self.box)
                 cut += part + closing_walls(part)
             else:
@@ -202,9 +183,14 @@ class ChainCut(Cut):
     seams between segments the ball would knock against."""
 
     def __init__(self, kind: str, level: str, floor: str, segment: tuple, end: tuple,
-                 step: float, most: int) -> None:
+                 step: float, most: int, *, only: int | None = None) -> None:
         super().__init__(kind, level)
         self.floor, self.segment, self.end, self.step, self.most = floor, segment, end, step, most
+        self.counts = [only] if only is not None else list(range(1, most+1))
+
+    @property
+    def output_names(self):
+        return [f'{self.kind}_{n}' for n in self.counts]
 
     def take(self, levels, path, out, centers):
         objects = levels.objects(path)
@@ -216,7 +202,7 @@ class ChainCut(Cut):
         end = in_frame(faces, matrix, self.end)
         middle = (self.segment[0] + self.segment[1]) / 2
         tip = (self.end[0] + self.end[1]) / 2
-        for n in range(1, self.most + 1):
+        for n in self.counts:
             chain = []
             for k in range(n):
                 shift = self.step * (k - (n - 1) / 2) - middle
@@ -263,167 +249,32 @@ class DecorCut(Cut):
         return f"{path.name}:{'+'.join(self.names)}"
 
 
-# One of the clamps holding Level_01's railings to the walls (on
-# A01_Rail_04's first), in the rail object's frame: round it, and its post's
-# middle at the floor's rim
-CLAMP_BOX = (-17.58, -16.08, 0.67, 1.18, -13.16, -12.45)
-CLAMP_POST = (-16.6374, 1.5767, -12.7156)
-# Level_04's fan tower, in its fan's frame: the shaft, the rail in it, and
-# the cap and the hidden plates under it
-FAN_TOWER_SPIRAL = (-17.95, 18.3, -6.0, 14.0, -13.2, 18.1)
-FAN_TOWER_RAIL = (-3.6, 3.6, -8.0, 22.0, -6.0, 3.6)
-FAN_TOWER_CAP = (-4.5, 4.5, 15.0, 31.0, -5.0, 4.5)
-FAN_TOWER_GUARD = (-16.0, 19.0, 2.4, 16.0, -14.0, -2.9)
-# Level_01's wood spiral, in the frame of its pads: all of it, the corner of
-# the road it leaves (to the start of the corner), and where the road comes in
-SPIRAL_BOX, SPIRAL_CORNER = (-27.0, 30.0, -52.0, 46.0, -36.0, 63.0), \
-    (-25.29, -15.2, -52.0, -35.0, 44.8, 62.9)
-SPIRAL_ORIGIN = (-25.29, -41.55, 53.94)
-# Level_06's climbing logs, in the frame of their first fan: all of them,
-# and where the ball comes in
-CLIMB_BOX, CLIMB_ORIGIN = (-13.0, 13.0, -230.0, 60.0, -255.7, 77.7), (0.0, 0.845, 77.66)
+def resource_cut(part):
+    """Compile a descriptor into the same native cut used by full extraction."""
+    cut = part['extract']
+    if cut['method'] == 'marker-cut':
+        return MarkerCut(part['name'], Path(cut['file']).name, cut['object'],
+                         cut['frame_object'], cut['half_x'], cut['half_z'])
+    if cut['method'] == 'chain':
+        return ChainCut(cut['base'], Path(cut['file']).name, cut['object'],
+                        tuple(cut['segment']), tuple(cut['end']), cut['step'],
+                        cut['count'], only=cut['count'])
+    if cut['method'] == 'decoration':
+        return DecorCut(part['name'], Path(cut['file']).name, cut['objects'],
+                        tuple(cut['point']), cut['reach'], on=cut.get('on'))
+    return ModuleCut(part['name'], Path(cut['file']).name, cut['objects'], cut['frame_object'],
+                     tuple(cut['box']), tuple(cut['origin']), method=cut['method'])
 
-CUTS: list[Cut] = [
-    MarkerCut("Floor_Start", "Level_03.NMO", "A01_Floor_01", "PS_FourFlames_01", 8.07, 9.3),
-    MarkerCut("Floor_Checkpoint", "Level_03.NMO", "A02_Floor_01", "PC_TwoFlames_01", 4.93, 9.3),
-    MarkerCut("Floor_Modul_18", "Level_03.NMO", "A05_Floor_02", "P_Modul_18_03", 2.52, 2.52),
-    ModuleCut("Floor_Modul_25", "Level_03.NMO", "A05_Floor_02", "P_Modul_25_03",
-              (-15.1, 5.1, -5.1, 0.1, -2.6, 2.6)),
-    ModuleCut("Floor_Stopper_25", "Level_03.NMO", "A01_Floor_Stopper_01", "P_Modul_25_03",
-              (-15.1, 5.1, -5.1, 0.1, -2.6, 2.6)),
-    ModuleCut("Floor_Modul_37", "Level_05.NMO", "A02_Floor_02", "P_Modul_37_02",
-              (-16.3, 8.8, -5.1, 0.1, -9.8, 9.8)),
-    ModuleCut("Floor_Stopper_37", "Level_05.NMO", "A01_Floor_Stopper", "P_Modul_37_02",
-              (-16.3, 3.8, -5.1, 0.1, -9.8, 9.8)),
-    ModuleCut("Floor_Modul_34", "Level_01.NMO", "A02_Floor_03", "P_Modul_34_01",
-              (-30.45, 24.65, -20.0, 3.0, -22.8, 22.8)),
-    # Level_05's octagon node, in the frame of its floor, whose X points at
-    # the node's one shut side (OCTAGON_HALF in ballance.game.measures)
-    ModuleCut("Floor_Octagon", "Level_05.NMO", "A01_Floor_01", "A01_Floor_01",
-              (4.1114, 19.1114, -6.0, 0.5, -19.0174, -4.0174), (11.6114, 0.0, -11.5174)),
-    # Level_05's diamond, in the frame of its floor, whose X points from its
-    # shut tip to its open one (DIAMOND_* in ballance.game.measures)
-    ModuleCut("Floor_Diamond", "Level_05.NMO", "A01_Floor_03", "A01_Floor_03",
-              (-54.45, -35.63, -3.5, 3.0, -24.1, -2.8), (-43.749, 2.503, -13.448)),
-    # Level_10's maze, cut where the track enters and leaves it (MAZE_* in
-    # ballance.game.measures)
-    ModuleCut("Floor_Maze_34", "Level_10.NMO", "A01_Floor_04", "P_Modul_34_01",
-              (-20.4, 44.83, -11.0, 1.0, -17.5, 27.5)),
-    ModuleCut("Rail_Maze_34", "Level_10.NMO", "A01_Rail_02", "P_Modul_34_01",
-              (-41.0, 16.0, -6.0, 1.0, -3.0, 28.0)),
-    ModuleCut("Floor_Modul_01", "Level_01.NMO", "A03_Floor_02", "P_Modul_01_01",
-              (-25.1, 30.1, -10.0, 0.2, -24.4, 28.2)),
-    ModuleCut("Floor_Stopper_30", "Level_03.NMO", "A01_Floor_Stopper_01", "P_Modul_30_01",
-              (-7.5, 7.5, -0.6, 0.1, -2.6, 2.6)),
-    ModuleCut("Floor_Modul_17", "Level_03.NMO", "A04_Floor_01", "P_Modul_17_01",
-              (-24.0, 15.5, -11.0, -0.5, -8.78, 24.62)),
-    ModuleCut("Floor_Modul_17_Far", "Level_03.NMO", "A04_Floor_02", "P_Modul_17_01",
-              (-13.8, -8.6, -11.0, -0.5, -8.78, 24.62)),
-    ModuleCut("Floor_Modul_19", "Level_09.NMO", "A01_Floor_01", "P_Modul_19_01",
-              (-14.2, 7.6, -5.1, 0.1, -12.6, 7.6)),
-    ModuleCut("Floor_Stopper_19", "Level_09.NMO", "A01_Floor_Stopper", "P_Modul_19_01",
-              (-14.2, 7.6, -1.1, -0.4, -12.6, 7.6)),
-    ModuleCut("Modul27", "Level_03.NMO", "A04_Modul_27", "A04_Modul_27",
-              (-5.1, 5.1, -3.0, 0.1, -2.6, 2.6)),
-    ModuleCut("Modul42", "Level_08.NMO", "A02_Modul42", "A02_Modul42",
-              (-35.3, 35.3, -2.2, 2.2, -2.6, 2.6)),
-    # the long one, along Z
-    ModuleCut("Modul42_Long", "Level_11.NMO", "A01_Modul42_01", "A01_Modul42_01",
-              (-2.6, 2.6, -2.2, 2.2, -65.2, 65.2)),
-    # the cradle a rail drops the ball into: the block, the rail's end bent
-    # down to it with the tubes holding the ball and the railing, and the
-    # railing's clamps
-    ModuleCut("Floor_Cradle", "Level_01.NMO", "A01_Floor_05", "A01_Floor_05",
-              (-7.6, 7.6, -2.6, 2.6, -7.6, 7.6)),
-    ModuleCut("Rail_Cradle", "Level_01.NMO", "A01_Rail_09", "A01_Floor_05",
-              (-7.45, 8.0, -2.0, 9.6, -8.0, 3.84)),
-    ModuleCut("Misc_Cradle", "Level_01.NMO", "A01_Misc_Schelle04", "A01_Floor_05",
-              (-8.0, 8.0, -3.0, 3.0, -9.0, 9.0)),
-    # the trough with holes in its bottom
-    ModuleCut("Trough_Holes", "Level_04.NMO", "A01_Halfpipe_04", "A01_Halfpipe_04",
-              (-175.1, 175.1, -3.0, 3.0, -9.4, 9.4)),
-    # troughs and logs of 1 to 8 segments, each one mesh
-    ChainCut("Trough", "Level_04.NMO", "A01_Halfpipe_01", (-50.05, 0.05, -3.0, 3.0, -9.4, 9.4),
-             (99.95, 100.05, -3.0, 3.0, -9.4, 9.4), 50.0, 8),
-    ChainCut("Log", "Level_12.NMO", "A08_Halfpipe_02", (-25.05, 25.05, -2.4, 2.4, -8.5, 8.5),
-             (74.95, 75.05, -2.4, 2.4, -8.5, 8.5), 50.0, 8),
-    # Level_06's logs climbing with fans, from where the ball comes in on
-    # the lower log's top, along -Z: the logs, the hidden funnels under the
-    # holes the fans blow the ball up through and the wall at the top log's
-    # end, and the rail and poles of that wall
-    ModuleCut("Log_Climb", "Level_06.NMO", [f"A_02_Wood_{n:02d}" for n in range(4, 15)],
-              "P_Modul_18_04", CLIMB_BOX, CLIMB_ORIGIN),
-    ModuleCut("Log_Climb_Hidden", "Level_06.NMO",
-              [f"A02_inv_Coll_{n:02d}" for n in range(5)], "P_Modul_18_04", CLIMB_BOX,
-              CLIMB_ORIGIN),
-    ModuleCut("Log_Climb_Rail", "Level_06.NMO", "A_02_Rail_01", "P_Modul_18_04", CLIMB_BOX,
-              CLIMB_ORIGIN),
-    ModuleCut("Log_Climb_Poles", "Level_06.NMO", "A02_Poles", "P_Modul_18_04", CLIMB_BOX,
-              CLIMB_ORIGIN),
-    # Level_01's wood spiral, from where the road comes in along X: its
-    # ramps, its pads, the road's corner it leaves, its railings and their
-    # clamps
-    ModuleCut("Spiral", "Level_01.NMO", ["A04_Floor_Wood_01", "A04_Floor_Wood_02"],
-              "A04_Floor_02", SPIRAL_BOX, SPIRAL_ORIGIN),
-    ModuleCut("Spiral_Pads", "Level_01.NMO", "A04_Floor_02", "A04_Floor_02", SPIRAL_BOX,
-              SPIRAL_ORIGIN),
-    ModuleCut("Floor_Spiral_Corner", "Level_01.NMO", "A04_Floor_01", "A04_Floor_02",
-              SPIRAL_CORNER, SPIRAL_ORIGIN),
-    ModuleCut("Spiral_Rails", "Level_01.NMO", ["A04_Rail_01", "A04_Rail_02"], "A04_Floor_02",
-              SPIRAL_BOX, SPIRAL_ORIGIN),
-    ModuleCut("Spiral_Clamps", "Level_01.NMO", ["A04_Misc_Schelle_01", "A04_Misc_Schelle_02"],
-              "A04_Floor_02", SPIRAL_BOX, SPIRAL_ORIGIN),
-    # a clamp holding a railing's post to a floor's wall, the post's middle
-    # at the rim at the origin, the wall along X and the floor toward +Z
-    ModuleCut("Railing_Clamp", "Level_01.NMO", "A01_Misc_Schelle03", "A01_Rail_04", CLAMP_BOX,
-              CLAMP_POST),
-    # Level_04's fan tower, round its fan: the shaft with the channels
-    # winding down round it, the rail bending up into the shaft, the
-    # railings on the channels and their clamps, the cap, and the hidden
-    # plates under the cap
-    ModuleCut("Floor_FanTower", "Level_04.NMO", "A04_Floor_01", "P_Modul_18_05",
-              FAN_TOWER_SPIRAL),
-    ModuleCut("Rail_FanTower", "Level_04.NMO", "A04_Rail_03", "P_Modul_18_05", FAN_TOWER_RAIL),
-    ModuleCut("Railing_FanTower", "Level_04.NMO", "A04_Rail_03", "P_Modul_18_05",
-              FAN_TOWER_GUARD),
-    ModuleCut("Clamps_FanTower", "Level_04.NMO", "A05_Schelle", "P_Modul_18_05",
-              FAN_TOWER_GUARD),
-    ModuleCut("FanTower_Cap", "Level_04.NMO", "A04_Towers", "P_Modul_18_05", FAN_TOWER_CAP),
-    ModuleCut("FanTower_Hidden", "Level_04.NMO", ["A04_invisibleColl1", "A04_invisibleColl2"],
-              "P_Modul_18_05", FAN_TOWER_CAP),
-    # the fan's housing block a rail ends in, its bottom's middle at the origin
-    ModuleCut("Floor_FanBlock", "Level_05.NMO", "A03_Floor_Modul18", "A03_Floor_Modul18",
-              (-2.6, 2.6, -0.1, 5.1, -2.6, 2.6)),
-    # a wide road's end narrowing to a rail, its flat middle at the origin
-    ModuleCut("Floor_RailDock", "Level_01.NMO", "A01_Floor_03", "A01_Rail_07",
-              (-5.1, 5.1, -6.0, 1.4, 12.8, 17.95), (0.0, 0.58, 17.88)),
-    # the tubes parting at a rail's end, from its last straight ring on
-    ModuleCut("Rail_Split", "Level_01.NMO", "A01_Rail_02_01", "A01_Rail_02_01",
-              (-13.5, -3.0, -0.5, 0.4, -12.0, 12.0), (-3.089, -0.101, 0.0)),
-    ModuleCut("Modul02", "Level_09.NMO", "A05_Modul02", "A05_Modul02",
-              (-28.3, 28.3, -12.0, 12.0, -2.6, 2.6)),
-    ModuleCut("Floor_Modul02", "Level_09.NMO", "A05_Floor_03", "A05_Modul02",
-              (42.4, 57.6, -18.3, -13.1, -7.6, 7.6)),
-    ModuleCut("Modul11", "Level_07.NMO", "A01_Modul11", "A01_Modul11",
-              (-5.5, 6.7, -3.7, 3.7, -29.4, 29.4)),
-    ModuleCut("Floor_Modul11", "Level_07.NMO", "A01_Floor_02", "A01_Modul11",
-              (-1.9, 3.2, -8.3, -3.1, -29.4, 29.4)),
-    ModuleCut("Floor_Modul_08", "Level_09.NMO", "A03_Floor_01", "P_Modul_08_01",
-              (-12.6, 12.6, -3.6, 1.6, -2.6, 2.6)),
-    ModuleCut("Floor_Modul_03", "Level_07.NMO", "A05_Floor_03", "P_Modul_03_01",
-              (-36.0, -10.9, 1.8, 7.0, -7.7, 7.7)),
-    ModuleCut("Floor_Stopper_17", "Level_03.NMO", "A01_Floor_Stopper_01", "P_Modul_17_01",
-              (-24.0, 15.5, -11.0, -0.5, -8.78, 24.62)),
-    DecorCut("Pillar", "Level_01.NMO", ["A01_Floor_Columns_Top", "A01_Floor_Colums_Bottom"],
-             (31.8, -167.7), 3.0),
-    DecorCut("Tower", "Level_01.NMO", ["A01_Tower"], (31.8, -167.7), 4.5, on="Pillar"),
-    DecorCut("Stick", "Level_01.NMO", ["A04_Stick_Top", "A04_Stick_Bottom"], (680.2, -889.6), 1.5),
-]
+
+# Shared parts (the lantern and standalone column) are exported once.
+_RESOURCE_PARTS = {part['name']: part for spec in catalog().values() for part in spec['parts']
+                   if part['extract']['method'] != 'mesh'}
+CUTS = [resource_cut(part) for part in _RESOURCE_PARTS.values()]
 
 
 def snapped(value: float, targets: list) -> float:
     for target in targets:
-        target, tolerance = target if isinstance(target, tuple) else (target, SNAP_TOLERANCE)
+        target, tolerance = target if isinstance(target, (tuple, list)) else (target, SNAP_TOLERANCE)
         for signed in (target, -target):
             if abs(value - signed) <= tolerance:
                 return signed
@@ -616,11 +467,8 @@ def export_elements(levels: Levels, out: Path) -> dict[str, str]:
         if path is not None:
             source = cut.take(levels, path, out, centers)
             if source is not None:
-                if isinstance(cut, ChainCut):
-                    for n in range(1, cut.most + 1):
-                        found[f"{cut.kind}_{n}"] = source
-                else:
-                    found[cut.kind] = source
+                for name in cut.output_names:
+                    found[name] = source
     for path in levels.files:
         for name, fields in levels.objects(path).items():
             kind = kind_of(name)
@@ -631,14 +479,12 @@ def export_elements(levels: Levels, out: Path) -> dict[str, str]:
             found[kind] = f"{path.name}:{name}"
         if all(kind in found for kind in KINDS):
             break
+    if hasattr(levels, 'game'):
+        from .resources import export_resources
+        found.update(export_resources(levels, out))
     return found
 
 
 def every_kind() -> list[str]:
     """The names export_elements() writes, in the order it reports them."""
-    marker_cuts = [c.kind for c in CUTS if isinstance(c, MarkerCut)]
-    module_cuts = [c.kind for c in CUTS if isinstance(c, ModuleCut)]
-    decor = [c.kind for c in CUTS if isinstance(c, DecorCut)]
-    chains = [f"{c.kind}_{n}" for c in CUTS if isinstance(c, ChainCut)
-              for n in range(1, c.most + 1)]
-    return KINDS + marker_cuts + module_cuts + decor + chains
+    return KINDS + [name for cut in CUTS for name in cut.output_names]
