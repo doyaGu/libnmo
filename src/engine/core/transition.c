@@ -73,7 +73,7 @@ nmo_status_t eng_keyed_animation_transition(nmo_engine_t *engine, nmo_object_id_
     if ((mode & CK_TRANSITION_USEVELOCITY) && length >= ENG_TRANSITION_MAX_SAMPLES) return NMO_ERR_NOT_SUPPORTED;
     uint32_t in_flags = a->flags, out_flags = b->flags;
     float fps = fabsf(b->frame_rate);
-    nmo_object_id_t root = eng_object_ref(engine,to,&b->root_entity);
+    nmo_object_id_t root = eng_keyed_animation_root_entity(engine,to);
     nmo_object_id_t root_channel = eng_keyed_animation_root(engine,to);
     if (root_channel != 0) root = transition_entity(engine,root_channel);
     const eng_animation_channel_t *inputs, *outputs;
@@ -112,8 +112,9 @@ nmo_status_t eng_keyed_animation_transition(nmo_engine_t *engine, nmo_object_id_
     const nmo_keyedanimation_state_t *old = nmo_object_get_state(eng_find_object(engine,result));
     size_t capacity = old->animation_count > out_count ? old->animation_count : out_count;
     nmo_object_id_t *ids = calloc(capacity != 0 ? capacity : 1,sizeof(*ids));
+    nmo_object_id_t *entities = calloc(capacity != 0 ? capacity : 1,sizeof(*entities));
     nmo_objectanimation_state_t *states = calloc(capacity != 0 ? capacity : 1,sizeof(*states));
-    if (ids == NULL || states == NULL) { free(ids); free(states); free(pairs); return NMO_ERR_NOMEM; }
+    if (ids == NULL || states == NULL || entities == NULL) { free(ids); free(states); free(entities); free(pairs); return NMO_ERR_NOMEM; }
     size_t count = 0, previous_count = 0;
     for (uint32_t i = 0; old->animation_ids != NULL && i < old->animation_count; i++) {
         nmo_object_id_t id = eng_object_ref(engine,result,&old->animation_ids[i]);
@@ -134,12 +135,16 @@ nmo_status_t eng_keyed_animation_transition(nmo_engine_t *engine, nmo_object_id_
         (out_flags & (CKANIMATION_LINKTOFRAMERATE|CKANIMATION_ALLOWTURN)) | CKANIMATION_SUBANIMSSORTED;
     generated.has_merge = 0; generated.merged = 0; generated.subanim_count = 0; generated.subanims = NULL;
     generated.animation_ids = refs; generated.animation_count = (uint32_t)count;
-    if (!eng_animation_local_ref(engine,result,root,&generated.base.root_entity) ||
-        !eng_animation_local_ref(engine,result,character,&generated.base.character)) status = NMO_ERR_INVALID_ARGUMENT;
+    if (!eng_animation_local_ref(engine,result,root,&generated.base.root_entity)) generated.base.root_entity = nmo_ref_from_id(0);
+    if (!eng_animation_local_ref(engine,result,character,&generated.base.character)) generated.base.character = nmo_ref_from_id(0);
+    /* Reserve live binding entries before capturing. Installing final engine
+     * IDs then needs no allocation and preserves existing poses on failure. */
+    if (!eng_animation_set_character(engine,result,eng_animation_character(engine,result))) status = NMO_ERR_NOMEM;
     for (size_t i = 0; status == NMO_OK && i < count; i++) {
         if (!eng_animation_local_ref(engine,result,ids[i],&refs[i])) { status = NMO_ERR_INVALID_ARGUMENT; break; }
         const nmo_objectanimation_state_t *state = nmo_object_get_state(eng_find_object(engine,ids[i]));
         states[i] = (nmo_objectanimation_state_t){.base=state->base,.format=CKOBJANIM_FORMAT_CONTROLLERS,.has_length=1,.length=length,.merge_factor=.5f};
+        if (!eng_object_animation_set_entity(engine,ids[i],eng_object_animation_entity(engine,ids[i]))) status = NMO_ERR_NOMEM;
     }
     for (size_t i = 0; status == NMO_OK && i < out_count; i++) {
         if (pairs[i].from == 0) continue;
@@ -152,16 +157,24 @@ nmo_status_t eng_keyed_animation_transition(nmo_engine_t *engine, nmo_object_id_
         status = eng_object_animation_capture_transition(engine,ids[target],pairs[i].from,step,pairs[i].to,step_to,length,
             is_root && (mode & CK_TRANSITION_USEVELOCITY),is_root && (in_flags & CKANIMATION_ALIGNORIENTATION),
             mode & CK_TRANSITION_WARPTOBEST ? &pairs[i].starting : NULL,&states[target]);
-        if (status == NMO_OK) states[target].flags |= CK_OBJECTANIMATION_RESERVED;
+        if (status == NMO_OK) {
+            states[target].flags |= CK_OBJECTANIMATION_RESERVED;
+            entities[target] = transition_entity(engine,pairs[i].to);
+        }
     }
     if (status == NMO_OK) {
-        for (size_t i = 0; i < count; i++) *(nmo_objectanimation_state_t *)nmo_object_get_state(eng_find_object(engine,ids[i])) = states[i];
+        for (size_t i = 0; i < count; i++) {
+            eng_object_animation_set_entity(engine,ids[i],entities[i]);
+            *(nmo_objectanimation_state_t *)nmo_object_get_state(eng_find_object(engine,ids[i])) = states[i];
+        }
         *(nmo_keyedanimation_state_t *)nmo_object_get_state(eng_find_object(engine,result)) = generated;
         eng_keyed_animation_refresh(engine,result);
+        eng_keyed_animation_set_root_entity(engine,result,root);
+        eng_animation_set_character(engine,result,character);
         *entry = step_to*out_length;
     } else {
         for (size_t i = previous_count; i < count; i++) nmo_engine_destroy_object(engine,ids[i]);
     }
-    free(ids); free(states); free(pairs);
+    free(ids); free(entities); free(states); free(pairs);
     return status;
 }

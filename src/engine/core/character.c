@@ -291,13 +291,14 @@ nmo_object_id_t eng_character_warper(nmo_engine_t *engine, nmo_object_id_t chara
     nmo_keyedanimation_state_t *state = nmo_object_get_state(object);
     state->base.has_character = state->base.has_root_entity = state->base.has_data = 1;
     state->base.flags |= CKANIMATION_ALLOWTURN;
-    if (!eng_animation_local_ref(engine,id,character,&state->base.character) ||
-        !eng_animation_local_ref(engine,id,runtime->root,&state->base.root_entity)) {
+    if (!eng_animation_local_ref(engine,id,character,&state->base.character)) {
         nmo_engine_destroy_object(engine,id);
         return 0;
     }
+    if (!eng_animation_local_ref(engine,id,runtime->root,&state->base.root_entity)) state->base.root_entity = nmo_ref_from_id(0);
     object->flags |= CK_OBJECT_NOTTOBELISTEDANDSAVED;
     eng_keyed_animation_refresh(engine,id);
+    eng_keyed_animation_set_root_entity(engine,id,runtime->root);
     runtime->warper = id;
     return id;
 }

@@ -3,6 +3,9 @@
 #include "../../src/engine/engine_character.h"
 #include "../../src/engine/engine_transform.h"
 #include "object/builtin/nmo_character_schemas.h"
+#include "format/nmo_chunk_api.h"
+#include "object/builtin/nmo_parameter_schemas.h"
+#include "core/nmo_utils.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -17,6 +20,7 @@ static nmo_object_id_t bodypart(engine_fixture_t *f, nmo_object_id_t character, 
     nmo_character_state_t *actor = fixture_state(f,character);
     if (part == NULL || actor == NULL) return 0;
     ((nmo_3dentity_state_t *)part)->parent = nmo_ref_from_id(character);
+    ((nmo_3dentity_state_t *)part)->has_entityndata_chunk = 1;
     part->has_character = 1; part->character = nmo_ref_from_id(character);
     if (actor->body_parts.element_size != sizeof(nmo_character_part_t)) {
         nmo_array_dispose(&actor->body_parts);
@@ -250,6 +254,188 @@ TEST(engine_animation_binding, plain_animations_transfer_and_missing_targets_or_
     }
 }
 
+static const char *resolve_file(void *data, const char *name)
+{
+    (void)name;
+    return data;
+}
+
+static void channel_format(engine_fixture_t *f, nmo_object_id_t channel, nmo_objectanimation_format_t format)
+{
+    nmo_objectanimation_state_t *part = fixture_state(f,channel);
+    if (format == CKOBJANIM_FORMAT_SHARED) {
+        nmo_object_id_t shared = fixture_create(f,NMO_CID_OBJECTANIMATION,"Shared Keys");
+        nmo_objectanimation_state_t *keys = fixture_state(f,shared);
+        *keys = *part; keys->entity = nmo_ref_from_id(0);
+        part->has_shared_anim = 1; part->shared_anim = nmo_ref_from_id(shared);
+        part->controllers = NULL; part->controller_count = 0;
+    } else if (format == CKOBJANIM_FORMAT_LEGACY) {
+        nmo_object_t *object = nmo_object_repository_find_by_id(f->repo,channel);
+        object->chunk = nmo_chunk_create(nmo_session_get_arena(f->session));
+        ASSERT_NOT_NULL(object->chunk);
+        object->chunk->class_id = NMO_CID_OBJECTANIMATION; object->chunk->data_version = 0;
+    }
+    part->format = format;
+}
+
+TEST(engine_animation_binding, loaded_animation_transfers_keep_cross_module_warps_and_copies_bound)
+{
+    const nmo_objectanimation_format_t formats[] = {CKOBJANIM_FORMAT_CONTROLLERS,
+        CKOBJANIM_FORMAT_NEWDATA,CKOBJANIM_FORMAT_LEGACY,CKOBJANIM_FORMAT_SHARED};
+    for (size_t i = 0; i < COUNT(formats); i++) {
+        engine_fixture_t source; fixture_begin_document(&source);
+        nmo_object_id_t old_body, old = character(&source,"Imported",&old_body), channel;
+        nmo_object_id_t animation = clip(&source,"Incoming",old,old_body,&channel);
+        channel_format(&source,channel,formats[i]);
+        nmo_character_state_t *saved_actor = fixture_state(&source,old);
+        nmo_array_dispose(&saved_actor->animations);
+        ASSERT_EQ(NMO_OK,nmo_array_alloc(&saved_actor->animations,sizeof(nmo_ref_t),1,NULL));
+        *(nmo_ref_t *)saved_actor->animations.data = nmo_ref_from_id(animation);
+        fixture_begin_edit(&source); fixture_commit_bare(&source,NULL);
+        const char *path = NMO_TEST_SCRATCH_FILE("engine_add_animation.cmo");
+        ASSERT_EQ(NMO_OK,nmo_session_save_file(source.session,path,NULL,NULL));
+        engine_fixture_t host; fixture_begin_document(&host);
+        nmo_object_id_t body, target = character(&host,"Target",&body), spare = bodypart(&host,target,"Other");
+        nmo_object_id_t a_channel, a = clip(&host,"Primary",target,body,&a_channel);
+        nmo_object_id_t b_channel, b = clip(&host,"Destination",target,body,&b_channel);
+        nmo_object_id_t block = add_block(&host,target,0), input = 0;
+        ASSERT_TRUE(block != 0);
+        ASSERT_EQ(NMO_OK,nmo_script_edit_ensure_input_parameter_source(host.tx,BLOCK_PIN(&host,block,0),&input));
+        strict_commit(&host);
+        nmo_engine_set_file_resolver(host.engine,resolve_file,(void *)path);
+        int32_t file;
+        ASSERT_EQ(NMO_OK,nmo_engine_load(host.engine,"animation.cmo",true,&file)); ASSERT_TRUE(file > 0);
+        nmo_object_id_t imported = nmo_engine_object_named(host.engine,"Imported",NMO_CID_CHARACTER);
+        nmo_object_id_t incoming = nmo_engine_object_named(host.engine,"Incoming",NMO_CID_KEYEDANIMATION);
+        nmo_object_id_t imported_body = eng_character_bodypart(host.engine,imported,0);
+        nmo_object_id_t incoming_channel = eng_keyed_animation_part(host.engine,incoming,imported_body);
+        ASSERT_TRUE(imported != 0 && incoming != 0 && incoming_channel != 0 && incoming != animation);
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,input,&incoming,4));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
+        ASSERT_EQ(target,eng_animation_character(host.engine,incoming)); ASSERT_EQ(body,eng_object_animation_entity(host.engine,incoming_channel));
+        ASSERT_EQ(0u,eng_character_animation_count(host.engine,imported)); ASSERT_EQ(1u,eng_character_animation_count(host.engine,target));
+        ASSERT_EQ(imported_body,eng_keyed_animation_root_entity(host.engine,incoming));
+        ASSERT_TRUE(eng_animation_set_frame(host.engine,incoming,4)); ASSERT_FLOAT_EQ(4,x(host.engine,body),1e-6f);
+        eng_animation_source_t data; ASSERT_TRUE(eng_animation_source(host.engine,incoming_channel,&data)); ASSERT_EQ(formats[i],data.state->format);
+        ASSERT_EQ(NMO_OK,eng_character_set_active_animation(host.engine,target,a));
+        ASSERT_TRUE(eng_animation_set_frame(host.engine,a,2));
+        ASSERT_TRUE(eng_animation_set_playback(host.engine,a,CKANIMATION_CANBEBREAK,CKANIMATION_CANBEBREAK,1000));
+        ASSERT_EQ(NMO_OK,eng_character_set_next_animation_warp(host.engine,target,incoming,CK_TRANSITION_WARPSTART,2));
+        nmo_object_id_t warper = eng_character_warper(host.engine,target);
+        ASSERT_EQ(warper,eng_character_active_animation(host.engine,target));
+        ASSERT_EQ(imported_body,eng_keyed_animation_root_entity(host.engine,warper));
+        ASSERT_TRUE(eng_keyed_animation_part(host.engine,warper,body) != 0);
+        ASSERT_EQ(NMO_OK,eng_character_set_active_animation(host.engine,target,0));
+        ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,eng_character_set_next_animation(host.engine,target,0,0));
+        float identity[16] = {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+        ASSERT_EQ(NMO_OK,nmo_engine_set_entity_world_matrix(host.engine,target,identity,false));
+        ASSERT_TRUE(eng_animation_set_current_step(host.engine,a,.2f));
+        ASSERT_EQ(NMO_OK,eng_object_animation_transition(host.engine,incoming_channel,a_channel,.2f,b_channel,.4f,2,false,false,NULL));
+        ASSERT_TRUE(eng_object_animation_set_step(host.engine,incoming_channel,.5f)); ASSERT_FLOAT_EQ(3,x(host.engine,body),1e-6f);
+        float entry = -1;
+        ASSERT_EQ(NMO_OK,eng_keyed_animation_transition(host.engine,incoming,a,b,CK_TRANSITION_WARPSTART,2,0,&entry));
+        ASSERT_EQ(target,eng_animation_character(host.engine,incoming)); ASSERT_EQ(body,eng_keyed_animation_root_entity(host.engine,incoming));
+        ASSERT_TRUE(eng_animation_set_frame(host.engine,incoming,1)); ASSERT_FLOAT_EQ(1,x(host.engine,body),1e-6f);
+        nmo_object_id_t copy = 0;
+        ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(host.engine,&incoming,1,false,&copy));
+        nmo_object_id_t copy_channel = eng_keyed_animation_part(host.engine,copy,body);
+        ASSERT_TRUE(copy_channel != 0 && copy_channel != incoming_channel);
+        ASSERT_EQ(target,eng_animation_character(host.engine,copy)); ASSERT_EQ(body,eng_keyed_animation_root_entity(host.engine,copy));
+        ASSERT_TRUE(eng_object_animation_set_entity(host.engine,copy_channel,spare));
+        ASSERT_TRUE(eng_animation_set_frame(host.engine,copy,.5f)); ASSERT_FLOAT_EQ(1.5f,x(host.engine,spare),1e-6f);
+        ASSERT_FLOAT_EQ(1,x(host.engine,body),1e-6f); ASSERT_FLOAT_EQ(0,x(host.engine,imported_body),0);
+        nmo_engine_destroy_object(host.engine,body);
+        ASSERT_EQ(0u,eng_object_animation_entity(host.engine,incoming_channel)); ASSERT_EQ(spare,eng_object_animation_entity(host.engine,copy_channel));
+        ASSERT_EQ(old,nmo_ref_runtime_id(&((const nmo_keyedanimation_state_t *)fixture_state(&source,animation))->base.character));
+        ASSERT_EQ(old_body,nmo_ref_runtime_id(&((const nmo_objectanimation_state_t *)fixture_state(&source,channel))->entity));
+        fixture_end(&host); fixture_end(&source); remove(path);
+    }
+}
+
+TEST(engine_animation_binding, empty_target_characters_adopt_an_imported_root_for_their_warper)
+{
+    engine_fixture_t source; fixture_begin_document(&source);
+    nmo_object_id_t old_body, old = character(&source,"Imported",&old_body), channel;
+    clip(&source,"Incoming",old,old_body,&channel);
+    fixture_begin_edit(&source); fixture_commit_bare(&source,NULL);
+    const char *path = NMO_TEST_SCRATCH_FILE("engine_adopt_animation_root.cmo");
+    ASSERT_EQ(NMO_OK,nmo_session_save_file(source.session,path,NULL,NULL));
+    engine_fixture_t host; fixture_begin_document(&host);
+    nmo_object_id_t body, target = character(&host,"Target",&body);
+    ((nmo_character_state_t *)fixture_state(&host,target))->root_body_part = nmo_ref_from_id(0);
+    ((nmo_3dentity_state_t *)fixture_state(&host,body))->parent = nmo_ref_from_id(0);
+    nmo_object_id_t block = add_block(&host,target,0), input = 0;
+    ASSERT_TRUE(block != 0);
+    ASSERT_EQ(NMO_OK,nmo_script_edit_ensure_input_parameter_source(host.tx,BLOCK_PIN(&host,block,0),&input));
+    strict_commit(&host);
+    nmo_engine_set_file_resolver(host.engine,resolve_file,(void *)path);
+    int32_t file; ASSERT_EQ(NMO_OK,nmo_engine_load(host.engine,"animation.cmo",true,&file));
+    nmo_object_id_t imported = nmo_engine_object_named(host.engine,"Imported",NMO_CID_CHARACTER);
+    nmo_object_id_t incoming = nmo_engine_object_named(host.engine,"Incoming",NMO_CID_KEYEDANIMATION);
+    nmo_object_id_t imported_body = eng_character_bodypart(host.engine,imported,0);
+    ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,input,&incoming,4));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
+    nmo_object_id_t warper = eng_character_warper(host.engine,target);
+    ASSERT_TRUE(warper != 0); ASSERT_EQ(imported_body,eng_keyed_animation_root_entity(host.engine,warper));
+    fixture_end(&host); fixture_end(&source); remove(path);
+}
+
+TEST(engine_animation_binding, unlimited_controller_accepts_a_transferred_animation_with_its_new_owner)
+{
+    engine_fixture_t f; fixture_begin_document(&f);
+    nmo_object_id_t old_body, old = character(&f,"Old",&old_body), new_body, target = character(&f,"Target",&new_body);
+    nmo_object_id_t channel, animation = clip(&f,"Clip",old,old_body,&channel);
+    f.owner_id = target;
+    nmo_object_id_t add = add_block(&f,target,animation);
+    nmo_object_id_t control = fixture_block(&f,NMO_GUID(0x59537e89,0x79d02f25),"Controller");
+    ASSERT_TRUE(add != 0 && control != 0);
+    const nmo_behavior_state_t *state = fixture_state(&f,control);
+    nmo_object_id_t array = nmo_behavior_ref_array_get_id(&state->local_parameters,0);
+    nmo_object_id_t data = nmo_behavior_ref_array_get_id(&state->local_parameters,1);
+    uint8_t record[152] = {0}; memset(record+56,0xff,16);
+    nmo_write_u16_le(record+148,2|128); float fps = 1000; uint32_t word; memcpy(&word,&fps,4); nmo_write_u32_le(record+140,word);
+    const nmo_object_id_t parameters[] = {array,data};
+    const void *values[] = {&animation,record}; const size_t sizes[] = {4,sizeof(record)};
+    for (size_t i = 0; i < COUNT(parameters); i++) {
+        nmo_parameter_state_t *parameter = fixture_state(&f,parameters[i]);
+        nmo_array_dispose(&parameter->buffer_data);
+        ASSERT_EQ(NMO_OK,nmo_array_alloc(&parameter->buffer_data,1,sizes[i],NULL));
+        memcpy(parameter->buffer_data.data,values[i],sizes[i]); parameter->mode = CKPARAM_MODE_BUFFER; parameter->has_state = true;
+    }
+    ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(f.tx,nmo_behavior_ref_array_get_id(&state->local_parameters,2),"1"));
+    ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(f.tx,nmo_behavior_ref_array_get_id(&state->local_parameters,3),"FALSE"));
+    fixture_link(&f,BLOCK_OUT(&f,add,0),BLOCK_IN(&f,control,0),0);
+    strict_commit(&f);
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0)); ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,1));
+    ASSERT_EQ(animation,eng_character_active_animation(f.engine,target));
+    ASSERT_EQ(target,eng_animation_character(f.engine,animation)); ASSERT_EQ(3u,runs(&f,control));
+    ASSERT_EQ(1u,eng_character_animation_count(f.engine,target));
+    ASSERT_EQ(old,nmo_ref_runtime_id(&((const nmo_keyedanimation_state_t *)fixture_state(&f,animation))->base.character));
+    fixture_end(&f);
+}
+
+TEST(engine_animation_binding, global_animation_takeover_stops_the_retargeted_characters_automatic_processing)
+{
+    engine_fixture_t f; fixture_begin_document(&f);
+    nmo_object_id_t old_body, old = character(&f,"Old",&old_body), new_body, target = character(&f,"Target",&new_body);
+    nmo_object_id_t channel, animation = clip(&f,"Clip",old,old_body,&channel);
+    nmo_object_id_t add = add_block(&f,target,animation);
+    nmo_object_id_t play = fixture_block(&f,NMO_GUID(0x1c9236e1,0x42f40996),"Play Global");
+    ASSERT_TRUE(add != 0 && play != 0);
+    fixture_input_int(&f,BLOCK_PIN(&f,play,0),(int32_t)animation);
+    const float duration = 10; fixture_input_value(&f,BLOCK_PIN(&f,play,1),&duration,4);
+    fixture_input_int(&f,BLOCK_PIN(&f,play,3),0);
+    fixture_link(&f,BLOCK_OUT(&f,add,0),BLOCK_IN(&f,play,0),0);
+    strict_commit(&f);
+    ASSERT_TRUE(eng_character_set_automatic(f.engine,old,true)); ASSERT_TRUE(eng_character_set_automatic(f.engine,target,true));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0));
+    ASSERT_TRUE(eng_character_automatic(f.engine,old)); ASSERT_FALSE(eng_character_automatic(f.engine,target));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,5));
+    ASSERT_FLOAT_EQ(5,x(f.engine,new_body),1e-6f); ASSERT_FLOAT_EQ(0,x(f.engine,old_body),0);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_animation_binding, live_owner_and_target_changes_drive_playback_without_editing_source_refs);
 REGISTER_TEST(engine_animation_binding, copied_runtime_bindings_remap_and_deleted_targets_stay_unbound);
@@ -258,4 +444,8 @@ REGISTER_TEST(engine_animation_binding, add_animation_transfers_membership_prese
 REGISTER_TEST(engine_animation_binding, add_animation_keeps_exact_and_historical_suffix_matching_order);
 REGISTER_TEST(engine_animation_binding, duplicate_channel_slots_share_the_exact_match_marker);
 REGISTER_TEST(engine_animation_binding, plain_animations_transfer_and_missing_targets_or_animations_keep_control_flow);
+REGISTER_TEST(engine_animation_binding, loaded_animation_transfers_keep_cross_module_warps_and_copies_bound);
+REGISTER_TEST(engine_animation_binding, empty_target_characters_adopt_an_imported_root_for_their_warper);
+REGISTER_TEST(engine_animation_binding, unlimited_controller_accepts_a_transferred_animation_with_its_new_owner);
+REGISTER_TEST(engine_animation_binding, global_animation_takeover_stops_the_retargeted_characters_automatic_processing);
 TEST_MAIN_END()

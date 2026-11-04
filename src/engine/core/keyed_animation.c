@@ -195,6 +195,23 @@ bool eng_keyed_animation_update_root(nmo_engine_t *engine, nmo_object_id_t anima
     return true;
 }
 
+nmo_object_id_t eng_keyed_animation_root_entity(nmo_engine_t *engine, nmo_object_id_t animation)
+{
+    eng_keyed_animation_t *runtime = keyed_runtime(engine,animation);
+    const nmo_keyedanimation_state_t *state = keyed_state(engine,animation,NMO_CID_KEYEDANIMATION);
+    if (runtime == NULL || state == NULL) return 0;
+    keyed_root(engine,runtime,state);
+    return runtime->root_entity;
+}
+
+bool eng_keyed_animation_set_root_entity(nmo_engine_t *engine, nmo_object_id_t animation, nmo_object_id_t root)
+{
+    eng_keyed_animation_t *runtime = keyed_runtime(engine,animation);
+    if (runtime == NULL || (root != 0 && eng_entity_index(engine,root) < 0)) return false;
+    runtime->root_entity = root; runtime->root_animation = 0; runtime->sorted = false;
+    return true;
+}
+
 bool eng_keyed_animation_center(nmo_engine_t *engine, nmo_object_id_t animation, float frame)
 {
     if (!isfinite(frame)) return false;

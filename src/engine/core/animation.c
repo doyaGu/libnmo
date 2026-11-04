@@ -967,7 +967,9 @@ nmo_status_t eng_object_animation_capture_transition(nmo_engine_t *engine, nmo_o
     nmo_objectanimation_state_t *target = nmo_object_get_state(eng_find_object(engine,result));
     nmo_objectanimation_state_t generated = {.base=target->base,.format=CKOBJANIM_FORMAT_CONTROLLERS,
         .flags=target->flags & ~CK_OBJECTANIMATION_MERGED,.has_length=1,.length=length,.merge_factor=0.5f};
-    if (!eng_animation_local_ref(engine,result,entity,&generated.entity)) return NMO_ERR_INVALID_ARGUMENT;
+    /* A retargeted channel can belong to another module. Its live engine
+     * binding is installed only after the complete transition is captured. */
+    if (!eng_animation_local_ref(engine,result,entity,&generated.entity)) generated.entity = nmo_ref_from_id(0);
     generated.controllers = nmo_arena_alloc(arena,5*sizeof(*generated.controllers),_Alignof(nmo_objanim_controller_t));
     if (generated.controllers == NULL) return NMO_ERR_NOMEM;
     const uint32_t masks[] = {ENG_ANIM_POSITION,ENG_ANIM_ROTATION,ENG_ANIM_SCALE,ENG_ANIM_AXIS};
@@ -1012,6 +1014,7 @@ nmo_status_t eng_object_animation_transition(nmo_engine_t *engine, nmo_object_id
 {
     nmo_objectanimation_state_t generated;
     nmo_status_t status = eng_object_animation_capture_transition(engine,result,from,from_step,to,to_step,length,velocity,dont_turn,starting,&generated);
+    if (status == NMO_OK && !eng_object_animation_set_entity(engine,result,eng_object_animation_entity(engine,to))) return NMO_ERR_NOMEM;
     if (status == NMO_OK) *(nmo_objectanimation_state_t *)nmo_object_get_state(eng_find_object(engine,result)) = generated;
     return status;
 }

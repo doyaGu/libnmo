@@ -97,6 +97,8 @@ bool eng_animation_position(nmo_engine_t *engine, nmo_object_id_t animation, flo
 bool eng_keyed_animation_center(nmo_engine_t *engine, nmo_object_id_t animation, float frame);
 bool eng_animation_root_offset(const nmo_engine_t *engine, nmo_object_id_t animation, nmo_vector_t *out);
 nmo_object_id_t eng_keyed_animation_root(nmo_engine_t *engine, nmo_object_id_t animation);
+nmo_object_id_t eng_keyed_animation_root_entity(nmo_engine_t *engine, nmo_object_id_t animation);
+bool eng_keyed_animation_set_root_entity(nmo_engine_t *engine, nmo_object_id_t animation, nmo_object_id_t root);
 bool eng_keyed_animation_update_root(nmo_engine_t *engine, nmo_object_id_t animation,
     nmo_object_id_t fallback, nmo_object_id_t *root);
 nmo_object_id_t eng_keyed_animation_part(nmo_engine_t *engine, nmo_object_id_t animation, nmo_object_id_t entity);
