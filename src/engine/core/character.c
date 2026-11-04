@@ -42,6 +42,12 @@ static eng_character_t *character_runtime(nmo_engine_t *engine, nmo_object_id_t 
     return runtime;
 }
 
+nmo_object_id_t eng_character_root(nmo_engine_t *engine, nmo_object_id_t character)
+{
+    eng_character_t *runtime = character_runtime(engine,character);
+    return runtime != NULL && eng_entity_index(engine,runtime->root) >= 0 ? runtime->root : 0;
+}
+
 size_t eng_character_animation_count(nmo_engine_t *engine, nmo_object_id_t character)
 {
     eng_character_t *runtime = character_runtime(engine,character);

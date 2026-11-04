@@ -14,6 +14,7 @@ set(NMO_BB_VIRTOOLS_SOURCES
     virtools/addons.c
     virtools/cameras.c
     virtools/characters.c
+    virtools/character_goto.c
     virtools/animation_sync.c
     virtools/unlimited_controller.c
     virtools/collisions.c
