@@ -1,78 +1,78 @@
 #!/usr/bin/env python3
-"""Check a level: its floors' geometry, and (for a built one) a run of the
-game along the builder's points.
+"""Verify a built project or original level and save a structured report.
 
-    ballance_verify_level.py SOURCE [--play FRAMES --game DIR [--sector N]]
+    ballance_verify_level.py SOURCE [--play FRAMES --game DIR --sector N]
+        [--report FILE] [--json] [--strict]
 
-SOURCE is a folder a level was built in (manifest.json and its OBJ meshes,
-as ballance_build_level.py writes them) or a level file (Level_NN.NMO, read
-through the nmo CLI).  The floors are checked for walls left open at their
-ends, holes in their tops and tops of two objects lying on one another
-(ballance.verify.geometry); some are meant (the cradle's pocket is a hole),
-and the originals have some too (Level_01: 21 open wall ends, and that
-pocket).
+A built project is checked against its recorded input hashes, its floor
+geometry and the final scenery placements around rails. --play also runs
+the real IVP gameplay harness and reports checkpoints, falls, reward
+proximity, stalls and the trace's clearance from death zones. Older builds
+without route.json/build_info.json still work, with unavailable checks
+marked explicitly; rebuild them to enable all static checks.
 
-With --play, the built level is patched into Level_01.NMO in its folder and
-played for FRAMES with the game's files in DIR (`nmo behavior run`, physics
-by ivp, in libnmo's test base rather than the game's base.cmo: straight
-into the level), the ball steered along route_points.json; with --sector,
-from sector N's start, with the ball the player has there, its rewards
-and those after looked for only.  The checkpoints, the
-finish and any fall are reported, and where the ball stood still a while
-(the ball changers hold it 126 frames; a point that waits says what for),
-and each extra point or life the ball never came near enough to take before
-the finish (every reward should lie where a ball can get to it).
-The exit status is 1 if the level does not finish or the ball falls.
+Built projects save validation.json by default; --report chooses another
+path (also for original NMO files). --json prints the same report. Geometry
+findings need review by default, since original modules contain intentional
+openings; --strict makes them failures. Exit 1 means a failed check, 2 an
+invocation/input error. A review result keeps its findings and exits 0.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from ballance.core.nmo import Nmo, add_nmo_argument  # noqa: E402
-from ballance.verify.geometry import check  # noqa: E402
-from ballance.verify.play import play  # noqa: E402
-from ballance.view import scene  # noqa: E402
+from ballance.verify.report import summary, verify, write  # noqa: E402
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Check a level's floors and play it through.")
-    parser.add_argument("source", help="A built level's folder, or Level_NN.NMO")
-    parser.add_argument("--play", type=int, metavar="FRAMES",
-                        help="Play the built level for FRAMES and report how it went")
-    parser.add_argument("--game", help="Ballance installation folder (holds 3D Entities)")
-    parser.add_argument("--sector", type=int, default=1,
-                        help="Play from this sector's start (default: 1)")
+    parser = argparse.ArgumentParser(description='Check geometry, scenery clearance and gameplay.')
+    parser.add_argument('source', type=Path, help="A built level's folder, or Level_NN.NMO")
+    parser.add_argument('--play', type=int, metavar='FRAMES', help='Run the autopilot for FRAMES')
+    parser.add_argument('--game', type=Path, default=os.environ.get('BALLANCE'),
+                        help='Ballance installation folder (default: $BALLANCE)')
+    parser.add_argument('--sector', type=int, default=1, help='Play from sector N (default: 1)')
+    parser.add_argument('--report', type=Path, help='JSON file (default: SOURCE/validation.json for projects)')
+    parser.add_argument('--json', action='store_true', help='Print the structured report')
+    parser.add_argument('--strict', action='store_true', help='Fail on floor geometry findings too')
     add_nmo_argument(parser)
     args = parser.parse_args()
-
-    source, nmo = Path(args.source), Nmo(args.nmo)
-    findings = check(scene.load(source, nmo, hidden=True))
-    for finding in findings:
-        print(finding)
-    print(f"{len(findings)} findings in the floors")
-    if args.play is None:
-        return 0
-    if not source.is_dir() or not args.game:
-        parser.error("--play needs a built level's folder and --game")
+    output = args.report or (args.source / 'validation.json' if args.source.is_dir() else None)
     try:
-        result = play(source, args.play, nmo, Path(args.game), args.sector)
-    except ValueError as error:
-        parser.error(str(error))
-    for frame, what in result.events:
-        print(f"[{frame}] {what}")
-    for stall in result.stalls:
-        print(stall)
-    for name, (x, y, z), near in result.missed:
-        print(f"{name} at ({x:.1f}, {y:.1f}, {z:.1f}) not taken: the ball came {near:.1f} near")
-    if result.finished is None:
-        print(f"the level did not finish in {args.play} frames")
-    return 0 if result.finished is not None and not result.falls else 1
+        report = verify(args.source, Nmo(args.nmo), frames=args.play, game=args.game,
+                        sector=args.sector, strict=args.strict)
+        if output:
+            write(report, output)
+    except (OSError, RuntimeError, ValueError, KeyError) as error:
+        # Replace a previous successful report even when inputs cannot be
+        # read. An old success must not survive a failed verification.
+        report = {'schema_version': 1, 'source': str(args.source.resolve()), 'status': 'failed',
+                  'checks': {'input': {'status': 'failed', 'error': str(error)}}}
+        if output and output.parent.is_dir():
+            try:
+                write(report, output)
+            except OSError:
+                pass  # The original error below still explains the failure.
+        if args.json:
+            print(json.dumps(report, indent=2, allow_nan=False))
+        else:
+            print(f'error: {error}', file=sys.stderr)
+        return 2
+    if args.json:
+        print(json.dumps(report, indent=2, allow_nan=False))
+    else:
+        print('\n'.join(summary(report)))
+        if output:
+            print(f'report: {output}')
+    return 1 if report['status'] == 'failed' else 0
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main())

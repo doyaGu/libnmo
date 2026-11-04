@@ -54,6 +54,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from ballance.core.nmo import Nmo, add_nmo_argument  # noqa: E402
+from ballance.core import evidence  # noqa: E402
 from ballance.view import scene as scenes  # noqa: E402
 from ballance.view.overlays import mechanism_labels, route_overlays, trace_overlays  # noqa: E402
 from ballance.view.render import Textures  # noqa: E402
@@ -81,6 +82,10 @@ def main() -> int:
     args = parser.parse_args()
 
     source = Path(args.source)
+    dependencies = [Path(p) for p in (args.route, args.trace) if p]
+    if args.textures:
+        dependencies += [p for p in Path(args.textures).iterdir() if p.is_file()]
+    provenance = evidence.capture(source, 'editor-preview', vars(args), dependencies)
     scene = scenes.load(source, Nmo(args.nmo))
     # a built level's route, unless another is given
     route_path = Path(args.route) if args.route else source / "route_points.json"
@@ -110,6 +115,7 @@ def main() -> int:
         print(error, file=sys.stderr)
         return 2
     sheet(rows, present).save(args.output)
+    evidence.attach(Path(args.output), provenance)
     print(args.output)
     return 0
 

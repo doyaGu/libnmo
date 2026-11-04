@@ -19,7 +19,12 @@ A route is the track as the ball rolls it, sector by sector, in JSON:
 
 The start's marker stands at (x, z), the edges of the road that leaves it at
 height 0, and the track leaves toward heading (+x, -x, +z or -z).  Each
-sector is a list of pieces, laid end to end on the floors' 2.5 grid:
+sector is a list of pieces, laid end to end. The measured pieces use the
+floors' 2.5 grid. Free-form rail_path, floor_path and floor_polygon pieces
+can leave that grid: see docs/ballance-freeform.md for Bezier curves,
+helices, variable sections, polygon ports and parameterized templates.
+
+The measured pieces are:
 
 - {"road": length, "width": "narrow" or "wide", "drop": dy} -- a straight
   road (narrow unless given), coming down dy over its length; with
@@ -268,7 +273,6 @@ follow it) are warned of.  Turn it into a level file with:
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -286,11 +290,10 @@ def main() -> int:
                         help="Folder of <Kind>.obj meshes from ballance_level_elements.py")
     parser.add_argument("--name", default="Level", help="The document's name")
     args = parser.parse_args()
-    route = json.loads(Path(args.route).read_text(encoding="utf-8"))
     try:
-        return build(route, Path(args.out), Path(args.elements) if args.elements else None,
+        return build(Path(args.route), Path(args.out), Path(args.elements) if args.elements else None,
                      args.name)
-    except ValueError as error:
+    except (OSError, RuntimeError, ValueError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
 

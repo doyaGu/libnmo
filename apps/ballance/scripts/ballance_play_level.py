@@ -4,7 +4,7 @@
     ballance_play_level.py LEVEL [--sector N] [--self] [--mute] [--game DIR] [--nmo NMO]
 
 LEVEL is a folder a level was built in (as ballance_build_level.py writes
-it; its Level_01.NMO is patched from manifest.json first when that is newer)
+it; its Level_01.NMO is patched from the current manifest and meshes first)
 or a level file (Level_NN.NMO).  The level is played as level 1 with the
 game's files in DIR ($BALLANCE unless given), with libivp physics (the nmo
 CLI built with NMO_IVP_SOURCE_DIR and NMO_VIEWER, $NMO unless given), until
@@ -16,7 +16,9 @@ level's folder only).
 With a route_points.json beside the level, the builder's autopilot rolls
 the ball through the level as the verifier plays it, a frame stepping a
 fixed 1/60 s; with --self, or without one, the arrow keys do, as in the
-game.  Once BALLANCE and NMO are set (in the shell's profile, say):"""
+game.  Once BALLANCE and NMO are set (in the shell's profile, say):
+
+For a finite preview of the last approach, then manual control:"""
 
 from __future__ import annotations
 
@@ -28,6 +30,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from ballance.core.nmo import Nmo, add_nmo_argument  # noqa: E402
+from ballance.core.project import pack  # noqa: E402
 from ballance.verify.play import watch  # noqa: E402
 
 
@@ -50,6 +53,23 @@ def main() -> int:
     )
     parser.add_argument('--mute', action='store_true', help='Play no sound')
     parser.add_argument(
+        '--handoff-frame',
+        type=int,
+        metavar='FRAME',
+        help='Release the autopilot at this simulation frame for manual play',
+    )
+    parser.add_argument(
+        '--approach',
+        action='store_true',
+        help='Leave out the final balloon target; requires --handoff-frame',
+    )
+    parser.add_argument(
+        '--shot', type=Path, metavar='PNG', help='Save a native window screenshot'
+    )
+    parser.add_argument(
+        '--shot-frame', type=int, default=4500, help='Screenshot frame (default: 4500)'
+    )
+    parser.add_argument(
         '--game',
         default=os.environ.get('BALLANCE'),
         help='Ballance installation folder (default: $BALLANCE)',
@@ -65,13 +85,11 @@ def main() -> int:
     source, nmo = Path(args.level), Nmo(args.nmo)
     folder = source if source.is_dir() else source.parent
     level = folder / 'Level_01.NMO' if source.is_dir() else source
-    manifest = folder / 'manifest.json'
-    if (
-        source.is_dir()
-        and manifest.is_file()
-        and (not level.is_file() or level.stat().st_mtime < manifest.stat().st_mtime)
-    ):
-        nmo.run('patch', 'apply', '--project', str(manifest), '-o', str(level))
+    try:
+        if source.is_dir():
+            level = pack(folder, nmo)
+    except (ValueError, RuntimeError, OSError) as error:
+        parser.error(str(error))
     if not level.is_file():
         parser.error(f'{level} is not there')
     route = folder / 'route_points.json'
@@ -83,8 +101,19 @@ def main() -> int:
     if args.sector > 1 and not source.is_dir():
         parser.error("--sector needs a built level's folder")
     try:
-        return watch(level, route, nmo, Path(args.game), args.mute, args.sector)
-    except ValueError as error:
+        return watch(
+            level,
+            route,
+            nmo,
+            Path(args.game),
+            args.mute,
+            args.sector,
+            handoff_frame=args.handoff_frame,
+            approach=args.approach,
+            shot=args.shot,
+            shot_frame=args.shot_frame,
+        )
+    except (ValueError, RuntimeError, OSError) as error:
         parser.error(str(error))
 
 
