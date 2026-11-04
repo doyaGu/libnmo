@@ -256,7 +256,7 @@ def start_script(plan: Plan, script: int, level: int, camera: int, loading_manag
     plan.link(script, start, (view, "input:In"))
     plan.link(script, (view, "output:Out"), (load, "input:In"))
     last = (load, "output:Out")
-    if sector > 1:
+    if sector > 1 or ball != "Wood":
         levels = plan.by_name(script, "AllLevel", ARRAY)
         row = plan.node(script, GET_ROW, "Get Level 1", {"Row Index": 0})
         plan.wire(levels, (row, "target"))
@@ -348,8 +348,15 @@ def loading_manager_script(plan: Plan, script: int, loading_parameter: int) -> N
     plan.link(script, (activate, "output:Out"), (files, "input:Loop In"))
 
 
-def write(out: Path, nmo: Nmo, sector: int = 1, ball: str = "Wood") -> None:
-    """Writes the harness to out, starting the level at sector with ball."""
+def write(out: Path, nmo: Nmo, sector: int = 1, ball: str = "Wood", probe_position=None, probe_physics=None) -> None:
+    """Write native gameplay, optionally with an isolated local contact probe.
+
+    A probe unphysicalizes the player before moving it, then recreates its
+    two-unit sphere with the native ball-table material parameters. It never
+    changes the level or mechanism bodies and is not used for full play tests.
+    """
+    if probe_position is not None and probe_physics is None:
+        raise ValueError('a local probe requires native ball physics parameters')
     env = dict(os.environ)
     env.setdefault("NMO_DATA_DIR", str(DATA_DIR))
 
@@ -372,7 +379,8 @@ def write(out: Path, nmo: Nmo, sector: int = 1, ball: str = "Wood") -> None:
                 {"name": "Test Camera", "class": "CKCamera",
                  "transform": {"position": [0, 1000000, 0]}},
                 {"name": "Level", "class": "CKBeObject",
-                 "scripts": [{"name": "Test Start"}, {"name": "Loading_Manager"}]},
+                 "scripts": [{"name": "Test Start"}, {"name": "Loading_Manager"},
+                             *([{"name": "Probe Spawn"}] if probe_position is not None else [])]},
                 *({"name": name, "class": "CKDataArray"} for name in ARRAYS),
             ]}],
         }
@@ -402,11 +410,43 @@ def write(out: Path, nmo: Nmo, sector: int = 1, ball: str = "Wood") -> None:
         start_script(plan, ids["Test Start"], ids["Level"], ids["Test Camera"],
                      ids["Loading_Manager"], sector, ball)
         loading_manager_script(plan, ids["Loading_Manager"], ids["Loading_Parameter"])
+        if probe_position is not None:
+            script=ids['Probe Spawn']
+            entry=(plan.add({'op':'add_io','behavior_id':script,'kind':'input','name':'In'}),'io')
+            delay=plan.node(script,DELAYER,'Wait For Native Sector',
+                            {'Time to Wait':6000+setup_ms(sector)})
+            position=plan.node(script,'E456E78A-456789AA','Place Probe Ball',
+                               {'Position':','.join(map(str,probe_position))})
+            name=plan.local(script,STRING,'Probe Ball Name',f'Ball_{ball}')
+            entity=plan.operation(script,'428009B4-1CAA5C78','5B8A05D5-31EA28D4','Probe Ball',name)
+            plan.wire(entity,(position,'target'))
+            plan.link(script,entry,(delay,'input:In'))
+            physics=plan.node(script,'7522370E-37EC15EC','Probe Ball Physics',probe_physics)
+            plan.wire(entity,(physics,'target'))
+            plan.value((physics,'local_param:Convex Count'),0)
+            plan.value((physics,'local_param:Ball Count'),1)
+            plan.link(script,(delay,'output:Out'),(physics,'input:Unphysicalize'))
+            plan.link(script,(physics,'output:Out2'),(position,'input:In'))
+            plan.link(script,(position,'output:Out'),(physics,'input:Physicalize'))
         scripted = work / "scripted.cmo"
         (work / "plan.json").write_text(json.dumps(
             {"version": 2, "input": str(current), "output": str(scripted),
              "operations": plan.ops}, indent=1), encoding="utf-8")
         run("patch", "apply", str(work / "plan.json"))
+        if probe_position is not None:
+            block=nmo.data('behavior','find','--name','Probe Ball Physics',str(scripted))['results'][0]
+            detail=nmo.data('behavior','show',str(block['id']),str(scripted))
+            convex=next(p['id'] for p in detail['input_parameters'] if p['name']=='Convex')
+            shape=Plan()
+            shape.add({'op':'remove_parameter','parameter_id':convex,'detach':True})
+            centre=shape.output(block['id'],'48824EAE-2FE47960','ball position 1','in')
+            shape.value(centre,'0,0,0')
+            radius=shape.output(block['id'],'47884C3F-432C2C20','ball radius 1','in')
+            shape.value(radius,2)
+            (work/'shape.json').write_text(json.dumps({'version':2,'input':str(scripted),
+                'output':str(work/'shaped.cmo'),'operations':shape.ops}))
+            run('patch','apply',str(work/'shape.json'))
+            scripted=work/'shaped.cmo'
         # Loading_Manager runs when called, not at the start
         manager = str(ids["Loading_Manager"])
         run("object", "set-field", "--id", manager, "has_single_activity", "true",
@@ -429,7 +469,7 @@ def setup_ms(sector: int) -> int:
 def ensure(nmo: Nmo, sector: int = 1, ball: str = "Wood") -> Path:
     """The harness starting at sector with ball, written to CACHE the first
     time and when this module has changed since."""
-    path = CACHE / ("test_base.cmo" if sector == 1 else f"test_base_{sector}_{ball}.cmo")
+    path = CACHE / ("test_base.cmo" if sector == 1 and ball == "Wood" else f"test_base_{sector}_{ball}.cmo")
     if not path.is_file() or path.stat().st_mtime < Path(__file__).stat().st_mtime:
         path.parent.mkdir(parents=True, exist_ok=True)
         write(path, nmo, sector, ball)
