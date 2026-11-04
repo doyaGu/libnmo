@@ -261,7 +261,7 @@ static nmo_status_t character_start_warp(nmo_engine_t *engine, eng_character_t *
         runtime->next = 0; runtime->frame_dest = 0;
         return NMO_OK;
     }
-    if (eng_object_ref(engine,runtime->active,&source->character) != runtime->id) return NMO_ERR_INVALID_ARGUMENT;
+    if (eng_animation_character(engine,runtime->active) != runtime->id) return NMO_ERR_INVALID_ARGUMENT;
     nmo_object_id_t warper = eng_character_warper(engine,runtime->id);
     if (warper == 0) return runtime->warper != 0 ? NMO_ERR_INVALID_ARGUMENT : NMO_ERR_NOMEM;
     /* Capture the old alignment so a failed builder leaves playback intact. */
@@ -303,7 +303,7 @@ nmo_status_t eng_character_set_next_animation_warp(nmo_engine_t *engine, nmo_obj
         return NMO_ERR_INVALID_ARGUMENT;
     }
     const nmo_animation_state_t *target = eng_animation_playback_state(engine, animation);
-    if (target == NULL || eng_object_ref(engine, animation, &target->character) != character) return NMO_ERR_INVALID_ARGUMENT;
+    if (target == NULL || eng_animation_character(engine,animation) != character) return NMO_ERR_INVALID_ARGUMENT;
     if (mode & CK_TRANSITION_FROMANIMATION) {
         uint32_t preset = (target->flags & CKANIMATION_TRANSITION_ALL) >> 8;
         if (preset != 0) mode = preset;
@@ -383,8 +383,7 @@ static bool character_secondary_bodies(nmo_engine_t *engine, eng_secondary_gate_
         nmo_object_id_t channel = eng_object_ref(engine, gate->animation, &state->animation_ids[i]);
         nmo_object_t *object = eng_find_object(engine, channel);
         if (object == NULL || nmo_object_get_class_id(object) != NMO_CID_OBJECTANIMATION) continue;
-        const nmo_objectanimation_state_t *part = nmo_object_get_state(object);
-        nmo_object_id_t body = eng_object_ref(engine, channel, &part->entity);
+        nmo_object_id_t body = eng_object_animation_entity(engine,channel);
         if (!nmo_type_registry_is_class_derived_from(engine->types, nmo_engine_object_class(engine, body), NMO_CID_BODYPART)) continue;
         nmo_object_id_t *slot = NULL;
         if (!ENG_VEC_PUSH(gate->bodies, slot)) return false;
@@ -426,7 +425,7 @@ nmo_status_t eng_character_play_secondary(nmo_engine_t *engine, nmo_object_id_t 
 static bool character_owned_keyed(nmo_engine_t *engine, eng_character_t *runtime, nmo_object_id_t animation)
 {
     const nmo_animation_state_t *state = eng_animation_playback_state(engine,animation);
-    return state != NULL && character_keyed(engine,animation) && eng_object_ref(engine,animation,&state->character) == runtime->id;
+    return state != NULL && character_keyed(engine,animation) && eng_animation_character(engine,animation) == runtime->id;
 }
 
 static nmo_object_id_t character_secondary_warper(nmo_engine_t *engine, eng_character_t *runtime)
@@ -453,7 +452,7 @@ nmo_status_t eng_character_play_secondary_warp(nmo_engine_t *engine, nmo_object_
 {
     eng_character_t *runtime = character_runtime(engine, character);
     const nmo_animation_state_t *state = eng_animation_playback_state(engine, animation);
-    if (runtime == NULL || state == NULL || eng_object_ref(engine, animation, &state->character) != character ||
+    if (runtime == NULL || state == NULL || eng_animation_character(engine,animation) != character ||
         !isfinite(frame) || !isfinite(warp_length)) return NMO_ERR_INVALID_ARGUMENT;
     if (flags & CKSECONDARYANIMATION_FROMANIMATION) {
         uint32_t preset = (state->flags & CKANIMATION_SECONDARY_ALL) >> 16;
@@ -621,7 +620,7 @@ nmo_status_t eng_character_stop_secondary_warp(nmo_engine_t *engine, nmo_object_
     eng_character_t *runtime = character_runtime(engine, character);
     if (runtime == NULL || animation == 0 || !isfinite(length)) return NMO_ERR_INVALID_ARGUMENT;
     const nmo_animation_state_t *state = eng_animation_playback_state(engine, animation);
-    if (state != NULL && eng_object_ref(engine, animation, &state->character) != character) return NMO_ERR_INVALID_ARGUMENT;
+    if (state != NULL && eng_animation_character(engine,animation) != character) return NMO_ERR_INVALID_ARGUMENT;
     for (size_t i = 0; i < runtime->secondary.count; i++) {
         if (runtime->secondary.data[i].id == animation) {
             bool warped = false;

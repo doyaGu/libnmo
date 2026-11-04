@@ -317,7 +317,7 @@ nmo_status_t eng_animation_transition_morph(nmo_engine_t *engine, nmo_object_id_
         work = ENG_ANIMATION_WORK_LIMIT;
         ra = morph_evaluate(engine,&a,from_frame,count,first,NULL,&work);
     } else {
-        nmo_object_id_t entity = eng_object_ref(engine,to,&b.state->entity);
+        nmo_object_id_t entity = eng_object_animation_entity(engine,to);
         const nmo_3dentity_state_t *target = morph_state(engine,entity,CKPGUID_3DENTITY);
         nmo_object_id_t mesh = target != NULL ? eng_object_ref(engine,entity,&target->current_mesh) : 0;
         const nmo_mesh_state_t *original = morph_state(engine,mesh,CKPGUID_MESH);

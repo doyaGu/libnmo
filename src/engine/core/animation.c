@@ -956,7 +956,7 @@ nmo_status_t eng_object_animation_capture_transition(nmo_engine_t *engine, nmo_o
         double magnitude = sqrt((double)heading.y*heading.y+(double)heading.w*heading.w);
         first.rotation = magnitude > 0 ? (nmo_vector4_t){0,(float)(heading.y/magnitude),0,(float)(-heading.w/magnitude)} : (nmo_vector4_t){0,0,0,1};
     }
-    nmo_object_id_t entity = eng_object_ref(engine,to,&b.state->entity);
+    nmo_object_id_t entity = eng_object_animation_entity(engine,to);
     nmo_vector_t va = {0}, vb = {0};
     if (velocity && (present & ENG_ANIM_POSITION)) {
         va = anim_velocity(engine,from,from_step,a.length);
@@ -1032,8 +1032,7 @@ bool eng_object_animation_apply_step(nmo_engine_t *engine, nmo_object_id_t anima
 {
     eng_animation_source_t source;
     if (!eng_animation_source(engine, animation, &source)) return false;
-    const nmo_objectanimation_state_t *state = source.state;
-    int32_t entity = eng_entity_index(engine, eng_object_ref(engine, animation, &state->entity));
+    int32_t entity = eng_entity_index(engine, eng_object_animation_entity(engine,animation));
     if (entity < 0) {
         return false; /* CKERR_NOTINITIALIZED */
     }

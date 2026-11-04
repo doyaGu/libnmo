@@ -74,11 +74,14 @@ void eng_free_animations(nmo_engine_t *engine)
     for (size_t i = 0; i < engine->animations.clocks.count; i++) free(engine->animations.clocks.data[i].playback);
     free(engine->animations.clocks.data);
     free(engine->animations.clock_map.slots);
+    free(engine->animations.bindings.data);
+    free(engine->animations.binding_map.slots);
 }
 
 void eng_copy_animation(nmo_engine_t *engine, nmo_object_id_t source, nmo_object_id_t target,
                           const nmo_object_id_t *originals, const nmo_object_id_t *copies, size_t count)
 {
+    eng_copy_animation_bindings(engine,source,target,originals,copies,count);
     int32_t clock = eng_map_get(&engine->animations.clock_map, source);
     if (clock >= 0) {
         const nmo_animation_state_t *settings = engine->animations.clocks.data[clock].playback;
@@ -102,8 +105,7 @@ void eng_copy_animation(nmo_engine_t *engine, nmo_object_id_t source, nmo_object
 
 static nmo_object_id_t keyed_entity(const nmo_engine_t *engine, nmo_object_id_t part)
 {
-    const nmo_objectanimation_state_t *state = keyed_part(engine, part);
-    return state != NULL ? eng_object_ref(engine, part, &state->entity) : 0;
+    return eng_object_animation_entity(engine,part);
 }
 
 /* UpdateRootEntity walks from the first bound channel to the character, or
@@ -116,7 +118,7 @@ static nmo_object_id_t keyed_hierarchy_root(nmo_engine_t *engine, nmo_object_id_
         nmo_object_id_t part = eng_object_ref(engine, id, &state->animation_ids[i]);
         entity = eng_entity_index(engine, keyed_entity(engine, part));
     }
-    nmo_object_id_t character = eng_object_ref(engine, id, &state->base.character);
+    nmo_object_id_t character = eng_animation_character(engine,id);
     for (size_t visited = 0; entity >= 0 && visited < engine->entities.count; visited++) {
         const eng_entity_t *current = &engine->entities.data[entity];
         int32_t parent = current->parent;
@@ -304,7 +306,7 @@ bool eng_keyed_animation_channels(nmo_engine_t *engine, nmo_object_id_t animatio
     if (runtime == NULL || state == NULL) return false;
     nmo_object_id_t root = keyed_root(engine, runtime, state);
     if (root != 0 && !eng_map_put(&engine->animations.parents, root, (int32_t)(runtime - engine->animations.keyed.data))) return false;
-    nmo_object_id_t character = eng_object_ref(engine, animation, &state->base.character);
+    nmo_object_id_t character = eng_animation_character(engine,animation);
     const nmo_character_state_t *actor = keyed_state(engine, character, NMO_CID_CHARACTER);
     if (actor == NULL) character = 0;
     nmo_object_id_t floor = actor != NULL ? eng_character_floor_reference(engine,character) : 0;
@@ -320,8 +322,7 @@ bool eng_keyed_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animatio
     const eng_animation_channel_t *channels;
     size_t count;
     if (!eng_keyed_animation_channels(engine,animation,&channels,&count)) return false;
-    const nmo_keyedanimation_state_t *state = keyed_state(engine,animation,NMO_CID_KEYEDANIMATION);
-    nmo_object_id_t character = eng_object_ref(engine,animation,&state->base.character);
+    nmo_object_id_t character = eng_animation_character(engine,animation);
     const nmo_character_state_t *actor = keyed_state(engine,character,NMO_CID_CHARACTER);
     nmo_object_id_t floor = actor != NULL ? eng_character_floor_reference(engine,character) : 0;
     if (actor == NULL) character = 0;

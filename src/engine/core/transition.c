@@ -36,7 +36,7 @@ typedef struct transition_pair {
 static nmo_object_id_t transition_entity(nmo_engine_t *engine, nmo_object_id_t channel)
 {
     eng_animation_source_t source;
-    return eng_animation_source(engine,channel,&source) ? eng_object_ref(engine,channel,&source.state->entity) : 0;
+    return eng_animation_source(engine,channel,&source) ? eng_object_animation_entity(engine,channel) : 0;
 }
 
 static float transition_error(const eng_animation_pose_t *start, const eng_animation_pose_t *end)
@@ -61,8 +61,8 @@ nmo_status_t eng_keyed_animation_transition(nmo_engine_t *engine, nmo_object_id_
         nmo_engine_object_class(engine,to) != NMO_CID_KEYEDANIMATION) return NMO_ERR_INVALID_ARGUMENT;
     const nmo_animation_state_t *a = eng_animation_playback_state(engine,from), *b = eng_animation_playback_state(engine,to);
     if (a == NULL || b == NULL || eng_animation_playback_state(engine,result) == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    nmo_object_id_t character = eng_object_ref(engine,to,&b->character);
-    if (eng_object_ref(engine,from,&a->character) != character) return NMO_ERR_INVALID_ARGUMENT;
+    nmo_object_id_t character = eng_animation_character(engine,to);
+    if (eng_animation_character(engine,from) != character) return NMO_ERR_INVALID_ARGUMENT;
     float step, out_length = eng_animation_length(b);
     if (!eng_animation_current_step(engine,from,&step) || !isfinite(step) || !isfinite(out_length) || out_length < 0 || !isfinite(b->frame_rate)) return NMO_ERR_VALIDATION_FAILED;
     length = fmaxf(length,1);

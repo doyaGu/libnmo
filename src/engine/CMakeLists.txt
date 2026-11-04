@@ -18,6 +18,7 @@ set(NMO_ENGINE_SOURCES
     core/manager.c
     core/animation.c
     core/animation_clock.c
+    core/animation_binding.c
     core/character.c
     core/keyed_animation.c
     core/morph.c

@@ -116,7 +116,7 @@ static void reset_animated_characters(nmo_engine_t *engine, nmo_object_id_t anim
                                       nmo_type_query_object_get_ancestor_state_by_guid(
                                           engine->types, part_object, CKPGUID_OBJECTANIMATION)
                                 : NULL;
-        nmo_object_id_t entity = state != NULL ? referenced(engine, part_animation, &state->entity) : 0;
+        nmo_object_id_t entity = state != NULL ? eng_object_animation_entity(engine,part_animation) : 0;
         nmo_object_t *entity_object = entity != 0 ? eng_find_object(engine, entity) : NULL;
         const nmo_bodypart_state_t *part =
             entity_object != NULL ? (const nmo_bodypart_state_t *)

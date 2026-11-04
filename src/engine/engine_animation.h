@@ -38,6 +38,10 @@ nmo_status_t eng_animation_transition_morph(nmo_engine_t *engine, nmo_object_id_
 
 typedef struct eng_animation_member { nmo_object_id_t id, entity; } eng_animation_member_t;
 typedef struct eng_animation_channel { nmo_object_id_t id; float contribution; } eng_animation_channel_t;
+typedef struct eng_animation_binding {
+    nmo_object_id_t id, character, entity;
+    bool has_character, has_entity;
+} eng_animation_binding_t;
 typedef struct eng_animation_clock {
     nmo_object_id_t id;
     float step;
@@ -61,9 +65,17 @@ typedef struct eng_animations {
     eng_map_t consumed;  /* Saved root vectors transferred from these objects */
     ENG_VEC(eng_animation_clock_t) clocks;
     eng_map_t clock_map;
+    ENG_VEC(eng_animation_binding_t) bindings;
+    eng_map_t binding_map;
 } eng_animations_t;
 
 const nmo_animation_state_t *eng_animation_state(const nmo_engine_t *engine, nmo_object_id_t animation);
+nmo_object_id_t eng_animation_character(const nmo_engine_t *engine, nmo_object_id_t animation);
+bool eng_animation_set_character(nmo_engine_t *engine, nmo_object_id_t animation, nmo_object_id_t character);
+nmo_object_id_t eng_object_animation_entity(const nmo_engine_t *engine, nmo_object_id_t animation);
+bool eng_object_animation_set_entity(nmo_engine_t *engine, nmo_object_id_t animation, nmo_object_id_t entity);
+void eng_copy_animation_bindings(nmo_engine_t *engine, nmo_object_id_t source, nmo_object_id_t target,
+    const nmo_object_id_t *originals, const nmo_object_id_t *copies, size_t count);
 /* Mutable playback settings stay separate from the loaded object state. */
 const nmo_animation_state_t *eng_animation_playback_state(const nmo_engine_t *engine, nmo_object_id_t animation);
 bool eng_animation_set_playback(nmo_engine_t *engine, nmo_object_id_t animation,

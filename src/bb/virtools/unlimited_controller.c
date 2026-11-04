@@ -113,7 +113,7 @@ static void uc_check(blk_t *b, int data, int count, nmo_object_id_t owner)
         if (live != indexed || (cached != 0 && live == 0)) {
             if (cached == 0) nmo_write_u32_le(r+48,indexed);
             else uc_reconstruct(b,data,count);
-        } else if (state != NULL && eng_object_ref(b->engine,cached,&state->character) != owner) {
+        } else if (state != NULL && eng_animation_character(b->engine,cached) != owner) {
             nmo_write_u32_le(r,UINT32_MAX); nmo_write_u32_le(r+48,0);
         }
     }
