@@ -19,6 +19,7 @@
 #include "engine_graph.h"
 #include "engine_host.h"
 #include "engine_input.h"
+#include "engine_kinematic.h"
 #include "engine_manager.h"
 #include "engine_media.h"
 #include "engine_message.h"
@@ -54,6 +55,7 @@ struct nmo_engine {
     ENG_VEC(eng_entity_t) entities;
     eng_animations_t animations;
     eng_characters_t characters;
+    eng_kinematics_t kinematics;
     eng_map_t array_map, group_map, entity_map;
     /* The objects in the level scene (CKBeObject::IsInScene); every object without one */
     eng_map_t scene_objects;

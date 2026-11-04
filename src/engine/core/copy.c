@@ -897,6 +897,7 @@ static nmo_status_t copy_session(nmo_engine_t *engine, int32_t source, const nmo
         eng_copy_array(engine, original, copy);
         eng_copy_group(engine, original, copy, set.ids.data, copies, n);
         eng_copy_animation(engine, original, copy, set.ids.data, copies, n);
+        eng_copy_kinematic_chain(engine, original, copy, set.ids.data, copies, n);
         eng_copy_character(engine, original, copy, set.ids.data, copies, n,
             (class_dependencies(deps, NMO_CID_3DENTITY) & 4u) != 0 ||
             (class_dependencies(deps, NMO_CID_CHARACTER) & 1u) != 0);

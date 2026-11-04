@@ -22,6 +22,7 @@ set(NMO_ENGINE_SOURCES
     core/animation_blend.c
     core/animation_merge.c
     core/character.c
+    core/kinematic.c
     core/keyed_animation.c
     core/morph.c
     core/media.c
