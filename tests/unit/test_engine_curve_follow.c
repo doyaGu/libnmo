@@ -282,6 +282,121 @@ TEST(engine_curve_follow, invalid_owners_paths_and_frame_counts_preserve_native_
     }
 }
 
+static nmo_object_id_t saved_input(follow_fixture_t *g, nmo_object_id_t pin, const char *text)
+{
+    nmo_object_id_t parameter = 0;
+    if (nmo_script_edit_ensure_input_parameter_source(g->f.tx,pin,&parameter) != NMO_OK ||
+        nmo_script_edit_set_parameter_value(g->f.tx,parameter,text) != NMO_OK) return 0;
+    return parameter;
+}
+
+static const char *resolve_file(void *data, const char *name)
+{
+    (void)name; return data;
+}
+
+static nmo_object_id_t runtime_local(nmo_engine_t *engine, nmo_object_id_t block, size_t index)
+{
+    const nmo_behavior_state_t *state = nmo_object_get_state(eng_find_object(engine,block));
+    return eng_module_id(eng_module_of(engine,block,NULL),nmo_behavior_ref_array_get_id(&state->local_parameters,index));
+}
+
+static void expect_position(nmo_engine_t *engine, nmo_object_id_t id, eng_vector_t expected)
+{
+    eng_vector_t actual = eng_entity_position(engine,eng_entity_index(engine,id),-1);
+    ASSERT_FLOAT_EQ(expected.x,actual.x,1e-4f); ASSERT_FLOAT_EQ(expected.y,actual.y,1e-4f); ASSERT_FLOAT_EQ(expected.z,actual.z,1e-4f);
+}
+
+TEST(engine_curve_follow, loaded_and_copied_graphs_keep_cursors_curves_and_paths_independent)
+{
+    for (int mode = 0; mode < 3; mode++) {
+        bool frames = mode == 1; follow_fixture_t g; begin(&g,frames,mode == 2,true);
+        nmo_object_id_t parameters[5]; char text[32];
+        snprintf(text,sizeof(text),"%u",g.f.owner_id); parameters[0] = saved_input(&g,fixture_target(&g.f,g.block),text);
+        snprintf(text,sizeof(text),"%u",g.path); parameters[1] = saved_input(&g,BLOCK_PIN(&g.f,g.block,0),text);
+        parameters[2] = saved_input(&g,BLOCK_PIN(&g.f,g.block,1),"4"); parameters[3] = g.curve;
+        parameters[4] = saved_input(&g,BLOCK_PIN(&g.f,g.block,3),"TRUE");
+        for (size_t i = 0; i < COUNT(parameters); i++) ASSERT_TRUE(parameters[i] != 0);
+        const float points[][2] = {{0,0},{.5f,.25f},{1,1}}; save_curve(&g,points,COUNT(points)); fixture_commit_bare(&g.f,NULL);
+        nmo_beobject_state_t *owner = fixture_state(&g.f,g.f.owner_id);
+        owner->has_single_activity = 1; owner->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE;
+        nmo_behavior_state_t *script = fixture_state(&g.f,g.f.script_id);
+        script->has_single_activity = 1; script->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE | CK_SCENEOBJECT_START_RESET;
+        const char *path = NMO_TEST_SCRATCH_FILE("engine_curve_follow.cmo"); ASSERT_EQ(NMO_OK,nmo_session_save_file(g.f.session,path,NULL,NULL));
+        for (int started = 0; started < 2; started++) {
+            engine_fixture_t host; fixture_begin_document(&host); fixture_begin_edit(&host);
+            nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL; fixture_commit(&host,&options);
+            if (started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_ALL));
+            nmo_engine_set_file_resolver(host.engine,resolve_file,(void *)path);
+            int32_t file = -1; ASSERT_EQ(NMO_OK,nmo_engine_load(host.engine,"follow.cmo",true,&file));
+            if (!started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_SCENE_DEFAULT));
+            nmo_object_id_t block = nmo_engine_object_named(host.engine,"Curve Follow",NMO_CID_BEHAVIOR); ASSERT_TRUE(block != 0);
+            const eng_module_t *module = eng_module_of(host.engine,block,NULL);
+            const nmo_object_id_t original[] = {g.f.owner_id,g.child,g.path,g.points[0],g.points[1],g.f.script_id,g.block,g.done,g.loop};
+            nmo_object_id_t ids[14], copies[14] = {0};
+            for (size_t i = 0; i < COUNT(original); i++) { ids[i] = eng_module_id(module,original[i]); ASSERT_TRUE(ids[i] != 0); }
+            for (size_t i = 0; i < COUNT(parameters); i++) ids[9+i] = eng_module_id(module,parameters[i]);
+            ASSERT_TRUE(ids[0] != g.f.owner_id); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,1.75f));
+            expect_position(host.engine,ids[0],(eng_vector_t){0,0,frames ? 0 : mode == 2 ? 2.5f : 4.375f});
+            ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(host.engine,ids,COUNT(ids),false,copies));
+            ASSERT_EQ(copies[0],nmo_engine_entity_parent(host.engine,copies[1])); ASSERT_EQ(copies[2],nmo_engine_entity_parent(host.engine,copies[3]));
+            for (size_t i = 0; i < 4; i++) {
+                const void *a = NULL, *b = NULL; size_t a_size = 0, b_size = 0;
+                ASSERT_EQ(NMO_OK,nmo_engine_param_value(host.engine,runtime_local(host.engine,ids[6],i),&a,&a_size,NULL));
+                ASSERT_EQ(NMO_OK,nmo_engine_param_value(host.engine,runtime_local(host.engine,copies[6],i),&b,&b_size,NULL));
+                ASSERT_EQ(a_size,b_size); ASSERT_EQ(0,memcmp(a,b,a_size));
+            }
+            eng_matrix_t moved; eng_matrix_from_euler(&moved,0,1.57079632679f,0);
+            for (int j = 0; j < 3; j++) moved.m[2][j] *= 2;
+            moved.m[3][0] = 100; moved.m[3][1] = 30; moved.m[3][2] = 50;
+            eng_entity_set_world_matrix(host.engine,eng_entity_index(host.engine,copies[2]),&moved,false);
+            ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[5],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,1.75f));
+            expect_position(host.engine,ids[0],(eng_vector_t){0,0,frames ? 20.0f/6 : mode == 2 ? 5 : 16.25f});
+            expect_position(host.engine,copies[0],(eng_vector_t){100+(frames ? 0 : mode == 2 ? 5 : 8.75f),30,50});
+            for (int step = 0; step < 5; step++) ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,1.75f));
+            expect_position(host.engine,ids[0],(eng_vector_t){0,0,20}); expect_position(host.engine,copies[0],(eng_vector_t){140,30,50});
+            ASSERT_EQ(1u,runs(&host,ids[7])); ASSERT_EQ(1u,runs(&host,copies[7]));
+            nmo_engine_destroy_object(host.engine,ids[0]); nmo_engine_destroy_object(host.engine,ids[2]);
+            nmo_engine_destroy_object(host.engine,ids[3]); nmo_engine_destroy_object(host.engine,ids[4]);
+            moved.m[3][0] = 200; eng_entity_set_world_matrix(host.engine,eng_entity_index(host.engine,copies[2]),&moved,false);
+            ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[5],true,true));
+            for (int step = 0; step < 6; step++) ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,1.75f));
+            expect_position(host.engine,copies[0],(eng_vector_t){240,30,50}); fixture_end(&host);
+        }
+        ASSERT_FLOAT_EQ(3,((nmo_3dentity_state_t *)fixture_state(&g.f,g.f.owner_id))->world_matrix[12],0); fixture_end(&g.f); remove(path);
+    }
+}
+
+TEST(engine_curve_follow, progression_and_value_drive_downstream_blocks_through_the_completion_frame)
+{
+    follow_fixture_t g; begin(&g,false,false,true);
+    nmo_curvepoint_state_t *end = fixture_state(&g.f,g.points[1]); nmo_curvepoint_set_position(end,16,0,12);
+    nmo_3dentity_state_t *observer = fixture_state(&g.f,g.child); observer->parent = nmo_ref_from_id(0);
+    const float points[][2] = {{0,.2f},{.5f,.8f},{1,.4f}}; save_curve(&g,points,COUNT(points));
+    nmo_object_id_t follower = fixture_block(&g.f,NMO_GUID(0x676776d0,0x20d457bd),"Oriented Follower"); ASSERT_TRUE(follower != 0);
+    fixture_input_int(&g.f,fixture_target(&g.f,follower),(int32_t)g.child); fixture_input_int(&g.f,BLOCK_PIN(&g.f,follower,0),(int32_t)g.path);
+    fixture_input_int(&g.f,BLOCK_PIN(&g.f,follower,2),1);
+    nmo_object_id_t interpolate = fixture_block(&g.f,NMO_GUID(0x35503950,0x2dde7a65),"Observe Value"); ASSERT_TRUE(interpolate != 0);
+    ASSERT_EQ(NMO_OK,nmo_script_edit_connect_parameter(g.f.tx,BLOCK_POUT(&g.f,g.block,0),BLOCK_PIN(&g.f,follower,1)));
+    ASSERT_EQ(NMO_OK,nmo_script_edit_connect_parameter(g.f.tx,BLOCK_POUT(&g.f,g.block,1),BLOCK_PIN(&g.f,interpolate,0)));
+    for (int output = 0; output < 2; output++) {
+        fixture_link(&g.f,BLOCK_OUT(&g.f,g.block,output),BLOCK_IN(&g.f,follower,0),0);
+        fixture_link(&g.f,BLOCK_OUT(&g.f,g.block,output),BLOCK_IN(&g.f,interpolate,0),0);
+    }
+    commit(&g); const float values[] = {.5f,.8f,.6f,.4f,.4f};
+    for (size_t step = 0; step < COUNT(values); step++) {
+        float progression = step < 4 ? (float)(step+1)*.25f : 1;
+        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,25)); position(&g,g.f.owner_id,16*values[step],0,12*values[step]);
+        position(&g,g.child,16*progression,0,12*progression);
+        ASSERT_FLOAT_EQ(progression,value(&g,BLOCK_POUT(&g.f,g.block,0)),1e-6f); ASSERT_FLOAT_EQ(values[step],value(&g,BLOCK_POUT(&g.f,g.block,1)),1e-6f);
+        ASSERT_FLOAT_EQ((1+values[step])*.5f,value(&g,BLOCK_POUT(&g.f,interpolate,0)),1e-6f);
+        float matrix[16]; ASSERT_TRUE(nmo_engine_entity_world_matrix(g.f.engine,g.child,matrix));
+        ASSERT_FLOAT_EQ(.8f,matrix[8],1e-5f); ASSERT_FLOAT_EQ(0,matrix[9],1e-5f); ASSERT_FLOAT_EQ(.6f,matrix[10],1e-5f);
+    }
+    ASSERT_EQ(1u,runs(&g.f,g.done)); ASSERT_EQ(4u,runs(&g.f,g.loop)); ASSERT_EQ(5u,runs(&g.f,follower)); ASSERT_EQ(5u,runs(&g.f,interpolate));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,25)); ASSERT_EQ(5u,runs(&g.f,g.block)); fixture_end(&g.f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_curve_follow, time_counts_the_first_delta_and_completes_strictly_after_duration);
 REGISTER_TEST(engine_curve_follow, completion_updates_both_outputs_but_preserves_the_last_elapsed_cursor);
@@ -295,4 +410,6 @@ REGISTER_TEST(engine_curve_follow, missing_progression_curves_are_only_optional_
 REGISTER_TEST(engine_curve_follow, load_selects_duration_type_and_upgrades_only_old_float_time_runtime_versions);
 REGISTER_TEST(engine_curve_follow, zero_and_negative_durations_preserve_native_division_and_completion_order);
 REGISTER_TEST(engine_curve_follow, invalid_owners_paths_and_frame_counts_preserve_native_input_consumption);
+REGISTER_TEST(engine_curve_follow, loaded_and_copied_graphs_keep_cursors_curves_and_paths_independent);
+REGISTER_TEST(engine_curve_follow, progression_and_value_drive_downstream_blocks_through_the_completion_frame);
 TEST_MAIN_END()
