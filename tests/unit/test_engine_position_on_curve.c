@@ -234,6 +234,122 @@ TEST(engine_position_on_curve, missing_targets_and_curves_report_errors_after_se
     }
 }
 
+static nmo_object_id_t saved_input(position_fixture_t *g, nmo_object_id_t pin, const char *text)
+{
+    nmo_object_id_t source = 0;
+    if (nmo_script_edit_ensure_input_parameter_source(g->f.tx,pin,&source) != NMO_OK ||
+        nmo_script_edit_set_parameter_value(g->f.tx,source,text) != NMO_OK) return 0;
+    return source;
+}
+
+static const char *resolve_file(void *data, const char *name)
+{
+    (void)name; return data;
+}
+
+static nmo_object_id_t runtime_local(nmo_engine_t *engine, nmo_object_id_t block)
+{
+    const nmo_behavior_state_t *state = nmo_object_get_state(eng_find_object(engine,block));
+    return eng_module_id(eng_module_of(engine,block,NULL),nmo_behavior_ref_array_get_id(&state->local_parameters,0));
+}
+
+static eng_vector_t runtime_up(nmo_engine_t *engine, nmo_object_id_t block)
+{
+    const void *data = NULL; size_t size = 0; eng_vector_t result = {0};
+    if (nmo_engine_param_value(engine,runtime_local(engine,block),&data,&size,NULL) != NMO_OK || size != sizeof(result)) return result;
+    memcpy(&result,data,sizeof(result)); return result;
+}
+
+static void runtime_basis(nmo_engine_t *engine, nmo_object_id_t id, eng_vector_t x, eng_vector_t y, eng_vector_t z)
+{
+    float matrix[16]; ASSERT_TRUE(nmo_engine_entity_world_matrix(engine,id,matrix));
+    vector((eng_vector_t){matrix[0],matrix[1],matrix[2]},x); vector((eng_vector_t){matrix[4],matrix[5],matrix[6]},y); vector((eng_vector_t){matrix[8],matrix[9],matrix[10]},z);
+}
+
+TEST(engine_position_on_curve, loaded_and_copied_followers_preserve_native_reset_and_up_cache_semantics)
+{
+    const eng_vector_t points[] = {{0,0,0},{0,0,20}}; position_fixture_t g; begin(&g,points,COUNT(points));
+    nmo_object_id_t sources[8]; char text[32];
+    snprintf(text,sizeof(text),"%u",g.f.owner_id); sources[0] = saved_input(&g,fixture_target(&g.f,g.block),text);
+    snprintf(text,sizeof(text),"%u",g.path); sources[1] = saved_input(&g,BLOCK_PIN(&g.f,g.block,0),text);
+    const char *values[] = {"0.5","TRUE","FALSE","0.5","Z","TRUE"};
+    for (size_t i = 0; i < COUNT(values); i++) sources[2+i] = saved_input(&g,BLOCK_PIN(&g.f,g.block,i+1),values[i]);
+    for (size_t i = 0; i < COUNT(sources); i++) ASSERT_TRUE(sources[i] != 0);
+    ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(g.f.tx,local(&g,0),"1,1,0")); roll(&g,.3f); fixture_commit_bare(&g.f,NULL);
+    nmo_beobject_state_t *owner = fixture_state(&g.f,g.f.owner_id); owner->has_single_activity = 1; owner->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE;
+    nmo_behavior_state_t *script = fixture_state(&g.f,g.f.script_id);
+    script->has_single_activity = 1; script->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE | CK_SCENEOBJECT_START_RESET;
+    const char *path = NMO_TEST_SCRATCH_FILE("engine_position_on_curve.cmo"); ASSERT_EQ(NMO_OK,nmo_session_save_file(g.f.session,path,NULL,NULL));
+    for (int started = 0; started < 2; started++) {
+        engine_fixture_t host; fixture_begin_document(&host); fixture_begin_edit(&host);
+        nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL; fixture_commit(&host,&options);
+        if (started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_ALL));
+        nmo_engine_set_file_resolver(host.engine,resolve_file,(void *)path);
+        int32_t file = -1; ASSERT_EQ(NMO_OK,nmo_engine_load(host.engine,"position.cmo",true,&file));
+        if (!started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_SCENE_DEFAULT));
+        nmo_object_id_t ids[17], copies[17] = {0};
+        ids[0] = nmo_engine_object_named(host.engine,"Parent",NMO_CID_3DENTITY); ids[1] = nmo_engine_object_named(host.engine,"Follower",NMO_CID_3DENTITY);
+        ids[2] = nmo_engine_object_named(host.engine,"Child",NMO_CID_3DENTITY); ids[3] = nmo_engine_object_named(host.engine,"Path",NMO_CID_CURVE);
+        ids[6] = nmo_engine_object_named(host.engine,"Curve Script",NMO_CID_BEHAVIOR); ids[7] = nmo_engine_object_named(host.engine,"Position On Curve",NMO_CID_BEHAVIOR);
+        ids[8] = nmo_engine_object_named(host.engine,"Out",NMO_CID_BEHAVIOR); ASSERT_TRUE(ids[1] != 0 && ids[1] != g.f.owner_id && ids[7] != 0);
+        const eng_module_t *module = eng_module_of(host.engine,ids[7],NULL);
+        for (size_t i = 0; i < COUNT(points); i++) ids[4+i] = eng_module_id(module,g.points[i]);
+        for (size_t i = 0; i < COUNT(sources); i++) ids[9+i] = eng_module_id(module,sources[i]);
+        vector(runtime_up(host.engine,ids[7]),started ? (eng_vector_t){1,1,0} : (eng_vector_t){99,0,0});
+        ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
+        eng_vector_t cached = started ? (eng_vector_t){1/sqrtf(5),2/sqrtf(5),0} : (eng_vector_t){0,1,0};
+        vector(runtime_up(host.engine,ids[7]),cached);
+        float c = cosf(.3f), s = sinf(.3f);
+        eng_vector_t x = {2*(cached.y*c-cached.x*s),2*(-cached.x*c-cached.y*s),0};
+        eng_vector_t y = {3*(cached.y*s+cached.x*c),3*(-cached.x*s+cached.y*c),0};
+        runtime_basis(host.engine,ids[1],x,y,(eng_vector_t){0,0,4});
+        ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(host.engine,ids,COUNT(ids),false,copies)); vector(runtime_up(host.engine,copies[7]),cached);
+        ASSERT_EQ(copies[1],nmo_engine_entity_parent(host.engine,copies[2])); ASSERT_EQ(copies[3],nmo_engine_entity_parent(host.engine,copies[4]));
+        eng_matrix_t moved; eng_matrix_from_euler(&moved,0,PI_F*.5f,0); moved.m[3][0] = 50;
+        eng_entity_set_world_matrix(host.engine,eng_entity_index(host.engine,copies[3]),&moved,false);
+        ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[6],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
+        vector(eng_entity_position(host.engine,eng_entity_index(host.engine,copies[1]),-1),(eng_vector_t){60,0,0});
+        runtime_basis(host.engine,copies[1],(eng_vector_t){0,-2*s,-2*c},(eng_vector_t){0,3*c,-3*s},(eng_vector_t){4,0,0});
+        vector(runtime_up(host.engine,copies[7]),(eng_vector_t){0,1,0}); vector(runtime_up(host.engine,ids[7]),cached);
+        runtime_basis(host.engine,ids[1],x,y,(eng_vector_t){0,0,4});
+        nmo_engine_destroy_object(host.engine,ids[1]); nmo_engine_destroy_object(host.engine,ids[3]);
+        nmo_engine_destroy_object(host.engine,ids[4]); nmo_engine_destroy_object(host.engine,ids[5]);
+        moved.m[3][0] = 80; moved.m[3][1] = 10; moved.m[3][2] = 20;
+        eng_entity_set_world_matrix(host.engine,eng_entity_index(host.engine,copies[3]),&moved,false);
+        ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[6],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
+        vector(eng_entity_position(host.engine,eng_entity_index(host.engine,copies[1]),-1),(eng_vector_t){90,10,20});
+        fixture_end(&host);
+    }
+    vector(up(&g),(eng_vector_t){1,1,0}); fixture_end(&g.f); remove(path);
+}
+
+TEST(engine_position_on_curve, bezier_progression_drives_follow_and_bank_through_its_completion_output)
+{
+    const eng_vector_t points[] = {{0,0,0},{10,0,0},{10,0,-10}}; position_fixture_t g; begin(&g,points,COUNT(points));
+    fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,2),1); fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,3),1); input_float(&g,4,.5f);
+    const nmo_behavior_state_t *script = fixture_state(&g.f,g.f.script_id);
+    nmo_object_id_t first_link = nmo_behavior_ref_array_get_id(&script->sub_behavior_links,0);
+    ASSERT_EQ(NMO_OK,nmo_script_edit_remove_behavior_link(g.f.tx,g.f.script_id,first_link));
+    nmo_object_id_t progress = fixture_block(&g.f,NMO_GUID(0x6bb8699a,0x29fb6a4b),"Progress"); ASSERT_TRUE(progress != 0);
+    const float values[] = {40,0,1};
+    for (size_t i = 0; i < COUNT(values); i++) fixture_input_value(&g.f,BLOCK_PIN(&g.f,progress,i),&values[i],sizeof(float));
+    nmo_object_id_t curve = 0; ASSERT_EQ(NMO_OK,nmo_script_edit_ensure_input_parameter_source(g.f.tx,BLOCK_PIN(&g.f,progress,3),&curve));
+    ASSERT_EQ(NMO_OK,nmo_script_edit_connect_parameter(g.f.tx,BLOCK_POUT(&g.f,progress,3),BLOCK_PIN(&g.f,g.block,1)));
+    fixture_link(&g.f,g.f.script_in,BLOCK_IN(&g.f,progress,0),0); fixture_link(&g.f,BLOCK_OUT(&g.f,progress,1),BLOCK_IN(&g.f,progress,1),1);
+    fixture_link(&g.f,BLOCK_OUT(&g.f,progress,1),BLOCK_IN(&g.f,g.block,0),0); fixture_link(&g.f,BLOCK_OUT(&g.f,progress,0),BLOCK_IN(&g.f,g.block,0),0); commit(&g);
+    for (int step = 1; step <= 5; step++) {
+        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,10));
+        position(&g,g.f.owner_id,step == 1 ? (eng_vector_t){5,0,0} : step == 2 ? (eng_vector_t){10,0,0} : step == 3 ? (eng_vector_t){10,0,-5} : (eng_vector_t){10,0,-10});
+        if (step == 1) basis(&g,(eng_vector_t){0,0,-2},(eng_vector_t){0,3,0},(eng_vector_t){4,0,0});
+        else if (step == 2) {
+            float h = sqrtf(.5f); basis(&g,(eng_vector_t){-1,-2*h,-1},(eng_vector_t){-1.5f,3*h,-1.5f},(eng_vector_t){4*h,0,-4*h});
+        } else basis(&g,(eng_vector_t){-2,0,0},(eng_vector_t){0,3,0},(eng_vector_t){0,0,-4});
+        vector(up(&g),(eng_vector_t){0,1,0});
+    }
+    ASSERT_EQ(5u,runs(&g.f,g.out)); ASSERT_EQ(5u,runs(&g.f,g.block));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,10)); ASSERT_EQ(5u,runs(&g.f,g.block)); fixture_end(&g.f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_position_on_curve, follows_all_six_axes_and_keeps_scale_without_scheduling_another_frame);
 REGISTER_TEST(engine_position_on_curve, historical_vectors_choose_the_first_nonzero_component_and_ignore_its_sign);
@@ -245,4 +361,6 @@ REGISTER_TEST(engine_position_on_curve, follow_roll_and_bank_compose_around_the_
 REGISTER_TEST(engine_position_on_curve, bank_skips_open_endpoints_and_straight_segments_but_wraps_closed_seams);
 REGISTER_TEST(engine_position_on_curve, disabled_follow_and_bank_preserve_orientation_and_invalid_axes_are_only_read_when_needed);
 REGISTER_TEST(engine_position_on_curve, missing_targets_and_curves_report_errors_after_setting_io);
+REGISTER_TEST(engine_position_on_curve, loaded_and_copied_followers_preserve_native_reset_and_up_cache_semantics);
+REGISTER_TEST(engine_position_on_curve, bezier_progression_drives_follow_and_bank_through_its_completion_output);
 TEST_MAIN_END()
