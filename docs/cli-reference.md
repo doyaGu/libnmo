@@ -68,6 +68,43 @@ nmo behavior interface show <id> <file>     # Interface layout data
 `behavior dump` takes `--values` to include decoded local and output parameter values, and
 `--flows` (one behavior only, not with `--all`) to include execution and data flow summaries.
 
+## Behavior Playback and Physics Traces
+
+```sh
+nmo behavior run --frames 1600 --delta 16.667 --physics ivp \
+  --path "$BALLANCE" --write out/probe \
+  --steer '0,0;10,0,,precision@370-1200' \
+  --steer-object Ball_Wood,Ball_Stone,Ball_Paper \
+  --steer-log out/probe/steer.csv --physics-log out/probe/physics.csv \
+  out/probe/probe_base.cmo
+```
+
+This example assumes an existing probe directory and generated harness.
+`--physics ivp` requires a CLI built with libivp. `--window` opens the
+viewer when built with viewer support; `--shot FILE.png@FRAME,...` saves
+specified frames. `--write` is also searched before `--path` for loaded
+files, allowing a local `Level_01.NMO` to override the installed level.
+
+`--steer` takes `X,Z[,Y[,F[,NAME,WX,WZ,REACH]]];...@FRAME[-FRAME]`.
+`Y` waits for height, a numeric `F` holds for that many frames, `rush`
+accelerates across a jump, `precision` tracks narrow beams, and `push:N`
+heads for a target for at most N frames. The final four values can wait for
+a named moving object near a location. A finite end frame releases the
+arrow keys to the window user. See the
+[Ballance steering points](ballance-level-builder.md#the-autopilots-points)
+for the JSON representation used by the route builder.
+
+`--steer-log` requires steering and records the selected ball's trajectory,
+target, keys and runtime identity. `--physics-log` records every movable
+physical body's pose after each simulation step as CSV:
+`frame,id,name,m0,...,m15`. Names are CSV-escaped. Fixed bodies and
+nonphysical objects are absent. Opening, writing or closing a trace can
+fail the run; a missing trace is not a successful observation.
+
+The [Ballance native motion guide](ballance-native-resources.md) explains
+how these poses are checked against per-body contracts. Sampled poses do
+not cover all positions between frames.
+
 ## Behavior Rewriting
 
 ```
