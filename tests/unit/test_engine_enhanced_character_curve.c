@@ -2,6 +2,7 @@
 #include "../../src/engine/engine_animation.h"
 #include "../../src/engine/engine_character.h"
 #include "../../src/engine/engine_transform.h"
+#include "../../src/engine/engine_module.h"
 #include "object/builtin/nmo_character_schemas.h"
 #include "object/builtin/nmo_curve_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
@@ -252,6 +253,127 @@ TEST(engine_enhanced_character_curve, absent_owners_and_curves_report_errors_bef
     }
 }
 
+static nmo_object_id_t saved_input(enhanced_fixture_t *g, size_t index, const char *text)
+{
+    nmo_object_id_t source = 0;
+    if (nmo_script_edit_ensure_input_parameter_source(g->f.tx,BLOCK_PIN(&g->f,g->block,index),&source) != NMO_OK ||
+        nmo_script_edit_set_parameter_value(g->f.tx,source,text) != NMO_OK) return 0;
+    return source;
+}
+
+static nmo_object_id_t saved_object(enhanced_fixture_t *g, nmo_object_id_t pin, nmo_object_id_t id)
+{
+    char text[32]; snprintf(text,sizeof(text),"%u",id);
+    nmo_object_id_t source = 0;
+    if (nmo_script_edit_ensure_input_parameter_source(g->f.tx,pin,&source) != NMO_OK ||
+        nmo_script_edit_set_parameter_value(g->f.tx,source,text) != NMO_OK) return 0;
+    return source;
+}
+
+static const char *resolve_file(void *data, const char *name)
+{
+    (void)name; return data;
+}
+
+static nmo_object_id_t runtime_parameter(nmo_engine_t *engine, nmo_object_id_t block, bool is_local, size_t index)
+{
+    const nmo_behavior_state_t *state = nmo_object_get_state(eng_find_object(engine,block));
+    nmo_object_id_t id = nmo_behavior_ref_array_get_id(is_local ? &state->local_parameters : &state->out_parameters,index);
+    return eng_module_id(eng_module_of(engine,block,NULL),id);
+}
+
+TEST(engine_enhanced_character_curve, loaded_and_copied_followers_bind_their_own_paths_and_animations)
+{
+    enhanced_fixture_t source; begin(&source);
+    nmo_object_id_t animation = clip(&source,"Walk",0,0); ASSERT_TRUE(animation != 0);
+    nmo_object_id_t actor_parameter = saved_object(&source,fixture_target(&source.f,source.block),source.f.owner_id);
+    nmo_object_id_t path_parameter = saved_object(&source,BLOCK_PIN(&source.f,source.block,0),source.path);
+    nmo_object_id_t animation_parameter = saved_object(&source,BLOCK_PIN(&source.f,source.block,4),animation);
+    ASSERT_TRUE(actor_parameter != 0 && path_parameter != 0 && animation_parameter != 0);
+    ASSERT_TRUE(saved_input(&source,1,"25%") != 0 && saved_input(&source,2,"75%") != 0);
+    fixture_commit_bare(&source.f,NULL);
+    nmo_beobject_state_t *owner = fixture_state(&source.f,source.f.owner_id);
+    owner->has_single_activity = 1; owner->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE;
+    nmo_behavior_state_t *script = fixture_state(&source.f,source.f.script_id);
+    script->has_single_activity = 1; script->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE | CK_SCENEOBJECT_START_RESET;
+    const char *file_path = NMO_TEST_SCRATCH_FILE("engine_enhanced_character_curve.cmo");
+    ASSERT_EQ(NMO_OK,nmo_session_save_file(source.f.session,file_path,NULL,NULL));
+    for (int started = 0; started < 2; started++) {
+        enhanced_fixture_t host = {0}; fixture_begin_document(&host.f); fixture_begin_edit(&host.f);
+        nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL;
+        fixture_commit(&host.f,&options);
+        if (started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.f.engine,NMO_ENGINE_START_ALL));
+        nmo_engine_set_file_resolver(host.f.engine,resolve_file,(void *)file_path);
+        int32_t file = -1; ASSERT_EQ(NMO_OK,nmo_engine_load(host.f.engine,"enhanced.cmo",true,&file));
+        if (!started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.f.engine,NMO_ENGINE_START_SCENE_DEFAULT));
+        nmo_object_id_t actor = nmo_engine_object_named(host.f.engine,"Actor",NMO_CID_CHARACTER);
+        nmo_object_id_t root = nmo_engine_object_named(host.f.engine,"Root",NMO_CID_BODYPART);
+        nmo_object_id_t curve = nmo_engine_object_named(host.f.engine,"Path",NMO_CID_CURVE);
+        nmo_object_id_t walk = nmo_engine_object_named(host.f.engine,"Walk",NMO_CID_KEYEDANIMATION);
+        nmo_object_id_t block = nmo_engine_object_named(host.f.engine,"Enhanced follow",NMO_CID_BEHAVIOR);
+        nmo_object_id_t loaded_script = nmo_engine_object_named(host.f.engine,"Enhanced script",NMO_CID_BEHAVIOR);
+        ASSERT_TRUE(actor != 0 && actor != source.f.owner_id && walk != 0 && walk != animation && block != 0);
+        host.f.owner_id = actor; host.block = block; nmo_engine_set_trace(host.f.engine,log_messages,&host);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(host.f.engine,0)); position(&host,5,1,0);
+        ASSERT_EQ(walk,eng_character_next_animation(host.f.engine,actor)); ASSERT_FALSE(eng_character_automatic(host.f.engine,actor));
+        ASSERT_EQ(0u,eng_animation_state(host.f.engine,walk)->flags & CKANIMATION_CANBEBREAK);
+        ASSERT_TRUE(eng_animation_playback_state(host.f.engine,walk)->flags & CKANIMATION_CANBEBREAK);
+        ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.f.engine,loaded_script,false,false)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.f.engine,0));
+        const eng_module_t *module = eng_module_of(host.f.engine,block,NULL);
+        nmo_object_id_t ids[] = {actor,root,curve,walk,loaded_script,block,
+            eng_module_id(module,actor_parameter),eng_module_id(module,path_parameter),eng_module_id(module,animation_parameter)}, copies[COUNT(ids)] = {0};
+        ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(host.f.engine,ids,COUNT(ids),false,copies));
+        ASSERT_EQ(copies[1],eng_character_root(host.f.engine,copies[0])); ASSERT_EQ(copies[0],eng_animation_character(host.f.engine,copies[3]));
+        const eng_vector_t shifted = {100,0,0}; eng_entity_set_position(host.f.engine,eng_entity_index(host.f.engine,copies[2]),&shifted,-1,false);
+        host.f.owner_id = copies[0]; host.block = copies[5];
+        ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.f.engine,copies[4],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.f.engine,0));
+        position(&host,105,1,0); ASSERT_EQ(copies[3],eng_character_next_animation(host.f.engine,copies[0]));
+        move(&host,108,30,0); nmo_engine_destroy_object(host.f.engine,curve); nmo_engine_destroy_object(host.f.engine,walk);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(host.f.engine,0)); position(&host,108,30,0);
+        ASSERT_EQ(copies[3],eng_character_next_animation(host.f.engine,copies[0]));
+        /* Loop In enables automatic processing for the next manager frame. */
+        ASSERT_EQ(NMO_OK,nmo_engine_step(host.f.engine,0));
+        ASSERT_EQ(copies[3],eng_character_active_animation(host.f.engine,copies[0]));
+        float progress = -1; read_value(&host.f,runtime_parameter(host.f.engine,copies[5],false,0),&progress,sizeof(progress)); ASSERT_FLOAT_EQ(.4f,progress,1e-6f);
+        read_value(&host.f,runtime_parameter(host.f.engine,copies[5],true,3),&progress,sizeof(progress)); ASSERT_FLOAT_EQ(15,progress,0);
+        ASSERT_EQ(0u,host.messages); fixture_end(&host.f);
+    }
+    fixture_end(&source.f); remove(file_path);
+}
+
+TEST(engine_enhanced_character_curve, automatic_warped_playback_traverses_forward_and_reverse_ranges_without_a_controller)
+{
+    for (int reverse = 0; reverse < 2; reverse++) {
+        enhanced_fixture_t g; begin(&g);
+        if (reverse) { range(&g,.75f,.25f); fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,3),2); }
+        else {
+            const eng_vector_t corner[] = {{0,20,0},{10,20,0},{10,20,10}};
+            g.path = path(&g.f,corner,COUNT(corner)); fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,0),(int32_t)g.path);
+        }
+        nmo_object_id_t idle = clip(&g,"Idle",0,0), walk = clip(&g,"Walk",0,20);
+        fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,4),(int32_t)walk); commit(&g);
+        ASSERT_TRUE(eng_animation_set_playback(g.f.engine,idle,CKANIMATION_CANBEBREAK,CKANIMATION_CANBEBREAK,1000));
+        ASSERT_EQ(NMO_OK,eng_character_set_active_animation(g.f.engine,g.f.owner_id,idle));
+        ASSERT_TRUE(eng_animation_set_frame(g.f.engine,idle,2)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0));
+        ASSERT_EQ(eng_character_warper(g.f.engine,g.f.owner_id),eng_character_active_animation(g.f.engine,g.f.owner_id));
+        bool walked = false, turned = false;
+        for (int step = 0; step < 64 && runs(&g.f,g.done) == 0; step++) {
+            ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,1));
+            if (eng_character_active_animation(g.f.engine,g.f.owner_id) == walk) walked = true;
+            float matrix[16]; ASSERT_TRUE(nmo_engine_entity_world_matrix(g.f.engine,g.f.owner_id,matrix));
+            if (reverse ? matrix[0] < -.99f : matrix[2] > .99f) turned = true;
+            ASSERT_FLOAT_EQ(1,matrix[13],1e-4f);
+        }
+        ASSERT_TRUE(walked); ASSERT_TRUE(turned); ASSERT_EQ(1u,runs(&g.f,g.done));
+        ASSERT_TRUE(eng_character_automatic(g.f.engine,g.f.owner_id)); ASSERT_EQ(0u,eng_character_active_animation(g.f.engine,g.f.owner_id));
+        ASSERT_FLOAT_EQ(reverse ? 0 : 1,value(&g,BLOCK_POUT(&g.f,g.block,0)),0); ASSERT_EQ(0u,g.messages);
+        uint64_t executions = runs(&g.f,g.block); ASSERT_TRUE(executions > 2);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,1)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,1));
+        ASSERT_EQ(executions,runs(&g.f,g.block)); ASSERT_EQ(1u,runs(&g.f,g.done));
+        fixture_end(&g.f);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_enhanced_character_curve, initialization_preserves_output_and_uses_all_six_native_axes);
 REGISTER_TEST(engine_enhanced_character_curve, forward_end_is_inclusive_and_uses_cached_bounds);
@@ -260,4 +382,6 @@ REGISTER_TEST(engine_enhanced_character_curve, animation_is_interruptible_and_lo
 REGISTER_TEST(engine_enhanced_character_curve, animation_requests_use_the_five_frame_best_warp);
 REGISTER_TEST(engine_enhanced_character_curve, default_equal_and_zero_length_ranges_finish_on_loop_in);
 REGISTER_TEST(engine_enhanced_character_curve, absent_owners_and_curves_report_errors_before_consuming_inputs);
+REGISTER_TEST(engine_enhanced_character_curve, loaded_and_copied_followers_bind_their_own_paths_and_animations);
+REGISTER_TEST(engine_enhanced_character_curve, automatic_warped_playback_traverses_forward_and_reverse_ranges_without_a_controller);
 TEST_MAIN_END()
