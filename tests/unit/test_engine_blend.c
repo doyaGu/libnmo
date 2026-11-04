@@ -119,9 +119,10 @@ TEST(engine_blend, factor_block_uses_native_fractional_default_and_allows_absent
     engine_fixture_t f; fixture_begin_document(&f);
     nmo_object_id_t a = channel(&f,"A",f.owner_id,10,10), b = channel(&f,"B",f.owner_id,20,30);
     nmo_object_id_t part = blend_channel(&f,a,b,20);
+    nmo_object_id_t animation = clip(&f,"Blended",0,20,&part,1);
     f.script_id = fixture_add_script(&f,"Blend control",&f.script_in); fixture_begin_edit(&f);
     nmo_object_id_t block = fixture_block(&f,GUID_FACTOR,"Set Blended Animation Factor"); ASSERT_TRUE(block != 0);
-    fixture_input_int(&f,BLOCK_PIN(&f,block,0),(int32_t)part);
+    fixture_input_int(&f,BLOCK_PIN(&f,block,0),(int32_t)animation);
     nmo_object_id_t factor_param = nmo_parameterin_source_id(fixture_state(&f,BLOCK_PIN(&f,block,1)));
     nmo_object_id_t animation_param = nmo_parameterin_source_id(fixture_state(&f,BLOCK_PIN(&f,block,0)));
     fixture_link(&f,f.script_in,BLOCK_IN(&f,block,0),0);
@@ -132,9 +133,11 @@ TEST(engine_blend, factor_block_uses_native_fractional_default_and_allows_absent
     float factor = .25f; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(f.engine,factor_param,&factor,sizeof(factor)));
     ASSERT_EQ(NMO_OK,nmo_engine_activate_script(f.engine,f.script_id,true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0));
     ASSERT_TRUE(eng_object_animation_set_frame(f.engine,part,10,true)); ASSERT_FLOAT_EQ(7.5f,position(f.engine,f.owner_id),1e-6f);
+    nmo_engine_destroy_object(f.engine,animation);
+    ASSERT_EQ(NMO_OK,nmo_engine_activate_script(f.engine,f.script_id,true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0));
     int32_t absent = 0; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(f.engine,animation_param,&absent,sizeof(absent)));
     ASSERT_EQ(NMO_OK,nmo_engine_activate_script(f.engine,f.script_id,true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0));
-    ASSERT_EQ(3u,runs(&f,block));
+    ASSERT_EQ(4u,runs(&f,block));
     fixture_end(&f);
 }
 
@@ -292,6 +295,7 @@ TEST(engine_blend, create_block_honors_settings_reuses_absent_inputs_and_creates
     for (int defaults = 0; defaults < 2; defaults++) {
         engine_fixture_t f; fixture_begin_document(&f);
         nmo_object_id_t body, character = actor(&f,&body);
+        nmo_object_id_t recipient_body, recipient = actor(&f,&recipient_body);
         nmo_object_id_t a = channel(&f,"A",body,10,10), b = channel(&f,"B",body,20,30);
         nmo_object_id_t extra = channel(&f,"Extra",f.owner_id,10,40), left[] = {a,extra};
         nmo_object_id_t first = clip(&f,"First",character,10,left,COUNT(left)), second = clip(&f,"Second",0,20,&b,1);
@@ -299,7 +303,7 @@ TEST(engine_blend, create_block_honors_settings_reuses_absent_inputs_and_creates
         nmo_object_id_t block = fixture_block(&f,GUID_CREATE,"Create Blended Animation 2"); ASSERT_TRUE(block != 0);
         nmo_object_id_t input = saved_object(&f,BLOCK_PIN(&f,block,0),first);
         ASSERT_TRUE(input != 0 && saved_object(&f,BLOCK_PIN(&f,block,1),second) != 0);
-        ASSERT_TRUE(saved_object(&f,fixture_target(&f,block),character) != 0);
+        ASSERT_TRUE(saved_object(&f,fixture_target(&f,block),recipient) != 0);
         if (!defaults) {
             ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(f.tx,local(&f,block,0),"FALSE"));
             ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(f.tx,local(&f,block,1),"FALSE"));
@@ -311,19 +315,24 @@ TEST(engine_blend, create_block_honors_settings_reuses_absent_inputs_and_creates
         nmo_object_id_t result = 0; read_value(&f,BLOCK_POUT(&f,block,0),&result,sizeof(result)); ASSERT_TRUE(result != 0);
         const nmo_keyedanimation_state_t *state = nmo_object_get_state(eng_find_object(f.engine,result));
         ASSERT_EQ(defaults ? 1u : 2u,state->animation_count);
-        ASSERT_EQ((size_t)defaults,eng_character_animation_count(f.engine,character));
-        ASSERT_EQ(character,eng_animation_character(f.engine,result));
+        ASSERT_EQ((size_t)defaults,eng_character_animation_count(f.engine,recipient));
+        ASSERT_EQ(defaults ? recipient : character,eng_animation_character(f.engine,result));
         int32_t absent = 0; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(f.engine,input,&absent,sizeof(absent)));
         ASSERT_EQ(NMO_OK,nmo_engine_activate_script(f.engine,f.script_id,true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0));
         nmo_object_id_t retained = 0; read_value(&f,BLOCK_POUT(&f,block,0),&retained,sizeof(retained)); ASSERT_EQ(result,retained);
-        ASSERT_EQ((size_t)defaults,eng_character_animation_count(f.engine,character));
+        ASSERT_EQ((size_t)defaults,eng_character_animation_count(f.engine,recipient));
         ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(f.engine,input,&first,sizeof(first)));
         ASSERT_EQ(NMO_OK,nmo_engine_activate_script(f.engine,f.script_id,true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0));
         nmo_object_id_t repeated = 0; read_value(&f,BLOCK_POUT(&f,block,0),&repeated,sizeof(repeated));
-        ASSERT_TRUE(repeated != 0 && repeated != result); ASSERT_EQ((size_t)(defaults*2),eng_character_animation_count(f.engine,character));
+        ASSERT_TRUE(repeated != 0 && repeated != result); ASSERT_EQ((size_t)(defaults*2),eng_character_animation_count(f.engine,recipient));
         ASSERT_TRUE(eng_animation_set_character(f.engine,first,0));
         ASSERT_EQ(NMO_OK,nmo_engine_activate_script(f.engine,f.script_id,true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0));
         read_value(&f,BLOCK_POUT(&f,block,0),&retained,sizeof(retained)); ASSERT_EQ(0u,retained); ASSERT_EQ(4u,runs(&f,block));
+        ASSERT_TRUE(eng_animation_set_character(f.engine,first,character));
+        nmo_engine_destroy_object(f.engine,recipient);
+        ASSERT_EQ(NMO_OK,nmo_engine_activate_script(f.engine,f.script_id,true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0));
+        read_value(&f,BLOCK_POUT(&f,block,0),&retained,sizeof(retained)); ASSERT_TRUE(retained != 0);
+        ASSERT_EQ(character,eng_animation_character(f.engine,retained)); ASSERT_EQ(5u,runs(&f,block));
         fixture_end(&f);
     }
 }

@@ -60,7 +60,8 @@ static int bb_set_animation_frame(blk_t *b)
 static int bb_set_blended_animation_factor(blk_t *b)
 {
     nmo_object_id_t animation = nmo_engine_block_get_input_object(b,0);
-    if (animation != 0 && !eng_animation_set_merge_factor(b->engine,animation,get_in_float(b,1,.5f)))
+    if (eng_animation_state(b->engine,animation) != NULL &&
+        !eng_animation_set_merge_factor(b->engine,animation,get_in_float(b,1,.5f)))
         return NMO_ENGINE_BR_GENERICERROR;
     OUT_ON(b,0);
     return NMO_ENGINE_BR_OK;
@@ -74,7 +75,7 @@ static int bb_create_blended_animation(blk_t *b)
     if (eng_animation_state(b->engine,result) == NULL) result = 0;
     if (eng_animation_state(b->engine,first) != NULL && eng_animation_state(b->engine,second) != NULL)
         result = eng_keyed_animation_merge(b->engine,first,second,get_local_int(b,0,1) != 0);
-    if (result != 0 && character != 0 && get_local_int(b,1,1) != 0 &&
+    if (result != 0 && eng_entity_index(b->engine,character) >= 0 && get_local_int(b,1,1) != 0 &&
         eng_character_add_animation(b->engine,character,result) != NMO_OK) return NMO_ENGINE_BR_GENERICERROR;
     return nmo_engine_block_set_output_value(b,0,&result,sizeof(result)) == NMO_OK ? NMO_ENGINE_BR_OK : NMO_ENGINE_BR_GENERICERROR;
 }
