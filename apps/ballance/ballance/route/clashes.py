@@ -17,7 +17,13 @@ import math
 from pathlib import Path
 
 from ..core.obj import Box, Mesh
-from ..game.measures import BALL_RADIUS, CLASH_HEADROOM, CLASH_OVERLAP, CLASH_RAIL_ROOM, CLASH_RAIL_STEP
+from ..game.measures import (
+    BALL_RADIUS,
+    CLASH_HEADROOM,
+    CLASH_OVERLAP,
+    CLASH_RAIL_ROOM,
+    CLASH_RAIL_STEP,
+)
 from ..kit.floors import CELL, RISE, WALL
 from ..kit.railings import RADIUS, centre_line
 from .assets import Assets
@@ -25,19 +31,24 @@ from .layout import Layout, Part
 from .modules import MODULE_FLOORS
 
 # Pieces the ball flies along, not rolling on a floor.
-FLOWN = ("rail", "rail_turn", "rail_path", "fall")
+FLOWN = ('rail', 'rail_turn', 'rail_path', 'fall')
 # Elements the ball passes through or that are not in its way, and the
 # sacks, which swing into it on purpose (over a road, or under a beam's crest
 # into the beam crossing below).
-PASSED = ("P_Extra_Point", "P_Extra_Life", "P_Trafo_", "P_Modul_26")
+PASSED = ('P_Extra_Point', 'P_Extra_Life', 'P_Trafo_', 'P_Modul_26')
 
 
 def _bounds(points: list[tuple[float, float, float]]) -> Box | None:
     if not points:
         return None
-    return (min(p[0] for p in points), max(p[0] for p in points),
-            min(p[1] for p in points), max(p[1] for p in points),
-            min(p[2] for p in points), max(p[2] for p in points))
+    return (
+        min(p[0] for p in points),
+        max(p[0] for p in points),
+        min(p[1] for p in points),
+        max(p[1] for p in points),
+        min(p[2] for p in points),
+        max(p[2] for p in points),
+    )
 
 
 def _placed(path: Path, position: list[float], turn: float) -> Box | None:
@@ -46,8 +57,8 @@ def _placed(path: Path, position: list[float], turn: float) -> Box | None:
     t = math.radians(turn)
     c, s = math.cos(t), math.sin(t)
     points = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if line.startswith("v "):
+    for line in path.read_text(encoding='utf-8').splitlines():
+        if line.startswith('v '):
             x, y, z = (float(v) for v in line.split()[1:4])
             points.append((px + x * c + z * s, py + y, pz - x * s + z * c))
     return _bounds(points)
@@ -75,15 +86,26 @@ def part_boxes(part: Part, assets: Assets) -> tuple[list[Box], list[Box]]:
         for a0, b0, a1, b1 in strips:
             heights = [piece.height(i, j) for i in (a0, a1) for j in (b0, b1)]
             low, high = min(heights), max(heights)
-            box = (grid.ox + a0 * CELL, grid.ox + a1 * CELL, high + RISE - WALL, high + RISE,
-                   grid.oz + b0 * CELL, grid.oz + b1 * CELL)
+            box = (
+                grid.ox + a0 * CELL,
+                grid.ox + a1 * CELL,
+                high + RISE - WALL,
+                high + RISE,
+                grid.oz + b0 * CELL,
+                grid.oz + b1 * CELL,
+            )
             solid.append(box)
             room.append(_room((box[0], box[1], low, high + RISE, box[4], box[5])))
     for function, (x, z), *rest in part.extras:
         mesh = Mesh()
         function(mesh, x, z, *rest)
-        box = _bounds([tuple(float(v) for v in line.split()[1:4])
-                       for line in mesh.lines if line.startswith("v ")])
+        box = _bounds(
+            [
+                tuple(float(v) for v in line.split()[1:4])
+                for line in mesh.lines
+                if line.startswith('v ')
+            ]
+        )
         if box:
             solid.append(box)
             room.append(_room(box))
@@ -115,9 +137,16 @@ def part_boxes(part: Part, assets: Assets) -> tuple[list[Box], list[Box]]:
     for path in part.railings:
         line = centre_line(path)
         for a, b in zip(line, line[1:]):
-            solid.append((min(a[0], b[0]) - RADIUS, max(a[0], b[0]) + RADIUS,
-                          min(a[1], b[1]) - RADIUS, max(a[1], b[1]) + RADIUS,
-                          min(a[2], b[2]) - RADIUS, max(a[2], b[2]) + RADIUS))
+            solid.append(
+                (
+                    min(a[0], b[0]) - RADIUS,
+                    max(a[0], b[0]) + RADIUS,
+                    min(a[1], b[1]) - RADIUS,
+                    max(a[1], b[1]) + RADIUS,
+                    min(a[2], b[2]) - RADIUS,
+                    max(a[2], b[2]) + RADIUS,
+                )
+            )
     rails, clearance = rail_boxes(part.segments)
     solid.extend(rails)
     room.extend(clearance)
@@ -129,33 +158,47 @@ def rail_boxes(segments):
     solid, room = [], []
     for a, b in segments:
         reach = max(a.gauge / 2 + a.radius, b.gauge / 2 + b.radius)
-        bank_height = max(abs(math.sin(math.radians(r.bank))) * r.gauge / 2
-                          for r in (a, b))
+        bank_height = max(abs(math.sin(math.radians(r.bank))) * r.gauge / 2 for r in (a, b))
         tube = max(a.radius, b.radius)
         # a sloping rail a few units at a time
         steps = max(1, math.ceil(math.dist((a.x, a.z), (b.x, b.z)) / CLASH_RAIL_STEP))
         for k in range(steps):
-            p, q = ([a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t]
-                    for t in (k / steps, (k + 1) / steps))
+            p, q = (
+                [a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t]
+                for t in (k / steps, (k + 1) / steps)
+            )
             # the tubes reach across the rail, not along it
             rx = reach if abs(b.z - a.z) > 1e-6 else tube
             rz = reach if abs(b.x - a.x) > 1e-6 else tube
-            box = (min(p[0], q[0]) - rx, max(p[0], q[0]) + rx,
-                   min(p[1], q[1]) - tube - bank_height,
-                   max(p[1], q[1]) + tube + bank_height,
-                   min(p[2], q[2]) - rz, max(p[2], q[2]) + rz)
+            box = (
+                min(p[0], q[0]) - rx,
+                max(p[0], q[0]) + rx,
+                min(p[1], q[1]) - tube - bank_height,
+                max(p[1], q[1]) + tube + bank_height,
+                min(p[2], q[2]) - rz,
+                max(p[2], q[2]) + rz,
+            )
             solid.append(box)
             beam = a.gauge == b.gauge == 0
             # On a single beam the ball sits on the tube, rather than
             # between two tubes. Its top reaches radius + diameter above
             # the centre, and its sides extend beyond the thin beam.
-            clearance = max(CLASH_RAIL_ROOM, tube + 2 * BALL_RADIUS + .15) if beam else CLASH_RAIL_ROOM
+            clearance = (
+                max(CLASH_RAIL_ROOM, tube + 2 * BALL_RADIUS + 0.15) if beam else CLASH_RAIL_ROOM
+            )
             # The ball overhangs a tube along the track as well as across
             # it, including at an endpoint entering the next piece.
             room_x, room_z = max(rx, BALL_RADIUS), max(rz, BALL_RADIUS)
-            room.append((min(p[0], q[0]) - room_x, max(p[0], q[0]) + room_x, box[2],
-                         max(p[1], q[1]) + bank_height + clearance,
-                         min(p[2], q[2]) - room_z, max(p[2], q[2]) + room_z))
+            room.append(
+                (
+                    min(p[0], q[0]) - room_x,
+                    max(p[0], q[0]) + room_x,
+                    box[2],
+                    max(p[1], q[1]) + bank_height + clearance,
+                    min(p[2], q[2]) - room_z,
+                    max(p[2], q[2]) + room_z,
+                )
+            )
     return solid, room
 
 
@@ -170,8 +213,10 @@ def _overlap(a: Box, b: Box) -> float:
 
 def _name(part: Part) -> str:
     if part.branch:
-        return (f"sector {part.sector}'s piece {part.branch} ({part.what}) of the branch off "
-                f"piece {part.index}")
+        return (
+            f"sector {part.sector}'s piece {part.branch} ({part.what}) of the branch off "
+            f'piece {part.index}'
+        )
     if part.index:
         return f"sector {part.sector}'s piece {part.index} ({part.what})"
     return f"sector {part.sector}'s {part.what}"
@@ -210,6 +255,8 @@ def clashes(layout: Layout, assets: Assets) -> list[str]:
                 a, b = hits[0]
                 x = (max(a[0], b[0]) + min(a[1], b[1])) / 2
                 z = (max(a[4], b[4]) + min(a[5], b[5])) / 2
-                found.append(f"{_name(part)} is in the ball's way over {_name(other)}, near "
-                             f"({x:.0f}, {z:.0f})")
+                found.append(
+                    f"{_name(part)} is in the ball's way over {_name(other)}, near "
+                    f'({x:.0f}, {z:.0f})'
+                )
     return found

@@ -19,10 +19,16 @@ def boxes(balloon):
     a = back
     while a < forward:
         b = min(a + description['step'], forward)
-        corners = [at((x, z), heading, along, side)
-                   for along in (a, b) for side in (left, right)]
-        result.append((min(p[0] for p in corners), max(p[0] for p in corners),
-                       y + low, y + high,
-                       min(p[1] for p in corners), max(p[1] for p in corners)))
+        corners = [at((x, z), heading, along, side) for along in (a, b) for side in (left, right)]
+        result.append(
+            (
+                min(p[0] for p in corners),
+                max(p[0] for p in corners),
+                y + low,
+                y + high,
+                min(p[1] for p in corners),
+                max(p[1] for p in corners),
+            )
+        )
         a = b
     return result

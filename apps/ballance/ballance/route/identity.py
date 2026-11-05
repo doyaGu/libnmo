@@ -37,8 +37,9 @@ class Piece(dict):
         self.origin = origin
 
 
-def identify(item: dict, path: str, scope: str, fallback: str, version: int,
-             stable_parent: bool) -> tuple[str, bool]:
+def identify(
+    item: dict, path: str, scope: str, fallback: str, version: int, stable_parent: bool
+) -> tuple[str, bool]:
     name = item.get('id')
     if 'id' not in item:
         return f'{scope}/position/{fallback}', False

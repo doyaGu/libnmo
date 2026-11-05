@@ -1,4 +1,5 @@
 """Authored native-instance frames, separate from their supporting route geometry."""
+
 from ..core.motion import place
 from ..core.path import vector, number
 from .spaces import part_id
@@ -19,7 +20,8 @@ def prepare(layout):
             kind, sector, position, *rotation = entry
             if not kind.startswith('P_Modul_'):
                 continue
-            index = counts.get(kind, 0); counts[kind] = index + 1
+            index = counts.get(kind, 0)
+            counts[kind] = index + 1
             identifier = f'{part_id(part)}/mechanism/{kind}/{index}'
             value = overrides.get(identifier, {})
             if not isinstance(value, dict) or set(value) - {'offset', 'yaw', 'sector', 'physics'}:
@@ -30,12 +32,16 @@ def prepare(layout):
             if type(active) is not int or not 1 <= active <= len(layout.sectors):
                 raise ValueError(f'{identifier}: activation sector must be a valid integer sector')
             from .dynamics import parameters, variant, profiles
+
             physics = parameters(kind, value.get('physics', {}))
             base_yaw = rotation[0] if rotation else 0
-            pose = {'position': list(place(offset, position, base_yaw)),
-                    'yaw': (base_yaw + yaw) % 360, 'sector': active,
-                    'base_pose': {'position': list(position), 'yaw': base_yaw, 'sector': sector},
-                    'settings': {'offset': list(offset), 'yaw': yaw, 'sector': active}}
+            pose = {
+                'position': list(place(offset, position, base_yaw)),
+                'yaw': (base_yaw + yaw) % 360,
+                'sector': active,
+                'base_pose': {'position': list(position), 'yaw': base_yaw, 'sector': sector},
+                'settings': {'offset': list(offset), 'yaw': yaw, 'sector': active},
+            }
             if physics:
                 pose['settings']['physics'] = physics
                 pose['parameter_schema'] = profiles()[kind]

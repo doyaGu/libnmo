@@ -14,16 +14,31 @@ def transition(spec, start):
     The incoming section supplies defaults; no dimensions or bank are guessed.
     Rail/floor changes still use the native standard docking cross sections.
     """
-    if not isinstance(spec, dict) or set(spec) - {'length', 'segments', 'to', 'step', 'tolerance', 'ribs', 'stops'}:
-        raise ValueError('connector accepts length or segments, to, step, tolerance, ribs and stops')
+    if not isinstance(spec, dict) or set(spec) - {
+        'length',
+        'segments',
+        'to',
+        'step',
+        'tolerance',
+        'ribs',
+        'stops',
+    }:
+        raise ValueError(
+            'connector accepts length or segments, to, step, tolerance, ribs and stops'
+        )
     if ('length' in spec) == ('segments' in spec):
         raise ValueError('connector needs exactly one of length or segments')
     target = spec.get('to')
-    allowed = {'kind', 'bank'} | ({'width', 'section', 'depth'} if start.kind == 'floor' else {'gauge', 'radius'})
+    allowed = {'kind', 'bank'} | (
+        {'width', 'section', 'depth'} if start.kind == 'floor' else {'gauge', 'radius'}
+    )
     if not isinstance(target, dict) or set(target) - allowed:
         raise ValueError(f'{start.kind} connector target accepts {sorted(allowed)}')
     if target.get('kind', start.kind) != start.kind:
-        raise ValueError('connector changes one cross section kind at a time; reach a standard port before docking rail/floor')
+        raise ValueError(
+            'connector changes one cross section kind at a time; reach a '
+            'standard port before docking rail/floor'
+        )
     if 'length' in spec:
         length = number(spec['length'], 'connector length')
         if length <= 0:
@@ -38,13 +53,16 @@ def transition(spec, start):
             path[key] = [[0, getattr(start, key)], [1, target.get(key, getattr(start, key))]]
     else:
         depth = number(target.get('depth', start.depth), 'connector depth')
-        if abs(depth-start.depth) > 1e-6:
+        if abs(depth - start.depth) > 1e-6:
             raise ValueError('connector cannot change floor depth yet; keep matching depth')
         last = section(target.get('section', list(start.profile)))
         fractions = sorted({p[0] for p in (*start.profile, *last)})
-        path.update(width=[[0, start.width], [1, target.get('width', start.width)]], depth=depth,
-                    section=[[u, profile_height(start.profile, u)] for u in fractions],
-                    end_section=[[u, profile_height(last, u)] for u in fractions])
+        path.update(
+            width=[[0, start.width], [1, target.get('width', start.width)]],
+            depth=depth,
+            section=[[u, profile_height(start.profile, u)] for u in fractions],
+            end_section=[[u, profile_height(last, u)] for u in fractions],
+        )
     return f'{start.kind}_path', path
 
 
@@ -59,10 +77,13 @@ def platform_mouth(position, heading, height, width, depth, *, leaving=False, di
     b = Ring(middle[0], height, middle[1], *heading)
     c = Ring(end[0], height + (0 if leaving else RISE), end[1], *heading)
     if leaving:
-        intervals = ((a, b, FLAT_SECTION, V_SECTION, 0, 1),
-                     (b, c, V_SECTION, V_SECTION, 0, .5))
+        intervals = ((a, b, FLAT_SECTION, V_SECTION, 0, 1), (b, c, V_SECTION, V_SECTION, 0, 0.5))
     else:
-        intervals = ((a, b, V_SECTION, V_SECTION, distance/5, (distance+2.5)/5),
-                     (b, c, V_SECTION, FLAT_SECTION, 0, 1))
-    return [(sweep, (0, 0), a, b, width, width, pa, pb, va, vb, depth)
-            for a, b, pa, pb, va, vb in intervals]
+        intervals = (
+            (a, b, V_SECTION, V_SECTION, distance / 5, (distance + 2.5) / 5),
+            (b, c, V_SECTION, FLAT_SECTION, 0, 1),
+        )
+    return [
+        (sweep, (0, 0), a, b, width, width, pa, pb, va, vb, depth)
+        for a, b, pa, pb, va, vb in intervals
+    ]

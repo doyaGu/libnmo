@@ -26,13 +26,15 @@ def cardinal(direction):
 def profile_height(profile, x):
     for (u, a), (v, b) in zip(profile, profile[1:]):
         if x <= v + EPSILON:
-            return a + (b-a) * (x-u) / (v-u)
+            return a + (b - a) * (x - u) / (v - u)
     return profile[-1][1]
 
 
 def same_profile(a, b):
-    return all(abs(profile_height(a, x)-profile_height(b, x)) <= EPSILON
-               for x in {p[0] for p in (*a, *b)})
+    return all(
+        abs(profile_height(a, x) - profile_height(b, x)) <= EPSILON
+        for x in {p[0] for p in (*a, *b)}
+    )
 
 
 @dataclass(frozen=True)
@@ -48,14 +50,24 @@ class Section:
     def __post_init__(self):
         if self.kind not in ('floor', 'rail'):
             raise ValueError(f'unsupported port kind {self.kind}')
-        values = (self.bank, self.width, self.depth, self.gauge, self.radius,
-                  *(v for p in self.profile for v in p))
+        values = (
+            self.bank,
+            self.width,
+            self.depth,
+            self.gauge,
+            self.radius,
+            *(v for p in self.profile for v in p),
+        )
         if not all(math.isfinite(v) for v in values):
             raise ValueError('port section needs finite values')
-        if self.width <= 0 or self.depth <= 0 or self.radius <= 0 or self.gauge <= 2*self.radius:
+        if self.width <= 0 or self.depth <= 0 or self.radius <= 0 or self.gauge <= 2 * self.radius:
             raise ValueError('invalid port width, depth or rail gauge/radius')
-        if len(self.profile) < 2 or self.profile[0][0] != -.5 or self.profile[-1][0] != .5 or any(
-                a[0] >= b[0] for a, b in zip(self.profile, self.profile[1:])):
+        if (
+            len(self.profile) < 2
+            or self.profile[0][0] != -0.5
+            or self.profile[-1][0] != 0.5
+            or any(a[0] >= b[0] for a, b in zip(self.profile, self.profile[1:]))
+        ):
             raise ValueError('port profile fractions must increase from -0.5 to 0.5')
 
     @property
@@ -63,9 +75,12 @@ class Section:
         if abs(self.bank) > EPSILON:
             return False
         if self.kind == 'rail':
-            return abs(self.gauge-GAUGE) <= EPSILON and abs(self.radius-TUBE) <= EPSILON
-        return (abs(self.width-NARROW) <= EPSILON and abs(self.depth-WALL) <= EPSILON
-                and same_profile(self.profile, V_SECTION))
+            return abs(self.gauge - GAUGE) <= EPSILON and abs(self.radius - TUBE) <= EPSILON
+        return (
+            abs(self.width - NARROW) <= EPSILON
+            and abs(self.depth - WALL) <= EPSILON
+            and same_profile(self.profile, V_SECTION)
+        )
 
 
 @dataclass(frozen=True)
@@ -81,7 +96,7 @@ class Port:
     def __post_init__(self):
         if not all(math.isfinite(v) for v in (*self.position, *self.heading, self.distance)):
             raise ValueError('port pose needs finite values')
-        if abs(math.hypot(*self.heading)-1) > EPSILON:
+        if abs(math.hypot(*self.heading) - 1) > EPSILON:
             raise ValueError('port heading must be a unit direction')
 
     def data(self):
@@ -99,16 +114,28 @@ class Connection:
     native: bool = False
 
     def data(self):
-        return {'from': self.before.data(), 'to': self.after.data(), 'kind': self.kind,
-                'caps': 'open', 'uv': 'native-grid' if self.native else
-                'continue' if self.kind == 'floor-seam' else 'material-boundary'}
+        return {
+            'from': self.before.data(),
+            'to': self.after.data(),
+            'kind': self.kind,
+            'caps': 'open',
+            'uv': 'native-grid'
+            if self.native
+            else 'continue'
+            if self.kind == 'floor-seam'
+            else 'material-boundary',
+        }
 
 
 class ConnectionError(ValueError):
     def __init__(self, before, after, rule, remedy):
         self.before, self.after, self.rule = before, after, rule
+
         def label(port):
-            return f'{port.owner}:{port.name}' + (f' at {port.source.pointer}' if port.source else '')
+            return f'{port.owner}:{port.name}' + (
+                f' at {port.source.pointer}' if port.source else ''
+            )
+
         super().__init__(f'{label(before)} -> {label(after)}: {rule}; {remedy}')
 
 
@@ -118,23 +145,28 @@ def connect(before: Port, after: Port, *, grid=False) -> Connection:
     Intentional slope changes remain allowed. Native module interiors, beam
     overlaps and ballistic transfers require their own adapters, not this rule.
     """
+
     def reject(rule, remedy='add an explicit connector before this piece'):
         raise ConnectionError(before, after, rule, remedy)
+
     if math.dist(before.position, after.position) > EPSILON:
         reject('position gap', 'align the two port positions')
     if math.dist(before.heading, after.heading) > EPSILON:
         reject('heading mismatch', 'use a curved path to align the end heading')
     a, b = before.section, after.section
     if grid and (cardinal(before.heading) is None or not a.standard):
-        reject('grid connection needs a cardinal heading, zero bank and standard '
-               '5-wide V floor or 3.8-gauge rail', 'add a free path transition or connector')
+        reject(
+            'grid connection needs a cardinal heading, zero bank and standard '
+            '5-wide V floor or 3.8-gauge rail',
+            'add a free path transition or connector',
+        )
     if a.kind != b.kind:
         if not a.standard or not b.standard:
             reject('rail/floor transitions require standard ports')
         return Connection(before, after, 'rail-floor-dock', grid)
     fields = ('bank', 'width', 'depth') if a.kind == 'floor' else ('bank', 'gauge', 'radius')
     for field in fields:
-        if abs(getattr(a, field)-getattr(b, field)) > EPSILON:
+        if abs(getattr(a, field) - getattr(b, field)) > EPSILON:
             reject(f'mismatched {field}')
     if a.kind == 'floor' and not same_profile(a.profile, b.profile):
         reject('mismatched section')
@@ -146,12 +178,30 @@ def incoming(layout, track) -> Port:
         return track.free_port
     previous = layout.parts[track.step] if track.step is not None else None
     origin = previous.origin if previous else None
-    owner = origin.entity_id if origin else f'sector/{previous.sector}/start' if previous else 'route/start'
-    return Port(owner, 'exit', (track.p[0], track.h, track.p[1]), track.d,
-                Section('rail' if track.run is not None else 'floor', width=track.width), origin)
+    owner = (
+        origin.entity_id
+        if origin
+        else f'sector/{previous.sector}/start'
+        if previous
+        else 'route/start'
+    )
+    return Port(
+        owner,
+        'exit',
+        (track.p[0], track.h, track.p[1]),
+        track.d,
+        Section('rail' if track.run is not None else 'floor', width=track.width),
+        origin,
+    )
 
 
 def entry(piece, track, section, *, owner=None) -> Port:
     origin = getattr(piece, 'origin', None)
-    return Port(owner or (origin.entity_id if origin else 'route/end'), 'entry',
-                (track.p[0], track.h, track.p[1]), track.d, section, origin)
+    return Port(
+        owner or (origin.entity_id if origin else 'route/end'),
+        'entry',
+        (track.p[0], track.h, track.p[1]),
+        track.d,
+        section,
+        origin,
+    )
