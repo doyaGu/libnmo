@@ -10,6 +10,7 @@
  */
 
 #include "virtools.h"
+#include "core/nmo_utils.h"
 #include "object/nmo_class_ids.h"
 
 #include <stdlib.h>
@@ -21,6 +22,50 @@ static bool key_down(blk_t *b, uint32_t key)
 }
 
 /* ---- Controllers/Keyboard ---- */
+
+static eng_param_t *keyboard_mapper_data(blk_t *b)
+{
+    const eng_node_t *node = &b->engine->nodes.data[b->node];
+    return eng_node_param(b->engine,node->first_local,node->local_count,0);
+}
+
+static bool keyboard_mapper_valid(const eng_param_t *data, int32_t count)
+{
+    return count <= 0 || (data != NULL && data->data != NULL && (uint32_t)count <= data->size/40);
+}
+
+static int cb_keyboard_mapper(blk_t *b, uint32_t message)
+{
+    if (message != NMO_ENGINE_MSG_LOAD) return NMO_ENGINE_BR_OK;
+    eng_param_t *data = keyboard_mapper_data(b); int32_t count = get_local_int(b,1,0);
+    if (!keyboard_mapper_valid(data,count)) return NMO_ENGINE_BR_PARAMETERERROR;
+    /* mappedKey: little-endian key and cached message ID, then a 32-byte name.
+     * Rebuild only the active records; copied/runtime IDs remain valid until LOAD. */
+    for (int32_t i = 0; i < count; i++) {
+        uint8_t *record = data->data+(size_t)i*40; char name[33]; memcpy(name,record+8,32); name[32] = 0;
+        int32_t type = name[0] != 0 ? eng_message_type_add(b->engine,name) : -1;
+        if (type < 0 && name[0] != 0) return NMO_ENGINE_BR_GENERICERROR;
+        nmo_write_u32_le(record+4,(uint32_t)type);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+static int bb_keyboard_mapper(blk_t *b)
+{
+    if (IN_ACTIVE(b,1)) { IN_OFF(b,1); return NMO_ENGINE_BR_OK; }
+    IN_OFF(b,0);
+    nmo_object_id_t sender = nmo_engine_block_owner(b), target = nmo_engine_block_target(b);
+    if (eng_map_get(&b->engine->destroyed,sender) >= 0 || eng_map_get(&b->engine->destroyed,target) >= 0 ||
+        !eng_is_child_class(b->engine,nmo_engine_object_class(b->engine,sender),NMO_CID_BEOBJECT) ||
+        !eng_is_child_class(b->engine,nmo_engine_object_class(b->engine,target),NMO_CID_BEOBJECT)) return NMO_ENGINE_BR_OWNERERROR;
+    eng_param_t *data = keyboard_mapper_data(b); int32_t count = get_local_int(b,1,0);
+    if (!keyboard_mapper_valid(data,count)) return NMO_ENGINE_BR_PARAMETERERROR;
+    for (int32_t i = 0; i < count; i++) {
+        const uint8_t *record = data->data+(size_t)i*40;
+        if (key_down(b,nmo_read_u32_le(record))) nmo_engine_block_send_message(b,(int32_t)nmo_read_u32_le(record+4),target,sender);
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
 
 static int cb_keyboard_controller(blk_t *b, uint32_t message)
 {
@@ -793,6 +838,7 @@ static int cb_tt_input_string(blk_t *b, uint32_t message)
 }
 
 static const nmo_engine_block_desc_t eng_controller_blocks[] = {
+    {NMO_GUID_INIT(0x053b2bde,0x2f8f1d74),"Keyboard Mapper",bb_keyboard_mapper,cb_keyboard_mapper,NULL},
     {NMO_GUID_INIT(0x43f1d000,0x1a2b3c4d),"Keyboard Controller",bb_keyboard_controller,cb_keyboard_controller,NULL},
     {NMO_GUID_INIT(0x1af2274b, 0x6b8c1524), "Key Event", bb_key_event, NULL, NULL},
     {NMO_GUID_INIT(0x016d010b, 0x017d010b), "Key Waiter", bb_key_waiter, cb_key_waiter, NULL},

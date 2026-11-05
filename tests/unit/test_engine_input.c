@@ -1,5 +1,6 @@
 #include "engine_fixture.h"
 #include "../../src/engine/engine_internal.h"
+#include "core/nmo_utils.h"
 
 #include "behavior/nmo_behavior_view.h"
 #include "object/builtin/nmo_behavior_schemas.h"
@@ -16,6 +17,7 @@
 #define GUID_INPUT_STRING NMO_GUID(0x693e7e4b, 0x100104c4)
 #define GUID_TT_INPUT_STRING NMO_GUID(0x52fd6294, 0x612f51a5)
 #define GUID_KEYBOARD_CONTROLLER NMO_GUID(0x43f1d000,0x1a2b3c4d)
+#define GUID_KEYBOARD_MAPPER NMO_GUID(0x053b2bde,0x2f8f1d74)
 
 #define KEY_SPACE 0x39u
 #define KEY_ENTER 0x1Cu
@@ -40,24 +42,51 @@ static void press(engine_fixture_t *f, const uint32_t *keys, int count)
 
 typedef struct keyboard_fixture {
     engine_fixture_t f;
-    nmo_object_id_t block, target_value, table;
+    nmo_object_id_t block, target_value, table, count;
+    nmo_guid_t guid;
 } keyboard_fixture_t;
 
-static void keyboard_begin(keyboard_fixture_t *g)
+static void keyboard_begin_variant(keyboard_fixture_t *g, nmo_guid_t guid, const char *name)
 {
-    memset(g,0,sizeof(*g)); fixture_begin(&g->f); g->block = fixture_block(&g->f,GUID_KEYBOARD_CONTROLLER,"Keyboard Controller"); ASSERT_TRUE(g->block != 0); nmo_object_id_t target = fixture_target(&g->f,g->block); ASSERT_TRUE(target != 0); fixture_input_int(&g->f,target,(int32_t)g->f.owner_id); g->target_value = nmo_parameterin_source_id(fixture_state(&g->f,target));
+    memset(g,0,sizeof(*g)); g->guid = guid; fixture_begin(&g->f); g->block = fixture_block(&g->f,guid,name); ASSERT_TRUE(g->block != 0); nmo_object_id_t target = fixture_target(&g->f,g->block); ASSERT_TRUE(target != 0); fixture_input_int(&g->f,target,(int32_t)g->f.owner_id); g->target_value = nmo_parameterin_source_id(fixture_state(&g->f,target));
     const nmo_behavior_state_t *state = fixture_state(&g->f,g->block); g->table = nmo_behavior_ref_array_get_id(&state->local_parameters,0); ASSERT_TRUE(g->table != 0); fixture_link(&g->f,g->f.script_in,BLOCK_IN(&g->f,g->block,0),0);
+    if (state->local_parameters.count > 1) g->count = nmo_behavior_ref_array_get_id(&state->local_parameters,1);
 }
+
+static void keyboard_begin(keyboard_fixture_t *g) { keyboard_begin_variant(g,GUID_KEYBOARD_CONTROLLER,"Keyboard Controller"); }
+static void mapper_begin(keyboard_fixture_t *g) { keyboard_begin_variant(g,GUID_KEYBOARD_MAPPER,"Keyboard Mapper"); }
 
 static void keyboard_ready(keyboard_fixture_t *g)
 {
-    nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL; fixture_commit(&g->f,&options); ASSERT_TRUE(nmo_engine_has_block(g->f.engine,GUID_KEYBOARD_CONTROLLER)); ASSERT_EQ(NMO_OK,nmo_engine_start(g->f.engine,NMO_ENGINE_START_ALL)); nmo_engine_block_t block = {g->f.engine,eng_map_get(&g->f.engine->node_map,g->block)}; nmo_engine_block_set_waiting_for_messages(&block,g->f.owner_id,true);
+    nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL; fixture_commit(&g->f,&options); ASSERT_TRUE(nmo_engine_has_block(g->f.engine,g->guid)); ASSERT_EQ(NMO_OK,nmo_engine_start(g->f.engine,NMO_ENGINE_START_ALL)); nmo_engine_block_t block = {g->f.engine,eng_map_get(&g->f.engine->node_map,g->block)}; nmo_engine_block_set_waiting_for_messages(&block,g->f.owner_id,true);
 }
 
 static void keyboard_received(keyboard_fixture_t *g, nmo_object_id_t receiver, const char *const *names, size_t count)
 {
     ASSERT_EQ(count,g->f.engine->messages.received.count);
     for (size_t i = 0; i < count; i++) { const eng_received_t *message = &g->f.engine->messages.received.data[i]; ASSERT_EQ(receiver,message->object); ASSERT_EQ(receiver,message->sender); ASSERT_EQ(nmo_engine_message_type(g->f.engine,names[i]),message->type); }
+}
+
+static void mapper_record(uint8_t *record, uint32_t key, int32_t type, const char *name)
+{
+    memset(record,0,40); nmo_write_u32_le(record,key); nmo_write_u32_le(record+4,(uint32_t)type); size_t length = strlen(name); memcpy(record+8,name,length < 32 ? length : 32);
+}
+
+static void mapper_saved(keyboard_fixture_t *g, const void *records, size_t bytes, int32_t count)
+{
+    nmo_parameter_state_t *state = fixture_state(&g->f,g->table); nmo_array_dispose(&state->buffer_data); ASSERT_EQ(NMO_OK,nmo_array_alloc(&state->buffer_data,1,bytes,NULL)); if (bytes != 0) memcpy(state->buffer_data.data,records,bytes); state->mode = CKPARAM_MODE_BUFFER; state->has_state = true; char text[32]; snprintf(text,sizeof(text),"%d",count); ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(g->f.tx,g->count,text));
+}
+
+TEST(engine_input, keyboard_mapper_loads_named_bindings_and_repeats_duplicate_keys_in_record_order)
+{
+    keyboard_fixture_t g; mapper_begin(&g); uint8_t records[120]; mapper_record(records,KEY_X,999,"Second"); mapper_record(records+40,KEY_C,998,"First"); mapper_record(records+80,KEY_X,997,"Second"); mapper_saved(&g,records,sizeof(records),3); keyboard_ready(&g); uint8_t runtime[120]; read_value(&g.f,g.table,runtime,sizeof(runtime));
+    for (size_t i = 0; i < 3; i++) { ASSERT_EQ(nmo_read_u32_le(records+40*i),nmo_read_u32_le(runtime+40*i)); ASSERT_EQ(nmo_engine_message_type(g.f.engine,i == 1 ? "First" : "Second"),(int32_t)nmo_read_u32_le(runtime+40*i+4)); }
+    nmo_engine_set_key(g.f.engine,KEY_X,true); nmo_engine_set_key(g.f.engine,KEY_C,true); const char *names[] = {"Second","First","Second"}; ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); keyboard_received(&g,g.f.owner_id,names,3); ASSERT_FALSE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,0))); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); keyboard_received(&g,g.f.owner_id,names,3); ASSERT_EQ(0,nmo_engine_key_buffer_count(g.f.engine)); nmo_engine_set_key(g.f.engine,KEY_X,false); nmo_engine_set_key(g.f.engine,KEY_C,false); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); keyboard_received(&g,g.f.owner_id,NULL,0); ASSERT_TRUE(memcmp(records,((nmo_parameter_state_t *)fixture_state(&g.f,g.table))->buffer_data.data,sizeof(records)) == 0); fixture_end(&g.f);
+}
+
+TEST(engine_input, keyboard_mapper_uses_the_behavior_owner_as_sender_when_targeting_a_group)
+{
+    keyboard_fixture_t g; mapper_begin(&g); uint8_t record[40]; mapper_record(record,KEY_C,-1,"Mapped"); mapper_saved(&g,record,sizeof(record),1); nmo_object_id_t owner = g.f.owner_id, group = fixture_create(&g.f,NMO_CID_GROUP,"Mapper Receiver"), input = 0; ASSERT_TRUE(group != 0); g.f.owner_id = group; ASSERT_TRUE(fixture_add_script(&g.f,"Receiver Script",&input) != 0); g.f.owner_id = owner; keyboard_ready(&g); nmo_engine_block_t block = {g.f.engine,eng_map_get(&g.f.engine->node_map,g.block)}; nmo_engine_block_set_waiting_for_messages(&block,group,true); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.target_value,&group,sizeof(group))); nmo_engine_set_key(g.f.engine,KEY_C,true); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(1u,g.f.engine->messages.received.count); const eng_received_t *message = &g.f.engine->messages.received.data[0]; ASSERT_EQ(group,message->object); ASSERT_EQ(owner,message->sender); ASSERT_EQ(nmo_engine_message_type(g.f.engine,"Mapped"),message->type); fixture_end(&g.f);
 }
 
 TEST(engine_input, keyboard_controller_maps_native_scan_codes_and_repeats_held_keys_without_consuming_on)
@@ -407,4 +436,6 @@ REGISTER_TEST(engine_input, keyboard_controller_retargets_live_groups_as_single_
 REGISTER_TEST(engine_input, keyboard_controller_uses_live_message_aliases_and_ignores_failed_individual_sends);
 REGISTER_TEST(engine_input, keyboard_controller_truncated_tables_fail_before_sending_any_key_messages);
 REGISTER_TEST(engine_input, loaded_keyboard_controllers_rebuild_message_ids_and_copies_keep_live_tables_after_source_deletion);
+REGISTER_TEST(engine_input, keyboard_mapper_loads_named_bindings_and_repeats_duplicate_keys_in_record_order);
+REGISTER_TEST(engine_input, keyboard_mapper_uses_the_behavior_owner_as_sender_when_targeting_a_group);
 TEST_MAIN_END()
