@@ -13,7 +13,7 @@
 #endif
 
 #define GUID_NOP NMO_GUID(0x302561c4, 0x0d282980)
-#define GUID_TRANSLATE NMO_GUID(0x000d000d, 0x000d000d)
+#define GUID_UNKNOWN NMO_GUID(0x6e6d6f00, 0x756e6b6e)
 #define GUID_OP NMO_GUID(0x2d5d6d01, 0x6a353eb0)
 #define GUID_KEY_EVENT NMO_GUID(0x1af2274b, 0x6b8c1524)
 
@@ -26,7 +26,7 @@ static void write_run_fixture(const char *path, run_fixture_kind_t kind,
 {
     engine_fixture_t f;
     fixture_begin(&f);
-    nmo_guid_t guid = kind == RUN_UNKNOWN ? GUID_TRANSLATE : kind == RUN_OPERATION ? GUID_OP : GUID_NOP;
+    nmo_guid_t guid = kind == RUN_OPERATION ? GUID_OP : GUID_NOP;
     nmo_object_id_t block = fixture_block(&f, guid, "First");
     nmo_object_id_t after = fixture_block(&f, GUID_NOP, "After");
     ASSERT_TRUE(block != 0 && after != 0);
@@ -34,6 +34,9 @@ static void write_run_fixture(const char *path, run_fixture_kind_t kind,
     fixture_link(&f, BLOCK_OUT(&f, block, 0),
                   BLOCK_IN(&f, kind == RUN_LOOP ? block : after, 0), 0);
     fixture_commit(&f, NULL);
+    if (kind == RUN_UNKNOWN) {
+        ((nmo_behavior_state_t *)fixture_state(&f, block))->block_guid = GUID_UNKNOWN;
+    }
     ASSERT_EQ(NMO_OK, nmo_session_save_file(f.session, path, NULL, NULL));
     *out_behavior = kind == RUN_LOOP ? f.script_id : block;
     fixture_end(&f);
