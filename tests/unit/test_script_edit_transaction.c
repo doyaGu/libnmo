@@ -36,6 +36,7 @@
 #include "format/nmo_interface_edit.h"
 #include "core/nmo_array.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_math.h"
 #include "type/nmo_type_guids.h"
 #include "type/nmo_type_query.h"
 
@@ -1986,7 +1987,29 @@ TEST(script_edit_transaction, open_interface_edits_in_place_and_rolls_back)
     nmo_context_release(ctx);
 }
 
+TEST(script_edit_transaction, add_node_keeps_native_quaternion_constructor_defaults)
+{
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){.data_dir=NMO_TEST_DATA_DIR}); ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx); ASSERT_NOT_NULL(session);
+    script_control_fixture_t fixture; setup_script_control_fixture(session,&fixture);
+    nmo_script_edit_tx_t *tx = NULL; ASSERT_EQ(NMO_OK,begin_test_script_edit(ctx,session,"quaternion-default",&tx));
+    nmo_object_id_t node = 0; ASSERT_EQ(NMO_OK,nmo_script_edit_add_node(tx,fixture.root_behavior_id,NMO_GUID(0x5ae25172,0x5c781faa),"Quaternion",&node));
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    const nmo_behavior_state_t *behavior = nmo_object_get_state(nmo_object_repository_find_by_id(repo,node)); ASSERT_NOT_NULL(behavior);
+    nmo_object_id_t pin = nmo_behavior_ref_array_get_id(&behavior->in_parameters,0);
+    const nmo_parameterin_state_t *input = nmo_object_get_state(nmo_object_repository_find_by_id(repo,pin)); ASSERT_NOT_NULL(input);
+    nmo_object_id_t parameter = nmo_parameterin_source_id(input); nmo_object_t *object = nmo_object_repository_find_by_id(repo,parameter); ASSERT_NOT_NULL(object);
+    const nmo_parameter_state_t *state = nmo_parameter_get_mutable_state(object); ASSERT_NOT_NULL(state);
+    ASSERT_TRUE(nmo_guid_equals(state->type_guid,CKPGUID_QUATERNION)); ASSERT_TRUE(state->buffer_data.count >= sizeof(nmo_quaternion_t));
+    nmo_quaternion_t value; memcpy(&value,state->buffer_data.data,sizeof(value));
+    ASSERT_FLOAT_EQ(0,value.x,0); ASSERT_FLOAT_EQ(0,value.y,0); ASSERT_FLOAT_EQ(0,value.z,0); ASSERT_FLOAT_EQ(1,value.w,0);
+    ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(tx,parameter,"0,0,2,2")); state = nmo_parameter_get_mutable_state(object); memcpy(&value,state->buffer_data.data,sizeof(value));
+    ASSERT_FLOAT_EQ(0,value.x,0); ASSERT_FLOAT_EQ(0,value.y,0); ASSERT_FLOAT_EQ(2,value.z,0); ASSERT_FLOAT_EQ(2,value.w,0);
+    ASSERT_EQ(NMO_OK,nmo_script_edit_commit(tx)); nmo_session_destroy(session); nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
+    REGISTER_TEST(script_edit_transaction, add_node_keeps_native_quaternion_constructor_defaults);
     REGISTER_TEST(script_edit_transaction, rename_node_renames_a_behavior_and_rolls_back);
     REGISTER_TEST(script_edit_transaction,
                   behavior_edit_add_link_through_workspace_owner);
