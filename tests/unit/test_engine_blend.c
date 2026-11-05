@@ -13,6 +13,7 @@
 #define COUNT(a) (sizeof(a)/sizeof((a)[0]))
 #define GUID_FACTOR NMO_GUID(0x7afc20a3,0x6d367a99)
 #define GUID_CREATE NMO_GUID(0x56864d6d,0x159b5d1e)
+#define GUID_LEGACY_CREATE NMO_GUID(0x248a56ed,0x2c232967)
 #define GUID_FRAME NMO_GUID(0x0e579636,0xa3b6e7f0)
 
 static nmo_object_id_t channel(engine_fixture_t *f, const char *name, nmo_object_id_t entity, float length, float end)
@@ -290,6 +291,62 @@ static nmo_object_id_t saved_object(engine_fixture_t *f, nmo_object_id_t pin, nm
     return saved_input(f,pin,text);
 }
 
+typedef struct legacy_blend_fixture {
+    engine_fixture_t f;
+    nmo_object_id_t source, source_body, owner_body, extra, first, second, block, inputs[2], output;
+} legacy_blend_fixture_t;
+
+static void legacy_begin(legacy_blend_fixture_t *g)
+{
+    memset(g,0,sizeof(*g)); fixture_begin_document(&g->f); nmo_object_id_t extra_entity = g->f.owner_id;
+    g->source = actor(&g->f,&g->source_body); ASSERT_TRUE(g->source != 0);
+    g->f.owner_id = actor(&g->f,&g->owner_body); ASSERT_TRUE(g->f.owner_id != 0);
+    ASSERT_EQ(NMO_OK,nmo_object_repository_rename(g->f.repo,g->source,"Legacy Source Character"));
+    ASSERT_EQ(NMO_OK,nmo_object_repository_rename(g->f.repo,g->source_body,"Legacy Source Body"));
+    ASSERT_EQ(NMO_OK,nmo_object_repository_rename(g->f.repo,g->f.owner_id,"Legacy Owner Character"));
+    ASSERT_EQ(NMO_OK,nmo_object_repository_rename(g->f.repo,g->owner_body,"Legacy Owner Body"));
+    nmo_object_id_t a = channel(&g->f,"Legacy A",g->source_body,10,10), b = channel(&g->f,"Legacy B",g->source_body,20,30);
+    g->extra = channel(&g->f,"Legacy Left Only",extra_entity,10,40);
+    nmo_object_id_t c = channel(&g->f,"Legacy Right Only",g->owner_body,20,80), left[] = {a,g->extra}, right[] = {b,c};
+    ASSERT_TRUE(a != 0 && b != 0 && g->extra != 0 && c != 0);
+    g->first = clip(&g->f,"Legacy First",g->source,10,left,COUNT(left)); g->second = clip(&g->f,"Legacy Second",0,20,right,COUNT(right)); ASSERT_TRUE(g->first != 0 && g->second != 0);
+    g->f.script_id = fixture_add_script(&g->f,"Legacy Blend Script",&g->f.script_in); ASSERT_TRUE(g->f.script_id != 0); fixture_begin_edit(&g->f);
+    g->block = fixture_block(&g->f,GUID_LEGACY_CREATE,"Create Legacy Blend"); ASSERT_TRUE(g->block != 0);
+    g->inputs[0] = saved_object(&g->f,BLOCK_PIN(&g->f,g->block,0),g->first); g->inputs[1] = saved_object(&g->f,BLOCK_PIN(&g->f,g->block,1),g->second); g->output = BLOCK_POUT(&g->f,g->block,0);
+    ASSERT_TRUE(g->inputs[0] != 0 && g->inputs[1] != 0 && g->output != 0);
+}
+
+static void legacy_ready(legacy_blend_fixture_t *g)
+{
+    nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL; fixture_commit(&g->f,&options); ASSERT_TRUE(nmo_engine_has_block(g->f.engine,GUID_LEGACY_CREATE));
+}
+
+static void legacy_notify(legacy_blend_fixture_t *g)
+{
+    int32_t result = -1; ASSERT_EQ(NMO_OK,nmo_engine_notify_behavior_edited(g->f.engine,g->block,&result)); ASSERT_EQ(NMO_ENGINE_BR_OK,result);
+}
+
+static nmo_object_id_t legacy_edit(legacy_blend_fixture_t *g)
+{
+    legacy_notify(g);
+    nmo_object_id_t animation = 0; read_value(&g->f,g->output,&animation,sizeof(animation)); return animation;
+}
+
+TEST(engine_blend, obsolete_create_uses_only_edit_callbacks_and_keeps_the_default_union_on_the_behavior_owner)
+{
+    legacy_blend_fixture_t g; legacy_begin(&g); const nmo_behavior_state_t *prototype = fixture_state(&g.f,g.block); ASSERT_EQ(0u,prototype->inputs.count); ASSERT_EQ(0u,prototype->outputs.count); ASSERT_EQ(0u,prototype->local_parameters.count); ASSERT_EQ(0u,fixture_target(&g.f,g.block)); legacy_ready(&g);
+    ASSERT_EQ(NMO_OK,nmo_engine_start(g.f.engine,NMO_ENGINE_START_ALL)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,16)); nmo_object_id_t unset = 99; read_value(&g.f,g.output,&unset,sizeof(unset)); ASSERT_EQ(0u,unset); ASSERT_EQ(0u,eng_character_animation_count(g.f.engine,g.f.owner_id));
+    nmo_object_id_t result = legacy_edit(&g); ASSERT_TRUE(result != 0); const nmo_keyedanimation_state_t *state = nmo_object_get_state(eng_find_object(g.f.engine,result)); ASSERT_EQ(3u,state->animation_count); ASSERT_EQ(g.f.owner_id,eng_animation_character(g.f.engine,result)); ASSERT_EQ(1u,eng_character_animation_count(g.f.engine,g.f.owner_id)); ASSERT_EQ(result,eng_character_animation(g.f.engine,g.f.owner_id,0)); ASSERT_EQ(0u,eng_character_animation_count(g.f.engine,g.source)); ASSERT_FLOAT_EQ(.5f,eng_animation_merge_factor(g.f.engine,result),0);
+    g.f.engine->entities.data[eng_entity_index(g.f.engine,g.f.owner_id)].moveable_flags |= VX_MOVEABLE_CHARACTERRENDERED; ASSERT_TRUE(eng_animation_set_frame(g.f.engine,result,10)); ASSERT_FLOAT_EQ(10,position(g.f.engine,g.source_body),1e-6f); ASSERT_FLOAT_EQ(40,position(g.f.engine,g.owner_body),1e-6f); nmo_object_id_t extra_entity = eng_object_animation_entity(g.f.engine,g.extra); ASSERT_FLOAT_EQ(20,position(g.f.engine,extra_entity),1e-6f); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,16)); ASSERT_EQ(0u,runs(&g.f,g.block)); ASSERT_EQ(result,legacy_edit(&g)); fixture_end(&g.f);
+}
+
+TEST(engine_blend, obsolete_create_before_start_keeps_the_first_result_when_inputs_change_or_disappear)
+{
+    legacy_blend_fixture_t g; legacy_begin(&g); legacy_ready(&g); nmo_object_id_t result = legacy_edit(&g); ASSERT_TRUE(result != 0); ASSERT_TRUE(eng_animation_set_merge_factor(g.f.engine,result,.25f));
+    ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.inputs[0],&g.second,sizeof(g.second))); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.inputs[1],&g.first,sizeof(g.first))); ASSERT_EQ(result,legacy_edit(&g)); ASSERT_FLOAT_EQ(.25f,eng_animation_merge_factor(g.f.engine,result),0); nmo_engine_destroy_object(g.f.engine,g.first); nmo_engine_destroy_object(g.f.engine,g.second); ASSERT_EQ(result,legacy_edit(&g));
+    ASSERT_EQ(NMO_OK,nmo_engine_start(g.f.engine,NMO_ENGINE_START_ALL)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,16)); ASSERT_EQ(result,legacy_edit(&g)); ASSERT_EQ(1u,eng_character_animation_count(g.f.engine,g.f.owner_id)); ASSERT_EQ(0u,runs(&g.f,g.block)); fixture_end(&g.f);
+}
+
 TEST(engine_blend, create_block_honors_settings_reuses_absent_inputs_and_creates_each_trigger)
 {
     for (int defaults = 0; defaults < 2; defaults++) {
@@ -435,4 +492,6 @@ REGISTER_TEST(engine_blend, union_stretches_variable_key_formats_and_detaches_sh
 REGISTER_TEST(engine_blend, factory_keeps_cross_module_sources_and_local_copies_distinct);
 REGISTER_TEST(engine_blend, create_block_honors_settings_reuses_absent_inputs_and_creates_each_trigger);
 REGISTER_TEST(engine_blend, saved_graph_creates_controls_and_applies_a_blend_after_module_load);
+REGISTER_TEST(engine_blend, obsolete_create_uses_only_edit_callbacks_and_keeps_the_default_union_on_the_behavior_owner);
+REGISTER_TEST(engine_blend, obsolete_create_before_start_keeps_the_first_result_when_inputs_change_or_disappear);
 TEST_MAIN_END()

@@ -80,6 +80,20 @@ static int bb_create_blended_animation(blk_t *b)
     return nmo_engine_block_set_output_value(b,0,&result,sizeof(result)) == NMO_OK ? NMO_ENGINE_BR_OK : NMO_ENGINE_BR_GENERICERROR;
 }
 
+static int bb_create_blended_animation_edited(blk_t *b, uint32_t message)
+{
+    if (message != NMO_ENGINE_MSG_EDITED) return NMO_ENGINE_BR_OK;
+    nmo_object_id_t result = (nmo_object_id_t)get_out_int(b,0);
+    if (eng_find_object(b->engine,result) != NULL && eng_map_get(&b->engine->destroyed,result) < 0) return NMO_ENGINE_BR_OK;
+    nmo_object_id_t first = nmo_engine_block_get_input_object(b,0), second = nmo_engine_block_get_input_object(b,1);
+    if (eng_animation_state(b->engine,first) == NULL || eng_animation_state(b->engine,second) == NULL) return NMO_ENGINE_BR_OK;
+    /* The obsolete editor callback omits the factory's boolean argument: its
+     * native default is FALSE, which keeps the union of both channel lists. */
+    result = eng_keyed_animation_merge(b->engine,first,second,false);
+    if (result != 0 && eng_character_add_animation(b->engine,nmo_engine_block_owner(b),result) != NMO_OK) return NMO_ENGINE_BR_GENERICERROR;
+    return nmo_engine_block_set_output_value(b,0,&result,sizeof(result)) == NMO_OK ? NMO_ENGINE_BR_OK : NMO_ENGINE_BR_GENERICERROR;
+}
+
 static int bb_set_animation_step(blk_t *b)
 {
     if (nmo_engine_block_target(b) == 0) return NMO_ENGINE_BR_OWNERERROR;
@@ -161,6 +175,7 @@ static int bb_get_nearest_object(blk_t *b)
 static const nmo_engine_block_desc_t character_blocks[] = {
     {NMO_GUID_INIT(0x6a794228,0x77197f5e),"Add Animation",bb_add_animation,NULL,NULL},
     {NMO_GUID_INIT(0x7afc20a3,0x6d367a99),"Set Blended Animation Factor",bb_set_blended_animation_factor,NULL,NULL},
+    {NMO_GUID_INIT(0x248a56ed,0x2c232967),"Create Blended Animation",NULL,bb_create_blended_animation_edited,NULL},
     {NMO_GUID_INIT(0x56864d6d,0x159b5d1e),"Create Blended Animation 2",bb_create_blended_animation,NULL,NULL},
     {NMO_GUID_INIT(0x0e579636,0xa3b6e7f0),"Set Animation Frame",bb_set_animation_frame,NULL,NULL},
     {NMO_GUID_INIT(0x120127aa,0x960added),"Set Animation Step",bb_set_animation_step,NULL,NULL},
