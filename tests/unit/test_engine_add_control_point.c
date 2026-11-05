@@ -275,6 +275,108 @@ TEST(engine_add_control_point, invalid_targets_change_io_but_preserve_outputs_an
     }
 }
 
+TEST(engine_add_control_point, output_points_drive_properties_curve_following_and_removal_in_the_same_frame)
+{
+    curve_fixture_t g; graph_begin(&g);
+    for (size_t i = 0; i < 3; i++) ((nmo_curvepoint_state_t *)fixture_state(&g.f,g.points[i]))->linear = 1;
+    fixture_input_value(&g.f,BLOCK_PIN(&g.f,g.block,0),&(eng_vector_t){12,0,0},sizeof(eng_vector_t));
+    nmo_object_id_t setter = fixture_block(&g.f,NMO_GUID(0x1254effa,0xfebec112),"Edit New Point"), getter = fixture_block(&g.f,NMO_GUID(0x1251effa,0xaebec112),"Read New Point");
+    nmo_object_id_t properties = fixture_block(&g.f,NMO_GUID(0x1251adfa,0xaebec002),"Read Extended Curve"), follow = fixture_block(&g.f,NMO_GUID(0x676776d0,0x20d457bd),"Follow Extended Curve");
+    nmo_object_id_t remover = fixture_block(&g.f,NMO_GUID(0x1234effa,0xffbec112),"Remove New Point"); ASSERT_TRUE(setter != 0 && getter != 0 && properties != 0 && follow != 0 && remover != 0);
+    ASSERT_EQ(NMO_OK,nmo_script_edit_connect_parameter(g.f.tx,BLOCK_POUT(&g.f,g.block,0),fixture_target(&g.f,setter))); ASSERT_EQ(NMO_OK,nmo_script_edit_connect_parameter(g.f.tx,BLOCK_POUT(&g.f,g.block,0),fixture_target(&g.f,getter)));
+    const float values[] = {.25f,.5f,.75f}; for (int i = 0; i < 3; i++) fixture_input_value(&g.f,BLOCK_PIN(&g.f,setter,i),&values[i],sizeof(float)); fixture_input_int(&g.f,BLOCK_PIN(&g.f,setter,3),-7);
+    fixture_input_int(&g.f,fixture_target(&g.f,properties),(int32_t)g.curve); fixture_input_int(&g.f,fixture_target(&g.f,follow),(int32_t)g.f.owner_id);
+    fixture_input_int(&g.f,BLOCK_PIN(&g.f,follow,0),(int32_t)g.curve); fixture_input_value(&g.f,BLOCK_PIN(&g.f,follow,1),&(float){1},sizeof(float)); fixture_input_int(&g.f,BLOCK_PIN(&g.f,follow,2),0);
+    fixture_input_int(&g.f,fixture_target(&g.f,remover),(int32_t)g.curve); ASSERT_EQ(NMO_OK,nmo_script_edit_connect_parameter(g.f.tx,BLOCK_POUT(&g.f,g.block,0),BLOCK_PIN(&g.f,remover,0)));
+    const nmo_object_id_t chain[] = {g.out,setter,getter,properties,follow,remover};
+    for (size_t i = 1; i < COUNT(chain); i++) fixture_link(&g.f,BLOCK_OUT(&g.f,chain[i-1],0),BLOCK_IN(&g.f,chain[i],0),0);
+    graph_commit(&g); nmo_object_id_t previous = 0;
+    for (int frame = 0; frame < 2; frame++) {
+        if (frame) trigger(&g); else ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0));
+        nmo_object_id_t point = added(&g); ASSERT_TRUE(point != 0 && point != previous); previous = point; points(g.f.engine,g.curve,g.points,3); ASSERT_EQ(g.curve,nmo_engine_entity_parent(g.f.engine,point));
+        eng_curvepoint_properties_t actual; ASSERT_TRUE(eng_curvepoint_get_properties(g.f.engine,point,&actual)); ASSERT_EQ(-7,actual.linear);
+        for (int i = 0; i < 3; i++) { float value = NAN; read_value(&g.f,BLOCK_POUT(&g.f,getter,i),&value,sizeof(value)); ASSERT_FLOAT_EQ(values[i],value,0); }
+        float length = NAN; read_value(&g.f,BLOCK_POUT(&g.f,properties,3),&length,sizeof(length)); ASSERT_FLOAT_EQ(8*sqrtf(2)+4,length,1e-4f);
+        vector(eng_entity_position(g.f.engine,eng_entity_index(g.f.engine,g.f.owner_id),-1),(eng_vector_t){12,0,0});
+    }
+    ASSERT_EQ(2u,runs(&g.f,remover)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,100)); ASSERT_EQ(2u,runs(&g.f,g.block)); fixture_end(&g.f);
+}
+
+TEST(engine_add_control_point, deferred_dynamic_cleanup_removes_dynamic_points_and_preserves_static_points_after_curve_deletion)
+{
+    for (int mode = 0; mode < 3; mode++) {
+        curve_fixture_t g; graph_begin(&g); setting(&g,0,mode == 0 ? "TRUE" : "FALSE"); fixture_input_value(&g.f,BLOCK_PIN(&g.f,g.block,0),&(eng_vector_t){12,3,0},sizeof(eng_vector_t));
+        nmo_object_id_t cleanup = fixture_block(&g.f,NMO_GUID(0x0cba3195,0x53440e4c),"Delete Dynamic Points"), getter = fixture_block(&g.f,NMO_GUID(0x1251adfa,0xaebec002),"Before Cleanup"); ASSERT_TRUE(cleanup != 0 && getter != 0);
+        fixture_input_int(&g.f,fixture_target(&g.f,getter),(int32_t)g.curve); fixture_link(&g.f,BLOCK_OUT(&g.f,g.out,0),BLOCK_IN(&g.f,cleanup,0),0); fixture_link(&g.f,BLOCK_OUT(&g.f,cleanup,0),BLOCK_IN(&g.f,getter,0),0);
+        graph_commit(&g); if (mode == 2) eng_mark_dynamic(g.f.engine,g.curve);
+        float original_length = NAN; ASSERT_TRUE(eng_curve_length(g.f.engine,g.curve,&original_length)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0));
+        nmo_object_id_t point = added(&g); ASSERT_TRUE(point != 0); float before_cleanup = NAN; read_value(&g.f,BLOCK_POUT(&g.f,getter,3),&before_cleanup,sizeof(before_cleanup)); ASSERT_TRUE(isfinite(before_cleanup) && before_cleanup > original_length);
+        if (mode == 0) { ASSERT_TRUE(eng_entity_index(g.f.engine,point) < 0); points(g.f.engine,g.curve,g.points,3); }
+        else {
+            ASSERT_TRUE(eng_entity_index(g.f.engine,point) >= 0); vector(eng_entity_position(g.f.engine,eng_entity_index(g.f.engine,point),-1),(eng_vector_t){12,3,0});
+            if (mode == 2) { ASSERT_TRUE(eng_entity_index(g.f.engine,g.curve) < 0); ASSERT_EQ(0u,nmo_engine_entity_parent(g.f.engine,point)); }
+            else points(g.f.engine,g.curve,(nmo_object_id_t[]){g.points[0],g.points[1],g.points[2],point},4);
+        }
+        ASSERT_EQ(1u,runs(&g.f,getter)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,100)); ASSERT_EQ(1u,runs(&g.f,g.block)); fixture_end(&g.f);
+    }
+}
+
+static const char *resolve_file(void *data, const char *name)
+{
+    (void)name; return data;
+}
+
+static nmo_object_id_t runtime_parameter(nmo_engine_t *engine, nmo_object_id_t block, int pos, bool output)
+{
+    nmo_object_t *object = eng_find_object(engine,block);
+    const nmo_behavior_state_t *behavior = object != NULL ? nmo_object_get_state(object) : NULL;
+    const eng_module_t *module = eng_module_of(engine,block,NULL);
+    if (behavior == NULL || module == NULL) return 0;
+    nmo_object_id_t pin = output ? nmo_behavior_ref_array_get_id(&behavior->out_parameters,(size_t)pos) : pos < 0 ? nmo_behavior_target_parameter_id(behavior) : nmo_behavior_ref_array_get_id(&behavior->in_parameters,(size_t)pos);
+    if (output) return eng_module_id(module,pin);
+    object = eng_find_object(engine,eng_module_id(module,pin));
+    const nmo_parameterin_state_t *input = object != NULL ? nmo_object_get_state(object) : NULL;
+    return input != NULL ? eng_module_id(module,nmo_parameterin_source_id(input)) : 0;
+}
+
+TEST(engine_add_control_point, loaded_and_copied_graphs_remap_generated_points_and_keep_future_insertions_independent)
+{
+    curve_fixture_t g; graph_begin(&g); setting(&g,0,"FALSE"); char text[32]; snprintf(text,sizeof(text),"%u",g.curve);
+    ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(g.f.tx,source(&g,fixture_target(&g.f,g.block)),text));
+    nmo_object_id_t position_source = 0; ASSERT_EQ(NMO_OK,nmo_script_edit_ensure_input_parameter_source(g.f.tx,BLOCK_PIN(&g.f,g.block,0),&position_source)); ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(g.f.tx,position_source,"12,3,0"));
+    fixture_commit_bare(&g.f,NULL);
+    nmo_beobject_state_t *owner = fixture_state(&g.f,g.f.owner_id); owner->has_single_activity = 1; owner->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE;
+    nmo_behavior_state_t *script = fixture_state(&g.f,g.f.script_id); script->has_single_activity = 1; script->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE | CK_SCENEOBJECT_START_RESET;
+    const char *file_path = NMO_TEST_SCRATCH_FILE("engine_add_control_point.cmo"); ASSERT_EQ(NMO_OK,nmo_session_save_file(g.f.session,file_path,NULL,NULL));
+    for (int started = 0; started < 2; started++) {
+        engine_fixture_t host; fixture_begin_document(&host); fixture_begin_edit(&host); nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL; fixture_commit(&host,&options);
+        if (started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_ALL));
+        nmo_engine_set_file_resolver(host.engine,resolve_file,(void *)file_path); int32_t file = -1; ASSERT_EQ(NMO_OK,nmo_engine_load(host.engine,"add-control-point.cmo",true,&file));
+        if (!started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_SCENE_DEFAULT));
+        nmo_object_id_t block = nmo_engine_object_named(host.engine,"Add Control Point",NMO_CID_BEHAVIOR); ASSERT_TRUE(block != 0); const eng_module_t *module = eng_module_of(host.engine,block,NULL);
+        const char *names[] = {"Owner","Path","Path Point 0","Path Point 1","Path Point 2","Add Point Script","Add Control Point","After Addition"}; nmo_object_id_t ids[12] = {0}, copies[12] = {0};
+        for (size_t i = 0; i < COUNT(names); i++) { nmo_object_t *object = nmo_object_repository_find_by_name(module->repo,names[i]); ASSERT_NOT_NULL(object); ids[i] = eng_module_id(module,nmo_object_get_id(object)); ASSERT_TRUE(ids[i] != 0); }
+        ids[8] = runtime_parameter(host.engine,block,-1,false); ids[9] = runtime_parameter(host.engine,block,0,false); ids[10] = runtime_parameter(host.engine,block,2,false); ASSERT_TRUE(ids[8] != 0 && ids[9] != 0 && ids[10] != 0);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0)); read_value(&host,runtime_parameter(host.engine,block,0,true),&ids[11],sizeof(ids[11])); ASSERT_TRUE(ids[11] != 0);
+        points(host.engine,ids[1],(nmo_object_id_t[]){ids[2],ids[3],ids[4],ids[11]},4); vector(eng_entity_position(host.engine,eng_entity_index(host.engine,ids[11]),-1),(eng_vector_t){12,3,0});
+        ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(host.engine,ids,COUNT(ids),false,copies)); for (size_t i = 0; i < COUNT(copies); i++) ASSERT_TRUE(copies[i] != 0);
+        points(host.engine,copies[1],(nmo_object_id_t[]){copies[2],copies[3],copies[4],copies[11]},4); same_curve(host.engine,copies[1],ids[1]); ASSERT_EQ(copies[1],nmo_engine_entity_parent(host.engine,copies[11]));
+        nmo_object_id_t reference = 0; read_value(&host,copies[8],&reference,sizeof(reference)); ASSERT_EQ(copies[1],reference); read_value(&host,runtime_parameter(host.engine,copies[6],0,true),&reference,sizeof(reference)); ASSERT_EQ(copies[11],reference);
+        const eng_vector_t first_position = {-4,2,0}; const int32_t first = 0;
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[9],&first_position,sizeof(first_position))); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[10],&first,sizeof(first)));
+        ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[5],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0)); nmo_object_id_t first_point = 0; read_value(&host,runtime_parameter(host.engine,copies[6],0,true),&first_point,sizeof(first_point)); ASSERT_TRUE(first_point != 0);
+        points(host.engine,copies[1],(nmo_object_id_t[]){first_point,copies[2],copies[3],copies[4],copies[11]},5); points(host.engine,ids[1],(nmo_object_id_t[]){ids[2],ids[3],ids[4],ids[11]},4);
+        nmo_engine_destroy_object(host.engine,ids[1]); for (size_t i = 2; i < 5; i++) nmo_engine_destroy_object(host.engine,ids[i]); nmo_engine_destroy_object(host.engine,ids[11]); nmo_engine_destroy_object(host.engine,ids[0]);
+        eng_entity_set_position(host.engine,eng_entity_index(host.engine,copies[1]),&(eng_vector_t){20,10,5},-1,false);
+        const eng_vector_t last_position = {16,0,0}; const int32_t last = -1;
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[9],&last_position,sizeof(last_position))); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[10],&last,sizeof(last)));
+        ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[5],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0)); nmo_object_id_t last_point = 0; read_value(&host,runtime_parameter(host.engine,copies[6],0,true),&last_point,sizeof(last_point)); ASSERT_TRUE(last_point != 0 && last_point != first_point);
+        points(host.engine,copies[1],(nmo_object_id_t[]){first_point,copies[2],copies[3],copies[4],copies[11],last_point},6); vector(eng_entity_position(host.engine,eng_entity_index(host.engine,last_point),-1),last_position); ASSERT_EQ(copies[1],nmo_engine_entity_parent(host.engine,last_point));
+        ASSERT_EQ(2u,runs(&host,copies[7])); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,100)); ASSERT_EQ(2u,runs(&host,copies[6])); fixture_end(&host);
+    }
+    const nmo_curve_state_t *original = fixture_state(&g.f,g.curve); ASSERT_EQ(3u,original->control_point_count); fixture_end(&g.f); remove(file_path);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_add_control_point, insertion_uses_native_order_rejects_duplicates_and_keeps_world_transform);
 REGISTER_TEST(engine_add_control_point, inserted_default_points_recompute_open_closed_tcb_and_fitted_curves);
@@ -288,4 +390,7 @@ REGISTER_TEST(engine_add_control_point, reference_coordinates_are_applied_before
 REGISTER_TEST(engine_add_control_point, percentage_uses_the_new_point_length_before_curve_update_including_zero_length_nan);
 REGISTER_TEST(engine_add_control_point, explicit_static_setting_overrides_a_dynamic_curve);
 REGISTER_TEST(engine_add_control_point, invalid_targets_change_io_but_preserve_outputs_and_do_not_create_points);
+REGISTER_TEST(engine_add_control_point, output_points_drive_properties_curve_following_and_removal_in_the_same_frame);
+REGISTER_TEST(engine_add_control_point, deferred_dynamic_cleanup_removes_dynamic_points_and_preserves_static_points_after_curve_deletion);
+REGISTER_TEST(engine_add_control_point, loaded_and_copied_graphs_remap_generated_points_and_keep_future_insertions_independent);
 TEST_MAIN_END()
