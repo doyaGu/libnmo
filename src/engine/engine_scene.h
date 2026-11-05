@@ -8,6 +8,7 @@
 #define NMO_ENGINE_SCENE_H
 
 #include "engine_array.h"
+#include "engine_render.h"
 
 /*
  * An object's initial condition in the level scene (CKScene's object
@@ -29,6 +30,8 @@ typedef struct eng_ic {
     bool has_light;         /* a light's color and activity */
     float light_color[4];
     bool light_active;
+    bool has_sprite3d;
+    eng_sprite3d_t sprite3d;
     int32_t visibility; /* CK_OBJECT_VISIBLE and HIERACHICALHIDE, which CKObject::Load restores */
 } eng_ic_t;
 

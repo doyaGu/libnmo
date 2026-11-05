@@ -14,6 +14,7 @@
 #include "object/builtin/nmo_light_schemas.h"
 #include "object/builtin/nmo_material_schemas.h"
 #include "object/builtin/nmo_object_schemas.h"
+#include "object/builtin/nmo_sprite3d_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_statesave_ids.h"
@@ -79,6 +80,13 @@ nmo_status_t eng_load_ic(nmo_engine_t *engine, nmo_object_id_t id, nmo_chunk_t *
     if (status == NMO_OK) status = type->vtable->deserialize(decoded.state, saved, type, &context);
     eng_ic_t ic = {.id = id};
     if (status == NMO_OK) {
+        const nmo_sprite3d_state_t *sprite = nmo_type_query_object_get_ancestor_state_by_guid(engine->types,&decoded,CKPGUID_SPRITE3D);
+        if (sprite != NULL && nmo_chunk_seek_identifier(saved,CK_STATESAVE_SPRITE3DDATA) == NMO_OK) {
+            ic.has_sprite3d = true;
+            eng_sprite3d_from_state(engine,id,sprite,&ic.sprite3d);
+        }
+    }
+    if (status == NMO_OK) {
         const nmo_object_state_t *base = nmo_type_query_object_get_ancestor_state_by_guid(
             engine->types, &decoded, CKPGUID_OBJECT);
         ic.visibility = base != NULL && (base->visibility_flags & NMO_CKOBJECT_VISIBLE) ? 0x40 : 0;
@@ -138,6 +146,7 @@ void eng_save_ic(nmo_engine_t *engine, nmo_object_id_t id)
     uint32_t class_id = object != NULL ? nmo_object_get_class_id(object) : 0u;
     const eng_material_t *material = class_id == NMO_CID_MATERIAL ? eng_material(engine, id) : NULL;
     const eng_light_t *light = has_matrix ? eng_light(engine, id) : NULL;
+    const eng_sprite3d_t *sprite = has_matrix ? eng_sprite3d(engine,id) : NULL;
     if (array == NULL && !has_matrix && material == NULL) {
         return;
     }
@@ -167,6 +176,7 @@ void eng_save_ic(nmo_engine_t *engine, nmo_object_id_t id)
         memcpy(ic->light_color, light->color, sizeof(ic->light_color));
         ic->light_active = light->active;
     }
+    if (sprite != NULL) { ic->has_sprite3d = true; ic->sprite3d = *sprite; }
     ic->visibility = eng_object_visibility(engine, id);
     if (eng_store_ic(engine, ic) != NMO_OK && ic->has_array) eng_array_release(&ic->array);
 }
@@ -210,6 +220,8 @@ void eng_restore_ic(nmo_engine_t *engine, nmo_object_id_t id)
         memcpy(light->color, ic->light_color, sizeof(light->color));
         light->active = ic->light_active;
     }
+    eng_sprite3d_t *sprite = ic->has_sprite3d ? eng_sprite3d(engine,id) : NULL;
+    if (sprite != NULL) *sprite = ic->sprite3d;
 }
 
 void eng_free_ics(nmo_engine_t *engine)

@@ -894,6 +894,7 @@ static nmo_status_t copy_session(nmo_engine_t *engine, int32_t source, const nmo
         copy_behavior_state(engine, original, copy);
         copy_param_value(engine, &set, copies, original, copy);
         eng_copy_attributes(engine, original, copy);
+        eng_copy_sprite3d(engine, original, copy, set.ids.data, copies, n);
         eng_copy_array(engine, original, copy);
         eng_copy_group(engine, original, copy, set.ids.data, copies, n);
         eng_copy_animation(engine, original, copy, set.ids.data, copies, n);

@@ -15,6 +15,7 @@
 #include "engine/nmo_engine_render.h"
 
 struct nmo_material_state;
+struct nmo_sprite3d_state;
 
 /* A mesh made at run time (TT Sky's), with what CKMesh would hold */
 typedef struct eng_mesh {
@@ -91,6 +92,14 @@ typedef struct eng_light {
     bool active;
 } eng_light_t;
 
+/* CKSprite3D keeps size in its local box; signed extents are preserved. */
+typedef struct eng_sprite3d {
+    nmo_object_id_t id, material;
+    uint32_t mode;
+    nmo_vector2_t min, max, offset;
+    nmo_rect_t uv_rect;
+} eng_sprite3d_t;
+
 /* An image of a texture's slot, decoded the first time the host asks for it */
 typedef struct eng_image {
     nmo_object_id_t texture;
@@ -112,6 +121,8 @@ typedef struct eng_render {
     size_t entities_2d_modules; /* the modules whose 2D entities are in entities_2d */
     ENG_VEC(eng_light_t) lights;
     eng_map_t light_map;
+    ENG_VEC(eng_sprite3d_t) sprites_3d;
+    eng_map_t sprite_3d_map;
     ENG_VEC(eng_image_t) images;
     ENG_VEC(eng_image_t) user_mipmaps; /* a texture's saved mipmap levels, `slot` their level */
     uint32_t image_version;
@@ -163,6 +174,12 @@ void eng_2d_destroy(nmo_engine_t *engine, nmo_object_id_t id);
 /* The 2D entity's run time state; NULL for no CK2dEntity */
 eng_2d_t *eng_2d_entity(nmo_engine_t *engine, nmo_object_id_t id);
 eng_light_t *eng_light(nmo_engine_t *engine, nmo_object_id_t id);
+eng_sprite3d_t *eng_sprite3d(nmo_engine_t *engine, nmo_object_id_t id);
+void eng_sprite3d_from_state(const nmo_engine_t *engine, nmo_object_id_t id,
+    const struct nmo_sprite3d_state *state, eng_sprite3d_t *out);
+bool eng_sprite3d_set_size(nmo_engine_t *engine, nmo_object_id_t id, nmo_vector2_t size);
+void eng_copy_sprite3d(nmo_engine_t *engine, nmo_object_id_t source, nmo_object_id_t target,
+    const nmo_object_id_t *originals, const nmo_object_id_t *copies, size_t count);
 /* A camera's front and back planes now (Set Clipping Planes', else the file's); false for none */
 bool eng_camera_planes(nmo_engine_t *engine, nmo_object_id_t id, float *near_plane,
                        float *far_plane);

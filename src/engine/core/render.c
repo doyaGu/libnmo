@@ -58,6 +58,8 @@ void eng_free_render(nmo_engine_t *engine)
     free(render->entity_2d_map.slots);
     free(render->lights.data);
     free(render->light_map.slots);
+    free(render->sprites_3d.data);
+    free(render->sprite_3d_map.slots);
     for (size_t i = 0; i < render->images.count; i++) {
         free(render->images.data[i].rgba);
     }
@@ -144,6 +146,55 @@ static const void *eng_typed_state(const nmo_engine_t *engine, nmo_object_id_t i
     return object != NULL
                ? nmo_type_query_object_get_ancestor_state_by_guid(engine->types, object, guid)
                : NULL;
+}
+
+void eng_sprite3d_from_state(const nmo_engine_t *engine, nmo_object_id_t id,
+    const nmo_sprite3d_state_t *state, eng_sprite3d_t *out)
+{
+    *out = (eng_sprite3d_t){.id=id, .material=state->has_data ? eng_object_ref(engine,id,&state->material) : 0,
+        .mode=state->mode, .offset=state->offset, .uv_rect=state->uv_rect,
+        .min={(state->offset.x-1)*state->half_width, (state->offset.y-1)*state->half_height},
+        .max={(state->offset.x+1)*state->half_width, (state->offset.y+1)*state->half_height}};
+}
+
+eng_sprite3d_t *eng_sprite3d(nmo_engine_t *engine, nmo_object_id_t id)
+{
+    if (eng_map_get(&engine->destroyed,id) >= 0) return NULL;
+    const nmo_sprite3d_state_t *state = eng_typed_state(engine,id,CKPGUID_SPRITE3D);
+    if (state == NULL) return NULL;
+    int32_t index = eng_map_get(&engine->render.sprite_3d_map,id);
+    if (index >= 0) return &engine->render.sprites_3d.data[index];
+    eng_sprite3d_t *sprite = NULL;
+    index = (int32_t)engine->render.sprites_3d.count;
+    if (!ENG_VEC_PUSH(engine->render.sprites_3d,sprite)) return NULL;
+    if (!eng_map_put(&engine->render.sprite_3d_map,id,index)) {
+        engine->render.sprites_3d.count--;
+        return NULL;
+    }
+    eng_sprite3d_from_state(engine,id,state,sprite);
+    return sprite;
+}
+
+bool eng_sprite3d_set_size(nmo_engine_t *engine, nmo_object_id_t id, nmo_vector2_t size)
+{
+    eng_sprite3d_t *sprite = eng_sprite3d(engine,id);
+    if (sprite == NULL) return false;
+    float half_width = size.x*.5f, half_height = size.y*.5f;
+    sprite->min = (nmo_vector2_t){(sprite->offset.x-1)*half_width, (sprite->offset.y-1)*half_height};
+    sprite->max = (nmo_vector2_t){(sprite->offset.x+1)*half_width, (sprite->offset.y+1)*half_height};
+    return true;
+}
+
+void eng_copy_sprite3d(nmo_engine_t *engine, nmo_object_id_t source, nmo_object_id_t target,
+    const nmo_object_id_t *originals, const nmo_object_id_t *copies, size_t count)
+{
+    const eng_sprite3d_t *sprite = eng_sprite3d(engine,source);
+    if (sprite == NULL) return;
+    eng_sprite3d_t saved = *sprite;
+    eng_sprite3d_t *copy = eng_sprite3d(engine,target);
+    if (copy == NULL) return;
+    *copy = saved; copy->id = target;
+    for (size_t i = 0; i < count; i++) if (copy->material == originals[i]) { copy->material = copies[i]; break; }
 }
 
 static void eng_color_floats(uint32_t argb, float out[4])
@@ -656,11 +707,11 @@ static void eng_normalize3(float v[3])
  * along the world X and Y axes times the sprite's size, from its offset, in
  * its UV rectangle, with its material's diffuse color (CallSprite3DBatches).
  */
-static bool eng_draw_sprite3d(nmo_engine_t *engine, const eng_entity_t *entity,
-                              const nmo_sprite3d_state_t *state, const float camera[16])
+static bool eng_draw_sprite3d(nmo_engine_t *engine, const eng_entity_t *entity, const float camera[16])
 {
-    nmo_object_id_t material_id =
-        state->has_data ? eng_object_ref(engine, entity->id, &state->material) : 0;
+    const eng_sprite3d_t *state = eng_sprite3d(engine,entity->id);
+    if (state == NULL) return false;
+    nmo_object_id_t material_id = state->material;
     eng_material_t *material = material_id != 0 ? eng_material(engine, material_id) : NULL;
     if (material == NULL) {
         return true; /* only a sprite with a material joins a batch */
@@ -681,7 +732,7 @@ static bool eng_draw_sprite3d(nmo_engine_t *engine, const eng_entity_t *entity,
         eng_normalize3(x);
         y[0] = 0.0f, y[1] = 1.0f, y[2] = 0.0f;
     }
-    float width = state->half_width * 2.0f, height = state->half_height * 2.0f;
+    float width = state->max.x-state->min.x, height = state->max.y-state->min.y;
     float ox = (state->offset.x - 1.0f) * 0.5f, oy = (state->offset.y - 1.0f) * 0.5f;
     float base[3], corners[4][3];
     for (int c = 0; c < 3; c++) {
@@ -1214,7 +1265,7 @@ nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *o
         const nmo_sprite3d_state_t *sprite =
             (const nmo_sprite3d_state_t *)eng_typed_state(engine, entity->id, CKPGUID_SPRITE3D);
         if (sprite != NULL) {
-            if (!eng_draw_sprite3d(engine, entity, sprite, camera >= 0 ? out->view : NULL)) {
+            if (!eng_draw_sprite3d(engine, entity, camera >= 0 ? out->view : NULL)) {
                 return NMO_ERR_NOMEM;
             }
             continue;

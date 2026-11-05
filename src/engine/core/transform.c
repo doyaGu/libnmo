@@ -850,13 +850,18 @@ bool eng_entity_bary_center(nmo_engine_t *engine, int32_t index, eng_vector_t *o
     return true;
 }
 
-/* GetRadius: the mesh's radius times the largest world axis scale; 0 without a mesh. */
+/* GetRadius: scaled mesh radius, or half the largest world-box extent. */
 float eng_entity_radius(nmo_engine_t *engine, int32_t index)
 {
     nmo_mesh_state_t runtime;
     const nmo_mesh_state_t *mesh = eng_entity_mesh(engine, index, NULL, &runtime);
     if (mesh == NULL) {
-        return 0.0f; /* the world box of an entity without a mesh is not valid */
+        eng_vector_t min, max;
+        if (!eng_entity_world_box(engine,index,&min,&max)) return 0;
+        float extent = max.x-min.x;
+        if (max.y-min.y > extent) extent = max.y-min.y;
+        if (max.z-min.z > extent) extent = max.z-min.z;
+        return extent*.5f;
     }
     const eng_matrix_t *world = &eng_entity_at(engine, index)->world;
     float scale[3];
@@ -869,16 +874,22 @@ float eng_entity_radius(nmo_engine_t *engine, int32_t index)
 }
 
 /*
- * The local box (GetBoundingBox(TRUE)): the current mesh's vertices' extent;
- * all zero, and false, without a mesh.
+ * The local box (GetBoundingBox(TRUE)): the sprite's own box or the current
+ * mesh's vertices' extent; all zero, and false, without either.
  *
  * The world box (UpdateBox): the mesh's local box (its vertices' extent)
  * through the world matrix as VxBbox::TransformFrom has it; false without a
- * mesh.
+ * geometry.
  */
 bool eng_entity_local_box(nmo_engine_t *engine, int32_t index, eng_vector_t *min,
                           eng_vector_t *max)
 {
+    const eng_sprite3d_t *sprite = eng_sprite3d(engine,eng_entity_at(engine,index)->id);
+    if (sprite != NULL) {
+        *min = (eng_vector_t){sprite->min.x,sprite->min.y,0};
+        *max = (eng_vector_t){sprite->max.x,sprite->max.y,0};
+        return true;
+    }
     nmo_mesh_state_t runtime;
     const nmo_mesh_state_t *mesh = eng_entity_mesh(engine, index, NULL, &runtime);
     float low[3] = {0.0f, 0.0f, 0.0f}, high[3] = {0.0f, 0.0f, 0.0f};
