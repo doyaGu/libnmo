@@ -123,7 +123,7 @@ class ProjectTests(unittest.TestCase):
             build(self.route, folder, None, 'Before')
             texture.write_bytes(b'old texture')
             artifact.write_bytes(b'preview')
-            record = evidence.capture(folder, 'editor-preview', {'yaw': 35}, [texture])
+            record = evidence.capture(folder, 'map-preview', {'yaw': 35}, [texture])
             evidence.attach(artifact, record)
             self.assertEqual(evidence.inspect(artifact)['status'], 'current')
             texture.write_bytes(b'new texture')

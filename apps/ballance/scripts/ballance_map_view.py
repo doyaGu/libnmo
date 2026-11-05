@@ -85,7 +85,7 @@ def main() -> int:
     dependencies = [Path(p) for p in (args.route, args.trace) if p]
     if args.textures:
         dependencies += [p for p in Path(args.textures).iterdir() if p.is_file()]
-    provenance = evidence.capture(source, 'editor-preview', vars(args), dependencies)
+    provenance = evidence.capture(source, 'map-preview', vars(args), dependencies)
     scene = scenes.load(source, Nmo(args.nmo))
     # a built level's route, unless another is given
     route_path = Path(args.route) if args.route else source / "route_points.json"
