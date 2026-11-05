@@ -31,11 +31,41 @@ static int bb_set_curve_properties(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+static int bb_get_control_point_properties(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    eng_curvepoint_properties_t properties;
+    if (!eng_curvepoint_get_properties(b->engine,nmo_engine_block_target(b),&properties)) return NMO_ENGINE_BR_OWNERERROR;
+    set_out_float(b, 0, properties.bias);
+    set_out_float(b, 1, properties.tension);
+    set_out_float(b, 2, properties.continuity);
+    set_out_int(b, 3, properties.linear);
+    return NMO_ENGINE_BR_OK;
+}
+
+static int bb_set_control_point_properties(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_object_id_t point = nmo_engine_block_target(b);
+    eng_curvepoint_properties_t properties;
+    if (!eng_curvepoint_get_properties(b->engine,point,&properties)) return NMO_ENGINE_BR_OWNERERROR;
+    properties.bias = get_in_float(b, 0, 0);
+    properties.tension = get_in_float(b, 1, 0);
+    properties.continuity = get_in_float(b, 2, 0);
+    properties.linear = get_in_int(b, 3, 0);
+    eng_curvepoint_set_properties(b->engine,point,&properties);
+    return NMO_ENGINE_BR_OK;
+}
+
 nmo_status_t eng_register_curve_properties(nmo_engine_t *engine)
 {
     static const nmo_engine_block_desc_t blocks[] = {
         {NMO_GUID_INIT(0x1251adfa,0xaebec002), "Get Curve Properties", bb_get_curve_properties, NULL, NULL},
         {NMO_GUID_INIT(0x1257effa,0xf7bec112), "Set Curve Properties", bb_set_curve_properties, NULL, NULL},
+        {NMO_GUID_INIT(0x1251effa,0xaebec112), "Get Control Point Properties", bb_get_control_point_properties, NULL, NULL},
+        {NMO_GUID_INIT(0x1254effa,0xfebec112), "Set Control Point Properties", bb_set_control_point_properties, NULL, NULL},
     };
     return ENG_REGISTER_BLOCKS(engine,blocks);
 }
