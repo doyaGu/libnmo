@@ -279,6 +279,11 @@ floor; pose AABBs can also include empty space. Conversely, a
 single successful trace cannot clear an unobserved state or prove that all
 between-frame contacts, reset paths and player strategies are safe.
 
+For explicit completion and reset requirements, use
+[action contracts and replayable scenarios](ballance-gameplay-scenarios.md).
+They measure sustained hinge angles and ball rises, and can require death,
+checkpoint respawn and repeated actuation in the same native world.
+
 ## Probing the seven assemblies in original levels
 
 The dedicated probe command uses a byte-identical copy of each original

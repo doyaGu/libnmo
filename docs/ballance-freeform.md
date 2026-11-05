@@ -437,7 +437,8 @@ per-body envelopes, intentional interactions and original-level probes.
 
 ## Gameplay conditions
 
-`gameplay.contracts` declares required passage conditions and native events:
+`gameplay.contracts` declares required passages, native events and sustained
+mechanism actions. Passage and event conditions use this form:
 
 ```json
 {
@@ -471,9 +472,12 @@ an earlier sector visit from satisfying a condition.
 
 `--play` adds a `gameplay` check. No contracts or no fresh run is explicitly
 skipped. A partial-sector run marks earlier contracts as skipped setup
-assumptions. Endpoint observations do not establish mechanism completion,
-continuous passage, arbitrary shortcut exclusion or successful recovery;
-those require additional event sources and execution scenarios.
+assumptions. Endpoint observations alone do not establish mechanism completion. Use an
+`action` condition for a sustained hinge rotation or a ball rise, then test
+correct play, incorrect conditions and death recovery with the scenario runner.
+See [actions and replayable scenarios](ballance-gameplay-scenarios.md) for
+the schema, commands and evidence requirements. These authored cases do not
+exhaust arbitrary shortcuts or player strategies.
 
 ## Parameterized templates
 
