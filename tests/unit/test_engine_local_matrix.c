@@ -2,6 +2,8 @@
 #include "../../src/engine/engine_internal.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
+#include "object/builtin/nmo_parameteroperation_schemas.h"
+#include "type/nmo_object_guids.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -178,6 +180,112 @@ TEST(engine_local_matrix, missing_deleted_and_nonentity_targets_report_owner_err
     }
 }
 
+static nmo_object_id_t saved_input(matrix_fixture_t *g, nmo_object_id_t pin, const char *text)
+{
+    nmo_object_id_t parameter = 0;
+    if (nmo_script_edit_ensure_input_parameter_source(g->f.tx,pin,&parameter) != NMO_OK ||
+        nmo_script_edit_set_parameter_value(g->f.tx,parameter,text) != NMO_OK) return 0;
+    return parameter;
+}
+
+static const char *resolve_file(void *data, const char *name)
+{
+    (void)name; return data;
+}
+
+TEST(engine_local_matrix, loaded_and_copied_graphs_keep_full_matrix_parameters_and_parent_bindings_independent)
+{
+    for (int hierarchy = 0; hierarchy < 2; hierarchy++) {
+        matrix_fixture_t g; begin(&g); nmo_object_id_t parameters[3]; char text[32];
+        snprintf(text,sizeof(text),"%u",g.target); parameters[0] = saved_input(&g,fixture_target(&g.f,g.block),text); parameters[1] = g.matrix;
+        parameters[2] = saved_input(&g,BLOCK_PIN(&g.f,g.block,1),hierarchy ? "TRUE" : "FALSE");
+        for (size_t i = 0; i < COUNT(parameters); i++) ASSERT_TRUE(parameters[i] != 0);
+        eng_matrix_t matrix = requested(); matrix.m[0][3] = .25f; matrix.m[3][3] = 2; input(&g,&matrix); fixture_commit_bare(&g.f,NULL);
+        nmo_beobject_state_t *owner = fixture_state(&g.f,g.f.owner_id);
+        owner->has_single_activity = 1; owner->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE;
+        nmo_behavior_state_t *script = fixture_state(&g.f,g.f.script_id);
+        script->has_single_activity = 1; script->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE | CK_SCENEOBJECT_START_RESET;
+        const char *path = NMO_TEST_SCRATCH_FILE("engine_local_matrix.cmo"); ASSERT_EQ(NMO_OK,nmo_session_save_file(g.f.session,path,NULL,NULL));
+        for (int started = 0; started < 2; started++) {
+            engine_fixture_t host; fixture_begin_document(&host); fixture_begin_edit(&host);
+            nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL; fixture_commit(&host,&options);
+            if (started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_ALL));
+            nmo_engine_set_file_resolver(host.engine,resolve_file,(void *)path);
+            int32_t file = -1; ASSERT_EQ(NMO_OK,nmo_engine_load(host.engine,"matrix.cmo",true,&file));
+            if (!started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_SCENE_DEFAULT));
+            nmo_object_id_t block = nmo_engine_object_named(host.engine,"Set Local Matrix",NMO_CID_BEHAVIOR); ASSERT_TRUE(block != 0);
+            const eng_module_t *module = eng_module_of(host.engine,block,NULL);
+            const nmo_object_id_t original[] = {g.f.owner_id,g.parent,g.other_parent,g.target,g.child,g.grandchild,g.f.script_id,g.block,g.out};
+            nmo_object_id_t ids[12] = {0}, copies[12] = {0};
+            for (size_t i = 0; i < COUNT(original); i++) { ids[i] = eng_module_id(module,original[i]); ASSERT_TRUE(ids[i] != 0); }
+            for (size_t i = 0; i < COUNT(parameters); i++) ids[9+i] = eng_module_id(module,parameters[i]);
+            ASSERT_TRUE(ids[3] != g.target); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
+            matrix_fixture_t view = {.f.engine=host.engine}; eng_matrix_t expected = expected_world(); world(&view,ids[3],&expected);
+            same_matrix(host.engine->entities.data[eng_entity_index(host.engine,ids[3])].local.m[0],&matrix);
+            ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(host.engine,ids,COUNT(ids),false,copies));
+            ASSERT_EQ(copies[1],nmo_engine_entity_parent(host.engine,copies[3])); ASSERT_EQ(copies[3],nmo_engine_entity_parent(host.engine,copies[4]));
+            ASSERT_EQ(copies[4],nmo_engine_entity_parent(host.engine,copies[5])); eng_matrix_t bytes;
+            read_value(&host,copies[10],&bytes,sizeof(bytes)); same_matrix(bytes.m[0],&matrix);
+            eng_vector_t moved = {110,20,30}; eng_entity_set_position(host.engine,eng_entity_index(host.engine,copies[1]),&moved,-1,true);
+            ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[6],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
+            world(&view,ids[3],&expected); expected.m[3][0] += 100; world(&view,copies[3],&expected);
+            position(&view,copies[4],hierarchy ? (eng_vector_t){113,24,50} : (eng_vector_t){5,7,9});
+            position(&view,copies[5],hierarchy ? (eng_vector_t){119.75f,25,50+16.0f/3} : (eng_vector_t){6,9,12});
+            same_matrix(host.engine->entities.data[eng_entity_index(host.engine,copies[3])].local.m[0],&matrix);
+            nmo_engine_destroy_object(host.engine,ids[3]); nmo_engine_destroy_object(host.engine,ids[1]); nmo_engine_destroy_object(host.engine,ids[2]);
+            ASSERT_TRUE(eng_entity_set_parent(host.engine,eng_entity_index(host.engine,copies[3]),eng_entity_index(host.engine,copies[2]),true));
+            eng_matrix_t changed = {.m={{-2,0,0,0},{0,3,0,0},{0,0,.5f,0},{-2,4,1,1}}};
+            ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[10],changed.m,sizeof(changed.m)));
+            ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[6],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,100));
+            expected = changed; expected.m[3][0] = 98; expected.m[3][1] = 204; expected.m[3][2] = 301; world(&view,copies[3],&expected);
+            position(&view,copies[4],hierarchy ? (eng_vector_t){96,207,301.5f} : (eng_vector_t){5,7,9});
+            position(&view,copies[5],hierarchy ? (eng_vector_t){95,209,301.875f} : (eng_vector_t){6,9,12});
+            ASSERT_EQ(1u,runs(&host,ids[7])); ASSERT_EQ(2u,runs(&host,copies[7])); fixture_end(&host);
+        }
+        ASSERT_FLOAT_EQ(3,((nmo_3dentity_state_t *)fixture_state(&g.f,g.target))->world_matrix[12],0); fixture_end(&g.f); remove(path);
+    }
+}
+
+static void count_operations(const nmo_engine_event_t *event, void *data)
+{
+    if (event->kind == NMO_ENGINE_EVENT_OPERATION) (*(size_t *)data)++;
+}
+
+TEST(engine_local_matrix, local_matrix_operations_read_the_preceding_block_pose_and_are_skipped_for_invalid_targets)
+{
+    for (int valid = 0; valid < 2; valid++) {
+        matrix_fixture_t g; begin(&g); if (!valid) fixture_input_int(&g.f,fixture_target(&g.f,g.block),0);
+        nmo_object_id_t source_entity = fixture_create(&g.f,NMO_CID_3DENTITY,"Source Entity"); nmo_3dentity_state_t *source = fixture_state(&g.f,source_entity); ASSERT_NOT_NULL(source);
+        source->parent = nmo_ref_from_id(g.other_parent); source->has_entityndata_chunk = 1;
+        const nmo_behavior_state_t *script = fixture_state(&g.f,g.f.script_id);
+        nmo_object_id_t first_link = nmo_behavior_ref_array_get_id(&script->sub_behavior_links,0);
+        ASSERT_EQ(NMO_OK,nmo_script_edit_remove_behavior_link(g.f.tx,g.f.script_id,first_link));
+        nmo_object_id_t producer = fixture_block(&g.f,GUID_LOCAL,"Set Source Local Matrix"); ASSERT_TRUE(producer != 0);
+        fixture_input_int(&g.f,fixture_target(&g.f,producer),(int32_t)source_entity);
+        nmo_object_id_t producer_matrix = 0; ASSERT_EQ(NMO_OK,nmo_script_edit_ensure_input_parameter_source(g.f.tx,BLOCK_PIN(&g.f,producer,0),&producer_matrix));
+        eng_matrix_t first = {.m={{2,0,0,0},{0,3,0,0},{0,0,4,0},{4,5,6,1}}};
+        ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_bytes(g.f.tx,producer_matrix,(const uint8_t *)first.m,sizeof(first.m)));
+        nmo_object_id_t entity_parameter = 0, operation = 0;
+        ASSERT_EQ(NMO_OK,nmo_script_edit_add_parameter(g.f.tx,g.f.script_id,NMO_SCRIPT_EDIT_PARAM_LOCAL,CKPGUID_3DENTITY,"Source Entity ID",&entity_parameter));
+        char text[32]; snprintf(text,sizeof(text),"%u",source_entity); ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(g.f.tx,entity_parameter,text));
+        ASSERT_EQ(NMO_OK,nmo_script_edit_add_operation(g.f.tx,g.f.script_id,NMO_GUID(0x14a024c7,0x050d4228),entity_parameter,0,0,&operation));
+        const nmo_parameteroperation_state_t *op = fixture_state(&g.f,operation); ASSERT_NOT_NULL(op);
+        ASSERT_EQ(NMO_OK,nmo_script_edit_connect_parameter(g.f.tx,nmo_parameteroperation_out_id(op),BLOCK_PIN(&g.f,g.block,0)));
+        fixture_link(&g.f,g.f.script_in,BLOCK_IN(&g.f,producer,0),0); fixture_link(&g.f,BLOCK_OUT(&g.f,producer,0),BLOCK_IN(&g.f,g.block,0),0);
+        commit(&g); size_t operations = 0; nmo_engine_set_trace(g.f.engine,count_operations,&operations);
+        ASSERT_EQ(valid ? NMO_OK : NMO_ERR_VALIDATION_FAILED,nmo_engine_step(g.f.engine,0));
+        ASSERT_EQ(valid ? 1u : 0u,operations); position(&g,source_entity,(eng_vector_t){104,205,306});
+        if (!valid) { position(&g,g.target,(eng_vector_t){3,4,5}); fixture_end(&g.f); continue; }
+        eng_matrix_t expected = {.m={{0,4,0,0},{-9,0,0,0},{0,0,16,0},{-5,28,54,1}}}; world(&g,g.target,&expected);
+        eng_vector_t moved = {200,300,400}; eng_entity_set_position(g.f.engine,eng_entity_index(g.f.engine,g.other_parent),&moved,-1,false);
+        trigger(&g); world(&g,g.target,&expected); position(&g,source_entity,(eng_vector_t){204,305,406});
+        eng_matrix_t changed = requested(); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,producer_matrix,changed.m,sizeof(changed.m))); trigger(&g);
+        expected = expected_world(); world(&g,g.target,&expected); position(&g,source_entity,(eng_vector_t){201,302,403});
+        position(&g,g.child,(eng_vector_t){13,24,50}); position(&g,g.grandchild,(eng_vector_t){19.75f,25,50+16.0f/3});
+        ASSERT_EQ(3u,operations); ASSERT_EQ(3u,runs(&g.f,producer)); ASSERT_EQ(3u,runs(&g.f,g.block)); ASSERT_EQ(3u,runs(&g.f,g.out)); fixture_end(&g.f);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_local_matrix, composes_local_pose_with_scaled_parent_and_propagates_or_preserves_descendants);
 REGISTER_TEST(engine_local_matrix, root_entities_copy_all_sixteen_values_including_shear_reflection_and_singular_axes);
@@ -186,4 +294,6 @@ REGISTER_TEST(engine_local_matrix, reads_live_matrix_values_and_the_current_pare
 REGISTER_TEST(engine_local_matrix, children_that_ignore_parent_updates_keep_world_and_local_matrices_until_reenabled);
 REGISTER_TEST(engine_local_matrix, disconnected_matrices_use_native_zero_initialization_and_hierarchy_defaults);
 REGISTER_TEST(engine_local_matrix, missing_deleted_and_nonentity_targets_report_owner_errors_before_consuming_input);
+REGISTER_TEST(engine_local_matrix, loaded_and_copied_graphs_keep_full_matrix_parameters_and_parent_bindings_independent);
+REGISTER_TEST(engine_local_matrix, local_matrix_operations_read_the_preceding_block_pose_and_are_skipped_for_invalid_targets);
 TEST_MAIN_END()
