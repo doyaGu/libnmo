@@ -735,6 +735,74 @@ static int bb_set_dynamic_position(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* TT Joystick Waiter follows TT_Toolbox_RT.dll (0x10023bc0): On rebases
+ * sliders, relative sliders use sensitivity Z, and disconnected slots keep
+ * running against the input snapshot. Output parameters hold the history. */
+static int bb_tt_joystick_waiter(blk_t *b)
+{
+    if (IN_ACTIVE(b,1)) { IN_OFF(b,1); return NMO_ENGINE_BR_OK; }
+    nmo_object_id_t owner = nmo_engine_block_owner(b);
+    if (eng_map_get(&b->engine->destroyed,owner) >= 0 ||
+        !eng_is_child_class(b->engine,nmo_engine_object_class(b->engine,owner),NMO_CID_BEOBJECT)) return NMO_ENGINE_BR_OWNERERROR;
+    nmo_engine_joystick_state_t state;
+    (void)nmo_engine_joystick_state(b->engine,get_in_int(b,0,0),&state);
+    eng_vector_t sensitivity = {.5f,.5f,.5f}; nmo_engine_block_get_local_value(b,0,&sensitivity,sizeof(sensitivity));
+    float previous[8] = {0}, old_pov = -1;
+    nmo_engine_block_get_output_value(b,0,previous,3*sizeof(float));
+    nmo_engine_block_get_output_value(b,1,previous+3,3*sizeof(float));
+    nmo_engine_block_get_output_value(b,2,previous+6,2*sizeof(float));
+    nmo_engine_block_get_output_value(b,3,&old_pov,sizeof(old_pov));
+    nmo_engine_block_set_output_value(b,0,state.position,sizeof(state.position));
+    nmo_engine_block_set_output_value(b,1,state.rotation,sizeof(state.rotation));
+    nmo_engine_block_set_output_value(b,2,state.sliders,sizeof(state.sliders));
+    nmo_engine_block_set_output_value(b,3,&state.point_of_view,sizeof(state.point_of_view));
+    if (nmo_engine_block_version(b) < 0x00020000u) {
+        for (int i = 0; i < 6; i++) if (state.buttons & (1u << i)) OUT_ON(b,4+i);
+        if (state.position[1] < -sensitivity.y) OUT_ON(b,0);
+        if (state.position[1] > sensitivity.y) OUT_ON(b,1);
+        if (state.position[0] < -sensitivity.x) OUT_ON(b,2);
+        if (state.position[0] > sensitivity.x) OUT_ON(b,3);
+        return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+    }
+    if (IN_ACTIVE(b,0)) {
+        previous[6] = state.sliders[0]; previous[7] = state.sliders[1]; IN_OFF(b,0);
+    }
+    uint32_t axes = (uint32_t)get_local_int(b,1,3), relative = (uint32_t)get_local_int(b,3,448);
+    int output = 1; bool one_active = false;
+    for (uint32_t i = 0; i < 8; i++) {
+        uint32_t bit = 1u << i;
+        if ((axes & bit) == 0) continue;
+        float sample = i < 3 ? state.position[i] : i < 6 ? state.rotation[i-3] : state.sliders[i-6]; bool active;
+        if (relative & bit) {
+            double delta = i < 3 ? (double)previous[i]-sample : (double)sample-previous[i];
+            double threshold = i < 6 ? sensitivity.y : sensitivity.z;
+            if (i == 6) { float difference = (float)delta; nmo_engine_block_set_output_value(b,4,&difference,sizeof(difference)); }
+            /* Native x87 range tests treat unordered relative deltas as movement;
+             * compare before rounding the optional float Sliders Diff output. */
+            active = !(delta >= -threshold && delta <= threshold);
+        } else active = sample < -sensitivity.x || sample > sensitivity.x;
+        if (active) { OUT_ON(b,output); one_active = true; }
+        output++;
+    }
+    if (axes & 256u) {
+        /* The native POV equality check also suppresses unordered changes. */
+        bool changed = state.point_of_view < old_pov || state.point_of_view > old_pov;
+        if ((relative & 256u) == 0 || changed) {
+            OUT_ON(b,output+(state.point_of_view >= 0 ? 0 : 1)); one_active = true;
+        }
+        output += 2;
+    }
+    uint32_t buttons = (uint32_t)get_local_int(b,2,1);
+    for (uint32_t i = 0; i < 32; i++) {
+        uint32_t bit = 1u << i;
+        if ((buttons & bit) == 0) continue;
+        if (state.buttons & bit) { OUT_ON(b,output); one_active = true; }
+        output++;
+    }
+    if (!one_active) OUT_ON(b,0);
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
 /* TT_TestForJoystick queries the current frame and finishes on Yes or No. */
 static int bb_test_for_joystick(blk_t *b)
 {
@@ -766,6 +834,7 @@ static int bb_joystick_vector_mapper(blk_t *b)
 }
 
 static const nmo_engine_block_desc_t eng_tt_toolbox_blocks[] = {
+    {NMO_GUID_INIT(0x594a136e,0x58135ef9),"TT Joystick Waiter",bb_tt_joystick_waiter,NULL,NULL},
     {NMO_GUID_INIT(0x229865eb,0x577619e4),"TT_TestForJoystick",bb_test_for_joystick,NULL,NULL},
     {NMO_GUID_INIT(0x04f80efd,0x76b47b33),"TT_JoystickVectorMapper",bb_joystick_vector_mapper,NULL,NULL},
     {NMO_GUID_INIT(0x09b335b3, 0x12d17cdc), "TT_LinearVolume", bb_linear_volume, NULL, NULL},
