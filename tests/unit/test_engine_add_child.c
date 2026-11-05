@@ -2,6 +2,8 @@
 #include "../../src/engine/engine_internal.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
+#include "object/builtin/nmo_parameteroperation_schemas.h"
+#include "type/nmo_object_guids.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -179,6 +181,101 @@ TEST(engine_add_child, missing_deleted_and_nonentity_targets_report_owner_errors
     }
 }
 
+static nmo_object_id_t saved_input(child_fixture_t *g, nmo_object_id_t pin, const char *text)
+{
+    nmo_object_id_t parameter = 0;
+    if (nmo_script_edit_ensure_input_parameter_source(g->f.tx,pin,&parameter) != NMO_OK ||
+        nmo_script_edit_set_parameter_value(g->f.tx,parameter,text) != NMO_OK) return 0;
+    return parameter;
+}
+
+static const char *resolve_file(void *data, const char *name)
+{
+    (void)name; return data;
+}
+
+TEST(engine_add_child, loaded_and_copied_graphs_keep_parent_child_bindings_and_inheritance_flags_independent)
+{
+    for (int disabled = 0; disabled < 2; disabled++) {
+        child_fixture_t g; begin(&g); if (disabled) ((nmo_3dentity_state_t *)fixture_state(&g.f,g.child))->moveable_flags |= VX_MOVEABLE_DONTUPDATEFROMPARENT;
+        char text[32]; snprintf(text,sizeof(text),"%u",g.parent); nmo_object_id_t parameters[2];
+        parameters[0] = saved_input(&g,fixture_target(&g.f,g.block),text);
+        snprintf(text,sizeof(text),"%u",g.child); parameters[1] = saved_input(&g,BLOCK_PIN(&g.f,g.block,0),text);
+        ASSERT_TRUE(parameters[0] != 0 && parameters[1] != 0); fixture_commit_bare(&g.f,NULL);
+        nmo_beobject_state_t *owner = fixture_state(&g.f,g.f.owner_id);
+        owner->has_single_activity = 1; owner->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE;
+        nmo_behavior_state_t *script = fixture_state(&g.f,g.f.script_id);
+        script->has_single_activity = 1; script->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE | CK_SCENEOBJECT_START_RESET;
+        const char *path = NMO_TEST_SCRATCH_FILE("engine_add_child.cmo"); ASSERT_EQ(NMO_OK,nmo_session_save_file(g.f.session,path,NULL,NULL));
+        for (int started = 0; started < 2; started++) {
+            engine_fixture_t host; fixture_begin_document(&host); fixture_begin_edit(&host);
+            nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL; fixture_commit(&host,&options);
+            if (started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_ALL));
+            nmo_engine_set_file_resolver(host.engine,resolve_file,(void *)path);
+            int32_t file = -1; ASSERT_EQ(NMO_OK,nmo_engine_load(host.engine,"child.cmo",true,&file));
+            if (!started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_SCENE_DEFAULT));
+            nmo_object_id_t block = nmo_engine_object_named(host.engine,"Add Child",NMO_CID_BEHAVIOR); ASSERT_TRUE(block != 0);
+            const eng_module_t *module = eng_module_of(host.engine,block,NULL);
+            const nmo_object_id_t original[] = {g.f.owner_id,g.old_parent,g.parent,g.child,g.grandchild,g.sibling,g.old_sibling,g.f.script_id,g.block,g.out};
+            nmo_object_id_t ids[12] = {0}, copies[12] = {0};
+            for (size_t i = 0; i < COUNT(original); i++) { ids[i] = eng_module_id(module,original[i]); ASSERT_TRUE(ids[i] != 0); }
+            for (size_t i = 0; i < COUNT(parameters); i++) ids[10+i] = eng_module_id(module,parameters[i]);
+            ASSERT_TRUE(ids[3] != g.child); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0)); ASSERT_EQ(ids[2],nmo_engine_entity_parent(host.engine,ids[3]));
+            ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(host.engine,ids,COUNT(ids),false,copies));
+            ASSERT_EQ(copies[2],nmo_engine_entity_parent(host.engine,copies[3])); ASSERT_EQ(copies[3],nmo_engine_entity_parent(host.engine,copies[4]));
+            child_fixture_t view = {.f.engine=host.engine}; set_parent_position(&view,copies[2],(eng_vector_t){210,20,30});
+            position(&view,copies[3],(eng_vector_t){disabled ? 4 : 204,22,42}); position(&view,ids[3],(eng_vector_t){4,22,42});
+            ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[10],&copies[1],sizeof(copies[1])));
+            ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,ids[7],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[7],true,true));
+            ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0)); ASSERT_EQ(ids[2],nmo_engine_entity_parent(host.engine,ids[3])); ASSERT_EQ(copies[1],nmo_engine_entity_parent(host.engine,copies[3]));
+            children(&view,copies[2],&copies[5],1); nmo_object_id_t siblings[] = {copies[6],copies[3]}; children(&view,copies[1],siblings,COUNT(siblings));
+            nmo_engine_destroy_object(host.engine,ids[3]); nmo_engine_destroy_object(host.engine,ids[2]); nmo_engine_destroy_object(host.engine,ids[1]);
+            int32_t child = eng_entity_index(host.engine,copies[3]); ASSERT_EQ(disabled != 0,(host.engine->entities.data[child].moveable_flags & VX_MOVEABLE_DONTUPDATEFROMPARENT) != 0);
+            host.engine->entities.data[child].moveable_flags &= ~VX_MOVEABLE_DONTUPDATEFROMPARENT;
+            set_parent_position(&view,copies[1],(eng_vector_t){90,-20,-30});
+            position(&view,copies[3],(eng_vector_t){disabled ? 104 : 304,22,42}); position(&view,copies[4],(eng_vector_t){disabled ? 106 : 306,25,46});
+            ASSERT_EQ(2u,runs(&host,ids[8])); ASSERT_EQ(1u,runs(&host,copies[8])); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,10)); ASSERT_EQ(1u,runs(&host,copies[8])); fixture_end(&host);
+        }
+        ASSERT_EQ(g.old_parent,nmo_ref_runtime_id(&((nmo_3dentity_state_t *)fixture_state(&g.f,g.child))->parent)); fixture_end(&g.f); remove(path);
+    }
+}
+
+static void count_operations(const nmo_engine_event_t *event, void *data)
+{
+    if (event->kind == NMO_ENGINE_EVENT_OPERATION) (*(size_t *)data)++;
+}
+
+TEST(engine_add_child, local_matrix_and_parent_query_blocks_observe_each_new_attachment_in_the_same_frame)
+{
+    child_fixture_t g; begin(&g);
+    nmo_object_id_t local = fixture_block(&g.f,NMO_GUID(0x21f5f30d,0x08d5a1db),"Set Adopted Local Matrix"); ASSERT_TRUE(local != 0);
+    ASSERT_EQ(NMO_OK,nmo_script_edit_connect_parameter(g.f.tx,g.child_parameter,fixture_target(&g.f,local)));
+    nmo_object_id_t matrix_parameter = 0; ASSERT_EQ(NMO_OK,nmo_script_edit_ensure_input_parameter_source(g.f.tx,BLOCK_PIN(&g.f,local,0),&matrix_parameter));
+    eng_matrix_t matrix; eng_matrix_identity(&matrix); matrix.m[3][0] = 1; matrix.m[3][1] = 2; matrix.m[3][2] = 3;
+    ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_bytes(g.f.tx,matrix_parameter,(const uint8_t *)matrix.m,sizeof(matrix.m)));
+    nmo_object_id_t operation = 0, parent_result = 0;
+    ASSERT_EQ(NMO_OK,nmo_script_edit_add_parameter(g.f.tx,g.f.script_id,NMO_SCRIPT_EDIT_PARAM_LOCAL,CKPGUID_3DENTITY,"Queried Parent",&parent_result));
+    ASSERT_EQ(NMO_OK,nmo_script_edit_add_operation(g.f.tx,g.f.script_id,NMO_GUID(0x5bf9718f,0x030b698c),g.child_parameter,0,parent_result,&operation));
+    const nmo_parameteroperation_state_t *op = fixture_state(&g.f,operation); ASSERT_NOT_NULL(op);
+    /* Select CK3dEntityGetParent3dEntity explicitly; the catalogue also lists Basic Object. */
+    ((nmo_parameterin_state_t *)fixture_state(&g.f,nmo_parameteroperation_in1_id(op)))->type_guid = CKPGUID_3DENTITY;
+    nmo_object_id_t move = fixture_block(&g.f,NMO_GUID(0xe456e78a,0x456789aa),"Move Queried Parent"); ASSERT_TRUE(move != 0);
+    ASSERT_EQ(NMO_OK,nmo_script_edit_connect_parameter(g.f.tx,nmo_parameteroperation_out_id(op),fixture_target(&g.f,move)));
+    const eng_vector_t position_value = {110,20,30}; fixture_input_value(&g.f,BLOCK_PIN(&g.f,move,0),&position_value,sizeof(position_value));
+    fixture_link(&g.f,BLOCK_OUT(&g.f,g.block,0),BLOCK_IN(&g.f,local,0),0); fixture_link(&g.f,BLOCK_OUT(&g.f,local,0),BLOCK_IN(&g.f,move,0),0); commit(&g);
+    size_t operations = 0; nmo_engine_set_trace(g.f.engine,count_operations,&operations); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0));
+    ASSERT_EQ(g.parent,nmo_engine_entity_parent(g.f.engine,g.child)); position(&g,g.parent,position_value); position(&g,g.old_parent,(eng_vector_t){-10,-20,-30});
+    position(&g,g.child,(eng_vector_t){104,22,42}); position(&g,g.grandchild,(eng_vector_t){101,24,46});
+    ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.child_parameter,&g.old_sibling,sizeof(g.old_sibling))); trigger(&g);
+    ASSERT_EQ(g.parent,nmo_engine_entity_parent(g.f.engine,g.old_sibling)); position(&g,g.old_sibling,(eng_vector_t){104,22,42});
+    ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.target_parameter,&g.old_parent,sizeof(g.old_parent))); trigger(&g);
+    ASSERT_EQ(g.old_parent,nmo_engine_entity_parent(g.f.engine,g.old_sibling)); position(&g,g.old_parent,position_value); position(&g,g.old_sibling,(eng_vector_t){111,22,33});
+    position(&g,g.child,(eng_vector_t){104,22,42}); position(&g,g.grandchild,(eng_vector_t){101,24,46});
+    children(&g,g.old_parent,&g.old_sibling,1); nmo_object_id_t siblings[] = {g.sibling,g.child}; children(&g,g.parent,siblings,COUNT(siblings));
+    ASSERT_EQ(3u,operations); ASSERT_EQ(3u,runs(&g.f,g.block)); ASSERT_EQ(3u,runs(&g.f,local)); ASSERT_EQ(3u,runs(&g.f,move)); ASSERT_EQ(3u,runs(&g.f,g.out));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,100)); ASSERT_EQ(3u,runs(&g.f,g.block)); fixture_end(&g.f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_add_child, reparents_without_changing_world_matrices_and_then_follows_the_new_parent);
 REGISTER_TEST(engine_add_child, repeated_adoption_preserves_sibling_order_and_reattachment_appends_once);
@@ -188,4 +285,6 @@ REGISTER_TEST(engine_add_child, self_and_descendant_attachments_leave_the_existi
 REGISTER_TEST(engine_add_child, places_cannot_be_parented_to_other_places_and_still_finish_normally);
 REGISTER_TEST(engine_add_child, preserves_the_child_parent_update_flag_and_recomputes_local_pose_even_when_inheritance_is_disabled);
 REGISTER_TEST(engine_add_child, missing_deleted_and_nonentity_targets_report_owner_errors_before_consuming_input);
+REGISTER_TEST(engine_add_child, loaded_and_copied_graphs_keep_parent_child_bindings_and_inheritance_flags_independent);
+REGISTER_TEST(engine_add_child, local_matrix_and_parent_query_blocks_observe_each_new_attachment_in_the_same_frame);
 TEST_MAIN_END()
