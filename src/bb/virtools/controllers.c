@@ -67,7 +67,7 @@ static int bb_keyboard_mapper(blk_t *b)
     return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
 }
 
-static int cb_keyboard_controller(blk_t *b, uint32_t message)
+static int cb_controller_messages(blk_t *b, uint32_t message)
 {
     if (message != NMO_ENGINE_MSG_LOAD) return NMO_ENGINE_BR_OK;
     const char *names[] = {"Joy_Left","Joy_Right","Joy_Up","Joy_Down","Joy_Button1","Joy_Button2","Joy_Button3","Joy_Button4","Joy_Button5","Joy_Button6"};
@@ -97,6 +97,28 @@ static int bb_keyboard_controller(blk_t *b)
      * every frame, and this block deliberately leaves the On input active. */
     for (size_t i = 0; i < sizeof(mappings)/sizeof(mappings[0]); i++)
         if (key_down(b,mappings[i].key)) nmo_engine_block_send_message(b,messages[mappings[i].message],target,target);
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+static int bb_joystick_controller(blk_t *b)
+{
+    if (IN_ACTIVE(b,1)) { IN_OFF(b,1); return NMO_ENGINE_BR_OK; }
+    nmo_object_id_t target = nmo_engine_block_target(b), sender = nmo_engine_block_owner(b);
+    if (eng_map_get(&b->engine->destroyed,target) >= 0 || !eng_is_child_class(b->engine,nmo_engine_object_class(b->engine,target),NMO_CID_BEOBJECT)) return NMO_ENGINE_BR_OWNERERROR;
+    nmo_engine_joystick_state_t state;
+    if (!nmo_engine_joystick_state(b->engine,get_in_int(b,0,0),&state)) return NMO_ENGINE_BR_GENERICERROR;
+    eng_vector_t sensitivity = {.5f,.5f,.5f}; nmo_engine_block_get_local_value(b,1,&sensitivity,sizeof(sensitivity));
+    const eng_node_t *node = &b->engine->nodes.data[b->node];
+    const eng_param_t *buffer = eng_node_param(b->engine,node->first_local,node->local_count,0);
+    int32_t messages[10];
+    if (buffer == NULL || buffer->size < sizeof(messages)) return NMO_ENGINE_BR_PARAMETERERROR;
+    memcpy(messages,buffer->data,sizeof(messages));
+    for (int i = 0; i < 6; i++) if (state.buttons & (1u << i)) nmo_engine_block_send_message(b,messages[4+i],target,sender);
+    if (state.position[1] < -sensitivity.y) nmo_engine_block_send_message(b,messages[2],target,sender);
+    if (state.position[1] > sensitivity.y) nmo_engine_block_send_message(b,messages[3],target,sender);
+    if (state.position[0] < -sensitivity.x) nmo_engine_block_send_message(b,messages[0],target,sender);
+    if (state.position[0] > sensitivity.x) nmo_engine_block_send_message(b,messages[1],target,sender);
+    nmo_engine_block_set_output_value(b,0,state.position,sizeof(state.position));
     return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
 }
 
@@ -839,7 +861,8 @@ static int cb_tt_input_string(blk_t *b, uint32_t message)
 
 static const nmo_engine_block_desc_t eng_controller_blocks[] = {
     {NMO_GUID_INIT(0x053b2bde,0x2f8f1d74),"Keyboard Mapper",bb_keyboard_mapper,cb_keyboard_mapper,NULL},
-    {NMO_GUID_INIT(0x43f1d000,0x1a2b3c4d),"Keyboard Controller",bb_keyboard_controller,cb_keyboard_controller,NULL},
+    {NMO_GUID_INIT(0x43f1d000,0x1a2b3c4d),"Keyboard Controller",bb_keyboard_controller,cb_controller_messages,NULL},
+    {NMO_GUID_INIT(0x0085ebc1,0x21935422),"Joystick Controller",bb_joystick_controller,cb_controller_messages,NULL},
     {NMO_GUID_INIT(0x1af2274b, 0x6b8c1524), "Key Event", bb_key_event, NULL, NULL},
     {NMO_GUID_INIT(0x016d010b, 0x017d010b), "Key Waiter", bb_key_waiter, cb_key_waiter, NULL},
     {NMO_GUID_INIT(0x2ffb3ef0, 0x21807ae3), "TT_Key Waiter", bb_tt_key_waiter, cb_tt_key_waiter, NULL},
