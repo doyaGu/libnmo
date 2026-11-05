@@ -64,6 +64,8 @@ apps/ballance/scripts/ballance_play_level.py <out>
 | `route_points.json` | The points along the middle of the track, start to balloon, for the autopilot |
 | `route_sectors.json` | Each sector's start: the ball the player has there and the index of its first point |
 | `route_plan.txt` | Where each piece leaves the track: its point, the floor's height there and the heading |
+| `sector_cache.json`, `rebuild.json` | Verified sector-mesh cache and the sectors reused or rebuilt |
+| `native_dynamics.json`, `3D Entities/` | Generated PH variants and loader overlay for nondefault native parameters, when present |
 
 It prints a warning for each thing that builds but plays wrong (see
 [What the Builder Checks](#what-the-builder-checks)). `nmo patch apply`
@@ -82,6 +84,17 @@ unused OBJ files left in the folder do not become part of the level.
 Verification checks recorded inputs and generator hashes before gameplay.
 Rebuild after source or route changes instead of editing generated files
 and relying on an older successful report.
+
+Use `--incremental` on a later build to reuse verified sector meshes. Cache keys
+include the expanded route prefix, sector count, geometry settings, generator
+sources and extracted-asset identity. Editing an earlier exit can rebuild later
+sectors. Global placement and constraints are recomputed even when sector meshes
+are reused. Missing or changed cached files force regeneration; `rebuild.json`
+records the result.
+
+Routes with nondefault native mechanism parameters also need `--game` and
+`--nmo` during building. Keep their generated `3D Entities/` directory with the
+level; see [per-instance physics](ballance-native-resources.md#per-instance-placement-and-physics).
 
 ## Routes
 
@@ -339,6 +352,7 @@ BALLANCE=<GAME_ROOT> NMO_TEST_PHYSICS=1 NMO_TEST_CLI=<path-to-nmo> \
 | File | Contents |
 |------|----------|
 | `resource_catalog.json`, `motion_catalog.json` | Native resource descriptions and measured motion recipes |
+| `mechanism_parameters.json` | Allowed per-kind native physics parameters, defaults, ranges and parameter IDs |
 | `level_materials.json` | The originals' 48 shared materials, as manifest materials (`ballance_level_materials.py`) |
 | `base_ballance_bb_manifest.json` | For rebuilding `base.cmo` ([ballance-base-bb-rewrite.md](ballance-base-bb-rewrite.md)) |
 
