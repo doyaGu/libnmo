@@ -18,7 +18,7 @@
 
 typedef struct billboard_fixture {
     engine_fixture_t f;
-    nmo_object_id_t target, camera, child, mesh, material, texture, block, out;
+    nmo_object_id_t target, camera, child, mesh, material, texture, block, out, entry;
 } billboard_fixture_t;
 
 static void begin(billboard_fixture_t *g, uint32_t class_id)
@@ -119,7 +119,7 @@ static void graph_begin(billboard_fixture_t *g, uint32_t class_id)
     begin(g,class_id); g->f.script_id = fixture_add_script(&g->f,"Billboard Script",&g->f.script_in); fixture_begin_edit(&g->f);
     nmo_status_t status = nmo_script_edit_add_node(g->f.tx,g->f.script_id,GUID_BILLBOARD,"Billboard",&g->block);
     g->out = fixture_block(&g->f,GUID_NOP,"After Billboard"); ASSERT_EQ(NMO_OK,status); ASSERT_TRUE(g->block != 0 && g->out != 0);
-    fixture_input_int(&g->f,fixture_target(&g->f,g->block),(int32_t)g->target); fixture_link(&g->f,g->f.script_in,BLOCK_IN(&g->f,g->block,0),0); fixture_link(&g->f,BLOCK_OUT(&g->f,g->block,0),BLOCK_IN(&g->f,g->out,0),0);
+    fixture_input_int(&g->f,fixture_target(&g->f,g->block),(int32_t)g->target); ASSERT_EQ(NMO_OK,nmo_script_edit_add_behavior_link(g->f.tx,g->f.script_id,g->f.script_in,BLOCK_IN(&g->f,g->block,0),0,&g->entry)); fixture_link(&g->f,BLOCK_OUT(&g->f,g->block,0),BLOCK_IN(&g->f,g->out,0),0);
 }
 
 static void graph_commit(billboard_fixture_t *g)
@@ -233,6 +233,88 @@ TEST(engine_billboard, invalid_targets_consume_input_activate_output_and_preserv
     }
 }
 
+static void rendered_matrix(nmo_engine_t *engine, nmo_object_id_t object, const eng_matrix_t *expected)
+{
+    eng_show(engine,object,1); nmo_engine_frame_t frame; ASSERT_EQ(NMO_OK,nmo_engine_render_frame(engine,&frame)); bool found = false;
+    for (int32_t i = 0; i < frame.draw_count; i++) if (frame.draws[i].object == object) {
+        const nmo_engine_draw_t *draw = &frame.draws[i];
+        if (draw->kind == NMO_ENGINE_DRAW_SPRITE3D) {
+            const eng_sprite3d_t *s = eng_sprite3d(engine,object); ASSERT_NOT_NULL(s); ASSERT_EQ(6,draw->vertex_count);
+            const eng_vector_t corners[] = {{s->min.x,s->min.y,0},{s->min.x,s->max.y,0},{s->max.x,s->max.y,0},{s->max.x,s->min.y,0}}; const int order[] = {0,1,2,0,2,3};
+            for (int k = 0; k < 6; k++) { eng_vector_t position; eng_vector_transform(&position,expected,&corners[order[k]]); const nmo_engine_vertex_t *v = &frame.vertices[draw->first_vertex+k]; vector((eng_vector_t){v->x,v->y,v->z},position); }
+        } else { eng_matrix_t actual; memcpy(actual.m,draw->world,sizeof(actual.m)); matrix(&actual,expected); }
+        found = true;
+    }
+    ASSERT_TRUE(found);
+}
+
+TEST(engine_billboard, output_matrix_links_apply_the_corrected_pose_and_render_it_in_the_same_frame)
+{
+    billboard_fixture_t g; graph_begin(&g,NMO_CID_3DENTITY); mesh(&g,true); fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,0),0); fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,4),0); fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,5),0); fixture_input_value(&g.f,BLOCK_PIN(&g.f,g.block,3),&(float){.5f},sizeof(float));
+    nmo_object_id_t setter = fixture_block(&g.f,NMO_GUID(0xaa4aa6f0,0xddefdef4),"Apply Billboard Matrix"); ASSERT_TRUE(setter != 0); fixture_input_int(&g.f,fixture_target(&g.f,setter),(int32_t)g.target); fixture_input_int(&g.f,BLOCK_PIN(&g.f,setter,1),1);
+    ASSERT_EQ(NMO_OK,nmo_script_edit_connect_parameter(g.f.tx,BLOCK_POUT(&g.f,g.block,0),BLOCK_PIN(&g.f,setter,0))); fixture_link(&g.f,BLOCK_OUT(&g.f,g.out,0),BLOCK_IN(&g.f,setter,0),0); graph_commit(&g);
+    const float distances[] = {60,20,20};
+    for (size_t i = 0; i < COUNT(distances); i++) {
+        if (i == 0) ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); else trigger(&g);
+        const eng_matrix_t expected = {{{-1,0,0,0},{0,1,0,0},{0,0,-1,0},{3,4,distances[i],1}}}; output_matrix(&g,&expected); matrix(&g.f.engine->entities.data[eng_entity_index(g.f.engine,g.target)].world,&expected);
+        vector(eng_entity_position(g.f.engine,eng_entity_index(g.f.engine,g.child),-1),(eng_vector_t){2,5,distances[i]-1}); rendered_matrix(g.f.engine,g.target,&expected);
+    }
+    ASSERT_EQ(3u,runs(&g.f,setter)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,100)); ASSERT_EQ(3u,runs(&g.f,g.block)); fixture_end(&g.f);
+}
+
+TEST(engine_billboard, camera_switches_viewport_changes_and_live_materials_update_sprite_pixel_sizing)
+{
+    billboard_fixture_t g; graph_begin(&g,NMO_CID_SPRITE3D); sprite(&g); fixture_input_value(&g.f,BLOCK_PIN(&g.f,g.block,3),&(float){1},sizeof(float)); nmo_object_id_t factor = source(&g,BLOCK_PIN(&g.f,g.block,3));
+    nmo_object_id_t second = fixture_create(&g.f,NMO_CID_CAMERA,"Second Camera"); ASSERT_TRUE(second != 0); nmo_camera_state_t *camera = fixture_state(&g.f,second); camera->has_cameraonly_chunk = camera->entity.has_entityndata_chunk = 1; camera->projection_type = CK_ORTHOGRAPHICPROJECTION; camera->orthographic_zoom = .5f;
+    const eng_matrix_t eye = {{{0,0,-1,0},{0,1,0,0},{1,0,0,0},{7,8,9,1}}}; memcpy(camera->entity.world_matrix,eye.m,sizeof(eye.m));
+    nmo_object_id_t activate = fixture_block(&g.f,NMO_GUID(0x368f0ab1,0x2d8957e4),"Use Second Camera"); ASSERT_TRUE(activate != 0); fixture_input_int(&g.f,fixture_target(&g.f,activate),(int32_t)second); fixture_link(&g.f,BLOCK_OUT(&g.f,g.out,0),BLOCK_IN(&g.f,activate,0),0); graph_commit(&g);
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); const eng_sprite3d_t *s = eng_sprite3d(g.f.engine,g.target); ASSERT_FLOAT_EQ(2,s->max.y-s->min.y,2e-4f); ASSERT_EQ(second,g.f.engine->render.camera);
+    trigger(&g); s = eng_sprite3d(g.f.engine,g.target); ASSERT_FLOAT_EQ(.4f,s->max.y-s->min.y,2e-4f); const eng_matrix_t expected = {{{0,0,1,0},{0,1,0,0},{-1,0,0,0},{3,4,10,1}}}; rendered_matrix(g.f.engine,g.target,&expected);
+    g.f.engine->render.screen_mode = 2; const float two = 2; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,factor,&two,sizeof(two))); trigger(&g); s = eng_sprite3d(g.f.engine,g.target); ASSERT_FLOAT_EQ(.64f,s->max.y-s->min.y,2e-4f);
+    eng_material_t *material = eng_material(g.f.engine,g.material); ASSERT_NOT_NULL(material); material->desc.texture = 0; const float four = 4; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,factor,&four,sizeof(four))); trigger(&g); s = eng_sprite3d(g.f.engine,g.target); ASSERT_FLOAT_EQ(.64f,s->max.y-s->min.y,2e-4f);
+    ASSERT_EQ(4u,runs(&g.f,g.out)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,100)); ASSERT_EQ(4u,runs(&g.f,g.block)); fixture_end(&g.f);
+}
+
+static const char *resolve_file(void *data, const char *name)
+{
+    (void)name; return data;
+}
+
+static nmo_object_id_t runtime_source(nmo_engine_t *engine, nmo_object_id_t block, int pos)
+{
+    nmo_object_t *object = eng_find_object(engine,block); const nmo_behavior_state_t *behavior = object != NULL ? nmo_object_get_state(object) : NULL; const eng_module_t *module = eng_module_of(engine,block,NULL);
+    if (behavior == NULL || module == NULL) return 0;
+    nmo_object_id_t pin = pos < 0 ? nmo_behavior_target_parameter_id(behavior) : nmo_behavior_ref_array_get_id(&behavior->in_parameters,(size_t)pos); object = eng_find_object(engine,eng_module_id(module,pin)); const nmo_parameterin_state_t *input = object != NULL ? nmo_object_get_state(object) : NULL;
+    return input != NULL ? eng_module_id(module,nmo_parameterin_source_id(input)) : 0;
+}
+
+TEST(engine_billboard, loaded_and_copied_graphs_remap_cameras_sprites_and_textures_and_keep_runtime_sizes_independent)
+{
+    billboard_fixture_t g; graph_begin(&g,NMO_CID_SPRITE3D); sprite(&g); nmo_object_id_t activate = fixture_block(&g.f,NMO_GUID(0x368f0ab1,0x2d8957e4),"Use Billboard Camera"); ASSERT_TRUE(activate != 0); fixture_input_int(&g.f,fixture_target(&g.f,activate),(int32_t)g.camera);
+    ASSERT_EQ(NMO_OK,nmo_script_edit_remove_behavior_link(g.f.tx,g.f.script_id,g.entry)); fixture_link(&g.f,g.f.script_in,BLOCK_IN(&g.f,activate,0),0); fixture_link(&g.f,BLOCK_OUT(&g.f,activate,0),BLOCK_IN(&g.f,g.block,0),0);
+    char text[32]; snprintf(text,sizeof(text),"%u",g.target); ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(g.f.tx,source(&g,fixture_target(&g.f,g.block)),text)); snprintf(text,sizeof(text),"%u",g.camera); ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(g.f.tx,source(&g,fixture_target(&g.f,activate)),text)); fixture_commit_bare(&g.f,NULL);
+    nmo_beobject_state_t *owner = fixture_state(&g.f,g.f.owner_id); owner->has_single_activity = 1; owner->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE; nmo_behavior_state_t *script = fixture_state(&g.f,g.f.script_id); script->has_single_activity = 1; script->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE | CK_SCENEOBJECT_START_RESET;
+    const char *file_path = NMO_TEST_SCRATCH_FILE("engine_billboard.cmo"); ASSERT_EQ(NMO_OK,nmo_session_save_file(g.f.session,file_path,NULL,NULL));
+    for (int started = 0; started < 2; started++) {
+        engine_fixture_t host; fixture_begin_document(&host); fixture_begin_edit(&host); nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL; fixture_commit(&host,&options); if (started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_ALL));
+        nmo_engine_set_file_resolver(host.engine,resolve_file,(void *)file_path); int32_t file = -1; ASSERT_EQ(NMO_OK,nmo_engine_load(host.engine,"billboard.cmo",true,&file)); if (!started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_SCENE_DEFAULT));
+        nmo_object_id_t block = nmo_engine_object_named(host.engine,"Billboard",NMO_CID_BEHAVIOR); ASSERT_TRUE(block != 0); const eng_module_t *module = eng_module_of(host.engine,block,NULL);
+        const char *names[] = {"Owner","Billboard Target","Child","Camera","Material","Texture","Billboard Script","Billboard","After Billboard","Use Billboard Camera"}; nmo_object_id_t ids[14] = {0}, copies[14] = {0};
+        for (size_t i = 0; i < COUNT(names); i++) { nmo_object_t *object = nmo_object_repository_find_by_name(module->repo,names[i]); ASSERT_NOT_NULL(object); ids[i] = eng_module_id(module,nmo_object_get_id(object)); ASSERT_TRUE(ids[i] != 0); }
+        ids[10] = runtime_source(host.engine,ids[7],-1); ids[11] = runtime_source(host.engine,ids[7],4); ids[12] = runtime_source(host.engine,ids[7],3); ids[13] = runtime_source(host.engine,ids[9],-1); for (size_t i = 10; i < COUNT(ids); i++) ASSERT_TRUE(ids[i] != 0);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0)); const eng_sprite3d_t *s = eng_sprite3d(host.engine,ids[1]); ASSERT_NOT_NULL(s); ASSERT_FLOAT_EQ(2,s->max.y-s->min.y,2e-4f); ASSERT_EQ(ids[3],host.engine->render.camera);
+        ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(host.engine,ids,COUNT(ids),false,copies)); for (size_t i = 0; i < COUNT(copies); i++) ASSERT_TRUE(copies[i] != 0);
+        s = eng_sprite3d(host.engine,copies[1]); ASSERT_NOT_NULL(s); ASSERT_EQ(copies[4],s->material); ASSERT_EQ(copies[5],eng_material(host.engine,copies[4])->desc.texture); ASSERT_FLOAT_EQ(2,s->max.y-s->min.y,2e-4f);
+        nmo_object_id_t reference = 0; read_value(&host,copies[10],&reference,sizeof(reference)); ASSERT_EQ(copies[1],reference); read_value(&host,copies[13],&reference,sizeof(reference)); ASSERT_EQ(copies[3],reference);
+        const float factor = 2; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[12],&factor,sizeof(factor))); ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[6],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
+        s = eng_sprite3d(host.engine,copies[1]); ASSERT_FLOAT_EQ(4,s->max.y-s->min.y,2e-4f); s = eng_sprite3d(host.engine,ids[1]); ASSERT_FLOAT_EQ(2,s->max.y-s->min.y,2e-4f); ASSERT_EQ(copies[3],host.engine->render.camera);
+        nmo_engine_destroy_object(host.engine,ids[1]); for (size_t i = 2; i < 6; i++) nmo_engine_destroy_object(host.engine,ids[i]); nmo_engine_destroy_object(host.engine,ids[0]);
+        eng_entity_set_position(host.engine,eng_entity_index(host.engine,copies[3]),&(eng_vector_t){0,0,-10},-1,false); ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[6],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0)); s = eng_sprite3d(host.engine,copies[1]); ASSERT_FLOAT_EQ(8,s->max.y-s->min.y,2e-4f);
+        const eng_matrix_t expected = {{{-1,0,0,0},{0,1,0,0},{0,0,-1,0},{3,4,10,1}}}; rendered_matrix(host.engine,copies[1],&expected); ASSERT_EQ(copies[1],nmo_engine_entity_parent(host.engine,copies[2])); ASSERT_EQ(2u,runs(&host,copies[8])); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,100)); ASSERT_EQ(2u,runs(&host,copies[7])); fixture_end(&host);
+    }
+    const nmo_sprite3d_state_t *original = fixture_state(&g.f,g.target); ASSERT_FLOAT_EQ(3,original->half_height,0); fixture_end(&g.f); remove(file_path);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_billboard, matrix_uses_raw_local_axes_and_preserves_position_without_mutating_entity);
 REGISTER_TEST(engine_billboard, matrix_follows_normalized_live_camera_axes_and_uses_default_eye_after_deletion);
@@ -246,4 +328,7 @@ REGISTER_TEST(engine_billboard, sprite_texture_scaling_preserves_offset_and_resi
 REGISTER_TEST(engine_billboard, mesh_scale_instead_of_move_keeps_the_native_noop_for_texture_scaling);
 REGISTER_TEST(engine_billboard, face_mode_and_invalid_targets_skip_lazy_axis_operations);
 REGISTER_TEST(engine_billboard, invalid_targets_consume_input_activate_output_and_preserve_matrix_output);
+REGISTER_TEST(engine_billboard, output_matrix_links_apply_the_corrected_pose_and_render_it_in_the_same_frame);
+REGISTER_TEST(engine_billboard, camera_switches_viewport_changes_and_live_materials_update_sprite_pixel_sizing);
+REGISTER_TEST(engine_billboard, loaded_and_copied_graphs_remap_cameras_sprites_and_textures_and_keep_runtime_sizes_independent);
 TEST_MAIN_END()
