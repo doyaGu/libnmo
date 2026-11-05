@@ -36,25 +36,41 @@ def main() -> int:
     parser = argparse.ArgumentParser(description='Check geometry, scenery clearance and gameplay.')
     parser.add_argument('source', type=Path, help="A built level's folder, or Level_NN.NMO")
     parser.add_argument('--play', type=int, metavar='FRAMES', help='Run the autopilot for FRAMES')
-    parser.add_argument('--game', type=Path, default=os.environ.get('BALLANCE'),
-                        help='Ballance installation folder (default: $BALLANCE)')
+    parser.add_argument(
+        '--game',
+        type=Path,
+        default=os.environ.get('BALLANCE'),
+        help='Ballance installation folder (default: $BALLANCE)',
+    )
     parser.add_argument('--sector', type=int, default=1, help='Play from sector N (default: 1)')
-    parser.add_argument('--report', type=Path, help='JSON file (default: SOURCE/validation.json for projects)')
+    parser.add_argument(
+        '--report', type=Path, help='JSON file (default: SOURCE/validation.json for projects)'
+    )
     parser.add_argument('--json', action='store_true', help='Print the structured report')
     parser.add_argument('--strict', action='store_true', help='Fail on floor geometry findings too')
     add_nmo_argument(parser)
     args = parser.parse_args()
     output = args.report or (args.source / 'validation.json' if args.source.is_dir() else None)
     try:
-        report = verify(args.source, Nmo(args.nmo), frames=args.play, game=args.game,
-                        sector=args.sector, strict=args.strict)
+        report = verify(
+            args.source,
+            Nmo(args.nmo),
+            frames=args.play,
+            game=args.game,
+            sector=args.sector,
+            strict=args.strict,
+        )
         if output:
             write(report, output)
     except (OSError, RuntimeError, ValueError, KeyError) as error:
         # Replace a previous successful report even when inputs cannot be
         # read. An old success must not survive a failed verification.
-        report = {'schema_version': 1, 'source': str(args.source.resolve()), 'status': 'failed',
-                  'checks': {'input': {'status': 'failed', 'error': str(error)}}}
+        report = {
+            'schema_version': 1,
+            'source': str(args.source.resolve()),
+            'status': 'failed',
+            'checks': {'input': {'status': 'failed', 'error': str(error)}},
+        }
         if output and output.parent.is_dir():
             try:
                 write(report, output)

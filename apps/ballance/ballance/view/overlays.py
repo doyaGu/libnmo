@@ -13,8 +13,12 @@ from ..game.catalog import Mechanism, mechanism_of
 from .render import Camera
 from .scene import SceneObject
 
-ROUTE, STOP, TRACE_MARK, TRACE_TEXT = (255, 230, 60), (255, 80, 80), (255, 255, 255), \
-    (200, 220, 255)
+ROUTE, STOP, TRACE_MARK, TRACE_TEXT = (
+    (255, 230, 60),
+    (255, 80, 80),
+    (255, 255, 255),
+    (200, 220, 255),
+)
 Point3 = tuple[float, float, float]
 
 
@@ -56,8 +60,11 @@ class Label(Text):
         if camera.within(self.point):
             x, y = camera.pixel(self.point)
             box = draw.textbbox((x + 6, y - 14), self.text)
-            draw.rectangle([box[0] - 2, box[1] - 1, box[2] + 2, box[3] + 1], fill=(10, 10, 14),
-                           outline=self.colour)
+            draw.rectangle(
+                [box[0] - 2, box[1] - 1, box[2] + 2, box[3] + 1],
+                fill=(10, 10, 14),
+                outline=self.colour,
+            )
             draw.text((x + 6, y - 14), self.text, fill=self.colour)
             draw.line([(x, y), (box[0] - 2, box[3])], fill=self.colour, width=1)
 
@@ -71,23 +78,23 @@ def route_overlays(route: list[list], floor_y: Callable[[float, float], float]) 
         x, z = point[0], point[1]
         p = (x, floor_y(x, z), z)
         points.append(p)
-        rush = len(point) > 3 and point[3] == "rush"
-        precise = len(point) > 3 and point[3] == "precision"
+        rush = len(point) > 3 and point[3] == 'rush'
+        precise = len(point) > 3 and point[3] == 'precision'
         stop = len(point) > 2 and not (rush or precise)
         out.append(Dot(p, STOP if stop else ROUTE, 6 if stop else 3))
         label = str(i)
         if rush:
-            label += " rush"
+            label += ' rush'
         elif precise:
-            label += " precision"
+            label += ' precision'
         elif len(point) > 4:
-            label += f" wait {point[4]}"
-        elif len(point) > 3 and isinstance(point[3], str) and point[3].startswith("push:"):
-            label += f" push {point[3][5:]}"
+            label += f' wait {point[4]}'
+        elif len(point) > 3 and isinstance(point[3], str) and point[3].startswith('push:'):
+            label += f' push {point[3][5:]}'
         elif len(point) > 3 and point[3]:
-            label += f" hold {point[3]:g}"
+            label += f' hold {point[3]:g}'
         elif len(point) > 2 and point[2] is not None:
-            label += f" wait y {point[2]:g}"
+            label += f' wait y {point[2]:g}'
         out.append(Text(p, ROUTE, label))
     return [Line(points, ROUTE, 2)] + out
 
@@ -96,31 +103,40 @@ def trace_overlays(rows: list[dict]) -> list:
     """A ball's path from a --steer-log, from slow (blue) to fast (red), with
     the frame every 100 frames."""
     out = []
-    speeds = [float(r.get("speed", 0) or 0) for r in rows]
+    speeds = [float(r.get('speed', 0) or 0) for r in rows]
     top = max(max(speeds, default=0.0), 1e-6)
     for a, b, speed in zip(rows, rows[1:], speeds):
         t = min(speed / top, 1.0)
         colour = (int(60 + 195 * t), int(90 * (1 - t) + 40), int(255 * (1 - t)))
-        out.append(Line([(float(a["x"]), float(a["y"]), float(a["z"])),
-                         (float(b["x"]), float(b["y"]), float(b["z"]))], colour, 3))
+        out.append(
+            Line(
+                [
+                    (float(a['x']), float(a['y']), float(a['z'])),
+                    (float(b['x']), float(b['y']), float(b['z'])),
+                ],
+                colour,
+                3,
+            )
+        )
     for row in rows:
-        if int(row["frame"]) % 100 == 0:
-            p = (float(row["x"]), float(row["y"]), float(row["z"]))
+        if int(row['frame']) % 100 == 0:
+            p = (float(row['x']), float(row['y']), float(row['z']))
             out.append(Dot(p, TRACE_MARK, 2))
-            out.append(Text(p, TRACE_TEXT, row["frame"]))
+            out.append(Text(p, TRACE_TEXT, row['frame']))
     return out
 
 
 def sector_of(obj: SceneObject) -> str:
-    """"S2" for an object in Sector_02, or ""."""
+    """ "S2" for an object in Sector_02, or ""."""
     for group in obj.groups:
-        if group.startswith("Sector_"):
-            return "S" + group[len("Sector_"):].lstrip("0")
-    return ""
+        if group.startswith('Sector_'):
+            return 'S' + group[len('Sector_') :].lstrip('0')
+    return ''
 
 
-def mechanism_labels(scene: list[SceneObject], box: tuple[float, float, float, float]
-                     ) -> tuple[list[Label], dict[Mechanism, int]]:
+def mechanism_labels(
+    scene: list[SceneObject], box: tuple[float, float, float, float]
+) -> tuple[list[Label], dict[Mechanism, int]]:
     """The mechanisms, elements and markers within box (x0, x1, z0, z1),
     named over their tops, and how many of each there are."""
     x0, x1, z0, z1 = box
@@ -134,7 +150,12 @@ def mechanism_labels(scene: list[SceneObject], box: tuple[float, float, float, f
         if not (x0 <= cx <= x1 and z0 <= cz <= z1):
             continue
         sector = sector_of(obj)
-        labels.append(Label((cx, float(pts[:, 1].max()) + 0.5, cz), mechanism.colour,
-                            mechanism.name + (f" {sector}" if sector else "")))
+        labels.append(
+            Label(
+                (cx, float(pts[:, 1].max()) + 0.5, cz),
+                mechanism.colour,
+                mechanism.name + (f' {sector}' if sector else ''),
+            )
+        )
         present[mechanism] = present.get(mechanism, 0) + 1
     return labels, present

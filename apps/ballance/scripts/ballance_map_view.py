@@ -62,22 +62,32 @@ from ballance.view.sheet import around, frame, panels, sheet  # noqa: E402
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Draw a Ballance level from any side.")
-    parser.add_argument("source", help="Level_NN.NMO, or a folder with manifest.json")
-    parser.add_argument("-o", "--output", required=True, help="PNG to write")
-    parser.add_argument("--box", nargs=4, type=float, metavar=("X0", "X1", "Z0", "Z1"))
-    parser.add_argument("--around", nargs="+", metavar=("NAME", "R"),
-                        help="Centre on an object, R (default 30) each way")
-    parser.add_argument("--heights", nargs=2, type=float, metavar=("Y0", "Y1"),
-                        help="Height range (default: the floors in the box)")
-    parser.add_argument("--views", default="top,front,side,iso",
-                        help="Comma-separated: top, front, side, iso, view")
-    parser.add_argument("--yaw", type=float, default=30.0, help="For 'view': degrees about Y")
-    parser.add_argument("--pitch", type=float, default=40.0, help="For 'view': degrees down")
-    parser.add_argument("--scale", type=float, default=8.0, help="Pixels a unit")
-    parser.add_argument("--textures", help="The game's Textures folder, to draw textures")
-    parser.add_argument("--route", help="route_points.json to draw")
-    parser.add_argument("--trace", help="A --steer-log CSV to draw")
+    parser = argparse.ArgumentParser(description='Draw a Ballance level from any side.')
+    parser.add_argument('source', help='Level_NN.NMO, or a folder with manifest.json')
+    parser.add_argument('-o', '--output', required=True, help='PNG to write')
+    parser.add_argument('--box', nargs=4, type=float, metavar=('X0', 'X1', 'Z0', 'Z1'))
+    parser.add_argument(
+        '--around',
+        nargs='+',
+        metavar=('NAME', 'R'),
+        help='Centre on an object, R (default 30) each way',
+    )
+    parser.add_argument(
+        '--heights',
+        nargs=2,
+        type=float,
+        metavar=('Y0', 'Y1'),
+        help='Height range (default: the floors in the box)',
+    )
+    parser.add_argument(
+        '--views', default='top,front,side,iso', help='Comma-separated: top, front, side, iso, view'
+    )
+    parser.add_argument('--yaw', type=float, default=30.0, help="For 'view': degrees about Y")
+    parser.add_argument('--pitch', type=float, default=40.0, help="For 'view': degrees down")
+    parser.add_argument('--scale', type=float, default=8.0, help='Pixels a unit')
+    parser.add_argument('--textures', help="The game's Textures folder, to draw textures")
+    parser.add_argument('--route', help='route_points.json to draw')
+    parser.add_argument('--trace', help='A --steer-log CSV to draw')
     add_nmo_argument(parser)
     args = parser.parse_args()
 
@@ -88,29 +98,36 @@ def main() -> int:
     provenance = evidence.capture(source, 'map-preview', vars(args), dependencies)
     scene = scenes.load(source, Nmo(args.nmo))
     # a built level's route, unless another is given
-    route_path = Path(args.route) if args.route else source / "route_points.json"
+    route_path = Path(args.route) if args.route else source / 'route_points.json'
     route = []
     if args.route or (source.is_dir() and route_path.exists()):
-        route = json.loads(route_path.read_text(encoding="utf-8"))
+        route = json.loads(route_path.read_text(encoding='utf-8'))
     trace = []
     if args.trace:
-        with open(args.trace, newline="", encoding="utf-8") as f:
+        with open(args.trace, newline='', encoding='utf-8') as f:
             trace = list(csv.DictReader(f))
 
     box = tuple(args.box) if args.box else None
     if args.around:
-        box = around(scene, args.around[0],
-                     float(args.around[1]) if len(args.around) > 1 else 30.0)
+        box = around(scene, args.around[0], float(args.around[1]) if len(args.around) > 1 else 30.0)
         if box is None:
-            print(f"no object {args.around[0]}", file=sys.stderr)
+            print(f'no object {args.around[0]}', file=sys.stderr)
             return 2
     framed = frame(scene, route, box, tuple(args.heights) if args.heights else None)
     labels, present = mechanism_labels(scene, framed.box)
     overlays = route_overlays(route, framed.floor_y) + trace_overlays(trace) + labels
     textures = Textures(Path(args.textures) if args.textures else None)
     try:
-        rows = panels(scene, textures, framed, [v.strip() for v in args.views.split(",")],
-                      args.yaw, args.pitch, args.scale, overlays)
+        rows = panels(
+            scene,
+            textures,
+            framed,
+            [v.strip() for v in args.views.split(',')],
+            args.yaw,
+            args.pitch,
+            args.scale,
+            overlays,
+        )
     except ValueError as error:
         print(error, file=sys.stderr)
         return 2
@@ -120,5 +137,5 @@ def main() -> int:
     return 0
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main())

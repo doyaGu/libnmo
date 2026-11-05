@@ -27,23 +27,24 @@ from ballance.extract.materials import extract_materials  # noqa: E402
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Extract Ballance's level materials as project manifest materials.")
-    parser.add_argument("game", help="Ballance installation folder (holds '3D Entities')")
-    parser.add_argument("-o", "--output", required=True, help="JSON file to write")
+        description="Extract Ballance's level materials as project manifest materials."
+    )
+    parser.add_argument('game', help="Ballance installation folder (holds '3D Entities')")
+    parser.add_argument('-o', '--output', required=True, help='JSON file to write')
     add_nmo_argument(parser)
     args = parser.parse_args()
 
-    levels = sorted((Path(args.game) / "3D Entities" / "Level").glob("Level_*.NMO"))
+    levels = sorted((Path(args.game) / '3D Entities' / 'Level').glob('Level_*.NMO'))
     if not levels:
-        print(f"no Level_*.NMO under {args.game}", file=sys.stderr)
+        print(f'no Level_*.NMO under {args.game}', file=sys.stderr)
         return 2
     materials = extract_materials(levels, Nmo(args.nmo))
     Path(args.output).write_text(
-        json.dumps({"materials": materials}, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8")
-    print(f"{len(materials)} materials from {len(levels)} levels -> {args.output}")
+        json.dumps({'materials': materials}, indent=2, ensure_ascii=False) + '\n', encoding='utf-8'
+    )
+    print(f'{len(materials)} materials from {len(levels)} levels -> {args.output}')
     return 0
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main())

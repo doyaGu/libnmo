@@ -29,27 +29,30 @@ from ballance.extract.check import check  # noqa: E402
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Check a Ballance level file against the level format rules.")
-    parser.add_argument("level", help="Level file (Level_NN.NMO)")
+        description='Check a Ballance level file against the level format rules.'
+    )
+    parser.add_argument('level', help='Level file (Level_NN.NMO)')
     add_nmo_argument(parser)
-    parser.add_argument("--json", action="store_true", help="Print the findings as JSON")
+    parser.add_argument('--json', action='store_true', help='Print the findings as JSON')
     args = parser.parse_args()
 
     try:
         report = check(Path(args.level), Nmo(args.nmo))
     except (RuntimeError, OSError, KeyError, ValueError) as error:
-        print(f"error: {error}", file=sys.stderr)
+        print(f'error: {error}', file=sys.stderr)
         return 2
 
     if args.json:
-        print(json.dumps({"level": args.level, "findings": report.items}, indent=2))
+        print(json.dumps({'level': args.level, 'findings': report.items}, indent=2))
     else:
         for item in report.items:
-            print(f"{item['severity']:7s} {item['code']}: {item['message']}")
-        print(f"{report.count('error')} errors, {report.count('warning')} warnings, "
-              f"{report.count('info')} notes")
-    return 1 if report.count("error") else 0
+            print(f'{item["severity"]:7s} {item["code"]}: {item["message"]}')
+        print(
+            f'{report.count("error")} errors, {report.count("warning")} warnings, '
+            f'{report.count("info")} notes'
+        )
+    return 1 if report.count('error') else 0
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main())

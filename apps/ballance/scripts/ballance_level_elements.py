@@ -28,29 +28,35 @@ from ballance.game.resources import catalog  # noqa: E402
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Export Ballance's level element meshes as OBJ files.")
-    parser.add_argument("game", help="Ballance installation folder (holds '3D Entities')")
-    parser.add_argument("-o", "--output", required=True, help="Folder for <Kind>.obj files")
-    parser.add_argument("--resources", nargs="+", choices=tuple(catalog()),
-                        help="Refresh only the named unified resources and their source record")
+        description="Export Ballance's level element meshes as OBJ files."
+    )
+    parser.add_argument('game', help="Ballance installation folder (holds '3D Entities')")
+    parser.add_argument('-o', '--output', required=True, help='Folder for <Kind>.obj files')
+    parser.add_argument(
+        '--resources',
+        nargs='+',
+        choices=tuple(catalog()),
+        help='Refresh only the named unified resources and their source record',
+    )
     add_nmo_argument(parser)
     args = parser.parse_args()
 
     levels = Levels(Path(args.game), Nmo(args.nmo))
     if not levels.files:
-        print(f"no Level_*.NMO under {args.game}", file=sys.stderr)
+        print(f'no Level_*.NMO under {args.game}', file=sys.stderr)
         return 2
     if args.resources:
         from ballance.extract.resources import export_resources
+
         found = export_resources(levels, Path(args.output), args.resources)
         every = list(found)
     else:
         found = export_elements(levels, Path(args.output))
         every = every_kind()
     for kind in every:
-        print(f"{kind:16s} {found.get(kind, 'not found')}")
+        print(f'{kind:16s} {found.get(kind, "not found")}')
     return 0 if len(found) == len(every) else 1
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main())

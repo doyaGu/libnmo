@@ -22,8 +22,13 @@ from ..game.catalog import mechanism_of
 from ..game.materials import textures_by_material
 from .scene import SceneObject
 
-FLOOR, WALL, RAIL, STOPPER, OTHER = (205, 190, 155), (140, 120, 95), (175, 185, 210), \
-    (150, 100, 55), (130, 130, 130)
+FLOOR, WALL, RAIL, STOPPER, OTHER = (
+    (205, 190, 155),
+    (140, 120, 95),
+    (175, 185, 210),
+    (150, 100, 55),
+    (130, 130, 130),
+)
 BACKGROUND = (24, 26, 32)
 LIGHT = np.array([0.35, 0.8, -0.5]) / np.linalg.norm([0.35, 0.8, -0.5])
 
@@ -34,17 +39,17 @@ def colour_of(obj: SceneObject, material: str | None) -> tuple[int, int, int]:
     mechanism = mechanism_of(obj.name, obj.groups)
     if mechanism is not None:
         return mechanism.colour
-    if "Phys_FloorRails" in obj.groups:
+    if 'Phys_FloorRails' in obj.groups:
         return RAIL
-    if "Phys_FloorStopper" in obj.groups:
+    if 'Phys_FloorStopper' in obj.groups:
         return STOPPER
-    if "Phys_Floors" in obj.groups:
-        return WALL if material == "Floor_Side" else FLOOR
+    if 'Phys_Floors' in obj.groups:
+        return WALL if material == 'Floor_Side' else FLOOR
     return OTHER
 
 
 def is_rail(obj: SceneObject, material: str | None) -> bool:
-    return "Phys_FloorRails" in obj.groups or (material or "").startswith("Rail")
+    return 'Phys_FloorRails' in obj.groups or (material or '').startswith('Rail')
 
 
 class Textures:
@@ -64,8 +69,9 @@ class Textures:
         if material not in self.cache:
             name = self.files.get(material)
             path = self.names.get(name.lower()) if name else None
-            self.cache[material] = (np.asarray(Image.open(path).convert("RGB"), dtype=np.float32)
-                                    if path else None)
+            self.cache[material] = (
+                np.asarray(Image.open(path).convert('RGB'), dtype=np.float32) if path else None
+            )
         return self.cache[material]
 
 
@@ -93,11 +99,12 @@ class Camera:
 
     def axes(self) -> str:
         """Which axes run right and up, as "right +X, up +Z"."""
+
         def name(vector) -> str:
             k = int(np.argmax(np.abs(vector)))
-            return ("-" if vector[k] < 0 else "+") + "XYZ"[k]
+            return ('-' if vector[k] < 0 else '+') + 'XYZ'[k]
 
-        return f"right {name(self.rot[0])}, up {name(self.rot[1])}"
+        return f'right {name(self.rot[0])}, up {name(self.rot[1])}'
 
     def pixel(self, point) -> tuple[float, float]:
         q = np.array(point, dtype=float) @ self.rot.T
@@ -121,12 +128,24 @@ def render(scene: list[SceneObject], textures: Textures, camera: Camera) -> Imag
 
 def _culled(p: np.ndarray, bounds: Bounds) -> bool:
     x0, x1, y0, y1, z0, z1 = bounds
-    return (p[:, 0].max() < x0 or p[:, 0].min() > x1 or p[:, 2].max() < z0 or
-            p[:, 2].min() > z1 or p[:, 1].max() < y0 - 50 or p[:, 1].min() > y1 + 50)
+    return (
+        p[:, 0].max() < x0
+        or p[:, 0].min() > x1
+        or p[:, 2].max() < z0
+        or p[:, 2].min() > z1
+        or p[:, 1].max() < y0 - 50
+        or p[:, 1].min() > y1 + 50
+    )
 
 
-def _draw_triangle(image: np.ndarray, depth: np.ndarray, camera: Camera, textures: Textures,
-                   obj: SceneObject, triangle) -> None:
+def _draw_triangle(
+    image: np.ndarray,
+    depth: np.ndarray,
+    camera: Camera,
+    textures: Textures,
+    obj: SceneObject,
+    triangle,
+) -> None:
     material, points, uvs, normals = triangle
     p = np.array(points)
     if _culled(p, camera.bounds):
@@ -138,7 +157,8 @@ def _draw_triangle(image: np.ndarray, depth: np.ndarray, camera: Camera, texture
     shade = 0.55 + 0.45 * abs(float(np.dot(normal / length, LIGHT)))
     # smooth surfaces (rails) shade by their vertex normals, across the face
     smooth = normals is not None and any(
-        np.dot(np.array(n), normal) < 0.999 * np.linalg.norm(n) * length for n in normals)
+        np.dot(np.array(n), normal) < 0.999 * np.linalg.norm(n) * length for n in normals
+    )
     # where on screen, and which pixels it covers
     w, h, scale = camera.width, camera.height, camera.scale
     s = p @ camera.rot.T
@@ -165,14 +185,16 @@ def _draw_triangle(image: np.ndarray, depth: np.ndarray, camera: Camera, texture
     def blend(values) -> np.ndarray:
         """Per-corner values across the covered pixels."""
         v = np.array(values, dtype=float)
-        return np.stack([l1 * v[0, k] + l2 * v[1, k] + l3 * v[2, k]
-                         for k in range(v.shape[1])], axis=-1)
+        return np.stack(
+            [l1 * v[0, k] + l2 * v[1, k] + l3 * v[2, k] for k in range(v.shape[1])], axis=-1
+        )
 
     if smooth:
         n = blend(normals)
         nx, ny, nz = n[..., 0], n[..., 1], n[..., 2]
         lit = np.abs(nx * LIGHT[0] + ny * LIGHT[1] + nz * LIGHT[2]) / np.maximum(
-            np.sqrt(nx * nx + ny * ny + nz * nz), 1e-9)
+            np.sqrt(nx * nx + ny * ny + nz * nz), 1e-9
+        )
         shade = (0.55 + 0.45 * lit[ok])[:, None]
     texture = None if is_rail(obj, material) or not uvs else textures.get(material)
     if is_rail(obj, material):
@@ -185,8 +207,10 @@ def _draw_triangle(image: np.ndarray, depth: np.ndarray, camera: Camera, texture
         half = LIGHT + camera.rot[2]
         half = half / np.linalg.norm(half)
         highlight = np.abs(n @ half) ** 24
-        colour = (np.array(RAIL, dtype=np.float32) * (0.45 + 0.55 * np.abs(n @ LIGHT))[:, None]
-                  + 220.0 * highlight[:, None])
+        colour = (
+            np.array(RAIL, dtype=np.float32) * (0.45 + 0.55 * np.abs(n @ LIGHT))[:, None]
+            + 220.0 * highlight[:, None]
+        )
     elif texture is not None:
         uv = blend(uvs)
         th, tw, _ = texture.shape

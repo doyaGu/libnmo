@@ -30,10 +30,12 @@ def entry(spec):
 def main():
     descriptions = catalog()
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('name', nargs='?', choices=sorted(descriptions), help='Inspect one resource')
+    parser.add_argument(
+        'name', nargs='?', choices=sorted(descriptions), help='Inspect one resource'
+    )
     parser.add_argument('--json', action='store_true', help='Emit complete descriptions as JSON')
     args = parser.parse_args()
-    selected = {args.name:descriptions[args.name]} if args.name else descriptions
+    selected = {args.name: descriptions[args.name]} if args.name else descriptions
     if args.json or args.name:
         print(json.dumps(selected, indent=2))
     else:

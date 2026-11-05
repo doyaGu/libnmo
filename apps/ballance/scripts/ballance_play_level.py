@@ -79,8 +79,7 @@ def main() -> int:
 
     if not args.game or not (Path(args.game) / '3D Entities').is_dir():
         parser.error(
-            'give the Ballance installation folder (holding 3D Entities) with --game '
-            'or $BALLANCE'
+            'give the Ballance installation folder (holding 3D Entities) with --game or $BALLANCE'
         )
     source, nmo = Path(args.level), Nmo(args.nmo)
     folder = source if source.is_dir() else source.parent
