@@ -201,6 +201,20 @@ static int bb_set_position(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* Translate expresses the displacement in Ref's axes, including their scale. */
+static int bb_translate(blk_t *b)
+{
+    int32_t entity = target_entity(b);
+    if (entity < 0) return NMO_ENGINE_BR_OWNERERROR;
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    eng_vector_t move = get_in_vector(b,0,0,0,0);
+    int32_t reference = input_entity(b,1);
+    bool keep = keep_children(b,2);
+    eng_entity_translate(b->engine,entity,&move,reference,keep);
+    return NMO_ENGINE_BR_OK;
+}
+
 /* Keep At Constant Distance also accepts the old layout without Position. */
 static int bb_keep_at_constant_distance(blk_t *b)
 {
@@ -668,6 +682,7 @@ static const nmo_engine_block_desc_t eng_3dtransfo_blocks[] = {
     {NMO_GUID_INIT(0x1c9236e1, 0x42f40996), "Play Global Animation", bb_play_global_animation, NULL,
      NULL},
     {NMO_GUID_INIT(0xe456e78a, 0x456789aa), "Set Position", bb_set_position, NULL, NULL},
+    {NMO_GUID_INIT(0x000d000d, 0x000d000d), "Translate", bb_translate, NULL, NULL},
     {NMO_GUID_INIT(0xb7e6398a, 0x113c66dd), "Keep At Constant Distance", bb_keep_at_constant_distance, NULL, NULL},
     {NMO_GUID_INIT(0xaa4aa6f0, 0xddefdef4), "Set World Matrix", bb_set_world_matrix, NULL, NULL},
     {NMO_GUID_INIT(0x21f5f30d, 0x08d5a1db), "Set Local Matrix", bb_set_local_matrix, NULL, NULL},
