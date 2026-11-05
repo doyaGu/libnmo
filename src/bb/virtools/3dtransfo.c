@@ -822,5 +822,6 @@ nmo_status_t eng_register_3dtransfo(nmo_engine_t *engine)
     nmo_status_t status = ENG_REGISTER_BLOCKS(engine, eng_3dtransfo_blocks);
     if (status == NMO_OK) status = eng_register_mimic(engine);
     if (status == NMO_OK) status = eng_register_move_to(engine);
-    return status == NMO_OK ? eng_register_curve_follow(engine) : status;
+    if (status == NMO_OK) status = eng_register_curve_follow(engine);
+    return status == NMO_OK ? eng_register_curve_properties(engine) : status;
 }
