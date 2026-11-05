@@ -190,6 +190,89 @@ TEST(engine_translate, missing_deleted_and_nonentity_targets_report_owner_errors
     }
 }
 
+static nmo_object_id_t saved_input(translate_fixture_t *g, nmo_object_id_t pin, const char *text)
+{
+    nmo_object_id_t parameter = 0;
+    if (nmo_script_edit_ensure_input_parameter_source(g->f.tx,pin,&parameter) != NMO_OK ||
+        nmo_script_edit_set_parameter_value(g->f.tx,parameter,text) != NMO_OK) return 0;
+    return parameter;
+}
+
+static const char *resolve_file(void *data, const char *name)
+{
+    (void)name; return data;
+}
+
+TEST(engine_translate, loaded_and_copied_graphs_keep_vectors_references_and_hierarchy_independent)
+{
+    for (int hierarchy = 0; hierarchy < 2; hierarchy++) {
+        translate_fixture_t g; begin(&g); nmo_object_id_t parameters[4]; char text[32];
+        snprintf(text,sizeof(text),"%u",g.target); parameters[0] = saved_input(&g,fixture_target(&g.f,g.block),text);
+        parameters[1] = saved_input(&g,BLOCK_PIN(&g.f,g.block,0),"1,2,3");
+        snprintf(text,sizeof(text),"%u",g.reference); parameters[2] = saved_input(&g,BLOCK_PIN(&g.f,g.block,1),text);
+        parameters[3] = saved_input(&g,BLOCK_PIN(&g.f,g.block,2),hierarchy ? "TRUE" : "FALSE");
+        for (size_t i = 0; i < COUNT(parameters); i++) ASSERT_TRUE(parameters[i] != 0);
+        fixture_commit_bare(&g.f,NULL); nmo_beobject_state_t *owner = fixture_state(&g.f,g.f.owner_id);
+        owner->has_single_activity = 1; owner->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE;
+        nmo_behavior_state_t *script = fixture_state(&g.f,g.f.script_id);
+        script->has_single_activity = 1; script->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE | CK_SCENEOBJECT_START_RESET;
+        const char *path = NMO_TEST_SCRATCH_FILE("engine_translate.cmo"); ASSERT_EQ(NMO_OK,nmo_session_save_file(g.f.session,path,NULL,NULL));
+        for (int started = 0; started < 2; started++) {
+            engine_fixture_t host; fixture_begin_document(&host); fixture_begin_edit(&host);
+            nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL; fixture_commit(&host,&options);
+            if (started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_ALL));
+            nmo_engine_set_file_resolver(host.engine,resolve_file,(void *)path);
+            int32_t file = -1; ASSERT_EQ(NMO_OK,nmo_engine_load(host.engine,"translate.cmo",true,&file));
+            if (!started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_SCENE_DEFAULT));
+            nmo_object_id_t block = nmo_engine_object_named(host.engine,"Translate",NMO_CID_BEHAVIOR); ASSERT_TRUE(block != 0);
+            const eng_module_t *module = eng_module_of(host.engine,block,NULL);
+            const nmo_object_id_t original[] = {g.f.owner_id,g.parent,g.target,g.child,g.grandchild,g.reference,g.f.script_id,g.block,g.out};
+            nmo_object_id_t ids[13] = {0}, copies[13] = {0};
+            for (size_t i = 0; i < COUNT(original); i++) { ids[i] = eng_module_id(module,original[i]); ASSERT_TRUE(ids[i] != 0); }
+            for (size_t i = 0; i < COUNT(parameters); i++) ids[9+i] = eng_module_id(module,parameters[i]);
+            ASSERT_TRUE(ids[2] != g.target); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
+            translate_fixture_t view = {.f.engine=host.engine}; position(&view,ids[2],(eng_vector_t){6,11,17});
+            ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(host.engine,ids,COUNT(ids),false,copies));
+            ASSERT_EQ(copies[1],nmo_engine_entity_parent(host.engine,copies[2])); ASSERT_EQ(copies[2],nmo_engine_entity_parent(host.engine,copies[3])); ASSERT_EQ(copies[3],nmo_engine_entity_parent(host.engine,copies[4]));
+            eng_matrix_t reference = {.m={{0,2,0,0},{-3,0,0,0},{0,0,4,0},{-100,50,300,1}}};
+            eng_entity_set_world_matrix(host.engine,eng_entity_index(host.engine,copies[5]),&reference,false);
+            ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,ids[6],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[6],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,100));
+            position(&view,ids[2],(eng_vector_t){9,18,29}); position(&view,copies[2],(eng_vector_t){0,13,29});
+            position(&view,copies[3],hierarchy ? (eng_vector_t){2,16,33} : (eng_vector_t){5,7,9}); position(&view,copies[4],hierarchy ? (eng_vector_t){3,18,36} : (eng_vector_t){6,9,12});
+            nmo_engine_destroy_object(host.engine,ids[2]); nmo_engine_destroy_object(host.engine,ids[5]); nmo_engine_destroy_object(host.engine,ids[1]);
+            eng_vector_t changed = {0,-2,0}; int32_t yes = 1;
+            ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[10],&changed,sizeof(changed))); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[12],&yes,sizeof(yes)));
+            ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[6],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0)); position(&view,copies[2],(eng_vector_t){6,13,29});
+            position(&view,copies[3],hierarchy ? (eng_vector_t){8,16,33} : (eng_vector_t){11,7,9}); position(&view,copies[4],hierarchy ? (eng_vector_t){9,18,36} : (eng_vector_t){12,9,12});
+            view.target = copies[2]; basis(&view); eng_vector_t original_value; read_value(&host,ids[10],&original_value,sizeof(original_value)); vector(original_value,(eng_vector_t){1,2,3});
+            ASSERT_EQ(2u,runs(&host,ids[7])); ASSERT_EQ(2u,runs(&host,copies[7])); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,10)); ASSERT_EQ(2u,runs(&host,copies[7])); fixture_end(&host);
+        }
+        ASSERT_FLOAT_EQ(3,((nmo_3dentity_state_t *)fixture_state(&g.f,g.target))->world_matrix[12],0); fixture_end(&g.f); remove(path);
+    }
+}
+
+TEST(engine_translate, rotate_around_updates_reference_axes_before_translation_in_the_same_frame)
+{
+    translate_fixture_t g; begin(&g); input(&g,(eng_vector_t){0,0,1}); fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,1),(int32_t)g.reference);
+    eng_matrix_t reference = {.m={{2,0,0,0},{0,3,0,0},{0,0,4,0},{100,200,300,1}}};
+    memcpy(((nmo_3dentity_state_t *)fixture_state(&g.f,g.reference))->world_matrix,reference.m,sizeof(reference.m));
+    const nmo_behavior_state_t *script = fixture_state(&g.f,g.f.script_id);
+    nmo_object_id_t first_link = nmo_behavior_ref_array_get_id(&script->sub_behavior_links,0);
+    ASSERT_EQ(NMO_OK,nmo_script_edit_remove_behavior_link(g.f.tx,g.f.script_id,first_link));
+    nmo_object_id_t rotate = fixture_block(&g.f,NMO_GUID(0xfdfd999e,0xdefeded8),"Rotate Reference"); ASSERT_TRUE(rotate != 0);
+    fixture_input_int(&g.f,fixture_target(&g.f,rotate),(int32_t)g.reference); fixture_input_int(&g.f,BLOCK_PIN(&g.f,rotate,3),0);
+    float quarter = 1.57079632679489661923f; fixture_input_value(&g.f,BLOCK_PIN(&g.f,rotate,1),&quarter,sizeof(quarter));
+    fixture_link(&g.f,g.f.script_in,BLOCK_IN(&g.f,rotate,0),0); fixture_link(&g.f,BLOCK_OUT(&g.f,rotate,0),BLOCK_IN(&g.f,g.block,0),0); commit(&g);
+    const eng_vector_t positions[] = {{-1,4,5},{-1,4,1},{3,4,1},{3,4,5}}; const float deltas[] = {0,10,1000,1};
+    for (size_t i = 0; i < COUNT(positions); i++) {
+        if (i == 0) ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,deltas[i])); else trigger(&g,deltas[i]);
+        position(&g,g.target,positions[i]); position(&g,g.child,(eng_vector_t){positions[i].x+2,positions[i].y+3,positions[i].z+4});
+        position(&g,g.grandchild,(eng_vector_t){positions[i].x+3,positions[i].y+5,positions[i].z+7}); basis(&g);
+    }
+    ASSERT_EQ(4u,runs(&g.f,rotate)); ASSERT_EQ(4u,runs(&g.f,g.block)); ASSERT_EQ(4u,runs(&g.f,g.out));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,100)); ASSERT_EQ(4u,runs(&g.f,g.block)); fixture_end(&g.f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_translate, adds_world_displacements_without_changing_orientation_scale_or_scheduling_another_frame);
 REGISTER_TEST(engine_translate, hierarchy_preserves_or_moves_descendants_and_kept_children_still_follow_future_parent_motion);
@@ -201,4 +284,6 @@ REGISTER_TEST(engine_translate, disconnected_inputs_keep_native_zero_vector_worl
 REGISTER_TEST(engine_translate, explicit_translation_ignores_target_parent_update_flags_but_respects_them_on_children);
 REGISTER_TEST(engine_translate, tiny_vectors_are_applied_without_an_angle_or_length_threshold);
 REGISTER_TEST(engine_translate, missing_deleted_and_nonentity_targets_report_owner_errors_before_consuming_input);
+REGISTER_TEST(engine_translate, loaded_and_copied_graphs_keep_vectors_references_and_hierarchy_independent);
+REGISTER_TEST(engine_translate, rotate_around_updates_reference_axes_before_translation_in_the_same_frame);
 TEST_MAIN_END()
