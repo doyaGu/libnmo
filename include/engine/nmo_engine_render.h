@@ -93,6 +93,10 @@ typedef struct nmo_engine_draw {
     int32_t font_size, font_weight;
     bool italic;
     uint32_t text_align;
+    /* A Place's viewport clipping: normalized left, top, right, bottom.
+       Hosts clip this draw to that part of the render viewport when clipped. */
+    bool clipped;
+    float clip_rect[4];
 } nmo_engine_draw_t;
 
 typedef struct nmo_engine_light {

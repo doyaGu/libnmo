@@ -218,6 +218,32 @@ TEST(engine_portal_management, automatic_generation_fits_adjacent_hierarchies_an
     frame(&g); outputs(&g,1,g.places,4); activate(&g,0); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(before+3,nmo_engine_entity_count(g.f.engine)); const eng_portal_list_t *links = eng_place_portals(g.f.engine,g.places[1]); ASSERT_NOT_NULL(links); ASSERT_EQ(2u,links->count); fixture_end(&g.f);
 }
 
+static const nmo_engine_draw_t *find_draw(const nmo_engine_frame_t *result, nmo_object_id_t object)
+{
+    for (int32_t i = 0; i < result->draw_count; i++) if (result->draws[i].object == object) return &result->draws[i];
+    return NULL;
+}
+
+static void draw_clip(const nmo_engine_frame_t *result, nmo_object_id_t id, nmo_rect_t expected)
+{
+    const nmo_engine_draw_t *draw = find_draw(result,id); ASSERT_NOT_NULL(draw); ASSERT_TRUE(draw->clipped); rect((nmo_rect_t){draw->clip_rect[0],draw->clip_rect[1],draw->clip_rect[2],draw->clip_rect[3]},expected);
+}
+
+TEST(engine_portal_management, rendered_meshes_inherit_portal_viewports_and_hidden_places_emit_no_draws)
+{
+    portal_fixture_t g; graph_begin(&g); graph_commit(&g); connect(&g,false); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); nmo_engine_frame_t result; ASSERT_EQ(NMO_OK,nmo_engine_render_frame(g.f.engine,&result));
+    const nmo_engine_draw_t *draw = find_draw(&result,g.geometry[0]); ASSERT_NOT_NULL(draw); ASSERT_FALSE(draw->clipped); draw_clip(&result,g.geometry[1],eng_place_viewport_clip(g.f.engine,g.places[1])); draw_clip(&result,g.geometry[2],eng_place_viewport_clip(g.f.engine,g.places[2])); draw = find_draw(&result,g.geometry[3]); ASSERT_NOT_NULL(draw); ASSERT_FALSE(draw->clipped);
+    move(&g,g.portal[0],(eng_vector_t){100,0,5}); ASSERT_EQ(NMO_OK,nmo_engine_render_frame(g.f.engine,&result)); ASSERT_TRUE(find_draw(&result,g.geometry[1]) == NULL); ASSERT_TRUE(find_draw(&result,g.geometry[2]) == NULL); ASSERT_NOT_NULL(find_draw(&result,g.geometry[0])); fixture_end(&g.f);
+}
+
+TEST(engine_portal_management, nested_places_replace_nonfull_clips_and_full_inner_viewports_keep_outer_clips)
+{
+    portal_fixture_t g; begin(&g); commit(&g); ASSERT_TRUE(eng_entity_set_parent(g.f.engine,eng_entity_index(g.f.engine,g.places[1]),eng_entity_index(g.f.engine,g.geometry[0]),true));
+    nmo_rect_t outer = {.1f,.2f,.8f,.9f}, inner = {.3f,.4f,.6f,.7f}; eng_place_set_viewport_clip(g.f.engine,g.places[0],outer); eng_place_set_viewport_clip(g.f.engine,g.places[1],(nmo_rect_t){0,0,1,1}); nmo_engine_frame_t result; ASSERT_EQ(NMO_OK,nmo_engine_render_frame(g.f.engine,&result)); draw_clip(&result,g.geometry[0],outer); draw_clip(&result,g.geometry[1],outer);
+    eng_place_set_viewport_clip(g.f.engine,g.places[1],inner); ASSERT_EQ(NMO_OK,nmo_engine_render_frame(g.f.engine,&result)); draw_clip(&result,g.geometry[1],inner); const nmo_engine_draw_t *unrelated = find_draw(&result,g.geometry[2]); ASSERT_NOT_NULL(unrelated); ASSERT_FALSE(unrelated->clipped);
+    eng_place_set_viewport_clip(g.f.engine,g.places[0],(nmo_rect_t){0}); eng_place_set_viewport_clip(g.f.engine,g.places[1],(nmo_rect_t){0}); ASSERT_EQ(NMO_OK,nmo_engine_render_frame(g.f.engine,&result)); unrelated = find_draw(&result,g.geometry[1]); ASSERT_NOT_NULL(unrelated); ASSERT_FALSE(unrelated->clipped); fixture_end(&g.f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_portal_management, hierarchy_bounds_exclude_empty_parents_and_follow_live_descendants);
 REGISTER_TEST(engine_portal_management, camera_projection_uses_native_aspect_near_origin_and_runtime_clipping_planes);
@@ -232,4 +258,6 @@ REGISTER_TEST(engine_portal_management, trans_place_groups_are_filtered_by_hiera
 REGISTER_TEST(engine_portal_management, off_restores_places_but_retains_viewport_and_hidden_trans_place_objects);
 REGISTER_TEST(engine_portal_management, script_deactivation_keeps_the_manager_running_and_global_reset_restores_places_and_trans_objects);
 REGISTER_TEST(engine_portal_management, automatic_generation_fits_adjacent_hierarchies_and_does_not_duplicate_existing_connections);
+REGISTER_TEST(engine_portal_management, rendered_meshes_inherit_portal_viewports_and_hidden_places_emit_no_draws);
+REGISTER_TEST(engine_portal_management, nested_places_replace_nonfull_clips_and_full_inner_viewports_keep_outer_clips);
 TEST_MAIN_END()

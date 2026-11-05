@@ -1189,6 +1189,23 @@ static void eng_frame_lights(nmo_engine_t *engine)
     }
 }
 
+/* The nearest Place that sets a nonempty, non-full viewport wins, as in
+ * CKSceneGraphNode's traversal. A full inner Place keeps an outer clip. */
+static void eng_draw_portal_clips(nmo_engine_t *engine)
+{
+    for (size_t i = 0; i < engine->render.draws.count; i++) {
+        nmo_engine_draw_t *draw = &engine->render.draws.data[i];
+        int32_t entity = eng_entity_index(engine,draw->object);
+        for (size_t depth = 0; entity >= 0 && depth < engine->entities.count; depth++) {
+            nmo_rect_t clip = eng_place_viewport_clip(engine,engine->entities.data[entity].id);
+            if (clip.left != clip.right && clip.top != clip.bottom && (clip.left != 0 || clip.top != 0 || clip.right != 1 || clip.bottom != 1)) {
+                draw->clipped = true; draw->clip_rect[0] = clip.left; draw->clip_rect[1] = clip.top; draw->clip_rect[2] = clip.right; draw->clip_rect[3] = clip.bottom; break;
+            }
+            entity = engine->entities.data[entity].parent;
+        }
+    }
+}
+
 nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *out)
 {
     if (engine == NULL || out == NULL) {
@@ -1289,6 +1306,7 @@ nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *o
         draw->transparent = transparent;
     }
     eng_managers_render(engine, ENG_RENDER_SCENE, &args);
+    eng_draw_portal_clips(engine);
     eng_render_2d_root(engine, false, width, height);
     eng_managers_render(engine, ENG_RENDER_OVERLAY, &args); /* the post render callbacks */
     eng_managers_render(engine, ENG_RENDER_POST, &args);    /* the post sprite render callbacks */

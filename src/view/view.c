@@ -1220,6 +1220,19 @@ static void view_pick(nmo_view_t *view, const nmo_engine_frame_t *frame)
 }
 
 /* Draw the engine's current frame into the back buffer. */
+static void view_clip_draw(const nmo_view_t *view, const nmo_engine_draw_t *draw, int window_height)
+{
+    if (!draw->clipped) { glDisable(GL_SCISSOR_TEST); return; }
+    int edges[4];
+    for (int i = 0; i < 4; i++) {
+        float normalized = fminf(fmaxf(draw->clip_rect[i],0),1);
+        edges[i] = (int)(normalized*(float)((i & 1) ? view->view_h : view->view_w));
+    }
+    int width = edges[2] > edges[0] ? edges[2]-edges[0] : 0, height = edges[3] > edges[1] ? edges[3]-edges[1] : 0;
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(view->view_x+edges[0],window_height-view->view_y-edges[3],width,height);
+}
+
 static nmo_status_t view_render(nmo_view_t *view, nmo_engine_frame_t *out_frame)
 {
     nmo_engine_frame_t frame;
@@ -1293,6 +1306,7 @@ static nmo_status_t view_render(nmo_view_t *view, nmo_engine_frame_t *out_frame)
             transparent[transparent_count++] = i;
             continue;
         }
+        view_clip_draw(view,draw,window_h);
         if (draw->kind == NMO_ENGINE_DRAW_SPRITE3D) {
             view_draw_sprite3d(view, &frame, draw, view_m);
             continue;
@@ -1311,6 +1325,7 @@ static nmo_status_t view_render(nmo_view_t *view, nmo_engine_frame_t *out_frame)
     }
     for (int32_t i = 0; i < transparent_count; i++) {
         const nmo_engine_draw_t *draw = &frame.draws[transparent[i]];
+        view_clip_draw(view,draw,window_h);
         if (draw->kind == NMO_ENGINE_DRAW_TRIANGLES || draw->kind == NMO_ENGINE_DRAW_LINES) {
             view_draw_triangles(view, &frame, draw, view_m);
         } else if (draw->kind == NMO_ENGINE_DRAW_SPRITE3D) {
@@ -1321,6 +1336,7 @@ static nmo_status_t view_render(nmo_view_t *view, nmo_engine_frame_t *out_frame)
     }
     free(transparent);
     free(depths);
+    glDisable(GL_SCISSOR_TEST);
     glDisable(GL_LIGHTING);
     view_begin_2d(&frame);
     for (int32_t i = end_mesh; i < frame.draw_count; i++) {
