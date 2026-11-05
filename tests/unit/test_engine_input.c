@@ -76,6 +76,40 @@ TEST(engine_input, keyboard_controller_sends_buttons_before_directions_and_ignor
     const uint32_t keys[] = {0xd2,0xc7,0xc9,0xd3,0xcf,0xd1,0x48,0x50,0x4b,0x4d}; const char *names[] = {"Joy_Button1","Joy_Button2","Joy_Button3","Joy_Button4","Joy_Button5","Joy_Button6","Joy_Up","Joy_Down","Joy_Left","Joy_Right"}; for (size_t i = 0; i < 10; i++) nmo_engine_set_key(g.f.engine,keys[i],true); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,16)); keyboard_received(&g,g.f.owner_id,names,10); fixture_end(&g.f);
 }
 
+TEST(engine_input, keyboard_controller_off_wins_before_target_and_table_validation_and_held_keys_do_not_restart_it)
+{
+    keyboard_fixture_t g; keyboard_begin(&g); keyboard_ready(&g); int32_t table[10]; read_value(&g.f,g.table,table,sizeof(table)); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.target_value,&(nmo_object_id_t){0},sizeof(nmo_object_id_t))); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.table,table,4)); nmo_engine_block_t block = {g.f.engine,eng_map_get(&g.f.engine->node_map,g.block)}; nmo_engine_block_activate_input(&block,1,true); nmo_engine_set_key(g.f.engine,0xd2,true);
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_FALSE(nmo_engine_behavior_is_active(g.f.engine,g.block)); ASSERT_TRUE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,0))); ASSERT_FALSE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,1))); keyboard_received(&g,g.f.owner_id,NULL,0); for (int i = 0; i < 3; i++) ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,16)); ASSERT_EQ(1u,runs(&g.f,g.block));
+    ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.table,table,sizeof(table))); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.target_value,&g.f.owner_id,sizeof(g.f.owner_id))); ASSERT_EQ(NMO_OK,nmo_engine_activate_script(g.f.engine,g.f.script_id,true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); const char *names[] = {"Joy_Button1"}; keyboard_received(&g,g.f.owner_id,names,1); ASSERT_EQ(2u,runs(&g.f,g.block)); fixture_end(&g.f);
+}
+
+TEST(engine_input, keyboard_controller_invalid_targets_report_owner_errors_without_consuming_on)
+{
+    for (int kind = 0; kind < 4; kind++) {
+        keyboard_fixture_t g; keyboard_begin(&g); nmo_object_id_t other = fixture_create(&g.f,kind == 3 ? NMO_CID_GROUP : NMO_CID_OBJECT,"Invalid Receiver"); ASSERT_TRUE(other != 0); keyboard_ready(&g); nmo_object_id_t target = kind == 0 ? 0 : kind == 1 ? 0x7ffffffeu : other; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.target_value,&target,sizeof(target))); if (kind == 3) nmo_engine_destroy_object(g.f.engine,other); nmo_engine_set_key(g.f.engine,0xd2,true); ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,nmo_engine_step(g.f.engine,0)); nmo_engine_event_t failure; ASSERT_TRUE(nmo_engine_failure(g.f.engine,&failure)); ASSERT_EQ(g.block,failure.behavior_id); ASSERT_EQ(NMO_ENGINE_BR_OWNERERROR,failure.result); ASSERT_TRUE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,0))); ASSERT_EQ(0u,g.f.engine->messages.sent.count); fixture_end(&g.f);
+    }
+}
+
+TEST(engine_input, keyboard_controller_retargets_live_groups_as_single_recipients_and_uses_the_target_as_sender)
+{
+    keyboard_fixture_t g; keyboard_begin(&g); nmo_object_id_t owner = g.f.owner_id, group = fixture_create(&g.f,NMO_CID_GROUP,"Receiver Group"), input = 0; ASSERT_TRUE(group != 0); g.f.owner_id = group; ASSERT_TRUE(fixture_add_script(&g.f,"Receiver Script",&input) != 0); g.f.owner_id = owner; keyboard_ready(&g); ASSERT_TRUE(eng_group_add(g.f.engine,group,owner)); nmo_engine_block_t block = {g.f.engine,eng_map_get(&g.f.engine->node_map,g.block)}; nmo_engine_block_set_waiting_for_messages(&block,group,true); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.target_value,&group,sizeof(group))); nmo_engine_set_key(g.f.engine,0xd2,true); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); const char *names[] = {"Joy_Button1"}; keyboard_received(&g,group,names,1);
+    ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.target_value,&owner,sizeof(owner))); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); keyboard_received(&g,owner,names,1); fixture_end(&g.f);
+}
+
+TEST(engine_input, keyboard_controller_uses_live_message_aliases_and_ignores_failed_individual_sends)
+{
+    keyboard_fixture_t g; keyboard_begin(&g); keyboard_ready(&g); int32_t table[10]; read_value(&g.f,g.table,table,sizeof(table)); table[4] = table[5]; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.table,table,sizeof(table))); nmo_engine_set_key(g.f.engine,0xd2,true); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); const char *names[] = {"Joy_Button2"}; keyboard_received(&g,g.f.owner_id,names,1);
+    table[4] = -1; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.table,table,sizeof(table))); nmo_engine_set_key(g.f.engine,0xc7,true); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); keyboard_received(&g,g.f.owner_id,names,1); ASSERT_TRUE(nmo_engine_behavior_is_active(g.f.engine,g.block)); fixture_end(&g.f);
+}
+
+TEST(engine_input, keyboard_controller_truncated_tables_fail_before_sending_any_key_messages)
+{
+    const size_t sizes[] = {4,28,39}; int32_t table[10] = {0};
+    for (size_t i = 0; i < sizeof(sizes)/sizeof(sizes[0]); i++) {
+        keyboard_fixture_t g; keyboard_begin(&g); keyboard_ready(&g); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.table,table,sizes[i])); nmo_engine_set_key(g.f.engine,0xd2,true); ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,nmo_engine_step(g.f.engine,0)); nmo_engine_event_t failure; ASSERT_TRUE(nmo_engine_failure(g.f.engine,&failure)); ASSERT_EQ(g.block,failure.behavior_id); ASSERT_EQ(NMO_ENGINE_BR_PARAMETERERROR,failure.result); ASSERT_TRUE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,0))); ASSERT_EQ(0u,g.f.engine->messages.sent.count); fixture_end(&g.f);
+    }
+}
+
 TEST(engine_input, key_event_reports_presses_and_releases)
 {
     engine_fixture_t f;
@@ -346,4 +380,9 @@ REGISTER_TEST(engine_input, input_string_edits_until_enter);
 REGISTER_TEST(engine_input, tt_input_string_keeps_editing_past_enter);
 REGISTER_TEST(engine_input, keyboard_controller_maps_native_scan_codes_and_repeats_held_keys_without_consuming_on);
 REGISTER_TEST(engine_input, keyboard_controller_sends_buttons_before_directions_and_ignores_main_arrow_keys);
+REGISTER_TEST(engine_input, keyboard_controller_off_wins_before_target_and_table_validation_and_held_keys_do_not_restart_it);
+REGISTER_TEST(engine_input, keyboard_controller_invalid_targets_report_owner_errors_without_consuming_on);
+REGISTER_TEST(engine_input, keyboard_controller_retargets_live_groups_as_single_recipients_and_uses_the_target_as_sender);
+REGISTER_TEST(engine_input, keyboard_controller_uses_live_message_aliases_and_ignores_failed_individual_sends);
+REGISTER_TEST(engine_input, keyboard_controller_truncated_tables_fail_before_sending_any_key_messages);
 TEST_MAIN_END()
