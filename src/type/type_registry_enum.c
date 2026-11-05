@@ -422,7 +422,12 @@ nmo_status_t nmo_type_flags_from_string(
             bool found = false;
             for (size_t i = 0; i < metadata->flags_meta.bit_count; i++) {
                 const char *bit_name = metadata->flags_meta.bits[i].name;
-                if (strncmp(bit_name, start, name_len) == 0 && bit_name[name_len] == '\0') {
+                /* CKFlagsStringFunc compares names without case (e.g. POV/Pov). */
+                size_t matched_len = 0;
+                while (matched_len < name_len && bit_name[matched_len] != '\0' &&
+                       tolower((unsigned char)bit_name[matched_len]) ==
+                           tolower((unsigned char)start[matched_len])) matched_len++;
+                if (matched_len == name_len && bit_name[matched_len] == '\0') {
                     flags_result |= (uint32_t)metadata->flags_meta.bits[i].mask;
                     found = true;
                     break;

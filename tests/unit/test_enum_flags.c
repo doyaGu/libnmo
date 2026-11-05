@@ -432,6 +432,20 @@ TEST(enum_flags, flags_from_string_accepts_comma_and_bar_lists) {
     teardown();
 }
 
+TEST(enum_flags, flags_from_string_matches_joystick_axis_names_case_insensitively) {
+    setup();
+    nmo_flags_bit_def_t bits[] = {{"Slider 1",64,NULL},{"Slider 2",128,NULL},{"Pov",256,NULL}};
+    nmo_flags_type_def_t definition = {.name = "Joy Axis",.bits = bits,.bit_count = 3};
+    nmo_guid_t guid; ASSERT_EQ(NMO_OK,nmo_type_registry_register_flags(g_type_registry,&definition,&guid));
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(g_type_registry,guid); ASSERT_NOT_NULL(type);
+    uint32_t value = 0;
+    ASSERT_EQ(NMO_OK,nmo_type_value_from_string(&value,type,g_type_registry,"Slider 1,Slider 2,POV")); ASSERT_EQ(448u,value);
+    ASSERT_EQ(NMO_OK,nmo_type_value_from_string(&value,type,g_type_registry,"sLiDeR 1 | pOv")); ASSERT_EQ(320u,value);
+    const char *invalid[] = {"PO","POV suffix","POV,Unknown"};
+    for (size_t i = 0; i < 3; i++) { ASSERT_EQ(NMO_ERR_INVALID_FORMAT,nmo_type_value_from_string(&value,type,g_type_registry,invalid[i])); ASSERT_EQ(320u,value); }
+    teardown();
+}
+
 TEST(enum_flags, register_flags_null_params) {
     setup();
     
@@ -675,6 +689,7 @@ TEST_MAIN_BEGIN()
     /* Flags tests */
     REGISTER_TEST(enum_flags, register_flags_success);
     REGISTER_TEST(enum_flags, flags_from_string_accepts_comma_and_bar_lists);
+    REGISTER_TEST(enum_flags, flags_from_string_matches_joystick_axis_names_case_insensitively);
     REGISTER_TEST(enum_flags, register_flags_null_params);
     REGISTER_TEST(enum_flags, register_flags_empty_name);
     REGISTER_TEST(enum_flags, register_flags_no_bits);
