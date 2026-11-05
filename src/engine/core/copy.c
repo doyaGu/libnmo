@@ -533,7 +533,8 @@ static int32_t copies_module(nmo_engine_t *engine, int32_t source, nmo_object_id
     return (int32_t)engine->modules.count - 1;
 }
 
-nmo_object_id_t eng_create_related_object(nmo_engine_t *engine, nmo_object_id_t model, uint32_t class_id)
+nmo_object_id_t eng_create_related_object_with_options(nmo_engine_t *engine, nmo_object_id_t model,
+    uint32_t class_id, const char *name, bool dynamic)
 {
     const eng_module_t *module = eng_module_of(engine, model, NULL);
     if (module == NULL) return 0;
@@ -548,14 +549,19 @@ nmo_object_id_t eng_create_related_object(nmo_engine_t *engine, nmo_object_id_t 
     if (eng_own_module(engine, source) != NMO_OK) return 0;
     nmo_object_id_t local = 0;
     if (nmo_session_create_object(engine->modules.data[source].session, (nmo_class_id_t)class_id,
-                                  "", NMO_GUID(0,0), &local, NULL) != NMO_OK) return 0;
+                                  name != NULL ? name : "", NMO_GUID(0,0), &local, NULL) != NMO_OK) return 0;
     int32_t range = copies_module(engine, source, local, local);
     if (range < 0 || eng_load_range(engine, range, local, local) != NMO_OK) return 0;
     nmo_object_id_t id = eng_module_id(&engine->modules.data[range], local);
-    for (size_t i = 0; i < engine->dynamic.objects.count; i++) {
-        if (engine->dynamic.objects.data[i] == model) { eng_mark_dynamic(engine,id); break; }
-    }
+    if (dynamic) eng_mark_dynamic(engine,id);
     return id;
+}
+
+nmo_object_id_t eng_create_related_object(nmo_engine_t *engine, nmo_object_id_t model, uint32_t class_id)
+{
+    bool dynamic = false;
+    for (size_t i = 0; i < engine->dynamic.objects.count; i++) if (engine->dynamic.objects.data[i] == model) { dynamic = true; break; }
+    return eng_create_related_object_with_options(engine,model,class_id,"",dynamic);
 }
 
 /* CKBehavior::Copy and friends: the runtime state of the behaviors, IOs and links. */

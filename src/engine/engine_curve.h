@@ -58,6 +58,8 @@ const eng_curve_points_t *eng_curve_points(nmo_engine_t *engine, nmo_object_id_t
 bool eng_curve_clone_points(eng_curve_points_t *out, const eng_curve_points_t *points);
 bool eng_curve_set_points(nmo_engine_t *engine, nmo_object_id_t curve, const eng_curve_points_t *points);
 bool eng_curve_remove_point(nmo_engine_t *engine, nmo_object_id_t curve, nmo_object_id_t point);
+/* CKCurve::InsertControlPoint inserts before a present precursor, or appends. */
+bool eng_curve_insert_point(nmo_engine_t *engine, nmo_object_id_t curve, nmo_object_id_t precursor, nmo_object_id_t point);
 void eng_copy_curve_points(nmo_engine_t *engine, nmo_object_id_t source, nmo_object_id_t target,
                             const nmo_object_id_t *originals, const nmo_object_id_t *copies, size_t count);
 void eng_curve_forget_object(nmo_engine_t *engine, nmo_object_id_t id);

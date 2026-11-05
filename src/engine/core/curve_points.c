@@ -92,6 +92,27 @@ bool eng_curve_remove_point(nmo_engine_t *engine, nmo_object_id_t curve, nmo_obj
     return true;
 }
 
+bool eng_curve_insert_point(nmo_engine_t *engine, nmo_object_id_t curve, nmo_object_id_t precursor, nmo_object_id_t point)
+{
+    if (!live_point(engine,point)) return false;
+    const eng_curve_points_t *points = eng_curve_points(engine,curve);
+    if (points == NULL || points->count >= INT32_MAX || points->count+1 > SIZE_MAX/sizeof(*points->ids)) return false;
+    size_t at = points->count;
+    for (size_t i = 0; i < points->count; i++) {
+        if (points->ids[i] == point) return false;
+        if (points->ids[i] == precursor && at == points->count) at = i;
+    }
+    eng_curve_points_t saved = {malloc((points->count+1)*sizeof(*saved.ids)),points->count+1};
+    if (saved.ids == NULL) return false;
+    if (at != 0) memcpy(saved.ids,points->ids,at*sizeof(*saved.ids));
+    saved.ids[at] = point;
+    if (at < points->count) memcpy(&saved.ids[at+1],&points->ids[at],(points->count-at)*sizeof(*saved.ids));
+    /* SetCurve assigns the 3D parent with KeepWorld=TRUE. */
+    eng_entity_set_parent(engine,eng_entity_index(engine,point),eng_entity_index(engine,curve),true);
+    store_points(engine,curve,saved); /* The topology entry already exists. */
+    return true;
+}
+
 void eng_copy_curve_points(nmo_engine_t *engine, nmo_object_id_t source, nmo_object_id_t target,
                             const nmo_object_id_t *originals, const nmo_object_id_t *copies, size_t count)
 {

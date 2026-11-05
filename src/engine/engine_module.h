@@ -77,6 +77,9 @@ nmo_object_id_t eng_object_named(const nmo_engine_t *engine, const char *name, u
 nmo_object_id_t eng_create_object(nmo_engine_t *engine, uint32_t class_id, const char *name);
 /* A generated animation in its model's session, with ordinary local references. */
 nmo_object_id_t eng_create_related_object(nmo_engine_t *engine, nmo_object_id_t model, uint32_t class_id);
+/* A named object in the model's session, with an explicit dynamic flag. */
+nmo_object_id_t eng_create_related_object_with_options(nmo_engine_t *engine, nmo_object_id_t model,
+    uint32_t class_id, const char *name, bool dynamic);
 /* The engine ID of an object of a module's session outside its window */
 nmo_object_id_t eng_module_id_outside(const eng_module_t *module, nmo_object_id_t local);
 /* The engine ID of a document's object ID; 0 stays 0. */
