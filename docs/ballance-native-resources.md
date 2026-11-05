@@ -137,6 +137,34 @@ motion status. The balloon's 150-unit corridor covers the standard visible
 departure. Unlimited flight, UFO endings, arbitrary replacement templates
 and complete discovery of game dependencies remain outside these checks.
 
+## Per-instance placement and physics
+
+`offset` is `[x, y, z]` in the module's original yaw frame; `yaw` adds degrees
+to that frame. These settings move the native assembly and its runtime entry
+without moving the route piece's supporting floor. The activation sector must
+be an existing sector. Unknown instance IDs and setting fields are errors.
+
+[`mechanism_parameters.json`](../apps/ballance/data/mechanism_parameters.json)
+defines each kind's parameter names, defaults, ranges, units and native parameter
+IDs. The current catalog has profiles for six kinds: `P_Modul_18`,
+`P_Modul_17`, `P_Modul_25`, `P_Modul_37`, `P_Modul_41` and `P_Modul_26`.
+Fan rotor speed is in radians per second. Joint limits use degrees; numeric
+values must be finite, and boolean fields require booleans. Omitted values use
+the native defaults. Parameters are specific to each kind: changing a template's
+installation frame does not itself change force, speed or joint limits.
+
+Nondefault physics settings require `--game` and `--nmo` at build time. The
+builder checks the original template hashes, writes a PH variant per changed
+instance and appends its groups to a copied `Levelinit.nmo`. It leaves the
+installed game files untouched. `native_dynamics.json` records instances, source
+hashes and generated file hashes; resource verification rejects missing or changed
+runtime files. Default settings do not create a variant.
+
+Keep the generated `3D Entities/` directory alongside the exported level. A bare
+NMO does not contain its PH variants. The toolchain player and verifier copy this
+runtime directory into their run folders. Other launchers must supply the same
+files ahead of the installed game resources in their load path.
+
 ## Native mechanism states and motion
 
 The measured catalog covers all thirteen native mechanism kinds used by the
