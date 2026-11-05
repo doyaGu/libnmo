@@ -171,6 +171,15 @@ static int bb_joystick_waiter(blk_t *b)
     nmo_engine_block_set_output_value(b,1,state.rotation,sizeof(state.rotation));
     nmo_engine_block_set_output_value(b,2,state.sliders,sizeof(state.sliders));
     nmo_engine_block_set_output_value(b,3,&state.point_of_view,sizeof(state.point_of_view));
+    if (nmo_engine_block_version(b) < 0x00020000u) {
+        /* Older files have ten fixed outputs and no Idle event. */
+        for (int i = 0; i < 6; i++) if (state.buttons & (1u << i)) OUT_ON(b,4+i);
+        if (state.position[1] < -sensitivity.y) OUT_ON(b,0);
+        if (state.position[1] > sensitivity.y) OUT_ON(b,1);
+        if (state.position[0] < -sensitivity.x) OUT_ON(b,2);
+        if (state.position[0] > sensitivity.x) OUT_ON(b,3);
+        return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+    }
     uint32_t axes = (uint32_t)get_local_int(b,1,3), relative = (uint32_t)get_local_int(b,3,448);
     int output = 1; bool one_active = false;
     for (uint32_t i = 0; i < 8; i++) {
