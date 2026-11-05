@@ -1,30 +1,35 @@
 """Editing transactions, dependency propagation and incremental mesh equivalence."""
+
 from copy import deepcopy
-import json
 from pathlib import Path
-import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 
-from support import TOOLCHAIN_ROOT
+import support  # noqa: F401 - resolve the external toolchain before application imports
 from ballance.core import project
 from ballance.core.nmo import Nmo
 from ballance_editor.session import Session, read
-from ballance.route.build import build
 
-ROUTE = {'schema_version': 1, 'sectors': [
-    [{'id': 'first', 'road': 20}],
-    [{'id': 'entry', 'road': 10}, {'id': 'joint', 'connector': {'length': 20, 'to': {'width': 5}}},
-     {'id': 'exit', 'road': 10}],
-    [{'id': 'last', 'road': 20}]]}
+ROUTE = {
+    'schema_version': 1,
+    'sectors': [
+        [{'id': 'first', 'road': 20}],
+        [
+            {'id': 'entry', 'road': 10},
+            {'id': 'joint', 'connector': {'length': 20, 'to': {'width': 5}}},
+            {'id': 'exit', 'road': 10},
+        ],
+        [{'id': 'last', 'road': 20}],
+    ],
+}
 
 
 class EditorTests(unittest.TestCase):
     def make(self, tmp):
-        source = Path(tmp)/'route.json'
+        source = Path(tmp) / 'route.json'
         project.write_json(source, ROUTE)
-        session = Session(source, Path(tmp)/'editor', None, Nmo('nmo'))
+        session = Session(source, Path(tmp) / 'editor', None, Nmo('nmo'))
         session.prepare()
         return session
 
@@ -42,7 +47,7 @@ class EditorTests(unittest.TestCase):
             self.assertTrue(state['before_available'])
             self.assertEqual(state['rebuild']['reused_sectors'], [1])
             self.assertEqual(read(session.source), ROUTE)
-            self.assertEqual(read(session.before/'route.json'), ROUTE)
+            self.assertEqual(read(session.before / 'route.json'), ROUTE)
             self.assertEqual(state['checks']['validation.json']['freshness']['status'], 'current')
             self.assertNotIn('full-validation.json', state['checks'])
             self.assertNotEqual(session.scene(True)['model'], session.scene()['model'])
@@ -55,7 +60,7 @@ class EditorTests(unittest.TestCase):
     def test_invalid_edit_and_failed_build_preserve_draft_and_source(self):
         with tempfile.TemporaryDirectory() as tmp:
             session = self.make(tmp)
-            old = (session.current/'sector2.obj').read_bytes()
+            old = (session.current / 'sector2.obj').read_bytes()
             piece = deepcopy(ROUTE['sectors'][1][1])
             piece['connector']['to']['width'] = 7
             with self.assertRaises(ValueError):
@@ -66,16 +71,17 @@ class EditorTests(unittest.TestCase):
             with patch('ballance.route.build.write_sector', side_effect=OSError('disk full')):
                 with self.assertRaisesRegex(OSError, 'disk full'):
                     session.apply('route/id/joint', piece, session.revision())
-            self.assertEqual((session.current/'sector2.obj').read_bytes(), old)
+            self.assertEqual((session.current / 'sector2.obj').read_bytes(), old)
             self.assertEqual(session.route, ROUTE)
             self.assertEqual(read(session.source), ROUTE)
             self.assertEqual(project.inspect(session.current)['status'], 'failed')
-            self.assertEqual(read(session.current/'validation.json')['status'], 'superseded')
+            self.assertEqual(read(session.current / 'validation.json')['status'], 'superseded')
 
     def test_external_source_changes_and_identity_replacement_are_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             session = self.make(tmp)
-            piece = deepcopy(ROUTE['sectors'][1][1]);piece['id'] = 'new'
+            piece = deepcopy(ROUTE['sectors'][1][1])
+            piece['id'] = 'new'
             with self.assertRaisesRegex(ValueError, 'ID'):
                 session.preview('route/id/joint', piece, session.revision())
             session.source.write_text('{"sectors": []}')
@@ -84,5 +90,5 @@ class EditorTests(unittest.TestCase):
             self.assertEqual(session.source.read_text(), '{"sectors": []}')
 
 
-
-if __name__ == "__main__": unittest.main()
+if __name__ == '__main__':
+    unittest.main()
