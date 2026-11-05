@@ -69,6 +69,12 @@ def inspect(folder: Path, specification: dict, sector=1, finish=None):
         return sector + sum(cp < frame for cp in checkpoints) == target
 
     outcomes = {}
+    actions = [contract['action'] for contract in contracts if contract['kind'] == 'action']
+    action_trace = None
+    if actions:
+        from .actions import ActionTrace
+
+        action_trace = ActionTrace(folder, actions)
     for contract in contracts:
         outcome = {'id': contract['id'], 'source': contract['source'], 'sector': contract['sector']}
         if contract['sector'] < sector:
@@ -77,7 +83,16 @@ def inspect(folder: Path, specification: dict, sector=1, finish=None):
                 reason='Before requested starting sector; assumed by harness setup.',
             )
         else:
-            if contract['kind'] == 'passage':
+            if contract['kind'] == 'action':
+                observation = action_trace.inspect(
+                    contract['action'],
+                    first,
+                    finish or rows[-1]['frame'],
+                    eligible=lambda frame: in_sector(frame, contract['sector']),
+                )
+                matches = observation['occurrences']
+                outcome['action'] = observation
+            elif contract['kind'] == 'passage':
                 matches = [
                     row
                     for row in rows
@@ -138,6 +153,6 @@ def inspect(folder: Path, specification: dict, sector=1, finish=None):
         'events': events,
         'scope': specification['scope'],
         'limits': 'Endpoint gates observe sampled passage, not all possible '
-        'shortcuts or mechanism events. Earlier sectors in partial runs '
-        'are setup assumptions.',
+        'shortcuts. Action predicates only prove their declared sampled condition. '
+        'Earlier sectors in partial runs are setup assumptions.',
     }

@@ -29,6 +29,7 @@ def compile_contracts(route, layout):
             'event',
             'sector',
             'after',
+            'action',
         }:
             raise ValueError(f'{source}: unknown gameplay contract fields')
         identity = item.get('id')
@@ -38,10 +39,20 @@ def compile_contracts(route, layout):
             or identity in known
         ):
             raise ValueError(f'{source}: contract needs a unique stable id')
-        if ('at' in item) == ('event' in item):
-            raise ValueError(f'{source}: choose at or event')
+        if sum(key in item for key in ('at', 'event', 'action')) != 1:
+            raise ValueError(f'{source}: choose at, event or action')
         contract = {'id': identity, 'source': source}
-        if 'at' in item:
+        if 'action' in item:
+            from .actions import compile_action
+
+            if set(item) & {'ball', 'radius', 'sector'}:
+                raise ValueError(f'{source}: action derives its sector from the mechanism')
+            try:
+                action = compile_action(item['action'], layout)
+            except ValueError as error:
+                raise ValueError(f'{source}: {error}') from error
+            contract.update(kind='action', action=action, sector=action['sector'])
+        elif 'at' in item:
             entity = item['at']
             part = parts.get(entity) if isinstance(entity, str) else None
             if part is None or part.end is None or 'sector' in item:
@@ -99,6 +110,6 @@ def compile_contracts(route, layout):
         'schema_version': 1,
         'contracts': result,
         'scope': 'Observed ball identity at authored endpoint gates and native '
-        'All_Gameplay messages. Passage is not proof of mechanism '
-        'completion.',
+        'All_Gameplay messages, plus explicit sustained native hinge and ball-region '
+        'actions. Passage alone is not proof of mechanism completion.',
     }
