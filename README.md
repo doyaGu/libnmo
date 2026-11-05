@@ -328,6 +328,10 @@ Tooling for one game lives under `apps/`, outside the libraries, which know noth
 `apps/ballance/` holds the Ballance level scripts (`scripts/`) and the data they read (`data/`);
 [docs/ballance-level-builder.md](docs/ballance-level-builder.md) describes them.
 
+[`apps/ballance-editor/`](apps/ballance-editor/README.md) is a separate application
+that consumes the toolchain. It has its own launcher, browser assets and tests;
+editor development is paused. The toolchain has no dependency on that application.
+
 ### Key Design Decisions
 
 - **DWORD alignment**: all chunk positions and sizes are measured in 4-byte
