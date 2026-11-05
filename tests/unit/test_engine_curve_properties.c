@@ -18,7 +18,7 @@
 typedef struct curve_fixture {
     engine_fixture_t f;
     nmo_object_id_t curve, points[3];
-    nmo_object_id_t setter, getter, out;
+    nmo_object_id_t setter, getter, out, entry_link;
 } curve_fixture_t;
 
 static void begin(curve_fixture_t *g, size_t count)
@@ -169,7 +169,7 @@ static void graph_begin(curve_fixture_t *g, bool with_setter, size_t count)
         fixture_input_int(&g->f,fixture_target(&g->f,g->setter),(int32_t)g->curve);
         fixture_link(&g->f,BLOCK_OUT(&g->f,g->setter,0),BLOCK_IN(&g->f,g->getter,0),0); first = g->setter;
     }
-    fixture_link(&g->f,g->f.script_in,BLOCK_IN(&g->f,first,0),0);
+    ASSERT_EQ(NMO_OK,nmo_script_edit_add_behavior_link(g->f.tx,g->f.script_id,g->f.script_in,BLOCK_IN(&g->f,first,0),0,&g->entry_link));
     fixture_link(&g->f,BLOCK_OUT(&g->f,g->getter,0),BLOCK_IN(&g->f,g->out,0),0);
 }
 
@@ -320,6 +320,137 @@ TEST(engine_curve_properties, missing_setter_targets_skip_lazy_fitting_operation
     ASSERT_EQ(1u,operations); ASSERT_EQ(1u,runs(&g.f,g.out)); fixture_end(&g.f);
 }
 
+static nmo_object_id_t position_block(curve_fixture_t *g, float step)
+{
+    nmo_object_id_t block = fixture_block(&g->f,NMO_GUID(0x676776d0,0x20d457bd),"Position On Edited Curve");
+    if (block == 0) return 0;
+    fixture_input_int(&g->f,fixture_target(&g->f,block),(int32_t)g->f.owner_id);
+    fixture_input_int(&g->f,BLOCK_PIN(&g->f,block,0),(int32_t)g->curve);
+    fixture_input_value(&g->f,BLOCK_PIN(&g->f,block,1),&step,sizeof(step)); fixture_input_int(&g->f,BLOCK_PIN(&g->f,block,2),0);
+    fixture_link(&g->f,BLOCK_OUT(&g->f,g->getter,0),BLOCK_IN(&g->f,block,0),0);
+    return block;
+}
+
+TEST(engine_curve_properties, same_frame_property_changes_reposition_followers_using_the_edited_curve)
+{
+    curve_fixture_t g; graph_begin(&g,true,3); nmo_object_id_t follow = position_block(&g,.75f); ASSERT_TRUE(follow != 0);
+    fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.setter,0),1); fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.setter,1),100);
+    const float zero = 0; fixture_input_value(&g.f,BLOCK_PIN(&g.f,g.setter,2),&zero,sizeof(zero));
+    const nmo_object_id_t parameters[] = {source(&g,BLOCK_PIN(&g.f,g.setter,0)),source(&g,BLOCK_PIN(&g.f,g.setter,1)),source(&g,BLOCK_PIN(&g.f,g.setter,2))};
+    const eng_curve_properties_t values[] = {{1,100,0},{0,-1,0},{0,3,.5f},{1,0,1}};
+    const float lengths[] = {14,24,6,7}; const eng_vector_t positions[] = {{6,4.5f,0},{3.6f,4.8f,0},{3.9f,3.2f,0},{4.25f,4,0}};
+    graph_commit(&g);
+    for (size_t i = 0; i < COUNT(values); i++) {
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,parameters[0],&values[i].opened,sizeof(int32_t)));
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,parameters[1],&values[i].step_count,sizeof(int32_t)));
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,parameters[2],&values[i].fitting_coeff,sizeof(float))); trigger(&g.f);
+        outputs(&g.f,g.getter,values[i].opened,values[i].step_count,values[i].fitting_coeff,lengths[i]);
+        vector(eng_entity_position(g.f.engine,eng_entity_index(g.f.engine,g.f.owner_id),-1),positions[i]);
+    }
+    ASSERT_EQ(4u,runs(&g.f,follow)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,100)); ASSERT_EQ(4u,runs(&g.f,g.setter)); fixture_end(&g.f);
+}
+
+static nmo_object_id_t saved_value(curve_fixture_t *g, nmo_object_id_t pin, const char *value)
+{
+    nmo_object_id_t parameter = 0;
+    if (nmo_script_edit_ensure_input_parameter_source(g->f.tx,pin,&parameter) != NMO_OK ||
+        nmo_script_edit_set_parameter_value(g->f.tx,parameter,value) != NMO_OK) return 0;
+    return parameter;
+}
+
+static const char *resolve_file(void *data, const char *name)
+{
+    (void)name; return data;
+}
+
+static nmo_object_id_t loaded_source(nmo_engine_t *engine, nmo_object_id_t block, int pos)
+{
+    nmo_object_t *object = eng_find_object(engine,block);
+    const nmo_behavior_state_t *behavior = object != NULL ? nmo_object_get_state(object) : NULL;
+    const eng_module_t *module = eng_module_of(engine,block,NULL);
+    if (behavior == NULL || module == NULL) return 0;
+    nmo_object_id_t pin = pos < 0 ? nmo_behavior_target_parameter_id(behavior) : nmo_behavior_ref_array_get_id(&behavior->in_parameters,(size_t)pos);
+    object = eng_find_object(engine,eng_module_id(module,pin));
+    const nmo_parameterin_state_t *input = object != NULL ? nmo_object_get_state(object) : NULL;
+    return input != NULL ? eng_module_id(module,nmo_parameterin_source_id(input)) : 0;
+}
+
+TEST(engine_curve_properties, loaded_and_copied_graphs_keep_curve_properties_points_and_parameters_independent)
+{
+    curve_fixture_t g; graph_begin(&g,true,3); char text[32]; snprintf(text,sizeof(text),"%u",g.curve);
+    ASSERT_TRUE(saved_value(&g,fixture_target(&g.f,g.setter),text) != 0); ASSERT_TRUE(saved_value(&g,fixture_target(&g.f,g.getter),text) != 0);
+    ASSERT_TRUE(saved_value(&g,BLOCK_PIN(&g.f,g.setter,0),"FALSE") != 0); ASSERT_TRUE(saved_value(&g,BLOCK_PIN(&g.f,g.setter,1),"-17") != 0);
+    ASSERT_TRUE(saved_value(&g,BLOCK_PIN(&g.f,g.setter,2),"0.5") != 0); fixture_commit_bare(&g.f,NULL);
+    nmo_beobject_state_t *owner = fixture_state(&g.f,g.f.owner_id);
+    owner->has_single_activity = 1; owner->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE;
+    nmo_behavior_state_t *script = fixture_state(&g.f,g.f.script_id);
+    script->has_single_activity = 1; script->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE | CK_SCENEOBJECT_START_RESET;
+    const char *path = NMO_TEST_SCRATCH_FILE("engine_curve_properties.cmo"); ASSERT_EQ(NMO_OK,nmo_session_save_file(g.f.session,path,NULL,NULL));
+    for (int started = 0; started < 2; started++) {
+        engine_fixture_t host; fixture_begin_document(&host); fixture_begin_edit(&host);
+        nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL; fixture_commit(&host,&options);
+        if (started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_ALL));
+        nmo_engine_set_file_resolver(host.engine,resolve_file,(void *)path);
+        int32_t file = -1; ASSERT_EQ(NMO_OK,nmo_engine_load(host.engine,"curve-properties.cmo",true,&file));
+        if (!started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_SCENE_DEFAULT));
+        nmo_object_id_t getter = nmo_engine_object_named(host.engine,"Get Curve Properties",NMO_CID_BEHAVIOR); ASSERT_TRUE(getter != 0);
+        const eng_module_t *module = eng_module_of(host.engine,getter,NULL);
+        const char *names[] = {"Owner","Triangle Path","Point A","Point B","Point C","Curve Properties Script","Set Curve Properties","Get Curve Properties","After Properties"};
+        nmo_object_id_t ids[14] = {0}, copies[14] = {0};
+        for (size_t i = 0; i < COUNT(names); i++) {
+            nmo_object_t *object = nmo_object_repository_find_by_name(module->repo,names[i]); ASSERT_NOT_NULL(object);
+            ids[i] = eng_module_id(module,nmo_object_get_id(object)); ASSERT_TRUE(ids[i] != 0);
+        }
+        ids[9] = loaded_source(host.engine,ids[6],-1); ids[10] = loaded_source(host.engine,ids[7],-1);
+        for (int pin = 0; pin < 3; pin++) ids[11+pin] = loaded_source(host.engine,ids[6],pin);
+        for (size_t i = 9; i < COUNT(ids); i++) ASSERT_TRUE(ids[i] != 0);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0)); outputs(&host,ids[7],0,-17,.5f,6); sample(host.engine,ids[1],0,(eng_vector_t){3,2,0});
+        ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(host.engine,ids,COUNT(ids),false,copies));
+        for (size_t i = 0; i < COUNT(copies); i++) ASSERT_TRUE(copies[i] != 0);
+        for (size_t i = 2; i < 5; i++) ASSERT_EQ(copies[1],nmo_engine_entity_parent(host.engine,copies[i]));
+        nmo_object_id_t reference = 0; read_value(&host,copies[9],&reference,sizeof(reference)); ASSERT_EQ(copies[1],reference);
+        read_value(&host,copies[10],&reference,sizeof(reference)); ASSERT_EQ(copies[1],reference);
+        const int32_t open = 1, steps = 23; const float fitting = 1;
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[11],&open,sizeof(open)));
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[12],&steps,sizeof(steps)));
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[13],&fitting,sizeof(fitting)));
+        ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[5],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
+        outputs(&host,copies[7],1,23,1,7); properties(host.engine,ids[1],0,-17,.5f); length(host.engine,ids[1],6);
+        nmo_engine_destroy_object(host.engine,ids[1]); for (size_t i = 2; i < 5; i++) nmo_engine_destroy_object(host.engine,ids[i]); nmo_engine_destroy_object(host.engine,ids[0]);
+        eng_vector_t moved = {20,10,5}; eng_entity_set_position(host.engine,eng_entity_index(host.engine,copies[1]),&moved,-1,false);
+        const int32_t closed = 0, zero = 0; const float half = .5f;
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[11],&closed,sizeof(closed)));
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[12],&zero,sizeof(zero)));
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[13],&half,sizeof(half)));
+        ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[5],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
+        outputs(&host,copies[7],0,0,.5f,6); sample(host.engine,copies[1],0,(eng_vector_t){23,12,5});
+        ASSERT_EQ(2u,runs(&host,copies[8])); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,100)); ASSERT_EQ(2u,runs(&host,copies[6])); fixture_end(&host);
+    }
+    const nmo_curve_state_t *state = fixture_state(&g.f,g.curve); ASSERT_EQ(1u,state->opened); ASSERT_EQ(100u,state->step_count); ASSERT_FLOAT_EQ(0,state->fitting_coeff,0);
+    fixture_end(&g.f); remove(path);
+}
+
+TEST(engine_curve_properties, bezier_progression_changes_curve_length_and_follower_position_until_completion)
+{
+    curve_fixture_t g; graph_begin(&g,true,3); nmo_object_id_t follow = position_block(&g,1); ASSERT_TRUE(follow != 0);
+    ASSERT_EQ(NMO_OK,nmo_script_edit_remove_behavior_link(g.f.tx,g.f.script_id,g.entry_link));
+    fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.setter,0),0); fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.setter,1),100);
+    nmo_object_id_t progress = fixture_block(&g.f,NMO_GUID(0x6bb8699a,0x29fb6a4b),"Progress"); ASSERT_TRUE(progress != 0);
+    const float values[] = {40,0,.5f};
+    for (size_t i = 0; i < COUNT(values); i++) fixture_input_value(&g.f,BLOCK_PIN(&g.f,progress,i),&values[i],sizeof(float));
+    nmo_object_id_t curve = 0; ASSERT_EQ(NMO_OK,nmo_script_edit_ensure_input_parameter_source(g.f.tx,BLOCK_PIN(&g.f,progress,3),&curve));
+    ASSERT_EQ(NMO_OK,nmo_script_edit_connect_parameter(g.f.tx,BLOCK_POUT(&g.f,progress,1),BLOCK_PIN(&g.f,g.setter,2)));
+    fixture_link(&g.f,g.f.script_in,BLOCK_IN(&g.f,progress,0),0); fixture_link(&g.f,BLOCK_OUT(&g.f,progress,1),BLOCK_IN(&g.f,progress,1),1);
+    for (int out = 0; out < 2; out++) fixture_link(&g.f,BLOCK_OUT(&g.f,progress,out),BLOCK_IN(&g.f,g.setter,0),0); graph_commit(&g);
+    for (int frame = 1; frame <= 5; frame++) {
+        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,10)); float fitting = frame < 4 ? frame*.125f : .5f;
+        outputs(&g.f,g.getter,0,100,fitting,24-36*fitting);
+        vector(eng_entity_position(g.f.engine,eng_entity_index(g.f.engine,g.f.owner_id),-1),(eng_vector_t){6*fitting,4*fitting,0});
+    }
+    ASSERT_EQ(5u,runs(&g.f,progress)); ASSERT_EQ(5u,runs(&g.f,g.setter)); ASSERT_EQ(5u,runs(&g.f,g.getter)); ASSERT_EQ(5u,runs(&g.f,follow));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,100)); ASSERT_EQ(5u,runs(&g.f,g.setter)); fixture_end(&g.f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_curve_properties, runtime_properties_preserve_native_defaults_and_leave_the_document_and_other_engines_unchanged);
 REGISTER_TEST(engine_curve_properties, opening_closing_and_fitting_change_length_and_positions_immediately_without_using_display_steps);
@@ -335,4 +466,7 @@ REGISTER_TEST(engine_curve_properties, opening_an_already_open_curve_preserves_i
 REGISTER_TEST(engine_curve_properties, live_getter_and_setter_targets_can_change_independently);
 REGISTER_TEST(engine_curve_properties, invalid_targets_consume_input_activate_out_and_preserve_getter_values);
 REGISTER_TEST(engine_curve_properties, missing_setter_targets_skip_lazy_fitting_operations);
+REGISTER_TEST(engine_curve_properties, same_frame_property_changes_reposition_followers_using_the_edited_curve);
+REGISTER_TEST(engine_curve_properties, loaded_and_copied_graphs_keep_curve_properties_points_and_parameters_independent);
+REGISTER_TEST(engine_curve_properties, bezier_progression_changes_curve_length_and_follower_position_until_completion);
 TEST_MAIN_END()
