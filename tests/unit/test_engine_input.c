@@ -20,6 +20,7 @@
 #define GUID_TT_INPUT_STRING NMO_GUID(0x52fd6294, 0x612f51a5)
 #define GUID_KEYBOARD_CONTROLLER NMO_GUID(0x43f1d000,0x1a2b3c4d)
 #define GUID_KEYBOARD_MAPPER NMO_GUID(0x053b2bde,0x2f8f1d74)
+#define GUID_JOYSTICK_WAITER NMO_GUID(0x012d010b,0x013d010b)
 #define GUID_JOYSTICK_MAPPER NMO_GUID(0x03ed1bea,0x25692ecc)
 #define GUID_JOYSTICK_CONTROLLER NMO_GUID(0x0085ebc1,0x21935422)
 
@@ -71,6 +72,78 @@ TEST(engine_input, four_joystick_slots_are_independent_and_invalid_indices_retur
 TEST(engine_input, joystick_snapshots_remain_private_to_each_engine_and_survive_script_reactivation)
 {
     engine_fixture_t f; fixture_begin(&f); fixture_commit_bare(&f,NULL); ASSERT_EQ(NMO_OK,nmo_engine_start(f.engine,NMO_ENGINE_START_ALL)); nmo_engine_t *second = NULL; ASSERT_EQ(NMO_OK,nmo_engine_create(f.workspace,NULL,&second)); ASSERT_EQ(NMO_OK,nmo_engine_start(second,NMO_ENGINE_START_ALL)); nmo_engine_joystick_state_t state = {.attached = true,.position = {.75f,0,0},.point_of_view = -1,.buttons = 32}; nmo_engine_set_joystick(f.engine,0,&state); ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0)); ASSERT_EQ(NMO_OK,nmo_engine_step(second,0)); ASSERT_FALSE(nmo_engine_joystick_state(second,0,NULL)); state.position[0] = -.75f; nmo_engine_set_joystick(second,0,&state); ASSERT_EQ(NMO_OK,nmo_engine_step(second,0)); ASSERT_TRUE(nmo_engine_joystick_state(f.engine,0,&state)); ASSERT_FLOAT_EQ(.75f,state.position[0],0); ASSERT_EQ(NMO_OK,nmo_engine_activate_script(f.engine,f.script_id,false,false)); ASSERT_EQ(NMO_OK,nmo_engine_activate_script(f.engine,f.script_id,true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0)); ASSERT_TRUE(nmo_engine_joystick_state(f.engine,0,&state)); ASSERT_FLOAT_EQ(.75f,state.position[0],0); nmo_engine_destroy(second); fixture_end(&f);
+}
+
+typedef struct joystick_waiter_fixture {
+    engine_fixture_t f;
+    nmo_object_id_t block, number_value, settings[4], values[4], observers[43];
+    uint64_t hits[43];
+    size_t output_count;
+} joystick_waiter_fixture_t;
+
+static void joystick_waiter_begin(joystick_waiter_fixture_t *g)
+{
+    memset(g,0,sizeof(*g)); fixture_begin(&g->f); g->block = fixture_block(&g->f,GUID_JOYSTICK_WAITER,"Joystick Waiter"); ASSERT_TRUE(g->block != 0); ASSERT_EQ(0u,fixture_target(&g->f,g->block)); nmo_object_id_t number = BLOCK_PIN(&g->f,g->block,0); fixture_input_int(&g->f,number,0); g->number_value = nmo_parameterin_source_id(fixture_state(&g->f,number)); const nmo_behavior_state_t *state = fixture_state(&g->f,g->block);
+    for (size_t i = 0; i < 4; i++) { g->settings[i] = nmo_behavior_ref_array_get_id(&state->local_parameters,i); g->values[i] = BLOCK_POUT(&g->f,g->block,i); ASSERT_TRUE(g->settings[i] != 0 && g->values[i] != 0); } fixture_link(&g->f,g->f.script_in,BLOCK_IN(&g->f,g->block,0),0);
+}
+
+static void joystick_waiter_output(joystick_waiter_fixture_t *g, const char *name)
+{
+    ASSERT_TRUE(g->output_count < 43); nmo_object_id_t output = 0; ASSERT_EQ(NMO_OK,nmo_script_edit_add_io(g->f.tx,g->block,NMO_SCRIPT_EDIT_IO_OUTPUT,name,&output)); nmo_object_id_t observer = fixture_block(&g->f,GUID_NOP,name); ASSERT_TRUE(observer != 0); fixture_link(&g->f,output,BLOCK_IN(&g->f,observer,0),0); g->observers[g->output_count++] = observer;
+}
+
+/* Author the same compact output layout as the native settings editor. */
+static void joystick_waiter_layout(joystick_waiter_fixture_t *g, uint32_t axes, uint32_t buttons)
+{
+    const nmo_behavior_state_t *state = fixture_state(&g->f,g->block);
+    while (state->outputs.count) ASSERT_EQ(NMO_OK,nmo_script_edit_remove_io(g->f.tx,nmo_behavior_ref_array_get_id(&state->outputs,state->outputs.count-1),true));
+    joystick_waiter_output(g,"Joystick Idle"); const char *names[] = {"Axis X Moved","Axis Y Moved","Axis Z Moved","Rotation X Moved","Rotation Y Moved","Rotation Z Moved","Slider 1 Moved","Slider 2 Moved","Point Of View Moved","Point Of View Centered"};
+    for (uint32_t i = 0; i < 8; i++) if (axes & (1u << i)) joystick_waiter_output(g,names[i]);
+    if (axes & 256u) { joystick_waiter_output(g,names[8]); joystick_waiter_output(g,names[9]); }
+    for (uint32_t i = 0; i < 32; i++) if (buttons & (1u << i)) { char name[32]; snprintf(name,sizeof(name),"Button %u Pressed",i+1); joystick_waiter_output(g,name); }
+}
+
+static void joystick_waiter_configure(joystick_waiter_fixture_t *g, uint32_t axes, uint32_t buttons, uint32_t relative)
+{
+    const uint32_t flags[] = {axes,buttons,relative}; for (size_t i = 0; i < 3; i++) ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_bytes(g->f.tx,g->settings[i+1],(const uint8_t *)&flags[i],sizeof(flags[i]))); joystick_waiter_layout(g,axes,buttons);
+}
+
+static void joystick_waiter_ready(joystick_waiter_fixture_t *g)
+{
+    nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL; fixture_commit(&g->f,&options); ASSERT_TRUE(nmo_engine_has_block(g->f.engine,GUID_JOYSTICK_WAITER)); ASSERT_EQ(NMO_OK,nmo_engine_start(g->f.engine,NMO_ENGINE_START_ALL)); nmo_engine_block_t block = {g->f.engine,eng_map_get(&g->f.engine->node_map,g->block)}; ASSERT_EQ(g->output_count,(size_t)nmo_engine_block_output_count(&block));
+}
+
+static void joystick_waiter_values(joystick_waiter_fixture_t *g, const nmo_engine_joystick_state_t *state)
+{
+    float position[3], rotation[3], sliders[2], pov; read_value(&g->f,g->values[0],position,sizeof(position)); read_value(&g->f,g->values[1],rotation,sizeof(rotation)); read_value(&g->f,g->values[2],sliders,sizeof(sliders)); read_value(&g->f,g->values[3],&pov,sizeof(pov));
+    for (size_t i = 0; i < 3; i++) { ASSERT_FLOAT_EQ(state->position[i],position[i],0); ASSERT_FLOAT_EQ(state->rotation[i],rotation[i],0); } for (size_t i = 0; i < 2; i++) ASSERT_FLOAT_EQ(state->sliders[i],sliders[i],0); ASSERT_FLOAT_EQ(state->point_of_view,pov,0);
+}
+
+static void joystick_waiter_step(joystick_waiter_fixture_t *g, uint64_t outputs, const nmo_engine_joystick_state_t *state)
+{
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g->f.engine,0));
+    for (size_t i = 0; i < g->output_count; i++) { if (outputs & (UINT64_C(1) << i)) g->hits[i]++; ASSERT_EQ(g->hits[i],runs(&g->f,g->observers[i])); }
+    joystick_waiter_values(g,state); ASSERT_TRUE(nmo_engine_io_is_active(g->f.engine,BLOCK_IN(&g->f,g->block,0))); ASSERT_TRUE(nmo_engine_behavior_is_active(g->f.engine,g->block));
+}
+
+TEST(engine_input, joystick_waiter_defaults_repeat_selected_axes_buttons_and_idle_while_publishing_all_raw_values)
+{
+    joystick_waiter_fixture_t g; joystick_waiter_begin(&g); joystick_waiter_layout(&g,3,1); joystick_waiter_ready(&g); const uint32_t defaults[] = {3,1,448}; for (size_t i = 0; i < 3; i++) { uint32_t value = 0; read_value(&g.f,g.settings[i+1],&value,sizeof(value)); ASSERT_EQ(defaults[i],value); } float sensitivity[3]; read_value(&g.f,g.settings[0],sensitivity,sizeof(sensitivity)); ASSERT_FLOAT_EQ(.5f,sensitivity[0],0); ASSERT_FLOAT_EQ(.1f,sensitivity[1],0); ASSERT_FLOAT_EQ(.5f,sensitivity[2],0);
+    nmo_engine_joystick_state_t state = {.attached = true,.position = {.75f,-.9f,2},.rotation = {3,4,5},.sliders = {6,7},.point_of_view = .25f,.buttons = UINT32_MAX}; nmo_engine_set_joystick(g.f.engine,0,&state); joystick_waiter_step(&g,14,&state); joystick_waiter_step(&g,14,&state);
+    state.position[0] = .5f; state.position[1] = -.5f; state.buttons = 0xfffffffeu; nmo_engine_set_joystick(g.f.engine,0,&state); joystick_waiter_step(&g,1,&state); joystick_waiter_step(&g,1,&state); fixture_end(&g.f);
+}
+
+TEST(engine_input, joystick_waiter_compacts_all_axis_pov_and_32_button_outputs_in_native_order)
+{
+    joystick_waiter_fixture_t g; joystick_waiter_begin(&g); joystick_waiter_configure(&g,511,UINT32_MAX,0); joystick_waiter_ready(&g); ASSERT_EQ(43u,g.output_count); nmo_engine_joystick_state_t state = {.attached = true,.position = {.75f,-.75f,.75f},.rotation = {-.75f,.75f,-.75f},.sliders = {.75f,-.75f},.point_of_view = .25f,.buttons = UINT32_MAX}; nmo_engine_set_joystick(g.f.engine,0,&state); const uint64_t all = (UINT64_C(1) << 43)-1; joystick_waiter_step(&g,all & ~UINT64_C(1) & ~(UINT64_C(1) << 10),&state);
+    for (uint32_t i = 0; i < 32; i++) { state.buttons = 1u << i; memset(state.position,0,sizeof(state.position)); memset(state.rotation,0,sizeof(state.rotation)); memset(state.sliders,0,sizeof(state.sliders)); state.point_of_view = -1; nmo_engine_set_joystick(g.f.engine,0,&state); joystick_waiter_step(&g,(UINT64_C(1) << 10) | (UINT64_C(1) << (11+i)),&state); } fixture_end(&g.f);
+}
+
+TEST(engine_input, joystick_waiter_relative_axes_compare_each_sample_to_the_previous_output_values)
+{
+    joystick_waiter_fixture_t g; joystick_waiter_begin(&g); joystick_waiter_configure(&g,255,0,255); ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(g.f.tx,g.settings[0],"0.75,0.125,99")); joystick_waiter_ready(&g); nmo_engine_joystick_state_t state = {.attached = true,.position = {.25f,-.25f,.25f},.rotation = {-.25f,.25f,-.25f},.sliders = {.25f,-.25f},.point_of_view = -1}; nmo_engine_set_joystick(g.f.engine,0,&state); joystick_waiter_step(&g,510,&state); joystick_waiter_step(&g,1,&state);
+    for (size_t i = 0; i < 3; i++) { state.position[i] += .125f; state.rotation[i] += .125f; } for (size_t i = 0; i < 2; i++) state.sliders[i] += .125f; nmo_engine_set_joystick(g.f.engine,0,&state); joystick_waiter_step(&g,1,&state);
+    for (size_t i = 0; i < 3; i++) { state.position[i] -= .25f; state.rotation[i] -= .25f; } for (size_t i = 0; i < 2; i++) state.sliders[i] -= .25f; nmo_engine_set_joystick(g.f.engine,0,&state); joystick_waiter_step(&g,510,&state); joystick_waiter_step(&g,1,&state); fixture_end(&g.f);
 }
 
 typedef struct joystick_fixture {
@@ -724,6 +797,10 @@ TEST(engine_input, tt_input_string_keeps_editing_past_enter)
 }
 
 TEST_MAIN_BEGIN()
+REGISTER_TEST(engine_input, joystick_waiter_defaults_repeat_selected_axes_buttons_and_idle_while_publishing_all_raw_values);
+REGISTER_TEST(engine_input, joystick_waiter_compacts_all_axis_pov_and_32_button_outputs_in_native_order);
+REGISTER_TEST(engine_input, joystick_waiter_relative_axes_compare_each_sample_to_the_previous_output_values);
+
 REGISTER_TEST(engine_input, loaded_joystick_mappers_rebind_active_names_and_copies_keep_cached_bindings_and_analog_state);
 
 REGISTER_TEST(engine_input, joystick_mapper_direction_comparisons_preserve_strict_negative_and_nonfinite_thresholds);

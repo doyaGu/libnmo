@@ -151,6 +151,54 @@ static int bb_joystick_controller(blk_t *b)
     return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
 }
 
+/* Joystick Waiter V2 numbers outputs by enabled axes, POV moved/centered,
+ * then enabled buttons. Its output parameters are also the relative history. */
+static int bb_joystick_waiter(blk_t *b)
+{
+    if (IN_ACTIVE(b,1)) { IN_OFF(b,1); return NMO_ENGINE_BR_OK; }
+    nmo_object_id_t owner = nmo_engine_block_owner(b);
+    if (eng_map_get(&b->engine->destroyed,owner) >= 0 ||
+        !eng_is_child_class(b->engine,nmo_engine_object_class(b->engine,owner),NMO_CID_BEOBJECT)) return NMO_ENGINE_BR_OWNERERROR;
+    nmo_engine_joystick_state_t state;
+    if (!nmo_engine_joystick_state(b->engine,get_in_int(b,0,0),&state)) return NMO_ENGINE_BR_GENERICERROR;
+    eng_vector_t sensitivity = {.5f,.5f,.5f}; nmo_engine_block_get_local_value(b,0,&sensitivity,sizeof(sensitivity));
+    float previous[8] = {0}, old_pov = -1;
+    nmo_engine_block_get_output_value(b,0,previous,3*sizeof(float));
+    nmo_engine_block_get_output_value(b,1,previous+3,3*sizeof(float));
+    nmo_engine_block_get_output_value(b,2,previous+6,2*sizeof(float));
+    nmo_engine_block_get_output_value(b,3,&old_pov,sizeof(old_pov));
+    nmo_engine_block_set_output_value(b,0,state.position,sizeof(state.position));
+    nmo_engine_block_set_output_value(b,1,state.rotation,sizeof(state.rotation));
+    nmo_engine_block_set_output_value(b,2,state.sliders,sizeof(state.sliders));
+    nmo_engine_block_set_output_value(b,3,&state.point_of_view,sizeof(state.point_of_view));
+    uint32_t axes = (uint32_t)get_local_int(b,1,3), relative = (uint32_t)get_local_int(b,3,448);
+    int output = 1; bool one_active = false;
+    for (uint32_t i = 0; i < 8; i++) {
+        uint32_t bit = 1u << i;
+        if ((axes & bit) == 0) continue;
+        float value = i < 3 ? state.position[i] : i < 6 ? state.rotation[i-3] : state.sliders[i-6];
+        float threshold = sensitivity.x;
+        if (relative & bit) { value = i < 3 ? previous[i]-value : value-previous[i]; threshold = sensitivity.y; }
+        if (value < -threshold || value > threshold) { OUT_ON(b,output); one_active = true; }
+        output++;
+    }
+    if (axes & 256u) {
+        if ((relative & 256u) == 0 || state.point_of_view != old_pov) {
+            OUT_ON(b,output+(state.point_of_view >= 0 ? 0 : 1)); one_active = true;
+        }
+        output += 2;
+    }
+    uint32_t buttons = (uint32_t)get_local_int(b,2,1);
+    for (uint32_t i = 0; i < 32; i++) {
+        uint32_t bit = 1u << i;
+        if ((buttons & bit) == 0) continue;
+        if (state.buttons & bit) { OUT_ON(b,output); one_active = true; }
+        output++;
+    }
+    if (!one_active) OUT_ON(b,0);
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
 /* Key Event: Pressed when every key waited is down, Released when one goes up. */
 static int bb_key_event(blk_t *b)
 {
@@ -892,6 +940,7 @@ static const nmo_engine_block_desc_t eng_controller_blocks[] = {
     {NMO_GUID_INIT(0x053b2bde,0x2f8f1d74),"Keyboard Mapper",bb_keyboard_mapper,cb_mapper_bindings,NULL},
     {NMO_GUID_INIT(0x43f1d000,0x1a2b3c4d),"Keyboard Controller",bb_keyboard_controller,cb_controller_messages,NULL},
     {NMO_GUID_INIT(0x03ed1bea,0x25692ecc),"Joystick Mapper",bb_joystick_mapper,cb_mapper_bindings,NULL},
+    {NMO_GUID_INIT(0x012d010b,0x013d010b),"Joystick Waiter",bb_joystick_waiter,NULL,NULL},
     {NMO_GUID_INIT(0x0085ebc1,0x21935422),"Joystick Controller",bb_joystick_controller,cb_controller_messages,NULL},
     {NMO_GUID_INIT(0x1af2274b, 0x6b8c1524), "Key Event", bb_key_event, NULL, NULL},
     {NMO_GUID_INIT(0x016d010b, 0x017d010b), "Key Waiter", bb_key_waiter, cb_key_waiter, NULL},
