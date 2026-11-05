@@ -106,6 +106,50 @@ void *nmo_arena_alloc(nmo_arena_t *arena, size_t size, size_t align) {
 }
 ```
 
+### Ballance Python and Browser Code
+
+The Python applications under `apps/ballance` and `apps/ballance-editor` each
+have a `ruff.toml` and a pinned `requirements-dev.txt`. Use four-space indentation,
+a 100-character line limit and single-quoted strings. Ruff checks unused imports,
+undefined names and compressed statements as well as formatting. CLI and test
+entry points may adjust `sys.path` before importing the application.
+
+Use descriptive names for state and domain objects. Give branches and exception
+handlers their own blocks, and split functions when validation, file generation
+and process control obscure one another. Keep short mathematical names where
+they make vector and matrix expressions easier to read.
+
+The editor's browser code uses Prettier and ESLint, pinned in `package-lock.json`.
+Use braces for control flow, one variable declaration per statement and no comma
+expressions. HTML contains the page structure; executable code lives in separate
+JavaScript files. Preserve script loading order and request-token handling.
+
+With a Python virtual environment active, run these commands from the repository
+root. NumPy and Pillow support rendering and its tests; Node.js 24 runs the
+frontend tooling:
+
+```sh
+python3 -m pip install numpy Pillow -r apps/ballance/requirements-dev.txt
+make -C apps/ballance check-style
+make -C apps/ballance test
+
+python3 -m pip install -r apps/ballance-editor/requirements-dev.txt
+npm --prefix apps/ballance-editor ci
+make -C apps/ballance-editor check-style
+make -C apps/ballance-editor test
+```
+
+Each directory also provides `make format`; it changes files, while `check-style`
+only checks them. Review the diff after formatting. Native tests need `BALLANCE`,
+`BALLANCE_ELEMENTS`, `NMO_TEST_CLI` and, for the optional physics cases,
+`NMO_TEST_PHYSICS=1`. Use absolute paths with `make -C`. Missing native assets cause
+those tests to skip; a passing run with skips does not establish native coverage.
+
+The two test suites are separate. The editor may depend on the toolchain, but
+no toolchain module, test, launcher or build fingerprint may depend on the editor.
+Application-only changes must leave toolchain evidence current. See the
+[editor guide](apps/ballance-editor/README.md) for workspace and playback behavior.
+
 ### Architecture Rules
 
 The layer stack, lowest to highest:
