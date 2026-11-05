@@ -304,6 +304,166 @@ TEST(engine_set_scale, missing_deleted_and_nonentity_targets_leave_input_active_
     }
 }
 
+static nmo_object_id_t saved_value(engine_fixture_t *f, nmo_object_id_t pin, const char *value)
+{
+    nmo_object_id_t parameter = 0;
+    if (nmo_script_edit_ensure_input_parameter_source(f->tx,pin,&parameter) != NMO_OK ||
+        nmo_script_edit_set_parameter_value(f->tx,parameter,value) != NMO_OK) return 0;
+    return parameter;
+}
+
+static const char *resolve_file(void *data, const char *name)
+{
+    (void)name; return data;
+}
+
+static nmo_object_id_t loaded_source(nmo_engine_t *engine, nmo_object_id_t block, int pos)
+{
+    nmo_object_t *object = eng_find_object(engine,block);
+    const nmo_behavior_state_t *behavior = object != NULL ? nmo_object_get_state(object) : NULL;
+    const eng_module_t *module = eng_module_of(engine,block,NULL);
+    if (behavior == NULL || module == NULL) return 0;
+    nmo_object_id_t pin = pos < 0 ? nmo_behavior_target_parameter_id(behavior) : nmo_behavior_ref_array_get_id(&behavior->in_parameters,(size_t)pos);
+    object = eng_find_object(engine,eng_module_id(module,pin));
+    const nmo_parameterin_state_t *input = object != NULL ? nmo_object_get_state(object) : NULL;
+    return input != NULL ? eng_module_id(module,nmo_parameterin_source_id(input)) : 0;
+}
+
+static nmo_object_id_t sprite_graph(sprite_fixture_t *g, nmo_guid_t guid, nmo_object_id_t *out)
+{
+    g->f.script_id = fixture_add_script(&g->f,"Sprite Scale Script",&g->f.script_in); fixture_begin_edit(&g->f);
+    nmo_object_id_t block = fixture_block(&g->f,guid,"Scale Loaded Sprite"); *out = fixture_block(&g->f,GUID_NOP,"After Sprite Scale");
+    if (block == 0 || *out == 0) return 0;
+    fixture_input_int(&g->f,fixture_target(&g->f,block),(int32_t)g->sprite);
+    fixture_link(&g->f,g->f.script_in,BLOCK_IN(&g->f,block,0),0); fixture_link(&g->f,BLOCK_OUT(&g->f,block,0),BLOCK_IN(&g->f,*out,0),0);
+    return block;
+}
+
+TEST(engine_set_scale, loaded_and_copied_scale_graphs_remap_entities_and_sprites_with_independent_parameters)
+{
+    for (int kind = 0; kind < 3; kind++) for (int hierarchy = 0; hierarchy < 2; hierarchy++) {
+        scale_fixture_t regular; sprite_fixture_t sprite; engine_fixture_t *f;
+        nmo_object_id_t block, target, out;
+        if (kind == 0) { begin(&regular); f = &regular.f; block = regular.block; target = regular.target; out = regular.out; }
+        else { sprite_begin(&sprite); f = &sprite.f; target = sprite.sprite; block = sprite_graph(&sprite,kind == 2 ? GUID_SCALE : GUID_SET_SCALE,&out); }
+        ASSERT_TRUE(block != 0 && out != 0); char text[32]; snprintf(text,sizeof(text),"%u",target);
+        ASSERT_TRUE(saved_value(f,fixture_target(f,block),text) != 0);
+        ASSERT_TRUE(saved_value(f,BLOCK_PIN(f,block,0),kind == 0 ? "4,6,8" : kind == 1 ? "8,2,-99" : "2,0.5,-99") != 0);
+        ASSERT_TRUE(saved_value(f,BLOCK_PIN(f,block,1),hierarchy ? "TRUE" : "FALSE") != 0);
+        if (kind == 2) ASSERT_TRUE(saved_value(f,BLOCK_PIN(f,block,2),"FALSE") != 0);
+        fixture_commit_bare(f,NULL);
+        nmo_beobject_state_t *owner = fixture_state(f,f->owner_id);
+        owner->has_single_activity = 1; owner->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE;
+        nmo_behavior_state_t *script = fixture_state(f,f->script_id);
+        script->has_single_activity = 1; script->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE | CK_SCENEOBJECT_START_RESET;
+        const char *path = NMO_TEST_SCRATCH_FILE("engine_set_scale.cmo"); ASSERT_EQ(NMO_OK,nmo_session_save_file(f->session,path,NULL,NULL));
+        for (int started = 0; started < 2; started++) {
+            engine_fixture_t host; fixture_begin_document(&host); fixture_begin_edit(&host);
+            nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL; fixture_commit(&host,&options);
+            if (started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_ALL));
+            nmo_engine_set_file_resolver(host.engine,resolve_file,(void *)path);
+            int32_t file = -1; ASSERT_EQ(NMO_OK,nmo_engine_load(host.engine,"set-scale.cmo",true,&file));
+            if (!started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_SCENE_DEFAULT));
+            const char *block_name = kind == 0 ? "Set Scale" : "Scale Loaded Sprite";
+            nmo_object_id_t loaded_block = nmo_engine_object_named(host.engine,block_name,NMO_CID_BEHAVIOR); ASSERT_TRUE(loaded_block != 0);
+            const eng_module_t *module = eng_module_of(host.engine,loaded_block,NULL);
+            const char *names[] = {"Owner",kind == 0 ? "Scaled Entity" : "Sprite","Child",block_name,
+                kind == 0 ? "After Scale" : "After Sprite Scale",kind == 0 ? "Scale Script" : "Sprite Scale Script"};
+            nmo_object_id_t ids[11] = {0}, copies[11] = {0}; size_t count = 9;
+            for (size_t i = 0; i < COUNT(names); i++) {
+                nmo_object_t *object = nmo_object_repository_find_by_name(module->repo,names[i]); ASSERT_NOT_NULL(object);
+                ids[i] = eng_module_id(module,nmo_object_get_id(object)); ASSERT_TRUE(ids[i] != 0);
+            }
+            for (int pin = -1; pin < 2; pin++) { ids[7+pin] = loaded_source(host.engine,ids[3],pin); ASSERT_TRUE(ids[7+pin] != 0); }
+            if (kind != 0) {
+                nmo_object_t *material = nmo_object_repository_find_by_name(module->repo,"Material"); ASSERT_NOT_NULL(material);
+                ids[count++] = eng_module_id(module,nmo_object_get_id(material)); eng_show(host.engine,ids[1],1);
+            }
+            if (kind == 2) { ids[count++] = loaded_source(host.engine,ids[3],2); ASSERT_TRUE(ids[count-1] != 0); }
+            ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
+            if (kind == 0) {
+                basis(host.engine,ids[1],(eng_vector_t){4,0,0},(eng_vector_t){0,6,0},(eng_vector_t){0,0,8});
+                position(host.engine,ids[2],hierarchy ? (eng_vector_t){7,10,13} : (eng_vector_t){5,7,9});
+            } else {
+                sprite_size(host.engine,ids[1],8,kind == 1 ? 2 : 3);
+                quad(host.engine,ids[1],-1,kind == 1 ? .25f : -1.625f,15,kind == 1 ? 6.25f : 7.375f);
+            }
+            ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(host.engine,ids,count,false,copies));
+            for (size_t i = 0; i < count; i++) ASSERT_TRUE(copies[i] != 0);
+            ASSERT_EQ(copies[1],nmo_engine_entity_parent(host.engine,copies[2]));
+            nmo_object_id_t reference = 0; read_value(&host,copies[6],&reference,sizeof(reference)); ASSERT_EQ(copies[1],reference);
+            const eng_vector_t changed = kind == 0 ? (eng_vector_t){1,2,3} : kind == 1 ? (eng_vector_t){4,6,99} : (eng_vector_t){.5f,2,99};
+            ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[7],&changed,sizeof(changed)));
+            ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[5],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
+            if (kind == 0) {
+                basis(host.engine,copies[1],(eng_vector_t){1,0,0},(eng_vector_t){0,2,0},(eng_vector_t){0,0,3});
+                position(host.engine,copies[2],hierarchy ? (eng_vector_t){4,6,8} : (eng_vector_t){5,7,9});
+                basis(host.engine,ids[1],(eng_vector_t){4,0,0},(eng_vector_t){0,6,0},(eng_vector_t){0,0,8});
+            } else {
+                eng_show(host.engine,copies[1],1); sprite_size(host.engine,copies[1],4,6); quad(host.engine,copies[1],1,-7.25f,9,10.75f);
+                sprite_size(host.engine,ids[1],8,kind == 1 ? 2 : 3); eng_save_ic(host.engine,copies[1]);
+                ASSERT_EQ(copies[9],eng_sprite3d(host.engine,copies[1])->material);
+            }
+            nmo_engine_destroy_object(host.engine,ids[1]); nmo_engine_destroy_object(host.engine,ids[0]);
+            const eng_vector_t final = kind == 0 ? (eng_vector_t){2,3,4} : (eng_vector_t){0,-4,100}; const int32_t flip = !hierarchy, yes = 1;
+            ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[7],&final,sizeof(final)));
+            ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[8],&flip,sizeof(flip)));
+            if (kind == 2) ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[10],&yes,sizeof(yes)));
+            ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[5],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
+            if (kind == 0) basis(host.engine,copies[1],(eng_vector_t){2,0,0},(eng_vector_t){0,3,0},(eng_vector_t){0,0,4});
+            else {
+                sprite_size(host.engine,copies[1],0,-4); quad(host.engine,copies[1],3,11.5f,3,-.5f);
+                position(host.engine,copies[2],(eng_vector_t){5,7,9}); eng_restore_ic(host.engine,copies[1]);
+                sprite_size(host.engine,copies[1],4,6); quad(host.engine,copies[1],1,-7.25f,9,10.75f);
+            }
+            int32_t original_hierarchy = -1; read_value(&host,ids[8],&original_hierarchy,sizeof(original_hierarchy)); ASSERT_EQ(hierarchy,original_hierarchy);
+            ASSERT_EQ(2u,runs(&host,copies[4])); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,100)); ASSERT_EQ(2u,runs(&host,copies[3])); fixture_end(&host);
+        }
+        ASSERT_FLOAT_EQ(2,((nmo_3dentity_state_t *)fixture_state(f,target))->world_matrix[0],0); fixture_end(f); remove(path);
+    }
+}
+
+TEST(engine_set_scale, bezier_progression_and_vector_interpolation_drive_entity_scale_and_sprite_geometry_until_completion)
+{
+    for (int is_sprite = 0; is_sprite < 2; is_sprite++) {
+        scale_fixture_t regular; sprite_fixture_t sprite; engine_fixture_t *f; nmo_object_id_t block, target, child, out;
+        if (!is_sprite) { begin(&regular); f = &regular.f; block = regular.block; target = regular.target; child = regular.child; out = regular.out; }
+        else { sprite_begin(&sprite); f = &sprite.f; target = sprite.sprite; child = sprite.child; block = sprite_graph(&sprite,GUID_SET_SCALE,&out); }
+        ASSERT_TRUE(block != 0 && out != 0);
+        const nmo_behavior_state_t *script = fixture_state(f,f->script_id);
+        nmo_object_id_t first_link = nmo_behavior_ref_array_get_id(&script->sub_behavior_links,0);
+        ASSERT_EQ(NMO_OK,nmo_script_edit_remove_behavior_link(f->tx,f->script_id,first_link));
+        nmo_object_id_t interpolate = fixture_block(f,NMO_GUID(0x35503950,0x2dde7a65),"Interpolate Scale"); ASSERT_TRUE(interpolate != 0);
+        for (int i = 0; i < 3; i++) ASSERT_EQ(NMO_OK,nmo_script_edit_remove_parameter(f->tx,BLOCK_PIN(f,interpolate,0),true));
+        ASSERT_EQ(NMO_OK,nmo_script_edit_remove_parameter(f->tx,BLOCK_POUT(f,interpolate,0),true));
+        nmo_object_id_t a = 0, b = 0, mix = 0, result = 0;
+        ASSERT_EQ(NMO_OK,nmo_script_edit_add_parameter(f->tx,interpolate,NMO_SCRIPT_EDIT_PARAM_IN,CKPGUID_VECTOR,"A",&a));
+        ASSERT_EQ(NMO_OK,nmo_script_edit_add_parameter(f->tx,interpolate,NMO_SCRIPT_EDIT_PARAM_IN,CKPGUID_VECTOR,"B",&b));
+        ASSERT_EQ(NMO_OK,nmo_script_edit_add_parameter(f->tx,interpolate,NMO_SCRIPT_EDIT_PARAM_IN,CKPGUID_PERCENTAGE,"Value",&mix));
+        ASSERT_EQ(NMO_OK,nmo_script_edit_add_parameter(f->tx,interpolate,NMO_SCRIPT_EDIT_PARAM_OUT,CKPGUID_VECTOR,"C",&result));
+        const eng_vector_t start = {2,3,4}, end = {4,6,8}; fixture_input_value(f,a,&start,sizeof(start)); fixture_input_value(f,b,&end,sizeof(end));
+        ASSERT_EQ(NMO_OK,nmo_script_edit_connect_parameter(f->tx,result,BLOCK_PIN(f,block,0)));
+        nmo_object_id_t progress = fixture_block(f,NMO_GUID(0x6bb8699a,0x29fb6a4b),"Progress"); ASSERT_TRUE(progress != 0);
+        const float values[] = {40,0,1};
+        for (size_t i = 0; i < COUNT(values); i++) fixture_input_value(f,BLOCK_PIN(f,progress,i),&values[i],sizeof(float));
+        nmo_object_id_t curve = 0; ASSERT_EQ(NMO_OK,nmo_script_edit_ensure_input_parameter_source(f->tx,BLOCK_PIN(f,progress,3),&curve));
+        ASSERT_EQ(NMO_OK,nmo_script_edit_connect_parameter(f->tx,BLOCK_POUT(f,progress,3),mix));
+        fixture_link(f,f->script_in,BLOCK_IN(f,progress,0),0); fixture_link(f,BLOCK_OUT(f,progress,1),BLOCK_IN(f,progress,1),1);
+        for (int output = 0; output < 2; output++) fixture_link(f,BLOCK_OUT(f,progress,output),BLOCK_IN(f,interpolate,0),0);
+        fixture_link(f,BLOCK_OUT(f,interpolate,0),BLOCK_IN(f,block,0),0); fixture_commit(f,NULL); ASSERT_EQ(NMO_OK,nmo_engine_start(f->engine,NMO_ENGINE_START_ALL));
+        if (is_sprite) eng_show(f->engine,target,1);
+        for (int frame = 1; frame <= 5; frame++) {
+            ASSERT_EQ(NMO_OK,nmo_engine_step(f->engine,10)); float p = frame < 4 ? frame*.25f : 1;
+            eng_vector_t value = {2+2*p,3+3*p,4+4*p}, actual; read_value(f,result,&actual,sizeof(actual)); vector(actual,value);
+            if (is_sprite) { sprite_size(f->engine,target,value.x,value.y); quad(f->engine,target,3-value.x*.5f,4-value.y*1.875f,3+value.x*1.5f,4+value.y*1.125f); }
+            else { basis(f->engine,target,(eng_vector_t){value.x,0,0},(eng_vector_t){0,value.y,0},(eng_vector_t){0,0,value.z}); position(f->engine,child,(eng_vector_t){3+value.x,4+value.y,5+value.z}); }
+            position(f->engine,target,(eng_vector_t){3,4,5});
+        }
+        ASSERT_EQ(5u,runs(f,progress)); ASSERT_EQ(5u,runs(f,interpolate)); ASSERT_EQ(5u,runs(f,block)); ASSERT_EQ(5u,runs(f,out));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(f->engine,100)); ASSERT_EQ(5u,runs(f,block)); fixture_end(f);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_set_scale, sprite_sizes_update_drawn_geometry_boxes_and_radius_without_changing_transforms_or_document);
 REGISTER_TEST(engine_set_scale, sprite_zero_and_negative_sizes_keep_signed_native_extents);
@@ -319,4 +479,6 @@ REGISTER_TEST(engine_set_scale, zero_requests_use_native_epsilon_and_negative_re
 REGISTER_TEST(engine_set_scale, disconnected_vectors_use_unit_scale_and_collapsed_axes_stay_collapsed);
 REGISTER_TEST(engine_set_scale, sprites_use_dimensions_for_both_absolute_blocks_and_relative_scale_ignoring_z_and_hierarchy);
 REGISTER_TEST(engine_set_scale, missing_deleted_and_nonentity_targets_leave_input_active_before_owner_error);
+REGISTER_TEST(engine_set_scale, loaded_and_copied_scale_graphs_remap_entities_and_sprites_with_independent_parameters);
+REGISTER_TEST(engine_set_scale, bezier_progression_and_vector_interpolation_drive_entity_scale_and_sprite_geometry_until_completion);
 TEST_MAIN_END()
