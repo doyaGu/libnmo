@@ -944,6 +944,7 @@ typedef struct data_fill_args {
     const char *name;
     uint32_t column_count;
     uint32_t row_count;
+    bool append;
 } data_fill_args_t;
 
 static bool data_fill_column_type(const char *text, uint32_t *out_type)
@@ -1048,6 +1049,13 @@ static nmo_status_t data_fill_table(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
+    nmo_object_t *array = nmo_object_repository_find_by_id(
+        nmo_tool_owner_repository(c->workspace), args->obj_id);
+    const nmo_dataarray_state_t *state = (const nmo_dataarray_state_t *)nmo_object_get_state(array);
+    if (args->append && yyjson_arr_size(columns) != state->column_count) {
+        fprintf(stderr, "Error: Append requires the existing column schema\n");
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
     size_t index = 0, max = 0;
     yyjson_val *column = NULL;
     yyjson_arr_foreach(columns, index, max, column) {
@@ -1068,13 +1076,19 @@ static nmo_status_t data_fill_table(
             fprintf(stderr, "Error: Column '%s' needs a known parameter type\n", name);
             return NMO_ERR_INVALID_ARGUMENT;
         }
-        NMO_RETURN_IF_ERROR(nmo_object_edit_add_dataarray_column(
-            edit, args->obj_id, name, type, parameter_guid));
+        if (args->append) {
+            const nmo_dataarray_column_format_t *existing = &state->column_formats[index];
+            if (strcmp(existing->name, name) != 0 || existing->type != type ||
+                !nmo_guid_equals(existing->parameter_type_guid, parameter_guid)) {
+                fprintf(stderr, "Error: Append column %zu differs from the existing schema\n", index);
+                return NMO_ERR_INVALID_ARGUMENT;
+            }
+        } else {
+            NMO_RETURN_IF_ERROR(nmo_object_edit_add_dataarray_column(
+                edit, args->obj_id, name, type, parameter_guid));
+        }
     }
 
-    nmo_object_t *array = nmo_object_repository_find_by_id(
-        nmo_tool_owner_repository(c->workspace), args->obj_id);
-    const nmo_dataarray_state_t *state = (const nmo_dataarray_state_t *)nmo_object_get_state(array);
     yyjson_val *row = NULL;
     yyjson_arr_foreach(rows, index, max, row) {
         if (!yyjson_is_arr(row) || yyjson_arr_size(row) > state->column_count) {
@@ -1117,7 +1131,7 @@ static int data_fill_mutate(nmo_cmd_ctx_t *c, bool dry_run, const char *output_p
     }
     args->name = nmo_object_get_name(obj);
     const nmo_dataarray_state_t *state = (const nmo_dataarray_state_t *)nmo_object_get_state(obj);
-    if (state == NULL || state->column_count != 0) {
+    if (state == NULL || (!args->append && state->column_count != 0)) {
         fprintf(stderr, "Error: Data array #%u already has columns; fill takes an empty one\n",
                 args->obj_id);
         return NMO_CLI_EXIT_ARG_ERROR;
@@ -1201,8 +1215,9 @@ int nmo_cmd_data_fill(int argc, char **argv, const nmo_cli_global_opts_t *global
         NMO_OPT_DEF_DRY_RUN,
         {"--id", NULL, NMO_OPT_UINT, "Data array object ID"},
         {"--name", "-n", NMO_OPT_STRING, "Data array object name"},
+        {"--append", NULL, NMO_OPT_FLAG, "Append rows with an identical column schema"},
     };
-    enum { OPT_OUTPUT, OPT_TABLE, OPT_DRYRUN, OPT_ID, OPT_NAME, OPT_COUNT };
+    enum { OPT_OUTPUT, OPT_TABLE, OPT_DRYRUN, OPT_ID, OPT_NAME, OPT_APPEND, OPT_COUNT };
 
     nmo_cli_global_opts_t local_global = *global;
     nmo_opt_val_t vals[OPT_COUNT];
@@ -1239,6 +1254,7 @@ int nmo_cmd_data_fill(int argc, char **argv, const nmo_cli_global_opts_t *global
             .type_label = "CKDataArray",
         },
         .table_path = table_path,
+        .append = nmo_opt_flag(&vals[OPT_APPEND]),
     };
     const nmo_cli_write_spec_t spec = {
         .command_name = "data.fill",

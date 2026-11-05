@@ -938,6 +938,18 @@ TEST(cli_write, data_fill_gives_an_empty_array_its_table) {
         "data fill --name Table --table test_cli_write_tmp/fill_table.json "
         "test_cli_write_tmp/fill_out.cmo -o test_cli_write_tmp/fill_twice.cmo",
         "already has columns");
+    assert_cli_success(
+        "data fill --append --name Table --table test_cli_write_tmp/fill_table.json "
+        "test_cli_write_tmp/fill_out.cmo -o test_cli_write_tmp/fill_append.cmo",
+        "4 columns, 2 rows");
+    assert_validate_ok("test_cli_write_tmp/fill_append.cmo");
+    assert_cli_success("data dump --name Table test_cli_write_tmp/fill_append.cmo", "Ball_Paper");
+    ASSERT_TRUE(write_text_file("test_cli_write_tmp/wrong_columns.json",
+        "{\"columns\":[{\"name\":\"Different\",\"type\":\"int\"}],\"rows\":[[1]]}"));
+    assert_cli_failure(
+        "data fill --append --name Table --table test_cli_write_tmp/wrong_columns.json "
+        "test_cli_write_tmp/fill_append.cmo -o test_cli_write_tmp/fill_rejected.cmo",
+        "existing column schema");
 }
 
 TEST(cli_write, data_entity_material_texture_animation_save_and_validate) {

@@ -975,6 +975,7 @@ static void data_fill_usage(FILE *out) {
     fprintf(out, "Column types: int, float, string, object (cells name an object in the file)\n");
     fprintf(out, "and parameter (each cell a new parameter of that type holding the value).\n\n");
     fprintf(out, "Options:\n");
+    fprintf(out, "  --append             Append rows to an array with exactly the same schema\n");
     fprintf(out, "  -t, --table <path>   The JSON table (required)\n");
     fprintf(out, "  -o, --output <path>  Output file (required unless --dry-run)\n");
     fprintf(out, "  --dry-run            Preview without saving\n");
