@@ -43,6 +43,14 @@ void eng_matrix_identity(eng_matrix_t *m)
     m->m[0][0] = m->m[1][1] = m->m[2][2] = m->m[3][3] = 1.0f;
 }
 
+void eng_matrix_multiply4(eng_matrix_t *result, const eng_matrix_t *a, const eng_matrix_t *b)
+{
+    eng_matrix_t product;
+    for (int r = 0; r < 4; r++) for (int c = 0; c < 4; c++)
+        product.m[r][c] = (float)((double)b->m[r][0]*a->m[0][c]+(double)b->m[r][1]*a->m[1][c]+(double)b->m[r][2]*a->m[2][c]+(double)b->m[r][3]*a->m[3][c]);
+    *result = product;
+}
+
 /* Vx3DMultiplyMatrix: a * b, b applied first; the affine part only. */
 void eng_matrix_multiply(eng_matrix_t *result, const eng_matrix_t *a, const eng_matrix_t *b)
 {
@@ -934,6 +942,30 @@ bool eng_entity_world_box(nmo_engine_t *engine, int32_t index, eng_vector_t *min
     *min = (eng_vector_t){c.x - half[0], c.y - half[1], c.z - half[2]};
     *max = (eng_vector_t){c.x + half[0], c.y + half[1], c.z + half[2]};
     return true;
+}
+
+bool eng_entity_hierarchical_box(nmo_engine_t *engine, int32_t root, eng_vector_t *min,
+    eng_vector_t *max)
+{
+    if (root < 0 || (size_t)root >= engine->entities.count || engine->entities.data[root].destroyed) return false;
+    bool valid = false;
+    for (int32_t index = root; ; ) {
+        eng_vector_t low, high;
+        if (eng_entity_world_box(engine,index,&low,&high)) {
+            if (!valid) { *min = low; *max = high; valid = true; }
+            else {
+                *min = (eng_vector_t){fminf(min->x,low.x),fminf(min->y,low.y),fminf(min->z,low.z)};
+                *max = (eng_vector_t){fmaxf(max->x,high.x),fmaxf(max->y,high.y),fmaxf(max->z,high.z)};
+            }
+        }
+        if (engine->entities.data[index].first_child >= 0) index = engine->entities.data[index].first_child;
+        else {
+            while (index != root && engine->entities.data[index].next_sibling < 0) index = engine->entities.data[index].parent;
+            if (index == root) break;
+            index = engine->entities.data[index].next_sibling;
+        }
+    }
+    return valid;
 }
 
 /* VxIntersect::RayBox: the half-line from `origin` along `dir` meets the box. */

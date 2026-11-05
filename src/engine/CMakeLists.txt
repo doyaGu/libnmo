@@ -38,6 +38,7 @@ set(NMO_ENGINE_SOURCES
     core/param_text.c
     core/portal.c
     core/place_fit.c
+    core/projection.c
     core/render.c
     core/run.c
     core/scene.c

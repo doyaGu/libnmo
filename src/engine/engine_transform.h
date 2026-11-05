@@ -50,6 +50,8 @@ typedef struct eng_ray_hit {
 
 void eng_matrix_identity(eng_matrix_t *m);
 void eng_matrix_multiply(eng_matrix_t *result, const eng_matrix_t *a, const eng_matrix_t *b);
+/* Vx3DMultiplyMatrix4, including the projection column; b is applied first. */
+void eng_matrix_multiply4(eng_matrix_t *result, const eng_matrix_t *a, const eng_matrix_t *b);
 void eng_matrix_inverse(eng_matrix_t *result, const eng_matrix_t *a);
 /* Recover missing animation channels. Principal axes use polar/spectral
  * decomposition; otherwise use CK's normalized-row decomposition. Outputs
@@ -125,6 +127,9 @@ bool eng_entity_local_box(nmo_engine_t *engine, int32_t index, eng_vector_t *min
                           eng_vector_t *max);
 bool eng_entity_world_box(nmo_engine_t *engine, int32_t index, eng_vector_t *min,
                           eng_vector_t *max);
+/* World bounds of the entity and its descendants, excluding empty geometry. */
+bool eng_entity_hierarchical_box(nmo_engine_t *engine, int32_t root, eng_vector_t *min,
+    eng_vector_t *max);
 bool eng_ray_box(const eng_vector_t *origin, const eng_vector_t *dir, const eng_vector_t *min,
                  const eng_vector_t *max);
 int eng_entity_ray_intersection(nmo_engine_t *engine, int32_t index, const eng_vector_t *pos1,

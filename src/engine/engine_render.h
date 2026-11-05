@@ -160,6 +160,12 @@ void eng_free_render(nmo_engine_t *engine);
 void eng_render_viewpoint(nmo_engine_t *engine, struct eng_matrix *out);
 /* CKRenderContext::Transform of a world point into render context pixels. */
 void eng_render_project(nmo_engine_t *engine, const struct eng_vector *world, struct eng_vector *screen);
+/* The selected camera's inverse-world times projection, and its near-plane origin. */
+bool eng_camera_view_projection(nmo_engine_t *engine, nmo_object_id_t camera,
+    struct eng_matrix *out, struct eng_vector *near_origin);
+/* VxTransformBox2D: normalized screen bounds, including native near-plane expansion. */
+bool eng_project_box(const struct eng_matrix *matrix, const struct eng_vector *min,
+    const struct eng_vector *max, nmo_rect_t *out);
 /* The engine ID an object's reference names, in the object's document */
 nmo_object_id_t eng_object_ref(const nmo_engine_t *engine, nmo_object_id_t owner,
                                const nmo_ref_t *ref);
