@@ -301,6 +301,18 @@ static int bb_set_parent(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* Add Child keeps the child's world pose; rejected attachments still finish. */
+static int bb_add_child(blk_t *b)
+{
+    int32_t parent = target_entity(b);
+    if (parent < 0) return NMO_ENGINE_BR_OWNERERROR;
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    int32_t child = input_entity(b,0);
+    if (child >= 0) eng_entity_set_parent(b->engine,child,parent,true);
+    return NMO_ENGINE_BR_OK;
+}
+
 /* Rotate: about an axis of the referential's space (the world's without one). */
 static int bb_rotate(blk_t *b)
 {
@@ -661,6 +673,7 @@ static const nmo_engine_block_desc_t eng_3dtransfo_blocks[] = {
     {NMO_GUID_INIT(0x21f5f30d, 0x08d5a1db), "Set Local Matrix", bb_set_local_matrix, NULL, NULL},
     {NMO_GUID_INIT(0x41236987, 0xa54a87a6), "Scale", bb_scale, NULL, NULL},
     {NMO_GUID_INIT(0x9d9d9d98, 0x7e7a7f75), "Set Parent", bb_set_parent, NULL, NULL},
+    {NMO_GUID_INIT(0x45986587, 0x12654556), "Add Child", bb_add_child, NULL, NULL},
     {NMO_GUID_INIT(0xffffffee, 0xeeffffff), "Rotate", bb_rotate, NULL, NULL},
     {NMO_GUID_INIT(0xfdfd999e, 0xdefeded8), "Rotate Around", bb_rotate_around, NULL, NULL},
     {NMO_GUID_INIT(0x625874aa, 0xaa694132), "Set Orientation", bb_set_orientation, NULL, NULL},
