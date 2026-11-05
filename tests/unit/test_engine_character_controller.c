@@ -13,6 +13,7 @@
 #define GUID_ENHANCED_CONTROLLER NMO_GUID(0x44433224,0x12874356)
 #define GUID_KEYBOARD_CONTROLLER NMO_GUID(0x43f1d000,0x1a2b3c4d)
 #define GUID_KEYBOARD_MAPPER NMO_GUID(0x053b2bde,0x2f8f1d74)
+#define GUID_JOYSTICK_CONTROLLER NMO_GUID(0x0085ebc1,0x21935422)
 #define GUID_GOTO NMO_GUID(0x11223344,0xaabbccdd)
 #define GUID_NOP NMO_GUID(0x302561c4,0x0d282980)
 
@@ -465,6 +466,19 @@ TEST(engine_character_controller, custom_keyboard_mapper_bindings_drive_both_con
     }
 }
 
+TEST(engine_character_controller, joystick_slots_drive_both_character_controllers_with_button_priority_and_frame_delivery)
+{
+    const struct { float x,y; uint32_t buttons; int ordinary, enhanced; } cases[] = {
+        {0,0,0,0,0},{0,-1,0,1,1},{0,1,0,2,2},{0,0,1,3,3},{0,0,2,0,4},{0,0,4,0,5},{0,0,8,0,6},
+        {0,0,48,0,0},{0,0,3,3,3},{0,-1,2,1,4},{0,-1,8,1,1},{-1,0,0,0,0},
+    };
+    for (int enhanced = 0; enhanced < 2; enhanced++) for (size_t i = 0; i < COUNT(cases); i++) {
+        controller_fixture_t g; begin_variant(&g,true,enhanced != 0); nmo_object_id_t joystick = fixture_block(&g.f,GUID_JOYSTICK_CONTROLLER,"Joystick Controller"); ASSERT_TRUE(joystick != 0); fixture_input_int(&g.f,fixture_target(&g.f,joystick),(int32_t)g.f.owner_id); fixture_input_int(&g.f,BLOCK_PIN(&g.f,joystick,0),3); fixture_link(&g.f,g.f.script_in,BLOCK_IN(&g.f,joystick,0),0); commit(&g); nmo_engine_joystick_state_t other = {.attached = true,.position = {0,1,0},.point_of_view = -1,.buttons = 1}, selected = {.attached = true,.position = {cases[i].x,cases[i].y,.25f},.point_of_view = -1,.buttons = cases[i].buttons}; nmo_engine_set_joystick(g.f.engine,0,&other); nmo_engine_set_joystick(g.f.engine,3,&selected);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(g.animations[0],eng_character_next_animation(g.f.engine,g.f.owner_id)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(g.animations[enhanced ? cases[i].enhanced : cases[i].ordinary],eng_character_active_animation(g.f.engine,g.f.owner_id)); ASSERT_EQ(2u,runs(&g.f,joystick)); float output[3]; read_value(&g.f,BLOCK_POUT(&g.f,joystick,0),output,sizeof(output)); for (size_t j = 0; j < 3; j++) ASSERT_FLOAT_EQ(selected.position[j],output[j],0);
+        nmo_engine_block_t block = {g.f.engine,eng_map_get(&g.f.engine->node_map,joystick)}; nmo_engine_block_activate_input(&block,1,true); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(g.animations[0],eng_character_active_animation(g.f.engine,g.f.owner_id)); ASSERT_TRUE(eng_character_automatic(g.f.engine,g.f.owner_id)); ASSERT_EQ(3u,runs(&g.f,joystick)); ASSERT_EQ(4u,runs(&g.f,g.block)); fixture_end(&g.f);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_character_controller, message_presence_selects_animations_in_native_priority_order);
 REGISTER_TEST(engine_character_controller, enhanced_message_priority_uses_button_presence_and_protects_only_jump_and_dance);
@@ -484,4 +498,5 @@ REGISTER_TEST(engine_character_controller, loaded_and_copied_controllers_rebind_
 REGISTER_TEST(engine_character_controller, goto_messages_drive_root_motion_until_arrival_then_return_to_stand);
 REGISTER_TEST(engine_character_controller, keyboard_scan_codes_drive_both_character_controllers_with_native_frame_delivery_and_off_behavior);
 REGISTER_TEST(engine_character_controller, custom_keyboard_mapper_bindings_drive_both_controllers_and_keep_multiple_messages_per_key);
+REGISTER_TEST(engine_character_controller, joystick_slots_drive_both_character_controllers_with_button_priority_and_frame_delivery);
 TEST_MAIN_END()
