@@ -28,5 +28,6 @@ static int bb_set_portal(blk_t *b)
 nmo_status_t eng_register_portals(nmo_engine_t *engine)
 {
     static const nmo_engine_block_desc_t block = {NMO_GUID_INIT(0x465c4732,0x30996468),"Set Portal",bb_set_portal,NULL,NULL};
-    return nmo_engine_register_block(engine,&block);
+    nmo_status_t status = nmo_engine_register_block(engine,&block);
+    return status == NMO_OK ? eng_register_portal_management(engine) : status;
 }

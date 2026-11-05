@@ -40,6 +40,8 @@ typedef struct eng_manager_desc {
     void (*post_process)(nmo_engine_t *engine, void *state);
     void (*render)(nmo_engine_t *engine, void *state, eng_render_stage_t stage,
                    const eng_render_args_t *args);
+    /* CKBaseManager::OnCKReset, before the behaviors' reset callbacks. */
+    void (*reset)(nmo_engine_t *engine, void *state);
 } eng_manager_desc_t;
 
 typedef struct eng_manager {
@@ -54,6 +56,7 @@ void *eng_manager_state(const nmo_engine_t *engine, const eng_manager_desc_t *de
 
 /* core/manager.c: the hooks, for the core */
 void eng_managers_pre_process(nmo_engine_t *engine);
+void eng_managers_reset(nmo_engine_t *engine);
 void eng_managers_post_process(nmo_engine_t *engine);
 void eng_managers_render(nmo_engine_t *engine, eng_render_stage_t stage, const eng_render_args_t *args);
 /* Destroy the managers, the last added first */

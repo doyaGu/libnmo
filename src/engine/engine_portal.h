@@ -2,6 +2,7 @@
 #define NMO_ENGINE_PORTAL_H
 
 #include "engine_base.h"
+#include "core/nmo_math.h"
 
 struct eng_matrix;
 
@@ -17,6 +18,7 @@ typedef struct eng_portal_list {
 typedef struct eng_place_portals {
     nmo_object_id_t id;
     eng_portal_list_t links;
+    nmo_rect_t viewport;
 } eng_place_portals_t;
 
 typedef struct eng_portals {
@@ -32,5 +34,7 @@ void eng_copy_place_portals(nmo_engine_t *engine, nmo_object_id_t source, nmo_ob
 void eng_portals_forget_object(nmo_engine_t *engine, nmo_object_id_t id);
 void eng_free_portals(nmo_engine_t *engine);
 bool eng_place_best_fit(nmo_engine_t *engine, nmo_object_id_t first, nmo_object_id_t second, struct eng_matrix *out);
+nmo_rect_t eng_place_viewport_clip(const nmo_engine_t *engine, nmo_object_id_t place);
+void eng_place_set_viewport_clip(nmo_engine_t *engine, nmo_object_id_t place, nmo_rect_t rect);
 
 #endif /* NMO_ENGINE_PORTAL_H */

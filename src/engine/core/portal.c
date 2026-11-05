@@ -27,7 +27,18 @@ const eng_portal_list_t *eng_place_portals(nmo_engine_t *engine, nmo_object_id_t
     eng_place_portals_t *entry = NULL; index = (int32_t)engine->portals.places.count;
     if (!ENG_VEC_PUSH(engine->portals.places,entry)) { free(links.data); return NULL; }
     if (!eng_map_put(&engine->portals.map,place,index)) { engine->portals.places.count--; free(links.data); return NULL; }
-    *entry = (eng_place_portals_t){place,links}; return &entry->links;
+    *entry = (eng_place_portals_t){.id = place,.links = links}; return &entry->links;
+}
+
+nmo_rect_t eng_place_viewport_clip(const nmo_engine_t *engine, nmo_object_id_t place)
+{
+    int32_t index = eng_map_get(&engine->portals.map,place);
+    return index >= 0 ? engine->portals.places.data[index].viewport : (nmo_rect_t){0};
+}
+
+void eng_place_set_viewport_clip(nmo_engine_t *engine, nmo_object_id_t place, nmo_rect_t rect)
+{
+    if (eng_place_portals(engine,place) != NULL) engine->portals.places.data[eng_map_get(&engine->portals.map,place)].viewport = rect;
 }
 
 bool eng_place_add_portal(nmo_engine_t *engine, nmo_object_id_t from, nmo_object_id_t to, nmo_object_id_t portal)
@@ -66,7 +77,7 @@ void eng_portals_forget_object(nmo_engine_t *engine, nmo_object_id_t id)
     if (id == 0) return;
     for (size_t i = 0; i < engine->portals.places.count; i++) {
         eng_place_portals_t *place = &engine->portals.places.data[i];
-        if (place->id == id) { free(place->links.data); place->links = (eng_portal_list_t){0}; }
+        if (place->id == id) { free(place->links.data); place->links = (eng_portal_list_t){0}; place->viewport = (nmo_rect_t){0}; }
         else {
             size_t kept = 0;
             for (size_t j = 0; j < place->links.count; j++) if (place->links.data[j].place != id && place->links.data[j].portal != id) place->links.data[kept++] = place->links.data[j];

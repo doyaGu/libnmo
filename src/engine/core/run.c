@@ -175,6 +175,7 @@ nmo_status_t nmo_engine_start(nmo_engine_t *engine, nmo_engine_start_mode_t mode
         }
     }
     eng_reset_messages(engine); /* CKMessageManager::OnCKReset */
+    eng_managers_reset(engine);
     for (size_t i = 0; i < engine->nodes.count; i++) {
         if (engine->nodes.data[i].is_block) {
             eng_block_callback(engine, (int32_t)i, NMO_ENGINE_MSG_RESET);
