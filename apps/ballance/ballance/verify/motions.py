@@ -80,7 +80,14 @@ def check(layout, assets, game=None):
                 )
     unique = {}
     for f in findings:
-        key = (f['mechanism'], f['phase'], f['rule'], f['contact']['owner'], f['contact']['kind'])
+        key = (
+            f['mechanism'],
+            f['phase'],
+            f['rule'],
+            f['contact']['owner'],
+            f['contact']['kind'],
+            f['contact'].get('passage'),
+        )
         unique.setdefault(key, f)
     mismatch = []
     if game is not None:
@@ -96,6 +103,7 @@ def check(layout, assets, game=None):
             f['contact']['owner'],
             f['contact']['kind'],
             f['phase'],
+            f['contact'].get('passage'),
         )
         (expected if reason else findings).append(f | ({'design_reason': reason} if reason else {}))
     unsupported = [i['id'] for i in items if i['coverage'] == 'unsupported']

@@ -172,10 +172,24 @@ def inspect(path, layout, finish=None):
                 instance, recipe, name, points, record['space']
             ):
                 escapes[key] = {'mechanism': instance['id'], 'body': name, 'frame': frame}
-            for hit in routes.query([bounds(points)], ignore=(instance['parent'],)):
+            for hit in routes.query([bounds(points)]):
+                if hit['owner'] == instance['parent'] and hit['kind'] not in (
+                    'floor passage',
+                    'landing clearance',
+                ):
+                    continue
                 phase = 'moving' if distance > 0.1 else 'ready'
-                reason = motions.intention(rules, instance['id'], hit['owner'], hit['kind'], phase)
-                contact_key = (instance['id'], name, hit['owner'], hit['kind'], phase)
+                reason = motions.intention(
+                    rules, instance['id'], hit['owner'], hit['kind'], phase, hit.get('passage')
+                )
+                contact_key = (
+                    instance['id'],
+                    name,
+                    hit['owner'],
+                    hit['kind'],
+                    phase,
+                    hit.get('passage'),
+                )
                 if contact_key not in contacts:
                     contacts[contact_key] = {
                         'mechanism': instance['id'],

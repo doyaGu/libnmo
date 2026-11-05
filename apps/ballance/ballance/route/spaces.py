@@ -71,6 +71,10 @@ def route_space(layout, mechanisms=True):
                     source=source,
                 )
             )
+    from .passages import volumes
+
+    for volume in volumes(getattr(layout, 'passages', [])):
+        space.add(volume)
     if mechanisms:
         from .motions import add_to
 

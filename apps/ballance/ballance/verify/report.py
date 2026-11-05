@@ -16,6 +16,7 @@ from ..core.nmo import Nmo
 from ..route.layout import Layout
 from ..route import motions
 from ..view.scene import load
+from .clearance import check as clearance_check
 from .geometry import check as geometry_check
 from .scenery import check as scenery_check
 from .motions import check as motion_check
@@ -180,7 +181,9 @@ def verify(
         }
         # Read generated assets without copying or changing the build folder.
         checks['mechanisms'] = motion_check(layout, assets, game)
+        checks['clearance'] = clearance_check(scene, layout)
     else:
+        checks['clearance'] = {'status': 'skipped', 'reason': 'No builder route snapshot.'}
         checks['connections'] = {'status': 'skipped', 'reason': 'No builder route snapshot.'}
         checks['scenery'] = {'status': 'skipped', 'reason': 'No builder route snapshot.'}
         checks['mechanisms'] = {'status': 'skipped', 'reason': 'No builder route snapshot.'}

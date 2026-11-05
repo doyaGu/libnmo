@@ -240,7 +240,7 @@ def interactions(layout, items=None):
     targets = {part_id(p) for p in layout.parts}
     seen = set()
     for value in values:
-        if not isinstance(value, dict) or set(value) != {
+        if not isinstance(value, dict) or set(value) - {'passages'} != {
             'mechanism',
             'target',
             'contacts',
@@ -258,7 +258,10 @@ def interactions(layout, items=None):
         if not isinstance(value['reason'], str) or not value['reason'].strip():
             raise ValueError('interaction needs a design reason')
         for field, allowed in [
-            ('contacts', {'rail', 'ball clearance', 'route solid'}),
+            (
+                'contacts',
+                {'rail', 'ball clearance', 'route solid', 'floor passage', 'landing clearance'},
+            ),
             ('phases', {'ready', 'moving', 'split'}),
         ]:
             entries = value[field]
@@ -269,6 +272,21 @@ def interactions(layout, items=None):
                 or len(set(entries)) != len(entries)
             ):
                 raise ValueError(f'invalid interaction {field}')
+        if 'passages' in value:
+            selected = value['passages']
+            owned = {
+                p['id'] for p in getattr(layout, 'passages', []) if p['owner'] == value['target']
+            }
+            if (
+                not isinstance(selected, list)
+                or not selected
+                or any(not isinstance(p, str) or p not in owned for p in selected)
+                or len(set(selected)) != len(selected)
+                or set(value['contacts']) - {'floor passage', 'landing clearance'}
+            ):
+                raise ValueError(
+                    'interaction passages must reference owned floor or landing corridors'
+                )
         pair = value['mechanism'], value['target']
         if pair in seen:
             raise ValueError('duplicate mechanism interaction pair')
@@ -276,7 +294,7 @@ def interactions(layout, items=None):
     return values
 
 
-def intention(rules, mechanism, target, contact, phase):
+def intention(rules, mechanism, target, contact, phase, passage=None):
     return next(
         (
             r['reason']
@@ -285,6 +303,7 @@ def intention(rules, mechanism, target, contact, phase):
             and r['target'] == target
             and contact in r['contacts']
             and phase in r['phases']
+            and ('passages' not in r or passage in r['passages'])
         ),
         None,
     )

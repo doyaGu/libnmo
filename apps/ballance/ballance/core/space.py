@@ -131,7 +131,7 @@ class Space:
                 if i in self.inactive:
                     continue
                 volume = self.volumes[i]
-                key = volume.owner, volume.rule, volume.state
+                key = volume.owner, volume.rule, volume.state, volume.source.get('passage')
                 if (
                     key in seen
                     or volume.owner in ignore

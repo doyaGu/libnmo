@@ -164,6 +164,9 @@ class Layout:
         from .mechanism_placement import prepare
 
         prepare(self)
+        from .passages import compile_passages
+
+        self.passages = compile_passages(route.get('passages', []), self)
         # Module columns have their own placement, so a shaft can move
         # without moving the playable housing and its physics together.
         self.supports = [

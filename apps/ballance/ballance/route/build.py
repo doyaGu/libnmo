@@ -174,9 +174,11 @@ def _build(
             'native_assets': assets.game,
             'margin': SCENERY_MARGIN,
             'occupancy': route_space(layout).data(),
+            'passages': layout.passages,
             'attachments': layout.scenery_bindings,
             'mechanisms': motions.describe(layout),
-            'scope': 'Rail and ball sweeps, native finish motion, scenery assemblies '
+            'scope': 'Rail and ball sweeps, authored floor and landing corridors, '
+            'native finish motion, scenery assemblies '
             'and attachment contacts. '
             'Native mechanism sweeps and force fields use measured recipes. '
             'Bounds are conservative; unsupported mechanisms and camera '
