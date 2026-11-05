@@ -347,6 +347,47 @@ TEST(engine_blend, obsolete_create_before_start_keeps_the_first_result_when_inpu
     ASSERT_EQ(NMO_OK,nmo_engine_start(g.f.engine,NMO_ENGINE_START_ALL)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,16)); ASSERT_EQ(result,legacy_edit(&g)); ASSERT_EQ(1u,eng_character_animation_count(g.f.engine,g.f.owner_id)); ASSERT_EQ(0u,runs(&g.f,g.block)); fixture_end(&g.f);
 }
 
+TEST(engine_blend, obsolete_create_preserves_live_outputs_without_attaching_them_to_the_owner)
+{
+    legacy_blend_fixture_t g; legacy_begin(&g); legacy_ready(&g);
+    const nmo_object_id_t outputs[] = {g.second,g.source_body};
+    for (size_t i = 0; i < COUNT(outputs); i++) {
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.output,&outputs[i],sizeof(outputs[i]))); ASSERT_EQ(outputs[i],legacy_edit(&g)); ASSERT_EQ(0u,eng_character_animation_count(g.f.engine,g.f.owner_id));
+    }
+    ASSERT_EQ(0u,eng_animation_character(g.f.engine,g.second)); fixture_end(&g.f);
+}
+
+TEST(engine_blend, obsolete_create_preserves_stale_outputs_for_missing_inputs_and_clears_them_after_failed_factories)
+{
+    for (int kind = 0; kind < 7; kind++) {
+        legacy_blend_fixture_t g; legacy_begin(&g); nmo_object_id_t base = fixture_create(&g.f,NMO_CID_ANIMATION,"Base Animation"); ASSERT_TRUE(base != 0); legacy_ready(&g); nmo_object_id_t sentinel = 0x7ffffffeu, missing = 0; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.output,&sentinel,sizeof(sentinel)));
+        if (kind < 2) ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.inputs[kind],&missing,sizeof(missing)));
+        else if (kind < 4) nmo_engine_destroy_object(g.f.engine,kind == 2 ? g.first : g.second);
+        else if (kind == 4) ASSERT_TRUE(eng_animation_set_character(g.f.engine,g.first,0));
+        else ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.inputs[kind-5],&base,sizeof(base)));
+        ASSERT_EQ(kind < 4 ? sentinel : 0u,legacy_edit(&g)); ASSERT_EQ(0u,eng_character_animation_count(g.f.engine,g.f.owner_id)); fixture_end(&g.f);
+    }
+}
+
+TEST(engine_blend, obsolete_create_replaces_deleted_or_cleared_outputs_only_once)
+{
+    legacy_blend_fixture_t g; legacy_begin(&g); legacy_ready(&g); nmo_object_id_t first = legacy_edit(&g); ASSERT_TRUE(first != 0); nmo_engine_destroy_object(g.f.engine,first);
+    nmo_object_id_t second = legacy_edit(&g); ASSERT_TRUE(second != 0 && second != first); ASSERT_EQ(1u,eng_character_animation_count(g.f.engine,g.f.owner_id)); ASSERT_EQ(second,legacy_edit(&g)); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.output,&(nmo_object_id_t){0},sizeof(nmo_object_id_t)));
+    nmo_object_id_t third = legacy_edit(&g); ASSERT_TRUE(third != 0 && third != second); ASSERT_EQ(2u,eng_character_animation_count(g.f.engine,g.f.owner_id)); ASSERT_EQ(third,legacy_edit(&g)); fixture_end(&g.f);
+}
+
+TEST(engine_blend, obsolete_create_inherits_source_dynamic_lifetime_and_leaves_document_membership_and_output_untouched)
+{
+    for (int dynamic = 0; dynamic < 2; dynamic++) {
+        legacy_blend_fixture_t g; legacy_begin(&g); legacy_ready(&g); if (dynamic) eng_mark_dynamic(g.f.engine,g.first); nmo_object_id_t result = legacy_edit(&g); ASSERT_TRUE(result != 0); const nmo_keyedanimation_state_t *merged = nmo_object_get_state(eng_find_object(g.f.engine,result)); nmo_object_id_t parts[3]; ASSERT_EQ(COUNT(parts),merged->animation_count);
+        for (size_t i = 0; i < COUNT(parts); i++) parts[i] = eng_object_ref(g.f.engine,result,&merged->animation_ids[i]);
+        ASSERT_EQ(0u,nmo_parameter_object_id(fixture_state(&g.f,g.output))); ASSERT_EQ(0u,((nmo_character_state_t *)fixture_state(&g.f,g.f.owner_id))->animations.count);
+        ASSERT_EQ(NMO_OK,nmo_engine_start(g.f.engine,NMO_ENGINE_START_ALL)); g.f.engine->dynamic.delete_all = true; ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(dynamic ? 0u : 1u,eng_character_animation_count(g.f.engine,g.f.owner_id)); ASSERT_EQ(dynamic ? 0u : g.f.owner_id,eng_animation_character(g.f.engine,result));
+        for (size_t i = 0; i < COUNT(parts); i++) { eng_animation_source_t source; ASSERT_EQ(!dynamic,eng_animation_source(g.f.engine,parts[i],&source)); }
+        fixture_end(&g.f);
+    }
+}
+
 TEST(engine_blend, create_block_honors_settings_reuses_absent_inputs_and_creates_each_trigger)
 {
     for (int defaults = 0; defaults < 2; defaults++) {
@@ -494,4 +535,8 @@ REGISTER_TEST(engine_blend, create_block_honors_settings_reuses_absent_inputs_an
 REGISTER_TEST(engine_blend, saved_graph_creates_controls_and_applies_a_blend_after_module_load);
 REGISTER_TEST(engine_blend, obsolete_create_uses_only_edit_callbacks_and_keeps_the_default_union_on_the_behavior_owner);
 REGISTER_TEST(engine_blend, obsolete_create_before_start_keeps_the_first_result_when_inputs_change_or_disappear);
+REGISTER_TEST(engine_blend, obsolete_create_preserves_live_outputs_without_attaching_them_to_the_owner);
+REGISTER_TEST(engine_blend, obsolete_create_preserves_stale_outputs_for_missing_inputs_and_clears_them_after_failed_factories);
+REGISTER_TEST(engine_blend, obsolete_create_replaces_deleted_or_cleared_outputs_only_once);
+REGISTER_TEST(engine_blend, obsolete_create_inherits_source_dynamic_lifetime_and_leaves_document_membership_and_output_untouched);
 TEST_MAIN_END()
