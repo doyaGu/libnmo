@@ -1,7 +1,9 @@
 #include "engine_fixture.h"
+#include "../../src/engine/engine_internal.h"
 
 #include "behavior/nmo_behavior_view.h"
 #include "object/builtin/nmo_behavior_schemas.h"
+#include "object/builtin/nmo_parameterin_schemas.h"
 
 #define GUID_NOP NMO_GUID(0x302561c4, 0x0d282980)
 #define GUID_KEY_EVENT NMO_GUID(0x1af2274b, 0x6b8c1524)
@@ -12,6 +14,7 @@
 #define GUID_TT_KEY_WAITER NMO_GUID(0x2ffb3ef0, 0x21807ae3)
 #define GUID_INPUT_STRING NMO_GUID(0x693e7e4b, 0x100104c4)
 #define GUID_TT_INPUT_STRING NMO_GUID(0x52fd6294, 0x612f51a5)
+#define GUID_KEYBOARD_CONTROLLER NMO_GUID(0x43f1d000,0x1a2b3c4d)
 
 #define KEY_SPACE 0x39u
 #define KEY_ENTER 0x1Cu
@@ -32,6 +35,45 @@ static void press(engine_fixture_t *f, const uint32_t *keys, int count)
         nmo_engine_set_key(f->engine, keys[i], false);
     }
     ASSERT_EQ(NMO_OK, nmo_engine_step(f->engine, 16.0f));
+}
+
+typedef struct keyboard_fixture {
+    engine_fixture_t f;
+    nmo_object_id_t block, target_value, table;
+} keyboard_fixture_t;
+
+static void keyboard_begin(keyboard_fixture_t *g)
+{
+    memset(g,0,sizeof(*g)); fixture_begin(&g->f); g->block = fixture_block(&g->f,GUID_KEYBOARD_CONTROLLER,"Keyboard Controller"); ASSERT_TRUE(g->block != 0); nmo_object_id_t target = fixture_target(&g->f,g->block); ASSERT_TRUE(target != 0); fixture_input_int(&g->f,target,(int32_t)g->f.owner_id); g->target_value = nmo_parameterin_source_id(fixture_state(&g->f,target));
+    const nmo_behavior_state_t *state = fixture_state(&g->f,g->block); g->table = nmo_behavior_ref_array_get_id(&state->local_parameters,0); ASSERT_TRUE(g->table != 0); fixture_link(&g->f,g->f.script_in,BLOCK_IN(&g->f,g->block,0),0);
+}
+
+static void keyboard_ready(keyboard_fixture_t *g)
+{
+    nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL; fixture_commit(&g->f,&options); ASSERT_TRUE(nmo_engine_has_block(g->f.engine,GUID_KEYBOARD_CONTROLLER)); ASSERT_EQ(NMO_OK,nmo_engine_start(g->f.engine,NMO_ENGINE_START_ALL)); nmo_engine_block_t block = {g->f.engine,eng_map_get(&g->f.engine->node_map,g->block)}; nmo_engine_block_set_waiting_for_messages(&block,g->f.owner_id,true);
+}
+
+static void keyboard_received(keyboard_fixture_t *g, nmo_object_id_t receiver, const char *const *names, size_t count)
+{
+    ASSERT_EQ(count,g->f.engine->messages.received.count);
+    for (size_t i = 0; i < count; i++) { const eng_received_t *message = &g->f.engine->messages.received.data[i]; ASSERT_EQ(receiver,message->object); ASSERT_EQ(receiver,message->sender); ASSERT_EQ(nmo_engine_message_type(g->f.engine,names[i]),message->type); }
+}
+
+TEST(engine_input, keyboard_controller_maps_native_scan_codes_and_repeats_held_keys_without_consuming_on)
+{
+    keyboard_fixture_t g; keyboard_begin(&g); const nmo_behavior_state_t *state = fixture_state(&g.f,g.block); ASSERT_EQ(0u,state->outputs.count); ASSERT_EQ(0u,state->in_parameters.count); ASSERT_EQ(0u,state->out_parameters.count); keyboard_ready(&g);
+    const char *names[] = {"Joy_Left","Joy_Right","Joy_Up","Joy_Down","Joy_Button1","Joy_Button2","Joy_Button3","Joy_Button4","Joy_Button5","Joy_Button6"}; int32_t table[10]; read_value(&g.f,g.table,table,sizeof(table)); const void *data = NULL; size_t size = 0; ASSERT_EQ(NMO_OK,nmo_engine_param_value(g.f.engine,g.table,&data,&size,NULL)); ASSERT_EQ(sizeof(table),size); for (size_t i = 0; i < 10; i++) ASSERT_EQ(nmo_engine_message_type(g.f.engine,names[i]),table[i]);
+    const uint32_t keys[] = {0x4b,0x4d,0x48,0x50,0xd2,0xc7,0xc9,0xd3,0xcf,0xd1};
+    for (size_t i = 0; i < 10; i++) {
+        nmo_engine_set_key(g.f.engine,keys[i],true); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); keyboard_received(&g,g.f.owner_id,&names[i],1); ASSERT_TRUE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,0))); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(0,nmo_engine_key_buffer_count(g.f.engine)); keyboard_received(&g,g.f.owner_id,&names[i],1); nmo_engine_set_key(g.f.engine,keys[i],false); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); keyboard_received(&g,g.f.owner_id,NULL,0);
+    }
+    ASSERT_EQ(30u,runs(&g.f,g.block)); fixture_end(&g.f);
+}
+
+TEST(engine_input, keyboard_controller_sends_buttons_before_directions_and_ignores_main_arrow_keys)
+{
+    keyboard_fixture_t g; keyboard_begin(&g); keyboard_ready(&g); const uint32_t arrows[] = {0xc8,0xd0,0xcb,0xcd}; for (size_t i = 0; i < 4; i++) nmo_engine_set_key(g.f.engine,arrows[i],true); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); keyboard_received(&g,g.f.owner_id,NULL,0);
+    const uint32_t keys[] = {0xd2,0xc7,0xc9,0xd3,0xcf,0xd1,0x48,0x50,0x4b,0x4d}; const char *names[] = {"Joy_Button1","Joy_Button2","Joy_Button3","Joy_Button4","Joy_Button5","Joy_Button6","Joy_Up","Joy_Down","Joy_Left","Joy_Right"}; for (size_t i = 0; i < 10; i++) nmo_engine_set_key(g.f.engine,keys[i],true); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,16)); keyboard_received(&g,g.f.owner_id,names,10); fixture_end(&g.f);
 }
 
 TEST(engine_input, key_event_reports_presses_and_releases)
@@ -302,4 +344,6 @@ REGISTER_TEST(engine_input, key_names_round_trip);
 REGISTER_TEST(engine_input, tt_key_waiter_stops_on_off);
 REGISTER_TEST(engine_input, input_string_edits_until_enter);
 REGISTER_TEST(engine_input, tt_input_string_keeps_editing_past_enter);
+REGISTER_TEST(engine_input, keyboard_controller_maps_native_scan_codes_and_repeats_held_keys_without_consuming_on);
+REGISTER_TEST(engine_input, keyboard_controller_sends_buttons_before_directions_and_ignores_main_arrow_keys);
 TEST_MAIN_END()

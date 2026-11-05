@@ -10,6 +10,7 @@
  */
 
 #include "virtools.h"
+#include "object/nmo_class_ids.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -20,6 +21,39 @@ static bool key_down(blk_t *b, uint32_t key)
 }
 
 /* ---- Controllers/Keyboard ---- */
+
+static int cb_keyboard_controller(blk_t *b, uint32_t message)
+{
+    if (message != NMO_ENGINE_MSG_LOAD) return NMO_ENGINE_BR_OK;
+    const char *names[] = {"Joy_Left","Joy_Right","Joy_Up","Joy_Down","Joy_Button1","Joy_Button2","Joy_Button3","Joy_Button4","Joy_Button5","Joy_Button6"};
+    int32_t messages[10];
+    for (size_t i = 0; i < sizeof(names)/sizeof(names[0]); i++) {
+        messages[i] = eng_message_type_add(b->engine,names[i]);
+        if (messages[i] < 0) return NMO_ENGINE_BR_GENERICERROR;
+    }
+    return nmo_engine_block_set_local_value(b,0,messages,sizeof(messages)) == NMO_OK ? NMO_ENGINE_BR_OK : NMO_ENGINE_BR_PARAMETERERROR;
+}
+
+static int bb_keyboard_controller(blk_t *b)
+{
+    if (IN_ACTIVE(b,1)) { IN_OFF(b,1); return NMO_ENGINE_BR_OK; }
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (eng_map_get(&b->engine->destroyed,target) >= 0 || !eng_is_child_class(b->engine,nmo_engine_object_class(b->engine,target),NMO_CID_BEOBJECT)) return NMO_ENGINE_BR_OWNERERROR;
+    const eng_node_t *node = &b->engine->nodes.data[b->node];
+    const eng_param_t *buffer = eng_node_param(b->engine,node->first_local,node->local_count,0);
+    int32_t messages[10];
+    if (buffer == NULL || buffer->size < sizeof(messages)) return NMO_ENGINE_BR_PARAMETERERROR;
+    memcpy(messages,buffer->data,sizeof(messages));
+    static const struct { uint32_t key; int message; } mappings[] = {
+        {0xd2,4},{0xc7,5},{0xc9,6},{0xd3,7},{0xcf,8},{0xd1,9},
+        {0x48,2},{0x50,3},{0x4b,0},{0x4d,1},
+    };
+    /* Native order is buttons, then Up/Down/Left/Right. Held keys repeat on
+     * every frame, and this block deliberately leaves the On input active. */
+    for (size_t i = 0; i < sizeof(mappings)/sizeof(mappings[0]); i++)
+        if (key_down(b,mappings[i].key)) nmo_engine_block_send_message(b,messages[mappings[i].message],target,target);
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
 
 /* Key Event: Pressed when every key waited is down, Released when one goes up. */
 static int bb_key_event(blk_t *b)
@@ -759,6 +793,7 @@ static int cb_tt_input_string(blk_t *b, uint32_t message)
 }
 
 static const nmo_engine_block_desc_t eng_controller_blocks[] = {
+    {NMO_GUID_INIT(0x43f1d000,0x1a2b3c4d),"Keyboard Controller",bb_keyboard_controller,cb_keyboard_controller,NULL},
     {NMO_GUID_INIT(0x1af2274b, 0x6b8c1524), "Key Event", bb_key_event, NULL, NULL},
     {NMO_GUID_INIT(0x016d010b, 0x017d010b), "Key Waiter", bb_key_waiter, cb_key_waiter, NULL},
     {NMO_GUID_INIT(0x2ffb3ef0, 0x21807ae3), "TT_Key Waiter", bb_tt_key_waiter, cb_tt_key_waiter, NULL},
