@@ -72,12 +72,30 @@ regenerated when absent or older than the harness module. This cache uses
 file modification times; artifact provenance checks record content hashes
 separately.
 
+## Partial-run evidence and runtime overlays
+
+A partial run records setup checkpoints separately from checkpoints reached
+from its selected sector. Setup events do not hide falls: a native Ball Off
+before completion still fails the play report. Earlier sectors remain outside
+that run's gameplay-condition coverage.
+
+When a built level has `native_dynamics.json`, the player and verifier copy its
+recorded runtime files beside `Level_01.NMO`. This includes PH variants and the
+copied loader that registers them. The run directory precedes the installation
+in the load path; the source installation is unchanged. Missing or altered
+variants fail verification before gameplay.
+
 ## Isolated Native Contact Probes
 
 `harness.write()` also accepts a probe position and native ball physics
 parameters. The dedicated probe command writes a separate `probe_base.cmo`
 into each result directory, so probe placement does not alter the ordinary
 harness cache.
+
+A checkpoint start can leave `probe_position` unset to retain the native reset
+position and starting ball. Arbitrary placement requires both `probe_position`
+and `probe_physics`; omitting the latter is an error. A host can keep the world
+paused between steps through the [CLI control protocol](../cli-reference.md#controlled-runs).
 
 After `6000 + setup_ms(sector)` milliseconds, a probe removes the player's
 physicalization, moves the player and creates a two-unit sphere using the
