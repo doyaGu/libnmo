@@ -290,34 +290,93 @@ morphs it to `to`. Only the end values need to be specified:
 }
 ```
 
-Use exactly one of a positive `length` (a straight, level connector) or
-`segments` (the same local curves as a path). Floors accept target `width`,
-`bank` and `section`; double rails accept `gauge`, `radius` and `bank`.
-Omitted values retain the incoming section. Values change linearly with
-sampled arc distance. Custom floor profiles are resampled at the union of
-their width fractions, preserving each endpoint's piecewise linear shape.
-`step`, `tolerance`, `stops`, and rail-only `ribs` retain their path meanings.
-Template mirroring reflects the curve, target bank and custom profile.
+Choose exactly one of `length`, `segments` or `endpoint`. A positive `length`
+builds a straight, level connector; `segments` uses the same local curves
+as a path. Floors accept target `width`, `bank` and `section`; double rails
+accept `gauge`, `radius` and `bank`. Omitted values retain the incoming
+section. Values change linearly with sampled arc distance. Custom floor
+profiles are resampled at the union of their width fractions, preserving
+each endpoint's piecewise linear shape. `step`, `tolerance`, `stops`, and
+rail-only `ribs` retain their path meanings.
 
-Connectors retain the incoming kind and floor depth. To change from floor
-to rail or back, first reach a standard port, then start the other path
-kind; the native docking rule applies. Beam overlaps, ballistic transfers,
-module interiors and nonstandard legacy wide docks retain their measured
-adapters. The connector does not solve arbitrary endpoints or force slope
-continuity. Unusual gauges and cross sections still require gameplay tests.
+### Connecting two ends
 
-The builder writes `connections.json`: endpoint positions, horizontal
-headings, banked up vectors, cross sections, source IDs, opening policy,
-UV policy and authored transitions. Positions use the route's V-bottom
-datum, with rail centres offset above it. Direct joints check positions,
-horizontal headings and sections at tolerance `1e-6`; intentional slope
-changes remain allowed. A failure names both ports and their source locations.
+An `endpoint` supplies the destination pose. The builder solves a cubic
+curve from the incoming port, including its grade, to that pose. This route
+connects an offset rail to an independently placed platform:
+
+```json
+{
+  "schema_version": 1,
+  "start": {"heading": "+x"},
+  "placements": {
+    "route/id/destination": {"position": [95, -8, -24], "heading": [1, 0]}
+  },
+  "sectors": [[
+    {"id": "entry", "road": 10},
+    {"id": "rails", "rail": 10},
+    {"id": "link", "connector": {
+      "endpoint": {"placement": "route/id/destination", "slope": 0},
+      "to": {"kind": "floor"},
+      "min_radius": 8,
+      "max_grade": 1
+    }},
+    {"id": "destination", "floor_polygon": {
+      "outline": [[0,-5], [20,-5], [20,5], [0,5]],
+      "entry": {"edge": 3}, "exit": {"edge": 1}
+    }},
+    {"id": "exit", "road": 10}
+  ]]
+}
+```
+
+Replacing the platform with `{"id": "destination", "module": "P_Modul_25"}`
+uses the same connection for a native drawbridge. Moving the destination's
+explicit placement changes the connector on the next build.
+
+| Endpoint form | Meaning |
+| --- | --- |
+| `{"offset": [60,20,8], "heading": [1,0], "slope": 0}` | Local `[forward,right,up]` displacement and unit `[forward,right]` end heading |
+| `{"placement": "route/id/destination", "slope": 0}` | World pose from the top-level `placements` table; the target must have an explicit placement |
+| `{"platform": "hub", "port": "west", "slope": 0}` | An available named polygon port, approached inward; the platform must already be laid out |
+
+`slope` is rise divided by horizontal distance and defaults to zero. An
+unknown incoming slope requires `start_slope`; a known incoming slope cannot
+be overridden with a conflicting value. Endpoint exits require the next
+piece to have a matching known entry slope. Legacy joints still permit
+intentional slope changes.
+
+`min_radius` defaults to 8 and must be positive. `max_grade` defaults to 1
+and must be in `(0,4]`. The solver checks horizontal curvature and absolute
+grade over the entire cubic through subdivided derivative bounds, independent
+of mesh sampling. It tries a finite, deterministic set of tangent lengths.
+Optional `handles: [30,40]` supplies the two positive lengths explicitly.
+Failure means none of the tested curves could be certified; move the
+endpoint, change the handles or deliberately change the limits. This is
+not an obstacle-routing search.
+
+An endpoint connector from a double rail to `to.kind: "floor"` reserves a
+five-unit standard V dock before the requested endpoint. The dock must end
+level. Put elements on a separate floor after this connector. Other kind
+changes use the existing standard-port adapters; connector floor depth is
+preserved. Beam overlaps, ballistic transfers and module interiors retain
+their measured adapters. Unusual gauges and cross sections need gameplay tests.
+Template mirroring reflects local endpoint offsets and headings, target
+bank and custom profiles; placement and named-port references remain references.
+
+The builder writes `connections.json` with endpoint poses, known slopes,
+sections, source IDs, opening and UV policies, and authored transitions.
+Positions use the route's V-bottom datum, with rail centres offset above it.
+Direct joints check positions, horizontal headings and sections at tolerance
+`1e-6`. Endpoint-generated transitions also record their generated paths and
+radius/grade constraints. A failure names the ports and source locations.
 
 Consecutive free floors carry their cumulative UV distance through the
 joint. The native grid and the platform's ProfileFlat image retain explicit
 material phase resets. This does not promise seamless texture phase across
 every native module. Platform openings and connector mouths share their
-width; neither emits an internal end cap. Arbitrary custom profiles retain
+width; neither emits an internal end cap. A rail entering a free floor
+closes the exposed floor end wall. Arbitrary custom profiles retain
 the existing borderless surface material rather than acquiring a new theme.
 
 ## Spatial constraints and scenery attachments
