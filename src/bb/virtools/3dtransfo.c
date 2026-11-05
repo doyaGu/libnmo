@@ -43,6 +43,18 @@ static void play_animation_step(blk_t *b, nmo_object_id_t animation, float step)
     eng_animation_set_step(b->engine, animation, y);
 }
 
+static int bb_set_animation_step_entity(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_object_id_t animation = nmo_engine_block_get_input_object(b, 0);
+    if (eng_map_get(&b->engine->destroyed, animation) >= 0 ||
+        eng_find_object(b->engine, animation) == NULL) return NMO_ENGINE_BR_OK;
+    float step = get_in_float(b, 1, 0);
+    eng_object_animation_set_step(b->engine, animation, step);
+    return NMO_ENGINE_BR_OK;
+}
+
 static int bb_play_animation(blk_t *b)
 {
     nmo_object_id_t animation = nmo_engine_block_get_input_object(b, 0);
@@ -694,6 +706,7 @@ static int bb_position_on_curve(blk_t *b)
 static const nmo_engine_block_desc_t eng_3dtransfo_blocks[] = {
     {NMO_GUID_INIT(0x676776d0, 0x20d457bd), "Position On Curve", bb_position_on_curve, position_on_curve_callback, NULL},
     {NMO_GUID_INIT(0x64221225, 0x769a143f), "Play Animation 3D Entity", bb_play_animation, NULL, NULL},
+    {NMO_GUID_INIT(0x14782b1d, 0x52692e21), "Set Animation Step Entity", bb_set_animation_step_entity, NULL, NULL},
     {NMO_GUID_INIT(0x1c9236e1, 0x42f40996), "Play Global Animation", bb_play_global_animation, NULL,
      NULL},
     {NMO_GUID_INIT(0xe456e78a, 0x456789aa), "Set Position", bb_set_position, NULL, NULL},
