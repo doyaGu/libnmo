@@ -105,6 +105,39 @@ The [Ballance native motion guide](ballance-native-resources.md) explains
 how these poses are checked against per-body contracts. Sampled poses do
 not cover all positions between frames.
 
+### Controlled Runs
+
+`--control` keeps one native world alive while the caller advances it through
+stdin. It requires a file and `--observe`, and cannot be combined with `--window`,
+`--steer` or `--keys`. `--frames` does not bound this mode; the caller controls
+when to step and when to exit.
+
+With an existing probe composition and its runtime resources:
+
+```sh
+printf 'step 1 0\nstep 60 1\nstep 0 0\nquit\n' | \
+  nmo -f json behavior run --control --physics ivp --delta 16.667 \
+  --observe 'Ball_Wood,Ball_Stone,Ball_Paper,P_Modul_18*' \
+  --path "$BALLANCE" --write out/probe out/probe/probe_base.cmo
+```
+
+Read the initial JSON line before issuing interactive commands. `step COUNT MASK`
+accepts 0–10000 frames and an arrow-key bitmask from 0 to 15: Up=1, Down=2,
+Left=4, Right=8. The mask sets the held keys for that request. `step 0 0`
+releases the keys and returns the current state without advancing it. Each pause
+emits one JSON line containing `frame`, `time_ms`, `gameplay` and `entities`.
+Entities carry runtime IDs, names, visibility and 16-value world matrices.
+`gameplay` reports native death count, last death frame and finish state. A native
+Ball Off or Level_Finish ends the current batch early, before automatic respawn
+can hide the terminal event. The caller decides whether to resume or recreate the
+process. `quit` or EOF releases it and emits the normal final CLI result,
+which is separate from the per-pause snapshots. Invalid commands fail the run.
+
+In controlled runs, `--observe` accepts comma-separated exact names and trailing
+`*` prefixes. Without `--control`, it accepts exact names and adds their final
+world matrices to the normal result. It observes entities, including nonphysical
+objects; `--physics-log` remains the trace of movable physical bodies.
+
 ## Behavior Rewriting
 
 ```
@@ -177,7 +210,14 @@ nmo data show <id> <file>            # Data array schema
 nmo data dump <id> <file>            # Data array contents
 nmo data set-cell <id> --row <r> --col <c> --value <val> <file> -o <out>  # Modify a single cell
 nmo data fill <id> --table <table.json> <file> -o <out>  # Give an empty array columns and rows
+nmo data fill --append --name <name> --table <table.json> <file> -o <out>
 ```
+
+`data fill --append` adds rows to an existing array without replacing its
+columns or earlier rows. The table must declare the same column count, names,
+types and parameter GUIDs. A schema mismatch rejects the write. Plain `data fill`
+continues to require an empty array. This allows generated native loader groups
+to be appended while preserving the installed template's entries.
 
 ## Groups
 
