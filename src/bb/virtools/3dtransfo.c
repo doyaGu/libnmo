@@ -500,6 +500,44 @@ static eng_vector_t vector_toward(const eng_vector_t *from, const eng_vector_t *
     return v;
 }
 
+/* The free Vx Normalize divides by the length even for a zero vector. */
+static eng_vector_t normalize_unchecked(eng_vector_t v)
+{
+    const double x = v.x, y = v.y, z = v.z;
+    const double length = sqrt((x*x + y*y) + z*z);
+    return (eng_vector_t){(float)(x/length), (float)(y/length), (float)(z/length)};
+}
+
+static int bb_look_at_pos(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    int32_t entity = target_entity(b);
+    if (entity < 0) return NMO_ENGINE_BR_OWNERERROR;
+    nmo_engine_t *engine = b->engine;
+    eng_vector_t from = eng_entity_position(engine, entity, -1);
+    eng_vector_t to = get_in_vector(b, 0, 0, 0, 0);
+    float speed = get_in_float(b, 1, 1);
+    bool keep = keep_children(b, 2);
+    eng_vector_t dir = {to.x-from.x, to.y-from.y, to.z-from.z};
+    if (dir.x != 0 || dir.y != 0 || dir.z != 0) {
+        dir = normalize_unchecked(dir);
+        const eng_matrix_t *world = &engine->entities.data[entity].world;
+        eng_vector_t old = normalize_unchecked((eng_vector_t){world->m[2][0], world->m[2][1], world->m[2][2]});
+        dir = vector_toward(&old, &dir, speed);
+        eng_vector_t up = {0, 1, 0};
+        eng_vector_t right = eng_vector_cross(&up, &dir);
+        up = eng_vector_cross(&dir, &right);
+        dir = normalize_unchecked(dir);
+        right = normalize_unchecked(right);
+        up = normalize_unchecked(up);
+        eng_vector_t scale = eng_entity_scale(engine, entity, true);
+        eng_entity_set_orientation(engine, entity, &dir, &up, &right, -1, keep);
+        eng_entity_set_scale(engine, entity, &scale, false, true);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
 /*
  * BB_Orientate (3DTrans.cpp): the axis `dir_mode` names (1 X, 3 Y, 5 Z; the
  * even modes the opposite) turned `speed` of the way toward `dir`, about the
@@ -753,6 +791,7 @@ static const nmo_engine_block_desc_t eng_3dtransfo_blocks[] = {
     {NMO_GUID_INIT(0x0c4966d8, 0x6c0c6d14), "Set Euler Orientation", bb_set_euler_orientation, NULL,
      NULL},
     {NMO_GUID_INIT(0x26843971, 0x86249317), "Look At", bb_look_at, NULL, NULL},
+    {NMO_GUID_INIT(0xee6e5e6e, 0xe6e6e6e6), "Look At Pos", bb_look_at_pos, NULL, NULL},
     {NMO_GUID_INIT(0x3d4861f8, 0x2861703d), "TT LookAt", bb_tt_look_at, NULL, NULL},
 };
 
