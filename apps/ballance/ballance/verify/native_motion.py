@@ -56,7 +56,9 @@ def marker_layout(source, nmo, kind):
                            balloon=None,mechanism_settings={}),records
 
 
-def probe(name, game, out, nmo, frames=1600):
+def probe(name, game, out, nmo, frames=1600, *, recovery=False):
+    if recovery and name != "Plates":
+        raise ValueError("The recovery scenario currently covers Plates only")
     spec=resource(name)
     extract=spec['parts'][0]['extract']
     source=game/extract['file'];kind=spec['placement']['module']
@@ -110,5 +112,16 @@ def probe(name, game, out, nmo, frames=1600):
                      and trace['status']=='passed' else 'failed',
             'scope':'Local contact probe in a byte-identical original-level copy. The separate harness places the ball '
                     'after sector activation and recreates its sphere from native ball-table parameters. Movement and sampled containment only, not full-level completion.'}
+    if recovery:
+        from .recovery import plates
+        reset = next((o for o in nmo.objects(source, 'CK3dEntity')
+                      if o['name'] == f'PR_Resetpoint_{sector:02d}'), None)
+        if reset is None:
+            raise ValueError('Original checkpoint reset marker missing')
+        reset_position = matrix_of(field_values(reset)['world_matrix'])[12:15]
+        report['recovery'] = plates(out/'physics.csv', out/'runtime.log', trace, instance,
+                                    recipe, reset_position, ball)
+        if report['recovery']['status'] != 'passed':
+            report['status'] = 'failed'
     write_json(out/'validation.json',report)
     return report

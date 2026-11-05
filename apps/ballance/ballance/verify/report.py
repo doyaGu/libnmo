@@ -22,13 +22,13 @@ from .motions import check as motion_check
 from .motion_trace import inspect as motion_trace
 from .gameplay import inspect as gameplay_check
 from .resources import check as resource_check, dependency_paths
-from .play import FRAME_MS, Play, play
+from .play import FRAME_MS, Play, play, steer_from
 
 
 def _play_report(result: Play, folder: Path, sector: int) -> dict:
     finish = result.finished
     checkpoints = [frame for frame, event in result.events if event == 'Checkpoint reached'
-                   and (finish is None or frame < finish)]
+                   and frame >= steer_from(sector) and (finish is None or frame < finish)]
     sectors_path = folder / 'route_sectors.json'
     expected = len(json.loads(sectors_path.read_text(encoding='utf-8'))) - sector \
         if sectors_path.is_file() else None
@@ -45,6 +45,8 @@ def _play_report(result: Play, folder: Path, sector: int) -> dict:
             'requested_frames': result.frames, 'finished_frame': finish,
             'simulated_seconds': round(finish*float(FRAME_MS)/1000, 3) if finish is not None else None,
             'falls_before_finish': result.falls, 'checkpoints': checkpoints,
+            'setup_checkpoints': [frame for frame, event in result.events
+                                  if event == 'Checkpoint reached' and frame < steer_from(sector)],
             'expected_checkpoints': expected, 'stalls': [asdict(s) for s in result.stalls],
             'rewards': result.rewards, 'missed_rewards': len(result.missed),
             'trace_samples': len(result.trace),
@@ -82,7 +84,8 @@ def verify(source: Path, nmo: Nmo, *, frames: int | None = None,
         assets=Assets.existing(source)
         prepare_motion_stops(layout,assets)
         connections = layout.connection_report()
-        checks['connections'] = {'status': 'passed', 'count': len(connections['connections']),
+        checks['connections'] = {'status': 'failed' if connections.get('open_connections') else 'passed',
+                                 'open_connections': connections.get('open_connections', []), 'count': len(connections['connections']),
                                  'transitions': len(connections['transitions']),
                                  'scope': connections['scope']}
         spatial_path = source / 'spatial_constraints.json'
@@ -105,7 +108,7 @@ def verify(source: Path, nmo: Nmo, *, frames: int | None = None,
     checks['gameplay'] = {'status': 'skipped', 'reason': 'No new gameplay trace requested.'}
     checks['mechanism_motion'] = {'status':'skipped','reason':'No new gameplay trace requested.'}
     if frames is not None:
-        if checks['build']['status'] == 'failed' or checks.get('resources',{}).get('status') == 'failed' or checks.get('mechanisms',{}).get('template_mismatches'):
+        if checks.get('connections',{}).get('status') == 'failed' or checks['build']['status'] == 'failed' or checks.get('resources',{}).get('status') == 'failed' or checks.get('mechanisms',{}).get('template_mismatches'):
             checks['play'] = {'status': 'skipped', 'reason': 'Build inputs or native resources changed; refresh and rebuild first.'}
         else:
             try:
@@ -115,6 +118,8 @@ def verify(source: Path, nmo: Nmo, *, frames: int | None = None,
                     checks['gameplay'] = gameplay_check(source, json.loads(contract_path.read_text()), sector, checks['play']['finished_frame'])
                 if route_path.is_file():
                     checks['mechanism_motion']=motion_trace(source/'physics.csv',layout,checks['play']['finished_frame'])
+                    if (source/'physics.csv').is_file():
+                        checks['mechanism_motion']['trace_sha256']=project.digest(source/'physics.csv')
             except (OSError, RuntimeError, ValueError) as error:
                 checks['play'] = {'status': 'failed', 'error': str(error)}
     statuses = [c['status'] for c in checks.values()]

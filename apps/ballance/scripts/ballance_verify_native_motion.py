@@ -16,14 +16,17 @@ def main():
     parser.add_argument('--out',type=Path,required=True)
     parser.add_argument('--resources',nargs='+',choices=PROBES,default=list(PROBES))
     parser.add_argument('--frames',type=int,default=1600)
+    parser.add_argument('--recovery', action='store_true', help='Require natural plate break, death, restored poses and checkpoint respawn (Plates only)')
     add_nmo_argument(parser)
     args=parser.parse_args();reports=[]
     if args.frames<1:parser.error('--frames must be positive')
+    if args.recovery and args.resources != ['Plates']:
+        parser.error('--recovery requires --resources Plates')
     args.out=args.out.resolve();args.game=args.game.resolve()
     args.out.mkdir(parents=True,exist_ok=True)
     for name in args.resources:
         try:
-            report=probe(name,args.game,args.out/name,Nmo(args.nmo),args.frames)
+            report=probe(name,args.game,args.out/name,Nmo(args.nmo),args.frames,recovery=args.recovery)
         except (OSError,ValueError,RuntimeError,subprocess.CalledProcessError) as error:
             report={'resource':name,'status':'failed','error':str(error)}
             (args.out/name).mkdir(parents=True,exist_ok=True)

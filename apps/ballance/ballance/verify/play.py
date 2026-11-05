@@ -150,6 +150,8 @@ def watch(level: Path, route: Path | None, nmo: Nmo, game: Path, mute: bool = Fa
         Path(str(shot) + '.evidence.json').unlink(missing_ok=True)
     with tempfile.TemporaryDirectory() as folder:
         shutil.copyfile(level, Path(folder) / "Level_01.NMO")
+        from ..route.dynamics import copy_runtime
+        copy_runtime(level.parent, folder)
         command = [nmo.executable, "behavior", "run", "--window", "--physics", "ivp",
                    "--write", folder, "--path", str(game)]
         if route is not None:

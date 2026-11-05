@@ -421,7 +421,9 @@ def write(out: Path, nmo: Nmo, sector: int = 1, ball: str = "Wood", probe_positi
             entity=plan.operation(script,'428009B4-1CAA5C78','5B8A05D5-31EA28D4','Probe Ball',name)
             plan.wire(entity,(position,'target'))
             plan.link(script,entry,(delay,'input:In'))
-            physics=plan.node(script,'7522370E-37EC15EC','Probe Ball Physics',probe_physics)
+            # CK disables collisions for a sphere whose surface name is empty.
+            physics=plan.node(script,'7522370E-37EC15EC','Probe Ball Physics',
+                              dict(probe_physics, **{'Collision Surface':f'Ball_{ball}'}))
             plan.wire(entity,(physics,'target'))
             plan.value((physics,'local_param:Convex Count'),0)
             plan.value((physics,'local_param:Ball Count'),1)
