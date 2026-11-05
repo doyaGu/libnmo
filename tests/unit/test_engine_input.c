@@ -122,6 +122,42 @@ TEST(engine_input, tt_joystick_vector_mapper_maps_each_signed_source_axis_to_eac
     ASSERT_EQ(48u,runs(&g.f,g.block)); fixture_end(&g.f);
 }
 
+TEST(engine_input, tt_joystick_vector_mapper_later_active_assignments_replace_rather_than_accumulate)
+{
+    tt_vector_mapper_fixture_t g; tt_vector_mapper_begin(&g); tt_vector_mapper_ready(&g); const float input[] = {2,3,-5};
+    tt_vector_mapper_fire(&g,input,(int32_t[4]){0,2,5,3},(float[3]){-3,5,0});
+    tt_vector_mapper_fire(&g,input,(int32_t[4]){0,3,2,5},(float[3]){2,-5,0});
+    tt_vector_mapper_fire(&g,input,(int32_t[4]){0,0,5,5},(float[3]){-2,-5,0});
+    tt_vector_mapper_fire(&g,input,(int32_t[4]){5,-1,-1,5},(float[3]){5,-5,0}); fixture_end(&g.f);
+}
+
+TEST(engine_input, tt_joystick_vector_mapper_ignores_invalid_selectors_and_clears_all_previous_output_components)
+{
+    tt_vector_mapper_fixture_t g; tt_vector_mapper_begin(&g); tt_vector_mapper_ready(&g); const int32_t invalid[] = {-1,6,INT32_MIN,INT32_MAX}; const float input[] = {2,-3,5};
+    for (size_t i = 0; i < 4; i++) {
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.output,(float[3]){17,18,19},3*sizeof(float))); int32_t mappings[] = {invalid[i],invalid[i],invalid[i],invalid[i]}; tt_vector_mapper_fire(&g,input,mappings,(float[3]){0,0,0}); mappings[1] = 1; mappings[2] = 4; tt_vector_mapper_fire(&g,input,mappings,(float[3]){0,5,0}); mappings[0] = 3; mappings[3] = 3; tt_vector_mapper_fire(&g,input,mappings,(float[3]){3,-3,0});
+    }
+    fixture_end(&g.f);
+}
+
+TEST(engine_input, tt_joystick_vector_mapper_nonnegative_zero_can_overwrite_an_active_nonzero_mapping)
+{
+    tt_vector_mapper_fixture_t g; tt_vector_mapper_begin(&g); tt_vector_mapper_ready(&g);
+    tt_vector_mapper_fire(&g,(float[3]){2,0,3},(int32_t[4]){0,2,4,2},(float[3]){-0.0f,-0.0f,0});
+    tt_vector_mapper_fire(&g,(float[3]){2,-0.0f,3},(int32_t[4]){0,2,4,2},(float[3]){0,0,0});
+    tt_vector_mapper_fire(&g,(float[3]){2,-0.0f,3},(int32_t[4]){0,3,4,3},(float[3]){2,3,0});
+    tt_vector_mapper_fire(&g,(float[3]){-0.0f,2,3},(int32_t[4]){0,-1,0,-1},(float[3]){-0.0f,-0.0f,0}); fixture_end(&g.f);
+}
+
+TEST(engine_input, tt_joystick_vector_mapper_nan_sources_are_inactive_and_infinite_magnitudes_are_preserved)
+{
+    tt_vector_mapper_fixture_t g; tt_vector_mapper_begin(&g); tt_vector_mapper_ready(&g);
+    tt_vector_mapper_fire(&g,(float[3]){NAN,2,-3},(int32_t[4]){0,2,1,5},(float[3]){-2,-3,0});
+    tt_vector_mapper_fire(&g,(float[3]){NAN,NAN,NAN},(int32_t[4]){0,3,4,5},(float[3]){0,0,0});
+    tt_vector_mapper_fire(&g,(float[3]){INFINITY,-INFINITY,4},(int32_t[4]){0,3,3,0},(float[3]){-INFINITY,-INFINITY,0});
+    tt_vector_mapper_fire(&g,(float[3]){INFINITY,-INFINITY,4},(int32_t[4]){3,-1,0,-1},(float[3]){INFINITY,INFINITY,0}); fixture_end(&g.f);
+}
+
 typedef struct joystick_waiter_fixture {
     engine_fixture_t f;
     nmo_object_id_t block, number_value, settings[4], values[4], observers[43];
@@ -957,6 +993,11 @@ TEST(engine_input, tt_input_string_keeps_editing_past_enter)
 }
 
 TEST_MAIN_BEGIN()
+REGISTER_TEST(engine_input, tt_joystick_vector_mapper_later_active_assignments_replace_rather_than_accumulate);
+REGISTER_TEST(engine_input, tt_joystick_vector_mapper_ignores_invalid_selectors_and_clears_all_previous_output_components);
+REGISTER_TEST(engine_input, tt_joystick_vector_mapper_nonnegative_zero_can_overwrite_an_active_nonzero_mapping);
+REGISTER_TEST(engine_input, tt_joystick_vector_mapper_nan_sources_are_inactive_and_infinite_magnitudes_are_preserved);
+
 REGISTER_TEST(engine_input, tt_joystick_vector_mapper_defaults_follow_native_overwrite_order_without_attached_devices);
 REGISTER_TEST(engine_input, tt_joystick_vector_mapper_maps_each_signed_source_axis_to_each_output_channel);
 
