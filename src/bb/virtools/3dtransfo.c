@@ -400,6 +400,21 @@ static int bb_set_orientation(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* Set Quaternion Orientation always restores local scale after the new pose. */
+static int bb_set_quaternion_orientation(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    int32_t entity = target_entity(b);
+    if (entity < 0) return NMO_ENGINE_BR_OWNERERROR;
+    nmo_quaternion_t quaternion = {0,0,0,1};
+    nmo_engine_block_get_input_value(b,0,&quaternion,sizeof(quaternion));
+    bool keep = keep_children(b,1);
+    int32_t reference = input_entity(b,2);
+    eng_entity_set_quaternion_unchecked(b->engine,entity,&quaternion,reference,keep,true);
+    return NMO_ENGINE_BR_OK;
+}
+
 /*
  * Set Euler Orientation: the axes of the angles' rotation. An old block
  * (Merge Angles Params off, with four inputs or more) has the three angles
@@ -692,6 +707,7 @@ static const nmo_engine_block_desc_t eng_3dtransfo_blocks[] = {
     {NMO_GUID_INIT(0xffffffee, 0xeeffffff), "Rotate", bb_rotate, NULL, NULL},
     {NMO_GUID_INIT(0xfdfd999e, 0xdefeded8), "Rotate Around", bb_rotate_around, NULL, NULL},
     {NMO_GUID_INIT(0x625874aa, 0xaa694132), "Set Orientation", bb_set_orientation, NULL, NULL},
+    {NMO_GUID_INIT(0x5ae25172, 0x5c781faa), "Set Quaternion Orientation", bb_set_quaternion_orientation, NULL, NULL},
     {NMO_GUID_INIT(0x0c4966d8, 0x6c0c6d14), "Set Euler Orientation", bb_set_euler_orientation, NULL,
      NULL},
     {NMO_GUID_INIT(0x26843971, 0x86249317), "Look At", bb_look_at, NULL, NULL},
