@@ -63,7 +63,9 @@ static int share_edited(blk_t *b, uint32_t message)
     for (size_t m = 0; m < engine->modules.count; m++) {
         const eng_module_t *module = &engine->modules.data[m]; size_t objects_count = 0; nmo_object_t **objects = nmo_object_repository_get_all(module->repo,&objects_count);
         for (size_t i = 0; i < objects_count; i++) if (nmo_object_get_class_id(objects[i]) == NMO_CID_OBJECTANIMATION) {
-            nmo_object_id_t id = eng_module_id(module,nmo_object_get_id(objects[i])), *slot = NULL;
+            nmo_object_id_t local = nmo_object_get_id(objects[i]), *slot = NULL;
+            if (!eng_module_has(module,local)) continue;
+            nmo_object_id_t id = eng_module_id(module,local);
             if (eng_map_get(&engine->destroyed,id) >= 0) continue;
             if (!ENG_VEC_PUSH(candidates,slot)) { free(candidates.data); return NMO_ENGINE_BR_GENERICERROR; }
             *slot = id;

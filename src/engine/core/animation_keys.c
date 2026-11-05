@@ -42,7 +42,9 @@ static bool capture_data(nmo_engine_t *engine)
         nmo_object_t **objects = nmo_object_repository_get_all(module->repo,&count);
         for (size_t i = 0; i < count; i++) {
             if (nmo_object_get_class_id(objects[i]) != NMO_CID_OBJECTANIMATION) continue;
-            nmo_object_id_t id = eng_module_id(module,nmo_object_get_id(objects[i])); eng_animation_source_t source;
+            nmo_object_id_t local = nmo_object_get_id(objects[i]);
+            if (!eng_module_has(module,local)) continue;
+            nmo_object_id_t id = eng_module_id(module,local); eng_animation_source_t source;
             if (eng_map_get(&engine->animations.key_map,id) >= 0 || !eng_animation_source(engine,id,&source)) continue;
             eng_animation_key_data_t *data = NULL;
             for (size_t k = 0; source.keys != NULL && k < engine->animations.key_data.count; k++) {
