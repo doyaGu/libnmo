@@ -41,53 +41,54 @@ def default_plan(scene: list[SceneObject]) -> dict:
     on the way: from the first reset point to each checkpoint in turn, then
     the balloon."""
     names = {obj.name for obj in scene}
-    checkpoints = sorted(name for name in names if name.startswith("PC_TwoFlames_"))
-    balloon = sorted(name for name in names if name.startswith("PE_Balloon_"))
-    return {"start": "PR_Resetpoint_01",
-            "legs": [{"to": name} for name in checkpoints + balloon]}
+    checkpoints = sorted(name for name in names if name.startswith('PC_TwoFlames_'))
+    balloon = sorted(name for name in names if name.startswith('PE_Balloon_'))
+    return {'start': 'PR_Resetpoint_01', 'legs': [{'to': name} for name in checkpoints + balloon]}
 
 
-def play(scene: list[SceneObject], plan: dict,
-         log: Callable[[str], None] = lambda line: print(line, file=sys.stderr)
-         ) -> list[SteerPoint]:
+def play(
+    scene: list[SceneObject],
+    plan: dict,
+    log: Callable[[str], None] = lambda line: print(line, file=sys.stderr),
+) -> list[SteerPoint]:
     """The plan's points for the autopilot, the legs logged as they are
     found; ValueError if a leg has no path."""
     grounds: dict[str, tuple[Terrain, dict]] = {}
     points: list[SteerPoint] = []
-    at: str | Point3 = plan["start"]
-    for leg in plan["legs"]:
-        if "steer" in leg:
-            given = parse(leg["steer"])
+    at: str | Point3 = plan['start']
+    for leg in plan['legs']:
+        if 'steer' in leg:
+            given = parse(leg['steer'])
             points += given
-            at = (given[-1].x, leg.get("y", 0.0), given[-1].z)
+            at = (given[-1].x, leg.get('y', 0.0), given[-1].z)
             continue
-        key = json.dumps([leg.get("floors", []), leg.get("avoid", [])])
+        key = json.dumps([leg.get('floors', []), leg.get('avoid', [])])
         if key not in grounds:
             grounds[key] = _ground(scene, leg)
         ground, clear = grounds[key]
         start = nearest(ground, _where(ground, at))
-        target = _where(ground, leg["to"])
+        target = _where(ground, leg['to'])
         goal = nearest(ground, target)
-        off = goal is None   # off the ground (the balloon): to the ground nearest it
+        off = goal is None  # off the ground (the balloon): to the ground nearest it
         if off:
             goal = nearest(ground, target, OFF_GROUND)
         path = find_path(ground, clear, start, goal) if start and goal else None
-        log(f"{at} -> {leg['to']}: {len(path) if path else 'no'} cells")
+        log(f'{at} -> {leg["to"]}: {len(path) if path else "no"} cells')
         if path is None:
-            raise ValueError(f"no path from {at} to {leg['to']}")
+            raise ValueError(f'no path from {at} to {leg["to"]}')
         found = simplify(path)
         points += found if not points else found[1:]
         if off:
             points.append(SteerPoint(target[0], target[2]))
-        at = leg["to"]
-    for f in plan.get("fixes", []):
-        points = fix(points, tuple(f["box"]), parse(f["points"]), f.get("run", 0))
+        at = leg['to']
+    for f in plan.get('fixes', []):
+        points = fix(points, tuple(f['box']), parse(f['points']), f.get('run', 0))
     return points
 
 
 def _ground(scene: list[SceneObject], leg: dict) -> tuple[Terrain, dict]:
-    ground = terrain(scene, [tuple(f) for f in leg.get("floors", [])])
-    for avoid in leg.get("avoid", []):
+    ground = terrain(scene, [tuple(f) for f in leg.get('floors', [])])
+    for avoid in leg.get('avoid', []):
         if isinstance(avoid, str):
             x, _, z = ground.marks[avoid]
             ground.without(x, z, AVOID_REACH)

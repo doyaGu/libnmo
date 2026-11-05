@@ -46,8 +46,17 @@ class Ring:
     """Where a rail's middle line passes: a point and the level heading
     there, as a unit (dx, dz)."""
 
-    def __init__(self, x: float, y: float, z: float, dx: float, dz: float,
-                 bank: float = 0.0, gauge: float = GAUGE, radius: float = TUBE) -> None:
+    def __init__(
+        self,
+        x: float,
+        y: float,
+        z: float,
+        dx: float,
+        dz: float,
+        bank: float = 0.0,
+        gauge: float = GAUGE,
+        radius: float = TUBE,
+    ) -> None:
         self.x, self.y, self.z = x, y, z
         self.dx, self.dz = dx, dz
         self.bank, self.gauge, self.radius = bank, gauge, radius
@@ -97,18 +106,25 @@ def _tube(mesh: Mesh, run: list[Ring], side: float) -> None:
             # angle 0 points away from the other tube
             ca, sa = math.cos(math.radians(a)), math.sin(math.radians(a))
             cn, sn = math.cos(math.radians(n)), math.sin(math.radians(n))
-            corners.append((tuple(centre[j] + r.radius * (right[j] * side * ca + up[j] * sa)
-                                  for j in range(3)),
-                            tuple(right[j] * side * cn + up[j] * sn for j in range(3)), a / 360.0))
+            corners.append(
+                (
+                    tuple(
+                        centre[j] + r.radius * (right[j] * side * ca + up[j] * sa) for j in range(3)
+                    ),
+                    tuple(right[j] * side * cn + up[j] * sn for j in range(3)),
+                    a / 360.0,
+                )
+            )
         rings.append((corners, along / REPEAT))
     for (a, va), (b, vb) in zip(rings, rings[1:]):
         for i, j in FACES:
             quad = [(a[i], va), (a[j], va), (b[j], vb), (b[i], vb)]
             for tri in ((0, 1, 2), (0, 2, 3)):
-                corners = [((point, (u, v), normal)) for (point, normal, u), v in
-                           (quad[t] for t in tri)]
+                corners = [
+                    ((point, (u, v), normal)) for (point, normal, u), v in (quad[t] for t in tri)
+                ]
                 # outward: as the first corner's normal leans
-                mesh.triangle("Rail", corners[0][2], *corners)
+                mesh.triangle('Rail', corners[0][2], *corners)
 
 
 def _beam(mesh: Mesh, run: list[Ring]) -> None:
@@ -124,20 +140,27 @@ def _beam(mesh: Mesh, run: list[Ring]) -> None:
         for a in BEAM_ANGLES:
             ca, sa = math.cos(math.radians(a)), math.sin(math.radians(a))
             normal = tuple(right[j] * ca + up[j] * sa for j in range(3))
-            corners.append((tuple(v + r.radius * n for v, n in zip((r.x, r.y, r.z), normal)),
-                            normal, a / 360.0))
+            corners.append(
+                (
+                    tuple(v + r.radius * n for v, n in zip((r.x, r.y, r.z), normal)),
+                    normal,
+                    a / 360.0,
+                )
+            )
         rings.append((corners, along / REPEAT))
     for (a, va), (b, vb) in zip(rings, rings[1:]):
         for i, j in BEAM_FACES:
             quad = [(a[i], va), (a[j], va), (b[j], vb), (b[i], vb)]
             for tri in ((0, 1, 2), (0, 2, 3)):
-                corners = [((point, (u, v), normal)) for (point, normal, u), v in
-                           (quad[t] for t in tri)]
-                mesh.triangle("Rail", corners[0][2], *corners)
+                corners = [
+                    ((point, (u, v), normal)) for (point, normal, u), v in (quad[t] for t in tri)
+                ]
+                mesh.triangle('Rail', corners[0][2], *corners)
 
 
-def bend(x: float, y: float, z: float, d: tuple[int, int], side: tuple[int, int],
-         drop: float = 0.0) -> list[Ring]:
+def bend(
+    x: float, y: float, z: float, d: tuple[int, int], side: tuple[int, int], drop: float = 0.0
+) -> list[Ring]:
     """The rings of the originals' bend, from (x, y, z) heading d, turning
     toward side (a unit heading square to d), coming down drop along it."""
     cx, cz = x + side[0] * BEND_RADIUS, z + side[1] * BEND_RADIUS
@@ -148,6 +171,7 @@ def bend(x: float, y: float, z: float, d: tuple[int, int], side: tuple[int, int]
         c, s = math.cos(t), math.sin(t)
         px = cx - side[0] * BEND_RADIUS * c + d[0] * BEND_RADIUS * s
         pz = cz - side[1] * BEND_RADIUS * c + d[1] * BEND_RADIUS * s
-        rings.append(Ring(px, y - drop * k / steps, pz, d[0] * c + side[0] * s,
-                          d[1] * c + side[1] * s))
+        rings.append(
+            Ring(px, y - drop * k / steps, pz, d[0] * c + side[0] * s, d[1] * c + side[1] * s)
+        )
     return rings

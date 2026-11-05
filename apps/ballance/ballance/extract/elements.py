@@ -59,7 +59,7 @@ from ..core.obj import read_obj
 from ..game.catalog import ELEMENT_KINDS, MARKERS
 from ..game.resources import catalog
 
-KINDS = MARKERS + ELEMENT_KINDS + ["SkyLayer"]
+KINDS = MARKERS + ELEMENT_KINDS + ['SkyLayer']
 
 # Snapping: a cut's coordinates within SNAP_TOLERANCE of these are moved onto
 # them -- per kind, the values along X, Y and Z in its own frame, mirrored to
@@ -69,8 +69,12 @@ SNAP_TOLERANCE = 0.06
 # The walls closing a cut floor: as deep as the floors' (ballance.kit.floors),
 # one texture repeat every 5.
 WALL_DEPTH, REPEAT_UNITS = 5.0, 5.0
-SNAP = {p["name"]: p["extract"]["snap"] for s in catalog().values() for p in s["parts"]
-        if "snap" in p["extract"]}
+SNAP = {
+    p['name']: p['extract']['snap']
+    for s in catalog().values()
+    for p in s['parts']
+    if 'snap' in p['extract']
+}
 
 Face = tuple[str, list[tuple[tuple, tuple, tuple]]]  # material, (position, uv, normal) x 3
 
@@ -80,7 +84,7 @@ class Levels:
 
     def __init__(self, game: Path, nmo: Nmo) -> None:
         self.game = game.resolve()
-        self.files = sorted((game / "3D Entities" / "Level").glob("Level_*.NMO"))
+        self.files = sorted((game / '3D Entities' / 'Level').glob('Level_*.NMO'))
         self.by_name = {path.name.lower(): path for path in self.files}
         self.nmo = nmo
         self._objects: dict[Path, dict[str, dict]] = {}
@@ -88,20 +92,28 @@ class Levels:
     def objects(self, path: Path) -> dict[str, dict]:
         """The level's 3D objects' fields, by name."""
         if path not in self._objects:
-            self._objects[path] = {obj["name"]: field_values(obj)
-                                   for obj in self.nmo.objects(path, "CK3dObject")}
+            self._objects[path] = {
+                obj['name']: field_values(obj) for obj in self.nmo.objects(path, 'CK3dObject')
+            }
         return self._objects[path]
 
     def faces(self, path: Path, fields: dict) -> tuple[list[Face], str]:
         """An object's mesh placed by its world matrix, and the mesh's .mtl."""
-        matrix = matrix_of(fields["world_matrix"])
+        matrix = matrix_of(fields['world_matrix'])
         with tempfile.TemporaryDirectory() as work:
-            self.nmo.export_mesh(path, fields["current_mesh"], Path(work))
-            obj = next(Path(work).glob("*.obj"))
-            mtl = next(Path(work).glob("*.mtl")).read_text(encoding="utf-8")
-            faces = [(t.material, [(place(matrix, p), uv, turn(matrix, n))
-                                   for p, uv, n in zip(t.points, t.uvs, t.normals)])
-                     for t in read_obj(obj)]
+            self.nmo.export_mesh(path, fields['current_mesh'], Path(work))
+            obj = next(Path(work).glob('*.obj'))
+            mtl = next(Path(work).glob('*.mtl')).read_text(encoding='utf-8')
+            faces = [
+                (
+                    t.material,
+                    [
+                        (place(matrix, p), uv, turn(matrix, n))
+                        for p, uv, n in zip(t.points, t.uvs, t.normals)
+                    ],
+                )
+                for t in read_obj(obj)
+            ]
         return faces, mtl
 
 
@@ -112,8 +124,7 @@ class Cut:
     def __init__(self, kind: str, level: str) -> None:
         self.kind, self.level = kind, level
 
-    def take(self, levels: Levels, path: Path, out: Path,
-             centers: dict[str, tuple]) -> str | None:
+    def take(self, levels: Levels, path: Path, out: Path, centers: dict[str, tuple]) -> str | None:
         """Writes the cut; returns what it was cut from, or None."""
         raise NotImplementedError
 
@@ -126,8 +137,9 @@ class MarkerCut(Cut):
     """The part of a floor within half extents (X, Z) of a marker, around the
     marker."""
 
-    def __init__(self, kind: str, level: str, floor: str, marker: str,
-                 half_x: float, half_z: float) -> None:
+    def __init__(
+        self, kind: str, level: str, floor: str, marker: str, half_x: float, half_z: float
+    ) -> None:
         super().__init__(kind, level)
         self.floor, self.marker, self.half_x, self.half_z = floor, marker, half_x, half_z
 
@@ -135,11 +147,16 @@ class MarkerCut(Cut):
         objects = levels.objects(path)
         if self.floor not in objects or self.marker not in objects:
             return None
-        m = matrix_of(objects[self.marker]["world_matrix"])
+        m = matrix_of(objects[self.marker]['world_matrix'])
         faces, mtl = levels.faces(path, objects[self.floor])
-        write_faces(near(faces, (m[12], m[14]), self.half_x, self.half_z), [mtl],
-                    (m[12], m[13], m[14]), self.kind, out)
-        return f"{path.name}:{self.floor}"
+        write_faces(
+            near(faces, (m[12], m[14]), self.half_x, self.half_z),
+            [mtl],
+            (m[12], m[13], m[14]),
+            self.kind,
+            out,
+        )
+        return f'{path.name}:{self.floor}'
 
 
 class ModuleCut(Cut):
@@ -147,31 +164,42 @@ class ModuleCut(Cut):
     module's frame, in that frame (moved so origin, a point of it, is at its
     origin)."""
 
-    def __init__(self, kind: str, level: str, floor: str | list[str], module: str, box: tuple,
-                 origin: tuple = (0.0, 0.0, 0.0), *, method: str | None = None) -> None:
+    def __init__(
+        self,
+        kind: str,
+        level: str,
+        floor: str | list[str],
+        module: str,
+        box: tuple,
+        origin: tuple = (0.0, 0.0, 0.0),
+        *,
+        method: str | None = None,
+    ) -> None:
         super().__init__(kind, level)
         self.floors = [floor] if isinstance(floor, str) else floor
         self.module, self.box, self.origin = module, box, origin
-        self.method = method or ("clip-and-close" if kind.startswith("Floor_") else "contained-faces")
-        if self.method not in ("clip-and-close", "contained-faces"):
-            raise ValueError(f"unknown module extraction method: {self.method}")
+        self.method = method or (
+            'clip-and-close' if kind.startswith('Floor_') else 'contained-faces'
+        )
+        if self.method not in ('clip-and-close', 'contained-faces'):
+            raise ValueError(f'unknown module extraction method: {self.method}')
 
     def take(self, levels, path, out, centers):
         objects = levels.objects(path)
         if not all(name in objects for name in self.floors + [self.module]):
             return None
-        matrix = matrix_of(objects[self.module]["world_matrix"])
+        matrix = matrix_of(objects[self.module]['world_matrix'])
         cut, mtls = [], []
         for name in self.floors:
             faces, mtl = levels.faces(path, objects[name])
-            if self.method == "clip-and-close":
+            if self.method == 'clip-and-close':
                 part = clipped_in_frame(faces, matrix, self.box)
                 cut += part + closing_walls(part)
             else:
                 cut += in_frame(faces, matrix, self.box)
             mtls.append(mtl)
         write_faces(cut, mtls, self.origin, self.kind, out)
-        return f"{path.name}:{'+'.join(self.floors)}"
+        return f'{path.name}:{"+".join(self.floors)}'
 
 
 class ChainCut(Cut):
@@ -182,11 +210,21 @@ class ChainCut(Cut):
     facing X) at either end, so that each length is one mesh, without the
     seams between segments the ball would knock against."""
 
-    def __init__(self, kind: str, level: str, floor: str, segment: tuple, end: tuple,
-                 step: float, most: int, *, only: int | None = None) -> None:
+    def __init__(
+        self,
+        kind: str,
+        level: str,
+        floor: str,
+        segment: tuple,
+        end: tuple,
+        step: float,
+        most: int,
+        *,
+        only: int | None = None,
+    ) -> None:
         super().__init__(kind, level)
         self.floor, self.segment, self.end, self.step, self.most = floor, segment, end, step, most
-        self.counts = [only] if only is not None else list(range(1, most+1))
+        self.counts = [only] if only is not None else list(range(1, most + 1))
 
     @property
     def output_names(self):
@@ -197,7 +235,7 @@ class ChainCut(Cut):
         if self.floor not in objects:
             return None
         faces, mtl = levels.faces(path, objects[self.floor])
-        matrix = matrix_of(objects[self.floor]["world_matrix"])
+        matrix = matrix_of(objects[self.floor]['world_matrix'])
         segment = in_frame(faces, matrix, self.segment)
         end = in_frame(faces, matrix, self.end)
         middle = (self.segment[0] + self.segment[1]) / 2
@@ -206,24 +244,44 @@ class ChainCut(Cut):
             chain = []
             for k in range(n):
                 shift = self.step * (k - (n - 1) / 2) - middle
-                chain += [(m, [((p[0] + shift, p[1], p[2]), uv, nm) for p, uv, nm in corners])
-                          for m, corners in segment]
+                chain += [
+                    (m, [((p[0] + shift, p[1], p[2]), uv, nm) for p, uv, nm in corners])
+                    for m, corners in segment
+                ]
             half = self.step * n / 2
             for sign in (1.0, -1.0):
                 # the far face as it is, the near one turned about Y
-                chain += [(m, [((sign * (p[0] - tip + half), p[1], sign * p[2]), uv,
-                                (sign * nm[0], nm[1], sign * nm[2])) for p, uv, nm in corners])
-                          for m, corners in end]
-            write_faces(chain, [mtl], (0.0, 0.0, 0.0), f"{self.kind}_{n}", out)
-        return f"{path.name}:{self.floor}"
+                chain += [
+                    (
+                        m,
+                        [
+                            (
+                                (sign * (p[0] - tip + half), p[1], sign * p[2]),
+                                uv,
+                                (sign * nm[0], nm[1], sign * nm[2]),
+                            )
+                            for p, uv, nm in corners
+                        ],
+                    )
+                    for m, corners in end
+                ]
+            write_faces(chain, [mtl], (0.0, 0.0, 0.0), f'{self.kind}_{n}', out)
+        return f'{path.name}:{self.floor}'
 
 
 class DecorCut(Cut):
     """Objects' faces within reach of a point (X, Z), around the top of their
     middle, or around another cut's (on)."""
 
-    def __init__(self, kind: str, level: str, names: list[str], point: tuple[float, float],
-                 reach: float, on: str | None = None) -> None:
+    def __init__(
+        self,
+        kind: str,
+        level: str,
+        names: list[str],
+        point: tuple[float, float],
+        reach: float,
+        on: str | None = None,
+    ) -> None:
         super().__init__(kind, level)
         self.names, self.point, self.reach, self.on = names, point, reach, on
 
@@ -246,35 +304,67 @@ class DecorCut(Cut):
             center = ((min(xs) + max(xs)) / 2, max(ys), (min(zs) + max(zs)) / 2)
             centers[self.kind] = center
         write_faces(faces, mtls, center, self.kind, out)
-        return f"{path.name}:{'+'.join(self.names)}"
+        return f'{path.name}:{"+".join(self.names)}'
 
 
 def resource_cut(part):
     """Compile a descriptor into the same native cut used by full extraction."""
     cut = part['extract']
     if cut['method'] == 'marker-cut':
-        return MarkerCut(part['name'], Path(cut['file']).name, cut['object'],
-                         cut['frame_object'], cut['half_x'], cut['half_z'])
+        return MarkerCut(
+            part['name'],
+            Path(cut['file']).name,
+            cut['object'],
+            cut['frame_object'],
+            cut['half_x'],
+            cut['half_z'],
+        )
     if cut['method'] == 'chain':
-        return ChainCut(cut['base'], Path(cut['file']).name, cut['object'],
-                        tuple(cut['segment']), tuple(cut['end']), cut['step'],
-                        cut['count'], only=cut['count'])
+        return ChainCut(
+            cut['base'],
+            Path(cut['file']).name,
+            cut['object'],
+            tuple(cut['segment']),
+            tuple(cut['end']),
+            cut['step'],
+            cut['count'],
+            only=cut['count'],
+        )
     if cut['method'] == 'decoration':
-        return DecorCut(part['name'], Path(cut['file']).name, cut['objects'],
-                        tuple(cut['point']), cut['reach'], on=cut.get('on'))
-    return ModuleCut(part['name'], Path(cut['file']).name, cut['objects'], cut['frame_object'],
-                     tuple(cut['box']), tuple(cut['origin']), method=cut['method'])
+        return DecorCut(
+            part['name'],
+            Path(cut['file']).name,
+            cut['objects'],
+            tuple(cut['point']),
+            cut['reach'],
+            on=cut.get('on'),
+        )
+    return ModuleCut(
+        part['name'],
+        Path(cut['file']).name,
+        cut['objects'],
+        cut['frame_object'],
+        tuple(cut['box']),
+        tuple(cut['origin']),
+        method=cut['method'],
+    )
 
 
 # Shared parts (the lantern and standalone column) are exported once.
-_RESOURCE_PARTS = {part['name']: part for spec in catalog().values() for part in spec['parts']
-                   if part['extract']['method'] != 'mesh'}
+_RESOURCE_PARTS = {
+    part['name']: part
+    for spec in catalog().values()
+    for part in spec['parts']
+    if part['extract']['method'] != 'mesh'
+}
 CUTS = [resource_cut(part) for part in _RESOURCE_PARTS.values()]
 
 
 def snapped(value: float, targets: list) -> float:
     for target in targets:
-        target, tolerance = target if isinstance(target, (tuple, list)) else (target, SNAP_TOLERANCE)
+        target, tolerance = (
+            target if isinstance(target, (tuple, list)) else (target, SNAP_TOLERANCE)
+        )
         for signed in (target, -target):
             if abs(value - signed) <= tolerance:
                 return signed
@@ -285,35 +375,43 @@ def write_faces(faces: list[Face], mtls: list[str], center: tuple, kind: str, ou
     """Writes faces moved so center is at the origin, as <kind>.obj and .mtl,
     their coordinates snapped as SNAP says for kind."""
     snap = SNAP.get(kind, ([], [], []))
-    lines = [f"mtllib {kind}.mtl"]
+    lines = [f'mtllib {kind}.mtl']
     material = None
     for face_material, corners in faces:
         if face_material != material:
-            lines.append(f"usemtl {face_material}")
+            lines.append(f'usemtl {face_material}')
             material = face_material
         for position, uv, normal in corners:
-            lines.append("v %.6f %.6f %.6f" % tuple(snapped(position[i] - center[i], snap[i])
-                                                    for i in range(3)))
-            lines.append("vt %.6f %.6f" % uv)
-            lines.append("vn %.6f %.6f %.6f" % normal)
-        lines.append("f " + " ".join(f"{i}/{i}/{i}" for i in range(-len(corners), 0)))
+            lines.append(
+                'v %.6f %.6f %.6f'
+                % tuple(snapped(position[i] - center[i], snap[i]) for i in range(3))
+            )
+            lines.append('vt %.6f %.6f' % uv)
+            lines.append('vn %.6f %.6f %.6f' % normal)
+        lines.append('f ' + ' '.join(f'{i}/{i}/{i}' for i in range(-len(corners), 0)))
     blocks, seen = [], set()
     for mtl in mtls:
-        for block in mtl.split("newmtl ")[1:]:
+        for block in mtl.split('newmtl ')[1:]:
             name = block.split()[0]
             if name not in seen:
                 seen.add(name)
-                blocks.append("newmtl " + block.rstrip() + "\n")
-    (out / f"{kind}.mtl").write_text("\n".join(blocks), encoding="utf-8")
-    (out / f"{kind}.obj").write_text("\n".join(lines) + "\n", encoding="utf-8")
+                blocks.append('newmtl ' + block.rstrip() + '\n')
+    (out / f'{kind}.mtl').write_text('\n'.join(blocks), encoding='utf-8')
+    (out / f'{kind}.obj').write_text('\n'.join(lines) + '\n', encoding='utf-8')
 
 
-def near(faces: list[Face], center: tuple[float, float], half_x: float,
-         half_z: float) -> list[Face]:
+def near(
+    faces: list[Face], center: tuple[float, float], half_x: float, half_z: float
+) -> list[Face]:
     """The faces lying within half_x and half_z of center, on X and Z."""
-    return [(m, corners) for m, corners in faces
-            if all(abs(p[0] - center[0]) <= half_x and abs(p[2] - center[1]) <= half_z
-                   for p, _, _ in corners)]
+    return [
+        (m, corners)
+        for m, corners in faces
+        if all(
+            abs(p[0] - center[0]) <= half_x and abs(p[2] - center[1]) <= half_z
+            for p, _, _ in corners
+        )
+    ]
 
 
 SLIVER = 0.15  # what is left of a face this close to a box's side is dropped
@@ -324,8 +422,11 @@ def clipped_in_frame(faces: list[Face], matrix: list[float], box: tuple) -> list
     across the box's sides cut at them rather than left out (all but the
     slivers less than SLIVER deep), so that a wall the box ends goes on to
     its side instead of breaking off with a triangle missing."""
-    planes = [(axis, bound, sign) for axis in range(3)
-              for bound, sign in ((box[2 * axis], 1.0), (box[2 * axis + 1], -1.0))]
+    planes = [
+        (axis, bound, sign)
+        for axis in range(3)
+        for bound, sign in ((box[2 * axis], 1.0), (box[2 * axis + 1], -1.0))
+    ]
     out = []
     for m, corners in faces:
         poly = [(into(matrix, p, 1.0), uv, into(matrix, n, 0.0)) for p, uv, n in corners]
@@ -340,8 +441,10 @@ def clipped_in_frame(faces: list[Face], matrix: list[float], box: tuple) -> list
                 break
         if len(poly) < 3:
             continue
-        if any(max(sign * (p[axis] - bound) for p, _, _ in poly) < SLIVER
-               for axis, bound, sign in cut_by):
+        if any(
+            max(sign * (p[axis] - bound) for p, _, _ in poly) < SLIVER
+            for axis, bound, sign in cut_by
+        ):
             continue
         for k in range(1, len(poly) - 1):
             out.append((m, [poly[0], poly[k], poly[k + 1]]))
@@ -369,6 +472,7 @@ def closing_walls(cut: list[Face]) -> list[Face]:
     (in the same object or another); Floor_Side, facing away from the top
     face, one texture repeat every 5 as the floors' walls.  Where a piece
     of the track goes on from such an edge, its wall is hidden under it."""
+
     def key(p):
         return tuple(round(c, 2) for c in p)
 
@@ -406,10 +510,16 @@ def closing_walls(cut: list[Face]) -> list[Face]:
         if nx * ((ax + bx) / 2 - cx) + nz * ((az + bz) / 2 - cz) < 0:
             nx, nz = -nx, -nz
         normal = (nx, 0.0, nz)
-        along = lambda x, z: (x * -nz + z * nx) / REPEAT_UNITS
-        quad = [((ax, ay, az), (0.0, along(ax, az))), ((bx, by, bz), (0.0, along(bx, bz))),
-                ((bx, by - WALL_DEPTH, bz), (1.0, along(bx, bz))),
-                ((ax, ay - WALL_DEPTH, az), (1.0, along(ax, az)))]
+
+        def along(x, z):
+            return (x * -nz + z * nx) / REPEAT_UNITS
+
+        quad = [
+            ((ax, ay, az), (0.0, along(ax, az))),
+            ((bx, by, bz), (0.0, along(bx, bz))),
+            ((bx, by - WALL_DEPTH, bz), (1.0, along(bx, bz))),
+            ((ax, ay - WALL_DEPTH, az), (1.0, along(ax, az))),
+        ]
         for tri in ((0, 1, 2), (0, 2, 3)):
             pts = [quad[i] for i in tri]
             (p0, _), (p1, _), (p2, _) = pts
@@ -418,7 +528,7 @@ def closing_walls(cut: list[Face]) -> list[Face]:
             facing = (u[1] * v[2] - u[2] * v[1]) * nx + (u[0] * v[1] - u[1] * v[0]) * nz
             if facing < 0:
                 pts = [pts[0], pts[2], pts[1]]
-            walls.append(("Floor_Side", [(p, uv, normal) for p, uv in pts]))
+            walls.append(('Floor_Side', [(p, uv, normal) for p, uv in pts]))
     return walls
 
 
@@ -436,10 +546,10 @@ def in_frame(faces: list[Face], matrix: list[float], box: tuple) -> list[Face]:
 
 def kind_of(name: str) -> str | None:
     """The marker or element kind an object is one of, by its name."""
-    if name == "SkyLayer":
+    if name == 'SkyLayer':
         return name
     for kind in MARKERS + ELEMENT_KINDS:
-        if re.fullmatch(re.escape(kind) + r"_\d+", name):
+        if re.fullmatch(re.escape(kind) + r'_\d+', name):
             return kind
     return None
 
@@ -448,13 +558,13 @@ def copy_mesh(nmo: Nmo, path: Path, mesh_id: int, kind: str, out: Path) -> None:
     """A mesh as it is, as <kind>.obj and .mtl."""
     with tempfile.TemporaryDirectory() as work:
         nmo.export_mesh(path, mesh_id, Path(work))
-        obj = next(Path(work).glob("*.obj"))
-        mtl = next(Path(work).glob("*.mtl"), None)
-        text = obj.read_text(encoding="utf-8")
+        obj = next(Path(work).glob('*.obj'))
+        mtl = next(Path(work).glob('*.mtl'), None)
+        text = obj.read_text(encoding='utf-8')
         if mtl is not None:
-            text = text.replace(f"mtllib {mtl.name}", f"mtllib {kind}.mtl")
-            (out / f"{kind}.mtl").write_text(mtl.read_text(encoding="utf-8"), encoding="utf-8")
-        (out / f"{kind}.obj").write_text(text, encoding="utf-8")
+            text = text.replace(f'mtllib {mtl.name}', f'mtllib {kind}.mtl')
+            (out / f'{kind}.mtl').write_text(mtl.read_text(encoding='utf-8'), encoding='utf-8')
+        (out / f'{kind}.obj').write_text(text, encoding='utf-8')
 
 
 def export_elements(levels: Levels, out: Path) -> dict[str, str]:
@@ -472,15 +582,16 @@ def export_elements(levels: Levels, out: Path) -> dict[str, str]:
     for path in levels.files:
         for name, fields in levels.objects(path).items():
             kind = kind_of(name)
-            mesh = fields.get("current_mesh")
+            mesh = fields.get('current_mesh')
             if kind is None or kind in found or not mesh:
                 continue
             copy_mesh(levels.nmo, path, mesh, kind, out)
-            found[kind] = f"{path.name}:{name}"
+            found[kind] = f'{path.name}:{name}'
         if all(kind in found for kind in KINDS):
             break
     if hasattr(levels, 'game'):
         from .resources import export_resources
+
         found.update(export_resources(levels, out))
     return found
 

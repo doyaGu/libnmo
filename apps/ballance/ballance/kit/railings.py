@@ -16,11 +16,11 @@ from ..core.obj import Mesh
 
 RADIUS = 0.245
 SIDES = 8
-TOP = 2.855      # the tube's middle over the rim
-FOOT = 1.77      # the posts' feet under it
-BEND = 1.06      # the bends' radius
-OUT = 0.24       # the tube's middle outside the walls
-BEND_STEPS = 6   # steps to a quarter turn
+TOP = 2.855  # the tube's middle over the rim
+FOOT = 1.77  # the posts' feet under it
+BEND = 1.06  # the bends' radius
+OUT = 0.24  # the tube's middle outside the walls
+BEND_STEPS = 6  # steps to a quarter turn
 
 Point3 = tuple[float, float, float]
 ORIGIN: Point3 = (0.0, 0.0, 0.0)
@@ -103,4 +103,4 @@ def railing(mesh: Mesh, path: list[Point3]) -> None:
             j = (i + 1) % SIDES
             quad = [ra[i], ra[j], rb[j], rb[i]]
             corners = [(point, (0.0, 0.0), n) for point, n in quad]
-            mesh.quad("Rail", quad[0][1], *corners)
+            mesh.quad('Rail', quad[0][1], *corners)

@@ -19,15 +19,22 @@ def capture(source: Path, kind: str, parameters: dict, dependencies=()) -> dict:
         identity = {'build_id': build.get('build_id'), 'status': build['status']}
     else:
         identity = {'sha256': project.digest(source)}
-    return {'schema_version': 1, 'source': str(source), 'identity': identity,
-            'kind': kind, 'parameters': parameters, 'tools': project.tools_identity(),
-            'dependencies': {str(Path(p).resolve()): project.digest(Path(p))
-                             for p in dependencies}}
+    return {
+        'schema_version': 1,
+        'source': str(source),
+        'identity': identity,
+        'kind': kind,
+        'parameters': parameters,
+        'tools': project.tools_identity(),
+        'dependencies': {str(Path(p).resolve()): project.digest(Path(p)) for p in dependencies},
+    }
 
 
 def attach(artifact: Path, record: dict) -> None:
-    project.write_json(Path(str(artifact) + '.evidence.json'),
-                  record | {'artifact_sha256': project.digest(artifact)})
+    project.write_json(
+        Path(str(artifact) + '.evidence.json'),
+        record | {'artifact_sha256': project.digest(artifact)},
+    )
 
 
 def inspect(artifact: Path) -> dict:
@@ -42,13 +49,16 @@ def inspect(artifact: Path) -> dict:
             raise ValueError('unsupported evidence schema')
         if project.digest(artifact) != record['artifact_sha256']:
             reasons.append('Artifact content changed.')
-        current = capture(Path(record['source']), record['kind'], record['parameters'],
-                          record['dependencies'])
+        current = capture(
+            Path(record['source']), record['kind'], record['parameters'], record['dependencies']
+        )
         for key in ('identity', 'tools', 'dependencies'):
             if record[key] != current[key]:
                 reasons.append(f'{key} changed.')
         identity = current['identity']
-        if 'status' in identity and (identity['status'] != 'passed' or not identity.get('build_id')):
+        if 'status' in identity and (
+            identity['status'] != 'passed' or not identity.get('build_id')
+        ):
             reasons.append('Source has no intact versioned build.')
     except (OSError, ValueError, KeyError, TypeError) as error:
         reasons.append(str(error))

@@ -13,7 +13,7 @@ import math
 Heading = tuple[float, float]
 Point = tuple[float, float]
 
-HEADINGS: dict[str, Heading] = {"+x": (1, 0), "-x": (-1, 0), "+z": (0, 1), "-z": (0, -1)}
+HEADINGS: dict[str, Heading] = {'+x': (1, 0), '-x': (-1, 0), '+z': (0, 1), '-z': (0, -1)}
 
 
 def right_of(d: Heading) -> Heading:
@@ -33,7 +33,7 @@ def back_of(d: Heading) -> Heading:
 
 def side_of(d: Heading, side: str) -> Heading:
     """The heading to the "left" or "right" of d."""
-    return right_of(d) if side == "right" else left_of(d)
+    return right_of(d) if side == 'right' else left_of(d)
 
 
 def turn_of(d: Heading) -> float:
@@ -43,8 +43,8 @@ def turn_of(d: Heading) -> float:
 
 
 def axis_of(d: Heading) -> str:
-    """"x" or "z": the axis d runs along."""
-    return "x" if d[0] else "z"
+    """ "x" or "z": the axis d runs along."""
+    return 'x' if d[0] else 'z'
 
 
 def at(p: Point, d: Heading, along: float, right: float = 0.0) -> Point:

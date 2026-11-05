@@ -13,7 +13,7 @@ def decimal(value: float) -> str:
     # Trigonometric axes can multiply two rounding residues into e-48.
     # strtof rejects these underflows; they are geometrically zero. Nine
     # significant digits also preserve float32 vertices on large maps.
-    return "0" if abs(value) < 1e-12 else f"{value:.9g}"
+    return '0' if abs(value) < 1e-12 else f'{value:.9g}'
 
 
 class Triangle(NamedTuple):
@@ -35,32 +35,41 @@ def read_obj(path: Path) -> list[Triangle]:
         n = int(index)
         return table[n - 1 if n > 0 else len(table) + n]
 
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+    for line in path.read_text(encoding='utf-8', errors='replace').splitlines():
         t = line.split()
         if not t:
             continue
-        if t[0] == "v":
+        if t[0] == 'v':
             vs.append((float(t[1]), float(t[2]), float(t[3])))
-        elif t[0] == "vt":
+        elif t[0] == 'vt':
             vts.append((float(t[1]), float(t[2])))
-        elif t[0] == "vn":
+        elif t[0] == 'vn':
             vns.append((float(t[1]), float(t[2]), float(t[3])))
-        elif t[0] == "usemtl":
+        elif t[0] == 'usemtl':
             material = t[1]
-        elif t[0] == "f":
+        elif t[0] == 'f':
             corners = []
             for word in t[1:]:
-                parts = word.split("/")
-                corners.append((ref(vs, parts[0]),
-                                ref(vts, parts[1]) if len(parts) > 1 and parts[1] else None,
-                                ref(vns, parts[2]) if len(parts) > 2 and parts[2] else None))
+                parts = word.split('/')
+                corners.append(
+                    (
+                        ref(vs, parts[0]),
+                        ref(vts, parts[1]) if len(parts) > 1 and parts[1] else None,
+                        ref(vns, parts[2]) if len(parts) > 2 and parts[2] else None,
+                    )
+                )
             for k in range(1, len(corners) - 1):
                 three = (corners[0], corners[k], corners[k + 1])
                 uvs = [c[1] for c in three]
                 normals = [c[2] for c in three]
-                triangles.append(Triangle(material, [c[0] for c in three],
-                                          None if None in uvs else uvs,
-                                          None if None in normals else normals))
+                triangles.append(
+                    Triangle(
+                        material,
+                        [c[0] for c in three],
+                        None if None in uvs else uvs,
+                        None if None in normals else normals,
+                    )
+                )
     return triangles
 
 
@@ -78,22 +87,25 @@ class Mesh:
         a, b, c = (corner[0] for corner in corners)
         ab = [b[i] - a[i] for i in range(3)]
         ac = [c[i] - a[i] for i in range(3)]
-        normal = (ab[1] * ac[2] - ab[2] * ac[1], ab[2] * ac[0] - ab[0] * ac[2],
-                  ab[0] * ac[1] - ab[1] * ac[0])
+        normal = (
+            ab[1] * ac[2] - ab[2] * ac[1],
+            ab[2] * ac[0] - ab[0] * ac[2],
+            ab[0] * ac[1] - ab[1] * ac[0],
+        )
         if sum(normal[i] * facing[i] for i in range(3)) < 0:
             corners = (corners[0], corners[2], corners[1])
         if material != self.material:
-            self.lines.append(f"usemtl {material}")
+            self.lines.append(f'usemtl {material}')
             self.material = material
         for corner in corners:
             (x, y, z), (u, v) = corner[0], corner[1]
-            self.lines.append("v " + " ".join(map(decimal, (x, y, z))))
-            self.lines.append("vt " + " ".join(map(decimal, (u, v))))
+            self.lines.append('v ' + ' '.join(map(decimal, (x, y, z))))
+            self.lines.append('vt ' + ' '.join(map(decimal, (u, v))))
             if len(corner) > 2:
-                self.lines.append("vn " + " ".join(map(decimal, corner[2])))
+                self.lines.append('vn ' + ' '.join(map(decimal, corner[2])))
         refs = [self.count + i for i in (1, 2, 3)]
-        form = "{0}/{0}/{0}" if len(corners[0]) > 2 else "{0}/{0}"
-        self.lines.append("f " + " ".join(form.format(r) for r in refs))
+        form = '{0}/{0}/{0}' if len(corners[0]) > 2 else '{0}/{0}'
+        self.lines.append('f ' + ' '.join(form.format(r) for r in refs))
         self.count += 3
 
     def quad(self, material: str, facing: Vec3, *corners: tuple) -> None:
@@ -101,7 +113,7 @@ class Mesh:
         self.triangle(material, facing, corners[0], corners[2], corners[3])
 
     def write(self, path: Path) -> None:
-        path.write_text("\n".join(self.lines) + "\n", encoding="utf-8")
+        path.write_text('\n'.join(self.lines) + '\n', encoding='utf-8')
 
 
 Box = tuple[float, float, float, float, float, float]  # x0, x1, y0, y1, z0, z1
@@ -113,9 +125,9 @@ def write_boxes(path: Path, boxes: list[Box]) -> None:
     lines = []
     for k, (x0, x1, y0, y1, z0, z1) in enumerate(boxes):
         corners = [(x, y, z) for x in (x0, x1) for y in (y0, y1) for z in (z0, z1)]
-        lines += [f"v {x:g} {y:g} {z:g}" for x, y, z in corners]
-        lines += ["f " + " ".join(str(8 * k + i) for i in face) for face in faces]
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        lines += [f'v {x:g} {y:g} {z:g}' for x, y, z in corners]
+        lines += ['f ' + ' '.join(str(8 * k + i) for i in face) for face in faces]
+    path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
 
 
 def write_box(path: Path, box: Box) -> None:

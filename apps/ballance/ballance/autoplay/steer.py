@@ -6,7 +6,8 @@ with frames F only after it has pushed toward it that long; one with an
 object NAME only once that object is within R of WX,WZ (a swing's seat come
 round); at any of them, the autopilot stops the ball.  One whose F is "rush"
 is run at flat out, never braking (a jump's run-up). "precision" follows
-narrow beams slowly with a smaller tracking tolerance. A found path becomes the fewest points that stay
+narrow beams slowly with a smaller tracking tolerance. A found path becomes the fewest points
+that stay
 within TOLERANCE of it (Ramer-Douglas-Peucker, on X and Z).
 """
 
@@ -25,40 +26,57 @@ class SteerPoint:
     x: float
     z: float
     y: float | None = None  # the height to wait for
-    hold: int = 0           # the frames to keep pushing there; -1: rush to it
+    hold: int = 0  # the frames to keep pushing there; -1: rush to it
     wait: tuple[str, float, float, float] | None = None  # an object, where, within
     precision: bool = False
 
     def __str__(self) -> str:
-        text = f"{self.x:g},{self.z:g}"
+        text = f'{self.x:g},{self.z:g}'
         if self.y is not None or self.hold or self.wait or self.precision:
-            text += "," + (f"{self.y:g}" if self.y is not None else "")
+            text += ',' + (f'{self.y:g}' if self.y is not None else '')
         if self.hold or self.wait or self.precision:
-            text += "," + ("precision" if self.precision else
-                           "rush" if self.hold < 0 else f"{self.hold}" if self.hold else "")
+            text += ',' + (
+                'precision'
+                if self.precision
+                else 'rush'
+                if self.hold < 0
+                else f'{self.hold}'
+                if self.hold
+                else ''
+            )
         if self.wait:
             name, x, z, reach = self.wait
-            text += f",{name},{x:g},{z:g},{reach:g}"
+            text += f',{name},{x:g},{z:g},{reach:g}'
         return text
 
 
 def parse(text: str) -> list[SteerPoint]:
     """Points as --steer takes them, without the "@FRAME"."""
     points = []
-    for part in text.split(";"):
-        fields = part.split(",")
+    for part in text.split(';'):
+        fields = part.split(',')
         y = float(fields[2]) if len(fields) > 2 and fields[2] else None
-        wait = ((fields[4], float(fields[5]), float(fields[6]), float(fields[7]))
-                if len(fields) > 7 else None)
-        precision = len(fields) > 3 and fields[3] == "precision"
-        hold = (0 if precision else -1 if len(fields) > 3 and fields[3] == "rush" else
-                int(fields[3]) if len(fields) > 3 and fields[3] else 0)
+        wait = (
+            (fields[4], float(fields[5]), float(fields[6]), float(fields[7]))
+            if len(fields) > 7
+            else None
+        )
+        precision = len(fields) > 3 and fields[3] == 'precision'
+        hold = (
+            0
+            if precision
+            else -1
+            if len(fields) > 3 and fields[3] == 'rush'
+            else int(fields[3])
+            if len(fields) > 3 and fields[3]
+            else 0
+        )
         points.append(SteerPoint(float(fields[0]), float(fields[1]), y, hold, wait, precision))
     return points
 
 
 def format_points(points: list[SteerPoint]) -> str:
-    return ";".join(str(p) for p in points)
+    return ';'.join(str(p) for p in points)
 
 
 def simplify(path: list[Point3]) -> list[SteerPoint]:
@@ -82,17 +100,21 @@ def _simplified(path: list[Point3]) -> list[Point3]:
             worst, at = off, k
     if worst <= TOLERANCE:
         return [a, b]
-    return _simplified(path[:at + 1])[:-1] + _simplified(path[at:])
+    return _simplified(path[: at + 1])[:-1] + _simplified(path[at:])
 
 
-def fix(points: list[SteerPoint], box: tuple[float, float, float, float],
-        replacement: list[SteerPoint], run: int = 0) -> list[SteerPoint]:
+def fix(
+    points: list[SteerPoint],
+    box: tuple[float, float, float, float],
+    replacement: list[SteerPoint],
+    run: int = 0,
+) -> list[SteerPoint]:
     """The points with a run of those in box (x0, x1, z0, z1) replaced: the
     first run, or the one run picks (-1 the last)."""
     x0, x1, z0, z1 = box
     inside = [k for k, p in enumerate(points) if x0 <= p.x <= x1 and z0 <= p.z <= z1]
     if not inside:
-        raise ValueError(f"no points in {box}")
+        raise ValueError(f'no points in {box}')
     runs = [[inside[0]]]
     for k in inside[1:]:
         if k == runs[-1][-1] + 1:
@@ -100,4 +122,4 @@ def fix(points: list[SteerPoint], box: tuple[float, float, float, float],
         else:
             runs.append([k])
     chosen = runs[run]
-    return points[:chosen[0]] + replacement + points[chosen[-1] + 1:]
+    return points[: chosen[0]] + replacement + points[chosen[-1] + 1 :]

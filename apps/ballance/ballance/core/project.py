@@ -19,29 +19,47 @@ from .nmo import Nmo
 
 BUILD_RECORD = 'build_info.json'
 ROUTE_SNAPSHOT = 'route.json'
-SIDE_FILES = (ROUTE_SNAPSHOT, 'route_points.json', 'route_sectors.json',
-              'death_zones.json', 'scenery_placement.json', 'source_map.json', 'connections.json',
-              'spatial_constraints.json', 'gameplay_contracts.json', 'resources.json', 'sector_cache.json', 'native_dynamics.json')
+SIDE_FILES = (
+    ROUTE_SNAPSHOT,
+    'route_points.json',
+    'route_sectors.json',
+    'death_zones.json',
+    'scenery_placement.json',
+    'source_map.json',
+    'connections.json',
+    'spatial_constraints.json',
+    'gameplay_contracts.json',
+    'resources.json',
+    'sector_cache.json',
+    'native_dynamics.json',
+)
 
 
 def _identity(value: dict) -> str:
-    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':'),
-                                     allow_nan=False).encode('utf-8')).hexdigest()
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False).encode('utf-8')
+    ).hexdigest()
 
 
 def tools_identity() -> dict:
     """Conservative generator/controller identity, including dirty source edits."""
     root = Path(__file__).resolve().parents[2]
-    files = [*root.joinpath('ballance').rglob('*.py'), *root.joinpath('scripts').glob('*.py'),
-             root / 'data/level_materials.json', root / 'data/motion_catalog.json',
-             root / 'data/resource_catalog.json', root / 'data/mechanism_parameters.json']
+    files = [
+        *root.joinpath('ballance').rglob('*.py'),
+        *root.joinpath('scripts').glob('*.py'),
+        root / 'data/level_materials.json',
+        root / 'data/motion_catalog.json',
+        root / 'data/resource_catalog.json',
+        root / 'data/mechanism_parameters.json',
+    ]
     return {str(path.relative_to(root)): digest(path) for path in sorted(files)}
 
 
 def write_json(path: Path, value: dict) -> None:
     # Readers see the complete old or new JSON, never a truncated report.
-    with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=path.parent,
-                                     prefix=f'.{path.name}-', delete=False) as stream:
+    with tempfile.NamedTemporaryFile(
+        mode='w', encoding='utf-8', dir=path.parent, prefix=f'.{path.name}-', delete=False
+    ) as stream:
         temporary = Path(stream.name)
         try:
             stream.write(json.dumps(value, indent=2, allow_nan=False) + '\n')
@@ -56,8 +74,16 @@ def write_json(path: Path, value: dict) -> None:
 
 def _attempt(out: Path, route: dict, status: str, reason: str) -> None:
     out.mkdir(parents=True, exist_ok=True)
-    write_json(out / 'build_attempt.json', {'schema_version': 1, 'status': status, 'reason': reason,
-          'request_sha256': _identity(route), 'time': datetime.now(timezone.utc).isoformat()})
+    write_json(
+        out / 'build_attempt.json',
+        {
+            'schema_version': 1,
+            'status': status,
+            'reason': reason,
+            'request_sha256': _identity(route),
+            'time': datetime.now(timezone.utc).isoformat(),
+        },
+    )
     for name in ('validation.json', 'preview-validation.json'):
         path = out / name
         if path.is_file():
@@ -90,7 +116,9 @@ def generation(out: Path, route: dict):
     try:
         lock.mkdir()
     except FileExistsError as error:
-        raise ValueError(f'build lock exists: {lock}; check for an active builder before removing it') from error
+        raise ValueError(
+            f'build lock exists: {lock}; check for an active builder before removing it'
+        ) from error
     staged = None
     preserve_staged = False
     try:
@@ -116,7 +144,9 @@ def generation(out: Path, route: dict):
                     history.rename(out / '.history')
             except BaseException as recovery_error:
                 preserve_staged = True
-                raise RuntimeError(f'Publication rollback failed; recovery files retained at {staged}') from recovery_error
+                raise RuntimeError(
+                    f'Publication rollback failed; recovery files retained at {staged}'
+                ) from recovery_error
             raise
     except BaseException as error:
         _attempt(out, route, 'failed', f'Build failed; previous generation retained: {error}')
@@ -141,6 +171,7 @@ def inputs(folder: Path) -> list[str]:
                 files.add(mesh)
     files.update(name for name in SIDE_FILES if (folder / name).is_file())
     from ..route.dynamics import dependencies
+
     files.update(dependencies(folder))
     return sorted(files)
 
@@ -148,9 +179,13 @@ def inputs(folder: Path) -> list[str]:
 def record(folder: Path, route: dict, warnings: list[str], native_assets: bool) -> None:
     """Save the source snapshot and hashes after all build outputs are written."""
     (folder / ROUTE_SNAPSHOT).write_text(json.dumps(route, indent=2) + '\n', encoding='utf-8')
-    data = {'schema_version': 2, 'native_assets': native_assets, 'warnings': warnings,
-            'tools': tools_identity(),
-            'files': {name: digest(folder / name) for name in inputs(folder)}}
+    data = {
+        'schema_version': 2,
+        'native_assets': native_assets,
+        'warnings': warnings,
+        'tools': tools_identity(),
+        'files': {name: digest(folder / name) for name in inputs(folder)},
+    }
     data['build_id'] = _identity(data)
     (folder / BUILD_RECORD).write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
     # A successful rebuild makes the prior verification report obsolete.
@@ -163,31 +198,51 @@ def inspect(folder: Path) -> dict:
     missing = [name for name in names if not (folder / name).is_file()]
     path = folder / BUILD_RECORD
     if not path.is_file():
-        return {'status': 'failed' if missing else 'unavailable', 'missing': missing,
-                'changed': [], 'reason': 'No build record; rebuild to record source and mesh hashes.'}
+        return {
+            'status': 'failed' if missing else 'unavailable',
+            'missing': missing,
+            'changed': [],
+            'reason': 'No build record; rebuild to record source and mesh hashes.',
+        }
     data = json.loads(path.read_text(encoding='utf-8'))
     if data.get('schema_version') not in (1, 2):
         raise ValueError(f'unsupported build record version in {path}')
     expected = data['files']
     missing = sorted(set(missing) | {name for name in expected if not (folder / name).is_file()})
-    changed = sorted({name for name in expected if name not in missing and
-                      digest(folder / name) != expected[name]} | (set(names) - set(expected)))
+    changed = sorted(
+        {
+            name
+            for name in expected
+            if name not in missing and digest(folder / name) != expected[name]
+        }
+        | (set(names) - set(expected))
+    )
     tool_changes = []
     if data.get('schema_version') == 2:
         actual = tools_identity()
-        tool_changes = sorted(name for name in data['tools'].keys() | actual.keys()
-                              if data['tools'].get(name) != actual.get(name))
+        tool_changes = sorted(
+            name
+            for name in data['tools'].keys() | actual.keys()
+            if data['tools'].get(name) != actual.get(name)
+        )
         identity_data = {k: v for k, v in data.items() if k != 'build_id'}
         if data.get('build_id') != _identity(identity_data):
             changed.append(BUILD_RECORD)
     attempt_path = folder / 'build_attempt.json'
-    attempt = json.loads(attempt_path.read_text(encoding='utf-8')) if attempt_path.is_file() else None
-    return {'status': 'failed' if missing or changed or tool_changes or attempt else 'passed',
-            'missing': missing, 'changed': changed,
-            'build_id': data.get('build_id'), 'tool_changes': tool_changes,
-            'reason': attempt['reason'] if attempt else '',
-            'route_sha256': expected.get(ROUTE_SNAPSHOT),
-            'native_assets': data['native_assets'], 'warnings': data['warnings']}
+    attempt = (
+        json.loads(attempt_path.read_text(encoding='utf-8')) if attempt_path.is_file() else None
+    )
+    return {
+        'status': 'failed' if missing or changed or tool_changes or attempt else 'passed',
+        'missing': missing,
+        'changed': changed,
+        'build_id': data.get('build_id'),
+        'tool_changes': tool_changes,
+        'reason': attempt['reason'] if attempt else '',
+        'route_sha256': expected.get(ROUTE_SNAPSHOT),
+        'native_assets': data['native_assets'],
+        'warnings': data['warnings'],
+    }
 
 
 def pack(folder: Path, nmo: Nmo) -> Path:

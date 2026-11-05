@@ -15,19 +15,19 @@ Vec = tuple[float, float, float]
 
 def number(value, name: str) -> float:
     if isinstance(value, bool):
-        raise ValueError(f"{name} must be a finite number")
+        raise ValueError(f'{name} must be a finite number')
     try:
         result = float(value)
     except (ValueError, TypeError) as error:
-        raise ValueError(f"{name} must be a finite number") from error
+        raise ValueError(f'{name} must be a finite number') from error
     if not math.isfinite(result):
-        raise ValueError(f"{name} must be a finite number")
+        raise ValueError(f'{name} must be a finite number')
     return result
 
 
-def vector(value, name: str = "path point") -> Vec:
+def vector(value, name: str = 'path point') -> Vec:
     if not isinstance(value, (list, tuple)) or len(value) != 3:
-        raise ValueError(f"{name} needs [forward, right, up]")
+        raise ValueError(f'{name} needs [forward, right, up]')
     return tuple(number(v, name) for v in value)
 
 
@@ -38,7 +38,7 @@ def mix(a: Vec, b: Vec, t: float) -> Vec:
 def heading(v: Vec) -> tuple[float, float]:
     length = math.hypot(v[0], v[1])
     if length < 1e-8:
-        raise ValueError("a path cannot have a vertical or zero horizontal tangent")
+        raise ValueError('a path cannot have a vertical or zero horizontal tangent')
     return v[0] / length, v[1] / length
 
 
@@ -58,115 +58,135 @@ def sample_path(spec: dict) -> list[Sample]:
     S-curve with a midpoint on its chord is still sampled correctly.
     """
     if not isinstance(spec, dict):
-        raise ValueError("a path must be an object with segments")
-    segments = spec.get("segments")
+        raise ValueError('a path must be an object with segments')
+    segments = spec.get('segments')
     if not isinstance(segments, list) or not segments or len(segments) > 512:
-        raise ValueError("a path needs 1 to 512 segments")
-    step = number(spec.get("step", 2.0), "path step")
-    tolerance = number(spec.get("tolerance", 0.025), "path tolerance")
+        raise ValueError('a path needs 1 to 512 segments')
+    step = number(spec.get('step', 2.0), 'path step')
+    tolerance = number(spec.get('tolerance', 0.025), 'path tolerance')
     if not 0.1 <= step <= 10 or not 0.001 <= tolerance <= 0.5:
-        raise ValueError("path step must be 0.1..10 and tolerance 0.001..0.5")
+        raise ValueError('path step must be 0.1..10 and tolerance 0.001..0.5')
     raw: list[tuple[Vec, tuple[float, float]]] = []
     current: Vec = (0.0, 0.0, 0.0)
     direction = (1.0, 0.0)
 
     def append(p, d):
         if len(raw) >= 20000:
-            raise ValueError("path exceeds 20000 samples; use a coarser step")
+            raise ValueError('path exceeds 20000 samples; use a coarser step')
         raw.append((p, d))
 
     def cubic(points, depth=0):
         a, b, c, d = points
         chord = math.dist(a, d)
         polygon = math.dist(a, b) + math.dist(b, c) + math.dist(c, d)
+
         def off_chord(p):
-            t = (sum((p[i] - a[i]) * (d[i] - a[i]) for i in range(3)) / chord**2
-                 if chord > 1e-12 else 0.0)
+            t = (
+                sum((p[i] - a[i]) * (d[i] - a[i]) for i in range(3)) / chord**2
+                if chord > 1e-12
+                else 0.0
+            )
             return math.dist(p, mix(a, d, min(1.0, max(0.0, t))))
 
         if polygon <= step and max(off_chord(b), off_chord(c)) <= tolerance:
             append(d, heading(tuple(d[i] - c[i] for i in range(3))))
             return
         if depth >= 20:
-            raise ValueError("Bezier cannot be sampled: degenerate controls or excessive scale")
-        ab, bc, cd = mix(a, b, .5), mix(b, c, .5), mix(c, d, .5)
-        abc, bcd = mix(ab, bc, .5), mix(bc, cd, .5)
-        mid = mix(abc, bcd, .5)
+            raise ValueError('Bezier cannot be sampled: degenerate controls or excessive scale')
+        ab, bc, cd = mix(a, b, 0.5), mix(b, c, 0.5), mix(c, d, 0.5)
+        abc, bcd = mix(ab, bc, 0.5), mix(bc, cd, 0.5)
+        mid = mix(abc, bcd, 0.5)
         cubic((a, ab, abc, mid), depth + 1)
         cubic((mid, bcd, cd, d), depth + 1)
 
     for segment in segments:
         if not isinstance(segment, dict) or len(segment) != 1:
-            raise ValueError("each path segment must contain exactly one of line, bezier, arc")
+            raise ValueError('each path segment must contain exactly one of line, bezier, arc')
         kind, value = next(iter(segment.items()))
-        if kind == "line":
+        if kind == 'line':
             end = vector(value)
             delta = tuple(end[i] - current[i] for i in range(3))
             initial = final = heading(delta)
             count = math.ceil(math.dist(current, end) / step)
-        elif kind == "bezier":
+        elif kind == 'bezier':
             if not isinstance(value, list) or len(value) != 3:
-                raise ValueError("bezier needs two control points and an endpoint")
+                raise ValueError('bezier needs two control points and an endpoint')
             b, c, end = [vector(v) for v in value]
             initial = heading(tuple(b[i] - current[i] for i in range(3)))
             final = heading(tuple(end[i] - c[i] for i in range(3)))
-        elif kind == "arc":
-            if not isinstance(value, dict) or set(value) - {"radius", "angle", "rise"}:
-                raise ValueError("arc needs radius, angle and optional rise")
-            radius = number(value.get("radius"), "arc radius")
-            angle = math.radians(number(value.get("angle"), "arc angle"))
-            rise = number(value.get("rise", 0), "arc rise")
+        elif kind == 'arc':
+            if not isinstance(value, dict) or set(value) - {'radius', 'angle', 'rise'}:
+                raise ValueError('arc needs radius, angle and optional rise')
+            radius = number(value.get('radius'), 'arc radius')
+            angle = math.radians(number(value.get('angle'), 'arc angle'))
+            rise = number(value.get('rise', 0), 'arc rise')
             if radius <= 0 or not 0 < abs(angle) <= 8 * math.pi:
-                raise ValueError("arc radius must be positive and angle within +/-1440 degrees")
+                raise ValueError('arc radius must be positive and angle within +/-1440 degrees')
             initial = direction
             sign = 1 if angle > 0 else -1
             # Both coordinate axes are local: right of (forward, right).
             right = (-direction[1], direction[0])
-            centre = (current[0] + sign * radius * right[0],
-                      current[1] + sign * radius * right[1])
+            centre = (current[0] + sign * radius * right[0], current[1] + sign * radius * right[1])
             limit = 2 * math.acos(max(-1, 1 - tolerance / radius))
-            count = max(1, math.ceil(math.hypot(radius * angle, rise) / step),
-                        math.ceil(abs(angle) / max(limit, 1e-6)))
+            count = max(
+                1,
+                math.ceil(math.hypot(radius * angle, rise) / step),
+                math.ceil(abs(angle) / max(limit, 1e-6)),
+            )
 
             def arc_point(t):
                 a = angle * t
-                p = (centre[0] + sign * radius * (math.sin(a) * direction[0] - math.cos(a) * right[0]),
-                     centre[1] + sign * radius * (math.sin(a) * direction[1] - math.cos(a) * right[1]),
-                     current[2] + rise * t)
-                d = (math.cos(a) * direction[0] + math.sin(a) * right[0],
-                     math.cos(a) * direction[1] + math.sin(a) * right[1])
+                p = (
+                    centre[0]
+                    + sign * radius * (math.sin(a) * direction[0] - math.cos(a) * right[0]),
+                    centre[1]
+                    + sign * radius * (math.sin(a) * direction[1] - math.cos(a) * right[1]),
+                    current[2] + rise * t,
+                )
+                d = (
+                    math.cos(a) * direction[0] + math.sin(a) * right[0],
+                    math.cos(a) * direction[1] + math.sin(a) * right[1],
+                )
                 return p, d
 
             end, final = arc_point(1)
         elif kind in ('wave', 'weave', 'eased_turn'):
             from .formula import sampled
+
             formula = sampled(kind, value, step, tolerance)
             initial = direction
             right = (-direction[1], direction[0])
-            transformed = [((current[0]+p[0]*direction[0]+p[1]*right[0],
-                             current[1]+p[0]*direction[1]+p[1]*right[1], current[2]+p[2]),
-                            (d[0]*direction[0]+d[1]*right[0], d[0]*direction[1]+d[1]*right[1]))
-                           for p,d in formula]
+            transformed = [
+                (
+                    (
+                        current[0] + p[0] * direction[0] + p[1] * right[0],
+                        current[1] + p[0] * direction[1] + p[1] * right[1],
+                        current[2] + p[2],
+                    ),
+                    (d[0] * direction[0] + d[1] * right[0], d[0] * direction[1] + d[1] * right[1]),
+                )
+                for p, d in formula
+            ]
             end, final = transformed[-1]
         else:
-            raise ValueError(f"unknown path segment {kind}")
+            raise ValueError(f'unknown path segment {kind}')
         if initial[0] * direction[0] + initial[1] * direction[1] < 1 - 1e-5:
-            raise ValueError("path segments must meet tangentially; use a Bezier or arc to turn")
+            raise ValueError('path segments must meet tangentially; use a Bezier or arc to turn')
         if not raw:
             append(current, initial)
-        if kind == "line":
+        if kind == 'line':
             if count > 20000:
-                raise ValueError("path exceeds 20000 samples")
+                raise ValueError('path exceeds 20000 samples')
             for k in range(1, count + 1):
                 append(mix(current, end, k / count), initial)
-        elif kind == "bezier":
+        elif kind == 'bezier':
             cubic((current, b, c, end))
         elif kind in ('wave', 'weave', 'eased_turn'):
-            for p,d in transformed[1:]:
-                append(p,d)
+            for p, d in transformed[1:]:
+                append(p, d)
         else:
             if count > 20000:
-                raise ValueError("path exceeds 20000 samples")
+                raise ValueError('path exceeds 20000 samples')
             for k in range(1, count + 1):
                 append(*arc_point(k / count))
         current, direction = end, final
@@ -176,7 +196,7 @@ def sample_path(spec: dict) -> list[Sample]:
             distance += math.dist(point, raw[i - 1][0])
         result.append(Sample(point, direction, distance))
     if distance < 1e-6:
-        raise ValueError("path must have positive length")
+        raise ValueError('path must have positive length')
     return result
 
 
@@ -197,8 +217,13 @@ def include_stations(samples: list[Sample], fractions) -> list[Sample]:
             k += 1
         a, b = samples[k - 1], samples[k]
         t = (distance - a.distance) / (b.distance - a.distance)
-        d = heading((a.direction[0] + (b.direction[0] - a.direction[0]) * t,
-                     a.direction[1] + (b.direction[1] - a.direction[1]) * t, 0))
+        d = heading(
+            (
+                a.direction[0] + (b.direction[0] - a.direction[0]) * t,
+                a.direction[1] + (b.direction[1] - a.direction[1]) * t,
+                0,
+            )
+        )
         result.append(Sample(mix(a.point, b.point, t), d, distance))
     return result
 
@@ -207,14 +232,19 @@ def stations(value, name: str, low: float, high: float) -> list[tuple[float, flo
     """A constant or sorted [fraction, value] stations, including 0 and 1."""
     if not isinstance(value, list):
         value = [[0, value], [1, value]]
-    if not 2 <= len(value) <= 2048 or any(not isinstance(v, (list, tuple)) or len(v) != 2 for v in value):
-        raise ValueError(f"{name} needs [fraction, value] stations")
+    if not 2 <= len(value) <= 2048 or any(
+        not isinstance(v, (list, tuple)) or len(v) != 2 for v in value
+    ):
+        raise ValueError(f'{name} needs [fraction, value] stations')
     result = [(number(t, name), number(v, name)) for t, v in value]
-    if result[0][0] != 0 or result[-1][0] != 1 or any(
-            a[0] >= b[0] for a, b in zip(result, result[1:])):
-        raise ValueError(f"{name} stations must increase from 0 to 1")
+    if (
+        result[0][0] != 0
+        or result[-1][0] != 1
+        or any(a[0] >= b[0] for a, b in zip(result, result[1:]))
+    ):
+        raise ValueError(f'{name} stations must increase from 0 to 1')
     if any(not low <= v <= high for _, v in result):
-        raise ValueError(f"{name} must be within {low:g}..{high:g}")
+        raise ValueError(f'{name} must be within {low:g}..{high:g}')
     return result
 
 

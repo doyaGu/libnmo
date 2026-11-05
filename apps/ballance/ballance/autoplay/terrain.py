@@ -24,16 +24,16 @@ from ..kit.rails import GAUGE
 from ..view.scene import SceneObject
 
 CELL = 1.0
-MERGE = 0.6          # heights closer than this in a cell are one floor
-CLIMB = 0.65         # most a cell may rise from the one beside it (a slope; more is a step)
-STEEP = 3.0          # a step the ball can still take with a run at it; higher is a wall
-OVERHEAD = 8.0       # higher than this above it, a floor is no wall to it
-RADIUS = 1.9         # how far the ball keeps from a wall (its radius, about)
-FLOOR_SLOPE = 0.6    # the least upward part of a floor face's normal
-RING_EDGE = 0.4      # a ring's edges are shorter (an octagon's of radius 0.35 is 0.27)
-LEVEL_RINGS = 1.0    # paired rings are level with each other within this
-PARTING = 4.8        # tubes further apart than this, the ball falls between them
-BOX_CLEAR = 2.5      # around a box, the cells the ball would push it in
+MERGE = 0.6  # heights closer than this in a cell are one floor
+CLIMB = 0.65  # most a cell may rise from the one beside it (a slope; more is a step)
+STEEP = 3.0  # a step the ball can still take with a run at it; higher is a wall
+OVERHEAD = 8.0  # higher than this above it, a floor is no wall to it
+RADIUS = 1.9  # how far the ball keeps from a wall (its radius, about)
+FLOOR_SLOPE = 0.6  # the least upward part of a floor face's normal
+RING_EDGE = 0.4  # a ring's edges are shorter (an octagon's of radius 0.35 is 0.27)
+LEVEL_RINGS = 1.0  # paired rings are level with each other within this
+PARTING = 4.8  # tubes further apart than this, the ball falls between them
+BOX_CLEAR = 2.5  # around a box, the cells the ball would push it in
 # the cells under the ball: those within two cells of it
 SUPPORT = [(di, dj) for di in range(-2, 3) for dj in range(-2, 3) if di * di + dj * dj <= 4]
 
@@ -45,15 +45,16 @@ Floor = tuple[float, float, float, float, float]  # x0, x1, z0, z1, height
 @dataclass
 class Terrain:
     layers: dict[Cell, list[float]]  # the heights in a cell, lowest first
-    rails: set[Cell]                 # the cells a rail's strip covers
+    rails: set[Cell]  # the cells a rail's strip covers
     tangents: dict[Cell, tuple[float, float]]  # the way a rail runs there, on XZ
-    boxes: set[Cell]                 # the cells a box would be pushed through
-    marks: dict[str, Point3]         # markers and elements, where they are
+    boxes: set[Cell]  # the cells a box would be pushed through
+    marks: dict[str, Point3]  # markers and elements, where they are
 
     def without(self, x: float, z: float, reach: float) -> None:
         """Takes out the cells within reach of (x, z)."""
-        for cell in [c for c in self.layers
-                     if math.hypot(centre(c[0]) - x, centre(c[1]) - z) < reach]:
+        for cell in [
+            c for c in self.layers if math.hypot(centre(c[0]) - x, centre(c[1]) - z) < reach
+        ]:
             del self.layers[cell]
 
 
@@ -67,17 +68,19 @@ def terrain(scene: list[SceneObject], floors: list[Floor] = ()) -> Terrain:
     mechanism has moved): each solid, with nothing under it."""
     floor_triangles, rail_triangles, rail_ways = [], [], []
     for x0, x1, z0, z1, h in floors:
-        floor_triangles += [((x0, h, z0), (x1, h, z0), (x1, h, z1)),
-                            ((x0, h, z0), (x1, h, z1), (x0, h, z1))]
+        floor_triangles += [
+            ((x0, h, z0), (x1, h, z0), (x1, h, z1)),
+            ((x0, h, z0), (x1, h, z1), (x0, h, z1)),
+        ]
     marks, boxes = {}, set()
     for obj in scene:
-        if "P_Box" in obj.groups and obj.triangles:
+        if 'P_Box' in obj.groups and obj.triangles:
             boxes |= _around(obj, BOX_CLEAR)
         if obj.name.startswith(tuple(MARKERS)) or element_kind(obj.name):
             marks[obj.name] = obj.at
-        if "Phys_Floors" in obj.groups and not obj.name.startswith("Tower"):
+        if 'Phys_Floors' in obj.groups and not obj.name.startswith('Tower'):
             floor_triangles += [t.points for t in obj.triangles if _flat(t.points)]
-        if "Phys_FloorRails" in obj.groups:
+        if 'Phys_FloorRails' in obj.groups:
             triangles, ways = _rail_strips(obj)
             rail_triangles += triangles
             rail_ways += ways
@@ -119,12 +122,16 @@ def _around(obj: SceneObject, clear: float) -> set[Cell]:
     ps = [p for t in obj.triangles for p in t.points]
     x0, x1 = min(p[0] for p in ps) - clear, max(p[0] for p in ps) + clear
     z0, z1 = min(p[2] for p in ps) - clear, max(p[2] for p in ps) + clear
-    return {(i, j) for i in range(math.floor(x0 / CELL), math.ceil(x1 / CELL))
-            for j in range(math.floor(z0 / CELL), math.ceil(z1 / CELL))}
+    return {
+        (i, j)
+        for i in range(math.floor(x0 / CELL), math.ceil(x1 / CELL))
+        for j in range(math.floor(z0 / CELL), math.ceil(z1 / CELL))
+    }
 
 
-def _rasterize(triangles: list, cells: dict, ways: list | None = None,
-               tangents: dict | None = None) -> None:
+def _rasterize(
+    triangles: list, cells: dict, ways: list | None = None, tangents: dict | None = None
+) -> None:
     """Each triangle's height at the middles of the cells it covers (and,
     with ways, its way into tangents)."""
     for n, ((ax, ay, az), (bx, by, bz), (cx, cy, cz)) in enumerate(triangles):
@@ -132,8 +139,9 @@ def _rasterize(triangles: list, cells: dict, ways: list | None = None,
         if abs(d) < 1e-9:
             continue
         for i in range(math.floor(min(ax, bx, cx) / CELL), math.ceil(max(ax, bx, cx) / CELL) + 1):
-            for j in range(math.floor(min(az, bz, cz) / CELL),
-                           math.ceil(max(az, bz, cz) / CELL) + 1):
+            for j in range(
+                math.floor(min(az, bz, cz) / CELL), math.ceil(max(az, bz, cz) / CELL) + 1
+            ):
                 x, z = centre(i), centre(j)
                 l1 = ((bz - cz) * (x - cx) + (cx - bx) * (z - cz)) / d
                 l2 = ((cz - az) * (x - cx) + (ax - cx) * (z - cz)) / d
@@ -147,6 +155,7 @@ def _rasterize(triangles: list, cells: dict, ways: list | None = None,
 def _rings(obj: SceneObject) -> tuple[dict, dict]:
     """A rail's rings, by their middles, and the rings each one's tube
     joins it to: a ring is a loop of edges shorter than RING_EDGE."""
+
     def key(p):
         return round(p[0], 3), round(p[1], 3), round(p[2], 3)
 
@@ -232,8 +241,12 @@ def _off_walls(layers: dict[Cell, list[float]]) -> dict[Cell, list[float]]:
     """The layers RADIUS or more from a wall: a cell near, rising past STEEP
     (but not OVERHEAD), with nothing at the layer's height."""
     r = int(math.ceil(RADIUS / CELL))
-    near = [(di, dj) for di in range(-r, r + 1) for dj in range(-r, r + 1)
-            if (di or dj) and math.hypot(di, dj) * CELL <= RADIUS]
+    near = [
+        (di, dj)
+        for di in range(-r, r + 1)
+        for dj in range(-r, r + 1)
+        if (di or dj) and math.hypot(di, dj) * CELL <= RADIUS
+    ]
     kept = {}
     for (i, j), hs in layers.items():
         keep = []
@@ -241,8 +254,9 @@ def _off_walls(layers: dict[Cell, list[float]]) -> dict[Cell, list[float]]:
             walled = False
             for di, dj in near:
                 there = layers.get((i + di, j + dj), [])
-                if any(STEEP < hh - h < OVERHEAD for hh in there) and \
-                        not any(abs(hh - h) <= CLIMB for hh in there):
+                if any(STEEP < hh - h < OVERHEAD for hh in there) and not any(
+                    abs(hh - h) <= CLIMB for hh in there
+                ):
                     walled = True
             if not walled:
                 keep.append(h)
@@ -258,8 +272,11 @@ def _held(layers: dict[Cell, list[float]], rails: set[Cell]) -> dict[Cell, list[
     for (i, j), hs in layers.items():
         keep = []
         for h in hs:
-            under = sum(1 for di, dj in SUPPORT
-                        if any(abs(hh - h) <= CLIMB for hh in layers.get((i + di, j + dj), [])))
+            under = sum(
+                1
+                for di, dj in SUPPORT
+                if any(abs(hh - h) <= CLIMB for hh in layers.get((i + di, j + dj), []))
+            )
             if under >= len(SUPPORT) - 3 or (i, j) in rails:
                 keep.append(h)
         if keep:

@@ -6,8 +6,8 @@ from __future__ import annotations
 
 from .resources import resource, elements as resource_elements
 
-_FAN_TOWER = resource("FanTower")
-_BALLOON = resource("Balloon")
+_FAN_TOWER = resource('FanTower')
+_BALLOON = resource('Balloon')
 
 # --- The start, the checkpoints, the balloon -------------------------------
 
@@ -23,16 +23,21 @@ CHECKPOINT_OPENING, CHECKPOINT_GAP = 4.92, 0.87
 FIRST_RESET_ABOVE, RESET_ABOVE = 3.65, 3.33
 # The balloon's planks reach 22.08 along its +X, back to the road's end, which
 # is 0.01 higher than the balloon.
-BALLOON_REACH = _BALLOON["ports"]["entry"]["position"][0]
-BALLOON_BELOW_ROAD = _BALLOON["ports"]["entry"]["position"][1]
+BALLOON_REACH = _BALLOON['ports']['entry']['position'][0]
+BALLOON_BELOW_ROAD = _BALLOON['ports']['entry']['position'][1]
 
 # --- Elements --------------------------------------------------------------
 
 # How far above the floor under it each element stands, as in the originals:
 # their meshes rest on it.  A ball changer stands 0.1 above its pad.
-ELEMENT_LIFT = {kind: spec["placement"]["lift"] for kind, (_, spec) in resource_elements().items()
-                if "element" in spec["placement"] and not kind.startswith("P_Trafo_")}
-TRAFO_LIFTS = {kind: resource(kind+'Changer')['placement']['lift'] for kind in ('Paper','Stone','Wood')}
+ELEMENT_LIFT = {
+    kind: spec['placement']['lift']
+    for kind, (_, spec) in resource_elements().items()
+    if 'element' in spec['placement'] and not kind.startswith('P_Trafo_')
+}
+TRAFO_LIFTS = {
+    kind: resource(kind + 'Changer')['placement']['lift'] for kind in ('Paper', 'Stone', 'Wood')
+}
 TRAFO_LIFT = TRAFO_LIFTS['Paper']  # compatibility for callers using the shared original height
 # The balls are 4 across, about.
 BALL_RADIUS = 2.0
@@ -76,7 +81,7 @@ SACK_HANG, CREST_POINT = 15.39, 2.75
 # The game names the copies of P_Modul_26's sack SACK_SEAT, SACK_SEAT001,
 # ... in the order they are laid.
 SACK_NEAR, SACK_WAIT_BACK, SACK_SWING, SACK_CLEAR, SACK_REACH = 2.0, 5.0, 5.5, 3.3, 0.8
-SACK_SEAT = "P_Modul_26_Sack"
+SACK_SEAT = 'P_Modul_26_Sack'
 # Logs (Level_12's A08_Halfpipe_*, "halfpipes" in the levels' names): half
 # logs 16.84 wide, their tops 2.26 above their axes, built of 50-long
 # segments with a flat face at either end.  Level_12 lays them crossing at
@@ -94,8 +99,14 @@ LOG_SEGMENT, LOG_TOP, LOG_CROSS = 50.0, 2.26, 25.0
 # level with the rim of a wide road whose middle is 80.05 above the first's.
 # From that start: the middles of the road's last 10 and of the pads (along,
 # to the right), and where it comes out (along, to the right, up).
-SPIRAL_PATH = [(5.0, 0.0), (5.0, 58.94), (45.58, 58.94), (45.58, 24.47), (17.23, 24.47),
-               (17.23, 83.41)]
+SPIRAL_PATH = [
+    (5.0, 0.0),
+    (5.0, 58.94),
+    (45.58, 58.94),
+    (45.58, 24.47),
+    (17.23, 24.47),
+    (17.23, 83.41),
+]
 SPIRAL_OUT = (52.82, 83.41, 80.05)
 # Level_06's logs climbing with fans (A_02_Wood_04 to _14): a log the ball
 # comes in along, under three more that start 0, 50 and 150 on and whose
@@ -259,13 +270,34 @@ PUSHED_BALL_IN, PUSHED_BALL_BACK, PUSHED_BALL_REACH, PUSHED_BALL_HOLD = 5.0, 12.
 # other ramp to the rim, turning only there, and over the stone.
 STONEBOX_LENGTH, STONEBOX_MODULE, STONEBOX_TRAFO = 55.0, 24.6, 2.5
 STONEBOX_RISE = 2.1
-STONEBOX_PATH = [(2.5, 0, 0), (6.75, 0, 0), (15.75, 8.75, 0), (17.75, 9.75, 0),
-                 (19.75, 9.75, 0), (20.75, 10.75, 0), (22.75, 10.75, 0), (23.75, 11.75, 0),
-                 (23.75, 14.75, 0), (24.25, 15.25, 0), (32.25, 16.25, 25), (32.25, -5.75, 0),
-                 (41.25, -15.75, 20), (42.75, -17.25, 0), (45.75, -14.25, 0),
-                 (45.75, -9.25, 0), (43.75, -7.25, 0), (33.75, -7.25, 0), (32.75, -8.25, 0),
-                 (26.75, -8.25, 0), (25.75, -9.25, 0), (11.75, -9.25, 0), (9.75, -7.25, 0),
-                 (9.75, -3.25, 0), (12.75, 0, 0), (51.75, 0, 0)]
+STONEBOX_PATH = [
+    (2.5, 0, 0),
+    (6.75, 0, 0),
+    (15.75, 8.75, 0),
+    (17.75, 9.75, 0),
+    (19.75, 9.75, 0),
+    (20.75, 10.75, 0),
+    (22.75, 10.75, 0),
+    (23.75, 11.75, 0),
+    (23.75, 14.75, 0),
+    (24.25, 15.25, 0),
+    (32.25, 16.25, 25),
+    (32.25, -5.75, 0),
+    (41.25, -15.75, 20),
+    (42.75, -17.25, 0),
+    (45.75, -14.25, 0),
+    (45.75, -9.25, 0),
+    (43.75, -7.25, 0),
+    (33.75, -7.25, 0),
+    (32.75, -8.25, 0),
+    (26.75, -8.25, 0),
+    (25.75, -9.25, 0),
+    (11.75, -9.25, 0),
+    (9.75, -7.25, 0),
+    (9.75, -3.25, 0),
+    (12.75, 0, 0),
+    (51.75, 0, 0),
+]
 # Level_10's maze of them (A01_Floor_04 and A01_Rail_02 in P_Modul_34_01's
 # frame): three stand 15.4 apart along X over gaps 5.4 long in a flat road,
 # its top level with the modules; a road 5 lower winds under the gaps, up
@@ -285,9 +317,22 @@ STONEBOX_PATH = [(2.5, 0, 0), (6.75, 0, 0), (15.75, 8.75, 0), (17.75, 9.75, 0),
 MAZE_STEP, MAZE_BELOW = 15.4, 5.0
 MAZE_ENTRY, MAZE_EXIT = (-7.67, -17.5), 44.83
 MAZE_POINT = (15.68, 0.0)  # its extra point, between the second gap and the third
-MAZE_PATH = [(-7.67, -12.5), (-7.67, 16.0), (7.66, 15.0), (7.66, -16.0), (23.1, -15.0),
-             (23.1, 25.0), (15.6, 25.0), (-30.3, 25.0), (-36.0, 22.6), (-38.4, 16.9),
-             (-38.4, 8.1), (-36.0, 2.4), (-30.3, 0.0), (-20.4, 0.0)]
+MAZE_PATH = [
+    (-7.67, -12.5),
+    (-7.67, 16.0),
+    (7.66, 15.0),
+    (7.66, -16.0),
+    (23.1, -15.0),
+    (23.1, 25.0),
+    (15.6, 25.0),
+    (-30.3, 25.0),
+    (-36.0, 22.6),
+    (-38.4, 16.9),
+    (-38.4, 8.1),
+    (-36.0, 2.4),
+    (-30.3, 0.0),
+    (-20.4, 0.0),
+]
 
 # Level_05's octagon node (A01_Floor_01 round (68.9, 0)): a square 15 across,
 # its corners cut off 5 by 5, its inside a narrow road's V bottom down from
@@ -317,15 +362,50 @@ DIAMOND_EXIT, DIAMOND_OUT = 8.12, 17.5
 # rammed twice, the first crossbar still stops the ball for 4 seconds.
 PUSHERS_LENGTH, PUSHERS_ASIDE = 52.5, 2.5
 PUSHERS_MODULES = [28.15, 38.15]
-PUSHERS_PATH = [(6.9, 0, 0), (20.9, 0, 0), (23.9, 6.8, 0), (25.9, 12.8, 0), (27.9, 13.8, 0),
-                (27.5, 14.3, 10), (27.5, 5, 0), (27.5, 14.3, 10), (27.5, 5, 0),
-                (27.5, 14.3, 10), (27.5, 5, 0), (27.5, 14.3, 10), (27.5, 5, 0), (27.9, 6.8, 0),
-                (32.9, 11.8, 0), (33.9, 11.8, 0), (34.9, 12.8, 0), (36.9, 12.8, 0),
-                (37.9, 13.8, 0), (37.5, 14.3, 10), (37.5, 5, 0), (37.5, 14.3, 10), (37.5, 5, 0),
-                (37.5, 14.3, 10), (37.5, 5, 0), (37.5, 14.3, 10), (37.5, 5, 0),
-                (32.9, 10.8, 0), (29.9, 11.8, 0), (17.9, 23.8, 0), (5.9, 23.8, 0), (3.9, 21.8, 0),
-                (3.9, 2.8, 0), (5.9, 0.8, 0), (25.9, 0.8, 0), (26.9, 1.8, 0), (28.9, 1.8, 0),
-                (29.9, 0.8, 0), (35.9, 0.8, 0), (36.9, 1.8, 0), (38.9, 1.8, 0), (39.9, 0.8, 0)]
+PUSHERS_PATH = [
+    (6.9, 0, 0),
+    (20.9, 0, 0),
+    (23.9, 6.8, 0),
+    (25.9, 12.8, 0),
+    (27.9, 13.8, 0),
+    (27.5, 14.3, 10),
+    (27.5, 5, 0),
+    (27.5, 14.3, 10),
+    (27.5, 5, 0),
+    (27.5, 14.3, 10),
+    (27.5, 5, 0),
+    (27.5, 14.3, 10),
+    (27.5, 5, 0),
+    (27.9, 6.8, 0),
+    (32.9, 11.8, 0),
+    (33.9, 11.8, 0),
+    (34.9, 12.8, 0),
+    (36.9, 12.8, 0),
+    (37.9, 13.8, 0),
+    (37.5, 14.3, 10),
+    (37.5, 5, 0),
+    (37.5, 14.3, 10),
+    (37.5, 5, 0),
+    (37.5, 14.3, 10),
+    (37.5, 5, 0),
+    (37.5, 14.3, 10),
+    (37.5, 5, 0),
+    (32.9, 10.8, 0),
+    (29.9, 11.8, 0),
+    (17.9, 23.8, 0),
+    (5.9, 23.8, 0),
+    (3.9, 21.8, 0),
+    (3.9, 2.8, 0),
+    (5.9, 0.8, 0),
+    (25.9, 0.8, 0),
+    (26.9, 1.8, 0),
+    (28.9, 1.8, 0),
+    (29.9, 0.8, 0),
+    (35.9, 0.8, 0),
+    (36.9, 1.8, 0),
+    (38.9, 1.8, 0),
+    (39.9, 0.8, 0),
+]
 
 # P_Modul_29 and P_Modul_30 bridge a gap that two narrow roads' V's run to
 # (Level_03's): nine plates hung on hinges like a rope bridge, over a gap
@@ -334,7 +414,7 @@ PUSHERS_PATH = [(6.9, 0, 0), (20.9, 0, 0), (23.9, 6.8, 0), (25.9, 12.8, 0), (27.
 # its plank resting on a stopper lip at either end.  The ball crosses both
 # along the module's +X; a stone ball falls through the plates, in Ballanced
 # too.  (gap, module along it, module below the edges)
-BRIDGES = {"P_Modul_29": (15.33, 6.87, 0.17), "P_Modul_30": (14.8, 7.4, 0.5)}
+BRIDGES = {'P_Modul_29': (15.33, 6.87, 0.17), 'P_Modul_30': (14.8, 7.4, 0.5)}
 
 # P_Modul_17, a rotating arm, with the drawbridge it tips (Level_03's
 # P_Modul_17_01 and P_Modul_25_05): a road runs 33.33 to and across the
@@ -349,8 +429,7 @@ BRIDGES = {"P_Modul_29": (15.33, 6.87, 0.17), "P_Modul_30": (14.8, 7.4, 0.5)}
 # loop, along the upper road past the paddle to its end, back, and over the
 # plank.
 ARMS_LENGTH, ARMS_MODULE, ARMS_ABOVE, ARMS_BRIDGE = 33.33, (24.61, -11.21), 5.43, 23.33
-ARMS_PATH = [(5, 0, 0), (5, -20, 0), (20, -20, 0), (28, -20, 1), (5, -20, 0), (5, 0, 0),
-             (20, 0, 0)]
+ARMS_PATH = [(5, 0, 0), (5, -20, 0), (20, -20, 0), (28, -20, 1), (5, -20, 0), (5, 0, 0), (20, 0, 0)]
 
 # P_Modul_19, the flaps (Level_09's P_Modul_19_01): an axle 20 long across
 # two roads 15 apart, a flap 6.08 long at either end, square to each other.
@@ -375,8 +454,15 @@ FLAPS_COUNTERWEIGHT = (8.7, -14.85, 3.13)
 # off, rolling out 11 toward each and back, and the ball rides it up to 7
 # above the module.  (along, right) from the module
 LIFT_ENTRY, LIFT_BELOW, LIFT_TOP, LIFT_EXIT, LIFT_RIDE = 15.87, 10.76, 6.884, 35.94, 7.0
-LIFT_WALLS = [(-7.78, 7.78), (0.0, 11.0), (7.78, 7.78), (11.0, 0.0), (7.78, -7.78),
-              (0.0, -11.0), (-7.78, -7.78)]
+LIFT_WALLS = [
+    (-7.78, 7.78),
+    (0.0, 11.0),
+    (7.78, 7.78),
+    (11.0, 0.0),
+    (7.78, -7.78),
+    (0.0, -11.0),
+    (-7.78, -7.78),
+]
 
 # Modul27, the arched wood plank (Level_03's A04_Modul_27; 19 in the
 # originals, never two in a row): 10 long and 5 wide, without walls, over a
@@ -423,7 +509,7 @@ SWING_HALF, SWING_ABOVE = 12.5, 1.5
 # module until the seat has been within 0.8 of 4.3 beyond it and swung back
 # to within 1 of 1 beyond it, then rolls on, reaching the gap as the seat
 # does.  (along, reach)
-SWING_SEAT, SWING_WAIT, SWING_FAR, SWING_GO = "P_Modul_08_Schaukel", 14.0, (4.3, 0.8), (1.0, 1.0)
+SWING_SEAT, SWING_WAIT, SWING_FAR, SWING_GO = 'P_Modul_08_Schaukel', 14.0, (4.3, 0.8), (1.0, 1.0)
 
 # --- Scenery ---------------------------------------------------------------
 
