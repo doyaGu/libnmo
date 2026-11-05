@@ -735,6 +735,15 @@ static int bb_set_dynamic_position(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* TT_TestForJoystick queries the current frame and finishes on Yes or No. */
+static int bb_test_for_joystick(blk_t *b)
+{
+    bool attached = nmo_engine_joystick_state(b->engine,get_in_int(b,0,0),NULL);
+    OUT_ON(b,attached ? 0 : 1);
+    IN_OFF(b,0);
+    return NMO_ENGINE_BR_OK;
+}
+
 /* Four ordered half-axis assignments; the negative channel may overwrite
  * the positive channel. Unselected components, including output Z, stay zero. */
 static int bb_joystick_vector_mapper(blk_t *b)
@@ -757,6 +766,7 @@ static int bb_joystick_vector_mapper(blk_t *b)
 }
 
 static const nmo_engine_block_desc_t eng_tt_toolbox_blocks[] = {
+    {NMO_GUID_INIT(0x229865eb,0x577619e4),"TT_TestForJoystick",bb_test_for_joystick,NULL,NULL},
     {NMO_GUID_INIT(0x04f80efd,0x76b47b33),"TT_JoystickVectorMapper",bb_joystick_vector_mapper,NULL,NULL},
     {NMO_GUID_INIT(0x09b335b3, 0x12d17cdc), "TT_LinearVolume", bb_linear_volume, NULL, NULL},
     {NMO_GUID_INIT(0x7e212b2f, 0x24db67c6), "TT_ReflectionMapping", bb_reflection_mapping, NULL, NULL},

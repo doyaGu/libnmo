@@ -20,6 +20,7 @@
 #define GUID_TT_INPUT_STRING NMO_GUID(0x52fd6294, 0x612f51a5)
 #define GUID_KEYBOARD_CONTROLLER NMO_GUID(0x43f1d000,0x1a2b3c4d)
 #define GUID_KEYBOARD_MAPPER NMO_GUID(0x053b2bde,0x2f8f1d74)
+#define GUID_TT_TEST_FOR_JOYSTICK NMO_GUID(0x229865eb,0x577619e4)
 #define GUID_TT_JOYSTICK_VECTOR_MAPPER NMO_GUID(0x04f80efd,0x76b47b33)
 #define GUID_JOYSTICK_WAITER NMO_GUID(0x012d010b,0x013d010b)
 #define GUID_JOYSTICK_MAPPER NMO_GUID(0x03ed1bea,0x25692ecc)
@@ -73,6 +74,49 @@ TEST(engine_input, four_joystick_slots_are_independent_and_invalid_indices_retur
 TEST(engine_input, joystick_snapshots_remain_private_to_each_engine_and_survive_script_reactivation)
 {
     engine_fixture_t f; fixture_begin(&f); fixture_commit_bare(&f,NULL); ASSERT_EQ(NMO_OK,nmo_engine_start(f.engine,NMO_ENGINE_START_ALL)); nmo_engine_t *second = NULL; ASSERT_EQ(NMO_OK,nmo_engine_create(f.workspace,NULL,&second)); ASSERT_EQ(NMO_OK,nmo_engine_start(second,NMO_ENGINE_START_ALL)); nmo_engine_joystick_state_t state = {.attached = true,.position = {.75f,0,0},.point_of_view = -1,.buttons = 32}; nmo_engine_set_joystick(f.engine,0,&state); ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0)); ASSERT_EQ(NMO_OK,nmo_engine_step(second,0)); ASSERT_FALSE(nmo_engine_joystick_state(second,0,NULL)); state.position[0] = -.75f; nmo_engine_set_joystick(second,0,&state); ASSERT_EQ(NMO_OK,nmo_engine_step(second,0)); ASSERT_TRUE(nmo_engine_joystick_state(f.engine,0,&state)); ASSERT_FLOAT_EQ(.75f,state.position[0],0); ASSERT_EQ(NMO_OK,nmo_engine_activate_script(f.engine,f.script_id,false,false)); ASSERT_EQ(NMO_OK,nmo_engine_activate_script(f.engine,f.script_id,true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0)); ASSERT_TRUE(nmo_engine_joystick_state(f.engine,0,&state)); ASSERT_FLOAT_EQ(.75f,state.position[0],0); nmo_engine_destroy(second); fixture_end(&f);
+}
+
+typedef struct tt_joystick_test_fixture {
+    engine_fixture_t f;
+    nmo_object_id_t block, number_value, yes, no;
+    uint64_t calls, yes_hits, no_hits;
+} tt_joystick_test_fixture_t;
+
+static void tt_joystick_test_begin(tt_joystick_test_fixture_t *g)
+{
+    memset(g,0,sizeof(*g)); fixture_begin(&g->f); g->block = fixture_block(&g->f,GUID_TT_TEST_FOR_JOYSTICK,"TT_TestForJoystick"); g->yes = fixture_block(&g->f,GUID_NOP,"Joystick Present"); g->no = fixture_block(&g->f,GUID_NOP,"Joystick Absent"); ASSERT_TRUE(g->block != 0 && g->yes != 0 && g->no != 0); ASSERT_EQ(0u,fixture_target(&g->f,g->block)); nmo_object_id_t number = BLOCK_PIN(&g->f,g->block,0); fixture_input_int(&g->f,number,0); g->number_value = nmo_parameterin_source_id(fixture_state(&g->f,number)); fixture_link(&g->f,g->f.script_in,BLOCK_IN(&g->f,g->block,0),0); fixture_link(&g->f,BLOCK_OUT(&g->f,g->block,0),BLOCK_IN(&g->f,g->yes,0),0); fixture_link(&g->f,BLOCK_OUT(&g->f,g->block,1),BLOCK_IN(&g->f,g->no,0),0);
+}
+
+static void tt_joystick_test_ready(tt_joystick_test_fixture_t *g)
+{
+    nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL; fixture_commit_bare(&g->f,&options); ASSERT_FALSE(nmo_engine_has_block(g->f.engine,GUID_TT_TEST_FOR_JOYSTICK)); ASSERT_EQ(NMO_OK,nmo_bb_terratools_register(g->f.engine)); ASSERT_TRUE(nmo_engine_has_block(g->f.engine,GUID_TT_TEST_FOR_JOYSTICK)); ASSERT_EQ(NMO_OK,nmo_bb_virtools_register(g->f.engine)); ASSERT_EQ(NMO_OK,nmo_engine_start(g->f.engine,NMO_ENGINE_START_ALL));
+}
+
+static void tt_joystick_test_step(tt_joystick_test_fixture_t *g, bool attached)
+{
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g->f.engine,0)); g->calls++; if (attached) g->yes_hits++; else g->no_hits++; ASSERT_EQ(g->calls,runs(&g->f,g->block)); ASSERT_EQ(g->yes_hits,runs(&g->f,g->yes)); ASSERT_EQ(g->no_hits,runs(&g->f,g->no)); nmo_engine_block_t block = {g->f.engine,eng_map_get(&g->f.engine->node_map,g->block)}; ASSERT_FALSE(nmo_engine_block_is_input_active(&block,0)); ASSERT_FALSE(nmo_engine_behavior_is_active(g->f.engine,g->block));
+}
+
+static void tt_joystick_test_fire(tt_joystick_test_fixture_t *g, int32_t slot, bool attached)
+{
+    ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g->f.engine,g->number_value,&slot,sizeof(slot))); ASSERT_EQ(NMO_OK,nmo_engine_activate_script(g->f.engine,g->f.script_id,true,true)); tt_joystick_test_step(g,attached);
+}
+
+TEST(engine_input, tt_test_for_joystick_defaults_to_slot_zero_and_requires_reactivation_after_each_query)
+{
+    tt_joystick_test_fixture_t g; tt_joystick_test_begin(&g); tt_joystick_test_ready(&g); tt_joystick_test_step(&g,false); nmo_engine_joystick_state_t state = {.attached = true,.point_of_view = -1}; nmo_engine_set_joystick(g.f.engine,1,&state); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(1u,runs(&g.f,g.block)); ASSERT_EQ(1u,runs(&g.f,g.no)); ASSERT_EQ(0u,runs(&g.f,g.yes));
+    tt_joystick_test_fire(&g,0,false); tt_joystick_test_fire(&g,1,true); state.attached = false; state.buttons = UINT32_MAX; state.position[0] = 1; nmo_engine_set_joystick(g.f.engine,1,&state); tt_joystick_test_fire(&g,1,false); fixture_end(&g.f);
+}
+
+TEST(engine_input, tt_test_for_joystick_uses_the_live_number_and_distinguishes_all_four_device_slots)
+{
+    tt_joystick_test_fixture_t g; tt_joystick_test_begin(&g); tt_joystick_test_ready(&g);
+    for (int32_t selected = 0; selected < 4; selected++) {
+        for (int32_t slot = 0; slot < 4; slot++) nmo_engine_set_joystick(g.f.engine,slot,NULL);
+        nmo_engine_joystick_state_t state = {.attached = true,.point_of_view = -1}; nmo_engine_set_joystick(g.f.engine,selected,&state);
+        for (int32_t slot = 0; slot < 4; slot++) tt_joystick_test_fire(&g,slot,slot == selected);
+    }
+    ASSERT_EQ(4u,g.yes_hits); ASSERT_EQ(12u,g.no_hits); fixture_end(&g.f);
 }
 
 typedef struct tt_vector_mapper_fixture {
@@ -1014,6 +1058,9 @@ TEST(engine_input, tt_input_string_keeps_editing_past_enter)
 }
 
 TEST_MAIN_BEGIN()
+REGISTER_TEST(engine_input, tt_test_for_joystick_defaults_to_slot_zero_and_requires_reactivation_after_each_query);
+REGISTER_TEST(engine_input, tt_test_for_joystick_uses_the_live_number_and_distinguishes_all_four_device_slots);
+
 REGISTER_TEST(engine_input, loaded_tt_joystick_vector_mappers_and_copies_keep_live_input_assignments_and_cached_output);
 REGISTER_TEST(engine_input, joystick_waiter_vector_mapper_and_translate_deliver_current_remapped_axes_in_one_frame);
 
