@@ -22,15 +22,19 @@ class ProjectTests(unittest.TestCase):
             build(self.route, folder, None, 'Before')
             before = {p: project.digest(folder / p) for p in project.inputs(folder)}
             (folder / 'validation.json').write_text('{"status":"passed"}')
+
             def fail(sector, index, staged):
                 (staged / 'sector1.obj').write_text('incomplete')
                 raise OSError('injected write failure')
+
             with patch('ballance.route.build.write_sector', side_effect=fail):
                 with self.assertRaisesRegex(OSError, 'injected'):
                     build(self.route, folder, None, 'After')
             self.assertEqual({p: project.digest(folder / p) for p in before}, before)
             self.assertEqual(project.inspect(folder)['status'], 'failed')
-            self.assertEqual(json.loads((folder / 'validation.json').read_text())['status'], 'superseded')
+            self.assertEqual(
+                json.loads((folder / 'validation.json').read_text())['status'], 'superseded'
+            )
             self.assertFalse(list(Path(tmp).glob('.level.build-*')))
             build(self.route, folder, None, 'Recovered')
             self.assertEqual(project.inspect(folder)['status'], 'passed')
@@ -47,7 +51,9 @@ class ProjectTests(unittest.TestCase):
             self.assertFalse((folder / 'steer.csv').exists())
             history = next((folder / '.history').glob('*/panorama.png')).parent
             self.assertEqual((history / 'panorama.png').read_bytes(), b'previous picture')
-            self.assertEqual(json.loads((history / project.BUILD_RECORD).read_text())['build_id'], previous_id)
+            self.assertEqual(
+                json.loads((history / project.BUILD_RECORD).read_text())['build_id'], previous_id
+            )
             # A further rebuild retains flat history, including the oldest image.
             build(self.route, folder, None, 'Third')
             self.assertTrue((history / 'panorama.png').is_file())
@@ -61,10 +67,12 @@ class ProjectTests(unittest.TestCase):
             before = (folder / 'manifest.json').read_bytes()
             history = sorted(p.name for p in (folder / '.history').iterdir())
             rename = Path.rename
+
             def fail_publish(path, target):
                 if path.name.startswith('.level.build-') and target == folder:
                     raise OSError('injected publish failure')
                 return rename(path, target)
+
             with patch.object(Path, 'rename', fail_publish):
                 with self.assertRaisesRegex(OSError, 'publish'):
                     build(self.route, folder, None, 'After')
@@ -97,7 +105,9 @@ class ProjectTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 build(source, folder, None, 'After')
             self.assertEqual((folder / 'sector1.obj').read_bytes(), before)
-            self.assertEqual(json.loads((folder / 'validation.json').read_text())['status'], 'superseded')
+            self.assertEqual(
+                json.loads((folder / 'validation.json').read_text())['status'], 'superseded'
+            )
 
     def test_failed_rollback_retains_recovery_files(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -105,10 +115,12 @@ class ProjectTests(unittest.TestCase):
             build(self.route, folder, None, 'Before')
             old_manifest = (folder / 'manifest.json').read_bytes()
             rename = Path.rename
+
             def fail_destination(path, target):
                 if target == folder:
                     raise OSError('injected destination failure')
                 return rename(path, target)
+
             with patch.object(Path, 'rename', fail_destination):
                 with self.assertRaisesRegex(RuntimeError, 'recovery files retained'):
                     build(self.route, folder, None, 'After')
@@ -133,7 +145,9 @@ class ProjectTests(unittest.TestCase):
             self.assertIn('Artifact content changed.', evidence.inspect(artifact)['reasons'])
             artifact.write_bytes(b'preview')
             actual = project.tools_identity()
-            with patch('ballance.core.project.tools_identity', return_value=actual | {'changed.py': 'x'}):
+            with patch(
+                'ballance.core.project.tools_identity', return_value=actual | {'changed.py': 'x'}
+            ):
                 self.assertEqual(project.inspect(folder)['tool_changes'], ['changed.py'])
                 self.assertEqual(evidence.inspect(artifact)['status'], 'stale')
             build(self.route, folder, None, 'After')

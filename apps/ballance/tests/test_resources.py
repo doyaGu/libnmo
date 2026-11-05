@@ -11,7 +11,14 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from ballance.game.resources import resource, identity, files, digest, check_export, catalog
+from ballance.game.resources import (
+    resource,
+    identity,
+    files,
+    digest,
+    check_export,
+    catalog,
+)
 from ballance.core import evidence
 from ballance.core.nmo import Nmo
 from ballance.route.build import build

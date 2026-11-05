@@ -1,4 +1,5 @@
 """Analytic paths, readable rail structure and recoverable fall volumes."""
+
 import json
 import math
 import os
@@ -29,24 +30,34 @@ class FormulaTests(unittest.TestCase):
         self.assertEqual(coarse.lines, dense.lines)
 
     def test_wave_extrema_survive_sampling_and_join_straights_smoothly(self):
-        points = sample_path({'segments': [{'wave': {'length': 240, 'amplitude': 15, 'cycles': 4}}]})
+        points = sample_path(
+            {'segments': [{'wave': {'length': 240, 'amplitude': 15, 'cycles': 4}}]}
+        )
         self.assertGreater(max(s.point[1] for s in points), 14.99)
         self.assertLess(min(s.point[1] for s in points), -14.99)
         self.assertLess(math.dist(points[-1].point, (240, 0, 0)), 1e-10)
         self.assertLess(math.dist(points[-1].direction, (1, 0)), 1e-7)
-        self.assertTrue(all(math.dist(a.point, b.point) <= 2.001 for a, b in zip(points, points[1:])))
+        self.assertTrue(
+            all(math.dist(a.point, b.point) <= 2.001 for a, b in zip(points, points[1:]))
+        )
 
     def test_weave_has_distinct_height_at_each_centre_crossing(self):
         evaluate = curve('weave', {'length': 170, 'width': 100, 'lift': 16, 'rise': -12})
-        crossings = [evaluate(t) for t in (0, .5, 1)]
+        crossings = [evaluate(t) for t in (0, 0.5, 1)]
         for p in crossings:
             self.assertLess(math.hypot(*p[:2]), 1e-10)
         self.assertEqual([p[2] for p in crossings], [0, 26, -12])
 
     def test_eased_turn_rotation_and_mirroring(self):
-        spec = {'rail_path': {'segments': [{'eased_turn': {'length': 100, 'angle': 90}},
-                                          {'wave': {'length': 150, 'amplitude': 12}},
-                                          {'weave': {'length': 100, 'width': 60}}]}}
+        spec = {
+            'rail_path': {
+                'segments': [
+                    {'eased_turn': {'length': 100, 'angle': 90}},
+                    {'wave': {'length': 150, 'amplitude': 12}},
+                    {'weave': {'length': 100, 'width': 60}},
+                ]
+            }
+        }
         a = sample_path(spec['rail_path'])
         b = sample_path(mirror(spec)['rail_path'])
         self.assertEqual(len(a), len(b))
@@ -58,16 +69,33 @@ class FormulaTests(unittest.TestCase):
         self.assertAlmostEqual(x, y, places=8)
 
     def test_formula_parameters_reject_unbounded_or_aliasing_inputs(self):
-        for kind, spec in [('wave', {'cycles': 1.5}), ('wave', {'cycles': 9}),
-                           ('wave', {'amplitude': math.inf}), ('weave', {'hand': 0}),
-                           ('eased_turn', {'angle': 0}), ('wave', {'expression': 'x'})]:
+        for kind, spec in [
+            ('wave', {'cycles': 1.5}),
+            ('wave', {'cycles': 9}),
+            ('wave', {'amplitude': math.inf}),
+            ('weave', {'hand': 0}),
+            ('eased_turn', {'angle': 0}),
+            ('wave', {'expression': 'x'}),
+        ]:
             with self.subTest(kind=kind, spec=spec), self.assertRaises(ValueError):
                 sample_path({'segments': [{kind: spec}]})
 
     def test_ribs_are_visible_without_physics_and_normals_can_be_imported(self):
-        route = {'start': {'heading': '+x'}, 'sectors': [[{'road': 10},
-                 {'rail_path': {'segments': [{'wave': {'length': 140, 'amplitude': 10}}],
-                                'ribs': {'spacing': 20, 'depth': 3}}}, {'road': 10}]]}
+        route = {
+            'start': {'heading': '+x'},
+            'sectors': [
+                [
+                    {'road': 10},
+                    {
+                        'rail_path': {
+                            'segments': [{'wave': {'length': 140, 'amplitude': 10}}],
+                            'ribs': {'spacing': 20, 'depth': 3},
+                        }
+                    },
+                    {'road': 10},
+                ]
+            ],
+        }
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp)
             self.assertEqual(build(route, folder, None, 'Formula'), 0)
@@ -77,15 +105,24 @@ class FormulaTests(unittest.TestCase):
             self.assertNotEqual(rib.get('visible'), False)
             self.assertTrue(read_obj(folder / rib['mesh']['obj']))
             if os.environ.get('NMO_TEST_CLI'):
-                Nmo(os.environ['NMO_TEST_CLI']).run('patch', 'apply', '--project',
-                    str(folder / 'manifest.json'), '-o', str(folder / 'Level_01.NMO'))
+                Nmo(os.environ['NMO_TEST_CLI']).run(
+                    'patch',
+                    'apply',
+                    '--project',
+                    str(folder / 'manifest.json'),
+                    '-o',
+                    str(folder / 'Level_01.NMO'),
+                )
 
     def test_obj_writer_eliminates_float32_underflow_without_losing_map_precision(self):
         mesh = Mesh()
-        mesh.triangle('Rail', (0, 1, 0),
-                      ((900.00012, 0, 0), (0, 0), (2.14684e-48, 1, 6.12323e-17)),
-                      ((901, 0, 0), (1, 0), (0, 1, 0)),
-                      ((900, 0, 1), (0, 1), (0, 1, 0)))
+        mesh.triangle(
+            'Rail',
+            (0, 1, 0),
+            ((900.00012, 0, 0), (0, 0), (2.14684e-48, 1, 6.12323e-17)),
+            ((901, 0, 0), (1, 0), (0, 1, 0)),
+            ((900, 0, 1), (0, 1), (0, 1, 0)),
+        )
         self.assertIn('vn 0 1 0', mesh.lines)
         self.assertIn('v 900.00012 0 0', mesh.lines)
 
@@ -96,8 +133,10 @@ class DeathZoneTests(unittest.TestCase):
             folder = Path(tmp)
             write_box(folder / 'rail.obj', (0, 250, 0, 1, 0, 4))
             write_box(folder / 'tower.obj', (0, 5, -160, 0, 0, 5))
-            objects = [level_object('Rail', 'rail.obj', [0, 0, 0], ['Phys_FloorRails']),
-                       level_object('Tower_01', 'tower.obj', [0, 0, 0], ['Phys_Floors'])]
+            objects = [
+                level_object('Rail', 'rail.obj', [0, 0, 0], ['Phys_FloorRails']),
+                level_object('Tower_01', 'tower.obj', [0, 0, 0], ['Phys_Floors']),
+            ]
             cells = surface_cells(objects, folder, 25)
             self.assertIn((137.5, 0, 12.5), cells)
             # A rolling ball may reach over a tile edge even when its
@@ -105,7 +144,9 @@ class DeathZoneTests(unittest.TestCase):
             self.assertIn((137.5, 0, -12.5), cells)
             self.assertTrue(all(p[1] >= 0 for p in cells))
             boxes = fall_boxes(cells, 25, 18, 35, 5, 60)
-            self.assertTrue(any(b[0] <= 125 <= b[1] and b[4] <= 2 <= b[5] and b[3] == -20 for b in boxes))
+            self.assertTrue(
+                any(b[0] <= 125 <= b[1] and b[4] <= 2 <= b[5] and b[3] == -20 for b in boxes)
+            )
 
     def test_lower_landing_keeps_its_local_column_clear(self):
         boxes = fall_boxes([(12, 40, 12), (12, 0, 12)], 25, 18, 35, 5, 60)
@@ -114,11 +155,14 @@ class DeathZoneTests(unittest.TestCase):
     def test_keepout_subtraction_preserves_volume_without_overlap(self):
         box, keep = (0, 10, 0, 10, 0, 10), (2, 8, 3, 7, 1, 9)
         parts = subtract(box, keep)
-        volume = lambda b: math.prod(b[k+1] - b[k] for k in (0, 2, 4))
+
+        def volume(box):
+            return math.prod(box[k + 1] - box[k] for k in (0, 2, 4))
+
         self.assertAlmostEqual(sum(map(volume, parts)), volume(box) - volume(keep))
         for i, a in enumerate(parts):
-            for b in [keep, *parts[i+1:]]:
-                self.assertTrue(any(a[k+1] <= b[k] or b[k+1] <= a[k] for k in (0, 2, 4)))
+            for b in [keep, *parts[i + 1 :]]:
+                self.assertTrue(any(a[k + 1] <= b[k] or b[k + 1] <= a[k] for k in (0, 2, 4)))
         self.assertEqual(subtract(box, (20, 30, 20, 30, 20, 30)), [box])
         self.assertEqual(subtract(box, box), [])
 
@@ -131,8 +175,12 @@ class DeathZoneTests(unittest.TestCase):
             meshes = write_fall_zones(objects, folder, policy)
             audit = json.loads((folder / 'death_zones.json').read_text())
             self.assertEqual(len(meshes), len(audit['boxes']))
-            self.assertFalse(any(b[0] < 2 < b[1] and b[2] < -40 < b[3] and b[4] < 2 < b[5]
-                                 for b in audit['boxes']))
+            self.assertFalse(
+                any(
+                    b[0] < 2 < b[1] and b[2] < -40 < b[3] and b[4] < 2 < b[5]
+                    for b in audit['boxes']
+                )
+            )
             with self.assertRaisesRegex(ValueError, 'reason'):
                 write_fall_zones(objects, folder, {'keepouts': [{'box': [0, 1, 0, 1, 0, 1]}]})
 

@@ -26,14 +26,28 @@ from ballance.view.scene import load_project
 
 class WorkflowTests(unittest.TestCase):
     def test_authored_support_omission_keeps_the_fan_tower_housing(self):
-        course = {'scenery': {'omit_supports': ['FanTower_Pillar']},
-                  'sectors': [[{'road': 10}, {'trafo': 'paper'}, {'road': 10},
-                               {'rail': 15}, {'tower': True}, {'road': 15},
-                               {'trafo': 'wood'}, {'road': 15}]]}
+        course = {
+            'scenery': {'omit_supports': ['FanTower_Pillar']},
+            'sectors': [
+                [
+                    {'road': 10},
+                    {'trafo': 'paper'},
+                    {'road': 10},
+                    {'rail': 15},
+                    {'tower': True},
+                    {'road': 15},
+                    {'trafo': 'wood'},
+                    {'road': 15},
+                ]
+            ],
+        }
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp)
             self.assertEqual(build(course, folder, None, 'Fan'), 0)
-            names = [o['name'] for o in json.loads((folder / 'manifest.json').read_text())['scenes'][0]['objects']]
+            names = [
+                o['name']
+                for o in json.loads((folder / 'manifest.json').read_text())['scenes'][0]['objects']
+            ]
             self.assertTrue(any('_Floor_FanTower_' in n for n in names))
             self.assertFalse(any('_FanTower_Pillar_' in n for n in names))
             placements = json.loads((folder / 'scenery_placement.json').read_text())
@@ -45,11 +59,16 @@ class WorkflowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp)
             write_box(folder / 'column.obj', (-1, 1, -100, 30, -1, 1))
-            obj = {'name': 'A04_FanTower_Pillar_01', 'mesh': {'obj': 'column.obj'},
-                   'transform': {'position': [40, 0, 0]}}
+            obj = {
+                'name': 'A04_FanTower_Pillar_01',
+                'mesh': {'obj': 'column.obj'},
+                'transform': {'position': [40, 0, 0]},
+            }
+
             def findings():
                 (folder / 'manifest.json').write_text(json.dumps({'scenes': [{'objects': [obj]}]}))
                 return check_scenery(load_project(folder), layout)
+
             for heading, position in [((1, 0), [40, 0, 0]), ((0, -1), [0, 0, -40])]:
                 layout.balloon = ([0, 0, 0], heading)
                 obj['transform']['position'] = position
@@ -68,8 +87,9 @@ class WorkflowTests(unittest.TestCase):
             (folder / 'manifest.json').write_text('broken JSON')
             output = folder / 'validation.json'
             output.write_text('{"status":"passed"}')
-            result = subprocess.run([sys.executable, str(script), str(folder), '--json'],
-                                    text=True, capture_output=True)
+            result = subprocess.run(
+                [sys.executable, str(script), str(folder), '--json'], text=True, capture_output=True
+            )
             self.assertEqual(result.returncode, 2)
             self.assertEqual(json.loads(result.stdout)['status'], 'failed')
             self.assertEqual(json.loads(output.read_text()), json.loads(result.stdout))
@@ -134,18 +154,29 @@ class WorkflowTests(unittest.TestCase):
 
     def test_exported_column_and_ball_headroom_are_checked_in_world_space(self):
         layout = Layout({'sectors': [[{'road': 10}]]})
-        layout.parts = [Part(0, 1, 'beam', segments=[
-            (Ring(10, 0, -10, 0, 1, gauge=0), Ring(10, 0, 10, 0, 1, gauge=0))])]
+        layout.parts = [
+            Part(
+                0,
+                1,
+                'beam',
+                segments=[(Ring(10, 0, -10, 0, 1, gauge=0), Ring(10, 0, 10, 0, 1, gauge=0))],
+            )
+        ]
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp)
             # A horizontal capital at y=3, well above the tube but inside
             # the radius-two ball's space. Rotation places it across x=10.
             write_box(folder / 'column.obj', (-1, 1, 3, 4, -5, 5))
-            obj = {'name': 'Floor_Columns_01', 'mesh': {'obj': 'column.obj'},
-                   'transform': {'position': [10, 0, 0], 'rotation_euler_deg': [0, 90, 0]}}
+            obj = {
+                'name': 'Floor_Columns_01',
+                'mesh': {'obj': 'column.obj'},
+                'transform': {'position': [10, 0, 0], 'rotation_euler_deg': [0, 90, 0]},
+            }
+
             def findings():
                 (folder / 'manifest.json').write_text(json.dumps({'scenes': [{'objects': [obj]}]}))
                 return check_scenery(load_project(folder), layout)
+
             self.assertEqual(findings()[0]['kind'], 'ball clearance')
             obj['transform']['position'][1] = -3
             self.assertEqual(findings()[0]['kind'], 'rail')
@@ -154,14 +185,32 @@ class WorkflowTests(unittest.TestCase):
 
     def test_separate_braces_do_not_fill_the_empty_space_between_them(self):
         from ballance.core.obj import write_boxes
+
         layout = Layout({'sectors': [[{'road': 10}]]})
-        layout.parts = [Part(0, 1, 'beam', segments=[
-            (Ring(0, 0, -10, 0, 1, gauge=0), Ring(0, 0, 10, 0, 1, gauge=0))])]
+        layout.parts = [
+            Part(
+                0,
+                1,
+                'beam',
+                segments=[(Ring(0, 0, -10, 0, 1, gauge=0), Ring(0, 0, 10, 0, 1, gauge=0))],
+            )
+        ]
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp)
             write_boxes(folder / 'braces.obj', [(-12, -10, -5, 5, -2, 2), (10, 12, -5, 5, -2, 2)])
-            (folder / 'manifest.json').write_text(json.dumps({'scenes': [{'objects': [
-                {'name': 'Support_Scenery', 'mesh': {'obj': 'braces.obj'}}]}]}))
+            (folder / 'manifest.json').write_text(
+                json.dumps(
+                    {
+                        'scenes': [
+                            {
+                                'objects': [
+                                    {'name': 'Support_Scenery', 'mesh': {'obj': 'braces.obj'}}
+                                ]
+                            }
+                        ]
+                    }
+                )
+            )
             self.assertEqual(check_scenery(load_project(folder), layout), [])
 
     def test_relative_executable_survives_gameplay_working_directory(self):
@@ -177,8 +226,14 @@ class WorkflowTests(unittest.TestCase):
             folder = Path(tmp)
             build({'sectors': [[{'road': 10}]]}, folder, None, 'Failed play probe')
             (folder / 'steer.csv').write_text('old successful trace')
-            with patch('ballance.verify.play.pack'), patch('ballance.verify.play.base_for', return_value=folder/'base.nmo'), \
-                    patch('ballance.verify.play.subprocess.run', return_value=subprocess.CompletedProcess([], 7)):
+            with (
+                patch('ballance.verify.play.pack'),
+                patch('ballance.verify.play.base_for', return_value=folder / 'base.nmo'),
+                patch(
+                    'ballance.verify.play.subprocess.run',
+                    return_value=subprocess.CompletedProcess([], 7),
+                ),
+            ):
                 with self.assertRaisesRegex(RuntimeError, 'status 7'):
                     play(folder, 1000, Nmo(), folder)
             self.assertFalse((folder / 'steer.csv').exists())
@@ -187,14 +242,40 @@ class WorkflowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp)
             (folder / 'route_points.json').write_text('[[0,0],[10,0]]')
-            (folder / 'manifest.json').write_text(json.dumps({'scenes': [{'objects': [
-                {'name': 'P_Extra_Point_01', 'transform': {'position': [10, 0, 0]}},
-                {'name': 'P_Extra_Point_02', 'transform': {'position': [100, 0, 0]}}]}]}))
-            (folder / 'run.log').write_text('\n'.join(
-                f'[{frame}] Send Message#1 sends "{event}" to All_Gameplay'
-                for frame, event in [(400, 'Checkpoint reached'), (500, 'Level_Finish'), (600, 'Ball Off')]))
-            (folder / 'steer.csv').write_text('frame,x,y,z,speed,next,up,down,left,right\n'
-                '360,0,0,0,0,0,0,0,0,0\n500,10,0,0,1,1,0,0,0,0\n600,100,-500,0,0,1,0,0,0,0\n')
+            (folder / 'manifest.json').write_text(
+                json.dumps(
+                    {
+                        'scenes': [
+                            {
+                                'objects': [
+                                    {
+                                        'name': 'P_Extra_Point_01',
+                                        'transform': {'position': [10, 0, 0]},
+                                    },
+                                    {
+                                        'name': 'P_Extra_Point_02',
+                                        'transform': {'position': [100, 0, 0]},
+                                    },
+                                ]
+                            }
+                        ]
+                    }
+                )
+            )
+            (folder / 'run.log').write_text(
+                '\n'.join(
+                    f'[{frame}] Send Message#1 sends "{event}" to All_Gameplay'
+                    for frame, event in [
+                        (400, 'Checkpoint reached'),
+                        (500, 'Level_Finish'),
+                        (600, 'Ball Off'),
+                    ]
+                )
+            )
+            (folder / 'steer.csv').write_text(
+                'frame,x,y,z,speed,next,up,down,left,right\n'
+                '360,0,0,0,0,0,0,0,0,0\n500,10,0,0,1,1,0,0,0,0\n600,100,-500,0,0,1,0,0,0,0\n'
+            )
             result = read_run(folder, 1000)
             self.assertEqual(result.finished, 500)
             self.assertEqual(result.falls, [])
@@ -212,13 +293,31 @@ class WorkflowTests(unittest.TestCase):
             level.write_bytes(b'fixture')
             route = folder / 'route_points.json'
             route.write_text('[[0,0],[10,0],[20,0]]')
-            with patch('ballance.verify.play.harness.ensure', return_value=folder/'base.nmo'), \
-                    patch('ballance.verify.play.subprocess.run', return_value=subprocess.CompletedProcess([], 0)) as run:
-                self.assertEqual(watch(level, route, Nmo(), folder, handoff_frame=1000,
-                                       approach=True, shot=folder/'preview.png', shot_frame=1100), 0)
+            with (
+                patch('ballance.verify.play.harness.ensure', return_value=folder / 'base.nmo'),
+                patch(
+                    'ballance.verify.play.subprocess.run',
+                    return_value=subprocess.CompletedProcess([], 0),
+                ) as run,
+            ):
+                self.assertEqual(
+                    watch(
+                        level,
+                        route,
+                        Nmo(),
+                        folder,
+                        handoff_frame=1000,
+                        approach=True,
+                        shot=folder / 'preview.png',
+                        shot_frame=1100,
+                    ),
+                    0,
+                )
             command = run.call_args.args[0]
-            self.assertEqual(command[command.index('--steer')+1], '0,0;10,0@360-1000')
-            self.assertEqual(command[command.index('--shot')+1], f'{folder.resolve()}/preview.png@1100')
+            self.assertEqual(command[command.index('--steer') + 1], '0,0;10,0@360-1000')
+            self.assertEqual(
+                command[command.index('--shot') + 1], f'{folder.resolve()}/preview.png@1100'
+            )
             with self.assertRaisesRegex(ValueError, 'handoff'):
                 watch(level, route, Nmo(), folder, approach=True)
 
