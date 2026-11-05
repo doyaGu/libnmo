@@ -348,6 +348,55 @@ TEST(engine_input, legacy_tt_joystick_waiters_keep_fixed_outputs_and_on_and_leav
     }
 }
 
+TEST(engine_input, tt_joystick_waiter_on_only_rebases_sliders_and_difference_writes_require_relative_slider_one)
+{
+    joystick_waiter_fixture_t g; tt_joystick_waiter_begin(&g); joystick_waiter_configure(&g,457,0,457); ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(g.f.tx,g.settings[0],"0.5,0.125,0.125")); joystick_waiter_ready(&g); nmo_engine_joystick_state_t state = {.attached = true,.position = {.25f,0,0},.rotation = {.25f,0,0},.sliders = {.25f,-.25f},.point_of_view = .5f}; nmo_engine_set_joystick(g.f.engine,0,&state); joystick_waiter_step(&g,38,&state); tt_joystick_waiter_difference(&g,0); joystick_waiter_step(&g,1,&state);
+    nmo_engine_block_t block = {g.f.engine,eng_map_get(&g.f.engine->node_map,g.block)}; nmo_engine_block_activate_input(&block,0,true); state.position[0] = state.rotation[0] = .75f; state.sliders[0] = .75f; state.sliders[1] = .25f; state.point_of_view = -.5f; nmo_engine_set_joystick(g.f.engine,0,&state); joystick_waiter_step(&g,70,&state); tt_joystick_waiter_difference(&g,0);
+    ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.values[4],&(float){17},sizeof(float))); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.settings[3],&(uint32_t){0},sizeof(uint32_t))); joystick_waiter_step(&g,78,&state); tt_joystick_waiter_difference(&g,17);
+    ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.settings[1],&(uint32_t){128},sizeof(uint32_t))); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.settings[3],&(uint32_t){128},sizeof(uint32_t))); joystick_waiter_step(&g,1,&state); state.sliders[1] = .75f; nmo_engine_set_joystick(g.f.engine,0,&state); joystick_waiter_step(&g,2,&state); tt_joystick_waiter_difference(&g,17);
+    ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.settings[1],&(uint32_t){64},sizeof(uint32_t))); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.settings[3],&(uint32_t){64},sizeof(uint32_t))); state.sliders[0] = .625f; nmo_engine_set_joystick(g.f.engine,0,&state); joystick_waiter_step(&g,1,&state); tt_joystick_waiter_difference(&g,-.125f);
+    ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.settings[1],&(uint32_t){0},sizeof(uint32_t))); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.values[4],&(float){23},sizeof(float))); state.sliders[0] = 0; nmo_engine_set_joystick(g.f.engine,0,&state); joystick_waiter_step(&g,1,&state); tt_joystick_waiter_difference(&g,23); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.settings[1],&(uint32_t){64},sizeof(uint32_t))); joystick_waiter_step(&g,1,&state); tt_joystick_waiter_difference(&g,0); fixture_end(&g.f);
+}
+
+TEST(engine_input, tt_joystick_waiter_compacts_all_axes_pov_and_32_buttons_in_native_order)
+{
+    joystick_waiter_fixture_t g; tt_joystick_waiter_begin(&g); joystick_waiter_configure(&g,511,UINT32_MAX,0); joystick_waiter_ready(&g); ASSERT_EQ(43u,g.output_count); nmo_engine_joystick_state_t state = {.attached = true,.position = {.75f,-.75f,.75f},.rotation = {-.75f,.75f,-.75f},.sliders = {.75f,-.75f},.point_of_view = .25f,.buttons = UINT32_MAX}; nmo_engine_set_joystick(g.f.engine,0,&state); const uint64_t all = (UINT64_C(1) << 43)-1; joystick_waiter_step(&g,all & ~UINT64_C(1) & ~(UINT64_C(1) << 10),&state); tt_joystick_waiter_difference(&g,0);
+    for (uint32_t i = 0; i < 32; i++) { state.buttons = 1u << i; memset(state.position,0,sizeof(state.position)); memset(state.rotation,0,sizeof(state.rotation)); memset(state.sliders,0,sizeof(state.sliders)); state.point_of_view = -1; nmo_engine_set_joystick(g.f.engine,0,&state); joystick_waiter_step(&g,(UINT64_C(1) << 10) | (UINT64_C(1) << (11+i)),&state); } fixture_end(&g.f);
+}
+
+TEST(engine_input, tt_joystick_waiters_continue_after_disconnect_invalid_slots_and_reconnect_without_reactivation)
+{
+    for (int legacy = 0; legacy < 2; legacy++) {
+        joystick_waiter_fixture_t g; tt_joystick_waiter_begin(&g); if (legacy) joystick_waiter_legacy_layout(&g,0x10000); else joystick_waiter_configure(&g,192,0,192); ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(g.f.tx,g.settings[0],"0.5,0.125,0.125")); joystick_waiter_ready(&g); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.values[4],&(float){17},sizeof(float))); nmo_engine_joystick_state_t state = {.attached = true,.sliders = {.5f,-.5f},.point_of_view = -1}, neutral = {.point_of_view = -1}; nmo_engine_set_joystick(g.f.engine,0,&state); joystick_waiter_step(&g,legacy ? 0 : 1,&state); tt_joystick_waiter_difference(&g,legacy ? 17 : 0);
+        nmo_engine_set_joystick(g.f.engine,0,NULL); joystick_waiter_step(&g,legacy ? 0 : 6,&neutral); tt_joystick_waiter_difference(&g,legacy ? 17 : -.5f); joystick_waiter_step(&g,legacy ? 0 : 1,&neutral); tt_joystick_waiter_difference(&g,legacy ? 17 : 0);
+        state.sliders[0] = .25f; state.sliders[1] = -.25f; nmo_engine_set_joystick(g.f.engine,0,&state); joystick_waiter_step(&g,legacy ? 0 : 6,&state); tt_joystick_waiter_difference(&g,legacy ? 17 : .25f); const int32_t invalid[] = {-1,4,INT32_MAX};
+        for (size_t i = 0; i < 3; i++) { ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.number_value,&invalid[i],sizeof(invalid[i]))); joystick_waiter_step(&g,legacy ? 0 : i == 0 ? 6 : 1,&neutral); tt_joystick_waiter_difference(&g,legacy ? 17 : i == 0 ? -.25f : 0); }
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.number_value,&(int32_t){0},sizeof(int32_t))); joystick_waiter_step(&g,legacy ? 0 : 6,&state); tt_joystick_waiter_difference(&g,legacy ? 17 : .25f); fixture_end(&g.f);
+    }
+}
+
+TEST(engine_input, tt_joystick_waiter_off_preserves_on_all_values_and_difference_until_explicit_restart)
+{
+    for (int legacy = 0; legacy < 2; legacy++) {
+        joystick_waiter_fixture_t g; tt_joystick_waiter_begin(&g); if (legacy) joystick_waiter_legacy_layout(&g,0x10000); else joystick_waiter_configure(&g,511,UINT32_MAX,511); joystick_waiter_ready(&g); nmo_engine_joystick_state_t sentinel = {.position = {17,18,19},.rotation = {20,21,22},.sliders = {23,24},.point_of_view = 25}; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.values[0],sentinel.position,sizeof(sentinel.position))); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.values[1],sentinel.rotation,sizeof(sentinel.rotation))); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.values[2],sentinel.sliders,sizeof(sentinel.sliders))); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.values[3],&sentinel.point_of_view,sizeof(sentinel.point_of_view))); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.values[4],&(float){17},sizeof(float)));
+        nmo_engine_block_t block = {g.f.engine,eng_map_get(&g.f.engine->node_map,g.block)}; nmo_engine_block_activate_input(&block,1,true); nmo_engine_joystick_state_t state = {.attached = true,.position = {.75f,-.75f,2},.rotation = {.75f,.75f,.75f},.sliders = {.5f,.5f},.point_of_view = -.5f,.buttons = 1}; nmo_engine_set_joystick(g.f.engine,0,&state); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_TRUE(nmo_engine_block_is_input_active(&block,0)); ASSERT_FALSE(nmo_engine_block_is_input_active(&block,1)); ASSERT_FALSE(nmo_engine_behavior_is_active(g.f.engine,g.block)); joystick_waiter_values(&g,&sentinel); tt_joystick_waiter_difference(&g,17); for (size_t i = 0; i < g.output_count; i++) ASSERT_EQ(0u,runs(&g.f,g.observers[i]));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(1u,runs(&g.f,g.block)); joystick_waiter_values(&g,&sentinel); tt_joystick_waiter_difference(&g,17); ASSERT_EQ(NMO_OK,nmo_engine_activate_script(g.f.engine,g.f.script_id,true,true)); joystick_waiter_step(&g,legacy ? 25 : 3198,&state); tt_joystick_waiter_difference(&g,legacy ? 17 : 0); fixture_end(&g.f);
+    }
+}
+
+TEST(engine_input, tt_joystick_waiter_preserves_native_unordered_relative_axis_and_pov_comparisons)
+{
+    joystick_waiter_fixture_t g; tt_joystick_waiter_begin(&g); joystick_waiter_configure(&g,511,0,511); joystick_waiter_ready(&g); nmo_engine_joystick_state_t state = {.attached = true,.position = {NAN,NAN,NAN},.rotation = {NAN,NAN,NAN},.sliders = {NAN,NAN},.point_of_view = NAN}; nmo_engine_set_joystick(g.f.engine,0,&state); joystick_waiter_step(&g,510,&state); tt_joystick_waiter_difference(&g,NAN); joystick_waiter_step(&g,510,&state);
+    ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.settings[3],&(uint32_t){0},sizeof(uint32_t))); joystick_waiter_step(&g,UINT64_C(1) << 10,&state); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.settings[3],&(uint32_t){511},sizeof(uint32_t))); state = (nmo_engine_joystick_state_t){.attached = true,.point_of_view = .5f}; nmo_engine_set_joystick(g.f.engine,0,&state); joystick_waiter_step(&g,510,&state); tt_joystick_waiter_difference(&g,NAN); joystick_waiter_step(&g,1,&state); tt_joystick_waiter_difference(&g,0);
+    state.point_of_view = NAN; nmo_engine_set_joystick(g.f.engine,0,&state); joystick_waiter_step(&g,1,&state); state.point_of_view = -.5f; nmo_engine_set_joystick(g.f.engine,0,&state); joystick_waiter_step(&g,1,&state); state.point_of_view = .5f; nmo_engine_set_joystick(g.f.engine,0,&state); joystick_waiter_step(&g,UINT64_C(1) << 9,&state); fixture_end(&g.f);
+}
+
+TEST(engine_input, tt_joystick_waiter_compares_relative_deltas_before_rounding_slider_difference_to_float)
+{
+    joystick_waiter_fixture_t g; tt_joystick_waiter_begin(&g); joystick_waiter_configure(&g,73,0,73); ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(g.f.tx,g.settings[0],"99,0.5,0.5")); joystick_waiter_ready(&g); nmo_engine_joystick_state_t state = {.attached = true,.point_of_view = -1}; nmo_engine_set_joystick(g.f.engine,0,&state); joystick_waiter_step(&g,1,&state);
+    ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.values[0],(float[3]){0x1p-26f,0,0},3*sizeof(float))); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.values[1],(float[3]){-0x1p-26f,0,0},3*sizeof(float))); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.values[2],(float[2]){-0x1p-26f,0},2*sizeof(float))); state.position[0] = -.5f; state.rotation[0] = .5f; state.sliders[0] = .5f; nmo_engine_set_joystick(g.f.engine,0,&state); joystick_waiter_step(&g,14,&state); tt_joystick_waiter_difference(&g,.5f); fixture_end(&g.f);
+}
+
 TEST(engine_input, legacy_joystick_waiters_keep_fixed_direction_thresholds_and_six_buttons_without_idle)
 {
     const uint32_t versions[] = {0,0x10000,0x1ffff};
@@ -1151,6 +1200,13 @@ TEST(engine_input, tt_input_string_keeps_editing_past_enter)
 }
 
 TEST_MAIN_BEGIN()
+REGISTER_TEST(engine_input, tt_joystick_waiter_on_only_rebases_sliders_and_difference_writes_require_relative_slider_one);
+REGISTER_TEST(engine_input, tt_joystick_waiter_compacts_all_axes_pov_and_32_buttons_in_native_order);
+REGISTER_TEST(engine_input, tt_joystick_waiters_continue_after_disconnect_invalid_slots_and_reconnect_without_reactivation);
+REGISTER_TEST(engine_input, tt_joystick_waiter_off_preserves_on_all_values_and_difference_until_explicit_restart);
+REGISTER_TEST(engine_input, tt_joystick_waiter_preserves_native_unordered_relative_axis_and_pov_comparisons);
+REGISTER_TEST(engine_input, tt_joystick_waiter_compares_relative_deltas_before_rounding_slider_difference_to_float);
+
 REGISTER_TEST(engine_input, tt_joystick_waiter_defaults_repeat_axes_and_buttons_consume_on_and_publish_raw_samples);
 REGISTER_TEST(engine_input, tt_joystick_waiter_rebases_sliders_on_on_and_uses_z_sensitivity_for_relative_slider_events);
 REGISTER_TEST(engine_input, legacy_tt_joystick_waiters_keep_fixed_outputs_and_on_and_leave_slider_difference_untouched);
