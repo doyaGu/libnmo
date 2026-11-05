@@ -989,15 +989,21 @@ static bool run_add_physics(nmo_cli_record_t *rec, const run_state_t *state)
 
 static bool run_add_observed(nmo_cli_record_t *rec, const run_state_t *state)
 {
-    if (state->args->observe == NULL) return true;
+    if (state->args->observe == NULL) {
+        return true;
+    }
     nmo_cli_record_array_t *list = nmo_cli_record_array(rec, "observed_entities", "Observed entities");
-    if (list == NULL) return false;
+    if (list == NULL) {
+        return false;
+    }
     const char *cursor = state->args->observe;
     while (*cursor) {
         const char *end = strchr(cursor, ',');
         size_t length = end ? (size_t)(end - cursor) : strlen(cursor);
         char *name = malloc(length + 1);
-        if (name == NULL) return false;
+        if (name == NULL) {
+            return false;
+        }
         memcpy(name, cursor, length);
         name[length] = '\0';
         nmo_object_id_t id = nmo_engine_object_named(state->engine, name, NMO_CID_3DENTITY);
@@ -1017,11 +1023,37 @@ static bool run_add_observed(nmo_cli_record_t *rec, const run_state_t *state)
             nmo_cli_record_free(item);
             return false;
         }
-        if (!nmo_cli_record_array_add(list, item)) return false;
+        if (!nmo_cli_record_array_add(list, item)) {
+            return false;
+        }
         cursor += length;
-        if (*cursor) cursor++;
+        if (*cursor) {
+            cursor++;
+        }
     }
     return true;
+}
+
+static bool run_observe_matches(const char *patterns, const char *name)
+{
+    if (patterns == NULL || name == NULL) {
+        return false;
+    }
+    for (const char *pattern = patterns; *pattern;) {
+        const char *end = strchr(pattern, ',');
+        size_t length = end != NULL ? (size_t)(end - pattern) : strlen(pattern);
+        bool prefix = length > 0 && pattern[length - 1] == '*';
+        size_t match_length = length - (prefix ? 1u : 0u);
+        bool length_matches = prefix ? strlen(name) >= match_length : strlen(name) == match_length;
+        if (length_matches && memcmp(name, pattern, match_length) == 0) {
+            return true;
+        }
+        if (end == NULL) {
+            break;
+        }
+        pattern = end + 1;
+    }
+    return false;
 }
 
 /* Controlled runs emit one JSON line at each pause, then wait without stepping.
@@ -1030,7 +1062,9 @@ static bool run_add_observed(nmo_cli_record_t *rec, const run_state_t *state)
 static bool run_control_snapshot(nmo_engine_t *engine, const run_args_t *args, const run_state_t *state)
 {
     yyjson_mut_doc *doc = yyjson_mut_doc_new(NULL);
-    if (doc == NULL) return false;
+    if (doc == NULL) {
+        return false;
+    }
     yyjson_mut_val *root = yyjson_mut_obj(doc);
     yyjson_mut_doc_set_root(doc, root);
     bool ok = root != NULL && yyjson_mut_obj_add_uint(doc, root, "frame", nmo_engine_frame(engine)) &&
@@ -1044,24 +1078,20 @@ static bool run_control_snapshot(nmo_engine_t *engine, const run_args_t *args, c
     for (size_t i = 0; ok && i < nmo_engine_entity_count(engine); i++) {
         nmo_object_id_t id = nmo_engine_entity_id(engine, i);
         const char *name = nmo_engine_object_name(engine, id);
-        bool wanted = false;
-        for (const char *p = args->observe; name != NULL && p != NULL && *p;) {
-            const char *end = strchr(p, ',');
-            size_t length = end != NULL ? (size_t)(end - p) : strlen(p);
-            bool prefix = length > 0 && p[length - 1] == '*';
-            size_t match = length - (prefix ? 1u : 0u);
-            wanted = wanted || ((prefix ? strlen(name) >= match : strlen(name) == match) && memcmp(name, p, match) == 0);
-            p = end != NULL ? end + 1 : NULL;
-        }
         float matrix[16];
-        if (!wanted || !nmo_engine_entity_world_matrix(engine, id, matrix)) continue;
+        if (!run_observe_matches(args->observe, name) ||
+            !nmo_engine_entity_world_matrix(engine, id, matrix)) {
+            continue;
+        }
         yyjson_mut_val *item = yyjson_mut_arr_add_obj(doc, entities);
         ok = item != NULL && yyjson_mut_obj_add_uint(doc, item, "id", id) &&
              yyjson_mut_obj_add_strcpy(doc, item, "name", name) &&
              yyjson_mut_obj_add_bool(doc, item, "visible", nmo_engine_object_is_visible(engine, id));
         yyjson_mut_val *pose = yyjson_mut_obj_add_arr(doc, item, "matrix");
         ok = ok && pose != NULL;
-        for (int k = 0; ok && k < 16; k++) ok = yyjson_mut_arr_add_real(doc, pose, matrix[k]);
+        for (int k = 0; ok && k < 16; k++) {
+            ok = yyjson_mut_arr_add_real(doc, pose, matrix[k]);
+        }
     }
     char *json = ok ? yyjson_mut_write(doc, 0, NULL) : NULL;
     ok = json != NULL && puts(json) >= 0 && fflush(stdout) == 0;
@@ -1073,17 +1103,26 @@ static bool run_control_snapshot(nmo_engine_t *engine, const run_args_t *args, c
 static int run_control_request(nmo_engine_t *engine, const run_args_t *args, const run_state_t *state)
 {
     for (;;) {
-        if (!run_control_snapshot(engine, args, state)) return -1;
+        if (!run_control_snapshot(engine, args, state)) {
+            return -1;
+        }
         char line[128], extra;
         unsigned count = 0, mask = 0;
-        if (fgets(line, sizeof(line), stdin) == NULL || strcmp(line, "quit\n") == 0) return 0;
+        if (fgets(line, sizeof(line), stdin) == NULL || strcmp(line, "quit\n") == 0) {
+            return 0;
+        }
         if (sscanf(line, "step %u %u %c", &count, &mask, &extra) != 2 || count > 10000 || mask > 15) {
             fprintf(stderr, "Error: control expects step COUNT(0..10000) MASK(0..15), or quit\n");
             return -1;
         }
         const char *arrows[] = {"Up", "Down", "Left", "Right"};
-        for (int k = 0; k < 4; k++) nmo_engine_set_key(engine, run_key_code(arrows[k], strlen(arrows[k])), (mask & (1u << k)) != 0);
-        if (count != 0) return (int)count;
+        for (int k = 0; k < 4; k++) {
+            uint32_t key = run_key_code(arrows[k], strlen(arrows[k]));
+            nmo_engine_set_key(engine, key, (mask & (1u << k)) != 0);
+        }
+        if (count != 0) {
+            return (int)count;
+        }
     }
 }
 
@@ -1653,12 +1692,16 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
     double last_frame = view != NULL ? nmo_view_time(view) : 0.0;
 #endif
     int control_remaining = 0;
-    for (uint32_t f = 0; status == NMO_OK && (args->control || f < args->frames || (args->window && !args->frames_given));
+    for (uint32_t f = 0;
+         status == NMO_OK &&
+         (args->control || f < args->frames || (args->window && !args->frames_given));
          f++) {
         if (args->control && control_remaining == 0) {
             control_remaining = run_control_request(engine, args, &state);
             if (control_remaining <= 0) {
-                if (control_remaining < 0) status = NMO_ERR_INVALID_ARGUMENT;
+                if (control_remaining < 0) {
+                    status = NMO_ERR_INVALID_ARGUMENT;
+                }
                 break;
             }
         }
@@ -1698,10 +1741,14 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
 #endif
         uint64_t deaths_before = state.deaths;
         status = nmo_engine_step(engine, delta);
-        if (args->control) control_remaining--;
+        if (args->control) {
+            control_remaining--;
+        }
         /* Stop on the native terminal event, before automatic respawn can hide
          * the failed attempt from an interactive authoring client. */
-        if (args->control && (state.deaths != deaths_before || state.finished)) control_remaining = 0;
+        if (args->control && (state.deaths != deaths_before || state.finished)) {
+            control_remaining = 0;
+        }
         if (status == NMO_OK && physics_log != NULL && !run_log_physics(physics_log, engine)) {
             status = NMO_ERR_INVALID_ARGUMENT;
         }
