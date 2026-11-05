@@ -59,6 +59,8 @@ bool eng_matrix_decompose(const eng_matrix_t *matrix, bool principal_axes,
  * Failed conversions leave outputs unchanged. */
 bool eng_quaternion_from_matrix(const eng_matrix_t *matrix, nmo_quaternion_t *out);
 bool eng_matrix_from_quaternion(eng_matrix_t *matrix, const nmo_quaternion_t *quaternion);
+/* VxQuaternion::ToMatrix also computes zero and nonfinite inputs directly. */
+void eng_matrix_from_quaternion_unchecked(eng_matrix_t *matrix, const nmo_quaternion_t *quaternion);
 /* Shortest-arc Slerp; close inputs use the native unnormalized linear blend. */
 nmo_quaternion_t eng_quaternion_slerp(float step, nmo_quaternion_t a, nmo_quaternion_t b);
 void eng_vector_transform(eng_vector_t *result, const eng_matrix_t *m, const eng_vector_t *v);
@@ -95,6 +97,8 @@ bool eng_entity_quaternion(nmo_engine_t *engine, int32_t index, nmo_quaternion_t
  * that restoration follows children even when KeepChildren was requested. */
 bool eng_entity_set_quaternion(nmo_engine_t *engine, int32_t index, const nmo_quaternion_t *quaternion,
     int32_t ref, bool keep_children, bool keep_scale);
+void eng_entity_set_quaternion_unchecked(nmo_engine_t *engine, int32_t index,
+    const nmo_quaternion_t *quaternion, int32_t ref, bool keep_children, bool keep_scale);
 eng_vector_t eng_entity_scale(nmo_engine_t *engine, int32_t index, bool local);
 void eng_entity_set_scale(nmo_engine_t *engine, int32_t index, const eng_vector_t *scale,
                           bool keep_children, bool local);

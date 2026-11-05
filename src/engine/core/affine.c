@@ -347,6 +347,12 @@ bool eng_quaternion_from_matrix(const eng_matrix_t *matrix, nmo_quaternion_t *ou
     return true;
 }
 
+void eng_matrix_from_quaternion_unchecked(eng_matrix_t *matrix, const nmo_quaternion_t *quaternion)
+{
+    const float q[] = {quaternion->x,quaternion->y,quaternion->z,quaternion->w};
+    affine_rotation(q,matrix);
+}
+
 bool eng_matrix_from_quaternion(eng_matrix_t *matrix, const nmo_quaternion_t *quaternion)
 {
     if (matrix == NULL || quaternion == NULL) return false;

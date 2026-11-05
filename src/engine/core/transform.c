@@ -602,20 +602,35 @@ bool eng_entity_quaternion(nmo_engine_t *engine, int32_t index, nmo_quaternion_t
     return eng_quaternion_from_matrix(&matrix,out);
 }
 
-bool eng_entity_set_quaternion(nmo_engine_t *engine, int32_t index, const nmo_quaternion_t *quaternion,
+static void eng_entity_apply_quaternion(nmo_engine_t *engine, int32_t index, const eng_matrix_t *rotation,
     int32_t ref, bool keep_children, bool keep_scale)
 {
-    eng_matrix_t rotation, world;
-    if (!eng_matrix_from_quaternion(&rotation,quaternion)) return false;
+    eng_matrix_t world;
     eng_vector_t scale = {0};
     if (keep_scale) scale = eng_entity_scale(engine,index,true);
     eng_vector_t position = eng_matrix_row(&eng_entity_at(engine,index)->world,3);
-    if (ref >= 0) eng_matrix_multiply(&world,&eng_entity_at(engine,ref)->world,&rotation);
-    else world = rotation;
+    if (ref >= 0) eng_matrix_multiply(&world,&eng_entity_at(engine,ref)->world,rotation);
+    else world = *rotation;
     eng_matrix_set_row(&world,3,&position);
     eng_entity_set_world_matrix(engine,index,&world,keep_children);
     if (keep_scale) eng_entity_set_scale(engine,index,&scale,false,true);
+}
+
+bool eng_entity_set_quaternion(nmo_engine_t *engine, int32_t index, const nmo_quaternion_t *quaternion,
+    int32_t ref, bool keep_children, bool keep_scale)
+{
+    eng_matrix_t rotation;
+    if (!eng_matrix_from_quaternion(&rotation,quaternion)) return false;
+    eng_entity_apply_quaternion(engine,index,&rotation,ref,keep_children,keep_scale);
     return true;
+}
+
+void eng_entity_set_quaternion_unchecked(nmo_engine_t *engine, int32_t index,
+    const nmo_quaternion_t *quaternion, int32_t ref, bool keep_children, bool keep_scale)
+{
+    eng_matrix_t rotation;
+    eng_matrix_from_quaternion_unchecked(&rotation,quaternion);
+    eng_entity_apply_quaternion(engine,index,&rotation,ref,keep_children,keep_scale);
 }
 
 /* GetScale: the length of each axis of the local or world matrix. */

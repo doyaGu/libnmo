@@ -145,6 +145,34 @@ TEST(engine_quaternion, reference_access_and_nonuniform_parents_preserve_world_p
     fixture_end(&f);
 }
 
+TEST(engine_quaternion, unchecked_conversion_retains_native_nan_patterns_for_degenerate_inputs)
+{
+    const nmo_quaternion_t inputs[] = {{0,0,0,0},{0,0,0,NAN},{0,0,0,INFINITY}};
+    for (size_t i = 0; i < COUNT(inputs); i++) {
+        eng_matrix_t matrix; eng_matrix_from_quaternion_unchecked(&matrix,&inputs[i]);
+        for (int row = 0; row < 3; row++) for (int column = 0; column < 3; column++) {
+            if (i == 2 && row == column) ASSERT_FLOAT_EQ(1,matrix.m[row][column],0);
+            else ASSERT_TRUE(isnan(matrix.m[row][column]));
+        }
+        for (int row = 0; row < 3; row++) ASSERT_FLOAT_EQ(0,matrix.m[row][3],0);
+        ASSERT_FLOAT_EQ(0,matrix.m[3][0],0); ASSERT_FLOAT_EQ(0,matrix.m[3][1],0); ASSERT_FLOAT_EQ(0,matrix.m[3][2],0); ASSERT_FLOAT_EQ(1,matrix.m[3][3],0);
+    }
+}
+
+TEST(engine_quaternion, unchecked_entity_updates_keep_world_pivots_and_propagate_degenerate_orientation_through_scale_restoration)
+{
+    for (int keep = 0; keep < 2; keep++) {
+        engine_fixture_t f; fixture_begin_document(&f);
+        nmo_object_id_t object = entity(&f,"Object",0,(eng_vector_t){3,4,5},(eng_vector_t){2,3,4});
+        nmo_object_id_t child = entity(&f,"Child",object,(eng_vector_t){5,7,9},(eng_vector_t){1,1,1});
+        fixture_begin_edit(&f); fixture_commit(&f,NULL);
+        const nmo_quaternion_t zero = {0}; eng_entity_set_quaternion_unchecked(f.engine,eng_entity_index(f.engine,object),&zero,-1,keep,true);
+        position(&f,object,(eng_vector_t){3,4,5}); float matrix[16]; ASSERT_TRUE(nmo_engine_entity_world_matrix(f.engine,object,matrix));
+        for (int row = 0; row < 3; row++) for (int column = 0; column < 3; column++) ASSERT_TRUE(isnan(matrix[4*row+column]));
+        ASSERT_TRUE(nmo_engine_entity_world_matrix(f.engine,child,matrix)); ASSERT_TRUE(isnan(matrix[12]) && isnan(matrix[13]) && isnan(matrix[14])); fixture_end(&f);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_quaternion, scaled_matrix_conversions_recover_all_rotation_branches_without_mutating_inputs);
 REGISTER_TEST(engine_quaternion, nonorthogonal_rows_and_reflections_follow_native_normalization_without_polar_decomposition);
@@ -154,4 +182,6 @@ REGISTER_TEST(engine_quaternion, close_slerp_keeps_the_unnormalized_linear_resul
 REGISTER_TEST(engine_quaternion, invalid_conversions_preserve_existing_outputs);
 REGISTER_TEST(engine_quaternion, local_scale_restoration_follows_children_after_keep_children_rotation);
 REGISTER_TEST(engine_quaternion, reference_access_and_nonuniform_parents_preserve_world_pivots_and_local_scales);
+REGISTER_TEST(engine_quaternion, unchecked_conversion_retains_native_nan_patterns_for_degenerate_inputs);
+REGISTER_TEST(engine_quaternion, unchecked_entity_updates_keep_world_pivots_and_propagate_degenerate_orientation_through_scale_restoration);
 TEST_MAIN_END()
