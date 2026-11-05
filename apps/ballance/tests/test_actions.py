@@ -15,6 +15,7 @@ from ballance.route.actions import compile_action
 from ballance.route.gameplay import compile_contracts
 from ballance.route.layout import Layout
 from ballance.verify.actions import ActionTrace
+from ballance.verify.scenarios import evaluate
 
 
 def course():
@@ -91,7 +92,10 @@ class ActionTests(unittest.TestCase):
 
     def test_completion_requires_sustained_rotation_in_the_requested_direction(self):
         for angle, duration, passed in ((60, 10, True), (-60, 10, False), (60, 2, False)):
-            with self.subTest(angle=angle, duration=duration), tempfile.TemporaryDirectory() as tmp:
+            with (
+                self.subTest(angle=angle, duration=duration),
+                tempfile.TemporaryDirectory() as tmp,
+            ):
                 folder = Path(tmp)
                 self.write_trace(folder, lambda f: angle if 400 <= f < 400 + duration else 0)
                 trace = ActionTrace(folder, [self.action])
@@ -101,6 +105,61 @@ class ActionTests(unittest.TestCase):
                 if passed:
                     self.assertEqual(result['observed']['runtime_id'], '77')
                     self.assertEqual(result['observed']['frame'], 404)
+
+    def test_expected_block_needs_guard_and_complete_body_evidence(self):
+        self.case['expect'] = 'blocked'
+        for missing, body, passed in (
+            ((), 'Modul17_Dreharme', True),
+            ((410,), 'Modul17_Dreharme', False),
+            ((), 'WrongBody', False),
+        ):
+            with self.subTest(missing=missing, body=body), tempfile.TemporaryDirectory() as tmp:
+                folder = Path(tmp)
+                self.write_trace(folder, lambda f: 0, missing=missing, body=body)
+                report = evaluate(folder, self.case, self.checkpoint)
+                self.assertEqual(report['status'] == 'passed', passed)
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            self.write_trace(folder, lambda f: 0)
+            self.case['guard_action'] = dict(self.guard, box=[20, 30, 20, 30, 20, 30])
+            self.assertEqual(evaluate(folder, self.case, self.checkpoint)['status'], 'failed')
+
+    def test_positive_action_allows_a_gap_outside_its_sustained_observation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            self.write_trace(folder, lambda f: 60 if f >= 400 else 0, missing=(385,))
+            report = evaluate(folder, self.case, self.checkpoint)
+            self.assertEqual(report['status'], 'passed')
+            self.assertFalse(report['evidence_complete'])
+            self.assertTrue(report['evidence_sufficient'])
+
+    def test_recovery_requires_death_checkpoint_reset_and_another_action(self):
+        self.case['expect'] = 'recover'
+        for death, respawn, reset, retry, passed in (
+            (True, True, True, True, True),
+            (False, True, True, True, False),
+            (True, False, True, True, False),
+            (True, True, False, True, False),
+            (True, True, True, False, False),
+        ):
+
+            def angle(frame):
+                if 400 <= frame < 450 or (retry and frame >= 530):
+                    return 60
+                return 0 if reset or frame < 400 else 60
+
+            with (
+                self.subTest(death=death, respawn=respawn, reset=reset, retry=retry),
+                tempfile.TemporaryDirectory() as tmp,
+            ):
+                folder = Path(tmp)
+                self.write_trace(folder, angle, death=death, respawn=respawn)
+                report = evaluate(folder, self.case, self.checkpoint)
+                self.assertEqual(report['status'] == 'passed', passed)
+                if passed:
+                    self.assertEqual(report['recovery']['death_frame'], 450)
+                    self.assertEqual(report['recovery']['respawn']['frame'], 480)
+                    self.assertEqual(report['recovery']['retry'][0]['observed']['frame'], 534)
 
     def test_body_at_wrong_instance_and_nonfinite_trace_cannot_satisfy_action(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -113,6 +172,30 @@ class ActionTests(unittest.TestCase):
             (folder / 'steer.csv').write_text(text)
             with self.assertRaises((ValueError, TypeError)):
                 ActionTrace(folder, [self.action])
+
+    def test_recovery_preserves_the_ball_at_death_after_a_native_changer(self):
+        self.case['expect'] = 'recover'
+        for respawn_ball, passed in (('Ball_Paper', True), ('Ball_Stone', False)):
+            with self.subTest(respawn_ball=respawn_ball), tempfile.TemporaryDirectory() as tmp:
+                folder = Path(tmp)
+                self.write_trace(
+                    folder, lambda f: 60 if 400 <= f < 450 or f >= 530 else 0, death=True
+                )
+                with (folder / 'steer.csv').open(newline='') as stream:
+                    rows = list(csv.DictReader(stream))
+                for row in rows:
+                    frame = int(row['frame'])
+                    if frame >= 400:
+                        row['object_name'] = (
+                            respawn_ball if 480 <= frame < 510 else 'Ball_Paper'
+                        )
+                with (folder / 'steer.csv').open('w', newline='') as stream:
+                    writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
+                    writer.writeheader()
+                    writer.writerows(rows)
+                report = evaluate(folder, self.case, self.checkpoint)
+                self.assertEqual(report['status'] == 'passed', passed)
+                self.assertEqual(report['recovery']['expected_ball'], 'Ball_Paper')
 
     def test_invalid_body_pose_is_not_a_successful_negative_test(self):
         from ballance.verify.actions import hinge_degrees
