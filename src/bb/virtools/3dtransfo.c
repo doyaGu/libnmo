@@ -248,6 +248,19 @@ static int bb_set_world_matrix(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* Set Local Matrix replaces the pose relative to the current parent. */
+static int bb_set_local_matrix(blk_t *b)
+{
+    int32_t entity = target_entity(b);
+    if (entity < 0) return NMO_ENGINE_BR_OWNERERROR;
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    eng_matrix_t matrix = {0}; /* VxMatrix's default constructor clears all elements. */
+    nmo_engine_block_get_input_value(b,0,matrix.m,sizeof(matrix.m));
+    eng_entity_set_local_matrix(b->engine,entity,&matrix,keep_children(b,1));
+    return NMO_ENGINE_BR_OK;
+}
+
 /*
  * Scale (AddScale): the local axes scaled by the vector, or set to it with
  * Absolute; a 3D sprite changes its size instead (an effect).
@@ -645,6 +658,7 @@ static const nmo_engine_block_desc_t eng_3dtransfo_blocks[] = {
     {NMO_GUID_INIT(0xe456e78a, 0x456789aa), "Set Position", bb_set_position, NULL, NULL},
     {NMO_GUID_INIT(0xb7e6398a, 0x113c66dd), "Keep At Constant Distance", bb_keep_at_constant_distance, NULL, NULL},
     {NMO_GUID_INIT(0xaa4aa6f0, 0xddefdef4), "Set World Matrix", bb_set_world_matrix, NULL, NULL},
+    {NMO_GUID_INIT(0x21f5f30d, 0x08d5a1db), "Set Local Matrix", bb_set_local_matrix, NULL, NULL},
     {NMO_GUID_INIT(0x41236987, 0xa54a87a6), "Scale", bb_scale, NULL, NULL},
     {NMO_GUID_INIT(0x9d9d9d98, 0x7e7a7f75), "Set Parent", bb_set_parent, NULL, NULL},
     {NMO_GUID_INIT(0xffffffee, 0xeeffffff), "Rotate", bb_rotate, NULL, NULL},
