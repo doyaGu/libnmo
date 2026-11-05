@@ -144,6 +144,43 @@ TEST(engine_character_controller, enhanced_message_priority_uses_button_presence
     }
 }
 
+TEST(engine_character_controller, enhanced_jump_and_dance_hold_until_the_native_end_window_while_run_and_creep_allow_interrupts)
+{
+    for (int index = 3; index < 7; index++) {
+        controller_fixture_t g; begin_variant(&g,true,true); commit(&g); ASSERT_EQ(NMO_OK,eng_character_set_active_animation(g.f.engine,g.f.owner_id,g.animations[index])); ASSERT_TRUE(eng_animation_set_frame(g.f.engine,g.animations[index],5)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0));
+        if (index >= 5) {
+            ASSERT_EQ(g.animations[index],eng_character_active_animation(g.f.engine,g.f.owner_id)); send(&g,"Joy_Button1"); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(g.animations[index],eng_character_active_animation(g.f.engine,g.f.owner_id)); ASSERT_EQ(0u,eng_character_next_animation(g.f.engine,g.f.owner_id)); ASSERT_TRUE(eng_animation_set_frame(g.f.engine,g.animations[index],19.5f)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(g.animations[index],eng_character_active_animation(g.f.engine,g.f.owner_id)); ASSERT_TRUE(eng_animation_set_frame(g.f.engine,g.animations[index],19.75f)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0));
+        }
+        nmo_object_id_t warper = eng_character_warper(g.f.engine,g.f.owner_id), from = 0, to = 0; uint32_t mode = 0; ASSERT_TRUE(warper != 0); ASSERT_EQ(warper,eng_character_active_animation(g.f.engine,g.f.owner_id)); ASSERT_TRUE(eng_character_warper_parameters(g.f.engine,g.f.owner_id,&mode,&from,NULL,&to,NULL)); ASSERT_EQ(g.animations[index],from); ASSERT_EQ(g.animations[0],to); ASSERT_EQ(CK_TRANSITION_WARPBEST|CK_TRANSITION_LOOPIFEQUAL|CK_TRANSITION_USEVELOCITY,mode); ASSERT_FLOAT_EQ(5,eng_animation_length(eng_animation_state(g.f.engine,warper)),0); fixture_end(&g.f);
+    }
+}
+
+TEST(engine_character_controller, enhanced_off_preserves_on_and_stops_automatic_motion_until_explicit_reactivation)
+{
+    controller_fixture_t g; begin_variant(&g,true,true); commit(&g); nmo_engine_block_t block = runtime_block(&g); nmo_engine_block_activate_input(&block,1,true); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_FALSE(eng_character_automatic(g.f.engine,g.f.owner_id)); ASSERT_TRUE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,0))); ASSERT_FALSE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,1)));
+    for (int i = 5; i < 7; i++) ASSERT_TRUE(eng_animation_playback_state(g.f.engine,g.animations[i])->flags & CKANIMATION_CANBEBREAK);
+    uint64_t stopped = runs(&g.f,g.block); send(&g,"Joy_Button3"); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,2)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,2)); ASSERT_EQ(stopped,runs(&g.f,g.block)); ASSERT_FALSE(eng_character_automatic(g.f.engine,g.f.owner_id));
+    ASSERT_EQ(NMO_OK,nmo_engine_activate_script(g.f.engine,g.f.script_id,true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_TRUE(eng_character_automatic(g.f.engine,g.f.owner_id)); ASSERT_EQ(NMO_OK,eng_character_set_active_animation(g.f.engine,g.f.owner_id,g.animations[1])); ASSERT_TRUE(eng_animation_set_frame(g.f.engine,g.animations[1],5)); nmo_engine_block_activate_input(&block,1,true); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,2)); ASSERT_FALSE(eng_character_automatic(g.f.engine,g.f.owner_id));
+    float frame = 0, held = 0, matrix[16], after[16]; ASSERT_TRUE(eng_animation_frame(g.f.engine,g.animations[1],&frame)); ASSERT_TRUE(nmo_engine_entity_world_matrix(g.f.engine,g.f.owner_id,matrix)); stopped = runs(&g.f,g.block); send(&g,"Joy_Button2"); for (int i = 0; i < 3; i++) ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,2)); ASSERT_TRUE(eng_animation_frame(g.f.engine,g.animations[1],&held)); ASSERT_FLOAT_EQ(frame,held,0); ASSERT_TRUE(nmo_engine_entity_world_matrix(g.f.engine,g.f.owner_id,after)); ASSERT_FLOAT_EQ(matrix[12],after[12],0); ASSERT_EQ(stopped,runs(&g.f,g.block)); fixture_end(&g.f);
+}
+
+TEST(engine_character_controller, enhanced_missing_deleted_and_wrong_class_inputs_stop_without_falling_back_to_lower_priorities)
+{
+    const char *messages[] = {NULL,"Joy_Up","Joy_Down","Joy_Button1","Joy_Button2","Joy_Button3","Joy_Button4"};
+    for (int selected = 0; selected < 7; selected++) for (int kind = 0; kind < 3; kind++) {
+        controller_fixture_t g; begin_variant(&g,true,true); nmo_object_id_t input = kind == 0 ? 0 : kind == 1 ? g.animations[selected] : g.root; fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,selected),(int32_t)input); commit(&g); if (messages[selected] != NULL) send(&g,messages[selected]); send(&g,"Joy_Button6"); if (selected >= 3 && selected <= 5) send(&g,"Joy_Up"); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); nmo_object_id_t active = g.animations[selected == 0 ? 1 : 0]; ASSERT_EQ(NMO_OK,eng_character_set_active_animation(g.f.engine,g.f.owner_id,active)); ASSERT_TRUE(eng_animation_set_frame(g.f.engine,active,5)); if (kind == 1) nmo_engine_destroy_object(g.f.engine,g.animations[selected]); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(0u,eng_character_active_animation(g.f.engine,g.f.owner_id)); ASSERT_EQ(0u,eng_character_next_animation(g.f.engine,g.f.owner_id)); ASSERT_TRUE(eng_character_automatic(g.f.engine,g.f.owner_id)); fixture_end(&g.f);
+    }
+}
+
+TEST(engine_character_controller, enhanced_truncated_message_tables_fail_after_enabling_processing_and_protecting_jump_and_dance)
+{
+    const size_t sizes[] = {4,28,40,43}; int32_t table[11] = {0};
+    for (size_t i = 0; i < COUNT(sizes); i++) {
+        controller_fixture_t g; begin_variant(&g,true,true); commit(&g); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,local(&g),table,sizes[i])); ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,nmo_engine_step(g.f.engine,0)); nmo_engine_event_t failure; ASSERT_TRUE(nmo_engine_failure(g.f.engine,&failure)); ASSERT_EQ(g.block,failure.behavior_id); ASSERT_EQ(NMO_ENGINE_BR_PARAMETERERROR,failure.result); ASSERT_TRUE(eng_character_automatic(g.f.engine,g.f.owner_id));
+        for (int j = 0; j < 7; j++) ASSERT_EQ(j < 5,!!(eng_animation_playback_state(g.f.engine,g.animations[j])->flags & CKANIMATION_CANBEBREAK)); fixture_end(&g.f);
+    }
+}
+
 TEST(engine_character_controller, turns_use_active_rates_without_permission_or_clock_gates_and_prefer_right)
 {
     const struct { bool active; float rate; const char *first,*second; float angle; } cases[] = {
@@ -151,12 +188,12 @@ TEST(engine_character_controller, turns_use_active_rates_without_permission_or_c
         {true,60,"Joy_Left",NULL,.36f}, {true,-60,"Joy_Right",NULL,.36f},
         {true,60,"Joy_Left","Joy_Right",-.36f}, {true,0,"Joy_Left",NULL,0},
     };
-    for (size_t i = 0; i < COUNT(cases); i++) {
-        controller_fixture_t g; begin(&g,false);
+    for (size_t i = 0; i < COUNT(cases); i++) for (int enhanced = 0; enhanced < 2; enhanced++) {
+        controller_fixture_t g; begin_variant(&g,false,enhanced != 0);
         nmo_object_id_t animation = cases[i].active ? clip(&g,"Unlinked",0) : 0;
         if (animation != 0) {
             nmo_keyedanimation_state_t *state = fixture_state(&g.f,animation); state->base.flags = 0; state->base.frame_rate = cases[i].rate;
-            for (int j = 0; j < 4; j++) fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,j),(int32_t)animation);
+            for (size_t j = 0; j < g.animation_count; j++) fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,j),(int32_t)animation);
         }
         nmo_character_state_t *actor = fixture_state(&g.f,g.f.owner_id);
         actor->base.world_matrix[0] = 2; actor->base.world_matrix[5] = 3; actor->base.world_matrix[10] = 4;
@@ -245,15 +282,17 @@ TEST(engine_character_controller, invalid_message_tables_fail_after_enabling_pro
 
 TEST(engine_character_controller, non_character_owners_report_owner_error_without_consuming_inputs)
 {
-    engine_fixture_t f; fixture_begin(&f);
-    nmo_object_id_t block = fixture_block(&f,GUID_CONTROLLER,"Invalid owner"); ASSERT_TRUE(block != 0);
-    fixture_link(&f,f.script_in,BLOCK_IN(&f,block,0),0);
-    nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL;
-    fixture_commit(&f,&options); ASSERT_EQ(NMO_OK,nmo_engine_start(f.engine,NMO_ENGINE_START_ALL));
-    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,nmo_engine_step(f.engine,0));
-    nmo_engine_event_t failure; ASSERT_TRUE(nmo_engine_failure(f.engine,&failure));
-    ASSERT_EQ(block,failure.behavior_id); ASSERT_EQ(NMO_ENGINE_BR_OWNERERROR,failure.result);
-    ASSERT_TRUE(nmo_engine_io_is_active(f.engine,BLOCK_IN(&f,block,0))); fixture_end(&f);
+    for (int enhanced = 0; enhanced < 2; enhanced++) {
+        engine_fixture_t f; fixture_begin(&f);
+        nmo_object_id_t block = fixture_block(&f,enhanced ? GUID_ENHANCED_CONTROLLER : GUID_CONTROLLER,"Invalid owner"); ASSERT_TRUE(block != 0);
+        fixture_link(&f,f.script_in,BLOCK_IN(&f,block,0),0);
+        nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL;
+        fixture_commit(&f,&options); ASSERT_EQ(NMO_OK,nmo_engine_start(f.engine,NMO_ENGINE_START_ALL));
+        ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,nmo_engine_step(f.engine,0));
+        nmo_engine_event_t failure; ASSERT_TRUE(nmo_engine_failure(f.engine,&failure));
+        ASSERT_EQ(block,failure.behavior_id); ASSERT_EQ(NMO_ENGINE_BR_OWNERERROR,failure.result);
+        ASSERT_TRUE(nmo_engine_io_is_active(f.engine,BLOCK_IN(&f,block,0))); fixture_end(&f);
+    }
 }
 
 static nmo_object_id_t saved_animation(controller_fixture_t *g, size_t index)
@@ -382,6 +421,10 @@ TEST(engine_character_controller, goto_messages_drive_root_motion_until_arrival_
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_character_controller, message_presence_selects_animations_in_native_priority_order);
 REGISTER_TEST(engine_character_controller, enhanced_message_priority_uses_button_presence_and_protects_only_jump_and_dance);
+REGISTER_TEST(engine_character_controller, enhanced_jump_and_dance_hold_until_the_native_end_window_while_run_and_creep_allow_interrupts);
+REGISTER_TEST(engine_character_controller, enhanced_off_preserves_on_and_stops_automatic_motion_until_explicit_reactivation);
+REGISTER_TEST(engine_character_controller, enhanced_missing_deleted_and_wrong_class_inputs_stop_without_falling_back_to_lower_priorities);
+REGISTER_TEST(engine_character_controller, enhanced_truncated_message_tables_fail_after_enabling_processing_and_protecting_jump_and_dance);
 REGISTER_TEST(engine_character_controller, turns_use_active_rates_without_permission_or_clock_gates_and_prefer_right);
 REGISTER_TEST(engine_character_controller, animation_requests_build_five_frame_best_warps);
 REGISTER_TEST(engine_character_controller, off_stops_processing_and_messages_do_not_restart_the_controller);
