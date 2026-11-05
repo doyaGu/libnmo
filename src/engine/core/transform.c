@@ -1356,7 +1356,9 @@ static bool eng_curve_sample(nmo_engine_t *engine, nmo_object_id_t curve_id, flo
         free(descs);
         return false;
     }
-    bool opened = state->opened != 0;
+    eng_curve_properties_t properties;
+    if (!eng_curve_get_properties(engine,curve_id,&properties)) { free(points); free(descs); return false; }
+    bool opened = properties.opened != 0;
     const eng_module_t *module = eng_module_of(engine, curve_id, NULL);
     for (int i = 0; i < count; i++) {
         nmo_object_id_t id = eng_module_id(module, nmo_ref_runtime_id(&state->control_point_ids[i]));
@@ -1396,7 +1398,7 @@ static bool eng_curve_sample(nmo_engine_t *engine, nmo_object_id_t curve_id, flo
                                       (in_dn * dn.z + in_dp * dp.z) * 0.5f};
     }
     /* The fitting pass moves each point toward its neighbours' middle */
-    if (state->fitting_coeff > 0.0f) {
+    if (properties.fitting_coeff > 0.0f) {
         eng_vector_t *reserved = (eng_vector_t *)malloc((size_t)count * sizeof(eng_vector_t));
         for (int i = 0; reserved != NULL && i < count; i++) {
             reserved[i] = points[i].position;
@@ -1404,7 +1406,7 @@ static bool eng_curve_sample(nmo_engine_t *engine, nmo_object_id_t curve_id, flo
         for (int i = 0; reserved != NULL && i < count; i++) {
             const eng_vector_t *prev = &reserved[eng_curve_index(i - 1, count, opened)];
             const eng_vector_t *next = &reserved[eng_curve_index(i + 1, count, opened)];
-            float k = state->fitting_coeff;
+            float k = properties.fitting_coeff;
             points[i].position.x += ((prev->x + next->x) * 0.5f - reserved[i].x) * k;
             points[i].position.y += ((prev->y + next->y) * 0.5f - reserved[i].y) * k;
             points[i].position.z += ((prev->z + next->z) * 0.5f - reserved[i].z) * k;

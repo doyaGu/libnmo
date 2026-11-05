@@ -255,6 +255,7 @@ void nmo_engine_destroy(nmo_engine_t *engine)
     eng_free_ics(engine);
     eng_free_arrays(engine);
     eng_free_entities(engine);
+    eng_free_curves(engine);
     eng_free_animations(engine);
     eng_free_characters(engine);
     eng_free_kinematics(engine);

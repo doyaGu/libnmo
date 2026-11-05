@@ -8,6 +8,7 @@
 #define NMO_ENGINE_SCENE_H
 
 #include "engine_array.h"
+#include "engine_curve.h"
 #include "engine_render.h"
 
 /*
@@ -32,6 +33,8 @@ typedef struct eng_ic {
     bool light_active;
     bool has_sprite3d;
     eng_sprite3d_t sprite3d;
+    uint32_t curve_mask;
+    eng_curve_properties_t curve_properties;
     int32_t visibility; /* CK_OBJECT_VISIBLE and HIERACHICALHIDE, which CKObject::Load restores */
 } eng_ic_t;
 

@@ -16,6 +16,7 @@
 #include "engine_attributes.h"
 #include "engine_base.h"
 #include "engine_character.h"
+#include "engine_curve.h"
 #include "engine_graph.h"
 #include "engine_host.h"
 #include "engine_input.h"
@@ -53,6 +54,7 @@ struct nmo_engine {
     ENG_VEC(eng_array_t) arrays;
     ENG_VEC(eng_group_t) groups;
     ENG_VEC(eng_entity_t) entities;
+    eng_curves_t curves;
     eng_animations_t animations;
     eng_characters_t characters;
     eng_kinematics_t kinematics;

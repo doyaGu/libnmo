@@ -12,6 +12,7 @@ set(NMO_ENGINE_SOURCES
     core/build.c
     core/copy.c
     core/curve.c
+    core/curve_properties.c
     core/engine.c
     core/host.c
     core/input.c

@@ -10,6 +10,7 @@
 #include "format/nmo_chunk_api.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_camera_schemas.h"
+#include "object/builtin/nmo_curve_schemas.h"
 #include "object/builtin/nmo_dataarray_schemas.h"
 #include "object/builtin/nmo_light_schemas.h"
 #include "object/builtin/nmo_material_schemas.h"
@@ -79,6 +80,15 @@ nmo_status_t eng_load_ic(nmo_engine_t *engine, nmo_object_id_t id, nmo_chunk_t *
     if (status == NMO_OK) status = nmo_chunk_start_read(saved);
     if (status == NMO_OK) status = type->vtable->deserialize(decoded.state, saved, type, &context);
     eng_ic_t ic = {.id = id};
+    if (status == NMO_OK) {
+        const nmo_curve_state_t *curve = nmo_type_query_object_get_ancestor_state_by_guid(engine->types,&decoded,CKPGUID_CURVE);
+        if (curve != NULL) {
+            ic.curve_mask = curve->has_curveonly_chunk ? ENG_CURVE_PROPERTIES_ALL :
+                (curve->has_open_chunk ? ENG_CURVE_OPEN : 0) | (curve->has_steps_chunk ? ENG_CURVE_STEPS : 0) |
+                (curve->has_fitting_chunk ? ENG_CURVE_FITTING : 0);
+            ic.curve_properties = (eng_curve_properties_t){(int32_t)curve->opened,(int32_t)curve->step_count,curve->fitting_coeff};
+        }
+    }
     if (status == NMO_OK) {
         const nmo_sprite3d_state_t *sprite = nmo_type_query_object_get_ancestor_state_by_guid(engine->types,&decoded,CKPGUID_SPRITE3D);
         if (sprite != NULL && nmo_chunk_seek_identifier(saved,CK_STATESAVE_SPRITE3DDATA) == NMO_OK) {
@@ -178,6 +188,7 @@ void eng_save_ic(nmo_engine_t *engine, nmo_object_id_t id)
     }
     if (sprite != NULL) { ic->has_sprite3d = true; ic->sprite3d = *sprite; }
     ic->visibility = eng_object_visibility(engine, id);
+    if (eng_curve_get_properties(engine,id,&ic->curve_properties)) ic->curve_mask = ENG_CURVE_PROPERTIES_ALL;
     if (eng_store_ic(engine, ic) != NMO_OK && ic->has_array) eng_array_release(&ic->array);
 }
 
@@ -222,6 +233,13 @@ void eng_restore_ic(nmo_engine_t *engine, nmo_object_id_t id)
     }
     eng_sprite3d_t *sprite = ic->has_sprite3d ? eng_sprite3d(engine,id) : NULL;
     if (sprite != NULL) *sprite = ic->sprite3d;
+    eng_curve_properties_t curve;
+    if (ic->curve_mask != 0 && eng_curve_get_properties(engine,id,&curve)) {
+        if (ic->curve_mask & ENG_CURVE_OPEN) curve.opened = ic->curve_properties.opened;
+        if (ic->curve_mask & ENG_CURVE_STEPS) curve.step_count = ic->curve_properties.step_count;
+        if (ic->curve_mask & ENG_CURVE_FITTING) curve.fitting_coeff = ic->curve_properties.fitting_coeff;
+        eng_curve_set_properties(engine,id,&curve);
+    }
 }
 
 void eng_free_ics(nmo_engine_t *engine)
