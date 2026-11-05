@@ -219,6 +219,67 @@ TEST(engine_input, joystick_mapper_supports_all_32_buttons_independently)
     for (uint32_t i = 0; i < 32; i++) { nmo_engine_joystick_state_t state = {.attached = true,.point_of_view = -1,.buttons = 1u << i}; nmo_engine_set_joystick(g.f.engine,0,&state); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); const char *expected[] = {names[i]}; joystick_received(&g,g.f.owner_id,expected,1); } fixture_end(&g.f);
 }
 
+TEST(engine_input, joystick_mapper_direction_comparisons_preserve_strict_negative_and_nonfinite_thresholds)
+{
+    joystick_fixture_t g; joystick_mapper_begin(&g); uint8_t records[160]; const char *names[] = {"Up","Down","Left","Right"};
+    for (uint32_t i = 0; i < 4; i++) mapper_record(records+40*i,1008+i,-1,names[i]); joystick_mapper_saved(&g,records,sizeof(records),4); joystick_ready(&g);
+    nmo_engine_joystick_state_t state = {.attached = true,.position = {.5f,-.5f,20},.point_of_view = -1};
+    for (int sign = 0; sign < 2; sign++) { nmo_engine_set_joystick(g.f.engine,0,&state); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); joystick_received(&g,g.f.owner_id,NULL,0); state.position[0] *= -1; state.position[1] *= -1; }
+    state.position[0] = nextafterf(.5f,1); state.position[1] = nextafterf(-.5f,-1); nmo_engine_set_joystick(g.f.engine,0,&state); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); const char *first[] = {"Up","Right"}; joystick_received(&g,g.f.owner_id,first,2);
+    state.position[0] *= -1; state.position[1] *= -1; nmo_engine_set_joystick(g.f.engine,0,&state); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); const char *second[] = {"Down","Left"}; joystick_received(&g,g.f.owner_id,second,2);
+    const float negative[] = {-1,-1,NAN}; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.sensitivity,negative,sizeof(negative))); state.position[0] = state.position[1] = 0; nmo_engine_set_joystick(g.f.engine,0,&state); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); joystick_received(&g,g.f.owner_id,names,4);
+    const float nonfinite[] = {NAN,INFINITY,-INFINITY}; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.sensitivity,nonfinite,sizeof(nonfinite))); state.position[0] = INFINITY; state.position[1] = -INFINITY; state.position[2] = NAN; nmo_engine_set_joystick(g.f.engine,0,&state); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); joystick_received(&g,g.f.owner_id,NULL,0); float output[3]; read_value(&g.f,g.output,output,sizeof(output)); ASSERT_TRUE(isinf(output[0]) && output[0] > 0); ASSERT_TRUE(isinf(output[1]) && output[1] < 0); ASSERT_TRUE(isnan(output[2])); fixture_end(&g.f);
+}
+
+TEST(engine_input, joystick_mapper_reads_live_slots_targets_counts_and_cached_ids_without_rebinding_on_edit)
+{
+    joystick_fixture_t g; joystick_mapper_begin(&g); uint8_t records[125]; mapper_record(records,1008,500,"Forward"); mapper_record(records+40,1012,501,"12345678901234567890123456789012"); mapper_record(records+80,1043,502,"Inactive"); memset(records+120,0xe7,5); joystick_mapper_saved(&g,records,sizeof(records),2);
+    nmo_object_id_t owner = g.f.owner_id, group = fixture_create(&g.f,NMO_CID_GROUP,"Joystick Mapper Receiver"), input = 0; ASSERT_TRUE(group != 0); g.f.owner_id = group; ASSERT_TRUE(fixture_add_script(&g.f,"Joystick Mapper Receiver Script",&input) != 0); g.f.owner_id = owner; joystick_ready(&g); ASSERT_EQ(-1,nmo_engine_message_type(g.f.engine,"Inactive")); uint8_t runtime[125]; read_value(&g.f,g.table,runtime,sizeof(runtime)); ASSERT_TRUE(memcmp(records+80,runtime+80,45) == 0);
+    nmo_engine_block_t block = {g.f.engine,eng_map_get(&g.f.engine->node_map,g.block)}; nmo_engine_block_set_waiting_for_messages(&block,group,true); ASSERT_TRUE(eng_group_add(g.f.engine,group,owner)); nmo_engine_joystick_state_t first = {.attached = true,.position = {0,-1,.25f},.point_of_view = -1}, second = {.attached = true,.position = {.75f,0,-.75f},.point_of_view = -1,.buttons = 1}; nmo_engine_set_joystick(g.f.engine,0,&first); nmo_engine_set_joystick(g.f.engine,3,&second); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); const char *forward[] = {"Forward"}; joystick_received(&g,owner,forward,1);
+    ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.target_value,&group,sizeof(group))); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.number_value,&(int32_t){3},sizeof(int32_t))); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); const char *button[] = {"12345678901234567890123456789012"}; joystick_received(&g,group,button,1);
+    nmo_write_u32_le(runtime+40,1011); nmo_write_u32_le(runtime+44,nmo_read_u32_le(runtime+4)); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.table,runtime,sizeof(runtime))); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.count,&(int32_t){1},sizeof(int32_t))); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); joystick_received(&g,group,NULL,0);
+    ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.count,&(int32_t){2},sizeof(int32_t))); int32_t result = -1; ASSERT_EQ(NMO_OK,nmo_engine_notify_behavior_edited(g.f.engine,g.block,&result)); ASSERT_EQ(NMO_ENGINE_BR_OK,result); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); joystick_received(&g,group,forward,1); read_value(&g.f,g.table,runtime,sizeof(runtime)); ASSERT_TRUE(memcmp(records+80,runtime+80,45) == 0); ASSERT_EQ(-1,nmo_engine_message_type(g.f.engine,"Inactive")); float output[3]; read_value(&g.f,g.output,output,sizeof(output)); for (size_t i = 0; i < 3; i++) ASSERT_FLOAT_EQ(second.position[i],output[i],0); fixture_end(&g.f);
+}
+
+TEST(engine_input, joystick_mapper_nonpositive_counts_still_publish_attached_device_positions)
+{
+    const int32_t counts[] = {0,-1,INT32_MIN};
+    for (size_t i = 0; i < 3; i++) {
+        joystick_fixture_t g; joystick_mapper_begin(&g); joystick_mapper_saved(&g,NULL,0,counts[i]); joystick_ready(&g); nmo_engine_joystick_state_t state = {.attached = true,.position = {-.9f,.9f,.6f},.point_of_view = -1,.buttons = UINT32_MAX}; nmo_engine_set_joystick(g.f.engine,0,&state); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); joystick_received(&g,g.f.owner_id,NULL,0); ASSERT_TRUE(nmo_engine_behavior_is_active(g.f.engine,g.block)); ASSERT_FALSE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,0))); float output[3]; read_value(&g.f,g.output,output,sizeof(output)); for (size_t axis = 0; axis < 3; axis++) ASSERT_FLOAT_EQ(state.position[axis],output[axis],0); fixture_end(&g.f);
+    }
+}
+
+TEST(engine_input, joystick_mapper_off_wins_before_invalid_state_and_preserves_on_until_explicit_restart)
+{
+    joystick_fixture_t g; joystick_mapper_begin(&g); uint8_t record[40]; mapper_record(record,1012,-1,"Action"); joystick_mapper_saved(&g,record,sizeof(record),1); joystick_ready(&g); const float sentinel[] = {17,18,19}; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.output,sentinel,sizeof(sentinel))); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.count,&(int32_t){2},sizeof(int32_t))); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.target_value,&(nmo_object_id_t){0},sizeof(nmo_object_id_t))); nmo_engine_block_t block = {g.f.engine,eng_map_get(&g.f.engine->node_map,g.block)}; nmo_engine_block_activate_input(&block,1,true); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_TRUE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,0))); ASSERT_FALSE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,1))); ASSERT_FALSE(nmo_engine_behavior_is_active(g.f.engine,g.block)); float output[3]; read_value(&g.f,g.output,output,sizeof(output)); for (size_t i = 0; i < 3; i++) ASSERT_FLOAT_EQ(sentinel[i],output[i],0);
+    ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.count,&(int32_t){1},sizeof(int32_t))); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.target_value,&g.f.owner_id,sizeof(g.f.owner_id))); nmo_engine_joystick_state_t state = {.attached = true,.point_of_view = -1,.buttons = 1}; nmo_engine_set_joystick(g.f.engine,0,&state); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(1u,runs(&g.f,g.block)); joystick_received(&g,g.f.owner_id,NULL,0); ASSERT_EQ(NMO_OK,nmo_engine_activate_script(g.f.engine,g.f.script_id,true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); const char *action[] = {"Action"}; joystick_received(&g,g.f.owner_id,action,1); ASSERT_FALSE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,0))); fixture_end(&g.f);
+}
+
+TEST(engine_input, joystick_mapper_owner_and_device_errors_consume_on_and_preserve_output_without_sending)
+{
+    for (int kind = 0; kind < 8; kind++) {
+        joystick_fixture_t g; joystick_mapper_begin(&g); uint8_t record[40]; mapper_record(record,1012,-1,"Action"); joystick_mapper_saved(&g,record,sizeof(record),kind == 7 ? 0 : 1); nmo_object_id_t other = fixture_create(&g.f,kind == 3 ? NMO_CID_GROUP : NMO_CID_OBJECT,"Invalid Joystick Mapper Target"); ASSERT_TRUE(other != 0); joystick_ready(&g); const float sentinel[] = {17,18,19}; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.output,sentinel,sizeof(sentinel)));
+        if (kind < 4) { nmo_object_id_t target = kind == 0 ? 0 : kind == 1 ? 0x7ffffffeu : other; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.target_value,&target,sizeof(target))); if (kind == 3) nmo_engine_destroy_object(g.f.engine,other); }
+        else if (kind == 5 || kind == 6) { int32_t slot = kind == 5 ? -1 : 4; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.number_value,&slot,sizeof(slot))); }
+        nmo_engine_joystick_state_t state = {.attached = true,.point_of_view = -1,.buttons = 1}; if (kind < 4 || kind == 5 || kind == 6) nmo_engine_set_joystick(g.f.engine,0,&state); ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,nmo_engine_step(g.f.engine,0)); nmo_engine_event_t failure; ASSERT_TRUE(nmo_engine_failure(g.f.engine,&failure)); ASSERT_EQ(g.block,failure.behavior_id); ASSERT_EQ(kind < 4 ? NMO_ENGINE_BR_OWNERERROR : NMO_ENGINE_BR_GENERICERROR,failure.result); ASSERT_FALSE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,0))); ASSERT_EQ(0u,g.f.engine->messages.sent.count); float output[3]; read_value(&g.f,g.output,output,sizeof(output)); for (size_t i = 0; i < 3; i++) ASSERT_FLOAT_EQ(sentinel[i],output[i],0); fixture_end(&g.f);
+    }
+}
+
+TEST(engine_input, joystick_mapper_truncated_bindings_and_wide_counts_fail_before_partial_load_or_delivery)
+{
+    const size_t sizes[] = {0,39,79,40}; const int32_t counts[] = {1,1,2,INT32_MAX};
+    for (size_t i = 0; i < 4; i++) {
+        joystick_fixture_t g; joystick_mapper_begin(&g); uint8_t records[80]; mapper_record(records,1012,999,"Partial"); mapper_record(records+40,1012,998,"Tail"); joystick_mapper_saved(&g,records,sizes[i],counts[i]); joystick_ready(&g); ASSERT_EQ(-1,nmo_engine_message_type(g.f.engine,"Partial")); if (sizes[i]) { uint8_t runtime[80]; read_value(&g.f,g.table,runtime,sizes[i]); ASSERT_TRUE(memcmp(records,runtime,sizes[i]) == 0); }
+        const float sentinel[] = {17,18,19}; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.output,sentinel,sizeof(sentinel))); nmo_engine_joystick_state_t state = {.attached = true,.point_of_view = -1,.buttons = 1}; nmo_engine_set_joystick(g.f.engine,0,&state); ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,nmo_engine_step(g.f.engine,0)); nmo_engine_event_t failure; ASSERT_TRUE(nmo_engine_failure(g.f.engine,&failure)); ASSERT_EQ(g.block,failure.behavior_id); ASSERT_EQ(NMO_ENGINE_BR_PARAMETERERROR,failure.result); ASSERT_FALSE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,0))); ASSERT_EQ(0u,g.f.engine->messages.sent.count); float output[3]; read_value(&g.f,g.output,output,sizeof(output)); for (size_t axis = 0; axis < 3; axis++) ASSERT_FLOAT_EQ(sentinel[axis],output[axis],0); fixture_end(&g.f);
+    }
+}
+
+TEST(engine_input, joystick_mapper_wraps_native_button_shift_counts_and_continues_after_empty_message_names)
+{
+    joystick_fixture_t g; joystick_mapper_begin(&g); uint8_t records[280]; const uint32_t commands[] = {1012,1044,980,UINT32_MAX,0x80000000u,1007,1043}; const char *names[] = {"","Wrapped High","Wrapped Low","Negative","Signed Limit","Below Directions","Last"};
+    for (size_t i = 0; i < 7; i++) mapper_record(records+40*i,commands[i],999,names[i]); joystick_mapper_saved(&g,records,sizeof(records),7); joystick_ready(&g); uint8_t runtime[280]; read_value(&g.f,g.table,runtime,sizeof(runtime)); ASSERT_EQ(UINT32_MAX,nmo_read_u32_le(runtime+4)); ASSERT_EQ(-1,nmo_engine_message_type(g.f.engine,"")); nmo_engine_joystick_state_t state = {.attached = true,.point_of_view = -1,.buttons = 0x80000001u | (1u << 11) | (1u << 12) | (1u << 27)}; nmo_engine_set_joystick(g.f.engine,0,&state); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); joystick_received(&g,g.f.owner_id,names+1,6); ASSERT_TRUE(nmo_engine_behavior_is_active(g.f.engine,g.block)); fixture_end(&g.f);
+}
+
 TEST(engine_input, keyboard_mapper_loads_named_bindings_and_repeats_duplicate_keys_in_record_order)
 {
     keyboard_fixture_t g; mapper_begin(&g); uint8_t records[120]; mapper_record(records,KEY_X,999,"Second"); mapper_record(records+40,KEY_C,998,"First"); mapper_record(records+80,KEY_X,997,"Second"); mapper_saved(&g,records,sizeof(records),3); keyboard_ready(&g); uint8_t runtime[120]; read_value(&g.f,g.table,runtime,sizeof(runtime));
@@ -643,6 +704,14 @@ TEST(engine_input, tt_input_string_keeps_editing_past_enter)
 }
 
 TEST_MAIN_BEGIN()
+REGISTER_TEST(engine_input, joystick_mapper_direction_comparisons_preserve_strict_negative_and_nonfinite_thresholds);
+REGISTER_TEST(engine_input, joystick_mapper_reads_live_slots_targets_counts_and_cached_ids_without_rebinding_on_edit);
+REGISTER_TEST(engine_input, joystick_mapper_nonpositive_counts_still_publish_attached_device_positions);
+REGISTER_TEST(engine_input, joystick_mapper_off_wins_before_invalid_state_and_preserves_on_until_explicit_restart);
+REGISTER_TEST(engine_input, joystick_mapper_owner_and_device_errors_consume_on_and_preserve_output_without_sending);
+REGISTER_TEST(engine_input, joystick_mapper_truncated_bindings_and_wide_counts_fail_before_partial_load_or_delivery);
+REGISTER_TEST(engine_input, joystick_mapper_wraps_native_button_shift_counts_and_continues_after_empty_message_names);
+
 REGISTER_TEST(engine_input, joystick_mapper_loads_names_and_repeats_bindings_in_record_order_with_raw_analog_output);
 REGISTER_TEST(engine_input, joystick_mapper_supports_all_32_buttons_independently);
 REGISTER_TEST(engine_input, joystick_states_take_effect_at_frame_boundaries_and_disconnects_clear_all_fields);
