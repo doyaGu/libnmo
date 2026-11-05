@@ -300,28 +300,49 @@ static int bb_set_local_matrix(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
-/*
- * Scale (AddScale): the local axes scaled by the vector, or set to it with
- * Absolute; a 3D sprite changes its size instead (an effect).
- */
-static int bb_scale(blk_t *b)
+static void apply_scale(blk_t *b, nmo_object_id_t target, int32_t entity,
+    eng_vector_t scale, bool keep, bool absolute)
 {
-    nmo_object_id_t target = nmo_engine_block_target(b);
-    int32_t entity = eng_entity_index(b->engine, target);
-    if (entity < 0) {
-        return NMO_ENGINE_BR_OWNERERROR;
-    }
-    eng_vector_t scale = get_in_vector(b, 0, 1.0f, 1.0f, 1.0f);
-    bool keep = keep_children(b, 1);
-    bool absolute = get_in_int(b, 2, 0) != 0;
     uint32_t class_id = (uint32_t)nmo_engine_object_class(b->engine, target);
     if (nmo_type_registry_is_class_derived_from(b->engine->types, class_id, NMO_CID_SPRITE3D)) {
+        nmo_vector2_t size = {scale.x,scale.y};
+        if (!absolute) {
+            const eng_sprite3d_t *sprite = eng_sprite3d(b->engine,target);
+            if (sprite == NULL) return;
+            size.x *= sprite->max.x-sprite->min.x;
+            size.y *= sprite->max.y-sprite->min.y;
+        }
+        eng_sprite3d_set_size(b->engine,target,size);
         eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, target, 0);
     } else if (absolute) {
         eng_entity_set_scale(b->engine, entity, &scale, keep, true);
     } else {
         eng_entity_add_scale(b->engine, entity, &scale, keep, true);
     }
+}
+
+static int bb_set_scale(blk_t *b)
+{
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    int32_t entity = eng_entity_index(b->engine, target);
+    if (entity < 0) return NMO_ENGINE_BR_OWNERERROR;
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    eng_vector_t scale = get_in_vector(b, 0, 1, 1, 1);
+    apply_scale(b, target, entity, scale, keep_children(b, 1), true);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Scale (AddScale): multiply local axes or sprite dimensions, or set them with Absolute. */
+static int bb_scale(blk_t *b)
+{
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    int32_t entity = eng_entity_index(b->engine, target);
+    if (entity < 0) return NMO_ENGINE_BR_OWNERERROR;
+    eng_vector_t scale = get_in_vector(b, 0, 1, 1, 1);
+    bool keep = keep_children(b, 1);
+    bool absolute = get_in_int(b, 2, 0) != 0;
+    apply_scale(b, target, entity, scale, keep, absolute);
     IN_OFF(b, 0);
     OUT_ON(b, 0);
     return NMO_ENGINE_BR_OK;
@@ -781,6 +802,7 @@ static const nmo_engine_block_desc_t eng_3dtransfo_blocks[] = {
     {NMO_GUID_INIT(0xaa4aa6f0, 0xddefdef4), "Set World Matrix", bb_set_world_matrix, NULL, NULL},
     {NMO_GUID_INIT(0x21f5f30d, 0x08d5a1db), "Set Local Matrix", bb_set_local_matrix, NULL, NULL},
     {NMO_GUID_INIT(0x41236987, 0xa54a87a6), "Scale", bb_scale, NULL, NULL},
+    {NMO_GUID_INIT(0x7a7a7a7a, 0x7a7a7a7a), "Set Scale", bb_set_scale, NULL, NULL},
     {NMO_GUID_INIT(0x9d9d9d98, 0x7e7a7f75), "Set Parent", bb_set_parent, NULL, NULL},
     {NMO_GUID_INIT(0x45986587, 0x12654556), "Add Child", bb_add_child, NULL, NULL},
     {NMO_GUID_INIT(0xffffffee, 0xeeffffff), "Rotate", bb_rotate, NULL, NULL},
