@@ -51,4 +51,7 @@ void eng_free_curves(nmo_engine_t *engine)
     free(engine->curves.map.slots);
     free(engine->curves.point_overrides.data);
     free(engine->curves.point_map.slots);
+    for (size_t i = 0; i < engine->curves.topologies.count; i++) free(engine->curves.topologies.data[i].points.ids);
+    free(engine->curves.topologies.data);
+    free(engine->curves.topology_map.slots);
 }

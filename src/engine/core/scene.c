@@ -29,6 +29,12 @@
  * Initial conditions (CKScene::SetObjectInitialValue, GetObjectInitialValue)
  * ============================================================================ */
 
+static void eng_release_ic(eng_ic_t *ic)
+{
+    if (ic->has_array) eng_array_release(&ic->array);
+    free(ic->curve_points.ids);
+}
+
 /* Take ownership of the value only after its replacement can be stored. */
 static nmo_status_t eng_store_ic(nmo_engine_t *engine, const eng_ic_t *value)
 {
@@ -36,7 +42,7 @@ static nmo_status_t eng_store_ic(nmo_engine_t *engine, const eng_ic_t *value)
     eng_ic_t *ic = NULL;
     if (index >= 0) {
         ic = &engine->ics.list.data[index];
-        if (ic->has_array) eng_array_release(&ic->array);
+        eng_release_ic(ic);
     } else if (ENG_VEC_PUSH(engine->ics.list, ic)) {
         if (!eng_map_put(&engine->ics.map, value->id, (int32_t)(engine->ics.list.count - 1u))) {
             engine->ics.list.count--;
@@ -95,6 +101,14 @@ nmo_status_t eng_load_ic(nmo_engine_t *engine, nmo_object_id_t id, nmo_chunk_t *
                 (curve->has_open_chunk ? ENG_CURVE_OPEN : 0) | (curve->has_steps_chunk ? ENG_CURVE_STEPS : 0) |
                 (curve->has_fitting_chunk ? ENG_CURVE_FITTING : 0);
             ic.curve_properties = (eng_curve_properties_t){(int32_t)curve->opened,(int32_t)curve->step_count,curve->fitting_coeff};
+            ic.has_curve_points = curve->has_curveonly_chunk || curve->has_controlpoints_chunk;
+            if (ic.has_curve_points && curve->control_point_count != 0) {
+                ic.curve_points.ids = malloc((size_t)curve->control_point_count*sizeof(*ic.curve_points.ids));
+                if (ic.curve_points.ids == NULL) status = NMO_ERR_NOMEM;
+                else for (uint32_t i = 0; i < curve->control_point_count; i++) {
+                    ic.curve_points.ids[ic.curve_points.count++] = eng_module_id(module,nmo_ref_runtime_id(&curve->control_point_ids[i]));
+                }
+            }
         }
     }
     if (status == NMO_OK) {
@@ -146,7 +160,7 @@ nmo_status_t eng_load_ic(nmo_engine_t *engine, nmo_object_id_t id, nmo_chunk_t *
         }
         if (status == NMO_OK) status = eng_store_ic(engine, &ic);
     }
-    if (status != NMO_OK && ic.has_array) eng_array_release(&ic.array);
+    if (status != NMO_OK) eng_release_ic(&ic);
     if (created && type->vtable->destroy != NULL) type->vtable->destroy(decoded.state, type, &context);
     nmo_arena_destroy(arena);
     return status;
@@ -197,8 +211,13 @@ void eng_save_ic(nmo_engine_t *engine, nmo_object_id_t id)
     if (sprite != NULL) { ic->has_sprite3d = true; ic->sprite3d = *sprite; }
     ic->visibility = eng_object_visibility(engine, id);
     if (eng_curve_get_properties(engine,id,&ic->curve_properties)) ic->curve_mask = ENG_CURVE_PROPERTIES_ALL;
+    if (ic->curve_mask != 0) {
+        const eng_curve_points_t *points = eng_curve_points(engine,id);
+        if (points == NULL || !eng_curve_clone_points(&ic->curve_points,points)) { eng_release_ic(ic); return; }
+        ic->has_curve_points = true;
+    }
     if (eng_curvepoint_get_properties(engine,id,&ic->curvepoint_properties)) ic->curvepoint_mask = ENG_CURVEPOINT_PROPERTIES_ALL;
-    if (eng_store_ic(engine, ic) != NMO_OK && ic->has_array) eng_array_release(&ic->array);
+    if (eng_store_ic(engine, ic) != NMO_OK) eng_release_ic(ic);
 }
 
 /* CKReadObjectState of the object's initial value in the level scene, when it is in it and has one */
@@ -243,6 +262,7 @@ void eng_restore_ic(nmo_engine_t *engine, nmo_object_id_t id)
     eng_sprite3d_t *sprite = ic->has_sprite3d ? eng_sprite3d(engine,id) : NULL;
     if (sprite != NULL) *sprite = ic->sprite3d;
     eng_curve_properties_t curve;
+    if (ic->has_curve_points) eng_curve_set_points(engine,id,&ic->curve_points);
     if (ic->curve_mask != 0 && eng_curve_get_properties(engine,id,&curve)) {
         if (ic->curve_mask & ENG_CURVE_OPEN) curve.opened = ic->curve_properties.opened;
         if (ic->curve_mask & ENG_CURVE_STEPS) curve.step_count = ic->curve_properties.step_count;
@@ -264,9 +284,7 @@ void eng_restore_ic(nmo_engine_t *engine, nmo_object_id_t id)
 void eng_free_ics(nmo_engine_t *engine)
 {
     for (size_t i = 0; i < engine->ics.list.count; i++) {
-        if (engine->ics.list.data[i].has_array) {
-            eng_array_release(&engine->ics.list.data[i].array);
-        }
+        eng_release_ic(&engine->ics.list.data[i]);
     }
     free(engine->ics.list.data);
     free(engine->ics.map.slots);

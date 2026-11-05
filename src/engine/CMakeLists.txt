@@ -13,6 +13,7 @@ set(NMO_ENGINE_SOURCES
     core/copy.c
     core/curve.c
     core/curve_properties.c
+    core/curve_points.c
     core/curvepoint_properties.c
     core/engine.c
     core/host.c

@@ -27,11 +27,23 @@ typedef struct eng_curve_override {
     eng_curve_properties_t properties;
 } eng_curve_override_t;
 
+typedef struct eng_curve_points {
+    nmo_object_id_t *ids; /* engine IDs, in curve order */
+    size_t count;
+} eng_curve_points_t;
+
+typedef struct eng_curve_topology {
+    nmo_object_id_t id;
+    eng_curve_points_t points;
+} eng_curve_topology_t;
+
 typedef struct eng_curves {
     ENG_VEC(eng_curve_override_t) overrides;
     eng_map_t map;
     ENG_VEC(eng_curvepoint_override_t) point_overrides;
     eng_map_t point_map;
+    ENG_VEC(eng_curve_topology_t) topologies;
+    eng_map_t topology_map;
 } eng_curves_t;
 
 bool eng_curve_get_properties(const nmo_engine_t *engine, nmo_object_id_t curve, eng_curve_properties_t *out);
@@ -41,5 +53,13 @@ void eng_free_curves(nmo_engine_t *engine);
 bool eng_curvepoint_get_properties(const nmo_engine_t *engine, nmo_object_id_t point, eng_curvepoint_properties_t *out);
 bool eng_curvepoint_set_properties(nmo_engine_t *engine, nmo_object_id_t point, const eng_curvepoint_properties_t *properties);
 void eng_copy_curvepoint_properties(nmo_engine_t *engine, nmo_object_id_t source, nmo_object_id_t target);
+/* The view lasts until another curve's topology is first read or changed. */
+const eng_curve_points_t *eng_curve_points(nmo_engine_t *engine, nmo_object_id_t curve);
+bool eng_curve_clone_points(eng_curve_points_t *out, const eng_curve_points_t *points);
+bool eng_curve_set_points(nmo_engine_t *engine, nmo_object_id_t curve, const eng_curve_points_t *points);
+bool eng_curve_remove_point(nmo_engine_t *engine, nmo_object_id_t curve, nmo_object_id_t point);
+void eng_copy_curve_points(nmo_engine_t *engine, nmo_object_id_t source, nmo_object_id_t target,
+                            const nmo_object_id_t *originals, const nmo_object_id_t *copies, size_t count);
+void eng_curve_forget_object(nmo_engine_t *engine, nmo_object_id_t id);
 
 #endif /* NMO_ENGINE_CURVE_H */

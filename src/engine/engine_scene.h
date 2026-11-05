@@ -35,6 +35,8 @@ typedef struct eng_ic {
     eng_sprite3d_t sprite3d;
     uint32_t curve_mask;
     eng_curve_properties_t curve_properties;
+    bool has_curve_points;
+    eng_curve_points_t curve_points;
     uint32_t curvepoint_mask;
     eng_curvepoint_properties_t curvepoint_properties;
     int32_t visibility; /* CK_OBJECT_VISIBLE and HIERACHICALHIDE, which CKObject::Load restores */

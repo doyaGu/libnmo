@@ -1353,13 +1353,10 @@ static bool eng_curve_sample(nmo_engine_t *engine, nmo_object_id_t curve_id, flo
                             eng_vector_t *out, float *out_length)
 {
     int32_t curve = eng_entity_index(engine, curve_id);
-    const nmo_curve_state_t *state =
-        curve >= 0 ? (const nmo_curve_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
-                         engine->types, eng_find_object(engine, curve_id), CKPGUID_CURVE)
-                   : NULL;
-    int count = state != NULL ? (int)state->control_point_count : 0;
+    const eng_curve_points_t *control_points = eng_curve_points(engine,curve_id);
+    int count = control_points != NULL ? (int)control_points->count : 0;
     if (count < 2) {
-        if (state != NULL && out_length != NULL) { *out_length = 0; return out == NULL; }
+        if (control_points != NULL && out_length != NULL) { *out_length = 0; return out == NULL; }
         return false;
     }
     eng_curve_point_t *points = (eng_curve_point_t *)calloc((size_t)count, sizeof(*points));
@@ -1373,9 +1370,8 @@ static bool eng_curve_sample(nmo_engine_t *engine, nmo_object_id_t curve_id, flo
     eng_curve_properties_t properties;
     if (!eng_curve_get_properties(engine,curve_id,&properties)) { free(points); free(descs); return false; }
     bool opened = properties.opened != 0;
-    const eng_module_t *module = eng_module_of(engine, curve_id, NULL);
     for (int i = 0; i < count; i++) {
-        nmo_object_id_t id = eng_module_id(module, nmo_ref_runtime_id(&state->control_point_ids[i]));
+        nmo_object_id_t id = control_points->ids[i];
         int32_t point = id != 0 ? eng_entity_index(engine, id) : -1;
         descs[i] = point >= 0 ? (const nmo_curvepoint_state_t *)
                                     nmo_type_query_object_get_ancestor_state_by_guid(
