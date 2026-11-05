@@ -49,4 +49,6 @@ void eng_free_curves(nmo_engine_t *engine)
 {
     free(engine->curves.overrides.data);
     free(engine->curves.map.slots);
+    free(engine->curves.point_overrides.data);
+    free(engine->curves.point_map.slots);
 }

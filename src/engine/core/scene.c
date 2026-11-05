@@ -81,6 +81,14 @@ nmo_status_t eng_load_ic(nmo_engine_t *engine, nmo_object_id_t id, nmo_chunk_t *
     if (status == NMO_OK) status = type->vtable->deserialize(decoded.state, saved, type, &context);
     eng_ic_t ic = {.id = id};
     if (status == NMO_OK) {
+        const nmo_curvepoint_state_t *point = nmo_type_query_object_get_ancestor_state_by_guid(engine->types,&decoded,CKPGUID_CURVEPOINT);
+        if (point != NULL) {
+            ic.curvepoint_mask = (point->has_tcb_chunk || (point->has_default_data && point->defaultdata_is_modern) ? ENG_CURVEPOINT_TCB : 0) |
+                (point->has_default_data ? ENG_CURVEPOINT_LINEAR : 0);
+            ic.curvepoint_properties = (eng_curvepoint_properties_t){point->bias,point->tension,point->continuity,point->linear};
+        }
+    }
+    if (status == NMO_OK) {
         const nmo_curve_state_t *curve = nmo_type_query_object_get_ancestor_state_by_guid(engine->types,&decoded,CKPGUID_CURVE);
         if (curve != NULL) {
             ic.curve_mask = curve->has_curveonly_chunk ? ENG_CURVE_PROPERTIES_ALL :
@@ -189,6 +197,7 @@ void eng_save_ic(nmo_engine_t *engine, nmo_object_id_t id)
     if (sprite != NULL) { ic->has_sprite3d = true; ic->sprite3d = *sprite; }
     ic->visibility = eng_object_visibility(engine, id);
     if (eng_curve_get_properties(engine,id,&ic->curve_properties)) ic->curve_mask = ENG_CURVE_PROPERTIES_ALL;
+    if (eng_curvepoint_get_properties(engine,id,&ic->curvepoint_properties)) ic->curvepoint_mask = ENG_CURVEPOINT_PROPERTIES_ALL;
     if (eng_store_ic(engine, ic) != NMO_OK && ic->has_array) eng_array_release(&ic->array);
 }
 
@@ -239,6 +248,16 @@ void eng_restore_ic(nmo_engine_t *engine, nmo_object_id_t id)
         if (ic->curve_mask & ENG_CURVE_STEPS) curve.step_count = ic->curve_properties.step_count;
         if (ic->curve_mask & ENG_CURVE_FITTING) curve.fitting_coeff = ic->curve_properties.fitting_coeff;
         eng_curve_set_properties(engine,id,&curve);
+    }
+    eng_curvepoint_properties_t point;
+    if (ic->curvepoint_mask != 0 && eng_curvepoint_get_properties(engine,id,&point)) {
+        if (ic->curvepoint_mask & ENG_CURVEPOINT_TCB) {
+            point.bias = ic->curvepoint_properties.bias;
+            point.tension = ic->curvepoint_properties.tension;
+            point.continuity = ic->curvepoint_properties.continuity;
+        }
+        if (ic->curvepoint_mask & ENG_CURVEPOINT_LINEAR) point.linear = ic->curvepoint_properties.linear;
+        eng_curvepoint_set_properties(engine,id,&point);
     }
 }
 

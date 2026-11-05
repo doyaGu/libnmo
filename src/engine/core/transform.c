@@ -1319,6 +1319,7 @@ nmo_status_t nmo_engine_set_entity_world_matrix(nmo_engine_t *engine, nmo_object
 typedef struct eng_curve_point {
     eng_vector_t position;
     eng_vector_t in, out;
+    eng_curvepoint_properties_t properties;
     float length;
     bool linear;
 } eng_curve_point_t;
@@ -1384,7 +1385,8 @@ static bool eng_curve_sample(nmo_engine_t *engine, nmo_object_id_t curve_id, flo
             eng_vector_t world = eng_matrix_row(&engine->entities.data[point].world, 3);
             eng_entity_inverse_transform(engine, curve, &points[i].position, &world, -1);
         }
-        points[i].linear = descs[i] != NULL && descs[i]->linear != 0;
+        if (descs[i] != NULL) eng_curvepoint_get_properties(engine,id,&points[i].properties);
+        points[i].linear = points[i].properties.linear != 0;
     }
     /* GetTangentsByIndex: TCB from the neighbours, or the point's own */
     for (int i = 0; i < count; i++) {
@@ -1394,8 +1396,8 @@ static bool eng_curve_sample(nmo_engine_t *engine, nmo_object_id_t curve_id, flo
             points[i].out = (eng_vector_t){d->tangent_out.x, d->tangent_out.y, d->tangent_out.z};
             continue;
         }
-        float t = d != NULL ? d->tension : 0.0f, c = d != NULL ? d->continuity : 0.0f;
-        float b = d != NULL ? d->bias : 0.0f;
+        float t = points[i].properties.tension, c = points[i].properties.continuity;
+        float b = points[i].properties.bias;
         const eng_vector_t *p = &points[i].position;
         const eng_vector_t *prev = &points[eng_curve_index(i - 1, count, opened)].position;
         const eng_vector_t *next = &points[eng_curve_index(i + 1, count, opened)].position;
