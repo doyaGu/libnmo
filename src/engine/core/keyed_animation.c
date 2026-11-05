@@ -63,6 +63,7 @@ nmo_status_t eng_load_animations(nmo_engine_t *engine, const eng_range_t *range)
 
 void eng_free_animations(nmo_engine_t *engine)
 {
+    eng_free_animation_keys(engine);
     for (size_t i = 0; i < engine->animations.keyed.count; i++) {
         free(engine->animations.keyed.data[i].members.data);
         free(engine->animations.keyed.data[i].order.data);

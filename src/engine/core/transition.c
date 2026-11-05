@@ -166,6 +166,7 @@ nmo_status_t eng_keyed_animation_transition(nmo_engine_t *engine, nmo_object_id_
         for (size_t i = 0; i < count; i++) {
             eng_object_animation_set_entity(engine,ids[i],entities[i]);
             *(nmo_objectanimation_state_t *)nmo_object_get_state(eng_find_object(engine,ids[i])) = states[i];
+            eng_animation_keys_changed(engine,ids[i],&states[i]);
         }
         *(nmo_keyedanimation_state_t *)nmo_object_get_state(eng_find_object(engine,result)) = generated;
         eng_keyed_animation_refresh(engine,result);

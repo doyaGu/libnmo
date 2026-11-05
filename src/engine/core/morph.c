@@ -119,6 +119,37 @@ static uint32_t morph_normal_word(const morph_key_t *key, uint32_t vertex)
     return morph_pack(morph_angle(key, vertex, 0), morph_angle(key, vertex, 1));
 }
 
+static bool morph_compare_source(const nmo_objectanimation_state_t *state, morph_source_t *out, bool *present)
+{
+    *out = (morph_source_t){.state = state}; *present = state->has_morph_counts != 0;
+    for (uint32_t i = 0; state->controllers != NULL && i < state->controller_count; i++) if (state->controllers[i].type == NMO_OBJANIM_CONTROLLER_MORPH) out->controller = &state->controllers[i];
+    if (out->controller != NULL) { *present = true; return nmo_objanim_morph_controller_info(out->controller,&out->info); }
+    if (!*present) return true;
+    if (state->morph_vertex_count < 0 || state->morph_key_count < 0) return false;
+    if (state->morph_key_count == 0) { out->info.vertex_count = (uint32_t)state->morph_vertex_count; return true; }
+    return morph_source(state,out);
+}
+
+bool eng_animation_morph_compare(const nmo_objectanimation_state_t *target, const nmo_objectanimation_state_t *source)
+{
+    morph_source_t a, b; bool present, other;
+    if (!morph_compare_source(target,&a,&present)) return false;
+    if (!present) return true;
+    if (!morph_compare_source(source,&b,&other) || !other || a.info.key_count != b.info.key_count || a.info.vertex_count != b.info.vertex_count) return false;
+    for (uint32_t i = 0; i < a.info.key_count; i++) {
+        morph_key_t x = morph_key(&a,i), y = morph_key(&b,i);
+        if (fabs((double)x.time-y.time) > 0 || (x.positions != NULL && y.positions == NULL) || (x.normals != NULL && y.normals == NULL)) return false;
+        for (uint32_t v = 0; v < a.info.vertex_count; v++) {
+            if (x.positions != NULL) {
+                nmo_vector_t p, q; memcpy(&p,(const uint8_t *)x.positions+(size_t)v*sizeof(p),sizeof(p)); memcpy(&q,(const uint8_t *)y.positions+(size_t)v*sizeof(q),sizeof(q));
+                if (p.x != q.x || p.y != q.y || p.z != q.z) return false;
+            }
+            if (x.normals != NULL && morph_normal_word(&x,v) != morph_normal_word(&y,v)) return false;
+        }
+    }
+    return true;
+}
+
 static int morph_signed_angle(uint32_t value)
 {
     value &= 65535;

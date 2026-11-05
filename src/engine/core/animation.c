@@ -55,9 +55,13 @@ bool eng_animation_source(const nmo_engine_t *engine, nmo_object_id_t animation,
     const nmo_objectanimation_state_t *state = anim_state(engine, animation);
     if (state == NULL) return false;
     *out = (eng_animation_source_t){animation, state, state, 0};
+    const nmo_objectanimation_state_t *shared = eng_animation_shared_keys(engine,animation);
+    if (shared != NULL) { out->keys = shared; out->length = shared->has_length ? shared->length : 0; return true; }
     nmo_object_id_t current = animation, slow = animation, fast = animation;
     while (out->keys != NULL && out->keys->format == CKOBJANIM_FORMAT_SHARED) {
         current = anim_shared_next(engine, current);
+        shared = eng_animation_shared_keys(engine,current);
+        if (shared != NULL) { out->keys = shared; break; }
         out->keys = anim_state(engine, current);
         slow = anim_shared_next(engine, slow);
         fast = anim_shared_next(engine, anim_shared_next(engine, fast));
@@ -1015,7 +1019,10 @@ nmo_status_t eng_object_animation_transition(nmo_engine_t *engine, nmo_object_id
     nmo_objectanimation_state_t generated;
     nmo_status_t status = eng_object_animation_capture_transition(engine,result,from,from_step,to,to_step,length,velocity,dont_turn,starting,&generated);
     if (status == NMO_OK && !eng_object_animation_set_entity(engine,result,eng_object_animation_entity(engine,to))) return NMO_ERR_NOMEM;
-    if (status == NMO_OK) *(nmo_objectanimation_state_t *)nmo_object_get_state(eng_find_object(engine,result)) = generated;
+    if (status == NMO_OK) {
+        *(nmo_objectanimation_state_t *)nmo_object_get_state(eng_find_object(engine,result)) = generated;
+        eng_animation_keys_changed(engine,result,&generated);
+    }
     return status;
 }
 

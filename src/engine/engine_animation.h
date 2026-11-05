@@ -53,6 +53,14 @@ typedef struct eng_animation_blend {
     nmo_object_id_t first, second;
     bool has_sources;
 } eng_animation_blend_t;
+typedef struct eng_animation_key_data {
+    const nmo_objectanimation_state_t *origin;
+    nmo_objectanimation_state_t state;
+} eng_animation_key_data_t;
+typedef struct eng_animation_key_binding {
+    nmo_object_id_t id;
+    eng_animation_key_data_t *data;
+} eng_animation_key_binding_t;
 
 typedef struct eng_keyed_animation {
     nmo_object_id_t id, root_entity, root_animation;
@@ -75,7 +83,18 @@ typedef struct eng_animations {
     eng_map_t binding_map;
     ENG_VEC(eng_animation_blend_t) blends;
     eng_map_t blend_map;
+    ENG_VEC(eng_animation_key_binding_t) keys;
+    eng_map_t key_map;
+    ENG_VEC(eng_animation_key_data_t *) key_data;
 } eng_animations_t;
+
+const nmo_objectanimation_state_t *eng_animation_shared_keys(const nmo_engine_t *engine, nmo_object_id_t animation);
+bool eng_object_animation_compare(const nmo_engine_t *engine, nmo_object_id_t target, nmo_object_id_t source);
+bool eng_object_animation_share(nmo_engine_t *engine, nmo_object_id_t target, nmo_object_id_t source);
+void eng_animation_keys_changed(nmo_engine_t *engine, nmo_object_id_t animation, const nmo_objectanimation_state_t *state);
+void eng_copy_animation_keys(nmo_engine_t *engine, nmo_object_id_t source, nmo_object_id_t target, bool share);
+void eng_free_animation_keys(nmo_engine_t *engine);
+bool eng_animation_morph_compare(const nmo_objectanimation_state_t *target, const nmo_objectanimation_state_t *source);
 
 float eng_animation_merge_factor(const nmo_engine_t *engine, nmo_object_id_t animation);
 bool eng_animation_set_merge_factor(nmo_engine_t *engine, nmo_object_id_t animation, float factor);
