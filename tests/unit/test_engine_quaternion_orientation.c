@@ -2,6 +2,8 @@
 #include "../../src/engine/engine_internal.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
+#include "type/nmo_param_guids.h"
+#include "type/nmo_type_guids.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -182,6 +184,102 @@ TEST(engine_quaternion_orientation, missing_deleted_and_nonentity_targets_report
     }
 }
 
+static nmo_object_id_t saved_input(quaternion_fixture_t *g, nmo_object_id_t pin, const char *text)
+{
+    nmo_object_id_t parameter = 0;
+    if (nmo_script_edit_ensure_input_parameter_source(g->f.tx,pin,&parameter) != NMO_OK ||
+        nmo_script_edit_set_parameter_value(g->f.tx,parameter,text) != NMO_OK) return 0;
+    return parameter;
+}
+
+static const char *resolve_file(void *data, const char *name)
+{
+    (void)name; return data;
+}
+
+TEST(engine_quaternion_orientation, loaded_and_copied_graphs_keep_quaternions_references_and_hierarchy_independent)
+{
+    for (int hierarchy = 0; hierarchy < 2; hierarchy++) {
+        quaternion_fixture_t g; begin(&g); nmo_object_id_t parameters[4]; char text[32];
+        snprintf(text,sizeof(text),"%u",g.target); parameters[0] = saved_input(&g,fixture_target(&g.f,g.block),text);
+        parameters[1] = saved_input(&g,BLOCK_PIN(&g.f,g.block,0),"0,0,1,1"); parameters[2] = saved_input(&g,BLOCK_PIN(&g.f,g.block,1),hierarchy ? "TRUE" : "FALSE");
+        snprintf(text,sizeof(text),"%u",g.reference); parameters[3] = saved_input(&g,BLOCK_PIN(&g.f,g.block,2),text);
+        for (size_t i = 0; i < COUNT(parameters); i++) ASSERT_TRUE(parameters[i] != 0);
+        fixture_commit_bare(&g.f,NULL); nmo_beobject_state_t *owner = fixture_state(&g.f,g.f.owner_id);
+        owner->has_single_activity = 1; owner->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE;
+        nmo_behavior_state_t *script = fixture_state(&g.f,g.f.script_id);
+        script->has_single_activity = 1; script->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE | CK_SCENEOBJECT_START_RESET;
+        const char *path = NMO_TEST_SCRATCH_FILE("engine_quaternion_orientation.cmo"); ASSERT_EQ(NMO_OK,nmo_session_save_file(g.f.session,path,NULL,NULL));
+        for (int started = 0; started < 2; started++) {
+            engine_fixture_t host; fixture_begin_document(&host); fixture_begin_edit(&host);
+            nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL; fixture_commit(&host,&options);
+            if (started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_ALL));
+            nmo_engine_set_file_resolver(host.engine,resolve_file,(void *)path);
+            int32_t file = -1; ASSERT_EQ(NMO_OK,nmo_engine_load(host.engine,"quaternion.cmo",true,&file));
+            if (!started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_SCENE_DEFAULT));
+            nmo_object_id_t block = nmo_engine_object_named(host.engine,"Set Quaternion Orientation",NMO_CID_BEHAVIOR); ASSERT_TRUE(block != 0);
+            const eng_module_t *module = eng_module_of(host.engine,block,NULL);
+            const nmo_object_id_t original[] = {g.f.owner_id,g.parent,g.target,g.child,g.grandchild,g.reference,g.f.script_id,g.block,g.out};
+            nmo_object_id_t ids[13] = {0}, copies[13] = {0};
+            for (size_t i = 0; i < COUNT(original); i++) { ids[i] = eng_module_id(module,original[i]); ASSERT_TRUE(ids[i] != 0); }
+            for (size_t i = 0; i < COUNT(parameters); i++) ids[9+i] = eng_module_id(module,parameters[i]);
+            ASSERT_TRUE(ids[2] != g.target); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
+            runtime_basis(host.engine,ids[2],(eng_vector_t){2,0,0},(eng_vector_t){0,3,0},(eng_vector_t){0,0,4});
+            ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(host.engine,ids,COUNT(ids),false,copies));
+            ASSERT_EQ(copies[2],nmo_engine_entity_parent(host.engine,copies[3])); ASSERT_EQ(copies[3],nmo_engine_entity_parent(host.engine,copies[4]));
+            eng_matrix_t reference; eng_matrix_identity(&reference); reference.m[3][0] = 100; reference.m[3][1] = 200; reference.m[3][2] = 300;
+            eng_entity_set_world_matrix(host.engine,eng_entity_index(host.engine,copies[5]),&reference,false);
+            ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,ids[6],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[6],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,10));
+            runtime_basis(host.engine,ids[2],(eng_vector_t){2,0,0},(eng_vector_t){0,3,0},(eng_vector_t){0,0,4});
+            runtime_basis(host.engine,copies[2],(eng_vector_t){0,-2,0},(eng_vector_t){3,0,0},(eng_vector_t){0,0,4});
+            quaternion_fixture_t view = {.f.engine=host.engine}; position(&view,copies[3],hierarchy ? (eng_vector_t){6,2,9} : (eng_vector_t){7,13,21});
+            position(&view,copies[4],hierarchy ? (eng_vector_t){8,1,12} : (eng_vector_t){9,19,33});
+            nmo_engine_destroy_object(host.engine,ids[2]); nmo_engine_destroy_object(host.engine,ids[5]); nmo_engine_destroy_object(host.engine,ids[1]);
+            nmo_quaternion_t identity = {0,0,0,1}; int32_t yes = 1;
+            ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[10],&identity,sizeof(identity))); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[11],&yes,sizeof(yes)));
+            ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[6],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
+            runtime_basis(host.engine,copies[2],(eng_vector_t){2,0,0},(eng_vector_t){0,3,0},(eng_vector_t){0,0,4}); position(&view,copies[2],(eng_vector_t){3,4,5});
+            position(&view,copies[3],hierarchy ? (eng_vector_t){5,7,9} : (eng_vector_t){-6,8,21}); position(&view,copies[4],hierarchy ? (eng_vector_t){6,9,12} : (eng_vector_t){-12,10,33});
+            nmo_quaternion_t original_value; read_value(&host,ids[10],&original_value,sizeof(original_value)); ASSERT_FLOAT_EQ(1,original_value.z,0); ASSERT_FLOAT_EQ(1,original_value.w,0);
+            ASSERT_EQ(2u,runs(&host,ids[7])); ASSERT_EQ(2u,runs(&host,copies[7])); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,10)); ASSERT_EQ(2u,runs(&host,copies[7])); fixture_end(&host);
+        }
+        ASSERT_FLOAT_EQ(3,((nmo_3dentity_state_t *)fixture_state(&g.f,g.target))->world_matrix[12],0); fixture_end(&g.f); remove(path);
+    }
+}
+
+TEST(engine_quaternion_orientation, bezier_progression_and_shortest_arc_interpolation_drive_orientation_through_completion)
+{
+    quaternion_fixture_t g; begin(&g); const nmo_behavior_state_t *script = fixture_state(&g.f,g.f.script_id);
+    nmo_object_id_t first_link = nmo_behavior_ref_array_get_id(&script->sub_behavior_links,0); ASSERT_EQ(NMO_OK,nmo_script_edit_remove_behavior_link(g.f.tx,g.f.script_id,first_link));
+    nmo_object_id_t interpolate = fixture_block(&g.f,NMO_GUID(0x35503950,0x2dde7a65),"Interpolate Quaternion"); ASSERT_TRUE(interpolate != 0);
+    for (int i = 0; i < 3; i++) ASSERT_EQ(NMO_OK,nmo_script_edit_remove_parameter(g.f.tx,BLOCK_PIN(&g.f,interpolate,0),true));
+    ASSERT_EQ(NMO_OK,nmo_script_edit_remove_parameter(g.f.tx,BLOCK_POUT(&g.f,interpolate,0),true));
+    nmo_object_id_t a = 0, b = 0, mix = 0, result = 0;
+    ASSERT_EQ(NMO_OK,nmo_script_edit_add_parameter(g.f.tx,interpolate,NMO_SCRIPT_EDIT_PARAM_IN,CKPGUID_QUATERNION,"A",&a));
+    ASSERT_EQ(NMO_OK,nmo_script_edit_add_parameter(g.f.tx,interpolate,NMO_SCRIPT_EDIT_PARAM_IN,CKPGUID_QUATERNION,"B",&b));
+    ASSERT_EQ(NMO_OK,nmo_script_edit_add_parameter(g.f.tx,interpolate,NMO_SCRIPT_EDIT_PARAM_IN,CKPGUID_PERCENTAGE,"Value",&mix));
+    ASSERT_EQ(NMO_OK,nmo_script_edit_add_parameter(g.f.tx,interpolate,NMO_SCRIPT_EDIT_PARAM_OUT,CKPGUID_QUATERNION,"C",&result));
+    float h = sqrtf(.5f); nmo_quaternion_t start = {0,0,0,1}, end = {0,0,-h,-h};
+    fixture_input_value(&g.f,a,&start,sizeof(start)); fixture_input_value(&g.f,b,&end,sizeof(end));
+    size_t kept = 0; for (size_t i = 0; i < g.f.value_count; i++) if (g.f.values[i].param != g.quaternion_parameter) g.f.values[kept++] = g.f.values[i]; g.f.value_count = kept;
+    ASSERT_EQ(NMO_OK,nmo_script_edit_connect_parameter(g.f.tx,result,BLOCK_PIN(&g.f,g.block,0)));
+    nmo_object_id_t progress = fixture_block(&g.f,NMO_GUID(0x6bb8699a,0x29fb6a4b),"Progress"); ASSERT_TRUE(progress != 0);
+    const float values[] = {40,0,1}; for (size_t i = 0; i < COUNT(values); i++) fixture_input_value(&g.f,BLOCK_PIN(&g.f,progress,i),&values[i],sizeof(float));
+    nmo_object_id_t curve = 0; ASSERT_EQ(NMO_OK,nmo_script_edit_ensure_input_parameter_source(g.f.tx,BLOCK_PIN(&g.f,progress,3),&curve));
+    ASSERT_EQ(NMO_OK,nmo_script_edit_connect_parameter(g.f.tx,BLOCK_POUT(&g.f,progress,3),mix));
+    fixture_link(&g.f,g.f.script_in,BLOCK_IN(&g.f,progress,0),0); fixture_link(&g.f,BLOCK_OUT(&g.f,progress,1),BLOCK_IN(&g.f,progress,1),1);
+    for (int output = 0; output < 2; output++) fixture_link(&g.f,BLOCK_OUT(&g.f,progress,output),BLOCK_IN(&g.f,interpolate,0),0);
+    fixture_link(&g.f,BLOCK_OUT(&g.f,interpolate,0),BLOCK_IN(&g.f,g.block,0),0); commit(&g);
+    for (int step = 1; step <= 5; step++) {
+        float p = step < 4 ? (float)step*.25f : 1, angle = p*1.57079632679489661923f, c = cosf(angle), s = sinf(angle);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,10)); basis(&g,(eng_vector_t){2*c,-2*s,0},(eng_vector_t){3*s,3*c,0},(eng_vector_t){0,0,4});
+        position(&g,g.target,(eng_vector_t){3,4,5}); position(&g,g.child,(eng_vector_t){3+2*c+3*s,4-2*s+3*c,9}); position(&g,g.grandchild,(eng_vector_t){3+3*c+5*s,4-3*s+5*c,12});
+        nmo_quaternion_t value; read_value(&g.f,result,&value,sizeof(value)); ASSERT_TRUE(isfinite(value.z) && isfinite(value.w)); ASSERT_FLOAT_EQ(sinf(angle*.5f),value.z,1e-5f); ASSERT_FLOAT_EQ(cosf(angle*.5f),value.w,1e-5f);
+    }
+    ASSERT_EQ(5u,runs(&g.f,progress)); ASSERT_EQ(5u,runs(&g.f,interpolate)); ASSERT_EQ(5u,runs(&g.f,g.block)); ASSERT_EQ(5u,runs(&g.f,g.out));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,10)); ASSERT_EQ(5u,runs(&g.f,g.block)); fixture_end(&g.f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_quaternion_orientation, signed_principal_rotations_are_invariant_under_nonzero_quaternion_scale);
 REGISTER_TEST(engine_quaternion_orientation, local_scale_restoration_propagates_after_the_hierarchy_flag_keeps_children_in_place);
@@ -193,4 +291,6 @@ REGISTER_TEST(engine_quaternion_orientation, degenerate_quaternions_keep_native_
 REGISTER_TEST(engine_quaternion_orientation, missing_deleted_and_nonentity_references_use_world_orientation);
 REGISTER_TEST(engine_quaternion_orientation, disconnected_inputs_keep_identity_quaternion_and_hierarchy_defaults);
 REGISTER_TEST(engine_quaternion_orientation, missing_deleted_and_nonentity_targets_report_owner_errors_after_setting_io);
+REGISTER_TEST(engine_quaternion_orientation, loaded_and_copied_graphs_keep_quaternions_references_and_hierarchy_independent);
+REGISTER_TEST(engine_quaternion_orientation, bezier_progression_and_shortest_arc_interpolation_drive_orientation_through_completion);
 TEST_MAIN_END()
