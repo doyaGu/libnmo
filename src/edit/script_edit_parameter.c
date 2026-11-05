@@ -23,6 +23,12 @@
 static nmo_status_t script_edit_set_default_value(nmo_script_edit_tx_t *tx,
     nmo_object_id_t id, nmo_guid_t type, const char *text)
 {
+    if (nmo_guid_equals(type,CKPGUID_FLOAT)) {
+        /* CKFloatStringFunc reads a numeric prefix: native prototypes include "1.0f". */
+        float value = 0;
+        if (sscanf(text,"%f",&value) != 1) return NMO_ERR_INVALID_FORMAT;
+        return nmo_object_edit_set_parameter_bytes_ex(tx->edit,id,(const uint8_t *)&value,sizeof(value),NULL);
+    }
     if (nmo_guid_equals(type,CKPGUID_QUATERNION)) {
         /* CKQuaternionStringFunc fills parsed components over constructor identity. */
         nmo_quaternion_t value = {0,0,0,1};
