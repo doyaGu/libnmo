@@ -23,7 +23,8 @@ static int bb_set_curve_properties(blk_t *b)
     nmo_object_id_t curve = nmo_engine_block_target(b);
     eng_curve_properties_t properties;
     if (!eng_curve_get_properties(b->engine,curve,&properties)) return NMO_ENGINE_BR_OWNERERROR;
-    properties.opened = get_in_int(b, 0, 1) != 0;
+    if (get_in_int(b, 0, 1) == 0) properties.opened = 0;
+    else if (properties.opened == 0) properties.opened = 1;
     properties.step_count = get_in_int(b, 1, 100);
     properties.fitting_coeff = get_in_float(b, 2, 0);
     eng_curve_set_properties(b->engine,curve,&properties);

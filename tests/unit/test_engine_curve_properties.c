@@ -241,7 +241,7 @@ TEST(engine_curve_properties, disconnected_setter_inputs_use_native_defaults_and
     }
 }
 
-TEST(engine_curve_properties, setter_canonicalizes_open_but_does_not_clamp_step_counts_or_nonfinite_fitting)
+TEST(engine_curve_properties, setter_preserves_negative_steps_and_nonfinite_fitting_with_truthy_open_inputs)
 {
     const float fitting[] = {-1,-0.0f,NAN,INFINITY};
     for (size_t i = 0; i < COUNT(fitting); i++) {
@@ -284,6 +284,20 @@ TEST(engine_curve_properties, invalid_targets_consume_input_activate_out_and_pre
     }
 }
 
+TEST(engine_curve_properties, opening_an_already_open_curve_preserves_its_loaded_truthy_flag_until_closed)
+{
+    const int32_t initial[] = {0,7,-3};
+    for (size_t i = 0; i < COUNT(initial); i++) {
+        curve_fixture_t g; graph_begin(&g,true,3); ((nmo_curve_state_t *)fixture_state(&g.f,g.curve))->opened = (uint32_t)initial[i];
+        fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.setter,0),-7); fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.setter,1),100);
+        nmo_object_id_t open_parameter = source(&g,BLOCK_PIN(&g.f,g.setter,0)); graph_commit(&g);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); outputs(&g.f,g.getter,initial[i] ? initial[i] : 1,100,0,14);
+        const int32_t closed = 0, opened = 1;
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,open_parameter,&closed,sizeof(closed))); trigger(&g.f); outputs(&g.f,g.getter,0,100,0,24);
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,open_parameter,&opened,sizeof(opened))); trigger(&g.f); outputs(&g.f,g.getter,1,100,0,14); fixture_end(&g.f);
+    }
+}
+
 static void count_operations(const nmo_engine_event_t *event, void *data)
 {
     if (event->kind == NMO_ENGINE_EVENT_OPERATION && event->result == NMO_OK) (*(size_t *)data)++;
@@ -316,7 +330,8 @@ REGISTER_TEST(engine_curve_properties, empty_and_single_point_curves_keep_zero_l
 REGISTER_TEST(engine_curve_properties, getter_reads_native_fields_and_local_length_without_scheduling);
 REGISTER_TEST(engine_curve_properties, setter_and_getter_share_live_open_step_and_fitting_changes_in_the_same_frame);
 REGISTER_TEST(engine_curve_properties, disconnected_setter_inputs_use_native_defaults_and_connected_zeros_remain_values);
-REGISTER_TEST(engine_curve_properties, setter_canonicalizes_open_but_does_not_clamp_step_counts_or_nonfinite_fitting);
+REGISTER_TEST(engine_curve_properties, setter_preserves_negative_steps_and_nonfinite_fitting_with_truthy_open_inputs);
+REGISTER_TEST(engine_curve_properties, opening_an_already_open_curve_preserves_its_loaded_truthy_flag_until_closed);
 REGISTER_TEST(engine_curve_properties, live_getter_and_setter_targets_can_change_independently);
 REGISTER_TEST(engine_curve_properties, invalid_targets_consume_input_activate_out_and_preserve_getter_values);
 REGISTER_TEST(engine_curve_properties, missing_setter_targets_skip_lazy_fitting_operations);
