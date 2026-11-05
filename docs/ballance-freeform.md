@@ -383,9 +383,11 @@ the existing borderless surface material rather than acquiring a new theme.
 
 Native builds (`--elements`) use the same spatial query for placement and
 exported-scene validation. It covers rail tubes, the ball's swept clearance,
-the balloon's departure envelope, and separation between scenery assemblies.
-Rail and ball sweeps use conservative inflated boxes; they are not exact
-mesh collision tests. Route clearance includes a 0.5-unit margin. The
+the balloon's departure envelope, authored floor and landing corridors,
+and separation between scenery assemblies.
+Scenery fitting uses bounded rail and ball sweeps with conservative scenery
+bounds; it is not an exact mesh collision test. Scenery placement applies
+a 0.5-unit route-clearance margin. The
 balloon envelope has a `finish` state and is checked during placement even
 though the balloon has not yet departed.
 
@@ -424,9 +426,16 @@ change checkpoint lamp IDs. Platform accessory IDs derive from the route
 entity ID and its local index; preserve both when editing rules.
 
 Native motion recipes extend this query through finite per-body envelopes.
-Free bodies, unlimited sliders, camera envelopes and complete floor traversal
-volumes remain separate coverage limits; a passing spatial report is not a full gameplay
-or visibility guarantee.
+Top-level `passages` reserves floor corridors and lower-layer landing discs
+in the owning route element's entry frame. The verifier checks ball clearance
+against physical triangles, samples floor support at the declared layer,
+and checks native motion against the corridors. Fresh play also checks
+observed landings. See [passage and landing constraints](ballance-spatial-constraints.md)
+for the schema, tolerances and report fields.
+
+Free bodies, unlimited sliders, camera envelopes, undeclared floor routes
+and gaps between support samples remain coverage limits. A passing spatial
+report is not a full gameplay or visibility guarantee.
 
 ## Native resources and mechanisms
 

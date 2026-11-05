@@ -235,7 +235,9 @@ Unknown mechanism kinds remain explicitly `unsupported`, making the report
 
 The `mechanisms` report compares motion against foreign rails, ball
 clearance, conservative floor bounds and other mechanisms. A module's own
-floor and route are intentional contacts. The rotating arm and drawbridge
+floor and route retain their measured internal contacts. Authored floor and
+landing corridors are checked separately, including the owning mechanism.
+The rotating arm and drawbridge
 generated together are a coupled actuator pair. Other adjacent route pieces
 remain checked. Potential contacts include both owners, state, body,
 location and source configuration. Scenery fitting also reserves these
@@ -249,6 +251,13 @@ contacts remain in `expected_interactions`, with their design reason.
 This declaration records intent; it does not prove that the interaction is
 playable. Other objects and states retain their checks. Plate interactions
 can also name the `split` phase.
+
+The contact kinds also include `floor passage` and `landing clearance`.
+An optional `passages` list restricts these kinds to specific corridor IDs
+owned by `target`; other passages on the same route element remain checked.
+Static `clearance` and observed `mechanism_motion` reports retain that ID.
+See [passage motion rules](ballance-spatial-constraints.md#motion-through-a-passage)
+for an actuation-walkway example.
 
 Gameplay now writes `physics.csv` through `nmo behavior run --physics-log`:
 one row per movable physical body after each simulation step, including
