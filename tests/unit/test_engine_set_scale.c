@@ -139,6 +139,16 @@ TEST(engine_set_scale, missing_deleted_and_non_sprite_objects_do_not_create_spri
     ASSERT_NULL(eng_sprite3d(g.f.engine,g.sprite)); ASSERT_FALSE(eng_sprite3d_set_size(g.f.engine,g.sprite,(nmo_vector2_t){1,1})); fixture_end(&g.f);
 }
 
+TEST(engine_set_scale, sprites_stop_drawing_after_their_cached_material_is_deleted)
+{
+    sprite_fixture_t g; sprite_begin(&g); sprite_commit(&g);
+    ASSERT_TRUE(eng_sprite3d_set_size(g.f.engine,g.sprite,(nmo_vector2_t){8,2})); quad(g.f.engine,g.sprite,-1,.25f,15,6.25f);
+    nmo_engine_destroy_object(g.f.engine,g.material);
+    nmo_engine_frame_t frame; ASSERT_EQ(NMO_OK,nmo_engine_render_frame(g.f.engine,&frame));
+    for (int32_t i = 0; i < frame.draw_count; i++) ASSERT_TRUE(frame.draws[i].object != g.sprite);
+    sprite_size(g.f.engine,g.sprite,8,2); fixture_end(&g.f);
+}
+
 typedef struct scale_fixture {
     engine_fixture_t f;
     nmo_object_id_t parent, target, child, grandchild, block, out;
@@ -300,6 +310,7 @@ REGISTER_TEST(engine_set_scale, sprite_zero_and_negative_sizes_keep_signed_nativ
 REGISTER_TEST(engine_set_scale, copied_sprites_keep_runtime_sizes_and_remap_materials_independently);
 REGISTER_TEST(engine_set_scale, sprite_initial_values_restore_runtime_and_serialized_sizes_with_their_offset_and_mode);
 REGISTER_TEST(engine_set_scale, missing_deleted_and_non_sprite_objects_do_not_create_sprite_state);
+REGISTER_TEST(engine_set_scale, sprites_stop_drawing_after_their_cached_material_is_deleted);
 REGISTER_TEST(engine_set_scale, defaults_set_absolute_scale_and_move_descendants_once_without_scheduling);
 REGISTER_TEST(engine_set_scale, hierarchy_can_keep_children_in_place_while_changing_their_parent_scale);
 REGISTER_TEST(engine_set_scale, local_axes_under_nonuniform_parents_keep_the_world_pivot);

@@ -712,7 +712,8 @@ static bool eng_draw_sprite3d(nmo_engine_t *engine, const eng_entity_t *entity, 
     const eng_sprite3d_t *state = eng_sprite3d(engine,entity->id);
     if (state == NULL) return false;
     nmo_object_id_t material_id = state->material;
-    eng_material_t *material = material_id != 0 ? eng_material(engine, material_id) : NULL;
+    eng_material_t *material = material_id != 0 && eng_map_get(&engine->destroyed,material_id) < 0
+        ? eng_material(engine, material_id) : NULL;
     if (material == NULL) {
         return true; /* only a sprite with a material joins a batch */
     }
