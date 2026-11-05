@@ -629,6 +629,27 @@ static const char *keyboard_resolve_file(void *data, const char *name)
     (void)name; return data;
 }
 
+TEST(engine_input, loaded_tt_joystick_vector_mappers_and_copies_keep_live_input_assignments_and_cached_output)
+{
+    tt_vector_mapper_fixture_t source; tt_vector_mapper_begin(&source); ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(source.f.tx,source.input_value,"3,-2,-0.75")); const int32_t saved_mappings[] = {4,5,2,3}; for (size_t i = 0; i < 4; i++) { char text[16]; snprintf(text,sizeof(text),"%d",saved_mappings[i]); ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(source.f.tx,source.mappings[i],text)); } fixture_commit_bare(&source.f,NULL);
+    nmo_beobject_state_t *owner = fixture_state(&source.f,source.f.owner_id); owner->has_single_activity = 1; owner->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE; nmo_behavior_state_t *script = fixture_state(&source.f,source.f.script_id); script->has_single_activity = 1; script->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE | CK_SCENEOBJECT_START_RESET; const char *path = NMO_TEST_SCRATCH_FILE("engine_tt_joystick_vector_mapper.cmo"); ASSERT_EQ(NMO_OK,nmo_session_save_file(source.f.session,path,NULL,NULL));
+    for (int started = 0; started < 2; started++) {
+        tt_vector_mapper_fixture_t g = {0}; fixture_begin_document(&g.f); fixture_begin_edit(&g.f); nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL; fixture_commit(&g.f,&options); if (started) ASSERT_EQ(NMO_OK,nmo_engine_start(g.f.engine,NMO_ENGINE_START_ALL)); nmo_engine_set_file_resolver(g.f.engine,keyboard_resolve_file,(void *)path); int32_t file = -1; ASSERT_EQ(NMO_OK,nmo_engine_load(g.f.engine,"vector-mapper.cmo",true,&file));
+        g.block = nmo_engine_object_named(g.f.engine,"TT_JoystickVectorMapper",NMO_CID_BEHAVIOR); ASSERT_TRUE(g.block != 0); const eng_module_t *module = eng_module_of(g.f.engine,g.block,NULL); g.f.owner_id = eng_module_id(module,source.f.owner_id); g.f.script_id = eng_module_id(module,source.f.script_id); g.done = eng_module_id(module,source.done); g.input_value = eng_module_id(module,source.input_value); g.output = eng_module_id(module,source.output); for (size_t i = 0; i < 4; i++) g.mappings[i] = eng_module_id(module,source.mappings[i]); if (!started) ASSERT_EQ(NMO_OK,nmo_engine_start(g.f.engine,NMO_ENGINE_START_SCENE_DEFAULT)); tt_vector_mapper_step(&g,(float[3]){-.75f,-2,0});
+        const int32_t mappings[] = {2,3,4,5}; tt_vector_mapper_fire(&g,(float[3]){9,.5f,-.25f},mappings,(float[3]){.5f,-.25f,0}); nmo_object_id_t ids[] = {g.f.owner_id,g.f.script_id,g.block,g.done,g.input_value,g.mappings[0],g.mappings[1],g.mappings[2],g.mappings[3],g.output}, copies[10] = {0}; ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(g.f.engine,ids,10,false,copies)); for (size_t i = 0; i < 10; i++) ASSERT_TRUE(copies[i] != 0); for (size_t i = 0; i < 10; i++) nmo_engine_destroy_object(g.f.engine,ids[i]);
+        g.f.owner_id = copies[0]; g.f.script_id = copies[1]; g.block = copies[2]; g.done = copies[3]; g.input_value = copies[4]; for (size_t i = 0; i < 4; i++) { g.mappings[i] = copies[5+i]; int32_t value = -1; read_value(&g.f,g.mappings[i],&value,sizeof(value)); ASSERT_EQ(mappings[i],value); } g.output = copies[9]; g.calls = runs(&g.f,g.block); tt_vector_mapper_value(&g,(float[3]){.5f,-.25f,0}); ASSERT_EQ(NMO_OK,nmo_engine_activate_script(g.f.engine,g.f.script_id,true,true)); tt_vector_mapper_step(&g,(float[3]){.5f,-.25f,0}); tt_vector_mapper_fire(&g,(float[3]){-9,-.5f,.25f},NULL,(float[3]){-.5f,.25f,0}); fixture_end(&g.f);
+    }
+    for (size_t i = 0; i < 4; i++) { const nmo_parameter_state_t *parameter = fixture_state(&source.f,source.mappings[i]); ASSERT_EQ(sizeof(int32_t),parameter->buffer_data.count); ASSERT_TRUE(memcmp(parameter->buffer_data.data,saved_mappings+i,sizeof(int32_t)) == 0); } fixture_end(&source.f); remove(path);
+}
+
+TEST(engine_input, joystick_waiter_vector_mapper_and_translate_deliver_current_remapped_axes_in_one_frame)
+{
+    joystick_waiter_fixture_t g; joystick_waiter_begin(&g); joystick_waiter_configure(&g,1,0,0); nmo_object_id_t mapper = fixture_block(&g.f,GUID_TT_JOYSTICK_VECTOR_MAPPER,"Map Joystick Axes"), translate = fixture_block(&g.f,NMO_GUID(0x000d000d,0x000d000d),"Translate Remapped Joystick"); ASSERT_TRUE(mapper != 0 && translate != 0); ASSERT_EQ(NMO_OK,nmo_script_edit_connect_parameter(g.f.tx,g.values[0],BLOCK_PIN(&g.f,mapper,0))); const int32_t mappings[] = {2,3,4,5}; for (size_t i = 0; i < 4; i++) fixture_input_int(&g.f,BLOCK_PIN(&g.f,mapper,i+1),mappings[i]); fixture_input_int(&g.f,fixture_target(&g.f,translate),(int32_t)g.f.owner_id); fixture_input_int(&g.f,BLOCK_PIN(&g.f,translate,1),0); ASSERT_EQ(NMO_OK,nmo_script_edit_connect_parameter(g.f.tx,BLOCK_POUT(&g.f,mapper,0),BLOCK_PIN(&g.f,translate,0))); fixture_link(&g.f,BLOCK_OUT(&g.f,g.block,1),BLOCK_IN(&g.f,mapper,0),0); fixture_link(&g.f,BLOCK_OUT(&g.f,mapper,0),BLOCK_IN(&g.f,translate,0),0); joystick_waiter_ready(&g); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.number_value,&(int32_t){3},sizeof(int32_t)));
+    nmo_engine_joystick_state_t decoy = {.attached = true,.position = {1,2,3},.point_of_view = -1}, selected = {.attached = true,.position = {.75f,.25f,-.5f},.point_of_view = -1}; nmo_engine_set_joystick(g.f.engine,0,&decoy); nmo_engine_set_joystick(g.f.engine,3,&selected); joystick_waiter_step(&g,2,&selected); float matrix[16]; ASSERT_TRUE(nmo_engine_entity_world_matrix(g.f.engine,g.f.owner_id,matrix)); ASSERT_FLOAT_EQ(.25f,matrix[12],1e-6f); ASSERT_FLOAT_EQ(-.5f,matrix[13],1e-6f); ASSERT_FLOAT_EQ(0,matrix[14],1e-6f); ASSERT_EQ(1u,runs(&g.f,mapper)); ASSERT_EQ(1u,runs(&g.f,translate));
+    selected.position[0] = -.75f; selected.position[1] = -.5f; selected.position[2] = .25f; nmo_engine_set_joystick(g.f.engine,3,&selected); joystick_waiter_step(&g,2,&selected); ASSERT_TRUE(nmo_engine_entity_world_matrix(g.f.engine,g.f.owner_id,matrix)); ASSERT_FLOAT_EQ(-.25f,matrix[12],1e-6f); ASSERT_FLOAT_EQ(-.25f,matrix[13],1e-6f); ASSERT_FLOAT_EQ(0,matrix[14],1e-6f); ASSERT_EQ(2u,runs(&g.f,mapper)); ASSERT_EQ(2u,runs(&g.f,translate));
+    selected.position[0] = .5f; selected.position[1] = selected.position[2] = 99; nmo_engine_set_joystick(g.f.engine,3,&selected); joystick_waiter_step(&g,1,&selected); ASSERT_EQ(2u,runs(&g.f,mapper)); ASSERT_EQ(2u,runs(&g.f,translate)); ASSERT_TRUE(nmo_engine_entity_world_matrix(g.f.engine,g.f.owner_id,matrix)); ASSERT_FLOAT_EQ(-.25f,matrix[12],1e-6f); ASSERT_FLOAT_EQ(-.25f,matrix[13],1e-6f); ASSERT_FLOAT_EQ(0,matrix[14],1e-6f); fixture_end(&g.f);
+}
+
 TEST(engine_input, loaded_joystick_waiters_and_copies_preserve_versions_layouts_settings_and_relative_history)
 {
     for (int legacy = 0; legacy < 2; legacy++) {
@@ -993,6 +1014,9 @@ TEST(engine_input, tt_input_string_keeps_editing_past_enter)
 }
 
 TEST_MAIN_BEGIN()
+REGISTER_TEST(engine_input, loaded_tt_joystick_vector_mappers_and_copies_keep_live_input_assignments_and_cached_output);
+REGISTER_TEST(engine_input, joystick_waiter_vector_mapper_and_translate_deliver_current_remapped_axes_in_one_frame);
+
 REGISTER_TEST(engine_input, tt_joystick_vector_mapper_later_active_assignments_replace_rather_than_accumulate);
 REGISTER_TEST(engine_input, tt_joystick_vector_mapper_ignores_invalid_selectors_and_clears_all_previous_output_components);
 REGISTER_TEST(engine_input, tt_joystick_vector_mapper_nonnegative_zero_can_overwrite_an_active_nonzero_mapping);
