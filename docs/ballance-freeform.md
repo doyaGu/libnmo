@@ -447,6 +447,46 @@ unknown parameters are errors; expansion is limited to 4,096 pieces.
 elements and branches. `repeat` continues each copy from the previous
 copy's exit. Parameterize named branch targets to keep repeated names unique.
 
+## Instance overrides and placement
+
+Use route `schema_version: 1` and give template calls and their pieces stable
+`id` values before storing per-instance edits. Top-level `overrides` maps an expanded entity ID from
+`source_map.json` to a `set`/`remove` patch. For a template `strip` containing
+`{"id":"road","road":20}`, called as `{"id":"copy","use":"strip"}`:
+
+```json
+{
+  "overrides": {
+    "route/id/copy/repeat/0/id/road": {"set": {"road": 25}}
+  }
+}
+```
+
+Overrides apply after parameter substitution and mirroring, in the expanded
+leaf's incoming local frame. Only that instance changes. Patches cannot change
+IDs, geometry kinds or branch topology, and a field cannot appear in both `set`
+and `remove`. An override whose instance disappeared is an error; restore the
+instance or remove its override explicitly. Changing a shared definition still
+changes every call that uses it.
+
+Top-level `placements` maps a route entity ID to an entry pose:
+
+```json
+{
+  "placements": {
+    "route/id/landing": {"position": [20, 5, -10], "heading": [1, 0]}
+  }
+}
+```
+
+Position is world `[x, y, z]` at the route's V-bottom datum. Heading is a finite
+unit `[x, z]` direction. Grid pieces retain 90-degree headings; `rail_path`, `floor_path`,
+`floor_polygon` and `connector` permit arbitrary horizontal headings. Placement checks the real
+previous exit against the moved entry. Disconnected joints are recorded in
+`connections.json` and fail the connection check; the builder does not invent a
+connection to hide a gap. Native mechanism placement and physics use the separate
+[instance settings](ballance-native-resources.md#per-instance-placement-and-physics).
+
 ## Build and validate
 
 Geometry and route tests do not need a game installation:
