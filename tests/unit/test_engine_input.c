@@ -4,6 +4,7 @@
 #include "behavior/nmo_behavior_view.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
+#include "object/builtin/nmo_parameter_schemas.h"
 
 #define GUID_NOP NMO_GUID(0x302561c4, 0x0d282980)
 #define GUID_KEY_EVENT NMO_GUID(0x1af2274b, 0x6b8c1524)
@@ -108,6 +109,26 @@ TEST(engine_input, keyboard_controller_truncated_tables_fail_before_sending_any_
     for (size_t i = 0; i < sizeof(sizes)/sizeof(sizes[0]); i++) {
         keyboard_fixture_t g; keyboard_begin(&g); keyboard_ready(&g); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.table,table,sizes[i])); nmo_engine_set_key(g.f.engine,0xd2,true); ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,nmo_engine_step(g.f.engine,0)); nmo_engine_event_t failure; ASSERT_TRUE(nmo_engine_failure(g.f.engine,&failure)); ASSERT_EQ(g.block,failure.behavior_id); ASSERT_EQ(NMO_ENGINE_BR_PARAMETERERROR,failure.result); ASSERT_TRUE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,0))); ASSERT_EQ(0u,g.f.engine->messages.sent.count); fixture_end(&g.f);
     }
+}
+
+static const char *keyboard_resolve_file(void *data, const char *name)
+{
+    (void)name; return data;
+}
+
+TEST(engine_input, loaded_keyboard_controllers_rebuild_message_ids_and_copies_keep_live_tables_after_source_deletion)
+{
+    keyboard_fixture_t source; keyboard_begin(&source); char text[32]; snprintf(text,sizeof(text),"%u",source.f.owner_id); ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(source.f.tx,source.target_value,text)); const int32_t obsolete[10] = {100,101,102,103,104,105,106,107,108,109}; nmo_parameter_state_t *saved = fixture_state(&source.f,source.table); nmo_array_dispose(&saved->buffer_data); ASSERT_EQ(NMO_OK,nmo_array_alloc(&saved->buffer_data,1,sizeof(obsolete),NULL)); memcpy(saved->buffer_data.data,obsolete,sizeof(obsolete)); saved->mode = CKPARAM_MODE_BUFFER; saved->has_state = true; fixture_commit_bare(&source.f,NULL);
+    nmo_beobject_state_t *owner = fixture_state(&source.f,source.f.owner_id); owner->has_single_activity = 1; owner->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE; nmo_behavior_state_t *script = fixture_state(&source.f,source.f.script_id); script->has_single_activity = 1; script->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE | CK_SCENEOBJECT_START_RESET; const char *path = NMO_TEST_SCRATCH_FILE("engine_keyboard_controller.cmo"); ASSERT_EQ(NMO_OK,nmo_session_save_file(source.f.session,path,NULL,NULL));
+    for (int started = 0; started < 2; started++) {
+        keyboard_fixture_t g = {0}; fixture_begin_document(&g.f); const char *types[] = {"Joy_Button6","Host Only","Joy_Right","Joy_Button1","Joy_Up","Joy_Button4","Joy_Left","Joy_Button3","Joy_Down","Joy_Button5","Joy_Button2"}; fixture_install_messages(&g.f,types,sizeof(types)/sizeof(types[0])); fixture_begin_edit(&g.f); nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL; fixture_commit(&g.f,&options); if (started) ASSERT_EQ(NMO_OK,nmo_engine_start(g.f.engine,NMO_ENGINE_START_ALL)); nmo_engine_set_file_resolver(g.f.engine,keyboard_resolve_file,(void *)path); int32_t file = -1; ASSERT_EQ(NMO_OK,nmo_engine_load(g.f.engine,"keyboard.cmo",true,&file));
+        g.block = nmo_engine_object_named(g.f.engine,"Keyboard Controller",NMO_CID_BEHAVIOR); ASSERT_TRUE(g.block != 0); const eng_module_t *module = eng_module_of(g.f.engine,g.block,NULL); g.f.owner_id = eng_module_id(module,source.f.owner_id); g.f.script_id = eng_module_id(module,source.f.script_id); g.target_value = eng_module_id(module,source.target_value); g.table = eng_module_id(module,source.table); if (!started) ASSERT_EQ(NMO_OK,nmo_engine_start(g.f.engine,NMO_ENGINE_START_SCENE_DEFAULT)); nmo_engine_block_t block = {g.f.engine,eng_map_get(&g.f.engine->node_map,g.block)}; nmo_engine_block_set_waiting_for_messages(&block,g.f.owner_id,true);
+        nmo_object_id_t target = 0; read_value(&g.f,g.target_value,&target,sizeof(target)); ASSERT_EQ(g.f.owner_id,target); int32_t table[10]; read_value(&g.f,g.table,table,sizeof(table)); const char *names[] = {"Joy_Left","Joy_Right","Joy_Up","Joy_Down","Joy_Button1","Joy_Button2","Joy_Button3","Joy_Button4","Joy_Button5","Joy_Button6"}; for (size_t i = 0; i < 10; i++) ASSERT_EQ(nmo_engine_message_type(g.f.engine,names[i]),table[i]); nmo_engine_set_key(g.f.engine,0x48,true); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); keyboard_received(&g,g.f.owner_id,&names[2],1);
+        table[2] = table[4]; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.table,table,sizeof(table))); nmo_object_id_t ids[] = {g.f.owner_id,g.f.script_id,g.block,g.target_value,g.table}, copies[5] = {0}; ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(g.f.engine,ids,5,false,copies)); for (size_t i = 0; i < 5; i++) ASSERT_TRUE(copies[i] != 0); for (size_t i = 0; i < 5; i++) nmo_engine_destroy_object(g.f.engine,ids[i]);
+        g.f.owner_id = copies[0]; g.f.script_id = copies[1]; g.block = copies[2]; g.target_value = copies[3]; g.table = copies[4]; block = (nmo_engine_block_t){g.f.engine,eng_map_get(&g.f.engine->node_map,g.block)}; nmo_engine_block_set_waiting_for_messages(&block,g.f.owner_id,true); read_value(&g.f,g.target_value,&target,sizeof(target)); ASSERT_EQ(g.f.owner_id,target); int32_t copied[10]; read_value(&g.f,g.table,copied,sizeof(copied)); ASSERT_EQ(table[4],copied[2]); ASSERT_EQ(NMO_OK,nmo_engine_activate_script(g.f.engine,g.f.script_id,true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); keyboard_received(&g,g.f.owner_id,&names[4],1);
+        nmo_engine_set_key(g.f.engine,0x48,false); nmo_engine_set_key(g.f.engine,0xc7,true); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); keyboard_received(&g,g.f.owner_id,&names[5],1); ASSERT_EQ(2u,runs(&g.f,g.block)); fixture_end(&g.f);
+    }
+    ASSERT_EQ(sizeof(obsolete),saved->buffer_data.count); ASSERT_TRUE(memcmp(obsolete,saved->buffer_data.data,sizeof(obsolete)) == 0); fixture_end(&source.f); remove(path);
 }
 
 TEST(engine_input, key_event_reports_presses_and_releases)
@@ -385,4 +406,5 @@ REGISTER_TEST(engine_input, keyboard_controller_invalid_targets_report_owner_err
 REGISTER_TEST(engine_input, keyboard_controller_retargets_live_groups_as_single_recipients_and_uses_the_target_as_sender);
 REGISTER_TEST(engine_input, keyboard_controller_uses_live_message_aliases_and_ignores_failed_individual_sends);
 REGISTER_TEST(engine_input, keyboard_controller_truncated_tables_fail_before_sending_any_key_messages);
+REGISTER_TEST(engine_input, loaded_keyboard_controllers_rebuild_message_ids_and_copies_keep_live_tables_after_source_deletion);
 TEST_MAIN_END()

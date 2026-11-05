@@ -10,6 +10,7 @@
 #define COUNT(a) (sizeof(a)/sizeof((a)[0]))
 #define GUID_CONTROLLER NMO_GUID(0x12874356,0x12874356)
 #define GUID_ENHANCED_CONTROLLER NMO_GUID(0x44433224,0x12874356)
+#define GUID_KEYBOARD_CONTROLLER NMO_GUID(0x43f1d000,0x1a2b3c4d)
 #define GUID_GOTO NMO_GUID(0x11223344,0xaabbccdd)
 #define GUID_NOP NMO_GUID(0x302561c4,0x0d282980)
 
@@ -437,6 +438,19 @@ TEST(engine_character_controller, goto_messages_drive_root_motion_until_arrival_
     }
 }
 
+TEST(engine_character_controller, keyboard_scan_codes_drive_both_character_controllers_with_native_frame_delivery_and_off_behavior)
+{
+    const struct { uint32_t first, second; int ordinary, enhanced; } cases[] = {
+        {0,0,0,0},{0x48,0,1,1},{0x50,0,2,2},{0xd2,0,3,3},{0xc7,0,0,4},{0xc9,0,0,5},{0xd3,0,0,6},
+        {0xcf,0,0,0},{0xd1,0,0,0},{0xd2,0xc7,3,3},{0xc7,0x48,1,4},{0xc9,0x48,1,5},{0xd3,0x48,1,1},{0xc8,0,0,0},
+    };
+    for (int enhanced = 0; enhanced < 2; enhanced++) for (size_t i = 0; i < COUNT(cases); i++) {
+        controller_fixture_t g; begin_variant(&g,true,enhanced != 0); nmo_object_id_t keyboard = fixture_block(&g.f,GUID_KEYBOARD_CONTROLLER,"Keyboard Controller"); ASSERT_TRUE(keyboard != 0); fixture_input_int(&g.f,fixture_target(&g.f,keyboard),(int32_t)g.f.owner_id); fixture_link(&g.f,g.f.script_in,BLOCK_IN(&g.f,keyboard,0),0); commit(&g); if (cases[i].first != 0) nmo_engine_set_key(g.f.engine,cases[i].first,true); if (cases[i].second != 0) nmo_engine_set_key(g.f.engine,cases[i].second,true);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(g.animations[0],eng_character_next_animation(g.f.engine,g.f.owner_id)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(g.animations[enhanced ? cases[i].enhanced : cases[i].ordinary],eng_character_active_animation(g.f.engine,g.f.owner_id)); ASSERT_EQ(2u,runs(&g.f,keyboard)); ASSERT_EQ(2u,runs(&g.f,g.block));
+        nmo_engine_block_t block = {g.f.engine,eng_map_get(&g.f.engine->node_map,keyboard)}; nmo_engine_block_activate_input(&block,1,true); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(g.animations[0],eng_character_active_animation(g.f.engine,g.f.owner_id)); ASSERT_TRUE(eng_character_automatic(g.f.engine,g.f.owner_id)); ASSERT_EQ(3u,runs(&g.f,keyboard)); ASSERT_EQ(4u,runs(&g.f,g.block)); fixture_end(&g.f);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_character_controller, message_presence_selects_animations_in_native_priority_order);
 REGISTER_TEST(engine_character_controller, enhanced_message_priority_uses_button_presence_and_protects_only_jump_and_dance);
@@ -454,4 +468,5 @@ REGISTER_TEST(engine_character_controller, invalid_message_tables_fail_after_ena
 REGISTER_TEST(engine_character_controller, non_character_owners_report_owner_error_without_consuming_inputs);
 REGISTER_TEST(engine_character_controller, loaded_and_copied_controllers_rebind_messages_and_animation_references);
 REGISTER_TEST(engine_character_controller, goto_messages_drive_root_motion_until_arrival_then_return_to_stand);
+REGISTER_TEST(engine_character_controller, keyboard_scan_codes_drive_both_character_controllers_with_native_frame_delivery_and_off_behavior);
 TEST_MAIN_END()
