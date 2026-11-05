@@ -1,5 +1,6 @@
 #include "engine_fixture.h"
 #include "../../src/engine/engine_internal.h"
+#include "core/nmo_utils.h"
 #include "object/builtin/nmo_character_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
@@ -11,6 +12,7 @@
 #define GUID_CONTROLLER NMO_GUID(0x12874356,0x12874356)
 #define GUID_ENHANCED_CONTROLLER NMO_GUID(0x44433224,0x12874356)
 #define GUID_KEYBOARD_CONTROLLER NMO_GUID(0x43f1d000,0x1a2b3c4d)
+#define GUID_KEYBOARD_MAPPER NMO_GUID(0x053b2bde,0x2f8f1d74)
 #define GUID_GOTO NMO_GUID(0x11223344,0xaabbccdd)
 #define GUID_NOP NMO_GUID(0x302561c4,0x0d282980)
 
@@ -451,6 +453,18 @@ TEST(engine_character_controller, keyboard_scan_codes_drive_both_character_contr
     }
 }
 
+TEST(engine_character_controller, custom_keyboard_mapper_bindings_drive_both_controllers_and_keep_multiple_messages_per_key)
+{
+    const struct { uint32_t key; const char *message; } bindings[] = {{0x11,"Joy_Up"},{0x1f,"Joy_Down"},{0x13,"Joy_Button1"},{0x2c,"Joy_Button2"},{0x39,"Joy_Up"},{0x39,"Joy_Button3"},{0x2e,"Joy_Button4"}};
+    const struct { uint32_t first, second; int ordinary, enhanced; } cases[] = {{0,0,0,0},{0x11,0,1,1},{0x1f,0,2,2},{0x13,0,3,3},{0x2c,0,0,4},{0x39,0,1,5},{0x2e,0,0,6},{0x11,0x2c,1,4},{0x39,0x13,3,3}};
+    for (int enhanced = 0; enhanced < 2; enhanced++) for (size_t i = 0; i < COUNT(cases); i++) {
+        controller_fixture_t g; begin_variant(&g,true,enhanced != 0); nmo_object_id_t mapper = fixture_block(&g.f,GUID_KEYBOARD_MAPPER,"Custom Keyboard Mapper"); ASSERT_TRUE(mapper != 0); fixture_input_int(&g.f,fixture_target(&g.f,mapper),(int32_t)g.f.owner_id); const nmo_behavior_state_t *state = fixture_state(&g.f,mapper); nmo_parameter_state_t *data = fixture_state(&g.f,nmo_behavior_ref_array_get_id(&state->local_parameters,0)); nmo_array_dispose(&data->buffer_data); ASSERT_EQ(NMO_OK,nmo_array_alloc(&data->buffer_data,1,40*COUNT(bindings),NULL)); memset(data->buffer_data.data,0,40*COUNT(bindings)); data->mode = CKPARAM_MODE_BUFFER; data->has_state = true;
+        for (size_t j = 0; j < COUNT(bindings); j++) { uint8_t *record = (uint8_t *)data->buffer_data.data+40*j; nmo_write_u32_le(record,bindings[j].key); nmo_write_u32_le(record+4,UINT32_MAX); memcpy(record+8,bindings[j].message,strlen(bindings[j].message)); } ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(g.f.tx,nmo_behavior_ref_array_get_id(&state->local_parameters,1),"7")); fixture_link(&g.f,g.f.script_in,BLOCK_IN(&g.f,mapper,0),0); commit(&g); if (cases[i].first != 0) nmo_engine_set_key(g.f.engine,cases[i].first,true); if (cases[i].second != 0) nmo_engine_set_key(g.f.engine,cases[i].second,true);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(g.animations[0],eng_character_next_animation(g.f.engine,g.f.owner_id)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(g.animations[enhanced ? cases[i].enhanced : cases[i].ordinary],eng_character_active_animation(g.f.engine,g.f.owner_id)); ASSERT_FALSE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,mapper,0))); ASSERT_EQ(2u,runs(&g.f,mapper));
+        nmo_engine_block_t block = {g.f.engine,eng_map_get(&g.f.engine->node_map,mapper)}; nmo_engine_block_activate_input(&block,1,true); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(g.animations[0],eng_character_active_animation(g.f.engine,g.f.owner_id)); ASSERT_TRUE(eng_character_automatic(g.f.engine,g.f.owner_id)); ASSERT_EQ(3u,runs(&g.f,mapper)); fixture_end(&g.f);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_character_controller, message_presence_selects_animations_in_native_priority_order);
 REGISTER_TEST(engine_character_controller, enhanced_message_priority_uses_button_presence_and_protects_only_jump_and_dance);
@@ -469,4 +483,5 @@ REGISTER_TEST(engine_character_controller, non_character_owners_report_owner_err
 REGISTER_TEST(engine_character_controller, loaded_and_copied_controllers_rebind_messages_and_animation_references);
 REGISTER_TEST(engine_character_controller, goto_messages_drive_root_motion_until_arrival_then_return_to_stand);
 REGISTER_TEST(engine_character_controller, keyboard_scan_codes_drive_both_character_controllers_with_native_frame_delivery_and_off_behavior);
+REGISTER_TEST(engine_character_controller, custom_keyboard_mapper_bindings_drive_both_controllers_and_keep_multiple_messages_per_key);
 TEST_MAIN_END()
