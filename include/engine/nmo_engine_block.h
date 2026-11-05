@@ -35,6 +35,7 @@ typedef struct nmo_engine_block nmo_engine_block_t;
 #define NMO_ENGINE_MSG_RESUME 6u
 #define NMO_ENGINE_MSG_RESET 9u
 #define NMO_ENGINE_MSG_LOAD 11u
+#define NMO_ENGINE_MSG_EDITED 12u
 #define NMO_ENGINE_MSG_ACTIVATESCRIPT 16u
 #define NMO_ENGINE_MSG_DEACTIVATESCRIPT 17u
 
@@ -44,7 +45,7 @@ typedef int (*nmo_engine_block_callback_fn)(nmo_engine_block_t *block, uint32_t 
 typedef struct nmo_engine_block_desc {
     nmo_guid_t guid;                       /* prototype GUID */
     const char *name;
-    nmo_engine_block_fn function;
+    nmo_engine_block_fn function; /* optional for a block with only an editor callback */
     nmo_engine_block_callback_fn callback; /* optional */
     void *user_data;
 } nmo_engine_block_desc_t;
@@ -56,8 +57,16 @@ typedef struct nmo_engine_block_desc {
 NMO_API nmo_status_t nmo_engine_register_block(nmo_engine_t *engine,
                                                const nmo_engine_block_desc_t *desc);
 
-/** True when the engine has a function for prototype `guid`. */
+/** True when the engine has registered the prototype, including callback-only blocks. */
 NMO_API bool nmo_engine_has_block(const nmo_engine_t *engine, nmo_guid_t guid);
+/**
+ * Send CKM_BEHAVIOREDITED to one registered building block, before or after
+ * start. The caller has already set its runtime parameter values. This does
+ * not execute the graph or change the document. `out_result`, when non-NULL,
+ * receives the callback's CKBEHAVIOR_RETURN (OK when it has no callback).
+ */
+NMO_API nmo_status_t nmo_engine_notify_behavior_edited(nmo_engine_t *engine,
+    nmo_object_id_t behavior_id, int32_t *out_result);
 
 /* ---- The block being executed ---- */
 

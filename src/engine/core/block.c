@@ -26,7 +26,7 @@ static eng_block_entry_t *eng_find_block(const nmo_engine_t *engine, nmo_guid_t 
 
 nmo_status_t nmo_engine_register_block(nmo_engine_t *engine, const nmo_engine_block_desc_t *desc)
 {
-    if (engine == NULL || desc == NULL || desc->function == NULL ||
+    if (engine == NULL || desc == NULL || (desc->function == NULL && desc->callback == NULL) ||
         nmo_guid_is_null(desc->guid)) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -57,6 +57,20 @@ nmo_status_t nmo_engine_register_block(nmo_engine_t *engine, const nmo_engine_bl
 bool nmo_engine_has_block(const nmo_engine_t *engine, nmo_guid_t guid)
 {
     return engine != NULL && eng_find_block(engine, guid) != NULL;
+}
+
+nmo_status_t nmo_engine_notify_behavior_edited(nmo_engine_t *engine,
+    nmo_object_id_t behavior_id, int32_t *out_result)
+{
+    if (engine == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    int32_t index = eng_map_get(&engine->node_map,behavior_id);
+    if (index < 0 || !engine->nodes.data[index].is_block || eng_map_get(&engine->destroyed,behavior_id) >= 0) return NMO_ERR_NOT_FOUND;
+    eng_node_t *node = &engine->nodes.data[index];
+    if (!engine->started) { node->block = eng_find_block(engine,node->prototype); node->fn = node->block != NULL ? node->block->desc.function : NULL; }
+    if (node->block == NULL) return NMO_ERR_NOT_SUPPORTED;
+    int result = eng_block_callback(engine,index,NMO_ENGINE_MSG_EDITED);
+    if (out_result != NULL) *out_result = result;
+    return NMO_OK;
 }
 
 /* Give every building block the function registered for its prototype. */

@@ -133,6 +133,10 @@ static int eng_execute_function(nmo_engine_t *engine, int32_t index)
 {
     eng_node_t *node = eng_node(engine, index);
     if (node->fn == NULL) {
+        if (node->block != NULL) {
+            node->flags &= ~(uint32_t)CKBEHAVIOR_ACTIVE;
+            return NMO_ENGINE_BR_GENERICERROR; /* CKBehavior::ExecuteFunction has no function. */
+        }
         return eng_execute_unknown(engine, index);
     }
     engine->profile.frame.building_blocks_executed++;
