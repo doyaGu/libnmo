@@ -94,9 +94,21 @@ TEST(engine_portal_management, projected_boxes_preserve_native_near_plane_expans
     for (size_t i = 0; i < COUNT(low); i++) ASSERT_FALSE(eng_project_box(&projection,&low[i],&high[i],&extents)); ASSERT_FALSE(eng_project_box(&projection,&(eng_vector_t){NAN,0,0},&(eng_vector_t){1,1,1},&extents)); fixture_end(&g.f);
 }
 
+TEST(engine_portal_management, entities_without_scripts_keep_start_runtime_and_copy_scene_activity)
+{
+    for (int all = 0; all < 2; all++) {
+        portal_fixture_t g; begin(&g); nmo_beobject_state_t *portal = fixture_state(&g.f,g.portal[0]); portal->has_single_activity = 1; portal->single_activity_flags = CK_SCENEOBJECT_START_DEACTIVATE;
+        fixture_begin_edit(&g.f); fixture_commit(&g.f,NULL); ASSERT_EQ(NMO_OK,nmo_engine_start(g.f.engine,all ? NMO_ENGINE_START_ALL : NMO_ENGINE_START_SCENE_DEFAULT));
+        ASSERT_EQ(all != 0,nmo_engine_object_is_active(g.f.engine,g.portal[0])); ASSERT_EQ(NMO_OK,nmo_engine_activate_object(g.f.engine,g.portal[0],false)); ASSERT_FALSE(nmo_engine_object_is_active(g.f.engine,g.portal[0]));
+        nmo_object_id_t copy = 0; ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(g.f.engine,&g.portal[0],1,false,&copy)); ASSERT_TRUE(copy != 0); ASSERT_FALSE(nmo_engine_object_is_active(g.f.engine,copy));
+        ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(g.f.engine,&g.portal[0],1,true,&copy)); ASSERT_TRUE(nmo_engine_object_is_active(g.f.engine,copy)); ASSERT_EQ(NMO_OK,nmo_engine_activate_object(g.f.engine,g.portal[0],true)); ASSERT_TRUE(nmo_engine_object_is_active(g.f.engine,g.portal[0])); fixture_end(&g.f);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_portal_management, hierarchy_bounds_exclude_empty_parents_and_follow_live_descendants);
 REGISTER_TEST(engine_portal_management, camera_projection_uses_native_aspect_near_origin_and_runtime_clipping_planes);
 REGISTER_TEST(engine_portal_management, orthographic_boxes_use_zoom_and_transformed_camera_axes);
 REGISTER_TEST(engine_portal_management, projected_boxes_preserve_native_near_plane_expansion_and_reject_separated_frusta);
+REGISTER_TEST(engine_portal_management, entities_without_scripts_keep_start_runtime_and_copy_scene_activity);
 TEST_MAIN_END()

@@ -36,6 +36,7 @@ typedef struct eng_entity {
     int32_t parent;
     int32_t first_child, last_child;
     int32_t next_sibling, prev_sibling;
+    bool scene_active; /* Scene activity also exists on entities without scripts. */
     bool destroyed;
 } eng_entity_t;
 

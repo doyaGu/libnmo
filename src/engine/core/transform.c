@@ -267,6 +267,7 @@ static int32_t eng_entity_add(nmo_engine_t *engine, nmo_object_id_t id, const fl
         return -1;
     }
     entity->id = id;
+    entity->scene_active = true;
     if (world != NULL) {
         memcpy(entity->world.m, world, sizeof(entity->world.m));
     } else {

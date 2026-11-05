@@ -638,6 +638,7 @@ static void copy_entity(nmo_engine_t *engine, const copy_set_t *set, const nmo_o
     eng_matrix_t world = engine->entities.data[from].world;
     engine->entities.data[to].animation_lod = engine->entities.data[from].animation_lod;
     engine->entities.data[to].entity_flags = engine->entities.data[from].entity_flags;
+    engine->entities.data[to].scene_active = false; /* CopySession activates it when it joins its source's scene. */
     engine->entities.data[to].moveable_flags = (engine->entities.data[to].moveable_flags & ~CK_3DENTITY_IGNOREANIMATION) |
         (engine->entities.data[from].moveable_flags & CK_3DENTITY_IGNOREANIMATION);
     nmo_object_id_t exclusive = engine->entities.data[from].exclusive_animation;

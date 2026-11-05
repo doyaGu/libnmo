@@ -203,6 +203,11 @@ nmo_status_t nmo_engine_start(nmo_engine_t *engine, nmo_engine_start_mode_t mode
         }
     }
     bool has_scene = mode == NMO_ENGINE_START_SCENE_DEFAULT && engine->has_level_scene;
+    for (size_t i = 0; i < engine->entities.count; i++) {
+        eng_entity_t *entity = &engine->entities.data[i];
+        entity->scene_active = mode != NMO_ENGINE_START_SCENE_DEFAULT ||
+            (has_scene ? eng_scene_starts_active(scene,scene_count,entity->id) : eng_object_starts_active(engine,entity->id));
+    }
     for (size_t o = 0; o < engine->objects.count; o++) {
         eng_object_t *object = &engine->objects.data[o];
         object->active = mode != NMO_ENGINE_START_SCENE_DEFAULT ||
@@ -288,9 +293,11 @@ nmo_status_t nmo_engine_activate_object(nmo_engine_t *engine, nmo_object_id_t ob
     if (engine == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
+    int32_t entity = eng_entity_index(engine,object_id);
+    if (entity >= 0) engine->entities.data[entity].scene_active = active;
     int32_t index = eng_map_get(&engine->object_map, object_id);
     if (index < 0) {
-        return NMO_OK; /* no script: nothing for the behavior manager to do */
+        return NMO_OK; /* An entity without scripts still has scene activity. */
     }
     /* CKScene::ActivateBeObject in the current scene: its scripts' blocks hear of it */
     eng_object_t *object = &engine->objects.data[index];
@@ -313,7 +320,9 @@ bool nmo_engine_object_is_active(const nmo_engine_t *engine, nmo_object_id_t obj
         return false;
     }
     int32_t index = eng_map_get(&engine->object_map, object_id);
-    return index < 0 || engine->objects.data[index].active;
+    if (index >= 0) return engine->objects.data[index].active;
+    int32_t entity = eng_entity_index(engine,object_id);
+    return entity < 0 || engine->entities.data[entity].scene_active;
 }
 
 /* The activity flags an object or script was saved with; false when it has none. */
@@ -406,11 +415,11 @@ void eng_add_module_to_level(nmo_engine_t *engine, int32_t module)
         if (eng_saved_activity(engine, id, &flags) && (flags & CK_SCENEOBJECT_INTERNAL_IC) != 0) {
             eng_save_ic(engine, id);
         }
+        eng_add_to_scene(engine, id, false);
         int32_t index = eng_map_get(&engine->object_map, id);
         if (index < 0) {
             continue; /* no script: nothing for the behavior manager */
         }
-        eng_add_to_scene(engine, id, false);
         const eng_object_t *object = &engine->objects.data[index];
         for (uint32_t s = 0; s < object->script_count; s++) {
             int32_t script = *eng_index(engine, object->first_script + s);
