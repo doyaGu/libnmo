@@ -7,6 +7,9 @@ For curves, multiway platforms, connectors and scenery attachment rules,
 see [Free-form Ballance geometry](ballance-freeform.md). Named mechanisms,
 extraction provenance and motion checks are covered in
 [Ballance native resources and motion](ballance-native-resources.md).
+Use [passage and landing constraints](ballance-spatial-constraints.md) to
+reserve play space, and [actions and replayable scenarios](ballance-gameplay-scenarios.md)
+to check mechanism completion, incorrect conditions and recovery.
 
 The tools are Python scripts. They read and write levels through the `nmo`
 CLI (`--nmo`, or `$NMO`, or `nmo` on `PATH`) and take the game's meshes and
@@ -56,10 +59,10 @@ apps/ballance/scripts/ballance_play_level.py <out>
 | `route.json`, `build_info.json` | Source route snapshot, generator identity and hashes of the generation's inputs |
 | `build_attempt.json` | Present while a build is pending or after failure; absent from a successful generation |
 | `source_map.json` | Generated objects and route entities mapped to authored pieces |
-| `connections.json` | Ports, joins and explicit transitions |
-| `spatial_constraints.json`, `scenery_placement.json` | Spatial reservations, attachment bindings and placement decisions |
+| `connections.json` | Ports, known slopes, joins and generated endpoint transitions |
+| `spatial_constraints.json`, `scenery_placement.json` | Spatial reservations, resolved floor and landing corridors, attachment bindings and placement decisions |
 | `resources.json` | Native descriptions, source provenance and placed instances |
-| `gameplay_contracts.json` | Resolved passage conditions, events and dependencies |
+| `gameplay_contracts.json` | Resolved passage conditions, events, sustained native actions and dependencies |
 | `death_zones.json` | Death-zone policy and generated volumes |
 | `route_points.json` | The points along the middle of the track, start to balloon, for the autopilot |
 | `route_sectors.json` | Each sector's start: the ball the player has there and the index of its first point |
@@ -197,6 +200,12 @@ reported.
 
 For a built folder, verification also checks build identity, native resource
 provenance, connections, scenery attachments and mechanism reservations.
+Its `clearance` check sweeps the ball against physical world triangles and
+checks support along declared floor corridors and landing discs. It also
+checks native motion against those corridors, including contacts inside the
+owning assembly. Missing support or penetration on an authored passage fails;
+conservative nominal-rail and motion findings remain for review. See the
+[spatial reference](ballance-spatial-constraints.md) for sampling and coverage limits.
 Older folders without the route snapshot or build record retain explicit
 skipped or unavailable checks; rebuild them to obtain current coverage.
 An original NMO file supports static geometry checks. `--play` requires a
@@ -219,8 +228,17 @@ looked for. It writes `run.log`, `steer.csv` and `physics.csv` there and reports
 - each extra point or life the ball never came within 4 of before the
   finish. Every reward should lie where a ball can get to it.
 
-Gameplay conditions and recorded mechanism poses are checked through the
-finish frame. Reward checks measure proximity, not changes to the score.
+Gameplay conditions, recorded mechanism poses and declared landings are
+checked through the finish frame. `landings` requires a continuous observation
+of the same ball from the upper departure to the lower disc and height layer.
+Action contracts can require a sustained native hinge angle or fan-driven
+ball rise. Reward checks measure proximity, not changes to the score.
+
+Use `ballance_verify_scenarios.py` for bounded correct-play, blocked-condition
+and death-recovery cases. It has its own per-case traces and verdicts; a
+successful full-route run does not substitute for these checks. The
+[scenario reference](ballance-gameplay-scenarios.md) describes the suite
+format and the conditions under which a negative result counts as evidence.
 
 `validation.json` keeps each check's status and findings. `--report FILE`
 chooses another output path, including for original NMO files; `--json`
@@ -364,17 +382,20 @@ using only those before it:
 
 | Layer | Contents |
 |-------|----------|
-| `core` | Frames, paths, ports, polygon triangulation, motion and spatial queries, project identity, evidence and the nmo CLI |
+| `core` | Frames, paths, polygon triangulation, triangle-distance and spatial queries, motion, project identity, evidence and the nmo CLI |
 | `game` | The groups, element kinds and mechanisms, the measured dimensions (`measures.py`), the materials |
 | `kit` | Floors on the 2.5 grid, pieces off the grid, rails, railings |
-| `route` | A route laid out (`layout`, `pieces`, `modules`), its fall zones and clashes, written as a manifest |
+| `route` | Layout, ports and endpoint solvers, floor and landing reservations, native action contracts, fall zones and manifest generation |
 | `extract` | The element meshes and floors cut from the originals, the materials, the level checks |
 | `autoplay` | Paths over a level's ground, as autopilot points |
-| `verify` | Geometry, resources, scenery, motion, gameplay contracts, original-level probes and full-route play |
+| `verify` | Geometry, clearance and landing traces, resources, scenery, motion, gameplay contracts, replayable scenarios and full-route play |
 | `view` | Drawing levels |
 
 ## Not Covered Yet
 
+- Declared floor passages do not cover every platform route. Support gaps
+  between samples, ballistic prediction, camera clearance and exhaustive
+  shortcut or soft-lock detection remain outside the checks.
 - No generated level has been loaded in the original game. They are played
   only in libnmo's engine.
 - Level_05's pusher frame slides back when the ball stops pushing it; only

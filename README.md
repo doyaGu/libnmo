@@ -478,6 +478,10 @@ cc app.c $(pkg-config --cflags libnmo-lua libnmo-project) $(pkg-config --static 
   paths, connectors, holed platforms, scenery attachments and route templates.
 - [Ballance Native Resources and Motion](docs/ballance-native-resources.md):
   extraction provenance, placement entries, motion contracts and original-level probes.
+- [Ballance Passage and Landing Constraints](docs/ballance-spatial-constraints.md):
+  floor support, ball clearance, cross-layer arrivals and passage motion rules.
+- [Ballance Actions and Replayable Scenarios](docs/ballance-gameplay-scenarios.md):
+  native action conditions, bounded negative cases and checkpoint recovery.
 - [Ballance Test Base](docs/plans/2026-11-02-ballance-test-base.md): implemented
   native gameplay loading, sector starts and local contact probes.
 
