@@ -181,6 +181,11 @@ TEST(engine_character_controller, enhanced_truncated_message_tables_fail_after_e
     }
 }
 
+TEST(engine_character_controller, enhanced_message_aliases_use_the_first_matching_slot_in_the_live_local_table)
+{
+    controller_fixture_t g; begin_variant(&g,true,true); commit(&g); int32_t table[11]; read_value(&g.f,local(&g),table,sizeof(table)); table[2] = table[4]; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,local(&g),table,sizeof(table))); send(&g,"Joy_Button1"); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(g.animations[1],eng_character_active_animation(g.f.engine,g.f.owner_id)); ASSERT_TRUE(eng_animation_playback_state(g.f.engine,g.animations[3])->flags & CKANIMATION_CANBEBREAK); fixture_end(&g.f);
+}
+
 TEST(engine_character_controller, turns_use_active_rates_without_permission_or_clock_gates_and_prefer_right)
 {
     const struct { bool active; float rate; const char *first,*second; float angle; } cases[] = {
@@ -308,81 +313,93 @@ static const char *resolve_file(void *data, const char *name)
     (void)name; return data;
 }
 
-static void expect_message_table(nmo_engine_t *engine, nmo_object_id_t block)
+static void expect_message_table(nmo_engine_t *engine, nmo_object_id_t block, bool enhanced)
 {
     const nmo_behavior_state_t *state = nmo_object_get_state(eng_find_object(engine,block));
     nmo_object_id_t parameter = eng_module_id(eng_module_of(engine,block,NULL),nmo_behavior_ref_array_get_id(&state->local_parameters,0));
     const void *data = NULL; size_t size = 0;
-    ASSERT_EQ(NMO_OK,nmo_engine_param_value(engine,parameter,&data,&size,NULL)); ASSERT_EQ(7*sizeof(int32_t),size);
-    int32_t table[7]; memcpy(table,data,sizeof(table));
-    const char *names[] = {"Joy_Left","Joy_Right","Joy_Up","Joy_Down","Joy_Button1","Joy_Button2"};
-    for (size_t i = 0; i < COUNT(names); i++) ASSERT_EQ(nmo_engine_message_type(engine,names[i]),table[i]);
-    ASSERT_EQ(0,table[6]);
+    size_t count = enhanced ? 10 : 6; ASSERT_EQ(NMO_OK,nmo_engine_param_value(engine,parameter,&data,&size,NULL)); ASSERT_EQ((count+1)*sizeof(int32_t),size);
+    int32_t table[11]; memcpy(table,data,size);
+    const char *names[] = {"Joy_Left","Joy_Right","Joy_Up","Joy_Down","Joy_Button1","Joy_Button2","Joy_Button3","Joy_Button4","Joy_Button5","Joy_Button6"};
+    for (size_t i = 0; i < count; i++) ASSERT_EQ(nmo_engine_message_type(engine,names[i]),table[i]);
+    ASSERT_EQ(0,table[count]);
 }
 
 TEST(engine_character_controller, loaded_and_copied_controllers_rebind_messages_and_animation_references)
 {
-    controller_fixture_t g; begin(&g,true);
-    nmo_object_id_t sources[4];
-    for (size_t i = 0; i < COUNT(sources); i++) { sources[i] = saved_animation(&g,i); ASSERT_TRUE(sources[i] != 0); }
-    const int32_t obsolete[] = {123456,123457,123458,123459,123460,123461,99};
-    nmo_parameter_state_t *saved = fixture_state(&g.f,local(&g)); ASSERT_NOT_NULL(saved);
-    nmo_array_dispose(&saved->buffer_data); ASSERT_EQ(NMO_OK,nmo_array_alloc(&saved->buffer_data,1,sizeof(obsolete),NULL));
-    memcpy(saved->buffer_data.data,obsolete,sizeof(obsolete)); saved->mode = CKPARAM_MODE_BUFFER; saved->has_state = true;
-    fixture_commit_bare(&g.f,NULL);
-    nmo_beobject_state_t *owner = fixture_state(&g.f,g.f.owner_id);
-    owner->has_single_activity = 1; owner->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE;
-    nmo_behavior_state_t *script = fixture_state(&g.f,g.f.script_id);
-    script->has_single_activity = 1; script->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE | CK_SCENEOBJECT_START_RESET;
-    const char *path = NMO_TEST_SCRATCH_FILE("engine_character_controller.cmo");
-    ASSERT_EQ(NMO_OK,nmo_session_save_file(g.f.session,path,NULL,NULL));
-    for (int started = 0; started < 2; started++) {
-        engine_fixture_t host; fixture_begin_document(&host);
-        const char *names[] = {"Joy_Button1","Joy_Down","Host Only","Joy_Left","Joy_Up","Joy_Right","Joy_Button2"};
-        fixture_install_messages(&host,names,COUNT(names)); fixture_begin_edit(&host);
-        nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL;
-        fixture_commit(&host,&options);
-        if (started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_ALL));
-        nmo_engine_set_file_resolver(host.engine,resolve_file,(void *)path);
-        int32_t file = -1; ASSERT_EQ(NMO_OK,nmo_engine_load(host.engine,"controller.cmo",true,&file));
-        if (!started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_SCENE_DEFAULT));
-        nmo_object_id_t ids[16], copies[16] = {0};
-        ids[0] = nmo_engine_object_named(host.engine,"Actor",NMO_CID_CHARACTER);
-        ids[1] = nmo_engine_object_named(host.engine,"Root",NMO_CID_BODYPART);
-        ids[2] = nmo_engine_object_named(host.engine,"Controller Script",NMO_CID_BEHAVIOR);
-        ids[3] = nmo_engine_object_named(host.engine,"Controller",NMO_CID_BEHAVIOR);
-        ASSERT_TRUE(ids[0] != 0 && ids[0] != g.f.owner_id && ids[3] != 0); ASSERT_EQ(ids[1],eng_character_root(host.engine,ids[0]));
-        const eng_module_t *module = eng_module_of(host.engine,ids[3],NULL);
-        for (size_t i = 0; i < COUNT(sources); i++) {
-            ids[4+i] = eng_module_id(module,g.animations[i]);
-            const nmo_keyedanimation_state_t *animation = fixture_state(&g.f,g.animations[i]);
-            ids[8+i] = eng_module_id(module,nmo_ref_runtime_id(&animation->animation_ids[0]));
-            ids[12+i] = eng_module_id(module,sources[i]);
+    for (int enhanced = 0; enhanced < 2; enhanced++) {
+        controller_fixture_t g; begin_variant(&g,true,enhanced != 0);
+        nmo_object_id_t sources[7];
+        for (size_t i = 0; i < g.animation_count; i++) { sources[i] = saved_animation(&g,i); ASSERT_TRUE(sources[i] != 0); }
+        const int32_t obsolete[] = {123456,123457,123458,123459,123460,123461,99};
+        nmo_parameter_state_t *saved = fixture_state(&g.f,local(&g)); ASSERT_NOT_NULL(saved);
+        nmo_array_dispose(&saved->buffer_data); ASSERT_EQ(NMO_OK,nmo_array_alloc(&saved->buffer_data,1,sizeof(obsolete),NULL));
+        memcpy(saved->buffer_data.data,obsolete,sizeof(obsolete)); saved->mode = CKPARAM_MODE_BUFFER; saved->has_state = true;
+        fixture_commit_bare(&g.f,NULL);
+        nmo_beobject_state_t *owner = fixture_state(&g.f,g.f.owner_id);
+        owner->has_single_activity = 1; owner->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE;
+        nmo_behavior_state_t *script = fixture_state(&g.f,g.f.script_id);
+        script->has_single_activity = 1; script->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE | CK_SCENEOBJECT_START_RESET;
+        const char *path = NMO_TEST_SCRATCH_FILE("engine_character_controller.cmo");
+        ASSERT_EQ(NMO_OK,nmo_session_save_file(g.f.session,path,NULL,NULL));
+        for (int started = 0; started < 2; started++) {
+            engine_fixture_t host; fixture_begin_document(&host);
+            const char *names[] = {"Joy_Button1","Joy_Down","Host Only","Joy_Left","Joy_Up","Joy_Right","Joy_Button2","Joy_Button6","Joy_Button4","Joy_Button3","Joy_Button5"};
+            fixture_install_messages(&host,names,COUNT(names)); fixture_begin_edit(&host);
+            nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL;
+            fixture_commit(&host,&options);
+            if (started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_ALL));
+            nmo_engine_set_file_resolver(host.engine,resolve_file,(void *)path);
+            int32_t file = -1; ASSERT_EQ(NMO_OK,nmo_engine_load(host.engine,"controller.cmo",true,&file));
+            if (!started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_SCENE_DEFAULT));
+            nmo_object_id_t ids[25], copies[25] = {0}; size_t object_count = 4+3*g.animation_count;
+            ids[0] = nmo_engine_object_named(host.engine,"Actor",NMO_CID_CHARACTER);
+            ids[1] = nmo_engine_object_named(host.engine,"Root",NMO_CID_BODYPART);
+            ids[2] = nmo_engine_object_named(host.engine,"Controller Script",NMO_CID_BEHAVIOR);
+            ids[3] = nmo_engine_object_named(host.engine,"Controller",NMO_CID_BEHAVIOR);
+            ASSERT_TRUE(ids[0] != 0 && ids[0] != g.f.owner_id && ids[3] != 0); ASSERT_EQ(ids[1],eng_character_root(host.engine,ids[0]));
+            const eng_module_t *module = eng_module_of(host.engine,ids[3],NULL);
+            for (size_t i = 0; i < g.animation_count; i++) {
+                ids[4+i] = eng_module_id(module,g.animations[i]);
+                const nmo_keyedanimation_state_t *animation = fixture_state(&g.f,g.animations[i]);
+                ids[4+g.animation_count+i] = eng_module_id(module,nmo_ref_runtime_id(&animation->animation_ids[0]));
+                ids[4+2*g.animation_count+i] = eng_module_id(module,sources[i]);
+            }
+            expect_message_table(host.engine,ids[3],g.enhanced);
+            ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0)); ASSERT_EQ(ids[4],eng_character_next_animation(host.engine,ids[0]));
+            ASSERT_EQ(NMO_OK,nmo_engine_send_message(host.engine,nmo_engine_message_type(host.engine,"Joy_Button1"),ids[0],0));
+            ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
+            ASSERT_EQ(ids[7],eng_character_active_animation(host.engine,ids[0]));
+            ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(host.engine,ids,object_count,false,copies));
+            ASSERT_EQ(copies[1],eng_character_root(host.engine,copies[0])); expect_message_table(host.engine,copies[3],g.enhanced);
+            ASSERT_EQ(copies[7],eng_character_active_animation(host.engine,copies[0]));
+            for (size_t i = 0; i < g.animation_count; i++) {
+                ASSERT_EQ(copies[0],eng_animation_character(host.engine,copies[4+i]));
+                ASSERT_EQ(copies[1],eng_object_animation_entity(host.engine,copies[4+g.animation_count+i]));
+            }
+            ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[2],true,true));
+            ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0)); ASSERT_EQ(copies[4],eng_character_active_animation(host.engine,copies[0]));
+            ASSERT_EQ(NMO_OK,nmo_engine_send_message(host.engine,nmo_engine_message_type(host.engine,"Joy_Up"),ids[0],0));
+            ASSERT_EQ(NMO_OK,nmo_engine_send_message(host.engine,nmo_engine_message_type(host.engine,"Joy_Down"),copies[0],0));
+            ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
+            ASSERT_EQ(ids[5],eng_character_active_animation(host.engine,ids[0]));
+            ASSERT_EQ(copies[6],eng_character_active_animation(host.engine,copies[0]));
+            for (size_t i = 0; i < g.animation_count; i++) {
+                bool protected = g.enhanced ? i >= 5 : i == 3; ASSERT_EQ(!protected,!!(eng_animation_playback_state(host.engine,copies[4+i])->flags & CKANIMATION_CANBEBREAK)); ASSERT_TRUE(eng_animation_state(host.engine,copies[4+i])->flags & CKANIMATION_CANBEBREAK);
+            }
+            if (g.enhanced) {
+                for (size_t i = 0; i < object_count; i++) nmo_engine_destroy_object(host.engine,ids[i]);
+                const char *buttons[] = {"Joy_Button2","Joy_Button3","Joy_Button4"};
+                for (size_t i = 0; i < COUNT(buttons); i++) {
+                    ASSERT_EQ(NMO_OK,eng_character_set_active_animation(host.engine,copies[0],copies[4])); ASSERT_TRUE(eng_animation_set_frame(host.engine,copies[4],0)); ASSERT_EQ(NMO_OK,nmo_engine_send_message(host.engine,nmo_engine_message_type(host.engine,buttons[i]),copies[0],0)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0)); ASSERT_EQ(copies[8+i],eng_character_active_animation(host.engine,copies[0]));
+                    ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[2],false,false)); ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[2],true,true));
+                }
+                int32_t object = eng_map_get(&host.engine->object_map,copies[0]); ASSERT_TRUE(object >= 0); ASSERT_EQ(1,host.engine->objects.data[object].waiting); expect_message_table(host.engine,copies[3],true);
+            }
+            fixture_end(&host);
         }
-        expect_message_table(host.engine,ids[3]);
-        ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0)); ASSERT_EQ(ids[4],eng_character_next_animation(host.engine,ids[0]));
-        ASSERT_EQ(NMO_OK,nmo_engine_send_message(host.engine,nmo_engine_message_type(host.engine,"Joy_Button1"),ids[0],0));
-        ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
-        ASSERT_EQ(ids[7],eng_character_active_animation(host.engine,ids[0]));
-        ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(host.engine,ids,COUNT(ids),false,copies));
-        ASSERT_EQ(copies[1],eng_character_root(host.engine,copies[0])); expect_message_table(host.engine,copies[3]);
-        ASSERT_EQ(copies[7],eng_character_active_animation(host.engine,copies[0]));
-        for (size_t i = 0; i < COUNT(sources); i++) {
-            ASSERT_EQ(copies[0],eng_animation_character(host.engine,copies[4+i]));
-            ASSERT_EQ(copies[1],eng_object_animation_entity(host.engine,copies[8+i]));
-        }
-        ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[2],true,true));
-        ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0)); ASSERT_EQ(copies[4],eng_character_active_animation(host.engine,copies[0]));
-        ASSERT_EQ(NMO_OK,nmo_engine_send_message(host.engine,nmo_engine_message_type(host.engine,"Joy_Up"),ids[0],0));
-        ASSERT_EQ(NMO_OK,nmo_engine_send_message(host.engine,nmo_engine_message_type(host.engine,"Joy_Down"),copies[0],0));
-        ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
-        ASSERT_EQ(ids[5],eng_character_active_animation(host.engine,ids[0]));
-        ASSERT_EQ(copies[6],eng_character_active_animation(host.engine,copies[0]));
-        ASSERT_EQ(0u,eng_animation_playback_state(host.engine,copies[7])->flags & CKANIMATION_CANBEBREAK);
-        ASSERT_TRUE(eng_animation_state(host.engine,copies[7])->flags & CKANIMATION_CANBEBREAK);
-        fixture_end(&host);
+        fixture_end(&g.f); remove(path);
     }
-    fixture_end(&g.f); remove(path);
 }
 
 static float actor_x(controller_fixture_t *g)
@@ -392,30 +409,32 @@ static float actor_x(controller_fixture_t *g)
 
 TEST(engine_character_controller, goto_messages_drive_root_motion_until_arrival_then_return_to_stand)
 {
-    controller_fixture_t g; begin(&g,true);
-    nmo_object_id_t target = fixture_create(&g.f,NMO_CID_3DENTITY,"Destination");
-    ((nmo_3dentity_state_t *)fixture_state(&g.f,target))->world_matrix[12] = 20;
-    nmo_object_id_t go = fixture_block(&g.f,GUID_GOTO,"Go To"), arrived = fixture_block(&g.f,GUID_NOP,"Arrived");
-    ASSERT_TRUE(go != 0 && arrived != 0);
-    fixture_input_int(&g.f,fixture_target(&g.f,go),(int32_t)g.f.owner_id);
-    fixture_input_int(&g.f,BLOCK_PIN(&g.f,go,0),(int32_t)target);
-    float distance = 4; fixture_input_value(&g.f,BLOCK_PIN(&g.f,go,1),&distance,sizeof(distance));
-    fixture_link(&g.f,g.f.script_in,BLOCK_IN(&g.f,go,0),0);
-    fixture_link(&g.f,BLOCK_OUT(&g.f,go,2),BLOCK_IN(&g.f,go,1),1);
-    fixture_link(&g.f,BLOCK_OUT(&g.f,go,0),BLOCK_IN(&g.f,arrived,0),0); commit(&g);
-    bool walked = false;
-    for (int step = 0; step < 80 && runs(&g.f,arrived) == 0; step++) {
-        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,1));
-        if (eng_character_active_animation(g.f.engine,g.f.owner_id) == g.animations[1]) walked = true;
+    for (int enhanced = 0; enhanced < 2; enhanced++) {
+        controller_fixture_t g; begin_variant(&g,true,enhanced != 0);
+        nmo_object_id_t target = fixture_create(&g.f,NMO_CID_3DENTITY,"Destination");
+        ((nmo_3dentity_state_t *)fixture_state(&g.f,target))->world_matrix[12] = 20;
+        nmo_object_id_t go = fixture_block(&g.f,GUID_GOTO,"Go To"), arrived = fixture_block(&g.f,GUID_NOP,"Arrived");
+        ASSERT_TRUE(go != 0 && arrived != 0);
+        fixture_input_int(&g.f,fixture_target(&g.f,go),(int32_t)g.f.owner_id);
+        fixture_input_int(&g.f,BLOCK_PIN(&g.f,go,0),(int32_t)target);
+        float distance = 4; fixture_input_value(&g.f,BLOCK_PIN(&g.f,go,1),&distance,sizeof(distance));
+        fixture_link(&g.f,g.f.script_in,BLOCK_IN(&g.f,go,0),0);
+        fixture_link(&g.f,BLOCK_OUT(&g.f,go,2),BLOCK_IN(&g.f,go,1),1);
+        fixture_link(&g.f,BLOCK_OUT(&g.f,go,0),BLOCK_IN(&g.f,arrived,0),0); commit(&g);
+        bool walked = false;
+        for (int step = 0; step < 80 && runs(&g.f,arrived) == 0; step++) {
+            ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,1));
+            if (eng_character_active_animation(g.f.engine,g.f.owner_id) == g.animations[1]) walked = true;
+        }
+        ASSERT_TRUE(walked); ASSERT_EQ(1u,runs(&g.f,arrived)); ASSERT_TRUE(actor_x(&g) >= 16 && actor_x(&g) <= 24);
+        uint64_t queries = runs(&g.f,go); ASSERT_TRUE(queries > 1);
+        for (int step = 0; step < 10; step++) ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,1));
+        ASSERT_EQ(g.animations[0],eng_character_active_animation(g.f.engine,g.f.owner_id)); ASSERT_EQ(queries,runs(&g.f,go));
+        ASSERT_EQ(1u,runs(&g.f,arrived)); float stopped = actor_x(&g); ASSERT_TRUE(stopped >= 16 && stopped <= 26);
+        for (int step = 0; step < 5; step++) ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,1));
+        ASSERT_FLOAT_EQ(stopped,actor_x(&g),1e-5f); ASSERT_TRUE(eng_character_automatic(g.f.engine,g.f.owner_id));
+        fixture_end(&g.f);
     }
-    ASSERT_TRUE(walked); ASSERT_EQ(1u,runs(&g.f,arrived)); ASSERT_TRUE(actor_x(&g) >= 16 && actor_x(&g) <= 24);
-    uint64_t queries = runs(&g.f,go); ASSERT_TRUE(queries > 1);
-    for (int step = 0; step < 10; step++) ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,1));
-    ASSERT_EQ(g.animations[0],eng_character_active_animation(g.f.engine,g.f.owner_id)); ASSERT_EQ(queries,runs(&g.f,go));
-    ASSERT_EQ(1u,runs(&g.f,arrived)); float stopped = actor_x(&g); ASSERT_TRUE(stopped >= 16 && stopped <= 26);
-    for (int step = 0; step < 5; step++) ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,1));
-    ASSERT_FLOAT_EQ(stopped,actor_x(&g),1e-5f); ASSERT_TRUE(eng_character_automatic(g.f.engine,g.f.owner_id));
-    fixture_end(&g.f);
 }
 
 TEST_MAIN_BEGIN()
@@ -425,6 +444,7 @@ REGISTER_TEST(engine_character_controller, enhanced_jump_and_dance_hold_until_th
 REGISTER_TEST(engine_character_controller, enhanced_off_preserves_on_and_stops_automatic_motion_until_explicit_reactivation);
 REGISTER_TEST(engine_character_controller, enhanced_missing_deleted_and_wrong_class_inputs_stop_without_falling_back_to_lower_priorities);
 REGISTER_TEST(engine_character_controller, enhanced_truncated_message_tables_fail_after_enabling_processing_and_protecting_jump_and_dance);
+REGISTER_TEST(engine_character_controller, enhanced_message_aliases_use_the_first_matching_slot_in_the_live_local_table);
 REGISTER_TEST(engine_character_controller, turns_use_active_rates_without_permission_or_clock_gates_and_prefer_right);
 REGISTER_TEST(engine_character_controller, animation_requests_build_five_frame_best_warps);
 REGISTER_TEST(engine_character_controller, off_stops_processing_and_messages_do_not_restart_the_controller);
