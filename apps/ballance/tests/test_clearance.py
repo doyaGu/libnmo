@@ -190,3 +190,39 @@ class ClearanceTests(unittest.TestCase):
             report = check([floor('ground')], corridor)
             self.assertEqual(report['status'], 'passed')
             self.assertEqual(len(report['expected_interactions']), 1)
+
+
+class LandingTraceTests(unittest.TestCase):
+    def test_departure_then_landing_requires_continuous_same_ball_observations(self):
+        from ballance.verify.landings import observe
+
+        passage = layout('landing', [[0, 0, 12], [0, 0, 2]], landing_radius=1).passages[0]
+        rows = [
+            {'frame': i, 'position': [0, height, 0], 'id': '1', 'name': 'Ball_Wood'}
+            for i, height in enumerate([12, 9, 6, 3, 2, 2, 2])
+        ]
+        self.assertEqual(observe(passage, rows)['status'], 'passed')
+        self.assertEqual(observe(passage, rows[-3:])['status'], 'failed')
+        for changed in (
+            [row | {'id': '2'} if i > 2 else row for i, row in enumerate(rows)],
+            [row | {'frame': row['frame'] + 10} if i > 2 else row for i, row in enumerate(rows)],
+            [row | {'position': [0, 20, 0]} if i > 2 else row for i, row in enumerate(rows)],
+        ):
+            self.assertEqual(observe(passage, changed)['status'], 'failed')
+
+    def test_interaction_authorization_does_not_cover_other_passages(self):
+        from ballance.route.motions import intention
+
+        rule = {
+            'mechanism': 'arm',
+            'target': 'platform',
+            'contacts': ['floor passage'],
+            'phases': ['moving'],
+            'passages': ['push'],
+            'reason': 'Deliberate actuation.',
+        }
+        self.assertIsNotNone(
+            intention([rule], 'arm', 'platform', 'floor passage', 'moving', 'push')
+        )
+        self.assertIsNone(intention([rule], 'arm', 'platform', 'floor passage', 'moving', 'exit'))
+        self.assertIsNone(intention([rule], 'arm', 'platform', 'floor passage', 'ready', 'push'))

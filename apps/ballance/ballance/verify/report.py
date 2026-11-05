@@ -16,6 +16,7 @@ from ..core.nmo import Nmo
 from ..route.layout import Layout
 from ..route import motions
 from ..view.scene import load
+from .landings import inspect as landing_check
 from .clearance import check as clearance_check
 from .geometry import check as geometry_check
 from .scenery import check as scenery_check
@@ -190,6 +191,7 @@ def verify(
     checks['play'] = {'status': 'skipped', 'reason': 'Not requested.'}
     checks['gameplay'] = {'status': 'skipped', 'reason': 'No new gameplay trace requested.'}
     checks['mechanism_motion'] = {'status': 'skipped', 'reason': 'No new gameplay trace requested.'}
+    checks['landings'] = {'status': 'skipped', 'reason': 'No new gameplay trace requested.'}
     if frames is not None:
         if (
             checks.get('connections', {}).get('status') == 'failed'
@@ -215,6 +217,9 @@ def verify(
                         checks['play']['finished_frame'],
                     )
                 if route_path.is_file():
+                    checks['landings'] = landing_check(
+                        source, layout, sector, checks['play']['finished_frame']
+                    )
                     checks['mechanism_motion'] = motion_trace(
                         source / 'physics.csv', layout, checks['play']['finished_frame']
                     )
