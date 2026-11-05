@@ -9,6 +9,7 @@ set(NMO_ENGINE_SOURCES
     core/array.c
     core/attributes.c
     core/block.c
+    core/billboard.c
     core/build.c
     core/copy.c
     core/curve.c

@@ -116,6 +116,9 @@ bool eng_entity_set_parent(nmo_engine_t *engine, int32_t index, int32_t parent,
 void eng_entity_destroy(nmo_engine_t *engine, nmo_object_id_t id);
 bool eng_entity_bary_center(nmo_engine_t *engine, int32_t index, eng_vector_t *out);
 bool eng_entity_has_mesh(nmo_engine_t *engine, int32_t index);
+/* Billboard's raw local axes mapped to the current view's unit axes. */
+void eng_entity_billboard_matrix(nmo_engine_t *engine, int32_t entity,
+    const eng_vector_t *normal, const eng_vector_t *up, eng_matrix_t *out);
 float eng_entity_radius(nmo_engine_t *engine, int32_t index);
 bool eng_entity_local_box(nmo_engine_t *engine, int32_t index, eng_vector_t *min,
                           eng_vector_t *max);

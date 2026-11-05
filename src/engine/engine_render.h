@@ -16,6 +16,8 @@
 
 struct nmo_material_state;
 struct nmo_sprite3d_state;
+struct eng_matrix;
+struct eng_vector;
 
 /* A mesh made at run time (TT Sky's), with what CKMesh would hold */
 typedef struct eng_mesh {
@@ -154,6 +156,10 @@ void eng_render_apply_scene(nmo_engine_t *engine, uint32_t background_color,
                             int32_t fog_mode, uint32_t fog_color, float fog_start,
                             float fog_end, float fog_density, nmo_object_id_t camera);
 void eng_free_render(nmo_engine_t *engine);
+/* The attached camera's world matrix, or the render context's default eye. */
+void eng_render_viewpoint(nmo_engine_t *engine, struct eng_matrix *out);
+/* CKRenderContext::Transform of a world point into render context pixels. */
+void eng_render_project(nmo_engine_t *engine, const struct eng_vector *world, struct eng_vector *screen);
 /* The engine ID an object's reference names, in the object's document */
 nmo_object_id_t eng_object_ref(const nmo_engine_t *engine, nmo_object_id_t owner,
                                const nmo_ref_t *ref);
