@@ -322,6 +322,45 @@ static int bb_rotate_around(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* The free VxMath Normalize divides by zero, unlike VxVector::Normalize. */
+static eng_vector_t orientation_normalized(eng_vector_t v)
+{
+    double x = v.x, y = v.y, z = v.z, length = sqrt((x*x+y*y)+z*z);
+    return (eng_vector_t){(float)(x/length),(float)(y/length),(float)(z/length)};
+}
+
+static void orientation_frame(eng_vector_t dir, eng_vector_t up, eng_vector_t axes[3])
+{
+    axes[2] = orientation_normalized(dir);
+    float dot = up.x*axes[2].x+up.y*axes[2].y+up.z*axes[2].z;
+    axes[1] = orientation_normalized((eng_vector_t){up.x-dot*axes[2].x,up.y-dot*axes[2].y,up.z-dot*axes[2].z});
+    axes[0] = eng_vector_cross(&axes[1],&axes[2]);
+}
+
+/* Map the chosen local frame onto the desired frame before applying Ref. */
+static int bb_set_orientation(blk_t *b)
+{
+    int32_t entity = target_entity(b);
+    if (entity < 0) return NMO_ENGINE_BR_OWNERERROR;
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    eng_vector_t dir = get_in_vector(b,0,0,0,1), up = get_in_vector(b,1,0,1,0);
+    bool keep = keep_children(b,2);
+    int32_t reference = input_entity(b,3);
+    eng_vector_t local_dir = get_in_vector(b,4,0,0,1), local_up = get_in_vector(b,5,0,1,0);
+    eng_vector_t desired[3], local[3], axes[3];
+    orientation_frame(dir,up,desired); orientation_frame(local_dir,local_up,local);
+    const float components[3][3] = {{local[0].x,local[1].x,local[2].x},
+        {local[0].y,local[1].y,local[2].y},{local[0].z,local[1].z,local[2].z}};
+    for (int i = 0; i < 3; i++) {
+        axes[i].x = components[i][0]*desired[0].x+components[i][1]*desired[1].x+components[i][2]*desired[2].x;
+        axes[i].y = components[i][0]*desired[0].y+components[i][1]*desired[1].y+components[i][2]*desired[2].y;
+        axes[i].z = components[i][0]*desired[0].z+components[i][1]*desired[1].z+components[i][2]*desired[2].z;
+    }
+    eng_entity_set_orientation(b->engine,entity,&axes[2],&axes[1],&axes[0],reference,keep);
+    return NMO_ENGINE_BR_OK;
+}
+
 /*
  * Set Euler Orientation: the axes of the angles' rotation. An old block
  * (Merge Angles Params off, with four inputs or more) has the three angles
@@ -610,6 +649,7 @@ static const nmo_engine_block_desc_t eng_3dtransfo_blocks[] = {
     {NMO_GUID_INIT(0x9d9d9d98, 0x7e7a7f75), "Set Parent", bb_set_parent, NULL, NULL},
     {NMO_GUID_INIT(0xffffffee, 0xeeffffff), "Rotate", bb_rotate, NULL, NULL},
     {NMO_GUID_INIT(0xfdfd999e, 0xdefeded8), "Rotate Around", bb_rotate_around, NULL, NULL},
+    {NMO_GUID_INIT(0x625874aa, 0xaa694132), "Set Orientation", bb_set_orientation, NULL, NULL},
     {NMO_GUID_INIT(0x0c4966d8, 0x6c0c6d14), "Set Euler Orientation", bb_set_euler_orientation, NULL,
      NULL},
     {NMO_GUID_INIT(0x26843971, 0x86249317), "Look At", bb_look_at, NULL, NULL},
