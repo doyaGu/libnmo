@@ -674,6 +674,9 @@ static void behavior_run_usage(FILE *out) {
     fprintf(out, "  --strict                  Stop on an unknown block, execution error or iteration limit; exit 3\n");
     fprintf(out, "  --max-iterations <n>      Iterations per graph and frame (default: 8000)\n");
     fprintf(out, "  --seed <n>                Random seed (default: 1)\n");
+    fprintf(out, "  --control                Pause for stdin step COUNT MASK (arrow bits 1/2/4/8); JSON poses\n");
+    fprintf(out, "                            --observe permits name* prefixes in controlled runs\n");
+    fprintf(out, "  --observe <names>         Report final entity world matrices: NAME,NAME,...\n");
     fprintf(out, "  -t, --trace               Show links, operations and graphs too\n");
     fprintf(out, "  -k, --keys <list>         Keys held down: KEY@FRAME[-FRAME],..., where KEY is\n");
     fprintf(out, "                            a name (Space, Enter, Up, F1, ...) or a scan code\n");

@@ -60,6 +60,7 @@ typedef struct run_args {
     const char *steer_objects; /* "NAME,NAME": the objects --steer may steer, first shown */
     const char *steer_log;     /* CSV file of the steered object's frames, or NULL */
     const char *physics_log;   /* CSV world matrices of movable physical bodies */
+    const char *observe;       /* named entities whose final world poses are reported */
     const char *messages; /* "Level_Finish@4000:All_Gameplay,...": messages the host sends */
     const char *registry; /* "Software\Game\Settings\Language=1;...": registry values */
     bool physics_ivp;     /* --physics ivp: simulate the physics blocks with libivp */
@@ -69,6 +70,7 @@ typedef struct run_args {
     bool mute;            /* --mute: the window plays no sound */
     bool mipmaps;         /* --mipmaps: the window mipmaps every texture */
     bool quiet;           /* --quiet, or a window played until it closes: no events listed */
+    bool control;         /* stdin step commands; the engine waits between commands */
     bool real_time;       /* a window with no --delta or --shot: frames take the time that passed */
 } run_args_t;
 
@@ -687,6 +689,9 @@ typedef struct run_state {
     nmo_object_id_t effect_behavior; /* the block an effect event named last */
     nmo_object_id_t effect_target;
     int32_t op_status;
+    uint64_t deaths;
+    uint64_t death_frame;
+    bool finished;
     bool ok;
 } run_state_t;
 
@@ -753,6 +758,14 @@ static void run_count_unknown(run_state_t *state, nmo_object_id_t id, const nmo_
 static void run_trace(const nmo_engine_event_t *event, void *user_data)
 {
     run_state_t *state = (run_state_t *)user_data;
+    if (state->args->control && event->kind == NMO_ENGINE_EVENT_MESSAGE_SENT) {
+        const char *message = nmo_engine_message_type_name(state->engine, event->result);
+        if (message != NULL && strcmp(message, "Ball Off") == 0) {
+            state->deaths++;
+            state->death_frame = event->frame;
+        }
+        if (message != NULL && strcmp(message, "Level_Finish") == 0) state->finished = true;
+    }
     const nmo_script_node_t *node =
         event->behavior_id != 0 ? nmo_engine_script_node(state->engine, event->behavior_id)
                                 : NULL;
@@ -972,6 +985,106 @@ static bool run_add_physics(nmo_cli_record_t *rec, const run_state_t *state)
         }
     }
     return true;
+}
+
+static bool run_add_observed(nmo_cli_record_t *rec, const run_state_t *state)
+{
+    if (state->args->observe == NULL) return true;
+    nmo_cli_record_array_t *list = nmo_cli_record_array(rec, "observed_entities", "Observed entities");
+    if (list == NULL) return false;
+    const char *cursor = state->args->observe;
+    while (*cursor) {
+        const char *end = strchr(cursor, ',');
+        size_t length = end ? (size_t)(end - cursor) : strlen(cursor);
+        char *name = malloc(length + 1);
+        if (name == NULL) return false;
+        memcpy(name, cursor, length);
+        name[length] = '\0';
+        nmo_object_id_t id = nmo_engine_object_named(state->engine, name, NMO_CID_3DENTITY);
+        float matrix[16];
+        bool found = id != 0 && nmo_engine_entity_world_matrix(state->engine, id, matrix);
+        nmo_cli_record_t *item = nmo_cli_record_new();
+        bool ok = item != NULL && nmo_cli_record_str(item, "name", NULL, name) &&
+                  nmo_cli_record_uint(item, "id", NULL, id) &&
+                  nmo_cli_record_bool(item, "found", NULL, found);
+        for (int k = 0; ok && found && k < 16; k++) {
+            char key[8];
+            snprintf(key, sizeof(key), "m%d", k);
+            ok = nmo_cli_record_real(item, key, NULL, matrix[k], "%.9g");
+        }
+        free(name);
+        if (!ok) {
+            nmo_cli_record_free(item);
+            return false;
+        }
+        if (!nmo_cli_record_array_add(list, item)) return false;
+        cursor += length;
+        if (*cursor) cursor++;
+    }
+    return true;
+}
+
+/* Controlled runs emit one JSON line at each pause, then wait without stepping.
+ * "step COUNT MASK" holds Up/Down/Left/Right bits 1/2/4/8 for COUNT frames.
+ * "step 0 0" inspects the same state; EOF or "quit" releases the engine. */
+static bool run_control_snapshot(nmo_engine_t *engine, const run_args_t *args, const run_state_t *state)
+{
+    yyjson_mut_doc *doc = yyjson_mut_doc_new(NULL);
+    if (doc == NULL) return false;
+    yyjson_mut_val *root = yyjson_mut_obj(doc);
+    yyjson_mut_doc_set_root(doc, root);
+    bool ok = root != NULL && yyjson_mut_obj_add_uint(doc, root, "frame", nmo_engine_frame(engine)) &&
+              yyjson_mut_obj_add_real(doc, root, "time_ms", nmo_engine_time(engine));
+    yyjson_mut_val *gameplay = yyjson_mut_obj_add_obj(doc, root, "gameplay");
+    ok = ok && gameplay != NULL && yyjson_mut_obj_add_uint(doc, gameplay, "deaths", state->deaths) &&
+         yyjson_mut_obj_add_uint(doc, gameplay, "death_frame", state->death_frame) &&
+         yyjson_mut_obj_add_bool(doc, gameplay, "finished", state->finished);
+    yyjson_mut_val *entities = yyjson_mut_obj_add_arr(doc, root, "entities");
+    ok = ok && entities != NULL;
+    for (size_t i = 0; ok && i < nmo_engine_entity_count(engine); i++) {
+        nmo_object_id_t id = nmo_engine_entity_id(engine, i);
+        const char *name = nmo_engine_object_name(engine, id);
+        bool wanted = false;
+        for (const char *p = args->observe; name != NULL && p != NULL && *p;) {
+            const char *end = strchr(p, ',');
+            size_t length = end != NULL ? (size_t)(end - p) : strlen(p);
+            bool prefix = length > 0 && p[length - 1] == '*';
+            size_t match = length - (prefix ? 1u : 0u);
+            wanted = wanted || ((prefix ? strlen(name) >= match : strlen(name) == match) && memcmp(name, p, match) == 0);
+            p = end != NULL ? end + 1 : NULL;
+        }
+        float matrix[16];
+        if (!wanted || !nmo_engine_entity_world_matrix(engine, id, matrix)) continue;
+        yyjson_mut_val *item = yyjson_mut_arr_add_obj(doc, entities);
+        ok = item != NULL && yyjson_mut_obj_add_uint(doc, item, "id", id) &&
+             yyjson_mut_obj_add_strcpy(doc, item, "name", name) &&
+             yyjson_mut_obj_add_bool(doc, item, "visible", nmo_engine_object_is_visible(engine, id));
+        yyjson_mut_val *pose = yyjson_mut_obj_add_arr(doc, item, "matrix");
+        ok = ok && pose != NULL;
+        for (int k = 0; ok && k < 16; k++) ok = yyjson_mut_arr_add_real(doc, pose, matrix[k]);
+    }
+    char *json = ok ? yyjson_mut_write(doc, 0, NULL) : NULL;
+    ok = json != NULL && puts(json) >= 0 && fflush(stdout) == 0;
+    free(json);
+    yyjson_mut_doc_free(doc);
+    return ok;
+}
+
+static int run_control_request(nmo_engine_t *engine, const run_args_t *args, const run_state_t *state)
+{
+    for (;;) {
+        if (!run_control_snapshot(engine, args, state)) return -1;
+        char line[128], extra;
+        unsigned count = 0, mask = 0;
+        if (fgets(line, sizeof(line), stdin) == NULL || strcmp(line, "quit\n") == 0) return 0;
+        if (sscanf(line, "step %u %u %c", &count, &mask, &extra) != 2 || count > 10000 || mask > 15) {
+            fprintf(stderr, "Error: control expects step COUNT(0..10000) MASK(0..15), or quit\n");
+            return -1;
+        }
+        const char *arrows[] = {"Up", "Down", "Left", "Right"};
+        for (int k = 0; k < 4; k++) nmo_engine_set_key(engine, run_key_code(arrows[k], strlen(arrows[k])), (mask & (1u << k)) != 0);
+        if (count != 0) return (int)count;
+    }
 }
 
 static bool run_add_failure(nmo_cli_record_t *rec, const nmo_engine_t *engine)
@@ -1539,8 +1652,16 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
 #ifdef NMO_HAS_VIEW
     double last_frame = view != NULL ? nmo_view_time(view) : 0.0;
 #endif
-    for (uint32_t f = 0; status == NMO_OK && (f < args->frames || (args->window && !args->frames_given));
+    int control_remaining = 0;
+    for (uint32_t f = 0; status == NMO_OK && (args->control || f < args->frames || (args->window && !args->frames_given));
          f++) {
+        if (args->control && control_remaining == 0) {
+            control_remaining = run_control_request(engine, args, &state);
+            if (control_remaining <= 0) {
+                if (control_remaining < 0) status = NMO_ERR_INVALID_ARGUMENT;
+                break;
+            }
+        }
         /* Release steering once, before collecting this frame's player
            input. Later frames must leave the player's arrow keys alone. */
         if (steer.points != NULL && f > steer.last && f - steer.last == 1) {
@@ -1575,7 +1696,12 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
             run_pace(view, delta, &last_frame);
         }
 #endif
+        uint64_t deaths_before = state.deaths;
         status = nmo_engine_step(engine, delta);
+        if (args->control) control_remaining--;
+        /* Stop on the native terminal event, before automatic respawn can hide
+         * the failed attempt from an interactive authoring client. */
+        if (args->control && (state.deaths != deaths_before || state.finished)) control_remaining = 0;
         if (status == NMO_OK && physics_log != NULL && !run_log_physics(physics_log, engine)) {
             status = NMO_ERR_INVALID_ARGUMENT;
         }
@@ -1635,6 +1761,7 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
     ok = ok && run_add_failure(rec, engine);
     ok = ok && run_add_unknown(rec, &state);
     ok = ok && run_add_physics(rec, &state);
+    ok = ok && run_add_observed(rec, &state);
     ok = ok && run_add_active_scripts(rec, engine);
 
     if (report) {
@@ -1692,6 +1819,8 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
          "it heads for, and the arrow keys held"},
         {"--physics-log", NULL, NMO_OPT_STRING,
          "Write movable physical bodies after every step: CSV frame, id, name, and 16 world matrix values"},
+        {"--control", NULL, NMO_OPT_FLAG, "Pause for stdin step COUNT MASK commands; emit JSON pose snapshots"},
+        {"--observe", NULL, NMO_OPT_STRING, "Report final world matrices of named entities: NAME,NAME,..."},
         {"--path", NULL, NMO_OPT_STRING,
          "Folder of the files the document loads, before its own folder"},
         {"--write", NULL, NMO_OPT_STRING,
@@ -1713,7 +1842,7 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
          "List no events, only the summary (the default for a window played until it closes)"},
     };
     enum { OPT_FRAMES, OPT_DELTA, OPT_START, OPT_SCRIPT, OPT_UNKNOWN, OPT_STRICT, OPT_MAX_ITER, OPT_SEED,
-           OPT_TRACE, OPT_KEYS, OPT_STEER, OPT_STEER_OBJECT, OPT_STEER_LOG, OPT_PHYSICS_LOG, OPT_PATH, OPT_WRITE, OPT_MESSAGE, OPT_REGISTRY, OPT_PHYSICS,
+           OPT_TRACE, OPT_KEYS, OPT_STEER, OPT_STEER_OBJECT, OPT_STEER_LOG, OPT_PHYSICS_LOG, OPT_CONTROL, OPT_OBSERVE, OPT_PATH, OPT_WRITE, OPT_MESSAGE, OPT_REGISTRY, OPT_PHYSICS,
            OPT_WINDOW, OPT_SHOT, OPT_MUTE, OPT_MIPMAPS, OPT_QUIET, OPT_COUNT };
 
     nmo_opt_val_t vals[OPT_COUNT];
@@ -1755,6 +1884,8 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
     out->steer_objects = nmo_opt_str(&vals[OPT_STEER_OBJECT]);
     out->steer_log = nmo_opt_str(&vals[OPT_STEER_LOG]);
     out->physics_log = nmo_opt_str(&vals[OPT_PHYSICS_LOG]);
+    out->observe = nmo_opt_str(&vals[OPT_OBSERVE]);
+    out->control = nmo_opt_flag(&vals[OPT_CONTROL]);
     if (out->steer_log != NULL && out->steer == NULL) {
         fprintf(stderr, "Error: --steer-log needs --steer\n");
         return false;
@@ -1787,6 +1918,13 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
         return false;
     }
 
+    if (out->control) {
+        if (out->window || out->steer != NULL || out->keys != NULL || out->observe == NULL || !expect_file) {
+            fprintf(stderr, "Error: --control needs --observe and a file, without --window, --steer or --keys\n");
+            return false;
+        }
+        out->quiet = true;
+    }
     const char *start = nmo_opt_str(&vals[OPT_START]);
     if (start == NULL) {
         out->start = out->script_id != 0 ? NMO_ENGINE_START_NONE
