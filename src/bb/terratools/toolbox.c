@@ -735,7 +735,29 @@ static int bb_set_dynamic_position(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* Four ordered half-axis assignments; the negative channel may overwrite
+ * the positive channel. Unselected components, including output Z, stay zero. */
+static int bb_joystick_vector_mapper(blk_t *b)
+{
+    eng_vector_t input = get_in_vector(b,0,0,0,0), output = {0};
+    const float components[] = {input.x,input.y,input.z};
+    for (int channel = 0; channel < 4; channel++) {
+        int32_t selector = get_in_int(b,1+channel,0);
+        if (selector < 0 || selector > 5) continue;
+        float value = components[selector/2];
+        if (selector%2 ? value < 0 : value >= 0) {
+            if (selector%2) value = -value;
+            if (channel%2) value = -value;
+            if (channel < 2) output.x = value; else output.y = value;
+        }
+    }
+    nmo_engine_block_set_output_value(b,0,&output,sizeof(output));
+    IN_OFF(b,0); OUT_ON(b,0);
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_tt_toolbox_blocks[] = {
+    {NMO_GUID_INIT(0x04f80efd,0x76b47b33),"TT_JoystickVectorMapper",bb_joystick_vector_mapper,NULL,NULL},
     {NMO_GUID_INIT(0x09b335b3, 0x12d17cdc), "TT_LinearVolume", bb_linear_volume, NULL, NULL},
     {NMO_GUID_INIT(0x7e212b2f, 0x24db67c6), "TT_ReflectionMapping", bb_reflection_mapping, NULL, NULL},
     {NMO_GUID_INIT(0x416b4f0e, 0x192d339a), "TT_PreloadTextures", bb_preload_textures, NULL, NULL},

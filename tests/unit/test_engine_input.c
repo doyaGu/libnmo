@@ -20,6 +20,7 @@
 #define GUID_TT_INPUT_STRING NMO_GUID(0x52fd6294, 0x612f51a5)
 #define GUID_KEYBOARD_CONTROLLER NMO_GUID(0x43f1d000,0x1a2b3c4d)
 #define GUID_KEYBOARD_MAPPER NMO_GUID(0x053b2bde,0x2f8f1d74)
+#define GUID_TT_JOYSTICK_VECTOR_MAPPER NMO_GUID(0x04f80efd,0x76b47b33)
 #define GUID_JOYSTICK_WAITER NMO_GUID(0x012d010b,0x013d010b)
 #define GUID_JOYSTICK_MAPPER NMO_GUID(0x03ed1bea,0x25692ecc)
 #define GUID_JOYSTICK_CONTROLLER NMO_GUID(0x0085ebc1,0x21935422)
@@ -72,6 +73,53 @@ TEST(engine_input, four_joystick_slots_are_independent_and_invalid_indices_retur
 TEST(engine_input, joystick_snapshots_remain_private_to_each_engine_and_survive_script_reactivation)
 {
     engine_fixture_t f; fixture_begin(&f); fixture_commit_bare(&f,NULL); ASSERT_EQ(NMO_OK,nmo_engine_start(f.engine,NMO_ENGINE_START_ALL)); nmo_engine_t *second = NULL; ASSERT_EQ(NMO_OK,nmo_engine_create(f.workspace,NULL,&second)); ASSERT_EQ(NMO_OK,nmo_engine_start(second,NMO_ENGINE_START_ALL)); nmo_engine_joystick_state_t state = {.attached = true,.position = {.75f,0,0},.point_of_view = -1,.buttons = 32}; nmo_engine_set_joystick(f.engine,0,&state); ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0)); ASSERT_EQ(NMO_OK,nmo_engine_step(second,0)); ASSERT_FALSE(nmo_engine_joystick_state(second,0,NULL)); state.position[0] = -.75f; nmo_engine_set_joystick(second,0,&state); ASSERT_EQ(NMO_OK,nmo_engine_step(second,0)); ASSERT_TRUE(nmo_engine_joystick_state(f.engine,0,&state)); ASSERT_FLOAT_EQ(.75f,state.position[0],0); ASSERT_EQ(NMO_OK,nmo_engine_activate_script(f.engine,f.script_id,false,false)); ASSERT_EQ(NMO_OK,nmo_engine_activate_script(f.engine,f.script_id,true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0)); ASSERT_TRUE(nmo_engine_joystick_state(f.engine,0,&state)); ASSERT_FLOAT_EQ(.75f,state.position[0],0); nmo_engine_destroy(second); fixture_end(&f);
+}
+
+typedef struct tt_vector_mapper_fixture {
+    engine_fixture_t f;
+    nmo_object_id_t block, done, input_value, mappings[4], output;
+    uint64_t calls;
+} tt_vector_mapper_fixture_t;
+
+static void tt_vector_mapper_begin(tt_vector_mapper_fixture_t *g)
+{
+    memset(g,0,sizeof(*g)); fixture_begin(&g->f); g->block = fixture_block(&g->f,GUID_TT_JOYSTICK_VECTOR_MAPPER,"TT_JoystickVectorMapper"); g->done = fixture_block(&g->f,GUID_NOP,"Vector Mapped"); ASSERT_TRUE(g->block != 0 && g->done != 0); ASSERT_EQ(0u,fixture_target(&g->f,g->block)); eng_vector_t zero = {0}; nmo_object_id_t input = BLOCK_PIN(&g->f,g->block,0); fixture_input_value(&g->f,input,&zero,sizeof(zero)); g->input_value = nmo_parameterin_source_id(fixture_state(&g->f,input));
+    for (size_t i = 0; i < 4; i++) { input = BLOCK_PIN(&g->f,g->block,i+1); fixture_input_int(&g->f,input,0); g->mappings[i] = nmo_parameterin_source_id(fixture_state(&g->f,input)); } g->output = BLOCK_POUT(&g->f,g->block,0); fixture_link(&g->f,g->f.script_in,BLOCK_IN(&g->f,g->block,0),0); fixture_link(&g->f,BLOCK_OUT(&g->f,g->block,0),BLOCK_IN(&g->f,g->done,0),0);
+}
+
+static void tt_vector_mapper_ready(tt_vector_mapper_fixture_t *g)
+{
+    nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL; fixture_commit_bare(&g->f,&options); ASSERT_FALSE(nmo_engine_has_block(g->f.engine,GUID_TT_JOYSTICK_VECTOR_MAPPER)); ASSERT_EQ(NMO_OK,nmo_bb_terratools_register(g->f.engine)); ASSERT_TRUE(nmo_engine_has_block(g->f.engine,GUID_TT_JOYSTICK_VECTOR_MAPPER)); ASSERT_EQ(NMO_OK,nmo_bb_virtools_register(g->f.engine)); ASSERT_EQ(NMO_OK,nmo_engine_start(g->f.engine,NMO_ENGINE_START_ALL));
+}
+
+static void tt_vector_mapper_value(tt_vector_mapper_fixture_t *g, const float expected[3])
+{
+    float output[3]; read_value(&g->f,g->output,output,sizeof(output)); ASSERT_TRUE(memcmp(expected,output,sizeof(output)) == 0);
+}
+
+static void tt_vector_mapper_step(tt_vector_mapper_fixture_t *g, const float expected[3])
+{
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g->f.engine,0)); g->calls++; tt_vector_mapper_value(g,expected); ASSERT_EQ(g->calls,runs(&g->f,g->block)); ASSERT_EQ(g->calls,runs(&g->f,g->done)); nmo_engine_block_t block = {g->f.engine,eng_map_get(&g->f.engine->node_map,g->block)}; ASSERT_FALSE(nmo_engine_block_is_input_active(&block,0)); ASSERT_FALSE(nmo_engine_behavior_is_active(g->f.engine,g->block));
+}
+
+static void tt_vector_mapper_fire(tt_vector_mapper_fixture_t *g, const float input[3], const int32_t *mappings, const float expected[3])
+{
+    ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g->f.engine,g->input_value,input,3*sizeof(float))); if (mappings != NULL) for (size_t i = 0; i < 4; i++) ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g->f.engine,g->mappings[i],mappings+i,sizeof(mappings[i]))); ASSERT_EQ(NMO_OK,nmo_engine_activate_script(g->f.engine,g->f.script_id,true,true)); tt_vector_mapper_step(g,expected);
+}
+
+TEST(engine_input, tt_joystick_vector_mapper_defaults_follow_native_overwrite_order_without_attached_devices)
+{
+    tt_vector_mapper_fixture_t g; tt_vector_mapper_begin(&g); tt_vector_mapper_ready(&g); for (size_t i = 0; i < NMO_ENGINE_JOYSTICK_COUNT; i++) ASSERT_FALSE(nmo_engine_joystick_state(g.f.engine,(int32_t)i,NULL));
+    tt_vector_mapper_fire(&g,(float[3]){.75f,-2,4},NULL,(float[3]){-.75f,-.75f,0}); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(1u,runs(&g.f,g.block)); ASSERT_EQ(1u,runs(&g.f,g.done)); tt_vector_mapper_fire(&g,(float[3]){-.75f,2,-4},NULL,(float[3]){0,0,0}); fixture_end(&g.f);
+}
+
+TEST(engine_input, tt_joystick_vector_mapper_maps_each_signed_source_axis_to_each_output_channel)
+{
+    tt_vector_mapper_fixture_t g; tt_vector_mapper_begin(&g); tt_vector_mapper_ready(&g); const float inputs[][3] = {{2,3,5},{-2,-3,-5}}, magnitudes[][6] = {{2,0,3,0,5,0},{0,2,0,3,0,5}};
+    for (size_t sample = 0; sample < 2; sample++) for (int32_t selector = 0; selector < 6; selector++) for (size_t channel = 0; channel < 4; channel++) {
+        int32_t mappings[] = {-1,-1,-1,-1}; mappings[channel] = selector; float expected[3] = {0}; float value = magnitudes[sample][selector]; if (value != 0) expected[channel/2] = channel%2 ? -value : value; tt_vector_mapper_fire(&g,inputs[sample],mappings,expected);
+    }
+    ASSERT_EQ(48u,runs(&g.f,g.block)); fixture_end(&g.f);
 }
 
 typedef struct joystick_waiter_fixture {
@@ -909,6 +957,9 @@ TEST(engine_input, tt_input_string_keeps_editing_past_enter)
 }
 
 TEST_MAIN_BEGIN()
+REGISTER_TEST(engine_input, tt_joystick_vector_mapper_defaults_follow_native_overwrite_order_without_attached_devices);
+REGISTER_TEST(engine_input, tt_joystick_vector_mapper_maps_each_signed_source_axis_to_each_output_channel);
+
 REGISTER_TEST(engine_input, loaded_joystick_waiters_and_copies_preserve_versions_layouts_settings_and_relative_history);
 REGISTER_TEST(engine_input, joystick_waiter_axis_outputs_drive_translations_using_the_current_analog_position);
 
