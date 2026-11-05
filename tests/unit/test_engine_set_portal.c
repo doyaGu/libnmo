@@ -102,10 +102,86 @@ TEST(engine_set_portal, initial_conditions_restore_entity_flags_while_place_conn
     mark(g.f.engine,g.portal); eng_save_ic(g.f.engine,g.portal); g.f.engine->entities.data[eng_entity_index(g.f.engine,g.portal)].entity_flags = 0; eng_restore_ic(g.f.engine,g.portal); ASSERT_EQ(CK_3DENTITY_DUMMY | CK_3DENTITY_PORTAL,flags(g.f.engine,g.portal)); fixture_end(&g.f);
 }
 
+static nmo_object_id_t geometry(portal_fixture_t *g, nmo_object_id_t place, const char *name, const eng_vector_t *points, size_t count, nmo_object_id_t *out_mesh)
+{
+    nmo_object_id_t entity = fixture_create(&g->f,NMO_CID_3DENTITY,name), mesh = fixture_create(&g->f,NMO_CID_MESH,name);
+    if (entity == 0 || mesh == 0) return 0;
+    nmo_arena_t *arena = nmo_session_get_arena(g->f.session); nmo_3dentity_state_t *e = fixture_state(&g->f,entity); nmo_mesh_state_t *m = fixture_state(&g->f,mesh);
+    e->has_entityndata_chunk = e->has_mesh_chunk = 1; e->parent = nmo_ref_from_id(place); e->current_mesh = nmo_ref_from_id(mesh); e->mesh_count = 1;
+    e->mesh_ids = nmo_arena_alloc(arena,sizeof(nmo_ref_t),_Alignof(nmo_ref_t)); if (e->mesh_ids == NULL) return 0; e->mesh_ids[0] = nmo_ref_from_id(mesh);
+    m->vertex_count = (uint32_t)count; m->vertices = count != 0 ? nmo_arena_alloc(arena,count*sizeof(nmo_vertex_t),_Alignof(nmo_vertex_t)) : NULL;
+    if (count != 0 && m->vertices == NULL) return 0;
+    if (count != 0) memset(m->vertices,0,count*sizeof(nmo_vertex_t));
+    for (size_t i = 0; i < count; i++) m->vertices[i].position = (nmo_vector_t){points[i].x,points[i].y,points[i].z};
+    nmo_mesh_update_bounding_volumes(m); if (out_mesh != NULL) *out_mesh = mesh; return entity;
+}
+
+static void vector(eng_vector_t actual, eng_vector_t expected)
+{
+    ASSERT_TRUE(isfinite(actual.x) && isfinite(actual.y) && isfinite(actual.z)); ASSERT_FLOAT_EQ(expected.x,actual.x,3e-4f); ASSERT_FLOAT_EQ(expected.y,actual.y,3e-4f); ASSERT_FLOAT_EQ(expected.z,actual.z,3e-4f);
+}
+
+static void matrix(const eng_matrix_t *actual, const eng_matrix_t *expected)
+{
+    for (int r = 0; r < 4; r++) for (int c = 0; c < 4; c++) { ASSERT_TRUE(isfinite(actual->m[r][c])); ASSERT_FLOAT_EQ(expected->m[r][c],actual->m[r][c],3e-4f); }
+}
+
+static const eng_vector_t face[] = {{-2,-1,0},{2,-1,0},{2,1,0},{-2,1,0}};
+
+TEST(engine_set_portal, fitting_uses_common_hierarchical_vertices_live_transforms_and_runtime_geometry)
+{
+    portal_fixture_t g; begin(&g); eng_vector_t a[5], b[5]; memcpy(a,face,sizeof(face)); memcpy(b,face,sizeof(face)); a[4] = (eng_vector_t){9,9,9}; b[4] = (eng_vector_t){-9,-9,-9}; nmo_object_id_t mesh_b = 0;
+    ASSERT_TRUE(geometry(&g,g.places[0],"Geometry A",a,5,NULL) != 0); ASSERT_TRUE(geometry(&g,g.places[1],"Geometry B",b,5,&mesh_b) != 0); commit(&g);
+    eng_matrix_t box; ASSERT_TRUE(eng_place_best_fit(g.f.engine,g.places[0],g.places[1],&box)); eng_matrix_t expected = {{{2.1f,0,0,0},{0,1.1f,0,0},{0,0,.1f,0},{0,0,0,1}}}; matrix(&box,&expected);
+    eng_entity_set_position(g.f.engine,eng_entity_index(g.f.engine,g.places[0]),&(eng_vector_t){10,20,30},-1,false); eng_matrix_t before = box; ASSERT_FALSE(eng_place_best_fit(g.f.engine,g.places[0],g.places[1],&box)); matrix(&box,&before);
+    eng_entity_set_position(g.f.engine,eng_entity_index(g.f.engine,g.places[1]),&(eng_vector_t){10,20,30},-1,false); ASSERT_TRUE(eng_place_best_fit(g.f.engine,g.places[0],g.places[1],&box)); expected.m[3][0] = 10; expected.m[3][1] = 20; expected.m[3][2] = 30; matrix(&box,&expected);
+    eng_mesh_copy_t *copy = eng_mesh_copy(g.f.engine,mesh_b); ASSERT_NOT_NULL(copy); for (size_t i = 0; i < 4; i++) { copy->vertices[i].position.x += .009f; copy->vertices[i].position.y += .009f; copy->vertices[i].position.z += .009f; }
+    ASSERT_TRUE(eng_place_best_fit(g.f.engine,g.places[0],g.places[1],&box)); vector((eng_vector_t){box.m[3][0],box.m[3][1],box.m[3][2]},(eng_vector_t){10.009f,20.009f,30.009f}); fixture_end(&g.f);
+}
+
+TEST(engine_set_portal, fitted_pca_boxes_follow_rotated_faces_with_native_border_and_right_handed_axes)
+{
+    portal_fixture_t g; begin(&g); eng_vector_t points[4];
+    for (size_t i = 0; i < 4; i++) points[i] = (eng_vector_t){3+.6f*face[i].x-.8f*face[i].y,5+.8f*face[i].x+.6f*face[i].y,7};
+    ASSERT_TRUE(geometry(&g,g.places[0],"Geometry A",points,4,NULL) != 0); ASSERT_TRUE(geometry(&g,g.places[1],"Geometry B",points,4,NULL) != 0); commit(&g); eng_matrix_t box; ASSERT_TRUE(eng_place_best_fit(g.f.engine,g.places[0],g.places[1],&box));
+    vector((eng_vector_t){box.m[3][0],box.m[3][1],box.m[3][2]},(eng_vector_t){3,5,7}); eng_vector_t axes[3]; float lengths[3];
+    for (int r = 0; r < 3; r++) { axes[r] = (eng_vector_t){box.m[r][0],box.m[r][1],box.m[r][2]}; lengths[r] = eng_vector_magnitude(&axes[r]); eng_vector_normalize(&axes[r]); }
+    vector(eng_vector_cross(&axes[0],&axes[1]),axes[2]);
+    for (int r = 0; r < 3; r++) for (int s = r+1; s < 3; s++) if (lengths[r] > lengths[s]) { float value = lengths[r]; lengths[r] = lengths[s]; lengths[s] = value; }
+    ASSERT_FLOAT_EQ(.1f,lengths[0],3e-4f); ASSERT_FLOAT_EQ(1.1f,lengths[1],3e-4f); ASSERT_FLOAT_EQ(2.1f,lengths[2],3e-4f);
+    eng_matrix_t inverse; eng_matrix_identity(&inverse); eng_matrix_inverse(&inverse,&box);
+    for (size_t i = 0; i < 4; i++) { eng_vector_t local; eng_vector_transform(&local,&inverse,&points[i]); ASSERT_TRUE(fabsf(local.x) <= 1 && fabsf(local.y) <= 1 && fabsf(local.z) <= 1); } fixture_end(&g.f);
+}
+
+TEST(engine_set_portal, matching_uses_per_axis_tolerance_and_deduplicates_common_points_in_query_order)
+{
+    for (int reverse = 0; reverse < 2; reverse++) {
+        portal_fixture_t g; begin(&g); const eng_vector_t a[] = {{0,0,0},{.05f,.05f,.05f},{3,0,0}}, b[] = {{.009f,.009f,.009f},{.05f,.05f,.05f}}; eng_vector_t queries[] = {b[reverse],b[1-reverse]};
+        ASSERT_TRUE(geometry(&g,g.places[0],"Geometry A",a,3,NULL) != 0); ASSERT_TRUE(geometry(&g,g.places[1],"Geometry B",queries,2,NULL) != 0); commit(&g); eng_matrix_t box; ASSERT_TRUE(eng_place_best_fit(g.f.engine,g.places[0],g.places[1],&box));
+        const eng_matrix_t expected = {{{.1f,0,0,0},{0,.1f,0,0},{0,0,.1f,0},{queries[0].x,queries[0].y,queries[0].z,1}}}; matrix(&box,&expected); fixture_end(&g.f);
+    }
+}
+
+TEST(engine_set_portal, missing_nonmatching_nonfinite_and_excessive_geometry_leave_the_fit_output_unchanged)
+{
+    for (int kind = 0; kind < 4; kind++) {
+        portal_fixture_t g; begin(&g); eng_vector_t a = {0,0,0}, b = {.02f,0,0};
+        if (kind == 2) b.x = NAN;
+        if (kind == 3) a.x = b.x = 2e6f;
+        if (kind != 0) { ASSERT_TRUE(geometry(&g,g.places[0],"Geometry A",&a,1,NULL) != 0); ASSERT_TRUE(geometry(&g,g.places[1],"Geometry B",&b,1,NULL) != 0); }
+        commit(&g); eng_matrix_t box; eng_matrix_identity(&box); box.m[3][0] = 99; eng_matrix_t before = box;
+        ASSERT_FALSE(eng_place_best_fit(g.f.engine,g.places[0],g.places[1],&box)); matrix(&box,&before); ASSERT_FALSE(eng_place_best_fit(g.f.engine,g.portal,g.places[1],&box)); ASSERT_FALSE(eng_place_best_fit(g.f.engine,0,g.places[1],&box)); matrix(&box,&before); fixture_end(&g.f);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_set_portal, runtime_flags_and_bidirectional_links_preserve_document_and_other_engines);
 REGISTER_TEST(engine_set_portal, loaded_wildcards_suppress_new_links_and_asymmetric_reverse_lists_keep_native_duplicates);
 REGISTER_TEST(engine_set_portal, copies_obey_place_dependency_options_and_remap_live_links_and_portal_flags);
 REGISTER_TEST(engine_set_portal, deletion_prunes_cached_and_unread_connections_without_turning_deleted_geometry_into_a_wildcard);
 REGISTER_TEST(engine_set_portal, initial_conditions_restore_entity_flags_while_place_connections_persist);
+REGISTER_TEST(engine_set_portal, fitting_uses_common_hierarchical_vertices_live_transforms_and_runtime_geometry);
+REGISTER_TEST(engine_set_portal, fitted_pca_boxes_follow_rotated_faces_with_native_border_and_right_handed_axes);
+REGISTER_TEST(engine_set_portal, matching_uses_per_axis_tolerance_and_deduplicates_common_points_in_query_order);
+REGISTER_TEST(engine_set_portal, missing_nonmatching_nonfinite_and_excessive_geometry_leave_the_fit_output_unchanged);
 TEST_MAIN_END()
