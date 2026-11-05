@@ -20,6 +20,7 @@
 #define GUID_TT_INPUT_STRING NMO_GUID(0x52fd6294, 0x612f51a5)
 #define GUID_KEYBOARD_CONTROLLER NMO_GUID(0x43f1d000,0x1a2b3c4d)
 #define GUID_KEYBOARD_MAPPER NMO_GUID(0x053b2bde,0x2f8f1d74)
+#define GUID_JOYSTICK_MAPPER NMO_GUID(0x03ed1bea,0x25692ecc)
 #define GUID_JOYSTICK_CONTROLLER NMO_GUID(0x0085ebc1,0x21935422)
 
 #define KEY_SPACE 0x39u
@@ -74,17 +75,21 @@ TEST(engine_input, joystick_snapshots_remain_private_to_each_engine_and_survive_
 
 typedef struct joystick_fixture {
     engine_fixture_t f;
-    nmo_object_id_t block, target_value, number_value, table, sensitivity, output;
+    nmo_object_id_t block, target_value, number_value, table, count, sensitivity, output;
+    nmo_guid_t guid;
 } joystick_fixture_t;
 
-static void joystick_begin(joystick_fixture_t *g)
+static void joystick_begin_variant(joystick_fixture_t *g, bool mapper)
 {
-    memset(g,0,sizeof(*g)); fixture_begin(&g->f); g->block = fixture_block(&g->f,GUID_JOYSTICK_CONTROLLER,"Joystick Controller"); ASSERT_TRUE(g->block != 0); nmo_object_id_t target = fixture_target(&g->f,g->block), number = BLOCK_PIN(&g->f,g->block,0); fixture_input_int(&g->f,target,(int32_t)g->f.owner_id); fixture_input_int(&g->f,number,0); g->target_value = nmo_parameterin_source_id(fixture_state(&g->f,target)); g->number_value = nmo_parameterin_source_id(fixture_state(&g->f,number)); const nmo_behavior_state_t *state = fixture_state(&g->f,g->block); g->table = nmo_behavior_ref_array_get_id(&state->local_parameters,0); g->sensitivity = nmo_behavior_ref_array_get_id(&state->local_parameters,1); g->output = BLOCK_POUT(&g->f,g->block,0); fixture_link(&g->f,g->f.script_in,BLOCK_IN(&g->f,g->block,0),0);
+    memset(g,0,sizeof(*g)); g->guid = mapper ? GUID_JOYSTICK_MAPPER : GUID_JOYSTICK_CONTROLLER; fixture_begin(&g->f); g->block = fixture_block(&g->f,g->guid,mapper ? "Joystick Mapper" : "Joystick Controller"); ASSERT_TRUE(g->block != 0); nmo_object_id_t target = fixture_target(&g->f,g->block), number = BLOCK_PIN(&g->f,g->block,0); fixture_input_int(&g->f,target,(int32_t)g->f.owner_id); fixture_input_int(&g->f,number,0); g->target_value = nmo_parameterin_source_id(fixture_state(&g->f,target)); g->number_value = nmo_parameterin_source_id(fixture_state(&g->f,number)); const nmo_behavior_state_t *state = fixture_state(&g->f,g->block); g->table = nmo_behavior_ref_array_get_id(&state->local_parameters,0); if (mapper) g->count = nmo_behavior_ref_array_get_id(&state->local_parameters,1); g->sensitivity = nmo_behavior_ref_array_get_id(&state->local_parameters,mapper ? 2 : 1); g->output = BLOCK_POUT(&g->f,g->block,0); fixture_link(&g->f,g->f.script_in,BLOCK_IN(&g->f,g->block,0),0);
 }
+
+static void joystick_begin(joystick_fixture_t *g) { joystick_begin_variant(g,false); }
+static void joystick_mapper_begin(joystick_fixture_t *g) { joystick_begin_variant(g,true); }
 
 static void joystick_ready(joystick_fixture_t *g)
 {
-    nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL; fixture_commit(&g->f,&options); ASSERT_TRUE(nmo_engine_has_block(g->f.engine,GUID_JOYSTICK_CONTROLLER)); ASSERT_EQ(NMO_OK,nmo_engine_start(g->f.engine,NMO_ENGINE_START_ALL)); nmo_engine_block_t block = {g->f.engine,eng_map_get(&g->f.engine->node_map,g->block)}; nmo_engine_block_set_waiting_for_messages(&block,g->f.owner_id,true);
+    nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL; fixture_commit(&g->f,&options); ASSERT_TRUE(nmo_engine_has_block(g->f.engine,g->guid)); ASSERT_EQ(NMO_OK,nmo_engine_start(g->f.engine,NMO_ENGINE_START_ALL)); nmo_engine_block_t block = {g->f.engine,eng_map_get(&g->f.engine->node_map,g->block)}; nmo_engine_block_set_waiting_for_messages(&block,g->f.owner_id,true);
 }
 
 static void joystick_received(joystick_fixture_t *g, nmo_object_id_t receiver, const char *const *names, size_t count)
@@ -182,9 +187,36 @@ static void mapper_record(uint8_t *record, uint32_t key, int32_t type, const cha
     memset(record,0,40); nmo_write_u32_le(record,key); nmo_write_u32_le(record+4,(uint32_t)type); size_t length = strlen(name); memcpy(record+8,name,length < 32 ? length : 32);
 }
 
+static void mapper_save_bindings(engine_fixture_t *f, nmo_object_id_t table, nmo_object_id_t count_id, const void *records, size_t bytes, int32_t count)
+{
+    nmo_parameter_state_t *state = fixture_state(f,table); nmo_array_dispose(&state->buffer_data); ASSERT_EQ(NMO_OK,nmo_array_alloc(&state->buffer_data,1,bytes,NULL)); if (bytes != 0) memcpy(state->buffer_data.data,records,bytes); state->mode = CKPARAM_MODE_BUFFER; state->has_state = true; char text[32]; snprintf(text,sizeof(text),"%d",count); ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(f->tx,count_id,text));
+}
+
 static void mapper_saved(keyboard_fixture_t *g, const void *records, size_t bytes, int32_t count)
 {
-    nmo_parameter_state_t *state = fixture_state(&g->f,g->table); nmo_array_dispose(&state->buffer_data); ASSERT_EQ(NMO_OK,nmo_array_alloc(&state->buffer_data,1,bytes,NULL)); if (bytes != 0) memcpy(state->buffer_data.data,records,bytes); state->mode = CKPARAM_MODE_BUFFER; state->has_state = true; char text[32]; snprintf(text,sizeof(text),"%d",count); ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(g->f.tx,g->count,text));
+    mapper_save_bindings(&g->f,g->table,g->count,records,bytes,count);
+}
+
+static void joystick_mapper_saved(joystick_fixture_t *g, const void *records, size_t bytes, int32_t count)
+{
+    mapper_save_bindings(&g->f,g->table,g->count,records,bytes,count);
+}
+
+TEST(engine_input, joystick_mapper_loads_names_and_repeats_bindings_in_record_order_with_raw_analog_output)
+{
+    joystick_fixture_t g; joystick_mapper_begin(&g); uint8_t records[240]; const uint32_t commands[] = {1043,1008,1012,1010,1008,1011}; const char *names[] = {"High Button","Forward","Action","Left","Forward","Right"};
+    for (size_t i = 0; i < 6; i++) mapper_record(records+40*i,commands[i],999,names[i]); joystick_mapper_saved(&g,records,sizeof(records),6); joystick_ready(&g); uint8_t runtime[240]; read_value(&g.f,g.table,runtime,sizeof(runtime));
+    for (size_t i = 0; i < 6; i++) { ASSERT_EQ(commands[i],nmo_read_u32_le(runtime+40*i)); ASSERT_EQ(nmo_engine_message_type(g.f.engine,names[i]),(int32_t)nmo_read_u32_le(runtime+40*i+4)); }
+    nmo_engine_joystick_state_t state = {.attached = true,.position = {-1,-.75f,1.5f},.point_of_view = -1,.buttons = 0x80000001u}; nmo_engine_set_joystick(g.f.engine,0,&state); const char *expected[] = {"High Button","Forward","Action","Left","Forward"};
+    for (int frame = 0; frame < 2; frame++) { ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); joystick_received(&g,g.f.owner_id,expected,5); ASSERT_FALSE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,0))); float output[3]; read_value(&g.f,g.output,output,sizeof(output)); for (size_t i = 0; i < 3; i++) ASSERT_FLOAT_EQ(state.position[i],output[i],0); }
+    state.position[0] = state.position[1] = 0; state.buttons = 0; nmo_engine_set_joystick(g.f.engine,0,&state); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); joystick_received(&g,g.f.owner_id,NULL,0); ASSERT_TRUE(nmo_engine_behavior_is_active(g.f.engine,g.block)); ASSERT_TRUE(memcmp(records,((nmo_parameter_state_t *)fixture_state(&g.f,g.table))->buffer_data.data,sizeof(records)) == 0); fixture_end(&g.f);
+}
+
+TEST(engine_input, joystick_mapper_supports_all_32_buttons_independently)
+{
+    joystick_fixture_t g; joystick_mapper_begin(&g); uint8_t records[32*40]; char names[32][24];
+    for (uint32_t i = 0; i < 32; i++) { snprintf(names[i],sizeof(names[i]),"Button %u",i+1); mapper_record(records+40*i,1012+i,-1,names[i]); } joystick_mapper_saved(&g,records,sizeof(records),32); joystick_ready(&g);
+    for (uint32_t i = 0; i < 32; i++) { nmo_engine_joystick_state_t state = {.attached = true,.point_of_view = -1,.buttons = 1u << i}; nmo_engine_set_joystick(g.f.engine,0,&state); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); const char *expected[] = {names[i]}; joystick_received(&g,g.f.owner_id,expected,1); } fixture_end(&g.f);
 }
 
 TEST(engine_input, keyboard_mapper_loads_named_bindings_and_repeats_duplicate_keys_in_record_order)
@@ -611,6 +643,8 @@ TEST(engine_input, tt_input_string_keeps_editing_past_enter)
 }
 
 TEST_MAIN_BEGIN()
+REGISTER_TEST(engine_input, joystick_mapper_loads_names_and_repeats_bindings_in_record_order_with_raw_analog_output);
+REGISTER_TEST(engine_input, joystick_mapper_supports_all_32_buttons_independently);
 REGISTER_TEST(engine_input, joystick_states_take_effect_at_frame_boundaries_and_disconnects_clear_all_fields);
 REGISTER_TEST(engine_input, four_joystick_slots_are_independent_and_invalid_indices_return_neutral_states);
 REGISTER_TEST(engine_input, joystick_snapshots_remain_private_to_each_engine_and_survive_script_reactivation);

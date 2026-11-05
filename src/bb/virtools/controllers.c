@@ -1,6 +1,6 @@
 /**
  * @file controllers.c
- * @brief Ports of the keyboard and mouse building blocks.
+ * @brief Ports of the keyboard, joystick and mouse building blocks.
  *
  * Each function does what the block's function in Controllers.dll does,
  * reading the input state the host gives the engine (nmo_engine_set_key() and
@@ -23,23 +23,23 @@ static bool key_down(blk_t *b, uint32_t key)
 
 /* ---- Controllers/Keyboard ---- */
 
-static eng_param_t *keyboard_mapper_data(blk_t *b)
+static eng_param_t *mapper_data(blk_t *b)
 {
     const eng_node_t *node = &b->engine->nodes.data[b->node];
     return eng_node_param(b->engine,node->first_local,node->local_count,0);
 }
 
-static bool keyboard_mapper_valid(const eng_param_t *data, int32_t count)
+static bool mapper_valid(const eng_param_t *data, int32_t count)
 {
     return count <= 0 || (data != NULL && data->data != NULL && (uint32_t)count <= data->size/40);
 }
 
-static int cb_keyboard_mapper(blk_t *b, uint32_t message)
+static int cb_mapper_bindings(blk_t *b, uint32_t message)
 {
     if (message != NMO_ENGINE_MSG_LOAD) return NMO_ENGINE_BR_OK;
-    eng_param_t *data = keyboard_mapper_data(b); int32_t count = get_local_int(b,1,0);
-    if (!keyboard_mapper_valid(data,count)) return NMO_ENGINE_BR_PARAMETERERROR;
-    /* mappedKey: little-endian key and cached message ID, then a 32-byte name.
+    eng_param_t *data = mapper_data(b); int32_t count = get_local_int(b,1,0);
+    if (!mapper_valid(data,count)) return NMO_ENGINE_BR_PARAMETERERROR;
+    /* mappedKey/mappedJoy: little-endian command and cached ID, then a 32-byte name.
      * Rebuild only the active records; copied/runtime IDs remain valid until LOAD. */
     for (int32_t i = 0; i < count; i++) {
         uint8_t *record = data->data+(size_t)i*40; char name[33]; memcpy(name,record+8,32); name[32] = 0;
@@ -58,12 +58,41 @@ static int bb_keyboard_mapper(blk_t *b)
     if (eng_map_get(&b->engine->destroyed,sender) >= 0 || eng_map_get(&b->engine->destroyed,target) >= 0 ||
         !eng_is_child_class(b->engine,nmo_engine_object_class(b->engine,sender),NMO_CID_BEOBJECT) ||
         !eng_is_child_class(b->engine,nmo_engine_object_class(b->engine,target),NMO_CID_BEOBJECT)) return NMO_ENGINE_BR_OWNERERROR;
-    eng_param_t *data = keyboard_mapper_data(b); int32_t count = get_local_int(b,1,0);
-    if (!keyboard_mapper_valid(data,count)) return NMO_ENGINE_BR_PARAMETERERROR;
+    eng_param_t *data = mapper_data(b); int32_t count = get_local_int(b,1,0);
+    if (!mapper_valid(data,count)) return NMO_ENGINE_BR_PARAMETERERROR;
     for (int32_t i = 0; i < count; i++) {
         const uint8_t *record = data->data+(size_t)i*40;
         if (key_down(b,nmo_read_u32_le(record))) nmo_engine_block_send_message(b,(int32_t)nmo_read_u32_le(record+4),target,sender);
     }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+static int bb_joystick_mapper(blk_t *b)
+{
+    if (IN_ACTIVE(b,1)) { IN_OFF(b,1); return NMO_ENGINE_BR_OK; }
+    IN_OFF(b,0);
+    nmo_object_id_t sender = nmo_engine_block_owner(b), target = nmo_engine_block_target(b);
+    if (eng_map_get(&b->engine->destroyed,sender) >= 0 || eng_map_get(&b->engine->destroyed,target) >= 0 ||
+        !eng_is_child_class(b->engine,nmo_engine_object_class(b->engine,sender),NMO_CID_BEOBJECT) ||
+        !eng_is_child_class(b->engine,nmo_engine_object_class(b->engine,target),NMO_CID_BEOBJECT)) return NMO_ENGINE_BR_OWNERERROR;
+    eng_param_t *data = mapper_data(b); int32_t count = get_local_int(b,1,0);
+    nmo_engine_joystick_state_t state;
+    if (!nmo_engine_joystick_state(b->engine,get_in_int(b,0,0),&state)) return NMO_ENGINE_BR_GENERICERROR;
+    if (!mapper_valid(data,count)) return NMO_ENGINE_BR_PARAMETERERROR;
+    eng_vector_t sensitivity = {.5f,.5f,.5f}; nmo_engine_block_get_local_value(b,2,&sensitivity,sizeof(sensitivity));
+    for (int32_t i = 0; i < count; i++) {
+        const uint8_t *record = data->data+(size_t)i*40; uint32_t command = nmo_read_u32_le(record); bool active;
+        switch (command) {
+            case 1008: active = state.position[1] < -sensitivity.y; break;
+            case 1009: active = state.position[1] > sensitivity.y; break;
+            case 1010: active = state.position[0] < -sensitivity.x; break;
+            case 1011: active = state.position[0] > sensitivity.x; break;
+            /* Controllers.dll uses SHL EAX,CL, which masks the count to five bits. */
+            default: active = (state.buttons & (1u << ((command-1012u)&31u))) != 0; break;
+        }
+        if (active) nmo_engine_block_send_message(b,(int32_t)nmo_read_u32_le(record+4),target,sender);
+    }
+    nmo_engine_block_set_output_value(b,0,state.position,sizeof(state.position));
     return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
 }
 
@@ -860,8 +889,9 @@ static int cb_tt_input_string(blk_t *b, uint32_t message)
 }
 
 static const nmo_engine_block_desc_t eng_controller_blocks[] = {
-    {NMO_GUID_INIT(0x053b2bde,0x2f8f1d74),"Keyboard Mapper",bb_keyboard_mapper,cb_keyboard_mapper,NULL},
+    {NMO_GUID_INIT(0x053b2bde,0x2f8f1d74),"Keyboard Mapper",bb_keyboard_mapper,cb_mapper_bindings,NULL},
     {NMO_GUID_INIT(0x43f1d000,0x1a2b3c4d),"Keyboard Controller",bb_keyboard_controller,cb_controller_messages,NULL},
+    {NMO_GUID_INIT(0x03ed1bea,0x25692ecc),"Joystick Mapper",bb_joystick_mapper,cb_mapper_bindings,NULL},
     {NMO_GUID_INIT(0x0085ebc1,0x21935422),"Joystick Controller",bb_joystick_controller,cb_controller_messages,NULL},
     {NMO_GUID_INIT(0x1af2274b, 0x6b8c1524), "Key Event", bb_key_event, NULL, NULL},
     {NMO_GUID_INIT(0x016d010b, 0x017d010b), "Key Waiter", bb_key_waiter, cb_key_waiter, NULL},
