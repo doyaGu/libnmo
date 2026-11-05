@@ -1256,6 +1256,19 @@ void eng_entity_destroy(nmo_engine_t *engine, nmo_object_id_t id)
  * The host's view
  * ============================================================================ */
 
+size_t nmo_engine_entity_count(const nmo_engine_t *engine)
+{
+    return engine != NULL ? engine->entities.count : 0;
+}
+
+nmo_object_id_t nmo_engine_entity_id(const nmo_engine_t *engine, size_t index)
+{
+    if (engine == NULL || index >= engine->entities.count || engine->entities.data[index].destroyed) {
+        return 0;
+    }
+    return engine->entities.data[index].id;
+}
+
 bool nmo_engine_entity_world_matrix(const nmo_engine_t *engine, nmo_object_id_t entity_id,
                                     float out_matrix[16])
 {

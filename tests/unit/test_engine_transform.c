@@ -307,6 +307,32 @@ TEST(engine_transform, loaded_character_nearest_outputs_feed_transforms_and_rema
     fixture_end(&source); remove(path);
 }
 
+TEST(engine_transform, entity_slots_remain_stable_after_deletion)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t first = fixture_create(&f, NMO_CID_3DENTITY, "First");
+    nmo_object_id_t second = fixture_create(&f, NMO_CID_3DENTITY, "Second");
+    place_entity(&f, first, 1, 2, 3, 0);
+    place_entity(&f, second, 4, 5, 6, 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(0u, nmo_engine_entity_count(NULL));
+    size_t count = nmo_engine_entity_count(f.engine), first_slot = count, second_slot = count;
+    for (size_t i = 0; i < count; i++) {
+        if (nmo_engine_entity_id(f.engine, i) == first) first_slot = i;
+        if (nmo_engine_entity_id(f.engine, i) == second) second_slot = i;
+    }
+    ASSERT_TRUE(first_slot < count && second_slot < count);
+    ASSERT_EQ(0u, nmo_engine_entity_id(f.engine, count));
+    nmo_engine_destroy_object(f.engine, first);
+    ASSERT_EQ(count, nmo_engine_entity_count(f.engine));
+    ASSERT_EQ(0u, nmo_engine_entity_id(f.engine, first_slot));
+    ASSERT_EQ(second, nmo_engine_entity_id(f.engine, second_slot));
+    fixture_end(&f);
+}
+
 TEST(engine_transform, loaded_children_keep_their_place_under_the_parent)
 {
     engine_fixture_t f;
@@ -1063,6 +1089,7 @@ TEST(engine_transform, texture_sine_runs_its_clock_and_checks_the_channel)
 }
 
 TEST_MAIN_BEGIN()
+REGISTER_TEST(engine_transform, entity_slots_remain_stable_after_deletion);
 REGISTER_TEST(engine_transform, loaded_children_keep_their_place_under_the_parent);
 REGISTER_TEST(engine_transform, set_position_and_set_parent);
 REGISTER_TEST(engine_transform, rotate_scale_and_orientation);

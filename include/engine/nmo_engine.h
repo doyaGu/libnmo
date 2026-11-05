@@ -647,6 +647,9 @@ NMO_API nmo_status_t nmo_engine_copy_objects(nmo_engine_t *engine,
  * floats, VxMatrix's rows: the X, Y and Z axes, then the position.
  */
 
+/** Entity slots include loaded and copied objects; deleted slots return ID 0. */
+NMO_API size_t nmo_engine_entity_count(const nmo_engine_t *engine);
+NMO_API nmo_object_id_t nmo_engine_entity_id(const nmo_engine_t *engine, size_t index);
 /** The entity's world matrix; false when `entity_id` is no 3D entity. */
 NMO_API bool nmo_engine_entity_world_matrix(const nmo_engine_t *engine,
                                             nmo_object_id_t entity_id,
