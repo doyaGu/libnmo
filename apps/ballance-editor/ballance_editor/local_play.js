@@ -1,72 +1,747 @@
 /* Local play advances a retained native world, independently of document history. */
-let localSnapshot=null,localAssets=null,localPlaying=false,localPending=false,localPicking=false,localKeys=0,localGeneration=0,localOwner='',localTrail=[],localTimer=null,limitDrag=null,limitHandles=[],localLimitsRevision='';
-function localPause(){localPlaying=false;localKeys=0;clearTimeout(localTimer);$('localRun').textContent='▶ 运行';document.querySelectorAll('[data-local-key]').forEach(b=>b.classList.remove('active'))}
-function localObjectVisible(obj){if(obj.local_ball)return !before&&!!localSnapshot&&localSnapshot.revision===state.revision&&localSnapshot.ball?.name===obj.body;if(!before&&localSnapshot?.revision===state.revision&&obj.native&&localSnapshot.poses[obj.name])return localSnapshot.poses[obj.name].visible;return true}
-const matrixBeforeLocal=nativeObjectMatrix;
-nativeObjectMatrix=function(obj){if(!before&&localSnapshot?.revision===state.revision){if(obj.local_ball)return localSnapshot.ball?.matrix||obj.matrix;const pose=localSnapshot.poses[obj.name];if(pose)return pose.matrix}return matrixBeforeLocal(obj)};
-function localPoseChanged(value){if(value.status&&value.status!=='alive')localPause();const previous=localSnapshot;localSnapshot=value;const ball=value.ball?.matrix.slice(12,15);if(ball&&(!localTrail.length||value.frame!==previous?.frame)){localTrail.push(ball);if(localTrail.length>900)localTrail.shift()}
- let text=`${value.status==='dead'?(value.death_reason==='below_map'?'已离开地图范围':'已死亡'):value.status==='finished'?'已到达终点':localPlaying?'运行中':'已暂停'} · 第 ${value.frame} 帧 · ${(value.frame*value.frame_ms/1000).toFixed(2)} 秒`;
- if(ball)text+=`\n球位置 ${ball.map(v=>v.toFixed(2)).join(' / ')}`;else text+='\n球已失活，可重置重新放球。';
- const target=(scene.objects||[]).find(o=>o.instance===localOwner&&o.joint),pose=target&&value.poses[target.name];
- if(pose){const angle=measuredJointAngle(target,pose.matrix);if(Number.isFinite(angle))text+=`\n${target.joint.angles[1]-target.joint.angles[0]>=360?'转角':'关节角'} ${angle.toFixed(1)}°`}
- if(value.status==='dead')text+='\n点击“重试本次起点”重新开始。';$('localStatus').textContent=text;draw();}
-function measuredJointAngle(obj,matrix){const inv=ScenePicking.inverse(obj.instance_matrix),rest=ScenePicking.inverse(obj.template_matrix);if(!inv||!rest)return NaN;const relative=matrixProduct(matrixProduct(inv,matrix),rest),axis=obj.joint.axis;const reference=jointReference(axis),turned=ScenePicking.point(relative,reference,0);return signedJointAngle(reference,turned,axis)}
-function cross3(a,b){return [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]]}
-function normalized3(v){const n=Math.hypot(...v);return v.map(x=>x/n)}
-function jointReference(axis){const a=normalized3(axis),v=Math.abs(a[0])<.8?[1,0,0]:[0,0,1];return normalized3(v.map((x,i)=>x-dot(v,a)*a[i]))}
-function signedJointAngle(reference,turned,axis){return Math.atan2(dot(cross3(reference,turned),axis),dot(reference,turned))*180/Math.PI}
-function localPosition(){return ['localX','localY','localZ'].map(id=>Number($(id).value))}
-function setLocalPosition(p){['localX','localY','localZ'].forEach((id,i)=>$(id).value=Number(p[i].toFixed(3)))}
-function localSetEnabled(){const active=!!localSnapshot&&localSnapshot.revision===state.revision;$('localStep').disabled=!active||localSnapshot.status!=='alive'||localPending||busy;$('localRun').disabled=!active||localSnapshot.status!=='alive'||(localPending&&!localPlaying)||busy;for(const id of ['localReset','localSpawn','localPick','localStart','localSector','localBall'])$(id).disabled=localPending||busy;$('localRetry').disabled=!active||localPending||busy}
-function localConfiguration(){return {instance:localOwner||null,sector:Number($('localSector').value),checkpoint:$('localStart').value==='checkpoint',position:localPosition(),ball:$('localBall').value}}
-function syncLocalStart(){const checkpoint=$('localStart').value==='checkpoint',start=state.local_starts.find(s=>s.sector===Number($('localSector').value));$('localPosition').hidden=checkpoint;$('localPlacement').hidden=checkpoint;if(checkpoint&&start){setLocalPosition(start.position);$('localBall').value=start.ball}$('localBall').parentElement.hidden=checkpoint;localSetEnabled();draw()}
-async function localStop(){localPause();localGeneration++;const old=localSnapshot;localSnapshot=null;localAssets=null;localTrail=[];if(scene)upload();localSetEnabled();if(old)try{await api('/local-play',{action:'stop',revision:state.revision,session:old.session})}catch{/* Edits also release the old world. */}}
-async function startLocal(retry=false){if(localPending||busy||before)return;localPause();localPicking=false;const request=retry&&localSnapshot?{action:'retry',session:localSnapshot.session}:{action:'start',...localConfiguration()};const generation=++localGeneration;localPending=true;localSnapshot=null;localTrail=[];localSetEnabled();$('localStatus').textContent='正在加载本小节并放球…';
- try{const value=await api('/local-play',{...request,revision:state.revision});if(generation!==localGeneration){await api('/local-play',{action:'stop',revision:state.revision,session:value.session});return}localAssets=value.assets;delete value.assets;localSnapshot=value;$('sector').value=value.sector;if(!localOwner){center=(value.ball?.matrix.slice(12,15)||value.spawn).slice();scale=Math.max(6,Math.min(12,scale))}$('localSector').value=value.sector;$('localStart').value=value.checkpoint?'checkpoint':'point';$('localBall').value=value.start_ball;setLocalPosition(value.spawn);syncLocalStart();upload();localPoseChanged(value)}catch(e){$('localStatus').textContent=e.message}finally{localPending=false;localSetEnabled()}}
-async function stepLocal(frames=1){if(localPending||!localSnapshot||busy)return;localPending=true;const generation=localGeneration,start=performance.now();localSetEnabled();try{const value=await api('/local-play',{action:'step',revision:state.revision,session:localSnapshot.session,frames,keys:localKeys});if(generation!==localGeneration)return;localPoseChanged(value);if(localPlaying)localTimer=setTimeout(()=>stepLocal(4),Math.max(0,frames*value.frame_ms-(performance.now()-start)))}catch(e){localPause();$('localStatus').textContent=e.message}finally{localPending=false;localSetEnabled()}}
-function syncLocalLimits(){localLimitsRevision=state.revision;const e=state.model.entities.find(e=>e.id===localOwner),p=e?.piece?.physics||{};const enabled=!!e?.details?.parameter_schema?.limits_enabled;$('localLimits').hidden=!enabled;if(!limitDrag){$('localLower').value=p.lower_angle??-45;$('localUpper').value=p.upper_angle??45}$('localLowerValue').textContent=$('localLower').value+'°';$('localUpperValue').textContent=$('localUpper').value+'°';}
-async function saveLocalLimits(){if(busy||before||currentEntity()?.id!==localOwner)return;localPause();const p=pendingPiece();p.physics={...p.physics,limits_enabled:true,lower_angle:Number($('localLower').value),upper_angle:Number($('localUpper').value)};if(p.physics.lower_angle>=p.physics.upper_angle){$('localStatus').textContent='限位范围必须包含初始角度，且不能为零。';return}
- // documentAction reads the pending source field for a set command.
- $('piece').value=JSON.stringify(p,null,2);livePiece=p;await localStop();await documentAction('set');$('localStatus').textContent=state.document_error?'限位未能构建，请修正参数。':'限位已保存。重置试玩以加载新参数。';syncLocalLimits()}
-$('localOpen').onclick=async()=>{if(busy||before)return;await localStop();stopNative();const e=currentEntity();localOwner=e?.category==='mechanism'?e.id:'';$('localPanel').hidden=false;$('nativeControls').hidden=true;$('nativeToggle').setAttribute('aria-expanded','false');$('localOwner').textContent=localOwner?nativeResourceName(scene.native_instances.find(i=>i.id===localOwner)?.resource)+' · 局部试玩':'自由试玩 · 点击轨道或地面放球';$('localSector').innerHTML=state.local_starts.map(s=>`<option value="${s.sector}">${s.label}</option>`).join('');$('localSector').value=e?.sector||Number($('sector').value)||1;$('localStart').value='point';const parent=state.model.entities.find(o=>o.id===e?.parent),start=state.local_starts.find(s=>s.sector===Number($('localSector').value)),p=(localOwner?(e.id.includes('/P_Modul_18/')?e.details.position:parent?.frame?.position||e.details.position):(e?.frame?.position||start?.position||[0,0,0])).slice();p[1]+=3;setLocalPosition(p);$('localBall').value=localOwner.includes('/P_Modul_18/')?'Paper':start?.ball||'Wood';$('localStatus').textContent='选择路面放球，或从检查点开始；加载后保持暂停。';syncLocalLimits();syncLocalStart();draw()};
-$('localStart').onchange=()=>{localPause();syncLocalStart();if($('localStart').value==='checkpoint'){center=localPosition();scale=8;$('sector').value=$('localSector').value;upload()}};
-$('localSector').onchange=()=>{localPause();localOwner='';$('localOwner').textContent='自由试玩';syncLocalLimits();syncLocalStart();$('sector').value=$('localSector').value;if($('localStart').value==='checkpoint'){center=localPosition();scale=8}upload()};
-$('localClose').onclick=async()=>{await localStop();localPicking=false;$('localPanel').hidden=true;draw()};
-$('localSpawn').onclick=()=>startLocal();$('localReset').onclick=()=>startLocal();$('localRetry').onclick=()=>startLocal(true);
-$('localStep').onclick=()=>{const keys=localKeys;localPause();localKeys=keys;stepLocal(1)};
-$('localRun').onclick=()=>{if(localPlaying){localPause();if(localSnapshot)localPoseChanged(localSnapshot);return}if(!localSnapshot)return;stopNative();localPlaying=true;$('localRun').textContent='Ⅱ 暂停';overlay.focus();stepLocal(4)};
-$('localPick').onclick=()=>{localPause();localPicking=!localPicking;$('localStatus').textContent=localPicking?'点击轨道或地面的上表面；球心会放在表面上方。':'已取消选点';draw()};
-$('localLimitHandles').onchange=()=>{localPause();draw()};
-for(const id of ['localLower','localUpper']){$(id).oninput=()=>{localPause();$('localLowerValue').textContent=$('localLower').value+'°';$('localUpperValue').textContent=$('localUpper').value+'°';draw()};$(id).onchange=saveLocalLimits;}
-for(const button of document.querySelectorAll('[data-local-key]')){const mask=Number(button.dataset.localKey);button.onpointerdown=e=>{button.setPointerCapture(e.pointerId);localKeys|=mask;button.classList.add('active')};for(const name of ['onpointerup','onpointercancel','onlostpointercapture'])button[name]=()=>{localKeys&=~mask;button.classList.remove('active')}}
-const arrowMasks={ArrowUp:1,ArrowDown:2,ArrowLeft:4,ArrowRight:8};
-document.addEventListener('keydown',e=>{if($('localPanel').hidden||['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName)||!localSnapshot)return;if(arrowMasks[e.key]){e.preventDefault();e.stopImmediatePropagation();localKeys|=arrowMasks[e.key]}if(e.code==='Space'){e.preventDefault();e.stopImmediatePropagation();$('localRun').click()}},true);
-document.addEventListener('keyup',e=>{if(arrowMasks[e.key])localKeys&=~arrowMasks[e.key]});window.addEventListener('blur',localPause);document.addEventListener('visibilitychange',()=>{if(document.hidden)localPause()});
-function limitObject(){return (scene?.objects||[]).find(o=>o.instance===localOwner&&o.joint&&o.joint.angles&&state.model.entities.find(e=>e.id===localOwner)?.details?.parameter_schema?.limits_enabled)}
-function limitPoint(obj,angle,radius=12){const ref=jointReference(obj.joint.axis),p=obj.joint.pivot.map((v,i)=>v+radius*ref[i]);return ScenePicking.point(obj.instance_matrix,ScenePicking.point(jointMatrix(obj.joint,angle),p))}
-function limitPointerAngle(obj,x,y){const ray=sceneRay(x,y),pivot=ScenePicking.point(obj.instance_matrix,obj.joint.pivot),axis=normalized3(ScenePicking.point(obj.instance_matrix,obj.joint.axis,0)),den=dot(ray.direction,axis);if(Math.abs(den)<.03)return null;const t=dot(pivot.map((v,i)=>v-ray.origin[i]),axis)/den;if(t<0)return null;const v=ray.origin.map((a,i)=>a+t*ray.direction[i]-pivot[i]),ref=normalized3(ScenePicking.point(obj.instance_matrix,jointReference(obj.joint.axis),0));return signedJointAngle(ref,v,axis)}
-function localRailSpawn(entities,ray,hit,sector,others){
- // A double rail is a playable corridor even where the ray passes between its
- // tubes. The actual nearest mesh still occludes tracks on lower layers.
- let best=null;
- for(const e of entities){const section=e.ports?.entry?.section,gauge=section?.gauge;if(e.category!=='geometry'||section?.kind!=='rail'||!gauge||(sector&&!others&&e.sector!==sector))continue;
-  for(let i=1;i<(e.path||[]).length;i++){const a=e.path[i-1],b=e.path[i],v=b.map((p,j)=>p-a[j]),w=a.map((p,j)=>p-ray.origin[j]),along=dot(v,ray.direction),v2=dot(v,v)-along*along;if(v2<1e-10)continue;
-   const u=Math.max(0,Math.min(1,(along*dot(w,ray.direction)-dot(v,w))/v2)),p=a.map((x,j)=>x+u*v[j]),t=dot(p.map((x,j)=>x-ray.origin[j]),ray.direction),distance=Math.hypot(...p.map((x,j)=>x-ray.origin[j]-t*ray.direction[j]));
-   if(t<0||distance>gauge/2+(section.radius||.35)||hit&&hit.distance<t-(hit.object.play_surface==='rail'?3:.35))continue;
-   if(!best||t<best.distance)best={position:[p[0],p[1]+2.1,p[2]],sector:e.sector,distance:t};
-  }
- }return best;
+let localSnapshot = null;
+let localAssets = null;
+let localPlaying = false;
+let localPending = false;
+let localPicking = false;
+let localKeys = 0;
+let localGeneration = 0;
+let localOwner = '';
+let localTrail = [];
+let localTimer = null;
+let limitDrag = null;
+let limitHandles = [];
+let localLimitsRevision = '';
+function localPause() {
+    localPlaying = false;
+    localKeys = 0;
+    clearTimeout(localTimer);
+    $('localRun').textContent = '▶ 运行';
+    document.querySelectorAll('[data-local-key]').forEach((b) => b.classList.remove('active'));
 }
-const overlayBeforeLocal=drawEditorOverlay;
-drawEditorOverlay=function(){overlayBeforeLocal();limitHandles=[];if($('localPanel').hidden||before)return;if(localLimitsRevision!==state.revision)syncLocalLimits();if(localSnapshot&&localSnapshot.revision!==state.revision){localPause();localGeneration++;localSnapshot=null;localAssets=null;localTrail=[];$('localStatus').textContent='地图已修改，请重置局部试玩。';localSetEnabled()}
- if(localTrail.length){ctx.strokeStyle='#b1edbd99';ctx.lineWidth=2;ctx.beginPath();localTrail.forEach((p,i)=>{const q=project(p);i?ctx.lineTo(...q):ctx.moveTo(...q)});ctx.stroke()}
- if(!localSnapshot||localPicking){const p=project(localPosition());ctx.strokeStyle='#a9f0d1';ctx.lineWidth=2;ctx.setLineDash([4,4]);ctx.beginPath();ctx.arc(...p,2*scale,0,2*Math.PI);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#d5f6e7';ctx.fillText('放球点',p[0]+2*scale+6,p[1])}
- const obj=limitObject();if(!obj||!$('localLimitHandles').checked)return;const lower=Number($('localLower').value),upper=Number($('localUpper').value);ctx.strokeStyle='#eac685';ctx.lineWidth=3;ctx.beginPath();for(let i=0;i<=80;i++){const p=project(limitPoint(obj,lower+(upper-lower)*i/80));i?ctx.lineTo(...p):ctx.moveTo(...p)}ctx.stroke();const pivot=project(ScenePicking.point(obj.instance_matrix,obj.joint.pivot));for(const [id,angle] of [['localLower',lower],['localUpper',upper]]){const p=project(limitPoint(obj,angle));ctx.strokeStyle='#dfb97688';ctx.beginPath();ctx.moveTo(...pivot);ctx.lineTo(...p);ctx.stroke();ctx.fillStyle='#f5d48c';ctx.beginPath();ctx.arc(...p,8,0,2*Math.PI);ctx.fill();ctx.fillStyle='#fff2d4';ctx.font='12px system-ui';ctx.fillText((id==='localLower'?'最小 ':'最大 ')+angle+'°',p[0]+12,p[1]-10);limitHandles.push({id,point:p,obj})}};
-const downBeforeLocal=overlay.onpointerdown,moveBeforeLocal=overlay.onpointermove,upBeforeLocal=overlay.onpointerup,cancelBeforeLocal=overlay.onpointercancel;
-overlay.onpointerdown=e=>{if(e.button!==0||busy||before){downBeforeLocal(e);return}const h=limitHandles.find(h=>Math.hypot(h.point[0]-e.offsetX,h.point[1]-e.offsetY)<15);if(h){localPause();limitDrag={...h,original:Number($(h.id).value)};overlay.setPointerCapture(e.pointerId);return}if(localPicking){const ray=sceneRay(e.offsetX,e.offsetY),hit=ScenePicking.hit(visibleSceneObjects().filter(o=>!o.local_ball),ray.origin,ray.direction,nativeObjectMatrix);const rail=localRailSpawn(state.model.entities,ray,hit,Number($('sector').value),$('others').checked);if(rail||hit&&Math.abs(hit.normal[1])>.4){const normal=hit?.normal.map(v=>v*(hit.normal[1]<0?-1:1)),position=rail?.position||hit.position.map((v,i)=>v+2.1*normal[i]),sector=rail?.sector||hit.object.sector;setLocalPosition(position);if(sector){$('localSector').value=sector;if(state.model.entities.find(e=>e.id===localOwner)?.sector!==sector){localOwner='';$('localOwner').textContent='自由试玩';syncLocalLimits()}}localPicking=false;$('localStatus').textContent='放球点已选好，点击“放球并暂停”。';draw()}else $('localStatus').textContent='请选择路面或轨道的上表面。';return}downBeforeLocal(e)};
-overlay.onpointermove=e=>{if(!limitDrag){moveBeforeLocal(e);return}const a=limitPointerAngle(limitDrag.obj,e.offsetX,e.offsetY);if(a===null){$('localStatus').textContent='当前视角与关节平面平行，请转动视图再拖动。';return}$(limitDrag.id).value=Math.round(Math.max(limitDrag.id==='localLower'?-180:0,Math.min(limitDrag.id==='localLower'?0:180,a)));$('localLowerValue').textContent=$('localLower').value+'°';$('localUpperValue').textContent=$('localUpper').value+'°';draw()};
-overlay.onpointerup=e=>{if(!limitDrag){upBeforeLocal(e);return}const changed=Number($(limitDrag.id).value)!==limitDrag.original;limitDrag=null;if(changed)saveLocalLimits()};
-overlay.onpointercancel=e=>{if(limitDrag){$(limitDrag.id).value=limitDrag.original;limitDrag=null;draw()}else cancelBeforeLocal(e)};
+function localObjectVisible(obj) {
+    if (obj.local_ball) {
+        return (
+            !before &&
+            !!localSnapshot &&
+            localSnapshot.revision === state.revision &&
+            localSnapshot.ball?.name === obj.body
+        );
+    }
+    if (
+        !before &&
+        localSnapshot?.revision === state.revision &&
+        obj.native &&
+        localSnapshot.poses[obj.name]
+    ) {
+        return localSnapshot.poses[obj.name].visible;
+    }
+    return true;
+}
+const matrixBeforeLocal = nativeObjectMatrix;
+nativeObjectMatrix = function (obj) {
+    if (!before && localSnapshot?.revision === state.revision) {
+        if (obj.local_ball) {
+            return localSnapshot.ball?.matrix || obj.matrix;
+        }
+        const pose = localSnapshot.poses[obj.name];
+        if (pose) {
+            return pose.matrix;
+        }
+    }
+    return matrixBeforeLocal(obj);
+};
+function localStatusLabel(value) {
+    if (value.status === 'dead') {
+        return value.death_reason === 'below_map' ? '已离开地图范围' : '已死亡';
+    }
+    if (value.status === 'finished') {
+        return '已到达终点';
+    }
+    return localPlaying ? '运行中' : '已暂停';
+}
 
-const selectBeforeLocal=selectEntity;
-selectEntity=function(e,focus=false,add=false){if(!$('localPanel').hidden&&localOwner&&e.id!==localOwner){localStop();localPicking=false;$('localPanel').hidden=true}selectBeforeLocal(e,focus,add)};
+function localPoseChanged(value) {
+    if (value.status && value.status !== 'alive') {
+        localPause();
+    }
+    const previous = localSnapshot;
+    localSnapshot = value;
+    const ball = value.ball?.matrix.slice(12, 15);
+    if (ball && (!localTrail.length || value.frame !== previous?.frame)) {
+        localTrail.push(ball);
+        if (localTrail.length > 900) {
+            localTrail.shift();
+        }
+    }
+    const seconds = ((value.frame * value.frame_ms) / 1000).toFixed(2);
+    let text = `${localStatusLabel(value)} · 第 ${value.frame} 帧 · ${seconds} 秒`;
+    if (ball) {
+        text += `\n球位置 ${ball.map((v) => v.toFixed(2)).join(' / ')}`;
+    } else {
+        text += '\n球已失活，可重置重新放球。';
+    }
+    const target = (scene.objects || []).find((o) => o.instance === localOwner && o.joint);
+    const pose = target && value.poses[target.name];
+    if (pose) {
+        const angle = measuredJointAngle(target, pose.matrix);
+        if (Number.isFinite(angle)) {
+            text += `\n${target.joint.angles[1] - target.joint.angles[0] >= 360 ? '转角' : '关节角'} ${angle.toFixed(1)}°`;
+        }
+    }
+    if (value.status === 'dead') {
+        text += '\n点击“重试本次起点”重新开始。';
+    }
+    $('localStatus').textContent = text;
+    draw();
+}
+function measuredJointAngle(obj, matrix) {
+    const inv = ScenePicking.inverse(obj.instance_matrix);
+    const rest = ScenePicking.inverse(obj.template_matrix);
+    if (!inv || !rest) {
+        return NaN;
+    }
+    const relative = matrixProduct(matrixProduct(inv, matrix), rest);
+    const axis = obj.joint.axis;
+    const reference = jointReference(axis);
+    const turned = ScenePicking.point(relative, reference, 0);
+    return signedJointAngle(reference, turned, axis);
+}
+function cross3(a, b) {
+    return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+}
+function normalized3(v) {
+    const n = Math.hypot(...v);
+    return v.map((x) => x / n);
+}
+function jointReference(axis) {
+    const a = normalized3(axis);
+    const v = Math.abs(a[0]) < 0.8 ? [1, 0, 0] : [0, 0, 1];
+    return normalized3(v.map((x, i) => x - dot(v, a) * a[i]));
+}
+function signedJointAngle(reference, turned, axis) {
+    return (
+        (Math.atan2(dot(cross3(reference, turned), axis), dot(reference, turned)) * 180) / Math.PI
+    );
+}
+function localPosition() {
+    return ['localX', 'localY', 'localZ'].map((id) => Number($(id).value));
+}
+function setLocalPosition(p) {
+    ['localX', 'localY', 'localZ'].forEach((id, i) => ($(id).value = Number(p[i].toFixed(3))));
+}
+function localSetEnabled() {
+    const active = !!localSnapshot && localSnapshot.revision === state.revision;
+    $('localStep').disabled = !active || localSnapshot.status !== 'alive' || localPending || busy;
+    $('localRun').disabled =
+        !active || localSnapshot.status !== 'alive' || (localPending && !localPlaying) || busy;
+    for (const id of [
+        'localReset',
+        'localSpawn',
+        'localPick',
+        'localStart',
+        'localSector',
+        'localBall',
+    ]) {
+        $(id).disabled = localPending || busy;
+    }
+    $('localRetry').disabled = !active || localPending || busy;
+}
+function localConfiguration() {
+    return {
+        instance: localOwner || null,
+        sector: Number($('localSector').value),
+        checkpoint: $('localStart').value === 'checkpoint',
+        position: localPosition(),
+        ball: $('localBall').value,
+    };
+}
+function syncLocalStart() {
+    const checkpoint = $('localStart').value === 'checkpoint';
+    const start = state.local_starts.find((s) => s.sector === Number($('localSector').value));
+    $('localPosition').hidden = checkpoint;
+    $('localPlacement').hidden = checkpoint;
+    if (checkpoint && start) {
+        setLocalPosition(start.position);
+        $('localBall').value = start.ball;
+    }
+    $('localBall').parentElement.hidden = checkpoint;
+    localSetEnabled();
+    draw();
+}
+async function localStop() {
+    localPause();
+    localGeneration++;
+    const old = localSnapshot;
+    localSnapshot = null;
+    localAssets = null;
+    localTrail = [];
+    if (scene) {
+        upload();
+    }
+    localSetEnabled();
+    if (old) {
+        try {
+            await api('/local-play', {
+                action: 'stop',
+                revision: state.revision,
+                session: old.session,
+            });
+        } catch {
+            /* Edits also release the old world. */
+        }
+    }
+}
+async function startLocal(retry = false) {
+    if (localPending || busy || before) {
+        return;
+    }
+    localPause();
+    localPicking = false;
+    const request =
+        retry && localSnapshot
+            ? { action: 'retry', session: localSnapshot.session }
+            : { action: 'start', ...localConfiguration() };
+    const generation = ++localGeneration;
+    localPending = true;
+    localSnapshot = null;
+    localTrail = [];
+    localSetEnabled();
+    $('localStatus').textContent = '正在加载本小节并放球…';
+    try {
+        const value = await api('/local-play', { ...request, revision: state.revision });
+        if (generation !== localGeneration) {
+            await api('/local-play', {
+                action: 'stop',
+                revision: state.revision,
+                session: value.session,
+            });
+            return;
+        }
+        localAssets = value.assets;
+        delete value.assets;
+        localSnapshot = value;
+        $('sector').value = value.sector;
+        if (!localOwner) {
+            center = (value.ball?.matrix.slice(12, 15) || value.spawn).slice();
+            scale = Math.max(6, Math.min(12, scale));
+        }
+        $('localSector').value = value.sector;
+        $('localStart').value = value.checkpoint ? 'checkpoint' : 'point';
+        $('localBall').value = value.start_ball;
+        setLocalPosition(value.spawn);
+        syncLocalStart();
+        upload();
+        localPoseChanged(value);
+    } catch (e) {
+        $('localStatus').textContent = e.message;
+    } finally {
+        localPending = false;
+        localSetEnabled();
+    }
+}
+async function stepLocal(frames = 1) {
+    if (localPending || !localSnapshot || busy) {
+        return;
+    }
+    localPending = true;
+    const generation = localGeneration;
+    const start = performance.now();
+    localSetEnabled();
+    try {
+        const value = await api('/local-play', {
+            action: 'step',
+            revision: state.revision,
+            session: localSnapshot.session,
+            frames,
+            keys: localKeys,
+        });
+        if (generation !== localGeneration) {
+            return;
+        }
+        localPoseChanged(value);
+        if (localPlaying) {
+            localTimer = setTimeout(
+                () => stepLocal(4),
+                Math.max(0, frames * value.frame_ms - (performance.now() - start))
+            );
+        }
+    } catch (e) {
+        localPause();
+        $('localStatus').textContent = e.message;
+    } finally {
+        localPending = false;
+        localSetEnabled();
+    }
+}
+function syncLocalLimits() {
+    localLimitsRevision = state.revision;
+    const e = state.model.entities.find((e) => e.id === localOwner);
+    const p = e?.piece?.physics || {};
+    const enabled = !!e?.details?.parameter_schema?.limits_enabled;
+    $('localLimits').hidden = !enabled;
+    if (!limitDrag) {
+        $('localLower').value = p.lower_angle ?? -45;
+        $('localUpper').value = p.upper_angle ?? 45;
+    }
+    $('localLowerValue').textContent = $('localLower').value + '°';
+    $('localUpperValue').textContent = $('localUpper').value + '°';
+}
+async function saveLocalLimits() {
+    if (busy || before || currentEntity()?.id !== localOwner) {
+        return;
+    }
+    localPause();
+    const p = pendingPiece();
+    p.physics = {
+        ...p.physics,
+        limits_enabled: true,
+        lower_angle: Number($('localLower').value),
+        upper_angle: Number($('localUpper').value),
+    };
+    if (p.physics.lower_angle >= p.physics.upper_angle) {
+        $('localStatus').textContent = '限位范围必须包含初始角度，且不能为零。';
+        return;
+    }
+    // documentAction reads the pending source field for a set command.
+    $('piece').value = JSON.stringify(p, null, 2);
+    livePiece = p;
+    await localStop();
+    await documentAction('set');
+    $('localStatus').textContent = state.document_error
+        ? '限位未能构建，请修正参数。'
+        : '限位已保存。重置试玩以加载新参数。';
+    syncLocalLimits();
+}
+$('localOpen').onclick = async () => {
+    if (busy || before) {
+        return;
+    }
+    await localStop();
+    stopNative();
+    const e = currentEntity();
+    localOwner = e?.category === 'mechanism' ? e.id : '';
+    $('localPanel').hidden = false;
+    $('nativeControls').hidden = true;
+    $('nativeToggle').setAttribute('aria-expanded', 'false');
+    $('localOwner').textContent = localOwner
+        ? nativeResourceName(scene.native_instances.find((i) => i.id === localOwner)?.resource) +
+          ' · 局部试玩'
+        : '自由试玩 · 点击轨道或地面放球';
+    $('localSector').innerHTML = state.local_starts
+        .map((s) => `<option value="${s.sector}">${s.label}</option>`)
+        .join('');
+    $('localSector').value = e?.sector || Number($('sector').value) || 1;
+    $('localStart').value = 'point';
+    const parent = state.model.entities.find((o) => o.id === e?.parent);
+    const start = state.local_starts.find((s) => s.sector === Number($('localSector').value));
+    const p = (
+        localOwner
+            ? e.id.includes('/P_Modul_18/')
+                ? e.details.position
+                : parent?.frame?.position || e.details.position
+            : e?.frame?.position || start?.position || [0, 0, 0]
+    ).slice();
+    p[1] += 3;
+    setLocalPosition(p);
+    $('localBall').value = localOwner.includes('/P_Modul_18/') ? 'Paper' : start?.ball || 'Wood';
+    $('localStatus').textContent = '选择路面放球，或从检查点开始；加载后保持暂停。';
+    syncLocalLimits();
+    syncLocalStart();
+    draw();
+};
+$('localStart').onchange = () => {
+    localPause();
+    syncLocalStart();
+    if ($('localStart').value === 'checkpoint') {
+        center = localPosition();
+        scale = 8;
+        $('sector').value = $('localSector').value;
+        upload();
+    }
+};
+$('localSector').onchange = () => {
+    localPause();
+    localOwner = '';
+    $('localOwner').textContent = '自由试玩';
+    syncLocalLimits();
+    syncLocalStart();
+    $('sector').value = $('localSector').value;
+    if ($('localStart').value === 'checkpoint') {
+        center = localPosition();
+        scale = 8;
+    }
+    upload();
+};
+$('localClose').onclick = async () => {
+    await localStop();
+    localPicking = false;
+    $('localPanel').hidden = true;
+    draw();
+};
+$('localSpawn').onclick = () => startLocal();
+$('localReset').onclick = () => startLocal();
+$('localRetry').onclick = () => startLocal(true);
+$('localStep').onclick = () => {
+    const keys = localKeys;
+    localPause();
+    localKeys = keys;
+    stepLocal(1);
+};
+$('localRun').onclick = () => {
+    if (localPlaying) {
+        localPause();
+        if (localSnapshot) {
+            localPoseChanged(localSnapshot);
+        }
+        return;
+    }
+    if (!localSnapshot) {
+        return;
+    }
+    stopNative();
+    localPlaying = true;
+    $('localRun').textContent = 'Ⅱ 暂停';
+    overlay.focus();
+    stepLocal(4);
+};
+$('localPick').onclick = () => {
+    localPause();
+    localPicking = !localPicking;
+    $('localStatus').textContent = localPicking
+        ? '点击轨道或地面的上表面；球心会放在表面上方。'
+        : '已取消选点';
+    draw();
+};
+$('localLimitHandles').onchange = () => {
+    localPause();
+    draw();
+};
+for (const id of ['localLower', 'localUpper']) {
+    $(id).oninput = () => {
+        localPause();
+        $('localLowerValue').textContent = $('localLower').value + '°';
+        $('localUpperValue').textContent = $('localUpper').value + '°';
+        draw();
+    };
+    $(id).onchange = saveLocalLimits;
+}
+for (const button of document.querySelectorAll('[data-local-key]')) {
+    const mask = Number(button.dataset.localKey);
+    button.onpointerdown = (e) => {
+        button.setPointerCapture(e.pointerId);
+        localKeys |= mask;
+        button.classList.add('active');
+    };
+    for (const name of ['onpointerup', 'onpointercancel', 'onlostpointercapture']) {
+        button[name] = () => {
+            localKeys &= ~mask;
+            button.classList.remove('active');
+        };
+    }
+}
+const arrowMasks = { ArrowUp: 1, ArrowDown: 2, ArrowLeft: 4, ArrowRight: 8 };
+document.addEventListener(
+    'keydown',
+    (e) => {
+        if (
+            $('localPanel').hidden ||
+            ['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName) ||
+            !localSnapshot
+        ) {
+            return;
+        }
+        if (arrowMasks[e.key]) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            localKeys |= arrowMasks[e.key];
+        }
+        if (e.code === 'Space') {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            $('localRun').click();
+        }
+    },
+    true
+);
+document.addEventListener('keyup', (e) => {
+    if (arrowMasks[e.key]) {
+        localKeys &= ~arrowMasks[e.key];
+    }
+});
+window.addEventListener('blur', localPause);
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        localPause();
+    }
+});
+function limitObject() {
+    return (scene?.objects || []).find(
+        (o) =>
+            o.instance === localOwner &&
+            o.joint &&
+            o.joint.angles &&
+            state.model.entities.find((e) => e.id === localOwner)?.details?.parameter_schema
+                ?.limits_enabled
+    );
+}
+function limitPoint(obj, angle, radius = 12) {
+    const ref = jointReference(obj.joint.axis);
+    const p = obj.joint.pivot.map((v, i) => v + radius * ref[i]);
+    return ScenePicking.point(
+        obj.instance_matrix,
+        ScenePicking.point(jointMatrix(obj.joint, angle), p)
+    );
+}
+function limitPointerAngle(obj, x, y) {
+    const ray = sceneRay(x, y);
+    const pivot = ScenePicking.point(obj.instance_matrix, obj.joint.pivot);
+    const axis = normalized3(ScenePicking.point(obj.instance_matrix, obj.joint.axis, 0));
+    const den = dot(ray.direction, axis);
+    if (Math.abs(den) < 0.03) {
+        return null;
+    }
+    const t =
+        dot(
+            pivot.map((v, i) => v - ray.origin[i]),
+            axis
+        ) / den;
+    if (t < 0) {
+        return null;
+    }
+    const v = ray.origin.map((a, i) => a + t * ray.direction[i] - pivot[i]);
+    const ref = normalized3(
+        ScenePicking.point(obj.instance_matrix, jointReference(obj.joint.axis), 0)
+    );
+    return signedJointAngle(ref, v, axis);
+}
+function localRailSpawn(entities, ray, hit, sector, others) {
+    // A double rail is a playable corridor even where the ray passes between its
+    // tubes. The actual nearest mesh still occludes tracks on lower layers.
+    let best = null;
+    for (const e of entities) {
+        const section = e.ports?.entry?.section;
+        const gauge = section?.gauge;
+        if (
+            e.category !== 'geometry' ||
+            section?.kind !== 'rail' ||
+            !gauge ||
+            (sector && !others && e.sector !== sector)
+        ) {
+            continue;
+        }
+        for (let i = 1; i < (e.path || []).length; i++) {
+            const a = e.path[i - 1];
+            const b = e.path[i];
+            const v = b.map((p, j) => p - a[j]);
+            const w = a.map((p, j) => p - ray.origin[j]);
+            const along = dot(v, ray.direction);
+            const v2 = dot(v, v) - along * along;
+            if (v2 < 1e-10) {
+                continue;
+            }
+            const u = Math.max(0, Math.min(1, (along * dot(w, ray.direction) - dot(v, w)) / v2));
+            const p = a.map((x, j) => x + u * v[j]);
+            const t = dot(
+                p.map((x, j) => x - ray.origin[j]),
+                ray.direction
+            );
+            const distance = Math.hypot(
+                ...p.map((x, j) => x - ray.origin[j] - t * ray.direction[j])
+            );
+            if (
+                t < 0 ||
+                distance > gauge / 2 + (section.radius || 0.35) ||
+                (hit && hit.distance < t - (hit.object.play_surface === 'rail' ? 3 : 0.35))
+            ) {
+                continue;
+            }
+            if (!best || t < best.distance) {
+                best = { position: [p[0], p[1] + 2.1, p[2]], sector: e.sector, distance: t };
+            }
+        }
+    }
+    return best;
+}
+const overlayBeforeLocal = drawEditorOverlay;
+drawEditorOverlay = function () {
+    overlayBeforeLocal();
+    limitHandles = [];
+    if ($('localPanel').hidden || before) {
+        return;
+    }
+    if (localLimitsRevision !== state.revision) {
+        syncLocalLimits();
+    }
+    if (localSnapshot && localSnapshot.revision !== state.revision) {
+        localPause();
+        localGeneration++;
+        localSnapshot = null;
+        localAssets = null;
+        localTrail = [];
+        $('localStatus').textContent = '地图已修改，请重置局部试玩。';
+        localSetEnabled();
+    }
+    if (localTrail.length) {
+        ctx.strokeStyle = '#b1edbd99';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        localTrail.forEach((p, i) => {
+            const q = project(p);
+            i ? ctx.lineTo(...q) : ctx.moveTo(...q);
+        });
+        ctx.stroke();
+    }
+    if (!localSnapshot || localPicking) {
+        const p = project(localPosition());
+        ctx.strokeStyle = '#a9f0d1';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.arc(...p, 2 * scale, 0, 2 * Math.PI);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#d5f6e7';
+        ctx.fillText('放球点', p[0] + 2 * scale + 6, p[1]);
+    }
+    const obj = limitObject();
+    if (!obj || !$('localLimitHandles').checked) {
+        return;
+    }
+    const lower = Number($('localLower').value);
+    const upper = Number($('localUpper').value);
+    ctx.strokeStyle = '#eac685';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    for (let i = 0; i <= 80; i++) {
+        const p = project(limitPoint(obj, lower + ((upper - lower) * i) / 80));
+        i ? ctx.lineTo(...p) : ctx.moveTo(...p);
+    }
+    ctx.stroke();
+    const pivot = project(ScenePicking.point(obj.instance_matrix, obj.joint.pivot));
+    for (const [id, angle] of [
+        ['localLower', lower],
+        ['localUpper', upper],
+    ]) {
+        const p = project(limitPoint(obj, angle));
+        ctx.strokeStyle = '#dfb97688';
+        ctx.beginPath();
+        ctx.moveTo(...pivot);
+        ctx.lineTo(...p);
+        ctx.stroke();
+        ctx.fillStyle = '#f5d48c';
+        ctx.beginPath();
+        ctx.arc(...p, 8, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.fillStyle = '#fff2d4';
+        ctx.font = '12px system-ui';
+        ctx.fillText((id === 'localLower' ? '最小 ' : '最大 ') + angle + '°', p[0] + 12, p[1] - 10);
+        limitHandles.push({ id, point: p, obj });
+    }
+};
+const downBeforeLocal = overlay.onpointerdown;
+const moveBeforeLocal = overlay.onpointermove;
+const upBeforeLocal = overlay.onpointerup;
+const cancelBeforeLocal = overlay.onpointercancel;
+overlay.onpointerdown = (e) => {
+    if (e.button !== 0 || busy || before) {
+        downBeforeLocal(e);
+        return;
+    }
+    const h = limitHandles.find(
+        (h) => Math.hypot(h.point[0] - e.offsetX, h.point[1] - e.offsetY) < 15
+    );
+    if (h) {
+        localPause();
+        limitDrag = { ...h, original: Number($(h.id).value) };
+        overlay.setPointerCapture(e.pointerId);
+        return;
+    }
+    if (localPicking) {
+        const ray = sceneRay(e.offsetX, e.offsetY);
+        const hit = ScenePicking.hit(
+            visibleSceneObjects().filter((o) => !o.local_ball),
+            ray.origin,
+            ray.direction,
+            nativeObjectMatrix
+        );
+        const rail = localRailSpawn(
+            state.model.entities,
+            ray,
+            hit,
+            Number($('sector').value),
+            $('others').checked
+        );
+        if (rail || (hit && Math.abs(hit.normal[1]) > 0.4)) {
+            const normal = hit?.normal.map((v) => v * (hit.normal[1] < 0 ? -1 : 1));
+            const position = rail?.position || hit.position.map((v, i) => v + 2.1 * normal[i]);
+            const sector = rail?.sector || hit.object.sector;
+            setLocalPosition(position);
+            if (sector) {
+                $('localSector').value = sector;
+                if (state.model.entities.find((e) => e.id === localOwner)?.sector !== sector) {
+                    localOwner = '';
+                    $('localOwner').textContent = '自由试玩';
+                    syncLocalLimits();
+                }
+            }
+            localPicking = false;
+            $('localStatus').textContent = '放球点已选好，点击“放球并暂停”。';
+            draw();
+        } else {
+            $('localStatus').textContent = '请选择路面或轨道的上表面。';
+        }
+        return;
+    }
+    downBeforeLocal(e);
+};
+overlay.onpointermove = (e) => {
+    if (!limitDrag) {
+        moveBeforeLocal(e);
+        return;
+    }
+    const a = limitPointerAngle(limitDrag.obj, e.offsetX, e.offsetY);
+    if (a === null) {
+        $('localStatus').textContent = '当前视角与关节平面平行，请转动视图再拖动。';
+        return;
+    }
+    $(limitDrag.id).value = Math.round(
+        Math.max(
+            limitDrag.id === 'localLower' ? -180 : 0,
+            Math.min(limitDrag.id === 'localLower' ? 0 : 180, a)
+        )
+    );
+    $('localLowerValue').textContent = $('localLower').value + '°';
+    $('localUpperValue').textContent = $('localUpper').value + '°';
+    draw();
+};
+overlay.onpointerup = (e) => {
+    if (!limitDrag) {
+        upBeforeLocal(e);
+        return;
+    }
+    const changed = Number($(limitDrag.id).value) !== limitDrag.original;
+    limitDrag = null;
+    if (changed) {
+        saveLocalLimits();
+    }
+};
+overlay.onpointercancel = (e) => {
+    if (limitDrag) {
+        $(limitDrag.id).value = limitDrag.original;
+        limitDrag = null;
+        draw();
+    } else {
+        cancelBeforeLocal(e);
+    }
+};
+
+const selectBeforeLocal = selectEntity;
+selectEntity = function (e, focus = false, add = false) {
+    if (!$('localPanel').hidden && localOwner && e.id !== localOwner) {
+        localStop();
+        localPicking = false;
+        $('localPanel').hidden = true;
+    }
+    selectBeforeLocal(e, focus, add);
+};
