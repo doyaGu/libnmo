@@ -703,6 +703,33 @@ static const char *keyboard_resolve_file(void *data, const char *name)
     (void)name; return data;
 }
 
+TEST(engine_input, loaded_tt_joystick_queries_and_copies_preserve_numbers_and_links_but_read_current_host_devices)
+{
+    tt_joystick_test_fixture_t source; tt_joystick_test_begin(&source); ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(source.f.tx,source.number_value,"3")); fixture_commit_bare(&source.f,NULL); nmo_beobject_state_t *owner = fixture_state(&source.f,source.f.owner_id); owner->has_single_activity = 1; owner->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE; nmo_behavior_state_t *script = fixture_state(&source.f,source.f.script_id); script->has_single_activity = 1; script->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE | CK_SCENEOBJECT_START_RESET; const char *path = NMO_TEST_SCRATCH_FILE("engine_tt_test_for_joystick.cmo"); ASSERT_EQ(NMO_OK,nmo_session_save_file(source.f.session,path,NULL,NULL));
+    for (int started = 0; started < 2; started++) {
+        tt_joystick_test_fixture_t g = {0}; fixture_begin_document(&g.f); fixture_begin_edit(&g.f); nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL; fixture_commit(&g.f,&options); if (started) ASSERT_EQ(NMO_OK,nmo_engine_start(g.f.engine,NMO_ENGINE_START_ALL)); nmo_engine_set_file_resolver(g.f.engine,keyboard_resolve_file,(void *)path); int32_t file = -1; ASSERT_EQ(NMO_OK,nmo_engine_load(g.f.engine,"joystick-query.cmo",true,&file));
+        g.block = nmo_engine_object_named(g.f.engine,"TT_TestForJoystick",NMO_CID_BEHAVIOR); ASSERT_TRUE(g.block != 0); const eng_module_t *module = eng_module_of(g.f.engine,g.block,NULL); g.f.owner_id = eng_module_id(module,source.f.owner_id); g.f.script_id = eng_module_id(module,source.f.script_id); g.number_value = eng_module_id(module,source.number_value); g.yes = eng_module_id(module,source.yes); g.no = eng_module_id(module,source.no); if (!started) ASSERT_EQ(NMO_OK,nmo_engine_start(g.f.engine,NMO_ENGINE_START_SCENE_DEFAULT)); int32_t number = -1; read_value(&g.f,g.number_value,&number,sizeof(number)); ASSERT_EQ(3,number); nmo_engine_joystick_state_t state = {.attached = true,.point_of_view = -1}; nmo_engine_set_joystick(g.f.engine,0,&state); tt_joystick_test_step(&g,false);
+        nmo_engine_set_joystick(g.f.engine,3,&state); ASSERT_EQ(NMO_OK,nmo_engine_activate_script(g.f.engine,g.f.script_id,true,true)); tt_joystick_test_step(&g,true); tt_joystick_test_fire(&g,2,false); nmo_object_id_t ids[] = {g.f.owner_id,g.f.script_id,g.block,g.yes,g.no,g.number_value}, copies[6] = {0}; ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(g.f.engine,ids,6,false,copies)); for (size_t i = 0; i < 6; i++) ASSERT_TRUE(copies[i] != 0); for (size_t i = 0; i < 6; i++) nmo_engine_destroy_object(g.f.engine,ids[i]);
+        g.f.owner_id = copies[0]; g.f.script_id = copies[1]; g.block = copies[2]; g.yes = copies[3]; g.no = copies[4]; g.number_value = copies[5]; g.calls = runs(&g.f,g.block); g.yes_hits = runs(&g.f,g.yes); g.no_hits = runs(&g.f,g.no); read_value(&g.f,g.number_value,&number,sizeof(number)); ASSERT_EQ(2,number); ASSERT_EQ(NMO_OK,nmo_engine_activate_script(g.f.engine,g.f.script_id,true,true)); tt_joystick_test_step(&g,false); nmo_engine_set_joystick(g.f.engine,2,&state); tt_joystick_test_fire(&g,2,true); nmo_engine_set_joystick(g.f.engine,2,NULL); tt_joystick_test_fire(&g,2,false); fixture_end(&g.f);
+    }
+    const nmo_parameter_state_t *number = fixture_state(&source.f,source.number_value); ASSERT_EQ(sizeof(int32_t),number->buffer_data.count); ASSERT_TRUE(memcmp(number->buffer_data.data,&(int32_t){3},sizeof(int32_t)) == 0); fixture_end(&source.f); remove(path);
+}
+
+TEST(engine_input, tt_test_for_joystick_routes_missing_devices_to_fallback_before_starting_the_waiter)
+{
+    for (int attached = 0; attached < 2; attached++) {
+        joystick_waiter_fixture_t g; joystick_waiter_begin(&g); const nmo_behavior_state_t *script = fixture_state(&g.f,g.f.script_id); ASSERT_EQ(1u,script->sub_behavior_links.count); ASSERT_EQ(NMO_OK,nmo_script_edit_remove_behavior_link(g.f.tx,g.f.script_id,nmo_behavior_ref_array_get_id(&script->sub_behavior_links,0))); joystick_waiter_configure(&g,1,0,0);
+        nmo_object_id_t query = fixture_block(&g.f,GUID_TT_TEST_FOR_JOYSTICK,"Check Before Waiting"), fallback = fixture_block(&g.f,GUID_NOP,"No Device Fallback"); ASSERT_TRUE(query != 0 && fallback != 0); fixture_input_int(&g.f,BLOCK_PIN(&g.f,query,0),3); fixture_link(&g.f,g.f.script_in,BLOCK_IN(&g.f,query,0),0); fixture_link(&g.f,BLOCK_OUT(&g.f,query,0),BLOCK_IN(&g.f,g.block,0),0); fixture_link(&g.f,BLOCK_OUT(&g.f,query,1),BLOCK_IN(&g.f,fallback,0),0); joystick_waiter_ready(&g); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.number_value,&(int32_t){3},sizeof(int32_t)));
+        nmo_engine_joystick_state_t decoy = {.attached = true,.position = {1,2,3},.point_of_view = -1}, selected = {.attached = true,.position = {.75f,.25f,-.5f},.point_of_view = -1}; nmo_engine_set_joystick(g.f.engine,0,&decoy); if (attached) nmo_engine_set_joystick(g.f.engine,3,&selected);
+        if (attached) { joystick_waiter_step(&g,2,&selected); ASSERT_EQ(0u,runs(&g.f,fallback)); joystick_waiter_step(&g,2,&selected); ASSERT_EQ(2u,runs(&g.f,g.block)); }
+        else {
+            ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(1u,runs(&g.f,fallback)); ASSERT_EQ(0u,runs(&g.f,g.block)); nmo_engine_joystick_state_t defaults = {0}; joystick_waiter_values(&g,&defaults); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(1u,runs(&g.f,fallback)); ASSERT_EQ(0u,runs(&g.f,g.block)); ASSERT_EQ(1u,runs(&g.f,query));
+            nmo_engine_set_joystick(g.f.engine,3,&selected); ASSERT_EQ(NMO_OK,nmo_engine_activate_script(g.f.engine,g.f.script_id,true,true)); joystick_waiter_step(&g,2,&selected); ASSERT_EQ(1u,runs(&g.f,fallback)); ASSERT_EQ(1u,runs(&g.f,g.block));
+        }
+        ASSERT_EQ(attached ? 1u : 2u,runs(&g.f,query)); nmo_engine_block_t block = {g.f.engine,eng_map_get(&g.f.engine->node_map,query)}; ASSERT_FALSE(nmo_engine_block_is_input_active(&block,0)); ASSERT_FALSE(nmo_engine_behavior_is_active(g.f.engine,query)); fixture_end(&g.f);
+    }
+}
+
 TEST(engine_input, loaded_tt_joystick_vector_mappers_and_copies_keep_live_input_assignments_and_cached_output)
 {
     tt_vector_mapper_fixture_t source; tt_vector_mapper_begin(&source); ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(source.f.tx,source.input_value,"3,-2,-0.75")); const int32_t saved_mappings[] = {4,5,2,3}; for (size_t i = 0; i < 4; i++) { char text[16]; snprintf(text,sizeof(text),"%d",saved_mappings[i]); ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(source.f.tx,source.mappings[i],text)); } fixture_commit_bare(&source.f,NULL);
@@ -1088,6 +1115,9 @@ TEST(engine_input, tt_input_string_keeps_editing_past_enter)
 }
 
 TEST_MAIN_BEGIN()
+REGISTER_TEST(engine_input, loaded_tt_joystick_queries_and_copies_preserve_numbers_and_links_but_read_current_host_devices);
+REGISTER_TEST(engine_input, tt_test_for_joystick_routes_missing_devices_to_fallback_before_starting_the_waiter);
+
 REGISTER_TEST(engine_input, tt_test_for_joystick_invalid_numbers_take_no_without_failing_even_when_all_devices_are_attached);
 REGISTER_TEST(engine_input, tt_test_for_joystick_observes_one_snapshot_across_host_updates_between_query_nodes);
 
