@@ -1,10 +1,13 @@
 #include "engine_fixture.h"
 #include "../../src/engine/engine_internal.h"
 #include "object/builtin/nmo_animation_schemas.h"
+#include "object/builtin/nmo_character_schemas.h"
+#include "object/builtin/nmo_parameterin_schemas.h"
 
 #include <math.h>
 
 #define GUID_NOP NMO_GUID(0x302561c4,0x0d282980)
+#define GUID_SHARE NMO_GUID(0x1c0d5e24,0xde47b706)
 
 typedef struct callback_observation { unsigned edits, loads, resets; int result; } callback_observation_t;
 
@@ -121,6 +124,89 @@ TEST(engine_share_animation, morph_comparison_preserves_native_directional_optio
     ASSERT_TRUE(eng_object_animation_compare(f.engine,optional,full)); ASSERT_FALSE(eng_object_animation_compare(f.engine,full,optional)); state->morph_keys[0].time_step = 1; ASSERT_FALSE(eng_object_animation_compare(f.engine,optional,full)); fixture_end(&f);
 }
 
+typedef struct share_fixture {
+    engine_fixture_t f;
+    nmo_object_id_t source, target, source_body, target_body, source_part, target_part;
+    nmo_object_id_t source_animation, target_animation, group, block, target_value, group_value;
+} share_fixture_t;
+
+static nmo_object_id_t body(engine_fixture_t *f, nmo_object_id_t character, nmo_object_id_t parent, const char *name)
+{
+    nmo_object_id_t id = fixture_create(f,NMO_CID_BODYPART,name); nmo_bodypart_state_t *part = fixture_state(f,id); nmo_character_state_t *actor = fixture_state(f,character); if (part == NULL || actor == NULL) return 0;
+    part->base.entity.has_entityndata_chunk = 1; part->base.entity.parent = nmo_ref_from_id(parent); part->has_character = 1; part->character = nmo_ref_from_id(character);
+    if (actor->body_parts.element_size != sizeof(nmo_character_part_t)) { nmo_array_dispose(&actor->body_parts); if (nmo_array_init(&actor->body_parts,sizeof(nmo_character_part_t),0,NULL) != NMO_OK) return 0; }
+    nmo_character_part_t entry = {.ref = nmo_ref_from_id(id)}; return nmo_array_append(&actor->body_parts,&entry) == NMO_OK ? id : 0;
+}
+
+static nmo_object_id_t animation(engine_fixture_t *f, const char *name, nmo_object_id_t actor, nmo_object_id_t entity, nmo_object_id_t part)
+{
+    nmo_object_id_t id = fixture_create(f,NMO_CID_KEYEDANIMATION,name); nmo_keyedanimation_state_t *state = fixture_state(f,id); if (state == NULL) return 0;
+    state->base.has_data = state->base.has_character = state->base.has_root_entity = state->base.has_length = 1; state->base.character = nmo_ref_from_id(actor); state->base.root_entity = nmo_ref_from_id(entity); state->base.length = 10; state->base.frame_rate = 1000; state->base.flags = CKANIMATION_LINKTOFRAMERATE;
+    state->animation_count = 1; state->animation_ids = nmo_arena_alloc(nmo_session_get_arena(f->session),sizeof(nmo_ref_t),_Alignof(nmo_ref_t)); if (state->animation_ids == NULL) return 0; state->animation_ids[0] = nmo_ref_from_id(part);
+    nmo_character_state_t *character = fixture_state(f,actor); nmo_ref_t ref = nmo_ref_from_id(id); return nmo_array_append(&character->animations,&ref) == NMO_OK ? id : 0;
+}
+
+static void begin(share_fixture_t *g)
+{
+    memset(g,0,sizeof(*g)); fixture_begin_document(&g->f); g->source = fixture_create(&g->f,NMO_CID_CHARACTER,"Source Character"); g->target = fixture_create(&g->f,NMO_CID_CHARACTER,"Target Character"); ASSERT_TRUE(g->source != 0 && g->target != 0);
+    g->source_body = body(&g->f,g->source,g->source,"Source Bone"); g->target_body = body(&g->f,g->target,g->target,"Different Bone"); ASSERT_TRUE(g->source_body != 0 && g->target_body != 0); ((nmo_character_state_t *)fixture_state(&g->f,g->source))->root_body_part = nmo_ref_from_id(g->source_body); ((nmo_character_state_t *)fixture_state(&g->f,g->target))->root_body_part = nmo_ref_from_id(g->target_body);
+    g->source_part = position(&g->f,"Source Keys",g->source_body,10); g->target_part = position(&g->f,"Different Keys",g->target_body,10); g->source_animation = animation(&g->f,"Source Clip",g->source,g->source_body,g->source_part); g->target_animation = animation(&g->f,"Different Clip",g->target,g->target_body,g->target_part); g->group = fixture_create(&g->f,NMO_CID_GROUP,"Characters Group"); ASSERT_TRUE(g->source_animation != 0 && g->target_animation != 0 && g->group != 0);
+    g->f.script_id = fixture_add_script(&g->f,"Share Script",&g->f.script_in); fixture_begin_edit(&g->f); g->block = fixture_block(&g->f,GUID_SHARE,"Share Character Animation Keys"); ASSERT_TRUE(g->block != 0);
+    nmo_object_id_t target = fixture_target(&g->f,g->block), input = BLOCK_PIN(&g->f,g->block,0); fixture_input_int(&g->f,target,(int32_t)g->source); fixture_input_int(&g->f,input,(int32_t)g->group); g->target_value = nmo_parameterin_source_id(fixture_state(&g->f,target)); g->group_value = nmo_parameterin_source_id(fixture_state(&g->f,input));
+}
+
+static void ready(share_fixture_t *g)
+{
+    nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL; fixture_commit(&g->f,&options); ASSERT_TRUE(nmo_engine_has_block(g->f.engine,GUID_SHARE)); ASSERT_TRUE(eng_group_add(g->f.engine,g->group,g->target)); ASSERT_EQ(NMO_OK,nmo_engine_start(g->f.engine,NMO_ENGINE_START_ALL));
+}
+
+static int32_t shared_count(share_fixture_t *g)
+{
+    int32_t value = -1; read_value(&g->f,BLOCK_POUT(&g->f,g->block,0),&value,sizeof(value)); return value;
+}
+
+static void edit(share_fixture_t *g)
+{
+    int32_t result = -1; ASSERT_EQ(NMO_OK,nmo_engine_notify_behavior_edited(g->f.engine,g->block,&result)); ASSERT_EQ(NMO_ENGINE_BR_OK,result);
+}
+
+TEST(engine_share_animation, sharing_block_is_editor_only_and_counts_object_channels_outside_target_animation_lists)
+{
+    share_fixture_t g; begin(&g); nmo_object_id_t orphan = position(&g.f,"Unlisted Keys",g.target_body,10); ASSERT_TRUE(orphan != 0); ready(&g); const nmo_behavior_state_t *state = fixture_state(&g.f,g.block); ASSERT_EQ(0u,state->inputs.count); ASSERT_EQ(0u,state->outputs.count); int32_t sentinel = 99; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,BLOCK_POUT(&g.f,g.block,0),&sentinel,sizeof(sentinel))); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,16)); ASSERT_EQ(99,shared_count(&g)); ASSERT_TRUE(eng_animation_shared_keys(g.f.engine,g.target_part) == NULL);
+    edit(&g); ASSERT_EQ(2,shared_count(&g)); ASSERT_TRUE(eng_animation_shared_keys(g.f.engine,g.target_part) == eng_animation_shared_keys(g.f.engine,g.source_part)); ASSERT_TRUE(eng_animation_shared_keys(g.f.engine,orphan) == eng_animation_shared_keys(g.f.engine,g.source_part)); edit(&g); ASSERT_EQ(2,shared_count(&g)); ASSERT_EQ(0u,runs(&g.f,g.block)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,16)); ASSERT_EQ(2,shared_count(&g)); fixture_end(&g.f);
+}
+
+TEST(engine_share_animation, shared_characters_keep_independent_targets_flags_and_playback_clocks)
+{
+    share_fixture_t g; begin(&g); ((nmo_objectanimation_state_t *)fixture_state(&g.f,g.target_part))->flags = CK_OBJECTANIMATION_IGNOREPOS; ready(&g); edit(&g); ASSERT_EQ(1,shared_count(&g)); ASSERT_EQ(g.source_body,eng_object_animation_entity(g.f.engine,g.source_part)); ASSERT_EQ(g.target_body,eng_object_animation_entity(g.f.engine,g.target_part)); ASSERT_TRUE(eng_object_animation_set_step(g.f.engine,g.source_part,.4f)); ASSERT_FLOAT_EQ(4,x(g.f.engine,g.source_body),1e-6f); ASSERT_TRUE(eng_object_animation_set_step(g.f.engine,g.target_part,.7f)); ASSERT_FLOAT_EQ(0,x(g.f.engine,g.target_body),0);
+    ASSERT_TRUE(eng_animation_set_current_step(g.f.engine,g.source_animation,.2f)); ASSERT_TRUE(eng_animation_set_current_step(g.f.engine,g.target_animation,.8f)); float a = 0, b = 0; ASSERT_TRUE(eng_animation_current_step(g.f.engine,g.source_animation,&a)); ASSERT_TRUE(eng_animation_current_step(g.f.engine,g.target_animation,&b)); ASSERT_FLOAT_EQ(.2f,a,0); ASSERT_FLOAT_EQ(.8f,b,0); ASSERT_EQ(CK_OBJECTANIMATION_IGNOREPOS,((nmo_objectanimation_state_t *)fixture_state(&g.f,g.target_part))->flags); fixture_end(&g.f);
+}
+
+TEST(engine_share_animation, invalid_targets_and_groups_preserve_output_while_valid_empty_groups_write_zero)
+{
+    for (int kind = 0; kind < 7; kind++) {
+        share_fixture_t g; begin(&g); nmo_object_id_t empty = fixture_create(&g.f,NMO_CID_GROUP,"Empty Group"); ASSERT_TRUE(empty != 0); ready(&g); int32_t sentinel = 99; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,BLOCK_POUT(&g.f,g.block,0),&sentinel,sizeof(sentinel))); nmo_object_id_t value = kind == 0 || kind == 3 ? 0 : kind == 1 || kind == 4 ? g.f.owner_id : kind == 2 ? g.source : kind == 5 ? g.group : empty;
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,kind < 3 ? g.target_value : g.group_value,&value,sizeof(value))); if (kind == 2) nmo_engine_destroy_object(g.f.engine,g.source); if (kind == 5) nmo_engine_destroy_object(g.f.engine,g.group); edit(&g); ASSERT_EQ(kind == 6 ? 0 : 99,shared_count(&g)); ASSERT_TRUE(eng_animation_shared_keys(g.f.engine,g.target_part) == NULL); fixture_end(&g.f);
+    }
+}
+
+TEST(engine_share_animation, hierarchy_mismatches_are_skipped_until_live_parenting_matches)
+{
+    share_fixture_t g; begin(&g); nmo_object_id_t extra = body(&g.f,g.target,g.target,"Extra Bone"); ASSERT_TRUE(extra != 0); ready(&g); edit(&g); ASSERT_EQ(0,shared_count(&g)); ASSERT_TRUE(eng_entity_set_parent(g.f.engine,eng_entity_index(g.f.engine,extra),-1,true)); edit(&g); ASSERT_EQ(1,shared_count(&g)); fixture_end(&g.f);
+}
+
+TEST(engine_share_animation, hierarchy_matching_preserves_native_reuse_of_a_source_subtree)
+{
+    share_fixture_t g; begin(&g); nmo_object_id_t branch = body(&g.f,g.source,g.source,"Branch"), leaf = body(&g.f,g.target,g.target,"Leaf"), child = body(&g.f,g.source,branch,"Branch Child"); ASSERT_TRUE(branch != 0 && leaf != 0 && child != 0); nmo_object_id_t reverse = fixture_create(&g.f,NMO_CID_GROUP,"Reverse Group"); ready(&g); ASSERT_TRUE(eng_group_add(g.f.engine,reverse,g.source)); edit(&g); ASSERT_EQ(1,shared_count(&g));
+    ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.target_value,&g.target,sizeof(g.target))); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.group_value,&reverse,sizeof(reverse))); edit(&g); ASSERT_EQ(0,shared_count(&g)); fixture_end(&g.f);
+}
+
+TEST(engine_share_animation, candidate_selection_uses_body_ownership_live_bindings_and_key_values)
+{
+    share_fixture_t g; begin(&g); nmo_object_id_t mismatch = position(&g.f,"Source Keys",g.target_body,20), generic = position(&g.f,"Generic Entity Keys",g.f.owner_id,10); ASSERT_TRUE(mismatch != 0 && generic != 0); ready(&g); ASSERT_TRUE(eng_group_add(g.f.engine,g.group,g.source)); ASSERT_TRUE(eng_group_add(g.f.engine,g.group,g.f.owner_id)); ASSERT_TRUE(eng_object_animation_set_entity(g.f.engine,g.target_part,g.source_body)); edit(&g); ASSERT_EQ(0,shared_count(&g)); ASSERT_TRUE(eng_animation_shared_keys(g.f.engine,mismatch) == NULL);
+    ASSERT_TRUE(eng_object_animation_set_entity(g.f.engine,g.target_part,g.target_body)); edit(&g); ASSERT_EQ(1,shared_count(&g)); ASSERT_TRUE(eng_animation_shared_keys(g.f.engine,g.target_part) == eng_animation_shared_keys(g.f.engine,g.source_part)); ASSERT_TRUE(eng_animation_shared_keys(g.f.engine,mismatch) != eng_animation_shared_keys(g.f.engine,g.source_part)); fixture_end(&g.f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_share_animation, callback_only_blocks_receive_explicit_edit_notifications_before_and_after_start);
 REGISTER_TEST(engine_share_animation, registered_blocks_without_functions_report_native_function_errors_instead_of_unknown_blocks);
@@ -132,4 +218,10 @@ REGISTER_TEST(engine_share_animation, sharing_keeps_old_aliases_alive_when_the_o
 REGISTER_TEST(engine_share_animation, copied_keys_obey_character_sharing_dependencies_and_keep_payloads_independent_when_cloned);
 REGISTER_TEST(engine_share_animation, generated_transitions_update_shared_payloads_without_rebinding_other_animation_targets);
 REGISTER_TEST(engine_share_animation, morph_comparison_preserves_native_directional_optional_payloads);
+REGISTER_TEST(engine_share_animation, sharing_block_is_editor_only_and_counts_object_channels_outside_target_animation_lists);
+REGISTER_TEST(engine_share_animation, shared_characters_keep_independent_targets_flags_and_playback_clocks);
+REGISTER_TEST(engine_share_animation, invalid_targets_and_groups_preserve_output_while_valid_empty_groups_write_zero);
+REGISTER_TEST(engine_share_animation, hierarchy_mismatches_are_skipped_until_live_parenting_matches);
+REGISTER_TEST(engine_share_animation, hierarchy_matching_preserves_native_reuse_of_a_source_subtree);
+REGISTER_TEST(engine_share_animation, candidate_selection_uses_body_ownership_live_bindings_and_key_values);
 TEST_MAIN_END()

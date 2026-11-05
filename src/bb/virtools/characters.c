@@ -174,6 +174,7 @@ static const nmo_engine_block_desc_t character_blocks[] = {
 nmo_status_t eng_register_characters(nmo_engine_t *engine)
 {
     nmo_status_t status = ENG_REGISTER_BLOCKS(engine,character_blocks);
+    if (status == NMO_OK) status = eng_register_share_animation(engine);
     if (status == NMO_OK) status = eng_register_character_goto(engine);
     if (status == NMO_OK) status = eng_register_character_curve(engine);
     if (status == NMO_OK) status = eng_register_character_controller(engine);

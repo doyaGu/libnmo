@@ -24,6 +24,7 @@ nmo_status_t eng_register_narratives(nmo_engine_t *engine);
 nmo_status_t eng_register_effects(nmo_engine_t *engine);
 nmo_status_t eng_register_cameras(nmo_engine_t *engine);
 nmo_status_t eng_register_characters(nmo_engine_t *engine);
+nmo_status_t eng_register_share_animation(nmo_engine_t *engine);
 nmo_status_t eng_register_ik_position(nmo_engine_t *engine);
 nmo_status_t eng_register_character_controller(nmo_engine_t *engine);
 nmo_status_t eng_register_character_goto(nmo_engine_t *engine);

@@ -21,6 +21,7 @@ set(NMO_BB_VIRTOOLS_SOURCES
     virtools/addons.c
     virtools/cameras.c
     virtools/characters.c
+    virtools/share_animation.c
     virtools/character_controller.c
     virtools/ik_position.c
     virtools/character_goto.c
