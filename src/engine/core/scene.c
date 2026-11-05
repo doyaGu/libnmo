@@ -126,6 +126,9 @@ nmo_status_t eng_load_ic(nmo_engine_t *engine, nmo_object_id_t id, nmo_chunk_t *
         const nmo_3dentity_state_t *entity = nmo_type_query_object_get_ancestor_state_by_guid(
             engine->types, &decoded, CKPGUID_3DENTITY);
         if (entity != NULL) {
+            /* CKPlace's non-file Load stops at CKBeObject; it leaves 3D flags alone. */
+            ic.has_entity_flags = !nmo_type_registry_is_class_derived_from(engine->types,object->class_id,NMO_CID_PLACE) && (entity->has_entityndata_chunk || entity->has_flags_chunk);
+            ic.entity_flags = entity->entity_flags;
             ic.has_matrix = entity->has_entityndata_chunk || entity->has_matrix_chunk;
             memcpy(ic.world, entity->world_matrix, sizeof(ic.world));
             ic.has_parent = entity->has_entityndata_chunk || entity->has_parent_chunk;
@@ -193,6 +196,8 @@ void eng_save_ic(nmo_engine_t *engine, nmo_object_id_t id)
     if (has_matrix) {
         memcpy(ic->world, world, sizeof(world));
         int32_t entity = eng_entity_index(engine, id);
+        ic->has_entity_flags = !nmo_type_registry_is_class_derived_from(engine->types,class_id,NMO_CID_PLACE);
+        ic->entity_flags = engine->entities.data[entity].entity_flags;
         int32_t parent = entity >= 0 ? engine->entities.data[entity].parent : -1;
         ic->parent = parent >= 0 ? engine->entities.data[parent].id : 0;
     }
@@ -237,6 +242,8 @@ void eng_restore_ic(nmo_engine_t *engine, nmo_object_id_t id)
         *array = copy;
     }
     eng_set_object_visibility(engine, id, ic->visibility);
+    int32_t entity_flags_index = ic->has_entity_flags ? eng_entity_index(engine,id) : -1;
+    if (entity_flags_index >= 0) engine->entities.data[entity_flags_index].entity_flags = ic->entity_flags;
     if (ic->has_parent) {
         /* CK3dEntity::Load: the parent (keeping where it is), then the world matrix */
         int32_t entity = eng_entity_index(engine, id);

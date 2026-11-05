@@ -435,6 +435,7 @@ void nmo_engine_destroy_object(nmo_engine_t *engine, nmo_object_id_t id)
         eng_map_put(&engine->destroyed, id, 1);
     }
     eng_curve_forget_object(engine, id);
+    eng_portals_forget_object(engine, id);
     eng_entity_destroy(engine, id);
     eng_2d_destroy(engine, id);
     eng_forget_object(engine, id);

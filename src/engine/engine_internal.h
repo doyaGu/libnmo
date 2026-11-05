@@ -25,6 +25,7 @@
 #include "engine_media.h"
 #include "engine_message.h"
 #include "engine_module.h"
+#include "engine_portal.h"
 #include "engine_render.h"
 #include "engine_scene.h"
 #include "engine_transform.h"
@@ -55,6 +56,7 @@ struct nmo_engine {
     ENG_VEC(eng_group_t) groups;
     ENG_VEC(eng_entity_t) entities;
     eng_curves_t curves;
+    eng_portals_t portals;
     eng_animations_t animations;
     eng_characters_t characters;
     eng_kinematics_t kinematics;

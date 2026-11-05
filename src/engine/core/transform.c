@@ -334,6 +334,7 @@ nmo_status_t eng_load_entities(nmo_engine_t *engine, const eng_range_t *range)
         if (eng_entity_add(engine, id, state->world_matrix, state->moveable_flags) < 0) {
             return NMO_ERR_NOMEM;
         }
+        engine->entities.data[engine->entities.count-1].entity_flags = state->entity_flags;
     }
     /* The parents, once every entity of the file is there */
     for (size_t i = 0; objects != NULL && i < count; i++) {

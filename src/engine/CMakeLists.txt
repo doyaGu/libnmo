@@ -36,6 +36,7 @@ set(NMO_ENGINE_SOURCES
     core/operations.c
     core/param.c
     core/param_text.c
+    core/portal.c
     core/render.c
     core/run.c
     core/scene.c

@@ -436,6 +436,13 @@ static void prepare_object(copy_set_t *set, nmo_object_t *object, nmo_object_id_
     prepare_beobject(set, object);
     if (derives(engine, class_id, NMO_CID_3DENTITY)) {
         prepare_3dentity(set, object, id);
+        if (derives(engine,class_id,NMO_CID_PLACE) && (class_dependencies(set->deps,NMO_CID_PLACE) & 1u)) {
+            for (size_t i = 0; ; i++) {
+                const eng_portal_list_t *links = eng_place_portals(engine,id);
+                if (links == NULL || i >= links->count) break;
+                prepare(set,links->data[i].portal);
+            }
+        }
         const nmo_sprite3d_state_t *sprite = derives(engine, class_id, NMO_CID_SPRITE3D)
             ? (const nmo_sprite3d_state_t *)ancestor_state(engine, object, CKPGUID_SPRITE3D)
             : NULL;
@@ -630,6 +637,7 @@ static void copy_entity(nmo_engine_t *engine, const copy_set_t *set, const nmo_o
     eng_entity_set_parent(engine, to, new_parent, true);
     eng_matrix_t world = engine->entities.data[from].world;
     engine->entities.data[to].animation_lod = engine->entities.data[from].animation_lod;
+    engine->entities.data[to].entity_flags = engine->entities.data[from].entity_flags;
     engine->entities.data[to].moveable_flags = (engine->entities.data[to].moveable_flags & ~CK_3DENTITY_IGNOREANIMATION) |
         (engine->entities.data[from].moveable_flags & CK_3DENTITY_IGNOREANIMATION);
     nmo_object_id_t exclusive = engine->entities.data[from].exclusive_animation;
@@ -904,6 +912,7 @@ static nmo_status_t copy_session(nmo_engine_t *engine, int32_t source, const nmo
         eng_copy_curve_properties(engine, original, copy);
         eng_copy_curve_points(engine, original, copy, set.ids.data, copies, n);
         eng_copy_curvepoint_properties(engine, original, copy);
+        eng_copy_place_portals(engine,original,copy,set.ids.data,copies,n,(class_dependencies(deps,NMO_CID_PLACE) & 1u) != 0);
         eng_copy_array(engine, original, copy);
         eng_copy_group(engine, original, copy, set.ids.data, copies, n);
         eng_copy_animation(engine, original, copy, set.ids.data, copies, n);

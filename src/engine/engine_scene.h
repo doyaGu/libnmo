@@ -21,6 +21,8 @@ typedef struct eng_ic {
     bool has_array;
     eng_array_t array;
     bool has_matrix;
+    bool has_entity_flags;
+    uint32_t entity_flags;
     float world[16];
     bool has_parent;
     nmo_object_id_t parent; /* a 3D entity's parent then (0 for none), which CK3dEntity::Load sets */
