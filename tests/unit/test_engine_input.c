@@ -40,6 +40,35 @@ static void press(engine_fixture_t *f, const uint32_t *keys, int count)
     ASSERT_EQ(NMO_OK, nmo_engine_step(f->engine, 16.0f));
 }
 
+static void joystick_neutral(const nmo_engine_joystick_state_t *state)
+{
+    ASSERT_FALSE(state->attached); ASSERT_EQ(0u,state->buttons); ASSERT_FLOAT_EQ(-1,state->point_of_view,0);
+    for (size_t i = 0; i < 3; i++) { ASSERT_FLOAT_EQ(0,state->position[i],0); ASSERT_FLOAT_EQ(0,state->rotation[i],0); }
+    for (size_t i = 0; i < 2; i++) ASSERT_FLOAT_EQ(0,state->sliders[i],0);
+}
+
+TEST(engine_input, joystick_states_take_effect_at_frame_boundaries_and_disconnects_clear_all_fields)
+{
+    engine_fixture_t f; fixture_begin(&f); fixture_commit_bare(&f,NULL); ASSERT_EQ(NMO_OK,nmo_engine_start(f.engine,NMO_ENGINE_START_ALL)); nmo_engine_joystick_state_t observed; ASSERT_FALSE(nmo_engine_joystick_state(f.engine,3,&observed)); joystick_neutral(&observed);
+    nmo_engine_joystick_state_t host = {.attached = true,.position = {.25f,-.5f,1.25f},.rotation = {1,2,3},.sliders = {-.75f,.5f},.point_of_view = .75f,.buttons = 0x80000021u}; nmo_engine_set_joystick(f.engine,3,&host); ASSERT_FALSE(nmo_engine_joystick_state(f.engine,3,NULL)); ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0)); ASSERT_TRUE(nmo_engine_joystick_state(f.engine,3,&observed));
+    for (size_t i = 0; i < 3; i++) { ASSERT_FLOAT_EQ(host.position[i],observed.position[i],0); ASSERT_FLOAT_EQ(host.rotation[i],observed.rotation[i],0); } for (size_t i = 0; i < 2; i++) ASSERT_FLOAT_EQ(host.sliders[i],observed.sliders[i],0); ASSERT_FLOAT_EQ(host.point_of_view,observed.point_of_view,0); ASSERT_EQ(host.buttons,observed.buttons);
+    host.position[0] = -.25f; nmo_engine_set_joystick(f.engine,3,&host); host.position[0] = 9; ASSERT_TRUE(nmo_engine_joystick_state(f.engine,3,&observed)); ASSERT_FLOAT_EQ(.25f,observed.position[0],0); ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0)); ASSERT_TRUE(nmo_engine_joystick_state(f.engine,3,&observed)); ASSERT_FLOAT_EQ(-.25f,observed.position[0],0);
+    nmo_engine_set_joystick(f.engine,3,NULL); ASSERT_TRUE(nmo_engine_joystick_state(f.engine,3,NULL)); ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0)); ASSERT_FALSE(nmo_engine_joystick_state(f.engine,3,&observed)); joystick_neutral(&observed); host.attached = false; nmo_engine_set_joystick(f.engine,3,&host); ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0)); ASSERT_FALSE(nmo_engine_joystick_state(f.engine,3,&observed)); joystick_neutral(&observed); fixture_end(&f);
+}
+
+TEST(engine_input, four_joystick_slots_are_independent_and_invalid_indices_return_neutral_states)
+{
+    engine_fixture_t f; fixture_begin(&f); fixture_commit_bare(&f,NULL); ASSERT_EQ(NMO_OK,nmo_engine_start(f.engine,NMO_ENGINE_START_ALL)); ASSERT_EQ(4,NMO_ENGINE_JOYSTICK_COUNT);
+    for (int32_t i = 0; i < 4; i++) { nmo_engine_joystick_state_t state = {.attached = true,.position = {(float)i,0,0},.point_of_view = -1,.buttons = 1u << i}; nmo_engine_set_joystick(f.engine,i,&state); }
+    const int32_t invalid[] = {-1,4,INT32_MAX}; nmo_engine_joystick_state_t state = {.attached = true,.buttons = UINT32_MAX}; nmo_engine_set_joystick(NULL,0,&state); for (size_t i = 0; i < 3; i++) { nmo_engine_set_joystick(f.engine,invalid[i],&state); ASSERT_FALSE(nmo_engine_joystick_state(f.engine,invalid[i],&state)); joystick_neutral(&state); } ASSERT_FALSE(nmo_engine_joystick_state(NULL,0,&state)); joystick_neutral(&state); ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0));
+    for (int32_t i = 0; i < 4; i++) { ASSERT_TRUE(nmo_engine_joystick_state(f.engine,i,&state)); ASSERT_FLOAT_EQ((float)i,state.position[0],0); ASSERT_EQ(1u << i,state.buttons); } fixture_end(&f);
+}
+
+TEST(engine_input, joystick_snapshots_remain_private_to_each_engine_and_survive_script_reactivation)
+{
+    engine_fixture_t f; fixture_begin(&f); fixture_commit_bare(&f,NULL); ASSERT_EQ(NMO_OK,nmo_engine_start(f.engine,NMO_ENGINE_START_ALL)); nmo_engine_t *second = NULL; ASSERT_EQ(NMO_OK,nmo_engine_create(f.workspace,NULL,&second)); ASSERT_EQ(NMO_OK,nmo_engine_start(second,NMO_ENGINE_START_ALL)); nmo_engine_joystick_state_t state = {.attached = true,.position = {.75f,0,0},.point_of_view = -1,.buttons = 32}; nmo_engine_set_joystick(f.engine,0,&state); ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0)); ASSERT_EQ(NMO_OK,nmo_engine_step(second,0)); ASSERT_FALSE(nmo_engine_joystick_state(second,0,NULL)); state.position[0] = -.75f; nmo_engine_set_joystick(second,0,&state); ASSERT_EQ(NMO_OK,nmo_engine_step(second,0)); ASSERT_TRUE(nmo_engine_joystick_state(f.engine,0,&state)); ASSERT_FLOAT_EQ(.75f,state.position[0],0); ASSERT_EQ(NMO_OK,nmo_engine_activate_script(f.engine,f.script_id,false,false)); ASSERT_EQ(NMO_OK,nmo_engine_activate_script(f.engine,f.script_id,true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,0)); ASSERT_TRUE(nmo_engine_joystick_state(f.engine,0,&state)); ASSERT_FLOAT_EQ(.75f,state.position[0],0); nmo_engine_destroy(second); fixture_end(&f);
+}
+
 typedef struct keyboard_fixture {
     engine_fixture_t f;
     nmo_object_id_t block, target_value, table, count;
@@ -485,6 +514,9 @@ TEST(engine_input, tt_input_string_keeps_editing_past_enter)
 }
 
 TEST_MAIN_BEGIN()
+REGISTER_TEST(engine_input, joystick_states_take_effect_at_frame_boundaries_and_disconnects_clear_all_fields);
+REGISTER_TEST(engine_input, four_joystick_slots_are_independent_and_invalid_indices_return_neutral_states);
+REGISTER_TEST(engine_input, joystick_snapshots_remain_private_to_each_engine_and_survive_script_reactivation);
 REGISTER_TEST(engine_input, key_event_reports_presses_and_releases);
 REGISTER_TEST(engine_input, key_waiter_and_switch_on_key);
 REGISTER_TEST(engine_input, mouse_waiter_and_position);

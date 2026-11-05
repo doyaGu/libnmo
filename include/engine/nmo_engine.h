@@ -563,7 +563,7 @@ NMO_API nmo_object_id_t nmo_engine_group_object(const nmo_engine_t *engine,
 
 /* ---- Input ----
  *
- * The keyboard and mouse the input manager reports. The host sets what is
+ * The keyboard, mouse and joysticks the input manager reports. The host sets what is
  * down and where the mouse is; the state takes effect at the start of the
  * next frame, when the keys that changed since the previous frame form the
  * frame's key buffer and the mouse movement is the difference of positions.
@@ -576,6 +576,27 @@ NMO_API void nmo_engine_set_mouse_position(nmo_engine_t *engine, float x, float 
 NMO_API void nmo_engine_set_mouse_button(nmo_engine_t *engine, int32_t button, bool down);
 /** Add wheel movement to the next frame. */
 NMO_API void nmo_engine_add_mouse_wheel(nmo_engine_t *engine, float delta);
+
+/* CKMAX_JOY: the four native joystick slots, indexed 0 through 3. */
+#define NMO_ENGINE_JOYSTICK_COUNT 4
+
+typedef struct nmo_engine_joystick_state {
+    bool attached;
+    float position[3];
+    float rotation[3];
+    float sliders[2];
+    float point_of_view; /* a negative value means centered */
+    uint32_t buttons; /* bit 0 is button 1; all 32 native buttons are retained */
+} nmo_engine_joystick_state_t;
+
+/** Copy a host joystick state for the next frame. NULL or !attached disconnects
+ * it and clears its axes/buttons. Invalid slot indices are ignored. */
+NMO_API void nmo_engine_set_joystick(nmo_engine_t *engine, int32_t slot,
+                                      const nmo_engine_joystick_state_t *state);
+/** True when the slot is attached in the current frame. Optional `out` receives
+ * that frame's state, or zero axes/buttons and a centered POV when unavailable. */
+NMO_API bool nmo_engine_joystick_state(const nmo_engine_t *engine, int32_t slot,
+                                        nmo_engine_joystick_state_t *out);
 /**
  * The 2D entity under the mouse from the next frame on, as the renderer picks
  * it (Pick2D) for the font manager; 0 for none. There is no renderer, so the

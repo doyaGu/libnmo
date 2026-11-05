@@ -1,6 +1,6 @@
 /**
  * @file engine_input.h
- * @brief The input manager: keys, mouse, and the host's picking.
+ * @brief The input manager: keys, mouse, joysticks, and the host's picking.
  */
 
 #ifndef NMO_ENGINE_INPUT_H
@@ -30,6 +30,8 @@ typedef struct eng_input {
     float relative[3];       /* x, y and the wheel */
     float next_wheel;
     bool buttons[3], next_buttons[3]; /* CK_MOUSE_BUTTON: left, right, middle */
+    nmo_engine_joystick_state_t joysticks[NMO_ENGINE_JOYSTICK_COUNT];
+    nmo_engine_joystick_state_t next_joysticks[NMO_ENGINE_JOYSTICK_COUNT];
     nmo_object_id_t under_mouse, next_under_mouse;
     bool cursor_hidden; /* CKInputManager::ShowCursor(FALSE); the cursor starts shown */
     nmo_engine_pick_fn pick; /* the host's CKRenderContext::Pick; NULL for none */

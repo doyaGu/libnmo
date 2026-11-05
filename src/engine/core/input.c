@@ -1,6 +1,6 @@
 /**
  * @file input.c
- * @brief The keyboard and mouse state the input blocks read.
+ * @brief The keyboard, mouse and joystick state the input blocks read.
  */
 
 #include "../engine_internal.h"
@@ -36,6 +36,24 @@ void nmo_engine_add_mouse_wheel(nmo_engine_t *engine, float delta)
     }
 }
 
+void nmo_engine_set_joystick(nmo_engine_t *engine, int32_t slot,
+                              const nmo_engine_joystick_state_t *state)
+{
+    if (engine != NULL && slot >= 0 && slot < NMO_ENGINE_JOYSTICK_COUNT)
+        engine->input.next_joysticks[slot] = state != NULL && state->attached ? *state :
+            (nmo_engine_joystick_state_t){.point_of_view = -1};
+}
+
+bool nmo_engine_joystick_state(const nmo_engine_t *engine, int32_t slot,
+                                nmo_engine_joystick_state_t *out)
+{
+    const nmo_engine_joystick_state_t *state = engine != NULL && slot >= 0 && slot < NMO_ENGINE_JOYSTICK_COUNT
+        ? &engine->input.joysticks[slot] : NULL;
+    bool attached = state != NULL && state->attached;
+    if (out != NULL) *out = attached ? *state : (nmo_engine_joystick_state_t){.point_of_view = -1};
+    return attached;
+}
+
 void eng_input_begin_frame(nmo_engine_t *engine)
 {
     eng_input_t *in = &engine->input;
@@ -54,6 +72,7 @@ void eng_input_begin_frame(nmo_engine_t *engine)
     in->next_wheel = 0.0f;
     memcpy(in->mouse, in->next_mouse, sizeof(in->mouse));
     memcpy(in->buttons, in->next_buttons, sizeof(in->buttons));
+    memcpy(in->joysticks, in->next_joysticks, sizeof(in->joysticks));
     in->under_mouse = in->next_under_mouse;
 }
 
