@@ -8,7 +8,47 @@ from ..kit.shapes import V_SECTION, FLAT_SECTION, section, sweep
 from .ports import profile_height
 
 
-def transition(spec, start):
+def compile_paths(spec, before, layout):
+    """Rail-to-floor endpoints reserve a straight five-unit standard V dock.
+
+    The requested endpoint is the destination's entry, after the dock. This
+    lets native funnels and polygon mouths consume their normal floor port.
+    """
+    from .endpoint import resolve
+    from .ports import Section
+
+    target = spec.get('to') if isinstance(spec, dict) else None
+    docking = (
+        isinstance(target, dict)
+        and target.get('kind') == 'floor'
+        and before.section.kind == 'rail'
+        and 'endpoint' in spec
+    )
+    if not docking:
+        return [transition(spec, before.section, before=before, layout=layout)]
+    end, heading, slope = resolve(spec['endpoint'], before, layout)
+    if abs(slope) > 1e-6:
+        raise ValueError('rail-to-floor endpoint needs a level docking slope')
+    rail_spec = {
+        **spec,
+        'endpoint': {
+            'offset': [end[0] - 5 * heading[0], end[1] - 5 * heading[1], end[2]],
+            'heading': list(heading),
+            'slope': 0,
+        },
+        'to': {
+            'kind': 'rail',
+            'gauge': Section('rail').gauge,
+            'radius': Section('rail').radius,
+            'bank': 0,
+        },
+    }
+    rail_path = transition(rail_spec, before.section, before=before, layout=layout)
+    floor_path = transition({'length': 5, 'to': target}, Section('floor'))
+    return [rail_path, floor_path]
+
+
+def transition(spec, start, *, before=None, layout=None):
     """Compile an explicit same-kind connector to the existing sampled sweeper.
 
     The incoming section supplies defaults; no dimensions or bank are guessed.
@@ -22,12 +62,20 @@ def transition(spec, start):
         'tolerance',
         'ribs',
         'stops',
+        'endpoint',
+        'start_slope',
+        'min_radius',
+        'max_grade',
+        'handles',
     }:
         raise ValueError(
-            'connector accepts length or segments, to, step, tolerance, ribs and stops'
+            'connector accepts length, segments or endpoint, to, step, tolerance, ribs, stops '
+            'and endpoint constraints (start_slope, min_radius, max_grade, handles)'
         )
-    if ('length' in spec) == ('segments' in spec):
-        raise ValueError('connector needs exactly one of length or segments')
+    if sum(key in spec for key in ('length', 'segments', 'endpoint')) != 1:
+        raise ValueError('connector needs exactly one of length, segments or endpoint')
+    if 'endpoint' not in spec and set(spec) & {'start_slope', 'min_radius', 'max_grade', 'handles'}:
+        raise ValueError('connector constraints require an endpoint')
     target = spec.get('to')
     allowed = {'kind', 'bank'} | (
         {'width', 'section', 'depth'} if start.kind == 'floor' else {'gauge', 'radius'}
@@ -44,6 +92,12 @@ def transition(spec, start):
         if length <= 0:
             raise ValueError('connector length must be positive')
         segments = [{'line': [length, 0, 0]}]
+    elif 'endpoint' in spec:
+        from .endpoint import solve
+
+        if before is None or layout is None:
+            raise ValueError('endpoint connector needs an incoming port and layout')
+        segments = solve(spec, before, layout)
     else:
         segments = spec['segments']
     path = {'segments': segments, 'bank': [[0, start.bank], [1, target.get('bank', start.bank)]]}

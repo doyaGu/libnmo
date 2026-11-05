@@ -62,6 +62,7 @@ def prepare_grid(layout, part, track, piece=None):
         track,
         Section('rail' if rail_entry else 'floor'),
         owner=None if piece is not None else f'sector/{len(layout.sectors)}/end',
+        slope=ports.grid_slope(piece),
     )
     connection = ports.connect(before, after, grid=True)
     if piece and 'area' in piece and before.section.kind == 'floor':
@@ -76,9 +77,9 @@ def prepare_grid(layout, part, track, piece=None):
     track.free_port = None
 
 
-def _open_entry(layout, part, track, kind, section, piece):
+def _open_entry(layout, part, track, kind, section, piece, slope=0):
     before = ports.incoming(layout, track)
-    after = ports.entry(piece, track, section)
+    after = ports.entry(piece, track, section, slope=slope)
     if before.section.kind == kind == 'floor':
         after = replace(after, distance=before.distance)
     connection = ports.connect(before, after)
@@ -178,6 +179,7 @@ def lay_path(layout, index, part, piece, track):
         )
 
     uv_start = 0
+    cap_entry = not rail and ports.incoming(layout, track).section.kind == 'rail'
     if beam:
         # Use the same overlapped height transition as the original single
         # beams. Cardinal end ports keep beam_turn and rail exits unambiguous.
@@ -210,7 +212,7 @@ def lay_path(layout, index, part, piece, track):
                 ]
             )
     else:
-        entry = _open_entry(layout, part, track, kind, port(0), piece)
+        entry = _open_entry(layout, part, track, kind, port(0), piece, samples[0].slope)
         uv_start = entry.distance
     origin, direction, height = track.p, track.d, track.h
     rings, profiles, sizes = [], [], []
@@ -286,6 +288,7 @@ def lay_path(layout, index, part, piece, track):
                     (uv_start + samples[i].distance) / 5,
                     (uv_start + samples[i + 1].distance) / 5,
                     depth,
+                    cap_entry and i == 0,
                 )
             )
         track.width, track.floor = sizes[-1], 'road'
@@ -328,6 +331,7 @@ def lay_path(layout, index, part, piece, track):
             heading=track.d,
             section=port(1),
             distance=uv_start + samples[-1].distance if kind == 'floor' else 0,
+            slope=samples[-1].slope,
         )
     )
     if beam:
@@ -657,21 +661,34 @@ def lay_polygon(layout, index, part, piece, track):
 def lay(layout, index, part, piece, track):
     if 'connector' in piece:
         before = ports.incoming(layout, track)
-        key, path = connectors.transition(piece['connector'], before.section)
-        generated = piece.copy()
-        del generated['connector']
-        generated[key] = path
-        # Keep the authored connector's source identity in both port records.
+        paths = connectors.compile_paths(piece['connector'], before, layout)
+        if len(paths) > 1 and piece.get('elements'):
+            raise ValueError('place elements on a separate floor after a rail-to-floor connector')
+        # Keep the authored connector's source identity in every adapter port.
         from .identity import Piece
 
-        generated = Piece(generated, piece.origin)
-        lay_path(layout, index, part, generated, track)
+        for key, path in paths:
+            generated = piece.copy()
+            del generated['connector']
+            generated[key] = path
+            generated = Piece(generated, piece.origin)
+            lay_path(layout, index, part, generated, track)
+        if 'endpoint' in piece['connector']:
+            track.free_port = replace(track.free_port, smooth=True)
         layout.transitions.append(
             {
                 'entity': piece.origin.data(),
                 'from': before.data(),
                 'to': track.free_port.data(),
-                'path': path,
+                'path': paths[0][1],
+                'paths': [{key: path} for key, path in paths],
+                'endpoint': piece['connector'].get('endpoint'),
+                'constraints': {
+                    key: piece['connector'].get(key, default)
+                    for key, default in (('min_radius', 8), ('max_grade', 1))
+                }
+                if 'endpoint' in piece['connector']
+                else None,
             }
         )
     elif 'floor_polygon' in piece:

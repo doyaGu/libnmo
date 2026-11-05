@@ -1590,9 +1590,11 @@ PIECES: dict[str, Callable] = {
 
 def lay_piece(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> None:
     from .placement import begin, finish
+    from .ports import grid_slope
 
     context = begin(layout, part, piece, track)
     _lay_piece(layout, sector, part, piece, track)
+    track.slope = grid_slope(piece) if track.free_port is None else track.free_port.slope
     finish(layout, piece, track, context)
 
 

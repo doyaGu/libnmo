@@ -47,6 +47,7 @@ class Sample:
     point: Vec
     direction: tuple[float, float]
     distance: float
+    slope: float | None = None
 
 
 def sample_path(spec: dict) -> list[Sample]:
@@ -66,14 +67,14 @@ def sample_path(spec: dict) -> list[Sample]:
     tolerance = number(spec.get('tolerance', 0.025), 'path tolerance')
     if not 0.1 <= step <= 10 or not 0.001 <= tolerance <= 0.5:
         raise ValueError('path step must be 0.1..10 and tolerance 0.001..0.5')
-    raw: list[tuple[Vec, tuple[float, float]]] = []
+    raw: list[tuple[Vec, tuple[float, float], float | None]] = []
     current: Vec = (0.0, 0.0, 0.0)
     direction = (1.0, 0.0)
 
-    def append(p, d):
+    def append(p, d, slope=None):
         if len(raw) >= 20000:
             raise ValueError('path exceeds 20000 samples; use a coarser step')
-        raw.append((p, d))
+        raw.append((p, d, slope))
 
     def cubic(points, depth=0):
         a, b, c, d = points
@@ -89,7 +90,8 @@ def sample_path(spec: dict) -> list[Sample]:
             return math.dist(p, mix(a, d, min(1.0, max(0.0, t))))
 
         if polygon <= step and max(off_chord(b), off_chord(c)) <= tolerance:
-            append(d, heading(tuple(d[i] - c[i] for i in range(3))))
+            delta = tuple(d[i] - c[i] for i in range(3))
+            append(d, heading(delta), delta[2] / math.hypot(*delta[:2]))
             return
         if depth >= 20:
             raise ValueError('Bezier cannot be sampled: degenerate controls or excessive scale')
@@ -103,16 +105,19 @@ def sample_path(spec: dict) -> list[Sample]:
         if not isinstance(segment, dict) or len(segment) != 1:
             raise ValueError('each path segment must contain exactly one of line, bezier, arc')
         kind, value = next(iter(segment.items()))
+        initial_slope = None
         if kind == 'line':
             end = vector(value)
             delta = tuple(end[i] - current[i] for i in range(3))
             initial = final = heading(delta)
+            initial_slope = delta[2] / math.hypot(*delta[:2])
             count = math.ceil(math.dist(current, end) / step)
         elif kind == 'bezier':
             if not isinstance(value, list) or len(value) != 3:
                 raise ValueError('bezier needs two control points and an endpoint')
             b, c, end = [vector(v) for v in value]
             initial = heading(tuple(b[i] - current[i] for i in range(3)))
+            initial_slope = (b[2] - current[2]) / math.hypot(b[0] - current[0], b[1] - current[1])
             final = heading(tuple(end[i] - c[i] for i in range(3)))
         elif kind == 'arc':
             if not isinstance(value, dict) or set(value) - {'radius', 'angle', 'rise'}:
@@ -123,6 +128,7 @@ def sample_path(spec: dict) -> list[Sample]:
             if radius <= 0 or not 0 < abs(angle) <= 8 * math.pi:
                 raise ValueError('arc radius must be positive and angle within +/-1440 degrees')
             initial = direction
+            initial_slope = rise / (radius * abs(angle))
             sign = 1 if angle > 0 else -1
             # Both coordinate axes are local: right of (forward, right).
             right = (-direction[1], direction[0])
@@ -173,12 +179,12 @@ def sample_path(spec: dict) -> list[Sample]:
         if initial[0] * direction[0] + initial[1] * direction[1] < 1 - 1e-5:
             raise ValueError('path segments must meet tangentially; use a Bezier or arc to turn')
         if not raw:
-            append(current, initial)
+            append(current, initial, initial_slope)
         if kind == 'line':
             if count > 20000:
                 raise ValueError('path exceeds 20000 samples')
             for k in range(1, count + 1):
-                append(mix(current, end, k / count), initial)
+                append(mix(current, end, k / count), initial, initial_slope)
         elif kind == 'bezier':
             cubic((current, b, c, end))
         elif kind in ('wave', 'weave', 'eased_turn'):
@@ -188,13 +194,13 @@ def sample_path(spec: dict) -> list[Sample]:
             if count > 20000:
                 raise ValueError('path exceeds 20000 samples')
             for k in range(1, count + 1):
-                append(*arc_point(k / count))
+                append(*arc_point(k / count), initial_slope)
         current, direction = end, final
     result, distance = [], 0.0
-    for i, (point, direction) in enumerate(raw):
+    for i, (point, direction, slope) in enumerate(raw):
         if i:
             distance += math.dist(point, raw[i - 1][0])
-        result.append(Sample(point, direction, distance))
+        result.append(Sample(point, direction, distance, slope))
     if distance < 1e-6:
         raise ValueError('path must have positive length')
     return result
@@ -224,7 +230,8 @@ def include_stations(samples: list[Sample], fractions) -> list[Sample]:
                 0,
             )
         )
-        result.append(Sample(mix(a.point, b.point, t), d, distance))
+        slope = a.slope if t == 0 else b.slope if t == 1 else None
+        result.append(Sample(mix(a.point, b.point, t), d, distance, slope))
     return result
 
 

@@ -23,6 +23,21 @@ def cardinal(direction):
     return next((d for d in HEADINGS.values() if math.dist(direction, d) < EPSILON), None)
 
 
+def grid_slope(piece):
+    """Known entry/exit grades of straight native-grid pieces.
+
+    Native module adapters have level mouths. Other measured curves keep an
+    unknown grade when they change height; endpoint joins must not certify it.
+    """
+    if piece is None:
+        return 0
+    for kind in ('road', 'rail'):
+        if kind in piece:
+            length = float(piece[kind])
+            return -float(piece.get('drop', 0)) / length if length > 0 else None
+    return None if piece.get('drop') else 0
+
+
 def profile_height(profile, x):
     for (u, a), (v, b) in zip(profile, profile[1:]):
         if x <= v + EPSILON:
@@ -92,12 +107,16 @@ class Port:
     section: Section
     source: Origin | None = None
     distance: float = 0  # floor UV phase in world units, before division by 5
+    slope: float | None = None  # rise / horizontal distance; unknown for measured native interiors
+    smooth: bool = False  # endpoint-generated exits require a known matching entry slope
 
     def __post_init__(self):
         if not all(math.isfinite(v) for v in (*self.position, *self.heading, self.distance)):
             raise ValueError('port pose needs finite values')
         if abs(math.hypot(*self.heading) - 1) > EPSILON:
             raise ValueError('port heading must be a unit direction')
+        if self.slope is not None and not math.isfinite(self.slope):
+            raise ValueError('port slope must be finite when known')
 
     def data(self):
         value = asdict(self)
@@ -142,8 +161,9 @@ class ConnectionError(ValueError):
 def connect(before: Port, after: Port, *, grid=False) -> Connection:
     """Require a closed positional joint and matching horizontal cross sections.
 
-    Intentional slope changes remain allowed. Native module interiors, beam
-    overlaps and ballistic transfers require their own adapters, not this rule.
+    Legacy pieces allow intentional slope changes; endpoint-generated exits
+    require a matching known grade. Native interiors, beam overlaps and
+    ballistic transfers require their own adapters, not this rule.
     """
 
     def reject(rule, remedy='add an explicit connector before this piece'):
@@ -153,6 +173,12 @@ def connect(before: Port, after: Port, *, grid=False) -> Connection:
         reject('position gap', 'align the two port positions')
     if math.dist(before.heading, after.heading) > EPSILON:
         reject('heading mismatch', 'use a curved path to align the end heading')
+    if before.smooth and (
+        before.slope is None or after.slope is None or abs(before.slope - after.slope) > EPSILON
+    ):
+        reject(
+            'slope mismatch or unknown entry slope', 'match the endpoint slope to the next piece'
+        )
     a, b = before.section, after.section
     if grid and (cardinal(before.heading) is None or not a.standard):
         reject(
@@ -192,10 +218,11 @@ def incoming(layout, track) -> Port:
         track.d,
         Section('rail' if track.run is not None else 'floor', width=track.width),
         origin,
+        slope=track.slope,
     )
 
 
-def entry(piece, track, section, *, owner=None) -> Port:
+def entry(piece, track, section, *, owner=None, slope=None) -> Port:
     origin = getattr(piece, 'origin', None)
     return Port(
         owner or (origin.entity_id if origin else 'route/end'),
@@ -204,4 +231,5 @@ def entry(piece, track, section, *, owner=None) -> Port:
         track.d,
         section,
         origin,
+        slope=slope,
     )

@@ -103,6 +103,11 @@ def mirror(piece):
             if isinstance(spec.get(section), list):
                 spec[section] = [[-u, y] for u, y in reversed(spec[section])]
         if key == 'connector':
+            endpoint = spec.get('endpoint', {})
+            if 'offset' in endpoint:
+                endpoint['offset'][1] *= -1
+                if 'heading' in endpoint:
+                    endpoint['heading'][1] *= -1
             target = spec.get('to', {})
             if 'bank' in target:
                 target['bank'] *= -1

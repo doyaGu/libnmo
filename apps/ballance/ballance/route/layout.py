@@ -55,6 +55,7 @@ class Track:
     forks: list[tuple] = field(default_factory=list)
     step: int | None = None  # the last Part laid on it
     free_port: Port | None = None
+    slope: float | None = None
 
 
 @dataclass
@@ -417,7 +418,7 @@ class Layout:
             if selected is None or selected['used']:
                 raise ValueError(f'branch to {name} needs an unused to_port')
             outward = selected['port']
-            incoming = replace(outward, heading=back_of(outward.heading))
+            incoming = replace(outward, heading=back_of(outward.heading), slope=0)
             self.connections.append(ports.connect(ports.incoming(self, t), incoming))
             if t.run is not None:
                 sector.rails.runs.append(t.run)
@@ -519,7 +520,9 @@ class Layout:
             'scope': 'Free paths, polygon mouths and standard native entry adapters. '
             'Native module interiors, beam overlaps and ballistic transfers retain measured rules. '
             'Checks require position, horizontal heading and section '
-            'continuity; slope changes are allowed.',
+            'continuity. Endpoint-generated exits also require matching known slopes; '
+            'legacy joints allow slope changes. Endpoint curves certify horizontal '
+            'radius and grade, not obstacle avoidance.',
             'connections': [c.data() for c in self.connections],
             'transitions': self.transitions,
             'platforms': self.platforms,
