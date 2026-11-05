@@ -759,6 +759,27 @@ TEST(builtin_operations, vector_add_vector3) {
     teardown_registries();
 }
 
+TEST(builtin_operations, vector_scalar_multiplication_resolves_exact_types_and_supports_in_place_results) {
+    setup_registries();
+    const nmo_guid_t guid = NMO_OP_GUID_MULTIPLY;
+    const nmo_type_descriptor_t *vector_type = get_type(CKPGUID_VECTOR), *float_type = get_type(CKPGUID_FLOAT);
+    ASSERT_NOT_NULL(vector_type); ASSERT_NOT_NULL(float_type);
+    const nmo_operation_tree_cell_t *cell = NULL;
+    ASSERT_EQ(NMO_OK,nmo_operation_registry_find_typed(operation_registry,&guid,vector_type,float_type,vector_type,type_registry,&cell));
+    ASSERT_NOT_NULL(cell); ASSERT_NOT_NULL(cell->desc.function);
+    const nmo_vector_t input = {-2,3,.5f}, expected[] = {{-4,6,1},{.5f,-.75f,-.125f},{0,0,0}};
+    const float factors[] = {2,-.25f,0};
+    for (size_t i = 0; i < 3; i++) {
+        nmo_vector_t output = {17,18,19};
+        ASSERT_EQ(NMO_OK,cell->desc.function(&input,vector_type,factors+i,float_type,&output,vector_type,NULL));
+        ASSERT_TRUE(output.x == expected[i].x && output.y == expected[i].y && output.z == expected[i].z);
+    }
+    nmo_vector_t aliased = {2,-4,8}; float scale = -.5f;
+    ASSERT_EQ(NMO_OK,cell->desc.function(&aliased,vector_type,&scale,float_type,&aliased,vector_type,NULL));
+    ASSERT_TRUE(aliased.x == -1 && aliased.y == 2 && aliased.z == -4);
+    teardown_registries();
+}
+
 TEST(builtin_operations, vector_dot_vector2) {
     setup_registries();
 
@@ -898,6 +919,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(builtin_operations, trigonometry_asin_domain_error);
 
     REGISTER_TEST(builtin_operations, vector_add_vector3);
+    REGISTER_TEST(builtin_operations, vector_scalar_multiplication_resolves_exact_types_and_supports_in_place_results);
     REGISTER_TEST(builtin_operations, vector_dot_vector2);
     REGISTER_TEST(builtin_operations, vector_cross_vector3);
 

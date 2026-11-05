@@ -137,6 +137,22 @@ static nmo_status_t op_vector3_mul(
     NMO_RETURN_OK();
 }
 
+/* CKVectorMultiplyVectorFloat: scale all components by the same scalar. */
+static nmo_status_t op_vector3_scale(
+    const void *p1_data, const nmo_type_descriptor_t *p1_type,
+    const void *p2_data, const nmo_type_descriptor_t *p2_type,
+    void *result_data, const nmo_type_descriptor_t *result_type, void *user_data)
+{
+    (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
+    const nmo_vector_t value = *(const nmo_vector_t *)p1_data;
+    const float scale = *(const float *)p2_data;
+    nmo_vector_t *out = (nmo_vector_t *)result_data;
+    out->x = value.x * scale;
+    out->y = value.y * scale;
+    out->z = value.z * scale;
+    NMO_RETURN_OK();
+}
+
 static nmo_status_t op_vector3_div(
     const void *p1_data, const nmo_type_descriptor_t *p1_type,
     const void *p2_data, const nmo_type_descriptor_t *p2_type,
@@ -300,6 +316,8 @@ nmo_status_t nmo_register_vector_operations(
          op_vector3_sub, NULL, NMO_OP_BINARY, 100, "Subtraction", "Vector3 subtraction"},
         {NMO_OP_GUID_MULTIPLY, CKPGUID_VECTOR, CKPGUID_VECTOR, CKPGUID_VECTOR,
          op_vector3_mul, NULL, NMO_OP_BINARY, 100, "Multiplication", "Vector3 component-wise multiply"},
+        {NMO_OP_GUID_MULTIPLY, CKPGUID_VECTOR, CKPGUID_FLOAT, CKPGUID_VECTOR,
+         op_vector3_scale, NULL, NMO_OP_BINARY, 100, "Multiplication", "Vector3 scalar multiply"},
         {NMO_OP_GUID_DIVIDE, CKPGUID_VECTOR, CKPGUID_VECTOR, CKPGUID_VECTOR,
          op_vector3_div, NULL, NMO_OP_BINARY, 100, "Division", "Vector3 component-wise divide"},
         {NMO_OP_GUID_VECTOR_DOT, CKPGUID_VECTOR, CKPGUID_VECTOR, CKPGUID_FLOAT,
