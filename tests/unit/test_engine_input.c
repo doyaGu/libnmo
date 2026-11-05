@@ -119,6 +119,36 @@ TEST(engine_input, tt_test_for_joystick_uses_the_live_number_and_distinguishes_a
     ASSERT_EQ(4u,g.yes_hits); ASSERT_EQ(12u,g.no_hits); fixture_end(&g.f);
 }
 
+TEST(engine_input, tt_test_for_joystick_invalid_numbers_take_no_without_failing_even_when_all_devices_are_attached)
+{
+    tt_joystick_test_fixture_t g; tt_joystick_test_begin(&g); tt_joystick_test_ready(&g); nmo_engine_joystick_state_t state = {.attached = true,.point_of_view = -1}; for (int32_t slot = 0; slot < 4; slot++) nmo_engine_set_joystick(g.f.engine,slot,&state); const int32_t invalid[] = {-1,4,INT32_MIN,INT32_MAX}; for (size_t i = 0; i < 4; i++) tt_joystick_test_fire(&g,invalid[i],false); for (int32_t slot = 0; slot < 4; slot++) tt_joystick_test_fire(&g,slot,true); fixture_end(&g.f);
+}
+
+typedef struct joystick_query_update {
+    nmo_object_id_t block;
+    int32_t slot;
+    bool enabled, disconnect, before, after;
+} joystick_query_update_t;
+
+/* A host update between two query nodes must only affect the next frame. */
+static int joystick_query_queue_update(nmo_engine_block_t *block)
+{
+    joystick_query_update_t *update = nmo_engine_block_user_data(block);
+    if (nmo_engine_block_id(block) == update->block && update->enabled) {
+        nmo_engine_t *engine = nmo_engine_block_engine(block); update->before = nmo_engine_joystick_state(engine,update->slot,NULL); nmo_engine_joystick_state_t state = {.attached = true,.point_of_view = -1}; nmo_engine_set_joystick(engine,update->slot,update->disconnect ? NULL : &state); update->after = nmo_engine_joystick_state(engine,update->slot,NULL);
+    }
+    nmo_engine_block_activate_input(block,0,false); nmo_engine_block_activate_output(block,0,true); return NMO_ENGINE_BR_OK;
+}
+
+TEST(engine_input, tt_test_for_joystick_observes_one_snapshot_across_host_updates_between_query_nodes)
+{
+    tt_joystick_test_fixture_t g; tt_joystick_test_begin(&g); nmo_object_id_t update = fixture_block(&g.f,GUID_NOP,"Queue Joystick Update"), second = fixture_block(&g.f,GUID_TT_TEST_FOR_JOYSTICK,"Query After Update"), yes = fixture_block(&g.f,GUID_NOP,"Second Query Present"), no = fixture_block(&g.f,GUID_NOP,"Second Query Absent"); ASSERT_TRUE(update != 0 && second != 0 && yes != 0 && no != 0); fixture_input_int(&g.f,BLOCK_PIN(&g.f,second,0),2); fixture_link(&g.f,BLOCK_OUT(&g.f,g.block,0),BLOCK_IN(&g.f,update,0),0); fixture_link(&g.f,BLOCK_OUT(&g.f,g.block,1),BLOCK_IN(&g.f,update,0),0); fixture_link(&g.f,BLOCK_OUT(&g.f,update,0),BLOCK_IN(&g.f,second,0),0); fixture_link(&g.f,BLOCK_OUT(&g.f,second,0),BLOCK_IN(&g.f,yes,0),0); fixture_link(&g.f,BLOCK_OUT(&g.f,second,1),BLOCK_IN(&g.f,no,0),0);
+    nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL; fixture_commit(&g.f,&options); joystick_query_update_t change = {.block = update,.slot = 2,.enabled = true}; nmo_engine_block_desc_t desc = {.guid = GUID_NOP,.name = "Host Input Update",.function = joystick_query_queue_update,.user_data = &change}; ASSERT_EQ(NMO_OK,nmo_engine_register_block(g.f.engine,&desc)); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.number_value,&(int32_t){2},sizeof(int32_t))); ASSERT_EQ(NMO_OK,nmo_engine_start(g.f.engine,NMO_ENGINE_START_ALL));
+    tt_joystick_test_step(&g,false); ASSERT_FALSE(change.before); ASSERT_FALSE(change.after); ASSERT_FALSE(nmo_engine_joystick_state(g.f.engine,2,NULL)); ASSERT_EQ(1u,runs(&g.f,second)); ASSERT_EQ(0u,runs(&g.f,yes)); ASSERT_EQ(1u,runs(&g.f,no));
+    change.disconnect = true; ASSERT_EQ(NMO_OK,nmo_engine_activate_script(g.f.engine,g.f.script_id,true,true)); tt_joystick_test_step(&g,true); ASSERT_TRUE(change.before); ASSERT_TRUE(change.after); ASSERT_TRUE(nmo_engine_joystick_state(g.f.engine,2,NULL)); ASSERT_EQ(2u,runs(&g.f,second)); ASSERT_EQ(1u,runs(&g.f,yes)); ASSERT_EQ(1u,runs(&g.f,no));
+    change.enabled = false; ASSERT_EQ(NMO_OK,nmo_engine_activate_script(g.f.engine,g.f.script_id,true,true)); tt_joystick_test_step(&g,false); ASSERT_FALSE(nmo_engine_joystick_state(g.f.engine,2,NULL)); ASSERT_EQ(3u,runs(&g.f,second)); ASSERT_EQ(1u,runs(&g.f,yes)); ASSERT_EQ(2u,runs(&g.f,no)); fixture_end(&g.f);
+}
+
 typedef struct tt_vector_mapper_fixture {
     engine_fixture_t f;
     nmo_object_id_t block, done, input_value, mappings[4], output;
@@ -1058,6 +1088,9 @@ TEST(engine_input, tt_input_string_keeps_editing_past_enter)
 }
 
 TEST_MAIN_BEGIN()
+REGISTER_TEST(engine_input, tt_test_for_joystick_invalid_numbers_take_no_without_failing_even_when_all_devices_are_attached);
+REGISTER_TEST(engine_input, tt_test_for_joystick_observes_one_snapshot_across_host_updates_between_query_nodes);
+
 REGISTER_TEST(engine_input, tt_test_for_joystick_defaults_to_slot_zero_and_requires_reactivation_after_each_query);
 REGISTER_TEST(engine_input, tt_test_for_joystick_uses_the_live_number_and_distinguishes_all_four_device_slots);
 
