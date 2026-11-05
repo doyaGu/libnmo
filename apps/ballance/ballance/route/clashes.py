@@ -95,7 +95,11 @@ def part_boxes(part: Part, assets: Assets) -> tuple[list[Box], list[Box]]:
             if box:
                 solid.append(box)
                 room.append(_room(box))
-    for kind, _, position, *turn in part.elements + part.modules:
+    for entry in part.elements + part.modules:
+        kind, _, position, *turn = entry
+        pose = part.mechanism_entries.get(id(entry))
+        if pose:
+            position, turn = pose['position'], [pose['yaw']]
         if not kind.startswith(PASSED):
             box = _placed(assets.out / assets.mesh(kind), position, turn[0] if turn else 0.0)
             if box:

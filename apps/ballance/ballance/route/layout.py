@@ -93,12 +93,16 @@ class Part:
     # where it left the track: point, height of the floor's inside, heading
     end: tuple[Point, float, Heading] | None = None
     origin: Origin | None = None
+    mechanism_entries: dict = field(default_factory=dict)
 
 
 class Layout:
     """A route laid out."""
 
     def __init__(self, route: dict) -> None:
+        from .placement import validate
+        self.placements = validate(route.get('placements', {}))
+        self.entry_poses, self.edit_ports, self.open_connections = {}, {}, []
         self.mechanism_settings = route.get('mechanisms', {})
         start = route.get("start", {})
         self.start: Point = (float(start.get("x", 0.0)), float(start.get("z", 0.0)))
@@ -138,6 +142,10 @@ class Layout:
         self._waiting: dict[str, list[tuple]] = {}  # branches to areas not yet laid
         self._named: dict[str, tuple] = {}  # areas named by the piece being laid
         self._lay(expand(route))
+        if set(self.placements) - self.entry_poses.keys():
+            raise ValueError('placements reference missing route elements: '+str(sorted(set(self.placements)-self.entry_poses.keys())))
+        from .mechanism_placement import prepare
+        prepare(self)
         # Module columns have their own placement, so a shaft can move
         # without moving the playable housing and its physics together.
         self.supports = [(floor.name, sector, list(position), turn)
@@ -426,6 +434,7 @@ class Layout:
             {'id': ids[p.step], 'kind': p.what, 'sector': p.sector,
              'source': p.origin.data() if p.origin else None,
              'after': ids.get(p.after), 'joins': ids.get(p.joins),
+             'entry': self.entry_poses.get(ids[p.step]), 'ports': self.edit_ports.get(ids[p.step]),
              'end': {'position': [p.end[0][0], p.end[1], p.end[0][1]], 'heading': p.end[2]}}
             for p in self.parts]}
 
@@ -435,7 +444,7 @@ class Layout:
                          'Native module interiors, beam overlaps and ballistic transfers retain measured rules. '
                          'Checks require position, horizontal heading and section continuity; slope changes are allowed.',
                 'connections': [c.data() for c in self.connections], 'transitions': self.transitions,
-                'platforms': self.platforms}
+                'platforms': self.platforms, 'open_connections': self.open_connections}
 
     def warn(self, message: str) -> None:
         self.warnings.append(message)

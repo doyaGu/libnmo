@@ -186,5 +186,7 @@ def expand(route):
                 result.append(Piece(item, Origin(entity_id, source, instances, stable)))
         return result
 
-    return [pieces(sector, path=f'/sectors/{index}', fallback=f'sector/{index}/')
-            for index, sector in enumerate(route["sectors"])]
+    from .editing import apply_overrides
+    expanded = [pieces(sector, path=f'/sectors/{index}', fallback=f'sector/{index}/')
+                for index, sector in enumerate(route["sectors"])]
+    return apply_overrides(expanded, route.get('overrides', {}))

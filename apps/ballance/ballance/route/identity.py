@@ -20,9 +20,13 @@ class Origin:
     pointer: str
     instances: tuple[dict, ...] = ()
     stable: bool = False
+    override_pointer: str | None = None
 
     def data(self) -> dict:
-        return asdict(self)
+        result = asdict(self)
+        if self.override_pointer is None:
+            result.pop('override_pointer')
+        return result
 
 
 class Piece(dict):

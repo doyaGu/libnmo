@@ -42,7 +42,7 @@ def write_sector(sector: Sector, index: int, out: Path) -> None:
         mesh.write(out / f"railings{index}.obj")
 
 
-def build(route: dict | Path, out: Path, elements: Path | None, name: str) -> int:
+def build(route: dict | Path, out: Path, elements: Path | None, name: str, *, incremental: bool = False, game=None, nmo=None) -> int:
     """Build in isolation and publish a complete generation, retaining history."""
     try:
         request = {'source_file': str(route.resolve())} if isinstance(route, Path) else route
@@ -51,7 +51,7 @@ def build(route: dict | Path, out: Path, elements: Path | None, name: str) -> in
                 route = json.loads(route.read_text(encoding='utf-8'))
             if not isinstance(route, dict):
                 raise ValueError('route must be a JSON object')
-            _build(route, staged, elements, name)
+            _build(route, staged, elements, name, previous=out if incremental else None, game=game, nmo=nmo)
     except MissingMesh as error:
         print(error, file=sys.stderr)
         return 2
@@ -59,7 +59,7 @@ def build(route: dict | Path, out: Path, elements: Path | None, name: str) -> in
     return 0
 
 
-def _build(route: dict, out: Path, elements: Path | None, name: str) -> int:
+def _build(route: dict, out: Path, elements: Path | None, name: str, *, previous: Path | None = None, game=None, nmo=None) -> int:
     """Lays route out and writes it to out: manifest.json, the OBJ meshes it
     names, and route_points.json.  With elements (a folder of the game's
     meshes, from ballance_level_elements.py) the level uses them and stands
@@ -111,8 +111,8 @@ def _build(route: dict, out: Path, elements: Path | None, name: str) -> int:
         placements.extend(fitted)
     (out / 'scenery_placement.json').write_text(json.dumps(placements, indent=2) + '\n',
                                                encoding='utf-8')
-    for index, sector in enumerate(layout.sectors, start=1):
-        write_sector(sector, index, out)
+    from .incremental import write as write_sectors
+    write_sectors(layout, route, out, elements, previous, write_sector)
     manifest = build_manifest(load_presets(), assets, layout, name, towers, sticks)
     attachments.bind_objects(layout, manifest)
     from .resources import describe as describe_resources
@@ -150,5 +150,7 @@ def _build(route: dict, out: Path, elements: Path | None, name: str) -> int:
             first = findings[0]
             raise ValueError(f"exported scenery failed {first.get('rule', first['kind'])}: "
                              f"{first['object']} ({len(findings)} findings)")
+    from .dynamics import generate
+    generate(layout, out, game, nmo)
     project.record(out, route, layout.warnings + conflicts, assets.game)
     return 0

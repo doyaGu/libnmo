@@ -21,7 +21,7 @@ BUILD_RECORD = 'build_info.json'
 ROUTE_SNAPSHOT = 'route.json'
 SIDE_FILES = (ROUTE_SNAPSHOT, 'route_points.json', 'route_sectors.json',
               'death_zones.json', 'scenery_placement.json', 'source_map.json', 'connections.json',
-              'spatial_constraints.json', 'gameplay_contracts.json', 'resources.json')
+              'spatial_constraints.json', 'gameplay_contracts.json', 'resources.json', 'sector_cache.json', 'native_dynamics.json')
 
 
 def _identity(value: dict) -> str:
@@ -34,7 +34,7 @@ def tools_identity() -> dict:
     root = Path(__file__).resolve().parents[2]
     files = [*root.joinpath('ballance').rglob('*.py'), *root.joinpath('scripts').glob('*.py'),
              root / 'data/level_materials.json', root / 'data/motion_catalog.json',
-             root / 'data/resource_catalog.json']
+             root / 'data/resource_catalog.json', root / 'data/mechanism_parameters.json']
     return {str(path.relative_to(root)): digest(path) for path in sorted(files)}
 
 
@@ -140,6 +140,8 @@ def inputs(folder: Path) -> list[str]:
             if mesh:
                 files.add(mesh)
     files.update(name for name in SIDE_FILES if (folder / name).is_file())
+    from ..route.dynamics import dependencies
+    files.update(dependencies(folder))
     return sorted(files)
 
 

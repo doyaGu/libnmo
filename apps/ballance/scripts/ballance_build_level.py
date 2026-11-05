@@ -289,10 +289,15 @@ def main() -> int:
     parser.add_argument("--elements",
                         help="Folder of <Kind>.obj meshes from ballance_level_elements.py")
     parser.add_argument("--name", default="Level", help="The document's name")
+    parser.add_argument("--incremental", action="store_true",
+                        help="Reuse intact sector meshes with unchanged dependencies; recheck global constraints")
+    parser.add_argument('--game', type=Path, help='Game directory for native mechanism parameters')
+    from ballance.core.nmo import Nmo, add_nmo_argument
+    add_nmo_argument(parser)
     args = parser.parse_args()
     try:
         return build(Path(args.route), Path(args.out), Path(args.elements) if args.elements else None,
-                     args.name)
+                     args.name, incremental=args.incremental, game=args.game, nmo=Nmo(args.nmo))
     except (OSError, RuntimeError, ValueError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2

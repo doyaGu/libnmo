@@ -43,6 +43,20 @@ def check(folder, game=None):
             if component['status']=='missing':
                 findings.append({'resource':instance['resource'],'instance':instance['id'],
                                  'kind':'missing component','part':component['part']})
+    runtime=Path(folder)/'native_dynamics.json'
+    if any(i.get('runtime_variant') for i in record['instances']) and not runtime.is_file():
+        findings.append({'kind':'missing native dynamics bundle'})
+    if runtime.is_file():
+        config=json.loads(runtime.read_text())
+        for name,sha in config['files'].items():
+            p=Path(folder)/name
+            if not p.is_file() or digest(p)!=sha:
+                findings.append({'kind':'native dynamics changed or missing','file':name})
+        if game is not None:
+            for name,sha in config['sources'].items():
+                p=Path(game)/name
+                if not p.is_file() or digest(p)!=sha:
+                    findings.append({'kind':'native dynamics source changed','file':name})
     return {'status':'failed' if findings else 'review' if not record['native_assets'] or game is None else 'passed',
             'count':len(record['resources']),'instances':len(record['instances']),'findings':findings,
             'native_sources_checked':game is not None,'scope':record['scope']}

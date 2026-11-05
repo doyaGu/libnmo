@@ -144,8 +144,15 @@ def _floors(manifest: Manifest, assets: Assets, layout: Layout) -> None:
 
 def _elements(manifest: Manifest, assets: Assets, layout: Layout) -> None:
     descriptions = resource_elements()
-    for kind, sector, position, turn in [e + (0.0,) for e in layout.elements] + layout.modules:
+    for entry in [*layout.elements, *layout.modules]:
+        kind, sector, position, *rotation = entry
+        turn = rotation[0] if rotation else 0
+        pose = layout.mechanism_entries.get(id(entry))
+        if pose:
+            sector, position, turn = pose['sector'], pose['position'], pose['yaw']
         groups = descriptions[kind][1]['parts'][0]['groups'] if kind in descriptions else [kind]
+        if pose and pose.get('runtime_variant'):
+            groups = [pose['runtime_variant'] if g == kind else g for g in groups]
         manifest.add(f"{kind}_{manifest.number(kind):02d}", assets.mesh(kind), position,
                      [*groups, f"Sector_{sector:02d}"], turn=turn)
     for kind, sector, position, turn in layout.module_floors:
@@ -198,6 +205,11 @@ def _scenery(manifest: Manifest, assets: Assets, layout: Layout, towers: list[li
         manifest.add(f"Floor_Columns_{index:02d}", assets.mesh("Pillar"), position, parts['Pillar']['groups'])
     for index, position in enumerate(sticks, start=1):
         manifest.add(f"Stick_{index:02d}", assets.mesh("Stick"), position, parts['Stick']['groups'])
+    turns={name:binding['turn'] for binding in layout.scenery_bindings
+           if binding['role'] in ('lamp','pillar') for name in binding['objects']}
+    for obj in manifest.objects:
+        if turns.get(obj['name'],0)%360:
+            obj['transform']['rotation_euler_deg']=[0,turns[obj['name']]%360,0]
     if assets.has('Scenery_Braces'):
         manifest.add('Support_Scenery', assets.mesh('Scenery_Braces'), [0, 0, 0], [])
         manifest.materials.add('Rail')

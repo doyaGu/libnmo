@@ -1329,6 +1329,13 @@ PIECES: dict[str, Callable] = {
 
 
 def lay_piece(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> None:
+    from .placement import begin, finish
+    context = begin(layout, part, piece, track)
+    _lay_piece(layout, sector, part, piece, track)
+    finish(layout, piece, track, context)
+
+
+def _lay_piece(layout: Layout, sector: int, part: Sector, piece: dict, track: Track) -> None:
     """Lays one piece of sector number sector, and the elements on it."""
     from . import freeform
     kinds = [key for key in (*PIECES, *freeform.KINDS) if key in piece]

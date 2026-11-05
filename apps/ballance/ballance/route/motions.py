@@ -21,6 +21,9 @@ def catalog():
 
 
 def instances(layout):
+    if not hasattr(layout, 'mechanism_instances'):
+        from .mechanism_placement import prepare
+        prepare(layout)
     recipes=catalog()
     descriptions=mechanisms()
     result=[]
@@ -48,6 +51,7 @@ def instances(layout):
             if recipe and recipe['type']=='assembly':
                 result[-1]['states']=recipe['states']
                 result[-1]['transitions'].extend(recipe['extra_transitions'])
+            result[-1].update(layout.mechanism_instances[identifier])
             result[-1]['stops']=getattr(layout,'motion_limits',{}).get(identifier)
     return result
 
@@ -92,8 +96,9 @@ def _volumes(kind, position, yaw, recipe_text):
 def volumes(instance, recipe):
     if recipe is None:
         return []
-    if instance.get('stops'):
-        recipe=recipe|{'angles':instance['stops']['angles']}
+    from .dynamics import joint_angles
+    if recipe['type'] == 'hinge':
+        recipe=recipe|{'angles':joint_angles(instance, recipe)}
     source={'entity_id':instance['id'],'parent':instance['parent'],'source':instance['source'],
             'sector':instance['sector'],'piece':instance['kind'],'branch':None}
     result=[]
@@ -131,8 +136,8 @@ def describe(layout):
 
 def interactions(layout, items=None):
     settings=getattr(layout,'mechanism_settings',{})
-    if not isinstance(settings,dict) or set(settings)-{'interactions'}:
-        raise ValueError('mechanisms accepts interactions only')
+    if not isinstance(settings,dict) or set(settings)-{'interactions', 'instances'}:
+        raise ValueError('mechanisms accepts interactions and instances only')
     values=settings.get('interactions',[])
     if not isinstance(values,list):
         raise ValueError('mechanism interactions must be a list')

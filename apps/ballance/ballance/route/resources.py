@@ -40,6 +40,7 @@ def _instances(layout, descriptions):
                         'position':position,'yaw':rotation[0] if rotation else 0,
                         'source':part.origin.data() if part.origin else None}
             if role == 'mechanism':
+                instance.update(layout.mechanism_instances[identifier])
                 instance['mechanism'] = identifier
                 instance['motion_coverage'] = 'modeled' if spec['runtime'].get('motion_recipe') else 'unsupported'
             if 'variants' in spec:
@@ -84,7 +85,8 @@ def describe(layout, assets, manifest):
             if 'variant' in instance and component['name'] not in spec['variants'][instance['variant']]['parts']:
                 continue
             mesh = assets.mesh(component['name'])
-            frames = [(instance['position'], instance['yaw'])]
+            frame = instance.get('base_pose', instance) if component['role'] != 'placement_marker' else instance
+            frames = [(frame['position'], frame['yaw'])]
             if component.get('placement_frame') == 'parent_module_floor':
                 frames = [(p,yaw) for kind,_,p,yaw in parents[instance['parent']].module_floors
                           if any(f.name==component['name'] for f in MODULE_FLOORS[kind])]

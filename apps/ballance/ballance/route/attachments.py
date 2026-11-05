@@ -33,7 +33,7 @@ def supported(box, regions):
 
 def policy(settings, identifier, mode, parent):
     value = settings.get(identifier, {})
-    if not isinstance(value, dict) or set(value) - {'mode', 'max_shift', 'allow_brace', 'allow_omit', 'parent'}:
+    if not isinstance(value, dict) or set(value) - {'mode', 'max_shift', 'allow_brace', 'allow_omit', 'parent', 'position', 'yaw'}:
         raise ValueError(f'{identifier}: placement rule accepts mode, max_shift, allow_brace, allow_omit and parent')
     result = {'mode': mode, 'max_shift': 15., 'allow_brace': False, 'allow_omit': False,
               'parent': parent} | value
@@ -105,6 +105,13 @@ def candidates(layout, lamps, poles, solid_by_part, box_at, settings):
         parent = rule['parent']
         if actor['role'] != 'lamp' and parent not in parts:
             raise ValueError(f"{actor['id']}: unknown parent {parent}")
+        if 'position' in rule:
+            from ..core.path import vector
+            actor['anchor']=list(vector(rule['position'],'scenery position'))
+        if 'yaw' in rule:
+            if type(rule['yaw']) not in (int,float) or not math.isfinite(rule['yaw']):
+                raise ValueError('scenery yaw must be a finite angle')
+            actor['turn']=rule['yaw']%360
         actor['parent'], actor['rule'] = parent, rule
         actor['regions'] = solid_by_part.get(parent, [])
         actor['source'] = parts[parent].origin.data() if parent in parts and parts[parent].origin else None
@@ -127,7 +134,7 @@ def authored(layout, parts):
         raise ValueError('scenery.instances must be a list')
     descriptions, actors, seen = catalog(), [], set()
     for value in values:
-        if not isinstance(value, dict) or set(value) != {'id','resource','parent','at'}:
+        if not isinstance(value, dict) or not {'id','resource','parent','at'} <= set(value) or set(value)-{'id','resource','parent','at','yaw'}:
             raise ValueError('a scenery instance needs id, resource, parent and at')
         identifier, name, parent, offset = (value[k] for k in ('id','resource','parent','at'))
         if not isinstance(identifier, str) or not identifier or identifier in seen:
@@ -141,11 +148,14 @@ def authored(layout, parts):
         if not isinstance(offset, list) or len(offset) != 3 or any(
                 isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in offset):
             raise ValueError(f'{identifier}: at needs finite [along, right, up] coordinates')
+        yaw=value.get('yaw',0)
+        if type(yaw) not in (int,float) or not math.isfinite(yaw):
+            raise ValueError('scenery yaw must be a finite angle')
         p, h, heading = parts[parent].end
         x, z = at(p, heading, offset[0], offset[1])
         actors.append({'id':f'scenery/id/{identifier}', 'role':spec['placement']['role'],
                        'kinds':tuple(spec['attachments']['assembly']['parts']), 'parent':parent,
-                       'anchor':[x,h+offset[2],z], 'turn':0, 'default':spec['placement']['mode']})
+                       'anchor':[x,h+offset[2],z], 'turn':yaw%360, 'default':spec['placement']['mode']})
     return actors
 
 
