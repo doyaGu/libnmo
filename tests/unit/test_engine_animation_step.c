@@ -46,6 +46,7 @@ static void begin(step_fixture_t *g, nmo_guid_t guid)
     nmo_3dentity_state_t *owner = fixture_state(&g->f,g->f.owner_id), *parent = fixture_state(&g->f,g->parent);
     nmo_3dentity_state_t *target = fixture_state(&g->f,g->target), *child = fixture_state(&g->f,g->child);
     ASSERT_NOT_NULL(owner); ASSERT_NOT_NULL(parent); ASSERT_NOT_NULL(target); ASSERT_NOT_NULL(child);
+    owner->has_entityndata_chunk = parent->has_entityndata_chunk = target->has_entityndata_chunk = child->has_entityndata_chunk = 1;
     owner->world_matrix[12] = 100; parent->world_matrix[12] = 10;
     target->parent = nmo_ref_from_id(g->parent); target->world_matrix[12] = 12;
     child->parent = nmo_ref_from_id(g->target); child->world_matrix[12] = 15;
@@ -87,6 +88,7 @@ static nmo_object_id_t actor(engine_fixture_t *f, const char *name, nmo_object_i
     nmo_character_state_t *state = fixture_state(f,id);
     nmo_bodypart_state_t *part = fixture_state(f,*body);
     if (state == NULL || part == NULL) return 0;
+    state->base.has_entityndata_chunk = ((nmo_3dentity_state_t *)part)->has_entityndata_chunk = 1;
     state->root_body_part = nmo_ref_from_id(*body); state->base.world_matrix[12] = 40;
     ((nmo_3dentity_state_t *)part)->parent = nmo_ref_from_id(id);
     ((nmo_3dentity_state_t *)part)->world_matrix[12] = 42;
@@ -227,10 +229,15 @@ TEST(engine_animation_step, global_keyed_sampling_resets_each_character_with_chi
     }
     const float steps[] = {-.5f,.5f,2}, clamped[] = {0,.5f,1};
     for (size_t s = 0; s < COUNT(steps); s++) {
-        for (size_t i = 0; i < 2; i++) move(g.f.engine,actors[i],40);
+        const eng_matrix_t displaced = {.m={{0,2,0,0},{-3,0,0,0},{0,0,4,0},{40,10,-20,1}}};
+        for (size_t i = 0; i < 2; i++) eng_entity_set_world_matrix(g.f.engine,eng_entity_index(g.f.engine,actors[i]),&displaced,false);
         ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.step_parameter,&steps[s],sizeof(float))); trigger(&g,0);
         for (size_t i = 0; i < 2; i++) {
             ASSERT_TRUE(eng_character_automatic(g.f.engine,actors[i])); position(g.f.engine,actors[i],0,0,0);
+            float matrix[16]; ASSERT_TRUE(nmo_engine_entity_world_matrix(g.f.engine,actors[i],matrix));
+            for (size_t cell = 0; cell < COUNT(matrix); cell++) {
+                ASSERT_TRUE(isfinite(matrix[cell])); ASSERT_FLOAT_EQ(cell%5 == 0 ? 1 : 0,matrix[cell],0);
+            }
             position(g.f.engine,bodies[i],8*clamped[s],16*clamped[s],24*clamped[s]);
         }
         position(g.f.engine,g.child,8*clamped[s]+3,16*clamped[s],24*clamped[s]);
@@ -279,6 +286,114 @@ TEST(engine_animation_step, global_missing_and_deleted_animations_still_evaluate
     }
 }
 
+static nmo_object_id_t saved_input(step_fixture_t *g, int pin, const char *value)
+{
+    nmo_object_id_t source = 0;
+    if (nmo_script_edit_ensure_input_parameter_source(g->f.tx,BLOCK_PIN(&g->f,g->block,pin),&source) != NMO_OK ||
+        nmo_script_edit_set_parameter_value(g->f.tx,source,value) != NMO_OK) return 0;
+    return source;
+}
+
+static const char *resolve_file(void *data, const char *name)
+{
+    (void)name; return data;
+}
+
+TEST(engine_animation_step, loaded_and_copied_graphs_remap_animation_bindings_and_keep_steps_independent)
+{
+    for (int global = 0; global < 2; global++) {
+        step_fixture_t g; begin(&g,global ? GUID_GLOBAL_STEP : GUID_ENTITY_STEP);
+        nmo_object_id_t body = 0, character = actor(&g.f,"Saved Character",&body); ASSERT_TRUE(character != 0);
+        nmo_object_id_t keyed = group(&g.f,&g.animation,1); ASSERT_TRUE(keyed != 0);
+        if (global) {
+            ((nmo_objectanimation_state_t *)fixture_state(&g.f,g.animation))->entity = nmo_ref_from_id(body);
+            nmo_3dentity_state_t *child = fixture_state(&g.f,g.child); child->parent = nmo_ref_from_id(body); child->world_matrix[12] = 45;
+        }
+        char text[32]; snprintf(text,sizeof(text),"%u",global ? keyed : g.animation);
+        nmo_object_id_t parameters[] = {saved_input(&g,0,text),saved_input(&g,1,"0.25")};
+        ASSERT_TRUE(parameters[0] != 0 && parameters[1] != 0); fixture_commit_bare(&g.f,NULL);
+        nmo_beobject_state_t *owner = fixture_state(&g.f,g.f.owner_id);
+        owner->has_single_activity = 1; owner->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE;
+        nmo_behavior_state_t *script = fixture_state(&g.f,g.f.script_id);
+        script->has_single_activity = 1; script->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE | CK_SCENEOBJECT_START_RESET;
+        const char *path = NMO_TEST_SCRATCH_FILE("engine_animation_step.cmo");
+        ASSERT_EQ(NMO_OK,nmo_session_save_file(g.f.session,path,NULL,NULL));
+        for (int started = 0; started < 2; started++) {
+            engine_fixture_t host; fixture_begin_document(&host); fixture_begin_edit(&host);
+            nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL; fixture_commit(&host,&options);
+            if (started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_ALL));
+            nmo_engine_set_file_resolver(host.engine,resolve_file,(void *)path);
+            int32_t file = -1; ASSERT_EQ(NMO_OK,nmo_engine_load(host.engine,"manual-animation.cmo",true,&file));
+            if (!started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_SCENE_DEFAULT));
+            nmo_object_id_t block = nmo_engine_object_named(host.engine,"Manual Step",NMO_CID_BEHAVIOR); ASSERT_TRUE(block != 0);
+            const eng_module_t *module = eng_module_of(host.engine,block,NULL);
+            const nmo_object_id_t original[] = {g.f.owner_id,g.parent,g.target,g.child,character,body,g.animation,keyed,
+                g.f.script_id,g.block,g.out,parameters[0],parameters[1]};
+            nmo_object_id_t ids[COUNT(original)], copies[COUNT(original)];
+            for (size_t i = 0; i < COUNT(original); i++) { ids[i] = eng_module_id(module,original[i]); ASSERT_TRUE(ids[i] != 0); }
+            ASSERT_TRUE(ids[6] != g.animation); ASSERT_EQ(global ? ids[5] : ids[2],eng_object_animation_entity(host.engine,ids[6]));
+            ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
+            position(host.engine,global ? ids[5] : ids[2],global ? 2 : 12,4,6);
+            position(host.engine,ids[3],global ? 5 : 15,4,6); position(host.engine,ids[4],global ? 0 : 40,0,0);
+            ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(host.engine,ids,COUNT(ids),false,copies));
+            ASSERT_EQ(global ? copies[5] : copies[2],eng_object_animation_entity(host.engine,copies[6]));
+            ASSERT_EQ(copies[6],eng_keyed_animation_part(host.engine,copies[7],global ? copies[5] : copies[2]));
+            nmo_object_id_t copied_reference = 0; read_value(&host,copies[11],&copied_reference,sizeof(copied_reference));
+            ASSERT_EQ(global ? copies[7] : copies[6],copied_reference);
+            const float different = .75f; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[12],&different,sizeof(different)));
+            move(host.engine,global ? copies[4] : copies[1],global ? 60 : 30);
+            ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,ids[8],true,true));
+            ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[8],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
+            position(host.engine,global ? ids[5] : ids[2],global ? 2 : 12,4,6);
+            position(host.engine,global ? copies[5] : copies[2],global ? 6 : 36,12,18);
+            position(host.engine,copies[3],global ? 9 : 39,12,18); position(host.engine,copies[4],global ? 0 : 40,0,0);
+            float original_step = NAN; read_value(&host,ids[12],&original_step,sizeof(original_step)); ASSERT_FLOAT_EQ(.25f,original_step,0);
+            nmo_engine_destroy_object(host.engine,ids[6]); nmo_engine_destroy_object(host.engine,ids[7]);
+            nmo_engine_destroy_object(host.engine,global ? ids[4] : ids[2]); nmo_engine_destroy_object(host.engine,ids[0]);
+            const float half = .5f; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[12],&half,sizeof(half)));
+            ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[8],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
+            position(host.engine,global ? copies[5] : copies[2],global ? 4 : 34,8,12); position(host.engine,copies[3],global ? 7 : 37,8,12);
+            ASSERT_EQ(2u,runs(&host,copies[10])); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,100)); ASSERT_EQ(2u,runs(&host,copies[9]));
+            fixture_end(&host);
+        }
+        ASSERT_FLOAT_EQ(12,((nmo_3dentity_state_t *)fixture_state(&g.f,g.target))->world_matrix[12],0);
+        fixture_end(&g.f); remove(path);
+    }
+}
+
+TEST(engine_animation_step, bezier_progression_drives_entity_and_global_sampling_through_completion)
+{
+    for (int global = 0; global < 2; global++) {
+        step_fixture_t g; begin(&g,global ? GUID_GLOBAL_STEP : GUID_ENTITY_STEP);
+        if (global) {
+            nmo_object_id_t keyed = group(&g.f,&g.animation,1); ASSERT_TRUE(keyed != 0);
+            fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,0),(int32_t)keyed);
+        }
+        const nmo_behavior_state_t *script = fixture_state(&g.f,g.f.script_id);
+        nmo_object_id_t first_link = nmo_behavior_ref_array_get_id(&script->sub_behavior_links,0);
+        ASSERT_EQ(NMO_OK,nmo_script_edit_remove_behavior_link(g.f.tx,g.f.script_id,first_link));
+        nmo_object_id_t progress = fixture_block(&g.f,NMO_GUID(0x6bb8699a,0x29fb6a4b),"Progress"); ASSERT_TRUE(progress != 0);
+        const float values[] = {40,0,1};
+        for (size_t i = 0; i < COUNT(values); i++) fixture_input_value(&g.f,BLOCK_PIN(&g.f,progress,i),&values[i],sizeof(float));
+        nmo_object_id_t curve = 0; ASSERT_EQ(NMO_OK,nmo_script_edit_ensure_input_parameter_source(g.f.tx,BLOCK_PIN(&g.f,progress,3),&curve));
+        size_t kept = 0;
+        for (size_t i = 0; i < g.f.value_count; i++) if (g.f.values[i].param != g.step_parameter) g.f.values[kept++] = g.f.values[i];
+        g.f.value_count = kept;
+        ASSERT_EQ(NMO_OK,nmo_script_edit_connect_parameter(g.f.tx,BLOCK_POUT(&g.f,progress,3),BLOCK_PIN(&g.f,g.block,1)));
+        fixture_link(&g.f,g.f.script_in,BLOCK_IN(&g.f,progress,0),0);
+        fixture_link(&g.f,BLOCK_OUT(&g.f,progress,1),BLOCK_IN(&g.f,progress,1),1);
+        for (int out = 0; out < 2; out++) fixture_link(&g.f,BLOCK_OUT(&g.f,progress,out),BLOCK_IN(&g.f,g.block,0),0);
+        commit(&g);
+        for (int frame = 1; frame <= 5; frame++) {
+            float step = frame < 4 ? (float)frame*.25f : 1;
+            ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,10));
+            position(g.f.engine,g.target,10+8*step,16*step,24*step); position(g.f.engine,g.child,13+8*step,16*step,24*step);
+        }
+        ASSERT_EQ(5u,runs(&g.f,g.block)); ASSERT_EQ(5u,runs(&g.f,g.out)); ASSERT_EQ(5u,runs(&g.f,progress));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,100)); ASSERT_EQ(5u,runs(&g.f,g.block)); fixture_end(&g.f);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_animation_step, entity_samples_the_bound_target_and_moves_children_without_scheduling);
 REGISTER_TEST(engine_animation_step, entity_reads_live_steps_and_animation_bindings);
@@ -288,4 +403,6 @@ REGISTER_TEST(engine_animation_step, global_accepts_object_and_base_animations_w
 REGISTER_TEST(engine_animation_step, global_keyed_sampling_resets_each_character_with_children_and_keeps_automatic_processing);
 REGISTER_TEST(engine_animation_step, global_character_reset_follows_live_channel_bindings_and_skips_deleted_channels);
 REGISTER_TEST(engine_animation_step, global_missing_and_deleted_animations_still_evaluate_step_and_activate_out);
+REGISTER_TEST(engine_animation_step, loaded_and_copied_graphs_remap_animation_bindings_and_keep_steps_independent);
+REGISTER_TEST(engine_animation_step, bezier_progression_drives_entity_and_global_sampling_through_completion);
 TEST_MAIN_END()
