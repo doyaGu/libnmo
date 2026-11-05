@@ -824,5 +824,6 @@ nmo_status_t eng_register_3dtransfo(nmo_engine_t *engine)
     if (status == NMO_OK) status = eng_register_move_to(engine);
     if (status == NMO_OK) status = eng_register_curve_follow(engine);
     if (status == NMO_OK) status = eng_register_curve_properties(engine);
-    return status == NMO_OK ? eng_register_billboard(engine) : status;
+    if (status == NMO_OK) status = eng_register_billboard(engine);
+    return status == NMO_OK ? eng_register_portals(engine) : status;
 }

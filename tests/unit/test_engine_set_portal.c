@@ -3,6 +3,8 @@
 #include "object/builtin/nmo_place_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
+#include "object/builtin/nmo_parameteroperation_schemas.h"
+#include "type/nmo_operations.h"
 
 #include <math.h>
 
@@ -174,6 +176,103 @@ TEST(engine_set_portal, missing_nonmatching_nonfinite_and_excessive_geometry_lea
     }
 }
 
+static void graph_begin(portal_fixture_t *g)
+{
+    begin(g); g->f.script_id = fixture_add_script(&g->f,"Portal Script",&g->f.script_in); fixture_begin_edit(&g->f);
+    g->block = fixture_block(&g->f,GUID_SET_PORTAL,"Set Portal"); g->out = fixture_block(&g->f,GUID_NOP,"After Portal"); ASSERT_TRUE(g->block != 0 && g->out != 0);
+    fixture_input_int(&g->f,fixture_target(&g->f,g->block),(int32_t)g->portal); fixture_input_int(&g->f,BLOCK_PIN(&g->f,g->block,0),(int32_t)g->places[0]); fixture_input_int(&g->f,BLOCK_PIN(&g->f,g->block,1),(int32_t)g->places[1]);
+    fixture_link(&g->f,g->f.script_in,BLOCK_IN(&g->f,g->block,0),0); fixture_link(&g->f,BLOCK_OUT(&g->f,g->block,0),BLOCK_IN(&g->f,g->out,0),0);
+}
+
+static void graph_commit(portal_fixture_t *g)
+{
+    nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL; fixture_commit(&g->f,&options); ASSERT_TRUE(nmo_engine_has_block(g->f.engine,GUID_SET_PORTAL)); ASSERT_EQ(NMO_OK,nmo_engine_start(g->f.engine,NMO_ENGINE_START_ALL));
+}
+
+static nmo_object_id_t source(portal_fixture_t *g, nmo_object_id_t pin)
+{
+    return nmo_parameterin_source_id(fixture_state(&g->f,pin));
+}
+
+static void trigger(portal_fixture_t *g)
+{
+    ASSERT_EQ(NMO_OK,nmo_engine_activate_script(g->f.engine,g->f.script_id,true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(g->f.engine,0));
+}
+
+TEST(engine_set_portal, block_sets_flags_adds_connections_and_switches_targets_without_scheduling_or_removing_old_links)
+{
+    portal_fixture_t g; graph_begin(&g); nmo_object_id_t target = source(&g,fixture_target(&g.f,g.block)), second = source(&g,BLOCK_PIN(&g.f,g.block,1)); graph_commit(&g); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0));
+    ASSERT_EQ(CK_3DENTITY_DUMMY | CK_3DENTITY_PORTAL,flags(g.f.engine,g.portal)); links(g.f.engine,g.places[0],(eng_portal_link_t[]){{g.places[1],g.portal}},1); vector(eng_entity_position(g.f.engine,eng_entity_index(g.f.engine,g.portal),-1),(eng_vector_t){7,8,9});
+    trigger(&g); links(g.f.engine,g.places[1],(eng_portal_link_t[]){{g.places[0],g.portal}},1);
+    ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,second,&g.places[2],sizeof(g.places[2]))); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,target,&g.other,sizeof(g.other))); trigger(&g);
+    ASSERT_TRUE((flags(g.f.engine,g.other) & CK_3DENTITY_PORTAL) != 0); links(g.f.engine,g.places[0],(eng_portal_link_t[]){{g.places[1],g.portal},{g.places[2],g.other}},2); links(g.f.engine,g.places[2],(eng_portal_link_t[]){{g.places[0],g.other}},1);
+    ASSERT_FALSE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,0))); ASSERT_EQ(3u,runs(&g.f,g.out)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,100)); ASSERT_EQ(3u,runs(&g.f,g.block)); fixture_end(&g.f);
+}
+
+TEST(engine_set_portal, auto_fit_applies_native_bounds_moves_children_and_entity_ic_does_not_remove_connections)
+{
+    portal_fixture_t g; graph_begin(&g); ASSERT_TRUE(geometry(&g,g.places[0],"Geometry A",face,4,NULL) != 0); ASSERT_TRUE(geometry(&g,g.places[1],"Geometry B",face,4,NULL) != 0); fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,2),1); graph_commit(&g); eng_save_ic(g.f.engine,g.portal);
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); const eng_matrix_t expected = {{{2.1f,0,0,0},{0,1.1f,0,0},{0,0,.1f,0},{0,0,0,1}}}; matrix(&g.f.engine->entities.data[eng_entity_index(g.f.engine,g.portal)].world,&expected);
+    vector(eng_entity_position(g.f.engine,eng_entity_index(g.f.engine,g.child),-1),(eng_vector_t){2.1f,1.1f,.1f}); ASSERT_EQ(1u,runs(&g.f,g.out));
+    eng_restore_ic(g.f.engine,g.portal); ASSERT_EQ(CK_3DENTITY_DUMMY,flags(g.f.engine,g.portal)); vector(eng_entity_position(g.f.engine,eng_entity_index(g.f.engine,g.portal),-1),(eng_vector_t){7,8,9}); links(g.f.engine,g.places[0],(eng_portal_link_t[]){{g.places[1],g.portal}},1); fixture_end(&g.f);
+}
+
+TEST(engine_set_portal, failed_geometric_fit_still_completes_and_keeps_connection_flags_and_original_pose)
+{
+    for (int missing = 0; missing < 2; missing++) {
+        portal_fixture_t g; graph_begin(&g);
+        if (!missing) { eng_vector_t moved[4]; for (size_t i = 0; i < 4; i++) moved[i] = (eng_vector_t){face[i].x,face[i].y,4}; ASSERT_TRUE(geometry(&g,g.places[0],"Geometry A",face,4,NULL) != 0); ASSERT_TRUE(geometry(&g,g.places[1],"Geometry B",moved,4,NULL) != 0); }
+        fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,2),1); graph_commit(&g); eng_matrix_t before = g.f.engine->entities.data[eng_entity_index(g.f.engine,g.portal)].world; ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); matrix(&g.f.engine->entities.data[eng_entity_index(g.f.engine,g.portal)].world,&before);
+        ASSERT_TRUE((flags(g.f.engine,g.portal) & CK_3DENTITY_PORTAL) != 0); links(g.f.engine,g.places[0],(eng_portal_link_t[]){{g.places[1],g.portal}},1); ASSERT_EQ(1u,runs(&g.f,g.out)); fixture_end(&g.f);
+    }
+}
+
+TEST(engine_set_portal, equal_or_missing_places_preserve_native_partial_flags_and_io_before_parameter_errors)
+{
+    for (int kind = 0; kind < 5; kind++) {
+        portal_fixture_t g; graph_begin(&g); nmo_object_id_t first = kind == 0 || kind == 4 ? g.places[0] : 0, second = kind == 0 ? g.places[0] : kind == 1 || kind == 4 ? 0 : g.places[1];
+        fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,0),(int32_t)first); fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,1),(int32_t)second); fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,2),kind >= 3); graph_commit(&g);
+        nmo_status_t expected = kind == 2 ? NMO_OK : NMO_ERR_VALIDATION_FAILED; ASSERT_EQ(expected,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(CK_3DENTITY_DUMMY | CK_3DENTITY_PORTAL,flags(g.f.engine,g.portal)); links(g.f.engine,g.places[0],NULL,0); links(g.f.engine,g.places[1],NULL,0);
+        if (expected != NMO_OK) { nmo_engine_event_t failure; ASSERT_TRUE(nmo_engine_failure(g.f.engine,&failure)); ASSERT_EQ(NMO_ENGINE_BR_PARAMETERERROR,failure.result); ASSERT_TRUE(nmo_engine_io_is_active(g.f.engine,BLOCK_OUT(&g.f,g.block,0))); ASSERT_EQ(0u,runs(&g.f,g.out)); }
+        ASSERT_FALSE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,0))); fixture_end(&g.f);
+    }
+}
+
+typedef struct fit_observation { portal_fixture_t *g; size_t operations; bool ordered; } fit_observation_t;
+
+static void observe_fit_input(const nmo_engine_event_t *event, void *data)
+{
+    fit_observation_t *seen = data;
+    if (event->kind != NMO_ENGINE_EVENT_OPERATION || event->result != NMO_OK) return;
+    seen->operations++; portal_fixture_t *g = seen->g; const eng_portal_list_t *list = eng_place_portals(g->f.engine,g->places[0]);
+    seen->ordered = (flags(g->f.engine,g->portal) & CK_3DENTITY_PORTAL) != 0 && list != NULL && list->count == 1 && g->f.engine->entities.data[eng_entity_index(g->f.engine,g->portal)].world.m[3][0] == 7;
+}
+
+TEST(engine_set_portal, fit_input_runs_after_connection_creation_and_is_not_evaluated_after_earlier_errors)
+{
+    for (int kind = 0; kind < 3; kind++) {
+        portal_fixture_t g; graph_begin(&g); ASSERT_TRUE(geometry(&g,g.places[0],"Geometry A",face,4,NULL) != 0); ASSERT_TRUE(geometry(&g,g.places[1],"Geometry B",face,4,NULL) != 0);
+        nmo_object_id_t a = 0, b = 0, operation = 0;
+        ASSERT_EQ(NMO_OK,nmo_script_edit_add_parameter(g.f.tx,g.f.script_id,NMO_SCRIPT_EDIT_PARAM_LOCAL,CKPGUID_BOOL,"A",&a)); ASSERT_EQ(NMO_OK,nmo_script_edit_add_parameter(g.f.tx,g.f.script_id,NMO_SCRIPT_EDIT_PARAM_LOCAL,CKPGUID_BOOL,"B",&b));
+        ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(g.f.tx,a,"TRUE")); ASSERT_EQ(NMO_OK,nmo_script_edit_set_parameter_value(g.f.tx,b,"TRUE")); ASSERT_EQ(NMO_OK,nmo_script_edit_add_operation(g.f.tx,g.f.script_id,NMO_OP_GUID_AND,a,b,0,&operation)); const nmo_parameteroperation_state_t *state = fixture_state(&g.f,operation); ASSERT_NOT_NULL(state);
+        ASSERT_EQ(NMO_OK,nmo_script_edit_connect_parameter(g.f.tx,nmo_parameteroperation_out_id(state),BLOCK_PIN(&g.f,g.block,2)));
+        if (kind == 1) fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,1),(int32_t)g.places[0]);
+        if (kind == 2) fixture_input_int(&g.f,fixture_target(&g.f,g.block),0);
+        graph_commit(&g); fit_observation_t seen = {.g = &g}; nmo_engine_set_trace(g.f.engine,observe_fit_input,&seen); ASSERT_EQ(kind == 0 ? NMO_OK : NMO_ERR_VALIDATION_FAILED,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(kind == 0 ? 1u : 0u,seen.operations);
+        if (kind == 0) { ASSERT_TRUE(seen.ordered); vector(eng_entity_position(g.f.engine,eng_entity_index(g.f.engine,g.portal),-1),(eng_vector_t){0,0,0}); } fixture_end(&g.f);
+    }
+}
+
+TEST(engine_set_portal, invalid_targets_activate_output_without_marking_or_connecting_objects)
+{
+    for (int kind = 0; kind < 3; kind++) {
+        portal_fixture_t g; graph_begin(&g); nmo_object_id_t wrong = fixture_create(&g.f,NMO_CID_GROUP,"Wrong Target"), target = source(&g,fixture_target(&g.f,g.block)); graph_commit(&g); nmo_object_id_t bad = kind == 0 ? 0 : kind == 1 ? g.portal : wrong;
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,target,&bad,sizeof(bad))); if (kind == 1) nmo_engine_destroy_object(g.f.engine,g.portal);
+        ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,nmo_engine_step(g.f.engine,0)); nmo_engine_event_t failure; ASSERT_TRUE(nmo_engine_failure(g.f.engine,&failure)); ASSERT_EQ(NMO_ENGINE_BR_OWNERERROR,failure.result);
+        ASSERT_EQ(0u,flags(g.f.engine,g.other)); links(g.f.engine,g.places[0],NULL,0); links(g.f.engine,g.places[1],NULL,0); ASSERT_FALSE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,0))); ASSERT_TRUE(nmo_engine_io_is_active(g.f.engine,BLOCK_OUT(&g.f,g.block,0))); ASSERT_EQ(0u,runs(&g.f,g.out)); fixture_end(&g.f);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_set_portal, runtime_flags_and_bidirectional_links_preserve_document_and_other_engines);
 REGISTER_TEST(engine_set_portal, loaded_wildcards_suppress_new_links_and_asymmetric_reverse_lists_keep_native_duplicates);
@@ -184,4 +283,10 @@ REGISTER_TEST(engine_set_portal, fitting_uses_common_hierarchical_vertices_live_
 REGISTER_TEST(engine_set_portal, fitted_pca_boxes_follow_rotated_faces_with_native_border_and_right_handed_axes);
 REGISTER_TEST(engine_set_portal, matching_uses_per_axis_tolerance_and_deduplicates_common_points_in_query_order);
 REGISTER_TEST(engine_set_portal, missing_nonmatching_nonfinite_and_excessive_geometry_leave_the_fit_output_unchanged);
+REGISTER_TEST(engine_set_portal, block_sets_flags_adds_connections_and_switches_targets_without_scheduling_or_removing_old_links);
+REGISTER_TEST(engine_set_portal, auto_fit_applies_native_bounds_moves_children_and_entity_ic_does_not_remove_connections);
+REGISTER_TEST(engine_set_portal, failed_geometric_fit_still_completes_and_keeps_connection_flags_and_original_pose);
+REGISTER_TEST(engine_set_portal, equal_or_missing_places_preserve_native_partial_flags_and_io_before_parameter_errors);
+REGISTER_TEST(engine_set_portal, fit_input_runs_after_connection_creation_and_is_not_evaluated_after_earlier_errors);
+REGISTER_TEST(engine_set_portal, invalid_targets_activate_output_without_marking_or_connecting_objects);
 TEST_MAIN_END()

@@ -12,6 +12,7 @@ set(NMO_BB_VIRTOOLS_SOURCES
     virtools/virtools.c
     virtools/3dtransfo.c
     virtools/billboard.c
+    virtools/portals.c
     virtools/move_to.c
     virtools/curve_follow.c
     virtools/curve_properties.c
