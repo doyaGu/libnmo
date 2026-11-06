@@ -62,5 +62,11 @@ nmo_status_t nmo_register_builtin_operations(
         return result;
     }
 
+    /* Register the math operations of the Parameter Operations plugin */
+    result = nmo_register_math_operations(operation_registry, type_registry);
+    if (result != NMO_OK) {
+        return result;
+    }
+
     NMO_RETURN_OK();
 }

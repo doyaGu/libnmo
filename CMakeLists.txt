@@ -270,6 +270,7 @@ set(NMO_TYPE_SOURCES
     src/type/builtin_bitwise.c
     src/type/builtin_trigonometry.c
     src/type/builtin_vector.c
+    src/type/builtin_math.c
     src/type/nmo_reflection.c
     src/type/type_view.c
     src/type/type_query.c
