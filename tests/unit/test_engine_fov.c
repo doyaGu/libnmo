@@ -9,6 +9,7 @@
 #include <stdio.h>
 
 #define PI_F 3.14159265358979323846f
+#define GUID_GET_CURRENT_CAMERA NMO_GUID(0x368f22b1,0x222957e4)
 #define GUID_SET_PROJECTION NMO_GUID(0xe444e666,0x4eee6eee)
 #define GUID_ORTHOGRAPHIC_ZOOM NMO_GUID(0x0a125555,0x0eee5488)
 #define GUID_SET_ZOOM NMO_GUID(0x40540a0d,0x000aaaaa)
@@ -1170,6 +1171,53 @@ TEST(engine_fov, loaded_and_copied_set_projection_graphs_remap_camera_targets_an
     }
 }
 
+static void current_camera_begin(fov_fixture_t *g)
+{
+    begin(g);
+    g->block = fixture_block(&g->f,GUID_GET_CURRENT_CAMERA,"Get Current Camera");
+    g->after = fixture_block(&g->f,GUID_NOP,"After Current Camera");
+    ASSERT_TRUE(g->block != 0 && g->after != 0);
+    fixture_link(&g->f,g->f.script_in,BLOCK_IN(&g->f,g->block,0),0);
+    fixture_link(&g->f,BLOCK_OUT(&g->f,g->block,0),BLOCK_IN(&g->f,g->after,0),0);
+}
+
+static void current_camera_value(fov_fixture_t *g, nmo_object_id_t expected)
+{
+    nmo_object_id_t actual = 0; read_value(&g->f,BLOCK_POUT(&g->f,g->block,0),&actual,sizeof(actual)); ASSERT_EQ(expected,actual);
+}
+
+TEST(engine_fov, get_current_camera_returns_the_attached_camera_and_runs_once)
+{
+    fov_fixture_t g; current_camera_begin(&g); ready(&g);
+    ASSERT_TRUE(nmo_engine_has_block(g.f.engine,GUID_GET_CURRENT_CAMERA)); ASSERT_EQ(0u,fixture_target(&g.f,g.block));
+    nmo_engine_block_t block = {g.f.engine,eng_map_get(&g.f.engine->node_map,g.block)};
+    ASSERT_TRUE(nmo_guid_equals(CKPGUID_CAMERA,nmo_engine_block_output_parameter_type(&block,0)));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); current_camera_value(&g,g.camera);
+    ASSERT_EQ(1u,runs(&g.f,g.block)); ASSERT_EQ(1u,runs(&g.f,g.after));
+    ASSERT_FALSE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,0))); ASSERT_FALSE(nmo_engine_behavior_is_active(g.f.engine,g.block));
+    g.f.engine->render.camera = g.second; ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,10)); current_camera_value(&g,g.camera);
+    ASSERT_EQ(1u,runs(&g.f,g.block)); ASSERT_EQ(1u,runs(&g.f,g.after)); fixture_end(&g.f);
+}
+
+TEST(engine_fov, get_current_camera_clears_stale_output_when_no_camera_is_attached)
+{
+    fov_fixture_t g; current_camera_begin(&g); ready(&g); g.f.engine->render.camera = 0;
+    ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,BLOCK_POUT(&g.f,g.block,0),&g.second,sizeof(g.second)));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); current_camera_value(&g,0); ASSERT_EQ(1u,runs(&g.f,g.after));
+    nmo_engine_frame_t view; ASSERT_EQ(NMO_OK,nmo_engine_render_frame(g.f.engine,&view)); ASSERT_EQ(0u,view.camera);
+    fixture_end(&g.f);
+}
+
+TEST(engine_fov, get_current_camera_reads_target_cameras_and_each_new_activation)
+{
+    fov_fixture_t g; current_camera_begin(&g); ready(&g); g.f.engine->render.camera = g.second;
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); current_camera_value(&g,g.second);
+    g.f.engine->render.camera = g.camera; trigger(&g); current_camera_value(&g,g.camera);
+    g.f.engine->render.camera = 0; trigger(&g); current_camera_value(&g,0);
+    g.f.engine->render.camera = g.second; trigger(&g); current_camera_value(&g,g.second);
+    ASSERT_EQ(4u,runs(&g.f,g.after)); fixture_end(&g.f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_fov, runtime_fov_updates_render_projection_and_screen_coordinates_without_changing_the_document);
 REGISTER_TEST(engine_fov, fov_and_clipping_plane_changes_preserve_each_other_for_cameras_and_target_cameras);
@@ -1226,4 +1274,7 @@ REGISTER_TEST(engine_fov, malformed_projection_initial_values_keep_the_previous_
 REGISTER_TEST(engine_fov, nonstrict_execution_keeps_set_projection_owner_errors_from_advancing_flow);
 REGISTER_TEST(engine_fov, projection_and_both_zoom_blocks_switch_a_live_camera_across_delayed_graph_stages);
 REGISTER_TEST(engine_fov, loaded_and_copied_set_projection_graphs_remap_camera_targets_and_keep_raw_modes_independent);
+REGISTER_TEST(engine_fov, get_current_camera_returns_the_attached_camera_and_runs_once);
+REGISTER_TEST(engine_fov, get_current_camera_clears_stale_output_when_no_camera_is_attached);
+REGISTER_TEST(engine_fov, get_current_camera_reads_target_cameras_and_each_new_activation);
 TEST_MAIN_END()
