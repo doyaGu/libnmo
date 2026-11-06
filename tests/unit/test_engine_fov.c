@@ -4,6 +4,7 @@
 #include "object/builtin/nmo_camera_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
 
+#include <float.h>
 #include <math.h>
 #include <stdio.h>
 
@@ -459,6 +460,88 @@ TEST(engine_fov, set_zoom_reports_invalid_targets_before_validating_focal_length
     }
 }
 
+TEST(engine_fov, set_zoom_uses_focal_lengths_in_millimeters_and_observes_live_target_changes)
+{
+    const float lenses[] = {18,36,50,100,250};
+    const float angles[] = {1.570796327f,.927295218f,.691111161f,.356185876f,.143751939f};
+    fov_fixture_t g; zoom_begin(&g); ready(&g);
+    for (size_t i = 0; i < sizeof(lenses)/sizeof(*lenses); i++) {
+        nmo_object_id_t target = i & 1 ? g.second : g.camera;
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.target_value,&target,sizeof(target)));
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.angle_value,&lenses[i],sizeof(lenses[i])));
+        trigger(&g);
+        float fov = 0; ASSERT_TRUE(eng_camera_fov(g.f.engine,target,&fov));
+        ASSERT_FLOAT_EQ(angles[i],fov,1e-7f); frame(&g,target,fov,1,100);
+        ASSERT_EQ(i+1,runs(&g.f,g.after));
+        if (i > 0) {
+            nmo_object_id_t other = target == g.camera ? g.second : g.camera;
+            ASSERT_TRUE(eng_camera_fov(g.f.engine,other,&fov)); ASSERT_FLOAT_EQ(angles[i-1],fov,1e-7f);
+        }
+    }
+    fixture_end(&g.f);
+}
+
+TEST(engine_fov, set_zoom_changes_view_projection_and_billboard_screen_coordinates)
+{
+    fov_fixture_t g; zoom_begin(&g); ready(&g);
+    float lens = 36; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.angle_value,&lens,sizeof(lens)));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0));
+    eng_matrix_t projection; ASSERT_TRUE(eng_camera_view_projection(g.f.engine,g.camera,&projection,NULL));
+    nmo_rect_t rect;
+    ASSERT_TRUE(eng_project_box(&projection,&(eng_vector_t){-1,-1,10},&(eng_vector_t){1,1,10},&rect));
+    ASSERT_FLOAT_EQ(.4f,rect.left,1e-6f); ASSERT_FLOAT_EQ(.4f,rect.top,1e-6f);
+    ASSERT_FLOAT_EQ(.6f,rect.right,1e-6f); ASSERT_FLOAT_EQ(.6f,rect.bottom,1e-6f);
+    eng_vector_t screen; eng_render_project(g.f.engine,&(eng_vector_t){1,0,10},&screen);
+    nmo_engine_frame_t view; ASSERT_EQ(NMO_OK,nmo_engine_render_frame(g.f.engine,&view));
+    ASSERT_FLOAT_EQ(.6f*view.width,screen.x,2e-4f); ASSERT_FLOAT_EQ(.5f*view.height,screen.y,2e-4f);
+    ASSERT_FLOAT_EQ(.927295218f,view.fov,1e-7f);
+    fixture_end(&g.f);
+}
+
+TEST(engine_fov, set_zoom_keeps_native_nan_infinite_and_extreme_positive_focal_length_semantics)
+{
+    /* A tiny lens overflows the float division to infinity; +infinity yields +zero FOV. */
+    const float lenses[] = {FLT_TRUE_MIN,FLT_MIN,FLT_MAX,INFINITY,NAN,-NAN};
+    const float angles[] = {PI_F,PI_F,0x1.200002p-123f,0,NAN,NAN};
+    fov_fixture_t g; zoom_begin(&g); ready(&g);
+    for (size_t i = 0; i < sizeof(lenses)/sizeof(*lenses); i++) {
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.angle_value,&lenses[i],sizeof(lenses[i])));
+        trigger(&g);
+        float fov = -1; ASSERT_TRUE(eng_camera_fov(g.f.engine,g.camera,&fov));
+        if (i < 2) {
+            /* libm implementations can round atan(infinity) to adjacent floats. */
+            ASSERT_FLOAT_EQ(PI_F,fov,2.5e-7f); frame(&g,g.camera,fov,1,100);
+        } else frame(&g,g.camera,angles[i],1,100);
+        if (i == 3) ASSERT_FALSE(signbit(fov));
+        ASSERT_EQ(i+1,runs(&g.f,g.after));
+    }
+    fixture_end(&g.f);
+}
+
+TEST(engine_fov, disconnected_focal_length_uses_fifty_millimeters)
+{
+    fov_fixture_t g; zoom_begin(&g);
+    nmo_parameterin_set_source_id(fixture_state(&g.f,BLOCK_PIN(&g.f,g.block,0)),0);
+    ready(&g); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0));
+    float fov = 0; ASSERT_TRUE(eng_camera_fov(g.f.engine,g.camera,&fov)); ASSERT_FLOAT_EQ(.691111161f,fov,1e-7f);
+    ASSERT_EQ(1u,runs(&g.f,g.after)); fixture_end(&g.f);
+}
+
+TEST(engine_fov, set_zoom_updates_orthographic_camera_fov_without_changing_zoom_or_projection)
+{
+    fov_fixture_t g; zoom_begin(&g);
+    nmo_camera_state_t *camera = fixture_state(&g.f,g.camera);
+    camera->projection_type = CK_ORTHOGRAPHICPROJECTION; camera->orthographic_zoom = 2;
+    ready(&g);
+    eng_matrix_t before, after; ASSERT_TRUE(eng_camera_view_projection(g.f.engine,g.camera,&before,NULL));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0));
+    ASSERT_TRUE(eng_camera_view_projection(g.f.engine,g.camera,&after,NULL));
+    ASSERT_EQ(0,memcmp(&before,&after,sizeof(before)));
+    nmo_engine_frame_t view; ASSERT_EQ(NMO_OK,nmo_engine_render_frame(g.f.engine,&view));
+    ASSERT_TRUE(view.orthographic); ASSERT_FLOAT_EQ(2,view.zoom,0); ASSERT_FLOAT_EQ(.691111161f,view.fov,1e-7f);
+    fixture_end(&g.f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_fov, runtime_fov_updates_render_projection_and_screen_coordinates_without_changing_the_document);
 REGISTER_TEST(engine_fov, fov_and_clipping_plane_changes_preserve_each_other_for_cameras_and_target_cameras);
@@ -477,4 +560,9 @@ REGISTER_TEST(engine_fov, terratools_sky_distortion_tracks_runtime_camera_fov_wi
 REGISTER_TEST(engine_fov, set_zoom_uses_the_native_fifty_millimeter_default_and_runs_once);
 REGISTER_TEST(engine_fov, set_zoom_rejects_nonpositive_focal_lengths_without_consuming_input_or_changing_the_camera);
 REGISTER_TEST(engine_fov, set_zoom_reports_invalid_targets_before_validating_focal_length_or_consuming_input);
+REGISTER_TEST(engine_fov, set_zoom_uses_focal_lengths_in_millimeters_and_observes_live_target_changes);
+REGISTER_TEST(engine_fov, set_zoom_changes_view_projection_and_billboard_screen_coordinates);
+REGISTER_TEST(engine_fov, set_zoom_keeps_native_nan_infinite_and_extreme_positive_focal_length_semantics);
+REGISTER_TEST(engine_fov, disconnected_focal_length_uses_fifty_millimeters);
+REGISTER_TEST(engine_fov, set_zoom_updates_orthographic_camera_fov_without_changing_zoom_or_projection);
 TEST_MAIN_END()
