@@ -1270,6 +1270,70 @@ TEST(engine_fov, get_current_camera_keeps_native_success_flow_when_its_output_pa
     ASSERT_FALSE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,0))); fixture_end(&g.f);
 }
 
+TEST(engine_fov, copied_camera_getter_outputs_remap_history_then_read_the_current_render_context)
+{
+    fov_fixture_t g; current_camera_begin(&g); ready(&g); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); current_camera_value(&g,g.camera);
+    const nmo_object_id_t ids[] = {g.f.owner_id,g.camera,g.f.script_id,g.block,g.after,BLOCK_POUT(&g.f,g.block,0)};
+    nmo_object_id_t copies[6]; ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(g.f.engine,ids,6,false,copies));
+    nmo_object_id_t value = 0; read_value(&g.f,copies[5],&value,sizeof(value)); ASSERT_EQ(copies[1],value);
+    /* Copying a stored camera reference does not attach the copied camera to the viewport. */
+    ASSERT_EQ(g.camera,g.f.engine->render.camera);
+    ASSERT_EQ(NMO_OK,nmo_engine_activate_script(g.f.engine,copies[2],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0));
+    read_value(&g.f,copies[5],&value,sizeof(value)); ASSERT_EQ(g.camera,value);
+    g.f.engine->render.camera = copies[1]; trigger(&g); current_camera_value(&g,copies[1]);
+    nmo_engine_destroy_object(g.f.engine,g.camera); trigger(&g); current_camera_value(&g,copies[1]);
+    nmo_engine_destroy_object(g.f.engine,copies[1]);
+    ASSERT_EQ(NMO_OK,nmo_engine_activate_script(g.f.engine,copies[2],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0));
+    read_value(&g.f,copies[5],&value,sizeof(value)); ASSERT_EQ(0u,value); ASSERT_EQ(2u,runs(&g.f,copies[4])); fixture_end(&g.f);
+}
+
+TEST(engine_fov, loaded_and_copied_current_camera_outputs_drive_camera_targets_across_modules)
+{
+    fov_fixture_t source; current_camera_begin(&source);
+    nmo_object_id_t setter = fixture_block(&source.f,GUID_SET_PROJECTION,"Project Current Camera"); ASSERT_TRUE(setter != 0);
+    ASSERT_EQ(NMO_OK,nmo_script_edit_connect_parameter(source.f.tx,BLOCK_POUT(&source.f,source.block,0),fixture_target(&source.f,setter)));
+    fixture_link(&source.f,BLOCK_OUT(&source.f,source.block,0),BLOCK_IN(&source.f,setter,0),0);
+    nmo_object_id_t mode_value = saved_input(&source,BLOCK_PIN(&source.f,setter,0),"Orthographic"); ASSERT_TRUE(mode_value != 0);
+    fixture_commit_bare(&source.f,NULL);
+    nmo_beobject_state_t *owner = fixture_state(&source.f,source.f.owner_id); owner->has_single_activity = 1; owner->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE;
+    nmo_behavior_state_t *script = fixture_state(&source.f,source.f.script_id);
+    script->has_single_activity = 1; script->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE | CK_SCENEOBJECT_START_RESET;
+    const char *path = NMO_TEST_SCRATCH_FILE("engine_get_current_camera.cmo"); ASSERT_EQ(NMO_OK,nmo_session_save_file(source.f.session,path,NULL,NULL));
+    for (int derived = 0; derived < 2; derived++) for (int started = 0; started < 2; started++) {
+        fov_fixture_t host; begin(&host); nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL;
+        fixture_commit(&host.f,&options); nmo_object_id_t host_camera = derived ? host.second : host.camera; host.f.engine->render.camera = host_camera;
+        if (started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.f.engine,NMO_ENGINE_START_ALL));
+        nmo_engine_set_file_resolver(host.f.engine,resolve_file,(void *)path);
+        int32_t file = -1; ASSERT_EQ(NMO_OK,nmo_engine_load(host.f.engine,"get_current_camera.cmo",true,&file));
+        if (!started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.f.engine,NMO_ENGINE_START_SCENE_DEFAULT));
+        nmo_object_id_t block = nmo_engine_object_named(host.f.engine,"Get Current Camera",NMO_CID_BEHAVIOR); ASSERT_TRUE(block != 0);
+        const eng_module_t *module = eng_module_of(host.f.engine,block,NULL);
+        const nmo_object_id_t local[] = {source.f.owner_id,source.camera,source.second,source.f.script_id,source.block,source.after,setter,BLOCK_POUT(&source.f,source.block,0),mode_value};
+        nmo_object_id_t ids[9], copies[9];
+        for (size_t i = 0; i < 9; i++) { ids[i] = eng_module_id(module,local[i]); ASSERT_TRUE(ids[i] != 0); }
+        ASSERT_TRUE(ids[1] != source.camera && ids[1] != host_camera); ASSERT_EQ(host_camera,host.f.engine->render.camera);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(host.f.engine,0)); nmo_object_id_t value = 0; read_value(&host.f,ids[7],&value,sizeof(value)); ASSERT_EQ(host_camera,value);
+        projection_frame(&host,host_camera,CK_ORTHOGRAPHICPROJECTION); projection_frame(&host,ids[1],CK_PERSPECTIVEPROJECTION); projection_frame(&host,ids[2],CK_PERSPECTIVEPROJECTION);
+        host.f.engine->render.camera = host_camera;
+        ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(host.f.engine,ids,9,false,copies));
+        read_value(&host.f,copies[7],&value,sizeof(value)); ASSERT_EQ(host_camera,value);
+        uint32_t mode = 0; read_value(&host.f,copies[8],&mode,sizeof(mode)); ASSERT_EQ(CK_ORTHOGRAPHICPROJECTION,mode);
+        host.f.engine->render.camera = copies[2];
+        ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.f.engine,copies[3],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.f.engine,0));
+        read_value(&host.f,copies[7],&value,sizeof(value)); ASSERT_EQ(copies[2],value); projection_frame(&host,copies[2],CK_ORTHOGRAPHICPROJECTION);
+        read_value(&host.f,ids[7],&value,sizeof(value)); ASSERT_EQ(host_camera,value); projection_frame(&host,ids[2],CK_PERSPECTIVEPROJECTION);
+        ASSERT_EQ(1u,runs(&host.f,ids[6])); ASSERT_EQ(1u,runs(&host.f,copies[6]));
+        nmo_engine_destroy_object(host.f.engine,ids[1]); nmo_engine_destroy_object(host.f.engine,ids[2]); nmo_engine_destroy_object(host.f.engine,ids[3]);
+        host.f.engine->render.camera = host.second;
+        ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.f.engine,copies[3],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.f.engine,0));
+        read_value(&host.f,copies[7],&value,sizeof(value)); ASSERT_EQ(host.second,value); projection_frame(&host,host.second,CK_ORTHOGRAPHICPROJECTION);
+        ASSERT_EQ(2u,runs(&host.f,copies[6]));
+        const nmo_camera_state_t *document = nmo_type_query_object_get_ancestor_state_by_guid(host.f.engine->types,eng_find_object(host.f.engine,host_camera),CKPGUID_CAMERA);
+        ASSERT_NOT_NULL(document); ASSERT_EQ(CK_PERSPECTIVEPROJECTION,document->projection_type); fixture_end(&host.f);
+    }
+    fixture_end(&source.f); remove(path);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_fov, runtime_fov_updates_render_projection_and_screen_coordinates_without_changing_the_document);
 REGISTER_TEST(engine_fov, fov_and_clipping_plane_changes_preserve_each_other_for_cameras_and_target_cameras);
@@ -1333,4 +1397,6 @@ REGISTER_TEST(engine_fov, get_current_camera_clears_output_after_deletion_and_ig
 REGISTER_TEST(engine_fov, current_camera_outputs_are_private_to_engines_sharing_the_same_document);
 REGISTER_TEST(engine_fov, current_camera_queries_observe_set_as_active_camera_in_graph_order);
 REGISTER_TEST(engine_fov, get_current_camera_keeps_native_success_flow_when_its_output_parameter_is_missing);
+REGISTER_TEST(engine_fov, copied_camera_getter_outputs_remap_history_then_read_the_current_render_context);
+REGISTER_TEST(engine_fov, loaded_and_copied_current_camera_outputs_drive_camera_targets_across_modules);
 TEST_MAIN_END()
