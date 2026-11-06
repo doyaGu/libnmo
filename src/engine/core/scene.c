@@ -137,6 +137,8 @@ nmo_status_t eng_load_ic(nmo_engine_t *engine, nmo_object_id_t id, nmo_chunk_t *
         const nmo_camera_state_t *camera = nmo_type_query_object_get_ancestor_state_by_guid(
             engine->types, &decoded, CKPGUID_CAMERA);
         if (camera != NULL) {
+            ic.has_projection_type = camera->has_cameraonly_chunk || camera->has_proj_chunk;
+            ic.projection_type = camera->projection_type;
             ic.has_orthographic_zoom = camera->has_cameraonly_chunk || camera->has_ortho_chunk;
             ic.orthographic_zoom = camera->orthographic_zoom;
             ic.has_fov = camera->has_cameraonly_chunk || camera->has_fov_chunk;
@@ -179,6 +181,8 @@ void eng_save_ic(nmo_engine_t *engine, nmo_object_id_t id)
     const eng_array_t *array = eng_find_array(engine, id);
     float world[16];
     bool has_matrix = nmo_engine_entity_world_matrix(engine, id, world);
+    uint32_t projection_type = 0;
+    bool has_projection_type = eng_camera_projection_type(engine,id,&projection_type);
     float orthographic_zoom = 0.0f;
     bool has_orthographic_zoom = eng_camera_orthographic_zoom(engine,id,&orthographic_zoom);
     float fov = 0.0f;
@@ -209,6 +213,8 @@ void eng_save_ic(nmo_engine_t *engine, nmo_object_id_t id)
         int32_t parent = entity >= 0 ? engine->entities.data[entity].parent : -1;
         ic->parent = parent >= 0 ? engine->entities.data[parent].id : 0;
     }
+    ic->has_projection_type = has_projection_type;
+    ic->projection_type = projection_type;
     ic->has_orthographic_zoom = has_orthographic_zoom;
     ic->orthographic_zoom = orthographic_zoom;
     ic->has_fov = has_fov;
@@ -266,6 +272,7 @@ void eng_restore_ic(nmo_engine_t *engine, nmo_object_id_t id)
     }
     if (ic->has_matrix) nmo_engine_set_entity_world_matrix(engine, id, ic->world, true);
     /* CKCamera, CKMaterial and CKLight's own members */
+    if (ic->has_projection_type) eng_set_camera_projection_type(engine,id,ic->projection_type);
     if (ic->has_orthographic_zoom) eng_set_camera_orthographic_zoom(engine,id,ic->orthographic_zoom);
     if (ic->has_fov) eng_set_camera_fov(engine,id,ic->fov);
     if (ic->has_planes) {

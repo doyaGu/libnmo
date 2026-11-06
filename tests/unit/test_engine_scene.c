@@ -208,6 +208,7 @@ TEST(engine_scene, saved_file_initial_values_restore_references_arrays_and_rende
     table.key_column = -1;
     save_ic(&f, NMO_CID_DATAARRAY, &table, &nmo_dataarray_vtable, &ics[2]);
     nmo_camera_state_t saved_camera = *(nmo_camera_state_t *)fixture_state(&f, camera);
+    saved_camera.projection_type = CK_ORTHOGRAPHICPROJECTION;
     saved_camera.orthographic_zoom = 2.5f;
     saved_camera.near_plane = 2;
     saved_camera.far_plane = 333;
@@ -262,6 +263,7 @@ TEST(engine_scene, saved_file_initial_values_restore_references_arrays_and_rende
     ASSERT_FLOAT_EQ(2, frame.near_plane, 0.0001f);
     ASSERT_FLOAT_EQ(333, frame.far_plane, 0.0001f);
     ASSERT_FLOAT_EQ(2.5f, frame.zoom, 0);
+    ASSERT_TRUE(frame.orthographic);
     ASSERT_EQ(1, frame.light_count);
     ASSERT_FLOAT_EQ(0, frame.lights[0].color[0], 0.0001f);
     ASSERT_FLOAT_EQ(1, frame.lights[0].color[1], 0.0001f);
@@ -274,6 +276,7 @@ TEST(engine_scene, saved_file_initial_values_restore_references_arrays_and_rende
     source = nmo_object_repository_find_by_id(nmo_document_get_repository(f.document), frame.camera);
     ASSERT_NOT_NULL(source);
     ASSERT_FLOAT_EQ(1, ((const nmo_camera_state_t *)nmo_object_get_state(source))->orthographic_zoom, 0);
+    ASSERT_EQ(CK_PERSPECTIVEPROJECTION, ((const nmo_camera_state_t *)nmo_object_get_state(source))->projection_type);
     fixture_end(&f);
     remove(path);
 }

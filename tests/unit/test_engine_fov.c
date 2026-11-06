@@ -1022,6 +1022,72 @@ TEST(engine_fov, set_projection_owner_errors_keep_input_and_outputs_unchanged)
     }
 }
 
+TEST(engine_fov, projection_initial_conditions_capture_runtime_modes_and_replace_previous_saves)
+{
+    fov_fixture_t g; projection_begin(&g); ready(&g); eng_add_to_level_scene(g.f.engine,g.camera); eng_save_ic(g.f.engine,g.camera);
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); projection_frame(&g,g.camera,CK_ORTHOGRAPHICPROJECTION);
+    eng_restore_ic(g.f.engine,g.camera); projection_frame(&g,g.camera,CK_PERSPECTIVEPROJECTION);
+    trigger(&g); eng_save_ic(g.f.engine,g.camera);
+    uint32_t mode = 0xffffffffu; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.angle_value,&mode,sizeof(mode)));
+    trigger(&g); projection_frame(&g,g.camera,mode); eng_restore_ic(g.f.engine,g.camera); projection_frame(&g,g.camera,CK_ORTHOGRAPHICPROJECTION);
+    trigger(&g); eng_save_ic(g.f.engine,g.camera); ASSERT_TRUE(eng_set_camera_projection_type(g.f.engine,g.camera,0));
+    eng_restore_ic(g.f.engine,g.camera); projection_frame(&g,g.camera,mode);
+    ASSERT_EQ(CK_PERSPECTIVEPROJECTION,((nmo_camera_state_t *)fixture_state(&g.f,g.camera))->projection_type);
+    fixture_end(&g.f);
+}
+
+TEST(engine_fov, modern_camera_initial_values_restore_full_projection_bits_and_other_camera_members)
+{
+    const uint32_t modes[] = {0,2,0x80000000u,0xffffffffu};
+    fov_fixture_t g; begin(&g); ready(&g); const nmo_object_id_t cameras[] = {g.camera,g.second};
+    for (size_t type = 0; type < 2; type++) for (size_t i = 0; i < sizeof(modes)/sizeof(*modes); i++) {
+        nmo_object_id_t id = cameras[type]; nmo_camera_state_t saved = *(nmo_camera_state_t *)fixture_state(&g.f,id);
+        saved.projection_type = modes[i]; saved.orthographic_zoom = 2.5f; saved.fov = .625f; saved.near_plane = 2; saved.far_plane = 50;
+        nmo_arena_t *arena = nmo_session_get_arena(g.f.session); nmo_chunk_t *chunk = nmo_chunk_create(arena); ASSERT_NOT_NULL(chunk); chunk->class_id = NMO_CID_CAMERA;
+        nmo_serialize_context_t context = nmo_serialize_context_create_nonfile(arena,g.f.repo,CK_STATESAVE_CAMERAONLY);
+        ASSERT_EQ(NMO_OK,nmo_chunk_start_write(chunk)); ASSERT_EQ(NMO_OK,nmo_camera_vtable.serialize(&saved,chunk,NULL,&context)); nmo_chunk_close(chunk);
+        ASSERT_EQ(NMO_OK,eng_load_ic(g.f.engine,id,chunk)); eng_add_to_level_scene(g.f.engine,id);
+        ASSERT_TRUE(eng_set_camera_projection_type(g.f.engine,id,1)); ASSERT_TRUE(eng_set_camera_orthographic_zoom(g.f.engine,id,3));
+        ASSERT_TRUE(eng_set_camera_fov(g.f.engine,id,.75f)); eng_set_camera_planes(g.f.engine,id,3,60);
+        eng_restore_ic(g.f.engine,id); projection_frame(&g,id,modes[i]); frame(&g,id,.625f,2,50);
+        float zoom = 0; ASSERT_TRUE(eng_camera_orthographic_zoom(g.f.engine,id,&zoom)); ASSERT_FLOAT_EQ(2.5f,zoom,0);
+        ASSERT_EQ(CK_PERSPECTIVEPROJECTION,((nmo_camera_state_t *)fixture_state(&g.f,id))->projection_type);
+    }
+    fixture_end(&g.f);
+}
+
+TEST(engine_fov, legacy_camera_initial_values_restore_projection_only_when_present)
+{
+    fov_fixture_t g; begin(&g); ready(&g); eng_add_to_level_scene(g.f.engine,g.camera);
+    const uint32_t identifiers[] = {CK_STATESAVE_CAMERAPROJTYPE,CK_STATESAVE_CAMERAOTHOZOOM,CK_STATESAVE_CAMERAFOV,CK_STATESAVE_CAMERAPLANES,CK_STATESAVE_OBJECTHIDDEN};
+    for (size_t i = 0; i < sizeof(identifiers)/sizeof(*identifiers); i++) {
+        nmo_chunk_t *chunk = nmo_chunk_create(nmo_session_get_arena(g.f.session)); ASSERT_NOT_NULL(chunk); chunk->class_id = NMO_CID_CAMERA;
+        ASSERT_EQ(NMO_OK,nmo_chunk_start_write(chunk)); nmo_chunk_set_data_version(chunk,4); ASSERT_EQ(NMO_OK,nmo_chunk_write_identifier(chunk,identifiers[i]));
+        if (i == 0) ASSERT_EQ(NMO_OK,nmo_chunk_write_dword(chunk,0xfffffffeu));
+        else if (i < 4) ASSERT_EQ(NMO_OK,nmo_chunk_write_float(chunk,i == 1 ? 2.5f : i == 2 ? .625f : 2));
+        if (i == 3) ASSERT_EQ(NMO_OK,nmo_chunk_write_float(chunk,50));
+        nmo_chunk_close(chunk); ASSERT_EQ(NMO_OK,eng_load_ic(g.f.engine,g.camera,chunk));
+        ASSERT_TRUE(eng_set_camera_projection_type(g.f.engine,g.camera,0x80000001u)); ASSERT_TRUE(eng_set_camera_orthographic_zoom(g.f.engine,g.camera,3));
+        ASSERT_TRUE(eng_set_camera_fov(g.f.engine,g.camera,.75f)); eng_set_camera_planes(g.f.engine,g.camera,3,60);
+        eng_restore_ic(g.f.engine,g.camera); projection_frame(&g,g.camera,i == 0 ? 0xfffffffeu : 0x80000001u);
+        frame(&g,g.camera,i == 2 ? .625f : .75f,i == 3 ? 2 : 3,i == 3 ? 50 : 60);
+        float zoom = 0; ASSERT_TRUE(eng_camera_orthographic_zoom(g.f.engine,g.camera,&zoom)); ASSERT_FLOAT_EQ(i == 1 ? 2.5f : 3,zoom,0);
+    }
+    fixture_end(&g.f);
+}
+
+TEST(engine_fov, malformed_projection_initial_values_keep_the_previous_saved_state)
+{
+    fov_fixture_t g; begin(&g); ready(&g); eng_add_to_level_scene(g.f.engine,g.camera);
+    ASSERT_TRUE(eng_set_camera_projection_type(g.f.engine,g.camera,0xfffffffeu)); eng_save_ic(g.f.engine,g.camera);
+    nmo_chunk_t *chunk = nmo_chunk_create(nmo_session_get_arena(g.f.session)); ASSERT_NOT_NULL(chunk); chunk->class_id = NMO_CID_CAMERA;
+    ASSERT_EQ(NMO_OK,nmo_chunk_start_write(chunk)); nmo_chunk_set_data_version(chunk,4);
+    ASSERT_EQ(NMO_OK,nmo_chunk_write_identifier(chunk,CK_STATESAVE_CAMERAPROJTYPE)); nmo_chunk_close(chunk);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,eng_load_ic(g.f.engine,g.camera,chunk));
+    ASSERT_TRUE(eng_set_camera_projection_type(g.f.engine,g.camera,1)); eng_restore_ic(g.f.engine,g.camera); projection_frame(&g,g.camera,0xfffffffeu);
+    fixture_end(&g.f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_fov, runtime_fov_updates_render_projection_and_screen_coordinates_without_changing_the_document);
 REGISTER_TEST(engine_fov, fov_and_clipping_plane_changes_preserve_each_other_for_cameras_and_target_cameras);
@@ -1071,4 +1137,8 @@ REGISTER_TEST(engine_fov, set_projection_defaults_to_orthographic_and_runs_once)
 REGISTER_TEST(engine_fov, disconnected_projection_input_uses_the_native_perspective_fallback);
 REGISTER_TEST(engine_fov, set_projection_keeps_raw_integer_bits_and_observes_live_target_changes);
 REGISTER_TEST(engine_fov, set_projection_owner_errors_keep_input_and_outputs_unchanged);
+REGISTER_TEST(engine_fov, projection_initial_conditions_capture_runtime_modes_and_replace_previous_saves);
+REGISTER_TEST(engine_fov, modern_camera_initial_values_restore_full_projection_bits_and_other_camera_members);
+REGISTER_TEST(engine_fov, legacy_camera_initial_values_restore_projection_only_when_present);
+REGISTER_TEST(engine_fov, malformed_projection_initial_values_keep_the_previous_saved_state);
 TEST_MAIN_END()
