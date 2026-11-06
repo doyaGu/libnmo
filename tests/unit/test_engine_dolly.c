@@ -55,6 +55,7 @@ static void ready(dolly_fixture_t *g)
 static void position(nmo_engine_t *engine, nmo_object_id_t id, eng_vector_t expected)
 {
     float world[16]; ASSERT_TRUE(nmo_engine_entity_world_matrix(engine,id,world));
+    ASSERT_TRUE(isfinite(world[12]) && isfinite(world[13]) && isfinite(world[14]));
     ASSERT_FLOAT_EQ(expected.x,world[12],1e-4f); ASSERT_FLOAT_EQ(expected.y,world[13],1e-4f); ASSERT_FLOAT_EQ(expected.z,world[14],1e-4f);
 }
 
@@ -99,8 +100,94 @@ TEST(engine_dolly, invalid_targets_fail_before_consuming_input_or_emitting_outpu
     }
 }
 
+TEST(engine_dolly, self_axis_translation_respects_rotation_shear_mirrors_and_collapsed_axes)
+{
+    const eng_matrix_t matrices[] = {
+        {{{0,0,-2,0},{0,3,0,0},{4,0,0,0},{3,4,5,1}}},
+        {{{2,1,0,0},{.5f,3,0,0},{1,2,4,0},{3,4,5,1}}},
+        {{{-2,0,0,0},{0,3,0,0},{0,0,-4,0},{3,4,5,1}}},
+        {{{2,0,0,0},{0,3,0,0},{0,0,0,0},{3,4,5,1}}}
+    };
+    const eng_vector_t positions[] = {{11,4,5},{5,8,13},{3,4,-3},{3,4,5}};
+    for (size_t i = 0; i < COUNT(matrices); i++) {
+        dolly_fixture_t g; begin(&g); matrix(&g,g.camera,matrices[i],g.parent); ready(&g);
+        float value = 2; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.distance_value,&value,sizeof(value)));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); position(g.f.engine,g.camera,positions[i]);
+        float world[16]; ASSERT_TRUE(nmo_engine_entity_world_matrix(g.f.engine,g.camera,world));
+        for (int row = 0; row < 3; row++) for (int col = 0; col < 3; col++) { ASSERT_TRUE(isfinite(world[4*row+col])); ASSERT_FLOAT_EQ(matrices[i].m[row][col],world[4*row+col],0); }
+        fixture_end(&g.f);
+    }
+}
+
+TEST(engine_dolly, hierarchy_moves_or_keeps_descendants_and_kept_children_follow_later_parent_motion)
+{
+    const int32_t values[] = {0,1,-7};
+    for (size_t i = 0; i < COUNT(values); i++) {
+        dolly_fixture_t g; begin(&g); ready(&g);
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.hierarchy_value,&values[i],sizeof(values[i])));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); position(g.f.engine,g.camera,(eng_vector_t){3,4,9});
+        position(g.f.engine,g.child,(eng_vector_t){5,7,i == 0 ? 9 : 13}); position(g.f.engine,g.grandchild,(eng_vector_t){6,9,i == 0 ? 12 : 16});
+        eng_vector_t moved = {110,20,30}; eng_entity_set_position(g.f.engine,eng_entity_index(g.f.engine,g.parent),&moved,-1,false);
+        position(g.f.engine,g.camera,(eng_vector_t){103,4,9}); position(g.f.engine,g.child,(eng_vector_t){105,7,i == 0 ? 9 : 13});
+        position(g.f.engine,g.grandchild,(eng_vector_t){106,9,i == 0 ? 12 : 16}); fixture_end(&g.f);
+    }
+}
+
+TEST(engine_dolly, disconnected_inputs_keep_native_distance_and_hierarchy_fallbacks)
+{
+    for (int kind = 0; kind < 3; kind++) {
+        dolly_fixture_t g; begin(&g);
+        if (kind != 1) nmo_parameterin_set_source_id(fixture_state(&g.f,BLOCK_PIN(&g.f,g.block,0)),0);
+        if (kind != 0) nmo_parameterin_set_source_id(fixture_state(&g.f,BLOCK_PIN(&g.f,g.block,1)),0);
+        ready(&g);
+        if (kind == 0) { int32_t hierarchy = 0; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.hierarchy_value,&hierarchy,sizeof(hierarchy))); }
+        if (kind == 1) { float value = 2; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.distance_value,&value,sizeof(value))); }
+        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); position(g.f.engine,g.camera,(eng_vector_t){3,4,kind == 1 ? 13 : 9});
+        position(g.f.engine,g.child,(eng_vector_t){5,7,kind == 0 ? 9 : kind == 1 ? 17 : 13}); fixture_end(&g.f);
+    }
+}
+
+TEST(engine_dolly, changing_the_camera_target_uses_the_new_camera_axes_without_moving_the_old_camera)
+{
+    dolly_fixture_t g; begin(&g);
+    nmo_object_id_t second = fixture_create(&g.f,NMO_CID_TARGETCAMERA,"Another Dolly Camera"); ASSERT_TRUE(second != 0);
+    matrix(&g,second,(eng_matrix_t){{{1,0,0,0},{0,1,0,0},{0,0,1,0},{20,30,40,1}}},0); ready(&g);
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); position(g.f.engine,g.camera,(eng_vector_t){3,4,9});
+    ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.target_value,&second,sizeof(second)));
+    float value = 2; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.distance_value,&value,sizeof(value)));
+    fire(&g,0); position(g.f.engine,second,(eng_vector_t){20,30,42}); position(g.f.engine,g.camera,(eng_vector_t){3,4,9});
+    nmo_engine_destroy_object(g.f.engine,g.camera); fire(&g,0); position(g.f.engine,second,(eng_vector_t){20,30,44}); fixture_end(&g.f);
+}
+
+TEST(engine_dolly, tiny_displacements_are_not_discarded_by_a_motion_epsilon)
+{
+    dolly_fixture_t g; begin(&g); matrix(&g,g.camera,(eng_matrix_t){{{2,0,0,0},{0,3,0,0},{0,0,4,0},{0,0,0,1}}},g.parent); ready(&g);
+    float value = 1e-8f; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.distance_value,&value,sizeof(value)));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); float world[16]; ASSERT_TRUE(nmo_engine_entity_world_matrix(g.f.engine,g.camera,world));
+    ASSERT_FLOAT_EQ(0,world[12],0); ASSERT_FLOAT_EQ(0,world[13],0); ASSERT_FLOAT_EQ(4e-8f,world[14],1e-14f); fixture_end(&g.f);
+}
+
+TEST(engine_dolly, nonfinite_distances_follow_native_float_vector_arithmetic)
+{
+    const float values[] = {NAN,INFINITY,-INFINITY};
+    for (size_t i = 0; i < COUNT(values); i++) {
+        dolly_fixture_t g; begin(&g); ready(&g);
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.distance_value,&values[i],sizeof(values[i])));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); float world[16]; ASSERT_TRUE(nmo_engine_entity_world_matrix(g.f.engine,g.camera,world));
+        ASSERT_TRUE(isnan(world[12]) && isnan(world[13]));
+        if (i == 0) ASSERT_TRUE(isnan(world[14])); else { ASSERT_TRUE(isinf(world[14])); ASSERT_EQ(i == 2,signbit(world[14]) != 0); }
+        ASSERT_EQ(1u,runs(&g.f,g.after)); fixture_end(&g.f);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_dolly, native_defaults_move_once_along_the_scaled_camera_axis_and_move_descendants);
 REGISTER_TEST(engine_dolly, live_translation_values_are_per_activation_and_keep_camera_projection_members);
 REGISTER_TEST(engine_dolly, invalid_targets_fail_before_consuming_input_or_emitting_output);
+REGISTER_TEST(engine_dolly, self_axis_translation_respects_rotation_shear_mirrors_and_collapsed_axes);
+REGISTER_TEST(engine_dolly, hierarchy_moves_or_keeps_descendants_and_kept_children_follow_later_parent_motion);
+REGISTER_TEST(engine_dolly, disconnected_inputs_keep_native_distance_and_hierarchy_fallbacks);
+REGISTER_TEST(engine_dolly, changing_the_camera_target_uses_the_new_camera_axes_without_moving_the_old_camera);
+REGISTER_TEST(engine_dolly, tiny_displacements_are_not_discarded_by_a_motion_epsilon);
+REGISTER_TEST(engine_dolly, nonfinite_distances_follow_native_float_vector_arithmetic);
 TEST_MAIN_END()
