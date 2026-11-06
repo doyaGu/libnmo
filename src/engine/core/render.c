@@ -813,6 +813,16 @@ bool eng_set_camera_fov(nmo_engine_t *engine, nmo_object_id_t id, float fov)
     return true;
 }
 
+void eng_copy_camera_state(nmo_engine_t *engine, nmo_object_id_t source, nmo_object_id_t target)
+{
+    const eng_camera_state_t *original = eng_camera_override(engine,source,false);
+    if (original == NULL) return;
+    /* Creating the target can reallocate the table containing the source. */
+    eng_camera_state_t saved = *original;
+    eng_camera_state_t *copy = eng_camera_override(engine,target,true);
+    if (copy != NULL) { *copy = saved; copy->id = target; }
+}
+
 bool eng_camera_planes(nmo_engine_t *engine, nmo_object_id_t id, float *near_plane,
                        float *far_plane)
 {

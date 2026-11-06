@@ -195,6 +195,7 @@ void eng_copy_sprite3d(nmo_engine_t *engine, nmo_object_id_t source, nmo_object_
 /* Camera projection members now; reads fall back to the file without allocating. */
 bool eng_camera_fov(nmo_engine_t *engine, nmo_object_id_t id, float *fov);
 bool eng_set_camera_fov(nmo_engine_t *engine, nmo_object_id_t id, float fov);
+void eng_copy_camera_state(nmo_engine_t *engine, nmo_object_id_t source, nmo_object_id_t target);
 /* A camera's front and back planes now (Set Clipping Planes', else the file's); false for none */
 bool eng_camera_planes(nmo_engine_t *engine, nmo_object_id_t id, float *near_plane,
                        float *far_plane);

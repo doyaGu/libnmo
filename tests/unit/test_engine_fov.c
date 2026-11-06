@@ -216,6 +216,93 @@ TEST(engine_fov, orthographic_cameras_store_fov_without_changing_zoom_projection
     fixture_end(&g.f);
 }
 
+TEST(engine_fov, camera_copies_preserve_runtime_lenses_and_remain_independent_after_source_deletion)
+{
+    fov_fixture_t g; begin(&g); ready(&g);
+    const nmo_object_id_t cameras[] = {g.camera,g.second};
+    for (size_t type = 0; type < 2; type++) {
+        nmo_object_id_t original = cameras[type], copies[40];
+        ASSERT_TRUE(eng_set_camera_fov(g.f.engine,original,.75f));
+        eng_set_camera_planes(g.f.engine,original,2,50);
+        for (size_t i = 0; i < sizeof(copies)/sizeof(*copies); i++) {
+            ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(g.f.engine,&original,1,false,&copies[i]));
+            frame(&g,copies[i],.75f,2,50);
+        }
+        ASSERT_TRUE(eng_set_camera_fov(g.f.engine,original,1.25f));
+        eng_set_camera_planes(g.f.engine,original,3,60);
+        ASSERT_TRUE(eng_set_camera_fov(g.f.engine,copies[0],.625f));
+        frame(&g,copies[0],.625f,2,50); frame(&g,copies[39],.75f,2,50);
+        frame(&g,original,1.25f,3,60);
+        nmo_object_id_t grandchild = 0;
+        ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(g.f.engine,&copies[0],1,false,&grandchild));
+        nmo_engine_destroy_object(g.f.engine,original);
+        nmo_engine_destroy_object(g.f.engine,copies[0]);
+        frame(&g,grandchild,.625f,2,50); frame(&g,copies[39],.75f,2,50);
+        ASSERT_FLOAT_EQ(PI_F/2,((nmo_camera_state_t *)fixture_state(&g.f,original))->fov,0);
+    }
+    fixture_end(&g.f);
+}
+
+TEST(engine_fov, runtime_initial_conditions_capture_restore_and_replace_fov_with_clipping_planes)
+{
+    fov_fixture_t g; behavior_begin(&g); ready(&g);
+    eng_add_to_level_scene(g.f.engine,g.camera);
+    eng_save_ic(g.f.engine,g.camera);
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0));
+    eng_set_camera_planes(g.f.engine,g.camera,2,50);
+    eng_restore_ic(g.f.engine,g.camera); frame(&g,g.camera,PI_F/2,1,100);
+    ASSERT_TRUE(eng_set_camera_fov(g.f.engine,g.camera,.75f));
+    eng_set_camera_planes(g.f.engine,g.camera,3,60); eng_save_ic(g.f.engine,g.camera);
+    trigger(&g); eng_set_camera_planes(g.f.engine,g.camera,4,70);
+    eng_restore_ic(g.f.engine,g.camera); frame(&g,g.camera,.75f,3,60);
+    ASSERT_TRUE(eng_set_camera_fov(g.f.engine,g.camera,NAN)); eng_save_ic(g.f.engine,g.camera);
+    trigger(&g); eng_restore_ic(g.f.engine,g.camera); frame(&g,g.camera,NAN,3,60);
+    ASSERT_FLOAT_EQ(PI_F/2,((nmo_camera_state_t *)fixture_state(&g.f,g.camera))->fov,0);
+    fixture_end(&g.f);
+}
+
+TEST(engine_fov, modern_camera_initial_values_restore_serialized_raw_fov_and_planes)
+{
+    const float angles[] = {.625f,-.75f,INFINITY};
+    fov_fixture_t g; begin(&g); ready(&g);
+    const nmo_object_id_t cameras[] = {g.camera,g.second};
+    for (size_t type = 0; type < 2; type++) for (size_t i = 0; i < sizeof(angles)/sizeof(*angles); i++) {
+        nmo_object_id_t id = cameras[type];
+        nmo_camera_state_t saved = *(nmo_camera_state_t *)fixture_state(&g.f,id);
+        saved.fov = angles[i]; saved.near_plane = 2; saved.far_plane = 50;
+        nmo_arena_t *arena = nmo_session_get_arena(g.f.session);
+        nmo_chunk_t *chunk = nmo_chunk_create(arena); ASSERT_NOT_NULL(chunk);
+        chunk->class_id = NMO_CID_CAMERA;
+        nmo_serialize_context_t context = nmo_serialize_context_create_nonfile(arena,g.f.repo,CK_STATESAVE_CAMERAONLY);
+        ASSERT_EQ(NMO_OK,nmo_chunk_start_write(chunk));
+        ASSERT_EQ(NMO_OK,nmo_camera_vtable.serialize(&saved,chunk,NULL,&context));
+        nmo_chunk_close(chunk);
+        ASSERT_EQ(NMO_OK,eng_load_ic(g.f.engine,id,chunk)); eng_add_to_level_scene(g.f.engine,id);
+        ASSERT_TRUE(eng_set_camera_fov(g.f.engine,id,1.25f)); eng_set_camera_planes(g.f.engine,id,3,60);
+        eng_restore_ic(g.f.engine,id); frame(&g,id,angles[i],2,50);
+        ASSERT_FLOAT_EQ(PI_F/2,((nmo_camera_state_t *)fixture_state(&g.f,id))->fov,0);
+    }
+    fixture_end(&g.f);
+}
+
+TEST(engine_fov, legacy_partial_camera_initial_values_restore_only_present_members)
+{
+    fov_fixture_t g; begin(&g); ready(&g); eng_add_to_level_scene(g.f.engine,g.camera);
+    for (int kind = 0; kind < 3; kind++) {
+        nmo_chunk_t *chunk = nmo_chunk_create(nmo_session_get_arena(g.f.session)); ASSERT_NOT_NULL(chunk);
+        chunk->class_id = NMO_CID_CAMERA;
+        ASSERT_EQ(NMO_OK,nmo_chunk_start_write(chunk)); nmo_chunk_set_data_version(chunk,4);
+        ASSERT_EQ(NMO_OK,nmo_chunk_write_identifier(chunk,kind == 0 ? CK_STATESAVE_CAMERAFOV : kind == 1 ? CK_STATESAVE_CAMERAPLANES : CK_STATESAVE_OBJECTHIDDEN));
+        if (kind < 2) ASSERT_EQ(NMO_OK,nmo_chunk_write_float(chunk,kind == 0 ? -.75f : 2));
+        if (kind == 1) ASSERT_EQ(NMO_OK,nmo_chunk_write_float(chunk,50));
+        nmo_chunk_close(chunk); ASSERT_EQ(NMO_OK,eng_load_ic(g.f.engine,g.camera,chunk));
+        ASSERT_TRUE(eng_set_camera_fov(g.f.engine,g.camera,1.25f)); eng_set_camera_planes(g.f.engine,g.camera,3,60);
+        eng_restore_ic(g.f.engine,g.camera);
+        frame(&g,g.camera,kind == 0 ? -.75f : 1.25f,kind == 1 ? 2 : 3,kind == 1 ? 50 : 60);
+    }
+    fixture_end(&g.f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_fov, runtime_fov_updates_render_projection_and_screen_coordinates_without_changing_the_document);
 REGISTER_TEST(engine_fov, fov_and_clipping_plane_changes_preserve_each_other_for_cameras_and_target_cameras);
@@ -225,4 +312,8 @@ REGISTER_TEST(engine_fov, disconnected_angle_uses_the_native_fallback);
 REGISTER_TEST(engine_fov, set_fov_keeps_native_zero_negative_large_and_nonfinite_radians);
 REGISTER_TEST(engine_fov, invalid_targets_fail_before_consuming_input_or_changing_another_camera);
 REGISTER_TEST(engine_fov, orthographic_cameras_store_fov_without_changing_zoom_projection);
+REGISTER_TEST(engine_fov, camera_copies_preserve_runtime_lenses_and_remain_independent_after_source_deletion);
+REGISTER_TEST(engine_fov, runtime_initial_conditions_capture_restore_and_replace_fov_with_clipping_planes);
+REGISTER_TEST(engine_fov, modern_camera_initial_values_restore_serialized_raw_fov_and_planes);
+REGISTER_TEST(engine_fov, legacy_partial_camera_initial_values_restore_only_present_members);
 TEST_MAIN_END()
