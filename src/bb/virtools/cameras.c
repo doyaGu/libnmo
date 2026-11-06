@@ -152,7 +152,31 @@ static int bb_dolly(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+static int bb_set_camera_target(blk_t *b)
+{
+    nmo_object_id_t camera = nmo_engine_block_target(b);
+    nmo_object_t *object = eng_entity_index(b->engine,camera) >= 0 ? eng_find_object(b->engine,camera) : NULL;
+    if (object == NULL || nmo_type_query_object_get_ancestor_state_by_guid(b->engine->types,object,CKPGUID_TARGETCAMERA) == NULL) return NMO_ENGINE_BR_OWNERERROR;
+    IN_OFF(b,0);
+    OUT_ON(b,0);
+    nmo_object_id_t target = nmo_engine_block_get_input_object(b,0);
+    int32_t entity = eng_entity_index(b->engine,target);
+    if (nmo_engine_block_version(b) == 0x00010000u) {
+        if (entity < 0) return NMO_ENGINE_BR_PARAMETERERROR;
+        nmo_object_id_t previous = eng_camera_target(b->engine,camera);
+        if (previous != 0) {
+            eng_vector_t position = eng_entity_position(b->engine,entity,-1);
+            eng_entity_set_position(b->engine,eng_entity_index(b->engine,previous),&position,-1,false);
+            return NMO_ENGINE_BR_OK;
+        }
+    } else if (entity < 0 || nmo_engine_object_class(b->engine,target) != NMO_CID_3DENTITY) {
+        target = 0; /* The modern block rejects subclasses too. */
+    }
+    return eng_set_camera_target(b->engine,camera,target) ? NMO_ENGINE_BR_OK : NMO_ENGINE_BR_GENERICERROR;
+}
+
 static const nmo_engine_block_desc_t eng_cameras_blocks[] = {
+    {NMO_GUID_INIT(0x74123741, 0x4563ffff), "Set Camera Target", bb_set_camera_target, NULL, NULL},
     {NMO_GUID_INIT(0xb98b83bb, 0x87787878), "Dolly", bb_dolly, NULL, NULL},
     {NMO_GUID_INIT(0x368f22b1, 0x222957e4), "Get Current Camera", bb_get_current_camera, NULL, NULL},
     {NMO_GUID_INIT(0xe444e666, 0x4eee6eee), "Set Projection", bb_set_projection, NULL, NULL},
