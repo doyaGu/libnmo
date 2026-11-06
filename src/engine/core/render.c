@@ -836,6 +836,20 @@ bool eng_set_camera_target(nmo_engine_t *engine, nmo_object_id_t camera, nmo_obj
     return true;
 }
 
+void eng_copy_camera_target(nmo_engine_t *engine, nmo_object_id_t source, nmo_object_id_t target,
+    const nmo_object_id_t *originals, const nmo_object_id_t *copies, size_t count)
+{
+    if (eng_target_camera(engine,source) == NULL) return;
+    nmo_object_id_t attached = eng_camera_target(engine,source);
+    if (attached == 0 && eng_camera_target_override(engine,source,false) == NULL) return;
+    /* Copy starts from no attachment; remapping then calls SetTarget again. */
+    if (!eng_restore_camera_target(engine,target,0) || !eng_set_camera_target(engine,target,attached)) return;
+    for (size_t i = 0; i < count; i++) if (originals[i] == attached) {
+        eng_set_camera_target(engine,target,copies[i]);
+        break;
+    }
+}
+
 void eng_camera_forget_object(nmo_engine_t *engine, nmo_object_id_t id)
 {
     if (eng_entity_index(engine,id) < 0) return;

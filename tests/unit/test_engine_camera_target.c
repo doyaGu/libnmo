@@ -192,6 +192,42 @@ TEST(engine_camera_target, nonstrict_legacy_parameter_errors_still_advance_the_n
     ASSERT_EQ(1u,runs(&g.f,g.after)); ASSERT_EQ(g.first,eng_camera_target(g.f.engine,g.camera)); fixture_end(&g.f);
 }
 
+TEST(engine_camera_target, default_copies_bring_the_runtime_target_and_remap_it_instead_of_the_file_target)
+{
+    target_fixture_t g; begin(&g,true); ready(&g); ASSERT_TRUE(eng_set_camera_target(g.f.engine,g.camera,g.second));
+    nmo_object_id_t copy = 0; ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(g.f.engine,&g.camera,1,false,&copy)); nmo_object_id_t target = eng_camera_target(g.f.engine,copy);
+    ASSERT_TRUE(target != 0 && target != g.first && target != g.second); ASSERT_EQ(NMO_CID_3DENTITY,nmo_engine_object_class(g.f.engine,target));
+    position(&g,target,(eng_vector_t){-10,0,10}); ASSERT_EQ(CK_3DENTITY_TARGETCAMERA | CK_3DENTITY_TARGETLIGHT,flags(g.f.engine,target));
+    /* Native remapping detaches the intermediate reference to the original target. */
+    ASSERT_EQ(CK_3DENTITY_FRAME | CK_3DENTITY_TARGETLIGHT,flags(g.f.engine,g.second));
+    nmo_engine_destroy_object(g.f.engine,g.second); ASSERT_EQ(0u,eng_camera_target(g.f.engine,g.camera)); ASSERT_EQ(target,eng_camera_target(g.f.engine,copy));
+    nmo_engine_destroy_object(g.f.engine,copy); ASSERT_EQ(CK_3DENTITY_FRAME | CK_3DENTITY_TARGETLIGHT,flags(g.f.engine,target)); fixture_end(&g.f);
+}
+
+TEST(engine_camera_target, copies_without_target_dependencies_share_the_live_target_and_keep_native_unreferenced_flags)
+{
+    target_fixture_t g; begin(&g,true); ready(&g); ASSERT_TRUE(eng_set_camera_target(g.f.engine,g.camera,g.second));
+    eng_dependencies_t deps = {.flags = 1}; nmo_object_id_t copy = 0; ASSERT_EQ(NMO_OK,eng_copy_objects(g.f.engine,&g.camera,1,&deps,false,false,&copy));
+    ASSERT_EQ(g.second,eng_camera_target(g.f.engine,copy)); ASSERT_TRUE(eng_set_camera_target(g.f.engine,copy,0));
+    ASSERT_EQ(g.second,eng_camera_target(g.f.engine,g.camera)); ASSERT_EQ(CK_3DENTITY_FRAME | CK_3DENTITY_TARGETLIGHT,flags(g.f.engine,g.second));
+    ASSERT_TRUE(eng_set_camera_target(g.f.engine,g.camera,g.second)); ASSERT_EQ(CK_3DENTITY_FRAME | CK_3DENTITY_TARGETLIGHT,flags(g.f.engine,g.second)); fixture_end(&g.f);
+}
+
+TEST(engine_camera_target, cleared_runtime_targets_are_not_resurrected_by_copying_or_used_as_dependencies)
+{
+    target_fixture_t g; begin(&g,true); ready(&g); ASSERT_TRUE(eng_set_camera_target(g.f.engine,g.camera,0));
+    size_t before = g.f.engine->entities.count; nmo_object_id_t copy = 0; ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(g.f.engine,&g.camera,1,false,&copy));
+    ASSERT_EQ(before+1,g.f.engine->entities.count); ASSERT_EQ(0u,eng_camera_target(g.f.engine,copy)); fixture_end(&g.f);
+}
+
+TEST(engine_camera_target, custom_delete_dependencies_use_the_runtime_target_and_leave_the_file_target_alive)
+{
+    target_fixture_t g; begin(&g,true); ready(&g); ASSERT_TRUE(eng_set_camera_target(g.f.engine,g.camera,g.second));
+    eng_dependencies_t deps = {0}; deps.classes[NMO_CID_TARGETCAMERA] = 1;
+    eng_destroy_objects(g.f.engine,&g.camera,1,&deps); ASSERT_EQ(-1,eng_entity_index(g.f.engine,g.camera)); ASSERT_EQ(-1,eng_entity_index(g.f.engine,g.second));
+    ASSERT_TRUE(eng_entity_index(g.f.engine,g.first) >= 0); fixture_end(&g.f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_camera_target, runtime_targets_override_file_references_and_follow_moving_entities_without_document_changes);
 REGISTER_TEST(engine_camera_target, attaching_detaching_and_self_assignments_keep_native_target_flags);
@@ -204,4 +240,8 @@ REGISTER_TEST(engine_camera_target, legacy_behavior_attaches_derived_entities_wh
 REGISTER_TEST(engine_camera_target, legacy_missing_targets_fail_after_consuming_input_and_activating_output);
 REGISTER_TEST(engine_camera_target, invalid_camera_owners_fail_before_advancing_io);
 REGISTER_TEST(engine_camera_target, nonstrict_legacy_parameter_errors_still_advance_the_native_output_flow);
+REGISTER_TEST(engine_camera_target, default_copies_bring_the_runtime_target_and_remap_it_instead_of_the_file_target);
+REGISTER_TEST(engine_camera_target, copies_without_target_dependencies_share_the_live_target_and_keep_native_unreferenced_flags);
+REGISTER_TEST(engine_camera_target, cleared_runtime_targets_are_not_resurrected_by_copying_or_used_as_dependencies);
+REGISTER_TEST(engine_camera_target, custom_delete_dependencies_use_the_runtime_target_and_leave_the_file_target_alive);
 TEST_MAIN_END()

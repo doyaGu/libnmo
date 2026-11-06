@@ -436,6 +436,9 @@ static void prepare_object(copy_set_t *set, nmo_object_t *object, nmo_object_id_
     prepare_beobject(set, object);
     if (derives(engine, class_id, NMO_CID_3DENTITY)) {
         prepare_3dentity(set, object, id);
+        if (derives(engine,class_id,NMO_CID_TARGETCAMERA) && (class_dependencies(set->deps,NMO_CID_TARGETCAMERA) & 1u)) {
+            prepare(set,eng_camera_target(engine,id));
+        }
         if (derives(engine,class_id,NMO_CID_PLACE) && (class_dependencies(set->deps,NMO_CID_PLACE) & 1u)) {
             for (size_t i = 0; ; i++) {
                 const eng_portal_list_t *links = eng_place_portals(engine,id);
@@ -934,6 +937,8 @@ static nmo_status_t copy_session(nmo_engine_t *engine, int32_t source, const nmo
     for (size_t i = 0; i < n; i++) {
         copy_entity(engine, &set, copies, set.ids.data[i], copies[i]);
     }
+    /* Target setters update entity flags after the copied entity state is in place. */
+    for (size_t i = 0; i < n; i++) eng_copy_camera_target(engine,set.ids.data[i],copies[i],set.ids.data,copies,n);
     copy_links(engine, &set, copies, first_link);
 
     /* The copies join the level scene with their originals, active as asked or as they were */

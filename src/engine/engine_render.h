@@ -204,6 +204,8 @@ bool eng_set_camera_target(nmo_engine_t *engine, nmo_object_id_t camera, nmo_obj
 /* RCKTargetCamera::Load stores the reference directly, leaving target flags alone. */
 bool eng_restore_camera_target(nmo_engine_t *engine, nmo_object_id_t camera, nmo_object_id_t target);
 void eng_camera_forget_object(nmo_engine_t *engine, nmo_object_id_t id);
+void eng_copy_camera_target(nmo_engine_t *engine, nmo_object_id_t source, nmo_object_id_t target,
+    const nmo_object_id_t *originals, const nmo_object_id_t *copies, size_t count);
 /* Camera projection members now; reads fall back to the file without allocating. */
 bool eng_camera_projection_type(nmo_engine_t *engine, nmo_object_id_t id, uint32_t *projection);
 bool eng_set_camera_projection_type(nmo_engine_t *engine, nmo_object_id_t id, uint32_t projection);
