@@ -329,18 +329,27 @@ static const char *resolve_file(void *data, const char *name)
     (void)name; return data;
 }
 
-TEST(engine_fov, loaded_and_copied_scripts_remap_cameras_and_keep_runtime_lenses_independent)
+static void approximate_frame(fov_fixture_t *g, nmo_object_id_t id, float expected, float front, float back)
 {
-    fov_fixture_t source; behavior_begin(&source); char target[32];
+    float actual = 0; ASSERT_TRUE(eng_camera_fov(g->f.engine,id,&actual));
+    ASSERT_FLOAT_EQ(expected,actual,1e-7f); frame(g,id,actual,front,back);
+}
+
+static void loaded_and_copied_lens_graphs(bool zoom)
+{
+    fov_fixture_t source;
+    if (zoom) zoom_begin(&source); else behavior_begin(&source);
+    char target[32];
+    const float initial_fov = zoom ? .927295218f : PI_F/3;
     snprintf(target,sizeof(target),"%u",source.camera);
     ASSERT_EQ(source.target_value,saved_input(&source,fixture_target(&source.f,source.block),target));
-    ASSERT_EQ(source.angle_value,saved_input(&source,BLOCK_PIN(&source.f,source.block,0),"0:60"));
+    ASSERT_EQ(source.angle_value,saved_input(&source,BLOCK_PIN(&source.f,source.block,0),zoom ? "36" : "0:60"));
     fixture_commit_bare(&source.f,NULL);
     nmo_beobject_state_t *owner = fixture_state(&source.f,source.f.owner_id);
     owner->has_single_activity = 1; owner->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE;
     nmo_behavior_state_t *script = fixture_state(&source.f,source.f.script_id);
     script->has_single_activity = 1; script->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE | CK_SCENEOBJECT_START_RESET;
-    const char *path = NMO_TEST_SCRATCH_FILE("engine_fov.cmo");
+    const char *path = zoom ? NMO_TEST_SCRATCH_FILE("engine_zoom.cmo") : NMO_TEST_SCRATCH_FILE("engine_fov.cmo");
     ASSERT_EQ(NMO_OK,nmo_session_save_file(source.f.session,path,NULL,NULL));
     for (int started = 0; started < 2; started++) {
         fov_fixture_t host; memset(&host,0,sizeof(host));
@@ -349,9 +358,9 @@ TEST(engine_fov, loaded_and_copied_scripts_remap_cameras_and_keep_runtime_lenses
         fixture_commit(&host.f,&options);
         if (started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.f.engine,NMO_ENGINE_START_ALL));
         nmo_engine_set_file_resolver(host.f.engine,resolve_file,(void *)path);
-        int32_t file = -1; ASSERT_EQ(NMO_OK,nmo_engine_load(host.f.engine,"fov.cmo",true,&file));
+        int32_t file = -1; ASSERT_EQ(NMO_OK,nmo_engine_load(host.f.engine,zoom ? "zoom.cmo" : "fov.cmo",true,&file));
         if (!started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.f.engine,NMO_ENGINE_START_SCENE_DEFAULT));
-        nmo_object_id_t block = nmo_engine_object_named(host.f.engine,"Set FOV",NMO_CID_BEHAVIOR);
+        nmo_object_id_t block = nmo_engine_object_named(host.f.engine,zoom ? "Set Zoom" : "Set FOV",NMO_CID_BEHAVIOR);
         ASSERT_TRUE(block != 0);
         const eng_module_t *module = eng_module_of(host.f.engine,block,NULL);
         const nmo_object_id_t local[] = {source.f.owner_id,source.camera,source.f.script_id,source.block,source.after,source.target_value,source.angle_value};
@@ -360,22 +369,22 @@ TEST(engine_fov, loaded_and_copied_scripts_remap_cameras_and_keep_runtime_lenses
         ASSERT_TRUE(ids[1] != source.camera);
         frame(&host,ids[1],PI_F/2,1,100);
         ASSERT_EQ(NMO_OK,nmo_engine_step(host.f.engine,0));
-        float angle; ASSERT_TRUE(eng_camera_fov(host.f.engine,ids[1],&angle)); ASSERT_FLOAT_EQ(PI_F/3,angle,1e-7f);
+        float angle; ASSERT_TRUE(eng_camera_fov(host.f.engine,ids[1],&angle)); ASSERT_FLOAT_EQ(initial_fov,angle,1e-7f);
         frame(&host,ids[1],angle,1,100); ASSERT_EQ(1u,runs(&host.f,ids[4]));
         eng_set_camera_planes(host.f.engine,ids[1],2,50);
         ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(host.f.engine,ids,7,false,copies));
         frame(&host,copies[1],angle,2,50);
         /* The target value must name the copied camera after global-ID remapping. */
         nmo_object_id_t copied_target = 0; read_value(&host.f,copies[5],&copied_target,sizeof(copied_target)); ASSERT_EQ(copies[1],copied_target);
-        angle = .625f; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.f.engine,copies[6],&angle,sizeof(angle)));
+        angle = zoom ? 72 : .625f; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.f.engine,copies[6],&angle,sizeof(angle)));
         ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.f.engine,copies[2],true,true));
-        ASSERT_EQ(NMO_OK,nmo_engine_step(host.f.engine,0)); frame(&host,copies[1],angle,2,50);
-        float original; ASSERT_TRUE(eng_camera_fov(host.f.engine,ids[1],&original)); ASSERT_FLOAT_EQ(PI_F/3,original,1e-7f);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(host.f.engine,0)); approximate_frame(&host,copies[1],zoom ? .489957326f : .625f,2,50);
+        float original; ASSERT_TRUE(eng_camera_fov(host.f.engine,ids[1],&original)); ASSERT_FLOAT_EQ(initial_fov,original,1e-7f);
         ASSERT_EQ(1u,runs(&host.f,ids[4])); ASSERT_EQ(1u,runs(&host.f,copies[4]));
         nmo_engine_destroy_object(host.f.engine,ids[1]); nmo_engine_destroy_object(host.f.engine,ids[2]);
-        angle = 1.25f; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.f.engine,copies[6],&angle,sizeof(angle)));
+        angle = zoom ? 18 : 1.25f; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.f.engine,copies[6],&angle,sizeof(angle)));
         ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.f.engine,copies[2],true,true));
-        ASSERT_EQ(NMO_OK,nmo_engine_step(host.f.engine,0)); frame(&host,copies[1],angle,2,50);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(host.f.engine,0)); approximate_frame(&host,copies[1],zoom ? PI_F/2 : 1.25f,2,50);
         ASSERT_EQ(2u,runs(&host.f,copies[4]));
         const nmo_camera_state_t *document = nmo_type_query_object_get_ancestor_state_by_guid(host.f.engine->types,eng_find_object(host.f.engine,copies[1]),CKPGUID_CAMERA);
         ASSERT_NOT_NULL(document); ASSERT_FLOAT_EQ(PI_F/2,document->fov,0);
@@ -383,6 +392,16 @@ TEST(engine_fov, loaded_and_copied_scripts_remap_cameras_and_keep_runtime_lenses
     }
     ASSERT_FLOAT_EQ(PI_F/2,((nmo_camera_state_t *)fixture_state(&source.f,source.camera))->fov,0);
     fixture_end(&source.f);
+}
+
+TEST(engine_fov, loaded_and_copied_scripts_remap_cameras_and_keep_runtime_lenses_independent)
+{
+    loaded_and_copied_lens_graphs(false);
+}
+
+TEST(engine_fov, loaded_and_copied_zoom_scripts_remap_cameras_and_focal_length_parameters)
+{
+    loaded_and_copied_lens_graphs(true);
 }
 
 TEST(engine_fov, terratools_sky_distortion_tracks_runtime_camera_fov_with_its_own_planes)
@@ -542,6 +561,35 @@ TEST(engine_fov, set_zoom_updates_orthographic_camera_fov_without_changing_zoom_
     fixture_end(&g.f);
 }
 
+TEST(engine_fov, zoom_camera_copies_and_initial_conditions_capture_converted_fov_independently)
+{
+    for (int derived = 0; derived < 2; derived++) {
+        fov_fixture_t g; zoom_begin(&g); ready(&g);
+        nmo_object_id_t original = derived ? g.second : g.camera;
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.target_value,&original,sizeof(original)));
+        float lens = 36; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.angle_value,&lens,sizeof(lens)));
+        eng_set_camera_planes(g.f.engine,original,2,50);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); approximate_frame(&g,original,.927295218f,2,50);
+        eng_add_to_level_scene(g.f.engine,original); eng_save_ic(g.f.engine,original);
+        nmo_object_id_t copy = 0; ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(g.f.engine,&original,1,false,&copy));
+        approximate_frame(&g,copy,.927295218f,2,50);
+        lens = 72; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.angle_value,&lens,sizeof(lens)));
+        trigger(&g); approximate_frame(&g,original,.489957326f,2,50); approximate_frame(&g,copy,.927295218f,2,50);
+        eng_restore_ic(g.f.engine,original); approximate_frame(&g,original,.927295218f,2,50);
+        eng_add_to_level_scene(g.f.engine,copy); eng_save_ic(g.f.engine,copy);
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.target_value,&copy,sizeof(copy)));
+        lens = 18; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.angle_value,&lens,sizeof(lens)));
+        trigger(&g); approximate_frame(&g,copy,PI_F/2,2,50); approximate_frame(&g,original,.927295218f,2,50);
+        eng_restore_ic(g.f.engine,copy); approximate_frame(&g,copy,.927295218f,2,50);
+        nmo_engine_destroy_object(g.f.engine,original);
+        lens = 50; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.angle_value,&lens,sizeof(lens)));
+        trigger(&g); approximate_frame(&g,copy,.691111161f,2,50);
+        const nmo_camera_state_t *document = nmo_type_query_object_get_ancestor_state_by_guid(g.f.engine->types,eng_find_object(g.f.engine,copy),CKPGUID_CAMERA);
+        ASSERT_NOT_NULL(document); ASSERT_FLOAT_EQ(PI_F/2,document->fov,0);
+        fixture_end(&g.f);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_fov, runtime_fov_updates_render_projection_and_screen_coordinates_without_changing_the_document);
 REGISTER_TEST(engine_fov, fov_and_clipping_plane_changes_preserve_each_other_for_cameras_and_target_cameras);
@@ -565,4 +613,6 @@ REGISTER_TEST(engine_fov, set_zoom_changes_view_projection_and_billboard_screen_
 REGISTER_TEST(engine_fov, set_zoom_keeps_native_nan_infinite_and_extreme_positive_focal_length_semantics);
 REGISTER_TEST(engine_fov, disconnected_focal_length_uses_fifty_millimeters);
 REGISTER_TEST(engine_fov, set_zoom_updates_orthographic_camera_fov_without_changing_zoom_or_projection);
+REGISTER_TEST(engine_fov, loaded_and_copied_zoom_scripts_remap_cameras_and_focal_length_parameters);
+REGISTER_TEST(engine_fov, zoom_camera_copies_and_initial_conditions_capture_converted_fov_independently);
 TEST_MAIN_END()
