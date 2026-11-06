@@ -88,6 +88,7 @@ void eng_free_render(nmo_engine_t *engine)
     }
     free(render->mesh_copies.data);
     free(render->camera_states.data);
+    free(render->camera_targets.data);
     free(render->vertices.data);
     free(render->draws.data);
     free(render->frame_lights.data);
@@ -780,6 +781,70 @@ static bool eng_draw_sprite3d(nmo_engine_t *engine, const eng_entity_t *entity, 
  * Lights
  * ============================================================================ */
 
+static const nmo_targetcamera_state_t *eng_target_camera(nmo_engine_t *engine, nmo_object_id_t id)
+{
+    return eng_entity_index(engine,id) >= 0 ? eng_typed_state(engine,id,CKPGUID_TARGETCAMERA) : NULL;
+}
+
+static eng_camera_target_t *eng_camera_target_override(nmo_engine_t *engine, nmo_object_id_t id, bool create)
+{
+    for (size_t i = 0; i < engine->render.camera_targets.count; i++)
+        if (engine->render.camera_targets.data[i].id == id) return &engine->render.camera_targets.data[i];
+    eng_camera_target_t *entry = NULL;
+    if (!create || !ENG_VEC_PUSH(engine->render.camera_targets,entry)) return NULL;
+    entry->id = id;
+    return entry;
+}
+
+nmo_object_id_t eng_camera_target(nmo_engine_t *engine, nmo_object_id_t camera)
+{
+    const nmo_targetcamera_state_t *source = eng_target_camera(engine,camera);
+    if (source == NULL) return 0;
+    const eng_camera_target_t *entry = eng_camera_target_override(engine,camera,false);
+    nmo_object_id_t target = entry != NULL ? entry->target : source->has_target ? eng_object_ref(engine,camera,&source->target) : 0;
+    return eng_entity_index(engine,target) >= 0 ? target : 0;
+}
+
+bool eng_restore_camera_target(nmo_engine_t *engine, nmo_object_id_t camera, nmo_object_id_t target)
+{
+    if (eng_target_camera(engine,camera) == NULL || (target != 0 && eng_entity_index(engine,target) < 0)) return false;
+    eng_camera_target_t *entry = eng_camera_target_override(engine,camera,true);
+    if (entry == NULL) return false;
+    entry->target = target;
+    return true;
+}
+
+static void eng_camera_target_flags(nmo_engine_t *engine, nmo_object_id_t target, bool attached)
+{
+    int32_t index = eng_entity_index(engine,target);
+    if (index < 0) return;
+    uint32_t *flags = &engine->entities.data[index].entity_flags;
+    if (attached) *flags = (*flags | CK_3DENTITY_TARGETCAMERA) & ~(uint32_t)CK_3DENTITY_FRAME;
+    else *flags = (*flags & ~(uint32_t)CK_3DENTITY_TARGETCAMERA) | CK_3DENTITY_FRAME;
+}
+
+bool eng_set_camera_target(nmo_engine_t *engine, nmo_object_id_t camera, nmo_object_id_t target)
+{
+    if (eng_target_camera(engine,camera) == NULL) return false;
+    if (target == camera) return true; /* SetTarget ignores self attachments. */
+    nmo_object_id_t old = eng_camera_target(engine,camera);
+    if (!eng_restore_camera_target(engine,camera,target)) return false;
+    if (old != target) {
+        eng_camera_target_flags(engine,old,false);
+        eng_camera_target_flags(engine,target,true);
+    }
+    return true;
+}
+
+void eng_camera_forget_object(nmo_engine_t *engine, nmo_object_id_t id)
+{
+    if (eng_entity_index(engine,id) < 0) return;
+    for (size_t i = 0; i < engine->entities.count; i++) {
+        nmo_object_id_t camera = engine->entities.data[i].id;
+        if (camera == id || eng_camera_target(engine,camera) == id) eng_set_camera_target(engine,camera,0);
+    }
+}
+
 static eng_camera_state_t *eng_camera_override(nmo_engine_t *engine, nmo_object_id_t id, bool create)
 {
     const nmo_camera_state_t *source = NULL;
@@ -1180,10 +1245,9 @@ static void eng_prepare_cameras(nmo_engine_t *engine)
         nmo_object_t *object = entity->destroyed ? NULL : eng_find_object(engine, entity->id);
         uint32_t class_id = object != NULL ? nmo_object_get_class_id(object) : 0;
         const nmo_ref_t *target_ref = NULL;
-        if (class_id == NMO_CID_TARGETCAMERA) {
-            const nmo_targetcamera_state_t *state =
-                (const nmo_targetcamera_state_t *)nmo_object_get_state(object);
-            target_ref = state != NULL && state->has_target ? &state->target : NULL;
+        nmo_object_id_t target = 0;
+        if (nmo_type_registry_is_class_derived_from(engine->types,class_id,NMO_CID_TARGETCAMERA)) {
+            target = eng_camera_target(engine,entity->id);
         } else if (class_id == NMO_CID_TARGETLIGHT) {
             const nmo_targetlight_state_t *state =
                 (const nmo_targetlight_state_t *)nmo_object_get_state(object);
@@ -1192,7 +1256,7 @@ static void eng_prepare_cameras(nmo_engine_t *engine)
                              ? &state->target
                              : NULL;
         }
-        nmo_object_id_t target = target_ref != NULL ? eng_object_ref(engine, entity->id, target_ref) : 0;
+        if (target_ref != NULL) target = eng_object_ref(engine,entity->id,target_ref);
         int32_t target_index = target != 0 ? eng_entity_index(engine, target) : -1;
         if (target_index >= 0) {
             eng_vector_t origin = {0.0f, 0.0f, 0.0f};

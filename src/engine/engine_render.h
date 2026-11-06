@@ -60,6 +60,10 @@ typedef struct eng_screen_mode {
 #define ENG_SCREEN_MODE_COUNT 6
 extern const eng_screen_mode_t eng_screen_modes[ENG_SCREEN_MODE_COUNT];
 
+typedef struct eng_camera_target {
+    nmo_object_id_t id, target;
+} eng_camera_target_t;
+
 /* A camera's runtime projection members, initialized from the file on first write. */
 typedef struct eng_camera_state {
     nmo_object_id_t id;
@@ -133,6 +137,7 @@ typedef struct eng_render {
     /* The render context (CKRenderContext / CKRenderedScene) */
     nmo_object_id_t camera; /* AttachViewpointToCamera */
     ENG_VEC(eng_camera_state_t) camera_states;
+    ENG_VEC(eng_camera_target_t) camera_targets;
     uint32_t background_color; /* the background material's diffuse and texture */
     nmo_object_id_t background_texture;
     int32_t fog_mode;
@@ -193,6 +198,12 @@ void eng_sprite3d_from_state(const nmo_engine_t *engine, nmo_object_id_t id,
 bool eng_sprite3d_set_size(nmo_engine_t *engine, nmo_object_id_t id, nmo_vector2_t size);
 void eng_copy_sprite3d(nmo_engine_t *engine, nmo_object_id_t source, nmo_object_id_t target,
     const nmo_object_id_t *originals, const nmo_object_id_t *copies, size_t count);
+/* CKTargetCamera's live attachment; writes do not modify the document. */
+nmo_object_id_t eng_camera_target(nmo_engine_t *engine, nmo_object_id_t camera);
+bool eng_set_camera_target(nmo_engine_t *engine, nmo_object_id_t camera, nmo_object_id_t target);
+/* RCKTargetCamera::Load stores the reference directly, leaving target flags alone. */
+bool eng_restore_camera_target(nmo_engine_t *engine, nmo_object_id_t camera, nmo_object_id_t target);
+void eng_camera_forget_object(nmo_engine_t *engine, nmo_object_id_t id);
 /* Camera projection members now; reads fall back to the file without allocating. */
 bool eng_camera_projection_type(nmo_engine_t *engine, nmo_object_id_t id, uint32_t *projection);
 bool eng_set_camera_projection_type(nmo_engine_t *engine, nmo_object_id_t id, uint32_t projection);

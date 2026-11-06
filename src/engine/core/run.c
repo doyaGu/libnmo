@@ -441,6 +441,7 @@ void nmo_engine_destroy_object(nmo_engine_t *engine, nmo_object_id_t id)
         }
         return;
     }
+    eng_camera_forget_object(engine,id);
     if (id != 0) {
         eng_map_put(&engine->destroyed, id, 1);
     }
