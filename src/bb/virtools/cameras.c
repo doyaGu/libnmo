@@ -135,7 +135,25 @@ static int bb_get_current_camera(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* Dolly translates a target camera along its own scaled Z axis. */
+static int bb_dolly(blk_t *b)
+{
+    nmo_object_id_t camera = nmo_engine_block_target(b);
+    int32_t entity = eng_entity_index(b->engine,camera);
+    nmo_object_t *object = entity >= 0 ? eng_find_object(b->engine,camera) : NULL;
+    if (object == NULL ||
+        nmo_type_query_object_get_ancestor_state_by_guid(b->engine->types,object,CKPGUID_TARGETCAMERA) == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    IN_OFF(b,0);
+    OUT_ON(b,0);
+    eng_vector_t move = {0,0,get_in_float(b,0,1)};
+    eng_entity_translate(b->engine,entity,&move,entity,get_in_int(b,1,1) == 0);
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_cameras_blocks[] = {
+    {NMO_GUID_INIT(0xb98b83bb, 0x87787878), "Dolly", bb_dolly, NULL, NULL},
     {NMO_GUID_INIT(0x368f22b1, 0x222957e4), "Get Current Camera", bb_get_current_camera, NULL, NULL},
     {NMO_GUID_INIT(0xe444e666, 0x4eee6eee), "Set Projection", bb_set_projection, NULL, NULL},
     {NMO_GUID_INIT(0x0a125555, 0x0eee5488), "Orthographic Zoom", bb_orthographic_zoom, NULL, NULL},
