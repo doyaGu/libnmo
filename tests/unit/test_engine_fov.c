@@ -907,6 +907,67 @@ TEST(engine_fov, loaded_and_copied_orthographic_zoom_graphs_keep_versions_target
     }
 }
 
+static void projection_frame(fov_fixture_t *g, nmo_object_id_t id, uint32_t expected)
+{
+    uint32_t actual = 0; ASSERT_TRUE(eng_camera_projection_type(g->f.engine,id,&actual)); ASSERT_EQ(expected,actual);
+    g->f.engine->render.camera = id;
+    nmo_engine_frame_t view; ASSERT_EQ(NMO_OK,nmo_engine_render_frame(g->f.engine,&view));
+    ASSERT_EQ(id,view.camera); ASSERT_EQ((expected & 1u) == 0,view.orthographic);
+}
+
+TEST(engine_fov, runtime_projection_switches_update_render_box_projection_and_screen_coordinates)
+{
+    fov_fixture_t g; begin(&g); ready(&g); ASSERT_TRUE(eng_set_camera_orthographic_zoom(g.f.engine,g.camera,2));
+    const uint32_t modes[] = {CK_ORTHOGRAPHICPROJECTION,CK_PERSPECTIVEPROJECTION,0};
+    for (size_t i = 0; i < sizeof(modes)/sizeof(*modes); i++) {
+        ASSERT_TRUE(eng_set_camera_projection_type(g.f.engine,g.camera,modes[i])); projection_frame(&g,g.camera,modes[i]);
+        eng_matrix_t projection; ASSERT_TRUE(eng_camera_view_projection(g.f.engine,g.camera,&projection,NULL));
+        nmo_rect_t rect; ASSERT_TRUE(eng_project_box(&projection,&(eng_vector_t){-.25f,-.25f,10},&(eng_vector_t){.25f,.25f,10},&rect));
+        float left = i == 1 ? .4875f : .25f, right = i == 1 ? .5125f : .75f;
+        ASSERT_FLOAT_EQ(left,rect.left,1e-6f); ASSERT_FLOAT_EQ(left,rect.top,1e-6f);
+        ASSERT_FLOAT_EQ(right,rect.right,1e-6f); ASSERT_FLOAT_EQ(right,rect.bottom,1e-6f);
+        eng_vector_t screen; eng_render_project(g.f.engine,&(eng_vector_t){.25f,0,10},&screen);
+        nmo_engine_frame_t view; ASSERT_EQ(NMO_OK,nmo_engine_render_frame(g.f.engine,&view)); ASSERT_FLOAT_EQ(right*view.width,screen.x,2e-4f);
+    }
+    ASSERT_EQ(CK_PERSPECTIVEPROJECTION,((nmo_camera_state_t *)fixture_state(&g.f,g.camera))->projection_type);
+    nmo_engine_t *other = NULL; ASSERT_EQ(NMO_OK,nmo_engine_create(g.f.workspace,NULL,&other)); ASSERT_EQ(NMO_OK,nmo_engine_start(other,NMO_ENGINE_START_ALL));
+    uint32_t mode = 0; ASSERT_TRUE(eng_camera_projection_type(other,g.camera,&mode)); ASSERT_EQ(CK_PERSPECTIVEPROJECTION,mode);
+    nmo_engine_destroy(other); fixture_end(&g.f);
+}
+
+TEST(engine_fov, projection_fov_zoom_and_planes_preserve_each_other_for_both_camera_classes)
+{
+    fov_fixture_t g; begin(&g); ready(&g);
+    ASSERT_TRUE(eng_set_camera_projection_type(g.f.engine,g.camera,0xfffffffeu));
+    ASSERT_TRUE(eng_set_camera_fov(g.f.engine,g.camera,.625f)); ASSERT_TRUE(eng_set_camera_orthographic_zoom(g.f.engine,g.camera,2)); eng_set_camera_planes(g.f.engine,g.camera,2,50);
+    projection_frame(&g,g.camera,0xfffffffeu); orthographic_frame(&g,g.camera,2); frame(&g,g.camera,.625f,2,50);
+    ASSERT_TRUE(eng_set_camera_fov(g.f.engine,g.second,.75f)); ASSERT_TRUE(eng_set_camera_orthographic_zoom(g.f.engine,g.second,3)); eng_set_camera_planes(g.f.engine,g.second,3,60);
+    ASSERT_TRUE(eng_set_camera_projection_type(g.f.engine,g.second,0x80000000u));
+    projection_frame(&g,g.second,0x80000000u); orthographic_frame(&g,g.second,3); frame(&g,g.second,.75f,3,60);
+    ASSERT_TRUE(eng_set_camera_projection_type(g.f.engine,g.second,0x80000001u)); frame(&g,g.second,.75f,3,60);
+    nmo_engine_destroy_object(g.f.engine,g.second); uint32_t ignored;
+    ASSERT_FALSE(eng_camera_projection_type(g.f.engine,g.second,&ignored)); ASSERT_FALSE(eng_set_camera_projection_type(g.f.engine,g.second,1));
+    fixture_end(&g.f);
+}
+
+TEST(engine_fov, camera_copies_preserve_raw_projection_modes_across_cache_growth_and_source_deletion)
+{
+    fov_fixture_t g; begin(&g); ready(&g);
+    const nmo_object_id_t cameras[] = {g.camera,g.second};
+    for (size_t type = 0; type < 2; type++) {
+        ASSERT_TRUE(eng_set_camera_projection_type(g.f.engine,cameras[type],0xfffffffeu)); nmo_object_id_t copies[40];
+        for (size_t i = 0; i < sizeof(copies)/sizeof(*copies); i++) {
+            ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(g.f.engine,&cameras[type],1,false,&copies[i])); projection_frame(&g,copies[i],0xfffffffeu);
+        }
+        ASSERT_TRUE(eng_set_camera_projection_type(g.f.engine,cameras[type],1)); ASSERT_TRUE(eng_set_camera_projection_type(g.f.engine,copies[0],0xffffffffu));
+        projection_frame(&g,cameras[type],1); projection_frame(&g,copies[39],0xfffffffeu);
+        nmo_object_id_t next = 0; ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(g.f.engine,&copies[0],1,false,&next));
+        nmo_engine_destroy_object(g.f.engine,cameras[type]); nmo_engine_destroy_object(g.f.engine,copies[0]);
+        projection_frame(&g,next,0xffffffffu); projection_frame(&g,copies[39],0xfffffffeu);
+    }
+    fixture_end(&g.f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_fov, runtime_fov_updates_render_projection_and_screen_coordinates_without_changing_the_document);
 REGISTER_TEST(engine_fov, fov_and_clipping_plane_changes_preserve_each_other_for_cameras_and_target_cameras);
@@ -949,4 +1010,7 @@ REGISTER_TEST(engine_fov, legacy_camera_initial_values_restore_orthographic_zoom
 REGISTER_TEST(engine_fov, malformed_orthographic_zoom_initial_values_keep_the_previous_saved_state);
 REGISTER_TEST(engine_fov, nonstrict_execution_follows_orthographic_zoom_output_on_owner_errors);
 REGISTER_TEST(engine_fov, loaded_and_copied_orthographic_zoom_graphs_keep_versions_targets_and_values_independent);
+REGISTER_TEST(engine_fov, runtime_projection_switches_update_render_box_projection_and_screen_coordinates);
+REGISTER_TEST(engine_fov, projection_fov_zoom_and_planes_preserve_each_other_for_both_camera_classes);
+REGISTER_TEST(engine_fov, camera_copies_preserve_raw_projection_modes_across_cache_growth_and_source_deletion);
 TEST_MAIN_END()

@@ -64,6 +64,7 @@ extern const eng_screen_mode_t eng_screen_modes[ENG_SCREEN_MODE_COUNT];
 typedef struct eng_camera_state {
     nmo_object_id_t id;
     float fov, orthographic_zoom, near_plane, far_plane;
+    uint32_t projection_type;
 } eng_camera_state_t;
 
 /* A CKMaterial once a block changed it or the host asked for it: the file's, then the changes */
@@ -193,6 +194,8 @@ bool eng_sprite3d_set_size(nmo_engine_t *engine, nmo_object_id_t id, nmo_vector2
 void eng_copy_sprite3d(nmo_engine_t *engine, nmo_object_id_t source, nmo_object_id_t target,
     const nmo_object_id_t *originals, const nmo_object_id_t *copies, size_t count);
 /* Camera projection members now; reads fall back to the file without allocating. */
+bool eng_camera_projection_type(nmo_engine_t *engine, nmo_object_id_t id, uint32_t *projection);
+bool eng_set_camera_projection_type(nmo_engine_t *engine, nmo_object_id_t id, uint32_t projection);
 bool eng_camera_fov(nmo_engine_t *engine, nmo_object_id_t id, float *fov);
 bool eng_set_camera_fov(nmo_engine_t *engine, nmo_object_id_t id, float fov);
 bool eng_camera_orthographic_zoom(nmo_engine_t *engine, nmo_object_id_t id, float *zoom);

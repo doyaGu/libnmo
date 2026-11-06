@@ -17,7 +17,8 @@ bool eng_camera_view_projection(nmo_engine_t *engine, nmo_object_id_t camera,
     double aspect = state->aspect_width > 0 && state->aspect_height > 0 ? (double)state->aspect_width/state->aspect_height : 1;
     double depth = (double)back-front;
     eng_matrix_t projection = {{{0}}}, inverse; eng_matrix_identity(&inverse);
-    if (state->projection_type & 1u) {
+    uint32_t projection_type = state->projection_type; eng_camera_projection_type(engine,camera,&projection_type);
+    if (projection_type & 1u) {
         double scale = cos((double)fov*.5)/sin((double)fov*.5);
         projection.m[0][0] = (float)scale; projection.m[1][1] = (float)(scale*aspect);
         projection.m[2][2] = (float)(back/depth); projection.m[3][2] = (float)(-(double)front*back/depth); projection.m[2][3] = 1;
