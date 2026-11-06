@@ -807,7 +807,7 @@ nmo_object_id_t eng_camera_target(nmo_engine_t *engine, nmo_object_id_t camera)
 
 bool eng_restore_camera_target(nmo_engine_t *engine, nmo_object_id_t camera, nmo_object_id_t target)
 {
-    if (eng_target_camera(engine,camera) == NULL || (target != 0 && eng_entity_index(engine,target) < 0)) return false;
+    if (eng_target_camera(engine,camera) == NULL) return false;
     eng_camera_target_t *entry = eng_camera_target_override(engine,camera,true);
     if (entry == NULL) return false;
     entry->target = target;
@@ -827,6 +827,7 @@ bool eng_set_camera_target(nmo_engine_t *engine, nmo_object_id_t camera, nmo_obj
 {
     if (eng_target_camera(engine,camera) == NULL) return false;
     if (target == camera) return true; /* SetTarget ignores self attachments. */
+    if (target != 0 && eng_entity_index(engine,target) < 0) return false;
     nmo_object_id_t old = eng_camera_target(engine,camera);
     if (!eng_restore_camera_target(engine,camera,target)) return false;
     if (old != target) {

@@ -16,6 +16,7 @@
 #include "object/builtin/nmo_material_schemas.h"
 #include "object/builtin/nmo_object_schemas.h"
 #include "object/builtin/nmo_sprite3d_schemas.h"
+#include "object/builtin/nmo_targetcamera_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_statesave_ids.h"
@@ -134,6 +135,11 @@ nmo_status_t eng_load_ic(nmo_engine_t *engine, nmo_object_id_t id, nmo_chunk_t *
             ic.has_parent = entity->has_entityndata_chunk || entity->has_parent_chunk;
             ic.parent = eng_module_id(module, nmo_ref_runtime_id(&entity->parent));
         }
+        const nmo_targetcamera_state_t *target_camera = nmo_type_query_object_get_ancestor_state_by_guid(engine->types,&decoded,CKPGUID_TARGETCAMERA);
+        if (target_camera != NULL && nmo_chunk_seek_identifier(saved,CK_STATESAVE_TCAMERATARGET) == NMO_OK) {
+            ic.has_camera_target = true;
+            ic.camera_target = eng_module_id(module,nmo_ref_runtime_id(&target_camera->target));
+        }
         const nmo_camera_state_t *camera = nmo_type_query_object_get_ancestor_state_by_guid(
             engine->types, &decoded, CKPGUID_CAMERA);
         if (camera != NULL) {
@@ -213,6 +219,8 @@ void eng_save_ic(nmo_engine_t *engine, nmo_object_id_t id)
         int32_t parent = entity >= 0 ? engine->entities.data[entity].parent : -1;
         ic->parent = parent >= 0 ? engine->entities.data[parent].id : 0;
     }
+    ic->has_camera_target = has_matrix && nmo_type_registry_is_class_derived_from(engine->types,class_id,NMO_CID_TARGETCAMERA);
+    if (ic->has_camera_target) ic->camera_target = eng_camera_target(engine,id);
     ic->has_projection_type = has_projection_type;
     ic->projection_type = projection_type;
     ic->has_orthographic_zoom = has_orthographic_zoom;
@@ -272,6 +280,7 @@ void eng_restore_ic(nmo_engine_t *engine, nmo_object_id_t id)
     }
     if (ic->has_matrix) nmo_engine_set_entity_world_matrix(engine, id, ic->world, true);
     /* CKCamera, CKMaterial and CKLight's own members */
+    if (ic->has_camera_target) eng_restore_camera_target(engine,id,ic->camera_target);
     if (ic->has_projection_type) eng_set_camera_projection_type(engine,id,ic->projection_type);
     if (ic->has_orthographic_zoom) eng_set_camera_orthographic_zoom(engine,id,ic->orthographic_zoom);
     if (ic->has_fov) eng_set_camera_fov(engine,id,ic->fov);

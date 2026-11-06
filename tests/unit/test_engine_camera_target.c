@@ -228,6 +228,59 @@ TEST(engine_camera_target, custom_delete_dependencies_use_the_runtime_target_and
     ASSERT_TRUE(eng_entity_index(g.f.engine,g.first) >= 0); fixture_end(&g.f);
 }
 
+TEST(engine_camera_target, initial_conditions_restore_runtime_attachments_without_replaying_target_flag_setters)
+{
+    target_fixture_t g; begin(&g,true); ready(&g); eng_add_to_level_scene(g.f.engine,g.camera); eng_save_ic(g.f.engine,g.camera);
+    ASSERT_TRUE(eng_set_camera_target(g.f.engine,g.camera,g.second));
+    uint32_t first_flags = flags(g.f.engine,g.first), second_flags = flags(g.f.engine,g.second);
+    eng_restore_ic(g.f.engine,g.camera); ASSERT_EQ(g.first,eng_camera_target(g.f.engine,g.camera));
+    ASSERT_EQ(first_flags,flags(g.f.engine,g.first)); ASSERT_EQ(second_flags,flags(g.f.engine,g.second));
+    ASSERT_TRUE(eng_set_camera_target(g.f.engine,g.camera,0)); eng_save_ic(g.f.engine,g.camera);
+    ASSERT_TRUE(eng_set_camera_target(g.f.engine,g.camera,g.second)); eng_restore_ic(g.f.engine,g.camera); ASSERT_EQ(0u,eng_camera_target(g.f.engine,g.camera));
+    fixture_end(&g.f);
+}
+
+TEST(engine_camera_target, serialized_target_initial_values_restore_both_nonnull_and_explicit_null_references)
+{
+    target_fixture_t g; begin(&g,true); ready(&g); eng_add_to_level_scene(g.f.engine,g.camera);
+    for (int clear = 0; clear < 2; clear++) {
+        nmo_targetcamera_state_t saved = *(nmo_targetcamera_state_t *)fixture_state(&g.f,g.camera);
+        saved.has_target = !clear; saved.target = nmo_ref_from_id(clear ? 0 : g.second);
+        nmo_arena_t *arena = nmo_session_get_arena(g.f.session); nmo_chunk_t *chunk = nmo_chunk_create(arena); ASSERT_NOT_NULL(chunk); chunk->class_id = NMO_CID_TARGETCAMERA;
+        nmo_serialize_context_t context = nmo_serialize_context_create_nonfile(arena,g.f.repo,CK_STATESAVE_TCAMERAONLY);
+        ASSERT_EQ(NMO_OK,nmo_chunk_start_write(chunk)); ASSERT_EQ(NMO_OK,nmo_targetcamera_vtable.serialize(&saved,chunk,NULL,&context)); nmo_chunk_close(chunk);
+        ASSERT_EQ(NMO_OK,eng_load_ic(g.f.engine,g.camera,chunk)); ASSERT_TRUE(eng_set_camera_target(g.f.engine,g.camera,g.first));
+        eng_restore_ic(g.f.engine,g.camera); ASSERT_EQ(clear ? 0u : g.second,eng_camera_target(g.f.engine,g.camera));
+    }
+    const nmo_targetcamera_state_t *document = fixture_state(&g.f,g.camera); ASSERT_EQ(g.first,nmo_ref_runtime_id(&document->target)); fixture_end(&g.f);
+}
+
+TEST(engine_camera_target, partial_initial_values_without_target_sections_keep_the_current_attachment)
+{
+    target_fixture_t g; begin(&g,true); ready(&g); eng_add_to_level_scene(g.f.engine,g.camera);
+    nmo_chunk_t *chunk = nmo_chunk_create(nmo_session_get_arena(g.f.session)); ASSERT_NOT_NULL(chunk); chunk->class_id = NMO_CID_TARGETCAMERA;
+    ASSERT_EQ(NMO_OK,nmo_chunk_start_write(chunk)); ASSERT_EQ(NMO_OK,nmo_chunk_write_identifier(chunk,CK_STATESAVE_OBJECTHIDDEN)); nmo_chunk_close(chunk);
+    ASSERT_EQ(NMO_OK,eng_load_ic(g.f.engine,g.camera,chunk)); ASSERT_TRUE(eng_set_camera_target(g.f.engine,g.camera,g.second)); eng_restore_ic(g.f.engine,g.camera);
+    ASSERT_EQ(g.second,eng_camera_target(g.f.engine,g.camera)); fixture_end(&g.f);
+}
+
+TEST(engine_camera_target, malformed_target_initial_values_preserve_the_previous_saved_attachment)
+{
+    target_fixture_t g; begin(&g,true); ready(&g); eng_add_to_level_scene(g.f.engine,g.camera); eng_save_ic(g.f.engine,g.camera);
+    nmo_chunk_t *chunk = nmo_chunk_create(nmo_session_get_arena(g.f.session)); ASSERT_NOT_NULL(chunk); chunk->class_id = NMO_CID_TARGETCAMERA;
+    ASSERT_EQ(NMO_OK,nmo_chunk_start_write(chunk)); ASSERT_EQ(NMO_OK,nmo_chunk_write_identifier(chunk,CK_STATESAVE_TCAMERATARGET)); nmo_chunk_close(chunk);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,eng_load_ic(g.f.engine,g.camera,chunk)); ASSERT_TRUE(eng_set_camera_target(g.f.engine,g.camera,g.second));
+    eng_restore_ic(g.f.engine,g.camera); ASSERT_EQ(g.first,eng_camera_target(g.f.engine,g.camera)); fixture_end(&g.f);
+}
+
+TEST(engine_camera_target, restoring_a_deleted_initial_target_detaches_the_live_reference_without_replaying_flags)
+{
+    target_fixture_t g; begin(&g,true); ready(&g); eng_add_to_level_scene(g.f.engine,g.camera); eng_save_ic(g.f.engine,g.camera);
+    nmo_engine_destroy_object(g.f.engine,g.first); ASSERT_TRUE(eng_set_camera_target(g.f.engine,g.camera,g.second));
+    eng_restore_ic(g.f.engine,g.camera); ASSERT_EQ(0u,eng_camera_target(g.f.engine,g.camera));
+    ASSERT_EQ(CK_3DENTITY_TARGETCAMERA | CK_3DENTITY_TARGETLIGHT,flags(g.f.engine,g.second)); fixture_end(&g.f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_camera_target, runtime_targets_override_file_references_and_follow_moving_entities_without_document_changes);
 REGISTER_TEST(engine_camera_target, attaching_detaching_and_self_assignments_keep_native_target_flags);
@@ -244,4 +297,9 @@ REGISTER_TEST(engine_camera_target, default_copies_bring_the_runtime_target_and_
 REGISTER_TEST(engine_camera_target, copies_without_target_dependencies_share_the_live_target_and_keep_native_unreferenced_flags);
 REGISTER_TEST(engine_camera_target, cleared_runtime_targets_are_not_resurrected_by_copying_or_used_as_dependencies);
 REGISTER_TEST(engine_camera_target, custom_delete_dependencies_use_the_runtime_target_and_leave_the_file_target_alive);
+REGISTER_TEST(engine_camera_target, initial_conditions_restore_runtime_attachments_without_replaying_target_flag_setters);
+REGISTER_TEST(engine_camera_target, serialized_target_initial_values_restore_both_nonnull_and_explicit_null_references);
+REGISTER_TEST(engine_camera_target, partial_initial_values_without_target_sections_keep_the_current_attachment);
+REGISTER_TEST(engine_camera_target, malformed_target_initial_values_preserve_the_previous_saved_attachment);
+REGISTER_TEST(engine_camera_target, restoring_a_deleted_initial_target_detaches_the_live_reference_without_replaying_flags);
 TEST_MAIN_END()
