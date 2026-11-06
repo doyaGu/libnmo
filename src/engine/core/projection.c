@@ -11,12 +11,12 @@ bool eng_camera_view_projection(nmo_engine_t *engine, nmo_object_id_t camera,
     int32_t entity = eng_entity_index(engine,camera);
     const nmo_camera_state_t *state = entity >= 0 ? nmo_type_query_object_get_ancestor_state_by_guid(engine->types,eng_find_object(engine,camera),CKPGUID_CAMERA) : NULL;
     if (state == NULL) return false;
-    float front, back; eng_camera_planes(engine,camera,&front,&back);
+    float front, back, fov = state->fov; eng_camera_planes(engine,camera,&front,&back); eng_camera_fov(engine,camera,&fov);
     double aspect = state->aspect_width > 0 && state->aspect_height > 0 ? (double)state->aspect_width/state->aspect_height : 1;
     double depth = (double)back-front;
     eng_matrix_t projection = {{{0}}}, inverse; eng_matrix_identity(&inverse);
     if (state->projection_type & 1u) {
-        double scale = cos((double)state->fov*.5)/sin((double)state->fov*.5);
+        double scale = cos((double)fov*.5)/sin((double)fov*.5);
         projection.m[0][0] = (float)scale; projection.m[1][1] = (float)(scale*aspect);
         projection.m[2][2] = (float)(back/depth); projection.m[3][2] = (float)(-(double)front*back/depth); projection.m[2][3] = 1;
     } else {

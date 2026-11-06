@@ -60,11 +60,11 @@ typedef struct eng_screen_mode {
 #define ENG_SCREEN_MODE_COUNT 6
 extern const eng_screen_mode_t eng_screen_modes[ENG_SCREEN_MODE_COUNT];
 
-/* A camera's clipping planes once Set Clipping Planes changed them */
-typedef struct eng_camera_planes {
+/* A camera's runtime projection members, initialized from the file on first write. */
+typedef struct eng_camera_state {
     nmo_object_id_t id;
-    float near_plane, far_plane;
-} eng_camera_planes_t;
+    float fov, near_plane, far_plane;
+} eng_camera_state_t;
 
 /* A CKMaterial once a block changed it or the host asked for it: the file's, then the changes */
 typedef struct eng_material {
@@ -131,7 +131,7 @@ typedef struct eng_render {
 
     /* The render context (CKRenderContext / CKRenderedScene) */
     nmo_object_id_t camera; /* AttachViewpointToCamera */
-    ENG_VEC(eng_camera_planes_t) camera_planes;
+    ENG_VEC(eng_camera_state_t) camera_states;
     uint32_t background_color; /* the background material's diffuse and texture */
     nmo_object_id_t background_texture;
     int32_t fog_mode;
@@ -192,6 +192,9 @@ void eng_sprite3d_from_state(const nmo_engine_t *engine, nmo_object_id_t id,
 bool eng_sprite3d_set_size(nmo_engine_t *engine, nmo_object_id_t id, nmo_vector2_t size);
 void eng_copy_sprite3d(nmo_engine_t *engine, nmo_object_id_t source, nmo_object_id_t target,
     const nmo_object_id_t *originals, const nmo_object_id_t *copies, size_t count);
+/* Camera projection members now; reads fall back to the file without allocating. */
+bool eng_camera_fov(nmo_engine_t *engine, nmo_object_id_t id, float *fov);
+bool eng_set_camera_fov(nmo_engine_t *engine, nmo_object_id_t id, float fov);
 /* A camera's front and back planes now (Set Clipping Planes', else the file's); false for none */
 bool eng_camera_planes(nmo_engine_t *engine, nmo_object_id_t id, float *near_plane,
                        float *far_plane);

@@ -87,7 +87,7 @@ void eng_free_render(nmo_engine_t *engine)
         free(copy->channels.data);
     }
     free(render->mesh_copies.data);
-    free(render->camera_planes.data);
+    free(render->camera_states.data);
     free(render->vertices.data);
     free(render->draws.data);
     free(render->frame_lights.data);
@@ -780,40 +780,55 @@ static bool eng_draw_sprite3d(nmo_engine_t *engine, const eng_entity_t *entity, 
  * Lights
  * ============================================================================ */
 
+static eng_camera_state_t *eng_camera_override(nmo_engine_t *engine, nmo_object_id_t id, bool create)
+{
+    const nmo_camera_state_t *source = NULL;
+    if (create) {
+        source = eng_entity_index(engine,id) >= 0 ? eng_typed_state(engine,id,CKPGUID_CAMERA) : NULL;
+        if (source == NULL) return NULL;
+    }
+    for (size_t i = 0; i < engine->render.camera_states.count; i++)
+        if (engine->render.camera_states.data[i].id == id) return &engine->render.camera_states.data[i];
+    if (!create) return NULL;
+    eng_camera_state_t *state = NULL;
+    if (source == NULL || !ENG_VEC_PUSH(engine->render.camera_states,state)) return NULL;
+    *state = (eng_camera_state_t){id,source->fov,source->near_plane,source->far_plane};
+    return state;
+}
+
+bool eng_camera_fov(nmo_engine_t *engine, nmo_object_id_t id, float *fov)
+{
+    const nmo_camera_state_t *source = eng_entity_index(engine,id) >= 0 ? eng_typed_state(engine,id,CKPGUID_CAMERA) : NULL;
+    if (source == NULL) return false;
+    const eng_camera_state_t *state = eng_camera_override(engine,id,false);
+    *fov = state != NULL ? state->fov : source->fov;
+    return true;
+}
+
+bool eng_set_camera_fov(nmo_engine_t *engine, nmo_object_id_t id, float fov)
+{
+    eng_camera_state_t *state = eng_camera_override(engine,id,true);
+    if (state == NULL) return false;
+    state->fov = fov;
+    return true;
+}
+
 bool eng_camera_planes(nmo_engine_t *engine, nmo_object_id_t id, float *near_plane,
                        float *far_plane)
 {
-    const nmo_camera_state_t *state =
-        (const nmo_camera_state_t *)eng_typed_state(engine, id, CKPGUID_CAMERA);
-    if (state == NULL) {
-        return false;
-    }
-    *near_plane = state->near_plane;
-    *far_plane = state->far_plane;
-    for (size_t i = 0; i < engine->render.camera_planes.count; i++) {
-        if (engine->render.camera_planes.data[i].id == id) {
-            *near_plane = engine->render.camera_planes.data[i].near_plane;
-            *far_plane = engine->render.camera_planes.data[i].far_plane;
-        }
-    }
+    const nmo_camera_state_t *source = eng_entity_index(engine,id) >= 0 ? eng_typed_state(engine,id,CKPGUID_CAMERA) : NULL;
+    if (source == NULL) return false;
+    const eng_camera_state_t *state = eng_camera_override(engine,id,false);
+    *near_plane = state != NULL ? state->near_plane : source->near_plane;
+    *far_plane = state != NULL ? state->far_plane : source->far_plane;
     return true;
 }
 
 void eng_set_camera_planes(nmo_engine_t *engine, nmo_object_id_t id, float near_plane,
                            float far_plane)
 {
-    eng_camera_planes_t *planes = NULL;
-    for (size_t i = 0; i < engine->render.camera_planes.count && planes == NULL; i++) {
-        if (engine->render.camera_planes.data[i].id == id) {
-            planes = &engine->render.camera_planes.data[i];
-        }
-    }
-    if (planes == NULL && !ENG_VEC_PUSH(engine->render.camera_planes, planes)) {
-        return;
-    }
-    planes->id = id;
-    planes->near_plane = near_plane;
-    planes->far_plane = far_plane;
+    eng_camera_state_t *state = eng_camera_override(engine,id,true);
+    if (state != NULL) { state->near_plane = near_plane; state->far_plane = far_plane; }
 }
 
 eng_light_t *eng_light(nmo_engine_t *engine, nmo_object_id_t id)
@@ -1240,16 +1255,9 @@ nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *o
     if (camera_state != NULL) {
         memcpy(out->view, engine->entities.data[camera].world.m, sizeof(out->view));
         out->orthographic = (camera_state->projection_type & 1u) == 0;
-        out->fov = camera_state->fov;
+        eng_camera_fov(engine,render->camera,&out->fov);
         out->zoom = camera_state->orthographic_zoom;
-        out->near_plane = camera_state->near_plane;
-        out->far_plane = camera_state->far_plane;
-        for (size_t i = 0; i < render->camera_planes.count; i++) {
-            if (render->camera_planes.data[i].id == render->camera) {
-                out->near_plane = render->camera_planes.data[i].near_plane;
-                out->far_plane = render->camera_planes.data[i].far_plane;
-            }
-        }
+        eng_camera_planes(engine,render->camera,&out->near_plane,&out->far_plane);
     } else {
         out->camera = 0;
     }
