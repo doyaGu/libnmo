@@ -104,7 +104,24 @@ static int bb_orthographic_zoom(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* Set Projection stores the integer verbatim; the camera tests its low bit. */
+static int bb_set_projection(blk_t *b)
+{
+    nmo_object_id_t camera = nmo_engine_block_target(b);
+    nmo_object_t *object = eng_entity_index(b->engine,camera) >= 0 ? eng_find_object(b->engine,camera) : NULL;
+    if (object == NULL ||
+        nmo_type_query_object_get_ancestor_state_by_guid(b->engine->types,object,CKPGUID_CAMERA) == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    IN_OFF(b,0);
+    OUT_ON(b,0);
+    if (!eng_set_camera_projection_type(b->engine,camera,(uint32_t)get_in_int(b,0,1))) return NMO_ENGINE_BR_GENERICERROR;
+    eng_emit(b->engine,NMO_ENGINE_EVENT_EFFECT,b->node,camera,0);
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_cameras_blocks[] = {
+    {NMO_GUID_INIT(0xe444e666, 0x4eee6eee), "Set Projection", bb_set_projection, NULL, NULL},
     {NMO_GUID_INIT(0x0a125555, 0x0eee5488), "Orthographic Zoom", bb_orthographic_zoom, NULL, NULL},
     {NMO_GUID_INIT(0x40540a0d, 0x000aaaaa), "Set Zoom", bb_set_zoom, NULL, NULL},
     {NMO_GUID_INIT(0xaaaacccc, 0xaaaacccc), "Set FOV", bb_set_fov, NULL, NULL},

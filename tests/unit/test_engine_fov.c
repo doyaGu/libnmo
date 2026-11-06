@@ -9,6 +9,7 @@
 #include <stdio.h>
 
 #define PI_F 3.14159265358979323846f
+#define GUID_SET_PROJECTION NMO_GUID(0xe444e666,0x4eee6eee)
 #define GUID_ORTHOGRAPHIC_ZOOM NMO_GUID(0x0a125555,0x0eee5488)
 #define GUID_SET_ZOOM NMO_GUID(0x40540a0d,0x000aaaaa)
 #define GUID_SET_FOV NMO_GUID(0xaaaacccc,0xaaaacccc)
@@ -968,6 +969,59 @@ TEST(engine_fov, camera_copies_preserve_raw_projection_modes_across_cache_growth
     fixture_end(&g.f);
 }
 
+static void projection_begin(fov_fixture_t *g)
+{
+    behavior_begin_guid(g,GUID_SET_PROJECTION,"Set Projection");
+}
+
+TEST(engine_fov, set_projection_defaults_to_orthographic_and_runs_once)
+{
+    fov_fixture_t g; projection_begin(&g); ready(&g); ASSERT_TRUE(nmo_engine_has_block(g.f.engine,GUID_SET_PROJECTION));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); projection_frame(&g,g.camera,CK_ORTHOGRAPHICPROJECTION);
+    ASSERT_EQ(1u,runs(&g.f,g.block)); ASSERT_EQ(1u,runs(&g.f,g.after));
+    ASSERT_FALSE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,0))); ASSERT_FALSE(nmo_engine_behavior_is_active(g.f.engine,g.block));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,10)); ASSERT_EQ(1u,runs(&g.f,g.block)); ASSERT_EQ(1u,runs(&g.f,g.after));
+    ASSERT_EQ(CK_PERSPECTIVEPROJECTION,((nmo_camera_state_t *)fixture_state(&g.f,g.camera))->projection_type);
+    fixture_end(&g.f);
+}
+
+TEST(engine_fov, disconnected_projection_input_uses_the_native_perspective_fallback)
+{
+    fov_fixture_t g; projection_begin(&g);
+    nmo_parameterin_set_source_id(fixture_state(&g.f,BLOCK_PIN(&g.f,g.block,0)),0);
+    ready(&g); ASSERT_TRUE(eng_set_camera_projection_type(g.f.engine,g.camera,CK_ORTHOGRAPHICPROJECTION));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); projection_frame(&g,g.camera,CK_PERSPECTIVEPROJECTION);
+    fixture_end(&g.f);
+}
+
+TEST(engine_fov, set_projection_keeps_raw_integer_bits_and_observes_live_target_changes)
+{
+    const uint32_t modes[] = {0,1,2,3,0xfffffffeu,0xffffffffu,0x80000000u,0x80000001u};
+    fov_fixture_t g; projection_begin(&g); ready(&g);
+    for (size_t i = 0; i < sizeof(modes)/sizeof(*modes); i++) {
+        nmo_object_id_t target = i & 1 ? g.second : g.camera;
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.target_value,&target,sizeof(target)));
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.angle_value,&modes[i],sizeof(modes[i])));
+        trigger(&g); projection_frame(&g,target,modes[i]); ASSERT_EQ(i+1,runs(&g.f,g.after));
+        if (i > 0) projection_frame(&g,target == g.camera ? g.second : g.camera,modes[i-1]);
+    }
+    fixture_end(&g.f);
+}
+
+TEST(engine_fov, set_projection_owner_errors_keep_input_and_outputs_unchanged)
+{
+    for (int kind = 0; kind < 5; kind++) {
+        fov_fixture_t g; projection_begin(&g); ready(&g);
+        nmo_object_id_t target = kind == 0 ? 0 : kind == 1 ? 0x7fffffff : kind == 2 ? g.f.owner_id : kind == 3 ? g.f.script_id : g.camera;
+        if (kind == 4) nmo_engine_destroy_object(g.f.engine,g.camera);
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.target_value,&target,sizeof(target)));
+        ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,nmo_engine_step(g.f.engine,0));
+        nmo_engine_event_t failure; ASSERT_TRUE(nmo_engine_failure(g.f.engine,&failure)); ASSERT_EQ(NMO_ENGINE_BR_OWNERERROR,failure.result);
+        ASSERT_TRUE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,0))); ASSERT_FALSE(nmo_engine_io_is_active(g.f.engine,BLOCK_OUT(&g.f,g.block,0)));
+        ASSERT_EQ(0u,runs(&g.f,g.after)); projection_frame(&g,g.second,CK_PERSPECTIVEPROJECTION); fixture_end(&g.f);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_fov, runtime_fov_updates_render_projection_and_screen_coordinates_without_changing_the_document);
 REGISTER_TEST(engine_fov, fov_and_clipping_plane_changes_preserve_each_other_for_cameras_and_target_cameras);
@@ -1013,4 +1067,8 @@ REGISTER_TEST(engine_fov, loaded_and_copied_orthographic_zoom_graphs_keep_versio
 REGISTER_TEST(engine_fov, runtime_projection_switches_update_render_box_projection_and_screen_coordinates);
 REGISTER_TEST(engine_fov, projection_fov_zoom_and_planes_preserve_each_other_for_both_camera_classes);
 REGISTER_TEST(engine_fov, camera_copies_preserve_raw_projection_modes_across_cache_growth_and_source_deletion);
+REGISTER_TEST(engine_fov, set_projection_defaults_to_orthographic_and_runs_once);
+REGISTER_TEST(engine_fov, disconnected_projection_input_uses_the_native_perspective_fallback);
+REGISTER_TEST(engine_fov, set_projection_keeps_raw_integer_bits_and_observes_live_target_changes);
+REGISTER_TEST(engine_fov, set_projection_owner_errors_keep_input_and_outputs_unchanged);
 TEST_MAIN_END()
