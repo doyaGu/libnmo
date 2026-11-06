@@ -105,7 +105,124 @@ TEST(engine_fov, fov_and_clipping_plane_changes_preserve_each_other_for_cameras_
     fixture_end(&g.f);
 }
 
+static void behavior_begin(fov_fixture_t *g)
+{
+    begin(g);
+    g->block = fixture_block(&g->f,GUID_SET_FOV,"Set FOV");
+    g->after = fixture_block(&g->f,GUID_NOP,"After FOV");
+    ASSERT_TRUE(g->block != 0 && g->after != 0);
+    fixture_input_int(&g->f,fixture_target(&g->f,g->block),(int32_t)g->camera);
+    g->target_value = nmo_parameterin_source_id(fixture_state(&g->f,fixture_target(&g->f,g->block)));
+    ASSERT_EQ(NMO_OK,nmo_script_edit_ensure_input_parameter_source(g->f.tx,BLOCK_PIN(&g->f,g->block,0),&g->angle_value));
+    fixture_link(&g->f,g->f.script_in,BLOCK_IN(&g->f,g->block,0),0);
+    fixture_link(&g->f,BLOCK_OUT(&g->f,g->block,0),BLOCK_IN(&g->f,g->after,0),0);
+}
+
+static void trigger(fov_fixture_t *g)
+{
+    ASSERT_EQ(NMO_OK,nmo_engine_activate_script(g->f.engine,g->f.script_id,true,true));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g->f.engine,0));
+}
+
+TEST(engine_fov, set_fov_uses_the_native_fifty_degree_default_and_runs_once)
+{
+    fov_fixture_t g; behavior_begin(&g); ready(&g);
+    ASSERT_TRUE(nmo_engine_has_block(g.f.engine,GUID_SET_FOV));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0));
+    float actual = 0; ASSERT_TRUE(eng_camera_fov(g.f.engine,g.camera,&actual));
+    ASSERT_FLOAT_EQ(50.0f*PI_F/180,actual,1e-7f);
+    frame(&g,g.camera,actual,1,100);
+    ASSERT_EQ(1u,runs(&g.f,g.block)); ASSERT_EQ(1u,runs(&g.f,g.after));
+    ASSERT_FALSE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,0)));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,10));
+    ASSERT_EQ(1u,runs(&g.f,g.block)); ASSERT_EQ(1u,runs(&g.f,g.after));
+    fixture_end(&g.f);
+}
+
+TEST(engine_fov, live_angle_and_target_inputs_update_only_the_selected_camera)
+{
+    fov_fixture_t g; behavior_begin(&g); ready(&g);
+    float angle = PI_F/3;
+    ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.angle_value,&angle,sizeof(angle)));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); frame(&g,g.camera,angle,1,100);
+    ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.target_value,&g.second,sizeof(g.second)));
+    angle = PI_F/4;
+    ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.angle_value,&angle,sizeof(angle)));
+    trigger(&g); frame(&g,g.second,angle,1,100); frame(&g,g.camera,PI_F/3,1,100);
+    ASSERT_EQ(2u,runs(&g.f,g.after));
+    ASSERT_FLOAT_EQ(PI_F/2,((nmo_camera_state_t *)fixture_state(&g.f,g.camera))->fov,0);
+    fixture_end(&g.f);
+}
+
+TEST(engine_fov, disconnected_angle_uses_the_native_fallback)
+{
+    fov_fixture_t g; behavior_begin(&g);
+    nmo_parameterin_set_source_id(fixture_state(&g.f,BLOCK_PIN(&g.f,g.block,0)),0);
+    ready(&g); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0));
+    frame(&g,g.camera,50.0f*PI_F/180,1,100);
+    fixture_end(&g.f);
+}
+
+TEST(engine_fov, set_fov_keeps_native_zero_negative_large_and_nonfinite_radians)
+{
+    const float angles[] = {0,-.75f,8*PI_F,NAN,INFINITY,-INFINITY};
+    fov_fixture_t g; behavior_begin(&g); ready(&g);
+    for (size_t i = 0; i < sizeof(angles)/sizeof(*angles); i++) {
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.angle_value,&angles[i],sizeof(angles[i])));
+        trigger(&g); frame(&g,g.camera,angles[i],1,100);
+        ASSERT_EQ(i+1,runs(&g.f,g.after));
+    }
+    fixture_end(&g.f);
+}
+
+TEST(engine_fov, invalid_targets_fail_before_consuming_input_or_changing_another_camera)
+{
+    for (int kind = 0; kind < 5; kind++) {
+        fov_fixture_t g; behavior_begin(&g); ready(&g);
+        ASSERT_TRUE(eng_set_camera_fov(g.f.engine,g.second,.625f));
+        nmo_object_id_t target = kind == 0 ? 0 : kind == 1 ? 0x7fffffff : kind == 2 ? g.f.owner_id : kind == 3 ? g.f.script_id : g.camera;
+        if (kind == 4) {
+            ASSERT_TRUE(eng_set_camera_fov(g.f.engine,g.camera,.75f));
+            nmo_engine_destroy_object(g.f.engine,g.camera);
+            float ignored;
+            ASSERT_FALSE(eng_camera_fov(g.f.engine,g.camera,&ignored));
+            ASSERT_FALSE(eng_set_camera_fov(g.f.engine,g.camera,1));
+        }
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.target_value,&target,sizeof(target)));
+        ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,nmo_engine_step(g.f.engine,0));
+        nmo_engine_event_t failure; ASSERT_TRUE(nmo_engine_failure(g.f.engine,&failure));
+        ASSERT_EQ(NMO_ENGINE_BR_OWNERERROR,failure.result);
+        ASSERT_TRUE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,0)));
+        ASSERT_FALSE(nmo_engine_io_is_active(g.f.engine,BLOCK_OUT(&g.f,g.block,0)));
+        ASSERT_EQ(0u,runs(&g.f,g.after)); frame(&g,g.second,.625f,1,100);
+        fixture_end(&g.f);
+    }
+}
+
+TEST(engine_fov, orthographic_cameras_store_fov_without_changing_zoom_projection)
+{
+    fov_fixture_t g; behavior_begin(&g);
+    nmo_camera_state_t *camera = fixture_state(&g.f,g.camera);
+    camera->projection_type = CK_ORTHOGRAPHICPROJECTION; camera->orthographic_zoom = 2;
+    ready(&g);
+    eng_matrix_t before, after; ASSERT_TRUE(eng_camera_view_projection(g.f.engine,g.camera,&before,NULL));
+    float angle = .125f;
+    ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.angle_value,&angle,sizeof(angle)));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); frame(&g,g.camera,angle,1,100);
+    ASSERT_TRUE(eng_camera_view_projection(g.f.engine,g.camera,&after,NULL));
+    ASSERT_EQ(0,memcmp(&before,&after,sizeof(before)));
+    nmo_engine_frame_t view; ASSERT_EQ(NMO_OK,nmo_engine_render_frame(g.f.engine,&view));
+    ASSERT_TRUE(view.orthographic); ASSERT_FLOAT_EQ(2,view.zoom,0);
+    fixture_end(&g.f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_fov, runtime_fov_updates_render_projection_and_screen_coordinates_without_changing_the_document);
 REGISTER_TEST(engine_fov, fov_and_clipping_plane_changes_preserve_each_other_for_cameras_and_target_cameras);
+REGISTER_TEST(engine_fov, set_fov_uses_the_native_fifty_degree_default_and_runs_once);
+REGISTER_TEST(engine_fov, live_angle_and_target_inputs_update_only_the_selected_camera);
+REGISTER_TEST(engine_fov, disconnected_angle_uses_the_native_fallback);
+REGISTER_TEST(engine_fov, set_fov_keeps_native_zero_negative_large_and_nonfinite_radians);
+REGISTER_TEST(engine_fov, invalid_targets_fail_before_consuming_input_or_changing_another_camera);
+REGISTER_TEST(engine_fov, orthographic_cameras_store_fov_without_changing_zoom_projection);
 TEST_MAIN_END()
