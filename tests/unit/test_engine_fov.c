@@ -1218,6 +1218,58 @@ TEST(engine_fov, get_current_camera_reads_target_cameras_and_each_new_activation
     ASSERT_EQ(4u,runs(&g.f,g.after)); fixture_end(&g.f);
 }
 
+TEST(engine_fov, get_current_camera_clears_output_after_deletion_and_ignores_invalid_context_references)
+{
+    fov_fixture_t g; current_camera_begin(&g); ready(&g);
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); current_camera_value(&g,g.camera);
+    nmo_engine_destroy_object(g.f.engine,g.camera); trigger(&g); current_camera_value(&g,0);
+    const nmo_object_id_t invalid[] = {g.camera,g.f.owner_id,g.f.script_id,0x7fffffffu};
+    for (size_t i = 0; i < sizeof(invalid)/sizeof(*invalid); i++) {
+        g.f.engine->render.camera = invalid[i]; trigger(&g); current_camera_value(&g,0);
+        nmo_engine_frame_t view; ASSERT_EQ(NMO_OK,nmo_engine_render_frame(g.f.engine,&view)); ASSERT_EQ(0u,view.camera);
+    }
+    g.f.engine->render.camera = g.second; trigger(&g); current_camera_value(&g,g.second); fixture_end(&g.f);
+}
+
+TEST(engine_fov, current_camera_outputs_are_private_to_engines_sharing_the_same_document)
+{
+    fov_fixture_t g; current_camera_begin(&g); ready(&g);
+    nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL;
+    nmo_engine_t *other = NULL; ASSERT_EQ(NMO_OK,nmo_engine_create(g.f.workspace,&options,&other));
+    ASSERT_EQ(NMO_OK,nmo_bb_virtools_register(other)); ASSERT_EQ(NMO_OK,nmo_engine_start(other,NMO_ENGINE_START_ALL)); other->render.camera = g.second;
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(NMO_OK,nmo_engine_step(other,0)); current_camera_value(&g,g.camera);
+    const void *data = NULL; size_t size = 0; ASSERT_EQ(NMO_OK,nmo_engine_param_value(other,BLOCK_POUT(&g.f,g.block,0),&data,&size,NULL));
+    ASSERT_EQ(sizeof(nmo_object_id_t),size); nmo_object_id_t value = 0; memcpy(&value,data,sizeof(value)); ASSERT_EQ(g.second,value);
+    other->render.camera = 0; ASSERT_EQ(NMO_OK,nmo_engine_activate_script(other,g.f.script_id,true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(other,0));
+    ASSERT_EQ(NMO_OK,nmo_engine_param_value(other,BLOCK_POUT(&g.f,g.block,0),&data,&size,NULL)); memcpy(&value,data,sizeof(value)); ASSERT_EQ(0u,value);
+    current_camera_value(&g,g.camera); nmo_engine_destroy(other); fixture_end(&g.f);
+}
+
+TEST(engine_fov, current_camera_queries_observe_set_as_active_camera_in_graph_order)
+{
+    fov_fixture_t g; current_camera_begin(&g);
+    nmo_object_id_t activate = fixture_block(&g.f,NMO_GUID(0x368f0ab1,0x2d8957e4),"Switch Camera");
+    nmo_object_id_t query = fixture_block(&g.f,GUID_GET_CURRENT_CAMERA,"Read Switched Camera");
+    nmo_object_id_t after = fixture_block(&g.f,GUID_NOP,"After Camera Switch"); ASSERT_TRUE(activate != 0 && query != 0 && after != 0);
+    fixture_input_int(&g.f,fixture_target(&g.f,activate),(int32_t)g.second);
+    fixture_link(&g.f,BLOCK_OUT(&g.f,g.block,0),BLOCK_IN(&g.f,activate,0),0);
+    fixture_link(&g.f,BLOCK_OUT(&g.f,activate,0),BLOCK_IN(&g.f,query,0),0);
+    fixture_link(&g.f,BLOCK_OUT(&g.f,query,0),BLOCK_IN(&g.f,after,0),0);
+    ready(&g); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); current_camera_value(&g,g.camera);
+    nmo_object_id_t actual = 0; read_value(&g.f,BLOCK_POUT(&g.f,query,0),&actual,sizeof(actual)); ASSERT_EQ(g.second,actual);
+    nmo_engine_frame_t view; ASSERT_EQ(NMO_OK,nmo_engine_render_frame(g.f.engine,&view)); ASSERT_EQ(actual,view.camera);
+    ASSERT_EQ(1u,runs(&g.f,after)); fixture_end(&g.f);
+}
+
+TEST(engine_fov, get_current_camera_keeps_native_success_flow_when_its_output_parameter_is_missing)
+{
+    fov_fixture_t g; current_camera_begin(&g);
+    ASSERT_EQ(NMO_OK,nmo_script_edit_remove_parameter(g.f.tx,BLOCK_POUT(&g.f,g.block,0),true));
+    ready(&g); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0));
+    ASSERT_EQ(1u,runs(&g.f,g.block)); ASSERT_EQ(1u,runs(&g.f,g.after));
+    ASSERT_FALSE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,0))); fixture_end(&g.f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_fov, runtime_fov_updates_render_projection_and_screen_coordinates_without_changing_the_document);
 REGISTER_TEST(engine_fov, fov_and_clipping_plane_changes_preserve_each_other_for_cameras_and_target_cameras);
@@ -1277,4 +1329,8 @@ REGISTER_TEST(engine_fov, loaded_and_copied_set_projection_graphs_remap_camera_t
 REGISTER_TEST(engine_fov, get_current_camera_returns_the_attached_camera_and_runs_once);
 REGISTER_TEST(engine_fov, get_current_camera_clears_stale_output_when_no_camera_is_attached);
 REGISTER_TEST(engine_fov, get_current_camera_reads_target_cameras_and_each_new_activation);
+REGISTER_TEST(engine_fov, get_current_camera_clears_output_after_deletion_and_ignores_invalid_context_references);
+REGISTER_TEST(engine_fov, current_camera_outputs_are_private_to_engines_sharing_the_same_document);
+REGISTER_TEST(engine_fov, current_camera_queries_observe_set_as_active_camera_in_graph_order);
+REGISTER_TEST(engine_fov, get_current_camera_keeps_native_success_flow_when_its_output_parameter_is_missing);
 TEST_MAIN_END()
