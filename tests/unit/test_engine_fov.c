@@ -9,6 +9,7 @@
 #include <stdio.h>
 
 #define PI_F 3.14159265358979323846f
+#define GUID_ORTHOGRAPHIC_ZOOM NMO_GUID(0x0a125555,0x0eee5488)
 #define GUID_SET_ZOOM NMO_GUID(0x40540a0d,0x000aaaaa)
 #define GUID_SET_FOV NMO_GUID(0xaaaacccc,0xaaaacccc)
 #define GUID_NOP NMO_GUID(0x302561c4,0x0d282980)
@@ -661,6 +662,114 @@ TEST(engine_fov, camera_copies_keep_runtime_orthographic_zoom_independent_across
     fixture_end(&g.f);
 }
 
+static void orthographic_begin(fov_fixture_t *g, uint32_t version)
+{
+    behavior_begin_guid(g,GUID_ORTHOGRAPHIC_ZOOM,"Orthographic Zoom");
+    orthographic_cameras(g);
+    ((nmo_behavior_state_t *)fixture_state(&g->f,g->block))->block_version = version;
+}
+
+TEST(engine_fov, orthographic_zoom_uses_the_native_unit_default_and_runs_once)
+{
+    fov_fixture_t g; orthographic_begin(&g,0x20000); ready(&g);
+    ASSERT_TRUE(nmo_engine_has_block(g.f.engine,GUID_ORTHOGRAPHIC_ZOOM));
+    ASSERT_TRUE(eng_set_camera_orthographic_zoom(g.f.engine,g.camera,3));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); orthographic_frame(&g,g.camera,1);
+    ASSERT_EQ(1u,runs(&g.f,g.block)); ASSERT_EQ(1u,runs(&g.f,g.after));
+    ASSERT_FALSE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,0)));
+    ASSERT_FALSE(nmo_engine_behavior_is_active(g.f.engine,g.block));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,10)); ASSERT_EQ(1u,runs(&g.f,g.block));
+    fixture_end(&g.f);
+}
+
+TEST(engine_fov, orthographic_zoom_applies_percent_scaling_only_before_version_two)
+{
+    const uint32_t versions[] = {0x10000,0x1ffff,0x20000,0x20001};
+    for (size_t i = 0; i < sizeof(versions)/sizeof(*versions); i++) {
+        fov_fixture_t g; orthographic_begin(&g,versions[i]); ready(&g);
+        float value = 250; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.angle_value,&value,sizeof(value)));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); orthographic_frame(&g,g.camera,i < 2 ? 2.5f : 250);
+        fixture_end(&g.f);
+    }
+}
+
+TEST(engine_fov, orthographic_zoom_preserves_zero_negative_extreme_and_nonfinite_values)
+{
+    const float values[] = {0,-0.0f,-2,FLT_TRUE_MIN,FLT_MAX,NAN,INFINITY,-INFINITY};
+    fov_fixture_t g; orthographic_begin(&g,0x20000); ready(&g);
+    for (size_t i = 0; i < sizeof(values)/sizeof(*values); i++) {
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.angle_value,&values[i],sizeof(values[i])));
+        trigger(&g); orthographic_frame(&g,g.camera,values[i]);
+        if (i == 1) { float zoom = 1; ASSERT_TRUE(eng_camera_orthographic_zoom(g.f.engine,g.camera,&zoom)); ASSERT_TRUE(signbit(zoom)); }
+        ASSERT_EQ(i+1,runs(&g.f,g.after));
+    }
+    fixture_end(&g.f);
+}
+
+TEST(engine_fov, legacy_orthographic_zoom_keeps_signed_zero_underflow_and_nonfinite_scaling)
+{
+    const float values[] = {250,-125,-0.0f,FLT_TRUE_MIN,NAN,INFINITY,-INFINITY};
+    const float expected[] = {2.5f,-1.25f,-0.0f,0,NAN,INFINITY,-INFINITY};
+    fov_fixture_t g; orthographic_begin(&g,0x10000); ready(&g);
+    for (size_t i = 0; i < sizeof(values)/sizeof(*values); i++) {
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.angle_value,&values[i],sizeof(values[i])));
+        trigger(&g); orthographic_frame(&g,g.camera,expected[i]);
+        if (i == 2) { float zoom = 1; ASSERT_TRUE(eng_camera_orthographic_zoom(g.f.engine,g.camera,&zoom)); ASSERT_TRUE(signbit(zoom)); }
+    }
+    fixture_end(&g.f);
+}
+
+TEST(engine_fov, orthographic_zoom_observes_live_inputs_and_target_cameras_without_changing_fov_or_planes)
+{
+    fov_fixture_t g; orthographic_begin(&g,0x20000); ready(&g);
+    ASSERT_TRUE(eng_set_camera_fov(g.f.engine,g.camera,.625f)); eng_set_camera_planes(g.f.engine,g.camera,2,50);
+    float zoom = 2; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.angle_value,&zoom,sizeof(zoom)));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); orthographic_frame(&g,g.camera,2);
+    ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.target_value,&g.second,sizeof(g.second)));
+    zoom = 3; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.angle_value,&zoom,sizeof(zoom)));
+    trigger(&g); orthographic_frame(&g,g.second,3); orthographic_frame(&g,g.camera,2); frame(&g,g.camera,.625f,2,50);
+    ASSERT_FLOAT_EQ(1,((nmo_camera_state_t *)fixture_state(&g.f,g.second))->orthographic_zoom,0);
+    fixture_end(&g.f);
+}
+
+TEST(engine_fov, disconnected_orthographic_zoom_keeps_the_native_default_for_each_version)
+{
+    for (int legacy = 0; legacy < 2; legacy++) {
+        fov_fixture_t g; orthographic_begin(&g,legacy ? 0x10000 : 0x20000);
+        nmo_parameterin_set_source_id(fixture_state(&g.f,BLOCK_PIN(&g.f,g.block,0)),0);
+        ready(&g); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); orthographic_frame(&g,g.camera,legacy ? .01f : 1);
+        fixture_end(&g.f);
+    }
+}
+
+TEST(engine_fov, orthographic_zoom_consumes_input_and_activates_output_before_invalid_target_errors)
+{
+    for (int kind = 0; kind < 5; kind++) {
+        fov_fixture_t g; orthographic_begin(&g,0x20000); ready(&g);
+        nmo_object_id_t target = kind == 0 ? 0 : kind == 1 ? 0x7fffffff : kind == 2 ? g.f.owner_id : kind == 3 ? g.f.script_id : g.camera;
+        if (kind == 4) nmo_engine_destroy_object(g.f.engine,g.camera);
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.target_value,&target,sizeof(target)));
+        ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,nmo_engine_step(g.f.engine,0));
+        nmo_engine_event_t failure; ASSERT_TRUE(nmo_engine_failure(g.f.engine,&failure)); ASSERT_EQ(NMO_ENGINE_BR_OWNERERROR,failure.result);
+        ASSERT_FALSE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,0)));
+        ASSERT_TRUE(nmo_engine_io_is_active(g.f.engine,BLOCK_OUT(&g.f,g.block,0)));
+        ASSERT_EQ(0u,runs(&g.f,g.after)); orthographic_frame(&g,g.second,1);
+        fixture_end(&g.f);
+    }
+}
+
+TEST(engine_fov, perspective_cameras_store_orthographic_zoom_without_changing_perspective_projection)
+{
+    fov_fixture_t g; behavior_begin_guid(&g,GUID_ORTHOGRAPHIC_ZOOM,"Orthographic Zoom"); ready(&g);
+    eng_matrix_t before, after; ASSERT_TRUE(eng_camera_view_projection(g.f.engine,g.camera,&before,NULL));
+    float zoom = 3; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.angle_value,&zoom,sizeof(zoom)));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_TRUE(eng_camera_view_projection(g.f.engine,g.camera,&after,NULL));
+    ASSERT_EQ(0,memcmp(&before,&after,sizeof(before)));
+    nmo_engine_frame_t view; ASSERT_EQ(NMO_OK,nmo_engine_render_frame(g.f.engine,&view));
+    ASSERT_FALSE(view.orthographic); ASSERT_FLOAT_EQ(3,view.zoom,0); ASSERT_FLOAT_EQ(PI_F/2,view.fov,0);
+    fixture_end(&g.f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_fov, runtime_fov_updates_render_projection_and_screen_coordinates_without_changing_the_document);
 REGISTER_TEST(engine_fov, fov_and_clipping_plane_changes_preserve_each_other_for_cameras_and_target_cameras);
@@ -689,4 +798,12 @@ REGISTER_TEST(engine_fov, zoom_camera_copies_and_initial_conditions_capture_conv
 REGISTER_TEST(engine_fov, runtime_orthographic_zoom_updates_render_projection_and_screen_coordinates);
 REGISTER_TEST(engine_fov, orthographic_zoom_fov_and_clipping_planes_preserve_each_other_in_both_write_orders);
 REGISTER_TEST(engine_fov, camera_copies_keep_runtime_orthographic_zoom_independent_across_cache_growth_and_deletion);
+REGISTER_TEST(engine_fov, orthographic_zoom_uses_the_native_unit_default_and_runs_once);
+REGISTER_TEST(engine_fov, orthographic_zoom_applies_percent_scaling_only_before_version_two);
+REGISTER_TEST(engine_fov, orthographic_zoom_preserves_zero_negative_extreme_and_nonfinite_values);
+REGISTER_TEST(engine_fov, legacy_orthographic_zoom_keeps_signed_zero_underflow_and_nonfinite_scaling);
+REGISTER_TEST(engine_fov, orthographic_zoom_observes_live_inputs_and_target_cameras_without_changing_fov_or_planes);
+REGISTER_TEST(engine_fov, disconnected_orthographic_zoom_keeps_the_native_default_for_each_version);
+REGISTER_TEST(engine_fov, orthographic_zoom_consumes_input_and_activates_output_before_invalid_target_errors);
+REGISTER_TEST(engine_fov, perspective_cameras_store_orthographic_zoom_without_changing_perspective_projection);
 TEST_MAIN_END()

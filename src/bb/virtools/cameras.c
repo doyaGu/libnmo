@@ -86,7 +86,26 @@ static int bb_set_zoom(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* Orthographic Zoom advances IO before checking the target, including on errors. */
+static int bb_orthographic_zoom(blk_t *b)
+{
+    IN_OFF(b,0);
+    OUT_ON(b,0);
+    nmo_object_id_t camera = nmo_engine_block_target(b);
+    nmo_object_t *object = eng_entity_index(b->engine,camera) >= 0 ? eng_find_object(b->engine,camera) : NULL;
+    if (object == NULL ||
+        nmo_type_query_object_get_ancestor_state_by_guid(b->engine->types,object,CKPGUID_CAMERA) == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    float zoom = get_in_float(b,0,1);
+    if (nmo_engine_block_version(b) < 0x00020000u) zoom *= 0.01f;
+    if (!eng_set_camera_orthographic_zoom(b->engine,camera,zoom)) return NMO_ENGINE_BR_GENERICERROR;
+    eng_emit(b->engine,NMO_ENGINE_EVENT_EFFECT,b->node,camera,0);
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_cameras_blocks[] = {
+    {NMO_GUID_INIT(0x0a125555, 0x0eee5488), "Orthographic Zoom", bb_orthographic_zoom, NULL, NULL},
     {NMO_GUID_INIT(0x40540a0d, 0x000aaaaa), "Set Zoom", bb_set_zoom, NULL, NULL},
     {NMO_GUID_INIT(0xaaaacccc, 0xaaaacccc), "Set FOV", bb_set_fov, NULL, NULL},
     {NMO_GUID_INIT(0x652316a2, 0x01aa09a9), "Set Clipping Planes", bb_set_clipping_planes, NULL, NULL},
