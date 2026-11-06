@@ -229,22 +229,19 @@ static uint32_t read_le32(const unsigned char *p)
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
 }
 
-/*
- * The length in ms of the WAV file `name` names (its data over the average
- * bytes a second its format records), as the wave reader gives it; -1 when
- * it is no WAV file.
- */
-float eng_wave_length(nmo_engine_t *engine, const char *name)
+/* The WAV file `name` names: its format's rate and bytes a second, and its data size */
+static bool eng_wave_scan(nmo_engine_t *engine, const char *name, uint32_t *out_sample_rate,
+                          uint32_t *out_bytes_per_second, uint32_t *out_data_size)
 {
     const char *path = engine->host.resolve_file != NULL
                            ? engine->host.resolve_file(engine->host.resolve_file_user_data, name)
                            : NULL;
     FILE *file = path != NULL ? fopen(path, "rb") : NULL;
     if (file == NULL) {
-        return -1.0f;
+        return false;
     }
     unsigned char header[12];
-    uint32_t bytes_per_second = 0, data_size = 0;
+    uint32_t sample_rate = 0, bytes_per_second = 0, data_size = 0;
     bool has_format = false, has_data = false;
     if (fread(header, 1, sizeof(header), file) == sizeof(header) &&
         memcmp(header, "RIFF", 4) == 0 && memcmp(header + 8, "WAVE", 4) == 0) {
@@ -255,6 +252,7 @@ float eng_wave_length(nmo_engine_t *engine, const char *name)
                 if (fread(chunk, 1, 16, file) != 16) {
                     break;
                 }
+                sample_rate = read_le32(chunk + 4);
                 bytes_per_second = read_le32(chunk + 8);
                 has_format = true;
                 size -= 16;
@@ -269,10 +267,36 @@ float eng_wave_length(nmo_engine_t *engine, const char *name)
         }
     }
     fclose(file);
-    if (!has_format || !has_data || bytes_per_second == 0) {
+    if (!has_format || !has_data) {
+        return false;
+    }
+    *out_sample_rate = sample_rate;
+    *out_bytes_per_second = bytes_per_second;
+    *out_data_size = data_size;
+    return true;
+}
+
+/*
+ * The length in ms of the WAV file `name` names (its data over the average
+ * bytes a second its format records), as the wave reader gives it; -1 when
+ * it is no WAV file.
+ */
+float eng_wave_length(nmo_engine_t *engine, const char *name)
+{
+    uint32_t sample_rate, bytes_per_second, data_size;
+    if (!eng_wave_scan(engine, name, &sample_rate, &bytes_per_second, &data_size) ||
+        bytes_per_second == 0) {
         return -1.0f;
     }
     return (float)((double)data_size * 1000.0 / (double)bytes_per_second);
+}
+
+uint32_t eng_wave_sample_rate(nmo_engine_t *engine, const char *name)
+{
+    uint32_t sample_rate, bytes_per_second, data_size;
+    return name != NULL && eng_wave_scan(engine, name, &sample_rate, &bytes_per_second, &data_size)
+               ? sample_rate
+               : 0u;
 }
 
 /* ============================================================================

@@ -153,5 +153,8 @@ bool eng_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animation, flo
 bool eng_curve_position(nmo_engine_t *engine, nmo_object_id_t curve, float step, eng_vector_t *out);
 /* CKCurve::GetLength, in the curve's local space after fitting and tangents. */
 bool eng_curve_length(nmo_engine_t *engine, nmo_object_id_t curve, float *out);
+/* CKCurvePoint::GetTangents: the point's in and out tangents in its curve's space; false when it is on no curve */
+bool eng_curve_point_tangents(nmo_engine_t *engine, nmo_object_id_t point, eng_vector_t *in,
+                              eng_vector_t *out);
 
 #endif /* NMO_ENGINE_TRANSFORM_H */

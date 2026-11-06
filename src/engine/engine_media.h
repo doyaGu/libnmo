@@ -76,6 +76,8 @@ void eng_sound_stop(eng_sound_t *sound, float fade_out);
  * it is no WAV file.
  */
 float eng_wave_length(nmo_engine_t *engine, const char *name);
+/* The samples a second the WAV file `name` names records (CKWaveFormat::nSamplesPerSec); 0 when none */
+uint32_t eng_wave_sample_rate(nmo_engine_t *engine, const char *name);
 /* The engine's state of texture `id`, made the first time; NULL when `id` is no CKTexture. */
 eng_texture_t *eng_texture(nmo_engine_t *engine, nmo_object_id_t id);
 /* CKTexture::UseMipmap: 1 or less than 0 for all the levels, more than 1 that many, 0 none */

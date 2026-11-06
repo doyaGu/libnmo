@@ -1384,7 +1384,8 @@ static void eng_hermite(eng_vector_t *out, const eng_vector_t *p0, const eng_vec
  * samples a segment). False for a curve of fewer than two points.
  */
 static bool eng_curve_sample(nmo_engine_t *engine, nmo_object_id_t curve_id, float step,
-                            eng_vector_t *out, float *out_length)
+                            eng_vector_t *out, float *out_length, nmo_object_id_t tangent_point,
+                            eng_vector_t *tangent_in, eng_vector_t *tangent_out)
 {
     int32_t curve = eng_entity_index(engine, curve_id);
     const eng_curve_points_t *control_points = eng_curve_points(engine,curve_id);
@@ -1441,6 +1442,20 @@ static bool eng_curve_sample(nmo_engine_t *engine, nmo_object_id_t curve_id, flo
         points[i].in = (eng_vector_t){(in_dn * dn.x + in_dp * dp.x) * 0.5f,
                                       (in_dn * dn.y + in_dp * dp.y) * 0.5f,
                                       (in_dn * dn.z + in_dp * dp.z) * 0.5f};
+    }
+    /* CKCurvePoint::GetTangents: the point's tangents as Update left them */
+    if (tangent_point != 0) {
+        bool found = false;
+        for (int i = 0; i < count && !found; i++) {
+            if (control_points->ids[i] == tangent_point) {
+                *tangent_in = points[i].in;
+                *tangent_out = points[i].out;
+                found = true;
+            }
+        }
+        free(points);
+        free(descs);
+        return found;
     }
     /* The fitting pass moves each point toward its neighbours' middle */
     if (properties.fitting_coeff > 0.0f) {
@@ -1527,10 +1542,35 @@ static bool eng_curve_sample(nmo_engine_t *engine, nmo_object_id_t curve_id, flo
 
 bool eng_curve_position(nmo_engine_t *engine, nmo_object_id_t curve, float step, eng_vector_t *out)
 {
-    return out != NULL && eng_curve_sample(engine,curve,step,out,NULL);
+    return out != NULL && eng_curve_sample(engine,curve,step,out,NULL,0,NULL,NULL);
 }
 
 bool eng_curve_length(nmo_engine_t *engine, nmo_object_id_t curve, float *out)
 {
-    return out != NULL && eng_curve_sample(engine,curve,0,NULL,out);
+    return out != NULL && eng_curve_sample(engine,curve,0,NULL,out,0,NULL,NULL);
+}
+
+bool eng_curve_point_tangents(nmo_engine_t *engine, nmo_object_id_t point, eng_vector_t *in,
+                              eng_vector_t *out)
+{
+    /* The curve the point is on: the one whose control points list it, else the one it names */
+    nmo_object_id_t curve = 0;
+    for (size_t i = 0; i < engine->curves.topologies.count && curve == 0; i++) {
+        const eng_curve_topology_t *topology = &engine->curves.topologies.data[i];
+        for (size_t j = 0; j < topology->points.count; j++) {
+            if (topology->points.ids[j] == point) {
+                curve = topology->id;
+                break;
+            }
+        }
+    }
+    if (curve == 0) {
+        nmo_object_t *object = eng_find_object(engine, point);
+        const nmo_curvepoint_state_t *state =
+            object != NULL ? (const nmo_curvepoint_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
+                                 engine->types, object, CKPGUID_CURVEPOINT)
+                           : NULL;
+        curve = state != NULL ? eng_object_ref(engine, point, &state->curve) : 0;
+    }
+    return curve != 0 && eng_curve_sample(engine, curve, 0, NULL, NULL, point, in, out);
 }
