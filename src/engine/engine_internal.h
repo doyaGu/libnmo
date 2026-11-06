@@ -92,6 +92,9 @@ struct nmo_engine {
     ENG_VEC(eng_manager_t) managers;
 };
 
+/* The next value of the engine's random sequence, as rand() gives one: 0..32767 */
+uint32_t eng_random_u15(nmo_engine_t *engine);
+
 static inline int32_t *eng_index(nmo_engine_t *engine, uint32_t at)
 {
     return &engine->indexes.data[at];

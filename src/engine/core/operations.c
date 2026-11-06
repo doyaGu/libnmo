@@ -14,6 +14,9 @@
  * The registry has no conversions, so the plugin's between numbers and
  * vectors are here too (CKIntSetFloat and the others), and it has no vector
  * components either (CKFloatGetXEuler and the others).
+ * Per Second reads the engine's clock and Random its random sequence
+ * (CKFloatPerSecondFloat, CKFloatRandomFloatFloat and the others), so they
+ * are here as well.
  * The engine looks an operation up in this table and in the registry
  * together, as CK looks one up (see eng_operation_find()).
  */
@@ -80,6 +83,8 @@
 #define OP_INVERSE_TRANSFORM NMO_GUID_INIT(0x09ae53f3, 0x0dc769d6)
 #define OP_INVERSE_TRANSFORM_VECTOR NMO_GUID_INIT(0x72213b67, 0x52fb2b56)
 #define OP_MIN NMO_GUID_INIT(0x6EA214CB, 0x43BE6B56)
+#define OP_PER_SECOND NMO_GUID_INIT(0x68ec3c11, 0x41f36a69)
+#define OP_RANDOM NMO_GUID_INIT(0x3dcb6039, 0x7b744e45)
 #define OP_MAX NMO_GUID_INIT(0x7C2E01A8, 0x6E702206)
 
 
@@ -935,6 +940,103 @@ static nmo_status_t op_get_specular_power(nmo_engine_t *engine, eng_param_t *src
     return material != NULL ? write_floats(engine, out, &material->desc.power, 1) : NMO_OK;
 }
 
+/* CKFloatPerSecondFloat: the value per second of the last frame's delta */
+static nmo_status_t op_per_second_float(nmo_engine_t *engine, eng_param_t *src1,
+                                        eng_param_t *src2, eng_param_t *out)
+{
+    (void)src2;
+    const float value = param_float(src1) * (engine->delta * 0.001f);
+    return write_floats(engine, out, &value, 1u);
+}
+
+/* CKVectorPerSecondVector: the plugin scales by a tenth of the delta in seconds */
+static nmo_status_t op_per_second_vector(nmo_engine_t *engine, eng_param_t *src1,
+                                         eng_param_t *src2, eng_param_t *out)
+{
+    (void)src2;
+    const float scale = engine->delta * 0.0001f;
+    float v[3];
+    for (size_t i = 0; i < 3; i++) {
+        v[i] = param_component(src1, i) * scale;
+    }
+    return write_floats(engine, out, v, 3u);
+}
+
+/* The plugin's rand() scaled to [0, 1), from the engine's own sequence */
+static float random_unit(nmo_engine_t *engine)
+{
+    return (float)eng_random_u15(engine) * 3.0518499e-05f;
+}
+
+/* CKFloatRandomFloatFloat: between the bounds */
+static nmo_status_t op_random_float(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                    eng_param_t *out)
+{
+    const float low = param_float(src1), high = param_float(src2);
+    const float value = low + random_unit(engine) * (high - low);
+    return write_floats(engine, out, &value, 1u);
+}
+
+/* CKIntRandomIntInt: between the bounds inclusive; an empty range counts as one */
+static nmo_status_t op_random_int(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                  eng_param_t *out)
+{
+    const int32_t low = (int32_t)param_u32(src1), high = (int32_t)param_u32(src2);
+    int32_t range = (int32_t)((uint32_t)high - (uint32_t)low + 1u);
+    if (range == 0) {
+        range = 1;
+    }
+    const int32_t value = low + (int32_t)eng_random_u15(engine) % range;
+    return write_u32(engine, out, (uint32_t)value);
+}
+
+/* CKBoolRandom */
+static nmo_status_t op_random_bool(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                   eng_param_t *out)
+{
+    (void)src1;
+    (void)src2;
+    return write_u32(engine, out, eng_random_u15(engine) & 1u);
+}
+
+/* CKVectorRandom, CK2dVectorRandom, CKColorRandom: components in [0, 1), alpha 1 */
+static nmo_status_t random_components(nmo_engine_t *engine, eng_param_t *out, size_t count,
+                                      bool alpha)
+{
+    float v[4];
+    for (size_t i = 0; i < count; i++) {
+        v[i] = random_unit(engine);
+    }
+    if (alpha) {
+        v[count++] = 1.0f;
+    }
+    return write_floats(engine, out, v, count);
+}
+
+static nmo_status_t op_random_vector(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                     eng_param_t *out)
+{
+    (void)src1;
+    (void)src2;
+    return random_components(engine, out, 3u, false);
+}
+
+static nmo_status_t op_random_2dvector(nmo_engine_t *engine, eng_param_t *src1,
+                                       eng_param_t *src2, eng_param_t *out)
+{
+    (void)src1;
+    (void)src2;
+    return random_components(engine, out, 2u, false);
+}
+
+static nmo_status_t op_random_color(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                    eng_param_t *out)
+{
+    (void)src1;
+    (void)src2;
+    return random_components(engine, out, 3u, true);
+}
+
 typedef struct engine_op {
     nmo_guid_t operation;
     nmo_guid_t result, input1, input2; /* a null input2 is no second input */
@@ -1014,6 +1116,14 @@ static const engine_op_t engine_ops[] = {
     {OP_GET_SPECULAR, CKPGUID_COLOR_INIT, CKPGUID_MATERIAL_INIT, {0, 0}, op_get_specular},
     {OP_GET_EMISSIVE, CKPGUID_COLOR_INIT, CKPGUID_MATERIAL_INIT, {0, 0}, op_get_emissive},
     {OP_GET_SPECULAR_POWER, CKPGUID_FLOAT_INIT, CKPGUID_MATERIAL_INIT, {0, 0}, op_get_specular_power},
+    {OP_PER_SECOND, CKPGUID_FLOAT_INIT, CKPGUID_FLOAT_INIT, {0, 0}, op_per_second_float},
+    {OP_PER_SECOND, CKPGUID_VECTOR_INIT, CKPGUID_VECTOR_INIT, {0, 0}, op_per_second_vector},
+    {OP_RANDOM, CKPGUID_FLOAT_INIT, CKPGUID_FLOAT_INIT, CKPGUID_FLOAT_INIT, op_random_float},
+    {OP_RANDOM, CKPGUID_INT_INIT, CKPGUID_INT_INIT, CKPGUID_INT_INIT, op_random_int},
+    {OP_RANDOM, CKPGUID_BOOL_INIT, {0, 0}, {0, 0}, op_random_bool},
+    {OP_RANDOM, CKPGUID_VECTOR_INIT, {0, 0}, {0, 0}, op_random_vector},
+    {OP_RANDOM, CKPGUID_2DVECTOR_INIT, {0, 0}, {0, 0}, op_random_2dvector},
+    {OP_RANDOM, CKPGUID_COLOR_INIT, {0, 0}, {0, 0}, op_random_color},
 };
 
 eng_builtin_op_fn eng_operation_builtin(nmo_guid_t operation, nmo_guid_t result,

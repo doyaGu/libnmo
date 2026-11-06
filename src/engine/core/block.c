@@ -141,15 +141,25 @@ void *nmo_engine_block_state(nmo_engine_block_t *block, size_t size)
     return size <= node->state_size ? node->state : NULL;
 }
 
-double nmo_engine_block_random(nmo_engine_block_t *block)
+/* xorshift64*: the next 64 mixed bits of the engine's random sequence */
+static uint64_t eng_random_bits(nmo_engine_t *engine)
 {
-    /* xorshift64* */
-    uint64_t x = block->engine->random_state;
+    uint64_t x = engine->random_state;
     x ^= x >> 12;
     x ^= x << 25;
     x ^= x >> 27;
-    block->engine->random_state = x;
-    return (double)((x * 0x2545F4914F6CDD1Dull) >> 11) * (1.0 / 9007199254740992.0);
+    engine->random_state = x;
+    return x * 0x2545F4914F6CDD1Dull;
+}
+
+double nmo_engine_block_random(nmo_engine_block_t *block)
+{
+    return (double)(eng_random_bits(block->engine) >> 11) * (1.0 / 9007199254740992.0);
+}
+
+uint32_t eng_random_u15(nmo_engine_t *engine)
+{
+    return (uint32_t)(eng_random_bits(engine) >> 49);
 }
 
 /* ---- IOs ---- */
