@@ -11,7 +11,9 @@ bool eng_camera_view_projection(nmo_engine_t *engine, nmo_object_id_t camera,
     int32_t entity = eng_entity_index(engine,camera);
     const nmo_camera_state_t *state = entity >= 0 ? nmo_type_query_object_get_ancestor_state_by_guid(engine->types,eng_find_object(engine,camera),CKPGUID_CAMERA) : NULL;
     if (state == NULL) return false;
-    float front, back, fov = state->fov; eng_camera_planes(engine,camera,&front,&back); eng_camera_fov(engine,camera,&fov);
+    float front, back, fov = state->fov, zoom = state->orthographic_zoom;
+    eng_camera_planes(engine,camera,&front,&back); eng_camera_fov(engine,camera,&fov);
+    eng_camera_orthographic_zoom(engine,camera,&zoom);
     double aspect = state->aspect_width > 0 && state->aspect_height > 0 ? (double)state->aspect_width/state->aspect_height : 1;
     double depth = (double)back-front;
     eng_matrix_t projection = {{{0}}}, inverse; eng_matrix_identity(&inverse);
@@ -20,7 +22,7 @@ bool eng_camera_view_projection(nmo_engine_t *engine, nmo_object_id_t camera,
         projection.m[0][0] = (float)scale; projection.m[1][1] = (float)(scale*aspect);
         projection.m[2][2] = (float)(back/depth); projection.m[3][2] = (float)(-(double)front*back/depth); projection.m[2][3] = 1;
     } else {
-        projection.m[0][0] = state->orthographic_zoom; projection.m[1][1] = (float)(state->orthographic_zoom*aspect);
+        projection.m[0][0] = zoom; projection.m[1][1] = (float)(zoom*aspect);
         projection.m[2][2] = (float)(1/depth); projection.m[3][2] = (float)(-front/depth); projection.m[3][3] = 1;
     }
     eng_matrix_inverse(&inverse,&engine->entities.data[entity].world);

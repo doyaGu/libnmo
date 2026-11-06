@@ -792,7 +792,7 @@ static eng_camera_state_t *eng_camera_override(nmo_engine_t *engine, nmo_object_
     if (!create) return NULL;
     eng_camera_state_t *state = NULL;
     if (source == NULL || !ENG_VEC_PUSH(engine->render.camera_states,state)) return NULL;
-    *state = (eng_camera_state_t){id,source->fov,source->near_plane,source->far_plane};
+    *state = (eng_camera_state_t){id,source->fov,source->orthographic_zoom,source->near_plane,source->far_plane};
     return state;
 }
 
@@ -810,6 +810,23 @@ bool eng_set_camera_fov(nmo_engine_t *engine, nmo_object_id_t id, float fov)
     eng_camera_state_t *state = eng_camera_override(engine,id,true);
     if (state == NULL) return false;
     state->fov = fov;
+    return true;
+}
+
+bool eng_camera_orthographic_zoom(nmo_engine_t *engine, nmo_object_id_t id, float *zoom)
+{
+    const nmo_camera_state_t *source = eng_entity_index(engine,id) >= 0 ? eng_typed_state(engine,id,CKPGUID_CAMERA) : NULL;
+    if (source == NULL) return false;
+    const eng_camera_state_t *state = eng_camera_override(engine,id,false);
+    *zoom = state != NULL ? state->orthographic_zoom : source->orthographic_zoom;
+    return true;
+}
+
+bool eng_set_camera_orthographic_zoom(nmo_engine_t *engine, nmo_object_id_t id, float zoom)
+{
+    eng_camera_state_t *state = eng_camera_override(engine,id,true);
+    if (state == NULL) return false;
+    state->orthographic_zoom = zoom;
     return true;
 }
 
@@ -1266,7 +1283,7 @@ nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *o
         memcpy(out->view, engine->entities.data[camera].world.m, sizeof(out->view));
         out->orthographic = (camera_state->projection_type & 1u) == 0;
         eng_camera_fov(engine,render->camera,&out->fov);
-        out->zoom = camera_state->orthographic_zoom;
+        eng_camera_orthographic_zoom(engine,render->camera,&out->zoom);
         eng_camera_planes(engine,render->camera,&out->near_plane,&out->far_plane);
     } else {
         out->camera = 0;

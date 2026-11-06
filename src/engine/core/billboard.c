@@ -31,7 +31,11 @@ void eng_render_project(nmo_engine_t *engine, const eng_vector_t *world, eng_vec
     bool perspective = camera == NULL || (camera->projection_type & 1u) != 0;
     float fov = camera != NULL ? camera->fov : .5f, zoom = camera != NULL ? camera->orthographic_zoom : 1;
     float near_plane = 1, far_plane = 4000;
-    if (camera != NULL) { eng_camera_fov(engine,engine->render.camera,&fov); eng_camera_planes(engine,engine->render.camera,&near_plane,&far_plane); }
+    if (camera != NULL) {
+        eng_camera_fov(engine,engine->render.camera,&fov);
+        eng_camera_orthographic_zoom(engine,engine->render.camera,&zoom);
+        eng_camera_planes(engine,engine->render.camera,&near_plane,&far_plane);
+    }
     const eng_screen_mode_t *mode = &eng_screen_modes[engine->render.screen_mode];
     float aspect = (float)mode->width/(float)mode->height, depth = far_plane-near_plane;
     float w = perspective ? point.z : 1;
