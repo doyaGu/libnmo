@@ -180,6 +180,90 @@ TEST(engine_dolly, nonfinite_distances_follow_native_float_vector_arithmetic)
     }
 }
 
+TEST(engine_dolly, render_preparation_aims_the_camera_and_dolly_uses_its_current_scaled_direction)
+{
+    dolly_fixture_t g; begin(&g); nmo_targetcamera_state_t *camera = fixture_state(&g.f,g.camera);
+    camera->has_target = 1; camera->target = nmo_ref_from_id(g.point); ready(&g); g.f.engine->render.camera = g.camera;
+    nmo_engine_frame_t view; ASSERT_EQ(NMO_OK,nmo_engine_render_frame(g.f.engine,&view)); float h = sqrtf(.5f);
+    ASSERT_FLOAT_EQ(4*h,view.view[8],1e-5f); ASSERT_FLOAT_EQ(4*h,view.view[10],1e-5f);
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); position(g.f.engine,g.camera,(eng_vector_t){3+4*h,4,5+4*h}); position(g.f.engine,g.point,(eng_vector_t){13,4,15});
+    ASSERT_EQ(NMO_OK,nmo_engine_render_frame(g.f.engine,&view)); ASSERT_EQ(g.camera,view.camera);
+    ASSERT_FLOAT_EQ(3+4*h,view.view[12],1e-4f); ASSERT_FLOAT_EQ(5+4*h,view.view[14],1e-4f); ASSERT_FLOAT_EQ(.75f,view.fov,0);
+    nmo_engine_destroy_object(g.f.engine,g.point); fire(&g,0); position(g.f.engine,g.camera,(eng_vector_t){3+8*h,4,5+8*h});
+    ASSERT_EQ(NMO_OK,nmo_engine_render_frame(g.f.engine,&view)); ASSERT_FLOAT_EQ(.75f,view.fov,0); ASSERT_EQ(2u,runs(&g.f,g.after)); fixture_end(&g.f);
+}
+
+TEST(engine_dolly, rotations_earlier_in_the_graph_change_the_axis_used_by_dolly_in_the_same_frame)
+{
+    dolly_fixture_t g; begin(&g);
+    const nmo_behavior_state_t *script = fixture_state(&g.f,g.f.script_id); nmo_object_id_t link = nmo_behavior_ref_array_get_id(&script->sub_behavior_links,0);
+    ASSERT_EQ(NMO_OK,nmo_script_edit_remove_behavior_link(g.f.tx,g.f.script_id,link));
+    nmo_object_id_t rotate = fixture_block(&g.f,NMO_GUID(0xffffffee,0xeeffffff),"Rotate Dolly Camera");
+    ASSERT_TRUE(rotate != 0); fixture_input_int(&g.f,fixture_target(&g.f,rotate),(int32_t)g.camera);
+    eng_vector_t axis = {0,1,0}; float quarter = 1.57079632679489661923f;
+    fixture_input_value(&g.f,BLOCK_PIN(&g.f,rotate,0),&axis,sizeof(axis)); fixture_input_value(&g.f,BLOCK_PIN(&g.f,rotate,1),&quarter,sizeof(quarter));
+    fixture_input_int(&g.f,BLOCK_PIN(&g.f,rotate,2),0); fixture_input_int(&g.f,BLOCK_PIN(&g.f,rotate,3),1);
+    fixture_link(&g.f,g.f.script_in,BLOCK_IN(&g.f,rotate,0),0); fixture_link(&g.f,BLOCK_OUT(&g.f,rotate,0),BLOCK_IN(&g.f,g.block,0),0);
+    ready(&g); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0));
+    /* Vx3DMatrixFromRotation turns Z toward -X for a positive quarter turn about Y. */
+    position(g.f.engine,g.camera,(eng_vector_t){-1,4,5});
+    position(g.f.engine,g.child,(eng_vector_t){-5,7,7}); position(g.f.engine,g.grandchild,(eng_vector_t){-8,9,8});
+    ASSERT_EQ(1u,runs(&g.f,rotate)); ASSERT_EQ(1u,runs(&g.f,g.block)); ASSERT_EQ(1u,runs(&g.f,g.after)); fixture_end(&g.f);
+}
+
+static nmo_object_id_t saved_input(dolly_fixture_t *g, nmo_object_id_t pin, const char *text)
+{
+    nmo_object_id_t value = 0;
+    if (nmo_script_edit_ensure_input_parameter_source(g->f.tx,pin,&value) != NMO_OK || nmo_script_edit_set_parameter_value(g->f.tx,value,text) != NMO_OK) return 0;
+    return value;
+}
+
+static const char *resolve_file(void *data, const char *name)
+{
+    (void)name; return data;
+}
+
+TEST(engine_dolly, loaded_and_copied_dolly_graphs_keep_camera_targets_hierarchy_and_distances_independent)
+{
+    for (int hierarchy = 0; hierarchy < 2; hierarchy++) {
+        dolly_fixture_t source; begin(&source); char text[32]; snprintf(text,sizeof(text),"%u",source.camera);
+        ASSERT_EQ(source.target_value,saved_input(&source,fixture_target(&source.f,source.block),text));
+        ASSERT_EQ(source.distance_value,saved_input(&source,BLOCK_PIN(&source.f,source.block,0),"2"));
+        ASSERT_EQ(source.hierarchy_value,saved_input(&source,BLOCK_PIN(&source.f,source.block,1),hierarchy ? "TRUE" : "FALSE"));
+        fixture_commit_bare(&source.f,NULL);
+        nmo_beobject_state_t *owner = fixture_state(&source.f,source.f.owner_id); owner->has_single_activity = 1; owner->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE;
+        nmo_behavior_state_t *script = fixture_state(&source.f,source.f.script_id); script->has_single_activity = 1; script->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE | CK_SCENEOBJECT_START_RESET;
+        const char *path = NMO_TEST_SCRATCH_FILE("engine_dolly.cmo"); ASSERT_EQ(NMO_OK,nmo_session_save_file(source.f.session,path,NULL,NULL));
+        for (int started = 0; started < 2; started++) {
+            engine_fixture_t host; fixture_begin_document(&host); fixture_begin_edit(&host);
+            nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL; fixture_commit(&host,&options);
+            if (started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_ALL));
+            nmo_engine_set_file_resolver(host.engine,resolve_file,(void *)path); int32_t file = -1; ASSERT_EQ(NMO_OK,nmo_engine_load(host.engine,"dolly.cmo",true,&file));
+            if (!started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.engine,NMO_ENGINE_START_SCENE_DEFAULT));
+            nmo_object_id_t block = nmo_engine_object_named(host.engine,"Dolly",NMO_CID_BEHAVIOR); ASSERT_TRUE(block != 0); const eng_module_t *module = eng_module_of(host.engine,block,NULL);
+            const nmo_object_id_t local[] = {source.f.owner_id,source.parent,source.camera,source.child,source.grandchild,source.f.script_id,source.block,source.after,source.target_value,source.distance_value,source.hierarchy_value};
+            nmo_object_id_t ids[11], copies[11]; for (size_t i = 0; i < COUNT(local); i++) { ids[i] = eng_module_id(module,local[i]); ASSERT_TRUE(ids[i] != 0); }
+            ASSERT_TRUE(ids[2] != source.camera); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0)); position(host.engine,ids[2],(eng_vector_t){3,4,13});
+            position(host.engine,ids[3],(eng_vector_t){5,7,hierarchy ? 17 : 9}); position(host.engine,ids[4],(eng_vector_t){6,9,hierarchy ? 20 : 12});
+            ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(host.engine,ids,COUNT(ids),false,copies)); ASSERT_EQ(copies[1],nmo_engine_entity_parent(host.engine,copies[2]));
+            ASSERT_EQ(copies[2],nmo_engine_entity_parent(host.engine,copies[3])); ASSERT_EQ(copies[3],nmo_engine_entity_parent(host.engine,copies[4]));
+            nmo_object_id_t target = 0; read_value(&host,copies[8],&target,sizeof(target)); ASSERT_EQ(copies[2],target);
+            eng_vector_t moved = {110,20,30}; eng_entity_set_position(host.engine,eng_entity_index(host.engine,copies[1]),&moved,-1,false);
+            float value = -1; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[9],&value,sizeof(value)));
+            ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[5],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,100));
+            position(host.engine,copies[2],(eng_vector_t){103,4,9}); position(host.engine,copies[3],(eng_vector_t){105,7,hierarchy ? 13 : 9});
+            position(host.engine,copies[4],(eng_vector_t){106,9,hierarchy ? 16 : 12}); position(host.engine,ids[2],(eng_vector_t){3,4,13});
+            read_value(&host,ids[9],&value,sizeof(value)); ASSERT_FLOAT_EQ(2,value,0);
+            nmo_engine_destroy_object(host.engine,ids[2]); nmo_engine_destroy_object(host.engine,ids[1]); nmo_engine_destroy_object(host.engine,ids[5]);
+            value = 2; int32_t yes = 1; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[9],&value,sizeof(value))); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[10],&yes,sizeof(yes)));
+            ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[5],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
+            position(host.engine,copies[2],(eng_vector_t){103,4,17}); position(host.engine,copies[3],(eng_vector_t){105,7,hierarchy ? 21 : 17}); position(host.engine,copies[4],(eng_vector_t){106,9,hierarchy ? 24 : 20});
+            ASSERT_EQ(2u,runs(&host,copies[6])); ASSERT_EQ(2u,runs(&host,copies[7])); fixture_end(&host);
+        }
+        const nmo_targetcamera_state_t *camera = fixture_state(&source.f,source.camera); ASSERT_FLOAT_EQ(5,camera->base.entity.world_matrix[14],0); fixture_end(&source.f); remove(path);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_dolly, native_defaults_move_once_along_the_scaled_camera_axis_and_move_descendants);
 REGISTER_TEST(engine_dolly, live_translation_values_are_per_activation_and_keep_camera_projection_members);
@@ -190,4 +274,7 @@ REGISTER_TEST(engine_dolly, disconnected_inputs_keep_native_distance_and_hierarc
 REGISTER_TEST(engine_dolly, changing_the_camera_target_uses_the_new_camera_axes_without_moving_the_old_camera);
 REGISTER_TEST(engine_dolly, tiny_displacements_are_not_discarded_by_a_motion_epsilon);
 REGISTER_TEST(engine_dolly, nonfinite_distances_follow_native_float_vector_arithmetic);
+REGISTER_TEST(engine_dolly, render_preparation_aims_the_camera_and_dolly_uses_its_current_scaled_direction);
+REGISTER_TEST(engine_dolly, rotations_earlier_in_the_graph_change_the_axis_used_by_dolly_in_the_same_frame);
+REGISTER_TEST(engine_dolly, loaded_and_copied_dolly_graphs_keep_camera_targets_hierarchy_and_distances_independent);
 TEST_MAIN_END()
