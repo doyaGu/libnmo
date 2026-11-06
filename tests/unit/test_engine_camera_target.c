@@ -281,6 +281,73 @@ TEST(engine_camera_target, restoring_a_deleted_initial_target_detaches_the_live_
     ASSERT_EQ(CK_3DENTITY_TARGETCAMERA | CK_3DENTITY_TARGETLIGHT,flags(g.f.engine,g.second)); fixture_end(&g.f);
 }
 
+static nmo_object_id_t saved_input(target_fixture_t *g, nmo_object_id_t pin, const char *text)
+{
+    nmo_object_id_t value = 0;
+    if (nmo_script_edit_ensure_input_parameter_source(g->f.tx,pin,&value) != NMO_OK || nmo_script_edit_set_parameter_value(g->f.tx,value,text) != NMO_OK) return 0;
+    return value;
+}
+
+static const char *resolve_file(void *data, const char *name)
+{
+    (void)name; return data;
+}
+
+TEST(engine_camera_target, deferred_deletion_clears_targets_when_the_frame_releases_the_object)
+{
+    target_fixture_t g; begin(&g,true); ready(&g); g.f.engine->dynamic.defer = true;
+    nmo_engine_destroy_object(g.f.engine,g.first); ASSERT_EQ(g.first,eng_camera_target(g.f.engine,g.camera));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(-1,eng_entity_index(g.f.engine,g.first)); ASSERT_EQ(0u,eng_camera_target(g.f.engine,g.camera)); fixture_end(&g.f);
+}
+
+TEST(engine_camera_target, loaded_and_copied_target_graphs_keep_versions_external_references_and_runtime_attachments)
+{
+    for (int legacy = 0; legacy < 2; legacy++) {
+        target_fixture_t source; behavior_begin(&source,true,legacy ? 0x10000 : 0x20000); char text[32];
+        snprintf(text,sizeof(text),"%u",source.camera); ASSERT_EQ(source.camera_value,saved_input(&source,fixture_target(&source.f,source.block),text));
+        snprintf(text,sizeof(text),"%u",source.second); ASSERT_EQ(source.target_value,saved_input(&source,BLOCK_PIN(&source.f,source.block,0),text));
+        nmo_arena_t *arena = nmo_session_get_arena(source.f.session); nmo_chunk_t *initial = nmo_chunk_create(arena); ASSERT_NOT_NULL(initial); initial->class_id = NMO_CID_TARGETCAMERA;
+        nmo_serialize_context_t context = nmo_serialize_context_create_nonfile(arena,source.f.repo,CK_STATESAVE_TCAMERAONLY);
+        ASSERT_EQ(NMO_OK,nmo_chunk_start_write(initial)); ASSERT_EQ(NMO_OK,nmo_targetcamera_vtable.serialize(fixture_state(&source.f,source.camera),initial,NULL,&context)); nmo_chunk_close(initial);
+        fixture_commit_bare(&source.f,NULL);
+        nmo_beobject_state_t *owner = fixture_state(&source.f,source.f.owner_id); owner->has_single_activity = 1; owner->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE;
+        nmo_behavior_state_t *script = fixture_state(&source.f,source.f.script_id); script->has_single_activity = 1; script->single_activity_flags = CK_SCENEOBJECT_START_ACTIVATE | CK_SCENEOBJECT_START_RESET;
+        const char *path = NMO_TEST_SCRATCH_FILE("engine_camera_target.cmo"); ASSERT_EQ(NMO_OK,nmo_session_save_file(source.f.session,path,NULL,NULL));
+        for (int started = 0; started < 2; started++) {
+            target_fixture_t host; begin(&host,false); nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL; fixture_commit(&host.f,&options);
+            if (started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.f.engine,NMO_ENGINE_START_ALL));
+            eng_vector_t moved = {30,0,10}; eng_entity_set_position(host.f.engine,eng_entity_index(host.f.engine,host.first),&moved,-1,false);
+            nmo_engine_set_file_resolver(host.f.engine,resolve_file,(void *)path); int32_t file = -1; ASSERT_EQ(NMO_OK,nmo_engine_load(host.f.engine,"camera_target.cmo",true,&file));
+            if (!started) ASSERT_EQ(NMO_OK,nmo_engine_start(host.f.engine,NMO_ENGINE_START_SCENE_DEFAULT));
+            nmo_object_id_t block = nmo_engine_object_named(host.f.engine,"Set Camera Target",NMO_CID_BEHAVIOR); ASSERT_TRUE(block != 0); const eng_module_t *module = eng_module_of(host.f.engine,block,NULL);
+            const nmo_object_id_t local[] = {source.f.owner_id,source.camera,source.first,source.second,source.child,source.f.script_id,source.block,source.after,source.camera_value,source.target_value};
+            nmo_object_id_t ids[10], copies[10]; for (size_t i = 0; i < COUNT(local); i++) { ids[i] = eng_module_id(module,local[i]); ASSERT_TRUE(ids[i] != 0); }
+            ASSERT_TRUE(ids[2] != host.first); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.f.engine,ids[9],&host.first,sizeof(host.first)));
+            ASSERT_EQ(NMO_OK,nmo_engine_step(host.f.engine,0)); ASSERT_EQ(legacy ? ids[2] : host.first,eng_camera_target(host.f.engine,ids[1]));
+            ASSERT_EQ(NMO_OK,eng_load_ic(host.f.engine,ids[1],initial)); eng_add_to_level_scene(host.f.engine,ids[1]); eng_restore_ic(host.f.engine,ids[1]); ASSERT_EQ(ids[2],eng_camera_target(host.f.engine,ids[1]));
+            ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.f.engine,ids[5],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.f.engine,0));
+            ASSERT_EQ(legacy ? ids[2] : host.first,eng_camera_target(host.f.engine,ids[1])); ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(host.f.engine,ids,COUNT(ids),false,copies));
+            ASSERT_EQ(legacy ? copies[2] : host.first,eng_camera_target(host.f.engine,copies[1]));
+            nmo_object_id_t input = 0; read_value(&host.f,copies[8],&input,sizeof(input)); ASSERT_EQ(copies[1],input); read_value(&host.f,copies[9],&input,sizeof(input)); ASSERT_EQ(host.first,input);
+            nmo_engine_block_t copied = {host.f.engine,eng_map_get(&host.f.engine->node_map,copies[6])}; ASSERT_EQ(legacy ? 0x10000u : 0x20000u,nmo_engine_block_version(&copied));
+            ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.f.engine,copies[9],&copies[3],sizeof(copies[3])));
+            ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.f.engine,copies[5],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.f.engine,0));
+            ASSERT_EQ(legacy ? copies[2] : copies[3],eng_camera_target(host.f.engine,copies[1])); ASSERT_EQ(legacy ? ids[2] : host.first,eng_camera_target(host.f.engine,ids[1]));
+            target_fixture_t view = {.f.engine=host.f.engine,.camera=copies[1]}; host.f.engine->render.camera = view.camera; float h = sqrtf(.5f); direction(&view,(eng_vector_t){-h,0,h});
+            moved = (eng_vector_t){0,10,10}; eng_entity_set_position(host.f.engine,eng_entity_index(host.f.engine,host.first),&moved,-1,false);
+            view.camera = ids[1]; host.f.engine->render.camera = view.camera; float inv = 1/sqrtf(10);
+            direction(&view,legacy ? (eng_vector_t){3*inv,0,inv} : (eng_vector_t){0,h,h});
+            ASSERT_EQ(2u,runs(&host.f,ids[6])); ASSERT_EQ(1u,runs(&host.f,copies[6]));
+            nmo_engine_destroy_object(host.f.engine,ids[1]); nmo_engine_destroy_object(host.f.engine,ids[2]); nmo_engine_destroy_object(host.f.engine,ids[3]); nmo_engine_destroy_object(host.f.engine,ids[5]);
+            moved = (eng_vector_t){0,0,20}; eng_entity_set_position(host.f.engine,eng_entity_index(host.f.engine,host.second),&moved,-1,false);
+            ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.f.engine,copies[9],&host.second,sizeof(host.second))); ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.f.engine,copies[5],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.f.engine,0));
+            ASSERT_EQ(legacy ? copies[2] : host.second,eng_camera_target(host.f.engine,copies[1]));
+            view.camera = copies[1]; host.f.engine->render.camera = view.camera; direction(&view,(eng_vector_t){0,0,1}); ASSERT_EQ(2u,runs(&host.f,copies[7])); fixture_end(&host.f);
+        }
+        const nmo_targetcamera_state_t *document = fixture_state(&source.f,source.camera); ASSERT_EQ(source.first,nmo_ref_runtime_id(&document->target)); fixture_end(&source.f); remove(path);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_camera_target, runtime_targets_override_file_references_and_follow_moving_entities_without_document_changes);
 REGISTER_TEST(engine_camera_target, attaching_detaching_and_self_assignments_keep_native_target_flags);
@@ -302,4 +369,6 @@ REGISTER_TEST(engine_camera_target, serialized_target_initial_values_restore_bot
 REGISTER_TEST(engine_camera_target, partial_initial_values_without_target_sections_keep_the_current_attachment);
 REGISTER_TEST(engine_camera_target, malformed_target_initial_values_preserve_the_previous_saved_attachment);
 REGISTER_TEST(engine_camera_target, restoring_a_deleted_initial_target_detaches_the_live_reference_without_replaying_flags);
+REGISTER_TEST(engine_camera_target, deferred_deletion_clears_targets_when_the_frame_releases_the_object);
+REGISTER_TEST(engine_camera_target, loaded_and_copied_target_graphs_keep_versions_external_references_and_runtime_attachments);
 TEST_MAIN_END()
