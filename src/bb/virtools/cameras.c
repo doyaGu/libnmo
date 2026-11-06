@@ -12,6 +12,8 @@
 #include "type/nmo_object_guids.h"
 #include "type/nmo_type_query.h"
 
+#include <math.h>
+
 /* Set As Active Camera: the render context looks through the target camera */
 static int bb_set_as_active_camera(blk_t *b)
 {
@@ -64,7 +66,28 @@ static int bb_set_fov(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* Set Zoom converts a focal length in millimeters into a horizontal FOV. */
+static int bb_set_zoom(blk_t *b)
+{
+    nmo_object_id_t camera = nmo_engine_block_target(b);
+    nmo_object_t *object = eng_entity_index(b->engine,camera) >= 0 ? eng_find_object(b->engine,camera) : NULL;
+    if (object == NULL ||
+        nmo_type_query_object_get_ancestor_state_by_guid(b->engine->types,object,CKPGUID_CAMERA) == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    float focal_length = get_in_float(b,0,50);
+    if (focal_length <= 0.0f) return NMO_ENGINE_BR_PARAMETERERROR;
+    if (!eng_set_camera_fov(b->engine,camera,2.0f*atanf(18.0f/focal_length))) {
+        return NMO_ENGINE_BR_GENERICERROR;
+    }
+    IN_OFF(b,0);
+    OUT_ON(b,0);
+    eng_emit(b->engine,NMO_ENGINE_EVENT_EFFECT,b->node,camera,0);
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_cameras_blocks[] = {
+    {NMO_GUID_INIT(0x40540a0d, 0x000aaaaa), "Set Zoom", bb_set_zoom, NULL, NULL},
     {NMO_GUID_INIT(0xaaaacccc, 0xaaaacccc), "Set FOV", bb_set_fov, NULL, NULL},
     {NMO_GUID_INIT(0x652316a2, 0x01aa09a9), "Set Clipping Planes", bb_set_clipping_planes, NULL, NULL},
     {NMO_GUID_INIT(0x368f0ab1, 0x2d8957e4), "Set As Active Camera", bb_set_as_active_camera, NULL, NULL},

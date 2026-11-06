@@ -8,6 +8,7 @@
 #include <stdio.h>
 
 #define PI_F 3.14159265358979323846f
+#define GUID_SET_ZOOM NMO_GUID(0x40540a0d,0x000aaaaa)
 #define GUID_SET_FOV NMO_GUID(0xaaaacccc,0xaaaacccc)
 #define GUID_NOP NMO_GUID(0x302561c4,0x0d282980)
 
@@ -106,10 +107,10 @@ TEST(engine_fov, fov_and_clipping_plane_changes_preserve_each_other_for_cameras_
     fixture_end(&g.f);
 }
 
-static void behavior_begin(fov_fixture_t *g)
+static void behavior_begin_guid(fov_fixture_t *g, nmo_guid_t guid, const char *name)
 {
     begin(g);
-    g->block = fixture_block(&g->f,GUID_SET_FOV,"Set FOV");
+    g->block = fixture_block(&g->f,guid,name);
     g->after = fixture_block(&g->f,GUID_NOP,"After FOV");
     ASSERT_TRUE(g->block != 0 && g->after != 0);
     fixture_input_int(&g->f,fixture_target(&g->f,g->block),(int32_t)g->camera);
@@ -117,6 +118,16 @@ static void behavior_begin(fov_fixture_t *g)
     ASSERT_EQ(NMO_OK,nmo_script_edit_ensure_input_parameter_source(g->f.tx,BLOCK_PIN(&g->f,g->block,0),&g->angle_value));
     fixture_link(&g->f,g->f.script_in,BLOCK_IN(&g->f,g->block,0),0);
     fixture_link(&g->f,BLOCK_OUT(&g->f,g->block,0),BLOCK_IN(&g->f,g->after,0),0);
+}
+
+static void behavior_begin(fov_fixture_t *g)
+{
+    behavior_begin_guid(g,GUID_SET_FOV,"Set FOV");
+}
+
+static void zoom_begin(fov_fixture_t *g)
+{
+    behavior_begin_guid(g,GUID_SET_ZOOM,"Set Zoom");
 }
 
 static void trigger(fov_fixture_t *g)
@@ -395,6 +406,59 @@ TEST(engine_fov, terratools_sky_distortion_tracks_runtime_camera_fov_with_its_ow
     fixture_end(&g.f);
 }
 
+TEST(engine_fov, set_zoom_uses_the_native_fifty_millimeter_default_and_runs_once)
+{
+    fov_fixture_t g; zoom_begin(&g); ready(&g);
+    ASSERT_TRUE(nmo_engine_has_block(g.f.engine,GUID_SET_ZOOM));
+    eng_set_camera_planes(g.f.engine,g.camera,2,50);
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0));
+    float fov = 0; ASSERT_TRUE(eng_camera_fov(g.f.engine,g.camera,&fov));
+    ASSERT_FLOAT_EQ(.69111116f,fov,1e-7f); frame(&g,g.camera,fov,2,50);
+    ASSERT_EQ(1u,runs(&g.f,g.block)); ASSERT_EQ(1u,runs(&g.f,g.after));
+    ASSERT_FALSE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,0)));
+    ASSERT_FALSE(nmo_engine_behavior_is_active(g.f.engine,g.block));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,10));
+    ASSERT_EQ(1u,runs(&g.f,g.block)); ASSERT_EQ(1u,runs(&g.f,g.after));
+    ASSERT_FLOAT_EQ(PI_F/2,((nmo_camera_state_t *)fixture_state(&g.f,g.camera))->fov,0);
+    fixture_end(&g.f);
+}
+
+TEST(engine_fov, set_zoom_rejects_nonpositive_focal_lengths_without_consuming_input_or_changing_the_camera)
+{
+    const float values[] = {0,-0.0f,-1,-INFINITY};
+    for (size_t i = 0; i < sizeof(values)/sizeof(*values); i++) {
+        fov_fixture_t g; zoom_begin(&g); ready(&g);
+        ASSERT_TRUE(eng_set_camera_fov(g.f.engine,g.camera,.625f));
+        eng_set_camera_planes(g.f.engine,g.camera,2,50);
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.angle_value,&values[i],sizeof(values[i])));
+        ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,nmo_engine_step(g.f.engine,0));
+        nmo_engine_event_t failure; ASSERT_TRUE(nmo_engine_failure(g.f.engine,&failure));
+        ASSERT_EQ(NMO_ENGINE_BR_PARAMETERERROR,failure.result);
+        ASSERT_TRUE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,0)));
+        ASSERT_FALSE(nmo_engine_io_is_active(g.f.engine,BLOCK_OUT(&g.f,g.block,0)));
+        ASSERT_EQ(0u,runs(&g.f,g.after)); frame(&g,g.camera,.625f,2,50);
+        fixture_end(&g.f);
+    }
+}
+
+TEST(engine_fov, set_zoom_reports_invalid_targets_before_validating_focal_length_or_consuming_input)
+{
+    for (int kind = 0; kind < 5; kind++) {
+        fov_fixture_t g; zoom_begin(&g); ready(&g);
+        nmo_object_id_t target = kind == 0 ? 0 : kind == 1 ? 0x7fffffff : kind == 2 ? g.f.owner_id : kind == 3 ? g.f.script_id : g.camera;
+        if (kind == 4) nmo_engine_destroy_object(g.f.engine,g.camera);
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.target_value,&target,sizeof(target)));
+        float invalid = -1; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.angle_value,&invalid,sizeof(invalid)));
+        ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,nmo_engine_step(g.f.engine,0));
+        nmo_engine_event_t failure; ASSERT_TRUE(nmo_engine_failure(g.f.engine,&failure));
+        ASSERT_EQ(NMO_ENGINE_BR_OWNERERROR,failure.result);
+        ASSERT_TRUE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,0)));
+        ASSERT_FALSE(nmo_engine_io_is_active(g.f.engine,BLOCK_OUT(&g.f,g.block,0)));
+        ASSERT_EQ(0u,runs(&g.f,g.after)); frame(&g,g.second,PI_F/2,1,100);
+        fixture_end(&g.f);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_fov, runtime_fov_updates_render_projection_and_screen_coordinates_without_changing_the_document);
 REGISTER_TEST(engine_fov, fov_and_clipping_plane_changes_preserve_each_other_for_cameras_and_target_cameras);
@@ -410,4 +474,7 @@ REGISTER_TEST(engine_fov, modern_camera_initial_values_restore_serialized_raw_fo
 REGISTER_TEST(engine_fov, legacy_partial_camera_initial_values_restore_only_present_members);
 REGISTER_TEST(engine_fov, loaded_and_copied_scripts_remap_cameras_and_keep_runtime_lenses_independent);
 REGISTER_TEST(engine_fov, terratools_sky_distortion_tracks_runtime_camera_fov_with_its_own_planes);
+REGISTER_TEST(engine_fov, set_zoom_uses_the_native_fifty_millimeter_default_and_runs_once);
+REGISTER_TEST(engine_fov, set_zoom_rejects_nonpositive_focal_lengths_without_consuming_input_or_changing_the_camera);
+REGISTER_TEST(engine_fov, set_zoom_reports_invalid_targets_before_validating_focal_length_or_consuming_input);
 TEST_MAIN_END()
