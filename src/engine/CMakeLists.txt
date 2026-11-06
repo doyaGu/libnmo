@@ -35,6 +35,7 @@ set(NMO_ENGINE_SOURCES
     core/message.c
     core/module.c
     core/operations.c
+    core/operations_query.c
     core/param.c
     core/param_text.c
     core/portal.c

@@ -1136,7 +1136,7 @@ eng_builtin_op_fn eng_operation_builtin(nmo_guid_t operation, nmo_guid_t result,
             return op->fn;
         }
     }
-    return NULL;
+    return eng_operation_builtin_query(operation, result, input1, input2);
 }
 
 eng_builtin_op_fn eng_operation_builtin_text(nmo_guid_t operation, nmo_guid_t result,

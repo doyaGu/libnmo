@@ -181,6 +181,9 @@ eng_builtin_op_fn eng_operation_builtin(nmo_guid_t operation, nmo_guid_t result,
                                         nmo_guid_t input1, nmo_guid_t input2);
 eng_builtin_op_fn eng_operation_builtin_text(nmo_guid_t operation, nmo_guid_t result,
                                              nmo_guid_t input1, nmo_guid_t input2);
+/* core/operations_query.c: the operations that read objects' state (the getters) */
+eng_builtin_op_fn eng_operation_builtin_query(nmo_guid_t operation, nmo_guid_t result,
+                                              nmo_guid_t input1, nmo_guid_t input2);
 bool eng_param_resize(eng_param_t *param, size_t size);
 /* need_sources: CKParameterOperation::DoOperation's refusal of an input with no source */
 nmo_status_t eng_operation_execute(nmo_engine_t *engine, nmo_guid_t guid, eng_param_t *in1,

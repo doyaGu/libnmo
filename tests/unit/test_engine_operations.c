@@ -8,6 +8,8 @@
 
 #include "engine_fixture.h"
 
+#include "object/builtin/nmo_curve_schemas.h"
+#include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/builtin/nmo_parameteroperation_schemas.h"
@@ -18,6 +20,22 @@
 #include <math.h>
 
 #define GUID_IDENTITY NMO_GUID(0x15151652, 0xaeefffd5)
+#define OP_GET_WIDTH NMO_GUID(0x5a4e13fe, 0x628b7ca2)
+#define OP_GET_VIEW_RECT NMO_GUID(0x2a143038, 0x03d126b9)
+#define OP_GET_MOUSE_POSITION NMO_GUID(0x06ea0201, 0x680e3a62)
+#define OP_GET_MOUSE_X NMO_GUID(0x53c51abe, 0x0eba68de)
+#define OP_IS_DERIVED_FROM NMO_GUID(0x6ab94f5a, 0x1a6376a9)
+#define OP_DYNAMIC_CAST NMO_GUID(0x39697e76, 0x538376ec)
+#define OP_GET_GROUP_TYPE NMO_GUID(0x429c3ff2, 0x0e4a4938)
+#define OP_IS_CONTENT_EQUAL NMO_GUID(0x3dda41e5, 0x036c6833)
+#define OP_IS_IN NMO_GUID(0x540e1450, 0x593f1692)
+#define OP_IS_COLLISION NMO_GUID(0x66ae6c61, 0x038658e8)
+#define OP_GET_GEOMETRIC_CENTER NMO_GUID(0x6a8c4838, 0x7b026566)
+#define OP_GET_SIZE NMO_GUID(0x54f52b51, 0x564c4812)
+#define OP_GET_CURVE_POINT NMO_GUID(0x4e9426c2, 0x04e50e5f)
+#define OP_GET_CURVE_POSITION NMO_GUID(0x61323b67, 0x3a282f1c)
+#define OP_GET_CURVE_TANGENT NMO_GUID(0x54ba6299, 0x51bf236d)
+#define OP_GET_OUT_TANGENT NMO_GUID(0xabc16e82, 0x73ef6952)
 
 /* A local parameter of the script of `type` holding `size` bytes of `data` */
 static nmo_object_id_t local_value(engine_fixture_t *f, nmo_guid_t type, const char *name,
@@ -210,8 +228,227 @@ TEST(engine_operations, derived_types_find_the_float_functions)
     fixture_end(&f);
 }
 
+/* The engine ID an Identity block's output holds */
+static uint32_t read_id(engine_fixture_t *f, nmo_object_id_t identity)
+{
+    uint32_t id = 0xFFFFFFFFu;
+    read_value(f, BLOCK_POUT(f, identity, 0), &id, sizeof(id));
+    return id;
+}
+
+TEST(engine_operations, render_context_and_mouse_getters)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    const int32_t yes = 1;
+    nmo_object_id_t absolute = local_value(&f, CKPGUID_BOOL, "Absolute", &yes, sizeof(yes));
+    ASSERT_TRUE(absolute != 0);
+    nmo_object_id_t width = operation(&f, OP_GET_WIDTH, 0, 0, CKPGUID_INT);
+    nmo_object_id_t view = operation(&f, OP_GET_VIEW_RECT, 0, 0, CKPGUID_RECT);
+    nmo_object_id_t mouse_x = operation(&f, OP_GET_MOUSE_X, 0, 0, CKPGUID_INT);
+    nmo_object_id_t clamped = operation(&f, OP_GET_MOUSE_POSITION, absolute, 0, CKPGUID_2DVECTOR);
+    ASSERT_TRUE(width != 0 && view != 0 && mouse_x != 0 && clamped != 0);
+    nmo_object_id_t read_width = identity_of(&f, width, CKPGUID_INT, f.script_in);
+    nmo_object_id_t read_view = identity_of(&f, view, CKPGUID_RECT, BLOCK_OUT(&f, read_width, 0));
+    nmo_object_id_t read_x = identity_of(&f, mouse_x, CKPGUID_INT, BLOCK_OUT(&f, read_view, 0));
+    nmo_object_id_t read_clamped = identity_of(&f, clamped, CKPGUID_2DVECTOR, BLOCK_OUT(&f, read_x, 0));
+    ASSERT_TRUE(read_width != 0 && read_view != 0 && read_x != 0 && read_clamped != 0);
+    fixture_commit(&f, NULL);
+    /* Off the window to the left and below it */
+    nmo_engine_set_mouse_position(f.engine, -5.5f, 700.0f);
+
+    run_frame(&f, 16.0f);
+    /* The default screen mode is 640 by 480 */
+    ASSERT_EQ(640u, read_id(&f, read_width));
+    float rect[4] = {1, 1, 1, 1};
+    read_value(&f, BLOCK_POUT(&f, read_view, 0), rect, sizeof(rect));
+    ASSERT_FLOAT_EQ(0.0f, rect[0], 0.0f);
+    ASSERT_FLOAT_EQ(0.0f, rect[1], 0.0f);
+    ASSERT_FLOAT_EQ(640.0f, rect[2], 0.0f);
+    ASSERT_FLOAT_EQ(480.0f, rect[3], 0.0f);
+    ASSERT_EQ((uint32_t)-5, read_id(&f, read_x));
+    float position[2] = {1, 1};
+    read_value(&f, BLOCK_POUT(&f, read_clamped, 0), position, sizeof(position));
+    ASSERT_FLOAT_EQ(0.0f, position[0], 0.0f);
+    ASSERT_FLOAT_EQ(479.0f, position[1], 0.0f);
+    fixture_end(&f);
+}
+
+/* A local parameter of the script of object type `type`; its object is set in the engine */
+static nmo_object_id_t local_object(engine_fixture_t *f, const char *name, nmo_guid_t type)
+{
+    nmo_object_id_t param = 0;
+    return nmo_script_edit_add_parameter(f->tx, f->script_id, NMO_SCRIPT_EDIT_PARAM_LOCAL, type,
+                                         name, &param) == NMO_OK
+               ? param
+               : 0;
+}
+
+TEST(engine_operations, object_class_group_and_collection_getters)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t other = fixture_create(&f, NMO_CID_3DENTITY, "Other");
+    nmo_object_id_t group = fixture_create(&f, NMO_CID_GROUP, "Group");
+    nmo_group_state_t *state = (nmo_group_state_t *)fixture_state(&f, group);
+    ASSERT_TRUE(other != 0 && state != NULL);
+    nmo_ref_t *members = NULL;
+    ASSERT_EQ(NMO_OK, nmo_array_extend(&state->object_ids, 2u, (void **)&members));
+    members[0] = nmo_ref_from_id(f.owner_id);
+    members[1] = nmo_ref_from_id(other);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t object = local_object(&f, "Object", CKPGUID_3DENTITY);
+    nmo_object_id_t owner = local_object(&f, "Owner", CKPGUID_3DENTITY);
+    nmo_object_id_t in_group = local_object(&f, "Group", CKPGUID_GROUP);
+    nmo_object_id_t collection = local_object(&f, "Collection", CKPGUID_OBJECTARRAY);
+    ASSERT_TRUE(object != 0 && owner != 0 && in_group != 0 && collection != 0);
+    nmo_object_id_t derived = operation(&f, OP_IS_DERIVED_FROM, object, owner, CKPGUID_BOOL);
+    nmo_object_id_t as_entity = operation(&f, OP_DYNAMIC_CAST, object, 0, CKPGUID_3DENTITY);
+    nmo_object_id_t as_camera = operation(&f, OP_DYNAMIC_CAST, object, 0, CKPGUID_CAMERA);
+    nmo_object_id_t group_type = operation(&f, OP_GET_GROUP_TYPE, in_group, 0, CKPGUID_CLASSID);
+    nmo_object_id_t same = operation(&f, OP_IS_CONTENT_EQUAL, in_group, in_group, CKPGUID_BOOL);
+    nmo_object_id_t in = operation(&f, OP_IS_IN, collection, owner, CKPGUID_BOOL);
+    ASSERT_TRUE(derived != 0 && as_entity != 0 && as_camera != 0 && group_type != 0 && same != 0 && in != 0);
+    nmo_object_id_t read_derived = identity_of(&f, derived, CKPGUID_BOOL, f.script_in);
+    nmo_object_id_t read_entity = identity_of(&f, as_entity, CKPGUID_3DENTITY, BLOCK_OUT(&f, read_derived, 0));
+    nmo_object_id_t read_camera = identity_of(&f, as_camera, CKPGUID_CAMERA, BLOCK_OUT(&f, read_entity, 0));
+    nmo_object_id_t read_type = identity_of(&f, group_type, CKPGUID_CLASSID, BLOCK_OUT(&f, read_camera, 0));
+    nmo_object_id_t read_same = identity_of(&f, same, CKPGUID_BOOL, BLOCK_OUT(&f, read_type, 0));
+    nmo_object_id_t read_in = identity_of(&f, in, CKPGUID_BOOL, BLOCK_OUT(&f, read_same, 0));
+    ASSERT_TRUE(read_derived != 0 && read_entity != 0 && read_camera != 0 && read_type != 0 &&
+                read_same != 0 && read_in != 0);
+    fixture_commit(&f, NULL);
+    const uint32_t ids[3] = {(uint32_t)other, (uint32_t)f.owner_id, (uint32_t)group};
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, object, &ids[0], sizeof(ids[0])));
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, owner, &ids[1], sizeof(ids[1])));
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, in_group, &ids[2], sizeof(ids[2])));
+    /* The collection holds the other entity and the owner */
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, collection, ids, 2u * sizeof(ids[0])));
+
+    run_frame(&f, 16.0f);
+    ASSERT_EQ(1u, read_id(&f, read_derived));
+    ASSERT_EQ((uint32_t)other, read_id(&f, read_entity));
+    ASSERT_EQ(0u, read_id(&f, read_camera));
+    ASSERT_EQ((uint32_t)NMO_CID_3DENTITY, read_id(&f, read_type));
+    ASSERT_EQ(1u, read_id(&f, read_same));
+    ASSERT_EQ(1u, read_id(&f, read_in));
+    fixture_end(&f);
+}
+
+TEST(engine_operations, box_and_rectangle_getters)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    /* A VxBbox is its maximum then its minimum */
+    const float box[6] = {4.0f, 6.0f, 8.0f, 0.0f, 2.0f, 4.0f};
+    const float inside[3] = {1.0f, 3.0f, 5.0f}, outside[3] = {5.0f, 3.0f, 5.0f};
+    const float rect[4] = {10.0f, 20.0f, 30.0f, 60.0f};
+    nmo_object_id_t b = local_value(&f, CKPGUID_BOX, "Box", box, sizeof(box));
+    nmo_object_id_t in = local_value(&f, CKPGUID_VECTOR, "Inside", inside, sizeof(inside));
+    nmo_object_id_t out = local_value(&f, CKPGUID_VECTOR, "Outside", outside, sizeof(outside));
+    nmo_object_id_t r = local_value(&f, CKPGUID_RECT, "Rect", rect, sizeof(rect));
+    ASSERT_TRUE(b != 0 && in != 0 && out != 0 && r != 0);
+    nmo_object_id_t hit = operation(&f, OP_IS_COLLISION, b, in, CKPGUID_BOOL);
+    nmo_object_id_t miss = operation(&f, OP_IS_COLLISION, b, out, CKPGUID_BOOL);
+    nmo_object_id_t center = operation(&f, OP_GET_GEOMETRIC_CENTER, b, 0, CKPGUID_VECTOR);
+    nmo_object_id_t size = operation(&f, OP_GET_SIZE, r, 0, CKPGUID_2DVECTOR);
+    nmo_object_id_t middle = operation(&f, OP_GET_GEOMETRIC_CENTER, r, 0, CKPGUID_2DVECTOR);
+    ASSERT_TRUE(hit != 0 && miss != 0 && center != 0 && size != 0 && middle != 0);
+    nmo_object_id_t read_hit = identity_of(&f, hit, CKPGUID_BOOL, f.script_in);
+    nmo_object_id_t read_miss = identity_of(&f, miss, CKPGUID_BOOL, BLOCK_OUT(&f, read_hit, 0));
+    nmo_object_id_t read_center = identity_of(&f, center, CKPGUID_VECTOR, BLOCK_OUT(&f, read_miss, 0));
+    nmo_object_id_t read_size = identity_of(&f, size, CKPGUID_2DVECTOR, BLOCK_OUT(&f, read_center, 0));
+    nmo_object_id_t read_middle = identity_of(&f, middle, CKPGUID_2DVECTOR, BLOCK_OUT(&f, read_size, 0));
+    ASSERT_TRUE(read_hit != 0 && read_miss != 0 && read_center != 0 && read_size != 0 && read_middle != 0);
+    fixture_commit(&f, NULL);
+
+    run_frame(&f, 16.0f);
+    ASSERT_EQ(1u, read_id(&f, read_hit));
+    ASSERT_EQ(0u, read_id(&f, read_miss));
+    float v[3] = {0, 0, 0};
+    read_value(&f, BLOCK_POUT(&f, read_center, 0), v, sizeof(v));
+    ASSERT_FLOAT_EQ(2.0f, v[0], 0.0f);
+    ASSERT_FLOAT_EQ(4.0f, v[1], 0.0f);
+    ASSERT_FLOAT_EQ(6.0f, v[2], 0.0f);
+    read_value(&f, BLOCK_POUT(&f, read_size, 0), v, 2u * sizeof(v[0]));
+    ASSERT_FLOAT_EQ(20.0f, v[0], 0.0f);
+    ASSERT_FLOAT_EQ(40.0f, v[1], 0.0f);
+    read_value(&f, BLOCK_POUT(&f, read_middle, 0), v, 2u * sizeof(v[0]));
+    ASSERT_FLOAT_EQ(20.0f, v[0], 0.0f);
+    ASSERT_FLOAT_EQ(40.0f, v[1], 0.0f);
+    fixture_end(&f);
+}
+
+/* An open curve of three TCB points along x, two apart */
+TEST(engine_operations, curve_getters)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t path = fixture_create(&f, NMO_CID_CURVE, "Path");
+    nmo_curve_state_t *curve = (nmo_curve_state_t *)fixture_state(&f, path);
+    ASSERT_TRUE(curve != NULL);
+    curve->opened = 1;
+    curve->control_point_count = 3u;
+    curve->control_point_ids = nmo_arena_alloc(nmo_session_get_arena(f.session), 3u * sizeof(nmo_ref_t),
+                                               _Alignof(nmo_ref_t));
+    ASSERT_TRUE(curve->control_point_ids != NULL);
+    nmo_object_id_t points[3];
+    for (size_t i = 0; i < 3; i++) {
+        points[i] = fixture_create(&f, NMO_CID_CURVEPOINT, "Point");
+        nmo_curvepoint_state_t *p = (nmo_curvepoint_state_t *)fixture_state(&f, points[i]);
+        ASSERT_TRUE(p != NULL);
+        p->base.parent = nmo_ref_from_id(path);
+        p->base.has_entityndata_chunk = 1;
+        p->curve = nmo_ref_from_id(path);
+        nmo_curvepoint_set_position(p, 2.0f * (float)i, 0.0f, 0.0f);
+        curve->control_point_ids[i] = nmo_ref_from_id(points[i]);
+    }
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t on_curve = local_object(&f, "Curve", CKPGUID_CURVE);
+    nmo_object_id_t half = local_float(&f, CKPGUID_FLOAT, "Half", 0.5f);
+    const int32_t one = 1;
+    nmo_object_id_t index = local_value(&f, CKPGUID_INT, "Index", &one, sizeof(one));
+    ASSERT_TRUE(on_curve != 0 && half != 0 && index != 0);
+    nmo_object_id_t point = operation(&f, OP_GET_CURVE_POINT, on_curve, index, CKPGUID_CURVEPOINT);
+    nmo_object_id_t position = operation(&f, OP_GET_CURVE_POSITION, half, on_curve, CKPGUID_VECTOR);
+    nmo_object_id_t tangent = operation(&f, OP_GET_CURVE_TANGENT, half, on_curve, CKPGUID_VECTOR);
+    nmo_object_id_t outgoing = operation(&f, OP_GET_OUT_TANGENT, point, 0, CKPGUID_VECTOR);
+    ASSERT_TRUE(point != 0 && position != 0 && tangent != 0 && outgoing != 0);
+    nmo_object_id_t read_point = identity_of(&f, point, CKPGUID_CURVEPOINT, f.script_in);
+    nmo_object_id_t read_position = identity_of(&f, position, CKPGUID_VECTOR, BLOCK_OUT(&f, read_point, 0));
+    nmo_object_id_t read_tangent = identity_of(&f, tangent, CKPGUID_VECTOR, BLOCK_OUT(&f, read_position, 0));
+    nmo_object_id_t read_outgoing = identity_of(&f, outgoing, CKPGUID_VECTOR, BLOCK_OUT(&f, read_tangent, 0));
+    ASSERT_TRUE(read_point != 0 && read_position != 0 && read_tangent != 0 && read_outgoing != 0);
+    fixture_commit(&f, NULL);
+    const uint32_t id = (uint32_t)path;
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, on_curve, &id, sizeof(id)));
+
+    run_frame(&f, 16.0f);
+    ASSERT_EQ((uint32_t)points[1], read_id(&f, read_point));
+    float v[3] = {0, 0, 0};
+    read_value(&f, BLOCK_POUT(&f, read_position, 0), v, sizeof(v));
+    ASSERT_FLOAT_EQ(2.0f, v[0], 1e-4f);
+    ASSERT_FLOAT_EQ(0.0f, v[1], 1e-6f);
+    /* A thousandth of the curve's length of 4, along x */
+    read_value(&f, BLOCK_POUT(&f, read_tangent, 0), v, sizeof(v));
+    ASSERT_FLOAT_EQ(0.004f, v[0], 1e-4f);
+    ASSERT_FLOAT_EQ(0.0f, v[1], 1e-6f);
+    /* The middle point's TCB out tangent: half the way from the previous to the next point */
+    read_value(&f, BLOCK_POUT(&f, read_outgoing, 0), v, sizeof(v));
+    ASSERT_FLOAT_EQ(2.0f, v[0], 1e-5f);
+    ASSERT_FLOAT_EQ(0.0f, v[1], 1e-6f);
+    ASSERT_FLOAT_EQ(0.0f, v[2], 1e-6f);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_operations, per_second_scales_by_the_frame_delta);
     REGISTER_TEST(engine_operations, random_stays_in_its_bounds_and_repeats_with_the_seed);
     REGISTER_TEST(engine_operations, derived_types_find_the_float_functions);
+    REGISTER_TEST(engine_operations, render_context_and_mouse_getters);
+    REGISTER_TEST(engine_operations, object_class_group_and_collection_getters);
+    REGISTER_TEST(engine_operations, box_and_rectangle_getters);
+    REGISTER_TEST(engine_operations, curve_getters);
 TEST_MAIN_END()
