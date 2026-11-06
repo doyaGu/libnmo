@@ -770,6 +770,73 @@ TEST(engine_fov, perspective_cameras_store_orthographic_zoom_without_changing_pe
     fixture_end(&g.f);
 }
 
+TEST(engine_fov, orthographic_zoom_initial_conditions_capture_runtime_values_and_replace_previous_saves)
+{
+    fov_fixture_t g; orthographic_begin(&g,0x20000); ready(&g);
+    eng_add_to_level_scene(g.f.engine,g.camera); eng_save_ic(g.f.engine,g.camera);
+    float zoom = 2; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.angle_value,&zoom,sizeof(zoom)));
+    ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); orthographic_frame(&g,g.camera,2);
+    eng_restore_ic(g.f.engine,g.camera); orthographic_frame(&g,g.camera,1);
+    trigger(&g); eng_save_ic(g.f.engine,g.camera);
+    zoom = 3; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.angle_value,&zoom,sizeof(zoom)));
+    trigger(&g); eng_restore_ic(g.f.engine,g.camera); orthographic_frame(&g,g.camera,2);
+    ASSERT_TRUE(eng_set_camera_orthographic_zoom(g.f.engine,g.camera,NAN)); eng_save_ic(g.f.engine,g.camera);
+    trigger(&g); eng_restore_ic(g.f.engine,g.camera); orthographic_frame(&g,g.camera,NAN);
+    ASSERT_FLOAT_EQ(1,((nmo_camera_state_t *)fixture_state(&g.f,g.camera))->orthographic_zoom,0);
+    fixture_end(&g.f);
+}
+
+TEST(engine_fov, modern_camera_initial_values_restore_raw_orthographic_zoom_for_both_camera_classes)
+{
+    const float zooms[] = {2.5f,-2,INFINITY,NAN};
+    fov_fixture_t g; begin(&g); orthographic_cameras(&g); ready(&g);
+    const nmo_object_id_t cameras[] = {g.camera,g.second};
+    for (size_t type = 0; type < 2; type++) for (size_t i = 0; i < sizeof(zooms)/sizeof(*zooms); i++) {
+        nmo_object_id_t id = cameras[type];
+        nmo_camera_state_t saved = *(nmo_camera_state_t *)fixture_state(&g.f,id);
+        saved.orthographic_zoom = zooms[i]; saved.fov = .625f; saved.near_plane = 2; saved.far_plane = 50;
+        nmo_arena_t *arena = nmo_session_get_arena(g.f.session);
+        nmo_chunk_t *chunk = nmo_chunk_create(arena); ASSERT_NOT_NULL(chunk); chunk->class_id = NMO_CID_CAMERA;
+        nmo_serialize_context_t context = nmo_serialize_context_create_nonfile(arena,g.f.repo,CK_STATESAVE_CAMERAONLY);
+        ASSERT_EQ(NMO_OK,nmo_chunk_start_write(chunk)); ASSERT_EQ(NMO_OK,nmo_camera_vtable.serialize(&saved,chunk,NULL,&context)); nmo_chunk_close(chunk);
+        ASSERT_EQ(NMO_OK,eng_load_ic(g.f.engine,id,chunk)); eng_add_to_level_scene(g.f.engine,id);
+        ASSERT_TRUE(eng_set_camera_orthographic_zoom(g.f.engine,id,4)); ASSERT_TRUE(eng_set_camera_fov(g.f.engine,id,.75f)); eng_set_camera_planes(g.f.engine,id,3,60);
+        eng_restore_ic(g.f.engine,id); orthographic_frame(&g,id,zooms[i]); frame(&g,id,.625f,2,50);
+        ASSERT_FLOAT_EQ(1,((nmo_camera_state_t *)fixture_state(&g.f,id))->orthographic_zoom,0);
+    }
+    fixture_end(&g.f);
+}
+
+TEST(engine_fov, legacy_camera_initial_values_restore_orthographic_zoom_only_when_present)
+{
+    fov_fixture_t g; begin(&g); orthographic_cameras(&g); ready(&g); eng_add_to_level_scene(g.f.engine,g.camera);
+    const uint32_t identifiers[] = {CK_STATESAVE_CAMERAOTHOZOOM,CK_STATESAVE_CAMERAFOV,CK_STATESAVE_CAMERAPLANES,CK_STATESAVE_OBJECTHIDDEN};
+    for (size_t i = 0; i < sizeof(identifiers)/sizeof(*identifiers); i++) {
+        nmo_chunk_t *chunk = nmo_chunk_create(nmo_session_get_arena(g.f.session)); ASSERT_NOT_NULL(chunk); chunk->class_id = NMO_CID_CAMERA;
+        ASSERT_EQ(NMO_OK,nmo_chunk_start_write(chunk)); nmo_chunk_set_data_version(chunk,4);
+        ASSERT_EQ(NMO_OK,nmo_chunk_write_identifier(chunk,identifiers[i]));
+        if (i < 3) ASSERT_EQ(NMO_OK,nmo_chunk_write_float(chunk,i == 0 ? 2.5f : i == 1 ? .625f : 2));
+        if (i == 2) ASSERT_EQ(NMO_OK,nmo_chunk_write_float(chunk,50));
+        nmo_chunk_close(chunk); ASSERT_EQ(NMO_OK,eng_load_ic(g.f.engine,g.camera,chunk));
+        ASSERT_TRUE(eng_set_camera_orthographic_zoom(g.f.engine,g.camera,4)); ASSERT_TRUE(eng_set_camera_fov(g.f.engine,g.camera,.75f)); eng_set_camera_planes(g.f.engine,g.camera,3,60);
+        eng_restore_ic(g.f.engine,g.camera); orthographic_frame(&g,g.camera,i == 0 ? 2.5f : 4);
+        frame(&g,g.camera,i == 1 ? .625f : .75f,i == 2 ? 2 : 3,i == 2 ? 50 : 60);
+    }
+    fixture_end(&g.f);
+}
+
+TEST(engine_fov, malformed_orthographic_zoom_initial_values_keep_the_previous_saved_state)
+{
+    fov_fixture_t g; begin(&g); orthographic_cameras(&g); ready(&g); eng_add_to_level_scene(g.f.engine,g.camera);
+    ASSERT_TRUE(eng_set_camera_orthographic_zoom(g.f.engine,g.camera,2)); eng_save_ic(g.f.engine,g.camera);
+    nmo_chunk_t *chunk = nmo_chunk_create(nmo_session_get_arena(g.f.session)); ASSERT_NOT_NULL(chunk); chunk->class_id = NMO_CID_CAMERA;
+    ASSERT_EQ(NMO_OK,nmo_chunk_start_write(chunk)); nmo_chunk_set_data_version(chunk,4);
+    ASSERT_EQ(NMO_OK,nmo_chunk_write_identifier(chunk,CK_STATESAVE_CAMERAOTHOZOOM)); nmo_chunk_close(chunk);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,eng_load_ic(g.f.engine,g.camera,chunk));
+    ASSERT_TRUE(eng_set_camera_orthographic_zoom(g.f.engine,g.camera,3)); eng_restore_ic(g.f.engine,g.camera); orthographic_frame(&g,g.camera,2);
+    fixture_end(&g.f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_fov, runtime_fov_updates_render_projection_and_screen_coordinates_without_changing_the_document);
 REGISTER_TEST(engine_fov, fov_and_clipping_plane_changes_preserve_each_other_for_cameras_and_target_cameras);
@@ -806,4 +873,8 @@ REGISTER_TEST(engine_fov, orthographic_zoom_observes_live_inputs_and_target_came
 REGISTER_TEST(engine_fov, disconnected_orthographic_zoom_keeps_the_native_default_for_each_version);
 REGISTER_TEST(engine_fov, orthographic_zoom_consumes_input_and_activates_output_before_invalid_target_errors);
 REGISTER_TEST(engine_fov, perspective_cameras_store_orthographic_zoom_without_changing_perspective_projection);
+REGISTER_TEST(engine_fov, orthographic_zoom_initial_conditions_capture_runtime_values_and_replace_previous_saves);
+REGISTER_TEST(engine_fov, modern_camera_initial_values_restore_raw_orthographic_zoom_for_both_camera_classes);
+REGISTER_TEST(engine_fov, legacy_camera_initial_values_restore_orthographic_zoom_only_when_present);
+REGISTER_TEST(engine_fov, malformed_orthographic_zoom_initial_values_keep_the_previous_saved_state);
 TEST_MAIN_END()

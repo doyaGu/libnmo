@@ -26,6 +26,8 @@ typedef struct eng_ic {
     float world[16];
     bool has_parent;
     nmo_object_id_t parent; /* a 3D entity's parent then (0 for none), which CK3dEntity::Load sets */
+    bool has_orthographic_zoom;
+    float orthographic_zoom;
     bool has_fov;
     float fov;
     bool has_planes;        /* a camera's front and back planes */
