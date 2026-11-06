@@ -303,6 +303,28 @@ TEST(engine_fov, legacy_partial_camera_initial_values_restore_only_present_membe
     fixture_end(&g.f);
 }
 
+TEST(engine_fov, terratools_sky_distortion_tracks_runtime_camera_fov_with_its_own_planes)
+{
+    fov_fixture_t g; behavior_begin(&g);
+    nmo_object_id_t sky = fixture_block(&g.f,NMO_GUID(0x36691920,0x3b261630),"TT Sky");
+    ASSERT_TRUE(sky != 0);
+    float distortion = .25f;
+    fixture_input_value(&g.f,BLOCK_PIN(&g.f,sky,0),&distortion,sizeof(distortion));
+    fixture_link(&g.f,BLOCK_OUT(&g.f,g.block,0),BLOCK_IN(&g.f,sky,0),0);
+    ready(&g); eng_set_camera_planes(g.f.engine,g.camera,2,50);
+    const float angles[] = {.75f,1.25f};
+    for (size_t i = 0; i < sizeof(angles)/sizeof(*angles); i++) {
+        ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.angle_value,&angles[i],sizeof(angles[i])));
+        trigger(&g); frame(&g,g.camera,angles[i],2,50);
+        nmo_engine_frame_t view; ASSERT_EQ(NMO_OK,nmo_engine_render_frame(g.f.engine,&view));
+        ASSERT_EQ(1,view.draw_count);
+        ASSERT_FLOAT_EQ(angles[i]+.25f*(PI_F-angles[i]),view.draws[0].fov,1e-7f);
+        ASSERT_FLOAT_EQ(1,view.draws[0].near_plane,0);
+        ASSERT_FLOAT_EQ(200,view.draws[0].far_plane,0);
+    }
+    fixture_end(&g.f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_fov, runtime_fov_updates_render_projection_and_screen_coordinates_without_changing_the_document);
 REGISTER_TEST(engine_fov, fov_and_clipping_plane_changes_preserve_each_other_for_cameras_and_target_cameras);
@@ -316,4 +338,5 @@ REGISTER_TEST(engine_fov, camera_copies_preserve_runtime_lenses_and_remain_indep
 REGISTER_TEST(engine_fov, runtime_initial_conditions_capture_restore_and_replace_fov_with_clipping_planes);
 REGISTER_TEST(engine_fov, modern_camera_initial_values_restore_serialized_raw_fov_and_planes);
 REGISTER_TEST(engine_fov, legacy_partial_camera_initial_values_restore_only_present_members);
+REGISTER_TEST(engine_fov, terratools_sky_distortion_tracks_runtime_camera_fov_with_its_own_planes);
 TEST_MAIN_END()

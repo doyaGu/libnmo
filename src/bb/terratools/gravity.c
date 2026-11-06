@@ -11,7 +11,6 @@
 #include "terratools.h"
 
 #include "object/builtin/nmo_3dentity_schemas.h"
-#include "object/builtin/nmo_camera_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_sound_schemas.h"
 #include "object/nmo_class_ids.h"
@@ -224,12 +223,8 @@ static int cb_sky(blk_t *b, uint32_t message)
 void eng_draw_skies(nmo_engine_t *engine, const float view[16])
 {
     const eng_render_t *render = &engine->render;
-    const nmo_camera_state_t *camera =
-        render->camera != 0
-            ? (const nmo_camera_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
-                  engine->types, eng_find_object(engine, render->camera), CKPGUID_CAMERA)
-            : NULL;
-    float current_fov = camera != NULL ? camera->fov : 0.5f;
+    float current_fov = 0.5f;
+    eng_camera_fov(engine,render->camera,&current_fov);
     const float pi = 3.14159265358979f;
     const eng_tt_t *tt = eng_tt(engine);
     for (size_t i = 0; i < tt->skies.count; i++) {
