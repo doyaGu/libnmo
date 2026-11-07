@@ -2,6 +2,9 @@
 
 Use the [builder workflow](ballance-level-builder.md#from-a-route-to-a-level)
 for extraction, build records and report status conventions.
+The fragments below describe reusable geometry features. Assemble authored
+routes in [local map inputs](ballance-level-builder.md#local-map-inputs);
+complete maps and their recorded runs are not distributed with this reference.
 
 ## Three-dimensional paths
 

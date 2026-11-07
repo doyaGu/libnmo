@@ -139,6 +139,10 @@ and complete discovery of game dependencies remain outside these checks.
 
 ## Per-instance placement and physics
 
+Store per-instance settings in the local route's `mechanisms.instances`, keyed
+by the compiled native mechanism instance ID. The shared parameter catalog
+defines the available settings; a map's chosen values stay with its route.
+
 `offset` is `[x, y, z]` in the module's original yaw frame; `yaw` adds degrees
 to that frame. These settings move the native assembly and its runtime entry
 without moving the route piece's supporting floor. The activation sector must
@@ -243,7 +247,8 @@ remain checked. Potential contacts include both owners, state, body,
 location and source configuration. Scenery fitting also reserves these
 motion volumes, preventing a decoration from being moved into a later pose.
 
-Intentional cross-piece interactions can be described explicitly:
+Declare intentional cross-piece contacts in the local route's
+`mechanisms.interactions`.
 
 IDs, phases and contact kinds must resolve exactly. A reason is required;
 unknown fields, duplicate pairs and broad selectors are rejected. Matching
@@ -257,7 +262,7 @@ An optional `passages` list restricts these kinds to specific corridor IDs
 owned by `target`; other passages on the same route element remain checked.
 Static `clearance` and observed `mechanism_motion` reports retain that ID.
 See [passage motion rules](ballance-spatial-constraints.md#motion-through-a-passage)
-for an actuation-walkway example.
+for passage selectors and contact matching.
 
 Gameplay now writes `physics.csv` through `nmo behavior run --physics-log`:
 one row per movable physical body after each simulation step, including

@@ -119,3 +119,20 @@ Missing arrivals fail the check; without a fresh run it is skipped. These
 samples confirm arrival proximity, not a solver contact event or every
 possible launch speed.
 
+## Validate a local route
+
+After building your own route into `out/level`, run a fresh native check with
+`BALLANCE` and `NMO` set to absolute paths:
+
+```sh
+python3 apps/ballance/scripts/ballance_verify_level.py out/level \
+  --play 24000 --game "$BALLANCE" --nmo "$NMO"
+python3 apps/ballance/scripts/ballance_check_evidence.py out/level/validation.json
+```
+
+Choose a frame budget that covers the intended run. Without `--play`, static
+checks still run, but no new landing or mechanism-motion evidence is collected.
+Keep authored passage declarations with the local route and generated reports
+in its ignored output directory. Repository tests exercise the checker with
+small fixtures; they do not provide completion evidence for your map.
+
