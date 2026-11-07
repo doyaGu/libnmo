@@ -95,6 +95,14 @@ deps/lua/
 /dist/
 
 # Authored maps and map-bound local regression fixtures stay outside Git.
+/.local/ballance/
+# This directory tracks shared catalogs only; authored data remains local.
+/apps/ballance/data/*
+!/apps/ballance/data/base_ballance_bb_manifest.json
+!/apps/ballance/data/level_materials.json
+!/apps/ballance/data/mechanism_parameters.json
+!/apps/ballance/data/motion_catalog.json
+!/apps/ballance/data/resource_catalog.json
 /apps/ballance/data/*_route.json
 /apps/ballance/data/*_scenarios.json
 /apps/ballance/data/*_shortcuts.json
