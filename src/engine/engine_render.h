@@ -174,6 +174,10 @@ typedef struct eng_render {
     int32_t screen_mode;      /* the render context's mode, of the engine's driver's list */
     ENG_VEC(eng_env_map_t) env_maps;
     ENG_VEC(eng_entity_callback_t) entity_callbacks;
+    /* The render context's stencil states as callbacks set them, given to each draw made, and
+       the stencil bits used since the last stencil clear (m_StencilFreeMask) */
+    nmo_engine_stencil_t stencil;
+    uint32_t stencil_used;
 
     /* CKObject::Show at run time: object -> its CK_OBJECT_VISIBLE and HIERACHICALHIDE flags */
     eng_map_t shown;
@@ -346,6 +350,14 @@ void eng_remove_entity_callback(nmo_engine_t *engine, nmo_object_id_t entity, en
    moveable flags; drawn with the transparent ones when `transparent`. NULL out of memory. */
 nmo_engine_draw_t *eng_render_entity_mesh(nmo_engine_t *engine, nmo_object_id_t entity, nmo_object_id_t mesh,
                                           const float world[16], bool transparent);
+/* CKRenderContext::GetFirstFreeStencilBits: the first of the 8 stencil bits unused since the
+   last stencil clear; with none left the blocks clear the stencil (Clear(CK_RENDER_CLEARSTENCIL)):
+   the engine starts over at bit 0 */
+int32_t eng_render_first_free_stencil_bit(nmo_engine_t *engine);
+/* CKRenderContext::UsedStencilBits */
+void eng_render_use_stencil_bits(nmo_engine_t *engine, uint32_t bits);
+/* CK3dEntity::IsHiddenByParent: a parent hides its children (CKHIERARCHICALHIDE) */
+bool eng_render_hidden_by_parent(const nmo_engine_t *engine, int32_t index);
 /* CKMesh::SetLitMode (VX_PRELITMESH 0, VX_LITMESH 1). False when `mesh` is none. */
 bool eng_mesh_set_lit_mode(nmo_engine_t *engine, nmo_object_id_t mesh, int32_t mode);
 /* A soft shadow on the floors under a 3D entity (Simple Shadow, TT Simple Shadow): the floors

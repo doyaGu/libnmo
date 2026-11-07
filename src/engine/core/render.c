@@ -112,7 +112,11 @@ eng_mesh_t *eng_render_mesh(nmo_engine_t *engine, nmo_object_id_t id)
 nmo_engine_draw_t *eng_render_push(nmo_engine_t *engine)
 {
     nmo_engine_draw_t *draw = NULL;
-    return ENG_VEC_PUSH(engine->render.draws, draw) ? draw : NULL;
+    if (!ENG_VEC_PUSH(engine->render.draws, draw)) {
+        return NULL;
+    }
+    draw->stencil = engine->render.stencil;
+    return draw;
 }
 
 void eng_render_apply_scene(nmo_engine_t *engine, uint32_t background_color,
@@ -1648,7 +1652,27 @@ static int32_t *eng_2d_children(nmo_engine_t *engine, nmo_object_id_t parent, bo
 
 static bool eng_push_draw(nmo_engine_t *engine, nmo_engine_draw_t **out)
 {
-    return ENG_VEC_PUSH(engine->render.draws, *out);
+    if (!ENG_VEC_PUSH(engine->render.draws, *out)) {
+        return false;
+    }
+    (*out)->stencil = engine->render.stencil;
+    return true;
+}
+
+int32_t eng_render_first_free_stencil_bit(nmo_engine_t *engine)
+{
+    for (int32_t bit = 0; bit < 8; bit++) {
+        if (!(engine->render.stencil_used & (1u << bit))) {
+            return bit;
+        }
+    }
+    engine->render.stencil_used = 0;
+    return 0;
+}
+
+void eng_render_use_stencil_bits(nmo_engine_t *engine, uint32_t bits)
+{
+    engine->render.stencil_used |= bits;
 }
 
 /* RCK2dEntity::Render: itself if shown and in the scene, then its children */
@@ -1847,6 +1871,8 @@ nmo_engine_draw_t *eng_render_entity_mesh(nmo_engine_t *engine, nmo_object_id_t 
     draw->no_z_test = (moveable & VX_MOVEABLE_NOZBUFFERTEST) != 0;
     draw->no_z_write = (moveable & VX_MOVEABLE_NOZBUFFERWRITE) != 0;
     draw->z_only = (moveable & VX_MOVEABLE_ZBUFONLY) != 0;
+    draw->stencil_only = (moveable & VX_MOVEABLE_STENCILONLY) != 0;
+    draw->mirrored = (moveable & VX_MOVEABLE_INDIRECTMATRIX) != 0;
     return draw;
 }
 
@@ -1889,6 +1915,11 @@ static bool eng_hidden_by_parent(const nmo_engine_t *engine, const eng_entity_t 
         }
     }
     return false;
+}
+
+bool eng_render_hidden_by_parent(const nmo_engine_t *engine, int32_t index)
+{
+    return index >= 0 && eng_hidden_by_parent(engine, &engine->entities.data[index]);
 }
 
 /* CKMesh::GetBaryCenter and GetRadius, in the mesh's space; false for no mesh */
@@ -2219,6 +2250,10 @@ nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *o
     render->draws.count = 0;
     render->vertices.count = 0;
     eng_render_settings(engine);
+    memset(&render->stencil, 0, sizeof(render->stencil));
+    if (render->render_options & CK_RENDER_CLEARSTENCIL) {
+        render->stencil_used = 0;
+    }
     out->render_options = render->render_options;
     out->shading = render->shading;
     out->use_textures = render->use_textures;

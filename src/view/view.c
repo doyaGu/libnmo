@@ -509,6 +509,35 @@ static GLenum view_compare(int32_t func)
     }
 }
 
+static GLenum view_stencil_op(int32_t op)
+{
+    switch (op) {
+    case 2: return GL_ZERO;
+    case 3: return GL_REPLACE;
+    case 4: return GL_INCR;
+    case 5: return GL_DECR;
+    case 6: return GL_INVERT;
+    case 7: return GL_INCR_WRAP;
+    case 8: return GL_DECR_WRAP;
+    default: return GL_KEEP;
+    }
+}
+
+/* The draw's stencil test (the render context's states it was made with) and its winding */
+static void view_draw_state(const nmo_engine_draw_t *draw)
+{
+    if (draw->stencil.enabled) {
+        glEnable(GL_STENCIL_TEST);
+        glStencilFunc(view_compare(draw->stencil.func), (GLint)draw->stencil.ref, draw->stencil.mask);
+        glStencilOp(view_stencil_op(draw->stencil.fail), view_stencil_op(draw->stencil.zfail),
+                    view_stencil_op(draw->stencil.pass));
+        glStencilMask(draw->stencil.write_mask);
+    } else {
+        glDisable(GL_STENCIL_TEST);
+    }
+    glFrontFace(draw->mirrored ? GL_CCW : GL_CW); /* VX_MOVEABLE_INDIRECTMATRIX inverts it */
+}
+
 static GLint view_texture_env(int32_t blend)
 {
     switch (blend) {
@@ -856,6 +885,32 @@ static void view_draw_mesh(nmo_view_t *view, const nmo_engine_frame_t *frame,
     glNormalPointer(GL_FLOAT, stride, &mesh.vertices[0].normal);
     glEnableClientState(GL_TEXTURE_COORD_ARRAY);
     glTexCoordPointer(2, GL_FLOAT, stride, &mesh.vertices[0].uv);
+    if (draw->stencil_only) {
+        /* RCKMesh::Render of a VX_MOVEABLE_STENCILONLY entity: 1 in every stencil bit, nothing else */
+        glDisable(GL_LIGHTING);
+        glDisable(GL_BLEND);
+        glDisable(GL_ALPHA_TEST);
+        glDisable(GL_TEXTURE_2D);
+        glEnable(GL_DEPTH_TEST);
+        glDepthMask(GL_FALSE);
+        glDepthFunc(GL_LEQUAL);
+        glEnable(GL_STENCIL_TEST);
+        glStencilFunc(GL_ALWAYS, 1, 0xFF);
+        glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+        glStencilMask(0xFF);
+        glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+        for (int32_t g = 0; g < cached->group_count; g++) {
+            if (cached->counts[g] > 0) {
+                glDrawElements(GL_TRIANGLES, cached->counts[g], GL_UNSIGNED_SHORT, cached->indices[g]);
+            }
+        }
+        glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+        view_draw_state(draw);
+        glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+        glDisableClientState(GL_NORMAL_ARRAY);
+        glDisableClientState(GL_VERTEX_ARRAY);
+        return;
+    }
     bool prelit = mesh.prelit && cached->colors != NULL;
     if (prelit) {
         glEnableClientState(GL_COLOR_ARRAY);
@@ -1143,9 +1198,12 @@ static void view_draw_primitive(nmo_view_t *view, const nmo_engine_frame_t *fram
     if (draw->material == 0 || !nmo_engine_material(view->engine, draw->material, &material)) {
         memset(&material, 0, sizeof(material));
         material.diffuse[0] = material.diffuse[1] = material.diffuse[2] = material.diffuse[3] = 1.0f;
-        material.z_write = true;
+        material.z_write = !draw->no_z_write;
         material.z_func = 4;
         material.shade_mode = 2;
+        material.alpha_blend = draw->blend;
+        material.source_blend = draw->source_blend;
+        material.dest_blend = draw->dest_blend;
     }
     if (draw->lines) {
         material.texture = 0;
@@ -1353,8 +1411,10 @@ static nmo_status_t view_render(nmo_view_t *view, nmo_engine_frame_t *out_frame)
     glClearColor(background[0], background[1], background[2], 1.0f);
     /* RCKRenderContext::Clear: the background only with CK_RENDER_CLEARBACK, depth with CLEARZ */
     GLbitfield clear = ((frame.render_options & 0x20u) ? GL_COLOR_BUFFER_BIT : 0u) |
-                       ((frame.render_options & 0x10u) ? GL_DEPTH_BUFFER_BIT : 0u);
+                       ((frame.render_options & 0x10u) ? GL_DEPTH_BUFFER_BIT : 0u) |
+                       ((frame.render_options & 0x40u) ? GL_STENCIL_BUFFER_BIT : 0u);
     if (clear != 0) {
+        glStencilMask(0xFF);
         glClear(clear);
     }
     glDisable(GL_SCISSOR_TEST);
@@ -1404,6 +1464,7 @@ static nmo_status_t view_render(nmo_view_t *view, nmo_engine_frame_t *out_frame)
             continue;
         }
         view_clip_draw(view,draw,window_h);
+        view_draw_state(draw);
         if (draw->kind == NMO_ENGINE_DRAW_SPRITE3D) {
             view_draw_sprite3d(view, &frame, draw, view_m);
             continue;
@@ -1427,6 +1488,7 @@ static nmo_status_t view_render(nmo_view_t *view, nmo_engine_frame_t *out_frame)
     for (int32_t i = 0; i < transparent_count; i++) {
         const nmo_engine_draw_t *draw = &frame.draws[transparent[i]];
         view_clip_draw(view,draw,window_h);
+        view_draw_state(draw);
         if (draw->kind == NMO_ENGINE_DRAW_TRIANGLES || draw->kind == NMO_ENGINE_DRAW_LINES) {
             view_draw_triangles(view, &frame, draw, view_m);
         } else if (draw->kind == NMO_ENGINE_DRAW_SPRITE3D) {
@@ -1441,11 +1503,14 @@ static nmo_status_t view_render(nmo_view_t *view, nmo_engine_frame_t *out_frame)
         const nmo_engine_draw_t *draw = &frame.draws[i];
         if (draw->kind == NMO_ENGINE_DRAW_PRIMITIVE && draw->post) {
             view_clip_draw(view, draw, window_h);
+            view_draw_state(draw);
             view_draw_primitive(view, &frame, draw, view_m);
         }
     }
     free(transparent);
     free(depths);
+    glDisable(GL_STENCIL_TEST);
+    glFrontFace(GL_CW);
     glDisable(GL_SCISSOR_TEST);
     glDisable(GL_LIGHTING);
     view_begin_2d(&frame);
@@ -1571,6 +1636,7 @@ nmo_status_t nmo_view_open(nmo_engine_t *engine, const char *title, int scale,
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+    SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     /* Edges smoothed with 4 samples a pixel, or none when the driver has no such format */
     for (int samples = 4; samples >= 0 && view->context == NULL; samples -= 4) {

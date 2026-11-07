@@ -50,6 +50,14 @@ typedef struct nmo_engine_vertex {
     float nx, ny, nz;
 } nmo_engine_vertex_t;
 
+/* The stencil test a draw renders with, as the render context's VXRENDERSTATE_STENCIL* states
+   were when it was made: VXCMP `func`, VXSTENCILOP `fail`, `zfail` and `pass` */
+typedef struct nmo_engine_stencil {
+    bool enabled;
+    int32_t func, fail, zfail, pass;
+    uint32_t ref, mask, write_mask;
+} nmo_engine_stencil_t;
+
 /*
  * Something to draw. A mesh uses its materials; a quad uses `material`
  * (CKMaterial::SetAsCurrent, vertex color its diffuse), or when it has
@@ -110,6 +118,15 @@ typedef struct nmo_engine_draw {
     float fade_alpha;
     bool has_sort_position;
     float sort_position[3];
+    /* A 3D draw renders with `stencil` (Planar Reflection's and Planar Shadow's plane masks).
+       A mesh with `stencil_only` (VX_MOVEABLE_STENCILONLY) writes 1 to every stencil bit where
+       it passes a less-or-equal depth test, and no color or depth. One `mirrored` has its
+       winding inverted (VX_MOVEABLE_INDIRECTMATRIX: a reflection). A primitive with no
+       material is blended source_blend/dest_blend when `blend`, without z write when
+       `no_z_write`. */
+    nmo_engine_stencil_t stencil;
+    bool stencil_only;
+    bool mirrored;
     /* Sprite text: `text` in `rect`, in `color` on nothing (the sprite's transparent
        color), with the font `font_name` of `font_size` (points; pixels when negative,
        as CreateFont takes it), `font_weight` and `italic`, placed by `text_align`
