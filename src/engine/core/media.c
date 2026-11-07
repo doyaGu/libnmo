@@ -10,6 +10,7 @@
 #include "../engine_block_util.h"
 
 #include "object/builtin/nmo_sound_schemas.h"
+#include "object/builtin/nmo_sprite_schemas.h"
 #include "object/builtin/nmo_texture_schemas.h"
 #include "object/nmo_class_ids.h"
 
@@ -386,6 +387,55 @@ const eng_screen_mode_t eng_screen_modes[ENG_SCREEN_MODE_COUNT] = {
     {640, 480, 16}, {640, 480, 32}, {800, 600, 16}, {800, 600, 32}, {1024, 768, 16}, {1024, 768, 32}};
 
 /* The engine's state of texture `id`, made the first time; NULL when `id` is no CKTexture. */
+/* A sprite's own state, or that of the sprite it shares its bitmap with (CKSprite::Load:
+   CopySpriteData); NULL for none */
+static const nmo_sprite_state_t *eng_sprite_bitmap_state(const nmo_engine_t *engine, nmo_object_id_t id)
+{
+    for (int depth = 0; id != 0 && depth < 8; depth++) {
+        nmo_object_t *object = eng_find_object(engine, id);
+        if (object == NULL || nmo_object_get_class_id(object) != NMO_CID_SPRITE) {
+            return NULL;
+        }
+        const nmo_sprite_state_t *state = (const nmo_sprite_state_t *)nmo_object_get_state(object);
+        if (state == NULL || !state->has_sprite_ref) {
+            return state;
+        }
+        id = eng_object_ref(engine, id, &state->sprite_ref);
+    }
+    return NULL;
+}
+
+bool eng_bitmap_view(const nmo_engine_t *engine, nmo_object_id_t id, nmo_bitmap_slots_t *out)
+{
+    memset(out, 0, sizeof(*out));
+    nmo_object_t *object = id != 0 ? eng_find_object(engine, id) : NULL;
+    uint32_t class_id = object != NULL ? nmo_object_get_class_id(object) : 0;
+    if (class_id == NMO_CID_TEXTURE) {
+        const nmo_texture_state_t *state = (const nmo_texture_state_t *)nmo_object_get_state(object);
+        if (state == NULL) {
+            return false;
+        }
+        out->kind = state->bitmap_kind;
+        out->slot_count = state->slot_count;
+        out->reader_slots = state->reader_slots;
+        out->raw_slots = state->raw_slots;
+        out->bitmap2_slots = state->bitmap2_slots;
+        out->has_slot_filenames = state->has_slot_filenames;
+        out->slot_filenames = state->slot_filenames;
+        out->has_movie_filename = state->has_movie_filename;
+        out->movie_filename = state->movie_filename;
+        return true;
+    }
+    const nmo_sprite_state_t *sprite = class_id == NMO_CID_SPRITE ? eng_sprite_bitmap_state(engine, id) : NULL;
+    if (sprite == NULL) {
+        return false;
+    }
+    if (sprite->has_bitmap_data) {
+        *out = sprite->bitmap;
+    }
+    return true;
+}
+
 eng_texture_t *eng_texture(nmo_engine_t *engine, nmo_object_id_t id)
 {
     for (size_t i = 0; i < engine->media.textures.count; i++) {
@@ -394,7 +444,23 @@ eng_texture_t *eng_texture(nmo_engine_t *engine, nmo_object_id_t id)
         }
     }
     nmo_object_t *object = id != 0 ? eng_find_object(engine, id) : NULL;
-    if (object == NULL || nmo_object_get_class_id(object) != NMO_CID_TEXTURE) {
+    uint32_t class_id = object != NULL ? nmo_object_get_class_id(object) : 0;
+    if (class_id == NMO_CID_SPRITE) {
+        /* A sprite's bitmap, as its file or the sprite it shares it with left it */
+        const nmo_sprite_state_t *sprite = eng_sprite_bitmap_state(engine, id);
+        eng_texture_t *texture = NULL;
+        if (sprite == NULL || !ENG_VEC_PUSH(engine->media.textures, texture)) {
+            return NULL;
+        }
+        texture->id = id;
+        texture->sprite = true;
+        texture->slot_count = sprite->has_bitmap_data ? (int32_t)sprite->bitmap.slot_count : 0;
+        texture->current_slot = sprite->has_slot ? (int32_t)sprite->current_slot : 0;
+        texture->transparent = sprite->has_transparency && sprite->is_transparent;
+        texture->transparent_color = sprite->has_transparency ? sprite->transparent_color : 0u;
+        return texture;
+    }
+    if (class_id != NMO_CID_TEXTURE) {
         return NULL;
     }
     const nmo_texture_state_t *state = (const nmo_texture_state_t *)nmo_object_get_state(object);
@@ -416,6 +482,15 @@ eng_texture_t *eng_texture(nmo_engine_t *engine, nmo_object_id_t id)
         texture->mipmap_level = -1;
     }
     return texture;
+}
+
+bool eng_texture_set_slot(eng_texture_t *texture, int32_t slot)
+{
+    if (slot < 0 || slot >= texture->slot_count) {
+        return false;
+    }
+    texture->current_slot = slot;
+    return true;
 }
 
 void eng_texture_use_mipmap(nmo_engine_t *engine, nmo_object_id_t id, int32_t use)

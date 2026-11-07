@@ -994,6 +994,11 @@ static void view_draw_quad(nmo_view_t *view, const nmo_engine_draw_t *draw)
         material.address_mode = 3;
         material.min_filter = material.mag_filter = draw->nearest ? 1 : 2;
         material.shade_mode = draw->color2 != draw->color ? 2 : 1;
+        if (draw->alpha_test) { /* a transparent sprite: its keyed texels dropped */
+            material.alpha_test = true;
+            material.alpha_func = 5; /* VXCMP_GREATER */
+            material.alpha_ref = 0;
+        }
         view_set_material(view, &material, false, false, NULL);
     }
     glDisable(GL_CULL_FACE);

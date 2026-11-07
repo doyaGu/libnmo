@@ -81,7 +81,9 @@ typedef struct nmo_engine_draw {
     bool alpha_test;
     /* A 3D sprite: two triangles of the frame's vertices from first_vertex, colored with its
        material's diffuse, drawn with `material` and no lighting */
-    /* Triangles, and a quad with no material that sets `blend` (Planar Filter): its blending */
+    /* Triangles, and a quad with no material that sets `blend` (Planar Filter, a sprite): its
+       blending; such a quad is alpha tested (alpha > 0) too when `alpha_test` (a transparent
+       sprite). A sprite's quad textures `texture`, the sprite itself, with nearest filtering. */
     int32_t source_blend, dest_blend;
     bool blend;
     /* Sprite text: `text` in `rect`, in `color` on nothing (the sprite's transparent

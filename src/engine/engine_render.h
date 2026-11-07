@@ -219,6 +219,23 @@ eng_material_t *eng_material_new(nmo_engine_t *engine, nmo_object_id_t id);
 void eng_2d_destroy(nmo_engine_t *engine, nmo_object_id_t id);
 /* The 2D entity's run time state; NULL for no CK2dEntity */
 eng_2d_t *eng_2d_entity(nmo_engine_t *engine, nmo_object_id_t id);
+/* CK2dEntity::SetRect: the rect, the homogeneous one with it, and unless `keep_children`
+   the children moved along (their STICK flags, or their homogeneous rects); false for no
+   2D entity */
+bool eng_2d_set_rect(nmo_engine_t *engine, nmo_object_id_t id, nmo_rect_t rect, bool keep_children);
+/* CK2dEntity::SetPosition: the top left corner, in homogeneous coordinates or in pixels
+   from `ref`'s (0: the render context's) */
+bool eng_2d_set_position(nmo_engine_t *engine, nmo_object_id_t id, float x, float y, bool homogeneous,
+                         bool keep_children, nmo_object_id_t ref);
+/* CK2dEntity::SetSize, the same way */
+bool eng_2d_set_size(nmo_engine_t *engine, nmo_object_id_t id, float width, float height, bool homogeneous,
+                     bool keep_children);
+/* CK2dEntity::SetBackground: a root entity moves to the background or foreground root,
+   its children with it; a child stays as its parent has it */
+bool eng_2d_set_background(nmo_engine_t *engine, nmo_object_id_t id, bool back);
+/* CK2dEntity::SetParent: 0 for none; a background parent makes the entity background,
+   another foreground. False for no 2D entity or a parent among its children. */
+bool eng_2d_set_parent(nmo_engine_t *engine, nmo_object_id_t id, nmo_object_id_t parent);
 eng_light_t *eng_light(nmo_engine_t *engine, nmo_object_id_t id);
 /* CKTargetLight::SetTarget: the light points at `target` (0 for none), its flags moved over; false for no target light */
 bool eng_set_light_target(nmo_engine_t *engine, nmo_object_id_t light, nmo_object_id_t target);

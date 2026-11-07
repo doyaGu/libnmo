@@ -20,6 +20,7 @@
 #include "format/nmo_stb_adapter.h"
 #include "object/builtin/nmo_2dentity_schemas.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_bitmap_slots.h"
 #include "object/builtin/nmo_camera_schemas.h"
 #include "object/builtin/nmo_light_schemas.h"
 #include "object/builtin/nmo_material_schemas.h"
@@ -1268,6 +1269,241 @@ static void eng_load_2d_class(nmo_engine_t *engine, uint32_t class_id)
     free(ids);
 }
 
+/* The 2D entities of every file loaded so far */
+static void eng_load_2d_entities(nmo_engine_t *engine)
+{
+    if (engine->render.entities_2d_modules != engine->modules.count) {
+        engine->render.entities_2d_modules = engine->modules.count;
+        eng_load_2d_class(engine, NMO_CID_2DENTITY);
+    }
+}
+
+/* RCK2dEntity::GetHomogeneousRelativeRect: the parent's rect, or the render context's */
+static nmo_rect_t eng_2d_homogeneous_relative(nmo_engine_t *engine, nmo_object_id_t parent)
+{
+    int32_t at = parent != 0 ? eng_map_get(&engine->render.entity_2d_map, parent) : -1;
+    if (at >= 0) {
+        return engine->render.entities_2d.data[at].rect;
+    }
+    const eng_screen_mode_t *mode = &eng_screen_modes[engine->render.screen_mode];
+    nmo_rect_t rect = {0.0f, 0.0f, (float)mode->width, (float)mode->height};
+    return rect;
+}
+
+/* One axis of a child's rect when its parent's goes from old to new (the STICK flags) */
+static void eng_2d_stick(float child_lo, float child_hi, float old_lo, float old_hi, float new_lo,
+                         float new_hi, bool stick_lo, bool stick_hi, float *lo, float *hi)
+{
+    float size = child_hi - child_lo;
+    if (stick_lo) {
+        *lo = child_lo - old_lo + new_lo;
+        *hi = stick_hi ? new_hi - (old_hi - child_hi) : *lo + size;
+    } else if (stick_hi) {
+        *hi = new_hi - (old_hi - child_hi);
+        *lo = *hi - size;
+    } else {
+        float parent = old_hi - old_lo;
+        float ratio = parent != 0.0f ? ((child_lo + child_hi) * 0.5f - old_lo) / parent : 0.5f;
+        float center = (new_hi - new_lo) * ratio + new_lo;
+        *lo = center - size * 0.5f;
+        *hi = *lo + size;
+    }
+}
+
+static void eng_2d_set_rect_at(nmo_engine_t *engine, int32_t index, nmo_rect_t rect, bool keep_children)
+{
+    eng_2d_t *entity = &engine->render.entities_2d.data[index];
+    nmo_rect_t old = entity->rect;
+    if (entity->flags & CK_2DENTITY_USEHOMOGENEOUSCOORD) {
+        nmo_rect_t relative = eng_2d_homogeneous_relative(engine, entity->parent);
+        float inv_w = 1.0f / (relative.right - relative.left);
+        float inv_h = 1.0f / (relative.bottom - relative.top);
+        nmo_rect_t h;
+        h.left = (rect.left - relative.left) * inv_w;
+        h.top = (rect.top - relative.top) * inv_h;
+        h.right = h.left + (rect.right - rect.left) * inv_w;
+        h.bottom = h.top + (rect.bottom - rect.top) * inv_h;
+        entity->homogeneous = h;
+    }
+    entity->rect = rect;
+    if (keep_children) {
+        return;
+    }
+    nmo_object_id_t id = entity->id;
+    for (size_t i = 0; i < engine->render.entities_2d.count; i++) {
+        const eng_2d_t *child = &engine->render.entities_2d.data[i];
+        if (child->parent != id || child->destroyed) {
+            continue;
+        }
+        nmo_rect_t next;
+        if (child->flags & CK_2DENTITY_USEHOMOGENEOUSCOORD) {
+            float w = rect.right - rect.left, h = rect.bottom - rect.top;
+            next.left = rect.left + child->homogeneous.left * w;
+            next.top = rect.top + child->homogeneous.top * h;
+            next.right = rect.left + child->homogeneous.right * w;
+            next.bottom = rect.top + child->homogeneous.bottom * h;
+        } else {
+            eng_2d_stick(child->rect.left, child->rect.right, old.left, old.right, rect.left,
+                         rect.right, (child->flags & CK_2DENTITY_STICKLEFT) != 0,
+                         (child->flags & CK_2DENTITY_STICKRIGHT) != 0, &next.left, &next.right);
+            eng_2d_stick(child->rect.top, child->rect.bottom, old.top, old.bottom, rect.top,
+                         rect.bottom, (child->flags & CK_2DENTITY_STICKTOP) != 0,
+                         (child->flags & CK_2DENTITY_STICKBOTTOM) != 0, &next.top, &next.bottom);
+        }
+        eng_2d_set_rect_at(engine, (int32_t)i, next, false);
+    }
+}
+
+static int32_t eng_2d_index(nmo_engine_t *engine, nmo_object_id_t id)
+{
+    eng_load_2d_entities(engine);
+    return eng_2d_entity(engine, id) != NULL ? eng_map_get(&engine->render.entity_2d_map, id) : -1;
+}
+
+bool eng_2d_set_rect(nmo_engine_t *engine, nmo_object_id_t id, nmo_rect_t rect, bool keep_children)
+{
+    int32_t at = eng_2d_index(engine, id);
+    if (at < 0) {
+        return false;
+    }
+    eng_2d_set_rect_at(engine, at, rect, keep_children);
+    return true;
+}
+
+/* RCK2dEntity::SetHomogeneousRect, through SetRect */
+static void eng_2d_set_homogeneous_at(nmo_engine_t *engine, int32_t index, nmo_rect_t h, bool keep_children)
+{
+    eng_2d_t *entity = &engine->render.entities_2d.data[index];
+    entity->homogeneous = h;
+    nmo_rect_t relative = eng_2d_homogeneous_relative(engine, entity->parent);
+    float w = relative.right - relative.left, ht = relative.bottom - relative.top;
+    nmo_rect_t rect = {relative.left + h.left * w, relative.top + h.top * ht,
+                       relative.left + h.right * w, relative.top + h.bottom * ht};
+    eng_2d_set_rect_at(engine, index, rect, keep_children);
+}
+
+bool eng_2d_set_position(nmo_engine_t *engine, nmo_object_id_t id, float x, float y, bool homogeneous,
+                         bool keep_children, nmo_object_id_t ref)
+{
+    int32_t at = eng_2d_index(engine, id);
+    if (at < 0) {
+        return false;
+    }
+    eng_2d_t *entity = &engine->render.entities_2d.data[at];
+    if (homogeneous) {
+        if (entity->flags & CK_2DENTITY_USEHOMOGENEOUSCOORD) {
+            nmo_rect_t h = entity->homogeneous;
+            h.right += x - h.left;
+            h.bottom += y - h.top;
+            h.left = x;
+            h.top = y;
+            eng_2d_set_homogeneous_at(engine, at, h, keep_children);
+        }
+        return true;
+    }
+    if (entity->flags & CK_2DENTITY_USEHOMOGENEOUSCOORD) {
+        entity->flags |= CK_2DENTITY_UPDATEHOMOGENEOUSCOORD;
+    }
+    int32_t ref_at = ref != 0 ? eng_2d_index(engine, ref) : -1;
+    if (ref_at >= 0) {
+        x += engine->render.entities_2d.data[ref_at].rect.left;
+        y += engine->render.entities_2d.data[ref_at].rect.top;
+    }
+    nmo_rect_t rect = engine->render.entities_2d.data[at].rect;
+    rect.right += x - rect.left;
+    rect.bottom += y - rect.top;
+    rect.left = x;
+    rect.top = y;
+    eng_2d_set_rect_at(engine, at, rect, keep_children);
+    return true;
+}
+
+bool eng_2d_set_size(nmo_engine_t *engine, nmo_object_id_t id, float width, float height, bool homogeneous,
+                     bool keep_children)
+{
+    int32_t at = eng_2d_index(engine, id);
+    if (at < 0) {
+        return false;
+    }
+    eng_2d_t *entity = &engine->render.entities_2d.data[at];
+    if (homogeneous) {
+        if (entity->flags & CK_2DENTITY_USEHOMOGENEOUSCOORD) {
+            nmo_rect_t h = entity->homogeneous;
+            h.right = h.left + width;
+            h.bottom = h.top + height;
+            eng_2d_set_homogeneous_at(engine, at, h, keep_children);
+        }
+        return true;
+    }
+    if (entity->flags & CK_2DENTITY_USEHOMOGENEOUSCOORD) {
+        entity->flags |= CK_2DENTITY_UPDATEHOMOGENEOUSCOORD;
+    }
+    nmo_rect_t rect = entity->rect;
+    rect.right = rect.left + width;
+    rect.bottom = rect.top + height;
+    eng_2d_set_rect_at(engine, at, rect, keep_children);
+    return true;
+}
+
+/* RCK2dEntity::HierarchySetBackground: the entity and every child under it */
+static void eng_2d_hierarchy_background(nmo_engine_t *engine, int32_t index, bool back, int depth)
+{
+    eng_2d_t *entity = &engine->render.entities_2d.data[index];
+    if (back) {
+        entity->flags |= CK_2DENTITY_BACKGROUND;
+    } else {
+        entity->flags &= ~(uint32_t)CK_2DENTITY_BACKGROUND;
+    }
+    nmo_object_id_t id = entity->id;
+    for (size_t i = 0; depth < 1024 && i < engine->render.entities_2d.count; i++) {
+        if (engine->render.entities_2d.data[i].parent == id) {
+            eng_2d_hierarchy_background(engine, (int32_t)i, back, depth + 1);
+        }
+    }
+}
+
+bool eng_2d_set_background(nmo_engine_t *engine, nmo_object_id_t id, bool back)
+{
+    int32_t at = eng_2d_index(engine, id);
+    if (at < 0) {
+        return false;
+    }
+    const eng_2d_t *entity = &engine->render.entities_2d.data[at];
+    if (entity->parent == 0 && ((entity->flags & CK_2DENTITY_BACKGROUND) != 0) != back) {
+        eng_2d_hierarchy_background(engine, at, back, 0);
+    }
+    return true;
+}
+
+bool eng_2d_set_parent(nmo_engine_t *engine, nmo_object_id_t id, nmo_object_id_t parent)
+{
+    int32_t at = eng_2d_index(engine, id);
+    int32_t parent_at = parent != 0 ? eng_2d_index(engine, parent) : -1;
+    if (at < 0) {
+        return false;
+    }
+    /* No cycle: the entity is none of the new parent's ancestors */
+    for (int32_t p = parent_at, depth = 0; p >= 0 && depth < 1024; depth++) {
+        const eng_2d_t *ancestor = &engine->render.entities_2d.data[p];
+        if (ancestor->id == id) {
+            return false;
+        }
+        p = ancestor->parent != 0 ? eng_map_get(&engine->render.entity_2d_map, ancestor->parent) : -1;
+    }
+    eng_2d_t *entity = &engine->render.entities_2d.data[at];
+    if (parent_at < 0) {
+        entity->parent = 0; /* a child of the background or foreground root, as it is */
+        return true;
+    }
+    entity->parent = parent;
+    if (engine->render.entities_2d.data[parent_at].flags & CK_2DENTITY_BACKGROUND) {
+        entity->flags |= CK_2DENTITY_BACKGROUND;
+    } else {
+        entity->flags &= ~(uint32_t)CK_2DENTITY_BACKGROUND;
+    }
+    return true;
+}
+
 /* The rect homogeneous coordinates are relative to: the parent's, or the render context's */
 static nmo_rect_t eng_2d_relative_rect(nmo_engine_t *engine, const eng_2d_t *entity,
                                        float width, float height)
@@ -1284,12 +1520,14 @@ static nmo_rect_t eng_2d_relative_rect(nmo_engine_t *engine, const eng_2d_t *ent
 
 /* RCK2dEntity::UpdateExtents with the viewport the whole render context; false when clipped away */
 static bool eng_2d_update_extents(nmo_engine_t *engine, eng_2d_t *entity, float width,
-                                  float height)
+                                  float height, const int32_t *sprite_size)
 {
     nmo_rect_t src = entity->source;
     if (!(entity->flags & CK_2DENTITY_USESRCRECT)) {
+        /* a sprite's whole bitmap in pixels, another entity's in [0, 1] */
         src.left = src.top = 0.0f;
-        src.right = src.bottom = 1.0f;
+        src.right = sprite_size != NULL ? (float)sprite_size[0] : 1.0f;
+        src.bottom = sprite_size != NULL ? (float)sprite_size[1] : 1.0f;
     }
     memset(&entity->extents, 0, sizeof(entity->extents));
     memset(&entity->source_extents, 0, sizeof(entity->source_extents));
@@ -1415,10 +1653,38 @@ static void eng_render_2d(nmo_engine_t *engine, int32_t index, float width, floa
         free(children);
         return;
     }
-    bool clipped = !eng_2d_update_extents(engine, entity, width, height);
+    /* A CKSprite draws its own bitmap (RCKSprite::Draw), its material unused */
+    eng_texture_t *sprite = eng_object_class(engine, id) == NMO_CID_SPRITE ? eng_texture(engine, id) : NULL;
+    int32_t sprite_size[2] = {0, 0};
+    bool has_bitmap = sprite != NULL && eng_bitmap_size(engine, sprite, &sprite_size[0], &sprite_size[1]);
+    entity = &engine->render.entities_2d.data[index];
+    bool clipped = !eng_2d_update_extents(engine, entity, width, height, sprite != NULL ? sprite_size : NULL);
     entity = &engine->render.entities_2d.data[index];
     nmo_engine_draw_t *draw = NULL;
-    if (!clipped && visible && entity->material != 0 && eng_push_draw(engine, &draw)) {
+    if (sprite != NULL) {
+        if (!clipped && visible && has_bitmap && eng_push_draw(engine, &draw)) {
+            draw->kind = NMO_ENGINE_DRAW_QUAD;
+            draw->object = id;
+            draw->rect[0] = floorf(entity->extents.left + 0.5f);
+            draw->rect[1] = floorf(entity->extents.top + 0.5f);
+            draw->rect[2] = floorf(entity->extents.right + 0.5f);
+            draw->rect[3] = floorf(entity->extents.bottom + 0.5f);
+            /* the source rect is in bitmap pixels */
+            draw->uv[0] = entity->source_extents.left / (float)sprite_size[0];
+            draw->uv[1] = entity->source_extents.top / (float)sprite_size[1];
+            draw->uv[2] = entity->source_extents.right / (float)sprite_size[0];
+            draw->uv[3] = entity->source_extents.bottom / (float)sprite_size[1];
+            draw->texture = id;
+            draw->color = draw->color2 = 0xFFFFFFFFu;
+            draw->nearest = true;
+            draw->background = (entity->flags & CK_2DENTITY_BACKGROUND) != 0;
+            /* transparent: blended and alpha tested; opaque otherwise */
+            draw->blend = true;
+            draw->source_blend = sprite->transparent ? VXBLEND_SRCALPHA : VXBLEND_ONE;
+            draw->dest_blend = sprite->transparent ? VXBLEND_INVSRCALPHA : VXBLEND_ZERO;
+            draw->alpha_test = sprite->transparent;
+        }
+    } else if (!clipped && visible && entity->material != 0 && eng_push_draw(engine, &draw)) {
         eng_material_t *material = eng_material(engine, entity->material);
         draw->kind = NMO_ENGINE_DRAW_QUAD;
         draw->object = entity->id;
@@ -1678,10 +1944,7 @@ nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *o
     }
     eng_render_t *render = &engine->render;
     /* The 2D entities of every file loaded so far */
-    if (render->entities_2d_modules != engine->modules.count) {
-        render->entities_2d_modules = engine->modules.count;
-        eng_load_2d_class(engine, NMO_CID_2DENTITY);
-    }
+    eng_load_2d_entities(engine);
     memset(out, 0, sizeof(*out));
     const eng_screen_mode_t *mode = &eng_screen_modes[render->screen_mode];
     out->width = mode->width;
@@ -1806,14 +2069,14 @@ static uint8_t *eng_rgba_copy(const uint8_t *pixels, int width, int height, int 
     return rgba;
 }
 
-/* The pixels of a texture's slot, as its reader, raw planes or file give them */
-static uint8_t *eng_decode_slot(nmo_engine_t *engine, const nmo_texture_state_t *state,
+/* The pixels of a texture's or sprite's slot, as its reader, raw planes or file give them */
+static uint8_t *eng_decode_slot(nmo_engine_t *engine, const nmo_bitmap_slots_t *state,
                                 const eng_texture_t *texture, int32_t slot, nmo_arena_t *arena,
                                 int *w, int *h, int *ch)
 {
     uint32_t index = (uint32_t)slot;
     const char *loaded = (size_t)slot < texture->files.count ? texture->files.data[slot] : NULL;
-    switch (loaded != NULL ? CKTEXTURE_BITMAP_NONE : state->bitmap_kind) {
+    switch (loaded != NULL ? CKTEXTURE_BITMAP_NONE : state->kind) {
     case CKTEXTURE_BITMAP_READER:
         if (state->reader_slots != NULL && index < state->slot_count &&
             state->reader_slots[index].data != NULL) {
@@ -1936,12 +2199,11 @@ bool nmo_engine_texture_image(nmo_engine_t *engine, nmo_object_id_t texture,
         return false;
     }
     eng_texture_t *slots = eng_texture(engine, texture);
-    nmo_object_t *object = slots != NULL ? eng_find_object(engine, texture) : NULL;
-    const nmo_texture_state_t *state =
-        object != NULL ? (const nmo_texture_state_t *)nmo_object_get_state(object) : NULL;
-    if (state == NULL) {
+    nmo_bitmap_slots_t bitmap;
+    if (slots == NULL || !eng_bitmap_view(engine, texture, &bitmap)) {
         return false;
     }
+    const nmo_bitmap_slots_t *state = &bitmap;
     int32_t slot = slots->current_slot;
     eng_image_t *image = eng_find_image(engine, texture);
     if (image == NULL) {
@@ -2030,10 +2292,10 @@ eng_surface_t *eng_texture_surface(nmo_engine_t *engine, eng_texture_t *texture,
     if (surface == NULL || surface->rgba != NULL) {
         return surface != NULL && surface->rgba != NULL ? surface : NULL;
     }
-    const nmo_texture_state_t *state = eng_texture_state(engine, texture->id);
-    nmo_arena_t *arena = state != NULL ? nmo_arena_create(NULL, 1u << 16) : NULL;
+    nmo_bitmap_slots_t bitmap;
+    nmo_arena_t *arena = eng_bitmap_view(engine, texture->id, &bitmap) ? nmo_arena_create(NULL, 1u << 16) : NULL;
     int w = 0, h = 0, ch = 0;
-    uint8_t *pixels = arena != NULL ? eng_decode_slot(engine, state, texture, slot, arena, &w, &h, &ch) : NULL;
+    uint8_t *pixels = arena != NULL ? eng_decode_slot(engine, &bitmap, texture, slot, arena, &w, &h, &ch) : NULL;
     uint8_t *rgba = eng_rgba_copy(pixels, w, h, ch);
     if (arena != NULL) {
         nmo_arena_destroy(arena);
@@ -2048,7 +2310,7 @@ eng_surface_t *eng_texture_surface(nmo_engine_t *engine, eng_texture_t *texture,
 }
 
 /* The texture's size: its first image's (CKBitmapData keeps one for every slot) */
-static bool eng_texture_size(nmo_engine_t *engine, eng_texture_t *texture, int32_t *w, int32_t *h)
+bool eng_bitmap_size(nmo_engine_t *engine, eng_texture_t *texture, int32_t *w, int32_t *h)
 {
     for (int32_t slot = 0; slot < texture->slot_count; slot++) {
         const eng_surface_t *surface = eng_texture_surface(engine, texture, slot);
@@ -2066,7 +2328,7 @@ bool eng_texture_create(nmo_engine_t *engine, eng_texture_t *texture, int32_t wi
 {
     int32_t w = 0, h = 0;
     if (slot < 0 || width <= 0 || height <= 0 ||
-        (!(texture->slot_count <= 1 && slot == 0) && eng_texture_size(engine, texture, &w, &h) &&
+        (!(texture->slot_count <= 1 && slot == 0) && eng_bitmap_size(engine, texture, &w, &h) &&
          (w != width || h != height))) {
         return false;
     }
@@ -2119,7 +2381,7 @@ bool eng_texture_use_user_levels(nmo_engine_t *engine, eng_texture_t *texture)
                               ? (int32_t)state->user_mipmap_count
                               : 0;
     int32_t w = 0, h = 0;
-    if (file_levels == 0 && (texture->slot_count != 1 || !eng_texture_size(engine, texture, &w, &h) ||
+    if (file_levels == 0 && (texture->slot_count != 1 || !eng_bitmap_size(engine, texture, &w, &h) ||
                              !eng_power_of_two(w) || !eng_power_of_two(h))) {
         return false;
     }
@@ -2300,7 +2562,7 @@ void eng_resize_image32(const uint32_t *src, int32_t w1, int32_t h1, uint32_t *d
 bool eng_texture_resize(nmo_engine_t *engine, eng_texture_t *texture, int32_t width, int32_t height)
 {
     int32_t w = 0, h = 0;
-    if (texture->movie || texture->slot_count == 0 || !eng_texture_size(engine, texture, &w, &h) ||
+    if (texture->movie || texture->slot_count == 0 || !eng_bitmap_size(engine, texture, &w, &h) ||
         width <= 0 || height <= 0) {
         return false;
     }

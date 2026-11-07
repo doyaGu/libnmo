@@ -9,6 +9,8 @@
 
 #include "engine_base.h"
 
+struct nmo_bitmap_slots;
+
 /* A sound as the engine plays it: no audio, its position in time and its settings. */
 typedef struct eng_sound {
     nmo_object_id_t id;
@@ -67,6 +69,7 @@ typedef struct eng_texture {
     /* The user mipmap levels blocks set (CKTexture::SetUserMipMapMode); the file's otherwise */
     bool user_levels;
     ENG_VEC(eng_surface_t) levels;
+    bool sprite; /* a CKSprite's bitmap, not a CKTexture's */
 } eng_texture_t;
 
 /* The sound manager's settings (CKSoundManager::SetSoundSettings) and listener */
@@ -109,8 +112,14 @@ void eng_sound_stop(eng_sound_t *sound, float fade_out);
 float eng_wave_length(nmo_engine_t *engine, const char *name);
 /* The samples a second the WAV file `name` names records (CKWaveFormat::nSamplesPerSec); 0 when none */
 uint32_t eng_wave_sample_rate(nmo_engine_t *engine, const char *name);
-/* The engine's state of texture `id`, made the first time; NULL when `id` is no CKTexture. */
+/* The engine's state of the bitmap of texture or sprite `id`, made the first time; NULL
+   when `id` is neither a CKTexture nor a CKSprite. */
 eng_texture_t *eng_texture(nmo_engine_t *engine, nmo_object_id_t id);
+/* The bitmap slots the file gives texture or sprite `id` (a sprite sharing another's: that
+   one's), empty for a sprite without; false when `id` is neither. */
+bool eng_bitmap_view(const nmo_engine_t *engine, nmo_object_id_t id, struct nmo_bitmap_slots *out);
+/* CKBitmapData::SetCurrentSlot: false (nothing done) for a slot it does not have */
+bool eng_texture_set_slot(eng_texture_t *texture, int32_t slot);
 /* CKTexture::UseMipmap: 1 or less than 0 for all the levels, more than 1 that many, 0 none */
 void eng_texture_use_mipmap(nmo_engine_t *engine, nmo_object_id_t id, int32_t use);
 /*
@@ -132,6 +141,8 @@ void eng_free_textures(nmo_engine_t *engine);
    from the file the first time; NULL when there is none (no image, a movie). Blocks call
    eng_texture_changed once they wrote it. */
 eng_surface_t *eng_texture_surface(nmo_engine_t *engine, eng_texture_t *texture, int32_t slot);
+/* CKBitmapData::GetWidth/GetHeight: the size of the first slot with an image; false for none */
+bool eng_bitmap_size(nmo_engine_t *engine, eng_texture_t *texture, int32_t *w, int32_t *h);
 /* CKTexture::Create(width, height, 32, slot): an opaque black image; false (nothing done)
    for a size of 0, or another size than the texture's when it has other slots. */
 bool eng_texture_create(nmo_engine_t *engine, eng_texture_t *texture, int32_t width, int32_t height,
