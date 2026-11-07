@@ -665,13 +665,6 @@ static int bb_get_component(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
-/* A block's local parameter `pos` */
-static eng_param_t *block_local(blk_t *b, int pos)
-{
-    const eng_node_t *node = &b->engine->nodes.data[b->node];
-    return eng_node_param(b->engine, node->first_local, node->local_count, pos);
-}
-
 /*
  * Variation: X less its value at the last In (kept in local 0), and Change
  * or No Change. Reset stores Reset Value as that value, without an output.

@@ -11,6 +11,7 @@
 
 #include "type/nmo_type_guids.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 /* ---- Logics/Streaming ---- */
@@ -336,6 +337,205 @@ static int bb_random_switch(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* While: Loop Out while Condition holds, else Out */
+static int bb_while(blk_t *b)
+{
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+    } else if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+    }
+    OUT_ON(b, get_in_int(b, 0, 1) != 0 ? 1 : 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Bool Event: Change Detected when Value differs from the one In saw last; Reset forgets it */
+static int bb_bool_event(blk_t *b)
+{
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        set_local_int(b, 0, 0);
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        int32_t value = get_in_int(b, 0, 0);
+        OUT_ON(b, value != get_local_int(b, 0, 0) ? 0 : 1);
+        set_local_int(b, 0, value);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Specific Bool Event: which way Value went since In saw it last */
+static int bb_specific_bool_event(blk_t *b)
+{
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        set_local_int(b, 0, 0);
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        int32_t value = get_in_int(b, 0, 0), old = get_local_int(b, 0, 0);
+        if (old && !value) {
+            OUT_ON(b, 0);
+        } else if (!old && value) {
+            OUT_ON(b, 1);
+        } else if (old && value) {
+            OUT_ON(b, 2);
+        } else {
+            OUT_ON(b, 3);
+        }
+        set_local_int(b, 0, value);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * Trigger Event: Activate the first frame In is active, then stay active while
+ * it is; Deactivate the frame it is not.
+ */
+static int bb_trigger_event(blk_t *b)
+{
+    if (IN_ACTIVE(b, 0)) {
+        if (!get_local_int(b, 0, 0)) {
+            OUT_ON(b, 0);
+            set_local_int(b, 0, 1);
+        }
+        IN_OFF(b, 0);
+        return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+    }
+    OUT_ON(b, 1);
+    set_local_int(b, 0, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* TriggerEventCallBack, Specific Bool Event's too: the state is false again */
+static int cb_trigger_event(blk_t *b, uint32_t message)
+{
+    if (message == NMO_ENGINE_MSG_LOAD || message == NMO_ENGINE_MSG_RESET) {
+        set_local_int(b, 0, 0);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * Priority: the lowest active input at or below the priority reached opens its
+ * output and becomes the priority; the inputs up to it are consumed. Reset
+ * (input 0) lowers the priority to 0.
+ */
+static int bb_priority(blk_t *b)
+{
+    if (IN_ACTIVE(b, 0)) {
+        set_local_int(b, 0, 0);
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+    }
+    int32_t stop = get_local_int(b, 0, 0);
+    int a = nmo_engine_block_input_count(b) - 1;
+    for (; a >= stop; --a) {
+        if (IN_ACTIVE(b, a)) {
+            OUT_ON(b, a);
+            break;
+        }
+    }
+    if (a < stop) {
+        a = stop;
+    }
+    for (int i = 0; i <= a; i++) {
+        IN_OFF(b, i);
+    }
+    set_local_int(b, 0, a);
+    return NMO_ENGINE_BR_OK;
+}
+
+static int cb_priority(blk_t *b, uint32_t message)
+{
+    if (message == NMO_ENGINE_MSG_LOAD || message == NMO_ENGINE_MSG_RESET) {
+        set_local_int(b, 0, 0);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * FIFO and LIFO: the inputs past Unstack are stored, up to the Stack Size
+ * setting (local 2), in the buffer of local 0, the count in local 1; Unstack
+ * opens its output and the output of the first stored (FIFO) or the last
+ * (LIFO), which leaves the store.
+ */
+static int stack_step(blk_t *b, bool fifo)
+{
+    int count = nmo_engine_block_input_count(b);
+    if (count != nmo_engine_block_output_count(b)) {
+        return NMO_ENGINE_BR_GENERICERROR; /* throw "Wrong number of Input/Output" */
+    }
+    int32_t max_size = get_local_int(b, 2, 256);
+    size_t buffer_size = 0;
+    eng_param_t *buffer = block_local(b, 0);
+    if (buffer != NULL) {
+        buffer_size = buffer->size / sizeof(int32_t);
+    }
+    if (max_size < 0 || (size_t)max_size > buffer_size) {
+        max_size = (int32_t)buffer_size; /* the buffer the load callback made */
+    }
+    int32_t *stack = buffer != NULL ? (int32_t *)buffer->data : NULL;
+    int32_t sp = get_local_int(b, 1, 0);
+    for (int a = 1; a < count; a++) {
+        if (IN_ACTIVE(b, a)) {
+            IN_OFF(b, a);
+            if (sp >= 0 && sp < max_size) {
+                stack[sp++] = a;
+                set_local_int(b, 1, sp);
+            }
+        }
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+        if (sp > 0) {
+            sp--;
+            set_local_int(b, 1, sp);
+            if (fifo) {
+                OUT_ON(b, stack[0]);
+                memmove(stack, stack + 1, (size_t)sp * sizeof(int32_t));
+            } else {
+                OUT_ON(b, stack[sp]);
+            }
+        }
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+static int bb_fifo(blk_t *b) { return stack_step(b, true); }
+
+static int bb_lifo(blk_t *b) { return stack_step(b, false); }
+
+/* FIFOCallBack, LIFOCallBack: an empty buffer of Stack Size entries */
+static int cb_stack(blk_t *b, uint32_t message)
+{
+    if (message != NMO_ENGINE_MSG_LOAD) {
+        return NMO_ENGINE_BR_OK;
+    }
+    set_local_int(b, 1, 0);
+    int32_t max_size = get_local_int(b, 2, 8);
+    size_t size = max_size > 0 ? (size_t)max_size * sizeof(int32_t) : 0u;
+    int32_t *zeros = size > 0 ? (int32_t *)calloc(1, size) : NULL;
+    if (size == 0 || zeros != NULL) {
+        nmo_engine_block_set_local_value(b, 0, zeros, size);
+    }
+    free(zeros);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Stop & Go (StreamingNOT): Out the first frame In is no longer active */
+static int bb_stop_and_go(blk_t *b)
+{
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+    }
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_logics_streaming_blocks[] = {
     {NMO_GUID_INIT(0xeb506901, 0x984afccc), "Binary Switch", bb_binary_switch, NULL, NULL},
     {NMO_GUID_INIT(0x302561c4, 0x0d282980), "Nop", bb_nop, NULL, NULL},
@@ -350,6 +550,16 @@ static const nmo_engine_block_desc_t eng_logics_streaming_blocks[] = {
     {NMO_GUID_INIT(0x271b61af, 0x41b44d43), "One At A Time", bb_one_at_a_time, cb_one_at_a_time, NULL},
     {NMO_GUID_INIT(0x7ebc16ce, 0x75ba1301), "All But One", bb_all_but_one, NULL, NULL},
     {NMO_GUID_INIT(0x79d72fde, 0x2e9d0912), "Random Switch", bb_random_switch, NULL, NULL},
+    {NMO_GUID_INIT(0x010015a6, 0xef597665), "While", bb_while, NULL, NULL},
+    {NMO_GUID_INIT(0xfefefefe, 0xfefefefe), "Bool Event", bb_bool_event, NULL, NULL},
+    {NMO_GUID_INIT(0xe5f22514, 0x12dfffee), "Specific Bool Event", bb_specific_bool_event,
+     cb_trigger_event, NULL},
+    {NMO_GUID_INIT(0x3c3f7044, 0x0e917d1a), "Trigger Event", bb_trigger_event, cb_trigger_event,
+     NULL},
+    {NMO_GUID_INIT(0xffb40d68, 0x45455444), "Priority", bb_priority, cb_priority, NULL},
+    {NMO_GUID_INIT(0x7242794c, 0x98c2b340), "FIFO", bb_fifo, cb_stack, NULL},
+    {NMO_GUID_INIT(0x7d037385, 0x12d62259), "LIFO", bb_lifo, cb_stack, NULL},
+    {NMO_GUID_INIT(0x78a667f0, 0x5a3c0323), "Stop & Go", bb_stop_and_go, NULL, NULL},
 };
 
 nmo_status_t eng_register_logics_streaming(nmo_engine_t *engine)

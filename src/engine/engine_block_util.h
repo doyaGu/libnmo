@@ -155,6 +155,13 @@ static inline eng_param_t *block_output(blk_t *b, int pos)
     return eng_node_param(b->engine, node->first_pout, node->pout_count, pos);
 }
 
+/* The block's local parameter at `pos`, as the engine holds it (a buffer a block keeps there) */
+static inline eng_param_t *block_local(blk_t *b, int pos)
+{
+    const eng_node_t *node = &b->engine->nodes.data[b->node];
+    return eng_node_param(b->engine, node->first_local, node->local_count, pos);
+}
+
 /* Register a file's table of blocks */
 static inline nmo_status_t eng_register_blocks(nmo_engine_t *engine,
                                                const nmo_engine_block_desc_t *blocks, size_t count)
