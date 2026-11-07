@@ -2003,8 +2003,8 @@ static int cb_solid_trail(blk_t *b, uint32_t message)
  * mark in the world, joined to the one before it unless that one ended the
  * band (End Mark ends it). A mark lives Lifespan ms (0: forever) and fades
  * out over its last Fading Time. On clears the marks; while active the block
- * draws them each frame after the opaque objects (after the Supporting
- * Entity when there is one, as it renders), and they age only when drawn.
+ * draws them each frame after the opaque objects, or right after the
+ * Supporting Entity renders when there is one, and they age only when drawn.
  * A single mark is not added once Maximum Marks are in use; a band mark
  * takes the place of its material's oldest. The DLL does not draw a single
  * mark whose entity was outside the last frame's frustum; the engine keeps
@@ -2308,12 +2308,12 @@ static void marks_update(visuals_marks_t *marks, float delta)
 
 /* MarkSystem::RenderMarkSystem, as the render context's or the Supporting Entity's post render
    callback */
-static void draw_marks(nmo_engine_t *engine, const visuals_callback_t *callback)
+static void draw_marks(nmo_engine_t *engine, const visuals_callback_t *callback, bool transparent)
 {
     nmo_engine_block_t handle = {engine, callback->node};
     blk_t *b = &handle;
     visuals_marks_t *marks = mark_system(engine, callback->node);
-    if (marks == NULL || (callback->target != 0 && !eng_render_entity_drawn(engine, callback->target))) {
+    if (marks == NULL) {
         return;
     }
     marks_update(marks, engine->delta);
@@ -2398,11 +2398,19 @@ static void draw_marks(nmo_engine_t *engine, const visuals_callback_t *callback)
             draw->material = eng_find_object(engine, list->material) != NULL ? list->material : 0;
             draw->two_sided = true;
             draw->projection_z_scale = 1.001f;
+            draw->transparent = transparent;
         }
     }
     free(vertices);
     free(colors);
     free(indices);
+}
+
+/* RenderMarkFrame: the Supporting Entity's temporary post render callback */
+static void draw_marks_after(nmo_engine_t *engine, nmo_object_id_t entity, int32_t node, bool transparent)
+{
+    const visuals_callback_t callback = {node, entity};
+    draw_marks(engine, &callback, transparent);
 }
 
 static int bb_mark_system(blk_t *b)
@@ -2421,7 +2429,13 @@ static int bb_mark_system(blk_t *b)
         OUT_ON(b, 1);
         return NMO_ENGINE_BR_OK;
     }
-    callback_drawn(&visuals_state(engine)->marks, b->node, (nmo_object_id_t)get_local_int(b, 3, 0), true);
+    nmo_object_id_t frame = (nmo_object_id_t)get_local_int(b, 3, 0);
+    if (frame != 0) {
+        eng_entity_callback_t callback = {frame, ENG_ENTITY_POST_RENDER, draw_marks_after, b->node, true};
+        eng_add_entity_callback(engine, &callback);
+    } else {
+        callback_drawn(&visuals_state(engine)->marks, b->node, 0, true);
+    }
     bool end_mark = false;
     if (nmo_engine_block_input_count(b) > 3 && IN_ACTIVE(b, 3)) {
         IN_OFF(b, 3);
@@ -2665,7 +2679,7 @@ static void visuals_render(nmo_engine_t *engine, void *state, eng_render_stage_t
             draw_curve(engine, &visuals->curves.data[i], args);
         }
         for (size_t i = 0; i < visuals->marks.count; i++) {
-            draw_marks(engine, &visuals->marks.data[i]);
+            draw_marks(engine, &visuals->marks.data[i], false);
         }
         for (size_t i = 0; i < visuals->infos.count; i++) {
             draw_info(engine, visuals->infos.data[i].node);

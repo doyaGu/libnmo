@@ -835,6 +835,43 @@ TEST(engine_visuals, vertex_render_draws_a_sprite_at_each_vertex_instead_of_the_
     fixture_end(&f);
 }
 
+TEST(engine_visuals, mark_system_draws_after_its_supporting_entity_while_it_renders)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t material = fixture_create(&f, NMO_CID_MATERIAL, "Material");
+    nmo_object_id_t mesh = 0;
+    nmo_object_id_t a = face_object(&f, "A", material, &mesh);
+    nmo_object_id_t support = face_object(&f, "Support", material, &mesh);
+    nmo_object_id_t c = face_object(&f, "C", material, &mesh);
+    ASSERT_TRUE(material != 0 && a != 0 && support != 0 && c != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t marks = block_on(&f, GUID_MARK_SYSTEM, "Mark System", 0);
+    ASSERT_TRUE(marks != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, marks, 2), 0);
+    /* Supporting Entity, a setting: set as the engine starts, like an input's value */
+    engine_fixture_value_t *setting = &f.values[f.value_count++];
+    setting->param = block_local(&f, marks, 3);
+    memcpy(setting->bytes, &support, sizeof(int32_t));
+    setting->size = sizeof(int32_t);
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    const nmo_engine_draw_t *draw = NULL;
+    ASSERT_EQ(1, primitive_draws(&frame, support, &draw));
+    ASSERT_TRUE(draw == &frame.draws[mesh_draw(&frame, support) + 1]);
+    ASSERT_TRUE(mesh_draw(&frame, c) > mesh_draw(&frame, support));
+
+    eng_show(f.engine, support, 0); /* not rendered: no marks */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_EQ(0, primitive_draws(&frame, support, &draw));
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_visuals, blink_cycles_the_target_and_fps_reports_the_rate);
     REGISTER_TEST(engine_visuals, z_buffer_and_render_order_shape_the_mesh_draws);
@@ -848,5 +885,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_visuals, solid_trail_follows_the_owners_farthest_vertices_until_off);
     REGISTER_TEST(engine_visuals, mark_system_draws_single_marks_that_fade_and_die);
     REGISTER_TEST(engine_visuals, mark_system_joins_continuous_marks_into_a_band);
+    REGISTER_TEST(engine_visuals, mark_system_draws_after_its_supporting_entity_while_it_renders);
     REGISTER_TEST(engine_visuals, vertex_render_draws_a_sprite_at_each_vertex_instead_of_the_mesh);
 TEST_MAIN_END()
