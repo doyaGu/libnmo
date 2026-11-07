@@ -855,6 +855,59 @@ static int bb_set_component(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/*
+ * Modify Component: Vin with the components the settings flags (local 0)
+ * name read from the inputs after it, in order. The high bits of the flags
+ * are the type (2D vector, box, color, Euler angles, quaternion, rectangle,
+ * vector); the components are bits 1, 4, 16 and 64.
+ */
+typedef struct component_part {
+    uint32_t flag;
+    int offset, count; /* floats into the value */
+} component_part_t;
+
+typedef struct component_kind {
+    uint32_t type;
+    int floats;
+    component_part_t parts[4];
+} component_kind_t;
+
+static const component_kind_t component_kinds[] = {
+    {0x10000000u, 2, {{1, 0, 1}, {4, 1, 1}}},                       /* 2D vector: X, Y */
+    {0x20000000u, 6, {{1, 3, 3}, {4, 0, 3}}},                       /* box: Min, Max (VxBbox: Max first) */
+    {0x30000000u, 4, {{1, 0, 1}, {4, 1, 1}, {16, 2, 1}, {64, 3, 1}}}, /* color: R, G, B, Alpha */
+    {0x40000000u, 3, {{1, 0, 1}, {4, 1, 1}, {16, 2, 1}}},           /* Euler angles */
+    {0x50000000u, 4, {{1, 0, 1}, {4, 1, 1}, {16, 2, 1}, {64, 3, 1}}}, /* quaternion: X, Y, Z, W */
+    {0x60000000u, 4, {{1, 0, 2}, {4, 2, 2}}},                       /* rectangle: TopLeft, BottomRight */
+    {0x70000000u, 3, {{1, 0, 1}, {4, 1, 1}, {16, 2, 1}}},           /* vector: X, Y, Z */
+};
+
+static int bb_modify_component(blk_t *b)
+{
+    uint32_t flags = (uint32_t)get_local_int(b, 0, 0);
+    const component_kind_t *kind = NULL;
+    for (size_t k = 0; k < sizeof(component_kinds) / sizeof(component_kinds[0]); k++) {
+        if (component_kinds[k].type == (flags & 0xf0000000u)) {
+            kind = &component_kinds[k];
+        }
+    }
+    if (kind != NULL) {
+        float value[6] = {0};
+        nmo_engine_block_get_input_value(b, 0, value, (size_t)kind->floats * sizeof(float));
+        int input = 1;
+        for (int i = 0; i < 4 && kind->parts[i].flag != 0; i++) {
+            if (flags & kind->parts[i].flag) {
+                nmo_engine_block_get_input_value(b, input++, &value[kind->parts[i].offset],
+                                                 (size_t)kind->parts[i].count * sizeof(float));
+            }
+        }
+        nmo_engine_block_set_output_value(b, 0, value, (size_t)kind->floats * sizeof(float));
+    }
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_logics_calculator_blocks[] = {
     {NMO_GUID_INIT(0x2d5d6d01, 0x6a353eb0), "Op", bb_op, NULL, NULL},
     {NMO_GUID_INIT(0x15151652, 0xaeefffd5), "Identity", bb_identity, NULL, NULL},
@@ -869,6 +922,7 @@ static const nmo_engine_block_desc_t eng_logics_calculator_blocks[] = {
     {NMO_GUID_INIT(0x6d433e1b, 0x191954b4), "Bezier Transform", bb_bezier_transform, NULL, NULL},
     {NMO_GUID_INIT(0x655e6af4, 0x08c0596f), "Threshold", bb_threshold, NULL, NULL},
     {NMO_GUID_INIT(0x6e800755, 0x57b64acb), "Set Component", bb_set_component, NULL, NULL},
+    {NMO_GUID_INIT(0xe5b234f3, 0x35fbacf7), "Modify Component", bb_modify_component, NULL, NULL},
 };
 
 nmo_status_t eng_register_logics_calculator(nmo_engine_t *engine)
