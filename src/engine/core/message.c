@@ -31,6 +31,8 @@ void eng_free_messages(nmo_engine_t *engine)
     free(engine->messages.sent.data);
     free(engine->messages.waits.data);
     free(engine->messages.received.data);
+    free(engine->messages.params.data);
+    free(engine->messages.received_params.data);
 }
 
 int32_t nmo_engine_message_type_count(const nmo_engine_t *engine)
@@ -73,9 +75,46 @@ nmo_status_t eng_send(nmo_engine_t *engine, const eng_message_t *message)
         return NMO_ERR_NOMEM;
     }
     *slot = *message;
+    slot->first_param = (uint32_t)engine->messages.params.count;
+    slot->param_count = 0;
     eng_emit(engine, NMO_ENGINE_EVENT_MESSAGE_SENT, message->sent_by,
              message->sending == ENG_MESSAGE_BROADCAST ? 0 : message->recipient, message->type);
     return NMO_OK;
+}
+
+nmo_status_t eng_message_add_param(nmo_engine_t *engine, const eng_param_t *param)
+{
+    if (param == NULL || engine->messages.sent.count == 0) {
+        return NMO_ERR_INVALID_ARGUMENT; /* CKERR_INVALIDPARAMETER */
+    }
+    int32_t *slot = NULL;
+    if (!ENG_VEC_PUSH(engine->messages.params, slot)) {
+        return NMO_ERR_NOMEM;
+    }
+    *slot = (int32_t)(param - engine->params.data);
+    engine->messages.sent.data[engine->messages.sent.count - 1u].param_count++;
+    return NMO_OK;
+}
+
+const eng_received_t *eng_last_frame_message(const nmo_engine_t *engine, nmo_object_id_t object,
+                                             int pos)
+{
+    for (size_t i = 0; pos >= 0 && i < engine->messages.received.count; i++) {
+        const eng_received_t *r = &engine->messages.received.data[i];
+        if (r->object == object && pos-- == 0) {
+            return r;
+        }
+    }
+    return NULL;
+}
+
+eng_param_t *eng_received_param(nmo_engine_t *engine, const eng_received_t *message, uint32_t pos)
+{
+    if (message == NULL || pos >= message->param_count) {
+        return NULL;
+    }
+    int32_t index = engine->messages.received_params.data[message->first_param + pos];
+    return index >= 0 && (size_t)index < engine->params.count ? &engine->params.data[index] : NULL;
 }
 
 nmo_status_t nmo_engine_send_message(nmo_engine_t *engine, int32_t type,
@@ -165,6 +204,8 @@ void eng_reset_messages(nmo_engine_t *engine)
     engine->messages.sent.count = 0;
     engine->messages.waits.count = 0;
     engine->messages.received.count = 0;
+    engine->messages.params.count = 0;
+    engine->messages.received_params.count = 0;
 }
 
 /* ============================================================================
@@ -194,9 +235,19 @@ static void eng_add_received(nmo_engine_t *engine, nmo_object_id_t object,
         }
     }
     eng_received_t *slot = NULL;
-    if (ENG_VEC_PUSH(engine->messages.received, slot)) {
-        *slot = (eng_received_t){.object = object, .type = message->type,
-                                 .sender = message->sender, .message = position};
+    if (!ENG_VEC_PUSH(engine->messages.received, slot)) {
+        return;
+    }
+    *slot = (eng_received_t){.object = object, .type = message->type, .sender = message->sender,
+                             .message = position,
+                             .first_param = (uint32_t)engine->messages.received_params.count};
+    for (uint32_t i = 0; i < message->param_count; i++) {
+        int32_t *param = NULL;
+        if (!ENG_VEC_PUSH(engine->messages.received_params, param)) {
+            break;
+        }
+        *param = engine->messages.params.data[message->first_param + i];
+        engine->messages.received.data[engine->messages.received.count - 1u].param_count++;
     }
 }
 
@@ -258,6 +309,7 @@ void eng_dispatch_messages(nmo_engine_t *engine)
 {
     /* Last frame's messages are gone (RemoveAllLastFrameMessage) */
     engine->messages.received.count = 0;
+    engine->messages.received_params.count = 0;
 
     for (size_t m = 0; m < engine->messages.sent.count; m++) {
         eng_message_t message = engine->messages.sent.data[m];
@@ -294,4 +346,5 @@ void eng_dispatch_messages(nmo_engine_t *engine)
         }
     }
     engine->messages.sent.count = 0;
+    engine->messages.params.count = 0;
 }

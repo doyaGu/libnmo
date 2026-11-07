@@ -9,6 +9,8 @@
 
 #include "engine_base.h"
 
+struct eng_param;
+
 /* CK_MESSAGE_SENDINGTYPE */
 #define ENG_MESSAGE_BROADCAST 1
 #define ENG_MESSAGE_SINGLE 2
@@ -21,6 +23,9 @@ typedef struct eng_message {
     nmo_object_id_t recipient;    /* single and group messages */
     nmo_class_id_t broadcast_cid; /* broadcast messages */
     int32_t sent_by;              /* the node that sent it, -1 for the host */
+    /* The parameters it carries (CKMessage::AddParameter): engine parameter indexes in
+       messages.params, the sender's sources, read when the message is read */
+    uint32_t first_param, param_count;
 } eng_message_t;
 
 /* A behavior waiting for a message (CKWaitingObject). */
@@ -37,6 +42,7 @@ typedef struct eng_received {
     int32_t type;
     nmo_object_id_t sender;
     uint32_t message; /* position among the messages delivered, to add a message once */
+    uint32_t first_param, param_count; /* its parameters, in messages.received_params */
 } eng_received_t;
 
 /* CKMessageManager */
@@ -45,10 +51,20 @@ typedef struct eng_messages {
     ENG_VEC(eng_wait_t) waits;
     ENG_VEC(eng_received_t) received;
     ENG_VEC(char *) names;       /* the message types, by type */
+    ENG_VEC(int32_t) params;     /* the sent messages' parameters */
+    ENG_VEC(int32_t) received_params; /* the received messages' parameters */
 } eng_messages_t;
 
 void eng_free_messages(nmo_engine_t *engine);
 nmo_status_t eng_send(nmo_engine_t *engine, const eng_message_t *message);
+/* CKMessage::AddParameter on the message sent last: it carries `param` (an engine parameter) */
+nmo_status_t eng_message_add_param(nmo_engine_t *engine, const struct eng_param *param);
+/* CKBeObject::GetLastFrameMessage: the `pos`th message `object` received; NULL when none */
+const eng_received_t *eng_last_frame_message(const nmo_engine_t *engine, nmo_object_id_t object,
+                                             int pos);
+/* CKMessage::GetParameter of a received message; NULL past its parameters */
+struct eng_param *eng_received_param(nmo_engine_t *engine, const eng_received_t *message,
+                                    uint32_t pos);
 nmo_status_t eng_register_wait(nmo_engine_t *engine, int32_t type, int32_t node, int output_pos,
                                nmo_object_id_t object);
 void eng_unregister_wait(nmo_engine_t *engine, int32_t type, int32_t node, int output_pos);
