@@ -268,12 +268,30 @@ static int bb_set_current_slot(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/*
+ * RGBAFTOCOLOR(r, g, b, a): ARGB, each channel scaled to its place and
+ * rounded to the nearest (even), then masked; alpha unmasked.
+ */
 static uint32_t color_argb(const float c[4])
+{
+    uint32_t r = (uint32_t)(int64_t)rint((double)c[0] * 16711680.0);
+    uint32_t g = (uint32_t)(int64_t)rint((double)c[1] * 65280.0);
+    uint32_t b = (uint32_t)(int64_t)rint((double)c[2] * 255.0);
+    uint32_t a = (uint32_t)(int64_t)rint((double)c[3] * 255.0);
+    return (g & 0xFF00u) | (r & 0xFF0000u) | (b & 0xFFu) | (a << 24);
+}
+
+/* RGBAFTOCOLOR(const VxColor *): ARGB, each channel times 255 truncated and kept in [0, 255] */
+static uint32_t vxcolor_argb(const float c[4])
 {
     uint32_t argb = 0;
     for (int i = 0; i < 4; i++) {
-        float v = c[i] < 0.0f ? 0.0f : c[i] > 1.0f ? 1.0f : c[i];
-        argb |= (uint32_t)(v * 255.0f + 0.5f) << (i == 3 ? 24 : 16 - 8 * i);
+        float v = c[i] * 255.0f;
+        uint32_t byte = !(v > -2147483648.0f && v < 2147483648.0f) ? 0u
+                        : v >= 255.0f                               ? 255u
+                        : v > 0.0f                                  ? (uint32_t)(int32_t)v
+                                                                    : 0u;
+        argb |= byte << (i == 3 ? 24 : 16 - 8 * i);
     }
     return argb;
 }
@@ -1058,6 +1076,222 @@ static int bb_texture_sine(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+static uint32_t rgba_to_argb(const uint8_t *p)
+{
+    return (uint32_t)p[3] << 24 | (uint32_t)p[0] << 16 | (uint32_t)p[1] << 8 | p[2];
+}
+
+static void argb_to_rgba(uint32_t argb, uint8_t *p)
+{
+    p[0] = (uint8_t)(argb >> 16), p[1] = (uint8_t)(argb >> 8), p[2] = (uint8_t)argb, p[3] = (uint8_t)(argb >> 24);
+}
+
+/* Write In Texture's Write Mode on one ARGB pixel: copy, average, add clamped, add */
+static uint32_t write_pixel(int32_t mode, uint32_t dst, uint32_t src)
+{
+    uint32_t b[4], a[4];
+    for (int i = 0; i < 4; i++) {
+        b[i] = (dst >> (8 * i)) & 0xFFu;
+        a[i] = (src >> (8 * i)) & 0xFFu;
+    }
+    switch (mode) {
+    case 1:
+        return ((a[0] + b[0]) >> 1) | (((a[1] + b[1]) >> 1) << 8) | (((a[2] + b[2]) >> 1) << 16) |
+               (((a[3] + b[3]) >> 1) << 24);
+    case 2: {
+        uint32_t out = 0;
+        for (int i = 0; i < 4; i++) {
+            uint32_t sum = a[i] + b[i];
+            out |= (sum > 0xFFu ? 0xFFu : sum) << (8 * i);
+        }
+        return out;
+    }
+    case 3: /* the sums overflow into the next byte */
+        return (a[0] + b[0]) | (((a[1] + b[1]) | (((a[2] + b[2]) | ((a[3] + b[3]) << 8)) << 8)) << 8);
+    default:
+        return src;
+    }
+}
+
+static void write_at(eng_surface_t *surface, int32_t x, int32_t y, int32_t mode, uint32_t argb)
+{
+    uint8_t *p = &surface->rgba[((size_t)y * (size_t)surface->width + (size_t)x) * 4u];
+    argb_to_rgba(write_pixel(mode, rgba_to_argb(p), argb), p);
+}
+
+/* A coordinate brought into [0, 1) by whole turns */
+static float wrap_unit(float value)
+{
+    while (value < 0.0f) {
+        value += 1.0f;
+    }
+    while (!(value < 1.0f)) {
+        value -= 1.0f;
+    }
+    return value;
+}
+
+/*
+ * Write In Texture: at UV of the target texture's current slot, the Pen
+ * Texture centered there, or else a square of Color reaching Size pixels
+ * each way (one pixel for 1), each pixel written by Write Mode (copy,
+ * average, add clamped, add). Only 32-bit images; the engine's are.
+ */
+static int bb_write_in_texture(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_engine_t *engine = b->engine;
+    eng_texture_t *texture = eng_texture(engine, nmo_engine_block_target(b));
+    if (texture == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    float uv[2] = {0.0f, 0.0f}, color[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    nmo_engine_block_get_input_value(b, 0, uv, sizeof(uv));
+    nmo_engine_block_get_input_value(b, 1, color, sizeof(color));
+    int32_t size = get_in_int(b, 2, 1);
+    nmo_object_id_t pen_id = nmo_engine_block_get_input_object(b, 3);
+    int32_t mode = get_in_int(b, 4, 0);
+    mode = mode >= 0 && mode <= 3 ? mode : 0;
+    uv[0] = wrap_unit(uv[0]);
+    uv[1] = wrap_unit(uv[1]);
+    texture = eng_texture(engine, nmo_engine_block_target(b));
+    eng_surface_t *surface = eng_texture_surface(engine, texture, -1);
+    if (surface == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    nmo_object_id_t texture_id = texture->id;
+    int32_t w = surface->width, h = surface->height;
+    int32_t x = (int32_t)((float)w * uv[0]), y = (int32_t)((float)h * uv[1]);
+    uint32_t argb = vxcolor_argb(color);
+    if (pen_id != 0) {
+        eng_texture_t *pen = eng_texture(engine, pen_id);
+        const eng_surface_t *pen_surface = pen != NULL ? eng_texture_surface(engine, pen, -1) : NULL;
+        /* the pen's state may have moved the target's */
+        texture = eng_texture(engine, texture_id);
+        surface = texture != NULL ? eng_texture_surface(engine, texture, -1) : NULL;
+        if (pen_surface != NULL && surface != NULL) {
+            int32_t pw = pen_surface->width, ph = pen_surface->height;
+            int32_t x0 = x - pw / 2, y0 = y - ph / 2, x1 = pw / 2 + x - 1, y1 = ph / 2 + y - 1;
+            int32_t skip_x = 0, skip_y = 0;
+            if (x0 < 0) {
+                skip_x = pw / 2 - x;
+                x0 = 0;
+            }
+            if (y0 < 0) {
+                skip_y = -y0;
+                y0 = 0;
+            }
+            x1 = x1 >= w ? w - 1 : x1;
+            y1 = y1 >= h ? h - 1 : y1;
+            for (int32_t row = y0; row <= y1; row++) {
+                const uint8_t *line =
+                    &pen_surface->rgba[((size_t)(row - y0 + skip_y) * (size_t)pw + (size_t)skip_x) * 4u];
+                for (int32_t col = 0; col < x1 - x0 + 1; col++) {
+                    write_at(surface, x0 + col, row, mode, rgba_to_argb(&line[(size_t)col * 4u]));
+                }
+            }
+        }
+    } else if (size == 1) {
+        if (x < w && y < h) {
+            write_at(surface, x, y, mode, argb);
+        }
+    } else {
+        int32_t x0 = x - size < 0 ? 0 : x - size, y0 = y - size < 0 ? 0 : y - size;
+        int32_t x1 = x + size >= w ? w - 1 : x + size, y1 = y + size >= h ? h - 1 : y + size;
+        for (int32_t row = y0; row <= y1; row++) {
+            for (int32_t col = x0; col <= x1; col++) {
+                write_at(surface, col, row, mode, argb);
+            }
+        }
+    }
+    eng_texture_changed(engine, texture_id);
+    eng_emit(engine, NMO_ENGINE_EVENT_EFFECT, b->node, texture_id, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* The smallest power of two from n's lowest set bit up to n (0 for 0) */
+static int32_t power_of_two_above(int32_t n)
+{
+    int32_t p = n & -n;
+    while (p < n) {
+        p *= 2;
+    }
+    return p;
+}
+
+/*
+ * Change Texture Size: the target texture made Size (each side rounded up
+ * to a power of two) by CKTexture::Create, an opaque black image, when
+ * Clear is TRUE, else by scaling its images (CKBitmapData::ResizeImages).
+ */
+static int bb_change_texture_size(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    eng_texture_t *texture = eng_texture(b->engine, nmo_engine_block_target(b));
+    if (texture == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    float size[2] = {64.0f, 64.0f};
+    nmo_engine_block_get_input_value(b, 0, size, sizeof(size));
+    bool clear = get_in_int(b, 1, 1) != 0;
+    if (size[0] < 0.0f || size[1] < 0.0f) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    int32_t width = power_of_two_above((int32_t)size[0]), height = power_of_two_above((int32_t)size[1]);
+    if (clear) {
+        eng_texture_create(b->engine, texture, width, height, 0);
+    } else {
+        eng_texture_resize(b->engine, texture, width, height);
+    }
+    eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, texture->id, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * Set MipMap Texture: the Full Size Texture takes user mipmap levels
+ * (CKTexture::SetUserMipMapMode), each following input's image copied into
+ * one, from the first; each must be half the size of the one before, or
+ * the block stops there with an error.
+ */
+static int bb_set_mipmap_texture(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t texture_id = nmo_engine_block_get_input_object(b, 0);
+    eng_texture_t *texture = texture_id != 0 ? eng_texture(engine, texture_id) : NULL;
+    if (texture == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    eng_texture_use_user_levels(engine, texture);
+    eng_surface_t *full = eng_texture_surface(engine, texture, -1);
+    int32_t w = full != NULL ? full->width : 0, h = full != NULL ? full->height : 0;
+    int32_t count = nmo_engine_block_input_parameter_count(b);
+    for (int32_t i = 1; i < count; i++) {
+        nmo_object_id_t level_id = nmo_engine_block_get_input_object(b, i);
+        eng_texture_t *source = level_id != 0 ? eng_texture(engine, level_id) : NULL;
+        if (source == NULL) {
+            return NMO_ENGINE_BR_OK;
+        }
+        const eng_surface_t *image = eng_texture_surface(engine, source, -1);
+        w >>= 1;
+        h >>= 1;
+        if (image == NULL || image->width != w || image->height != h) {
+            return NMO_ENGINE_BR_OWNERERROR; /* Wrong texture size */
+        }
+        texture = eng_texture(engine, texture_id);
+        eng_surface_t *level = (size_t)(i - 1) < texture->levels.count ? &texture->levels.data[i - 1] : NULL;
+        if (level != NULL && level->rgba != NULL) {
+            memcpy(level->rgba, image->rgba, (size_t)level->width * (size_t)level->height * 4u);
+        }
+    }
+    eng_texture_changed(engine, texture_id);
+    eng_emit(engine, NMO_ENGINE_EVENT_EFFECT, b->node, texture_id, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_materials_blocks[] = {
     {NMO_GUID_INIT(0xf56d92ef, 0x41eb20c1), "Change Texture Video Format",
      bb_change_texture_video_format, NULL, NULL},
@@ -1100,6 +1334,9 @@ static const nmo_engine_block_desc_t eng_materials_blocks[] = {
     {NMO_GUID_INIT(0x2a6a3fa3, 0x3280407d), "Planar Mapping", bb_planar_mapping, NULL, NULL},
     {NMO_GUID_INIT(0x086a487c, 0x3cd44acb), "Copy Mapping", bb_copy_mapping, NULL, NULL},
     {NMO_GUID_INIT(0x4fe0646e, 0x7e0635c9), "Texture Sine", bb_texture_sine, NULL, NULL},
+    {NMO_GUID_INIT(0x1d57024d, 0x7c064238), "Write In Texture", bb_write_in_texture, NULL, NULL},
+    {NMO_GUID_INIT(0x7a7c4d7b, 0x468d0f33), "Change Texture Size", bb_change_texture_size, NULL, NULL},
+    {NMO_GUID_INIT(0x6e407fcf, 0x0eff06a5), "Set MipMap Texture", bb_set_mipmap_texture, NULL, NULL},
 };
 
 nmo_status_t eng_register_materials(nmo_engine_t *engine)

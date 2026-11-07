@@ -38,6 +38,12 @@ typedef struct eng_sound_instance {
 typedef struct eng_movie eng_movie_t;
 
 /* A texture's bitmap slots as CKBitmapData has them: a loaded movie's frames, or its own. */
+/* An image as CKBitmapData keeps it in system memory: RGBA, unkeyed */
+typedef struct eng_surface {
+    int32_t width, height;
+    uint8_t *rgba;
+} eng_surface_t;
+
 typedef struct eng_texture {
     nmo_object_id_t id;
     int32_t slot_count;
@@ -48,6 +54,11 @@ typedef struct eng_texture {
     int32_t mipmap_level;  /* CKTexture's: 0 none, -1 as many as the size gives, else that many */
     bool transparent;            /* CKBitmapData::IsTransparent */
     uint32_t transparent_color;  /* ARGB; its pixels are clear when transparent */
+    /* Each slot's image once a block wrote or sized it (rgba NULL: the file's) */
+    ENG_VEC(eng_surface_t) surfaces;
+    /* The user mipmap levels blocks set (CKTexture::SetUserMipMapMode); the file's otherwise */
+    bool user_levels;
+    ENG_VEC(eng_surface_t) levels;
 } eng_texture_t;
 
 typedef struct eng_media {
@@ -99,6 +110,24 @@ bool eng_movie_frame(eng_movie_t *movie, int32_t frame, const uint8_t **out_rgba
 /* CKTexture::LoadImage: slot `slot` shows file `name` from now on; false when it cannot be read. */
 bool eng_texture_load(nmo_engine_t *engine, eng_texture_t *texture, const char *name, int32_t slot);
 void eng_free_textures(nmo_engine_t *engine);
+/* CKBitmapData::LockSurfacePtr: slot `slot`'s image (-1 the current one) to write, read
+   from the file the first time; NULL when there is none (no image, a movie). Blocks call
+   eng_texture_changed once they wrote it. */
+eng_surface_t *eng_texture_surface(nmo_engine_t *engine, eng_texture_t *texture, int32_t slot);
+/* CKTexture::Create(width, height, 32, slot): an opaque black image; false (nothing done)
+   for a size of 0, or another size than the texture's when it has other slots. */
+bool eng_texture_create(nmo_engine_t *engine, eng_texture_t *texture, int32_t width, int32_t height,
+                        int32_t slot);
+/* CKBitmapData::ResizeImages: every slot's image to that size (VxResizeImage32); false for
+   a movie, a texture without an image, or a size of 0. */
+bool eng_texture_resize(nmo_engine_t *engine, eng_texture_t *texture, int32_t width, int32_t height);
+/* VxResizeImage32: `src` (w1 x h1 pixels of 32 bits) scaled to `dst` (w2 x h2), averaging
+   the pixels a smaller image covers and mixing neighbours for a larger one. */
+void eng_resize_image32(const uint32_t *src, int32_t w1, int32_t h1, uint32_t *dst, int32_t w2, int32_t h2);
+/* CKTexture::SetUserMipMapMode(TRUE): levels down to 1x1, clear, for a single slot texture of
+   power of two sides; the file's levels when it has some. False when it cannot. */
+bool eng_texture_use_user_levels(nmo_engine_t *engine, eng_texture_t *texture);
+
 /* Whether the file `name` names is there to read. */
 bool eng_media_file_exists(nmo_engine_t *engine, const char *name);
 

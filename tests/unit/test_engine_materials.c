@@ -39,6 +39,9 @@
 #define GUID_PLANAR_MAPPING NMO_GUID(0x2a6a3fa3, 0x3280407d)
 #define GUID_COPY_MAPPING NMO_GUID(0x086a487c, 0x3cd44acb)
 #define GUID_TEXTURE_SINE NMO_GUID(0x4fe0646e, 0x7e0635c9)
+#define GUID_CHANGE_TEXTURE_SIZE NMO_GUID(0x7a7c4d7b, 0x468d0f33)
+#define GUID_WRITE_IN_TEXTURE NMO_GUID(0x1d57024d, 0x7c064238)
+#define GUID_SET_MIPMAP_TEXTURE NMO_GUID(0x6e407fcf, 0x0eff06a5)
 
 #define STEP_MS 10.0f
 
@@ -398,6 +401,90 @@ TEST(engine_materials, texture_sine_sways_the_owner_mesh_uvs)
     fixture_end(&f);
 }
 
+/* Change Texture Size on `texture`, run `delay` frames after `after` (the script start for 0) */
+static nmo_object_id_t size_texture(engine_fixture_t *f, nmo_object_id_t texture, float w, float h, bool clear,
+                                    nmo_object_id_t after, uint32_t delay)
+{
+    nmo_object_id_t id = block_on(f, GUID_CHANGE_TEXTURE_SIZE, "Change Texture Size", texture, after, delay);
+    if (id != 0) {
+        const float size[2] = {w, h};
+        fixture_input_value(f, BLOCK_PIN(f, id, 0), size, sizeof(size));
+        fixture_input_int(f, BLOCK_PIN(f, id, 1), clear ? 1 : 0);
+    }
+    return id;
+}
+
+/* Write In Texture of one pixel of `color` at `u`, `v` */
+static nmo_object_id_t write_texture(engine_fixture_t *f, nmo_object_id_t texture, float u, float v,
+                                     const float color[4], nmo_object_id_t after)
+{
+    nmo_object_id_t id = block_on(f, GUID_WRITE_IN_TEXTURE, "Write In Texture", texture, after, 1);
+    if (id != 0) {
+        const float uv[2] = {u, v};
+        fixture_input_value(f, BLOCK_PIN(f, id, 0), uv, sizeof(uv));
+        fixture_input_value(f, BLOCK_PIN(f, id, 1), color, 4u * sizeof(float));
+    }
+    return id;
+}
+
+static const uint8_t *pixel_of(const nmo_engine_image_t *image, int x, int y)
+{
+    return &image->rgba[((size_t)y * (size_t)image->width + (size_t)x) * 4u];
+}
+
+TEST(engine_materials, texture_blocks_create_write_scale_and_set_levels)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t texture = fixture_create(&f, NMO_CID_TEXTURE, "Texture");
+    nmo_object_id_t half = fixture_create(&f, NMO_CID_TEXTURE, "Half");
+    ASSERT_TRUE(texture != 0 && half != 0);
+    /* Frame 1: 3x3 rounds up to 4x4 and Half is 2x2; frame 2: a red and a green pixel */
+    nmo_object_id_t create = size_texture(&f, texture, 3.0f, 3.0f, true, 0, 0);
+    nmo_object_id_t create_half = size_texture(&f, half, 2.0f, 2.0f, true, 0, 0);
+    const float red[4] = {1.0f, 0.0f, 0.0f, 1.0f}, green[4] = {0.0f, 1.0f, 0.0f, 1.0f};
+    nmo_object_id_t write = write_texture(&f, texture, 0.5f, 0.5f, red, create);
+    nmo_object_id_t write_half = write_texture(&f, half, 0.0f, 0.0f, green, create_half);
+    /* Frame 3: Half is the texture's first user level; frame 4: the texture scaled to 8x8 */
+    nmo_object_id_t levels = fixture_block(&f, GUID_SET_MIPMAP_TEXTURE, "Set MipMap Texture");
+    ASSERT_TRUE(create != 0 && create_half != 0 && write != 0 && write_half != 0 && levels != 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, levels, 0), (int32_t)texture);
+    fixture_input_int(&f, BLOCK_PIN(&f, levels, 1), (int32_t)half);
+    fixture_link(&f, BLOCK_OUT(&f, write, 0), BLOCK_IN(&f, levels, 0), 1);
+    nmo_object_id_t scale = size_texture(&f, texture, 8.0f, 8.0f, false, levels, 1);
+    ASSERT_TRUE(scale != 0);
+    start(&f);
+
+    step(&f, 2);
+    nmo_engine_image_t image;
+    ASSERT_TRUE(nmo_engine_texture_image(f.engine, texture, &image));
+    ASSERT_EQ(4, image.width);
+    ASSERT_EQ(4, image.height);
+    ASSERT_EQ(255, pixel_of(&image, 2, 2)[0]);
+    ASSERT_EQ(0, pixel_of(&image, 2, 2)[1]);
+    ASSERT_EQ(0, pixel_of(&image, 1, 2)[0]);
+    ASSERT_EQ(255, pixel_of(&image, 1, 2)[3]); /* opaque black elsewhere */
+
+    step(&f, 1);
+    ASSERT_EQ(2, nmo_engine_texture_user_mipmap_count(f.engine, texture));
+    nmo_engine_image_t level;
+    ASSERT_TRUE(nmo_engine_texture_user_mipmap(f.engine, texture, 1, &level));
+    ASSERT_EQ(2, level.width);
+    ASSERT_EQ(255, pixel_of(&level, 0, 0)[1]);
+    ASSERT_TRUE(nmo_engine_texture_user_mipmap(f.engine, texture, 2, &level));
+    ASSERT_EQ(1, level.width);
+    ASSERT_EQ(0, pixel_of(&level, 0, 0)[3]); /* a level no input filled stays clear */
+
+    /* Growing mixes neighbours: (4, 4) is the red pixel, (5, 4) half way to black */
+    step(&f, 1);
+    ASSERT_TRUE(nmo_engine_texture_image(f.engine, texture, &image));
+    ASSERT_EQ(8, image.width);
+    ASSERT_EQ(255, pixel_of(&image, 4, 4)[0]);
+    ASSERT_EQ(127, pixel_of(&image, 5, 4)[0]);
+    ASSERT_EQ(255, pixel_of(&image, 5, 4)[3]);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_materials, setters_change_the_material_the_engine_keeps);
     REGISTER_TEST(engine_materials, set_material_replaces_then_applies_and_mesh_flags_follow);
@@ -405,4 +492,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_materials, set_color_key_keys_the_texture);
     REGISTER_TEST(engine_materials, mappings_project_the_vertices_into_uvs);
     REGISTER_TEST(engine_materials, texture_sine_sways_the_owner_mesh_uvs);
+    REGISTER_TEST(engine_materials, texture_blocks_create_write_scale_and_set_levels);
 TEST_MAIN_END()

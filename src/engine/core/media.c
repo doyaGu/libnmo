@@ -413,6 +413,10 @@ bool eng_texture_load(nmo_engine_t *engine, eng_texture_t *texture, const char *
     memcpy(copy, name, length + 1);
     free(texture->files.data[slot]);
     texture->files.data[slot] = copy;
+    if ((size_t)slot < texture->surfaces.count) {
+        free(texture->surfaces.data[slot].rgba); /* the slot is the file's again */
+        texture->surfaces.data[slot] = (eng_surface_t){0, 0, NULL};
+    }
     if (slot >= texture->slot_count) {
         texture->slot_count = slot + 1;
     }
@@ -428,6 +432,14 @@ void eng_free_textures(nmo_engine_t *engine)
             free(texture->files.data[f]);
         }
         free(texture->files.data);
+        for (size_t s = 0; s < texture->surfaces.count; s++) {
+            free(texture->surfaces.data[s].rgba);
+        }
+        free(texture->surfaces.data);
+        for (size_t l = 0; l < texture->levels.count; l++) {
+            free(texture->levels.data[l].rgba);
+        }
+        free(texture->levels.data);
         eng_movie_close(texture->movie_reader);
     }
     free(engine->media.textures.data);

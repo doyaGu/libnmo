@@ -1856,13 +1856,23 @@ bool nmo_engine_texture_image(nmo_engine_t *engine, nmo_object_id_t texture,
             out->mipmapped = slots->mipmap_level != 0;
             return image->rgba != NULL;
         }
-        nmo_arena_t *arena = nmo_arena_create(NULL, 1u << 16);
+        const eng_surface_t *surface =
+            (size_t)slot < slots->surfaces.count && slots->surfaces.data[slot].rgba != NULL
+                ? &slots->surfaces.data[slot]
+                : NULL;
         int w = 0, h = 0, ch = 0;
-        uint8_t *pixels = arena != NULL ? eng_decode_slot(engine, state, slots, slot, arena, &w, &h, &ch)
-                                        : NULL;
-        image->rgba = eng_rgba_copy(pixels, w, h, ch);
-        if (arena != NULL) {
-            nmo_arena_destroy(arena);
+        if (surface != NULL) {
+            w = surface->width;
+            h = surface->height;
+            image->rgba = eng_rgba_copy(surface->rgba, w, h, 4);
+        } else {
+            nmo_arena_t *arena = nmo_arena_create(NULL, 1u << 16);
+            uint8_t *pixels = arena != NULL ? eng_decode_slot(engine, state, slots, slot, arena, &w, &h, &ch)
+                                            : NULL;
+            image->rgba = eng_rgba_copy(pixels, w, h, ch);
+            if (arena != NULL) {
+                nmo_arena_destroy(arena);
+            }
         }
         if (image->rgba != NULL) {
             image->width = w;
@@ -1879,6 +1889,338 @@ bool nmo_engine_texture_image(nmo_engine_t *engine, nmo_object_id_t texture,
 }
 
 static const nmo_texture_state_t *eng_texture_state(const nmo_engine_t *engine,
+                                                   nmo_object_id_t texture);
+static uint8_t *eng_decode_user_level(const nmo_texture_state_t *state, int32_t level, int32_t *w,
+                                      int32_t *h);
+
+/* The surface entry of `slot`, the list grown to it; NULL without memory */
+static eng_surface_t *eng_surface_entry(eng_texture_t *texture, int32_t slot)
+{
+    while (texture->surfaces.count <= (size_t)slot) {
+        eng_surface_t *item = NULL;
+        if (!ENG_VEC_PUSH(texture->surfaces, item)) {
+            return NULL;
+        }
+    }
+    return &texture->surfaces.data[slot];
+}
+
+eng_surface_t *eng_texture_surface(nmo_engine_t *engine, eng_texture_t *texture, int32_t slot)
+{
+    slot = slot < 0 ? texture->current_slot : slot;
+    if (slot < 0 || slot >= texture->slot_count || texture->movie) {
+        return NULL;
+    }
+    eng_surface_t *surface = eng_surface_entry(texture, slot);
+    if (surface == NULL || surface->rgba != NULL) {
+        return surface != NULL && surface->rgba != NULL ? surface : NULL;
+    }
+    const nmo_texture_state_t *state = eng_texture_state(engine, texture->id);
+    nmo_arena_t *arena = state != NULL ? nmo_arena_create(NULL, 1u << 16) : NULL;
+    int w = 0, h = 0, ch = 0;
+    uint8_t *pixels = arena != NULL ? eng_decode_slot(engine, state, texture, slot, arena, &w, &h, &ch) : NULL;
+    uint8_t *rgba = eng_rgba_copy(pixels, w, h, ch);
+    if (arena != NULL) {
+        nmo_arena_destroy(arena);
+    }
+    surface = eng_surface_entry(texture, slot); /* decoding may have grown the list */
+    if (rgba == NULL || surface == NULL) {
+        free(rgba);
+        return NULL;
+    }
+    *surface = (eng_surface_t){w, h, rgba};
+    return surface;
+}
+
+/* The texture's size: its first image's (CKBitmapData keeps one for every slot) */
+static bool eng_texture_size(nmo_engine_t *engine, eng_texture_t *texture, int32_t *w, int32_t *h)
+{
+    for (int32_t slot = 0; slot < texture->slot_count; slot++) {
+        const eng_surface_t *surface = eng_texture_surface(engine, texture, slot);
+        if (surface != NULL) {
+            *w = surface->width;
+            *h = surface->height;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool eng_texture_create(nmo_engine_t *engine, eng_texture_t *texture, int32_t width, int32_t height,
+                        int32_t slot)
+{
+    int32_t w = 0, h = 0;
+    if (slot < 0 || width <= 0 || height <= 0 ||
+        (!(texture->slot_count <= 1 && slot == 0) && eng_texture_size(engine, texture, &w, &h) &&
+         (w != width || h != height))) {
+        return false;
+    }
+    size_t count = (size_t)width * (size_t)height;
+    uint8_t *rgba = (uint8_t *)calloc(count, 4u);
+    eng_surface_t *surface = rgba != NULL ? eng_surface_entry(texture, slot) : NULL;
+    if (surface == NULL) {
+        free(rgba);
+        return false;
+    }
+    for (size_t i = 0; i < count; i++) {
+        rgba[i * 4 + 3] = 0xFF; /* opaque black */
+    }
+    free(surface->rgba);
+    *surface = (eng_surface_t){width, height, rgba};
+    if ((size_t)slot < texture->files.count) {
+        free(texture->files.data[slot]); /* no file any more */
+        texture->files.data[slot] = NULL;
+    }
+    if (slot >= texture->slot_count) {
+        texture->slot_count = slot + 1;
+    }
+    if (texture->current_slot < 0 || texture->current_slot >= texture->slot_count) {
+        texture->current_slot = slot;
+    }
+    /* Another size drops the user mipmap levels (RCKTexture::Create) */
+    if (w != width || h != height) {
+        for (size_t l = 0; l < texture->levels.count; l++) {
+            free(texture->levels.data[l].rgba);
+        }
+        texture->levels.count = 0;
+        texture->user_levels = false;
+    }
+    eng_texture_changed(engine, texture->id);
+    return true;
+}
+
+static bool eng_power_of_two(int32_t n)
+{
+    return n > 0 && (n & (n - 1)) == 0;
+}
+
+bool eng_texture_use_user_levels(nmo_engine_t *engine, eng_texture_t *texture)
+{
+    if (texture->user_levels) {
+        return true;
+    }
+    const nmo_texture_state_t *state = eng_texture_state(engine, texture->id);
+    int32_t file_levels = state != NULL && state->has_user_mipmaps && state->user_mipmaps != NULL
+                              ? (int32_t)state->user_mipmap_count
+                              : 0;
+    int32_t w = 0, h = 0;
+    if (file_levels == 0 && (texture->slot_count != 1 || !eng_texture_size(engine, texture, &w, &h) ||
+                             !eng_power_of_two(w) || !eng_power_of_two(h))) {
+        return false;
+    }
+    int32_t count = file_levels;
+    for (int32_t side = w > h ? w : h; file_levels == 0 && side > 1; side >>= 1) {
+        count++;
+    }
+    for (int32_t l = 0; l < count; l++) {
+        eng_surface_t *level = NULL;
+        if (!ENG_VEC_PUSH(texture->levels, level)) {
+            return false;
+        }
+        if (file_levels > 0) {
+            level->rgba = eng_decode_user_level(state, l + 1, &level->width, &level->height);
+        } else {
+            w = w > 1 ? w >> 1 : 1;
+            h = h > 1 ? h >> 1 : 1;
+            *level = (eng_surface_t){w, h, (uint8_t *)calloc((size_t)w * (size_t)h, 4u)};
+        }
+    }
+    texture->user_levels = true;
+    eng_texture_changed(engine, texture->id);
+    return true;
+}
+
+/* ============================================================================
+ * VxResizeImage32 (VxMath's VxBlitEngine::ResizeImage for 32-bit images)
+ * ============================================================================ */
+
+/* Its two pixels mixed, `t` of the second (16.16 fraction), each byte on its own */
+static uint32_t eng_lerp_pixel(uint32_t a, uint32_t b, uint32_t t)
+{
+    uint32_t s = 0x10000u - t;
+    uint32_t g = (t * ((b >> 8) & 0xFFu) + s * ((a >> 8) & 0xFFu)) & 0xFFFF00FFu;
+    return ((s * ((a >> 16) & 0xFFu) + t * ((b >> 16) & 0xFFu)) & 0xFFFF0000u) |
+           ((s * ((a >> 16) & 0xFF00u) + t * ((b >> 16) & 0xFF00u)) & 0xFF000000u) |
+           ((((t * (b & 0xFFu) + s * (a & 0xFFu)) >> 8) | g) >> 8);
+}
+
+/* Sums of the bytes of pixels (each byte times its 16.16 weight) back to a pixel, times `scale` */
+static uint32_t eng_pack_sums(uint32_t scale, const uint32_t c[4])
+{
+    return ((((scale * (c[1] >> 16)) & 0xFFFF00FFu) | ((scale * (c[0] >> 16)) >> 8)) >> 8) |
+           ((scale * (c[2] >> 16)) & 0xFFFF0000u) | ((scale * ((c[3] >> 8) & 0xFFFF00u)) & 0xFF000000u);
+}
+
+static void eng_add_pixel(uint32_t c[4], uint32_t pixel)
+{
+    c[0] += (pixel & 0xFFu) << 16;
+    c[1] += (pixel & 0xFF00u) << 8;
+    c[2] += pixel & 0xFF0000u;
+    c[3] += (pixel >> 8) & 0xFF0000u;
+}
+
+static void eng_add_weighted(uint32_t c[4], uint32_t pixel, uint32_t weight)
+{
+    c[0] += weight * (pixel & 0xFFu);
+    c[1] += weight * ((pixel >> 8) & 0xFFu);
+    c[2] += weight * ((pixel >> 16) & 0xFFu);
+    c[3] += weight * (pixel >> 24);
+}
+
+typedef struct eng_resize {
+    int32_t w1, w2, h1;
+    uint32_t wr1, wr2, hr2;
+} eng_resize_t;
+
+/* A line of w1 pixels to w2: each the average of the pixels it covers (ResizeHLine_EqualY_ShrinkX) */
+static void eng_shrink_line(const eng_resize_t *r, const uint32_t *src, uint32_t *dst)
+{
+    uint32_t pos = 0;
+    int32_t x = 0;
+    for (int32_t out = 0; out < r->w2; out++) {
+        uint32_t c[4] = {0, 0, 0, 0};
+        eng_add_weighted(c, src[x], 0x10000u - (pos & 0xFFFFu));
+        uint32_t next = pos + r->wr1;
+        int32_t end = (int32_t)(next >> 16);
+        for (int32_t i = x + 1; i < end; i++) {
+            eng_add_pixel(c, src[i]);
+        }
+        int32_t at = end > x + 1 ? end : x + 1;
+        if (end < r->w1 && next != 0) {
+            eng_add_weighted(c, src[at], next & 0xFFFFu);
+        }
+        x = end;
+        pos = next;
+        dst[out] = eng_pack_sums(r->wr2, c);
+    }
+}
+
+/* A line of w1 pixels to w2, mixing neighbours, then the last pixel (ResizeHLine_EqualY_GrowX) */
+static void eng_grow_line(const eng_resize_t *r, const uint32_t *src, uint32_t *dst)
+{
+    int32_t out = 0;
+    int32_t limit = (r->w1 << 16) - 0x10000;
+    for (uint32_t pos = 0; (int32_t)pos < limit; pos += r->wr1) {
+        uint32_t i = pos >> 16;
+        dst[out++] = eng_lerp_pixel(src[i], src[i + 1], pos & 0xFFFFu);
+    }
+    for (; out < r->w2; out++) {
+        dst[out] = src[r->w1 - 1];
+    }
+}
+
+static void eng_resize_line(const eng_resize_t *r, const uint32_t *src, uint32_t *dst)
+{
+    if (r->w1 == r->w2) {
+        memcpy(dst, src, (size_t)r->w2 * sizeof(uint32_t));
+    } else if (r->w1 > r->w2) {
+        eng_shrink_line(r, src, dst);
+    } else {
+        eng_grow_line(r, src, dst);
+    }
+}
+
+void eng_resize_image32(const uint32_t *src, int32_t w1, int32_t h1, uint32_t *dst, int32_t w2, int32_t h2)
+{
+    if (src == NULL || dst == NULL || w1 <= 0 || h1 <= 0 || w2 <= 0 || h2 <= 0) {
+        return;
+    }
+    eng_resize_t r = {w1, w2, h1, (uint32_t)((w1 << 16) / w2), (uint32_t)((w2 << 16) / w1),
+                      (uint32_t)((h2 << 16) / h1)};
+    uint32_t hr1 = (uint32_t)((h1 << 16) / h2);
+    uint32_t *line = (uint32_t *)malloc(((size_t)w1 + 1u) * sizeof(uint32_t));
+    if (line == NULL) {
+        return;
+    }
+    if (h1 == h2) {
+        for (int32_t y = 0; y < h1; y++) {
+            eng_resize_line(&r, &src[(size_t)y * (size_t)w1], &dst[(size_t)y * (size_t)w2]);
+        }
+    } else if (h1 > h2) {
+        /* Each row the average of the rows it covers (ResizeHLine_ShrinkY_*) */
+        uint32_t start = 0;
+        for (int32_t y = 0; y < h2; y++) {
+            uint32_t end = start + hr1;
+            const uint32_t *row = &src[(size_t)(start >> 16) * (size_t)w1];
+            int32_t end_row = (int16_t)(end >> 16), full = end_row - (int16_t)(start >> 16) - 1;
+            uint32_t *sums = w1 == w2 ? &dst[(size_t)y * (size_t)w2] : line;
+            for (int32_t x = 0; x < w1; x++) {
+                uint32_t c[4] = {0, 0, 0, 0};
+                eng_add_weighted(c, row[x], 0x10000u - (start & 0xFFFFu));
+                const uint32_t *below = &row[x];
+                for (int32_t k = 0; k < full; k++) {
+                    below += w1;
+                    eng_add_pixel(c, *below);
+                }
+                if (end_row < h1) {
+                    eng_add_weighted(c, below[w1], end & 0xFFFFu);
+                }
+                sums[x] = eng_pack_sums(r.hr2, c);
+            }
+            if (w1 != w2) {
+                eng_resize_line(&r, line, &dst[(size_t)y * (size_t)w2]);
+            }
+            start = end;
+        }
+    } else {
+        /* Each row mixes the two rows about it (ResizeHLine_GrowY_*), then the last row repeats */
+        int32_t limit = (h1 << 16) - 0x10000, y = 0;
+        for (uint32_t pos = 0; (int32_t)pos < limit; pos += hr1, y++) {
+            const uint32_t *row = &src[(size_t)(pos >> 16) * (size_t)w1];
+            uint32_t *mixed = w1 == w2 ? &dst[(size_t)y * (size_t)w2] : line;
+            for (int32_t x = 0; x < w1; x++) {
+                mixed[x] = eng_lerp_pixel(row[x], row[x + w1], pos & 0xFFFFu);
+            }
+            if (w1 != w2) {
+                eng_resize_line(&r, line, &dst[(size_t)y * (size_t)w2]);
+            }
+        }
+        for (; y < h2; y++) {
+            eng_resize_line(&r, &src[(size_t)(h1 - 1) * (size_t)w1], &dst[(size_t)y * (size_t)w2]);
+        }
+    }
+    free(line);
+}
+
+bool eng_texture_resize(nmo_engine_t *engine, eng_texture_t *texture, int32_t width, int32_t height)
+{
+    int32_t w = 0, h = 0;
+    if (texture->movie || texture->slot_count == 0 || !eng_texture_size(engine, texture, &w, &h) ||
+        width <= 0 || height <= 0) {
+        return false;
+    }
+    if (w == width && h == height) {
+        return true;
+    }
+    size_t count = (size_t)width * (size_t)height;
+    for (int32_t slot = 0; slot < texture->slot_count; slot++) {
+        eng_surface_t *surface = eng_texture_surface(engine, texture, slot);
+        uint8_t *rgba = (uint8_t *)malloc(count * 4u);
+        if (rgba == NULL) {
+            return false;
+        }
+        if (surface != NULL) {
+            eng_resize_image32((const uint32_t *)surface->rgba, surface->width, surface->height,
+                               (uint32_t *)rgba, width, height);
+            free(surface->rgba);
+        } else {
+            for (size_t i = 0; i < count; i++) {
+                rgba[i * 4] = rgba[i * 4 + 1] = rgba[i * 4 + 2] = 0;
+                rgba[i * 4 + 3] = 0xFF; /* a slot without an image: opaque black */
+            }
+            surface = eng_surface_entry(texture, slot);
+            if (surface == NULL) {
+                free(rgba);
+                return false;
+            }
+        }
+        *surface = (eng_surface_t){width, height, rgba};
+    }
+    eng_texture_changed(engine, texture->id);
+    return true;
+}
+
+static const nmo_texture_state_t *eng_texture_state(const nmo_engine_t *engine,
                                                    nmo_object_id_t texture)
 {
     nmo_object_t *object = engine != NULL && texture != 0 ? eng_find_object(engine, texture) : NULL;
@@ -1887,8 +2229,45 @@ static const nmo_texture_state_t *eng_texture_state(const nmo_engine_t *engine,
                : NULL;
 }
 
+/* The engine's state of a texture when it made one */
+static const eng_texture_t *eng_texture_known(const nmo_engine_t *engine, nmo_object_id_t texture)
+{
+    for (size_t i = 0; engine != NULL && i < engine->media.textures.count; i++) {
+        if (engine->media.textures.data[i].id == texture) {
+            return &engine->media.textures.data[i];
+        }
+    }
+    return NULL;
+}
+
+/* User mipmap level `level` (from 1) the file saved, RGBA unkeyed (malloc'ed); NULL when unreadable */
+static uint8_t *eng_decode_user_level(const nmo_texture_state_t *state, int32_t level, int32_t *w, int32_t *h)
+{
+    const nmo_texture_raw_slot_t *rs = &state->user_mipmaps[level - 1];
+    nmo_arena_t *arena = nmo_arena_create(NULL, 1u << 16);
+    uint8_t *pixels = NULL;
+    int channels = 0;
+    if (arena == NULL || (rs->compression & 0xFu) != 0 || rs->width <= 0 || rs->height <= 0 ||
+        nmo_image_reconstruct_pixels(rs->red_data, rs->green_data, rs->blue_data, rs->alpha_data,
+                                     rs->red_size, rs->green_size, rs->blue_size, rs->alpha_size,
+                                     rs->width, rs->height, rs->bits_per_pixel, arena, &pixels,
+                                     &channels) != NMO_OK) {
+        nmo_arena_destroy(arena);
+        return NULL;
+    }
+    uint8_t *rgba = eng_rgba_copy(pixels, rs->width, rs->height, channels);
+    nmo_arena_destroy(arena);
+    *w = rs->width;
+    *h = rs->height;
+    return rgba;
+}
+
 int32_t nmo_engine_texture_user_mipmap_count(const nmo_engine_t *engine, nmo_object_id_t texture)
 {
+    const eng_texture_t *known = eng_texture_known(engine, texture);
+    if (known != NULL && known->user_levels) {
+        return (int32_t)known->levels.count;
+    }
     const nmo_texture_state_t *state = eng_texture_state(engine, texture);
     return state != NULL && state->has_user_mipmaps && state->user_mipmaps != NULL
                ? (int32_t)state->user_mipmap_count
@@ -1909,34 +2288,35 @@ bool nmo_engine_texture_user_mipmap(nmo_engine_t *engine, nmo_object_id_t textur
         }
     }
     if (image == NULL) {
-        const nmo_texture_state_t *state = eng_texture_state(engine, texture);
-        const nmo_texture_raw_slot_t *rs = &state->user_mipmaps[level - 1];
-        nmo_arena_t *arena = nmo_arena_create(NULL, 1u << 16);
-        uint8_t *pixels = NULL;
-        int channels = 0;
-        if (arena == NULL || (rs->compression & 0xFu) != 0 || rs->width <= 0 || rs->height <= 0 ||
-            nmo_image_reconstruct_pixels(rs->red_data, rs->green_data, rs->blue_data,
-                                         rs->alpha_data, rs->red_size, rs->green_size,
-                                         rs->blue_size, rs->alpha_size, rs->width, rs->height,
-                                         rs->bits_per_pixel, arena, &pixels, &channels) != NMO_OK) {
-            nmo_arena_destroy(arena);
-            return false;
+        const eng_texture_t *known = eng_texture_known(engine, texture);
+        int32_t w = 0, h = 0;
+        uint8_t *rgba = NULL;
+        if (known != NULL && known->user_levels) {
+            const eng_surface_t *source = &known->levels.data[level - 1];
+            size_t size = (size_t)source->width * (size_t)source->height * 4u;
+            rgba = source->rgba != NULL && size > 0 ? (uint8_t *)malloc(size) : NULL;
+            if (rgba != NULL) {
+                memcpy(rgba, source->rgba, size);
+                w = source->width;
+                h = source->height;
+            }
+        } else {
+            rgba = eng_decode_user_level(eng_texture_state(engine, texture), level, &w, &h);
         }
-        uint8_t *rgba = eng_rgba_copy(pixels, rs->width, rs->height, channels);
-        nmo_arena_destroy(arena);
         if (rgba == NULL || !ENG_VEC_PUSH(engine->render.user_mipmaps, image)) {
             free(rgba);
             return false;
         }
         image->texture = texture;
         image->slot = level;
-        image->width = rs->width;
-        image->height = rs->height;
+        image->width = w;
+        image->height = h;
         image->rgba = rgba;
+        image->version = ++engine->render.image_version;
         /* RCKTexture::Restore keys the levels as it keys the image */
         const eng_texture_t *keys = eng_texture(engine, texture);
         if (keys != NULL) {
-            eng_key_image(keys, rgba, rs->width, rs->height);
+            eng_key_image(keys, rgba, w, h);
         }
     }
     out->width = image->width;
