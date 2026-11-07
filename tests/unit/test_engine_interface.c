@@ -1,4 +1,5 @@
 #include "engine_fixture.h"
+#include "engine/nmo_engine_render.h"
 
 #define GUID_NOP NMO_GUID(0x302561c4, 0x0d282980)
 #define GUID_CREATE_SYSTEM_FONT NMO_GUID(0x936334fc, 0xf243684f)
@@ -8,6 +9,7 @@
 #define GUID_PUSH_BUTTON NMO_GUID(0x761b7e64, 0x2b4c6911)
 #define GUID_TT_PUSH_BUTTON2 NMO_GUID(0x14d325d1, 0x6748654e)
 #define GUID_SHOW_MOUSE_CURSOR NMO_GUID(0x16f6368f, 0x506b60fc)
+#define GUID_TEXT_DISPLAY NMO_GUID(0xf22d010a, 0xf2cd010a)
 
 typedef struct effect_log {
     size_t effects;
@@ -127,6 +129,66 @@ TEST(engine_interface, text_2d_draws_until_off)
     fixture_end(&f);
 }
 
+/* The frame's sprite text draw, or NULL */
+static const nmo_engine_draw_t *sprite_text_draw(const nmo_engine_frame_t *frame)
+{
+    for (int32_t i = 0; i < frame->draw_count; i++) {
+        if (frame->draws[i].kind == NMO_ENGINE_DRAW_SPRITE_TEXT) {
+            return &frame->draws[i];
+        }
+    }
+    return NULL;
+}
+
+TEST(engine_interface, text_display_shows_its_text_until_off)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t display = fixture_block(&f, GUID_TEXT_DISPLAY, "Text Display");
+    nmo_object_id_t exit_off = fixture_block(&f, GUID_NOP, "Exit Off");
+    ASSERT_TRUE(display != 0 && exit_off != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, display, 0), 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, display, 1), 2);
+    fixture_link(&f, BLOCK_OUT(&f, display, 1), BLOCK_IN(&f, exit_off, 0), 0);
+    const float offset[2] = {10.0f, 20.0f};
+    const float red[4] = {1.0f, 0.0f, 0.0f, 1.0f};
+    fixture_input_value(&f, BLOCK_PIN(&f, display, 0), offset, sizeof(offset));
+    fixture_input_value(&f, BLOCK_PIN(&f, display, 1), red, sizeof(red));
+    /* Left as CK reads the "Left" default (the edit layer's Sprite Text Alignment names differ) */
+    fixture_input_int(&f, BLOCK_PIN(&f, display, 2), 2);
+    fixture_input_int(&f, BLOCK_PIN(&f, display, 3), 16);
+    fixture_input_value(&f, BLOCK_PIN(&f, display, 4), "Hello", 6);
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+
+    /* At Offset, the Sprite Size setting's 320 x 25, the text with a space after it, red
+       reaching GDI as blue, Arial (no font info) at Size points, Left */
+    const nmo_engine_draw_t *draw = sprite_text_draw(&frame);
+    ASSERT_NOT_NULL(draw);
+    ASSERT_FLOAT_EQ(10.0f, draw->rect[0], 0.0f);
+    ASSERT_FLOAT_EQ(20.0f, draw->rect[1], 0.0f);
+    ASSERT_FLOAT_EQ(330.0f, draw->rect[2], 0.0f);
+    ASSERT_FLOAT_EQ(45.0f, draw->rect[3], 0.0f);
+    ASSERT_STR_EQ("Hello ", draw->text);
+    ASSERT_EQ(0xFF0000FFu, draw->color);
+    ASSERT_STR_EQ("Arial", draw->font_name);
+    ASSERT_EQ(16, draw->font_size);
+    ASSERT_EQ(2u, draw->text_align);
+    ASSERT_TRUE(nmo_engine_behavior_is_active(f.engine, display));
+
+    /* Off two frames on: hidden, Exit Off, the block done */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1u, runs(&f, exit_off));
+    ASSERT_FALSE(nmo_engine_behavior_is_active(f.engine, display));
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_NULL(sprite_text_draw(&frame));
+    fixture_end(&f);
+}
+
 TEST(engine_interface, push_button_follows_the_mouse)
 {
     engine_fixture_t f;
@@ -213,6 +275,7 @@ TEST(engine_interface, tt_push_button2_needs_the_cursor_shown)
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_interface, fonts_are_numbered_by_name);
 REGISTER_TEST(engine_interface, text_2d_draws_until_off);
+REGISTER_TEST(engine_interface, text_display_shows_its_text_until_off);
 REGISTER_TEST(engine_interface, push_button_follows_the_mouse);
 REGISTER_TEST(engine_interface, tt_push_button2_needs_the_cursor_shown);
 TEST_MAIN_END()
