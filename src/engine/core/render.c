@@ -1810,6 +1810,58 @@ static bool eng_hidden_by_parent(const nmo_engine_t *engine, const eng_entity_t 
 }
 
 /* CKMesh::GetBaryCenter and GetRadius, in the mesh's space; false for no mesh */
+nmo_object_id_t eng_create_mesh(nmo_engine_t *engine, const char *name, int32_t vertex_count,
+                                int32_t face_count, nmo_mesh_state_t **out_state)
+{
+    nmo_object_id_t id = vertex_count >= 0 && face_count >= 0 ? eng_create_object(engine, NMO_CID_MESH, name) : 0;
+    const eng_module_t *module = id != 0 ? eng_module_of(engine, id, NULL) : NULL;
+    nmo_object_t *object = id != 0 ? eng_find_object(engine, id) : NULL;
+    nmo_mesh_state_t *state = object != NULL ? (nmo_mesh_state_t *)nmo_object_get_state(object) : NULL;
+    if (module == NULL || module->session == NULL || state == NULL) {
+        return 0;
+    }
+    nmo_arena_t *arena = nmo_session_get_arena(module->session);
+    size_t vertices = (size_t)(vertex_count > 0 ? vertex_count : 1);
+    size_t faces = (size_t)(face_count > 0 ? face_count : 1);
+    state->vertices = (nmo_vertex_t *)nmo_arena_alloc(arena, vertices * sizeof(nmo_vertex_t), _Alignof(nmo_vertex_t));
+    state->vertex_colors = (uint32_t *)nmo_arena_alloc(arena, vertices * sizeof(uint32_t), _Alignof(uint32_t));
+    state->vertex_specular = (uint32_t *)nmo_arena_alloc(arena, vertices * sizeof(uint32_t), _Alignof(uint32_t));
+    state->faces = (nmo_face_t *)nmo_arena_alloc(arena, faces * sizeof(nmo_face_t), _Alignof(nmo_face_t));
+    state->face_vertex_indices =
+        (uint16_t *)nmo_arena_alloc(arena, faces * 3u * sizeof(uint16_t), _Alignof(uint16_t));
+    if (state->vertices == NULL || state->vertex_colors == NULL || state->vertex_specular == NULL ||
+        state->faces == NULL || state->face_vertex_indices == NULL) {
+        return 0;
+    }
+    memset(state->vertices, 0, vertices * sizeof(nmo_vertex_t));
+    for (size_t v = 0; v < vertices; v++) {
+        state->vertex_colors[v] = 0xFFFFFFFFu;
+    }
+    memset(state->vertex_specular, 0, vertices * sizeof(uint32_t));
+    memset(state->faces, 0, faces * sizeof(nmo_face_t));
+    memset(state->face_vertex_indices, 0, faces * 3u * sizeof(uint16_t));
+    state->vertex_count = (uint32_t)vertex_count;
+    state->face_count = (uint32_t)face_count;
+    *out_state = state;
+    return id;
+}
+
+bool eng_entity_set_current_mesh(nmo_engine_t *engine, nmo_object_id_t entity, nmo_object_id_t mesh)
+{
+    nmo_object_id_t local = 0;
+    const eng_module_t *module = eng_module_of(engine, entity, NULL);
+    nmo_object_t *object = entity != 0 ? eng_find_object(engine, entity) : NULL;
+    nmo_3dentity_state_t *state = object != NULL
+        ? (nmo_3dentity_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(engine->types, object,
+                                                                                   CKPGUID_3DENTITY)
+        : NULL;
+    if (state == NULL || (mesh != 0 && eng_module_of(engine, mesh, &local) != module)) {
+        return false;
+    }
+    state->current_mesh = nmo_ref_from_id(local);
+    return true;
+}
+
 bool eng_mesh_sphere(nmo_engine_t *engine, nmo_object_id_t mesh_id, eng_vector_t *center, float *radius)
 {
     const nmo_mesh_state_t *mesh = mesh_id != 0 ? eng_mesh_state(engine, mesh_id) : NULL;

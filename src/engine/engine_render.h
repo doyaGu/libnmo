@@ -16,6 +16,7 @@
 
 struct nmo_material_state;
 struct nmo_sprite3d_state;
+struct nmo_mesh_state;
 struct eng_matrix;
 struct eng_vector;
 
@@ -329,6 +330,14 @@ void eng_floor_shadow_place(nmo_engine_t *engine, eng_floor_shadow_t *shadow, nm
 void eng_floor_shadow_remove(nmo_engine_t *engine, eng_floor_shadow_t *shadow);
 /* Add a draw to the frame being made; NULL out of memory */
 nmo_engine_draw_t *eng_render_push(nmo_engine_t *engine);
+/* CKContext::CreateObject(CKCID_MESH) then SetVertexCount and SetFaceCount: zeroed vertices,
+   white vertex colors, no specular, faces of vertex 0 in no material group; the state is the
+   caller's to fill before the mesh renders. 0 out of memory */
+nmo_object_id_t eng_create_mesh(nmo_engine_t *engine, const char *name, int32_t vertex_count,
+                                int32_t face_count, struct nmo_mesh_state **out_state);
+/* CK3dEntity::SetCurrentMesh, for a mesh of the entity's own document (a created entity takes a
+   created mesh); 0 for none. False when it cannot refer to it. */
+bool eng_entity_set_current_mesh(nmo_engine_t *engine, nmo_object_id_t entity, nmo_object_id_t mesh);
 /* CKMesh::GetBaryCenter and GetRadius, in the mesh's space; false for no mesh */
 bool eng_mesh_sphere(nmo_engine_t *engine, nmo_object_id_t mesh, struct eng_vector *center, float *radius);
 /* Whether the scene traversal renders the 3D entity: in the scene, shown, and no parent hiding
