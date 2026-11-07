@@ -48,6 +48,21 @@ static inline uint32_t rgbaf_to_color(const float c[4])
     return (g & 0xFF00u) | (r & 0xFF0000u) | (b & 0xFFu) | (a << 24);
 }
 
+/* RGBAFTOCOLOR(const VxColor *): ARGB, each channel times 255 truncated and kept in [0, 255] */
+static inline uint32_t vxcolor_to_color(const float c[4])
+{
+    uint32_t argb = 0;
+    for (int i = 0; i < 4; i++) {
+        float v = c[i] * 255.0f;
+        uint32_t byte = !(v > -2147483648.0f && v < 2147483648.0f) ? 0u
+                        : v >= 255.0f                               ? 255u
+                        : v > 0.0f                                  ? (uint32_t)(int32_t)v
+                                                                    : 0u;
+        argb |= byte << (i == 3 ? 24 : 16 - 8 * i);
+    }
+    return argb;
+}
+
 static inline eng_vector_t get_in_vector(blk_t *b, int pos, float x, float y, float z)
 {
     eng_vector_t v = {x, y, z};

@@ -1155,6 +1155,15 @@ static void view_draw_primitive(nmo_view_t *view, const nmo_engine_frame_t *fram
         glDisable(GL_LIGHTING);
     }
     view_set_material(view, &material, draw->lit, true, NULL);
+    if (draw->projection_z_scale != 0.0f) {
+        /* GL's depth translation is the matrix's [14], as D3D's is its [3][2] */
+        float projection[16];
+        glMatrixMode(GL_PROJECTION);
+        glPushMatrix();
+        glGetFloatv(GL_PROJECTION_MATRIX, projection);
+        projection[14] *= draw->projection_z_scale;
+        glLoadMatrixf(projection);
+    }
     glMatrixMode(GL_MODELVIEW);
     glLoadMatrixf(view_m);
     const nmo_engine_vertex_t *v = &frame->vertices[draw->first_vertex];
@@ -1172,6 +1181,11 @@ static void view_draw_primitive(nmo_view_t *view, const nmo_engine_frame_t *fram
     }
     glEnd();
     glDisable(GL_LIGHTING);
+    if (draw->projection_z_scale != 0.0f) {
+        glMatrixMode(GL_PROJECTION);
+        glPopMatrix();
+        glMatrixMode(GL_MODELVIEW);
+    }
 }
 
 static void view_begin_2d(const nmo_engine_frame_t *frame)
