@@ -107,18 +107,14 @@ static int bb_interpolator_int(blk_t *b)
 }
 
 /* Slerp (VxQuaternionDetail::Interpolate) */
-static int bb_interpolator_quaternion(blk_t *b)
+static void quaternion_slerp(double t, const float a[4], const float c[4], float r[4])
 {
-    float a[4] = {0, 0, 0, 1}, c[4] = {0, 0, 0, 1}, r[4];
-    double t = get_in_float(b, 2, 0.0f);
-    nmo_engine_block_get_input_value(b, 0, a, sizeof(a));
-    nmo_engine_block_get_input_value(b, 1, c, sizeof(c));
     double dot = (((double)a[2] * c[2] + (double)a[1] * c[1]) + (double)a[0] * c[0]) +
                  (double)a[3] * c[3];
     double sign = dot < 0.0 ? -1.0 : 1.0;
     double cosine = dot < 0.0 ? -dot : dot;
     if (t == 0.0) {
-        memcpy(r, a, sizeof(r));
+        memcpy(r, a, 4 * sizeof(float));
     } else if (t == 1.0) {
         for (int i = 0; i < 4; i++) {
             r[i] = (float)(sign * c[i]);
@@ -134,6 +130,15 @@ static int bb_interpolator_quaternion(blk_t *b)
             r[i] = (float)(a[i] * cos(phase) + tangent * sin(phase));
         }
     }
+}
+
+static int bb_interpolator_quaternion(blk_t *b)
+{
+    float a[4] = {0, 0, 0, 1}, c[4] = {0, 0, 0, 1}, r[4];
+    double t = get_in_float(b, 2, 0.0f);
+    nmo_engine_block_get_input_value(b, 0, a, sizeof(a));
+    nmo_engine_block_get_input_value(b, 1, c, sizeof(c));
+    quaternion_slerp(t, a, c, r);
     nmo_engine_block_set_output_value(b, 0, r, sizeof(r));
     IN_OFF(b, 0);
     OUT_ON(b, 0);
@@ -183,10 +188,192 @@ static int bb_interpolator_color_hsv(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* Vx3DNormalizeRotationRows: rows 0 and 1 to unit length (wide), row 2 their cross product */
+static void normalize_rotation_rows(const float m[4][4], float out[3][3])
+{
+    for (int r = 0; r < 2; r++) {
+        const double inverse = 1.0 / sqrt(((double)m[r][0] * m[r][0] + (double)m[r][1] * m[r][1]) +
+                                          (double)m[r][2] * m[r][2]);
+        for (int c = 0; c < 3; c++) {
+            out[r][c] = (float)(m[r][c] * inverse);
+        }
+    }
+    out[2][0] = (float)((double)out[1][2] * out[0][1] - (double)out[0][2] * out[1][1]);
+    out[2][1] = (float)((double)out[0][2] * out[1][0] - (double)out[0][0] * out[1][2]);
+    out[2][2] = (float)((double)out[0][0] * out[1][1] - (double)out[1][0] * out[0][1]);
+}
+
+/* VxQuaternion::FromMatrix of a unit rotation, with wide intermediates */
+static void quaternion_from_rows(const float m[3][3], float q[4])
+{
+    const double trace = (double)m[1][1] + m[2][2] + m[0][0];
+    if (trace >= 0.0) {
+        const double root = sqrt(trace + 1.0), s = 0.5 / root;
+        q[3] = (float)(root * 0.5);
+        q[0] = (float)(((double)m[2][1] - m[1][2]) * s);
+        q[1] = (float)(((double)m[0][2] - m[2][0]) * s);
+        q[2] = (float)(((double)m[1][0] - m[0][1]) * s);
+        return;
+    }
+    int i = 0;
+    if (m[1][1] > m[0][0]) {
+        i = 1;
+    }
+    if (m[2][2] > m[i][i]) {
+        i = 2;
+    }
+    static const int next[3] = {1, 2, 0};
+    const int j = next[i], k = next[j];
+    const double root = sqrt((m[i][i] - ((double)m[k][k] + m[j][j])) + 1.0), s = 0.5 / root;
+    q[i] = (float)(root * 0.5);
+    q[j] = (float)(((double)m[j][i] + m[i][j]) * s);
+    q[k] = (float)(((double)m[k][i] + m[i][k]) * s);
+    q[3] = (float)(((double)m[k][j] - m[j][k]) * s);
+}
+
+/* VxQuaternion::FromMatrix(Mat, MatIsUnit, TRUE) */
+static void quaternion_from_matrix(const float m[4][4], bool unit, float q[4])
+{
+    float rows[3][3];
+    if (unit) {
+        for (int r = 0; r < 3; r++) {
+            for (int c = 0; c < 3; c++) {
+                rows[r][c] = m[r][c];
+            }
+        }
+    } else {
+        normalize_rotation_rows(m, rows);
+    }
+    quaternion_from_rows(rows, q);
+}
+
+/* VxQuaternion::ToMatrix: the rotation, no translation */
+static void quaternion_to_matrix(const float q[4], float m[4][4])
+{
+    eng_matrix_t matrix;
+    const nmo_quaternion_t quaternion = {q[0], q[1], q[2], q[3]};
+    eng_matrix_from_quaternion_unchecked(&matrix, &quaternion);
+    memcpy(m, matrix.m, sizeof(matrix.m));
+}
+
 /*
- * The function goes by the output's type, as the load callback picks it. A
- * matrix (Vx3DInterpolateMatrix) has no port: the block keeps no function.
+ * Vx3DInterpolateMatrix (Vx3DInterpolateMatrixNoScale, which interpolates the
+ * scale too): each matrix as a rotation, a position and a scale by rows, the
+ * rotation slerped and the others linear, the ends kept as they are.
  */
+static void interpolate_matrix(float step, const float a[4][4], const float c[4][4], float r[4][4])
+{
+    if (step == 0.0f) {
+        memcpy(r, a, 16 * sizeof(float));
+        return;
+    }
+    if (step == 1.0f) {
+        memcpy(r, c, 16 * sizeof(float));
+        return;
+    }
+    const float(*ends[2])[4] = {a, c};
+    float q[2][4], position[2][3], scale[2][3];
+    for (int e = 0; e < 2; e++) {
+        float rows[3][3];
+        normalize_rotation_rows(ends[e], rows);
+        quaternion_from_rows(rows, q[e]);
+        for (int i = 0; i < 3; i++) {
+            position[e][i] = ends[e][3][i];
+            scale[e][i] = (float)(((double)rows[i][0] * ends[e][i][0] +
+                                   (double)rows[i][1] * ends[e][i][1]) +
+                                  (double)rows[i][2] * ends[e][i][2]);
+        }
+    }
+    float rotation[4];
+    quaternion_slerp(step, q[0], q[1], rotation);
+    float p[3], sc[3];
+    for (int i = 0; i < 3; i++) {
+        p[i] = (float)((double)position[0][i] + ((double)position[1][i] - position[0][i]) * step);
+        sc[i] = (float)((double)scale[0][i] + ((double)scale[1][i] - scale[0][i]) * step);
+    }
+    const double length = sqrt((((double)rotation[0] * rotation[0] + (double)rotation[1] * rotation[1]) +
+                                (double)rotation[2] * rotation[2]) +
+                               (double)rotation[3] * rotation[3]);
+    if (length == 0.0) {
+        rotation[0] = rotation[1] = rotation[2] = 0.0f;
+        rotation[3] = 1.0f;
+    } else {
+        for (int i = 0; i < 4; i++) {
+            rotation[i] = (float)(rotation[i] / length);
+        }
+    }
+    const double x = rotation[0], y = rotation[1], z = rotation[2], w = rotation[3];
+    const double xx = x * x, yy = y * y, zz = z * z, ww = w * w, xy = y * x, wz = w * z;
+    const float xz = (float)(z * x), wx = (float)(w * x), yz = (float)(z * y), wy = (float)(w * y);
+    memset(r, 0, 16 * sizeof(float));
+    r[3][3] = 1.0f;
+    r[0][0] = (float)(ww + xx - yy - zz);
+    r[0][1] = (float)(2 * xy - 2 * wz);
+    r[0][2] = 2 * wy + 2 * xz;
+    r[1][0] = (float)(2 * wz + 2 * xy);
+    r[1][1] = (float)(ww - xx + yy - zz);
+    r[1][2] = 2 * yz - 2 * wx;
+    r[2][0] = 2 * xz - 2 * wy;
+    r[2][1] = 2 * yz + 2 * wx;
+    r[2][2] = (float)(ww - xx - yy + zz);
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            r[i][j] *= sc[i];
+        }
+        r[3][i] = p[i];
+    }
+}
+
+/* InterpolatorMatrix */
+static int bb_interpolator_matrix(blk_t *b)
+{
+    float a[4][4] = {{0}}, c[4][4] = {{0}}, r[4][4];
+    nmo_engine_block_get_input_value(b, 0, a, sizeof(a));
+    nmo_engine_block_get_input_value(b, 1, c, sizeof(c));
+    interpolate_matrix(get_in_float(b, 2, 0.0f), a, c, r);
+    nmo_engine_block_set_output_value(b, 0, r, sizeof(r));
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * Interpolator Object Orientation: the slerp of A's and B's world rotations as
+ * a matrix, its rows scaled by Scale unless the setting (local 0) says the
+ * objects are unit scaled, in which case their matrices are taken as rotations
+ * as they are. The original reads a missing entity; here that is a parameter
+ * error.
+ */
+static int bb_interpolator_orientation(blk_t *b)
+{
+    bool unit = get_local_int(b, 0, 0) != 0;
+    int32_t ea = input_entity(b, 0), ec = input_entity(b, 1);
+    if (ea < 0 || ec < 0) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    float qa[4], qc[4], q[4], m[4][4];
+    quaternion_from_matrix(b->engine->entities.data[ea].world.m, unit, qa);
+    quaternion_from_matrix(b->engine->entities.data[ec].world.m, unit, qc);
+    quaternion_slerp(get_in_float(b, 2, 0.0f), qa, qc, q);
+    quaternion_to_matrix(q, m);
+    if (!unit) {
+        eng_vector_t scale = get_in_vector(b, 3, 1.0f, 1.0f, 1.0f);
+        if (scale.x != 1.0f || scale.y != 1.0f || scale.z != 1.0f) {
+            const float s[3] = {scale.x, scale.y, scale.z};
+            for (int i = 0; i < 3; i++) {
+                for (int j = 0; j < 3; j++) {
+                    m[i][j] *= s[i];
+                }
+            }
+        }
+    }
+    nmo_engine_block_set_output_value(b, 0, m, sizeof(m));
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* The function goes by the output's type, as the load callback picks it. */
 static int cb_interpolator(blk_t *b, uint32_t message)
 {
     if (message != NMO_ENGINE_MSG_LOAD) {
@@ -208,7 +395,9 @@ static int cb_interpolator(blk_t *b, uint32_t message)
         fn = bb_interpolator_quaternion;
     } else if (nmo_guid_equals(out, CKPGUID_RECT)) {
         fn = bb_interpolator_four;
-    } else if (!nmo_guid_equals(out, CKPGUID_MATRIX)) {
+    } else if (nmo_guid_equals(out, CKPGUID_MATRIX)) {
+        fn = bb_interpolator_matrix;
+    } else {
         return NMO_ENGINE_BR_OK; /* another type: the function stays InterpolatorFloat */
     }
     nmo_engine_block_set_function(b, fn);
@@ -218,6 +407,17 @@ static int cb_interpolator(blk_t *b, uint32_t message)
 static const nmo_engine_block_desc_t eng_logics_interpolator_blocks[] = {
     {NMO_GUID_INIT(0x35503950, 0x2dde7a65), "Interpolator", bb_interpolator_float, cb_interpolator,
      NULL},
+    {NMO_GUID_INIT(0x17171700, 0x17171700), "Interpolator Float", bb_interpolator_float, NULL, NULL},
+    {NMO_GUID_INIT(0x17171701, 0x17171701), "Interpolator Int", bb_interpolator_int, NULL, NULL},
+    {NMO_GUID_INIT(0x17171702, 0x17171702), "Interpolator Vector", bb_interpolator_vector, NULL,
+     NULL},
+    {NMO_GUID_INIT(0x17171703, 0x17171703), "Interpolator Color", bb_interpolator_four, NULL, NULL},
+    {NMO_GUID_INIT(0x03184d55, 0x7d7a0509), "Interpolator Matrix", bb_interpolator_matrix, NULL,
+     NULL},
+    {NMO_GUID_INIT(0x17171704, 0x17171704), "Interpolator Object Orientation",
+     bb_interpolator_orientation, NULL, NULL},
+    {NMO_GUID_INIT(0x778400bb, 0x1a480d35), "Interpolator HSV Color", bb_interpolator_color_hsv,
+     NULL, NULL},
 };
 
 nmo_status_t eng_register_logics_interpolator(nmo_engine_t *engine)
