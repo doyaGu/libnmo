@@ -144,9 +144,36 @@ typedef struct eng_env_map {
     bool old_version;              /* before 1.5, always the referential's orientation */
 } eng_env_map_t;
 
+/*
+ * A render callback a block gives a 3D entity: CK3dEntity::AddPreRenderCallBack,
+ * SetRenderCallBack (in place of its mesh's draw; one an entity) or
+ * AddPostRenderCallBack. The scene traversal runs it as it renders the
+ * entity (shown, in the scene, with a mesh or callbacks), with whether the
+ * entity is rendered last (its draws then go with the transparent ones,
+ * sorted at the entity); a temporary one is removed after the frame. `node`
+ * is the block, passed back.
+ */
+typedef enum eng_entity_callback_kind {
+    ENG_ENTITY_PRE_RENDER = 0,
+    ENG_ENTITY_RENDER = 1,
+    ENG_ENTITY_POST_RENDER = 2
+} eng_entity_callback_kind_t;
+
+typedef void (*eng_entity_callback_fn)(nmo_engine_t *engine, nmo_object_id_t entity, int32_t node,
+                                       bool transparent);
+
+typedef struct eng_entity_callback {
+    nmo_object_id_t entity;
+    eng_entity_callback_kind_t kind;
+    eng_entity_callback_fn fn;
+    int32_t node;
+    bool temporary;
+} eng_entity_callback_t;
+
 typedef struct eng_render {
     int32_t screen_mode;      /* the render context's mode, of the engine's driver's list */
     ENG_VEC(eng_env_map_t) env_maps;
+    ENG_VEC(eng_entity_callback_t) entity_callbacks;
 
     /* CKObject::Show at run time: object -> its CK_OBJECT_VISIBLE and HIERACHICALHIDE flags */
     eng_map_t shown;
@@ -309,6 +336,12 @@ float *eng_mesh_uvs(nmo_engine_t *engine, eng_mesh_copy_t *copy, int32_t channel
                     int32_t *count);
 /* CK3dEntity::AddPreRenderCallBack of Environment Mapping, once per block and entity */
 bool eng_add_env_map(nmo_engine_t *engine, const eng_env_map_t *map);
+/* Add an entity's render callback: a render one takes the place of the entity's other, a pre
+   or post one is added once (entity, kind, function and block). False out of memory. */
+bool eng_add_entity_callback(nmo_engine_t *engine, const eng_entity_callback_t *callback);
+/* Remove the entity's callbacks of `kind` by `fn` for the block `node` */
+void eng_remove_entity_callback(nmo_engine_t *engine, nmo_object_id_t entity, eng_entity_callback_kind_t kind,
+                                eng_entity_callback_fn fn, int32_t node);
 /* CKMesh::SetLitMode (VX_PRELITMESH 0, VX_LITMESH 1). False when `mesh` is none. */
 bool eng_mesh_set_lit_mode(nmo_engine_t *engine, nmo_object_id_t mesh, int32_t mode);
 /* A soft shadow on the floors under a 3D entity (Simple Shadow, TT Simple Shadow): the floors

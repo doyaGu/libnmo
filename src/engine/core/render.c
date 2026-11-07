@@ -96,6 +96,7 @@ void eng_free_render(nmo_engine_t *engine)
     free(render->draws.data);
     free(render->frame_lights.data);
     free(render->env_maps.data);
+    free(render->entity_callbacks.data);
 }
 
 eng_mesh_t *eng_render_mesh(nmo_engine_t *engine, nmo_object_id_t id)
@@ -1797,6 +1798,66 @@ static void eng_sort_by_priority(nmo_engine_t *engine, size_t first, size_t end)
     free(items);
 }
 
+bool eng_add_entity_callback(nmo_engine_t *engine, const eng_entity_callback_t *callback)
+{
+    for (size_t i = 0; i < engine->render.entity_callbacks.count; i++) {
+        eng_entity_callback_t *known = &engine->render.entity_callbacks.data[i];
+        if (known->entity == callback->entity && known->kind == callback->kind &&
+            (callback->kind == ENG_ENTITY_RENDER || (known->fn == callback->fn && known->node == callback->node))) {
+            *known = *callback;
+            return true;
+        }
+    }
+    eng_entity_callback_t *added = NULL;
+    if (!ENG_VEC_PUSH(engine->render.entity_callbacks, added)) {
+        return false;
+    }
+    *added = *callback;
+    return true;
+}
+
+void eng_remove_entity_callback(nmo_engine_t *engine, nmo_object_id_t entity, eng_entity_callback_kind_t kind,
+                                eng_entity_callback_fn fn, int32_t node)
+{
+    size_t kept = 0;
+    for (size_t i = 0; i < engine->render.entity_callbacks.count; i++) {
+        const eng_entity_callback_t *callback = &engine->render.entity_callbacks.data[i];
+        if (!(callback->entity == entity && callback->kind == kind && callback->fn == fn && callback->node == node)) {
+            engine->render.entity_callbacks.data[kept++] = *callback;
+        }
+    }
+    engine->render.entity_callbacks.count = kept;
+}
+
+/* The entity's render callbacks of `kind`, in the order they were added; whether it has any */
+static bool eng_run_entity_callbacks(nmo_engine_t *engine, nmo_object_id_t entity,
+                                     eng_entity_callback_kind_t kind, bool transparent, bool run)
+{
+    bool found = false;
+    for (size_t i = 0; i < engine->render.entity_callbacks.count; i++) {
+        eng_entity_callback_t callback = engine->render.entity_callbacks.data[i];
+        if (callback.entity == entity && (callback.kind == kind || (int)kind < 0)) {
+            found = true;
+            if (run && callback.fn != NULL) {
+                callback.fn(engine, entity, callback.node, transparent);
+            }
+        }
+    }
+    return found;
+}
+
+/* The temporary callbacks removed after the frame */
+static void eng_drop_temporary_callbacks(nmo_engine_t *engine)
+{
+    size_t kept = 0;
+    for (size_t i = 0; i < engine->render.entity_callbacks.count; i++) {
+        if (!engine->render.entity_callbacks.data[i].temporary) {
+            engine->render.entity_callbacks.data[kept++] = engine->render.entity_callbacks.data[i];
+        }
+    }
+    engine->render.entity_callbacks.count = kept;
+}
+
 /* Whether a 3D entity or one of its parents is hidden with its children */
 static bool eng_hidden_by_parent(const nmo_engine_t *engine, const eng_entity_t *entity)
 {
@@ -2171,15 +2232,29 @@ nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *o
         nmo_object_id_t mesh = eng_entity_current_mesh(engine, entity->id);
         const nmo_mesh_state_t *mesh_state = mesh != 0 ? eng_mesh_state(engine, mesh) : NULL;
         nmo_engine_draw_t *draw = NULL;
-        if (mesh_state == NULL || mesh_state->face_count == 0) {
+        bool has_mesh = mesh_state != NULL && mesh_state->face_count != 0;
+        nmo_object_id_t id = entity->id;
+        /* RCK3dEntity::Render: a mesh or callbacks */
+        bool has_callbacks = eng_run_entity_callbacks(engine, id, (eng_entity_callback_kind_t)-1, false, false);
+        if (!has_mesh && !has_callbacks) {
             continue;
         }
-        for (size_t m = 0; m < render->env_maps.count; m++) {
+        for (size_t m = 0; has_mesh && m < render->env_maps.count; m++) {
             if (render->env_maps.data[m].entity == entity->id) {
                 eng_run_env_map(engine, &render->env_maps.data[m], (int32_t)i, mesh);
             }
         }
-        bool transparent = eng_mesh_transparent(engine, mesh, mesh_state);
+        /* RCK3dEntity::IsToBeRenderedLast */
+        uint32_t moveable = engine->entities.data[i].moveable_flags;
+        bool last = (moveable & VX_MOVEABLE_RENDERFIRST) ? false
+                    : (moveable & VX_MOVEABLE_RENDERLAST) ? true
+                    : has_mesh && eng_mesh_transparent(engine, mesh, mesh_state);
+        prioritized = prioritized || eng_render_priority(&engine->entities.data[i]) != 0;
+        eng_run_entity_callbacks(engine, id, ENG_ENTITY_PRE_RENDER, last, true);
+        if (eng_run_entity_callbacks(engine, id, ENG_ENTITY_RENDER, last, true) || !has_mesh) {
+            eng_run_entity_callbacks(engine, id, ENG_ENTITY_POST_RENDER, last, true);
+            continue;
+        }
         if (!eng_push_draw(engine, &draw)) {
             return NMO_ERR_NOMEM;
         }
@@ -2188,20 +2263,18 @@ nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *o
         draw->object = entity->id;
         draw->mesh = mesh;
         memcpy(draw->world, entity->world.m, sizeof(draw->world));
-        /* RCK3dEntity::IsToBeRenderedLast, and the moveable flags RCKMesh::Render applies */
-        uint32_t moveable = entity->moveable_flags;
-        draw->transparent = (moveable & VX_MOVEABLE_RENDERFIRST) ? false
-                            : (moveable & VX_MOVEABLE_RENDERLAST) ? true
-                                                                  : transparent;
+        /* and the moveable flags RCKMesh::Render applies */
+        draw->transparent = last;
         draw->no_z_test = (moveable & VX_MOVEABLE_NOZBUFFERTEST) != 0;
         draw->no_z_write = (moveable & VX_MOVEABLE_NOZBUFFERWRITE) != 0;
         draw->z_only = (moveable & VX_MOVEABLE_ZBUFONLY) != 0;
-        prioritized = prioritized || eng_render_priority(entity) != 0;
+        eng_run_entity_callbacks(engine, id, ENG_ENTITY_POST_RENDER, last, true);
     }
     if (prioritized) {
         eng_sort_by_priority(engine, first_entity_draw, render->draws.count);
     }
     render->env_maps.count = 0; /* temporary callbacks */
+    eng_drop_temporary_callbacks(engine);
     eng_managers_render(engine, ENG_RENDER_SCENE, &args);
     eng_draw_portal_clips(engine);
     if (render->render_options & CK_RENDER_FOREGROUNDSPRITES) {
