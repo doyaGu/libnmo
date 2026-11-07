@@ -332,6 +332,22 @@ static int bb_sound_manager_setup(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/*
+ * CD Player: Play, Stop and Pause/Resume on the CD audio tracks (MCI, the
+ * tracks and times kept in its local). The engine has no CD drive, which is
+ * how the DLL behaves when the MCI device does not open: the inputs are
+ * taken and nothing plays; the block has no output.
+ */
+static int bb_cd_player(blk_t *b)
+{
+    for (int i = 0; i < 3; i++) {
+        if (IN_ACTIVE(b, i)) {
+            IN_OFF(b, i);
+        }
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_sounds_blocks[] = {
     {NMO_GUID_INIT(0x5bde0e45, 0x2e2107d5), "Wave Player", bb_wave_player, cb_wave_player, NULL},
     {NMO_GUID_INIT(0x33613f21, 0x776b185b), "Volume Control", bb_volume_control, cb_volume_control,
@@ -349,6 +365,7 @@ static const nmo_engine_block_desc_t eng_sounds_blocks[] = {
     {NMO_GUID_INIT(0x1b82338f, 0x5a656975), "Fade Out", bb_fade_out, NULL, NULL},
     {NMO_GUID_INIT(0x28cd6341, 0x0cad5793), "Set Listener", bb_set_listener, NULL, NULL},
     {NMO_GUID_INIT(0x04c05c6a, 0x6454792b), "Sound Manager Setup", bb_sound_manager_setup, NULL, NULL},
+    {NMO_GUID_INIT(0x3dec4ae1, 0x72ae2cd6), "CD Player", bb_cd_player, NULL, NULL},
 };
 
 nmo_status_t eng_register_sounds(nmo_engine_t *engine)
