@@ -127,6 +127,9 @@ typedef struct nmo_engine_draw {
     nmo_engine_stencil_t stencil;
     bool stencil_only;
     bool mirrored;
+    /* A mesh `blackened` draws its materials with black diffuse, emissive and ambient
+       (ShadowCaster's shadow) */
+    bool blackened;
     /* Sprite text: `text` in `rect`, in `color` on nothing (the sprite's transparent
        color), with the font `font_name` of `font_size` (points; pixels when negative,
        as CreateFont takes it), `font_weight` and `italic`, placed by `text_align`
@@ -153,6 +156,8 @@ typedef struct nmo_engine_light {
     float inner_cone, outer_cone, falloff;
     bool specular;
 } nmo_engine_light_t;
+
+typedef struct nmo_engine_pass nmo_engine_pass_t;
 
 /* A frame: the view, then what to draw (the engine's until the next call). */
 typedef struct nmo_engine_frame {
@@ -181,10 +186,31 @@ typedef struct nmo_engine_frame {
     uint32_t render_options;
     int32_t shading;
     bool use_textures, wireframe_layer;
+    /* The render passes to draw first, in order (a pass has none of its own) */
+    const nmo_engine_pass_t *passes;
+    int32_t pass_count;
 } nmo_engine_frame_t;
 
+/*
+ * A render pass (CKRenderContext::SetRenderTarget): `frame` drawn as a frame
+ * is, into `viewport` (left, top, width, height in pixels; the frame is its
+ * size) of the texture's slot `slot` (a cube map's face, else 0), width x
+ * height: Texture Render's view of the scene, ShadowCaster's shadow. The
+ * texture then shows what was drawn, until a pass draws it again. The
+ * texture's image the engine keeps does not change (CK leaves the system
+ * memory copy as it was).
+ */
+struct nmo_engine_pass {
+    nmo_object_id_t texture;
+    int32_t slot;
+    int32_t width, height;
+    int32_t viewport[4];
+    nmo_engine_frame_t frame;
+};
+
 /**
- * The frame as the render context draws it now: background 2D entities,
+ * The frame as the render context draws it now, after the render passes the
+ * blocks asked for this frame: background 2D entities,
  * then the visible meshes of the level scene and the particle systems'
  * triangles, then the foreground 2D entities with the text drawn on them,
  * each 2D tree in Z order. A target camera turns to its target first

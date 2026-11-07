@@ -19,7 +19,8 @@ static const nmo_camera_state_t *camera_state(nmo_engine_t *engine)
 void eng_render_viewpoint(nmo_engine_t *engine, eng_matrix_t *out)
 {
     eng_matrix_identity(out);
-    if (camera_state(engine) != NULL) *out = engine->entities.data[eng_entity_index(engine,engine->render.camera)].world;
+    if (engine->render.pass_eye_set) memcpy(out->m, engine->render.pass_eye, sizeof(out->m)); /* a pass's */
+    else if (camera_state(engine) != NULL) *out = engine->entities.data[eng_entity_index(engine,engine->render.camera)].world;
 }
 
 void eng_render_project(nmo_engine_t *engine, const eng_vector_t *world, eng_vector_t *screen)

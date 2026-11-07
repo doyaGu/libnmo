@@ -20,13 +20,15 @@ typedef enum eng_render_stage {
     ENG_RENDER_SCENE,      /* after the 3D entities */
     ENG_RENDER_ENTITY_2D,  /* a 2D entity's post render callbacks; `entity` is the entity */
     ENG_RENDER_OVERLAY,    /* after the foreground 2D entities (the post render callbacks) */
-    ENG_RENDER_POST        /* the post sprite render callbacks, last */
+    ENG_RENDER_POST,       /* the post sprite render callbacks, last */
+    ENG_RENDER_PASSES      /* after PREPARE, before the frame's draws: the render passes to make */
 } eng_render_stage_t;
 
 typedef struct eng_render_args {
     const float *view;     /* the camera's matrix */
     float width, height;   /* the render context's size */
     nmo_object_id_t entity; /* ENG_RENDER_ENTITY_2D's entity, else 0 (the root) */
+    bool pass;             /* drawing a render pass: the temporary callbacks stay for the frame */
 } eng_render_args_t;
 
 typedef struct eng_manager_desc {

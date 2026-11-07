@@ -178,6 +178,13 @@ typedef struct eng_render {
        the stencil bits used since the last stencil clear (m_StencilFreeMask) */
     nmo_engine_stencil_t stencil;
     uint32_t stencil_used;
+    /* The frame's render passes, each with the draws from its first; the pass being made (-1:
+       none) and the eye a pass draws from (eng_render_viewpoint's while it draws) */
+    ENG_VEC(nmo_engine_pass_t) passes;
+    ENG_VEC(size_t) pass_firsts;
+    int32_t open_pass;
+    bool pass_eye_set;
+    float pass_eye[16];
 
     /* CKObject::Show at run time: object -> its CK_OBJECT_VISIBLE and HIERACHICALHIDE flags */
     eng_map_t shown;
@@ -358,6 +365,29 @@ int32_t eng_render_first_free_stencil_bit(nmo_engine_t *engine);
 void eng_render_use_stencil_bits(nmo_engine_t *engine, uint32_t bits);
 /* CK3dEntity::IsHiddenByParent: a parent hides its children (CKHIERARCHICALHIDE) */
 bool eng_render_hidden_by_parent(const nmo_engine_t *engine, int32_t index);
+/* What a render pass of the scene looks through (Texture Render): `camera`'s projection and
+   aspect ratio (none: the defaults, 4:3), the eye at `eye`, the fov `fov` when `has_fov` (a cube
+   face's), the background (Clear's background material) and the render options */
+typedef struct eng_scene_view {
+    nmo_object_id_t camera;
+    float eye[16];           /* VxMatrix rows */
+    bool has_fov;
+    float fov;
+    uint32_t background_color;
+    nmo_object_id_t background_texture;
+    uint32_t render_options;
+} eng_scene_view_t;
+/* At ENG_RENDER_PASSES: SetRenderTarget(texture, slot) then Render: a pass drawing the scene
+   from `view` (a viewport of the camera's ratio with CK_RENDER_USECAMERARATIO); nothing for a
+   texture without an image. */
+nmo_status_t eng_render_scene_pass(nmo_engine_t *engine, nmo_object_id_t texture, int32_t slot,
+                                   const eng_scene_view_t *view);
+/* At ENG_RENDER_PASSES: a pass of the caller's own draws into the texture's slot, the whole
+   texture its viewport: the frame to set the view of (the main frame's fog, lights and settings
+   are there), then the draws made until eng_render_end_pass(); NULL for a texture without an
+   image */
+nmo_engine_frame_t *eng_render_begin_pass(nmo_engine_t *engine, nmo_object_id_t texture, int32_t slot);
+void eng_render_end_pass(nmo_engine_t *engine);
 /* CKMesh::SetLitMode (VX_PRELITMESH 0, VX_LITMESH 1). False when `mesh` is none. */
 bool eng_mesh_set_lit_mode(nmo_engine_t *engine, nmo_object_id_t mesh, int32_t mode);
 /* A soft shadow on the floors under a 3D entity (Simple Shadow, TT Simple Shadow): the floors

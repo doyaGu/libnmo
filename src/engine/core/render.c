@@ -96,6 +96,8 @@ void eng_free_render(nmo_engine_t *engine)
     free(render->draws.data);
     free(render->frame_lights.data);
     free(render->env_maps.data);
+    free(render->passes.data);
+    free(render->pass_firsts.data);
     free(render->entity_callbacks.data);
 }
 
@@ -1749,7 +1751,7 @@ static void eng_render_2d(nmo_engine_t *engine, int32_t index, float width, floa
     free(children);
     if (visible) {
         /* the post render callbacks */
-        eng_render_args_t args = {NULL, width, height, id};
+        eng_render_args_t args = {NULL, width, height, id, false};
         eng_managers_render(engine, ENG_RENDER_ENTITY_2D, &args);
     }
 }
@@ -2198,67 +2200,42 @@ static void eng_draw_portal_clips(nmo_engine_t *engine)
     }
 }
 
-nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *out)
+/* The camera's projection in the frame (its eye, perspective or orthographic, fov, zoom and
+   planes); the defaults for none */
+static void eng_frame_camera(nmo_engine_t *engine, nmo_object_id_t id, nmo_engine_frame_t *out)
 {
-    if (engine == NULL || out == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    eng_render_t *render = &engine->render;
-    /* The 2D entities of every file loaded so far */
-    eng_load_2d_entities(engine);
-    memset(out, 0, sizeof(*out));
-    const eng_screen_mode_t *mode = &eng_screen_modes[render->screen_mode];
-    out->width = mode->width;
-    out->height = mode->height;
-    float width = (float)mode->width;
-    float height = (float)mode->height;
-
-    eng_prepare_cameras(engine);
-    eng_render_args_t args = {out->view, width, height, 0};
-    eng_managers_render(engine, ENG_RENDER_PREPARE, &args);
-    out->camera = render->camera;
+    out->camera = id;
     out->fov = 0.5f;
     out->zoom = 1.0f;
     out->near_plane = 1.0f;
     out->far_plane = 4000.0f;
+    memset(out->view, 0, sizeof(out->view));
     out->view[0] = out->view[5] = out->view[10] = out->view[15] = 1.0f;
-    int32_t camera = render->camera != 0 ? eng_entity_index(engine, render->camera) : -1;
+    out->orthographic = false;
+    int32_t camera = id != 0 ? eng_entity_index(engine, id) : -1;
     const nmo_camera_state_t *camera_state =
-        camera >= 0 ? (const nmo_camera_state_t *)eng_typed_state(engine, render->camera, CKPGUID_CAMERA)
-                    : NULL;
+        camera >= 0 ? (const nmo_camera_state_t *)eng_typed_state(engine, id, CKPGUID_CAMERA) : NULL;
     if (camera_state != NULL) {
         memcpy(out->view, engine->entities.data[camera].world.m, sizeof(out->view));
         uint32_t projection = camera_state->projection_type;
-        eng_camera_projection_type(engine,render->camera,&projection);
+        eng_camera_projection_type(engine, id, &projection);
         out->orthographic = (projection & 1u) == 0;
-        eng_camera_fov(engine,render->camera,&out->fov);
-        eng_camera_orthographic_zoom(engine,render->camera,&out->zoom);
-        eng_camera_planes(engine,render->camera,&out->near_plane,&out->far_plane);
+        eng_camera_fov(engine, id, &out->fov);
+        eng_camera_orthographic_zoom(engine, id, &out->zoom);
+        eng_camera_planes(engine, id, &out->near_plane, &out->far_plane);
     } else {
         out->camera = 0;
     }
-    out->background_color = render->background_color;
-    out->background_texture = render->background_texture;
-    out->fog_mode = render->fog_mode;
-    out->fog_color = render->fog_color;
-    out->fog_start = render->fog_start;
-    out->fog_end = render->fog_end;
-    out->fog_density = render->fog_density;
-    out->ambient_light = render->ambient_light;
-    eng_frame_lights(engine);
+}
 
-    render->draws.count = 0;
-    render->vertices.count = 0;
-    eng_render_settings(engine);
-    memset(&render->stencil, 0, sizeof(render->stencil));
-    if (render->render_options & CK_RENDER_CLEARSTENCIL) {
-        render->stencil_used = 0;
-    }
-    out->render_options = render->render_options;
-    out->shading = render->shading;
-    out->use_textures = render->use_textures;
-    out->wireframe_layer = render->wireframe_layer;
-    if (render->render_options & CK_RENDER_BACKGROUNDSPRITES) {
+/* CKRenderedScene::Draw: what the render context draws of the scene, from the draws' end, as
+   `frame` sets it (its eye and render options); a pass leaves the temporary callbacks */
+static nmo_status_t eng_draw_scene(nmo_engine_t *engine, const nmo_engine_frame_t *frame, bool pass)
+{
+    eng_render_t *render = &engine->render;
+    float width = (float)frame->width, height = (float)frame->height;
+    eng_render_args_t args = {frame->view, width, height, 0, pass};
+    if (frame->render_options & CK_RENDER_BACKGROUNDSPRITES) {
         eng_render_2d_root(engine, true, width, height);
     }
     eng_managers_render(engine, ENG_RENDER_BACKGROUND, &args);
@@ -2280,7 +2257,7 @@ nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *o
         const nmo_sprite3d_state_t *sprite =
             (const nmo_sprite3d_state_t *)eng_typed_state(engine, entity->id, CKPGUID_SPRITE3D);
         if (sprite != NULL) {
-            if (!eng_draw_sprite3d(engine, entity, camera >= 0 ? out->view : NULL)) {
+            if (!eng_draw_sprite3d(engine, entity, frame->camera != 0 ? frame->view : NULL)) {
                 return NMO_ERR_NOMEM;
             }
             continue;
@@ -2318,21 +2295,192 @@ nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *o
     if (prioritized) {
         eng_sort_by_priority(engine, first_entity_draw, render->draws.count);
     }
-    render->env_maps.count = 0; /* temporary callbacks */
-    eng_drop_temporary_callbacks(engine);
+    if (!pass) {
+        render->env_maps.count = 0; /* temporary callbacks */
+        eng_drop_temporary_callbacks(engine);
+    }
     eng_managers_render(engine, ENG_RENDER_SCENE, &args);
-    eng_draw_portal_clips(engine);
-    if (render->render_options & CK_RENDER_FOREGROUNDSPRITES) {
+    if (!pass) {
+        eng_draw_portal_clips(engine);
+    }
+    if (frame->render_options & CK_RENDER_FOREGROUNDSPRITES) {
         eng_render_2d_root(engine, false, width, height);
     }
     eng_managers_render(engine, ENG_RENDER_OVERLAY, &args); /* the post render callbacks */
     eng_managers_render(engine, ENG_RENDER_POST, &args);    /* the post sprite render callbacks */
+    return NMO_OK;
+}
+
+nmo_engine_frame_t *eng_render_begin_pass(nmo_engine_t *engine, nmo_object_id_t texture, int32_t slot)
+{
+    eng_render_t *render = &engine->render;
+    eng_texture_t *target = eng_texture(engine, texture);
+    int32_t width = 0, height = 0;
+    if (render->open_pass >= 0 || target == NULL || slot < 0 || slot > 5 ||
+        !eng_bitmap_size(engine, target, &width, &height) || width <= 0 || height <= 0) {
+        return NULL;
+    }
+    nmo_engine_pass_t *pass = NULL;
+    size_t *first = NULL;
+    if (!ENG_VEC_PUSH(render->passes, pass)) {
+        return NULL;
+    }
+    if (!ENG_VEC_PUSH(render->pass_firsts, first)) {
+        render->passes.count--;
+        return NULL;
+    }
+    *first = render->draws.count;
+    pass->texture = texture;
+    pass->slot = slot;
+    pass->width = width;
+    pass->height = height;
+    pass->viewport[2] = width;
+    pass->viewport[3] = height;
+    nmo_engine_frame_t *frame = &pass->frame;
+    frame->width = width;
+    frame->height = height;
+    eng_frame_camera(engine, 0, frame);
+    frame->background_color = render->background_color;
+    frame->fog_mode = render->fog_mode;
+    frame->fog_color = render->fog_color;
+    frame->fog_start = render->fog_start;
+    frame->fog_end = render->fog_end;
+    frame->fog_density = render->fog_density;
+    frame->ambient_light = render->ambient_light;
+    frame->render_options = render->render_options;
+    frame->shading = render->shading;
+    frame->use_textures = render->use_textures;
+    frame->wireframe_layer = render->wireframe_layer;
+    render->open_pass = (int32_t)render->passes.count - 1;
+    return frame;
+}
+
+void eng_render_end_pass(nmo_engine_t *engine)
+{
+    engine->render.open_pass = -1;
+}
+
+nmo_status_t eng_render_scene_pass(nmo_engine_t *engine, nmo_object_id_t texture, int32_t slot,
+                                   const eng_scene_view_t *view)
+{
+    eng_render_t *render = &engine->render;
+    nmo_engine_frame_t *frame = eng_render_begin_pass(engine, texture, slot);
+    if (frame == NULL) {
+        return NMO_OK;
+    }
+    nmo_engine_pass_t *pass = &render->passes.data[render->open_pass];
+    eng_frame_camera(engine, view->camera, frame);
+    memcpy(frame->view, view->eye, sizeof(frame->view));
+    if (view->has_fov) {
+        frame->fov = view->fov;
+    }
+    frame->background_color = view->background_color;
+    frame->background_texture = view->background_texture;
+    frame->render_options = view->render_options;
+    /* CKRenderedScene::UpdateViewportSize: the camera's ratio, centered */
+    if (view->render_options & CK_RENDER_USECAMERARATIO) {
+        const nmo_camera_state_t *camera = view->camera != 0
+            ? (const nmo_camera_state_t *)eng_typed_state(engine, view->camera, CKPGUID_CAMERA) : NULL;
+        int32_t aw = camera != NULL && camera->aspect_width > 0 ? camera->aspect_width : 4;
+        int32_t ah = camera != NULL && camera->aspect_height > 0 ? camera->aspect_height : 3;
+        if (view->has_fov) {
+            aw = ah = 1; /* a cube face's 1:1 */
+        }
+        int32_t right = pass->width, bottom = pass->height;
+        int32_t w = right, h = bottom;
+        if ((double)right / bottom >= (double)aw / ah) {
+            w = aw * bottom / ah;
+        } else {
+            h = ah * right / aw;
+        }
+        pass->viewport[0] = (int32_t)((double)(right - w) * 0.5);
+        pass->viewport[1] = (int32_t)((double)(bottom - h) * 0.5);
+        pass->viewport[2] = w;
+        pass->viewport[3] = h;
+        frame->width = w > 0 ? w : 1;
+        frame->height = h > 0 ? h : 1;
+    }
+    nmo_engine_frame_t copy = *frame; /* the passes may move as callbacks draw */
+    nmo_object_id_t attached = render->camera; /* AttachViewpointToCamera for the render */
+    if (view->camera != 0) {
+        render->camera = view->camera;
+    }
+    render->pass_eye_set = true;
+    memcpy(render->pass_eye, view->eye, sizeof(render->pass_eye));
+    nmo_status_t status = eng_draw_scene(engine, &copy, true);
+    render->pass_eye_set = false;
+    render->camera = attached;
+    eng_render_end_pass(engine);
+    return status;
+}
+
+nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *out)
+{
+    if (engine == NULL || out == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    eng_render_t *render = &engine->render;
+    /* The 2D entities of every file loaded so far */
+    eng_load_2d_entities(engine);
+    memset(out, 0, sizeof(*out));
+    const eng_screen_mode_t *mode = &eng_screen_modes[render->screen_mode];
+    out->width = mode->width;
+    out->height = mode->height;
+
+    eng_prepare_cameras(engine);
+    eng_render_args_t args = {out->view, (float)mode->width, (float)mode->height, 0, false};
+    eng_managers_render(engine, ENG_RENDER_PREPARE, &args);
+    eng_frame_camera(engine, render->camera, out);
+    out->background_color = render->background_color;
+    out->background_texture = render->background_texture;
+    out->fog_mode = render->fog_mode;
+    out->fog_color = render->fog_color;
+    out->fog_start = render->fog_start;
+    out->fog_end = render->fog_end;
+    out->fog_density = render->fog_density;
+    out->ambient_light = render->ambient_light;
+    eng_frame_lights(engine);
+
+    render->draws.count = 0;
+    render->vertices.count = 0;
+    eng_render_settings(engine);
+    memset(&render->stencil, 0, sizeof(render->stencil));
+    if (render->render_options & CK_RENDER_CLEARSTENCIL) {
+        render->stencil_used = 0;
+    }
+    out->render_options = render->render_options;
+    out->shading = render->shading;
+    out->use_textures = render->use_textures;
+    out->wireframe_layer = render->wireframe_layer;
+    /* The passes the blocks asked for, drawn before the frame */
+    render->passes.count = 0;
+    render->pass_firsts.count = 0;
+    render->open_pass = -1;
+    eng_managers_render(engine, ENG_RENDER_PASSES, &args);
+    render->open_pass = -1;
+    memset(&render->stencil, 0, sizeof(render->stencil));
+    size_t first = render->draws.count;
+    nmo_status_t status = eng_draw_scene(engine, out, false);
+    if (status != NMO_OK) {
+        return status;
+    }
 
     out->lights = render->frame_lights.data;
     out->light_count = (int32_t)render->frame_lights.count;
-    out->draws = render->draws.data;
-    out->draw_count = (int32_t)render->draws.count;
+    out->draws = render->draws.data + first;
+    out->draw_count = (int32_t)(render->draws.count - first);
     out->vertices = render->vertices.data;
+    for (size_t p = 0; p < render->passes.count; p++) {
+        nmo_engine_frame_t *frame = &render->passes.data[p].frame;
+        size_t end = p + 1 < render->passes.count ? render->pass_firsts.data[p + 1] : first;
+        frame->lights = out->lights;
+        frame->light_count = out->light_count;
+        frame->draws = render->draws.data + render->pass_firsts.data[p];
+        frame->draw_count = (int32_t)(end - render->pass_firsts.data[p]);
+        frame->vertices = out->vertices;
+    }
+    out->passes = render->passes.data;
+    out->pass_count = (int32_t)render->passes.count;
     return NMO_OK;
 }
 
