@@ -12,6 +12,8 @@
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/nmo_ref.h"
 
+#include <math.h>
+
 #define GUID_SET_AMBIENT NMO_GUID(0xaaaaaaaa, 0xaeae1287)
 #define GUID_SET_SPECULAR NMO_GUID(0x20202020, 0x30303030)
 #define GUID_SET_SPECULAR_POWER NMO_GUID(0x45454545, 0x15151515)
@@ -32,6 +34,11 @@
 #define GUID_SET_CHANNEL_SRC_BLEND NMO_GUID(0x3b9b0e7f, 0xb1316800)
 #define GUID_SET_CHANNEL_MATERIAL NMO_GUID(0x2e0a6b92, 0x366a3f9b)
 #define GUID_REMOVE_CHANNEL NMO_GUID(0x4a462e58, 0x022e369b)
+#define GUID_CYLINDRICAL_MAPPING NMO_GUID(0x770a5fc9, 0x7bbe2aed)
+#define GUID_SPHERICAL_MAPPING NMO_GUID(0x5e40778e, 0x44f36cf3)
+#define GUID_PLANAR_MAPPING NMO_GUID(0x2a6a3fa3, 0x3280407d)
+#define GUID_COPY_MAPPING NMO_GUID(0x086a487c, 0x3cd44acb)
+#define GUID_TEXTURE_SINE NMO_GUID(0x4fe0646e, 0x7e0635c9)
 
 #define STEP_MS 10.0f
 
@@ -67,9 +74,24 @@ static void step(engine_fixture_t *f, int frames)
     }
 }
 
+/* An entity's world matrix the identity */
+static bool place_at_origin(engine_fixture_t *f, nmo_object_id_t id)
+{
+    nmo_3dentity_state_t *entity = (nmo_3dentity_state_t *)fixture_state(f, id);
+    if (entity == NULL) {
+        return false;
+    }
+    memset(entity->world_matrix, 0, sizeof(entity->world_matrix));
+    entity->world_matrix[0] = entity->world_matrix[5] = entity->world_matrix[10] = 1.0f;
+    entity->world_matrix[15] = 1.0f;
+    entity->has_entityndata_chunk = 1;
+    return true;
+}
+
 /*
- * A 3D object whose mesh is a quad of two faces: the first in group 0 (no
- * material), the second in group 1 (`material`).
+ * A 3D object at the origin whose mesh is a unit quad in the XY plane (UVs
+ * its X and Y) of two faces: the first in group 0 (no material), the second
+ * in group 1 (`material`).
  */
 static nmo_object_id_t quad_object(engine_fixture_t *f, nmo_object_id_t material, nmo_object_id_t *out_mesh)
 {
@@ -107,7 +129,17 @@ static nmo_object_id_t quad_object(engine_fixture_t *f, nmo_object_id_t material
     state->has_material_groups = 1;
     entity->current_mesh = nmo_ref_from_id(mesh);
     *out_mesh = mesh;
-    return object;
+    return place_at_origin(f, object) ? object : 0;
+}
+
+/* The UV of vertex `v` of a mesh's channel -1 */
+static nmo_vector2_t uv_of(engine_fixture_t *f, nmo_object_id_t mesh, int v)
+{
+    nmo_engine_mesh_t desc;
+    if (!nmo_engine_mesh(f->engine, mesh, &desc) || v >= desc.vertex_count) {
+        return (nmo_vector2_t){-100.0f, -100.0f};
+    }
+    return desc.vertices[v].uv;
 }
 
 TEST(engine_materials, setters_change_the_material_the_engine_keeps)
@@ -283,9 +315,94 @@ TEST(engine_materials, set_color_key_keys_the_texture)
     fixture_end(&f);
 }
 
+
+TEST(engine_materials, mappings_project_the_vertices_into_uvs)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t planar_mesh = 0, round_mesh = 0, ball_mesh = 0, copied_mesh = 0;
+    nmo_object_id_t planar_quad = quad_object(&f, 0, &planar_mesh);
+    nmo_object_id_t round_quad = quad_object(&f, 0, &round_mesh);
+    nmo_object_id_t ball_quad = quad_object(&f, 0, &ball_mesh);
+    nmo_object_id_t copied_quad = quad_object(&f, 0, &copied_mesh);
+    nmo_object_id_t referential = fixture_create(&f, NMO_CID_3DENTITY, "Referential");
+    ASSERT_TRUE(planar_quad != 0 && round_quad != 0 && ball_quad != 0 && copied_quad != 0 &&
+                place_at_origin(&f, referential));
+
+    nmo_object_id_t planar = block_on(&f, GUID_PLANAR_MAPPING, "Planar Mapping", planar_quad, 0, 0);
+    nmo_object_id_t round = block_on(&f, GUID_CYLINDRICAL_MAPPING, "Cylindrical Mapping", round_quad, 0, 0);
+    nmo_object_id_t ball = block_on(&f, GUID_SPHERICAL_MAPPING, "Spherical Mapping", ball_quad, 0, 0);
+    nmo_object_id_t copy = block_on(&f, GUID_COPY_MAPPING, "Copy Mapping", copied_mesh, 0, 0);
+    ASSERT_TRUE(planar != 0 && round != 0 && ball != 0 && copy != 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, round, 1), (int32_t)referential);
+    fixture_input_int(&f, BLOCK_PIN(&f, copy, 1), (int32_t)planar_mesh);
+    const float tile[2] = {2.0f, 4.0f};
+    fixture_input_value(&f, BLOCK_PIN(&f, copy, 3), tile, sizeof(tile));
+    start(&f);
+    step(&f, 1);
+
+    /* Planar: U = x / 2 + 0.5, V = 0.5 - y / 2 */
+    nmo_vector2_t uv = uv_of(&f, planar_mesh, 3);
+    ASSERT_FLOAT_EQ(1.0f, uv.x, 1e-6f);
+    ASSERT_FLOAT_EQ(0.0f, uv.y, 1e-6f);
+    uv = uv_of(&f, planar_mesh, 0);
+    ASSERT_FLOAT_EQ(0.5f, uv.x, 1e-6f);
+    ASSERT_FLOAT_EQ(0.5f, uv.y, 1e-6f);
+    /* Cylindrical: U the angle about Y from +X, V = 0.5 - y / 2 */
+    uv = uv_of(&f, round_mesh, 1);
+    ASSERT_FLOAT_EQ(0.0f, uv.x, 1e-6f);
+    ASSERT_FLOAT_EQ(0.5f, uv.y, 1e-6f);
+    uv = uv_of(&f, round_mesh, 2);
+    ASSERT_FLOAT_EQ(0.25f, uv.x, 1e-6f);
+    ASSERT_FLOAT_EQ(0.0f, uv.y, 1e-6f);
+    /* Spherical: (1, 1, 0) is 45 degrees up on +X */
+    uv = uv_of(&f, ball_mesh, 3);
+    ASSERT_FLOAT_EQ(0.0f, uv.x, 1e-6f);
+    ASSERT_FLOAT_EQ(0.25f, uv.y, 1e-6f);
+    /* Copy Mapping, which runs after Planar Mapping: the planar mesh's new UVs, tiled */
+    uv = uv_of(&f, copied_mesh, 3);
+    ASSERT_FLOAT_EQ(2.0f, uv.x, 1e-6f);
+    ASSERT_FLOAT_EQ(0.0f, uv.y, 1e-6f);
+    fixture_end(&f);
+}
+
+TEST(engine_materials, texture_sine_sways_the_owner_mesh_uvs)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t mesh = 0;
+    ASSERT_TRUE(quad_object(&f, 0, &mesh) != 0);
+    f.owner_id = mesh; /* the script is the mesh's */
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    ASSERT_TRUE(f.script_id != 0);
+    fixture_begin_edit(&f);
+    nmo_object_id_t sine = fixture_block(&f, GUID_TEXTURE_SINE, "Texture Sine");
+    ASSERT_TRUE(sine != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, sine, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, sine, 0), BLOCK_IN(&f, sine, 0), 1);
+    input_float(&f, BLOCK_PIN(&f, sine, 0), 1.0f);
+    input_float(&f, BLOCK_PIN(&f, sine, 1), 1.0f);
+    start(&f);
+
+    /* First frame, time 0: vertex 0 at angle -2 */
+    step(&f, 1);
+    nmo_vector2_t uv = uv_of(&f, mesh, 0);
+    ASSERT_FLOAT_EQ(cosf(-2.0f) * 0.5f, uv.x, 1e-5f);
+    ASSERT_FLOAT_EQ(sinf(-2.0f) * 0.5f, uv.y, 1e-5f);
+    /* Then about the saved UVs, not the swayed ones: time 0.01 s */
+    step(&f, 1);
+    uv = uv_of(&f, mesh, 3);
+    float angle = (3.0f / 4.0f - 0.5f) * 4.0f + 0.01f;
+    ASSERT_FLOAT_EQ(cosf(angle) * -0.5f + 1.0f, uv.x, 1e-5f);
+    ASSERT_FLOAT_EQ(sinf(angle) * -0.5f + 1.0f, uv.y, 1e-5f);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_materials, setters_change_the_material_the_engine_keeps);
     REGISTER_TEST(engine_materials, set_material_replaces_then_applies_and_mesh_flags_follow);
     REGISTER_TEST(engine_materials, channel_blocks_add_change_and_remove_a_channel);
     REGISTER_TEST(engine_materials, set_color_key_keys_the_texture);
+    REGISTER_TEST(engine_materials, mappings_project_the_vertices_into_uvs);
+    REGISTER_TEST(engine_materials, texture_sine_sways_the_owner_mesh_uvs);
 TEST_MAIN_END()

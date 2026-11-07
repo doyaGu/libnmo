@@ -687,6 +687,36 @@ nmo_object_id_t nmo_engine_mesh_material(const nmo_engine_t *engine, nmo_object_
     return eng_object_ref(engine, mesh, &state->material_groups[group].material);
 }
 
+nmo_face_t *eng_mesh_copy_faces(nmo_engine_t *engine, eng_mesh_copy_t *copy)
+{
+    const nmo_mesh_state_t *state = eng_mesh_state(engine, copy->mesh);
+    if (copy->faces == NULL && state != NULL && state->face_count > 0) {
+        copy->faces = (nmo_face_t *)malloc(state->face_count * sizeof(nmo_face_t));
+        if (copy->faces != NULL) {
+            memcpy(copy->faces, state->faces, state->face_count * sizeof(nmo_face_t));
+        }
+    }
+    return copy->faces;
+}
+
+float *eng_mesh_uvs(nmo_engine_t *engine, eng_mesh_copy_t *copy, int32_t channel, size_t *stride,
+                    int32_t *count)
+{
+    const nmo_mesh_state_t *state = eng_mesh_state(engine, copy->mesh);
+    *count = state != NULL ? (int32_t)state->vertex_count : 0;
+    *stride = sizeof(nmo_vertex_t);
+    const nmo_engine_channel_t *own =
+        channel >= 0 && (size_t)channel < copy->channels.count ? &copy->channels.data[channel] : NULL;
+    if ((channel != -1 && own == NULL) || *count == 0) {
+        return NULL;
+    }
+    if (own != NULL && own->uvs != NULL) {
+        *stride = 2u * sizeof(float);
+        return (float *)own->uvs;
+    }
+    return &copy->vertices[0].uv.x; /* the mesh's, which a channel without its own shares */
+}
+
 /*
  * A mesh's faces and group materials as blocks change them: a made mesh's
  * own, or a file mesh copy's, copied from the file the first time.
@@ -712,12 +742,8 @@ static bool eng_mesh_groups(nmo_engine_t *engine, nmo_object_id_t mesh, eng_mesh
     if (copy == NULL) {
         return false;
     }
-    if (copy->faces == NULL && state->face_count > 0) {
-        copy->faces = (nmo_face_t *)malloc(state->face_count * sizeof(nmo_face_t));
-        if (copy->faces == NULL) {
-            return false;
-        }
-        memcpy(copy->faces, state->faces, state->face_count * sizeof(nmo_face_t));
+    if (state->face_count > 0 && eng_mesh_copy_faces(engine, copy) == NULL) {
+        return false;
     }
     if (copy->groups == NULL) {
         uint32_t count = state->material_group_count;

@@ -15,6 +15,7 @@
 #include "object/nmo_class_ids.h"
 #include "type/nmo_type_query.h"
 
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -731,6 +732,332 @@ static int bb_set_channel_material(blk_t *b)
     return channel_done(b, copy);
 }
 
+/*
+ * The matrix the mapping blocks take the target's vertices through: into
+ * the Mapping Referential's space (CK3dEntity::GetInverseWorldMatrix times
+ * the target's world matrix), or into the world without one.
+ */
+static eng_matrix_t mapping_matrix(nmo_engine_t *engine, int32_t entity, int32_t referential)
+{
+    eng_matrix_t m = engine->entities.data[entity].world;
+    if (referential >= 0) {
+        eng_matrix_t inverse;
+        eng_matrix_inverse(&inverse, &engine->entities.data[referential].world);
+        eng_matrix_multiply(&m, &inverse, &m);
+    }
+    return m;
+}
+
+/* The target's current mesh copy and the UVs of the Channel input (-1 the mesh's own) */
+typedef struct mapping {
+    int32_t entity, referential;
+    eng_mesh_copy_t *copy;
+    float *uvs;
+    size_t stride;
+    int32_t count;
+    int32_t channel;
+} mapping_t;
+
+static bool mapping_uvs(blk_t *b, nmo_object_id_t mesh, mapping_t *out)
+{
+    out->copy = mesh != 0 ? eng_mesh_copy(b->engine, mesh) : NULL;
+    if (out->copy == NULL) {
+        return false;
+    }
+    out->channel = get_in_int(b, 0, -1);
+    out->uvs = eng_mesh_uvs(b->engine, out->copy, out->channel, &out->stride, &out->count);
+    return out->uvs != NULL;
+}
+
+static float *uv_at(const mapping_t *m, int32_t v)
+{
+    return (float *)((uint8_t *)m->uvs + (size_t)v * m->stride);
+}
+
+static void mapping_done(blk_t *b, eng_mesh_copy_t *copy)
+{
+    copy->version = ++b->engine->render.mesh_version;
+    eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, copy->mesh, 0);
+}
+
+static void normalize_vector(eng_vector_t *v)
+{
+    float length = sqrtf(v->x * v->x + v->y * v->y + v->z * v->z);
+    if (length > 0.0f) {
+        v->x /= length, v->y /= length, v->z /= length;
+    }
+}
+
+/* The angle about the Y axis the round mappings make U of, times `scale` */
+static float around_y(const eng_vector_t *p, float scale)
+{
+    return (1.5707964f - atan2f(p->x, p->z)) * scale;
+}
+
+/*
+ * Cylindrical Mapping: the target's vertices in the Mapping Referential's
+ * space (needed) wrap the UVs about its Y axis: U the angle, V the height
+ * (0.5 at the origin), both times UV Tile; Wrap Correction keeps U's
+ * fraction.
+ */
+static int bb_cylindrical_mapping(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    int32_t entity = target != 0 ? eng_entity_index(engine, target) : -1;
+    int32_t referential = input_entity(b, 1);
+    mapping_t m;
+    if (entity < 0 || referential < 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    nmo_object_id_t mesh = entity_mesh(engine, target);
+    if (mesh == 0 || eng_mesh_copy(engine, mesh) == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    if (!mapping_uvs(b, mesh, &m)) {
+        return NMO_ENGINE_BR_OK;
+    }
+    float tile[2] = {1.0f, 1.0f};
+    nmo_engine_block_get_input_value(b, 2, tile, sizeof(tile));
+    bool wrap = get_in_int(b, 3, 1) != 0;
+    eng_matrix_t matrix = mapping_matrix(engine, entity, referential);
+    float u_scale = tile[0] * 0.15915494f, v_scale = tile[1] * 0.5f;
+    for (int32_t v = 0; v < m.count; v++) {
+        const nmo_vector_t *position = &m.copy->vertices[v].position;
+        eng_vector_t p, local = {position->x, position->y, position->z};
+        eng_vector_transform(&p, &matrix, &local);
+        float *uv = uv_at(&m, v);
+        uv[1] = 0.5f - v_scale * p.y;
+        p.y = 0.0f;
+        normalize_vector(&p);
+        float u = around_y(&p, u_scale);
+        uv[0] = wrap ? u - (float)(int32_t)u : u;
+    }
+    mapping_done(b, m.copy);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * Spherical Mapping: the target's vertices, in the Mapping Referential's
+ * space or the world's, wrap the UVs about a sphere: U the angle about Y,
+ * V the angle from the top, both times UV Tile; Wrap Correction keeps U's
+ * fraction.
+ */
+static int bb_spherical_mapping(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    int32_t entity = target != 0 ? eng_entity_index(engine, target) : -1;
+    mapping_t m;
+    if (entity < 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    if (!mapping_uvs(b, entity_mesh(engine, target), &m)) {
+        return NMO_ENGINE_BR_OK;
+    }
+    float tile[2] = {1.0f, 1.0f};
+    nmo_engine_block_get_input_value(b, 2, tile, sizeof(tile));
+    bool wrap = get_in_int(b, 3, 1) != 0;
+    eng_matrix_t matrix = mapping_matrix(engine, entity, input_entity(b, 1));
+    float u_scale = tile[0] * 0.15915494f, v_scale = tile[1] * 0.31830987f;
+    for (int32_t v = 0; v < m.count; v++) {
+        const nmo_vector_t *position = &m.copy->vertices[v].position;
+        eng_vector_t p, local = {position->x, position->y, position->z};
+        eng_vector_transform(&p, &matrix, &local);
+        normalize_vector(&p);
+        p.y = !(p.y < 1.0f) ? 1.0f : p.y <= -1.0f ? -1.0f : p.y;
+        float *uv = uv_at(&m, v);
+        float u = around_y(&p, u_scale);
+        uv[0] = wrap ? u - (float)(int32_t)u : u;
+        uv[1] = (1.5707964f - asinf(p.y)) * v_scale;
+    }
+    mapping_done(b, m.copy);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * Planar Mapping: the UVs are the target's vertices projected on the
+ * Mapping Referential's XY plane (the world's without one), times half the
+ * UV Tile about 0.5, V downward. With Exclude Faces, a channel whose
+ * material clamps its texture keeps only the faces facing the projection
+ * with a vertex inside it.
+ */
+static int bb_planar_mapping(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    int32_t entity = target != 0 ? eng_entity_index(engine, target) : -1;
+    mapping_t m;
+    if (entity < 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    if (!mapping_uvs(b, entity_mesh(engine, target), &m)) {
+        return NMO_ENGINE_BR_OK;
+    }
+    int32_t referential = input_entity(b, 1);
+    float tile[2] = {1.0f, 1.0f};
+    nmo_engine_block_get_input_value(b, 2, tile, sizeof(tile));
+    eng_matrix_t matrix = mapping_matrix(engine, entity, referential);
+    float su = tile[0] * 0.5f, sv = tile[1] * 0.5f;
+    for (int r = 0; r < 3; r++) {
+        matrix.m[r][0] *= su;
+        matrix.m[r][1] = -(matrix.m[r][1] * sv);
+    }
+    matrix.m[3][0] = matrix.m[3][0] * su + 0.5f;
+    matrix.m[3][1] = 0.5f - matrix.m[3][1] * sv;
+
+    nmo_engine_material_t clamp;
+    nmo_object_id_t channel_material =
+        (size_t)m.channel < m.copy->channels.count ? m.copy->channels.data[m.channel].material : 0;
+    bool exclude = m.channel >= 0 && get_local_int(b, 0, 0) != 0 && channel_material != 0 &&
+                   nmo_engine_material(engine, channel_material, &clamp) &&
+                   clamp.address_mode == VXTEXTURE_ADDRESSCLAMP;
+    uint32_t *clips = exclude ? (uint32_t *)calloc((size_t)m.count, sizeof(uint32_t)) : NULL;
+    for (int32_t v = 0; v < m.count; v++) {
+        const nmo_vector_t *position = &m.copy->vertices[v].position;
+        eng_vector_t p, local = {position->x, position->y, position->z};
+        eng_vector_transform(&p, &matrix, &local);
+        float *uv = uv_at(&m, v);
+        uv[0] = p.x;
+        uv[1] = p.y;
+        if (clips != NULL) {
+            clips[v] = (p.z < 0.0f ? 0x100u : 0u) | (p.x < 0.0f ? 0x10u : 0u) | (p.x > 1.0f ? 0x20u : 0u) |
+                       (p.y < 0.0f ? 0x40u : 0u) | (p.y > 1.0f ? 0x80u : 0u);
+        }
+    }
+    nmo_engine_mesh_t desc;
+    nmo_face_t *faces = clips != NULL ? eng_mesh_copy_faces(engine, m.copy) : NULL;
+    if (faces != NULL && m.channel < 16 && nmo_engine_mesh(engine, m.copy->mesh, &desc)) {
+        /* The mapper's Z axis in the target's space (CK3dEntity::InverseTransformVector) */
+        eng_vector_t z = {0.0f, 0.0f, 1.0f}, mapper;
+        eng_entity_transform_vector(engine, entity, &mapper, &z, referential, true);
+        uint16_t bit = (uint16_t)(1u << m.channel);
+        for (int32_t f = 0; f < desc.face_count; f++) {
+            const uint16_t *i = &desc.indices[3 * f];
+            if (i[0] >= m.count || i[1] >= m.count || i[2] >= m.count) {
+                continue;
+            }
+            const nmo_vector_t *p0 = &m.copy->vertices[i[0]].position, *p1 = &m.copy->vertices[i[1]].position,
+                               *p2 = &m.copy->vertices[i[2]].position;
+            eng_vector_t e1 = {p1->x - p0->x, p1->y - p0->y, p1->z - p0->z};
+            eng_vector_t e2 = {p2->x - p0->x, p2->y - p0->y, p2->z - p0->z};
+            eng_vector_t n = eng_vector_cross(&e1, &e2);
+            normalize_vector(&n);
+            bool outside = (clips[i[0]] & clips[i[1]] & clips[i[2]]) != 0;
+            bool facing = n.x * mapper.x + n.y * mapper.y + n.z * mapper.z < 0.0f;
+            faces[f].channel_mask = (uint16_t)(!outside && facing ? faces[f].channel_mask | bit
+                                                                  : faces[f].channel_mask & ~bit);
+        }
+        m.copy->channels.data[m.channel].mask = bit;
+    }
+    free(clips);
+    mapping_done(b, m.copy);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * Copy Mapping: the Src Mesh's UVs of Src Channel, times UV Tile, become
+ * the target mesh's of Dest Channel (as many as both meshes have vertices).
+ */
+static int bb_copy_mapping(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    eng_mesh_copy_t *copy = eng_mesh_copy(engine, nmo_engine_block_target(b));
+    if (copy == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    int32_t dest_channel = get_in_int(b, 0, -1);
+    eng_mesh_copy_t *source = eng_mesh_copy(engine, nmo_engine_block_get_input_object(b, 1));
+    if (source == NULL) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    int32_t source_channel = get_in_int(b, 2, -1);
+    float tile[2] = {1.0f, 1.0f};
+    nmo_engine_block_get_input_value(b, 3, tile, sizeof(tile));
+    size_t dest_stride = 0, source_stride = 0;
+    int32_t dest_count = 0, source_count = 0;
+    float *dest = eng_mesh_uvs(engine, copy, dest_channel, &dest_stride, &dest_count);
+    const float *from = eng_mesh_uvs(engine, source, source_channel, &source_stride, &source_count);
+    int32_t count = source_count < dest_count ? source_count : dest_count;
+    for (int32_t v = 0; dest != NULL && from != NULL && v < count; v++) {
+        float *to = (float *)((uint8_t *)dest + (size_t)v * dest_stride);
+        const float *uv = (const float *)((const uint8_t *)from + (size_t)v * source_stride);
+        to[0] = tile[0] * uv[0];
+        to[1] = tile[1] * uv[1];
+    }
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    mapping_done(b, copy);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * Texture Sine: each frame the owner mesh's UVs of Channel sway about the
+ * UVs saved when the block was attached (its first local), each vertex a
+ * step further along the sine; the second local is the time in seconds,
+ * kept below one period of Velocity. A block without saved UVs saves the
+ * mesh's own the first time it runs, as attaching it does.
+ */
+static int bb_texture_sine(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    float amplitude[2] = {get_in_float(b, 0, 0.1f), get_in_float(b, 1, 0.1f)};
+    float velocity = get_in_float(b, 2, 1.0f);
+    eng_mesh_copy_t *copy = eng_mesh_copy(engine, nmo_engine_block_owner(b));
+    int32_t channel = get_in_int(b, 3, -1);
+    if (copy == NULL || channel < -1 || channel >= (int32_t)copy->channels.count) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    size_t stride = 0;
+    int32_t count = 0;
+    float *uvs = eng_mesh_uvs(engine, copy, channel, &stride, &count);
+    eng_param_t *saved = block_local(b, 0);
+    if (saved != NULL && saved->size < (uint32_t)count * 2u * sizeof(float) && count > 0) {
+        size_t own_stride = 0;
+        int32_t own_count = 0;
+        const float *own = eng_mesh_uvs(engine, copy, -1, &own_stride, &own_count);
+        float *capture = (float *)malloc((size_t)own_count * 2u * sizeof(float));
+        for (int32_t v = 0; capture != NULL && v < own_count; v++) {
+            const float *uv = (const float *)((const uint8_t *)own + (size_t)v * own_stride);
+            capture[v * 2] = uv[0];
+            capture[v * 2 + 1] = uv[1];
+        }
+        if (capture != NULL) {
+            nmo_engine_block_set_local_value(b, 0, capture, (size_t)own_count * 2u * sizeof(float));
+        }
+        free(capture);
+        saved = block_local(b, 0);
+    }
+    const float *original = saved != NULL && saved->size >= (uint32_t)count * 2u * sizeof(float)
+                                ? (const float *)saved->data
+                                : NULL;
+    float time = get_local_float(b, 1, 0.0f);
+    for (int32_t v = 0; uvs != NULL && original != NULL && v < count; v++) {
+        float angle = ((float)v / (float)count - 0.5f) * 4.0f + time * velocity;
+        float *uv = (float *)((uint8_t *)uvs + (size_t)v * stride);
+        uv[0] = cosf(angle) * (0.5f - original[v * 2]) * amplitude[0] + original[v * 2];
+        uv[1] = sinf(angle) * (0.5f - original[v * 2 + 1]) * amplitude[1] + original[v * 2 + 1];
+    }
+    copy->version = ++engine->render.mesh_version;
+    time += nmo_engine_block_delta_time(b) * 0.001f;
+    if (time * velocity > 6.2831855f) {
+        time -= 6.2831855f / velocity;
+    }
+    nmo_engine_block_set_local_value(b, 1, &time, sizeof(time));
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    eng_emit(engine, NMO_ENGINE_EVENT_EFFECT, b->node, copy->mesh, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_materials_blocks[] = {
     {NMO_GUID_INIT(0xf56d92ef, 0x41eb20c1), "Change Texture Video Format",
      bb_change_texture_video_format, NULL, NULL},
@@ -768,6 +1095,11 @@ static const nmo_engine_block_desc_t eng_materials_blocks[] = {
     {NMO_GUID_INIT(0x3b9b0e7f, 0xb1316800), "Set Channel Src Blend", bb_set_channel_src_blend, NULL, NULL},
     {NMO_GUID_INIT(0x2f5a0eb9, 0x27067e93), "Set Channel Dest Blend", bb_set_channel_dest_blend, NULL, NULL},
     {NMO_GUID_INIT(0x2e0a6b92, 0x366a3f9b), "Set Channel Material", bb_set_channel_material, NULL, NULL},
+    {NMO_GUID_INIT(0x770a5fc9, 0x7bbe2aed), "Cylindrical Mapping", bb_cylindrical_mapping, NULL, NULL},
+    {NMO_GUID_INIT(0x5e40778e, 0x44f36cf3), "Spherical Mapping", bb_spherical_mapping, NULL, NULL},
+    {NMO_GUID_INIT(0x2a6a3fa3, 0x3280407d), "Planar Mapping", bb_planar_mapping, NULL, NULL},
+    {NMO_GUID_INIT(0x086a487c, 0x3cd44acb), "Copy Mapping", bb_copy_mapping, NULL, NULL},
+    {NMO_GUID_INIT(0x4fe0646e, 0x7e0635c9), "Texture Sine", bb_texture_sine, NULL, NULL},
 };
 
 nmo_status_t eng_register_materials(nmo_engine_t *engine)

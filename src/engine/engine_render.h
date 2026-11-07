@@ -255,6 +255,13 @@ bool eng_mesh_apply_material(nmo_engine_t *engine, nmo_object_id_t mesh, nmo_obj
    to that group when it is the first, and to the first when there is no new material). */
 bool eng_mesh_replace_material(nmo_engine_t *engine, nmo_object_id_t mesh,
                                nmo_object_id_t old_material, nmo_object_id_t new_material);
+/* The copy's faces, copied from the file the first time; NULL for a mesh without faces. */
+nmo_face_t *eng_mesh_copy_faces(nmo_engine_t *engine, eng_mesh_copy_t *copy);
+/* CKMesh::GetTextureCoordinatesPtr: the UVs of `channel` (-1 the mesh's own, which a channel
+   without UVs of its own shares), two floats every `*stride` bytes for `*count` vertices;
+   NULL for no such channel or no vertices. */
+float *eng_mesh_uvs(nmo_engine_t *engine, eng_mesh_copy_t *copy, int32_t channel, size_t *stride,
+                    int32_t *count);
 /* CKMesh::SetLitMode (VX_PRELITMESH 0, VX_LITMESH 1). False when `mesh` is none. */
 bool eng_mesh_set_lit_mode(nmo_engine_t *engine, nmo_object_id_t mesh, int32_t mode);
 /* Add a draw to the frame being made; NULL out of memory */
