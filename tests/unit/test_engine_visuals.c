@@ -11,6 +11,8 @@
 #include "engine/nmo_engine_render.h"
 #include "object/builtin/nmo_2dentity_schemas.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_curve_schemas.h"
+#include "object/builtin/nmo_material_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/nmo_ref.h"
 
@@ -23,6 +25,8 @@
 #define GUID_MAKE_TRANSPARENT NMO_GUID(0x16cc600c, 0x702836d1)
 #define GUID_SET_RENDER_OPTIONS NMO_GUID(0x4d586c55, 0x5250236a)
 #define GUID_USE_Z_INFORMATION NMO_GUID(0x01f60adc, 0x39b02cb8)
+#define GUID_RENDER_CURVE NMO_GUID(0x215c7794, 0x7ac40f5d)
+#define GUID_SHOW_OBJECT_INFORMATION NMO_GUID(0x17cb4c57, 0x00f525fb)
 
 /* A block acting on `object` (0: no target), run when the script starts */
 static nmo_object_id_t block_on(engine_fixture_t *f, nmo_guid_t guid, const char *name, nmo_object_id_t object)
@@ -264,10 +268,217 @@ TEST(engine_visuals, hide_hierarchy_and_3dsprite_mode)
     fixture_end(&f);
 }
 
+/* A curve of two linear points, from the origin to (0, 0, 20) */
+static nmo_object_id_t straight_curve(engine_fixture_t *f)
+{
+    nmo_object_id_t curve = fixture_create(f, NMO_CID_CURVE, "Curve");
+    nmo_curve_state_t *state = (nmo_curve_state_t *)fixture_state(f, curve);
+    if (state == NULL) {
+        return 0;
+    }
+    state->opened = 1;
+    state->step_count = 100;
+    state->control_point_count = 2;
+    state->control_point_ids = (nmo_ref_t *)nmo_arena_alloc(nmo_session_get_arena(f->session),
+                                                            2 * sizeof(nmo_ref_t), _Alignof(nmo_ref_t));
+    if (state->control_point_ids == NULL) {
+        return 0;
+    }
+    for (int i = 0; i < 2; i++) {
+        nmo_object_id_t id = fixture_create(f, NMO_CID_CURVEPOINT, i ? "End" : "Start");
+        nmo_curvepoint_state_t *point = (nmo_curvepoint_state_t *)fixture_state(f, id);
+        if (point == NULL) {
+            return 0;
+        }
+        point->base.parent = nmo_ref_from_id(curve);
+        point->base.has_entityndata_chunk = 1;
+        point->curve = nmo_ref_from_id(curve);
+        point->linear = 1;
+        nmo_curvepoint_set_position(point, 0, 0, i ? 20.0f : 0.0f);
+        state = (nmo_curve_state_t *)fixture_state(f, curve);
+        state->control_point_ids[i] = nmo_ref_from_id(id);
+    }
+    return curve;
+}
+
+static nmo_object_id_t local_of(engine_fixture_t *f, nmo_object_id_t block, size_t pos)
+{
+    const nmo_behavior_state_t *state = (const nmo_behavior_state_t *)fixture_state(f, block);
+    return state != NULL && pos < state->local_parameters.count
+               ? nmo_behavior_ref_array_get_id(&state->local_parameters, pos)
+               : 0;
+}
+
+/* The frame's primitive draws of `object`, `out` the first; their count */
+static int primitive_draws(const nmo_engine_frame_t *frame, nmo_object_id_t object, const nmo_engine_draw_t **out)
+{
+    int count = 0;
+    for (int32_t i = 0; i < frame->draw_count; i++) {
+        if (frame->draws[i].kind == NMO_ENGINE_DRAW_PRIMITIVE && frame->draws[i].object == object) {
+            if (count++ == 0) {
+                *out = &frame->draws[i];
+            }
+        }
+    }
+    return count;
+}
+
+static void vertex_at(const nmo_engine_frame_t *frame, const nmo_engine_draw_t *draw, int k, float x, float y,
+                      float z, float u, float v)
+{
+    const nmo_engine_vertex_t *p = &frame->vertices[draw->first_vertex + k];
+    ASSERT_FLOAT_EQ(x, p->x, 1e-5f);
+    ASSERT_FLOAT_EQ(y, p->y, 1e-5f);
+    ASSERT_FLOAT_EQ(z, p->z, 1e-5f);
+    ASSERT_FLOAT_EQ(u, p->u, 1e-5f);
+    ASSERT_FLOAT_EQ(v, p->v, 1e-5f);
+}
+
+TEST(engine_visuals, render_curve_draws_the_curve_each_frame_until_off)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t curve = straight_curve(&f);
+    nmo_object_id_t material = fixture_create(&f, NMO_CID_MATERIAL, "Green");
+    ASSERT_TRUE(curve != 0 && material != 0);
+    ((nmo_material_state_t *)fixture_state(&f, material))->diffuse_color = 0xFF00FF00u;
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t render = block_on(&f, GUID_RENDER_CURVE, "Render Curve", curve);
+    ASSERT_TRUE(render != 0);
+    fixture_link(&f, BLOCK_OUT(&f, render, 0), BLOCK_IN(&f, render, 1), 2); /* Off two frames on */
+    fixture_input_int(&f, BLOCK_PIN(&f, render, 0), (int32_t)material);
+    fixture_input_int(&f, BLOCK_PIN(&f, render, 5), 1); /* Tube Lighting */
+    nmo_object_id_t mode = local_of(&f, render, 0);
+    ASSERT_TRUE(mode != 0);
+    fixture_commit(&f, NULL);
+    const int32_t plane = 0;
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, mode, &plane, sizeof(plane)));
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+
+    /* Plane: a strip across Up of Size 1 each side, two triangles */
+    nmo_engine_frame_t frame;
+    const nmo_engine_draw_t *draw = NULL;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_EQ(1, primitive_draws(&frame, curve, &draw));
+    ASSERT_EQ(material, draw->material);
+    ASSERT_EQ(6, draw->vertex_count);
+    ASSERT_FALSE(draw->lines || draw->lit || draw->two_sided || draw->post || draw->transparent);
+    ASSERT_EQ(0xFF00FF00u, frame.vertices[draw->first_vertex].color);
+    vertex_at(&frame, draw, 0, -1, 0, 0, 0, 0);
+    vertex_at(&frame, draw, 1, 1, 0, 0, 0, 1);
+    vertex_at(&frame, draw, 2, -1, 0, 20, 1, 0);
+    vertex_at(&frame, draw, 3, -1, 0, 20, 1, 0); /* the second triangle turned back: 2, 1, 3 */
+    vertex_at(&frame, draw, 4, 1, 0, 0, 0, 1);
+    vertex_at(&frame, draw, 5, 1, 0, 20, 1, 1);
+    /* temporary: the next frame draws it only if the block ran again */
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_EQ(0, primitive_draws(&frame, curve, &draw));
+
+    /* Tube, lit: three rings, a quad between each two, both sides */
+    const int32_t tube = 2;
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, mode, &tube, sizeof(tube)));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_EQ(1, primitive_draws(&frame, curve, &draw));
+    ASSERT_EQ(18, draw->vertex_count);
+    ASSERT_TRUE(draw->lit && draw->two_sided && !draw->lines);
+    const nmo_engine_vertex_t *first = &frame.vertices[draw->first_vertex];
+    ASSERT_FLOAT_EQ(1.0f, first->x, 1e-5f); /* the first ring's point at angle 0: Size.x right */
+    ASSERT_FLOAT_EQ(1.0f, first->nx, 1e-5f);
+
+    /* Off: no more callback */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_EQ(0, primitive_draws(&frame, curve, &draw));
+    fixture_end(&f);
+}
+
+TEST(engine_visuals, render_curve_line_mode_draws_the_line_mesh)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t curve = straight_curve(&f);
+    ASSERT_TRUE(curve != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t render = block_on(&f, GUID_RENDER_CURVE, "Render Curve", curve);
+    ASSERT_TRUE(render != 0);
+    nmo_object_id_t mode = local_of(&f, render, 0);
+    fixture_commit(&f, NULL);
+    const int32_t line = 4;
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, mode, &line, sizeof(line)));
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    nmo_engine_frame_t frame;
+    const nmo_engine_draw_t *draw = NULL;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_EQ(1, primitive_draws(&frame, curve, &draw));
+    ASSERT_TRUE(draw->lines && draw->material == 0);
+    ASSERT_EQ(2, draw->vertex_count);
+    ASSERT_EQ(0xFFFFFFFFu, frame.vertices[draw->first_vertex].color); /* white without a material */
+    vertex_at(&frame, draw, 1, 0, 0, 20, 0, 0);
+    fixture_end(&f);
+}
+
+TEST(engine_visuals, show_object_information_draws_box_and_face_normals_after_the_scene)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t material = fixture_create(&f, NMO_CID_MATERIAL, "Material");
+    nmo_object_id_t mesh = 0;
+    nmo_object_id_t object = face_object(&f, "Face", material, &mesh);
+    ASSERT_TRUE(material != 0 && object != 0);
+    nmo_mesh_state_t *state = (nmo_mesh_state_t *)fixture_state(&f, mesh);
+    state->faces[0].normal = (nmo_vector_t){0.0f, 0.0f, 1.0f};
+    nmo_mesh_update_bounding_volumes(state);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t info = block_on(&f, GUID_SHOW_OBJECT_INFORMATION, "Show Object Information", object);
+    ASSERT_TRUE(info != 0);
+    const float white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+    fixture_input_int(&f, BLOCK_PIN(&f, info, 0), 1);
+    fixture_input_value(&f, BLOCK_PIN(&f, info, 1), white, sizeof(white));
+    fixture_input_int(&f, BLOCK_PIN(&f, info, 7), 1);
+    const float half = 0.5f;
+    fixture_input_value(&f, BLOCK_PIN(&f, info, 9), &half, sizeof(half));
+    fixture_input_int(&f, BLOCK_PIN(&f, info, 10), 1);
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    int at_mesh = mesh_draw(&frame, object);
+    const nmo_engine_draw_t *box = NULL;
+    ASSERT_EQ(3, primitive_draws(&frame, object, &box));
+    ASSERT_TRUE(at_mesh >= 0 && box > &frame.draws[at_mesh]);
+    ASSERT_TRUE(box->lines && box->post && box->material == 0);
+    ASSERT_EQ(24, box->vertex_count); /* twelve edges of the world box (0,0,0)-(1,1,0) */
+    ASSERT_EQ(0xFFFFFFFFu, frame.vertices[box->first_vertex].color);
+    vertex_at(&frame, box, 1, 1, 0, 0, 0, 0);
+    vertex_at(&frame, box, 4, 1, 1, 0, 0, 0);
+    const nmo_engine_draw_t *normals = box + 1, *sphere = box + 2;
+    ASSERT_EQ(2, normals->vertex_count); /* from the face's center along its normal, half long */
+    vertex_at(&frame, normals, 0, 0.33333f, 0.33333f, 0, 0, 0);
+    vertex_at(&frame, normals, 1, 0.33333f, 0.33333f, 0.5f, 0, 0);
+    ASSERT_EQ(3 * 31 * 2, sphere->vertex_count); /* three circles of 32 points */
+    ASSERT_EQ(0xFFFF0000u, frame.vertices[sphere->first_vertex].color); /* the default red */
+
+    /* drawn the frame after the block ran, not later */
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_EQ(0, primitive_draws(&frame, object, &box));
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_visuals, blink_cycles_the_target_and_fps_reports_the_rate);
     REGISTER_TEST(engine_visuals, z_buffer_and_render_order_shape_the_mesh_draws);
     REGISTER_TEST(engine_visuals, make_transparent_blends_the_materials_and_marks_the_meshes);
     REGISTER_TEST(engine_visuals, render_options_and_use_z_information_set_the_frame);
     REGISTER_TEST(engine_visuals, hide_hierarchy_and_3dsprite_mode);
+    REGISTER_TEST(engine_visuals, render_curve_draws_the_curve_each_frame_until_off);
+    REGISTER_TEST(engine_visuals, render_curve_line_mode_draws_the_line_mesh);
+    REGISTER_TEST(engine_visuals, show_object_information_draws_box_and_face_normals_after_the_scene);
 TEST_MAIN_END()

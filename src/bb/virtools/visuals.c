@@ -20,12 +20,25 @@
 #include "../../engine/engine_character.h"
 #include "type/nmo_type_guids.h"
 
+/* A temporary render callback, for the frame: Render Curve's on its curve, Show Object
+   Information's on the render context */
+typedef struct visuals_callback {
+    int32_t node;
+    nmo_object_id_t target;
+} visuals_callback_t;
+
+typedef ENG_VEC(visuals_callback_t) callback_list_t;
+
 /* The blocks drawing in render callbacks: Planar Filter and Display Progression Bar after
-   the sprites (PostSpriteRenderCallBacks), Display Score after the scene (PostRenderCallBack) */
+   the sprites (PostSpriteRenderCallBacks), Display Score after the scene (PostRenderCallBack),
+   Render Curve as its curve renders and Show Object Information after the transparent
+   entities, both for the frame */
 typedef struct visuals {
     ENG_VEC(int32_t) filters;
     ENG_VEC(int32_t) bars;
     ENG_VEC(int32_t) scores;
+    callback_list_t curves;
+    callback_list_t infos;
 } visuals_t;
 
 static void visuals_destroy(nmo_engine_t *engine, void *state);
@@ -1021,6 +1034,600 @@ static int cb_display_score(blk_t *b, uint32_t message)
     return NMO_ENGINE_BR_OK;
 }
 
+/* ============================================================================
+ * Render Curve and Show Object Information: geometry drawn in render callbacks
+ * ============================================================================ */
+
+/* Add or Remove a temporary render callback of the block `node` on `target`: once each */
+static void callback_drawn(callback_list_t *list, int32_t node, nmo_object_id_t target, bool drawn)
+{
+    for (size_t i = 0; i < list->count; i++) {
+        if (list->data[i].node == node && list->data[i].target == target) {
+            if (!drawn) {
+                list->data[i] = list->data[--list->count];
+            }
+            return;
+        }
+    }
+    visuals_callback_t *slot = NULL;
+    if (drawn && ENG_VEC_PUSH(*list, slot)) {
+        slot->node = node;
+        slot->target = target;
+    }
+}
+
+static eng_vector_t vec_sub(eng_vector_t a, eng_vector_t b)
+{
+    return (eng_vector_t){a.x - b.x, a.y - b.y, a.z - b.z};
+}
+
+static eng_vector_t vec_add(eng_vector_t a, eng_vector_t b)
+{
+    return (eng_vector_t){a.x + b.x, a.y + b.y, a.z + b.z};
+}
+
+static eng_vector_t vec_scale(eng_vector_t a, float s)
+{
+    return (eng_vector_t){a.x * s, a.y * s, a.z * s};
+}
+
+/* VxVector Normalize */
+static eng_vector_t vec_normalized(eng_vector_t a)
+{
+    eng_vector_normalize(&a);
+    return a;
+}
+
+static eng_vector_t vec_cross_normalized(eng_vector_t a, eng_vector_t b)
+{
+    return vec_normalized(eng_vector_cross(&a, &b));
+}
+
+/* A vertex of a block's VxDrawPrimitiveData, in the space of the matrix it is drawn with */
+typedef struct prim_vertex {
+    eng_vector_t p, n;
+    float u, v;
+} prim_vertex_t;
+
+static bool push_prim_vertex(nmo_engine_t *engine, const eng_matrix_t *matrix, const prim_vertex_t *src,
+                             uint32_t color)
+{
+    nmo_engine_vertex_t *vertex = NULL;
+    if (!ENG_VEC_PUSH(engine->render.vertices, vertex)) {
+        return false;
+    }
+    eng_vector_t p, n;
+    eng_vector_transform(&p, matrix, &src->p);
+    eng_vector_rotate(&n, matrix, &src->n);
+    eng_vector_normalize(&n);
+    *vertex = (nmo_engine_vertex_t){p.x, p.y, p.z, src->u, src->v, color, n.x, n.y, n.z};
+    return true;
+}
+
+/* The primitive draw of the vertices pushed since `first`, sorted at `position` when transparent */
+static nmo_engine_draw_t *push_primitive(nmo_engine_t *engine, nmo_object_id_t object, int32_t first,
+                                         eng_vector_t position)
+{
+    int32_t count = (int32_t)engine->render.vertices.count - first;
+    nmo_engine_draw_t *draw = count > 0 ? eng_render_push(engine) : NULL;
+    if (draw == NULL) {
+        return NULL;
+    }
+    memset(draw, 0, sizeof(*draw));
+    draw->kind = NMO_ENGINE_DRAW_PRIMITIVE;
+    draw->object = object;
+    draw->first_vertex = first;
+    draw->vertex_count = count;
+    draw->world[0] = draw->world[5] = draw->world[10] = draw->world[15] = 1.0f;
+    draw->world[12] = position.x, draw->world[13] = position.y, draw->world[14] = position.z;
+    return draw;
+}
+
+/* A VX_TRIANGLESTRIP of `v` through `indices` (NULL: in order) as triangles, every other one
+   turned back, the degenerate ones joining strips left out */
+static void push_strip(nmo_engine_t *engine, const eng_matrix_t *matrix, const prim_vertex_t *v,
+                       const int32_t *indices, int32_t count, uint32_t color)
+{
+    for (int32_t k = 0; k + 2 < count; k++) {
+        int32_t i0 = indices != NULL ? indices[k] : k, i1 = indices != NULL ? indices[k + 1] : k + 1;
+        int32_t i2 = indices != NULL ? indices[k + 2] : k + 2;
+        if (k & 1) {
+            int32_t t = i0;
+            i0 = i1;
+            i1 = t;
+        }
+        if (i0 == i1 || i1 == i2 || i0 == i2) {
+            continue;
+        }
+        if (!push_prim_vertex(engine, matrix, &v[i0], color) ||
+            !push_prim_vertex(engine, matrix, &v[i1], color) ||
+            !push_prim_vertex(engine, matrix, &v[i2], color)) {
+            return;
+        }
+    }
+}
+
+/* The inputs of Render Curve as CurveRenderCallback reads them */
+typedef struct curve_inputs {
+    eng_vector_t up;
+    float size[2], texscale[2], offset;
+    int32_t tesselation;
+    bool lighting;
+} curve_inputs_t;
+
+/* RenderPlane: a ribbon Size.x wide each side across Up carried along the curve */
+static void curve_plane(nmo_engine_t *engine, const eng_matrix_t *world, const eng_vector_t *points,
+                        int32_t tc, eng_vector_t pos, const curve_inputs_t *in, uint32_t color)
+{
+    prim_vertex_t *v = (prim_vertex_t *)calloc((size_t)(tc + 1) * 2, sizeof(*v));
+    if (v == NULL) {
+        return;
+    }
+    float delta = 1.0f / (float)tc, a = 0.0f;
+    eng_vector_t up = in->up;
+    for (int32_t i = 0; i <= tc; i++) {
+        eng_vector_t old = pos;
+        pos = points[i];
+        eng_vector_t dir = vec_normalized(vec_sub(pos, old));
+        eng_vector_t right = vec_scale(vec_cross_normalized(up, dir), in->size[0]);
+        up = vec_cross_normalized(dir, right);
+        float u = in->offset + a * in->texscale[0];
+        v[2 * i] = (prim_vertex_t){vec_sub(pos, right), {0, 0, 0}, u, 0.0f};
+        v[2 * i + 1] = (prim_vertex_t){vec_add(pos, right), {0, 0, 0}, u, in->texscale[1]};
+        a += delta;
+    }
+    push_strip(engine, world, v, NULL, 2 * (tc + 1), color);
+    free(v);
+}
+
+/* RenderCross: a ribbon Size.x along the up axis, then one Size.y along the right axis, both
+   textured the same */
+static void curve_cross(nmo_engine_t *engine, const eng_matrix_t *world, const eng_vector_t *points,
+                        int32_t tc, eng_vector_t pos, const curve_inputs_t *in, uint32_t color)
+{
+    prim_vertex_t *v = (prim_vertex_t *)calloc((size_t)(tc + 1) * 4, sizeof(*v));
+    if (v == NULL) {
+        return;
+    }
+    prim_vertex_t *v2 = v + 2 * (tc + 1);
+    float delta = 1.0f / (float)tc, a = 0.0f;
+    for (int32_t i = 0; i <= tc; i++) {
+        eng_vector_t old = pos;
+        pos = points[i];
+        eng_vector_t dir = vec_normalized(vec_sub(pos, old));
+        eng_vector_t right = vec_cross_normalized(in->up, dir);
+        eng_vector_t up = vec_cross_normalized(dir, right);
+        float u = in->offset + a * in->texscale[0];
+        eng_vector_t ux = vec_scale(up, in->size[0]), ry = vec_scale(right, in->size[1]);
+        v[2 * i] = (prim_vertex_t){vec_add(pos, ux), {0, 0, 0}, u, 0.0f};
+        v[2 * i + 1] = (prim_vertex_t){vec_sub(pos, ux), {0, 0, 0}, u, in->texscale[1]};
+        v2[2 * i] = (prim_vertex_t){vec_add(pos, ry), {0, 0, 0}, u, 0.0f};
+        v2[2 * i + 1] = (prim_vertex_t){vec_sub(pos, ry), {0, 0, 0}, u, in->texscale[1]};
+        a += delta;
+    }
+    push_strip(engine, world, v, NULL, 2 * (tc + 1), color);
+    push_strip(engine, world, v2, NULL, 2 * (tc + 1), color);
+    free(v);
+}
+
+/* RenderTube: Tube Tesselation rings of the ellipse Size around the curve, a strip between each
+   ring and the next, run forth and back */
+static void curve_tube(nmo_engine_t *engine, const eng_matrix_t *world, const eng_vector_t *points,
+                       int32_t tc, eng_vector_t start, const curve_inputs_t *in, uint32_t color)
+{
+    int32_t rtc = in->tesselation, n = tc + 1;
+    prim_vertex_t *v = (prim_vertex_t *)calloc((size_t)rtc * (size_t)n, sizeof(*v));
+    int32_t *indices = (int32_t *)malloc((size_t)rtc * 2u * (size_t)n * sizeof(int32_t));
+    if (v == NULL || indices == NULL) {
+        free(v);
+        free(indices);
+        return;
+    }
+    const float pi = 3.1415927f;
+    float delta = 1.0f / (float)tc, pdelta = 2.0f * pi / (float)rtc, inv2pi = 1.0f / (2.0f * pi);
+    float p = 0.0f;
+    for (int32_t j = 0; j < rtc; j++) {
+        float a = 0.0f;
+        eng_vector_t pos = start;
+        float psin = in->size[1] * sinf(p), pcos = in->size[0] * cosf(p);
+        for (int32_t i = 0; i <= tc; i++) {
+            eng_vector_t old = pos;
+            pos = points[i];
+            eng_vector_t dir = vec_normalized(vec_sub(pos, old));
+            eng_vector_t right = vec_cross_normalized(in->up, dir);
+            eng_vector_t up = vec_cross_normalized(dir, right);
+            eng_vector_t offset = vec_add(vec_scale(right, pcos), vec_scale(up, psin));
+            v[j * n + i] = (prim_vertex_t){vec_add(pos, offset), vec_normalized(offset),
+                                           in->offset + a * in->texscale[0], in->texscale[1] * p * inv2pi};
+            a += delta;
+        }
+        p += pdelta;
+    }
+    int32_t count = 0;
+    for (int32_t j = 0; j < rtc; j++) {
+        int32_t next = (j + 1) % rtc;
+        for (int32_t i = 0; i <= tc; i++) {
+            int32_t k = (j & 1) ? tc - i : i;
+            indices[count++] = j * n + k;
+            indices[count++] = next * n + k;
+        }
+    }
+    push_strip(engine, world, v, indices, count, color);
+    free(v);
+    free(indices);
+}
+
+/* RenderTwoDim: in view space, a ribbon across the curve's projection Size.x wide at the
+   render context's scale whatever its depth (the first segment leans to the 13th vertex, the
+   one the DLL reads there) */
+static void curve_two_dim(nmo_engine_t *engine, const eng_matrix_t *world, const eng_matrix_t *eye,
+                          const eng_vector_t *points, int32_t tc, const curve_inputs_t *in,
+                          uint32_t color, float width, float height)
+{
+    prim_vertex_t *v = (prim_vertex_t *)calloc((size_t)(tc + 1) * 2, sizeof(*v));
+    eng_vector_t *view_points = (eng_vector_t *)malloc((size_t)(tc + 1) * sizeof(eng_vector_t));
+    if (v == NULL || view_points == NULL) {
+        free(v);
+        free(view_points);
+        return;
+    }
+    eng_matrix_t to_view;
+    eng_matrix_inverse(&to_view, eye);
+    for (int32_t i = 0; i <= tc; i++) {
+        eng_vector_t w;
+        eng_vector_transform(&w, world, &points[i]);
+        eng_vector_transform(&view_points[i], &to_view, &w);
+    }
+    float dx = 1.0f / width, dy = 1.0f / height;
+    float delta = 1.0f / (float)tc, a = 0.0f;
+    eng_vector_t pos = view_points[0];
+    pos = vec_sub(pos, vec_normalized(vec_sub(view_points[tc < 12 ? tc : 12], pos)));
+    const eng_vector_t up = {0.0f, 0.0f, 1.0f};
+    for (int32_t i = 0; i <= tc; i++) {
+        eng_vector_t old = pos;
+        pos = view_points[i];
+        eng_vector_t dir = vec_normalized(vec_sub(pos, old));
+        dir.z = 0.0f;
+        eng_vector_t right = vec_scale(vec_cross_normalized(up, dir), in->size[0]);
+        right.z = 0.0f;
+        right.x *= pos.z * dx;
+        right.y *= pos.z * dy;
+        float u = in->offset + a * in->texscale[0];
+        v[2 * i] = (prim_vertex_t){vec_sub(pos, right), {0, 0, 0}, u, in->texscale[1]};
+        v[2 * i + 1] = (prim_vertex_t){vec_add(pos, right), {0, 0, 0}, u, 0.0f};
+        a += delta;
+    }
+    push_strip(engine, eye, v, NULL, 2 * (tc + 1), color);
+    free(v);
+    free(view_points);
+}
+
+/* RenderLine: the curve's line mesh in the material's color, unlit and untextured */
+static void curve_line(nmo_engine_t *engine, const eng_matrix_t *world, const eng_vector_t *points,
+                       int32_t tc, uint32_t color)
+{
+    for (int32_t i = 0; i < tc; i++) {
+        prim_vertex_t a = {points[i], {0, 0, 0}, 0.0f, 0.0f};
+        prim_vertex_t b = {points[i + 1], {0, 0, 0}, 0.0f, 0.0f};
+        if (!push_prim_vertex(engine, world, &a, color) || !push_prim_vertex(engine, world, &b, color)) {
+            return;
+        }
+    }
+}
+
+enum { CURVE_PLANE, CURVE_CROSS, CURVE_TUBE, CURVE_TWODIM, CURVE_LINE };
+
+/*
+ * CurveRenderCallback: the curve's line mesh drawn as Render Mode says, with
+ * Material set as current and its diffuse color on the vertices (white
+ * without one). It runs as the curve renders: after the opaque entities, or
+ * with the transparent ones when the curve renders last.
+ */
+static void draw_curve(nmo_engine_t *engine, const visuals_callback_t *callback,
+                       const eng_render_args_t *args)
+{
+    nmo_engine_block_t handle = {engine, callback->node};
+    blk_t *b = &handle;
+    int32_t index = eng_entity_index(engine, callback->target);
+    if (index < 0 || nmo_engine_object_class(engine, callback->target) != NMO_CID_CURVE ||
+        !eng_render_entity_drawn(engine, callback->target)) {
+        return;
+    }
+    nmo_object_id_t material = nmo_engine_block_get_input_object(b, 0);
+    nmo_engine_material_t m;
+    float diffuse[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+    if (material != 0 && nmo_engine_material(engine, material, &m)) {
+        memcpy(diffuse, m.diffuse, sizeof(diffuse));
+    } else {
+        material = 0;
+    }
+    uint32_t color = rgbaf_to_color(diffuse);
+    curve_inputs_t in = {.size = {1.0f, 1.0f}, .texscale = {1.0f, 1.0f}};
+    nmo_engine_block_get_input_value(b, 1, in.size, sizeof(in.size));
+    nmo_engine_block_get_input_value(b, 2, in.texscale, sizeof(in.texscale));
+    in.offset = get_in_float(b, 3, 0.0f);
+    in.up = get_in_vector(b, 4, 0.0f, 1.0f, 0.0f);
+    in.lighting = get_in_int(b, 5, 0) != 0;
+    in.tesselation = get_in_int(b, 6, 3);
+    in.tesselation = in.tesselation < 3 ? 3 : in.tesselation;
+    int32_t mode = get_local_int(b, 0, CURVE_CROSS);
+
+    eng_vector_t *points = NULL;
+    int32_t count = 0;
+    if (!eng_curve_mesh_points(engine, callback->target, &points, &count)) {
+        return;
+    }
+    int32_t tc = count - 1;
+    eng_vector_t ahead, start;
+    eng_curve_local_position(engine, callback->target, 0.01f, &ahead);
+    eng_curve_local_position(engine, callback->target, 0.0f, &start);
+    eng_vector_t before = vec_sub(start, vec_normalized(vec_sub(ahead, start)));
+
+    const eng_entity_t *entity = &engine->entities.data[index];
+    eng_matrix_t world = entity->world;
+    eng_matrix_t eye;
+    memcpy(eye.m, args->view, sizeof(eye.m));
+    int32_t first = (int32_t)engine->render.vertices.count;
+    switch (mode) {
+    case CURVE_PLANE: curve_plane(engine, &world, points, tc, before, &in, color); break;
+    case CURVE_CROSS: curve_cross(engine, &world, points, tc, before, &in, color); break;
+    case CURVE_TUBE: curve_tube(engine, &world, points, tc, before, &in, color); break;
+    case CURVE_TWODIM:
+        curve_two_dim(engine, &world, &eye, points, tc, &in, color, args->width, args->height);
+        break;
+    case CURVE_LINE: curve_line(engine, &world, points, tc, color); break;
+    default: break;
+    }
+    free(points);
+    eng_vector_t position = {world.m[3][0], world.m[3][1], world.m[3][2]};
+    nmo_engine_draw_t *draw = push_primitive(engine, callback->target, first, position);
+    if (draw == NULL) {
+        return;
+    }
+    entity = &engine->entities.data[index];
+    draw->material = material;
+    draw->lines = mode == CURVE_LINE;
+    draw->lit = mode == CURVE_TUBE && in.lighting;
+    draw->two_sided = mode == CURVE_TUBE || mode == CURVE_TWODIM; /* VXCULL_NONE */
+    draw->transparent = (entity->moveable_flags & VX_MOVEABLE_RENDERLAST) != 0 &&
+                        (entity->moveable_flags & VX_MOVEABLE_RENDERFIRST) == 0;
+}
+
+/*
+ * Render Curve: On adds CurveRenderCallback to the curve's post render
+ * callbacks for the frame, each frame until Off removes it; Exit On, Exit Off.
+ */
+static int bb_render_curve(blk_t *b)
+{
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+    }
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    bool entity = eng_entity_index(b->engine, target) >= 0;
+    callback_list_t *curves = &visuals_state(b->engine)->curves;
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        if (entity) {
+            callback_drawn(curves, b->node, target, false);
+        }
+        return NMO_ENGINE_BR_OK;
+    }
+    if (!entity) {
+        return NMO_ENGINE_BR_OK;
+    }
+    callback_drawn(curves, b->node, target, true);
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+/* VxBbox::TransformFrom */
+static void box_transform(eng_vector_t *min, eng_vector_t *max, const eng_matrix_t *m)
+{
+    const float low[3] = {min->x, min->y, min->z}, high[3] = {max->x, max->y, max->z};
+    eng_vector_t center = {(low[0] + high[0]) * 0.5f, (low[1] + high[1]) * 0.5f, (low[2] + high[2]) * 0.5f};
+    eng_vector_t c;
+    eng_vector_transform(&c, m, &center);
+    float half[3];
+    for (int k = 0; k < 3; k++) {
+        half[k] = (fabsf((high[0] - low[0]) * m->m[0][k]) + fabsf((high[1] - low[1]) * m->m[1][k]) +
+                   fabsf((high[2] - low[2]) * m->m[2][k])) * 0.5f;
+    }
+    *min = (eng_vector_t){c.x - half[0], c.y - half[1], c.z - half[2]};
+    *max = (eng_vector_t){c.x + half[0], c.y + half[1], c.z + half[2]};
+}
+
+static uint32_t input_color(blk_t *b, int pos)
+{
+    float color[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    nmo_engine_block_get_input_value(b, pos, color, sizeof(color));
+    return rgbaf_to_color(color);
+}
+
+/* The bounding box's twelve edges in Bounding Box Color, in the world or the entity's space */
+static void info_box(nmo_engine_t *engine, blk_t *b, int32_t index, eng_vector_t position)
+{
+    bool local = get_in_int(b, 2, 0) != 0, hierarchical = get_in_int(b, 3, 0) != 0;
+    const eng_matrix_t *world = &engine->entities.data[index].world;
+    eng_vector_t min, max;
+    bool valid;
+    if (hierarchical) {
+        valid = eng_entity_hierarchical_box(engine, index, &min, &max);
+        if (valid && local) {
+            eng_matrix_t inverse;
+            eng_matrix_inverse(&inverse, world);
+            box_transform(&min, &max, &inverse);
+        }
+    } else {
+        valid = local ? eng_entity_local_box(engine, index, &min, &max)
+                      : eng_entity_world_box(engine, index, &min, &max);
+    }
+    if (!valid) {
+        return;
+    }
+    eng_matrix_t identity = {{{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, 1}}};
+    const eng_matrix_t *matrix = local ? &engine->entities.data[index].world : &identity;
+    uint32_t color = input_color(b, 1);
+    const eng_vector_t corners[8] = {
+        {min.x, min.y, min.z}, {max.x, min.y, min.z}, {max.x, max.y, min.z}, {min.x, max.y, min.z},
+        {min.x, min.y, max.z}, {max.x, min.y, max.z}, {max.x, max.y, max.z}, {min.x, max.y, max.z}};
+    static const int edges[24] = {0, 1, 0, 3, 2, 1, 2, 3, 2, 6, 6, 7, 6, 5, 5, 1, 5, 4, 4, 7, 4, 0, 7, 3};
+    int32_t first = (int32_t)engine->render.vertices.count;
+    for (int i = 0; i < 24; i++) {
+        prim_vertex_t v = {corners[edges[i]], {0, 0, 0}, 0.0f, 0.0f};
+        if (!push_prim_vertex(engine, matrix, &v, color)) {
+            return;
+        }
+    }
+    nmo_engine_draw_t *draw = push_primitive(engine, engine->entities.data[index].id, first, position);
+    if (draw != NULL) {
+        draw->lines = true;
+        draw->post = true;
+    }
+}
+
+/* Lines from the mesh's vertices along their normals, or from its faces' centers along theirs:
+   in a color, or lit with a material (a face's line gets its center for a normal, as the DLL
+   writes it) */
+static void info_normals(nmo_engine_t *engine, blk_t *b, int32_t index, const nmo_engine_mesh_t *mesh,
+                         bool faces, eng_vector_t position)
+{
+    uint32_t color = input_color(b, faces ? 8 : 5);
+    float size = get_in_float(b, faces ? 9 : 6, 1.0f);
+    nmo_object_id_t material = local_object(b, faces ? 1 : 0);
+    nmo_engine_material_t m;
+    if (material != 0 && !nmo_engine_material(engine, material, &m)) {
+        material = 0;
+    }
+    const eng_matrix_t *world = &engine->entities.data[index].world;
+    int32_t count = faces ? mesh->face_count : mesh->vertex_count;
+    int32_t first = (int32_t)engine->render.vertices.count;
+    for (int32_t i = 0; i < count; i++) {
+        eng_vector_t from, normal, lit_normal;
+        if (faces) {
+            const nmo_vector_t *n = &mesh->faces[i].normal;
+            const uint16_t *f = &mesh->indices[3 * i];
+            eng_vector_t sum = {0, 0, 0};
+            for (int k = 0; k < 3; k++) {
+                const nmo_vector_t *p = &mesh->vertices[f[k]].position;
+                sum = vec_add(sum, (eng_vector_t){p->x, p->y, p->z});
+            }
+            from = vec_scale(sum, 0.33333f);
+            normal = (eng_vector_t){n->x, n->y, n->z};
+            lit_normal = from;
+        } else {
+            const nmo_vertex_t *v = &mesh->vertices[i];
+            from = (eng_vector_t){v->position.x, v->position.y, v->position.z};
+            normal = (eng_vector_t){v->normal.x, v->normal.y, v->normal.z};
+            lit_normal = vec_normalized(normal);
+        }
+        prim_vertex_t a = {from, lit_normal, 0.0f, 0.0f};
+        prim_vertex_t c = {vec_add(from, vec_scale(normal, size)), lit_normal, 0.0f, 0.0f};
+        if (!push_prim_vertex(engine, world, &a, color) || !push_prim_vertex(engine, world, &c, color)) {
+            return;
+        }
+    }
+    nmo_engine_draw_t *draw = push_primitive(engine, engine->entities.data[index].id, first, position);
+    if (draw != NULL) {
+        draw->lines = true;
+        draw->post = true;
+        draw->material = material;
+        draw->lit = material != 0;
+    }
+}
+
+/* The mesh's bounding sphere: three circles of 32 points around its barycenter, in the XY, YZ
+   and ZX planes */
+static void info_sphere(nmo_engine_t *engine, blk_t *b, int32_t index, nmo_object_id_t mesh,
+                        eng_vector_t position)
+{
+    eng_vector_t center;
+    float radius = 0.0f;
+    if (!eng_mesh_sphere(engine, mesh, &center, &radius)) {
+        return;
+    }
+    uint32_t color = input_color(b, 11);
+    const eng_matrix_t *world = &engine->entities.data[index].world;
+    const int count = 32;
+    float delta = 3.1415927f * 2.0f / (float)(count - 1);
+    int32_t first = (int32_t)engine->render.vertices.count;
+    for (int axis0 = 0, axis1 = 1, circle = 0; circle < 3; circle++) {
+        prim_vertex_t points[32];
+        float t = 0.0f;
+        for (int j = 0; j < count; j++, t += delta) {
+            float p[3] = {center.x, center.y, center.z};
+            p[axis0] += radius * cosf(t);
+            p[axis1] += radius * sinf(t);
+            points[j] = (prim_vertex_t){{p[0], p[1], p[2]}, {0, 0, 0}, 0.0f, 0.0f};
+        }
+        for (int j = 0; j + 1 < count; j++) {
+            if (!push_prim_vertex(engine, world, &points[j], color) ||
+                !push_prim_vertex(engine, world, &points[j + 1], color)) {
+                return;
+            }
+        }
+        axis0++;
+        axis1 = axis1 == 2 ? 0 : axis1 + 1;
+    }
+    nmo_engine_draw_t *draw = push_primitive(engine, engine->entities.data[index].id, first, position);
+    if (draw != NULL) {
+        draw->lines = true;
+        draw->post = true;
+    }
+}
+
+/*
+ * ShowBoundingBoxRenderCallBack: the target's bounding box, its mesh's vertex
+ * and face normals and its bounding sphere, as lines after the transparent
+ * entities. (The original's projection offset against Z fighting is in the
+ * Ballanced source only, not in Ballance's DLL.)
+ */
+static void draw_info(nmo_engine_t *engine, int32_t node)
+{
+    nmo_engine_block_t handle = {engine, node};
+    blk_t *b = &handle;
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    int32_t index = eng_entity_index(engine, target);
+    if (index < 0) {
+        return;
+    }
+    const eng_matrix_t *world = &engine->entities.data[index].world;
+    eng_vector_t position = {world->m[3][0], world->m[3][1], world->m[3][2]};
+    if (get_in_int(b, 0, 1) != 0) {
+        info_box(engine, b, index, position);
+    }
+    nmo_object_t *object = eng_find_object(engine, target);
+    const nmo_3dentity_state_t *state =
+        object != NULL ? (const nmo_3dentity_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
+                             engine->types, object, CKPGUID_3DENTITY)
+                       : NULL;
+    nmo_object_id_t mesh_id = state != NULL ? eng_object_ref(engine, target, &state->current_mesh) : 0;
+    nmo_engine_mesh_t mesh;
+    bool has_mesh = mesh_id != 0 && nmo_engine_mesh(engine, mesh_id, &mesh);
+    if (has_mesh && get_in_int(b, 4, 0) != 0) {
+        info_normals(engine, b, index, &mesh, false, position);
+    }
+    if (has_mesh && get_in_int(b, 7, 0) != 0) {
+        info_normals(engine, b, index, &mesh, true, position);
+    }
+    if (has_mesh && get_in_int(b, 10, 0) != 0) {
+        info_sphere(engine, b, index, mesh_id, position);
+    }
+}
+
+/* Show Object Information: In adds the render callback for the next frame (looped to keep
+   it); Out */
+static int bb_show_object_information(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (eng_entity_index(b->engine, target) >= 0) {
+        callback_drawn(&visuals_state(b->engine)->infos, b->node, 0, true);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_visuals_blocks[] = {
     {NMO_GUID_INIT(0x00cd320b, 0x32ed010b), "Planar Filter", bb_planar_filter, cb_planar_filter,
      NULL},
@@ -1052,14 +1659,26 @@ static const nmo_engine_block_desc_t eng_visuals_blocks[] = {
     {NMO_GUID_INIT(0x04cf37cd, 0x7a246b85), "Display Progression Bar", bb_display_progression_bar,
      cb_display_progression_bar, NULL},
     {NMO_GUID_INIT(0x0fc45543, 0x55b012c3), "Display Score", bb_display_score, cb_display_score, NULL},
+    {NMO_GUID_INIT(0x215c7794, 0x7ac40f5d), "Render Curve", bb_render_curve, NULL, NULL},
+    {NMO_GUID_INIT(0x17cb4c57, 0x00f525fb), "Show Object Information", bb_show_object_information,
+     NULL, NULL},
 };
 
-/* Planar Filter's full-view quads, the post sprite render callbacks */
+/* The render callbacks, at the stages the render context calls them */
 static void visuals_render(nmo_engine_t *engine, void *state, eng_render_stage_t stage,
                            const eng_render_args_t *args)
 {
     visuals_t *visuals = (visuals_t *)state;
-    if (stage == ENG_RENDER_OVERLAY) {
+    if (stage == ENG_RENDER_SCENE) {
+        for (size_t i = 0; i < visuals->curves.count; i++) {
+            draw_curve(engine, &visuals->curves.data[i], args);
+        }
+        for (size_t i = 0; i < visuals->infos.count; i++) {
+            draw_info(engine, visuals->infos.data[i].node);
+        }
+        visuals->curves.count = 0; /* temporary callbacks */
+        visuals->infos.count = 0;
+    } else if (stage == ENG_RENDER_OVERLAY) {
         for (size_t i = 0; i < visuals->scores.count; i++) {
             draw_score(engine, visuals->scores.data[i], args->width, args->height);
         }
@@ -1077,6 +1696,8 @@ static void visuals_destroy(nmo_engine_t *engine, void *state)
     free(((visuals_t *)state)->filters.data);
     free(((visuals_t *)state)->bars.data);
     free(((visuals_t *)state)->scores.data);
+    free(((visuals_t *)state)->curves.data);
+    free(((visuals_t *)state)->infos.data);
 }
 
 nmo_status_t eng_register_visuals(nmo_engine_t *engine)
