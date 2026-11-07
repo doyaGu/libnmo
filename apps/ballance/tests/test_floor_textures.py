@@ -98,8 +98,13 @@ class FloorTextureTests(unittest.TestCase):
         top = [
             t for t in sampled(10, FLAT_SECTION, FLAT_SECTION) if t.material.startswith('Floor_Top')
         ]
-        uv = [p for t in top for p in t.uvs]
-        self.assertAlmostEqual(max(p[0] for p in uv) - min(p[0] for p in uv), 2)
+        self.assertIn('Floor_Top_Border', {t.material for t in top})
+        for triangle in top:
+            for a, b, ua, ub in zip(
+                triangle.points, triangle.points[1:], triangle.uvs, triangle.uvs[1:]
+            ):
+                if abs(a[0] - b[0]) < 1e-8:
+                    self.assertAlmostEqual(abs(ua[0] - ub[0]) * 5, abs(a[2] - b[2]))
 
 
 if __name__ == '__main__':

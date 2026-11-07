@@ -79,6 +79,9 @@ def sweep(
         else 'Floor_Top_Boderless'
     )
     banded = (profile or adapter) and max(wa, wb) > 5
+    custom = not profile and not adapter
+    if custom:
+        bordered_sweep(mesh, a, b, wa, wb, pa, pb, va, vb, top)
     if banded:
         # The native Profile bitmap carries its brick edge. Stretching one
         # copy over a wider cross-section also stretches those bricks. Keep
@@ -125,7 +128,7 @@ def sweep(
                     mesh.triangle(material if edge else 'Floor_Top_Boderless', top, *triangle)
     for i in range(len(pa) - 1):
         u0, u1 = pa[i][0] + 0.5, pa[i + 1][0] + 0.5
-        if not banded:
+        if not banded and not custom:
             ua = (u0, u1) if profile or adapter else (u0 * wa / 5, u1 * wa / 5)
             ub = (u0, u1) if profile or adapter else (u0 * wb / 5, u1 * wb / 5)
             v0, v1 = (1 - va, 1 - vb) if adapter and pa == FLAT_SECTION else (va, vb)
@@ -173,6 +176,61 @@ def sweep(
                     (low[i + 1], (1, thickness / 5)),
                     (low[i], (0, thickness / 5)),
                 )
+
+
+def bordered_sweep(mesh, a, b, wa, wb, pa, pb, va, vb, top):
+    """Tile custom profiles with physical-width brick bands on both edges.
+
+    A shared three-band parameter follows the moving border boundaries as the
+    width changes. Include every profile knot from both ends so the tessellation
+    retains asymmetric ridges rather than flattening them into the material bands.
+    """
+
+    def boundaries(width):
+        edge = min(0.75 / width, 0.25)
+        return (-0.5, -0.5 + edge, 0.5 - edge, 0.5)
+
+    def coordinate(value, source, destination):
+        for i, (lo, hi) in enumerate(zip(source, source[1:])):
+            if value <= hi:
+                t = (value - lo) / (hi - lo)
+                return destination[i] + t * (destination[i + 1] - destination[i])
+        return destination[-1]
+
+    bands = (0, 1, 2, 3)
+    ba, bb = boundaries(wa), boundaries(wb)
+    knots = sorted(
+        {
+            *bands,
+            *(coordinate(u, ba, bands) for u, _ in pa),
+            *(coordinate(u, bb, bands) for u, _ in pb),
+        }
+    )
+
+    def height(profile, u):
+        return coordinate(u, [p[0] for p in profile], [p[1] for p in profile])
+
+    def corners(ring, width, profile, boundaries, distance, lo, hi):
+        fractions = [coordinate(t, bands, boundaries) for t in (lo, hi)]
+        points = section_points(ring, width, [(u, height(profile, u)) for u in fractions])
+
+        def distance_across(u):
+            length = 0
+            for (left, low), (right, high) in zip(profile, profile[1:]):
+                fraction = max(0, min(1, (u - left) / (right - left)))
+                length += fraction * math.hypot((right - left) * width, high - low)
+            return length
+
+        texture = [distance_across(u) / 5 for u in fractions]
+        if lo >= 2:
+            texture = [distance_across(0.5) / 5 - u for u in texture]
+        return [(point, (u, distance)) for point, u in zip(points, texture)]
+
+    for lo, hi in zip(knots, knots[1:]):
+        ca = corners(a, wa, pa, ba, va, lo, hi)
+        cb = corners(b, wb, pb, bb, vb, lo, hi)
+        material = 'Floor_Top_Border' if hi <= 1 or lo >= 2 else 'Floor_Top_Boderless'
+        mesh.quad(material, top, ca[0], ca[1], cb[1], cb[0])
 
 
 def cross(a, b, c):
