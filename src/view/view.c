@@ -1416,6 +1416,8 @@ static void view_draw_frame(nmo_view_t *view, const nmo_engine_frame_t *frame, i
                        ((frame->render_options & 0x10u) ? GL_DEPTH_BUFFER_BIT : 0u) |
                        ((frame->render_options & 0x40u) ? GL_STENCIL_BUFFER_BIT : 0u);
     if (clear != 0) {
+        glDepthMask(GL_TRUE); /* a clear writes only what the masks let through */
+        glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
         glStencilMask(0xFF);
         glClear(clear);
     }
