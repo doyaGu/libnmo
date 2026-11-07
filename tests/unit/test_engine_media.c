@@ -1,6 +1,7 @@
 #include "engine_fixture.h"
 
 #include "engine/nmo_engine_render.h"
+#include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_animation_schemas.h"
 #include "object/builtin/nmo_material_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
@@ -23,6 +24,13 @@
 #define GUID_PLAY_SOUND_INSTANCE NMO_GUID(0x00283a35, 0x38ef6b48)
 #define GUID_TIME_SETTINGS NMO_GUID(0x060a0f8c, 0x09203b5f)
 #define GUID_TT_SET_MIP_MAPPING NMO_GUID(0x38c34dab, 0x5dd03bdf)
+#define GUID_POSITION_SOUND NMO_GUID(0x4ba42a5b, 0x3ca030dd)
+#define GUID_SET_SOUND_TYPE NMO_GUID(0x7734470d, 0x23b221f8)
+#define GUID_SET_SOUND_RANGE NMO_GUID(0x27f50a7c, 0x0ee91d0e)
+#define GUID_SET_SOUND_CONE_VALUES NMO_GUID(0xabf60a8c, 0x0ff91d0d)
+#define GUID_SET_LISTENER NMO_GUID(0x28cd6341, 0x0cad5793)
+#define GUID_SOUND_MANAGER_SETUP NMO_GUID(0x04c05c6a, 0x6454792b)
+#define GUID_FADE_OUT NMO_GUID(0x1b82338f, 0x5a656975)
 
 static void input_float(engine_fixture_t *f, nmo_object_id_t pin, float value)
 {
@@ -786,6 +794,113 @@ TEST(engine_media, texgen_ref_material_reads_its_struct)
     fixture_end(&f);
 }
 
+/* Blocks run one after the other from the script's start, each on `sound` when targetable */
+static nmo_object_id_t chain_block(engine_fixture_t *f, nmo_guid_t guid, const char *name,
+                                   nmo_object_id_t sound, nmo_object_id_t *previous)
+{
+    nmo_object_id_t id = fixture_block(f, guid, name);
+    if (id == 0) {
+        return 0;
+    }
+    nmo_object_id_t target = fixture_target(f, id);
+    if (target != 0) {
+        fixture_input_int(f, target, (int32_t)sound);
+    }
+    fixture_link(f, *previous != 0 ? BLOCK_OUT(f, *previous, 0) : f->script_in, BLOCK_IN(f, id, 0), 0);
+    *previous = id;
+    return id;
+}
+
+TEST(engine_media, sound_3d_settings_and_the_manager_reach_the_voices)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t sound = create_sound(&f, 1000);
+    nmo_object_id_t holder = fixture_create(&f, NMO_CID_3DENTITY, "Holder");
+    nmo_object_id_t ear = fixture_create(&f, NMO_CID_3DENTITY, "Ear");
+    nmo_wavesound_state_t *state = (nmo_wavesound_state_t *)fixture_state(&f, sound);
+    nmo_3dentity_state_t *entity = (nmo_3dentity_state_t *)fixture_state(&f, holder);
+    ASSERT_TRUE(state != NULL && entity != NULL && ear != 0);
+    state->base.file_name = (char *)"hit.wav";
+    const float world[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 5, 0, 0, 1};
+    memcpy(entity->world_matrix, world, sizeof(world));
+    entity->has_entityndata_chunk = 1;
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t previous = 0;
+    nmo_object_id_t position = chain_block(&f, GUID_POSITION_SOUND, "Position Sound", sound, &previous);
+    nmo_object_id_t type = chain_block(&f, GUID_SET_SOUND_TYPE, "Set Sound Type", sound, &previous);
+    nmo_object_id_t range = chain_block(&f, GUID_SET_SOUND_RANGE, "Set Sound Range", sound, &previous);
+    nmo_object_id_t cone = chain_block(&f, GUID_SET_SOUND_CONE_VALUES, "Set Sound Cone Values", sound, &previous);
+    nmo_object_id_t listener = chain_block(&f, GUID_SET_LISTENER, "Set Listener", sound, &previous);
+    nmo_object_id_t setup = chain_block(&f, GUID_SOUND_MANAGER_SETUP, "Sound Manager Setup", sound, &previous);
+    nmo_object_id_t player = chain_block(&f, GUID_WAVE_PLAYER, "Player", sound, &previous);
+    ASSERT_TRUE(position != 0 && type != 0 && range != 0 && cone != 0 && listener != 0 && setup != 0 &&
+                player != 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, position, 0), (int32_t)holder);
+    const float at[3] = {1.0f, 0.0f, 0.0f};
+    fixture_input_value(&f, BLOCK_PIN(&f, position, 1), at, sizeof(at));
+    fixture_input_int(&f, BLOCK_PIN(&f, type, 0), 2); /* point */
+    input_float(&f, BLOCK_PIN(&f, range, 0), 2.0f);
+    input_float(&f, BLOCK_PIN(&f, range, 1), 50.0f);
+    input_float(&f, BLOCK_PIN(&f, cone, 0), 1.0f);
+    input_float(&f, BLOCK_PIN(&f, cone, 1), 2.0f);
+    input_float(&f, BLOCK_PIN(&f, cone, 2), 0.25f);
+    fixture_input_int(&f, BLOCK_PIN(&f, listener, 0), (int32_t)ear);
+    input_float(&f, BLOCK_PIN(&f, setup, 3), 0.5f); /* Global Gain */
+    input_float(&f, BLOCK_PIN(&f, player, 0), 0.0f); /* no fade in */
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+
+    size_t count = 0;
+    const nmo_engine_voice_t *voices = nmo_engine_voices(f.engine, &count);
+    ASSERT_EQ(1u, count);
+    ASSERT_EQ(2u, voices[0].type);
+    ASSERT_FLOAT_EQ(6.0f, voices[0].world_position[0], 1e-5f); /* Position in the holder's space */
+    ASSERT_FLOAT_EQ(1.0f, voices[0].world_direction[2], 1e-5f);
+    ASSERT_FLOAT_EQ(2.0f, voices[0].min_distance, 0.0f);
+    ASSERT_FLOAT_EQ(50.0f, voices[0].max_distance, 0.0f);
+    ASSERT_TRUE(voices[0].mute_after_max);
+    ASSERT_FLOAT_EQ(57.295776f, voices[0].cone[0], 1e-4f); /* radians made degrees */
+    ASSERT_FLOAT_EQ(0.25f, voices[0].cone[2], 0.0f);
+    ASSERT_FLOAT_EQ(0.5f, voices[0].gain, 1e-6f); /* the global gain */
+    nmo_object_id_t heard_by = 0;
+    float distance_factor = 0.0f;
+    ASSERT_TRUE(nmo_engine_sound_listener(f.engine, &heard_by, &distance_factor, NULL, NULL));
+    ASSERT_EQ(ear, heard_by);
+    ASSERT_FLOAT_EQ(1.0f, distance_factor, 0.0f); /* no Distance Factor given */
+    fixture_end(&f);
+}
+
+TEST(engine_media, fade_out_lowers_the_global_gain_over_its_delay)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t fade = fixture_block(&f, GUID_FADE_OUT, "Fade Out");
+    nmo_object_id_t done = fixture_block(&f, GUID_NOP, "Done");
+    ASSERT_TRUE(fade != 0 && done != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, fade, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, fade, 0), BLOCK_IN(&f, done, 0), 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, fade, 0), 20);
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+
+    float gain = 0.0f;
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    ASSERT_TRUE(nmo_engine_sound_listener(f.engine, NULL, NULL, NULL, &gain));
+    ASSERT_FLOAT_EQ(1.0f, gain, 0.0f);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    ASSERT_TRUE(nmo_engine_sound_listener(f.engine, NULL, NULL, NULL, &gain));
+    ASSERT_FLOAT_EQ(0.5f, gain, 1e-6f);
+    ASSERT_EQ(0u, runs(&f, done));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    ASSERT_TRUE(nmo_engine_sound_listener(f.engine, NULL, NULL, NULL, &gain));
+    ASSERT_FLOAT_EQ(0.0f, gain, 0.0f);
+    ASSERT_EQ(1u, runs(&f, done));
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_media, wave_player_ends_after_the_sound_length);
 REGISTER_TEST(engine_media, voices_follow_the_sound_settings_and_instances);
@@ -800,4 +915,6 @@ REGISTER_TEST(engine_media, play_global_animation_loops_over_its_duration);
 REGISTER_TEST(engine_media, sound_load_gives_the_sound_its_file_length);
 REGISTER_TEST(engine_media, time_settings_bound_and_scale_the_frame_time);
 REGISTER_TEST(engine_media, texgen_ref_material_reads_its_struct);
+    REGISTER_TEST(engine_media, sound_3d_settings_and_the_manager_reach_the_voices);
+    REGISTER_TEST(engine_media, fade_out_lowers_the_global_gain_over_its_delay);
 TEST_MAIN_END()

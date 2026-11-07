@@ -46,6 +46,23 @@ eng_sound_t *eng_sound(nmo_engine_t *engine, nmo_object_id_t id)
     sound->gain = settings ? state->gain : 1.0f;
     sound->pitch = settings && state->pitch > 0.0f ? state->pitch : 1.0f;
     sound->pan = settings ? state->pan : 0.0f;
+    sound->type = settings && (state->state_flags & CK_WAVESOUND_ALLTYPE) != 0
+                      ? state->state_flags & CK_WAVESOUND_ALLTYPE
+                      : CK_WAVESOUND_BACKGROUND;
+    sound->priority = settings ? state->priority : 0.5f;
+    sound->cone[0] = settings ? state->cone_in_angle : 360.0f;
+    sound->cone[1] = settings ? state->cone_out_angle : 360.0f;
+    sound->cone[2] = settings ? state->cone_out_gain : 1.0f;
+    sound->min_distance = settings ? state->min_distance : 1.0f;
+    sound->max_distance = settings ? state->max_distance : 100.0f;
+    sound->mute_after_max = settings && state->distance_behavior != 0;
+    if (settings) {
+        sound->attached = eng_object_ref(engine, id, &state->attached_object);
+        memcpy(sound->place, &state->position, sizeof(sound->place));
+        memcpy(sound->heading, &state->direction, sizeof(sound->heading));
+    } else {
+        sound->heading[2] = 1.0f;
+    }
     sound->last_instance = -1.0;
     /* CKSound's file name, else the one older wave sounds kept */
     if (state != NULL && state->base.file_name != NULL && state->base.file_name[0] != '\0') {
@@ -149,6 +166,65 @@ static const char *eng_sound_file(nmo_engine_t *engine, nmo_object_id_t id)
     return NULL;
 }
 
+eng_sound_manager_t *eng_sound_manager(nmo_engine_t *engine)
+{
+    eng_sound_manager_t *manager = &engine->media.manager;
+    if (!manager->set) {
+        manager->set = true;
+        manager->distance_factor = manager->doppler_factor = manager->global_gain = 1.0f;
+    }
+    return manager;
+}
+
+/* A voice's 3D settings: its sound's, its position and direction in the world */
+static void eng_voice_place(nmo_engine_t *engine, const eng_sound_t *sound, nmo_engine_voice_t *voice)
+{
+    if (engine->media.manager.set) {
+        voice->gain *= engine->media.manager.global_gain;
+    }
+    voice->type = sound->type;
+    voice->priority = sound->priority;
+    memcpy(voice->cone, sound->cone, sizeof(voice->cone));
+    voice->min_distance = sound->min_distance;
+    voice->max_distance = sound->max_distance;
+    voice->mute_after_max = sound->mute_after_max;
+    eng_vector_t position = {sound->place[0], sound->place[1], sound->place[2]};
+    eng_vector_t direction = {sound->heading[0], sound->heading[1], sound->heading[2]};
+    int32_t attached = sound->attached != 0 ? eng_entity_index(engine, sound->attached) : -1;
+    if (attached >= 0) {
+        eng_vector_t local = position;
+        eng_entity_transform(engine, attached, &position, &local, -1);
+        local = direction;
+        eng_entity_transform_vector(engine, attached, &direction, &local, -1, false);
+    }
+    voice->world_position[0] = position.x, voice->world_position[1] = position.y;
+    voice->world_position[2] = position.z;
+    voice->world_direction[0] = direction.x, voice->world_direction[1] = direction.y;
+    voice->world_direction[2] = direction.z;
+}
+
+bool nmo_engine_sound_listener(const nmo_engine_t *engine, nmo_object_id_t *out_listener,
+                               float *out_distance_factor, float *out_doppler_factor, float *out_global_gain)
+{
+    if (engine == NULL) {
+        return false;
+    }
+    const eng_sound_manager_t *manager = &engine->media.manager;
+    if (out_listener != NULL) {
+        *out_listener = manager->listener != 0 ? manager->listener : engine->render.camera;
+    }
+    if (out_distance_factor != NULL) {
+        *out_distance_factor = manager->set ? manager->distance_factor : 1.0f;
+    }
+    if (out_doppler_factor != NULL) {
+        *out_doppler_factor = manager->set ? manager->doppler_factor : 1.0f;
+    }
+    if (out_global_gain != NULL) {
+        *out_global_gain = manager->set ? manager->global_gain : 1.0f;
+    }
+    return true;
+}
+
 const nmo_engine_voice_t *nmo_engine_voices(nmo_engine_t *engine, size_t *out_count)
 {
     *out_count = 0;
@@ -162,9 +238,11 @@ const nmo_engine_voice_t *nmo_engine_voices(nmo_engine_t *engine, size_t *out_co
         if (!sound->playing || sound->file == NULL || !ENG_VEC_PUSH(engine->media.voices, voice)) {
             continue;
         }
-        *voice = (nmo_engine_voice_t){sound->id, sound->id, sound->file, sound->starts,
-                                      sound->position, eng_sound_gain(sound), sound->pitch,
-                                      sound->pan, sound->loop, sound->paused};
+        *voice = (nmo_engine_voice_t){.key = sound->id, .sound = sound->id, .file = sound->file,
+                                      .start = sound->starts, .position = sound->position,
+                                      .gain = eng_sound_gain(sound), .pitch = sound->pitch,
+                                      .pan = sound->pan, .loop = sound->loop, .paused = sound->paused};
+        eng_voice_place(engine, sound, voice);
     }
     for (size_t i = 0; i < engine->media.instances.count; i++) {
         const eng_sound_instance_t *instance = &engine->media.instances.data[i];
@@ -175,9 +253,10 @@ const nmo_engine_voice_t *nmo_engine_voices(nmo_engine_t *engine, size_t *out_co
             continue;
         }
         /* Instance keys count apart from object IDs: from the top of the range down */
-        *voice = (nmo_engine_voice_t){UINT32_MAX - instance->key, instance->sound, file, 0u,
-                                      instance->position, instance->gain,
-                                      sound->pitch, sound->pan, false, false};
+        *voice = (nmo_engine_voice_t){.key = UINT32_MAX - instance->key, .sound = instance->sound,
+                                      .file = file, .position = instance->position,
+                                      .gain = instance->gain, .pitch = sound->pitch, .pan = sound->pan};
+        eng_voice_place(engine, sound, voice);
     }
     *out_count = engine->media.voices.count;
     return engine->media.voices.data;

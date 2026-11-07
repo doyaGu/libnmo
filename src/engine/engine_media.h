@@ -24,6 +24,14 @@ typedef struct eng_sound {
     bool playing;
     bool paused;
     bool loop;
+    /* CKWaveSound's 3D settings */
+    uint32_t type;               /* CK_WAVESOUND_TYPE */
+    float priority;
+    float cone[3];               /* inside and outside angles (degrees), outside gain */
+    float min_distance, max_distance;
+    bool mute_after_max;
+    nmo_object_id_t attached;    /* PositionSound's object; 0 for the world */
+    float place[3], heading[3]; /* PositionSound's position and direction, in the attached object's space */
 } eng_sound_t;
 
 /* An instance of a sound (CKWaveSound::PlayMinion): it plays once, then goes */
@@ -61,7 +69,15 @@ typedef struct eng_texture {
     ENG_VEC(eng_surface_t) levels;
 } eng_texture_t;
 
+/* The sound manager's settings (CKSoundManager::SetSoundSettings) and listener */
+typedef struct eng_sound_manager {
+    bool set;                    /* false: every factor 1 */
+    float distance_factor, doppler_factor, global_gain;
+    nmo_object_id_t listener;    /* 0: the render context's camera */
+} eng_sound_manager_t;
+
 typedef struct eng_media {
+    eng_sound_manager_t manager;
     ENG_VEC(eng_sound_t) sounds;
     ENG_VEC(eng_sound_instance_t) instances;
     uint32_t instance_keys;
@@ -75,6 +91,8 @@ void eng_sounds_begin_frame(nmo_engine_t *engine);
 void eng_free_sounds(nmo_engine_t *engine);
 /* The engine's state of sound `id`, made the first time; NULL when `id` is no CKWaveSound. */
 eng_sound_t *eng_sound(nmo_engine_t *engine, nmo_object_id_t id);
+/* The sound manager's settings, every factor 1 until a block sets one. */
+eng_sound_manager_t *eng_sound_manager(nmo_engine_t *engine);
 /* CKWaveSound::Play: from the start, its gain rising from 0 over `fade_in` ms. */
 void eng_sound_play(nmo_engine_block_t *b, eng_sound_t *sound, bool loop, float fade_in);
 /* CKWaveSound::PlayMinion: an instance at `gain`, unless one started less than `min_delay` ms ago. */
