@@ -14,6 +14,7 @@
 #include "virtools.h"
 
 #include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_mesh_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "type/nmo_object_guids.h"
 #include "type/nmo_type_query.h"
@@ -82,6 +83,17 @@ static void node_drawn(node_list_t *list, int32_t node, bool drawn)
 static visuals_t *visuals_state(nmo_engine_t *engine)
 {
     return (visuals_t *)eng_manager_state(engine, &visuals_manager);
+}
+
+/* CK3dEntity::GetCurrentMesh; 0 for none */
+static nmo_object_id_t entity_current_mesh(nmo_engine_t *engine, nmo_object_id_t id)
+{
+    nmo_object_t *object = id != 0 ? eng_find_object(engine, id) : NULL;
+    const nmo_3dentity_state_t *state =
+        object != NULL ? (const nmo_3dentity_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
+                             engine->types, object, CKPGUID_3DENTITY)
+                       : NULL;
+    return state != NULL ? eng_object_ref(engine, id, &state->current_mesh) : 0;
 }
 
 /* Add or Remove PostSpriteRenderCallBack(PlanarFilterRender, beh) */
@@ -1604,12 +1616,7 @@ static void draw_info(nmo_engine_t *engine, int32_t node)
     if (get_in_int(b, 0, 1) != 0) {
         info_box(engine, b, index, position);
     }
-    nmo_object_t *object = eng_find_object(engine, target);
-    const nmo_3dentity_state_t *state =
-        object != NULL ? (const nmo_3dentity_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
-                             engine->types, object, CKPGUID_3DENTITY)
-                       : NULL;
-    nmo_object_id_t mesh_id = state != NULL ? eng_object_ref(engine, target, &state->current_mesh) : 0;
+    nmo_object_id_t mesh_id = entity_current_mesh(engine, target);
     nmo_engine_mesh_t mesh;
     bool has_mesh = mesh_id != 0 && nmo_engine_mesh(engine, mesh_id, &mesh);
     if (has_mesh && get_in_int(b, 4, 0) != 0) {
@@ -1705,6 +1712,257 @@ static int cb_simple_shadow(blk_t *b, uint32_t message)
     return NMO_ENGINE_BR_OK;
 }
 
+/*
+ * Solid Trail: as it loads, a trail entity is made in the level scene with a
+ * mesh of 41 vertex pairs and 80 faces between them (prelit, transparent; its
+ * material white at alpha 0.1, added (ONE, ONE), two sided, no z write), all
+ * at the two vertices of the owner's mesh farthest apart, in the world. On
+ * puts the pairs back there and shows it, Off hides it. While active, every
+ * Frame Delay frames each pair takes the place of the one before it, closer
+ * to its partner by the Width Attenuation, and the front pair takes the two
+ * vertices where they are now; the colors fade from the Color at the front
+ * to black over the last Length of the pairs, so the added trail fades out.
+ * Its locals are CK's: the trail entity, the two vertex indices, the frame
+ * delay count and whether it is active.
+ */
+#define TRAIL_TRACKS 40
+
+/* The trail's mesh copy, where the vertices move; NULL when there is none */
+static eng_mesh_copy_t *trail_mesh(nmo_engine_t *engine, blk_t *b)
+{
+    nmo_object_id_t mesh = entity_current_mesh(engine, (nmo_object_id_t)get_local_int(b, 0, 0));
+    eng_mesh_copy_t *copy = mesh != 0 ? eng_mesh_copy(engine, mesh) : NULL;
+    nmo_engine_mesh_t desc;
+    if (copy == NULL || !nmo_engine_mesh(engine, mesh, &desc) || desc.vertex_count != 2 + TRAIL_TRACKS * 2) {
+        return NULL;
+    }
+    if (copy->colors == NULL) {
+        copy->colors = (uint32_t *)malloc((size_t)desc.vertex_count * sizeof(uint32_t));
+        if (copy->colors == NULL) {
+            return NULL;
+        }
+        memcpy(copy->colors, desc.colors, (size_t)desc.vertex_count * sizeof(uint32_t));
+    }
+    return copy;
+}
+
+/* The owner's vertices `li` and `lj` in the world; false without its mesh */
+static bool trail_ends(nmo_engine_t *engine, blk_t *b, eng_vector_t *a, eng_vector_t *c)
+{
+    nmo_object_id_t owner = nmo_engine_block_owner(b);
+    int32_t index = eng_entity_index(engine, owner);
+    nmo_engine_mesh_t mesh;
+    int32_t li = get_local_int(b, 1, 0), lj = get_local_int(b, 2, 0);
+    if (index < 0 || !nmo_engine_mesh(engine, entity_current_mesh(engine, owner), &mesh) || li < 0 ||
+        lj < 0 || li >= mesh.vertex_count || lj >= mesh.vertex_count) {
+        return false;
+    }
+    const nmo_vector_t *p = &mesh.vertices[li].position, *q = &mesh.vertices[lj].position;
+    eng_vector_t local_a = {p->x, p->y, p->z}, local_c = {q->x, q->y, q->z};
+    eng_vector_transform(a, &engine->entities.data[index].world, &local_a);
+    eng_vector_transform(c, &engine->entities.data[index].world, &local_c);
+    return true;
+}
+
+/* ResetMesh: every pair at the owner's two vertices */
+static void trail_reset(nmo_engine_t *engine, blk_t *b)
+{
+    eng_mesh_copy_t *copy = trail_mesh(engine, b);
+    eng_vector_t a, c;
+    if (copy == NULL || !trail_ends(engine, b, &a, &c)) {
+        return;
+    }
+    for (int i = 0; i < TRAIL_TRACKS + 1; i++) {
+        copy->vertices[i * 2].position = (nmo_vector_t){a.x, a.y, a.z};
+        copy->vertices[i * 2 + 1].position = (nmo_vector_t){c.x, c.y, c.z};
+    }
+    copy->version = ++engine->render.mesh_version;
+}
+
+/* The trail entity, its mesh and material, as CKM_BEHAVIORLOAD makes them */
+static void trail_create(nmo_engine_t *engine, blk_t *b)
+{
+    nmo_object_id_t owner = nmo_engine_block_owner(b);
+    int32_t index = eng_entity_index(engine, owner);
+    nmo_engine_mesh_t source;
+    if (index < 0 || !nmo_engine_mesh(engine, entity_current_mesh(engine, owner), &source)) {
+        return;
+    }
+    /* The two vertices farthest apart */
+    float max = 0.0f;
+    int32_t li = 0, lj = 0;
+    for (int32_t i = 0; i < source.vertex_count - 1; i++) {
+        for (int32_t j = i; j < source.vertex_count; j++) {
+            const nmo_vector_t *p = &source.vertices[i].position, *q = &source.vertices[j].position;
+            float dx = p->x - q->x, dy = p->y - q->y, dz = p->z - q->z;
+            float mag = dx * dx + dy * dy + dz * dz;
+            if (mag > max) {
+                max = mag;
+                li = i;
+                lj = j;
+            }
+        }
+    }
+    const eng_matrix_t *world = &engine->entities.data[index].world;
+    eng_vector_t first = {0.0f, 0.0f, 0.0f}, second = {0.0f, 0.0f, 0.0f};
+    if (source.vertex_count > 0) {
+        const nmo_vector_t *p = &source.vertices[li].position, *q = &source.vertices[lj].position;
+        eng_vector_t a = {p->x, p->y, p->z}, c = {q->x, q->y, q->z};
+        eng_vector_transform(&first, world, &a);
+        eng_vector_transform(&second, world, &c);
+    }
+    nmo_mesh_state_t *mesh = NULL;
+    nmo_object_id_t mesh_id = eng_create_mesh(engine, "STMesh", 2 + TRAIL_TRACKS * 2, TRAIL_TRACKS * 2, &mesh);
+    if (mesh_id == 0) {
+        return;
+    }
+    float color[4] = {1.0f, 0.0f, 0.0f, 0.0f};
+    nmo_engine_block_get_input_value(b, 2, color, sizeof(color));
+    uint32_t argb = 0xFF000000u | ((uint32_t)((int)(255.0f * color[0]) & 0xFF) << 16) |
+                    ((uint32_t)((int)(255.0f * color[1]) & 0xFF) << 8) | (uint32_t)((int)(255.0f * color[2]) & 0xFF);
+    mesh->flags |= VXMESH_PRELITMODE | VXMESH_FORCETRANSPARENCY;
+    for (int32_t v = 0; v < 2 + TRAIL_TRACKS * 2; v++) {
+        const eng_vector_t *at = (v & 1) ? &second : &first;
+        mesh->vertices[v].position = (nmo_vector_t){at->x, at->y, at->z};
+        mesh->vertex_colors[v] = argb;
+        mesh->vertex_specular[v] = 0;
+        mesh->vertices[v].uv.x = (float)(v & 1);
+        mesh->vertices[v].uv.y = v < 2 ? 0.0f : (float)(((v - 2) / 2 / 2) % 2);
+    }
+    for (int32_t i = 0; i < TRAIL_TRACKS; i++) {
+        const uint16_t faces[2][3] = {{(uint16_t)(i * 2), (uint16_t)((i + 1) * 2), (uint16_t)(i * 2 + 1)},
+                                      {(uint16_t)((i + 1) * 2), (uint16_t)((i + 1) * 2 + 1), (uint16_t)(i * 2 + 1)}};
+        memcpy(&mesh->face_vertex_indices[i * 6], faces, sizeof(faces));
+    }
+    /* BuildFaceNormals */
+    for (int32_t f = 0; f < TRAIL_TRACKS * 2; f++) {
+        const uint16_t *k = &mesh->face_vertex_indices[f * 3];
+        eng_vector_t p0 = {mesh->vertices[k[0]].position.x, mesh->vertices[k[0]].position.y, mesh->vertices[k[0]].position.z};
+        eng_vector_t p1 = {mesh->vertices[k[1]].position.x, mesh->vertices[k[1]].position.y, mesh->vertices[k[1]].position.z};
+        eng_vector_t p2 = {mesh->vertices[k[2]].position.x, mesh->vertices[k[2]].position.y, mesh->vertices[k[2]].position.z};
+        eng_vector_t n = vec_cross_normalized(vec_sub(p1, p0), vec_sub(p2, p0));
+        mesh->faces[f].normal = (nmo_vector_t){n.x, n.y, n.z};
+    }
+    nmo_object_id_t material_id = eng_create_object(engine, NMO_CID_MATERIAL, "STMaterial");
+    eng_material_t *material = material_id != 0 ? eng_material(engine, material_id) : NULL;
+    if (material == NULL && material_id != 0) {
+        material = eng_material_new(engine, material_id);
+    }
+    if (material != NULL) {
+        const float diffuse[4] = {1.0f, 1.0f, 1.0f, 0.1f};
+        memcpy(material->desc.diffuse, diffuse, sizeof(diffuse));
+        material->desc.source_blend = VXBLEND_ONE;
+        material->desc.dest_blend = VXBLEND_ONE;
+        material->desc.alpha_blend = true;
+        material->desc.z_write = false;
+        material->desc.two_sided = true;
+        material->desc.texture = 0;
+        eng_mesh_apply_material(engine, mesh_id, material_id);
+    }
+    nmo_object_id_t entity = eng_create_object(engine, NMO_CID_3DENTITY, "STEntity");
+    if (entity == 0) {
+        return;
+    }
+    eng_entity_set_current_mesh(engine, entity, mesh_id);
+    set_local_int(b, 0, (int32_t)entity);
+    set_local_int(b, 1, li);
+    set_local_int(b, 2, lj);
+    set_local_int(b, 4, 0);
+}
+
+static int bb_solid_trail(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t entity = (nmo_object_id_t)get_local_int(b, 0, 0);
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        eng_show(engine, entity, 0);
+        set_local_int(b, 4, 0);
+        return NMO_ENGINE_BR_OK;
+    }
+    if (IN_ACTIVE(b, 0)) {
+        trail_reset(engine, b);
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+        eng_show(engine, entity, 1);
+        set_local_int(b, 4, 1);
+    }
+    int32_t count = get_local_int(b, 3, 0);
+    if (count != 0) {
+        set_local_int(b, 3, count - 1);
+        return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+    }
+    int32_t delay = get_in_int(b, 3, 1);
+    set_local_int(b, 3, (delay != 0 ? delay : 1) - 1);
+    float width = get_in_float(b, 0, 0.02f), length = get_in_float(b, 1, 0.9f);
+    float color[4] = {1.0f, 0.0f, 0.0f, 0.0f};
+    nmo_engine_block_get_input_value(b, 2, color, sizeof(color));
+    eng_mesh_copy_t *copy = trail_mesh(engine, b);
+    eng_vector_t a, c;
+    if (copy == NULL || !trail_ends(engine, b, &a, &c)) {
+        return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+    }
+    nmo_object_id_t material = nmo_engine_mesh_material(engine, copy->mesh, 0);
+    eng_material_t *trail_material = material != 0 ? eng_material(engine, material) : NULL;
+    if (trail_material != NULL) {
+        trail_material->desc.texture = nmo_engine_block_get_input_object(b, 4);
+    }
+    float la = 0.0f;
+    for (int i = TRAIL_TRACKS; i > 0; i--) {
+        nmo_vector_t *second = &copy->vertices[(i - 1) * 2 + 1].position;
+        nmo_vector_t *first = &copy->vertices[(i - 1) * 2].position;
+        nmo_vector_t fts = {(second->x - first->x) * width, (second->y - first->y) * width,
+                            (second->z - first->z) * width};
+        copy->vertices[i * 2].position = (nmo_vector_t){first->x + fts.x, first->y + fts.y, first->z + fts.z};
+        copy->vertices[i * 2 + 1].position =
+            (nmo_vector_t){second->x - fts.x, second->y - fts.y, second->z - fts.z};
+        const float faded[4] = {color[0] * la, color[1] * la, color[2] * la, 1.0f};
+        copy->colors[i * 2] = copy->colors[i * 2 + 1] = rgbaf_to_color(faded);
+        if ((float)i < (float)TRAIL_TRACKS * length) {
+            la += 1.0f / ((float)TRAIL_TRACKS * length);
+        }
+    }
+    const float front[4] = {color[0], color[1], color[2], 1.0f};
+    copy->vertices[0].position = (nmo_vector_t){a.x, a.y, a.z};
+    copy->vertices[1].position = (nmo_vector_t){c.x, c.y, c.z};
+    copy->colors[0] = copy->colors[1] = rgbaf_to_color(front);
+    copy->version = ++engine->render.mesh_version;
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+static int cb_solid_trail(blk_t *b, uint32_t message)
+{
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t entity = (nmo_object_id_t)get_local_int(b, 0, 0);
+    switch (message) {
+    case NMO_ENGINE_MSG_LOAD:
+        trail_create(engine, b);
+        break;
+    case NMO_ENGINE_MSG_PAUSE:
+        eng_show(engine, entity, 0);
+        break;
+    case NMO_ENGINE_MSG_RESUME:
+    case NMO_ENGINE_MSG_ACTIVATESCRIPT:
+        if (get_local_int(b, 4, 0) != 0) {
+            eng_show(engine, entity, 1);
+        }
+        trail_reset(engine, b);
+        break;
+    case NMO_ENGINE_MSG_RESET:
+        trail_reset(engine, b);
+        break;
+    case NMO_ENGINE_MSG_DEACTIVATESCRIPT:
+        if (get_local_int(b, 4, 0) != 0) {
+            eng_show(engine, entity, 0);
+        }
+        break;
+    default:
+        break;
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_visuals_blocks[] = {
     {NMO_GUID_INIT(0x00cd320b, 0x32ed010b), "Planar Filter", bb_planar_filter, cb_planar_filter,
      NULL},
@@ -1740,6 +1998,7 @@ static const nmo_engine_block_desc_t eng_visuals_blocks[] = {
     {NMO_GUID_INIT(0x17cb4c57, 0x00f525fb), "Show Object Information", bb_show_object_information,
      NULL, NULL},
     {NMO_GUID_INIT(0x79b95ed0, 0x3e4a01f5), "Simple Shadow", bb_simple_shadow, cb_simple_shadow, NULL},
+    {NMO_GUID_INIT(0xd00d010a, 0xe00d010a), "Solid Trail", bb_solid_trail, cb_solid_trail, NULL},
 };
 
 /* The render callbacks, at the stages the render context calls them */

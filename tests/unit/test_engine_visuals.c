@@ -32,6 +32,7 @@
 #define GUID_RENDER_CURVE NMO_GUID(0x215c7794, 0x7ac40f5d)
 #define GUID_SHOW_OBJECT_INFORMATION NMO_GUID(0x17cb4c57, 0x00f525fb)
 #define GUID_SIMPLE_SHADOW NMO_GUID(0x79b95ed0, 0x3e4a01f5)
+#define GUID_SOLID_TRAIL NMO_GUID(0xd00d010a, 0xe00d010a)
 
 /* A block acting on `object` (0: no target), run when the script starts */
 static nmo_object_id_t block_on(engine_fixture_t *f, nmo_guid_t guid, const char *name, nmo_object_id_t object)
@@ -588,6 +589,84 @@ TEST(engine_visuals, simple_shadow_multiplies_the_floors_under_its_owner_until_o
     fixture_end(&f);
 }
 
+static void trail_pair(const nmo_engine_mesh_t *mesh, int pair, float ax, float ay, float az, float bx, float by,
+                       float bz)
+{
+    const nmo_vector_t *a = &mesh->vertices[pair * 2].position, *b = &mesh->vertices[pair * 2 + 1].position;
+    ASSERT_FLOAT_EQ(ax, a->x, 1e-5f);
+    ASSERT_FLOAT_EQ(ay, a->y, 1e-5f);
+    ASSERT_FLOAT_EQ(az, a->z, 1e-5f);
+    ASSERT_FLOAT_EQ(bx, b->x, 1e-5f);
+    ASSERT_FLOAT_EQ(by, b->y, 1e-5f);
+    ASSERT_FLOAT_EQ(bz, b->z, 1e-5f);
+}
+
+TEST(engine_visuals, solid_trail_follows_the_owners_farthest_vertices_until_off)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t material = fixture_create(&f, NMO_CID_MATERIAL, "Material");
+    nmo_object_id_t mesh = 0;
+    nmo_object_id_t object = face_object(&f, "Face", material, &mesh);
+    ASSERT_TRUE(material != 0 && object != 0);
+    ((nmo_3dentity_state_t *)fixture_state(&f, object))->world_matrix[12] = 10.0f;
+    f.owner_id = object;
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t trail = block_on(&f, GUID_SOLID_TRAIL, "Solid Trail", 0);
+    ASSERT_TRUE(trail != 0);
+    const float width = 0.25f, length = 1.0f, white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+    fixture_input_value(&f, BLOCK_PIN(&f, trail, 0), &width, sizeof(width));
+    fixture_input_value(&f, BLOCK_PIN(&f, trail, 1), &length, sizeof(length));
+    fixture_input_value(&f, BLOCK_PIN(&f, trail, 2), white, sizeof(white));
+    fixture_link(&f, BLOCK_OUT(&f, trail, 0), BLOCK_IN(&f, trail, 1), 2); /* Off two frames on */
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    nmo_object_id_t entity = eng_object_named(f.engine, "STEntity", 0);
+    ASSERT_TRUE(entity != 0);
+
+    /* On: the front pair at the two vertices farthest apart, (1,0,0) and (0,1,0), the others a
+       quarter closer to each other */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    int at = mesh_draw(&frame, entity);
+    ASSERT_TRUE(at >= 0);
+    ASSERT_TRUE(frame.draws[at].transparent);
+    nmo_engine_mesh_t desc;
+    ASSERT_TRUE(nmo_engine_mesh(f.engine, frame.draws[at].mesh, &desc));
+    ASSERT_EQ(82, desc.vertex_count);
+    ASSERT_EQ(80, desc.face_count);
+    ASSERT_TRUE(desc.prelit);
+    trail_pair(&desc, 0, 11, 0, 0, 10, 1, 0);
+    trail_pair(&desc, 1, 10.75f, 0.25f, 0, 10.25f, 0.75f, 0);
+    trail_pair(&desc, 40, 10.75f, 0.25f, 0, 10.25f, 0.75f, 0);
+    ASSERT_EQ(0xFFFFFFFFu, desc.colors[0]);
+    ASSERT_EQ(0xFFF2F2F2u, desc.colors[2]);  /* 38/40 of the color */
+    ASSERT_EQ(0xFF060606u, desc.colors[76]); /* 1/40 */
+    ASSERT_EQ(0xFF000000u, desc.colors[80]);
+    nmo_engine_material_t shade;
+    ASSERT_TRUE(nmo_engine_material(f.engine, nmo_engine_mesh_material(f.engine, frame.draws[at].mesh, 0), &shade));
+    ASSERT_TRUE(shade.alpha_blend && shade.two_sided && !shade.z_write);
+    ASSERT_EQ(VXBLEND_ONE, shade.source_blend);
+    ASSERT_EQ(VXBLEND_ONE, shade.dest_blend);
+
+    /* Moved 1 along Z: the front pair follows, the rest step back behind it */
+    eng_vector_t step = {0.0f, 0.0f, 1.0f};
+    eng_entity_translate(f.engine, eng_entity_index(f.engine, object), &step, -1, false);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    ASSERT_TRUE(nmo_engine_mesh(f.engine, frame.draws[at].mesh, &desc));
+    trail_pair(&desc, 0, 11, 0, 1, 10, 1, 1);
+    trail_pair(&desc, 1, 10.75f, 0.25f, 0, 10.25f, 0.75f, 0);
+    trail_pair(&desc, 2, 10.625f, 0.375f, 0, 10.375f, 0.625f, 0);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f)); /* Off */
+    ASSERT_FALSE(nmo_engine_object_is_visible(f.engine, entity));
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_EQ(-1, mesh_draw(&frame, entity));
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_visuals, blink_cycles_the_target_and_fps_reports_the_rate);
     REGISTER_TEST(engine_visuals, z_buffer_and_render_order_shape_the_mesh_draws);
@@ -598,4 +677,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_visuals, render_curve_line_mode_draws_the_line_mesh);
     REGISTER_TEST(engine_visuals, show_object_information_draws_box_and_face_normals_after_the_scene);
     REGISTER_TEST(engine_visuals, simple_shadow_multiplies_the_floors_under_its_owner_until_off);
+    REGISTER_TEST(engine_visuals, solid_trail_follows_the_owners_farthest_vertices_until_off);
 TEST_MAIN_END()
