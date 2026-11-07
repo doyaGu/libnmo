@@ -4,6 +4,7 @@
  */
 
 #include "script_edit_internal.h"
+#include "behavior/nmo_behavior_view.h"
 
 #include "object/nmo_manager_guids.h"
 #include "type/nmo_param_guids.h"
@@ -33,6 +34,12 @@ static nmo_status_t script_edit_set_default_value(nmo_script_edit_tx_t *tx,
         /* CKQuaternionStringFunc fills parsed components over constructor identity. */
         nmo_quaternion_t value = {0,0,0,1};
         (void)sscanf(text,"%f,%f,%f,%f",&value.x,&value.y,&value.z,&value.w);
+        return nmo_object_edit_set_parameter_bytes_ex(tx->edit,id,(const uint8_t *)&value,sizeof(value),NULL);
+    }
+    if (nmo_guid_equals(type,CKPGUID_KEY)) {
+        /* CKKeyStringFunc asks the input manager for the key of that name: 0 for a name it
+           does not know ("Up Arrow", "PREVIOUS"), which blocks read as their default key. */
+        uint32_t value = nmo_behavior_keyboard_key_from_name(text);
         return nmo_object_edit_set_parameter_bytes_ex(tx->edit,id,(const uint8_t *)&value,sizeof(value),NULL);
     }
     if (nmo_guid_equals(type,CKPGUID_PERCENTAGE)) {
