@@ -43,6 +43,7 @@
 #define GUID_PLANAR_REFLECTION NMO_GUID(0x44fe1b3c, 0x29ba3445)
 #define GUID_PLANAR_SHADOW NMO_GUID(0x731072fa, 0x56cf087f)
 #define GUID_SHADOW_CASTER NMO_GUID(0x0718360b, 0x71e5002f)
+#define GUID_TEXTURE_RENDER NMO_GUID(0x67fc7084, 0x141154f7)
 
 /* A block acting on `object` (0: no target), run when the script starts */
 static nmo_object_id_t block_on(engine_fixture_t *f, nmo_guid_t guid, const char *name, nmo_object_id_t object)
@@ -1102,8 +1103,8 @@ TEST(engine_visuals, planar_shadow_flattens_shadow_objects_on_the_plane_from_the
     fixture_end(&f);
 }
 
-/* Texture Render's pass, asked for as the block does (the edit layer cannot add Texture Render
-   itself: it rejects the prototype's unnamed parameters) */
+/* A pass like Texture Render's, asked for straight from a manager: the engine's side of it,
+   without the block */
 static nmo_object_id_t pass_texture;
 
 static void pass_render(nmo_engine_t *engine, void *state, eng_render_stage_t stage, const eng_render_args_t *args)
@@ -1163,6 +1164,56 @@ TEST(engine_visuals, a_scene_pass_draws_the_scene_into_a_texture_before_the_fram
     ASSERT_TRUE(pass->frame.draws + pass->frame.draw_count <= frame.draws);
     ASSERT_TRUE(pass->frame.lights == frame.lights && pass->frame.vertices == frame.vertices);
 
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_EQ(0, frame.pass_count);
+    fixture_end(&f);
+}
+
+TEST(engine_visuals, texture_render_asks_for_a_pass_into_its_target_once_a_run)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t material = fixture_create(&f, NMO_CID_MATERIAL, "Material");
+    nmo_object_id_t texture = fixture_create(&f, NMO_CID_TEXTURE, "Target");
+    nmo_object_id_t mesh = 0;
+    nmo_object_id_t object = face_object(&f, "Face", material, &mesh);
+    ASSERT_TRUE(material != 0 && texture != 0 && object != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t render = block_on(&f, GUID_TEXTURE_RENDER, "Texture Render", texture);
+    ASSERT_TRUE(render != 0);
+    const float red[4] = {1.0f, 0.0f, 0.0f, 1.0f};
+    fixture_input_value(&f, BLOCK_PIN(&f, render, 1), red, sizeof(red));
+    fixture_commit(&f, NULL);
+    /* Render Options (after the three unnamed None slots) as CK reads the prototype's default:
+       its "Clear Stencil" names no flag (the type has "Clear Stencil Buffer") and is skipped */
+    const int32_t options = CK_RENDER_USECAMERARATIO | CK_RENDER_CLEARZ | CK_RENDER_CLEARBACK |
+                            CK_RENDER_CLEARVIEWPORT;
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, local_of(&f, render, 3), &options, sizeof(options)));
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_TRUE(eng_texture_create(f.engine, eng_texture(f.engine, texture), 64, 32, 0));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+
+    /* No Camera (and none attached): the identity view, the default options' 4:3 camera ratio
+       centered in the 64x32 target, the Background Color behind the scene */
+    ASSERT_EQ(1, frame.pass_count);
+    const nmo_engine_pass_t *pass = &frame.passes[0];
+    ASSERT_EQ(texture, pass->texture);
+    ASSERT_EQ(0, pass->slot);
+    ASSERT_EQ(64, pass->width);
+    ASSERT_EQ(32, pass->height);
+    ASSERT_EQ(11, pass->viewport[0]);
+    ASSERT_EQ(0, pass->viewport[1]);
+    ASSERT_EQ(42, pass->viewport[2]);
+    ASSERT_EQ(32, pass->viewport[3]);
+    ASSERT_EQ(0xFFFF0000u, pass->frame.background_color);
+    ASSERT_TRUE(mesh_draw(&pass->frame, object) >= 0);
+    ASSERT_TRUE(pass->frame.draws + pass->frame.draw_count <= frame.draws);
+
+    /* It ran once (its In went off): no pass the next frame */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
     ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
     ASSERT_EQ(0, frame.pass_count);
     fixture_end(&f);
@@ -1287,5 +1338,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_visuals, planar_reflection_mirrors_reflected_objects_inside_the_plane);
     REGISTER_TEST(engine_visuals, planar_shadow_flattens_shadow_objects_on_the_plane_from_the_light);
     REGISTER_TEST(engine_visuals, a_scene_pass_draws_the_scene_into_a_texture_before_the_frame);
+    REGISTER_TEST(engine_visuals, texture_render_asks_for_a_pass_into_its_target_once_a_run);
     REGISTER_TEST(engine_visuals, shadow_caster_draws_its_shadow_texture_and_projects_it_on_receivers);
 TEST_MAIN_END()
