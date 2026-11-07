@@ -50,4 +50,7 @@ nmo_status_t eng_register_curve_properties(nmo_engine_t *engine);
 nmo_status_t eng_register_mimic(nmo_engine_t *engine);
 nmo_status_t eng_register_collisions(nmo_engine_t *engine);
 
+/* Movie Player (Materials) and Sprite Movie Player (Visuals): the target's slots over time */
+int virtools_movie_player(nmo_engine_block_t *b);
+
 #endif /* NMO_BB_VIRTOOLS_INTERNAL_H */

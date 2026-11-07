@@ -47,9 +47,10 @@ static int bb_change_texture_video_format(blk_t *b)
 /*
  * Movie Player (MoviePlayer): the target texture's slots from Starting Slot
  * to Ending Slot (all of them when both are 0) over Duration, Synchro Out at
- * each new slot, One Loop Played at the end of each pass.
+ * each new slot, One Loop Played at the end of each pass. Visuals' Sprite
+ * Movie Player does the same with a sprite's.
  */
-static int bb_movie_player(blk_t *b)
+int virtools_movie_player(blk_t *b)
 {
     if (IN_ACTIVE(b, 1)) {
         IN_OFF(b, 1);
@@ -102,7 +103,7 @@ static int bb_movie_player(blk_t *b)
     int32_t new_slot = (int32_t)(time * rate);
     if (new_slot != old_slot) {
         int32_t slot = start <= end ? start + new_slot : start - 1 - new_slot;
-        texture->current_slot = slot;
+        eng_texture_set_slot(texture, slot);
         nmo_engine_block_set_output_value(b, 0, &slot, sizeof(slot));
         OUT_ON(b, 0);
     }
@@ -260,25 +261,9 @@ static int bb_set_current_slot(blk_t *b)
     if (texture == NULL) {
         return NMO_ENGINE_BR_OWNERERROR;
     }
-    int32_t slot = get_in_int(b, 0, 0);
-    if (slot >= 0 && slot < texture->slot_count) {
-        texture->current_slot = slot;
-    }
+    eng_texture_set_slot(texture, get_in_int(b, 0, 0));
     eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, texture->id, 0);
     return NMO_ENGINE_BR_OK;
-}
-
-/*
- * RGBAFTOCOLOR(r, g, b, a): ARGB, each channel scaled to its place and
- * rounded to the nearest (even), then masked; alpha unmasked.
- */
-static uint32_t color_argb(const float c[4])
-{
-    uint32_t r = (uint32_t)(int64_t)rint((double)c[0] * 16711680.0);
-    uint32_t g = (uint32_t)(int64_t)rint((double)c[1] * 65280.0);
-    uint32_t b = (uint32_t)(int64_t)rint((double)c[2] * 255.0);
-    uint32_t a = (uint32_t)(int64_t)rint((double)c[3] * 255.0);
-    return (g & 0xFF00u) | (r & 0xFF0000u) | (b & 0xFFu) | (a << 24);
 }
 
 /* RGBAFTOCOLOR(const VxColor *): ARGB, each channel times 255 truncated and kept in [0, 255] */
@@ -326,7 +311,7 @@ static int bb_set_prelit_color(blk_t *b)
     if (mesh->colors == NULL && desc.vertex_count > 0) {
         mesh->colors = (uint32_t *)malloc((size_t)desc.vertex_count * sizeof(uint32_t));
     }
-    uint32_t argb = color_argb(color);
+    uint32_t argb = rgbaf_to_color(color);
     for (int32_t v = 0; mesh->colors != NULL && v < desc.vertex_count; v++) {
         mesh->colors[v] = argb;
     }
@@ -499,7 +484,7 @@ static int bb_set_color_key(blk_t *b)
     }
     float color[4] = {0.0f, 0.0f, 0.0f, 1.0f};
     nmo_engine_block_get_input_value(b, 0, color, sizeof(color));
-    texture->transparent_color = color_argb(color);
+    texture->transparent_color = rgbaf_to_color(color);
     texture->transparent = get_in_int(b, 1, 1) != 0;
     eng_texture_changed(b->engine, texture->id);
     IN_OFF(b, 0);
@@ -1382,7 +1367,7 @@ static int bb_screen_mapping(blk_t *b)
 static const nmo_engine_block_desc_t eng_materials_blocks[] = {
     {NMO_GUID_INIT(0xf56d92ef, 0x41eb20c1), "Change Texture Video Format",
      bb_change_texture_video_format, NULL, NULL},
-    {NMO_GUID_INIT(0x778d16d4, 0x1dd60060), "Movie Player", bb_movie_player, NULL, NULL},
+    {NMO_GUID_INIT(0x778d16d4, 0x1dd60060), "Movie Player", virtools_movie_player, NULL, NULL},
     {NMO_GUID_INIT(0xe1e1e1e1, 0x1e1e1e1e), "Set Diffuse", bb_set_diffuse, NULL, NULL},
     {NMO_GUID_INIT(0xd1d1d1d1, 0x30303030), "Set Emissive", bb_set_emissive, NULL, NULL},
     {NMO_GUID_INIT(0xeb123eb5, 0x5be321be), "Set Texture", bb_set_texture, NULL, NULL},

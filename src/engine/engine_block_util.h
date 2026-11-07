@@ -13,6 +13,8 @@
 
 #include "engine_internal.h"
 
+#include <math.h>
+
 typedef nmo_engine_block_t blk_t;
 
 #define IN_ACTIVE(b, i) nmo_engine_block_is_input_active((b), (i))
@@ -31,6 +33,19 @@ static inline float get_in_float(blk_t *b, int pos, float fallback)
     float value = fallback;
     nmo_engine_block_get_input_value(b, pos, &value, sizeof(value));
     return value;
+}
+
+/*
+ * RGBAFTOCOLOR(r, g, b, a): ARGB, each channel scaled to its place and
+ * rounded to the nearest (even), then masked; alpha unmasked.
+ */
+static inline uint32_t rgbaf_to_color(const float c[4])
+{
+    uint32_t r = (uint32_t)(int64_t)rint((double)c[0] * 16711680.0);
+    uint32_t g = (uint32_t)(int64_t)rint((double)c[1] * 65280.0);
+    uint32_t b = (uint32_t)(int64_t)rint((double)c[2] * 255.0);
+    uint32_t a = (uint32_t)(int64_t)rint((double)c[3] * 255.0);
+    return (g & 0xFF00u) | (r & 0xFF0000u) | (b & 0xFFu) | (a << 24);
 }
 
 static inline eng_vector_t get_in_vector(blk_t *b, int pos, float x, float y, float z)

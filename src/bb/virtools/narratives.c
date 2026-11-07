@@ -114,6 +114,49 @@ static int bb_texture_load(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/*
+ * sprite Load (SpriteLoader, not in Ballance's Narratives.dll; ported from
+ * the SDK's): the image file into a slot of the target sprite
+ * (CKSprite::LoadImage), which takes the image's size, and on slot 0 shows
+ * the whole of it (its source rect). Error when the file is not there or
+ * cannot be read as an image.
+ */
+static int bb_sprite_load(blk_t *b)
+{
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    eng_texture_t *sprite = target != 0 && eng_object_class(b->engine, target) == NMO_CID_SPRITE
+                                ? eng_texture(b->engine, target)
+                                : NULL;
+    if (sprite == NULL) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    if (!IN_ACTIVE(b, 0)) {
+        return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+    }
+    IN_OFF(b, 0);
+    size_t size = 0;
+    const char *name = (const char *)nmo_engine_block_input_data(b, 0, &size);
+    int32_t slot = get_in_int(b, 1, 0);
+    const eng_surface_t *image = NULL;
+    if (name != NULL && size > 1 && memchr(name, '\0', size) != NULL && name[0] != '\0' && slot >= 0 &&
+        !sprite->movie && eng_texture_load(b->engine, sprite, name, slot)) {
+        image = eng_texture_surface(b->engine, sprite, slot);
+    }
+    if (image == NULL) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    float width = (float)image->width, height = (float)image->height;
+    eng_2d_set_size(b->engine, target, width, height, false, false);
+    eng_2d_t *entity = eng_2d_entity(b->engine, target);
+    if (slot == 0 && entity != NULL) {
+        entity->source = (nmo_rect_t){0.0f, 0.0f, width, height};
+    }
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
 /* Activate `script`, and with `awake` its owner when it is not active in the scene. */
 static void activate_script(nmo_engine_t *engine, nmo_object_id_t script, bool reset, bool awake)
 {
@@ -796,6 +839,7 @@ static int bb_launch_scene(blk_t *b)
 static const nmo_engine_block_desc_t eng_narratives_blocks[] = {
     {NMO_GUID_INIT(0x02bc537c, 0x147c22e0), "Sound Load", bb_sound_load, NULL, NULL},
     {NMO_GUID_INIT(0x00e85ab1, 0x312a731c), "Texture Load", bb_texture_load, NULL, NULL},
+    {NMO_GUID_INIT(0x00e85ae1, 0x317a771c), "sprite Load", bb_sprite_load, NULL, NULL},
     {NMO_GUID_INIT(0x4c7e7bc3, 0x0b693155), "Activate Script", bb_activate_script, NULL, NULL},
     {NMO_GUID_INIT(0x14367c05, 0x635b24f9), "Deactivate Script", bb_deactivate_script, NULL, NULL},
     {NMO_GUID_INIT(0x706c5a40, 0x5bb31a0b), "Execute Script", bb_execute_script, NULL, NULL},

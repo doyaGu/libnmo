@@ -69,16 +69,6 @@ static int bb_set_fog(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
-/* RGBAFTOCOLOR(r, g, b, a): each channel scaled to its place and rounded (half to even), masked */
-static uint32_t rgba_to_color(const float c[4])
-{
-    uint32_t r = (uint32_t)(int64_t)rint((double)c[0] * 16711680.0);
-    uint32_t g = (uint32_t)(int64_t)rint((double)c[1] * 65280.0);
-    uint32_t bl = (uint32_t)(int64_t)rint((double)c[2] * 255.0);
-    uint32_t a = (uint32_t)(int64_t)rint((double)c[3] * 255.0);
-    return (g & 0xFF00u) | (r & 0xFF0000u) | (bl & 0xFFu) | (a << 24);
-}
-
 /* Set Background Image: the texture of the render context's background material */
 static int bb_set_background_image(blk_t *b)
 {
@@ -116,7 +106,7 @@ static int bb_set_ambient_light_color(blk_t *b)
     float color[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     nmo_engine_block_get_input_value(b, 0, color, sizeof(color));
     color[3] = 1.0f;
-    b->engine->render.ambient_light = rgba_to_color(color);
+    b->engine->render.ambient_light = rgbaf_to_color(color);
     eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, 0, 0);
     return NMO_ENGINE_BR_OK;
 }
@@ -298,7 +288,7 @@ static void sky_colors(blk_t *b, sky_cube_t *cube, int input)
 {
     float color[4] = {1.0f, 1.0f, 1.0f, 0.5f};
     nmo_engine_block_get_input_value(b, input, color, sizeof(color));
-    uint32_t argb = rgba_to_color(color);
+    uint32_t argb = rgbaf_to_color(color);
     eng_mesh_t *mesh = eng_render_mesh(b->engine, cube->mesh);
     for (int32_t v = 0; mesh != NULL && mesh->colors != NULL && v < mesh->vertex_count; v++) {
         mesh->colors[v] = argb;
