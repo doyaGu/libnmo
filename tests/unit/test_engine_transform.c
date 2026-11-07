@@ -4,6 +4,7 @@
 
 #include "engine/nmo_engine_render.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_camera_schemas.h"
 #include "object/builtin/nmo_character_schemas.h"
 #include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
@@ -28,6 +29,11 @@
 #define GUID_TT_EXTRA NMO_GUID(0x36106bd9, 0x51813906)
 #define GUID_RAY_INTERSECTION NMO_GUID(0x671e4a87, 0x383b2912)
 #define GUID_BOX_BOX_INTERSECTION NMO_GUID(0x64154401, 0x76cf37af)
+#define GUID_SPHERE_SPHERE NMO_GUID(0x198531f9, 0x60f66c57)
+#define GUID_BB_Y_OVERLAPPING NMO_GUID(0x01ad010b, 0x01bd010b)
+#define GUID_FRUSTUM_OBJECT NMO_GUID(0x4d6075e1, 0x2dda272e)
+#define GUID_BOX_FACE NMO_GUID(0x0f1c5480, 0x04a811cb)
+#define GUID_FACE_FACE NMO_GUID(0x11426a61, 0x1a815584)
 #define GUID_PROXIMITY_VOLUME NMO_GUID(0x38571b61, 0x64cd2174)
 #define GUID_TEXTURE_SINE NMO_GUID(0x009c1208, 0x3a8d779e)
 #define GUID_CHARACTER_NEAREST NMO_GUID(0x4321abcd, 0x0eeaabdd)
@@ -928,6 +934,7 @@ static nmo_object_id_t cube_object(engine_fixture_t *f, const char *name, float 
             (nmo_vector_t){(i & 1) ? 0.5f : -0.5f, (i & 2) ? 0.5f : -0.5f, (i & 4) ? 0.5f : -0.5f};
     }
     state->vertex_count = 8;
+    nmo_mesh_update_bounding_volumes(state);
     entity->current_mesh = nmo_ref_from_id(mesh);
     return object;
 }
@@ -1088,6 +1095,115 @@ TEST(engine_transform, texture_sine_runs_its_clock_and_checks_the_channel)
     fixture_end(&f);
 }
 
+/* A 3D object at (x, y, z) whose mesh is one triangle */
+static nmo_object_id_t triangle_object(engine_fixture_t *f, const char *name, const float v[9], float x, float y,
+                                       float z)
+{
+    nmo_object_id_t object = fixture_create(f, NMO_CID_3DOBJECT, name);
+    nmo_object_id_t mesh = fixture_create(f, NMO_CID_MESH, name);
+    nmo_3dentity_state_t *entity = (nmo_3dentity_state_t *)fixture_state(f, object);
+    nmo_mesh_state_t *state = (nmo_mesh_state_t *)fixture_state(f, mesh);
+    nmo_arena_t *arena = nmo_session_get_arena(f->session);
+    if (place_entity(f, object, x, y, z, 0) == 0 || entity == NULL || state == NULL) {
+        return 0;
+    }
+    state->vertices = (nmo_vertex_t *)nmo_arena_alloc(arena, 3u * sizeof(nmo_vertex_t), _Alignof(nmo_vertex_t));
+    state->faces = (nmo_face_t *)nmo_arena_alloc(arena, sizeof(nmo_face_t), _Alignof(nmo_face_t));
+    state->face_vertex_indices = (uint16_t *)nmo_arena_alloc(arena, 3u * sizeof(uint16_t), _Alignof(uint16_t));
+    if (state->vertices == NULL || state->faces == NULL || state->face_vertex_indices == NULL) {
+        return 0;
+    }
+    memset(state->vertices, 0, 3u * sizeof(nmo_vertex_t));
+    memset(state->faces, 0, sizeof(nmo_face_t));
+    for (int i = 0; i < 3; i++) {
+        state->vertices[i].position = (nmo_vector_t){v[i * 3], v[i * 3 + 1], v[i * 3 + 2]};
+        state->face_vertex_indices[i] = (uint16_t)i;
+    }
+    state->vertex_count = 3;
+    state->face_count = 1;
+    nmo_mesh_update_bounding_volumes(state);
+    entity->current_mesh = nmo_ref_from_id(mesh);
+    return object;
+}
+
+/* A test block of `guid` on two entities (or a target camera and an entity) with a Nop on each of
+   its first `outputs` outputs */
+static nmo_object_id_t pair_test(engine_fixture_t *f, nmo_guid_t guid, nmo_object_id_t target, nmo_object_id_t a,
+                                 nmo_object_id_t b, int outputs, nmo_object_id_t *outs)
+{
+    nmo_object_id_t test = fixture_block(f, guid, "Test");
+    if (test == 0) {
+        return 0;
+    }
+    fixture_link(f, f->script_in, BLOCK_IN(f, test, 0), 0);
+    if (target != 0) {
+        fixture_input_int(f, fixture_target(f, test), (int32_t)target);
+    }
+    fixture_input_int(f, BLOCK_PIN(f, test, 0), (int32_t)a);
+    if (b != 0) {
+        fixture_input_int(f, BLOCK_PIN(f, test, 1), (int32_t)b);
+    }
+    for (int k = 0; k < outputs; k++) {
+        outs[k] = fixture_block(f, GUID_NOP, "Output");
+        if (outs[k] == 0) {
+            return 0;
+        }
+        fixture_link(f, BLOCK_OUT(f, test, (size_t)k), BLOCK_IN(f, outs[k], 0), 0);
+    }
+    return test;
+}
+
+TEST(engine_transform, collision_intersection_tests_spheres_boxes_faces_and_the_frustum)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t a = cube_object(&f, "A", 0.0f, 0.0f);
+    nmo_object_id_t near = cube_object(&f, "Near", 1.1f, 0.0f); /* spheres of 0.87 meet */
+    nmo_object_id_t far = cube_object(&f, "Far", 5.0f, 0.0f);
+    nmo_object_id_t high = cube_object(&f, "High", 0.0f, 0.0f);
+    const float upright[9] = {-1, -1, 0, 1, -1, 0, 0, 1, 0}; /* in the XY plane */
+    const float flat[9] = {-1, 0, -1, 1, 0, -1, 0, 0, 1};    /* in the XZ plane */
+    nmo_object_id_t standing = triangle_object(&f, "Standing", upright, 0.0f, 0.0f, 0.0f);
+    nmo_object_id_t lying = triangle_object(&f, "Lying", flat, 0.0f, 0.0f, 0.0f);
+    nmo_object_id_t raised = triangle_object(&f, "Raised", flat, 0.0f, 5.0f, 0.0f);
+    nmo_object_id_t camera = fixture_create(&f, NMO_CID_CAMERA, "Camera");
+    nmo_object_id_t ahead = cube_object(&f, "Ahead", 0.0f, 0.0f), behind = cube_object(&f, "Behind", 0.0f, 0.0f);
+    ASSERT_TRUE(a && near && far && high && standing && lying && raised && camera && ahead && behind);
+    ((nmo_3dentity_state_t *)fixture_state(&f, high))->world_matrix[13] = 3.0f;
+    ((nmo_3dentity_state_t *)fixture_state(&f, ahead))->world_matrix[14] = 10.0f;
+    ((nmo_3dentity_state_t *)fixture_state(&f, behind))->world_matrix[14] = -10.0f;
+    ASSERT_TRUE(place_entity(&f, camera, 0.0f, 0.0f, 0.0f, 0) != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t spheres[2][2], heights[5], frustum[2][2], boxes[2][2], faces[2][2];
+    ASSERT_TRUE(pair_test(&f, GUID_SPHERE_SPHERE, 0, a, near, 2, spheres[0]) != 0);
+    ASSERT_TRUE(pair_test(&f, GUID_SPHERE_SPHERE, 0, a, far, 2, spheres[1]) != 0);
+    ASSERT_TRUE(pair_test(&f, GUID_BB_Y_OVERLAPPING, 0, a, high, 5, heights) != 0);
+    ASSERT_TRUE(pair_test(&f, GUID_FRUSTUM_OBJECT, camera, ahead, 0, 2, frustum[0]) != 0);
+    ASSERT_TRUE(pair_test(&f, GUID_FRUSTUM_OBJECT, camera, behind, 0, 2, frustum[1]) != 0);
+    ASSERT_TRUE(pair_test(&f, GUID_BOX_FACE, 0, a, lying, 2, boxes[0]) != 0);
+    ASSERT_TRUE(pair_test(&f, GUID_BOX_FACE, 0, a, raised, 2, boxes[1]) != 0);
+    ASSERT_TRUE(pair_test(&f, GUID_FACE_FACE, 0, standing, lying, 2, faces[0]) != 0);
+    ASSERT_TRUE(pair_test(&f, GUID_FACE_FACE, 0, standing, raised, 2, faces[1]) != 0);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1u, runs(&f, spheres[0][0])); /* True */
+    ASSERT_EQ(1u, runs(&f, spheres[1][1])); /* False */
+    ASSERT_EQ(1u, runs(&f, heights[1]));    /* B above A */
+    ASSERT_EQ(1u, runs(&f, frustum[0][0])); /* in front of the camera */
+    ASSERT_EQ(1u, runs(&f, frustum[1][1])); /* behind it */
+    ASSERT_EQ(1u, runs(&f, boxes[0][0]));   /* the triangle crosses the cube */
+    ASSERT_EQ(1u, runs(&f, boxes[1][1]));
+    ASSERT_EQ(1u, runs(&f, faces[0][0]));   /* the two triangles cross */
+    ASSERT_EQ(1u, runs(&f, faces[1][1]));
+    ASSERT_EQ(0u, runs(&f, spheres[0][1]) + runs(&f, spheres[1][0]) + runs(&f, frustum[0][1]) +
+                      runs(&f, frustum[1][0]) + runs(&f, boxes[0][1]) + runs(&f, boxes[1][0]) +
+                      runs(&f, faces[0][1]) + runs(&f, faces[1][0]));
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_transform, entity_slots_remain_stable_after_deletion);
 REGISTER_TEST(engine_transform, loaded_children_keep_their_place_under_the_parent);
@@ -1103,6 +1219,7 @@ REGISTER_TEST(engine_transform, speedometer_measures_the_target_speed);
 REGISTER_TEST(engine_transform, tt_extra_circles_flies_away_and_homes_in);
 REGISTER_TEST(engine_transform, ray_intersection_finds_the_nearest_face);
 REGISTER_TEST(engine_transform, box_box_intersection_tests_oriented_boxes);
+REGISTER_TEST(engine_transform, collision_intersection_tests_spheres_boxes_faces_and_the_frustum);
 REGISTER_TEST(engine_transform, proximity_volume_control_runs_until_off);
 REGISTER_TEST(engine_transform, texture_sine_runs_its_clock_and_checks_the_channel);
 TEST_MAIN_END()
