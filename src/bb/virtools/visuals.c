@@ -30,6 +30,35 @@ typedef struct visuals_callback {
 
 typedef ENG_VEC(visuals_callback_t) callback_list_t;
 
+/* A mark of Mark System: a single one's four corners (in its entity's space), or a band one's
+   two (and its center) in the world */
+typedef struct visuals_mark {
+    eng_vector_t positions[4];
+    float color[4];
+    uint32_t packed;
+    uint32_t mode;
+    nmo_object_id_t entity;
+    float delta_alpha;
+    float lifespan;
+    float fade_time;
+    int32_t next, prev;
+    float uvs[4]; /* left, top, right, bottom; a band uses the first two */
+} visuals_mark_t;
+
+/* The marks of a material, newest first */
+typedef struct visuals_mark_list {
+    nmo_object_id_t material;
+    int32_t first, last;
+} visuals_mark_list_t;
+
+/* A Mark System's marks: a pool of Maximum Marks, and a list for each material in use */
+typedef struct visuals_marks {
+    int32_t node;
+    visuals_mark_t *pool;
+    int32_t size, count, free;
+    ENG_VEC(visuals_mark_list_t) lists;
+} visuals_marks_t;
+
 /* A Simple Shadow's data: the texture it last gave its material, and the floors */
 typedef struct visuals_shadow {
     int32_t node;
@@ -48,6 +77,8 @@ typedef struct visuals {
     callback_list_t curves;
     callback_list_t infos;
     ENG_VEC(struct visuals_shadow) shadows;
+    ENG_VEC(visuals_marks_t) mark_systems;
+    callback_list_t marks;
 } visuals_t;
 
 static void visuals_destroy(nmo_engine_t *engine, void *state);
@@ -1963,6 +1994,475 @@ static int cb_solid_trail(blk_t *b, uint32_t message)
     return NMO_ENGINE_BR_OK;
 }
 
+/*
+ * Mark System: marks left on surfaces, each a quad of the Material's (one
+ * draw a material, no culling, in the marks' colors, drawn with the depth
+ * nudged toward the eye against z fighting). Mark adds one at Position along
+ * Normal, Size wide: a single mark, a square in the Referential's space (its
+ * UVs the whole texture unless UVs says), or with Continuous Marks a band
+ * mark in the world, joined to the one before it unless that one ended the
+ * band (End Mark ends it). A mark lives Lifespan ms (0: forever) and fades
+ * out over its last Fading Time. On clears the marks; while active the block
+ * draws them each frame after the opaque objects (after the Supporting
+ * Entity when there is one, as it renders), and they age only when drawn.
+ * A single mark is not added once Maximum Marks are in use; a band mark
+ * takes the place of its material's oldest. The DLL does not draw a single
+ * mark whose entity was outside the last frame's frustum; the engine keeps
+ * no frustum test of the last render, so it draws them all. The DLL keeps
+ * the materials in a hash table and draws them in its order; the engine
+ * draws them in the order they were first used.
+ */
+#define MARK_SINGLE 0
+#define MARK_BAND_START 1
+#define MARK_BAND_IN 2
+#define MARK_BAND_END 3
+#define MARK_STYLE 3
+#define MARK_STANDARD_UVS 4
+#define MARK_EPSILON 1.1920929e-7f
+
+static visuals_marks_t *mark_system(nmo_engine_t *engine, int32_t node)
+{
+    visuals_t *visuals = visuals_state(engine);
+    for (size_t i = 0; i < visuals->mark_systems.count; i++) {
+        if (visuals->mark_systems.data[i].node == node) {
+            return &visuals->mark_systems.data[i];
+        }
+    }
+    visuals_marks_t *marks = NULL;
+    if (!ENG_VEC_PUSH(visuals->mark_systems, marks)) {
+        return NULL;
+    }
+    memset(marks, 0, sizeof(*marks));
+    marks->node = node;
+    marks->free = -1;
+    return marks;
+}
+
+/* MarkSystem::Clear: every mark free */
+static void marks_clear(visuals_marks_t *marks)
+{
+    for (int32_t i = 0; i < marks->size; i++) {
+        marks->pool[i].next = i + 1 < marks->size ? i + 1 : -1;
+    }
+    marks->free = marks->size > 0 ? 0 : -1;
+    marks->count = 0;
+    marks->lists.count = 0;
+}
+
+/* MarkSystem::CheckSize */
+static void marks_check_size(visuals_marks_t *marks, int32_t size)
+{
+    size = size > 0 ? size : 0;
+    if (size == marks->size) {
+        return;
+    }
+    visuals_mark_t *pool = size > 0 ? (visuals_mark_t *)calloc((size_t)size, sizeof(visuals_mark_t)) : NULL;
+    free(marks->pool);
+    marks->pool = pool;
+    marks->size = pool != NULL ? size : 0;
+    marks_clear(marks);
+}
+
+/* m_MaterialMarks.InsertUnique(material) */
+static int32_t marks_list(visuals_marks_t *marks, nmo_object_id_t material)
+{
+    for (size_t i = 0; i < marks->lists.count; i++) {
+        if (marks->lists.data[i].material == material) {
+            return (int32_t)i;
+        }
+    }
+    visuals_mark_list_t *list = NULL;
+    if (!ENG_VEC_PUSH(marks->lists, list)) {
+        return -1;
+    }
+    *list = (visuals_mark_list_t){material, -1, -1};
+    return (int32_t)marks->lists.count - 1;
+}
+
+/* FreeLastMark: the list's oldest mark taken out of it; -1 for an empty list */
+static int32_t marks_free_last(visuals_marks_t *marks, visuals_mark_list_t *list)
+{
+    if (list->first < 0) {
+        return -1;
+    }
+    int32_t m = list->last;
+    visuals_mark_t *mark = &marks->pool[m];
+    if (list->first == list->last) {
+        list->first = list->last = -1;
+        return m;
+    }
+    if ((mark->mode & MARK_STYLE) == MARK_BAND_START && mark->prev >= 0) {
+        marks->pool[mark->prev].mode = MARK_BAND_START;
+    }
+    marks->pool[mark->prev].next = mark->next;
+    list->last = mark->prev;
+    if (mark->next >= 0) {
+        marks->pool[mark->next].prev = mark->prev;
+    }
+    mark->next = mark->prev = -1;
+    return m;
+}
+
+/* AddNewMark: first in the list */
+static void marks_add_new(visuals_marks_t *marks, visuals_mark_list_t *list, int32_t m)
+{
+    visuals_mark_t *mark = &marks->pool[m];
+    mark->prev = -1;
+    mark->next = list->first;
+    if (list->first >= 0) {
+        marks->pool[list->first].prev = m;
+    } else {
+        list->last = m;
+    }
+    list->first = m;
+}
+
+static eng_vector_t marks_v(float x, float y, float z)
+{
+    return (eng_vector_t){x, y, z};
+}
+
+static void marks_set_color(visuals_mark_t *mark, const float color[4], float fade_time)
+{
+    memcpy(mark->color, color, sizeof(mark->color));
+    mark->packed = vxcolor_to_color(color);
+    mark->delta_alpha = -color[3] / fade_time;
+}
+
+/* AddSingleMark */
+static void marks_add_single(nmo_engine_t *engine, visuals_marks_t *marks, eng_vector_t point, eng_vector_t normal,
+                             nmo_object_id_t ref, const float color[4], float size, float life,
+                             nmo_object_id_t material, float fade_time, const float uvs[4], float offset)
+{
+    if (marks->free < 0) {
+        return;
+    }
+    int32_t l = marks_list(marks, material);
+    if (l < 0) {
+        return;
+    }
+    int32_t m = marks->free;
+    marks->free = marks->pool[m].next;
+    marks->count++;
+    marks_add_new(marks, &marks->lists.data[l], m);
+    visuals_mark_t *mark = &marks->pool[m];
+    mark->entity = ref;
+    int32_t index = ref != 0 ? eng_entity_index(engine, ref) : -1;
+    eng_vector_t scale = {1.0f, 1.0f, 1.0f};
+    if (index >= 0) {
+        scale = eng_entity_scale(engine, index, false);
+        offset /= eng_vector_magnitude(&scale);
+        scale = marks_v(1.0f / scale.x, 1.0f / scale.y, 1.0f / scale.z);
+    }
+    point = vec_add(point, vec_scale(normal, offset));
+    float half = size * 0.5f;
+    eng_vector_t y = {0.0f, 1.0f, 0.0f};
+    eng_vector_t v = fabsf(normal.x) < MARK_EPSILON && fabsf(normal.z) < MARK_EPSILON
+                         ? marks_v(0.0f, 0.0f, 1.0f)
+                         : vec_cross_normalized(y, normal);
+    eng_vector_t w = vec_cross_normalized(normal, v);
+    v = vec_scale(v, half);
+    w = vec_scale(w, half);
+    if (index >= 0) {
+        v = marks_v(v.x * scale.x, v.y * scale.y, v.z * scale.z);
+        w = marks_v(w.x * scale.x, w.y * scale.y, w.z * scale.z);
+    }
+    mark->positions[0] = vec_add(vec_add(point, v), w);
+    mark->positions[1] = vec_add(vec_sub(point, v), w);
+    mark->positions[2] = vec_sub(vec_add(point, v), w);
+    mark->positions[3] = vec_sub(vec_sub(point, v), w);
+    mark->lifespan = life;
+    mark->fade_time = fade_time;
+    marks_set_color(mark, color, fade_time);
+    mark->mode = MARK_SINGLE;
+    if (uvs[0] == uvs[2] || uvs[3] == uvs[1]) { /* VxRect::IsEmpty */
+        mark->mode |= MARK_STANDARD_UVS;
+    } else {
+        memcpy(mark->uvs, uvs, sizeof(mark->uvs));
+    }
+}
+
+/* AddContinuousMark */
+static void marks_add_band(nmo_engine_t *engine, visuals_marks_t *marks, eng_vector_t point, eng_vector_t normal,
+                           nmo_object_id_t ref, const float color[4], float size, float life, float fade_time,
+                           bool last, nmo_object_id_t material, float offset)
+{
+    int32_t index = ref != 0 ? eng_entity_index(engine, ref) : -1;
+    if (index >= 0) {
+        eng_vector_t p = point, n = normal;
+        eng_vector_transform(&point, &engine->entities.data[index].world, &p);
+        eng_vector_rotate(&normal, &engine->entities.data[index].world, &n);
+    }
+    if (normal.x == 0.0f && normal.y == 0.0f && normal.z == 0.0f) {
+        normal = marks_v(0.0f, 1.0f, 0.0f);
+    }
+    normal = vec_normalized(normal);
+    point = vec_add(point, vec_scale(normal, offset));
+    int32_t l = marks_list(marks, material);
+    if (l < 0) {
+        return;
+    }
+    int32_t old = marks->lists.data[l].first;
+    bool first = true, second = false;
+    eng_vector_t last_position = {0.0f, 0.0f, 0.0f};
+    if (old >= 0 && (marks->pool[old].mode & MARK_STYLE) != MARK_BAND_END) {
+        second = (marks->pool[old].mode & MARK_STYLE) == MARK_BAND_START;
+        first = false;
+        last_position = marks->pool[old].positions[2];
+        eng_vector_t d = vec_sub(last_position, point);
+        if (d.x * d.x + d.y * d.y + d.z * d.z <= 0.01f) {
+            return; /* not moved enough */
+        }
+    }
+    if (first && last) {
+        return;
+    }
+    int32_t m = marks->free;
+    if (m >= 0) {
+        marks->free = marks->pool[m].next;
+        marks->count++;
+    } else {
+        m = marks_free_last(marks, &marks->lists.data[l]);
+        if (m < 0) {
+            return;
+        }
+    }
+    marks_add_new(marks, &marks->lists.data[l], m);
+    visuals_mark_t *mark = &marks->pool[m];
+    float half = size * 0.5f;
+    eng_vector_t dir = first ? marks_v(0.0f, 1.0f, 0.0f) : vec_normalized(vec_sub(point, last_position));
+    eng_vector_t v = vec_scale(vec_cross_normalized(dir, normal), half);
+    mark->positions[0] = vec_add(point, v);
+    mark->positions[1] = vec_sub(point, v);
+    mark->positions[2] = point;
+    mark->lifespan = life;
+    mark->fade_time = fade_time;
+    if (second && old != m) {
+        marks->pool[old].positions[0] = vec_add(marks->pool[old].positions[2], v);
+        marks->pool[old].positions[1] = vec_sub(marks->pool[old].positions[2], v);
+    }
+    if (!first && mark->next >= 0) {
+        const visuals_mark_t *before = &marks->pool[mark->next];
+        float start = (before->uvs[0] + before->uvs[2]) * 0.5f;
+        eng_vector_t from = before->positions[2];
+        eng_vector_t d = vec_normalized(vec_sub(mark->positions[2], from));
+        eng_vector_t p1 = vec_sub(mark->positions[1], from), p0 = vec_sub(mark->positions[0], from);
+        mark->uvs[0] = start + p1.x * d.x + p1.y * d.y + p1.z * d.z;
+        mark->uvs[2] = start + p0.x * d.x + p0.y * d.y + p0.z * d.z;
+    } else {
+        mark->uvs[0] = mark->uvs[2] = 0.0f;
+    }
+    marks_set_color(mark, color, fade_time);
+    mark->mode = first ? MARK_BAND_START : last ? MARK_BAND_END : MARK_BAND_IN;
+}
+
+/* MarkSystem::Update: the dead marks freed, the others aged and faded, empty lists dropped */
+static void marks_update(visuals_marks_t *marks, float delta)
+{
+    for (size_t l = 0; l < marks->lists.count;) {
+        visuals_mark_list_t *list = &marks->lists.data[l];
+        int32_t m = list->first;
+        while (m >= 0) {
+            visuals_mark_t *mark = &marks->pool[m];
+            if (mark->lifespan < 0.0f) {
+                if ((mark->mode & MARK_STYLE) == MARK_BAND_START && mark->prev >= 0) {
+                    marks->pool[mark->prev].mode = MARK_BAND_START;
+                }
+                int32_t next = mark->next;
+                if (mark->prev >= 0) {
+                    marks->pool[mark->prev].next = mark->next;
+                } else {
+                    list->first = mark->next;
+                }
+                if (mark->next >= 0) {
+                    marks->pool[mark->next].prev = mark->prev;
+                } else {
+                    list->last = mark->prev;
+                }
+                mark->next = marks->free;
+                marks->free = m;
+                marks->count--;
+                m = next;
+                continue;
+            }
+            if (fabsf(mark->lifespan) > MARK_EPSILON) { /* not a mark forever */
+                mark->lifespan -= delta;
+                if (fabsf(mark->lifespan) < MARK_EPSILON) {
+                    mark->lifespan -= 1.0f;
+                }
+                if (mark->lifespan < mark->fade_time) {
+                    mark->color[3] += mark->delta_alpha * delta;
+                    mark->packed = vxcolor_to_color(mark->color);
+                }
+            }
+            m = mark->next;
+        }
+        if (list->first < 0) {
+            memmove(list, list + 1, (marks->lists.count - l - 1) * sizeof(*list));
+            marks->lists.count--;
+        } else {
+            l++;
+        }
+    }
+}
+
+/* MarkSystem::RenderMarkSystem, as the render context's or the Supporting Entity's post render
+   callback */
+static void draw_marks(nmo_engine_t *engine, const visuals_callback_t *callback)
+{
+    nmo_engine_block_t handle = {engine, callback->node};
+    blk_t *b = &handle;
+    visuals_marks_t *marks = mark_system(engine, callback->node);
+    if (marks == NULL || (callback->target != 0 && !eng_render_entity_drawn(engine, callback->target))) {
+        return;
+    }
+    marks_update(marks, engine->delta);
+    static const float single_uvs[8] = {0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f};
+    float factor = get_in_float(b, 10, 0.2f);
+    size_t capacity = (size_t)(marks->count > 0 ? marks->count : 1) * 4u;
+    prim_vertex_t *vertices = (prim_vertex_t *)malloc(capacity * sizeof(prim_vertex_t));
+    uint32_t *colors = (uint32_t *)malloc(capacity * sizeof(uint32_t));
+    int32_t *indices = (int32_t *)malloc(capacity / 4u * 6u * sizeof(int32_t));
+    eng_matrix_t identity;
+    eng_matrix_identity(&identity);
+    for (size_t l = 0; vertices != NULL && colors != NULL && indices != NULL && l < marks->lists.count; l++) {
+        const visuals_mark_list_t *list = &marks->lists.data[l];
+        int32_t vertex_count = 0, index_count = 0;
+        for (int32_t m = list->first; m >= 0; m = marks->pool[m].next) {
+            visuals_mark_t *mark = &marks->pool[m];
+            if ((mark->mode & MARK_STYLE) == MARK_SINGLE) {
+                eng_vector_t corners[4];
+                memcpy(corners, mark->positions, sizeof(corners));
+                if (mark->entity != 0) {
+                    int32_t index = eng_entity_index(engine, mark->entity);
+                    if (index < 0 || engine->entities.data[index].destroyed) {
+                        mark->lifespan = -1.0f; /* its referential was destroyed */
+                        continue;
+                    }
+                    for (int k = 0; k < 4; k++) {
+                        eng_vector_transform(&corners[k], &engine->entities.data[index].world,
+                                             &mark->positions[k]);
+                    }
+                }
+                for (int k = 0; k < 4 && (size_t)vertex_count + 4u <= capacity; k++) {
+                    prim_vertex_t *v = &vertices[vertex_count + k];
+                    v->p = corners[k];
+                    v->n = marks_v(0.0f, 0.0f, 0.0f);
+                    if (mark->mode & MARK_STANDARD_UVS) {
+                        v->u = single_uvs[k * 2];
+                        v->v = single_uvs[k * 2 + 1];
+                    } else {
+                        v->u = (k & 1) ? mark->uvs[2] : mark->uvs[0];
+                        v->v = (k & 2) ? mark->uvs[3] : mark->uvs[1];
+                    }
+                    colors[vertex_count + k] = mark->packed;
+                }
+                const int32_t quad[6] = {0, 1, 2, 1, 3, 2};
+                for (int k = 0; k < 6; k++) {
+                    indices[index_count++] = vertex_count + quad[k];
+                }
+                vertex_count += 4;
+            } else {
+                uint32_t color = vxcolor_to_color(mark->color);
+                for (int k = 0; k < 2; k++) {
+                    prim_vertex_t *v = &vertices[vertex_count + k];
+                    v->p = mark->positions[k];
+                    v->n = marks_v(0.0f, 0.0f, 0.0f);
+                    v->u = (float)k;
+                    v->v = factor * mark->uvs[k * 2];
+                    colors[vertex_count + k] = color;
+                }
+                if ((mark->mode & MARK_STYLE) != MARK_BAND_START) { /* joined to the mark before it */
+                    const int32_t band[6] = {0, 2, 1, 2, 3, 1};
+                    for (int k = 0; k < 6; k++) {
+                        indices[index_count++] = vertex_count + band[k];
+                    }
+                }
+                vertex_count += 2;
+            }
+        }
+        if (vertex_count <= 2) {
+            continue;
+        }
+        int32_t first = (int32_t)engine->render.vertices.count;
+        for (int32_t t = 0; t + 2 < index_count; t += 3) {
+            if (indices[t] >= vertex_count || indices[t + 1] >= vertex_count || indices[t + 2] >= vertex_count) {
+                continue; /* a band joined to nothing drawn */
+            }
+            for (int k = 0; k < 3; k++) {
+                push_prim_vertex(engine, &identity, &vertices[indices[t + k]], colors[indices[t + k]]);
+            }
+        }
+        nmo_engine_draw_t *draw = push_primitive(engine, callback->target, first, vertices[0].p);
+        if (draw != NULL) {
+            draw->material = eng_find_object(engine, list->material) != NULL ? list->material : 0;
+            draw->two_sided = true;
+            draw->projection_z_scale = 1.001f;
+        }
+    }
+    free(vertices);
+    free(colors);
+    free(indices);
+}
+
+static int bb_mark_system(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    visuals_marks_t *marks = mark_system(engine, b->node);
+    if (marks == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+        marks_clear(marks);
+    } else if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    callback_drawn(&visuals_state(engine)->marks, b->node, (nmo_object_id_t)get_local_int(b, 3, 0), true);
+    bool end_mark = false;
+    if (nmo_engine_block_input_count(b) > 3 && IN_ACTIVE(b, 3)) {
+        IN_OFF(b, 3);
+        OUT_ON(b, 3);
+        end_mark = true;
+    } else if (!IN_ACTIVE(b, 2)) {
+        return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+    }
+    if (IN_ACTIVE(b, 2)) {
+        IN_OFF(b, 2);
+        OUT_ON(b, 2);
+    }
+    eng_vector_t point = get_in_vector(b, 0, 0.0f, 0.0f, 0.0f);
+    nmo_object_id_t ref = nmo_engine_block_get_input_object(b, 2);
+    eng_vector_t normal = get_in_vector(b, 1, 0.0f, 0.0f, 0.0f);
+    float color[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+    nmo_engine_block_get_input_value(b, 3, color, sizeof(color));
+    float size = get_in_float(b, 4, 1.0f), life = get_in_float(b, 6, 5000.0f);
+    float offset = get_in_float(b, 9, 0.0f);
+    nmo_object_id_t material = nmo_engine_block_get_input_object(b, 5);
+    float fade_time = get_in_float(b, 7, 1000.0f);
+    float uvs[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    nmo_engine_block_get_input_value(b, 8, uvs, sizeof(uvs));
+    if (get_local_int(b, 2, 0) != 0) {
+        marks_add_band(engine, marks, point, normal, ref, color, size, life, fade_time, end_mark, material, offset);
+    } else {
+        marks_add_single(engine, marks, point, normal, ref, color, size, life, material, fade_time, uvs, offset);
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+static int cb_mark_system(blk_t *b, uint32_t message)
+{
+    visuals_marks_t *marks = mark_system(b->engine, b->node);
+    if (marks != NULL && (message == NMO_ENGINE_MSG_LOAD || message == NMO_ENGINE_MSG_RESET)) {
+        marks_clear(marks);
+        marks_check_size(marks, get_local_int(b, 1, 200));
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_visuals_blocks[] = {
     {NMO_GUID_INIT(0x00cd320b, 0x32ed010b), "Planar Filter", bb_planar_filter, cb_planar_filter,
      NULL},
@@ -1999,6 +2499,7 @@ static const nmo_engine_block_desc_t eng_visuals_blocks[] = {
      NULL, NULL},
     {NMO_GUID_INIT(0x79b95ed0, 0x3e4a01f5), "Simple Shadow", bb_simple_shadow, cb_simple_shadow, NULL},
     {NMO_GUID_INIT(0xd00d010a, 0xe00d010a), "Solid Trail", bb_solid_trail, cb_solid_trail, NULL},
+    {NMO_GUID_INIT(0x09a06075, 0x760a4720), "Mark System", bb_mark_system, cb_mark_system, NULL},
 };
 
 /* The render callbacks, at the stages the render context calls them */
@@ -2010,10 +2511,14 @@ static void visuals_render(nmo_engine_t *engine, void *state, eng_render_stage_t
         for (size_t i = 0; i < visuals->curves.count; i++) {
             draw_curve(engine, &visuals->curves.data[i], args);
         }
+        for (size_t i = 0; i < visuals->marks.count; i++) {
+            draw_marks(engine, &visuals->marks.data[i]);
+        }
         for (size_t i = 0; i < visuals->infos.count; i++) {
             draw_info(engine, visuals->infos.data[i].node);
         }
         visuals->curves.count = 0; /* temporary callbacks */
+        visuals->marks.count = 0;
         visuals->infos.count = 0;
     } else if (stage == ENG_RENDER_OVERLAY) {
         for (size_t i = 0; i < visuals->scores.count; i++) {
@@ -2036,6 +2541,12 @@ static void visuals_destroy(nmo_engine_t *engine, void *state)
     free(((visuals_t *)state)->curves.data);
     free(((visuals_t *)state)->infos.data);
     free(((visuals_t *)state)->shadows.data);
+    for (size_t i = 0; i < ((visuals_t *)state)->mark_systems.count; i++) {
+        free(((visuals_t *)state)->mark_systems.data[i].pool);
+        free(((visuals_t *)state)->mark_systems.data[i].lists.data);
+    }
+    free(((visuals_t *)state)->mark_systems.data);
+    free(((visuals_t *)state)->marks.data);
 }
 
 nmo_status_t eng_register_visuals(nmo_engine_t *engine)

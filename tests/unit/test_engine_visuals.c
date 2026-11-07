@@ -33,6 +33,7 @@
 #define GUID_SHOW_OBJECT_INFORMATION NMO_GUID(0x17cb4c57, 0x00f525fb)
 #define GUID_SIMPLE_SHADOW NMO_GUID(0x79b95ed0, 0x3e4a01f5)
 #define GUID_SOLID_TRAIL NMO_GUID(0xd00d010a, 0xe00d010a)
+#define GUID_MARK_SYSTEM NMO_GUID(0x09a06075, 0x760a4720)
 
 /* A block acting on `object` (0: no target), run when the script starts */
 static nmo_object_id_t block_on(engine_fixture_t *f, nmo_guid_t guid, const char *name, nmo_object_id_t object)
@@ -667,6 +668,113 @@ TEST(engine_visuals, solid_trail_follows_the_owners_farthest_vertices_until_off)
     fixture_end(&f);
 }
 
+/* The block's local parameter `pos` (its settings follow its locals) */
+static nmo_object_id_t block_local(engine_fixture_t *f, nmo_object_id_t block, size_t pos)
+{
+    const nmo_behavior_state_t *state = (const nmo_behavior_state_t *)fixture_state(f, block);
+    return state != NULL && pos < state->local_parameters.count
+               ? nmo_behavior_ref_array_get_id(&state->local_parameters, pos)
+               : 0;
+}
+
+TEST(engine_visuals, mark_system_draws_single_marks_that_fade_and_die)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t material = fixture_create(&f, NMO_CID_MATERIAL, "Decal");
+    ASSERT_TRUE(material != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t marks = block_on(&f, GUID_MARK_SYSTEM, "Mark System", 0);
+    ASSERT_TRUE(marks != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, marks, 2), 0); /* a mark as it starts */
+    const float position[3] = {1.0f, 0.0f, 2.0f}, size = 2.0f, life = 100.0f, fade = 50.0f;
+    fixture_input_value(&f, BLOCK_PIN(&f, marks, 0), position, sizeof(position));
+    fixture_input_value(&f, BLOCK_PIN(&f, marks, 4), &size, sizeof(size));
+    fixture_input_int(&f, BLOCK_PIN(&f, marks, 5), (int32_t)material);
+    fixture_input_value(&f, BLOCK_PIN(&f, marks, 6), &life, sizeof(life));
+    fixture_input_value(&f, BLOCK_PIN(&f, marks, 7), &fade, sizeof(fade));
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+
+    /* A square on the XZ plane around the position, its UVs the whole texture */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    const nmo_engine_draw_t *draw = NULL;
+    ASSERT_EQ(1, primitive_draws(&frame, 0, &draw));
+    ASSERT_EQ(6, draw->vertex_count);
+    ASSERT_EQ(material, draw->material);
+    ASSERT_TRUE(draw->two_sided && !draw->lit && !draw->post && !draw->lines);
+    ASSERT_FLOAT_EQ(1.001f, draw->projection_z_scale, 1e-7f);
+    vertex_at(&frame, draw, 0, 2, 0, 3, 0, 0);
+    vertex_at(&frame, draw, 1, 2, 0, 1, 1, 0);
+    vertex_at(&frame, draw, 2, 0, 0, 3, 0, 1);
+    vertex_at(&frame, draw, 3, 2, 0, 1, 1, 0);
+    vertex_at(&frame, draw, 4, 0, 0, 1, 1, 1);
+    ASSERT_EQ(0xFFFFFFFFu, frame.vertices[draw->first_vertex].color);
+
+    /* 10 ms a frame: under 50 ms left it fades, a fifth of its alpha a frame, and then dies */
+    const uint32_t alpha[] = {255, 255, 255, 255, 204, 153, 102, 51};
+    for (int i = 0; i < 8; i++) {
+        ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+        ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+        ASSERT_EQ(1, primitive_draws(&frame, 0, &draw));
+        ASSERT_EQ(alpha[i], frame.vertices[draw->first_vertex].color >> 24);
+    }
+    for (int i = 0; i < 3; i++) {
+        ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+        ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    }
+    ASSERT_EQ(0, primitive_draws(&frame, 0, &draw));
+    fixture_end(&f);
+}
+
+TEST(engine_visuals, mark_system_joins_continuous_marks_into_a_band)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t marks = block_on(&f, GUID_MARK_SYSTEM, "Mark System", 0);
+    ASSERT_TRUE(marks != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, marks, 2), 0);
+    fixture_link(&f, BLOCK_OUT(&f, marks, 2), BLOCK_IN(&f, marks, 2), 1); /* a mark every frame */
+    ASSERT_EQ(NMO_OK, nmo_script_edit_set_parameter_value(f.tx, block_local(&f, marks, 2), "1"));
+    const float size = 2.0f;
+    fixture_input_value(&f, BLOCK_PIN(&f, marks, 4), &size, sizeof(size));
+    fixture_input_int(&f, BLOCK_PIN(&f, marks, 2), (int32_t)f.owner_id); /* at the owner */
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    const nmo_engine_draw_t *draw = NULL;
+    ASSERT_EQ(0, primitive_draws(&frame, 0, &draw)); /* a band's start alone draws nothing */
+
+    /* Moved 1 along Z: the band runs from the start to it, 2 wide across, its V the distance
+       times the default texture scale */
+    eng_vector_t step = {0.0f, 0.0f, 1.0f};
+    eng_entity_translate(f.engine, eng_entity_index(f.engine, f.owner_id), &step, -1, false);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_EQ(1, primitive_draws(&frame, 0, &draw));
+    ASSERT_EQ(6, draw->vertex_count);
+    vertex_at(&frame, draw, 0, -1, 0, 1, 0, 0.2f);
+    vertex_at(&frame, draw, 1, -1, 0, 0, 0, 0);
+    vertex_at(&frame, draw, 2, 1, 0, 1, 1, 0.2f);
+    vertex_at(&frame, draw, 3, -1, 0, 0, 0, 0);
+    vertex_at(&frame, draw, 4, 1, 0, 0, 1, 0);
+
+    /* Not moved: no new mark */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_EQ(1, primitive_draws(&frame, 0, &draw));
+    ASSERT_EQ(6, draw->vertex_count);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_visuals, blink_cycles_the_target_and_fps_reports_the_rate);
     REGISTER_TEST(engine_visuals, z_buffer_and_render_order_shape_the_mesh_draws);
@@ -678,4 +786,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_visuals, show_object_information_draws_box_and_face_normals_after_the_scene);
     REGISTER_TEST(engine_visuals, simple_shadow_multiplies_the_floors_under_its_owner_until_off);
     REGISTER_TEST(engine_visuals, solid_trail_follows_the_owners_farthest_vertices_until_off);
+    REGISTER_TEST(engine_visuals, mark_system_draws_single_marks_that_fade_and_die);
+    REGISTER_TEST(engine_visuals, mark_system_joins_continuous_marks_into_a_band);
 TEST_MAIN_END()
