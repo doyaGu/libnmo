@@ -342,6 +342,10 @@ bool eng_add_entity_callback(nmo_engine_t *engine, const eng_entity_callback_t *
 /* Remove the entity's callbacks of `kind` by `fn` for the block `node` */
 void eng_remove_entity_callback(nmo_engine_t *engine, nmo_object_id_t entity, eng_entity_callback_kind_t kind,
                                 eng_entity_callback_fn fn, int32_t node);
+/* CKMesh::Render of the entity's `mesh` at `world` (rows, as VxMatrix), with the entity's
+   moveable flags; drawn with the transparent ones when `transparent`. NULL out of memory. */
+nmo_engine_draw_t *eng_render_entity_mesh(nmo_engine_t *engine, nmo_object_id_t entity, nmo_object_id_t mesh,
+                                          const float world[16], bool transparent);
 /* CKMesh::SetLitMode (VX_PRELITMESH 0, VX_LITMESH 1). False when `mesh` is none. */
 bool eng_mesh_set_lit_mode(nmo_engine_t *engine, nmo_object_id_t mesh, int32_t mode);
 /* A soft shadow on the floors under a 3D entity (Simple Shadow, TT Simple Shadow): the floors

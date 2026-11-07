@@ -102,6 +102,14 @@ typedef struct nmo_engine_draw {
     bool lines, lit, two_sided, post;
     float projection_z_scale;
     bool no_fog;
+    /* A mesh with `fade` (a trail Motion Blur draws in its render callback) draws its
+       materials alpha blended (srcalpha, invsrcalpha) at `fade_alpha` times their diffuse
+       alpha. A transparent draw with `has_sort_position` sorts at `sort_position` instead of
+       world[12..14]: all the draws an entity's render callback makes sort where it is. */
+    bool fade;
+    float fade_alpha;
+    bool has_sort_position;
+    float sort_position[3];
     /* Sprite text: `text` in `rect`, in `color` on nothing (the sprite's transparent
        color), with the font `font_name` of `font_size` (points; pixels when negative,
        as CreateFont takes it), `font_weight` and `italic`, placed by `text_align`

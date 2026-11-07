@@ -886,6 +886,11 @@ static void view_draw_mesh(nmo_view_t *view, const nmo_engine_frame_t *frame,
             material.z_func = 4;
             material.source_blend = 2;
             material.dest_blend = 1;
+        } else if (draw->fade) { /* a Motion Blur trail */
+            material.alpha_blend = true;
+            material.source_blend = 5; /* VXBLEND_SRCALPHA */
+            material.dest_blend = 6;   /* VXBLEND_INVSRCALPHA */
+            material.diffuse[3] *= draw->fade_alpha;
         }
         if (prelit) {
             glDisable(GL_LIGHTING);
@@ -1393,7 +1398,7 @@ static nmo_status_t view_render(nmo_view_t *view, nmo_engine_frame_t *out_frame)
             continue; /* after the transparent ones */
         }
         if (draw->transparent && transparent != NULL && depths != NULL) {
-            const float *p = &draw->world[12];
+            const float *p = draw->has_sort_position ? draw->sort_position : &draw->world[12];
             depths[transparent_count] = p[0] * view_m[2] + p[1] * view_m[6] + p[2] * view_m[10] + view_m[14];
             transparent[transparent_count++] = i;
             continue;
