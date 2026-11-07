@@ -12,10 +12,8 @@ whose mechanisms need nothing done to them: a path from each to the next.
 The points are written as --steer takes them, without the "@FRAME"; each
 leg's path is logged as it is found.
 
-reaches the checkpoints at frames 5316, 8158 and 11264, and the balloon at
-13553.  The Enters start level 1 as soon as the main menu takes them, and Q
-skips the tutorial, which otherwise holds the ball back 25 seconds waiting
-for Enter; the ball rolls from frame 1055."""
+Keep authored plans and generated routes in a local, ignored directory.
+"""
 
 from __future__ import annotations
 

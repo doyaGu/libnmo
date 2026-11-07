@@ -18,7 +18,11 @@ the ball through the level as the verifier plays it, a frame stepping a
 fixed 1/60 s; with --self, or without one, the arrow keys do, as in the
 game.  Once BALLANCE and NMO are set (in the shell's profile, say):
 
-For a finite preview of the last approach, then manual control:"""
+    ballance_play_level.py out/level
+
+For a finite preview of an approach followed by manual control, combine
+--sector N, --approach and --handoff-frame FRAME.
+"""
 
 from __future__ import annotations
 
@@ -35,9 +39,7 @@ from ballance.verify.play import watch  # noqa: E402
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description='Watch a level played in a window, or play it.'
-    )
+    parser = argparse.ArgumentParser(description='Watch a level played in a window, or play it.')
     parser.add_argument('level', help="A built level's folder, or Level_NN.NMO")
     parser.add_argument(
         '--sector',
@@ -63,9 +65,7 @@ def main() -> int:
         action='store_true',
         help='Leave out the final balloon target; requires --handoff-frame',
     )
-    parser.add_argument(
-        '--shot', type=Path, metavar='PNG', help='Save a native window screenshot'
-    )
+    parser.add_argument('--shot', type=Path, metavar='PNG', help='Save a native window screenshot')
     parser.add_argument(
         '--shot-frame', type=int, default=4500, help='Screenshot frame (default: 4500)'
     )
