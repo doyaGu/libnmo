@@ -37,14 +37,17 @@ typedef enum nmo_engine_draw_kind {
     NMO_ENGINE_DRAW_TRIANGLES = 2, /* world space triangles a particle system draws */
     NMO_ENGINE_DRAW_SPRITE_TEXT = 3, /* a CKSpriteText: text a host draws with a system font */
     NMO_ENGINE_DRAW_SPRITE3D = 4,  /* a CKSprite3D: a world space quad with its material, unlit */
-    NMO_ENGINE_DRAW_LINES = 5      /* world space lines a particle system draws */
+    NMO_ENGINE_DRAW_LINES = 5,     /* world space lines a particle system draws */
+    NMO_ENGINE_DRAW_PRIMITIVE = 6  /* world space triangles or lines a render callback draws */
 } nmo_engine_draw_kind_t;
 
-/* A vertex of NMO_ENGINE_DRAW_TRIANGLES and _LINES: world position, texture coordinates, ARGB color */
+/* A vertex of NMO_ENGINE_DRAW_TRIANGLES, _LINES and _PRIMITIVE: world position, texture
+   coordinates, ARGB color, and the world normal a lit primitive has */
 typedef struct nmo_engine_vertex {
     float x, y, z;
     float u, v;
     uint32_t color;
+    float nx, ny, nz;
 } nmo_engine_vertex_t;
 
 /*
@@ -87,6 +90,13 @@ typedef struct nmo_engine_draw {
        sprite). A sprite's quad textures `texture`, the sprite itself, with nearest filtering. */
     int32_t source_blend, dest_blend;
     bool blend;
+    /* A primitive (a block's DrawPrimitive in a render callback): triangles of the frame's
+       vertices from first_vertex, or pairs of them when `lines`, drawn with `material` set as
+       current (none: untextured and opaque) in the vertices' colors without lighting, or lit
+       with their normals when `lit`; lines are untextured. No culling when `two_sided`. A
+       render context's post render callback's are `post`: drawn after the transparent draws,
+       in order. */
+    bool lines, lit, two_sided, post;
     /* Sprite text: `text` in `rect`, in `color` on nothing (the sprite's transparent
        color), with the font `font_name` of `font_size` (points; pixels when negative,
        as CreateFont takes it), `font_weight` and `italic`, placed by `text_align`

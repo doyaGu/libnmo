@@ -516,7 +516,7 @@ static bool push_vertex(nmo_engine_t *engine, const float pos[3], float u, float
     if (!ENG_VEC_PUSH(engine->render.vertices, vertex)) {
         return false;
     }
-    *vertex = (nmo_engine_vertex_t){pos[0], pos[1], pos[2], u, v, color};
+    *vertex = (nmo_engine_vertex_t){pos[0], pos[1], pos[2], u, v, color, 0.0f, 0.0f, 0.0f};
     return true;
 }
 

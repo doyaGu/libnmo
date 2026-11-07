@@ -1381,11 +1381,18 @@ static void eng_hermite(eng_vector_t *out, const eng_vector_t *p0, const eng_vec
  * CKCurve::GetPos: the world position at `step` (0..1) of the curve's
  * length. Update first: the control points in the curve's space, their TCB
  * or explicit tangents, the fitting pass, and the lengths (100 Hermite
- * samples a segment). False for a curve of fewer than two points.
+ * samples a segment). False for a curve of fewer than two points. With
+ * `local`, GetLocalPos: the position in the curve's space; with `mesh`,
+ * UpdateMesh's line mesh vertices instead of a position.
  */
+static bool eng_curve_mesh_build(const eng_curve_point_t *points, int count, bool opened,
+                                 int32_t step_count, float length, eng_vector_t **out,
+                                 int32_t *out_count);
+
 static bool eng_curve_sample(nmo_engine_t *engine, nmo_object_id_t curve_id, float step,
                             eng_vector_t *out, float *out_length, nmo_object_id_t tangent_point,
-                            eng_vector_t *tangent_in, eng_vector_t *tangent_out)
+                            eng_vector_t *tangent_in, eng_vector_t *tangent_out, bool local,
+                            eng_vector_t **mesh, int32_t *mesh_count)
 {
     int32_t curve = eng_entity_index(engine, curve_id);
     const eng_curve_points_t *control_points = eng_curve_points(engine,curve_id);
@@ -1499,6 +1506,13 @@ static bool eng_curve_sample(nmo_engine_t *engine, nmo_object_id_t curve_id, flo
         }
     }
     if (out_length != NULL) *out_length = length;
+    if (mesh != NULL) {
+        bool built = eng_curve_mesh_build(points, count, opened, properties.step_count, length, mesh,
+                                          mesh_count);
+        free(points);
+        free(descs);
+        return built;
+    }
     if (out == NULL) { free(points); free(descs); return true; }
     /* GetLocalPos */
     if (opened) {
@@ -1526,28 +1540,92 @@ static bool eng_curve_sample(nmo_engine_t *engine, nmo_object_id_t curve_id, flo
     const eng_curve_point_t *p0 = &points[start], *p1 = &points[end];
     float l1 = end == 0 ? length : p1->length;
     float u = l1 - p0->length != 0.0f ? (target - p0->length) / (l1 - p0->length) : 0.0f;
-    eng_vector_t local;
+    eng_vector_t position;
     if (p0->linear) {
-        local.x = p0->position.x + (p1->position.x - p0->position.x) * u;
-        local.y = p0->position.y + (p1->position.y - p0->position.y) * u;
-        local.z = p0->position.z + (p1->position.z - p0->position.z) * u;
+        position.x = p0->position.x + (p1->position.x - p0->position.x) * u;
+        position.y = p0->position.y + (p1->position.y - p0->position.y) * u;
+        position.z = p0->position.z + (p1->position.z - p0->position.z) * u;
     } else {
-        eng_hermite(&local, &p0->position, &p1->position, &p0->out, &p1->in, u);
+        eng_hermite(&position, &p0->position, &p1->position, &p0->out, &p1->in, u);
     }
-    eng_vector_transform(out, &engine->entities.data[curve].world, &local);
+    if (local) {
+        *out = position;
+    } else {
+        eng_vector_transform(out, &engine->entities.data[curve].world, &position);
+    }
     free(points);
     free(descs);
     return true;
 }
 
+/*
+ * CKCurve::UpdateMesh: the line mesh's vertices. A segment gets the share of
+ * the step count its length has of the curve's (one at least), Hermite
+ * samples from its start, or only its start when it is linear; the last
+ * vertex is the end (the first point of a closed curve).
+ */
+static bool eng_curve_mesh_build(const eng_curve_point_t *points, int count, bool opened,
+                                 int32_t step_count, float length, eng_vector_t **out,
+                                 int32_t *out_count)
+{
+    float inv_length = length != 0.0f ? 1.0f / length : 0.0f;
+    float steps = (float)step_count;
+    int segments = opened ? count - 1 : count;
+    int32_t total = 0;
+    for (int i = 0; i < segments; i++) {
+        const eng_curve_point_t *start = &points[i];
+        float l1 = i + 1 < count ? points[i + 1].length : length;
+        int32_t n = (int32_t)(steps * inv_length * (l1 - start->length));
+        total += start->linear ? 1 : n < 1 ? 1 : n;
+    }
+    eng_vector_t *vertices = (eng_vector_t *)malloc((size_t)(total + 1) * sizeof(eng_vector_t));
+    if (vertices == NULL) {
+        return false;
+    }
+    int32_t k = 0;
+    for (int i = 0; i < segments; i++) {
+        const eng_curve_point_t *start = &points[i];
+        const eng_curve_point_t *end = &points[i + 1 < count ? i + 1 : 0];
+        float l1 = i + 1 < count ? end->length : length;
+        int32_t n = (int32_t)(steps * inv_length * (l1 - start->length));
+        n = n < 1 ? 1 : n;
+        if (start->linear || n == 1) {
+            vertices[k++] = start->position;
+            continue;
+        }
+        float inv_n = 1.0f / (float)n;
+        for (int32_t j = 0; j < n; j++) {
+            eng_hermite(&vertices[k++], &start->position, &end->position, &start->out, &end->in,
+                        (float)j * inv_n);
+        }
+    }
+    vertices[k++] = points[opened ? count - 1 : 0].position;
+    *out = vertices;
+    *out_count = k;
+    return true;
+}
+
 bool eng_curve_position(nmo_engine_t *engine, nmo_object_id_t curve, float step, eng_vector_t *out)
 {
-    return out != NULL && eng_curve_sample(engine,curve,step,out,NULL,0,NULL,NULL);
+    return out != NULL && eng_curve_sample(engine,curve,step,out,NULL,0,NULL,NULL,false,NULL,NULL);
+}
+
+bool eng_curve_local_position(nmo_engine_t *engine, nmo_object_id_t curve, float step,
+                              eng_vector_t *out)
+{
+    return out != NULL && eng_curve_sample(engine,curve,step,out,NULL,0,NULL,NULL,true,NULL,NULL);
 }
 
 bool eng_curve_length(nmo_engine_t *engine, nmo_object_id_t curve, float *out)
 {
-    return out != NULL && eng_curve_sample(engine,curve,0,NULL,out,0,NULL,NULL);
+    return out != NULL && eng_curve_sample(engine,curve,0,NULL,out,0,NULL,NULL,false,NULL,NULL);
+}
+
+bool eng_curve_mesh_points(nmo_engine_t *engine, nmo_object_id_t curve, eng_vector_t **out,
+                           int32_t *count)
+{
+    return out != NULL && count != NULL &&
+           eng_curve_sample(engine,curve,0,NULL,NULL,0,NULL,NULL,false,out,count);
 }
 
 bool eng_curve_point_tangents(nmo_engine_t *engine, nmo_object_id_t point, eng_vector_t *in,
@@ -1572,5 +1650,5 @@ bool eng_curve_point_tangents(nmo_engine_t *engine, nmo_object_id_t point, eng_v
                            : NULL;
         curve = state != NULL ? eng_object_ref(engine, point, &state->curve) : 0;
     }
-    return curve != 0 && eng_curve_sample(engine, curve, 0, NULL, NULL, point, in, out);
+    return curve != 0 && eng_curve_sample(engine, curve, 0, NULL, NULL, point, in, out, false, NULL, NULL);
 }

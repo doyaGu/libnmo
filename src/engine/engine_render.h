@@ -312,6 +312,11 @@ bool eng_add_env_map(nmo_engine_t *engine, const eng_env_map_t *map);
 bool eng_mesh_set_lit_mode(nmo_engine_t *engine, nmo_object_id_t mesh, int32_t mode);
 /* Add a draw to the frame being made; NULL out of memory */
 nmo_engine_draw_t *eng_render_push(nmo_engine_t *engine);
+/* CKMesh::GetBaryCenter and GetRadius, in the mesh's space; false for no mesh */
+bool eng_mesh_sphere(nmo_engine_t *engine, nmo_object_id_t mesh, struct eng_vector *center, float *radius);
+/* Whether the scene traversal renders the 3D entity: in the scene, shown, and no parent hiding
+   its children (its render callbacks run) */
+bool eng_render_entity_drawn(nmo_engine_t *engine, nmo_object_id_t id);
 /* A texture with a transparent color: RCKTexture::SetAsCurrent tests alpha > 0 with it */
 bool eng_texture_keyed(const nmo_engine_t *engine, nmo_object_id_t texture);
 

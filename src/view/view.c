@@ -1126,6 +1126,54 @@ static void view_draw_sprite3d(nmo_view_t *view, const nmo_engine_frame_t *frame
     glEnd();
 }
 
+/* A block's DrawPrimitive in a render callback: its material set as current (none: untextured,
+   opaque), unlit in the vertices' colors or lit with their normals */
+static void view_draw_primitive(nmo_view_t *view, const nmo_engine_frame_t *frame,
+                                const nmo_engine_draw_t *draw, const float view_m[16])
+{
+    nmo_engine_material_t material;
+    if (draw->vertex_count <= 0 || frame->vertices == NULL) {
+        return;
+    }
+    if (draw->material == 0 || !nmo_engine_material(view->engine, draw->material, &material)) {
+        memset(&material, 0, sizeof(material));
+        material.diffuse[0] = material.diffuse[1] = material.diffuse[2] = material.diffuse[3] = 1.0f;
+        material.z_write = true;
+        material.z_func = 4;
+        material.shade_mode = 2;
+    }
+    if (draw->lines) {
+        material.texture = 0;
+    }
+    if (draw->two_sided) {
+        material.two_sided = true;
+    }
+    if (draw->lit) {
+        glEnable(GL_LIGHTING);
+        glColor4fv(material.diffuse);
+    } else {
+        glDisable(GL_LIGHTING);
+    }
+    view_set_material(view, &material, draw->lit, true, NULL);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadMatrixf(view_m);
+    const nmo_engine_vertex_t *v = &frame->vertices[draw->first_vertex];
+    glBegin(draw->lines ? GL_LINES : GL_TRIANGLES);
+    for (int32_t i = 0; i < draw->vertex_count; i++) {
+        if (draw->lit) {
+            glNormal3f(v[i].nx, v[i].ny, v[i].nz);
+        } else {
+            float color[4];
+            view_color(v[i].color, color);
+            glColor4fv(color);
+        }
+        glTexCoord2f(v[i].u, v[i].v);
+        glVertex3f(v[i].x, v[i].y, v[i].z);
+    }
+    glEnd();
+    glDisable(GL_LIGHTING);
+}
+
 static void view_begin_2d(const nmo_engine_frame_t *frame)
 {
     glMatrixMode(GL_PROJECTION);
@@ -1320,6 +1368,9 @@ static nmo_status_t view_render(nmo_view_t *view, nmo_engine_frame_t *out_frame)
     int32_t transparent_count = 0;
     for (int32_t i = first_mesh; i < end_mesh; i++) {
         const nmo_engine_draw_t *draw = &frame.draws[i];
+        if (draw->kind == NMO_ENGINE_DRAW_PRIMITIVE && draw->post) {
+            continue; /* after the transparent ones */
+        }
         if (draw->transparent && transparent != NULL && depths != NULL) {
             const float *p = &draw->world[12];
             depths[transparent_count] = p[0] * view_m[2] + p[1] * view_m[6] + p[2] * view_m[10] + view_m[14];
@@ -1329,6 +1380,10 @@ static nmo_status_t view_render(nmo_view_t *view, nmo_engine_frame_t *out_frame)
         view_clip_draw(view,draw,window_h);
         if (draw->kind == NMO_ENGINE_DRAW_SPRITE3D) {
             view_draw_sprite3d(view, &frame, draw, view_m);
+            continue;
+        }
+        if (draw->kind == NMO_ENGINE_DRAW_PRIMITIVE) {
+            view_draw_primitive(view, &frame, draw, view_m);
             continue;
         }
         view_draw_mesh(view, &frame, draw, view_m);
@@ -1350,8 +1405,17 @@ static nmo_status_t view_render(nmo_view_t *view, nmo_engine_frame_t *out_frame)
             view_draw_triangles(view, &frame, draw, view_m);
         } else if (draw->kind == NMO_ENGINE_DRAW_SPRITE3D) {
             view_draw_sprite3d(view, &frame, draw, view_m);
+        } else if (draw->kind == NMO_ENGINE_DRAW_PRIMITIVE) {
+            view_draw_primitive(view, &frame, draw, view_m);
         } else {
             view_draw_mesh(view, &frame, draw, view_m);
+        }
+    }
+    for (int32_t i = first_mesh; i < end_mesh; i++) {
+        const nmo_engine_draw_t *draw = &frame.draws[i];
+        if (draw->kind == NMO_ENGINE_DRAW_PRIMITIVE && draw->post) {
+            view_clip_draw(view, draw, window_h);
+            view_draw_primitive(view, &frame, draw, view_m);
         }
     }
     free(transparent);

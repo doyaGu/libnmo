@@ -956,7 +956,7 @@ static bool eng_draw_sprite3d(nmo_engine_t *engine, const eng_entity_t *entity, 
             return false;
         }
         const float *p = corners[order[k]];
-        *vertex = (nmo_engine_vertex_t){p[0], p[1], p[2], uvs[order[k]][0], uvs[order[k]][1], color};
+        *vertex = (nmo_engine_vertex_t){p[0], p[1], p[2], uvs[order[k]][0], uvs[order[k]][1], color, 0.0f, 0.0f, 0.0f};
     }
     nmo_engine_draw_t *draw = eng_render_push(engine);
     if (draw == NULL) {
@@ -1807,6 +1807,35 @@ static bool eng_hidden_by_parent(const nmo_engine_t *engine, const eng_entity_t 
         }
     }
     return false;
+}
+
+/* CKMesh::GetBaryCenter and GetRadius, in the mesh's space; false for no mesh */
+bool eng_mesh_sphere(nmo_engine_t *engine, nmo_object_id_t mesh_id, eng_vector_t *center, float *radius)
+{
+    const nmo_mesh_state_t *mesh = mesh_id != 0 ? eng_mesh_state(engine, mesh_id) : NULL;
+    if (mesh == NULL) {
+        return false;
+    }
+    nmo_vector_t c = mesh->bary_center;
+    *radius = mesh->radius;
+    const eng_mesh_copy_t *copy = eng_mesh_copy_find(engine, mesh_id);
+    if (copy != NULL && copy->geometry_changed) {
+        c = copy->bary_center;
+        *radius = copy->radius;
+    }
+    *center = (eng_vector_t){c.x, c.y, c.z};
+    return true;
+}
+
+bool eng_render_entity_drawn(nmo_engine_t *engine, nmo_object_id_t id)
+{
+    int32_t index = eng_entity_index(engine, id);
+    if (index < 0) {
+        return false;
+    }
+    const eng_entity_t *entity = &engine->entities.data[index];
+    return !entity->destroyed && eng_in_scene(engine, id) && !eng_hidden_by_parent(engine, entity) &&
+           (eng_object_flags(engine, id) & OBJECT_VISIBLE) != 0;
 }
 
 /* CKRenderedScene::PrepareCameras: a target camera and a target light turn to their target */
