@@ -38,9 +38,8 @@ typedef struct eng_ic {
     float near_plane, far_plane;
     bool has_material;      /* a material's members */
     nmo_engine_material_t material;
-    bool has_light;         /* a light's color and activity */
-    float light_color[4];
-    bool light_active;
+    bool has_light;         /* a light's run-time state */
+    eng_light_t light;
     bool has_sprite3d;
     eng_sprite3d_t sprite3d;
     uint32_t curve_mask;

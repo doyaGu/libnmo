@@ -6,6 +6,8 @@
 
 #include "../engine_internal.h"
 
+#include "object/builtin/nmo_targetlight_schemas.h"
+
 #include "format/nmo_object.h"
 #include "format/nmo_chunk_api.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
@@ -157,11 +159,28 @@ nmo_status_t eng_load_ic(nmo_engine_t *engine, nmo_object_id_t id, nmo_chunk_t *
             engine->types, &decoded, CKPGUID_LIGHT);
         if (light != NULL && light->has_light_data_chunk) {
             ic.has_light = true;
-            ic.light_color[0] = light->light_data.diffuse.r;
-            ic.light_color[1] = light->light_data.diffuse.g;
-            ic.light_color[2] = light->light_data.diffuse.b;
-            ic.light_color[3] = light->light_data.diffuse.a;
-            ic.light_active = (light->flags & NMO_LIGHT_FLAG_ACTIVE) != 0;
+            eng_light_t *l = &ic.light;
+            memset(l, 0, sizeof(*l));
+            l->id = id;
+            l->color[0] = light->light_data.diffuse.r;
+            l->color[1] = light->light_data.diffuse.g;
+            l->color[2] = light->light_data.diffuse.b;
+            l->color[3] = light->light_data.diffuse.a;
+            l->active = (light->flags & NMO_LIGHT_FLAG_ACTIVE) != 0;
+            l->type = (int32_t)light->light_data.type;
+            l->range = light->light_data.range;
+            l->attenuation[0] = light->light_data.attenuation0;
+            l->attenuation[1] = light->light_data.attenuation1;
+            l->attenuation[2] = light->light_data.attenuation2;
+            l->hot_spot = light->light_data.inner_spot_cone;
+            l->fall_off = light->light_data.outer_spot_cone;
+            l->fall_off_shape = light->light_data.falloff;
+            l->specular = (light->flags & NMO_LIGHT_FLAG_SPECULAR) != 0;
+            const nmo_targetlight_state_t *target_light = nmo_type_query_object_get_ancestor_state_by_guid(
+                engine->types, &decoded, CKPGUID_TARGETLIGHT);
+            if (target_light != NULL && target_light->has_target) {
+                l->target = eng_module_id(module, nmo_ref_runtime_id(&target_light->target));
+            }
         }
         if (object->class_id == NMO_CID_MATERIAL) {
             const nmo_material_state_t *material = decoded.state;
@@ -236,8 +255,7 @@ void eng_save_ic(nmo_engine_t *engine, nmo_object_id_t id)
     }
     if (light != NULL) {
         ic->has_light = true;
-        memcpy(ic->light_color, light->color, sizeof(ic->light_color));
-        ic->light_active = light->active;
+        ic->light = *light;
     }
     if (sprite != NULL) { ic->has_sprite3d = true; ic->sprite3d = *sprite; }
     ic->visibility = eng_object_visibility(engine, id);
@@ -293,8 +311,10 @@ void eng_restore_ic(nmo_engine_t *engine, nmo_object_id_t id)
     }
     eng_light_t *light = ic->has_light ? eng_light(engine, id) : NULL;
     if (light != NULL) {
-        memcpy(light->color, ic->light_color, sizeof(light->color));
-        light->active = ic->light_active;
+        nmo_object_id_t target = ic->light.target;
+        *light = ic->light;
+        light->target = 0;
+        eng_set_light_target(engine, id, target); /* the IC's target, with its flags */
     }
     eng_sprite3d_t *sprite = ic->has_sprite3d ? eng_sprite3d(engine,id) : NULL;
     if (sprite != NULL) *sprite = ic->sprite3d;

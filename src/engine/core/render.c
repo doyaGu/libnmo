@@ -970,12 +970,27 @@ eng_light_t *eng_light(nmo_engine_t *engine, nmo_object_id_t id)
     if (!ENG_VEC_PUSH(engine->render.lights, light)) {
         return NULL;
     }
+    memset(light, 0, sizeof(*light));
     light->id = id;
     light->color[0] = state->light_data.diffuse.r;
     light->color[1] = state->light_data.diffuse.g;
     light->color[2] = state->light_data.diffuse.b;
     light->color[3] = state->light_data.diffuse.a;
     light->active = (state->flags & NMO_LIGHT_FLAG_ACTIVE) != 0;
+    light->type = (int32_t)state->light_data.type;
+    light->range = state->light_data.range;
+    light->attenuation[0] = state->light_data.attenuation0;
+    light->attenuation[1] = state->light_data.attenuation1;
+    light->attenuation[2] = state->light_data.attenuation2;
+    light->hot_spot = state->light_data.inner_spot_cone;
+    light->fall_off = state->light_data.outer_spot_cone;
+    light->fall_off_shape = state->light_data.falloff;
+    light->specular = (state->flags & NMO_LIGHT_FLAG_SPECULAR) != 0;
+    const nmo_targetlight_state_t *target =
+        (const nmo_targetlight_state_t *)eng_typed_state(engine, id, CKPGUID_TARGETLIGHT);
+    if (target != NULL && target->has_target) {
+        light->target = eng_object_ref(engine, id, &target->target);
+    }
     if (!eng_map_put(&engine->render.light_map, id, (int32_t)engine->render.lights.count - 1)) {
         engine->render.lights.count--;
         return NULL;
@@ -1236,6 +1251,31 @@ static void eng_render_2d_root(nmo_engine_t *engine, bool background, float widt
     free(roots);
 }
 
+bool eng_set_light_target(nmo_engine_t *engine, nmo_object_id_t id, nmo_object_id_t target)
+{
+    if (eng_typed_state(engine, id, CKPGUID_TARGETLIGHT) == NULL) {
+        return false; /* CKLight::SetTarget does nothing */
+    }
+    eng_light_t *light = eng_light(engine, id);
+    if (light == NULL || target == id) {
+        return light != NULL;
+    }
+    int32_t old = light->target != 0 ? eng_entity_index(engine, light->target) : -1;
+    if (old >= 0) {
+        uint32_t *flags = &engine->entities.data[old].entity_flags;
+        *flags = (*flags & ~(uint32_t)CK_3DENTITY_TARGETLIGHT) | CK_3DENTITY_FRAME;
+    }
+    int32_t index = target != 0 ? eng_entity_index(engine, target) : -1;
+    if (index >= 0) {
+        uint32_t *flags = &engine->entities.data[index].entity_flags;
+        *flags = (*flags | CK_3DENTITY_TARGETLIGHT) & ~(uint32_t)CK_3DENTITY_FRAME;
+        light->target = target;
+    } else {
+        light->target = 0;
+    }
+    return true;
+}
+
 /* ============================================================================
  * The frame
  * ============================================================================ */
@@ -1264,12 +1304,9 @@ static void eng_prepare_cameras(nmo_engine_t *engine)
         if (nmo_type_registry_is_class_derived_from(engine->types,class_id,NMO_CID_TARGETCAMERA)) {
             target = eng_camera_target(engine,entity->id);
         } else if (class_id == NMO_CID_TARGETLIGHT) {
-            const nmo_targetlight_state_t *state =
-                (const nmo_targetlight_state_t *)nmo_object_get_state(object);
-            target_ref = state != NULL && state->has_target &&
-                                 state->base.light_data.type != VX_LIGHTPOINT
-                             ? &state->target
-                             : NULL;
+            const eng_light_t *light = eng_light(engine, entity->id);
+            entity = &engine->entities.data[i];
+            target = light != NULL && light->type != VX_LIGHTPOINT ? light->target : 0;
         }
         if (target_ref != NULL) target = eng_object_ref(engine,entity->id,target_ref);
         int32_t target_index = target != 0 ? eng_entity_index(engine, target) : -1;
@@ -1306,7 +1343,7 @@ static void eng_frame_lights(nmo_engine_t *engine)
         }
         entity = &engine->entities.data[i];
         out->id = entity->id;
-        out->type = (int32_t)state->light_data.type;
+        out->type = light->type;
         float power = state->has_light_power_chunk ? state->light_power : 1.0f;
         for (int c = 0; c < 3; c++) {
             out->color[c] = light->color[c] * power;
@@ -1316,14 +1353,12 @@ static void eng_frame_lights(nmo_engine_t *engine)
             out->position[c] = entity->world.m[3][c];
             out->direction[c] = entity->world.m[2][c];
         }
-        out->range = state->light_data.range;
-        out->attenuation[0] = state->light_data.attenuation0;
-        out->attenuation[1] = state->light_data.attenuation1;
-        out->attenuation[2] = state->light_data.attenuation2;
-        out->inner_cone = state->light_data.inner_spot_cone;
-        out->outer_cone = state->light_data.outer_spot_cone;
-        out->falloff = state->light_data.falloff;
-        out->specular = (state->flags & NMO_LIGHT_FLAG_SPECULAR) != 0;
+        out->range = light->range;
+        memcpy(out->attenuation, light->attenuation, sizeof(out->attenuation));
+        out->inner_cone = light->hot_spot;
+        out->outer_cone = light->fall_off;
+        out->falloff = light->fall_off_shape;
+        out->specular = light->specular;
     }
 }
 

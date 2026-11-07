@@ -92,11 +92,19 @@ typedef struct eng_2d {
     bool destroyed;
 } eng_2d_t;
 
-/* A CKLight's state the blocks change */
+/* A CKLight's state the blocks change: its color, activity and VxLight data, and a target light's target */
 typedef struct eng_light {
     nmo_object_id_t id;
     float color[4];
     bool active;
+    int32_t type;          /* VXLIGHT_TYPE */
+    float range;
+    float attenuation[3];  /* constant, linear, quadratic */
+    float hot_spot;        /* the inner cone (InnerSpotCone) */
+    float fall_off;        /* the outer cone (OuterSpotCone) */
+    float fall_off_shape;  /* Falloff */
+    bool specular;
+    nmo_object_id_t target; /* CKTargetLight's; 0 for none */
 } eng_light_t;
 
 /* CKSprite3D keeps size in its local box; signed extents are preserved. */
@@ -192,6 +200,8 @@ void eng_2d_destroy(nmo_engine_t *engine, nmo_object_id_t id);
 /* The 2D entity's run time state; NULL for no CK2dEntity */
 eng_2d_t *eng_2d_entity(nmo_engine_t *engine, nmo_object_id_t id);
 eng_light_t *eng_light(nmo_engine_t *engine, nmo_object_id_t id);
+/* CKTargetLight::SetTarget: the light points at `target` (0 for none), its flags moved over; false for no target light */
+bool eng_set_light_target(nmo_engine_t *engine, nmo_object_id_t light, nmo_object_id_t target);
 eng_sprite3d_t *eng_sprite3d(nmo_engine_t *engine, nmo_object_id_t id);
 void eng_sprite3d_from_state(const nmo_engine_t *engine, nmo_object_id_t id,
     const struct nmo_sprite3d_state *state, eng_sprite3d_t *out);
