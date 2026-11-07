@@ -125,11 +125,81 @@ static int bb_objects_with_attribute(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/*
+ * The obsolete attribute blocks name their object in an input, the owner when
+ * it holds none (Set Attribute Obsolete does nothing then), and the
+ * attribute in the next.
+ */
+static nmo_object_id_t obsolete_object(blk_t *b, bool owner_fallback)
+{
+    nmo_object_id_t object = nmo_engine_block_get_input_object(b, 0);
+    return object == 0 && owner_fallback ? nmo_engine_block_owner(b) : object;
+}
+
+/* Has Attribute Obsolete (HasAttribute_old) */
+static int bb_has_attribute_old(blk_t *b)
+{
+    IN_OFF(b, 0);
+    nmo_object_id_t object = obsolete_object(b, true);
+    eng_attribute_t *attribute = object != 0 ? eng_attribute_find(b->engine, object, get_in_int(b, 1, -1))
+                                             : NULL;
+    if (attribute == NULL) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    OUT_ON(b, 0);
+    eng_param_t *out = block_output(b, 0);
+    if (out != NULL && attribute->has_value) {
+        eng_param_copy(b->engine, out, &attribute->value, false);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Set Attribute Obsolete (SetAttribute_old): its value from the third input */
+static int bb_set_attribute_old(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_object_id_t object = obsolete_object(b, false);
+    if (object == 0) {
+        return NMO_ENGINE_BR_OK;
+    }
+    int32_t type = get_in_int(b, 1, -1);
+    nmo_engine_object_set_attribute(b->engine, object, type);
+    eng_attribute_t *attribute = eng_attribute_find(b->engine, object, type);
+    if (attribute == NULL || !attribute->has_value) {
+        return NMO_ENGINE_BR_OK;
+    }
+    eng_param_t *source = input_source(b, 2, false);
+    if (source != NULL) {
+        eng_param_copy(b->engine, &attribute->value, source, true);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Remove Attribute Obsolete (RemoveAttribute_old) */
+static int bb_remove_attribute_old(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_object_id_t object = obsolete_object(b, true);
+    if (object != 0) {
+        nmo_engine_object_remove_attribute(b->engine, object, get_in_int(b, 1, -1));
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_logics_attribute_blocks[] = {
     {NMO_GUID_INIT(0x25b54079, 0x6ff90545), "Has Attribute", bb_has_attribute, NULL, NULL},
     {NMO_GUID_INIT(0x373040f2, 0x05e01b34), "Set Attribute", bb_set_attribute, NULL, NULL},
     {NMO_GUID_INIT(0x6b6340c4, 0x61e94a41), "Remove Attribute", bb_remove_attribute, NULL, NULL},
     {NMO_GUID_INIT(0x6bc1494c, 0x0c816ad3), "Objects With Attribute Iterator", bb_objects_with_attribute,
+     NULL, NULL},
+    {NMO_GUID_INIT(0x321e41c4, 0x006e41d5), "Has Attribute Obsolete", bb_has_attribute_old, NULL,
+     NULL},
+    {NMO_GUID_INIT(0x321f32c4, 0x006f32d5), "Set Attribute Obsolete", bb_set_attribute_old, NULL,
+     NULL},
+    {NMO_GUID_INIT(0x321d56c4, 0x006d56d5), "Remove Attribute Obsolete", bb_remove_attribute_old,
      NULL, NULL},
 };
 
