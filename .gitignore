@@ -93,3 +93,18 @@ deps/lua/
 # Release packaging (tools/scripts/package_release.py)
 /build-package/
 /dist/
+
+# Authored maps and map-bound local regression fixtures stay outside Git.
+/apps/ballance/data/*_route.json
+/apps/ballance/data/*_scenarios.json
+/apps/ballance/data/*_shortcuts.json
+/apps/ballance/data/*_tolerance.json
+/apps/ballance/data/level_*_autoplay.*
+/apps/ballance/scripts/ballance_sample_level.py
+/tools/scripts/ballance_sample_level.py
+/apps/ballance/tests/test_shortcuts.py
+/apps/ballance/tests/test_tolerance.py
+/apps/ballance/tests/test_local_play.py
+/apps/ballance/tests/test_editor_dynamics.py
+/apps/ballance-editor/tests/test_local_play.py
+/apps/ballance-editor/tests/test_editor_dynamics.py
