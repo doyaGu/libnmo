@@ -11,7 +11,9 @@
 #include "core/nmo_array.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/nmo_ref.h"
+#include "object/builtin/nmo_camera_schemas.h"
 #include "object/builtin/nmo_group_schemas.h"
+#include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/builtin/nmo_synchro_schemas.h"
@@ -47,6 +49,11 @@
 #define GUID_RENDEZVOUS NMO_GUID(0x3a1a16c7, 0x20095c45)
 #define GUID_ENTER_CRITICAL_SECTION NMO_GUID(0x3c442002, 0x5988257c)
 #define GUID_LEAVE_CRITICAL_SECTION NMO_GUID(0x45db3138, 0x4db80f47)
+#define GUID_PROXIMITY NMO_GUID(0x5321cacb, 0xdcdc5213)
+#define GUID_MODIFY_COMPONENT NMO_GUID(0xe5b234f3, 0x35fbacf7)
+#define GUID_RAY_BOX_INTERSECTION NMO_GUID(0x671e5a87, 0x383b2372)
+#define GUID_OBJECT_BETWEEN NMO_GUID(0x45484b53, 0x08eb1fab)
+#define GUID_IS_IN_VIEW_FRUSTUM NMO_GUID(0x45542a7f, 0x4c2f01a6)
 
 #define STEP_MS 10.0f
 
@@ -536,6 +543,175 @@ TEST(engine_logics, rendezvous_and_critical_sections_hold_objects_back)
     fixture_end(&f);
 }
 
+/* A 3D object at `x`, `z` with a unit cube mesh (vertices only: boxes, no faces) */
+static nmo_object_id_t cube_at(engine_fixture_t *f, const char *name, float x, float z)
+{
+    nmo_object_id_t object = fixture_create(f, NMO_CID_3DOBJECT, name);
+    nmo_object_id_t mesh = fixture_create(f, NMO_CID_MESH, name);
+    nmo_3dentity_state_t *entity = (nmo_3dentity_state_t *)fixture_state(f, object);
+    nmo_mesh_state_t *state = (nmo_mesh_state_t *)fixture_state(f, mesh);
+    if (entity == NULL || state == NULL) {
+        return 0;
+    }
+    memset(entity->world_matrix, 0, sizeof(entity->world_matrix));
+    entity->world_matrix[0] = entity->world_matrix[5] = entity->world_matrix[10] = 1.0f;
+    entity->world_matrix[15] = 1.0f;
+    entity->world_matrix[12] = x;
+    entity->world_matrix[14] = z;
+    entity->has_entityndata_chunk = 1;
+    state->vertices = (nmo_vertex_t *)nmo_arena_alloc(nmo_session_get_arena(f->session),
+                                                      8u * sizeof(nmo_vertex_t), _Alignof(nmo_vertex_t));
+    if (state->vertices == NULL) {
+        return 0;
+    }
+    memset(state->vertices, 0, 8u * sizeof(nmo_vertex_t));
+    for (int i = 0; i < 8; i++) {
+        state->vertices[i].position =
+            (nmo_vector_t){(i & 1) ? 0.5f : -0.5f, (i & 2) ? 0.5f : -0.5f, (i & 4) ? 0.5f : -0.5f};
+    }
+    state->vertex_count = 8;
+    entity->current_mesh = nmo_ref_from_id(mesh);
+    return object;
+}
+
+/* A local parameter of a block, by position */
+static nmo_object_id_t local_of(engine_fixture_t *f, nmo_object_id_t behavior, size_t pos)
+{
+    const nmo_behavior_state_t *state = (const nmo_behavior_state_t *)fixture_state(f, behavior);
+    return state != NULL && pos < state->local_parameters.count
+               ? nmo_behavior_ref_array_get_id(&state->local_parameters, pos)
+               : 0;
+}
+
+TEST(engine_logics, proximity_and_modify_component)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t near_cube = cube_at(&f, "Near", 3.0f, 0.0f);
+    ASSERT_TRUE(near_cube != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    /* The owner (at the origin) and Near, 3 apart: within 5, not within 2 */
+    nmo_object_id_t within = block(&f, GUID_PROXIMITY, "Within 5");
+    nmo_object_id_t beyond = block(&f, GUID_PROXIMITY, "Within 2");
+    const float five = 5.0f, two = 2.0f;
+    fixture_input_value(&f, BLOCK_PIN(&f, within, 0), &five, sizeof(five));
+    fixture_input_value(&f, BLOCK_PIN(&f, beyond, 0), &two, sizeof(two));
+    for (int i = 0; i < 2; i++) {
+        nmo_object_id_t p = i == 0 ? within : beyond;
+        fixture_input_int(&f, BLOCK_PIN(&f, p, 1), (int32_t)f.owner_id);
+        fixture_input_int(&f, BLOCK_PIN(&f, p, 2), (int32_t)near_cube);
+        fixture_link(&f, f.script_in, BLOCK_IN(&f, p, 0), 0);
+    }
+    nmo_object_id_t in_range = nop_after(&f, BLOCK_OUT(&f, within, 0), 0);
+    nmo_object_id_t out_range = nop_after(&f, BLOCK_OUT(&f, beyond, 1), 0);
+    /* Modify Component of a vector: Y only */
+    nmo_object_id_t modify = block(&f, GUID_MODIFY_COMPONENT, "Modify Component");
+    const float vin[3] = {1.0f, 2.0f, 3.0f}, nine = 9.0f;
+    fixture_input_value(&f, BLOCK_PIN(&f, modify, 0), vin, sizeof(vin));
+    nmo_object_id_t y = 0;
+    ASSERT_EQ(NMO_OK, nmo_script_edit_add_parameter(f.tx, modify, NMO_SCRIPT_EDIT_PARAM_IN,
+                                                    CKPGUID_FLOAT, "Y", &y));
+    fixture_input_value(&f, y, &nine, sizeof(nine));
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, modify, 0), 0);
+    nmo_object_id_t settings = local_of(&f, modify, 0);
+    ASSERT_TRUE(settings != 0);
+    start(&f);
+    const uint32_t flags = 0x70000004u; /* a vector, Modify Y */
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, settings, &flags, sizeof(flags)));
+
+    step(&f, 1);
+    ASSERT_EQ(1u, runs(&f, in_range));
+    ASSERT_EQ(1u, runs(&f, out_range));
+    float distance = 0.0f;
+    read_value(&f, BLOCK_POUT(&f, within, 0), &distance, sizeof(distance));
+    ASSERT_FLOAT_EQ(3.0f, distance, 1e-6f);
+    float v[3] = {0, 0, 0};
+    read_value(&f, BLOCK_POUT(&f, modify, 0), v, sizeof(v));
+    ASSERT_FLOAT_EQ(1.0f, v[0], 0.0f);
+    ASSERT_FLOAT_EQ(9.0f, v[1], 0.0f);
+    ASSERT_FLOAT_EQ(3.0f, v[2], 0.0f);
+    fixture_end(&f);
+}
+
+TEST(engine_logics, ray_boxes_obstacles_and_the_view_frustum)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t cube = cube_at(&f, "Cube", 10.0f, 0.0f);
+    nmo_object_id_t far_end = cube_at(&f, "Far End", 20.0f, 0.0f);
+    nmo_object_id_t ahead = cube_at(&f, "Ahead", 0.0f, 10.0f);
+    nmo_object_id_t camera = fixture_create(&f, NMO_CID_CAMERA, "Camera");
+    nmo_camera_state_t *lens = (nmo_camera_state_t *)fixture_state(&f, camera);
+    ASSERT_TRUE(cube != 0 && far_end != 0 && ahead != 0 && lens != NULL);
+    memset(lens->entity.world_matrix, 0, sizeof(lens->entity.world_matrix));
+    lens->entity.world_matrix[0] = lens->entity.world_matrix[5] = lens->entity.world_matrix[10] = 1.0f;
+    lens->entity.world_matrix[15] = 1.0f;
+    lens->entity.has_entityndata_chunk = 1;
+    lens->projection_type = 1; /* perspective */
+    lens->fov = 1.0f;
+    lens->aspect_width = 4;
+    lens->aspect_height = 3;
+    lens->near_plane = 1.0f;
+    lens->far_plane = 100.0f;
+    const nmo_object_id_t members[1] = {cube};
+    nmo_object_id_t group = make_group(&f, "Boxes", members, 1);
+    ASSERT_TRUE(group != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t ray = block(&f, GUID_RAY_BOX_INTERSECTION, "Ray Box");
+    target_of(&f, ray, f.owner_id);
+    const float origin[3] = {0, 0, 0}, along_x[3] = {1, 0, 0};
+    fixture_input_value(&f, BLOCK_PIN(&f, ray, 0), origin, sizeof(origin));
+    fixture_input_value(&f, BLOCK_PIN(&f, ray, 1), along_x, sizeof(along_x));
+    fixture_input_int(&f, BLOCK_PIN(&f, ray, 4), (int32_t)group);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, ray, 0), 0);
+    nmo_object_id_t hit = nop_after(&f, BLOCK_OUT(&f, ray, 0), 0);
+    nmo_object_id_t between = block(&f, GUID_OBJECT_BETWEEN, "Object Between");
+    fixture_input_int(&f, BLOCK_PIN(&f, between, 0), (int32_t)f.owner_id);
+    fixture_input_int(&f, BLOCK_PIN(&f, between, 1), (int32_t)far_end);
+    fixture_input_int(&f, BLOCK_PIN(&f, between, 2), 1); /* boxes only */
+    fixture_input_int(&f, BLOCK_PIN(&f, between, 3), 0); /* every 3D object */
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, between, 0), 0);
+    nmo_object_id_t blocked = nop_after(&f, BLOCK_OUT(&f, between, 0), 0);
+    nmo_object_id_t seen = block(&f, GUID_IS_IN_VIEW_FRUSTUM, "Ahead In View");
+    nmo_object_id_t unseen = block(&f, GUID_IS_IN_VIEW_FRUSTUM, "Side In View");
+    fixture_input_int(&f, BLOCK_PIN(&f, seen, 0), (int32_t)ahead);
+    fixture_input_int(&f, BLOCK_PIN(&f, unseen, 0), (int32_t)cube);
+    fixture_input_int(&f, BLOCK_PIN(&f, seen, 1), 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, unseen, 1), 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, seen, 0), 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, unseen, 0), 0);
+    nmo_object_id_t inside = nop_after(&f, BLOCK_OUT(&f, seen, 0), 0);
+    nmo_object_id_t outside = nop_after(&f, BLOCK_OUT(&f, unseen, 1), 0);
+    start(&f);
+    f.engine->render.camera = camera;
+
+    step(&f, 1);
+    ASSERT_EQ(1u, runs(&f, hit));
+    uint32_t object = 0;
+    float point[3] = {0, 0, 0}, normal[3] = {0, 0, 0}, distance = 0.0f;
+    read_value(&f, BLOCK_POUT(&f, ray, 0), &object, sizeof(object));
+    read_value(&f, BLOCK_POUT(&f, ray, 1), point, sizeof(point));
+    read_value(&f, BLOCK_POUT(&f, ray, 2), normal, sizeof(normal));
+    read_value(&f, BLOCK_POUT(&f, ray, 3), &distance, sizeof(distance));
+    ASSERT_EQ((uint32_t)cube, object);
+    ASSERT_FLOAT_EQ(9.5f, point[0], 1e-5f);
+    ASSERT_FLOAT_EQ(-1.0f, normal[0], 0.0f);
+    ASSERT_FLOAT_EQ(9.5f, distance, 1e-5f);
+    ASSERT_EQ(1u, runs(&f, blocked));
+    read_value(&f, BLOCK_POUT(&f, between, 0), &object, sizeof(object));
+    ASSERT_EQ((uint32_t)cube, object);
+    ASSERT_EQ(1u, runs(&f, inside));
+    ASSERT_EQ(1u, runs(&f, outside));
+    float extents[4] = {0, 0, 0, 0};
+    read_value(&f, BLOCK_POUT(&f, seen, 0), extents, sizeof(extents));
+    /* A unit cube 10 ahead sits around the middle of the 640 by 480 view */
+    ASSERT_TRUE(extents[0] < 320.0f && extents[2] > 320.0f);
+    ASSERT_TRUE(extents[1] < 240.0f && extents[3] > 240.0f);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_logics, while_and_bool_events_follow_their_conditions);
     REGISTER_TEST(engine_logics, fifo_and_lifo_release_their_inputs_in_order);
@@ -546,4 +722,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_logics, message_data_carries_the_senders_parameters);
     REGISTER_TEST(engine_logics, group_blocks_add_remove_combine_and_clear);
     REGISTER_TEST(engine_logics, rendezvous_and_critical_sections_hold_objects_back);
+    REGISTER_TEST(engine_logics, proximity_and_modify_component);
+    REGISTER_TEST(engine_logics, ray_boxes_obstacles_and_the_view_frustum);
 TEST_MAIN_END()

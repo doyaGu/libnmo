@@ -9,6 +9,8 @@
 #include "type/nmo_param_guids.h"
 #include "type/nmo_type_guids.h"
 
+#include <stdio.h>
+
 #define GUID_NOP NMO_GUID(0x302561c4, 0x0d282980)
 #define GUID_GET_CELL NMO_GUID(0x33b99f51, 0x07d95c45)
 #define GUID_SET_CELL NMO_GUID(0x30ed1c6d, 0x4a3b7067)
@@ -48,6 +50,8 @@
 #define GUID_GET_COLUMN_NAME NMO_GUID(0x33b7ff41, 0x07b95c44)
 #define GUID_SET_KEY_ROW NMO_GUID(0x2fff4c63, 0x4fcb1b94)
 #define GUID_CREATE_GROUP_FROM_ARRAY NMO_GUID(0x22c71529, 0x6bb265d2)
+#define GUID_ARRAY_LOAD NMO_GUID(0x13bd2c64, 0x62db38e1)
+#define GUID_ARRAY_SAVE NMO_GUID(0x15185846, 0x41014a45)
 
 /* Columns: Key (int), Weight (float), Name (string), Object (object). */
 static nmo_object_id_t create_array(engine_fixture_t *f, int32_t key_column, uint32_t rows,
@@ -985,6 +989,91 @@ TEST(engine_arrays, move_column_names_and_create_group)
     fixture_end(&f);
 }
 
+/* The files the array load and save test reads and writes */
+typedef struct array_files {
+    const char *input_path;
+    char written[256];
+    size_t written_size;
+    char written_name[32];
+} array_files_t;
+
+static const char *array_resolve(void *user_data, const char *name)
+{
+    const array_files_t *files = (const array_files_t *)user_data;
+    return strcmp(name, "rows.txt") == 0 ? files->input_path : NULL;
+}
+
+static nmo_status_t array_write(void *user_data, const char *name, const void *data, size_t size)
+{
+    array_files_t *files = (array_files_t *)user_data;
+    if (size >= sizeof(files->written) || strlen(name) >= sizeof(files->written_name)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    memcpy(files->written, data, size);
+    files->written[size] = '\0';
+    files->written_size = size;
+    memcpy(files->written_name, name, strlen(name) + 1u);
+    return NMO_OK;
+}
+
+static void input_text(engine_fixture_t *f, nmo_object_id_t pin, const char *text)
+{
+    nmo_object_id_t source = 0;
+    ASSERT_EQ(NMO_OK, nmo_script_edit_ensure_input_parameter_source(f->tx, pin, &source));
+    ASSERT_EQ(NMO_OK, nmo_script_edit_set_parameter_value(f->tx, source, text));
+}
+
+TEST(engine_arrays, array_load_appends_rows_and_array_save_writes_them)
+{
+    array_files_t files;
+    memset(&files, 0, sizeof(files));
+    files.input_path = NMO_TEST_SCRATCH_FILE("engine_array_rows.txt");
+    FILE *input = fopen(files.input_path, "wb");
+    ASSERT_TRUE(input != NULL);
+    /* Every column type but parameters; a CR LF line, an empty line, a short line */
+    fputs("40\t4.5\tforty\tOwner\r\n\n50\n", input);
+    fclose(input);
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t array = create_array(&f, -1, 1, keys, weights, names);
+    ASSERT_TRUE(array != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t load = array_block(&f, GUID_ARRAY_LOAD, "Load", array);
+    nmo_object_id_t missing = array_block(&f, GUID_ARRAY_LOAD, "Load Missing", array);
+    nmo_object_id_t save = array_block(&f, GUID_ARRAY_SAVE, "Save", array);
+    nmo_object_id_t file_error = fixture_block(&f, GUID_NOP, "File Error");
+    ASSERT_TRUE(load != 0 && missing != 0 && save != 0 && file_error != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, load, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, load, 0), BLOCK_IN(&f, missing, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, missing, 1), BLOCK_IN(&f, file_error, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, missing, 1), BLOCK_IN(&f, save, 0), 0);
+    input_text(&f, BLOCK_PIN(&f, load, 0), "rows.txt");
+    fixture_input_int(&f, BLOCK_PIN(&f, load, 1), 1);
+    fixture_input_int(&f, BLOCK_PIN(&f, load, 2), 0);
+    input_text(&f, BLOCK_PIN(&f, missing, 0), "none.txt");
+    input_text(&f, BLOCK_PIN(&f, save, 0), "out.txt");
+    fixture_input_int(&f, BLOCK_PIN(&f, save, 1), 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, save, 2), 4);
+    fixture_input_int(&f, BLOCK_PIN(&f, save, 3), 0);
+    fixture_commit(&f, NULL);
+    nmo_engine_set_file_resolver(f.engine, array_resolve, &files);
+    nmo_engine_set_file_writer(f.engine, array_write, &files);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 16.0f));
+
+    ASSERT_EQ(1u, runs(&f, file_error));
+    ASSERT_EQ(3, nmo_engine_array_row_count(f.engine, array));
+    ASSERT_EQ(40, cell_int(&f, array, 1, 0));
+    ASSERT_FLOAT_EQ(4.5f, cell_float(&f, array, 1, 1), 0.0f);
+    ASSERT_EQ((int32_t)f.owner_id, cell_int(&f, array, 1, 3));
+    ASSERT_EQ(50, cell_int(&f, array, 2, 0));
+    ASSERT_STR_EQ("out.txt", files.written_name);
+    ASSERT_STR_EQ("10\t0.5\tten\tOwner\r\n40\t4.5\tforty\tOwner\r\n50\t0\t\t\r\n", files.written);
+    fixture_end(&f);
+    remove(files.input_path);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_arrays, get_cell_reads_a_cell_or_reports_not_found);
 REGISTER_TEST(engine_arrays, set_cell_and_add_row_change_the_engine_copy);
@@ -1006,4 +1095,5 @@ REGISTER_TEST(engine_arrays, collection_iterator_walks_the_objects);
 REGISTER_TEST(engine_arrays, lowest_nearest_product_and_column_arithmetic);
 REGISTER_TEST(engine_arrays, reverse_move_swap_unique_and_key_rows);
 REGISTER_TEST(engine_arrays, move_column_names_and_create_group);
+REGISTER_TEST(engine_arrays, array_load_appends_rows_and_array_save_writes_them);
 TEST_MAIN_END()
