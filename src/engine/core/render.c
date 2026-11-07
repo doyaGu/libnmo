@@ -2238,6 +2238,7 @@ static nmo_status_t eng_draw_scene(nmo_engine_t *engine, const nmo_engine_frame_
     if (frame->render_options & CK_RENDER_BACKGROUNDSPRITES) {
         eng_render_2d_root(engine, true, width, height);
     }
+    eng_managers_render(engine, ENG_RENDER_PRE, &args);
     eng_managers_render(engine, ENG_RENDER_BACKGROUND, &args);
     size_t first_entity_draw = render->draws.count;
     bool prioritized = false;

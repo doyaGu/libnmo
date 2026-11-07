@@ -21,7 +21,9 @@ typedef enum eng_render_stage {
     ENG_RENDER_ENTITY_2D,  /* a 2D entity's post render callbacks; `entity` is the entity */
     ENG_RENDER_OVERLAY,    /* after the foreground 2D entities (the post render callbacks) */
     ENG_RENDER_POST,       /* the post sprite render callbacks, last */
-    ENG_RENDER_PASSES      /* after PREPARE, before the frame's draws: the render passes to make */
+    ENG_RENDER_PASSES,     /* after PREPARE, before the frame's draws: the render passes to make */
+    ENG_RENDER_PRE         /* the render context's pre render callbacks: after the background 2D
+                              entities, before BACKGROUND (ExecuteManagersOnPreRender) */
 } eng_render_stage_t;
 
 typedef struct eng_render_args {
