@@ -9,6 +9,7 @@
 
 #include "core/nmo_arena.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_camera_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/nmo_ref.h"
 
@@ -42,6 +43,8 @@
 #define GUID_CHANGE_TEXTURE_SIZE NMO_GUID(0x7a7c4d7b, 0x468d0f33)
 #define GUID_WRITE_IN_TEXTURE NMO_GUID(0x1d57024d, 0x7c064238)
 #define GUID_SET_MIPMAP_TEXTURE NMO_GUID(0x6e407fcf, 0x0eff06a5)
+#define GUID_ENVIRONMENT_MAPPING NMO_GUID(0x10d1c997, 0x99dabef4)
+#define GUID_SCREEN_MAPPING NMO_GUID(0x58ef12ca, 0x26805940)
 
 #define STEP_MS 10.0f
 
@@ -485,6 +488,72 @@ TEST(engine_materials, texture_blocks_create_write_scale_and_set_levels)
     fixture_end(&f);
 }
 
+TEST(engine_materials, environment_mapping_maps_the_normals_at_the_next_render)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t mesh = 0;
+    nmo_object_id_t quad = quad_object(&f, 0, &mesh);
+    nmo_object_id_t referential = fixture_create(&f, NMO_CID_3DENTITY, "Referential");
+    nmo_3dentity_state_t *ref = (nmo_3dentity_state_t *)fixture_state(&f, referential);
+    ASSERT_TRUE(quad != 0 && ref != 0);
+    /* The referential's X axis is the world's Z */
+    const float turned[16] = {0, 0, 1, 0, 0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 0, 1};
+    memcpy(ref->world_matrix, turned, sizeof(turned));
+    ref->has_entityndata_chunk = 1;
+    nmo_object_id_t map = block_on(&f, GUID_ENVIRONMENT_MAPPING, "Environment Mapping", quad, 0, 0);
+    ASSERT_TRUE(map != 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, map, 1), 4); /* Use Ref Orientation */
+    fixture_input_int(&f, BLOCK_PIN(&f, map, 2), (int32_t)referential);
+    start(&f);
+    eng_show(f.engine, quad, 1);
+    eng_show(f.engine, mesh, 1);
+
+    step(&f, 1);
+    nmo_vector2_t before = uv_of(&f, mesh, 3);
+    ASSERT_FLOAT_EQ(1.0f, before.x, 0.0f); /* nothing until the render */
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    nmo_engine_mesh_t desc;
+    ASSERT_TRUE(nmo_engine_mesh(f.engine, mesh, &desc));
+    const nmo_vector_t *n = &desc.vertices[3].normal;
+    ASSERT_FLOAT_EQ(1.0f, fabsf(n->z), 1e-6f);
+    /* U along the referential's X, V against its Y */
+    ASSERT_FLOAT_EQ(0.45f * n->z + 0.5f, desc.vertices[3].uv.x, 1e-6f);
+    ASSERT_FLOAT_EQ(0.5f, desc.vertices[3].uv.y, 1e-6f);
+    fixture_end(&f);
+}
+
+TEST(engine_materials, screen_mapping_projects_through_the_camera)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t mesh = 0;
+    nmo_object_id_t quad = quad_object(&f, 0, &mesh);
+    nmo_object_id_t camera = fixture_create(&f, NMO_CID_CAMERA, "Camera");
+    nmo_camera_state_t *lens = (nmo_camera_state_t *)fixture_state(&f, camera);
+    ASSERT_TRUE(quad != 0 && lens != NULL && place_at_origin(&f, camera));
+    lens->projection_type = 2; /* orthographic: no division by depth */
+    lens->orthographic_zoom = 1.0f;
+    lens->aspect_width = lens->aspect_height = 1;
+    lens->near_plane = 1.0f;
+    lens->far_plane = 100.0f;
+    nmo_object_id_t screen = block_on(&f, GUID_SCREEN_MAPPING, "Screen Mapping", quad, 0, 0);
+    ASSERT_TRUE(screen != 0);
+    start(&f);
+    f.engine->render.camera = camera;
+
+    step(&f, 1);
+    /* U = x / 2 - 0.5, V = -y / 2 - 0.5 in the default Screen UVs */
+    nmo_vector2_t uv = uv_of(&f, mesh, 3);
+    ASSERT_FLOAT_EQ(0.0f, uv.x, 1e-6f);
+    ASSERT_FLOAT_EQ(-1.0f, uv.y, 1e-6f);
+    uv = uv_of(&f, mesh, 0);
+    ASSERT_FLOAT_EQ(-0.5f, uv.x, 1e-6f);
+    ASSERT_FLOAT_EQ(-0.5f, uv.y, 1e-6f);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_materials, setters_change_the_material_the_engine_keeps);
     REGISTER_TEST(engine_materials, set_material_replaces_then_applies_and_mesh_flags_follow);
@@ -493,4 +562,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_materials, mappings_project_the_vertices_into_uvs);
     REGISTER_TEST(engine_materials, texture_sine_sways_the_owner_mesh_uvs);
     REGISTER_TEST(engine_materials, texture_blocks_create_write_scale_and_set_levels);
+    REGISTER_TEST(engine_materials, environment_mapping_maps_the_normals_at_the_next_render);
+    REGISTER_TEST(engine_materials, screen_mapping_projects_through_the_camera);
 TEST_MAIN_END()

@@ -94,6 +94,7 @@ void eng_free_render(nmo_engine_t *engine)
     free(render->vertices.data);
     free(render->draws.data);
     free(render->frame_lights.data);
+    free(render->env_maps.data);
 }
 
 eng_mesh_t *eng_render_mesh(nmo_engine_t *engine, nmo_object_id_t id)
@@ -1500,6 +1501,114 @@ static void eng_prepare_cameras(nmo_engine_t *engine)
     }
 }
 
+bool eng_add_env_map(nmo_engine_t *engine, const eng_env_map_t *map)
+{
+    for (size_t m = 0; m < engine->render.env_maps.count; m++) {
+        eng_env_map_t *known = &engine->render.env_maps.data[m];
+        if (known->entity == map->entity && known->behavior == map->behavior) {
+            *known = *map;
+            return true;
+        }
+    }
+    eng_env_map_t *added = NULL;
+    if (!ENG_VEC_PUSH(engine->render.env_maps, added)) {
+        return false;
+    }
+    *added = *map;
+    return true;
+}
+
+static void eng_normalize_vector(eng_vector_t *v)
+{
+    float length = sqrtf(v->x * v->x + v->y * v->y + v->z * v->z);
+    if (length > 0.0f) {
+        v->x /= length, v->y /= length, v->z /= length;
+    }
+}
+
+static float eng_dot(const eng_vector_t *a, const eng_vector_t *b)
+{
+    return a->z * b->z + a->y * b->y + a->x * b->x;
+}
+
+/*
+ * Environment Mapping's callback (Materials.dll): the UVs of the entity's
+ * mesh from its normals (or, reflecting, from the directions to the
+ * referential mirrored on them) along the referential's right and up axes,
+ * seen from the entity or as the referential is oriented.
+ */
+static void eng_run_env_map(nmo_engine_t *engine, const eng_env_map_t *map, int32_t entity, nmo_object_id_t mesh)
+{
+    nmo_object_id_t referential_id = map->referential;
+    eng_vector_t up = {0.0f, 1.0f, 0.0f}, right;
+    if (referential_id == 0) {
+        referential_id = engine->render.camera;
+        int32_t camera = referential_id != 0 ? eng_entity_index(engine, referential_id) : -1;
+        if (camera >= 0) {
+            const float *y = engine->entities.data[camera].world.m[1];
+            up = (eng_vector_t){y[0], y[1], y[2]};
+        }
+    }
+    int32_t referential = referential_id != 0 ? eng_entity_index(engine, referential_id) : -1;
+    if (referential < 0) {
+        return;
+    }
+    const eng_matrix_t *ref_world = &engine->entities.data[referential].world;
+    if ((map->options & 4u) || map->old_version) {
+        right = (eng_vector_t){ref_world->m[0][0], ref_world->m[0][1], ref_world->m[0][2]};
+        up = (eng_vector_t){ref_world->m[1][0], ref_world->m[1][1], ref_world->m[1][2]};
+        eng_normalize_vector(&right);
+        eng_normalize_vector(&up);
+    } else {
+        const float *at = engine->entities.data[entity].world.m[3], *from = ref_world->m[3];
+        eng_vector_t dir = {at[0] - from[0], at[1] - from[1], at[2] - from[2]};
+        eng_normalize_vector(&dir);
+        float along = eng_dot(&up, &dir);
+        up = (eng_vector_t){up.x - dir.x * along, up.y - dir.y * along, up.z - dir.z * along};
+        eng_normalize_vector(&up);
+        right = eng_vector_cross(&up, &dir);
+    }
+    if (map->options & 1u) {
+        right = (eng_vector_t){-right.x, -right.y, -right.z};
+    }
+    if (!(map->options & 2u)) {
+        up = (eng_vector_t){-up.x, -up.y, -up.z};
+    }
+    eng_vector_t u_axis, v_axis;
+    eng_entity_transform_vector(engine, entity, &u_axis, &right, -1, true);
+    eng_entity_transform_vector(engine, entity, &v_axis, &up, -1, true);
+    eng_normalize_vector(&u_axis);
+    eng_normalize_vector(&v_axis);
+    u_axis = (eng_vector_t){u_axis.x * 0.45f, u_axis.y * 0.45f, u_axis.z * 0.45f};
+    v_axis = (eng_vector_t){v_axis.x * 0.45f, v_axis.y * 0.45f, v_axis.z * 0.45f};
+    eng_mesh_copy_t *copy = eng_mesh_copy(engine, mesh);
+    size_t stride = 0;
+    int32_t count = 0;
+    float *uvs = copy != NULL ? eng_mesh_uvs(engine, copy, map->channel, &stride, &count) : NULL;
+    if (uvs == NULL) {
+        return;
+    }
+    eng_vector_t eye = {0.0f, 0.0f, 0.0f};
+    if (map->options & 8u) {
+        const eng_vector_t world = {ref_world->m[3][0], ref_world->m[3][1], ref_world->m[3][2]};
+        eng_entity_inverse_transform(engine, entity, &eye, &world, -1);
+    }
+    for (int32_t v = 0; v < count; v++) {
+        const nmo_vertex_t *vertex = &copy->vertices[v];
+        eng_vector_t n = {vertex->normal.x, vertex->normal.y, vertex->normal.z};
+        if (map->options & 8u) {
+            eng_vector_t d = {eye.x - vertex->position.x, eye.y - vertex->position.y, eye.z - vertex->position.z};
+            float twice = eng_dot(&d, &n) * 2.0f;
+            n = (eng_vector_t){twice * n.x - d.x, twice * n.y - d.y, twice * n.z - d.z};
+            eng_normalize_vector(&n);
+        }
+        float *uv = (float *)((uint8_t *)uvs + (size_t)v * stride);
+        uv[0] = eng_dot(&u_axis, &n) + 0.5f;
+        uv[1] = eng_dot(&v_axis, &n) + 0.5f;
+    }
+    copy->version = ++engine->render.mesh_version;
+}
+
 /* The current mesh of a 3D entity, when it and the mesh are shown */
 static nmo_object_id_t eng_entity_current_mesh(const nmo_engine_t *engine, nmo_object_id_t id)
 {
@@ -1645,6 +1754,11 @@ nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *o
         if (mesh_state == NULL || mesh_state->face_count == 0) {
             continue;
         }
+        for (size_t m = 0; m < render->env_maps.count; m++) {
+            if (render->env_maps.data[m].entity == entity->id) {
+                eng_run_env_map(engine, &render->env_maps.data[m], (int32_t)i, mesh);
+            }
+        }
         bool transparent = eng_mesh_transparent(engine, mesh, mesh_state);
         if (!eng_push_draw(engine, &draw)) {
             return NMO_ERR_NOMEM;
@@ -1656,6 +1770,7 @@ nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *o
         memcpy(draw->world, entity->world.m, sizeof(draw->world));
         draw->transparent = transparent;
     }
+    render->env_maps.count = 0; /* temporary callbacks */
     eng_managers_render(engine, ENG_RENDER_SCENE, &args);
     eng_draw_portal_clips(engine);
     eng_render_2d_root(engine, false, width, height);

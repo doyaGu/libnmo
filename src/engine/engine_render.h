@@ -130,8 +130,22 @@ typedef struct eng_image {
     uint32_t version;
 } eng_image_t;
 
+/*
+ * An Environment Mapping block's pre-render callback (temporary: the next
+ * frame's render runs it once): its inputs when the block ran.
+ */
+typedef struct eng_env_map {
+    nmo_object_id_t entity;
+    nmo_object_id_t behavior;
+    int32_t channel;
+    uint32_t options;              /* 1 invert U, 2 invert V, 4 use the referential's orientation, 8 reflect */
+    nmo_object_id_t referential;   /* 0: the render context's camera */
+    bool old_version;              /* before 1.5, always the referential's orientation */
+} eng_env_map_t;
+
 typedef struct eng_render {
     int32_t screen_mode;      /* the render context's mode, of the engine's driver's list */
+    ENG_VEC(eng_env_map_t) env_maps;
 
     /* CKObject::Show at run time: object -> its CK_OBJECT_VISIBLE and HIERACHICALHIDE flags */
     eng_map_t shown;
@@ -262,6 +276,8 @@ nmo_face_t *eng_mesh_copy_faces(nmo_engine_t *engine, eng_mesh_copy_t *copy);
    NULL for no such channel or no vertices. */
 float *eng_mesh_uvs(nmo_engine_t *engine, eng_mesh_copy_t *copy, int32_t channel, size_t *stride,
                     int32_t *count);
+/* CK3dEntity::AddPreRenderCallBack of Environment Mapping, once per block and entity */
+bool eng_add_env_map(nmo_engine_t *engine, const eng_env_map_t *map);
 /* CKMesh::SetLitMode (VX_PRELITMESH 0, VX_LITMESH 1). False when `mesh` is none. */
 bool eng_mesh_set_lit_mode(nmo_engine_t *engine, nmo_object_id_t mesh, int32_t mode);
 /* Add a draw to the frame being made; NULL out of memory */

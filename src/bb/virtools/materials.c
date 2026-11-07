@@ -1292,6 +1292,93 @@ static int bb_set_mipmap_texture(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/*
+ * Environment Mapping: the target's next render maps its current mesh's UVs
+ * of Channel from its normals as seen from the Projection Referential (the
+ * camera without one), by a temporary pre-render callback the block adds
+ * each time it runs.
+ */
+static int bb_environment_mapping(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (target == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    eng_env_map_t map = {
+        .entity = target,
+        .behavior = b->node,
+        .channel = get_in_int(b, 0, -1),
+        .options = (uint32_t)get_in_int(b, 1, 0),
+        .referential = nmo_engine_block_get_input_object(b, 2),
+        .old_version = nmo_engine_block_version(b) < 0x00010005u,
+    };
+    eng_add_env_map(b->engine, &map);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * Screen Mapping: the target's current mesh's UVs of Channel are its
+ * vertices as the render context's camera projects them (each divided by
+ * its depth through a perspective camera), placed in Screen UVs and turned
+ * by Rotation, centered on 0. With Disable Perspective Correction CK draws
+ * the mesh itself in screen space instead, which the engine's host cannot
+ * do: the block then leaves the UVs.
+ */
+static int bb_screen_mapping(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    int32_t entity = target != 0 ? eng_entity_index(engine, target) : -1;
+    if (entity < 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    eng_mesh_copy_t *copy = eng_mesh_copy(engine, entity_mesh(engine, target));
+    nmo_object_id_t camera = engine->render.camera;
+    eng_matrix_t view_projection;
+    if (copy == NULL || get_local_int(b, 1, 0) != 0 || get_local_int(b, 0, 0) != 0 || camera == 0 ||
+        !eng_camera_view_projection(engine, camera, &view_projection, NULL)) {
+        return NMO_ENGINE_BR_OK;
+    }
+    eng_matrix_t matrix;
+    eng_matrix_multiply4(&matrix, &view_projection, &engine->entities.data[entity].world);
+    uint32_t projection = 0;
+    eng_camera_projection_type(engine, camera, &projection);
+    bool perspective = projection != 2u; /* CK_ORTHOGRAPHICPROJECTION */
+    float rect[4] = {0.0f, 0.0f, 1.0f, 1.0f};
+    nmo_engine_block_get_input_value(b, 1, rect, sizeof(rect));
+    float rotation = get_in_float(b, 2, 0.0f);
+    float half_w = (rect[2] - rect[0]) * 0.5f, half_h = (rect[3] - rect[1]) * 0.5f;
+    size_t stride = 0;
+    int32_t count = 0;
+    float *uvs = eng_mesh_uvs(engine, copy, get_in_int(b, 0, -1), &stride, &count);
+    float c = cosf(rotation), sn = sinf(rotation);
+    bool turned = !(fabsf(rotation) <= 1.1920929e-07f);
+    for (int32_t v = 0; uvs != NULL && v < count; v++) {
+        const nmo_vector_t *p = &copy->vertices[v].position;
+        float h[3];
+        for (int i = 0; i < 3; i++) {
+            h[i] = p->x * matrix.m[0][i] + p->y * matrix.m[1][i] + p->z * matrix.m[2][i] + matrix.m[3][i];
+        }
+        float k = perspective ? fabsf(1.0f / h[2]) : 1.0f;
+        float *uv = (float *)((uint8_t *)uvs + (size_t)v * stride);
+        float u = k * h[0] * half_w + rect[0], w = rect[1] - k * h[1] * half_h;
+        if (turned) {
+            uv[0] = sn * w + u * c - 0.5f;
+            uv[1] = w * c - u * sn - 0.5f;
+        } else {
+            uv[0] = u - 0.5f;
+            uv[1] = w - 0.5f;
+        }
+    }
+    copy->version = ++engine->render.mesh_version;
+    eng_emit(engine, NMO_ENGINE_EVENT_EFFECT, b->node, copy->mesh, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_materials_blocks[] = {
     {NMO_GUID_INIT(0xf56d92ef, 0x41eb20c1), "Change Texture Video Format",
      bb_change_texture_video_format, NULL, NULL},
@@ -1337,6 +1424,8 @@ static const nmo_engine_block_desc_t eng_materials_blocks[] = {
     {NMO_GUID_INIT(0x1d57024d, 0x7c064238), "Write In Texture", bb_write_in_texture, NULL, NULL},
     {NMO_GUID_INIT(0x7a7c4d7b, 0x468d0f33), "Change Texture Size", bb_change_texture_size, NULL, NULL},
     {NMO_GUID_INIT(0x6e407fcf, 0x0eff06a5), "Set MipMap Texture", bb_set_mipmap_texture, NULL, NULL},
+    {NMO_GUID_INIT(0x10d1c997, 0x99dabef4), "Environment Mapping", bb_environment_mapping, NULL, NULL},
+    {NMO_GUID_INIT(0x58ef12ca, 0x26805940), "Screen Mapping", bb_screen_mapping, NULL, NULL},
 };
 
 nmo_status_t eng_register_materials(nmo_engine_t *engine)
