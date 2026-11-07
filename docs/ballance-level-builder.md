@@ -16,6 +16,22 @@ CLI (`--nmo`, or `$NMO`, or `nmo` on `PATH`) and take the game's meshes and
 textures from a local installation, `<GAME_ROOT>`. Nothing of the game is
 kept with libnmo.
 
+## Local map inputs
+
+The repository contains the reusable toolchain and shared resource catalogs.
+Authored maps, automatic routes for individual levels, scenario suites and
+recorded results stay local. A fresh clone supplies no complete playable map.
+
+Keep new map sources under `.local/ballance/` and generated builds under `out/`.
+Both directories are ignored. Existing ignored map inputs in
+`apps/ballance/data/` may remain at their current paths; only the shared catalogs
+listed in [The Data](#the-data) are tracked there. Do not copy a local map into
+a tracked example, test or documentation block.
+
+Commands below use `<route.json>`, `<out>` and other placeholders for inputs
+you supply. The [contribution guide](../CONTRIBUTING.md#authored-maps-and-shared-tooling)
+explains local test discovery, archives and the optional workspace commit guard.
+
 ## What You Need
 
 - A Ballance installation, `<GAME_ROOT>`, with its `3D Entities`. Its
@@ -357,15 +373,23 @@ apps/ballance/scripts/ballance_map_view.py <out> --trace <out>/steer.csv --views
 
 ## Playing an Original Level
 
-The optional physics regression starts each ball at sector 2 in the test
-base. It needs the game's files and an `nmo` built with libivp:
+The autoplay planner accepts an original level file and an optional local
+plan. It writes steering points for the native runner:
 
 ```sh
-BALLANCE=<GAME_ROOT> NMO_TEST_PHYSICS=1 NMO_TEST_CLI=<path-to-nmo> \
-  python3 -m unittest discover -s apps/ballance/tests -p test_autoplay.py -v
+python3 apps/ballance/scripts/ballance_autoplay.py \
+  <level-file> <local-plan.json> -o <local-route.txt> --nmo <path-to-nmo>
 ```
 
+Without a plan, it searches from the first reset point through the checkpoints
+to the balloon. Mechanism actions and precise approaches need authored plan
+steps. Plans, their generated points and tests tied to a particular level stay
+local. The tracked `test_autoplay.py` covers reusable steering syntax; it does
+not establish completion of an original level.
+
 ## The Data
+
+These five files are the tracked exceptions in `apps/ballance/data/`:
 
 | File | Contents |
 |------|----------|

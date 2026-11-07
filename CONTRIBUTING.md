@@ -150,6 +150,49 @@ no toolchain module, test, launcher or build fingerprint may depend on the edito
 Application-only changes must leave toolchain evidence current. See the
 [editor guide](apps/ballance-editor/README.md) for workspace and playback behavior.
 
+### Authored maps and shared tooling
+
+Commit reusable generators, validators, native resource descriptions and tests
+with small, self-contained fixtures. Keep complete authored routes, recorded
+solutions, map-specific scenarios, previews and production notes local. A test
+that needs a particular authored map belongs with that map's local tests.
+
+Use `.local/ballance/` for map inputs, local tests and archives, and `out/` for
+generated levels and reports. Both are ignored. `apps/ballance/data/` tracks only
+the five shared catalogs listed in the [builder guide](docs/ballance-level-builder.md#the-data).
+Existing ignored map inputs may remain there for local path compatibility.
+Adding a shared catalog requires an explicit exception in `.gitignore`.
+
+The normal toolchain and editor test commands above run their tracked suites.
+A prepared workspace may also have `.local/ballance/inventory.json` and a local
+test runner. When that runner is present, run the preserved map tests separately:
+
+```sh
+python3 .local/ballance/run_tests.py
+python3 .local/ballance/run_tests.py --editor
+```
+
+These local files are not supplied by a fresh clone. Native cases use the same
+asset environment variables as the tracked tests. Keep complete map inputs out
+of tracked tests; retain reusable assertions with small independent fixtures.
+
+Ignore rules do not protect content pasted into an already tracked file. Review
+the staged diff for map data, solutions and map-dependent documentation before
+committing. Stage exact files or hunks:
+
+```sh
+git diff --cached --name-only
+git diff --cached --check
+git diff --cached
+```
+
+A prepared workspace may install `.git/hooks/pre-commit` to run
+`.local/ballance/check_staged.py`. That local guard checks staged paths, known
+map references and JSON route payloads, including forced additions and renamed
+route files. It allows the shared catalogs and generic code fixtures. The hook
+and its checker are workspace-local and are not installed by cloning; check
+their presence before relying on them.
+
 ### Architecture Rules
 
 The layer stack, lowest to highest:
