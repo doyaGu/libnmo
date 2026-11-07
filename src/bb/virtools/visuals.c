@@ -29,6 +29,13 @@ typedef struct visuals_callback {
 
 typedef ENG_VEC(visuals_callback_t) callback_list_t;
 
+/* A Simple Shadow's data: the texture it last gave its material, and the floors */
+typedef struct visuals_shadow {
+    int32_t node;
+    nmo_object_id_t texture;
+    eng_floor_shadow_t floor;
+} visuals_shadow_t;
+
 /* The blocks drawing in render callbacks: Planar Filter and Display Progression Bar after
    the sprites (PostSpriteRenderCallBacks), Display Score after the scene (PostRenderCallBack),
    Render Curve as its curve renders and Show Object Information after the transparent
@@ -39,6 +46,7 @@ typedef struct visuals {
     ENG_VEC(int32_t) scores;
     callback_list_t curves;
     callback_list_t infos;
+    ENG_VEC(struct visuals_shadow) shadows;
 } visuals_t;
 
 static void visuals_destroy(nmo_engine_t *engine, void *state);
@@ -1628,6 +1636,75 @@ static int bb_show_object_information(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/*
+ * Simple Shadow: its material (white, its texture clamped and copied) is made
+ * as it loads; while active, each frame it goes on the floors (objects with
+ * the Floor attribute, shown) under the owner as a channel multiplying them,
+ * with UVs from the owner's position over each floor, and off the floors the
+ * owner left. Off, a pause, reset or the script's deactivation take it off
+ * the floors. The DLL also skips floors that were all outside the last
+ * frame's frustum; the engine keeps no frustum test of the last render.
+ */
+static visuals_shadow_t *simple_shadow(nmo_engine_t *engine, int32_t node)
+{
+    visuals_t *visuals = visuals_state(engine);
+    for (size_t i = 0; i < visuals->shadows.count; i++) {
+        if (visuals->shadows.data[i].node == node) {
+            return &visuals->shadows.data[i];
+        }
+    }
+    visuals_shadow_t *shadow = NULL;
+    nmo_object_id_t material = eng_floor_shadow_material(engine, "SimpleShadow Material");
+    if (material == 0 || !ENG_VEC_PUSH(visuals->shadows, shadow)) {
+        return NULL;
+    }
+    memset(shadow, 0, sizeof(*shadow));
+    shadow->node = node;
+    shadow->texture = (nmo_object_id_t)-1;
+    shadow->floor.material = material;
+    return shadow;
+}
+
+static int bb_simple_shadow(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    visuals_shadow_t *shadow = simple_shadow(engine, b->node);
+    if (shadow == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, nmo_engine_block_output_count(b) >= 2 ? 1 : 0);
+        eng_floor_shadow_remove(engine, &shadow->floor);
+        return NMO_ENGINE_BR_OK;
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+    }
+    nmo_object_id_t texture = nmo_engine_block_get_input_object(b, 0);
+    if (texture != shadow->texture) {
+        eng_material_t *material = eng_material(engine, shadow->floor.material);
+        shadow->texture = texture;
+        if (material != NULL) {
+            material->desc.texture = texture;
+        }
+    }
+    eng_floor_shadow_place(engine, &shadow->floor, nmo_engine_block_owner(b), get_in_float(b, 1, 2.0f),
+                           get_in_float(b, 2, 100.0f));
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+static int cb_simple_shadow(blk_t *b, uint32_t message)
+{
+    visuals_shadow_t *shadow = simple_shadow(b->engine, b->node);
+    if (shadow != NULL && (message == NMO_ENGINE_MSG_PAUSE || message == NMO_ENGINE_MSG_RESET ||
+                           message == NMO_ENGINE_MSG_DEACTIVATESCRIPT)) {
+        eng_floor_shadow_remove(b->engine, &shadow->floor);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_visuals_blocks[] = {
     {NMO_GUID_INIT(0x00cd320b, 0x32ed010b), "Planar Filter", bb_planar_filter, cb_planar_filter,
      NULL},
@@ -1662,6 +1739,7 @@ static const nmo_engine_block_desc_t eng_visuals_blocks[] = {
     {NMO_GUID_INIT(0x215c7794, 0x7ac40f5d), "Render Curve", bb_render_curve, NULL, NULL},
     {NMO_GUID_INIT(0x17cb4c57, 0x00f525fb), "Show Object Information", bb_show_object_information,
      NULL, NULL},
+    {NMO_GUID_INIT(0x79b95ed0, 0x3e4a01f5), "Simple Shadow", bb_simple_shadow, cb_simple_shadow, NULL},
 };
 
 /* The render callbacks, at the stages the render context calls them */
@@ -1698,6 +1776,7 @@ static void visuals_destroy(nmo_engine_t *engine, void *state)
     free(((visuals_t *)state)->scores.data);
     free(((visuals_t *)state)->curves.data);
     free(((visuals_t *)state)->infos.data);
+    free(((visuals_t *)state)->shadows.data);
 }
 
 nmo_status_t eng_register_visuals(nmo_engine_t *engine)

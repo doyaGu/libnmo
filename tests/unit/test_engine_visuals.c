@@ -6,6 +6,7 @@
 
 #include "engine_fixture.h"
 #include "../../src/engine/engine_internal.h"
+#include "../../src/engine/engine_transform.h"
 
 #include "core/nmo_arena.h"
 #include "engine/nmo_engine_render.h"
@@ -14,6 +15,9 @@
 #include "object/builtin/nmo_curve_schemas.h"
 #include "object/builtin/nmo_material_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
+#include "object/builtin/nmo_parameter_schemas.h"
+#include "object/nmo_object_edit.h"
+#include "type/nmo_param_guids.h"
 #include "object/nmo_ref.h"
 
 #define GUID_BLINK NMO_GUID(0xf00d010a, 0xfa0d010a)
@@ -27,6 +31,7 @@
 #define GUID_USE_Z_INFORMATION NMO_GUID(0x01f60adc, 0x39b02cb8)
 #define GUID_RENDER_CURVE NMO_GUID(0x215c7794, 0x7ac40f5d)
 #define GUID_SHOW_OBJECT_INFORMATION NMO_GUID(0x17cb4c57, 0x00f525fb)
+#define GUID_SIMPLE_SHADOW NMO_GUID(0x79b95ed0, 0x3e4a01f5)
 
 /* A block acting on `object` (0: no target), run when the script starts */
 static nmo_object_id_t block_on(engine_fixture_t *f, nmo_guid_t guid, const char *name, nmo_object_id_t object)
@@ -472,6 +477,117 @@ TEST(engine_visuals, show_object_information_draws_box_and_face_normals_after_th
     fixture_end(&f);
 }
 
+/* A 10x10 floor in the XZ plane at the origin, with the Floor attribute. After fixture_begin_edit(). */
+static nmo_object_id_t floor_object(engine_fixture_t *f, nmo_object_id_t *out_mesh)
+{
+    nmo_arena_t *arena = nmo_session_get_arena(f->session);
+    nmo_object_id_t id = fixture_create(f, NMO_CID_3DOBJECT, "Floor");
+    nmo_object_id_t mesh = fixture_create(f, NMO_CID_MESH, "Floor Mesh");
+    nmo_3dentity_state_t *entity = (nmo_3dentity_state_t *)fixture_state(f, id);
+    nmo_mesh_state_t *state = (nmo_mesh_state_t *)fixture_state(f, mesh);
+    if (entity == NULL || state == NULL) {
+        return 0;
+    }
+    state->vertices = (nmo_vertex_t *)nmo_arena_alloc(arena, 4u * sizeof(nmo_vertex_t), _Alignof(nmo_vertex_t));
+    state->faces = (nmo_face_t *)nmo_arena_alloc(arena, 2u * sizeof(nmo_face_t), _Alignof(nmo_face_t));
+    state->face_vertex_indices = (uint16_t *)nmo_arena_alloc(arena, 6u * sizeof(uint16_t), _Alignof(uint16_t));
+    if (state->vertices == NULL || state->faces == NULL || state->face_vertex_indices == NULL) {
+        return 0;
+    }
+    memset(state->vertices, 0, 4u * sizeof(nmo_vertex_t));
+    memset(state->faces, 0, 2u * sizeof(nmo_face_t));
+    const float xz[4][2] = {{-5, -5}, {-5, 5}, {5, 5}, {5, -5}};
+    for (int i = 0; i < 4; i++) {
+        state->vertices[i].position = (nmo_vector_t){xz[i][0], 0.0f, xz[i][1]};
+    }
+    const uint16_t indices[6] = {0, 1, 2, 0, 2, 3};
+    memcpy(state->face_vertex_indices, indices, sizeof(indices));
+    state->vertex_count = 4;
+    state->face_count = 2;
+    nmo_mesh_update_bounding_volumes(state);
+    entity->current_mesh = nmo_ref_from_id(mesh);
+    const float world[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    memcpy(entity->world_matrix, world, sizeof(world));
+    entity->has_entityndata_chunk = 1;
+
+    nmo_manager_entry_create_options_t options = {.enabled = true, .attribute_type_guid = CKPGUID_FLOAT,
+        .category = "Test", .has_compatible_class_id = true, .compatible_class_id = NMO_CID_3DENTITY,
+        .has_flags = true, .flags = 0};
+    uint32_t type = 0;
+    if (nmo_object_edit_ensure_attribute_manager_entry(nmo_script_edit_workspace_edit(f->tx), "Floor",
+                                                       &options, &type) != NMO_OK) {
+        return 0;
+    }
+    nmo_object_id_t parameter = fixture_create(f, NMO_CID_PARAMETEROUT, "Floor Attribute");
+    nmo_parameter_state_t *value = (nmo_parameter_state_t *)fixture_state(f, parameter);
+    value->has_state = true;
+    value->mode = CKPARAM_MODE_BUFFER;
+    value->type_guid = CKPGUID_FLOAT;
+    if (nmo_array_alloc(&value->buffer_data, 1, 4, NULL) != NMO_OK) {
+        return 0;
+    }
+    memset(value->buffer_data.data, 0, 4);
+    if (nmo_beobject_attribute_array_append(&((nmo_beobject_state_t *)entity)->attributes, parameter, type,
+                                            NULL) != NMO_OK) {
+        return 0;
+    }
+    *out_mesh = mesh;
+    return id;
+}
+
+TEST(engine_visuals, simple_shadow_multiplies_the_floors_under_its_owner_until_off)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t material = fixture_create(&f, NMO_CID_MATERIAL, "Material");
+    nmo_object_id_t texture = fixture_create(&f, NMO_CID_TEXTURE, "Shadow");
+    nmo_object_id_t mesh = 0;
+    nmo_object_id_t object = face_object(&f, "Face", material, &mesh);
+    ASSERT_TRUE(material != 0 && texture != 0 && object != 0);
+    nmo_mesh_update_bounding_volumes((nmo_mesh_state_t *)fixture_state(&f, mesh));
+    ((nmo_3dentity_state_t *)fixture_state(&f, object))->world_matrix[13] = 2.0f;
+    f.owner_id = object; /* the shadow is its owner's */
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t floor_mesh = 0;
+    nmo_object_id_t floor = floor_object(&f, &floor_mesh);
+    nmo_object_id_t shadow = block_on(&f, GUID_SIMPLE_SHADOW, "Simple Shadow", 0);
+    ASSERT_TRUE(floor != 0 && shadow != 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, shadow, 0), (int32_t)texture);
+    fixture_link(&f, BLOCK_OUT(&f, shadow, 0), BLOCK_IN(&f, shadow, 1), 2);
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+
+    nmo_engine_mesh_t desc;
+    ASSERT_TRUE(nmo_engine_mesh(f.engine, floor_mesh, &desc));
+    ASSERT_EQ(1, desc.channel_count);
+    const nmo_engine_channel_t *channel = &desc.channels[0];
+    nmo_engine_material_t shade;
+    ASSERT_TRUE(nmo_engine_material(f.engine, channel->material, &shade));
+    ASSERT_EQ(texture, shade.texture);
+    ASSERT_EQ(VXBLEND_ZERO, channel->source_blend);
+    ASSERT_EQ(VXBLEND_SRCCOLOR, channel->dest_blend);
+    ASSERT_NOT_NULL(channel->uvs);
+    /* the owner is 1 wide, the scale 2: half a texture a unit, centered under the owner */
+    ASSERT_FLOAT_EQ(3.0f, channel->uvs[0], 1e-5f);
+    ASSERT_FLOAT_EQ(3.0f, channel->uvs[1], 1e-5f);
+    ASSERT_FLOAT_EQ(-2.0f, channel->uvs[4], 1e-5f);
+
+    /* moved 1 along X: the UVs follow */
+    eng_vector_t step = {1.0f, 0.0f, 0.0f};
+    eng_entity_translate(f.engine, eng_entity_index(f.engine, object), &step, -1, false);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    ASSERT_TRUE(nmo_engine_mesh(f.engine, floor_mesh, &desc));
+    ASSERT_EQ(1, desc.channel_count);
+    ASSERT_FLOAT_EQ(3.5f, desc.channels[0].uvs[0], 1e-5f);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f)); /* Off, two frames after On */
+    ASSERT_TRUE(nmo_engine_mesh(f.engine, floor_mesh, &desc));
+    ASSERT_EQ(0, desc.channel_count);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_visuals, blink_cycles_the_target_and_fps_reports_the_rate);
     REGISTER_TEST(engine_visuals, z_buffer_and_render_order_shape_the_mesh_draws);
@@ -481,4 +597,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_visuals, render_curve_draws_the_curve_each_frame_until_off);
     REGISTER_TEST(engine_visuals, render_curve_line_mode_draws_the_line_mesh);
     REGISTER_TEST(engine_visuals, show_object_information_draws_box_and_face_normals_after_the_scene);
+    REGISTER_TEST(engine_visuals, simple_shadow_multiplies_the_floors_under_its_owner_until_off);
 TEST_MAIN_END()
