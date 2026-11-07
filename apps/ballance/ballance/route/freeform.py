@@ -137,11 +137,11 @@ def lay_path(layout, index, part, piece, track):
         widths = stations(spec.get('width', NARROW), 'width', 0.5, 100)
         first = section(spec.get('section', 'v'))
         last = section(spec.get('end_section', spec.get('section', 'v')))
-        if [p[0] for p in first] != [p[0] for p in last]:
-            raise ValueError('start and end sections must have identical width fractions')
-        depth = number(spec.get('depth', WALL), 'floor depth')
-        if not 0.1 <= depth <= 100:
-            raise ValueError('floor depth must be within 0.1..100')
+        fractions = sorted({p[0] for p in (*first, *last)})
+        first, last = (
+            [(u, ports.profile_height(profile, u)) for u in fractions] for profile in (first, last)
+        )
+        depths = stations(spec.get('depth', WALL), 'floor depth', 0.1, 100)
     stops = {}
     for stop in spec.get('stops', []):
         if not isinstance(stop, list) or len(stop) != 2:
@@ -159,7 +159,7 @@ def lay_path(layout, index, part, piece, track):
         stops[fraction] = frames
     samples = include_stations(
         samples,
-        [t for keys in (banks, widths, radii if rail else []) for t, _ in keys] + list(stops),
+        [t for keys in (banks, widths, radii if rail else depths) for t, _ in keys] + list(stops),
     )
 
     def port(t):
@@ -175,7 +175,7 @@ def lay_path(layout, index, part, piece, track):
             bank=interpolate(banks, t),
             width=interpolate(widths, t),
             profile=tuple(_profile(first, last, t)),
-            depth=depth,
+            depth=interpolate(depths, t),
         )
 
     uv_start = 0
@@ -287,8 +287,10 @@ def lay_path(layout, index, part, piece, track):
                     profiles[i + 1],
                     (uv_start + samples[i].distance) / 5,
                     (uv_start + samples[i + 1].distance) / 5,
-                    depth,
+                    interpolate(depths, samples[i].distance / samples[-1].distance),
                     cap_entry and i == 0,
+                    False,
+                    interpolate(depths, samples[i + 1].distance / samples[-1].distance),
                 )
             )
         track.width, track.floor = sizes[-1], 'road'

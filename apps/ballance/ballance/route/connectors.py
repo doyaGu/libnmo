@@ -107,13 +107,11 @@ def transition(spec, start, *, before=None, layout=None):
             path[key] = [[0, getattr(start, key)], [1, target.get(key, getattr(start, key))]]
     else:
         depth = number(target.get('depth', start.depth), 'connector depth')
-        if abs(depth - start.depth) > 1e-6:
-            raise ValueError('connector cannot change floor depth yet; keep matching depth')
         last = section(target.get('section', list(start.profile)))
         fractions = sorted({p[0] for p in (*start.profile, *last)})
         path.update(
             width=[[0, start.width], [1, target.get('width', start.width)]],
-            depth=depth,
+            depth=[[0, start.depth], [1, depth]],
             section=[[u, profile_height(start.profile, u)] for u in fractions],
             end_section=[[u, profile_height(last, u)] for u in fractions],
         )

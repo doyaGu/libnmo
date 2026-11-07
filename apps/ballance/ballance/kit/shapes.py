@@ -58,13 +58,15 @@ def sweep(
     depth: float = WALL,
     cap_start: bool = False,
     cap_end: bool = False,
+    end_depth: float | None = None,
 ) -> None:
     """One interval of a floor: top, bottom and side walls. UV length is
     cumulative path distance, so adjacent intervals share texture seams."""
+    end_depth = depth if end_depth is None else end_depth
     aa, bb = section_points(a, wa, pa), section_points(b, wb, pb)
     au, bu = a.axes()[1], b.axes()[1]
     low_a = [tuple(p[j] - depth * au[j] for j in range(3)) for p in aa]
-    low_b = [tuple(p[j] - depth * bu[j] for j in range(3)) for p in bb]
+    low_b = [tuple(p[j] - end_depth * bu[j] for j in range(3)) for p in bb]
     top = tuple(au[j] + bu[j] for j in range(3))
     bottom = tuple(-v for v in top)
     profile = pa == pb == V_SECTION
@@ -154,12 +156,12 @@ def sweep(
             tuple(sign * v for v in right),
             (aa[i], (0, va)),
             (bb[i], (0, vb)),
-            (low_b[i], (depth / 5, vb)),
+            (low_b[i], (end_depth / 5, vb)),
             (low_a[i], (depth / 5, va)),
         )
-    for ring, high, low, profile, cap, sign in (
-        (a, aa, low_a, pa, cap_start, -1),
-        (b, bb, low_b, pb, cap_end, 1),
+    for ring, high, low, profile, cap, sign, thickness in (
+        (a, aa, low_a, pa, cap_start, -1, depth),
+        (b, bb, low_b, pb, cap_end, 1, end_depth),
     ):
         if cap:
             for i in range(len(profile) - 1):
@@ -168,8 +170,8 @@ def sweep(
                     (sign * ring.dx, 0, sign * ring.dz),
                     (high[i], (0, 0)),
                     (high[i + 1], (1, 0)),
-                    (low[i + 1], (1, depth / 5)),
-                    (low[i], (0, depth / 5)),
+                    (low[i + 1], (1, thickness / 5)),
+                    (low[i], (0, thickness / 5)),
                 )
 
 

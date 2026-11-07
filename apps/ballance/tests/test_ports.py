@@ -249,7 +249,7 @@ class PortTests(unittest.TestCase):
         for spec, message in [
             ({'length': 0, 'to': {}}, 'positive'),
             ({'length': 10, 'to': {'kind': 'rail'}}, 'one cross section'),
-            ({'length': 10, 'to': {'depth': 20}}, 'depth'),
+            ({'length': 10, 'to': {'depth': 0}}, 'depth'),
             ({'length': 10, 'to': {'typo': 3}}, 'target accepts'),
         ]:
             with self.subTest(spec=spec), self.assertRaisesRegex(ValueError, message):
