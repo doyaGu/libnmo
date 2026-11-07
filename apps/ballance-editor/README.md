@@ -16,6 +16,15 @@ window additionally needs the CLI's viewer support.
 From the repository root, with `BALLANCE`, `BALLANCE_ELEMENTS` and `NMO` set to
 absolute paths:
 
+```sh
+python3 apps/ballance-editor/run.py .local/ballance/route.json out/ballance-editor \
+  --elements "$BALLANCE_ELEMENTS" --game "$BALLANCE" --nmo "$NMO" --open
+```
+
+Supply your own route at the input path; a fresh clone does not include an
+authored map. Keep map sources in an ignored local directory and use a separate
+ignored workspace for drafts, generated meshes and playback traces.
+
 The server prints its loopback URL; `--port` selects a fixed port. Without
 `--open`, open the printed URL yourself. Stop the server with Ctrl-C.
 
@@ -36,6 +45,13 @@ See the [level builder guide](../../docs/ballance-level-builder.md) for native
 asset extraction and CLI build requirements.
 
 ## Drafts and local play
+
+Use a dedicated workspace, such as `out/ballance-editor`. `draft.json` holds
+edits, `session.json` records history and source identity, and `current/` holds
+the compiled draft. Reopening the workspace preserves its draft. Moving the
+application does not move the workspace. If the source has changed since the
+draft was created, use a new workspace. **Save source** writes the draft back
+to the local source route; it does not stage or commit the map.
 
 Local play accepts a point on a rail or floor, a selected mechanism, or a compiled
 checkpoint. It supports pause, stepping and retry from the same start. Retry
@@ -85,6 +101,13 @@ tests relocate the application and then modify and remove it in a temporary
 copy, checking that toolchain builds and evidence remain valid. Application-only
 changes do not invalidate toolchain evidence; changes to the consumed toolchain,
 CLI, route or recorded assets still do.
+
+The tracked suite uses independent fixtures. Tests that require a particular
+authored map stay with its local files and are outside normal discovery.
+A prepared workspace may provide `.local/ballance/run_tests.py --editor` for
+those preserved tests; that runner and its map inputs are not part of a fresh
+clone. See [authored maps and shared tooling](../../CONTRIBUTING.md#authored-maps-and-shared-tooling)
+for storage rules and the optional local commit guard.
 
 ## Code layout
 
