@@ -225,6 +225,113 @@ static int cb_light_color_progression(blk_t *b, uint32_t message)
     return NMO_ENGINE_BR_OK;
 }
 
+/*
+ * Light Sprite (DisplayOmniLight, the DLL's version): a 3D sprite of the
+ * owner light, made with its material when the block loads (blended
+ * additively, no Z writes) and hidden. On sets the sprite's texture, its
+ * color the light's (opaque) and its size Size Scale times the light's
+ * range; then each frame the sprite shows at the light, until Off hides it.
+ * The first local holds the sprite, the material and whether it is on.
+ */
+typedef struct light_sprite {
+    uint32_t sprite, material, on;
+} light_sprite_t;
+
+static light_sprite_t *light_sprite_local(blk_t *b)
+{
+    eng_param_t *local = block_local(b, 0);
+    return local != NULL && local->size >= sizeof(light_sprite_t) ? (light_sprite_t *)local->data : NULL;
+}
+
+/* A color channel as RGBAFTOCOLOR(const VxColor *) keeps it: times 255, truncated, in [0, 255] */
+static float color_channel(float value)
+{
+    float v = value * 255.0f;
+    uint32_t byte = !(v > -2147483648.0f && v < 2147483648.0f) ? 0u
+                    : v >= 255.0f                               ? 255u
+                    : v > 0.0f                                  ? (uint32_t)(int32_t)v
+                                                                : 0u;
+    return (float)((double)byte * 0.0039215689);
+}
+
+static int bb_light_sprite(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t owner = nmo_engine_block_owner(b);
+    light_sprite_t *local = light_sprite_local(b);
+    eng_light_t *light = eng_light(engine, owner);
+    int32_t sprite = local != NULL ? eng_entity_index(engine, local->sprite) : -1;
+    if (light == NULL || sprite < 0) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    if (local->on == 0) {
+        local->on = 1;
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+        eng_material_t *material = eng_material(engine, local->material);
+        if (material != NULL) {
+            material->desc.texture = nmo_engine_block_get_input_object(b, 0);
+            light = eng_light(engine, owner);
+            for (int i = 0; i < 3; i++) {
+                material->desc.diffuse[i] = color_channel(light->color[i]);
+            }
+            material->desc.diffuse[3] = color_channel(1.0f);
+        }
+        light = eng_light(engine, owner);
+        float side = light->range * get_in_float(b, 1, 0.1f);
+        eng_sprite3d_set_size(engine, local->sprite, (nmo_vector2_t){side, side});
+    }
+    int32_t at = eng_entity_index(engine, owner);
+    if (at >= 0) {
+        const float *row = engine->entities.data[at].world.m[3];
+        eng_vector_t position = {row[0], row[1], row[2]};
+        eng_entity_set_position(engine, eng_entity_index(engine, local->sprite), &position, -1, false);
+    }
+    eng_show(engine, local->sprite, 1);
+    if (!IN_ACTIVE(b, 1)) {
+        return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+    }
+    IN_OFF(b, 1);
+    OUT_ON(b, 0);
+    eng_show(engine, local->sprite, 0);
+    local->on = 0;
+    return NMO_ENGINE_BR_OK;
+}
+
+static int cb_light_sprite(blk_t *b, uint32_t message)
+{
+    nmo_engine_t *engine = b->engine;
+    if (message == NMO_ENGINE_MSG_LOAD) {
+        light_sprite_t made = {(uint32_t)eng_create_object(engine, NMO_CID_SPRITE3D, "DOL Sprite3D"),
+                               (uint32_t)eng_create_object(engine, NMO_CID_MATERIAL, "DOL Material"), 0};
+        nmo_engine_block_set_local_value(b, 0, &made, sizeof(made));
+        eng_material_t *material = eng_material(engine, made.material);
+        if (material != NULL) {
+            material->desc.alpha_blend = true;
+            material->desc.z_write = false;
+            material->desc.source_blend = VXBLEND_ONE;
+            material->desc.dest_blend = VXBLEND_ONE;
+            const float diffuse[4] = {0.0f, 0.0f, 0.0f, 0.9f}, specular[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+            memcpy(material->desc.diffuse, diffuse, sizeof(diffuse));
+            memcpy(material->desc.specular, specular, sizeof(specular));
+        }
+        eng_sprite3d_t *sprite = eng_sprite3d(engine, made.sprite);
+        if (sprite != NULL) {
+            sprite->material = made.material;
+        }
+        eng_show(engine, made.sprite, 0);
+    } else if (message == NMO_ENGINE_MSG_PAUSE || message == NMO_ENGINE_MSG_RESET ||
+               message == NMO_ENGINE_MSG_DEACTIVATESCRIPT) {
+        const light_sprite_t *local = light_sprite_local(b);
+        if (local != NULL) {
+            eng_show(engine, local->sprite, 0);
+        }
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_lights_blocks[] = {
     {NMO_GUID_INIT(0x32115590, 0x78951230), "Set Light Color", bb_set_light_color, NULL, NULL},
     {NMO_GUID_INIT(0xd63d004d, 0xd54d8100), "Set Light Attenuation", bb_set_light_attenuation, NULL, NULL},
@@ -237,6 +344,7 @@ static const nmo_engine_block_desc_t eng_lights_blocks[] = {
     {NMO_GUID_INIT(0x02580258, 0x02580258), "Set Light Target", bb_set_light_target, NULL, NULL},
     {NMO_GUID_INIT(0x20171e01, 0x234a1b62), "Light Color Progression", bb_light_color_progression,
      cb_light_color_progression, NULL},
+    {NMO_GUID_INIT(0x4def3319, 0x075b5cc8), "Light Sprite", bb_light_sprite, cb_light_sprite, NULL},
 };
 
 nmo_status_t eng_register_lights(nmo_engine_t *engine)

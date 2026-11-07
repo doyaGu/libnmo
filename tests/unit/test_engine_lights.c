@@ -7,6 +7,7 @@
 #include "engine_fixture.h"
 #include "../../src/engine/engine_internal.h"
 
+#include "object/builtin/nmo_light_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "type/nmo_param_guids.h"
 
@@ -20,6 +21,7 @@
 #define GUID_SPOT_LIGHT_PROPERTIES NMO_GUID(0x01ed010b, 0x01fd010b)
 #define GUID_SET_LIGHT_TARGET NMO_GUID(0x02580258, 0x02580258)
 #define GUID_LIGHT_COLOR_PROGRESSION NMO_GUID(0x20171e01, 0x234a1b62)
+#define GUID_LIGHT_SPRITE NMO_GUID(0x4def3319, 0x075b5cc8)
 
 #define STEP_MS 10.0f
 
@@ -227,8 +229,61 @@ TEST(engine_lights, light_color_progression_stops_short_of_the_end_color)
     fixture_end(&f);
 }
 
+TEST(engine_lights, light_sprite_follows_the_light_until_off)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t light = fixture_create(&f, NMO_CID_LIGHT, "Omni");
+    nmo_light_state_t *state = (nmo_light_state_t *)fixture_state(&f, light);
+    nmo_object_id_t texture = fixture_create(&f, NMO_CID_TEXTURE, "Glow");
+    ASSERT_TRUE(state != NULL && texture != 0);
+    const float world[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 3, 4, 5, 1};
+    memcpy(state->entity.world_matrix, world, sizeof(world));
+    state->entity.has_entityndata_chunk = 1;
+    state->light_data.diffuse = (nmo_color_t){0.5f, 0.25f, 1.0f, 0.5f};
+    state->light_data.range = 20.0f;
+    f.owner_id = light; /* the script is the light's */
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    ASSERT_TRUE(f.script_id != 0);
+    fixture_begin_edit(&f);
+    nmo_object_id_t sprite_block = fixture_block(&f, GUID_LIGHT_SPRITE, "Light Sprite");
+    ASSERT_TRUE(sprite_block != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, sprite_block, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, sprite_block, 0), BLOCK_IN(&f, sprite_block, 1), 3); /* Off later */
+    fixture_input_int(&f, BLOCK_PIN(&f, sprite_block, 0), (int32_t)texture);
+    float scale = 0.5f;
+    fixture_input_value(&f, BLOCK_PIN(&f, sprite_block, 1), &scale, sizeof(scale));
+    start(&f);
+
+    step(&f, 1);
+    /* The sprite the block made when it loaded */
+    nmo_object_id_t sprite = 0;
+    for (size_t i = 0; i < f.engine->render.sprites_3d.count; i++) {
+        sprite = f.engine->render.sprites_3d.data[i].id;
+    }
+    ASSERT_TRUE(sprite != 0);
+    ASSERT_TRUE(nmo_engine_object_is_visible(f.engine, sprite));
+    const eng_matrix_t *at = &f.engine->entities.data[eng_entity_index(f.engine, sprite)].world;
+    ASSERT_FLOAT_EQ(3.0f, at->m[3][0], 0.0f);
+    ASSERT_FLOAT_EQ(5.0f, at->m[3][2], 0.0f);
+    const eng_sprite3d_t *shape = eng_sprite3d(f.engine, sprite);
+    ASSERT_FLOAT_EQ(10.0f, shape->max.x - shape->min.x, 1e-5f);
+    nmo_engine_material_t desc;
+    ASSERT_TRUE(nmo_engine_material(f.engine, shape->material, &desc));
+    ASSERT_EQ(texture, desc.texture);
+    ASSERT_FLOAT_EQ(127.0f / 255.0f, desc.diffuse[0], 1e-6f);
+    ASSERT_FLOAT_EQ(63.0f / 255.0f, desc.diffuse[1], 1e-6f);
+    ASSERT_FLOAT_EQ(1.0f, desc.diffuse[3], 1e-6f);
+    ASSERT_TRUE(desc.alpha_blend && !desc.z_write);
+
+    step(&f, 4);
+    ASSERT_TRUE(!nmo_engine_object_is_visible(f.engine, sprite));
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_lights, setters_change_the_light_the_engine_keeps);
     REGISTER_TEST(engine_lights, set_light_target_takes_plain_3d_entities_only);
     REGISTER_TEST(engine_lights, light_color_progression_stops_short_of_the_end_color);
+    REGISTER_TEST(engine_lights, light_sprite_follows_the_light_until_off);
 TEST_MAIN_END()
