@@ -134,7 +134,7 @@ in the gameplay harness.
     ],
     "width": [[0, 5], [0.25, 12], [0.75, 3], [1, 5]],
     "section": "v",
-    "depth": 5
+    "depth": [[0, 5], [0.4, 8], [1, 5]]
   },
   "elements": [{"kind": "P_Extra_Point", "at": [35, 0]}]
 }
@@ -144,14 +144,31 @@ in the gameplay harness.
 (the standard road), `"flat"`, or ordered `[width fraction, height]`
 pairs from -0.5 at the left edge to 0.5 at the right. Extra points create
 ridges, gutters or asymmetric sections. `end_section` morphs toward a
-section with the same width fractions. `depth` is the thickness beneath
-the section; side walls and a bottom are generated.
+second profile. The two profiles may have different width fractions: the
+builder samples both at the union of their knots, preserving each endpoint's
+piecewise linear shape.
+
+`depth` accepts a constant or `[distance fraction, thickness]` stations.
+Thickness must be within 0.1–100 units. Stations must increase strictly from
+0 to 1, including both endpoints; values interpolate linearly along sampled
+3D centreline distance. The example thickens from 5 to 8 units, then returns
+to 5. Every thickness station becomes a mesh sample, even between ordinary
+path samples. Thickness follows the section's banked up axis; the underside,
+side walls and exposed end caps use the value at each end of an interval.
 
 For example, `"section": "v", "end_section": "flat"` transitions into
 a flat road. Reverse it before reconnecting to a standard road. The
 builder rejects a floor whose inner edge folds backward around a tight
 bend; widen the turn or narrow the floor. This local check does not prove
 that a whole path avoids itself or other geometry.
+
+Flat and custom profiles have brick bands on both edges. Each band is
+0.75 units wide, capped at one quarter of the local floor width. It follows
+width changes and retains every profile knot. The stone interior and border
+are separate surface regions. Transverse UV distance follows the actual
+cross section; longitudinal UV distance follows the sampled centreline.
+Side-wall UV depth follows the changing thickness. These path bands are
+automatic; the `border` option described below belongs to polygon platforms.
 
 Path elements use `[distance, lateral offset]`. Distance follows the 3D
 centreline; positive offset is right. Placement follows the curve's height,
@@ -295,12 +312,19 @@ morphs it to `to`. Only the end values need to be specified:
 
 Choose exactly one of `length`, `segments` or `endpoint`. A positive `length`
 builds a straight, level connector; `segments` uses the same local curves
-as a path. Floors accept target `width`, `bank` and `section`; double rails
+as a path. Floors accept target `width`, `bank`, `section` and `depth`; double rails
 accept `gauge`, `radius` and `bank`. Omitted values retain the incoming
 section. Values change linearly with sampled arc distance. Custom floor
 profiles are resampled at the union of their width fractions, preserving
 each endpoint's piecewise linear shape. `step`, `tolerance`, `stops`, and
 rail-only `ribs` retain their path meanings.
+
+For example, `{"connector": {"length": 20, "to": {"width": 8, "depth": 3}}}`
+widens and thins the incoming floor over 20 units. Its exit has depth 3;
+the next floor or platform must match it. Use another connector to restore
+the standard 5-unit width, V section, zero bank and 5-unit depth before a
+legacy road. A thickness change leaves the top profile unchanged unless
+`section` or `bank` also changes.
 
 ### Connecting two ends
 
@@ -361,8 +385,8 @@ not an obstacle-routing search.
 An endpoint connector from a double rail to `to.kind: "floor"` reserves a
 five-unit standard V dock before the requested endpoint. The dock must end
 level. Put elements on a separate floor after this connector. Other kind
-changes use the existing standard-port adapters; connector floor depth is
-preserved. Beam overlaps, ballistic transfers and module interiors retain
+changes use the existing standard-port adapters. Beam overlaps, ballistic
+transfers and module interiors retain
 their measured adapters. Unusual gauges and cross sections need gameplay tests.
 Template mirroring reflects local endpoint offsets and headings, target
 bank and custom profiles; placement and named-port references remain references.
@@ -379,8 +403,9 @@ joint. The native grid and the platform's ProfileFlat image retain explicit
 material phase resets. This does not promise seamless texture phase across
 every native module. Platform openings and connector mouths share their
 width; neither emits an internal end cap. A rail entering a free floor
-closes the exposed floor end wall. Arbitrary custom profiles retain
-the existing borderless surface material rather than acquiring a new theme.
+closes the exposed floor end wall. Custom and flat profiles use
+`Floor_Top_Border` on their edge bands and `Floor_Top_Boderless` inside;
+standard V and native V/flat adapters retain their profile materials.
 
 ## Spatial constraints and scenery attachments
 
