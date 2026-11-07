@@ -34,6 +34,7 @@
 #define GUID_SIMPLE_SHADOW NMO_GUID(0x79b95ed0, 0x3e4a01f5)
 #define GUID_SOLID_TRAIL NMO_GUID(0xd00d010a, 0xe00d010a)
 #define GUID_MARK_SYSTEM NMO_GUID(0x09a06075, 0x760a4720)
+#define GUID_VERTEX_RENDER NMO_GUID(0xcc030377, 0x897aaaaa)
 
 /* A block acting on `object` (0: no target), run when the script starts */
 static nmo_object_id_t block_on(engine_fixture_t *f, nmo_guid_t guid, const char *name, nmo_object_id_t object)
@@ -775,6 +776,65 @@ TEST(engine_visuals, mark_system_joins_continuous_marks_into_a_band)
     fixture_end(&f);
 }
 
+TEST(engine_visuals, vertex_render_draws_a_sprite_at_each_vertex_instead_of_the_mesh)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t material = fixture_create(&f, NMO_CID_MATERIAL, "Material");
+    nmo_object_id_t texture = fixture_create(&f, NMO_CID_TEXTURE, "Light");
+    nmo_object_id_t mesh = 0;
+    nmo_object_id_t object = face_object(&f, "Face", material, &mesh);
+    ASSERT_TRUE(material != 0 && texture != 0 && object != 0);
+    ((nmo_3dentity_state_t *)fixture_state(&f, object))->world_matrix[12] = 10.0f;
+    f.owner_id = object; /* its target is its owner */
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t render = block_on(&f, GUID_VERTEX_RENDER, "Vertex Render", 0);
+    ASSERT_TRUE(render != 0);
+    const float size = 2.0f;
+    fixture_input_int(&f, BLOCK_PIN(&f, render, 0), (int32_t)texture);
+    fixture_input_value(&f, BLOCK_PIN(&f, render, 1), &size, sizeof(size));
+    fixture_input_int(&f, BLOCK_PIN(&f, render, 2), 0); /* no fog */
+    fixture_link(&f, BLOCK_OUT(&f, render, 0), BLOCK_IN(&f, render, 1), 2); /* Off two frames on */
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_TRUE(mesh_draw(&frame, object) >= 0);
+
+    /* Three squares facing the eye (no camera: looking down Z), 2 wide, instead of the face */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_EQ(-1, mesh_draw(&frame, object));
+    const nmo_engine_draw_t *draw = NULL;
+    ASSERT_EQ(1, primitive_draws(&frame, object, &draw));
+    ASSERT_EQ(18, draw->vertex_count);
+    ASSERT_TRUE(draw->transparent && draw->no_fog && !draw->lit && !draw->two_sided);
+    vertex_at(&frame, draw, 0, 9, 1, 0, 0, 0);
+    vertex_at(&frame, draw, 1, 11, 1, 0, 1, 0);
+    vertex_at(&frame, draw, 2, 11, -1, 0, 1, 1);
+    vertex_at(&frame, draw, 5, 9, -1, 0, 0, 1);
+    vertex_at(&frame, draw, 6, 10, 1, 0, 0, 0); /* the second vertex, (1,0,0) */
+    ASSERT_EQ(0xFFFFFFFFu, frame.vertices[draw->first_vertex].color);
+    nmo_engine_material_t sprite;
+    ASSERT_TRUE(nmo_engine_material(f.engine, draw->material, &sprite));
+    ASSERT_EQ(texture, sprite.texture);
+    ASSERT_EQ(VXTEXTUREBLEND_DECAL, sprite.texture_blend);
+    ASSERT_TRUE(sprite.alpha_blend && !sprite.z_write);
+    ASSERT_EQ(VXBLEND_ONE, sprite.source_blend);
+    ASSERT_EQ(VXBLEND_ONE, sprite.dest_blend);
+
+    /* Off: the mesh again, opaque */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    int at = mesh_draw(&frame, object);
+    ASSERT_TRUE(at >= 0);
+    ASSERT_FALSE(frame.draws[at].transparent);
+    ASSERT_EQ(0, primitive_draws(&frame, object, &draw));
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_visuals, blink_cycles_the_target_and_fps_reports_the_rate);
     REGISTER_TEST(engine_visuals, z_buffer_and_render_order_shape_the_mesh_draws);
@@ -788,4 +848,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_visuals, solid_trail_follows_the_owners_farthest_vertices_until_off);
     REGISTER_TEST(engine_visuals, mark_system_draws_single_marks_that_fade_and_die);
     REGISTER_TEST(engine_visuals, mark_system_joins_continuous_marks_into_a_band);
+    REGISTER_TEST(engine_visuals, vertex_render_draws_a_sprite_at_each_vertex_instead_of_the_mesh);
 TEST_MAIN_END()

@@ -2463,6 +2463,158 @@ static int cb_mark_system(blk_t *b, uint32_t message)
     return NMO_ENGINE_BR_OK;
 }
 
+/*
+ * Vertex Render: while on, the target renders as a sprite of the Light
+ * Texture at each vertex of its mesh instead of the mesh (its render
+ * callback; the mesh is made transparent so it renders last): a square
+ * facing the camera, Light Size wide, added (ONE, ONE) without z write, the
+ * texture alone or, with Use Vertex Color, modulated by the vertex's prelit
+ * color; with Use Vertex Weight each square is the vertex's weight times as
+ * wide. Enable Fog Influence off draws them without the fog. On sets the
+ * texture; Off, a pause, reset or the script's deactivation give the mesh
+ * back.
+ */
+static void vertex_render_draw(nmo_engine_t *engine, nmo_object_id_t entity, int32_t node, bool transparent)
+{
+    nmo_engine_block_t handle = {engine, node};
+    blk_t *b = &handle;
+    int32_t index = eng_entity_index(engine, entity);
+    nmo_object_id_t mesh_id = entity_current_mesh(engine, entity);
+    nmo_engine_mesh_t mesh;
+    nmo_object_id_t material_id = (nmo_object_id_t)get_local_int(b, 1, 0);
+    eng_material_t *material = material_id != 0 ? eng_material(engine, material_id) : NULL;
+    if (index < 0 || !nmo_engine_mesh(engine, mesh_id, &mesh) || mesh.vertex_count == 0 || material == NULL) {
+        return;
+    }
+    bool use_color = get_local_int(b, 3, 0) != 0, use_weight = get_local_int(b, 4, 0) != 0;
+    material->desc.texture_blend = use_color ? VXTEXTUREBLEND_MODULATEALPHA : VXTEXTUREBLEND_DECAL;
+    /* The camera's up and right in the entity's space */
+    eng_matrix_t eye;
+    eng_render_viewpoint(engine, &eye);
+    eng_vector_t up_world = {eye.m[1][0], eye.m[1][1], eye.m[1][2]};
+    eng_vector_t right_world = {eye.m[0][0], eye.m[0][1], eye.m[0][2]};
+    eng_vector_t up, right;
+    eng_entity_transform_vector(engine, index, &up, &up_world, -1, true);
+    eng_entity_transform_vector(engine, index, &right, &right_world, -1, true);
+    float half = get_in_float(b, 1, 1.0f) * 0.5f;
+    up = vec_scale(vec_normalized(up), half);
+    right = vec_scale(vec_normalized(right), half);
+    const eng_vector_t offsets[4] = {vec_add(vec_scale(right, -1.0f), up), vec_add(right, up),
+                                     vec_sub(right, up), vec_sub(vec_scale(right, -1.0f), up)};
+    const float uvs[4][2] = {{0.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 1.0f}, {0.0f, 1.0f}};
+    const float *weights = NULL;
+    if (use_weight) {
+        nmo_object_t *object = eng_find_object(engine, mesh_id);
+        const nmo_mesh_state_t *state =
+            object != NULL ? (const nmo_mesh_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
+                                 engine->types, object, CKPGUID_MESH)
+                           : NULL;
+        if (state != NULL && state->vertex_weights != NULL && state->vertex_weight_count >= (uint32_t)mesh.vertex_count) {
+            weights = state->vertex_weights;
+        }
+    }
+    const eng_matrix_t *world = &engine->entities.data[index].world;
+    int32_t first = (int32_t)engine->render.vertices.count;
+    for (int32_t v = 0; v < mesh.vertex_count; v++) {
+        const nmo_vector_t *p = &mesh.vertices[v].position;
+        uint32_t color = use_color && mesh.colors != NULL ? mesh.colors[v] : 0xFFFFFFFFu;
+        prim_vertex_t corners[4];
+        for (int k = 0; k < 4; k++) {
+            eng_vector_t offset = weights != NULL ? vec_scale(offsets[k], weights[v]) : offsets[k];
+            corners[k].p = vec_add(marks_v(p->x, p->y, p->z), offset);
+            corners[k].n = marks_v(0.0f, 0.0f, 0.0f);
+            corners[k].u = uvs[k][0];
+            corners[k].v = uvs[k][1];
+        }
+        const int quad[6] = {0, 1, 2, 0, 2, 3};
+        for (int k = 0; k < 6; k++) {
+            push_prim_vertex(engine, world, &corners[quad[k]], color);
+        }
+    }
+    nmo_engine_draw_t *draw =
+        push_primitive(engine, entity, first, marks_v(world->m[3][0], world->m[3][1], world->m[3][2]));
+    if (draw != NULL) {
+        draw->material = material_id;
+        draw->transparent = transparent;
+        draw->no_fog = get_in_int(b, 2, 1) == 0;
+    }
+}
+
+/* CKMesh::SetTransparent on the target's mesh */
+static void vertex_render_transparent(nmo_engine_t *engine, nmo_object_id_t target, bool transparent)
+{
+    eng_mesh_copy_t *copy = eng_mesh_copy(engine, entity_current_mesh(engine, target));
+    if (copy != NULL) {
+        copy->flags = transparent ? copy->flags | VXMESH_FORCETRANSPARENCY : copy->flags & ~(uint32_t)VXMESH_FORCETRANSPARENCY;
+        copy->version = ++engine->render.mesh_version;
+    }
+}
+
+static void vertex_render_off(nmo_engine_t *engine, blk_t *b, nmo_object_id_t target)
+{
+    set_local_int(b, 2, 0);
+    eng_remove_entity_callback(engine, target, ENG_ENTITY_RENDER, vertex_render_draw, b->node);
+    vertex_render_transparent(engine, target, false);
+}
+
+static int bb_vertex_render(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (get_local_int(b, 2, 0) == 0) {
+        eng_entity_callback_t callback = {target, ENG_ENTITY_RENDER, vertex_render_draw, b->node, false};
+        eng_add_entity_callback(engine, &callback);
+        vertex_render_transparent(engine, target, true);
+        set_local_int(b, 2, 1);
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+        eng_material_t *material = eng_material(engine, (nmo_object_id_t)get_local_int(b, 1, 0));
+        if (material != NULL) {
+            material->desc.texture = nmo_engine_block_get_input_object(b, 0);
+        }
+    }
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 0);
+        vertex_render_off(engine, b, target);
+        return NMO_ENGINE_BR_OK;
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+static int cb_vertex_render(blk_t *b, uint32_t message)
+{
+    nmo_engine_t *engine = b->engine;
+    if (message == NMO_ENGINE_MSG_LOAD) {
+        set_local_int(b, 2, 0);
+        nmo_object_id_t id = eng_create_object(engine, NMO_CID_MATERIAL, "MLMaterial");
+        eng_material_t *material = id != 0 ? eng_material(engine, id) : NULL;
+        if (material == NULL && id != 0) {
+            material = eng_material_new(engine, id);
+        }
+        if (material == NULL) {
+            return NMO_ENGINE_BR_OK;
+        }
+        set_local_int(b, 1, (int32_t)id);
+        material->desc.alpha_blend = true;
+        material->desc.source_blend = VXBLEND_ONE;
+        material->desc.dest_blend = VXBLEND_ONE;
+        material->desc.z_write = false;
+        material->desc.address_mode = VXTEXTURE_ADDRESSCLAMP;
+        material->desc.texture_blend = VXTEXTUREBLEND_MODULATEALPHA;
+        material->desc.texture = nmo_engine_block_get_input_object(b, 0);
+    } else if (message == NMO_ENGINE_MSG_PAUSE || message == NMO_ENGINE_MSG_RESET ||
+               message == NMO_ENGINE_MSG_DEACTIVATESCRIPT) {
+        nmo_object_id_t target = nmo_engine_block_target(b);
+        if (target != 0 && get_local_int(b, 2, 0) != 0) {
+            vertex_render_off(engine, b, target);
+        }
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_visuals_blocks[] = {
     {NMO_GUID_INIT(0x00cd320b, 0x32ed010b), "Planar Filter", bb_planar_filter, cb_planar_filter,
      NULL},
@@ -2500,6 +2652,7 @@ static const nmo_engine_block_desc_t eng_visuals_blocks[] = {
     {NMO_GUID_INIT(0x79b95ed0, 0x3e4a01f5), "Simple Shadow", bb_simple_shadow, cb_simple_shadow, NULL},
     {NMO_GUID_INIT(0xd00d010a, 0xe00d010a), "Solid Trail", bb_solid_trail, cb_solid_trail, NULL},
     {NMO_GUID_INIT(0x09a06075, 0x760a4720), "Mark System", bb_mark_system, cb_mark_system, NULL},
+    {NMO_GUID_INIT(0xcc030377, 0x897aaaaa), "Vertex Render", bb_vertex_render, cb_vertex_render, NULL},
 };
 
 /* The render callbacks, at the stages the render context calls them */
