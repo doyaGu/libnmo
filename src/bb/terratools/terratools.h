@@ -41,14 +41,11 @@ typedef struct eng_emitter {
 } eng_emitter_t;
 
 /* A TT Simple Shadow: its material, projected on the floors under its object */
-#define ENG_SHADOW_FLOORS 50
 typedef struct eng_shadow {
     int32_t node;
     nmo_object_id_t entity;
-    nmo_object_id_t material;
     nmo_object_id_t texture;
-    nmo_object_id_t floors[ENG_SHADOW_FLOORS];
-    int32_t floor_count;
+    eng_floor_shadow_t floor;
     uint64_t ran;          /* the engine frame after its block last ran (its temporary callback) */
 } eng_shadow_t;
 

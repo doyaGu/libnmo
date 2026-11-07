@@ -310,6 +310,23 @@ float *eng_mesh_uvs(nmo_engine_t *engine, eng_mesh_copy_t *copy, int32_t channel
 bool eng_add_env_map(nmo_engine_t *engine, const eng_env_map_t *map);
 /* CKMesh::SetLitMode (VX_PRELITMESH 0, VX_LITMESH 1). False when `mesh` is none. */
 bool eng_mesh_set_lit_mode(nmo_engine_t *engine, nmo_object_id_t mesh, int32_t mode);
+/* A soft shadow on the floors under a 3D entity (Simple Shadow, TT Simple Shadow): the floors
+   its material's channel is on */
+#define ENG_SHADOW_FLOORS 50
+typedef struct eng_floor_shadow {
+    nmo_object_id_t material;
+    nmo_object_id_t floors[ENG_SHADOW_FLOORS];
+    int32_t floor_count;
+} eng_floor_shadow_t;
+/* The shadow's material: white, unlit by the specular and ambient, its texture clamped and
+   copied; 0 out of memory */
+nmo_object_id_t eng_floor_shadow_material(nmo_engine_t *engine, const char *name);
+/* A_GetFloors and the channel UVs: the channel on the floors (Floor attribute, shown) under
+   `entity` whose height is within `max_height`, `zoom` times its width, off the others */
+void eng_floor_shadow_place(nmo_engine_t *engine, eng_floor_shadow_t *shadow, nmo_object_id_t entity,
+                            float zoom, float max_height);
+/* The channel off every floor it is on (the list stays) */
+void eng_floor_shadow_remove(nmo_engine_t *engine, eng_floor_shadow_t *shadow);
 /* Add a draw to the frame being made; NULL out of memory */
 nmo_engine_draw_t *eng_render_push(nmo_engine_t *engine);
 /* CKMesh::GetBaryCenter and GetRadius, in the mesh's space; false for no mesh */
