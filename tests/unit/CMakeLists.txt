@@ -346,6 +346,9 @@ target_link_libraries(test_engine_narratives PRIVATE ${NMO_TEST_BB_PACKS} nmo_en
 
 add_unit_test(test_engine_sprites)
 target_link_libraries(test_engine_sprites PRIVATE ${NMO_TEST_BB_PACKS} nmo_engine nmo_edit)
+
+add_unit_test(test_engine_visuals)
+target_link_libraries(test_engine_visuals PRIVATE ${NMO_TEST_BB_PACKS} nmo_engine nmo_edit)
 add_unit_test(test_engine_calculator)
 target_link_libraries(test_engine_calculator PRIVATE ${NMO_TEST_BB_PACKS} nmo_engine nmo_edit)
 add_unit_test(test_engine_attributes)

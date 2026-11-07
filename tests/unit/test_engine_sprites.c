@@ -25,6 +25,7 @@
 #define GUID_SET_2D_POSITION NMO_GUID(0x32d30604, 0x23b163fc)
 #define GUID_EDIT_2D_ENTITY NMO_GUID(0x7fc54c91, 0x3f486670)
 #define GUID_SPRITE_MULTI_ANGLE NMO_GUID(0x1ef926bd, 0x01ad167f)
+#define GUID_DISPLAY_PROGRESSION_BAR NMO_GUID(0x04cf37cd, 0x7a246b85)
 
 /* The files the engine loads, from the scratch directory (the last path stays allocated) */
 static const char *resolve_scratch(void *user_data, const char *name)
@@ -373,10 +374,71 @@ TEST(engine_sprites, sprite_multi_angle_stands_a_keyed_3d_sprite_in_for_its_owne
     fixture_end(&f);
 }
 
+static nmo_object_id_t block_local(engine_fixture_t *f, nmo_object_id_t block, size_t pos)
+{
+    const nmo_behavior_state_t *state = (const nmo_behavior_state_t *)fixture_state(f, block);
+    return state != NULL && pos < state->local_parameters.count
+               ? nmo_behavior_ref_array_get_id(&state->local_parameters, pos)
+               : 0;
+}
+
+TEST(engine_sprites, display_progression_bar_draws_the_full_bar_cut_over_the_empty_one)
+{
+    write_sprite_bmp();
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t empty = make_sprite(&f, 0);
+    nmo_object_id_t full = make_sprite(&f, 0);
+    ASSERT_TRUE(empty != 0 && full != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t previous = 0;
+    nmo_object_id_t load_empty = load_block(&f, empty, 0, &previous);
+    nmo_object_id_t load_full = load_block(&f, full, 0, &previous);
+    nmo_object_id_t bar = chain(&f, GUID_DISPLAY_PROGRESSION_BAR, "Display Progression Bar", &previous);
+    ASSERT_TRUE(load_empty != 0 && load_full != 0 && bar != 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, bar, 0), 5);
+    fixture_input_int(&f, BLOCK_PIN(&f, bar, 1), 6);
+    const float half = 0.5f;
+    fixture_input_value(&f, BLOCK_PIN(&f, bar, 2), &half, sizeof(half));
+    nmo_object_id_t locals[3] = {block_local(&f, bar, 0), block_local(&f, bar, 1), block_local(&f, bar, 2)};
+    ASSERT_TRUE(locals[0] != 0 && locals[1] != 0 && locals[2] != 0);
+    fixture_commit(&f, NULL);
+    nmo_engine_set_file_resolver(f.engine, resolve_scratch, NULL);
+    const int32_t values[3] = {(int32_t)empty, (int32_t)full, 1}; /* the settings, set (Active) */
+    for (int i = 0; i < 3; i++) {
+        ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, locals[i], &values[i], sizeof(values[i])));
+    }
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    ASSERT_EQ(1u, runs(&f, bar));
+
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    int at_empty = -1, at_full = -1;
+    for (int32_t i = 0; i < frame.draw_count; i++) {
+        if (frame.draws[i].kind == NMO_ENGINE_DRAW_QUAD && frame.draws[i].object == empty) {
+            at_empty = i;
+        } else if (frame.draws[i].kind == NMO_ENGINE_DRAW_QUAD && frame.draws[i].object == full) {
+            at_full = i;
+        }
+    }
+    ASSERT_TRUE(at_empty >= 0 && at_full > at_empty);
+    const nmo_engine_draw_t *e = &frame.draws[at_empty], *u = &frame.draws[at_full];
+    ASSERT_FLOAT_EQ(5.0f, e->rect[0], 0.0f);
+    ASSERT_FLOAT_EQ(9.0f, e->rect[2], 0.0f);
+    ASSERT_FLOAT_EQ(8.0f, e->rect[3], 0.0f);
+    ASSERT_FLOAT_EQ(7.0f, u->rect[2], 0.0f); /* half of 4 pixels */
+    ASSERT_FLOAT_EQ(0.5f, u->uv[2], 0.0f);
+    ASSERT_FALSE(nmo_engine_object_is_visible(f.engine, full)); /* hidden again */
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_sprites, sprite_load_sizes_the_sprite_which_draws_its_keyed_bitmap);
     REGISTER_TEST(engine_sprites, set_rectangles_and_change_sprite_slot_pick_what_the_sprite_shows);
     REGISTER_TEST(engine_sprites, set_2d_parent_and_position_move_children_and_edit_2d_entity_sets_fields);
     REGISTER_TEST(engine_sprites, set_2d_position_keeps_a_stuck_child_at_its_offset);
     REGISTER_TEST(engine_sprites, sprite_multi_angle_stands_a_keyed_3d_sprite_in_for_its_owner);
+    REGISTER_TEST(engine_sprites, display_progression_bar_draws_the_full_bar_cut_over_the_empty_one);
 TEST_MAIN_END()
