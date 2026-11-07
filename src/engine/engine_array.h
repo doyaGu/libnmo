@@ -77,6 +77,11 @@ void eng_array_move_row(nmo_engine_t *engine, nmo_object_id_t array_id, int32_t 
 void eng_array_move_column(nmo_engine_t *engine, nmo_object_id_t array_id, int32_t from,
                            int32_t to);
 void eng_array_reverse(nmo_engine_t *engine, nmo_object_id_t array_id);
+/* CKDataArray::LoadElements of a file's bytes, and WriteElements as a new heap string */
+void eng_array_load_elements(nmo_engine_t *engine, nmo_object_id_t array_id, const char *text,
+                             size_t size, bool append, int32_t column);
+char *eng_array_write_elements(nmo_engine_t *engine, nmo_object_id_t array_id, int32_t column,
+                               int32_t number, size_t *out_size);
 void eng_array_create_group(nmo_engine_t *engine, nmo_object_id_t array_id, int32_t mc,
                             int32_t op, const nmo_engine_cell_t *key, nmo_object_id_t group_id,
                             int32_t ec);

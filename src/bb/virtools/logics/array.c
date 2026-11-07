@@ -1015,6 +1015,81 @@ static int bb_set_key_row(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/*
+ * Array Load (ArrayLoad): the data file Filename names (the path manager's
+ * data paths) into the array, as rows appended or over the rows from the
+ * first, from column First Column on; File Error when it cannot be read.
+ */
+static int bb_array_load(blk_t *b)
+{
+    nmo_object_id_t array = array_target(b);
+    if (array == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    const char *name = input_string(b, 0);
+    bool append = get_in_int(b, 1, 1) != 0;
+    int32_t column = get_in_int(b, 2, 0);
+    size_t size = 0;
+    unsigned char *text = name != NULL ? eng_read_path_file(b->engine, name, 1, &size) : NULL;
+    IN_OFF(b, 0);
+    if (text == NULL) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    eng_array_load_elements(b->engine, array, (const char *)text, size, append, column);
+    free(text);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * Array Save (ArrayWrite): Number of Column columns from First Column into
+ * the file Filename names, as the original gives the name (it completes a
+ * relative name, then writes the name as it was), through the host's writer.
+ * The file is written as Windows' text mode writes it, a CR before each LF;
+ * Write Error without a writer or when it fails.
+ */
+static int bb_array_save(blk_t *b)
+{
+    nmo_object_id_t array = array_target(b);
+    if (array == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    nmo_engine_t *engine = b->engine;
+    const char *name = input_string(b, 0);
+    int32_t column = get_in_int(b, 1, 0), number = get_in_int(b, 2, 1);
+    bool append = get_in_int(b, 3, 0) != 0;
+    IN_OFF(b, 0);
+    size_t size = 0;
+    char *rows = eng_array_write_elements(engine, array, column, number, &size);
+    size_t old_size = 0;
+    unsigned char *old = append && name != NULL ? eng_read_file(engine, name, &old_size) : NULL;
+    size_t lines = 0;
+    for (size_t i = 0; rows != NULL && i < size; i++) {
+        lines += rows[i] == '\n';
+    }
+    char *file = rows != NULL ? (char *)malloc(old_size + size + lines + 1u) : NULL;
+    bool written = false;
+    if (file != NULL && name != NULL && engine->host.write_file != NULL) {
+        if (old_size > 0) {
+            memcpy(file, old, old_size);
+        }
+        size_t at = old_size;
+        for (size_t i = 0; i < size; i++) {
+            if (rows[i] == '\n') {
+                file[at++] = '\r';
+            }
+            file[at++] = rows[i];
+        }
+        written = engine->host.write_file(engine->host.write_file_user_data, name, file, at) == NMO_OK;
+    }
+    free(file);
+    free(old);
+    free(rows);
+    OUT_ON(b, written ? 0 : 1);
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_logics_array_blocks[] = {
     {NMO_GUID_INIT(0x33b99f51, 0x07d95c45), "Get Cell", bb_get_cell, NULL, NULL},
     {NMO_GUID_INIT(0x30ed1c6d, 0x4a3b7067), "Set Cell", bb_set_cell, NULL, NULL},
@@ -1052,6 +1127,8 @@ static const nmo_engine_block_desc_t eng_logics_array_blocks[] = {
     {NMO_GUID_INIT(0x3b7d3db7, 0x519f015b), "Reverse Order", bb_reverse_order, NULL, NULL},
     {NMO_GUID_INIT(0x2ed72740, 0x406b5027), "Swap Rows", bb_swap_rows, NULL, NULL},
     {NMO_GUID_INIT(0x2fff4c63, 0x4fcb1b94), "Set Key Row", bb_set_key_row, NULL, NULL},
+    {NMO_GUID_INIT(0x13bd2c64, 0x62db38e1), "Array Load", bb_array_load, NULL, NULL},
+    {NMO_GUID_INIT(0x15185846, 0x41014a45), "Array Save", bb_array_save, NULL, NULL},
 };
 
 nmo_status_t eng_register_logics_array(nmo_engine_t *engine)

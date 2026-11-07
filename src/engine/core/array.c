@@ -19,6 +19,7 @@
 #include "../../runtime/runtime_internal.h"
 
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -1046,6 +1047,224 @@ void eng_array_reverse(nmo_engine_t *engine, nmo_object_id_t array_id)
     for (int32_t a = 0, b = (int32_t)array->row_count - 1; a < b; a++, b--) {
         nmo_engine_array_swap_rows(engine, array_id, a, b);
     }
+}
+
+/* A parameter cell as a plain parameter of the column's type (owning a copy of the cell's bytes) */
+static bool eng_cell_param(const nmo_engine_t *engine, const eng_column_t *column,
+                           const eng_cell_t *cell, eng_param_t *out)
+{
+    memset(out, 0, sizeof(*out));
+    out->kind = ENG_PARAM_PLAIN;
+    out->type = column->param_type;
+    out->type_desc = nmo_type_registry_find_by_guid(engine->types, column->param_type);
+    out->source = -1;
+    out->operation = -1;
+    if (out->type_desc == NULL) {
+        return false;
+    }
+    if (cell->size > 0) {
+        out->data = (uint8_t *)malloc(cell->size);
+        if (out->data == NULL) {
+            return false;
+        }
+        memcpy(out->data, cell->data, cell->size);
+        out->size = cell->size;
+    }
+    return true;
+}
+
+/*
+ * CKDataArray::LoadElements of a file's bytes: a row per line (empty lines
+ * skipped, a line's first 2047 bytes, a '\r' before its '\n' dropped), its
+ * tab-separated values into the columns from `column` on, appended as new
+ * rows or over the rows from the first.
+ */
+void eng_array_load_elements(nmo_engine_t *engine, nmo_object_id_t array_id, const char *text,
+                             size_t size, bool append, int32_t column)
+{
+    eng_array_t *array = eng_find_array(engine, array_id);
+    if (array == NULL || text == NULL) {
+        return;
+    }
+    char line[2048];
+    size_t offset = 0;
+    int32_t row_index = 0;
+    while (offset < size) {
+        size_t length = 0;
+        while (offset + length < size && text[offset + length] != '\n') {
+            ++length;
+        }
+        size_t copy = length < sizeof(line) - 1u ? length : sizeof(line) - 1u;
+        memcpy(line, text + offset, copy);
+        if (offset + length < size && copy > 0 && line[copy - 1u] == '\r') {
+            line[copy - 1u] = '\0';
+        } else {
+            line[copy] = '\0';
+        }
+        offset += length + 1u;
+        if (line[0] == '\0') {
+            continue;
+        }
+        int32_t row;
+        if (append) {
+            if (nmo_engine_array_insert_row(engine, array_id, -1, &row) != NMO_OK) {
+                return;
+            }
+            array = eng_find_array(engine, array_id);
+        } else {
+            row = row_index++;
+            if ((size_t)row >= array->row_count) {
+                return;
+            }
+        }
+        char *token = line;
+        for (int32_t c = column; token != NULL && *token != '\0'; c++) {
+            char *tab = strchr(token, '\t');
+            if (tab != NULL) {
+                *tab = '\0';
+            }
+            if (c < 0 || (uint32_t)c >= array->column_count) {
+                break;
+            }
+            eng_cell_t *cell = eng_array_cell(array, (size_t)row, (size_t)c);
+            switch (array->columns[c].type) {
+            case CKARRAYTYPE_INT:
+                cell->value = (uint32_t)atoi(token);
+                break;
+            case CKARRAYTYPE_FLOAT: {
+                float value = (float)atof(token);
+                memcpy(&cell->value, &value, sizeof(value));
+                break;
+            }
+            case CKARRAYTYPE_STRING: {
+                char *copy_text = eng_strdup(token);
+                if (copy_text != NULL) {
+                    free(cell->text);
+                    cell->text = copy_text;
+                }
+                break;
+            }
+            case CKARRAYTYPE_OBJECT:
+                cell->value = (uint32_t)nmo_engine_object_named(engine, token, NMO_CID_OBJECT);
+                break;
+            case CKARRAYTYPE_PARAMETER: {
+                eng_param_t param;
+                if (eng_cell_param(engine, &array->columns[c], cell, &param)) {
+                    if (eng_param_set_text(engine, &param, token) == NMO_OK && param.size > 0) {
+                        uint8_t *data = (uint8_t *)realloc(cell->data, param.size);
+                        if (data != NULL) {
+                            memcpy(data, param.data, param.size);
+                            cell->data = data;
+                            cell->size = param.size;
+                        }
+                    }
+                }
+                free(param.data);
+                break;
+            }
+            default:
+                break;
+            }
+            token = tab != NULL ? tab + 1 : NULL;
+        }
+    }
+}
+
+/* Append `text` to a growing heap string; false out of memory */
+static bool eng_text_append(char **buffer, size_t *length, size_t *capacity, const char *text)
+{
+    size_t add = strlen(text);
+    if (!eng_vec_reserve((void **)buffer, capacity, *length + add + 1u, 1u)) {
+        return false;
+    }
+    memcpy(*buffer + *length, text, add + 1u);
+    *length += add;
+    return true;
+}
+
+/* A formatted number as an exact-size heap string */
+static char *eng_number_text(bool real, uint32_t value)
+{
+    float f;
+    memcpy(&f, &value, sizeof(f));
+    int needed = real ? snprintf(NULL, 0, "%g", (double)f) : snprintf(NULL, 0, "%d", (int32_t)value);
+    char *text = needed >= 0 ? (char *)malloc((size_t)needed + 1u) : NULL;
+    if (text != NULL) {
+        if (real) {
+            snprintf(text, (size_t)needed + 1u, "%g", (double)f);
+        } else {
+            snprintf(text, (size_t)needed + 1u, "%d", (int32_t)value);
+        }
+    }
+    return text;
+}
+
+/*
+ * CKDataArray::WriteElements as text: each row's `number` columns from
+ * `column` on, tab-separated (a tab even before a column it lacks), then a
+ * newline. A new heap string, its length in `out_size`; NULL out of memory.
+ */
+char *eng_array_write_elements(nmo_engine_t *engine, nmo_object_id_t array_id, int32_t column,
+                               int32_t number, size_t *out_size)
+{
+    eng_array_t *array = eng_find_array(engine, array_id);
+    char *buffer = NULL;
+    size_t length = 0, capacity = 0;
+    if (!eng_text_append(&buffer, &length, &capacity, "")) {
+        return NULL;
+    }
+    for (size_t r = 0; array != NULL && r < array->row_count; r++) {
+        for (int32_t c = column; c < column + number; c++) {
+            if (c > column && !eng_text_append(&buffer, &length, &capacity, "\t")) {
+                goto fail;
+            }
+            if (c < 0 || (uint32_t)c >= array->column_count) {
+                continue;
+            }
+            const eng_cell_t *cell = eng_array_cell(array, r, (size_t)c);
+            char *owned = NULL;
+            const char *text = NULL;
+            switch (array->columns[c].type) {
+            case CKARRAYTYPE_INT:
+            case CKARRAYTYPE_FLOAT:
+                owned = eng_number_text(array->columns[c].type == CKARRAYTYPE_FLOAT, cell->value);
+                if (owned == NULL) {
+                    goto fail;
+                }
+                break;
+            case CKARRAYTYPE_STRING:
+                text = cell->text;
+                break;
+            case CKARRAYTYPE_OBJECT:
+                text = cell->value != 0 ? nmo_engine_object_name(engine, (nmo_object_id_t)cell->value) : NULL;
+                break;
+            case CKARRAYTYPE_PARAMETER: {
+                eng_param_t param;
+                if (eng_cell_param(engine, &array->columns[c], cell, &param)) {
+                    owned = eng_param_text(engine, &param);
+                }
+                free(param.data);
+                break;
+            }
+            default:
+                break;
+            }
+            bool ok = eng_text_append(&buffer, &length, &capacity,
+                                      owned != NULL ? owned : text != NULL ? text : "");
+            free(owned);
+            if (!ok) {
+                goto fail;
+            }
+        }
+        if (!eng_text_append(&buffer, &length, &capacity, "\n")) {
+            goto fail;
+        }
+    }
+    *out_size = length;
+    return buffer;
+fail:
+    free(buffer);
+    return NULL;
 }
 
 /* The cells laid out again for `columns` columns; `map[c]` is the old column of new column c, or -1. */
