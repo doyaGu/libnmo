@@ -18,6 +18,7 @@ from ballance.game.resources import (
     digest,
     check_export,
     catalog,
+    mechanisms,
 )
 from ballance.core import evidence
 from ballance.core.nmo import Nmo
@@ -195,8 +196,7 @@ class ResourceTests(unittest.TestCase):
                 # Start/checkpoint flame templates have no mesh-bearing entities.
                 self.assertEqual(
                     bool(item['runtime_bodies']),
-                    'runtime' in resource(name)
-                    and name not in ('StartFlames', 'CheckpointFlames'),
+                    'runtime' in resource(name) and name not in ('StartFlames', 'CheckpointFlames'),
                     name,
                 )
                 for filename, sha in item['assets'].items():
@@ -209,6 +209,46 @@ class ResourceTests(unittest.TestCase):
                     for b in record['resources']['Balloon']['runtime_bodies']
                 )
             )
+
+    def test_named_resources_preserve_route_adapters_and_template_mirroring(self):
+        from ballance.route.templates import expand
+        from ballance.route.motions import catalog as motion_catalog
+
+        for kind, (name, spec) in mechanisms().items():
+            if spec['runtime'].get('motion_recipe'):
+                self.assertEqual(spec['runtime']['template'], motion_catalog()[kind]['template'])
+            else:
+                self.assertNotIn(kind, motion_catalog())
+            if 'module' not in spec['placement']:
+                continue
+            old = {'sectors': [[{'road': 15}, {'module': kind}, {'road': 15}]]}
+            # A switch needs an authored push branch; it is not a straight adapter.
+            if kind == 'P_Modul_37':
+                continue
+            new = copy.deepcopy(old)
+            new['sectors'][0][1] = {'resource': name}
+            for heading in ('+x', '-x', '+z', '-z'):
+                old['start'] = new['start'] = {'heading': heading}
+                a, b = Layout(old), Layout(new)
+                self.assertEqual(a.modules, b.modules)
+                self.assertEqual(a.module_floors, b.module_floors)
+                self.assertEqual(a.points, b.points)
+        route = {
+            'definitions': {
+                'bridge': {'pieces': [{'resource': 'SwitchBridge', 'side': 'left', 'name': 'key'}]}
+            },
+            'sectors': [[{'use': 'bridge', 'mirror': True}]],
+        }
+        self.assertEqual(expand(route)[0][0]['side'], 'right')
+        route = {'sectors': [[{'area': [3, 3], 'elements': [{'resource': 'Fan', 'at': [5, 5]}]}]]}
+        self.assertEqual(expand(route)[0][0]['elements'][0]['kind'], 'P_Modul_18')
+        for piece in (
+            {'resource': 'Missing'},
+            {'resource': 'Column'},
+            {'resource': 'Drawbridge', 'module': 'P_Modul_37'},
+        ):
+            with self.assertRaises(ValueError):
+                expand({'sectors': [[piece]]})
 
     def test_authored_scenery_frames_and_invalid_ownership(self):
         from ballance.route.attachments import authored
