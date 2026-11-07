@@ -5,8 +5,11 @@
  */
 
 #include "engine_fixture.h"
+#include <math.h>
 #include "../../src/engine/engine_internal.h"
 #include "../../src/engine/engine_transform.h"
+#include "../../src/engine/engine_media.h"
+#include "../../src/engine/engine_manager.h"
 
 #include "core/nmo_arena.h"
 #include "engine/nmo_engine_render.h"
@@ -39,6 +42,7 @@
 #define GUID_MOTION_BLUR NMO_GUID(0x06d0b04b, 0x1d4ea106)
 #define GUID_PLANAR_REFLECTION NMO_GUID(0x44fe1b3c, 0x29ba3445)
 #define GUID_PLANAR_SHADOW NMO_GUID(0x731072fa, 0x56cf087f)
+#define GUID_SHADOW_CASTER NMO_GUID(0x0718360b, 0x71e5002f)
 
 /* A block acting on `object` (0: no target), run when the script starts */
 static nmo_object_id_t block_on(engine_fixture_t *f, nmo_guid_t guid, const char *name, nmo_object_id_t object)
@@ -1098,6 +1102,172 @@ TEST(engine_visuals, planar_shadow_flattens_shadow_objects_on_the_plane_from_the
     fixture_end(&f);
 }
 
+/* Texture Render's pass, asked for as the block does (the edit layer cannot add Texture Render
+   itself: it rejects the prototype's unnamed parameters) */
+static nmo_object_id_t pass_texture;
+
+static void pass_render(nmo_engine_t *engine, void *state, eng_render_stage_t stage, const eng_render_args_t *args)
+{
+    (void)state;
+    (void)args;
+    if (stage == ENG_RENDER_PASSES && pass_texture != 0) {
+        eng_scene_view_t view;
+        memset(&view, 0, sizeof(view));
+        view.eye[0] = view.eye[5] = view.eye[10] = view.eye[15] = 1.0f;
+        view.background_color = 0xFF808080u;
+        view.render_options = CK_RENDER_USECAMERARATIO | CK_RENDER_CLEARBACK | CK_RENDER_CLEARZ;
+        eng_render_scene_pass(engine, pass_texture, 0, &view);
+        pass_texture = 0; /* once */
+    }
+}
+
+static const eng_manager_desc_t pass_manager = {.name = "Test Pass", .render = pass_render};
+
+TEST(engine_visuals, a_scene_pass_draws_the_scene_into_a_texture_before_the_frame)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t material = fixture_create(&f, NMO_CID_MATERIAL, "Material");
+    nmo_object_id_t texture = fixture_create(&f, NMO_CID_TEXTURE, "Target");
+    nmo_object_id_t mesh = 0;
+    nmo_object_id_t object = face_object(&f, "Face", material, &mesh);
+    ASSERT_TRUE(material != 0 && texture != 0 && object != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, eng_add_manager(f.engine, &pass_manager, NULL));
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_TRUE(eng_texture_create(f.engine, eng_texture(f.engine, texture), 64, 32, 0));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    pass_texture = texture;
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+
+    /* One pass into the 64x32 texture, the 4:3 camera ratio centered in it, its background,
+       drawing the scene as the frame does, its draws before the frame's */
+    ASSERT_EQ(1, frame.pass_count);
+    const nmo_engine_pass_t *pass = &frame.passes[0];
+    ASSERT_EQ(texture, pass->texture);
+    ASSERT_EQ(0, pass->slot);
+    ASSERT_EQ(64, pass->width);
+    ASSERT_EQ(32, pass->height);
+    ASSERT_EQ(11, pass->viewport[0]);
+    ASSERT_EQ(0, pass->viewport[1]);
+    ASSERT_EQ(42, pass->viewport[2]);
+    ASSERT_EQ(32, pass->viewport[3]);
+    ASSERT_EQ(42, pass->frame.width);
+    ASSERT_EQ(32, pass->frame.height);
+    ASSERT_EQ(0xFF808080u, pass->frame.background_color);
+    ASSERT_TRUE(mesh_draw(&pass->frame, object) >= 0);
+    ASSERT_TRUE(mesh_draw(&frame, object) >= 0);
+    ASSERT_TRUE(pass->frame.draws + pass->frame.draw_count <= frame.draws);
+    ASSERT_TRUE(pass->frame.lights == frame.lights && pass->frame.vertices == frame.vertices);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_EQ(0, frame.pass_count);
+    fixture_end(&f);
+}
+
+/* An attribute `name` (with a float value: the blocks only look for it). After
+   fixture_begin_edit(). */
+static void plain_attribute(engine_fixture_t *f, nmo_object_id_t object, const char *name)
+{
+    nmo_manager_entry_create_options_t options = {.enabled = true, .attribute_type_guid = CKPGUID_FLOAT,
+        .category = "Test", .has_compatible_class_id = true, .compatible_class_id = NMO_CID_3DENTITY,
+        .has_flags = true, .flags = 0};
+    uint32_t type = 0;
+    ASSERT_EQ(NMO_OK, nmo_object_edit_ensure_attribute_manager_entry(nmo_script_edit_workspace_edit(f->tx), name,
+                                                                     &options, &type));
+    nmo_object_id_t parameter = fixture_create(f, NMO_CID_PARAMETEROUT, name);
+    nmo_parameter_state_t *value = (nmo_parameter_state_t *)fixture_state(f, parameter);
+    value->has_state = true;
+    value->mode = CKPARAM_MODE_BUFFER;
+    value->type_guid = CKPGUID_FLOAT;
+    ASSERT_EQ(NMO_OK, nmo_array_alloc(&value->buffer_data, 1, 4, NULL));
+    memset(value->buffer_data.data, 0, 4);
+    ASSERT_EQ(NMO_OK, nmo_beobject_attribute_array_append(&((nmo_beobject_state_t *)fixture_state(f, object))->attributes,
+                                                          parameter, type, NULL));
+}
+
+TEST(engine_visuals, shadow_caster_draws_its_shadow_texture_and_projects_it_on_receivers)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t material = fixture_create(&f, NMO_CID_MATERIAL, "Material");
+    nmo_object_id_t mesh = 0;
+    nmo_object_id_t object = face_object(&f, "Face", material, &mesh);
+    nmo_object_id_t light = fixture_create(&f, NMO_CID_LIGHT, "Light");
+    ASSERT_TRUE(material != 0 && object != 0 && light != 0);
+    nmo_mesh_update_bounding_volumes((nmo_mesh_state_t *)fixture_state(&f, mesh));
+    ((nmo_3dentity_state_t *)fixture_state(&f, object))->world_matrix[13] = 2.0f;
+    nmo_light_state_t *point = (nmo_light_state_t *)fixture_state(&f, light);
+    point->light_data.type = VX_LIGHTPOINT;
+    const float at[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 10, 0, 1};
+    memcpy(point->entity.world_matrix, at, sizeof(at));
+    point->entity.has_entityndata_chunk = 1;
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t floor_mesh = 0;
+    nmo_object_id_t floor = floor_object(&f, &floor_mesh);
+    ASSERT_TRUE(floor != 0);
+    nmo_mesh_state_t *floor_state = (nmo_mesh_state_t *)fixture_state(&f, floor_mesh);
+    floor_state->faces[0].normal = floor_state->faces[1].normal = (nmo_vector_t){0.0f, 1.0f, 0.0f};
+    floor_state->faces[0].channel_mask = floor_state->faces[1].channel_mask = 0xFFFF;
+    plain_attribute(&f, floor, "Shadow Caster Receiver");
+    nmo_object_id_t caster = block_on(&f, GUID_SHADOW_CASTER, "ShadowCaster", object);
+    ASSERT_TRUE(caster != 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, caster, 0), (int32_t)light);
+    fixture_link(&f, BLOCK_OUT(&f, caster, 0), BLOCK_IN(&f, caster, 1), 2); /* Off two frames on */
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+
+    /* The shadow pass: 128 square, white, the face in black, then the light's distance
+       ((7.52 - 5) / 45 of white) added over it */
+    ASSERT_EQ(1, frame.pass_count);
+    const nmo_engine_pass_t *pass = &frame.passes[0];
+    ASSERT_EQ(128, pass->width);
+    ASSERT_EQ(128, pass->height);
+    ASSERT_EQ(0xFFFFFFFFu, pass->frame.background_color);
+    ASSERT_FLOAT_EQ(0.2f, pass->frame.fov, 1e-6f);
+    int black = mesh_draw(&pass->frame, object);
+    ASSERT_TRUE(black >= 0);
+    ASSERT_TRUE(pass->frame.draws[black].blackened && pass->frame.draws[black].no_z_test);
+    ASSERT_EQ(2, pass->frame.draw_count);
+    const nmo_engine_draw_t *lift = &pass->frame.draws[1];
+    ASSERT_EQ(NMO_ENGINE_DRAW_QUAD, lift->kind);
+    ASSERT_EQ(0x0E0E0E0Eu, lift->color);
+    ASSERT_TRUE(lift->blend);
+    ASSERT_EQ(VXBLEND_ONE, lift->source_blend);
+    ASSERT_EQ(VXBLEND_ONE, lift->dest_blend);
+    ASSERT_FLOAT_EQ(128.0f, lift->rect[2], 0.0f);
+
+    /* The floor multiplied by it, unlit, on its faces turned to the light */
+    nmo_engine_mesh_t desc;
+    ASSERT_TRUE(nmo_engine_mesh(f.engine, floor_mesh, &desc));
+    ASSERT_EQ(1, desc.channel_count);
+    const nmo_engine_channel_t *channel = &desc.channels[0];
+    nmo_engine_material_t shade;
+    ASSERT_TRUE(nmo_engine_material(f.engine, channel->material, &shade));
+    ASSERT_EQ(pass->texture, shade.texture);
+    ASSERT_TRUE(channel->active && !channel->lit);
+    ASSERT_EQ(VXBLEND_ZERO, channel->source_blend);
+    ASSERT_EQ(VXBLEND_SRCCOLOR, channel->dest_blend);
+    ASSERT_EQ(1u, (unsigned)channel->mask);
+    ASSERT_NOT_NULL(channel->uvs);
+    ASSERT_TRUE(isfinite(channel->uvs[0]) && isfinite(channel->uvs[1]));
+    ASSERT_TRUE(desc.faces[0].channel_mask & 1u);
+
+    /* Off: the channel off the floor */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    ASSERT_TRUE(nmo_engine_mesh(f.engine, floor_mesh, &desc));
+    ASSERT_EQ(0, desc.channel_count);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_visuals, blink_cycles_the_target_and_fps_reports_the_rate);
     REGISTER_TEST(engine_visuals, z_buffer_and_render_order_shape_the_mesh_draws);
@@ -1116,4 +1286,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_visuals, motion_blur_draws_the_mesh_faded_along_its_last_matrices);
     REGISTER_TEST(engine_visuals, planar_reflection_mirrors_reflected_objects_inside_the_plane);
     REGISTER_TEST(engine_visuals, planar_shadow_flattens_shadow_objects_on_the_plane_from_the_light);
+    REGISTER_TEST(engine_visuals, a_scene_pass_draws_the_scene_into_a_texture_before_the_frame);
+    REGISTER_TEST(engine_visuals, shadow_caster_draws_its_shadow_texture_and_projects_it_on_receivers);
 TEST_MAIN_END()

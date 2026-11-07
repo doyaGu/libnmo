@@ -15,6 +15,8 @@
 
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
+#include "object/builtin/nmo_camera_schemas.h"
+#include "object/builtin/nmo_texture_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "type/nmo_object_guids.h"
 #include "type/nmo_type_query.h"
@@ -59,6 +61,26 @@ typedef struct visuals_marks {
     ENG_VEC(visuals_mark_list_t) lists;
 } visuals_marks_t;
 
+/* A render pass a block asked for as it ran, made with the frame: Texture Render's scene from a
+   view into a texture's slot, or a ShadowCaster's shadow (`node`) */
+typedef struct visuals_pass_request {
+    uint64_t frame; /* the engine frame it was asked in: only that frame's render makes it */
+    int32_t node;
+    bool shadow;
+    nmo_object_id_t texture;
+    int32_t slot;
+    eng_scene_view_t view;
+} visuals_pass_request_t;
+
+/* A ShadowCaster's camera, shadow texture and material (ShadowCasterStruct), and what its shadow
+   pass draws: the caster in black if in range, the distance's white and the soft gradient */
+typedef struct visuals_caster {
+    int32_t node;
+    nmo_object_id_t camera, texture, material;
+    bool render, soft;
+    float delta;
+} visuals_caster_t;
+
 /* A Motion Blur's last world matrices of its target, the newest first (VAR_MAT) */
 #define BLUR_TRACKS 30
 typedef struct visuals_blur {
@@ -88,6 +110,8 @@ typedef struct visuals {
     ENG_VEC(visuals_marks_t) mark_systems;
     callback_list_t marks;
     ENG_VEC(struct visuals_blur) blurs;
+    ENG_VEC(struct visuals_pass_request) passes;
+    ENG_VEC(struct visuals_caster) casters;
 } visuals_t;
 
 static void visuals_destroy(nmo_engine_t *engine, void *state);
@@ -3294,6 +3318,497 @@ static int bb_planar_shadow(blk_t *b)
     return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
 }
 
+/*
+ * Texture Render: renders the scene into the target texture from the Camera
+ * (the attached one when none), its background the Background Color and
+ * Texture, with the Render Options (but back to front); a cube map gets the
+ * six faces from the camera's position, 90 degrees wide, or one face a frame
+ * (the current slot, then the next) with Render Face by Face. CK renders as
+ * the block runs; the engine makes the pass with the frame, before its
+ * draws, from the camera's matrix as the block left it. The DLL needs a
+ * Camera for a cube map (it would crash without); the engine gives an owner
+ * error. Version 1 blocks (their own texture, as an output) are not ported.
+ */
+static bool visuals_request_pass(nmo_engine_t *engine, const visuals_pass_request_t *request)
+{
+    visuals_t *visuals = visuals_state(engine);
+    if (visuals->passes.count > 0 && visuals->passes.data[0].frame != engine->frame) {
+        visuals->passes.count = 0; /* asked in a frame no render followed */
+    }
+    visuals_pass_request_t *slot = NULL;
+    if (!ENG_VEC_PUSH(visuals->passes, slot)) {
+        return false;
+    }
+    *slot = *request;
+    slot->frame = engine->frame;
+    return true;
+}
+
+static int bb_texture_render(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    eng_texture_t *texture = target != 0 ? eng_texture(engine, target) : NULL;
+    if (texture == NULL || texture->sprite) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_object_id_t input = nmo_engine_block_get_input_object(b, 0);
+    nmo_object_id_t camera = input != 0 ? input : engine->render.camera;
+    visuals_pass_request_t request;
+    memset(&request, 0, sizeof(request));
+    request.node = b->node;
+    request.texture = target;
+    request.view.camera = camera;
+    float color[4] = {0.5f, 0.5f, 0.5f, 1.0f};
+    nmo_engine_block_get_input_value(b, 1, color, sizeof(color));
+    request.view.background_color = vxcolor_to_color(color);
+    request.view.background_texture = nmo_engine_block_get_input_object(b, 2);
+    request.view.render_options = (uint32_t)get_local_int(b, 3, (int32_t)engine->render.render_options) &
+                                  ~(uint32_t)CK_RENDER_DOBACKTOFRONT;
+    int32_t index = camera != 0 ? eng_entity_index(engine, camera) : -1;
+    eng_matrix_t eye;
+    eng_matrix_identity(&eye);
+    if (index >= 0) {
+        eye = engine->entities.data[index].world;
+    }
+    nmo_object_t *object = eng_find_object(engine, target);
+    const nmo_texture_state_t *state = object != NULL
+        ? (const nmo_texture_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(engine->types, object, CKPGUID_TEXTURE)
+        : NULL;
+    if (state != NULL && state->is_cubemap) {
+        if (input == 0) {
+            return NMO_ENGINE_BR_OWNERERROR;
+        }
+        /* Each face's referential, at the camera */
+        static const float faces[6][3][3] = {
+            {{0, 0, -1}, {0, 1, 0}, {1, 0, 0}},  {{0, 0, 1}, {0, 1, 0}, {-1, 0, 0}},
+            {{1, 0, 0}, {0, 0, -1}, {0, 1, 0}},  {{1, 0, 0}, {0, 0, 1}, {0, -1, 0}},
+            {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}},   {{-1, 0, 0}, {0, 1, 0}, {0, 0, -1}}};
+        request.view.has_fov = true;
+        request.view.fov = 3.14159265358979f / 2.0f;
+        bool face_by_face = get_local_int(b, 4, 0) != 0;
+        int32_t current = texture->current_slot;
+        for (int32_t face = 0; face < 6; face++) {
+            if (face_by_face && face != current) {
+                continue;
+            }
+            eng_matrix_t at;
+            eng_matrix_identity(&at);
+            for (int r = 0; r < 3; r++) {
+                for (int c = 0; c < 3; c++) {
+                    at.m[r][c] = faces[face][r][c];
+                }
+                at.m[3][r] = eye.m[3][r];
+            }
+            memcpy(request.view.eye, at.m, sizeof(request.view.eye));
+            request.slot = face;
+            visuals_request_pass(engine, &request);
+        }
+        if (face_by_face) {
+            eng_texture_set_slot(texture, (current + 1) % 6);
+        }
+        return NMO_ENGINE_BR_OK;
+    }
+    memcpy(request.view.eye, eye.m, sizeof(request.view.eye));
+    visuals_request_pass(engine, &request);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * ShadowCaster: each frame it is active, the target's shadow is drawn from
+ * the Light into a square texture (Shadow Resolution Size, to a power of two)
+ * through a camera at the light aimed at the target's hierarchy and backed
+ * off until it fits a 0.2 radian view: white, the target in black, then
+ * lightened toward white as the light gets farther than Min Light Distance,
+ * not drawn at all past Max Light Distance (Soft Shadow adds a white to gray
+ * gradient). The objects with the Shadow Caster Receiver attribute inside the
+ * light's view get it as a material channel multiplying them (ZERO,
+ * SRCCOLOR, unlit) with UVs projected from the light, on their faces turned
+ * to it. Off or a pause takes the channel off them. CK renders as the block
+ * runs; the engine makes the pass with the frame. The DLL also skips a
+ * receiver that was outside the last frame's view; the engine keeps no
+ * frustum test of the last render. Its test of a receiver against the
+ * light's view checks the box's corners against each plane.
+ */
+#define SHADOW_FOV 0.2f
+
+static visuals_caster_t *shadow_caster(nmo_engine_t *engine, blk_t *b)
+{
+    visuals_t *visuals = visuals_state(engine);
+    for (size_t i = 0; i < visuals->casters.count; i++) {
+        if (visuals->casters.data[i].node == b->node) {
+            return &visuals->casters.data[i];
+        }
+    }
+    nmo_object_id_t camera = eng_create_object(engine, NMO_CID_TARGETCAMERA, "ShadowCaster Camera");
+    nmo_object_id_t texture = eng_create_object(engine, NMO_CID_TEXTURE, "ShadowCaster Texture");
+    nmo_object_id_t material = eng_create_object(engine, NMO_CID_MATERIAL, "SC Material");
+    eng_material_t *shade = material != 0 ? eng_material(engine, material) : NULL;
+    if (shade == NULL && material != 0) {
+        shade = eng_material_new(engine, material);
+    }
+    eng_texture_t *image = texture != 0 ? eng_texture(engine, texture) : NULL;
+    visuals_caster_t *caster = NULL;
+    if (camera == 0 || shade == NULL || image == NULL || !ENG_VEC_PUSH(visuals->casters, caster)) {
+        return NULL;
+    }
+    memset(caster, 0, sizeof(*caster));
+    caster->node = b->node;
+    caster->camera = camera;
+    caster->texture = texture;
+    caster->material = material;
+    nmo_object_t *object = eng_find_object(engine, camera);
+    nmo_camera_state_t *view = object != NULL
+        ? (nmo_camera_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(engine->types, object, CKPGUID_CAMERA)
+        : NULL;
+    if (view != NULL) {
+        view->aspect_width = view->aspect_height = 1;
+    }
+    const float white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+    memcpy(shade->desc.diffuse, white, sizeof(white));
+    memcpy(shade->desc.specular, white, sizeof(white));
+    shade->desc.power = 0.0f;
+    shade->desc.texture = texture;
+    shade->desc.texture_blend = VXTEXTUREBLEND_DECAL;
+    shade->desc.address_mode = VXTEXTURE_ADDRESSCLAMP;
+    shade->desc.min_filter = shade->desc.mag_filter = VXTEXTUREFILTER_LINEAR;
+    shade->desc.border_color = 0xFFFFFFFFu;
+    int32_t size = get_local_int(b, 1, 64), power = size & -size;
+    while (power < size) {
+        power <<= 1;
+    }
+    eng_texture_create(engine, image, power, power, 0);
+    return caster;
+}
+
+/* The receivers' channels of the caster's material, taken off */
+static void shadow_caster_remove(nmo_engine_t *engine, const visuals_caster_t *caster)
+{
+    int32_t type = attribute_type_named(engine, "Shadow Caster Receiver");
+    for (size_t i = 0; type >= 0 && i < engine->attributes.values.count; i++) {
+        const eng_attribute_t *attribute = &engine->attributes.values.data[i];
+        eng_mesh_copy_t *copy = attribute->type == type
+            ? eng_mesh_copy(engine, entity_current_mesh(engine, attribute->object)) : NULL;
+        int32_t channel = copy != NULL ? eng_mesh_channel(copy, caster->material) : -1;
+        if (channel >= 0) {
+            eng_mesh_remove_channel(copy, channel);
+            copy->version = ++engine->render.mesh_version;
+        }
+    }
+}
+
+/* The light frustum's clip flags (VxFrustum::Classify) of a point in its camera's space */
+static uint32_t shadow_classify(eng_vector_t p, float near_plane, float far_plane, float t)
+{
+    uint32_t flags = 0;
+    if (p.z < near_plane) {
+        flags |= VXCLIP_FRONT;
+    } else if (p.z > far_plane) {
+        flags |= VXCLIP_BACK;
+    }
+    if (p.x < -t * p.z) {
+        flags |= VXCLIP_LEFT;
+    } else if (p.x > t * p.z) {
+        flags |= VXCLIP_RIGHT;
+    }
+    if (p.y < -t * p.z) {
+        flags |= VXCLIP_BOTTOM;
+    } else if (p.y > t * p.z) {
+        flags |= VXCLIP_TOP;
+    }
+    return flags;
+}
+
+static int bb_shadow_caster(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    int32_t index = eng_entity_index(engine, target);
+    visuals_caster_t *caster = index >= 0 ? shadow_caster(engine, b) : NULL;
+    if (caster == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        shadow_caster_remove(engine, caster);
+        return NMO_ENGINE_BR_OK;
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+    }
+    int32_t type = attribute_type_named(engine, "Shadow Caster Receiver");
+    size_t receivers = 0;
+    for (size_t i = 0; type >= 0 && i < engine->attributes.values.count; i++) {
+        receivers += engine->attributes.values.data[i].type == type;
+    }
+    if (receivers == 0) {
+        return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+    }
+    eng_set_camera_fov(engine, caster->camera, SHADOW_FOV);
+    float tanfov = tanf(SHADOW_FOV * 0.5f);
+    nmo_object_id_t light_id = nmo_engine_block_get_input_object(b, 0);
+    int32_t light = light_id != 0 ? eng_entity_index(engine, light_id) : -1;
+    eng_light_t *light_desc = light >= 0 ? eng_light(engine, light_id) : NULL;
+    int32_t camera = eng_entity_index(engine, caster->camera);
+    if (light < 0 || camera < 0) {
+        return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+    }
+    bool perspective = light_desc == NULL || light_desc->type != VX_LIGHTDIREC;
+    eng_vector_t barycenter;
+    eng_entity_bary_center(engine, index, &barycenter);
+    float lmin = get_in_float(b, 1, 5.0f), lmax = get_in_float(b, 2, 50.0f);
+    caster->soft = get_in_int(b, 3, 0) != 0;
+
+    /* RenderObjectsToTexture: the camera at the light, aimed at the hierarchy, backed off to fit it */
+    eng_vector_t bmin = {0.0f, 0.0f, 0.0f}, bmax = {0.0f, 0.0f, 0.0f};
+    eng_entity_hierarchical_box(engine, index, &bmin, &bmax);
+    eng_vector_t center = marks_v((bmin.x + bmax.x) * 0.5f, (bmin.y + bmax.y) * 0.5f, (bmin.z + bmax.z) * 0.5f);
+    const eng_matrix_t *lw = &engine->entities.data[light].world;
+    eng_vector_t light_at = marks_v(lw->m[3][0], lw->m[3][1], lw->m[3][2]);
+    eng_entity_set_position(engine, camera, &light_at, -1, false);
+    eng_entity_look_at(engine, camera, &center, -1, false);
+    eng_vector_t to_light = vec_sub(light_at, center);
+    float distance = eng_vector_magnitude(&to_light);
+    caster->render = distance < lmax;
+    if (!caster->render) {
+        distance = lmax;
+    }
+    float delta = (distance - lmin) / (lmax - lmin);
+    caster->delta = delta >= 0.0f ? (delta < 1.0f ? delta : 1.0f) : 0.0f;
+    eng_matrix_t inverse;
+    eng_matrix_inverse(&inverse, &engine->entities.data[camera].world);
+    float minx = 0.0f, maxx = 0.0f, miny = 0.0f, maxy = 0.0f, minz = 0.0f;
+    for (int k = 0; k < 8; k++) {
+        eng_vector_t corner = marks_v((k & 1) ? bmax.x : bmin.x, (k & 2) ? bmax.y : bmin.y, (k & 4) ? bmax.z : bmin.z), p;
+        eng_vector_transform(&p, &inverse, &corner);
+        if (k == 0 || p.x < minx) minx = p.x;
+        if (k == 0 || p.x > maxx) maxx = p.x;
+        if (k == 0 || p.y < miny) miny = p.y;
+        if (k == 0 || p.y > maxy) maxy = p.y;
+        if (k == 0 || p.z < minz) minz = p.z;
+    }
+    maxx -= minx;
+    maxy -= miny;
+    float fit = (maxx > maxy ? maxx : maxy) * 0.5f / tanfov;
+    eng_vector_t back = {0.0f, 0.0f, -(fit - minz)};
+    eng_entity_translate(engine, camera, &back, camera, false);
+    visuals_pass_request_t request;
+    memset(&request, 0, sizeof(request));
+    request.node = b->node;
+    request.shadow = true;
+    request.texture = caster->texture;
+    visuals_request_pass(engine, &request);
+    bool in_range = caster->render;
+
+    /* The receivers: the channel and its UVs from the light */
+    const eng_matrix_t cam = engine->entities.data[camera].world;
+    eng_matrix_inverse(&inverse, &cam);
+    float near_plane = 1.0f, far_plane = 4000.0f;
+    eng_camera_planes(engine, caster->camera, &near_plane, &far_plane);
+    eng_vector_t bary_cam;
+    eng_vector_transform(&bary_cam, &inverse, &barycenter);
+    for (size_t i = 0; i < engine->attributes.values.count; i++) {
+        const eng_attribute_t *attribute = &engine->attributes.values.data[i];
+        int32_t o = attribute->type == type ? eng_entity_index(engine, attribute->object) : -1;
+        eng_mesh_copy_t *copy = o >= 0 ? eng_mesh_copy(engine, entity_current_mesh(engine, attribute->object)) : NULL;
+        nmo_engine_mesh_t mesh;
+        if (copy == NULL || !nmo_engine_mesh(engine, copy->mesh, &mesh)) {
+            continue;
+        }
+        int32_t channel = eng_mesh_channel(copy, caster->material);
+        eng_matrix_t to_cam;
+        eng_matrix_multiply(&to_cam, &inverse, &engine->entities.data[o].world);
+        bool outside = !in_range;
+        if (!outside) { /* !VxIntersect::FrustumOBB, by the box's corners */
+            eng_vector_t lmin_box, lmax_box;
+            eng_entity_local_box(engine, o, &lmin_box, &lmax_box);
+            uint32_t all = 0xFFFFFFFFu;
+            for (int k = 0; k < 8; k++) {
+                eng_vector_t corner = marks_v((k & 1) ? lmax_box.x : lmin_box.x, (k & 2) ? lmax_box.y : lmin_box.y,
+                                              (k & 4) ? lmax_box.z : lmin_box.z), p;
+                eng_vector_transform(&p, &to_cam, &corner);
+                all &= shadow_classify(p, near_plane, far_plane, tanfov);
+            }
+            outside = all != 0;
+        }
+        if (outside) {
+            if (channel >= 0) {
+                copy->channels.data[channel].active = false;
+                copy->version = ++engine->render.mesh_version;
+            }
+            continue;
+        }
+        if (channel < 0) {
+            channel = eng_mesh_add_channel(copy, caster->material);
+            if (channel < 0) {
+                continue;
+            }
+            copy->channels.data[channel].lit = false;
+            copy->channels.data[channel].source_blend = VXBLEND_ZERO;
+            copy->channels.data[channel].dest_blend = VXBLEND_SRCCOLOR;
+            copy->channels.data[channel].mask = (uint16_t)(1u << channel);
+        }
+        copy->channels.data[channel].active = true;
+        copy->version = ++engine->render.mesh_version;
+        if (!nmo_engine_object_is_visible(engine, attribute->object)) {
+            copy->channels.data[channel].active = false;
+            continue;
+        }
+        /* AddChannel(material, FALSE): UVs of its own */
+        nmo_engine_channel_t *ch = &copy->channels.data[channel];
+        if (ch->uvs == NULL && mesh.vertex_count > 0) {
+            ch->uvs = (float *)calloc((size_t)mesh.vertex_count * 2u, sizeof(float));
+        }
+        size_t stride = 2u * sizeof(float);
+        int32_t count = ch->uvs != NULL ? mesh.vertex_count : 0;
+        float *uvs = (float *)ch->uvs;
+        nmo_face_t *faces = eng_mesh_copy_faces(engine, copy);
+        uint32_t *flags = count > 0 ? (uint32_t *)calloc((size_t)count, sizeof(uint32_t)) : NULL;
+        if (uvs == NULL || flags == NULL) {
+            free(flags);
+            continue;
+        }
+        eng_vector_t camdir;
+        eng_entity_orientation(engine, camera, &camdir, NULL, NULL, o);
+        eng_matrix_t m = to_cam;
+        if (!perspective) {
+            float tx = 0.5f / maxx, ty = 1.0f / maxy;
+            for (int r = 0; r < 4; r++) {
+                m.m[r][0] *= tx;
+                m.m[r][1] = -(m.m[r][1] * ty);
+            }
+            m.m[3][0] += 0.5f;
+            m.m[3][1] += 0.5f;
+        }
+        for (int32_t v = 0; v < count && v < mesh.vertex_count; v++) {
+            const nmo_vector_t *q = &copy->vertices[v].position;
+            eng_vector_t local = marks_v(q->x, q->y, q->z), p;
+            eng_vector_transform(&p, &m, &local);
+            float *uv = (float *)((uint8_t *)uvs + (size_t)v * stride);
+            if (perspective) {
+                flags[v] = shadow_classify(p, bary_cam.z, far_plane, tanfov);
+                float inv = 0.5f / (tanfov * p.z);
+                uv[0] = 0.5f + p.x * inv;
+                uv[1] = 0.5f - p.y * inv;
+            } else {
+                uv[0] = p.x;
+                uv[1] = p.y;
+                flags[v] = (p.z < bary_cam.z ? VXCLIP_FRONT : 0u) | (uv[0] < 0.0f ? VXCLIP_LEFT : 0u) |
+                           (uv[0] > 1.0f ? VXCLIP_RIGHT : 0u) | (uv[1] < 0.0f ? VXCLIP_TOP : 0u) |
+                           (uv[1] > 1.0f ? VXCLIP_BOTTOM : 0u);
+            }
+        }
+        uint16_t bit = (uint16_t)(1u << channel);
+        for (int32_t f = 0; faces != NULL && f < mesh.face_count; f++) {
+            const uint16_t *k = &mesh.indices[f * 3];
+            bool clipped = k[0] < count && k[1] < count && k[2] < count && (flags[k[0]] & flags[k[1]] & flags[k[2]]) != 0;
+            const nmo_vector_t *n = &faces[f].normal;
+            if (!clipped && n->x * camdir.x + n->y * camdir.y + n->z * camdir.z < 0.0f) {
+                faces[f].channel_mask |= bit;
+            } else {
+                faces[f].channel_mask &= (uint16_t)~bit;
+            }
+        }
+        free(flags);
+        copy->version = ++engine->render.mesh_version;
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+/* HierarchicalRendering in black */
+static void shadow_caster_draw(nmo_engine_t *engine, int32_t index)
+{
+    nmo_object_id_t id = engine->entities.data[index].id;
+    if (eng_object_visibility(engine, id) & 0x200) { /* IsHierarchicallyHide */
+        return;
+    }
+    nmo_object_id_t mesh = nmo_engine_object_is_visible(engine, id) ? entity_shown_mesh(engine, id) : 0;
+    if (mesh != 0) {
+        nmo_engine_draw_t *draw = eng_render_entity_mesh(engine, id, mesh, engine->entities.data[index].world.m[0], false);
+        if (draw != NULL) {
+            draw->blackened = true;
+            draw->no_z_test = true;
+        }
+    }
+    for (int32_t child = engine->entities.data[index].first_child; child >= 0;
+         child = engine->entities.data[child].next_sibling) {
+        shadow_caster_draw(engine, child);
+    }
+}
+
+/* DrawFillRectangleGradient over the whole pass, added */
+static void shadow_caster_fill(nmo_engine_t *engine, const nmo_engine_frame_t *frame, const float top[4],
+                               const float bottom[4])
+{
+    nmo_engine_draw_t *draw = eng_render_push(engine);
+    if (draw != NULL) {
+        draw->kind = NMO_ENGINE_DRAW_QUAD;
+        draw->rect[2] = (float)frame->width;
+        draw->rect[3] = (float)frame->height;
+        draw->color = vxcolor_to_color(top);
+        draw->color2 = vxcolor_to_color(bottom);
+        draw->blend = true;
+        draw->source_blend = draw->dest_blend = VXBLEND_ONE;
+    }
+}
+
+/* The shadow pass: cleared white, the target in black and the distance's white added */
+static void shadow_caster_pass(nmo_engine_t *engine, int32_t node)
+{
+    visuals_caster_t *caster = NULL;
+    visuals_t *visuals = visuals_state(engine);
+    for (size_t i = 0; i < visuals->casters.count; i++) {
+        if (visuals->casters.data[i].node == node) {
+            caster = &visuals->casters.data[i];
+        }
+    }
+    int32_t camera = caster != NULL ? eng_entity_index(engine, caster->camera) : -1;
+    nmo_engine_frame_t *frame = camera >= 0 ? eng_render_begin_pass(engine, caster->texture, 0) : NULL;
+    if (frame == NULL) {
+        return;
+    }
+    frame->camera = caster->camera;
+    memcpy(frame->view, engine->entities.data[camera].world.m, sizeof(frame->view));
+    frame->orthographic = false;
+    eng_camera_fov(engine, caster->camera, &frame->fov);
+    eng_camera_planes(engine, caster->camera, &frame->near_plane, &frame->far_plane);
+    frame->background_color = 0xFFFFFFFFu;
+    frame->background_texture = 0;
+    frame->render_options = CK_RENDER_CLEARBACK | CK_RENDER_CLEARZ | CK_RENDER_CLEARVIEWPORT;
+    nmo_engine_frame_t view = *frame;
+    if (caster->render) {
+        nmo_engine_block_t handle = {engine, node};
+        int32_t index = eng_entity_index(engine, nmo_engine_block_target(&handle));
+        if (index >= 0) {
+            shadow_caster_draw(engine, index);
+        }
+        const float lift[4] = {caster->delta, caster->delta, caster->delta, caster->delta};
+        shadow_caster_fill(engine, &view, lift, lift);
+        if (caster->soft) {
+            const float white[4] = {1.0f, 1.0f, 1.0f, 1.0f}, gray[4] = {0.2f, 0.2f, 0.2f, 1.0f};
+            shadow_caster_fill(engine, &view, white, gray);
+        }
+    }
+    eng_render_end_pass(engine);
+}
+
+static int cb_shadow_caster(blk_t *b, uint32_t message)
+{
+    if (message == NMO_ENGINE_MSG_LOAD) {
+        shadow_caster(b->engine, b);
+    } else if (message == NMO_ENGINE_MSG_PAUSE) {
+        visuals_caster_t *caster = shadow_caster(b->engine, b);
+        if (caster != NULL) {
+            shadow_caster_remove(b->engine, caster);
+        }
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_visuals_blocks[] = {
     {NMO_GUID_INIT(0x00cd320b, 0x32ed010b), "Planar Filter", bb_planar_filter, cb_planar_filter,
      NULL},
@@ -3335,6 +3850,8 @@ static const nmo_engine_block_desc_t eng_visuals_blocks[] = {
     {NMO_GUID_INIT(0x06d0b04b, 0x1d4ea106), "Motion Blur", bb_motion_blur, cb_motion_blur, NULL},
     {NMO_GUID_INIT(0x44fe1b3c, 0x29ba3445), "Planar Reflection", bb_planar_reflection, NULL, NULL},
     {NMO_GUID_INIT(0x731072fa, 0x56cf087f), "Planar Shadow", bb_planar_shadow, NULL, NULL},
+    {NMO_GUID_INIT(0x67fc7084, 0x141154f7), "Texture Render", bb_texture_render, NULL, NULL},
+    {NMO_GUID_INIT(0x0718360b, 0x71e5002f), "ShadowCaster", bb_shadow_caster, cb_shadow_caster, NULL},
 };
 
 /* The render callbacks, at the stages the render context calls them */
@@ -3342,6 +3859,18 @@ static void visuals_render(nmo_engine_t *engine, void *state, eng_render_stage_t
                            const eng_render_args_t *args)
 {
     visuals_t *visuals = (visuals_t *)state;
+    if (stage == ENG_RENDER_PASSES) {
+        for (size_t i = 0; i < visuals->passes.count; i++) {
+            visuals_pass_request_t request = visuals->passes.data[i];
+            if (request.shadow) {
+                shadow_caster_pass(engine, request.node);
+            } else {
+                eng_render_scene_pass(engine, request.texture, request.slot, &request.view);
+            }
+        }
+        visuals->passes.count = 0;
+        return;
+    }
     if (stage == ENG_RENDER_SCENE) {
         for (size_t i = 0; i < visuals->curves.count; i++) {
             draw_curve(engine, &visuals->curves.data[i], args);
@@ -3352,9 +3881,11 @@ static void visuals_render(nmo_engine_t *engine, void *state, eng_render_stage_t
         for (size_t i = 0; i < visuals->infos.count; i++) {
             draw_info(engine, visuals->infos.data[i].node);
         }
-        visuals->curves.count = 0; /* temporary callbacks */
-        visuals->marks.count = 0;
-        visuals->infos.count = 0;
+        if (!args->pass) { /* temporary callbacks, the frame's */
+            visuals->curves.count = 0;
+            visuals->marks.count = 0;
+            visuals->infos.count = 0;
+        }
     } else if (stage == ENG_RENDER_OVERLAY) {
         for (size_t i = 0; i < visuals->scores.count; i++) {
             draw_score(engine, visuals->scores.data[i], args->width, args->height);
@@ -3383,6 +3914,8 @@ static void visuals_destroy(nmo_engine_t *engine, void *state)
     free(((visuals_t *)state)->mark_systems.data);
     free(((visuals_t *)state)->marks.data);
     free(((visuals_t *)state)->blurs.data);
+    free(((visuals_t *)state)->passes.data);
+    free(((visuals_t *)state)->casters.data);
 }
 
 nmo_status_t eng_register_visuals(nmo_engine_t *engine)
