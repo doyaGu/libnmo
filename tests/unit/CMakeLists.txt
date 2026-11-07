@@ -334,6 +334,9 @@ target_link_libraries(test_engine_lights PRIVATE ${NMO_TEST_BB_PACKS} nmo_engine
 
 add_unit_test(test_engine_materials)
 target_link_libraries(test_engine_materials PRIVATE ${NMO_TEST_BB_PACKS} nmo_engine nmo_edit)
+
+add_unit_test(test_engine_camera_orbit)
+target_link_libraries(test_engine_camera_orbit PRIVATE ${NMO_TEST_BB_PACKS} nmo_engine nmo_edit)
 add_unit_test(test_engine_calculator)
 target_link_libraries(test_engine_calculator PRIVATE ${NMO_TEST_BB_PACKS} nmo_engine nmo_edit)
 add_unit_test(test_engine_attributes)
