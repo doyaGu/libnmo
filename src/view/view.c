@@ -105,6 +105,10 @@ struct nmo_view {
     /* The framebuffer render passes draw in, and its depth and stencil */
     GLuint target_fbo, target_depth;
     int target_w, target_h;
+    /* The frame kept between frames when the render context does not clear its background
+       (Global Blur): drawn there, then shown */
+    GLuint kept_fbo, kept_color, kept_depth;
+    int kept_w, kept_h;
 };
 
 /* Drawing a render pass: upside down, so the texture's first row is the frame's top as CK has it */
@@ -1527,6 +1531,85 @@ static void view_draw_frame(nmo_view_t *view, const nmo_engine_frame_t *frame, i
     }
 }
 
+/* Draw into the kept frame, made (black) at the window's size; false when it cannot be made */
+static bool view_kept_begin(nmo_view_t *view, int window_w, int window_h)
+{
+    bool made = false;
+    if (view->kept_fbo == 0) {
+        glGenFramebuffersEXT(1, &view->kept_fbo);
+        glGenTextures(1, &view->kept_color);
+        glGenRenderbuffersEXT(1, &view->kept_depth);
+    }
+    glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, view->kept_fbo);
+    if (view->kept_w != window_w || view->kept_h != window_h) {
+        view->kept_w = window_w;
+        view->kept_h = window_h;
+        glBindTexture(GL_TEXTURE_2D, view->kept_color);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, window_w, window_h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glBindRenderbufferEXT(GL_RENDERBUFFER_EXT, view->kept_depth);
+        glRenderbufferStorageEXT(GL_RENDERBUFFER_EXT, GL_DEPTH24_STENCIL8_EXT, window_w, window_h);
+        glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, GL_TEXTURE_2D, view->kept_color, 0);
+        glFramebufferRenderbufferEXT(GL_FRAMEBUFFER_EXT, GL_DEPTH_ATTACHMENT_EXT, GL_RENDERBUFFER_EXT, view->kept_depth);
+        glFramebufferRenderbufferEXT(GL_FRAMEBUFFER_EXT, GL_STENCIL_ATTACHMENT_EXT, GL_RENDERBUFFER_EXT,
+                                     view->kept_depth);
+        made = true;
+    }
+    if (glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT) != GL_FRAMEBUFFER_COMPLETE_EXT) {
+        glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
+        return false;
+    }
+    if (made) {
+        glViewport(0, 0, window_w, window_h);
+        glDisable(GL_SCISSOR_TEST);
+        glDepthMask(GL_TRUE);
+        glStencilMask(0xFF);
+        glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+    }
+    return true;
+}
+
+/* The kept frame shown in the window */
+static void view_kept_end(nmo_view_t *view, int window_w, int window_h)
+{
+    glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
+    glViewport(0, 0, window_w, window_h);
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_STENCIL_TEST);
+    glDisable(GL_BLEND);
+    glDisable(GL_ALPHA_TEST);
+    glDisable(GL_LIGHTING);
+    glDisable(GL_FOG);
+    glDisable(GL_CULL_FACE);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glOrtho(0.0, 1.0, 0.0, 1.0, -1.0, 1.0);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, view->kept_color);
+    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+    glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+    glBegin(GL_TRIANGLE_FAN);
+    glTexCoord2f(0.0f, 0.0f);
+    glVertex2f(0.0f, 0.0f);
+    glTexCoord2f(1.0f, 0.0f);
+    glVertex2f(1.0f, 0.0f);
+    glTexCoord2f(1.0f, 1.0f);
+    glVertex2f(1.0f, 1.0f);
+    glTexCoord2f(0.0f, 1.0f);
+    glVertex2f(0.0f, 1.0f);
+    glEnd();
+    glDisable(GL_TEXTURE_2D);
+}
+
 /* A render pass: into the texture its pass names, which then shows what was drawn */
 static void view_draw_pass(nmo_view_t *view, const nmo_engine_pass_t *pass)
 {
@@ -1604,12 +1687,18 @@ static nmo_status_t view_render(nmo_view_t *view, nmo_engine_frame_t *out_frame)
     view->view_x = (window_w - view->view_w) / 2;
     view->view_y = (window_h - view->view_h) / 2;
 
-    glViewport(0, 0, window_w, window_h);
-    glDepthMask(GL_TRUE); /* a clear writes only what the masks let through */
-    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    view_draw_frame(view, &frame, window_h);
+    /* Without CK_RENDER_CLEARBACK the frames before stay under the new one (Global Blur) */
+    if (!(frame.render_options & 0x20u) && view_kept_begin(view, window_w, window_h)) {
+        view_draw_frame(view, &frame, window_h);
+        view_kept_end(view, window_w, window_h);
+    } else {
+        glViewport(0, 0, window_w, window_h);
+        glDepthMask(GL_TRUE); /* a clear writes only what the masks let through */
+        glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        view_draw_frame(view, &frame, window_h);
+    }
     view_text_end_frame(view->text);
     *out_frame = frame;
     return NMO_OK;
@@ -1773,6 +1862,11 @@ void nmo_view_close(nmo_view_t *view)
     if (view->target_fbo != 0) {
         glDeleteFramebuffersEXT(1, &view->target_fbo);
         glDeleteRenderbuffersEXT(1, &view->target_depth);
+    }
+    if (view->kept_fbo != 0) {
+        glDeleteFramebuffersEXT(1, &view->kept_fbo);
+        glDeleteTextures(1, &view->kept_color);
+        glDeleteRenderbuffersEXT(1, &view->kept_depth);
     }
     for (size_t i = 0; i < view->mesh_count; i++) {
         for (int32_t g = 0; view->meshes[i].indices != NULL && g < view->meshes[i].group_count; g++) {
