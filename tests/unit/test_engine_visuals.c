@@ -35,6 +35,7 @@
 #define GUID_SOLID_TRAIL NMO_GUID(0xd00d010a, 0xe00d010a)
 #define GUID_MARK_SYSTEM NMO_GUID(0x09a06075, 0x760a4720)
 #define GUID_VERTEX_RENDER NMO_GUID(0xcc030377, 0x897aaaaa)
+#define GUID_MOTION_BLUR NMO_GUID(0x06d0b04b, 0x1d4ea106)
 
 /* A block acting on `object` (0: no target), run when the script starts */
 static nmo_object_id_t block_on(engine_fixture_t *f, nmo_guid_t guid, const char *name, nmo_object_id_t object)
@@ -872,6 +873,73 @@ TEST(engine_visuals, mark_system_draws_after_its_supporting_entity_while_it_rend
     fixture_end(&f);
 }
 
+/* The frame's mesh draws of `object`, up to `max`, in order */
+static int mesh_draws(const nmo_engine_frame_t *frame, nmo_object_id_t object, const nmo_engine_draw_t **out, int max)
+{
+    int count = 0;
+    for (int32_t i = 0; i < frame->draw_count; i++) {
+        if (frame->draws[i].kind == NMO_ENGINE_DRAW_MESH && frame->draws[i].object == object) {
+            if (count < max) {
+                out[count] = &frame->draws[i];
+            }
+            count++;
+        }
+    }
+    return count;
+}
+
+TEST(engine_visuals, motion_blur_draws_the_mesh_faded_along_its_last_matrices)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t material = fixture_create(&f, NMO_CID_MATERIAL, "Material");
+    nmo_object_id_t mesh = 0;
+    nmo_object_id_t object = face_object(&f, "Face", material, &mesh);
+    ASSERT_TRUE(material != 0 && object != 0);
+    f.owner_id = object;
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t blur = block_on(&f, GUID_MOTION_BLUR, "Motion Blur", 0);
+    ASSERT_TRUE(blur != 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, blur, 0), 4);
+    fixture_link(&f, BLOCK_OUT(&f, blur, 0), BLOCK_IN(&f, blur, 1), 3); /* Off three frames on */
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+
+    /* Still: the mesh once, as it is, rendered last */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    const nmo_engine_draw_t *draws[8];
+    ASSERT_EQ(1, mesh_draws(&frame, object, draws, 8));
+    ASSERT_TRUE(draws[0]->transparent && !draws[0]->fade);
+
+    /* Moved: four copies, a third back (the oldest three, still at 0) the most opaque, then the
+       newest at half; all sorted where the object is */
+    const int32_t index = eng_entity_index(f.engine, object);
+    eng_vector_t step = {1.0f, 0.0f, 0.0f};
+    for (int moves = 1; moves <= 2; moves++) {
+        eng_entity_translate(f.engine, index, &step, -1, false);
+        ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    }
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_EQ(4, mesh_draws(&frame, object, draws, 8));
+    const float x[4] = {1, 0, 0, 2}, alpha[4] = {1.0f, 2.0f / 3.0f, 1.0f / 3.0f, 0.5f};
+    for (int k = 0; k < 4; k++) {
+        ASSERT_TRUE(draws[k]->fade && draws[k]->transparent && draws[k]->has_sort_position);
+        ASSERT_FLOAT_EQ(x[k], draws[k]->world[12], 1e-5f);
+        ASSERT_FLOAT_EQ(alpha[k], draws[k]->fade_alpha, 1e-6f);
+        ASSERT_FLOAT_EQ(2.0f, draws[k]->sort_position[0], 1e-5f);
+    }
+
+    /* Off: the mesh once, opaque again */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_EQ(1, mesh_draws(&frame, object, draws, 8));
+    ASSERT_TRUE(!draws[0]->transparent && !draws[0]->fade);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_visuals, blink_cycles_the_target_and_fps_reports_the_rate);
     REGISTER_TEST(engine_visuals, z_buffer_and_render_order_shape_the_mesh_draws);
@@ -887,4 +955,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_visuals, mark_system_joins_continuous_marks_into_a_band);
     REGISTER_TEST(engine_visuals, mark_system_draws_after_its_supporting_entity_while_it_renders);
     REGISTER_TEST(engine_visuals, vertex_render_draws_a_sprite_at_each_vertex_instead_of_the_mesh);
+    REGISTER_TEST(engine_visuals, motion_blur_draws_the_mesh_faded_along_its_last_matrices);
 TEST_MAIN_END()

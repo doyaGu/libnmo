@@ -59,6 +59,14 @@ typedef struct visuals_marks {
     ENG_VEC(visuals_mark_list_t) lists;
 } visuals_marks_t;
 
+/* A Motion Blur's last world matrices of its target, the newest first (VAR_MAT) */
+#define BLUR_TRACKS 30
+typedef struct visuals_blur {
+    int32_t node;
+    int32_t n;
+    eng_matrix_t tab[BLUR_TRACKS];
+} visuals_blur_t;
+
 /* A Simple Shadow's data: the texture it last gave its material, and the floors */
 typedef struct visuals_shadow {
     int32_t node;
@@ -79,6 +87,7 @@ typedef struct visuals {
     ENG_VEC(struct visuals_shadow) shadows;
     ENG_VEC(visuals_marks_t) mark_systems;
     callback_list_t marks;
+    ENG_VEC(struct visuals_blur) blurs;
 } visuals_t;
 
 static void visuals_destroy(nmo_engine_t *engine, void *state);
@@ -2629,6 +2638,136 @@ static int cb_vertex_render(blk_t *b, uint32_t message)
     return NMO_ENGINE_BR_OK;
 }
 
+/*
+ * Motion Blur: while on, the target renders last (RENDERLAST) through its
+ * render callback, which draws its mesh at its last Number of Trails world
+ * matrices (1 to 30, kept each frame) instead of once, its materials alpha
+ * blended (srcalpha, invsrcalpha) at a fraction of their alpha: the copy a
+ * third of the way back the most opaque, fading toward the oldest and toward
+ * the newest (the target where it is, at 1 / (third + 1)). The trails are
+ * drawn from the third back to the oldest, then from the third forward. When
+ * the newest and the oldest matrix are the same, the mesh draws once, as it
+ * is. Off, a pause, reset or the script's deactivation end it.
+ */
+static visuals_blur_t *motion_blur(nmo_engine_t *engine, int32_t node)
+{
+    visuals_t *visuals = visuals_state(engine);
+    for (size_t i = 0; i < visuals->blurs.count; i++) {
+        if (visuals->blurs.data[i].node == node) {
+            return &visuals->blurs.data[i];
+        }
+    }
+    visuals_blur_t *blur = NULL;
+    if (!ENG_VEC_PUSH(visuals->blurs, blur)) {
+        return NULL;
+    }
+    memset(blur, 0, sizeof(*blur));
+    blur->node = node;
+    blur->n = 1;
+    return blur;
+}
+
+static void blur_trail(nmo_engine_t *engine, nmo_object_id_t entity, nmo_object_id_t mesh, const eng_matrix_t *world,
+                       float alpha, bool transparent, const eng_matrix_t *at)
+{
+    nmo_engine_draw_t *draw = eng_render_entity_mesh(engine, entity, mesh, world->m[0], transparent);
+    if (draw != NULL) {
+        draw->fade = true;
+        draw->fade_alpha = alpha;
+        draw->has_sort_position = true;
+        draw->sort_position[0] = at->m[3][0];
+        draw->sort_position[1] = at->m[3][1];
+        draw->sort_position[2] = at->m[3][2];
+    }
+}
+
+/* rendercallback */
+static void motion_blur_draw(nmo_engine_t *engine, nmo_object_id_t entity, int32_t node, bool transparent)
+{
+    visuals_blur_t *blur = motion_blur(engine, node);
+    int32_t index = eng_entity_index(engine, entity);
+    nmo_object_id_t mesh = entity_current_mesh(engine, entity);
+    if (blur == NULL || index < 0 || mesh == 0) {
+        return;
+    }
+    const eng_matrix_t *at = &engine->entities.data[index].world;
+    int32_t n = blur->n;
+    if (memcmp(&blur->tab[0], &blur->tab[n - 1], sizeof(eng_matrix_t)) == 0) {
+        eng_render_entity_mesh(engine, entity, mesh, at->m[0], transparent);
+        return;
+    }
+    int32_t mid = (int32_t)((float)n * 0.33333334f);
+    for (int32_t a = mid; a < n; a++) {
+        blur_trail(engine, entity, mesh, &blur->tab[a], (float)(n - a) / (float)(n - mid), transparent, at);
+    }
+    for (int32_t a = mid - 1; a >= 0; a--) {
+        blur_trail(engine, entity, mesh, &blur->tab[a], (float)(a + 1) / (float)(mid + 1), transparent, at);
+    }
+}
+
+static void motion_blur_off(nmo_engine_t *engine, blk_t *b, nmo_object_id_t target)
+{
+    set_local_int(b, 1, 0);
+    eng_remove_entity_callback(engine, target, ENG_ENTITY_RENDER, motion_blur_draw, b->node);
+    int32_t index = eng_entity_index(engine, target);
+    if (index >= 0) {
+        engine->entities.data[index].moveable_flags &= ~(uint32_t)VX_MOVEABLE_RENDERLAST;
+    }
+}
+
+static int bb_motion_blur(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    int32_t index = eng_entity_index(engine, target);
+    visuals_blur_t *blur = motion_blur(engine, b->node);
+    if (index < 0 || blur == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    if (get_local_int(b, 1, 0) == 0) {
+        blur->n = 10;
+        for (int a = 0; a < BLUR_TRACKS; a++) {
+            blur->tab[a] = engine->entities.data[index].world;
+        }
+        set_local_int(b, 1, 1);
+        engine->entities.data[index].moveable_flags |= VX_MOVEABLE_RENDERLAST;
+        eng_entity_callback_t callback = {target, ENG_ENTITY_RENDER, motion_blur_draw, b->node, false};
+        eng_add_entity_callback(engine, &callback);
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+    }
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        motion_blur_off(engine, b, target);
+        return NMO_ENGINE_BR_OK;
+    }
+    int32_t n = get_in_int(b, 0, 10);
+    n = n > BLUR_TRACKS ? BLUR_TRACKS : n < 1 ? 1 : n;
+    blur->n = n;
+    for (int32_t a = n - 1; a > 0; a--) {
+        blur->tab[a] = blur->tab[a - 1];
+    }
+    blur->tab[0] = engine->entities.data[index].world;
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+static int cb_motion_blur(blk_t *b, uint32_t message)
+{
+    if (message == NMO_ENGINE_MSG_LOAD) {
+        set_local_int(b, 1, 0);
+    } else if (message == NMO_ENGINE_MSG_PAUSE || message == NMO_ENGINE_MSG_RESET ||
+               message == NMO_ENGINE_MSG_DEACTIVATESCRIPT) {
+        nmo_object_id_t target = nmo_engine_block_target(b);
+        if (target != 0 && get_local_int(b, 1, 0) != 0) {
+            motion_blur_off(b->engine, b, target);
+        }
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_visuals_blocks[] = {
     {NMO_GUID_INIT(0x00cd320b, 0x32ed010b), "Planar Filter", bb_planar_filter, cb_planar_filter,
      NULL},
@@ -2667,6 +2806,7 @@ static const nmo_engine_block_desc_t eng_visuals_blocks[] = {
     {NMO_GUID_INIT(0xd00d010a, 0xe00d010a), "Solid Trail", bb_solid_trail, cb_solid_trail, NULL},
     {NMO_GUID_INIT(0x09a06075, 0x760a4720), "Mark System", bb_mark_system, cb_mark_system, NULL},
     {NMO_GUID_INIT(0xcc030377, 0x897aaaaa), "Vertex Render", bb_vertex_render, cb_vertex_render, NULL},
+    {NMO_GUID_INIT(0x06d0b04b, 0x1d4ea106), "Motion Blur", bb_motion_blur, cb_motion_blur, NULL},
 };
 
 /* The render callbacks, at the stages the render context calls them */
@@ -2714,6 +2854,7 @@ static void visuals_destroy(nmo_engine_t *engine, void *state)
     }
     free(((visuals_t *)state)->mark_systems.data);
     free(((visuals_t *)state)->marks.data);
+    free(((visuals_t *)state)->blurs.data);
 }
 
 nmo_status_t eng_register_visuals(nmo_engine_t *engine)
