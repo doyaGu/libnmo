@@ -23,8 +23,11 @@
 #include <SDL3/SDL.h>
 #ifdef __APPLE__
 #include <OpenGL/gl.h>
+#include <OpenGL/glext.h>
 #else
+#define GL_GLEXT_PROTOTYPES 1
 #include <GL/gl.h>
+#include <GL/glext.h>
 #endif
 
 #include <math.h>
@@ -67,6 +70,8 @@ typedef struct view_texture {
     bool empty; /* no image: drawn untextured */
     bool mipmapped; /* uploaded with its mipmaps */
     bool forced;    /* mipmapped by nmo_view_set_mipmaps, not by CK */
+    bool target;    /* a render pass's: what it drew, not the engine's image */
+    int target_w, target_h;
 } view_texture_t;
 
 /* A mesh's faces split by material group, and its prelit colors as RGBA bytes */
@@ -97,7 +102,13 @@ struct nmo_view {
     view_text_t *text;   /* the sprite texts' fonts and textures */
     int32_t shading;     /* the frame's global render mode: 0 wireframe, 1 flat */
     bool use_textures;
+    /* The framebuffer render passes draw in, and its depth and stencil */
+    GLuint target_fbo, target_depth;
+    int target_w, target_h;
 };
+
+/* Drawing a render pass: upside down, so the texture's first row is the frame's top as CK has it */
+static bool view_flip;
 
 /* ============================================================================
  * Input
@@ -354,6 +365,9 @@ static GLuint view_texture(nmo_view_t *view, nmo_object_id_t id)
             break;
         }
     }
+    if (texture != NULL && texture->target) {
+        return texture->name;
+    }
     nmo_engine_image_t image;
     bool has_image = nmo_engine_texture_image(view->engine, id, &image);
     if (texture == NULL) {
@@ -535,7 +549,7 @@ static void view_draw_state(const nmo_engine_draw_t *draw)
     } else {
         glDisable(GL_STENCIL_TEST);
     }
-    glFrontFace(draw->mirrored ? GL_CCW : GL_CW); /* VX_MOVEABLE_INDIRECTMATRIX inverts it */
+    glFrontFace(draw->mirrored != view_flip ? GL_CCW : GL_CW); /* INDIRECTMATRIX inverts it */
 }
 
 static GLint view_texture_env(int32_t blend)
@@ -838,6 +852,10 @@ static void view_load_projection(const nmo_engine_frame_t *frame, bool orthograp
     }
     const float remap[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 2, 0, 0, 0, -1, 1};
     view_multiply(projection, projection, remap);
+    if (view_flip) {
+        projection[1] = -projection[1], projection[5] = -projection[5];
+        projection[9] = -projection[9], projection[13] = -projection[13];
+    }
     glMatrixMode(GL_PROJECTION);
     glLoadMatrixf(projection);
 }
@@ -941,6 +959,11 @@ static void view_draw_mesh(nmo_view_t *view, const nmo_engine_frame_t *frame,
             material.z_func = 4;
             material.source_blend = 2;
             material.dest_blend = 1;
+        } else if (draw->blackened) { /* ShadowCaster's BlackFunction */
+            const float black[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+            memcpy(material.diffuse, black, sizeof(black));
+            memcpy(material.ambient, black, sizeof(black));
+            memcpy(material.emissive, black, sizeof(black));
         } else if (draw->fade) { /* a Motion Blur trail */
             material.alpha_blend = true;
             material.source_blend = 5; /* VXBLEND_SRCALPHA */
@@ -1262,7 +1285,7 @@ static void view_begin_2d(const nmo_engine_frame_t *frame)
 {
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    glOrtho(0.0, frame->width, frame->height, 0.0, -1.0, 1.0);
+    glOrtho(0.0, frame->width, view_flip ? 0.0 : frame->height, view_flip ? frame->height : 0.0, -1.0, 1.0);
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
     glDisable(GL_LIGHTING);
@@ -1279,7 +1302,7 @@ static void view_begin_3d(const nmo_engine_frame_t *frame, float out_view[16])
                          frame->far_plane);
     view_inverse(out_view, frame->view);
 
-    glFrontFace(GL_CW);
+    glFrontFace(view_flip ? GL_CCW : GL_CW);
     glCullFace(GL_BACK);
     glEnable(GL_NORMALIZE);
     glEnable(GL_DEPTH_TEST);
@@ -1378,6 +1401,184 @@ static void view_clip_draw(const nmo_view_t *view, const nmo_engine_draw_t *draw
     glScissor(view->view_x+edges[0],window_height-view->view_y-edges[3],width,height);
 }
 
+/* A frame's draws into the viewport view_x, view_y, view_w, view_h (from the top) of a target
+   `window_h` high: its clear, background, 2D entities and 3D draws */
+static void view_draw_frame(nmo_view_t *view, const nmo_engine_frame_t *frame, int window_h)
+{
+    glViewport(view->view_x, window_h - view->view_y - view->view_h, view->view_w, view->view_h);
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(view->view_x, window_h - view->view_y - view->view_h, view->view_w, view->view_h);
+    float background[4];
+    view_color(frame->background_color, background);
+    glClearColor(background[0], background[1], background[2], 1.0f);
+    /* RCKRenderContext::Clear: the background only with CK_RENDER_CLEARBACK, depth with CLEARZ */
+    GLbitfield clear = ((frame->render_options & 0x20u) ? GL_COLOR_BUFFER_BIT : 0u) |
+                       ((frame->render_options & 0x10u) ? GL_DEPTH_BUFFER_BIT : 0u) |
+                       ((frame->render_options & 0x40u) ? GL_STENCIL_BUFFER_BIT : 0u);
+    if (clear != 0) {
+        glStencilMask(0xFF);
+        glClear(clear);
+    }
+    glDisable(GL_SCISSOR_TEST);
+
+    if (frame->background_texture != 0 && (frame->render_options & 0x20u)) {
+        nmo_engine_draw_t quad;
+        memset(&quad, 0, sizeof(quad));
+        quad.rect[2] = (float)frame->width;
+        quad.rect[3] = (float)frame->height;
+        quad.uv[2] = quad.uv[3] = 1.0f;
+        quad.texture = frame->background_texture;
+        quad.color = quad.color2 = frame->background_color | 0xFF000000u;
+        view_begin_2d(frame);
+        view_draw_quad(view, &quad);
+    }
+
+    /* Background 2D entities, then the opaque meshes, the transparent ones back
+       to front, and the foreground 2D entities */
+    int32_t first_mesh = 0;
+    while (first_mesh < frame->draw_count && frame->draws[first_mesh].kind == NMO_ENGINE_DRAW_QUAD &&
+           frame->draws[first_mesh].background) {
+        first_mesh++;
+    }
+    view_begin_2d(frame);
+    for (int32_t i = 0; i < first_mesh; i++) {
+        view_draw_quad(view, &frame->draws[i]);
+    }
+    int32_t end_mesh = first_mesh;
+    while (end_mesh < frame->draw_count && frame->draws[end_mesh].kind != NMO_ENGINE_DRAW_QUAD &&
+           frame->draws[end_mesh].kind != NMO_ENGINE_DRAW_SPRITE_TEXT) {
+        end_mesh++;
+    }
+    float view_m[16];
+    view_begin_3d(frame, view_m);
+    int32_t *transparent = (int32_t *)malloc((size_t)(end_mesh - first_mesh + 1) * sizeof(int32_t));
+    float *depths = (float *)malloc((size_t)(end_mesh - first_mesh + 1) * sizeof(float));
+    int32_t transparent_count = 0;
+    for (int32_t i = first_mesh; i < end_mesh; i++) {
+        const nmo_engine_draw_t *draw = &frame->draws[i];
+        if (draw->kind == NMO_ENGINE_DRAW_PRIMITIVE && draw->post) {
+            continue; /* after the transparent ones */
+        }
+        if (draw->transparent && transparent != NULL && depths != NULL) {
+            const float *p = draw->has_sort_position ? draw->sort_position : &draw->world[12];
+            depths[transparent_count] = p[0] * view_m[2] + p[1] * view_m[6] + p[2] * view_m[10] + view_m[14];
+            transparent[transparent_count++] = i;
+            continue;
+        }
+        view_clip_draw(view,draw,window_h);
+        view_draw_state(draw);
+        if (draw->kind == NMO_ENGINE_DRAW_SPRITE3D) {
+            view_draw_sprite3d(view, frame, draw, view_m);
+            continue;
+        }
+        if (draw->kind == NMO_ENGINE_DRAW_PRIMITIVE) {
+            view_draw_primitive(view, frame, draw, view_m);
+            continue;
+        }
+        view_draw_mesh(view, frame, draw, view_m);
+    }
+    for (int32_t i = 1; i < transparent_count; i++) {
+        for (int32_t j = i; j > 0 && depths[j - 1] < depths[j]; j--) {
+            float d = depths[j];
+            depths[j] = depths[j - 1];
+            depths[j - 1] = d;
+            int32_t t = transparent[j];
+            transparent[j] = transparent[j - 1];
+            transparent[j - 1] = t;
+        }
+    }
+    for (int32_t i = 0; i < transparent_count; i++) {
+        const nmo_engine_draw_t *draw = &frame->draws[transparent[i]];
+        view_clip_draw(view,draw,window_h);
+        view_draw_state(draw);
+        if (draw->kind == NMO_ENGINE_DRAW_TRIANGLES || draw->kind == NMO_ENGINE_DRAW_LINES) {
+            view_draw_triangles(view, frame, draw, view_m);
+        } else if (draw->kind == NMO_ENGINE_DRAW_SPRITE3D) {
+            view_draw_sprite3d(view, frame, draw, view_m);
+        } else if (draw->kind == NMO_ENGINE_DRAW_PRIMITIVE) {
+            view_draw_primitive(view, frame, draw, view_m);
+        } else {
+            view_draw_mesh(view, frame, draw, view_m);
+        }
+    }
+    for (int32_t i = first_mesh; i < end_mesh; i++) {
+        const nmo_engine_draw_t *draw = &frame->draws[i];
+        if (draw->kind == NMO_ENGINE_DRAW_PRIMITIVE && draw->post) {
+            view_clip_draw(view, draw, window_h);
+            view_draw_state(draw);
+            view_draw_primitive(view, frame, draw, view_m);
+        }
+    }
+    free(transparent);
+    free(depths);
+    glDisable(GL_STENCIL_TEST);
+    glFrontFace(GL_CW);
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_LIGHTING);
+    view_begin_2d(frame);
+    for (int32_t i = end_mesh; i < frame->draw_count; i++) {
+        if (frame->draws[i].kind == NMO_ENGINE_DRAW_SPRITE_TEXT) {
+            view_draw_sprite_text(view, &frame->draws[i]);
+        } else {
+            view_draw_quad(view, &frame->draws[i]);
+        }
+    }
+}
+
+/* A render pass: into the texture its pass names, which then shows what was drawn */
+static void view_draw_pass(nmo_view_t *view, const nmo_engine_pass_t *pass)
+{
+    if (view->target_fbo == 0) {
+        glGenFramebuffersEXT(1, &view->target_fbo);
+        glGenRenderbuffersEXT(1, &view->target_depth);
+    }
+    view_texture(view, pass->texture); /* its entry */
+    view_texture_t *texture = NULL;
+    for (size_t i = 0; i < view->texture_count; i++) {
+        if (view->textures[i].id == pass->texture) {
+            texture = &view->textures[i];
+        }
+    }
+    if (texture == NULL) {
+        return;
+    }
+    if (!texture->target || texture->target_w != pass->width || texture->target_h != pass->height) {
+        texture->target = true;
+        texture->empty = false;
+        texture->mipmapped = texture->forced = false;
+        texture->target_w = pass->width;
+        texture->target_h = pass->height;
+        glBindTexture(GL_TEXTURE_2D, texture->name);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, pass->width, pass->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    }
+    glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, view->target_fbo);
+    if (view->target_w != pass->width || view->target_h != pass->height) {
+        view->target_w = pass->width;
+        view->target_h = pass->height;
+        glBindRenderbufferEXT(GL_RENDERBUFFER_EXT, view->target_depth);
+        glRenderbufferStorageEXT(GL_RENDERBUFFER_EXT, GL_DEPTH24_STENCIL8_EXT, pass->width, pass->height);
+        glFramebufferRenderbufferEXT(GL_FRAMEBUFFER_EXT, GL_DEPTH_ATTACHMENT_EXT, GL_RENDERBUFFER_EXT,
+                                     view->target_depth);
+        glFramebufferRenderbufferEXT(GL_FRAMEBUFFER_EXT, GL_STENCIL_ATTACHMENT_EXT, GL_RENDERBUFFER_EXT,
+                                     view->target_depth);
+    }
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, GL_TEXTURE_2D, texture->name, 0);
+    if (glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT) == GL_FRAMEBUFFER_COMPLETE_EXT) {
+        view->view_x = pass->viewport[0];
+        view->view_w = pass->viewport[2];
+        view->view_h = pass->viewport[3];
+        view->view_y = pass->height - pass->viewport[1] - pass->viewport[3]; /* drawn upside down */
+        view_flip = true;
+        view_draw_frame(view, &pass->frame, pass->height);
+        view_flip = false;
+    }
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, GL_TEXTURE_2D, 0, 0);
+    glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
+}
+
 static nmo_status_t view_render(nmo_view_t *view, nmo_engine_frame_t *out_frame)
 {
     nmo_engine_frame_t frame;
@@ -1389,6 +1590,9 @@ static nmo_status_t view_render(nmo_view_t *view, nmo_engine_frame_t *out_frame)
     view->frame_height = frame.height;
     view->shading = frame.shading;
     view->use_textures = frame.use_textures;
+    for (int32_t p = 0; p < frame.pass_count; p++) {
+        view_draw_pass(view, &frame.passes[p]);
+    }
     int window_w = 0, window_h = 0;
     SDL_GetWindowSizeInPixels(view->window, &window_w, &window_h);
     /* The frame keeps its aspect, centered in the window */
@@ -1403,124 +1607,7 @@ static nmo_status_t view_render(nmo_view_t *view, nmo_engine_frame_t *out_frame)
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    glViewport(view->view_x, window_h - view->view_y - view->view_h, view->view_w, view->view_h);
-    glEnable(GL_SCISSOR_TEST);
-    glScissor(view->view_x, window_h - view->view_y - view->view_h, view->view_w, view->view_h);
-    float background[4];
-    view_color(frame.background_color, background);
-    glClearColor(background[0], background[1], background[2], 1.0f);
-    /* RCKRenderContext::Clear: the background only with CK_RENDER_CLEARBACK, depth with CLEARZ */
-    GLbitfield clear = ((frame.render_options & 0x20u) ? GL_COLOR_BUFFER_BIT : 0u) |
-                       ((frame.render_options & 0x10u) ? GL_DEPTH_BUFFER_BIT : 0u) |
-                       ((frame.render_options & 0x40u) ? GL_STENCIL_BUFFER_BIT : 0u);
-    if (clear != 0) {
-        glStencilMask(0xFF);
-        glClear(clear);
-    }
-    glDisable(GL_SCISSOR_TEST);
-
-    if (frame.background_texture != 0 && (frame.render_options & 0x20u)) {
-        nmo_engine_draw_t quad;
-        memset(&quad, 0, sizeof(quad));
-        quad.rect[2] = (float)frame.width;
-        quad.rect[3] = (float)frame.height;
-        quad.uv[2] = quad.uv[3] = 1.0f;
-        quad.texture = frame.background_texture;
-        quad.color = quad.color2 = frame.background_color | 0xFF000000u;
-        view_begin_2d(&frame);
-        view_draw_quad(view, &quad);
-    }
-
-    /* Background 2D entities, then the opaque meshes, the transparent ones back
-       to front, and the foreground 2D entities */
-    int32_t first_mesh = 0;
-    while (first_mesh < frame.draw_count && frame.draws[first_mesh].kind == NMO_ENGINE_DRAW_QUAD &&
-           frame.draws[first_mesh].background) {
-        first_mesh++;
-    }
-    view_begin_2d(&frame);
-    for (int32_t i = 0; i < first_mesh; i++) {
-        view_draw_quad(view, &frame.draws[i]);
-    }
-    int32_t end_mesh = first_mesh;
-    while (end_mesh < frame.draw_count && frame.draws[end_mesh].kind != NMO_ENGINE_DRAW_QUAD &&
-           frame.draws[end_mesh].kind != NMO_ENGINE_DRAW_SPRITE_TEXT) {
-        end_mesh++;
-    }
-    float view_m[16];
-    view_begin_3d(&frame, view_m);
-    int32_t *transparent = (int32_t *)malloc((size_t)(end_mesh - first_mesh + 1) * sizeof(int32_t));
-    float *depths = (float *)malloc((size_t)(end_mesh - first_mesh + 1) * sizeof(float));
-    int32_t transparent_count = 0;
-    for (int32_t i = first_mesh; i < end_mesh; i++) {
-        const nmo_engine_draw_t *draw = &frame.draws[i];
-        if (draw->kind == NMO_ENGINE_DRAW_PRIMITIVE && draw->post) {
-            continue; /* after the transparent ones */
-        }
-        if (draw->transparent && transparent != NULL && depths != NULL) {
-            const float *p = draw->has_sort_position ? draw->sort_position : &draw->world[12];
-            depths[transparent_count] = p[0] * view_m[2] + p[1] * view_m[6] + p[2] * view_m[10] + view_m[14];
-            transparent[transparent_count++] = i;
-            continue;
-        }
-        view_clip_draw(view,draw,window_h);
-        view_draw_state(draw);
-        if (draw->kind == NMO_ENGINE_DRAW_SPRITE3D) {
-            view_draw_sprite3d(view, &frame, draw, view_m);
-            continue;
-        }
-        if (draw->kind == NMO_ENGINE_DRAW_PRIMITIVE) {
-            view_draw_primitive(view, &frame, draw, view_m);
-            continue;
-        }
-        view_draw_mesh(view, &frame, draw, view_m);
-    }
-    for (int32_t i = 1; i < transparent_count; i++) {
-        for (int32_t j = i; j > 0 && depths[j - 1] < depths[j]; j--) {
-            float d = depths[j];
-            depths[j] = depths[j - 1];
-            depths[j - 1] = d;
-            int32_t t = transparent[j];
-            transparent[j] = transparent[j - 1];
-            transparent[j - 1] = t;
-        }
-    }
-    for (int32_t i = 0; i < transparent_count; i++) {
-        const nmo_engine_draw_t *draw = &frame.draws[transparent[i]];
-        view_clip_draw(view,draw,window_h);
-        view_draw_state(draw);
-        if (draw->kind == NMO_ENGINE_DRAW_TRIANGLES || draw->kind == NMO_ENGINE_DRAW_LINES) {
-            view_draw_triangles(view, &frame, draw, view_m);
-        } else if (draw->kind == NMO_ENGINE_DRAW_SPRITE3D) {
-            view_draw_sprite3d(view, &frame, draw, view_m);
-        } else if (draw->kind == NMO_ENGINE_DRAW_PRIMITIVE) {
-            view_draw_primitive(view, &frame, draw, view_m);
-        } else {
-            view_draw_mesh(view, &frame, draw, view_m);
-        }
-    }
-    for (int32_t i = first_mesh; i < end_mesh; i++) {
-        const nmo_engine_draw_t *draw = &frame.draws[i];
-        if (draw->kind == NMO_ENGINE_DRAW_PRIMITIVE && draw->post) {
-            view_clip_draw(view, draw, window_h);
-            view_draw_state(draw);
-            view_draw_primitive(view, &frame, draw, view_m);
-        }
-    }
-    free(transparent);
-    free(depths);
-    glDisable(GL_STENCIL_TEST);
-    glFrontFace(GL_CW);
-    glDisable(GL_SCISSOR_TEST);
-    glDisable(GL_LIGHTING);
-    view_begin_2d(&frame);
-    for (int32_t i = end_mesh; i < frame.draw_count; i++) {
-        if (frame.draws[i].kind == NMO_ENGINE_DRAW_SPRITE_TEXT) {
-            view_draw_sprite_text(view, &frame.draws[i]);
-        } else {
-            view_draw_quad(view, &frame.draws[i]);
-        }
-    }
+    view_draw_frame(view, &frame, window_h);
     view_text_end_frame(view->text);
     *out_frame = frame;
     return NMO_OK;
@@ -1681,6 +1768,10 @@ void nmo_view_close(nmo_view_t *view)
         glDeleteTextures(1, &view->textures[i].name);
     }
     free(view->textures);
+    if (view->target_fbo != 0) {
+        glDeleteFramebuffersEXT(1, &view->target_fbo);
+        glDeleteRenderbuffersEXT(1, &view->target_depth);
+    }
     for (size_t i = 0; i < view->mesh_count; i++) {
         for (int32_t g = 0; view->meshes[i].indices != NULL && g < view->meshes[i].group_count; g++) {
             free(view->meshes[i].indices[g]);
