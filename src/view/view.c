@@ -95,6 +95,8 @@ struct nmo_view {
     bool cursor_shown;
     view_audio_t *audio; /* NULL when there is no audio device */
     view_text_t *text;   /* the sprite texts' fonts and textures */
+    int32_t shading;     /* the frame's global render mode: 0 wireframe, 1 flat */
+    bool use_textures;
 };
 
 /* ============================================================================
@@ -669,7 +671,7 @@ static void view_set_material(nmo_view_t *view, const nmo_engine_material_t *m, 
         float power = m->power < 0.0f ? 0.0f : m->power > 128.0f ? 128.0f : m->power;
         glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, power);
     }
-    GLuint texture = view_texture(view, m->texture);
+    GLuint texture = view->use_textures ? view_texture(view, m->texture) : 0;
     if (texture != 0) {
         glEnable(GL_TEXTURE_2D);
         glBindTexture(GL_TEXTURE_2D, texture);
@@ -728,8 +730,10 @@ static void view_set_material(nmo_view_t *view, const nmo_engine_material_t *m, 
     } else {
         glEnable(GL_CULL_FACE);
     }
-    glShadeModel(m->shade_mode == 1 ? GL_FLAT : GL_SMOOTH);
-    glPolygonMode(GL_FRONT_AND_BACK, m->fill_mode == 1   ? GL_POINT
+    /* RCKMaterial::SetAsCurrent: the render context's wireframe or flat mode over the material's */
+    glShadeModel(view->shading == 1 || m->shade_mode == 1 ? GL_FLAT : GL_SMOOTH);
+    glPolygonMode(GL_FRONT_AND_BACK, view->shading == 0  ? GL_LINE
+                                     : m->fill_mode == 1 ? GL_POINT
                                      : m->fill_mode == 2 ? GL_LINE
                                                          : GL_FILL);
 }
@@ -836,6 +840,9 @@ static void view_draw_mesh(nmo_view_t *view, const nmo_engine_frame_t *frame,
     }
     if (draw->fov > 0.0f) {
         view_load_projection(frame, false, draw->fov, draw->near_plane, draw->far_plane);
+    }
+    if (draw->z_only) {
+        glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE); /* VX_MOVEABLE_ZBUFONLY */
     }
     float model_view[16];
     view_multiply(model_view, draw->world, view_m);
@@ -970,6 +977,7 @@ static void view_draw_mesh(nmo_view_t *view, const nmo_engine_frame_t *frame,
     glDisableClientState(GL_TEXTURE_COORD_ARRAY);
     glDisableClientState(GL_NORMAL_ARRAY);
     glDisableClientState(GL_VERTEX_ARRAY);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     if (draw->fov > 0.0f) {
         view_load_projection(frame, frame->orthographic, frame->fov, frame->near_plane,
                              frame->far_plane);
@@ -1247,6 +1255,8 @@ static nmo_status_t view_render(nmo_view_t *view, nmo_engine_frame_t *out_frame)
     }
     view->frame_width = frame.width;
     view->frame_height = frame.height;
+    view->shading = frame.shading;
+    view->use_textures = frame.use_textures;
     int window_w = 0, window_h = 0;
     SDL_GetWindowSizeInPixels(view->window, &window_w, &window_h);
     /* The frame keeps its aspect, centered in the window */
@@ -1267,10 +1277,15 @@ static nmo_status_t view_render(nmo_view_t *view, nmo_engine_frame_t *out_frame)
     float background[4];
     view_color(frame.background_color, background);
     glClearColor(background[0], background[1], background[2], 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    /* RCKRenderContext::Clear: the background only with CK_RENDER_CLEARBACK, depth with CLEARZ */
+    GLbitfield clear = ((frame.render_options & 0x20u) ? GL_COLOR_BUFFER_BIT : 0u) |
+                       ((frame.render_options & 0x10u) ? GL_DEPTH_BUFFER_BIT : 0u);
+    if (clear != 0) {
+        glClear(clear);
+    }
     glDisable(GL_SCISSOR_TEST);
 
-    if (frame.background_texture != 0) {
+    if (frame.background_texture != 0 && (frame.render_options & 0x20u)) {
         nmo_engine_draw_t quad;
         memset(&quad, 0, sizeof(quad));
         quad.rect[2] = (float)frame.width;

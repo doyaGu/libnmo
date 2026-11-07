@@ -133,6 +133,19 @@ void eng_render_apply_scene(nmo_engine_t *engine, uint32_t background_color,
     render->ambient_light = ambient_light;
 }
 
+eng_render_t *eng_render_settings(nmo_engine_t *engine)
+{
+    eng_render_t *render = &engine->render;
+    if (!render->settings_set) {
+        render->settings_set = true;
+        render->render_options = CK_RENDER_DEFAULTSETTINGS;
+        render->shading = 2; /* GouraudShading */
+        render->use_textures = true;
+        render->wireframe_layer = false;
+    }
+    return render;
+}
+
 nmo_object_id_t eng_object_ref(const nmo_engine_t *engine, nmo_object_id_t owner,
                                const nmo_ref_t *ref)
 {
@@ -1270,7 +1283,7 @@ static void eng_load_2d_class(nmo_engine_t *engine, uint32_t class_id)
 }
 
 /* The 2D entities of every file loaded so far */
-static void eng_load_2d_entities(nmo_engine_t *engine)
+void eng_load_2d_entities(nmo_engine_t *engine)
 {
     if (engine->render.entities_2d_modules != engine->modules.count) {
         engine->render.entities_2d_modules = engine->modules.count;
@@ -1716,6 +1729,14 @@ static void eng_render_2d(nmo_engine_t *engine, int32_t index, float width, floa
     }
 }
 
+void eng_render_2d_entity(nmo_engine_t *engine, nmo_object_id_t id, float width, float height)
+{
+    int32_t at = eng_2d_index(engine, id);
+    if (at >= 0 && !engine->render.entities_2d.data[at].destroyed) {
+        eng_render_2d(engine, at, width, height);
+    }
+}
+
 static void eng_render_2d_root(nmo_engine_t *engine, bool background, float width, float height)
 {
     size_t count = 0;
@@ -1729,6 +1750,52 @@ static void eng_render_2d_root(nmo_engine_t *engine, bool background, float widt
 /* ============================================================================
  * The frame
  * ============================================================================ */
+
+/* An entity's scene graph priority: 10000 rendered first, else its Z order */
+static int32_t eng_render_priority(const eng_entity_t *entity)
+{
+    return (entity->moveable_flags & VX_MOVEABLE_RENDERFIRST) ? 10000 : entity->render_priority;
+}
+
+typedef struct eng_priority_item {
+    int32_t priority;
+    size_t index;
+} eng_priority_item_t;
+
+static int eng_priority_compare(const void *a, const void *b)
+{
+    const eng_priority_item_t *x = (const eng_priority_item_t *)a, *y = (const eng_priority_item_t *)b;
+    if (x->priority != y->priority) {
+        return x->priority > y->priority ? -1 : 1;
+    }
+    return x->index < y->index ? -1 : x->index > y->index;
+}
+
+/* The scene graph's order, approximated: the entities' draws by priority, highest first,
+   the others kept in order (the scene graph's hierarchy is not modelled) */
+static void eng_sort_by_priority(nmo_engine_t *engine, size_t first, size_t end)
+{
+    size_t count = end - first;
+    eng_priority_item_t *items = count > 1 ? (eng_priority_item_t *)malloc(count * sizeof(*items)) : NULL;
+    nmo_engine_draw_t *copy = items != NULL ? (nmo_engine_draw_t *)malloc(count * sizeof(*copy)) : NULL;
+    if (copy == NULL) {
+        free(items);
+        return;
+    }
+    nmo_engine_draw_t *draws = &engine->render.draws.data[first];
+    for (size_t i = 0; i < count; i++) {
+        int32_t at = eng_entity_index(engine, draws[i].object);
+        items[i].priority = at >= 0 ? eng_render_priority(&engine->entities.data[at]) : 0;
+        items[i].index = i;
+    }
+    qsort(items, count, sizeof(*items), eng_priority_compare);
+    memcpy(copy, draws, count * sizeof(*copy));
+    for (size_t i = 0; i < count; i++) {
+        draws[i] = copy[items[i].index];
+    }
+    free(copy);
+    free(items);
+}
 
 /* Whether a 3D entity or one of its parents is hidden with its children */
 static bool eng_hidden_by_parent(const nmo_engine_t *engine, const eng_entity_t *entity)
@@ -1988,8 +2055,17 @@ nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *o
 
     render->draws.count = 0;
     render->vertices.count = 0;
-    eng_render_2d_root(engine, true, width, height);
+    eng_render_settings(engine);
+    out->render_options = render->render_options;
+    out->shading = render->shading;
+    out->use_textures = render->use_textures;
+    out->wireframe_layer = render->wireframe_layer;
+    if (render->render_options & CK_RENDER_BACKGROUNDSPRITES) {
+        eng_render_2d_root(engine, true, width, height);
+    }
     eng_managers_render(engine, ENG_RENDER_BACKGROUND, &args);
+    size_t first_entity_draw = render->draws.count;
+    bool prioritized = false;
     for (size_t i = 0; i < engine->entities.count; i++) {
         const eng_entity_t *entity = &engine->entities.data[i];
         if (entity->destroyed || !eng_in_scene(engine, entity->id) ||
@@ -2031,12 +2107,25 @@ nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *o
         draw->object = entity->id;
         draw->mesh = mesh;
         memcpy(draw->world, entity->world.m, sizeof(draw->world));
-        draw->transparent = transparent;
+        /* RCK3dEntity::IsToBeRenderedLast, and the moveable flags RCKMesh::Render applies */
+        uint32_t moveable = entity->moveable_flags;
+        draw->transparent = (moveable & VX_MOVEABLE_RENDERFIRST) ? false
+                            : (moveable & VX_MOVEABLE_RENDERLAST) ? true
+                                                                  : transparent;
+        draw->no_z_test = (moveable & VX_MOVEABLE_NOZBUFFERTEST) != 0;
+        draw->no_z_write = (moveable & VX_MOVEABLE_NOZBUFFERWRITE) != 0;
+        draw->z_only = (moveable & VX_MOVEABLE_ZBUFONLY) != 0;
+        prioritized = prioritized || eng_render_priority(entity) != 0;
+    }
+    if (prioritized) {
+        eng_sort_by_priority(engine, first_entity_draw, render->draws.count);
     }
     render->env_maps.count = 0; /* temporary callbacks */
     eng_managers_render(engine, ENG_RENDER_SCENE, &args);
     eng_draw_portal_clips(engine);
-    eng_render_2d_root(engine, false, width, height);
+    if (render->render_options & CK_RENDER_FOREGROUNDSPRITES) {
+        eng_render_2d_root(engine, false, width, height);
+    }
     eng_managers_render(engine, ENG_RENDER_OVERLAY, &args); /* the post render callbacks */
     eng_managers_render(engine, ENG_RENDER_POST, &args);    /* the post sprite render callbacks */
 

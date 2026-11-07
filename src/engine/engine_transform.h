@@ -30,6 +30,7 @@ typedef struct eng_entity {
     eng_matrix_t world;
     eng_matrix_t local;
     uint32_t moveable_flags;
+    int32_t render_priority; /* CK3dEntity::SetZOrder at run time; 0 at first */
     uint32_t entity_flags; /* CK3dEntity::GetFlags, including PORTAL */
     float animation_lod; /* CKCharacter's runtime animation LOD; initially one */
     nmo_object_id_t exclusive_animation; /* BodyPart's secondary animation gate */

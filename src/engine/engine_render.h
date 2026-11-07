@@ -164,6 +164,11 @@ typedef struct eng_render {
 
     /* The render context (CKRenderContext / CKRenderedScene) */
     nmo_object_id_t camera; /* AttachViewpointToCamera */
+    /* Its render options and global render mode once a block set them (eng_render_settings) */
+    bool settings_set;
+    uint32_t render_options;  /* CK_RENDER_FLAGS */
+    int32_t shading;          /* VxShadeType: 0 wireframe, 1 flat, 2 Gouraud, ... 4 material default */
+    bool use_textures, wireframe_layer;
     ENG_VEC(eng_camera_state_t) camera_states;
     ENG_VEC(eng_camera_target_t) camera_targets;
     uint32_t background_color; /* the background material's diffuse and texture */
@@ -190,6 +195,9 @@ void eng_render_apply_scene(nmo_engine_t *engine, uint32_t background_color,
                             int32_t fog_mode, uint32_t fog_color, float fog_start,
                             float fog_end, float fog_density, nmo_object_id_t camera);
 void eng_free_render(nmo_engine_t *engine);
+/* The render context's render options and global render mode, CK's defaults the first time
+   (CK_RENDER_DEFAULTSETTINGS, Gouraud shading, textures, no wireframe) */
+eng_render_t *eng_render_settings(nmo_engine_t *engine);
 /* The attached camera's world matrix, or the render context's default eye. */
 void eng_render_viewpoint(nmo_engine_t *engine, struct eng_matrix *out);
 /* CKRenderContext::Transform of a world point into render context pixels. */
@@ -219,6 +227,11 @@ eng_material_t *eng_material_new(nmo_engine_t *engine, nmo_object_id_t id);
 void eng_2d_destroy(nmo_engine_t *engine, nmo_object_id_t id);
 /* The 2D entity's run time state; NULL for no CK2dEntity */
 eng_2d_t *eng_2d_entity(nmo_engine_t *engine, nmo_object_id_t id);
+/* CK2dEntity::Render in a render callback: the entity's draws (when it is shown and in the
+   scene), then its children's, pushed onto the frame being made */
+void eng_render_2d_entity(nmo_engine_t *engine, nmo_object_id_t id, float width, float height);
+/* Every 2D entity of the files loaded so far in render.entities_2d (their children found there) */
+void eng_load_2d_entities(nmo_engine_t *engine);
 /* CK2dEntity::SetRect: the rect, the homogeneous one with it, and unless `keep_children`
    the children moved along (their STICK flags, or their homogeneous rects); false for no
    2D entity */

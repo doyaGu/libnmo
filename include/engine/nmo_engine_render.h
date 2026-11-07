@@ -69,6 +69,7 @@ typedef struct nmo_engine_draw {
     bool background;        /* a background 2D entity: no depth test or write */
     bool transparent;       /* a mesh drawn after the opaque ones, back to front */
     bool no_z_test, no_z_write; /* VX_MOVEABLE_NOZBUFFERTEST / NOZBUFFERWRITE */
+    bool z_only;            /* VX_MOVEABLE_ZBUFONLY: depth written, no color */
     /* A mesh drawn with a projection of its own (TT Sky's): fov > 0 */
     float fov, near_plane, far_plane;
     /* Triangles: the frame's vertices from first_vertex, textured with `texture`
@@ -133,6 +134,13 @@ typedef struct nmo_engine_frame {
     const nmo_engine_draw_t *draws;
     int32_t draw_count;
     const nmo_engine_vertex_t *vertices; /* what triangle draws use */
+    /* The render context's options (CK_RENDER_FLAGS: CK_RENDER_CLEARBACK clears the color
+       buffer, the sprite flags are applied already) and global render mode: shading 0 draws
+       wireframe, 1 flat, others as the materials say; no textures unless use_textures; a
+       wireframe layer over the meshes when wireframe_layer */
+    uint32_t render_options;
+    int32_t shading;
+    bool use_textures, wireframe_layer;
 } nmo_engine_frame_t;
 
 /**
