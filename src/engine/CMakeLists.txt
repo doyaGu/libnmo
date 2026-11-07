@@ -45,6 +45,7 @@ set(NMO_ENGINE_SOURCES
     core/run.c
     core/scene.c
     core/schedule.c
+    core/synchro.c
     core/transform.c
     core/transition.c
 )

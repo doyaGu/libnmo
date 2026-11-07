@@ -28,6 +28,7 @@
 #include "engine_portal.h"
 #include "engine_render.h"
 #include "engine_scene.h"
+#include "engine_synchro.h"
 #include "engine_transform.h"
 
 struct nmo_engine {
@@ -57,6 +58,7 @@ struct nmo_engine {
     ENG_VEC(eng_entity_t) entities;
     eng_curves_t curves;
     eng_portals_t portals;
+    eng_synchros_t synchros;
     eng_animations_t animations;
     eng_characters_t characters;
     eng_kinematics_t kinematics;

@@ -536,6 +536,68 @@ static int bb_stop_and_go(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* ---- Logics/Synchro ---- */
+
+/*
+ * Rendezvous: the target waits until all the rendezvous' waiters arrived;
+ * Number already arrived is the count before its own arrival. The original
+ * throws without a rendezvous.
+ */
+static int bb_rendezvous(blk_t *b)
+{
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (target == 0) {
+        return NMO_ENGINE_BR_OK;
+    }
+    IN_OFF(b, 0);
+    eng_synchro_t *rendezvous = eng_synchro(b->engine, nmo_engine_block_get_input_object(b, 0));
+    if (rendezvous == NULL) {
+        return NMO_ENGINE_BR_GENERICERROR;
+    }
+    set_out_int(b, 0, (int32_t)rendezvous->arrived.count);
+    if (eng_rendezvous_pass(b->engine, rendezvous, target)) {
+        OUT_ON(b, 0);
+        return NMO_ENGINE_BR_OK;
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+/* Enter Critical Section: the target waits until it is alone in the section */
+static int bb_enter_critical_section(blk_t *b)
+{
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (target == 0) {
+        return NMO_ENGINE_BR_OK;
+    }
+    IN_OFF(b, 0);
+    eng_synchro_t *section = eng_synchro(b->engine, nmo_engine_block_get_input_object(b, 0));
+    if (section == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    if (eng_critical_enter(section, target)) {
+        OUT_ON(b, 0);
+        return NMO_ENGINE_BR_OK;
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+/* Leave Critical Section: the target leaves it (the original throws without a section) */
+static int bb_leave_critical_section(blk_t *b)
+{
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (target == 0) {
+        return NMO_ENGINE_BR_OK;
+    }
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    eng_synchro_t *section = eng_synchro(b->engine, nmo_engine_block_get_input_object(b, 0));
+    if (section == NULL) {
+        return NMO_ENGINE_BR_GENERICERROR;
+    }
+    eng_critical_leave(section, target);
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_logics_streaming_blocks[] = {
     {NMO_GUID_INIT(0xeb506901, 0x984afccc), "Binary Switch", bb_binary_switch, NULL, NULL},
     {NMO_GUID_INIT(0x302561c4, 0x0d282980), "Nop", bb_nop, NULL, NULL},
@@ -560,6 +622,11 @@ static const nmo_engine_block_desc_t eng_logics_streaming_blocks[] = {
     {NMO_GUID_INIT(0x7242794c, 0x98c2b340), "FIFO", bb_fifo, cb_stack, NULL},
     {NMO_GUID_INIT(0x7d037385, 0x12d62259), "LIFO", bb_lifo, cb_stack, NULL},
     {NMO_GUID_INIT(0x78a667f0, 0x5a3c0323), "Stop & Go", bb_stop_and_go, NULL, NULL},
+    {NMO_GUID_INIT(0x3a1a16c7, 0x20095c45), "Rendezvous", bb_rendezvous, NULL, NULL},
+    {NMO_GUID_INIT(0x3c442002, 0x5988257c), "Enter Critical Section", bb_enter_critical_section,
+     NULL, NULL},
+    {NMO_GUID_INIT(0x45db3138, 0x4db80f47), "Leave Critical Section", bb_leave_critical_section,
+     NULL, NULL},
 };
 
 nmo_status_t eng_register_logics_streaming(nmo_engine_t *engine)
