@@ -396,6 +396,13 @@ bool nmo_engine_parent_script_is_active(const nmo_engine_t *engine, nmo_object_i
     return node->scene_active;
 }
 
+void eng_remove_from_level_scene(nmo_engine_t *engine, nmo_object_id_t id)
+{
+    if (id != 0 && eng_map_get(&engine->scene_objects, id) >= 0) {
+        eng_map_put(&engine->scene_objects, id, -1);
+    }
+}
+
 /* CKLevel::AddObject: the object is in the level scene from now on. */
 void eng_add_to_level_scene(nmo_engine_t *engine, nmo_object_id_t id)
 {

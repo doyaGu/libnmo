@@ -55,6 +55,8 @@ typedef struct eng_ic {
 typedef struct eng_ics {
     ENG_VEC(eng_ic_t) list;
     eng_map_t map; /* object -> index in list */
+    /* Save State's states (CKSaveObjectState), a parameter holding one's number from 1 */
+    ENG_VEC(eng_ic_t) states;
 } eng_ics_t;
 
 /* CKObjectManager's dynamic objects and deferred deletions */
@@ -73,6 +75,11 @@ typedef struct eng_dynamic {
 void eng_add_module_to_level(nmo_engine_t *engine, int32_t module);
 bool eng_in_scene(const nmo_engine_t *engine, nmo_object_id_t id);
 void eng_add_to_level_scene(nmo_engine_t *engine, nmo_object_id_t id);
+/* CKScene::RemoveObjectFromScene of the level scene */
+void eng_remove_from_level_scene(nmo_engine_t *engine, nmo_object_id_t id);
+/* CKBeObject::RemoveScript from its owner, then AddScript to `owner`: the script and its
+   sub-behaviors are the owner's. False when either is unknown or out of memory. */
+bool eng_attach_script(nmo_engine_t *engine, nmo_object_id_t script, nmo_object_id_t owner);
 
 /* core/scene.c */
 /* CKScene::SetObjectInitialValue: what the engine models of the object */
@@ -81,6 +88,10 @@ void eng_save_ic(nmo_engine_t *engine, nmo_object_id_t id);
 nmo_status_t eng_load_ic(nmo_engine_t *engine, nmo_object_id_t id, struct nmo_chunk *chunk);
 /* CKReadObjectState of the object's initial value in the level scene, when it is in it and has one */
 void eng_restore_ic(nmo_engine_t *engine, nmo_object_id_t id);
+/* CKSaveObjectState into state `handle` (from 1; 0 for a new one); its number, 0 without memory */
+uint32_t eng_save_state(nmo_engine_t *engine, nmo_object_id_t id, uint32_t handle);
+/* CKReadObjectState of state `handle` onto object `id`; false for no such state */
+bool eng_read_state(nmo_engine_t *engine, nmo_object_id_t id, uint32_t handle);
 void eng_free_ics(nmo_engine_t *engine);
 
 /* core/module.c */

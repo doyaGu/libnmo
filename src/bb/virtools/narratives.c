@@ -567,6 +567,153 @@ static int bb_delete_dynamic_objects(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/*
+ * Activate Global State, Deactivate Global State and Is Global State Active:
+ * CKStateObject::EnterState, LeaveState and IsStateActive. Without a state
+ * object the DLL throws; the block stops with a parameter error.
+ */
+static eng_synchro_t *global_state(blk_t *b)
+{
+    eng_synchro_t *state = eng_synchro(b->engine, nmo_engine_block_get_input_object(b, 0));
+    return state != NULL && state->is_state ? state : NULL;
+}
+
+static int set_global_state(blk_t *b, bool active)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    eng_synchro_t *state = global_state(b);
+    if (state == NULL) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    state->state_active = active;
+    return NMO_ENGINE_BR_OK;
+}
+
+static int bb_activate_global_state(blk_t *b) { return set_global_state(b, true); }
+
+static int bb_deactivate_global_state(blk_t *b) { return set_global_state(b, false); }
+
+static int bb_is_global_state_active(blk_t *b)
+{
+    IN_OFF(b, 0);
+    eng_synchro_t *state = global_state(b);
+    if (state == NULL) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    OUT_ON(b, state->state_active ? 0 : 1);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Set IC: the target's state now is its initial value in the current scene, when it is in it */
+static int bb_set_ic(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (target == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    if (eng_in_scene(b->engine, target)) {
+        eng_save_ic(b->engine, target);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * Save State and Read State: CKSaveObjectState of the target into the
+ * Object State output (the engine's state, by its number), and
+ * CKReadObjectState of the Object State input onto the target.
+ */
+static int bb_save_state(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (target == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    uint32_t handle = (uint32_t)get_out_int(b, 0);
+    handle = eng_save_state(b->engine, target, handle);
+    set_out_int(b, 0, (int32_t)handle);
+    return NMO_ENGINE_BR_OK;
+}
+
+static int bb_read_state(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (target == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    uint32_t handle = (uint32_t)get_in_int(b, 0, 0);
+    if (handle != 0) {
+        eng_read_state(b->engine, target, handle);
+        eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, target, 0);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Object Rename: CKObject::SetName */
+static int bb_object_rename(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    nmo_object_t *object = target != 0 ? eng_find_object(b->engine, target) : NULL;
+    if (object == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    nmo_object_set_name(object, input_string(b, 0));
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * Attach Script: a copy of Script (dynamic with Dynamic) moved to the
+ * target, in Created Script; with Activate it is activated in the current
+ * scene (reset with Reset), and the target too when it is not active.
+ */
+static int bb_attach_script(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (target == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    bool dynamic = get_in_int(b, 0, 1) != 0;
+    nmo_object_id_t script = nmo_engine_block_get_input_object(b, 1);
+    if (script == 0) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    eng_dependencies_t deps;
+    eng_default_copy_dependencies(&deps);
+    nmo_object_id_t copy = 0;
+    if (eng_copy_objects(engine, &script, 1, &deps, false, dynamic, &copy) != NMO_OK || copy == 0) {
+        return NMO_ENGINE_BR_GENERICERROR;
+    }
+    nmo_engine_block_set_output_value(b, 0, &copy, sizeof(copy));
+    eng_attach_script(engine, copy, target);
+    if (get_in_int(b, 2, 1) != 0) {
+        eng_add_to_level_scene(engine, copy);
+        nmo_engine_activate_script(engine, copy, true, get_in_int(b, 3, 1) != 0);
+        if (!nmo_engine_object_is_active(engine, target)) {
+            nmo_engine_activate_object(engine, target, true);
+        }
+    }
+    eng_emit(engine, NMO_ENGINE_EVENT_EFFECT, b->node, target, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Dummy0: a prototype without inputs, outputs or function */
+static int bb_dummy0(blk_t *b)
+{
+    (void)b;
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_narratives_blocks[] = {
     {NMO_GUID_INIT(0x02bc537c, 0x147c22e0), "Sound Load", bb_sound_load, NULL, NULL},
     {NMO_GUID_INIT(0x00e85ab1, 0x312a731c), "Texture Load", bb_texture_load, NULL, NULL},
@@ -585,6 +732,17 @@ static const nmo_engine_block_desc_t eng_narratives_blocks[] = {
     {NMO_GUID_INIT(0x74120ded, 0x76524673), "Object Delete", bb_object_delete, NULL, NULL},
     {NMO_GUID_INIT(0x0cba3195, 0x53440e4c), "Delete Dynamic Objects", bb_delete_dynamic_objects, NULL,
      NULL},
+    {NMO_GUID_INIT(0x373a615b, 0x769a6d53), "Activate Global State", bb_activate_global_state, NULL, NULL},
+    {NMO_GUID_INIT(0x520d14a5, 0x797502ae), "Deactivate Global State", bb_deactivate_global_state, NULL,
+     NULL},
+    {NMO_GUID_INIT(0x04e65bdd, 0x473c3681), "Is Global State Active", bb_is_global_state_active, NULL, NULL},
+    {NMO_GUID_INIT(0x72671a24, 0x161a2347), "Set IC", bb_set_ic, NULL, NULL},
+    {NMO_GUID_INIT(0x200123d8, 0x65f802b6), "Save State", bb_save_state, NULL, NULL},
+    {NMO_GUID_INIT(0x3ab6273f, 0x578f7118), "Read State", bb_read_state, NULL, NULL},
+    {NMO_GUID_INIT(0x4cae18cc, 0x03520c5a), "Object Rename", bb_object_rename, NULL, NULL},
+    {NMO_GUID_INIT(0x4ca718cc, 0x03520c5a), "Object Rename", bb_object_rename, NULL, NULL},
+    {NMO_GUID_INIT(0x1dba5f4a, 0x14481212), "Attach Script", bb_attach_script, NULL, NULL},
+    {NMO_GUID_INIT(0xd0b7adf3, 0xd3ff3cf6), "Dummy0", bb_dummy0, NULL, NULL},
 };
 
 nmo_status_t eng_register_narratives(nmo_engine_t *engine)

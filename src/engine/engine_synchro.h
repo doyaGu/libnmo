@@ -16,6 +16,8 @@ typedef struct eng_synchro {
     ENG_VEC(nmo_object_id_t) arrived;     /* m_Arrived, in arrival order */
     ENG_VEC(nmo_object_id_t) passed;      /* m_Passed */
     nmo_object_id_t in_section;           /* CKCriticalSectionObject::m_ObjectInSection */
+    bool is_state;                        /* a CKStateObject */
+    bool state_active;                    /* CKStateObject::IsStateActive */
 } eng_synchro_t;
 
 typedef struct eng_synchros {
@@ -24,7 +26,7 @@ typedef struct eng_synchros {
 } eng_synchros_t;
 
 /* core/synchro.c */
-/* The synchro or critical section object `id` now; NULL when it is neither. */
+/* The synchro, critical section or state object `id` now; NULL when it is none of them. */
 eng_synchro_t *eng_synchro(nmo_engine_t *engine, nmo_object_id_t id);
 /* CKSynchroObject::CanIPassRendezVous: `asker` arrives; true once all the waiters have. */
 bool eng_rendezvous_pass(nmo_engine_t *engine, eng_synchro_t *synchro, nmo_object_id_t asker);

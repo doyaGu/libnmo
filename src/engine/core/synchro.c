@@ -48,11 +48,16 @@ eng_synchro_t *eng_synchro(nmo_engine_t *engine, nmo_object_id_t id)
     const nmo_criticalsection_state_t *section = (const nmo_criticalsection_state_t *)
         nmo_type_query_object_get_ancestor_state_by_guid(engine->types, object,
                                                          CKPGUID_CRITICALSECTION);
-    if (rendezvous == NULL && section == NULL) {
+    const nmo_state_state_t *state = (const nmo_state_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(engine->types, object, CKPGUID_STATE);
+    if (rendezvous == NULL && section == NULL && state == NULL) {
         return NULL;
     }
     eng_synchro_t synchro = {.id = id};
-    if (rendezvous != NULL) {
+    if (state != NULL) {
+        synchro.is_state = true;
+        synchro.state_active = state->event_flag != 0;
+    } else if (rendezvous != NULL) {
         synchro.max_waiters = rendezvous->max_waiters;
         if (!synchro_load_refs(engine, id, &rendezvous->arrived_ids, &synchro.arrived.data,
                                &synchro.arrived.count, &synchro.arrived.capacity) ||

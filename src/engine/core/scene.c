@@ -200,8 +200,9 @@ nmo_status_t eng_load_ic(nmo_engine_t *engine, nmo_object_id_t id, nmo_chunk_t *
     return status;
 }
 
-/* CKSaveObjectState into the level scene's initial value: what the engine models of the object */
-void eng_save_ic(nmo_engine_t *engine, nmo_object_id_t id)
+/* CKSaveObjectState: what the engine models of the object, into `value`; false when it models
+   nothing of it (or is out of memory) */
+static bool eng_capture_state(nmo_engine_t *engine, nmo_object_id_t id, eng_ic_t *out)
 {
     const eng_array_t *array = eng_find_array(engine, id);
     float world[16];
@@ -220,14 +221,13 @@ void eng_save_ic(nmo_engine_t *engine, nmo_object_id_t id)
     const eng_light_t *light = has_matrix ? eng_light(engine, id) : NULL;
     const eng_sprite3d_t *sprite = has_matrix ? eng_sprite3d(engine,id) : NULL;
     if (array == NULL && !has_matrix && material == NULL) {
-        return;
+        return false;
     }
-    eng_ic_t value;
-    memset(&value, 0, sizeof(value));
-    eng_ic_t *ic = &value;
+    memset(out, 0, sizeof(*out));
+    eng_ic_t *ic = out;
     ic->id = id;
     ic->has_array = array != NULL && eng_array_clone(&ic->array, array);
-    if (array != NULL && !ic->has_array) return;
+    if (array != NULL && !ic->has_array) return false;
     ic->has_matrix = has_matrix;
     ic->has_parent = has_matrix;
     if (has_matrix) {
@@ -262,21 +262,25 @@ void eng_save_ic(nmo_engine_t *engine, nmo_object_id_t id)
     if (eng_curve_get_properties(engine,id,&ic->curve_properties)) ic->curve_mask = ENG_CURVE_PROPERTIES_ALL;
     if (ic->curve_mask != 0) {
         const eng_curve_points_t *points = eng_curve_points(engine,id);
-        if (points == NULL || !eng_curve_clone_points(&ic->curve_points,points)) { eng_release_ic(ic); return; }
+        if (points == NULL || !eng_curve_clone_points(&ic->curve_points,points)) { eng_release_ic(ic); return false; }
         ic->has_curve_points = true;
     }
     if (eng_curvepoint_get_properties(engine,id,&ic->curvepoint_properties)) ic->curvepoint_mask = ENG_CURVEPOINT_PROPERTIES_ALL;
-    if (eng_store_ic(engine, ic) != NMO_OK) eng_release_ic(ic);
+    return true;
 }
 
-/* CKReadObjectState of the object's initial value in the level scene, when it is in it and has one */
-void eng_restore_ic(nmo_engine_t *engine, nmo_object_id_t id)
+/* CKSaveObjectState into the level scene's initial value: what the engine models of the object */
+void eng_save_ic(nmo_engine_t *engine, nmo_object_id_t id)
 {
-    int32_t index = eng_in_scene(engine, id) ? eng_map_get(&engine->ics.map, id) : -1;
-    if (index < 0) {
-        return;
+    eng_ic_t value;
+    if (eng_capture_state(engine, id, &value) && eng_store_ic(engine, &value) != NMO_OK) {
+        eng_release_ic(&value);
     }
-    const eng_ic_t *ic = &engine->ics.list.data[index];
+}
+
+/* CKReadObjectState of a saved state (an IC, or Save State's) onto object `id` */
+static void eng_apply_state(nmo_engine_t *engine, nmo_object_id_t id, const eng_ic_t *ic)
+{
     eng_array_t *array = ic->has_array ? eng_find_array(engine, id) : NULL;
     eng_array_t copy;
     memset(&copy, 0, sizeof(copy));
@@ -338,6 +342,46 @@ void eng_restore_ic(nmo_engine_t *engine, nmo_object_id_t id)
     }
 }
 
+/* CKReadObjectState of the object's initial value in the level scene, when it is in it and has one */
+void eng_restore_ic(nmo_engine_t *engine, nmo_object_id_t id)
+{
+    int32_t index = eng_in_scene(engine, id) ? eng_map_get(&engine->ics.map, id) : -1;
+    if (index >= 0) {
+        eng_ic_t ic = engine->ics.list.data[index]; /* applying may store others */
+        eng_apply_state(engine, id, &ic);
+    }
+}
+
+uint32_t eng_save_state(nmo_engine_t *engine, nmo_object_id_t id, uint32_t handle)
+{
+    eng_ic_t value;
+    if (!eng_capture_state(engine, id, &value)) {
+        memset(&value, 0, sizeof(value));
+        value.id = id;
+    }
+    eng_ic_t *slot = handle != 0 && handle <= engine->ics.states.count ? &engine->ics.states.data[handle - 1] : NULL;
+    if (slot != NULL) {
+        eng_release_ic(slot);
+    } else if (ENG_VEC_PUSH(engine->ics.states, slot)) {
+        handle = (uint32_t)engine->ics.states.count;
+    } else {
+        eng_release_ic(&value);
+        return 0;
+    }
+    *slot = value;
+    return handle;
+}
+
+bool eng_read_state(nmo_engine_t *engine, nmo_object_id_t id, uint32_t handle)
+{
+    if (handle == 0 || handle > engine->ics.states.count) {
+        return false;
+    }
+    eng_ic_t state = engine->ics.states.data[handle - 1];
+    eng_apply_state(engine, id, &state);
+    return true;
+}
+
 void eng_free_ics(nmo_engine_t *engine)
 {
     for (size_t i = 0; i < engine->ics.list.count; i++) {
@@ -345,4 +389,8 @@ void eng_free_ics(nmo_engine_t *engine)
     }
     free(engine->ics.list.data);
     free(engine->ics.map.slots);
+    for (size_t i = 0; i < engine->ics.states.count; i++) {
+        eng_release_ic(&engine->ics.states.data[i]);
+    }
+    free(engine->ics.states.data);
 }

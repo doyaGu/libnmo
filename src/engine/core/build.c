@@ -647,6 +647,66 @@ static nmo_status_t eng_build_objects(eng_builder_t *b)
     return NMO_OK;
 }
 
+bool eng_attach_script(nmo_engine_t *engine, nmo_object_id_t script_id, nmo_object_id_t owner_id)
+{
+    int32_t script = eng_map_get(&engine->node_map, script_id);
+    if (script < 0 || owner_id == 0 || eng_find_object(engine, owner_id) == NULL) {
+        return false;
+    }
+    /* Out of its owner's scripts */
+    int32_t old = eng_map_get(&engine->object_map, engine->nodes.data[script].owner);
+    if (old >= 0) {
+        eng_object_t *object = &engine->objects.data[old];
+        for (uint32_t s = 0; s < object->script_count; s++) {
+            if (engine->indexes.data[object->first_script + s] == script) {
+                memmove(&engine->indexes.data[object->first_script + s],
+                        &engine->indexes.data[object->first_script + s + 1],
+                        (object->script_count - s - 1u) * sizeof(int32_t));
+                object->script_count--;
+                break;
+            }
+        }
+    }
+    /* The new owner's, at the end of its scripts (a range of its own) */
+    int32_t index = eng_map_get(&engine->object_map, owner_id);
+    if (index < 0) {
+        eng_object_t *object = NULL;
+        if (!ENG_VEC_PUSH(engine->objects, object) ||
+            !eng_map_put(&engine->object_map, owner_id, (int32_t)(engine->objects.count - 1u))) {
+            return false;
+        }
+        object->id = owner_id;
+        object->order = (uint32_t)(engine->objects.count - 1u);
+        object->active = true;
+        nmo_object_t *owner = eng_find_object(engine, owner_id);
+        const nmo_beobject_state_t *be = (const nmo_beobject_state_t *)
+            nmo_type_query_object_get_ancestor_state_by_guid(engine->types, owner, CKPGUID_BEOBJECT);
+        object->priority = be != NULL ? be->priority : 0;
+        index = (int32_t)(engine->objects.count - 1u);
+    }
+    uint32_t count = engine->objects.data[index].script_count;
+    uint32_t first = eng_alloc_indexes(engine, count + 1u);
+    if (first == UINT32_MAX) {
+        return false;
+    }
+    eng_object_t *object = &engine->objects.data[index];
+    memcpy(&engine->indexes.data[first], &engine->indexes.data[object->first_script], count * sizeof(int32_t));
+    engine->indexes.data[first + count] = script;
+    object->first_script = first;
+    object->script_count = count + 1u;
+    /* The script and the behaviors in it */
+    for (size_t i = 0; i < engine->nodes.count; i++) {
+        int32_t top = (int32_t)i;
+        while (engine->nodes.data[top].parent >= 0) {
+            top = engine->nodes.data[top].parent;
+        }
+        if (top == script) {
+            engine->nodes.data[i].owner = owner_id;
+        }
+    }
+    return true;
+}
+
 nmo_status_t eng_build_module(nmo_engine_t *engine, const eng_range_t *range)
 {
     eng_builder_t b = {
