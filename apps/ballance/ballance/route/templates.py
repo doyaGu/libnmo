@@ -115,6 +115,8 @@ def mirror(piece):
                 target['section'] = [[-u, y] for u, y in reversed(target['section'])]
     if 'floor_polygon' in result:
         spec = result['floor_polygon']
+        if isinstance(spec.get('slope'), list):
+            spec['slope'][1] *= -1
         extra = [p for hole in spec.get('holes', []) for p in hole]
         extra += [p for port in spec.get('ports', {}).values() for p in port.get('path', [])]
         for p in spec['outline'] + spec.get('path', []) + spec.get('supports', []) + extra:

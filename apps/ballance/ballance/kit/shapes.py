@@ -423,11 +423,39 @@ def bordered_outline(outline, width, openings):
 def platform_triangle(
     mesh: Mesh, x: float, z: float, vertices, depth: float, material='Floor_Top_Boderless', uvs=None
 ):
-    texture = uvs if uvs is not None else [(a / 5, c / 5) for a, _, c in vertices]
+    texture = platform_texture(vertices, uvs)
     mesh.triangle(material, (0, 1, 0), *list(zip(vertices, texture)))
     mesh.triangle(
-        'Floor_Side', (0, -1, 0), *[((a, b - depth, c), (a / 5, c / 5)) for a, b, c in vertices]
+        'Floor_Side',
+        (0, -1, 0),
+        *[((a, b - depth, c), uv) for (a, b, c), uv in zip(vertices, texture)],
     )
+
+
+def platform_texture(vertices, uvs):
+    """Preserve five-unit stone tiles and brick scale on an inclined plane."""
+    a, b, c = vertices
+    ab = [b[k] - a[k] for k in range(3)]
+    ac = [c[k] - a[k] for k in range(3)]
+    if abs(ab[1]) + abs(ac[1]) < 1e-12:
+        return uvs if uvs is not None else [(x / 5, z / 5) for x, _, z in vertices]
+    if uvs is None:
+        determinant = ab[0] * ac[2] - ab[2] * ac[0]
+        gx = (ab[1] * ac[2] - ab[2] * ac[1]) / determinant
+        gz = (ab[0] * ac[1] - ab[1] * ac[0]) / determinant
+        scale = math.hypot(1, gx)
+        across = math.sqrt(1 + gx * gx + gz * gz) / scale
+        return [((x * scale + z * gx * gz / scale) / 5, z * across / 5) for x, _, z in vertices]
+    du, dv = ([uvs[i][k] - uvs[0][k] for k in (0, 1)] for i in (1, 2))
+    determinant = du[0] * dv[1] - du[1] * dv[0]
+    if abs(determinant) < 1e-12:
+        return uvs
+    tangent_u = [(ab[k] * dv[1] - ac[k] * du[1]) / determinant for k in range(3)]
+    tangent_v = [(ac[k] * du[0] - ab[k] * dv[0]) / determinant for k in range(3)]
+    # Preserve each material patch's existing layout, adding only slope stretch.
+    scale_u = math.hypot(*tangent_u) / math.hypot(tangent_u[0], tangent_u[2])
+    scale_v = math.hypot(*tangent_v) / math.hypot(tangent_v[0], tangent_v[2])
+    return [(u * scale_u, v * scale_v) for u, v in uvs]
 
 
 def platform_wall(mesh: Mesh, x: float, z: float, a, b, outward, depth: float):

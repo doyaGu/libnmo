@@ -428,10 +428,11 @@ def lay_polygon(layout, index, part, piece, track):
         'path',
         'depth',
         'border',
+        'slope',
     }:
         raise ValueError(
             'floor_polygon accepts outline, holes, ports, supports, entry, '
-            'exit, path, depth and border'
+            'exit, path, depth, border and slope'
         )
     outline = polygon(spec.get('outline'))
     holes = domain(outline, spec.get('holes', []))
@@ -441,6 +442,26 @@ def lay_polygon(layout, index, part, piece, track):
     depth = number(spec.get('depth', WALL), 'polygon depth')
     if not 0.1 <= depth <= 100:
         raise ValueError('polygon depth must be within 0.1..100')
+    gradient = spec.get('slope', 0)
+    if not isinstance(gradient, list):
+        gradient = [gradient, 0]
+    if len(gradient) != 2:
+        raise ValueError('polygon slope needs a forward grade or [forward, right] grades')
+    gradient = tuple(number(value, 'polygon slope') for value in gradient)
+    if math.hypot(*gradient) > 4:
+        raise ValueError('polygon slope magnitude must be at most 4')
+
+    def grades(direction):
+        forward, right = direction
+        return (
+            gradient[0] * forward + gradient[1] * right,
+            -gradient[0] * right + gradient[1] * forward,
+        )
+
+    def floor_section(width, cross_slope):
+        profile = connectors.tilted_profile(Section('floor').profile, width, cross_slope)
+        return Section('floor', width=width, depth=depth, profile=tuple(profile))
+
     signed = sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(outline, outline[1:] + outline[:1]))
 
     def port(value, paths=False):
@@ -522,14 +543,14 @@ def lay_polygon(layout, index, part, piece, track):
     # Reserve 5 units before the platform for a V-to-flat adapter.
     p, d, h = track.p, track.d, track.h
     origin = at(p, d, 5)
-    base = h + RISE
+    base = h + 5 * gradient[0] + RISE
     inlet = _open_entry(
-        layout, part, track, 'floor', Section('floor', width=entry[5], depth=depth), piece
+        layout, part, track, 'floor', floor_section(entry[5], gradient[1]), piece, gradient[0]
     )
 
     def world(v):
         x, z = at(origin, d, *v)
-        return x, base, z
+        return x, base + gradient[0] * v[0] + gradient[1] * v[1], z
 
     for tri in top_triangles:
         part.extras.append((platform_triangle, (0, 0), [world(v) for v in tri], depth))
@@ -565,24 +586,50 @@ def lay_polygon(layout, index, part, piece, track):
             part.extras.append(
                 (platform_wall, (0, 0), world(a), world(b), (normal[0], 0, normal[1]), depth)
             )
-    ex, _, ez = world(leave[2])
+    ex, ey, ez = world(leave[2])
     ed = _direction(leave[3], d)
+    exit_slope, exit_cross = grades(leave[3])
+    exit_height = ey - RISE + 5 * exit_slope
     end = at((ex, ez), ed, 5)
-    part.extras.extend(connectors.platform_mouth(p, d, h, entry[5], depth, distance=inlet.distance))
-    part.extras.extend(connectors.platform_mouth((ex, ez), ed, h, leave[5], depth, leaving=True))
+    part.extras.extend(
+        connectors.platform_mouth(
+            p,
+            d,
+            h,
+            entry[5],
+            depth,
+            distance=inlet.distance,
+            slope=gradient[0],
+            cross_slope=gradient[1],
+        )
+    )
+    part.extras.extend(
+        connectors.platform_mouth(
+            (ex, ez),
+            ed,
+            ey - RISE,
+            leave[5],
+            depth,
+            leaving=True,
+            slope=exit_slope,
+            cross_slope=exit_cross,
+        )
+    )
     main_path = [[world(v)[0], world(v)[2]] for v in route] + [list(end)]
     branch_ports = {}
     for name, value in named.items():
-        bx, _, bz = world(value[2])
+        bx, by, bz = world(value[2])
         direction = _direction(value[3], d)
+        branch_slope, branch_cross = grades(value[3])
         tip = at((bx, bz), direction, 5)
         attachment = replace(
             inlet,
             name=name,
-            position=(tip[0], h, tip[1]),
+            position=(tip[0], by - RISE + 5 * branch_slope, tip[1]),
             heading=direction,
-            section=Section('floor', width=value[5], depth=depth),
-            distance=2.5,
+            section=floor_section(value[5], branch_cross),
+            slope=branch_slope,
+            distance=(5 if branch_cross else 2.5) * math.hypot(1, branch_slope),
         )
         approach = [list(p)] + [[world(v)[0], world(v)[2]] for v in approaches[name]] + [list(tip)]
         branch_ports[name] = {
@@ -592,7 +639,16 @@ def lay_polygon(layout, index, part, piece, track):
             'sector': index,
         }
         part.extras.extend(
-            connectors.platform_mouth((bx, bz), direction, h, value[5], depth, leaving=True)
+            connectors.platform_mouth(
+                (bx, bz),
+                direction,
+                by - RISE,
+                value[5],
+                depth,
+                leaving=True,
+                slope=branch_slope,
+                cross_slope=branch_cross,
+            )
         )
     for branch in piece.get('branches', []):
         name = branch.get('port')
@@ -607,7 +663,7 @@ def lay_polygon(layout, index, part, piece, track):
             (
                 tip,
                 attachment.heading,
-                h,
+                attachment.position[1],
                 grid,
                 branch,
                 'road',
@@ -627,18 +683,20 @@ def lay_polygon(layout, index, part, piece, track):
             'holes': [[world(v) for v in hole] for hole in holes],
             'ports': [inlet.data(), *[value['port'].data() for value in branch_ports.values()]],
             'depth': depth,
+            'slope': list(gradient),
         }
     )
     layout.points += main_path
-    track.p, track.d, track.h = end, ed, h
+    track.p, track.d, track.h = end, ed, exit_height
     track.width, track.floor = leave[5], 'road'
     track.free_port = replace(
         inlet,
         name='exit',
-        position=(end[0], h, end[1]),
+        position=(end[0], exit_height, end[1]),
         heading=ed,
-        section=Section('floor', width=leave[5], depth=depth),
-        distance=2.5,
+        section=floor_section(leave[5], exit_cross),
+        slope=exit_slope,
+        distance=(5 if exit_cross else 2.5) * math.hypot(1, exit_slope),
     )
     layout.platforms[-1]['ports'].append(track.free_port.data())
     supports = spec.get('supports', [])

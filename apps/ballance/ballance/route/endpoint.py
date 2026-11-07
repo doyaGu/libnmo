@@ -51,6 +51,11 @@ def resolve(spec, before, layout):
         port = selected['port']
         position = port.position
         heading = tuple(-v for v in port.heading)
+        if port.slope is not None:
+            expected = -port.slope
+            if 'slope' in spec and abs(slope - expected) > 1e-6:
+                raise ValueError('endpoint slope differs from the named platform port')
+            slope = expected
     dx, dz = before.heading
     x, y, z = (value - origin for value, origin in zip(position, before.position))
     return (

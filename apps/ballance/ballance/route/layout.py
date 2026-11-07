@@ -421,7 +421,16 @@ class Layout:
             if selected is None or selected['used']:
                 raise ValueError(f'branch to {name} needs an unused to_port')
             outward = selected['port']
-            incoming = replace(outward, heading=back_of(outward.heading), slope=0)
+            incoming = replace(
+                outward,
+                heading=back_of(outward.heading),
+                slope=-outward.slope if outward.slope is not None else None,
+                section=replace(
+                    outward.section,
+                    bank=-outward.section.bank,
+                    profile=tuple((-u, y) for u, y in reversed(outward.section.profile)),
+                ),
+            )
             self.connections.append(ports.connect(ports.incoming(self, t), incoming))
             if t.run is not None:
                 sector.rails.runs.append(t.run)

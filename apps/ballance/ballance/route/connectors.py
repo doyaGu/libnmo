@@ -1,5 +1,7 @@
 """Reusable authored transitions and the native platform mouth geometry."""
 
+import math
+
 from ..core.geometry import at
 from ..core.path import number
 from ..kit.floors import RISE
@@ -27,14 +29,12 @@ def compile_paths(spec, before, layout):
     if not docking:
         return [transition(spec, before.section, before=before, layout=layout)]
     end, heading, slope = resolve(spec['endpoint'], before, layout)
-    if abs(slope) > 1e-6:
-        raise ValueError('rail-to-floor endpoint needs a level docking slope')
     rail_spec = {
         **spec,
         'endpoint': {
-            'offset': [end[0] - 5 * heading[0], end[1] - 5 * heading[1], end[2]],
+            'offset': [end[0] - 5 * heading[0], end[1] - 5 * heading[1], end[2] - 5 * slope],
             'heading': list(heading),
-            'slope': 0,
+            'slope': slope,
         },
         'to': {
             'kind': 'rail',
@@ -44,7 +44,9 @@ def compile_paths(spec, before, layout):
         },
     }
     rail_path = transition(rail_spec, before.section, before=before, layout=layout)
-    floor_path = transition({'length': 5, 'to': target}, Section('floor'))
+    floor_path = transition(
+        {'segments': [{'line': [5, 0, 5 * slope]}], 'to': target}, Section('floor')
+    )
     return [rail_path, floor_path]
 
 
@@ -118,7 +120,9 @@ def transition(spec, start, *, before=None, layout=None):
     return f'{start.kind}_path', path
 
 
-def platform_mouth(position, heading, height, width, depth, *, leaving=False, distance=0):
+def platform_mouth(
+    position, heading, height, width, depth, *, leaving=False, distance=0, slope=0, cross_slope=0
+):
     """Five-unit V/flat mouth, with a native 2.5-unit ProfileFlat material cell.
 
     The polygon owns its border and opening; this connector owns the neck's
@@ -126,16 +130,42 @@ def platform_mouth(position, heading, height, width, depth, *, leaving=False, di
     """
     middle, end = at(position, heading, 2.5), at(position, heading, 5)
     a = Ring(position[0], height + (RISE if leaving else 0), position[1], *heading)
-    b = Ring(middle[0], height, middle[1], *heading)
-    c = Ring(end[0], height + (0 if leaving else RISE), end[1], *heading)
+    b = Ring(middle[0], height + 2.5 * slope, middle[1], *heading)
+    c = Ring(end[0], height + 5 * slope + (0 if leaving else RISE), end[1], *heading)
+    run = 2.5 * math.hypot(1, slope)
     if leaving:
-        intervals = ((a, b, FLAT_SECTION, V_SECTION, 0, 1), (b, c, V_SECTION, V_SECTION, 0, 0.5))
+        intervals = (
+            (a, b, FLAT_SECTION, V_SECTION, 0, 1),
+            (b, c, V_SECTION, V_SECTION, 0, run / 5),
+        )
     else:
         intervals = (
-            (a, b, V_SECTION, V_SECTION, distance / 5, (distance + 2.5) / 5),
+            (a, b, V_SECTION, V_SECTION, distance / 5, (distance + run) / 5),
             (b, c, V_SECTION, FLAT_SECTION, 0, 1),
         )
+    if cross_slope:
+        intervals = [
+            (a, b, pa, pb, (distance + i * run) / 5, (distance + (i + 1) * run) / 5)
+            for i, (a, b, pa, pb, _, _) in enumerate(intervals)
+        ]
     return [
-        (sweep, (0, 0), a, b, width, width, pa, pb, va, vb, depth)
+        (
+            sweep,
+            (0, 0),
+            a,
+            b,
+            width,
+            width,
+            tilted_profile(pa, width, cross_slope),
+            tilted_profile(pb, width, cross_slope),
+            va,
+            vb,
+            depth,
+        )
         for a, b, pa, pb, va, vb in intervals
     ]
+
+
+def tilted_profile(profile, width, cross_slope):
+    """A transverse plane gradient expressed in the upright port frame."""
+    return [(fraction, height + fraction * width * cross_slope) for fraction, height in profile]
