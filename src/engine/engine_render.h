@@ -50,6 +50,12 @@ typedef struct eng_mesh_copy {
     /* Its material channels: the file's, then the ones blocks added; each channel's
        uvs (owned) are NULL when it uses the mesh's own */
     ENG_VEC(nmo_engine_channel_t) channels;
+    /* Its faces and material groups once a block changed them (ApplyGlobalMaterial,
+       ReplaceMaterial); NULL: the file's. Each group is its material, 0 for none. */
+    nmo_face_t *faces;
+    nmo_object_id_t *groups;
+    int32_t group_count;
+    uint32_t flags; /* VXMESH_FLAGS as blocks set them (wrap, forced transparency) */
 } eng_mesh_copy_t;
 
 /* A screen mode of the engine's one render driver (4:3, in 16 and 32 bits) */
@@ -242,6 +248,15 @@ int32_t eng_mesh_channel(const eng_mesh_copy_t *copy, nmo_object_id_t material);
 /* CKMesh::AddChannel(material, FALSE): UVs of its own, every face; -1 out of memory */
 int32_t eng_mesh_add_channel(eng_mesh_copy_t *copy, nmo_object_id_t material);
 void eng_mesh_remove_channel(eng_mesh_copy_t *copy, int32_t channel);
+/* CKMesh::ApplyGlobalMaterial: every face in the group of `material`, made when missing.
+   False when `mesh` is none. */
+bool eng_mesh_apply_material(nmo_engine_t *engine, nmo_object_id_t mesh, nmo_object_id_t material);
+/* CKMesh::ReplaceMaterial: the group of `old_material` takes `new_material` (its faces move
+   to that group when it is the first, and to the first when there is no new material). */
+bool eng_mesh_replace_material(nmo_engine_t *engine, nmo_object_id_t mesh,
+                               nmo_object_id_t old_material, nmo_object_id_t new_material);
+/* CKMesh::SetLitMode (VX_PRELITMESH 0, VX_LITMESH 1). False when `mesh` is none. */
+bool eng_mesh_set_lit_mode(nmo_engine_t *engine, nmo_object_id_t mesh, int32_t mode);
 /* Add a draw to the frame being made; NULL out of memory */
 nmo_engine_draw_t *eng_render_push(nmo_engine_t *engine);
 /* A texture with a transparent color: RCKTexture::SetAsCurrent tests alpha > 0 with it */

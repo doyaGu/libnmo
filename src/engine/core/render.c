@@ -85,6 +85,8 @@ void eng_free_render(nmo_engine_t *engine)
             free((void *)copy->channels.data[c].uvs);
         }
         free(copy->channels.data);
+        free(copy->faces);
+        free(copy->groups);
     }
     free(render->mesh_copies.data);
     free(render->camera_states.data);
@@ -463,6 +465,11 @@ eng_material_t *eng_material_new(nmo_engine_t *engine, nmo_object_id_t id)
 
 bool eng_texture_keyed(const nmo_engine_t *engine, nmo_object_id_t texture)
 {
+    for (size_t i = 0; texture != 0 && i < engine->media.textures.count; i++) {
+        if (engine->media.textures.data[i].id == texture) {
+            return engine->media.textures.data[i].transparent;
+        }
+    }
     nmo_object_t *object = texture != 0 ? eng_find_object(engine, texture) : NULL;
     const nmo_texture_state_t *state =
         object != NULL && nmo_object_get_class_id(object) == NMO_CID_TEXTURE
@@ -551,6 +558,7 @@ static eng_mesh_copy_t *eng_make_mesh_copy(nmo_engine_t *engine, nmo_object_id_t
     copy->mesh = mesh;
     copy->vertices = vertices;
     copy->prelit = (state->flags & VXMESH_PRELITMODE) != 0;
+    copy->flags = state->flags;
     copy->version = ++engine->render.mesh_version;
     /* The file's channels: a channel without UVs of its own uses the mesh's (VXCHANNEL_SAMEUV) */
     for (uint32_t c = 0; c < state->material_channel_count; c++) {
@@ -651,11 +659,13 @@ bool nmo_engine_mesh(const nmo_engine_t *engine, nmo_object_id_t mesh, nmo_engin
     out->channels = copy != NULL ? copy->channels.data : NULL;
     out->face_count = (int32_t)state->face_count;
     out->indices = state->face_vertex_indices;
-    out->faces = state->faces;
-    out->material_count = (int32_t)state->material_group_count;
+    out->faces = copy != NULL && copy->faces != NULL ? copy->faces : state->faces;
+    out->material_count =
+        copy != NULL && copy->groups != NULL ? copy->group_count : (int32_t)state->material_group_count;
     out->prelit = copy != NULL ? copy->prelit : (state->flags & VXMESH_PRELITMODE) != 0;
-    out->wrap_u = (state->flags & VXMESH_WRAPU) != 0;
-    out->wrap_v = (state->flags & VXMESH_WRAPV) != 0;
+    uint32_t flags = copy != NULL ? copy->flags : state->flags;
+    out->wrap_u = (flags & VXMESH_WRAPU) != 0;
+    out->wrap_v = (flags & VXMESH_WRAPV) != 0;
     return true;
 }
 
@@ -666,6 +676,10 @@ nmo_object_id_t nmo_engine_mesh_material(const nmo_engine_t *engine, nmo_object_
     if (made != NULL) {
         return group >= 0 && group < made->material_count ? made->materials[group] : 0;
     }
+    const eng_mesh_copy_t *copy = engine != NULL ? eng_mesh_copy_find(engine, mesh) : NULL;
+    if (copy != NULL && copy->groups != NULL) {
+        return group >= 0 && group < copy->group_count ? copy->groups[group] : 0;
+    }
     const nmo_mesh_state_t *state = engine != NULL ? eng_mesh_state(engine, mesh) : NULL;
     if (state == NULL || group < 0 || (uint32_t)group >= state->material_group_count) {
         return 0;
@@ -673,16 +687,159 @@ nmo_object_id_t nmo_engine_mesh_material(const nmo_engine_t *engine, nmo_object_
     return eng_object_ref(engine, mesh, &state->material_groups[group].material);
 }
 
+/*
+ * A mesh's faces and group materials as blocks change them: a made mesh's
+ * own, or a file mesh copy's, copied from the file the first time.
+ */
+typedef struct eng_mesh_groups {
+    nmo_face_t *faces;
+    int32_t face_count;
+    nmo_object_id_t **materials;
+    int32_t *count;
+    uint32_t *version; /* NULL for a made mesh */
+} eng_mesh_groups_t;
+
+static bool eng_mesh_groups(nmo_engine_t *engine, nmo_object_id_t mesh, eng_mesh_groups_t *out)
+{
+    eng_mesh_t *made = eng_render_mesh(engine, mesh);
+    if (made != NULL) {
+        *out = (eng_mesh_groups_t){made->faces, made->face_count, &made->materials, &made->material_count,
+                                   NULL};
+        return true;
+    }
+    const nmo_mesh_state_t *state = eng_mesh_state(engine, mesh);
+    eng_mesh_copy_t *copy = state != NULL ? eng_mesh_copy(engine, mesh) : NULL;
+    if (copy == NULL) {
+        return false;
+    }
+    if (copy->faces == NULL && state->face_count > 0) {
+        copy->faces = (nmo_face_t *)malloc(state->face_count * sizeof(nmo_face_t));
+        if (copy->faces == NULL) {
+            return false;
+        }
+        memcpy(copy->faces, state->faces, state->face_count * sizeof(nmo_face_t));
+    }
+    if (copy->groups == NULL) {
+        uint32_t count = state->material_group_count;
+        copy->groups = (nmo_object_id_t *)calloc(count > 0 ? count : 1, sizeof(nmo_object_id_t));
+        if (copy->groups == NULL) {
+            return false;
+        }
+        for (uint32_t g = 0; g < count; g++) {
+            copy->groups[g] = eng_object_ref(engine, mesh, &state->material_groups[g].material);
+        }
+        copy->group_count = (int32_t)count;
+    }
+    *out = (eng_mesh_groups_t){copy->faces, (int32_t)state->face_count, &copy->groups, &copy->group_count,
+                               &copy->version};
+    return true;
+}
+
+/* CKMesh::GetMaterialGroupIndex: the first group of `material`, made when `create`; -1 for none */
+static int32_t eng_mesh_group_of(eng_mesh_groups_t *groups, nmo_object_id_t material, bool create)
+{
+    for (int32_t g = 0; g < *groups->count; g++) {
+        if ((*groups->materials)[g] == material) {
+            return g;
+        }
+    }
+    if (!create) {
+        return -1;
+    }
+    nmo_object_id_t *grown =
+        (nmo_object_id_t *)realloc(*groups->materials, ((size_t)*groups->count + 1u) * sizeof(nmo_object_id_t));
+    if (grown == NULL) {
+        return -1;
+    }
+    grown[*groups->count] = material;
+    *groups->materials = grown;
+    return (*groups->count)++;
+}
+
+static void eng_mesh_groups_changed(nmo_engine_t *engine, const eng_mesh_groups_t *groups)
+{
+    if (groups->version != NULL) {
+        *groups->version = ++engine->render.mesh_version;
+    }
+}
+
+bool eng_mesh_apply_material(nmo_engine_t *engine, nmo_object_id_t mesh, nmo_object_id_t material)
+{
+    eng_mesh_groups_t groups;
+    if (!eng_mesh_groups(engine, mesh, &groups)) {
+        return false;
+    }
+    int32_t group = eng_mesh_group_of(&groups, material, true);
+    for (int32_t f = 0; group >= 0 && f < groups.face_count; f++) {
+        groups.faces[f].material_group_idx = (uint32_t)group;
+    }
+    eng_mesh_groups_changed(engine, &groups);
+    return true;
+}
+
+bool eng_mesh_replace_material(nmo_engine_t *engine, nmo_object_id_t mesh, nmo_object_id_t old_material,
+                               nmo_object_id_t new_material)
+{
+    eng_mesh_groups_t groups;
+    if (!eng_mesh_groups(engine, mesh, &groups)) {
+        return false;
+    }
+    int32_t old_group = old_material != new_material ? eng_mesh_group_of(&groups, old_material, false) : -1;
+    if (old_group == 0) {
+        int32_t group = eng_mesh_group_of(&groups, new_material, true);
+        for (int32_t f = 0; group >= 0 && f < groups.face_count; f++) {
+            if (groups.faces[f].material_group_idx == 0) {
+                groups.faces[f].material_group_idx = (uint32_t)group;
+            }
+        }
+    } else if (old_group > 0 && new_material != 0) {
+        (*groups.materials)[old_group] = new_material;
+    } else if (old_group > 0) {
+        for (int32_t f = 0; f < groups.face_count; f++) {
+            uint32_t *index = &groups.faces[f].material_group_idx;
+            if (*index == (uint32_t)old_group) {
+                *index = 0;
+            } else if (*index > (uint32_t)old_group) {
+                (*index)--;
+            }
+        }
+        memmove(&(*groups.materials)[old_group], &(*groups.materials)[old_group + 1],
+                (size_t)(*groups.count - old_group - 1) * sizeof(nmo_object_id_t));
+        (*groups.count)--;
+    }
+    if (old_group >= 0) {
+        eng_mesh_groups_changed(engine, &groups);
+    }
+    return true;
+}
+
+bool eng_mesh_set_lit_mode(nmo_engine_t *engine, nmo_object_id_t mesh, int32_t mode)
+{
+    eng_mesh_t *made = eng_render_mesh(engine, mesh);
+    if (made != NULL) {
+        made->prelit = mode == 0;
+        return true;
+    }
+    eng_mesh_copy_t *copy = eng_mesh_copy(engine, mesh);
+    if (copy == NULL) {
+        return false;
+    }
+    copy->prelit = mode == 0;
+    copy->version = ++engine->render.mesh_version;
+    return true;
+}
+
 /* CKMesh::IsTransparent: forced, or a material group's material blends */
 static bool eng_mesh_transparent(nmo_engine_t *engine, nmo_object_id_t mesh,
                                  const nmo_mesh_state_t *state)
 {
-    if (state->flags & VXMESH_FORCETRANSPARENCY) {
+    const eng_mesh_copy_t *copy = eng_mesh_copy_find(engine, mesh);
+    if ((copy != NULL ? copy->flags : state->flags) & VXMESH_FORCETRANSPARENCY) {
         return true;
     }
-    for (uint32_t g = 0; g < state->material_group_count; g++) {
-        eng_material_t *material = eng_material(
-            engine, eng_object_ref(engine, mesh, &state->material_groups[g].material));
+    int32_t count = copy != NULL && copy->groups != NULL ? copy->group_count : (int32_t)state->material_group_count;
+    for (int32_t g = 0; g < count; g++) {
+        eng_material_t *material = eng_material(engine, nmo_engine_mesh_material(engine, mesh, g));
         if (material != NULL && material->desc.alpha_blend) {
             return true;
         }
@@ -998,6 +1155,31 @@ eng_light_t *eng_light(nmo_engine_t *engine, nmo_object_id_t id)
     return light;
 }
 
+bool eng_set_light_target(nmo_engine_t *engine, nmo_object_id_t id, nmo_object_id_t target)
+{
+    if (eng_typed_state(engine, id, CKPGUID_TARGETLIGHT) == NULL) {
+        return false; /* CKLight::SetTarget does nothing */
+    }
+    eng_light_t *light = eng_light(engine, id);
+    if (light == NULL || target == id) {
+        return light != NULL;
+    }
+    int32_t old = light->target != 0 ? eng_entity_index(engine, light->target) : -1;
+    if (old >= 0) {
+        uint32_t *flags = &engine->entities.data[old].entity_flags;
+        *flags = (*flags & ~(uint32_t)CK_3DENTITY_TARGETLIGHT) | CK_3DENTITY_FRAME;
+    }
+    int32_t index = target != 0 ? eng_entity_index(engine, target) : -1;
+    if (index >= 0) {
+        uint32_t *flags = &engine->entities.data[index].entity_flags;
+        *flags = (*flags | CK_3DENTITY_TARGETLIGHT) & ~(uint32_t)CK_3DENTITY_FRAME;
+        light->target = target;
+    } else {
+        light->target = 0;
+    }
+    return true;
+}
+
 /* ============================================================================
  * 2D entities
  * ============================================================================ */
@@ -1249,31 +1431,6 @@ static void eng_render_2d_root(nmo_engine_t *engine, bool background, float widt
         eng_render_2d(engine, roots[i], width, height);
     }
     free(roots);
-}
-
-bool eng_set_light_target(nmo_engine_t *engine, nmo_object_id_t id, nmo_object_id_t target)
-{
-    if (eng_typed_state(engine, id, CKPGUID_TARGETLIGHT) == NULL) {
-        return false; /* CKLight::SetTarget does nothing */
-    }
-    eng_light_t *light = eng_light(engine, id);
-    if (light == NULL || target == id) {
-        return light != NULL;
-    }
-    int32_t old = light->target != 0 ? eng_entity_index(engine, light->target) : -1;
-    if (old >= 0) {
-        uint32_t *flags = &engine->entities.data[old].entity_flags;
-        *flags = (*flags & ~(uint32_t)CK_3DENTITY_TARGETLIGHT) | CK_3DENTITY_FRAME;
-    }
-    int32_t index = target != 0 ? eng_entity_index(engine, target) : -1;
-    if (index >= 0) {
-        uint32_t *flags = &engine->entities.data[index].entity_flags;
-        *flags = (*flags | CK_3DENTITY_TARGETLIGHT) & ~(uint32_t)CK_3DENTITY_FRAME;
-        light->target = target;
-    } else {
-        light->target = 0;
-    }
-    return true;
 }
 
 /* ============================================================================
@@ -1587,13 +1744,13 @@ static uint8_t *eng_decode_slot(nmo_engine_t *engine, const nmo_texture_state_t 
     return pixels;
 }
 
-/* CKBitmapData's transparent color (black unless saved): those pixels are clear */
-static void eng_key_image(const nmo_texture_state_t *state, uint8_t *rgba, int w, int h)
+/* CKBitmapData's transparent color (black unless set): those pixels are clear */
+static void eng_key_image(const eng_texture_t *texture, uint8_t *rgba, int w, int h)
 {
-    if (!state->is_transparent || rgba == NULL) {
+    if (!texture->transparent || rgba == NULL) {
         return;
     }
-    uint32_t key = state->has_transparent_color ? state->transparent_color : 0u;
+    uint32_t key = texture->transparent_color;
     uint8_t r = (uint8_t)(key >> 16), g = (uint8_t)(key >> 8), b = (uint8_t)key;
     size_t count = (size_t)w * (size_t)h;
     for (size_t i = 0; i < count; i++) {
@@ -1619,6 +1776,15 @@ void eng_texture_changed(nmo_engine_t *engine, nmo_object_id_t texture)
     eng_image_t *image = eng_find_image(engine, texture);
     if (image != NULL) {
         image->slot = -1;
+    }
+    /* Its user mipmap levels are read again, keyed as the image now is */
+    for (size_t i = 0; i < engine->render.user_mipmaps.count; i++) {
+        eng_image_t *level = &engine->render.user_mipmaps.data[i];
+        if (level->texture == texture) {
+            free(level->rgba);
+            level->rgba = NULL;
+            level->texture = 0;
+        }
     }
 }
 
@@ -1675,7 +1841,7 @@ bool nmo_engine_texture_image(nmo_engine_t *engine, nmo_object_id_t texture,
         if (image->rgba != NULL) {
             image->width = w;
             image->height = h;
-            eng_key_image(state, image->rgba, w, h);
+            eng_key_image(slots, image->rgba, w, h);
         }
     }
     out->width = image->width;
@@ -1742,7 +1908,10 @@ bool nmo_engine_texture_user_mipmap(nmo_engine_t *engine, nmo_object_id_t textur
         image->height = rs->height;
         image->rgba = rgba;
         /* RCKTexture::Restore keys the levels as it keys the image */
-        eng_key_image(state, rgba, rs->width, rs->height);
+        const eng_texture_t *keys = eng_texture(engine, texture);
+        if (keys != NULL) {
+            eng_key_image(keys, rgba, rs->width, rs->height);
+        }
     }
     out->width = image->width;
     out->height = image->height;

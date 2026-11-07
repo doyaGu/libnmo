@@ -1,0 +1,291 @@
+/**
+ * @file test_engine_materials.c
+ * @brief Materials.dll blocks run in graphs: what they leave on the
+ *        materials, meshes and textures the engine keeps.
+ */
+
+#include "engine_fixture.h"
+#include "../../src/engine/engine_internal.h"
+
+#include "core/nmo_arena.h"
+#include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_mesh_schemas.h"
+#include "object/nmo_ref.h"
+
+#define GUID_SET_AMBIENT NMO_GUID(0xaaaaaaaa, 0xaeae1287)
+#define GUID_SET_SPECULAR NMO_GUID(0x20202020, 0x30303030)
+#define GUID_SET_SPECULAR_POWER NMO_GUID(0x45454545, 0x15151515)
+#define GUID_SET_BOTH_SIDED NMO_GUID(0x76319845, 0x48593399)
+#define GUID_SET_FILL_MODE NMO_GUID(0xc5c4c3c2, 0x8c8c8c8c)
+#define GUID_SET_SHADE_MODE NMO_GUID(0x95195195, 0x98795198)
+#define GUID_SET_SRC_BLEND NMO_GUID(0x40234ddc, 0x012da700)
+#define GUID_SET_DEST_BLEND NMO_GUID(0x036d1a87, 0xdf0a670c)
+#define GUID_SET_TEXTURE_MAG NMO_GUID(0xda495631, 0xde155488)
+#define GUID_SET_TEXTURE_MIN NMO_GUID(0x12589321, 0x32587123)
+#define GUID_SET_COLOR_KEY NMO_GUID(0x41bb5af1, 0x01eb26e9)
+#define GUID_SET_MATERIAL NMO_GUID(0x37865d50, 0x2e285fab)
+#define GUID_SET_LIGHTING_MODE NMO_GUID(0x45899665, 0x45211254)
+#define GUID_SET_WRAP_MODE NMO_GUID(0x12a5498d, 0x65657512)
+#define GUID_SET_TRANSPARENT NMO_GUID(0x2fc37564, 0x299a2c9d)
+#define GUID_ADD_CHANNEL NMO_GUID(0x89658965, 0x36654789)
+#define GUID_ACTIVATE_CHANNEL NMO_GUID(0x55566666, 0x66666444)
+#define GUID_SET_CHANNEL_SRC_BLEND NMO_GUID(0x3b9b0e7f, 0xb1316800)
+#define GUID_SET_CHANNEL_MATERIAL NMO_GUID(0x2e0a6b92, 0x366a3f9b)
+#define GUID_REMOVE_CHANNEL NMO_GUID(0x4a462e58, 0x022e369b)
+
+#define STEP_MS 10.0f
+
+static void input_float(engine_fixture_t *f, nmo_object_id_t pin, float value)
+{
+    fixture_input_value(f, pin, &value, sizeof(value));
+}
+
+/* A block acting on `object`, run `delay` frames after the script starts (0: at once) */
+static nmo_object_id_t block_on(engine_fixture_t *f, nmo_guid_t guid, const char *name,
+                                nmo_object_id_t object, nmo_object_id_t after, uint32_t delay)
+{
+    nmo_object_id_t id = fixture_block(f, guid, name);
+    nmo_object_id_t target = id != 0 ? fixture_target(f, id) : 0;
+    if (target == 0) {
+        return 0;
+    }
+    fixture_input_int(f, target, (int32_t)object);
+    fixture_link(f, after != 0 ? BLOCK_OUT(f, after, 0) : f->script_in, BLOCK_IN(f, id, 0), delay);
+    return id;
+}
+
+static void start(engine_fixture_t *f)
+{
+    fixture_commit(f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f->engine, NMO_ENGINE_START_ALL));
+}
+
+static void step(engine_fixture_t *f, int frames)
+{
+    for (int i = 0; i < frames; i++) {
+        ASSERT_EQ(NMO_OK, nmo_engine_step(f->engine, STEP_MS));
+    }
+}
+
+/*
+ * A 3D object whose mesh is a quad of two faces: the first in group 0 (no
+ * material), the second in group 1 (`material`).
+ */
+static nmo_object_id_t quad_object(engine_fixture_t *f, nmo_object_id_t material, nmo_object_id_t *out_mesh)
+{
+    nmo_arena_t *arena = nmo_session_get_arena(f->session);
+    nmo_object_id_t object = fixture_create(f, NMO_CID_3DOBJECT, "Quad");
+    nmo_object_id_t mesh = fixture_create(f, NMO_CID_MESH, "Quad Mesh");
+    nmo_3dentity_state_t *entity = (nmo_3dentity_state_t *)fixture_state(f, object);
+    nmo_mesh_state_t *state = (nmo_mesh_state_t *)fixture_state(f, mesh);
+    if (entity == NULL || state == NULL) {
+        return 0;
+    }
+    state->vertices = (nmo_vertex_t *)nmo_arena_alloc(arena, 4u * sizeof(nmo_vertex_t), _Alignof(nmo_vertex_t));
+    state->faces = (nmo_face_t *)nmo_arena_alloc(arena, 2u * sizeof(nmo_face_t), _Alignof(nmo_face_t));
+    state->face_vertex_indices = (uint16_t *)nmo_arena_alloc(arena, 6u * sizeof(uint16_t), _Alignof(uint16_t));
+    state->material_groups = (nmo_material_group_t *)nmo_arena_alloc(arena, 2u * sizeof(nmo_material_group_t),
+                                                                      _Alignof(nmo_material_group_t));
+    if (state->vertices == NULL || state->faces == NULL || state->face_vertex_indices == NULL ||
+        state->material_groups == NULL) {
+        return 0;
+    }
+    memset(state->vertices, 0, 4u * sizeof(nmo_vertex_t));
+    for (int i = 0; i < 4; i++) {
+        state->vertices[i].position = (nmo_vector_t){(float)(i & 1), (float)(i >> 1), 0.0f};
+        state->vertices[i].uv = (nmo_vector2_t){(float)(i & 1), (float)(i >> 1)};
+    }
+    static const uint16_t indices[6] = {0, 1, 2, 1, 3, 2};
+    memcpy(state->face_vertex_indices, indices, sizeof(indices));
+    memset(state->faces, 0, 2u * sizeof(nmo_face_t));
+    state->faces[1].material_group_idx = 1;
+    memset(state->material_groups, 0, 2u * sizeof(nmo_material_group_t));
+    state->material_groups[1].material = nmo_ref_from_id(material);
+    state->vertex_count = 4;
+    state->face_count = 2;
+    state->material_group_count = 2;
+    state->has_material_groups = 1;
+    entity->current_mesh = nmo_ref_from_id(mesh);
+    *out_mesh = mesh;
+    return object;
+}
+
+TEST(engine_materials, setters_change_the_material_the_engine_keeps)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t material = fixture_create(&f, NMO_CID_MATERIAL, "Material");
+    ASSERT_TRUE(material != 0);
+    nmo_object_id_t ambient = block_on(&f, GUID_SET_AMBIENT, "Set Ambient", material, 0, 0);
+    nmo_object_id_t specular = block_on(&f, GUID_SET_SPECULAR, "Set Specular", material, 0, 0);
+    nmo_object_id_t sided = block_on(&f, GUID_SET_BOTH_SIDED, "Set Both Sided", material, 0, 0);
+    nmo_object_id_t fill = block_on(&f, GUID_SET_FILL_MODE, "Set Fill Mode", material, 0, 0);
+    nmo_object_id_t shade = block_on(&f, GUID_SET_SHADE_MODE, "Set Shade Mode", material, 0, 0);
+    nmo_object_id_t src = block_on(&f, GUID_SET_SRC_BLEND, "Set Src Blend", material, 0, 0);
+    nmo_object_id_t dest = block_on(&f, GUID_SET_DEST_BLEND, "Set Dest Blend", material, 0, 0);
+    nmo_object_id_t mag = block_on(&f, GUID_SET_TEXTURE_MAG, "Set Texture Mag", material, 0, 0);
+    nmo_object_id_t min = block_on(&f, GUID_SET_TEXTURE_MIN, "Set Texture Min", material, 0, 0);
+    /* A frame later the obsolete power setter overrides Set Specular's */
+    nmo_object_id_t power = block_on(&f, GUID_SET_SPECULAR_POWER, "Set Specular Power", material, specular, 1);
+    ASSERT_TRUE(ambient != 0 && specular != 0 && sided != 0 && fill != 0 && shade != 0 && src != 0 &&
+                dest != 0 && mag != 0 && min != 0 && power != 0);
+    const float ambient_color[4] = {0.25f, 0.5f, 0.75f, 1.0f};
+    const float specular_color[4] = {1.0f, 0.5f, 0.0f, 1.0f};
+    fixture_input_value(&f, BLOCK_PIN(&f, ambient, 0), ambient_color, sizeof(ambient_color));
+    fixture_input_value(&f, BLOCK_PIN(&f, specular, 0), specular_color, sizeof(specular_color));
+    input_float(&f, BLOCK_PIN(&f, specular, 1), 8.0f);
+    fixture_input_int(&f, BLOCK_PIN(&f, sided, 0), 1);
+    fixture_input_int(&f, BLOCK_PIN(&f, fill, 0), VXFILL_POINT);
+    fixture_input_int(&f, BLOCK_PIN(&f, shade, 0), VXSHADE_GOURAUD);
+    fixture_input_int(&f, BLOCK_PIN(&f, src, 0), VXBLEND_SRCALPHA);
+    fixture_input_int(&f, BLOCK_PIN(&f, dest, 0), VXBLEND_INVSRCALPHA);
+    fixture_input_int(&f, BLOCK_PIN(&f, mag, 0), VXTEXTUREFILTER_NEAREST);
+    fixture_input_int(&f, BLOCK_PIN(&f, min, 0), VXTEXTUREFILTER_MIPLINEAR);
+    input_float(&f, BLOCK_PIN(&f, power, 0), 2.0f);
+    start(&f);
+
+    step(&f, 1);
+    nmo_engine_material_t desc;
+    ASSERT_TRUE(nmo_engine_material(f.engine, material, &desc));
+    ASSERT_FLOAT_EQ(0.5f, desc.ambient[1], 0.0f);
+    ASSERT_FLOAT_EQ(0.5f, desc.specular[1], 0.0f);
+    ASSERT_FLOAT_EQ(8.0f, desc.power, 0.0f);
+    ASSERT_TRUE(desc.two_sided);
+    ASSERT_EQ(VXFILL_POINT, desc.fill_mode);
+    ASSERT_EQ(VXSHADE_GOURAUD, desc.shade_mode);
+    ASSERT_EQ(VXBLEND_SRCALPHA, desc.source_blend);
+    ASSERT_EQ(VXBLEND_INVSRCALPHA, desc.dest_blend);
+    ASSERT_EQ(VXTEXTUREFILTER_NEAREST, desc.mag_filter);
+    ASSERT_EQ(VXTEXTUREFILTER_MIPLINEAR, desc.min_filter);
+
+    step(&f, 2);
+    ASSERT_TRUE(nmo_engine_material(f.engine, material, &desc));
+    ASSERT_FLOAT_EQ(2.0f, desc.power, 0.0f);
+    fixture_end(&f);
+}
+
+TEST(engine_materials, set_material_replaces_then_applies_and_mesh_flags_follow)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t first = fixture_create(&f, NMO_CID_MATERIAL, "First");
+    nmo_object_id_t second = fixture_create(&f, NMO_CID_MATERIAL, "Second");
+    nmo_object_id_t mesh = 0;
+    nmo_object_id_t quad = quad_object(&f, first, &mesh);
+    ASSERT_TRUE(first != 0 && second != 0 && quad != 0);
+
+    /* Frame 1: Second replaces First in group 1; frame 2: First on every face, in a new group */
+    nmo_object_id_t replace = block_on(&f, GUID_SET_MATERIAL, "Set Material", quad, 0, 0);
+    nmo_object_id_t apply = block_on(&f, GUID_SET_MATERIAL, "Set Material", quad, replace, 1);
+    nmo_object_id_t wrap = block_on(&f, GUID_SET_WRAP_MODE, "Set Wrap Mode", quad, 0, 0);
+    nmo_object_id_t lit = block_on(&f, GUID_SET_LIGHTING_MODE, "Set Lighting Mode", quad, 0, 0);
+    nmo_object_id_t transparent = fixture_block(&f, GUID_SET_TRANSPARENT, "Set Transparent");
+    ASSERT_TRUE(replace != 0 && apply != 0 && wrap != 0 && lit != 0 && transparent != 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, replace, 0), (int32_t)second);
+    fixture_input_int(&f, BLOCK_PIN(&f, replace, 1), (int32_t)first);
+    fixture_input_int(&f, BLOCK_PIN(&f, apply, 0), (int32_t)first);
+    fixture_input_int(&f, BLOCK_PIN(&f, wrap, 0), VXTEXTUREWRAP_V);
+    fixture_input_int(&f, BLOCK_PIN(&f, lit, 0), VX_PRELITMESH);
+    fixture_input_int(&f, fixture_target(&f, transparent), (int32_t)mesh);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, transparent, 0), 0);
+    start(&f);
+
+    step(&f, 1);
+    nmo_engine_mesh_t desc;
+    ASSERT_TRUE(nmo_engine_mesh(f.engine, mesh, &desc));
+    ASSERT_EQ(2, desc.material_count);
+    ASSERT_EQ(1u, desc.faces[1].material_group_idx);
+    ASSERT_EQ(second, nmo_engine_mesh_material(f.engine, mesh, 1));
+    ASSERT_TRUE(!desc.wrap_u && desc.wrap_v);
+    ASSERT_TRUE(desc.prelit);
+    const eng_mesh_copy_t *copy = eng_mesh_copy_find(f.engine, mesh);
+    ASSERT_NOT_NULL(copy);
+    ASSERT_TRUE((copy->flags & VXMESH_FORCETRANSPARENCY) != 0);
+
+    step(&f, 2);
+    ASSERT_TRUE(nmo_engine_mesh(f.engine, mesh, &desc));
+    ASSERT_EQ(3, desc.material_count);
+    ASSERT_EQ(2u, desc.faces[0].material_group_idx);
+    ASSERT_EQ(2u, desc.faces[1].material_group_idx);
+    ASSERT_EQ(first, nmo_engine_mesh_material(f.engine, mesh, 2));
+    ASSERT_EQ(second, nmo_engine_mesh_material(f.engine, mesh, 1));
+    fixture_end(&f);
+}
+
+TEST(engine_materials, channel_blocks_add_change_and_remove_a_channel)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t first = fixture_create(&f, NMO_CID_MATERIAL, "First");
+    nmo_object_id_t second = fixture_create(&f, NMO_CID_MATERIAL, "Second");
+    nmo_object_id_t mesh = 0;
+    nmo_object_id_t quad = quad_object(&f, first, &mesh);
+    ASSERT_TRUE(first != 0 && second != 0 && quad != 0);
+
+    nmo_object_id_t add = block_on(&f, GUID_ADD_CHANNEL, "Add Channel", mesh, 0, 0);
+    nmo_object_id_t blend = block_on(&f, GUID_SET_CHANNEL_SRC_BLEND, "Set Channel Src Blend", mesh, add, 1);
+    nmo_object_id_t off = block_on(&f, GUID_ACTIVATE_CHANNEL, "Activate Channel", mesh, add, 1);
+    nmo_object_id_t swap = block_on(&f, GUID_SET_CHANNEL_MATERIAL, "Set Channel Material", mesh, add, 1);
+    nmo_object_id_t remove = block_on(&f, GUID_REMOVE_CHANNEL, "Remove Channel", mesh, swap, 1);
+    ASSERT_TRUE(add != 0 && blend != 0 && off != 0 && swap != 0 && remove != 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, add, 0), (int32_t)first);
+    fixture_input_int(&f, BLOCK_PIN(&f, blend, 1), VXBLEND_ONE);
+    fixture_input_int(&f, BLOCK_PIN(&f, swap, 1), (int32_t)second);
+    fixture_input_int(&f, BLOCK_PIN(&f, remove, 1), (int32_t)second);
+    start(&f);
+
+    step(&f, 1);
+    int32_t channel = -1;
+    read_value(&f, BLOCK_POUT(&f, add, 0), &channel, sizeof(channel));
+    ASSERT_EQ(0, channel);
+    nmo_engine_mesh_t desc;
+    ASSERT_TRUE(nmo_engine_mesh(f.engine, mesh, &desc));
+    ASSERT_EQ(1, desc.channel_count);
+    ASSERT_EQ(first, desc.channels[0].material);
+    ASSERT_TRUE(desc.channels[0].active);
+    ASSERT_NOT_NULL(desc.channels[0].uvs);
+    ASSERT_FLOAT_EQ(1.0f, desc.channels[0].uvs[3 * 2 + 1], 0.0f);
+
+    step(&f, 1);
+    ASSERT_TRUE(nmo_engine_mesh(f.engine, mesh, &desc));
+    ASSERT_EQ(1, desc.channel_count);
+    ASSERT_EQ(VXBLEND_ONE, desc.channels[0].source_blend);
+    ASSERT_TRUE(!desc.channels[0].active);
+    ASSERT_EQ(second, desc.channels[0].material);
+
+    step(&f, 1);
+    ASSERT_TRUE(nmo_engine_mesh(f.engine, mesh, &desc));
+    ASSERT_EQ(0, desc.channel_count);
+    fixture_end(&f);
+}
+
+TEST(engine_materials, set_color_key_keys_the_texture)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t texture = fixture_create(&f, NMO_CID_TEXTURE, "Texture");
+    ASSERT_TRUE(texture != 0);
+    nmo_object_id_t key = block_on(&f, GUID_SET_COLOR_KEY, "Set Color Key", texture, 0, 0);
+    nmo_object_id_t unkey = block_on(&f, GUID_SET_COLOR_KEY, "Set Color Key", texture, key, 1);
+    ASSERT_TRUE(key != 0 && unkey != 0);
+    const float magenta[4] = {1.0f, 0.0f, 1.0f, 1.0f};
+    fixture_input_value(&f, BLOCK_PIN(&f, key, 0), magenta, sizeof(magenta));
+    fixture_input_int(&f, BLOCK_PIN(&f, unkey, 1), 0);
+    start(&f);
+
+    step(&f, 1);
+    ASSERT_TRUE(eng_texture_keyed(f.engine, texture));
+    ASSERT_EQ(0xffff00ffu, eng_texture(f.engine, texture)->transparent_color);
+    /* Without a color of its own, the input's default: clear black */
+    step(&f, 2);
+    ASSERT_TRUE(!eng_texture_keyed(f.engine, texture));
+    ASSERT_EQ(0u, eng_texture(f.engine, texture)->transparent_color);
+    fixture_end(&f);
+}
+
+TEST_MAIN_BEGIN()
+    REGISTER_TEST(engine_materials, setters_change_the_material_the_engine_keeps);
+    REGISTER_TEST(engine_materials, set_material_replaces_then_applies_and_mesh_flags_follow);
+    REGISTER_TEST(engine_materials, channel_blocks_add_change_and_remove_a_channel);
+    REGISTER_TEST(engine_materials, set_color_key_keys_the_texture);
+TEST_MAIN_END()

@@ -12,9 +12,11 @@
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "type/nmo_object_guids.h"
 #include "type/nmo_type_guids.h"
+#include "object/nmo_class_ids.h"
 #include "type/nmo_type_query.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 /*
  * Change Texture Video Format: the texture's format in video memory. The
@@ -275,6 +277,17 @@ static uint32_t color_argb(const float c[4])
     return argb;
 }
 
+/* The current mesh of 3D entity `id`; 0 when it has none or is no 3D entity. */
+static nmo_object_id_t entity_mesh(nmo_engine_t *engine, nmo_object_id_t id)
+{
+    nmo_object_t *object = id != 0 ? eng_find_object(engine, id) : NULL;
+    const nmo_3dentity_state_t *state =
+        object != NULL ? (const nmo_3dentity_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
+                             engine->types, object, CKPGUID_3DENTITY)
+                       : NULL;
+    return state != NULL ? eng_object_ref(engine, id, &state->current_mesh) : 0;
+}
+
 /*
  * Set Prelit Color: the target's current mesh becomes prelit, every vertex
  * the Filtering Color (the Additional Color is its specular, which the
@@ -284,15 +297,7 @@ static int bb_set_prelit_color(blk_t *b)
 {
     nmo_engine_t *engine = b->engine;
     nmo_object_id_t target = nmo_engine_block_target(b);
-    nmo_object_t *object = target != 0 ? eng_find_object(engine, target) : NULL;
-    const nmo_3dentity_state_t *state =
-        object != NULL ? (const nmo_3dentity_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
-                             engine->types, object, CKPGUID_3DENTITY)
-                       : NULL;
-    if (state == NULL) {
-        return NMO_ENGINE_BR_OWNERERROR;
-    }
-    eng_mesh_copy_t *mesh = eng_mesh_copy(engine, eng_object_ref(engine, target, &state->current_mesh));
+    eng_mesh_copy_t *mesh = eng_mesh_copy(engine, entity_mesh(engine, target));
     nmo_engine_mesh_t desc;
     if (mesh == NULL || !nmo_engine_mesh(engine, mesh->mesh, &desc)) {
         return NMO_ENGINE_BR_OWNERERROR;
@@ -344,6 +349,388 @@ static int bb_texture_scroller(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+
+/* The target material; its change is reported as an effect by material_done. */
+static eng_material_t *target_material(blk_t *b)
+{
+    return eng_material(b->engine, nmo_engine_block_target(b));
+}
+
+static int material_done(blk_t *b, const eng_material_t *material, bool io)
+{
+    if (io) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+    }
+    eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, material->id, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Set Ambient: CKMaterial::SetAmbient */
+static int bb_set_ambient(blk_t *b)
+{
+    eng_material_t *material = target_material(b);
+    if (material == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    float color[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+    nmo_engine_block_get_input_value(b, 0, color, sizeof(color));
+    memcpy(material->desc.ambient, color, sizeof(color));
+    return material_done(b, material, true);
+}
+
+/* Set Specular: the color, and the power when its input is given; out before the target check */
+static int bb_set_specular(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    eng_material_t *material = target_material(b);
+    if (material == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    float color[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+    nmo_engine_block_get_input_value(b, 0, color, sizeof(color));
+    memcpy(material->desc.specular, color, sizeof(color));
+    float power = 1.0f;
+    if (nmo_engine_block_get_input_value(b, 1, &power, sizeof(power)) == NMO_OK) {
+        material->desc.power = power;
+    }
+    return material_done(b, material, false);
+}
+
+/* Set Specular Power (obsolete): CKMaterial::SetPower */
+static int bb_set_specular_power(blk_t *b)
+{
+    eng_material_t *material = target_material(b);
+    if (material == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    material->desc.power = get_in_float(b, 0, 0.0f);
+    return material_done(b, material, true);
+}
+
+/* Set Both Sided: CKMaterial::SetTwoSided; out before the target check */
+static int bb_set_both_sided(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    eng_material_t *material = target_material(b);
+    if (material == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    material->desc.two_sided = get_in_int(b, 0, 1) != 0;
+    return material_done(b, material, false);
+}
+
+/* The material setters of one enum: which member, and the value without an input */
+typedef enum {
+    MATERIAL_FILL_MODE,
+    MATERIAL_SHADE_MODE,
+    MATERIAL_SOURCE_BLEND,
+    MATERIAL_DEST_BLEND,
+    MATERIAL_MAG_FILTER,
+    MATERIAL_MIN_FILTER,
+} material_member_t;
+
+static int set_material_member(blk_t *b, material_member_t member, int32_t fallback)
+{
+    eng_material_t *material = target_material(b);
+    if (material == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    int32_t value = get_in_int(b, 0, fallback);
+    nmo_engine_material_t *desc = &material->desc;
+    int32_t *members[] = {&desc->fill_mode,   &desc->shade_mode, &desc->source_blend,
+                          &desc->dest_blend,  &desc->mag_filter, &desc->min_filter};
+    *members[member] = value;
+    return material_done(b, material, true);
+}
+
+/* Set Fill Mode: CKMaterial::SetFillMode (WireFrame without an input) */
+static int bb_set_fill_mode(blk_t *b) { return set_material_member(b, MATERIAL_FILL_MODE, VXFILL_WIREFRAME); }
+
+/* Set Shade Mode: CKMaterial::SetShadeMode (Flat without an input) */
+static int bb_set_shade_mode(blk_t *b) { return set_material_member(b, MATERIAL_SHADE_MODE, VXSHADE_FLAT); }
+
+/* Set Src Blend and Set Dest Blend (obsolete): CKMaterial::SetSourceBlend and SetDestBlend */
+static int bb_set_src_blend(blk_t *b) { return set_material_member(b, MATERIAL_SOURCE_BLEND, VXBLEND_ONE); }
+
+static int bb_set_dest_blend(blk_t *b) { return set_material_member(b, MATERIAL_DEST_BLEND, VXBLEND_ZERO); }
+
+/* Set Texture Mag and Set Texture Min: the texture filters (Linear without an input) */
+static int bb_set_texture_mag(blk_t *b)
+{
+    return set_material_member(b, MATERIAL_MAG_FILTER, VXTEXTUREFILTER_LINEAR);
+}
+
+static int bb_set_texture_min(blk_t *b)
+{
+    return set_material_member(b, MATERIAL_MIN_FILTER, VXTEXTUREFILTER_LINEAR);
+}
+
+/*
+ * Set Color Key: CKBitmapData::SetTransparentColor with the color, then
+ * SetTransparent; the image is keyed again.
+ */
+static int bb_set_color_key(blk_t *b)
+{
+    eng_texture_t *texture = eng_texture(b->engine, nmo_engine_block_target(b));
+    if (texture == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    float color[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+    nmo_engine_block_get_input_value(b, 0, color, sizeof(color));
+    texture->transparent_color = color_argb(color);
+    texture->transparent = get_in_int(b, 1, 1) != 0;
+    eng_texture_changed(b->engine, texture->id);
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, texture->id, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * Set Material: a 3D sprite takes the material; another entity's current
+ * mesh replaces Material to replace with it, or takes it on every face when
+ * there is none to replace (CKMesh::ReplaceMaterial, ApplyGlobalMaterial).
+ */
+static int bb_set_material(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (target == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    nmo_object_id_t material = nmo_engine_block_get_input_object(b, 0);
+    if (eng_object_class(engine, target) == NMO_CID_SPRITE3D) {
+        eng_sprite3d_t *sprite = eng_sprite3d(engine, target);
+        if (sprite != NULL) {
+            sprite->material = material;
+        }
+    } else {
+        nmo_object_id_t mesh = entity_mesh(engine, target);
+        if (mesh == 0) {
+            return NMO_ENGINE_BR_OK;
+        }
+        nmo_object_id_t replaced = nmo_engine_block_get_input_object(b, 1);
+        if (replaced != 0) {
+            eng_mesh_replace_material(engine, mesh, replaced, material);
+        } else {
+            eng_mesh_apply_material(engine, mesh, material);
+        }
+    }
+    eng_emit(engine, NMO_ENGINE_EVENT_EFFECT, b->node, target, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Set Material 3DSprite (obsolete): CKSprite3D::SetMaterial */
+static int bb_set_material_3dsprite(blk_t *b)
+{
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    eng_sprite3d_t *sprite = target != 0 ? eng_sprite3d(b->engine, target) : NULL;
+    if (sprite == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    sprite->material = nmo_engine_block_get_input_object(b, 0);
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, target, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Set Lighting Mode: CKMesh::SetLitMode on the current mesh (Prelit without an input) */
+static int bb_set_lighting_mode(blk_t *b)
+{
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (target == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    nmo_object_id_t mesh = entity_mesh(b->engine, target);
+    if (mesh == 0 || !eng_mesh_set_lit_mode(b->engine, mesh, get_in_int(b, 0, 0))) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, mesh, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* A mesh's flag set or cleared (CKMesh::SetWrapMode, SetTransparent) */
+static void set_mesh_flag(nmo_engine_t *engine, eng_mesh_copy_t *copy, uint32_t flag, bool on)
+{
+    copy->flags = on ? copy->flags | flag : copy->flags & ~flag;
+    copy->version = ++engine->render.mesh_version;
+}
+
+/*
+ * Set Wrap Mode: CKMesh::SetWrapMode on the current mesh (None without an
+ * input). Without a mesh CK has none to call; the block stops there.
+ */
+static int bb_set_wrap_mode(blk_t *b)
+{
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (target == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    eng_mesh_copy_t *copy = eng_mesh_copy(b->engine, entity_mesh(b->engine, target));
+    if (copy == NULL) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    int32_t mode = get_in_int(b, 0, VXTEXTUREWRAP_NONE);
+    set_mesh_flag(b->engine, copy, VXMESH_WRAPU, (mode & VXTEXTUREWRAP_U) != 0);
+    set_mesh_flag(b->engine, copy, VXMESH_WRAPV, (mode & VXTEXTUREWRAP_V) != 0);
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, copy->mesh, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Set Transparent: the target mesh forced transparent by Set, not by UnSet */
+static int bb_set_transparent(blk_t *b)
+{
+    eng_mesh_copy_t *copy = eng_mesh_copy(b->engine, nmo_engine_block_target(b));
+    if (copy == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    bool set = IN_ACTIVE(b, 0);
+    set_mesh_flag(b->engine, copy, VXMESH_FORCETRANSPARENCY, set);
+    IN_OFF(b, set ? 0 : 1);
+    OUT_ON(b, 0);
+    eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, copy->mesh, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * The mesh the channel blocks act on: the target when it is a mesh, a 3D
+ * entity's current mesh, none otherwise. Their out opens first.
+ */
+static eng_mesh_copy_t *channel_mesh(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    nmo_class_id_t cid = target != 0 ? eng_object_class(engine, target) : 0;
+    nmo_object_id_t mesh = cid == NMO_CID_MESH || cid == NMO_CID_PATCHMESH ? target : entity_mesh(engine, target);
+    return mesh != 0 ? eng_mesh_copy(engine, mesh) : NULL;
+}
+
+static int channel_done(blk_t *b, eng_mesh_copy_t *copy)
+{
+    copy->version = ++b->engine->render.mesh_version;
+    eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, copy->mesh, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+static nmo_engine_channel_t *mesh_channel_at(eng_mesh_copy_t *copy, int32_t channel)
+{
+    return channel >= 0 && (size_t)channel < copy->channels.count ? &copy->channels.data[channel] : NULL;
+}
+
+/* Activate Channel: CKMesh::ActivateChannel */
+static int bb_activate_channel(blk_t *b)
+{
+    eng_mesh_copy_t *copy = channel_mesh(b);
+    if (copy == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    nmo_engine_channel_t *channel = mesh_channel_at(copy, get_in_int(b, 0, 0));
+    if (channel != NULL) {
+        channel->active = get_in_int(b, 1, 0) != 0;
+    }
+    return channel_done(b, copy);
+}
+
+/*
+ * Add Channel: CKMesh::AddChannel(material, TRUE): the material's channel,
+ * or a new one on every face with a copy of the mesh's UVs (at most 16; -1
+ * without a material or room).
+ */
+static int bb_add_channel(blk_t *b)
+{
+    eng_mesh_copy_t *copy = channel_mesh(b);
+    if (copy == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    nmo_object_id_t material = nmo_engine_block_get_input_object(b, 0);
+    int32_t channel = material != 0 ? eng_mesh_channel(copy, material) : -1;
+    if (material != 0 && channel < 0 && copy->channels.count < 16) {
+        nmo_engine_mesh_t desc;
+        channel = nmo_engine_mesh(b->engine, copy->mesh, &desc) ? eng_mesh_add_channel(copy, material) : -1;
+        float *uvs = channel >= 0 && desc.vertex_count > 0
+                         ? (float *)malloc((size_t)desc.vertex_count * 2u * sizeof(float))
+                         : NULL;
+        for (int32_t v = 0; uvs != NULL && v < desc.vertex_count; v++) {
+            uvs[v * 2] = copy->vertices[v].uv.x;
+            uvs[v * 2 + 1] = copy->vertices[v].uv.y;
+        }
+        if (channel >= 0) {
+            copy->channels.data[channel].uvs = uvs;
+        }
+    }
+    nmo_engine_block_set_output_value(b, 0, &channel, sizeof(channel));
+    return channel_done(b, copy);
+}
+
+/* Remove Channel: the channel at its index when not -1, else every channel of the material */
+static int bb_remove_channel(blk_t *b)
+{
+    eng_mesh_copy_t *copy = channel_mesh(b);
+    if (copy == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    int32_t index = get_in_int(b, 0, -1);
+    if (index > -1) {
+        eng_mesh_remove_channel(copy, index);
+        return channel_done(b, copy);
+    }
+    nmo_object_id_t material = nmo_engine_block_get_input_object(b, 1);
+    for (size_t c = 0; material != 0 && c < copy->channels.count;) {
+        if (copy->channels.data[c].material == material) {
+            eng_mesh_remove_channel(copy, (int32_t)c);
+        } else {
+            c++;
+        }
+    }
+    return channel_done(b, copy);
+}
+
+/* Set Channel Src Blend and Set Channel Dest Blend: a channel's blend factors */
+static int set_channel_blend(blk_t *b, bool source)
+{
+    eng_mesh_copy_t *copy = channel_mesh(b);
+    if (copy == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    int32_t index = get_in_int(b, 0, 0);
+    int32_t blend = get_in_int(b, 1, source ? VXBLEND_SRCALPHA : VXBLEND_INVSRCALPHA);
+    nmo_engine_channel_t *channel = mesh_channel_at(copy, index);
+    if (channel != NULL) {
+        *(source ? &channel->source_blend : &channel->dest_blend) = blend;
+    }
+    return channel_done(b, copy);
+}
+
+static int bb_set_channel_src_blend(blk_t *b) { return set_channel_blend(b, true); }
+
+static int bb_set_channel_dest_blend(blk_t *b) { return set_channel_blend(b, false); }
+
+/* Set Channel Material: CKMesh::SetChannelMaterial */
+static int bb_set_channel_material(blk_t *b)
+{
+    eng_mesh_copy_t *copy = channel_mesh(b);
+    if (copy == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    nmo_engine_channel_t *channel = mesh_channel_at(copy, get_in_int(b, 0, 0));
+    if (channel != NULL) {
+        channel->material = nmo_engine_block_get_input_object(b, 1);
+    }
+    return channel_done(b, copy);
+}
+
 static const nmo_engine_block_desc_t eng_materials_blocks[] = {
     {NMO_GUID_INIT(0xf56d92ef, 0x41eb20c1), "Change Texture Video Format",
      bb_change_texture_video_format, NULL, NULL},
@@ -359,6 +746,28 @@ static const nmo_engine_block_desc_t eng_materials_blocks[] = {
     {NMO_GUID_INIT(0xaaaa213a, 0xeaa8d52a), "Set Current Slot", bb_set_current_slot, NULL, NULL},
     {NMO_GUID_INIT(0x60415d44, 0x0d0174ea), "Set Prelit Color", bb_set_prelit_color, NULL, NULL},
     {NMO_GUID_INIT(0xf11d010a, 0xfb1d010a), "Texture Scroller", bb_texture_scroller, NULL, NULL},
+    {NMO_GUID_INIT(0xaaaaaaaa, 0xaeae1287), "Set Ambient", bb_set_ambient, NULL, NULL},
+    {NMO_GUID_INIT(0x20202020, 0x30303030), "Set Specular", bb_set_specular, NULL, NULL},
+    {NMO_GUID_INIT(0x45454545, 0x15151515), "Set Specular Power", bb_set_specular_power, NULL, NULL},
+    {NMO_GUID_INIT(0x76319845, 0x48593399), "Set Both Sided", bb_set_both_sided, NULL, NULL},
+    {NMO_GUID_INIT(0xc5c4c3c2, 0x8c8c8c8c), "Set Fill Mode", bb_set_fill_mode, NULL, NULL},
+    {NMO_GUID_INIT(0x95195195, 0x98795198), "Set Shade Mode", bb_set_shade_mode, NULL, NULL},
+    {NMO_GUID_INIT(0x40234ddc, 0x012da700), "Set Src Blend", bb_set_src_blend, NULL, NULL},
+    {NMO_GUID_INIT(0x036d1a87, 0xdf0a670c), "Set Dest Blend", bb_set_dest_blend, NULL, NULL},
+    {NMO_GUID_INIT(0xda495631, 0xde155488), "Set Texture Mag", bb_set_texture_mag, NULL, NULL},
+    {NMO_GUID_INIT(0x12589321, 0x32587123), "Set Texture Min", bb_set_texture_min, NULL, NULL},
+    {NMO_GUID_INIT(0x41bb5af1, 0x01eb26e9), "Set Color Key", bb_set_color_key, NULL, NULL},
+    {NMO_GUID_INIT(0x37865d50, 0x2e285fab), "Set Material", bb_set_material, NULL, NULL},
+    {NMO_GUID_INIT(0x3ddd6d33, 0xa54d5c48), "Set Material 3DSprite", bb_set_material_3dsprite, NULL, NULL},
+    {NMO_GUID_INIT(0x45899665, 0x45211254), "Set Lighting Mode", bb_set_lighting_mode, NULL, NULL},
+    {NMO_GUID_INIT(0x12a5498d, 0x65657512), "Set Wrap Mode", bb_set_wrap_mode, NULL, NULL},
+    {NMO_GUID_INIT(0x2fc37564, 0x299a2c9d), "Set Transparent", bb_set_transparent, NULL, NULL},
+    {NMO_GUID_INIT(0x55566666, 0x66666444), "Activate Channel", bb_activate_channel, NULL, NULL},
+    {NMO_GUID_INIT(0x89658965, 0x36654789), "Add Channel", bb_add_channel, NULL, NULL},
+    {NMO_GUID_INIT(0x4a462e58, 0x022e369b), "Remove Channel", bb_remove_channel, NULL, NULL},
+    {NMO_GUID_INIT(0x3b9b0e7f, 0xb1316800), "Set Channel Src Blend", bb_set_channel_src_blend, NULL, NULL},
+    {NMO_GUID_INIT(0x2f5a0eb9, 0x27067e93), "Set Channel Dest Blend", bb_set_channel_dest_blend, NULL, NULL},
+    {NMO_GUID_INIT(0x2e0a6b92, 0x366a3f9b), "Set Channel Material", bb_set_channel_material, NULL, NULL},
 };
 
 nmo_status_t eng_register_materials(nmo_engine_t *engine)

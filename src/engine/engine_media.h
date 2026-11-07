@@ -46,6 +46,8 @@ typedef struct eng_texture {
     eng_movie_t *movie_reader; /* Movie Load's movie; NULL when it cannot be decoded */
     ENG_VEC(char *) files; /* the file each slot was loaded from at run time (LoadImage); NULL: the file's */
     int32_t mipmap_level;  /* CKTexture's: 0 none, -1 as many as the size gives, else that many */
+    bool transparent;            /* CKBitmapData::IsTransparent */
+    uint32_t transparent_color;  /* ARGB; its pixels are clear when transparent */
 } eng_texture_t;
 
 typedef struct eng_media {

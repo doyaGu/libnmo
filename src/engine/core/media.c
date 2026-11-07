@@ -328,6 +328,8 @@ eng_texture_t *eng_texture(nmo_engine_t *engine, nmo_object_id_t id)
     texture->current_slot = state != NULL && state->has_current_slot ? state->current_slot : 0;
     /* The file's level count (0xFF stands for every level), an old file's mipmap flag, or
        saved levels (CKTexture::Load: SetUserMipMapMode, which uses them) */
+    texture->transparent = state != NULL && state->is_transparent;
+    texture->transparent_color = state != NULL && state->has_transparent_color ? state->transparent_color : 0u;
     texture->mipmap_level = state == NULL ? 0 : state->mipmap_level == 0xFF ? -1 : state->mipmap_level;
     if (state != NULL && texture->mipmap_level == 0 &&
         ((state->has_legacy_video_format && state->legacy_use_mipmap != 0) ||
