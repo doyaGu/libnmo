@@ -131,3 +131,25 @@ remain tracked; concrete approaches and recorded outcomes belong to the map.
 
 These are bounded authored-input tests. They do not enumerate shortcuts,
 prove that a level has no soft locks, or establish manual-play difficulty.
+
+## Shared regression coverage
+
+The tracked [tolerance tests](../apps/ballance/tests/test_tolerance_contracts.py)
+compile a small mechanism fixture and feed synthetic observations through the
+reporting code. They cover axis and product sampling, duplicate controls, invalid
+references, release-body identity and measured rotation. A zero-perturbation run
+must reproduce the reference physics trace byte for byte; a mismatch invalidates
+the control. Death before completion, death after completion and checkpoint
+respawn remain distinct outcomes. Respawn timing alone does not prove a retry.
+
+The [shortcut tests](../apps/ballance/tests/test_shortcut_contracts.py) cover
+rotated local coordinates, repeated-XZ anchors, non-overlapping route splices
+and checkpoint boundaries. Synthetic runs exercise the normal, individual and
+combined profiles. Reaching the finish cannot hide a missed checkpoint, failed
+condition, death, wrong-ball landing, changed ball identity or insufficient time
+savings. Stale inputs and failed reference runs must replace old success reports.
+
+These tests use no authored map files. They substitute native execution to test
+report handling; native traversal still needs a fresh run with the map and original
+resources. Commands and the distinction between synthetic and native coverage
+are in [Contributing](../CONTRIBUTING.md#ballance-toolchain-regression-coverage).

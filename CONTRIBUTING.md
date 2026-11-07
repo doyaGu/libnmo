@@ -193,6 +193,44 @@ route files. It allows the shared catalogs and generic code fixtures. The hook
 and its checker are workspace-local and are not installed by cloning; check
 their presence before relying on them.
 
+### Ballance toolchain regression coverage
+
+The tracked suite exercises shared behavior with small generated routes and
+traces. It runs without the ignored map inputs or `.local/ballance/` archives.
+
+| Tests | Coverage |
+| --- | --- |
+| `test_tolerance_contracts.py` | Perturbation grids, scenario references, release-state identity, death outcomes, zero-control replay consistency and report evidence |
+| `test_shortcut_contracts.py` | Local coordinates, ambiguous anchors, route splices, checkpoint retention, landing identity, required conditions and time savings |
+| `test_floor_transitions.py` | Thickness stations, custom profiles, closed side walls, brick bands, UV seams, inclined platforms and reversed or mirrored ports |
+
+Run the tolerance and shortcut tests without native assets:
+
+```sh
+python3 -m unittest discover -s apps/ballance/tests -p '*_contracts.py' -v
+```
+
+Their runner tests use `verification_fixtures.py` to build real metadata and
+substitute external native dependencies and execution. Compilation, trace
+parsing, verdicts and evidence hashes use the production code. These synthetic
+logs test the checks; they do not establish that a ball can traverse a level.
+
+`test_floor_transitions.py` also has an opt-in native case that plays two small
+generated routes, including a rail approach to an inclined platform. Run it
+with absolute paths to the game, extracted meshes and CLI:
+
+```sh
+BALLANCE=/path/to/Ballance BALLANCE_ELEMENTS=/path/to/extracted-elements \
+NMO_TEST_CLI=/path/to/nmo NMO_TEST_PHYSICS=1 \
+python3 -m unittest discover -s apps/ballance/tests -p test_floor_transitions.py -v
+```
+
+Without that environment, the geometry tests run and the native case skips.
+For full coverage, use the same environment with `make -C apps/ballance test`.
+Record skips when reporting results, and validate authored maps separately in
+their local workspace. See the [free-form geometry guide](docs/ballance-freeform.md#build-and-validate)
+for the related geometry and traversal tests.
+
 ### Architecture Rules
 
 The layer stack, lowest to highest:
