@@ -204,14 +204,14 @@ The builder adds a 5-unit V-to-flat adapter before the outline and a
 5-unit flat-to-V adapter after the exit. Each adapter consists of a
 2.5-unit V neck and the native 2.5-unit flattening, triangulated from the
 low V point on both halves. The outline therefore begins 5
-units beyond the preceding piece. Its top is at the incoming road's edge
-height. Port openings are removed from its walls. Elements use the
-outline's local coordinates and rest on its flat top.
+units beyond the preceding piece. With the default zero slope, its top is at
+the incoming road's edge height. Port openings are removed from its walls.
+Elements use the outline's local coordinates and follow the surface height.
 
 For an indirect route, supply `"path": [[forward, right], ...]` interior
 waypoints. Every segment from entry through these points to exit is
-checked against the outline and all holes. The surface is flat; holes and
-named branch ports share the same local coordinate system:
+checked against the outline and all holes. Holes and named branch ports share
+the same local coordinate system, including on an inclined plane:
 
 ```json
 {
@@ -244,10 +244,11 @@ Each named port accepts `edge`, `at`, `width` and an optional `path` from
 the entry to that port. Entry, exit and named ports currently require
 distinct outer edges; holes cannot host ports. Each outlet owns a five-unit
 flat/V adapter and a normal port contract, so branches may start with a
-matching floor connector or standard rail. Different port widths and
-non-cardinal edges are supported through free paths; legacy grid pieces
-still require cardinal standard ports. Mirror operations transform holes,
-paths and support points while preserving port names and edge indices.
+matching floor connector, or a standard rail where the floor port is standard.
+Different port widths and non-cardinal edges are supported through free paths;
+legacy grid pieces still require cardinal standard ports. Mirror operations transform holes,
+paths, support points and transverse slope while preserving port names and
+edge indices.
 
 A branch selects its outlet with `port`, replacing the legacy `side` field.
 `visit: true` follows the port's internal path and returns along it before
@@ -257,21 +258,68 @@ use `to: "destination-name", to_port: "port-name"` on the source branch.
 `take: true` selects that branch as the playable route instead of the main
 route between the platforms. The destination's internal port path is
 traversed in reverse to join its main route. Position, heading and section
-must match exactly; the builder does not solve an arbitrary connecting
-curve. Every declared port must have one branch connection. Missing,
-duplicate and mismatched connections fail the build.
+must match exactly. A two-ended `connector` can target the named port as
+described [below](#connecting-two-ends). Every declared port must have one
+branch connection. Missing, duplicate and mismatched connections fail the build.
 
 `connections.json` includes platform identities, world-space hole contours,
 ports and source locations. An authored void is a real opening in collision
 geometry; centreline validation alone does not prove that the ball has
 enough room around it. Verify the intended traversal with actual physics.
 
+### Inclined platforms
+
+Set `floor_polygon.slope` to a forward grade or `[forward grade, right grade]`.
+Each grade is rise per horizontal unit in the outline's local coordinates;
+`0.1` is equivalent to `[0.1, 0]`. Values must be finite and the gradient's
+magnitude must be at most 4. The default is zero.
+
+```json
+{
+  "floor_polygon": {
+    "outline": [[0,-8], [20,-8], [20,8], [0,8]],
+    "entry": {"edge": 3},
+    "exit": {"edge": 1},
+    "depth": 5,
+    "slope": 0.1
+  }
+}
+```
+
+This platform rises 3 units between its external entry and exit ports:
+20 units across the outline plus two 5-unit adapters. For an incoming
+V-bottom height `h` and gradient `[gf, gr]`, the surface at outline point
+`[f, r]` has height `h + 0.7 + (5 + f) * gf + r * gr`. The 0.7 offset is
+the standard V edge height. Polygon `depth` remains a constant vertical
+thickness; floor paths and connectors provide thickness transitions.
+
+The plane also sets hole walls, element positions and support-column heights.
+Each outlet derives its own grade from its outward direction. A transverse
+grade tilts its V profile: add `fraction * width * cross_grade` to each
+standard profile height. It does not set the port's `bank`. Use the section
+reported in `connections.json` when connecting to an oblique side outlet.
+When approached inward, a port reverses its heading, grade, bank and profile
+width fractions. Template mirroring negates the right grade and reflects
+the profile with the outline.
+
+Match the incoming connector's endpoint slope to the platform entry grade.
+Match its width, depth and profile too; a transverse platform slope requires
+the corresponding tilted profile. An outgoing connector can return to zero
+grade and the standard floor section. Platform geometry, port matching and
+UV projection do not determine whether a ball can climb the chosen slope;
+check that approach with native play.
+
+Stone UVs measure distance on the inclined plane. Brick patches compensate
+for slope stretch, and side walls use their sloped edge length and vertical
+depth. The native V/flat texture cell retains its material phase reset.
+
 ## Connections and autopilot
 
 Free pieces may join at arbitrary horizontal headings. Their widths,
-banks and sections must match. Rail-to-floor connections require standard
-ports. Connecting back to legacy pieces requires a cardinal heading,
-zero bank, and either a 5-wide V floor or rails with gauge 3.8 and radius
+banks, depths and sections must match. Direct rail-to-floor connections use
+standard ports; an explicit connector can add the transition to another
+floor section. Connecting back to legacy pieces requires a cardinal heading,
+zero bank, and either a 5-wide, 5-deep V floor or rails with gauge 3.8 and radius
 0.35. Put a narrow road between a free floor and a legacy area.
 
 Mesh and steering points share sampled curves. The autopilot still needs
@@ -365,12 +413,15 @@ explicit placement changes the connector on the next build.
 | --- | --- |
 | `{"offset": [60,20,8], "heading": [1,0], "slope": 0}` | Local `[forward,right,up]` displacement and unit `[forward,right]` end heading |
 | `{"placement": "route/id/destination", "slope": 0}` | World pose from the top-level `placements` table; the target must have an explicit placement |
-| `{"platform": "hub", "port": "west", "slope": 0}` | An available named polygon port, approached inward; the platform must already be laid out |
+| `{"platform": "hub", "port": "west"}` | An available named polygon port, approached inward; inherits its inward grade and requires the platform to be laid out |
 
-`slope` is rise divided by horizontal distance and defaults to zero. An
-unknown incoming slope requires `start_slope`; a known incoming slope cannot
-be overridden with a conflicting value. Endpoint exits require the next
-piece to have a matching known entry slope. Legacy joints still permit
+`slope` is rise divided by horizontal distance. It defaults to zero for an
+offset or placement endpoint. A named platform endpoint derives its inward
+slope from the port; an explicit conflicting value is rejected. The target
+section still comes from `to`, so match the destination's width, depth and
+profile separately. An unknown incoming slope requires `start_slope`; a known
+incoming slope cannot be overridden with a conflicting value. Endpoint exits
+require the next piece to have a matching known entry slope. Legacy joints still permit
 intentional slope changes.
 
 `min_radius` defaults to 8 and must be positive. `max_grade` defaults to 1
@@ -383,11 +434,14 @@ endpoint, change the handles or deliberately change the limits. This is
 not an obstacle-routing search.
 
 An endpoint connector from a double rail to `to.kind: "floor"` reserves a
-five-unit standard V dock before the requested endpoint. The dock must end
-level. Put elements on a separate floor after this connector. Other kind
-changes use the existing standard-port adapters. Beam overlaps, ballistic
-transfers and module interiors retain
-their measured adapters. Unusual gauges and cross sections need gameplay tests.
+five-unit floor dock before the requested endpoint. The rail ends at a standard
+section, five horizontal units before the destination and `5 * slope` units
+below it. The dock starts with a standard V floor and transitions to `to`'s
+width, depth, bank and profile while maintaining the destination grade.
+Put elements on a separate floor after this connector. Other kind changes
+use the existing standard-port adapters. Beam overlaps, ballistic transfers
+and module interiors retain their measured adapters. Unusual gauges and
+cross sections need gameplay tests.
 Template mirroring reflects local endpoint offsets and headings, target
 bank and custom profiles; placement and named-port references remain references.
 
@@ -544,8 +598,9 @@ can call other templates and appear inside branches. Recursion and
 unknown parameters are errors; expansion is limited to 4,096 pieces.
 
 `mirror` swaps left/right and reflects coordinates, banks, cross sections,
-elements and branches. `repeat` continues each copy from the previous
-copy's exit. Parameterize named branch targets to keep repeated names unique.
+elements, branches and the right grade of a polygon's slope. `repeat` continues
+each copy from the previous copy's exit. Parameterize named branch targets to
+keep repeated names unique.
 
 ## Instance overrides and placement
 
@@ -593,13 +648,26 @@ Geometry and route tests do not need a game installation:
 
 ```sh
 python3 -m unittest discover -s apps/ballance/tests -p test_freeform.py -v
+python3 -m unittest discover -s apps/ballance/tests -p test_floor_transitions.py -v
 ```
 
-The optional physics regression traverses a helix, mirrored banked floor
-bends and a concave platform in the real gameplay harness:
+The floor-transition tests check thickness stations, different profile knots,
+closed walls, brick width, UV seams, rotated and mirrored ports, and inclined
+platforms with holes. Their native case skips unless physics and assets are
+enabled. With the environment below, it plays two generated routes through
+custom floors and inclined platforms, including a rail-to-floor approach.
+The other physics suite covers a helix, mirrored banked floor bends and a
+concave platform in libnmo's native gameplay harness:
 
 ```sh
-BALLANCE=<GAME_ROOT> BALLANCE_ELEMENTS=<extracted-elements> \
-NMO_TEST_CLI=<absolute-path-to-nmo> NMO_TEST_PHYSICS=1 \
+export BALLANCE=/path/to/Ballance
+export BALLANCE_ELEMENTS=/path/to/extracted-elements
+export NMO_TEST_CLI=/path/to/nmo
+export NMO_TEST_PHYSICS=1
 python3 -m unittest discover -s apps/ballance/tests -p test_freeform_physics.py -v
+python3 -m unittest discover -s apps/ballance/tests -p test_floor_transitions.py -v
 ```
+
+Use absolute paths. These small fixtures exercise shared code without a local
+map. Retain map-specific builds, full-route runs and reports locally; see the
+[regression coverage guide](../CONTRIBUTING.md#ballance-toolchain-regression-coverage).
