@@ -23,6 +23,7 @@ the arrays, and an edit plan for the scripts.
 from __future__ import annotations
 
 import json
+import math
 import os
 import subprocess
 import tempfile
@@ -447,6 +448,68 @@ def loading_manager_script(plan: Plan, script: int, loading_parameter: int) -> N
     plan.link(script, (activate, 'output:Out'), (files, 'input:Loop In'))
 
 
+def _probe_script(
+    plan,
+    script,
+    sector,
+    ball,
+    position_world,
+    material,
+    physics_name,
+    delay_frames=0,
+    velocity=None,
+):
+    """Place one sphere and apply a world-space impulse through native physics."""
+    entry = (
+        plan.add({'op': 'add_io', 'behavior_id': script, 'kind': 'input', 'name': 'In'}),
+        'io',
+    )
+    delay = plan.node(
+        script,
+        DELAYER,
+        'Wait For Native Sector',
+        {'Time to Wait': 6000 + setup_ms(sector) + delay_frames * 16.667},
+    )
+    position = plan.node(
+        script,
+        'E456E78A-456789AA',
+        'Place Probe Ball',
+        {'Position': ','.join(map(str, position_world))},
+    )
+    name = plan.local(script, STRING, 'Probe Ball Name', f'Ball_{ball}')
+    entity = plan.operation(script, '428009B4-1CAA5C78', '5B8A05D5-31EA28D4', 'Probe Ball', name)
+    plan.wire(entity, (position, 'target'))
+    plan.link(script, entry, (delay, 'input:In'))
+    # CK disables collisions for a sphere whose surface name is empty.
+    physics = plan.node(
+        script,
+        '7522370E-37EC15EC',
+        physics_name,
+        dict(material, **{'Collision Surface': f'Ball_{ball}'}),
+    )
+    plan.wire(entity, (physics, 'target'))
+    plan.value((physics, 'local_param:Convex Count'), 0)
+    plan.value((physics, 'local_param:Ball Count'), 1)
+    plan.link(script, (delay, 'output:Out'), (physics, 'input:Unphysicalize'))
+    plan.link(script, (physics, 'output:Out2'), (position, 'input:In'))
+    plan.link(script, (position, 'output:Out'), (physics, 'input:Physicalize'))
+    if velocity is not None and any(velocity):
+        speed = math.sqrt(sum(v * v for v in velocity))
+        impulse = plan.node(
+            script,
+            '0C7E39BB-16DB20D5',
+            'Launch Probe Ball',
+            {
+                'Position': '0,0,0',
+                'Direction': ','.join(map(str, velocity)),
+                'Impulse': material['Mass'] * speed,
+            },
+        )
+        plan.wire(entity, (impulse, 'target'))
+        plan.wire(entity, (impulse, 'input_param:Referential'))
+        plan.link(script, (physics, 'output:Out1'), (impulse, 'input:In'))
+
+
 def write(
     out: Path,
     nmo: Nmo,
@@ -454,6 +517,9 @@ def write(
     ball: str = 'Wood',
     probe_position=None,
     probe_physics=None,
+    probe_velocity=None,
+    probe_delay_frames=0,
+    probe_rehearsal_position=None,
 ) -> None:
     """Write native gameplay, optionally with an isolated local contact probe.
 
@@ -497,6 +563,11 @@ def write(
                                 {'name': 'Test Start'},
                                 {'name': 'Loading_Manager'},
                                 *([{'name': 'Probe Spawn'}] if probe_position is not None else []),
+                                *(
+                                    [{'name': 'Probe Rehearsal'}]
+                                    if probe_rehearsal_position is not None
+                                    else []
+                                ),
                             ],
                         },
                         *({'name': name, 'class': 'CKDataArray'} for name in ARRAYS),
@@ -560,39 +631,27 @@ def write(
         )
         loading_manager_script(plan, ids['Loading_Manager'], ids['Loading_Parameter'])
         if probe_position is not None:
-            script = ids['Probe Spawn']
-            entry = (
-                plan.add({'op': 'add_io', 'behavior_id': script, 'kind': 'input', 'name': 'In'}),
-                'io',
-            )
-            delay = plan.node(
-                script, DELAYER, 'Wait For Native Sector', {'Time to Wait': 6000 + setup_ms(sector)}
-            )
-            position = plan.node(
-                script,
-                'E456E78A-456789AA',
-                'Place Probe Ball',
-                {'Position': ','.join(map(str, probe_position))},
-            )
-            name = plan.local(script, STRING, 'Probe Ball Name', f'Ball_{ball}')
-            entity = plan.operation(
-                script, '428009B4-1CAA5C78', '5B8A05D5-31EA28D4', 'Probe Ball', name
-            )
-            plan.wire(entity, (position, 'target'))
-            plan.link(script, entry, (delay, 'input:In'))
-            # CK disables collisions for a sphere whose surface name is empty.
-            physics = plan.node(
-                script,
-                '7522370E-37EC15EC',
+            _probe_script(
+                plan,
+                ids['Probe Spawn'],
+                sector,
+                ball,
+                probe_position,
+                probe_physics,
                 'Probe Ball Physics',
-                dict(probe_physics, **{'Collision Surface': f'Ball_{ball}'}),
+                probe_delay_frames,
+                probe_velocity,
             )
-            plan.wire(entity, (physics, 'target'))
-            plan.value((physics, 'local_param:Convex Count'), 0)
-            plan.value((physics, 'local_param:Ball Count'), 1)
-            plan.link(script, (delay, 'output:Out'), (physics, 'input:Unphysicalize'))
-            plan.link(script, (physics, 'output:Out2'), (position, 'input:In'))
-            plan.link(script, (position, 'output:Out'), (physics, 'input:Physicalize'))
+            if probe_rehearsal_position is not None:
+                _probe_script(
+                    plan,
+                    ids['Probe Rehearsal'],
+                    sector,
+                    ball,
+                    probe_rehearsal_position,
+                    probe_physics,
+                    'Rehearsal Ball Physics',
+                )
         scripted = work / 'scripted.cmo'
         (work / 'plan.json').write_text(
             json.dumps(
@@ -608,17 +667,21 @@ def write(
         )
         run('patch', 'apply', str(work / 'plan.json'))
         if probe_position is not None:
-            block = nmo.data('behavior', 'find', '--name', 'Probe Ball Physics', str(scripted))[
-                'results'
-            ][0]
-            detail = nmo.data('behavior', 'show', str(block['id']), str(scripted))
-            convex = next(p['id'] for p in detail['input_parameters'] if p['name'] == 'Convex')
             shape = Plan()
-            shape.add({'op': 'remove_parameter', 'parameter_id': convex, 'detach': True})
-            centre = shape.output(block['id'], '48824EAE-2FE47960', 'ball position 1', 'in')
-            shape.value(centre, '0,0,0')
-            radius = shape.output(block['id'], '47884C3F-432C2C20', 'ball radius 1', 'in')
-            shape.value(radius, 2)
+            names = ['Probe Ball Physics']
+            if probe_rehearsal_position is not None:
+                names.append('Rehearsal Ball Physics')
+            for physics_name in names:
+                block = nmo.data('behavior', 'find', '--name', physics_name, str(scripted))[
+                    'results'
+                ][0]
+                detail = nmo.data('behavior', 'show', str(block['id']), str(scripted))
+                convex = next(p['id'] for p in detail['input_parameters'] if p['name'] == 'Convex')
+                shape.add({'op': 'remove_parameter', 'parameter_id': convex, 'detach': True})
+                centre = shape.output(block['id'], '48824EAE-2FE47960', 'ball position 1', 'in')
+                shape.value(centre, '0,0,0')
+                radius = shape.output(block['id'], '47884C3F-432C2C20', 'ball radius 1', 'in')
+                shape.value(radius, 2)
             (work / 'shape.json').write_text(
                 json.dumps(
                     {
