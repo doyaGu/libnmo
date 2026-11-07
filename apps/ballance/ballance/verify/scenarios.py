@@ -22,7 +22,7 @@ from ..route.layout import Layout
 from ..route.motions import instances, template_paths
 from . import harness
 from .actions import ActionTrace, rotation_degrees
-from .play import FRAME_MS, BALLS, SENT, steer_text
+from .play import FRAME_MS, BALLS, steer_text
 from .resources import check as resource_check, dependency_paths
 
 
@@ -179,16 +179,19 @@ def _native_ball_physics(nmo, game, ball):
 
 
 def evaluate(folder, case, checkpoint):
-    first = 370 + math.ceil(harness.setup_ms(case['sector']) / float(FRAME_MS))
+    if 'landing' in case:
+        from .replay import evaluate_landing
+
+        return evaluate_landing(folder, case)
+    first = first_frame(case)
     trace = ActionTrace(folder, [*case['actions'], case['guard_action']])
-    deaths = []
-    for line in (folder / 'runtime.log').read_text(errors='replace').splitlines():
-        match = SENT.match(line)
-        if match and match[2] == 'Ball Off' and int(match[1]) >= first:
-            deaths.append(int(match[1]))
+    from .replay import death_frames
+
+    deaths = death_frames(folder, first)
     last = case['frames'] - 1
     initial_end = min(deaths) - 1 if deaths else last
-    first_pose = next((row for row in trace.ball if row['frame'] >= first), None)
+    spawn_frame = first - 9 if 'probe_options' in case else first
+    first_pose = next((row for row in trace.ball if row['frame'] >= spawn_frame), None)
     spawn_ok = bool(
         first_pose
         and first_pose['name'] == 'Ball_' + case['ball']
@@ -294,6 +297,99 @@ def evaluate(folder, case, checkpoint):
     return report
 
 
+def first_frame(case):
+    return case.get(
+        'first_frame', 370 + math.ceil(harness.setup_ms(case['sector']) / float(FRAME_MS))
+    )
+
+
+def run_case(source, level, folder, case, nmo, game, checkpoint, keys=None):
+    """Run a fresh native world, retaining the exact input and raw physics trace."""
+    folder = Path(folder)
+    folder.mkdir(exist_ok=True)
+    # A previous parameterized run may have supplied a private Levelinit
+    # loader. Never let that overlay leak into a later unmodified case.
+    runtime_overlay = folder / '3D Entities'
+    if runtime_overlay.exists():
+        shutil.rmtree(runtime_overlay)
+    shutil.copyfile(level, folder / 'Level_01.NMO')
+    copy_runtime(source, folder)
+    for name in ('steer.csv', 'physics.csv', 'validation.json', 'observations.json', 'keys.json'):
+        (folder / name).unlink(missing_ok=True)
+    base = folder / 'probe.cmo'
+    harness.write(
+        base,
+        nmo,
+        case['sector'],
+        case['ball'],
+        probe_position=case['spawn_world'] if case['start'] == 'probe' else None,
+        probe_physics=_native_ball_physics(nmo, game, case['ball'])
+        if case['start'] == 'probe'
+        else None,
+        **case.get('probe_options', {}),
+    )
+    first = first_frame(case)
+    command = [
+        nmo.executable,
+        'behavior',
+        'run',
+        '--physics',
+        'ivp',
+        '--delta',
+        FRAME_MS,
+        '--seed',
+        '1',
+        '--write',
+        str(folder),
+        '--path',
+        str(game),
+        '-n',
+        str(case['frames']),
+        '--steer',
+        f'{steer_text(case["steering"])}@{first}',
+        '--steer-object',
+        BALLS,
+        '--steer-log',
+        str(folder / 'steer.csv'),
+        '--physics-log',
+        str(folder / 'physics.csv'),
+        str(base),
+    ]
+    if keys is not None:
+        command[command.index('--steer') : command.index('--physics-log')] = [
+            '--control',
+            '--observe',
+            case['observe'],
+        ]
+    project.write_json(
+        folder / 'input.json',
+        {
+            'case': case,
+            'command': command,
+            'level_sha256': project.digest(level),
+            'harness_sha256': project.digest(base),
+        },
+    )
+    if keys is None:
+        with (folder / 'runtime.log').open('w') as log:
+            subprocess.run(
+                command, cwd=game, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=180
+            )
+    else:
+        from .replay import ball_trace, input_ranges, run_control
+
+        project.write_json(folder / 'keys.json', input_ranges(keys))
+        run_control(
+            command,
+            folder,
+            game,
+            keys,
+            [first - case['parameters']['phase_frames'], first, case['frames']],
+        )
+        ball_trace(folder)
+    return evaluate(folder, case, checkpoint)
+
+
 def run_suite(source, specification, out, nmo, game, selected=None):
     source, specification, out, game = [
         Path(p).resolve() for p in (source, specification, out, game)
@@ -336,66 +432,9 @@ def run_suite(source, specification, out, nmo, game, selected=None):
     results = []
     for case in cases:
         folder = out / case['id']
-        folder.mkdir(exist_ok=True)
-        # A previous parameterized run may have supplied a private Levelinit
-        # loader. Never let that overlay leak into a later unmodified case.
-        runtime_overlay = folder / '3D Entities'
-        if runtime_overlay.exists():
-            shutil.rmtree(runtime_overlay)
-        shutil.copyfile(level, folder / 'Level_01.NMO')
-        copy_runtime(source, folder)
-        for name in ('steer.csv', 'physics.csv', 'validation.json'):
-            (folder / name).unlink(missing_ok=True)
-        base = folder / 'probe.cmo'
-        harness.write(
-            base,
-            nmo,
-            case['sector'],
-            case['ball'],
-            probe_position=case['spawn_world'] if case['start'] == 'probe' else None,
-            probe_physics=_native_ball_physics(nmo, game, case['ball'])
-            if case['start'] == 'probe'
-            else None,
+        result = run_case(
+            source, level, folder, case, nmo, game, markers[f'PR_Resetpoint_{case["sector"]:02d}']
         )
-        first = 370 + math.ceil(harness.setup_ms(case['sector']) / float(FRAME_MS))
-        command = [
-            nmo.executable,
-            'behavior',
-            'run',
-            '--physics',
-            'ivp',
-            '--delta',
-            FRAME_MS,
-            '--write',
-            str(folder),
-            '--path',
-            str(game),
-            '-n',
-            str(case['frames']),
-            '--steer',
-            f'{steer_text(case["steering"])}@{first}',
-            '--steer-object',
-            BALLS,
-            '--steer-log',
-            str(folder / 'steer.csv'),
-            '--physics-log',
-            str(folder / 'physics.csv'),
-            str(base),
-        ]
-        project.write_json(
-            folder / 'input.json',
-            {
-                'case': case,
-                'command': command,
-                'level_sha256': project.digest(level),
-                'harness_sha256': project.digest(base),
-            },
-        )
-        with (folder / 'runtime.log').open('w') as log:
-            subprocess.run(
-                command, cwd=game, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=180
-            )
-        result = evaluate(folder, case, markers[f'PR_Resetpoint_{case["sector"]:02d}'])
         project.write_json(folder / 'validation.json', result)
         for name in ('input.json', 'steer.csv', 'physics.csv', 'runtime.log', 'validation.json'):
             evidence.attach(folder / name, provenance)
