@@ -8,8 +8,13 @@
 #include "engine_fixture.h"
 #include "../../src/engine/engine_internal.h"
 
+#include "core/nmo_array.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/nmo_ref.h"
+#include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
+#include "object/builtin/nmo_parameterin_schemas.h"
+#include "object/builtin/nmo_synchro_schemas.h"
 #include "type/nmo_object_guids.h"
 #include "type/nmo_param_guids.h"
 #include "type/nmo_type_guids.h"
@@ -34,6 +39,14 @@
 #define GUID_SEND_MESSAGE NMO_GUID(0xa20e8d5b, 0xdf002150)
 #define GUID_GET_MESSAGE_DATA NMO_GUID(0x45875fee, 0x45875fdd)
 #define GUID_CHECK_FOR_MESSAGE NMO_GUID(0x61226639, 0x6d390cb7)
+#define GUID_ADD_OBJECT_TO_GROUP NMO_GUID(0x69aa320b, 0x023829c7)
+#define GUID_REMOVE_OBJECT_FROM_GROUP NMO_GUID(0x3c94747a, 0x50882825)
+#define GUID_REMOVE_FROM_GROUP NMO_GUID(0xd0147412, 0x0258520d)
+#define GUID_GROUP_CLEAR NMO_GUID(0x1d12662e, 0x42687a3c)
+#define GUID_GROUP_OPERATOR NMO_GUID(0x7b377625, 0x16da3bda)
+#define GUID_RENDEZVOUS NMO_GUID(0x3a1a16c7, 0x20095c45)
+#define GUID_ENTER_CRITICAL_SECTION NMO_GUID(0x3c442002, 0x5988257c)
+#define GUID_LEAVE_CRITICAL_SECTION NMO_GUID(0x45db3138, 0x4db80f47)
 
 #define STEP_MS 10.0f
 
@@ -381,6 +394,148 @@ TEST(engine_logics, message_data_carries_the_senders_parameters)
     fixture_end(&f);
 }
 
+/* A group of `count` objects */
+static nmo_object_id_t make_group(engine_fixture_t *f, const char *name, const nmo_object_id_t *objects,
+                                  size_t count)
+{
+    nmo_object_id_t group = fixture_create(f, NMO_CID_GROUP, name);
+    nmo_group_state_t *state = (nmo_group_state_t *)fixture_state(f, group);
+    nmo_ref_t *members = NULL;
+    if (state == NULL || (count > 0 && nmo_array_extend(&state->object_ids, count, (void **)&members) != NMO_OK)) {
+        return 0;
+    }
+    for (size_t i = 0; i < count; i++) {
+        members[i] = nmo_ref_from_id(objects[i]);
+    }
+    return group;
+}
+
+/* A block's target set to `object` */
+static void target_of(engine_fixture_t *f, nmo_object_id_t behavior, nmo_object_id_t object)
+{
+    nmo_object_id_t target = fixture_target(f, behavior);
+    ASSERT_TRUE(target != 0);
+    fixture_input_int(f, target, (int32_t)object);
+}
+
+static bool in_group(engine_fixture_t *f, nmo_object_id_t group, nmo_object_id_t object)
+{
+    for (int32_t i = 0; i < nmo_engine_group_count(f->engine, group); i++) {
+        if (nmo_engine_group_object(f->engine, group, i) == object) {
+            return true;
+        }
+    }
+    return false;
+}
+
+TEST(engine_logics, group_blocks_add_remove_combine_and_clear)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t other = fixture_create(&f, NMO_CID_3DENTITY, "Other");
+    nmo_object_id_t third = fixture_create(&f, NMO_CID_3DENTITY, "Third");
+    const nmo_object_id_t both[2] = {f.owner_id, third};
+    nmo_object_id_t g = make_group(&f, "G", NULL, 0);
+    nmo_object_id_t h = make_group(&f, "H", both, 2);
+    nmo_object_id_t k = make_group(&f, "K", both, 1);
+    ASSERT_TRUE(other != 0 && third != 0 && g != 0 && h != 0 && k != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t add = block(&f, GUID_ADD_OBJECT_TO_GROUP, "Add Object To Group");
+    nmo_object_id_t unite = block(&f, GUID_GROUP_OPERATOR, "Union");
+    nmo_object_id_t remove = block(&f, GUID_REMOVE_FROM_GROUP, "Remove From Group");
+    nmo_object_id_t remove_object = block(&f, GUID_REMOVE_OBJECT_FROM_GROUP, "Remove Object");
+    nmo_object_id_t clear = block(&f, GUID_GROUP_CLEAR, "Group Clear");
+    ASSERT_TRUE(add != 0 && unite != 0 && remove != 0 && remove_object != 0 && clear != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, add, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, add, 0), BLOCK_IN(&f, unite, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, unite, 0), BLOCK_IN(&f, remove, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, remove, 0), BLOCK_IN(&f, remove_object, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, remove_object, 0), BLOCK_IN(&f, clear, 0), 0);
+    /* G gets Other; G union H: Other, Owner, Third; the owner leaves; then Third */
+    fixture_input_int(&f, BLOCK_PIN(&f, add, 0), (int32_t)g);
+    fixture_input_int(&f, BLOCK_PIN(&f, add, 1), (int32_t)other);
+    target_of(&f, unite, g);
+    fixture_input_int(&f, BLOCK_PIN(&f, unite, 0), 1); /* CKUNION */
+    nmo_parameterin_state_t *set = (nmo_parameterin_state_t *)fixture_state(&f, BLOCK_PIN(&f, unite, 1));
+    ASSERT_TRUE(set != NULL);
+    set->type_guid = CKPGUID_GROUP;
+    fixture_input_int(&f, BLOCK_PIN(&f, unite, 1), (int32_t)h);
+    fixture_input_int(&f, BLOCK_PIN(&f, remove, 0), (int32_t)g);
+    target_of(&f, remove, f.owner_id);
+    fixture_input_int(&f, BLOCK_PIN(&f, remove_object, 0), (int32_t)g);
+    fixture_input_int(&f, BLOCK_PIN(&f, remove_object, 1), (int32_t)third);
+    target_of(&f, clear, k);
+    start(&f);
+
+    step(&f, 1);
+    ASSERT_EQ(1, nmo_engine_group_count(f.engine, g));
+    ASSERT_TRUE(in_group(&f, g, other));
+    ASSERT_EQ(2, nmo_engine_group_count(f.engine, h));
+    ASSERT_EQ(0, nmo_engine_group_count(f.engine, k));
+    fixture_end(&f);
+}
+
+TEST(engine_logics, rendezvous_and_critical_sections_hold_objects_back)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t other = fixture_create(&f, NMO_CID_3DENTITY, "Other");
+    nmo_object_id_t meeting = fixture_create(&f, NMO_CID_SYNCHRO, "Meeting");
+    nmo_object_id_t alone = fixture_create(&f, NMO_CID_SYNCHRO, "Alone");
+    nmo_object_id_t section = fixture_create(&f, NMO_CID_CRITICALSECTION, "Section");
+    nmo_synchro_state_t *meeting_state = (nmo_synchro_state_t *)fixture_state(&f, meeting);
+    nmo_synchro_state_t *alone_state = (nmo_synchro_state_t *)fixture_state(&f, alone);
+    ASSERT_TRUE(other != 0 && section != 0 && meeting_state != NULL && alone_state != NULL);
+    meeting_state->max_waiters = 2;
+    alone_state->max_waiters = 1;
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    /* A rendezvous of one passes at once; of two, the owner waits for Other a frame later */
+    nmo_object_id_t solo = block(&f, GUID_RENDEZVOUS, "Solo");
+    target_of(&f, solo, f.owner_id);
+    fixture_input_int(&f, BLOCK_PIN(&f, solo, 0), (int32_t)alone);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, solo, 0), 0);
+    nmo_object_id_t solo_out = nop_after(&f, BLOCK_OUT(&f, solo, 0), 0);
+    nmo_object_id_t first = block(&f, GUID_RENDEZVOUS, "First");
+    nmo_object_id_t second = block(&f, GUID_RENDEZVOUS, "Second");
+    target_of(&f, first, f.owner_id);
+    target_of(&f, second, other);
+    fixture_input_int(&f, BLOCK_PIN(&f, first, 0), (int32_t)meeting);
+    fixture_input_int(&f, BLOCK_PIN(&f, second, 0), (int32_t)meeting);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, first, 0), 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, second, 0), 2);
+    nmo_object_id_t first_out = nop_after(&f, BLOCK_OUT(&f, first, 0), 0);
+    nmo_object_id_t second_out = nop_after(&f, BLOCK_OUT(&f, second, 0), 0);
+    /* The owner holds the section frames 1 to 3; Other asks from frame 2 */
+    nmo_object_id_t enter = block(&f, GUID_ENTER_CRITICAL_SECTION, "Enter");
+    nmo_object_id_t leave = block(&f, GUID_LEAVE_CRITICAL_SECTION, "Leave");
+    nmo_object_id_t wait = block(&f, GUID_ENTER_CRITICAL_SECTION, "Enter Other");
+    target_of(&f, enter, f.owner_id);
+    target_of(&f, leave, f.owner_id);
+    target_of(&f, wait, other);
+    fixture_input_int(&f, BLOCK_PIN(&f, enter, 0), (int32_t)section);
+    fixture_input_int(&f, BLOCK_PIN(&f, leave, 0), (int32_t)section);
+    fixture_input_int(&f, BLOCK_PIN(&f, wait, 0), (int32_t)section);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, enter, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, enter, 0), BLOCK_IN(&f, leave, 0), 2);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, wait, 0), 1);
+    nmo_object_id_t entered = nop_after(&f, BLOCK_OUT(&f, enter, 0), 0);
+    nmo_object_id_t waited = nop_after(&f, BLOCK_OUT(&f, wait, 0), 0);
+    start(&f);
+
+    step(&f, 2);
+    ASSERT_EQ(1u, runs(&f, solo_out));
+    ASSERT_EQ(0u, runs(&f, first_out));
+    ASSERT_EQ(1u, runs(&f, entered));
+    ASSERT_EQ(0u, runs(&f, waited));
+    step(&f, 3);
+    ASSERT_EQ(1u, runs(&f, first_out));
+    ASSERT_EQ(1u, runs(&f, second_out));
+    ASSERT_EQ(1u, runs(&f, waited));
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_logics, while_and_bool_events_follow_their_conditions);
     REGISTER_TEST(engine_logics, fifo_and_lifo_release_their_inputs_in_order);
@@ -389,4 +544,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_logics, hierarchy_parser_walks_the_target_depth_first);
     REGISTER_TEST(engine_logics, interpolators_blend_matrices_orientations_and_integers);
     REGISTER_TEST(engine_logics, message_data_carries_the_senders_parameters);
+    REGISTER_TEST(engine_logics, group_blocks_add_remove_combine_and_clear);
+    REGISTER_TEST(engine_logics, rendezvous_and_critical_sections_hold_objects_back);
 TEST_MAIN_END()
