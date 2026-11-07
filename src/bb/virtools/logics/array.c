@@ -794,6 +794,227 @@ static int bb_get_highest(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* Get Lowest (ArrayGetLowest): the row of the lowest cell of the column and its cells */
+static int bb_get_lowest(blk_t *b)
+{
+    nmo_object_id_t array = array_target(b);
+    if (array == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    int32_t row = eng_array_lowest_row(b->engine, array, get_in_int(b, 0, 0));
+    set_out_int(b, 0, row);
+    IN_OFF(b, 0);
+    if (row < 0) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    array_write_outputs(b, array, row, 1);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Get Nearest (ArrayGetNearest): the row whose cell is nearest the key input */
+static int bb_get_nearest(blk_t *b)
+{
+    nmo_object_id_t array = array_target(b);
+    if (array == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    int32_t column = get_in_int(b, 0, 0);
+    nmo_engine_cell_t key;
+    array_input_key(b, array, column, 1, &key);
+    int32_t row = eng_array_nearest_row(b->engine, array, column, &key);
+    set_out_int(b, 0, row);
+    IN_OFF(b, 0);
+    if (row < 0 || row >= nmo_engine_array_row_count(b->engine, array)) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    array_write_outputs(b, array, row, 1);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Column Operation (ArrayColumnsOperate): Result Column = Column 1 op Column 2 */
+static int bb_column_operation(blk_t *b)
+{
+    nmo_object_id_t array = array_target(b);
+    if (array == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    eng_array_columns_operate(b->engine, array, get_in_int(b, 0, 0), get_in_int(b, 1, 1),
+                              get_in_int(b, 2, 1), get_in_int(b, 3, 2));
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Column Transform (ArrayColumnTransform): each cell op the value input */
+static int bb_column_transform(blk_t *b)
+{
+    nmo_object_id_t array = array_target(b);
+    if (array == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    int32_t column = get_in_int(b, 0, 0);
+    nmo_engine_cell_t value;
+    array_input_key(b, array, column, 2, &value);
+    eng_array_column_transform(b->engine, array, column, get_in_int(b, 1, 1), value.value);
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Column Product (ArrayProduct) */
+static int bb_column_product(blk_t *b)
+{
+    nmo_object_id_t array = array_target(b);
+    if (array == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    uint32_t product = eng_array_product(b->engine, array, get_in_int(b, 0, 0));
+    nmo_engine_block_set_output_value(b, 0, &product, sizeof(product));
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * Create Group From Array (CreateGroupFromArray): the group the output holds
+ * gets the objects of Entities Column whose Search Column cell compares true.
+ */
+static int bb_create_group_from_array(blk_t *b)
+{
+    nmo_object_id_t array = array_target(b);
+    if (array == 0) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    int32_t entities = get_in_int(b, 0, 0), search = get_in_int(b, 1, 0);
+    int32_t op = get_in_int(b, 2, 1); /* CKEQUAL */
+    nmo_engine_cell_t key;
+    array_input_key(b, array, search, 3, &key);
+    nmo_object_id_t group = (nmo_object_id_t)get_out_int(b, 0);
+    if (group == 0 || nmo_engine_group_count(b->engine, group) < 0) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    eng_array_create_group(b->engine, array, search, op, &key, group, entities);
+    IN_OFF(b, 0);
+    OUT_ON(b, nmo_engine_group_count(b->engine, group) == 0 ? 1 : 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Get Column Name (ArrayGetColumnTitle); a parameter error past the columns */
+static int bb_get_column_name(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_object_id_t array = array_target(b);
+    if (array == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    int32_t column = get_in_int(b, 0, 0);
+    if (column < 0 || column >= nmo_engine_array_column_count(b->engine, array)) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    const char *name = nmo_engine_array_column_name(b->engine, array, column);
+    name = name != NULL ? name : "";
+    nmo_engine_block_set_output_value(b, 0, name, strlen(name) + 1u);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Make Rows Unique (ArrayUnique) */
+static int bb_make_rows_unique(blk_t *b)
+{
+    nmo_object_id_t array = array_target(b);
+    if (array == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    eng_array_unique(b->engine, array, get_in_int(b, 0, 0));
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Move Column (ArrayMoveColumn) */
+static int bb_move_column(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_object_id_t array = array_target(b);
+    if (array == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    eng_array_move_column(b->engine, array, get_in_int(b, 0, -1), get_in_int(b, 1, -1));
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Move Row (ArrayMove): no array is no error here */
+static int bb_move_row(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_object_id_t array = array_target(b);
+    if (array != 0) {
+        eng_array_move_row(b->engine, array, get_in_int(b, 0, 0), get_in_int(b, 1, 1));
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Reverse Order (ArrayReverse) */
+static int bb_reverse_order(blk_t *b)
+{
+    nmo_object_id_t array = array_target(b);
+    if (array == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    eng_array_reverse(b->engine, array);
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Swap Rows (ArraySwap): no array is no error here */
+static int bb_swap_rows(blk_t *b)
+{
+    nmo_object_id_t array = array_target(b);
+    if (array == 0) {
+        return NMO_ENGINE_BR_OK;
+    }
+    nmo_engine_array_swap_rows(b->engine, array, get_in_int(b, 0, 0), get_in_int(b, 1, 1));
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * Set Key Row (ArraySet): the inputs, one a column, into the first row whose
+ * key column cell equals the key column's input.
+ */
+static int bb_set_key_row(blk_t *b)
+{
+    nmo_object_id_t array = array_target(b);
+    if (array == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    int32_t column = nmo_engine_array_key_column(b->engine, array);
+    if (column < 0) {
+        return NMO_ENGINE_BR_PARAMETERERROR; /* "No column criterion defined" */
+    }
+    nmo_engine_cell_t key;
+    array_input_key(b, array, column, column, &key);
+    int32_t row = nmo_engine_array_find_row(b->engine, array, column, &key, 0);
+    IN_OFF(b, 0);
+    if (row < 0) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    array_read_inputs(b, array, row, 0);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_logics_array_blocks[] = {
     {NMO_GUID_INIT(0x33b99f51, 0x07d95c45), "Get Cell", bb_get_cell, NULL, NULL},
     {NMO_GUID_INIT(0x30ed1c6d, 0x4a3b7067), "Set Cell", bb_set_cell, NULL, NULL},
@@ -817,6 +1038,20 @@ static const nmo_engine_block_desc_t eng_logics_array_blocks[] = {
     {NMO_GUID_INIT(0x05cb7802, 0x04a64a58), "Insert Column", bb_insert_column, NULL, NULL},
     {NMO_GUID_INIT(0x49124252, 0x1be909a4), "Column Sum", bb_column_sum, NULL, NULL},
     {NMO_GUID_INIT(0x46f71e13, 0x13d26f61), "Get Highest", bb_get_highest, NULL, NULL},
+    {NMO_GUID_INIT(0x71b25ed7, 0x3c365a30), "Get Lowest", bb_get_lowest, NULL, NULL},
+    {NMO_GUID_INIT(0x0fac60ad, 0x1bd31ac9), "Get Nearest", bb_get_nearest, NULL, NULL},
+    {NMO_GUID_INIT(0x32351c65, 0x4f6916be), "Column Operation", bb_column_operation, NULL, NULL},
+    {NMO_GUID_INIT(0x4f8f0dfe, 0x7c517321), "Column Transform", bb_column_transform, NULL, NULL},
+    {NMO_GUID_INIT(0x39f64a9a, 0x682b721c), "Column Product", bb_column_product, NULL, NULL},
+    {NMO_GUID_INIT(0x22c71529, 0x6bb265d2), "Create Group From Array", bb_create_group_from_array,
+     NULL, NULL},
+    {NMO_GUID_INIT(0x33b7ff41, 0x07b95c44), "Get Column Name", bb_get_column_name, NULL, NULL},
+    {NMO_GUID_INIT(0x2b175818, 0x2c270b20), "Make Rows Unique", bb_make_rows_unique, NULL, NULL},
+    {NMO_GUID_INIT(0x1ace1319, 0x66b112b1), "Move Column", bb_move_column, NULL, NULL},
+    {NMO_GUID_INIT(0x101a62f4, 0x6e2d25f6), "Move Row", bb_move_row, NULL, NULL},
+    {NMO_GUID_INIT(0x3b7d3db7, 0x519f015b), "Reverse Order", bb_reverse_order, NULL, NULL},
+    {NMO_GUID_INIT(0x2ed72740, 0x406b5027), "Swap Rows", bb_swap_rows, NULL, NULL},
+    {NMO_GUID_INIT(0x2fff4c63, 0x4fcb1b94), "Set Key Row", bb_set_key_row, NULL, NULL},
 };
 
 nmo_status_t eng_register_logics_array(nmo_engine_t *engine)

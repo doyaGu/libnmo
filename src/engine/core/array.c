@@ -18,6 +18,7 @@
 #include "object/nmo_ref.h"
 #include "../../runtime/runtime_internal.h"
 
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -775,6 +776,278 @@ uint32_t nmo_engine_array_sum(const nmo_engine_t *engine, nmo_object_id_t array_
     return bits;
 }
 
+/* CKDataArray::GetLowest: the row of the lowest cell of a column; -1 for none */
+int32_t eng_array_lowest_row(const nmo_engine_t *engine, nmo_object_id_t array_id, int32_t column)
+{
+    const eng_array_t *array = eng_find_array(engine, array_id);
+    if (array == NULL || column < 0 || (uint32_t)column >= array->column_count ||
+        array->row_count == 0) {
+        return -1;
+    }
+    if (array->sorted && array->sort_column == column) {
+        return 0; /* GetLowest trusts the sort */
+    }
+    int32_t type = array->columns[column].type;
+    size_t lowest = 0;
+    for (size_t r = 1; r < array->row_count; r++) {
+        if (eng_cell_compare(type, eng_array_cell(array, r, column),
+                             eng_array_cell(array, lowest, column)) < 0) {
+            lowest = r;
+        }
+    }
+    return (int32_t)lowest;
+}
+
+/*
+ * CKDataArray::GetNearest: the row whose cell is nearest `key` (the smallest
+ * difference of an integer or a float, the best match score of a string). It
+ * gives row 0 for another column type, as CK sets the row before it gives up.
+ */
+int32_t eng_array_nearest_row(const nmo_engine_t *engine, nmo_object_id_t array_id,
+                              int32_t column, const nmo_engine_cell_t *key)
+{
+    const eng_array_t *array = eng_find_array(engine, array_id);
+    if (array == NULL || key == NULL || column < 0 || (uint32_t)column >= array->column_count ||
+        array->row_count == 0) {
+        return -1;
+    }
+    int32_t row = 0;
+    switch (array->columns[column].type) {
+    case CKARRAYTYPE_INT: {
+        int32_t target = (int32_t)key->value, best = 100000000;
+        for (size_t r = 0; r < array->row_count; r++) {
+            int32_t diff = abs(target - (int32_t)eng_array_cell(array, r, column)->value);
+            if (diff < best) {
+                best = diff;
+                row = (int32_t)r;
+            }
+        }
+        break;
+    }
+    case CKARRAYTYPE_FLOAT: {
+        float target, best = 100000000.0f;
+        memcpy(&target, &key->value, sizeof(target));
+        for (size_t r = 0; r < array->row_count; r++) {
+            float value;
+            memcpy(&value, &eng_array_cell(array, r, column)->value, sizeof(value));
+            float diff = fabsf(target - value);
+            if (diff < best) {
+                best = diff;
+                row = (int32_t)r;
+            }
+        }
+        break;
+    }
+    case CKARRAYTYPE_STRING: {
+        const char *target = key->text != NULL ? key->text : "";
+        int best = 100000000;
+        for (size_t r = 0; r < array->row_count; r++) {
+            const char *text = eng_array_cell(array, r, column)->text;
+            int score = 0;
+            if (text != NULL) {
+                const char *t = target, *c = text;
+                while (*t && *c) {
+                    if (*t != *c) {
+                        score += abs(*t - *c);
+                        break;
+                    }
+                    score -= 100;
+                    t++;
+                    c++;
+                }
+                score += abs((int)strlen(t) - (int)strlen(c)) * 100;
+            }
+            if (score < best) {
+                best = score;
+                row = (int32_t)r;
+            }
+        }
+        break;
+    }
+    default:
+        break;
+    }
+    return row;
+}
+
+/* CK_BINARYOPERATOR on two integers or two floats; a division by zero gives 0 */
+static uint32_t eng_binary_op(int32_t type, int32_t op, uint32_t a, uint32_t b)
+{
+    if (type == CKARRAYTYPE_FLOAT) {
+        float x, y, r = 0.0f;
+        memcpy(&x, &a, sizeof(x));
+        memcpy(&y, &b, sizeof(y));
+        switch (op) {
+        case 1: r = x + y; break; /* CKADD */
+        case 2: r = x - y; break; /* CKSUB */
+        case 3: r = x * y; break; /* CKMUL */
+        case 4: r = y != 0.0f ? x / y : 0.0f; break; /* CKDIV */
+        default: break;
+        }
+        uint32_t bits;
+        memcpy(&bits, &r, sizeof(bits));
+        return bits;
+    }
+    int32_t x = (int32_t)a, y = (int32_t)b, r = 0;
+    switch (op) {
+    case 1: r = (int32_t)((uint32_t)x + (uint32_t)y); break;
+    case 2: r = (int32_t)((uint32_t)x - (uint32_t)y); break;
+    case 3: r = (int32_t)((uint32_t)x * (uint32_t)y); break;
+    case 4: r = y != 0 && !(x == INT32_MIN && y == -1) ? x / y : 0; break;
+    default: break;
+    }
+    return (uint32_t)r;
+}
+
+/* CKDataArray::ColumnsOperate: column `cr` = `c1` op `c2`, all three of one number type */
+void eng_array_columns_operate(nmo_engine_t *engine, nmo_object_id_t array_id, int32_t c1,
+                               int32_t op, int32_t c2, int32_t cr)
+{
+    eng_array_t *array = eng_find_array(engine, array_id);
+    int32_t n = array != NULL ? (int32_t)array->column_count : 0;
+    if (array == NULL || c1 < 0 || c1 >= n || c2 < 0 || c2 >= n || cr < 0 || cr >= n) {
+        return;
+    }
+    int32_t type = array->columns[c1].type;
+    if (type != array->columns[c2].type || type != array->columns[cr].type) {
+        return;
+    }
+    if (type != CKARRAYTYPE_FLOAT) {
+        type = CKARRAYTYPE_INT; /* CK operates any other type as integers */
+    }
+    for (size_t r = 0; r < array->row_count; r++) {
+        uint32_t result = eng_binary_op(type, op, eng_array_cell(array, r, c1)->value,
+                                        eng_array_cell(array, r, c2)->value);
+        eng_array_cell(array, r, cr)->value = result;
+    }
+}
+
+/* CKDataArray::ColumnTransform: each cell of a number column op `value` */
+void eng_array_column_transform(nmo_engine_t *engine, nmo_object_id_t array_id, int32_t column,
+                                int32_t op, uint32_t value)
+{
+    eng_array_t *array = eng_find_array(engine, array_id);
+    if (array == NULL || column < 0 || (uint32_t)column >= array->column_count) {
+        return;
+    }
+    int32_t type = array->columns[column].type;
+    if (type != CKARRAYTYPE_INT && type != CKARRAYTYPE_FLOAT) {
+        return;
+    }
+    for (size_t r = 0; r < array->row_count; r++) {
+        eng_cell_t *cell = eng_array_cell(array, r, column);
+        cell->value = eng_binary_op(type, op, cell->value, value);
+    }
+}
+
+/* CKDataArray::Product of an integer or float column (its bits); 0 for another */
+uint32_t eng_array_product(const nmo_engine_t *engine, nmo_object_id_t array_id, int32_t column)
+{
+    const eng_array_t *array = eng_find_array(engine, array_id);
+    if (array == NULL || column < 0 || (uint32_t)column >= array->column_count) {
+        return 0u;
+    }
+    int32_t type = array->columns[column].type;
+    if (type == CKARRAYTYPE_INT) {
+        uint32_t product = 1u;
+        for (size_t r = 0; r < array->row_count; r++) {
+            product *= eng_array_cell(array, r, (size_t)column)->value;
+        }
+        return product;
+    }
+    if (type != CKARRAYTYPE_FLOAT) {
+        return 0u;
+    }
+    float product = 1.0f;
+    for (size_t r = 0; r < array->row_count; r++) {
+        float value;
+        memcpy(&value, &eng_array_cell(array, r, (size_t)column)->value, sizeof(value));
+        product *= value;
+    }
+    uint32_t bits;
+    memcpy(&bits, &product, sizeof(bits));
+    return bits;
+}
+
+/* CKDataArray::Unique: sorted on the column, rows equal to the one before go */
+void eng_array_unique(nmo_engine_t *engine, nmo_object_id_t array_id, int32_t column)
+{
+    eng_array_t *array = eng_find_array(engine, array_id);
+    if (array == NULL || column < 0 || (uint32_t)column >= array->column_count) {
+        return;
+    }
+    nmo_engine_array_sort(engine, array_id, column, true);
+    int32_t type = array->columns[column].type;
+    for (size_t r = array->row_count; r-- > 1;) {
+        if (eng_cell_compare(type, eng_array_cell(array, r, column),
+                             eng_array_cell(array, r - 1u, column)) == 0) {
+            nmo_engine_array_remove_row(engine, array_id, (int32_t)r);
+        }
+    }
+}
+
+/* XArray::Move of `count` items of `width` bytes: item `from` goes before item `to` (count: the end) */
+static void eng_move_item(uint8_t *items, size_t width, size_t count, size_t from, size_t to)
+{
+    size_t insert = to;
+    if (from < to) {
+        --insert;
+    }
+    uint8_t *moving = (uint8_t *)malloc(width);
+    if (moving == NULL) {
+        return;
+    }
+    memcpy(moving, items + from * width, width);
+    memmove(items + from * width, items + (from + 1u) * width, (count - from - 1u) * width);
+    memmove(items + (insert + 1u) * width, items + insert * width, (count - 1u - insert) * width);
+    memcpy(items + insert * width, moving, width);
+    free(moving);
+}
+
+/* CKDataArray::MoveRow: row `from` goes before row `to`, or last for -1 */
+void eng_array_move_row(nmo_engine_t *engine, nmo_object_id_t array_id, int32_t from, int32_t to)
+{
+    eng_array_t *array = eng_find_array(engine, array_id);
+    int32_t rows = array != NULL ? (int32_t)array->row_count : 0;
+    if (array == NULL || from < 0 || from >= rows || to < -1 || to >= rows || from == to ||
+        array->column_count == 0) {
+        return;
+    }
+    eng_move_item((uint8_t *)array->cells, array->column_count * sizeof(eng_cell_t),
+                  (size_t)rows, (size_t)from, to < 0 ? (size_t)rows : (size_t)to);
+}
+
+/* CKDataArray::MoveColumn: column `from` goes before column `to`, or last for -1 */
+void eng_array_move_column(nmo_engine_t *engine, nmo_object_id_t array_id, int32_t from,
+                           int32_t to)
+{
+    eng_array_t *array = eng_find_array(engine, array_id);
+    int32_t columns = array != NULL ? (int32_t)array->column_count : 0;
+    if (array == NULL || from < 0 || from >= columns || to < -1 || to >= columns || from == to) {
+        return;
+    }
+    size_t dest = to < 0 ? (size_t)columns : (size_t)to;
+    eng_move_item((uint8_t *)array->columns, sizeof(eng_column_t), (size_t)columns, (size_t)from,
+                  dest);
+    for (size_t r = 0; r < array->row_count; r++) {
+        eng_move_item((uint8_t *)eng_array_cell(array, r, 0), sizeof(eng_cell_t),
+                      (size_t)columns, (size_t)from, dest);
+    }
+    /* CK keeps the key column's index, whichever column is there now */
+}
+
+/* CKDataArray::Reverse: the rows in the opposite order */
+void eng_array_reverse(nmo_engine_t *engine, nmo_object_id_t array_id)
+{
+    eng_array_t *array = eng_find_array(engine, array_id);
+    if (array == NULL) {
+        return;
+    }
+    for (int32_t a = 0, b = (int32_t)array->row_count - 1; a < b; a++, b--) {
+        nmo_engine_array_swap_rows(engine, array_id, a, b);
+    }
+}
+
 /* The cells laid out again for `columns` columns; `map[c]` is the old column of new column c, or -1. */
 static bool eng_array_relayout(nmo_engine_t *engine, eng_array_t *array, eng_column_t *columns,
                                uint32_t column_count, const int32_t *map)
@@ -1071,6 +1344,57 @@ void eng_copy_group(nmo_engine_t *engine, nmo_object_id_t from, nmo_object_id_t 
         }
     }
     group->count = source->count;
+}
+
+/* CKGroup::RemoveObject: the object leaves the group; false when it was not in it */
+bool eng_group_remove(nmo_engine_t *engine, nmo_object_id_t group_id, nmo_object_id_t object_id)
+{
+    eng_group_t *group = eng_find_group(engine, group_id);
+    if (group == NULL || object_id == 0) {
+        return false;
+    }
+    for (size_t i = 0; i < group->count; i++) {
+        if (group->objects[i] == object_id) {
+            memmove(&group->objects[i], &group->objects[i + 1u],
+                    (group->count - i - 1u) * sizeof(nmo_object_id_t));
+            group->count--;
+            return true;
+        }
+    }
+    return false;
+}
+
+/* CKGroup::Clear */
+void eng_group_clear(nmo_engine_t *engine, nmo_object_id_t group_id)
+{
+    eng_group_t *group = eng_find_group(engine, group_id);
+    if (group != NULL) {
+        group->count = 0;
+    }
+}
+
+/*
+ * CKDataArray::CreateGroup: the group holds the behavioral objects of column
+ * `ec` (an object column) of the rows whose cell of column `mc` compares true.
+ */
+void eng_array_create_group(nmo_engine_t *engine, nmo_object_id_t array_id, int32_t mc,
+                            int32_t op, const nmo_engine_cell_t *key, nmo_object_id_t group_id,
+                            int32_t ec)
+{
+    if (eng_find_group(engine, group_id) == NULL) {
+        return;
+    }
+    eng_group_clear(engine, group_id);
+    const eng_array_t *array = eng_find_array(engine, array_id);
+    if (array == NULL || key == NULL || ec < 0 || (uint32_t)ec >= array->column_count || mc < 0 ||
+        (uint32_t)mc >= array->column_count || array->columns[ec].type != CKARRAYTYPE_OBJECT) {
+        return;
+    }
+    for (size_t r = 0; r < array->row_count; r++) {
+        if (eng_cell_matches(array->columns[mc].type, eng_array_cell(array, r, mc), op, key)) {
+            eng_group_add(engine, group_id, (nmo_object_id_t)eng_array_cell(array, r, ec)->value);
+        }
+    }
 }
 
 int32_t nmo_engine_group_count(const nmo_engine_t *engine, nmo_object_id_t group_id)

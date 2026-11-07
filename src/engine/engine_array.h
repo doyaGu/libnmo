@@ -61,6 +61,25 @@ nmo_status_t eng_load_groups(nmo_engine_t *engine, const eng_range_t *range);
 nmo_status_t eng_add_group(nmo_engine_t *engine, nmo_object_id_t id);
 void eng_group_join(nmo_engine_t *engine, nmo_object_id_t original, nmo_object_id_t copy);
 bool eng_group_add(nmo_engine_t *engine, nmo_object_id_t group_id, nmo_object_id_t object_id);
+bool eng_group_remove(nmo_engine_t *engine, nmo_object_id_t group_id, nmo_object_id_t object_id);
+void eng_group_clear(nmo_engine_t *engine, nmo_object_id_t group_id);
+/* CKDataArray operations of the array blocks, by the CK method each names */
+int32_t eng_array_lowest_row(const nmo_engine_t *engine, nmo_object_id_t array_id, int32_t column);
+int32_t eng_array_nearest_row(const nmo_engine_t *engine, nmo_object_id_t array_id,
+                              int32_t column, const nmo_engine_cell_t *key);
+void eng_array_columns_operate(nmo_engine_t *engine, nmo_object_id_t array_id, int32_t c1,
+                               int32_t op, int32_t c2, int32_t cr);
+void eng_array_column_transform(nmo_engine_t *engine, nmo_object_id_t array_id, int32_t column,
+                                int32_t op, uint32_t value);
+uint32_t eng_array_product(const nmo_engine_t *engine, nmo_object_id_t array_id, int32_t column);
+void eng_array_unique(nmo_engine_t *engine, nmo_object_id_t array_id, int32_t column);
+void eng_array_move_row(nmo_engine_t *engine, nmo_object_id_t array_id, int32_t from, int32_t to);
+void eng_array_move_column(nmo_engine_t *engine, nmo_object_id_t array_id, int32_t from,
+                           int32_t to);
+void eng_array_reverse(nmo_engine_t *engine, nmo_object_id_t array_id);
+void eng_array_create_group(nmo_engine_t *engine, nmo_object_id_t array_id, int32_t mc,
+                            int32_t op, const nmo_engine_cell_t *key, nmo_object_id_t group_id,
+                            int32_t ec);
 /* Deleting an object: groups drop it and object cells that held it hold none */
 void eng_forget_object(nmo_engine_t *engine, nmo_object_id_t id);
 size_t eng_type_size(const nmo_engine_t *engine, nmo_guid_t type);
