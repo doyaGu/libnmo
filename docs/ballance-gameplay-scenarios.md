@@ -22,6 +22,12 @@ rest pose. `min_degrees` is in `(0,180]`; `direction` is `positive`, `negative`
 or `either` (default). This measures displacement from rest, not cumulative
 turns. `hold` defaults to 3 and accepts 1–600 consecutive frames.
 
+A `ball_region` action uses a mechanism-local box in
+`[xmin,xmax,ymin,ymax,zmin,zmax]` order. Its bounds must be finite and increase
+on each axis. Optional `rise` requires the same observed ball to move from a
+lower box, gain at least `min_height`, and still be ascending in the target
+region. `within` accepts 1–3600 frames; `min_height` must be positive.
+
 A fall into the upper region does not satisfy this rise condition. Gaps,
 teleports or a changed ball identity break the ascent evidence. Ball regions
 use the mechanism's native XYZ axes, rotated by its placed yaw; they do not
@@ -35,7 +41,19 @@ satisfy an action. Nonphysical fan rotor animation is not lift evidence.
 
 ## Running a suite
 
-Add `--scenario bridge-recovery` to run one case. The runner checks build and
+Suites describe the mechanisms and approaches in an authored map, so keep them
+with that map's local inputs. The runner is part of the reusable toolchain;
+a fresh clone does not include a map-specific suite. After building your local
+route into `out/level`, set `BALLANCE` and `NMO` to absolute paths and run:
+
+```sh
+python3 apps/ballance/scripts/ballance_verify_scenarios.py \
+  out/level .local/ballance/scenarios.json \
+  --out out/scenarios --game "$BALLANCE" --nmo "$NMO"
+```
+
+The paths above are placeholders for your own build and suite. Add
+`--scenario <case-id>` to run one of its cases. The runner checks build and
 resource provenance, packs the level, and copies its generated native runtime
 variants into each case directory. It clears old generated runtime overlays
 before a rerun. Keep `--out` separate from the build directory, and run full
@@ -62,8 +80,8 @@ actually visited.
 Choose exactly one of `route_to` and `points`. Local waypoint Y values do
 not create height waits; use `route_to` to retain the route's existing waits
 and ball-changer approach. A `recover` case requires `route_to`, a fall
-`exit`, and the checkpoint's starting ball. The committed recovery cases use
-`start: "checkpoint"`.
+`exit`, and the checkpoint's starting ball. Use `start: "checkpoint"` when the
+case must exercise the approach from the native reset point.
 
 ## Expected outcomes and recovery
 
@@ -101,6 +119,15 @@ The runner uses a fixed 16.667 ms step and attaches evidence sidecars to
 these files and the suite report. Exit 0 means all selected cases passed;
 1 means a case failed; 2 means an invocation, input or runtime error.
 Check a retained report before relying on it:
+
+```sh
+python3 apps/ballance/scripts/ballance_check_evidence.py out/scenarios/scenarios.json
+```
+
+Keep the suite, raw traces, reports and evidence sidecars local. The same boundary
+applies to authored tolerance and shortcut specifications used by
+`ballance_verify_tolerance.py` and `ballance_verify_shortcuts.py`. Their runners
+remain tracked; concrete approaches and recorded outcomes belong to the map.
 
 These are bounded authored-input tests. They do not enumerate shortcuts,
 prove that a level has no soft locks, or establish manual-play difficulty.
