@@ -8,6 +8,8 @@
 #include "../../src/engine/engine_internal.h"
 
 #include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_level_schemas.h"
+#include "object/builtin/nmo_scene_schemas.h"
 
 #define GUID_NOP NMO_GUID(0x302561c4, 0x0d282980)
 #define GUID_ACTIVATE_GLOBAL_STATE NMO_GUID(0x373a615b, 0x769a6d53)
@@ -19,6 +21,9 @@
 #define GUID_READ_STATE NMO_GUID(0x3ab6273f, 0x578f7118)
 #define GUID_OBJECT_RENAME NMO_GUID(0x4cae18cc, 0x03520c5a)
 #define GUID_ATTACH_SCRIPT NMO_GUID(0x1dba5f4a, 0x14481212)
+#define GUID_GET_CURRENT_SCENE NMO_GUID(0x00dc125f, 0x592b00a8)
+#define GUID_REMOVE_OBJECT_FROM_SCENE NMO_GUID(0x683925f3, 0x6fdd3f16)
+#define GUID_LAUNCH_SCENE NMO_GUID(0x188d6d43, 0x169613dd)
 
 static nmo_object_id_t after(engine_fixture_t *f, nmo_guid_t guid, const char *name, nmo_object_id_t previous,
                              uint32_t delay)
@@ -163,8 +168,95 @@ TEST(engine_narratives, object_rename_and_attach_script)
     fixture_end(&f);
 }
 
+/* The owner's state at x, saved as a chunk (its initial value) */
+static nmo_chunk_t *entity_ic(engine_fixture_t *f, nmo_object_id_t id, float x)
+{
+    nmo_arena_t *arena = nmo_session_get_arena(f->session);
+    nmo_3dentity_state_t saved = *(nmo_3dentity_state_t *)fixture_state(f, id);
+    saved.world_matrix[12] = x;
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    if (chunk == NULL) {
+        return NULL;
+    }
+    chunk->class_id = NMO_CID_3DENTITY;
+    nmo_serialize_context_t context = nmo_serialize_context_create_nonfile(arena, f->repo, CK_STATESAVE_ALL);
+    if (nmo_chunk_start_write(chunk) != NMO_OK || nmo_3dentity_vtable.serialize(&saved, chunk, NULL, &context) != NMO_OK) {
+        return NULL;
+    }
+    nmo_chunk_close(chunk);
+    return chunk;
+}
+
+/* A level whose scene holds `ids`, starting active and reset, with their initial values */
+static void install_level_scene(engine_fixture_t *f, const nmo_object_id_t *ids, nmo_chunk_t *const *ics, size_t count)
+{
+    nmo_object_id_t level_id = fixture_create(f, NMO_CID_LEVEL, "Level");
+    nmo_level_state_t *level = (nmo_level_state_t *)fixture_state(f, level_id);
+    ASSERT_NOT_NULL(level);
+    nmo_scene_state_t scene;
+    memset(&scene, 0, sizeof(scene));
+    ASSERT_EQ(NMO_OK, nmo_scene_vtable.create(&scene, NULL, NULL));
+    scene.level = nmo_ref_from_id(level_id);
+    nmo_scene_object_desc_t *descs = NULL;
+    ASSERT_EQ(NMO_OK, nmo_array_extend(&scene.object_descs, count, (void **)&descs));
+    for (size_t i = 0; i < count; i++) {
+        descs[i].ref = nmo_ref_from_id(ids[i]);
+        descs[i].flags = CK_SCENEOBJECT_START_ACTIVATE | CK_SCENEOBJECT_START_RESET;
+        descs[i].initial_value = ics[i];
+    }
+    nmo_arena_t *arena = nmo_session_get_arena(f->session);
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->class_id = NMO_CID_SCENE;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_serialize_context_t context = nmo_serialize_context_create(arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_scene_serialize(&scene, chunk, NULL, &context));
+    nmo_chunk_close(chunk);
+    level->level_scene_chunk = chunk;
+    nmo_scene_vtable.destroy(&scene, NULL, NULL);
+}
+
+TEST(engine_narratives, launch_scene_resets_the_level_scene_and_objects_leave_it)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    place_x(&f, f.owner_id, 3.0f);
+    nmo_object_id_t other = fixture_create(&f, NMO_CID_3DENTITY, "Other");
+    ASSERT_TRUE(other != 0);
+    place_x(&f, other, 0.0f);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    nmo_object_id_t ids[] = {f.owner_id, f.script_id, other};
+    nmo_chunk_t *ics[] = {entity_ic(&f, f.owner_id, 3.0f), NULL, NULL};
+    ASSERT_NOT_NULL(ics[0]);
+    install_level_scene(&f, ids, ics, 3);
+    fixture_begin_edit(&f);
+    nmo_object_id_t current = after(&f, GUID_GET_CURRENT_SCENE, "Get Current Scene", 0, 0);
+    nmo_object_id_t remove = after(&f, GUID_REMOVE_OBJECT_FROM_SCENE, "Remove Object From Scene", current, 0);
+    nmo_object_id_t launch = after(&f, GUID_LAUNCH_SCENE, "Launch Scene", remove, 0);
+    ASSERT_TRUE(current != 0 && remove != 0 && launch != 0);
+    target_of(&f, remove, other);
+    fixture_input_int(&f, BLOCK_PIN(&f, launch, 2), 1); /* Reset */
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_SCENE_DEFAULT));
+    ASSERT_TRUE(eng_in_scene(f.engine, other));
+
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    nmo_object_id_t scene = 1;
+    read_value(&f, BLOCK_POUT(&f, current, 0), &scene, sizeof(scene));
+    ASSERT_EQ(0u, scene); /* the level scene */
+    ASSERT_TRUE(!eng_in_scene(f.engine, other));
+    move_x(&f, f.owner_id, 100.0f);
+    /* The launch happens as the next frame starts: the owner back at its initial value */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    ASSERT_FLOAT_EQ(3.0f, x_of(&f, f.owner_id), 0.0f);
+    ASSERT_TRUE(runs(&f, current) >= 2u); /* the script ran again after the reset */
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_narratives, global_states_enter_leave_and_test);
     REGISTER_TEST(engine_narratives, set_ic_save_state_and_read_state_bring_the_object_back);
     REGISTER_TEST(engine_narratives, object_rename_and_attach_script);
+    REGISTER_TEST(engine_narratives, launch_scene_resets_the_level_scene_and_objects_leave_it);
 TEST_MAIN_END()

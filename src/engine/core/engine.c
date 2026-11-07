@@ -269,6 +269,7 @@ void nmo_engine_destroy(nmo_engine_t *engine)
     free(engine->operation_map.slots);
     free(engine->object_map.slots);
     free(engine->scene_objects.slots);
+    free(engine->scene_entries);
     free(engine->destroyed.slots);
     eng_free_render(engine);
     free(engine->dynamic.objects.data);

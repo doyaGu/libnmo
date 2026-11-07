@@ -75,6 +75,9 @@ typedef struct eng_dynamic {
 void eng_add_module_to_level(nmo_engine_t *engine, int32_t module);
 bool eng_in_scene(const nmo_engine_t *engine, nmo_object_id_t id);
 void eng_add_to_level_scene(nmo_engine_t *engine, nmo_object_id_t id);
+/* CKLevel::SetNextActiveScene of the level scene: CKScene::Init with these
+   CK_SCENEOBJECTACTIVITY_FLAGS and CK_SCENEOBJECTRESET_FLAGS at the next frame's start */
+void eng_launch_level_scene(nmo_engine_t *engine, int32_t activity, int32_t reset);
 /* CKScene::RemoveObjectFromScene of the level scene */
 void eng_remove_from_level_scene(nmo_engine_t *engine, nmo_object_id_t id);
 /* CKBeObject::RemoveScript from its owner, then AddScript to `owner`: the script and its

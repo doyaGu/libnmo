@@ -714,6 +714,85 @@ static int bb_dummy0(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/*
+ * The scene blocks. The engine runs the level scene only: a Scene input
+ * naming another CKScene is one the engine never launches, and the blocks
+ * leave it be.
+ */
+
+/* Get Current Scene: none while the level scene is the current one */
+static int bb_get_current_scene(blk_t *b)
+{
+    nmo_object_id_t scene = 0;
+    nmo_engine_block_set_output_value(b, 0, &scene, sizeof(scene));
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* The target and its scripts, in or out of the level scene (CKBeObject::AddToScene, RemoveFromScene) */
+static void scene_membership(blk_t *b, nmo_object_id_t target, bool add)
+{
+    nmo_engine_t *engine = b->engine;
+    int32_t object = eng_map_get(&engine->object_map, target);
+    for (uint32_t s = 0; object >= 0 && s < engine->objects.data[object].script_count; s++) {
+        int32_t node = engine->indexes.data[engine->objects.data[object].first_script + s];
+        if (add) {
+            eng_add_to_level_scene(engine, engine->nodes.data[node].id);
+        } else {
+            eng_remove_from_level_scene(engine, engine->nodes.data[node].id);
+        }
+    }
+    if (add) {
+        eng_add_to_level_scene(engine, target);
+    } else {
+        eng_remove_from_level_scene(engine, target);
+        if (object >= 0) {
+            nmo_engine_activate_object(engine, target, false); /* out of the behavior manager */
+        }
+    }
+}
+
+/* Add Object To Scene and Remove Object From Scene: the target, in the Scene (the current one) */
+static int scene_object(blk_t *b, bool add)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (target != 0 && nmo_engine_block_get_input_object(b, 0) == 0) {
+        scene_membership(b, target, add);
+        eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, target, 0);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+static int bb_add_object_to_scene(blk_t *b) { return scene_object(b, true); }
+
+static int bb_remove_object_from_scene(blk_t *b) { return scene_object(b, false); }
+
+/*
+ * Launch Scene: CKLevel::SetNextActiveScene of the Scene (the level scene
+ * without one) with the Activity and Reset options, when it is not the
+ * current scene or the reset option is Reset; an old block's boolean
+ * activity resets as the scene says when TRUE, does nothing when FALSE.
+ */
+static int bb_launch_scene(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    int32_t activity = 0, reset = 0;
+    if (nmo_guid_equals(nmo_engine_block_input_parameter_type(b, 1), CKPGUID_BOOL)) {
+        reset = get_in_int(b, 1, 0) != 0 ? 0 : 2;
+    } else {
+        activity = get_in_int(b, 1, 0);
+        reset = get_in_int(b, 2, 0);
+    }
+    if (nmo_engine_block_get_input_object(b, 0) == 0 && reset == 1) {
+        eng_launch_level_scene(b->engine, activity, reset);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_narratives_blocks[] = {
     {NMO_GUID_INIT(0x02bc537c, 0x147c22e0), "Sound Load", bb_sound_load, NULL, NULL},
     {NMO_GUID_INIT(0x00e85ab1, 0x312a731c), "Texture Load", bb_texture_load, NULL, NULL},
@@ -743,6 +822,11 @@ static const nmo_engine_block_desc_t eng_narratives_blocks[] = {
     {NMO_GUID_INIT(0x4ca718cc, 0x03520c5a), "Object Rename", bb_object_rename, NULL, NULL},
     {NMO_GUID_INIT(0x1dba5f4a, 0x14481212), "Attach Script", bb_attach_script, NULL, NULL},
     {NMO_GUID_INIT(0xd0b7adf3, 0xd3ff3cf6), "Dummy0", bb_dummy0, NULL, NULL},
+    {NMO_GUID_INIT(0x00dc125f, 0x592b00a8), "Get Current Scene", bb_get_current_scene, NULL, NULL},
+    {NMO_GUID_INIT(0x4f7d5221, 0x4c852520), "Add Object To Scene", bb_add_object_to_scene, NULL, NULL},
+    {NMO_GUID_INIT(0x683925f3, 0x6fdd3f16), "Remove Object From Scene", bb_remove_object_from_scene, NULL,
+     NULL},
+    {NMO_GUID_INIT(0x188d6d43, 0x169613dd), "Launch Scene", bb_launch_scene, NULL, NULL},
 };
 
 nmo_status_t eng_register_narratives(nmo_engine_t *engine)

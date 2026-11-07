@@ -58,8 +58,8 @@ static bool eng_object_starts_active(nmo_engine_t *engine, nmo_object_id_t id)
 /* An object of the level scene and the flags it starts with. */
 typedef struct eng_scene_entry {
     nmo_object_id_t id;
-    uint32_t flags;
-    bool has_ic; /* the scene keeps an initial value for it */
+    uint32_t flags; /* CK_SCENEOBJECT_FLAGS, ACTIVE as the scene has it */
+    bool has_ic;    /* the scene keeps an initial value for it */
 } eng_scene_entry_t;
 
 static int eng_scene_entry_compare(const void *a, const void *b)
@@ -245,9 +245,85 @@ nmo_status_t nmo_engine_start(nmo_engine_t *engine, nmo_engine_start_mode_t mode
             eng_list_object(engine, (int32_t)o);
         }
     }
-    free(scene);
+    for (size_t i = 0; i < scene_count; i++) {
+        /* CKScene::Init's defaults: the objects that start active are */
+        if (scene[i].flags & CK_SCENEOBJECT_START_ACTIVATE) {
+            scene[i].flags |= CK_SCENEOBJECT_ACTIVE;
+        }
+    }
+    free(engine->scene_entries);
+    engine->scene_entries = scene; /* kept for a launch of the level scene */
+    engine->scene_entry_count = scene_count;
     eng_sort_listed(engine);
     return NMO_OK;
+}
+
+void eng_launch_level_scene(nmo_engine_t *engine, int32_t activity, int32_t reset)
+{
+    engine->scene_launch = true;
+    engine->scene_launch_activity = activity;
+    engine->scene_launch_reset = reset;
+}
+
+/*
+ * CKLevel::LaunchScene of the level scene (CKScene::Init): the behavior
+ * manager empties; each object of the scene resets to its initial value and
+ * becomes active or not as the options say (the scene's flags for their
+ * defaults); a script activates or deactivates so, keeping its activity
+ * with Do Nothing; the active objects with scripts are processed again.
+ */
+static void eng_relaunch_level_scene(nmo_engine_t *engine)
+{
+    engine->scene_launch = false;
+    for (size_t k = 0; k < engine->listed.count; k++) {
+        engine->objects.data[engine->listed.data[k]].listed = false;
+    }
+    engine->listed.count = 0;
+    for (size_t i = 0; i < engine->scene_entry_count; i++) {
+        eng_scene_entry_t *desc = &engine->scene_entries[i];
+        if (!eng_in_scene(engine, desc->id)) {
+            continue;
+        }
+        bool active = engine->scene_launch_activity == 1; /* CK_SCENEOBJECTACTIVITY_ACTIVATE */
+        bool nothing = engine->scene_launch_activity == 3;
+        bool reset = engine->scene_launch_reset == 1; /* CK_SCENEOBJECTRESET_RESET */
+        if (engine->scene_launch_reset == 0) {
+            reset = (desc->flags & CK_SCENEOBJECT_START_RESET) != 0;
+        }
+        if (engine->scene_launch_activity == 0) {
+            active = (desc->flags & CK_SCENEOBJECT_START_ACTIVATE) != 0;
+            nothing = (desc->flags & CK_SCENEOBJECT_START_LEAVE) != 0;
+        }
+        if (reset && desc->has_ic) {
+            eng_restore_ic(engine, desc->id);
+        }
+        if (!nothing) {
+            desc->flags = active ? desc->flags | CK_SCENEOBJECT_ACTIVE : desc->flags & ~(uint32_t)CK_SCENEOBJECT_ACTIVE;
+        }
+        bool now_active = (desc->flags & CK_SCENEOBJECT_ACTIVE) != 0;
+        int32_t node = eng_map_get(&engine->node_map, desc->id);
+        if (node >= 0 && (engine->nodes.data[node].flags & CKBEHAVIOR_SCRIPT) != 0) {
+            if (nothing) {
+                reset = false;
+                now_active = nmo_engine_behavior_is_active(engine, desc->id);
+            }
+            eng_behavior_activate(engine, node, now_active, reset);
+            engine->nodes.data[node].scene_active = now_active;
+            continue;
+        }
+        int32_t entity = eng_entity_index(engine, desc->id);
+        if (entity >= 0) {
+            engine->entities.data[entity].scene_active = now_active;
+        }
+        int32_t object = eng_map_get(&engine->object_map, desc->id);
+        if (object >= 0) {
+            engine->objects.data[object].active = now_active;
+            if (now_active && engine->objects.data[object].script_count > 0) {
+                eng_list_object(engine, object);
+            }
+        }
+    }
+    eng_sort_listed(engine);
 }
 
 nmo_status_t nmo_engine_activate_script(nmo_engine_t *engine, nmo_object_id_t script_id,
@@ -534,6 +610,9 @@ nmo_status_t nmo_engine_step(nmo_engine_t *engine, float delta_ms)
     memset(&engine->profile.frame, 0, sizeof(engine->profile.frame));
     eng_input_begin_frame(engine);
     eng_sounds_begin_frame(engine);
+    if (engine->scene_launch) {
+        eng_relaunch_level_scene(engine); /* CKLevel::PreProcess */
+    }
     eng_managers_pre_process(engine);
     eng_emit(engine, NMO_ENGINE_EVENT_FRAME_BEGIN, -1, 0, 0);
     engine->dynamic.defer = true;

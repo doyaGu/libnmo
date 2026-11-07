@@ -67,6 +67,12 @@ struct nmo_engine {
     eng_map_t scene_objects;
     eng_map_t destroyed; /* the objects nmo_engine_destroy_object() deleted */
     bool has_level_scene;
+    /* The level scene's objects and their scene flags (CKSceneObjectDesc), sorted by ID */
+    struct eng_scene_entry *scene_entries;
+    size_t scene_entry_count;
+    /* CKLevel::SetNextActiveScene of the level scene: launched again at the next frame */
+    bool scene_launch;
+    int32_t scene_launch_activity, scene_launch_reset;
     eng_ics_t ics;
     eng_dynamic_t dynamic;
 
