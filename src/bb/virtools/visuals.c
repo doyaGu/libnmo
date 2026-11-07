@@ -112,6 +112,7 @@ typedef struct visuals {
     ENG_VEC(struct visuals_blur) blurs;
     ENG_VEC(struct visuals_pass_request) passes;
     ENG_VEC(struct visuals_caster) casters;
+    ENG_VEC(int32_t) global_blurs;
 } visuals_t;
 
 static void visuals_destroy(nmo_engine_t *engine, void *state);
@@ -3809,6 +3810,88 @@ static int cb_shadow_caster(blk_t *b, uint32_t message)
     return NMO_ENGINE_BR_OK;
 }
 
+/*
+ * Global Blur: On stops the render context clearing its background and adds
+ * a render callback that, before the scene draws, lays the Material (the
+ * background material when none) over the whole view: its texture modulated
+ * by its diffuse color at a random alpha from 0.01 to 0.21 (rand()), blended
+ * (srcalpha, invsrcalpha) without Z, so the frames before fade out behind
+ * the new one. Off, a pause, reset or the script's deactivation clear the
+ * background again and remove it. The block declares no outputs.
+ */
+static void global_blur_on(nmo_engine_t *engine, int32_t node, bool on)
+{
+    eng_render_t *render = eng_render_settings(engine);
+    if (on) {
+        render->render_options &= ~(uint32_t)CK_RENDER_CLEARBACK;
+    } else {
+        render->render_options |= CK_RENDER_CLEARBACK;
+    }
+    node_drawn((node_list_t *)&visuals_state(engine)->global_blurs, node, on);
+}
+
+/* BlurRender */
+static void draw_global_blur(nmo_engine_t *engine, int32_t node, float width, float height)
+{
+    nmo_engine_block_t handle = {engine, node};
+    blk_t *b = &handle;
+    nmo_object_id_t material_id = nmo_engine_block_get_input_object(b, 0);
+    eng_material_t *material = material_id != 0 ? eng_material(engine, material_id) : NULL;
+    float color[4];
+    nmo_object_id_t texture;
+    if (material != NULL) {
+        memcpy(color, material->desc.diffuse, sizeof(color));
+        texture = material->desc.texture;
+    } else { /* the background material */
+        uint32_t argb = engine->render.background_color;
+        color[0] = (float)((argb >> 16) & 0xFF) / 255.0f;
+        color[1] = (float)((argb >> 8) & 0xFF) / 255.0f;
+        color[2] = (float)(argb & 0xFF) / 255.0f;
+        texture = engine->render.background_texture;
+    }
+    color[3] = (float)(eng_random_u15(engine) & 0x3FFu) * 0.00019999999f + 0.0099999998f;
+    nmo_engine_draw_t *draw = eng_render_push(engine);
+    if (draw == NULL) {
+        return;
+    }
+    draw->kind = NMO_ENGINE_DRAW_QUAD;
+    draw->background = true; /* before the 3D, without Z */
+    draw->rect[2] = width;
+    draw->rect[3] = height;
+    draw->uv[2] = draw->uv[3] = 1.0f;
+    draw->texture = texture;
+    draw->color = draw->color2 = vxcolor_to_color(color);
+    draw->blend = true;
+    draw->source_blend = VXBLEND_SRCALPHA;
+    draw->dest_blend = VXBLEND_INVSRCALPHA;
+}
+
+static int bb_global_blur(blk_t *b)
+{
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        global_blur_on(b->engine, b->node, false);
+        return NMO_ENGINE_BR_OK;
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        global_blur_on(b->engine, b->node, true);
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+static int cb_global_blur(blk_t *b, uint32_t message)
+{
+    bool active = (block_node(b)->flags & CKBEHAVIOR_ACTIVE) != 0; /* IsActive */
+    if ((message == NMO_ENGINE_MSG_PAUSE || message == NMO_ENGINE_MSG_RESET ||
+         message == NMO_ENGINE_MSG_DEACTIVATESCRIPT) && active) {
+        global_blur_on(b->engine, b->node, false);
+    } else if ((message == NMO_ENGINE_MSG_RESUME || message == NMO_ENGINE_MSG_ACTIVATESCRIPT) && active) {
+        global_blur_on(b->engine, b->node, true);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_visuals_blocks[] = {
     {NMO_GUID_INIT(0x00cd320b, 0x32ed010b), "Planar Filter", bb_planar_filter, cb_planar_filter,
      NULL},
@@ -3852,6 +3935,7 @@ static const nmo_engine_block_desc_t eng_visuals_blocks[] = {
     {NMO_GUID_INIT(0x731072fa, 0x56cf087f), "Planar Shadow", bb_planar_shadow, NULL, NULL},
     {NMO_GUID_INIT(0x67fc7084, 0x141154f7), "Texture Render", bb_texture_render, NULL, NULL},
     {NMO_GUID_INIT(0x0718360b, 0x71e5002f), "ShadowCaster", bb_shadow_caster, cb_shadow_caster, NULL},
+    {NMO_GUID_INIT(0x37f1163d, 0x35ad3e6b), "Global Blur", bb_global_blur, cb_global_blur, NULL},
 };
 
 /* The render callbacks, at the stages the render context calls them */
@@ -3869,6 +3953,12 @@ static void visuals_render(nmo_engine_t *engine, void *state, eng_render_stage_t
             }
         }
         visuals->passes.count = 0;
+        return;
+    }
+    if (stage == ENG_RENDER_PRE) {
+        for (size_t i = 0; i < visuals->global_blurs.count; i++) {
+            draw_global_blur(engine, visuals->global_blurs.data[i], args->width, args->height);
+        }
         return;
     }
     if (stage == ENG_RENDER_SCENE) {
@@ -3916,6 +4006,7 @@ static void visuals_destroy(nmo_engine_t *engine, void *state)
     free(((visuals_t *)state)->blurs.data);
     free(((visuals_t *)state)->passes.data);
     free(((visuals_t *)state)->casters.data);
+    free(((visuals_t *)state)->global_blurs.data);
 }
 
 nmo_status_t eng_register_visuals(nmo_engine_t *engine)

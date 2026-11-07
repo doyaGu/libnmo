@@ -1319,6 +1319,59 @@ TEST(engine_visuals, shadow_caster_draws_its_shadow_texture_and_projects_it_on_r
     fixture_end(&f);
 }
 
+#define GUID_GLOBAL_BLUR NMO_GUID(0x37f1163d, 0x35ad3e6b)
+
+TEST(engine_visuals, global_blur_stops_the_clear_and_lays_a_faint_quad_before_the_scene)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t material = fixture_create(&f, NMO_CID_MATERIAL, "Material");
+    nmo_object_id_t mesh = 0;
+    nmo_object_id_t object = face_object(&f, "Face", material, &mesh);
+    ASSERT_TRUE(material != 0 && object != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t blur = block_on(&f, GUID_GLOBAL_BLUR, "Global Blur", 0);
+    ASSERT_TRUE(blur != 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, blur, 0), (int32_t)material);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, blur, 1), 2); /* Off two frames on */
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    eng_material_t *shade = eng_material(f.engine, material);
+    ASSERT_NOT_NULL(shade);
+    const float green[4] = {0.0f, 1.0f, 0.0f, 1.0f};
+    memcpy(shade->desc.diffuse, green, sizeof(green));
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_TRUE(frame.render_options & CK_RENDER_CLEARBACK);
+
+    /* On: no background clear, and the material's green over the whole view at a faint random
+       alpha (0.01 to 0.21) first, before the face */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_FALSE(frame.render_options & CK_RENDER_CLEARBACK);
+    ASSERT_TRUE(frame.draw_count >= 2);
+    const nmo_engine_draw_t *quad = &frame.draws[0];
+    ASSERT_EQ(NMO_ENGINE_DRAW_QUAD, quad->kind);
+    ASSERT_TRUE(quad->background && quad->blend);
+    ASSERT_EQ(VXBLEND_SRCALPHA, quad->source_blend);
+    ASSERT_EQ(VXBLEND_INVSRCALPHA, quad->dest_blend);
+    ASSERT_FLOAT_EQ((float)frame.width, quad->rect[2], 0.0f);
+    ASSERT_FLOAT_EQ((float)frame.height, quad->rect[3], 0.0f);
+    ASSERT_EQ(0x0000FF00u, quad->color & 0x00FFFFFFu);
+    uint32_t alpha = quad->color >> 24;
+    ASSERT_TRUE(alpha >= 2u && alpha <= 53u);
+    ASSERT_TRUE(mesh_draw(&frame, object) > 0);
+
+    /* Off: cleared again, no quad */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_TRUE(frame.render_options & CK_RENDER_CLEARBACK);
+    ASSERT_EQ(NMO_ENGINE_DRAW_MESH, frame.draws[0].kind);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_visuals, blink_cycles_the_target_and_fps_reports_the_rate);
     REGISTER_TEST(engine_visuals, z_buffer_and_render_order_shape_the_mesh_draws);
@@ -1340,4 +1393,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_visuals, a_scene_pass_draws_the_scene_into_a_texture_before_the_frame);
     REGISTER_TEST(engine_visuals, texture_render_asks_for_a_pass_into_its_target_once_a_run);
     REGISTER_TEST(engine_visuals, shadow_caster_draws_its_shadow_texture_and_projects_it_on_receivers);
+    REGISTER_TEST(engine_visuals, global_blur_stops_the_clear_and_lays_a_faint_quad_before_the_scene);
 TEST_MAIN_END()
