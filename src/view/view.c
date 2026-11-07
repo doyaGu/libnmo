@@ -1164,6 +1164,10 @@ static void view_draw_primitive(nmo_view_t *view, const nmo_engine_frame_t *fram
         projection[14] *= draw->projection_z_scale;
         glLoadMatrixf(projection);
     }
+    bool fogged = draw->no_fog && glIsEnabled(GL_FOG);
+    if (fogged) {
+        glDisable(GL_FOG);
+    }
     glMatrixMode(GL_MODELVIEW);
     glLoadMatrixf(view_m);
     const nmo_engine_vertex_t *v = &frame->vertices[draw->first_vertex];
@@ -1181,6 +1185,9 @@ static void view_draw_primitive(nmo_view_t *view, const nmo_engine_frame_t *fram
     }
     glEnd();
     glDisable(GL_LIGHTING);
+    if (fogged) {
+        glEnable(GL_FOG);
+    }
     if (draw->projection_z_scale != 0.0f) {
         glMatrixMode(GL_PROJECTION);
         glPopMatrix();

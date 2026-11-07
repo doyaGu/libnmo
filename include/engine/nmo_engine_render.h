@@ -97,9 +97,11 @@ typedef struct nmo_engine_draw {
        render context's post render callback's are `post`: drawn after the transparent draws,
        in order. A primitive with `projection_z_scale` (not 0) is drawn with the projection's
        depth translation (VxMatrix [3][2]) scaled by it: a block's trick against z fighting
-       (Mark System's 1.001). */
+       (Mark System's 1.001). One with `no_fog` is drawn without the fog
+       (VXRENDERSTATE_FOGENABLE off). */
     bool lines, lit, two_sided, post;
     float projection_z_scale;
+    bool no_fog;
     /* Sprite text: `text` in `rect`, in `color` on nothing (the sprite's transparent
        color), with the font `font_name` of `font_size` (points; pixels when negative,
        as CreateFont takes it), `font_weight` and `italic`, placed by `text_align`
