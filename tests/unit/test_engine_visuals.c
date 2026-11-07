@@ -13,6 +13,7 @@
 #include "object/builtin/nmo_2dentity_schemas.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_curve_schemas.h"
+#include "object/builtin/nmo_light_schemas.h"
 #include "object/builtin/nmo_material_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
@@ -36,6 +37,8 @@
 #define GUID_MARK_SYSTEM NMO_GUID(0x09a06075, 0x760a4720)
 #define GUID_VERTEX_RENDER NMO_GUID(0xcc030377, 0x897aaaaa)
 #define GUID_MOTION_BLUR NMO_GUID(0x06d0b04b, 0x1d4ea106)
+#define GUID_PLANAR_REFLECTION NMO_GUID(0x44fe1b3c, 0x29ba3445)
+#define GUID_PLANAR_SHADOW NMO_GUID(0x731072fa, 0x56cf087f)
 
 /* A block acting on `object` (0: no target), run when the script starts */
 static nmo_object_id_t block_on(engine_fixture_t *f, nmo_guid_t guid, const char *name, nmo_object_id_t object)
@@ -940,6 +943,161 @@ TEST(engine_visuals, motion_blur_draws_the_mesh_faded_along_its_last_matrices)
     fixture_end(&f);
 }
 
+/* An attribute `name` with a structure value whose first fields are `count` int parameters
+   (`values`, an object's ID for an object field). After fixture_begin_edit(). */
+static void struct_attribute(engine_fixture_t *f, nmo_object_id_t object, const char *name, const int32_t *values,
+                             int count)
+{
+    nmo_manager_entry_create_options_t options = {.enabled = true, .attribute_type_guid = CKPGUID_FLOOR,
+        .category = "Test", .has_compatible_class_id = true, .compatible_class_id = NMO_CID_3DENTITY,
+        .has_flags = true, .flags = 0};
+    uint32_t type = 0;
+    ASSERT_EQ(NMO_OK, nmo_object_edit_ensure_attribute_manager_entry(nmo_script_edit_workspace_edit(f->tx), name,
+                                                                     &options, &type));
+    nmo_object_id_t parameter = fixture_create(f, NMO_CID_PARAMETEROUT, name);
+    nmo_parameter_state_t *state = (nmo_parameter_state_t *)fixture_state(f, parameter);
+    state->has_state = true;
+    state->mode = CKPARAM_MODE_BUFFER;
+    state->type_guid = CKPGUID_FLOOR;
+    ASSERT_EQ(NMO_OK, nmo_array_alloc(&state->buffer_data, 1, 20, NULL));
+    memset(state->buffer_data.data, 0, 20);
+    for (int i = 0; i < count; i++) {
+        nmo_object_id_t field = fixture_create(f, NMO_CID_PARAMETERLOCAL, "Field");
+        nmo_parameter_state_t *value = (nmo_parameter_state_t *)fixture_state(f, field);
+        value->has_state = true;
+        value->mode = CKPARAM_MODE_BUFFER;
+        value->type_guid = CKPGUID_INT;
+        ASSERT_EQ(NMO_OK, nmo_array_alloc(&value->buffer_data, 1, 4, NULL));
+        memcpy(value->buffer_data.data, &values[i], 4);
+        memcpy((uint8_t *)state->buffer_data.data + 4 * i, &field, 4);
+    }
+    ASSERT_EQ(NMO_OK, nmo_beobject_attribute_array_append(&((nmo_beobject_state_t *)fixture_state(f, object))->attributes,
+                                                          parameter, type, NULL));
+}
+
+/* The frame's index of the mesh draw of `object` of the kind `stencil_only`; -1 for none */
+static int mesh_draw_of(const nmo_engine_frame_t *frame, nmo_object_id_t object, bool stencil_only)
+{
+    for (int32_t i = 0; i < frame->draw_count; i++) {
+        if (frame->draws[i].kind == NMO_ENGINE_DRAW_MESH && frame->draws[i].object == object &&
+            frame->draws[i].stencil_only == stencil_only) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+TEST(engine_visuals, planar_reflection_mirrors_reflected_objects_inside_the_plane)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t material = fixture_create(&f, NMO_CID_MATERIAL, "Material");
+    nmo_object_id_t mesh = 0;
+    nmo_object_id_t object = face_object(&f, "Face", material, &mesh);
+    ASSERT_TRUE(material != 0 && object != 0);
+    ((nmo_3dentity_state_t *)fixture_state(&f, object))->world_matrix[13] = 2.0f;
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t floor_mesh = 0;
+    nmo_object_id_t plane = floor_object(&f, &floor_mesh);
+    ASSERT_TRUE(plane != 0);
+    const int32_t fields[2] = {1, 0}; /* group 1, no mesh of its own */
+    struct_attribute(&f, object, "Reflected Object", fields, 2);
+    nmo_object_id_t mirror = block_on(&f, GUID_PLANAR_REFLECTION, "Planar Reflection", plane);
+    ASSERT_TRUE(mirror != 0);
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+
+    /* The plane's pixels marked in stencil bit 0, then the face mirrored to y = -2 drawn there,
+       then the plane itself with no stencil test */
+    int mask = mesh_draw_of(&frame, plane, true), plane_at = mesh_draw_of(&frame, plane, false);
+    ASSERT_TRUE(mask >= 0 && plane_at > mask);
+    const nmo_engine_draw_t *marked = &frame.draws[mask];
+    ASSERT_TRUE(marked->stencil.enabled);
+    ASSERT_EQ(VXCMP_ALWAYS, marked->stencil.func);
+    ASSERT_EQ(VXSTENCILOP_REPLACE, marked->stencil.pass);
+    ASSERT_EQ(1u, marked->stencil.write_mask);
+    const nmo_engine_draw_t *mirrored = &frame.draws[mask + 1];
+    ASSERT_EQ(object, mirrored->object);
+    ASSERT_TRUE(mirrored->mirrored && !mirrored->stencil_only);
+    ASSERT_FLOAT_EQ(-2.0f, mirrored->world[13], 1e-5f);
+    ASSERT_FLOAT_EQ(-1.0f, mirrored->world[5], 1e-5f);
+    ASSERT_TRUE(mirrored->stencil.enabled);
+    ASSERT_EQ(VXCMP_EQUAL, mirrored->stencil.func);
+    ASSERT_EQ(1u, mirrored->stencil.mask);
+    ASSERT_EQ(VXSTENCILOP_KEEP, mirrored->stencil.pass);
+    ASSERT_FALSE(frame.draws[plane_at].stencil.enabled);
+    int own = mesh_draw_of(&frame, object, false);
+    ASSERT_TRUE(own >= 0 && !frame.draws[own].mirrored && frame.draws[own].world[13] == 2.0f);
+    fixture_end(&f);
+}
+
+TEST(engine_visuals, planar_shadow_flattens_shadow_objects_on_the_plane_from_the_light)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t material = fixture_create(&f, NMO_CID_MATERIAL, "Material");
+    nmo_object_id_t mesh = 0;
+    nmo_object_id_t object = face_object(&f, "Face", material, &mesh);
+    nmo_object_id_t light = fixture_create(&f, NMO_CID_LIGHT, "Light");
+    ASSERT_TRUE(material != 0 && object != 0 && light != 0);
+    ((nmo_3dentity_state_t *)fixture_state(&f, object))->world_matrix[13] = 2.0f;
+    nmo_light_state_t *point = (nmo_light_state_t *)fixture_state(&f, light);
+    point->light_data.type = VX_LIGHTPOINT;
+    const float at[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 10, 10, 1};
+    memcpy(point->entity.world_matrix, at, sizeof(at));
+    point->entity.has_entityndata_chunk = 1;
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t floor_mesh = 0;
+    nmo_object_id_t plane = floor_object(&f, &floor_mesh);
+    ASSERT_TRUE(plane != 0);
+    const int32_t fields[2] = {1, 0};
+    struct_attribute(&f, object, "Planar Shadow Object", fields, 2);
+    nmo_object_id_t shadow = block_on(&f, GUID_PLANAR_SHADOW, "Planar Shadow", plane);
+    ASSERT_TRUE(shadow != 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, shadow, 1), (int32_t)light);
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+
+    /* The plane writes stencil bit 0 as it draws; right after it, the face's shadow from the
+       light at (0,10,10), black, blended, only where the plane is */
+    int plane_at = mesh_draw_of(&frame, plane, false);
+    ASSERT_TRUE(plane_at >= 0);
+    const nmo_engine_draw_t *drawn = &frame.draws[plane_at];
+    ASSERT_TRUE(drawn->stencil.enabled);
+    ASSERT_EQ(VXCMP_ALWAYS, drawn->stencil.func);
+    ASSERT_EQ(VXSTENCILOP_REPLACE, drawn->stencil.pass);
+    ASSERT_EQ(1u, drawn->stencil.write_mask);
+    const nmo_engine_draw_t *cast = &frame.draws[plane_at + 1];
+    ASSERT_EQ(NMO_ENGINE_DRAW_PRIMITIVE, cast->kind);
+    ASSERT_EQ(plane, cast->object);
+    ASSERT_EQ(3, cast->vertex_count);
+    vertex_at(&frame, cast, 0, 0, 0, -2.5f, 0, 0);
+    vertex_at(&frame, cast, 1, 1.25f, 0, -2.5f, 0, 0);
+    vertex_at(&frame, cast, 2, 0, 0, -10.0f / 7.0f * 3.0f, 0, 0);
+    ASSERT_EQ(0xFF000000u, frame.vertices[cast->first_vertex].color);
+    ASSERT_TRUE(cast->blend && cast->no_z_write && cast->two_sided && cast->material == 0);
+    ASSERT_EQ(VXBLEND_SRCALPHA, cast->source_blend);
+    ASSERT_EQ(VXBLEND_INVSRCALPHA, cast->dest_blend);
+    ASSERT_FLOAT_EQ(1.005f, cast->projection_z_scale, 1e-7f);
+    ASSERT_TRUE(cast->stencil.enabled);
+    ASSERT_EQ(VXCMP_EQUAL, cast->stencil.func);
+    ASSERT_EQ(1u, cast->stencil.mask);
+    ASSERT_EQ(VXSTENCILOP_KEEP, cast->stencil.pass);
+    /* the stencil off again after the plane */
+    int own = mesh_draw_of(&frame, object, false);
+    ASSERT_TRUE(own >= 0);
+    ASSERT_FALSE(frame.draws[own].stencil.enabled);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_visuals, blink_cycles_the_target_and_fps_reports_the_rate);
     REGISTER_TEST(engine_visuals, z_buffer_and_render_order_shape_the_mesh_draws);
@@ -956,4 +1114,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_visuals, mark_system_draws_after_its_supporting_entity_while_it_renders);
     REGISTER_TEST(engine_visuals, vertex_render_draws_a_sprite_at_each_vertex_instead_of_the_mesh);
     REGISTER_TEST(engine_visuals, motion_blur_draws_the_mesh_faded_along_its_last_matrices);
+    REGISTER_TEST(engine_visuals, planar_reflection_mirrors_reflected_objects_inside_the_plane);
+    REGISTER_TEST(engine_visuals, planar_shadow_flattens_shadow_objects_on_the_plane_from_the_light);
 TEST_MAIN_END()

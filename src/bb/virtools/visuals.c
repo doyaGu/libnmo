@@ -1173,8 +1173,7 @@ static nmo_engine_draw_t *push_primitive(nmo_engine_t *engine, nmo_object_id_t o
     if (draw == NULL) {
         return NULL;
     }
-    memset(draw, 0, sizeof(*draw));
-    draw->kind = NMO_ENGINE_DRAW_PRIMITIVE;
+    draw->kind = NMO_ENGINE_DRAW_PRIMITIVE; /* zeroed but for the render context's stencil */
     draw->object = object;
     draw->first_vertex = first;
     draw->vertex_count = count;
@@ -2768,6 +2767,533 @@ static int cb_motion_blur(blk_t *b, uint32_t message)
     return NMO_ENGINE_BR_OK;
 }
 
+/* The attribute type named `name`; -1 for none */
+static int32_t attribute_type_named(const nmo_engine_t *engine, const char *name)
+{
+    for (size_t t = 0; t < engine->attributes.types.count; t++) {
+        const eng_attribute_type_t *type = &engine->attributes.types.data[t];
+        if (type->present && type->name != NULL && strcmp(type->name, name) == 0) {
+            return (int32_t)t;
+        }
+    }
+    return -1;
+}
+
+/* A field of a structure attribute's value (its parameters' ids, one a field): an int, or with
+   `object` the object it names (an engine ID) */
+static int32_t attribute_field(nmo_engine_t *engine, const eng_attribute_t *attribute, uint32_t field,
+                               bool object, int32_t fallback)
+{
+    if (!attribute->has_value || attribute->value.size / 4 <= field) {
+        return fallback;
+    }
+    nmo_object_id_t local;
+    memcpy(&local, attribute->value.data + 4 * field, 4);
+    const eng_module_t *module = eng_module_of(engine, attribute->object, NULL);
+    nmo_object_id_t id = module != NULL ? eng_module_id(module, local) : 0;
+    int32_t param = eng_map_get(&engine->param_map, id);
+    if (param >= 0) {
+        return eng_param_read_int(&engine->params.data[param]);
+    }
+    const nmo_parameter_state_t *state = (const nmo_parameter_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
+        engine->types, eng_find_object(engine, id), CKPGUID_PARAMETER);
+    uint8_t *bytes = NULL;
+    uint32_t size = 0;
+    if (state != NULL && eng_parameter_state_bytes(module, state, 4, &bytes, &size) && size >= 4) {
+        memcpy(&fallback, bytes, 4);
+        if (object) {
+            fallback = (int32_t)eng_module_id(module, (nmo_object_id_t)fallback);
+        }
+    }
+    free(bytes);
+    return fallback;
+}
+
+/* CK3dEntity::HierarchyParser: the entity's descendants, depth first; -1 after the last */
+static int32_t hierarchy_next(const nmo_engine_t *engine, int32_t root, int32_t current)
+{
+    if (current < 0) {
+        return engine->entities.data[root].first_child;
+    }
+    if (engine->entities.data[current].first_child >= 0) {
+        return engine->entities.data[current].first_child;
+    }
+    while (current != root && engine->entities.data[current].next_sibling < 0) {
+        current = engine->entities.data[current].parent;
+    }
+    return current == root || current < 0 ? -1 : engine->entities.data[current].next_sibling;
+}
+
+/* IsVisible() && !IsHiddenByParent() */
+static bool entity_shown(nmo_engine_t *engine, int32_t index)
+{
+    return nmo_engine_object_is_visible(engine, engine->entities.data[index].id) &&
+           !eng_render_hidden_by_parent(engine, index);
+}
+
+/* The entity's current mesh when it is shown (VXMESH_VISIBLE); 0 otherwise */
+static nmo_object_id_t entity_shown_mesh(nmo_engine_t *engine, nmo_object_id_t entity)
+{
+    nmo_object_id_t mesh = entity_current_mesh(engine, entity);
+    return mesh != 0 && nmo_engine_object_is_visible(engine, mesh) ? mesh : 0;
+}
+
+/* VxPlane(a, b, c): its normal and D */
+typedef struct visuals_plane {
+    eng_vector_t n;
+    float d;
+} visuals_plane_t;
+
+static visuals_plane_t plane_through(eng_vector_t a, eng_vector_t b, eng_vector_t c)
+{
+    double bx = (double)b.x - a.x, by = (double)b.y - a.y, bz = (double)b.z - a.z;
+    double cx = (double)c.x - a.x, cy = (double)c.y - a.y, cz = (double)c.z - a.z;
+    double nx = by * cz - bz * cy, ny = bz * cx - bx * cz, nz = bx * cy - by * cx;
+    double length = nx * nx + ny * ny + nz * nz;
+    visuals_plane_t plane = {{0.0f, 0.0f, 0.0f}, 0.0f};
+    if (length != 0.0) {
+        double inverse = 1.0 / sqrt(length);
+        plane.n = marks_v((float)(nx * inverse), (float)(ny * inverse), (float)(nz * inverse));
+    }
+    plane.d = -(plane.n.x * a.x + plane.n.y * a.y + plane.n.z * a.z);
+    return plane;
+}
+
+/* VxPlane::Classify(box, matrix): the distance of the transformed box past the plane, 0 across */
+static float plane_classify(const visuals_plane_t *plane, eng_vector_t min, eng_vector_t max,
+                            const eng_matrix_t *m)
+{
+    float radius = 0.0f;
+    const float half[3] = {(max.x - min.x) * 0.5f, (max.y - min.y) * 0.5f, (max.z - min.z) * 0.5f};
+    for (int i = 0; i < 3; i++) {
+        eng_vector_t axis = marks_v(m->m[i][0] * half[i], m->m[i][1] * half[i], m->m[i][2] * half[i]);
+        radius += fabsf(plane->n.x * axis.x + plane->n.y * axis.y + plane->n.z * axis.z);
+    }
+    eng_vector_t center = marks_v((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f, (min.z + max.z) * 0.5f), c;
+    eng_vector_transform(&c, m, &center);
+    float distance = plane->n.x * c.x + plane->n.y * c.y + plane->n.z * c.z + plane->d;
+    return distance > radius ? distance - radius : distance < -radius ? distance + radius : 0.0f;
+}
+
+/* The four planes through the light (or eye) and the edges of the plane entity's local box
+   across `normal` (left, right, top, down), in the world */
+static void plane_edges(nmo_engine_t *engine, int32_t plane, eng_vector_t normal, eng_vector_t from,
+                        visuals_plane_t out[4])
+{
+    eng_vector_t min, max;
+    eng_entity_local_box(engine, plane, &min, &max);
+    float lo[3] = {min.x, min.y, min.z}, hi[3] = {max.x, max.y, max.z};
+    float smallest = normal.x;
+    int x = 1, y = 2;
+    if (smallest < normal.y) {
+        smallest = normal.y;
+        x = 0;
+        y = 2;
+    }
+    if (smallest < normal.z) {
+        x = 0;
+        y = 1;
+    }
+    eng_vector_t corners[4];
+    for (int k = 0; k < 4; k++) {
+        float p[3] = {hi[0], hi[1], hi[2]};
+        if (k == 0 || k == 1) {
+            p[x] = lo[x];
+        }
+        if (k == 0 || k == 3) {
+            p[y] = lo[y];
+        }
+        eng_vector_t local = marks_v(p[0], p[1], p[2]);
+        eng_vector_transform(&corners[k], &engine->entities.data[plane].world, &local);
+    }
+    out[0] = plane_through(corners[1], corners[0], from);
+    out[1] = plane_through(corners[2], corners[1], from);
+    out[2] = plane_through(corners[3], corners[2], from);
+    out[3] = plane_through(corners[0], corners[3], from);
+}
+
+/* The viewpoint's position in the plane entity's space */
+static eng_vector_t viewpoint_in(nmo_engine_t *engine, int32_t plane)
+{
+    eng_matrix_t eye, inverse;
+    eng_render_viewpoint(engine, &eye);
+    eng_matrix_inverse(&inverse, &engine->entities.data[plane].world);
+    eng_vector_t at = marks_v(eye.m[3][0], eye.m[3][1], eye.m[3][2]), out;
+    eng_vector_transform(&out, &inverse, &at);
+    return out;
+}
+
+/* A mesh draw an entity's render callback makes, sorted with the plane entity `at` */
+static nmo_engine_draw_t *plane_mesh_draw(nmo_engine_t *engine, nmo_object_id_t entity, nmo_object_id_t mesh,
+                                          const eng_matrix_t *world, bool transparent, const eng_matrix_t *at)
+{
+    nmo_engine_draw_t *draw = eng_render_entity_mesh(engine, entity, mesh, world->m[0], transparent);
+    if (draw != NULL) {
+        draw->has_sort_position = true;
+        draw->sort_position[0] = at->m[3][0];
+        draw->sort_position[1] = at->m[3][1];
+        draw->sort_position[2] = at->m[3][2];
+    }
+    return draw;
+}
+
+/*
+ * Planar Reflection: each frame it is active, the target (a plane, seen from
+ * the side its Plane Normal points to) draws, before itself, the entities
+ * with the Reflected Object attribute of one of its Reflection Group(s)
+ * mirrored through it: an entity's own mesh and its shown descendants, or
+ * the attribute's mesh when it names one, with their winding inverted. With
+ * Discard Off Mirror Reflection the plane first marks its pixels in a free
+ * stencil bit (its mesh drawn to the stencil only) and the reflections are
+ * drawn only there. The reflected entities draw their meshes only: their
+ * own render callbacks do not run in the reflection.
+ */
+static void planar_reflection_draw(nmo_engine_t *engine, nmo_object_id_t plane, int32_t node, bool transparent)
+{
+    nmo_engine_block_t handle = {engine, node};
+    blk_t *b = &handle;
+    int32_t index = eng_entity_index(engine, plane);
+    if (index < 0) {
+        return;
+    }
+    int32_t plane_flag = get_in_int(b, 0, 1);
+    eng_vector_t local_normal = get_in_vector(b, 1, 0.0f, 1.0f, 0.0f);
+    eng_vector_t eye = viewpoint_in(engine, index);
+    if (eye.x * local_normal.x + eye.y * local_normal.y + eye.z * local_normal.z < 0.0f) {
+        return;
+    }
+    const eng_matrix_t at = engine->entities.data[index].world;
+    eng_vector_t n;
+    eng_vector_rotate(&n, &at, &local_normal);
+    n = vec_normalized(n);
+    eng_vector_t position = marks_v(at.m[3][0], at.m[3][1], at.m[3][2]);
+    float dp = n.x * position.x + n.y * position.y + n.z * position.z;
+    eng_matrix_t reflect;
+    eng_matrix_identity(&reflect);
+    const float nv[3] = {n.x, n.y, n.z};
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            reflect.m[i][j] = (i == j ? 1.0f : 0.0f) - 2.0f * nv[i] * nv[j];
+        }
+        reflect.m[3][i] = 2.0f * dp * nv[i];
+    }
+    nmo_engine_stencil_t saved = engine->render.stencil;
+    bool masked = get_local_int(b, 0, 1) != 0;
+    if (masked) {
+        int32_t bit = eng_render_first_free_stencil_bit(engine);
+        nmo_engine_stencil_t *stencil = &engine->render.stencil;
+        stencil->enabled = true;
+        stencil->ref = 0xFF;
+        stencil->write_mask = 1u << bit;
+        stencil->func = VXCMP_ALWAYS;
+        stencil->fail = stencil->zfail = VXSTENCILOP_KEEP;
+        stencil->pass = VXSTENCILOP_REPLACE;
+        nmo_object_id_t mesh = entity_shown_mesh(engine, plane);
+        if (mesh != 0) {
+            nmo_engine_draw_t *draw = plane_mesh_draw(engine, plane, mesh, &at, transparent, &at);
+            if (draw != NULL) {
+                draw->stencil_only = true;
+            }
+            eng_render_use_stencil_bits(engine, 1u << bit);
+        }
+        stencil->pass = VXSTENCILOP_KEEP;
+        stencil->ref = 0xFF;
+        stencil->mask = 1u << bit;
+        stencil->func = VXCMP_EQUAL;
+    }
+    int32_t type = attribute_type_named(engine, "Reflected Object");
+    for (size_t i = 0; type >= 0 && i < engine->attributes.values.count; i++) {
+        eng_attribute_t attribute = engine->attributes.values.data[i];
+        int32_t entity = attribute.type == type ? eng_entity_index(engine, attribute.object) : -1;
+        if (entity < 0 || entity == index || engine->entities.data[entity].destroyed ||
+            !(plane_flag & attribute_field(engine, &attribute, 0, false, 1))) {
+            continue;
+        }
+        nmo_object_id_t mesh = (nmo_object_id_t)attribute_field(engine, &attribute, 1, true, 0);
+        eng_matrix_t world;
+        eng_matrix_multiply(&world, &reflect, &engine->entities.data[entity].world);
+        if (mesh != 0) {
+            nmo_engine_draw_t *draw = plane_mesh_draw(engine, attribute.object, mesh, &world, transparent, &at);
+            if (draw != NULL) {
+                draw->mirrored = !draw->mirrored;
+            }
+            continue;
+        }
+        nmo_object_id_t own = entity_shown_mesh(engine, attribute.object);
+        if (own != 0 && nmo_engine_object_is_visible(engine, attribute.object)) {
+            nmo_engine_draw_t *draw = plane_mesh_draw(engine, attribute.object, own, &world, transparent, &at);
+            if (draw != NULL) {
+                draw->mirrored = !draw->mirrored;
+            }
+        }
+        for (int32_t child = hierarchy_next(engine, entity, -1); child >= 0; child = hierarchy_next(engine, entity, child)) {
+            nmo_object_id_t child_mesh = entity_shown_mesh(engine, engine->entities.data[child].id);
+            if (child_mesh == 0 || !entity_shown(engine, child)) {
+                continue;
+            }
+            eng_matrix_multiply(&world, &reflect, &engine->entities.data[child].world);
+            nmo_engine_draw_t *draw =
+                plane_mesh_draw(engine, engine->entities.data[child].id, child_mesh, &world, transparent, &at);
+            if (draw != NULL) {
+                draw->mirrored = !draw->mirrored;
+            }
+        }
+    }
+    if (masked) {
+        engine->render.stencil = saved;
+    }
+}
+
+static int bb_planar_reflection(blk_t *b)
+{
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+    }
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (eng_entity_index(b->engine, target) >= 0) {
+        eng_entity_callback_t callback = {target, ENG_ENTITY_PRE_RENDER, planar_reflection_draw, b->node, true};
+        eng_add_entity_callback(b->engine, &callback);
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+/*
+ * Planar Shadow: each frame it is active, after the target (a plane, seen
+ * from the side its Plane Normal points to) draws, the entities with the
+ * Planar Shadow Object attribute of one of its Shadowing Group(s) cast their
+ * shadows on it from the Light: each mesh (the entity's and its shown
+ * descendants', or the attribute's mesh) flattened onto the plane along the
+ * light's direction (a directional light) or from its position, in Color,
+ * alpha blended without z write or culling, the depth nudged toward the eye.
+ * With a point or spot light, an entity outside the four planes through the
+ * light and the plane's edges casts none. With Discard Off Plane Shadow the
+ * plane marks its pixels in a free stencil bit as it draws and the shadows
+ * are drawn only there.
+ */
+#define CK_3DENTITY_RESERVED0 0x20
+
+/* PlanarShadowPreRenderCallBack */
+static void planar_shadow_mask(nmo_engine_t *engine, nmo_object_id_t plane, int32_t node, bool transparent)
+{
+    (void)node;
+    (void)transparent;
+    int32_t index = eng_entity_index(engine, plane);
+    nmo_engine_stencil_t *stencil = &engine->render.stencil;
+    if (index < 0) {
+        return;
+    }
+    bool was = stencil->enabled;
+    if (was) {
+        engine->entities.data[index].entity_flags |= CK_3DENTITY_RESERVED0;
+    } else {
+        engine->entities.data[index].entity_flags &= ~(uint32_t)CK_3DENTITY_RESERVED0;
+    }
+    stencil->enabled = true;
+    int32_t bit = eng_render_first_free_stencil_bit(engine);
+    eng_render_use_stencil_bits(engine, 1u << bit);
+    if (!was) {
+        stencil->ref = 0xFF;
+        stencil->mask = 0;
+        stencil->func = VXCMP_ALWAYS;
+    }
+    stencil->write_mask = 1u << bit;
+    stencil->fail = stencil->zfail = VXSTENCILOP_KEEP;
+    stencil->pass = VXSTENCILOP_REPLACE;
+}
+
+/* RenderShadow: the mesh's faces flattened on the plane, in the plane's space, drawn at it */
+static void planar_shadow_cast(nmo_engine_t *engine, int32_t plane, int32_t entity, nmo_object_id_t mesh_id,
+                               int32_t light, uint32_t color, eng_vector_t local_normal, bool directional,
+                               bool transparent)
+{
+    nmo_engine_mesh_t mesh;
+    if (!nmo_engine_mesh(engine, mesh_id, &mesh) || mesh.face_count == 0) {
+        return;
+    }
+    const eng_matrix_t *at = &engine->entities.data[plane].world;
+    eng_matrix_t inverse, to_plane;
+    eng_matrix_inverse(&inverse, at);
+    eng_matrix_multiply(&to_plane, &inverse, &engine->entities.data[entity].world);
+    eng_vector_t n = vec_normalized(local_normal);
+    const eng_matrix_t *lw = &engine->entities.data[light].world;
+    float s[4][4];
+    if (directional) {
+        eng_vector_t z = marks_v(lw->m[2][0], lw->m[2][1], lw->m[2][2]), l;
+        eng_vector_rotate(&l, &inverse, &z);
+        l = vec_normalized(l);
+        float inv = 1.0f / (l.x * n.x + l.y * n.y + l.z * n.z);
+        const float nv[3] = {n.x, n.y, n.z}, lv[3] = {l.x, l.y, l.z};
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                s[i][j] = (i == j ? 1.0f : 0.0f) - nv[i] * lv[j] * inv;
+            }
+            s[i][3] = 0.0f;
+            s[3][i] = 0.0f; /* the plane's position in its own space is the origin */
+        }
+        s[3][3] = 1.0f;
+    } else {
+        eng_vector_t origin = marks_v(lw->m[3][0], lw->m[3][1], lw->m[3][2]), p;
+        eng_vector_transform(&p, &inverse, &origin);
+        float dp = p.x * n.x + p.y * n.y + p.z * n.z;
+        const float nv[3] = {n.x, n.y, n.z}, pv[3] = {p.x, p.y, p.z};
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                s[i][j] = (i == j ? dp : 0.0f) - nv[i] * pv[j];
+            }
+            s[i][3] = -nv[i];
+            s[3][i] = 0.0f;
+        }
+        s[3][3] = dp;
+    }
+    eng_matrix_t identity;
+    eng_matrix_identity(&identity);
+    int32_t first = (int32_t)engine->render.vertices.count;
+    for (int32_t f = 0; f < mesh.face_count; f++) {
+        for (int k = 0; k < 3; k++) {
+            const nmo_vector_t *v = &mesh.vertices[mesh.indices[f * 3 + k]].position;
+            eng_vector_t local = marks_v(v->x, v->y, v->z), q;
+            eng_vector_transform(&q, &to_plane, &local);
+            float out[4];
+            for (int j = 0; j < 4; j++) {
+                out[j] = q.x * s[0][j] + q.y * s[1][j] + q.z * s[2][j] + s[3][j];
+            }
+            prim_vertex_t vertex = {marks_v(out[0] / out[3], out[1] / out[3], out[2] / out[3]),
+                                    marks_v(0.0f, 0.0f, 0.0f), 0.0f, 0.0f};
+            push_prim_vertex(engine, at, &vertex, color);
+        }
+    }
+    nmo_engine_draw_t *draw = push_primitive(engine, engine->entities.data[plane].id, first,
+                                             marks_v(at->m[3][0], at->m[3][1], at->m[3][2]));
+    if (draw != NULL) {
+        draw->blend = true;
+        draw->source_blend = VXBLEND_SRCALPHA;
+        draw->dest_blend = VXBLEND_INVSRCALPHA;
+        draw->no_z_write = true;
+        draw->two_sided = true;
+        draw->transparent = transparent;
+        draw->projection_z_scale = 1.005f;
+    }
+}
+
+/* PlanarShadowPostRenderCallBack */
+static void planar_shadow_draw(nmo_engine_t *engine, nmo_object_id_t plane_id, int32_t node, bool transparent)
+{
+    nmo_engine_block_t handle = {engine, node};
+    blk_t *b = &handle;
+    int32_t plane = eng_entity_index(engine, plane_id);
+    if (plane < 0) {
+        return;
+    }
+    bool masked = get_local_int(b, 0, 1) != 0;
+    nmo_engine_stencil_t saved = engine->render.stencil; /* the Cleaner's */
+    bool was = (engine->entities.data[plane].entity_flags & CK_3DENTITY_RESERVED0) != 0;
+    engine->entities.data[plane].entity_flags &= ~(uint32_t)CK_3DENTITY_RESERVED0;
+    int32_t plane_flag = get_in_int(b, 0, 1);
+    nmo_object_id_t light_id = nmo_engine_block_get_input_object(b, 1);
+    int32_t light = eng_entity_index(engine, light_id);
+    eng_light_t *desc = light >= 0 ? eng_light(engine, light_id) : NULL;
+    float color_in[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+    nmo_engine_block_get_input_value(b, 2, color_in, sizeof(color_in));
+    uint32_t color = vxcolor_to_color(color_in);
+    eng_vector_t local_normal = get_in_vector(b, 3, 0.0f, 1.0f, 0.0f);
+    eng_vector_t eye = viewpoint_in(engine, plane);
+    if (light >= 0 && eye.x * local_normal.x + eye.y * local_normal.y + eye.z * local_normal.z >= 0.0f) {
+        bool directional = desc != NULL && desc->type == VX_LIGHTDIREC;
+        const eng_matrix_t *lw = &engine->entities.data[light].world;
+        visuals_plane_t edges[4];
+        plane_edges(engine, plane, local_normal, marks_v(lw->m[3][0], lw->m[3][1], lw->m[3][2]), edges);
+        if (masked) {
+            nmo_engine_stencil_t *stencil = &engine->render.stencil;
+            stencil->enabled = true;
+            stencil->pass = VXSTENCILOP_KEEP;
+            stencil->ref = 0xFF;
+            stencil->mask = saved.write_mask;
+            stencil->write_mask = saved.write_mask;
+            stencil->func = VXCMP_EQUAL;
+        }
+        int32_t type = attribute_type_named(engine, "Planar Shadow Object");
+        for (size_t i = 0; type >= 0 && i < engine->attributes.values.count; i++) {
+            eng_attribute_t attribute = engine->attributes.values.data[i];
+            int32_t entity = attribute.type == type ? eng_entity_index(engine, attribute.object) : -1;
+            if (entity < 0 || engine->entities.data[entity].destroyed || !entity_shown(engine, entity) ||
+                !(plane_flag & attribute_field(engine, &attribute, 0, false, 1))) {
+                continue;
+            }
+            nmo_object_id_t mesh = (nmo_object_id_t)attribute_field(engine, &attribute, 1, true, 0);
+            bool hierarchy = mesh == 0;
+            if (hierarchy) {
+                mesh = entity_shown_mesh(engine, attribute.object);
+            }
+            if (mesh != 0) {
+                bool culled = false;
+                if (!directional) {
+                    eng_vector_t min, max;
+                    eng_entity_local_box(engine, entity, &min, &max);
+                    for (int e = 0; e < 4; e++) {
+                        culled = culled || plane_classify(&edges[e], min, max, &engine->entities.data[entity].world) < 0.0f;
+                    }
+                }
+                if (!culled) {
+                    planar_shadow_cast(engine, plane, entity, mesh, light, color, local_normal, directional, transparent);
+                }
+            }
+            for (int32_t child = hierarchy ? hierarchy_next(engine, entity, -1) : -1; child >= 0;
+                 child = hierarchy_next(engine, entity, child)) {
+                nmo_object_id_t child_mesh = entity_shown(engine, child) ? entity_shown_mesh(engine, engine->entities.data[child].id) : 0;
+                if (child_mesh == 0) {
+                    continue;
+                }
+                bool culled = false;
+                if (!directional) {
+                    eng_vector_t min, max;
+                    eng_entity_local_box(engine, child, &min, &max);
+                    for (int e = 0; e < 4; e++) {
+                        culled = culled || plane_classify(&edges[e], min, max, &engine->entities.data[child].world) < 0.0f;
+                    }
+                }
+                if (!culled) {
+                    planar_shadow_cast(engine, plane, child, child_mesh, light, color, local_normal, directional, transparent);
+                }
+            }
+        }
+    }
+    if (masked) {
+        engine->render.stencil = saved;
+        if (!was) {
+            engine->render.stencil.enabled = false;
+        }
+    }
+}
+
+static int bb_planar_shadow(blk_t *b)
+{
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+    }
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (eng_entity_index(b->engine, target) >= 0) {
+        if (get_local_int(b, 0, 1) != 0) {
+            eng_entity_callback_t pre = {target, ENG_ENTITY_PRE_RENDER, planar_shadow_mask, b->node, true};
+            eng_add_entity_callback(b->engine, &pre);
+        }
+        eng_entity_callback_t post = {target, ENG_ENTITY_POST_RENDER, planar_shadow_draw, b->node, true};
+        eng_add_entity_callback(b->engine, &post);
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
 static const nmo_engine_block_desc_t eng_visuals_blocks[] = {
     {NMO_GUID_INIT(0x00cd320b, 0x32ed010b), "Planar Filter", bb_planar_filter, cb_planar_filter,
      NULL},
@@ -2807,6 +3333,8 @@ static const nmo_engine_block_desc_t eng_visuals_blocks[] = {
     {NMO_GUID_INIT(0x09a06075, 0x760a4720), "Mark System", bb_mark_system, cb_mark_system, NULL},
     {NMO_GUID_INIT(0xcc030377, 0x897aaaaa), "Vertex Render", bb_vertex_render, cb_vertex_render, NULL},
     {NMO_GUID_INIT(0x06d0b04b, 0x1d4ea106), "Motion Blur", bb_motion_blur, cb_motion_blur, NULL},
+    {NMO_GUID_INIT(0x44fe1b3c, 0x29ba3445), "Planar Reflection", bb_planar_reflection, NULL, NULL},
+    {NMO_GUID_INIT(0x731072fa, 0x56cf087f), "Planar Shadow", bb_planar_shadow, NULL, NULL},
 };
 
 /* The render callbacks, at the stages the render context calls them */
