@@ -65,6 +65,7 @@ typedef struct eng_tt {
     bool database_crypted;
     ENG_VEC(char *) database_arrays; /* the arrays it saves (DatabaseManager::Register) */
     bool debug_mode; /* CTTDebugManager::m_DebugMode, which TT_DebugON sets */
+    bool chrono_on;  /* TT_Chrono's chronoOn, one for every chronometer */
     eng_map_t video_textures; /* the textures TT_PreloadTextures put in video memory */
     ENG_VEC(eng_sky_t) skies;
     ENG_VEC(eng_shadow_t) shadows;

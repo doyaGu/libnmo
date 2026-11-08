@@ -2,6 +2,8 @@
 
 #include "engine/nmo_engine_render.h"
 #include "type/nmo_type_guids.h"
+#include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/nmo_ref.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,6 +32,14 @@
 #define GUID_GET_CURRENT_DIRECTORY NMO_GUID(0x556e6df3, 0x24207d37)
 #define GUID_REPLACE_PATH NMO_GUID(0x524a6bcb, 0x66f67774)
 #define GUID_STATISTICS NMO_GUID(0x5fb70201, 0x65595af3)
+#define GUID_CONVERT_BOX NMO_GUID(0x694867ff, 0x7db16d1f)
+#define GUID_FIND_SUBSTRING NMO_GUID(0x12f31e27, 0x4cea0bf5)
+#define GUID_GET_FULL_ANGLE NMO_GUID(0x7a18014d, 0x009d2e73)
+#define GUID_CONVERT_TIME_TO_STRING NMO_GUID(0x69e34443, 0x459f23db)
+#define GUID_PARAMETER_MAPPER NMO_GUID(0x033e30a1, 0x42f452fc)
+#define GUID_CHRONO NMO_GUID(0x325d722d, 0x3d9e16e9)
+#define GUID_CHILDREN_ITERATOR NMO_GUID(0x78041c90, 0x16de3cde)
+#define GUID_WRITE_BACK NMO_GUID(0x78b31127, 0x0a875030)
 
 /* The files the engine loads, from the scratch directory */
 static const char *resolve_scratch(void *user_data, const char *name)
@@ -737,6 +747,121 @@ TEST(engine_tt, counter_wraps_around_its_range)
     fixture_end(&f);
 }
 
+/* A block run from the script's start */
+static nmo_object_id_t started_block(engine_fixture_t *f, nmo_guid_t guid, const char *name)
+{
+    nmo_object_id_t block = fixture_block(f, guid, name);
+    if (block != 0) {
+        fixture_link(f, f->script_in, BLOCK_IN(f, block, 0), 0);
+    }
+    return block;
+}
+
+TEST(engine_tt, logic_blocks_convert_map_and_find)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t named = fixture_create(&f, NMO_CID_3DENTITY, "Cube Floor");
+    ASSERT_TRUE(named != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t box = started_block(&f, GUID_CONVERT_BOX, "Box");
+    nmo_object_id_t angle = started_block(&f, GUID_GET_FULL_ANGLE, "Angle");
+    nmo_object_id_t time = started_block(&f, GUID_CONVERT_TIME_TO_STRING, "Time");
+    nmo_object_id_t find = started_block(&f, GUID_FIND_SUBSTRING, "Find");
+    nmo_object_id_t mapper = started_block(&f, GUID_PARAMETER_MAPPER, "Mapper");
+    nmo_object_id_t mapped = fixture_block(&f, GUID_NOP, "Out0"), found = fixture_block(&f, GUID_NOP, "Found");
+    ASSERT_TRUE(box && angle && time && find && mapper && mapped && found);
+    const float min[3] = {1, 2, 3}, max[3] = {4, 5, 6}, a[2] = {1, 0}, c[2] = {0, 1}, ms = 75430.0f;
+    fixture_input_value(&f, BLOCK_PIN(&f, box, 0), min, sizeof(min));
+    fixture_input_value(&f, BLOCK_PIN(&f, box, 1), max, sizeof(max));
+    fixture_input_value(&f, BLOCK_PIN(&f, angle, 0), a, sizeof(a));
+    fixture_input_value(&f, BLOCK_PIN(&f, angle, 1), c, sizeof(c));
+    fixture_input_value(&f, BLOCK_PIN(&f, time, 0), &ms, sizeof(ms));
+    fixture_input_int(&f, BLOCK_PIN(&f, find, 0), (int32_t)named);
+    input_text(&f, BLOCK_PIN(&f, find, 1), "Floor");
+    fixture_link(&f, BLOCK_OUT(&f, find, 1), BLOCK_IN(&f, found, 0), 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, mapper, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, mapper, 1), BLOCK_IN(&f, mapped, 0), 0);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    float bbox[6];
+    read_value(&f, BLOCK_POUT(&f, box, 0), bbox, sizeof(bbox));
+    ASSERT_FLOAT_EQ(4.0f, bbox[0], 0.0f); /* Max first, as a VxBbox */
+    ASSERT_FLOAT_EQ(1.0f, bbox[3], 0.0f);
+    float degrees = 0.0f;
+    read_value(&f, BLOCK_POUT(&f, angle, 1), &degrees, sizeof(degrees));
+    ASSERT_FLOAT_EQ(270.0f, degrees, 0.001f); /* a quarter turn the other way round */
+    const void *text = NULL;
+    ASSERT_EQ(NMO_OK, nmo_engine_param_value(f.engine, BLOCK_POUT(&f, time, 0), &text, NULL, NULL));
+    ASSERT_STR_EQ("01:15:43", (const char *)text);
+    int32_t rank = 0;
+    read_value(&f, BLOCK_POUT(&f, find, 0), &rank, sizeof(rank));
+    ASSERT_EQ(1, rank);
+    ASSERT_EQ(1u, runs(&f, found));
+    ASSERT_EQ(1u, runs(&f, mapped)); /* 0 is the first output after None */
+    fixture_end(&f);
+}
+
+TEST(engine_tt, chrono_counts_and_children_iterate)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t parent = fixture_create(&f, NMO_CID_3DENTITY, "Parent");
+    nmo_object_id_t kids[2] = {fixture_create(&f, NMO_CID_3DENTITY, "Kid A"), fixture_create(&f, NMO_CID_3DENTITY, "Kid B")};
+    ASSERT_TRUE(parent && kids[0] && kids[1]);
+    for (int i = 0; i < 2; i++) {
+        ((nmo_3dentity_state_t *)fixture_state(&f, kids[i]))->parent = nmo_ref_from_id(parent);
+    }
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t chrono = started_block(&f, GUID_CHRONO, "Chrono");
+    nmo_object_id_t iterator = started_block(&f, GUID_CHILDREN_ITERATOR, "Children");
+    nmo_object_id_t each = fixture_block(&f, GUID_NOP, "Each"), done = fixture_block(&f, GUID_NOP, "Done");
+    ASSERT_TRUE(chrono && iterator && each && done);
+    fixture_input_int(&f, fixture_target(&f, iterator), (int32_t)parent);
+    fixture_link(&f, BLOCK_OUT(&f, iterator, 1), BLOCK_IN(&f, each, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, each, 0), BLOCK_IN(&f, iterator, 1), 0);
+    fixture_link(&f, BLOCK_OUT(&f, iterator, 0), BLOCK_IN(&f, done, 0), 0);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    for (int frame = 0; frame < 3; frame++) {
+        ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    }
+    float elapsed = 0.0f;
+    read_value(&f, BLOCK_POUT(&f, chrono, 0), &elapsed, sizeof(elapsed));
+    ASSERT_FLOAT_EQ(60.0f, elapsed, 0.001f); /* counted from On's frame */
+    ASSERT_EQ(2u, runs(&f, each));
+    ASSERT_EQ(1u, runs(&f, done));
+    int32_t count = 0;
+    nmo_object_id_t last = 0;
+    read_value(&f, BLOCK_POUT(&f, iterator, 0), &count, sizeof(count));
+    read_value(&f, BLOCK_POUT(&f, iterator, 1), &last, sizeof(last));
+    ASSERT_EQ(2, count);
+    ASSERT_EQ(kids[1], last);
+    fixture_end(&f);
+}
+
+TEST(engine_tt, write_back_writes_into_the_source_read)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t write = started_block(&f, GUID_WRITE_BACK, "Write");
+    ASSERT_TRUE(write != 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, write, 0), 1);
+    fixture_input_int(&f, BLOCK_PIN(&f, write, 1), 7);
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    int32_t value = 0;
+    read_value(&f, BLOCK_PIN(&f, write, 0), &value, sizeof(value));
+    ASSERT_EQ(7, value);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_tt, load_database_fills_the_array_of_its_name);
 REGISTER_TEST(engine_tt, save_database_writes_the_registered_arrays);
@@ -753,4 +878,7 @@ REGISTER_TEST(engine_tt, convert_pixel_uses_the_screen_mode);
 REGISTER_TEST(engine_tt, planar_filter_stays_on_until_off);
 REGISTER_TEST(engine_tt, planar_filter_leaves_with_its_script_and_comes_back);
 REGISTER_TEST(engine_tt, counter_wraps_around_its_range);
+REGISTER_TEST(engine_tt, logic_blocks_convert_map_and_find);
+REGISTER_TEST(engine_tt, chrono_counts_and_children_iterate);
+REGISTER_TEST(engine_tt, write_back_writes_into_the_source_read);
 TEST_MAIN_END()
