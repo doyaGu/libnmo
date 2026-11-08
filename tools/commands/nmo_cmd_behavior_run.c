@@ -30,9 +30,15 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <sys/stat.h>
 #ifdef _WIN32
 #include <direct.h>
+#include <io.h>
+#ifndef S_ISDIR
+#define S_ISDIR(mode) (((mode) & _S_IFMT) == _S_IFDIR)
+#endif
 #else
+#include <dirent.h>
 #include <unistd.h>
 #endif
 
@@ -1235,6 +1241,9 @@ typedef struct run_files {
     char *temporary;
     char **written; /* the files saved there */
     size_t written_count;
+    char **directories; /* the folders the file blocks made there */
+    size_t directory_count;
+    nmo_engine_t *engine;
 } run_files_t;
 
 static char *run_join(const char *folder, const char *name, size_t name_length)
@@ -1380,6 +1389,310 @@ static nmo_status_t run_write_file(void *user_data, const char *name, const void
     return written && closed ? NMO_OK : NMO_ERR_CANT_WRITE_FILE;
 }
 
+/* ---- The file blocks' file system (TT_CopyFile, TT_ListDir, ...) ----
+ *
+ * The blocks read where the resolver reads (--write, --path, the run file's
+ * folder) and change files only inside --write: a name that stays inside it
+ * keeps its path there, any other goes there by its last part, as the writer
+ * puts saved files. Without --write they change nothing. A window run's
+ * temporary folder loses what they made there at the end.
+ */
+
+/* An absolute name, or one with a ".." part */
+static bool run_name_leaves(const char *name)
+{
+    size_t length = strlen(name);
+    if (length > 0 && (name[0] == '/' || name[0] == '\\' || (length > 1 && name[1] == ':'))) {
+        return true;
+    }
+    for (size_t i = 0; i + 1 < length; i++) {
+        bool starts = i == 0 || name[i - 1] == '/' || name[i - 1] == '\\';
+        if (starts && name[i] == '.' && name[i + 1] == '.' &&
+            (name[i + 2] == '\0' || name[i + 2] == '/' || name[i + 2] == '\\')) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static const char *run_last_part(const char *name)
+{
+    const char *base = name;
+    for (const char *p = name; *p != '\0'; p++) {
+        if (*p == '/' || *p == '\\') {
+            base = p + 1;
+        }
+    }
+    return base;
+}
+
+/* `name` in `folder`: at its path when it stays inside, else by its last part; NULL for none */
+static char *run_place(const char *folder, const char *name)
+{
+    const char *part = run_name_leaves(name) ? run_last_part(name) : name;
+    if (part[0] == '\0' || strcmp(part, ".") == 0 || strcmp(part, "..") == 0) {
+        return NULL;
+    }
+    size_t length = strlen(part);
+    while (length > 0 && (part[length - 1] == '/' || part[length - 1] == '\\')) {
+        length--; /* "Save\\" names the folder Save */
+    }
+    return length > 0 ? run_join(folder, part, length) : NULL;
+}
+
+static bool run_is_directory(const char *path)
+{
+    struct stat info;
+    return path != NULL && stat(path, &info) == 0 && S_ISDIR(info.st_mode);
+}
+
+/* The folder a name means, in the first of the folders the resolver reads that has it */
+static char *run_find_directory(const run_files_t *files, const char *name)
+{
+    const char *folders[3] = {files->write, files->path, files->folder};
+    for (int f = 0; f < 3; f++) {
+        if (folders[f] == NULL) {
+            continue;
+        }
+        char *path = name[0] != '\0' ? run_place(folders[f], name) : run_join(folders[f], "", 0);
+        if (run_is_directory(path)) {
+            return path;
+        }
+        free(path);
+    }
+    return NULL;
+}
+
+/* A path inside --write to remember: a window run's temporary folder removes it at the end */
+static void run_remember(char ***list, size_t *count, const run_files_t *files, const char *path)
+{
+    if (files->temporary == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < *count; i++) {
+        if (strcmp((*list)[i], path) == 0) {
+            return;
+        }
+    }
+    size_t length = strlen(path);
+    char *copy = (char *)malloc(length + 1u);
+    char **grown = copy != NULL ? (char **)realloc(*list, (*count + 1u) * sizeof(*grown)) : NULL;
+    if (grown == NULL) {
+        free(copy);
+        return;
+    }
+    memcpy(copy, path, length + 1u);
+    *list = grown;
+    (*list)[(*count)++] = copy;
+}
+
+static bool run_fs_exists(void *user_data, const char *name)
+{
+    run_files_t *files = (run_files_t *)user_data;
+    if (run_resolve_file(files, name) != NULL) {
+        return true;
+    }
+    char *directory = run_find_directory(files, name);
+    free(directory);
+    return directory != NULL;
+}
+
+static bool run_fs_copy(void *user_data, const char *source, const char *destination, bool overwrite)
+{
+    run_files_t *files = (run_files_t *)user_data;
+    const char *found = run_resolve_file(files, source);
+    char *from_path = found != NULL ? run_join(NULL, found, strlen(found)) : NULL;
+    char *to_path = files->write != NULL ? run_place(files->write, destination) : NULL;
+    bool done = false;
+    if (from_path != NULL && to_path != NULL && strcmp(from_path, to_path) != 0 &&
+        (overwrite || !run_file_exists(to_path)) && !run_is_directory(to_path)) {
+        FILE *in = fopen(from_path, "rb");
+        FILE *out = in != NULL ? fopen(to_path, "wb") : NULL;
+        done = out != NULL;
+        char buffer[4096];
+        size_t n;
+        while (done && in != NULL && (n = fread(buffer, 1, sizeof(buffer), in)) > 0) {
+            done = fwrite(buffer, 1, n, out) == n;
+        }
+        done = done && !ferror(in);
+        if (out != NULL) {
+            done = fclose(out) == 0 && done;
+            run_remember(&files->written, &files->written_count, files, to_path);
+        }
+        if (in != NULL) {
+            fclose(in);
+        }
+    }
+    free(from_path);
+    free(to_path);
+    return done;
+}
+
+static bool run_fs_remove_file(void *user_data, const char *name)
+{
+    run_files_t *files = (run_files_t *)user_data;
+    char *path = files->write != NULL ? run_place(files->write, name) : NULL;
+#ifdef _WIN32
+    bool done = path != NULL && _unlink(path) == 0;
+#else
+    bool done = path != NULL && unlink(path) == 0;
+#endif
+    free(path);
+    return done;
+}
+
+static bool run_fs_create_directory(void *user_data, const char *name)
+{
+    run_files_t *files = (run_files_t *)user_data;
+    char *path = files->write != NULL ? run_place(files->write, name) : NULL;
+#ifdef _WIN32
+    bool done = path != NULL && _mkdir(path) == 0;
+#else
+    bool done = path != NULL && mkdir(path, 0777) == 0;
+#endif
+    if (done) {
+        run_remember(&files->directories, &files->directory_count, files, path);
+    }
+    free(path);
+    return done;
+}
+
+static bool run_fs_remove_directory(void *user_data, const char *name)
+{
+    run_files_t *files = (run_files_t *)user_data;
+    char *path = files->write != NULL ? run_place(files->write, name) : NULL;
+#ifdef _WIN32
+    bool done = path != NULL && _rmdir(path) == 0;
+#else
+    bool done = path != NULL && rmdir(path) == 0;
+#endif
+    free(path);
+    return done;
+}
+
+/* A folder the resolver can read becomes the current directory, reported by the name given */
+static bool run_fs_set_current_directory(void *user_data, const char *name)
+{
+    run_files_t *files = (run_files_t *)user_data;
+    char *directory = run_find_directory(files, name);
+    free(directory);
+    return directory != NULL && nmo_engine_set_current_directory(files->engine, name) == NMO_OK;
+}
+
+static int run_lower(int c)
+{
+    return c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c;
+}
+
+/* A Windows file mask: * and ?, without case; "*.*" is everything */
+static bool run_mask_matches(const char *mask, const char *name)
+{
+    if (strcmp(mask, "*.*") == 0) {
+        return true;
+    }
+    if (*mask == '\0') {
+        return *name == '\0';
+    }
+    if (*mask == '*') {
+        for (const char *rest = name;; rest++) {
+            if (run_mask_matches(mask + 1, rest)) {
+                return true;
+            }
+            if (*rest == '\0') {
+                return false;
+            }
+        }
+    }
+    if (*name == '\0') {
+        return false;
+    }
+    if (*mask == '?' || run_lower((unsigned char)*mask) == run_lower((unsigned char)*name)) {
+        return run_mask_matches(mask + 1, name + 1);
+    }
+    return false;
+}
+
+static int run_compare_names(const void *a, const void *b)
+{
+    const char *x = *(const char *const *)a, *y = *(const char *const *)b;
+    for (; *x != '\0' && run_lower((unsigned char)*x) == run_lower((unsigned char)*y); x++, y++) {
+    }
+    return run_lower((unsigned char)*x) - run_lower((unsigned char)*y);
+}
+
+/* FindFirstFile/FindNextFile over the folder of the pattern, in name order as NTFS gives them */
+static bool run_fs_list(void *user_data, const char *pattern, void (*found)(void *, const char *),
+                        void *context)
+{
+    run_files_t *files = (run_files_t *)user_data;
+    const char *mask = run_last_part(pattern);
+    size_t folder_length = (size_t)(mask - pattern);
+    char *folder_name = (char *)malloc(folder_length + 1u);
+    if (folder_name == NULL) {
+        return false;
+    }
+    memcpy(folder_name, pattern, folder_length);
+    folder_name[folder_length] = '\0';
+    char *folder = run_find_directory(files, folder_name);
+    free(folder_name);
+    if (folder == NULL || mask[0] == '\0') {
+        free(folder);
+        return false;
+    }
+    char **names = NULL;
+    size_t count = 0;
+    bool ok = true;
+#ifdef _WIN32
+    char *search = run_join(folder, "*", 1);
+    struct _finddata_t entry;
+    intptr_t handle = search != NULL ? _findfirst(search, &entry) : -1;
+    free(search);
+    for (int more = handle != -1 ? 0 : -1; more == 0 && ok; more = _findnext(handle, &entry)) {
+        const char *entry_name = entry.name;
+#else
+    DIR *dir = opendir(folder);
+    struct dirent *entry;
+    while (dir != NULL && ok && (entry = readdir(dir)) != NULL) {
+        const char *entry_name = entry->d_name;
+#endif
+        if (!run_mask_matches(mask, entry_name)) {
+            continue;
+        }
+        size_t length = strlen(entry_name);
+        char *copy = (char *)malloc(length + 1u);
+        char **grown = copy != NULL ? (char **)realloc(names, (count + 1u) * sizeof(*grown)) : NULL;
+        ok = grown != NULL;
+        if (!ok) {
+            free(copy);
+            break;
+        }
+        memcpy(copy, entry_name, length + 1u);
+        names = grown;
+        names[count++] = copy;
+    }
+#ifdef _WIN32
+    if (handle != -1) {
+        _findclose(handle);
+    }
+#else
+    if (dir != NULL) {
+        closedir(dir);
+    }
+#endif
+    free(folder);
+    if (count > 1) {
+        qsort(names, count, sizeof(*names), run_compare_names);
+    }
+    for (size_t i = 0; i < count; i++) {
+        if (ok) {
+            found(context, names[i]);
+        }
+        free(names[i]);
+    }
+    free(names);
+    return ok;
+}
+
 /* A new empty folder for a window run's saves; NULL when none could be made */
 static char *run_make_temporary_folder(void)
 {
@@ -1412,6 +1725,15 @@ static void run_files_release(run_files_t *files)
         free(files->written[i]);
     }
     free(files->written);
+    for (size_t i = files->directory_count; i > 0; i--) {
+#ifdef _WIN32
+        _rmdir(files->directories[i - 1]);
+#else
+        rmdir(files->directories[i - 1]);
+#endif
+        free(files->directories[i - 1]);
+    }
+    free(files->directories);
     if (files->temporary != NULL) {
 #ifdef _WIN32
         _rmdir(files->temporary);
@@ -1618,6 +1940,11 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
     }
     nmo_engine_set_file_resolver(engine, run_resolve_file, &files);
     nmo_engine_set_file_writer(engine, run_write_file, &files);
+    files.engine = engine;
+    const nmo_engine_file_system_t file_system = {
+        &files, run_fs_exists, run_fs_copy, run_fs_remove_file, run_fs_create_directory,
+        run_fs_remove_directory, run_fs_set_current_directory, run_fs_list};
+    nmo_engine_set_file_system(engine, &file_system);
     if (!run_set_registry(engine, args->registry) || !run_add_paths(engine)) {
         fprintf(stderr, "Error: Out of memory\n");
 #ifdef NMO_HAS_PHYSICS_IVP
@@ -1872,7 +2199,8 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
          "Folder of the files the document loads, before its own folder"},
         {"--write", NULL, NMO_OPT_STRING,
          "Folder the files the document saves go to, read before the others (default: none; "
-         "a window run saves into a temporary folder removed at the end)"},
+         "a window run saves into a temporary folder removed at the end); the only folder the "
+         "file blocks change"},
         {"--message", NULL, NMO_OPT_STRING,
          "Messages the host sends: NAME@FRAME:OBJECT,... (before that frame steps)"},
         {"--registry", NULL, NMO_OPT_STRING,
