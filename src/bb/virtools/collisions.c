@@ -3002,6 +3002,162 @@ static int bb_collision_detection(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* SetAttribute(Moving Obstacle) from a block: its callback takes the fixed one off */
+static void cm_set_moving(nmo_engine_t *engine, nmo_object_id_t id)
+{
+    int32_t moving = moving_attribute(engine), fixed = fixed_attribute(engine);
+    if (moving < 0 || eng_attribute_find(engine, id, moving) != NULL) {
+        return;
+    }
+    if (fixed >= 0) {
+        nmo_engine_object_remove_attribute(engine, id, fixed);
+    }
+    nmo_engine_object_set_attribute(engine, id, moving);
+    collision_manager_t *cm = cm_state(engine);
+    if (cm != NULL && cm->launched) {
+        cm_sync(engine, cm);
+    }
+}
+
+/*
+ * Prevent Collision: from On, the target is a moving obstacle (of its
+ * attribute's default, faces and hierarchy) put back each frame to its safe
+ * place when it touches an obstacle. The priority On sets is not changed.
+ */
+static int bb_prevent_collision(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    int32_t entity = target_entity(b);
+    if (entity < 0) {
+        if (IN_ACTIVE(b, 1)) {
+            IN_OFF(b, 1);
+        } else if (IN_ACTIVE(b, 0)) {
+            IN_OFF(b, 0);
+        }
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        cm_set_moving(engine, engine->entities.data[entity].id);
+    }
+    impact_t imp;
+    memset(&imp, 0, sizeof(imp));
+    bool collision = cm_detect(engine, entity, get_in_int(b, 0, 0), get_in_int(b, 2, 0), get_in_int(b, 1, 0),
+                               IMPACTWORLDMATRIX, &imp);
+    if (collision) {
+        set_world(engine, entity, &imp.matrix);
+    }
+    nmo_engine_block_activate_output(b, 0, collision);
+    nmo_engine_block_activate_output(b, 1, !collision);
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+/* CKCharacter::GetEstimatedVelocity: how far its active animation moves its root body part in `delta` */
+static eng_vector_t estimated_velocity(nmo_engine_t *engine, nmo_object_id_t character, float delta)
+{
+    nmo_object_id_t active = eng_character_active_animation(engine, character);
+    if (active == 0 || nmo_engine_object_class(engine, active) != NMO_CID_KEYEDANIMATION) {
+        return v3(0.0f, 0.0f, 0.0f);
+    }
+    nmo_object_id_t root = eng_keyed_animation_part(engine, active, eng_character_root(engine, character));
+    float frame = 0.0f, next = 0.0f;
+    nmo_vector_t p1 = {0, 0, 0}, p2 = {0, 0, 0};
+    if (root == 0 || !eng_animation_frame(engine, active, &frame) ||
+        !eng_animation_next_frame(engine, active, delta, &next)) {
+        return v3(0.0f, 0.0f, 0.0f);
+    }
+    eng_animation_position(engine, root, frame, &p1);
+    eng_animation_position(engine, root, next, &p2);
+    return v3(p2.x - p1.x, p2.y - p1.y, p2.z - p1.z);
+}
+
+/*
+ * Character Prevent From Collision (obsolete): Prevent Collision for a
+ * character, a hierarchical moving obstacle, put back only when it walks
+ * into the obstacle (its animation's velocity against the side of the
+ * obstacle's box it stands by); the body part and obstacles touched. As in
+ * the DLL, the body part is not filled when the sub obstacle is asked for.
+ */
+static int bb_character_prevent_from_collision(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    int32_t entity = target_entity(b);
+    if (entity < 0) {
+        IN_OFF(b, IN_ACTIVE(b, 1) ? 1 : 0);
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    nmo_object_id_t id = engine->entities.data[entity].id;
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        cm_set_moving(engine, id);
+        eng_attribute_t *attribute = eng_attribute_find(engine, id, moving_attribute(engine));
+        if (attribute == NULL) {
+            return NMO_ENGINE_BR_OK;
+        }
+        if (attribute->has_value) {
+            int32_t precision = CKCOLLISION_FACE, hierarchy = 1;
+            read_obstacle(engine, id, &precision, &hierarchy);
+            if (attribute->fields == NULL) {
+                attribute->fields = (int32_t *)malloc(2 * sizeof(int32_t));
+                attribute->field_count = attribute->fields != NULL ? 2 : 0;
+            }
+            if (attribute->fields != NULL) {
+                attribute->fields[0] = precision;
+                attribute->fields[1] = 1;
+            }
+        }
+    }
+    impact_t imp;
+    memset(&imp, 0, sizeof(imp));
+    uint32_t flags = IMPACTWORLDMATRIX | OWNERENTITY | OBSTACLETOUCHED | SUBOBSTACLETOUCHED | IMPACTNORMAL;
+    if (!cm_detect(engine, entity, get_in_int(b, 0, 0), get_in_int(b, 2, 0), get_in_int(b, 1, 0), flags, &imp)) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+    }
+    /* "avoid hooking", an input the prototype does not have: on */
+    eng_vector_t local = estimated_velocity(engine, id, nmo_engine_block_delta_time(b)), velocity;
+    eng_entity_transform_vector(engine, entity, &velocity, &local, -1, false);
+    int32_t ob = eng_entity_index(engine, imp.sub_obstacle != 0 ? imp.sub_obstacle : imp.obstacle);
+    if (ob >= 0) {
+        eng_vector_t pos = eng_entity_position(engine, entity, -1), center, lpos, min, max;
+        eng_entity_bary_center(engine, ob, &center);
+        pos.y = center.y;
+        eng_entity_inverse_transform(engine, ob, &lpos, &pos, -1);
+        local_bounding_box(engine, ob, &min, &max);
+        const float v[3] = {lpos.x - (min.x + max.x) * 0.5f, lpos.y - (min.y + max.y) * 0.5f,
+                            lpos.z - (min.z + max.z) * 0.5f};
+        const float half[3] = {(max.x - min.x) * 0.5f, (max.y - min.y) * 0.5f, (max.z - min.z) * 0.5f};
+        float n[3] = {0.0f, 0.0f, 0.0f};
+        for (int i = 0; i < 3; i++) {
+            if (fabsf(v[i]) > half[i]) {
+                n[i] += v[i] > 0.0f ? 1.0f : -1.0f;
+            }
+        }
+        eng_vector_t normal = v3(n[0], n[1], n[2]), world;
+        eng_entity_transform_vector(engine, ob, &world, &normal, -1, false);
+        eng_vector_normalize(&world);
+        if (world.z * velocity.z + world.y * velocity.y + world.x * velocity.x <= 0.0f) {
+            set_world(engine, entity, &imp.matrix);
+        }
+    }
+    set_out(b, 0, &imp.owner, sizeof(imp.owner));
+    set_out(b, 1, &imp.obstacle, sizeof(imp.obstacle));
+    set_out(b, 2, &imp.sub_obstacle, sizeof(imp.sub_obstacle));
+    OUT_ON(b, 0);
+    nmo_engine_block_activate_output(b, 1, false);
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
 static const nmo_engine_block_desc_t eng_collisions_blocks[] = {
     {NMO_GUID_INIT(0x64154401, 0x76cf37af), "Box Box Intersection", bb_box_box_intersection, NULL, NULL},
     {NMO_GUID_INIT(0x198531f9, 0x60f66c57), "Sphere Sphere Intersection", bb_sphere_sphere_intersection, NULL, NULL},
@@ -3024,6 +3180,9 @@ static const nmo_engine_block_desc_t eng_collisions_blocks[] = {
     {NMO_GUID_INIT(0x21dc34e8, 0xd512cd89), "Declare Obstacles", bb_declare_obstacles, NULL, NULL},
     {NMO_GUID_INIT(0x321a42c4, 0x006133d5), "Add Obstacle", bb_add_obstacle, NULL, NULL},
     {NMO_GUID_INIT(0x56204f19, 0x682801e8), "Collision Detection", bb_collision_detection, NULL, NULL},
+    {NMO_GUID_INIT(0x301971f0, 0x7919343f), "Prevent Collision", bb_prevent_collision, NULL, NULL},
+    {NMO_GUID_INIT(0x319971f0, 0x7919193f), "Character Prevent From Collision", bb_character_prevent_from_collision,
+     NULL, NULL},
 };
 
 nmo_status_t eng_register_collisions(nmo_engine_t *engine)
