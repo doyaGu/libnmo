@@ -1065,13 +1065,15 @@ static int bb_face_face_intersection(blk_t *b)
  * Floors
  * ============================================================================ */
 
-/* CK3dEntity::GetBoundingBox: a character's is its hierarchy's */
+/* CK3dEntity::GetBoundingBox: a character's is its hierarchy's; at the entity's position when nothing
+   there has geometry */
 static void bounding_box(nmo_engine_t *engine, int32_t index, eng_vector_t *min, eng_vector_t *max)
 {
-    if (nmo_engine_object_class(engine, engine->entities.data[index].id) == NMO_CID_CHARACTER) {
-        eng_entity_hierarchical_box(engine, index, min, max);
-    } else {
-        eng_entity_world_box(engine, index, min, max);
+    bool valid = nmo_engine_object_class(engine, engine->entities.data[index].id) == NMO_CID_CHARACTER
+                     ? eng_entity_hierarchical_box(engine, index, min, max)
+                     : eng_entity_world_box(engine, index, min, max);
+    if (!valid) {
+        *min = *max = eng_entity_position(engine, index, -1);
     }
 }
 
@@ -1377,13 +1379,15 @@ static float ray_extruded_face(nmo_engine_t *engine, nmo_object_id_t floor, eng_
     return best;
 }
 
-/* CK3dEntity::GetBoundingBox(TRUE): a character's is its hierarchy's */
+/* CK3dEntity::GetBoundingBox(TRUE): a character's is its hierarchy's; empty at the entity's origin when
+   nothing there has geometry */
 static void local_bounding_box(nmo_engine_t *engine, int32_t index, eng_vector_t *min, eng_vector_t *max)
 {
-    if (nmo_engine_object_class(engine, engine->entities.data[index].id) == NMO_CID_CHARACTER) {
-        local_hierarchical_box(engine, index, min, max);
-    } else {
-        eng_entity_local_box(engine, index, min, max);
+    bool valid = nmo_engine_object_class(engine, engine->entities.data[index].id) == NMO_CID_CHARACTER
+                     ? local_hierarchical_box(engine, index, min, max)
+                     : eng_entity_local_box(engine, index, min, max);
+    if (!valid) {
+        *min = *max = v3(0.0f, 0.0f, 0.0f);
     }
 }
 
@@ -1779,6 +1783,329 @@ static int bb_object_keep_on_floor_v2(blk_t *b)
     return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
 }
 
+/* ============================================================================
+ * Characters on floors
+ * ============================================================================ */
+
+/* Enhanced Character Keep On Floor's last frame (its CKOF2 local) */
+typedef struct enhanced_floor_state {
+    eng_vector_t pts[4];
+    eng_floor_point_t fps[4];
+    int floors[4];
+} enhanced_floor_state_t;
+
+/* Test4Points3: the four points' floors, an up floor taken when it is within the detection offset;
+   their bits when off the floors */
+static int test_4_points_3(nmo_engine_t *engine, const eng_vector_t pts[4], eng_floor_point_t fps[4], int floors[4],
+                           float det)
+{
+    int off = 0;
+    for (int i = 0; i < 4; i++) {
+        floors[i] = eng_floor_nearest(engine, &pts[i], &fps[i], 0);
+        if (floors[i] == CKFLOOR_UP) {
+            if (fps[i].down_floor != 0 && fps[i].up_distance > det) {
+                floors[i] = CKFLOOR_DOWN;
+            }
+        } else if (floors[i] == CKFLOOR_DOWN) {
+            if (fps[i].up_floor != 0 && fps[i].up_distance < det) {
+                floors[i] = CKFLOOR_UP;
+            }
+        } else {
+            off |= 1 << i;
+        }
+    }
+    return off;
+}
+
+/* ReturnCharacterDirection, the direction only: the entity's axis the Character Direction picks the way
+   the DLL calls GetOrientation (Y for X, X for Y, Z for Z), negated for the negative ones */
+static eng_vector_t character_direction(nmo_engine_t *engine, int32_t entity, int direction)
+{
+    eng_vector_t dir = v3(0.0f, 0.0f, 0.0f);
+    if (direction == 1 || direction == 2) {
+        eng_entity_orientation(engine, entity, NULL, &dir, NULL, -1);
+    } else if (direction == 3 || direction == 4) {
+        eng_entity_orientation(engine, entity, NULL, NULL, &dir, -1);
+    } else if (direction == 5 || direction == 6) {
+        eng_entity_orientation(engine, entity, &dir, NULL, NULL, -1);
+    }
+    if (direction == 2 || direction == 4 || direction == 6) {
+        dir = v3(-dir.x, -dir.y, -dir.z);
+    }
+    return dir;
+}
+
+/*
+ * Enhanced Character Keep On Floor: the character falls with its Weight (a
+ * Down Velocity) onto the floors under four points around its root's
+ * center (Character Extents apart, at its floor reference or its bottom),
+ * an upper floor within the Detection Offset stepped onto; with a point off
+ * the floors it goes back to last frame's place with Keep In Floor Boundary.
+ * The Show Extents entity is not made.
+ */
+static int bb_enhanced_character_keep_on_floor(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t owner = nmo_engine_block_owner(b);
+    int32_t character = eng_entity_index(engine, owner);
+    if (character < 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    float offset = get_in_float(b, 1, 0.0f);
+    eng_vector_t velocity;
+    if (nmo_engine_block_get_output_value(b, 4, &velocity, sizeof(velocity)) != NMO_OK) {
+        return NMO_ENGINE_BR_PARAMETERERROR; /* "Obsolete Version" */
+    }
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    eng_vector_t move;
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+        velocity = v3(0.0f, 0.0f, 0.0f);
+    } else if (offset > 0.0f) {
+        move = v3(0.0f, -offset, 0.0f);
+        eng_entity_translate(engine, character, &move, -1, false);
+    }
+    float weight = get_in_float(b, 6, 0.0f);
+    eng_entity_translate(engine, character, &velocity, -1, false);
+    velocity.y -= weight * nmo_engine_block_delta_time(b) * 0.001f; /* gravity */
+    bool follow = get_in_int(b, 0, 0) != 0, keep_in = get_in_int(b, 2, 0) != 0;
+    float det = get_in_float(b, 3, 0.0f), extents[2] = {1.0f, 1.0f};
+    nmo_engine_block_get_input_value(b, 4, extents, sizeof(extents));
+    float attenuation = get_in_float(b, 5, 0.9f);
+    enhanced_floor_state_t *old = nmo_engine_block_state(b, sizeof(*old));
+    if (old == NULL) {
+        return NMO_ENGINE_BR_GENERICERROR;
+    }
+    nmo_object_id_t out_floor = 0;
+    eng_vector_t out_normal = v3(0.0f, 0.0f, 0.0f);
+    float out_distance = 0.0f, basement;
+    int32_t reference = eng_entity_index(engine, eng_character_floor_reference(engine, owner));
+    if (reference >= 0) {
+        basement = eng_entity_position(engine, reference, -1).y;
+    } else {
+        eng_vector_t min, max;
+        bounding_box(engine, character, &min, &max); /* GetHierarchicalBox */
+        basement = min.y;
+    }
+    int32_t root = eng_entity_index(engine, eng_character_root(engine, owner));
+    if (root < 0) {
+        return NMO_ENGINE_BR_GENERICERROR;
+    }
+    eng_vector_t center;
+    eng_entity_bary_center(engine, root, &center);
+    eng_vector_t dir = character_direction(engine, root, get_in_int(b, 7, 1));
+    dir.y = 0.0f;
+    eng_vector_normalize(&dir);
+    const eng_vector_t world_up = v3(0.0f, 1.0f, 0.0f);
+    eng_vector_t right = normalized(eng_vector_cross(&world_up, &dir));
+    right = v3(right.x * extents[0], right.y * extents[0], right.z * extents[0]);
+    dir = v3(dir.x * extents[1], dir.y * extents[1], dir.z * extents[1]);
+    eng_vector_t pts[4] = {
+        v3(center.x + dir.x - right.x, basement, center.z + dir.z - right.z),
+        v3(center.x + dir.x + right.x, basement, center.z + dir.z + right.z),
+        v3(center.x - dir.x + right.x, basement, center.z - dir.z + right.z),
+        v3(center.x - dir.x - right.x, basement, center.z - dir.z - right.z),
+    };
+    eng_floor_point_t fps[4];
+    int floors[4];
+    int off = test_4_points_3(engine, pts, fps, floors, det);
+    bool up = false;
+    float higher = -1000000000.0f;
+    for (int i = 0; i < 4; i++) {
+        if (floors[i] == CKFLOOR_DOWN || floors[i] == CKFLOOR_UP) {
+            float distance = floors[i] == CKFLOOR_DOWN ? fps[i].down_distance : fps[i].up_distance;
+            if (distance > higher) {
+                higher = distance;
+            }
+            pts[i].y += distance;
+            up = up || floors[i] == CKFLOOR_UP;
+        }
+    }
+    if (up) {
+        velocity = v3(0.0f, 0.0f, 0.0f);
+    }
+    if (off == 0) {
+        eng_vector_t fdir = normalized(v3(pts[0].x - pts[3].x + pts[1].x - pts[2].x,
+                                          pts[0].y - pts[3].y + pts[1].y - pts[2].y,
+                                          pts[0].z - pts[3].z + pts[1].z - pts[2].z));
+        eng_vector_t fright = normalized(v3(pts[1].x - pts[0].x + pts[2].x - pts[3].x,
+                                            pts[1].y - pts[0].y + pts[2].y - pts[3].y,
+                                            pts[1].z - pts[0].z + pts[2].z - pts[3].z));
+        eng_vector_t vup = normalized(eng_vector_cross(&fdir, &fright));
+        if (follow && up) {
+            eng_vector_t cup;
+            eng_entity_orientation(engine, character, &fdir, &cup, NULL, -1);
+            float rest = 1.0f - attenuation;
+            vup = v3(cup.x * attenuation + vup.x * rest, cup.y * attenuation + vup.y * rest,
+                     cup.z * attenuation + vup.z * rest);
+            if ((vup.z + vup.x) * 0.0f + vup.y > 0.8f) {
+                fright = normalized(eng_vector_cross(&vup, &fdir));
+                fdir = normalized(eng_vector_cross(&fright, &vup));
+                eng_entity_set_orientation(engine, character, &fdir, &vup, &fright, -1, false);
+            }
+        }
+        if (weight <= 0.0f || up) {
+            move = v3(0.0f, higher, 0.0f);
+            eng_entity_translate(engine, character, &move, -1, false);
+        }
+        out_normal = vup;
+        out_floor = floors[0] == CKFLOOR_DOWN ? fps[0].down_floor : floors[0] == CKFLOOR_UP ? fps[0].up_floor : 0;
+        out_distance = higher + offset;
+        OUT_ON(b, 0);
+    } else if (keep_in) { /* the DLL's flag test is always true */
+        OUT_ON(b, 2);
+        eng_matrix_t last = *eng_entity_last_frame_matrix(engine, character);
+        eng_entity_set_world_matrix(engine, character, &last, false);
+        memcpy(pts, old->pts, sizeof(pts));
+        memcpy(fps, old->fps, sizeof(fps));
+        memcpy(floors, old->floors, sizeof(floors));
+    } else {
+        OUT_ON(b, 1);
+    }
+    memcpy(old->pts, pts, sizeof(pts));
+    memcpy(old->fps, fps, sizeof(fps));
+    memcpy(old->floors, floors, sizeof(floors));
+    eng_floor_settings_t settings = {0, 0, 0, 0, 0};
+    eng_floor_read(engine, out_floor, &settings);
+    set_out(b, 0, &out_floor, sizeof(out_floor));
+    set_out_int(b, 1, settings.type);
+    set_out(b, 2, &out_normal, sizeof(out_normal));
+    set_out_float(b, 3, out_distance);
+    if (keep_in) {
+        engine->entities.data[character].entity_flags |= CK_3DENTITY_UPDATELASTFRAME;
+    }
+    if (offset > 0.0f) {
+        move = v3(0.0f, offset, 0.0f);
+        eng_entity_translate(engine, character, &move, -1, false);
+    }
+    set_out(b, 4, &velocity, sizeof(velocity));
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+/* The bottom corners of a box: front left, front right, back left, back right */
+static void bottom_box_corners(eng_vector_t min, eng_vector_t max, eng_vector_t corners[4])
+{
+    corners[0] = v3(min.x, min.y, max.z);
+    corners[1] = v3(max.x, min.y, max.z);
+    corners[2] = v3(min.x, min.y, min.z);
+    corners[3] = v3(max.x, min.y, min.z);
+}
+
+/* The position, in the floor's space, moved back by each corner past the floor's local box on a side
+   with no floor beyond it */
+static eng_vector_t limits_inside(nmo_engine_t *engine, nmo_object_id_t floor, const eng_vector_t corners[4],
+                                  eng_vector_t pos)
+{
+    int32_t index = eng_entity_index(engine, floor);
+    eng_vector_t min, max, local[4], lpos, out;
+    eng_entity_local_box(engine, index, &min, &max);
+    for (int k = 0; k < 4; k++) {
+        eng_entity_inverse_transform(engine, index, &local[k], &corners[k], -1);
+    }
+    eng_entity_inverse_transform(engine, index, &lpos, &pos, -1);
+    for (int k = 0; k < 4; k++) {
+        /* x past the max, x past the min, z past the max, z past the min */
+        const float past[4] = {local[k].x - max.x, local[k].x - min.x, local[k].z - max.z, local[k].z - min.z};
+        const bool beyond[4] = {local[k].x > max.x, local[k].x < min.x, local[k].z > max.z, local[k].z < min.z};
+        for (int side = 0; side < 4; side++) {
+            eng_floor_point_t fp;
+            if (beyond[side] && eng_floor_nearest(engine, &corners[k], &fp, 0) == CKFLOOR_NOFLOOR) {
+                if (side < 2) {
+                    lpos.x -= past[side];
+                } else {
+                    lpos.z -= past[side];
+                }
+            }
+        }
+    }
+    eng_entity_transform(engine, index, &out, &lpos, -1);
+    return out;
+}
+
+/*
+ * Character Keep On Floor Limits (obsolete): the character kept on the
+ * floors (the upper whenever there is one). With a floor reference object,
+ * a corner of its box off the floors sends it back past where it was last
+ * time (1.5 times the way); without one, it is pushed back inside the
+ * floor's local box on the sides with no floor beyond.
+ */
+static int bb_character_keep_on_floor_limits(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t owner = nmo_engine_block_owner(b);
+    int32_t character = eng_entity_index(engine, owner);
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+    }
+    if (character < 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    eng_vector_t old = v3(0.0f, 0.0f, 0.0f), min, max, corners[4];
+    nmo_engine_block_get_local_value(b, 0, &old, sizeof(old));
+    int32_t reference = eng_entity_index(engine, eng_character_floor_reference(engine, owner));
+    eng_floor_point_t fp;
+    if (reference >= 0) {
+        eng_vector_t pos = eng_entity_position(engine, character, -1);
+        eng_vector_t ref = eng_entity_position(engine, reference, -1);
+        if (eng_floor_nearest(engine, &ref, &fp, 0) != CKFLOOR_NOFLOOR) {
+            float up = fp.up_distance, down = fp.down_distance;
+            bool has_up = fp.up_floor != 0, has_down = fp.down_floor != 0;
+            bounding_box(engine, character, &min, &max);
+            bottom_box_corners(min, max, corners);
+            if (has_up || has_down) {
+                eng_floor_point_t corner;
+                for (int k = 0; k < 4; k++) {
+                    if (eng_floor_nearest(engine, &corners[k], &corner, 0) == CKFLOOR_NOFLOOR) {
+                        eng_vector_t back = v3((old.x - pos.x) * 1.5f + pos.x, (old.y - pos.y) * 1.5f + pos.y,
+                                               (old.z - pos.z) * 1.5f + pos.z);
+                        eng_entity_set_position(engine, character, &back, -1, false);
+                        OUT_ON(b, 0);
+                        return NMO_ENGINE_BR_OK;
+                    }
+                }
+                pos.y += has_up ? up : down;
+            }
+            eng_entity_set_position(engine, character, &pos, -1, false);
+            nmo_engine_block_set_local_value(b, 0, &pos, sizeof(pos));
+        }
+    } else {
+        bounding_box(engine, character, &min, &max);
+        eng_vector_t pos = v3((max.x + min.x) * 0.5f, min.y, (max.z + min.z) * 0.5f);
+        if (eng_floor_nearest(engine, &pos, &fp, 0) != CKFLOOR_NOFLOOR) {
+            nmo_object_id_t floor = fp.up_floor != 0 ? fp.up_floor : fp.down_floor;
+            float distance = fp.up_floor != 0 ? fp.up_distance : fp.down_distance;
+            bottom_box_corners(min, max, corners);
+            pos = eng_entity_position(engine, character, -1);
+            if (floor != 0) {
+                pos = limits_inside(engine, floor, corners, pos);
+                pos.y += distance;
+            }
+            eng_entity_set_position(engine, character, &pos, -1, false);
+        }
+    }
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Character Keep On Floor Limits' load: the character's place as the last one */
+static int cb_character_keep_on_floor_limits(blk_t *b, uint32_t message)
+{
+    if (message == NMO_ENGINE_MSG_LOAD) {
+        int32_t character = eng_entity_index(b->engine, nmo_engine_block_owner(b));
+        if (character < 0) {
+            return NMO_ENGINE_BR_OWNERERROR;
+        }
+        eng_vector_t pos = eng_entity_position(b->engine, character, -1);
+        nmo_engine_block_set_local_value(b, 0, &pos, sizeof(pos));
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_collisions_blocks[] = {
     {NMO_GUID_INIT(0x64154401, 0x76cf37af), "Box Box Intersection", bb_box_box_intersection, NULL, NULL},
     {NMO_GUID_INIT(0x198531f9, 0x60f66c57), "Sphere Sphere Intersection", bb_sphere_sphere_intersection, NULL, NULL},
@@ -1794,6 +2121,10 @@ static const nmo_engine_block_desc_t eng_collisions_blocks[] = {
     {NMO_GUID_INIT(0xdbac2124, 0x6adcbfa4), "Character Keep On Floor", bb_character_keep_on_floor, NULL, NULL},
     {NMO_GUID_INIT(0x136044b0, 0x1c59b21a), "Floor Slider", bb_floor_slider, NULL, NULL},
     {NMO_GUID_INIT(0x3de853bd, 0x133d0d2e), "Object Keep On Floor V2", bb_object_keep_on_floor_v2, NULL, NULL},
+    {NMO_GUID_INIT(0xdbde2424, 0x6addef12), "Enhanced Character Keep On Floor", bb_enhanced_character_keep_on_floor,
+     NULL, NULL},
+    {NMO_GUID_INIT(0x788061fb, 0x249f29a1), "Character Keep On Floor Limits", bb_character_keep_on_floor_limits,
+     cb_character_keep_on_floor_limits, NULL},
 };
 
 nmo_status_t eng_register_collisions(nmo_engine_t *engine)

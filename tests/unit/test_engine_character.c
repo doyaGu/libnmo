@@ -1758,6 +1758,119 @@ TEST(engine_character, unlimited_secondary_input_overrides_control_warp_entry_lo
     fixture_end(&f);
 }
 
+#define GUID_ENHANCED_KEEP_ON_FLOOR NMO_GUID(0xdbde2424, 0x6addef12)
+#define GUID_KEEP_ON_FLOOR_LIMITS NMO_GUID(0x788061fb, 0x249f29a1)
+
+/* The entity at x, y, z, with a mesh of one vertex at its origin (a box of no size there) */
+static void place(engine_fixture_t *f, nmo_object_id_t id, float x, float y, float z)
+{
+    nmo_3dentity_state_t *entity = fixture_state(f,id);
+    entity->world_matrix[12] = x; entity->world_matrix[13] = y; entity->world_matrix[14] = z;
+    nmo_object_id_t mesh = fixture_create(f,NMO_CID_MESH,"Point");
+    nmo_mesh_state_t *state = fixture_state(f,mesh);
+    state->vertices = nmo_arena_alloc(nmo_session_get_arena(f->session),sizeof(*state->vertices),_Alignof(nmo_vertex_t));
+    if (state->vertices == NULL) return;
+    memset(state->vertices,0,sizeof(*state->vertices));
+    state->vertex_count = 1;
+    entity->current_mesh = nmo_ref_from_id(mesh);
+}
+
+/* The character at x, y, z (no geometry of its own) */
+static void place_actor(engine_fixture_t *f, nmo_object_id_t id, float x, float y, float z)
+{
+    float *m = ((nmo_3dentity_state_t *)fixture_state(f,id))->world_matrix;
+    m[12] = x; m[13] = y; m[14] = z;
+}
+
+TEST(engine_character, enhanced_keep_on_floor_falls_with_its_weight_or_snaps_without)
+{
+    for (int weighted = 0; weighted < 2; weighted++) {
+        engine_fixture_t f;
+        fixture_begin_document(&f);
+        nmo_object_id_t body, actor = character(&f,&body), floor = controller_floor(&f,0,false);
+        place_actor(&f,actor,0,5,0); place(&f,body,0,3,0); /* the hierarchy's bottom at 3 */
+        f.owner_id = actor; character_script(&f);
+        controller_floor_attribute(&f,floor,false);
+        nmo_object_id_t block = fixture_block(&f,GUID_ENHANCED_KEEP_ON_FLOOR,"Enhanced Character Keep On Floor");
+        ASSERT_TRUE(block != 0);
+        fixture_link(&f,f.script_in,BLOCK_IN(&f,block,0),0);
+        float weight = weighted ? 1.0f : 0.0f;
+        fixture_input_value(&f,BLOCK_PIN(&f,block,6),&weight,sizeof(weight));
+        fixture_input_int(&f,BLOCK_PIN(&f,block,7),5); /* Z */
+        fixture_commit(&f,NULL);
+        ASSERT_EQ(NMO_OK,nmo_engine_start(f.engine,NMO_ENGINE_START_ALL));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,20));
+        float matrix[16], velocity[3], normal[3], distance = 0;
+        nmo_object_id_t found = 0;
+        ASSERT_TRUE(nmo_engine_entity_world_matrix(f.engine,actor,matrix));
+        read_value(&f,BLOCK_POUT(&f,block,4),velocity,sizeof(velocity));
+        if (weighted) {
+            /* It only falls: 20 ms of gravity in the Down Velocity, moved by it next frame */
+            ASSERT_FLOAT_EQ(5,matrix[13],1e-6f);
+            ASSERT_FLOAT_EQ(-0.02f,velocity[1],1e-6f);
+            ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,20));
+            ASSERT_TRUE(nmo_engine_entity_world_matrix(f.engine,actor,matrix));
+            ASSERT_FLOAT_EQ(4.98f,matrix[13],1e-5f);
+            read_value(&f,BLOCK_POUT(&f,block,4),velocity,sizeof(velocity));
+            ASSERT_FLOAT_EQ(-0.04f,velocity[1],1e-6f);
+        } else {
+            ASSERT_FLOAT_EQ(2,matrix[13],1e-5f); /* the four points' floor 3 below */
+            ASSERT_FLOAT_EQ(0,velocity[1],0);
+        }
+        read_value(&f,BLOCK_POUT(&f,block,0),&found,sizeof(found));
+        read_value(&f,BLOCK_POUT(&f,block,2),normal,sizeof(normal));
+        read_value(&f,BLOCK_POUT(&f,block,3),&distance,sizeof(distance));
+        ASSERT_EQ(floor,found);
+        ASSERT_FLOAT_EQ(1,normal[1],1e-5f);
+        ASSERT_FLOAT_EQ(weighted ? -2.98f : -3,distance,1e-5f);
+        fixture_end(&f);
+    }
+}
+
+TEST(engine_character, keep_on_floor_limits_pushes_back_inside_or_to_the_last_place)
+{
+    for (int reference = 0; reference < 2; reference++) {
+        engine_fixture_t f;
+        fixture_begin_document(&f);
+        nmo_object_id_t body, actor = character(&f,&body), foot = limb(&f,actor), floor = controller_floor(&f,0,false);
+        if (reference) {
+            /* all on the ground: kept on it */
+            place_actor(&f,actor,3,5,0); place(&f,body,2.5f,3,-1); place(&f,foot,4,3,1);
+            ((nmo_character_state_t *)fixture_state(&f,actor))->floor_ref = nmo_ref_from_id(body);
+        } else {
+            /* the box's right corners past the ground's edge at x = 5 */
+            place_actor(&f,actor,4.5f,5,0); place(&f,body,4,3,-1); place(&f,foot,6,3,1);
+        }
+        f.owner_id = actor; character_script(&f);
+        controller_floor_attribute(&f,floor,false);
+        nmo_object_id_t block = fixture_block(&f,GUID_KEEP_ON_FLOOR_LIMITS,"Character Keep On Floor Limits");
+        ASSERT_TRUE(block != 0);
+        fixture_link(&f,f.script_in,BLOCK_IN(&f,block,0),0);
+        fixture_link(&f,BLOCK_OUT(&f,block,0),BLOCK_IN(&f,block,0),1); /* every frame */
+        fixture_commit(&f,NULL);
+        ASSERT_EQ(NMO_OK,nmo_engine_start(f.engine,NMO_ENGINE_START_ALL));
+        ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,20));
+        float matrix[16];
+        ASSERT_TRUE(nmo_engine_entity_world_matrix(f.engine,actor,matrix));
+        if (!reference) {
+            /* back by the corner's overshoot, once for each of the two corners there */
+            ASSERT_FLOAT_EQ(2.5f,matrix[12],1e-5f);
+            ASSERT_FLOAT_EQ(2,matrix[13],1e-5f);
+        } else {
+            ASSERT_FLOAT_EQ(3,matrix[12],1e-5f);
+            ASSERT_FLOAT_EQ(2,matrix[13],1e-5f);
+            /* moved over the edge: sent 1.5 times back toward where it was kept */
+            matrix[12] = 4.5f;
+            ASSERT_EQ(NMO_OK,nmo_engine_set_entity_world_matrix(f.engine,actor,matrix,false));
+            ASSERT_EQ(NMO_OK,nmo_engine_step(f.engine,20));
+            ASSERT_TRUE(nmo_engine_entity_world_matrix(f.engine,actor,matrix));
+            ASSERT_FLOAT_EQ(2.25f,matrix[12],1e-5f);
+            ASSERT_FLOAT_EQ(2,matrix[13],1e-5f);
+        }
+        fixture_end(&f);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_character, clocks_restore_saved_cursors_and_separate_cursor_updates_from_pose);
 REGISTER_TEST(engine_character, linked_unlinked_paused_and_reverse_clocks_follow_native_frame_rules);
@@ -1801,4 +1914,6 @@ REGISTER_TEST(engine_character, unlimited_floor_uses_reference_or_hierarchy_bott
 REGISTER_TEST(engine_character, unlimited_floor_respects_face_orientation_and_box_geometry);
 REGISTER_TEST(engine_character, loaded_unlimited_controllers_read_native_collections_and_copies_rebind_their_caches);
 REGISTER_TEST(engine_character, unlimited_secondary_input_overrides_control_warp_entry_loop_count_and_last_frame);
+REGISTER_TEST(engine_character, enhanced_keep_on_floor_falls_with_its_weight_or_snaps_without);
+REGISTER_TEST(engine_character, keep_on_floor_limits_pushes_back_inside_or_to_the_last_place);
 TEST_MAIN_END()
