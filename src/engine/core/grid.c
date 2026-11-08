@@ -20,6 +20,7 @@
 #include "object/builtin/nmo_grid_schemas.h"
 #include "object/builtin/nmo_layer_schemas.h"
 #include "object/nmo_class_ids.h"
+#include "type/nmo_type_guids.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -38,11 +39,13 @@ void eng_grids_init(nmo_engine_t *engine)
 {
     /* InitData, then OnCKInit's SetTypeName(1, DEFAULT_LAYER_NAME) */
     char **name = NULL;
-    if (ENG_VEC_PUSH(engine->grids.type_names, name)) {
+    nmo_guid_t *param = NULL;
+    if (ENG_VEC_PUSH(engine->grids.type_names, name) && ENG_VEC_PUSH(engine->grids.type_params, param)) {
         *name = grid_text("invalid layer type");
     }
-    if (ENG_VEC_PUSH(engine->grids.type_names, name)) {
+    if (ENG_VEC_PUSH(engine->grids.type_names, name) && ENG_VEC_PUSH(engine->grids.type_params, param)) {
         *name = grid_text(ENG_DEFAULT_LAYER_NAME);
+        *param = CKPGUID_INT;
     }
 }
 
@@ -52,6 +55,7 @@ void eng_free_grids(nmo_engine_t *engine)
         free(engine->grids.type_names.data[i]);
     }
     free(engine->grids.type_names.data);
+    free(engine->grids.type_params.data);
     for (size_t i = 0; i < engine->grids.grids.count; i++) {
         free(engine->grids.grids.data[i].layers.data);
     }
@@ -97,12 +101,36 @@ int32_t eng_grid_register_type(nmo_engine_t *engine, const char *name)
     }
     char *copy = grid_text(name);
     char **slot = NULL;
-    if (copy == NULL || !ENG_VEC_PUSH(engine->grids.type_names, slot)) {
+    nmo_guid_t *param = NULL;
+    if (copy == NULL || !eng_vec_reserve((void **)&engine->grids.type_params.data, &engine->grids.type_params.capacity,
+                                         engine->grids.type_params.count + 1u, sizeof(nmo_guid_t)) ||
+        !ENG_VEC_PUSH(engine->grids.type_names, slot)) {
         free(copy);
         return 0;
     }
     *slot = copy;
+    ENG_VEC_PUSH(engine->grids.type_params, param);
+    *param = CKPGUID_INT;
     return (int32_t)engine->grids.type_names.count - 1;
+}
+
+int32_t eng_grid_type_count(nmo_engine_t *engine)
+{
+    grids_sync(engine);
+    return (int32_t)engine->grids.type_names.count;
+}
+
+const char *eng_grid_type_name(nmo_engine_t *engine, int32_t type)
+{
+    grids_sync(engine);
+    return type >= 0 && (size_t)type < engine->grids.type_names.count ? engine->grids.type_names.data[type] : NULL;
+}
+
+nmo_guid_t eng_grid_type_param(nmo_engine_t *engine, int32_t type)
+{
+    grids_sync(engine);
+    return type >= 0 && (size_t)type < engine->grids.type_params.count ? engine->grids.type_params.data[type]
+                                                                        : NMO_GUID(0u, 0u);
 }
 
 static eng_layer_t *layer_of(nmo_engine_t *engine, nmo_object_id_t id)
@@ -141,6 +169,11 @@ static void add_layer(nmo_engine_t *engine, nmo_object_id_t id)
     layer->type = type_from_name(engine, name);
     if (layer->type == 0) {
         layer->type = eng_grid_register_type(engine, name);
+    }
+    /* the file's associated parameter: its own from version 3, INT before, none before 2 */
+    if (layer->type > 0 && (size_t)layer->type < engine->grids.type_params.count && state->has_version &&
+        state->version >= 2) {
+        engine->grids.type_params.data[layer->type] = state->version >= 3 ? state->param_guid : CKPGUID_INT;
     }
     layer->grid = eng_object_ref(engine, id, &state->grid);
     int32_t count = state->square_data != NULL ? (int32_t)(state->square_data_size / 4u) : 0;

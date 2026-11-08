@@ -29,6 +29,7 @@ typedef struct eng_grid {
 
 typedef struct eng_grids {
     ENG_VEC(char *) type_names; /* the layer types by number: 0 none, 1 "- default -" */
+    ENG_VEC(nmo_guid_t) type_params; /* each type's associated parameter (GetAssociatedParam) */
     ENG_VEC(eng_grid_t) grids;  /* in the order they were loaded */
     ENG_VEC(eng_layer_t) layers;
     nmo_object_id_t synced;     /* the next engine ID when the objects were last read */
@@ -43,6 +44,10 @@ void eng_free_grids(nmo_engine_t *engine);
 int32_t eng_grid_type_from_name(nmo_engine_t *engine, const char *name);
 /* RegisterType: the type of that name, made at the end when there is none; 0 for no name */
 int32_t eng_grid_register_type(nmo_engine_t *engine, const char *name);
+/* GetLayerTypeCount, GetTypeName (NULL for none) and GetAssociatedParam (null for none) */
+int32_t eng_grid_type_count(nmo_engine_t *engine);
+const char *eng_grid_type_name(nmo_engine_t *engine, int32_t type);
+nmo_guid_t eng_grid_type_param(nmo_engine_t *engine, int32_t type);
 /* The grids loaded so far, every layer read; the grids in the scene are those eng_in_scene has */
 size_t eng_grid_count(nmo_engine_t *engine);
 eng_grid_t *eng_grid_at(nmo_engine_t *engine, size_t index);
