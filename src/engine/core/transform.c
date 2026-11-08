@@ -1406,10 +1406,13 @@ static bool eng_curve_mesh_build(const eng_curve_point_t *points, int count, boo
                                  int32_t step_count, float length, eng_vector_t **out,
                                  int32_t *out_count);
 
+/* With `length_point`, CKCurvePoint::GetLength: that point's length along the curve in
+   `point_length` (false when it is not one of the curve's points). */
 static bool eng_curve_sample(nmo_engine_t *engine, nmo_object_id_t curve_id, float step,
                             eng_vector_t *out, float *out_length, nmo_object_id_t tangent_point,
                             eng_vector_t *tangent_in, eng_vector_t *tangent_out, bool local,
-                            eng_vector_t **mesh, int32_t *mesh_count)
+                            eng_vector_t **mesh, int32_t *mesh_count, nmo_object_id_t length_point,
+                            float *point_length)
 {
     int32_t curve = eng_entity_index(engine, curve_id);
     const eng_curve_points_t *control_points = eng_curve_points(engine,curve_id);
@@ -1523,6 +1526,18 @@ static bool eng_curve_sample(nmo_engine_t *engine, nmo_object_id_t curve_id, flo
         }
     }
     if (out_length != NULL) *out_length = length;
+    if (length_point != 0) {
+        bool found = false;
+        for (int i = 0; i < count && !found; i++) {
+            if (control_points->ids[i] == length_point) {
+                *point_length = points[i].length;
+                found = true;
+            }
+        }
+        free(points);
+        free(descs);
+        return found;
+    }
     if (mesh != NULL) {
         bool built = eng_curve_mesh_build(points, count, opened, properties.step_count, length, mesh,
                                           mesh_count);
@@ -1624,31 +1639,30 @@ static bool eng_curve_mesh_build(const eng_curve_point_t *points, int count, boo
 
 bool eng_curve_position(nmo_engine_t *engine, nmo_object_id_t curve, float step, eng_vector_t *out)
 {
-    return out != NULL && eng_curve_sample(engine,curve,step,out,NULL,0,NULL,NULL,false,NULL,NULL);
+    return out != NULL && eng_curve_sample(engine,curve,step,out,NULL,0,NULL,NULL,false,NULL,NULL,0,NULL);
 }
 
 bool eng_curve_local_position(nmo_engine_t *engine, nmo_object_id_t curve, float step,
                               eng_vector_t *out)
 {
-    return out != NULL && eng_curve_sample(engine,curve,step,out,NULL,0,NULL,NULL,true,NULL,NULL);
+    return out != NULL && eng_curve_sample(engine,curve,step,out,NULL,0,NULL,NULL,true,NULL,NULL,0,NULL);
 }
 
 bool eng_curve_length(nmo_engine_t *engine, nmo_object_id_t curve, float *out)
 {
-    return out != NULL && eng_curve_sample(engine,curve,0,NULL,out,0,NULL,NULL,false,NULL,NULL);
+    return out != NULL && eng_curve_sample(engine,curve,0,NULL,out,0,NULL,NULL,false,NULL,NULL,0,NULL);
 }
 
 bool eng_curve_mesh_points(nmo_engine_t *engine, nmo_object_id_t curve, eng_vector_t **out,
                            int32_t *count)
 {
     return out != NULL && count != NULL &&
-           eng_curve_sample(engine,curve,0,NULL,NULL,0,NULL,NULL,false,out,count);
+           eng_curve_sample(engine,curve,0,NULL,NULL,0,NULL,NULL,false,out,count,0,NULL);
 }
 
-bool eng_curve_point_tangents(nmo_engine_t *engine, nmo_object_id_t point, eng_vector_t *in,
-                              eng_vector_t *out)
+/* The curve a point is on: the one whose control points list it, else the one it names */
+static nmo_object_id_t eng_curve_of_point(nmo_engine_t *engine, nmo_object_id_t point)
 {
-    /* The curve the point is on: the one whose control points list it, else the one it names */
     nmo_object_id_t curve = 0;
     for (size_t i = 0; i < engine->curves.topologies.count && curve == 0; i++) {
         const eng_curve_topology_t *topology = &engine->curves.topologies.data[i];
@@ -1667,5 +1681,19 @@ bool eng_curve_point_tangents(nmo_engine_t *engine, nmo_object_id_t point, eng_v
                            : NULL;
         curve = state != NULL ? eng_object_ref(engine, point, &state->curve) : 0;
     }
-    return curve != 0 && eng_curve_sample(engine, curve, 0, NULL, NULL, point, in, out, false, NULL, NULL);
+    return curve;
+}
+
+bool eng_curve_point_tangents(nmo_engine_t *engine, nmo_object_id_t point, eng_vector_t *in,
+                              eng_vector_t *out)
+{
+    nmo_object_id_t curve = eng_curve_of_point(engine, point);
+    return curve != 0 && eng_curve_sample(engine, curve, 0, NULL, NULL, point, in, out, false, NULL, NULL, 0, NULL);
+}
+
+bool eng_curve_point_length(nmo_engine_t *engine, nmo_object_id_t point, float *out)
+{
+    nmo_object_id_t curve = eng_curve_of_point(engine, point);
+    return out != NULL && curve != 0 &&
+           eng_curve_sample(engine, curve, 0, NULL, NULL, 0, NULL, NULL, false, NULL, NULL, point, out);
 }

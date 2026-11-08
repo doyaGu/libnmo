@@ -175,5 +175,8 @@ bool eng_curve_length(nmo_engine_t *engine, nmo_object_id_t curve, float *out);
 /* CKCurvePoint::GetTangents: the point's in and out tangents in its curve's space; false when it is on no curve */
 bool eng_curve_point_tangents(nmo_engine_t *engine, nmo_object_id_t point, eng_vector_t *in,
                               eng_vector_t *out);
+/* CKCurvePoint::GetLength: the curve's length up to the point, in its curve's space; false when it
+   is on no curve */
+bool eng_curve_point_length(nmo_engine_t *engine, nmo_object_id_t point, float *out);
 
 #endif /* NMO_ENGINE_TRANSFORM_H */
