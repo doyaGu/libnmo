@@ -14,6 +14,7 @@
 #include "type/nmo_type_query.h"
 #include "type/nmo_object_guids.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_mesh_schemas.h"
 
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_defs.h"
@@ -1906,6 +1907,566 @@ static int follow_camera_callback(blk_t *b, uint32_t message)
     return NMO_ENGINE_BR_OK;
 }
 
+/* ---- Mesh deformers ---- */
+
+/* The DLL's sine tables: sin of each whole degree */
+static float sine_degrees(int32_t degree)
+{
+    return (float)sin((double)degree * (double)0.0027777778f * (double)6.2831855f);
+}
+
+/* The target's current mesh as a run time copy, its vertex count in `count`; NULL for none */
+static eng_mesh_copy_t *deformed_mesh(nmo_engine_t *engine, nmo_object_id_t entity, uint32_t *count)
+{
+    nmo_object_id_t mesh = entity != 0 ? current_mesh_of(engine, entity) : 0;
+    nmo_object_t *object = mesh != 0 ? eng_find_object(engine, mesh) : NULL;
+    const nmo_mesh_state_t *state = object != NULL ? (const nmo_mesh_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(engine->types, object, CKPGUID_MESH) : NULL;
+    if (state == NULL) {
+        return NULL;
+    }
+    *count = state->vertex_count;
+    return eng_mesh_copy(engine, mesh);
+}
+
+/* The callbacks' copy of the mesh's positions into local `pos` (attach, load, edit) */
+static void save_vertices(blk_t *b, int pos)
+{
+    uint32_t count = 0;
+    eng_mesh_copy_t *copy = deformed_mesh(b->engine, nmo_engine_block_target(b), &count);
+    if (copy == NULL || count == 0) {
+        return;
+    }
+    nmo_vector_t *saved = (nmo_vector_t *)malloc(count * sizeof(*saved));
+    if (saved == NULL) {
+        return;
+    }
+    for (uint32_t v = 0; v < count; v++) {
+        saved[v] = copy->vertices[v].position;
+    }
+    nmo_engine_block_set_local_value(b, pos, saved, count * sizeof(*saved));
+    free(saved);
+}
+
+/* The positions local `pos` holds, back on the mesh (delete, detach, reset) */
+static void restore_vertices(blk_t *b, int pos)
+{
+    uint32_t count = 0;
+    eng_mesh_copy_t *copy = deformed_mesh(b->engine, nmo_engine_block_target(b), &count);
+    const eng_param_t *saved = block_local(b, pos);
+    if (copy == NULL || saved == NULL || saved->data == NULL || saved->size < sizeof(nmo_vector_t)) {
+        return;
+    }
+    const nmo_vector_t *positions = (const nmo_vector_t *)saved->data;
+    for (uint32_t v = 0; v < count && (v + 1) * sizeof(nmo_vector_t) <= saved->size; v++) {
+        copy->vertices[v].position = positions[v];
+    }
+    eng_mesh_vertices_moved(b->engine, copy, true);
+}
+
+/* The positions local `pos` holds, `count` at most; NULL for none */
+static const nmo_vector_t *saved_vertices(blk_t *b, int pos, uint32_t *count)
+{
+    const eng_param_t *saved = block_local(b, pos);
+    if (saved == NULL || saved->data == NULL) {
+        return NULL;
+    }
+    uint32_t held = (uint32_t)(saved->size / sizeof(nmo_vector_t));
+    *count = held < *count ? held : *count;
+    return (const nmo_vector_t *)saved->data;
+}
+
+/*
+ * TT_GeneratePlane: a "generated Entity" in the scene at Position, scaled
+ * (in the world) by Scale, with a "generated Mesh" of Size X by Size Y unit
+ * squares in XZ going -Z, four vertices and two faces a square, face normals
+ * only; its input stays active, as in the DLL.
+ */
+static int bb_generate_plane(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    OUT_ON(b, 0);
+    eng_vector_t position = get_in_vector(b, 0, 0.0f, 0.0f, 0.0f), scale = get_in_vector(b, 1, 1.0f, 1.0f, 1.0f);
+    int32_t size_x = get_in_int(b, 2, 1), size_y = get_in_int(b, 3, 1);
+    int32_t squares = size_x > 0 && size_y > 0 ? size_x * size_y : 0;
+    nmo_mesh_state_t *state = NULL;
+    nmo_object_id_t mesh = eng_create_mesh(engine, "generated Mesh", 4 * squares, 2 * squares, &state);
+    nmo_object_id_t entity = eng_create_object(engine, NMO_CID_3DENTITY, "generated Entity");
+    if (mesh == 0 || entity == 0) {
+        return NMO_ENGINE_BR_OK;
+    }
+    int32_t v = 0, f = 0;
+    for (int32_t y = 0; y < size_y && squares > 0; y++) {
+        for (int32_t x = 0; x < size_x; x++, v += 4, f += 2) {
+            const float near = -(float)y, far = -(float)(y + 1);
+            state->vertices[v].position = (nmo_vector_t){(float)x, 0.0f, near};
+            state->vertices[v + 1].position = (nmo_vector_t){(float)x, 0.0f, far};
+            state->vertices[v + 2].position = (nmo_vector_t){(float)(x + 1), 0.0f, far};
+            state->vertices[v + 3].position = (nmo_vector_t){(float)(x + 1), 0.0f, near};
+            const uint16_t faces[6] = {(uint16_t)v, (uint16_t)(v + 3), (uint16_t)(v + 2),
+                                       (uint16_t)(v + 1), (uint16_t)v, (uint16_t)(v + 2)};
+            memcpy(&state->face_vertex_indices[3 * f], faces, sizeof(faces));
+        }
+    }
+    /* BuildFaceNormals: each square's faces face up */
+    for (int32_t i = 0; i < 2 * squares; i++) {
+        state->faces[i].normal = (nmo_vector_t){0.0f, 1.0f, 0.0f};
+    }
+    nmo_mesh_update_bounding_volumes(state);
+    eng_entity_set_current_mesh(engine, entity, mesh);
+    int32_t index = eng_entity_index(engine, entity);
+    if (index >= 0) {
+        eng_entity_set_position(engine, index, &position, -1, false);
+        eng_entity_set_scale(engine, index, &scale, false, false);
+    }
+    eng_add_to_level_scene(engine, entity);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * TT_HighMapMeshform: each vertex's height is the alpha of the texel its UVs
+ * point at in the texture of the mesh's material MatChannel + 1 (taken as
+ * its material groups' list), times Height / 100 (X and Z kept).
+ */
+static int bb_high_map_meshform(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    uint32_t count = 0;
+    eng_mesh_copy_t *copy = deformed_mesh(engine, target, &count);
+    if (copy == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    int32_t channel = get_in_int(b, 0, -1);
+    nmo_object_id_t material = nmo_engine_mesh_material(engine, copy->mesh, channel + 1);
+    eng_material_t *desc = material != 0 ? eng_material(engine, material) : NULL;
+    eng_texture_t *texture = desc != NULL && desc->desc.texture != 0 ? eng_texture(engine, desc->desc.texture) : NULL;
+    eng_surface_t *surface = texture != NULL ? eng_texture_surface(engine, texture, -1) : NULL;
+    if (surface == NULL || surface->rgba == NULL) {
+        return NMO_ENGINE_BR_PARAMETERERROR; /* the DLL calls through a missing material or texture */
+    }
+    float height = get_in_float(b, 1, 1.0f);
+    size_t stride = 0;
+    int32_t uv_count = 0;
+    const float *uvs = eng_mesh_uvs(engine, copy, -1, &stride, &uv_count);
+    int32_t w = surface->width, h = surface->height;
+    for (int32_t v = 0; uvs != NULL && v < uv_count && (uint32_t)v < count; v++) {
+        const float *uv = (const float *)((const uint8_t *)uvs + (size_t)v * stride);
+        int32_t x = abs((int32_t)(int64_t)((double)w * uv[0]) % (w + 1));
+        int32_t y = h - abs((int32_t)(int64_t)((double)h * uv[1]) % (h + 1));
+        /* the DLL reads past the image at x == w or y == h; nothing there here */
+        int32_t alpha = x < w && y < h ? surface->rgba[4 * ((size_t)y * (size_t)w + (size_t)x) + 3] : 0;
+        copy->vertices[v].position.y = (float)((double)alpha * height * 0.01);
+    }
+    eng_mesh_vertices_moved(engine, copy, true);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* The callbacks of the deformers keeping the mesh's positions in local `pos` */
+static int deformer_callback(blk_t *b, uint32_t message, int pos)
+{
+    if (message == NMO_ENGINE_MSG_LOAD || message == NMO_ENGINE_MSG_EDITED) {
+        save_vertices(b, pos);
+    } else if (message == NMO_ENGINE_MSG_RESET) {
+        restore_vertices(b, pos);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+enum { MAGNET_SINUS, MAGNET_VARRAY, MAGNET_TIME };
+
+/*
+ * TT MagnetMeshForm: each vertex of the rest shape (VArray, kept at load)
+ * pulled toward the Magnet-Entity: nothing from Max Distance off its
+ * radius, Strength at Min Distance, falling to nothing at its centre; with
+ * Sinus-Deform the pull swings by 30% along Z over time. Off leaves the
+ * mesh as it is.
+ */
+static int bb_magnet_mesh_form(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t target_id = nmo_engine_block_target(b);
+    int32_t target = target_entity(b), magnet = input_entity(b, 0);
+    float max_distance = get_in_float(b, 1, 0.0f), min_distance = get_in_float(b, 2, 0.0f);
+    float strength = get_in_float(b, 3, 0.0f);
+    bool sinus = get_local_int(b, MAGNET_SINUS, 0) != 0;
+    float time = 0.0f;
+    if (sinus) {
+        time = (float)(nmo_engine_block_delta_time(b) * 0.0099999998 + get_local_float(b, MAGNET_TIME, 0.0f));
+        nmo_engine_block_set_local_value(b, MAGNET_TIME, &time, sizeof(time));
+    }
+    uint32_t count = 0;
+    eng_mesh_copy_t *copy = deformed_mesh(engine, target_id, &count);
+    if (target < 0 || magnet < 0 || copy == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR; /* the DLL calls through them */
+    }
+    const nmo_vector_t *rest = saved_vertices(b, MAGNET_VARRAY, &count);
+    eng_vector_t centre = eng_entity_position(engine, magnet, target);
+    float radius = eng_entity_radius(engine, magnet);
+    float slope = (float)(1.0 / (min_distance - max_distance) * strength);
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+        float zero = 0.0f;
+        nmo_engine_block_set_local_value(b, MAGNET_TIME, &zero, sizeof(zero));
+    }
+    for (uint32_t v = 0; rest != NULL && v < count; v++) {
+        eng_vector_t d = {centre.x - rest[v].x, centre.y - rest[v].y, centre.z - rest[v].z};
+        float distance = (float)(sqrt((double)(d.z * d.z + d.y * d.y + d.x * d.x)) - radius);
+        if (distance >= max_distance) {
+            copy->vertices[v].position = rest[v];
+            continue;
+        }
+        float pull = distance <= min_distance ? (distance + radius) / (radius + min_distance) * strength
+                                              : (distance - max_distance) * slope;
+        if (sinus) {
+            int32_t degree = (int32_t)(int64_t)(fabs((double)(rest[v].z - time)) * 50.0) % 360;
+            pull = (float)((sine_degrees(degree) * 0.3 + 1.0) * pull);
+        }
+        eng_vector_normalize(&d);
+        copy->vertices[v].position = (nmo_vector_t){d.x * pull + rest[v].x, d.y * pull + rest[v].y,
+                                                    d.z * pull + rest[v].z};
+    }
+    eng_mesh_vertices_moved(engine, copy, true);
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+static int magnet_mesh_form_callback(blk_t *b, uint32_t message)
+{
+    return deformer_callback(b, message, MAGNET_VARRAY);
+}
+
+enum { SINUS_COUNT, SINUS_VERTICES, SINUS_WAVES };
+
+/* TT SinusMeshdeform's wave, as the DLL keeps it */
+typedef struct sinus_wave {
+    float height, wavelength, k; /* k: the box diagonal times 6.28 over the wavelength */
+    float time, phase;           /* phase: time times k */
+    float speed;                 /* Timefactor / 100 */
+    float x, y, z;               /* SinPos, Y cleared */
+} sinus_wave_t;
+
+/*
+ * TT SinusMeshdeform: each vertex's height is the sum of SinusCount circular
+ * sine waves (the DLL's sine table, in degrees) round their SinPos, of
+ * Height, with a wavelength in units of the target's box diagonal, moving
+ * by Timefactor (X and Z kept). On reads the waves from the last
+ * 4 x SinusCount inputs.
+ */
+static int bb_sinus_meshdeform(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    int32_t target = target_entity(b);
+    if (target < 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    int32_t waves = get_local_int(b, SINUS_COUNT, 0);
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+        eng_vector_t min = {0, 0, 0}, max = {0, 0, 0};
+        eng_entity_local_box(engine, target, &min, &max);
+        float dy = min.y - max.y, dz = min.z - max.z, dx = min.x - max.x;
+        float diagonal = (float)(sqrt((double)(dz * dz + dy * dy + dx * dx)) * 6.2800002);
+        sinus_wave_t *made = waves > 0 ? (sinus_wave_t *)calloc((size_t)waves, sizeof(*made)) : NULL;
+        int32_t first = nmo_engine_block_input_parameter_count(b) - 4 * waves;
+        for (int32_t i = 0; made != NULL && i < waves; i++) {
+            sinus_wave_t *w = &made[i];
+            w->speed = (float)(get_in_float(b, first + 4 * i, 0.0f) * 0.0099999998);
+            w->height = get_in_float(b, first + 4 * i + 1, 0.0f);
+            w->wavelength = get_in_float(b, first + 4 * i + 2, 0.0f);
+            w->k = diagonal / w->wavelength;
+            eng_vector_t at = get_in_vector(b, first + 4 * i + 3, 0.0f, 0.0f, 0.0f);
+            w->x = at.x;
+            w->z = at.z;
+        }
+        if (made != NULL) {
+            nmo_engine_block_set_local_value(b, SINUS_WAVES, made, (size_t)waves * sizeof(*made));
+        }
+        free(made);
+    }
+    eng_param_t *param = block_local(b, SINUS_WAVES);
+    sinus_wave_t *wave = param != NULL ? (sinus_wave_t *)param->data : NULL;
+    int32_t held = param != NULL ? (int32_t)(param->size / sizeof(sinus_wave_t)) : 0;
+    waves = waves < held ? waves : held;
+    float delta = nmo_engine_block_delta_time(b);
+    for (int32_t i = 0; i < waves; i++) {
+        wave[i].time = wave[i].speed * delta + wave[i].time;
+        wave[i].phase = wave[i].time * wave[i].k;
+    }
+    uint32_t count = 0;
+    eng_mesh_copy_t *copy = deformed_mesh(engine, nmo_engine_block_target(b), &count);
+    if (copy == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    for (uint32_t v = 0; v < count; v++) {
+        nmo_vector_t *p = &copy->vertices[v].position;
+        float y = 0.0f;
+        for (int32_t i = 0; i < waves; i++) {
+            float dx = p->x - wave[i].x, dz = p->z - wave[i].z, py = -wave[i].y;
+            double distance = sqrt((double)(dz * dz + py * py + dx * dx));
+            int32_t degree = (int32_t)(int64_t)fabs(distance * wave[i].k - wave[i].phase) % 360;
+            y = sine_degrees(degree) * wave[i].height + y;
+        }
+        p->y = y;
+    }
+    eng_mesh_vertices_moved(engine, copy, true);
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+static int sinus_meshdeform_callback(blk_t *b, uint32_t message)
+{
+    return deformer_callback(b, message, SINUS_VERTICES);
+}
+
+enum { PMS_COUNT, PMS_VERTICES, PMS_TIME, PMS_WAVE_X, PMS_WAVE_Y, PMS_WIND };
+
+/* TT PMS_Meshdeform's wave, as the DLL keeps it (the X waves use the first four) */
+typedef struct pms_wave {
+    float wavelength, k, phase, amplitude, moved_phase, speed, frequency;
+} pms_wave_t;
+
+/* MSVC's rand() after srand(seed) */
+static int32_t msvc_rand(uint32_t *state)
+{
+    *state = *state * 214013u + 2531011u;
+    return (int32_t)((*state >> 16) & 0x7FFFu);
+}
+
+/* The DLL's random number: from `low`, `range` wide */
+static float pms_random(uint32_t *state, float low, float range)
+{
+    return (float)((double)msvc_rand(state) * range * 0.000030518509 + low);
+}
+
+/* The DLL's sine: its table at |a x 359| degrees */
+static float pms_sine(float a)
+{
+    double degrees = (double)a * 359.0;
+    if (degrees < 0.0) {
+        degrees = degrees * -1.0;
+    }
+    return sine_degrees((int32_t)(int64_t)degrees % 360);
+}
+
+/*
+ * TT PMS_Meshdeform: the height of each vertex from Wellenanzahl
+ * Pierson-Moskowitz waves along X (turned by Winddirection, scaled by
+ * WaveScale / 5), their X first pushed by fixed waves along Z (X and Z
+ * kept). In sets the waves up from srand(10), as the DLL does; as in the
+ * DLL the pushed X is twice the vertex's X plus the push, and each height
+ * wave is joined by one of half its wave number at 0.8 its amplitude.
+ */
+static int bb_pms_meshdeform(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (target == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    int32_t waves = get_local_int(b, PMS_COUNT, 1);
+    float wind = get_in_float(b, 0, 0.0f), max_amplitude = get_in_float(b, 1, 0.6f);
+    float wave_scale = (float)(get_in_float(b, 2, 1.0f) * 0.2);
+    float time_scale = get_in_float(b, 3, 1.0f);
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+        uint32_t seed = 10;
+        pms_wave_t *xs = waves > 0 ? (pms_wave_t *)calloc((size_t)waves, sizeof(*xs)) : NULL;
+        pms_wave_t *ys = waves > 0 ? (pms_wave_t *)calloc((size_t)waves, sizeof(*ys)) : NULL;
+        const double pi2_4 = pow(6.283185482025146, 4.0);
+        for (int32_t i = 0; xs != NULL && ys != NULL && i < waves; i++) {
+            pms_wave_t *y = &ys[i], *x = &xs[i];
+            y->wavelength = get_in_float(b, 4 + 3 * i, 0.0f);
+            y->k = (float)(6.2831855 / y->wavelength);
+            y->frequency = (float)(pow((double)y->k * 9.81, 0.5) * 0.1591549386630057);
+            y->amplitude = (float)(0.7698888000000002 / (pow((double)y->frequency, 5.0) * pi2_4));
+            y->amplitude = (float)(exp(-pow((double)y->frequency * 3.92156862745098, -4.0)) * y->amplitude);
+            y->amplitude = (float)(y->amplitude / (0.16 / max_amplitude));
+            y->amplitude = pms_random(&seed, -1.0f, 1.0f) * y->amplitude;
+            y->phase = pms_random(&seed, 0.0f, 6.2831855f);
+            y->speed = (float)(pow(9.81 / y->k, 0.5) * 5.0);
+            x->wavelength = get_in_float(b, 5 + 3 * i, 0.0f);
+            x->amplitude = get_in_float(b, 6 + 3 * i, 0.0f);
+            x->k = x->wavelength == 0.0f ? 0.0f : (float)(6.2831855 / x->wavelength);
+            x->phase = pms_random(&seed, 0.0f, 6.2831855f);
+        }
+        if (xs != NULL && ys != NULL) {
+            nmo_engine_block_set_local_value(b, PMS_WAVE_X, xs, (size_t)waves * sizeof(*xs));
+            nmo_engine_block_set_local_value(b, PMS_WAVE_Y, ys, (size_t)waves * sizeof(*ys));
+        }
+        free(xs);
+        free(ys);
+        eng_matrix_t matrix;
+        const eng_vector_t up = {0.0f, 1.0f, 0.0f};
+        eng_matrix_from_rotation(&matrix, &up, wind);
+        nmo_engine_block_set_local_value(b, PMS_WIND, &matrix, sizeof(matrix));
+    }
+    float time = (float)(time_scale * nmo_engine_block_delta_time(b) * 0.000099999997 +
+                         get_local_float(b, PMS_TIME, 0.0f));
+    nmo_engine_block_set_local_value(b, PMS_TIME, &time, sizeof(time));
+    eng_param_t *xp = block_local(b, PMS_WAVE_X), *yp = block_local(b, PMS_WAVE_Y);
+    pms_wave_t *xs = xp != NULL ? (pms_wave_t *)xp->data : NULL, *ys = yp != NULL ? (pms_wave_t *)yp->data : NULL;
+    int32_t held_x = xp != NULL ? (int32_t)(xp->size / sizeof(pms_wave_t)) : 0;
+    int32_t held_y = yp != NULL ? (int32_t)(yp->size / sizeof(pms_wave_t)) : 0;
+    waves = waves < held_x ? waves : held_x;
+    waves = waves < held_y ? waves : held_y;
+    eng_matrix_t matrix;
+    memset(&matrix, 0, sizeof(matrix));
+    nmo_engine_block_get_local_value(b, PMS_WIND, &matrix, sizeof(matrix));
+    for (int32_t i = 0; i < waves; i++) {
+        ys[i].moved_phase = (float)(ys[i].phase - (double)time * ys[i].k * ys[i].speed);
+    }
+    uint32_t count = 0;
+    eng_mesh_copy_t *copy = deformed_mesh(engine, target, &count);
+    if (copy == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    for (uint32_t v = 0; v < count; v++) {
+        nmo_vector_t *p = &copy->vertices[v].position;
+        eng_vector_t original = {p->x, p->y, p->z}, turned;
+        eng_vector_rotate(&turned, &matrix, &original);
+        turned.x = turned.x * wave_scale;
+        turned.y = turned.y * wave_scale;
+        turned.z = turned.z * wave_scale;
+        float push = turned.x;
+        for (int32_t i = 0; i < waves; i++) {
+            push = pms_sine(turned.z * xs[i].k - xs[i].phase) * xs[i].amplitude + push;
+        }
+        turned.x = turned.x + push;
+        float height = 0.0f;
+        for (int32_t i = 0; i < waves; i++) {
+            height = pms_sine(turned.x * ys[i].k - ys[i].moved_phase) * ys[i].amplitude + height;
+            height = (float)(pms_sine((float)(turned.x * ys[i].k * 0.5f) - ys[i].moved_phase) * ys[i].amplitude *
+                             0.80000001 + height);
+        }
+        p->y = height;
+    }
+    eng_mesh_vertices_moved(engine, copy, true);
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+static int pms_meshdeform_callback(blk_t *b, uint32_t message)
+{
+    return deformer_callback(b, message, PMS_VERTICES);
+}
+
+enum { RIPPLE_GRID, RIPPLE_VERTICES };
+
+/*
+ * TT_RippleWave: a square grid of heights and speeds over the mesh's
+ * vertices (a square count of them, in rows): each speed eases toward its
+ * neighbours' weighted heights and the heights move by it; a Drop pushes a
+ * 3 x 3 dent in at a random point. The vertices keep the X and Z In saved
+ * and take the heights. As in the DLL the speed of the easing is Viscosity
+ * too (Speed is not read).
+ */
+static int bb_ripple_wave(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    uint32_t count = 0;
+    eng_mesh_copy_t *copy = target != 0 ? deformed_mesh(engine, target, &count) : NULL;
+    if (copy == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    int32_t side = (int32_t)(int64_t)pow((double)count, 0.5);
+    if ((uint32_t)(side * side) != count) {
+        return NMO_ENGINE_BR_OWNERERROR; /* "Mesh hat keine quadratische Vertexanzahl!" */
+    }
+    float drop = get_in_float(b, 0, 0.0f);
+    float viscosity = get_in_float(b, 1, 0.0f), speed = get_in_float(b, 1, 0.0f);
+    if (IN_ACTIVE(b, 2)) {
+        IN_OFF(b, 2);
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+        save_vertices(b, RIPPLE_VERTICES);
+        float *grid = (float *)calloc(count > 0 ? 2u * count : 1u, sizeof(float));
+        if (grid != NULL) {
+            nmo_engine_block_set_local_value(b, RIPPLE_GRID, grid, 2u * count * sizeof(float));
+        }
+        free(grid);
+    }
+    eng_param_t *gp = block_local(b, RIPPLE_GRID);
+    float *grid = gp != NULL && gp->size >= 2u * count * sizeof(float) ? (float *)gp->data : NULL;
+    uint32_t saved_count = count;
+    const nmo_vector_t *saved = saved_vertices(b, RIPPLE_VERTICES, &saved_count);
+    if (grid == NULL || saved == NULL || saved_count < count) {
+        return NMO_ENGINE_BR_ACTIVATENEXTFRAME; /* the DLL reads what In never made */
+    }
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        float range = (float)(side - 1);
+        int32_t column = (int32_t)(int64_t)((double)eng_random_u15(engine) * range * 0.000030518509 + 1.0);
+        int32_t row = (int32_t)(int64_t)((double)eng_random_u15(engine) * range * 0.000030518509 + 1.0);
+        static const float weights[3][3] = {{0.0625f, 0.125f, 0.0625f}, {0.125f, 0.25f, 0.125f},
+                                            {0.0625f, 0.125f, 0.0625f}};
+        for (int32_t dr = -1; dr <= 1; dr++) {
+            for (int32_t dc = -1; dc <= 1; dc++) {
+                int64_t cell = (int64_t)(row + dr) * side + column + dc;
+                if (cell >= 0 && cell < (int64_t)count) { /* the DLL writes past the grid there */
+                    grid[2 * cell + 1] = grid[2 * cell + 1] - drop * weights[dr + 1][dc + 1];
+                }
+            }
+        }
+    }
+    for (int32_t r = 0; r < side; r++) {
+        for (int32_t c = 0; c < side; c++) {
+            float *cell = &grid[2 * ((size_t)r * (size_t)side + (size_t)c)];
+            double mean = 0.0;
+            if (r <= 1 || r >= side - 1 || c <= 1 || c >= side - 1) {
+                cell[0] = 0.0f;
+                cell[1] = 0.0f;
+            } else {
+#define H(rr, cc) ((double)grid[2 * ((size_t)(rr) * (size_t)side + (size_t)(cc))])
+                double diagonal = H(r + 1, c + 1) + H(r - 1, c + 1) + H(r + 1, c - 1) + H(r - 1, c - 1);
+                double straight = H(r, c - 1) + H(r, c + 1) + H(r - 1, c) + H(r + 1, c);
+#undef H
+                mean = diagonal * 0.082999997 + straight * 0.16599999;
+            }
+            float eased = viscosity * cell[1];
+            cell[1] = (float)((mean - cell[0]) * speed + eased);
+        }
+    }
+    for (uint32_t v = 0; v < count; v++) {
+        float height = grid[2 * v + 1] + grid[2 * v];
+        grid[2 * v] = height;
+        copy->vertices[v].position = (nmo_vector_t){saved[v].x, height, saved[v].z};
+    }
+    eng_mesh_vertices_moved(engine, copy, true);
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+/* TT_RippleWave's callback: the saved positions back on delete, detach and reset (none saved at load) */
+static int ripple_wave_callback(blk_t *b, uint32_t message)
+{
+    if (message == NMO_ENGINE_MSG_RESET) {
+        restore_vertices(b, RIPPLE_VERTICES);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_tt_toolbox_blocks[] = {
     {NMO_GUID_INIT(0x594a136e,0x58135ef9),"TT Joystick Waiter",bb_tt_joystick_waiter,NULL,NULL},
     {NMO_GUID_INIT(0x229865eb,0x577619e4),"TT_TestForJoystick",bb_test_for_joystick,NULL,NULL},
@@ -1961,6 +2522,12 @@ static const nmo_engine_block_desc_t eng_tt_toolbox_blocks[] = {
     {NMO_GUID_INIT(0x7e9a4415, 0x199e4eb3), "TT CheckCurveCollision", bb_check_curve_collision, NULL, NULL},
     {NMO_GUID_INIT(0x44d43591, 0x28f91084), "TT Homing Missile", bb_homing_missile, NULL, NULL},
     {NMO_GUID_INIT(0x595b4723, 0x576c6749), "TT FollowCamera", bb_follow_camera, follow_camera_callback, NULL},
+    {NMO_GUID_INIT(0x5ae72f89, 0x57eb5413), "TT_GeneratePlane", bb_generate_plane, NULL, NULL},
+    {NMO_GUID_INIT(0x2e3c2d7e, 0x7be7234e), "TT_HighMapMeshform", bb_high_map_meshform, NULL, NULL},
+    {NMO_GUID_INIT(0x08e53929, 0x4c9c5205), "TT MagnetMeshForm", bb_magnet_mesh_form, magnet_mesh_form_callback, NULL},
+    {NMO_GUID_INIT(0x4f907f12, 0x16af15d6), "TT SinusMeshdeform", bb_sinus_meshdeform, sinus_meshdeform_callback, NULL},
+    {NMO_GUID_INIT(0x38b87d43, 0x149b755b), "TT PMS_Meshdeform", bb_pms_meshdeform, pms_meshdeform_callback, NULL},
+    {NMO_GUID_INIT(0x2f6a47b3, 0x35f4755c), "TT_RippleWave", bb_ripple_wave, ripple_wave_callback, NULL},
     {NMO_GUID_INIT(0x0fd4755f, 0x7de22dc8), "TT Set Dynamic Position", bb_set_dynamic_position, NULL,
      NULL},
 };

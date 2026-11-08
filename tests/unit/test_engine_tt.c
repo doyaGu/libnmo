@@ -7,11 +7,13 @@
 #include "object/builtin/nmo_targetcamera_schemas.h"
 #include "object/builtin/nmo_curve_schemas.h"
 #include "object/builtin/nmo_group_schemas.h"
+#include "object/builtin/nmo_material_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/nmo_object_enum_defs.h"
 #include "object/nmo_ref.h"
 #include "../../src/engine/engine_internal.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -53,6 +55,12 @@
 #define GUID_CHECK_CURVE_COLLISION NMO_GUID(0x7e9a4415, 0x199e4eb3)
 #define GUID_HOMING_MISSILE NMO_GUID(0x44d43591, 0x28f91084)
 #define GUID_FOLLOW_CAMERA NMO_GUID(0x595b4723, 0x576c6749)
+#define GUID_GENERATE_PLANE NMO_GUID(0x5ae72f89, 0x57eb5413)
+#define GUID_HIGH_MAP_MESHFORM NMO_GUID(0x2e3c2d7e, 0x7be7234e)
+#define GUID_MAGNET_MESH_FORM NMO_GUID(0x08e53929, 0x4c9c5205)
+#define GUID_SINUS_MESHDEFORM NMO_GUID(0x4f907f12, 0x16af15d6)
+#define GUID_PMS_MESHDEFORM NMO_GUID(0x38b87d43, 0x149b755b)
+#define GUID_RIPPLE_WAVE NMO_GUID(0x2f6a47b3, 0x35f4755c)
 
 /* The files the engine loads, from the scratch directory */
 static const char *resolve_scratch(void *user_data, const char *name)
@@ -1131,6 +1139,251 @@ TEST(engine_tt, follow_camera_eases_the_camera_and_its_target)
     fixture_end(&f);
 }
 
+/* A 3D object at the origin with a mesh of `side` x `side` vertices one apart in XZ (rows along Z),
+   UVs from 0 to 1, two faces a square; its mesh in `mesh_out` */
+static nmo_object_id_t grid_object(engine_fixture_t *f, const char *name, int side, nmo_object_id_t *mesh_out)
+{
+    nmo_object_id_t object = placed(f, NMO_CID_3DOBJECT, name, 0.0f, 0.0f, 0.0f);
+    nmo_object_id_t mesh = fixture_create(f, NMO_CID_MESH, name);
+    nmo_mesh_state_t *state = mesh != 0 ? (nmo_mesh_state_t *)fixture_state(f, mesh) : NULL;
+    if (object == 0 || state == NULL) {
+        return 0;
+    }
+    nmo_arena_t *arena = nmo_session_get_arena(f->session);
+    uint32_t count = (uint32_t)(side * side), faces = (uint32_t)(2 * (side - 1) * (side - 1));
+    state->vertices = (nmo_vertex_t *)nmo_arena_alloc(arena, count * sizeof(nmo_vertex_t), _Alignof(nmo_vertex_t));
+    state->faces = (nmo_face_t *)nmo_arena_alloc(arena, faces * sizeof(nmo_face_t), _Alignof(nmo_face_t));
+    state->face_vertex_indices = (uint16_t *)nmo_arena_alloc(arena, faces * 3 * sizeof(uint16_t), _Alignof(uint16_t));
+    if (state->vertices == NULL || state->faces == NULL || state->face_vertex_indices == NULL) {
+        return 0;
+    }
+    memset(state->vertices, 0, count * sizeof(nmo_vertex_t));
+    memset(state->faces, 0, faces * sizeof(nmo_face_t));
+    for (int r = 0; r < side; r++) {
+        for (int c = 0; c < side; c++) {
+            nmo_vertex_t *v = &state->vertices[r * side + c];
+            v->position = (nmo_vector_t){(float)c, 0.0f, (float)r};
+            v->normal = (nmo_vector_t){0.0f, 1.0f, 0.0f};
+            v->uv = (nmo_vector2_t){(float)c / (float)(side - 1), (float)r / (float)(side - 1)};
+        }
+    }
+    uint32_t k = 0;
+    for (int r = 0; r + 1 < side; r++) {
+        for (int c = 0; c + 1 < side; c++) {
+            const uint16_t a = (uint16_t)(r * side + c), b = (uint16_t)(a + 1), d = (uint16_t)(a + side);
+            const uint16_t e = (uint16_t)(d + 1);
+            const uint16_t quad[6] = {a, d, b, b, d, e};
+            memcpy(&state->face_vertex_indices[k * 3], quad, sizeof(quad));
+            state->faces[k].normal = state->faces[k + 1].normal = (nmo_vector_t){0.0f, 1.0f, 0.0f};
+            k += 2;
+        }
+    }
+    state->vertex_count = count;
+    state->face_count = faces;
+    nmo_mesh_update_bounding_volumes(state);
+    ((nmo_3dentity_state_t *)fixture_state(f, object))->current_mesh = nmo_ref_from_id(mesh);
+    *mesh_out = mesh;
+    return object;
+}
+
+/* The mesh's vertex `v` as the engine has it now */
+static nmo_vector_t mesh_vertex(engine_fixture_t *f, nmo_object_id_t mesh, int v)
+{
+    nmo_engine_mesh_t out;
+    nmo_vector_t none = {NAN, NAN, NAN};
+    return nmo_engine_mesh(f->engine, mesh, &out) && v < out.vertex_count ? out.vertices[v].position : none;
+}
+
+TEST(engine_tt, generate_plane_makes_its_entity_and_mesh)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t plane = started_block(&f, GUID_GENERATE_PLANE, "Plane");
+    ASSERT_TRUE(plane != 0);
+    const float position[3] = {1.0f, 2.0f, 3.0f};
+    fixture_input_value(&f, BLOCK_PIN(&f, plane, 0), position, sizeof(position));
+    fixture_input_int(&f, BLOCK_PIN(&f, plane, 2), 2);
+    fixture_input_int(&f, BLOCK_PIN(&f, plane, 3), 1);
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    nmo_object_id_t entity = nmo_engine_object_named(f.engine, "generated Entity", NMO_CID_3DENTITY);
+    nmo_object_id_t mesh = nmo_engine_object_named(f.engine, "generated Mesh", NMO_CID_MESH);
+    ASSERT_TRUE(entity != 0 && mesh != 0);
+    int32_t index = eng_entity_index(f.engine, entity);
+    ASSERT_TRUE(index >= 0);
+    ASSERT_FLOAT_EQ(3.0f, f.engine->entities.data[index].world.m[3][2], 0.0f);
+    ASSERT_TRUE(eng_in_scene(f.engine, entity));
+    nmo_engine_mesh_t out;
+    ASSERT_TRUE(nmo_engine_mesh(f.engine, mesh, &out));
+    ASSERT_EQ(8, out.vertex_count); /* four a square */
+    ASSERT_EQ(4, out.face_count);
+    ASSERT_FLOAT_EQ(2.0f, out.vertices[6].position.x, 0.0f); /* the second square's far right corner */
+    ASSERT_FLOAT_EQ(-1.0f, out.vertices[6].position.z, 0.0f);
+    fixture_end(&f);
+}
+
+TEST(engine_tt, sinus_and_magnet_deform_their_meshes)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t waved_mesh = 0, pulled_mesh = 0;
+    nmo_object_id_t waved = grid_object(&f, "Waved", 3, &waved_mesh);
+    nmo_object_id_t pulled = grid_object(&f, "Pulled", 3, &pulled_mesh);
+    nmo_object_id_t magnet = placed(&f, NMO_CID_3DENTITY, "Magnet", 1.0f, 1.0f, 1.0f);
+    ASSERT_TRUE(waved && pulled && magnet);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t sinus = started_block(&f, GUID_SINUS_MESHDEFORM, "Sinus");
+    nmo_object_id_t pull = started_block(&f, GUID_MAGNET_MESH_FORM, "Magnet");
+    ASSERT_TRUE(sinus && pull);
+    fixture_input_int(&f, fixture_target(&f, sinus), (int32_t)waved);
+    const float still = 0.0f, one = 1.0f, wavelength = 0.2f;
+    fixture_input_value(&f, BLOCK_PIN(&f, sinus, 0), &still, sizeof(still)); /* no time: phase 0 */
+    fixture_input_value(&f, BLOCK_PIN(&f, sinus, 1), &one, sizeof(one));
+    fixture_input_value(&f, BLOCK_PIN(&f, sinus, 2), &wavelength, sizeof(wavelength));
+    nmo_object_id_t sinus_count = local_of(&f, sinus, 0);
+    fixture_input_int(&f, fixture_target(&f, pull), (int32_t)pulled);
+    fixture_input_int(&f, BLOCK_PIN(&f, pull, 0), (int32_t)magnet);
+    const float max = 5.0f, min = 0.5f;
+    fixture_input_value(&f, BLOCK_PIN(&f, pull, 1), &max, sizeof(max));
+    fixture_input_value(&f, BLOCK_PIN(&f, pull, 2), &min, sizeof(min));
+    fixture_input_value(&f, BLOCK_PIN(&f, pull, 3), &one, sizeof(one));
+    ASSERT_TRUE(sinus_count != 0);
+    fixture_commit(&f, NULL);
+    const int32_t waves = 1;
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, sinus_count, &waves, sizeof(waves)));
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+
+    /* Circles round SinPos (the origin): the sine table at |distance x k| degrees, k the box
+       diagonal (2 x sqrt 2) times 6.28 over the wavelength */
+    const float k = (float)(sqrt(8.0) * 6.2800002) / 0.2f;
+    const int corners[3] = {1, 3, 8}; /* 1 away, 1 away, 2 sqrt 2 away */
+    const double distances[3] = {1.0, 1.0, sqrt(8.0)};
+    for (int i = 0; i < 3; i++) {
+        int degree = (int)fabs(distances[i] * k) % 360;
+        nmo_vector_t p = mesh_vertex(&f, waved_mesh, corners[i]);
+        ASSERT_FLOAT_EQ((float)sin(degree * 3.14159265358979 / 180.0), p.y, 1e-4f);
+    }
+    nmo_vector_t far = mesh_vertex(&f, waved_mesh, 8);
+    ASSERT_FLOAT_EQ(2.0f, far.x, 0.0f); /* X and Z stay */
+    ASSERT_FLOAT_EQ(2.0f, far.z, 0.0f);
+
+    /* The middle vertex, 1 under the magnet: (1 - 5) / (0.5 - 5) of the way up */
+    nmo_vector_t middle = mesh_vertex(&f, pulled_mesh, 4);
+    ASSERT_FLOAT_EQ(4.0f / 4.5f, middle.y, 1e-5f);
+    ASSERT_FLOAT_EQ(1.0f, middle.x, 1e-6f);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    middle = mesh_vertex(&f, pulled_mesh, 4);
+    ASSERT_FLOAT_EQ(4.0f / 4.5f, middle.y, 1e-5f); /* from the rest shape again, not further */
+    fixture_end(&f);
+}
+
+TEST(engine_tt, ripple_and_pms_waves_move_only_heights)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t pond_mesh = 0, sea_mesh = 0;
+    nmo_object_id_t pond = grid_object(&f, "Pond", 5, &pond_mesh);
+    nmo_object_id_t sea = grid_object(&f, "Sea", 4, &sea_mesh);
+    ASSERT_TRUE(pond && sea);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t ripple = started_block(&f, GUID_RIPPLE_WAVE, "Ripple");
+    nmo_object_id_t pms = started_block(&f, GUID_PMS_MESHDEFORM, "PMS");
+    ASSERT_TRUE(ripple && pms);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, ripple, 1), 0); /* a drop as it starts */
+    fixture_input_int(&f, fixture_target(&f, ripple), (int32_t)pond);
+    const float strength = 1.0f, viscosity = 0.98f;
+    fixture_input_value(&f, BLOCK_PIN(&f, ripple, 0), &strength, sizeof(strength));
+    fixture_input_value(&f, BLOCK_PIN(&f, ripple, 1), &viscosity, sizeof(viscosity));
+    fixture_input_int(&f, fixture_target(&f, pms), (int32_t)sea);
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+
+    /* Only the inner cells (rows and columns 2 and 3) move: the two outer rings are held at 0;
+       the drop's 3 x 3 dent, anywhere from (1,1) to (4,4), reaches one of them at least */
+    bool dented = false;
+    for (int v = 0; v < 25; v++) {
+        nmo_vector_t p = mesh_vertex(&f, pond_mesh, v);
+        int r = v / 5, c = v % 5;
+        ASSERT_FLOAT_EQ((float)c, p.x, 0.0f);
+        ASSERT_FLOAT_EQ((float)r, p.z, 0.0f);
+        if (r < 2 || r > 3 || c < 2 || c > 3) {
+            ASSERT_FLOAT_EQ(0.0f, p.y, 0.0f);
+        } else {
+            ASSERT_TRUE(p.y <= 0.0f);
+            dented = dented || p.y < 0.0f;
+        }
+    }
+    ASSERT_TRUE(dented);
+    float highest = 0.0f;
+    bool moved = false;
+    for (int v = 0; v < 16; v++) {
+        nmo_vector_t p = mesh_vertex(&f, sea_mesh, v);
+        ASSERT_FLOAT_EQ((float)(v % 4), p.x, 0.0f);
+        ASSERT_FLOAT_EQ((float)(v / 4), p.z, 0.0f);
+        ASSERT_TRUE(isfinite(p.y));
+        highest = fmaxf(highest, fabsf(p.y));
+        moved = moved || p.y != 0.0f;
+    }
+    ASSERT_TRUE(moved);
+    ASSERT_TRUE(highest < 2.0f * 0.6f * 1.8f); /* within two waves' bound */
+    fixture_end(&f);
+}
+
+TEST(engine_tt, high_map_meshform_raises_vertices_by_texel_alpha)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t mesh = 0;
+    nmo_object_id_t ground = grid_object(&f, "Ground", 2, &mesh);
+    nmo_object_id_t texture = fixture_create(&f, NMO_CID_TEXTURE, "Height Map");
+    nmo_object_id_t material = fixture_create(&f, NMO_CID_MATERIAL, "Ground Material");
+    ASSERT_TRUE(ground && texture && material);
+    ((nmo_material_state_t *)fixture_state(&f, material))->textures[0] = nmo_ref_from_id(texture);
+    nmo_mesh_state_t *state = (nmo_mesh_state_t *)fixture_state(&f, mesh);
+    state->material_groups = (nmo_material_group_t *)nmo_arena_alloc(nmo_session_get_arena(f.session),
+                                                                     sizeof(nmo_material_group_t),
+                                                                     _Alignof(nmo_material_group_t));
+    ASSERT_TRUE(state->material_groups != NULL);
+    memset(state->material_groups, 0, sizeof(nmo_material_group_t));
+    state->material_groups[0].material = nmo_ref_from_id(material);
+    state->material_group_count = 1;
+    state->has_material_groups = 1;
+    /* Texels (0,1), (1,1), (0,0), and a V of 0 that points under the image */
+    const float uvs[4][2] = {{0.25f, 0.75f}, {0.75f, 0.75f}, {0.25f, 1.0f}, {0.75f, 0.0f}};
+    for (int v = 0; v < 4; v++) {
+        state->vertices[v].uv = (nmo_vector2_t){uvs[v][0], uvs[v][1]};
+    }
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t form = started_block(&f, GUID_HIGH_MAP_MESHFORM, "High Map");
+    ASSERT_TRUE(form != 0);
+    fixture_input_int(&f, fixture_target(&f, form), (int32_t)ground);
+    fixture_input_int(&f, BLOCK_PIN(&f, form, 0), -1); /* the first material */
+    const float height = 10.0f;
+    fixture_input_value(&f, BLOCK_PIN(&f, form, 1), &height, sizeof(height));
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    eng_texture_t *bitmap = eng_texture(f.engine, texture);
+    ASSERT_TRUE(bitmap != NULL && eng_texture_create(f.engine, bitmap, 2, 2, 0));
+    eng_surface_t *surface = eng_texture_surface(f.engine, bitmap, -1);
+    ASSERT_TRUE(surface != NULL && surface->rgba != NULL);
+    const uint8_t alphas[4] = {50, 0, 255, 100}; /* (0,0), (1,0), (0,1), (1,1) */
+    for (int i = 0; i < 4; i++) {
+        surface->rgba[4 * i + 3] = alphas[i];
+    }
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_FLOAT_EQ(25.5f, mesh_vertex(&f, mesh, 0).y, 1e-4f); /* 255 x 10 / 100 */
+    ASSERT_FLOAT_EQ(10.0f, mesh_vertex(&f, mesh, 1).y, 1e-4f);
+    ASSERT_FLOAT_EQ(5.0f, mesh_vertex(&f, mesh, 2).y, 1e-4f);
+    ASSERT_FLOAT_EQ(0.0f, mesh_vertex(&f, mesh, 3).y, 0.0f);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_tt, load_database_fills_the_array_of_its_name);
 REGISTER_TEST(engine_tt, save_database_writes_the_registered_arrays);
@@ -1153,4 +1406,8 @@ REGISTER_TEST(engine_tt, write_back_writes_into_the_source_read);
 REGISTER_TEST(engine_tt, curve_blocks_pick_points_project_and_collide);
 REGISTER_TEST(engine_tt, bounding_spheres_meet_and_the_missile_homes_in);
 REGISTER_TEST(engine_tt, follow_camera_eases_the_camera_and_its_target);
+REGISTER_TEST(engine_tt, generate_plane_makes_its_entity_and_mesh);
+REGISTER_TEST(engine_tt, sinus_and_magnet_deform_their_meshes);
+REGISTER_TEST(engine_tt, ripple_and_pms_waves_move_only_heights);
+REGISTER_TEST(engine_tt, high_map_meshform_raises_vertices_by_texel_alpha);
 TEST_MAIN_END()
