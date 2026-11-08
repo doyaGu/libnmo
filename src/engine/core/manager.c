@@ -53,6 +53,17 @@ void *eng_manager_state(const nmo_engine_t *engine, const eng_manager_desc_t *de
     return NULL;
 }
 
+bool eng_font_coordinates(nmo_engine_t *engine, int32_t font, float out[256][6])
+{
+    for (size_t i = 0; i < engine->managers.count; i++) {
+        const eng_manager_t *manager = &engine->managers.data[i];
+        if (manager->desc->font_coordinates != NULL) {
+            return manager->desc->font_coordinates(engine, manager->state, font, out);
+        }
+    }
+    return false;
+}
+
 void eng_managers_reset(nmo_engine_t *engine)
 {
     for (size_t i = 0; i < engine->managers.count; i++) {

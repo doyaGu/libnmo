@@ -101,6 +101,8 @@ static void font_manager_destroy(nmo_engine_t *engine, void *state);
 static void font_manager_pre_process(nmo_engine_t *engine, void *state);
 static void font_manager_render(nmo_engine_t *engine, void *state, eng_render_stage_t stage,
                                 const eng_render_args_t *args);
+static bool font_manager_coordinates(nmo_engine_t *engine, void *state, int32_t font,
+                                     float out[256][6]);
 
 /* CKFontManager */
 static const eng_manager_desc_t font_manager = {
@@ -109,6 +111,7 @@ static const eng_manager_desc_t font_manager = {
     .destroy = font_manager_destroy,
     .pre_process = font_manager_pre_process,
     .render = font_manager_render,
+    .font_coordinates = font_manager_coordinates,
 };
 
 static font_manager_t *fonts_of(const nmo_engine_t *engine)
@@ -140,6 +143,27 @@ static eng_font_t *font_get(nmo_engine_t *engine, int32_t index)
     }
     eng_font_t *font = &fm->fonts.data[index - 1];
     return font->created ? font : NULL;
+}
+
+/* GetFont(font)->m_FontCoordinates, for the packs that cannot reach the font manager */
+static bool font_manager_coordinates(nmo_engine_t *engine, void *state, int32_t font,
+                                     float out[256][6])
+{
+    (void)state;
+    const eng_font_t *made = font_get(engine, font);
+    if (made == NULL) {
+        return false;
+    }
+    for (int i = 0; i < 256; i++) {
+        const eng_glyph_t *glyph = &made->glyphs[i];
+        out[i][0] = glyph->ustart;
+        out[i][1] = glyph->vstart;
+        out[i][2] = glyph->uwidth;
+        out[i][3] = glyph->uprewidth;
+        out[i][4] = glyph->upostwidth;
+        out[i][5] = glyph->vwidth;
+    }
+    return true;
 }
 
 /* Whether a font texture's pixel is part of a character: alpha, or not the transparent color */

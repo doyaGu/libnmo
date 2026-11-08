@@ -210,6 +210,21 @@ bool eng_sprite3d_set_size(nmo_engine_t *engine, nmo_object_id_t id, nmo_vector2
     return true;
 }
 
+/* CKSprite3D::SetOffset: the box keeps its size around the new offset. */
+bool eng_sprite3d_set_offset(nmo_engine_t *engine, nmo_object_id_t id, nmo_vector2_t offset)
+{
+    eng_sprite3d_t *sprite = eng_sprite3d(engine, id);
+    if (sprite == NULL) {
+        return false;
+    }
+    float half_width = (sprite->max.x - sprite->min.x) * 0.5f;
+    float half_height = (sprite->max.y - sprite->min.y) * 0.5f;
+    sprite->offset = offset;
+    sprite->min = (nmo_vector2_t){(offset.x - 1.0f) * half_width, (offset.y - 1.0f) * half_height};
+    sprite->max = (nmo_vector2_t){(offset.x + 1.0f) * half_width, (offset.y + 1.0f) * half_height};
+    return true;
+}
+
 void eng_copy_sprite3d(nmo_engine_t *engine, nmo_object_id_t source, nmo_object_id_t target,
     const nmo_object_id_t *originals, const nmo_object_id_t *copies, size_t count)
 {

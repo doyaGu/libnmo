@@ -46,6 +46,10 @@ typedef struct eng_manager_desc {
                    const eng_render_args_t *args);
     /* CKBaseManager::OnCKReset, before the behaviors' reset callbacks. */
     void (*reset)(nmo_engine_t *engine, void *state);
+    /* The font manager's (CKFontManager::GetFont(font)->m_FontCoordinates): font `font`'s 256
+       characters as ustart, vstart, uwidth, uprewidth, upostwidth, vwidth; false for no font
+       made. Only the font manager has it. */
+    bool (*font_coordinates)(nmo_engine_t *engine, void *state, int32_t font, float out[256][6]);
 } eng_manager_desc_t;
 
 typedef struct eng_manager {
@@ -63,6 +67,9 @@ void eng_managers_pre_process(nmo_engine_t *engine);
 void eng_managers_reset(nmo_engine_t *engine);
 void eng_managers_post_process(nmo_engine_t *engine);
 void eng_managers_render(nmo_engine_t *engine, eng_render_stage_t stage, const eng_render_args_t *args);
+/* A font's character coordinates from the manager that has them, for the packs that cannot
+   reach the font manager; false when no manager has the font */
+bool eng_font_coordinates(nmo_engine_t *engine, int32_t font, float out[256][6]);
 /* Destroy the managers, the last added first */
 void eng_free_managers(nmo_engine_t *engine);
 

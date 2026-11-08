@@ -296,6 +296,7 @@ eng_sprite3d_t *eng_sprite3d(nmo_engine_t *engine, nmo_object_id_t id);
 void eng_sprite3d_from_state(const nmo_engine_t *engine, nmo_object_id_t id,
     const struct nmo_sprite3d_state *state, eng_sprite3d_t *out);
 bool eng_sprite3d_set_size(nmo_engine_t *engine, nmo_object_id_t id, nmo_vector2_t size);
+bool eng_sprite3d_set_offset(nmo_engine_t *engine, nmo_object_id_t id, nmo_vector2_t offset);
 void eng_copy_sprite3d(nmo_engine_t *engine, nmo_object_id_t source, nmo_object_id_t target,
     const nmo_object_id_t *originals, const nmo_object_id_t *copies, size_t count);
 /* CKTargetCamera's live attachment; writes do not modify the document. */
