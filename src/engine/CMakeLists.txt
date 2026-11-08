@@ -29,6 +29,7 @@ set(NMO_ENGINE_SOURCES
     core/character.c
     core/floor.c
     core/floor_shadow.c
+    core/grid.c
     core/kinematic.c
     core/keyed_animation.c
     core/morph.c

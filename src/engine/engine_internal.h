@@ -18,6 +18,7 @@
 #include "engine_character.h"
 #include "engine_curve.h"
 #include "engine_floor.h"
+#include "engine_grid.h"
 #include "engine_graph.h"
 #include "engine_host.h"
 #include "engine_input.h"
@@ -94,6 +95,7 @@ struct nmo_engine {
     eng_messages_t messages;
     eng_attributes_t attributes;
     eng_floors_t floors;
+    eng_grids_t grids;
     eng_input_t input;
     eng_media_t media;
     eng_render_t render;
