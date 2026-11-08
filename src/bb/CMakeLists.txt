@@ -32,6 +32,7 @@ set(NMO_BB_VIRTOOLS_SOURCES
     virtools/collisions.c
     virtools/controllers.c
     virtools/effects.c
+    virtools/grids.c
     virtools/interface.c
     virtools/lights.c
     virtools/materials.c

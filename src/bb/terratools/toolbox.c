@@ -5008,6 +5008,62 @@ static int bb_font_coordinates_to_data_array(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/*
+ * TT Switch on Layer: each frame, the square of the Layer under the target
+ * (on the preferred grid, the target's position taken in Ref's space): In
+ * while it holds Value and the target was inside, Enter when it comes in,
+ * Exit (with the move since the last frame) when it leaves, Out while it is
+ * elsewhere. In clears Was Inside the way TT PushButton's On does, only its
+ * low byte, so the first frame reads as inside. Off stops it.
+ */
+static int bb_switch_on_layer(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    int32_t entity = target_entity(b);
+    if (entity < 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    eng_vector_t position = eng_entity_position(engine, entity, -1);
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        nmo_engine_block_set_local_value(b, 0, &position, sizeof(position));
+        set_local_int(b, 1, 1);
+    }
+    int32_t wanted = get_in_int(b, 2, 255);
+    int32_t ref = input_entity(b, 0);
+    int32_t type = get_in_int(b, 1, 1);
+    eng_grid_t *grid = eng_grid_preferred(engine, &position, ref);
+    eng_layer_t *layer = grid != NULL ? eng_grid_layer(engine, grid, type) : NULL;
+    if (layer != NULL) {
+        eng_vector_t local = eng_grid_local(engine, grid, &position, ref);
+        int32_t value = eng_layer_value(grid, layer, (int32_t)local.x, (int32_t)local.z);
+        bool was_inside = get_local_int(b, 1, 0) != 0;
+        if (value == wanted) {
+            if (was_inside) {
+                OUT_ON(b, 0);
+            } else {
+                set_local_int(b, 1, 1);
+                OUT_ON(b, 2);
+            }
+        } else if (was_inside) {
+            set_local_int(b, 1, 0);
+            eng_vector_t last = {0.0f, 0.0f, 0.0f};
+            nmo_engine_block_get_local_value(b, 0, &last, sizeof(last));
+            const eng_vector_t exit_vector = {position.x - last.x, position.y - last.y, position.z - last.z};
+            set_out(b, 0, &exit_vector, sizeof(exit_vector));
+            OUT_ON(b, 3);
+        } else {
+            OUT_ON(b, 1);
+        }
+    }
+    nmo_engine_block_set_local_value(b, 0, &position, sizeof(position));
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
 static const nmo_engine_block_desc_t eng_tt_toolbox_blocks[] = {
     {NMO_GUID_INIT(0x594a136e,0x58135ef9),"TT Joystick Waiter",bb_tt_joystick_waiter,NULL,NULL},
     {NMO_GUID_INIT(0x229865eb,0x577619e4),"TT_TestForJoystick",bb_test_for_joystick,NULL,NULL},
@@ -5093,6 +5149,7 @@ static const nmo_engine_block_desc_t eng_tt_toolbox_blocks[] = {
     {NMO_GUID_INIT(0x4f16689a, 0x472b1c63), "TT GetUV2DSprite", bb_get_uv_2d_sprite, NULL, NULL},
     {NMO_GUID_INIT(0x73e256e5, 0x6552118e), "TT_FontCoordinatesToDataArray", bb_font_coordinates_to_data_array,
      NULL, NULL},
+    {NMO_GUID_INIT(0x1a151160, 0x1be26257), "TT Switch on Layer", bb_switch_on_layer, NULL, NULL},
     {NMO_GUID_INIT(0x0fd4755f, 0x7de22dc8), "TT Set Dynamic Position", bb_set_dynamic_position, NULL,
      NULL},
 };
