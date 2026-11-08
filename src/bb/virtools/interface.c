@@ -10,8 +10,8 @@
  * character in the render frame. System fonts are kept but do not draw. PushButton tests the mouse against the 2D entity the
  * host says is under it, and 2D Picking asks the host's picker. Draw
  * Rectangle, Mouse Cursor and BitmapText Display draw after the sprites.
- * Not here: Additional View and Resize View, which need a view rect the
- * engine's render context does not have.
+ * Additional View asks for the scene drawn again into part of the screen,
+ * and Resize View sets the render context's view rect.
  */
 
 #include "virtools.h"
@@ -1949,6 +1949,87 @@ static int cb_bitmap_text_display(blk_t *b, uint32_t message)
     return NMO_ENGINE_BR_OK;
 }
 
+/*
+ * Additional View: while on, the scene is drawn again each frame from the
+ * target camera into View Region, with Render Options (clearing only that
+ * region): after the 2D (Overwrite 2D) or after the 3D, under the 2D.
+ */
+static int bb_additional_view(blk_t *b)
+{
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+    }
+    eng_view_request_t request;
+    memset(&request, 0, sizeof(request));
+    request.node = b->node;
+    request.camera = nmo_engine_block_target(b);
+    nmo_engine_block_get_input_value(b, 0, &request.rect, sizeof(request.rect));
+    request.options = (uint32_t)get_in_int(b, 1, 0);
+    if ((request.options & CK_RENDER_DEFAULTSETTINGS) == 0) { /* CK_RENDER_USECURRENTSETTINGS */
+        request.options |= eng_render_settings(b->engine)->render_options;
+    }
+    request.over_2d = get_in_int(b, 2, 1) != 0;
+    eng_render_request_view(b->engine, &request);
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+/* Resize View's view: View Region, the camera's ratio no longer kept; or the whole render
+   context with the ratio again */
+static void resize_view_apply(blk_t *b, bool on)
+{
+    eng_render_t *render = eng_render_settings(b->engine);
+    if (on) {
+        nmo_rect_t region = {0.0f, 0.0f, 100.0f, 60.0f};
+        nmo_engine_block_get_input_value(b, 0, &region, sizeof(region));
+        eng_render_set_view_rect(b->engine, &region);
+        render->render_options &= ~(uint32_t)CK_RENDER_USECAMERARATIO;
+    } else {
+        const eng_screen_mode_t *mode = &eng_screen_modes[render->screen_mode];
+        const nmo_rect_t window = {0.0f, 0.0f, (float)mode->width, (float)mode->height};
+        eng_render_set_view_rect(b->engine, &window);
+        render->render_options |= CK_RENDER_USECAMERARATIO;
+    }
+}
+
+/* Resize View: the scene drawn in View Region of the render context while on. */
+static int bb_resize_view(blk_t *b)
+{
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        resize_view_apply(b, false);
+        return NMO_ENGINE_BR_OK;
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+        resize_view_apply(b, true);
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+/* Pausing, resetting or deactivating a running Resize View gives the whole view back;
+   resuming or activating it takes the region again. */
+static int cb_resize_view(blk_t *b, uint32_t message)
+{
+    if (!block_running(b)) {
+        return NMO_ENGINE_BR_OK;
+    }
+    if (message == NMO_ENGINE_MSG_PAUSE || message == NMO_ENGINE_MSG_RESET ||
+        message == NMO_ENGINE_MSG_DEACTIVATESCRIPT) {
+        resize_view_apply(b, false);
+    } else if (message == NMO_ENGINE_MSG_RESUME || message == NMO_ENGINE_MSG_ACTIVATESCRIPT) {
+        resize_view_apply(b, true);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_interface_blocks[] = {
     {NMO_GUID_INIT(0x936334fc, 0xf243684f), "Create System Font", bb_create_system_font, NULL, NULL},
     {NMO_GUID_INIT(0x7d644088, 0x40dd0349), "Create Font", bb_create_font, NULL, NULL},
@@ -1972,6 +2053,8 @@ static const nmo_engine_block_desc_t eng_interface_blocks[] = {
     {NMO_GUID_INIT(0x39c45869, 0x3dcf3fc1), "Drag and Drop", bb_drag_and_drop, NULL, NULL},
     {NMO_GUID_INIT(0x049d487b, 0x57565345), "BitmapText Display", bb_bitmap_text_display, cb_bitmap_text_display,
      NULL},
+    {NMO_GUID_INIT(0x00cd159b, 0x164d010b), "Additional View", bb_additional_view, NULL, NULL},
+    {NMO_GUID_INIT(0x040e1fe8, 0x79ed7c9b), "Resize View", bb_resize_view, cb_resize_view, NULL},
 };
 
 /* The texts drawn last frame are dropped (the temporary callbacks) */

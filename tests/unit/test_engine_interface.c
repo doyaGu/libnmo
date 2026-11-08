@@ -28,6 +28,8 @@
 #define GUID_MOUSE_CURSOR NMO_GUID(0x140c3eac, 0x6e502a81)
 #define GUID_DRAG_AND_DROP NMO_GUID(0x39c45869, 0x3dcf3fc1)
 #define GUID_BITMAP_TEXT_DISPLAY NMO_GUID(0x049d487b, 0x57565345)
+#define GUID_RESIZE_VIEW NMO_GUID(0x040e1fe8, 0x79ed7c9b)
+#define GUID_ADDITIONAL_VIEW NMO_GUID(0x00cd159b, 0x164d010b)
 
 typedef struct effect_log {
     size_t effects;
@@ -625,6 +627,77 @@ TEST(engine_interface, bitmap_text_display_draws_the_sprite_a_character_at_a_tim
     fixture_end(&f);
 }
 
+TEST(engine_interface, resize_view_and_additional_view)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t camera = fixture_create(&f, NMO_CID_CAMERA, "Side Camera");
+    ASSERT_TRUE(camera != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t resize = started(&f, GUID_RESIZE_VIEW, "Resize");
+    nmo_object_id_t extra = started(&f, GUID_ADDITIONAL_VIEW, "Extra");
+    nmo_object_id_t stop = fixture_block(&f, GUID_NOP, "Later");
+    ASSERT_TRUE(resize && extra && stop);
+    const nmo_rect_t region = {10.0f, 20.0f, 330.0f, 260.0f}, corner = {0.0f, 0.0f, 100.0f, 60.0f};
+    fixture_input_value(&f, BLOCK_PIN(&f, resize, 0), &region, sizeof(region));
+    fixture_input_int(&f, fixture_target(&f, extra), (int32_t)camera);
+    fixture_input_value(&f, BLOCK_PIN(&f, extra, 0), &corner, sizeof(corner));
+    fixture_input_int(&f, BLOCK_PIN(&f, extra, 1), 0x31); /* background sprites, clear Z and back */
+    fixture_input_int(&f, BLOCK_PIN(&f, extra, 2), 1);
+    /* Off for both two frames later */
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, stop, 0), 2);
+    fixture_link(&f, BLOCK_OUT(&f, stop, 0), BLOCK_IN(&f, resize, 1), 0);
+    fixture_link(&f, BLOCK_OUT(&f, stop, 0), BLOCK_IN(&f, extra, 1), 0);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_EQ(0, frame.viewport[0]); /* the whole 640 x 480 render context at first */
+    ASSERT_EQ(640, frame.viewport[2]);
+    ASSERT_EQ(0, frame.view_count);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    /* The scene in the region, the camera's ratio no longer kept */
+    ASSERT_EQ(10, frame.viewport[0]);
+    ASSERT_EQ(20, frame.viewport[1]);
+    ASSERT_EQ(320, frame.viewport[2]);
+    ASSERT_EQ(240, frame.viewport[3]);
+    ASSERT_EQ(0u, frame.render_options & 0x08u);
+    eng_matrix_t eye;
+    eng_render_viewpoint(f.engine, &eye);
+    eng_vector_t ahead = {eye.m[3][0] + eye.m[2][0] * 10.0f, eye.m[3][1] + eye.m[2][1] * 10.0f,
+                          eye.m[3][2] + eye.m[2][2] * 10.0f}, screen;
+    eng_render_project(f.engine, &ahead, &screen);
+    ASSERT_FLOAT_EQ(170.0f, screen.x, 1e-3f); /* the middle of the region */
+    ASSERT_FLOAT_EQ(140.0f, screen.y, 1e-3f);
+    /* The side camera's view in the corner, over the 2D */
+    ASSERT_EQ(1, frame.view_count);
+    const nmo_engine_frame_t *side = &frame.views[0].frame;
+    ASSERT_TRUE(frame.views[0].over_2d);
+    ASSERT_EQ(camera, side->camera);
+    ASSERT_EQ(100, side->viewport[2]);
+    ASSERT_EQ(60, side->viewport[3]);
+    ASSERT_EQ(0x931u, side->render_options); /* with CLEARVIEWPORT and DONOTUPDATEEXTENTS */
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_EQ(0, frame.view_count); /* once a frame of the behaviors */
+    for (int i = 0; i < 3; i++) {
+        ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    }
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    /* Off: the whole render context, the camera's ratio again */
+    ASSERT_EQ(0, frame.viewport[0]);
+    ASSERT_EQ(640, frame.viewport[2]);
+    ASSERT_EQ(480, frame.viewport[3]);
+    ASSERT_EQ(0x08u, frame.render_options & 0x08u);
+    /* the request of the frame Off came in, before it, waited for this render */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_EQ(0, frame.view_count);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_interface, fonts_are_numbered_by_name);
 REGISTER_TEST(engine_interface, text_2d_draws_until_off);
@@ -635,4 +708,5 @@ REGISTER_TEST(engine_interface, layouts_place_2d_and_3d_entities);
 REGISTER_TEST(engine_interface, screen_blocks_rectangles_and_cursor);
 REGISTER_TEST(engine_interface, drag_and_drop_moves_its_owner);
 REGISTER_TEST(engine_interface, bitmap_text_display_draws_the_sprite_a_character_at_a_time);
+REGISTER_TEST(engine_interface, resize_view_and_additional_view);
 TEST_MAIN_END()
