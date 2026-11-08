@@ -1,6 +1,7 @@
 #include "engine_fixture.h"
 
 #include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_grid_schemas.h"
 #include "object/builtin/nmo_layer_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
@@ -335,9 +336,180 @@ TEST(engine_grids, switch_on_layer_and_entity_fill)
     fixture_end(&f);
 }
 
+#define GUID_GRID_PATH_INIT NMO_GUID(0x74d12456, 0x6f481719)
+#define GUID_GRID_PATH_SOLVER NMO_GUID(0x17e75566, 0x0c5625a6)
+#define GUID_CHARACTER_GRID_PATH_FOLLOW NMO_GUID(0x6d0a6dd3, 0x43765df4)
+
+static nmo_object_id_t local_param(engine_fixture_t *f, nmo_object_id_t block, size_t pos)
+{
+    const nmo_behavior_state_t *state = (const nmo_behavior_state_t *)fixture_state(f, block);
+    return state != NULL && pos < state->local_parameters.count
+               ? nmo_behavior_ref_array_get_id(&state->local_parameters, pos)
+               : 0;
+}
+
+/* A solver of the walker towards the goal, on layer 2 */
+static nmo_object_id_t solver_of(engine_fixture_t *f, nmo_object_id_t walker, float gx, float gz, nmo_object_id_t after)
+{
+    nmo_object_id_t solver = fixture_block(f, GUID_GRID_PATH_SOLVER, "Solver");
+    if (solver == 0) {
+        return 0;
+    }
+    fixture_link(f, after, BLOCK_IN(f, solver, 0), 0);
+    fixture_input_int(f, fixture_target(f, solver), (int32_t)walker);
+    input_vector(f, BLOCK_PIN(f, solver, 0), 0.0f, 0.0f, 0.0f);
+    input_vector(f, BLOCK_PIN(f, solver, 1), gx, 1.0f, gz);
+    fixture_input_int(f, BLOCK_PIN(f, solver, 3), 1);
+    const float factor = 2.0f, slowing = 1.0f, ms = 1.0f;
+    fixture_input_value(f, BLOCK_PIN(f, solver, 4), &factor, sizeof(factor));
+    fixture_input_int(f, BLOCK_PIN(f, solver, 5), 0);
+    fixture_input_int(f, BLOCK_PIN(f, solver, 6), 2);
+    fixture_input_int(f, BLOCK_PIN(f, solver, 7), 0);
+    fixture_input_value(f, BLOCK_PIN(f, solver, 8), &slowing, sizeof(slowing));
+    fixture_input_int(f, BLOCK_PIN(f, solver, 9), 1);
+    fixture_input_int(f, BLOCK_PIN(f, solver, 10), 0);
+    fixture_input_value(f, BLOCK_PIN(f, solver, 11), &ms, sizeof(ms));
+    return solver;
+}
+
+TEST(engine_grids, path_solver_goes_round_the_wall)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t grid = grid_at(&f, "Grid", 5, 5, 0, 0.0f, 0.0f);
+    int32_t walls[25] = {0};
+    for (int y = 0; y < 4; y++) {
+        walls[y * 5 + 2] = 255; /* column 2, open at row 4 */
+    }
+    nmo_object_id_t walker = entity_at(&f, NMO_CID_3DENTITY, "Walker", 0.5f, 1.0f, 0.5f);
+    nmo_object_id_t other = entity_at(&f, NMO_CID_3DENTITY, "Other", 0.5f, 1.0f, 0.5f);
+    ASSERT_TRUE(grid && walker && other && layer_of(&f, grid, "Wall", walls, 25));
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t init = started(&f, GUID_GRID_PATH_INIT, "Init");
+    ASSERT_TRUE(init != 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, init, 0), 2);
+    nmo_object_id_t solver = solver_of(&f, walker, 4.5f, 0.5f, BLOCK_OUT(&f, init, 0));
+    nmo_object_id_t blocked = solver_of(&f, other, 2.5f, 1.5f, BLOCK_OUT(&f, init, 0)); /* a wall */
+    nmo_object_id_t found = fixture_block(&f, GUID_NOP, "Found"), not_found = fixture_block(&f, GUID_NOP, "Not Found");
+    ASSERT_TRUE(solver && blocked && found && not_found);
+    fixture_link(&f, BLOCK_OUT(&f, solver, 0), BLOCK_IN(&f, found, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, blocked, 1), BLOCK_IN(&f, not_found, 0), 0);
+    fixture_commit(&f, NULL);
+    const int32_t list_of_points = 2;
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, local_param(&f, solver, 0), &list_of_points,
+                                                 sizeof(list_of_points)));
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f)); /* registered */
+    ASSERT_EQ(0u, runs(&f, found));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f)); /* solved before the behaviors */
+    ASSERT_EQ(1u, runs(&f, found));
+    ASSERT_EQ(1u, runs(&f, not_found));
+    nmo_object_id_t array = (nmo_object_id_t)output_int(&f, solver, 0);
+    ASSERT_TRUE(array != 0);
+    int32_t rows = nmo_engine_array_row_count(f.engine, array);
+    ASSERT_TRUE(rows >= 3);
+    bool through_gap = false;
+    float first[3] = {0}, last[3] = {0};
+    for (int32_t r = 0; r < rows; r++) {
+        nmo_engine_cell_t cell;
+        ASSERT_EQ(NMO_OK, nmo_engine_array_get_cell(f.engine, array, r, 0, &cell));
+        ASSERT_TRUE(cell.data != NULL && cell.size >= 12u);
+        float p[3];
+        memcpy(p, cell.data, sizeof(p));
+        ASSERT_EQ(0, square(&f, grid, "Wall", (int32_t)p[0], (int32_t)p[2])); /* never on the wall */
+        through_gap = through_gap || p[2] > 4.0f;
+        if (r == 0) {
+            memcpy(first, p, sizeof(p));
+        }
+        memcpy(last, p, sizeof(p));
+    }
+    ASSERT_TRUE(through_gap);
+    ASSERT_FLOAT_EQ(0.5f, first[0], 1e-6f); /* from the walker's square */
+    ASSERT_FLOAT_EQ(0.5f, first[2], 1e-6f);
+    ASSERT_FLOAT_EQ(4.5f, last[0], 1e-6f); /* to the goal's */
+    ASSERT_FLOAT_EQ(0.5f, last[2], 1e-6f);
+    float length = 0.0f;
+    read_value(&f, BLOCK_POUT(&f, solver, 1), &length, sizeof(length));
+    ASSERT_TRUE(length > 8.0f); /* the way round, not the 4 squares across */
+    fixture_end(&f);
+}
+
+/* The messages sent to one object, by type */
+typedef struct sent_log {
+    nmo_object_id_t object;
+    int32_t counts[8];
+} sent_log_t;
+
+static void on_sent(const nmo_engine_event_t *event, void *user_data)
+{
+    sent_log_t *log = (sent_log_t *)user_data;
+    if (event->kind == NMO_ENGINE_EVENT_MESSAGE_SENT && event->object_id == log->object && event->result >= 0 &&
+        event->result < 8) {
+        log->counts[event->result]++;
+    }
+}
+
+TEST(engine_grids, follower_steers_along_the_path_to_its_end)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t grid = grid_at(&f, "Grid", 5, 5, 0, 0.0f, 0.0f);
+    const int32_t open[25] = {0};
+    nmo_object_id_t walker = entity_at(&f, NMO_CID_CHARACTER, "Walker", 0.5f, 1.0f, 0.5f);
+    ASSERT_TRUE(grid && walker && layer_of(&f, grid, "Floor", open, 25));
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t init = started(&f, GUID_GRID_PATH_INIT, "Init");
+    ASSERT_TRUE(init != 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, init, 0), 2);
+    nmo_object_id_t solver = solver_of(&f, walker, 3.5f, 0.5f, BLOCK_OUT(&f, init, 0));
+    nmo_object_id_t follow = fixture_block(&f, GUID_CHARACTER_GRID_PATH_FOLLOW, "Follow");
+    nmo_object_id_t done = fixture_block(&f, GUID_NOP, "Done");
+    ASSERT_TRUE(solver && follow && done);
+    fixture_link(&f, BLOCK_OUT(&f, solver, 0), BLOCK_IN(&f, follow, 0), 0);
+    ASSERT_EQ(NMO_OK, nmo_script_edit_connect_parameter(f.tx, BLOCK_POUT(&f, solver, 0), BLOCK_PIN(&f, follow, 0)));
+    fixture_input_int(&f, fixture_target(&f, follow), (int32_t)walker);
+    fixture_input_int(&f, BLOCK_PIN(&f, follow, 1), 1);
+    const float change = 0.2f, angle = 1.2217305f, fuzzy = 0.0f, blocked_time = 10000.0f, blocked_distance = 0.0f;
+    fixture_input_value(&f, BLOCK_PIN(&f, follow, 2), &change, sizeof(change));
+    fixture_input_value(&f, BLOCK_PIN(&f, follow, 3), &angle, sizeof(angle));
+    fixture_input_value(&f, BLOCK_PIN(&f, follow, 4), &fuzzy, sizeof(fuzzy));
+    fixture_input_int(&f, BLOCK_PIN(&f, follow, 5), 0);
+    fixture_input_value(&f, BLOCK_PIN(&f, follow, 6), &blocked_time, sizeof(blocked_time));
+    fixture_input_value(&f, BLOCK_PIN(&f, follow, 7), &blocked_distance, sizeof(blocked_distance));
+    fixture_link(&f, BLOCK_OUT(&f, follow, 0), BLOCK_IN(&f, done, 0), 0);
+    fixture_commit(&f, NULL);
+
+    sent_log_t log = {walker, {0}};
+    nmo_engine_set_trace(f.engine, on_sent, &log);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f)); /* found: the follow starts */
+    ASSERT_EQ(0, output_int(&f, solver, 0));             /* the first path ID */
+    ASSERT_TRUE(nmo_engine_behavior_is_active(f.engine, follow));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f)); /* steered */
+    /* Character Direction 1 makes +X forward, the way to the goal: Joy_Up only */
+    int32_t up = eng_message_type_add(f.engine, "Joy_Up"), left = eng_message_type_add(f.engine, "Joy_Left"),
+            right = eng_message_type_add(f.engine, "Joy_Right");
+    ASSERT_TRUE(up >= 0 && up < 8 && left >= 0 && left < 8 && right >= 0 && right < 8);
+    ASSERT_EQ(1, log.counts[up]);
+    ASSERT_EQ(0, log.counts[left] + log.counts[right]);
+    int32_t index = eng_entity_index(f.engine, walker);
+    eng_entity_set_position(f.engine, index, &(eng_vector_t){3.5f, 1.0f, 0.5f}, -1, false);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f)); /* at the goal */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1u, runs(&f, done));
+    ASSERT_FALSE(nmo_engine_behavior_is_active(f.engine, follow));
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_grids, squares_come_from_the_preferred_grid);
 REGISTER_TEST(engine_grids, priority_and_positions_of_a_value);
 REGISTER_TEST(engine_grids, layer_slider_keeps_the_entity_off_walls);
 REGISTER_TEST(engine_grids, switch_on_layer_and_entity_fill);
+REGISTER_TEST(engine_grids, path_solver_goes_round_the_wall);
+REGISTER_TEST(engine_grids, follower_steers_along_the_path_to_its_end);
 TEST_MAIN_END()

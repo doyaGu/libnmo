@@ -5,7 +5,7 @@
  * Each function does what the block's function in Grids.dll does. Ballance
  * ships no Grids.dll, so the reference is the Ballanced source of the DLL;
  * the grids and layers are the engine's grid manager's (engine_grid.h).
- * The path finding blocks are not here.
+ * The path finding blocks are in grid_path.c.
  */
 
 #include "virtools.h"
@@ -733,5 +733,6 @@ static const nmo_engine_block_desc_t eng_grids_blocks[] = {
 
 nmo_status_t eng_register_grids(nmo_engine_t *engine)
 {
-    return ENG_REGISTER_BLOCKS(engine, eng_grids_blocks);
+    nmo_status_t status = ENG_REGISTER_BLOCKS(engine, eng_grids_blocks);
+    return status == NMO_OK ? eng_register_grid_path(engine) : status;
 }
