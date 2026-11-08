@@ -61,6 +61,13 @@
 #define GUID_SINUS_MESHDEFORM NMO_GUID(0x4f907f12, 0x16af15d6)
 #define GUID_PMS_MESHDEFORM NMO_GUID(0x38b87d43, 0x149b755b)
 #define GUID_RIPPLE_WAVE NMO_GUID(0x2f6a47b3, 0x35f4755c)
+#define GUID_SET_MAPPING NMO_GUID(0x2e36319f, 0x6ec6031f)
+#define GUID_REFRACTION_MAPPING NMO_GUID(0x53024810, 0x22ed280f)
+#define GUID_BUMP_MAP NMO_GUID(0x630d05f7, 0x1dda541f)
+#define GUID_CEL_SHADING NMO_GUID(0x2d2d2a64, 0x5a0501c7)
+#define GUID_ANISO_MAPPING NMO_GUID(0x73b30b5e, 0x4fed4c65)
+#define GUID_SAVE_ALPHA NMO_GUID(0x5ca62d31, 0x5d2031b8)
+#define GUID_SET_MATERIAL_VALUES NMO_GUID(0x62963fa9, 0x7258745c)
 
 /* The files the engine loads, from the scratch directory */
 static const char *resolve_scratch(void *user_data, const char *name)
@@ -1384,6 +1391,204 @@ TEST(engine_tt, high_map_meshform_raises_vertices_by_texel_alpha)
     fixture_end(&f);
 }
 
+/* The UV of vertex `v` in channel `channel` (-1 the mesh's own) as the engine has it now */
+static nmo_vector2_t mesh_uv(engine_fixture_t *f, nmo_object_id_t mesh, int channel, int v)
+{
+    nmo_engine_mesh_t out;
+    nmo_vector2_t none = {NAN, NAN};
+    if (!nmo_engine_mesh(f->engine, mesh, &out) || v >= out.vertex_count) {
+        return none;
+    }
+    if (channel < 0) {
+        return out.vertices[v].uv;
+    }
+    if (channel >= out.channel_count || out.channels[channel].uvs == NULL) {
+        return none;
+    }
+    return (nmo_vector2_t){out.channels[channel].uvs[2 * v], out.channels[channel].uvs[2 * v + 1]};
+}
+
+TEST(engine_tt, set_mapping_tiles_offsets_and_copies_materials)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t mesh = 0;
+    nmo_object_id_t ground = grid_object(&f, "Ground", 3, &mesh);
+    nmo_object_id_t from = fixture_create(&f, NMO_CID_MATERIAL, "From");
+    nmo_object_id_t to = fixture_create(&f, NMO_CID_MATERIAL, "To");
+    ASSERT_TRUE(ground && from && to);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t mapping = started_block(&f, GUID_SET_MAPPING, "Mapping");
+    nmo_object_id_t values = started_block(&f, GUID_SET_MATERIAL_VALUES, "Values");
+    ASSERT_TRUE(mapping && values);
+    fixture_input_int(&f, fixture_target(&f, mapping), (int32_t)ground);
+    fixture_input_int(&f, BLOCK_PIN(&f, mapping, 0), -1);
+    const float offset[2] = {0.5f, 0.0f}, tile[2] = {2.0f, 2.0f};
+    fixture_input_value(&f, BLOCK_PIN(&f, mapping, 3), offset, sizeof(offset));
+    fixture_input_value(&f, BLOCK_PIN(&f, mapping, 4), tile, sizeof(tile));
+    fixture_input_int(&f, fixture_target(&f, values), (int32_t)to);
+    fixture_input_int(&f, BLOCK_PIN(&f, values, 0), (int32_t)from);
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    eng_material_t *source = eng_material(f.engine, from);
+    ASSERT_TRUE(source != NULL);
+    source->desc.diffuse[1] = 0.25f;
+    source->desc.power = 7.0f;
+    source->desc.two_sided = true;
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+
+    /* U and V in [0, 1] round their middle: tiled by 2 (V the other way round) then offset */
+    nmo_vector2_t middle = mesh_uv(&f, mesh, -1, 4), corner = mesh_uv(&f, mesh, -1, 8);
+    ASSERT_FLOAT_EQ(1.0f, middle.x, 1e-6f);
+    ASSERT_FLOAT_EQ(0.5f, middle.y, 1e-6f);
+    ASSERT_FLOAT_EQ(2.0f, corner.x, 1e-6f);
+    ASSERT_FLOAT_EQ(1.5f, corner.y, 1e-6f);
+    nmo_engine_material_t copied;
+    ASSERT_TRUE(nmo_engine_material(f.engine, to, &copied));
+    ASSERT_FLOAT_EQ(0.25f, copied.diffuse[1], 0.0f);
+    ASSERT_FLOAT_EQ(7.0f, copied.power, 0.0f);
+    ASSERT_TRUE(copied.two_sided);
+    fixture_end(&f);
+}
+
+TEST(engine_tt, cel_shading_and_aniso_add_their_channels)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t cel_mesh = 0, aniso_mesh = 0;
+    nmo_object_id_t toon = grid_object(&f, "Toon", 2, &cel_mesh);
+    nmo_object_id_t shiny = grid_object(&f, "Shiny", 2, &aniso_mesh);
+    nmo_object_id_t sun = placed(&f, NMO_CID_LIGHT, "Sun", 0.5f, 10.0f, 0.5f);
+    nmo_object_id_t eye = placed(&f, NMO_CID_3DENTITY, "Eye", 1.0f, 10.0f, 0.0f);
+    ASSERT_TRUE(toon && shiny && sun && eye);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t cel = started_block(&f, GUID_CEL_SHADING, "Cel");
+    nmo_object_id_t aniso = started_block(&f, GUID_ANISO_MAPPING, "Aniso");
+    ASSERT_TRUE(cel && aniso);
+    fixture_input_int(&f, fixture_target(&f, cel), (int32_t)toon);
+    fixture_input_int(&f, BLOCK_PIN(&f, cel, 0), (int32_t)sun);
+    const float red[4] = {1.0f, 0.0f, 0.0f, 1.0f};
+    fixture_input_value(&f, BLOCK_PIN(&f, cel, 1), red, sizeof(red));
+    fixture_input_int(&f, fixture_target(&f, aniso), (int32_t)shiny);
+    fixture_input_int(&f, BLOCK_PIN(&f, aniso, 0), (int32_t)eye); /* light and camera together */
+    fixture_input_int(&f, BLOCK_PIN(&f, aniso, 1), (int32_t)eye);
+    fixture_input_int(&f, BLOCK_PIN(&f, aniso, 2), 4);
+    fixture_input_int(&f, BLOCK_PIN(&f, aniso, 5), 1);
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+
+    /* Cel: a channel facing the light all over (U 1) on a tone texture of red */
+    nmo_engine_mesh_t out;
+    ASSERT_TRUE(nmo_engine_mesh(f.engine, cel_mesh, &out));
+    ASSERT_EQ(1, out.channel_count);
+    ASSERT_EQ(VXBLEND_ONE, out.channels[0].source_blend);
+    ASSERT_EQ(VXBLEND_ZERO, out.channels[0].dest_blend);
+    ASSERT_FLOAT_EQ(1.0f, mesh_uv(&f, cel_mesh, 0, 3).x, 0.0f);
+    nmo_engine_material_t look;
+    ASSERT_TRUE(nmo_engine_material(f.engine, out.channels[0].material, &look));
+    nmo_engine_image_t image;
+    ASSERT_TRUE(nmo_engine_texture_image(f.engine, look.texture, &image));
+    ASSERT_EQ(16, image.width);
+    ASSERT_EQ(127, image.rgba[0]);      /* texel 0: half the colour */
+    ASSERT_EQ(255, image.rgba[4 * 10]); /* texel 10: half of the colour plus white */
+    ASSERT_EQ(127, image.rgba[4 * 10 + 1]);
+
+    /* Aniso: added on (ONE, ONE); vertex (1,0,0): base (cos 1, sin 1) through a light and camera
+       straight up */
+    ASSERT_TRUE(nmo_engine_mesh(f.engine, aniso_mesh, &out));
+    ASSERT_EQ(1, out.channel_count);
+    ASSERT_EQ(VXBLEND_ONE, out.channels[0].dest_blend);
+    nmo_vector2_t uv = mesh_uv(&f, aniso_mesh, 0, 1);
+    ASSERT_FLOAT_EQ(0.0f, uv.x, 1e-6f);
+    ASSERT_FLOAT_EQ((float)(cos(1.0) + sin(1.0)), uv.y, 1e-5f);
+    ASSERT_TRUE(nmo_engine_object_named(f.engine, "Tex AnisoMap", NMO_CID_TEXTURE) != 0);
+    fixture_end(&f);
+}
+
+TEST(engine_tt, bump_and_refraction_move_uvs_toward_light_and_eye)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t bump_mesh = 0, glass_mesh = 0;
+    nmo_object_id_t bumped = grid_object(&f, "Bumped", 2, &bump_mesh);
+    nmo_object_id_t glass = grid_object(&f, "Glass", 2, &glass_mesh);
+    nmo_object_id_t lamp = placed(&f, NMO_CID_3DENTITY, "Lamp", 1.0f, 0.0f, -100.0f);
+    nmo_object_id_t eye = placed(&f, NMO_CID_3DENTITY, "Eye", 0.0f, 10.0f, 0.0f);
+    ASSERT_TRUE(bumped && glass && lamp && eye);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t bump = started_block(&f, GUID_BUMP_MAP, "Bump");
+    nmo_object_id_t refraction = started_block(&f, GUID_REFRACTION_MAPPING, "Refraction");
+    ASSERT_TRUE(bump && refraction);
+    fixture_input_int(&f, fixture_target(&f, bump), (int32_t)bumped);
+    fixture_input_int(&f, BLOCK_PIN(&f, bump, 0), -1);
+    fixture_input_int(&f, BLOCK_PIN(&f, bump, 1), (int32_t)lamp);
+    const float emboss = 0.5f, depth = 10.0f, factor = 0.95f;
+    fixture_input_value(&f, BLOCK_PIN(&f, bump, 2), &emboss, sizeof(emboss));
+    fixture_input_int(&f, fixture_target(&f, refraction), (int32_t)glass);
+    fixture_input_int(&f, BLOCK_PIN(&f, refraction, 0), -1);
+    fixture_input_int(&f, BLOCK_PIN(&f, refraction, 1), (int32_t)eye);
+    fixture_input_value(&f, BLOCK_PIN(&f, refraction, 2), &depth, sizeof(depth));
+    fixture_input_value(&f, BLOCK_PIN(&f, refraction, 3), &factor, sizeof(factor));
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+
+    /* Bump: vertex 3 (1,0,1) is only the second face's third: its edge to vertex 1 points at the
+       lamp (U + emboss), its edge to vertex 2 across it (V kept) */
+    nmo_vector2_t uv = mesh_uv(&f, bump_mesh, -1, 3);
+    ASSERT_FLOAT_EQ(1.5f, uv.x, 1e-4f);
+    ASSERT_FLOAT_EQ(1.0f, uv.y, 1e-4f);
+
+    /* Refraction: under the eye straight down to Depth; vertex (1,0,0) bent outward */
+    uv = mesh_uv(&f, glass_mesh, -1, 0);
+    ASSERT_FLOAT_EQ(0.0f, uv.x, 1e-6f);
+    ASSERT_FLOAT_EQ(0.0f, uv.y, 1e-6f);
+    double tx = -1.0 / sqrt(101.0), ty = 10.0 / sqrt(101.0);
+    double rx = -tx, ry = -(ty + 0.95);
+    double rl = sqrt(rx * rx + ry * ry);
+    double t = -10.0 / (ry / rl);
+    uv = mesh_uv(&f, glass_mesh, -1, 1);
+    ASSERT_FLOAT_EQ((float)(rx / rl * t + 1.0), uv.x, 1e-4f);
+    ASSERT_FLOAT_EQ(0.0f, uv.y, 1e-6f);
+    fixture_end(&f);
+}
+
+TEST(engine_tt, save_alpha_moves_alpha_into_the_colour_and_saves)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t texture = fixture_create(&f, NMO_CID_TEXTURE, "Mask");
+    ASSERT_TRUE(texture != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t save = started_block(&f, GUID_SAVE_ALPHA, "Save");
+    ASSERT_TRUE(save != 0);
+    fixture_input_int(&f, fixture_target(&f, save), (int32_t)texture);
+    input_text(&f, BLOCK_PIN(&f, save, 0), "mask.tga");
+    fixture_commit(&f, NULL);
+    written_t written;
+    memset(&written, 0, sizeof(written));
+    nmo_engine_set_file_writer(f.engine, keep_written, &written);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    eng_texture_t *bitmap = eng_texture(f.engine, texture);
+    ASSERT_TRUE(bitmap != NULL && eng_texture_create(f.engine, bitmap, 2, 2, 0));
+    eng_surface_t *surface = eng_texture_surface(f.engine, bitmap, -1);
+    ASSERT_TRUE(surface != NULL);
+    surface->rgba[3] = 200;
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1, written.count);
+    ASSERT_STR_EQ("mask.tga", written.name);
+    ASSERT_TRUE(written.size > 16);
+    ASSERT_EQ(200, surface->rgba[0]);
+    ASSERT_EQ(200, surface->rgba[2]);
+    ASSERT_EQ(0, surface->rgba[3]);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_tt, load_database_fills_the_array_of_its_name);
 REGISTER_TEST(engine_tt, save_database_writes_the_registered_arrays);
@@ -1410,4 +1615,8 @@ REGISTER_TEST(engine_tt, generate_plane_makes_its_entity_and_mesh);
 REGISTER_TEST(engine_tt, sinus_and_magnet_deform_their_meshes);
 REGISTER_TEST(engine_tt, ripple_and_pms_waves_move_only_heights);
 REGISTER_TEST(engine_tt, high_map_meshform_raises_vertices_by_texel_alpha);
+REGISTER_TEST(engine_tt, set_mapping_tiles_offsets_and_copies_materials);
+REGISTER_TEST(engine_tt, cel_shading_and_aniso_add_their_channels);
+REGISTER_TEST(engine_tt, bump_and_refraction_move_uvs_toward_light_and_eye);
+REGISTER_TEST(engine_tt, save_alpha_moves_alpha_into_the_colour_and_saves);
 TEST_MAIN_END()

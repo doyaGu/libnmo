@@ -15,6 +15,8 @@
 #include "type/nmo_object_guids.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
+#include "object/builtin/nmo_bitmap_slots.h"
+#include "format/nmo_image_codec.h"
 
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_defs.h"
@@ -2467,6 +2469,698 @@ static int ripple_wave_callback(blk_t *b, uint32_t message)
     return NMO_ENGINE_BR_OK;
 }
 
+/* ---- Materials and mapping ---- */
+
+/* CKMesh::UVChanged: the copy's UVs are new */
+static void uvs_changed(blk_t *b, eng_mesh_copy_t *copy)
+{
+    copy->version = ++b->engine->render.mesh_version;
+    eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, copy->mesh, 0);
+}
+
+static float *uv_of(float *uvs, size_t stride, int32_t v)
+{
+    return (float *)((uint8_t *)uvs + (size_t)v * stride);
+}
+
+/*
+ * TT_SetMapping: the UVs of the MatChannel turned by Rotate round the middle
+ * of their range, tiled and offset; with New Planar Mapping they are first
+ * the vertices' X and Z across the target's box. The range: U's half width
+ * is the centre for both, and the last vertex is left out of it, as in the
+ * DLL.
+ */
+static int bb_set_mapping(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+    }
+    int32_t target = target_entity(b);
+    if (target < 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    int32_t channel = get_in_int(b, 0, -1);
+    bool planar = get_in_int(b, 1, 0) != 0;
+    float rotate = get_in_float(b, 2, 0.0f);
+    float offset[2] = {0.0f, 0.0f}, tile[2] = {0.0f, 0.0f};
+    nmo_engine_block_get_input_value(b, 3, offset, sizeof(offset));
+    nmo_engine_block_get_input_value(b, 4, tile, sizeof(tile));
+    uint32_t count = 0;
+    eng_mesh_copy_t *copy = deformed_mesh(engine, nmo_engine_block_target(b), &count);
+    if (copy == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    size_t stride = 0;
+    int32_t uv_count = 0;
+    float *uvs = eng_mesh_uvs(engine, copy, channel, &stride, &uv_count);
+    if (uvs == NULL) {
+        return NMO_ENGINE_BR_OK; /* the DLL writes through a missing channel */
+    }
+    int32_t n = (int32_t)count < uv_count ? (int32_t)count : uv_count;
+    float umin = 0.0f, vmin = 0.0f, umax = 1.0f, vmax = 1.0f;
+    if (planar) {
+        eng_vector_t min = {0, 0, 0}, max = {0, 0, 0};
+        eng_entity_local_box(engine, target, &min, &max);
+        float sx = (float)(1.0 / (max.x - min.x)), sz = (float)(1.0 / (min.z - max.z));
+        for (int32_t v = 0; v < n; v++) {
+            float *uv = uv_of(uvs, stride, v);
+            uv[0] = (copy->vertices[v].position.x - min.x) * sx;
+            uv[1] = (copy->vertices[v].position.z - max.z) * sz;
+        }
+    } else if (n > 0) {
+        umin = umax = uvs[0];
+        vmin = vmax = uvs[1];
+        for (int32_t v = 0; v + 1 < n; v++) {
+            const float *uv = uv_of(uvs, stride, v);
+            if (umin <= uv[0]) {
+                if (umax < uv[0]) {
+                    umax = uv[0];
+                }
+            } else {
+                umin = uv[0];
+            }
+            if (vmin <= uv[1]) {
+                if (vmax < uv[1]) {
+                    vmax = uv[1];
+                }
+            } else {
+                vmin = uv[1];
+            }
+        }
+    }
+    float half = (float)((umax - umin) * 0.5);
+    double s = sin((double)rotate), c = cos((double)rotate);
+    for (int32_t v = 0; v < n; v++) {
+        float *uv = uv_of(uvs, stride, v);
+        float a = vmax - uv[1] - half - vmin;
+        float d = uv[0] - half - umin;
+        uv[0] = (float)(s * a + c * d);
+        uv[1] = (float)(c * a - s * d);
+        uv[0] = tile[0] * uv[0] + half + umin;
+        uv[1] = half - tile[1] * uv[1] + vmin;
+        uv[0] = offset[0] + uv[0];
+        uv[1] = offset[1] + uv[1];
+    }
+    uvs_changed(b, copy);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * TT_RefractionMapping: each frame, the MatChannel's UVs are where the
+ * camera's ray to each vertex, bent by its normal times RefractionFactor,
+ * meets the plane Depth below (in the target's space, as Y), across the
+ * target's box in X and Z.
+ */
+static int bb_refraction_mapping(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+    }
+    int32_t target = target_entity(b);
+    if (target < 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    int32_t channel = get_in_int(b, 0, -1);
+    int32_t camera = input_entity(b, 1);
+    float depth = get_in_float(b, 2, 10.0f), factor = get_in_float(b, 3, 0.94999999f);
+    if (camera < 0) {
+        return NMO_ENGINE_BR_PARAMETERERROR; /* the DLL calls through a missing camera */
+    }
+    eng_vector_t eye = eng_entity_position(engine, camera, target);
+    uint32_t count = 0;
+    eng_mesh_copy_t *copy = deformed_mesh(engine, nmo_engine_block_target(b), &count);
+    if (copy == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    eng_vector_t min = {0, 0, 0}, max = {0, 0, 0};
+    eng_entity_local_box(engine, target, &min, &max);
+    float sx = (float)(1.0 / (max.x - min.x)), sz = (float)(1.0 / (max.z - min.z));
+    size_t stride = 0;
+    int32_t uv_count = 0;
+    float *uvs = eng_mesh_uvs(engine, copy, channel, &stride, &uv_count);
+    for (int32_t v = 0; uvs != NULL && v < uv_count && (uint32_t)v < count; v++) {
+        const nmo_vector_t *p = &copy->vertices[v].position, *nrm = &copy->vertices[v].normal;
+        eng_vector_t to = {eye.x - p->x, eye.y - p->y, eye.z - p->z};
+        eng_vector_normalize(&to);
+        eng_vector_t ray = {-(factor * nrm->x + to.x), -(to.y + factor * nrm->y), -(to.z + factor * nrm->z)};
+        eng_vector_normalize(&ray);
+        float t = (p->y - depth) / ray.y;
+        float *uv = uv_of(uvs, stride, v);
+        uv[0] = (ray.x * t + p->x - min.x) * sx;
+        uv[1] = (ray.z * t + p->z - min.z) * sz;
+    }
+    uvs_changed(b, copy);
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+/* VxVector of `to` - `from`, normalised as the DLL inlines it (1 / sqrt, no zero test) */
+static eng_vector_t unit_toward(const eng_vector_t *from, const eng_vector_t *to)
+{
+    eng_vector_t d = {to->x - from->x, to->y - from->y, to->z - from->z};
+    double inv = 1.0 / sqrt((double)(d.x * d.x + d.z * d.z + d.y * d.y));
+    return (eng_vector_t){(float)(d.x * inv), (float)(d.y * inv), (float)(d.z * inv)};
+}
+
+static float dot3(const eng_vector_t *a, const eng_vector_t *c)
+{
+    return a->x * c->x + a->y * c->y + a->z * c->z;
+}
+
+/*
+ * TT_BumpMap: each frame, every face shifts its vertices' MatChannel UVs
+ * (from the ones On saved) along its two edges by how much each edge points
+ * at the Light, times Emboss Factor; a vertex shared by faces keeps the last
+ * face's.
+ */
+static int bb_bump_map(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    int32_t target = target_entity(b);
+    if (target < 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    int32_t channel = get_in_int(b, 0, -1);
+    int32_t light = input_entity(b, 1);
+    float emboss = get_in_float(b, 2, 0.0099999998f);
+    if (light < 0) {
+        return NMO_ENGINE_BR_PARAMETERERROR; /* the DLL calls through a missing light */
+    }
+    eng_vector_t at = eng_entity_position(engine, light, target);
+    nmo_object_id_t mesh = current_mesh_of(engine, nmo_engine_block_target(b));
+    nmo_object_t *object = mesh != 0 ? eng_find_object(engine, mesh) : NULL;
+    const nmo_mesh_state_t *state = object != NULL ? (const nmo_mesh_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(engine->types, object, CKPGUID_MESH) : NULL;
+    eng_mesh_copy_t *copy = state != NULL ? eng_mesh_copy(engine, mesh) : NULL;
+    if (copy == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    size_t stride = 0;
+    int32_t uv_count = 0;
+    float *uvs = eng_mesh_uvs(engine, copy, channel, &stride, &uv_count);
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+        float *saved = (float *)malloc((size_t)(uv_count > 0 ? uv_count : 1) * 2u * sizeof(float));
+        for (int32_t v = 0; saved != NULL && uvs != NULL && v < uv_count; v++) {
+            const float *uv = uv_of(uvs, stride, v);
+            saved[2 * v] = uv[0];
+            saved[2 * v + 1] = uv[1];
+        }
+        if (saved != NULL && uvs != NULL) {
+            nmo_engine_block_set_local_value(b, 0, saved, (size_t)uv_count * 2u * sizeof(float));
+        }
+        free(saved);
+    }
+    const eng_param_t *param = block_local(b, 0);
+    const float *saved = param != NULL ? (const float *)param->data : NULL;
+    uint32_t held = param != NULL ? (uint32_t)(param->size / (2u * sizeof(float))) : 0;
+    uint32_t vertices = state->vertex_count;
+    for (uint32_t f = 0; uvs != NULL && saved != NULL && state->face_vertex_indices != NULL && f < state->face_count; f++) {
+        const uint16_t *k = &state->face_vertex_indices[3u * f];
+        if (k[0] >= vertices || k[1] >= vertices || k[2] >= vertices || k[0] >= held || k[1] >= held ||
+            k[2] >= held || (int32_t)k[0] >= uv_count || (int32_t)k[1] >= uv_count || (int32_t)k[2] >= uv_count) {
+            continue;
+        }
+        const nmo_vector_t *qa = &copy->vertices[k[0]].position, *qb = &copy->vertices[k[1]].position;
+        const nmo_vector_t *qc = &copy->vertices[k[2]].position;
+        eng_vector_t pa = {qa->x, qa->y, qa->z}, pb = {qb->x, qb->y, qb->z}, pc = {qc->x, qc->y, qc->z};
+        eng_vector_t la = unit_toward(&pa, &at), ab = unit_toward(&pa, &pb), ac = unit_toward(&pa, &pc);
+        float *uv = uv_of(uvs, stride, k[0]);
+        uv[0] = dot3(&ab, &la) * emboss + saved[2 * k[0]];
+        uv[1] = dot3(&la, &ac) * emboss + saved[2 * k[0] + 1];
+        eng_vector_t lb = unit_toward(&pb, &at), bc = unit_toward(&pb, &pc), ba = unit_toward(&pb, &pa);
+        uv = uv_of(uvs, stride, k[1]);
+        uv[0] = dot3(&bc, &lb) * emboss + saved[2 * k[1]];
+        uv[1] = dot3(&lb, &ba) * emboss + saved[2 * k[1] + 1];
+        eng_vector_t lc = unit_toward(&pc, &at), ca = unit_toward(&pc, &pa), cb = unit_toward(&pc, &pb);
+        uv = uv_of(uvs, stride, k[2]);
+        uv[0] = dot3(&ca, &lc) * emboss + saved[2 * k[2]];
+        uv[1] = dot3(&cb, &lc) * emboss + saved[2 * k[2] + 1];
+    }
+    uvs_changed(b, copy);
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+/* A material made at run time with the toolbox's shading look: white diffuse and ambient, no
+   emissive or specular, its texture wrapped and modulated */
+static nmo_object_id_t shading_material(nmo_engine_t *engine, const char *name)
+{
+    nmo_object_id_t id = eng_create_object(engine, NMO_CID_MATERIAL, name);
+    eng_material_t *material = id != 0 ? eng_material(engine, id) : NULL;
+    if (material == NULL && id != 0) {
+        material = eng_material_new(engine, id);
+    }
+    if (material == NULL) {
+        return 0;
+    }
+    const float black[4] = {0.0f, 0.0f, 0.0f, 1.0f}, white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+    memcpy(material->desc.emissive, black, sizeof(black));
+    memcpy(material->desc.diffuse, white, sizeof(white));
+    memcpy(material->desc.specular, black, sizeof(black));
+    memcpy(material->desc.ambient, white, sizeof(white));
+    material->desc.address_mode = VXTEXTURE_ADDRESSWRAP;
+    material->desc.texture_blend = VXTEXTUREBLEND_MODULATE;
+    return id;
+}
+
+/* CKBitmapData::SetPixel of an ARGB color */
+static void put_pixel(eng_surface_t *surface, int32_t x, int32_t y, uint32_t argb)
+{
+    uint8_t *p = &surface->rgba[4 * ((size_t)y * (size_t)surface->width + (size_t)x)];
+    p[0] = (uint8_t)(argb >> 16);
+    p[1] = (uint8_t)(argb >> 8);
+    p[2] = (uint8_t)argb;
+    p[3] = (uint8_t)(argb >> 24);
+}
+
+/* A texture made at run time (CKTexture::Create(width, height, 32)); NULL for none */
+static eng_surface_t *made_texture(nmo_engine_t *engine, const char *name, int32_t width, int32_t height,
+                                   nmo_object_id_t *out)
+{
+    nmo_object_id_t id = eng_create_object(engine, NMO_CID_TEXTURE, name);
+    eng_texture_t *texture = id != 0 ? eng_texture(engine, id) : NULL;
+    *out = id;
+    if (texture == NULL || !eng_texture_create(engine, texture, width, height, 0)) {
+        return NULL;
+    }
+    eng_surface_t *surface = eng_texture_surface(engine, texture, -1);
+    return surface != NULL && surface->rgba != NULL ? surface : NULL;
+}
+
+/* CKMesh::AddChannel(material, TRUE): the new channel with a copy of the mesh's UVs; -1 for none */
+static int32_t add_uv_channel(nmo_engine_t *engine, eng_mesh_copy_t *copy, nmo_object_id_t material)
+{
+    size_t stride = 0;
+    int32_t count = 0;
+    const float *own = eng_mesh_uvs(engine, copy, -1, &stride, &count);
+    int32_t channel = eng_mesh_add_channel(copy, material);
+    if (channel < 0 || own == NULL || count <= 0) {
+        return channel;
+    }
+    float *uvs = (float *)malloc((size_t)count * 2u * sizeof(float));
+    for (int32_t v = 0; uvs != NULL && v < count; v++) {
+        const float *uv = (const float *)((const uint8_t *)own + (size_t)v * stride);
+        uvs[2 * v] = uv[0];
+        uvs[2 * v + 1] = uv[1];
+    }
+    copy->channels.data[channel].uvs = uvs;
+    return channel;
+}
+
+/*
+ * TT_CelShading: On adds a channel (replacing the mesh's colour: source ONE,
+ * dest ZERO, lit) whose "Mat CelShading" reads a 16 x 1 "Tex CelShading" of
+ * three tones of Color, and keeps smooth normals (the face normals round
+ * each position summed); each frame the channel's U is 1 less how much each
+ * vertex faces away from the Light. As in the DLL, after On the UVs written
+ * are channel 0's. Outline (the target drawn again over everything after it
+ * renders) is not drawn here.
+ */
+static int bb_cel_shading(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    int32_t target = target_entity(b);
+    if (target < 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    int32_t light = input_entity(b, 0);
+    float color[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    nmo_engine_block_get_input_value(b, 1, color, sizeof(color));
+    if (light < 0) {
+        return NMO_ENGINE_BR_PARAMETERERROR; /* the DLL calls through a missing light */
+    }
+    eng_vector_t at = eng_entity_position(engine, light, target);
+    nmo_object_id_t mesh = current_mesh_of(engine, nmo_engine_block_target(b));
+    nmo_object_t *object = mesh != 0 ? eng_find_object(engine, mesh) : NULL;
+    const nmo_mesh_state_t *state = object != NULL ? (const nmo_mesh_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(engine->types, object, CKPGUID_MESH) : NULL;
+    eng_mesh_copy_t *copy = state != NULL ? eng_mesh_copy(engine, mesh) : NULL;
+    if (copy == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    int32_t channel = 0;
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    uint32_t count = state->vertex_count;
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+        nmo_object_id_t material = shading_material(engine, "Mat CelShading");
+        nmo_object_id_t texture = 0;
+        eng_surface_t *surface = made_texture(engine, "Tex CelShading", 16, 1, &texture);
+        if (surface != NULL) {
+            for (int32_t x = 0; x < 16; x++) {
+                float add = x < 3 ? 0.0f : x < 8 ? 0.5f : 1.0f;
+                const float tone[4] = {(float)((color[0] + add) * 0.5), (float)((color[1] + add) * 0.5),
+                                       (float)((color[2] + add) * 0.5), 0.0f};
+                put_pixel(surface, x, 0, vxcolor_to_color(tone));
+            }
+            eng_texture_changed(engine, texture);
+        }
+        eng_material_t *desc = material != 0 ? eng_material(engine, material) : NULL;
+        if (desc != NULL) {
+            desc->desc.texture = texture;
+        }
+        int32_t before = (int32_t)copy->channels.count;
+        channel = add_uv_channel(engine, copy, material);
+        if (channel != before) {
+            return NMO_ENGINE_BR_PARAMETERERROR;
+        }
+        copy->channels.data[channel].source_blend = VXBLEND_ONE;
+        copy->channels.data[channel].dest_blend = VXBLEND_ZERO;
+        copy->channels.data[channel].lit = true;
+        /* Smooth normals: the face normals of the faces with a vertex at the same place */
+        const nmo_face_t *faces = copy->faces != NULL ? copy->faces : state->faces;
+        nmo_vector_t *normals = (nmo_vector_t *)calloc(count > 0 ? count : 1, sizeof(*normals));
+        for (uint32_t v = 0; normals != NULL && v < count; v++) {
+            const nmo_vector_t *p = &copy->vertices[v].position;
+            double sum[3] = {0.0, 0.0, 0.0};
+            for (uint32_t f = 0; faces != NULL && state->face_vertex_indices != NULL && f < state->face_count; f++) {
+                const uint16_t *k = &state->face_vertex_indices[3u * f];
+                bool touches = false;
+                for (int i = 0; i < 3 && !touches; i++) {
+                    const nmo_vector_t *q = k[i] < count ? &copy->vertices[k[i]].position : NULL;
+                    touches = q != NULL && p->x == q->x && p->y == q->y && p->z == q->z;
+                }
+                if (touches) {
+                    sum[0] = faces[f].normal.x + (float)sum[0];
+                    sum[1] = faces[f].normal.y + (float)sum[1];
+                    sum[2] = faces[f].normal.z + (float)sum[2];
+                }
+            }
+            double length = sqrt(sum[0] * sum[0] + sum[1] * sum[1] + sum[2] * sum[2]);
+            normals[v] = (nmo_vector_t){(float)(1.0 / length * sum[0]), (float)(1.0 / length * sum[1]),
+                                        (float)(1.0 / length * sum[2])};
+        }
+        if (normals != NULL) {
+            nmo_engine_block_set_local_value(b, 0, normals, count * sizeof(*normals));
+        }
+        free(normals);
+    }
+    const eng_param_t *param = block_local(b, 0);
+    const nmo_vector_t *normals = param != NULL ? (const nmo_vector_t *)param->data : NULL;
+    uint32_t held = param != NULL ? (uint32_t)(param->size / sizeof(nmo_vector_t)) : 0;
+    size_t stride = 0;
+    int32_t uv_count = 0;
+    float *uvs = eng_mesh_uvs(engine, copy, channel, &stride, &uv_count);
+    for (uint32_t v = 0; uvs != NULL && normals != NULL && v < count && v < held && (int32_t)v < uv_count; v++) {
+        const nmo_vector_t *p = &copy->vertices[v].position;
+        eng_vector_t from = {p->x - at.x, p->y - at.y, p->z - at.z};
+        eng_vector_normalize(&from);
+        float facing = from.x * normals[v].x + from.z * normals[v].z + from.y * normals[v].y;
+        if (facing < 0.0f) {
+            facing = 0.0f;
+        }
+        float *uv = uv_of(uvs, stride, (int32_t)v);
+        uv[1] = 0.0f;
+        uv[0] = 1.0f - facing;
+    }
+    uvs_changed(b, copy);
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+/*
+ * TT_AnisoMapping: On adds a channel (added to the mesh's colour: ONE, ONE)
+ * whose "Mat AnisoMap" reads a Texture Size square "Tex AnisoMap" of an
+ * anisotropic highlight in Color (tinted with Metal), both put in the
+ * scene, and keeps base UVs from the vertices (Mapping 1: the cosine and
+ * sine of the direction's X, else the distance over the box's Min corner's,
+ * times Size); each frame the last channel's UVs are the base UVs through
+ * the light and camera directions.
+ */
+static int bb_aniso_mapping(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    int32_t target = target_entity(b);
+    if (target < 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    int32_t light = input_entity(b, 0), camera = input_entity(b, 1);
+    uint32_t count = 0;
+    eng_mesh_copy_t *copy = deformed_mesh(engine, nmo_engine_block_target(b), &count);
+    if (copy == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+        int32_t size = get_in_int(b, 2, 2);
+        float color[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        nmo_engine_block_get_input_value(b, 3, color, sizeof(color));
+        bool metal = get_in_int(b, 4, 0) != 0;
+        int32_t mapping = get_in_int(b, 5, 1);
+        float scale = get_in_float(b, 6, 1.0f);
+        nmo_object_id_t material = shading_material(engine, "Mat AnisoMap");
+        nmo_object_id_t texture = 0;
+        eng_surface_t *surface = size > 0 ? made_texture(engine, "Tex AnisoMap", size, size, &texture) : NULL;
+        if (surface == NULL) {
+            return NMO_ENGINE_BR_OK;
+        }
+        for (int32_t x = 0; x < size; x++) {
+            double a = 1.0 - ((double)x + (double)x) / (double)(size - 1);
+            float af = (float)a;
+            double sa = pow(1.0 - a * af, 0.5);
+            for (int32_t y = 0; y < size; y++) {
+                double c = ((double)y + (double)y) / (double)(size - 1) - 1.0;
+                float cf = (float)c;
+                double s = pow(1.0 - c * cf, 0.5) * sa - cf * af;
+                float clipped = s >= 0.0 ? (float)s : 0.0f;
+                double spec = pow((double)clipped, 39.99999940395356) * 0.800000011920929;
+                float tone[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+                for (int i = 0; i < 3; i++) {
+                    double value = ((metal ? color[i] : 1.0f) * spec + color[i] * sa * 0.2) * color[3];
+                    tone[i] = value < 0.0 ? 0.0f : value <= 1.0 ? (float)value : 1.0f;
+                }
+                put_pixel(surface, x, y, vxcolor_to_color(tone));
+            }
+        }
+        eng_texture_changed(engine, texture);
+        eng_material_t *desc = material != 0 ? eng_material(engine, material) : NULL;
+        if (desc != NULL) {
+            desc->desc.texture = texture;
+        }
+        int32_t before = (int32_t)copy->channels.count;
+        int32_t channel = add_uv_channel(engine, copy, material);
+        if (channel != before) {
+            return NMO_ENGINE_BR_PARAMETERERROR;
+        }
+        copy->channels.data[channel].source_blend = VXBLEND_ONE;
+        copy->channels.data[channel].dest_blend = VXBLEND_ONE;
+        eng_add_to_level_scene(engine, texture);
+        eng_add_to_level_scene(engine, material);
+        eng_vector_t min = {0, 0, 0}, max = {0, 0, 0};
+        eng_entity_local_box(engine, target, &min, &max);
+        float reach = (float)sqrt((double)(min.x * min.x + min.z * min.z + min.y * min.y));
+        float *base = (float *)malloc((count > 0 ? count : 1) * 2u * sizeof(float));
+        for (uint32_t v = 0; base != NULL && v < count; v++) {
+            const nmo_vector_t *p = &copy->vertices[v].position;
+            eng_vector_t dir = {0.0f, 0.0f, 0.0f};
+            if (!(p->x == 0.0f && p->y == 0.0f && p->z == 0.0f)) {
+                double inv = 1.0 / sqrt((double)(p->x * p->x + p->z * p->z + p->y * p->y));
+                dir = (eng_vector_t){(float)(p->x * inv), (float)(p->y * inv), (float)(p->z * inv)};
+            }
+            float length = (float)sqrt((double)(p->x * p->x + p->z * p->z + p->y * p->y));
+            if (mapping == 1) {
+                base[2 * v] = length >= 0.0099999998f ? (float)(cos(fabs((double)dir.x)) * scale) : 0.0f;
+                base[2 * v + 1] = length >= 0.0099999998f ? (float)(sin(fabs((double)dir.x)) * scale) : 0.0f;
+            } else {
+                float share = length / reach;
+                base[2 * v] = base[2 * v + 1] = share * scale;
+            }
+        }
+        if (base != NULL) {
+            nmo_engine_block_set_local_value(b, 0, base, count * 2u * sizeof(float));
+        }
+        free(base);
+    }
+    if (light < 0 || camera < 0) {
+        return NMO_ENGINE_BR_PARAMETERERROR; /* the DLL calls through them */
+    }
+    eng_vector_t eye = eng_entity_position(engine, camera, target), lamp = eng_entity_position(engine, light, target);
+    size_t stride = 0;
+    int32_t uv_count = 0;
+    float *uvs = eng_mesh_uvs(engine, copy, (int32_t)copy->channels.count - 1, &stride, &uv_count);
+    const eng_param_t *param = block_local(b, 0);
+    const float *base = param != NULL ? (const float *)param->data : NULL;
+    uint32_t held = param != NULL ? (uint32_t)(param->size / (2u * sizeof(float))) : 0;
+    for (uint32_t v = 0; uvs != NULL && base != NULL && v < count && v < held && (int32_t)v < uv_count; v++) {
+        const nmo_vector_t *p = &copy->vertices[v].position;
+        eng_vector_t to_eye = {eye.x - p->x, eye.y - p->y, eye.z - p->z};
+        eng_vector_t to_lamp = {lamp.x - p->x, lamp.y - p->y, lamp.z - p->z};
+        eng_vector_normalize(&to_eye);
+        eng_vector_normalize(&to_lamp);
+        /* Vx3DMultiplyMatrixVector with rows: the light direction, the camera direction */
+        float *uv = uv_of(uvs, stride, (int32_t)v);
+        uv[0] = base[2 * v] * to_lamp.x + base[2 * v + 1] * to_eye.x;
+        uv[1] = base[2 * v] * to_lamp.y + base[2 * v + 1] * to_eye.y;
+    }
+    uvs_changed(b, copy);
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+/* TT_AnisoMapping's callback: on reset its last channel, when active, goes with its material and texture */
+static int aniso_mapping_callback(blk_t *b, uint32_t message)
+{
+    if (message != NMO_ENGINE_MSG_RESET) {
+        return NMO_ENGINE_BR_OK;
+    }
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t mesh = current_mesh_of(engine, nmo_engine_block_target(b));
+    eng_mesh_copy_t *copy = mesh != 0 ? eng_mesh_copy_find(engine, mesh) : NULL;
+    if (copy == NULL || copy->channels.count == 0) {
+        return NMO_ENGINE_BR_OK;
+    }
+    int32_t last = (int32_t)copy->channels.count - 1;
+    if (copy->channels.data[last].active) {
+        nmo_object_id_t material = copy->channels.data[last].material;
+        eng_material_t *desc = material != 0 ? eng_material(engine, material) : NULL;
+        nmo_object_id_t doomed[2] = {desc != NULL ? desc->desc.texture : 0, material};
+        eng_mesh_remove_channel(copy, last);
+        copy->version = ++engine->render.mesh_version;
+        eng_destroy_objects(engine, doomed[0] != 0 ? doomed : &doomed[1], doomed[0] != 0 ? 2 : 1, NULL);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * TT_ListAllCurrentUsedTextures: a row at the end of Array for each slot
+ * file of each texture (its first column), removed when the cell takes no
+ * text; with OnInVideoMemory only the textures in video memory, none on
+ * the machine the toolbox reports.
+ */
+static int bb_list_all_current_used_textures(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    IN_OFF(b, 0);
+    nmo_object_id_t array = nmo_engine_block_get_input_object(b, 0);
+    bool video_only = get_local_int(b, 0, 1) == 1;
+    nmo_object_id_t *ids = NULL;
+    size_t count = video_only ? 0 : eng_objects_of_class(engine, NMO_CID_TEXTURE, &ids);
+    for (size_t i = 0; i < count; i++) {
+        eng_texture_t *texture = eng_texture(engine, ids[i]);
+        nmo_bitmap_slots_t view;
+        bool has_view = eng_bitmap_view(engine, ids[i], &view);
+        int32_t slots = texture != NULL ? texture->slot_count : 0;
+        for (int32_t s = 0; s < slots; s++) {
+            const char *name = (size_t)s < texture->files.count && texture->files.data[s] != NULL
+                                   ? texture->files.data[s]
+                               : has_view && view.slot_filenames != NULL && (uint32_t)s < view.slot_count
+                                   ? view.slot_filenames[s]
+                                   : NULL;
+            int32_t row = -1;
+            nmo_engine_array_insert_row(engine, array, -1, &row);
+            nmo_engine_cell_t cell = {.type = CKARRAYTYPE_STRING, .text = name != NULL ? name : ""};
+            if (row < 0 || nmo_engine_array_column_type(engine, array, 0) != CKARRAYTYPE_STRING ||
+                nmo_engine_array_set_cell(engine, array, row, 0, &cell) != NMO_OK) {
+                if (row >= 0) {
+                    nmo_engine_array_remove_row(engine, array, row);
+                }
+            }
+        }
+    }
+    free(ids);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * TT_SaveAlpha: the target texture's alpha copied into its red, green and
+ * blue, its alpha cleared, then its first slot saved to the file Filename
+ * names, in the format its extension names, through the host's writer.
+ */
+static int bb_save_alpha(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t id = nmo_engine_block_target(b);
+    eng_texture_t *texture = id != 0 ? eng_texture(engine, id) : NULL;
+    if (texture == NULL) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    eng_surface_t *surface = eng_texture_surface(engine, texture, -1);
+    if (surface != NULL && surface->rgba != NULL) {
+        for (size_t i = 0; i < (size_t)surface->width * (size_t)surface->height; i++) {
+            uint8_t *p = &surface->rgba[4 * i];
+            p[0] = p[1] = p[2] = p[3];
+            p[3] = 0;
+        }
+        eng_texture_changed(engine, id);
+    }
+    const char *name = input_string(b, 0);
+    eng_surface_t *first = eng_texture_surface(engine, texture, 0);
+    const char *dot = name != NULL ? strrchr(name, '.') : NULL;
+    const nmo_image_codec_t *codec = dot != NULL ? nmo_image_codec_find_by_extension(dot + 1) : NULL;
+    if (first != NULL && first->rgba != NULL && codec != NULL && codec->encode != NULL &&
+        engine->host.write_file != NULL) {
+        nmo_arena_t *arena = nmo_arena_create(NULL, 0);
+        nmo_bitmap_properties_t props = {codec->format, 100, 0, true, dot + 1};
+        uint8_t *data = NULL;
+        size_t size = 0;
+        if (arena != NULL && codec->encode(first->rgba, first->width, first->height, 4, &props, arena, &data,
+                                           &size) == NMO_OK) {
+            engine->host.write_file(engine->host.write_file_user_data, name, data, size);
+            eng_emit(engine, NMO_ENGINE_EVENT_EFFECT, b->node, id, 0);
+        }
+        if (arena != NULL) {
+            nmo_arena_destroy(arena);
+        }
+    }
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * TT_Set Material Values: the target material takes Get Material's colours,
+ * power, first texture, texture modes, blending, sides, Z and alpha test
+ * settings (not its effect). Perspective correction is not modelled.
+ */
+static int bb_set_material_values(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t target = nmo_engine_block_target(b), source = nmo_engine_block_get_input_object(b, 0);
+    eng_material_t *from = target != 0 && source != 0 ? eng_material(engine, source) : NULL;
+    nmo_engine_material_t copied;
+    if (from == NULL) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    copied = from->desc;
+    eng_material_t *to = eng_material(engine, target);
+    if (to == NULL) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    int32_t texgen = to->desc.texgen;
+    nmo_object_id_t texgen_referential = to->desc.texgen_referential;
+    to->desc = copied;
+    to->desc.texgen = texgen;
+    to->desc.texgen_referential = texgen_referential;
+    eng_emit(engine, NMO_ENGINE_EVENT_EFFECT, b->node, target, 0);
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_tt_toolbox_blocks[] = {
     {NMO_GUID_INIT(0x594a136e,0x58135ef9),"TT Joystick Waiter",bb_tt_joystick_waiter,NULL,NULL},
     {NMO_GUID_INIT(0x229865eb,0x577619e4),"TT_TestForJoystick",bb_test_for_joystick,NULL,NULL},
@@ -2528,6 +3222,14 @@ static const nmo_engine_block_desc_t eng_tt_toolbox_blocks[] = {
     {NMO_GUID_INIT(0x4f907f12, 0x16af15d6), "TT SinusMeshdeform", bb_sinus_meshdeform, sinus_meshdeform_callback, NULL},
     {NMO_GUID_INIT(0x38b87d43, 0x149b755b), "TT PMS_Meshdeform", bb_pms_meshdeform, pms_meshdeform_callback, NULL},
     {NMO_GUID_INIT(0x2f6a47b3, 0x35f4755c), "TT_RippleWave", bb_ripple_wave, ripple_wave_callback, NULL},
+    {NMO_GUID_INIT(0x2e36319f, 0x6ec6031f), "TT_SetMapping", bb_set_mapping, NULL, NULL},
+    {NMO_GUID_INIT(0x53024810, 0x22ed280f), "TT_RefractionMapping", bb_refraction_mapping, NULL, NULL},
+    {NMO_GUID_INIT(0x630d05f7, 0x1dda541f), "TT_BumpMap", bb_bump_map, NULL, NULL},
+    {NMO_GUID_INIT(0x2d2d2a64, 0x5a0501c7), "TT_CelShading", bb_cel_shading, NULL, NULL},
+    {NMO_GUID_INIT(0x73b30b5e, 0x4fed4c65), "TT_AnisoMapping", bb_aniso_mapping, aniso_mapping_callback, NULL},
+    {NMO_GUID_INIT(0x6b6d781e, 0x4b531860), "TT_ListAllCurrentUsedTextures", bb_list_all_current_used_textures, NULL, NULL},
+    {NMO_GUID_INIT(0x5ca62d31, 0x5d2031b8), "TT_SaveAlpha", bb_save_alpha, NULL, NULL},
+    {NMO_GUID_INIT(0x62963fa9, 0x7258745c), "TT_Set Material Values", bb_set_material_values, NULL, NULL},
     {NMO_GUID_INIT(0x0fd4755f, 0x7de22dc8), "TT Set Dynamic Position", bb_set_dynamic_position, NULL,
      NULL},
 };
