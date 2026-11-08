@@ -10,6 +10,12 @@
 
 #include "virtools.h"
 
+#include "format/nmo_chunk_api.h"
+#include "format/nmo_chunk.h"
+#include "core/nmo_arena.h"
+#include "object/builtin/nmo_parameter_schemas.h"
+#include "../../engine/engine_curve.h"
+#include "../../engine/engine_message.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_camera_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
@@ -2151,6 +2157,7 @@ typedef struct collision_manager {
     int32_t touched_face, touching_face; /* the faces a face test met */
     struct impact *impacts;              /* the impact array (GetImpactArray) and its size */
     size_t impact_count;
+    ENG_VEC(struct nodal_graph) graphs;  /* the nodal paths, by group */
 } collision_manager_t;
 
 /* ImpactDesc */
@@ -2160,6 +2167,41 @@ typedef struct impact {
     eng_matrix_t matrix;
     eng_vector_t point, normal;
 } impact_t;
+
+/* N3DGraph: a nodal path's nodes (states) and their links (edges) */
+#define EDGE_BASIC 1   /* STATEBASICACTIVITY */
+#define EDGE_DYNAMIC 2 /* STATEDYNAMICACTIVITY */
+typedef struct nodal_edge {
+    int32_t successor;
+    int32_t active;
+    float distance, difficulty;
+} nodal_edge_t;
+
+typedef struct nodal_state {
+    nmo_object_id_t node, occupier;
+    nodal_edge_t *edges; /* in their list's order */
+    int32_t edge_count;
+    float g, h, f;       /* the A* search's */
+    int32_t parent;
+    uint32_t flag;       /* LISTOPEN 1, LISTCLOSE 2 */
+    eng_vector_t position;
+} nodal_state_t;
+
+typedef struct nodal_graph {
+    nmo_object_id_t group;
+    nodal_state_t *states;
+    int32_t count;
+} nodal_graph_t;
+
+static void nodal_graph_free(nodal_graph_t *graph)
+{
+    for (int32_t i = 0; i < graph->count; i++) {
+        free(graph->states[i].edges);
+    }
+    free(graph->states);
+    graph->states = NULL;
+    graph->count = 0;
+}
 
 static void cm_destroy(nmo_engine_t *engine, void *state);
 static void cm_pre_process(nmo_engine_t *engine, void *state);
@@ -2369,6 +2411,10 @@ static void cm_destroy(nmo_engine_t *engine, void *state)
     free(cm->obstacles.data);
     free(cm->movings.data);
     free(cm->impacts);
+    for (size_t i = 0; i < cm->graphs.count; i++) {
+        nodal_graph_free(&cm->graphs.data[i]);
+    }
+    free(cm->graphs.data);
 }
 
 static void cm_pre_process(nmo_engine_t *engine, void *state)
@@ -3829,6 +3875,760 @@ static int bb_home_on_entity(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* ============================================================================
+ * Nodal paths (N3DGraph)
+ * ============================================================================ */
+
+#define N3DGRAPH_IDENTIFIER 2000666u
+
+/* The nodal path of a group (its Nodal Path attribute's graph); NULL when it has none */
+static nodal_graph_t *graph_of(nmo_engine_t *engine, nmo_object_id_t group)
+{
+    collision_manager_t *cm = cm_state(engine);
+    for (size_t i = 0; cm != NULL && group != 0 && i < cm->graphs.count; i++) {
+        if (cm->graphs.data[i].group == group) {
+            return &cm->graphs.data[i];
+        }
+    }
+    return NULL;
+}
+
+/* SeekPosition: the state of a node; -1 when it is none */
+static int32_t graph_seek(const nodal_graph_t *graph, nmo_object_id_t node)
+{
+    for (int32_t i = 0; i < graph->count; i++) {
+        if (graph->states[i].node == node) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static nodal_edge_t *graph_edge(nodal_graph_t *graph, nmo_object_id_t s, nmo_object_id_t e)
+{
+    int32_t si = graph_seek(graph, s), ei = graph_seek(graph, e);
+    if (si < 0 || ei < 0) {
+        return NULL;
+    }
+    for (int32_t k = 0; k < graph->states[si].edge_count; k++) {
+        if (graph->states[si].edges[k].successor == ei) {
+            return &graph->states[si].edges[k];
+        }
+    }
+    return NULL;
+}
+
+/* DeleteState: the node out, its links and the links to it too */
+static void graph_delete_state(nodal_graph_t *graph, int32_t ni)
+{
+    free(graph->states[ni].edges);
+    memmove(&graph->states[ni], &graph->states[ni + 1], (size_t)(graph->count - ni - 1) * sizeof(nodal_state_t));
+    graph->count--;
+    for (int32_t i = 0; i < graph->count; i++) {
+        nodal_state_t *state = &graph->states[i];
+        for (int32_t k = 0; k < state->edge_count;) {
+            int32_t successor = state->edges[k].successor;
+            if (successor == ni) {
+                memmove(&state->edges[k], &state->edges[k + 1], (size_t)(state->edge_count - k - 1) * sizeof(nodal_edge_t));
+                state->edge_count--;
+            } else {
+                state->edges[k].successor = successor > ni ? successor - 1 : successor;
+                k++;
+            }
+        }
+    }
+}
+
+/* UpdateDistance: the nodes' positions (a node gone leaves the graph), then the links' lengths */
+static void graph_update_distance(nmo_engine_t *engine, nodal_graph_t *graph)
+{
+    for (int32_t i = 0; i < graph->count;) {
+        int32_t index = eng_entity_index(engine, graph->states[i].node);
+        if (index < 0 && eng_find_object(engine, graph->states[i].node) == NULL) {
+            graph_delete_state(graph, i); /* GetSafeEntity */
+            continue;
+        }
+        graph->states[i].position = index >= 0 ? eng_entity_position(engine, index, -1) : v3(0.0f, 0.0f, 0.0f);
+        i++;
+    }
+    for (int32_t i = 0; i < graph->count; i++) {
+        for (int32_t k = 0; k < graph->states[i].edge_count; k++) {
+            eng_vector_t d = vsub(graph->states[i].position, graph->states[graph->states[i].edges[k].successor].position);
+            graph->states[i].edges[k].distance = eng_vector_magnitude(&d);
+        }
+    }
+}
+
+/*
+ * CreateFromChunk: the graph the Create Nodal Path block saved in its state
+ * chunk local (the nodes, their occupiers in version 2, each link's
+ * activity, difficulty and successor), without links to themselves (Clean),
+ * the lengths from the nodes' positions.
+ */
+static void graph_load(nmo_engine_t *engine, nodal_graph_t *graph, nmo_object_id_t chunk_param)
+{
+    nmo_object_t *object = chunk_param != 0 ? eng_find_object(engine, chunk_param) : NULL;
+    const nmo_parameter_state_t *value =
+        object != NULL ? (const nmo_parameter_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
+                             engine->types, object, CKPGUID_PARAMETER)
+                       : NULL;
+    if (value == NULL || value->mode != CKPARAM_MODE_SUBCHUNK || value->subchunk == NULL) {
+        return;
+    }
+    const eng_module_t *module = eng_module_of(engine, chunk_param, NULL);
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096u);
+    nmo_chunk_t *chunk = arena != NULL ? nmo_chunk_clone(value->subchunk, arena) : NULL;
+    int32_t version = 0, count = 0;
+    if (chunk != NULL && nmo_chunk_start_read(chunk) == NMO_OK &&
+        nmo_chunk_seek_identifier(chunk, N3DGRAPH_IDENTIFIER) == NMO_OK && nmo_chunk_read_int(chunk, &version) == NMO_OK &&
+        (version == 1 || version == 2) && nmo_chunk_read_int(chunk, &count) == NMO_OK && count >= 0) {
+        graph->states = (nodal_state_t *)calloc((size_t)count + 1, sizeof(nodal_state_t));
+        for (int32_t i = 0; graph->states != NULL && i < count; i++) {
+            nodal_state_t *state = &graph->states[graph->count++];
+            nmo_object_id_t id = 0, occupier = 0;
+            int32_t edges = 0;
+            nmo_chunk_read_object_id(chunk, &id);
+            if (version == 2) {
+                nmo_chunk_read_object_id(chunk, &occupier);
+            }
+            state->node = id != 0 && module != NULL ? eng_module_id(module, id) : 0;
+            state->occupier = occupier != 0 && module != NULL ? eng_module_id(module, occupier) : 0;
+            nmo_chunk_read_int(chunk, &edges);
+            state->edges = edges > 0 ? (nodal_edge_t *)calloc((size_t)edges, sizeof(nodal_edge_t)) : NULL;
+            for (int32_t k = 0; state->edges != NULL && k < edges; k++) {
+                nodal_edge_t *edge = &state->edges[state->edge_count++];
+                nmo_chunk_read_int(chunk, &edge->active);
+                nmo_chunk_read_float(chunk, &edge->difficulty);
+                nmo_chunk_read_int(chunk, &edge->successor);
+            }
+        }
+        for (int32_t i = 0; i < graph->count; i++) {
+            nodal_state_t *state = &graph->states[i];
+            for (int32_t k = 0; k < state->edge_count;) {
+                int32_t successor = state->edges[k].successor;
+                if (successor == i || successor < 0 || successor >= graph->count) { /* Clean */
+                    memmove(&state->edges[k], &state->edges[k + 1],
+                            (size_t)(state->edge_count - k - 1) * sizeof(nodal_edge_t));
+                    state->edge_count--;
+                } else {
+                    k++;
+                }
+            }
+        }
+        graph_update_distance(engine, graph);
+    }
+    nmo_arena_destroy(arena);
+}
+
+/* ActivateEdge: the dynamic activity, or both */
+static void graph_activate_edge(nodal_graph_t *graph, nmo_object_id_t s, nmo_object_id_t e, bool active, bool dynamic)
+{
+    nodal_edge_t *edge = graph_edge(graph, s, e);
+    if (edge == NULL) {
+        return;
+    }
+    int32_t bits = dynamic ? EDGE_DYNAMIC : (EDGE_BASIC | EDGE_DYNAMIC);
+    edge->active = active ? (edge->active | bits) : (edge->active & ~bits);
+}
+
+/* ActivateState: the dynamic activity of the node's links and of the links to it */
+static void graph_activate_state(nodal_graph_t *graph, nmo_object_id_t node, bool active)
+{
+    int32_t sp = graph_seek(graph, node);
+    for (int32_t i = 0; sp >= 0 && i < graph->count; i++) {
+        for (int32_t k = 0; k < graph->states[i].edge_count; k++) {
+            nodal_edge_t *edge = &graph->states[i].edges[k];
+            if (i == sp || edge->successor == sp) {
+                edge->active = active ? (edge->active | EDGE_DYNAMIC) : (edge->active & ~EDGE_DYNAMIC);
+            }
+        }
+    }
+}
+
+/* ResetActivity: no occupiers, the dynamic activity back to the basic one */
+static void graph_reset_activity(nodal_graph_t *graph)
+{
+    for (int32_t i = 0; i < graph->count; i++) {
+        graph->states[i].occupier = 0;
+        for (int32_t k = 0; k < graph->states[i].edge_count; k++) {
+            nodal_edge_t *edge = &graph->states[i].edges[k];
+            edge->active = (edge->active & EDGE_BASIC) ? (edge->active | EDGE_DYNAMIC) : (edge->active & ~EDGE_DYNAMIC);
+        }
+    }
+}
+
+/* SetOccupier: false when another occupies the node (or it is none) */
+static bool graph_set_occupier(nodal_graph_t *graph, nmo_object_id_t node, nmo_object_id_t occupier)
+{
+    int32_t i = graph_seek(graph, node);
+    if (i < 0) {
+        return false;
+    }
+    if (occupier != 0 && graph->states[i].occupier != 0 && graph->states[i].occupier != occupier) {
+        return false;
+    }
+    graph->states[i].occupier = occupier;
+    return true;
+}
+
+static nmo_object_id_t graph_occupier(const nodal_graph_t *graph, nmo_object_id_t node)
+{
+    int32_t i = graph_seek(graph, node);
+    return i >= 0 ? graph->states[i].occupier : 0;
+}
+
+static bool graph_edge_active(nodal_graph_t *graph, nmo_object_id_t s, nmo_object_id_t e)
+{
+    const nodal_edge_t *edge = graph_edge(graph, s, e);
+    return edge != NULL && (edge->active & EDGE_DYNAMIC) != 0;
+}
+
+static float graph_distance(const nodal_graph_t *graph, int32_t a, int32_t b)
+{
+    eng_vector_t d = vsub(graph->states[a].position, graph->states[b].position);
+    return eng_vector_magnitude(&d);
+}
+
+/*
+ * N3DGraph::FindPath: A* over the links active (basic or dynamic), not
+ * through occupied nodes with `occupation`; a link costs its difficulty
+ * times its length. The path's nodes, start first, in `path` (when given);
+ * the node to go to next, 0 when there is no way.
+ */
+static nmo_object_id_t graph_find_path(nodal_graph_t *graph, nmo_object_id_t start, nmo_object_id_t goal,
+                                       nmo_object_id_t **path, int32_t *path_count, bool basic, bool occupation)
+{
+    if (path != NULL) {
+        *path = NULL;
+        *path_count = 0;
+    }
+    int32_t activity = basic ? EDGE_BASIC : EDGE_DYNAMIC;
+    int32_t s = graph_seek(graph, start), g = graph_seek(graph, goal);
+    if (s < 0 || g < 0) {
+        return 0;
+    }
+    int32_t *open = (int32_t *)malloc(((size_t)graph->count * 2 + 4) * sizeof(int32_t));
+    int32_t opened = 0, capacity = graph->count * 2 + 4;
+    if (open == NULL) {
+        return 0;
+    }
+    nodal_state_t *states = graph->states;
+    states[s].g = 0.0f;
+    states[s].h = graph_distance(graph, s, g);
+    states[s].f = states[s].g + states[s].h;
+    states[s].parent = -1;
+#define PUSH_OPEN(n)                                                                    \
+    do {                                                                                \
+        states[n].flag |= 1u;                                                           \
+        int32_t at_ = 0;                                                                \
+        while (at_ < opened && !(states[n].f < states[open[at_]].f)) at_++;             \
+        if (opened == capacity) {                                                       \
+            capacity *= 2;                                                              \
+            int32_t *grown_ = (int32_t *)realloc(open, (size_t)capacity * sizeof(int32_t)); \
+            if (grown_ == NULL) break;                                                  \
+            open = grown_;                                                              \
+        }                                                                               \
+        memmove(&open[at_ + 1], &open[at_], (size_t)(opened - at_) * sizeof(int32_t));  \
+        open[at_] = (n);                                                                \
+        opened++;                                                                       \
+    } while (0)
+    PUSH_OPEN(s);
+    nmo_object_id_t next = 0;
+    bool found = false;
+    while (opened > 0) {
+        int32_t n = open[0];
+        memmove(&open[0], &open[1], (size_t)(opened - 1) * sizeof(int32_t));
+        opened--;
+        states[n].flag &= ~1u;
+        if (n == g) {
+            found = true;
+            int32_t count = 0;
+            for (int32_t k = n; states[k].parent >= 0 && k != states[k].parent; k = states[k].parent) {
+                count++;
+            }
+            if (path != NULL) {
+                *path = (nmo_object_id_t *)malloc(((size_t)count + 1) * sizeof(nmo_object_id_t));
+                int32_t k = n, at = count;
+                while (*path != NULL && states[k].parent >= 0 && k != states[k].parent) {
+                    (*path)[at--] = states[k].node;
+                    k = states[k].parent;
+                }
+                if (*path != NULL) {
+                    (*path)[0] = states[k].node;
+                    *path_count = count + 1;
+                    next = count > 0 ? (*path)[1] : 0;
+                }
+            } else {
+                int32_t k = n;
+                while (states[k].parent >= 0 && k != states[k].parent) {
+                    next = states[k].node;
+                    k = states[k].parent;
+                }
+            }
+            break;
+        }
+        for (int32_t e = 0; e < states[n].edge_count; e++) {
+            const nodal_edge_t *edge = &states[n].edges[e];
+            if (!(edge->active & activity)) {
+                continue;
+            }
+            int32_t m = edge->successor;
+            if (occupation && states[m].occupier != 0) {
+                continue;
+            }
+            float newg = states[n].g + edge->difficulty * edge->distance;
+            if (states[m].flag != 0 && states[m].g <= newg) {
+                continue;
+            }
+            states[m].parent = n;
+            states[m].g = newg;
+            states[m].h = graph_distance(graph, m, g);
+            states[m].f = states[m].g + states[m].h;
+            states[m].flag &= ~2u;
+            if (!(states[m].flag & 1u)) {
+                PUSH_OPEN(m);
+            }
+        }
+        states[n].flag |= 2u;
+    }
+#undef PUSH_OPEN
+    (void)found;
+    for (int32_t i = 0; i < graph->count; i++) {
+        states[i].flag = 0;
+    }
+    free(open);
+    return next;
+}
+
+/* The group's nodal path the block's input names; NULL (an exception in the DLL) when it has none */
+static nodal_graph_t *input_graph(blk_t *b, int pos)
+{
+    return graph_of(b->engine, nmo_engine_block_get_input_object(b, pos));
+}
+
+/*
+ * Create Nodal Path: its group's graph, loaded from the block's state chunk
+ * (LOAD), its activity reset with the behavior. The debug display is not
+ * drawn.
+ */
+static int cb_create_nodal_path(blk_t *b, uint32_t message)
+{
+    nmo_engine_t *engine = b->engine;
+    collision_manager_t *cm = cm_state(engine);
+    if (cm == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    nmo_object_id_t group = nmo_engine_block_owner(b);
+    nodal_graph_t *graph = graph_of(engine, group);
+    if (message == NMO_ENGINE_MSG_LOAD) {
+        if (graph == NULL) {
+            if (!ENG_VEC_PUSH(cm->graphs, graph)) {
+                return NMO_ENGINE_BR_OK;
+            }
+            graph->group = group;
+        } else {
+            nodal_graph_free(graph);
+        }
+        eng_param_t *chunk = block_local(b, 2);
+        graph_load(engine, graph, chunk != NULL ? chunk->id : 0);
+    } else if (message == NMO_ENGINE_MSG_RESET && graph != NULL) {
+        graph_reset_activity(graph);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Activate Link: the link (and with Two Way its way back) on or off */
+static int bb_activate_link(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nodal_graph_t *graph = input_graph(b, 0);
+    if (graph == NULL) {
+        return NMO_ENGINE_BR_PARAMETERERROR; /* "Given Group isn't a Network" */
+    }
+    nmo_object_id_t s = nmo_engine_block_get_input_object(b, 1), e = nmo_engine_block_get_input_object(b, 2);
+    bool active = get_in_int(b, 3, 0) != 0;
+    graph_activate_edge(graph, s, e, active, true);
+    if (get_in_int(b, 4, 0) != 0) {
+        graph_activate_edge(graph, e, s, active, true);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Activate Node: the links from and to the node on or off */
+static int bb_activate_node(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nodal_graph_t *graph = input_graph(b, 0);
+    if (graph == NULL) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    graph_activate_state(graph, nmo_engine_block_get_input_object(b, 1), get_in_int(b, 2, 0) != 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* The path into the block's group (cleared, then the nodes start first); Path Found when it has any */
+static int path_into(blk_t *b, nodal_graph_t *graph, nmo_object_id_t s, nmo_object_id_t e, nmo_object_id_t group)
+{
+    nmo_object_id_t *path = NULL;
+    int32_t count = 0;
+    if (group == 0) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    eng_group_clear(b->engine, group);
+    graph_find_path(graph, s, e, &path, &count, false, false);
+    for (int32_t i = 0; i < count; i++) {
+        eng_group_add(b->engine, group, path[i]);
+    }
+    free(path);
+    OUT_ON(b, nmo_engine_group_count(b->engine, group) > 0 ? 0 : 1);
+    return NMO_ENGINE_BR_OK;
+}
+
+static nmo_object_id_t output_object(blk_t *b, int pos)
+{
+    nmo_object_id_t id = 0;
+    nmo_engine_block_get_output_value(b, pos, &id, sizeof(id));
+    return id;
+}
+
+/* Find Path: the path from Start Object to Goal Object in the Object List */
+static int bb_find_path(blk_t *b)
+{
+    IN_OFF(b, 0);
+    nodal_graph_t *graph = input_graph(b, 0);
+    if (graph == NULL) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    nmo_object_id_t s = nmo_engine_block_get_input_object(b, 1), e = nmo_engine_block_get_input_object(b, 2);
+    if (graph_seek(graph, s) < 0 || graph_seek(graph, e) < 0) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    return path_into(b, graph, s, e, output_object(b, 0));
+}
+
+/* The Find Path blocks' output group (Find Curved Nodal Path's local), made at LOAD */
+static nmo_object_id_t made_group(blk_t *b)
+{
+    return eng_create_object(b->engine, NMO_CID_GROUP, "FindPathGroup");
+}
+
+static int cb_find_path(blk_t *b, uint32_t message)
+{
+    if (message == NMO_ENGINE_MSG_LOAD && nmo_engine_block_owner(b) != 0) {
+        nmo_object_id_t group = made_group(b);
+        set_out(b, 0, &group, sizeof(group));
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Entity Find Nodal Path: from the node of the group nearest the target to Goal Object */
+static int bb_entity_find_nodal_path(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    IN_OFF(b, 0);
+    nmo_object_id_t group = nmo_engine_block_get_input_object(b, 0);
+    nodal_graph_t *graph = graph_of(engine, group);
+    if (graph == NULL) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    int32_t object = target_entity(b);
+    if (object < 0) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    eng_vector_t pos = eng_entity_position(engine, object, -1);
+    nmo_object_id_t s = 0;
+    float least = FLT_MAX;
+    int32_t count = nmo_engine_group_count(engine, group);
+    for (int32_t i = 0; i < count; i++) {
+        nmo_object_id_t id = nmo_engine_group_object(engine, group, i);
+        int32_t index = eng_entity_index(engine, id);
+        if (index < 0) {
+            continue;
+        }
+        eng_vector_t d = vsub(eng_entity_position(engine, index, -1), pos);
+        float m = d.x * d.x + d.y * d.y + d.z * d.z;
+        if (m < least) {
+            least = m;
+            s = id;
+        }
+    }
+    nmo_object_id_t e = nmo_engine_block_get_input_object(b, 1);
+    if (graph_seek(graph, s) < 0 || graph_seek(graph, e) < 0) {
+        return NMO_ENGINE_BR_PARAMETERERROR; /* "Start/End point isn't in the Network" */
+    }
+    return path_into(b, graph, s, e, output_object(b, 0));
+}
+
+/* Find Curved Nodal Path: the path as the output curve's control points, of Fitting Coef */
+static int bb_find_curved_nodal_path(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    IN_OFF(b, 0);
+    nodal_graph_t *graph = input_graph(b, 0);
+    if (graph == NULL) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    nmo_object_id_t s = nmo_engine_block_get_input_object(b, 1), e = nmo_engine_block_get_input_object(b, 2);
+    if (graph_seek(graph, s) < 0 || graph_seek(graph, e) < 0) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    nmo_object_id_t group = 0;
+    nmo_engine_block_get_local_value(b, 0, &group, sizeof(group));
+    if (group == 0) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    eng_group_clear(engine, group);
+    nmo_object_id_t *path = NULL;
+    int32_t count = 0;
+    graph_find_path(graph, s, e, &path, &count, false, false);
+    for (int32_t i = 0; i < count; i++) {
+        eng_group_add(engine, group, path[i]);
+    }
+    free(path);
+    count = nmo_engine_group_count(engine, group);
+    if (count == 0) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    nmo_object_id_t curve = output_object(b, 0);
+    eng_curve_properties_t properties;
+    if (curve == 0 || !eng_curve_get_properties(engine, curve, &properties)) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    const eng_curve_points_t *points = eng_curve_points(engine, curve);
+    eng_curve_points_t old = {NULL, 0};
+    if (points != NULL) {
+        eng_curve_clone_points(&old, points);
+    }
+    const eng_curve_points_t none = {NULL, 0};
+    eng_curve_set_points(engine, curve, &none);
+    for (size_t i = 0; i < old.count; i++) {
+        nmo_engine_destroy_object(engine, old.ids[i]);
+    }
+    free(old.ids);
+    for (int32_t i = 0; i < count; i++) {
+        int32_t node = eng_entity_index(engine, nmo_engine_group_object(engine, group, i));
+        nmo_object_id_t point = eng_create_related_object_with_options(engine, curve, NMO_CID_CURVEPOINT, "CurvePoint", false);
+        int32_t index = eng_entity_index(engine, point);
+        if (index < 0 || node < 0) {
+            continue;
+        }
+        eng_vector_t pos = eng_entity_position(engine, node, -1);
+        eng_entity_set_position(engine, index, &pos, -1, false);
+        eng_curve_insert_point(engine, curve, 0, point);
+    }
+    eng_curve_get_properties(engine, curve, &properties);
+    properties.fitting_coeff = get_in_float(b, 3, 0.0f);
+    eng_curve_set_properties(engine, curve, &properties);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+static int cb_find_curved_nodal_path(blk_t *b, uint32_t message)
+{
+    if (message == NMO_ENGINE_MSG_LOAD) {
+        nmo_object_id_t group = made_group(b);
+        nmo_engine_block_set_local_value(b, 0, &group, sizeof(group));
+        nmo_object_id_t curve = eng_create_object(b->engine, NMO_CID_CURVE, "FindCurvedPath");
+        set_out(b, 0, &curve, sizeof(curve));
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Update Nodal Path: the nodes' positions and the links' lengths taken again */
+static int bb_update_nodal_path(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nodal_graph_t *graph = input_graph(b, 0);
+    if (graph == NULL) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    graph_update_distance(b->engine, graph);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * Character Go To Node: In picks the node nearest the character (its floor
+ * reference or root, on the ground plane) with a way to the Goal Node; each
+ * Loop In it walks there by Joy_Up (within the Limit Angle) and turns by
+ * Joy_Left/Joy_Right messages (or rotates), and once within the Guard
+ * Distance takes the next node. As in the DLL, the link walked is turned
+ * off while walking and back on at the node, with or without Mark
+ * Occupation.
+ */
+static int bb_character_go_to_node(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    int32_t character = target_entity(b);
+    if (character < 0) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    nodal_graph_t *graph = input_graph(b, 0);
+    if (graph == NULL) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    nmo_object_id_t self = engine->entities.data[character].id;
+    bool occupation = get_in_int(b, 5, 0) != 0;
+    int32_t carac = eng_entity_index(engine, eng_character_floor_reference(engine, self));
+    if (carac < 0) {
+        carac = eng_entity_index(engine, eng_character_root(engine, self));
+        if (carac < 0) {
+            return NMO_ENGINE_BR_OWNERERROR;
+        }
+    }
+    nmo_object_id_t carac_id = engine->entities.data[carac].id;
+    eng_vector_t carpos = eng_entity_position(engine, carac, -1);
+    carpos.y = 0.0f;
+    nmo_object_id_t goal = nmo_engine_block_get_input_object(b, 1), nodetogo = 0, oldnode = 0;
+    nmo_engine_block_get_local_value(b, 1, &nodetogo, sizeof(nodetogo));
+    nmo_engine_block_get_local_value(b, 2, &oldnode, sizeof(oldnode));
+    const nmo_object_id_t none = 0;
+    if (IN_ACTIVE(b, 2)) { /* Stop */
+        IN_OFF(b, 1);
+        IN_OFF(b, 2);
+        if (oldnode != 0 && nodetogo != 0) {
+            graph_activate_edge(graph, oldnode, nodetogo, true, true);
+            graph_activate_edge(graph, nodetogo, oldnode, true, true);
+        }
+        return NMO_ENGINE_BR_OK;
+    }
+    if (IN_ACTIVE(b, 0)) {
+        if (oldnode != 0 && occupation) {
+            graph_set_occupier(graph, oldnode, 0);
+        }
+        IN_OFF(b, 0);
+        nmo_object_id_t nearest = 0;
+        float least = 1e17f;
+        for (int32_t i = 0; i < graph->count; i++) {
+            nmo_object_id_t node = graph->states[i].node;
+            int32_t index = eng_entity_index(engine, node);
+            if (index < 0) {
+                continue;
+            }
+            eng_vector_t pos = eng_entity_position(engine, index, -1);
+            float d2 = (carpos.x - pos.x) * (carpos.x - pos.x) + (carpos.z - pos.z) * (carpos.z - pos.z);
+            if (d2 < least && (goal == node || graph_find_path(graph, node, goal, NULL, NULL, true, false) != 0)) {
+                least = d2;
+                nearest = node;
+            }
+        }
+        if (nearest == 0) {
+            OUT_ON(b, 1);
+            return NMO_ENGINE_BR_OK;
+        }
+        nmo_engine_block_set_local_value(b, 1, &nearest, sizeof(nearest));
+        nmo_engine_block_set_local_value(b, 2, &none, sizeof(none));
+        OUT_ON(b, 2);
+        return NMO_ENGINE_BR_OK;
+    }
+    IN_OFF(b, 1);
+    float prox = get_in_float(b, 2, 1.0f);
+    int32_t old_index = eng_entity_index(engine, oldnode);
+    if (old_index >= 0 && occupation) {
+        eng_vector_t d = vsub(eng_entity_position(engine, old_index, -1), carpos);
+        if (sqrtf(d.x * d.x + d.z * d.z) > prox) {
+            graph_set_occupier(graph, oldnode, 0);
+        }
+    }
+    if (nodetogo == 0) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    if (oldnode != 0 && occupation) {
+        nmo_object_id_t occ = graph_occupier(graph, nodetogo);
+        if (occ != 0 && occ != self && nodetogo != goal) {
+            nodetogo = oldnode;
+        }
+    }
+    int32_t to = eng_entity_index(engine, nodetogo);
+    eng_vector_t nodepos = to >= 0 ? eng_entity_position(engine, to, -1) : v3(0.0f, 0.0f, 0.0f);
+    eng_vector_t dist = v3(nodepos.x - carpos.x, 0.0f, nodepos.z - carpos.z);
+    float distance = sqrtf(dist.x * dist.x + dist.z * dist.z);
+    if (distance < prox) {
+        if (oldnode != 0) {
+            graph_activate_edge(graph, oldnode, nodetogo, true, true);
+            graph_activate_edge(graph, nodetogo, oldnode, true, true);
+        }
+        if (nodetogo == goal) {
+            OUT_ON(b, 0);
+            return NMO_ENGINE_BR_OK;
+        }
+        if (occupation && !graph_set_occupier(graph, nodetogo, self)) {
+            OUT_ON(b, 2);
+            return NMO_ENGINE_BR_OK;
+        }
+        oldnode = nodetogo;
+        nmo_engine_block_set_local_value(b, 2, &oldnode, sizeof(oldnode));
+        nodetogo = graph_find_path(graph, oldnode, goal, NULL, NULL, false, false);
+        if (nodetogo == 0) {
+            nodetogo = graph_find_path(graph, oldnode, goal, NULL, NULL, true, false);
+            if (nodetogo == 0) {
+                OUT_ON(b, 1);
+                return NMO_ENGINE_BR_OK;
+            }
+            if (!graph_edge_active(graph, oldnode, nodetogo)) {
+                nodetogo = oldnode;
+            }
+        }
+        if (occupation) {
+            nmo_object_id_t occ = graph_occupier(graph, nodetogo);
+            if (occ != 0 && occ != self && nodetogo != goal) {
+                nodetogo = graph_find_path(graph, oldnode, goal, NULL, NULL, true, true);
+                if (nodetogo == 0 || !graph_edge_active(graph, oldnode, nodetogo)) {
+                    nodetogo = oldnode;
+                }
+            }
+        }
+        graph_activate_edge(graph, oldnode, nodetogo, false, true);
+        graph_activate_edge(graph, nodetogo, oldnode, false, true);
+        to = eng_entity_index(engine, nodetogo);
+        nodepos = to >= 0 ? eng_entity_position(engine, to, -1) : v3(0.0f, 0.0f, 0.0f);
+        dist = v3(nodepos.x - carpos.x, 0.0f, nodepos.z - carpos.z);
+        distance = sqrtf(dist.x * dist.x + dist.z * dist.z);
+        nmo_engine_block_set_local_value(b, 1, &nodetogo, sizeof(nodetogo));
+    }
+    /* The character's direction and its side, by Character Direction */
+    eng_vector_t dir = v3(0.0f, 0.0f, 0.0f), dirx = v3(0.0f, 0.0f, 0.0f);
+    int32_t direction = get_in_int(b, 3, 1);
+    switch (direction) {
+    case 1: case 2: eng_entity_orientation(engine, character, &dirx, NULL, &dir, -1); break;
+    case 3: case 4: eng_entity_orientation(engine, character, NULL, &dir, &dirx, -1); break;
+    case 5: case 6: eng_entity_orientation(engine, character, &dir, NULL, &dirx, -1); break;
+    default: break;
+    }
+    if (direction == 2 || direction == 4 || direction == 6) {
+        dir = v3(-dir.x, -dir.y, -dir.z);
+    }
+    if (direction == 1 || direction == 4 || direction == 6) {
+        dirx = v3(-dirx.x, -dirx.y, -dirx.z);
+    }
+    eng_vector_t up = eng_vector_cross(&dir, &dirx);
+    float inv = 1.0f / distance;
+    float ahead = dir.x * dist.x * inv + dir.z * dist.z * inv, side = dirx.x * dist.x * inv + dirx.z * dist.z * inv;
+    float limit = get_in_float(b, 4, 1.22f);
+    int32_t joy_up = eng_message_type_add(engine, "Joy_Up"), joy_left = eng_message_type_add(engine, "Joy_Left");
+    int32_t joy_right = eng_message_type_add(engine, "Joy_Right");
+    eng_message_type_add(engine, "Joy_Down");
+    if (distance > prox && ahead > cosf(limit)) {
+        nmo_engine_block_send_message(b, joy_up, carac_id, carac_id);
+    }
+    bool messages = get_local_int(b, 3, 1) != 0;
+    float speed = get_local_float(b, 4, 1.0f);
+    if (ahead < 0.999f) {
+        if (messages) {
+            nmo_engine_block_send_message(b, side >= 0.0f ? joy_right : joy_left, carac_id, carac_id);
+        } else {
+            eng_entity_rotate(engine, character, &up, -(speed * side), -1, false);
+        }
+    }
+    OUT_ON(b, 2);
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_collisions_blocks[] = {
     {NMO_GUID_INIT(0x64154401, 0x76cf37af), "Box Box Intersection", bb_box_box_intersection, NULL, NULL},
     {NMO_GUID_INIT(0x198531f9, 0x60f66c57), "Sphere Sphere Intersection", bb_sphere_sphere_intersection, NULL, NULL},
@@ -3856,6 +4656,15 @@ static const nmo_engine_block_desc_t eng_collisions_blocks[] = {
     {NMO_GUID_INIT(0x13603db0, 0x16bc321a), "Object Slider", bb_object_slider, NULL, NULL},
     {NMO_GUID_INIT(0x39460907, 0x30f329af), "Avoid Obstacles", bb_avoid_obstacles, NULL, NULL},
     {NMO_GUID_INIT(0x71234f96, 0x34321e45), "Home on Entity", bb_home_on_entity, NULL, NULL},
+    {NMO_GUID_INIT(0x435b3d9c, 0x3a8e41f6), "Create Nodal Path", NULL, cb_create_nodal_path, NULL},
+    {NMO_GUID_INIT(0x51df79d8, 0x294163a3), "Activate Link", bb_activate_link, NULL, NULL},
+    {NMO_GUID_INIT(0x092a4e59, 0x4009769c), "Activate Node", bb_activate_node, NULL, NULL},
+    {NMO_GUID_INIT(0x078c60de, 0x6c744614), "Find Path", bb_find_path, cb_find_path, NULL},
+    {NMO_GUID_INIT(0x170a5187, 0x42f10a3a), "Entity Find Nodal Path", bb_entity_find_nodal_path, cb_find_path, NULL},
+    {NMO_GUID_INIT(0x72542b8a, 0x6fe901c7), "Find Curved Nodal Path", bb_find_curved_nodal_path,
+     cb_find_curved_nodal_path, NULL},
+    {NMO_GUID_INIT(0x21647449, 0x51126c00), "Update Nodal Path", bb_update_nodal_path, NULL, NULL},
+    {NMO_GUID_INIT(0x4c710f65, 0x32ed4ea6), "Character Go To Node", bb_character_go_to_node, NULL, NULL},
     {NMO_GUID_INIT(0x319971f0, 0x7919193f), "Character Prevent From Collision", bb_character_prevent_from_collision,
      NULL, NULL},
 };

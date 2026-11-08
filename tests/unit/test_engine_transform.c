@@ -3,6 +3,9 @@
 #include "../../src/engine/engine_module.h"
 
 #include "engine/nmo_engine_render.h"
+#include "format/nmo_chunk.h"
+#include "format/nmo_chunk_api.h"
+#include "../../src/engine/engine_curve.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_camera_schemas.h"
 #include "object/builtin/nmo_character_schemas.h"
@@ -54,6 +57,11 @@
 #define GUID_OBJECT_SLIDER NMO_GUID(0x13603db0, 0x16bc321a)
 #define GUID_AVOID_OBSTACLES NMO_GUID(0x39460907, 0x30f329af)
 #define GUID_HOME_ON_ENTITY NMO_GUID(0x71234f96, 0x34321e45)
+#define GUID_CREATE_NODAL_PATH NMO_GUID(0x435b3d9c, 0x3a8e41f6)
+#define GUID_ACTIVATE_LINK NMO_GUID(0x51df79d8, 0x294163a3)
+#define GUID_FIND_PATH NMO_GUID(0x078c60de, 0x6c744614)
+#define GUID_ENTITY_FIND_NODAL_PATH NMO_GUID(0x170a5187, 0x42f10a3a)
+#define GUID_FIND_CURVED_NODAL_PATH NMO_GUID(0x72542b8a, 0x6fe901c7)
 
 #define PI_F 3.14159265f
 
@@ -1624,6 +1632,126 @@ TEST(engine_transform, object_slider_avoid_obstacles_and_home_on_entity_steer_ar
     fixture_end(&f);
 }
 
+/* A nodal path block's input of the graph's group, of a start and of a goal, linked from `from` */
+static nmo_object_id_t path_block(engine_fixture_t *f, nmo_guid_t guid, const char *name, nmo_object_id_t from,
+                                  nmo_object_id_t group, nmo_object_id_t start, nmo_object_id_t goal)
+{
+    nmo_object_id_t block = fixture_block(f, guid, name);
+    if (block == 0) {
+        return 0;
+    }
+    fixture_input_int(f, BLOCK_PIN(f, block, 0), (int32_t)group);
+    fixture_input_int(f, BLOCK_PIN(f, block, 1), (int32_t)start);
+    if (goal != 0) {
+        fixture_input_int(f, BLOCK_PIN(f, block, 2), (int32_t)goal);
+    }
+    fixture_link(f, from, BLOCK_IN(f, block, 0), 0);
+    return block;
+}
+
+static void group_members(engine_fixture_t *f, nmo_object_id_t group, nmo_object_id_t *out, int32_t *count)
+{
+    *count = nmo_engine_group_count(f->engine, group);
+    for (int32_t i = 0; i < *count && i < 8; i++) {
+        out[i] = nmo_engine_group_object(f->engine, group, i);
+    }
+}
+
+TEST(engine_transform, nodal_paths_are_loaded_searched_and_switched)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    /* A square: N0 (0, 0) to N1 (10, 0) to N2 (10, 10), and N0 to N3 (0, 10) to N2 twice as hard */
+    nmo_object_id_t n[4];
+    const float xz[4][2] = {{0, 0}, {10, 0}, {10, 10}, {0, 10}};
+    for (int i = 0; i < 4; i++) {
+        n[i] = fixture_create(&f, NMO_CID_3DENTITY, "Node");
+        ASSERT_TRUE(place_entity(&f, n[i], xz[i][0], 0.0f, xz[i][1], 0) != 0);
+    }
+    nmo_object_id_t walker = cube_object(&f, "Walker", 1.0f, 0.0f);
+    ((nmo_3dentity_state_t *)fixture_state(&f, walker))->world_matrix[14] = 9.0f; /* by N3 */
+    nmo_object_id_t network = object_group(&f, "Network", n, 4);
+    ASSERT_TRUE(walker && network);
+    f.owner_id = network;
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t create = fixture_block(&f, GUID_CREATE_NODAL_PATH, "Create Nodal Path");
+    ASSERT_TRUE(create != 0);
+    const nmo_behavior_state_t *behavior = (const nmo_behavior_state_t *)fixture_state(&f, create);
+    ASSERT_TRUE(behavior != NULL && behavior->local_parameters.count > 2);
+    nmo_parameter_state_t *saved =
+        (nmo_parameter_state_t *)fixture_state(&f, nmo_behavior_ref_array_get_id(&behavior->local_parameters, 2));
+    nmo_chunk_t *chunk = nmo_chunk_create(nmo_session_get_arena(f.session));
+    ASSERT_TRUE(saved != NULL && chunk != NULL);
+    const int32_t edges[4][2][2] = {{{1, 1}, {3, 1}}, {{2, 1}, {-1, 0}}, {{-1, 0}, {-1, 0}}, {{2, 2}, {-1, 0}}};
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    nmo_chunk_write_identifier(chunk, 2000666u);
+    nmo_chunk_write_int(chunk, 2);
+    nmo_chunk_write_int(chunk, 4);
+    for (int i = 0; i < 4; i++) {
+        nmo_chunk_write_object_id(chunk, n[i]);
+        nmo_chunk_write_object_id(chunk, 0);
+        int count = (edges[i][0][0] >= 0) + (edges[i][1][0] >= 0);
+        nmo_chunk_write_int(chunk, count);
+        for (int k = 0; k < count; k++) {
+            nmo_chunk_write_int(chunk, 3); /* basic and dynamic */
+            nmo_chunk_write_float(chunk, (float)edges[i][k][1]);
+            nmo_chunk_write_int(chunk, edges[i][k][0]);
+        }
+    }
+    nmo_chunk_close(chunk);
+    saved->has_state = true;
+    saved->mode = CKPARAM_MODE_SUBCHUNK;
+    saved->subchunk = chunk;
+    nmo_object_id_t first = path_block(&f, GUID_FIND_PATH, "Find Path", f.script_in, network, n[0], n[2]);
+    ASSERT_TRUE(first != 0);
+    nmo_object_id_t cut = path_block(&f, GUID_ACTIVATE_LINK, "Activate Link", BLOCK_OUT(&f, first, 0), network, n[0],
+                                     n[1]);
+    ASSERT_TRUE(cut != 0);
+    nmo_object_id_t second = path_block(&f, GUID_FIND_PATH, "Find Path", BLOCK_OUT(&f, cut, 0), network, n[0], n[2]);
+    nmo_object_id_t entity = fixture_block(&f, GUID_ENTITY_FIND_NODAL_PATH, "Entity Find Nodal Path");
+    nmo_object_id_t curved = path_block(&f, GUID_FIND_CURVED_NODAL_PATH, "Find Curved Nodal Path", BLOCK_OUT(&f, second, 0),
+                                        network, n[0], n[2]);
+    ASSERT_TRUE(second && entity && curved);
+    fixture_input_int(&f, fixture_target(&f, entity), (int32_t)walker);
+    fixture_input_int(&f, BLOCK_PIN(&f, entity, 0), (int32_t)network);
+    fixture_input_int(&f, BLOCK_PIN(&f, entity, 1), (int32_t)n[2]);
+    fixture_link(&f, BLOCK_OUT(&f, curved, 0), BLOCK_IN(&f, entity, 0), 0);
+    nmo_object_id_t found = fixture_block(&f, GUID_NOP, "Found");
+    ASSERT_TRUE(found != 0);
+    fixture_link(&f, BLOCK_OUT(&f, entity, 0), BLOCK_IN(&f, found, 0), 0);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1u, runs(&f, found));
+    nmo_object_id_t group = 0, members[8];
+    int32_t count = 0;
+    read_value(&f, BLOCK_POUT(&f, first, 0), &group, sizeof(group));
+    group_members(&f, group, members, &count);
+    ASSERT_EQ(3, count); /* the easy way */
+    ASSERT_EQ(n[0], members[0]);
+    ASSERT_EQ(n[1], members[1]);
+    ASSERT_EQ(n[2], members[2]);
+    read_value(&f, BLOCK_POUT(&f, second, 0), &group, sizeof(group));
+    group_members(&f, group, members, &count);
+    ASSERT_EQ(3, count); /* N0 to N1 off: the hard way */
+    ASSERT_EQ(n[3], members[1]);
+    read_value(&f, BLOCK_POUT(&f, entity, 0), &group, sizeof(group));
+    group_members(&f, group, members, &count);
+    ASSERT_EQ(2, count); /* from N3, the node nearest the walker */
+    ASSERT_EQ(n[3], members[0]);
+    nmo_object_id_t curve = 0;
+    read_value(&f, BLOCK_POUT(&f, curved, 0), &curve, sizeof(curve));
+    const eng_curve_points_t *points = eng_curve_points(f.engine, curve);
+    ASSERT_TRUE(points != NULL);
+    ASSERT_EQ(3u, points->count); /* a control point at each node of the hard way */
+    float m[16];
+    ASSERT_TRUE(nmo_engine_entity_world_matrix(f.engine, points->ids[1], m));
+    ASSERT_FLOAT_EQ(10.0f, m[14], 0.0001f); /* N3's */
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_transform, entity_slots_remain_stable_after_deletion);
 REGISTER_TEST(engine_transform, loaded_children_keep_their_place_under_the_parent);
@@ -1646,6 +1774,7 @@ REGISTER_TEST(engine_transform, collision_detection_finds_the_obstacle_and_the_s
 REGISTER_TEST(engine_transform, prevent_collision_puts_the_object_back_to_its_safe_place);
 REGISTER_TEST(engine_transform, multi_collision_detection_loops_over_the_colliding_pairs);
 REGISTER_TEST(engine_transform, object_slider_avoid_obstacles_and_home_on_entity_steer_around_and_off_objects);
+REGISTER_TEST(engine_transform, nodal_paths_are_loaded_searched_and_switched);
 REGISTER_TEST(engine_transform, proximity_volume_control_runs_until_off);
 REGISTER_TEST(engine_transform, texture_sine_runs_its_clock_and_checks_the_channel);
 TEST_MAIN_END()
