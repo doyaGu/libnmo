@@ -532,6 +532,18 @@ void nmo_engine_set_file_writer(nmo_engine_t *engine, nmo_engine_write_file_fn f
     }
 }
 
+void nmo_engine_set_file_system(nmo_engine_t *engine, const nmo_engine_file_system_t *files)
+{
+    if (engine == NULL) {
+        return;
+    }
+    if (files != NULL) {
+        engine->host.files = *files;
+    } else {
+        memset(&engine->host.files, 0, sizeof(engine->host.files));
+    }
+}
+
 void nmo_engine_set_file_resolver(nmo_engine_t *engine, nmo_engine_resolve_file_fn fn,
                                   void *user_data)
 {

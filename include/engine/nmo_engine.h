@@ -228,6 +228,33 @@ typedef nmo_status_t (*nmo_engine_write_file_fn)(void *user_data, const char *na
  */
 NMO_API void nmo_engine_set_file_writer(nmo_engine_t *engine, nmo_engine_write_file_fn fn,
                                         void *user_data);
+
+/**
+ * The host's file system, for the TT file blocks (TT_CopyFile, TT_DeleteFile,
+ * TT_CreateDirectory, TT_RemoveDirectory, TT_SetCurrentDirectory, TT_ExistFile,
+ * TT_ListDir), with names as the documents give them. Each operation returns
+ * whether it was done; a NULL operation fails. The engine touches no file
+ * itself: without these, the blocks fail, and TT_ExistFile asks the resolver.
+ */
+typedef struct nmo_engine_file_system {
+    void *user_data;
+    /** GetFileAttributes: whether the file or directory is there */
+    bool (*exists)(void *user_data, const char *name);
+    /** CopyFile, which fails on an existing destination unless `overwrite` */
+    bool (*copy)(void *user_data, const char *source, const char *destination, bool overwrite);
+    bool (*remove_file)(void *user_data, const char *name);
+    bool (*create_directory)(void *user_data, const char *name);
+    bool (*remove_directory)(void *user_data, const char *name);
+    /** SetCurrentDirectory; the host reports the new one with nmo_engine_set_current_directory() */
+    bool (*set_current_directory)(void *user_data, const char *name);
+    /** FindFirstFile and FindNextFile: each entry the pattern finds ("." and ".." too) to
+        `found`; false when the search cannot start */
+    bool (*list)(void *user_data, const char *pattern,
+                 void (*found)(void *context, const char *name), void *context);
+} nmo_engine_file_system_t;
+
+/** The host's file system (copied); NULL for none. */
+NMO_API void nmo_engine_set_file_system(nmo_engine_t *engine, const nmo_engine_file_system_t *files);
 /**
  * Load the file `name` names. With `add_to_level`, its objects are added to
  * the level as Object Load adds them: each behavioral object, and each of its

@@ -24,6 +24,7 @@ typedef struct eng_host {
     void *resolve_file_user_data;
     nmo_engine_write_file_fn write_file;
     void *write_file_user_data;
+    nmo_engine_file_system_t files; /* the TT file blocks'; zeroed for none */
     ENG_VEC(eng_registry_value_t) registry;    /* what the TT blocks read */
     ENG_VEC(eng_registry_value_t) environment; /* environment variables */
     char *current_directory;
