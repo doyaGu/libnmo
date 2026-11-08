@@ -80,6 +80,7 @@
 #define GUID_SHADOW_PLANE NMO_GUID(0x137c3d66, 0x3ff1752d)
 #define GUID_SHADOW_MAPPING NMO_GUID(0x334c7dfe, 0x47c81a31)
 #define GUID_LENS_FLARE NMO_GUID(0x241b32a5, 0x71fe3357)
+#define GUID_SCENE_STENCIL_SHADOW NMO_GUID(0x4dcf4ca0, 0x474e25ec)
 
 /* The files the engine loads, from the scratch directory */
 static const char *resolve_scratch(void *user_data, const char *name)
@@ -1834,6 +1835,98 @@ TEST(engine_tt, lens_flare_draws_its_flares_in_front_of_the_eye)
     fixture_end(&f);
 }
 
+/* The StencilShadow attribute on `object` (while editing): mesh 0, fixed, length, redrawn */
+static void stencil_shadow_attribute(engine_fixture_t *f, nmo_object_id_t object, bool fixed, float length, bool redraw)
+{
+    const nmo_guid_t type = NMO_GUID(469842135u, 437651951u);
+    nmo_manager_entry_create_options_t options = {.enabled = true, .attribute_type_guid = type,
+        .category = "Visuals FX", .has_compatible_class_id = true, .compatible_class_id = NMO_CID_3DENTITY,
+        .has_flags = true, .flags = 0};
+    uint32_t attribute = 0;
+    ASSERT_EQ(NMO_OK, nmo_object_edit_ensure_attribute_manager_entry(nmo_script_edit_workspace_edit(f->tx),
+                                                                     "StencilShadow", &options, &attribute));
+    nmo_object_id_t parameter = fixture_create(f, NMO_CID_PARAMETEROUT, "StencilShadow");
+    nmo_parameter_state_t *state = (nmo_parameter_state_t *)fixture_state(f, parameter);
+    state->has_state = true;
+    state->mode = CKPARAM_MODE_BUFFER;
+    state->type_guid = type;
+    ASSERT_EQ(NMO_OK, nmo_array_alloc(&state->buffer_data, 1, 16, NULL));
+    memset(state->buffer_data.data, 0, 16);
+    int32_t values[4] = {0, fixed ? 1 : 0, 0, redraw ? 1 : 0};
+    memcpy(&values[2], &length, sizeof(length));
+    const nmo_guid_t types[4] = {CKPGUID_INT, CKPGUID_BOOL, CKPGUID_FLOAT, CKPGUID_BOOL};
+    for (int i = 0; i < 4; i++) {
+        nmo_object_id_t field = fixture_create(f, NMO_CID_PARAMETERLOCAL, "Field");
+        nmo_parameter_state_t *value = (nmo_parameter_state_t *)fixture_state(f, field);
+        value->has_state = true;
+        value->mode = CKPARAM_MODE_BUFFER;
+        value->type_guid = types[i];
+        ASSERT_EQ(NMO_OK, nmo_array_alloc(&value->buffer_data, 1, 4, NULL));
+        memcpy(value->buffer_data.data, &values[i], 4);
+        memcpy((uint8_t *)state->buffer_data.data + 4 * i, &field, 4);
+    }
+    ASSERT_EQ(NMO_OK, nmo_beobject_attribute_array_append(&((nmo_beobject_state_t *)fixture_state(f, object))->attributes,
+                                                          parameter, attribute, NULL));
+}
+
+TEST(engine_tt, scene_stencil_shadow_extrudes_the_silhouette_and_masks_the_sprite)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t square_mesh = 0;
+    nmo_object_id_t square = grid_object(&f, "Square", 2, &square_mesh); /* two faces, 1 by 1 */
+    nmo_object_id_t lamp = placed(&f, NMO_CID_LIGHT, "Lamp", 0.5f, 10.0f, 0.5f);
+    ASSERT_TRUE(square && lamp);
+    ((nmo_3dentity_state_t *)fixture_state(&f, square))->world_matrix[13] = 2.0f;
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    stencil_shadow_attribute(&f, square, false, 100.0f, true);
+    nmo_object_id_t shadow = started_block(&f, GUID_SCENE_STENCIL_SHADOW, "Shadows");
+    ASSERT_TRUE(shadow != 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, shadow, 0), (int32_t)lamp);
+    const float color[4] = {0.0f, 0.0f, 0.0f, 0.5f};
+    fixture_input_value(&f, BLOCK_PIN(&f, shadow, 1), color, sizeof(color));
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+
+    /* Lit from above, the square's four outer edges are its silhouette (the diagonal between two
+       lit faces is not): five edges, four quads pushed 100 away from the light */
+    nmo_object_id_t volume = nmo_engine_object_named(f.engine, "ShadowMesh", NMO_CID_MESH);
+    nmo_object_id_t holder = nmo_engine_object_named(f.engine, "ShadowEnt", NMO_CID_3DENTITY);
+    nmo_object_id_t sprite = nmo_engine_object_named(f.engine, "ShadowSprite", NMO_CID_2DENTITY);
+    ASSERT_TRUE(volume != 0 && holder != 0 && sprite != 0);
+    nmo_engine_mesh_t out;
+    ASSERT_TRUE(nmo_engine_mesh(f.engine, volume, &out));
+    ASSERT_EQ(20, out.vertex_count);
+    const double reach = sqrt(0.25 + 64.0 + 0.25);
+    ASSERT_FLOAT_EQ(0.0f, out.vertices[0].position.x, 0.0f);
+    ASSERT_FLOAT_EQ((float)(-0.5 / reach * 100.0), out.vertices[2].position.x, 1e-3f);
+    ASSERT_FLOAT_EQ((float)(-8.0 / reach * 100.0), out.vertices[2].position.y, 1e-3f);
+    ASSERT_FLOAT_EQ(0.0f, out.vertices[16].position.y, 0.0f); /* the fifth slot unused */
+
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    int volumes = 0, mirrored = 0, masked = 0, redrawn = 0;
+    for (int32_t i = 0; i < frame.draw_count; i++) {
+        const nmo_engine_draw_t *draw = &frame.draws[i];
+        if (draw->object == holder && draw->stencil_only) {
+            volumes++;
+            mirrored += draw->mirrored ? 1 : 0;
+        } else if (draw->object == sprite && draw->stencil.enabled && draw->stencil.func == VXCMP_NOTEQUAL &&
+                   draw->stencil.ref == 0) {
+            masked++;
+        } else if (draw->object == square && draw->no_z_test && draw->stencil.enabled) {
+            redrawn++;
+        }
+    }
+    ASSERT_EQ(2, volumes); /* front, then turned over */
+    ASSERT_EQ(1, mirrored);
+    ASSERT_EQ(1, masked);
+    ASSERT_EQ(1, redrawn);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_tt, load_database_fills_the_array_of_its_name);
 REGISTER_TEST(engine_tt, save_database_writes_the_registered_arrays);
@@ -1868,4 +1961,5 @@ REGISTER_TEST(engine_tt, fsaa_bitmap_font_and_frustum_clipping);
 REGISTER_TEST(engine_tt, sky_around_follows_the_viewpoint);
 REGISTER_TEST(engine_tt, shadow_plane_and_mapping_project_the_box_from_the_light);
 REGISTER_TEST(engine_tt, lens_flare_draws_its_flares_in_front_of_the_eye);
+REGISTER_TEST(engine_tt, scene_stencil_shadow_extrudes_the_silhouette_and_masks_the_sprite);
 TEST_MAIN_END()

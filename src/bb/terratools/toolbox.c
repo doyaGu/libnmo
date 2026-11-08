@@ -4143,6 +4143,513 @@ static int lens_flare_callback(blk_t *b, uint32_t message)
     return NMO_ENGINE_BR_OK;
 }
 
+/* ---- TT_SceneStencilShadow ---- */
+
+/* The attribute type of that name; -1 for none */
+static int32_t attribute_type_named_tt(const nmo_engine_t *engine, const char *name)
+{
+    for (size_t t = 0; t < engine->attributes.types.count; t++) {
+        const eng_attribute_type_t *type = &engine->attributes.types.data[t];
+        if (type->present && type->name != NULL && strcmp(type->name, name) == 0) {
+            return (int32_t)t;
+        }
+    }
+    return -1;
+}
+
+/* An edge of a caster's mesh: its vertices, the faces either side (face1 -1 for an open edge) and
+   their centres, as the DLL keeps it */
+typedef struct stencil_edge {
+    int32_t v0, v1, face0, face1;
+    eng_vector_t centre0, centre1;
+} stencil_edge_t;
+
+/* An object with the StencilShadow attribute, and its shadow volume */
+typedef struct stencil_caster {
+    nmo_object_id_t object, mesh;          /* the object and the mesh its attribute names */
+    nmo_object_id_t shadow_entity, shadow_mesh;
+    float length;                          /* how far the volume reaches */
+    bool fixed;                            /* the volume made at On only */
+    bool redraw;                           /* the object drawn again over its shadow */
+    stencil_edge_t *edges;
+    int32_t edge_count;
+    int32_t (*pairs)[2];                   /* the silhouette edges, facing the volume's outside */
+    int32_t pair_count;
+    int32_t slots;                         /* the quads the shadow mesh has room for */
+} stencil_caster_t;
+
+typedef struct stencil_block {
+    int32_t node;
+    nmo_object_id_t sprite, material;
+    stencil_caster_t *casters;
+    int32_t caster_count;
+} stencil_block_t;
+
+/* The toolbox's render context post render callbacks of the frame (temporary ones) */
+typedef struct toolbox_render {
+    ENG_VEC(stencil_block_t) stencil_blocks;
+    ENG_VEC(int32_t) stencil_frame;
+} toolbox_render_t;
+
+static void stencil_casters_free(stencil_block_t *block)
+{
+    for (int32_t i = 0; i < block->caster_count; i++) {
+        free(block->casters[i].edges);
+        free(block->casters[i].pairs);
+    }
+    free(block->casters);
+    block->casters = NULL;
+    block->caster_count = 0;
+}
+
+static void toolbox_render_destroy(nmo_engine_t *engine, void *state)
+{
+    (void)engine;
+    toolbox_render_t *tr = (toolbox_render_t *)state;
+    for (size_t i = 0; i < tr->stencil_blocks.count; i++) {
+        stencil_casters_free(&tr->stencil_blocks.data[i]);
+    }
+    free(tr->stencil_blocks.data);
+    free(tr->stencil_frame.data);
+}
+
+static void stencil_shadow_draw(nmo_engine_t *engine, stencil_block_t *block);
+
+static void toolbox_render_hook(nmo_engine_t *engine, void *state, eng_render_stage_t stage,
+                                const eng_render_args_t *args)
+{
+    toolbox_render_t *tr = (toolbox_render_t *)state;
+    if (stage != ENG_RENDER_SCENE) {
+        return;
+    }
+    for (size_t i = 0; i < tr->stencil_frame.count; i++) {
+        for (size_t k = 0; k < tr->stencil_blocks.count; k++) {
+            if (tr->stencil_blocks.data[k].node == tr->stencil_frame.data[i]) {
+                stencil_shadow_draw(engine, &tr->stencil_blocks.data[k]);
+            }
+        }
+    }
+    if (!args->pass) {
+        tr->stencil_frame.count = 0;
+    }
+}
+
+static const eng_manager_desc_t toolbox_render = {
+    .name = "TT Toolbox render callbacks",
+    .state_size = sizeof(toolbox_render_t),
+    .destroy = toolbox_render_destroy,
+    .render = toolbox_render_hook,
+};
+
+static stencil_block_t *stencil_block(nmo_engine_t *engine, int32_t node, bool make)
+{
+    toolbox_render_t *tr = (toolbox_render_t *)eng_manager_state(engine, &toolbox_render);
+    for (size_t i = 0; tr != NULL && i < tr->stencil_blocks.count; i++) {
+        if (tr->stencil_blocks.data[i].node == node) {
+            return &tr->stencil_blocks.data[i];
+        }
+    }
+    stencil_block_t *block = NULL;
+    if (tr == NULL || !make || !ENG_VEC_PUSH(tr->stencil_blocks, block)) {
+        return NULL;
+    }
+    memset(block, 0, sizeof(*block));
+    block->node = node;
+    return block;
+}
+
+/* The mesh's state, and its positions and face normals now */
+static const nmo_mesh_state_t *caster_mesh(nmo_engine_t *engine, nmo_object_id_t mesh, const nmo_vertex_t **vertices,
+                                           const nmo_face_t **faces)
+{
+    nmo_object_t *object = mesh != 0 ? eng_find_object(engine, mesh) : NULL;
+    const nmo_mesh_state_t *state = object != NULL ? (const nmo_mesh_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(engine->types, object, CKPGUID_MESH) : NULL;
+    if (state == NULL) {
+        return NULL;
+    }
+    const eng_mesh_copy_t *copy = eng_mesh_copy_find(engine, mesh);
+    *vertices = copy != NULL ? copy->vertices : state->vertices;
+    *faces = copy != NULL && copy->faces != NULL ? copy->faces : state->faces;
+    return state;
+}
+
+static eng_vector_t mesh_point(const nmo_vertex_t *vertices, int32_t v)
+{
+    return (eng_vector_t){vertices[v].position.x, vertices[v].position.y, vertices[v].position.z};
+}
+
+static bool same_point(const eng_vector_t *a, const eng_vector_t *c)
+{
+    return a->x == c->x && a->y == c->y && a->z == c->z;
+}
+
+static eng_vector_t face_centre(const nmo_mesh_state_t *state, const nmo_vertex_t *vertices, int32_t face)
+{
+    const uint16_t *k = &state->face_vertex_indices[3 * face];
+    eng_vector_t a = mesh_point(vertices, k[0]), b = mesh_point(vertices, k[1]), c = mesh_point(vertices, k[2]);
+    return (eng_vector_t){(float)((b.x + a.x + c.x) * 0.33333334), (float)((b.y + a.y + c.y) * 0.33333334f),
+                          (float)((b.z + a.z + c.z) * 0.33333334f)};
+}
+
+/* The DLL's AddEdge: the edge, unless one with its vertices (by index or place, either way round)
+   is there */
+static void stencil_add_edge(stencil_caster_t *caster, const nmo_mesh_state_t *state, const nmo_vertex_t *vertices,
+                             int32_t v0, int32_t v1, int32_t face0, int32_t face1)
+{
+    eng_vector_t p0 = mesh_point(vertices, v0), p1 = mesh_point(vertices, v1);
+    for (int32_t i = 0; i < caster->edge_count; i++) {
+        const stencil_edge_t *e = &caster->edges[i];
+        eng_vector_t q0 = mesh_point(vertices, e->v0), q1 = mesh_point(vertices, e->v1);
+        if ((e->v0 == v0 && e->v1 == v1) || (e->v0 == v1 && e->v1 == v0) || (same_point(&p0, &q0) && same_point(&p1, &q1)) ||
+            (same_point(&p0, &q1) && same_point(&p1, &q0))) {
+            return;
+        }
+    }
+    stencil_edge_t *e = &caster->edges[caster->edge_count++];
+    e->v0 = v0;
+    e->v1 = v1;
+    e->face0 = face0;
+    e->face1 = face1;
+    e->centre0 = face_centre(state, vertices, face0);
+    e->centre1 = face1 >= 0 ? face_centre(state, vertices, face1) : (eng_vector_t){0, 0, 0};
+}
+
+/* The DLL's edge search: another face with an edge at the same places (either way round) makes the
+   edge a shared one; else it is open, added the other way round */
+static void stencil_edge_of_face(stencil_caster_t *caster, const nmo_mesh_state_t *state, const nmo_vertex_t *vertices,
+                                 int32_t face, int32_t a, int32_t b)
+{
+    eng_vector_t pa = mesh_point(vertices, a), pb = mesh_point(vertices, b);
+    for (int32_t g = 0; g < (int32_t)state->face_count; g++) {
+        if (g == face) {
+            continue;
+        }
+        const uint16_t *k = &state->face_vertex_indices[3 * g];
+        eng_vector_t A = mesh_point(vertices, k[0]), B = mesh_point(vertices, k[1]), C = mesh_point(vertices, k[2]);
+        if ((same_point(&pa, &A) && (same_point(&pb, &B) || same_point(&pb, &C))) ||
+            (same_point(&pa, &B) && (same_point(&pb, &A) || same_point(&pb, &C))) ||
+            (same_point(&pa, &C) && (same_point(&pb, &B) || same_point(&pb, &A)))) {
+            stencil_add_edge(caster, state, vertices, a, b, face, g);
+            return;
+        }
+    }
+    stencil_add_edge(caster, state, vertices, b, a, face, -1);
+}
+
+/* CK3dEntity::GetMesh(index) */
+static nmo_object_id_t entity_mesh_at(nmo_engine_t *engine, nmo_object_id_t entity, int32_t index)
+{
+    const nmo_3dentity_state_t *state = (const nmo_3dentity_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
+        engine->types, eng_find_object(engine, entity), CKPGUID_3DENTITY);
+    if (state == NULL || index < 0) {
+        return 0;
+    }
+    if ((uint32_t)index < state->mesh_count && state->mesh_ids != NULL) {
+        return eng_object_ref(engine, entity, &state->mesh_ids[index]);
+    }
+    return index == 0 ? eng_object_ref(engine, entity, &state->current_mesh) : 0;
+}
+
+/* On: the casters' edges, and a shadow entity and mesh each (with room for every edge) */
+static bool stencil_casters_make(blk_t *b, stencil_block_t *block, int32_t type)
+{
+    nmo_engine_t *engine = b->engine;
+    stencil_casters_free(block);
+    int32_t holders = 0;
+    for (size_t i = 0; i < engine->attributes.values.count; i++) {
+        holders += engine->attributes.values.data[i].type == type ? 1 : 0;
+    }
+    nmo_engine_block_set_local_value(b, 4, &holders, sizeof(holders));
+    block->casters = holders > 0 ? (stencil_caster_t *)calloc((size_t)holders, sizeof(*block->casters)) : NULL;
+    for (size_t i = 0; block->casters != NULL && i < engine->attributes.values.count; i++) {
+        const eng_attribute_t *attribute = &engine->attributes.values.data[i];
+        if (attribute->type != type || !nmo_engine_object_is_visible(engine, attribute->object)) {
+            continue;
+        }
+        int32_t fields[4] = {0, 0, 0, 0};
+        for (uint32_t f = 0; f < 4; f++) {
+            eng_struct_field(engine, attribute->object, attribute->value.data, attribute->value.size, f, &fields[f]);
+        }
+        stencil_caster_t *caster = &block->casters[block->caster_count];
+        caster->object = attribute->object;
+        caster->fixed = (fields[1] & 0xFF) != 0;
+        memcpy(&caster->length, &fields[2], sizeof(float));
+        caster->redraw = (fields[3] & 0xFF) != 0;
+        caster->mesh = entity_mesh_at(engine, attribute->object, fields[0]);
+        const nmo_vertex_t *vertices = NULL;
+        const nmo_face_t *faces = NULL;
+        const nmo_mesh_state_t *state = caster_mesh(engine, caster->mesh, &vertices, &faces);
+        if (state == NULL || vertices == NULL) {
+            return false; /* "3dEntity hat keine Mesh!" */
+        }
+        block->caster_count++;
+        int32_t face_count = (int32_t)state->face_count;
+        caster->edges = (stencil_edge_t *)calloc((size_t)(face_count > 0 ? 3 * face_count : 1), sizeof(*caster->edges));
+        for (int32_t face = 0; caster->edges != NULL && state->face_vertex_indices != NULL && face < face_count; face++) {
+            const uint16_t *k = &state->face_vertex_indices[3 * face];
+            if (k[0] >= state->vertex_count || k[1] >= state->vertex_count || k[2] >= state->vertex_count) {
+                continue;
+            }
+            stencil_edge_of_face(caster, state, vertices, face, k[0], k[1]);
+            stencil_edge_of_face(caster, state, vertices, face, k[1], k[2]);
+            stencil_edge_of_face(caster, state, vertices, face, k[2], k[0]);
+        }
+        caster->pairs = (int32_t (*)[2])calloc((size_t)(caster->edge_count > 0 ? caster->edge_count : 1),
+                                               sizeof(*caster->pairs));
+        caster->slots = caster->edge_count > 16383 ? 16383 : caster->edge_count;
+        nmo_mesh_state_t *shadow = NULL;
+        caster->shadow_entity = eng_create_object(engine, NMO_CID_3DENTITY, "ShadowEnt");
+        caster->shadow_mesh = eng_create_mesh(engine, "ShadowMesh", 4 * caster->slots, 2 * caster->slots, &shadow);
+        if (caster->shadow_entity == 0 || caster->shadow_mesh == 0) {
+            return false; /* "ShadowEntity konnte nicht erstellt werden" */
+        }
+        for (int32_t s = 0; s < caster->slots; s++) {
+            const uint16_t q = (uint16_t)(4 * s);
+            const uint16_t quad[6] = {q, (uint16_t)(q + 2), (uint16_t)(q + 1), (uint16_t)(q + 1), (uint16_t)(q + 2),
+                                      (uint16_t)(q + 3)};
+            memcpy(&shadow->face_vertex_indices[6 * s], quad, sizeof(quad));
+        }
+        eng_entity_set_current_mesh(engine, caster->shadow_entity, caster->shadow_mesh);
+    }
+    return true;
+}
+
+/* The light's direction for a caster: toward its target (a spot with one), else against its Z axis
+   (in the world, as the DLL takes it) */
+static eng_vector_t stencil_light_direction(nmo_engine_t *engine, int32_t light, int32_t object,
+                                            const eng_vector_t *at, int32_t type)
+{
+    if (type == VX_LIGHTSPOT) {
+        const eng_light_t *state = eng_light(engine, engine->entities.data[light].id);
+        int32_t target = state != NULL ? eng_entity_index(engine, state->target) : -1;
+        if (target >= 0) {
+            eng_vector_t to = eng_entity_position(engine, target, object);
+            eng_vector_t d = {at->x - to.x, at->y - to.y, at->z - to.z};
+            return unit_of(&d);
+        }
+    }
+    eng_vector_t dir, up, right;
+    eng_entity_orientation(engine, light, &dir, &up, &right, -1);
+    return (eng_vector_t){dir.x * -1.0f, dir.y * -1.0f, dir.z * -1.0f};
+}
+
+/* The silhouette and the volume of a caster this frame, in the object's space */
+static void stencil_caster_update(nmo_engine_t *engine, stencil_caster_t *caster, int32_t light, int32_t type)
+{
+    int32_t object = eng_entity_index(engine, caster->object);
+    const nmo_vertex_t *vertices = NULL;
+    const nmo_face_t *faces = NULL;
+    const nmo_mesh_state_t *state = caster_mesh(engine, caster->mesh, &vertices, &faces);
+    if (object < 0 || state == NULL || vertices == NULL || faces == NULL) {
+        return;
+    }
+    eng_vector_t at = eng_entity_position(engine, light, object);
+    bool point = type == VX_LIGHTPOINT;
+    eng_vector_t toward = point ? (eng_vector_t){0, 0, 0} : stencil_light_direction(engine, light, object, &at, type);
+    caster->pair_count = 0;
+    for (int32_t i = 0; i < caster->edge_count; i++) {
+        const stencil_edge_t *e = &caster->edges[i];
+        const nmo_vector_t *n0 = &faces[e->face0].normal;
+        if (point) {
+            eng_vector_t d = {at.x - e->centre0.x, at.y - e->centre0.y, at.z - e->centre0.z};
+            toward = unit_of(&d);
+        }
+        bool lit0 = n0->x * toward.x + toward.z * n0->z + toward.y * n0->y >= 0.0f;
+        if (e->face1 == -1) {
+            if (lit0) {
+                caster->pairs[caster->pair_count][0] = e->v1;
+                caster->pairs[caster->pair_count++][1] = e->v0;
+            }
+            continue;
+        }
+        const nmo_vector_t *n1 = &faces[e->face1].normal;
+        if (point) {
+            eng_vector_t d = {at.x - e->centre1.x, at.y - e->centre1.y, at.z - e->centre1.z};
+            toward = unit_of(&d);
+        }
+        bool lit1 = n1->x * toward.x + toward.z * n1->z + toward.y * n1->y >= 0.0f;
+        if (lit0 && !lit1) {
+            caster->pairs[caster->pair_count][0] = e->v0;
+            caster->pairs[caster->pair_count++][1] = e->v1;
+        } else if (!lit0 && lit1) {
+            caster->pairs[caster->pair_count][0] = e->v1;
+            caster->pairs[caster->pair_count++][1] = e->v0;
+        }
+    }
+    eng_mesh_copy_t *copy = eng_mesh_copy(engine, caster->shadow_mesh);
+    if (copy == NULL) {
+        return;
+    }
+    for (int32_t s = 0; s < caster->slots; s++) {
+        nmo_vertex_t *v = &copy->vertices[4 * s];
+        if (s >= caster->pair_count) {
+            for (int k = 0; k < 4; k++) {
+                v[k].position = (nmo_vector_t){0.0f, 0.0f, 0.0f}; /* a quad with no room: out of the way */
+            }
+            continue;
+        }
+        eng_vector_t pa = mesh_point(vertices, caster->pairs[s][0]), pb = mesh_point(vertices, caster->pairs[s][1]);
+        eng_vector_t da = toward, db = toward;
+        if (point) {
+            eng_vector_t a = {at.x - pa.x, at.y - pa.y, at.z - pa.z}, c = {at.x - pb.x, at.y - pb.y, at.z - pb.z};
+            da = unit_of(&a);
+            db = unit_of(&c);
+        }
+        v[0].position = (nmo_vector_t){pa.x, pa.y, pa.z};
+        v[1].position = (nmo_vector_t){pb.x, pb.y, pb.z};
+        v[2].position = (nmo_vector_t){pa.x - da.x * caster->length, pa.y - da.y * caster->length,
+                                       pa.z - da.z * caster->length};
+        v[3].position = (nmo_vector_t){pb.x - db.x * caster->length, pb.y - db.y * caster->length,
+                                       pb.z - db.z * caster->length};
+    }
+    eng_mesh_vertices_moved(engine, copy, false);
+}
+
+/*
+ * TT_SceneStencilShadow's render callback: each caster's volume drawn to the
+ * stencil only, its front then (turned over) its back; the ShadowSprite
+ * over the screen where the stencil is not 0; the casters asking for it
+ * drawn again there without the depth test. As in CK, a stencil-only mesh
+ * writes 1 where it passes the depth test whatever the block's increment
+ * and decrement states, so the shadow is wherever a volume shows. The DLL
+ * clears the stencil first; the frame's clear stands in for it here.
+ */
+static void stencil_shadow_draw(nmo_engine_t *engine, stencil_block_t *block)
+{
+    nmo_engine_stencil_t saved = engine->render.stencil;
+    for (int pass = 0; pass < 2; pass++) {
+        for (int32_t i = 0; i < block->caster_count; i++) {
+            const stencil_caster_t *caster = &block->casters[i];
+            int32_t object = eng_entity_index(engine, caster->object);
+            if (object < 0 || caster->shadow_entity == 0) {
+                continue;
+            }
+            nmo_engine_draw_t *draw = eng_render_entity_mesh(engine, caster->shadow_entity, caster->shadow_mesh,
+                                                             &engine->entities.data[object].world.m[0][0], false);
+            if (draw != NULL) {
+                draw->stencil_only = true;
+                draw->mirrored = pass == 1;
+            }
+        }
+    }
+    eng_render_use_stencil_bits(engine, 1u);
+    nmo_engine_stencil_t *stencil = &engine->render.stencil;
+    stencil->enabled = true;
+    stencil->func = VXCMP_NOTEQUAL;
+    stencil->fail = stencil->zfail = stencil->pass = VXSTENCILOP_KEEP;
+    stencil->ref = 0;
+    stencil->mask = 0xFFFFFFFFu;
+    stencil->write_mask = 0xFFu;
+    if (block->sprite != 0) {
+        const eng_screen_mode_t *mode =
+            &eng_screen_modes[engine->render.screen_mode >= 0 && engine->render.screen_mode < ENG_SCREEN_MODE_COUNT
+                                  ? engine->render.screen_mode
+                                  : 0];
+        eng_show(engine, block->sprite, 1);
+        eng_render_2d_entity(engine, block->sprite, (float)mode->width, (float)mode->height);
+        eng_show(engine, block->sprite, 0);
+    }
+    for (int32_t i = 0; i < block->caster_count; i++) {
+        const stencil_caster_t *caster = &block->casters[i];
+        int32_t object = eng_entity_index(engine, caster->object);
+        nmo_object_id_t mesh = object >= 0 ? current_mesh_of(engine, caster->object) : 0;
+        if (!caster->redraw || mesh == 0) {
+            continue;
+        }
+        nmo_engine_draw_t *draw = eng_render_entity_mesh(engine, caster->object, mesh,
+                                                         &engine->entities.data[object].world.m[0][0], false);
+        if (draw != NULL) {
+            draw->no_z_test = true;
+        }
+    }
+    engine->render.stencil = saved;
+}
+
+/*
+ * TT_SceneStencilShadow: shadows of the objects with the StencilShadow
+ * attribute (its mesh index, whether the shadow is made once, how far it
+ * reaches, whether the object is drawn over it) from Light, in ShadowColor,
+ * drawn after the scene each frame. On makes each caster's edges (faces
+ * meeting at the same places), the "ShadowSprite" and its "ShadowMat";
+ * each frame the edges between a lit and an unlit face (or open and lit)
+ * are pushed away from the light into a volume. The machine has a stencil
+ * buffer.
+ */
+static int bb_scene_stencil_shadow(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    int32_t light = input_entity(b, 0);
+    if (light < 0) {
+        return NMO_ENGINE_BR_GENERICERROR; /* "kein Licht ausgewählt" */
+    }
+    const eng_light_t *light_state = eng_light(engine, engine->entities.data[light].id);
+    int32_t light_type = light_state != NULL ? light_state->type : VX_LIGHTPOINT;
+    nmo_engine_block_set_local_value(b, 3, &engine->entities.data[light].world, sizeof(eng_matrix_t));
+    toolbox_render_t *tr = (toolbox_render_t *)eng_manager_state(engine, &toolbox_render);
+    int32_t *queued = NULL;
+    if (tr != NULL && ENG_VEC_PUSH(tr->stencil_frame, queued)) {
+        *queued = b->node;
+    }
+    bool on = false;
+    stencil_block_t *block = stencil_block(engine, b->node, true);
+    if (IN_ACTIVE(b, 0)) {
+        on = true;
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+        if (block == NULL) {
+            return NMO_ENGINE_BR_GENERICERROR;
+        }
+        block->sprite = eng_create_object(engine, NMO_CID_2DENTITY, "ShadowSprite");
+        block->material = eng_create_object(engine, NMO_CID_MATERIAL, "ShadowMat");
+        eng_material_t *material = block->material != 0 ? eng_material(engine, block->material) : NULL;
+        if (material == NULL && block->material != 0) {
+            material = eng_material_new(engine, block->material);
+        }
+        if (block->sprite == 0 || material == NULL) {
+            return NMO_ENGINE_BR_GENERICERROR; /* "Sprite konnte nicht erstellt werden" */
+        }
+        float color[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        nmo_engine_block_get_input_value(b, 1, color, sizeof(color));
+        const float black[4] = {0.0f, 0.0f, 0.0f, 1.0f}, white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+        memcpy(material->desc.ambient, black, sizeof(black));
+        memcpy(material->desc.diffuse, color, sizeof(color));
+        memcpy(material->desc.specular, black, sizeof(black));
+        memcpy(material->desc.emissive, white, sizeof(white));
+        material->desc.alpha_blend = true;
+        material->desc.source_blend = VXBLEND_SRCALPHA;
+        material->desc.dest_blend = VXBLEND_INVSRCALPHA;
+        eng_add_to_level_scene(engine, block->sprite);
+        eng_2d_t *sprite = eng_2d_entity(engine, block->sprite);
+        if (sprite != NULL) {
+            sprite->flags |= CK_2DENTITY_USEHOMOGENEOUSCOORD; /* SetHomogeneousCoordinates */
+            sprite->material = block->material;
+        }
+        eng_2d_set_position(engine, block->sprite, 0.0f, 0.0f, true, false, 0);
+        eng_2d_set_size(engine, block->sprite, 1.0f, 1.0f, true, false);
+        eng_show(engine, block->sprite, 0);
+        uint32_t ids[2] = {(uint32_t)block->sprite, (uint32_t)block->material};
+        nmo_engine_block_set_local_value(b, 1, &ids[0], sizeof(ids[0]));
+        nmo_engine_block_set_local_value(b, 2, &ids[1], sizeof(ids[1]));
+        int32_t type = attribute_type_named_tt(engine, "StencilShadow");
+        if (type >= 0 && !stencil_casters_make(b, block, type)) {
+            return NMO_ENGINE_BR_GENERICERROR;
+        }
+    }
+    for (int32_t i = 0; block != NULL && i < block->caster_count; i++) {
+        if (block->casters[i].fixed && !on) {
+            continue;
+        }
+        stencil_caster_update(engine, &block->casters[i], light, light_type);
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
 static const nmo_engine_block_desc_t eng_tt_toolbox_blocks[] = {
     {NMO_GUID_INIT(0x594a136e,0x58135ef9),"TT Joystick Waiter",bb_tt_joystick_waiter,NULL,NULL},
     {NMO_GUID_INIT(0x229865eb,0x577619e4),"TT_TestForJoystick",bb_test_for_joystick,NULL,NULL},
@@ -4219,6 +4726,7 @@ static const nmo_engine_block_desc_t eng_tt_toolbox_blocks[] = {
     {NMO_GUID_INIT(0x137c3d66, 0x3ff1752d), "TT ShadowPlane", bb_shadow_plane, NULL, NULL},
     {NMO_GUID_INIT(0x334c7dfe, 0x47c81a31), "TT ShadowMapping", bb_shadow_mapping, shadow_mapping_callback, NULL},
     {NMO_GUID_INIT(0x241b32a5, 0x71fe3357), "TT_LensFlare", bb_lens_flare, lens_flare_callback, NULL},
+    {NMO_GUID_INIT(0x4dcf4ca0, 0x474e25ec), "TT_SceneStencilShadow", bb_scene_stencil_shadow, NULL, NULL},
     {NMO_GUID_INIT(0x0fd4755f, 0x7de22dc8), "TT Set Dynamic Position", bb_set_dynamic_position, NULL,
      NULL},
 };
@@ -4230,5 +4738,9 @@ nmo_status_t eng_register_tt_toolbox(nmo_engine_t *engine)
         return status;
     }
     eng_tt(engine)->timing = true;
+    status = eng_add_manager(engine, &toolbox_render, NULL);
+    if (status != NMO_OK) {
+        return status;
+    }
     return ENG_REGISTER_BLOCKS(engine, eng_tt_toolbox_blocks);
 }
