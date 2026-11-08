@@ -1061,6 +1061,200 @@ static int bb_face_face_intersection(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* ============================================================================
+ * Floors
+ * ============================================================================ */
+
+/* CK3dEntity::GetBoundingBox: a character's is its hierarchy's */
+static void bounding_box(nmo_engine_t *engine, int32_t index, eng_vector_t *min, eng_vector_t *max)
+{
+    if (nmo_engine_object_class(engine, engine->entities.data[index].id) == NMO_CID_CHARACTER) {
+        eng_entity_hierarchical_box(engine, index, min, max);
+    } else {
+        eng_entity_world_box(engine, index, min, max);
+    }
+}
+
+/* The floor CK_FLOORNEAREST names and its distance */
+static nmo_object_id_t nearest_floor(int nearest, const eng_floor_point_t *point, float *distance)
+{
+    *distance = nearest == CKFLOOR_UP ? point->up_distance : point->down_distance;
+    return nearest == CKFLOOR_UP ? point->up_floor : nearest == CKFLOOR_DOWN ? point->down_floor : 0;
+}
+
+/*
+ * Declare Floors: every 3D entity of the level whose name holds Key Substring
+ * gets the Floor attribute, with the Attributes structure's fields.
+ */
+static int bb_declare_floors(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    const char *key = input_string(b, 0);
+    eng_floor_settings_t settings = {CKFLOOR_FACES, 1, 0, 0, 1};
+    eng_param_t *attributes = input_source(b, 1, true);
+    if (attributes != NULL && attributes->data != NULL) {
+        int32_t *fields[5] = {&settings.geometry, &settings.moving, &settings.type, &settings.hierarchy,
+                              &settings.first};
+        for (uint32_t i = 0; i < 5; i++) {
+            eng_struct_field(engine, attributes->id, attributes->data, attributes->size, i, fields[i]);
+        }
+    }
+    for (size_t i = 0; key != NULL && i < engine->entities.count; i++) {
+        const eng_entity_t *entity = &engine->entities.data[i];
+        const char *name = entity->destroyed ? NULL : nmo_engine_object_name(engine, entity->id);
+        if (name != NULL && strstr(name, key) != NULL) {
+            eng_floor_add(engine, entity->id, &settings);
+        }
+    }
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Floor Manager Setup: the limit angle (the cache settings do nothing) */
+static int bb_floor_manager_setup(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    float angle = get_in_float(b, 0, 0.0f);
+    b->engine->floors.cache_size = get_in_int(b, 1, 8);
+    b->engine->floors.cache_threshold = get_in_float(b, 2, 0.1f);
+    eng_floor_set_limit_angle(b->engine, angle);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * Get Nearest Floors: the floors above and below Position (in Referential's
+ * space); both floors' outputs are written whichever is nearer, the Floor
+ * Type of a missing one being the other's.
+ */
+static int bb_get_nearest_floors(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    if (target_entity(b) < 0) {
+        OUT_ON(b, 0);
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    IN_OFF(b, 0);
+    eng_vector_t pos = get_in_vector(b, 0, 0.0f, 0.0f, 0.0f), local = pos;
+    int32_t ref = input_entity(b, 1);
+    if (ref >= 0) {
+        eng_entity_transform(engine, ref, &pos, &local, -1);
+    }
+    eng_floor_point_t point;
+    int nearest = eng_floor_nearest(engine, &pos, &point, 0);
+    if (nearest == CKFLOOR_NOFLOOR) {
+        OUT_ON(b, 0);
+        return NMO_ENGINE_BR_OK;
+    }
+    eng_floor_settings_t settings = {0, 0, 0, 0, 0};
+    set_out(b, 0, &point.down_floor, sizeof(point.down_floor));
+    eng_floor_read(engine, point.down_floor, &settings);
+    set_out_int(b, 1, settings.type);
+    set_out(b, 2, &point.down_normal, sizeof(point.down_normal));
+    set_out_float(b, 3, point.down_distance);
+    set_out_int(b, 4, point.down_face);
+    set_out(b, 5, &point.up_floor, sizeof(point.up_floor));
+    eng_floor_read(engine, point.up_floor, &settings);
+    set_out_int(b, 6, settings.type);
+    set_out(b, 7, &point.up_normal, sizeof(point.up_normal));
+    set_out_float(b, 8, point.up_distance);
+    set_out_int(b, 9, point.up_face);
+    OUT_ON(b, nearest == CKFLOOR_DOWN ? 1 : 2);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Object Keep On Floor: the object moved up or down onto the floor nearest its box's bottom center */
+static int bb_object_keep_on_floor(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    int32_t entity = target_entity(b);
+    if (entity < 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    eng_vector_t min, max;
+    bounding_box(engine, entity, &min, &max);
+    eng_vector_t pos = v3((max.x + min.x) * 0.5f, min.y, (max.z + min.z) * 0.5f);
+    eng_floor_point_t point;
+    float distance;
+    if (nearest_floor(eng_floor_nearest(engine, &pos, &point, 0), &point, &distance) != 0) {
+        eng_vector_t move = v3(0.0f, distance, 0.0f);
+        eng_entity_translate(engine, entity, &move, -1, false);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * Character Keep On Floor: the character moved onto the floors under its
+ * floor reference object (else under its box's bottom center): onto the upper
+ * floor whenever there is one, nearer or not.
+ */
+static int bb_character_keep_on_floor(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t owner = nmo_engine_block_owner(b);
+    int32_t character = eng_entity_index(engine, owner);
+    IN_OFF(b, 0);
+    if (character >= 0) {
+        int32_t reference = eng_entity_index(engine, eng_character_floor_reference(engine, owner));
+        eng_vector_t pos, min, max;
+        if (reference >= 0) {
+            pos = eng_entity_position(engine, reference, -1);
+        } else {
+            bounding_box(engine, character, &min, &max);
+            pos = v3((max.x + min.x) * 0.5f, min.y, (max.z + min.z) * 0.5f);
+        }
+        eng_floor_point_t point;
+        if (eng_floor_nearest(engine, &pos, &point, 0) != CKFLOOR_NOFLOOR) {
+            pos = eng_entity_position(engine, character, -1);
+            if (point.up_floor != 0) {
+                pos.y += point.up_distance;
+            } else if (point.down_floor != 0) {
+                pos.y += point.down_distance;
+            }
+            eng_entity_set_position(engine, character, &pos, -1, false);
+        }
+    }
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * Floor Slider (later SDK, not in Ballance's DLL): the object kept a Radius
+ * inside the borders of the floors it moves over, from where it was last
+ * frame (the local, at the origin at first).
+ */
+static int bb_floor_slider(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    int32_t ball = target_entity(b);
+    if (ball < 0) {
+        if (IN_ACTIVE(b, 0)) {
+            IN_OFF(b, 0);
+        }
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    eng_vector_t pos = eng_entity_position(engine, ball, -1), old = pos, out;
+    nmo_engine_block_get_local_value(b, 0, &old, sizeof(old));
+    float radius = get_in_float(b, 0, 1.0f);
+    bool touched = eng_floor_constrain(engine, &old, &pos, radius, &out, -1);
+    if (touched) {
+        eng_entity_set_position(engine, ball, &out, -1, false);
+        nmo_engine_block_set_local_value(b, 0, &out, sizeof(out));
+    } else {
+        nmo_engine_block_set_local_value(b, 0, &pos, sizeof(pos));
+    }
+    OUT_ON(b, touched ? 0 : 1);
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
 static const nmo_engine_block_desc_t eng_collisions_blocks[] = {
     {NMO_GUID_INIT(0x64154401, 0x76cf37af), "Box Box Intersection", bb_box_box_intersection, NULL, NULL},
     {NMO_GUID_INIT(0x198531f9, 0x60f66c57), "Sphere Sphere Intersection", bb_sphere_sphere_intersection, NULL, NULL},
@@ -1069,6 +1263,12 @@ static const nmo_engine_block_desc_t eng_collisions_blocks[] = {
     {NMO_GUID_INIT(0x4d6075e1, 0x2dda272e), "Frustum Object Intersection", bb_frustum_object_intersection, NULL, NULL},
     {NMO_GUID_INIT(0x0f1c5480, 0x04a811cb), "Box Face Intersection", bb_box_face_intersection, NULL, NULL},
     {NMO_GUID_INIT(0x11426a61, 0x1a815584), "Face Face Intersection", bb_face_face_intersection, NULL, NULL},
+    {NMO_GUID_INIT(0x8e43cd12, 0x98dc215d), "Declare Floors", bb_declare_floors, NULL, NULL},
+    {NMO_GUID_INIT(0x3a271561, 0x1d8c4b45), "Floor Manager Setup", bb_floor_manager_setup, NULL, NULL},
+    {NMO_GUID_INIT(0x6dad424e, 0x54b6003d), "Get Nearest Floors", bb_get_nearest_floors, NULL, NULL},
+    {NMO_GUID_INIT(0x43617677, 0x7de15e12), "Object Keep On Floor", bb_object_keep_on_floor, NULL, NULL},
+    {NMO_GUID_INIT(0xdbac2124, 0x6adcbfa4), "Character Keep On Floor", bb_character_keep_on_floor, NULL, NULL},
+    {NMO_GUID_INIT(0x136044b0, 0x1c59b21a), "Floor Slider", bb_floor_slider, NULL, NULL},
 };
 
 nmo_status_t eng_register_collisions(nmo_engine_t *engine)

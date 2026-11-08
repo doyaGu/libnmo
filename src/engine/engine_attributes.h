@@ -26,6 +26,10 @@ typedef struct eng_attribute {
     int32_t type;
     bool has_value;
     eng_param_t value;
+    /* A structure value's fields set at run time (a manager's SetValue on its
+       sub-parameters, which the engine does not make): read in place of them; NULL when none */
+    int32_t *fields;
+    uint32_t field_count;
 } eng_attribute_t;
 
 typedef struct eng_attributes {
@@ -38,5 +42,9 @@ void eng_free_attributes(nmo_engine_t *engine);
 /* The attribute of that type the object has; NULL when it has none */
 eng_attribute_t *eng_attribute_find(const nmo_engine_t *engine, nmo_object_id_t object,
                                     int32_t type);
+/* A field of a structure value (its sub-parameters' IDs, one a field, local to the module of
+   `holder`): the int its parameter holds in `*out`; false when the field has no parameter */
+bool eng_struct_field(nmo_engine_t *engine, nmo_object_id_t holder, const uint8_t *data,
+                      uint32_t size, uint32_t field, int32_t *out);
 
 #endif /* NMO_ENGINE_ATTRIBUTES_H */

@@ -38,18 +38,6 @@ static void shadow_off_floor(nmo_engine_t *engine, nmo_object_id_t material, nmo
     }
 }
 
-/* The Floor attribute (CKFloorManager::GetFloorAttribute) */
-static int32_t floor_attribute(const nmo_engine_t *engine)
-{
-    for (size_t t = 0; t < engine->attributes.types.count; t++) {
-        const eng_attribute_type_t *type = &engine->attributes.types.data[t];
-        if (type->present && type->name != NULL && strcmp(type->name, "Floor") == 0) {
-            return (int32_t)t;
-        }
-    }
-    return -1;
-}
-
 nmo_object_id_t eng_floor_shadow_material(nmo_engine_t *engine, const char *name)
 {
     nmo_object_id_t id = eng_create_object(engine, NMO_CID_MATERIAL, name);
@@ -101,7 +89,7 @@ void eng_floor_shadow_place(nmo_engine_t *engine, eng_floor_shadow_t *shadow, nm
     memcpy(old, shadow->floors, sizeof(old));
     eng_vector_t positions[ENG_SHADOW_FLOORS], scales[ENG_SHADOW_FLOORS];
     int32_t count = 0;
-    int32_t type = floor_attribute(engine);
+    int32_t type = eng_floor_attribute(engine);
     for (size_t i = 0; type >= 0 && i < engine->attributes.values.count; i++) {
         const eng_attribute_t *attribute = &engine->attributes.values.data[i];
         int32_t floor = attribute->type == type ? eng_entity_index(engine, attribute->object) : -1;

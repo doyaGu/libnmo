@@ -210,6 +210,7 @@ nmo_status_t nmo_engine_create(nmo_workspace_t *workspace,
     /* CKTimeManager's constructor */
     engine->time_settings = (nmo_engine_time_settings_t){0x10u | 0x1u, 60.0f, 60.0f, 1.0f, 1.0f,
                                                          200.0f};
+    eng_floors_init(engine);
 
     nmo_status_t status = eng_module_open(engine, workspace, NULL, NULL, NULL);
     if (status == NMO_OK) {
@@ -262,6 +263,7 @@ void nmo_engine_destroy(nmo_engine_t *engine)
     eng_free_characters(engine);
     eng_free_kinematics(engine);
     eng_free_attributes(engine);
+    eng_free_floors(engine);
     eng_free_host(engine);
     free(engine->node_map.slots);
     free(engine->io_map.slots);

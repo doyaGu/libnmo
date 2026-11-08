@@ -136,6 +136,10 @@ bool eng_ray_box(const eng_vector_t *origin, const eng_vector_t *dir, const eng_
                  const eng_vector_t *max);
 int eng_entity_ray_intersection(nmo_engine_t *engine, int32_t index, const eng_vector_t *pos1,
                                 const eng_vector_t *pos2, eng_ray_hit_t *hit);
+/* VxIntersect::PointInFace: the projection axes of the face's dominant normal in `i1`, `i2`;
+   0 outside. */
+int eng_point_in_face(const float *p, const float *a, const float *b, const float *c,
+                      const nmo_vector_t *n, int *i1, int *i2);
 /* FloorManager's vertical line query, using upward faces within its 80-degree limit. */
 bool eng_entity_floor_height(nmo_engine_t *engine, int32_t index, const eng_vector_t *position,
     bool box, bool first, float *height);

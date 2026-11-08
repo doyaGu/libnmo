@@ -8,9 +8,13 @@
 #include "object/builtin/nmo_character_schemas.h"
 #include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
+#include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
+#include "object/nmo_object_edit.h"
+#include "object/nmo_object_enum_defs.h"
 #include "object/nmo_ref.h"
 #include "type/nmo_object_guids.h"
+#include "type/nmo_param_guids.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -37,6 +41,11 @@
 #define GUID_PROXIMITY_VOLUME NMO_GUID(0x38571b61, 0x64cd2174)
 #define GUID_TEXTURE_SINE NMO_GUID(0x009c1208, 0x3a8d779e)
 #define GUID_CHARACTER_NEAREST NMO_GUID(0x4321abcd, 0x0eeaabdd)
+#define GUID_DECLARE_FLOORS NMO_GUID(0x8e43cd12, 0x98dc215d)
+#define GUID_FLOOR_MANAGER_SETUP NMO_GUID(0x3a271561, 0x1d8c4b45)
+#define GUID_GET_NEAREST_FLOORS NMO_GUID(0x6dad424e, 0x54b6003d)
+#define GUID_OBJECT_KEEP_ON_FLOOR NMO_GUID(0x43617677, 0x7de15e12)
+#define GUID_FLOOR_SLIDER NMO_GUID(0x136044b0, 0x1c59b21a)
 
 #define PI_F 3.14159265f
 
@@ -1204,6 +1213,125 @@ TEST(engine_transform, collision_intersection_tests_spheres_boxes_faces_and_the_
     fixture_end(&f);
 }
 
+/* A saved Floor attribute on `object`: Floor Geometry and Floor Type set, the rest without a parameter */
+static void floor_attribute(engine_fixture_t *f, nmo_object_id_t object, int32_t geometry, int32_t type)
+{
+    nmo_manager_entry_create_options_t options = {.enabled = true, .attribute_type_guid = CKPGUID_FLOOR,
+        .category = "Floor Manager", .has_compatible_class_id = true, .compatible_class_id = NMO_CID_3DENTITY,
+        .has_flags = true, .flags = 0};
+    uint32_t attribute = 0;
+    ASSERT_EQ(NMO_OK, nmo_object_edit_ensure_attribute_manager_entry(nmo_script_edit_workspace_edit(f->tx), "Floor",
+                                                                     &options, &attribute));
+    nmo_object_id_t parameter = fixture_create(f, NMO_CID_PARAMETEROUT, "Floor");
+    nmo_parameter_state_t *state = (nmo_parameter_state_t *)fixture_state(f, parameter);
+    state->has_state = true;
+    state->mode = CKPARAM_MODE_BUFFER;
+    state->type_guid = CKPGUID_FLOOR;
+    ASSERT_EQ(NMO_OK, nmo_array_alloc(&state->buffer_data, 1, 20, NULL));
+    memset(state->buffer_data.data, 0, 20);
+    const int32_t values[3] = {geometry, 0, type};
+    for (int i = 0; i < 3; i += 2) {
+        nmo_object_id_t field = fixture_create(f, NMO_CID_PARAMETERLOCAL, "Field");
+        nmo_parameter_state_t *value = (nmo_parameter_state_t *)fixture_state(f, field);
+        value->has_state = true;
+        value->mode = CKPARAM_MODE_BUFFER;
+        value->type_guid = CKPGUID_INT;
+        ASSERT_EQ(NMO_OK, nmo_array_alloc(&value->buffer_data, 1, 4, NULL));
+        memcpy(value->buffer_data.data, &values[i], 4);
+        memcpy((uint8_t *)state->buffer_data.data + 4 * i, &field, 4);
+    }
+    ASSERT_EQ(NMO_OK, nmo_beobject_attribute_array_append(&((nmo_beobject_state_t *)fixture_state(f, object))->attributes,
+                                                          parameter, attribute, NULL));
+}
+
+/* A Get Nearest Floors of `position` linked from `from`, its Nop on output `out` */
+static nmo_object_id_t nearest_floors(engine_fixture_t *f, nmo_object_id_t from, float x, float y, float z,
+                                      int out, nmo_object_id_t *next)
+{
+    nmo_object_id_t block = target_block(f, GUID_GET_NEAREST_FLOORS, "Get Nearest Floors", f->owner_id, from);
+    if (block == 0) {
+        return 0;
+    }
+    const float position[3] = {x, y, z};
+    fixture_input_value(f, BLOCK_PIN(f, block, 0), position, sizeof(position));
+    *next = BLOCK_OUT(f, block, (size_t)out);
+    return block;
+}
+
+TEST(engine_transform, floors_are_declared_found_kept_on_and_slid_within)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t ground = floor_object(&f); /* "Floor", 10 x 10 on y = 0 */
+    const float wedge[9] = {-1, -0.5f, -1, 0, 0.5f, 1, 1, -0.5f, -1}; /* a box of half height 0.5 */
+    nmo_object_id_t roof = triangle_object(&f, "Roof", wedge, 0.0f, 3.0f, 0.0f); /* 2.5 to 3.5 */
+    const float slope[9] = {-1, -1, -1, 0, 0, 1, 1, 1, -1}; /* rising 45 degrees along x */
+    nmo_object_id_t ramp = triangle_object(&f, "Ramp Floor", slope, 20.0f, 0.0f, 0.0f);
+    nmo_object_id_t crate = cube_object(&f, "Crate", 3.0f, 0.0f);
+    nmo_object_id_t ball = cube_object(&f, "Ball", 4.5f, 0.0f);
+    ASSERT_TRUE(ground && roof && ramp && crate && ball);
+    ((nmo_3dentity_state_t *)fixture_state(&f, crate))->world_matrix[13] = 2.0f;  /* bottom at 1.5 */
+    ((nmo_3dentity_state_t *)fixture_state(&f, crate))->world_matrix[14] = 3.0f;
+    ((nmo_3dentity_state_t *)fixture_state(&f, ball))->world_matrix[13] = 0.5f;
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    floor_attribute(&f, roof, CKFLOOR_BOX, 7); /* not named a floor: a box floor of type 7 (with faces,
+                                                  or it would be skipped) */
+    nmo_object_id_t declare = fixture_block(&f, GUID_DECLARE_FLOORS, "Declare Floors");
+    ASSERT_TRUE(declare != 0);
+    fixture_input_value(&f, BLOCK_PIN(&f, declare, 0), "Floor", 6);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, declare, 0), 0);
+    nmo_object_id_t next = 0;
+    /* Under the roof: the ground 1 below is nearer than the roof 1.5 above */
+    nmo_object_id_t middle = nearest_floors(&f, BLOCK_OUT(&f, declare, 0), 0.0f, 1.0f, 0.0f, 1, &next);
+    /* The ramp is a floor within 80 degrees, not within 30 */
+    nmo_object_id_t steep = nearest_floors(&f, next, 20.0f, 5.0f, -0.5f, 1, &next);
+    nmo_object_id_t setup = fixture_block(&f, GUID_FLOOR_MANAGER_SETUP, "Floor Manager Setup");
+    ASSERT_TRUE(middle && steep && setup);
+    fixture_link(&f, next, BLOCK_IN(&f, setup, 0), 0);
+    const float angle = 30.0f * PI_F / 180.0f;
+    fixture_input_value(&f, BLOCK_PIN(&f, setup, 0), &angle, sizeof(angle));
+    nmo_object_id_t flat = nearest_floors(&f, BLOCK_OUT(&f, setup, 0), 20.0f, 5.0f, -0.5f, 0, &next);
+    nmo_object_id_t keep = target_block(&f, GUID_OBJECT_KEEP_ON_FLOOR, "Object Keep On Floor", crate, next);
+    nmo_object_id_t slider = target_block(&f, GUID_FLOOR_SLIDER, "Floor Slider", ball, BLOCK_OUT(&f, keep, 0));
+    nmo_object_id_t contact = fixture_block(&f, GUID_NOP, "Contact");
+    ASSERT_TRUE(flat && keep && slider && contact);
+    fixture_link(&f, BLOCK_OUT(&f, slider, 0), BLOCK_IN(&f, contact, 0), 0);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1u, runs(&f, contact));
+    nmo_object_id_t lower = 0, upper = 0;
+    int32_t lower_type = -1, upper_type = -1, lower_face = -2;
+    float lower_distance = 0.0f, upper_distance = 0.0f, upper_normal[3];
+    read_value(&f, BLOCK_POUT(&f, middle, 0), &lower, sizeof(lower));
+    read_value(&f, BLOCK_POUT(&f, middle, 1), &lower_type, sizeof(lower_type));
+    read_value(&f, BLOCK_POUT(&f, middle, 3), &lower_distance, sizeof(lower_distance));
+    read_value(&f, BLOCK_POUT(&f, middle, 4), &lower_face, sizeof(lower_face));
+    read_value(&f, BLOCK_POUT(&f, middle, 5), &upper, sizeof(upper));
+    read_value(&f, BLOCK_POUT(&f, middle, 6), &upper_type, sizeof(upper_type));
+    read_value(&f, BLOCK_POUT(&f, middle, 7), upper_normal, sizeof(upper_normal));
+    read_value(&f, BLOCK_POUT(&f, middle, 8), &upper_distance, sizeof(upper_distance));
+    ASSERT_EQ(ground, lower);
+    ASSERT_EQ(0, lower_type);
+    ASSERT_FLOAT_EQ(-1.0f, lower_distance, 0.0001f);
+    ASSERT_EQ(0, lower_face); /* "First Contact": the first face met */
+    ASSERT_EQ(roof, upper);
+    ASSERT_EQ(7, upper_type);
+    ASSERT_FLOAT_EQ(1.5f, upper_distance, 0.0001f);
+    ASSERT_FLOAT_EQ(2.0f, upper_normal[1], 0.0001f); /* the box's (0, -1, 0) transformed as a point */
+    nmo_object_id_t ramp_floor = 0;
+    float ramp_distance = 0.0f;
+    read_value(&f, BLOCK_POUT(&f, steep, 0), &ramp_floor, sizeof(ramp_floor));
+    read_value(&f, BLOCK_POUT(&f, steep, 3), &ramp_distance, sizeof(ramp_distance));
+    ASSERT_EQ(ramp, ramp_floor);
+    ASSERT_FLOAT_EQ(-5.0f, ramp_distance, 0.0001f);
+    ASSERT_POSITION(&f, crate, 3.0f, 0.5f, 3.0f); /* down onto the ground */
+    ASSERT_POSITION(&f, ball, 4.0f, 0.5f, 0.0f);  /* a radius in from the ground's edge at x = 5 */
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_transform, entity_slots_remain_stable_after_deletion);
 REGISTER_TEST(engine_transform, loaded_children_keep_their_place_under_the_parent);
@@ -1220,6 +1348,7 @@ REGISTER_TEST(engine_transform, tt_extra_circles_flies_away_and_homes_in);
 REGISTER_TEST(engine_transform, ray_intersection_finds_the_nearest_face);
 REGISTER_TEST(engine_transform, box_box_intersection_tests_oriented_boxes);
 REGISTER_TEST(engine_transform, collision_intersection_tests_spheres_boxes_faces_and_the_frustum);
+REGISTER_TEST(engine_transform, floors_are_declared_found_kept_on_and_slid_within);
 REGISTER_TEST(engine_transform, proximity_volume_control_runs_until_off);
 REGISTER_TEST(engine_transform, texture_sine_runs_its_clock_and_checks_the_channel);
 TEST_MAIN_END()

@@ -995,9 +995,8 @@ bool eng_ray_box(const eng_vector_t *origin, const eng_vector_t *dir, const eng_
     return near_t <= far_t;
 }
 
-/* VxIntersect::PointInFace: the projection axes of the face's dominant normal; 0 outside. */
-static int eng_point_in_face(const float *p, const float *a, const float *b, const float *c,
-                             const nmo_vector_t *n, int *i1, int *i2)
+int eng_point_in_face(const float *p, const float *a, const float *b, const float *c,
+                      const nmo_vector_t *n, int *i1, int *i2)
 {
     float largest = fabsf(n->x);
     *i1 = 1;

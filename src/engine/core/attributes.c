@@ -54,6 +54,8 @@ static nmo_status_t attribute_add(nmo_engine_t *engine, const eng_module_t *modu
     }
     attribute->object = object;
     attribute->type = type;
+    attribute->fields = NULL;
+    attribute->field_count = 0;
     attribute->has_value = !nmo_guid_is_null(value_type);
     if (attribute->has_value &&
         !attribute_value_init(engine, module, &attribute->value, value_type, state)) {
@@ -105,6 +107,7 @@ void eng_free_attributes(nmo_engine_t *engine)
 {
     for (size_t i = 0; i < engine->attributes.values.count; i++) {
         free(engine->attributes.values.data[i].value.data);
+        free(engine->attributes.values.data[i].fields);
     }
     free(engine->attributes.values.data);
     for (size_t i = 0; i < engine->attributes.types.count; i++) {
@@ -157,7 +160,44 @@ void eng_copy_attributes(nmo_engine_t *engine, nmo_object_id_t from, nmo_object_
         if (original->has_value && copy->has_value) {
             eng_param_copy(engine, &copy->value, (eng_param_t *)&original->value, false);
         }
+        if (original->fields != NULL) {
+            copy->fields = (int32_t *)malloc(original->field_count * sizeof(int32_t));
+            if (copy->fields != NULL) {
+                memcpy(copy->fields, original->fields, original->field_count * sizeof(int32_t));
+                copy->field_count = original->field_count;
+            }
+        }
     }
+}
+
+bool eng_struct_field(nmo_engine_t *engine, nmo_object_id_t holder, const uint8_t *data,
+                      uint32_t size, uint32_t field, int32_t *out)
+{
+    if (data == NULL || size / 4u <= field) {
+        return false;
+    }
+    nmo_object_id_t local;
+    memcpy(&local, data + 4u * field, 4);
+    const eng_module_t *module = local != 0 ? eng_module_of(engine, holder, NULL) : NULL;
+    nmo_object_id_t id = module != NULL ? eng_module_id(module, local) : 0;
+    if (id == 0) {
+        return false;
+    }
+    int32_t param = eng_map_get(&engine->param_map, id);
+    if (param >= 0) {
+        *out = eng_param_read_int(&engine->params.data[param]);
+        return true;
+    }
+    const nmo_parameter_state_t *state = (const nmo_parameter_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
+        engine->types, eng_find_object(engine, id), CKPGUID_PARAMETER);
+    uint8_t *bytes = NULL;
+    uint32_t count = 0;
+    bool found = state != NULL && eng_parameter_state_bytes(module, state, 4, &bytes, &count) && count >= 4;
+    if (found) {
+        memcpy(out, bytes, 4);
+    }
+    free(bytes);
+    return found;
 }
 
 bool nmo_engine_object_has_attribute(const nmo_engine_t *engine, nmo_object_id_t object,
@@ -221,6 +261,7 @@ bool nmo_engine_object_remove_attribute(nmo_engine_t *engine, nmo_object_id_t ob
         return false;
     }
     free(attribute->value.data);
+    free(attribute->fields);
     size_t index = (size_t)(attribute - engine->attributes.values.data);
     memmove(attribute, attribute + 1,
             (engine->attributes.values.count - index - 1u) * sizeof(eng_attribute_t));
