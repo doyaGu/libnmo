@@ -2,6 +2,7 @@
 
 #include "engine/nmo_engine_render.h"
 #include "type/nmo_type_guids.h"
+#include "type/nmo_param_guids.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_targetcamera_schemas.h"
@@ -9,6 +10,9 @@
 #include "object/builtin/nmo_curve_schemas.h"
 #include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_material_schemas.h"
+#include "object/builtin/nmo_parameter_schemas.h"
+#include "object/builtin/nmo_beobject_schemas.h"
+#include "object/nmo_object_edit.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/nmo_object_enum_defs.h"
 #include "object/nmo_ref.h"
@@ -73,6 +77,9 @@
 #define GUID_VIEW_FRUSTUM_CLIPPING NMO_GUID(0x412e4cd0, 0x6f860de3)
 #define GUID_BITMAP_FONT NMO_GUID(0x173e60ff, 0x4db14bcc)
 #define GUID_SKY_AROUND NMO_GUID(0x2c7d5826, 0x688778f4)
+#define GUID_SHADOW_PLANE NMO_GUID(0x137c3d66, 0x3ff1752d)
+#define GUID_SHADOW_MAPPING NMO_GUID(0x334c7dfe, 0x47c81a31)
+#define GUID_LENS_FLARE NMO_GUID(0x241b32a5, 0x71fe3357)
 
 /* The files the engine loads, from the scratch directory */
 static const char *resolve_scratch(void *user_data, const char *name)
@@ -909,10 +916,10 @@ static nmo_object_id_t placed(engine_fixture_t *f, int32_t cid, const char *name
     return id;
 }
 
-/* A unit cube (half size 0.5) at the position */
+/* A 3D object, a unit cube (half size 0.5), at the position */
 static nmo_object_id_t unit_cube(engine_fixture_t *f, const char *name, float x, float y, float z)
 {
-    nmo_object_id_t object = placed(f, NMO_CID_3DENTITY, name, x, y, z);
+    nmo_object_id_t object = placed(f, NMO_CID_3DOBJECT, name, x, y, z);
     nmo_object_id_t mesh = fixture_create(f, NMO_CID_MESH, name);
     nmo_mesh_state_t *state = mesh != 0 ? (nmo_mesh_state_t *)fixture_state(f, mesh) : NULL;
     if (object == 0 || state == NULL) {
@@ -1691,6 +1698,142 @@ TEST(engine_tt, sky_around_follows_the_viewpoint)
     fixture_end(&f);
 }
 
+/* The Floor attribute on `object` (while editing) */
+static void floor_attribute(engine_fixture_t *f, nmo_object_id_t object)
+{
+    nmo_manager_entry_create_options_t options = {.enabled = true, .attribute_type_guid = CKPGUID_FLOOR,
+        .category = "Floor Manager", .has_compatible_class_id = true, .compatible_class_id = NMO_CID_3DENTITY,
+        .has_flags = true, .flags = 0};
+    uint32_t attribute = 0;
+    ASSERT_EQ(NMO_OK, nmo_object_edit_ensure_attribute_manager_entry(nmo_script_edit_workspace_edit(f->tx), "Floor",
+                                                                     &options, &attribute));
+    nmo_object_id_t parameter = fixture_create(f, NMO_CID_PARAMETEROUT, "Floor");
+    nmo_parameter_state_t *state = (nmo_parameter_state_t *)fixture_state(f, parameter);
+    state->has_state = true;
+    state->mode = CKPARAM_MODE_BUFFER;
+    state->type_guid = CKPGUID_FLOOR;
+    ASSERT_EQ(NMO_OK, nmo_array_alloc(&state->buffer_data, 1, 20, NULL));
+    memset(state->buffer_data.data, 0, 20);
+    ASSERT_EQ(NMO_OK, nmo_beobject_attribute_array_append(&((nmo_beobject_state_t *)fixture_state(f, object))->attributes,
+                                                          parameter, attribute, NULL));
+}
+
+/* The frame's TRIANGLES draw of `object`; NULL for none */
+static const nmo_engine_draw_t *triangles_of(const nmo_engine_frame_t *frame, nmo_object_id_t object)
+{
+    for (int32_t i = 0; i < frame->draw_count; i++) {
+        if (frame->draws[i].kind == NMO_ENGINE_DRAW_TRIANGLES && frame->draws[i].object == object) {
+            return &frame->draws[i];
+        }
+    }
+    return NULL;
+}
+
+TEST(engine_tt, shadow_plane_and_mapping_project_the_box_from_the_light)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t ground_mesh = 0;
+    nmo_object_id_t ground = grid_object(&f, "Ground", 11, &ground_mesh); /* 0 to 10 in X and Z */
+    nmo_object_id_t box = unit_cube(&f, "Box", 5.0f, 2.0f, 5.0f);
+    nmo_object_id_t lamp = placed(&f, NMO_CID_LIGHT, "Lamp", 5.0f, 10.0f, 5.0f);
+    ASSERT_TRUE(ground && box && lamp);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    floor_attribute(&f, ground);
+    nmo_object_id_t plane = started_block(&f, GUID_SHADOW_PLANE, "Plane");
+    nmo_object_id_t mapping = started_block(&f, GUID_SHADOW_MAPPING, "Mapping");
+    ASSERT_TRUE(plane && mapping);
+    const float size[2] = {1.0f, 1.0f};
+    nmo_object_id_t blocks[2] = {plane, mapping};
+    for (int i = 0; i < 2; i++) {
+        fixture_input_int(&f, fixture_target(&f, blocks[i]), (int32_t)box);
+        fixture_input_int(&f, BLOCK_PIN(&f, blocks[i], 0), (int32_t)lamp);
+        fixture_input_value(&f, BLOCK_PIN(&f, blocks[i], 2), size, sizeof(size));
+        fixture_input_int(&f, BLOCK_PIN(&f, blocks[i], 3), VXBLEND_ZERO);
+        fixture_input_int(&f, BLOCK_PIN(&f, blocks[i], 4), VXBLEND_SRCCOLOR);
+    }
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, mapping, 1), 2); /* Off two frames on */
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+
+    /* Plane: the light 8 above, the floor 10 under it: the box's corners 1.25 times as far out */
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    const nmo_engine_draw_t *quad = triangles_of(&frame, box);
+    ASSERT_TRUE(quad != NULL);
+    ASSERT_EQ(6, quad->vertex_count);
+    ASSERT_TRUE(quad->no_z_test);
+    ASSERT_EQ(VXBLEND_SRCCOLOR, quad->dest_blend);
+    const nmo_engine_vertex_t *corner = &frame.vertices[quad->first_vertex];
+    ASSERT_FLOAT_EQ(5.625f, corner->x, 1e-4f);
+    ASSERT_FLOAT_EQ(0.0f, corner->y, 1e-4f);
+    ASSERT_FLOAT_EQ(5.625f, corner->z, 1e-4f);
+
+    /* Mapping: a channel on the floor, its UVs across that rectangle (1.25 wide round the box) */
+    nmo_engine_mesh_t out;
+    ASSERT_TRUE(nmo_engine_mesh(f.engine, ground_mesh, &out));
+    ASSERT_EQ(1, out.channel_count);
+    ASSERT_EQ(nmo_engine_object_named(f.engine, "SimpleShadow Material", NMO_CID_MATERIAL), out.channels[0].material);
+    ASSERT_EQ(VXBLEND_ZERO, out.channels[0].source_blend);
+    nmo_vector2_t under = mesh_uv(&f, ground_mesh, 0, 60), far = mesh_uv(&f, ground_mesh, 0, 0); /* (5,0,5), (0,0,0) */
+    ASSERT_FLOAT_EQ(0.5f, under.x, 1e-5f);
+    ASSERT_FLOAT_EQ(0.5f, under.y, 1e-5f);
+    ASSERT_FLOAT_EQ(-3.5f, far.x, 1e-4f);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_TRUE(nmo_engine_mesh(f.engine, ground_mesh, &out));
+    ASSERT_EQ(0, out.channel_count); /* Off */
+    fixture_end(&f);
+}
+
+TEST(engine_tt, lens_flare_draws_its_flares_in_front_of_the_eye)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t camera = placed(&f, NMO_CID_CAMERA, "Camera", 0.0f, 0.0f, 0.0f);
+    nmo_object_id_t sun = placed(&f, NMO_CID_LIGHT, "Sun", 0.0f, 0.0f, 100.0f);
+    ASSERT_TRUE(camera && sun);
+    nmo_camera_state_t *lens = (nmo_camera_state_t *)fixture_state(&f, camera);
+    lens->fov = 1.0f;
+    lens->near_plane = 1.0f;
+    lens->far_plane = 1000.0f;
+    lens->aspect_width = 4;
+    lens->aspect_height = 3;
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t flare = started_block(&f, GUID_LENS_FLARE, "Flare");
+    ASSERT_TRUE(flare != 0);
+    fixture_input_int(&f, fixture_target(&f, flare), (int32_t)sun);
+    const float multiplier[2] = {1.0f, 1.0f};
+    fixture_input_value(&f, BLOCK_PIN(&f, flare, 2), multiplier, sizeof(multiplier));
+    fixture_input_int(&f, BLOCK_PIN(&f, flare, 3), VXBLEND_ONE);
+    fixture_input_int(&f, BLOCK_PIN(&f, flare, 4), VXBLEND_ONE);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, flare, 1), 2); /* Off two frames on */
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    f.engine->render.camera = camera;
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+
+    /* The default flare (at the light, 1 by 1) straight ahead: a quad round the axis at twice the
+       near plane (1.01) */
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    const nmo_engine_draw_t *quad = triangles_of(&frame, sun);
+    ASSERT_TRUE(quad != NULL);
+    ASSERT_EQ(6, quad->vertex_count);
+    const nmo_engine_vertex_t *corner = &frame.vertices[quad->first_vertex];
+    ASSERT_FLOAT_EQ(-1.0f, corner->x, 1e-5f);
+    ASSERT_FLOAT_EQ(1.0f, corner->y, 1e-5f);
+    ASSERT_FLOAT_EQ(2.02f, corner->z, 1e-5f);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_TRUE(triangles_of(&frame, sun) == NULL); /* Off */
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_tt, load_database_fills_the_array_of_its_name);
 REGISTER_TEST(engine_tt, save_database_writes_the_registered_arrays);
@@ -1723,4 +1866,6 @@ REGISTER_TEST(engine_tt, bump_and_refraction_move_uvs_toward_light_and_eye);
 REGISTER_TEST(engine_tt, save_alpha_moves_alpha_into_the_colour_and_saves);
 REGISTER_TEST(engine_tt, fsaa_bitmap_font_and_frustum_clipping);
 REGISTER_TEST(engine_tt, sky_around_follows_the_viewpoint);
+REGISTER_TEST(engine_tt, shadow_plane_and_mapping_project_the_box_from_the_light);
+REGISTER_TEST(engine_tt, lens_flare_draws_its_flares_in_front_of_the_eye);
 TEST_MAIN_END()

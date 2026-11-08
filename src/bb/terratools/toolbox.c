@@ -3491,6 +3491,658 @@ static int sky_around_callback(blk_t *b, uint32_t message)
     return NMO_ENGINE_BR_OK;
 }
 
+/* ---- Shadows and flares ---- */
+
+/* A floor the shadow blocks look at: an object with the Floor attribute, shown and not hidden by a
+   parent; -1 for none */
+static int32_t visible_floor(nmo_engine_t *engine, const eng_attribute_t *attribute, int32_t type)
+{
+    int32_t floor = attribute->type == type ? eng_entity_index(engine, attribute->object) : -1;
+    if (floor < 0 || engine->entities.data[floor].destroyed ||
+        !nmo_engine_object_is_visible(engine, attribute->object) || eng_render_hidden_by_parent(engine, floor)) {
+        return -1;
+    }
+    return floor;
+}
+
+/* A TRIANGLES draw of quads (corners in world space, a fan each), textured and blended, without the
+   depth test or write */
+static void push_overlay_quads(nmo_engine_t *engine, nmo_object_id_t object, const eng_vector_t *corners,
+                               const float (*uvs)[2], const uint32_t *colors, int32_t quads,
+                               nmo_object_id_t texture, int32_t source_blend, int32_t dest_blend)
+{
+    eng_render_t *render = &engine->render;
+    int32_t first = (int32_t)render->vertices.count;
+    eng_vector_t centre = {0.0f, 0.0f, 0.0f};
+    for (int32_t q = 0; q < quads; q++) {
+        static const int order[6] = {0, 1, 2, 0, 2, 3};
+        for (int i = 0; i < 6; i++) {
+            const eng_vector_t *p = &corners[4 * q + order[i]];
+            nmo_engine_vertex_t *vertex = NULL;
+            if (!ENG_VEC_PUSH(render->vertices, vertex)) {
+                return;
+            }
+            *vertex = (nmo_engine_vertex_t){p->x, p->y, p->z, uvs[4 * q + order[i]][0], uvs[4 * q + order[i]][1],
+                                            colors[q], 0.0f, 0.0f, 0.0f};
+        }
+        centre = corners[4 * q];
+    }
+    int32_t count = (int32_t)render->vertices.count - first;
+    nmo_engine_draw_t *draw = count > 0 ? eng_render_push(engine) : NULL;
+    if (draw == NULL) {
+        return;
+    }
+    draw->kind = NMO_ENGINE_DRAW_TRIANGLES;
+    draw->object = object;
+    draw->first_vertex = first;
+    draw->vertex_count = count;
+    draw->texture = texture;
+    draw->source_blend = source_blend;
+    draw->dest_blend = dest_blend;
+    draw->blend = true;
+    draw->transparent = true;
+    draw->no_z_test = true;
+    draw->no_z_write = true;
+    draw->world[0] = draw->world[5] = draw->world[10] = draw->world[15] = 1.0f;
+    draw->world[12] = centre.x, draw->world[13] = centre.y, draw->world[14] = centre.z;
+}
+
+enum { SHADOW_PLANE_CORNERS };
+
+/* TT ShadowPlane's pre-render callback: the shadow quad at its corners in the target's space,
+   white, in Texture, blended SourceBlend / DestBlend, without the depth test */
+static void shadow_plane_draw(nmo_engine_t *engine, nmo_object_id_t entity, int32_t node, bool transparent)
+{
+    (void)transparent;
+    nmo_engine_block_t handle = {engine, node};
+    blk_t *b = &handle;
+    int32_t target = eng_entity_index(engine, entity);
+    const eng_param_t *param = block_local(b, SHADOW_PLANE_CORNERS);
+    if (target < 0 || param == NULL || param->data == NULL || param->size < 12u * sizeof(float)) {
+        return; /* "keine Geometriedaten" */
+    }
+    const float *local = (const float *)param->data;
+    eng_vector_t corners[4];
+    for (int i = 0; i < 4; i++) {
+        const eng_vector_t p = {local[3 * i], local[3 * i + 1], local[3 * i + 2]};
+        eng_vector_transform(&corners[i], &engine->entities.data[target].world, &p);
+    }
+    static const float uvs[4][2] = {{0.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 1.0f}, {0.0f, 1.0f}};
+    const uint32_t white = 0xFFFFFFFFu;
+    push_overlay_quads(engine, entity, corners, uvs, &white, 1, nmo_engine_block_get_input_object(b, 1),
+                       get_in_int(b, 3, VXBLEND_ZERO), get_in_int(b, 4, VXBLEND_SRCCOLOR));
+}
+
+/*
+ * TT ShadowPlane: a textured quad under the target, its box's XZ rectangle
+ * (times Size) projected from the Light onto the first floor the light's
+ * ray to the target meets, drawn before the target each frame without the
+ * depth test. With no floor met the quad stays where it was (at the
+ * target's centre at first).
+ */
+static int bb_shadow_plane(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    int32_t target = target_entity(b);
+    if (target < 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        eng_remove_entity_callback(engine, nmo_engine_block_target(b), ENG_ENTITY_PRE_RENDER, shadow_plane_draw,
+                                   b->node);
+        return NMO_ENGINE_BR_OK;
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+        const float zero[12] = {0};
+        nmo_engine_block_set_local_value(b, SHADOW_PLANE_CORNERS, zero, sizeof(zero));
+    }
+    nmo_object_id_t target_id = nmo_engine_block_target(b);
+    eng_entity_callback_t callback = {target_id, ENG_ENTITY_PRE_RENDER, shadow_plane_draw, b->node, true};
+    eng_add_entity_callback(engine, &callback);
+    int32_t light = input_entity(b, 0);
+    if (light < 0) {
+        return NMO_ENGINE_BR_PARAMETERERROR; /* the DLL calls through a missing light */
+    }
+    float size[2] = {0.0f, 0.0f};
+    nmo_engine_block_get_input_value(b, 2, size, sizeof(size));
+    eng_vector_t from = eng_entity_position(engine, light, target);
+    eng_vector_t min = {0, 0, 0}, max = {0, 0, 0};
+    eng_entity_local_box(engine, target, &min, &max);
+    const eng_vector_t box[4] = {{max.x * size[0], 0.0f, max.z * size[1]}, {min.x * size[0], 0.0f, max.z * size[1]},
+                                 {min.x * size[0], 0.0f, min.z * size[1]}, {max.x * size[0], 0.0f, min.z * size[1]}};
+    eng_param_t *param = block_local(b, SHADOW_PLANE_CORNERS);
+    if (param == NULL || param->data == NULL || param->size < 12u * sizeof(float)) {
+        return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+    }
+    float *corners = (float *)param->data;
+    int32_t type = eng_floor_attribute(engine);
+    const eng_matrix_t *world = &engine->entities.data[target].world;
+    eng_vector_t ray_from, ray_to;
+    const eng_vector_t origin = {0.0f, 0.0f, 0.0f};
+    eng_vector_transform(&ray_from, world, &from);
+    eng_vector_transform(&ray_to, world, &origin);
+    for (size_t i = 0; type >= 0 && i < engine->attributes.values.count; i++) {
+        int32_t floor = visible_floor(engine, &engine->attributes.values.data[i], type);
+        eng_ray_hit_t hit;
+        if (floor < 0 || eng_entity_ray_intersection(engine, floor, &ray_from, &ray_to, &hit) <= 0) {
+            continue;
+        }
+        eng_vector_t hit_world, hit_local;
+        eng_vector_transform(&hit_world, &engine->entities.data[floor].world, &hit.point);
+        eng_entity_inverse_transform(engine, target, &hit_local, &hit_world, -1);
+        float distance = (float)sqrt((double)distance_squared(&hit_local, &from));
+        if (distance > 0.0f) {
+            double reach = sqrt((double)(from.y * from.y + from.z * from.z + from.x * from.x));
+            for (int c = 0; c < 4; c++) {
+                eng_vector_t d = {box[c].x - from.x, box[c].y - from.y, box[c].z - from.z};
+                double length = sqrt((double)(d.z * d.z + d.y * d.y + d.x * d.x));
+                double scale = length * distance / reach;
+                double inv = 1.0 / length;
+                corners[3 * c] = (float)(d.x * inv * scale) + from.x;
+                corners[3 * c + 1] = (float)(d.y * inv * scale) + from.y;
+                corners[3 * c + 2] = (float)(d.z * inv * scale) + from.z;
+            }
+        }
+        break;
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+enum { SHADOW_MAP_DATA };
+enum { SHADOW_MAP_FLOORS = 16, SHADOW_MAP_ENTRY = 7, SHADOW_MAP_WORDS = 115, SHADOW_MAP_COUNT = 114 };
+
+/* TT ShadowMapping's floor entry: the floor, then its rectangle in the target's space ({Max, Min}) */
+static uint32_t *shadow_map_entry(uint32_t *words, int32_t k)
+{
+    return &words[2 + SHADOW_MAP_ENTRY * k];
+}
+
+/* The shadow channel off the floor (GetChannelByMaterial, RemoveChannel) */
+static void shadow_map_off(nmo_engine_t *engine, nmo_object_id_t floor, nmo_object_id_t material)
+{
+    nmo_object_id_t mesh = floor != 0 ? current_mesh_of(engine, floor) : 0;
+    eng_mesh_copy_t *copy = mesh != 0 ? eng_mesh_copy_find(engine, mesh) : NULL;
+    int32_t channel = copy != NULL ? eng_mesh_channel(copy, material) : -1;
+    if (channel >= 0) {
+        eng_mesh_remove_channel(copy, channel);
+        copy->version = ++engine->render.mesh_version;
+    }
+}
+
+/*
+ * The floors TT ShadowMapping darkens (16 at most): those (shown) where a
+ * corner of the target's XZ rectangle (its box times Size), projected from
+ * the Light onto the floor's height in the target's space, falls within the
+ * floor's box; each with the projected rectangle's bounds. As in the DLL,
+ * the target's world height is tested against the floor's local box.
+ */
+static int32_t shadow_map_floors(blk_t *b, int32_t target, uint32_t *words)
+{
+    nmo_engine_t *engine = b->engine;
+    int32_t light = input_entity(b, 0), count = 0;
+    if (light < 0) {
+        return 0;
+    }
+    eng_vector_t from = eng_entity_position(engine, light, target);
+    float size[2] = {0.0f, 0.0f};
+    nmo_engine_block_get_input_value(b, 2, size, sizeof(size));
+    eng_vector_t min = {0, 0, 0}, max = {0, 0, 0};
+    eng_entity_local_box(engine, target, &min, &max);
+    const eng_vector_t box[4] = {{max.x * size[0], 0.0f, max.z * size[1]}, {min.x * size[0], 0.0f, max.z * size[1]},
+                                 {min.x * size[0], 0.0f, min.z * size[1]}, {max.x * size[0], 0.0f, min.z * size[1]}};
+    float height = engine->entities.data[target].world.m[3][1];
+    int32_t type = eng_floor_attribute(engine);
+    for (size_t i = 0; type >= 0 && i < engine->attributes.values.count; i++) {
+        int32_t floor = visible_floor(engine, &engine->attributes.values.data[i], type);
+        if (floor < 0) {
+            continue;
+        }
+        eng_vector_t at = eng_entity_position(engine, floor, target);
+        eng_vector_t fmin = {0, 0, 0}, fmax = {0, 0, 0};
+        eng_entity_local_box(engine, floor, &fmin, &fmax);
+        if (!(from.y > 0.0f && height > fmin.y)) {
+            continue;
+        }
+        bool inside = false;
+        float lo_x = 1000.0f, lo_z = 1000.0f, hi_x = -1000.0f, hi_z = -1000.0f;
+        for (int c = 0; c < 4; c++) {
+            double k = (double)(from.y - at.y) / (double)(from.y - box[c].y);
+            eng_vector_t p = {(float)((box[c].x - from.x) * k + from.x), at.y, (float)((box[c].z - from.z) * k + from.z)};
+            if (!inside) {
+                eng_vector_t world, local;
+                eng_vector_transform(&world, &engine->entities.data[target].world, &p);
+                eng_entity_inverse_transform(engine, floor, &local, &world, -1);
+                inside = local.x > fmin.x && local.x < fmax.x && local.z > fmin.z && local.z < fmax.z;
+            }
+            lo_x = p.x < lo_x ? p.x : lo_x;
+            hi_x = p.x > hi_x ? p.x : hi_x;
+            lo_z = p.z < lo_z ? p.z : lo_z;
+            hi_z = p.z > hi_z ? p.z : hi_z;
+        }
+        if (inside && count < SHADOW_MAP_FLOORS) {
+            uint32_t *entry = shadow_map_entry(words, count++);
+            const float rect[6] = {hi_x, 0.0f, hi_z, lo_x, 0.0f, lo_z};
+            entry[0] = (uint32_t)engine->attributes.values.data[i].object;
+            memcpy(&entry[1], rect, sizeof(rect));
+        }
+    }
+    return count;
+}
+
+/*
+ * TT ShadowMapping: a "SimpleShadow Material" channel (Texture, clamped,
+ * copied; blended SourceBlend / DestBlend) on the floors the target's
+ * projected rectangle falls on, its UVs each frame the floor's vertices
+ * across that rectangle in the target's space; off the floors it leaves and
+ * on Off.
+ */
+static int bb_shadow_mapping(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    int32_t target = target_entity(b);
+    if (target < 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    uint32_t words[SHADOW_MAP_WORDS], old[SHADOW_MAP_WORDS];
+    memset(words, 0, sizeof(words));
+    nmo_engine_block_get_local_value(b, SHADOW_MAP_DATA, words, sizeof(words));
+    memcpy(old, words, sizeof(old));
+    nmo_object_id_t material = (nmo_object_id_t)words[0];
+    int32_t old_count = (int32_t)old[SHADOW_MAP_COUNT];
+    old_count = old_count < 0 ? 0 : old_count > SHADOW_MAP_FLOORS ? SHADOW_MAP_FLOORS : old_count;
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, nmo_engine_block_output_count(b) >= 2 ? 1 : 0);
+        for (int32_t k = 0; k < old_count; k++) {
+            shadow_map_off(engine, (nmo_object_id_t)shadow_map_entry(old, k)[0], material);
+        }
+        return NMO_ENGINE_BR_OK;
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+    }
+    nmo_object_id_t texture = nmo_engine_block_get_input_object(b, 1);
+    if ((uint32_t)texture != words[1]) {
+        words[1] = (uint32_t)texture;
+        eng_material_t *desc = material != 0 ? eng_material(engine, material) : NULL;
+        if (desc != NULL) {
+            desc->desc.texture = texture;
+        }
+    }
+    int32_t source_blend = get_in_int(b, 3, VXBLEND_ZERO), dest_blend = get_in_int(b, 4, VXBLEND_SRCCOLOR);
+    int32_t count = shadow_map_floors(b, target, words);
+    words[SHADOW_MAP_COUNT] = (uint32_t)count;
+    for (int32_t k = 0; k < old_count; k++) {
+        nmo_object_id_t floor = (nmo_object_id_t)shadow_map_entry(old, k)[0];
+        bool kept = false;
+        for (int32_t j = 0; j < count && !kept; j++) {
+            kept = shadow_map_entry(words, j)[0] == (uint32_t)floor;
+        }
+        if (!kept) {
+            shadow_map_off(engine, floor, material);
+        }
+    }
+    for (int32_t k = 0; k < count; k++) {
+        const uint32_t *entry = shadow_map_entry(words, k);
+        nmo_object_id_t floor_id = (nmo_object_id_t)entry[0];
+        int32_t floor = eng_entity_index(engine, floor_id);
+        nmo_object_id_t mesh = current_mesh_of(engine, floor_id);
+        eng_mesh_copy_t *copy = mesh != 0 ? eng_mesh_copy(engine, mesh) : NULL;
+        if (copy == NULL || floor < 0) {
+            continue;
+        }
+        int32_t channel = eng_mesh_channel(copy, material);
+        if (channel < 0) {
+            channel = add_uv_channel(engine, copy, material);
+            if (channel < 0) {
+                continue;
+            }
+            copy->channels.data[channel].source_blend = source_blend;
+            copy->channels.data[channel].dest_blend = dest_blend;
+        }
+        float rect[6];
+        memcpy(rect, &entry[1], sizeof(rect));
+        size_t stride = 0;
+        int32_t uv_count = 0;
+        float *uvs = eng_mesh_uvs(engine, copy, channel, &stride, &uv_count);
+        for (int32_t v = 0; uvs != NULL && v < uv_count; v++) {
+            const nmo_vector_t *p = &copy->vertices[v].position;
+            eng_vector_t from = {p->x, p->y, p->z}, local;
+            eng_entity_inverse_transform(engine, target, &local, &from, floor);
+            float *uv = uv_of(uvs, stride, v);
+            uv[0] = (local.x - rect[3]) / (rect[0] - rect[3]);
+            uv[1] = (local.z - rect[5]) / (rect[2] - rect[5]);
+        }
+        copy->version = ++engine->render.mesh_version;
+    }
+    nmo_engine_block_set_local_value(b, SHADOW_MAP_DATA, words, sizeof(words));
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+/* TT ShadowMapping's callback: its material made on load (and attach); its channels off the floors
+   on reset (and pause, new scene, script deactivation) */
+static int shadow_mapping_callback(blk_t *b, uint32_t message)
+{
+    nmo_engine_t *engine = b->engine;
+    uint32_t words[SHADOW_MAP_WORDS];
+    memset(words, 0, sizeof(words));
+    if (message == NMO_ENGINE_MSG_LOAD) {
+        nmo_object_id_t id = eng_create_object(engine, NMO_CID_MATERIAL, "SimpleShadow Material");
+        eng_material_t *material = id != 0 ? eng_material(engine, id) : NULL;
+        if (material == NULL && id != 0) {
+            material = eng_material_new(engine, id);
+        }
+        if (material != NULL) {
+            const float white[4] = {1.0f, 1.0f, 1.0f, 1.0f}, black[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+            memcpy(material->desc.emissive, white, sizeof(white));
+            memcpy(material->desc.diffuse, white, sizeof(white));
+            memcpy(material->desc.specular, black, sizeof(black));
+            memcpy(material->desc.ambient, black, sizeof(black));
+            material->desc.address_mode = VXTEXTURE_ADDRESSCLAMP;
+            material->desc.texture_blend = VXTEXTUREBLEND_COPY;
+        }
+        words[0] = (uint32_t)id;
+        words[1] = 0xFFFFFFFFu;
+        nmo_engine_block_set_local_value(b, SHADOW_MAP_DATA, words, sizeof(words));
+    } else if (message == NMO_ENGINE_MSG_RESET || message == NMO_ENGINE_MSG_PAUSE ||
+               message == NMO_ENGINE_MSG_DEACTIVATESCRIPT) {
+        nmo_engine_block_get_local_value(b, SHADOW_MAP_DATA, words, sizeof(words));
+        int32_t count = (int32_t)words[SHADOW_MAP_COUNT];
+        for (int32_t k = 0; k < count && k < SHADOW_MAP_FLOORS; k++) {
+            shadow_map_off(engine, (nmo_object_id_t)shadow_map_entry(words, k)[0], (nmo_object_id_t)words[0]);
+        }
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/* A flare of TT_LensFlare, from a row of its Flares Array */
+typedef struct lens_flare {
+    float position;     /* along the line from the eye to the light: 0 the eye, 1 the light */
+    float rotation;     /* how much it turns with its place on screen */
+    float size[2];
+    int16_t fade_in, fade_out; /* frames */
+    float cos_limit;    /* shown while the light is within this cosine of the view's axis */
+    int32_t state;      /* 0 off, 1 fading in, 2 fading out, 4 shown */
+    float color[3];
+    float alpha, target_alpha;
+    float rect[4];      /* its part of the texture in pixels (left, top, right, bottom); all 0: all of it */
+} lens_flare_t;
+
+enum { LENS_FLARES, LENS_EACH_FRAME };
+
+static lens_flare_t lens_flare_default(void)
+{
+    lens_flare_t flare;
+    memset(&flare, 0, sizeof(flare));
+    flare.position = 1.0f;
+    flare.size[0] = flare.size[1] = 1.0f;
+    flare.fade_in = flare.fade_out = 100;
+    flare.color[0] = flare.color[1] = flare.color[2] = 1.0f;
+    return flare;
+}
+
+static lens_flare_t *lens_flares(blk_t *b, int32_t *count)
+{
+    eng_param_t *param = block_local(b, LENS_FLARES);
+    *count = param != NULL && param->data != NULL ? (int32_t)(param->size / sizeof(lens_flare_t)) : 0;
+    return *count > 0 ? (lens_flare_t *)param->data : NULL;
+}
+
+/* TT_LensFlare's post-render callback: the flares fade by whether the light is in view and not
+   picked behind something, then draw as quads on a plane twice the near plane in front of the eye */
+static void lens_flare_draw(nmo_engine_t *engine, nmo_object_id_t entity, int32_t node, bool transparent)
+{
+    (void)transparent;
+    nmo_engine_block_t handle = {engine, node};
+    blk_t *b = &handle;
+    int32_t count = 0;
+    lens_flare_t *flares = lens_flares(b, &count);
+    int32_t light = eng_entity_index(engine, entity);
+    int32_t camera = eng_entity_index(engine, engine->render.camera);
+    float near_plane = 0.0f, far_plane = 0.0f;
+    if (flares == NULL || light < 0 || camera < 0 ||
+        !eng_camera_planes(engine, engine->render.camera, &near_plane, &far_plane)) {
+        return;
+    }
+    float front = (float)(near_plane + 0.0099999998);
+    eng_vector_t world = eng_entity_position(engine, light, -1), local;
+    eng_entity_inverse_transform(engine, camera, &local, &world, -1);
+    double length = sqrt((double)(local.x * local.x + local.z * local.z + local.y * local.y));
+    float facing = (float)(1.0 / sqrt((double)(front * front)) * front * (local.z / length));
+    eng_vector_t screen;
+    eng_render_project(engine, &world, &screen);
+    nmo_engine_pick_t pick;
+    memset(&pick, 0, sizeof(pick));
+    bool hit = engine->input.pick != NULL &&
+               engine->input.pick(engine->input.pick_user_data, (int32_t)screen.x, (int32_t)screen.y, &pick);
+    const eng_screen_mode_t *mode =
+        &eng_screen_modes[engine->render.screen_mode >= 0 && engine->render.screen_mode < ENG_SCREEN_MODE_COUNT
+                              ? engine->render.screen_mode
+                              : 0];
+    bool fade_in = false;
+    if (!hit) {
+        fade_in = !(screen.x <= 15.0f || (float)(mode->width - 15) <= screen.x || screen.y <= 15.0f);
+    } else {
+        eng_vector_t eye = eng_entity_position(engine, camera, -1);
+        fade_in = sqrt((double)distance_squared(&eye, &world)) <= pick.distance;
+    }
+    if (fade_in) {
+        for (int32_t i = 0; i < count; i++) {
+            if (flares[i].state == 0 || (flares[i].state & 2) != 0) {
+                if (flares[i].cos_limit < facing) {
+                    flares[i].state = 1;
+                }
+            } else if (flares[i].cos_limit > facing) {
+                flares[i].state = 2;
+            }
+        }
+    } else {
+        bool any = false;
+        for (int32_t i = 0; i < count; i++) {
+            if (flares[i].state != 0) {
+                flares[i].state = 2;
+                any = true;
+            }
+        }
+        if (!any && hit) {
+            return;
+        }
+    }
+    float multiplier[2] = {1.0f, 1.0f};
+    nmo_engine_block_get_input_value(b, 2, multiplier, sizeof(multiplier));
+    nmo_object_id_t texture = nmo_engine_block_get_input_object(b, 1);
+    eng_texture_t *bitmap = texture != 0 ? eng_texture(engine, texture) : NULL;
+    int32_t tw = 0, th = 0;
+    float su = 1.0f, sv = 1.0f;
+    if (bitmap != NULL && eng_bitmap_size(engine, bitmap, &tw, &th) && tw > 0 && th > 0) {
+        su = (float)(1.0 / (double)tw);
+        sv = (float)(1.0 / (double)th);
+    }
+    eng_vector_t *corners = (eng_vector_t *)malloc((size_t)count * 4u * sizeof(*corners));
+    float (*uvs)[2] = (float (*)[2])malloc((size_t)count * 4u * sizeof(*uvs));
+    uint32_t *colors = (uint32_t *)malloc((size_t)count * sizeof(*colors));
+    int32_t quads = 0;
+    const eng_matrix_t *eye = &engine->entities.data[camera].world;
+    for (int32_t i = 0; corners != NULL && uvs != NULL && colors != NULL && i < count; i++) {
+        lens_flare_t *f = &flares[i];
+        if (f->state == 1) {
+            f->alpha = (float)(f->target_alpha / (double)f->fade_in + f->alpha);
+            if (f->alpha > f->target_alpha) {
+                f->alpha = f->target_alpha;
+                f->state = 4;
+            }
+        } else if (f->state == 2) {
+            f->alpha = (float)(f->alpha - f->target_alpha / (double)f->fade_out);
+            if (f->alpha < 0.0099999998f) {
+                f->state = 0;
+                f->alpha = 0.0f;
+                continue;
+            }
+        } else if (f->state != 4) {
+            continue;
+        }
+        float plane = front + front;
+        float scale = plane / local.z;
+        float x = f->position * local.x * scale, y = local.y * f->position * scale;
+        float c = 1.0f, s = 0.0f;
+        if (f->rotation != 0.0f) {
+            double angle = (y + x) * f->rotation;
+            c = (float)cos(angle);
+            s = (float)sin(angle);
+        }
+        float sx = multiplier[0] * f->size[0], sy = multiplier[1] * f->size[1];
+        float ax = sx * c, ay = sx * -s, bx = sy * s, by = c * sy;
+        const eng_vector_t quad[4] = {{bx + (x - ax), by + (y - ay), plane},
+                                      {bx + ax + x, by + ay + y, plane},
+                                      {ax + x - bx, ay + y - by, plane},
+                                      {x - ax - bx, y - ay - by, plane}};
+        for (int k = 0; k < 4; k++) {
+            eng_vector_transform(&corners[4 * quads + k], eye, &quad[k]);
+        }
+        float u0 = 0.0f, u1 = 1.0f, v0 = 0.0f, v1 = 1.0f;
+        if (f->rect[0] != f->rect[2] && f->rect[3] != f->rect[1]) {
+            u0 = su * f->rect[0];
+            u1 = su * f->rect[2];
+            v0 = sv * f->rect[1];
+            v1 = sv * f->rect[3];
+        }
+        const float quad_uv[4][2] = {{u0, v0}, {u1, v0}, {u1, v1}, {u0, v1}};
+        memcpy(uvs[4 * quads], quad_uv, sizeof(quad_uv));
+        const float tone[4] = {f->color[0], f->color[1], f->color[2], f->alpha};
+        colors[quads++] = vxcolor_to_color(tone);
+    }
+    if (quads > 0) {
+        push_overlay_quads(engine, entity, corners, (const float (*)[2])uvs, colors, quads, texture,
+                           get_in_int(b, 3, VXBLEND_ONE), get_in_int(b, 4, VXBLEND_ZERO));
+    }
+    free(corners);
+    free(uvs);
+    free(colors);
+}
+
+/* CKDataArray::GetColumnParameterGuid: a PARAMETER column's type; null for another column or none */
+static nmo_guid_t eng_array_column_param_type(nmo_engine_t *engine, nmo_object_id_t array, int32_t column)
+{
+    const eng_array_t *runtime = eng_find_array(engine, array);
+    if (runtime == NULL || column < 0 || (uint32_t)column >= runtime->column_count ||
+        runtime->columns[column].type != CKARRAYTYPE_PARAMETER) {
+        return NMO_GUID(0u, 0u);
+    }
+    return runtime->columns[column].param_type;
+}
+
+/* The flares read from Flares Array: a row each, the columns that have the expected types */
+static void lens_flare_read(blk_t *b, nmo_object_id_t array)
+{
+    nmo_engine_t *engine = b->engine;
+    int32_t rows = nmo_engine_array_row_count(engine, array);
+    int32_t held = 0;
+    lens_flares(b, &held);
+    if (rows != held) {
+        lens_flare_t *made = rows > 0 ? (lens_flare_t *)malloc((size_t)rows * sizeof(*made)) : NULL;
+        for (int32_t i = 0; made != NULL && i < rows; i++) {
+            made[i] = lens_flare_default();
+        }
+        nmo_engine_block_set_local_value(b, LENS_FLARES, made, made != NULL ? (size_t)rows * sizeof(*made) : 0);
+        free(made);
+    }
+    int32_t count = 0;
+    lens_flare_t *flares = lens_flares(b, &count);
+    for (int32_t i = 0; i < count && i < rows; i++) {
+        nmo_engine_cell_t cell;
+        lens_flare_t *f = &flares[i];
+        if (nmo_engine_array_column_type(engine, array, 0) == CKARRAYTYPE_PARAMETER &&
+            nmo_guid_equals(eng_array_column_param_type(engine, array, 0), CKPGUID_RECT) &&
+            nmo_engine_array_get_cell(engine, array, i, 0, &cell) == NMO_OK && cell.data != NULL && cell.size >= 16) {
+            memcpy(f->rect, cell.data, sizeof(f->rect));
+        }
+        if (nmo_engine_array_column_type(engine, array, 1) == CKARRAYTYPE_FLOAT &&
+            nmo_engine_array_get_cell(engine, array, i, 1, &cell) == NMO_OK) {
+            memcpy(&f->position, &cell.value, sizeof(float));
+        }
+        if (nmo_guid_equals(eng_array_column_param_type(engine, array, 2), CKPGUID_COLOR) &&
+            nmo_engine_array_get_cell(engine, array, i, 2, &cell) == NMO_OK && cell.data != NULL && cell.size >= 16) {
+            float color[4];
+            memcpy(color, cell.data, sizeof(color));
+            f->color[0] = color[0], f->color[1] = color[1], f->color[2] = color[2];
+            f->target_alpha = color[3];
+        }
+        if (nmo_guid_equals(eng_array_column_param_type(engine, array, 3), CKPGUID_2DVECTOR) &&
+            nmo_engine_array_get_cell(engine, array, i, 3, &cell) == NMO_OK && cell.data != NULL && cell.size >= 8) {
+            memcpy(f->size, cell.data, sizeof(f->size));
+        }
+        if (nmo_engine_array_column_type(engine, array, 4) == CKARRAYTYPE_FLOAT &&
+            nmo_engine_array_get_cell(engine, array, i, 4, &cell) == NMO_OK) {
+            memcpy(&f->rotation, &cell.value, sizeof(float));
+        }
+        if (nmo_engine_array_column_type(engine, array, 5) == CKARRAYTYPE_INT &&
+            nmo_engine_array_get_cell(engine, array, i, 5, &cell) == NMO_OK) {
+            f->fade_in = (int16_t)cell.value;
+        }
+        if (nmo_engine_array_column_type(engine, array, 6) == CKARRAYTYPE_INT &&
+            nmo_engine_array_get_cell(engine, array, i, 6, &cell) == NMO_OK) {
+            f->fade_out = (int16_t)cell.value;
+        }
+        if (nmo_guid_equals(eng_array_column_param_type(engine, array, 7), CKPGUID_ANGLE) &&
+            nmo_engine_array_get_cell(engine, array, i, 7, &cell) == NMO_OK && cell.data != NULL && cell.size >= 4) {
+            float angle = 0.0f;
+            memcpy(&angle, cell.data, sizeof(angle));
+            if (angle == 0.0f) {
+                angle = 1.5700001f;
+            }
+            f->cos_limit = (float)cos((double)angle);
+        }
+    }
+}
+
+/*
+ * TT_LensFlare: lens flares for the target light, drawn after it each frame
+ * (with the render context's camera); On reads the flares from Flares
+ * Array (then each frame with Read Array Each Frame), Off stops them. The
+ * DLL draws the quads with the light's world matrix current; they are taken
+ * here in the camera's space, where their coordinates are worked out.
+ */
+static int bb_lens_flare(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (target == 0 || eng_entity_index(engine, target) < 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    bool each_frame = get_local_int(b, LENS_EACH_FRAME, 0) != 0;
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        eng_remove_entity_callback(engine, target, ENG_ENTITY_POST_RENDER, lens_flare_draw, b->node);
+        return NMO_ENGINE_BR_OK;
+    }
+    eng_entity_callback_t callback = {target, ENG_ENTITY_POST_RENDER, lens_flare_draw, b->node, true};
+    eng_add_entity_callback(engine, &callback);
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        each_frame = true;
+    }
+    nmo_object_id_t array = nmo_engine_block_get_input_object(b, 0);
+    if (each_frame && array != 0) {
+        lens_flare_read(b, array);
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+/* TT_LensFlare's callback: one default flare on load (and attach) */
+static int lens_flare_callback(blk_t *b, uint32_t message)
+{
+    if (message == NMO_ENGINE_MSG_LOAD) {
+        lens_flare_t flare = lens_flare_default();
+        nmo_engine_block_set_local_value(b, LENS_FLARES, &flare, sizeof(flare));
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_tt_toolbox_blocks[] = {
     {NMO_GUID_INIT(0x594a136e,0x58135ef9),"TT Joystick Waiter",bb_tt_joystick_waiter,NULL,NULL},
     {NMO_GUID_INIT(0x229865eb,0x577619e4),"TT_TestForJoystick",bb_test_for_joystick,NULL,NULL},
@@ -3564,6 +4216,9 @@ static const nmo_engine_block_desc_t eng_tt_toolbox_blocks[] = {
     {NMO_GUID_INIT(0x412e4cd0, 0x6f860de3), "TT_ViewFrustumClipping", bb_view_frustum_clipping, view_frustum_clipping_callback, NULL},
     {NMO_GUID_INIT(0x173e60ff, 0x4db14bcc), "TT_BitmapFont", bb_bitmap_font, NULL, NULL},
     {NMO_GUID_INIT(0x2c7d5826, 0x688778f4), "TT SkyAround", bb_sky_around, sky_around_callback, NULL},
+    {NMO_GUID_INIT(0x137c3d66, 0x3ff1752d), "TT ShadowPlane", bb_shadow_plane, NULL, NULL},
+    {NMO_GUID_INIT(0x334c7dfe, 0x47c81a31), "TT ShadowMapping", bb_shadow_mapping, shadow_mapping_callback, NULL},
+    {NMO_GUID_INIT(0x241b32a5, 0x71fe3357), "TT_LensFlare", bb_lens_flare, lens_flare_callback, NULL},
     {NMO_GUID_INIT(0x0fd4755f, 0x7de22dc8), "TT Set Dynamic Position", bb_set_dynamic_position, NULL,
      NULL},
 };
