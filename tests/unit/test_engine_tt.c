@@ -11,6 +11,9 @@
 #include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_material_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
+#include "object/builtin/nmo_parameterin_schemas.h"
+#include "object/builtin/nmo_sound_schemas.h"
+#include "object/builtin/nmo_sprite3d_schemas.h"
 #include "object/builtin/nmo_beobject_schemas.h"
 #include "object/nmo_object_edit.h"
 #include "object/builtin/nmo_mesh_schemas.h"
@@ -81,6 +84,14 @@
 #define GUID_SHADOW_MAPPING NMO_GUID(0x334c7dfe, 0x47c81a31)
 #define GUID_LENS_FLARE NMO_GUID(0x241b32a5, 0x71fe3357)
 #define GUID_SCENE_STENCIL_SHADOW NMO_GUID(0x4dcf4ca0, 0x474e25ec)
+#define GUID_SET_2D_SPRITE_OLD NMO_GUID(0x56680b62, 0x23083054)
+#define GUID_SET_3D_SPRITE NMO_GUID(0x408e30b5, 0x22a07ada)
+#define GUID_GET_UV_2D_SPRITE NMO_GUID(0x4f16689a, 0x472b1c63)
+#define GUID_TT_PUSH_BUTTON NMO_GUID(0x4df00dac, 0x562c27da)
+#define GUID_MOTOR_SOUND NMO_GUID(0x1a1a67aa, 0x664108ed)
+#define GUID_LOAD_MOTOR_SETTINGS NMO_GUID(0x0f822838, 0x74116583)
+#define GUID_FONT_COORDINATES NMO_GUID(0x73e256e5, 0x6552118e)
+#define GUID_CREATE_FONT NMO_GUID(0x7d644088, 0x40dd0349)
 
 /* The files the engine loads, from the scratch directory */
 static const char *resolve_scratch(void *user_data, const char *name)
@@ -1927,6 +1938,271 @@ TEST(engine_tt, scene_stencil_shadow_extrudes_the_silhouette_and_masks_the_sprit
     fixture_end(&f);
 }
 
+static float out_float(engine_fixture_t *f, nmo_object_id_t block, size_t pos)
+{
+    float value = -1.0f;
+    read_value(f, BLOCK_POUT(f, block, pos), &value, sizeof(value));
+    return value;
+}
+
+TEST(engine_tt, sprite_blocks_place_the_sprites_and_read_the_uvs)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t panel = fixture_create(&f, NMO_CID_2DENTITY, "Panel");
+    nmo_object_id_t sprite = fixture_create(&f, NMO_CID_SPRITE3D, "Sprite");
+    ASSERT_TRUE(panel != 0 && sprite != 0);
+    nmo_sprite3d_state_t *state = (nmo_sprite3d_state_t *)fixture_state(&f, sprite);
+    state->has_data = 1;
+    state->half_width = 2.0f;
+    state->half_height = 3.0f;
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t old = started_block(&f, GUID_SET_2D_SPRITE_OLD, "Old");
+    nmo_object_id_t uv = fixture_block(&f, GUID_GET_UV_2D_SPRITE, "UV");
+    nmo_object_id_t set3d = started_block(&f, GUID_SET_3D_SPRITE, "3D");
+    ASSERT_TRUE(old && uv && set3d);
+    fixture_link(&f, BLOCK_OUT(&f, old, 0), BLOCK_IN(&f, uv, 0), 0);
+    fixture_input_int(&f, fixture_target(&f, old), (int32_t)panel);
+    fixture_input_int(&f, fixture_target(&f, uv), (int32_t)panel);
+    fixture_input_int(&f, fixture_target(&f, set3d), (int32_t)sprite);
+    const float position[2] = {0.1f, 0.2f}, size[2] = {0.5f, 0.25f};
+    const float left_right[2] = {0.25f, 0.75f}, top_bottom[2] = {0.0f, 0.5f};
+    fixture_input_value(&f, BLOCK_PIN(&f, old, 0), position, sizeof(position));
+    fixture_input_value(&f, BLOCK_PIN(&f, old, 1), size, sizeof(size));
+    fixture_input_value(&f, BLOCK_PIN(&f, old, 2), left_right, sizeof(left_right));
+    fixture_input_value(&f, BLOCK_PIN(&f, old, 3), top_bottom, sizeof(top_bottom));
+    const float place[3] = {1.0f, 2.0f, 3.0f}, sprite_size[2] = {4.0f, 2.0f}, offset[2] = {0.5f, 0.0f};
+    const float left_top[2] = {0.1f, 0.2f}, right_bottom[2] = {0.9f, 0.8f};
+    fixture_input_value(&f, BLOCK_PIN(&f, set3d, 0), place, sizeof(place));
+    fixture_input_value(&f, BLOCK_PIN(&f, set3d, 1), sprite_size, sizeof(sprite_size));
+    fixture_input_value(&f, BLOCK_PIN(&f, set3d, 2), offset, sizeof(offset));
+    fixture_input_value(&f, BLOCK_PIN(&f, set3d, 3), left_top, sizeof(left_top));
+    fixture_input_value(&f, BLOCK_PIN(&f, set3d, 4), right_bottom, sizeof(right_bottom));
+    fixture_commit(&f, NULL);
+    const int32_t all_2d = 7, all_3d = 15; /* every input of "Add Input" */
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, local_of(&f, old, 0), &all_2d, sizeof(all_2d)));
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, local_of(&f, set3d, 0), &all_3d, sizeof(all_3d)));
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    /* The old one: the rect from the two vectors, the position and size homogeneous */
+    const eng_2d_t *entity = eng_2d_entity(f.engine, panel);
+    ASSERT_TRUE(entity != NULL && (entity->flags & CK_2DENTITY_USEHOMOGENEOUSCOORD) != 0);
+    ASSERT_FLOAT_EQ(0.1f, entity->homogeneous.left, 1e-6f);
+    ASSERT_FLOAT_EQ(0.6f, entity->homogeneous.right, 1e-6f);
+    ASSERT_FLOAT_EQ(0.45f, entity->homogeneous.bottom, 1e-6f);
+    nmo_rect_t read = {0};
+    read_value(&f, BLOCK_POUT(&f, uv, 0), &read, sizeof(read));
+    ASSERT_FLOAT_EQ(0.25f, read.left, 0.0f);
+    ASSERT_FLOAT_EQ(0.0f, read.top, 0.0f);
+    ASSERT_FLOAT_EQ(0.75f, read.right, 0.0f);
+    ASSERT_FLOAT_EQ(0.5f, read.bottom, 0.0f);
+    /* The 3D one: sized 4 x 2, then the box moved to the offset with its size kept */
+    const eng_sprite3d_t *placed_sprite = eng_sprite3d(f.engine, sprite);
+    ASSERT_TRUE(placed_sprite != NULL);
+    ASSERT_FLOAT_EQ(-1.0f, placed_sprite->min.x, 1e-6f);
+    ASSERT_FLOAT_EQ(3.0f, placed_sprite->max.x, 1e-6f);
+    ASSERT_FLOAT_EQ(-1.0f, placed_sprite->min.y, 1e-6f);
+    ASSERT_FLOAT_EQ(1.0f, placed_sprite->max.y, 1e-6f);
+    ASSERT_FLOAT_EQ(0.9f, placed_sprite->uv_rect.right, 0.0f);
+    ASSERT_FLOAT_EQ(0.2f, placed_sprite->uv_rect.top, 0.0f);
+    eng_vector_t at = eng_entity_position(f.engine, eng_entity_index(f.engine, sprite), -1);
+    ASSERT_FLOAT_EQ(2.0f, at.y, 1e-6f);
+    ASSERT_FLOAT_EQ(3.0f, at.z, 1e-6f);
+    fixture_end(&f);
+}
+
+TEST(engine_tt, push_button_swaps_materials_and_starts_with_the_button_down)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t frame = fixture_create(&f, NMO_CID_2DENTITY, "Frame");
+    nmo_object_id_t materials[3];
+    const char *names[3] = {"Released", "Pressed", "Rollover"};
+    for (int i = 0; i < 3; i++) {
+        materials[i] = fixture_create(&f, NMO_CID_MATERIAL, names[i]);
+        ASSERT_TRUE(materials[i] != 0);
+    }
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t button = started_block(&f, GUID_TT_PUSH_BUTTON, "Button");
+    ASSERT_TRUE(frame != 0 && button != 0);
+    fixture_input_int(&f, fixture_target(&f, button), (int32_t)frame);
+    for (int i = 0; i < 3; i++) {
+        fixture_input_int(&f, BLOCK_PIN(&f, button, (size_t)i), (int32_t)materials[i]);
+    }
+    /* Released, Roll Over, Mouse Down, Mouse Up */
+    nmo_object_id_t outputs[4];
+    for (size_t i = 0; i < 4; i++) {
+        outputs[i] = fixture_block(&f, GUID_NOP, "Output");
+        fixture_link(&f, BLOCK_OUT(&f, button, i), BLOCK_IN(&f, outputs[i], 0), 0);
+    }
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    nmo_engine_set_entity_under_mouse(f.engine, frame);
+    /* On over the button with the mouse up: Roll Over, and Mouse Up since On left it down */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1u, runs(&f, outputs[1]));
+    ASSERT_EQ(1u, runs(&f, outputs[3]));
+    ASSERT_EQ(materials[2], eng_2d_entity(f.engine, frame)->material);
+    nmo_engine_set_mouse_button(f.engine, 0, true);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1u, runs(&f, outputs[2]));
+    ASSERT_EQ(materials[1], eng_2d_entity(f.engine, frame)->material);
+    nmo_engine_set_mouse_button(f.engine, 0, false);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(2u, runs(&f, outputs[3]));
+    ASSERT_EQ(materials[2], eng_2d_entity(f.engine, frame)->material);
+    nmo_engine_set_entity_under_mouse(f.engine, 0);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1u, runs(&f, outputs[0]));
+    ASSERT_EQ(materials[0], eng_2d_entity(f.engine, frame)->material);
+    ASSERT_EQ(1u, runs(&f, outputs[1]));
+    ASSERT_EQ(1u, runs(&f, outputs[2]));
+    fixture_end(&f);
+}
+
+static nmo_object_id_t motor_sound(engine_fixture_t *f, const char *name)
+{
+    nmo_object_id_t id = fixture_create(f, NMO_CID_WAVESOUND, name);
+    nmo_wavesound_state_t *state = (nmo_wavesound_state_t *)fixture_state(f, id);
+    if (state == NULL) {
+        return 0;
+    }
+    state->has_duration = 1;
+    state->duration = 1000;
+    return id;
+}
+
+TEST(engine_tt, motor_sound_plays_the_bands_of_the_loaded_settings)
+{
+    /* Two bands in the file; the third keeps the DLL's {2, 0.5, 20, 10, 0, 0} */
+    static const char settings[] =
+        "Volume:0.5\n"
+        "PitchMax:2 PitchMin:1 vMax:10 vMin:0 vFadeIn:2 vFadeOut:8\n"
+        "PitchMax:3 PitchMin:1 vMax:20 vMin:10 vFadeIn:12 vFadeOut:18\n";
+    size_t length = strlen(NMO_TEST_SCRATCH_DIR) + sizeof("/motor.txt");
+    char *path = (char *)malloc(length);
+    ASSERT_NOT_NULL(path);
+    memcpy(path, NMO_TEST_SCRATCH_DIR, strlen(NMO_TEST_SCRATCH_DIR));
+    memcpy(path + strlen(NMO_TEST_SCRATCH_DIR), "/motor.txt", sizeof("/motor.txt"));
+    FILE *out = fopen(path, "wb");
+    free(path);
+    ASSERT_NOT_NULL(out);
+    ASSERT_EQ(sizeof(settings) - 1u, fwrite(settings, 1, sizeof(settings) - 1u, out));
+    fclose(out);
+
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t sounds[3] = {motor_sound(&f, "Low"), motor_sound(&f, "Middle"), motor_sound(&f, "High")};
+    ASSERT_TRUE(sounds[0] && sounds[1] && sounds[2]);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t load = started_block(&f, GUID_LOAD_MOTOR_SETTINGS, "Load");
+    nmo_object_id_t motor = fixture_block(&f, GUID_MOTOR_SOUND, "Motor");
+    nmo_object_id_t missing = started_block(&f, GUID_LOAD_MOTOR_SETTINGS, "Missing");
+    nmo_object_id_t error = fixture_block(&f, GUID_NOP, "Error");
+    ASSERT_TRUE(load && motor && missing && error);
+    input_text(&f, BLOCK_PIN(&f, load, 0), "motor.txt");
+    input_text(&f, BLOCK_PIN(&f, missing, 0), "no motor.txt");
+    fixture_link(&f, BLOCK_OUT(&f, missing, 1), BLOCK_IN(&f, error, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, load, 0), BLOCK_IN(&f, motor, 0), 0);
+    const float speed = 1.0f, global_volume = 0.8f;
+    fixture_input_value(&f, BLOCK_PIN(&f, motor, 0), &speed, sizeof(speed));
+    for (int i = 0; i < 3; i++) {
+        fixture_input_int(&f, BLOCK_PIN(&f, motor, (size_t)i + 1u), (int32_t)sounds[i]);
+    }
+    fixture_input_value(&f, BLOCK_PIN(&f, motor, 4), &global_volume, sizeof(global_volume));
+    nmo_object_id_t speed_source =
+        nmo_parameterin_source_id((const nmo_parameterin_state_t *)fixture_state(&f, BLOCK_PIN(&f, motor, 0)));
+    fixture_commit(&f, NULL);
+    nmo_engine_set_file_resolver(f.engine, resolve_scratch, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1u, runs(&f, error));
+    /* Speed 1 is in the first band only: pitch 1 + 1/10, half way up its fade in */
+    ASSERT_FLOAT_EQ(1.1f, out_float(&f, motor, 0), 1e-6f);
+    ASSERT_FLOAT_EQ(0.5f, out_float(&f, motor, 1), 1e-6f);
+    ASSERT_FLOAT_EQ(0.0f, out_float(&f, motor, 3), 0.0f);
+    const eng_sound_t *low = eng_sound(f.engine, sounds[0]);
+    ASSERT_TRUE(low->playing && low->loop);
+    ASSERT_FLOAT_EQ(0.2f, low->gain, 1e-6f); /* 0.5 x 0.8 x 0.5 */
+    ASSERT_FALSE(eng_sound(f.engine, sounds[1])->playing); /* started silent, then stopped */
+    ASSERT_TRUE(eng_sound(f.engine, sounds[1])->loop);
+
+    const float faster = 15.0f;
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, speed_source, &faster, sizeof(faster)));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_FALSE(eng_sound(f.engine, sounds[0])->playing);
+    ASSERT_FLOAT_EQ(0.0f, out_float(&f, motor, 0), 0.0f);
+    ASSERT_FLOAT_EQ(2.0f, out_float(&f, motor, 2), 1e-6f);
+    ASSERT_FLOAT_EQ(1.0f, out_float(&f, motor, 3), 0.0f);
+    ASSERT_TRUE(eng_sound(f.engine, sounds[1])->playing);
+    ASSERT_FLOAT_EQ(0.4f, eng_sound(f.engine, sounds[1])->gain, 1e-6f);
+    /* The default third band fades out from 0: 1 - 15/20 */
+    ASSERT_FLOAT_EQ(1.25f, out_float(&f, motor, 4), 1e-6f);
+    ASSERT_FLOAT_EQ(0.25f, out_float(&f, motor, 5), 1e-6f);
+    ASSERT_FLOAT_EQ(1.25f, eng_sound(f.engine, sounds[2])->pitch, 1e-6f);
+    ASSERT_TRUE(nmo_engine_behavior_is_active(f.engine, motor));
+    fixture_end(&f);
+}
+
+TEST(engine_tt, font_coordinates_fill_a_new_array)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t texture = fixture_create(&f, NMO_CID_TEXTURE, "Font Texture");
+    ASSERT_TRUE(texture != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t font = started_block(&f, GUID_CREATE_FONT, "Font");
+    nmo_object_id_t coordinates = fixture_block(&f, GUID_FONT_COORDINATES, "Coordinates");
+    nmo_object_id_t none = started_block(&f, GUID_FONT_COORDINATES, "None");
+    ASSERT_TRUE(font && coordinates && none);
+    fixture_link(&f, BLOCK_OUT(&f, font, 0), BLOCK_IN(&f, coordinates, 0), 0);
+    input_text(&f, BLOCK_PIN(&f, font, 0), "Grid");
+    fixture_input_int(&f, BLOCK_PIN(&f, font, 1), (int32_t)texture);
+    const float characters[2] = {16.0f, 8.0f};
+    const nmo_rect_t zone = {0.0f, 0.0f, 16.0f, 8.0f};
+    fixture_input_value(&f, BLOCK_PIN(&f, font, 2), characters, sizeof(characters));
+    fixture_input_int(&f, BLOCK_PIN(&f, font, 3), 0); /* fixed width */
+    fixture_input_value(&f, BLOCK_PIN(&f, font, 4), &zone, sizeof(zone));
+    input_text(&f, BLOCK_PIN(&f, coordinates, 0), "GridData");
+    fixture_input_int(&f, BLOCK_PIN(&f, coordinates, 1), 1);
+    input_text(&f, BLOCK_PIN(&f, none, 0), "NoData");
+    fixture_input_int(&f, BLOCK_PIN(&f, none, 1), 7);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    eng_texture_t *bitmap = eng_texture(f.engine, texture);
+    ASSERT_TRUE(bitmap != NULL && eng_texture_create(f.engine, bitmap, 16, 8, 0));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    nmo_object_id_t array = 0;
+    read_value(&f, BLOCK_POUT(&f, coordinates, 0), &array, sizeof(array));
+    ASSERT_TRUE(array != 0);
+    ASSERT_EQ(array, eng_object_named(f.engine, "GridData", NMO_CID_DATAARRAY));
+    ASSERT_EQ(6, nmo_engine_array_column_count(f.engine, array));
+    ASSERT_STR_EQ("upostwidth", nmo_engine_array_column_name(f.engine, array, 4));
+    ASSERT_EQ(255, nmo_engine_array_row_count(f.engine, array)); /* character 255 left out */
+    /* Character 17 of a 16 x 8 grid: the second column of the second row */
+    nmo_engine_cell_t cell;
+    float value = 0.0f;
+    ASSERT_EQ(NMO_OK, nmo_engine_array_get_cell(f.engine, array, 17, 0, &cell));
+    memcpy(&value, &cell.value, sizeof(value));
+    ASSERT_FLOAT_EQ(1.0f / 16.0f, value, 1e-6f);
+    ASSERT_EQ(NMO_OK, nmo_engine_array_get_cell(f.engine, array, 17, 5, &cell));
+    memcpy(&value, &cell.value, sizeof(value));
+    ASSERT_FLOAT_EQ(1.0f / 8.0f, value, 1e-6f);
+    /* No font 7: the columns, no rows */
+    read_value(&f, BLOCK_POUT(&f, none, 0), &array, sizeof(array));
+    ASSERT_EQ(6, nmo_engine_array_column_count(f.engine, array));
+    ASSERT_EQ(0, nmo_engine_array_row_count(f.engine, array));
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_tt, load_database_fills_the_array_of_its_name);
 REGISTER_TEST(engine_tt, save_database_writes_the_registered_arrays);
@@ -1962,4 +2238,8 @@ REGISTER_TEST(engine_tt, sky_around_follows_the_viewpoint);
 REGISTER_TEST(engine_tt, shadow_plane_and_mapping_project_the_box_from_the_light);
 REGISTER_TEST(engine_tt, lens_flare_draws_its_flares_in_front_of_the_eye);
 REGISTER_TEST(engine_tt, scene_stencil_shadow_extrudes_the_silhouette_and_masks_the_sprite);
+REGISTER_TEST(engine_tt, sprite_blocks_place_the_sprites_and_read_the_uvs);
+REGISTER_TEST(engine_tt, push_button_swaps_materials_and_starts_with_the_button_down);
+REGISTER_TEST(engine_tt, motor_sound_plays_the_bands_of_the_loaded_settings);
+REGISTER_TEST(engine_tt, font_coordinates_fill_a_new_array);
 TEST_MAIN_END()

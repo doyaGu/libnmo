@@ -403,6 +403,12 @@ nmo_status_t eng_tt_add(nmo_engine_t *engine)
     nmo_status_t status = eng_add_manager(engine, &tt_manager, (void **)&tt);
     if (status == NMO_OK) {
         tt->database_crypted = true;
+        /* the DLL's initial motor settings */
+        tt->motor_volume = 1.0f;
+        tt->motor_global_volume = 1.0f;
+        tt->motor_bands[0] = (eng_motor_band_t){2.0f, 0.5f, 5.0f, 0.0f, 0.0f, 0.0f};
+        tt->motor_bands[1] = (eng_motor_band_t){2.0f, 0.5f, 10.0f, 5.0f, 0.0f, 0.0f};
+        tt->motor_bands[2] = (eng_motor_band_t){2.0f, 0.5f, 20.0f, 10.0f, 0.0f, 0.0f};
     }
     return status;
 }

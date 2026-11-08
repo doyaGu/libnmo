@@ -58,6 +58,14 @@ typedef struct eng_sky {
     bool shown;
 } eng_sky_t;
 
+/* A band of TT_MotorSound's sounds, as a line of TT_LoadMotorSettings' file has it: the speeds
+   it plays at and the pitch over them, and where its volume fades */
+typedef struct eng_motor_band {
+    float pitch_max, pitch_min;
+    float speed_max, speed_min;
+    float fade_in, fade_out;
+} eng_motor_band_t;
+
 typedef struct eng_tt {
     float time;   /* TT Time Manager: TT_Timer's time, and whether it runs */
     bool timing;
@@ -70,6 +78,10 @@ typedef struct eng_tt {
     ENG_VEC(eng_sky_t) skies;
     ENG_VEC(eng_shadow_t) shadows;
     ENG_VEC(eng_emitter_t) emitters; /* ParticleManager's */
+    /* TT_Toolbox_RT's motor settings, which every TT_MotorSound shares: the file's Volume, the
+       last GlobalVolume a motor sound read, and each sound's band */
+    float motor_volume, motor_global_volume;
+    eng_motor_band_t motor_bands[3];
 } eng_tt_t;
 
 /* database.c: the Terratools managers' state, added once with the first TT DLL;

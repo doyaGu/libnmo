@@ -275,15 +275,17 @@ static int bb_preload_textures(blk_t *b)
 }
 
 /*
- * TT Set_2DSprite: its 2D entity in homogeneous coordinates, at Position and
- * Size (each its own while not an input of the "Add Input" setting), with
- * the UV-Rect as its source rect when that is an input.
+ * TT Set_2DSprite and TT Set_2DSprite_old: the target 2D entity in
+ * homogeneous coordinates, at Position and Size (each its own while not an
+ * input of the "Add Input" setting), with the UV-Rect as its source rect
+ * when that is an input. The old one takes the rect as two 2D vectors,
+ * left-right and top-bottom.
  */
 #define SPRITE_INPUT_UV 1
 #define SPRITE_INPUT_SIZE 2
 #define SPRITE_INPUT_POSITION 4
 
-static int bb_set_2d_sprite(blk_t *b)
+static int set_2d_sprite(blk_t *b, bool uv_pairs)
 {
     if (IN_ACTIVE(b, 0)) {
         IN_OFF(b, 0);
@@ -309,8 +311,13 @@ static int bb_set_2d_sprite(blk_t *b)
         size[0] = entity->homogeneous.right - entity->homogeneous.left;
         size[1] = entity->homogeneous.bottom - entity->homogeneous.top;
     }
-    if (inputs & SPRITE_INPUT_UV) {
-        nmo_engine_block_get_input_value(b, pos++, &entity->source, sizeof(entity->source));
+    if ((inputs & SPRITE_INPUT_UV) && uv_pairs) {
+        float left_right[2] = {0.0f, 0.0f}, top_bottom[2] = {0.0f, 0.0f};
+        nmo_engine_block_get_input_value(b, pos, left_right, sizeof(left_right));
+        nmo_engine_block_get_input_value(b, pos + 1, top_bottom, sizeof(top_bottom));
+        entity->source = (nmo_rect_t){left_right[0], top_bottom[0], left_right[1], top_bottom[1]};
+    } else if (inputs & SPRITE_INPUT_UV) {
+        nmo_engine_block_get_input_value(b, pos, &entity->source, sizeof(entity->source));
     }
     /* SetHomogeneousCoordinates, then SetHomogeneousRect */
     nmo_rect_t rect = {position[0], position[1], position[0] + size[0], position[1] + size[1]};
@@ -318,6 +325,16 @@ static int bb_set_2d_sprite(blk_t *b)
     entity->homogeneous = rect;
     eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, entity->id, 0);
     return NMO_ENGINE_BR_OK;
+}
+
+static int bb_set_2d_sprite(blk_t *b)
+{
+    return set_2d_sprite(b, false);
+}
+
+static int bb_set_2d_sprite_old(blk_t *b)
+{
+    return set_2d_sprite(b, true);
 }
 
 /* TT OperationSystem: a Windows of the VXOS_WIN31..VXOS_WINSEVEN range reads as 2, 0, 6. */
@@ -4650,6 +4667,347 @@ static int bb_scene_stencil_shadow(blk_t *b)
     return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
 }
 
+/* ============================================================================
+ * Sprites, buttons, motor sounds and fonts
+ * ============================================================================ */
+
+/* TT GetUV2DSprite: the target 2D entity's source rect. */
+static int bb_get_uv_2d_sprite(blk_t *b)
+{
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+    }
+    const eng_2d_t *entity = eng_2d_entity(b->engine, nmo_engine_block_target(b));
+    if (entity == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    set_out(b, 0, &entity->source, sizeof(entity->source));
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * TT Set_3DSprite: the target sprite's Position (world), Size, Offset and
+ * UV mapping (UV Left Top to UV Right Bottom), each when the "Add Input"
+ * setting has it as an input (8, 4, 2 and 1).
+ */
+static int bb_set_3d_sprite(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+    }
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (target == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    int32_t inputs = get_local_int(b, 0, 0);
+    int pos = 0;
+    if (inputs >= 8) {
+        inputs -= 8;
+        eng_vector_t position = get_in_vector(b, pos++, 0.0f, 0.0f, 0.0f);
+        int32_t entity = eng_entity_index(engine, target);
+        if (entity >= 0) {
+            eng_entity_set_position(engine, entity, &position, -1, false);
+        }
+    }
+    if (inputs >= 4) {
+        inputs -= 4;
+        nmo_vector2_t size = {1.0f, 1.0f};
+        nmo_engine_block_get_input_value(b, pos++, &size, sizeof(size));
+        eng_sprite3d_set_size(engine, target, size);
+    }
+    if (inputs >= 2) {
+        inputs -= 2;
+        nmo_vector2_t offset = {0.0f, 0.0f};
+        nmo_engine_block_get_input_value(b, pos++, &offset, sizeof(offset));
+        eng_sprite3d_set_offset(engine, target, offset);
+    }
+    if (inputs >= 1) {
+        nmo_vector2_t left_top = {0.0f, 0.0f}, right_bottom = {0.0f, 0.0f};
+        nmo_engine_block_get_input_value(b, pos, &left_top, sizeof(left_top));
+        nmo_engine_block_get_input_value(b, pos + 1, &right_bottom, sizeof(right_bottom));
+        eng_sprite3d_t *sprite = eng_sprite3d(engine, target);
+        if (sprite != NULL) {
+            sprite->uv_rect = (nmo_rect_t){left_top.x, left_top.y, right_bottom.x, right_bottom.y};
+        }
+    }
+    eng_emit(engine, NMO_ENGINE_EVENT_EFFECT, b->node, target, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * TT PushButton: the target 2D entity takes the Rollover Material and Roll
+ * Over fires when the mouse comes over it, the Released Material and
+ * Released when it leaves; over it, the left button going down gives the
+ * Pressed Material and Mouse Down, going up the Rollover Material and Mouse
+ * Up. On clears the state (local 0) but leaves the button down (local 1):
+ * the DLL zeroes only the low byte of the bool it writes, whose other bytes
+ * are a pointer's.
+ */
+static int bb_push_button(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        set_local_int(b, 0, 0);
+        set_local_int(b, 1, 1);
+    }
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    if (target == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    int32_t state = target == nmo_engine_entity_under_mouse(engine) ? 1 : 0;
+    bool down = nmo_engine_is_mouse_button_down(engine, 0);
+    int32_t old_state = get_local_int(b, 0, 0);
+    bool old_down = get_local_int(b, 1, 0) != 0;
+    bool changed = down != old_down;
+    if (changed) {
+        set_local_int(b, 1, down ? 1 : 0);
+    }
+    eng_2d_t *entity = eng_2d_entity(engine, target);
+    if (state != old_state) {
+        set_local_int(b, 0, state);
+        int pin = state != 0 ? 2 : 0; /* Rollover, Released Material */
+        if (entity != NULL) {
+            entity->material = nmo_engine_block_get_input_object(b, pin);
+        }
+        OUT_ON(b, state != 0 ? 1 : 0); /* Roll Over, Released */
+    }
+    if (changed && state == 1) {
+        if (entity != NULL) {
+            entity->material = nmo_engine_block_get_input_object(b, down ? 1 : 2);
+        }
+        OUT_ON(b, down ? 2 : 3); /* Mouse Down, Mouse Up */
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+/* fscanf with a format of text, white space and %f: the floats read go to `out` in order up
+   to the first thing that does not match, and `*text` moves past what matched. */
+static void motor_scan(const char **text, const char *format, float *const *out)
+{
+    const char *s = *text;
+    int n = 0;
+    for (const char *f = format; *f != '\0'; f++) {
+        if (*f == ' ' || *f == '\n') {
+            while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n') {
+                s++;
+            }
+        } else if (f[0] == '%' && f[1] == 'f') {
+            f++;
+            while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n') {
+                s++;
+            }
+            char *end = NULL;
+            double value = strtod(s, &end);
+            if (end == s) {
+                break;
+            }
+            *out[n++] = (float)value;
+            s = end;
+        } else if (*s == *f) {
+            s++;
+        } else {
+            break;
+        }
+    }
+    *text = s;
+}
+
+/*
+ * TT_LoadMotorSettings: the motor settings every TT_MotorSound uses, from
+ * SettingsFile: a Volume line, then a line of pitches, speeds and fades for
+ * each sound (Loading Finished). A value the file does not have stays as it
+ * was. Error when the file is missing, or empty, which reads the same here.
+ */
+static int bb_load_motor_settings(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    IN_OFF(b, 0);
+    const char *name = input_string(b, 0);
+    size_t size = 0;
+    unsigned char *data = name != NULL ? eng_read_file(engine, name, &size) : NULL;
+    char *text = data != NULL ? (char *)malloc(size + 1u) : NULL;
+    if (text == NULL) {
+        free(data);
+        if (eng_tt(engine)->debug_mode) {
+            eng_emit(engine, NMO_ENGINE_EVENT_EFFECT, b->node, 0, 0); /* "File motor.txt ..." */
+        }
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    memcpy(text, data, size);
+    text[size] = '\0';
+    free(data);
+    eng_tt_t *tt = eng_tt(engine);
+    const char *p = text;
+    float *volume[1] = {&tt->motor_volume};
+    motor_scan(&p, "Volume:%f\n", volume);
+    for (int i = 0; i < 3; i++) {
+        eng_motor_band_t *band = &tt->motor_bands[i];
+        float *fields[6] = {&band->pitch_max, &band->pitch_min, &band->speed_max,
+                            &band->speed_min, &band->fade_in, &band->fade_out};
+        motor_scan(&p, "PitchMax:%f PitchMin:%f vMax:%f vMin:%f vFadeIn:%f vFadeOut:%f\n", fields);
+    }
+    free(text);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* The DLL's line through (x_b, b) and (x_a, a), at x */
+static float motor_map(float x, float a, float b, float x_a, float x_b)
+{
+    return (float)(((double)a - b) / ((double)x_a - x_b) * ((double)x - x_b) + b);
+}
+
+static bool motor_sound_playing(const eng_sound_t *sound)
+{
+    return sound->playing && !sound->paused;
+}
+
+/* One sound of TT_MotorSound at `speed`: its pitch and volume (0 when out of its band) */
+static void motor_sound_band(blk_t *b, eng_sound_t *sound, const eng_motor_band_t *band,
+                             float speed, float *pitch, float *volume)
+{
+    eng_tt_t *tt = eng_tt(b->engine);
+    if (speed < band->speed_min || speed >= band->speed_max) {
+        if (motor_sound_playing(sound)) {
+            eng_sound_stop(sound, 0.0f);
+        }
+        return;
+    }
+    *pitch = motor_map(speed, band->pitch_max, band->pitch_min, band->speed_max, band->speed_min);
+    sound->pitch = *pitch;
+    if (speed < band->fade_in) {
+        *volume = motor_map(speed, 0.0f, 1.0f, band->speed_min, band->fade_in);
+    } else if (speed <= band->fade_out) {
+        *volume = 1.0f;
+    } else {
+        *volume = motor_map(speed, 0.0f, 1.0f, band->speed_max, band->fade_out);
+    }
+    sound->gain = (float)((double)tt->motor_volume * tt->motor_global_volume * *volume);
+    if (!motor_sound_playing(sound)) {
+        eng_sound_play(b, sound, sound->loop, 0.0f);
+    }
+}
+
+static void motor_sounds_stop(blk_t *b)
+{
+    for (int i = 1; i <= 3; i++) {
+        eng_sound_t *sound = eng_sound(b->engine, nmo_engine_block_get_input_object(b, i));
+        if (sound != NULL) {
+            eng_sound_stop(sound, 0.0f);
+        }
+    }
+}
+
+/*
+ * TT_MotorSound: three looping sounds an engine's Speed plays through, each
+ * in its band of the motor settings, its pitch rising over the band and its
+ * volume (Volume x GlobalVolume x its fade) fading at the ends; out of its
+ * band a sound stops. The first frame after the script is activated starts
+ * all three, silent. Start Playing each frame; Stop stops them (End
+ * Playing), as does the script's deactivation.
+ */
+static int bb_motor_sound(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        motor_sounds_stop(b);
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    IN_OFF(b, 0);
+    eng_tt_t *tt = eng_tt(engine);
+    bool first = get_local_int(b, 0, 0) != 0;
+    float speed = get_in_float(b, 0, 0.0f);
+    nmo_engine_block_get_input_value(b, 4, &tt->motor_global_volume, sizeof(float));
+    eng_sound_t *sounds[3];
+    for (int i = 0; i < 3; i++) {
+        sounds[i] = eng_sound(engine, nmo_engine_block_get_input_object(b, i + 1));
+        if (sounds[i] == NULL) {
+            return NMO_ENGINE_BR_PARAMETERERROR;
+        }
+    }
+    if (first) {
+        for (int i = 0; i < 3; i++) {
+            sounds[i]->loop = true;
+            sounds[i]->gain = 0.0f;
+        }
+        for (int i = 0; i < 3; i++) {
+            eng_sound_play(b, sounds[i], true, 0.0f);
+        }
+        set_local_int(b, 0, 0);
+    }
+    float pitch[3] = {0.0f, 0.0f, 0.0f}, volume[3] = {0.0f, 0.0f, 0.0f};
+    for (int i = 0; i < 3; i++) {
+        motor_sound_band(b, sounds[i], &tt->motor_bands[i], speed, &pitch[i], &volume[i]);
+    }
+    for (int i = 0; i < 3; i++) {
+        set_out(b, 2 * i, &pitch[i], sizeof(float));
+        set_out(b, 2 * i + 1, &volume[i], sizeof(float));
+    }
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+/* Activating the script makes the next frame the first; deactivating it stops the sounds. */
+static int motor_sound_callback(blk_t *b, uint32_t message)
+{
+    if (message == NMO_ENGINE_MSG_ACTIVATESCRIPT) {
+        set_local_int(b, 0, 1);
+    } else if (message == NMO_ENGINE_MSG_DEACTIVATESCRIPT) {
+        motor_sounds_stop(b);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * TT_FontCoordinatesToDataArray: a new array named ArrayName, in the scene,
+ * with a float column of each of ustart, vstart, uwidth, uprewidth,
+ * upostwidth and vwidth and a row for each character of Font but the last
+ * (0 to 254), in FontCoordinates. A font not made gives no rows (the DLL
+ * reads through a null font).
+ */
+static int bb_font_coordinates_to_data_array(blk_t *b)
+{
+    static const char *const columns[6] = {"ustart", "vstart", "uwidth",
+                                           "uprewidth", "upostwidth", "vwidth"};
+    nmo_engine_t *engine = b->engine;
+    const char *name = input_string(b, 0);
+    nmo_object_id_t array = eng_create_object(engine, NMO_CID_DATAARRAY, name != NULL ? name : "");
+    if (array != 0) {
+        for (int32_t c = 0; c < 6; c++) {
+            nmo_engine_array_insert_column(engine, array, -1, CKARRAYTYPE_FLOAT, NMO_GUID(0u, 0u));
+            nmo_engine_array_set_column_name(engine, array, c, columns[c]);
+        }
+        eng_add_to_level_scene(engine, array);
+        float (*glyphs)[6] = (float (*)[6])malloc(256u * sizeof(*glyphs));
+        if (glyphs != NULL && eng_font_coordinates(engine, get_in_int(b, 1, 0), glyphs)) {
+            for (int32_t row = 0; row < 255; row++) {
+                nmo_engine_array_insert_row(engine, array, -1, NULL);
+                for (int32_t c = 0; c < 6; c++) {
+                    nmo_engine_cell_t cell = {.type = CKARRAYTYPE_FLOAT};
+                    memcpy(&cell.value, &glyphs[row][c], sizeof(float));
+                    nmo_engine_array_set_cell(engine, array, row, c, &cell);
+                }
+            }
+        }
+        free(glyphs);
+    }
+    set_out(b, 0, &array, sizeof(array));
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_tt_toolbox_blocks[] = {
     {NMO_GUID_INIT(0x594a136e,0x58135ef9),"TT Joystick Waiter",bb_tt_joystick_waiter,NULL,NULL},
     {NMO_GUID_INIT(0x229865eb,0x577619e4),"TT_TestForJoystick",bb_test_for_joystick,NULL,NULL},
@@ -4727,6 +5085,14 @@ static const nmo_engine_block_desc_t eng_tt_toolbox_blocks[] = {
     {NMO_GUID_INIT(0x334c7dfe, 0x47c81a31), "TT ShadowMapping", bb_shadow_mapping, shadow_mapping_callback, NULL},
     {NMO_GUID_INIT(0x241b32a5, 0x71fe3357), "TT_LensFlare", bb_lens_flare, lens_flare_callback, NULL},
     {NMO_GUID_INIT(0x4dcf4ca0, 0x474e25ec), "TT_SceneStencilShadow", bb_scene_stencil_shadow, NULL, NULL},
+    {NMO_GUID_INIT(0x4df00dac, 0x562c27da), "TT PushButton", bb_push_button, NULL, NULL},
+    {NMO_GUID_INIT(0x1a1a67aa, 0x664108ed), "TT_MotorSound", bb_motor_sound, motor_sound_callback, NULL},
+    {NMO_GUID_INIT(0x0f822838, 0x74116583), "TT_LoadMotorSettings", bb_load_motor_settings, NULL, NULL},
+    {NMO_GUID_INIT(0x56680b62, 0x23083054), "TT Set_2DSprite_old", bb_set_2d_sprite_old, NULL, NULL},
+    {NMO_GUID_INIT(0x408e30b5, 0x22a07ada), "TT Set_3DSprite", bb_set_3d_sprite, NULL, NULL},
+    {NMO_GUID_INIT(0x4f16689a, 0x472b1c63), "TT GetUV2DSprite", bb_get_uv_2d_sprite, NULL, NULL},
+    {NMO_GUID_INIT(0x73e256e5, 0x6552118e), "TT_FontCoordinatesToDataArray", bb_font_coordinates_to_data_array,
+     NULL, NULL},
     {NMO_GUID_INIT(0x0fd4755f, 0x7de22dc8), "TT Set Dynamic Position", bb_set_dynamic_position, NULL,
      NULL},
 };
