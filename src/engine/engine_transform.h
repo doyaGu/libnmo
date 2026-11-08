@@ -164,6 +164,9 @@ bool eng_animation_set_step(nmo_engine_t *engine, nmo_object_id_t animation, flo
 
 /* CKCurve::GetPos: the world position at `step` (0..1) of the curve's length */
 bool eng_curve_position(nmo_engine_t *engine, nmo_object_id_t curve, float step, eng_vector_t *out);
+/* CKCurve::GetPos with Dir: also the world direction along the curve there, normalized */
+bool eng_curve_position_dir(nmo_engine_t *engine, nmo_object_id_t curve, float step, eng_vector_t *out,
+                            eng_vector_t *dir);
 /* CKCurve::GetLocalPos: the same in the curve's space */
 bool eng_curve_local_position(nmo_engine_t *engine, nmo_object_id_t curve, float step, eng_vector_t *out);
 /* CKCurve::UpdateMesh: its line mesh's vertices in the curve's space, malloc'ed; false for a

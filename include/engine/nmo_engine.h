@@ -669,6 +669,9 @@ NMO_API void nmo_engine_mouse_relative(const nmo_engine_t *engine,
 NMO_API bool nmo_engine_is_mouse_button_down(const nmo_engine_t *engine, int32_t button);
 /** CKFontManager::GetEntityUnderMouse during the current frame. */
 NMO_API nmo_object_id_t nmo_engine_entity_under_mouse(const nmo_engine_t *engine);
+/** CKInputManager::GetSystemCursor as the blocks set it (VXCURSOR_POINTER: 1 normal select,
+ * 2 busy, 3 move, 4 link select); 0 until Mouse Cursor System sets one. */
+NMO_API int32_t nmo_engine_system_cursor(const nmo_engine_t *engine);
 /** CKInputManager::GetCursorVisibility: shown until Show Mouse Cursor hides it. */
 NMO_API bool nmo_engine_cursor_is_visible(const nmo_engine_t *engine);
 

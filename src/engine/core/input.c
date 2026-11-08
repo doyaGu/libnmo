@@ -71,9 +71,20 @@ void eng_input_begin_frame(nmo_engine_t *engine)
     in->relative[2] = in->next_wheel;
     in->next_wheel = 0.0f;
     memcpy(in->mouse, in->next_mouse, sizeof(in->mouse));
+    memcpy(in->last_buttons, in->buttons, sizeof(in->last_buttons));
     memcpy(in->buttons, in->next_buttons, sizeof(in->buttons));
     memcpy(in->joysticks, in->next_joysticks, sizeof(in->joysticks));
     in->under_mouse = in->next_under_mouse;
+}
+
+bool eng_mouse_clicked(const nmo_engine_t *engine, int32_t button)
+{
+    return button >= 0 && button < 3 && engine->input.buttons[button] && !engine->input.last_buttons[button];
+}
+
+int32_t nmo_engine_system_cursor(const nmo_engine_t *engine)
+{
+    return engine != NULL ? engine->input.system_cursor : 0;
 }
 
 void nmo_engine_set_entity_under_mouse(nmo_engine_t *engine, nmo_object_id_t entity)

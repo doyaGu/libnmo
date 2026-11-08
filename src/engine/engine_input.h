@@ -30,15 +30,19 @@ typedef struct eng_input {
     float relative[3];       /* x, y and the wheel */
     float next_wheel;
     bool buttons[3], next_buttons[3]; /* CK_MOUSE_BUTTON: left, right, middle */
+    bool last_buttons[3];             /* the previous frame's */
     nmo_engine_joystick_state_t joysticks[NMO_ENGINE_JOYSTICK_COUNT];
     nmo_engine_joystick_state_t next_joysticks[NMO_ENGINE_JOYSTICK_COUNT];
     nmo_object_id_t under_mouse, next_under_mouse;
     bool cursor_hidden; /* CKInputManager::ShowCursor(FALSE); the cursor starts shown */
+    int32_t system_cursor; /* SetSystemCursor (VXCURSOR_POINTER); 0 until a block sets one */
     nmo_engine_pick_fn pick; /* the host's CKRenderContext::Pick; NULL for none */
     void *pick_user_data;
 } eng_input_t;
 
 /* InputManager::PreProcess: the host's state becomes the frame's. */
 void eng_input_begin_frame(nmo_engine_t *engine);
+/* CKInputManager::IsMouseClicked: down this frame and not the last */
+bool eng_mouse_clicked(const nmo_engine_t *engine, int32_t button);
 
 #endif /* NMO_ENGINE_INPUT_H */

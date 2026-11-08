@@ -1412,7 +1412,7 @@ static bool eng_curve_sample(nmo_engine_t *engine, nmo_object_id_t curve_id, flo
                             eng_vector_t *out, float *out_length, nmo_object_id_t tangent_point,
                             eng_vector_t *tangent_in, eng_vector_t *tangent_out, bool local,
                             eng_vector_t **mesh, int32_t *mesh_count, nmo_object_id_t length_point,
-                            float *point_length)
+                            float *point_length, eng_vector_t *out_dir)
 {
     int32_t curve = eng_entity_index(engine, curve_id);
     const eng_curve_points_t *control_points = eng_curve_points(engine,curve_id);
@@ -1572,18 +1572,37 @@ static bool eng_curve_sample(nmo_engine_t *engine, nmo_object_id_t curve_id, flo
     const eng_curve_point_t *p0 = &points[start], *p1 = &points[end];
     float l1 = end == 0 ? length : p1->length;
     float u = l1 - p0->length != 0.0f ? (target - p0->length) / (l1 - p0->length) : 0.0f;
-    eng_vector_t position;
+    eng_vector_t position, dir = {0.0f, 0.0f, 0.0f};
     if (p0->linear) {
         position.x = p0->position.x + (p1->position.x - p0->position.x) * u;
         position.y = p0->position.y + (p1->position.y - p0->position.y) * u;
         position.z = p0->position.z + (p1->position.z - p0->position.z) * u;
+        dir = (eng_vector_t){p1->position.x - p0->position.x, p1->position.y - p0->position.y,
+                             p1->position.z - p0->position.z};
     } else {
         eng_hermite(&position, &p0->position, &p1->position, &p0->out, &p1->in, u);
+        if (out_dir != NULL) {
+            /* GetLocalPos's Dir: toward the point 0.01 further along the segment */
+            eng_vector_t ahead;
+            eng_hermite(&ahead, &p0->position, &p1->position, &p0->out, &p1->in, u + 0.01f);
+            dir = (eng_vector_t){ahead.x - position.x, ahead.y - position.y, ahead.z - position.z};
+        }
     }
     if (local) {
         *out = position;
     } else {
         eng_vector_transform(out, &engine->entities.data[curve].world, &position);
+    }
+    if (out_dir != NULL) {
+        eng_vector_normalize(&dir);
+        if (!local) {
+            /* GetPos: rotated into the world and normalized again */
+            eng_vector_t world_dir;
+            eng_vector_rotate(&world_dir, &engine->entities.data[curve].world, &dir);
+            dir = world_dir;
+            eng_vector_normalize(&dir);
+        }
+        *out_dir = dir;
     }
     free(points);
     free(descs);
@@ -1639,25 +1658,32 @@ static bool eng_curve_mesh_build(const eng_curve_point_t *points, int count, boo
 
 bool eng_curve_position(nmo_engine_t *engine, nmo_object_id_t curve, float step, eng_vector_t *out)
 {
-    return out != NULL && eng_curve_sample(engine,curve,step,out,NULL,0,NULL,NULL,false,NULL,NULL,0,NULL);
+    return out != NULL && eng_curve_sample(engine,curve,step,out,NULL,0,NULL,NULL,false,NULL,NULL,0,NULL, NULL);
+}
+
+bool eng_curve_position_dir(nmo_engine_t *engine, nmo_object_id_t curve, float step, eng_vector_t *out,
+                            eng_vector_t *dir)
+{
+    return out != NULL && dir != NULL &&
+           eng_curve_sample(engine, curve, step, out, NULL, 0, NULL, NULL, false, NULL, NULL, 0, NULL, dir);
 }
 
 bool eng_curve_local_position(nmo_engine_t *engine, nmo_object_id_t curve, float step,
                               eng_vector_t *out)
 {
-    return out != NULL && eng_curve_sample(engine,curve,step,out,NULL,0,NULL,NULL,true,NULL,NULL,0,NULL);
+    return out != NULL && eng_curve_sample(engine,curve,step,out,NULL,0,NULL,NULL,true,NULL,NULL,0,NULL, NULL);
 }
 
 bool eng_curve_length(nmo_engine_t *engine, nmo_object_id_t curve, float *out)
 {
-    return out != NULL && eng_curve_sample(engine,curve,0,NULL,out,0,NULL,NULL,false,NULL,NULL,0,NULL);
+    return out != NULL && eng_curve_sample(engine,curve,0,NULL,out,0,NULL,NULL,false,NULL,NULL,0,NULL, NULL);
 }
 
 bool eng_curve_mesh_points(nmo_engine_t *engine, nmo_object_id_t curve, eng_vector_t **out,
                            int32_t *count)
 {
     return out != NULL && count != NULL &&
-           eng_curve_sample(engine,curve,0,NULL,NULL,0,NULL,NULL,false,out,count,0,NULL);
+           eng_curve_sample(engine,curve,0,NULL,NULL,0,NULL,NULL,false,out,count,0,NULL, NULL);
 }
 
 /* The curve a point is on: the one whose control points list it, else the one it names */
@@ -1688,12 +1714,12 @@ bool eng_curve_point_tangents(nmo_engine_t *engine, nmo_object_id_t point, eng_v
                               eng_vector_t *out)
 {
     nmo_object_id_t curve = eng_curve_of_point(engine, point);
-    return curve != 0 && eng_curve_sample(engine, curve, 0, NULL, NULL, point, in, out, false, NULL, NULL, 0, NULL);
+    return curve != 0 && eng_curve_sample(engine, curve, 0, NULL, NULL, point, in, out, false, NULL, NULL, 0, NULL, NULL);
 }
 
 bool eng_curve_point_length(nmo_engine_t *engine, nmo_object_id_t point, float *out)
 {
     nmo_object_id_t curve = eng_curve_of_point(engine, point);
     return out != NULL && curve != 0 &&
-           eng_curve_sample(engine, curve, 0, NULL, NULL, 0, NULL, NULL, false, NULL, NULL, point, out);
+           eng_curve_sample(engine, curve, 0, NULL, NULL, 0, NULL, NULL, false, NULL, NULL, point, out, NULL);
 }
