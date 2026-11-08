@@ -166,6 +166,8 @@ void eng_param_update(nmo_engine_t *engine, eng_param_t *param);
 /* Store `size` bytes as `param`'s value, then copy it to its destinations (DataChanged). */
 nmo_status_t eng_param_write(nmo_engine_t *engine, eng_param_t *param, const void *data,
                              size_t size);
+/* CKParameter::IsCompatibleWith: the same type, or ones the registry finds compatible */
+bool eng_types_compatible(nmo_engine_t *engine, const eng_param_t *a, const eng_param_t *b);
 /* CKParameter::CopyValue: `dest` takes `source`'s value when the types are compatible. */
 nmo_status_t eng_param_copy(nmo_engine_t *engine, eng_param_t *dest, eng_param_t *source,
                             bool update_source);

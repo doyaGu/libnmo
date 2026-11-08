@@ -32,7 +32,7 @@ void eng_param_update(nmo_engine_t *engine, eng_param_t *param)
     }
 }
 
-static bool eng_types_compatible(nmo_engine_t *engine, const eng_param_t *a, const eng_param_t *b)
+bool eng_types_compatible(nmo_engine_t *engine, const eng_param_t *a, const eng_param_t *b)
 {
     if (nmo_guid_equals(a->type, b->type)) {
         return true;
