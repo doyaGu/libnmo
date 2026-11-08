@@ -51,6 +51,9 @@
 #define GUID_COLLISION_DETECTION NMO_GUID(0x56204f19, 0x682801e8)
 #define GUID_PREVENT_COLLISION NMO_GUID(0x301971f0, 0x7919343f)
 #define GUID_MULTI_COLLISION_DETECTION NMO_GUID(0x56204f09, 0x611101e8)
+#define GUID_OBJECT_SLIDER NMO_GUID(0x13603db0, 0x16bc321a)
+#define GUID_AVOID_OBSTACLES NMO_GUID(0x39460907, 0x30f329af)
+#define GUID_HOME_ON_ENTITY NMO_GUID(0x71234f96, 0x34321e45)
 
 #define PI_F 3.14159265f
 
@@ -1563,6 +1566,64 @@ TEST(engine_transform, multi_collision_detection_loops_over_the_colliding_pairs)
     fixture_end(&f);
 }
 
+TEST(engine_transform, object_slider_avoid_obstacles_and_home_on_entity_steer_around_and_off_objects)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t ground = floor_object(&f);              /* 10 x 10 on y = 0 */
+    nmo_object_id_t ball = cube_object(&f, "Ball", 2.0f, 0.0f); /* 0.5 above it, a radius of 1 */
+    nmo_object_id_t walker = cube_object(&f, "Walker", 20.0f, 0.0f);
+    nmo_object_id_t rock = cube_object(&f, "Rock Obstacle", 21.0f, 0.0f);
+    nmo_object_id_t missile = cube_object(&f, "Missile", -20.0f, 0.0f);
+    nmo_object_id_t goal = cube_object(&f, "Goal", -20.0f, 0.0f);
+    ASSERT_TRUE(ground && ball && walker && rock && missile && goal);
+    ((nmo_3dentity_state_t *)fixture_state(&f, ball))->world_matrix[13] = 0.5f;
+    ((nmo_3dentity_state_t *)fixture_state(&f, ball))->world_matrix[14] = -1.0f;
+    ((nmo_3dentity_state_t *)fixture_state(&f, rock))->world_matrix[14] = 1.0f;
+    ((nmo_3dentity_state_t *)fixture_state(&f, goal))->world_matrix[14] = 1.5f;
+    nmo_object_id_t group = object_group(&f, "Walls", &ground, 1);
+    ASSERT_TRUE(group != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    obstacle_attribute_types(&f);
+    nmo_object_id_t slider = target_block(&f, GUID_OBJECT_SLIDER, "Object Slider", ball, f.script_in);
+    nmo_object_id_t declare = declare_obstacles(&f, f.script_in, "Obstacle", false);
+    nmo_object_id_t avoid = target_block(&f, GUID_AVOID_OBSTACLES, "Avoid Obstacles", walker, BLOCK_OUT(&f, declare, 0));
+    nmo_object_id_t home = target_block(&f, GUID_HOME_ON_ENTITY, "Home on Entity", missile, f.script_in);
+    nmo_object_id_t contact = fixture_block(&f, GUID_NOP, "Contact"), reach = fixture_block(&f, GUID_NOP, "Reach");
+    ASSERT_TRUE(slider && declare && avoid && home && contact && reach);
+    fixture_input_int(&f, BLOCK_PIN(&f, slider, 1), (int32_t)group);
+    fixture_link(&f, BLOCK_OUT(&f, slider, 0), BLOCK_IN(&f, contact, 0), 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, avoid, 4), 0); /* not kept on a floor */
+    fixture_input_int(&f, BLOCK_PIN(&f, home, 0), (int32_t)goal);
+    const float speed = 1.0f;
+    fixture_input_value(&f, BLOCK_PIN(&f, home, 1), &speed, sizeof(speed));
+    fixture_link(&f, BLOCK_OUT(&f, home, 0), BLOCK_IN(&f, reach, 0), 0);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    /* The ball pushed up off the face to a radius above it */
+    ASSERT_EQ(1u, runs(&f, contact));
+    ASSERT_POSITION(&f, ball, 2.0f, 1.0f, -1.0f);
+    float reaction[3];
+    read_value(&f, BLOCK_POUT(&f, slider, 0), reaction, sizeof(reaction));
+    ASSERT_FLOAT_EQ(0.5f, reaction[1], 0.0001f);
+    /* Ahead (+Z) turned half away from the rock at (1, 0, 1) from it */
+    float dir[3];
+    read_value(&f, BLOCK_POUT(&f, avoid, 0), dir, sizeof(dir));
+    ASSERT_FLOAT_EQ(-0.9238795f, dir[0], 0.0001f);
+    ASSERT_FLOAT_EQ(0.0f, dir[1], 0.0001f);
+    ASSERT_FLOAT_EQ(0.3826834f, dir[2], 0.0001f);
+    /* One unit along its heading, within the goal's radius */
+    ASSERT_EQ(1u, runs(&f, reach));
+    ASSERT_POSITION(&f, missile, -20.0f, 0.0f, 1.0f);
+    nmo_object_id_t hit = 0;
+    read_value(&f, BLOCK_POUT(&f, home, 0), &hit, sizeof(hit));
+    ASSERT_EQ(goal, hit);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_transform, entity_slots_remain_stable_after_deletion);
 REGISTER_TEST(engine_transform, loaded_children_keep_their_place_under_the_parent);
@@ -1584,6 +1645,7 @@ REGISTER_TEST(engine_transform, object_keep_on_floor_v2_keeps_points_boxes_and_t
 REGISTER_TEST(engine_transform, collision_detection_finds_the_obstacle_and_the_safe_place);
 REGISTER_TEST(engine_transform, prevent_collision_puts_the_object_back_to_its_safe_place);
 REGISTER_TEST(engine_transform, multi_collision_detection_loops_over_the_colliding_pairs);
+REGISTER_TEST(engine_transform, object_slider_avoid_obstacles_and_home_on_entity_steer_around_and_off_objects);
 REGISTER_TEST(engine_transform, proximity_volume_control_runs_until_off);
 REGISTER_TEST(engine_transform, texture_sine_runs_its_clock_and_checks_the_channel);
 TEST_MAIN_END()

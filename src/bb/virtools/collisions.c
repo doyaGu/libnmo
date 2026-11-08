@@ -3338,6 +3338,497 @@ static int bb_multi_collision_detection(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* ============================================================================
+ * Sliding, avoiding and homing
+ * ============================================================================ */
+
+/*
+ * CollBallFace::DetectCollisionWithBallAndFace (the DLL's): the ball (in the
+ * face's space) within its radius above the face; the contact on the face,
+ * an edge or a corner. As in the DLL, the third corner is tried under the
+ * second's flag.
+ */
+static bool ball_face(const entity_faces_t *f, int32_t face, eng_vector_t ball, float radius, eng_vector_t *contact)
+{
+    eng_vector_t norm = face_normal(f, face), posa = face_vertex(f, f->indices[face * 3]);
+    eng_vector_t pos_posa = vsub(ball, posa);
+    float y = norm.x * pos_posa.x + norm.y * pos_posa.y + norm.z * pos_posa.z;
+    if (y >= radius || y <= 0.0f) {
+        return false;
+    }
+    eng_vector_t posb = face_vertex(f, f->indices[face * 3 + 1]), posc = face_vertex(f, f->indices[face * 3 + 2]);
+    eng_vector_t n_ab = vsub(posb, posa);
+    float mab = eng_vector_magnitude(&n_ab);
+    n_ab = v3(n_ab.x / mab, n_ab.y / mab, n_ab.z / mab);
+    eng_vector_t e_ab = eng_vector_cross(&n_ab, &norm);
+    float ab = pos_posa.x * e_ab.x + pos_posa.y * e_ab.y + pos_posa.z * e_ab.z;
+    if (ab >= radius) {
+        return false;
+    }
+    eng_vector_t n_ac = vsub(posc, posa);
+    float mac = eng_vector_magnitude(&n_ac);
+    n_ac = v3(n_ac.x / mac, n_ac.y / mac, n_ac.z / mac);
+    eng_vector_t e_ac = eng_vector_cross(&norm, &n_ac);
+    float ac = pos_posa.x * e_ac.x + pos_posa.y * e_ac.y + pos_posa.z * e_ac.z;
+    if (ac >= radius) {
+        return false;
+    }
+    eng_vector_t n_bc = vsub(posc, posb);
+    float mbc = eng_vector_magnitude(&n_bc);
+    n_bc = v3(n_bc.x / mbc, n_bc.y / mbc, n_bc.z / mbc);
+    eng_vector_t e_bc = eng_vector_cross(&n_bc, &norm), pos_posb = vsub(ball, posb);
+    float bc = pos_posb.x * e_bc.x + pos_posb.y * e_bc.y + pos_posb.z * e_bc.z;
+    if (bc >= radius) {
+        return false;
+    }
+    float radius2 = radius * radius, s;
+    if (ab <= 0.0f && bc <= 0.0f && ac <= 0.0f) { /* over the face */
+        s = pos_posa.x * n_ab.x + pos_posa.y * n_ab.y + pos_posa.z * n_ab.z;
+        *contact = v3(posa.x + n_ab.x * s + ab * e_ab.x, posa.y + n_ab.y * s + ab * e_ab.y,
+                      posa.z + n_ab.z * s + ab * e_ab.z);
+        return true;
+    }
+    uint32_t corners = 0x111;
+    if (bc > 0.0f) {
+        s = pos_posb.x * n_bc.x + pos_posb.y * n_bc.y + pos_posb.z * n_bc.z;
+        if (s < mbc) {
+            if (s > 0.0f) {
+                if (bc * bc + y * y >= radius2) {
+                    return false;
+                }
+                *contact = v3(posb.x + s * n_bc.x, posb.y + s * n_bc.y, posb.z + s * n_bc.z);
+                return true;
+            }
+            corners &= 0x110;
+        }
+    }
+    if (ab > 0.0f) {
+        s = pos_posa.x * n_ab.x + pos_posa.y * n_ab.y + pos_posa.z * n_ab.z;
+        if (s < mab) {
+            if (s > 0.0f) {
+                if (ab * ab + y * y >= radius2) {
+                    return false;
+                }
+                *contact = v3(posa.x + s * n_ab.x, posa.y + s * n_ab.y, posa.z + s * n_ab.z);
+                return true;
+            }
+            corners &= 0x101;
+        }
+    }
+    if (ac > 0.0f) {
+        s = pos_posa.x * n_ac.x + pos_posa.y * n_ac.y + pos_posa.z * n_ac.z;
+        if (s > 0.0f) {
+            if (s < mac) {
+                if (ac * ac + y * y >= radius2) {
+                    return false;
+                }
+                *contact = v3(posa.x + s * n_ac.x, posa.y + s * n_ac.y, posa.z + s * n_ac.z);
+                return true;
+            }
+            corners &= 0x011;
+        }
+    }
+    if ((corners & 0x100) && eng_vector_magnitude(&pos_posa) < radius) {
+        *contact = posa;
+        return true;
+    }
+    if ((corners & 0x010) && eng_vector_magnitude(&pos_posb) < radius) {
+        *contact = posb;
+        return true;
+    }
+    eng_vector_t pos_posc = vsub(ball, posc);
+    if ((corners & 0x010) && eng_vector_magnitude(&pos_posc) < radius) {
+        *contact = posc;
+        return true;
+    }
+    return false;
+}
+
+/* The Object Slider's state: where the ball was last frame (A_OBS) */
+typedef struct slider_state {
+    eng_vector_t old;
+} slider_state_t;
+
+/*
+ * ThreadObjectOBS: the ball (the target) pushed off each face of the object
+ * it is within its radius of, in the object's space (the radius not scaled);
+ * the faces of a mesh over 64 vertices culled when wholly on a side of the
+ * ball's box (along its longest axis only when it has many vertices a face).
+ */
+static void slide_on_object(nmo_engine_t *engine, nmo_object_id_t object, int32_t ball, eng_vector_t ball_pos,
+                            float radius, int32_t *steps, nmo_object_id_t touched_group, bool *touched)
+{
+    int32_t index = eng_entity_index(engine, object);
+    if (index < 0 || index == ball) {
+        return;
+    }
+    eng_vector_t min, max;
+    bounding_box(engine, index, &min, &max);
+    if (!(min.x - radius <= ball_pos.x && max.x + radius >= ball_pos.x && min.y - radius <= ball_pos.y &&
+          max.y + radius >= ball_pos.y && min.z - radius <= ball_pos.z && max.z + radius >= ball_pos.z)) {
+        return;
+    }
+    entity_faces_t f;
+    if (!entity_faces(engine, object, &f) || f.vertices == f.sprite) {
+        return;
+    }
+    eng_vector_t local = eng_entity_position(engine, ball, index), contact;
+    bool hit = false;
+    uint32_t *flags = NULL;
+    if (f.vertex_count > 64) {
+        flags = (uint32_t *)malloc((size_t)f.vertex_count * sizeof(uint32_t));
+        eng_vector_t bmin = v3(local.x - radius, local.y - radius, local.z - radius);
+        eng_vector_t bmax = v3(local.x + radius, local.y + radius, local.z + radius);
+        uint32_t mask = V_ALL;
+        if (f.vertex_count > f.face_count * 2) {
+            eng_vector_t lmin, lmax;
+            eng_entity_local_box(engine, index, &lmin, &lmax);
+            eng_vector_t d = vsub(lmax, lmin);
+            int axis = 0;
+            float most = d.x;
+            if (most < d.y) {
+                most = d.y;
+                axis = 1;
+            }
+            if (most < d.z) {
+                axis = 2;
+            }
+            mask = axis == 0 ? (V_LEFT | V_RIGHT) : axis == 1 ? (V_TOP | V_BOTTOM) : (V_FRONT | V_BACK);
+        }
+        for (int32_t v = 0; flags != NULL && v < f.vertex_count; v++) {
+            flags[v] = box_flags(face_vertex(&f, v), bmin, bmax) & mask;
+        }
+    }
+    for (int32_t face = 0; face < f.face_count; face++) {
+        const uint16_t *k = &f.indices[face * 3];
+        if (flags != NULL && (flags[k[0]] & flags[k[1]] & flags[k[2]])) {
+            continue;
+        }
+        if (ball_face(&f, face, local, radius, &contact)) {
+            eng_vector_t dif = vsub(local, contact);
+            float scale = radius / eng_vector_magnitude(&dif) - 1.0f;
+            dif = v3(dif.x * scale, dif.y * scale, dif.z * scale);
+            eng_entity_translate(engine, ball, &dif, index, false);
+            local = v3(local.x + dif.x, local.y + dif.y, local.z + dif.z);
+            *steps = 0;
+            hit = true;
+        }
+    }
+    free(flags);
+    if (hit) {
+        if (touched_group != 0) {
+            if (!*touched) {
+                eng_group_clear(engine, touched_group);
+            }
+            eng_group_add(engine, touched_group, object);
+        }
+        *touched = true;
+    }
+}
+
+static bool in_group(const nmo_engine_t *engine, nmo_object_id_t group, nmo_object_id_t object)
+{
+    int32_t count = nmo_engine_group_count(engine, group);
+    for (int32_t i = 0; i < count; i++) {
+        if (nmo_engine_group_object(engine, group, i) == object) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* ParseHierarchyChildOBS: the children (last first) of an entity whose hierarchy box is near the ball,
+   those in the group slid on */
+static void slide_on_children(nmo_engine_t *engine, int32_t entity, int32_t ball, eng_vector_t ball_pos, float radius,
+                              int32_t *steps, nmo_object_id_t touched_group, bool *touched, nmo_object_id_t group)
+{
+    eng_vector_t min, max;
+    if (!eng_entity_hierarchical_box(engine, entity, &min, &max)) {
+        min = max = eng_entity_position(engine, entity, -1);
+    }
+    if (!(min.x - radius <= ball_pos.x && max.x + radius >= ball_pos.x && min.y - radius <= ball_pos.y &&
+          max.y + radius >= ball_pos.y && min.z - radius <= ball_pos.z && max.z + radius >= ball_pos.z)) {
+        return;
+    }
+    for (int32_t child = engine->entities.data[entity].last_child; child >= 0;
+         child = engine->entities.data[child].prev_sibling) {
+        nmo_object_id_t id = engine->entities.data[child].id;
+        if (in_group(engine, group, id)) {
+            slide_on_object(engine, id, ball, ball_pos, radius, steps, touched_group, touched);
+        }
+        if (engine->entities.data[child].first_child >= 0) {
+            slide_on_children(engine, child, ball, ball_pos, radius, steps, touched_group, touched, group);
+        }
+    }
+}
+
+/*
+ * Object Slider: the target, a ball of Radius, kept off the faces of the
+ * Group's objects (with Place Optimization, of those under the places);
+ * with an Accuracy, tested at steps from where it was last frame. The
+ * Reaction is how far it was pushed.
+ */
+static int bb_object_slider(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    int32_t ball = target_entity(b);
+    if (ball < 0) {
+        if (IN_ACTIVE(b, 0)) {
+            IN_OFF(b, 0);
+        }
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    slider_state_t *state = nmo_engine_block_state(b, sizeof(*state));
+    if (state == NULL) {
+        return NMO_ENGINE_BR_GENERICERROR;
+    }
+    eng_vector_t init = eng_entity_position(engine, ball, -1);
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        state->old = init;
+    }
+    float radius = get_in_float(b, 0, 1.0f);
+    bool places = get_local_int(b, 3, 0) != 0;
+    nmo_object_id_t group = nmo_engine_block_get_input_object(b, 1);
+    if (group == 0) {
+        return NMO_ENGINE_BR_OK;
+    }
+    nmo_object_id_t touched_group = 0;
+    nmo_engine_block_get_local_value(b, 2, &touched_group, sizeof(touched_group));
+    int32_t accuracy = get_local_int(b, 0, 0);
+    if (accuracy < 0) {
+        accuracy = 0;
+    }
+    int32_t steps = accuracy;
+    eng_vector_t ball_pos = init, step = v3(0.0f, 0.0f, 0.0f);
+    if (accuracy != 0) {
+        eng_vector_t d = vsub(init, state->old);
+        steps = (int32_t)(sqrt((double)(d.z * d.z + d.y * d.y + d.x * d.x)) / (radius - 0.1));
+        if (steps > accuracy) {
+            steps = accuracy;
+        }
+        float inv = (float)(1.0 / ((double)steps + 1.0));
+        step = v3(inv * d.x, d.y * inv, d.z * inv);
+        ball_pos = state->old;
+    }
+    bool touched = false;
+    do {
+        if (accuracy != 0) {
+            ball_pos = v3(step.x + ball_pos.x, ball_pos.y + step.y, ball_pos.z + step.z);
+            eng_entity_set_position(engine, ball, &ball_pos, -1, false);
+        }
+        if (places) {
+            for (size_t i = 0; i < engine->entities.count; i++) {
+                if (!engine->entities.data[i].destroyed &&
+                    nmo_engine_object_class(engine, engine->entities.data[i].id) == NMO_CID_PLACE) {
+                    slide_on_children(engine, (int32_t)i, ball, ball_pos, radius, &steps, touched_group, &touched,
+                                      group);
+                }
+            }
+        } else {
+            int32_t count = nmo_engine_group_count(engine, group);
+            for (int32_t i = 0; i < count; i++) {
+                slide_on_object(engine, nmo_engine_group_object(engine, group, i), ball, ball_pos, radius, &steps,
+                                touched_group, &touched);
+            }
+        }
+    } while (steps-- != 0);
+    eng_vector_t reaction = vsub(eng_entity_position(engine, ball, -1), ball_pos);
+    set_out(b, 0, &reaction, sizeof(reaction));
+    if (accuracy != 0) {
+        state->old = eng_entity_position(engine, ball, -1);
+    }
+    OUT_ON(b, touched ? 0 : 1);
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+/* GetObstacleCount and GetObstacle: the fixed obstacles then the moving ones, in their attributes' order */
+static size_t obstacles_listed(nmo_engine_t *engine, nmo_object_id_t **out)
+{
+    int32_t types[2] = {fixed_attribute(engine), moving_attribute(engine)};
+    *out = (nmo_object_id_t *)malloc((engine->attributes.values.count + 1) * sizeof(nmo_object_id_t));
+    size_t count = 0;
+    for (int t = 0; *out != NULL && t < 2; t++) {
+        for (size_t i = 0; types[t] >= 0 && i < engine->attributes.values.count; i++) {
+            const eng_attribute_t *attribute = &engine->attributes.values.data[i];
+            if (attribute->type == types[t] && eng_entity_index(engine, attribute->object) >= 0) {
+                (*out)[count++] = attribute->object;
+            }
+        }
+    }
+    return count;
+}
+
+/* The push away from the obstacles near a point, within Factor times their radius */
+static eng_vector_t obstacle_push(nmo_engine_t *engine, nmo_object_id_t obstacle, eng_vector_t center, float factor,
+                                  bool *near)
+{
+    int32_t index = eng_entity_index(engine, obstacle);
+    eng_vector_t oc;
+    eng_entity_bary_center(engine, index, &oc);
+    float reach = eng_entity_radius(engine, index) * factor;
+    eng_vector_t d = vsub(oc, center);
+    float dist = (float)sqrt((double)(d.z * d.z + d.y * d.y + d.x * d.x));
+    *near = dist < reach;
+    if (!*near) {
+        return v3(0.0f, 0.0f, 0.0f);
+    }
+    float amplitude = (1.0f - dist / reach) * 10.0f / dist;
+    return normalized(v3((center.x - oc.x) * amplitude, (center.y - oc.y) * amplitude, (center.z - oc.z) * amplitude));
+}
+
+/*
+ * Avoid Obstacles (obsolete): the Direction turned away from the obstacles
+ * the target is near (within Influence Factor times their radius), by
+ * Inertia; with Keep On Floor, the target on its floor (the upper whenever
+ * there is one) and the turn horizontal.
+ */
+static int bb_avoid_obstacles(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    IN_OFF(b, IN_ACTIVE(b, 0) ? 0 : 1);
+    int32_t entity = target_entity(b);
+    if (entity < 0) {
+        OUT_ON(b, 0);
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    eng_vector_t dir = get_in_vector(b, 0, 0.0f, 0.0f, 1.0f), local = dir;
+    int32_t ref = input_entity(b, 1);
+    if (ref >= 0) {
+        eng_entity_transform_vector(engine, ref, &dir, &local, -1, false);
+    }
+    eng_vector_normalize(&dir);
+    float inertia = get_in_float(b, 2, 0.5f), factor = get_in_float(b, 3, 2.0f);
+    bool keep = get_in_int(b, 4, 1) != 0;
+    if (keep) {
+        eng_vector_t min, max;
+        bounding_box(engine, entity, &min, &max);
+        eng_vector_t pos = v3((max.x + min.x) * 0.5f, min.y, (max.z + min.z) * 0.5f);
+        eng_floor_point_t fp;
+        if (eng_floor_nearest(engine, &pos, &fp, 0) != CKFLOOR_NOFLOOR) {
+            pos = eng_entity_position(engine, entity, -1);
+            if (fp.up_floor != 0) {
+                pos.y += fp.up_distance;
+            } else if (fp.down_floor != 0) {
+                pos.y += fp.down_distance;
+            }
+            eng_entity_set_position(engine, entity, &pos, -1, false);
+        }
+    }
+    eng_vector_t center, deviation = v3(0.0f, 0.0f, 0.0f);
+    eng_entity_bary_center(engine, entity, &center);
+    nmo_object_id_t *obstacles = NULL;
+    size_t count = obstacles_listed(engine, &obstacles);
+    for (size_t i = 0; i < count; i++) {
+        bool near;
+        eng_vector_t push = obstacle_push(engine, obstacles[i], center, factor, &near);
+        if (near) {
+            deviation.x += push.x;
+            if (!keep) {
+                deviation.y += push.y;
+            }
+            deviation.z += push.z;
+        }
+    }
+    free(obstacles);
+    eng_vector_normalize(&deviation);
+    float rest = 1.0f - inertia;
+    dir = v3(dir.x * inertia + deviation.x * rest, dir.y * inertia + deviation.y * rest,
+             dir.z * inertia + deviation.z * rest);
+    if (ref >= 0) {
+        local = dir;
+        eng_entity_transform_vector(engine, ref, &dir, &local, -1, true);
+    }
+    eng_vector_normalize(&dir);
+    set_out(b, 0, &dir, sizeof(dir));
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * Home on Entity: the target, a missile, turned toward the Destination and
+ * away from the obstacles near it (Inertia keeping 90 to 100% of its
+ * heading), then moved Initial Velocity along its old heading; Target
+ * Reach within the destination's radius, Obstacle Reach within an
+ * obstacle's.
+ */
+static int bb_home_on_entity(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+    } else if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+    }
+    int32_t missile = target_entity(b), target = input_entity(b, 0);
+    if (missile < 0 || target < 0) {
+        nmo_engine_block_activate_output(b, 2, false);
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    float speed = get_in_float(b, 1, 0.0f);
+    float inertia = 0.9f + get_in_float(b, 2, 0.5f) / 10.0f;
+    float factor = get_in_float(b, 3, 1.5f);
+    eng_vector_t dir, up, right;
+    eng_entity_orientation(engine, missile, &dir, &up, &right, -1);
+    eng_vector_t velocity = dir;
+    eng_vector_normalize(&velocity);
+    eng_vector_t center = eng_entity_position(engine, missile, -1), goal = eng_entity_position(engine, target, -1);
+    eng_vector_t deviation = vsub(goal, center);
+    eng_vector_normalize(&deviation);
+    nmo_object_id_t *obstacles = NULL;
+    size_t count = obstacles_listed(engine, &obstacles);
+    for (size_t i = 0; i < count; i++) {
+        bool near;
+        eng_vector_t push = obstacle_push(engine, obstacles[i], center, factor, &near);
+        if (near) {
+            deviation = v3(push.x + deviation.x, push.y + deviation.y, push.z + deviation.z);
+            eng_vector_normalize(&deviation);
+        }
+    }
+    float rest = 1.0f - inertia;
+    deviation = v3(velocity.x * inertia + deviation.x * rest, velocity.y * inertia + deviation.y * rest,
+                   velocity.z * inertia + deviation.z * rest);
+    eng_vector_normalize(&deviation);
+    up = eng_vector_cross(&deviation, &dir);
+    eng_vector_normalize(&up);
+    dir = deviation;
+    eng_vector_normalize(&dir);
+    right = eng_vector_cross(&up, &dir);
+    eng_vector_t scale = eng_entity_scale(engine, missile, true);
+    eng_entity_set_orientation(engine, missile, &dir, &up, &right, -1, false);
+    eng_entity_set_scale(engine, missile, &scale, false, true);
+    eng_vector_t next = v3(center.x + velocity.x * speed, center.y + velocity.y * speed, center.z + velocity.z * speed);
+    eng_entity_set_position(engine, missile, &next, -1, false);
+    eng_vector_t to_goal = vsub(next, goal);
+    if (eng_vector_magnitude(&to_goal) < eng_entity_radius(engine, target)) {
+        nmo_object_id_t id = engine->entities.data[target].id;
+        set_out(b, 0, &id, sizeof(id));
+        OUT_ON(b, 0);
+        free(obstacles);
+        return NMO_ENGINE_BR_OK;
+    }
+    for (size_t i = 0; i < count; i++) {
+        int32_t index = eng_entity_index(engine, obstacles[i]);
+        eng_vector_t oc;
+        eng_entity_bary_center(engine, index, &oc);
+        eng_vector_t d = vsub(next, oc);
+        if (eng_vector_magnitude(&d) < eng_entity_radius(engine, index)) {
+            set_out(b, 0, &obstacles[i], sizeof(obstacles[i]));
+            OUT_ON(b, 1);
+            free(obstacles);
+            return NMO_ENGINE_BR_OK;
+        }
+    }
+    free(obstacles);
+    OUT_ON(b, 2);
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_collisions_blocks[] = {
     {NMO_GUID_INIT(0x64154401, 0x76cf37af), "Box Box Intersection", bb_box_box_intersection, NULL, NULL},
     {NMO_GUID_INIT(0x198531f9, 0x60f66c57), "Sphere Sphere Intersection", bb_sphere_sphere_intersection, NULL, NULL},
@@ -3362,6 +3853,9 @@ static const nmo_engine_block_desc_t eng_collisions_blocks[] = {
     {NMO_GUID_INIT(0x56204f19, 0x682801e8), "Collision Detection", bb_collision_detection, NULL, NULL},
     {NMO_GUID_INIT(0x301971f0, 0x7919343f), "Prevent Collision", bb_prevent_collision, NULL, NULL},
     {NMO_GUID_INIT(0x56204f09, 0x611101e8), "Multi Collision Detection", bb_multi_collision_detection, NULL, NULL},
+    {NMO_GUID_INIT(0x13603db0, 0x16bc321a), "Object Slider", bb_object_slider, NULL, NULL},
+    {NMO_GUID_INIT(0x39460907, 0x30f329af), "Avoid Obstacles", bb_avoid_obstacles, NULL, NULL},
+    {NMO_GUID_INIT(0x71234f96, 0x34321e45), "Home on Entity", bb_home_on_entity, NULL, NULL},
     {NMO_GUID_INIT(0x319971f0, 0x7919193f), "Character Prevent From Collision", bb_character_prevent_from_collision,
      NULL, NULL},
 };
