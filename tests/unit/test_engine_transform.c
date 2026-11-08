@@ -50,6 +50,7 @@
 #define GUID_DECLARE_OBSTACLES NMO_GUID(0x21dc34e8, 0xd512cd89)
 #define GUID_COLLISION_DETECTION NMO_GUID(0x56204f19, 0x682801e8)
 #define GUID_PREVENT_COLLISION NMO_GUID(0x301971f0, 0x7919343f)
+#define GUID_MULTI_COLLISION_DETECTION NMO_GUID(0x56204f09, 0x611101e8)
 
 #define PI_F 3.14159265f
 
@@ -1528,6 +1529,40 @@ TEST(engine_transform, prevent_collision_puts_the_object_back_to_its_safe_place)
     fixture_end(&f);
 }
 
+TEST(engine_transform, multi_collision_detection_loops_over_the_colliding_pairs)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t a = cube_object(&f, "Box A", 0.0f, 0.0f);
+    nmo_object_id_t c = cube_object(&f, "Box B", 0.8f, 0.0f); /* overlaps A */
+    nmo_object_id_t far = cube_object(&f, "Box C", 5.0f, 0.0f);
+    ASSERT_TRUE(a && c && far);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    obstacle_attribute_types(&f);
+    nmo_object_id_t declare = declare_obstacles(&f, f.script_in, "Box", false);
+    nmo_object_id_t multi = fixture_block(&f, GUID_MULTI_COLLISION_DETECTION, "Multi Collision Detection");
+    nmo_object_id_t pair = fixture_block(&f, GUID_NOP, "Pair"), done = fixture_block(&f, GUID_NOP, "Done");
+    ASSERT_TRUE(declare && multi && pair && done);
+    fixture_link(&f, BLOCK_OUT(&f, declare, 0), BLOCK_IN(&f, multi, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, multi, 1), BLOCK_IN(&f, pair, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, pair, 0), BLOCK_IN(&f, multi, 1), 0);
+    fixture_link(&f, BLOCK_OUT(&f, multi, 0), BLOCK_IN(&f, done, 0), 0);
+    fixture_commit(&f, NULL);
+    set_local_int(&f, multi, 0, 0);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1u, runs(&f, pair));
+    ASSERT_EQ(1u, runs(&f, done));
+    nmo_object_id_t first = 0, second = 0;
+    read_value(&f, BLOCK_POUT(&f, multi, 1), &first, sizeof(first));
+    read_value(&f, BLOCK_POUT(&f, multi, 2), &second, sizeof(second));
+    ASSERT_EQ(a, first); /* A closes first along Z, with B open */
+    ASSERT_EQ(c, second);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_transform, entity_slots_remain_stable_after_deletion);
 REGISTER_TEST(engine_transform, loaded_children_keep_their_place_under_the_parent);
@@ -1548,6 +1583,7 @@ REGISTER_TEST(engine_transform, floors_are_declared_found_kept_on_and_slid_withi
 REGISTER_TEST(engine_transform, object_keep_on_floor_v2_keeps_points_boxes_and_the_boundary);
 REGISTER_TEST(engine_transform, collision_detection_finds_the_obstacle_and_the_safe_place);
 REGISTER_TEST(engine_transform, prevent_collision_puts_the_object_back_to_its_safe_place);
+REGISTER_TEST(engine_transform, multi_collision_detection_loops_over_the_colliding_pairs);
 REGISTER_TEST(engine_transform, proximity_volume_control_runs_until_off);
 REGISTER_TEST(engine_transform, texture_sine_runs_its_clock_and_checks_the_channel);
 TEST_MAIN_END()

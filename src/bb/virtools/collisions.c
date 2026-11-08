@@ -2149,6 +2149,8 @@ typedef struct collision_manager {
     ENG_VEC(obstacle_t) obstacles;
     ENG_VEC(saved_moving_t) movings;
     int32_t touched_face, touching_face; /* the faces a face test met */
+    struct impact *impacts;              /* the impact array (GetImpactArray) and its size */
+    size_t impact_count;
 } collision_manager_t;
 
 /* ImpactDesc */
@@ -2366,6 +2368,7 @@ static void cm_destroy(nmo_engine_t *engine, void *state)
     collision_manager_t *cm = (collision_manager_t *)state;
     free(cm->obstacles.data);
     free(cm->movings.data);
+    free(cm->impacts);
 }
 
 static void cm_pre_process(nmo_engine_t *engine, void *state)
@@ -3158,6 +3161,183 @@ static int bb_character_prevent_from_collision(blk_t *b)
     return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
 }
 
+/* A bound on an axis of the pair finder: its object (in the list) and whether it opens it */
+typedef struct sweep_bound {
+    float value;
+    int32_t object;
+    bool opening;
+} sweep_bound_t;
+
+static int compare_bounds(const void *a, const void *b)
+{
+    const sweep_bound_t *x = (const sweep_bound_t *)a, *y = (const sweep_bound_t *)b;
+    if (x->value != y->value) {
+        return x->value < y->value ? -1 : 1;
+    }
+    /* the list's order for ties (the DLL keeps the order its sorts left) */
+    int64_t kx = (int64_t)x->object * 2 + (x->opening ? 0 : 1), ky = (int64_t)y->object * 2 + (y->opening ? 0 : 1);
+    return kx < ky ? -1 : kx > ky ? 1 : 0;
+}
+
+/*
+ * The DLL's FindOverlapping for every pair: the bounds swept along X then
+ * Y, each closing one marking the objects still open with it; along Z a
+ * closing one gives a pair with each object open, marked on both axes, in
+ * the order they opened.
+ */
+static size_t cm_pairs(nmo_engine_t *engine, collision_manager_t *cm, nmo_object_id_t **out)
+{
+    size_t n = cm->obstacles.count;
+    *out = NULL;
+    uint8_t *marks = (uint8_t *)calloc(n * n + 1, 1);
+    sweep_bound_t *bounds = (sweep_bound_t *)malloc((2 * n + 1) * sizeof(sweep_bound_t));
+    int32_t *open = (int32_t *)malloc((n + 1) * sizeof(int32_t));
+    nmo_object_id_t *pairs = (nmo_object_id_t *)malloc((n * n + 1) * 2 * sizeof(nmo_object_id_t));
+    size_t count = 0;
+    for (int axis = 0; marks != NULL && bounds != NULL && open != NULL && pairs != NULL && axis < 3; axis++) {
+        for (size_t i = 0; i < n; i++) {
+            const obstacle_t *o = &cm->obstacles.data[i];
+            bounds[2 * i] = (sweep_bound_t){vcomp(&o->min, axis), (int32_t)i, true};
+            bounds[2 * i + 1] = (sweep_bound_t){vcomp(&o->max, axis), (int32_t)i, false};
+        }
+        qsort(bounds, 2 * n, sizeof(sweep_bound_t), compare_bounds);
+        size_t opened = 0;
+        for (size_t k = 0; k < 2 * n; k++) {
+            int32_t self = bounds[k].object;
+            if (bounds[k].opening) {
+                open[opened++] = self;
+                continue;
+            }
+            for (size_t j = 0; j < opened; j++) {
+                if (open[j] == self) {
+                    memmove(&open[j], &open[j + 1], (opened - j - 1) * sizeof(int32_t));
+                    opened--;
+                    break;
+                }
+            }
+            for (size_t j = 0; j < opened; j++) {
+                int32_t other = open[j];
+                if (axis < 2) {
+                    marks[(size_t)other * n + (size_t)self] |= (uint8_t)(1 << axis);
+                    marks[(size_t)self * n + (size_t)other] |= (uint8_t)(1 << axis);
+                } else if (marks[(size_t)other * n + (size_t)self] == 3 &&
+                           eng_entity_index(engine, cm->obstacles.data[self].id) >= 0 &&
+                           eng_entity_index(engine, cm->obstacles.data[other].id) >= 0) {
+                    pairs[count * 2] = cm->obstacles.data[self].id;
+                    pairs[count * 2 + 1] = cm->obstacles.data[other].id;
+                    count++;
+                }
+            }
+        }
+    }
+    free(marks);
+    free(bounds);
+    free(open);
+    *out = pairs;
+    return count;
+}
+
+/* TestPair: the two obstacles by their attributes (or both at the precision given, without hierarchy) */
+static bool cm_test_pair(nmo_engine_t *engine, collision_manager_t *cm, int32_t precision, int32_t e1, int32_t e2,
+                         uint32_t flags, impact_t *imp)
+{
+    int32_t p1 = precision, p2 = precision, h1 = 0, h2 = 0, sub1 = -1, sub2 = -1;
+    if (precision == 0) {
+        read_obstacle(engine, engine->entities.data[e1].id, &p1, &h1);
+        read_obstacle(engine, engine->entities.data[e2].id, &p2, &h2);
+    }
+    bool collide;
+    if (h1 && h2) {
+        collide = cm_hierarchies(engine, cm, e1, p1, e2, p2, &sub1, &sub2);
+    } else if (h1) {
+        sub1 = cm_with_hierarchy(engine, cm, e2, p2, e1, p1);
+        collide = sub1 >= 0;
+    } else if (h2) {
+        sub2 = cm_with_hierarchy(engine, cm, e1, p1, e2, p2);
+        collide = sub2 >= 0;
+    } else {
+        collide = cm_in_collision(engine, cm, e1, p1, e2, p2);
+    }
+    eng_matrix_t identity;
+    eng_matrix_identity(&identity);
+    cm_fill_impact(engine, cm, flags, imp, e1, sub1, e2, sub2, &identity);
+    return collide;
+}
+
+/*
+ * The DLL's DetectCollision of every pair of obstacles: the impacts of the
+ * pairs colliding, in the array; as in the DLL, each pair's two objects are
+ * also written over the Object Part and Touched Obstacle of the entry of
+ * its rank, colliding or not.
+ */
+static void cm_detect_pairs(nmo_engine_t *engine, collision_manager_t *cm, int32_t precision, uint32_t flags)
+{
+    cm_sync(engine, cm);
+    cm->impact_count = 0;
+    cm_update_end_movings(engine, cm);
+    nmo_object_id_t *pairs = NULL;
+    size_t count = cm_pairs(engine, cm, &pairs);
+    impact_t *impacts = (impact_t *)realloc(cm->impacts, (count + 1) * sizeof(impact_t));
+    if (pairs == NULL || impacts == NULL) {
+        free(pairs);
+        if (impacts != NULL) {
+            cm->impacts = impacts;
+        }
+        return;
+    }
+    cm->impacts = impacts;
+    memset(impacts, 0, (count + 1) * sizeof(impact_t));
+    for (size_t i = 0; i < count; i++) {
+        int32_t e1 = eng_entity_index(engine, pairs[i * 2]), e2 = eng_entity_index(engine, pairs[i * 2 + 1]);
+        if (cm_test_pair(engine, cm, precision, e1, e2, flags, &impacts[cm->impact_count])) {
+            cm->impact_count++;
+        }
+        impacts[i].owner = pairs[i * 2];
+        impacts[i].obstacle = pairs[i * 2 + 1];
+    }
+    free(pairs);
+}
+
+/*
+ * Multi Collision Detection: In detects the collisions of every pair of
+ * obstacles; then each Loop gives the next one's objects and the Impact
+ * Data asked for, Out after the last.
+ */
+static int bb_multi_collision_detection(blk_t *b)
+{
+    collision_manager_t *cm = cm_state(b->engine);
+    int32_t index = get_out_int(b, 0);
+    uint32_t flags = (uint32_t)get_local_int(b, 0, 0);
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        index = 0;
+        if (cm != NULL) {
+            cm_detect_pairs(b->engine, cm, get_in_int(b, 0, 0), flags);
+        }
+    } else {
+        IN_OFF(b, 1);
+        index++;
+    }
+    if (cm == NULL || index < 0 || (size_t)index >= cm->impact_count) {
+        OUT_ON(b, 0);
+        return NMO_ENGINE_BR_OK;
+    }
+    const impact_t *imp = &cm->impacts[index];
+    set_out(b, 1, &imp->entity, sizeof(imp->entity));
+    set_out(b, 2, &imp->obstacle, sizeof(imp->obstacle));
+    if (flags & OWNERENTITY) set_out(b, 3, &imp->owner, sizeof(imp->owner));
+    if (flags & SUBOBSTACLETOUCHED) set_out(b, 4, &imp->sub_obstacle, sizeof(imp->sub_obstacle));
+    if (flags & TOUCHEDFACE) set_out_int(b, 5, imp->touched_face);
+    if (flags & TOUCHINGFACE) set_out_int(b, 6, imp->touching_face);
+    if (flags & TOUCHEDVERTEX) set_out_int(b, 7, imp->touched_vertex);
+    if (flags & TOUCHINGVERTEX) set_out_int(b, 8, imp->touching_vertex);
+    if (flags & IMPACTPOINT) set_out(b, 9, &imp->point, sizeof(imp->point));
+    if (flags & IMPACTNORMAL) set_out(b, 10, &imp->normal, sizeof(imp->normal));
+    set_out_int(b, 0, index);
+    OUT_ON(b, 1);
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_collisions_blocks[] = {
     {NMO_GUID_INIT(0x64154401, 0x76cf37af), "Box Box Intersection", bb_box_box_intersection, NULL, NULL},
     {NMO_GUID_INIT(0x198531f9, 0x60f66c57), "Sphere Sphere Intersection", bb_sphere_sphere_intersection, NULL, NULL},
@@ -3181,6 +3361,7 @@ static const nmo_engine_block_desc_t eng_collisions_blocks[] = {
     {NMO_GUID_INIT(0x321a42c4, 0x006133d5), "Add Obstacle", bb_add_obstacle, NULL, NULL},
     {NMO_GUID_INIT(0x56204f19, 0x682801e8), "Collision Detection", bb_collision_detection, NULL, NULL},
     {NMO_GUID_INIT(0x301971f0, 0x7919343f), "Prevent Collision", bb_prevent_collision, NULL, NULL},
+    {NMO_GUID_INIT(0x56204f09, 0x611101e8), "Multi Collision Detection", bb_multi_collision_detection, NULL, NULL},
     {NMO_GUID_INIT(0x319971f0, 0x7919193f), "Character Prevent From Collision", bb_character_prevent_from_collision,
      NULL, NULL},
 };
