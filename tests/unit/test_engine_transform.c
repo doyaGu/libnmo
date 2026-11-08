@@ -46,6 +46,7 @@
 #define GUID_GET_NEAREST_FLOORS NMO_GUID(0x6dad424e, 0x54b6003d)
 #define GUID_OBJECT_KEEP_ON_FLOOR NMO_GUID(0x43617677, 0x7de15e12)
 #define GUID_FLOOR_SLIDER NMO_GUID(0x136044b0, 0x1c59b21a)
+#define GUID_OBJECT_KEEP_ON_FLOOR_V2 NMO_GUID(0x3de853bd, 0x133d0d2e)
 
 #define PI_F 3.14159265f
 
@@ -1332,6 +1333,98 @@ TEST(engine_transform, floors_are_declared_found_kept_on_and_slid_within)
     fixture_end(&f);
 }
 
+/* An Object Keep On Floor V2 of `target` run from the script's start */
+static nmo_object_id_t keep_on_floor_v2(engine_fixture_t *f, nmo_object_id_t target, float offset, bool keep_in)
+{
+    nmo_object_id_t block = target_block(f, GUID_OBJECT_KEEP_ON_FLOOR_V2, "Object Keep On Floor V2", target,
+                                         f->script_in);
+    if (block == 0) {
+        return 0;
+    }
+    fixture_input_value(f, BLOCK_PIN(f, block, 1), &offset, sizeof(offset));
+    fixture_input_int(f, BLOCK_PIN(f, block, 3), keep_in ? 1 : 0);
+    return block;
+}
+
+/* The entity a frame's behaviors find moved: pushed at the frame's start, after the last frame's matrices
+   are saved */
+typedef struct push_at_frame {
+    nmo_engine_t *engine;
+    nmo_object_id_t entity;
+    uint64_t frame;
+    float x;
+} push_at_frame_t;
+
+static void push_entity(const nmo_engine_event_t *event, void *user_data)
+{
+    push_at_frame_t *push = (push_at_frame_t *)user_data;
+    float m[16];
+    if (event->kind == NMO_ENGINE_EVENT_FRAME_BEGIN && event->frame == push->frame &&
+        nmo_engine_entity_world_matrix(push->engine, push->entity, m)) {
+        m[12] = push->x;
+        nmo_engine_set_entity_world_matrix(push->engine, push->entity, m, false);
+    }
+}
+
+TEST(engine_transform, object_keep_on_floor_v2_keeps_points_boxes_and_the_boundary)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t ground = floor_object(&f); /* "Floor", 10 x 10 on y = 0 */
+    nmo_object_id_t point = cube_object(&f, "Point", -3.0f, 0.0f);
+    nmo_object_id_t box = cube_object(&f, "Box", 3.0f, 0.0f);
+    nmo_object_id_t edge = cube_object(&f, "Edge", 4.0f, 0.0f);
+    ASSERT_TRUE(ground && point && box && edge);
+    ((nmo_3dentity_state_t *)fixture_state(&f, point))->world_matrix[13] = 2.0f; /* bottom at 1.5 */
+    ((nmo_3dentity_state_t *)fixture_state(&f, box))->world_matrix[13] = 2.0f;
+    ((nmo_3dentity_state_t *)fixture_state(&f, edge))->world_matrix[13] = 0.5f;
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    floor_attribute(&f, ground, CKFLOOR_FACES, 3);
+    nmo_object_id_t on_point = keep_on_floor_v2(&f, point, 0.25f, false);
+    nmo_object_id_t on_box = keep_on_floor_v2(&f, box, 0.0f, false);
+    nmo_object_id_t on_edge = keep_on_floor_v2(&f, edge, 0.0f, true);
+    nmo_object_id_t off = fixture_block(&f, GUID_NOP, "Touched Floor Limits");
+    ASSERT_TRUE(on_point && on_box && on_edge && off);
+    fixture_link(&f, BLOCK_OUT(&f, on_edge, 2), BLOCK_IN(&f, off, 0), 0);
+    fixture_commit(&f, NULL);
+    set_local_int(&f, on_point, 0, 1); /* Object Extents: Point */
+    set_local_int(&f, on_box, 0, 2);   /* Bounding Box */
+    set_local_int(&f, on_edge, 0, 1);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_POSITION(&f, point, -3.0f, 0.75f, 0.0f); /* onto the ground, 0.25 above */
+    ASSERT_POSITION(&f, box, 3.0f, 0.5f, 0.0f);     /* its four bottom corners onto it */
+    nmo_object_id_t floor = 0;
+    int32_t type = -1;
+    float slope = -1.0f, distance = 0.0f;
+    read_value(&f, BLOCK_POUT(&f, on_point, 0), &floor, sizeof(floor));
+    read_value(&f, BLOCK_POUT(&f, on_point, 1), &type, sizeof(type));
+    read_value(&f, BLOCK_POUT(&f, on_point, 2), &slope, sizeof(slope));
+    read_value(&f, BLOCK_POUT(&f, on_point, 3), &distance, sizeof(distance));
+    ASSERT_EQ(ground, floor);
+    ASSERT_EQ(3, type);
+    ASSERT_FLOAT_EQ(0.0f, slope, 0.0001f);
+    ASSERT_FLOAT_EQ(-1.5f, distance, 0.0001f);
+    read_value(&f, BLOCK_POUT(&f, on_box, 3), &distance, sizeof(distance));
+    ASSERT_FLOAT_EQ(-1.5f, distance, 0.0001f);
+    ASSERT_EQ(0u, runs(&f, off));
+
+    /* Pushed off the ground's edge during the next frame: back over it, from where the last frame left it */
+    push_at_frame_t push = {f.engine, edge, 1, 6.0f};
+    nmo_engine_set_trace(f.engine, push_entity, &push);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    nmo_engine_set_trace(f.engine, NULL, NULL);
+    float m[16];
+    ASSERT_EQ(1u, runs(&f, off));
+    world_matrix(&f, edge, m);
+    /* The DLL's edge planes (a vertex as the normal) miss the way out here: back where it was */
+    ASSERT_FLOAT_EQ(4.0f, m[12], 0.0001f);
+    ASSERT_FLOAT_EQ(0.5f, m[13], 0.0001f);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_transform, entity_slots_remain_stable_after_deletion);
 REGISTER_TEST(engine_transform, loaded_children_keep_their_place_under_the_parent);
@@ -1349,6 +1442,7 @@ REGISTER_TEST(engine_transform, ray_intersection_finds_the_nearest_face);
 REGISTER_TEST(engine_transform, box_box_intersection_tests_oriented_boxes);
 REGISTER_TEST(engine_transform, collision_intersection_tests_spheres_boxes_faces_and_the_frustum);
 REGISTER_TEST(engine_transform, floors_are_declared_found_kept_on_and_slid_within);
+REGISTER_TEST(engine_transform, object_keep_on_floor_v2_keeps_points_boxes_and_the_boundary);
 REGISTER_TEST(engine_transform, proximity_volume_control_runs_until_off);
 REGISTER_TEST(engine_transform, texture_sine_runs_its_clock_and_checks_the_channel);
 TEST_MAIN_END()

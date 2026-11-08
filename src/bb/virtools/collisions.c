@@ -1255,6 +1255,530 @@ static int bb_floor_slider(blk_t *b)
     return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
 }
 
+/* ============================================================================
+ * Keeping objects within the floors (FloorTools)
+ * ============================================================================ */
+
+#define FLOOR_FACES_MAX 64 /* FACESMAXNUMBER */
+
+/* VxIntersect::SegmentPlane, the plane VxPlane::Create(n, point) makes */
+static bool segment_plane(eng_vector_t o, eng_vector_t d, eng_vector_t n, eng_vector_t point, eng_vector_t *out)
+{
+    float plane_d = (float)-((double)n.x * point.x + (double)n.y * point.y + (double)n.z * point.z);
+    double den = (double)n.x * d.x + (double)n.y * d.y + (double)n.z * d.z;
+    if (fabs(den) < VX_EPSILON) {
+        return false;
+    }
+    double t = -((double)n.x * o.x + (double)n.y * o.y + (double)n.z * o.z + plane_d) / den;
+    if (t < -VX_EPSILON || t > 1.0 + VX_EPSILON) {
+        return false;
+    }
+    *out = v3((float)(o.x + (double)d.x * t), (float)(o.y + (double)d.y * t), (float)(o.z + (double)d.z * t));
+    return true;
+}
+
+/* Normalize(v): v by the inverse of its magnitude */
+static eng_vector_t normalized(eng_vector_t v)
+{
+    double inv = 1.0 / sqrt((double)(v.x * v.x + v.y * v.y + v.z * v.z));
+    return v3((float)(v.x * inv), (float)(v.y * inv), (float)(v.z * inv));
+}
+
+/* CrossedFaces: the faces of the floor whose extents, across its axis nearest its up, meet the segment's */
+static int crossed_faces(nmo_engine_t *engine, nmo_object_id_t floor, eng_vector_t a, eng_vector_t b, int32_t *faces,
+                         int max)
+{
+    int32_t index = eng_entity_index(engine, floor);
+    entity_faces_t f;
+    if (index < 0 || !entity_faces(engine, floor, &f) || f.vertices == f.sprite) {
+        return 0;
+    }
+    eng_vector_t la, lb, up;
+    eng_entity_inverse_transform(engine, index, &la, &a, -1);
+    eng_entity_inverse_transform(engine, index, &lb, &b, -1);
+    eng_entity_orientation(engine, index, NULL, &up, NULL, -1);
+    int x = 1, z = 2;
+    float most = fabsf(up.x);
+    if (fabsf(up.y) > most) {
+        most = fabsf(up.y);
+        x = 0;
+    }
+    if (fabsf(up.z) > most) {
+        x = 0;
+        z = 1;
+    }
+    float rx0 = fminf(vcomp(&la, x), vcomp(&lb, x)), rx1 = fmaxf(vcomp(&la, x), vcomp(&lb, x));
+    float rz0 = fminf(vcomp(&la, z), vcomp(&lb, z)), rz1 = fmaxf(vcomp(&la, z), vcomp(&lb, z));
+    int count = 0;
+    for (int32_t i = 0; i < f.face_count; i++) {
+        eng_vector_t p0 = face_vertex(&f, f.indices[i * 3]), p1 = face_vertex(&f, f.indices[i * 3 + 1]);
+        eng_vector_t p2 = face_vertex(&f, f.indices[i * 3 + 2]);
+        float lo = fminf(vcomp(&p0, x), fminf(vcomp(&p1, x), vcomp(&p2, x)));
+        float hi = fmaxf(vcomp(&p0, x), fmaxf(vcomp(&p1, x), vcomp(&p2, x)));
+        if (rx1 < lo || rx0 > hi) {
+            continue;
+        }
+        lo = fminf(vcomp(&p0, z), fminf(vcomp(&p1, z), vcomp(&p2, z)));
+        hi = fmaxf(vcomp(&p0, z), fmaxf(vcomp(&p1, z), vcomp(&p2, z)));
+        if (rz1 < lo || rz0 > hi) {
+            continue;
+        }
+        if (count >= max) {
+            return count;
+        }
+        faces[count++] = i;
+    }
+    return count;
+}
+
+/*
+ * RayExtrudedFacesIntersection: the segment through the vertical planes on
+ * the face's edges, the crossing nearest its end (the square distance
+ * returned) with that edge. As in the DLL, each plane is made with the
+ * edge's first vertex as its normal and the edge's normal as its point.
+ */
+static float ray_extruded_face(nmo_engine_t *engine, nmo_object_id_t floor, eng_vector_t p1, eng_vector_t p2,
+                               int32_t face, eng_vector_t *intersection, eng_vector_t *edge1, eng_vector_t *edge2)
+{
+    int32_t index = eng_entity_index(engine, floor);
+    entity_faces_t f;
+    float best = 10000000.0f;
+    if (index < 0 || !entity_faces(engine, floor, &f)) {
+        return best;
+    }
+    eng_vector_t v[3];
+    for (int k = 0; k < 3; k++) {
+        eng_vector_t local = face_vertex(&f, f.indices[face * 3 + k]);
+        eng_entity_transform(engine, index, &v[k], &local, -1);
+    }
+    /* (a, b) with a as the plane's normal, (a, c) with c, (b, c) with b */
+    const int edges[3][3] = {{0, 1, 0}, {0, 2, 2}, {1, 2, 1}};
+    eng_vector_t d = vsub(p2, p1);
+    for (int e = 0; e < 3; e++) {
+        eng_vector_t a = v[edges[e][0]], c = v[edges[e][1]], inter;
+        eng_vector_t norm = v3(c.z - a.z, 0.0f, a.x - c.x);
+        eng_vector_normalize(&norm);
+        if (!segment_plane(p1, d, v[edges[e][2]], norm, &inter)) {
+            continue;
+        }
+        double lo = fmin(a.x, c.x), hi = fmax(a.x, c.x);
+        if (inter.x < lo - 0.001 || inter.x > hi + 0.001) {
+            continue;
+        }
+        eng_vector_t to_end = vsub(p2, inter);
+        float sm = to_end.x * to_end.x + to_end.y * to_end.y + to_end.z * to_end.z;
+        if (sm < best) {
+            best = sm;
+            *intersection = inter;
+            *edge1 = a;
+            *edge2 = c;
+        }
+    }
+    return best;
+}
+
+/* CK3dEntity::GetBoundingBox(TRUE): a character's is its hierarchy's */
+static void local_bounding_box(nmo_engine_t *engine, int32_t index, eng_vector_t *min, eng_vector_t *max)
+{
+    if (nmo_engine_object_class(engine, engine->entities.data[index].id) == NMO_CID_CHARACTER) {
+        local_hierarchical_box(engine, index, min, max);
+    } else {
+        eng_entity_local_box(engine, index, min, max);
+    }
+}
+
+/* VxBbox::TransformTo: the box's corners through a matrix; 0, 1, 4 and 5 are its bottom ones */
+static void box_corners(eng_vector_t min, eng_vector_t max, const eng_matrix_t *m, eng_vector_t pts[8])
+{
+    eng_vector_transform(&pts[0], m, &min);
+    float size[3] = {max.x - min.x, max.y - min.y, max.z - min.z};
+    eng_vector_t axis[3];
+    for (int k = 0; k < 3; k++) {
+        axis[k] = v3(size[k] * m->m[k][0], size[k] * m->m[k][1], size[k] * m->m[k][2]);
+    }
+    pts[1] = v3(pts[0].x + axis[2].x, pts[0].y + axis[2].y, pts[0].z + axis[2].z);
+    pts[2] = v3(pts[0].x + axis[1].x, pts[0].y + axis[1].y, pts[0].z + axis[1].z);
+    pts[3] = v3(pts[2].x + axis[2].x, pts[2].y + axis[2].y, pts[2].z + axis[2].z);
+    pts[4] = v3(pts[0].x + axis[0].x, pts[0].y + axis[0].y, pts[0].z + axis[0].z);
+    pts[5] = v3(pts[4].x + axis[2].x, pts[4].y + axis[2].y, pts[4].z + axis[2].z);
+    pts[6] = v3(pts[4].x + axis[1].x, pts[4].y + axis[1].y, pts[4].z + axis[1].z);
+    pts[7] = v3(pts[6].x + axis[2].x, pts[6].y + axis[2].y, pts[6].z + axis[2].z);
+}
+
+static const int bottom_corners[4] = {0, 1, 4, 5};
+
+/* The bottom corner's bit of the corners off the floors */
+static int corner_bit(int i)
+{
+    return i == 0 ? 1 : i == 1 ? 2 : i == 4 ? 4 : 8;
+}
+
+/* Test4Points: the bottom corners' floors, looked for (detection offset) higher on every axis; their
+   bits when off the floors */
+static int test_4_points(nmo_engine_t *engine, eng_vector_t pts[8], eng_floor_point_t fps[6], int floors[6],
+                         float det)
+{
+    int off = 0;
+    for (int k = 0; k < 4; k++) {
+        int i = bottom_corners[k];
+        pts[i] = v3(det + pts[i].x, det + pts[i].y, det + pts[i].z);
+        floors[i] = eng_floor_nearest(engine, &pts[i], &fps[i], 0);
+        if (floors[i] == CKFLOOR_UP) {
+            fps[i].up_distance -= det;
+        } else if (floors[i] == CKFLOOR_DOWN) {
+            fps[i].down_distance -= det;
+        } else {
+            off |= corner_bit(i);
+        }
+        pts[i] = v3(pts[i].x - det, pts[i].y - det, pts[i].z - det);
+    }
+    return off;
+}
+
+/* The box's bottom orientation from its bottom corners: dir along Z, right along X */
+static void corners_orientation(const eng_vector_t pts[8], eng_vector_t *dir, eng_vector_t *up, eng_vector_t *right)
+{
+    *dir = normalized(v3(pts[5].x + pts[1].x - pts[0].x - pts[4].x, pts[5].y + pts[1].y - pts[0].y - pts[4].y,
+                         pts[5].z + (pts[1].z - pts[0].z) - pts[4].z));
+    *right = normalized(v3(pts[5].x + pts[4].x - pts[0].x - pts[1].x, pts[5].y + pts[4].y - pts[0].y - pts[1].y,
+                           pts[5].z + (pts[4].z - pts[0].z) - pts[1].z));
+    *up = normalized(eng_vector_cross(dir, right));
+}
+
+/* The distance to a corner's floor, the nearest up one winning over any down one */
+static void corner_floor(int floorn, const eng_floor_point_t *fp, eng_vector_t *pt, float det, float *distmin,
+                         bool *up)
+{
+    if (floorn == CKFLOOR_DOWN) {
+        pt->y = fp->down_distance + pt->y + det;
+        if (!*up && fp->down_distance > *distmin) {
+            *distmin = fp->down_distance;
+        }
+    } else if (floorn == CKFLOOR_UP) {
+        pt->y = fp->up_distance + pt->y + det;
+        if (fp->up_distance > *distmin) {
+            *distmin = fp->up_distance;
+            *up = true;
+        }
+    }
+}
+
+typedef struct keep_on_floor_inputs {
+    bool follow, keep_children, keep_in;
+    float offset, det, attenuation;
+} keep_on_floor_inputs_t;
+
+/* The new up of a followed inclination: right and dir rebuilt around the floor's normal */
+static void follow_floor(nmo_engine_t *engine, int32_t entity, eng_vector_t up, eng_vector_t vup, bool keep_children)
+{
+    eng_vector_t dir, right;
+    eng_entity_orientation(engine, entity, &dir, NULL, NULL, -1);
+    right = normalized(eng_vector_cross(&up, &dir));
+    dir = normalized(eng_vector_cross(&right, &up));
+    eng_entity_set_orientation(engine, entity, &dir, &vup, &right, -1, keep_children);
+}
+
+/* Object Keep On Floor V2 with Point extents: the floors under the bottom center of the object's box */
+static int keep_on_floor_point(blk_t *b, int32_t entity, const keep_on_floor_inputs_t *in, eng_floor_point_t *fp,
+                               float *distance)
+{
+    nmo_engine_t *engine = b->engine;
+    eng_vector_t min, max;
+    bounding_box(engine, entity, &min, &max);
+    eng_vector_t pos = v3((min.x + max.x) * 0.5f, in->det + min.y, (min.z + max.z) * 0.5f);
+    int floorn = eng_floor_nearest(engine, &pos, fp, 0);
+    if (floorn != CKFLOOR_NOFLOOR) {
+        eng_vector_t up = floorn == CKFLOOR_DOWN ? fp->down_normal : fp->up_normal;
+        float dist = floorn == CKFLOOR_DOWN ? fp->down_distance : fp->up_distance;
+        pos = eng_entity_position(engine, entity, -1);
+        pos.y = dist + pos.y + in->det + in->offset;
+        eng_entity_set_position(engine, entity, &pos, -1, in->keep_children);
+        if (in->follow) {
+            eng_vector_t dir, vup, right;
+            eng_entity_orientation(engine, entity, &dir, &vup, &right, -1);
+            float rest = 1.0f - in->attenuation;
+            vup = v3(up.x * in->attenuation + vup.x * rest, up.y * in->attenuation + vup.y * rest,
+                     up.z * in->attenuation + vup.z * rest);
+            right = normalized(eng_vector_cross(&up, &dir));
+            dir = normalized(eng_vector_cross(&right, &up));
+            eng_entity_set_orientation(engine, entity, &dir, &vup, &right, -1, in->keep_children);
+        }
+    } else {
+        OUT_ON(b, 2);
+        /* "Keep In Floor Boundary": back over the edge the bottom center crossed since last frame
+           (the DLL's flag test is always true) */
+        if (in->keep_in) {
+            eng_vector_t newpos = v3((min.x + max.x) * 0.5f, min.y, (min.z + max.z) * 0.5f);
+            eng_matrix_t world = engine->entities.data[entity].world;
+            eng_matrix_t last = *eng_entity_last_frame_matrix(engine, entity);
+            eng_entity_set_world_matrix(engine, entity, &last, false);
+            eng_vector_t lmin, lmax;
+            bounding_box(engine, entity, &lmin, &lmax);
+            eng_vector_t oldpos = v3((lmin.x + lmax.x) * 0.5f, in->det + lmin.y, (lmin.z + lmax.z) * 0.5f);
+            eng_entity_set_world_matrix(engine, entity, &world, false);
+            floorn = eng_floor_nearest(engine, &oldpos, fp, 0);
+            if (floorn == CKFLOOR_NOFLOOR) {
+                eng_entity_set_world_matrix(engine, entity, &last, false);
+            } else {
+                nmo_object_id_t floor = floorn == CKFLOOR_DOWN ? fp->down_floor : fp->up_floor;
+                int32_t faces[FLOOR_FACES_MAX];
+                for (int failure = 0; failure < 8;) {
+                    int count = crossed_faces(engine, floor, oldpos, newpos, faces, FLOOR_FACES_MAX);
+                    if (count == 0) {
+                        break;
+                    }
+                    float best = 100000.0f;
+                    bool crossed = false;
+                    eng_vector_t inter, e1, e2, intersection = v3(0, 0, 0), edge1 = v3(0, 0, 0), edge2 = v3(0, 0, 0);
+                    for (int i = 0; i < count; i++) {
+                        float sm = ray_extruded_face(engine, floor, oldpos, newpos, faces[i], &inter, &e1, &e2);
+                        if (sm < best) {
+                            best = sm;
+                            intersection = inter;
+                            edge1 = e1;
+                            edge2 = e2;
+                            crossed = true;
+                        }
+                    }
+                    if (crossed) {
+                        eng_vector_t edge = normalized(vsub(edge2, edge1));
+                        eng_vector_t from = vsub(newpos, intersection);
+                        float ps = edge.x * from.x + edge.y * from.y + edge.z * from.z;
+                        newpos = v3(edge.x * ps + intersection.x + (oldpos.x - pos.x) * 0.01f,
+                                    edge.y * ps + intersection.y + (oldpos.y - pos.y) * 0.01f,
+                                    edge.z * ps + intersection.z + (oldpos.z - pos.z) * 0.01f);
+                    } else {
+                        newpos = oldpos;
+                    }
+                    newpos.y = min.y;
+                    floorn = eng_floor_nearest(engine, &newpos, fp, 0);
+                    failure++;
+                    if (floorn != CKFLOOR_NOFLOOR) {
+                        break;
+                    }
+                }
+                eng_vector_t up = v3(0.0f, 0.0f, 0.0f);
+                if (floorn != CKFLOOR_NOFLOOR) {
+                    up = floorn == CKFLOOR_DOWN ? fp->down_normal : fp->up_normal;
+                    float dist = floorn == CKFLOOR_DOWN ? fp->down_distance : fp->up_distance;
+                    newpos.y = newpos.y + dist + in->det + in->offset;
+                }
+                newpos.y = (max.y - min.y) * 0.5f + newpos.y;
+                eng_entity_set_position(engine, entity, &newpos, -1, in->keep_children);
+                if (in->follow) {
+                    follow_floor(engine, entity, up, up, in->keep_children);
+                }
+            }
+        }
+    }
+    *distance = floorn == CKFLOOR_DOWN ? fp->down_distance : floorn == CKFLOOR_UP ? fp->up_distance : 0.0f;
+    return floorn;
+}
+
+/*
+ * Object Keep On Floor V2 with Bounding Box extents: the floors under the
+ * four bottom corners of the object's local box, the object raised to the
+ * highest; with Keep In Floor Boundary, corners off the floors are pushed
+ * back over the edges they crossed since last frame.
+ */
+static int keep_on_floor_box(blk_t *b, int32_t entity, const keep_on_floor_inputs_t *in, eng_floor_point_t *fp,
+                             float *distance)
+{
+    nmo_engine_t *engine = b->engine;
+    eng_vector_t min, max, pts[8];
+    local_bounding_box(engine, entity, &min, &max);
+    box_corners(min, max, &engine->entities.data[entity].world, pts);
+    int off = 0, floorn = CKFLOOR_NOFLOOR;
+    bool up = false;
+    float distmin = -1000000000.0f;
+    for (int k = 0; k < 4; k++) {
+        int i = bottom_corners[k];
+        pts[i].y = in->det + pts[i].y;
+        floorn = eng_floor_nearest(engine, &pts[i], fp, 0);
+        if (floorn != CKFLOOR_NOFLOOR) {
+            corner_floor(floorn, fp, &pts[i], in->det, &distmin, &up);
+        } else {
+            off |= corner_bit(i);
+        }
+        pts[i].y = pts[i].y - in->det;
+    }
+    eng_vector_t dir, vup, right;
+    if (off == 0) {
+        corners_orientation(pts, &dir, &vup, &right);
+        if (in->follow) {
+            eng_entity_set_orientation(engine, entity, &dir, &vup, &right, -1, in->keep_children);
+        }
+        eng_vector_t move = v3(0.0f, distmin + in->det + in->offset, 0.0f);
+        eng_entity_translate(engine, entity, &move, -1, in->keep_children);
+        if (floorn == CKFLOOR_UP) {
+            fp->up_normal = vup;
+        } else if (floorn == CKFLOOR_DOWN) {
+            fp->down_normal = vup;
+        }
+        *distance = distmin;
+        return floorn;
+    }
+    OUT_ON(b, 2);
+    if (in->keep_in) { /* the DLL's flag test is always true */
+        eng_matrix_t old = *eng_entity_last_frame_matrix(engine, entity);
+        eng_vector_t oldpts[8];
+        eng_floor_point_t oldfps[6], fps[6];
+        int oldfloors[6] = {0}, floors[6] = {0};
+        memset(oldfps, 0, sizeof(oldfps));
+        box_corners(min, max, &old, oldpts);
+        for (int k = 0; k < 4; k++) {
+            int i = bottom_corners[k];
+            floorn = eng_floor_nearest(engine, &oldpts[i], &oldfps[i], 0);
+            oldfloors[i] = floorn;
+            if (floorn == CKFLOOR_NOFLOOR) {
+                break;
+            }
+        }
+        if (floorn != CKFLOOR_NOFLOOR) {
+            memset(fps, 0, sizeof(fps));
+            bool outside = true;
+            int tries = 0;
+            int32_t faces[FLOOR_FACES_MAX];
+            do {
+                float max_distance = 0.0f;
+                int max_i = 6;
+                eng_vector_t max_edge1 = v3(0, 0, 0), max_edge2 = v3(0, 0, 0), max_intersection = v3(0, 0, 0);
+                for (int k = 0; k < 4; k++) {
+                    int i = bottom_corners[k];
+                    if (!(off & corner_bit(i))) {
+                        continue;
+                    }
+                    nmo_object_id_t floor = oldfloors[i] == CKFLOOR_UP     ? oldfps[i].up_floor
+                                            : oldfloors[i] == CKFLOOR_DOWN ? oldfps[i].down_floor
+                                                                           : 0;
+                    if (eng_entity_index(engine, floor) < 0) {
+                        continue;
+                    }
+                    int count = crossed_faces(engine, floor, oldpts[i], pts[i], faces, FLOOR_FACES_MAX);
+                    if (count == 0) {
+                        break; /* "No Faces crossed" */
+                    }
+                    float best = 100000.0f;
+                    bool crossed = false;
+                    eng_vector_t inter = v3(0, 0, 0), e1 = v3(0, 0, 0), e2 = v3(0, 0, 0), intersection = v3(0, 0, 0);
+                    for (int j = 0; j < count; j++) {
+                        float sm = ray_extruded_face(engine, floor, oldpts[i], pts[i], faces[j], &inter, &e1, &e2);
+                        if (sm < best) {
+                            best = sm;
+                            intersection = inter;
+                            crossed = true;
+                        }
+                    }
+                    /* The edge kept is the last face's, as in the DLL */
+                    if (crossed && best > max_distance) {
+                        max_distance = best;
+                        max_edge1 = e1;
+                        max_edge2 = e2;
+                        max_intersection = intersection;
+                        max_i = i;
+                    }
+                }
+                if (max_i < 6) {
+                    eng_vector_t edge = normalized(vsub(max_edge2, max_edge1));
+                    eng_vector_t from = vsub(pts[max_i], max_intersection);
+                    float ps = edge.x * from.x + edge.y * from.y + edge.z * from.z;
+                    eng_vector_t move = v3(edge.x * ps + max_intersection.x + (oldpts[max_i].x - pts[max_i].x) * 0.1f - pts[max_i].x,
+                                           edge.y * ps + max_intersection.y + (oldpts[max_i].y - pts[max_i].y) * 0.1f - pts[max_i].y,
+                                           edge.z * ps + max_intersection.z + (oldpts[max_i].z - pts[max_i].z) * 0.1f - pts[max_i].z);
+                    for (int k = 0; k < 4; k++) {
+                        int j = bottom_corners[k];
+                        pts[j] = v3(move.x + pts[j].x, move.y + pts[j].y, move.z + pts[j].z);
+                    }
+                    eng_entity_translate(engine, entity, &move, -1, in->keep_children);
+                    off = test_4_points(engine, pts, fps, floors, in->det);
+                    outside = off != 0;
+                } else { /* "No Replacement found": back where it was */
+                    eng_entity_set_world_matrix(engine, entity, &old, false);
+                    memcpy(pts, oldpts, sizeof(oldpts));
+                    memcpy(fps, oldfps, sizeof(oldfps));
+                    memcpy(floors, oldfloors, sizeof(oldfloors));
+                    outside = false;
+                }
+                tries++;
+            } while (outside && tries < 8);
+            if (tries < 8) {
+                for (int k = 0; k < 4; k++) {
+                    int i = bottom_corners[k];
+                    corner_floor(floors[i], &fps[i], &pts[i], 0.0f, &distmin, &up);
+                }
+                corners_orientation(pts, &dir, &vup, &right);
+                if (in->follow) {
+                    eng_entity_set_orientation(engine, entity, &dir, &vup, &right, -1, in->keep_children);
+                }
+                eng_vector_t move = v3(0.0f, distmin + in->offset, 0.0f);
+                eng_entity_translate(engine, entity, &move, -1, in->keep_children);
+                floorn = floors[0];
+                /* The DLL takes the floor from past the corners' array: none here */
+                if (floorn == CKFLOOR_UP) {
+                    fp->up_floor = 0;
+                    fp->up_normal = vup;
+                } else if (floorn == CKFLOOR_DOWN) {
+                    fp->down_floor = 0;
+                    fp->down_normal = vup;
+                }
+            }
+        }
+    }
+    *distance = distmin;
+    return floorn;
+}
+
+/*
+ * Object Keep On Floor V2: the object kept on the floors under it (its box's
+ * bottom center, or its bottom corners), following their slope if asked;
+ * the floor, its type, its slope and the distance to it.
+ */
+static int bb_object_keep_on_floor_v2(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    int32_t entity = target_entity(b);
+    if (entity < 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+    }
+    keep_on_floor_inputs_t in;
+    in.follow = get_in_int(b, 0, 0) != 0;
+    in.offset = get_in_float(b, 1, 0.0f);
+    in.keep_children = get_in_int(b, 2, 1) == 0;
+    in.keep_in = get_in_int(b, 3, 0) != 0;
+    in.det = get_in_float(b, 4, 0.0f);
+    in.attenuation = get_in_float(b, 5, 0.9f);
+    eng_floor_point_t fp;
+    eng_floor_point_clear(&fp);
+    float distance = 0.0f;
+    int floorn = get_local_int(b, 0, 1) == 2 ? keep_on_floor_box(b, entity, &in, &fp, &distance)
+                                             : keep_on_floor_point(b, entity, &in, &fp, &distance);
+    eng_floor_settings_t settings = {0, 0, 0, 0, 0};
+    float slope = 0.0f;
+    if (floorn != CKFLOOR_NOFLOOR) {
+        nmo_object_id_t floor = floorn == CKFLOOR_UP ? fp.up_floor : fp.down_floor;
+        set_out(b, 0, &floor, sizeof(floor));
+        eng_floor_read(engine, floor, &settings);
+        eng_vector_t n = normalized(floorn == CKFLOOR_UP ? fp.up_normal : fp.down_normal);
+        slope = (float)acos((n.z + n.x) * 0.0f + n.y);
+    }
+    set_out_int(b, 1, settings.type);
+    set_out_float(b, 2, slope);
+    set_out_float(b, 3, distance);
+    if (in.keep_in) {
+        engine->entities.data[entity].entity_flags |= CK_3DENTITY_UPDATELASTFRAME;
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
 static const nmo_engine_block_desc_t eng_collisions_blocks[] = {
     {NMO_GUID_INIT(0x64154401, 0x76cf37af), "Box Box Intersection", bb_box_box_intersection, NULL, NULL},
     {NMO_GUID_INIT(0x198531f9, 0x60f66c57), "Sphere Sphere Intersection", bb_sphere_sphere_intersection, NULL, NULL},
@@ -1269,6 +1793,7 @@ static const nmo_engine_block_desc_t eng_collisions_blocks[] = {
     {NMO_GUID_INIT(0x43617677, 0x7de15e12), "Object Keep On Floor", bb_object_keep_on_floor, NULL, NULL},
     {NMO_GUID_INIT(0xdbac2124, 0x6adcbfa4), "Character Keep On Floor", bb_character_keep_on_floor, NULL, NULL},
     {NMO_GUID_INIT(0x136044b0, 0x1c59b21a), "Floor Slider", bb_floor_slider, NULL, NULL},
+    {NMO_GUID_INIT(0x3de853bd, 0x133d0d2e), "Object Keep On Floor V2", bb_object_keep_on_floor_v2, NULL, NULL},
 };
 
 nmo_status_t eng_register_collisions(nmo_engine_t *engine)
