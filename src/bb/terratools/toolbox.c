@@ -3161,6 +3161,336 @@ static int bb_set_material_values(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* ---- Effects ---- */
+
+/* TT_SetFSAA: the render context's antialiasing render state; its input stays active and no output
+   fires, as in the DLL */
+static int bb_set_fsaa(blk_t *b)
+{
+    eng_render_settings(b->engine)->antialias = (get_in_int(b, 0, 0) & 0xFF) != 0;
+    eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, 0, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * TT_ViewFrustumClipping: each frame, every 3D entity in the scene shown
+ * when its box (CK3dEntity::IsInViewFrustrum) is in Camera's view, hidden
+ * otherwise; all shown again when its script is deactivated. The DLL also
+ * draws the scene through the camera first (into the back buffer the frame
+ * clears again); that is not drawn here.
+ */
+static int bb_view_frustum_clipping(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+    }
+    nmo_object_id_t camera = nmo_engine_block_get_input_object(b, 0);
+    if (camera == 0) {
+        camera = engine->render.camera;
+    }
+    eng_matrix_t view;
+    eng_vector_t near_origin;
+    if (!eng_camera_view_projection(engine, camera, &view, &near_origin)) {
+        return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+    }
+    for (size_t i = 0; i < engine->entities.count; i++) {
+        const eng_entity_t *entity = &engine->entities.data[i];
+        if (entity->destroyed || !eng_in_scene(engine, entity->id)) {
+            continue;
+        }
+        /* A 3D entity without geometry has no box: never in view, as Is In View Frustrum has it */
+        eng_vector_t min = {0, 0, 0}, max = {0, 0, 0};
+        bool has_box = eng_entity_local_box(engine, (int32_t)i, &min, &max);
+        eng_matrix_t m;
+        eng_matrix_multiply4(&m, &view, &entity->world);
+        nmo_rect_t screen;
+        eng_show(engine, entity->id, has_box && eng_project_box(&m, &min, &max, &screen) ? 1 : 0);
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+static int view_frustum_clipping_callback(blk_t *b, uint32_t message)
+{
+    nmo_engine_t *engine = b->engine;
+    if (message != NMO_ENGINE_MSG_DEACTIVATESCRIPT) {
+        return NMO_ENGINE_BR_OK;
+    }
+    for (size_t i = 0; i < engine->entities.count; i++) {
+        const eng_entity_t *entity = &engine->entities.data[i];
+        if (!entity->destroyed && eng_in_scene(engine, entity->id)) {
+            eng_show(engine, entity->id, 1);
+        }
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * TT_BitmapFont: On makes (in the render context) an "Ent" with a "Mesh" of
+ * a quad a character of Text at Z 10, Scale apart from Position, each
+ * showing its cell of a 16 x 16 font texture from character 32 (Cursiv: 128
+ * cells on), in Material. As in the DLL, Off does nothing (the block tests
+ * On twice), each On makes another entity, and the blend and colour inputs
+ * are not used.
+ */
+static int bb_bitmap_font(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    if (!IN_ACTIVE(b, 0)) {
+        return NMO_ENGINE_BR_OK;
+    }
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_object_id_t material = nmo_engine_block_get_input_object(b, 0);
+    float position[2] = {0.0f, 0.0f}, scale[2] = {0.0f, 0.0f};
+    nmo_engine_block_get_input_value(b, 1, position, sizeof(position));
+    nmo_engine_block_get_input_value(b, 2, scale, sizeof(scale));
+    const char *text = input_string(b, 3);
+    if (text == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    bool cursive = (get_in_int(b, 4, 0) & 0xFF) != 0;
+    int32_t length = (int32_t)strlen(text);
+    nmo_mesh_state_t *state = NULL;
+    nmo_object_id_t mesh = eng_create_mesh(engine, "Mesh", 4 * length, 2 * length, &state);
+    nmo_object_id_t entity = eng_create_object(engine, NMO_CID_3DENTITY, "Ent");
+    if (mesh == 0 || entity == 0) {
+        return NMO_ENGINE_BR_OK;
+    }
+    for (int32_t i = 0; i < length; i++) {
+        int32_t cell = (unsigned char)text[i] - 32 + (cursive ? 128 : 0);
+        /* the DLL reads outside its 256 cells there; the first cell here */
+        cell = cell < 0 || cell > 255 ? 0 : cell;
+        float u0 = (float)(cell % 16) * 0.0625f, u1 = u0 + 0.0625f;
+        float v0 = (float)(cell / 16) * 0.0625f, v1 = v0 + 0.0625f;
+        float x0 = (float)i * scale[0] + position[0], x1 = (float)(i + 1) * scale[0] + position[0];
+        float y1 = scale[1] + position[1];
+        nmo_vertex_t *v = &state->vertices[4 * i];
+        v[0].position = (nmo_vector_t){x0, position[1], 10.0f};
+        v[1].position = (nmo_vector_t){x0, y1, 10.0f};
+        v[2].position = (nmo_vector_t){x1, y1, 10.0f};
+        v[3].position = (nmo_vector_t){x1, position[1], 10.0f};
+        v[0].uv = (nmo_vector2_t){u0, v1};
+        v[1].uv = (nmo_vector2_t){u0, v0};
+        v[2].uv = (nmo_vector2_t){u1, v0};
+        v[3].uv = (nmo_vector2_t){u1, v1};
+        const uint16_t k = (uint16_t)(4 * i);
+        const uint16_t faces[6] = {k, (uint16_t)(k + 1), (uint16_t)(k + 3), (uint16_t)(k + 1), (uint16_t)(k + 2),
+                                   (uint16_t)(k + 3)};
+        memcpy(&state->face_vertex_indices[6 * i], faces, sizeof(faces));
+    }
+    /* BuildNormals: the quads face -Z */
+    for (int32_t f = 0; f < 2 * length; f++) {
+        state->faces[f].normal = (nmo_vector_t){0.0f, 0.0f, -1.0f};
+    }
+    for (int32_t v = 0; v < 4 * length; v++) {
+        state->vertices[v].normal = (nmo_vector_t){0.0f, 0.0f, -1.0f};
+    }
+    nmo_mesh_update_bounding_volumes(state);
+    if (material != 0) {
+        eng_mesh_apply_material(engine, mesh, material);
+    }
+    eng_entity_set_current_mesh(engine, entity, mesh);
+    int32_t index = eng_entity_index(engine, entity);
+    if (index >= 0) {
+        const eng_vector_t origin = {0.0f, 0.0f, 0.0f};
+        eng_entity_set_position(engine, index, &origin, -1, false);
+    }
+    eng_add_to_level_scene(engine, entity);
+    return NMO_ENGINE_BR_OK;
+}
+
+enum { SKY_STATE, SKY_SIDES, SKY_TOP, SKY_BOTTOM };
+enum { SKY_ENTITY_SLOT = 17, SKY_ORIENTATION_SLOT = 18, SKY_STATE_WORDS = 19 };
+
+/* The UV the sky's top and bottom fans give a ring point: its direction in XZ halved round 0.5 */
+static nmo_vector2_t sky_fan_uv(float x, float z)
+{
+    if (x == 0.0f && z == 0.0f) {
+        return (nmo_vector2_t){0.0f, 0.0f};
+    }
+    double inv = 1.0 / sqrt((double)(z * z + x * x));
+    return (nmo_vector2_t){(float)(inv * x) * 0.5f + 0.5f, (float)(inv * z * 0.5 + 0.5)};
+}
+
+/*
+ * TT SkyAround: On makes a "TT_SkyAround_Entity" (hidden, in the level)
+ * with a prelit "TT_SkyAround_Mesh": a ring of SideMaterials quads of Radius
+ * round Y Position (square, or Sideface Height high), with top and bottom
+ * fans when the settings say, its vertex colours the filtering colour and
+ * its specular the additional one, each part in its material input; each
+ * frame it is shown at the viewpoint, turned as Orientation Object (none:
+ * the world's axes). Off hides it. Distortion and the blend inputs are not
+ * used, as in the DLL.
+ */
+static int bb_sky_around(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+        float filter[4] = {1.0f, 1.0f, 1.0f, 0.5f};
+        nmo_engine_block_get_input_value(b, 1, filter, sizeof(filter));
+        uint32_t filtering = rgbaf_to_color(filter);
+        nmo_engine_block_get_input_value(b, 2, filter, sizeof(filter));
+        uint32_t additional = rgbaf_to_color(filter);
+        nmo_object_id_t orientation = nmo_engine_block_get_input_object(b, 5);
+        float radius = get_in_float(b, 6, 70.0f);
+        bool square = get_in_int(b, 7, 1) != 0;
+        float height = square ? 0.0f : get_in_float(b, 8, 0.0f);
+        float y = get_in_float(b, 9, 0.0f);
+        int32_t sides = get_local_int(b, SKY_SIDES, 0);
+        bool top = get_local_int(b, SKY_TOP, 0) != 0, bottom = get_local_int(b, SKY_BOTTOM, 0) != 0;
+        int32_t per_vertices = 4 + (top ? 3 : 0) + (bottom ? 3 : 0);
+        int32_t per_faces = 2 + (top ? 1 : 0) + (bottom ? 1 : 0);
+        if (square) {
+            double step = 6.2831855 / (double)sides;
+            float cx = (float)(cos(step) * radius), sz = (float)(sin(step) * radius);
+            height = (float)sqrt((double)(-sz * -sz + (radius - cx) * (radius - cx)));
+        }
+        nmo_mesh_state_t *state = NULL;
+        nmo_object_id_t mesh = sides > 0 ? eng_create_mesh(engine, "TT_SkyAround_Mesh", sides * per_vertices,
+                                                           sides * per_faces, &state)
+                                         : 0;
+        nmo_object_id_t entity = mesh != 0 ? eng_create_object(engine, NMO_CID_3DENTITY, "TT_SkyAround_Entity") : 0;
+        if (entity == 0) {
+            return NMO_ENGINE_BR_GENERICERROR;
+        }
+        float low = (float)(y - height * 0.5), high = (float)(height * 0.5 + y);
+        for (int32_t s = 0; s < sides; s++) {
+            double step = 6.2831855 / (double)sides;
+            double a0 = (double)s * step, a1 = step * (double)(s + 1);
+            float x0 = (float)(cos(a0) * radius), z0 = (float)(sin(a0) * radius);
+            float x1 = (float)(cos(a1) * radius), z1 = (float)(sin(a1) * radius);
+            nmo_vertex_t *v = &state->vertices[s * per_vertices];
+            v[0].position = (nmo_vector_t){x0, low, z0};
+            v[0].uv = (nmo_vector2_t){1.0f, 1.0f};
+            v[1].position = (nmo_vector_t){x1, low, z1};
+            v[1].uv = (nmo_vector2_t){0.0f, 1.0f};
+            v[2].position = (nmo_vector_t){x1, high, z1};
+            v[2].uv = (nmo_vector2_t){0.0f, 0.0f};
+            v[3].position = (nmo_vector_t){x0, high, z0};
+            v[3].uv = (nmo_vector2_t){1.0f, 0.0f};
+            int32_t k = 4;
+            if (top) {
+                v[k].position = (nmo_vector_t){x0, high, z0};
+                v[k].uv = sky_fan_uv(x0, z0);
+                v[k + 1].position = (nmo_vector_t){x1, high, z1};
+                v[k + 1].uv = sky_fan_uv(x1, z1);
+                v[k + 2].position = (nmo_vector_t){0.0f, high, 0.0f};
+                v[k + 2].uv = (nmo_vector2_t){0.5f, 0.5f};
+                k += 3;
+            }
+            if (bottom) {
+                v[k].position = (nmo_vector_t){x0, low, z0};
+                v[k].uv = sky_fan_uv(x0, z0);
+                v[k + 1].position = (nmo_vector_t){0.0f, low, 0.0f};
+                v[k + 1].uv = (nmo_vector2_t){0.5f, 0.5f};
+                v[k + 2].position = (nmo_vector_t){x1, low, z1};
+                v[k + 2].uv = sky_fan_uv(x1, z1);
+            }
+        }
+        for (int32_t i = 0; i < sides * per_vertices; i++) {
+            state->vertex_colors[i] = filtering;
+            state->vertex_specular[i] = additional;
+        }
+        state->flags |= VXMESH_PRELITMODE;
+        for (int32_t s = 0; s < sides; s++) {
+            uint16_t base = (uint16_t)(s * per_vertices);
+            uint16_t *k = &state->face_vertex_indices[3 * s * per_faces];
+            const uint16_t quad[6] = {(uint16_t)(base + 2), base, (uint16_t)(base + 1), (uint16_t)(base + 2),
+                                      (uint16_t)(base + 3), base};
+            memcpy(k, quad, sizeof(quad));
+            int32_t f = 2, at = 4;
+            if (top) {
+                k[3 * f] = (uint16_t)(base + at);
+                k[3 * f + 1] = (uint16_t)(base + at + 1);
+                k[3 * f + 2] = (uint16_t)(base + at + 2);
+                f++;
+                at += 3;
+            }
+            if (bottom) {
+                k[3 * f] = (uint16_t)(base + at);
+                k[3 * f + 1] = (uint16_t)(base + at + 1);
+                k[3 * f + 2] = (uint16_t)(base + at + 2);
+            }
+        }
+        nmo_mesh_update_bounding_volumes(state);
+        for (int32_t s = 0; s < sides; s++) {
+            int32_t f = s * per_faces;
+            nmo_object_id_t side = nmo_engine_block_get_input_object(b, 10 + s);
+            eng_mesh_set_face_material(engine, mesh, f, side);
+            eng_mesh_set_face_material(engine, mesh, f + 1, side);
+            f += 2;
+            if (top) {
+                eng_mesh_set_face_material(engine, mesh, f++, nmo_engine_block_get_input_object(b, sides + 10));
+            }
+            if (bottom) {
+                eng_mesh_set_face_material(engine, mesh, f,
+                                           nmo_engine_block_get_input_object(b, sides + (top ? 11 : 10)));
+            }
+        }
+        eng_add_to_level_scene(engine, entity);
+        eng_show(engine, entity, 0);
+        eng_entity_set_current_mesh(engine, entity, mesh);
+        uint32_t words[SKY_STATE_WORDS];
+        memset(words, 0, sizeof(words));
+        words[SKY_ENTITY_SLOT] = (uint32_t)entity;
+        words[SKY_ORIENTATION_SLOT] = (uint32_t)orientation;
+        nmo_engine_block_set_local_value(b, SKY_STATE, words, sizeof(words));
+    }
+    uint32_t words[SKY_STATE_WORDS];
+    memset(words, 0, sizeof(words));
+    nmo_engine_block_get_local_value(b, SKY_STATE, words, sizeof(words));
+    nmo_object_id_t entity = (nmo_object_id_t)words[SKY_ENTITY_SLOT];
+    int32_t index = entity != 0 ? eng_entity_index(engine, entity) : -1;
+    if (index < 0) {
+        return NMO_ENGINE_BR_GENERICERROR;
+    }
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        eng_show(engine, entity, 0);
+        return NMO_ENGINE_BR_OK;
+    }
+    eng_show(engine, entity, 1);
+    eng_matrix_t eye;
+    eng_render_viewpoint(engine, &eye);
+    int32_t orientation = eng_entity_index(engine, (nmo_object_id_t)words[SKY_ORIENTATION_SLOT]);
+    eng_matrix_t world;
+    if (orientation >= 0) {
+        world = engine->entities.data[orientation].world;
+    } else {
+        memset(&world, 0, sizeof(world));
+        world.m[0][0] = world.m[1][1] = world.m[2][2] = world.m[3][3] = 1.0f;
+    }
+    eng_entity_set_world_matrix(engine, index, &world, false);
+    eng_vector_t at = {eye.m[3][0], eye.m[3][1], eye.m[3][2]};
+    eng_entity_set_position(engine, index, &at, -1, false);
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+/* TT SkyAround's callback: its entity destroyed on reset (and delete, detach), the state cleared on
+   load (and attach) */
+static int sky_around_callback(blk_t *b, uint32_t message)
+{
+    uint32_t words[SKY_STATE_WORDS];
+    memset(words, 0, sizeof(words));
+    if (message == NMO_ENGINE_MSG_LOAD) {
+        nmo_engine_block_set_local_value(b, SKY_STATE, words, sizeof(words));
+    } else if (message == NMO_ENGINE_MSG_RESET) {
+        nmo_engine_block_get_local_value(b, SKY_STATE, words, sizeof(words));
+        nmo_object_id_t entity = (nmo_object_id_t)words[SKY_ENTITY_SLOT];
+        if (entity != 0 && eng_find_object(b->engine, entity) != NULL) {
+            eng_destroy_objects(b->engine, &entity, 1, NULL);
+        }
+        words[SKY_ENTITY_SLOT] = 0;
+        nmo_engine_block_set_local_value(b, SKY_STATE, words, sizeof(words));
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_tt_toolbox_blocks[] = {
     {NMO_GUID_INIT(0x594a136e,0x58135ef9),"TT Joystick Waiter",bb_tt_joystick_waiter,NULL,NULL},
     {NMO_GUID_INIT(0x229865eb,0x577619e4),"TT_TestForJoystick",bb_test_for_joystick,NULL,NULL},
@@ -3230,6 +3560,10 @@ static const nmo_engine_block_desc_t eng_tt_toolbox_blocks[] = {
     {NMO_GUID_INIT(0x6b6d781e, 0x4b531860), "TT_ListAllCurrentUsedTextures", bb_list_all_current_used_textures, NULL, NULL},
     {NMO_GUID_INIT(0x5ca62d31, 0x5d2031b8), "TT_SaveAlpha", bb_save_alpha, NULL, NULL},
     {NMO_GUID_INIT(0x62963fa9, 0x7258745c), "TT_Set Material Values", bb_set_material_values, NULL, NULL},
+    {NMO_GUID_INIT(0x30bd6156, 0x14772834), "TT_SetFSAA", bb_set_fsaa, NULL, NULL},
+    {NMO_GUID_INIT(0x412e4cd0, 0x6f860de3), "TT_ViewFrustumClipping", bb_view_frustum_clipping, view_frustum_clipping_callback, NULL},
+    {NMO_GUID_INIT(0x173e60ff, 0x4db14bcc), "TT_BitmapFont", bb_bitmap_font, NULL, NULL},
+    {NMO_GUID_INIT(0x2c7d5826, 0x688778f4), "TT SkyAround", bb_sky_around, sky_around_callback, NULL},
     {NMO_GUID_INIT(0x0fd4755f, 0x7de22dc8), "TT Set Dynamic Position", bb_set_dynamic_position, NULL,
      NULL},
 };

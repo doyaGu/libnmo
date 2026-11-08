@@ -5,6 +5,7 @@
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_targetcamera_schemas.h"
+#include "object/builtin/nmo_camera_schemas.h"
 #include "object/builtin/nmo_curve_schemas.h"
 #include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_material_schemas.h"
@@ -68,6 +69,10 @@
 #define GUID_ANISO_MAPPING NMO_GUID(0x73b30b5e, 0x4fed4c65)
 #define GUID_SAVE_ALPHA NMO_GUID(0x5ca62d31, 0x5d2031b8)
 #define GUID_SET_MATERIAL_VALUES NMO_GUID(0x62963fa9, 0x7258745c)
+#define GUID_SET_FSAA NMO_GUID(0x30bd6156, 0x14772834)
+#define GUID_VIEW_FRUSTUM_CLIPPING NMO_GUID(0x412e4cd0, 0x6f860de3)
+#define GUID_BITMAP_FONT NMO_GUID(0x173e60ff, 0x4db14bcc)
+#define GUID_SKY_AROUND NMO_GUID(0x2c7d5826, 0x688778f4)
 
 /* The files the engine loads, from the scratch directory */
 static const char *resolve_scratch(void *user_data, const char *name)
@@ -1589,6 +1594,103 @@ TEST(engine_tt, save_alpha_moves_alpha_into_the_colour_and_saves)
     fixture_end(&f);
 }
 
+TEST(engine_tt, fsaa_bitmap_font_and_frustum_clipping)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t font = fixture_create(&f, NMO_CID_MATERIAL, "Font");
+    nmo_object_id_t camera = placed(&f, NMO_CID_CAMERA, "Camera", 0.0f, 0.0f, 0.0f);
+    nmo_object_id_t front = unit_cube(&f, "Front", 0.0f, 0.0f, 10.0f);
+    nmo_object_id_t behind = unit_cube(&f, "Behind", 0.0f, 0.0f, -10.0f);
+    ASSERT_TRUE(font && camera && front && behind);
+    nmo_camera_state_t *lens = (nmo_camera_state_t *)fixture_state(&f, camera);
+    lens->fov = 1.0f;
+    lens->near_plane = 1.0f;
+    lens->far_plane = 1000.0f;
+    lens->aspect_width = 4;
+    lens->aspect_height = 3;
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t fsaa = started_block(&f, GUID_SET_FSAA, "FSAA");
+    nmo_object_id_t text = started_block(&f, GUID_BITMAP_FONT, "Text");
+    nmo_object_id_t clip = started_block(&f, GUID_VIEW_FRUSTUM_CLIPPING, "Clip");
+    ASSERT_TRUE(fsaa && text && clip);
+    fixture_input_int(&f, BLOCK_PIN(&f, clip, 0), (int32_t)camera);
+    fixture_input_int(&f, BLOCK_PIN(&f, fsaa, 0), 1);
+    fixture_input_int(&f, BLOCK_PIN(&f, text, 0), (int32_t)font);
+    const float position[2] = {3.0f, 4.0f}, scale[2] = {1.0f, 2.0f};
+    fixture_input_value(&f, BLOCK_PIN(&f, text, 1), position, sizeof(position));
+    fixture_input_value(&f, BLOCK_PIN(&f, text, 2), scale, sizeof(scale));
+    input_text(&f, BLOCK_PIN(&f, text, 3), "AB");
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_TRUE(frame.antialias);
+    ASSERT_TRUE((eng_object_visibility(f.engine, front) & CK_OBJECT_VISIBLE) != 0); /* in the camera's view */
+    ASSERT_TRUE((eng_object_visibility(f.engine, behind) & CK_OBJECT_VISIBLE) == 0);
+
+    /* A quad a letter at Z 10; 'A' is cell 33: column 1, row 2 of the 16 x 16 texture */
+    nmo_object_id_t mesh = nmo_engine_object_named(f.engine, "Mesh", NMO_CID_MESH);
+    ASSERT_TRUE(nmo_engine_object_named(f.engine, "Ent", NMO_CID_3DENTITY) != 0 && mesh != 0);
+    nmo_engine_mesh_t out;
+    ASSERT_TRUE(nmo_engine_mesh(f.engine, mesh, &out));
+    ASSERT_EQ(8, out.vertex_count);
+    ASSERT_FLOAT_EQ(3.0f, out.vertices[1].position.x, 0.0f);
+    ASSERT_FLOAT_EQ(6.0f, out.vertices[1].position.y, 0.0f);
+    ASSERT_FLOAT_EQ(10.0f, out.vertices[1].position.z, 0.0f);
+    ASSERT_FLOAT_EQ(0.0625f, out.vertices[1].uv.x, 0.0f);
+    ASSERT_FLOAT_EQ(0.125f, out.vertices[1].uv.y, 0.0f);
+    ASSERT_FLOAT_EQ(5.0f, out.vertices[6].position.x, 0.0f); /* 'B' ends 2 to the right */
+    ASSERT_EQ(font, nmo_engine_mesh_material(f.engine, mesh, (int32_t)out.faces[3].material_group_idx));
+    fixture_end(&f);
+}
+
+TEST(engine_tt, sky_around_follows_the_viewpoint)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t sky = started_block(&f, GUID_SKY_AROUND, "Sky");
+    ASSERT_TRUE(sky != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, sky, 1), 2); /* Off two frames on */
+    nmo_object_id_t sides = local_of(&f, sky, 1), top = local_of(&f, sky, 2), bottom = local_of(&f, sky, 3);
+    ASSERT_TRUE(sides && top && bottom);
+    fixture_commit(&f, NULL);
+    const int32_t four = 4, yes = 1;
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, sides, &four, sizeof(four)));
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, top, &yes, sizeof(yes)));
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, bottom, &yes, sizeof(yes)));
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+
+    /* Four square sides of radius 70 (chord 70 sqrt 2), each with a top and a bottom triangle */
+    nmo_object_id_t ring = nmo_engine_object_named(f.engine, "TT_SkyAround_Entity", NMO_CID_3DENTITY);
+    nmo_object_id_t mesh = nmo_engine_object_named(f.engine, "TT_SkyAround_Mesh", NMO_CID_MESH);
+    ASSERT_TRUE(ring != 0 && mesh != 0);
+    nmo_engine_mesh_t out;
+    ASSERT_TRUE(nmo_engine_mesh(f.engine, mesh, &out));
+    ASSERT_EQ(40, out.vertex_count);
+    ASSERT_EQ(16, out.face_count);
+    ASSERT_TRUE(out.prelit);
+    ASSERT_FLOAT_EQ(70.0f, out.vertices[0].position.x, 1e-4f);
+    ASSERT_FLOAT_EQ(-35.0f * sqrtf(2.0f), out.vertices[0].position.y, 1e-3f);
+    ASSERT_FLOAT_EQ(0.5f, out.vertices[6].uv.x, 0.0f); /* the top fan's middle */
+    ASSERT_TRUE((eng_object_visibility(f.engine, ring) & CK_OBJECT_VISIBLE) != 0);
+    eng_matrix_t eye;
+    eng_render_viewpoint(f.engine, &eye);
+    int32_t index = eng_entity_index(f.engine, ring);
+    ASSERT_TRUE(index >= 0);
+    ASSERT_FLOAT_EQ(eye.m[3][0], f.engine->entities.data[index].world.m[3][0], 1e-5f);
+    ASSERT_FLOAT_EQ(eye.m[3][2], f.engine->entities.data[index].world.m[3][2], 1e-5f);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_TRUE((eng_object_visibility(f.engine, ring) & CK_OBJECT_VISIBLE) == 0); /* Off */
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_tt, load_database_fills_the_array_of_its_name);
 REGISTER_TEST(engine_tt, save_database_writes_the_registered_arrays);
@@ -1619,4 +1721,6 @@ REGISTER_TEST(engine_tt, set_mapping_tiles_offsets_and_copies_materials);
 REGISTER_TEST(engine_tt, cel_shading_and_aniso_add_their_channels);
 REGISTER_TEST(engine_tt, bump_and_refraction_move_uvs_toward_light_and_eye);
 REGISTER_TEST(engine_tt, save_alpha_moves_alpha_into_the_colour_and_saves);
+REGISTER_TEST(engine_tt, fsaa_bitmap_font_and_frustum_clipping);
+REGISTER_TEST(engine_tt, sky_around_follows_the_viewpoint);
 TEST_MAIN_END()
