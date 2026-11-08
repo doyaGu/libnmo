@@ -721,6 +721,58 @@ nmo_face_t *eng_mesh_copy_faces(nmo_engine_t *engine, eng_mesh_copy_t *copy)
     return copy->faces;
 }
 
+void eng_mesh_vertices_moved(nmo_engine_t *engine, eng_mesh_copy_t *copy, bool rebuild_normals)
+{
+    const nmo_mesh_state_t *state = eng_mesh_state(engine, copy->mesh);
+    uint32_t count = state != NULL ? state->vertex_count : 0;
+    if (count == 0) {
+        return;
+    }
+    if (rebuild_normals) {
+        nmo_mesh_state_t moved = *state;
+        moved.vertices = copy->vertices;
+        nmo_vector_t *normals = (nmo_vector_t *)malloc(count * sizeof(nmo_vector_t));
+        if (normals != NULL && nmo_mesh_build_vertex_normals(&moved, normals) == NMO_OK) {
+            for (uint32_t v = 0; v < count; v++) {
+                copy->vertices[v].normal = normals[v];
+            }
+        }
+        free(normals);
+        nmo_face_t *faces = state->face_vertex_indices != NULL ? eng_mesh_copy_faces(engine, copy) : NULL;
+        for (uint32_t f = 0; faces != NULL && f < state->face_count; f++) {
+            const uint16_t *k = &state->face_vertex_indices[3u * f];
+            if (k[0] >= count || k[1] >= count || k[2] >= count) {
+                continue;
+            }
+            const nmo_vector_t *p0 = &copy->vertices[k[0]].position, *p1 = &copy->vertices[k[1]].position;
+            const nmo_vector_t *p2 = &copy->vertices[k[2]].position;
+            double ax = (double)p1->x - p0->x, ay = (double)p1->y - p0->y, az = (double)p1->z - p0->z;
+            double bx = (double)p2->x - p0->x, by = (double)p2->y - p0->y, bz = (double)p2->z - p0->z;
+            double nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx;
+            double length = sqrt(nx * nx + ny * ny + nz * nz);
+            if (length > 0.0) {
+                faces[f].normal = (nmo_vector_t){(float)(nx / length), (float)(ny / length), (float)(nz / length)};
+            }
+        }
+    }
+    double sum[3] = {0.0, 0.0, 0.0};
+    for (uint32_t v = 0; v < count; v++) {
+        const nmo_vector_t *p = &copy->vertices[v].position;
+        sum[0] += p->x, sum[1] += p->y, sum[2] += p->z;
+    }
+    copy->bary_center = (nmo_vector_t){(float)(sum[0] / count), (float)(sum[1] / count), (float)(sum[2] / count)};
+    double squared = 0.0;
+    for (uint32_t v = 0; v < count; v++) {
+        const nmo_vector_t *p = &copy->vertices[v].position;
+        double x = (double)p->x - copy->bary_center.x, y = (double)p->y - copy->bary_center.y;
+        double z = (double)p->z - copy->bary_center.z;
+        squared = fmax(squared, x * x + y * y + z * z);
+    }
+    copy->radius = (float)sqrt(squared);
+    copy->geometry_changed = true;
+    copy->version = ++engine->render.mesh_version;
+}
+
 float *eng_mesh_uvs(nmo_engine_t *engine, eng_mesh_copy_t *copy, int32_t channel, size_t *stride,
                     int32_t *count)
 {

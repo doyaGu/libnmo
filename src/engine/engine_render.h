@@ -340,6 +340,9 @@ bool eng_mesh_replace_material(nmo_engine_t *engine, nmo_object_id_t mesh,
                                nmo_object_id_t old_material, nmo_object_id_t new_material);
 /* The copy's faces, copied from the file the first time; NULL for a mesh without faces. */
 nmo_face_t *eng_mesh_copy_faces(nmo_engine_t *engine, eng_mesh_copy_t *copy);
+/* CKMesh::ModifierVertexMove(rebuild_normals, TRUE) once a block moved the copy's vertices: the
+   vertex and face normals from the faces when `rebuild_normals`, the bounding sphere, a new version */
+void eng_mesh_vertices_moved(nmo_engine_t *engine, eng_mesh_copy_t *copy, bool rebuild_normals);
 /* CKMesh::GetTextureCoordinatesPtr: the UVs of `channel` (-1 the mesh's own, which a channel
    without UVs of its own shares), two floats every `*stride` bytes for `*count` vertices;
    NULL for no such channel or no vertices. */
