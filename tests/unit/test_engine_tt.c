@@ -3,7 +3,14 @@
 #include "engine/nmo_engine_render.h"
 #include "type/nmo_type_guids.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_behavior_schemas.h"
+#include "object/builtin/nmo_targetcamera_schemas.h"
+#include "object/builtin/nmo_curve_schemas.h"
+#include "object/builtin/nmo_group_schemas.h"
+#include "object/builtin/nmo_mesh_schemas.h"
+#include "object/nmo_object_enum_defs.h"
 #include "object/nmo_ref.h"
+#include "../../src/engine/engine_internal.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -40,6 +47,12 @@
 #define GUID_CHRONO NMO_GUID(0x325d722d, 0x3d9e16e9)
 #define GUID_CHILDREN_ITERATOR NMO_GUID(0x78041c90, 0x16de3cde)
 #define GUID_WRITE_BACK NMO_GUID(0x78b31127, 0x0a875030)
+#define GUID_GET_CURVE_POINT NMO_GUID(0x50eb3a17, 0x015c5bf9)
+#define GUID_GET_NEAREST_CURVE_POSITION NMO_GUID(0x04db6e14, 0x2c151f73)
+#define GUID_BOUNDING_SPHERE NMO_GUID(0x32a6308d, 0x1d3d0931)
+#define GUID_CHECK_CURVE_COLLISION NMO_GUID(0x7e9a4415, 0x199e4eb3)
+#define GUID_HOMING_MISSILE NMO_GUID(0x44d43591, 0x28f91084)
+#define GUID_FOLLOW_CAMERA NMO_GUID(0x595b4723, 0x576c6749)
 
 /* The files the engine loads, from the scratch directory */
 static const char *resolve_scratch(void *user_data, const char *name)
@@ -862,6 +875,262 @@ TEST(engine_tt, write_back_writes_into_the_source_read)
     fixture_end(&f);
 }
 
+/* An entity of `cid` at the position */
+static nmo_object_id_t placed(engine_fixture_t *f, int32_t cid, const char *name, float x, float y, float z)
+{
+    nmo_object_id_t id = fixture_create(f, cid, name);
+    nmo_3dentity_state_t *state = id != 0 ? (nmo_3dentity_state_t *)fixture_state(f, id) : NULL;
+    if (state == NULL) {
+        return 0;
+    }
+    state->world_matrix[12] = x;
+    state->world_matrix[13] = y;
+    state->world_matrix[14] = z;
+    return id;
+}
+
+/* A unit cube (half size 0.5) at the position */
+static nmo_object_id_t unit_cube(engine_fixture_t *f, const char *name, float x, float y, float z)
+{
+    nmo_object_id_t object = placed(f, NMO_CID_3DENTITY, name, x, y, z);
+    nmo_object_id_t mesh = fixture_create(f, NMO_CID_MESH, name);
+    nmo_mesh_state_t *state = mesh != 0 ? (nmo_mesh_state_t *)fixture_state(f, mesh) : NULL;
+    if (object == 0 || state == NULL) {
+        return 0;
+    }
+    state->vertices = (nmo_vertex_t *)nmo_arena_alloc(nmo_session_get_arena(f->session), 8u * sizeof(nmo_vertex_t),
+                                                      _Alignof(nmo_vertex_t));
+    if (state->vertices == NULL) {
+        return 0;
+    }
+    memset(state->vertices, 0, 8u * sizeof(nmo_vertex_t));
+    for (int i = 0; i < 8; i++) {
+        state->vertices[i].position =
+            (nmo_vector_t){(i & 1) ? 0.5f : -0.5f, (i & 2) ? 0.5f : -0.5f, (i & 4) ? 0.5f : -0.5f};
+    }
+    state->vertex_count = 8;
+    nmo_mesh_update_bounding_volumes(state);
+    ((nmo_3dentity_state_t *)fixture_state(f, object))->current_mesh = nmo_ref_from_id(mesh);
+    return object;
+}
+
+/* A closed linear curve round the 10 by 10 square in XZ: A (0,0,0), B (10,0,0), C (10,0,10), D (0,0,10) */
+static nmo_object_id_t square_curve(engine_fixture_t *f, nmo_object_id_t points[4])
+{
+    nmo_object_id_t curve = fixture_create(f, NMO_CID_CURVE, "Square");
+    nmo_curve_state_t *state = curve != 0 ? (nmo_curve_state_t *)fixture_state(f, curve) : NULL;
+    if (state == NULL) {
+        return 0;
+    }
+    state->base.has_entityndata_chunk = 1;
+    state->control_point_count = 4;
+    state->opened = 0;
+    state->control_point_ids = (nmo_ref_t *)nmo_arena_alloc(nmo_session_get_arena(f->session), 4 * sizeof(nmo_ref_t),
+                                                            _Alignof(nmo_ref_t));
+    if (state->control_point_ids == NULL) {
+        return 0;
+    }
+    const float corners[4][2] = {{0, 0}, {10, 0}, {10, 10}, {0, 10}};
+    const char *names[4] = {"A", "B", "C", "D"};
+    for (int i = 0; i < 4; i++) {
+        points[i] = placed(f, NMO_CID_CURVEPOINT, names[i], corners[i][0], 0.0f, corners[i][1]);
+        nmo_curvepoint_state_t *point = points[i] != 0 ? (nmo_curvepoint_state_t *)fixture_state(f, points[i]) : NULL;
+        if (point == NULL) {
+            return 0;
+        }
+        point->base.has_entityndata_chunk = 1;
+        point->base.parent = nmo_ref_from_id(curve);
+        point->curve = nmo_ref_from_id(curve);
+        point->linear = 1;
+        state->control_point_ids[i] = nmo_ref_from_id(points[i]);
+    }
+    return curve;
+}
+
+static nmo_object_id_t group_of(engine_fixture_t *f, const char *name, const nmo_object_id_t *ids, size_t count)
+{
+    nmo_object_id_t group = fixture_create(f, NMO_CID_GROUP, name);
+    nmo_group_state_t *state = group != 0 ? (nmo_group_state_t *)fixture_state(f, group) : NULL;
+    nmo_ref_t *members = NULL;
+    if (state == NULL || nmo_array_extend(&state->object_ids, count, (void **)&members) != NMO_OK) {
+        return 0;
+    }
+    for (size_t i = 0; i < count; i++) {
+        members[i] = nmo_ref_from_id(ids[i]);
+    }
+    return group;
+}
+
+/* The block's local parameter `pos`, settings included in declaration order */
+static nmo_object_id_t local_of(engine_fixture_t *f, nmo_object_id_t block, size_t pos)
+{
+    const nmo_behavior_state_t *state = (const nmo_behavior_state_t *)fixture_state(f, block);
+    return state != NULL && pos < state->local_parameters.count
+               ? nmo_behavior_ref_array_get_id(&state->local_parameters, pos)
+               : 0;
+}
+
+/* Two NOPs on a block's outputs 0 and 1 */
+static void watch_outputs(engine_fixture_t *f, nmo_object_id_t block, nmo_object_id_t out[2])
+{
+    for (size_t k = 0; k < 2; k++) {
+        out[k] = fixture_block(f, GUID_NOP, "Output");
+        fixture_link(f, BLOCK_OUT(f, block, k), BLOCK_IN(f, out[k], 0), 0);
+    }
+}
+
+TEST(engine_tt, curve_blocks_pick_points_project_and_collide)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t points[4];
+    nmo_object_id_t curve = square_curve(&f, points);
+    ASSERT_TRUE(curve != 0);
+    nmo_object_id_t on_edge = unit_cube(&f, "On Edge", 5.0f, 0.0f, 0.0f);
+    nmo_object_id_t inside = unit_cube(&f, "Inside", 5.0f, 0.0f, 5.0f);
+    nmo_object_id_t curves = group_of(&f, "Curves", &curve, 1);
+    ASSERT_TRUE(on_edge && inside && curves);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t pick = started_block(&f, GUID_GET_CURVE_POINT, "Pick");
+    nmo_object_id_t nearest = started_block(&f, GUID_GET_NEAREST_CURVE_POSITION, "Nearest");
+    nmo_object_id_t check[2] = {started_block(&f, GUID_CHECK_CURVE_COLLISION, "Check Edge"),
+                                started_block(&f, GUID_CHECK_CURVE_COLLISION, "Check Inside")};
+    ASSERT_TRUE(pick && nearest && check[0] && check[1]);
+    fixture_input_int(&f, fixture_target(&f, pick), (int32_t)curve);
+    fixture_input_int(&f, BLOCK_PIN(&f, pick, 0), 2);
+    fixture_input_int(&f, BLOCK_PIN(&f, nearest, 0), (int32_t)curve);
+    const float query[3] = {8.0f, 1.0f, 6.0f};
+    fixture_input_value(&f, BLOCK_PIN(&f, nearest, 1), query, sizeof(query));
+    nmo_object_id_t outs[2][2];
+    const nmo_object_id_t targets[2] = {on_edge, inside};
+    for (int i = 0; i < 2; i++) {
+        fixture_input_int(&f, fixture_target(&f, check[i]), (int32_t)targets[i]);
+        fixture_input_int(&f, BLOCK_PIN(&f, check[i], 0), (int32_t)curves);
+        watch_outputs(&f, check[i], outs[i]);
+    }
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+
+    nmo_object_id_t picked = 0;
+    read_value(&f, BLOCK_POUT(&f, pick, 0), &picked, sizeof(picked));
+    ASSERT_EQ(points[2], picked);
+    ASSERT_STR_EQ("Curvepoints", nmo_engine_object_name(f.engine, picked)); /* renamed, as the DLL does */
+    float position[3] = {0, 0, 0}, step = 0.0f;
+    read_value(&f, BLOCK_POUT(&f, nearest, 0), position, sizeof(position));
+    read_value(&f, BLOCK_POUT(&f, nearest, 1), &step, sizeof(step));
+    ASSERT_FLOAT_EQ(10.0f, position[0], 1e-4f); /* on B-C, the nearest edge in XZ */
+    ASSERT_FLOAT_EQ(0.0f, position[1], 1e-4f);
+    ASSERT_FLOAT_EQ(6.0f, position[2], 1e-4f);
+    ASSERT_FLOAT_EQ(0.4f, step, 1e-5f); /* (10 to B + 6) of 40 */
+    ASSERT_EQ(1u, runs(&f, outs[0][0])); /* A-B runs through the cube */
+    ASSERT_EQ(1u, runs(&f, outs[1][1]));
+    float distance[2] = {-1.0f, -1.0f};
+    read_value(&f, BLOCK_POUT(&f, check[0], 0), &distance[0], sizeof(float));
+    read_value(&f, BLOCK_POUT(&f, check[1], 0), &distance[1], sizeof(float));
+    ASSERT_FLOAT_EQ(0.0f, distance[0], 1e-4f);
+    ASSERT_FLOAT_EQ(2.0f * sqrtf(50.0f) - 10.0f, distance[1], 1e-4f);
+    fixture_end(&f);
+}
+
+TEST(engine_tt, bounding_spheres_meet_and_the_missile_homes_in)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t a = unit_cube(&f, "A", 0.0f, 0.0f, 0.0f);
+    nmo_object_id_t near = unit_cube(&f, "Near", 1.5f, 0.0f, 0.0f);
+    nmo_object_id_t far = unit_cube(&f, "Far", 3.0f, 0.0f, 0.0f);
+    nmo_object_id_t missile = placed(&f, NMO_CID_3DENTITY, "Missile", 0.0f, 0.0f, 20.0f);
+    nmo_object_id_t goal = unit_cube(&f, "Goal", 10.0f, 0.0f, 20.0f);
+    ASSERT_TRUE(a && near && far && missile && goal);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t spheres[2] = {started_block(&f, GUID_BOUNDING_SPHERE, "Near Test"),
+                                  started_block(&f, GUID_BOUNDING_SPHERE, "Far Test")};
+    nmo_object_id_t homing = started_block(&f, GUID_HOMING_MISSILE, "Homing");
+    ASSERT_TRUE(spheres[0] && spheres[1] && homing);
+    nmo_object_id_t outs[2][2], reach[2];
+    const nmo_object_id_t others[2] = {near, far};
+    for (int i = 0; i < 2; i++) {
+        fixture_input_int(&f, BLOCK_PIN(&f, spheres[i], 0), (int32_t)a);
+        fixture_input_int(&f, BLOCK_PIN(&f, spheres[i], 1), (int32_t)others[i]);
+        watch_outputs(&f, spheres[i], outs[i]);
+    }
+    fixture_input_int(&f, fixture_target(&f, homing), (int32_t)missile);
+    fixture_input_int(&f, BLOCK_PIN(&f, homing, 0), (int32_t)goal);
+    const float speed = 100.0f; /* 2 a 20 ms frame */
+    fixture_input_value(&f, BLOCK_PIN(&f, homing, 1), &speed, sizeof(speed));
+    watch_outputs(&f, homing, reach);
+    fixture_link(&f, BLOCK_OUT(&f, homing, 1), BLOCK_IN(&f, homing, 1), 1);
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1u, runs(&f, outs[0][0])); /* 1.5 apart: 2.25 <= 1.5 + 1.5 */
+    ASSERT_EQ(1u, runs(&f, outs[1][1])); /* 3 apart: 9 > 3 */
+    for (int frame = 1; frame < 5; frame++) {
+        ASSERT_EQ(0u, runs(&f, reach[0]));
+        ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    }
+    ASSERT_EQ(1u, runs(&f, reach[0])); /* at the goal on the fifth frame */
+    ASSERT_EQ(4u, runs(&f, reach[1]));
+    int32_t index = eng_entity_index(f.engine, missile);
+    ASSERT_TRUE(index >= 0);
+    const eng_matrix_t *world = &f.engine->entities.data[index].world;
+    ASSERT_FLOAT_EQ(10.0f, world->m[3][0], 1e-4f);
+    ASSERT_FLOAT_EQ(20.0f, world->m[3][2], 1e-4f);
+    ASSERT_FLOAT_EQ(1.0f, world->m[2][0], 1e-5f);  /* facing +X */
+    ASSERT_FLOAT_EQ(-1.0f, world->m[0][2], 1e-5f); /* right = up x dir */
+    float velocity[3] = {0, 0, 0};
+    read_value(&f, BLOCK_POUT(&f, homing, 0), velocity, sizeof(velocity));
+    ASSERT_FLOAT_EQ(2.0f, velocity[0], 1e-4f);
+    fixture_end(&f);
+}
+
+TEST(engine_tt, follow_camera_eases_the_camera_and_its_target)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t camera = placed(&f, NMO_CID_TARGETCAMERA, "Camera", 0.0f, 5.0f, -20.0f);
+    nmo_object_id_t aim = placed(&f, NMO_CID_3DENTITY, "Aim", 0.0f, 0.0f, 0.0f);
+    nmo_object_id_t ball = placed(&f, NMO_CID_3DENTITY, "Ball", 0.0f, 0.0f, 10.0f);
+    ASSERT_TRUE(camera && aim && ball);
+    nmo_targetcamera_state_t *state = (nmo_targetcamera_state_t *)fixture_state(&f, camera);
+    state->has_target = 1;
+    state->target = nmo_ref_from_id(aim);
+    ((nmo_3dentity_state_t *)fixture_state(&f, aim))->entity_flags = CK_3DENTITY_TARGETCAMERA;
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t follow = started_block(&f, GUID_FOLLOW_CAMERA, "Follow");
+    ASSERT_TRUE(follow != 0);
+    fixture_input_int(&f, fixture_target(&f, follow), (int32_t)camera);
+    fixture_input_int(&f, BLOCK_PIN(&f, follow, 0), (int32_t)ball);
+    const float half = 0.5f, fov = 1.0f, offset[3] = {0.0f, 5.0f, -10.0f};
+    fixture_input_value(&f, BLOCK_PIN(&f, follow, 2), &half, sizeof(half));
+    fixture_input_value(&f, BLOCK_PIN(&f, follow, 3), offset, sizeof(offset));
+    fixture_input_value(&f, BLOCK_PIN(&f, follow, 4), &half, sizeof(half));
+    fixture_input_value(&f, BLOCK_PIN(&f, follow, 5), &fov, sizeof(fov));
+    nmo_object_id_t time_based = local_of(&f, follow, 0);
+    ASSERT_TRUE(time_based != 0);
+    fixture_commit(&f, NULL);
+    const int32_t off = 0;
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, time_based, &off, sizeof(off)));
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+
+    /* From where they stand (Init): halfway each frame to the ball and to 10 behind it */
+    int32_t cam = eng_entity_index(f.engine, camera), target = eng_entity_index(f.engine, aim);
+    ASSERT_TRUE(cam >= 0 && target >= 0);
+    ASSERT_FLOAT_EQ(-5.0f, f.engine->entities.data[cam].world.m[3][2], 1e-4f);
+    ASSERT_FLOAT_EQ(5.0f, f.engine->entities.data[cam].world.m[3][1], 1e-4f);
+    ASSERT_FLOAT_EQ(7.5f, f.engine->entities.data[target].world.m[3][2], 1e-4f);
+    float now = 0.0f;
+    ASSERT_TRUE(eng_camera_fov(f.engine, camera, &now));
+    ASSERT_FLOAT_EQ(1.0f, now, 0.0f);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_tt, load_database_fills_the_array_of_its_name);
 REGISTER_TEST(engine_tt, save_database_writes_the_registered_arrays);
@@ -881,4 +1150,7 @@ REGISTER_TEST(engine_tt, counter_wraps_around_its_range);
 REGISTER_TEST(engine_tt, logic_blocks_convert_map_and_find);
 REGISTER_TEST(engine_tt, chrono_counts_and_children_iterate);
 REGISTER_TEST(engine_tt, write_back_writes_into_the_source_read);
+REGISTER_TEST(engine_tt, curve_blocks_pick_points_project_and_collide);
+REGISTER_TEST(engine_tt, bounding_spheres_meet_and_the_missile_homes_in);
+REGISTER_TEST(engine_tt, follow_camera_eases_the_camera_and_its_target);
 TEST_MAIN_END()

@@ -1423,6 +1423,489 @@ static int bb_show_vector(blk_t *b)
     return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
 }
 
+/* TT GetCurvePoint: the target curve's control point Number (renamed "Curvepoints", as in the DLL) */
+static int bb_get_curve_point(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_object_id_t curve = nmo_engine_block_target(b);
+    const eng_curve_points_t *points = curve != 0 ? eng_curve_points(engine, curve) : NULL;
+    if (points == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    int32_t number = get_in_int(b, 0, 0);
+    /* The DLL names the point before testing it; it would crash on none, here it says so */
+    if (number < 0 || (size_t)number >= points->count) {
+        return NMO_ENGINE_BR_OK;
+    }
+    nmo_object_id_t point = points->ids[number];
+    nmo_object_t *object = eng_find_object(engine, point);
+    if (object != NULL) {
+        nmo_object_set_name(object, "Curvepoints");
+    }
+    nmo_engine_block_set_output_value(b, 0, &point, sizeof(point));
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * The DLL's projection of a point on a segment in the XZ plane: along the
+ * segment's normal, false outside the segment; the height is the segment's
+ * at that X (at that Z when the segment does not move in X).
+ */
+static bool project_on_segment_xz(eng_vector_t *out, const eng_vector_t *a, const eng_vector_t *c,
+                                  const eng_vector_t *p)
+{
+    float dx = c->x - a->x, dy = c->y - a->y, dz = c->z - a->z;
+    double nx = -(double)dz;
+    float nz = dx;
+    double length = sqrt(nx * nx + (double)nz * nz);
+    if (length != 0.0) {
+        double inv = 1.0 / length;
+        nx = nx * inv;
+        nz = (float)(inv * dx);
+    }
+    double pz = (double)p->z - a->z, px = (double)p->x - a->x;
+    double det = nx * dz - (double)nz * dx;
+    float t = (float)((pz * nx - px * nz) / det);
+    float s = (float)((pz * dx - px * dz) / det);
+    if (t > 1.0f || t < 0.0f) {
+        return false;
+    }
+    double x = nx * s + p->x;
+    float z = s * nz + p->z;
+    out->x = (float)x;
+    out->z = z;
+    out->y = dx == 0.0f ? (float)((z - a->z) / (c->z - a->z) * dy + a->y)
+                        : (float)((x - a->x) / dx * dy + a->y);
+    return true;
+}
+
+static float distance_squared(const eng_vector_t *a, const eng_vector_t *c)
+{
+    float dx = a->x - c->x, dy = a->y - c->y, dz = a->z - c->z;
+    return dz * dz + dy * dy + dx * dx;
+}
+
+/*
+ * TT GetNearestCurvePosition: the point of the curve (taken as a closed
+ * polyline of its control points) nearest Position in XZ among those within
+ * the Prefered Height Delta of it, else the nearest in 3D; the Step is the
+ * length along the curve to the control point before it plus the straight
+ * distance from there, over the curve's length.
+ */
+static int bb_get_nearest_curve_position(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    IN_OFF(b, 0);
+    nmo_object_id_t curve = nmo_engine_block_get_input_object(b, 0);
+    const eng_curve_points_t *view = curve != 0 ? eng_curve_points(engine, curve) : NULL;
+    if (view == NULL) {
+        return NMO_ENGINE_BR_OK; /* "No Valid Curve" on the console */
+    }
+    eng_vector_t pos = get_in_vector(b, 1, 0.0f, 0.0f, 0.0f);
+    float height = get_local_float(b, 0, 2.5f);
+    size_t count = view->count;
+    if (count == 0) {
+        return NMO_ENGINE_BR_PARAMETERERROR; /* the DLL reads a point it never found */
+    }
+    nmo_object_id_t *ids = (nmo_object_id_t *)malloc(count * sizeof(*ids));
+    eng_vector_t *positions = (eng_vector_t *)malloc(count * sizeof(*positions));
+    if (ids == NULL || positions == NULL) {
+        free(ids);
+        free(positions);
+        return NMO_ENGINE_BR_OK;
+    }
+    memcpy(ids, view->ids, count * sizeof(*ids));
+    for (size_t i = 0; i < count; i++) {
+        int32_t index = eng_entity_index(engine, ids[i]);
+        positions[i] = index >= 0 ? eng_entity_position(engine, index, -1) : (eng_vector_t){0, 0, 0};
+    }
+    float best_3d = 1000000000.0f, best_xz = 1000000000.0f;
+    eng_vector_t near_3d = {0, 0, 0}, from_3d = {0, 0, 0}, near_xz = {0, 0, 0}, from_xz = {0, 0, 0};
+    nmo_object_id_t point_3d = 0, point_xz = 0;
+    bool found = false;
+    for (size_t i = 0; i < count; i++) {
+        size_t next = i == count - 1 ? 0 : i + 1;
+        const eng_vector_t *p = &positions[i], *q = &positions[next];
+        float pxz = (pos.z - p->z) * (pos.z - p->z) + (pos.x - p->x) * (pos.x - p->x);
+        float qxz = (pos.z - q->z) * (pos.z - q->z) + (pos.x - q->x) * (pos.x - q->x);
+        eng_vector_t proj = {0, 0, 0};
+        if (project_on_segment_xz(&proj, p, q, &pos)) {
+            float dy = proj.y - pos.y;
+            float d3 = distance_squared(&proj, &pos);
+            if (best_3d > d3) {
+                best_3d = d3;
+                near_3d = proj;
+                from_3d = *p;
+                point_3d = ids[i];
+            }
+            float dxz = (proj.z - pos.z) * (proj.z - pos.z) + (proj.x - pos.x) * (proj.x - pos.x);
+            if (best_xz > dxz && fabsf(dy) < height) {
+                best_xz = dxz;
+                near_xz = proj;
+                from_xz = *p;
+                point_xz = ids[i];
+                found = true;
+            }
+        } else {
+            float dp = p->y - pos.y, dq = q->y - pos.y;
+            float d3 = distance_squared(p, &pos);
+            if (best_3d > d3) {
+                best_3d = d3;
+                near_3d = from_3d = *p;
+                point_3d = ids[i];
+            }
+            d3 = distance_squared(q, &pos);
+            if (best_3d > d3) {
+                best_3d = d3;
+                near_3d = from_3d = *q;
+                point_3d = ids[next];
+            }
+            if (best_xz > pxz && fabsf(dp) < height) {
+                best_xz = pxz;
+                near_xz = from_xz = *p;
+                point_xz = ids[i];
+                found = true;
+            }
+            if (best_xz > qxz && fabsf(dq) < height) {
+                best_xz = qxz;
+                near_xz = from_xz = *q;
+                point_xz = ids[next];
+                found = true;
+            }
+        }
+    }
+    free(ids);
+    free(positions);
+    eng_vector_t near = found ? near_xz : near_3d, from = found ? from_xz : from_3d;
+    nmo_object_id_t point = found ? point_xz : point_3d;
+    float curve_length = 0.0f, point_length = 0.0f;
+    eng_curve_length(engine, curve, &curve_length);
+    eng_curve_point_length(engine, point, &point_length);
+    float step = (float)((sqrt((double)distance_squared(&near, &from)) + point_length) / curve_length);
+    set_out(b, 0, &near, sizeof(near));
+    set_out_float(b, 1, step);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * The DLL's local box of an entity with its hierarchy: its hierarchical box
+ * in its own space while it is turned to the world's axes (children turned
+ * with it), as {Max, Min}; zero when nothing in it has geometry.
+ */
+static void hierarchy_local_box(nmo_engine_t *engine, int32_t index, eng_vector_t box[2])
+{
+    eng_matrix_t saved = engine->entities.data[index].world;
+    const eng_vector_t dir = {0, 0, 1}, up = {0, 1, 0}, right = {1, 0, 0};
+    eng_entity_set_orientation(engine, index, &dir, &up, &right, -1, false);
+    eng_vector_t min, max;
+    box[0] = box[1] = (eng_vector_t){0, 0, 0};
+    if (eng_entity_hierarchical_box(engine, index, &min, &max)) {
+        eng_entity_inverse_transform(engine, index, &box[0], &max, -1);
+        eng_entity_inverse_transform(engine, index, &box[1], &min, -1);
+    }
+    eng_entity_set_world_matrix(engine, index, &saved, false);
+}
+
+/* CK3dEntity::GetBoundingBox(TRUE), or the hierarchy's local box, as {Max, Min} */
+static void entity_local_box(nmo_engine_t *engine, int32_t index, bool hierarchy, eng_vector_t box[2])
+{
+    if (hierarchy) {
+        hierarchy_local_box(engine, index, box);
+    } else {
+        eng_entity_local_box(engine, index, &box[1], &box[0]);
+    }
+}
+
+/*
+ * TT Bounding Sphere Intersection: each entity's sphere is its local box's
+ * corners in the world, centred at their sum times Threshold, with the
+ * squared diagonal times Threshold as its "squared radius"; True when the
+ * squared distance of the centres is at most the sum of those, as in the
+ * DLL.
+ */
+static int bb_bounding_sphere_intersection(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    IN_OFF(b, 0);
+    int32_t entities[2] = {input_entity(b, 0), input_entity(b, 1)};
+    if (entities[0] < 0 || entities[1] < 0) {
+        return NMO_ENGINE_BR_PARAMETERERROR; /* the DLL calls through a missing entity */
+    }
+    float threshold = get_in_float(b, 4, 0.5f);
+    eng_vector_t centres[2];
+    float radii[2];
+    for (int e = 0; e < 2; e++) {
+        eng_vector_t box[2], world[2];
+        entity_local_box(engine, entities[e], get_in_int(b, 2 + e, 0) != 0, box);
+        eng_entity_transform(engine, entities[e], &world[0], &box[0], -1);
+        eng_entity_transform(engine, entities[e], &world[1], &box[1], -1);
+        radii[e] = distance_squared(&world[0], &world[1]) * threshold;
+        centres[e] = (eng_vector_t){(world[0].x + world[1].x) * threshold, (world[1].y + world[0].y) * threshold,
+                                    (world[1].z + world[0].z) * threshold};
+    }
+    float d = distance_squared(&centres[1], &centres[0]);
+    OUT_ON(b, d <= radii[1] + radii[0] ? 0 : 1);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* The DLL's segment test against a box ({Max, Min}): separating axes */
+static bool segment_box(const eng_vector_t *origin, const eng_vector_t *dir, const eng_vector_t box[2])
+{
+    float sx = box[1].x + box[0].x, sy = box[1].y + box[0].y, sz = box[1].z + box[0].z;
+    float cx = sx == 0.0f ? 0.0f : sx * 0.5f, cy = sy == 0.0f ? 0.0f : sy * 0.5f;
+    float cz = sz == 0.0f ? 0.0f : sz * 0.5f;
+    float hx = box[0].x - cx, hy = box[0].y - cy, hz = box[0].z - cz;
+    float wx = dir->x * 0.5f, wy = dir->y * 0.5f, wz = dir->z * 0.5f;
+    float mx = wx + (origin->x - cx), my = (origin->y - cy) + wy, mz = origin->z - cz + wz;
+    if (fabsf(wx) + hx < fabsf(mx) || fabsf(wy) + hy < fabsf(my) || fabsf(wz) + hz < fabsf(mz)) {
+        return false;
+    }
+    float ay = fabsf(dir->y), az = fabsf(dir->z), ax = fabsf(dir->x);
+    return !(ay * hz + az * hy < fabsf(dir->z * my - mz * dir->y)) &&
+           ax * hz + az * hx >= fabsf(mz * dir->x - dir->z * mx) &&
+           ax * hy + ay * hx >= fabsf(dir->y * mx - my * dir->x);
+}
+
+/*
+ * TT CheckCurveCollision: TRUE when a segment between consecutive control
+ * points of a curve in the group crosses the target's local box (with its
+ * hierarchy's on HierachieBB). With the MinDistance setting, MinDistance is
+ * the least of |T-p| + |T-q| - |q-p| over the segments looked at before
+ * one crossed (1e12 for none).
+ */
+static int bb_check_curve_collision(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    int32_t target = target_entity(b);
+    nmo_object_id_t group = nmo_engine_block_get_input_object(b, 0);
+    if (target < 0) {
+        return NMO_ENGINE_BR_OWNERERROR; /* the DLL throws */
+    }
+    if (group == 0) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    bool hierarchy = get_in_int(b, 1, 0) != 0;
+    bool want_min = get_local_int(b, 0, 1) != 0;
+    eng_vector_t box[2];
+    entity_local_box(engine, target, hierarchy, box);
+    eng_vector_t t = eng_entity_position(engine, target, -1);
+    float min_distance = 1.0e12f;
+    bool hit = false;
+    int32_t count = nmo_engine_group_count(engine, group);
+    for (int32_t g = 0; g < count && !hit; g++) {
+        const eng_curve_points_t *view = eng_curve_points(engine, nmo_engine_group_object(engine, group, g));
+        if (view == NULL || view->count < 2) {
+            continue;
+        }
+        size_t n = view->count;
+        nmo_object_id_t *ids = (nmo_object_id_t *)malloc(n * sizeof(*ids));
+        if (ids == NULL) {
+            break;
+        }
+        memcpy(ids, view->ids, n * sizeof(*ids));
+        for (size_t j = 0; j + 1 < n && !hit; j++) {
+            int32_t pi = eng_entity_index(engine, ids[j]), qi = eng_entity_index(engine, ids[j + 1]);
+            if (pi < 0 || qi < 0) {
+                continue;
+            }
+            eng_vector_t p = eng_entity_position(engine, pi, target), q = eng_entity_position(engine, qi, target);
+            if (want_min) {
+                eng_vector_t pw = eng_entity_position(engine, pi, -1), qw = eng_entity_position(engine, qi, -1);
+                double d = sqrt((double)distance_squared(&t, &qw)) + sqrt((double)distance_squared(&t, &pw)) -
+                           sqrt((double)distance_squared(&qw, &pw));
+                if (d < min_distance) {
+                    min_distance = (float)d;
+                }
+            }
+            eng_vector_t dir = {q.x - p.x, q.y - p.y, q.z - p.z};
+            hit = segment_box(&p, &dir, box);
+        }
+        free(ids);
+    }
+    if (hit) {
+        OUT_ON(b, 0);
+    } else {
+        OUT_ON(b, 1);
+    }
+    if (want_min) {
+        set_out_float(b, 0, min_distance);
+    }
+    IN_OFF(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* SquareMagnitude-based normalisation, as the DLL inlines it (no zero test) */
+static eng_vector_t unit_of(const eng_vector_t *v)
+{
+    double inv = 1.0 / sqrt((double)(v->x * v->x + v->y * v->y + v->z * v->z));
+    return (eng_vector_t){(float)(inv * v->x), (float)(v->y * inv), (float)(v->z * inv)};
+}
+
+/*
+ * TT Homing Missile: the target flies at Missilespeed (per second) toward
+ * Destination, its velocity turned toward it by Adaptationspeed each frame
+ * (In starts it straight at it), facing where it flies; Target Reach once it
+ * is within the destination's radius, else Loop Out.
+ */
+static int bb_homing_missile(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    int32_t missile = target_entity(b), destination = input_entity(b, 0);
+    if (missile < 0 || destination < 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    eng_vector_t from = eng_entity_position(engine, missile, -1);
+    eng_vector_t to = eng_entity_position(engine, destination, -1);
+    eng_vector_t offset = {to.x - from.x, to.y - from.y, to.z - from.z};
+    float speed = (float)(nmo_engine_block_delta_time(b) * 0.001 * get_in_float(b, 1, 1.0f));
+    eng_vector_t velocity = {0, 0, 0};
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        eng_vector_t u = unit_of(&offset);
+        velocity = (eng_vector_t){u.x * speed, u.y * speed, u.z * speed};
+    } else {
+        nmo_engine_block_get_output_value(b, 0, &velocity, sizeof(velocity));
+        IN_OFF(b, 1);
+    }
+    float adapt = get_in_float(b, 2, 0.5f);
+    eng_vector_t toward = unit_of(&offset), heading = unit_of(&velocity);
+    float keep = (float)(1.0 - adapt);
+    velocity = (eng_vector_t){heading.x * keep + toward.x * adapt, heading.y * keep + toward.y * adapt,
+                              keep * heading.z + toward.z * adapt};
+    eng_vector_normalize(&velocity);
+    velocity = (eng_vector_t){velocity.x * speed, velocity.y * speed, velocity.z * speed};
+    eng_vector_t dir = unit_of(&velocity);
+    eng_vector_t world_up = {0, 1, 0};
+    eng_vector_t right = eng_vector_cross(&world_up, &dir);
+    eng_vector_normalize(&right);
+    eng_vector_t up = eng_vector_cross(&dir, &right);
+    eng_vector_normalize(&up);
+    eng_vector_t next = {velocity.x + from.x, velocity.y + from.y, velocity.z + from.z};
+    eng_entity_set_orientation(engine, missile, &dir, &up, &right, -1, false);
+    eng_entity_set_position(engine, missile, &next, -1, false);
+    set_out(b, 0, &velocity, sizeof(velocity));
+    float distance = (float)sqrt((double)distance_squared(&next, &to));
+    OUT_ON(b, eng_entity_radius(engine, destination) <= distance ? 1 : 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+enum { FOLLOW_TIME_BASED, FOLLOW_INIT_ACT_POS, FOLLOW_VIEW_OLD, FOLLOW_CAM_OLD, FOLLOW_OLD_DELTA, FOLLOW_INIT };
+
+/*
+ * TT FollowCamera: a target camera chasing Target Entity: its target eases
+ * toward the entity's View Offset point and the camera toward its Camera
+ * Offset point (by the attenuations a frame, scaled by the averaged frame
+ * time when Time Based), pushed back by Back Attenuation when nearer the
+ * entity than the offset. On starts from the camera and its target where
+ * they are (Init, set on load and script activation and never cleared);
+ * the InitActPos setting is unused. The DLL positions the camera's target
+ * (no LookAt) and needs one; without a target here the view point is only
+ * tracked.
+ */
+static int bb_follow_camera(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    int32_t camera = target_entity(b);
+    if (camera < 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    nmo_object_id_t camera_id = nmo_engine_block_target(b);
+    int32_t view = eng_entity_index(engine, eng_camera_target(engine, camera_id));
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    int32_t entity = input_entity(b, 0);
+    eng_vector_t view_offset = get_in_vector(b, 1, 0.0f, 0.0f, 0.0f);
+    float view_att = get_in_float(b, 2, 1.0f);
+    eng_vector_t cam_offset = get_in_vector(b, 3, 0.0f, 0.0f, 0.0f);
+    float cam_att = get_in_float(b, 4, 1.0f);
+    float fov = get_in_float(b, 5, 0.0f);
+    float back_att = get_in_float(b, 6, 0.25f);
+    eng_matrix_t world = engine->entities.data[camera].world;
+    if (world.m[0][0] < 0.0f) {
+        world.m[0][0] = fabsf(world.m[0][0]);
+        world.m[1][1] = fabsf(world.m[1][1]);
+        eng_entity_set_world_matrix(engine, camera, &world, false);
+    }
+    eng_set_camera_fov(engine, camera_id, fov);
+    if (entity < 0) {
+        return NMO_ENGINE_BR_PARAMETERERROR; /* the DLL transforms through a missing entity */
+    }
+    eng_vector_t view_goal, cam_goal;
+    eng_entity_transform(engine, entity, &view_goal, &view_offset, -1);
+    eng_entity_transform(engine, entity, &cam_goal, &cam_offset, -1);
+    eng_vector_t view_old = {0, 0, 0}, cam_old = {0, 0, 0};
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+        if (get_local_int(b, FOLLOW_INIT, 0) != 0) {
+            cam_old = eng_entity_position(engine, camera, -1);
+            view_old = view >= 0 ? eng_entity_position(engine, view, -1) : view_goal;
+        } else {
+            view_old = view_goal;
+            cam_old = cam_goal;
+        }
+        nmo_engine_block_set_local_value(b, FOLLOW_VIEW_OLD, &view_old, sizeof(view_old));
+        nmo_engine_block_set_local_value(b, FOLLOW_CAM_OLD, &cam_old, sizeof(cam_old));
+        float delta = nmo_engine_block_delta_time(b);
+        nmo_engine_block_set_local_value(b, FOLLOW_OLD_DELTA, &delta, sizeof(delta));
+    }
+    nmo_engine_block_get_local_value(b, FOLLOW_VIEW_OLD, &view_old, sizeof(view_old));
+    nmo_engine_block_get_local_value(b, FOLLOW_CAM_OLD, &cam_old, sizeof(cam_old));
+    eng_vector_t view_delta = {view_goal.x - view_old.x, view_goal.y - view_old.y, view_goal.z - view_old.z};
+    eng_vector_t cam_delta = {cam_goal.x - cam_old.x, cam_goal.y - cam_old.y, cam_goal.z - cam_old.z};
+    if (get_local_int(b, FOLLOW_TIME_BASED, 0) != 0) {
+        float delta = nmo_engine_block_delta_time(b);
+        float old = get_local_float(b, FOLLOW_OLD_DELTA, 0.0f);
+        float most = (float)(delta * 1.1);
+        if (old > most) {
+            delta = most;
+        }
+        float least = (float)(delta - delta * 0.1);
+        if (old >= least) {
+            least = delta;
+        }
+        float average = (float)((old * 4.0f + least) * 0.2);
+        view_att = (float)(average * view_att * 0.07);
+        view_att = view_att < 0.0f ? 0.0f : view_att > 1.0f ? 1.0f : view_att;
+        cam_att = (float)(average * cam_att * 0.07);
+        cam_att = cam_att < 0.0f ? 0.0f : cam_att > 1.0f ? 1.0f : cam_att;
+        nmo_engine_block_set_local_value(b, FOLLOW_OLD_DELTA, &average, sizeof(average));
+    }
+    view_old = (eng_vector_t){view_delta.x * view_att + view_old.x, view_delta.y * view_att + view_old.y,
+                              view_delta.z * view_att + view_old.z};
+    cam_old = (eng_vector_t){cam_delta.x * cam_att + cam_old.x, cam_delta.y * cam_att + cam_old.y,
+                             cam_delta.z * cam_att + cam_old.z};
+    eng_vector_t local;
+    eng_entity_inverse_transform(engine, entity, &local, &cam_old, -1);
+    if (eng_vector_magnitude(&cam_offset) > eng_vector_magnitude(&local)) {
+        cam_old = (eng_vector_t){(cam_goal.x - cam_old.x) * back_att + cam_old.x,
+                                 (cam_goal.y - cam_old.y) * back_att + cam_old.y,
+                                 (cam_goal.z - cam_old.z) * back_att + cam_old.z};
+    }
+    if (view >= 0) {
+        eng_entity_set_position(engine, view, &view_old, -1, false);
+    }
+    eng_entity_set_position(engine, camera, &cam_old, -1, false);
+    nmo_engine_block_set_local_value(b, FOLLOW_VIEW_OLD, &view_old, sizeof(view_old));
+    nmo_engine_block_set_local_value(b, FOLLOW_CAM_OLD, &cam_old, sizeof(cam_old));
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+/* TT FollowCamera's callback: Init on load and script activation (and attach, new scene in CK) */
+static int follow_camera_callback(blk_t *b, uint32_t message)
+{
+    if (message == NMO_ENGINE_MSG_LOAD || message == NMO_ENGINE_MSG_ACTIVATESCRIPT) {
+        set_local_int(b, FOLLOW_INIT, 1);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_tt_toolbox_blocks[] = {
     {NMO_GUID_INIT(0x594a136e,0x58135ef9),"TT Joystick Waiter",bb_tt_joystick_waiter,NULL,NULL},
     {NMO_GUID_INIT(0x229865eb,0x577619e4),"TT_TestForJoystick",bb_test_for_joystick,NULL,NULL},
@@ -1471,6 +1954,13 @@ static const nmo_engine_block_desc_t eng_tt_toolbox_blocks[] = {
     {NMO_GUID_INIT(0x4fbb3808, 0x4a99083c), "TT_KeySwitch", bb_key_switch, NULL, NULL},
     {NMO_GUID_INIT(0x3e715746, 0x45ce3b5a), "TT_GetTime", bb_get_time, NULL, NULL},
     {NMO_GUID_INIT(0x70f65b3e, 0x2dc41372), "TT_DebugOFF", bb_debug_off, NULL, NULL},
+    {NMO_GUID_INIT(0x50eb3a17, 0x015c5bf9), "TT GetCurvePoint", bb_get_curve_point, NULL, NULL},
+    {NMO_GUID_INIT(0x04db6e14, 0x2c151f73), "TT GetNearestCurvePosition", bb_get_nearest_curve_position, NULL, NULL},
+    {NMO_GUID_INIT(0x32a6308d, 0x1d3d0931), "TT Bounding Sphere Intersection", bb_bounding_sphere_intersection, NULL,
+     NULL},
+    {NMO_GUID_INIT(0x7e9a4415, 0x199e4eb3), "TT CheckCurveCollision", bb_check_curve_collision, NULL, NULL},
+    {NMO_GUID_INIT(0x44d43591, 0x28f91084), "TT Homing Missile", bb_homing_missile, NULL, NULL},
+    {NMO_GUID_INIT(0x595b4723, 0x576c6749), "TT FollowCamera", bb_follow_camera, follow_camera_callback, NULL},
     {NMO_GUID_INIT(0x0fd4755f, 0x7de22dc8), "TT Set Dynamic Position", bb_set_dynamic_position, NULL,
      NULL},
 };
