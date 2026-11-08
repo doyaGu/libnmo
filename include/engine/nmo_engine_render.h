@@ -186,6 +186,8 @@ typedef struct nmo_engine_frame {
     uint32_t render_options;
     int32_t shading;
     bool use_textures, wireframe_layer;
+    /* VXRENDERSTATE_ANTIALIAS as blocks set it (TT_SetFSAA): full-scene antialiasing on */
+    bool antialias;
     /* The render passes to draw first, in order (a pass has none of its own) */
     const nmo_engine_pass_t *passes;
     int32_t pass_count;

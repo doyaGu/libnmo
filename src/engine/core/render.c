@@ -877,6 +877,21 @@ bool eng_mesh_apply_material(nmo_engine_t *engine, nmo_object_id_t mesh, nmo_obj
     return true;
 }
 
+bool eng_mesh_set_face_material(nmo_engine_t *engine, nmo_object_id_t mesh, int32_t face,
+                                nmo_object_id_t material)
+{
+    eng_mesh_groups_t groups;
+    if (!eng_mesh_groups(engine, mesh, &groups) || face < 0 || face >= groups.face_count) {
+        return false;
+    }
+    int32_t group = eng_mesh_group_of(&groups, material, true);
+    if (group >= 0) {
+        groups.faces[face].material_group_idx = (uint32_t)group;
+    }
+    eng_mesh_groups_changed(engine, &groups);
+    return true;
+}
+
 bool eng_mesh_replace_material(nmo_engine_t *engine, nmo_object_id_t mesh, nmo_object_id_t old_material,
                                nmo_object_id_t new_material)
 {
@@ -2404,6 +2419,7 @@ nmo_engine_frame_t *eng_render_begin_pass(nmo_engine_t *engine, nmo_object_id_t 
     frame->shading = render->shading;
     frame->use_textures = render->use_textures;
     frame->wireframe_layer = render->wireframe_layer;
+    frame->antialias = render->antialias;
     render->open_pass = (int32_t)render->passes.count - 1;
     return frame;
 }
@@ -2505,6 +2521,7 @@ nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *o
     out->shading = render->shading;
     out->use_textures = render->use_textures;
     out->wireframe_layer = render->wireframe_layer;
+    out->antialias = render->antialias;
     /* The passes the blocks asked for, drawn before the frame */
     render->passes.count = 0;
     render->pass_firsts.count = 0;

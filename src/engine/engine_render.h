@@ -208,6 +208,7 @@ typedef struct eng_render {
     uint32_t render_options;  /* CK_RENDER_FLAGS */
     int32_t shading;          /* VxShadeType: 0 wireframe, 1 flat, 2 Gouraud, ... 4 material default */
     bool use_textures, wireframe_layer;
+    bool antialias;           /* VXRENDERSTATE_ANTIALIAS as blocks set it (TT_SetFSAA); off by default */
     ENG_VEC(eng_camera_state_t) camera_states;
     ENG_VEC(eng_camera_target_t) camera_targets;
     uint32_t background_color; /* the background material's diffuse and texture */
@@ -334,6 +335,10 @@ void eng_mesh_remove_channel(eng_mesh_copy_t *copy, int32_t channel);
 /* CKMesh::ApplyGlobalMaterial: every face in the group of `material`, made when missing.
    False when `mesh` is none. */
 bool eng_mesh_apply_material(nmo_engine_t *engine, nmo_object_id_t mesh, nmo_object_id_t material);
+/* CKMesh::SetFaceMaterial: face `face` in the group of `material`, made when missing. False when
+   `mesh` is none or has no such face. */
+bool eng_mesh_set_face_material(nmo_engine_t *engine, nmo_object_id_t mesh, int32_t face,
+                                nmo_object_id_t material);
 /* CKMesh::ReplaceMaterial: the group of `old_material` takes `new_material` (its faces move
    to that group when it is the first, and to the first when there is no new material). */
 bool eng_mesh_replace_material(nmo_engine_t *engine, nmo_object_id_t mesh,
