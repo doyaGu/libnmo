@@ -261,7 +261,7 @@ static void quaternion_to_matrix(const float q[4], float m[4][4])
  * scale too): each matrix as a rotation, a position and a scale by rows, the
  * rotation slerped and the others linear, the ends kept as they are.
  */
-static void interpolate_matrix(float step, const float a[4][4], const float c[4][4], float r[4][4])
+void vx_interpolate_matrix(float step, const float a[4][4], const float c[4][4], float r[4][4])
 {
     if (step == 0.0f) {
         memcpy(r, a, 16 * sizeof(float));
@@ -330,7 +330,7 @@ static int bb_interpolator_matrix(blk_t *b)
     float a[4][4] = {{0}}, c[4][4] = {{0}}, r[4][4];
     nmo_engine_block_get_input_value(b, 0, a, sizeof(a));
     nmo_engine_block_get_input_value(b, 1, c, sizeof(c));
-    interpolate_matrix(get_in_float(b, 2, 0.0f), a, c, r);
+    vx_interpolate_matrix(get_in_float(b, 2, 0.0f), a, c, r);
     nmo_engine_block_set_output_value(b, 0, r, sizeof(r));
     IN_OFF(b, 0);
     OUT_ON(b, 0);
