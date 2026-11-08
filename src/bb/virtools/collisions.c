@@ -14,8 +14,11 @@
 #include "object/builtin/nmo_camera_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_enum_defs.h"
 #include "type/nmo_object_guids.h"
+#include "type/nmo_param_guids.h"
 #include "type/nmo_type_query.h"
+#include "../../engine/engine_animation.h"
 #include "../../engine/engine_character.h"
 
 #include <float.h>
@@ -694,9 +697,11 @@ static bool box_face_intersection(nmo_engine_t *engine, int32_t first, bool hier
     return hit;
 }
 
-/* CKCollisionManager::FaceFaceIntersection: a face (or line) of one entity across one of the other */
+/* CKCollisionManager::FaceFaceIntersection: a face (or line) of one entity across one of the other; on a
+   face against a face, the first's face in `touching` and the second's in `touched` when given */
 #define FACE_EPSILON 0.001f
-static bool face_face_intersection(nmo_engine_t *engine, int32_t first, int32_t second)
+static bool face_face_intersection(nmo_engine_t *engine, int32_t first, int32_t second, int32_t *touching,
+                                   int32_t *touched)
 {
     eng_vector_t wmin1, wmax1, wmin2, wmax2;
     eng_entity_world_box(engine, first, &wmin1, &wmax1);
@@ -765,6 +770,10 @@ static bool face_face_intersection(nmo_engine_t *engine, int32_t first, int32_t 
             }
             if (face_face(face_vertex(&f1, ak[0]), face_vertex(&f1, ak[1]), face_vertex(&f1, ak[2]), face_normal(&f1, j),
                           bv[bk[0]], bv[bk[1]], bv[bk[2]], bn)) {
+                if (touching != NULL) {
+                    *touching = j;
+                    *touched = i;
+                }
                 hit = true;
                 break;
             }
@@ -1055,7 +1064,7 @@ static int bb_face_face_intersection(blk_t *b)
         OUT_ON(b, 1);
         return NMO_ENGINE_BR_OK;
     }
-    bool hit = face_face_intersection(b->engine, first, second);
+    bool hit = face_face_intersection(b->engine, first, second, NULL, NULL);
     nmo_engine_block_activate_output(b, 0, hit);
     nmo_engine_block_activate_output(b, 1, !hit);
     return NMO_ENGINE_BR_OK;
@@ -2106,6 +2115,893 @@ static int cb_character_keep_on_floor_limits(blk_t *b, uint32_t message)
     return NMO_ENGINE_BR_OK;
 }
 
+/* ============================================================================
+ * The collision manager (CollisionManager of Collisions.dll)
+ * ============================================================================ */
+
+/*
+ * Obstacles are the 3D entities with the Fixed Obstacle or Moving Obstacle
+ * attribute. The manager keeps them in the order they became obstacles
+ * (BoundariesManager), each with the box it last took for it: a fixed
+ * obstacle's from when it was added, a moving one's from the end of the last
+ * frame, grown by its box when a detection runs. A detection looks only at
+ * the obstacles whose boxes meet the tested one's (ties of touching bounds
+ * taken as meeting), in that order, then drops the fixed ones away from the
+ * tested entity's sweep (a filter of the DLL's). The engine does not call
+ * the attributes' callbacks: the list is brought up to date with them when
+ * the manager runs.
+ */
+typedef struct obstacle {
+    nmo_object_id_t id;
+    bool moving;
+    eng_vector_t min, max;
+} obstacle_t;
+
+/* A moving obstacle's world matrix and hierarchy box at the end of the last frame */
+typedef struct saved_moving {
+    nmo_object_id_t id;
+    eng_matrix_t world;
+    eng_vector_t min, max;
+} saved_moving_t;
+
+typedef struct collision_manager {
+    bool launched;
+    ENG_VEC(obstacle_t) obstacles;
+    ENG_VEC(saved_moving_t) movings;
+    int32_t touched_face, touching_face; /* the faces a face test met */
+} collision_manager_t;
+
+/* ImpactDesc */
+typedef struct impact {
+    nmo_object_id_t owner, obstacle, sub_obstacle, entity;
+    int32_t touched_vertex, touching_vertex, touched_face, touching_face;
+    eng_matrix_t matrix;
+    eng_vector_t point, normal;
+} impact_t;
+
+static void cm_destroy(nmo_engine_t *engine, void *state);
+static void cm_pre_process(nmo_engine_t *engine, void *state);
+static void cm_post_process(nmo_engine_t *engine, void *state);
+static void cm_reset(nmo_engine_t *engine, void *state);
+
+static const eng_manager_desc_t collision_manager_desc = {
+    .name = "Collision Manager",
+    .state_size = sizeof(collision_manager_t),
+    .destroy = cm_destroy,
+    .pre_process = cm_pre_process,
+    .post_process = cm_post_process,
+    .reset = cm_reset,
+};
+
+static collision_manager_t *cm_state(nmo_engine_t *engine)
+{
+    return (collision_manager_t *)eng_manager_state(engine, &collision_manager_desc);
+}
+
+static int32_t attribute_named(const nmo_engine_t *engine, const char *name)
+{
+    for (size_t t = 0; t < engine->attributes.types.count; t++) {
+        const eng_attribute_type_t *type = &engine->attributes.types.data[t];
+        if (type->present && type->name != NULL && strcmp(type->name, name) == 0) {
+            return (int32_t)t;
+        }
+    }
+    return -1;
+}
+
+static int32_t fixed_attribute(const nmo_engine_t *engine)
+{
+    return attribute_named(engine, "Fixed Obstacle");
+}
+
+static int32_t moving_attribute(const nmo_engine_t *engine)
+{
+    return attribute_named(engine, "Moving Obstacle");
+}
+
+static bool has_attribute(const nmo_engine_t *engine, nmo_object_id_t id, int32_t type)
+{
+    return type >= 0 && eng_attribute_find(engine, id, type) != NULL;
+}
+
+/* ReadAttributeValues: the obstacle's precision and hierarchy (the moving attribute's first); false when
+   it is no obstacle. A field without its parameter is left as it is. */
+static bool read_obstacle(nmo_engine_t *engine, nmo_object_id_t id, int32_t *precision, int32_t *hierarchy)
+{
+    const eng_attribute_t *attribute = eng_attribute_find(engine, id, moving_attribute(engine));
+    if (attribute == NULL) {
+        attribute = eng_attribute_find(engine, id, fixed_attribute(engine));
+    }
+    if (attribute == NULL) {
+        return false;
+    }
+    int32_t *fields[2] = {precision, hierarchy};
+    if (attribute->fields != NULL) {
+        for (uint32_t i = 0; i < 2 && i < attribute->field_count; i++) {
+            *fields[i] = attribute->fields[i];
+        }
+        return true;
+    }
+    if (!attribute->has_value || !nmo_guid_equals(attribute->value.type, CKPGUID_OBSTACLE)) {
+        *precision = CKCOLLISION_BOX;
+        *hierarchy = 0;
+        return true;
+    }
+    uint32_t ids[2] = {0, 0};
+    memcpy(ids, attribute->value.data, attribute->value.size < sizeof(ids) ? attribute->value.size : sizeof(ids));
+    if (ids[0] == 0 && ids[1] == 0) { /* set at run time: the attribute's default, "2;TRUE" */
+        *precision = CKCOLLISION_FACE;
+        *hierarchy = 1;
+        return true;
+    }
+    for (uint32_t i = 0; i < 2; i++) {
+        eng_struct_field(engine, id, attribute->value.data, attribute->value.size, i, fields[i]);
+    }
+    return true;
+}
+
+/* The box the manager takes for an obstacle: its hierarchy's when it is a hierarchical one */
+static void obstacle_box(nmo_engine_t *engine, int32_t index, eng_vector_t *min, eng_vector_t *max)
+{
+    if (engine->entities.data[index].entity_flags & CK_3DENTITY_HIERARCHICALOBSTACLE) {
+        if (!eng_entity_hierarchical_box(engine, index, min, max)) {
+            *min = *max = eng_entity_position(engine, index, -1);
+        }
+    } else {
+        bounding_box(engine, index, min, max);
+    }
+}
+
+/* BoundariesManager::Add */
+static void cm_add(nmo_engine_t *engine, collision_manager_t *cm, nmo_object_id_t id, bool moving)
+{
+    int32_t index = eng_entity_index(engine, id);
+    for (size_t i = 0; i < cm->obstacles.count; i++) {
+        if (cm->obstacles.data[i].id == id) {
+            return;
+        }
+    }
+    obstacle_t *obstacle = NULL;
+    if (index < 0 || !ENG_VEC_PUSH(cm->obstacles, obstacle)) {
+        return;
+    }
+    obstacle->id = id;
+    obstacle->moving = moving;
+    obstacle_box(engine, index, &obstacle->min, &obstacle->max);
+}
+
+static void cm_remove_at(collision_manager_t *cm, size_t i)
+{
+    memmove(&cm->obstacles.data[i], &cm->obstacles.data[i + 1], (cm->obstacles.count - i - 1) * sizeof(obstacle_t));
+    cm->obstacles.count--;
+}
+
+/*
+ * PostLaunchScene (once, at the first frame), then the attributes'
+ * callbacks: the fixed obstacles then the moving ones, their hierarchical
+ * flag from their attribute; afterwards, obstacles that lost their
+ * attribute leave and new ones are added after the others.
+ */
+static void cm_sync(nmo_engine_t *engine, collision_manager_t *cm)
+{
+    int32_t fixed = fixed_attribute(engine), moving = moving_attribute(engine);
+    if (!cm->launched) {
+        cm->launched = true;
+        cm->obstacles.count = 0;
+        for (int pass = 0; pass < 2; pass++) {
+            int32_t type = pass == 0 ? fixed : moving;
+            for (size_t i = 0; type >= 0 && i < engine->attributes.values.count; i++) {
+                const eng_attribute_t *attribute = &engine->attributes.values.data[i];
+                int32_t index = attribute->type == type ? eng_entity_index(engine, attribute->object) : -1;
+                if (index < 0) {
+                    continue;
+                }
+                nmo_object_id_t id = attribute->object;
+                cm_add(engine, cm, id, pass == 1);
+                int32_t precision = CKCOLLISION_BOX, hierarchy = 0;
+                read_obstacle(engine, id, &precision, &hierarchy);
+                if (hierarchy) {
+                    engine->entities.data[index].entity_flags |= CK_3DENTITY_HIERARCHICALOBSTACLE;
+                } else {
+                    engine->entities.data[index].entity_flags &= ~(uint32_t)CK_3DENTITY_HIERARCHICALOBSTACLE;
+                }
+            }
+        }
+        return;
+    }
+    for (size_t i = 0; i < cm->obstacles.count;) {
+        const obstacle_t *obstacle = &cm->obstacles.data[i];
+        bool kept = eng_entity_index(engine, obstacle->id) >= 0 &&
+                    has_attribute(engine, obstacle->id, obstacle->moving ? moving : fixed);
+        if (kept) {
+            i++;
+        } else {
+            cm_remove_at(cm, i);
+        }
+    }
+    for (size_t i = 0; i < engine->attributes.values.count; i++) {
+        const eng_attribute_t *attribute = &engine->attributes.values.data[i];
+        if ((attribute->type == fixed || attribute->type == moving) && attribute->type >= 0) {
+            cm_add(engine, cm, attribute->object, attribute->type == moving);
+        }
+    }
+}
+
+/* AddObstacle: the attribute (the other one removed, as its callback does), then its fields */
+static void cm_add_obstacle(nmo_engine_t *engine, nmo_object_id_t id, bool moving, int32_t precision, int32_t hierarchy)
+{
+    int32_t type = moving ? moving_attribute(engine) : fixed_attribute(engine);
+    int32_t other = moving ? fixed_attribute(engine) : moving_attribute(engine);
+    if (type < 0 || eng_entity_index(engine, id) < 0) {
+        return;
+    }
+    if (eng_attribute_find(engine, id, type) == NULL) {
+        if (other >= 0) {
+            nmo_engine_object_remove_attribute(engine, id, other);
+        }
+        nmo_engine_object_set_attribute(engine, id, type);
+        collision_manager_t *cm = cm_state(engine);
+        if (cm != NULL && cm->launched) {
+            cm_sync(engine, cm);
+        }
+    }
+    eng_attribute_t *attribute = eng_attribute_find(engine, id, type);
+    if (attribute == NULL || !attribute->has_value) {
+        return;
+    }
+    if (attribute->fields == NULL) {
+        attribute->fields = (int32_t *)malloc(2 * sizeof(int32_t));
+        if (attribute->fields == NULL) {
+            return;
+        }
+        attribute->field_count = 2;
+    }
+    attribute->fields[0] = precision;
+    attribute->fields[1] = hierarchy;
+}
+
+static void cm_destroy(nmo_engine_t *engine, void *state)
+{
+    (void)engine;
+    collision_manager_t *cm = (collision_manager_t *)state;
+    free(cm->obstacles.data);
+    free(cm->movings.data);
+}
+
+static void cm_pre_process(nmo_engine_t *engine, void *state)
+{
+    cm_sync(engine, (collision_manager_t *)state);
+}
+
+/* PostProcess: the moving obstacles' matrices and boxes saved, their bounds taken anew (UpdateStartMovings) */
+static void cm_post_process(nmo_engine_t *engine, void *state)
+{
+    collision_manager_t *cm = (collision_manager_t *)state;
+    cm_sync(engine, cm);
+    cm->movings.count = 0;
+    int32_t moving = moving_attribute(engine);
+    for (size_t i = 0; moving >= 0 && i < engine->attributes.values.count; i++) {
+        const eng_attribute_t *attribute = &engine->attributes.values.data[i];
+        int32_t index = attribute->type == moving ? eng_entity_index(engine, attribute->object) : -1;
+        saved_moving_t *saved = NULL;
+        if (index < 0 || !ENG_VEC_PUSH(cm->movings, saved)) {
+            continue;
+        }
+        saved->id = attribute->object;
+        saved->world = engine->entities.data[index].world;
+        if (!eng_entity_hierarchical_box(engine, index, &saved->min, &saved->max)) {
+            saved->min = saved->max = eng_entity_position(engine, index, -1);
+        }
+    }
+    for (size_t i = 0; i < cm->obstacles.count; i++) {
+        obstacle_t *obstacle = &cm->obstacles.data[i];
+        int32_t index = eng_entity_index(engine, obstacle->id);
+        if (obstacle->moving && index >= 0) {
+            obstacle_box(engine, index, &obstacle->min, &obstacle->max);
+        }
+    }
+}
+
+/* OnCKReset: the moving obstacles keep their last frame's matrix */
+static void cm_reset(nmo_engine_t *engine, void *state)
+{
+    (void)state;
+    int32_t moving = moving_attribute(engine);
+    for (size_t i = 0; moving >= 0 && i < engine->attributes.values.count; i++) {
+        const eng_attribute_t *attribute = &engine->attributes.values.data[i];
+        int32_t index = attribute->type == moving ? eng_entity_index(engine, attribute->object) : -1;
+        if (index >= 0) {
+            engine->entities.data[index].entity_flags |= CK_3DENTITY_UPDATELASTFRAME;
+        }
+    }
+}
+
+/* SeekMovingMatrix: the saved moving obstacle; NULL when it is none */
+static const saved_moving_t *cm_saved(const collision_manager_t *cm, nmo_object_id_t id)
+{
+    for (size_t i = 0; i < cm->movings.count; i++) {
+        if (cm->movings.data[i].id == id) {
+            return &cm->movings.data[i];
+        }
+    }
+    return NULL;
+}
+
+/* UpdateEndMovings: the moving obstacles' bounds grown by their boxes now */
+static void cm_update_end_movings(nmo_engine_t *engine, collision_manager_t *cm)
+{
+    for (size_t i = 0; i < cm->obstacles.count; i++) {
+        obstacle_t *o = &cm->obstacles.data[i];
+        int32_t index = eng_entity_index(engine, o->id);
+        if (!o->moving || index < 0) {
+            continue;
+        }
+        eng_vector_t min, max;
+        obstacle_box(engine, index, &min, &max);
+        o->min = v3(fminf(o->min.x, min.x), fminf(o->min.y, min.y), fminf(o->min.z, min.z));
+        o->max = v3(fmaxf(o->max.x, max.x), fmaxf(o->max.y, max.y), fmaxf(o->max.z, max.z));
+    }
+}
+
+static bool boxes_meet(eng_vector_t amin, eng_vector_t amax, eng_vector_t bmin, eng_vector_t bmax)
+{
+    return amin.x <= bmax.x && amax.x >= bmin.x && amin.y <= bmax.y && amax.y >= bmin.y && amin.z <= bmax.z &&
+           amax.z >= bmin.z;
+}
+
+/* FindOverlapping: the obstacles (but `self`) whose bounds meet the box, in the list's order */
+static size_t cm_overlapping(nmo_engine_t *engine, collision_manager_t *cm, nmo_object_id_t self, eng_vector_t min,
+                             eng_vector_t max, nmo_object_id_t **out)
+{
+    *out = (nmo_object_id_t *)malloc((cm->obstacles.count + 1) * sizeof(nmo_object_id_t));
+    size_t count = 0;
+    for (size_t i = 0; *out != NULL && i < cm->obstacles.count; i++) {
+        const obstacle_t *o = &cm->obstacles.data[i];
+        if (o->id != self && eng_entity_index(engine, o->id) >= 0 && boxes_meet(min, max, o->min, o->max)) {
+            (*out)[count++] = o->id;
+        }
+    }
+    return count;
+}
+
+/* The center and half largest size of an entity's hierarchy box (world, or with `local` its own space) */
+static float hierarchy_sphere(nmo_engine_t *engine, int32_t index, bool local, eng_vector_t *center)
+{
+    eng_vector_t min, max;
+    bool valid = local ? local_hierarchical_box(engine, index, &min, &max)
+                       : eng_entity_hierarchical_box(engine, index, &min, &max);
+    if (!valid) {
+        min = max = local ? v3(0.0f, 0.0f, 0.0f) : eng_entity_position(engine, index, -1);
+    }
+    *center = v3((max.x + min.x) * 0.5f, (max.y + min.y) * 0.5f, (max.z + min.z) * 0.5f);
+    return fmaxf(fmaxf(max.x - min.x, max.y - min.y), max.z - min.z) * 0.5f;
+}
+
+/* The DLL's filter: the fixed obstacles whose hierarchy box's center is farther from the line the
+   entity's moved along (start to now, the direction not normalized) than both half sizes */
+static size_t cm_filter(nmo_engine_t *engine, const collision_manager_t *cm, int32_t entity, nmo_object_id_t *ids,
+                        size_t count)
+{
+    eng_vector_t now, start, local;
+    float radius = hierarchy_sphere(engine, entity, false, &now);
+    const saved_moving_t *saved = cm_saved(cm, engine->entities.data[entity].id);
+    if (saved == NULL) {
+        start = now;
+    } else {
+        hierarchy_sphere(engine, entity, true, &local);
+        eng_vector_transform(&start, &saved->world, &local);
+    }
+    eng_vector_t dir = vsub(now, start);
+    int32_t moving = moving_attribute(engine);
+    for (size_t i = 0; i < count;) {
+        int32_t index = eng_entity_index(engine, ids[i]);
+        eng_vector_t center;
+        float r = index >= 0 ? hierarchy_sphere(engine, index, false, &center) : 0.0f;
+        float d2 = 0.0f;
+        if (!has_attribute(engine, ids[i], moving)) {
+            eng_vector_t d = vsub(center, start);
+            float t = dir.z * d.z + d.y * dir.y + d.x * dir.x;
+            d2 = d.z * d.z + d.y * d.y + d.x * d.x - t * t;
+        }
+        if (d2 <= (r + radius) * (r + radius)) {
+            i++;
+        } else {
+            memmove(&ids[i], &ids[i + 1], (count - i - 1) * sizeof(nmo_object_id_t));
+            count--;
+        }
+    }
+    return count;
+}
+
+/* The box BoxBoxIntersection takes for an entity: a character's root body part's hierarchy, else its
+   own or its hierarchy's; local (with the matrix) or world */
+static bool manager_box(nmo_engine_t *engine, int32_t *index, bool hierarchy, bool local, eng_vector_t *min,
+                        eng_vector_t *max)
+{
+    nmo_object_id_t id = engine->entities.data[*index].id;
+    if (nmo_engine_object_class(engine, id) == NMO_CID_CHARACTER) {
+        *index = eng_entity_index(engine, eng_character_root(engine, id));
+        if (*index < 0) {
+            return false;
+        }
+        hierarchy = true;
+    }
+    bool valid = hierarchy ? (local ? local_hierarchical_box(engine, *index, min, max)
+                                    : eng_entity_hierarchical_box(engine, *index, min, max))
+                           : (local ? eng_entity_local_box(engine, *index, min, max)
+                                    : eng_entity_world_box(engine, *index, min, max));
+    if (!valid) {
+        *min = *max = local ? v3(0.0f, 0.0f, 0.0f) : eng_entity_position(engine, *index, -1);
+    }
+    return true;
+}
+
+/* VxOBB::Create: a box through a matrix */
+static void obb_create(eng_vector_t min, eng_vector_t max, const eng_matrix_t *m, obb_t *out)
+{
+    eng_vector_t center = v3((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f, (min.z + max.z) * 0.5f), c;
+    eng_vector_transform(&c, m, &center);
+    out->center[0] = c.x;
+    out->center[1] = c.y;
+    out->center[2] = c.z;
+    const float size[3] = {max.x - min.x, max.y - min.y, max.z - min.z};
+    for (int i = 0; i < 3; i++) {
+        float length = sqrtf(m->m[i][0] * m->m[i][0] + m->m[i][1] * m->m[i][1] + m->m[i][2] * m->m[i][2]);
+        float inv = 1.0f / length;
+        for (int k = 0; k < 3; k++) {
+            out->axis[i][k] = inv * m->m[i][k];
+        }
+        out->extent[i] = size[i] * length * 0.5f;
+    }
+}
+
+/* An axis-aligned box as an OBB, for VxIntersect::AABBOBB */
+static void obb_aligned(eng_vector_t min, eng_vector_t max, obb_t *out)
+{
+    memset(out, 0, sizeof(*out));
+    out->center[0] = (min.x + max.x) * 0.5f;
+    out->center[1] = (min.y + max.y) * 0.5f;
+    out->center[2] = (min.z + max.z) * 0.5f;
+    out->axis[0][0] = out->axis[1][1] = out->axis[2][2] = 1.0f;
+    out->extent[0] = (max.x - min.x) * 0.5f;
+    out->extent[1] = (max.y - min.y) * 0.5f;
+    out->extent[2] = (max.z - min.z) * 0.5f;
+}
+
+/* CollisionManager::BoxBoxIntersection: world boxes compared aligned, local ones through their matrices */
+static bool cm_box_box(nmo_engine_t *engine, int32_t e1, bool h1, bool l1, int32_t e2, bool h2, bool l2)
+{
+    eng_vector_t min1, max1, min2, max2;
+    if (!manager_box(engine, &e1, h1, l1, &min1, &max1) || !manager_box(engine, &e2, h2, l2, &min2, &max2)) {
+        return false;
+    }
+    if (!l1 && !l2) {
+        return boxes_meet(min1, max1, min2, max2);
+    }
+    obb_t a, b;
+    if (l1) {
+        obb_create(min1, max1, &engine->entities.data[e1].world, &a);
+    } else {
+        obb_aligned(min1, max1, &a);
+    }
+    if (l2) {
+        obb_create(min2, max2, &engine->entities.data[e2].world, &b);
+    } else {
+        obb_aligned(min2, max2, &b);
+    }
+    return obb_overlap(&a, &b);
+}
+
+/* IsInCollision: box against box, faces against faces, or the box one's local box against the other's faces */
+static bool cm_in_collision(nmo_engine_t *engine, collision_manager_t *cm, int32_t e1, int32_t p1, int32_t e2,
+                            int32_t p2)
+{
+    switch (p1 | p2) {
+    case CKCOLLISION_BOX:
+        return cm_box_box(engine, e1, false, false, e2, false, false);
+    case CKCOLLISION_FACE:
+        return face_face_intersection(engine, e1, e2, &cm->touching_face, &cm->touched_face);
+    case CKCOLLISION_BOX | CKCOLLISION_FACE:
+        return (p1 & CKCOLLISION_BOX) ? box_face_intersection(engine, e1, false, true, e2)
+                                      : box_face_intersection(engine, e2, false, true, e1);
+    default:
+        return false;
+    }
+}
+
+/* The root to test of an entity: a character's root body part */
+static int32_t collision_root(nmo_engine_t *engine, int32_t index)
+{
+    nmo_object_id_t id = engine->entities.data[index].id;
+    return nmo_engine_object_class(engine, id) == NMO_CID_CHARACTER
+               ? eng_entity_index(engine, eng_character_root(engine, id))
+               : index;
+}
+
+/* IsInCollisionWithHierarchy: the first entity of `e2`'s hierarchy (depth first) `e1` collides with; -1 for none */
+static int32_t cm_with_hierarchy(nmo_engine_t *engine, collision_manager_t *cm, int32_t e1, int32_t p1, int32_t e2,
+                                 int32_t p2)
+{
+    e2 = collision_root(engine, e2);
+    if (e2 < 0 || !cm_box_box(engine, e1, false, false, e2, true, false)) {
+        return -1;
+    }
+    if (cm_in_collision(engine, cm, e1, p1, e2, p2)) {
+        return e2;
+    }
+    for (int32_t child = engine->entities.data[e2].first_child; child >= 0;
+         child = engine->entities.data[child].next_sibling) {
+        int32_t hit = cm_with_hierarchy(engine, cm, e1, p1, child, p2);
+        if (hit >= 0) {
+            return hit;
+        }
+    }
+    return -1;
+}
+
+/* IsHierarchyInCollisionWithHierarchy: the parts of each hierarchy that collide */
+static bool cm_hierarchies(nmo_engine_t *engine, collision_manager_t *cm, int32_t e1, int32_t p1, int32_t e2,
+                           int32_t p2, int32_t *sub1, int32_t *sub2)
+{
+    e1 = collision_root(engine, e1);
+    e2 = e1 >= 0 ? collision_root(engine, e2) : -1;
+    if (e2 < 0 || !cm_box_box(engine, e1, true, false, e2, true, false)) {
+        return false;
+    }
+    int32_t hit = cm_with_hierarchy(engine, cm, e1, p1, e2, p2);
+    if (hit >= 0) {
+        *sub1 = e1;
+        *sub2 = hit;
+        return true;
+    }
+    for (int32_t child = engine->entities.data[e1].first_child; child >= 0;
+         child = engine->entities.data[child].next_sibling) {
+        if (cm_hierarchies(engine, cm, child, p1, e2, p2, sub1, sub2)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* GetNearestVertex: the vertex of the entity's mesh nearest a world position; -1 without one */
+static int32_t nearest_vertex(nmo_engine_t *engine, int32_t index, eng_vector_t world)
+{
+    entity_faces_t f;
+    if (!entity_faces(engine, engine->entities.data[index].id, &f) || f.vertices == f.sprite || f.vertex_count == 0) {
+        return -1;
+    }
+    eng_vector_t pos;
+    eng_entity_inverse_transform(engine, index, &pos, &world, -1);
+    float best = 10000000.0f;
+    int32_t nearest = -1;
+    for (int32_t i = 0; i < f.vertex_count; i++) {
+        eng_vector_t d = vsub(face_vertex(&f, i), pos);
+        float d2 = d.x * d.x + d.y * d.y + d.z * d.z;
+        if (d2 < best) {
+            best = d2;
+            nearest = i;
+        }
+    }
+    return nearest;
+}
+
+/*
+ * FillImpactStructure, the DLL's: the vertices nearest the other side's
+ * center, the faces the face test met, the touching vertex projected on the
+ * touched face for the point, that face's normal. As in the DLL, the Object
+ * Part is only given when the Touched Sub Obstacle is not asked for.
+ */
+static void cm_fill_impact(nmo_engine_t *engine, const collision_manager_t *cm, uint32_t flags, impact_t *imp,
+                           int32_t ent, int32_t sub, int32_t ob, int32_t subob, const eng_matrix_t *replacement)
+{
+    imp->entity = engine->entities.data[ent].id;
+    imp->obstacle = engine->entities.data[ob].id;
+    if (flags & SUBOBSTACLETOUCHED) {
+        imp->sub_obstacle = subob >= 0 ? engine->entities.data[subob].id : 0;
+    } else if (flags & OWNERENTITY) {
+        imp->owner = sub >= 0 ? engine->entities.data[sub].id : 0;
+    }
+    int32_t obstacle = subob >= 0 ? subob : ob, entity = sub >= 0 ? sub : ent;
+    eng_vector_t center;
+    if (flags & TOUCHEDVERTEX) {
+        eng_entity_bary_center(engine, entity, &center);
+        imp->touched_vertex = nearest_vertex(engine, obstacle, center);
+    }
+    if (flags & (TOUCHINGVERTEX | IMPACTPOINT)) {
+        eng_entity_bary_center(engine, obstacle, &center);
+        imp->touching_vertex = nearest_vertex(engine, entity, center);
+    }
+    if (flags & (TOUCHEDFACE | IMPACTPOINT | IMPACTNORMAL)) {
+        imp->touched_face = cm->touched_face;
+    }
+    if (flags & TOUCHINGFACE) {
+        imp->touching_face = cm->touching_face;
+    }
+    entity_faces_t of, ef;
+    bool has_of = entity_faces(engine, engine->entities.data[obstacle].id, &of) && of.vertices != of.sprite;
+    bool has_ef = entity_faces(engine, engine->entities.data[entity].id, &ef) && ef.vertices != ef.sprite;
+    if ((flags & IMPACTPOINT) && imp->touched_face >= 0 && imp->touching_vertex >= 0 && has_of && has_ef &&
+        imp->touched_face < of.face_count) {
+        eng_vector_t world, pos, vertex = face_vertex(&ef, imp->touching_vertex);
+        eng_entity_transform(engine, entity, &world, &vertex, -1);
+        eng_entity_inverse_transform(engine, obstacle, &pos, &world, -1);
+        eng_vector_t n = face_normal(&of, imp->touched_face);
+        eng_vector_normalize(&n);
+        eng_vector_t a = face_vertex(&of, of.indices[imp->touched_face * 3]);
+        float d = n.z * (pos.z - a.z) + n.y * (pos.y - a.y) + (pos.x - a.x) * n.x;
+        eng_vector_t local = v3(pos.x - n.x * d, pos.y - n.y * d, pos.z - n.z * d);
+        eng_entity_transform(engine, obstacle, &imp->point, &local, -1);
+    }
+    if ((flags & IMPACTNORMAL) && imp->touched_face >= 0 && has_of && imp->touched_face < of.face_count) {
+        eng_vector_t n = face_normal(&of, imp->touched_face);
+        eng_entity_transform_vector(engine, obstacle, &imp->normal, &n, -1, false);
+        eng_vector_normalize(&imp->normal);
+    }
+    if (flags & IMPACTWORLDMATRIX) {
+        imp->matrix = *replacement;
+    }
+}
+
+/* The test of the entity against an obstacle, by their hierarchical flags */
+static bool cm_test(nmo_engine_t *engine, collision_manager_t *cm, int32_t ent, int32_t enttype, int32_t ob,
+                    int32_t colltype, int32_t *sub, int32_t *subob)
+{
+    bool ent_hierarchy = (engine->entities.data[ent].entity_flags & CK_3DENTITY_HIERARCHICALOBSTACLE) != 0;
+    bool ob_hierarchy = (engine->entities.data[ob].entity_flags & CK_3DENTITY_HIERARCHICALOBSTACLE) != 0;
+    if (ent_hierarchy && ob_hierarchy) {
+        return cm_hierarchies(engine, cm, ent, enttype, ob, colltype, sub, subob);
+    }
+    if (ent_hierarchy) {
+        *sub = cm_with_hierarchy(engine, cm, ob, colltype, ent, enttype); /* on a character's root body part */
+        return *sub >= 0;
+    }
+    if (ob_hierarchy) {
+        *subob = cm_with_hierarchy(engine, cm, ent, enttype, ob, colltype);
+        return *subob >= 0;
+    }
+    return cm_in_collision(engine, cm, ent, enttype, ob, colltype);
+}
+
+static void set_world(nmo_engine_t *engine, int32_t index, const eng_matrix_t *m)
+{
+    eng_entity_set_world_matrix(engine, index, m, false);
+}
+
+static void interpolate(float step, const eng_matrix_t *a, const eng_matrix_t *c, eng_matrix_t *out)
+{
+    vx_interpolate_matrix(step, a->m, c->m, out->m);
+}
+
+/* A character's active animation set back one frame, as when it touched an obstacle */
+static void rewind_character(nmo_engine_t *engine, nmo_object_id_t character)
+{
+    if (nmo_engine_object_class(engine, character) != NMO_CID_CHARACTER || !eng_character_automatic(engine, character)) {
+        return;
+    }
+    nmo_object_id_t animation = eng_character_active_animation(engine, character);
+    float step = 0.0f;
+    if (animation == 0 || !eng_animation_current_step(engine, animation, &step)) {
+        return;
+    }
+    const nmo_animation_state_t *state = eng_animation_playback_state(engine, animation);
+    if (state != NULL && (state->flags & CKANIMATION_LINKTOFRAMERATE)) {
+        float frame = 0.0f;
+        eng_animation_next_frame(engine, animation, -engine->delta, &frame);
+        eng_animation_set_frame(engine, animation, frame);
+        eng_keyed_animation_center(engine, animation, frame);
+        eng_animation_set_current_step(engine, animation, step);
+    } else {
+        eng_animation_set_step(engine, animation, step - 1.0f);
+        eng_keyed_animation_center(engine, animation, step);
+    }
+}
+
+/*
+ * DetectCollision: the entity (an obstacle, or any entity against them) is
+ * tested against the obstacles its bounds meet, moved from where it was
+ * last frame in Detection Tests + 1 steps (moving obstacles too); at the
+ * first one touched, the safe place is looked for in Safe Position Tests
+ * halvings, and the impact filled. The entity ends where it was.
+ */
+static bool cm_detect(nmo_engine_t *engine, int32_t ent, int32_t precision, int32_t replacing, int32_t detecting,
+                      uint32_t flags, impact_t *imp)
+{
+    collision_manager_t *cm = cm_state(engine);
+    if (cm == NULL) {
+        return false;
+    }
+    cm_sync(engine, cm);
+    detecting = detecting < 0 ? 0 : detecting;
+    replacing = replacing < 0 ? 0 : replacing;
+    cm_update_end_movings(engine, cm);
+    nmo_object_id_t id = engine->entities.data[ent].id;
+    eng_matrix_t start, end = engine->entities.data[ent].world;
+    int32_t enttype = CKCOLLISION_BOX, enthierarchy = 0;
+    nmo_object_id_t *candidates = NULL;
+    size_t count = 0;
+    if (read_obstacle(engine, id, &enttype, &enthierarchy)) {
+        const saved_moving_t *saved = cm_saved(cm, id);
+        start = saved != NULL ? saved->world : end;
+        const obstacle_t *self = NULL;
+        for (size_t i = 0; i < cm->obstacles.count && self == NULL; i++) {
+            self = cm->obstacles.data[i].id == id ? &cm->obstacles.data[i] : NULL;
+        }
+        if (self != NULL) {
+            count = cm_overlapping(engine, cm, id, self->min, self->max, &candidates);
+        }
+    } else {
+        enttype = CKCOLLISION_BOX;
+        eng_vector_t min, max;
+        bounding_box(engine, ent, &min, &max);
+        if (engine->entities.data[ent].entity_flags & CK_3DENTITY_UPDATELASTFRAME) {
+            start = *eng_entity_last_frame_matrix(engine, ent);
+            eng_vector_t lmin, lmax, omin, omax;
+            local_bounding_box(engine, ent, &lmin, &lmax);
+            box_transform_from(&omin, &omax, lmin, lmax, &start);
+            min = v3(fminf(min.x, omin.x), fminf(min.y, omin.y), fminf(min.z, omin.z));
+            max = v3(fmaxf(max.x, omax.x), fmaxf(max.y, omax.y), fmaxf(max.z, omax.z));
+        } else {
+            start = end;
+        }
+        count = cm_overlapping(engine, cm, 0, min, max, &candidates);
+    }
+    if (precision != 0) {
+        enttype = precision;
+    }
+    if (count == 0) {
+        free(candidates);
+        return false;
+    }
+    count = cm_filter(engine, cm, ent, candidates, count);
+    cm->touched_face = cm->touching_face = -1;
+    int32_t sub = -1, moving = moving_attribute(engine);
+    for (size_t i = 0; i < count; i++) {
+        int32_t ob = eng_entity_index(engine, candidates[i]);
+        if (ob < 0) {
+            continue;
+        }
+        int32_t subob = -1, colltype = CKCOLLISION_BOX, obhierarchy = 0;
+        bool obmoving = has_attribute(engine, candidates[i], moving);
+        eng_matrix_t ob_start, ob_end = engine->entities.data[ob].world, current = start, ob_current = ob_end;
+        if (obmoving) {
+            const saved_moving_t *saved = cm_saved(cm, candidates[i]);
+            ob_start = saved != NULL ? saved->world : ob_end;
+        }
+        float step = 1.0f / (float)(detecting + 1), slerp = 0.0f;
+        eng_matrix_t safe = start;
+        bool collision = false;
+        for (int32_t k = detecting + 1; k > 0; k--) {
+            slerp += step;
+            read_obstacle(engine, candidates[i], &colltype, &obhierarchy);
+            if (precision != 0) {
+                colltype = precision;
+            }
+            interpolate(slerp, &start, &end, &current);
+            set_world(engine, ent, &current);
+            if (obmoving) {
+                interpolate(slerp, &ob_start, &ob_end, &ob_current);
+                set_world(engine, ob, &ob_current);
+            }
+            collision = cm_test(engine, cm, ent, enttype, ob, colltype, &sub, &subob);
+            if (collision) {
+                break;
+            }
+            safe = current;
+        }
+        if (!collision) {
+            if (obmoving) {
+                set_world(engine, ob, &ob_end);
+            }
+            continue;
+        }
+        rewind_character(engine, id);
+        float back = 1.0f, back_step = 0.5f;
+        eng_matrix_t replacement = safe, temp, ob_temp;
+        for (int32_t k = replacing; k > 0; k--) {
+            back = collision ? back - back_step : back + back_step;
+            interpolate(back, &start, &current, &temp);
+            set_world(engine, ent, &temp);
+            if (obmoving) {
+                interpolate(back, &ob_start, &ob_current, &ob_temp);
+                set_world(engine, ob, &ob_temp);
+            }
+            collision = cm_test(engine, cm, ent, enttype, ob, colltype, &sub, &subob);
+            back_step *= 0.5f;
+            if (!collision) {
+                replacement = temp;
+            }
+        }
+        if (collision) {
+            replacement = safe;
+        }
+        if (imp != NULL) {
+            cm_fill_impact(engine, cm, flags, imp, ent, sub, ob, subob, &replacement);
+        }
+        set_world(engine, ent, &end);
+        if (obmoving) {
+            set_world(engine, ob, &ob_end);
+        }
+        free(candidates);
+        return true;
+    }
+    set_world(engine, ent, &end);
+    free(candidates);
+    return false;
+}
+
+/*
+ * Declare Obstacles: every 3D entity of the level whose name holds Key
+ * Substring becomes an obstacle, fixed or moving, of the Geometry's precision
+ * and hierarchy.
+ */
+static int bb_declare_obstacles(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    const char *key = input_string(b, 0);
+    bool moving = get_in_int(b, 1, 0) != 0;
+    int32_t precision = CKCOLLISION_BOX, hierarchy = 0;
+    eng_param_t *geometry = input_source(b, 2, true);
+    if (geometry != NULL && nmo_guid_equals(geometry->type, CKPGUID_OBSTACLE)) {
+        eng_struct_field(engine, geometry->id, geometry->data, geometry->size, 0, &precision);
+        eng_struct_field(engine, geometry->id, geometry->data, geometry->size, 1, &hierarchy);
+    }
+    for (size_t i = 0; key != NULL && i < engine->entities.count; i++) {
+        const eng_entity_t *entity = &engine->entities.data[i];
+        const char *name = entity->destroyed ? NULL : nmo_engine_object_name(engine, entity->id);
+        if (name != NULL && strstr(name, key) != NULL) {
+            cm_add_obstacle(engine, entity->id, moving, precision, hierarchy);
+        }
+    }
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Add Obstacle (obsolete): the target becomes a fixed obstacle of its bounding box */
+static int bb_add_obstacle(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    int32_t entity = target_entity(b);
+    if (entity < 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    cm_add_obstacle(b->engine, b->engine->entities.data[entity].id, false, CKCOLLISION_BOX, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Collision Detection: the target against the obstacles; the Impact Data asked for when it touches one */
+static int bb_collision_detection(blk_t *b)
+{
+    IN_OFF(b, 0);
+    int32_t entity = target_entity(b);
+    if (entity < 0) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    int32_t precision = get_in_int(b, 0, CKCOLLISION_NONE);
+    int32_t detecting = get_in_int(b, 1, 0), replacing = get_in_int(b, 2, 0);
+    uint32_t flags = (uint32_t)get_local_int(b, 0, 0);
+    impact_t imp;
+    memset(&imp, 0, sizeof(imp));
+    if (!cm_detect(b->engine, entity, precision, replacing, detecting, flags, &imp)) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    if (flags & OWNERENTITY) set_out(b, 0, &imp.owner, sizeof(imp.owner));
+    if (flags & OBSTACLETOUCHED) set_out(b, 1, &imp.obstacle, sizeof(imp.obstacle));
+    if (flags & SUBOBSTACLETOUCHED) set_out(b, 2, &imp.sub_obstacle, sizeof(imp.sub_obstacle));
+    if (flags & TOUCHEDFACE) set_out_int(b, 3, imp.touched_face);
+    if (flags & TOUCHINGFACE) set_out_int(b, 4, imp.touching_face);
+    if (flags & TOUCHEDVERTEX) set_out_int(b, 5, imp.touched_vertex);
+    if (flags & TOUCHINGVERTEX) set_out_int(b, 6, imp.touching_vertex);
+    if (flags & IMPACTPOINT) set_out(b, 7, &imp.point, sizeof(imp.point));
+    if (flags & IMPACTNORMAL) set_out(b, 8, &imp.normal, sizeof(imp.normal));
+    if (flags & IMPACTWORLDMATRIX) set_out(b, 9, imp.matrix.m, sizeof(imp.matrix.m));
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_collisions_blocks[] = {
     {NMO_GUID_INIT(0x64154401, 0x76cf37af), "Box Box Intersection", bb_box_box_intersection, NULL, NULL},
     {NMO_GUID_INIT(0x198531f9, 0x60f66c57), "Sphere Sphere Intersection", bb_sphere_sphere_intersection, NULL, NULL},
@@ -2125,9 +3021,13 @@ static const nmo_engine_block_desc_t eng_collisions_blocks[] = {
      NULL, NULL},
     {NMO_GUID_INIT(0x788061fb, 0x249f29a1), "Character Keep On Floor Limits", bb_character_keep_on_floor_limits,
      cb_character_keep_on_floor_limits, NULL},
+    {NMO_GUID_INIT(0x21dc34e8, 0xd512cd89), "Declare Obstacles", bb_declare_obstacles, NULL, NULL},
+    {NMO_GUID_INIT(0x321a42c4, 0x006133d5), "Add Obstacle", bb_add_obstacle, NULL, NULL},
+    {NMO_GUID_INIT(0x56204f19, 0x682801e8), "Collision Detection", bb_collision_detection, NULL, NULL},
 };
 
 nmo_status_t eng_register_collisions(nmo_engine_t *engine)
 {
-    return ENG_REGISTER_BLOCKS(engine, eng_collisions_blocks);
+    nmo_status_t status = eng_add_manager(engine, &collision_manager_desc, NULL);
+    return status != NMO_OK ? status : ENG_REGISTER_BLOCKS(engine, eng_collisions_blocks);
 }

@@ -47,6 +47,8 @@
 #define GUID_OBJECT_KEEP_ON_FLOOR NMO_GUID(0x43617677, 0x7de15e12)
 #define GUID_FLOOR_SLIDER NMO_GUID(0x136044b0, 0x1c59b21a)
 #define GUID_OBJECT_KEEP_ON_FLOOR_V2 NMO_GUID(0x3de853bd, 0x133d0d2e)
+#define GUID_DECLARE_OBSTACLES NMO_GUID(0x21dc34e8, 0xd512cd89)
+#define GUID_COLLISION_DETECTION NMO_GUID(0x56204f19, 0x682801e8)
 
 #define PI_F 3.14159265f
 
@@ -1425,6 +1427,74 @@ TEST(engine_transform, object_keep_on_floor_v2_keeps_points_boxes_and_the_bounda
     fixture_end(&f);
 }
 
+/* A Declare Obstacles of the names holding `key` linked from `from` */
+static nmo_object_id_t declare_obstacles(engine_fixture_t *f, nmo_object_id_t from, const char *key, bool moving)
+{
+    nmo_object_id_t block = fixture_block(f, GUID_DECLARE_OBSTACLES, "Declare Obstacles");
+    if (block == 0) {
+        return 0;
+    }
+    fixture_input_value(f, BLOCK_PIN(f, block, 0), key, strlen(key) + 1);
+    fixture_input_int(f, BLOCK_PIN(f, block, 1), moving ? 1 : 0);
+    fixture_link(f, from, BLOCK_IN(f, block, 0), 0);
+    return block;
+}
+
+/* The collision manager's attribute types, as a document using it has them */
+static void obstacle_attribute_types(engine_fixture_t *f)
+{
+    nmo_manager_entry_create_options_t options = {.enabled = true, .attribute_type_guid = CKPGUID_OBSTACLE,
+        .category = "Collision Manager", .has_compatible_class_id = true, .compatible_class_id = NMO_CID_3DENTITY,
+        .has_flags = true, .flags = 0};
+    uint32_t type = 0;
+    ASSERT_EQ(NMO_OK, nmo_object_edit_ensure_attribute_manager_entry(nmo_script_edit_workspace_edit(f->tx),
+                                                                     "Fixed Obstacle", &options, &type));
+    ASSERT_EQ(NMO_OK, nmo_object_edit_ensure_attribute_manager_entry(nmo_script_edit_workspace_edit(f->tx),
+                                                                     "Moving Obstacle", &options, &type));
+}
+
+TEST(engine_transform, collision_detection_finds_the_obstacle_and_the_safe_place)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t wall = cube_object(&f, "Wall Obstacle", 2.0f, 0.0f); /* x 1.5 to 2.5 */
+    nmo_object_id_t mover = cube_object(&f, "Mover", 0.0f, 0.0f);
+    ASSERT_TRUE(wall && mover);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    obstacle_attribute_types(&f);
+    nmo_object_id_t fixed = declare_obstacles(&f, f.script_in, "Obstacle", false);
+    nmo_object_id_t moving = declare_obstacles(&f, BLOCK_OUT(&f, fixed, 0), "Mover", true);
+    nmo_object_id_t detect = target_block(&f, GUID_COLLISION_DETECTION, "Collision Detection", mover,
+                                          BLOCK_OUT(&f, moving, 0));
+    nmo_object_id_t hit = fixture_block(&f, GUID_NOP, "Hit");
+    ASSERT_TRUE(fixed && moving && detect && hit);
+    fixture_input_int(&f, BLOCK_PIN(&f, detect, 2), 3); /* Safe Position Tests */
+    fixture_link(&f, BLOCK_OUT(&f, detect, 1), BLOCK_IN(&f, detect, 0), 1); /* again next frame */
+    fixture_link(&f, BLOCK_OUT(&f, detect, 0), BLOCK_IN(&f, hit, 0), 0);
+    fixture_commit(&f, NULL);
+    set_local_int(&f, detect, 0, OBSTACLETOUCHED | IMPACTWORLDMATRIX);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(0u, runs(&f, hit)); /* apart */
+    /* Moved into the wall during the next frame, from where the last one left it */
+    push_at_frame_t push = {f.engine, mover, 1, 1.4f};
+    nmo_engine_set_trace(f.engine, push_entity, &push);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    nmo_engine_set_trace(f.engine, NULL, NULL);
+    ASSERT_EQ(1u, runs(&f, hit));
+    nmo_object_id_t touched = 0;
+    float matrix[16];
+    read_value(&f, BLOCK_POUT(&f, detect, 1), &touched, sizeof(touched));
+    read_value(&f, BLOCK_POUT(&f, detect, 9), matrix, sizeof(matrix));
+    ASSERT_EQ(wall, touched);
+    /* the safe place halving from x = 0 toward 1.4: 0.7, 1.05 (touching), 0.875 */
+    ASSERT_FLOAT_EQ(0.875f, matrix[12], 0.0001f);
+    ASSERT_POSITION(&f, mover, 1.4f, 0.0f, 0.0f); /* left where it was */
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_transform, entity_slots_remain_stable_after_deletion);
 REGISTER_TEST(engine_transform, loaded_children_keep_their_place_under_the_parent);
@@ -1443,6 +1513,7 @@ REGISTER_TEST(engine_transform, box_box_intersection_tests_oriented_boxes);
 REGISTER_TEST(engine_transform, collision_intersection_tests_spheres_boxes_faces_and_the_frustum);
 REGISTER_TEST(engine_transform, floors_are_declared_found_kept_on_and_slid_within);
 REGISTER_TEST(engine_transform, object_keep_on_floor_v2_keeps_points_boxes_and_the_boundary);
+REGISTER_TEST(engine_transform, collision_detection_finds_the_obstacle_and_the_safe_place);
 REGISTER_TEST(engine_transform, proximity_volume_control_runs_until_off);
 REGISTER_TEST(engine_transform, texture_sine_runs_its_clock_and_checks_the_channel);
 TEST_MAIN_END()
