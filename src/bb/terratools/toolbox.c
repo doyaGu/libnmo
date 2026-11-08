@@ -5064,6 +5064,166 @@ static int bb_switch_on_layer(blk_t *b)
     return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
 }
 
+/* ============================================================================
+ * Files: through the host's file system (nmo_engine_set_file_system). None
+ * of these blocks deactivates its input, as in the DLL.
+ * ============================================================================ */
+
+static const char *file_name_input(blk_t *b, int pos)
+{
+    const char *name = input_string(b, pos);
+    return name != NULL ? name : "";
+}
+
+/* TT_CopyFile: CopyFile(Source, Destination, fail if exists = !Overwrite); OK or Fail. */
+static int bb_copy_file(blk_t *b)
+{
+    const nmo_engine_file_system_t *fs = &b->engine->host.files;
+    bool overwrite = get_in_int(b, 2, 0) != 0;
+    bool done = fs->copy != NULL &&
+                fs->copy(fs->user_data, file_name_input(b, 0), file_name_input(b, 1), overwrite);
+    OUT_ON(b, done ? 0 : 1);
+    return NMO_ENGINE_BR_OK;
+}
+
+typedef bool (*file_operation_fn)(void *user_data, const char *name);
+
+static int file_operation(blk_t *b, file_operation_fn operation)
+{
+    const nmo_engine_file_system_t *fs = &b->engine->host.files;
+    bool done = operation != NULL && operation(fs->user_data, file_name_input(b, 0));
+    OUT_ON(b, done ? 0 : 1);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* TT_CreateDirectory: CreateDirectory(Directory); OK or Fail. */
+static int bb_create_directory(blk_t *b)
+{
+    return file_operation(b, b->engine->host.files.create_directory);
+}
+
+/* TT_DeleteFile: DeleteFile(File); OK or Fail. */
+static int bb_delete_file(blk_t *b)
+{
+    return file_operation(b, b->engine->host.files.remove_file);
+}
+
+/* TT_RemoveDirectory: RemoveDirectory(Directory); OK or Fail. */
+static int bb_remove_directory(blk_t *b)
+{
+    return file_operation(b, b->engine->host.files.remove_directory);
+}
+
+/* TT_SetCurrentDirectory: SetCurrentDirectory(CurrentDirectory); OK or Fail. */
+static int bb_set_current_directory(blk_t *b)
+{
+    return file_operation(b, b->engine->host.files.set_current_directory);
+}
+
+/* TT_ExistFile: Yes when there is a file (or directory) of that name; without the host's check,
+   when the resolver gives a path that opens. */
+static int bb_exist_file(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    const char *name = file_name_input(b, 0);
+    bool exists;
+    if (engine->host.files.exists != NULL) {
+        exists = engine->host.files.exists(engine->host.files.user_data, name);
+    } else {
+        const char *path = engine->host.resolve_file != NULL
+                               ? engine->host.resolve_file(engine->host.resolve_file_user_data, name)
+                               : NULL;
+        FILE *file = path != NULL ? fopen(path, "rb") : NULL;
+        exists = file != NULL;
+        if (file != NULL) {
+            fclose(file);
+        }
+    }
+    OUT_ON(b, exists ? 0 : 1);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* TT_GetFileNameFromPath: what follows the last backslash (slash with Use Slash), or all of it. */
+static int bb_get_file_name_from_path(blk_t *b)
+{
+    const char *path = file_name_input(b, 0);
+    const char *last = strrchr(path, get_local_int(b, 0, 0) == 1 ? '/' : '\\');
+    const char *name = last != NULL ? last + 1 : path;
+    set_out(b, 0, name, strlen(name) + 1u);
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* CKDataArray::SetElementStringValue: a string, or an int or float read from it; false for
+   other columns, or a key column that has the value in another row */
+static bool set_element_string(nmo_engine_t *engine, nmo_object_id_t array, int32_t row, int32_t column,
+                               const char *text)
+{
+    if (column < 0 || column >= nmo_engine_array_column_count(engine, array) ||
+        row >= nmo_engine_array_row_count(engine, array)) {
+        return false;
+    }
+    nmo_engine_cell_t cell = {.type = nmo_engine_array_column_type(engine, array, column)};
+    if (cell.type == CKARRAYTYPE_INT) {
+        int32_t value = atoi(text);
+        memcpy(&cell.value, &value, sizeof(value));
+    } else if (cell.type == CKARRAYTYPE_FLOAT) {
+        float value = (float)atof(text);
+        memcpy(&cell.value, &value, sizeof(value));
+    } else if (cell.type == CKARRAYTYPE_STRING) {
+        cell.text = text;
+    } else {
+        return false;
+    }
+    if (column == nmo_engine_array_key_column(engine, array)) {
+        int32_t found = nmo_engine_array_find_row(engine, array, column, &cell, 0);
+        if ((found == row && nmo_engine_array_find_row(engine, array, column, &cell, row + 1) >= 0) ||
+            (found >= 0 && found != row)) {
+            return false;
+        }
+    }
+    return nmo_engine_array_set_cell(engine, array, row, column, &cell) == NMO_OK;
+}
+
+typedef struct list_dir {
+    nmo_engine_t *engine;
+    nmo_object_id_t array;
+} list_dir_t;
+
+/* A row at the end with the entry's name, taken back when the first column cannot hold it */
+static void list_dir_found(void *context, const char *name)
+{
+    list_dir_t *list = (list_dir_t *)context;
+    if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0 || list->array == 0) {
+        return;
+    }
+    nmo_engine_array_insert_row(list->engine, list->array, -1, NULL);
+    int32_t row = nmo_engine_array_row_count(list->engine, list->array) - 1;
+    if (row >= 0 && !set_element_string(list->engine, list->array, row, 0, name)) {
+        nmo_engine_array_remove_row(list->engine, list->array, row);
+    }
+}
+
+/*
+ * TT_ListDir: a row of Array for each entry SearchPath finds but "." and
+ * "..", its name in the first column. The DLL activates no output, and
+ * returns -1 ("Invalid File Handle") when the search cannot start, which
+ * leaves it active.
+ */
+static int bb_list_dir(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    list_dir_t list = {engine, nmo_engine_block_get_input_object(b, 1)};
+    if (list.array != 0 && eng_find_array(engine, list.array) == NULL) {
+        list.array = 0;
+    }
+    const nmo_engine_file_system_t *fs = &engine->host.files;
+    if (fs->list == NULL || !fs->list(fs->user_data, file_name_input(b, 0), list_dir_found, &list)) {
+        return -1;
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_tt_toolbox_blocks[] = {
     {NMO_GUID_INIT(0x594a136e,0x58135ef9),"TT Joystick Waiter",bb_tt_joystick_waiter,NULL,NULL},
     {NMO_GUID_INIT(0x229865eb,0x577619e4),"TT_TestForJoystick",bb_test_for_joystick,NULL,NULL},
@@ -5150,6 +5310,14 @@ static const nmo_engine_block_desc_t eng_tt_toolbox_blocks[] = {
     {NMO_GUID_INIT(0x73e256e5, 0x6552118e), "TT_FontCoordinatesToDataArray", bb_font_coordinates_to_data_array,
      NULL, NULL},
     {NMO_GUID_INIT(0x1a151160, 0x1be26257), "TT Switch on Layer", bb_switch_on_layer, NULL, NULL},
+    {NMO_GUID_INIT(0x22e510f9, 0x070f528a), "TT_CopyFile", bb_copy_file, NULL, NULL},
+    {NMO_GUID_INIT(0x2d2a0d16, 0x6b955ee1), "TT_SetCurrentDirectory", bb_set_current_directory, NULL, NULL},
+    {NMO_GUID_INIT(0x03442842, 0x01df7a5f), "TT_CreateDirectory", bb_create_directory, NULL, NULL},
+    {NMO_GUID_INIT(0x53ba46bc, 0x31782f60), "TT_ExistFile", bb_exist_file, NULL, NULL},
+    {NMO_GUID_INIT(0x562f6aab, 0x07ea0f0b), "TT_DeleteFile", bb_delete_file, NULL, NULL},
+    {NMO_GUID_INIT(0x7a2105fa, 0x282d2a22), "TT_RemoveDirectory", bb_remove_directory, NULL, NULL},
+    {NMO_GUID_INIT(0x496f429e, 0x7d602e9d), "TT_ListDir", bb_list_dir, NULL, NULL},
+    {NMO_GUID_INIT(0x68e631f7, 0x13f914fe), "TT_GetFileNameFromPath", bb_get_file_name_from_path, NULL, NULL},
     {NMO_GUID_INIT(0x0fd4755f, 0x7de22dc8), "TT Set Dynamic Position", bb_set_dynamic_position, NULL,
      NULL},
 };

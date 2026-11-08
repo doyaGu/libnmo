@@ -92,6 +92,12 @@
 #define GUID_LOAD_MOTOR_SETTINGS NMO_GUID(0x0f822838, 0x74116583)
 #define GUID_FONT_COORDINATES NMO_GUID(0x73e256e5, 0x6552118e)
 #define GUID_CREATE_FONT NMO_GUID(0x7d644088, 0x40dd0349)
+#define GUID_COPY_FILE NMO_GUID(0x22e510f9, 0x070f528a)
+#define GUID_CREATE_DIRECTORY NMO_GUID(0x03442842, 0x01df7a5f)
+#define GUID_EXIST_FILE NMO_GUID(0x53ba46bc, 0x31782f60)
+#define GUID_DELETE_FILE NMO_GUID(0x562f6aab, 0x07ea0f0b)
+#define GUID_LIST_DIR NMO_GUID(0x496f429e, 0x7d602e9d)
+#define GUID_FILE_NAME_FROM_PATH NMO_GUID(0x68e631f7, 0x13f914fe)
 
 /* The files the engine loads, from the scratch directory */
 static const char *resolve_scratch(void *user_data, const char *name)
@@ -2203,6 +2209,121 @@ TEST(engine_tt, font_coordinates_fill_a_new_array)
     fixture_end(&f);
 }
 
+/* A host file system that records what it is asked */
+typedef struct fake_files {
+    int copies;
+    bool last_overwrite;
+    char last_copy[64];
+    int removes;
+} fake_files_t;
+
+static bool fake_exists(void *user_data, const char *name)
+{
+    (void)user_data;
+    return strcmp(name, "Data\\here.txt") == 0;
+}
+
+static bool fake_copy(void *user_data, const char *source, const char *destination, bool overwrite)
+{
+    fake_files_t *files = (fake_files_t *)user_data;
+    files->copies++;
+    files->last_overwrite = overwrite;
+    size_t length = strlen(source);
+    if (length < sizeof(files->last_copy)) {
+        memcpy(files->last_copy, source, length + 1u);
+    }
+    return strcmp(destination, "Save\\copy.txt") == 0;
+}
+
+static bool fake_remove(void *user_data, const char *name)
+{
+    (void)name;
+    ((fake_files_t *)user_data)->removes++;
+    return false; /* in use */
+}
+
+static bool fake_list(void *user_data, const char *pattern, void (*found)(void *, const char *), void *context)
+{
+    (void)user_data;
+    if (strcmp(pattern, "Lv\\*.nmo") != 0) {
+        return false;
+    }
+    const char *names[4] = {".", "..", "Level_01.nmo", "Level_02.nmo"};
+    for (int i = 0; i < 4; i++) {
+        found(context, names[i]);
+    }
+    return true;
+}
+
+TEST(engine_tt, file_blocks_go_through_the_host_file_system)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t levels = fixture_create(&f, NMO_CID_DATAARRAY, "Levels");
+    ASSERT_TRUE(levels != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t copy = started_block(&f, GUID_COPY_FILE, "Copy");
+    nmo_object_id_t remove = started_block(&f, GUID_DELETE_FILE, "Delete");
+    nmo_object_id_t here = started_block(&f, GUID_EXIST_FILE, "Here");
+    nmo_object_id_t gone = started_block(&f, GUID_EXIST_FILE, "Gone");
+    nmo_object_id_t name = started_block(&f, GUID_FILE_NAME_FROM_PATH, "Name");
+    nmo_object_id_t slash = started_block(&f, GUID_FILE_NAME_FROM_PATH, "Slash");
+    nmo_object_id_t list = started_block(&f, GUID_LIST_DIR, "List");
+    nmo_object_id_t make = started_block(&f, GUID_CREATE_DIRECTORY, "Make");
+    ASSERT_TRUE(copy && remove && here && gone && name && slash && list && make);
+    input_text(&f, BLOCK_PIN(&f, copy, 0), "Data\\here.txt");
+    input_text(&f, BLOCK_PIN(&f, copy, 1), "Save\\copy.txt");
+    fixture_input_int(&f, BLOCK_PIN(&f, copy, 2), 0);
+    input_text(&f, BLOCK_PIN(&f, remove, 0), "Data\\here.txt");
+    input_text(&f, BLOCK_PIN(&f, here, 0), "Data\\here.txt");
+    input_text(&f, BLOCK_PIN(&f, gone, 0), "Data\\gone.txt");
+    input_text(&f, BLOCK_PIN(&f, name, 0), "C:\\B\\base.cmo");
+    input_text(&f, BLOCK_PIN(&f, slash, 0), "3D/PH/Box.nmo");
+    input_text(&f, BLOCK_PIN(&f, list, 0), "Lv\\*.nmo");
+    fixture_input_int(&f, BLOCK_PIN(&f, list, 1), (int32_t)levels);
+    input_text(&f, BLOCK_PIN(&f, make, 0), "Save");
+    /* OK and Fail (Yes and No) of each */
+    nmo_object_id_t outs[5][2];
+    const nmo_object_id_t blocks[5] = {copy, remove, here, gone, make};
+    for (int i = 0; i < 5; i++) {
+        watch_outputs(&f, blocks[i], outs[i]);
+    }
+    fixture_commit(&f, NULL);
+    const int32_t use_slash = 1;
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, local_of(&f, slash, 0), &use_slash, sizeof(use_slash)));
+    fake_files_t record;
+    memset(&record, 0, sizeof(record));
+    const nmo_engine_file_system_t files = {&record, fake_exists, fake_copy, fake_remove, NULL, NULL, NULL, fake_list};
+    nmo_engine_set_file_system(f.engine, &files);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_array_insert_column(f.engine, levels, -1, CKARRAYTYPE_STRING, NMO_GUID(0u, 0u)));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1, record.copies);
+    ASSERT_FALSE(record.last_overwrite); /* fails on an existing destination */
+    ASSERT_STR_EQ("Data\\here.txt", record.last_copy);
+    ASSERT_EQ(1u, runs(&f, outs[0][0]));
+    ASSERT_EQ(1u, runs(&f, outs[1][1])); /* the host refused */
+    ASSERT_EQ(1u, runs(&f, outs[2][0]));
+    ASSERT_EQ(1u, runs(&f, outs[3][1]));
+    ASSERT_EQ(1u, runs(&f, outs[4][1])); /* no directory operation from the host */
+    const void *text = NULL;
+    ASSERT_EQ(NMO_OK, nmo_engine_param_value(f.engine, BLOCK_POUT(&f, name, 0), &text, NULL, NULL));
+    ASSERT_STR_EQ("base.cmo", (const char *)text);
+    ASSERT_EQ(NMO_OK, nmo_engine_param_value(f.engine, BLOCK_POUT(&f, slash, 0), &text, NULL, NULL));
+    ASSERT_STR_EQ("Box.nmo", (const char *)text);
+    ASSERT_EQ(2, nmo_engine_array_row_count(f.engine, levels)); /* without "." and ".." */
+    nmo_engine_cell_t cell;
+    ASSERT_EQ(NMO_OK, nmo_engine_array_get_cell(f.engine, levels, 1, 0, &cell));
+    ASSERT_STR_EQ("Level_02.nmo", cell.text);
+    /* Their inputs stay set, but nothing runs them again */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1, record.copies);
+    ASSERT_EQ(2, nmo_engine_array_row_count(f.engine, levels));
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_tt, load_database_fills_the_array_of_its_name);
 REGISTER_TEST(engine_tt, save_database_writes_the_registered_arrays);
@@ -2242,4 +2363,5 @@ REGISTER_TEST(engine_tt, sprite_blocks_place_the_sprites_and_read_the_uvs);
 REGISTER_TEST(engine_tt, push_button_swaps_materials_and_starts_with_the_button_down);
 REGISTER_TEST(engine_tt, motor_sound_plays_the_bands_of_the_loaded_settings);
 REGISTER_TEST(engine_tt, font_coordinates_fill_a_new_array);
+REGISTER_TEST(engine_tt, file_blocks_go_through_the_host_file_system);
 TEST_MAIN_END()
