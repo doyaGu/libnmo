@@ -35,6 +35,7 @@ set(NMO_BB_VIRTOOLS_SOURCES
     virtools/grid_path.c
     virtools/grids.c
     virtools/interface.c
+    virtools/interface_layouts.c
     virtools/lights.c
     virtools/materials.c
     virtools/narratives.c

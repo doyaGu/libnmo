@@ -564,8 +564,8 @@ static int bb_look_at_pos(blk_t *b)
  * even modes the opposite) turned `speed` of the way toward `dir`, about the
  * up vector, then rolled about it; the local scale kept.
  */
-static eng_vector_t orientate(nmo_engine_t *engine, int32_t entity, eng_vector_t dir, int32_t dir_mode,
-                      float roll, eng_vector_t up, float speed, bool keep)
+eng_vector_t eng_bb_orientate(nmo_engine_t *engine, int32_t entity, eng_vector_t dir, int32_t dir_mode,
+                              float roll, eng_vector_t up, float speed, bool keep)
 {
     eng_vector_t scale = eng_entity_scale(engine, entity, true);
     if ((dir_mode & 1) == 0) {
@@ -681,7 +681,7 @@ static int bb_look_at(blk_t *b)
     if (dir.x != 0.0f || dir.y != 0.0f || dir.z != 0.0f) {
         eng_vector_normalize(&dir);
         const eng_vector_t up = {0.0f, 1.0f, 0.0f};
-        orientate(engine, entity, dir, get_local_int(b, 1, 5), get_local_float(b, 2, 0.0f), up,
+        eng_bb_orientate(engine, entity, dir, get_local_int(b, 1, 5), get_local_float(b, 2, 0.0f), up,
                   speed, false);
     }
     IN_OFF(b, 0);
@@ -720,7 +720,7 @@ static int bb_tt_look_at(blk_t *b)
             eng_vector_normalize(&dir);
         }
         const eng_vector_t up = {0.0f, 1.0f, 0.0f};
-        orientate(engine, entity, dir, get_local_int(b, 1, 5), get_local_float(b, 2, 0.0f), up,
+        eng_bb_orientate(engine, entity, dir, get_local_int(b, 1, 5), get_local_float(b, 2, 0.0f), up,
                   speed, false);
     }
     IN_OFF(b, 0);
@@ -771,7 +771,7 @@ static int bb_position_on_curve(blk_t *b)
     if (follow) {
         eng_vector_t direction = {next.x-previous.x,next.y-previous.y,next.z-previous.z};
         eng_vector_normalize(&direction);
-        up = orientate(b->engine,entity,direction,axis,roll,up,1,keep);
+        up = eng_bb_orientate(b->engine,entity,direction,axis,roll,up,1,keep);
         if (nmo_engine_block_set_local_value(b,0,&up,sizeof(up)) != NMO_OK) return NMO_ENGINE_BR_GENERICERROR;
     }
     if (bank) {

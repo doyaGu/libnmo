@@ -1,5 +1,10 @@
 #include "engine_fixture.h"
 #include "engine/nmo_engine_render.h"
+#include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_group_schemas.h"
+#include "object/nmo_object_enum_defs.h"
+#include "object/nmo_ref.h"
+#include "../../src/engine/engine_internal.h"
 
 #define GUID_NOP NMO_GUID(0x302561c4, 0x0d282980)
 #define GUID_CREATE_SYSTEM_FONT NMO_GUID(0x936334fc, 0xf243684f)
@@ -10,6 +15,19 @@
 #define GUID_TT_PUSH_BUTTON2 NMO_GUID(0x14d325d1, 0x6748654e)
 #define GUID_SHOW_MOUSE_CURSOR NMO_GUID(0x16f6368f, 0x506b60fc)
 #define GUID_TEXT_DISPLAY NMO_GUID(0xf22d010a, 0xf2cd010a)
+#define GUID_ALIGN_2D NMO_GUID(0x03385bc3, 0x1034102f)
+#define GUID_ALIGN_3D NMO_GUID(0x0f384bc3, 0x1b34102f)
+#define GUID_FLOW_LAYOUT_2D NMO_GUID(0x295f342c, 0x95e467e6)
+#define GUID_GRID_LAYOUT_2D NMO_GUID(0x265f342c, 0x95e466e6)
+#define GUID_GET_PROPORTIONAL_SCREEN_POS NMO_GUID(0x671e53a2, 0x5ba16d62)
+#define GUID_GET_SCREEN_PROPORTIONAL_POS NMO_GUID(0x7bdf0404, 0x0f765834)
+#define GUID_SET_PICKABLE NMO_GUID(0xf1499052, 0xebe9bbf1)
+#define GUID_MOUSE_CURSOR_SYSTEM NMO_GUID(0x2483576d, 0x57c66324)
+#define GUID_SET_CARET_POSITION NMO_GUID(0x0f760d6e, 0x7ce7589a)
+#define GUID_DRAW_RECTANGLE NMO_GUID(0x4095766f, 0x291161c1)
+#define GUID_MOUSE_CURSOR NMO_GUID(0x140c3eac, 0x6e502a81)
+#define GUID_DRAG_AND_DROP NMO_GUID(0x39c45869, 0x3dcf3fc1)
+#define GUID_BITMAP_TEXT_DISPLAY NMO_GUID(0x049d487b, 0x57565345)
 
 typedef struct effect_log {
     size_t effects;
@@ -272,10 +290,349 @@ TEST(engine_interface, tt_push_button2_needs_the_cursor_shown)
     fixture_end(&f);
 }
 
+static nmo_object_id_t started(engine_fixture_t *f, nmo_guid_t guid, const char *name)
+{
+    nmo_object_id_t block = fixture_block(f, guid, name);
+    if (block != 0) {
+        fixture_link(f, f->script_in, BLOCK_IN(f, block, 0), 0);
+    }
+    return block;
+}
+
+static void set_rect_of(engine_fixture_t *f, nmo_object_id_t entity, float l, float t, float r, float b)
+{
+    eng_2d_set_rect(f->engine, entity, (nmo_rect_t){l, t, r, b}, true);
+}
+
+static nmo_rect_t rect_of(engine_fixture_t *f, nmo_object_id_t entity)
+{
+    const eng_2d_t *e = eng_2d_entity(f->engine, entity);
+    return e != NULL ? e->rect : (nmo_rect_t){-1.0f, -1.0f, -1.0f, -1.0f};
+}
+
+static nmo_object_id_t placed(engine_fixture_t *f, const char *name, float x, float y, float z, float scale)
+{
+    nmo_object_id_t id = fixture_create(f, NMO_CID_3DENTITY, name);
+    nmo_3dentity_state_t *state = id != 0 ? (nmo_3dentity_state_t *)fixture_state(f, id) : NULL;
+    if (state == NULL) {
+        return 0;
+    }
+    memset(state->world_matrix, 0, sizeof(state->world_matrix));
+    state->world_matrix[0] = state->world_matrix[5] = state->world_matrix[10] = scale;
+    state->world_matrix[15] = 1.0f;
+    state->world_matrix[12] = x;
+    state->world_matrix[13] = y;
+    state->world_matrix[14] = z;
+    return id;
+}
+
+TEST(engine_interface, layouts_place_2d_and_3d_entities)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t frame = fixture_create(&f, NMO_CID_2DENTITY, "Frame");
+    nmo_object_id_t panel = fixture_create(&f, NMO_CID_2DENTITY, "Panel");
+    nmo_object_id_t cells[4], items[2];
+    for (int i = 0; i < 4; i++) {
+        cells[i] = fixture_create(&f, NMO_CID_2DENTITY, "Cell");
+    }
+    for (int i = 0; i < 2; i++) {
+        items[i] = fixture_create(&f, NMO_CID_2DENTITY, "Item");
+    }
+    nmo_object_id_t grid = fixture_create(&f, NMO_CID_DATAARRAY, "Cells");
+    nmo_object_id_t row = fixture_create(&f, NMO_CID_GROUP, "Row");
+    nmo_object_id_t box = placed(&f, "Box", 0.0f, 0.0f, 0.0f, 2.0f);
+    nmo_object_id_t lid = placed(&f, "Lid", 5.0f, 5.0f, 5.0f, 1.0f);
+    ASSERT_TRUE(frame && panel && grid && row && box && lid);
+    nmo_group_state_t *group = (nmo_group_state_t *)fixture_state(&f, row);
+    nmo_ref_t *members = NULL;
+    ASSERT_EQ(NMO_OK, nmo_array_extend(&group->object_ids, 2, (void **)&members));
+    for (int i = 0; i < 2; i++) {
+        members[i] = nmo_ref_from_id(items[i]);
+    }
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t align = started(&f, GUID_ALIGN_2D, "Align");
+    nmo_object_id_t layout = started(&f, GUID_GRID_LAYOUT_2D, "Grid");
+    nmo_object_id_t flow = started(&f, GUID_FLOW_LAYOUT_2D, "Flow");
+    nmo_object_id_t align3d = started(&f, GUID_ALIGN_3D, "Align 3D");
+    ASSERT_TRUE(align && layout && flow && align3d);
+    /* Align: right and bottom of the 640 x 480 render context, 5 pixels in */
+    fixture_input_int(&f, fixture_target(&f, align), (int32_t)panel);
+    fixture_input_int(&f, BLOCK_PIN(&f, align, 1), 2 | 8);
+    fixture_input_int(&f, BLOCK_PIN(&f, align, 2), 0);
+    const nmo_rect_t five = {5.0f, 5.0f, 5.0f, 5.0f};
+    fixture_input_value(&f, BLOCK_PIN(&f, align, 3), &five, sizeof(five));
+    /* Grid: 2 x 2 cells resized in the frame, 10 pixel margins and gaps */
+    fixture_input_int(&f, fixture_target(&f, layout), (int32_t)frame);
+    fixture_input_int(&f, BLOCK_PIN(&f, layout, 0), (int32_t)grid);
+    const nmo_rect_t ten = {10.0f, 10.0f, 10.0f, 10.0f};
+    fixture_input_value(&f, BLOCK_PIN(&f, layout, 1), &ten, sizeof(ten));
+    fixture_input_int(&f, BLOCK_PIN(&f, layout, 2), 10);
+    fixture_input_int(&f, BLOCK_PIN(&f, layout, 3), 10);
+    fixture_input_int(&f, BLOCK_PIN(&f, layout, 4), 1);
+    fixture_input_int(&f, BLOCK_PIN(&f, layout, 5), 0);
+    /* Flow: a row from the left of the frame */
+    fixture_input_int(&f, fixture_target(&f, flow), (int32_t)frame);
+    fixture_input_int(&f, BLOCK_PIN(&f, flow, 0), (int32_t)row);
+    fixture_input_int(&f, BLOCK_PIN(&f, flow, 1), 1);
+    fixture_input_int(&f, BLOCK_PIN(&f, flow, 2), 10);
+    fixture_input_int(&f, BLOCK_PIN(&f, flow, 3), 10);
+    fixture_input_int(&f, BLOCK_PIN(&f, flow, 4), 5);
+    fixture_input_int(&f, BLOCK_PIN(&f, flow, 5), 1);
+    fixture_input_int(&f, BLOCK_PIN(&f, flow, 6), 0);
+    /* Align 3D: against the box's left, top and front, as its half sizes say */
+    fixture_input_int(&f, fixture_target(&f, align3d), (int32_t)lid);
+    fixture_input_int(&f, BLOCK_PIN(&f, align3d, 0), (int32_t)box);
+    fixture_input_int(&f, BLOCK_PIN(&f, align3d, 1), 1 | 4);
+    fixture_input_int(&f, BLOCK_PIN(&f, align3d, 2), 1);
+    fixture_input_int(&f, BLOCK_PIN(&f, align3d, 3), 0);
+    const nmo_rect_t none = {0.0f, 0.0f, 0.0f, 0.0f};
+    const float depth[2] = {0.0f, 0.0f};
+    fixture_input_value(&f, BLOCK_PIN(&f, align3d, 4), &none, sizeof(none));
+    fixture_input_value(&f, BLOCK_PIN(&f, align3d, 5), depth, sizeof(depth));
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    set_rect_of(&f, panel, 10.0f, 10.0f, 60.0f, 30.0f);
+    set_rect_of(&f, frame, 0.0f, 0.0f, 230.0f, 120.0f);
+    for (int i = 0; i < 2; i++) {
+        set_rect_of(&f, items[i], 0.0f, 0.0f, 50.0f, 20.0f);
+    }
+    for (int c = 0; c < 2; c++) {
+        ASSERT_EQ(NMO_OK, nmo_engine_array_insert_column(f.engine, grid, -1, CKARRAYTYPE_OBJECT, NMO_GUID(0u, 0u)));
+    }
+    for (int r = 0; r < 2; r++) {
+        ASSERT_EQ(NMO_OK, nmo_engine_array_insert_row(f.engine, grid, -1, NULL));
+        for (int c = 0; c < 2; c++) {
+            nmo_engine_cell_t cell = {.type = CKARRAYTYPE_OBJECT, .value = (uint32_t)cells[r * 2 + c]};
+            ASSERT_EQ(NMO_OK, nmo_engine_array_set_cell(f.engine, grid, r, c, &cell));
+        }
+    }
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    nmo_rect_t r = rect_of(&f, panel);
+    ASSERT_FLOAT_EQ(585.0f, r.left, 1e-4f); /* 640 - 5 - 50 */
+    ASSERT_FLOAT_EQ(455.0f, r.top, 1e-4f);  /* 480 - 5 - 20 */
+    ASSERT_FLOAT_EQ(635.0f, r.right, 1e-4f);
+    /* Cells of (230 - 30) / 2 by (120 - 30) / 2 */
+    r = rect_of(&f, cells[3]);
+    ASSERT_FLOAT_EQ(120.0f, r.left, 1e-4f);
+    ASSERT_FLOAT_EQ(65.0f, r.top, 1e-4f);
+    ASSERT_FLOAT_EQ(220.0f, r.right, 1e-4f);
+    ASSERT_FLOAT_EQ(110.0f, r.bottom, 1e-4f);
+    ASSERT_FLOAT_EQ(10.0f, rect_of(&f, cells[0]).left, 1e-4f);
+    /* The row: 10 in, then 5 after the first's 50 */
+    ASSERT_FLOAT_EQ(10.0f, rect_of(&f, items[0]).left, 1e-4f);
+    ASSERT_FLOAT_EQ(65.0f, rect_of(&f, items[1]).left, 1e-4f);
+    ASSERT_FLOAT_EQ(10.0f, rect_of(&f, items[1]).top, 1e-4f);
+    /* The lid's centre one of its half sizes inside the box's left, top and front faces */
+    eng_vector_t at = eng_entity_position(f.engine, eng_entity_index(f.engine, lid), -1);
+    ASSERT_FLOAT_EQ(-1.0f, at.x, 1e-5f);
+    ASSERT_FLOAT_EQ(1.0f, at.y, 1e-5f);
+    ASSERT_FLOAT_EQ(-1.0f, at.z, 1e-5f);
+    fixture_end(&f);
+}
+
+/* The frame's quads in a color */
+static int32_t quads_of_color(const nmo_engine_frame_t *frame, uint32_t color)
+{
+    int32_t count = 0;
+    for (int32_t i = 0; i < frame->draw_count; i++) {
+        count += frame->draws[i].kind == NMO_ENGINE_DRAW_QUAD && frame->draws[i].color == color ? 1 : 0;
+    }
+    return count;
+}
+
+TEST(engine_interface, screen_blocks_rectangles_and_cursor)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t thing = placed(&f, "Thing", 0.0f, 0.0f, 0.0f, 1.0f);
+    ASSERT_TRUE(thing != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t to_ratio = started(&f, GUID_GET_PROPORTIONAL_SCREEN_POS, "Ratio");
+    nmo_object_id_t to_pixel = started(&f, GUID_GET_SCREEN_PROPORTIONAL_POS, "Pixel");
+    nmo_object_id_t pickable = started(&f, GUID_SET_PICKABLE, "Pickable");
+    nmo_object_id_t system = started(&f, GUID_MOUSE_CURSOR_SYSTEM, "System");
+    nmo_object_id_t caret = started(&f, GUID_SET_CARET_POSITION, "Caret");
+    nmo_object_id_t rectangle = started(&f, GUID_DRAW_RECTANGLE, "Rectangle");
+    nmo_object_id_t cursor = started(&f, GUID_MOUSE_CURSOR, "Cursor");
+    ASSERT_TRUE(to_ratio && to_pixel && pickable && system && caret && rectangle && cursor);
+    fixture_input_int(&f, BLOCK_PIN(&f, to_ratio, 0), 320);
+    fixture_input_int(&f, BLOCK_PIN(&f, to_ratio, 1), 120);
+    const float quarter = 0.25f, half = 0.5f;
+    fixture_input_value(&f, BLOCK_PIN(&f, to_pixel, 0), &quarter, sizeof(quarter));
+    fixture_input_value(&f, BLOCK_PIN(&f, to_pixel, 1), &half, sizeof(half));
+    fixture_input_int(&f, fixture_target(&f, pickable), (int32_t)thing);
+    fixture_input_int(&f, BLOCK_PIN(&f, pickable, 0), 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, system, 0), 2); /* busy */
+    fixture_input_value(&f, BLOCK_PIN(&f, caret, 0), "ab\bcd", 6);
+    fixture_input_int(&f, BLOCK_PIN(&f, caret, 1), 1);
+    /* A red rectangle with a 2 pixel green border */
+    const float red[4] = {1.0f, 0.0f, 0.0f, 1.0f}, green[4] = {0.0f, 1.0f, 0.0f, 1.0f};
+    const nmo_rect_t screen = {10.0f, 10.0f, 50.0f, 30.0f}, uv = {0.0f, 0.0f, 1.0f, 1.0f};
+    const float border = 2.0f;
+    fixture_input_int(&f, BLOCK_PIN(&f, rectangle, 0), 1);
+    fixture_input_value(&f, BLOCK_PIN(&f, rectangle, 1), red, sizeof(red));
+    fixture_input_value(&f, BLOCK_PIN(&f, rectangle, 3), &screen, sizeof(screen));
+    fixture_input_value(&f, BLOCK_PIN(&f, rectangle, 4), &uv, sizeof(uv));
+    fixture_input_int(&f, BLOCK_PIN(&f, rectangle, 5), 1);
+    fixture_input_value(&f, BLOCK_PIN(&f, rectangle, 6), green, sizeof(green));
+    fixture_input_value(&f, BLOCK_PIN(&f, rectangle, 7), &border, sizeof(border));
+    const float size[2] = {16.0f, 16.0f}, white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+    fixture_input_value(&f, BLOCK_PIN(&f, cursor, 1), size, sizeof(size));
+    fixture_input_value(&f, BLOCK_PIN(&f, cursor, 2), white, sizeof(white));
+    fixture_input_int(&f, BLOCK_PIN(&f, cursor, 3), 0);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    nmo_engine_set_mouse_position(f.engine, 105.0f, 104.0f);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    float ratio[2] = {0.0f, 0.0f};
+    read_value(&f, BLOCK_POUT(&f, to_ratio, 0), &ratio[0], sizeof(float));
+    read_value(&f, BLOCK_POUT(&f, to_ratio, 1), &ratio[1], sizeof(float));
+    ASSERT_FLOAT_EQ(0.5f, ratio[0], 1e-6f);
+    ASSERT_FLOAT_EQ(0.25f, ratio[1], 1e-6f);
+    ASSERT_EQ(160, output_int(&f, to_pixel, 0));
+    ASSERT_EQ(240, output_int(&f, to_pixel, 1));
+    int32_t index = eng_entity_index(f.engine, thing);
+    ASSERT_EQ(0u, f.engine->entities.data[index].moveable_flags & VX_MOVEABLE_PICKABLE);
+    ASSERT_EQ(2, nmo_engine_system_cursor(f.engine));
+    const void *text = NULL;
+    ASSERT_EQ(NMO_OK, nmo_engine_param_value(f.engine, BLOCK_POUT(&f, caret, 0), &text, NULL, NULL));
+    ASSERT_STR_EQ("a\bbcd", (const char *)text); /* the old caret gone, the new one after 'a' */
+    ASSERT_FALSE(nmo_engine_cursor_is_visible(f.engine));
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_EQ(1, quads_of_color(&frame, 0xFFFF0000u)); /* the interior, inside the border */
+    ASSERT_EQ(4, quads_of_color(&frame, 0xFF00FF00u));
+    int32_t cursors = 0;
+    for (int32_t i = 0; i < frame.draw_count; i++) {
+        const nmo_engine_draw_t *draw = &frame.draws[i];
+        if (draw->kind == NMO_ENGINE_DRAW_QUAD && draw->color == 0xFFFF0000u) {
+            ASSERT_FLOAT_EQ(12.0f, draw->rect[0], 0.0f);
+            ASSERT_FLOAT_EQ(48.0f, draw->rect[2], 0.0f);
+        }
+        if (draw->kind == NMO_ENGINE_DRAW_QUAD && draw->color == 0xFFFFFFFFu && draw->rect[0] == 105.0f &&
+            draw->rect[3] == 120.0f) {
+            cursors++;
+        }
+    }
+    ASSERT_EQ(1, cursors); /* at the mouse, 16 pixels big */
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_EQ(0, quads_of_color(&frame, 0xFFFF0000u)); /* drawn once */
+    fixture_end(&f);
+}
+
+TEST(engine_interface, drag_and_drop_moves_its_owner)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t knob = fixture_create(&f, NMO_CID_2DENTITY, "Knob");
+    ASSERT_TRUE(knob != 0);
+    f.owner_id = knob; /* not targetable: the block moves its owner */
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t drag = started(&f, GUID_DRAG_AND_DROP, "Drag");
+    nmo_object_id_t dragged = fixture_block(&f, GUID_NOP, "Dragged"), dropped = fixture_block(&f, GUID_NOP, "Dropped");
+    ASSERT_TRUE(drag && dragged && dropped);
+    const nmo_rect_t limit = {0.0f, 0.0f, 300.0f, 200.0f};
+    fixture_input_value(&f, BLOCK_PIN(&f, drag, 0), &limit, sizeof(limit));
+    fixture_link(&f, BLOCK_OUT(&f, drag, 0), BLOCK_IN(&f, dragged, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, drag, 1), BLOCK_IN(&f, dropped, 0), 0);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    set_rect_of(&f, knob, 100.0f, 100.0f, 120.0f, 110.0f);
+    nmo_engine_set_mouse_position(f.engine, 105.0f, 104.0f);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    /* Grab it 5, 4 in, move, release */
+    nmo_engine_set_entity_under_mouse(f.engine, knob);
+    nmo_engine_set_mouse_button(f.engine, 0, true);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1u, runs(&f, dragged));
+    nmo_engine_set_mouse_position(f.engine, 205.0f, 154.0f);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_FLOAT_EQ(200.0f, rect_of(&f, knob).left, 1e-4f);
+    ASSERT_FLOAT_EQ(150.0f, rect_of(&f, knob).top, 1e-4f);
+    nmo_engine_set_mouse_position(f.engine, 905.0f, 154.0f); /* kept in the limit: right - 1 */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_FLOAT_EQ(299.0f, rect_of(&f, knob).left, 1e-4f);
+    nmo_engine_set_mouse_button(f.engine, 0, false);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1u, runs(&f, dropped));
+    ASSERT_EQ(1u, runs(&f, dragged));
+    fixture_end(&f);
+}
+
+TEST(engine_interface, bitmap_text_display_draws_the_sprite_a_character_at_a_time)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t sprite = fixture_create(&f, NMO_CID_SPRITE, "Font Sprite");
+    ASSERT_TRUE(sprite != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t display = started(&f, GUID_BITMAP_TEXT_DISPLAY, "Display");
+    ASSERT_TRUE(display != 0);
+    const float position[2] = {10.0f, 20.0f}, scale[2] = {1.0f, 1.0f};
+    fixture_input_value(&f, BLOCK_PIN(&f, display, 0), position, sizeof(position));
+    fixture_input_int(&f, BLOCK_PIN(&f, display, 1), 1);
+    fixture_input_value(&f, BLOCK_PIN(&f, display, 2), scale, sizeof(scale));
+    fixture_input_int(&f, BLOCK_PIN(&f, display, 3), 1);
+    fixture_input_int(&f, BLOCK_PIN(&f, display, 4), 20);
+    fixture_input_value(&f, BLOCK_PIN(&f, display, 5), "AB|B", 5);
+    fixture_commit(&f, NULL);
+    /* The font as the file keeps it: 'A' from x 1, 3 wide; 'B' from 5, 2 wide; 4 high */
+    int32_t font[516];
+    memset(font, 0, sizeof(font));
+    for (int c = 0; c < 256; c++) {
+        font[1 + 2 * c] = -1;
+    }
+    font[1 + 2 * 'A'] = 1;
+    font[2 + 2 * 'A'] = 3;
+    font[1 + 2 * 'B'] = 5;
+    font[2 + 2 * 'B'] = 2;
+    font[513] = 4;
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, block_local(&f, display, 0), &sprite, sizeof(sprite)));
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, block_local(&f, display, 2), font, sizeof(font)));
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    eng_texture_t *bitmap = eng_texture(f.engine, sprite);
+    ASSERT_TRUE(bitmap != NULL && eng_texture_create(f.engine, bitmap, 8, 4, 0));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_FALSE(nmo_engine_object_is_visible(f.engine, sprite)); /* hidden, drawn by the block */
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    /* "AB" then, '|' starting a line 20 lower, "B" */
+    const float expected[3][4] = {{10, 20, 13, 24}, {14, 20, 16, 24}, {10, 40, 12, 44}};
+    const float uv_left[3] = {1.0f / 8.0f, 5.0f / 8.0f, 5.0f / 8.0f};
+    int32_t found = 0;
+    for (int32_t i = 0; i < frame.draw_count; i++) {
+        const nmo_engine_draw_t *draw = &frame.draws[i];
+        if (draw->kind != NMO_ENGINE_DRAW_QUAD || draw->object != sprite) {
+            continue;
+        }
+        ASSERT_TRUE(found < 3);
+        for (int k = 0; k < 4; k++) {
+            ASSERT_FLOAT_EQ(expected[found][k], draw->rect[k], 1e-4f);
+        }
+        ASSERT_FLOAT_EQ(uv_left[found], draw->uv[0], 1e-6f);
+        found++;
+    }
+    ASSERT_EQ(3, found);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_interface, fonts_are_numbered_by_name);
 REGISTER_TEST(engine_interface, text_2d_draws_until_off);
 REGISTER_TEST(engine_interface, text_display_shows_its_text_until_off);
 REGISTER_TEST(engine_interface, push_button_follows_the_mouse);
 REGISTER_TEST(engine_interface, tt_push_button2_needs_the_cursor_shown);
+REGISTER_TEST(engine_interface, layouts_place_2d_and_3d_entities);
+REGISTER_TEST(engine_interface, screen_blocks_rectangles_and_cursor);
+REGISTER_TEST(engine_interface, drag_and_drop_moves_its_owner);
+REGISTER_TEST(engine_interface, bitmap_text_display_draws_the_sprite_a_character_at_a_time);
 TEST_MAIN_END()

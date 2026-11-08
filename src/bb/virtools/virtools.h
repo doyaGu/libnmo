@@ -36,6 +36,7 @@ nmo_status_t eng_register_lights(nmo_engine_t *engine);
 nmo_status_t eng_register_world_environments(nmo_engine_t *engine);
 nmo_status_t eng_register_controllers(nmo_engine_t *engine);
 nmo_status_t eng_register_interface(nmo_engine_t *engine);
+nmo_status_t eng_register_interface_layouts(nmo_engine_t *engine);
 nmo_status_t eng_register_sounds(nmo_engine_t *engine);
 nmo_status_t eng_register_materials(nmo_engine_t *engine);
 nmo_status_t eng_register_visuals(nmo_engine_t *engine);
@@ -50,6 +51,9 @@ nmo_status_t eng_register_curve_properties(nmo_engine_t *engine);
 nmo_status_t eng_register_mimic(nmo_engine_t *engine);
 nmo_status_t eng_register_collisions(nmo_engine_t *engine);
 nmo_status_t eng_register_grids(nmo_engine_t *engine);
+/* BB_Orientate (3dtransfo.c): the entity's `dir_mode` axis turned toward `dir`; the up used */
+eng_vector_t eng_bb_orientate(nmo_engine_t *engine, int32_t entity, eng_vector_t dir, int32_t dir_mode,
+                              float roll, eng_vector_t up, float speed, bool keep);
 nmo_status_t eng_register_grid_path(nmo_engine_t *engine);
 
 /* Movie Player (Materials) and Sprite Movie Player (Visuals): the target's slots over time */

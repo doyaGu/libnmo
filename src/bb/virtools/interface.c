@@ -8,7 +8,10 @@
  * texture as CKTextureFont finds it. 2D Text lays its text out as
  * CKTextureFont::DrawCKText does when its 2D entity draws: a quad a
  * character in the render frame. System fonts are kept but do not draw. PushButton tests the mouse against the 2D entity the
- * host says is under it, and 2D Picking asks the host's picker.
+ * host says is under it, and 2D Picking asks the host's picker. Draw
+ * Rectangle, Mouse Cursor and BitmapText Display draw after the sprites.
+ * Not here: Additional View and Resize View, which need a view rect the
+ * engine's render context does not have.
  */
 
 #include "virtools.h"
@@ -91,10 +94,22 @@ typedef struct eng_sprite_text {
 } eng_sprite_text_t;
 
 /* CKFontManager: the fonts by number; the texts 2D Text draws this frame; Text Display's sprite texts */
+/* A rectangle Draw Rectangle queued (CKFontManager's RectangleData) */
+typedef struct rect_draw {
+    uint32_t in_color;
+    nmo_object_id_t material;
+    uint32_t border_color;
+    float border_size; /* 0 no border, < 0 a border alone */
+    nmo_rect_t screen, uvs;
+} rect_draw_t;
+
 typedef struct font_manager {
     ENG_VEC(eng_font_t) fonts;
     ENG_VEC(eng_text_t) texts;
     ENG_VEC(eng_sprite_text_t) sprite_texts;
+    ENG_VEC(rect_draw_t) rects;      /* Draw Rectangle's, drawn after the sprites, then dropped */
+    ENG_VEC(int32_t) cursors;        /* the Mouse Cursors of this frame (temporary callbacks) */
+    ENG_VEC(int32_t) bitmap_texts;   /* the BitmapText Displays shown (their callbacks) */
 } font_manager_t;
 
 static void font_manager_destroy(nmo_engine_t *engine, void *state);
@@ -1251,6 +1266,689 @@ static int bb_picking_2d(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* ============================================================================
+ * Screen, primitives, controls and text helpers
+ * ============================================================================ */
+
+/* A quad after the sprites in render context pixels: textured with `texture` (0 none) or
+   drawn with `material` set as current, in `color`; blended by its alpha without a material */
+static void push_screen_quad(nmo_engine_t *engine, const nmo_rect_t *rect, const nmo_rect_t *uv,
+                             nmo_object_id_t texture, nmo_object_id_t material, uint32_t color, bool force_blend)
+{
+    nmo_engine_draw_t *draw = eng_render_push(engine);
+    if (draw == NULL) {
+        return;
+    }
+    draw->kind = NMO_ENGINE_DRAW_QUAD;
+    draw->rect[0] = rect->left;
+    draw->rect[1] = rect->top;
+    draw->rect[2] = rect->right;
+    draw->rect[3] = rect->bottom;
+    if (uv != NULL) {
+        draw->uv[0] = uv->left;
+        draw->uv[1] = uv->top;
+        draw->uv[2] = uv->right;
+        draw->uv[3] = uv->bottom;
+    }
+    draw->texture = texture;
+    draw->material = material;
+    draw->color = color;
+    draw->color2 = color;
+    if (material == 0) {
+        bool blend = force_blend || (color & 0xFF000000u) != 0xFF000000u;
+        draw->blend = blend;
+        draw->source_blend = blend ? VXBLEND_SRCALPHA : VXBLEND_ONE;
+        draw->dest_blend = blend ? VXBLEND_INVSRCALPHA : VXBLEND_ZERO;
+    }
+}
+
+/* The frame of a rect a border `size` wide inside it, as four quads that do not overlap */
+static void push_border(nmo_engine_t *engine, const nmo_rect_t *r, float size, uint32_t color,
+                        nmo_object_id_t material)
+{
+    const nmo_rect_t bands[4] = {
+        {r->left, r->top, r->right, r->top + size},
+        {r->right - size, r->top + size, r->right, r->bottom - size},
+        {r->left, r->bottom - size, r->right, r->bottom},
+        {r->left, r->top + size, r->left + size, r->bottom - size},
+    };
+    const nmo_rect_t no_uv = {0.0f, 0.0f, 0.0f, 0.0f};
+    for (int i = 0; i < 4; i++) {
+        push_screen_quad(engine, &bands[i], &no_uv, 0, material, color, false);
+    }
+}
+
+/* CKFontManager::DrawTextCallback2D: the rectangles queued this frame, then none */
+static void draw_rectangles(nmo_engine_t *engine, font_manager_t *fm, bool keep)
+{
+    for (size_t i = 0; i < fm->rects.count; i++) {
+        const rect_draw_t *r = &fm->rects.data[i];
+        if (r->border_size == 0.0f) {
+            push_screen_quad(engine, &r->screen, &r->uvs, 0, r->material, r->in_color, false);
+        } else if (r->border_size < 0.0f) {
+            push_border(engine, &r->screen, -r->border_size, r->border_color, r->material);
+        } else {
+            const nmo_rect_t inside = {r->screen.left + r->border_size, r->screen.top + r->border_size,
+                                       r->screen.right - r->border_size, r->screen.bottom - r->border_size};
+            push_screen_quad(engine, &inside, &r->uvs, 0, r->material, r->in_color, false);
+            push_border(engine, &r->screen, r->border_size, r->border_color, r->material);
+        }
+    }
+    if (!keep) {
+        fm->rects.count = 0;
+    }
+}
+
+/*
+ * Draw Rectangle: the rectangle, its interior (in Color, Material, with the
+ * texture coordinates) and its border (Border Size wide, in Border Color),
+ * drawn once after the sprites by the font manager.
+ */
+static int bb_draw_rectangle(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    font_manager_t *fm = fonts_of(b->engine);
+    bool interior = get_in_int(b, 0, 1) != 0;
+    float color[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    nmo_engine_block_get_input_value(b, 1, color, sizeof(color));
+    nmo_object_id_t material = nmo_engine_block_get_input_object(b, 2);
+    nmo_rect_t screen = {0.0f, 0.0f, 0.0f, 0.0f}, uvs = {0.0f, 0.0f, 1.0f, 1.0f};
+    nmo_engine_block_get_input_value(b, 3, &screen, sizeof(screen));
+    nmo_engine_block_get_input_value(b, 4, &uvs, sizeof(uvs));
+    bool border = get_in_int(b, 5, 0) != 0;
+    if (fm == NULL || (!interior && !border)) {
+        return NMO_ENGINE_BR_OK;
+    }
+    float border_color[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    nmo_engine_block_get_input_value(b, 6, border_color, sizeof(border_color));
+    float size = get_in_float(b, 7, 0.0f);
+    rect_draw_t *r = NULL;
+    if (ENG_VEC_PUSH(fm->rects, r)) {
+        r->in_color = vxcolor_to_color(color);
+        r->material = material;
+        r->border_color = vxcolor_to_color(border_color);
+        r->border_size = border ? (interior ? size : -size) : 0.0f;
+        r->screen = screen;
+        r->uvs = uvs;
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/* The cursor quad of a Mouse Cursor at the mouse: its shadow first, when it has one */
+static void draw_cursor(nmo_engine_t *engine, int32_t node)
+{
+    nmo_engine_block_t handle = {engine, node};
+    blk_t *b = &handle;
+    nmo_object_id_t texture = nmo_engine_block_get_input_object(b, 0);
+    float size[2] = {0.0f, 0.0f};
+    nmo_engine_block_get_input_value(b, 1, size, sizeof(size));
+    float color[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    nmo_engine_block_get_input_value(b, 2, color, sizeof(color));
+    float x = 0.0f, y = 0.0f;
+    nmo_engine_mouse_position(engine, &x, &y);
+    const nmo_rect_t uv = {0.0f, 0.0f, 1.0f, 1.0f};
+    if (get_in_int(b, 3, 0) != 0) {
+        float distance = get_in_float(b, 4, 4.0f), angle = get_in_float(b, 5, 1.0f);
+        float intensity = get_in_float(b, 6, 0.8f);
+        float dx = (float)-(cos(angle) * distance), dy = (float)(sin(angle) * distance);
+        const nmo_rect_t shadow = {dx + x, y + dy, dx + (size[0] + x), dy + (size[1] + y)};
+        const float black[4] = {0.0f, 0.0f, 0.0f, intensity};
+        push_screen_quad(engine, &shadow, &uv, texture, 0, rgbaf_to_color(black), true);
+    }
+    const nmo_rect_t rect = {x, y, size[0] + x, size[1] + y};
+    push_screen_quad(engine, &rect, &uv, texture, 0, vxcolor_to_color(color), true);
+}
+
+static void node_list_add(int32_t **items, size_t *count, size_t *capacity, int32_t node)
+{
+    for (size_t i = 0; i < *count; i++) {
+        if ((*items)[i] == node) {
+            return;
+        }
+    }
+    if (eng_vec_reserve((void **)items, capacity, *count + 1u, sizeof(int32_t))) {
+        (*items)[(*count)++] = node;
+    }
+}
+
+static void node_list_remove(int32_t *items, size_t *count, int32_t node)
+{
+    for (size_t i = 0; i < *count; i++) {
+        if (items[i] == node) {
+            memmove(&items[i], &items[i + 1u], (*count - i - 1u) * sizeof(int32_t));
+            --*count;
+            return;
+        }
+    }
+}
+
+/*
+ * Mouse Cursor: while on, the system cursor is hidden and the Cursor Texture
+ * drawn at the mouse after the sprites, Cursor Size big in Cursor Color,
+ * with a shadow Shadow Distance away toward Shadow Angle. Off shows the
+ * system cursor again, as pausing or deactivating its script does.
+ */
+static int bb_mouse_cursor(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        engine->input.cursor_hidden = false;
+        return NMO_ENGINE_BR_OK;
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+        engine->input.cursor_hidden = true;
+    }
+    font_manager_t *fm = fonts_of(engine);
+    if (fm != NULL) {
+        node_list_add(&fm->cursors.data, &fm->cursors.count, &fm->cursors.capacity, b->node);
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+static bool block_running(blk_t *b)
+{
+    return nmo_engine_behavior_is_active(b->engine, b->engine->nodes.data[b->node].id);
+}
+
+static int cb_mouse_cursor(blk_t *b, uint32_t message)
+{
+    if (message == NMO_ENGINE_MSG_PAUSE || message == NMO_ENGINE_MSG_DEACTIVATESCRIPT) {
+        b->engine->input.cursor_hidden = false;
+    } else if ((message == NMO_ENGINE_MSG_RESUME || message == NMO_ENGINE_MSG_ACTIVATESCRIPT) && block_running(b)) {
+        b->engine->input.cursor_hidden = true;
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Mouse Cursor System: the system cursor's look (CKInputManager::SetSystemCursor). */
+static int bb_mouse_cursor_system(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    b->engine->input.system_cursor = get_in_int(b, 0, 1);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Get Proportional Screen Pos: a pixel position over the render context's size. */
+static int bb_get_proportional_screen_pos(blk_t *b)
+{
+    IN_OFF(b, 0);
+    const eng_screen_mode_t *mode = &eng_screen_modes[b->engine->render.screen_mode];
+    float x = (float)get_in_int(b, 0, 0), y = (float)get_in_int(b, 1, 0);
+    float px = (float)((double)x / (double)mode->width), py = (float)((double)y / (double)mode->height);
+    set_out(b, 0, &px, sizeof(px));
+    set_out(b, 1, &py, sizeof(py));
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Get Screen Proportional Pos: the pixel of a proportional position, in the render context
+   (Window Relative) or on the screen, where the window is at the origin here. */
+static int bb_get_screen_proportional_pos(blk_t *b)
+{
+    IN_OFF(b, 0);
+    const eng_screen_mode_t *mode = &eng_screen_modes[b->engine->render.screen_mode];
+    float px = get_in_float(b, 0, 0.0f), py = get_in_float(b, 1, 0.0f);
+    int32_t x = (int32_t)(int64_t)((double)mode->width * px);
+    int32_t y = (int32_t)(int64_t)((double)mode->height * py);
+    set_out(b, 0, &x, sizeof(x));
+    set_out(b, 1, &y, sizeof(y));
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Set Pickable: a 3D entity's VX_MOVEABLE_PICKABLE, or a 2D entity's CK_2DENTITY_NOTPICKABLE. */
+static int bb_set_pickable(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    bool pickable = get_in_int(b, 0, 0) != 0;
+    int32_t entity = target != 0 ? eng_entity_index(engine, target) : -1;
+    eng_2d_t *entity_2d = target != 0 && entity < 0 ? eng_2d_entity(engine, target) : NULL;
+    if (entity >= 0) {
+        uint32_t *flags = &engine->entities.data[entity].moveable_flags;
+        *flags = pickable ? (*flags | VX_MOVEABLE_PICKABLE) : (*flags & ~(uint32_t)VX_MOVEABLE_PICKABLE);
+    } else if (entity_2d != NULL) {
+        entity_2d->flags = pickable ? (entity_2d->flags & ~(uint32_t)CK_2DENTITY_NOTPICKABLE)
+                                    : (entity_2d->flags | CK_2DENTITY_NOTPICKABLE);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Set Caret Position: the text without its carets (\b), with one at Caret Position when it is
+   within it. */
+static int bb_set_caret_position(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    const char *text = input_string(b, 0);
+    if (text == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    int32_t caret = get_in_int(b, 1, -1);
+    size_t length = strlen(text);
+    char *out = (char *)malloc(length + 2u);
+    if (out == NULL) {
+        return NMO_ENGINE_BR_GENERICERROR;
+    }
+    size_t n = 0;
+    for (size_t i = 0; i < length; i++) {
+        if (text[i] != '\b') {
+            out[n++] = text[i];
+        }
+    }
+    out[n] = '\0';
+    if (caret >= 0 && (size_t)caret <= n) {
+        memmove(&out[caret + 1], &out[caret], n - (size_t)caret + 1u);
+        out[caret] = '\b';
+        n++;
+    }
+    set_out(b, 0, out, n + 1u);
+    free(out);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * Drag and Drop: a click on the target 2D entity starts a drag (Dragged):
+ * from then on it follows the mouse, held where it was grabbed and kept in
+ * the Limit Rectangle when that is not empty, until the button is released
+ * (Dropped).
+ */
+static int bb_drag_and_drop(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        set_local_int(b, 0, 1);
+    }
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    nmo_rect_t limit = {0.0f, 0.0f, 0.0f, 0.0f};
+    nmo_engine_block_get_input_value(b, 0, &limit, sizeof(limit));
+    bool over = nmo_engine_entity_under_mouse(engine) == target;
+    int32_t released = get_local_int(b, 0, 0);
+    float mouse[2] = {0.0f, 0.0f};
+    nmo_engine_mouse_position(engine, &mouse[0], &mouse[1]);
+    bool is_2d = eng_2d_entity(engine, target) != NULL;
+    if (released == 0 && is_2d) {
+        float at[2] = {0.0f, 0.0f};
+        nmo_engine_block_get_local_value(b, 1, at, sizeof(at));
+        at[0] += mouse[0];
+        at[1] += mouse[1];
+        if (limit.left != limit.right && limit.bottom != limit.top) {
+            at[0] = at[0] < limit.left ? limit.left : at[0] < limit.right ? at[0] : limit.right - 1.0f;
+            at[1] = at[1] < limit.top ? limit.top : at[1] < limit.bottom ? at[1] : limit.bottom - 1.0f;
+        }
+        eng_2d_set_position(engine, target, at[0], at[1], false, false, 0);
+    }
+    int32_t previous = released, now;
+    if (eng_mouse_clicked(engine, 0) && over) {
+        float grab[2] = {0.0f, 0.0f};
+        if (is_2d) {
+            const eng_2d_t *entity = eng_2d_entity(engine, target);
+            grab[0] = entity->rect.left - mouse[0];
+            grab[1] = entity->rect.top - mouse[1];
+        }
+        nmo_engine_block_set_local_value(b, 1, grab, sizeof(grab));
+        now = 0;
+        released = 0;
+    } else if (nmo_engine_is_mouse_button_down(engine, 0)) {
+        now = released;
+    } else {
+        now = 1;
+        released = 1;
+    }
+    if (now != previous) {
+        OUT_ON(b, now);
+        set_local_int(b, 0, released);
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+/* ---- BitmapText Display ----
+ *
+ * Its font (local 2, 516 ints) is a sprite whose first row marks the
+ * characters 32 to 126: pixel (0, 0) is the separator colour, each
+ * character the run of pixels between two separators. The block draws its
+ * text a character at a time by rendering the sprite with the character's
+ * source rect, after the sprites.
+ */
+#define BITMAP_FONT_INTS 516
+#define BITMAP_FONT_SIZE (BITMAP_FONT_INTS * 4)
+
+static uint32_t sprite_pixel(const eng_surface_t *surface, int32_t x, int32_t y)
+{
+    if (surface == NULL || surface->rgba == NULL || x < 0 || y < 0 || x >= surface->width || y >= surface->height) {
+        return 0;
+    }
+    const uint8_t *p = &surface->rgba[4 * ((size_t)y * (size_t)surface->width + (size_t)x)];
+    return ((uint32_t)p[3] << 24) | ((uint32_t)p[0] << 16) | ((uint32_t)p[1] << 8) | p[2];
+}
+
+static eng_surface_t *sprite_surface(nmo_engine_t *engine, nmo_object_id_t sprite)
+{
+    eng_texture_t *bitmap = sprite != 0 ? eng_texture(engine, sprite) : NULL;
+    eng_surface_t *surface = bitmap != NULL ? eng_texture_surface(engine, bitmap, -1) : NULL;
+    return surface != NULL && surface->rgba != NULL ? surface : NULL;
+}
+
+/* The font's table, empty: no character, no sprite */
+static void bitmap_font_clear(int32_t *font)
+{
+    memset(font, 0, BITMAP_FONT_SIZE);
+    for (int c = 0; c < 256; c++) {
+        font[1 + 2 * c] = -1;
+    }
+}
+
+/* Its characters read from the sprite's first row; false (no sprite) when the first two pixels match */
+static bool bitmap_font_build(nmo_engine_t *engine, int32_t *font, nmo_object_id_t sprite)
+{
+    font[0] = (int32_t)sprite;
+    eng_surface_t *surface = sprite_surface(engine, sprite);
+    if (surface == NULL) {
+        return false;
+    }
+    font[513] = surface->height;
+    int32_t width = surface->width;
+    uint32_t separator = sprite_pixel(surface, 0, 0), other = sprite_pixel(surface, 1, 0);
+    font[514] = (int32_t)separator;
+    font[515] = (int32_t)other;
+    if (separator == other) {
+        font[0] = 0; /* "Wrong bitmap font" */
+        return false;
+    }
+    int32_t x = 1, start = 1;
+    for (int c = 32; c < 127; c++) {
+        int32_t run = -1;
+        while (x < width + 1024) { /* the DLL reads on to the next separator */
+            int32_t at = x++;
+            ++run;
+            if (sprite_pixel(surface, at, 0) == separator || at >= width) {
+                break;
+            }
+        }
+        font[1 + 2 * c] = start;
+        font[2 + 2 * c] = run;
+        start += run + 1;
+        if (start >= width) {
+            break;
+        }
+    }
+    return true;
+}
+
+/* The separator columns painted: their own colour (pausing) or the first character's (running) */
+static void bitmap_font_paint(nmo_engine_t *engine, const int32_t *font, bool running)
+{
+    eng_surface_t *surface = sprite_surface(engine, (nmo_object_id_t)font[0]);
+    if (surface == NULL) {
+        return;
+    }
+    uint32_t argb = (uint32_t)(running ? font[515] : font[514]);
+    for (int c = 32; c < 127; c++) {
+        int32_t x = font[1 + 2 * c] - 1;
+        for (int32_t y = 0; y < font[513] && x >= 0 && x < surface->width && y < surface->height; y++) {
+            uint8_t *p = &surface->rgba[4 * ((size_t)y * (size_t)surface->width + (size_t)x)];
+            p[0] = (uint8_t)(argb >> 16);
+            p[1] = (uint8_t)(argb >> 8);
+            p[2] = (uint8_t)argb;
+            p[3] = (uint8_t)(argb >> 24);
+        }
+    }
+    eng_texture_changed(engine, (nmo_object_id_t)font[0]);
+}
+
+static int32_t *bitmap_font_of(blk_t *b)
+{
+    eng_param_t *local = block_local(b, 2);
+    return local != NULL && local->size >= BITMAP_FONT_SIZE ? (int32_t *)local->data : NULL;
+}
+
+/* The width of a line: each character's and the spacing, scaled, in whole pixels */
+static int32_t bitmap_line_width(const int32_t *font, const char *line, int32_t spacing, const float scale[2])
+{
+    int32_t width = 0;
+    for (const unsigned char *p = (const unsigned char *)line; *p != '\0'; p++) {
+        width += (int32_t)(int64_t)((double)spacing * scale[0]) + (int32_t)(int64_t)((double)font[2 + 2 * *p] * scale[0]);
+    }
+    return width;
+}
+
+/* A line drawn from (x, y): the sprite rendered with each character's source rect */
+static void bitmap_draw_line(nmo_engine_t *engine, const int32_t *font, const char *line, int32_t x, int32_t y,
+                             int32_t spacing, const float scale[2], float width, float height)
+{
+    nmo_object_id_t sprite = (nmo_object_id_t)font[0];
+    eng_2d_t *entity = eng_2d_entity(engine, sprite);
+    if (entity == NULL) {
+        return;
+    }
+    entity->flags |= CK_2DENTITY_USESRCRECT;
+    eng_show(engine, sprite, 1);
+    for (const unsigned char *p = (const unsigned char *)line; *p != '\0'; p++) {
+        int32_t start = font[1 + 2 * *p], w = font[2 + 2 * *p], drawn = 0;
+        if (start != -1) {
+            entity = eng_2d_entity(engine, sprite);
+            entity->source = (nmo_rect_t){(float)start, 0.0f, (float)start + (float)w, (float)font[513]};
+            const nmo_rect_t rect = {(float)x, (float)y, (float)(int32_t)(x + (int64_t)((double)w * scale[0])),
+                                     (float)(y + (int64_t)((float)font[513] * scale[1]))};
+            eng_2d_set_rect(engine, sprite, rect, false);
+            eng_render_2d_entity(engine, sprite, width, height);
+            drawn = w;
+        }
+        x += (int32_t)(int64_t)((float)spacing * scale[0]) + (int32_t)(int64_t)((double)drawn * scale[0]);
+    }
+    entity = eng_2d_entity(engine, sprite);
+    entity->flags &= ~(uint32_t)CK_2DENTITY_USESRCRECT;
+    eng_show(engine, sprite, 0);
+    eng_surface_t *surface = sprite_surface(engine, sprite);
+    const nmo_rect_t full = {0.0f, 0.0f, surface != NULL ? (float)surface->width : 0.0f,
+                             surface != NULL ? (float)surface->height : 0.0f};
+    eng_2d_set_rect(engine, sprite, full, false);
+}
+
+/* BitmapTextRender: the text, line by line, aligned left, right or centred on Position */
+static void draw_bitmap_text(nmo_engine_t *engine, int32_t node, float width, float height)
+{
+    nmo_engine_block_t handle = {engine, node};
+    blk_t *b = &handle;
+    eng_param_t *text_local = block_local(b, 1);
+    const int32_t *font = bitmap_font_of(b);
+    if (font == NULL || font[0] == 0 || eng_find_object(engine, (nmo_object_id_t)font[0]) == NULL ||
+        text_local == NULL || text_local->data == NULL || text_local->size == 0) {
+        return;
+    }
+    float position[2] = {0.0f, 0.0f}, scale[2] = {1.0f, 1.0f};
+    nmo_engine_block_get_input_value(b, 0, position, sizeof(position));
+    int32_t spacing = get_in_int(b, 1, 1);
+    nmo_engine_block_get_input_value(b, 2, scale, sizeof(scale));
+    int32_t alignment = get_in_int(b, 3, 1);
+    int32_t line_spacing = nmo_engine_block_output_count(b) > 2 ? get_in_int(b, 4, 20) : 20;
+    if (alignment < 1 || alignment > 3) {
+        return;
+    }
+    char *text = (char *)malloc(text_local->size + 1u);
+    if (text == NULL) {
+        return;
+    }
+    memcpy(text, text_local->data, text_local->size);
+    text[text_local->size] = '\0';
+    for (char *line = text; line != NULL;) {
+        char *next = strchr(line, '\n');
+        if (next != NULL) {
+            *next++ = '\0';
+        }
+        int32_t x = (int32_t)(int64_t)position[0];
+        if (alignment == 2) {
+            x -= bitmap_line_width(font, line, spacing, scale);
+        } else if (alignment == 3) {
+            x -= bitmap_line_width(font, line, spacing, scale) >> 1;
+        }
+        bitmap_draw_line(engine, font, line, x, (int32_t)(int64_t)position[1], spacing, scale, width, height);
+        position[1] = (float)((double)line_spacing + position[1]);
+        line = next != NULL && *next != '\0' ? next : NULL;
+    }
+    free(text);
+}
+
+/* The text inputs from `first` as GetStringValue gives them, a space apart; '|' a new line
+   when `lines` */
+static char *bitmap_text_inputs(blk_t *b, int first, bool lines)
+{
+    char *all = NULL;
+    size_t length = 0;
+    int count = nmo_engine_block_input_parameter_count(b);
+    for (int i = first; i < count; i++) {
+        size_t size = nmo_engine_block_input_text(b, i, NULL, 0);
+        if (size == 0) {
+            continue;
+        }
+        size_t extra = (i != first ? 1u : 0u) + size;
+        char *grown = (char *)realloc(all, length + extra + 1u);
+        if (grown == NULL) {
+            break;
+        }
+        all = grown;
+        if (i != first) {
+            all[length++] = ' ';
+        }
+        nmo_engine_block_input_text(b, i, all + length, size);
+        for (char *p = all + length; lines && *p != '\0'; p++) {
+            if (*p == '|') {
+                *p = '\n';
+            }
+        }
+        length = strlen(all);
+    }
+    return all;
+}
+
+/*
+ * BitmapText Display: On (or Reset) shows the text of the Text inputs (a
+ * space apart) with the sprite font, from then on after the sprites, until
+ * Off; with a Carriage Return input, each Carriage Return adds the inputs'
+ * text as a new line (Line Added), '|' starting a line inside it.
+ */
+static int bb_bitmap_text_display(blk_t *b)
+{
+    font_manager_t *fm = fonts_of(b->engine);
+    if (IN_ACTIVE(b, 1)) {
+        if (fm != NULL) {
+            node_list_remove(fm->bitmap_texts.data, &fm->bitmap_texts.count, b->node);
+        }
+        IN_OFF(b, 1);
+        IN_OFF(b, 0);
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    bool turned_on = false;
+    if (IN_ACTIVE(b, 0)) {
+        turned_on = true;
+        if (fm != NULL) {
+            node_list_add(&fm->bitmap_texts.data, &fm->bitmap_texts.count, &fm->bitmap_texts.capacity, b->node);
+        }
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+        nmo_engine_block_set_local_value(b, 1, "", 1u);
+    }
+    bool returns = nmo_engine_block_input_count(b) > 2;
+    char *text = NULL;
+    if (!returns) {
+        text = bitmap_text_inputs(b, 4, false);
+    } else if (IN_ACTIVE(b, 2) || turned_on) {
+        text = bitmap_text_inputs(b, 5, true);
+    }
+    const char *shown = text != NULL ? text : "";
+    if (returns && IN_ACTIVE(b, 2)) {
+        IN_OFF(b, 2);
+        OUT_ON(b, 2);
+        eng_param_t *previous = block_local(b, 1);
+        char *joined = NULL;
+        if (previous != NULL && previous->data != NULL && previous->size > 0) {
+            size_t old = strnlen((const char *)previous->data, previous->size);
+            joined = (char *)malloc(old + strlen(shown) + 2u);
+            if (joined != NULL) {
+                memcpy(joined, previous->data, old);
+                joined[old] = '\n';
+                memcpy(joined + old + 1, shown, strlen(shown) + 1u);
+            }
+        }
+        const char *line = joined != NULL ? joined : shown;
+        nmo_engine_block_set_local_value(b, 1, line, strlen(line) + 1u);
+        free(joined);
+    } else if (turned_on) {
+        nmo_engine_block_set_local_value(b, 1, shown, strlen(shown) + 1u);
+    }
+    free(text);
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+/* Loading reads the font's table from the file (or the sprite when there is none); pausing,
+   resetting or deactivating restores the separators and stops the drawing, resuming and
+   activating paints them over and draws again. */
+static int cb_bitmap_text_display(blk_t *b, uint32_t message)
+{
+    nmo_engine_t *engine = b->engine;
+    font_manager_t *fm = fonts_of(engine);
+    if (message == NMO_ENGINE_MSG_LOAD) {
+        nmo_object_id_t sprite = 0;
+        nmo_engine_block_get_local_value(b, 0, &sprite, sizeof(sprite));
+        eng_param_t *local = block_local(b, 2);
+        int32_t *font = (int32_t *)calloc(BITMAP_FONT_INTS, sizeof(int32_t));
+        if (font == NULL) {
+            return NMO_ENGINE_BR_OK;
+        }
+        if (local != NULL && local->data != NULL && local->size >= BITMAP_FONT_SIZE) {
+            memcpy(font, local->data, BITMAP_FONT_SIZE);
+        } else if (local != NULL && local->data != NULL && local->size > 0) {
+            memcpy(font, local->data, local->size); /* an older table, without its colours */
+            font[514] = (int32_t)0xFFFF00FFu;
+            font[515] = (int32_t)0xFF000000u;
+        } else {
+            bitmap_font_clear(font);
+            if (sprite != 0) {
+                bitmap_font_build(engine, font, sprite);
+            }
+        }
+        if (sprite != 0) {
+            eng_show(engine, sprite, 0);
+        }
+        font[0] = (int32_t)sprite;
+        nmo_engine_block_set_local_value(b, 2, font, BITMAP_FONT_SIZE);
+        free(font);
+        return NMO_ENGINE_BR_OK;
+    }
+    const int32_t *font = bitmap_font_of(b);
+    if (message == NMO_ENGINE_MSG_PAUSE || message == NMO_ENGINE_MSG_RESET ||
+        message == NMO_ENGINE_MSG_DEACTIVATESCRIPT) {
+        if (font != NULL) {
+            bitmap_font_paint(engine, font, false);
+        }
+        if (block_running(b) && fm != NULL) {
+            node_list_remove(fm->bitmap_texts.data, &fm->bitmap_texts.count, b->node);
+        }
+    } else if (message == NMO_ENGINE_MSG_RESUME || message == NMO_ENGINE_MSG_ACTIVATESCRIPT) {
+        if (font != NULL) {
+            bitmap_font_paint(engine, font, true);
+        }
+        if (block_running(b) && fm != NULL) {
+            node_list_add(&fm->bitmap_texts.data, &fm->bitmap_texts.count, &fm->bitmap_texts.capacity, b->node);
+        }
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_interface_blocks[] = {
     {NMO_GUID_INIT(0x936334fc, 0xf243684f), "Create System Font", bb_create_system_font, NULL, NULL},
     {NMO_GUID_INIT(0x7d644088, 0x40dd0349), "Create Font", bb_create_font, NULL, NULL},
@@ -1262,6 +1960,18 @@ static const nmo_engine_block_desc_t eng_interface_blocks[] = {
     {NMO_GUID_INIT(0x1f5b2fe7, 0x6d355175), "3D Text", bb_text_3d, NULL, NULL},
     {NMO_GUID_INIT(0x761b7e64, 0x2b4c6911), "PushButton", bb_push_button, NULL, NULL},
     {NMO_GUID_INIT(0x1616120f, 0x5b2f48ce), "2D Picking", bb_picking_2d, NULL, NULL},
+    {NMO_GUID_INIT(0x4095766f, 0x291161c1), "Draw Rectangle", bb_draw_rectangle, NULL, NULL},
+    {NMO_GUID_INIT(0x140c3eac, 0x6e502a81), "Mouse Cursor", bb_mouse_cursor, cb_mouse_cursor, NULL},
+    {NMO_GUID_INIT(0x2483576d, 0x57c66324), "Mouse Cursor System", bb_mouse_cursor_system, NULL, NULL},
+    {NMO_GUID_INIT(0x671e53a2, 0x5ba16d62), "Get Proportional Screen Pos", bb_get_proportional_screen_pos, NULL,
+     NULL},
+    {NMO_GUID_INIT(0x7bdf0404, 0x0f765834), "Get Screen Proportional Pos", bb_get_screen_proportional_pos, NULL,
+     NULL},
+    {NMO_GUID_INIT(0xf1499052, 0xebe9bbf1), "Set Pickable", bb_set_pickable, NULL, NULL},
+    {NMO_GUID_INIT(0x0f760d6e, 0x7ce7589a), "Set Caret Position", bb_set_caret_position, NULL, NULL},
+    {NMO_GUID_INIT(0x39c45869, 0x3dcf3fc1), "Drag and Drop", bb_drag_and_drop, NULL, NULL},
+    {NMO_GUID_INIT(0x049d487b, 0x57565345), "BitmapText Display", bb_bitmap_text_display, cb_bitmap_text_display,
+     NULL},
 };
 
 /* The texts drawn last frame are dropped (the temporary callbacks) */
@@ -1289,23 +1999,39 @@ static void font_manager_destroy(nmo_engine_t *engine, void *state)
         free(fm->sprite_texts.data[i].font);
     }
     free(fm->sprite_texts.data);
+    free(fm->rects.data);
+    free(fm->cursors.data);
+    free(fm->bitmap_texts.data);
 }
 
 /* The font manager's texts after each 2D entity and after the sprites; Text Display's sprite texts */
 static void font_manager_render(nmo_engine_t *engine, void *state, eng_render_stage_t stage,
                                 const eng_render_args_t *args)
 {
-    (void)state;
+    font_manager_t *fm = (font_manager_t *)state;
     if (stage == ENG_RENDER_ENTITY_2D) {
         draw_texts(engine, args->entity, args->width, args->height);
     } else if (stage == ENG_RENDER_OVERLAY) {
         draw_sprite_texts(engine);
         draw_texts(engine, 0, args->width, args->height);
+    } else if (stage == ENG_RENDER_POST) {
+        /* OnPostSpriteRender, then the render context's post sprite callbacks */
+        draw_rectangles(engine, fm, args->pass);
+        for (size_t i = 0; i < fm->bitmap_texts.count; i++) {
+            draw_bitmap_text(engine, fm->bitmap_texts.data[i], args->width, args->height);
+        }
+        for (size_t i = 0; i < fm->cursors.count; i++) {
+            draw_cursor(engine, fm->cursors.data[i]);
+        }
+        if (!args->pass) {
+            fm->cursors.count = 0;
+        }
     }
 }
 
 nmo_status_t eng_register_interface(nmo_engine_t *engine)
 {
     nmo_status_t status = eng_add_manager(engine, &font_manager, NULL);
-    return status == NMO_OK ? ENG_REGISTER_BLOCKS(engine, eng_interface_blocks) : status;
+    status = status == NMO_OK ? ENG_REGISTER_BLOCKS(engine, eng_interface_blocks) : status;
+    return status == NMO_OK ? eng_register_interface_layouts(engine) : status;
 }
