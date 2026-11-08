@@ -170,6 +170,16 @@ typedef struct eng_entity_callback {
     bool temporary;
 } eng_entity_callback_t;
 
+/* A render of the scene into part of the screen this frame (Additional View's temporary render
+   callback): from `camera`, into `rect`, with `options`, after the 3D or after everything */
+typedef struct eng_view_request {
+    int32_t node; /* the block asking: its newer request replaces an older one not drawn yet */
+    nmo_object_id_t camera;
+    nmo_rect_t rect;
+    uint32_t options;
+    bool over_2d;
+} eng_view_request_t;
+
 typedef struct eng_render {
     int32_t screen_mode;      /* the render context's mode, of the engine's driver's list */
     ENG_VEC(eng_env_map_t) env_maps;
@@ -223,6 +233,17 @@ typedef struct eng_render {
     ENG_VEC(eng_mesh_copy_t) mesh_copies;
     uint32_t mesh_version;
 
+    /* The render context's viewport (m_ViewportData: left, top, width, height): SetViewRect's,
+       made the attached camera's ratio at each frame while CK_RENDER_USECAMERARATIO is on; the
+       whole render context until either */
+    bool viewport_set;
+    int32_t viewport[4];
+    /* The views asked for this frame, and those made, each with the draws from its first */
+    ENG_VEC(eng_view_request_t) view_requests;
+    ENG_VEC(nmo_engine_view_t) views;
+    ENG_VEC(size_t) view_firsts;
+    bool making_views;
+
     /* What nmo_engine_render_frame() handed out last */
     ENG_VEC(nmo_engine_draw_t) draws;
     ENG_VEC(nmo_engine_light_t) frame_lights;
@@ -240,6 +261,13 @@ void eng_free_render(nmo_engine_t *engine);
 eng_render_t *eng_render_settings(nmo_engine_t *engine);
 /* The attached camera's world matrix, or the render context's default eye. */
 void eng_render_viewpoint(nmo_engine_t *engine, struct eng_matrix *out);
+/* CKRenderContext::GetViewRect: the viewport now (left, top, width, height) */
+void eng_render_viewport(nmo_engine_t *engine, int32_t out[4]);
+/* CKRenderContext::SetViewRect: the viewport from now on (its corners truncated to pixels) */
+void eng_render_set_view_rect(nmo_engine_t *engine, const nmo_rect_t *rect);
+/* A render of the scene into part of the screen once, in the next frame drawn (a temporary
+   render callback); none asked while views are being made */
+void eng_render_request_view(nmo_engine_t *engine, const eng_view_request_t *request);
 /* CKRenderContext::Transform of a world point into render context pixels. */
 void eng_render_project(nmo_engine_t *engine, const struct eng_vector *world, struct eng_vector *screen);
 /* The selected camera's inverse-world times projection, and its near-plane origin. */

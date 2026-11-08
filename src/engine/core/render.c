@@ -98,6 +98,9 @@ void eng_free_render(nmo_engine_t *engine)
     free(render->env_maps.data);
     free(render->passes.data);
     free(render->pass_firsts.data);
+    free(render->view_requests.data);
+    free(render->views.data);
+    free(render->view_firsts.data);
     free(render->entity_callbacks.data);
 }
 
@@ -2422,6 +2425,8 @@ nmo_engine_frame_t *eng_render_begin_pass(nmo_engine_t *engine, nmo_object_id_t 
     nmo_engine_frame_t *frame = &pass->frame;
     frame->width = width;
     frame->height = height;
+    frame->viewport[2] = width; /* the pass's viewport is the frame */
+    frame->viewport[3] = height;
     eng_frame_camera(engine, 0, frame);
     frame->background_color = render->background_color;
     frame->fog_mode = render->fog_mode;
@@ -2483,6 +2488,8 @@ nmo_status_t eng_render_scene_pass(nmo_engine_t *engine, nmo_object_id_t texture
         pass->viewport[3] = h;
         frame->width = w > 0 ? w : 1;
         frame->height = h > 0 ? h : 1;
+        frame->viewport[2] = frame->width;
+        frame->viewport[3] = frame->height;
     }
     nmo_engine_frame_t copy = *frame; /* the passes may move as callbacks draw */
     nmo_object_id_t attached = render->camera; /* AttachViewpointToCamera for the render */
@@ -2495,6 +2502,122 @@ nmo_status_t eng_render_scene_pass(nmo_engine_t *engine, nmo_object_id_t texture
     render->pass_eye_set = false;
     render->camera = attached;
     eng_render_end_pass(engine);
+    return status;
+}
+
+/* CKRenderedScene::UpdateViewportSize: the attached camera's ratio (4:3 without one), centered
+   in the render context */
+static void eng_render_camera_ratio(nmo_engine_t *engine)
+{
+    eng_render_t *render = &engine->render;
+    const eng_screen_mode_t *mode = &eng_screen_modes[render->screen_mode];
+    const nmo_camera_state_t *camera = render->camera != 0
+        ? (const nmo_camera_state_t *)eng_typed_state(engine, render->camera, CKPGUID_CAMERA) : NULL;
+    /* a camera without its ratio (made, not loaded) has CKCamera's 4:3 */
+    int32_t aw = camera != NULL && camera->aspect_width > 0 ? camera->aspect_width : 4;
+    int32_t ah = camera != NULL && camera->aspect_height > 0 ? camera->aspect_height : 3;
+    int32_t right = mode->width > 0 ? mode->width : 1, bottom = mode->height > 0 ? mode->height : 1;
+    int32_t w = right, h = bottom;
+    if ((double)right / (double)bottom >= (double)aw / (double)ah) {
+        w = aw * bottom / ah;
+    } else {
+        h = ah * right / aw;
+    }
+    render->viewport[0] = (int32_t)((double)(right - w) * 0.5);
+    render->viewport[1] = (int32_t)((double)(bottom - h) * 0.5);
+    render->viewport[2] = w;
+    render->viewport[3] = h;
+    render->viewport_set = true;
+}
+
+void eng_render_viewport(nmo_engine_t *engine, int32_t out[4])
+{
+    eng_render_t *render = &engine->render;
+    /* the ratio holds while the option does, of the camera attached now */
+    if (!render->making_views && (eng_render_settings(engine)->render_options & CK_RENDER_USECAMERARATIO)) {
+        eng_render_camera_ratio(engine);
+    }
+    if (render->viewport_set) {
+        memcpy(out, render->viewport, sizeof(render->viewport));
+        return;
+    }
+    const eng_screen_mode_t *mode = &eng_screen_modes[render->screen_mode];
+    out[0] = out[1] = 0;
+    out[2] = mode->width;
+    out[3] = mode->height;
+}
+
+void eng_render_set_view_rect(nmo_engine_t *engine, const nmo_rect_t *rect)
+{
+    eng_render_t *render = &engine->render;
+    render->viewport[0] = (int32_t)rect->left;
+    render->viewport[1] = (int32_t)rect->top;
+    render->viewport[2] = (int32_t)(rect->right - rect->left);
+    render->viewport[3] = (int32_t)(rect->bottom - rect->top);
+    render->viewport_set = true;
+}
+
+void eng_render_request_view(nmo_engine_t *engine, const eng_view_request_t *request)
+{
+    if (engine->render.making_views) {
+        return;
+    }
+    for (size_t i = 0; i < engine->render.view_requests.count; i++) {
+        if (engine->render.view_requests.data[i].node == request->node) {
+            engine->render.view_requests.data[i] = *request;
+            return;
+        }
+    }
+    eng_view_request_t *slot = NULL;
+    if (ENG_VEC_PUSH(engine->render.view_requests, slot)) {
+        *slot = *request;
+    }
+}
+
+/* The views asked for this frame, each drawn as a pass draws, into the screen: the draws
+   from the end; the requests are gone after */
+static nmo_status_t eng_make_views(nmo_engine_t *engine, const nmo_engine_frame_t *main)
+{
+    eng_render_t *render = &engine->render;
+    render->views.count = 0;
+    render->view_firsts.count = 0;
+    render->making_views = true;
+    nmo_status_t status = NMO_OK;
+    for (size_t i = 0; i < render->view_requests.count && status == NMO_OK; i++) {
+        eng_view_request_t request = render->view_requests.data[i];
+        nmo_engine_view_t *view = NULL;
+        size_t *first = NULL;
+        if (!ENG_VEC_PUSH(render->views, view) || !ENG_VEC_PUSH(render->view_firsts, first)) {
+            status = NMO_ERR_NOMEM;
+            break;
+        }
+        *first = render->draws.count;
+        view->over_2d = request.over_2d;
+        nmo_engine_frame_t *frame = &view->frame;
+        *frame = *main;
+        frame->passes = NULL;
+        frame->pass_count = 0;
+        frame->views = NULL;
+        frame->view_count = 0;
+        /* AttachViewpointToCamera, SetViewRect, Render(options | CLEARVIEWPORT |
+           DONOTUPDATEEXTENTS), then the camera and the view rect back */
+        nmo_object_id_t attached = render->camera;
+        bool had_viewport = render->viewport_set;
+        int32_t viewport[4];
+        memcpy(viewport, render->viewport, sizeof(viewport));
+        render->camera = request.camera;
+        eng_frame_camera(engine, request.camera, frame);
+        eng_render_set_view_rect(engine, &request.rect);
+        frame->render_options = request.options | CK_RENDER_CLEARVIEWPORT | CK_RENDER_DONOTUPDATEEXTENTS;
+        memcpy(frame->viewport, render->viewport, sizeof(frame->viewport));
+        nmo_engine_frame_t copy = *frame; /* the views may move as callbacks draw */
+        status = eng_draw_scene(engine, &copy, true);
+        render->camera = attached;
+        render->viewport_set = had_viewport;
+        memcpy(render->viewport, viewport, sizeof(viewport));
+    }
+    render->making_views = false;
+    render->view_requests.count = 0;
     return status;
 }
 
@@ -2533,6 +2656,7 @@ nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *o
         render->stencil_used = 0;
     }
     out->render_options = render->render_options;
+    eng_render_viewport(engine, out->viewport);
     out->shading = render->shading;
     out->use_textures = render->use_textures;
     out->wireframe_layer = render->wireframe_layer;
@@ -2546,6 +2670,10 @@ nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *o
     memset(&render->stencil, 0, sizeof(render->stencil));
     size_t first = render->draws.count;
     nmo_status_t status = eng_draw_scene(engine, out, false);
+    size_t main_end = render->draws.count;
+    if (status == NMO_OK) {
+        status = eng_make_views(engine, out);
+    }
     if (status != NMO_OK) {
         return status;
     }
@@ -2553,7 +2681,18 @@ nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *o
     out->lights = render->frame_lights.data;
     out->light_count = (int32_t)render->frame_lights.count;
     out->draws = render->draws.data + first;
-    out->draw_count = (int32_t)(render->draws.count - first);
+    out->draw_count = (int32_t)(main_end - first);
+    for (size_t v = 0; v < render->views.count; v++) {
+        nmo_engine_frame_t *frame = &render->views.data[v].frame;
+        size_t end = v + 1 < render->views.count ? render->view_firsts.data[v + 1] : render->draws.count;
+        frame->lights = render->frame_lights.data;
+        frame->light_count = (int32_t)render->frame_lights.count;
+        frame->draws = render->draws.data + render->view_firsts.data[v];
+        frame->draw_count = (int32_t)(end - render->view_firsts.data[v]);
+        frame->vertices = render->vertices.data;
+    }
+    out->views = render->views.data;
+    out->view_count = (int32_t)render->views.count;
     out->vertices = render->vertices.data;
     for (size_t p = 0; p < render->passes.count; p++) {
         nmo_engine_frame_t *frame = &render->passes.data[p].frame;

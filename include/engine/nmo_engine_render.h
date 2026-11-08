@@ -158,6 +158,7 @@ typedef struct nmo_engine_light {
 } nmo_engine_light_t;
 
 typedef struct nmo_engine_pass nmo_engine_pass_t;
+typedef struct nmo_engine_view nmo_engine_view_t;
 
 /* A frame: the view, then what to draw (the engine's until the next call). */
 typedef struct nmo_engine_frame {
@@ -191,7 +192,22 @@ typedef struct nmo_engine_frame {
     /* The render passes to draw first, in order (a pass has none of its own) */
     const nmo_engine_pass_t *passes;
     int32_t pass_count;
+    /* The viewport the 3D draws go to, in render context pixels: left, top, width, height
+       (CKRenderContext::GetViewRect); the projection's aspect is its width over its height.
+       The 2D draws use the whole render context. */
+    int32_t viewport[4];
+    /* The scene drawn again into parts of the screen (Additional View), in order: each its
+       frame, into its viewport, cleared there as its render options say (CK_RENDER_CLEARVIEWPORT
+       limits the clear to the viewport); after the 3D draws, or after everything when
+       `over_2d`. A view has none of its own. */
+    const nmo_engine_view_t *views;
+    int32_t view_count;
 } nmo_engine_frame_t;
+
+struct nmo_engine_view {
+    bool over_2d;
+    nmo_engine_frame_t frame;
+};
 
 /*
  * A render pass (CKRenderContext::SetRenderTarget): `frame` drawn as a frame

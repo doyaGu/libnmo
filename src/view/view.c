@@ -96,6 +96,7 @@ struct nmo_view {
     float anisotropy;                /* the driver's most for mipmapped textures; 0 for none */
     bool mipmap_all;                 /* mipmap every texture, not only CK's mipmapped ones */
     int view_x, view_y, view_w, view_h; /* where it shows in the window, in pixels */
+    int scene_view[4]; /* where the frame being drawn draws its 3D: GL x, y (bottom), width, height */
     uint64_t start;
     bool cursor_shown;
     view_audio_t *audio; /* NULL when there is no audio device */
@@ -833,7 +834,10 @@ static void view_inverse(float out[16], const float m[16])
 static void view_load_projection(const nmo_engine_frame_t *frame, bool orthographic, float fov,
                                  float near_plane, float far_plane)
 {
-    float aspect = (float)frame->width / (float)frame->height;
+    /* RCKRenderContext::UpdateProjection: the viewport's aspect */
+    float aspect = frame->viewport[2] > 0 && frame->viewport[3] > 0
+                       ? (float)frame->viewport[2] / (float)frame->viewport[3]
+                       : (float)frame->width / (float)frame->height;
     float projection[16] = {0};
     float depth = far_plane - near_plane;
     if (depth <= 0.0f) {
@@ -1395,23 +1399,44 @@ static void view_pick(nmo_view_t *view, const nmo_engine_frame_t *frame)
 static void view_clip_draw(const nmo_view_t *view, const nmo_engine_draw_t *draw, int window_height)
 {
     if (!draw->clipped) { glDisable(GL_SCISSOR_TEST); return; }
+    (void)window_height;
     int edges[4];
     for (int i = 0; i < 4; i++) {
         float normalized = fminf(fmaxf(draw->clip_rect[i],0),1);
-        edges[i] = (int)(normalized*(float)((i & 1) ? view->view_h : view->view_w));
+        edges[i] = (int)(normalized*(float)((i & 1) ? view->scene_view[3] : view->scene_view[2]));
     }
     int width = edges[2] > edges[0] ? edges[2]-edges[0] : 0, height = edges[3] > edges[1] ? edges[3]-edges[1] : 0;
     glEnable(GL_SCISSOR_TEST);
-    glScissor(view->view_x+edges[0],window_height-view->view_y-edges[3],width,height);
+    glScissor(view->scene_view[0]+edges[0],view->scene_view[1]+view->scene_view[3]-edges[3],width,height);
 }
 
 /* A frame's draws into the viewport view_x, view_y, view_w, view_h (from the top) of a target
    `window_h` high: its clear, background, 2D entities and 3D draws */
 static void view_draw_frame(nmo_view_t *view, const nmo_engine_frame_t *frame, int window_h)
 {
+    /* The frame's viewport in the window, for its 3D draws (the whole frame without one) */
+    int *scene = view->scene_view;
+    const int32_t *viewport = frame->viewport;
+    if (viewport[2] > 0 && viewport[3] > 0 && frame->width > 0 && frame->height > 0) {
+        float sx = (float)view->view_w / (float)frame->width, sy = (float)view->view_h / (float)frame->height;
+        int top = view->view_y + (int)((float)viewport[1] * sy);
+        scene[2] = (int)((float)viewport[2] * sx);
+        scene[3] = (int)((float)viewport[3] * sy);
+        scene[0] = view->view_x + (int)((float)viewport[0] * sx);
+        scene[1] = window_h - top - scene[3];
+    } else {
+        scene[0] = view->view_x;
+        scene[1] = window_h - view->view_y - view->view_h;
+        scene[2] = view->view_w;
+        scene[3] = view->view_h;
+    }
     glViewport(view->view_x, window_h - view->view_y - view->view_h, view->view_w, view->view_h);
     glEnable(GL_SCISSOR_TEST);
-    glScissor(view->view_x, window_h - view->view_y - view->view_h, view->view_w, view->view_h);
+    if (frame->render_options & 0x100u) { /* CK_RENDER_CLEARVIEWPORT: the viewport alone */
+        glScissor(scene[0], scene[1], scene[2], scene[3]);
+    } else {
+        glScissor(view->view_x, window_h - view->view_y - view->view_h, view->view_w, view->view_h);
+    }
     float background[4];
     view_color(frame->background_color, background);
     glClearColor(background[0], background[1], background[2], 1.0f);
@@ -1456,6 +1481,7 @@ static void view_draw_frame(nmo_view_t *view, const nmo_engine_frame_t *frame, i
         end_mesh++;
     }
     float view_m[16];
+    glViewport(scene[0], scene[1], scene[2], scene[3]);
     view_begin_3d(frame, view_m);
     int32_t *transparent = (int32_t *)malloc((size_t)(end_mesh - first_mesh + 1) * sizeof(int32_t));
     float *depths = (float *)malloc((size_t)(end_mesh - first_mesh + 1) * sizeof(float));
@@ -1521,6 +1547,13 @@ static void view_draw_frame(nmo_view_t *view, const nmo_engine_frame_t *frame, i
     glFrontFace(GL_CW);
     glDisable(GL_SCISSOR_TEST);
     glDisable(GL_LIGHTING);
+    /* Additional View's renders after the 3D, then the 2D, then those over the 2D */
+    for (int32_t v = 0; v < frame->view_count; v++) {
+        if (!frame->views[v].over_2d) {
+            view_draw_frame(view, &frame->views[v].frame, window_h);
+        }
+    }
+    glViewport(view->view_x, window_h - view->view_y - view->view_h, view->view_w, view->view_h);
     view_begin_2d(frame);
     for (int32_t i = end_mesh; i < frame->draw_count; i++) {
         if (frame->draws[i].kind == NMO_ENGINE_DRAW_SPRITE_TEXT) {
@@ -1529,6 +1562,12 @@ static void view_draw_frame(nmo_view_t *view, const nmo_engine_frame_t *frame, i
             view_draw_quad(view, &frame->draws[i]);
         }
     }
+    for (int32_t v = 0; v < frame->view_count; v++) {
+        if (frame->views[v].over_2d) {
+            view_draw_frame(view, &frame->views[v].frame, window_h);
+        }
+    }
+    glViewport(view->view_x, window_h - view->view_y - view->view_h, view->view_w, view->view_h);
 }
 
 /* Draw into the kept frame, made (black) at the window's size; false when it cannot be made */

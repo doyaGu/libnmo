@@ -39,15 +39,16 @@ void eng_render_project(nmo_engine_t *engine, const eng_vector_t *world, eng_vec
         eng_camera_planes(engine,engine->render.camera,&near_plane,&far_plane);
     }
     bool perspective = (projection_type & 1u) != 0;
-    const eng_screen_mode_t *mode = &eng_screen_modes[engine->render.screen_mode];
-    float aspect = (float)mode->width/(float)mode->height, depth = far_plane-near_plane;
+    int32_t viewport[4];
+    eng_render_viewport(engine,viewport); /* the projection's aspect and where it maps to */
+    float aspect = viewport[3] != 0 ? (float)viewport[2]/(float)viewport[3] : 1.0f, depth = far_plane-near_plane;
     float w = perspective ? point.z : 1;
     if (w == 0) { *screen = (eng_vector_t){0}; return; }
     double half = (double)fov*.5;
     float scale = perspective ? (float)(cos(half)/sin(half)) : zoom;
     *screen = (eng_vector_t){
-        (point.x*scale/w*.5f+.5f)*(float)mode->width,
-        (.5f-point.y*scale*aspect/w*.5f)*(float)mode->height,
+        (float)viewport[0]+(point.x*scale/w*.5f+.5f)*(float)viewport[2],
+        (float)viewport[1]+(.5f-point.y*scale*aspect/w*.5f)*(float)viewport[3],
         (perspective ? (point.z*far_plane-near_plane*far_plane)/depth : (point.z-near_plane)/depth)/w};
 }
 

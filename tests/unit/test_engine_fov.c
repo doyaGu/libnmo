@@ -83,8 +83,8 @@ TEST(engine_fov, runtime_fov_updates_render_projection_and_screen_coordinates_wi
     eng_render_project(g.f.engine,&(eng_vector_t){1,0,10},&screen);
     nmo_engine_frame_t view;
     ASSERT_EQ(NMO_OK,nmo_engine_render_frame(g.f.engine,&view));
-    ASSERT_FLOAT_EQ(.58660254f*view.width,screen.x,2e-4f);
-    ASSERT_FLOAT_EQ(.5f*view.height,screen.y,2e-4f);
+    ASSERT_FLOAT_EQ((float)view.viewport[0]+.58660254f*(float)view.viewport[2],screen.x,2e-4f);
+    ASSERT_FLOAT_EQ((float)view.viewport[1]+.5f*(float)view.viewport[3],screen.y,2e-4f);
     ASSERT_FLOAT_EQ(PI_F/2,((nmo_camera_state_t *)fixture_state(&g.f,g.camera))->fov,0);
     nmo_engine_t *other = NULL;
     ASSERT_EQ(NMO_OK,nmo_engine_create(g.f.workspace,NULL,&other));
@@ -515,7 +515,7 @@ TEST(engine_fov, set_zoom_changes_view_projection_and_billboard_screen_coordinat
     ASSERT_FLOAT_EQ(.6f,rect.right,1e-6f); ASSERT_FLOAT_EQ(.6f,rect.bottom,1e-6f);
     eng_vector_t screen; eng_render_project(g.f.engine,&(eng_vector_t){1,0,10},&screen);
     nmo_engine_frame_t view; ASSERT_EQ(NMO_OK,nmo_engine_render_frame(g.f.engine,&view));
-    ASSERT_FLOAT_EQ(.6f*view.width,screen.x,2e-4f); ASSERT_FLOAT_EQ(.5f*view.height,screen.y,2e-4f);
+    ASSERT_FLOAT_EQ((float)view.viewport[0]+.6f*(float)view.viewport[2],screen.x,2e-4f); ASSERT_FLOAT_EQ((float)view.viewport[1]+.5f*(float)view.viewport[3],screen.y,2e-4f);
     ASSERT_FLOAT_EQ(.927295218f,view.fov,1e-7f);
     fixture_end(&g.f);
 }
@@ -619,7 +619,7 @@ TEST(engine_fov, runtime_orthographic_zoom_updates_render_projection_and_screen_
     ASSERT_FLOAT_EQ(.75f,rect.right,1e-6f); ASSERT_FLOAT_EQ(.75f,rect.bottom,1e-6f);
     eng_vector_t screen; eng_render_project(g.f.engine,&(eng_vector_t){.25f,0,10},&screen);
     nmo_engine_frame_t view; ASSERT_EQ(NMO_OK,nmo_engine_render_frame(g.f.engine,&view));
-    ASSERT_FLOAT_EQ(.75f*view.width,screen.x,2e-4f); ASSERT_FLOAT_EQ(.5f*view.height,screen.y,2e-4f);
+    ASSERT_FLOAT_EQ((float)view.viewport[0]+.75f*(float)view.viewport[2],screen.x,2e-4f); ASSERT_FLOAT_EQ((float)view.viewport[1]+.5f*(float)view.viewport[3],screen.y,2e-4f);
     ASSERT_FLOAT_EQ(1,((nmo_camera_state_t *)fixture_state(&g.f,g.camera))->orthographic_zoom,0);
     nmo_engine_t *other = NULL; ASSERT_EQ(NMO_OK,nmo_engine_create(g.f.workspace,NULL,&other));
     ASSERT_EQ(NMO_OK,nmo_engine_start(other,NMO_ENGINE_START_ALL)); other->render.camera = g.camera;
@@ -929,7 +929,7 @@ TEST(engine_fov, runtime_projection_switches_update_render_box_projection_and_sc
         ASSERT_FLOAT_EQ(left,rect.left,1e-6f); ASSERT_FLOAT_EQ(left,rect.top,1e-6f);
         ASSERT_FLOAT_EQ(right,rect.right,1e-6f); ASSERT_FLOAT_EQ(right,rect.bottom,1e-6f);
         eng_vector_t screen; eng_render_project(g.f.engine,&(eng_vector_t){.25f,0,10},&screen);
-        nmo_engine_frame_t view; ASSERT_EQ(NMO_OK,nmo_engine_render_frame(g.f.engine,&view)); ASSERT_FLOAT_EQ(right*view.width,screen.x,2e-4f);
+        nmo_engine_frame_t view; ASSERT_EQ(NMO_OK,nmo_engine_render_frame(g.f.engine,&view)); ASSERT_FLOAT_EQ((float)view.viewport[0]+right*(float)view.viewport[2],screen.x,2e-4f);
     }
     ASSERT_EQ(CK_PERSPECTIVEPROJECTION,((nmo_camera_state_t *)fixture_state(&g.f,g.camera))->projection_type);
     nmo_engine_t *other = NULL; ASSERT_EQ(NMO_OK,nmo_engine_create(g.f.workspace,NULL,&other)); ASSERT_EQ(NMO_OK,nmo_engine_start(other,NMO_ENGINE_START_ALL));
