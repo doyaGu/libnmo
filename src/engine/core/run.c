@@ -613,6 +613,7 @@ nmo_status_t nmo_engine_step(nmo_engine_t *engine, float delta_ms)
     if (engine->scene_launch) {
         eng_relaunch_level_scene(engine); /* CKLevel::PreProcess */
     }
+    eng_entities_save_last_frame(engine); /* CKRenderManager::PreProcess */
     eng_managers_pre_process(engine);
     eng_emit(engine, NMO_ENGINE_EVENT_FRAME_BEGIN, -1, 0, 0);
     engine->dynamic.defer = true;

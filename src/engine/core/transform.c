@@ -530,6 +530,24 @@ void eng_entity_transform_vector(nmo_engine_t *engine, int32_t index, eng_vector
     eng_vector_rotate(dest, &m, src);
 }
 
+void eng_entities_save_last_frame(nmo_engine_t *engine)
+{
+    for (size_t i = 0; i < engine->entities.count; i++) {
+        eng_entity_t *entity = &engine->entities.data[i];
+        entity->has_last_frame = !entity->destroyed && (entity->entity_flags & CK_3DENTITY_UPDATELASTFRAME) != 0;
+        if (entity->has_last_frame) {
+            entity->last_frame = entity->world;
+        }
+    }
+}
+
+const eng_matrix_t *eng_entity_last_frame_matrix(nmo_engine_t *engine, int32_t index)
+{
+    const eng_entity_t *entity = eng_entity_at(engine, index);
+    return entity->has_last_frame && (entity->entity_flags & CK_3DENTITY_UPDATELASTFRAME) != 0 ? &entity->last_frame
+                                                                                               : &entity->world;
+}
+
 /* SetPosition: the world position, from Ref's space given one. */
 void eng_entity_set_position(nmo_engine_t *engine, int32_t index, const eng_vector_t *position,
                              int32_t ref, bool keep_children)

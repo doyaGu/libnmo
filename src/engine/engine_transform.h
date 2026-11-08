@@ -39,6 +39,9 @@ typedef struct eng_entity {
     int32_t next_sibling, prev_sibling;
     bool scene_active; /* Scene activity also exists on entities without scripts. */
     bool destroyed;
+    /* The world matrix at the start of the frame, saved while CK_3DENTITY_UPDATELASTFRAME is set */
+    bool has_last_frame;
+    eng_matrix_t last_frame;
 } eng_entity_t;
 
 /* A ray's hit on an entity's mesh, in the entity's space */
@@ -97,6 +100,11 @@ void eng_entity_translate(nmo_engine_t *engine, int32_t index, const eng_vector_
                           int32_t ref, bool keep_children);
 void eng_entity_rotate(nmo_engine_t *engine, int32_t index, const eng_vector_t *axis, float angle,
                        int32_t ref, bool keep_children);
+/* CKRenderManager::PreProcess: the world matrices of the entities with CK_3DENTITY_UPDATELASTFRAME,
+   saved for the frame (an entity without the flag drops its saved one) */
+void eng_entities_save_last_frame(nmo_engine_t *engine);
+/* CK3dEntity::GetLastFrameMatrix: the matrix saved this frame, else the world matrix */
+const eng_matrix_t *eng_entity_last_frame_matrix(nmo_engine_t *engine, int32_t index);
 bool eng_entity_quaternion(nmo_engine_t *engine, int32_t index, nmo_quaternion_t *out, int32_t ref);
 /* KeepScale restores local scale after propagating the new world rotation;
  * that restoration follows children even when KeepChildren was requested. */
