@@ -379,6 +379,7 @@ static void tt_manager_destroy(nmo_engine_t *engine, void *state)
     eng_free_emitters(engine);
     free(tt->skies.data);
     free(tt->shadows.data);
+    free(tt->real_shadows.data);
     free(tt->video_textures.slots);
 }
 

@@ -101,6 +101,7 @@ typedef struct eng_tt {
     eng_map_t video_textures; /* the textures TT_PreloadTextures put in video memory */
     ENG_VEC(eng_sky_t) skies;
     ENG_VEC(eng_shadow_t) shadows;
+    ENG_VEC(int32_t) real_shadows; /* the TT RealShadowMapping blocks with this frame's callback */
     ENG_VEC(eng_emitter_t) emitters; /* ParticleManager's */
     /* TT_Toolbox_RT's motor settings, which every TT_MotorSound shares: the file's Volume, the
        last GlobalVolume a motor sound read, and each sound's band */

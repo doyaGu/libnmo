@@ -1031,6 +1031,310 @@ static int cb_simple_shadow(blk_t *b, uint32_t message)
     return NMO_ENGINE_BR_OK;
 }
 
+/* ============================================================================
+ * TT RealShadowMapping
+ * ============================================================================ */
+
+#define REAL_SHADOW_FLOORS 16
+
+/* RealShadowFloor: a floor under the object, and the shadow's corners in its space */
+typedef struct real_shadow_floor {
+    nmo_object_id_t id;
+    eng_vector_t min, max;
+} real_shadow_floor_t;
+
+/* RealShadowStruct (its Data local), with the frame its temporary callback is for */
+typedef struct real_shadow {
+    nmo_object_id_t material;
+    nmo_object_id_t texture; /* -1 at first */
+    real_shadow_floor_t floor[REAL_SHADOW_FLOORS];
+    int32_t floor_count;
+    bool made;
+    uint64_t pending; /* the engine frame + 1 of its pre render callback; 0 for none */
+} real_shadow_t;
+
+static real_shadow_t *real_shadow_of(blk_t *b)
+{
+    return (real_shadow_t *)nmo_engine_block_state(b, sizeof(real_shadow_t));
+}
+
+/* The floor's mesh copy, where the material's channel goes */
+static eng_mesh_copy_t *real_shadow_floor_mesh(nmo_engine_t *engine, nmo_object_id_t floor)
+{
+    nmo_object_t *object = floor != 0 && eng_entity_index(engine, floor) >= 0 ? eng_find_object(engine, floor) : NULL;
+    const nmo_3dentity_state_t *state = object != NULL
+        ? (const nmo_3dentity_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(engine->types, object,
+                                                                                          CKPGUID_3DENTITY)
+        : NULL;
+    nmo_object_id_t mesh = state != NULL ? eng_object_ref(engine, floor, &state->current_mesh) : 0;
+    return mesh != 0 ? eng_mesh_copy(engine, mesh) : NULL;
+}
+
+static void real_shadow_off_floor(nmo_engine_t *engine, nmo_object_id_t material, nmo_object_id_t floor)
+{
+    eng_mesh_copy_t *mesh = real_shadow_floor_mesh(engine, floor);
+    int32_t channel = mesh != NULL ? eng_mesh_channel(mesh, material) : -1;
+    if (channel >= 0) {
+        eng_mesh_remove_channel(mesh, channel);
+        mesh->version = ++engine->render.mesh_version;
+    }
+}
+
+/* A_Delete_SoftShadow_From_Floors */
+static void real_shadow_remove(nmo_engine_t *engine, const real_shadow_floor_t *floors, nmo_object_id_t material,
+                               int32_t count)
+{
+    for (int32_t a = 0; material != 0 && a < count; a++) {
+        real_shadow_off_floor(engine, material, floors[a].id);
+    }
+}
+
+/* The point under `p` on the height `y` seen from the light: the line from the light through it */
+static void real_shadow_project(const eng_vector_t *light, const eng_vector_t *pos, float ox, float oz, float y,
+                                eng_vector_t *out)
+{
+    float y1 = light->y - y, y2 = light->y - pos->y;
+    out->x = (pos->x - light->x + ox) * y1 / y2 + light->x;
+    out->z = (pos->z - light->z + oz) * y1 / y2 + light->z;
+    out->y = y;
+}
+
+static bool real_shadow_inside(const eng_vector_t *v, const eng_vector_t *min, const eng_vector_t *max)
+{
+    return v->x > min->x && v->x < max->x && v->z > min->z && v->z < max->z;
+}
+
+/*
+ * A_GetFloors: the light (Light-Vector from the object) through the object's
+ * position meets each floor (shown, Floor attribute, under the object): the
+ * floor's face there (else its height), output 0; the four corners around it
+ * (the object's radius times Size, at that height) outputs 1 to 4. A floor any
+ * of the five points falls on (inside its world box) is under the shadow, with
+ * the corners' extent in its space.
+ */
+static void real_shadow_floors(blk_t *b, real_shadow_t *tss, int32_t entity)
+{
+    nmo_engine_t *engine = b->engine;
+    eng_vector_t light = get_in_vector(b, 0, 0.0f, 0.0f, 0.0f);
+    float size[2] = {0.0f, 0.0f};
+    nmo_engine_block_get_input_value(b, 2, size, sizeof(size));
+    eng_vector_t pos = eng_entity_position(engine, entity, -1);
+    light = (eng_vector_t){pos.x + light.x, pos.y + light.y, pos.z + light.z};
+    float radius = eng_entity_radius(engine, entity);
+    float hx = size[0] * radius, hz = radius * size[1];
+    const float offsets[4][2] = {{hx, hz}, {-hx, hz}, {-hx, -hz}, {hx, -hz}};
+    int32_t count = 0;
+    int32_t type = eng_floor_attribute(engine);
+    for (size_t i = 0; type >= 0 && i < engine->attributes.values.count; i++) {
+        const eng_attribute_t *attribute = &engine->attributes.values.data[i];
+        int32_t floor = attribute->type == type ? eng_entity_index(engine, attribute->object) : -1;
+        /* IsAllOutsideFrustrum: the engine keeps no frustum test of the last render */
+        if (floor < 0 || engine->entities.data[floor].destroyed || !nmo_engine_object_is_visible(engine, attribute->object)) {
+            continue;
+        }
+        eng_vector_t vmax = {1000.0f, 0.0f, 1000.0f}, vmin = {-1000.0f, 0.0f, -1000.0f};
+        eng_vector_t floor_position = eng_entity_position(engine, floor, -1);
+        eng_vector_t box_min, box_max;
+        eng_entity_world_box(engine, floor, &box_min, &box_max);
+        if (!(light.y > 0.0f && pos.y > box_min.y)) {
+            continue;
+        }
+        bool under = false;
+        float y = 0.0f;
+        eng_vector_t point;
+        eng_ray_hit_t hit;
+        memset(&hit, 0, sizeof(hit));
+        if (eng_entity_ray_intersection(engine, floor, &light, &pos, &hit) > 0) {
+            eng_vector_transform(&point, &engine->entities.data[floor].world, &hit.point);
+            y = point.y;
+        } else {
+            y = floor_position.y;
+            real_shadow_project(&light, &pos, 0.0f, 0.0f, y, &point);
+        }
+        set_out(b, 0, &point, sizeof(point));
+        under = real_shadow_inside(&point, &box_min, &box_max);
+        for (int j = 0; j < 4; j++) {
+            real_shadow_project(&light, &pos, offsets[j][0], offsets[j][1], y, &point);
+            set_out(b, j + 1, &point, sizeof(point));
+            under = under || real_shadow_inside(&point, &box_min, &box_max);
+            vmax.x = point.x < vmax.x ? point.x : vmax.x;
+            vmin.x = point.x > vmin.x ? point.x : vmin.x;
+            vmax.z = point.z < vmax.z ? point.z : vmax.z;
+            vmin.z = point.z > vmin.z ? point.z : vmin.z;
+        }
+        if (under && count < REAL_SHADOW_FLOORS) {
+            real_shadow_floor_t *f = &tss->floor[count++];
+            eng_entity_inverse_transform(engine, floor, &f->max, &vmax, -1);
+            eng_entity_inverse_transform(engine, floor, &f->min, &vmin, -1);
+            f->id = attribute->object;
+        }
+    }
+    tss->floor_count = count;
+}
+
+/*
+ * RealShadowMappingPreRenderCallBack: Off takes the shadow off (the DLL
+ * copies 4 bytes a floor of its floor list, so only the first floor's id
+ * survives the copy) and stops the block; On starts it. Either way the
+ * frame's shadow is then placed: the Texture on the material, the material a
+ * channel on each floor under the object (Source/Dest Blend when the channel
+ * is made), its UVs the floor's vertices across the corners; the first floor
+ * of last frame's list loses its channel when it is no longer under.
+ */
+static void real_shadow_callback(nmo_engine_t *engine, int32_t node)
+{
+    nmo_engine_block_t handle = {engine, node};
+    blk_t *b = &handle;
+    real_shadow_t *tss = real_shadow_of(b);
+    int32_t entity = eng_entity_index(engine, nmo_engine_block_target(b));
+    if (tss == NULL || entity < 0) {
+        return;
+    }
+    int32_t active = get_local_int(b, 1, 0) != 0;
+    int32_t old_count = tss->floor_count;
+    real_shadow_floor_t old_first = tss->floor[0];
+    eng_material_t *material = eng_material(engine, tss->material);
+    nmo_object_id_t mat = material != NULL ? tss->material : 0;
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        real_shadow_remove(engine, &old_first, mat, old_count > 0 ? 1 : 0);
+        active = 1;
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+        active = 0;
+    }
+    nmo_object_id_t texture = nmo_engine_block_get_input_object(b, 1);
+    if (texture != tss->texture) {
+        tss->texture = texture;
+        if (material != NULL) {
+            material->desc.texture = texture;
+        }
+    }
+    int32_t source = get_in_int(b, 3, VXBLEND_ZERO), dest = get_in_int(b, 4, VXBLEND_SRCCOLOR);
+    real_shadow_floors(b, tss, entity);
+    if (old_count > 0) {
+        bool kept = false;
+        for (int32_t f = 0; f < tss->floor_count && !kept; f++) {
+            kept = old_first.id == tss->floor[f].id;
+        }
+        if (!kept && mat != 0) {
+            real_shadow_off_floor(engine, mat, old_first.id);
+        }
+    }
+    for (int32_t a = 0; mat != 0 && a < tss->floor_count; a++) {
+        const real_shadow_floor_t *f = &tss->floor[a];
+        eng_mesh_copy_t *mesh = real_shadow_floor_mesh(engine, f->id);
+        nmo_engine_mesh_t desc;
+        if (mesh == NULL || !nmo_engine_mesh(engine, mesh->mesh, &desc)) {
+            continue;
+        }
+        int32_t channel = eng_mesh_channel(mesh, mat);
+        if (channel < 0) {
+            channel = eng_mesh_add_channel(mesh, mat);
+            if (channel < 0) {
+                continue;
+            }
+            mesh->channels.data[channel].source_blend = source;
+            mesh->channels.data[channel].dest_blend = dest;
+        }
+        nmo_engine_channel_t *ch = &mesh->channels.data[channel];
+        float *uvs = (float *)ch->uvs;
+        if (uvs == NULL && desc.vertex_count > 0) {
+            uvs = (float *)malloc((size_t)desc.vertex_count * 2u * sizeof(float));
+            ch->uvs = uvs;
+        }
+        for (int32_t v = 0; uvs != NULL && v < desc.vertex_count; v++) {
+            const nmo_vector_t *p = &mesh->vertices[v].position;
+            uvs[2 * v] = (p->x - f->max.x) / (f->min.x - f->max.x);
+            uvs[2 * v + 1] = (p->z - f->max.z) / (f->min.z - f->max.z);
+        }
+        mesh->version = ++engine->render.mesh_version;
+    }
+    set_local_int(b, 1, active);
+}
+
+/* The pre render callbacks of this frame */
+static void real_shadows_update(nmo_engine_t *engine)
+{
+    eng_tt_t *tt = eng_tt(engine);
+    for (size_t i = 0; i < tt->real_shadows.count; i++) {
+        int32_t node = tt->real_shadows.data[i];
+        nmo_engine_block_t handle = {engine, node};
+        real_shadow_t *tss = real_shadow_of(&handle);
+        if (tss != NULL && tss->pending == engine->frame) {
+            tss->pending = 0;
+            real_shadow_callback(engine, node);
+        }
+    }
+}
+
+/* CKM_BEHAVIORATTACH / LOAD: the material ("SimpleShadow Material", white, its texture copied
+   and clamped), no texture, no floor */
+static void real_shadow_make(blk_t *b, real_shadow_t *tss)
+{
+    memset(tss, 0, sizeof(*tss));
+    tss->material = eng_floor_shadow_material(b->engine, "SimpleShadow Material");
+    tss->texture = (nmo_object_id_t)-1;
+    tss->made = true;
+    eng_tt_t *tt = eng_tt(b->engine);
+    for (size_t i = 0; i < tt->real_shadows.count; i++) {
+        if (tt->real_shadows.data[i] == b->node) {
+            return;
+        }
+    }
+    int32_t *slot = NULL;
+    if (ENG_VEC_PUSH(tt->real_shadows, slot)) {
+        *slot = b->node;
+    }
+}
+
+/*
+ * TT RealShadowMapping: while active, each frame its pre render callback
+ * places the Texture as a shadow on the floors under the target, where the
+ * light (Light-Vector from it) throws its square (its radius times Size);
+ * the callback takes the On and Off inputs. Once the callback marked it
+ * stopped (Active), the block ends on its next run, leaving the shadow
+ * where the callback last put it.
+ */
+static int bb_real_shadow_mapping(blk_t *b)
+{
+    if (nmo_engine_block_target(b) == 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    real_shadow_t *tss = real_shadow_of(b);
+    if (tss == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    if (!tss->made) {
+        real_shadow_make(b, tss);
+    }
+    tss->pending = b->engine->frame + 1; /* AddPreRenderCallBack(..., TRUE) */
+    if (get_local_int(b, 1, 0) == 0) {
+        return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+    }
+    tss->pending = 0; /* RemovePreRenderCallBack */
+    return NMO_ENGINE_BR_OK;
+}
+
+static int cb_real_shadow_mapping(blk_t *b, uint32_t message)
+{
+    real_shadow_t *tss = real_shadow_of(b);
+    if (tss == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    if (message == NMO_ENGINE_MSG_LOAD) {
+        real_shadow_make(b, tss);
+    } else if (message == NMO_ENGINE_MSG_PAUSE || message == NMO_ENGINE_MSG_RESET || message == 15u /* NEWSCENE */ ||
+               message == NMO_ENGINE_MSG_DEACTIVATESCRIPT) {
+        real_shadow_remove(b->engine, tss->floor, eng_material(b->engine, tss->material) != NULL ? tss->material : 0,
+                           tss->floor_count);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_tt_gravity_blocks[] = {
     {NMO_GUID_INIT(0x30fa6a70, 0x3b3f728a), "TT_GetSoundProperties", bb_get_sound_properties, NULL,
      NULL},
@@ -1042,15 +1346,19 @@ static const nmo_engine_block_desc_t eng_tt_gravity_blocks[] = {
     {NMO_GUID_INIT(0x7f0517c2, 0x52cc76bb), "TT Simple Shadow", bb_simple_shadow, cb_simple_shadow,
      NULL},
     {NMO_GUID_INIT(0x36106bd9, 0x51813906), "TT Extra", bb_tt_extra, cb_tt_extra, NULL},
+    {NMO_GUID_INIT(0x452816af, 0x681a3a81), "TT RealShadowMapping", bb_real_shadow_mapping,
+     cb_real_shadow_mapping, NULL},
 };
 
-/* TT Sky's sky behind the 3D entities, TT Simple Shadow's floors before the draws */
+/* TT Sky's sky behind the 3D entities, TT Simple Shadow's and TT RealShadowMapping's floors
+   before the draws */
 static void gravity_render(nmo_engine_t *engine, void *state, eng_render_stage_t stage,
                            const eng_render_args_t *args)
 {
     (void)state;
     if (stage == ENG_RENDER_PREPARE) {
         eng_update_shadows(engine);
+        real_shadows_update(engine);
     } else if (stage == ENG_RENDER_BACKGROUND) {
         eng_draw_skies(engine, args->view);
     }
