@@ -9,6 +9,7 @@
 
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_level_schemas.h"
+#include "object/builtin/nmo_parameterlocal_schemas.h"
 #include "object/builtin/nmo_scene_schemas.h"
 
 #define GUID_NOP NMO_GUID(0x302561c4, 0x0d282980)
@@ -139,6 +140,13 @@ TEST(engine_narratives, object_rename_and_attach_script)
     f.owner_id = main_owner;
     f.script_id = fixture_add_script(&f, "Script", &f.script_in);
     ASSERT_TRUE(template != 0 && f.script_id != 0);
+    /* A "This" local of the template script: its owner */
+    nmo_object_id_t myself = fixture_create(&f, NMO_CID_PARAMETERLOCAL, "This");
+    nmo_parameterlocal_state_t *myself_state = (nmo_parameterlocal_state_t *)fixture_state(&f, myself);
+    ASSERT_NOT_NULL(myself_state);
+    myself_state->is_myself = 1;
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
+        &((nmo_behavior_state_t *)fixture_state(&f, template))->local_parameters, myself, NULL));
     fixture_begin_edit(&f);
     nmo_object_id_t inner = fixture_block_in(&f, template, GUID_NOP, "Inner");
     ASSERT_TRUE(inner != 0);
@@ -163,6 +171,21 @@ TEST(engine_narratives, object_rename_and_attach_script)
     int32_t node = eng_map_get(&f.engine->node_map, copy);
     ASSERT_TRUE(node >= 0);
     ASSERT_EQ(receiver, f.engine->nodes.data[node].owner);
+    /* CKBehavior::SetOwner: the copy's "This" holds its new owner, the template's its own */
+    int found = 0;
+    for (size_t i = 0; i < f.engine->params.count; i++) {
+        const eng_param_t *param = &f.engine->params.data[i];
+        if (!param->myself || param->size < sizeof(uint32_t)) continue;
+        uint32_t value = 0;
+        memcpy(&value, param->data, sizeof(value));
+        if (param->myself_of == copy) {
+            ASSERT_EQ(receiver, value);
+            found++;
+        } else if (param->myself_of == template) {
+            ASSERT_EQ(holder, value);
+        }
+    }
+    ASSERT_EQ(1, found);
     ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
     ASSERT_TRUE(runs(&f, copy) >= 1u); /* the copy runs on its new owner */
     fixture_end(&f);

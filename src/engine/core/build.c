@@ -704,6 +704,25 @@ bool eng_attach_script(nmo_engine_t *engine, nmo_object_id_t script_id, nmo_obje
             engine->nodes.data[i].owner = owner_id;
         }
     }
+    /* CKBehavior::SetOwner: its "myself" locals hold the new owner */
+    for (size_t i = 0; i < engine->params.count; i++) {
+        eng_param_t *param = &engine->params.data[i];
+        int32_t node = param->myself && param->myself_of != 0
+                           ? eng_map_get(&engine->node_map, param->myself_of)
+                           : -1;
+        if (node < 0 || engine->nodes.data[node].owner != owner_id) {
+            continue;
+        }
+        int32_t top = node;
+        while (engine->nodes.data[top].parent >= 0) {
+            top = engine->nodes.data[top].parent;
+        }
+        if (top == script &&
+            (param->size >= sizeof(uint32_t) || eng_param_resize(param, sizeof(uint32_t)))) {
+            uint32_t value = (uint32_t)owner_id;
+            memcpy(param->data, &value, sizeof(value));
+        }
+    }
     return true;
 }
 
