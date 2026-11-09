@@ -98,6 +98,31 @@
 #define GUID_DELETE_FILE NMO_GUID(0x562f6aab, 0x07ea0f0b)
 #define GUID_LIST_DIR NMO_GUID(0x496f429e, 0x7d602e9d)
 #define GUID_FILE_NAME_FROM_PATH NMO_GUID(0x68e631f7, 0x13f914fe)
+#define GUID_GET_GAME_SCORE NMO_GUID(0x34951557, 0x4d180895)
+#define GUID_CREATE_GAME_INFO NMO_GUID(0x0a8b6c27, 0x402b43b4)
+#define GUID_EXISTS_GAME_INFO NMO_GUID(0x56173aa5, 0x73ff1a7f)
+#define GUID_DELETE_GAME_INFO NMO_GUID(0x29f17890, 0x2e0117a2)
+#define GUID_SET_LEVEL_DATA NMO_GUID(0x02030ea1, 0x30182971)
+#define GUID_SET_LEVEL_ID NMO_GUID(0x20b86a4c, 0x3c62472a)
+#define GUID_GET_LEVEL_DATA NMO_GUID(0x6bca40f9, 0x42641a24)
+#define GUID_GET_LEVEL_ID NMO_GUID(0x649011fe, 0x437d5918)
+#define GUID_SET_GAME_NAME NMO_GUID(0x30641426, 0x12403bb9)
+#define GUID_GET_GAME_NAME NMO_GUID(0x39b21b0c, 0x5db65810)
+#define GUID_SET_INT_REGISTRY NMO_GUID(0x175c07d1, 0x1d235544)
+#define GUID_SET_FLOAT_REGISTRY NMO_GUID(0x0060522f, 0x041d4c1f)
+#define GUID_GET_INT_REGISTRY NMO_GUID(0x50c02b30, 0x2e5a2eda)
+#define GUID_GET_FLOAT_REGISTRY NMO_GUID(0x00fe6fe4, 0x12a66150)
+#define GUID_WRITE_REGISTRY NMO_GUID(0x7aa8084e, 0x1ee229b7)
+#define GUID_INSTALL_ARRAY NMO_GUID(0x41f47ec4, 0x69470bbd)
+#define GUID_UNINSTALL_ARRAY NMO_GUID(0x77dd56cf, 0x63dc30b4)
+#define GUID_READ_ARRAY NMO_GUID(0x5c825017, 0x6d367973)
+#define GUID_WRITE_ARRAY NMO_GUID(0x07414af4, 0x505e52ee)
+#define GUID_LOAD_CMO NMO_GUID(0x63dd09a7, 0x567f7218)
+#define GUID_RESTART_CMO NMO_GUID(0x0b585f6f, 0x46253c21)
+#define GUID_LIMIT_FRAMERATE NMO_GUID(0x12a40e8f, 0x6f2d0613)
+#define GUID_SET_ROOKIE NMO_GUID(0x77de64df, 0x694f141f)
+#define GUID_IS_ROOKIE NMO_GUID(0x6dc06abb, 0x44451de5)
+#define GUID_WINDOW_ACTIVATE NMO_GUID(0x70936783, 0x7fee4a3b)
 
 /* The files the engine loads, from the scratch directory */
 static const char *resolve_scratch(void *user_data, const char *name)
@@ -2324,6 +2349,296 @@ TEST(engine_tt, file_blocks_go_through_the_host_file_system)
     fixture_end(&f);
 }
 
+/* A chain of blocks, each run from the one before's output `outs[i]` in the same frame */
+static void chain(engine_fixture_t *f, const nmo_object_id_t *blocks, const int *outs, int count)
+{
+    fixture_link(f, f->script_in, BLOCK_IN(f, blocks[0], 0), 0);
+    for (int i = 1; i < count; i++) {
+        fixture_link(f, BLOCK_OUT(f, blocks[i - 1], outs[i - 1]), BLOCK_IN(f, blocks[i], 0), 0);
+    }
+}
+
+TEST(engine_tt, game_info_blocks_keep_the_game_and_level_fields)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t early = fixture_block(&f, GUID_GET_GAME_SCORE, "Early");
+    nmo_object_id_t create = fixture_block(&f, GUID_CREATE_GAME_INFO, "Create");
+    nmo_object_id_t again = fixture_block(&f, GUID_CREATE_GAME_INFO, "Again");
+    nmo_object_id_t exists = fixture_block(&f, GUID_EXISTS_GAME_INFO, "Exists");
+    nmo_object_id_t set_level = fixture_block(&f, GUID_SET_LEVEL_DATA, "Set Level");
+    nmo_object_id_t set_id = fixture_block(&f, GUID_SET_LEVEL_ID, "Set ID");
+    nmo_object_id_t get_level = fixture_block(&f, GUID_GET_LEVEL_DATA, "Get Level");
+    nmo_object_id_t get_id = fixture_block(&f, GUID_GET_LEVEL_ID, "Get ID");
+    nmo_object_id_t set_name = fixture_block(&f, GUID_SET_GAME_NAME, "Set Name");
+    nmo_object_id_t get_name = fixture_block(&f, GUID_GET_GAME_NAME, "Get Name");
+    nmo_object_id_t wrong = fixture_block(&f, GUID_DELETE_GAME_INFO, "Wrong");
+    nmo_object_id_t remove = fixture_block(&f, GUID_DELETE_GAME_INFO, "Delete");
+    nmo_object_id_t gone = fixture_block(&f, GUID_EXISTS_GAME_INFO, "Gone");
+    nmo_object_id_t done = fixture_block(&f, GUID_NOP, "Done");
+    const nmo_object_id_t blocks[] = {early, create, again, exists, set_level, set_id, get_level,
+                                      get_id, set_name, get_name, wrong, remove, gone, done};
+    for (size_t i = 0; i < sizeof(blocks) / sizeof(blocks[0]); i++) {
+        ASSERT_TRUE(blocks[i] != 0);
+    }
+    /* Exists: True; Wrong (another address): Not Found; Gone: False */
+    const int outs[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1};
+    chain(&f, blocks, outs, 14);
+    input_text(&f, BLOCK_PIN(&f, create, 0), "Software\\Game\\");
+    input_text(&f, BLOCK_PIN(&f, again, 0), "Other\\");
+    fixture_input_int(&f, BLOCK_PIN(&f, exists, 0), 1);
+    fixture_input_int(&f, BLOCK_PIN(&f, set_level, 0), 5);
+    fixture_input_int(&f, BLOCK_PIN(&f, set_level, 1), 6);
+    fixture_input_int(&f, BLOCK_PIN(&f, set_level, 2), 7);
+    fixture_input_int(&f, BLOCK_PIN(&f, set_id, 0), 9);
+    input_text(&f, BLOCK_PIN(&f, set_name, 0), "Ballance");
+    fixture_input_int(&f, BLOCK_PIN(&f, wrong, 0), 2);
+    fixture_input_int(&f, BLOCK_PIN(&f, remove, 0), 1);
+    fixture_input_int(&f, BLOCK_PIN(&f, gone, 0), 1);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1u, runs(&f, done));
+    /* Without a game info the getter posts TT_MSG_NO_GAMEINFO with its number and goes on */
+    ASSERT_EQ(1, nmo_engine_player_message_count(f.engine));
+    nmo_engine_player_message_t message = {0};
+    ASSERT_TRUE(nmo_engine_player_message(f.engine, 0, &message));
+    ASSERT_EQ((int64_t)NMO_ENGINE_PLAYER_NO_GAMEINFO, (int64_t)message.message);
+    ASSERT_EQ(4, message.param);
+    /* The first address is 1; a second create leaves its output alone */
+    int32_t address = -1;
+    read_value(&f, BLOCK_POUT(&f, create, 0), &address, sizeof(address));
+    ASSERT_EQ(1, address);
+    address = -1;
+    read_value(&f, BLOCK_POUT(&f, again, 0), &address, sizeof(address));
+    ASSERT_EQ(0, address);
+    /* Set Level ID writes the level bonus, as the DLL does; the level ID stays 0 */
+    int32_t level[3] = {-1, -1, -1}, id = -1;
+    for (int i = 0; i < 3; i++) {
+        read_value(&f, BLOCK_POUT(&f, get_level, i), &level[i], sizeof(level[i]));
+    }
+    read_value(&f, BLOCK_POUT(&f, get_id, 0), &id, sizeof(id));
+    ASSERT_EQ(5, level[0]);
+    ASSERT_EQ(9, level[1]);
+    ASSERT_EQ(7, level[2]);
+    ASSERT_EQ(0, id);
+    const void *name = NULL;
+    ASSERT_EQ(NMO_OK, nmo_engine_param_value(f.engine, BLOCK_POUT(&f, get_name, 0), &name, NULL, NULL));
+    ASSERT_STR_EQ("Ballance", (const char *)name);
+    /* The next frame's messages replace these */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(0, nmo_engine_player_message_count(f.engine));
+    fixture_end(&f);
+}
+
+TEST(engine_tt, registry_blocks_write_and_read_the_game_key)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t table = fixture_create(&f, NMO_CID_DATAARRAY, "Table");
+    ASSERT_TRUE(table != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t no_info = fixture_block(&f, GUID_SET_INT_REGISTRY, "No Info");
+    nmo_object_id_t create = fixture_block(&f, GUID_CREATE_GAME_INFO, "Create");
+    nmo_object_id_t set_int = fixture_block(&f, GUID_SET_INT_REGISTRY, "Set Int");
+    nmo_object_id_t set_float = fixture_block(&f, GUID_SET_FLOAT_REGISTRY, "Set Float");
+    nmo_object_id_t get_int = fixture_block(&f, GUID_GET_INT_REGISTRY, "Get Int");
+    nmo_object_id_t no_value = fixture_block(&f, GUID_GET_INT_REGISTRY, "No Value");
+    nmo_object_id_t no_key = fixture_block(&f, GUID_GET_INT_REGISTRY, "No Key");
+    nmo_object_id_t get_float = fixture_block(&f, GUID_GET_FLOAT_REGISTRY, "Get Float");
+    nmo_object_id_t write = fixture_block(&f, GUID_WRITE_REGISTRY, "Write");
+    nmo_object_id_t write_array = fixture_block(&f, GUID_WRITE_REGISTRY, "Write Array");
+    nmo_object_id_t done = fixture_block(&f, GUID_NOP, "Done");
+    const nmo_object_id_t blocks[] = {no_info, create, set_int, set_float, get_int, no_value,
+                                      no_key, get_float, write, write_array, done};
+    for (size_t i = 0; i < sizeof(blocks) / sizeof(blocks[0]); i++) {
+        ASSERT_TRUE(blocks[i] != 0);
+    }
+    /* No Info: FAILED; the missing value and key: FAILED */
+    const int outs[] = {1, 0, 0, 0, 0, 1, 1, 0, 0, 0};
+    chain(&f, blocks, outs, 11);
+    input_text(&f, BLOCK_PIN(&f, create, 0), "Software\\Game\\");
+    fixture_input_int(&f, BLOCK_PIN(&f, set_int, 0), 42);
+    input_text(&f, BLOCK_PIN(&f, set_int, 1), "Keys");
+    input_text(&f, BLOCK_PIN(&f, set_int, 2), "Up");
+    const float quarter = 0.25f;
+    fixture_input_value(&f, BLOCK_PIN(&f, set_float, 0), &quarter, sizeof(quarter));
+    input_text(&f, BLOCK_PIN(&f, set_float, 1), "Keys");
+    input_text(&f, BLOCK_PIN(&f, set_float, 2), "Speed");
+    input_text(&f, BLOCK_PIN(&f, get_int, 0), "keys\\");
+    input_text(&f, BLOCK_PIN(&f, get_int, 1), "UP");
+    input_text(&f, BLOCK_PIN(&f, no_value, 0), "Keys");
+    input_text(&f, BLOCK_PIN(&f, no_value, 1), "Down");
+    input_text(&f, BLOCK_PIN(&f, no_key, 0), "Mouse");
+    input_text(&f, BLOCK_PIN(&f, no_key, 1), "Up");
+    input_text(&f, BLOCK_PIN(&f, get_float, 0), "Keys");
+    input_text(&f, BLOCK_PIN(&f, get_float, 1), "Speed");
+    input_text(&f, BLOCK_PIN(&f, write, 0), "Software\\W");
+    input_text(&f, BLOCK_PIN(&f, write, 1), "Lives");
+    fixture_input_int(&f, BLOCK_PIN(&f, write, 3), 3);
+    input_text(&f, BLOCK_PIN(&f, write_array, 0), "Software\\W");
+    fixture_input_int(&f, BLOCK_PIN(&f, write_array, 2), (int32_t)table);
+    nmo_object_id_t save_array = local_of(&f, write_array, 0);
+    ASSERT_TRUE(save_array != 0);
+    fixture_commit(&f, NULL);
+    const int32_t on = 1;
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, save_array, &on, sizeof(on)));
+    ASSERT_EQ(NMO_OK, nmo_engine_array_insert_column(f.engine, table, -1, CKARRAYTYPE_INT,
+                                                     NMO_GUID(0u, 0u)));
+    ASSERT_EQ(NMO_OK, nmo_engine_array_insert_column(f.engine, table, -1, CKARRAYTYPE_STRING,
+                                                     NMO_GUID(0u, 0u)));
+    for (int32_t r = 0; r < 2; r++) {
+        ASSERT_EQ(NMO_OK, nmo_engine_array_insert_row(f.engine, table, -1, NULL));
+        nmo_engine_cell_t number = {.type = CKARRAYTYPE_INT, .value = (uint32_t)(10 + r)};
+        nmo_engine_cell_t text = {.type = CKARRAYTYPE_STRING, .text = r == 0 ? "a" : "b"};
+        ASSERT_EQ(NMO_OK, nmo_engine_array_set_cell(f.engine, table, r, 0, &number));
+        ASSERT_EQ(NMO_OK, nmo_engine_array_set_cell(f.engine, table, r, 1, &text));
+    }
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1u, runs(&f, done));
+    /* The game info's key and RegKey are joined as they are */
+    ASSERT_STR_EQ("42", nmo_engine_registry_value(f.engine, "Software\\Game\\Keys", "Up"));
+    ASSERT_STR_EQ("0.25", nmo_engine_registry_value(f.engine, "Software\\Game\\Keys", "Speed"));
+    int32_t value = 0;
+    read_value(&f, BLOCK_POUT(&f, get_int, 0), &value, sizeof(value));
+    ASSERT_EQ(42, value);
+    /* A missing value outputs 2, a missing key 1 */
+    read_value(&f, BLOCK_POUT(&f, no_value, 0), &value, sizeof(value));
+    ASSERT_EQ(2, value);
+    read_value(&f, BLOCK_POUT(&f, no_key, 0), &value, sizeof(value));
+    ASSERT_EQ(1, value);
+    float speed = 0.0f;
+    read_value(&f, BLOCK_POUT(&f, get_float, 0), &speed, sizeof(speed));
+    ASSERT_FLOAT_EQ(0.25f, speed, 0.0f);
+    /* TT_WriteRegistry writes under the section alone; the array as TT_ReadRegistry reads it */
+    ASSERT_STR_EQ("3", nmo_engine_registry_value(f.engine, "Software\\W", "Lives"));
+    ASSERT_STR_EQ("11", nmo_engine_registry_value(f.engine, "Software\\W\\Table\\0", "1"));
+    ASSERT_STR_EQ("a", nmo_engine_registry_value(f.engine, "Software\\W\\Table\\1", "0"));
+    fixture_end(&f);
+}
+
+static void set_int_cell_value(engine_fixture_t *f, nmo_object_id_t array, int32_t column,
+                               int32_t value)
+{
+    nmo_engine_cell_t cell = {.type = CKARRAYTYPE_INT, .value = (uint32_t)value};
+    ASSERT_EQ(NMO_OK, nmo_engine_array_set_cell(f->engine, array, 0, column, &cell));
+}
+
+TEST(engine_tt, installed_arrays_keep_their_first_row_across_frames)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t array = fixture_create(&f, NMO_CID_DATAARRAY, "Kept");
+    ASSERT_TRUE(array != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t install = fixture_block(&f, GUID_INSTALL_ARRAY, "Install");
+    nmo_object_id_t read = fixture_block(&f, GUID_READ_ARRAY, "Read");
+    nmo_object_id_t write = fixture_block(&f, GUID_WRITE_ARRAY, "Write");
+    nmo_object_id_t read_again = fixture_block(&f, GUID_READ_ARRAY, "Read Again");
+    nmo_object_id_t uninstall = fixture_block(&f, GUID_UNINSTALL_ARRAY, "Uninstall");
+    nmo_object_id_t read_none = fixture_block(&f, GUID_READ_ARRAY, "Read None");
+    const nmo_object_id_t blocks[] = {install, read, write, read_again, uninstall, read_none};
+    /* one block a frame */
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, install, 0), 0);
+    for (int i = 0; i < 6; i++) {
+        ASSERT_TRUE(blocks[i] != 0);
+        fixture_input_int(&f, BLOCK_PIN(&f, blocks[i], 0), (int32_t)array);
+        input_text(&f, BLOCK_PIN(&f, blocks[i], 1), "level.cmo");
+        if (i > 0) {
+            fixture_link(&f, BLOCK_OUT(&f, blocks[i - 1], 0), BLOCK_IN(&f, blocks[i], 0), 1);
+        }
+    }
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_array_insert_column(f.engine, array, -1, CKARRAYTYPE_INT,
+                                                     NMO_GUID(0u, 0u)));
+    ASSERT_EQ(NMO_OK, nmo_engine_array_insert_column(f.engine, array, -1, CKARRAYTYPE_STRING,
+                                                     NMO_GUID(0u, 0u)));
+    ASSERT_EQ(NMO_OK, nmo_engine_array_insert_row(f.engine, array, -1, NULL));
+    set_int_cell_value(&f, array, 0, 5);
+    nmo_engine_cell_t text = {.type = CKARRAYTYPE_STRING, .text = "a"};
+    ASSERT_EQ(NMO_OK, nmo_engine_array_set_cell(f.engine, array, 0, 1, &text));
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f)); /* Install keeps 5, "a" */
+    ASSERT_EQ(1u, runs(&f, install));
+    set_int_cell_value(&f, array, 0, 9);
+    text.text = "b";
+    ASSERT_EQ(NMO_OK, nmo_engine_array_set_cell(f.engine, array, 0, 1, &text));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f)); /* Read puts them back */
+    ASSERT_EQ(1u, runs(&f, read));
+    ASSERT_EQ(5, cell_int(&f, array, 0, 0));
+    nmo_engine_cell_t cell = {0};
+    ASSERT_EQ(NMO_OK, nmo_engine_array_get_cell(f.engine, array, 0, 1, &cell));
+    ASSERT_STR_EQ("a", cell.text);
+    set_int_cell_value(&f, array, 0, 7);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f)); /* Write keeps 7 */
+    set_int_cell_value(&f, array, 0, 0);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f)); /* Read Again */
+    ASSERT_EQ(1u, runs(&f, read_again));
+    ASSERT_EQ(7, cell_int(&f, array, 0, 0));
+    set_int_cell_value(&f, array, 0, 0);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f)); /* Uninstall forgets it */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f)); /* so Read None changes nothing */
+    ASSERT_EQ(1u, runs(&f, read_none));
+    ASSERT_EQ(0, cell_int(&f, array, 0, 0));
+    fixture_end(&f);
+}
+
+TEST(engine_tt, player_blocks_post_messages_and_keep_flags)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t no_info = fixture_block(&f, GUID_LOAD_CMO, "No Info");
+    nmo_object_id_t limit = fixture_block(&f, GUID_LIMIT_FRAMERATE, "Limit");
+    nmo_object_id_t create = fixture_block(&f, GUID_CREATE_GAME_INFO, "Create");
+    nmo_object_id_t load = fixture_block(&f, GUID_LOAD_CMO, "Load");
+    nmo_object_id_t restart = fixture_block(&f, GUID_RESTART_CMO, "Restart");
+    nmo_object_id_t rookie = fixture_block(&f, GUID_SET_ROOKIE, "Rookie");
+    nmo_object_id_t is_rookie = fixture_block(&f, GUID_IS_ROOKIE, "Is Rookie");
+    nmo_object_id_t window = fixture_block(&f, GUID_WINDOW_ACTIVATE, "Window");
+    nmo_object_id_t window_again = fixture_block(&f, GUID_WINDOW_ACTIVATE, "Window Again");
+    nmo_object_id_t done = fixture_block(&f, GUID_NOP, "Done");
+    ASSERT_TRUE(no_info != 0 && limit != 0 && create != 0 && load != 0 && restart != 0 &&
+                rookie != 0 && is_rookie != 0 && window != 0 && window_again != 0 && done != 0);
+    /* Load CMO without a game info stops the chain: Limit starts from the script */
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, no_info, 0), 0);
+    const nmo_object_id_t blocks[] = {limit, create, load, restart, rookie, is_rookie, window,
+                                      window_again, done};
+    /* Window: Activate; Window Again: else */
+    const int outs[] = {0, 0, 0, 0, 0, 0, 0, 1};
+    chain(&f, blocks, outs, 9);
+    fixture_input_int(&f, BLOCK_PIN(&f, limit, 0), 30);
+    input_text(&f, BLOCK_PIN(&f, load, 0), "Level_02.nmo");
+    fixture_input_int(&f, BLOCK_PIN(&f, rookie, 0), 1);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    nmo_engine_set_window_activated(f.engine);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1u, runs(&f, done));
+    ASSERT_EQ(1u, runs(&f, limit));
+    ASSERT_FALSE(nmo_engine_io_is_active(f.engine, BLOCK_IN(&f, limit, 0)));
+    const uint32_t expected[] = {NMO_ENGINE_PLAYER_LIMIT_FPS, NMO_ENGINE_PLAYER_CMO_LOAD,
+                                 NMO_ENGINE_PLAYER_CMO_RESTART};
+    ASSERT_EQ(3, nmo_engine_player_message_count(f.engine));
+    for (int i = 0; i < 3; i++) {
+        nmo_engine_player_message_t message = {0};
+        ASSERT_TRUE(nmo_engine_player_message(f.engine, i, &message));
+        ASSERT_EQ((int64_t)expected[i], (int64_t)message.message);
+        if (i == 0) {
+            ASSERT_EQ(30, message.param);
+        } else if (i == 1) {
+            ASSERT_STR_EQ("Level_02.nmo", message.text);
+        }
+    }
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_tt, load_database_fills_the_array_of_its_name);
 REGISTER_TEST(engine_tt, save_database_writes_the_registered_arrays);
@@ -2364,4 +2679,8 @@ REGISTER_TEST(engine_tt, push_button_swaps_materials_and_starts_with_the_button_
 REGISTER_TEST(engine_tt, motor_sound_plays_the_bands_of_the_loaded_settings);
 REGISTER_TEST(engine_tt, font_coordinates_fill_a_new_array);
 REGISTER_TEST(engine_tt, file_blocks_go_through_the_host_file_system);
+REGISTER_TEST(engine_tt, game_info_blocks_keep_the_game_and_level_fields);
+REGISTER_TEST(engine_tt, registry_blocks_write_and_read_the_game_key);
+REGISTER_TEST(engine_tt, installed_arrays_keep_their_first_row_across_frames);
+REGISTER_TEST(engine_tt, player_blocks_post_messages_and_keep_flags);
 TEST_MAIN_END()

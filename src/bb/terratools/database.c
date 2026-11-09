@@ -375,6 +375,7 @@ static void tt_manager_destroy(nmo_engine_t *engine, void *state)
 {
     eng_tt_t *tt = (eng_tt_t *)state;
     database_clear(engine);
+    eng_free_tt_interface(engine);
     eng_free_emitters(engine);
     free(tt->skies.data);
     free(tt->shadows.data);
@@ -403,6 +404,7 @@ nmo_status_t eng_tt_add(nmo_engine_t *engine)
     nmo_status_t status = eng_add_manager(engine, &tt_manager, (void **)&tt);
     if (status == NMO_OK) {
         tt->database_crypted = true;
+        tt->task_switch = true; /* InterfaceManager's constructor */
         /* the DLL's initial motor settings */
         tt->motor_volume = 1.0f;
         tt->motor_global_volume = 1.0f;

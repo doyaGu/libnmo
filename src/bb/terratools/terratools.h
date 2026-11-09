@@ -66,6 +66,30 @@ typedef struct eng_motor_band {
     float fade_in, fade_out;
 } eng_motor_band_t;
 
+/* TT_InterfaceManager_RT's CGameInfo: one at most, made by TT Create new GameInfo */
+typedef struct eng_game_info {
+    int32_t handle; /* its "Address of GameInfo (hex)": the engine numbers them from 1 */
+    char *game_name, *level_name;
+    char *reg_subkey; /* the registry blocks' keys start with it */
+    int32_t game_score, level_score, game_id, level_id, game_bonus, level_bonus, level_reached;
+} eng_game_info_t;
+
+/* A value of a CNemoArray: a cell of the array's first row, as its column's type keeps it */
+typedef struct eng_nemo_element {
+    int32_t type; /* CK_ARRAYTYPE */
+    uint32_t value;
+    char *text;
+    void *data; /* a parameter cell's value */
+    size_t size;
+    nmo_guid_t parameter_type;
+} eng_nemo_element_t;
+
+/* CNemoArray: an array's first row kept across CMOs, by the CMO's name and the array's */
+typedef struct eng_nemo_array {
+    char *cmo, *name;
+    ENG_VEC(eng_nemo_element_t) elements;
+} eng_nemo_array_t;
+
 typedef struct eng_tt {
     float time;   /* TT Time Manager: TT_Timer's time, and whether it runs */
     bool timing;
@@ -82,12 +106,22 @@ typedef struct eng_tt {
        last GlobalVolume a motor sound read, and each sound's band */
     float motor_volume, motor_global_volume;
     eng_motor_band_t motor_bands[3];
+    /* TT_InterfaceManager_RT's manager: the game info, the CMO TT Load CMO named, the task switch
+       and rookie flags and the installed arrays */
+    eng_game_info_t *game_info;
+    int32_t game_infos_made;
+    char *cmo_name;
+    bool task_switch, rookie;
+    ENG_VEC(eng_nemo_array_t) nemo_arrays;
 } eng_tt_t;
 
 /* database.c: the Terratools managers' state, added once with the first TT DLL;
    eng_tt() is NULL before */
 nmo_status_t eng_tt_add(nmo_engine_t *engine);
 eng_tt_t *eng_tt(const nmo_engine_t *engine);
+
+/* interface_manager.c: what the interface manager keeps goes */
+void eng_free_tt_interface(nmo_engine_t *engine);
 
 /* particles.c */
 /* The particles of the emitters shown, as their render modes draw them */
