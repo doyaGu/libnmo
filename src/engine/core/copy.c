@@ -977,6 +977,11 @@ nmo_status_t eng_copy_objects(nmo_engine_t *engine, const nmo_object_id_t *ids, 
                               const eng_dependencies_t *deps, bool activate, bool dynamic,
                               nmo_object_id_t *out_copies)
 {
+    eng_dependencies_t defaults;
+    if (deps == NULL) { /* the copy mode's defaults */
+        eng_default_copy_dependencies(&defaults);
+        deps = &defaults;
+    }
     for (int32_t i = 0; i < count; i++) {
         out_copies[i] = 0;
     }
@@ -1028,6 +1033,11 @@ nmo_status_t eng_copy_objects(nmo_engine_t *engine, const nmo_object_id_t *ids, 
 void eng_destroy_objects(nmo_engine_t *engine, const nmo_object_id_t *ids, int32_t count,
                          const eng_dependencies_t *deps)
 {
+    eng_dependencies_t defaults;
+    if (deps == NULL) { /* CKDependenciesContext::GetClassDependencies: the mode's defaults */
+        default_delete_dependencies(&defaults);
+        deps = &defaults;
+    }
     copy_set_t set;
     memset(&set, 0, sizeof(set));
     set.engine = engine;

@@ -1,4 +1,5 @@
 #include "engine_fixture.h"
+#include "../../src/engine/engine_internal.h"
 
 #include "document/nmo_document_save.h"
 #include "engine/nmo_engine_render.h"
@@ -460,6 +461,31 @@ TEST(engine_copy, object_delete_takes_what_its_options_delete)
     fixture_end(&f);
 }
 
+/* Destroying without dependencies takes the delete mode's defaults (CK: NULL dependencies), as the
+ * blocks that destroy what they made do: the object and its script, not its child */
+TEST(engine_copy, destroy_without_dependencies_uses_the_defaults)
+{
+    save_template_file();
+    engine_fixture_t f;
+    fixture_begin(&f);
+    fixture_commit(&f, NULL);
+    nmo_engine_set_file_resolver(f.engine, resolve_scratch, NULL);
+    int32_t file = -1;
+    ASSERT_EQ(NMO_OK, nmo_engine_load(f.engine, "template.nmo", true, &file));
+    nmo_object_id_t original = loaded_named(&f, file, "Template");
+    nmo_object_id_t child = loaded_named(&f, file, "Child");
+    nmo_object_id_t script = script_named(&f, "Template Script", 0);
+    ASSERT_TRUE(original != 0 && child != 0 && script != 0);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+
+    eng_destroy_objects(f.engine, &original, 1, NULL);
+    float m[16];
+    ASSERT_FALSE(nmo_engine_entity_world_matrix(f.engine, original, m));
+    ASSERT_FALSE(nmo_engine_behavior_is_active(f.engine, script));
+    ASSERT_TRUE(nmo_engine_entity_world_matrix(f.engine, child, m));
+    fixture_end(&f);
+}
+
 TEST(engine_copy, delete_dynamic_objects_takes_the_dynamic_ones)
 {
     engine_fixture_t f;
@@ -645,6 +671,7 @@ REGISTER_TEST(engine_copy, object_copy_joins_groups_and_delete_leaves_them);
 REGISTER_TEST(engine_copy, primary_object_copy_runs_inside_a_script);
 REGISTER_TEST(engine_copy, unique_name_copies_take_the_next_number);
 REGISTER_TEST(engine_copy, object_delete_takes_what_its_options_delete);
+REGISTER_TEST(engine_copy, destroy_without_dependencies_uses_the_defaults);
 REGISTER_TEST(engine_copy, delete_dynamic_objects_takes_the_dynamic_ones);
 REGISTER_TEST(engine_copy, initial_conditions_are_restored);
 REGISTER_TEST(engine_copy, initial_condition_restores_camera_planes);

@@ -111,6 +111,8 @@ typedef struct eng_dependencies {
 void eng_default_copy_dependencies(eng_dependencies_t *deps);
 void eng_dependencies_from_param(nmo_engine_t *engine, nmo_object_id_t param_id, bool deleting,
                                  eng_dependencies_t *deps);
+/* CKContext::DestroyObjects with the objects' dependencies: `deps` NULL for the delete mode's
+   defaults (eng_copy_objects: the copy mode's) */
 void eng_destroy_objects(nmo_engine_t *engine, const nmo_object_id_t *ids, int32_t count,
                          const eng_dependencies_t *deps);
 nmo_status_t eng_copy_objects(nmo_engine_t *engine, const nmo_object_id_t *ids, int32_t count,
