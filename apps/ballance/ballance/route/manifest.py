@@ -228,16 +228,14 @@ def _elements(manifest: Manifest, assets: Assets, layout: Layout) -> None:
         for floor in MODULE_FLOORS[kind]:
             if floor.support:
                 continue
+            name = f'A{sector:02d}_{floor.name}_{manifest.number(floor.name):02d}'
             manifest.add(
-                f'A{sector:02d}_{floor.name}_{manifest.number(floor.name):02d}',
-                assets.mesh(floor.name),
-                position,
-                floor.groups,
-                visible=floor.visible,
-                turn=turn,
+                name, assets.mesh(floor.name), position, floor.groups, visible=floor.visible, turn=turn
             )
             # a floor cut from a level brings the level's materials with it
             manifest.materials.update(_mesh_materials(assets.out / assets.mesh(floor.name)))
+            if floor.visible and 'Phys_Floors' in floor.groups:
+                _add_underside(manifest, assets, name, floor.name, position, turn)
     for kind, sector, position, turn in layout.supports:
         manifest.add(
             f'A{sector:02d}_{kind}_{manifest.number(kind):02d}',
@@ -250,6 +248,76 @@ def _elements(manifest: Manifest, assets: Assets, layout: Layout) -> None:
     manifest.materials.update(f'Floor_Trafo_{kind}' for kind in layout.trafos)
     if layout.modules:
         manifest.materials.add('Floor_Stopper_Wood')
+
+
+# How far below a floor's top its underside lies: the walls' depth.
+UNDERSIDE_BELOW = 5.0
+# The stone floors' top materials an underside is laid under; wood (logs,
+# troughs, planks, walkways) is a thin shell with nothing under it.
+STONE_TOPS = ('Floor_Top', 'Floor_Trafo', 'Modul01_Floor')
+# Floors set into another floor that has its own underside.
+NO_UNDERSIDE = {'Floor_Modul_18'}
+
+
+def _add_underside(
+    manifest: Manifest, assets: Assets, name: str, kind: str, position, turn: float
+) -> None:
+    """The underside of a floor cut from a level, as an object of its own
+    beside it, only seen (no physics group): the originals' floors have no
+    bottom, as their camera never looks up at one, and a level that stacks
+    its floors shows them open from below."""
+    if kind in NO_UNDERSIDE:
+        return
+    under = f'{kind}_Under.obj'
+    path = assets.out / under
+    if not path.exists():
+        if not underside_mesh(assets.out / assets.mesh(kind), path):
+            return
+    manifest.add(f'{name}_Under', under, position, [], turn=turn)
+    manifest.materials.add('Floor_Side')
+
+
+def underside_mesh(source: Path, out: Path, below: float = UNDERSIDE_BELOW) -> bool:
+    """Writes to out the faces of the OBJ at source that face up, moved below
+    down and turned to face down, in Floor_Side; False if none face up."""
+    points, normals, lines = [], [], ['usemtl Floor_Side']
+    count = 0
+    material = ''
+    for line in source.read_text(encoding='utf-8').splitlines():
+        head, *rest = line.split() or ['']
+        if head == 'usemtl':
+            material = rest[0] if rest else ''
+        elif head == 'v':
+            points.append(tuple(float(v) for v in rest[:3]))
+        elif head == 'vn':
+            normals.append(tuple(float(v) for v in rest[:3]))
+        elif head == 'f':
+            refs = [ref.split('/') for ref in rest]
+
+            def index(value: str, items: list) -> int:
+                k = int(value)
+                return len(items) + k if k < 0 else k - 1
+
+            corners = [points[index(r[0], points)] for r in refs]
+            if len(refs[0]) > 2 and refs[0][2]:
+                up = sum(normals[index(r[2], normals)][1] for r in refs) / len(refs)
+            else:
+                a, b, c = corners[:3]
+                up = (b[2] - a[2]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[2] - a[2])
+            if up <= 0.5 or not material.startswith(STONE_TOPS):
+                continue
+            for k in range(1, len(corners) - 1):
+                # reversed: facing down
+                for x, y, z in (corners[0], corners[k + 1], corners[k]):
+                    lines.append(f'v {x:.6f} {y - below:.6f} {z:.6f}')
+                    lines.append(f'vt {x / 5.0:.6f} {z / 5.0:.6f}')
+                    lines.append('vn 0 -1 0')
+                lines.append('f -3/-3/-3 -2/-2/-2 -1/-1/-1')
+                count += 1
+    if not count:
+        return False
+    out.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+    return True
 
 
 def _mesh_materials(path: Path) -> set[str]:
@@ -273,6 +341,8 @@ def _pads(manifest: Manifest, assets: Assets, layout: Layout) -> None:
         manifest.add(
             name, assets.mesh(kind), position, STONE_FLOOR_GROUPS, turn=turn if game else 0
         )
+        if game:
+            _add_underside(manifest, assets, name, kind, position, turn)
     if assets.has('Floor_Start'):
         manifest.materials.add('Floor_Top_Checkpoint')
 
