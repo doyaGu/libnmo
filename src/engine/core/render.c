@@ -103,6 +103,8 @@ void eng_free_render(nmo_engine_t *engine)
     free(render->passes.data);
     free(render->pass_firsts.data);
     free(render->view_requests.data);
+    free(render->copy_requests.data);
+    free(render->copies.data);
     free(render->views.data);
     free(render->view_firsts.data);
     free(render->entity_callbacks.data);
@@ -3600,6 +3602,18 @@ void eng_render_request_view(nmo_engine_t *engine, const eng_view_request_t *req
     }
 }
 
+void eng_render_copy_buffer(nmo_engine_t *engine, nmo_object_id_t texture, int32_t face, const float src[4],
+                            const float dest[4])
+{
+    nmo_engine_buffer_copy_t *copy = NULL;
+    if (ENG_VEC_PUSH(engine->render.copy_requests, copy)) {
+        copy->texture = texture;
+        copy->face = face;
+        memcpy(copy->src, src, sizeof(copy->src));
+        memcpy(copy->dest, dest, sizeof(copy->dest));
+    }
+}
+
 /* The views asked for this frame, each drawn as a pass draws, into the screen: the draws
    from the end; the requests are gone after */
 static nmo_status_t eng_make_views(nmo_engine_t *engine, const nmo_engine_frame_t *main)
@@ -3731,6 +3745,17 @@ nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_frame_t *o
     }
     out->passes = render->passes.data;
     out->pass_count = (int32_t)render->passes.count;
+    /* The copies asked for until now, the frame's; the requests start again */
+    nmo_engine_buffer_copy_t *copy = NULL;
+    render->copies.count = 0;
+    for (size_t c = 0; c < render->copy_requests.count; c++) {
+        if (ENG_VEC_PUSH(render->copies, copy)) {
+            *copy = render->copy_requests.data[c];
+        }
+    }
+    render->copy_requests.count = 0;
+    out->copies = render->copies.data;
+    out->copy_count = (int32_t)render->copies.count;
     return NMO_OK;
 }
 

@@ -1806,6 +1806,55 @@ static void view_draw_pass(nmo_view_t *view, const nmo_engine_pass_t *pass)
     glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
 }
 
+/*
+ * The frame's buffer copies (CopyToTexture), from what was just drawn: each
+ * source rectangle of the render context, as the window scaled it, taken
+ * nearest to its texel size into the texture's uploaded image, top row
+ * first. Only a 2D texture's face 0 is copied.
+ */
+static void view_copy_buffers(nmo_view_t *view, const nmo_engine_frame_t *frame, int window_h)
+{
+    if (frame->width <= 0 || frame->height <= 0) {
+        return;
+    }
+    float sx = (float)view->view_w / (float)frame->width, sy = (float)view->view_h / (float)frame->height;
+    for (int32_t c = 0; c < frame->copy_count; c++) {
+        const nmo_engine_buffer_copy_t *copy = &frame->copies[c];
+        GLuint name = view_texture(view, copy->texture);
+        const view_texture_t *uploaded = view_uploaded(view, copy->texture);
+        if (name == 0 || uploaded == NULL || uploaded->cube || copy->face != 0) {
+            continue;
+        }
+        int w = (int)(copy->dest[2] - copy->dest[0]), h = (int)(copy->dest[3] - copy->dest[1]);
+        int x = view->view_x + (int)(copy->src[0] * sx);
+        int top = view->view_y + (int)(copy->src[1] * sy);
+        int read_w = (int)((float)w * sx), read_h = (int)((float)h * sy);
+        if (w <= 0 || h <= 0 || read_w <= 0 || read_h <= 0) {
+            continue;
+        }
+        uint8_t *read = (uint8_t *)malloc((size_t)read_w * (size_t)read_h * 4u);
+        uint8_t *texels = (uint8_t *)malloc((size_t)w * (size_t)h * 4u);
+        if (read != NULL && texels != NULL) {
+            glPixelStorei(GL_PACK_ALIGNMENT, 1);
+            glReadPixels(x, window_h - top - read_h, read_w, read_h, GL_RGBA, GL_UNSIGNED_BYTE, read);
+            for (int ty = 0; ty < h; ty++) {
+                int ry = read_h - 1 - (int)((float)ty * sy); /* GL's rows go up */
+                for (int tx = 0; tx < w; tx++) {
+                    int rx = (int)((float)tx * sx);
+                    memcpy(&texels[((size_t)ty * (size_t)w + (size_t)tx) * 4u],
+                           &read[((size_t)ry * (size_t)read_w + (size_t)rx) * 4u], 4u);
+                }
+            }
+            glBindTexture(GL_TEXTURE_2D, name);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, (GLint)copy->dest[0], (GLint)copy->dest[1], w, h, GL_RGBA,
+                            GL_UNSIGNED_BYTE, texels);
+        }
+        free(read);
+        free(texels);
+    }
+}
+
 static nmo_status_t view_render(nmo_view_t *view, nmo_engine_frame_t *out_frame)
 {
     nmo_engine_frame_t frame;
@@ -1832,6 +1881,7 @@ static nmo_status_t view_render(nmo_view_t *view, nmo_engine_frame_t *out_frame)
     /* Without CK_RENDER_CLEARBACK the frames before stay under the new one (Global Blur) */
     if (!(frame.render_options & 0x20u) && view_kept_begin(view, window_w, window_h)) {
         view_draw_frame(view, &frame, window_h);
+        view_copy_buffers(view, &frame, window_h);
         view_kept_end(view, window_w, window_h);
     } else {
         glViewport(0, 0, window_w, window_h);
@@ -1840,6 +1890,7 @@ static nmo_status_t view_render(nmo_view_t *view, nmo_engine_frame_t *out_frame)
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         view_draw_frame(view, &frame, window_h);
+        view_copy_buffers(view, &frame, window_h);
     }
     view_text_end_frame(view->text);
     *out_frame = frame;

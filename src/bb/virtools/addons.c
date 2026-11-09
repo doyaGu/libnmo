@@ -349,18 +349,26 @@ static int bb_water_texture(blk_t *b)
 
 /*
  * Copy Buffer to Texture: CKTexture::CopyContext of the render context's
- * Source rectangle into the target's Destination one when they have the same
- * size. The engine has no frame buffer to read (the host renders), so it is
- * an effect.
+ * Source rectangle into the target's Destination one (face 0) when they have
+ * the same size. The host renders, so the copy goes with the next frame (see
+ * nmo_engine_buffer_copy_t).
  */
 static int bb_copy_buffer_to_texture(blk_t *b)
 {
-    if (eng_texture(b->engine, nmo_engine_block_target(b)) == NULL) {
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (target == 0) {
         return NMO_ENGINE_BR_OWNERERROR;
     }
     IN_OFF(b, 0);
     OUT_ON(b, 0);
-    eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, 0, 0);
+    float src[4] = {0.0f, 0.0f, 0.0f, 0.0f}, dest[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    nmo_engine_block_get_input_value(b, 0, src, sizeof(src));
+    nmo_engine_block_get_input_value(b, 1, dest, sizeof(dest));
+    if (eng_texture(b->engine, target) != NULL && dest[2] - dest[0] == src[2] - src[0] &&
+        dest[3] - dest[1] == src[3] - src[1]) {
+        eng_render_copy_buffer(b->engine, target, 0, src, dest);
+        eng_emit(b->engine, NMO_ENGINE_EVENT_EFFECT, b->node, 0, 0);
+    }
     return NMO_ENGINE_BR_OK;
 }
 

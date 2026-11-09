@@ -176,6 +176,19 @@ typedef struct nmo_engine_pass nmo_engine_pass_t;
 typedef struct nmo_engine_view nmo_engine_view_t;
 
 /* A frame: the view, then what to draw (the engine's until the next call). */
+/*
+ * CKTexture::CopyContext (Copy Buffer to Texture): the frame's `src` rectangle (left, top,
+ * right, bottom in render context pixels) into slot `face` of `texture` at `dest` (texels,
+ * the same size). CK copies the back buffer as the block runs, so what the frame before
+ * drew; a host copies once it drew the frame. The copy goes to the texture as the device
+ * holds it: the texture shows it, the engine's image unchanged, until that image changes.
+ */
+typedef struct nmo_engine_buffer_copy {
+    nmo_object_id_t texture;
+    int32_t face;
+    float src[4], dest[4];
+} nmo_engine_buffer_copy_t;
+
 typedef struct nmo_engine_frame {
     int32_t width, height;   /* the render context */
     nmo_object_id_t camera;  /* the attached camera; 0 for none */
@@ -217,6 +230,10 @@ typedef struct nmo_engine_frame {
        `over_2d`. A view has none of its own. */
     const nmo_engine_view_t *views;
     int32_t view_count;
+    /* The copies of the frame buffer blocks asked for since the frame before (the main frame's
+       alone) */
+    const nmo_engine_buffer_copy_t *copies;
+    int32_t copy_count;
 } nmo_engine_frame_t;
 
 struct nmo_engine_view {

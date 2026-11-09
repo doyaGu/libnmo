@@ -45,6 +45,7 @@
 #define GUID_ANIMATION_RECORDER NMO_GUID(0x00532d07, 0x1db631cc)
 #define GUID_LIGHTMAP NMO_GUID(0x4a797d21, 0x214d37f9)
 #define GUID_STATIC_LIGHTMAP NMO_GUID(0x4a797d21, 0x214d37fa)
+#define GUID_COPY_BUFFER_TO_TEXTURE NMO_GUID(0x0ef6070d, 0x67166889)
 
 static nmo_object_id_t local_of(engine_fixture_t *f, nmo_object_id_t block, size_t pos)
 {
@@ -930,6 +931,44 @@ TEST(engine_addons, lightmap_load_draws_the_saved_lightmaps)
     fixture_end(&f);
 }
 
+/* Copy Buffer to Texture asks the next frame for a copy when Source and Destination have the
+   same size, none otherwise */
+TEST(engine_addons, copy_buffer_to_texture_asks_the_frame_for_a_copy)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t picture = fixture_create(&f, NMO_CID_TEXTURE, "Picture");
+    ASSERT_TRUE(picture != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t same = fixture_block(&f, GUID_COPY_BUFFER_TO_TEXTURE, "Same");
+    nmo_object_id_t other = fixture_block(&f, GUID_COPY_BUFFER_TO_TEXTURE, "Other");
+    ASSERT_TRUE(same != 0 && other != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, same, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, same, 0), BLOCK_IN(&f, other, 0), 0);
+    const float src[4] = {10, 20, 42, 36}, dest[4] = {0, 16, 32, 32}, small[4] = {0, 0, 16, 16};
+    nmo_object_id_t blocks[2] = {same, other};
+    for (int i = 0; i < 2; i++) {
+        fixture_input_int(&f, fixture_target(&f, blocks[i]), (int32_t)picture);
+        fixture_input_value(&f, BLOCK_PIN(&f, blocks[i], 0), src, sizeof(src));
+        fixture_input_value(&f, BLOCK_PIN(&f, blocks[i], 1), i == 0 ? dest : small, sizeof(dest));
+    }
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_EQ(1, frame.copy_count);
+    ASSERT_EQ(picture, frame.copies[0].texture);
+    ASSERT_EQ(0, frame.copies[0].face);
+    ASSERT_EQ(0, memcmp(src, frame.copies[0].src, sizeof(src)));
+    ASSERT_EQ(0, memcmp(dest, frame.copies[0].dest, sizeof(dest)));
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_EQ(0, frame.copy_count); /* asked for once */
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_addons, filter_and_blend_textures_use_the_dll_integer_arithmetic);
 REGISTER_TEST(engine_addons, water_texture_steps_the_older_slot_and_swaps);
@@ -946,4 +985,5 @@ REGISTER_TEST(engine_addons, animation_recorder_keys_the_object_each_frame);
 REGISTER_TEST(engine_addons, lightmap_lights_the_ground_and_draws_over_it);
 REGISTER_TEST(engine_addons, static_lightmap_makes_a_lightmapped_copy);
 REGISTER_TEST(engine_addons, lightmap_load_draws_the_saved_lightmaps);
+    REGISTER_TEST(engine_addons, copy_buffer_to_texture_asks_the_frame_for_a_copy);
 TEST_MAIN_END()

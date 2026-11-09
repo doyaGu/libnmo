@@ -255,6 +255,9 @@ typedef struct eng_render {
     int32_t viewport[4];
     /* The views asked for this frame, and those made, each with the draws from its first */
     ENG_VEC(eng_view_request_t) view_requests;
+    /* The buffer copies asked for since the frame before, and the frame's */
+    ENG_VEC(nmo_engine_buffer_copy_t) copy_requests;
+    ENG_VEC(nmo_engine_buffer_copy_t) copies;
     ENG_VEC(nmo_engine_view_t) views;
     ENG_VEC(size_t) view_firsts;
     bool making_views;
@@ -283,6 +286,9 @@ void eng_render_set_view_rect(nmo_engine_t *engine, const nmo_rect_t *rect);
 /* A render of the scene into part of the screen once, in the next frame drawn (a temporary
    render callback); none asked while views are being made */
 void eng_render_request_view(nmo_engine_t *engine, const eng_view_request_t *request);
+/* CKTexture::CopyContext into `face`: the next frame's buffer copies get it */
+void eng_render_copy_buffer(nmo_engine_t *engine, nmo_object_id_t texture, int32_t face, const float src[4],
+                            const float dest[4]);
 /* CKRenderContext::Transform of a world point into render context pixels. */
 void eng_render_project(nmo_engine_t *engine, const struct eng_vector *world, struct eng_vector *screen);
 /* The selected camera's inverse-world times projection, and its near-plane origin. */
