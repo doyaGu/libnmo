@@ -405,7 +405,7 @@ MATH_OP(op_inverse_matrix)
     (void)p2_data;
     nmo_matrix_t mat;
     memcpy(&mat, p1_data, sizeof(mat));
-    const float(*m)[4] = mat.m;
+    const float(*m)[4] = (const float(*)[4])mat.m;
     const double a00 = m[0][0], a01 = m[0][1], a02 = m[0][2];
     const double a10 = m[1][0], a11 = m[1][1], a12 = m[1][2];
     const double a20 = m[2][0], a21 = m[2][1], a22 = m[2][2];

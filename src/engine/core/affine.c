@@ -78,7 +78,7 @@ static void affine_rank_one(double m[3][3], double q[3][3]) {
     double work[3][3];
     for (int i = 0; i < 3; ++i) for (int j = 0; j < 3; ++j) work[i][j] = m[i][j];
     for (int i = 0; i < 3; ++i) for (int j = 0; j < 3; ++j) q[i][j] = i == j ? 1.0 : 0.0;
-    const int column = affine_max_column(work);
+    const int column = affine_max_column((const double (*)[3])work);
     if (column < 0) return;
     double u[3] = {work[0][column], work[1][column], work[2][column]};
     affine_reflector(u);
@@ -131,7 +131,7 @@ static bool affine_polar(const eng_matrix_t *matrix, float orthogonal[3][3], flo
             iterate[column][row] = input[row][column];
         }
     }
-    const double original_determinant = affine_determinant(input);
+    const double original_determinant = affine_determinant((const double (*)[3])input);
     bool first_iteration = true;
     bool converged = false;
     for (int iteration = 0; iteration < 128; iteration++) {
@@ -168,7 +168,7 @@ static bool affine_polar(const eng_matrix_t *matrix, float orthogonal[3][3], flo
             ? ldexp(original_determinant, -3 * exponent)
             : affine_dot(scaled[0], cofactors[0]);
         if (original_determinant == 0.0) {
-            affine_rank_two(scaled, cofactors, iterate);
+            affine_rank_two(scaled, (const double (*)[3])cofactors, iterate);
             converged = true;
             break;
         }
@@ -341,7 +341,7 @@ bool eng_quaternion_from_matrix(const eng_matrix_t *matrix, nmo_quaternion_t *ou
         int a = (c+1)%3, b = (c+2)%3;
         rows[2][c] = (float)((double)rows[0][a]*rows[1][b]-(double)rows[0][b]*rows[1][a]);
     }
-    affine_quaternion(rows,q);
+    affine_quaternion((const float (*)[3])rows, q);
     for (int i = 0; i < 4; i++) if (!isfinite(q[i])) return false;
     *out = (nmo_quaternion_t){q[0],q[1],q[2],q[3]};
     return true;
@@ -449,8 +449,8 @@ bool eng_matrix_decompose(const eng_matrix_t *matrix, bool principal_axes,
         if (!affine_polar(&transposed, rows, symmetric, &reflection)) return false;
         if (scale != NULL) {
             float eigenvectors[3][3];
-            affine_spectral(symmetric, eigenvectors, values);
-            affine_quaternion(eigenvectors, q);
+            affine_spectral((const float (*)[3])symmetric, eigenvectors, values);
+            affine_quaternion((const float (*)[3])eigenvectors, q);
             affine_permute_scale(q, values);
             for (int i = 0; i < 3; i++) values[i] *= reflection;
         }
@@ -471,7 +471,7 @@ bool eng_matrix_decompose(const eng_matrix_t *matrix, bool principal_axes,
     }
     eng_matrix_t result;
     if (rotation != NULL) {
-        affine_quaternion(rows, q);
+        affine_quaternion((const float (*)[3])rows, q);
         affine_rotation(q, &result);
         if (principal_axes) {
             for (int r = 0; r < 3; r++) for (int c = r + 1; c < 3; c++) {

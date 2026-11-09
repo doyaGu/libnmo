@@ -244,7 +244,7 @@ static void quaternion_from_matrix(const float m[4][4], bool unit, float q[4])
     } else {
         normalize_rotation_rows(m, rows);
     }
-    quaternion_from_rows(rows, q);
+    quaternion_from_rows((const float (*)[3])rows, q);
 }
 
 /* VxQuaternion::ToMatrix: the rotation, no translation */
@@ -276,7 +276,7 @@ void vx_interpolate_matrix(float step, const float a[4][4], const float c[4][4],
     for (int e = 0; e < 2; e++) {
         float rows[3][3];
         normalize_rotation_rows(ends[e], rows);
-        quaternion_from_rows(rows, q[e]);
+        quaternion_from_rows((const float (*)[3])rows, q[e]);
         for (int i = 0; i < 3; i++) {
             position[e][i] = ends[e][3][i];
             scale[e][i] = (float)(((double)rows[i][0] * ends[e][i][0] +
@@ -330,7 +330,7 @@ static int bb_interpolator_matrix(blk_t *b)
     float a[4][4] = {{0}}, c[4][4] = {{0}}, r[4][4];
     nmo_engine_block_get_input_value(b, 0, a, sizeof(a));
     nmo_engine_block_get_input_value(b, 1, c, sizeof(c));
-    vx_interpolate_matrix(get_in_float(b, 2, 0.0f), a, c, r);
+    vx_interpolate_matrix(get_in_float(b, 2, 0.0f), (const float (*)[4])a, (const float (*)[4])c, r);
     nmo_engine_block_set_output_value(b, 0, r, sizeof(r));
     IN_OFF(b, 0);
     OUT_ON(b, 0);
@@ -352,8 +352,8 @@ static int bb_interpolator_orientation(blk_t *b)
         return NMO_ENGINE_BR_PARAMETERERROR;
     }
     float qa[4], qc[4], q[4], m[4][4];
-    quaternion_from_matrix(b->engine->entities.data[ea].world.m, unit, qa);
-    quaternion_from_matrix(b->engine->entities.data[ec].world.m, unit, qc);
+    quaternion_from_matrix((const float (*)[4])b->engine->entities.data[ea].world.m, unit, qa);
+    quaternion_from_matrix((const float (*)[4])b->engine->entities.data[ec].world.m, unit, qc);
     quaternion_slerp(get_in_float(b, 2, 0.0f), qa, qc, q);
     quaternion_to_matrix(q, m);
     if (!unit) {

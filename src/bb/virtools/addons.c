@@ -2072,7 +2072,7 @@ static int bb_create_decal(blk_t *b)
         if (eng_camera_view_projection(engine, camera_id, &total_matrix, NULL)) {
             for (int32_t v = 0; v < welded; v++) {
                 const nmo_vector_t *p = &made->vertices[v].position;
-                const float (*m)[4] = total_matrix.m;
+                const float (*m)[4] = (const float (*)[4])total_matrix.m;
                 float x = p->x * m[0][0] + p->y * m[1][0] + p->z * m[2][0] + m[3][0];
                 float y = p->x * m[0][1] + p->y * m[1][1] + p->z * m[2][1] + m[3][1];
                 float w = p->x * m[0][3] + p->y * m[1][3] + p->z * m[2][3] + m[3][3];
