@@ -26,6 +26,8 @@ typedef struct eng_mesh {
     int32_t vertex_count;
     nmo_vertex_t *vertices;
     uint32_t *colors;
+    uint32_t *speculars; /* the prelit vertices' specular colors; NULL for black */
+    uint32_t version;    /* bumped (render.mesh_version) when a block changes its colors */
     int32_t face_count;
     uint16_t *indices;
     nmo_face_t *faces;
@@ -43,6 +45,7 @@ typedef struct eng_mesh_copy {
     nmo_object_id_t mesh;
     nmo_vertex_t *vertices;
     uint32_t *colors;   /* NULL: the file's */
+    uint32_t *speculars; /* the vertices' specular colors; NULL: the file's */
     bool prelit;
     uint32_t version;   /* bumped by each change */
     bool geometry_changed;
@@ -415,6 +418,9 @@ void eng_mesh_build_face_normals(nmo_engine_t *engine, eng_mesh_copy_t *copy);
 void eng_mesh_reset_vertices(nmo_engine_t *engine, eng_mesh_copy_t *copy);
 /* The copy's vertex colors, copied from the file the first time; NULL for no vertices */
 uint32_t *eng_mesh_copy_colors(nmo_engine_t *engine, eng_mesh_copy_t *copy);
+/* The copy's vertex specular colors (CKMesh::GetSpecularColorsPtr), copied from the file the
+   first time; NULL for no vertices */
+uint32_t *eng_mesh_copy_speculars(nmo_engine_t *engine, eng_mesh_copy_t *copy);
 /* The mesh's vertices become `count` taken from `sources` (vertex i from sources[i], a new zeroed
    white one for -1; sources NULL: vertex i from vertex i): positions, normals, UVs (the
    channels' too), colors and weights, in the state and its copy. Faces are left alone. False on

@@ -666,13 +666,12 @@ static nmo_status_t op_get_vertex_color(nmo_engine_t *engine, eng_param_t *src1,
 static nmo_status_t op_get_vertex_specular(nmo_engine_t *engine, eng_param_t *src1,
                                            eng_param_t *src2, eng_param_t *out)
 {
-    const nmo_mesh_state_t *state = (const nmo_mesh_state_t *)param_state(engine, src1, CKPGUID_MESH);
-    int32_t index = (int32_t)param_u32(src2);
-    if (state == NULL || index < 0 || (uint32_t)index >= state->vertex_count) {
+    nmo_engine_mesh_t mesh;
+    int32_t index;
+    if (!param_mesh_vertex(engine, src1, src2, &mesh, &index)) {
         return NMO_OK;
     }
-    return write_argb(engine, out,
-                      state->vertex_specular != NULL ? state->vertex_specular[index] : 0u);
+    return write_argb(engine, out, mesh.speculars != NULL ? mesh.speculars[index] : 0u);
 }
 
 /* CKFloatGetVertexWeightMeshInt: 0 for a mesh without weights */

@@ -11,6 +11,8 @@
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_camera_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
+#include "object/builtin/nmo_material_schemas.h"
+#include "object/builtin/nmo_sprite3d_schemas.h"
 #include "object/nmo_ref.h"
 
 #include <math.h>
@@ -45,6 +47,7 @@
 #define GUID_SET_MIPMAP_TEXTURE NMO_GUID(0x6e407fcf, 0x0eff06a5)
 #define GUID_ENVIRONMENT_MAPPING NMO_GUID(0x10d1c997, 0x99dabef4)
 #define GUID_SCREEN_MAPPING NMO_GUID(0x58ef12ca, 0x26805940)
+#define GUID_SET_PRELIT_COLOR NMO_GUID(0x60415d44, 0x0d0174ea)
 
 #define STEP_MS 10.0f
 
@@ -627,6 +630,49 @@ TEST(engine_materials, screen_mapping_without_perspective_draws_at_the_screen)
     fixture_end(&f);
 }
 
+/* Set Prelit Color: a mesh's vertices take the Filtering Color and the Additional Color as their
+ * specular one; a 3D sprite's material takes them as its diffuse and specular */
+TEST(engine_materials, set_prelit_color_sets_colors_and_speculars)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t mesh = 0;
+    nmo_object_id_t quad = quad_object(&f, 0, &mesh);
+    nmo_object_id_t material = fixture_create(&f, NMO_CID_MATERIAL, "Sprite Material");
+    nmo_object_id_t sprite = fixture_create(&f, NMO_CID_SPRITE3D, "Sprite");
+    nmo_sprite3d_state_t *state = (nmo_sprite3d_state_t *)fixture_state(&f, sprite);
+    ASSERT_TRUE(quad != 0 && material != 0 && state != NULL);
+    ((nmo_material_state_t *)fixture_state(&f, material))->has_material_data = 1;
+    state->has_data = 1;
+    state->material = nmo_ref_from_id(material);
+    nmo_object_id_t on_mesh = block_on(&f, GUID_SET_PRELIT_COLOR, "Mesh", quad, 0, 0);
+    nmo_object_id_t on_sprite = block_on(&f, GUID_SET_PRELIT_COLOR, "Sprite", sprite, 0, 0);
+    ASSERT_TRUE(on_mesh != 0 && on_sprite != 0);
+    const float red[4] = {1.0f, 0.0f, 0.0f, 1.0f}, gray[4] = {0.5f, 0.5f, 0.5f, 0.0f};
+    nmo_object_id_t blocks[2] = {on_mesh, on_sprite};
+    for (int i = 0; i < 2; i++) {
+        fixture_input_value(&f, BLOCK_PIN(&f, blocks[i], 0), red, sizeof(red));
+        fixture_input_value(&f, BLOCK_PIN(&f, blocks[i], 1), gray, sizeof(gray));
+    }
+    start(&f);
+    step(&f, 1);
+
+    nmo_engine_mesh_t desc;
+    ASSERT_TRUE(nmo_engine_mesh(f.engine, mesh, &desc));
+    ASSERT_TRUE(desc.prelit);
+    ASSERT_EQ(0xFFFF0000u, desc.colors[2]);
+    ASSERT_NOT_NULL(desc.speculars);
+    ASSERT_EQ(0x007F7F80u, desc.speculars[2]); /* RGBAFTOCOLOR masks red and green, rounds blue */
+    nmo_engine_material_t sprite_material;
+    ASSERT_TRUE(nmo_engine_material(f.engine, material, &sprite_material));
+    ASSERT_FLOAT_EQ(1.0f, sprite_material.diffuse[0], 1e-6f);
+    ASSERT_FLOAT_EQ(0.0f, sprite_material.diffuse[1], 1e-6f);
+    ASSERT_FLOAT_EQ(127.0f / 255.0f, sprite_material.specular[0], 1e-6f);
+    ASSERT_FLOAT_EQ(128.0f / 255.0f, sprite_material.specular[2], 1e-6f);
+    ASSERT_FLOAT_EQ(0.0f, sprite_material.specular[3], 1e-6f);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_materials, setters_change_the_material_the_engine_keeps);
     REGISTER_TEST(engine_materials, set_material_replaces_then_applies_and_mesh_flags_follow);
@@ -638,4 +684,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_materials, environment_mapping_maps_the_normals_at_the_next_render);
     REGISTER_TEST(engine_materials, screen_mapping_projects_through_the_camera);
     REGISTER_TEST(engine_materials, screen_mapping_without_perspective_draws_at_the_screen);
+    REGISTER_TEST(engine_materials, set_prelit_color_sets_colors_and_speculars);
 TEST_MAIN_END()

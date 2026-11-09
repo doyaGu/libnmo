@@ -75,6 +75,8 @@ typedef struct nmo_engine_draw {
     nmo_object_id_t material;
     nmo_object_id_t texture;
     uint32_t color, color2;
+    uint32_t specular;      /* quad: a specular color added after texturing (Planar Filter's
+                               Additional Color); black adds nothing */
     float skew;
     bool nearest;           /* text of a font with Disable Filter */
     bool background;        /* a background 2D entity: no depth test or write */
@@ -288,6 +290,9 @@ typedef struct nmo_engine_mesh {
     int32_t vertex_count;
     const nmo_vertex_t *vertices; /* position, normal, uv */
     const uint32_t *colors;       /* prelit vertex colors (ARGB); NULL for none */
+    /* prelit vertex specular colors (ARGB), added after texturing (RCKMesh::DefaultRender turns
+       VXRENDERSTATE_SPECULARENABLE on for a prelit mesh); NULL for black */
+    const uint32_t *speculars;
     int32_t face_count;
     const uint16_t *indices;      /* three a face */
     const nmo_face_t *faces;      /* each face's material group */

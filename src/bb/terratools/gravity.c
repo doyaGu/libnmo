@@ -190,8 +190,13 @@ static int bb_sky(blk_t *b)
         float v = color[i] < 0.0f ? 0.0f : color[i] > 1.0f ? 1.0f : color[i];
         argb |= (uint32_t)(v * 255.0f + 0.5f) << (i == 3 ? 24 : 16 - 8 * i);
     }
+    bool changed = false;
     for (int32_t v = 0; v < mesh->vertex_count; v++) {
+        changed = changed || mesh->colors[v] != argb;
         mesh->colors[v] = argb;
+    }
+    if (changed) {
+        mesh->version = ++engine->render.mesh_version;
     }
     if (IN_ACTIVE(b, 1)) {
         IN_OFF(b, 1);

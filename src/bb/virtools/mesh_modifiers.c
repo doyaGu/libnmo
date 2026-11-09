@@ -363,8 +363,8 @@ static int bb_set_face_properties(blk_t *b)
 
 /*
  * Set Vertex Properties: the vertex's position, then its colors (a prelit
- * mesh) or its normal (a lit one), then its UVs in a channel, each when its
- * input has a value. The engine keeps no specular colors.
+ * mesh: color and specular color) or its normal (a lit one), then its UVs in
+ * a channel, each when its input has a value.
  */
 static int bb_set_vertex_properties(blk_t *b)
 {
@@ -391,6 +391,11 @@ static int bb_set_vertex_properties(blk_t *b)
         if (nmo_engine_block_get_input_value(b, 3, color, sizeof(color)) == NMO_OK &&
             (colors = eng_mesh_copy_colors(engine, copy)) != NULL) {
             colors[vertex] = vxcolor_to_color(color);
+        }
+        uint32_t *speculars = NULL;
+        if (nmo_engine_block_get_input_value(b, 4, color, sizeof(color)) == NMO_OK &&
+            (speculars = eng_mesh_copy_speculars(engine, copy)) != NULL) {
+            speculars[vertex] = vxcolor_to_color(color);
         }
     } else if (nmo_engine_block_get_input_value(b, 2, &v, sizeof(v)) == NMO_OK) {
         target->normal = (nmo_vector_t){v.x, v.y, v.z};

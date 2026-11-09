@@ -283,16 +283,29 @@ static int cb_clouds_around(blk_t *b, uint32_t message) { return sky_callback(b,
 
 static int cb_sky_around_cubemap(blk_t *b, uint32_t message) { return sky_callback(b, message, SKY_CUBEMAP); }
 
-/* The cube's vertex colors: the Filtering Color (RGBAFTOCOLOR); the Additional Color is
-   their specular one, which the engine's meshes do not keep */
+/* The cube's vertex colors: the Filtering Color, and the Additional Color (the next input) their
+   specular one, both through RGBAFTOCOLOR */
 static void sky_colors(blk_t *b, sky_cube_t *cube, int input)
 {
-    float color[4] = {1.0f, 1.0f, 1.0f, 0.5f};
+    float color[4] = {1.0f, 1.0f, 1.0f, 0.5f}, additional[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     nmo_engine_block_get_input_value(b, input, color, sizeof(color));
-    uint32_t argb = rgbaf_to_color(color);
+    nmo_engine_block_get_input_value(b, input + 1, additional, sizeof(additional));
+    uint32_t argb = rgbaf_to_color(color), specular = rgbaf_to_color(additional);
     eng_mesh_t *mesh = eng_render_mesh(b->engine, cube->mesh);
+    if (mesh != NULL && mesh->speculars == NULL && mesh->vertex_count > 0) {
+        mesh->speculars = (uint32_t *)calloc((size_t)mesh->vertex_count, sizeof(uint32_t));
+    }
+    bool changed = false;
     for (int32_t v = 0; mesh != NULL && mesh->colors != NULL && v < mesh->vertex_count; v++) {
+        changed = changed || mesh->colors[v] != argb ||
+                  (mesh->speculars != NULL && mesh->speculars[v] != specular);
         mesh->colors[v] = argb;
+        if (mesh->speculars != NULL) {
+            mesh->speculars[v] = specular;
+        }
+    }
+    if (changed) {
+        mesh->version = ++b->engine->render.mesh_version;
     }
 }
 

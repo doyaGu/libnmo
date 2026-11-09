@@ -292,31 +292,57 @@ static nmo_object_id_t entity_mesh(nmo_engine_t *engine, nmo_object_id_t id)
     return state != NULL ? eng_object_ref(engine, id, &state->current_mesh) : 0;
 }
 
+/* An ARGB dword back as RGBA floats, as the DLL turns RGBAFTOCOLOR's result into a VxColor */
+static void argb_to_floats(uint32_t argb, float out[4])
+{
+    out[0] = (float)((argb >> 16) & 0xFFu) * 0.0039215689f;
+    out[1] = (float)((argb >> 8) & 0xFFu) * 0.0039215689f;
+    out[2] = (float)(argb & 0xFFu) * 0.0039215689f;
+    out[3] = (float)(argb >> 24) * 0.0039215689f;
+}
+
 /*
  * Set Prelit Color: the target's current mesh becomes prelit, every vertex
- * the Filtering Color (the Additional Color is its specular, which the
- * engine does not keep).
+ * the Filtering Color, its specular the Additional Color (both through
+ * RGBAFTOCOLOR). A 3D sprite gets them as its material's diffuse and
+ * specular instead.
  */
 static int bb_set_prelit_color(blk_t *b)
 {
     nmo_engine_t *engine = b->engine;
     nmo_object_id_t target = nmo_engine_block_target(b);
-    eng_mesh_copy_t *mesh = eng_mesh_copy(engine, entity_mesh(engine, target));
-    nmo_engine_mesh_t desc;
-    if (mesh == NULL || !nmo_engine_mesh(engine, mesh->mesh, &desc)) {
+    if (target == 0) {
         return NMO_ENGINE_BR_OWNERERROR;
     }
-    float color[4] = {1.0f, 1.0f, 1.0f, 0.5f};
+    float color[4] = {1.0f, 1.0f, 1.0f, 0.5f}, additional[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     nmo_engine_block_get_input_value(b, 0, color, sizeof(color));
-    if (mesh->colors == NULL && desc.vertex_count > 0) {
-        mesh->colors = (uint32_t *)malloc((size_t)desc.vertex_count * sizeof(uint32_t));
+    nmo_engine_block_get_input_value(b, 1, additional, sizeof(additional));
+    uint32_t argb = rgbaf_to_color(color), specular = rgbaf_to_color(additional);
+    eng_sprite3d_t *sprite = nmo_engine_object_class(engine, target) == NMO_CID_SPRITE3D
+                                 ? eng_sprite3d(engine, target)
+                                 : NULL;
+    if (sprite != NULL) {
+        eng_material_t *material = eng_material(engine, sprite->material);
+        if (material != NULL) {
+            argb_to_floats(argb, material->desc.diffuse);
+            argb_to_floats(specular, material->desc.specular);
+        }
+    } else {
+        eng_mesh_copy_t *mesh = eng_mesh_copy(engine, entity_mesh(engine, target));
+        if (mesh == NULL) {
+            return NMO_ENGINE_BR_OWNERERROR;
+        }
+        uint32_t *colors = eng_mesh_copy_colors(engine, mesh);
+        uint32_t *speculars = eng_mesh_copy_speculars(engine, mesh);
+        nmo_engine_mesh_t desc;
+        int32_t count = nmo_engine_mesh(engine, mesh->mesh, &desc) ? desc.vertex_count : 0;
+        for (int32_t v = 0; colors != NULL && speculars != NULL && v < count; v++) {
+            colors[v] = argb;
+            speculars[v] = specular;
+        }
+        mesh->prelit = true;
+        mesh->version = ++engine->render.mesh_version;
     }
-    uint32_t argb = rgbaf_to_color(color);
-    for (int32_t v = 0; mesh->colors != NULL && v < desc.vertex_count; v++) {
-        mesh->colors[v] = argb;
-    }
-    mesh->prelit = true;
-    mesh->version = ++engine->render.mesh_version;
     IN_OFF(b, 0);
     OUT_ON(b, 0);
     eng_emit(engine, NMO_ENGINE_EVENT_EFFECT, b->node, target, 0);

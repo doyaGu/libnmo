@@ -205,8 +205,7 @@ static int cb_planar_filter(blk_t *b, uint32_t message)
 /*
  * PlanarFilterRender: the view's rect in Filtering Color, textured with
  * Texture (modulated, its alpha too), blended Source Blend and Dest Blend,
- * no Z. The Additional Color is the specular one the engine's draws have no
- * room for.
+ * no Z, with the Additional Color its specular one, added after texturing.
  */
 static void draw_filters(nmo_engine_t *engine, const visuals_t *visuals, float width, float height)
 {
@@ -231,6 +230,9 @@ static void draw_filters(nmo_engine_t *engine, const visuals_t *visuals, float w
             argb |= (uint32_t)(v * 255.0f + 0.5f) << (c == 3 ? 24 : 16 - 8 * c);
         }
         draw->color = draw->color2 = argb;
+        float additional[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        nmo_engine_block_get_input_value(b, 1, additional, sizeof(additional));
+        draw->specular = vxcolor_to_color(additional);
         draw->blend = true;
         draw->source_blend = get_in_int(b, 3, 5); /* VXBLEND_SRCALPHA */
         draw->dest_blend = get_in_int(b, 4, 6);   /* VXBLEND_INVSRCALPHA */

@@ -77,6 +77,7 @@ void eng_free_render(nmo_engine_t *engine)
         eng_mesh_t *mesh = &render->meshes.data[i];
         free(mesh->vertices);
         free(mesh->colors);
+        free(mesh->speculars);
         free(mesh->indices);
         free(mesh->faces);
         free(mesh->materials);
@@ -86,6 +87,7 @@ void eng_free_render(nmo_engine_t *engine)
         eng_mesh_copy_t *copy = &render->mesh_copies.data[i];
         free(copy->vertices);
         free(copy->colors);
+        free(copy->speculars);
         for (size_t c = 0; c < copy->channels.count; c++) {
             free((void *)copy->channels.data[c].uvs);
         }
@@ -682,6 +684,8 @@ bool nmo_engine_mesh(const nmo_engine_t *engine, nmo_object_id_t mesh, nmo_engin
         out->vertex_count = made->vertex_count;
         out->vertices = made->vertices;
         out->colors = made->colors;
+        out->speculars = made->speculars;
+        out->version = made->version;
         out->face_count = made->face_count;
         out->indices = made->indices;
         out->faces = made->faces;
@@ -701,6 +705,7 @@ bool nmo_engine_mesh(const nmo_engine_t *engine, nmo_object_id_t mesh, nmo_engin
     out->vertex_count = (int32_t)state->vertex_count;
     out->vertices = copy != NULL ? copy->vertices : state->vertices;
     out->colors = copy != NULL && copy->colors != NULL ? copy->colors : state->vertex_colors;
+    out->speculars = copy != NULL && copy->speculars != NULL ? copy->speculars : state->vertex_specular;
     out->version = copy != NULL ? copy->version : 0;
     out->channel_count = copy != NULL ? (int32_t)copy->channels.count : 0;
     out->channels = copy != NULL ? copy->channels.data : NULL;
@@ -795,6 +800,21 @@ void eng_mesh_reset_vertices(nmo_engine_t *engine, eng_mesh_copy_t *copy)
     }
     free(copy->colors);
     copy->colors = NULL;
+    free(copy->speculars);
+    copy->speculars = NULL;
+}
+
+uint32_t *eng_mesh_copy_speculars(nmo_engine_t *engine, eng_mesh_copy_t *copy)
+{
+    const nmo_mesh_state_t *state = eng_mesh_state(engine, copy->mesh);
+    uint32_t count = state != NULL ? state->vertex_count : 0;
+    if (copy->speculars == NULL && count > 0) {
+        copy->speculars = (uint32_t *)malloc(count * sizeof(uint32_t));
+        for (uint32_t v = 0; copy->speculars != NULL && v < count; v++) {
+            copy->speculars[v] = state->vertex_specular != NULL ? state->vertex_specular[v] : 0u;
+        }
+    }
+    return copy->speculars;
 }
 
 uint32_t *eng_mesh_copy_colors(nmo_engine_t *engine, eng_mesh_copy_t *copy)
@@ -855,12 +875,15 @@ bool eng_mesh_remap_vertices(nmo_engine_t *engine, nmo_object_id_t mesh, const i
     uint32_t *file_specular = (uint32_t *)nmo_arena_alloc(arena, room * sizeof(uint32_t), _Alignof(uint32_t));
     nmo_vertex_t *vertices = (nmo_vertex_t *)malloc(room * sizeof(nmo_vertex_t));
     uint32_t *colors = copy->colors != NULL ? (uint32_t *)malloc(room * sizeof(uint32_t)) : NULL;
+    uint32_t *speculars = copy->speculars != NULL ? (uint32_t *)malloc(room * sizeof(uint32_t)) : NULL;
     bool weights = state->vertex_weights != NULL && state->vertex_weight_count == old;
     float *file_weights = weights ? (float *)nmo_arena_alloc(arena, room * sizeof(float), _Alignof(float)) : NULL;
     if (file == NULL || file_colors == NULL || file_specular == NULL || vertices == NULL ||
-        (copy->colors != NULL && colors == NULL) || (weights && file_weights == NULL)) {
+        (copy->colors != NULL && colors == NULL) || (copy->speculars != NULL && speculars == NULL) ||
+        (weights && file_weights == NULL)) {
         free(vertices);
         free(colors);
+        free(speculars);
         return false;
     }
     /* the channels' UVs: the file's and the copy's own, made first so nothing changes on failure */
@@ -889,6 +912,7 @@ bool eng_mesh_remap_vertices(nmo_engine_t *engine, nmo_object_id_t mesh, const i
         free(file_uvs);
         free(vertices);
         free(colors);
+        free(speculars);
         return false;
     }
     for (size_t i = 0; i < n; i++) {
@@ -901,6 +925,9 @@ bool eng_mesh_remap_vertices(nmo_engine_t *engine, nmo_object_id_t mesh, const i
         file_specular[i] = kept && state->vertex_specular != NULL ? state->vertex_specular[from] : 0u;
         if (colors != NULL) {
             colors[i] = kept ? copy->colors[from] : 0xFFFFFFFFu;
+        }
+        if (speculars != NULL) {
+            speculars[i] = kept ? copy->speculars[from] : 0u;
         }
         if (weights) {
             file_weights[i] = kept ? state->vertex_weights[from] : 0.0f;
@@ -938,6 +965,8 @@ bool eng_mesh_remap_vertices(nmo_engine_t *engine, nmo_object_id_t mesh, const i
     copy->vertices = vertices;
     free(copy->colors);
     copy->colors = colors;
+    free(copy->speculars);
+    copy->speculars = speculars;
     state->vertices = file;
     state->vertex_colors = file_colors;
     state->vertex_specular = file_specular;
@@ -1143,9 +1172,11 @@ nmo_object_id_t eng_mesh_duplicate(nmo_engine_t *engine, nmo_object_id_t model, 
     if (vertices > 0) {
         memcpy(state->vertices, moved != NULL ? moved->vertices : from->vertices, vertices * sizeof(nmo_vertex_t));
         const uint32_t *colors = moved != NULL && moved->colors != NULL ? moved->colors : from->vertex_colors;
+        const uint32_t *speculars =
+            moved != NULL && moved->speculars != NULL ? moved->speculars : from->vertex_specular;
         for (size_t v = 0; v < vertices; v++) {
             state->vertex_colors[v] = colors != NULL ? colors[v] : 0xFFFFFFFFu;
-            state->vertex_specular[v] = from->vertex_specular != NULL ? from->vertex_specular[v] : 0u;
+            state->vertex_specular[v] = speculars != NULL ? speculars[v] : 0u;
         }
     }
     if (faces > 0) {

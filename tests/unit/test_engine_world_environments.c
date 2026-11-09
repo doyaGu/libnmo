@@ -224,6 +224,8 @@ TEST(engine_world_environments, sky_around_cubemap_draws_its_material_as_a_sky_m
     fixture_input_int(&f, BLOCK_PIN(&f, sky, 0), (int32_t)material);
     const float distance = 50.0f;
     fixture_input_value(&f, BLOCK_PIN(&f, sky, 1), &distance, sizeof(distance));
+    const float additional[4] = {0.0f, 0.0f, 1.0f, 0.0f};
+    fixture_input_value(&f, BLOCK_PIN(&f, sky, 4), additional, sizeof(additional));
     fixture_commit(&f, NULL);
     ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
     f.engine->render.camera = camera;
@@ -240,6 +242,9 @@ TEST(engine_world_environments, sky_around_cubemap_draws_its_material_as_a_sky_m
     nmo_engine_mesh_t mesh;
     ASSERT_TRUE(nmo_engine_mesh(f.engine, draw->mesh, &mesh));
     ASSERT_EQ(8, mesh.vertex_count);
+    ASSERT_NOT_NULL(mesh.speculars);
+    ASSERT_EQ(0x000000FFu, mesh.speculars[5]); /* the Additional Color */
+    ASSERT_TRUE(mesh.version != 0);           /* the colors changed: the host converts them again */
     ASSERT_EQ(material, nmo_engine_mesh_material(f.engine, draw->mesh, 0));
     nmo_engine_material_t own;
     ASSERT_TRUE(nmo_engine_material(f.engine, material, &own));

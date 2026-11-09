@@ -82,6 +82,7 @@ typedef struct view_mesh {
     uint16_t **indices;
     int32_t *counts;
     uint8_t *colors;
+    uint8_t *speculars; /* the prelit specular colors as RGBA bytes; NULL when all black */
     uint32_t version; /* the mesh's colors were converted at */
 } view_mesh_t;
 
@@ -458,12 +459,28 @@ static const view_texture_t *view_uploaded(const nmo_view_t *view, nmo_object_id
     return NULL;
 }
 
-/* The prelit colors as RGBA bytes */
+/* The prelit colors as RGBA bytes, and the specular ones when one is not black */
 static void view_mesh_colors(view_mesh_t *cached, const nmo_engine_mesh_t *mesh)
 {
     free(cached->colors);
     cached->colors = NULL;
+    free(cached->speculars);
+    cached->speculars = NULL;
     cached->version = mesh->version;
+    bool specular = false;
+    for (int32_t v = 0; mesh->speculars != NULL && v < mesh->vertex_count && !specular; v++) {
+        specular = (mesh->speculars[v] & 0xFFFFFFu) != 0;
+    }
+    if (specular) {
+        cached->speculars = (uint8_t *)malloc((size_t)mesh->vertex_count * 4u);
+        for (int32_t v = 0; cached->speculars != NULL && v < mesh->vertex_count; v++) {
+            uint32_t c = mesh->speculars[v];
+            cached->speculars[v * 4 + 0] = (uint8_t)(c >> 16);
+            cached->speculars[v * 4 + 1] = (uint8_t)(c >> 8);
+            cached->speculars[v * 4 + 2] = (uint8_t)c;
+            cached->speculars[v * 4 + 3] = (uint8_t)(c >> 24);
+        }
+    }
     if (mesh->colors == NULL || mesh->vertex_count <= 0) {
         return;
     }
@@ -1027,6 +1044,14 @@ static void view_draw_mesh_as(nmo_view_t *view, const nmo_engine_frame_t *frame,
         glEnableClientState(GL_COLOR_ARRAY);
         glColorPointer(4, GL_UNSIGNED_BYTE, 0, cached->colors);
     }
+    /* RCKMesh::DefaultRender turns VXRENDERSTATE_SPECULARENABLE on for a prelit mesh: its
+       vertices' specular colors are added after texturing */
+    bool summed = prelit && cached->speculars != NULL;
+    if (summed) {
+        glEnable(GL_COLOR_SUM);
+        glEnableClientState(GL_SECONDARY_COLOR_ARRAY);
+        glSecondaryColorPointer(3, GL_UNSIGNED_BYTE, 4, cached->speculars);
+    }
     /* With a folded channel the device adds the specular after the texture stages */
     bool folded = false;
     for (int32_t c = 0; c < mesh.channel_count && !folded; c++) {
@@ -1088,6 +1113,10 @@ static void view_draw_mesh_as(nmo_view_t *view, const nmo_engine_frame_t *frame,
             glDepthMask(GL_FALSE);
         }
         glDrawElements(GL_TRIANGLES, cached->counts[g], GL_UNSIGNED_SHORT, cached->indices[g]);
+    }
+    if (summed) {
+        glDisableClientState(GL_SECONDARY_COLOR_ARRAY);
+        glDisable(GL_COLOR_SUM);
     }
     /* RCKMesh::DefaultRender with the global render mode's wireframe: every face again in lines,
        in the vertex colors, untextured and unlit, with the projection's depth translation times
@@ -1248,6 +1277,12 @@ static void view_draw_quad(nmo_view_t *view, const nmo_engine_draw_t *draw)
     float top[4], bottom[4];
     view_color(draw->color, top);
     view_color(draw->color2, bottom);
+    bool summed = (draw->specular & 0xFFFFFFu) != 0;
+    if (summed) { /* VXRENDERSTATE_SPECULARENABLE and the vertices' specular color */
+        glEnable(GL_COLOR_SUM);
+        glSecondaryColor3ub((GLubyte)(draw->specular >> 16), (GLubyte)(draw->specular >> 8),
+                            (GLubyte)draw->specular);
+    }
     glBegin(GL_TRIANGLE_FAN);
     glColor4fv(top);
     glTexCoord2f(draw->uv[0], draw->uv[1]);
@@ -1260,6 +1295,10 @@ static void view_draw_quad(nmo_view_t *view, const nmo_engine_draw_t *draw)
     glTexCoord2f(draw->uv[0], draw->uv[3]);
     glVertex2f(draw->rect[0], draw->rect[3]);
     glEnd();
+    if (summed) {
+        glSecondaryColor3ub(0, 0, 0);
+        glDisable(GL_COLOR_SUM);
+    }
 }
 
 /* A sprite text: its sprite's pixels, blended over the frame without Z */
@@ -2133,6 +2172,7 @@ void nmo_view_close(nmo_view_t *view)
         free(view->meshes[i].indices);
         free(view->meshes[i].counts);
         free(view->meshes[i].colors);
+        free(view->meshes[i].speculars);
     }
     free(view->meshes);
     view_audio_close(view->audio);

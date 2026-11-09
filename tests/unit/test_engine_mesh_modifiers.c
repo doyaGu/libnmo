@@ -222,6 +222,7 @@ TEST(engine_mesh_modifiers, face_and_vertex_blocks_edit_the_target_mesh)
     fixture_begin_document(&f);
     nmo_object_id_t mesh = grid_mesh(&f, "Mesh", 2, 0.0f);
     ASSERT_TRUE(mesh != 0);
+    ((nmo_mesh_state_t *)fixture_state(&f, mesh))->flags |= VXMESH_PRELITMODE; /* colors, not normals */
     f.script_id = fixture_add_script(&f, "Script", &f.script_in);
     fixture_begin_edit(&f);
     nmo_object_id_t invert = fixture_block(&f, GUID_INVERT_WINDING, "Invert");
@@ -240,6 +241,9 @@ TEST(engine_mesh_modifiers, face_and_vertex_blocks_edit_the_target_mesh)
     fixture_input_int(&f, BLOCK_PIN(&f, vertex, 0), 3);
     const float position[3] = {9.0f, 8.0f, 7.0f};
     fixture_input_value(&f, BLOCK_PIN(&f, vertex, 1), position, sizeof(position));
+    const float red[4] = {1.0f, 0.0f, 0.0f, 1.0f}, blue[4] = {0.0f, 0.0f, 1.0f, 1.0f};
+    fixture_input_value(&f, BLOCK_PIN(&f, vertex, 3), red, sizeof(red));
+    fixture_input_value(&f, BLOCK_PIN(&f, vertex, 4), blue, sizeof(blue)); /* Vertex Specular Color */
     fixture_commit(&f, NULL);
 
     ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
@@ -255,6 +259,10 @@ TEST(engine_mesh_modifiers, face_and_vertex_blocks_edit_the_target_mesh)
     ASSERT_EQ(1, out.indices[5]);
     ASSERT_FLOAT_EQ(9.0f, out.vertices[3].position.x, 0.0f);
     ASSERT_FLOAT_EQ(7.0f, out.vertices[3].position.z, 0.0f);
+    ASSERT_EQ(0xFFFF0000u, out.colors[3]);
+    ASSERT_NOT_NULL(out.speculars);
+    ASSERT_EQ(0xFF0000FFu, out.speculars[3]);
+    ASSERT_EQ(0u, out.speculars[2]);
     fixture_end(&f);
 }
 
