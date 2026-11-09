@@ -256,6 +256,9 @@ static GLenum view_address(int32_t mode)
     case 2: return GL_MIRRORED_REPEAT;
     case 3: return GL_CLAMP_TO_EDGE;
     case 4: return GL_CLAMP_TO_BORDER;
+#ifdef GL_MIRROR_CLAMP_TO_EDGE_EXT
+    case 5: return GL_MIRROR_CLAMP_TO_EDGE_EXT; /* VXTEXTURE_ADDRESSMIRRORONCE */
+#endif
     default: return GL_REPEAT;
     }
 }
@@ -671,6 +674,7 @@ static bool view_affine_inverse(float out[16], const float m[16])
  * object's space as well. CK's cube faces and their rows are GL's.
  */
 static void view_multiply(float out[16], const float a[16], const float b[16]);
+static void view_color(uint32_t argb, float out[4]);
 static void view_set_texgen(nmo_view_t *view, const nmo_engine_material_t *m, const float *world)
 {
     int32_t texgen = m != NULL ? m->texgen : 0;
@@ -824,6 +828,10 @@ static void view_set_material(nmo_view_t *view, const nmo_engine_material_t *m, 
         glTexParameteri(target, GL_TEXTURE_WRAP_T, wrap);
         if (target == GL_TEXTURE_CUBE_MAP) {
             glTexParameteri(target, GL_TEXTURE_WRAP_R, wrap);
+        } else if (wrap == GL_CLAMP_TO_BORDER) { /* the material's border color */
+            float border[4];
+            view_color(m->border_color, border);
+            glTexParameterfv(target, GL_TEXTURE_BORDER_COLOR, border);
         }
         glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, view_texture_env(m->texture_blend));
         view_set_texgen(view, m, world);
