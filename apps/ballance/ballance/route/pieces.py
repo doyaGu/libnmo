@@ -1602,7 +1602,12 @@ def _lay_piece(layout: Layout, sector: int, part: Sector, piece: dict, track: Tr
     """Lays one piece of sector number sector, and the elements on it."""
     from . import freeform
 
-    kinds = [key for key in (*PIECES, *freeform.KINDS) if key in piece]
+    # a crossing log's "turn" is its own option, not the turn piece
+    kinds = [
+        key
+        for key in (*PIECES, *freeform.KINDS)
+        if key in piece and not (key == 'turn' and 'log' in piece)
+    ]
     if len(kinds) != 1:
         raise ValueError('each route piece needs exactly one piece kind')
     if kinds[0] in freeform.KINDS:
