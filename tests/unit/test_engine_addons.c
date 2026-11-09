@@ -13,6 +13,9 @@
 #include "object/builtin/nmo_beobject_schemas.h"
 #include "object/builtin/nmo_camera_schemas.h"
 #include "object/builtin/nmo_group_schemas.h"
+#include "object/builtin/nmo_light_schemas.h"
+#include "format/nmo_chunk_api.h"
+#include "object/builtin/nmo_parameter_schemas.h"
 #include "object/nmo_object_edit.h"
 #include "object/nmo_object_enum_defs.h"
 #include "../../src/engine/engine_animation.h"
@@ -40,6 +43,8 @@
 #define GUID_SHADOW_STENCIL NMO_GUID(0x60a873c5, 0x51245a67)
 #define GUID_CREATE_DECAL NMO_GUID(0x27b71ada, 0x22191538)
 #define GUID_ANIMATION_RECORDER NMO_GUID(0x00532d07, 0x1db631cc)
+#define GUID_LIGHTMAP NMO_GUID(0x4a797d21, 0x214d37f9)
+#define GUID_STATIC_LIGHTMAP NMO_GUID(0x4a797d21, 0x214d37fa)
 
 static nmo_object_id_t local_of(engine_fixture_t *f, nmo_object_id_t block, size_t pos)
 {
@@ -715,6 +720,215 @@ TEST(engine_addons, animation_recorder_keys_the_object_each_frame)
     fixture_end(&f);
 }
 
+/* A 4 x 4 ground under a point light at (2, 3, 2), a 1 x 1 plate at height 1.5 over its corner:
+   the block's inputs set on `block` (the receiving, occluding and light groups) */
+typedef struct lightmap_scene {
+    nmo_object_id_t ground, plate, light, camera;
+    nmo_object_id_t receivers, occluders, lights;
+} lightmap_scene_t;
+
+static void lightmap_scene(engine_fixture_t *f, lightmap_scene_t *s)
+{
+    nmo_object_id_t ground_mesh = grid_mesh(f, "Ground", 5), plate_mesh = grid_mesh(f, "Plate", 2);
+    const float origin[3] = {0, 0, 0}, plate_at[3] = {0.4f, 1.5f, 0.4f}, lamp[3] = {2, 3, 2}, eye[3] = {2, 3, -6};
+    s->ground = placed_entity(f, NMO_CID_3DOBJECT, "Ground", X_AXIS, Y_AXIS, Z_AXIS, origin, ground_mesh);
+    s->plate = placed_entity(f, NMO_CID_3DOBJECT, "Plate", X_AXIS, Y_AXIS, Z_AXIS, plate_at, plate_mesh);
+    s->light = placed_entity(f, NMO_CID_LIGHT, "Lamp", X_AXIS, Y_AXIS, Z_AXIS, lamp, 0);
+    s->camera = a_camera(f, X_AXIS, Y_AXIS, Z_AXIS, eye, 1.0f);
+    nmo_light_state_t *light = s->light != 0 ? (nmo_light_state_t *)fixture_state(f, s->light) : NULL;
+    ASSERT_TRUE(s->ground && s->plate && light && s->camera);
+    light->light_data.type = VX_LIGHTPOINT;
+    light->light_data.diffuse = (nmo_color_t){1.0f, 1.0f, 1.0f, 1.0f};
+    light->light_data.range = 10.0f;
+    light->light_data.attenuation0 = 1.0f;
+    light->light_power = 1.0f;
+    s->receivers = a_group(f, "Receivers", &s->ground, 1);
+    s->occluders = a_group(f, "Occluders", &s->plate, 1);
+    s->lights = a_group(f, "Lights", &s->light, 1);
+}
+
+static void lightmap_inputs(engine_fixture_t *f, const lightmap_scene_t *s, nmo_object_id_t block)
+{
+    const float resolution = 1.0f, threshold = 0.17453292f;
+    fixture_input_int(f, BLOCK_PIN(f, block, 0), (int32_t)s->receivers);
+    fixture_input_int(f, BLOCK_PIN(f, block, 1), (int32_t)s->occluders);
+    fixture_input_int(f, BLOCK_PIN(f, block, 2), (int32_t)s->lights);
+    fixture_input_value(f, BLOCK_PIN(f, block, 3), &resolution, sizeof(resolution));
+    fixture_input_int(f, BLOCK_PIN(f, block, 4), 1);
+    fixture_input_int(f, BLOCK_PIN(f, block, 5), 0);
+    fixture_input_value(f, BLOCK_PIN(f, block, 6), &threshold, sizeof(threshold));
+}
+
+/* The ground's one polygon (its 32 coplanar faces) lit in an 8 x 8 texture: 8 = 2 x 4 units x a
+   texel a unit. Texel (1, 1) samples (1/3, 1/3) on the ground, whose way to the lamp the plate
+   cuts; texel (2, 1) samples (1, 1/3), lit by cos 0.838 (2.99 up of 3.566). */
+static void assert_ground_lightmap(engine_fixture_t *f)
+{
+    nmo_object_id_t texture = nmo_engine_object_named(f->engine, "Ground - face 0", NMO_CID_TEXTURE);
+    ASSERT_TRUE(texture != 0);
+    eng_texture_t *t = eng_texture(f->engine, texture);
+    eng_surface_t *surface = t != NULL ? eng_texture_surface(f->engine, t, -1) : NULL;
+    ASSERT_TRUE(surface != NULL && surface->rgba != NULL);
+    ASSERT_EQ(8, surface->width);
+    ASSERT_EQ(8, surface->height);
+    ASSERT_EQ(0, channel(surface, 1, 1, 0));
+    ASSERT_EQ(255, channel(surface, 1, 1, 3));
+    ASSERT_EQ(213, channel(surface, 2, 1, 0));
+    ASSERT_EQ(213, channel(surface, 2, 1, 2));
+}
+
+TEST(engine_addons, lightmap_lights_the_ground_and_draws_over_it)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    lightmap_scene_t s;
+    lightmap_scene(&f, &s);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t lightmap = fixture_block(&f, GUID_LIGHTMAP, "Lightmap");
+    ASSERT_TRUE(lightmap != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, lightmap, 2), 0);
+    lightmap_inputs(&f, &s, lightmap);
+    const float opacity[4] = {1.0f, 1.0f, 1.0f, 0.5f};
+    fixture_input_value(&f, BLOCK_PIN(&f, lightmap, 7), opacity, sizeof(opacity));
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    f.engine->render.camera = s.camera;
+    eng_show(f.engine, s.ground, 1);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    assert_ground_lightmap(&f);
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    /* the ground's post render callback: its faces multiplied by the texture times the opacity */
+    nmo_object_id_t texture = nmo_engine_object_named(f.engine, "Ground - face 0", NMO_CID_TEXTURE);
+    int found = 0;
+    for (int32_t d = 0; d < frame.draw_count; d++) {
+        const nmo_engine_draw_t *draw = &frame.draws[d];
+        if (draw->kind != NMO_ENGINE_DRAW_PRIMITIVE || draw->object != s.ground) {
+            continue;
+        }
+        found++;
+        ASSERT_EQ((int64_t)texture, (int64_t)draw->texture);
+        ASSERT_EQ(96, draw->vertex_count);
+        ASSERT_TRUE(draw->blend && draw->no_z_write);
+        ASSERT_EQ(VXBLEND_ZERO, draw->source_blend);
+        ASSERT_EQ(VXBLEND_SRCCOLOR, draw->dest_blend);
+        ASSERT_FLOAT_EQ(1.0001f, draw->projection_z_scale, 0.0f);
+        ASSERT_EQ(0x7FFFFFFFu, frame.vertices[draw->first_vertex].color);
+    }
+    ASSERT_EQ(1, found);
+    fixture_end(&f);
+}
+
+TEST(engine_addons, static_lightmap_makes_a_lightmapped_copy)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    lightmap_scene_t s;
+    lightmap_scene(&f, &s);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t lightmap = fixture_block(&f, GUID_STATIC_LIGHTMAP, "Static");
+    ASSERT_TRUE(lightmap != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, lightmap, 0), 0);
+    lightmap_inputs(&f, &s, lightmap);
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    assert_ground_lightmap(&f);
+    /* "LM Ground": the polygon's 25 vertices and 32 faces, the lightmap a channel */
+    nmo_object_id_t copy = nmo_engine_object_named(f.engine, "LM Ground", NMO_CID_3DOBJECT);
+    nmo_object_id_t mesh = nmo_engine_object_named(f.engine, "LM Ground Mesh", NMO_CID_MESH);
+    nmo_object_id_t material = nmo_engine_object_named(f.engine, "LM Ground Material", NMO_CID_MATERIAL);
+    ASSERT_TRUE(copy != 0 && mesh != 0 && material != 0);
+    nmo_engine_mesh_t out;
+    ASSERT_TRUE(nmo_engine_mesh(f.engine, mesh, &out));
+    ASSERT_EQ(25, out.vertex_count);
+    ASSERT_EQ(32, out.face_count);
+    float sum_x = 0.0f, sum_z = 0.0f;
+    for (int32_t v = 0; v < out.vertex_count; v++) {
+        sum_x += out.vertices[v].position.x;
+        sum_z += out.vertices[v].position.z;
+    }
+    ASSERT_FLOAT_EQ(50.0f, sum_x, 0.0f); /* the ground's 5 x 5 vertices */
+    ASSERT_FLOAT_EQ(50.0f, sum_z, 0.0f);
+    ASSERT_EQ(1, out.channel_count);
+    ASSERT_EQ((int64_t)material, (int64_t)out.channels[0].material);
+    ASSERT_EQ(VXBLEND_ZERO, out.channels[0].source_blend);
+    ASSERT_EQ(VXBLEND_SRCCOLOR, out.channels[0].dest_blend);
+    ASSERT_FALSE(out.channels[0].lit);
+    ASSERT_TRUE(out.channels[0].uvs != NULL);
+    nmo_engine_material_t desc;
+    ASSERT_TRUE(nmo_engine_material(f.engine, material, &desc));
+    ASSERT_EQ((int64_t)nmo_engine_object_named(f.engine, "Ground - face 0", NMO_CID_TEXTURE), (int64_t)desc.texture);
+    fixture_end(&f);
+}
+
+/* The lightmaps a file saved in the block's state chunk local (LightmapGenerator::Save): the
+   ground's one triangle in a texture of its own, drawn while On */
+TEST(engine_addons, lightmap_load_draws_the_saved_lightmaps)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t mesh = grid_mesh(&f, "Ground", 2);
+    const float origin[3] = {0, 0, 0}, eye[3] = {0.5f, 3, -6};
+    nmo_object_id_t ground = placed_entity(&f, NMO_CID_3DOBJECT, "Ground", X_AXIS, Y_AXIS, Z_AXIS, origin, mesh);
+    nmo_object_id_t camera = a_camera(&f, X_AXIS, Y_AXIS, Z_AXIS, eye, 1.0f);
+    nmo_object_id_t texture = fixture_create(&f, NMO_CID_TEXTURE, "Saved Map");
+    ASSERT_TRUE(ground && camera && texture);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t lightmap = fixture_block(&f, GUID_LIGHTMAP, "Lightmap");
+    ASSERT_TRUE(lightmap != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, lightmap, 0), 0);
+    nmo_parameter_state_t *local = (nmo_parameter_state_t *)fixture_state(&f, local_of(&f, lightmap, 1));
+    nmo_chunk_t *chunk = nmo_chunk_create(nmo_session_get_arena(f.session));
+    ASSERT_TRUE(local != NULL && chunk != NULL);
+    const uint16_t indices[3] = {0, 1, 2};
+    const struct { float x, y, z; uint32_t diffuse, specular; float u, v; uint32_t index; } vertices[3] = {
+        {0, 0, 0, 0xFFFFFFFFu, 0, 0.25f, 0.75f, 0}, {0, 0, 1, 0xFFFFFFFFu, 0, 0.25f, 0.25f, 2},
+        {1, 0, 0, 0xFFFFFFFFu, 0, 0.75f, 0.75f, 1}};
+    nmo_chunk_start_write(chunk);
+    nmo_chunk_write_identifier(chunk, 4510204u);
+    nmo_chunk_write_int(chunk, 1);
+    nmo_chunk_write_object_id(chunk, ground);
+    nmo_chunk_write_int(chunk, 1);
+    nmo_chunk_write_object_id(chunk, texture);
+    nmo_chunk_write_int(chunk, 3);
+    nmo_chunk_write_buffer_no_size(chunk, indices, sizeof(indices));
+    nmo_chunk_write_int(chunk, 3);
+    nmo_chunk_write_buffer_no_size(chunk, vertices, sizeof(vertices));
+    nmo_chunk_close(chunk);
+    nmo_array_dispose(&local->buffer_data);
+    local->mode = CKPARAM_MODE_SUBCHUNK;
+    local->subchunk = chunk;
+    local->has_state = true;
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    f.engine->render.camera = camera;
+    eng_show(f.engine, ground, 1);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    int found = 0;
+    for (int32_t d = 0; d < frame.draw_count; d++) {
+        const nmo_engine_draw_t *draw = &frame.draws[d];
+        if (draw->kind != NMO_ENGINE_DRAW_PRIMITIVE || draw->object != ground) {
+            continue;
+        }
+        found++;
+        ASSERT_EQ((int64_t)texture, (int64_t)draw->texture);
+        ASSERT_EQ(3, draw->vertex_count);
+        const nmo_engine_vertex_t *v = &frame.vertices[draw->first_vertex];
+        ASSERT_FLOAT_EQ(1.0f, v[1].z, 0.0f);
+        ASSERT_FLOAT_EQ(0.25f, v[1].u, 0.0f);
+        ASSERT_FLOAT_EQ(0.25f, v[1].v, 0.0f);
+        ASSERT_EQ(0xFFFFFFFFu, v[0].color);
+    }
+    ASSERT_EQ(1, found);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_addons, filter_and_blend_textures_use_the_dll_integer_arithmetic);
 REGISTER_TEST(engine_addons, water_texture_steps_the_older_slot_and_swaps);
@@ -728,4 +942,7 @@ REGISTER_TEST(engine_addons, lens_flare_fades_its_flares_in);
 REGISTER_TEST(engine_addons, shadow_stencil_draws_volumes_and_the_shadow);
 REGISTER_TEST(engine_addons, create_decal_cuts_the_faces_in_the_frustum);
 REGISTER_TEST(engine_addons, animation_recorder_keys_the_object_each_frame);
+REGISTER_TEST(engine_addons, lightmap_lights_the_ground_and_draws_over_it);
+REGISTER_TEST(engine_addons, static_lightmap_makes_a_lightmapped_copy);
+REGISTER_TEST(engine_addons, lightmap_load_draws_the_saved_lightmaps);
 TEST_MAIN_END()

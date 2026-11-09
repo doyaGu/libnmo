@@ -100,7 +100,8 @@ typedef struct nmo_engine_draw {
     bool blend;
     /* A primitive (a block's DrawPrimitive in a render callback): triangles of the frame's
        vertices from first_vertex, or pairs of them when `lines`, drawn with `material` set as
-       current (none: untextured and opaque) in the vertices' colors without lighting, or lit
+       current (none: opaque, textured with `texture` modulated, clamped and linear when it is
+       not 0, else untextured) in the vertices' colors without lighting, or lit
        with their normals when `lit`; lines are untextured. No culling when `two_sided`. A
        render context's post render callback's are `post`: drawn after the transparent draws,
        in order. A primitive with `projection_z_scale` (not 0) is drawn with the projection's

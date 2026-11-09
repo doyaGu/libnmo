@@ -41,6 +41,7 @@ nmo_status_t eng_register_sounds(nmo_engine_t *engine);
 nmo_status_t eng_register_materials(nmo_engine_t *engine);
 nmo_status_t eng_register_visuals(nmo_engine_t *engine);
 nmo_status_t eng_register_addons(nmo_engine_t *engine);
+nmo_status_t eng_register_lightmap(nmo_engine_t *engine);
 nmo_status_t eng_register_3dtransfo(nmo_engine_t *engine);
 nmo_status_t eng_register_billboard(nmo_engine_t *engine);
 nmo_status_t eng_register_portals(nmo_engine_t *engine);

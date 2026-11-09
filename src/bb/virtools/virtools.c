@@ -30,6 +30,7 @@ static nmo_status_t (*const virtools_sets[])(nmo_engine_t *engine) = {
     eng_register_materials,
     eng_register_visuals,
     eng_register_addons,
+    eng_register_lightmap,
     eng_register_3dtransfo,
     eng_register_collisions,
     eng_register_grids,

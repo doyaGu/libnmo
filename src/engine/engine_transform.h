@@ -51,6 +51,8 @@ typedef struct eng_ray_hit {
     int32_t face;
     int32_t vertices[3];     /* the face's vertex indices */
     eng_vector_t corners[3]; /* and their positions */
+    float distance;          /* VxIntersectionDesc::Distance: along pos1 -> pos2, 1 at pos2 */
+    float u, v;              /* the texture coordinates there (TexU, TexV) */
 } eng_ray_hit_t;
 
 void eng_matrix_identity(eng_matrix_t *m);

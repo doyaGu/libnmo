@@ -1260,6 +1260,11 @@ static void view_draw_primitive(nmo_view_t *view, const nmo_engine_frame_t *fram
         material.alpha_blend = draw->blend;
         material.source_blend = draw->source_blend;
         material.dest_blend = draw->dest_blend;
+        /* a texture set as current: modulated, clamped, linear (Lightmap's) */
+        material.texture = draw->texture;
+        material.texture_blend = 2;                      /* VXTEXTUREBLEND_MODULATE */
+        material.address_mode = 3;                       /* VXTEXTURE_ADDRESSCLAMP */
+        material.min_filter = material.mag_filter = 2;   /* VXTEXTUREFILTER_LINEAR */
     }
     if (draw->lines) {
         material.texture = 0;

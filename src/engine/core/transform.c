@@ -1230,6 +1230,9 @@ int eng_entity_ray_intersection(nmo_engine_t *engine, int32_t index, const eng_v
                                      w0 * a->normal.y + w1 * b->normal.y + w2 * c->normal.y,
                                      w0 * a->normal.z + w1 * b->normal.z + w2 * c->normal.z};
         hit->face = (int32_t)best_face;
+        hit->distance = best;
+        hit->u = w0 * a->uv.x + w1 * b->uv.x + w2 * c->uv.x;
+        hit->v = w0 * a->uv.y + w1 * b->uv.y + w2 * c->uv.y;
         hit->vertices[0] = v[0];
         hit->vertices[1] = v[1];
         hit->vertices[2] = v[2];

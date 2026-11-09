@@ -19,6 +19,7 @@ set(NMO_BB_VIRTOOLS_SOURCES
     virtools/curve_properties.c
     virtools/mimic.c
     virtools/addons.c
+    virtools/lightmap.c
     virtools/cameras.c
     virtools/characters.c
     virtools/share_animation.c
