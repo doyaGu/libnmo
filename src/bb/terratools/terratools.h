@@ -20,9 +20,18 @@ typedef struct eng_particle {
     int32_t frame;
     float frame_time, dframe_time;
     float dt;             /* the time it last moved by (m_DeltaTime) */
+    float bounce;         /* m_Bounce: how much a deflector sends it back */
     float weight;         /* m_Weight: how much gravity and tunnels pull it */
     float surface;        /* m_Surface: how much the winds and the atmosphere take it */
 } eng_particle_t;
+
+/* A particle's impact on a deflector: where, the deflector's normal there, which, and the
+   texture coordinates (a plane's and an object's) */
+typedef struct eng_impact {
+    float position[3], direction[3];
+    nmo_object_id_t object;
+    float uv[2];
+} eng_impact_t;
 
 /* A particle system's emitter (ParticleEmitter): its particles, and how they draw */
 typedef struct eng_emitter {
@@ -40,6 +49,9 @@ typedef struct eng_emitter {
     float trail_time;
     bool trail_started;
     ENG_VEC(eng_particle_t) particles;
+    /* The deflector impacts of its last update (ParticleImpact), and the next one to output */
+    ENG_VEC(struct eng_impact) impacts;
+    size_t current_impact;
 } eng_emitter_t;
 
 /* A TT Simple Shadow: its material, projected on the floors under its object */

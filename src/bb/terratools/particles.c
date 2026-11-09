@@ -6,14 +6,19 @@
  * does (the reference is the Ballanced source of the blocks, or the DLL where
  * they differ). The emitters keep their particles in the render state and
  * draw them as their render modes do; the interactors (objects with the
- * Particle System Interactors attributes) act on them as the ParticleManager
- * does, the deflectors are not ported, and each emitter has its own random
+ * Particle System Interactors attributes) and the deflectors act on them as
+ * the ParticleManager does, and each emitter has its own random
  * numbers so that particles do not change the gameplay's (the Disruption Box
- * included, which takes the game's rand() in the DLL).
+ * and the deflectors' density included, which take the game's rand() in the
+ * DLL).
  */
 
 #include "../bb_sdk.h"
 #include "terratools.h"
+#include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_mesh_schemas.h"
+#include "type/nmo_object_guids.h"
+#include "type/nmo_type_query.h"
 
 #include <math.h>
 #include <string.h>
@@ -48,8 +53,18 @@ enum {
 /* Its settings, after the Emitter, Activity and EmissionTime locals */
 enum { PL_RENDER = 4, PL_SRC_BLEND, PL_DEST_BLEND, PL_EVOLUTIONS = 8, PL_VARIANCES, PL_DEFLECTORS, PL_MESSAGE,
        PL_INTERACTORS };
-/* The inputs the interactors add (Particle.h WEIGHT..SURFACEVARIATION) */
-enum { PI_WEIGHT = 19, PI_WEIGHT_VAR, PI_SURFACE, PI_SURFACE_VAR };
+/* The inputs the deflectors and interactors add (Particle.h BOUNCE..SURFACEVARIATION) */
+enum { PI_BOUNCE = 17, PI_BOUNCE_VAR, PI_WEIGHT, PI_WEIGHT_VAR, PI_SURFACE, PI_SURFACE_VAR };
+#define PD_PLANE 0x01
+#define PD_INFINITEPLANE 0x02
+#define PD_CYLINDER 0x04
+#define PD_SPHERE 0x08
+#define PD_BOX 0x10
+#define PD_OBJECT 0x20
+#define PD_ALL 0x3F
+#define PD_IMPACTS 0x40
+#define PD_DIEONIMPACT 0x80
+#define PV_BOUNCE 0x40
 #define PI_GRAVITY 0x001
 #define PI_GLOBALWIND 0x002
 #define PI_LOCALWIND 0x004
@@ -101,6 +116,9 @@ typedef struct emitter_inputs {
     int32_t start_frame, start_frame_var, frame_speed, frame_speed_var, frame_count, frame_loop;
     int32_t evolutions, variances, render_mode;
     int32_t interactors;          /* Manage Interactors (PI_*) */
+    int32_t deflectors;           /* Manage Deflectors (PD_*) */
+    int32_t message;              /* Message To Deflectors: the type, -1 for none */
+    float bounce, bounce_var;     /* with deflectors */
     float weight, weight_var;     /* with gravity */
     float surface, surface_var;   /* with the winds or the atmosphere */
 } emitter_inputs_t;
@@ -109,6 +127,7 @@ void eng_free_emitters(nmo_engine_t *engine)
 {
     for (size_t i = 0; i < eng_tt(engine)->emitters.count; i++) {
         free(eng_tt(engine)->emitters.data[i].particles.data);
+        free(eng_tt(engine)->emitters.data[i].impacts.data);
     }
     free(eng_tt(engine)->emitters.data);
 }
@@ -145,6 +164,13 @@ static float emitter_rand01(eng_emitter_t *e)
 {
     e->random = e->random * 1103515245u + 12345u;
     return (float)((e->random >> 16) & 0x7FFF) / 32767.0f;
+}
+
+/* rand() * INV_RAND (0.000030518499: just under 1 at RAND_MAX), the deflectors' density roll */
+static float emitter_rand_inv(eng_emitter_t *e)
+{
+    e->random = e->random * 1103515245u + 12345u;
+    return (float)((e->random >> 16) & 0x7FFF) * 0.000030518499f;
 }
 
 static float emitter_rand(eng_emitter_t *e)
@@ -185,7 +211,15 @@ static void read_inputs(blk_t *b, emitter_inputs_t *in)
     in->frame_speed_var = get_in_int(b, PI_FRAME_SPEED_VAR, 0);
     in->frame_count = get_in_int(b, PI_FRAME_COUNT, 1);
     in->frame_loop = get_in_int(b, PI_FRAME_LOOP, PL_NOLOOP);
-    /* the setting's default names every interactor */
+    /* the settings' defaults name every deflector and interactor */
+    in->deflectors = get_local_int(b, PL_DEFLECTORS, PD_ALL);
+    in->message = get_local_int(b, PL_MESSAGE, -1);
+    if (in->deflectors) {
+        in->bounce = get_in_float(b, PI_BOUNCE, 0.0f);
+        if (in->variances & PV_BOUNCE) {
+            in->bounce_var = get_in_float(b, PI_BOUNCE_VAR, 0.0f);
+        }
+    }
     in->interactors = get_local_int(b, PL_INTERACTORS, 0x3FF);
     if (in->interactors & PI_GRAVITY) {
         in->weight = get_in_float(b, PI_WEIGHT, 0.0f);
@@ -296,6 +330,9 @@ static void init_particle(eng_emitter_t *e, const emitter_inputs_t *in, eng_part
                                                          ? (float)in->frame_speed_var * emitter_rand(e)
                                                          : 0.0f)
                          : 0.0f;
+    if (in->deflectors) {
+        p->bounce = in->bounce + (in->variances & PV_BOUNCE ? in->bounce_var * emitter_rand(e) : 0.0f);
+    }
     if (in->interactors & PI_GRAVITY) {
         p->weight = in->weight + (in->variances & PV_WEIGHT ? in->weight_var * emitter_rand(e) : 0.0f);
     }
@@ -801,13 +838,426 @@ static void manage_interactors(nmo_engine_t *engine, eng_emitter_t *e, int32_t f
     if (flags & PI_PROJECTOR) manage_projector(engine, e, dt);
 }
 
-/* ParticleEmitter::UpdateParticles, the interactors first, without the deflectors: then the emitter's
+/* ---- Deflectors (ParticleManager::Manage*Deflectors) ---- */
+
+static float dot3(const float a[3], const float b[3])
+{
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+/* The segment a -> b against the plane through `point` along `normal` (sub_25091A40) */
+static bool segment_plane(const float normal[3], const float point[3], const float a[3], const float b[3], float out[3])
+{
+    const float v[3] = {b[0] - a[0], b[1] - a[1], b[2] - a[2]};
+    float denominator = v[0] * normal[0] + v[2] * normal[2] + v[1] * normal[1];
+    if (denominator == 0.0f) {
+        return false;
+    }
+    float t = -(((a[0] - point[0]) * normal[0] + (a[2] - point[2]) * normal[2] + (a[1] - point[1]) * normal[1]) /
+                denominator);
+    if (t < 0.0f || t > 1.0f) {
+        return false;
+    }
+    for (int c = 0; c < 3; c++) {
+        out[c] = v[c] * t + a[c];
+    }
+    return true;
+}
+
+/* RayBoxIntersection (sub_25091120) and RayInteriorBoxIntersection (sub_25091350): the segment
+   p0 -> p1 against the box's faces, the normal the face's; a start inside the box gives it back,
+   -1 (or 1 for the interior test) */
+static int segment_box(const float min[3], const float max[3], const float p0[3], const float p1[3], float res[3],
+                       float norm[3], bool interior)
+{
+    bool inside = true;
+    int quadrant[3];
+    float candidate[3];
+    for (int i = 0; i < 3; i++) {
+        if (p0[i] < min[i]) {
+            quadrant[i] = 1, candidate[i] = min[i], norm[i] = -1.0f, inside = false;
+        } else if (p0[i] > max[i]) {
+            quadrant[i] = 0, candidate[i] = max[i], norm[i] = 1.0f, inside = false;
+        } else {
+            norm[i] = 0.0f, candidate[i] = 0.0f, quadrant[i] = 2;
+        }
+    }
+    if (inside) {
+        memcpy(res, p0, 3 * sizeof(float));
+        return interior ? 1 : -1;
+    }
+    const float dir[3] = {p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]};
+    float max_t[3];
+    for (int i = 0; i < 3; i++) {
+        max_t[i] = quadrant[i] != 2 && dir[i] != 0.0f ? (candidate[i] - p0[i]) / dir[i] : -1.0f;
+    }
+    int plane = 0;
+    for (int i = 1; i < 3; i++) {
+        if (max_t[plane] < max_t[i]) {
+            plane = i;
+        }
+    }
+    if (max_t[plane] < 0.0f || max_t[plane] > 1.0f) {
+        return 0;
+    }
+    for (int i = 0; i < 3; i++) {
+        if (i == plane) {
+            res[i] = candidate[i];
+            continue;
+        }
+        norm[i] = 0.0f;
+        res[i] = max_t[plane] * dir[i] + p0[i];
+        if (res[i] < min[i] || res[i] > max[i]) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* RaySphereIntersection (sub_25091580): the segment crossing the unit sphere */
+static bool segment_sphere(const float p0[3], const float p1[3], float res[3], float norm[3])
+{
+    float d0 = dot3(p0, p0), d1 = dot3(p1, p1);
+    if (!((d0 < 1.0f && d1 > 1.0f) || (d0 > 1.0f && d1 < 1.0f))) {
+        return false;
+    }
+    float v[3] = {p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]};
+    float inv = 1.0f / sqrtf(v[2] * v[2] + v[0] * v[0] + v[1] * v[1]);
+    v[0] *= inv, v[1] *= inv, v[2] *= inv;
+    float along = d0 >= 1.0f ? (-p0[2] * v[2] + -p0[1] * v[1]) + -p0[0] * v[0] : (v[0] * p0[0] + v[2] * p0[2]) + v[1] * p0[1];
+    float t = along - sqrtf(1.0f - (dot3(p0, p0) - along * along));
+    for (int c = 0; c < 3; c++) {
+        res[c] = v[c] * t + p0[c];
+        norm[c] = res[c];
+    }
+    return true;
+}
+
+/* RayTubeIntersection (sub_25091750): the segment crossing the unit tube about Z between -1 and 1,
+   with the DLL's own roots (and t = b without one) */
+static bool segment_tube(const float p0[3], const float p1[3], float res[3], float norm[3])
+{
+    float d0 = p0[0] * p0[0] + p0[1] * p0[1], d1 = p1[0] * p1[0] + p1[1] * p1[1];
+    if (!((d0 < 1.0f && d1 > 1.0f) || (d0 > 1.0f && d1 < 1.0f)) || (p1[2] >= 1.0f && p0[2] >= 1.0f) ||
+        (p1[2] <= -1.0f && p0[2] <= -1.0f)) {
+        return false;
+    }
+    const float ray[3] = {p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]};
+    float a = ray[1] * ray[1] + ray[0] * ray[0];
+    float r = p0[0] * p0[0] + p0[1] * p0[1];
+    float b = r + r;
+    float delta = b * b - (r - 2.0f) * a * 4.0f;
+    float t;
+    if (delta < 0.0f) {
+        t = b;
+    } else {
+        float root = sqrtf(delta);
+        t = (-b - root) / (a + a);
+        if (t < 0.0f) {
+            t = (root - b) / (a + a);
+            if (t < 0.0f) {
+                return false;
+            }
+        }
+    }
+    for (int c = 0; c < 3; c++) {
+        res[c] = ray[c] * t + p0[c];
+        norm[c] = res[c];
+    }
+    norm[2] = 0.0f;
+    return true;
+}
+
+/* A deflector's response, friction and density (and an object deflector's smoothing): the first
+   fields of its structure */
+typedef struct deflector_fields {
+    float response, friction, density;
+    int32_t smooth;
+} deflector_fields_t;
+
+/* The impact (with PD_IMPACTS) and the bounce: the move kept along the surface times the friction,
+   sent back along the normal by the response times the particle's bounce, from the impact point */
+static void deflect(eng_emitter_t *e, const emitter_inputs_t *in, eng_particle_t *p, const float olddir[3],
+                    const float point[3], const float normal[3], const deflector_fields_t *fields, float inv_dt,
+                    nmo_object_id_t object, const float uv[2])
+{
+    float along = dot3(olddir, normal);
+    for (int c = 0; c < 3; c++) {
+        float d = (olddir[c] - normal[c] * along) * fields->friction - normal[c] * (along * fields->response * p->bounce);
+        p->pos[c] = point[c] + d;
+        p->dir[c] = d * inv_dt;
+    }
+    if (in->deflectors & PD_IMPACTS) {
+        eng_impact_t *impact = NULL;
+        if (ENG_VEC_PUSH(e->impacts, impact)) {
+            memcpy(impact->position, point, sizeof(impact->position));
+            memcpy(impact->direction, normal, sizeof(impact->direction));
+            impact->object = object;
+            impact->uv[0] = uv[0], impact->uv[1] = uv[1];
+        }
+    }
+}
+
+/* What every deflector shares: each object with the attribute, its fields; per particle its last
+   move and the density's chance; `hit` places the impact. The message goes once per deflector, a
+   particle dies on impact with PD_DIEONIMPACT */
+typedef bool (*deflector_hit_fn)(nmo_engine_t *engine, int32_t at, const float prev[3], const float pos[3],
+                                 const deflector_fields_t *fields, float point[3], float normal[3], float uv[2],
+                                 void *data);
+
+static void manage_deflectors(nmo_engine_t *engine, eng_emitter_t *e, const emitter_inputs_t *in, float dt,
+                              const char *name, uint32_t field_count, bool box_test, float y_margin,
+                              deflector_hit_fn hit, void *data)
+{
+    int32_t type = particle_attribute(engine, name);
+    int32_t emitter = eng_entity_index(engine, e->entity);
+    if (emitter < 0) {
+        return;
+    }
+    FOR_EACH_INTERACTOR(engine, type, attribute, at) {
+        if (box_test) {
+            eng_vector_t min, max, emin, emax;
+            world_box(engine, at, &min, &max);
+            min.y -= y_margin, max.y += y_margin;
+            world_box(engine, emitter, &emin, &emax);
+            if (!boxes_meet(&min, &max, &emin, &emax)) {
+                continue;
+            }
+        }
+        if (!attribute->has_value) {
+            continue;
+        }
+        deflector_fields_t fields = {0.0f, 0.0f, 0.0f, 0};
+        attribute_field(engine, attribute, 0, &fields.response, sizeof(float));
+        attribute_field(engine, attribute, 1, &fields.friction, sizeof(float));
+        attribute_field(engine, attribute, 2, &fields.density, sizeof(float));
+        if (field_count > 3) {
+            attribute_field(engine, attribute, 3, &fields.smooth, sizeof(int32_t));
+        }
+        float inv_dt = 1.0f / dt;
+        bool sent = false;
+        for (size_t i = 0; i < e->particles.count;) {
+            eng_particle_t *p = &e->particles.data[i];
+            const float olddir[3] = {p->dt * p->dir[0], p->dt * p->dir[1], p->dt * p->dir[2]};
+            const float prev[3] = {p->pos[0] - olddir[0], p->pos[1] - olddir[1], p->pos[2] - olddir[2]};
+            float point[3], normal[3], uv[2] = {0.0f, 0.0f};
+            if (!(emitter_rand_inv(e) < fields.density) ||
+                !hit(engine, at, prev, p->pos, &fields, point, normal, uv, data)) {
+                i++;
+                continue;
+            }
+            deflect(e, in, p, olddir, point, normal, &fields, inv_dt, attribute->object, uv);
+            if (!sent) {
+                if (in->message >= 0) {
+                    nmo_engine_send_message(engine, in->message, attribute->object, e->entity);
+                }
+                sent = true;
+            }
+            if (in->deflectors & PD_DIEONIMPACT) {
+                memmove(&e->particles.data[i], &e->particles.data[i + 1],
+                        (e->particles.count - i - 1) * sizeof(eng_particle_t));
+                e->particles.count--;
+                continue;
+            }
+            i++;
+        }
+    }
+}
+
+/* The deflector's local Y as a unit world normal, and its position */
+static void plane_of(nmo_engine_t *engine, int32_t at, float normal[3], float point[3])
+{
+    const eng_vector_t y = {0.0f, 1.0f, 0.0f};
+    eng_vector_t n;
+    eng_entity_transform_vector(engine, at, &n, &y, -1, false);
+    eng_vector_normalize(&n);
+    eng_vector_t o = eng_entity_position(engine, at, -1);
+    normal[0] = n.x, normal[1] = n.y, normal[2] = n.z;
+    point[0] = o.x, point[1] = o.y, point[2] = o.z;
+}
+
+/* Infinite Plane: the move crossing the plane of the deflector's XZ */
+static bool hit_infinite_plane(nmo_engine_t *engine, int32_t at, const float prev[3], const float pos[3],
+                               const deflector_fields_t *fields, float point[3], float normal[3], float uv[2], void *data)
+{
+    (void)fields, (void)uv, (void)data;
+    float o[3];
+    plane_of(engine, at, normal, o);
+    return segment_plane(normal, o, prev, pos, point);
+}
+
+/* Plane: the same within the deflector's local -1..1 square, the texture coordinates across it */
+static bool hit_plane(nmo_engine_t *engine, int32_t at, const float prev[3], const float pos[3],
+                      const deflector_fields_t *fields, float point[3], float normal[3], float uv[2], void *data)
+{
+    (void)fields, (void)data;
+    float o[3];
+    plane_of(engine, at, normal, o);
+    if (!segment_plane(normal, o, prev, pos, point)) {
+        return false;
+    }
+    eng_vector_t local, world = {point[0], point[1], point[2]};
+    eng_entity_inverse_transform(engine, at, &local, &world, -1);
+    if (local.x <= -1.0f || local.x >= 1.0f || local.z <= -1.0f || local.z >= 1.0f) {
+        return false;
+    }
+    uv[0] = (local.x + 1.0f) * 0.5f;
+    uv[1] = (1.0f - local.z) * 0.5f;
+    return true;
+}
+
+/* The move in the deflector's space, `local` hitting a shape there, back in the world */
+typedef bool (*local_shape_fn)(nmo_engine_t *engine, int32_t at, const float p0[3], const float p1[3], float res[3],
+                               float norm[3]);
+
+static bool hit_local(nmo_engine_t *engine, int32_t at, const float prev[3], const float pos[3], float point[3],
+                      float normal[3], local_shape_fn shape, bool point_first)
+{
+    eng_vector_t a = {prev[0], prev[1], prev[2]}, b = {pos[0], pos[1], pos[2]}, la, lb;
+    eng_entity_inverse_transform(engine, at, &la, &a, -1);
+    eng_entity_inverse_transform(engine, at, &lb, &b, -1);
+    const float p0[3] = {la.x, la.y, la.z}, p1[3] = {lb.x, lb.y, lb.z};
+    float res[3], norm[3];
+    if (!shape(engine, at, p0, p1, res, norm)) {
+        return false;
+    }
+    eng_vector_t lr = {res[0], res[1], res[2]}, ln = {norm[0], norm[1], norm[2]}, wr, wn;
+    if (point_first) {
+        eng_entity_transform(engine, at, &wr, &lr, -1);
+    }
+    eng_entity_transform_vector(engine, at, &wn, &ln, -1, false);
+    eng_vector_normalize(&wn);
+    if (!point_first) {
+        eng_entity_transform(engine, at, &wr, &lr, -1);
+    }
+    point[0] = wr.x, point[1] = wr.y, point[2] = wr.z;
+    normal[0] = wn.x, normal[1] = wn.y, normal[2] = wn.z;
+    return true;
+}
+
+static bool tube_shape(nmo_engine_t *engine, int32_t at, const float p0[3], const float p1[3], float res[3], float norm[3])
+{
+    (void)engine, (void)at;
+    return segment_tube(p0, p1, res, norm);
+}
+
+static bool sphere_shape(nmo_engine_t *engine, int32_t at, const float p0[3], const float p1[3], float res[3],
+                         float norm[3])
+{
+    (void)engine, (void)at;
+    return segment_sphere(p0, p1, res, norm);
+}
+
+/* Box: the deflector's own box, the move tried backwards when it starts inside */
+static bool box_shape(nmo_engine_t *engine, int32_t at, const float p0[3], const float p1[3], float res[3], float norm[3])
+{
+    eng_vector_t low = {0, 0, 0}, high = {0, 0, 0};
+    eng_entity_local_box(engine, at, &low, &high);
+    const float min[3] = {low.x, low.y, low.z}, max[3] = {high.x, high.y, high.z};
+    int found = segment_box(min, max, p0, p1, res, norm, false);
+    if (found == -1) {
+        found = segment_box(min, max, p1, p0, res, norm, false);
+    }
+    return found > 0;
+}
+
+static bool hit_cylinder(nmo_engine_t *engine, int32_t at, const float prev[3], const float pos[3],
+                         const deflector_fields_t *fields, float point[3], float normal[3], float uv[2], void *data)
+{
+    (void)fields, (void)uv, (void)data;
+    return hit_local(engine, at, prev, pos, point, normal, tube_shape, false);
+}
+
+static bool hit_sphere(nmo_engine_t *engine, int32_t at, const float prev[3], const float pos[3],
+                       const deflector_fields_t *fields, float point[3], float normal[3], float uv[2], void *data)
+{
+    (void)fields, (void)uv, (void)data;
+    return hit_local(engine, at, prev, pos, point, normal, sphere_shape, true);
+}
+
+static bool hit_box(nmo_engine_t *engine, int32_t at, const float prev[3], const float pos[3],
+                    const deflector_fields_t *fields, float point[3], float normal[3], float uv[2], void *data)
+{
+    (void)fields, (void)uv, (void)data;
+    return hit_local(engine, at, prev, pos, point, normal, box_shape, false);
+}
+
+/* Object: the move through the object's world box, then against its mesh (RayIntersection, as a
+   segment): the interpolated normal when smooth, the face's otherwise, and the hit's texture
+   coordinates */
+static bool hit_object(nmo_engine_t *engine, int32_t at, const float prev[3], const float pos[3],
+                       const deflector_fields_t *fields, float point[3], float normal[3], float uv[2], void *data)
+{
+    (void)data;
+    eng_vector_t low, high;
+    world_box(engine, at, &low, &high);
+    const float min[3] = {low.x, low.y, low.z}, max[3] = {high.x, high.y, high.z};
+    float res[3], norm[3];
+    if (segment_box(min, max, prev, pos, res, norm, true) == 0) {
+        return false;
+    }
+    eng_vector_t a = {prev[0], prev[1], prev[2]}, b = {pos[0], pos[1], pos[2]};
+    eng_ray_hit_t ray;
+    if (eng_entity_ray_intersection(engine, at, &a, &b, &ray) <= 0 || ray.distance > 1.0f) {
+        return false;
+    }
+    eng_vector_t local_normal = ray.normal;
+    if (!fields->smooth) {
+        nmo_object_id_t id = engine->entities.data[at].id;
+        nmo_object_t *object = eng_find_object(engine, id);
+        const nmo_3dentity_state_t *state = object != NULL
+            ? (const nmo_3dentity_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(engine->types, object,
+                                                                                              CKPGUID_3DENTITY)
+            : NULL;
+        nmo_object_id_t mesh = state != NULL ? eng_object_ref(engine, id, &state->current_mesh) : 0;
+        eng_mesh_copy_t *copy = mesh != 0 ? eng_mesh_copy_find(engine, mesh) : NULL;
+        nmo_object_t *mesh_object = mesh != 0 && copy == NULL ? eng_find_object(engine, mesh) : NULL;
+        const nmo_mesh_state_t *mesh_state = mesh_object != NULL
+            ? (const nmo_mesh_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(engine->types, mesh_object,
+                                                                                         CKPGUID_MESH)
+            : NULL;
+        const nmo_face_t *faces = copy != NULL ? eng_mesh_copy_faces(engine, copy)
+                                               : mesh_state != NULL ? mesh_state->faces : NULL;
+        if (faces != NULL) {
+            local_normal = (eng_vector_t){faces[ray.face].normal.x, faces[ray.face].normal.y, faces[ray.face].normal.z};
+        }
+    }
+    eng_vector_t wn, wp;
+    eng_entity_transform_vector(engine, at, &wn, &local_normal, -1, false);
+    eng_vector_normalize(&wn);
+    eng_entity_transform(engine, at, &wp, &ray.point, -1);
+    point[0] = wp.x, point[1] = wp.y, point[2] = wp.z;
+    normal[0] = wn.x, normal[1] = wn.y, normal[2] = wn.z;
+    uv[0] = ray.u, uv[1] = ray.v;
+    return true;
+}
+
+/* The deflectors the emitter manages, in UpdateParticles' order */
+static void manage_all_deflectors(nmo_engine_t *engine, eng_emitter_t *e, const emitter_inputs_t *in, float dt)
+{
+    if (in->deflectors & PD_PLANE)
+        manage_deflectors(engine, e, in, dt, "Particle Plane Deflector", 3, true, 0.1f, hit_plane, NULL);
+    if (in->deflectors & PD_INFINITEPLANE)
+        manage_deflectors(engine, e, in, dt, "Particle Infinite Plane Deflector", 3, false, 0.0f, hit_infinite_plane, NULL);
+    if (in->deflectors & PD_CYLINDER)
+        manage_deflectors(engine, e, in, dt, "Particle Cylinder Deflector", 3, true, 0.0f, hit_cylinder, NULL);
+    if (in->deflectors & PD_SPHERE)
+        manage_deflectors(engine, e, in, dt, "Particle Sphere Deflector", 3, true, 0.0f, hit_sphere, NULL);
+    if (in->deflectors & PD_BOX)
+        manage_deflectors(engine, e, in, dt, "Particle Box Deflector", 3, true, 0.0f, hit_box, NULL);
+    if (in->deflectors & PD_OBJECT)
+        manage_deflectors(engine, e, in, dt, "Particle Object Deflector", 4, true, 0.0f, hit_object, NULL);
+}
+
+/* ParticleEmitter::UpdateParticles, the interactors first, the deflectors last: then the emitter's
    box (SetBoundingBox, in the world) is where its living particles were and went, which an emitter
    whose particles all died leaves inverted. A wave emitter's UpdateParticles2 neither turns nor
    moves them (the box is where they were) */
 static void update_particles(nmo_engine_t *engine, eng_emitter_t *e, const emitter_inputs_t *in, float delta,
                              bool wave)
 {
+    e->impacts.count = 0; /* m_Impacts.Clear() */
+    e->current_impact = 0;
     if (e->particles.count == 0) {
         return; /* no particles yet: nothing to do */
     }
@@ -867,6 +1317,9 @@ static void update_particles(nmo_engine_t *engine, eng_emitter_t *e, const emitt
     }
     e->particles.count = kept;
     eng_entity_set_user_box(engine, eng_entity_index(engine, e->entity), &low, &high, false);
+    if (in->deflectors) {
+        manage_all_deflectors(engine, e, in, delta);
+    }
 }
 
 /*
@@ -943,6 +1396,16 @@ static int bb_particle_system(blk_t *b)
             update_particles(b->engine, e, &in, delta, shape == SHAPE_WAVE);
             nmo_engine_block_set_local_value(b, 2, &emission_time, sizeof(emission_time));
         }
+    }
+    /* Deflector impacts: the next one on the outputs, through Impacts Loop Out */
+    if (e->current_impact < e->impacts.count && nmo_engine_block_output_count(b) > 3 &&
+        nmo_engine_block_output_parameter_count(b) >= 4) {
+        const eng_impact_t *impact = &e->impacts.data[e->current_impact++];
+        nmo_engine_block_set_output_value(b, 0, impact->position, sizeof(impact->position));
+        nmo_engine_block_set_output_value(b, 1, impact->direction, sizeof(impact->direction));
+        nmo_engine_block_set_output_value(b, 2, &impact->object, sizeof(impact->object));
+        nmo_engine_block_set_output_value(b, 3, impact->uv, sizeof(impact->uv));
+        OUT_ON(b, 3);
     }
     if (!activity && e->particles.count == 0) {
         e->shown = false;

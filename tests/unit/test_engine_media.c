@@ -340,6 +340,101 @@ TEST(engine_media, a_mutation_box_brings_size_and_color_to_its_own)
     fixture_end(&f);
 }
 
+/* A point particle system on `emitter` shooting one particle a frame along the emitter's Z at
+   0.05 a ms, bounce 1, managing `deflectors` and no interactor. After fixture_begin_edit(). */
+static nmo_object_id_t shot_particles(engine_fixture_t *f, int32_t deflectors)
+{
+    nmo_object_id_t ps = fixture_block(f, GUID_POINT_PARTICLES, "Particles");
+    if (ps == 0) {
+        return 0;
+    }
+    fixture_link(f, f->script_in, BLOCK_IN(f, ps, 0), 0);
+    input_float(f, BLOCK_PIN(f, ps, 0), 0.0f);    /* Emission Delay */
+    input_float(f, BLOCK_PIN(f, ps, 2), 0.0f);    /* Yaw Variance */
+    input_float(f, BLOCK_PIN(f, ps, 3), 0.0f);    /* Pitch Variance */
+    input_float(f, BLOCK_PIN(f, ps, 4), 0.05f);   /* Speed */
+    input_float(f, BLOCK_PIN(f, ps, 8), 1000.0f); /* Lifespan */
+    fixture_input_int(f, BLOCK_PIN(f, ps, 11), 1); /* Emission */
+    input_float(f, BLOCK_PIN(f, ps, 17), 1.0f);   /* Bounce */
+    const int32_t settings[3][2] = {{9, 0}, {10, deflectors}, {12, 0}};
+    for (int i = 0; i < 3; i++) {
+        engine_fixture_value_t *setting = &f->values[f->value_count++];
+        setting->param = local_of(f, ps, (size_t)settings[i][0]);
+        memcpy(setting->bytes, &settings[i][1], sizeof(int32_t));
+        setting->size = sizeof(int32_t);
+    }
+    return ps;
+}
+
+/* A deflector attribute `name` on `object`: response, friction and density */
+static void deflector_attribute(engine_fixture_t *f, nmo_object_id_t object, const char *name, float response,
+                                float friction, float density)
+{
+    const float values[3] = {response, friction, density};
+    nmo_object_id_t structure[3];
+    for (int i = 0; i < 3; i++) {
+        structure[i] = value_parameter(f, NMO_CID_PARAMETERLOCAL, CKPGUID_FLOAT, &values[i], sizeof(float));
+    }
+    value_attribute(f, object, name, CKPGUID_FLOOR, structure, sizeof(structure));
+}
+
+TEST(engine_media, an_infinite_plane_deflector_sends_the_particles_back)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t emitter = plain_entity(&f, "Emitter");
+    nmo_object_id_t plane = plain_entity(&f, "Floor");
+    ASSERT_TRUE(emitter != 0 && plane != 0);
+    /* the emitter half a unit up, its Z pointing down */
+    nmo_3dentity_state_t *state = (nmo_3dentity_state_t *)fixture_state(&f, emitter);
+    const float down[16] = {1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, 0, 0.5f, 0, 1};
+    memcpy(state->world_matrix, down, sizeof(down));
+    f.owner_id = emitter;
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    deflector_attribute(&f, plane, "Particle Infinite Plane Deflector", 1.0f, 1.0f, 1.0f);
+    ASSERT_TRUE(shot_particles(&f, 0x02 | 0x40) != 0); /* Infinite Plane, impacts */
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 25.0f));
+
+    /* 1.25 down from 0.5 crosses the plane at the origin: sent back up as far, as fast */
+    const eng_emitter_t *e = &eng_tt(f.engine)->emitters.data[0];
+    ASSERT_EQ(1u, (uint32_t)e->particles.count);
+    const eng_particle_t *p = &e->particles.data[0];
+    ASSERT_FLOAT_EQ(1.25f, p->pos[1], 1e-5f);
+    ASSERT_FLOAT_EQ(0.05f, p->dir[1], 1e-6f);
+    ASSERT_EQ(1u, (uint32_t)e->impacts.count);
+    ASSERT_FLOAT_EQ(0.0f, e->impacts.data[0].position[1], 1e-6f);
+    ASSERT_FLOAT_EQ(1.0f, e->impacts.data[0].direction[1], 1e-6f);
+    ASSERT_EQ(plane, e->impacts.data[0].object);
+    fixture_end(&f);
+}
+
+TEST(engine_media, a_sphere_deflector_kills_the_particles_that_hit_it)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t emitter = plain_entity(&f, "Emitter");
+    nmo_object_id_t sphere = plain_entity(&f, "Ball");
+    ASSERT_TRUE(emitter != 0 && sphere != 0);
+    ((nmo_3dentity_state_t *)fixture_state(&f, emitter))->world_matrix[14] = -2.0f; /* 2 back, facing it */
+    f.owner_id = emitter;
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    deflector_attribute(&f, sphere, "Particle Sphere Deflector", 1.0f, 1.0f, 1.0f);
+    ASSERT_TRUE(shot_particles(&f, 0x08 | 0x80) != 0); /* Sphere, die on impact */
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    const eng_vector_t low = {-1, -1, -1}, high = {1, 1, 1}; /* the ball's box, to meet the emitter's */
+    eng_entity_set_user_box(f.engine, eng_entity_index(f.engine, sphere), &low, &high, true);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 25.0f));
+
+    /* from z -2 to -0.75: through the unit sphere's surface at -1, so it dies */
+    ASSERT_EQ(0u, (uint32_t)eng_tt(f.engine)->emitters.data[0].particles.count);
+    fixture_end(&f);
+}
+
 TEST(engine_media, voices_follow_the_sound_settings_and_instances)
 {
     engine_fixture_t f;
@@ -1133,6 +1228,8 @@ REGISTER_TEST(engine_media, particle_system_exits_off_once_its_particles_died);
 REGISTER_TEST(engine_media, wave_particles_stay_where_they_were_emitted);
 REGISTER_TEST(engine_media, gravity_and_global_wind_push_the_particles);
 REGISTER_TEST(engine_media, a_mutation_box_brings_size_and_color_to_its_own);
+REGISTER_TEST(engine_media, an_infinite_plane_deflector_sends_the_particles_back);
+REGISTER_TEST(engine_media, a_sphere_deflector_kills_the_particles_that_hit_it);
 REGISTER_TEST(engine_media, movie_player_shows_the_movie_frames_over_its_duration);
 REGISTER_TEST(engine_media, movie_texture_shows_the_decoded_frame_of_its_slot);
 REGISTER_TEST(engine_media, transparent_texture_clears_black_without_a_saved_color);
