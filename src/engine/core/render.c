@@ -803,6 +803,301 @@ uint32_t *eng_mesh_copy_colors(nmo_engine_t *engine, eng_mesh_copy_t *copy)
     return copy->colors;
 }
 
+/* The arena of a module's session (a range over an owned session borrows its owner's); the
+   engine's own for a document without one */
+static nmo_arena_t *eng_module_arena(nmo_engine_t *engine, const eng_module_t *module)
+{
+    nmo_session_t *session = module->session;
+    for (size_t i = 0; session == NULL && i < engine->modules.count; i++) {
+        if (engine->modules.data[i].repo == module->repo) {
+            session = engine->modules.data[i].session;
+        }
+    }
+    if (session != NULL) {
+        return nmo_session_get_arena(session);
+    }
+    if (engine->arena == NULL) {
+        engine->arena = nmo_arena_create(NULL, 64u * 1024u);
+    }
+    return engine->arena;
+}
+
+/* A mesh's state to change, its run time copy and its session's arena; false for no mesh */
+static bool eng_mesh_parts(nmo_engine_t *engine, nmo_object_id_t mesh, nmo_mesh_state_t **state,
+                           eng_mesh_copy_t **copy, nmo_arena_t **arena)
+{
+    const eng_module_t *module = mesh != 0 ? eng_module_of(engine, mesh, NULL) : NULL;
+    *state = (nmo_mesh_state_t *)eng_mesh_state(engine, mesh);
+    *copy = *state != NULL ? eng_mesh_copy(engine, mesh) : NULL;
+    *arena = module != NULL ? eng_module_arena(engine, module) : NULL;
+    return *state != NULL && *copy != NULL && *arena != NULL;
+}
+
+bool eng_mesh_remap_vertices(nmo_engine_t *engine, nmo_object_id_t mesh, const int32_t *sources, int32_t count)
+{
+    nmo_mesh_state_t *state = NULL;
+    eng_mesh_copy_t *copy = NULL;
+    nmo_arena_t *arena = NULL;
+    if (count < 0 || !eng_mesh_parts(engine, mesh, &state, &copy, &arena)) {
+        return false;
+    }
+    uint32_t old = state->vertex_count;
+    size_t n = (size_t)count, room = n > 0 ? n : 1;
+    nmo_vertex_t *file = (nmo_vertex_t *)nmo_arena_alloc(arena, room * sizeof(nmo_vertex_t), _Alignof(nmo_vertex_t));
+    uint32_t *file_colors = (uint32_t *)nmo_arena_alloc(arena, room * sizeof(uint32_t), _Alignof(uint32_t));
+    uint32_t *file_specular = (uint32_t *)nmo_arena_alloc(arena, room * sizeof(uint32_t), _Alignof(uint32_t));
+    nmo_vertex_t *vertices = (nmo_vertex_t *)malloc(room * sizeof(nmo_vertex_t));
+    uint32_t *colors = copy->colors != NULL ? (uint32_t *)malloc(room * sizeof(uint32_t)) : NULL;
+    bool weights = state->vertex_weights != NULL && state->vertex_weight_count == old;
+    float *file_weights = weights ? (float *)nmo_arena_alloc(arena, room * sizeof(float), _Alignof(float)) : NULL;
+    if (file == NULL || file_colors == NULL || file_specular == NULL || vertices == NULL ||
+        (copy->colors != NULL && colors == NULL) || (weights && file_weights == NULL)) {
+        free(vertices);
+        free(colors);
+        return false;
+    }
+    /* the channels' UVs: the file's and the copy's own, made first so nothing changes on failure */
+    float **uvs = copy->channels.count > 0 ? (float **)calloc(copy->channels.count, sizeof(float *)) : NULL;
+    bool ok = copy->channels.count == 0 || uvs != NULL;
+    for (size_t c = 0; ok && c < copy->channels.count; c++) {
+        if (copy->channels.data[c].uvs != NULL) {
+            uvs[c] = (float *)malloc(room * 2u * sizeof(float));
+            ok = uvs[c] != NULL;
+        }
+    }
+    nmo_vector2_t **file_uvs = state->material_channel_count > 0
+        ? (nmo_vector2_t **)calloc(state->material_channel_count, sizeof(nmo_vector2_t *)) : NULL;
+    ok = ok && (state->material_channel_count == 0 || file_uvs != NULL);
+    for (uint32_t c = 0; ok && c < state->material_channel_count; c++) {
+        if (state->material_channels[c].uv_coords != NULL) {
+            file_uvs[c] = (nmo_vector2_t *)nmo_arena_alloc(arena, room * sizeof(nmo_vector2_t), _Alignof(nmo_vector2_t));
+            ok = file_uvs[c] != NULL;
+        }
+    }
+    if (!ok) {
+        for (size_t c = 0; uvs != NULL && c < copy->channels.count; c++) {
+            free(uvs[c]);
+        }
+        free(uvs);
+        free(file_uvs);
+        free(vertices);
+        free(colors);
+        return false;
+    }
+    for (size_t i = 0; i < n; i++) {
+        int32_t from = sources != NULL ? sources[i] : (int32_t)i;
+        bool kept = from >= 0 && (uint32_t)from < old;
+        nmo_vertex_t none = {0};
+        file[i] = kept && state->vertices != NULL ? state->vertices[from] : none;
+        vertices[i] = kept ? copy->vertices[from] : none;
+        file_colors[i] = kept && state->vertex_colors != NULL ? state->vertex_colors[from] : 0xFFFFFFFFu;
+        file_specular[i] = kept && state->vertex_specular != NULL ? state->vertex_specular[from] : 0u;
+        if (colors != NULL) {
+            colors[i] = kept ? copy->colors[from] : 0xFFFFFFFFu;
+        }
+        if (weights) {
+            file_weights[i] = kept ? state->vertex_weights[from] : 0.0f;
+        }
+        for (size_t c = 0; uvs != NULL && c < copy->channels.count; c++) {
+            if (uvs[c] != NULL) {
+                const float *at = copy->channels.data[c].uvs;
+                uvs[c][2 * i] = kept ? at[2 * from] : 0.0f;
+                uvs[c][2 * i + 1] = kept ? at[2 * from + 1] : 0.0f;
+            }
+        }
+        for (uint32_t c = 0; file_uvs != NULL && c < state->material_channel_count; c++) {
+            const nmo_material_channel_t *channel = &state->material_channels[c];
+            if (file_uvs[c] != NULL) {
+                nmo_vector2_t zero = {0.0f, 0.0f};
+                file_uvs[c][i] = kept && (uint32_t)from < channel->uv_count ? channel->uv_coords[from] : zero;
+            }
+        }
+    }
+    for (size_t c = 0; uvs != NULL && c < copy->channels.count; c++) {
+        if (uvs[c] != NULL) {
+            free((void *)copy->channels.data[c].uvs);
+            copy->channels.data[c].uvs = uvs[c];
+        }
+    }
+    for (uint32_t c = 0; file_uvs != NULL && c < state->material_channel_count; c++) {
+        if (file_uvs[c] != NULL) {
+            state->material_channels[c].uv_coords = file_uvs[c];
+            state->material_channels[c].uv_count = (uint32_t)n;
+        }
+    }
+    free(uvs);
+    free(file_uvs);
+    free(copy->vertices);
+    copy->vertices = vertices;
+    free(copy->colors);
+    copy->colors = colors;
+    state->vertices = file;
+    state->vertex_colors = file_colors;
+    state->vertex_specular = file_specular;
+    if (weights) {
+        state->vertex_weights = file_weights;
+        state->vertex_weight_count = (uint32_t)n;
+    }
+    state->vertex_count = (uint32_t)n;
+    eng_mesh_vertices_moved(engine, copy, false);
+    return true;
+}
+
+/* The faces (and their copy's) at `count`, new ones of vertex 0 in group 0 on every channel */
+static bool eng_mesh_resize_faces(nmo_engine_t *engine, nmo_mesh_state_t *state, eng_mesh_copy_t *copy,
+                                  nmo_arena_t *arena, uint32_t count)
+{
+    uint32_t old = state->face_count, kept = old < count ? old : count;
+    size_t room = count > 0 ? count : 1;
+    nmo_face_t *faces = (nmo_face_t *)nmo_arena_alloc(arena, room * sizeof(nmo_face_t), _Alignof(nmo_face_t));
+    uint16_t *indices = (uint16_t *)nmo_arena_alloc(arena, room * 3u * sizeof(uint16_t), _Alignof(uint16_t));
+    nmo_face_t *copied = copy->faces != NULL ? (nmo_face_t *)malloc(room * sizeof(nmo_face_t)) : NULL;
+    if (faces == NULL || indices == NULL || (copy->faces != NULL && copied == NULL)) {
+        free(copied);
+        return false;
+    }
+    const nmo_face_t fresh = {{0.0f, 0.0f, 0.0f}, 0u, 0xFFFFu};
+    for (uint32_t f = 0; f < count; f++) {
+        bool was = f < kept;
+        faces[f] = was && state->faces != NULL ? state->faces[f] : fresh;
+        if (copied != NULL) {
+            copied[f] = was ? copy->faces[f] : fresh;
+        }
+        for (int k = 0; k < 3; k++) {
+            indices[3u * f + (uint32_t)k] = was && state->face_vertex_indices != NULL
+                                                ? state->face_vertex_indices[3u * f + (uint32_t)k] : 0u;
+        }
+    }
+    if (copied != NULL) {
+        free(copy->faces);
+        copy->faces = copied;
+    }
+    state->faces = faces;
+    state->face_vertex_indices = indices;
+    state->face_count = count;
+    copy->version = ++engine->render.mesh_version;
+    return true;
+}
+
+bool eng_mesh_set_face_count(nmo_engine_t *engine, nmo_object_id_t mesh, int32_t count)
+{
+    nmo_mesh_state_t *state = NULL;
+    eng_mesh_copy_t *copy = NULL;
+    nmo_arena_t *arena = NULL;
+    return eng_mesh_parts(engine, mesh, &state, &copy, &arena) &&
+           eng_mesh_resize_faces(engine, state, copy, arena, count > 0 ? (uint32_t)count : 0u);
+}
+
+bool eng_mesh_set_vertex_count(nmo_engine_t *engine, nmo_object_id_t mesh, int32_t count)
+{
+    const nmo_mesh_state_t *state = eng_mesh_state(engine, mesh);
+    if (count < 0) {
+        count = 0;
+    }
+    if (state == NULL || (uint32_t)count == state->vertex_count) {
+        return state != NULL;
+    }
+    uint32_t old = state->vertex_count;
+    if (!eng_mesh_remap_vertices(engine, mesh, NULL, count)) {
+        return false;
+    }
+    if ((uint32_t)count >= old) {
+        return true;
+    }
+    /* the faces and lines left with a vertex gone go */
+    nmo_mesh_state_t *changed = (nmo_mesh_state_t *)state;
+    eng_mesh_copy_t *copy = eng_mesh_copy(engine, mesh);
+    uint32_t write = 0;
+    for (uint32_t f = 0; changed->face_vertex_indices != NULL && f < changed->face_count; f++) {
+        const uint16_t *k = &changed->face_vertex_indices[3u * f];
+        if (k[0] >= (uint32_t)count || k[1] >= (uint32_t)count || k[2] >= (uint32_t)count) {
+            continue;
+        }
+        if (write != f) {
+            memmove(&changed->face_vertex_indices[3u * write], k, 3u * sizeof(uint16_t));
+            if (changed->faces != NULL) {
+                changed->faces[write] = changed->faces[f];
+            }
+            if (copy != NULL && copy->faces != NULL) {
+                copy->faces[write] = copy->faces[f];
+            }
+        }
+        write++;
+    }
+    changed->face_count = changed->face_vertex_indices != NULL ? write : changed->face_count;
+    uint32_t lines = 0;
+    for (uint32_t l = 0; changed->line_indices != NULL && l < changed->line_count; l++) {
+        const uint16_t *k = &changed->line_indices[2u * l];
+        if (k[0] < (uint32_t)count && k[1] < (uint32_t)count) {
+            memmove(&changed->line_indices[2u * lines++], k, 2u * sizeof(uint16_t));
+        }
+    }
+    changed->line_count = changed->line_indices != NULL ? lines : changed->line_count;
+    if (copy != NULL) {
+        copy->version = ++engine->render.mesh_version;
+    }
+    return true;
+}
+
+bool eng_mesh_dissociate_faces(nmo_engine_t *engine, nmo_object_id_t mesh)
+{
+    const nmo_mesh_state_t *state = eng_mesh_state(engine, mesh);
+    size_t corners = state != NULL && state->face_vertex_indices != NULL ? 3u * (size_t)state->face_count : 0;
+    if (corners == 0 || corners > 0x10000u) {
+        return state != NULL;
+    }
+    uint32_t old = state->vertex_count;
+    size_t most = corners + 2u * (size_t)state->line_count;
+    int32_t *sources = (int32_t *)malloc(most * sizeof(int32_t));
+    int32_t *first = old > 0 ? (int32_t *)malloc(old * sizeof(int32_t)) : NULL;
+    if (sources == NULL || (old > 0 && first == NULL)) {
+        free(sources);
+        free(first);
+        return false;
+    }
+    for (uint32_t v = 0; v < old; v++) {
+        first[v] = -1;
+    }
+    size_t count = 0;
+    for (size_t c = 0; c < corners; c++) {
+        uint16_t from = state->face_vertex_indices[c];
+        sources[count] = from < old ? (int32_t)from : -1;
+        if (from < old && first[from] < 0) {
+            first[from] = (int32_t)count;
+        }
+        count++;
+    }
+    /* lines keep their ends, a vertex no face uses included */
+    for (uint32_t i = 0; state->line_indices != NULL && i < 2u * state->line_count; i++) {
+        uint16_t from = state->line_indices[i];
+        if (from >= old || first[from] >= 0) {
+            continue;
+        }
+        if (count == 0x10000u) {
+            free(sources);
+            free(first);
+            return true;
+        }
+        first[from] = (int32_t)count;
+        sources[count++] = from;
+    }
+    bool ok = eng_mesh_remap_vertices(engine, mesh, sources, (int32_t)count);
+    if (ok) {
+        nmo_mesh_state_t *changed = (nmo_mesh_state_t *)state;
+        for (size_t c = 0; c < corners; c++) {
+            changed->face_vertex_indices[c] = (uint16_t)c;
+        }
+        for (uint32_t i = 0; changed->line_indices != NULL && i < 2u * changed->line_count; i++) {
+            uint16_t from = changed->line_indices[i];
+            changed->line_indices[i] = from < old && first[from] >= 0 ? (uint16_t)first[from] : 0u;
+        }
+        changed->has_progressive_mesh = false; /* DestroyPM */
+    }
+    free(sources);
+    free(first);
+    return ok;
+}
+
 nmo_object_id_t eng_mesh_duplicate(nmo_engine_t *engine, nmo_object_id_t model, nmo_object_id_t source,
                                    const char *name)
 {
@@ -812,17 +1107,10 @@ nmo_object_id_t eng_mesh_duplicate(nmo_engine_t *engine, nmo_object_id_t model, 
     const eng_module_t *module = id != 0 ? eng_module_of(engine, id, NULL) : NULL;
     nmo_object_t *object = id != 0 ? eng_find_object(engine, id) : NULL;
     nmo_mesh_state_t *state = object != NULL ? (nmo_mesh_state_t *)nmo_object_get_state(object) : NULL;
-    /* a range over an owned session borrows its owner's arena */
-    nmo_session_t *session = module != NULL ? module->session : NULL;
-    for (size_t i = 0; module != NULL && session == NULL && i < engine->modules.count; i++) {
-        if (engine->modules.data[i].repo == module->repo) {
-            session = engine->modules.data[i].session;
-        }
-    }
-    if (session == NULL || state == NULL) {
+    nmo_arena_t *arena = module != NULL ? eng_module_arena(engine, module) : NULL;
+    if (arena == NULL || state == NULL) {
         return 0;
     }
-    nmo_arena_t *arena = nmo_session_get_arena(session);
     const eng_mesh_copy_t *moved = eng_mesh_copy_find(engine, source);
     size_t vertices = from->vertex_count, faces = from->face_count, groups = from->material_group_count;
     state->vertices = vertices > 0 ? (nmo_vertex_t *)nmo_arena_alloc(arena, vertices * sizeof(nmo_vertex_t),
@@ -2181,6 +2469,81 @@ bool eng_entity_set_current_mesh(nmo_engine_t *engine, nmo_object_id_t entity, n
     }
     state->current_mesh = nmo_ref_from_id(local);
     return true;
+}
+
+/* The 3D entity state of an entity and its module; NULL for none */
+static nmo_3dentity_state_t *eng_entity_state_of(nmo_engine_t *engine, nmo_object_id_t entity,
+                                                 const eng_module_t **module)
+{
+    nmo_object_t *object = entity != 0 ? eng_find_object(engine, entity) : NULL;
+    *module = object != NULL ? eng_module_of(engine, entity, NULL) : NULL;
+    return object != NULL && *module != NULL
+        ? (nmo_3dentity_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(engine->types, object,
+                                                                                    CKPGUID_3DENTITY)
+        : NULL;
+}
+
+int32_t eng_entity_mesh_count(nmo_engine_t *engine, nmo_object_id_t entity)
+{
+    const eng_module_t *module = NULL;
+    const nmo_3dentity_state_t *state = eng_entity_state_of(engine, entity, &module);
+    return state != NULL ? (int32_t)state->mesh_count : 0;
+}
+
+nmo_object_id_t eng_entity_mesh_at(nmo_engine_t *engine, nmo_object_id_t entity, int32_t index)
+{
+    const eng_module_t *module = NULL;
+    const nmo_3dentity_state_t *state = eng_entity_state_of(engine, entity, &module);
+    return state != NULL && index >= 0 && (uint32_t)index < state->mesh_count
+               ? eng_object_ref(engine, entity, &state->mesh_ids[index]) : 0;
+}
+
+bool eng_entity_add_mesh(nmo_engine_t *engine, nmo_object_id_t entity, nmo_object_id_t mesh)
+{
+    const eng_module_t *module = NULL;
+    nmo_3dentity_state_t *state = eng_entity_state_of(engine, entity, &module);
+    nmo_object_id_t local = 0;
+    const eng_module_t *mesh_module = mesh != 0 ? eng_module_of(engine, mesh, &local) : NULL;
+    if (state == NULL || mesh_module == NULL || mesh_module->repo != module->repo) {
+        return false;
+    }
+    for (uint32_t i = 0; i < state->mesh_count; i++) {
+        if (eng_object_ref(engine, entity, &state->mesh_ids[i]) == mesh) {
+            return true;
+        }
+    }
+    nmo_arena_t *arena = eng_module_arena(engine, module);
+    nmo_ref_t *ids = arena != NULL ? (nmo_ref_t *)nmo_arena_alloc(arena, (state->mesh_count + 1u) * sizeof(nmo_ref_t),
+                                                                  _Alignof(nmo_ref_t)) : NULL;
+    if (ids == NULL) {
+        return false;
+    }
+    if (state->mesh_count > 0) {
+        memcpy(ids, state->mesh_ids, state->mesh_count * sizeof(nmo_ref_t));
+    }
+    ids[state->mesh_count] = nmo_ref_from_id(local);
+    state->mesh_ids = ids;
+    state->mesh_count++;
+    return true;
+}
+
+bool eng_entity_remove_mesh(nmo_engine_t *engine, nmo_object_id_t entity, nmo_object_id_t mesh)
+{
+    const eng_module_t *module = NULL;
+    nmo_3dentity_state_t *state = eng_entity_state_of(engine, entity, &module);
+    for (uint32_t i = 0; state != NULL && mesh != 0 && i < state->mesh_count; i++) {
+        if (eng_object_ref(engine, entity, &state->mesh_ids[i]) != mesh) {
+            continue;
+        }
+        memmove(&state->mesh_ids[i], &state->mesh_ids[i + 1], (state->mesh_count - i - 1u) * sizeof(nmo_ref_t));
+        state->mesh_count--;
+        if (eng_object_ref(engine, entity, &state->current_mesh) == mesh) {
+            eng_entity_set_current_mesh(engine, entity, state->mesh_count > 0
+                                                            ? eng_object_ref(engine, entity, &state->mesh_ids[0]) : 0);
+        }
+        return true;
+    }
+    return false;
 }
 
 bool eng_mesh_sphere(nmo_engine_t *engine, nmo_object_id_t mesh_id, eng_vector_t *center, float *radius)

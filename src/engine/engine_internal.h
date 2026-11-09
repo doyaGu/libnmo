@@ -36,6 +36,9 @@
 struct nmo_engine {
     nmo_workspace_t *workspace;
     ENG_VEC(eng_module_t) modules; /* the first is the document the engine was made for */
+    /* What blocks give the states of a document without a session of its own (the document the
+       engine was made for): made when first needed, gone with the engine */
+    nmo_arena_t *arena;
     nmo_type_registry_t *types;
     nmo_operation_registry_t *operations_registry;
     ENG_VEC(eng_op_lookup_t) op_lookups;

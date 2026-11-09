@@ -5,6 +5,8 @@
 
 #include "../engine_internal.h"
 
+#include "core/nmo_arena.h"
+
 #include "behavior/nmo_script_model.h"
 #include "object/nmo_context.h"
 #include "object/nmo_object_enum_defs.h"
@@ -279,6 +281,9 @@ void nmo_engine_destroy(nmo_engine_t *engine)
     free(engine->dynamic.objects.data);
     free(engine->dynamic.deferred.data);
     eng_free_modules(engine);
+    if (engine->arena != NULL) {
+        nmo_arena_destroy(engine->arena);
+    }
     free(engine);
 }
 

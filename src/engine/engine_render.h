@@ -385,6 +385,20 @@ void eng_mesh_build_face_normals(nmo_engine_t *engine, eng_mesh_copy_t *copy);
 void eng_mesh_reset_vertices(nmo_engine_t *engine, eng_mesh_copy_t *copy);
 /* The copy's vertex colors, copied from the file the first time; NULL for no vertices */
 uint32_t *eng_mesh_copy_colors(nmo_engine_t *engine, eng_mesh_copy_t *copy);
+/* The mesh's vertices become `count` taken from `sources` (vertex i from sources[i], a new zeroed
+   white one for -1; sources NULL: vertex i from vertex i): positions, normals, UVs (the
+   channels' too), colors and weights, in the state and its copy. Faces are left alone. False on
+   failure (nothing changed). */
+bool eng_mesh_remap_vertices(nmo_engine_t *engine, nmo_object_id_t mesh, const int32_t *sources, int32_t count);
+/* CKMesh::SetVertexCount: the vertices kept, new ones zeroed and white; fewer drop the faces and
+   lines that lose a vertex */
+bool eng_mesh_set_vertex_count(nmo_engine_t *engine, nmo_object_id_t mesh, int32_t count);
+/* CKMesh::SetFaceCount: the faces kept, new ones of vertex 0 in material group 0 on every
+   channel, with no normal */
+bool eng_mesh_set_face_count(nmo_engine_t *engine, nmo_object_id_t mesh, int32_t count);
+/* CKMesh::DissociateAllFaces: each face corner a vertex of its own (lines keep their ends);
+   nothing past 65536 corners */
+bool eng_mesh_dissociate_faces(nmo_engine_t *engine, nmo_object_id_t mesh);
 /* CKContext::CopyObject of a mesh, made in `model`'s document so `model` can take it: the
    source's vertices, colors, faces and material groups as they are now (a material of another
    document left out; no channels). 0 on failure */
@@ -468,6 +482,13 @@ nmo_object_id_t eng_create_mesh(nmo_engine_t *engine, const char *name, int32_t 
    at run time (a created entity takes a created mesh); 0 for none. False when it cannot refer
    to it. */
 bool eng_entity_set_current_mesh(nmo_engine_t *engine, nmo_object_id_t entity, nmo_object_id_t mesh);
+/* CK3dEntity::GetMeshCount and GetMesh: the entity's meshes (its file's, then blocks') */
+int32_t eng_entity_mesh_count(nmo_engine_t *engine, nmo_object_id_t entity);
+nmo_object_id_t eng_entity_mesh_at(nmo_engine_t *engine, nmo_object_id_t entity, int32_t index);
+/* CK3dEntity::AddMesh (once; a mesh it can refer to) and RemoveMesh (when it was the current
+   one, the first left is, none without one); false when nothing was done */
+bool eng_entity_add_mesh(nmo_engine_t *engine, nmo_object_id_t entity, nmo_object_id_t mesh);
+bool eng_entity_remove_mesh(nmo_engine_t *engine, nmo_object_id_t entity, nmo_object_id_t mesh);
 /* CKMesh::GetBaryCenter and GetRadius, in the mesh's space; false for no mesh */
 bool eng_mesh_sphere(nmo_engine_t *engine, nmo_object_id_t mesh, struct eng_vector *center, float *radius);
 /* Whether the scene traversal renders the 3D entity: in the scene, shown, and no parent hiding
