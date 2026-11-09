@@ -449,48 +449,42 @@ NMO_API nmo_status_t nmo_script_edit_add_node_ex(
             nmo_behavior_set_target_parameter_id(
                 node_state, target_parameter_id);
         }
-        for (uint32_t i = 0; i < proto->local_param_count; ++i) {
-            nmo_object_id_t parameter_id = 0;
-            rc = script_edit_create_parameter_object(
-                tx, NMO_CID_PARAMETERLOCAL, node_id,
-                proto->local_params[i].name,
-                proto->local_params[i].type_guid,
-                proto->local_params[i].default_value,
-                &manager_entry,
-                &parameter_id);
-            if (rc != NMO_OK) {
-                return rc;
-            }
-            rc = nmo_behavior_ref_array_append(
-                &node_state->local_parameters, parameter_id, NULL);
-            if (rc != NMO_OK) {
-                return rc;
-            }
-        }
-        for (uint32_t i = 0; i < proto->setting_count; ++i) {
-            nmo_object_id_t parameter_id = 0;
-            nmo_object_t *parameter_obj = NULL;
-            nmo_parameterlocal_state_t *parameter_state = NULL;
-            rc = script_edit_create_parameter_object(
-                tx, NMO_CID_PARAMETERLOCAL, node_id,
-                proto->settings[i].name,
-                proto->settings[i].type_guid,
-                proto->settings[i].default_value,
-                &manager_entry,
-                &parameter_id);
-            if (rc != NMO_OK) {
-                return rc;
-            }
-            parameter_obj = nmo_object_repository_find_by_id(
-                nmo_workspace_internal_repository(tx->workspace),
-                parameter_id);
-            parameter_state = parameter_obj
-                ? (nmo_parameterlocal_state_t *)nmo_object_get_state(parameter_obj)
-                : NULL;
-            if (!parameter_state) {
+        /* The locals and settings in the order the prototype declares them (all the locals,
+           then the settings, without one) */
+        uint32_t local_total = proto->local_param_count + proto->setting_count;
+        bool ordered = proto->local_order != NULL && proto->local_order_count == local_total;
+        uint32_t next_local = 0, next_setting = 0;
+        for (uint32_t i = 0; i < local_total; ++i) {
+            bool setting = ordered ? proto->local_order[i] != 0 : i >= proto->local_param_count;
+            if (setting ? next_setting >= proto->setting_count
+                        : next_local >= proto->local_param_count) {
                 return NMO_ERR_INVALID_STATE;
             }
-            parameter_state->is_setting = 1u;
+            const nmo_behavior_param_desc_t *desc =
+                setting ? &proto->settings[next_setting++] : &proto->local_params[next_local++];
+            nmo_object_id_t parameter_id = 0;
+            rc = script_edit_create_parameter_object(
+                tx, NMO_CID_PARAMETERLOCAL, node_id,
+                desc->name,
+                desc->type_guid,
+                desc->default_value,
+                &manager_entry,
+                &parameter_id);
+            if (rc != NMO_OK) {
+                return rc;
+            }
+            if (setting) {
+                nmo_object_t *parameter_obj = nmo_object_repository_find_by_id(
+                    nmo_workspace_internal_repository(tx->workspace),
+                    parameter_id);
+                nmo_parameterlocal_state_t *parameter_state = parameter_obj
+                    ? (nmo_parameterlocal_state_t *)nmo_object_get_state(parameter_obj)
+                    : NULL;
+                if (!parameter_state) {
+                    return NMO_ERR_INVALID_STATE;
+                }
+                parameter_state->is_setting = 1u;
+            }
             rc = nmo_behavior_ref_array_append(
                 &node_state->local_parameters, parameter_id, NULL);
             if (rc != NMO_OK) {

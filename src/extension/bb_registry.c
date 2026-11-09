@@ -126,6 +126,18 @@ static nmo_status_t validate_proto_arrays(const nmo_behavior_proto_t *proto) {
     NMO_RETURN_IF_ERROR(validate_count_ptr(proto->local_params, proto->local_param_count,
                                           "local_param"));
     NMO_RETURN_IF_ERROR(validate_count_ptr(proto->settings, proto->setting_count, "setting"));
+    NMO_RETURN_IF_ERROR(validate_count_ptr(proto->local_order, proto->local_order_count, "local order"));
+    if (proto->local_order != NULL) {
+        uint32_t settings = 0;
+        for (uint32_t i = 0; i < proto->local_order_count; ++i) {
+            settings += proto->local_order[i] != 0 ? 1u : 0u;
+        }
+        if (proto->local_order_count != proto->local_param_count + proto->setting_count ||
+            settings != proto->setting_count) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "local order does not match the locals and settings");
+        }
+    }
     NMO_RETURN_OK();
 }
 
@@ -185,6 +197,15 @@ static nmo_status_t deep_copy_proto(
     NMO_RETURN_IF_ERROR(arena_dup_params(arena, src->settings, src->setting_count, &settings));
     tmp.settings = settings;
     tmp.setting_count = src->setting_count;
+    if (src->local_order != NULL && src->local_order_count > 0) {
+        uint8_t *order = (uint8_t *)nmo_arena_alloc(arena, src->local_order_count, 1);
+        if (!order) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "arena alloc failed");
+        }
+        memcpy(order, src->local_order, src->local_order_count);
+        tmp.local_order = order;
+        tmp.local_order_count = src->local_order_count;
+    }
 
     *dst = tmp;
     NMO_RETURN_OK();

@@ -519,6 +519,70 @@ nmo_status_t nmo_virtools_load_building_blocks(nmo_behavior_registry_t *bb_regis
     return NMO_OK;
 }
 
+/*
+ * The local layouts of building blocks whose prototypes declare their locals
+ * and settings in another order than all the locals, then the settings (or
+ * declare others than the exported data lists): each entry gives a block's
+ * locals in declaration order, each with "setting" true or false, and
+ * replaces the registered prototype's locals and settings.
+ */
+nmo_status_t nmo_virtools_load_building_block_layouts(nmo_behavior_registry_t *bb_registry, const char *path) {
+    if (!bb_registry || !path)
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "null arg");
+
+    yyjson_read_err err;
+    yyjson_doc *doc = yyjson_read_file(path, NMO_VIRTOOLS_JSON_READ_FLAGS, NULL, &err);
+    if (!doc)
+        NMO_RETURN_ERROR(NMO_ERR_CANT_READ_FILE, NMO_SEVERITY_ERROR, "JSON parse error: %s at %zu", err.msg, err.pos);
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    if (!yyjson_is_arr(root)) {
+        yyjson_doc_free(doc);
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "expected JSON array");
+    }
+
+    nmo_status_t status = NMO_OK;
+    yyjson_val *item;
+    yyjson_arr_iter iter;
+    yyjson_arr_iter_init(root, &iter);
+    while (status == NMO_OK && (item = yyjson_arr_iter_next(&iter)) != NULL) {
+        const nmo_behavior_proto_t *known = nmo_behavior_registry_find(bb_registry, get_guid(item, "guid"));
+        yyjson_val *locals = yyjson_obj_get(item, "locals");
+        if (!known || !locals || !yyjson_is_arr(locals)) continue;
+
+        nmo_behavior_param_desc_t *all = NULL;
+        uint32_t n = read_json_param_array(locals, &all);
+        nmo_behavior_param_desc_t *lp = n > 0 ? (nmo_behavior_param_desc_t *)calloc(n, sizeof(*lp)) : NULL;
+        nmo_behavior_param_desc_t *st = n > 0 ? (nmo_behavior_param_desc_t *)calloc(n, sizeof(*st)) : NULL;
+        uint8_t *order = n > 0 ? (uint8_t *)calloc(n, 1) : NULL;
+        if (n > 0 && (!all || !lp || !st || !order)) {
+            status = NMO_ERR_NOMEM;
+        } else {
+            uint32_t lp_n = 0, st_n = 0;
+            for (uint32_t i = 0; i < n; i++) {
+                yyjson_val *setting = yyjson_obj_get(yyjson_arr_get(locals, i), "setting");
+                order[i] = setting && yyjson_is_true(setting) ? 1u : 0u;
+                if (order[i]) st[st_n++] = all[i];
+                else lp[lp_n++] = all[i];
+            }
+            nmo_behavior_proto_t proto = *known;
+            proto.local_params = lp;
+            proto.local_param_count = lp_n;
+            proto.settings = st;
+            proto.setting_count = st_n;
+            proto.local_order = order;
+            proto.local_order_count = n;
+            status = nmo_behavior_registry_add(bb_registry, &proto); /* deep-copies all data */
+        }
+        free(all);
+        free(lp);
+        free(st);
+        free(order);
+    }
+
+    yyjson_doc_free(doc);
+    return status;
+}
+
 /* ============================================================================
  * Plugin metadata
  * ============================================================================ */
@@ -618,6 +682,10 @@ nmo_status_t nmo_virtools_load_data_dir(
         /* Also try extended BBs */
         snprintf(path, path_cap, "%s/virtools_building_blocks_ext.json", data_dir);
         nmo_virtools_load_building_blocks(bb_registry, path); /* optional */
+
+        /* Then the blocks' local layouts as their DLLs declare them */
+        snprintf(path, path_cap, "%s/virtools_building_block_layouts.json", data_dir);
+        nmo_virtools_load_building_block_layouts(bb_registry, path); /* optional */
     }
 
     free(path);

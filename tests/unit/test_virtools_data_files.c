@@ -133,6 +133,7 @@ TEST(virtools_data_files, tracked_json_has_no_local_absolute_paths) {
     assert_file_has_no_local_absolute_path("virtools_plugins.json");
     assert_file_has_no_local_absolute_path("virtools_building_blocks.json");
     assert_file_has_no_local_absolute_path("virtools_building_blocks_ext.json");
+    assert_file_has_no_local_absolute_path("virtools_building_block_layouts.json");
     assert_file_has_no_local_absolute_path("virtools_operation_types.json");
     assert_file_has_no_local_absolute_path("virtools_parameter_types.json");
 }

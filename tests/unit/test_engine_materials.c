@@ -12,6 +12,7 @@
 #include "object/builtin/nmo_camera_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_material_schemas.h"
+#include "object/builtin/nmo_parameterlocal_schemas.h"
 #include "object/builtin/nmo_sprite3d_schemas.h"
 #include "object/nmo_ref.h"
 
@@ -566,7 +567,7 @@ TEST(engine_materials, screen_mapping_projects_through_the_camera)
 }
 
 /* With Disable Perspective Correction the quad draws itself at the screen with UVs where its
- * vertices fall */
+ * vertices fall, until a reset; the block has Materials.dll's locals, the setting first */
 TEST(engine_materials, screen_mapping_without_perspective_draws_at_the_screen)
 {
     engine_fixture_t f;
@@ -627,6 +628,24 @@ TEST(engine_materials, screen_mapping_without_perspective_draws_at_the_screen)
     ASSERT_FLOAT_EQ((at.y - (float)viewport[1]) / (float)viewport[3], v->v, 1e-5f);
     nmo_vector2_t uv = uv_of(&f, mesh, 3);
     ASSERT_FLOAT_EQ(1.0f, uv.x, 0.0f); /* the mesh's own UVs stay */
+
+    const nmo_behavior_state_t *block = (const nmo_behavior_state_t *)fixture_state(&f, screen);
+    ASSERT_EQ(2u, (uint32_t)block->local_parameters.count);
+    const nmo_parameterlocal_state_t *forcing =
+        (const nmo_parameterlocal_state_t *)fixture_state(&f, local_of(&f, screen, 1));
+    ASSERT_NOT_NULL(forcing);
+    ASSERT_EQ(0, forcing->is_setting); /* "Is forcing", after the setting */
+    for (size_t i = 0; i < f.engine->nodes.count; i++) { /* CKM_BEHAVIORRESET */
+        if (f.engine->nodes.data[i].id == screen) {
+            eng_block_callback(f.engine, (int32_t)i, NMO_ENGINE_MSG_RESET);
+        }
+    }
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    bool mesh_drawn = false;
+    for (int32_t i = 0; i < frame.draw_count; i++) {
+        mesh_drawn = mesh_drawn || (frame.draws[i].kind == NMO_ENGINE_DRAW_MESH && frame.draws[i].object == quad);
+    }
+    ASSERT_TRUE(mesh_drawn); /* the reset took the callback off */
     fixture_end(&f);
 }
 

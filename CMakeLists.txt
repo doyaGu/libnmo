@@ -510,6 +510,7 @@ install(FILES "${PROJECT_BINARY_DIR}/libnmo.pc"
 set(NMO_RUNTIME_DATA_FILES
     data/virtools_building_blocks.json
     data/virtools_building_blocks_ext.json
+    data/virtools_building_block_layouts.json
     data/virtools_operation_types.json
     data/virtools_parameter_types.json
     data/virtools_plugins.json

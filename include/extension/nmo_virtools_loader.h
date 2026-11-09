@@ -71,6 +71,20 @@ NMO_API nmo_status_t nmo_virtools_load_building_blocks(
     nmo_behavior_registry_t *bb_registry, const char *path);
 
 /**
+ * @brief Load building block local layouts from JSON file.
+ *
+ * Reads virtools_building_block_layouts.json: for the blocks it lists, the
+ * locals and settings in the order their prototypes declare them, which
+ * replace those of the prototypes already registered.
+ *
+ * @param bb_registry  BB registry
+ * @param path         JSON file path
+ * @return NMO_OK on success
+ */
+NMO_API nmo_status_t nmo_virtools_load_building_block_layouts(
+    nmo_behavior_registry_t *bb_registry, const char *path);
+
+/**
  * @brief Load Virtools plugin metadata from JSON file.
  *
  * Reads virtools_plugins.json and registers plugin-level metadata into the
@@ -88,7 +102,8 @@ NMO_API nmo_status_t nmo_virtools_load_plugins(
  * @brief Load all Virtools data from a directory.
  *
  * Looks for virtools_parameter_types.json, virtools_operation_types.json,
- * and virtools_building_blocks.json (+ _ext.json) in the given directory.
+ * and virtools_building_blocks.json (+ _ext.json, then the local layouts of
+ * virtools_building_block_layouts.json) in the given directory.
  * Missing files are silently skipped.
  *
  * @param type_registry  Type registry (for param types + operation names)

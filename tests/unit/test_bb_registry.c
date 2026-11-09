@@ -155,6 +155,55 @@ TEST(bb_reg, remove_entry) {
     nmo_arena_destroy(arena);
 }
 
+/* The local layouts: a block declaring a setting before a local (Screen Mapping) gets them in
+   that order, the local the exported data lacks included */
+TEST(bb_reg, loads_local_layouts) {
+    nmo_context_desc_t desc;
+    memset(&desc, 0, sizeof(desc));
+    desc.data_dir = "data";
+    nmo_context_t *ctx = nmo_context_create(&desc);
+    nmo_behavior_registry_t *reg = nmo_context_get_bb_registry(ctx);
+
+    const nmo_behavior_proto_t *p = nmo_behavior_registry_find(reg, nmo_guid_create(0x58ef12ca, 0x26805940));
+    ASSERT_TRUE(p != NULL);
+    ASSERT_EQ(1u, p->setting_count);
+    ASSERT_STR_EQ(p->settings[0].name, "Disable Perspective Correction");
+    ASSERT_EQ(1u, p->local_param_count);
+    ASSERT_STR_EQ(p->local_params[0].name, "Is forcing");
+    ASSERT_EQ(2u, p->local_order_count);
+    ASSERT_EQ(1, p->local_order[0]);
+    ASSERT_EQ(0, p->local_order[1]);
+
+    /* A block the layouts leave alone keeps no order: its locals, then its settings */
+    const nmo_behavior_proto_t *rotate = nmo_behavior_registry_find(reg, nmo_guid_create(0xFFFFFFEE, 0xEEFFFFFF));
+    ASSERT_TRUE(rotate != NULL);
+    ASSERT_TRUE(rotate->local_order == NULL);
+    nmo_context_release(ctx);
+}
+
+/* An order that does not add up to the locals and settings is refused */
+TEST(bb_reg, rejects_mismatched_local_order) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    nmo_behavior_registry_t *reg = nmo_context_get_bb_registry(ctx);
+    const nmo_behavior_param_desc_t local = {"Local", {0x5a5716fd, 0x44e276d7}, NULL};
+    const uint8_t order[2] = {1, 0}; /* a setting the prototype does not have */
+    nmo_behavior_proto_t proto;
+    memset(&proto, 0, sizeof(proto));
+    proto.guid = nmo_guid_create(0x12345678, 0x9abcdef0);
+    proto.name = "Ordered";
+    proto.local_params = &local;
+    proto.local_param_count = 1;
+    proto.local_order = order;
+    proto.local_order_count = 2;
+    ASSERT_TRUE(nmo_behavior_registry_add(reg, &proto) != NMO_OK);
+    proto.local_order_count = 1;
+    ASSERT_TRUE(nmo_behavior_registry_add(reg, &proto) != NMO_OK); /* 1 marks a setting */
+    const uint8_t local_first[1] = {0};
+    proto.local_order = local_first;
+    ASSERT_EQ(NMO_OK, nmo_behavior_registry_add(reg, &proto));
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(bb_reg, empty_without_data);
     REGISTER_TEST(bb_reg, loaded_from_data_dir);
@@ -163,5 +212,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(bb_reg, add_and_find);
     REGISTER_TEST(bb_reg, rejects_nonzero_count_with_null_array);
     REGISTER_TEST(bb_reg, remove_entry);
+    REGISTER_TEST(bb_reg, loads_local_layouts);
+    REGISTER_TEST(bb_reg, rejects_mismatched_local_order);
 TEST_MAIN_END()
 

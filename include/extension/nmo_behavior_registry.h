@@ -51,6 +51,12 @@ typedef struct nmo_behavior_proto {
     uint32_t local_param_count;
     const nmo_behavior_param_desc_t *settings;
     uint32_t setting_count;
+    /* The order the prototype declares its locals and settings in (CKBehaviorPrototype::
+       DeclareLocalParameter, DeclareSetting), which a behavior made from it keeps: entry i is
+       nonzero for the next setting, zero for the next local, local_param_count + setting_count
+       entries; NULL for all the locals, then the settings */
+    const uint8_t *local_order;
+    uint32_t local_order_count;
 } nmo_behavior_proto_t;
 
 typedef int (*nmo_behavior_registry_visitor_fn)(

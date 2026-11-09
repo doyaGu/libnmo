@@ -1,0 +1,1184 @@
+[
+  {
+    "guid": [
+      1786216388,
+      499219235
+    ],
+    "guid_hex": "0x6A777FC4-0x1DC17B23",
+    "name": "Gauge",
+    "dll": "BuildingBlocksAddons1.dll",
+    "source": "Ballance BuildingBlocks/BuildingBlocksAddons1.dll",
+    "locals": [
+      {
+        "name": "",
+        "type_guid": [
+          2058489120,
+          1764770985
+        ],
+        "default_value": "",
+        "setting": false
+      }
+    ]
+  },
+  {
+    "guid": [
+      325074352,
+      381432346
+    ],
+    "guid_hex": "0x13603DB0-0x16BC321A",
+    "name": "Object Slider",
+    "dll": "Collisions.dll",
+    "source": "Ballance BuildingBlocks/Collisions.dll",
+    "locals": [
+      {
+        "name": "Accuracy",
+        "type_guid": [
+          1515656957,
+          1155692247
+        ],
+        "default_value": "0",
+        "setting": true
+      },
+      {
+        "name": "",
+        "type_guid": [
+          1292381328,
+          209926562
+        ],
+        "default_value": "",
+        "setting": false
+      },
+      {
+        "name": "Touched Objects Group",
+        "type_guid": [
+          1544492315,
+          1862617085
+        ],
+        "default_value": "",
+        "setting": true
+      },
+      {
+        "name": "Place Optimization",
+        "type_guid": [
+          450177678,
+          1584666912
+        ],
+        "default_value": "",
+        "setting": true
+      }
+    ]
+  },
+  {
+    "guid": [
+      3688768548,
+      1792929554
+    ],
+    "guid_hex": "0xDBDE2424-0x6ADDEF12",
+    "name": "Enhanced Character Keep On Floor",
+    "dll": "Collisions.dll",
+    "source": "Ballance BuildingBlocks/Collisions.dll",
+    "locals": [
+      {
+        "name": "",
+        "type_guid": [
+          1535772117,
+          837429460
+        ],
+        "default_value": "",
+        "setting": false
+      },
+      {
+        "name": "Show Extents",
+        "type_guid": [
+          450177678,
+          1584666912
+        ],
+        "default_value": "FALSE",
+        "setting": true
+      },
+      {
+        "name": "",
+        "type_guid": [
+          1292381328,
+          209926562
+        ],
+        "default_value": "",
+        "setting": false
+      }
+    ]
+  },
+  {
+    "guid": [
+      1765703243,
+      268502212
+    ],
+    "guid_hex": "0x693E7E4B-0x100104C4",
+    "name": "Input String",
+    "dll": "Controllers.dll",
+    "source": "Ballance BuildingBlocks/Controllers.dll",
+    "locals": [
+      {
+        "name": "Max Size",
+        "type_guid": [
+          1515656957,
+          1155692247
+        ],
+        "default_value": "512",
+        "setting": true
+      },
+      {
+        "name": "Keyboard Repetition",
+        "type_guid": [
+          450177678,
+          1584666912
+        ],
+        "default_value": "TRUE",
+        "setting": true
+      },
+      {
+        "name": "Multiline",
+        "type_guid": [
+          450177678,
+          1584666912
+        ],
+        "default_value": "FALSE",
+        "setting": true
+      },
+      {
+        "name": "Disable Keyboard Section",
+        "type_guid": [
+          2051229661,
+          1504193742
+        ],
+        "default_value": "0",
+        "setting": true
+      },
+      {
+        "name": "Use Caret",
+        "type_guid": [
+          450177678,
+          1584666912
+        ],
+        "default_value": "FALSE",
+        "setting": true
+      },
+      {
+        "name": "",
+        "type_guid": [
+          1515656957,
+          1155692247
+        ],
+        "default_value": "0",
+        "setting": false
+      },
+      {
+        "name": "",
+        "type_guid": [
+          1808797922,
+          290854890
+        ],
+        "default_value": "",
+        "setting": false
+      },
+      {
+        "name": "",
+        "type_guid": [
+          450177678,
+          1584666912
+        ],
+        "default_value": "FALSE",
+        "setting": false
+      }
+    ]
+  },
+  {
+    "guid": [
+      21823755,
+      22872331
+    ],
+    "guid_hex": "0x014D010B-0x015D010B",
+    "name": "Mouse Waiter",
+    "dll": "Controllers.dll",
+    "source": "Ballance BuildingBlocks/Controllers.dll",
+    "locals": [
+      {
+        "name": "Stay Active",
+        "type_guid": [
+          450177678,
+          1584666912
+        ],
+        "default_value": "TRUE",
+        "setting": true
+      },
+      {
+        "name": "Outputs",
+        "type_guid": [
+          2059273075,
+          473328155
+        ],
+        "default_value": "Move,Left Button Down,Left Button Up,Right Button Down,Right Button Up,Middle Button Down,Middle Button Up,Roll Received",
+        "setting": true
+      }
+    ]
+  },
+  {
+    "guid": [
+      2074897826,
+      482244333
+    ],
+    "guid_hex": "0x7BAC6DA2-0x1CBE76ED",
+    "name": "Layer Slider",
+    "dll": "Grids.dll",
+    "source": "Ballanced Source/BuildingBlocks/Grids/Behaviors/LayerSlider.cpp",
+    "locals": [
+      {
+        "name": "Reaction Vecto",
+        "type_guid": [
+          450177678,
+          1584666912
+        ],
+        "default_value": "FALSE",
+        "setting": true
+      },
+      {
+        "name": "Output Contact Count",
+        "type_guid": [
+          1515656957,
+          1155692247
+        ],
+        "default_value": "0",
+        "setting": true
+      },
+      {
+        "name": "",
+        "type_guid": [
+          1292381328,
+          209926562
+        ],
+        "default_value": "",
+        "setting": false
+      },
+      {
+        "name": "Accuracy",
+        "type_guid": [
+          1515656957,
+          1155692247
+        ],
+        "default_value": "0",
+        "setting": true
+      }
+    ]
+  },
+  {
+    "guid": [
+      77416571,
+      1465275205
+    ],
+    "guid_hex": "0x049D487B-0x57565345",
+    "name": "BitmapText Display",
+    "dll": "Interface.dll",
+    "source": "Ballance BuildingBlocks/Interface.dll",
+    "locals": [
+      {
+        "name": "Font",
+        "type_guid": [
+          1467887272,
+          1536170345
+        ],
+        "default_value": "",
+        "setting": true
+      },
+      {
+        "name": "",
+        "type_guid": [
+          1808797922,
+          290854890
+        ],
+        "default_value": "",
+        "setting": false
+      },
+      {
+        "name": "",
+        "type_guid": [
+          1292381328,
+          209926562
+        ],
+        "default_value": "",
+        "setting": false
+      }
+    ]
+  },
+  {
+    "guid": [
+      2472752380,
+      4064503887
+    ],
+    "guid_hex": "0x936334FC-0xF243684F",
+    "name": "Create System Font",
+    "dll": "Interface.dll",
+    "source": "Ballance BuildingBlocks/Interface.dll",
+    "locals": [
+      {
+        "name": "Texture Resolution",
+        "type_guid": [
+          1901529373,
+          1338517810
+        ],
+        "default_value": "512x512",
+        "setting": true
+      },
+      {
+        "name": "Full Charset",
+        "type_guid": [
+          450177678,
+          1584666912
+        ],
+        "default_value": "FALSE",
+        "setting": true
+      },
+      {
+        "name": "Render Control Characters",
+        "type_guid": [
+          450177678,
+          1584666912
+        ],
+        "default_value": "FALSE",
+        "setting": true
+      },
+      {
+        "name": "Dynamic Texture",
+        "type_guid": [
+          450177678,
+          1584666912
+        ],
+        "default_value": "TRUE",
+        "setting": true
+      },
+      {
+        "name": "Current Font",
+        "type_guid": [
+          1808797922,
+          290854890
+        ],
+        "default_value": "",
+        "setting": false
+      },
+      {
+        "name": "Font Size",
+        "type_guid": [
+          1515656957,
+          1155692247
+        ],
+        "default_value": "0",
+        "setting": true
+      }
+    ]
+  },
+  {
+    "guid": [
+      761097473,
+      1781874352
+    ],
+    "guid_hex": "0x2D5D6D01-0x6A353EB0",
+    "name": "Op",
+    "dll": "Logics.dll",
+    "source": "Ballance BuildingBlocks/Logics.dll",
+    "locals": [
+      {
+        "name": "",
+        "type_guid": [
+          1292381328,
+          209926562
+        ],
+        "default_value": "",
+        "setting": true
+      },
+      {
+        "name": "",
+        "type_guid": [
+          1515656957,
+          1155692247
+        ],
+        "default_value": "0",
+        "setting": false
+      },
+      {
+        "name": "",
+        "type_guid": [
+          1515656957,
+          1155692247
+        ],
+        "default_value": "0",
+        "setting": false
+      }
+    ]
+  },
+  {
+    "guid": [
+      1166499822,
+      1166499805
+    ],
+    "guid_hex": "0x45875FEE-0x45875FDD",
+    "name": "Get Message Data",
+    "dll": "Logics.dll",
+    "source": "Ballance BuildingBlocks/Logics.dll",
+    "locals": [
+      {
+        "name": "Can get several Message per Frame",
+        "type_guid": [
+          450177678,
+          1584666912
+        ],
+        "default_value": "",
+        "setting": true
+      },
+      {
+        "name": "",
+        "type_guid": [
+          1515656957,
+          1155692247
+        ],
+        "default_value": "",
+        "setting": false
+      }
+    ]
+  },
+  {
+    "guid": [
+      2044145630,
+      782043410
+    ],
+    "guid_hex": "0x79D72FDE-0x2E9D0912",
+    "name": "Random Switch",
+    "dll": "Logics.dll",
+    "source": "Ballance BuildingBlocks/Logics.dll",
+    "locals": [
+      {
+        "name": "Forbid twice the same",
+        "type_guid": [
+          450177678,
+          1584666912
+        ],
+        "default_value": "FALSE",
+        "setting": true
+      },
+      {
+        "name": "",
+        "type_guid": [
+          1515656957,
+          1155692247
+        ],
+        "default_value": "",
+        "setting": false
+      }
+    ]
+  },
+  {
+    "guid": [
+      1902121786,
+      522531582
+    ],
+    "guid_hex": "0x7160133A-0x1F2532FE",
+    "name": "Keep Active",
+    "dll": "Logics.dll",
+    "source": "Ballance BuildingBlocks/Logics.dll",
+    "locals": [
+      {
+        "name": "One at a time ?",
+        "type_guid": [
+          450177678,
+          1584666912
+        ],
+        "default_value": "FALSE",
+        "setting": true
+      },
+      {
+        "name": "",
+        "type_guid": [
+          1515656957,
+          1155692247
+        ],
+        "default_value": "0",
+        "setting": false
+      }
+    ]
+  },
+  {
+    "guid": [
+      1492062922,
+      645945664
+    ],
+    "guid_hex": "0x58EF12CA-0x26805940",
+    "name": "Screen Mapping",
+    "dll": "Materials.dll",
+    "source": "Ballance BuildingBlocks/Materials.dll",
+    "locals": [
+      {
+        "name": "Disable Perspective Correction",
+        "type_guid": [
+          450177678,
+          1584666912
+        ],
+        "default_value": "FALSE",
+        "setting": true
+      },
+      {
+        "name": "Is forcing",
+        "type_guid": [
+          450177678,
+          1584666912
+        ],
+        "default_value": "FALSE",
+        "setting": false
+      }
+    ]
+  },
+  {
+    "guid": [
+      429804785,
+      1415215358
+    ],
+    "guid_hex": "0x199E4CF1-0x545A78FE",
+    "name": "PhysicsContinuousContact",
+    "dll": "physics_RT.dll",
+    "source": "Ballance BuildingBlocks/physics_RT.dll",
+    "locals": [
+      {
+        "name": "Number Group Output",
+        "type_guid": [
+          1515656957,
+          1155692247
+        ],
+        "default_value": "5",
+        "setting": true
+      },
+      {
+        "name": "IVP_Handle",
+        "type_guid": [
+          1349935193,
+          362630110
+        ],
+        "default_value": "NULL",
+        "setting": false
+      }
+    ]
+  },
+  {
+    "guid": [
+      912857376,
+      992351792
+    ],
+    "guid_hex": "0x36691920-0x3B261630",
+    "name": "TT Sky",
+    "dll": "TT_Gravity_RT.dll",
+    "source": "Ballance BuildingBlocks/TT_Gravity_RT.dll",
+    "locals": [
+      {
+        "name": "Side Materials",
+        "type_guid": [
+          1515656957,
+          1155692247
+        ],
+        "default_value": "4",
+        "setting": true
+      },
+      {
+        "name": "Top Material",
+        "type_guid": [
+          450177678,
+          1584666912
+        ],
+        "default_value": "True",
+        "setting": true
+      },
+      {
+        "name": "Bottom Material",
+        "type_guid": [
+          450177678,
+          1584666912
+        ],
+        "default_value": "True",
+        "setting": true
+      },
+      {
+        "name": "Skyaround",
+        "type_guid": [
+          1292381328,
+          209926562
+        ],
+        "default_value": "",
+        "setting": false
+      }
+    ]
+  },
+  {
+    "guid": [
+      1499154211,
+      1466722121
+    ],
+    "guid_hex": "0x595B4723-0x576C6749",
+    "name": "TT FollowCamera",
+    "dll": "TT_Toolbox_RT.dll",
+    "source": "Ballance BuildingBlocks/TT_Toolbox_RT.dll",
+    "locals": [
+      {
+        "name": "Time Based",
+        "type_guid": [
+          450177678,
+          1584666912
+        ],
+        "default_value": "TRUE",
+        "setting": true
+      },
+      {
+        "name": "Init actPos",
+        "type_guid": [
+          450177678,
+          1584666912
+        ],
+        "default_value": "FALSE",
+        "setting": true
+      },
+      {
+        "name": "ViewPosOld",
+        "type_guid": [
+          1216499374,
+          803502432
+        ],
+        "default_value": "",
+        "setting": false
+      },
+      {
+        "name": "CamPosOld",
+        "type_guid": [
+          1216499374,
+          803502432
+        ],
+        "default_value": "",
+        "setting": false
+      },
+      {
+        "name": "oldDeltaTime",
+        "type_guid": [
+          1200114751,
+          1126968352
+        ],
+        "default_value": "",
+        "setting": false
+      },
+      {
+        "name": "init",
+        "type_guid": [
+          450177678,
+          1584666912
+        ],
+        "default_value": "true",
+        "setting": false
+      }
+    ]
+  },
+  {
+    "guid": [
+      605762213,
+      1912484695
+    ],
+    "guid_hex": "0x241B32A5-0x71FE3357",
+    "name": "TT_LensFlare",
+    "dll": "TT_Toolbox_RT.dll",
+    "source": "Ballance BuildingBlocks/TT_Toolbox_RT.dll",
+    "locals": [
+      {
+        "name": "",
+        "type_guid": [
+          1349935193,
+          362630110
+        ],
+        "default_value": "",
+        "setting": false
+      },
+      {
+        "name": "Read Array Each Frame",
+        "type_guid": [
+          450177678,
+          1584666912
+        ],
+        "default_value": "FALSE",
+        "setting": true
+      }
+    ]
+  },
+  {
+    "guid": [
+      746412070,
+      1753708788
+    ],
+    "guid_hex": "0x2C7D5826-0x688778F4",
+    "name": "TT SkyAround",
+    "dll": "TT_Toolbox_RT.dll",
+    "source": "Ballance BuildingBlocks/TT_Toolbox_RT.dll",
+    "locals": [
+      {
+        "name": "Skyaround",
+        "type_guid": [
+          1292381328,
+          209926562
+        ],
+        "default_value": "",
+        "setting": false
+      },
+      {
+        "name": "Side Materials",
+        "type_guid": [
+          1515656957,
+          1155692247
+        ],
+        "default_value": "4",
+        "setting": true
+      },
+      {
+        "name": "Top Material",
+        "type_guid": [
+          450177678,
+          1584666912
+        ],
+        "default_value": "True",
+        "setting": true
+      },
+      {
+        "name": "Bottom Material",
+        "type_guid": [
+          450177678,
+          1584666912
+        ],
+        "default_value": "True",
+        "setting": true
+      }
+    ]
+  },
+  {
+    "guid": [
+      1305431200,
+      1196303852
+    ],
+    "guid_hex": "0x4DCF4CA0-0x474E25EC",
+    "name": "TT_SceneStencilShadow",
+    "dll": "TT_Toolbox_RT.dll",
+    "source": "Ballance BuildingBlocks/TT_Toolbox_RT.dll",
+    "locals": [
+      {
+        "name": "",
+        "type_guid": [
+          1349935193,
+          362630110
+        ],
+        "default_value": "",
+        "setting": false
+      },
+      {
+        "name": "",
+        "type_guid": [
+          404124131,
+          467408131
+        ],
+        "default_value": "",
+        "setting": false
+      },
+      {
+        "name": "",
+        "type_guid": [
+          1437274829,
+          581855883
+        ],
+        "default_value": "",
+        "setting": false
+      },
+      {
+        "name": "LigthMatrix",
+        "type_guid": [
+          1681851502,
+          1696668529
+        ],
+        "default_value": "",
+        "setting": false
+      },
+      {
+        "name": "ObjectCount",
+        "type_guid": [
+          1515656957,
+          1155692247
+        ],
+        "default_value": "",
+        "setting": false
+      }
+    ]
+  },
+  {
+    "guid": [
+      149240105,
+      1285313029
+    ],
+    "guid_hex": "0x08E53929-0x4C9C5205",
+    "name": "TT MagnetMeshForm",
+    "dll": "TT_Toolbox_RT.dll",
+    "source": "Ballance BuildingBlocks/TT_Toolbox_RT.dll",
+    "locals": [
+      {
+        "name": "Sinus-Deform?",
+        "type_guid": [
+          450177678,
+          1584666912
+        ],
+        "default_value": "false",
+        "setting": true
+      },
+      {
+        "name": "VArray",
+        "type_guid": [
+          1349935193,
+          362630110
+        ],
+        "default_value": "NULL",
+        "setting": false
+      },
+      {
+        "name": "Time",
+        "type_guid": [
+          1200114751,
+          1126968352
+        ],
+        "default_value": "",
+        "setting": false
+      }
+    ]
+  },
+  {
+    "guid": [
+      1334869778,
+      380573142
+    ],
+    "guid_hex": "0x4F907F12-0x16AF15D6",
+    "name": "TT SinusMeshdeform",
+    "dll": "TT_Toolbox_RT.dll",
+    "source": "Ballance BuildingBlocks/TT_Toolbox_RT.dll",
+    "locals": [
+      {
+        "name": "SinusCount",
+        "type_guid": [
+          1515656957,
+          1155692247
+        ],
+        "default_value": "1",
+        "setting": true
+      },
+      {
+        "name": "Vertex Array",
+        "type_guid": [
+          1292381328,
+          209926562
+        ],
+        "default_value": "",
+        "setting": false
+      },
+      {
+        "name": "",
+        "type_guid": [
+          1349935193,
+          362630110
+        ],
+        "default_value": "",
+        "setting": false
+      }
+    ]
+  },
+  {
+    "guid": [
+      951614787,
+      345732443
+    ],
+    "guid_hex": "0x38B87D43-0x149B755B",
+    "name": "TT PMS_Meshdeform",
+    "dll": "TT_Toolbox_RT.dll",
+    "source": "Ballance BuildingBlocks/TT_Toolbox_RT.dll",
+    "locals": [
+      {
+        "name": "Wellenanzahl",
+        "type_guid": [
+          1515656957,
+          1155692247
+        ],
+        "default_value": "1",
+        "setting": true
+      },
+      {
+        "name": "Vertex Array",
+        "type_guid": [
+          1292381328,
+          209926562
+        ],
+        "default_value": "",
+        "setting": false
+      },
+      {
+        "name": "Time",
+        "type_guid": [
+          1200114751,
+          1126968352
+        ],
+        "default_value": "",
+        "setting": false
+      },
+      {
+        "name": "WaveX",
+        "type_guid": [
+          1349935193,
+          362630110
+        ],
+        "default_value": "",
+        "setting": false
+      },
+      {
+        "name": "WaveY",
+        "type_guid": [
+          1349935193,
+          362630110
+        ],
+        "default_value": "",
+        "setting": false
+      },
+      {
+        "name": "WindMatrix",
+        "type_guid": [
+          1681851502,
+          1696668529
+        ],
+        "default_value": "",
+        "setting": false
+      }
+    ]
+  },
+  {
+    "guid": [
+      1392337556,
+      1630491045
+    ],
+    "guid_hex": "0x52FD6294-0x612F51A5",
+    "name": "TT InputString",
+    "dll": "TT_Toolbox_RT.dll",
+    "source": "Ballance BuildingBlocks/TT_Toolbox_RT.dll",
+    "locals": [
+      {
+        "name": "Max Size",
+        "type_guid": [
+          1515656957,
+          1155692247
+        ],
+        "default_value": "512",
+        "setting": true
+      },
+      {
+        "name": "Keyboard Repetition",
+        "type_guid": [
+          450177678,
+          1584666912
+        ],
+        "default_value": "TRUE",
+        "setting": true
+      },
+      {
+        "name": "Multiline",
+        "type_guid": [
+          450177678,
+          1584666912
+        ],
+        "default_value": "FALSE",
+        "setting": true
+      },
+      {
+        "name": "Disable Keyboard Section",
+        "type_guid": [
+          2051229661,
+          1504193742
+        ],
+        "default_value": "0",
+        "setting": true
+      },
+      {
+        "name": "Use Caret",
+        "type_guid": [
+          450177678,
+          1584666912
+        ],
+        "default_value": "FALSE",
+        "setting": true
+      },
+      {
+        "name": "",
+        "type_guid": [
+          1515656957,
+          1155692247
+        ],
+        "default_value": "0",
+        "setting": false
+      },
+      {
+        "name": "",
+        "type_guid": [
+          1808797922,
+          290854890
+        ],
+        "default_value": "",
+        "setting": false
+      }
+    ]
+  },
+  {
+    "guid": [
+      80689101,
+      2049207173
+    ],
+    "guid_hex": "0x04CF37CD-0x7A246B85",
+    "name": "Display Progression Bar",
+    "dll": "Visuals.dll",
+    "source": "Ballance BuildingBlocks/Visuals.dll",
+    "locals": [
+      {
+        "name": "Empty Bar ()",
+        "type_guid": [
+          1467887272,
+          1536170345
+        ],
+        "default_value": "",
+        "setting": true
+      },
+      {
+        "name": "Full Bar ()",
+        "type_guid": [
+          1467887272,
+          1536170345
+        ],
+        "default_value": "",
+        "setting": true
+      },
+      {
+        "name": "Active",
+        "type_guid": [
+          450177678,
+          1584666912
+        ],
+        "default_value": "FALSE",
+        "setting": false
+      }
+    ]
+  },
+  {
+    "guid": [
+      264525123,
+      1437602499
+    ],
+    "guid_hex": "0x0FC45543-0x55B012C3",
+    "name": "Display Score",
+    "dll": "Visuals.dll",
+    "source": "Ballance BuildingBlocks/Visuals.dll",
+    "locals": [
+      {
+        "name": "Number 0",
+        "type_guid": [
+          1467887272,
+          1536170345
+        ],
+        "default_value": "",
+        "setting": true
+      },
+      {
+        "name": "DisplayScore",
+        "type_guid": [
+          1467887272,
+          1536170345
+        ],
+        "default_value": "",
+        "setting": false
+      },
+      {
+        "name": "DisplayScore",
+        "type_guid": [
+          1467887272,
+          1536170345
+        ],
+        "default_value": "",
+        "setting": false
+      },
+      {
+        "name": "DisplayScore",
+        "type_guid": [
+          1467887272,
+          1536170345
+        ],
+        "default_value": "",
+        "setting": false
+      },
+      {
+        "name": "DisplayScore",
+        "type_guid": [
+          1467887272,
+          1536170345
+        ],
+        "default_value": "",
+        "setting": false
+      },
+      {
+        "name": "DisplayScore",
+        "type_guid": [
+          1467887272,
+          1536170345
+        ],
+        "default_value": "",
+        "setting": false
+      },
+      {
+        "name": "DisplayScore",
+        "type_guid": [
+          1467887272,
+          1536170345
+        ],
+        "default_value": "",
+        "setting": false
+      },
+      {
+        "name": "DisplayScore",
+        "type_guid": [
+          1467887272,
+          1536170345
+        ],
+        "default_value": "",
+        "setting": false
+      },
+      {
+        "name": "DisplayScore",
+        "type_guid": [
+          1467887272,
+          1536170345
+        ],
+        "default_value": "",
+        "setting": false
+      },
+      {
+        "name": "DisplayScore",
+        "type_guid": [
+          1467887272,
+          1536170345
+        ],
+        "default_value": "",
+        "setting": false
+      },
+      {
+        "name": "Active",
+        "type_guid": [
+          450177678,
+          1584666912
+        ],
+        "default_value": "FALSE",
+        "setting": false
+      }
+    ]
+  }
+]
