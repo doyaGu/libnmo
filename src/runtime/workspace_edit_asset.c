@@ -813,8 +813,11 @@ static nmo_status_t workspace_obj_mesh_compute_counts(
     if (counts.face_vertex_count > SIZE_MAX - counts.line_vertex_count) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
+    /* The corners bound the vertices; the mesh's own limit, 65535 vertices
+       (16-bit face indices), applies to the distinct corners, counted as
+       they are added (workspace_obj_mesh_get_or_add_vertex). */
     counts.max_vertices = counts.face_vertex_count + counts.line_vertex_count;
-    if (counts.max_vertices == 0 || counts.max_vertices > 65535u) {
+    if (counts.max_vertices == 0) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 

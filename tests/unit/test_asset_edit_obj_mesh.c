@@ -18,6 +18,7 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <math.h>
 #include <string.h>
 
@@ -553,8 +554,51 @@ TEST(asset_edit_obj_mesh, imported_normals_survive_finite_geometry_scales)
     }
 }
 
+/* More face corners than a mesh's 65535 vertices is fine when they share
+   few distinct vertices: the limit is on the vertices, not the corners. */
+TEST(asset_edit_obj_mesh, imports_more_corners_than_vertices_allow)
+{
+    static const char head[] = "v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\n";
+    static const char faces[] = "f 1 2 3\nf 1 3 4\n";
+    const size_t pairs = 11000u; /* 22000 triangles, 66000 corners */
+    size_t length = (sizeof(head) - 1u) + pairs * (sizeof(faces) - 1u);
+    char *text = malloc(length + 1u);
+    ASSERT_NOT_NULL(text);
+    memcpy(text, head, sizeof(head) - 1u);
+    for (size_t i = 0u; i < pairs; ++i) {
+        memcpy(text + (sizeof(head) - 1u) + i * (sizeof(faces) - 1u), faces, sizeof(faces) - 1u);
+    }
+    text[length] = '\0';
+
+    nmo_context_t *ctx = NULL;
+    nmo_document_t *doc = NULL;
+    nmo_workspace_t *workspace = NULL;
+    create_workspace(&ctx, &doc, &workspace);
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_begin(workspace, "shared corners", &edit));
+    nmo_object_id_t mesh_id = 0u;
+    ASSERT_EQ(NMO_OK, nmo_object_edit_create(edit,
+        &(nmo_object_create_desc_t){.class_id = NMO_CID_MESH, .name = "Shared"}, &mesh_id));
+    nmo_arena_t *arena = nmo_arena_create(NULL, 1u << 20);
+    ASSERT_NOT_NULL(arena);
+    nmo_obj_data_t obj = {0};
+    parse_obj_or_fail(arena, text, &obj);
+    ASSERT_EQ(NMO_OK, nmo_asset_edit_set_obj_mesh(edit, mesh_id, &obj, NULL));
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(edit));
+    const nmo_object_t *object = find_object(doc, mesh_id);
+    ASSERT_NOT_NULL(object);
+    const nmo_mesh_state_t *mesh = nmo_object_get_state(object);
+    ASSERT_NOT_NULL(mesh);
+    ASSERT_EQ(4u, mesh->vertex_count);
+    ASSERT_EQ(22000u, mesh->face_count);
+    nmo_arena_destroy(arena);
+    destroy_workspace(ctx, doc, workspace);
+    free(text);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(asset_edit_obj_mesh, imports_triangle_from_parsed_obj);
+REGISTER_TEST(asset_edit_obj_mesh, imports_more_corners_than_vertices_allow);
 REGISTER_TEST(asset_edit_obj_mesh, binds_named_obj_materials);
 REGISTER_TEST(asset_edit_obj_mesh, rejects_wrong_class_material_binding);
 REGISTER_TEST(asset_edit_obj_mesh, rejects_missing_face_array);
