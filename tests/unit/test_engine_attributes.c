@@ -186,8 +186,41 @@ TEST(engine_attributes, objects_with_attribute_iterator_walks_the_holders)
     fixture_end(&f);
 }
 
+/* A grid made through the edit layer takes the attribute named "Grid" when
+   the document registers that type, as RCKGrid::RCKGrid sets it, and none
+   when it does not (Ballance has no grid manager to register it). */
+TEST(engine_attributes, a_new_grid_takes_the_grid_attribute_when_registered)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    fixture_begin_edit(&f);
+    nmo_workspace_edit_t *edit = nmo_script_edit_workspace_edit(f.tx);
+    nmo_object_id_t bare = 0;
+    ASSERT_EQ(NMO_OK, nmo_object_edit_create(edit,
+        &(nmo_object_create_desc_t){.class_id = NMO_CID_GRID, .name = "Bare"}, &bare));
+    nmo_beobject_state_t *bare_state = (nmo_beobject_state_t *)fixture_state(&f, bare);
+    ASSERT_NOT_NULL(bare_state);
+    ASSERT_EQ(0u, bare_state->attributes.count);
+
+    uint32_t grid_type = attribute_type(&f, "Grid", NMO_CID_GRID);
+    ASSERT_TRUE(grid_type != UINT32_MAX);
+    nmo_object_id_t grid = 0;
+    ASSERT_EQ(NMO_OK, nmo_object_edit_create(edit,
+        &(nmo_object_create_desc_t){.class_id = NMO_CID_GRID, .name = "Grid 1"}, &grid));
+    nmo_beobject_state_t *state = (nmo_beobject_state_t *)fixture_state(&f, grid);
+    ASSERT_NOT_NULL(state);
+    ASSERT_EQ(1u, state->attributes.count);
+    const nmo_beobject_attribute_t *attribute =
+        NMO_ARRAY_DATA(nmo_beobject_attribute_t, &state->attributes);
+    ASSERT_EQ(grid_type, attribute[0].type_id);
+    ASSERT_EQ(0u, nmo_ref_runtime_id(&attribute[0].parameter));
+    fixture_commit(&f, NULL);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_attributes, blocks_test_set_and_remove_attributes);
 REGISTER_TEST(engine_attributes, set_attribute_follows_the_attribute_type);
 REGISTER_TEST(engine_attributes, objects_with_attribute_iterator_walks_the_holders);
+REGISTER_TEST(engine_attributes, a_new_grid_takes_the_grid_attribute_when_registered);
 TEST_MAIN_END()

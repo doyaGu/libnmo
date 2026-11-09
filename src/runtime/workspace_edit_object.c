@@ -9,6 +9,7 @@
 #include "object/nmo_class_ids.h"
 #include "type/nmo_object_guids.h"
 #include "object/builtin/nmo_behavior_schemas.h"
+#include "object/builtin/nmo_beobject_schemas.h"
 #include "object/builtin/nmo_dataarray_schemas.h"
 #include "object/builtin/nmo_group_schemas.h"
 #include "type/nmo_reflection.h"
@@ -31,6 +32,42 @@ static nmo_status_t rollback_rename_object(nmo_workspace_edit_t *edit, void *pay
         return NMO_ERR_INVALID_STATE;
     }
     return nmo_object_repository_rename(repo, action->id, action->name);
+}
+
+/* RCKGrid::RCKGrid sets the attribute named "Grid" on a new grid, with no
+   parameter, when an attribute type of that name is registered (the grid
+   manager registers it; Ballance has none, and its grids get no attribute).
+   The attribute manager of the document is where the name is looked up. */
+static nmo_status_t workspace_edit_give_grid_its_attribute(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t object_id)
+{
+    nmo_object_repository_t *repo = nmo_workspace_internal_repository(edit->workspace);
+    const nmo_type_registry_t *registry =
+        nmo_workspace_internal_type_registry(edit->workspace);
+    nmo_object_t *object =
+        repo != NULL ? nmo_object_repository_find_by_id(repo, object_id) : NULL;
+    if (registry == NULL || object == NULL ||
+        !workspace_edit_session_object_derives(registry, object, NMO_CID_GRID)) {
+        return NMO_OK;
+    }
+    uint32_t grid_type = 0;
+    const nmo_manager_entry_create_options_t lookup_only = {0};
+    nmo_status_t status = nmo_object_edit_ensure_attribute_manager_entry(
+        edit, "Grid", &lookup_only, &grid_type);
+    if (status == NMO_ERR_NOMEM) {
+        return status;
+    }
+    if (status != NMO_OK) {
+        return NMO_OK;  /* no "Grid" attribute type: GetAttributeTypeByName gives -1 */
+    }
+    nmo_beobject_state_t *state =
+        (nmo_beobject_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, object, CKPGUID_BEOBJECT);
+    if (state == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    return nmo_beobject_attribute_array_append(&state->attributes, 0, grid_type, NULL);
 }
 
 nmo_status_t nmo_object_edit_create(
@@ -67,6 +104,16 @@ nmo_status_t nmo_object_edit_create(
             1,
             NMO_RUNTIME_REQUEST_DEFAULT);
         return track_result;
+    }
+
+    nmo_status_t attribute_result = workspace_edit_give_grid_its_attribute(edit, object_id);
+    if (attribute_result != NMO_OK) {
+        (void)nmo_workspace_internal_destroy_objects(
+            edit->workspace,
+            &object_id,
+            1,
+            NMO_RUNTIME_REQUEST_DEFAULT);
+        return attribute_result;
     }
 
     *out_object_id = object_id;

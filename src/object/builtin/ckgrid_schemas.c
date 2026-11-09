@@ -44,7 +44,8 @@ static nmo_status_t nmo_grid_validate(
     void *context);
 
 /* RCKGrid::RCKGrid scales the new grid to (1, 10, 1). The attribute named
-   "Grid" it also sets needs the attribute manager. */
+   "Grid" it also sets comes from the document's attribute manager when a
+   grid is created through the edit layer (nmo_object_edit_create). */
 static void nmo_grid_set_defaults(void *instance)
 {
     nmo_grid_state_t *state = instance;
