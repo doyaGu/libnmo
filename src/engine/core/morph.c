@@ -226,8 +226,9 @@ static morph_result_t morph_merge(const nmo_engine_t *engine, const eng_animatio
         if (a == 0 && b > 0 && count <= b) return morph_evaluate(engine, &second, frame, count, out, path, work);
         return failed;
     }
-    if (count > a || (size_t)count > SIZE_MAX / (2 * sizeof(*out))) return failed;
-    morph_vertex_t *buffers = malloc((size_t)count * 2 * sizeof(*buffers));
+    if (count > a) return failed;
+    /* calloc refuses a count whose two buffers overflow size_t */
+    morph_vertex_t *buffers = calloc(count, 2 * sizeof(*buffers));
     if (buffers == NULL) return failed;
     morph_vertex_t *left = buffers, *right = buffers + count;
     memcpy(left, out, (size_t)count * sizeof(*out));
