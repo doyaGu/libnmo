@@ -580,10 +580,8 @@ TEST(engine_materials, screen_mapping_without_perspective_draws_at_the_screen)
     nmo_camera_state_t *lens = (nmo_camera_state_t *)fixture_state(&f, camera);
     ASSERT_TRUE(material != 0 && quad != 0 && state != NULL && lens != NULL && place_at_origin(&f, camera));
     ((nmo_3dentity_state_t *)fixture_state(&f, quad))->world_matrix[14] = 5.0f; /* in front of the camera */
-    /* one material group */
-    state->material_groups[0].material = nmo_ref_from_id(material);
-    state->faces[1].material_group_idx = 0;
-    state->material_group_count = 1;
+    /* every face in the material's group; group 0, none's, left empty as files have it */
+    state->faces[0].material_group_idx = 1;
     lens->projection_type = 2;
     lens->orthographic_zoom = 1.0f;
     lens->aspect_width = lens->aspect_height = 1;

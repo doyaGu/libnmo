@@ -1329,6 +1329,29 @@ static int bb_environment_mapping(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* CKMesh::GetMaterialCount, up to 2: the materials its faces use once CreateRenderGroups regrouped
+   them (group 0, the faces without one, left out); `first` GetMaterial(0) */
+static int32_t mesh_materials(nmo_engine_t *engine, nmo_object_id_t mesh_id, const nmo_engine_mesh_t *mesh,
+                              nmo_object_id_t *first)
+{
+    int32_t count = 0;
+    nmo_object_id_t one = 0;
+    for (int32_t f = 0; f < mesh->face_count && count < 2; f++) {
+        int32_t group = mesh->faces != NULL ? (int32_t)mesh->faces[f].material_group_idx : 0;
+        nmo_object_id_t material = nmo_engine_mesh_material(engine, mesh_id, group);
+        if (material != 0 && one == 0) {
+            one = material;
+            count = 1;
+        } else if (material != 0 && material != one) {
+            count = 2;
+        }
+    }
+    if (first != NULL) {
+        *first = one;
+    }
+    return count;
+}
+
 /*
  * Screen Mapping's render callback with Disable Perspective Correction
  * (the entity is drawn by it alone): the current mesh's vertices
@@ -1404,7 +1427,7 @@ static void screen_mapping_render(nmo_engine_t *engine, nmo_object_id_t entity, 
     draw->first_vertex = first;
     draw->vertex_count = count;
     draw->world[0] = draw->world[5] = draw->world[10] = draw->world[15] = 1.0f;
-    draw->material = nmo_engine_mesh_material(engine, mesh_id, 0);
+    mesh_materials(engine, mesh_id, &mesh, &draw->material); /* GetMaterial(0) */
     draw->screen = true;
 }
 
@@ -1417,7 +1440,7 @@ static bool screen_mapping_force(blk_t *b, nmo_object_id_t target)
     if (mesh_id == 0 || !nmo_engine_mesh(b->engine, mesh_id, &mesh)) {
         return true; /* nothing to do */
     }
-    if (mesh.material_count != 1) {
+    if (mesh_materials(b->engine, mesh_id, &mesh, NULL) != 1) {
         eng_console(b->engine, "There must be only one material for disabling perspective correction", true);
         return false;
     }
