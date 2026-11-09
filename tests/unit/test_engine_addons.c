@@ -946,12 +946,12 @@ TEST(engine_addons, copy_buffer_to_texture_asks_the_frame_for_a_copy)
     ASSERT_TRUE(same != 0 && other != 0);
     fixture_link(&f, f.script_in, BLOCK_IN(&f, same, 0), 0);
     fixture_link(&f, BLOCK_OUT(&f, same, 0), BLOCK_IN(&f, other, 0), 0);
-    const float src[4] = {10, 20, 42, 36}, dest[4] = {0, 16, 32, 32}, small[4] = {0, 0, 16, 16};
+    const float src[4] = {10, 20, 42, 36}, dest[4] = {0, 16, 32, 32}, small_rect[4] = {0, 0, 16, 16};
     nmo_object_id_t blocks[2] = {same, other};
     for (int i = 0; i < 2; i++) {
         fixture_input_int(&f, fixture_target(&f, blocks[i]), (int32_t)picture);
         fixture_input_value(&f, BLOCK_PIN(&f, blocks[i], 0), src, sizeof(src));
-        fixture_input_value(&f, BLOCK_PIN(&f, blocks[i], 1), i == 0 ? dest : small, sizeof(dest));
+        fixture_input_value(&f, BLOCK_PIN(&f, blocks[i], 1), i == 0 ? dest : small_rect, sizeof(dest));
     }
     fixture_commit(&f, NULL);
     ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));

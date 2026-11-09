@@ -128,8 +128,8 @@ TEST(engine_mimic, orientation_uses_the_short_arc_extrapolation_and_normalized_c
         pose(&g,(170+20*factors[i])*PI_F/180,(eng_vector_t){2,3,4}); fixture_end(&g.f);
     }
     mimic_fixture_t g; begin(&g,false); settings(&g,2,0,.25f,0);
-    nmo_3dentity_state_t *source = fixture_state(&g.f,g.source); eng_matrix_t near; eng_matrix_from_euler(&near,0,0,.1f);
-    memcpy(source->world_matrix,&near,sizeof(near)); commit(&g); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0));
+    nmo_3dentity_state_t *source = fixture_state(&g.f,g.source); eng_matrix_t near_turn; eng_matrix_from_euler(&near_turn,0,0,.1f);
+    memcpy(source->world_matrix,&near_turn,sizeof(near_turn)); commit(&g); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0));
     float angle = 2*atan2f(.25f*sinf(.05f),.75f+.25f*cosf(.05f));
     pose(&g,angle,(eng_vector_t){2,3,4}); fixture_end(&g.f);
 }

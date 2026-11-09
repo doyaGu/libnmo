@@ -157,8 +157,8 @@ TEST(engine_animation_lod, contribution_preserves_wide_cancellation_and_small_ra
     engine_fixture_t f;
     fixture_begin_document(&f);
     float cancelled[] = {0,FLT_MAX,-FLT_MAX,0, 8,-FLT_MAX,FLT_MAX,0};
-    float small = ldexpf(1,-13);
-    float rotation[] = {0,small,0,0,1, 8,-small,0,0,1};
+    float tiny = ldexpf(1,-13);
+    float rotation[] = {0,tiny,0,0,1, 8,-tiny,0,0,1};
     nmo_objanim_controller_t controllers[] = {{POSITION,2,sizeof(cancelled),cancelled},{ROTATION,2,sizeof(rotation),rotation}};
     nmo_object_id_t id = animation(&f, "Small rotation", controllers, COUNT(controllers));
     fixture_begin_edit(&f);

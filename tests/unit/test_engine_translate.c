@@ -112,7 +112,7 @@ TEST(engine_translate, reference_rotation_scale_and_shear_transform_displacement
         translate_fixture_t g; begin(&g); fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,1),(int32_t)g.reference);
         memcpy(((nmo_3dentity_state_t *)fixture_state(&g.f,g.reference))->world_matrix,references[i].m,sizeof(references[i].m)); commit(&g);
         ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); position(&g,g.target,(eng_vector_t){3+moves[i].x,4+moves[i].y,5+moves[i].z});
-        eng_vector_t far = {1e6f,-2e6f,3e6f}; eng_entity_set_position(g.f.engine,eng_entity_index(g.f.engine,g.reference),&far,-1,false); trigger(&g,0);
+        eng_vector_t distant = {1e6f,-2e6f,3e6f}; eng_entity_set_position(g.f.engine,eng_entity_index(g.f.engine,g.reference),&distant,-1,false); trigger(&g,0);
         position(&g,g.target,(eng_vector_t){3+2*moves[i].x,4+2*moves[i].y,5+2*moves[i].z}); basis(&g); fixture_end(&g.f);
     }
 }

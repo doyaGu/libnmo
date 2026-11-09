@@ -1110,11 +1110,11 @@ TEST(engine_tt, bounding_spheres_meet_and_the_missile_homes_in)
     engine_fixture_t f;
     fixture_begin_document(&f);
     nmo_object_id_t a = unit_cube(&f, "A", 0.0f, 0.0f, 0.0f);
-    nmo_object_id_t near = unit_cube(&f, "Near", 1.5f, 0.0f, 0.0f);
-    nmo_object_id_t far = unit_cube(&f, "Far", 3.0f, 0.0f, 0.0f);
+    nmo_object_id_t nearer = unit_cube(&f, "Near", 1.5f, 0.0f, 0.0f);
+    nmo_object_id_t farther = unit_cube(&f, "Far", 3.0f, 0.0f, 0.0f);
     nmo_object_id_t missile = placed(&f, NMO_CID_3DENTITY, "Missile", 0.0f, 0.0f, 20.0f);
     nmo_object_id_t goal = unit_cube(&f, "Goal", 10.0f, 0.0f, 20.0f);
-    ASSERT_TRUE(a && near && far && missile && goal);
+    ASSERT_TRUE(a && nearer && farther && missile && goal);
     f.script_id = fixture_add_script(&f, "Script", &f.script_in);
     fixture_begin_edit(&f);
     nmo_object_id_t spheres[2] = {started_block(&f, GUID_BOUNDING_SPHERE, "Near Test"),
@@ -1122,7 +1122,7 @@ TEST(engine_tt, bounding_spheres_meet_and_the_missile_homes_in)
     nmo_object_id_t homing = started_block(&f, GUID_HOMING_MISSILE, "Homing");
     ASSERT_TRUE(spheres[0] && spheres[1] && homing);
     nmo_object_id_t outs[2][2], reach[2];
-    const nmo_object_id_t others[2] = {near, far};
+    const nmo_object_id_t others[2] = {nearer, farther};
     for (int i = 0; i < 2; i++) {
         fixture_input_int(&f, BLOCK_PIN(&f, spheres[i], 0), (int32_t)a);
         fixture_input_int(&f, BLOCK_PIN(&f, spheres[i], 1), (int32_t)others[i]);
@@ -1329,9 +1329,9 @@ TEST(engine_tt, sinus_and_magnet_deform_their_meshes)
         nmo_vector_t p = mesh_vertex(&f, waved_mesh, corners[i]);
         ASSERT_FLOAT_EQ((float)sin(degree * 3.14159265358979 / 180.0), p.y, 1e-4f);
     }
-    nmo_vector_t far = mesh_vertex(&f, waved_mesh, 8);
-    ASSERT_FLOAT_EQ(2.0f, far.x, 0.0f); /* X and Z stay */
-    ASSERT_FLOAT_EQ(2.0f, far.z, 0.0f);
+    nmo_vector_t farther = mesh_vertex(&f, waved_mesh, 8);
+    ASSERT_FLOAT_EQ(2.0f, farther.x, 0.0f); /* X and Z stay */
+    ASSERT_FLOAT_EQ(2.0f, farther.z, 0.0f);
 
     /* The middle vertex, 1 under the magnet: (1 - 5) / (0.5 - 5) of the way up */
     nmo_vector_t middle = mesh_vertex(&f, pulled_mesh, 4);
@@ -1839,10 +1839,10 @@ TEST(engine_tt, shadow_plane_and_mapping_project_the_box_from_the_light)
     ASSERT_EQ(1, out.channel_count);
     ASSERT_EQ(nmo_engine_object_named(f.engine, "SimpleShadow Material", NMO_CID_MATERIAL), out.channels[0].material);
     ASSERT_EQ(VXBLEND_ZERO, out.channels[0].source_blend);
-    nmo_vector2_t under = mesh_uv(&f, ground_mesh, 0, 60), far = mesh_uv(&f, ground_mesh, 0, 0); /* (5,0,5), (0,0,0) */
+    nmo_vector2_t under = mesh_uv(&f, ground_mesh, 0, 60), farther = mesh_uv(&f, ground_mesh, 0, 0); /* (5,0,5), (0,0,0) */
     ASSERT_FLOAT_EQ(0.5f, under.x, 1e-5f);
     ASSERT_FLOAT_EQ(0.5f, under.y, 1e-5f);
-    ASSERT_FLOAT_EQ(-3.5f, far.x, 1e-4f);
+    ASSERT_FLOAT_EQ(-3.5f, farther.x, 1e-4f);
     ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
     ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
     ASSERT_TRUE(nmo_engine_mesh(f.engine, ground_mesh, &out));
@@ -1900,10 +1900,10 @@ TEST(engine_tt, real_shadow_mapping_throws_the_square_from_the_light)
     nmo_engine_material_t desc;
     ASSERT_TRUE(nmo_engine_material(f.engine, material, &desc));
     ASSERT_EQ(texture, desc.texture);
-    nmo_vector2_t under = mesh_uv(&f, ground_mesh, 0, 60), far = mesh_uv(&f, ground_mesh, 0, 0); /* (5,0,5), (0,0,0) */
+    nmo_vector2_t under = mesh_uv(&f, ground_mesh, 0, 60), farther = mesh_uv(&f, ground_mesh, 0, 0); /* (5,0,5), (0,0,0) */
     ASSERT_FLOAT_EQ(0.5f, under.x, 1e-5f);
     ASSERT_FLOAT_EQ(0.5f, under.y, 1e-5f);
-    ASSERT_FLOAT_EQ(-(5.0f - 1.25f * r) / (2.5f * r), far.x, 1e-4f);
+    ASSERT_FLOAT_EQ(-(5.0f - 1.25f * r) / (2.5f * r), farther.x, 1e-4f);
     for (int i = 0; i < 3; i++) {
         ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
         ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));

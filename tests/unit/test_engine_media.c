@@ -451,26 +451,26 @@ TEST(engine_media, particles_draw_where_their_render_last_emitter_sorts)
 {
     engine_fixture_t f;
     fixture_begin_document(&f);
-    nmo_object_id_t near = plain_entity(&f, "Near");
-    nmo_object_id_t far = plain_entity(&f, "Far");
-    ASSERT_TRUE(near != 0 && far != 0);
-    ((nmo_3dentity_state_t *)fixture_state(&f, near))->world_matrix[14] = 10.0f;
-    ((nmo_3dentity_state_t *)fixture_state(&f, far))->world_matrix[14] = 30.0f;
+    nmo_object_id_t nearer = plain_entity(&f, "Near");
+    nmo_object_id_t farther = plain_entity(&f, "Far");
+    ASSERT_TRUE(nearer != 0 && farther != 0);
+    ((nmo_3dentity_state_t *)fixture_state(&f, nearer))->world_matrix[14] = 10.0f;
+    ((nmo_3dentity_state_t *)fixture_state(&f, farther))->world_matrix[14] = 30.0f;
     /* a script with a particle system on each, the near one's first */
-    f.owner_id = near;
+    f.owner_id = nearer;
     nmo_object_id_t near_in = 0, far_in = 0;
     nmo_object_id_t near_script = fixture_add_script(&f, "Near Script", &near_in);
-    f.owner_id = far;
+    f.owner_id = farther;
     nmo_object_id_t far_script = fixture_add_script(&f, "Far Script", &far_in);
     fixture_begin_edit(&f);
     f.script_id = near_script, f.script_in = near_in;
-    ASSERT_TRUE(still_particles(&f, near, 0) != 0);
+    ASSERT_TRUE(still_particles(&f, nearer, 0) != 0);
     f.script_id = far_script, f.script_in = far_in;
-    ASSERT_TRUE(still_particles(&f, far, 0) != 0);
+    ASSERT_TRUE(still_particles(&f, farther, 0) != 0);
     fixture_commit(&f, NULL);
     ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
     /* each owner renders last from the start's new scene (CKM_BEHAVIORNEWSCENE) */
-    const nmo_object_id_t owners[2] = {near, far};
+    const nmo_object_id_t owners[2] = {nearer, farther};
     for (int i = 0; i < 2; i++) {
         int32_t at = eng_entity_index(f.engine, owners[i]);
         ASSERT_TRUE((f.engine->entities.data[at].moveable_flags & VX_MOVEABLE_RENDERLAST) != 0);
@@ -478,18 +478,18 @@ TEST(engine_media, particles_draw_where_their_render_last_emitter_sorts)
     }
     ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 25.0f));
     ASSERT_EQ(2u, (uint32_t)eng_tt(f.engine)->emitters.count);
-    ASSERT_EQ(near, eng_tt(f.engine)->emitters.data[0].entity);
+    ASSERT_EQ(nearer, eng_tt(f.engine)->emitters.data[0].entity);
 
     /* each emitter's particles draw as its entity renders: among the transparent objects back to
        front, the far one's first (one pass over the emitters would draw the near one's first) */
     nmo_engine_frame_t frame;
     ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
-    int near_draw = particle_draw(&frame, near), far_draw = particle_draw(&frame, far);
+    int near_draw = particle_draw(&frame, nearer), far_draw = particle_draw(&frame, farther);
     ASSERT_TRUE(near_draw >= 0 && far_draw >= 0);
     ASSERT_TRUE(far_draw < near_draw);
 
     /* a launch of the level scene warns the blocks again */
-    int32_t near_at = eng_entity_index(f.engine, near);
+    int32_t near_at = eng_entity_index(f.engine, nearer);
     f.engine->entities.data[near_at].moveable_flags &= ~(uint32_t)VX_MOVEABLE_RENDERLAST;
     eng_launch_level_scene(f.engine, 3, 2); /* do nothing, no reset */
     ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 25.0f));

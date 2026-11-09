@@ -42,7 +42,7 @@ static eng_vector_t position(ik_fixture_t *g, nmo_object_id_t id)
     return eng_entity_position(g->f.engine,eng_entity_index(g->f.engine,id),-1);
 }
 
-static void near(eng_vector_t actual, eng_vector_t expected, float tolerance)
+static void assert_near(eng_vector_t actual, eng_vector_t expected, float tolerance)
 {
     eng_vector_t difference = {actual.x-expected.x,actual.y-expected.y,actual.z-expected.z};
     ASSERT_TRUE(eng_vector_magnitude(&difference) <= tolerance);
@@ -74,7 +74,7 @@ TEST(engine_kinematic, named_axes_reach_circular_targets_without_moving_the_pivo
         end->world_matrix[12] = offsets[axis].x; end->world_matrix[13] = offsets[axis].y; end->world_matrix[14] = offsets[axis].z;
         commit(&g); eng_matrix_t end_local = local(&g,g.end);
         ASSERT_TRUE(eng_kinematic_set_position(g.f.engine,g.root,g.end,&targets[axis]));
-        near(position(&g,g.end),targets[axis],.05f); near(position(&g,g.root),(eng_vector_t){0,0,0},1e-6f);
+        assert_near(position(&g,g.end),targets[axis],.05f); assert_near(position(&g,g.root),(eng_vector_t){0,0,0},1e-6f);
         ASSERT_FLOAT_EQ(1,distance(position(&g,g.root),position(&g,g.end)),1e-5f);
         eng_matrix_t actual = local(&g,g.end); same_matrix(&actual,&end_local); fixture_end(&g.f);
     }
@@ -88,7 +88,7 @@ TEST(engine_kinematic, rigid_segments_project_both_interior_and_unreachable_targ
         eng_vector_t direction = {cosf(.6f),sinf(.6f),0};
         eng_vector_t target = {direction.x*radii[i],direction.y*radii[i],0}, original = target;
         ASSERT_TRUE(eng_kinematic_set_position(g.f.engine,g.root,g.end,&target));
-        near(position(&g,g.end),direction,.05f); near(target,original,0); fixture_end(&g.f);
+        assert_near(position(&g,g.end),direction,.05f); assert_near(target,original,0); fixture_end(&g.f);
     }
 }
 
@@ -97,7 +97,7 @@ TEST(engine_kinematic, bent_chains_distribute_motion_across_joints_and_keep_loca
     ik_fixture_t g; begin(&g,true,4); commit(&g);
     eng_matrix_t original_root = local(&g,g.root), original_middle = local(&g,g.middle), original_end = local(&g,g.end);
     eng_vector_t target = {1.15f,.9f,0}; ASSERT_TRUE(eng_kinematic_set_position(g.f.engine,g.root,g.end,&target));
-    near(position(&g,g.end),target,.05f); near(position(&g,g.root),(eng_vector_t){0,0,0},1e-6f);
+    assert_near(position(&g,g.end),target,.05f); assert_near(position(&g,g.root),(eng_vector_t){0,0,0},1e-6f);
     ASSERT_FLOAT_EQ(1,distance(position(&g,g.root),position(&g,g.middle)),1e-5f);
     ASSERT_FLOAT_EQ(1,distance(position(&g,g.middle),position(&g,g.end)),1e-5f);
     eng_matrix_t root = local(&g,g.root), middle = local(&g,g.middle), end = local(&g,g.end);
@@ -114,8 +114,8 @@ TEST(engine_kinematic, transformed_parents_preserve_world_pivots_and_use_the_joi
     parent.m[3][0] = 4; parent.m[3][1] = -3; parent.m[3][2] = 2;
     eng_entity_set_world_matrix(g.f.engine,eng_entity_index(g.f.engine,g.f.owner_id),&parent,false);
     eng_vector_t target = {4+cosf(.9f),-3+sinf(.9f),2};
-    ASSERT_TRUE(eng_kinematic_set_position(g.f.engine,g.root,g.end,&target)); near(position(&g,g.end),target,.05f);
-    near(position(&g,g.root),(eng_vector_t){4,-3,2},1e-5f);
+    ASSERT_TRUE(eng_kinematic_set_position(g.f.engine,g.root,g.end,&target)); assert_near(position(&g,g.end),target,.05f);
+    assert_near(position(&g,g.root),(eng_vector_t){4,-3,2},1e-5f);
     eng_matrix_t actual = local(&g,g.f.owner_id); same_matrix(&actual,&parent); fixture_end(&g.f);
 }
 
@@ -159,7 +159,7 @@ TEST(engine_kinematic, limited_joints_reach_valid_angles_and_reject_crossing_the
         eng_vector_t target = {cosf(beyond ? .6f : .2f),sinf(beyond ? .6f : .2f),0};
         float initial = distance(position(&g,g.end),target);
         bool solved = eng_kinematic_set_position(g.f.engine,g.root,g.end,&target);
-        if (!beyond) { ASSERT_TRUE(solved); near(position(&g,g.end),target,.05f); }
+        if (!beyond) { ASSERT_TRUE(solved); assert_near(position(&g,g.end),target,.05f); }
         eng_matrix_t matrix = local(&g,g.root); float x,y,z; eng_matrix_to_euler(&matrix,&x,&y,&z);
         ASSERT_TRUE(z >= -.30001f && z <= .30001f); ASSERT_TRUE(distance(position(&g,g.end),target) <= initial+1e-5f);
         ASSERT_EQ(4u|64u,root->rotation_joint.flags); fixture_end(&g.f);
@@ -188,7 +188,7 @@ TEST(engine_kinematic, multiple_axes_solve_a_spatial_target_and_zero_jacobians_k
         ASSERT_TRUE(eng_kinematic_set_position(g.f.engine,g.root,g.end,&target));
         if (singular) {
             eng_matrix_t actual = local(&g,g.root); same_matrix(&actual,&root); actual = local(&g,g.end); same_matrix(&actual,&end);
-        } else near(position(&g,g.end),target,.05f);
+        } else assert_near(position(&g,g.end),target,.05f);
         fixture_end(&g.f);
     }
 }

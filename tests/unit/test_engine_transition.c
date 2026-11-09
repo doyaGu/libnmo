@@ -292,7 +292,7 @@ TEST(engine_transition, channel_matching_uses_the_last_source_and_clears_unmatch
     nmo_object_id_t a[] = {curve(&f,f.owner_id,10,0,10),curve(&f,f.owner_id,10,0,20)};
     nmo_object_id_t b[] = {curve(&f,f.owner_id,10,100,120),curve(&f,limb,10,20,30),0};
     nmo_object_id_t from = group(&f,0,f.owner_id,a,COUNT(a),10,1000), to = group(&f,0,f.owner_id,b,COUNT(b),10,1000);
-    nmo_object_id_t small = group(&f,0,f.owner_id,b,1,10,1000);
+    nmo_object_id_t small_group = group(&f,0,f.owner_id,b,1,10,1000);
     fixture_begin_edit(&f); fixture_commit_bare(&f,NULL);
     nmo_object_id_t result = eng_create_related_object(f.engine,to,NMO_CID_KEYEDANIMATION);
     ASSERT_TRUE(eng_animation_set_current_step(f.engine,from,.5f));
@@ -306,7 +306,7 @@ TEST(engine_transition, channel_matching_uses_the_last_source_and_clears_unmatch
     ASSERT_EQ(0u,eng_animation_sample_pose(f.engine,parts[1].id,4).present);
     ASSERT_EQ(0u,eng_animation_sample_pose(f.engine,parts[2].id,4).present);
     ASSERT_TRUE(eng_animation_set_current_step(f.engine,result,.5f));
-    ASSERT_EQ(NMO_OK,eng_keyed_animation_transition(f.engine,result,result,small,0,2,0,&entry));
+    ASSERT_EQ(NMO_OK,eng_keyed_animation_transition(f.engine,result,result,small_group,0,2,0,&entry));
     ASSERT_EQ(root,eng_keyed_animation_root(f.engine,result));
     ASSERT_FLOAT_EQ(55,eng_animation_sample_pose(f.engine,root,0).position.x,1e-6f);
     ASSERT_FLOAT_EQ(100,eng_animation_sample_pose(f.engine,root,2).position.x,0);

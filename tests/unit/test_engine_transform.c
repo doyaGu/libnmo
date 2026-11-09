@@ -146,7 +146,7 @@ TEST(engine_transform, character_nearest_uses_world_distance_group_order_and_liv
     nmo_object_id_t parent = fixture_create(&f,NMO_CID_3DENTITY,"Parent");
     nmo_object_id_t actor = fixture_create(&f,NMO_CID_CHARACTER,"Character");
     nmo_object_id_t root = fixture_create(&f,NMO_CID_BODYPART,"Root");
-    nmo_object_id_t far = fixture_create(&f,NMO_CID_3DENTITY,"Far");
+    nmo_object_id_t far_object = fixture_create(&f,NMO_CID_3DENTITY,"Far");
     nmo_object_id_t camera = fixture_create(&f,NMO_CID_CAMERA,"First at five");
     nmo_object_id_t tie = fixture_create(&f,NMO_CID_LIGHT,"Second at five");
     nmo_object_id_t projected = fixture_create(&f,NMO_CID_3DENTITY,"Far above");
@@ -155,12 +155,12 @@ TEST(engine_transform, character_nearest_uses_world_distance_group_order_and_liv
     ASSERT_TRUE(place_entity(&f,actor,10,20,30,parent) != 0);
     ASSERT_TRUE(place_entity(&f,root,10,25,30,actor) != 0);
     ((nmo_character_state_t *)fixture_state(&f,actor))->root_body_part = nmo_ref_from_id(root);
-    ASSERT_TRUE(place_entity(&f,far,10,26,30,0) != 0);
+    ASSERT_TRUE(place_entity(&f,far_object,10,26,30,0) != 0);
     ASSERT_TRUE(place_entity(&f,camera,13,20,34,parent) != 0);
     ASSERT_TRUE(place_entity(&f,tie,10,25,30,0) != 0);
     ASSERT_TRUE(place_entity(&f,projected,10,100,30,0) != 0);
     nmo_object_id_t nested = object_group(&f,"Nested",&root,1);
-    nmo_object_id_t ids[] = {material,projected,nested,far,camera,tie};
+    nmo_object_id_t ids[] = {material,projected,nested,far_object,camera,tie};
     nmo_object_id_t group = object_group(&f,"Candidates",ids,sizeof(ids)/sizeof(ids[0])); ASSERT_TRUE(group != 0);
     f.script_id = fixture_add_script(&f,"Nearest script",&f.script_in); fixture_begin_edit(&f);
     nmo_object_id_t block = target_block(&f,GUID_CHARACTER_NEAREST,"Character nearest",actor,f.script_in);
@@ -172,7 +172,7 @@ TEST(engine_transform, character_nearest_uses_world_distance_group_order_and_liv
     float matrix[16]; ASSERT_TRUE(nmo_engine_entity_world_matrix(f.engine,actor,matrix));
     matrix[13] = 25; ASSERT_EQ(NMO_OK,nmo_engine_set_entity_world_matrix(f.engine,actor,matrix,false));
     query_nearest(&f,block,tie);
-    nmo_engine_destroy_object(f.engine,tie); query_nearest(&f,block,far);
+    nmo_engine_destroy_object(f.engine,tie); query_nearest(&f,block,far_object);
     ASSERT_TRUE(eng_group_add(f.engine,group,actor)); query_nearest(&f,block,actor);
     ASSERT_EQ(4u,runs(&f,block)); ASSERT_EQ(4u,runs(&f,after));
     fixture_end(&f);
@@ -260,13 +260,13 @@ TEST(engine_transform, loaded_character_nearest_outputs_feed_transforms_and_rema
 {
     engine_fixture_t source; fixture_begin_document(&source);
     nmo_object_id_t actor = fixture_create(&source,NMO_CID_CHARACTER,"Nearest actor");
-    nmo_object_id_t near = fixture_create(&source,NMO_CID_3DENTITY,"Near candidate");
-    nmo_object_id_t far = fixture_create(&source,NMO_CID_3DENTITY,"Far candidate");
+    nmo_object_id_t near_object = fixture_create(&source,NMO_CID_3DENTITY,"Near candidate");
+    nmo_object_id_t far_object = fixture_create(&source,NMO_CID_3DENTITY,"Far candidate");
     nmo_object_id_t material = fixture_create(&source,NMO_CID_MATERIAL,"Ignored candidate");
     ASSERT_TRUE(place_entity(&source,actor,5,0,0,0) != 0);
-    ASSERT_TRUE(place_entity(&source,near,6,0,0,0) != 0);
-    ASSERT_TRUE(place_entity(&source,far,7,0,0,0) != 0);
-    nmo_object_id_t members[] = {material,near,far}, group = object_group(&source,"Nearest candidates",members,3); ASSERT_TRUE(group != 0);
+    ASSERT_TRUE(place_entity(&source,near_object,6,0,0,0) != 0);
+    ASSERT_TRUE(place_entity(&source,far_object,7,0,0,0) != 0);
+    nmo_object_id_t members[] = {material,near_object,far_object}, group = object_group(&source,"Nearest candidates",members,3); ASSERT_TRUE(group != 0);
     source.script_id = fixture_add_script(&source,"Nearest saved script",&source.script_in); fixture_begin_edit(&source);
     nmo_object_id_t query = fixture_block(&source,GUID_CHARACTER_NEAREST,"Saved nearest query");
     nmo_object_id_t move = fixture_block(&source,GUID_SET_POSITION,"Move nearest result"); ASSERT_TRUE(query != 0 && move != 0);
@@ -301,7 +301,7 @@ TEST(engine_transform, loaded_character_nearest_outputs_feed_transforms_and_rema
         nmo_object_id_t loaded_query = nmo_engine_object_named(host.engine,"Saved nearest query",NMO_CID_BEHAVIOR);
         nmo_object_id_t loaded_move = nmo_engine_object_named(host.engine,"Move nearest result",NMO_CID_BEHAVIOR);
         nmo_object_id_t loaded_script = nmo_engine_object_named(host.engine,"Nearest saved script",NMO_CID_BEHAVIOR);
-        ASSERT_TRUE(loaded_actor != 0 && loaded_actor != actor && loaded_near != near && loaded_query != query);
+        ASSERT_TRUE(loaded_actor != 0 && loaded_actor != actor && loaded_near != near_object && loaded_query != query);
         ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
         ASSERT_EQ(loaded_near,nearest_output(host.engine,loaded_query));
         ASSERT_POSITION(&host,loaded_near,100,0,0); ASSERT_POSITION(&host,loaded_far,7,0,0);
@@ -1183,8 +1183,8 @@ TEST(engine_transform, collision_intersection_tests_spheres_boxes_faces_and_the_
     engine_fixture_t f;
     fixture_begin_document(&f);
     nmo_object_id_t a = cube_object(&f, "A", 0.0f, 0.0f);
-    nmo_object_id_t near = cube_object(&f, "Near", 1.1f, 0.0f); /* spheres of 0.87 meet */
-    nmo_object_id_t far = cube_object(&f, "Far", 5.0f, 0.0f);
+    nmo_object_id_t near_object = cube_object(&f, "Near", 1.1f, 0.0f); /* spheres of 0.87 meet */
+    nmo_object_id_t far_object = cube_object(&f, "Far", 5.0f, 0.0f);
     nmo_object_id_t high = cube_object(&f, "High", 0.0f, 0.0f);
     const float upright[9] = {-1, -1, 0, 1, -1, 0, 0, 1, 0}; /* in the XY plane */
     const float flat[9] = {-1, 0, -1, 1, 0, -1, 0, 0, 1};    /* in the XZ plane */
@@ -1193,7 +1193,7 @@ TEST(engine_transform, collision_intersection_tests_spheres_boxes_faces_and_the_
     nmo_object_id_t raised = triangle_object(&f, "Raised", flat, 0.0f, 5.0f, 0.0f);
     nmo_object_id_t camera = fixture_create(&f, NMO_CID_CAMERA, "Camera");
     nmo_object_id_t ahead = cube_object(&f, "Ahead", 0.0f, 0.0f), behind = cube_object(&f, "Behind", 0.0f, 0.0f);
-    ASSERT_TRUE(a && near && far && high && standing && lying && raised && camera && ahead && behind);
+    ASSERT_TRUE(a && near_object && far_object && high && standing && lying && raised && camera && ahead && behind);
     ((nmo_3dentity_state_t *)fixture_state(&f, high))->world_matrix[13] = 3.0f;
     ((nmo_3dentity_state_t *)fixture_state(&f, ahead))->world_matrix[14] = 10.0f;
     ((nmo_3dentity_state_t *)fixture_state(&f, behind))->world_matrix[14] = -10.0f;
@@ -1201,8 +1201,8 @@ TEST(engine_transform, collision_intersection_tests_spheres_boxes_faces_and_the_
     f.script_id = fixture_add_script(&f, "Script", &f.script_in);
     fixture_begin_edit(&f);
     nmo_object_id_t spheres[2][2], heights[5], frustum[2][2], boxes[2][2], faces[2][2];
-    ASSERT_TRUE(pair_test(&f, GUID_SPHERE_SPHERE, 0, a, near, 2, spheres[0]) != 0);
-    ASSERT_TRUE(pair_test(&f, GUID_SPHERE_SPHERE, 0, a, far, 2, spheres[1]) != 0);
+    ASSERT_TRUE(pair_test(&f, GUID_SPHERE_SPHERE, 0, a, near_object, 2, spheres[0]) != 0);
+    ASSERT_TRUE(pair_test(&f, GUID_SPHERE_SPHERE, 0, a, far_object, 2, spheres[1]) != 0);
     ASSERT_TRUE(pair_test(&f, GUID_BB_Y_OVERLAPPING, 0, a, high, 5, heights) != 0);
     ASSERT_TRUE(pair_test(&f, GUID_FRUSTUM_OBJECT, camera, ahead, 0, 2, frustum[0]) != 0);
     ASSERT_TRUE(pair_test(&f, GUID_FRUSTUM_OBJECT, camera, behind, 0, 2, frustum[1]) != 0);
@@ -1546,8 +1546,8 @@ TEST(engine_transform, multi_collision_detection_loops_over_the_colliding_pairs)
     fixture_begin_document(&f);
     nmo_object_id_t a = cube_object(&f, "Box A", 0.0f, 0.0f);
     nmo_object_id_t c = cube_object(&f, "Box B", 0.8f, 0.0f); /* overlaps A */
-    nmo_object_id_t far = cube_object(&f, "Box C", 5.0f, 0.0f);
-    ASSERT_TRUE(a && c && far);
+    nmo_object_id_t far_object = cube_object(&f, "Box C", 5.0f, 0.0f);
+    ASSERT_TRUE(a && c && far_object);
     f.script_id = fixture_add_script(&f, "Script", &f.script_in);
     fixture_begin_edit(&f);
     obstacle_attribute_types(&f);
