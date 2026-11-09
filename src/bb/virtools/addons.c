@@ -8,13 +8,20 @@
  */
 
 #include "virtools.h"
+#include "../../engine/engine_animation.h"
+#include "core/nmo_arena.h"
 
 #include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_animation_schemas.h"
 #include "object/builtin/nmo_beobject_schemas.h"
+#include "object/builtin/nmo_camera_schemas.h"
+#include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_bitmap_slots.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_defs.h"
 #include "type/nmo_object_guids.h"
+#include "type/nmo_param_guids.h"
+#include "type/nmo_type_guids.h"
 #include "type/nmo_type_query.h"
 
 #include <math.h>
@@ -730,12 +737,19 @@ typedef struct addons_replace {
 
 typedef struct addons_state {
     ENG_VEC(addons_replace_t) replaces;
+    ENG_VEC(int32_t) flares; /* Lens Flare blocks with this frame's post render callback */
+    ENG_VEC(int32_t) shadows; /* ShadowStencil blocks with this frame's post render callback */
 } addons_state_t;
+
+static void lens_flare_render(nmo_engine_t *engine, int32_t node);
+static void shadow_stencil_render(nmo_engine_t *engine, int32_t node);
 
 static void addons_destroy(nmo_engine_t *engine, void *state)
 {
     (void)engine;
     free(((addons_state_t *)state)->replaces.data);
+    free(((addons_state_t *)state)->flares.data);
+    free(((addons_state_t *)state)->shadows.data);
 }
 
 /* The temporary render callbacks of this frame: the draws of the entity (its own render) or of
@@ -759,6 +773,14 @@ static void addons_render(nmo_engine_t *engine, void *state, eng_render_stage_t 
         }
     }
     addons->replaces.count = 0;
+    for (size_t f = 0; f < addons->flares.count; f++) {
+        lens_flare_render(engine, addons->flares.data[f]);
+    }
+    addons->flares.count = 0;
+    for (size_t i = 0; i < addons->shadows.count; i++) {
+        shadow_stencil_render(engine, addons->shadows.data[i]);
+    }
+    addons->shadows.count = 0;
 }
 
 static const eng_manager_desc_t addons_manager = {
@@ -988,6 +1010,1352 @@ static int bb_synchro_player(blk_t *b)
     return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
 }
 
+
+/* ============================================================================
+ * Volumetric Fog and Lens Flare
+ * ============================================================================ */
+
+/*
+ * Volumetric Fog (the DLL's, which computes in the block): each shown object
+ * of Group with a mesh gets a channel of Material (added once, blended ONE /
+ * INVSRCCOLOR) whose V coordinate is the fog the eye sees through to the
+ * vertex: its distance along the eye's axis times FogDensity, for vertices
+ * below the eye (on the fog's up side of the target); with the eye inside
+ * the fog, less the part above the fog's top. The engine does not cull, so
+ * objects out of view are computed too.
+ */
+static int bb_volumetric_fog(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+    }
+    int32_t fog = eng_entity_index(engine, nmo_engine_block_target(b));
+    if (fog < 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    nmo_object_id_t material = nmo_engine_block_get_input_object(b, 0);
+    float density = get_in_float(b, 1, 0.0099999998f);
+    nmo_object_id_t group = nmo_engine_block_get_input_object(b, 2);
+    int32_t count = group != 0 ? nmo_engine_group_count(engine, group) : 0;
+    if (group == 0) {
+        return NMO_ENGINE_BR_OK;
+    }
+    int32_t camera = eng_entity_index(engine, engine->render.camera);
+    for (int32_t g = 0; g < count; g++) {
+        nmo_object_id_t id = nmo_engine_group_object(engine, group, g);
+        int32_t index = eng_entity_index(engine, id);
+        nmo_object_t *object = index >= 0 ? eng_find_object(engine, id) : NULL;
+        const nmo_3dentity_state_t *state = object != NULL
+            ? (const nmo_3dentity_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(engine->types, object,
+                                                                                              CKPGUID_3DENTITY)
+            : NULL;
+        nmo_object_id_t mesh = state != NULL ? eng_object_ref(engine, id, &state->current_mesh) : 0;
+        eng_mesh_copy_t *copy = mesh != 0 ? eng_mesh_copy(engine, mesh) : NULL;
+        if (copy == NULL || camera < 0 || !(eng_object_visibility(engine, id) & CK_OBJECT_VISIBLE)) {
+            continue;
+        }
+        int32_t channel = eng_mesh_channel(copy, material);
+        if (channel < 0) {
+            channel = eng_mesh_add_channel(copy, material);
+            if (channel < 0) {
+                continue;
+            }
+            copy->channels.data[channel].source_blend = VXBLEND_ONE;
+            copy->channels.data[channel].dest_blend = VXBLEND_INVSRCCOLOR;
+        }
+        size_t stride = 0;
+        int32_t vertices = 0;
+        float *uvs = eng_mesh_uvs(engine, copy, channel, &stride, &vertices);
+        if (uvs == NULL) {
+            continue;
+        }
+        const eng_vector_t axis_y = {0.0f, 1.0f, 0.0f}, axis_z = {0.0f, 0.0f, 1.0f};
+        eng_vector_t up, eye_z;
+        eng_entity_transform_vector(engine, index, &up, &axis_y, fog, true);
+        eng_vector_t eye = eng_entity_position(engine, camera, index), base = eng_entity_position(engine, fog, index);
+        float height = (eye.x - base.x) * up.x + (eye.y - base.y) * up.y + (eye.z - base.z) * up.z;
+        float height_density = height * density;
+        eng_entity_transform_vector(engine, index, &eye_z, &axis_z, camera, true);
+        eng_vector_t scale = eng_entity_scale(engine, index, true);
+        eye_z = (eng_vector_t){-eye_z.x * scale.x * scale.x, -eye_z.y * scale.y * scale.y, -eye_z.z * scale.z * scale.z};
+        for (int32_t v = 0; v < vertices; v++) {
+            const nmo_vector_t *p = &copy->vertices[v].position;
+            eng_vector_t apart = {eye.x - p->x, eye.y - p->y, eye.z - p->z};
+            float depth = apart.x * up.x + apart.y * up.y + apart.z * up.z;
+            float along = apart.x * eye_z.x + apart.y * eye_z.y + apart.z * eye_z.z;
+            float *uv = (float *)((uint8_t *)uvs + (size_t)v * stride);
+            if (!(depth + 0.001f > height)) {
+                uv[1] = 0.0f;
+            } else if (height < 0.0f) {
+                uv[1] = along * density;
+            } else {
+                uv[1] = along * (density - height_density / depth);
+            }
+        }
+        copy->version = ++engine->render.mesh_version;
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+/* A flare of Lens Flare (the DLL's 64 bytes), from a row of its Flare Array */
+typedef struct addons_flare {
+    float position;          /* along the line from the eye to the light */
+    float rotation;          /* how much it turns with its place on screen */
+    float size[2];
+    int16_t fade_in, fade_out; /* milliseconds */
+    float time;              /* into its fade */
+    float cos_limit;         /* shown while the light is within this cosine of the view's axis */
+    int32_t state;           /* 0 off, 1 fading in, 2 fading out, 4 shown */
+    float color[4];
+    float rect[4];           /* its part of the texture in pixels; left = right: all of it */
+} addons_flare_t;
+
+static const addons_flare_t addons_flare_default = {1.0f, 0.0f, {1.0f, 1.0f}, 100, 100, 0.0f, 0.0f, 0,
+                                                    {1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f, 0.0f}};
+
+static addons_flare_t *flares_of(nmo_engine_t *engine, int32_t node, int32_t *count)
+{
+    const eng_node_t *block = &engine->nodes.data[node];
+    eng_param_t *param = eng_node_param(engine, block->first_local, block->local_count, 0);
+    *count = param != NULL && param->data != NULL ? (int32_t)(param->size / sizeof(addons_flare_t)) : 0;
+    return *count > 0 ? (addons_flare_t *)param->data : NULL;
+}
+
+/* The flares from Flare Array: as many as its rows (all back to their defaults when that
+   changes), each from the columns that have the types expected */
+static void lens_flare_read(blk_t *b, nmo_object_id_t array)
+{
+    nmo_engine_t *engine = b->engine;
+    const eng_array_t *runtime = eng_find_array(engine, array);
+    int32_t rows = nmo_engine_array_row_count(engine, array), count = 0;
+    eng_param_t *param = block_local(b, 0);
+    if (runtime == NULL || param == NULL || rows < 0) {
+        return;
+    }
+    flares_of(engine, b->node, &count);
+    if (count != rows) {
+        if (!eng_param_resize(param, (size_t)rows * sizeof(addons_flare_t))) {
+            return;
+        }
+        for (int32_t i = 0; i < rows; i++) {
+            memcpy(param->data + (size_t)i * sizeof(addons_flare_t), &addons_flare_default, sizeof(addons_flare_t));
+        }
+    }
+    addons_flare_t *flares = flares_of(engine, b->node, &count);
+    for (int32_t i = 0; i < count; i++) {
+        addons_flare_t *f = &flares[i];
+        nmo_engine_cell_t cell = {0};
+        nmo_guid_t types[8] = {{0}};
+        for (uint32_t c = 0; c < 8 && c < runtime->column_count; c++) {
+            types[c] = runtime->columns[c].type == CKARRAYTYPE_PARAMETER ? runtime->columns[c].param_type : NMO_GUID(0u, 0u);
+        }
+        if (nmo_guid_equals(types[0], CKPGUID_RECT) && nmo_engine_array_get_cell(engine, array, i, 0, &cell) == NMO_OK &&
+            cell.data != NULL && cell.size >= sizeof(f->rect)) {
+            memcpy(f->rect, cell.data, sizeof(f->rect));
+        }
+        if (nmo_engine_array_column_type(engine, array, 1) == CKARRAYTYPE_FLOAT &&
+            nmo_engine_array_get_cell(engine, array, i, 1, &cell) == NMO_OK) {
+            memcpy(&f->position, &cell.value, sizeof(float));
+        }
+        if (nmo_guid_equals(types[2], CKPGUID_COLOR) && nmo_engine_array_get_cell(engine, array, i, 2, &cell) == NMO_OK &&
+            cell.data != NULL && cell.size >= sizeof(f->color)) {
+            memcpy(f->color, cell.data, sizeof(f->color));
+        }
+        if (nmo_guid_equals(types[3], CKPGUID_2DVECTOR) && nmo_engine_array_get_cell(engine, array, i, 3, &cell) == NMO_OK &&
+            cell.data != NULL && cell.size >= sizeof(f->size)) {
+            memcpy(f->size, cell.data, sizeof(f->size));
+        }
+        if (nmo_engine_array_column_type(engine, array, 4) == CKARRAYTYPE_FLOAT &&
+            nmo_engine_array_get_cell(engine, array, i, 4, &cell) == NMO_OK) {
+            memcpy(&f->rotation, &cell.value, sizeof(float));
+        }
+        if (nmo_engine_array_column_type(engine, array, 5) == CKARRAYTYPE_INT &&
+            nmo_engine_array_get_cell(engine, array, i, 5, &cell) == NMO_OK) {
+            f->fade_in = (int16_t)(int32_t)cell.value;
+        }
+        if (nmo_engine_array_column_type(engine, array, 6) == CKARRAYTYPE_INT &&
+            nmo_engine_array_get_cell(engine, array, i, 6, &cell) == NMO_OK) {
+            f->fade_out = (int16_t)(int32_t)cell.value;
+        }
+        if (nmo_guid_equals(types[7], CKPGUID_ANGLE) && nmo_engine_array_get_cell(engine, array, i, 7, &cell) == NMO_OK) {
+            float angle = 0.0f;
+            if (cell.data != NULL && cell.size >= sizeof(float)) {
+                memcpy(&angle, cell.data, sizeof(float));
+            }
+            if (angle == 0.0f) {
+                angle = 1.5700001f;
+            }
+            f->cos_limit = (float)cos((double)angle);
+        }
+    }
+}
+
+/* A shown flare starts fading out (from where its fade in got to) */
+static void flare_fade_out(addons_flare_t *f)
+{
+    f->time = (f->state & 1) ? (float)((double)f->fade_out * (double)f->time / (double)f->fade_in) : (float)f->fade_out;
+    f->state = 2;
+}
+
+/* The render context's post render callback: the flares fade in while the light is seen (not
+   picked behind something) within their cone, out otherwise, by the frame's time; then draw as
+   quads on a plane twice the near plane in front of the eye, alpha blended additively */
+static void lens_flare_render(nmo_engine_t *engine, int32_t node)
+{
+    nmo_engine_block_t handle = {engine, node};
+    blk_t *b = &handle;
+    int32_t count = 0;
+    addons_flare_t *flares = flares_of(engine, node, &count);
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    int32_t light = eng_entity_index(engine, target), camera = eng_entity_index(engine, engine->render.camera);
+    float near_plane = 0.0f, far_plane = 0.0f;
+    if (flares == NULL || light < 0 || camera < 0 ||
+        !eng_camera_planes(engine, engine->render.camera, &near_plane, &far_plane)) {
+        return;
+    }
+    float front = (float)(near_plane + 0.0099999998);
+    eng_vector_t world = eng_entity_position(engine, light, -1), local;
+    eng_entity_inverse_transform(engine, camera, &local, &world, -1);
+    double length = sqrt((double)(local.x * local.x + local.z * local.z + local.y * local.y));
+    float facing = (float)(1.0 / sqrt((double)(front * front)) * front * (local.z / length));
+    eng_vector_t screen;
+    eng_render_project(engine, &world, &screen);
+    nmo_engine_pick_t pick;
+    memset(&pick, 0, sizeof(pick));
+    bool hit = engine->input.pick != NULL &&
+               engine->input.pick(engine->input.pick_user_data, (int32_t)(int64_t)screen.x, (int32_t)(int64_t)screen.y, &pick);
+    eng_vector_t eye = eng_entity_position(engine, camera, -1);
+    double apart = sqrt((double)((eye.x - world.x) * (eye.x - world.x) + (eye.y - world.y) * (eye.y - world.y) +
+                                 (eye.z - world.z) * (eye.z - world.z)));
+    if (!hit || apart <= (double)pick.distance) {
+        for (int32_t i = 0; i < count; i++) {
+            addons_flare_t *f = &flares[i];
+            if (f->cos_limit >= facing) {
+                if (f->state != 0 && !(f->state & 2)) {
+                    flare_fade_out(f);
+                }
+            } else if (f->state == 0 || (f->state & 2)) {
+                f->time = (f->state & 2) ? (float)((double)f->fade_in * (double)f->time / (double)f->fade_out) : 0.0f;
+                f->state = 1;
+            }
+        }
+    } else {
+        bool any = false;
+        for (int32_t i = 0; i < count; i++) {
+            if (flares[i].state != 0) {
+                any = true;
+                if (!(flares[i].state & 2)) {
+                    flare_fade_out(&flares[i]);
+                }
+            }
+        }
+        if (!any) {
+            return;
+        }
+    }
+    float multiplier[2] = {1.0f, 1.0f};
+    nmo_engine_block_get_input_value(b, 2, multiplier, sizeof(multiplier));
+    nmo_object_id_t texture = nmo_engine_block_get_input_object(b, 1);
+    eng_texture_t *bitmap = texture != 0 ? eng_texture(engine, texture) : NULL;
+    int32_t tw = 0, th = 0;
+    float su = 1.0f, sv = 1.0f;
+    if (bitmap != NULL && eng_bitmap_size(engine, bitmap, &tw, &th) && tw > 0 && th > 0) {
+        su = (float)(1.0 / (double)tw);
+        sv = (float)(1.0 / (double)th);
+    }
+    eng_vector_t *corners = (eng_vector_t *)malloc((size_t)count * 4u * sizeof(*corners));
+    float (*uvs)[2] = (float (*)[2])malloc((size_t)count * 4u * sizeof(*uvs));
+    uint32_t *colors = (uint32_t *)malloc((size_t)count * sizeof(*colors));
+    int32_t quads = 0;
+    float delta = engine->delta;
+    const eng_matrix_t *view = &engine->entities.data[camera].world;
+    for (int32_t i = 0; corners != NULL && uvs != NULL && colors != NULL && i < count; i++) {
+        addons_flare_t *f = &flares[i];
+        float k = 1.0f;
+        if (f->state == 1) {
+            f->time += delta;
+            if ((double)f->fade_in >= (double)f->time) {
+                k = (float)((double)f->time / (double)f->fade_in);
+            } else {
+                f->state = 4;
+            }
+        } else if (f->state == 2) {
+            f->time -= delta;
+            if (f->time < 0.0f) {
+                f->state = 0;
+                continue;
+            }
+            k = (float)((double)f->time / (double)f->fade_out);
+        } else if (f->state != 4) {
+            continue;
+        }
+        float plane = front + front, scale = plane / local.z;
+        float x = f->position * local.x * scale, y = f->position * local.y * scale;
+        double angle = (double)((y + x) * f->rotation);
+        float c = (float)cos(angle), s = (float)sin(angle);
+        float sx = multiplier[0] * f->size[0], sy = multiplier[1] * f->size[1];
+        float ax = sx * c, ay = sx * -s, bx = sy * s, by = c * sy;
+        const eng_vector_t quad[4] = {{bx + (x - ax), by + (y - ay), plane},
+                                      {bx + ax + x, by + ay + y, plane},
+                                      {ax + x - bx, ay + y - by, plane},
+                                      {x - ax - bx, y - ay - by, plane}};
+        for (int q = 0; q < 4; q++) {
+            eng_vector_transform(&corners[4 * quads + q], view, &quad[q]);
+        }
+        float u0 = 0.0f, u1 = 1.0f, v0 = 0.0f, v1 = 1.0f;
+        if (f->rect[0] != f->rect[2] && f->rect[3] != f->rect[1]) {
+            u0 = su * f->rect[0], u1 = su * f->rect[2], v0 = sv * f->rect[1], v1 = sv * f->rect[3];
+        }
+        const float quad_uv[4][2] = {{u0, v0}, {u1, v0}, {u1, v1}, {u0, v1}};
+        memcpy(uvs[4 * quads], quad_uv, sizeof(quad_uv));
+        const float tone[4] = {f->color[0], f->color[1], f->color[2], k * f->color[3]};
+        colors[quads++] = vxcolor_to_color(tone);
+    }
+    if (quads > 0) {
+        eng_render_push_quads(engine, target, corners, (const float (*)[2])uvs, colors, quads, texture,
+                              VXBLEND_SRCALPHA, VXBLEND_ONE);
+    }
+    free(corners);
+    free(uvs);
+    free(colors);
+}
+
+/*
+ * Lens Flare: each frame the render context draws the target light's flares
+ * (a post render callback); On reads them from Flare Array, and every frame
+ * with Read Array Each Frame. Off stops.
+ */
+static int bb_lens_flare(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    if (eng_entity_index(engine, nmo_engine_block_target(b)) < 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    bool read = get_local_int(b, 1, 0) != 0;
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+        read = true;
+    } else if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    addons_state_t *addons = (addons_state_t *)eng_manager_state(engine, &addons_manager);
+    int32_t *slot = NULL;
+    if (addons != NULL && ENG_VEC_PUSH(addons->flares, slot)) {
+        *slot = b->node;
+    }
+    nmo_object_id_t array = nmo_engine_block_get_input_object(b, 0);
+    if (read && array != 0) {
+        lens_flare_read(b, array);
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+
+/* ============================================================================
+ * ShadowStencil
+ * ============================================================================ */
+
+/* A face edge for the neighbours: its vertices (merged by position, the lower first), its face */
+typedef struct stencil_edge_key {
+    int32_t a, b, face;
+} stencil_edge_key_t;
+
+static int stencil_edge_cmp(const void *x, const void *y)
+{
+    const stencil_edge_key_t *p = (const stencil_edge_key_t *)x, *q = (const stencil_edge_key_t *)y;
+    if (p->a != q->a) return p->a < q->a ? -1 : 1;
+    if (p->b != q->b) return p->b < q->b ? -1 : 1;
+    return p->face < q->face ? -1 : p->face > q->face;
+}
+
+typedef struct stencil_vertex_key {
+    nmo_vector_t p;
+    int32_t index;
+} stencil_vertex_key_t;
+
+static int stencil_vertex_cmp(const void *x, const void *y)
+{
+    const stencil_vertex_key_t *p = (const stencil_vertex_key_t *)x, *q = (const stencil_vertex_key_t *)y;
+    if (p->p.x != q->p.x) return p->p.x < q->p.x ? -1 : 1;
+    if (p->p.y != q->p.y) return p->p.y < q->p.y ? -1 : 1;
+    if (p->p.z != q->p.z) return p->p.z < q->p.z ? -1 : 1;
+    return p->index < q->index ? -1 : p->index > q->index;
+}
+
+/*
+ * NeigFaceStructure::BuildNeigFaceStruct: each face's neighbour across each
+ * edge (vertices merged where they have the same position; an edge keeps the
+ * first face that has it and the last; 0xFFFF for none).
+ */
+static uint16_t *stencil_neighbours(const nmo_vertex_t *vertices, int32_t vcount, const uint16_t *indices, int32_t fcount)
+{
+    stencil_vertex_key_t *sorted = vcount > 0 ? (stencil_vertex_key_t *)malloc((size_t)vcount * sizeof(*sorted)) : NULL;
+    int32_t *merged = vcount > 0 ? (int32_t *)malloc((size_t)vcount * sizeof(int32_t)) : NULL;
+    stencil_edge_key_t *edges = fcount > 0 ? (stencil_edge_key_t *)malloc((size_t)fcount * 3u * sizeof(*edges)) : NULL;
+    uint16_t *neighbour = fcount > 0 ? (uint16_t *)malloc((size_t)fcount * 3u * sizeof(uint16_t)) : NULL;
+    if (sorted == NULL || merged == NULL || edges == NULL || neighbour == NULL) {
+        free(sorted), free(merged), free(edges), free(neighbour);
+        return NULL;
+    }
+    for (int32_t v = 0; v < vcount; v++) {
+        sorted[v] = (stencil_vertex_key_t){vertices[v].position, v};
+    }
+    qsort(sorted, (size_t)vcount, sizeof(*sorted), stencil_vertex_cmp);
+    for (int32_t v = 0; v < vcount; v++) {
+        bool same = v > 0 && sorted[v].p.x == sorted[v - 1].p.x && sorted[v].p.y == sorted[v - 1].p.y &&
+                    sorted[v].p.z == sorted[v - 1].p.z;
+        merged[sorted[v].index] = same ? merged[sorted[v - 1].index] : sorted[v].index;
+    }
+    for (int32_t f = 0; f < fcount; f++) {
+        for (int k = 0; k < 3; k++) {
+            int32_t i = merged[indices[3 * f + k] < vcount ? indices[3 * f + k] : 0];
+            int32_t j = merged[indices[3 * f + (k + 1) % 3] < vcount ? indices[3 * f + (k + 1) % 3] : 0];
+            edges[3 * f + k] = (stencil_edge_key_t){i < j ? i : j, i < j ? j : i, f};
+        }
+    }
+    stencil_edge_key_t *order = (stencil_edge_key_t *)malloc((size_t)fcount * 3u * sizeof(*order));
+    if (order == NULL) {
+        free(sorted), free(merged), free(edges), free(neighbour);
+        return NULL;
+    }
+    memcpy(order, edges, (size_t)fcount * 3u * sizeof(*order));
+    qsort(order, (size_t)fcount * 3u, sizeof(*order), stencil_edge_cmp);
+    for (int32_t f = 0; f < fcount; f++) {
+        for (int k = 0; k < 3; k++) {
+            stencil_edge_key_t key = edges[3 * f + k];
+            /* the faces that have the edge: the first and the last (addEdge) */
+            size_t lo = 0, hi = (size_t)fcount * 3u;
+            while (lo < hi) {
+                size_t mid = (lo + hi) / 2;
+                stencil_edge_key_t m = order[mid];
+                if (m.a < key.a || (m.a == key.a && m.b < key.b)) lo = mid + 1;
+                else hi = mid;
+            }
+            size_t end = lo;
+            while (end < (size_t)fcount * 3u && order[end].a == key.a && order[end].b == key.b) {
+                end++;
+            }
+            int32_t first = order[lo].face, last = end - lo > 1 ? order[end - 1].face : 0xFFFF;
+            neighbour[3 * f + k] = (uint16_t)(first == f ? last : first);
+        }
+    }
+    free(order), free(sorted), free(merged), free(edges);
+    return neighbour;
+}
+
+static void stencil_vertex(nmo_engine_t *engine, const eng_matrix_t *world, const eng_vector_t *p, uint32_t color)
+{
+    eng_vector_t at;
+    eng_vector_transform(&at, world, p);
+    nmo_engine_vertex_t *vertex = NULL;
+    if (ENG_VEC_PUSH(engine->render.vertices, vertex)) {
+        *vertex = (nmo_engine_vertex_t){at.x, at.y, at.z, 0.0f, 0.0f, color, 0.0f, 0.0f, 0.0f};
+    }
+}
+
+/* A post primitive of the vertices pushed since `first` */
+static nmo_engine_draw_t *stencil_primitive(nmo_engine_t *engine, nmo_object_id_t object, int32_t first)
+{
+    int32_t count = (int32_t)engine->render.vertices.count - first;
+    nmo_engine_draw_t *draw = count > 0 ? eng_render_push(engine) : NULL;
+    if (draw != NULL) {
+        draw->kind = NMO_ENGINE_DRAW_PRIMITIVE;
+        draw->object = object;
+        draw->first_vertex = first;
+        draw->vertex_count = count;
+        draw->post = true;
+        draw->world[0] = draw->world[5] = draw->world[10] = draw->world[15] = 1.0f;
+    }
+    return draw;
+}
+
+/*
+ * ShadowStencil's post render callback: the objects with the "Shadow Stencil
+ * Caster" attribute that are shown cast shadow volumes from the target light
+ * (each silhouette edge of the faces toward the light pushed away by Shadow
+ * Range Factor), drawn into the stencil (front faces adding, back faces
+ * taking off) with the depth a little nearer (x 0.999); then the Shadow
+ * Material's diffuse covers the view where the stencil is not 0. With Show
+ * Shadow Volumes the volumes are drawn in the material instead. With Camera
+ * Can Penetrate Shadow the stencil starts at the count of casters between the
+ * light and the eye (Light Occluders Count).
+ */
+static void shadow_stencil_render(nmo_engine_t *engine, int32_t node)
+{
+    nmo_engine_block_t handle = {engine, node};
+    blk_t *b = &handle;
+    int32_t type = -1;
+    for (size_t t = 0; t < engine->attributes.types.count; t++) {
+        const eng_attribute_type_t *desc = &engine->attributes.types.data[t];
+        if (desc->present && desc->name != NULL && strcmp(desc->name, "Shadow Stencil Caster") == 0) {
+            type = (int32_t)t;
+        }
+    }
+    int32_t light = eng_entity_index(engine, nmo_engine_block_target(b));
+    nmo_object_id_t material = nmo_engine_block_get_input_object(b, 1);
+    if (type < 0 || light < 0 || material == 0) {
+        return;
+    }
+    ENG_VEC(nmo_object_id_t) casters = {0};
+    for (size_t i = 0; i < engine->attributes.values.count; i++) {
+        const eng_attribute_t *attribute = &engine->attributes.values.data[i];
+        nmo_object_id_t *slot = NULL;
+        if (attribute->type == type && eng_entity_index(engine, attribute->object) >= 0 &&
+            (eng_object_visibility(engine, attribute->object) & CK_OBJECT_VISIBLE) && ENG_VEC_PUSH(casters, slot)) {
+            *slot = attribute->object;
+        }
+    }
+    if (casters.count == 0) {
+        free(casters.data);
+        return;
+    }
+    eng_vector_t light_world = eng_entity_position(engine, light, -1);
+    int32_t camera = eng_entity_index(engine, engine->render.camera);
+    eng_vector_t eye = camera >= 0 ? eng_entity_position(engine, camera, -1) : (eng_vector_t){0.0f, 0.0f, 0.0f};
+    float near_plane = 0.0f, far_plane = 0.0f;
+    bool has_planes = camera >= 0 && eng_camera_planes(engine, engine->render.camera, &near_plane, &far_plane);
+    if (has_planes) {
+        const eng_matrix_t *m = &engine->entities.data[camera].world;
+        eng_vector_t axis = {m->m[2][0], m->m[2][1], m->m[2][2]};
+        eng_vector_normalize(&axis);
+        eye.x += axis.x * near_plane, eye.y += axis.y * near_plane, eye.z += axis.z * near_plane;
+    }
+    float range = get_in_float(b, 0, 1.0f);
+    bool show = get_in_int(b, 2, 0) != 0, penetrate = get_in_int(b, 3, 0) != 0;
+    int32_t occluders = 0;
+    for (size_t c = 0; penetrate && c < casters.count; c++) {
+        int32_t index = eng_entity_index(engine, casters.data[c]);
+        eng_ray_hit_t hit;
+        if (eng_entity_ray_intersection(engine, index, &light_world, &eye, &hit) > 0) {
+            eng_vector_t at;
+            eng_entity_transform(engine, index, &at, &hit.point, -1);
+            float seg = (eye.x - light_world.x) * (eye.x - light_world.x) + (eye.y - light_world.y) * (eye.y - light_world.y) +
+                        (eye.z - light_world.z) * (eye.z - light_world.z);
+            float to = (at.x - light_world.x) * (eye.x - light_world.x) + (at.y - light_world.y) * (eye.y - light_world.y) +
+                       (at.z - light_world.z) * (eye.z - light_world.z);
+            occluders += to >= 0.0f && to <= seg; /* CKRAYINTERSECTION_SEGMENT */
+        }
+    }
+    set_out_int(b, 0, occluders);
+    nmo_engine_stencil_t volume = {true, VXCMP_ALWAYS, VXSTENCILOP_KEEP, VXSTENCILOP_KEEP, VXSTENCILOP_INCR, 0u, 0xFFu, 0xFFu};
+    if (!show) {
+        int32_t first = (int32_t)engine->render.vertices.count;
+        nmo_engine_draw_t *clear = eng_render_push(engine);
+        if (clear != NULL) {
+            clear->kind = NMO_ENGINE_DRAW_PRIMITIVE;
+            clear->first_vertex = first;
+            clear->post = true;
+            clear->clears_stencil = true;
+            clear->stencil_clear = (uint32_t)occluders;
+        }
+    }
+    eng_material_t *shadow = eng_material(engine, material);
+    float diffuse[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+    if (shadow != NULL) {
+        memcpy(diffuse, shadow->desc.diffuse, sizeof(diffuse));
+    }
+    uint32_t color = rgbaf_to_color(diffuse);
+    for (size_t c = 0; c < casters.count; c++) {
+        nmo_object_id_t id = casters.data[c];
+        int32_t index = eng_entity_index(engine, id);
+        nmo_object_t *object = eng_find_object(engine, id);
+        const nmo_3dentity_state_t *state = object != NULL
+            ? (const nmo_3dentity_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(engine->types, object,
+                                                                                              CKPGUID_3DENTITY)
+            : NULL;
+        nmo_object_id_t mesh = state != NULL ? eng_object_ref(engine, id, &state->current_mesh) : 0;
+        nmo_engine_mesh_t shape;
+        if (mesh == 0 || !nmo_engine_mesh(engine, mesh, &shape) || shape.face_count <= 0 || shape.indices == NULL) {
+            continue;
+        }
+        uint16_t *neighbour = stencil_neighbours(shape.vertices, shape.vertex_count, shape.indices, shape.face_count);
+        uint8_t *front = (uint8_t *)malloc((size_t)shape.face_count);
+        eng_vector_t *pairs = (eng_vector_t *)malloc((size_t)shape.vertex_count * 2u * sizeof(eng_vector_t));
+        int32_t *placed = (int32_t *)malloc((size_t)shape.vertex_count * sizeof(int32_t));
+        if (neighbour == NULL || front == NULL || pairs == NULL || placed == NULL) {
+            free(neighbour), free(front), free(pairs), free(placed);
+            continue;
+        }
+        eng_vector_t light_local;
+        eng_entity_inverse_transform(engine, index, &light_local, &light_world, -1);
+        for (int32_t f = 0; f < shape.face_count; f++) {
+            uint16_t v0 = shape.indices[3 * f];
+            const nmo_vector_t *p = &shape.vertices[v0 < shape.vertex_count ? v0 : 0].position;
+            const nmo_vector_t *n = shape.faces != NULL ? &shape.faces[f].normal : &(nmo_vector_t){0.0f, 0.0f, 0.0f};
+            float d = (p->x - light_local.x) * n->x + (p->y - light_local.y) * n->y + (p->z - light_local.z) * n->z;
+            front[f] = d < 0.0f ? 1 : 2;
+        }
+        for (int32_t v = 0; v < shape.vertex_count; v++) {
+            placed[v] = -1;
+        }
+        int32_t pair_count = 0;
+        const eng_matrix_t *world = &engine->entities.data[index].world;
+        int32_t first[2];
+        for (int pass = 0; pass < 2; pass++) {
+            first[pass] = (int32_t)engine->render.vertices.count;
+            for (int32_t f = 0; f < shape.face_count; f++) {
+                if (front[f] != 1) {
+                    continue;
+                }
+                for (int k = 0; k < 3; k++) {
+                    uint16_t other = neighbour[3 * f + k];
+                    if (other != 0xFFFF && (other >= shape.face_count || front[other] != 2)) {
+                        continue;
+                    }
+                    int32_t ends[2];
+                    for (int e = 0; e < 2; e++) {
+                        uint16_t v = shape.indices[3 * f + (k + e) % 3];
+                        v = v < shape.vertex_count ? v : 0;
+                        if (placed[v] < 0) {
+                            const nmo_vector_t *p = &shape.vertices[v].position;
+                            eng_vector_t near = {p->x, p->y, p->z};
+                            eng_vector_t far = {p->x + (p->x - light_local.x) * range, p->y + (p->y - light_local.y) * range,
+                                                p->z + (p->z - light_local.z) * range};
+                            placed[v] = pair_count;
+                            pairs[2 * pair_count] = near;
+                            pairs[2 * pair_count + 1] = far;
+                            pair_count++;
+                        }
+                        ends[e] = placed[v];
+                    }
+                    /* (i0, i0 + 1, i1) and (i1, i0 + 1, i1 + 1) */
+                    const eng_vector_t *tri[6] = {&pairs[2 * ends[0]], &pairs[2 * ends[0] + 1], &pairs[2 * ends[1]],
+                                                  &pairs[2 * ends[1]], &pairs[2 * ends[0] + 1], &pairs[2 * ends[1] + 1]};
+                    for (int t = 0; t < 6; t++) {
+                        stencil_vertex(engine, world, tri[t], color);
+                    }
+                }
+            }
+            nmo_engine_draw_t *draw = stencil_primitive(engine, id, first[pass]);
+            if (draw != NULL) {
+                draw->projection_z_scale = 0.999f;
+                draw->mirrored = pass == 1; /* VXCULL_CCW, then VXCULL_CW */
+                if (show) {
+                    draw->material = material;
+                } else {
+                    draw->blend = true;
+                    draw->source_blend = VXBLEND_ZERO;
+                    draw->dest_blend = VXBLEND_ONE;
+                    draw->no_z_write = true;
+                    draw->stencil = volume;
+                    draw->stencil.pass = pass == 0 ? VXSTENCILOP_INCR : VXSTENCILOP_DECR;
+                }
+            }
+        }
+        free(neighbour), free(front), free(pairs), free(placed);
+    }
+    free(casters.data);
+    if (show || camera < 0) {
+        return;
+    }
+    /* DrawViewRect: the material's diffuse over the view where the stencil is not 0 */
+    float fov = 0.0f;
+    eng_camera_fov(engine, engine->render.camera, &fov);
+    int32_t viewport[4];
+    eng_render_viewport(engine, viewport);
+    float aspect = viewport[3] != 0 ? (float)viewport[2] / (float)viewport[3] : 1.3333334f;
+    float depth = (has_planes ? near_plane : 1.0f) * 1.01f;
+    float half_h = depth * tanf(fov * 0.5f) * 1.1f, half_w = half_h * aspect;
+    const eng_vector_t corner[4] = {{-half_w, half_h, depth}, {half_w, half_h, depth}, {half_w, -half_h, depth}, {-half_w, -half_h, depth}};
+    int32_t start = (int32_t)engine->render.vertices.count;
+    const int order[6] = {0, 1, 2, 0, 2, 3};
+    for (int i = 0; i < 6; i++) {
+        stencil_vertex(engine, &engine->entities.data[camera].world, &corner[order[i]], color);
+    }
+    nmo_engine_draw_t *cover = stencil_primitive(engine, engine->render.camera, start);
+    if (cover != NULL) {
+        cover->material = material;
+        cover->two_sided = true;
+        cover->no_z_write = true;
+        cover->stencil = (nmo_engine_stencil_t){true, VXCMP_NOTEQUAL, VXSTENCILOP_KEEP, VXSTENCILOP_KEEP,
+                                                VXSTENCILOP_KEEP, 0u, 0xFFu, 0xFFu};
+    }
+}
+
+/* ShadowStencil: while On, each frame the render context draws the shadows (a post render
+   callback); the machine has a stencil buffer. Off stops. */
+static int bb_shadow_stencil(blk_t *b)
+{
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+    }
+    addons_state_t *addons = (addons_state_t *)eng_manager_state(b->engine, &addons_manager);
+    int32_t *slot = NULL;
+    if (addons != NULL && ENG_VEC_PUSH(addons->shadows, slot)) {
+        *slot = b->node;
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+
+/* ============================================================================
+ * Create Decal
+ * ============================================================================ */
+
+typedef struct vx_plane {
+    eng_vector_t n;
+    float d;
+} vx_plane_t;
+
+static float plane_classify(const vx_plane_t *p, const eng_vector_t *v)
+{
+    return p->n.x * v->x + p->n.y * v->y + p->n.z * v->z + p->d;
+}
+
+static vx_plane_t plane_from_point(eng_vector_t n, eng_vector_t p)
+{
+    return (vx_plane_t){n, (float)(-((double)n.x * p.x + (double)n.y * p.y + (double)n.z * p.z))};
+}
+
+/* VxPlane::Create(a, b, c): its normal (the a-b-c winding), through a */
+static vx_plane_t plane_from_triangle(eng_vector_t a, eng_vector_t b, eng_vector_t c)
+{
+    double bx = (double)b.x - a.x, by = (double)b.y - a.y, bz = (double)b.z - a.z;
+    double cx = (double)c.x - a.x, cy = (double)c.y - a.y, cz = (double)c.z - a.z;
+    double nx = by * cz - bz * cy, ny = bz * cx - bx * cz, nz = bx * cy - by * cx;
+    double l = nx * nx + ny * ny + nz * nz;
+    eng_vector_t n = {0.0f, 0.0f, 1.0f};
+    if (l != 0.0) {
+        double inv = 1.0 / sqrt(l);
+        n = (eng_vector_t){(float)(nx * inv), (float)(ny * inv), (float)(nz * inv)};
+    }
+    return plane_from_point(n, a);
+}
+
+/* VxFrustum: its frame, bounds and planes (near, far, left, right, bottom, up) */
+typedef struct vx_frustum {
+    eng_vector_t origin, right, up, dir;
+    float rbound, ubound, dmin, dmax, dratio;
+    vx_plane_t near, far, left, right_plane, bottom, top;
+} vx_frustum_t;
+
+static eng_vector_t vec_add(eng_vector_t a, eng_vector_t b) { return (eng_vector_t){a.x + b.x, a.y + b.y, a.z + b.z}; }
+static eng_vector_t vec_sub(eng_vector_t a, eng_vector_t b) { return (eng_vector_t){a.x - b.x, a.y - b.y, a.z - b.z}; }
+static eng_vector_t vec_scale(eng_vector_t a, float k) { return (eng_vector_t){a.x * k, a.y * k, a.z * k}; }
+
+/* VxFrustum::Update */
+static void frustum_update(vx_frustum_t *f)
+{
+    f->dratio = f->dmax / f->dmin;
+    eng_vector_t near_dir = vec_scale(f->dir, f->dmin), up = vec_scale(f->up, f->ubound);
+    eng_vector_t right = vec_scale(f->right, f->rbound);
+    eng_vector_t nbl = vec_sub(vec_sub(near_dir, right), up), ntl = vec_add(vec_sub(near_dir, right), up);
+    eng_vector_t nbr = vec_sub(vec_add(near_dir, right), up), ntr = vec_add(vec_add(near_dir, right), up);
+    const eng_vector_t zero = {0.0f, 0.0f, 0.0f};
+    f->near = plane_from_point(vec_scale(f->dir, -1.0f), vec_add(f->origin, nbl));
+    f->far = plane_from_point(f->dir, vec_add(f->origin, vec_scale(ntr, f->dratio)));
+    f->left = plane_from_point(plane_from_triangle(zero, nbl, ntl).n, f->origin);
+    f->right_plane = plane_from_point(plane_from_triangle(zero, ntr, nbr).n, f->origin);
+    f->bottom = plane_from_point(plane_from_triangle(zero, nbr, nbl).n, f->origin);
+    f->top = plane_from_point(plane_from_triangle(zero, ntl, ntr).n, f->origin);
+}
+
+/* VxFrustum::Transform by an inverse world matrix */
+static void frustum_transform(vx_frustum_t *f, const eng_matrix_t *inverse)
+{
+    eng_vector_t axes[3] = {vec_scale(f->right, f->rbound), vec_scale(f->up, f->ubound), vec_scale(f->dir, f->dmin)};
+    eng_vector_t origin;
+    eng_vector_transform(&origin, inverse, &f->origin);
+    f->origin = origin;
+    double lengths[3];
+    for (int i = 0; i < 3; i++) {
+        eng_vector_t r;
+        eng_vector_rotate(&r, inverse, &axes[i]);
+        lengths[i] = sqrt((double)r.x * r.x + (double)r.y * r.y + (double)r.z * r.z);
+        axes[i] = lengths[i] > 0.0 ? (eng_vector_t){(float)(r.x / lengths[i]), (float)(r.y / lengths[i]), (float)(r.z / lengths[i])}
+                                   : (eng_vector_t){0.0f, 0.0f, 0.0f};
+    }
+    f->rbound = (float)lengths[0];
+    f->ubound = (float)lengths[1];
+    f->dmax = (float)lengths[2] * f->dratio;
+    f->dmin = (float)lengths[2];
+    f->right = axes[0], f->up = axes[1], f->dir = axes[2];
+    frustum_update(f);
+}
+
+enum { CLIP_LEFT = 0x10, CLIP_RIGHT = 0x20, CLIP_TOP = 0x40, CLIP_BOTTOM = 0x80, CLIP_FRONT = 0x100, CLIP_BACK = 0x200 };
+
+static uint32_t frustum_classify(const vx_frustum_t *f, const eng_vector_t *v)
+{
+    uint32_t flags = 0;
+    if (plane_classify(&f->near, v) > 0.0f) flags |= CLIP_FRONT;
+    else if (plane_classify(&f->far, v) > 0.0f) flags |= CLIP_BACK;
+    if (plane_classify(&f->left, v) > 0.0f) flags |= CLIP_LEFT;
+    else if (plane_classify(&f->right_plane, v) > 0.0f) flags |= CLIP_RIGHT;
+    if (plane_classify(&f->bottom, v) > 0.0f) flags |= CLIP_BOTTOM;
+    else if (plane_classify(&f->top, v) > 0.0f) flags |= CLIP_TOP;
+    return flags;
+}
+
+/* A polygon being clipped (VxPolygon) */
+typedef struct decal_polygon {
+    eng_vector_t *v;
+    int32_t count;
+} decal_polygon_t;
+
+#define DECAL_EPSILON 1.192092896e-07f
+
+static eng_vector_t lerp_point(eng_vector_t a, eng_vector_t b, float d)
+{
+    return (eng_vector_t){a.x + (b.x - a.x) * d, a.y + (b.y - a.y) * d, a.z + (b.z - a.z) * d};
+}
+
+/* VxPolygon::Clip: 0 all out, 1 all in, 2 clipped (`scratch` holds 2 x count + 2 points) */
+static int polygon_clip(decal_polygon_t *p, const vx_plane_t *plane, eng_vector_t *scratch)
+{
+    int32_t n = 0, count = p->count;
+    float dist0 = plane_classify(plane, &p->v[0]), dist1 = dist0;
+    bool inside = dist0 <= 0.0f, clipped = false;
+    int32_t i = 1;
+    for (; i <= count; i++) {
+        const eng_vector_t *cur = i < count ? &p->v[i] : &p->v[0];
+        float dist2 = i < count ? plane_classify(plane, cur) : dist0;
+        if (inside && dist2 <= 0.0f) {
+            scratch[n++] = *cur;
+        } else if (!inside && dist2 <= -DECAL_EPSILON) {
+            clipped = inside = true;
+            scratch[n++] = lerp_point(p->v[i - 1], *cur, dist1 / (dist1 - dist2));
+            scratch[n++] = *cur;
+        } else if (inside && dist2 >= DECAL_EPSILON) {
+            clipped = true;
+            inside = false;
+            scratch[n++] = lerp_point(p->v[i - 1], *cur, dist1 / (dist1 - dist2));
+        } else {
+            clipped = true;
+        }
+        dist1 = dist2;
+    }
+    if (!clipped) {
+        return 1;
+    }
+    if (n < 3) {
+        return 0;
+    }
+    memcpy(p->v, scratch, (size_t)n * sizeof(eng_vector_t));
+    p->count = n;
+    return 2;
+}
+
+/*
+ * Create Decal: a new 3D object ("<target>_Decal", dynamic unless Dynamic is
+ * off) at the world origin with a mesh ("<target>_DecalMesh") of the target's
+ * faces inside the Frustum camera's frustum (in the world): the whole faces
+ * that are inside (any face it meets with Whole Faces), the others clipped to
+ * it, back faces left out with Backface Cull; welded, prelit with Prelit,
+ * with UVs from the camera's projection with Generate UVs, pushed Offset
+ * along their normals, in Decal Material.
+ */
+static int bb_create_decal(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    int32_t index = eng_entity_index(engine, target);
+    nmo_object_t *object = index >= 0 ? eng_find_object(engine, target) : NULL;
+    const nmo_3dentity_state_t *state = object != NULL
+        ? (const nmo_3dentity_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(engine->types, object,
+                                                                                          CKPGUID_3DENTITY)
+        : NULL;
+    nmo_object_id_t mesh = state != NULL ? eng_object_ref(engine, target, &state->current_mesh) : 0;
+    nmo_engine_mesh_t shape;
+    if (mesh == 0 || !nmo_engine_mesh(engine, mesh, &shape)) {
+        return NMO_ENGINE_BR_OK;
+    }
+    nmo_object_id_t camera_id = nmo_engine_block_get_input_object(b, 0);
+    int32_t camera = eng_entity_index(engine, camera_id);
+    float fov = 0.0f, near_plane = 1.0f, far_plane = 4000.0f;
+    if (camera < 0 || !eng_camera_fov(engine, camera_id, &fov)) {
+        return NMO_ENGINE_BR_OK;
+    }
+    eng_camera_planes(engine, camera_id, &near_plane, &far_plane);
+    nmo_object_id_t material = nmo_engine_block_get_input_object(b, 1);
+    bool cull = get_in_int(b, 3, 0) != 0, prelit = get_in_int(b, 4, 1) != 0;
+    bool whole = get_in_int(b, 5, 0) != 0, make_uvs = get_in_int(b, 6, 0) != 0;
+    nmo_object_t *camera_object = eng_find_object(engine, camera_id);
+    const nmo_camera_state_t *lens = camera_object != NULL
+        ? (const nmo_camera_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(engine->types, camera_object,
+                                                                                        CKPGUID_CAMERA)
+        : NULL;
+    int32_t aw = lens != NULL && lens->aspect_width > 0 ? lens->aspect_width : 4;
+    int32_t ah = lens != NULL && lens->aspect_height > 0 ? lens->aspect_height : 3;
+    const eng_matrix_t *cm = &engine->entities.data[camera].world;
+    eng_vector_t axes[3];
+    for (int k = 0; k < 3; k++) {
+        axes[k] = (eng_vector_t){cm->m[k][0], cm->m[k][1], cm->m[k][2]};
+        eng_vector_normalize(&axes[k]);
+    }
+    vx_frustum_t frustum = {.origin = {cm->m[3][0], cm->m[3][1], cm->m[3][2]}, .right = axes[0], .up = axes[1],
+                            .dir = axes[2], .rbound = tanf(fov * 0.5f) * near_plane,
+                            .ubound = tanf(fov * 0.5f) * near_plane * ((float)ah / (float)aw),
+                            .dmin = near_plane, .dmax = far_plane};
+    frustum_update(&frustum);
+    eng_matrix_t inverse;
+    eng_matrix_inverse(&inverse, &engine->entities.data[index].world);
+    frustum_transform(&frustum, &inverse);
+    int32_t vcount = shape.vertex_count, fcount = shape.face_count;
+    uint32_t *flags = vcount > 0 ? (uint32_t *)malloc((size_t)vcount * sizeof(uint32_t)) : NULL;
+    int32_t *map = vcount > 0 ? (int32_t *)malloc((size_t)vcount * sizeof(int32_t)) : NULL;
+    eng_vector_t *inside = vcount > 0 ? (eng_vector_t *)malloc((size_t)vcount * sizeof(eng_vector_t)) : NULL;
+    uint16_t *inside_faces = fcount > 0 ? (uint16_t *)malloc((size_t)fcount * 3u * sizeof(uint16_t)) : NULL;
+    eng_vector_t *clipped = fcount > 0 ? (eng_vector_t *)malloc((size_t)fcount * 9u * sizeof(eng_vector_t)) : NULL;
+    int32_t *sizes = fcount > 0 ? (int32_t *)malloc((size_t)fcount * sizeof(int32_t)) : NULL;
+    if (vcount <= 0 || fcount <= 0 || flags == NULL || map == NULL || inside == NULL || inside_faces == NULL ||
+        clipped == NULL || sizes == NULL) {
+        free(flags), free(map), free(inside), free(inside_faces), free(clipped), free(sizes);
+        return NMO_ENGINE_BR_OK;
+    }
+    for (int32_t v = 0; v < vcount; v++) {
+        eng_vector_t p = {shape.vertices[v].position.x, shape.vertices[v].position.y, shape.vertices[v].position.z};
+        flags[v] = frustum_classify(&frustum, &p);
+        map[v] = -1;
+    }
+    int32_t inside_count = 0, inside_index = 0, polygons = 0, clipped_vertices = 0, clipped_faces = 0;
+    for (int32_t f = 0; f < fcount; f++) {
+        const uint16_t *k = &shape.indices[3 * f];
+        if (k[0] >= vcount || k[1] >= vcount || k[2] >= vcount) {
+            continue;
+        }
+        uint32_t af = flags[k[0]], bf = flags[k[1]], cf = flags[k[2]];
+        if (cull && shape.faces != NULL) {
+            const nmo_vector_t *n = &shape.faces[f].normal;
+            if (frustum.dir.x * n->x + frustum.dir.y * n->y + frustum.dir.z * n->z > 0.0f) {
+                continue;
+            }
+        }
+        if (af & bf & cf) {
+            continue;
+        }
+        if (whole || (!af && !bf && !cf)) {
+            for (int c = 0; c < 3; c++) {
+                if (map[k[c]] < 0) {
+                    map[k[c]] = inside_count;
+                    const nmo_vector_t *p = &shape.vertices[k[c]].position;
+                    inside[inside_count++] = (eng_vector_t){p->x, p->y, p->z};
+                }
+                inside_faces[inside_index++] = (uint16_t)map[k[c]];
+            }
+            continue;
+        }
+        eng_vector_t points[9], scratch[20];
+        decal_polygon_t polygon = {points, 3};
+        for (int c = 0; c < 3; c++) {
+            const nmo_vector_t *p = &shape.vertices[k[c]].position;
+            points[c] = (eng_vector_t){p->x, p->y, p->z};
+        }
+        uint32_t ff = (af ^ bf) | (af ^ cf);
+        const struct { uint32_t bit; const vx_plane_t *plane; } order[6] = {
+            {CLIP_LEFT, &frustum.left}, {CLIP_RIGHT, &frustum.right_plane}, {CLIP_FRONT, &frustum.near},
+            {CLIP_BACK, &frustum.far}, {CLIP_BOTTOM, &frustum.bottom}, {CLIP_TOP, &frustum.top}};
+        bool kept = true;
+        for (int o = 0; o < 6 && kept; o++) {
+            if ((ff & order[o].bit) && polygon_clip(&polygon, order[o].plane, scratch) == 0) {
+                kept = false;
+            }
+        }
+        if (kept && polygon.count <= 9) {
+            memcpy(&clipped[clipped_vertices], polygon.v, (size_t)polygon.count * sizeof(eng_vector_t));
+            sizes[polygons++] = polygon.count;
+            clipped_vertices += polygon.count;
+            clipped_faces += polygon.count - 2;
+        }
+    }
+    /* the vertices in the world, then welded (the same position is one vertex) */
+    int32_t total = inside_count + clipped_vertices, faces = inside_index / 3 + clipped_faces;
+    eng_vector_t *world = total > 0 ? (eng_vector_t *)malloc((size_t)total * sizeof(eng_vector_t)) : NULL;
+    uint16_t *indices = faces > 0 ? (uint16_t *)malloc((size_t)faces * 3u * sizeof(uint16_t)) : NULL;
+    int32_t *weld = total > 0 ? (int32_t *)malloc((size_t)total * sizeof(int32_t)) : NULL;
+    const eng_matrix_t *placed = &engine->entities.data[index].world;
+    for (int32_t v = 0; world != NULL && v < total; v++) {
+        const eng_vector_t *p = v < inside_count ? &inside[v] : &clipped[v - inside_count];
+        eng_vector_transform(&world[v], placed, p);
+    }
+    int32_t f3 = 0;
+    for (int32_t i = 0; indices != NULL && i < inside_index; i++) {
+        indices[f3++] = inside_faces[i];
+    }
+    int32_t base = inside_count;
+    for (int32_t p = 0; indices != NULL && p < polygons; p++) {
+        for (int32_t i = 0; i < sizes[p] - 2; i++) {
+            indices[f3++] = (uint16_t)base;
+            indices[f3++] = (uint16_t)(base + i + 1);
+            indices[f3++] = (uint16_t)(base + i + 2);
+        }
+        base += sizes[p];
+    }
+    int32_t welded = 0;
+    for (int32_t v = 0; world != NULL && weld != NULL && v < total; v++) {
+        weld[v] = -1;
+        for (int32_t u = 0; u < welded; u++) {
+            if (world[u].x == world[v].x && world[u].y == world[v].y && world[u].z == world[v].z) {
+                weld[v] = u;
+                break;
+            }
+        }
+        if (weld[v] < 0) {
+            weld[v] = welded;
+            world[welded++] = world[v];
+        }
+    }
+    for (int32_t i = 0; indices != NULL && weld != NULL && i < faces * 3; i++) {
+        indices[i] = (uint16_t)weld[indices[i]];
+    }
+    free(flags), free(map), free(inside), free(inside_faces), free(clipped), free(sizes), free(weld);
+    if ((total > 0 && world == NULL) || (faces > 0 && indices == NULL)) {
+        free(world), free(indices);
+        return NMO_ENGINE_BR_OK;
+    }
+    const char *name = nmo_engine_object_name(engine, target);
+    size_t length = name != NULL ? strlen(name) : 0;
+    char *decal_name = (char *)malloc(length + sizeof("_DecalMesh"));
+    nmo_object_id_t decal = 0, decal_mesh = 0;
+    nmo_mesh_state_t *made = NULL;
+    if (decal_name != NULL) {
+        memcpy(decal_name, name != NULL ? name : "", length);
+        memcpy(decal_name + length, "_Decal", sizeof("_Decal"));
+        decal = eng_create_object(engine, NMO_CID_3DOBJECT, decal_name);
+        memcpy(decal_name + length, "_DecalMesh", sizeof("_DecalMesh"));
+        decal_mesh = decal != 0 ? eng_create_mesh(engine, decal_name, welded, faces, &made) : 0;
+    }
+    free(decal_name);
+    if (decal == 0 || decal_mesh == 0 || made == NULL) {
+        free(world), free(indices);
+        return NMO_ENGINE_BR_OK;
+    }
+    if (get_local_int(b, 0, 1) != 0) {
+        eng_mark_dynamic(engine, decal);
+        eng_mark_dynamic(engine, decal_mesh);
+    }
+    nmo_object_id_t out = decal;
+    set_out(b, 0, &out, sizeof(out));
+    float identity[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    nmo_engine_set_entity_world_matrix(engine, decal, identity, false);
+    eng_entity_set_current_mesh(engine, decal, decal_mesh);
+    eng_entity_add_mesh(engine, decal, decal_mesh);
+    if (prelit) {
+        made->flags |= VXMESH_PRELITMODE;
+    }
+    for (int32_t v = 0; v < welded; v++) {
+        made->vertices[v].position = (nmo_vector_t){world[v].x, world[v].y, world[v].z};
+    }
+    if (faces > 0) {
+        memcpy(made->face_vertex_indices, indices, (size_t)faces * 3u * sizeof(uint16_t));
+    }
+    free(world), free(indices);
+    if (make_uvs && welded > 0) {
+        eng_matrix_t total_matrix;
+        if (eng_camera_view_projection(engine, camera_id, &total_matrix, NULL)) {
+            for (int32_t v = 0; v < welded; v++) {
+                const nmo_vector_t *p = &made->vertices[v].position;
+                const float (*m)[4] = total_matrix.m;
+                float x = p->x * m[0][0] + p->y * m[1][0] + p->z * m[2][0] + m[3][0];
+                float y = p->x * m[0][1] + p->y * m[1][1] + p->z * m[2][1] + m[3][1];
+                float w = p->x * m[0][3] + p->y * m[1][3] + p->z * m[2][3] + m[3][3];
+                float inv = 1.0f / w;
+                made->vertices[v].uv = (nmo_vector2_t){(1.0f + x * inv) * 0.5f, (1.0f - y * inv) * 0.5f};
+            }
+        }
+    }
+    /* BuildNormals, then each vertex pushed Offset along its normal */
+    nmo_vector_t *normals = welded > 0 ? (nmo_vector_t *)malloc((size_t)welded * sizeof(nmo_vector_t)) : NULL;
+    if (normals != NULL && nmo_mesh_build_vertex_normals(made, normals) == NMO_OK) {
+        for (int32_t v = 0; v < welded; v++) {
+            made->vertices[v].normal = normals[v];
+        }
+    }
+    free(normals);
+    for (int32_t f = 0; f < faces; f++) {
+        const uint16_t *k = &made->face_vertex_indices[3 * f];
+        eng_vector_t a = {made->vertices[k[0]].position.x, made->vertices[k[0]].position.y, made->vertices[k[0]].position.z};
+        eng_vector_t e1 = {made->vertices[k[1]].position.x - a.x, made->vertices[k[1]].position.y - a.y,
+                           made->vertices[k[1]].position.z - a.z};
+        eng_vector_t e2 = {made->vertices[k[2]].position.x - a.x, made->vertices[k[2]].position.y - a.y,
+                           made->vertices[k[2]].position.z - a.z};
+        eng_vector_t n = eng_vector_cross(&e1, &e2);
+        eng_vector_normalize(&n);
+        made->faces[f].normal = (nmo_vector_t){n.x, n.y, n.z};
+    }
+    float offset = get_in_float(b, 2, 0.01f);
+    if (offset != 0.0f) {
+        for (int32_t v = 0; v < welded; v++) {
+            nmo_vertex_t *vertex = &made->vertices[v];
+            vertex->position.x += vertex->normal.x * offset;
+            vertex->position.y += vertex->normal.y * offset;
+            vertex->position.z += vertex->normal.z * offset;
+        }
+    }
+    nmo_mesh_update_bounding_volumes(made);
+    eng_mesh_apply_material(engine, decal_mesh, material);
+    return NMO_ENGINE_BR_OK;
+}
+
+
+/* ============================================================================
+ * Animation Recorder
+ * ============================================================================ */
+
+#define REC_LINEAR_POSITION 0x637c4301u
+#define REC_LINEAR_ROTATION 0x49ed4002u
+#define REC_LINEAR_SCALE 0x654a3a04u
+
+/* Animation Recorder's inner struct (its local buffer): the recording, then an entry each
+   object animation */
+typedef struct rec_header {
+    int32_t count;
+    float time;        /* the next key's time: one a recorded frame */
+    int32_t step;      /* frames since the last key */
+    nmo_object_id_t keyed;
+} rec_header_t;
+
+typedef struct rec_entry {
+    nmo_object_id_t animation;
+    int32_t capacity;  /* the keys its controllers have room for */
+} rec_entry_t;
+
+static rec_header_t *rec_state(blk_t *b, int32_t count, bool resize)
+{
+    eng_param_t *param = block_local(b, 0);
+    size_t size = sizeof(rec_header_t) + (size_t)(count > 0 ? count : 0) * sizeof(rec_entry_t);
+    if (param == NULL || (resize && !eng_param_resize(param, size))) {
+        return NULL;
+    }
+    if (param->data == NULL || param->size < sizeof(rec_header_t)) {
+        return NULL;
+    }
+    return (rec_header_t *)param->data;
+}
+
+static rec_entry_t *rec_entries(rec_header_t *h)
+{
+    return (rec_entry_t *)(h + 1);
+}
+
+/* An object animation of that name made in the level, or the one there emptied of its keys */
+static nmo_object_id_t rec_animation(nmo_engine_t *engine, const char *name)
+{
+    nmo_object_id_t id = eng_object_named(engine, name, NMO_CID_OBJECTANIMATION);
+    if (id == 0) {
+        id = eng_create_object(engine, NMO_CID_OBJECTANIMATION, name);
+    }
+    nmo_object_t *object = id != 0 ? eng_find_object(engine, id) : NULL;
+    nmo_objectanimation_state_t *state = object != NULL ? (nmo_objectanimation_state_t *)nmo_object_get_state(object) : NULL;
+    if (state == NULL) {
+        return 0;
+    }
+    state->format = CKOBJANIM_FORMAT_CONTROLLERS;
+    state->controller_count = 0;
+    state->controllers = NULL;
+    state->has_length = 1;
+    state->length = 0.0f;
+    eng_animation_keys_changed(engine, id, state);
+    return id;
+}
+
+/* AddPositionKey, AddRotationKey and AddScaleKey at `time` (linear controllers), the arrays
+   doubled when full */
+static void rec_add_keys(nmo_engine_t *engine, rec_entry_t *entry, float time, const nmo_vector_t *position,
+                         const nmo_quaternion_t *rotation, const nmo_vector_t *scale)
+{
+    nmo_object_t *object = eng_find_object(engine, entry->animation);
+    nmo_objectanimation_state_t *state = object != NULL ? (nmo_objectanimation_state_t *)nmo_object_get_state(object) : NULL;
+    nmo_arena_t *arena = state != NULL ? eng_animation_edit_arena(engine, entry->animation) : NULL;
+    if (arena == NULL) {
+        return;
+    }
+    static const uint32_t types[3] = {REC_LINEAR_POSITION, REC_LINEAR_ROTATION, REC_LINEAR_SCALE};
+    static const uint32_t strides[3] = {4, 5, 4};
+    uint32_t count = state->controller_count == 3 ? state->controllers[0].key_count : 0;
+    if (state->controller_count != 3 || (int32_t)count >= entry->capacity) {
+        int32_t capacity = entry->capacity > 0 ? entry->capacity * 2 : 16;
+        nmo_objanim_controller_t *controllers = (nmo_objanim_controller_t *)nmo_arena_alloc(
+            arena, 3 * sizeof(nmo_objanim_controller_t), _Alignof(nmo_objanim_controller_t));
+        if (controllers == NULL) {
+            return;
+        }
+        for (int c = 0; c < 3; c++) {
+            float *keys = (float *)nmo_arena_alloc(arena, (size_t)capacity * strides[c] * sizeof(float), _Alignof(float));
+            if (keys == NULL) {
+                return;
+            }
+            if (count > 0) {
+                memcpy(keys, state->controllers[c].data, (size_t)count * strides[c] * sizeof(float));
+            }
+            controllers[c] = (nmo_objanim_controller_t){types[c], count, count * strides[c] * (uint32_t)sizeof(float), keys};
+        }
+        state->controllers = controllers;
+        state->controller_count = 3;
+        entry->capacity = capacity;
+    }
+    const float values[3][5] = {{time, position->x, position->y, position->z, 0.0f},
+                                {time, rotation->x, rotation->y, rotation->z, rotation->w},
+                                {time, scale->x, scale->y, scale->z, 0.0f}};
+    for (int c = 0; c < 3; c++) {
+        nmo_objanim_controller_t *controller = &state->controllers[c];
+        memcpy((float *)controller->data + (size_t)count * strides[c], values[c], strides[c] * sizeof(float));
+        controller->key_count = count + 1;
+        controller->data_size = (count + 1) * strides[c] * (uint32_t)sizeof(float);
+    }
+    eng_animation_keys_changed(engine, entry->animation, state);
+}
+
+static void rec_set_length(nmo_engine_t *engine, nmo_object_id_t animation, float length)
+{
+    nmo_object_t *object = animation != 0 ? eng_find_object(engine, animation) : NULL;
+    if (object == NULL) {
+        return;
+    }
+    if (nmo_object_get_class_id(object) == NMO_CID_KEYEDANIMATION) {
+        nmo_keyedanimation_state_t *keyed = (nmo_keyedanimation_state_t *)nmo_object_get_state(object);
+        keyed->base.has_length = 1;
+        keyed->base.length = length;
+        eng_keyed_animation_refresh(engine, animation);
+    } else {
+        nmo_objectanimation_state_t *state = (nmo_objectanimation_state_t *)nmo_object_get_state(object);
+        state->has_length = 1;
+        state->length = length;
+        eng_animation_keys_changed(engine, animation, state);
+    }
+}
+
+/*
+ * Animation Recorder: On starts recording Object(s) into the object animation
+ * Animation Name (made when missing, emptied otherwise); with Use Grouped
+ * Animation, Object(s) is a group: a keyed animation of that name gets an
+ * object animation "<object>_<name>" each. Every Frame Step frames each
+ * object's world matrix gives a position, rotation and scale key at the next
+ * whole frame. Off gives the animations their entities and length, and the
+ * recording as Animation.
+ */
+static int bb_animation_recorder(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    bool grouped = get_local_int(b, 1, 0) != 0;
+    nmo_object_id_t input = nmo_engine_block_get_input_object(b, 0);
+    if (input == 0) {
+        return NMO_ENGINE_BR_OK;
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+        int32_t count = grouped ? nmo_engine_group_count(engine, input) : 1;
+        rec_header_t *h = rec_state(b, count, true);
+        if (h == NULL) {
+            return NMO_ENGINE_BR_OK;
+        }
+        *h = (rec_header_t){count, 0.0f, 0, 0};
+        const char *name = input_string(b, 1);
+        name = name != NULL ? name : "";
+        rec_entry_t *entries = rec_entries(h);
+        memset(entries, 0, (size_t)count * sizeof(rec_entry_t));
+        if (!grouped) {
+            entries[0].animation = rec_animation(engine, name);
+        } else {
+            h->keyed = eng_object_named(engine, name, NMO_CID_KEYEDANIMATION);
+            if (h->keyed == 0) {
+                h->keyed = eng_create_object(engine, NMO_CID_KEYEDANIMATION, name);
+            }
+            nmo_object_t *keyed_object = h->keyed != 0 ? eng_find_object(engine, h->keyed) : NULL;
+            nmo_keyedanimation_state_t *keyed = keyed_object != NULL ? (nmo_keyedanimation_state_t *)nmo_object_get_state(keyed_object) : NULL;
+            nmo_arena_t *arena = keyed != NULL ? eng_animation_edit_arena(engine, h->keyed) : NULL;
+            nmo_ref_t *refs = arena != NULL && count > 0
+                ? (nmo_ref_t *)nmo_arena_alloc(arena, (size_t)count * sizeof(nmo_ref_t), _Alignof(nmo_ref_t)) : NULL;
+            uint32_t held = 0;
+            for (int32_t j = 0; j < count; j++) {
+                nmo_object_id_t object = nmo_engine_group_object(engine, input, j);
+                const char *object_name = object != 0 ? nmo_engine_object_name(engine, object) : NULL;
+                if (object == 0) {
+                    continue;
+                }
+                object_name = object_name != NULL ? object_name : "(null)";
+                size_t a = strlen(object_name), c = strlen(name);
+                char *full = (char *)malloc(a + c + 2u);
+                if (full == NULL) {
+                    continue;
+                }
+                memcpy(full, object_name, a);
+                full[a] = '_';
+                memcpy(full + a + 1, name, c + 1u);
+                entries[j].animation = rec_animation(engine, full);
+                free(full);
+                if (refs != NULL && entries[j].animation != 0 &&
+                    eng_animation_local_ref(engine, h->keyed, entries[j].animation, &refs[held])) {
+                    held++;
+                }
+            }
+            if (keyed != NULL) {
+                keyed->animation_ids = refs;
+                keyed->animation_count = refs != NULL ? held : 0;
+                eng_keyed_animation_refresh(engine, h->keyed);
+            }
+        }
+    }
+    rec_header_t *h = rec_state(b, 0, false);
+    if (h == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    rec_entry_t *entries = rec_entries(h);
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        nmo_object_id_t result = 0;
+        if (grouped) {
+            for (int32_t k = 0; k < h->count; k++) {
+                nmo_object_id_t object = nmo_engine_group_object(engine, input, k);
+                if (object != 0 && entries[k].animation != 0) {
+                    eng_object_animation_set_entity(engine, entries[k].animation, object);
+                }
+            }
+            rec_set_length(engine, h->keyed, h->time);
+            result = h->keyed;
+        } else if (entries[0].animation != 0) {
+            rec_set_length(engine, entries[0].animation, h->time);
+            eng_object_animation_set_entity(engine, entries[0].animation, input);
+            result = entries[0].animation;
+        }
+        set_out(b, 0, &result, sizeof(result));
+        h->count = 0;
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    if (++h->step >= get_in_int(b, 2, 1)) {
+        h->step = 0;
+        for (int32_t i = 0; i < h->count; i++) {
+            nmo_object_id_t object = grouped ? nmo_engine_group_object(engine, input, i) : input;
+            int32_t index = eng_entity_index(engine, object);
+            if (index < 0 || entries[i].animation == 0) {
+                continue;
+            }
+            const eng_matrix_t *world = &engine->entities.data[index].world;
+            eng_matrix_t turn;
+            eng_vector_t size = {1.0f, 1.0f, 1.0f};
+            eng_matrix_identity(&turn);
+            eng_matrix_decompose(world, false, &turn, &size);
+            nmo_quaternion_t q = {0.0f, 0.0f, 0.0f, 1.0f};
+            eng_quaternion_from_matrix(&turn, &q);
+            nmo_vector_t position = {world->m[3][0], world->m[3][1], world->m[3][2]};
+            nmo_vector_t scale = {size.x, size.y, size.z};
+            rec_add_keys(engine, &entries[i], h->time, &position, &q, &scale);
+        }
+        h->time += 1.0f;
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
 static const nmo_engine_block_desc_t eng_addons_blocks[] = {
     {NMO_GUID_INIT(0x798e26a9, 0x34e4169e), "Movie Load", bb_movie_load, NULL, NULL},
     {NMO_GUID_INIT(0x060a0f8c, 0x09203b5f), "Time Settings", bb_time_settings, NULL, NULL},
@@ -1008,6 +2376,11 @@ static const nmo_engine_block_desc_t eng_addons_blocks[] = {
     {NMO_GUID_INIT(0x208f0030, 0x652f088e), "Replace Rendering", bb_replace_rendering, NULL, NULL},
     {NMO_GUID_INIT(0x62ea3812, 0x1ed661a6), "Synchro Recorder", bb_synchro_recorder, cb_synchro_recorder, NULL},
     {NMO_GUID_INIT(0x62da29d8, 0x1bbc6234), "Synchro Player", bb_synchro_player, NULL, NULL},
+    {NMO_GUID_INIT(0xb0f1ca98, 0xe9dabe5f), "Volumetric Fog", bb_volumetric_fog, NULL, NULL},
+    {NMO_GUID_INIT(0x76926718, 0x7ee807d5), "Lens Flare", bb_lens_flare, NULL, NULL},
+    {NMO_GUID_INIT(0x60a873c5, 0x51245a67), "ShadowStencil", bb_shadow_stencil, NULL, NULL},
+    {NMO_GUID_INIT(0x27b71ada, 0x22191538), "Create Decal", bb_create_decal, NULL, NULL},
+    {NMO_GUID_INIT(0x00532d07, 0x1db631cc), "Animation Recorder", bb_animation_recorder, NULL, NULL},
 };
 
 nmo_status_t eng_register_addons(nmo_engine_t *engine)

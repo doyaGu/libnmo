@@ -8,7 +8,16 @@
 #include "../../src/engine/engine_media.h"
 #include "engine/nmo_engine_render.h"
 #include "object/builtin/nmo_mesh_schemas.h"
+#include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_animation_schemas.h"
+#include "object/builtin/nmo_beobject_schemas.h"
+#include "object/builtin/nmo_camera_schemas.h"
+#include "object/builtin/nmo_group_schemas.h"
+#include "object/nmo_object_edit.h"
+#include "object/nmo_object_enum_defs.h"
+#include "../../src/engine/engine_animation.h"
 #include "object/nmo_class_ids.h"
+#include "type/nmo_type_guids.h"
 #include "object/nmo_ref.h"
 #include "core/nmo_arena.h"
 
@@ -26,6 +35,11 @@
 #define GUID_GAUGE NMO_GUID(0x6a777fc4, 0x1dc17b23)
 #define GUID_REPLACE_RENDERING NMO_GUID(0x208f0030, 0x652f088e)
 #define GUID_SYNCHRO_PLAYER NMO_GUID(0x62da29d8, 0x1bbc6234)
+#define GUID_VOLUMETRIC_FOG NMO_GUID(0xb0f1ca98, 0xe9dabe5f)
+#define GUID_LENS_FLARE NMO_GUID(0x76926718, 0x7ee807d5)
+#define GUID_SHADOW_STENCIL NMO_GUID(0x60a873c5, 0x51245a67)
+#define GUID_CREATE_DECAL NMO_GUID(0x27b71ada, 0x22191538)
+#define GUID_ANIMATION_RECORDER NMO_GUID(0x00532d07, 0x1db631cc)
 
 static nmo_object_id_t local_of(engine_fixture_t *f, nmo_object_id_t block, size_t pos)
 {
@@ -379,6 +393,328 @@ TEST(engine_addons, replace_rendering_swaps_a_material_in_the_draws)
     fixture_end(&f);
 }
 
+
+/* A mesh of `side` x `side` vertices one apart in XZ at height 0, two faces a square, normals up */
+static nmo_object_id_t grid_mesh(engine_fixture_t *f, const char *name, int side)
+{
+    nmo_object_id_t mesh = fixture_create(f, NMO_CID_MESH, name);
+    nmo_mesh_state_t *state = mesh != 0 ? (nmo_mesh_state_t *)fixture_state(f, mesh) : NULL;
+    if (state == NULL) {
+        return 0;
+    }
+    nmo_arena_t *arena = nmo_session_get_arena(f->session);
+    uint32_t count = (uint32_t)(side * side), faces = (uint32_t)(2 * (side - 1) * (side - 1));
+    state->vertices = (nmo_vertex_t *)nmo_arena_alloc(arena, count * sizeof(nmo_vertex_t), _Alignof(nmo_vertex_t));
+    state->faces = (nmo_face_t *)nmo_arena_alloc(arena, faces * sizeof(nmo_face_t), _Alignof(nmo_face_t));
+    state->face_vertex_indices = (uint16_t *)nmo_arena_alloc(arena, faces * 3 * sizeof(uint16_t), _Alignof(uint16_t));
+    if (state->vertices == NULL || state->faces == NULL || state->face_vertex_indices == NULL) {
+        return 0;
+    }
+    memset(state->vertices, 0, count * sizeof(nmo_vertex_t));
+    memset(state->faces, 0, faces * sizeof(nmo_face_t));
+    for (int r = 0; r < side; r++) {
+        for (int c = 0; c < side; c++) {
+            nmo_vertex_t *v = &state->vertices[r * side + c];
+            v->position = (nmo_vector_t){(float)c, 0.0f, (float)r};
+            v->normal = (nmo_vector_t){0.0f, 1.0f, 0.0f};
+        }
+    }
+    uint32_t k = 0;
+    for (int r = 0; r + 1 < side; r++) {
+        for (int c = 0; c + 1 < side; c++) {
+            const uint16_t a = (uint16_t)(r * side + c), b = (uint16_t)(a + 1), d = (uint16_t)(a + side);
+            const uint16_t e = (uint16_t)(d + 1);
+            const uint16_t quad[6] = {a, d, b, b, d, e};
+            memcpy(&state->face_vertex_indices[k * 3], quad, sizeof(quad));
+            state->faces[k].normal = state->faces[k + 1].normal = (nmo_vector_t){0.0f, 1.0f, 0.0f};
+            k += 2;
+        }
+    }
+    state->vertex_count = count;
+    state->face_count = faces;
+    nmo_mesh_update_bounding_volumes(state);
+    return mesh;
+}
+
+/* A 3D entity of class `cid` with the world matrix's rows `x`, `y`, `z` and position `p` */
+static nmo_object_id_t placed_entity(engine_fixture_t *f, int32_t cid, const char *name, const float x[3],
+                                     const float y[3], const float z[3], const float p[3], nmo_object_id_t mesh)
+{
+    nmo_object_id_t id = fixture_create(f, cid, name);
+    nmo_3dentity_state_t *state = id != 0 ? (nmo_3dentity_state_t *)fixture_state(f, id) : NULL;
+    if (state == NULL) {
+        return 0;
+    }
+    const float *rows[4] = {x, y, z, p};
+    for (int r = 0; r < 4; r++) {
+        for (int c = 0; c < 3; c++) {
+            state->world_matrix[4 * r + c] = rows[r][c];
+        }
+        state->world_matrix[4 * r + 3] = r == 3 ? 1.0f : 0.0f;
+    }
+    if (mesh != 0) {
+        state->current_mesh = nmo_ref_from_id(mesh);
+    }
+    return id;
+}
+
+static const float X_AXIS[3] = {1, 0, 0}, Y_AXIS[3] = {0, 1, 0}, Z_AXIS[3] = {0, 0, 1};
+
+static nmo_object_id_t a_camera(engine_fixture_t *f, const float x[3], const float y[3], const float z[3],
+                                const float p[3], float fov)
+{
+    nmo_object_id_t camera = placed_entity(f, NMO_CID_CAMERA, "Camera", x, y, z, p, 0);
+    nmo_camera_state_t *state = camera != 0 ? (nmo_camera_state_t *)fixture_state(f, camera) : NULL;
+    if (state != NULL) {
+        state->fov = fov;
+        state->near_plane = 1.0f;
+        state->far_plane = 100.0f;
+        state->aspect_width = 4;
+        state->aspect_height = 3;
+    }
+    return camera;
+}
+
+static nmo_object_id_t a_group(engine_fixture_t *f, const char *name, const nmo_object_id_t *ids, size_t count)
+{
+    nmo_object_id_t group = fixture_create(f, NMO_CID_GROUP, name);
+    nmo_group_state_t *state = (nmo_group_state_t *)fixture_state(f, group);
+    nmo_ref_t *members = NULL;
+    if (state == NULL || nmo_array_extend(&state->object_ids, count, (void **)&members) != NMO_OK) {
+        return 0;
+    }
+    for (size_t i = 0; i < count; i++) {
+        members[i] = nmo_ref_from_id(ids[i]);
+    }
+    return group;
+}
+
+TEST(engine_addons, volumetric_fog_writes_the_fog_channel_v)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t mesh = grid_mesh(&f, "Floor", 2);
+    const float origin[3] = {0, 0, 0}, eye[3] = {0, -1, -10};
+    nmo_object_id_t floor = placed_entity(&f, NMO_CID_3DOBJECT, "Floor", X_AXIS, Y_AXIS, Z_AXIS, origin, mesh);
+    nmo_object_id_t fog = placed_entity(&f, NMO_CID_3DENTITY, "Fog", X_AXIS, Y_AXIS, Z_AXIS, origin, 0);
+    nmo_object_id_t camera = a_camera(&f, X_AXIS, Y_AXIS, Z_AXIS, eye, 1.0f);
+    nmo_object_id_t material = fixture_create(&f, NMO_CID_MATERIAL, "Fog Material");
+    nmo_object_id_t group = a_group(&f, "Fogged", &floor, 1);
+    ASSERT_TRUE(mesh && floor && fog && camera && material && group);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t block = fixture_block(&f, GUID_VOLUMETRIC_FOG, "Fog");
+    ASSERT_TRUE(block != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, block, 0), 0);
+    fixture_input_int(&f, fixture_target(&f, block), (int32_t)fog);
+    fixture_input_int(&f, BLOCK_PIN(&f, block, 0), (int32_t)material);
+    const float density = 0.5f;
+    fixture_input_value(&f, BLOCK_PIN(&f, block, 1), &density, sizeof(density));
+    fixture_input_int(&f, BLOCK_PIN(&f, block, 2), (int32_t)group);
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    f.engine->render.camera = camera;
+    eng_show(f.engine, floor, 1);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    /* The eye 1 under the fog's top looks along +Z: (0, 0, 1) is 11 away, times the density */
+    eng_mesh_copy_t *copy = eng_mesh_copy(f.engine, mesh);
+    int32_t channel = eng_mesh_channel(copy, material);
+    ASSERT_TRUE(channel >= 0);
+    size_t stride = 0;
+    int32_t count = 0;
+    float *uvs = eng_mesh_uvs(f.engine, copy, channel, &stride, &count);
+    ASSERT_NOT_NULL(uvs);
+    ASSERT_FLOAT_EQ(5.5f, ((float *)((uint8_t *)uvs + 2 * stride))[1], 1e-5f);
+    ASSERT_FLOAT_EQ(5.0f, ((float *)((uint8_t *)uvs + 0 * stride))[1], 1e-5f);
+    ASSERT_EQ(VXBLEND_INVSRCCOLOR, copy->channels.data[channel].dest_blend);
+    fixture_end(&f);
+}
+
+TEST(engine_addons, lens_flare_fades_its_flares_in)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    const float at[3] = {0, 0, 50}, origin[3] = {0, 0, 0};
+    nmo_object_id_t light = placed_entity(&f, NMO_CID_LIGHT, "Sun", X_AXIS, Y_AXIS, Z_AXIS, at, 0);
+    nmo_object_id_t camera = a_camera(&f, X_AXIS, Y_AXIS, Z_AXIS, origin, 1.0f);
+    nmo_object_id_t array = fixture_create(&f, NMO_CID_DATAARRAY, "Flares");
+    ASSERT_TRUE(light && camera && array);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t flare = fixture_block(&f, GUID_LENS_FLARE, "Flare");
+    ASSERT_TRUE(flare != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, flare, 0), 0);
+    fixture_input_int(&f, fixture_target(&f, flare), (int32_t)light);
+    fixture_input_int(&f, BLOCK_PIN(&f, flare, 0), (int32_t)array);
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_array_insert_column(f.engine, array, -1, CKARRAYTYPE_INT, NMO_GUID(0u, 0u)));
+    ASSERT_EQ(NMO_OK, nmo_engine_array_insert_column(f.engine, array, -1, CKARRAYTYPE_FLOAT, NMO_GUID(0u, 0u)));
+    ASSERT_EQ(NMO_OK, nmo_engine_array_insert_row(f.engine, array, -1, NULL));
+    nmo_engine_cell_t at_light = {.type = CKARRAYTYPE_FLOAT};
+    const float one = 1.0f;
+    memcpy(&at_light.value, &one, sizeof(one));
+    ASSERT_EQ(NMO_OK, nmo_engine_array_set_cell(f.engine, array, 0, 1, &at_light));
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    f.engine->render.camera = camera;
+
+    /* Seen ahead (no picker): it fades in over its 100 ms, 20 ms a frame */
+    nmo_engine_frame_t frame;
+    uint32_t alpha = 0;
+    for (int i = 0; i < 2; i++) {
+        ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+        ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+        alpha = 0;
+        for (int32_t d = 0; d < frame.draw_count; d++) {
+            const nmo_engine_draw_t *draw = &frame.draws[d];
+            if (draw->kind == NMO_ENGINE_DRAW_TRIANGLES && draw->object == light && draw->vertex_count == 6) {
+                alpha = frame.vertices[draw->first_vertex].color >> 24;
+                ASSERT_EQ(VXBLEND_SRCALPHA, draw->source_blend);
+                ASSERT_EQ(VXBLEND_ONE, draw->dest_blend);
+            }
+        }
+        ASSERT_EQ((uint32_t)(i == 0 ? 51 : 102), alpha); /* turned on and 20 of its 100 ms in, then 40 */
+    }
+    fixture_end(&f);
+}
+
+TEST(engine_addons, shadow_stencil_draws_volumes_and_the_shadow)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t mesh = grid_mesh(&f, "Plate", 2);
+    const float above[3] = {0, 5, 0}, origin[3] = {0, 0, 0}, eye[3] = {0, 2, -10};
+    nmo_object_id_t caster = placed_entity(&f, NMO_CID_3DOBJECT, "Plate", X_AXIS, Y_AXIS, Z_AXIS, origin, mesh);
+    nmo_object_id_t light = placed_entity(&f, NMO_CID_LIGHT, "Lamp", X_AXIS, Y_AXIS, Z_AXIS, above, 0);
+    nmo_object_id_t camera = a_camera(&f, X_AXIS, Y_AXIS, Z_AXIS, eye, 1.0f);
+    nmo_object_id_t material = fixture_create(&f, NMO_CID_MATERIAL, "Shadow");
+    ASSERT_TRUE(mesh && caster && light && camera && material);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_manager_entry_create_options_t options = {.enabled = true, .attribute_type_guid = CKPGUID_NONE,
+        .category = "Visuals FX", .has_compatible_class_id = true, .compatible_class_id = NMO_CID_3DOBJECT,
+        .has_flags = true, .flags = 0};
+    uint32_t attribute = 0;
+    ASSERT_EQ(NMO_OK, nmo_object_edit_ensure_attribute_manager_entry(nmo_script_edit_workspace_edit(f.tx),
+                                                                     "Shadow Stencil Caster", &options, &attribute));
+    ASSERT_EQ(NMO_OK, nmo_beobject_attribute_array_append(&((nmo_beobject_state_t *)fixture_state(&f, caster))->attributes,
+                                                          0, attribute, NULL));
+    nmo_object_id_t shadow = fixture_block(&f, GUID_SHADOW_STENCIL, "Shadow");
+    ASSERT_TRUE(shadow != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, shadow, 0), 0);
+    fixture_input_int(&f, fixture_target(&f, shadow), (int32_t)light);
+    fixture_input_int(&f, BLOCK_PIN(&f, shadow, 1), (int32_t)material);
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    f.engine->render.camera = camera;
+    eng_show(f.engine, caster, 1);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    /* the stencil cleared, the volume's four open edges (24 vertices) twice, then the shadow */
+    int clears = 0, incr = 0, decr = 0, cover = 0;
+    for (int32_t d = 0; d < frame.draw_count; d++) {
+        const nmo_engine_draw_t *draw = &frame.draws[d];
+        if (draw->kind != NMO_ENGINE_DRAW_PRIMITIVE || !draw->post) {
+            continue;
+        }
+        clears += draw->clears_stencil;
+        if (draw->stencil.enabled && draw->stencil.pass == VXSTENCILOP_INCR) {
+            incr++;
+            ASSERT_EQ(24, draw->vertex_count);
+            ASSERT_FALSE(draw->mirrored);
+        }
+        if (draw->stencil.enabled && draw->stencil.pass == VXSTENCILOP_DECR) {
+            decr++;
+            ASSERT_TRUE(draw->mirrored);
+        }
+        if (draw->stencil.enabled && draw->stencil.func == VXCMP_NOTEQUAL) {
+            cover++;
+            ASSERT_EQ((int64_t)material, (int64_t)draw->material);
+        }
+    }
+    ASSERT_EQ(1, clears);
+    ASSERT_EQ(1, incr);
+    ASSERT_EQ(1, decr);
+    ASSERT_EQ(1, cover);
+    fixture_end(&f);
+}
+
+TEST(engine_addons, create_decal_cuts_the_faces_in_the_frustum)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t mesh = grid_mesh(&f, "Ground", 5);
+    const float origin[3] = {0, 0, 0}, high[3] = {2, 5, 2};
+    const float down[3] = {0, -1, 0}, ahead[3] = {0, 0, 1};
+    nmo_object_id_t ground = placed_entity(&f, NMO_CID_3DOBJECT, "Ground", X_AXIS, Y_AXIS, Z_AXIS, origin, mesh);
+    nmo_object_id_t camera = a_camera(&f, X_AXIS, ahead, down, high, 0.4f);
+    ASSERT_TRUE(mesh && ground && camera);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t decal = fixture_block(&f, GUID_CREATE_DECAL, "Decal");
+    ASSERT_TRUE(decal != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, decal, 0), 0);
+    fixture_input_int(&f, fixture_target(&f, decal), (int32_t)ground);
+    fixture_input_int(&f, BLOCK_PIN(&f, decal, 0), (int32_t)camera);
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    nmo_object_id_t made = 0;
+    read_value(&f, BLOCK_POUT(&f, decal, 0), &made, sizeof(made));
+    ASSERT_TRUE(made != 0);
+    ASSERT_STR_EQ("Ground_Decal", nmo_engine_object_name(f.engine, made));
+    nmo_object_id_t decal_mesh = nmo_engine_object_named(f.engine, "Ground_DecalMesh", NMO_CID_MESH);
+    nmo_engine_mesh_t out;
+    ASSERT_TRUE(decal_mesh != 0 && nmo_engine_mesh(f.engine, decal_mesh, &out));
+    /* 5 x tan 0.2 = 1.01 around (2, 2): a cut square, welded, 0.01 above the ground */
+    ASSERT_TRUE(out.vertex_count >= 4 && out.face_count >= 2);
+    for (int32_t v = 0; v < out.vertex_count; v++) {
+        ASSERT_FLOAT_EQ(0.01f, out.vertices[v].position.y, 1e-5f);
+        ASSERT_TRUE(fabsf(out.vertices[v].position.x - 2.0f) <= 1.02f);
+        ASSERT_TRUE(fabsf(out.vertices[v].position.z - 2.0f) <= 1.02f);
+    }
+    fixture_end(&f);
+}
+
+TEST(engine_addons, animation_recorder_keys_the_object_each_frame)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    const float origin[3] = {0, 0, 0};
+    nmo_object_id_t box = placed_entity(&f, NMO_CID_3DENTITY, "Box", X_AXIS, Y_AXIS, Z_AXIS, origin, 0);
+    ASSERT_TRUE(box != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t recorder = fixture_block(&f, GUID_ANIMATION_RECORDER, "Recorder");
+    ASSERT_TRUE(recorder != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, recorder, 0), 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, recorder, 1), 3);
+    fixture_input_int(&f, BLOCK_PIN(&f, recorder, 0), (int32_t)box);
+    input_text(&f, BLOCK_PIN(&f, recorder, 1), "Take");
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    for (int i = 0; i < 4; i++) {
+        float world[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, (float)i, 0, 0, 1};
+        ASSERT_EQ(NMO_OK, nmo_engine_set_entity_world_matrix(f.engine, box, world, false));
+        ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    }
+    /* keys at frames 0, 1 and 2 (x 0, 1, 2), then Off: a length of 3 on the box */
+    nmo_object_id_t take = 0;
+    read_value(&f, BLOCK_POUT(&f, recorder, 0), &take, sizeof(take));
+    ASSERT_TRUE(take != 0);
+    ASSERT_EQ((int64_t)take, (int64_t)nmo_engine_object_named(f.engine, "Take", NMO_CID_OBJECTANIMATION));
+    const nmo_objectanimation_state_t *state = (const nmo_objectanimation_state_t *)nmo_object_get_state(eng_find_object(f.engine, take));
+    ASSERT_EQ(3u, state->controller_count);
+    ASSERT_EQ(3u, state->controllers[0].key_count);
+    const float *keys = (const float *)state->controllers[0].data;
+    ASSERT_FLOAT_EQ(2.0f, keys[0 + 4 * 2], 0.0f);
+    ASSERT_FLOAT_EQ(2.0f, keys[1 + 4 * 2], 0.0f);
+    ASSERT_FLOAT_EQ(3.0f, state->length, 0.0f);
+    ASSERT_EQ((int64_t)box, (int64_t)eng_object_animation_entity(f.engine, take));
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_addons, filter_and_blend_textures_use_the_dll_integer_arithmetic);
 REGISTER_TEST(engine_addons, water_texture_steps_the_older_slot_and_swaps);
@@ -387,4 +723,9 @@ REGISTER_TEST(engine_addons, config_blocks_and_the_console);
 REGISTER_TEST(engine_addons, gauge_cuts_the_rect_to_the_progression);
 REGISTER_TEST(engine_addons, synchro_player_pulses_each_row_on_time);
 REGISTER_TEST(engine_addons, replace_rendering_swaps_a_material_in_the_draws);
+REGISTER_TEST(engine_addons, volumetric_fog_writes_the_fog_channel_v);
+REGISTER_TEST(engine_addons, lens_flare_fades_its_flares_in);
+REGISTER_TEST(engine_addons, shadow_stencil_draws_volumes_and_the_shadow);
+REGISTER_TEST(engine_addons, create_decal_cuts_the_faces_in_the_frustum);
+REGISTER_TEST(engine_addons, animation_recorder_keys_the_object_each_frame);
 TEST_MAIN_END()
