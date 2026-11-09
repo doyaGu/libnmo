@@ -524,8 +524,9 @@ static nmo_status_t nmo_beobject_deserialize_internal(
         chunk, CK_STATESAVE_DATAS, &payload_dwords);
     if (result == NMO_OK) {
         if (!is_file) {
+            /* CKBeObject::Load without a file reads the first int alone: an older CK saved
+               the file's data section in initial values too */
             if (payload_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
-            if (payload_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_int(
                 chunk, &out_state->runtime_data_value));
             out_state->has_runtime_data_section = 1;

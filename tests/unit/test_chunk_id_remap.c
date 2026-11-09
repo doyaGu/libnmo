@@ -16295,6 +16295,25 @@ TEST(chunk_id_remap, beobject_preserves_script_and_priority_layouts) {
     ASSERT_EQ(0x12345678, runtime_loaded.runtime_data_value);
     ASSERT_EQ(0, runtime_loaded.has_data_section);
 
+    /* An older CK saved the file's data section in initial values too: CKBeObject::Load without
+       a file reads its first int and leaves the rest */
+    nmo_chunk_t *older = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(older);
+    older->class_id = NMO_CID_BEOBJECT;
+    older->data_version = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(older));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(older, CK_STATESAVE_DATAS));
+    for (int32_t i = 0; i < 5; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_int(older, 0x10000000 + i));
+    }
+    nmo_chunk_close(older);
+    nmo_beobject_state_t older_loaded;
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(&older_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_deserialize(&older_loaded, older, NULL, NULL));
+    ASSERT_EQ(1, older_loaded.has_runtime_data_section);
+    ASSERT_EQ(0x10000000, older_loaded.runtime_data_value);
+    nmo_beobject_vtable.destroy(&older_loaded, NULL, NULL);
+
     nmo_chunk_t *runtime_saved = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(runtime_saved);
     runtime_saved->class_id = NMO_CID_BEOBJECT;
