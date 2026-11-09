@@ -10,7 +10,8 @@ front of the narrower road's middle.  The cells on either side of the gap
 flatten its V: they fan out from the V's bottom, with one texture repeat
 across the gap and one along the cell, so a wide road meets a narrow one or
 an area through an X-shaped piece, as in the originals.  Walls hang 5 below
-the outline; floors have no bottom.
+the outline, and an underside 5 below the top closes the floor (the
+originals have none).
 
 The materials are the levels' own (apps/ballance/data/level_materials.json):
 Floor_Top_Boderless where a cell is flat, Floor_Top_Profile on the slopes of
@@ -35,6 +36,7 @@ REPEAT = 5.0
 NARROW = 2 * CELL
 
 UP = (0.0, 1.0, 0.0)
+DOWN = (0.0, -1.0, 0.0)
 
 
 class Piece:
@@ -374,6 +376,15 @@ class Floors:
             triangles = [((0, 1, 2), uv), ((0, 2, 3), uv)]
         for tri, uv in triangles:
             mesh.triangle(material, UP, *[(xyz[k], uv[k]) for k in tri])
+        # The underside, WALL below the top, meeting the walls' bottoms.  The
+        # originals leave it out, as their camera never looks up at a floor;
+        # levels that stack their floors show it.
+        for tri, _ in triangles:
+            mesh.triangle(
+                'Floor_Side',
+                DOWN,
+                *[((x, y - WALL, z), (x / REPEAT, z / REPEAT)) for x, y, z in (xyz[k] for k in tri)],
+            )
 
     def _wall(
         self, mesh: Mesh, edge: tuple[int, int, int], outward: tuple[int, int], level: bool = False
