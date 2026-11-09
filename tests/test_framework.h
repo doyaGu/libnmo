@@ -49,6 +49,9 @@
 extern "C" {
 #endif
 
+/* Changes to dir; warns (and stays) when it cannot. */
+void test_framework_enter_dir(const char *dir);
+
 /* Test result structure */
 typedef struct {
     const char *suite_name;
@@ -203,8 +206,17 @@ void test_format_error(char *buffer, size_t buffer_size, const char *format, ...
                                NULL, NULL, TEST_CATEGORY_UNIT, timeout)
 
 /* Standard main() template for tests */
+/* A binary built with NMO_TEST_WORKING_DIR (tests/CMakeLists.txt) runs in
+   the directory CTest runs it in, wherever it is started from. */
+#ifdef NMO_TEST_WORKING_DIR
+#define TEST_ENTER_WORKING_DIR() test_framework_enter_dir(NMO_TEST_WORKING_DIR)
+#else
+#define TEST_ENTER_WORKING_DIR() ((void)0)
+#endif
+
 #define TEST_MAIN_BEGIN() \
     int main(void) { \
+        TEST_ENTER_WORKING_DIR(); \
         test_framework_init();
 
 #define TEST_MAIN_END() \

@@ -95,6 +95,28 @@ add_subdirectory(performance)
 # Stress tests
 add_subdirectory(stress)
 
+# A test binary run by hand changes to the directory CTest runs it in, so it
+# writes its temporary files where a CTest run does and never into the
+# caller's working directory (the source tree, say). Reading another
+# directory's test properties needs CMake 3.28; older ones keep the caller's.
+if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.28)
+    foreach(test_dir unit integration round_trip performance stress)
+        get_property(dir_tests DIRECTORY ${test_dir} PROPERTY TESTS)
+        get_property(dir_binary DIRECTORY ${test_dir} PROPERTY BINARY_DIR)
+        foreach(test_name IN LISTS dir_tests)
+            if(TARGET ${test_name})
+                get_property(test_work TEST ${test_name} DIRECTORY ${test_dir}
+                             PROPERTY WORKING_DIRECTORY)
+                if(NOT test_work)
+                    set(test_work "${dir_binary}")
+                endif()
+                target_compile_definitions(${test_name} PRIVATE
+                    NMO_TEST_WORKING_DIR="${test_work}")
+            endif()
+        endforeach()
+    endforeach()
+endif()
+
 # Batch oracle tool (not a CTest target — run manually)
 add_executable(batch_interface_oracle batch_interface_oracle.c)
 target_link_libraries(batch_interface_oracle PRIVATE nmo)

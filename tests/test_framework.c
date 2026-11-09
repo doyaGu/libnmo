@@ -27,6 +27,7 @@
 #else
 #include <dirent.h>
 #include <sys/stat.h>
+#include <unistd.h>
 #endif
 
 /* Global variables */
@@ -260,6 +261,16 @@ static void test_create_scratch_dir(void) {
 /**
  * Initialize the test framework
  */
+void test_framework_enter_dir(const char *dir) {
+#ifdef _WIN32
+    if (_chdir(dir) != 0) {
+#else
+    if (chdir(dir) != 0) {
+#endif
+        fprintf(stderr, "warning: cannot change to the test directory %s\n", dir);
+    }
+}
+
 void test_framework_init(void) {
     test_create_scratch_dir();
     if (g_test_suite == NULL) {
