@@ -1687,6 +1687,55 @@ static void assert_parameter_show_layout(const char *path,
     yyjson_doc_free(doc);
 }
 
+TEST(cli, script_node_add_lists_the_block_and_its_plugin_as_dependencies)
+{
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
+    cli_run_result_t result = {0};
+    yyjson_doc *doc = NULL;
+    yyjson_val *entries = NULL;
+    yyjson_val *item = NULL;
+    size_t idx = 0;
+    size_t max = 0;
+    bool has_logics = false;
+    bool has_visuals = false;
+    bool has_hide = false;
+    char args[1024];
+    const char *output = "test_script_edit_tmp/node_add_deps.cmo";
+
+    make_dir("test_script_edit_tmp");
+    remove(output);
+    /* Nop.cmo needs Logics.dll; Hide comes from Visuals.dll */
+    snprintf(args, sizeof(args),
+             "script node add --parent 6 --bb-guid 31D97D82-78D54D98 --name \"Hide It\" "
+             "\"%s\" -o \"%s\"",
+             NMO_TEST_DATA_FILE("Nop.cmo"), output);
+    result = run_cli_capture(args);
+    free(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+
+    snprintf(args, sizeof(args), "-f json file plugins \"%s\"", output);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    entries = get_array_field(get_object_field(yyjson_doc_get_root(doc), "data"), "entries");
+    ASSERT_NOT_NULL(entries);
+    yyjson_arr_foreach(entries, idx, max, item) {
+        const char *guid = get_string_field(item, "guid");
+        if (guid == NULL) continue;
+        has_logics = has_logics || strcmp(guid, "{6F1369C8-0F561B89}") == 0;
+        has_visuals = has_visuals || strcmp(guid, "{1A357E90-30F82648}") == 0;
+        has_hide = has_hide || strcmp(guid, "{31D97D82-78D54D98}") == 0;
+    }
+    yyjson_doc_free(doc);
+    ASSERT_TRUE(has_logics);
+    ASSERT_TRUE(has_visuals);
+    ASSERT_TRUE(has_hide);
+    remove(output);
+}
+
 TEST(cli, script_node_add_creates_missing_manager_entry_when_policy_allows)
 {
     TEST_REQUIRE_FIXTURE("Nop.cmo");
@@ -4126,6 +4175,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, script_graph_json_smoke);
     REGISTER_TEST(cli, script_node_and_io_crud_roundtrip);
     REGISTER_TEST(cli, script_node_add_dry_run_reports_schema_v2);
+    REGISTER_TEST(cli, script_node_add_lists_the_block_and_its_plugin_as_dependencies);
     REGISTER_TEST(cli, script_node_add_creates_missing_manager_entry_when_policy_allows);
     REGISTER_TEST(cli, script_io_add_dry_run_exposes_executor_validation_parity);
     REGISTER_TEST(cli, script_node_remove_canonicalizes_interface_refs);

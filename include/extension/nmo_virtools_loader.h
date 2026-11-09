@@ -85,6 +85,20 @@ NMO_API nmo_status_t nmo_virtools_load_building_block_layouts(
     nmo_behavior_registry_t *bb_registry, const char *path);
 
 /**
+ * @brief Give the registered building blocks the plugins their DLLs declare them under.
+ *
+ * Reads virtools_plugins.json: each registered prototype whose DLL gives a
+ * behavior plugin takes the first one as its plugin_guid, as CK2 declares a
+ * DLL's blocks under its first behavior plugin info.
+ *
+ * @param bb_registry  BB registry
+ * @param path         JSON file path
+ * @return NMO_OK on success
+ */
+NMO_API nmo_status_t nmo_virtools_load_building_block_plugins(
+    nmo_behavior_registry_t *bb_registry, const char *path);
+
+/**
  * @brief Load Virtools plugin metadata from JSON file.
  *
  * Reads virtools_plugins.json and registers plugin-level metadata into the
@@ -103,7 +117,8 @@ NMO_API nmo_status_t nmo_virtools_load_plugins(
  *
  * Looks for virtools_parameter_types.json, virtools_operation_types.json,
  * and virtools_building_blocks.json (+ _ext.json, then the local layouts of
- * virtools_building_block_layouts.json) in the given directory.
+ * virtools_building_block_layouts.json and the blocks' plugins from
+ * virtools_plugins.json) in the given directory.
  * Missing files are silently skipped.
  *
  * @param type_registry  Type registry (for param types + operation names)

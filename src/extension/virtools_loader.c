@@ -587,6 +587,103 @@ nmo_status_t nmo_virtools_load_building_block_layouts(nmo_behavior_registry_t *b
  * Plugin metadata
  * ============================================================================ */
 
+typedef struct block_plugin_dll {
+    const char *dll;
+    nmo_guid_t plugin;
+} block_plugin_dll_t;
+
+typedef struct block_plugin_scan {
+    const block_plugin_dll_t *dlls;
+    size_t dll_count;
+    nmo_guid_t *blocks;
+    size_t block_count;
+    size_t block_capacity;
+    bool failed;
+} block_plugin_scan_t;
+
+static const block_plugin_dll_t *block_plugin_find_dll(
+    const block_plugin_dll_t *dlls, size_t count, const char *dll) {
+    for (size_t i = 0; dll != NULL && i < count; i++) {
+        if (strcmp(dlls[i].dll, dll) == 0) return &dlls[i];
+    }
+    return NULL;
+}
+
+static int block_plugin_collect(const nmo_behavior_proto_t *proto, void *user_data) {
+    block_plugin_scan_t *scan = (block_plugin_scan_t *)user_data;
+    const block_plugin_dll_t *owner = block_plugin_find_dll(scan->dlls, scan->dll_count, proto->dll);
+    if (owner == NULL || nmo_guid_equals(owner->plugin, proto->plugin_guid)) return 0;
+    if (scan->block_count == scan->block_capacity) {
+        size_t capacity = scan->block_capacity ? scan->block_capacity * 2 : 64;
+        nmo_guid_t *grown = (nmo_guid_t *)realloc(scan->blocks, capacity * sizeof(*grown));
+        if (grown == NULL) {
+            scan->failed = true;
+            return 1;
+        }
+        scan->blocks = grown;
+        scan->block_capacity = capacity;
+    }
+    scan->blocks[scan->block_count++] = proto->guid;
+    return 0;
+}
+
+nmo_status_t nmo_virtools_load_building_block_plugins(nmo_behavior_registry_t *bb_registry, const char *path) {
+    if (!bb_registry || !path)
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "null arg");
+
+    yyjson_read_err err;
+    yyjson_doc *doc = yyjson_read_file(path, NMO_VIRTOOLS_JSON_READ_FLAGS, NULL, &err);
+    if (!doc)
+        NMO_RETURN_ERROR(NMO_ERR_CANT_READ_FILE, NMO_SEVERITY_ERROR, "JSON parse error: %s at %zu", err.msg, err.pos);
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    if (!yyjson_is_arr(root)) {
+        yyjson_doc_free(doc);
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "expected JSON array");
+    }
+
+    /* Each DLL's first behavior plugin, in the order the data lists them */
+    size_t entry_count = yyjson_arr_size(root);
+    block_plugin_dll_t *dlls = entry_count > 0
+        ? (block_plugin_dll_t *)calloc(entry_count, sizeof(*dlls)) : NULL;
+    if (entry_count > 0 && dlls == NULL) {
+        yyjson_doc_free(doc);
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "plugin table alloc failed");
+    }
+    size_t dll_count = 0;
+    yyjson_val *item;
+    yyjson_arr_iter iter;
+    yyjson_arr_iter_init(root, &iter);
+    while ((item = yyjson_arr_iter_next(&iter)) != NULL) {
+        const char *dll = get_str(item, "dll");
+        nmo_guid_t guid = get_guid(item, "guid");
+        if (get_uint(item, "category") != NMO_PLUGIN_BEHAVIOR_DLL || dll == NULL || dll[0] == '\0' ||
+            nmo_guid_is_null(guid) || block_plugin_find_dll(dlls, dll_count, dll) != NULL) {
+            continue;
+        }
+        dlls[dll_count].dll = dll;
+        dlls[dll_count].plugin = guid;
+        dll_count++;
+    }
+
+    block_plugin_scan_t scan = {dlls, dll_count, NULL, 0, 0, false};
+    nmo_behavior_registry_foreach(bb_registry, block_plugin_collect, &scan);
+    nmo_status_t status = scan.failed ? NMO_ERR_NOMEM : NMO_OK;
+    for (size_t i = 0; status == NMO_OK && i < scan.block_count; i++) {
+        const nmo_behavior_proto_t *known = nmo_behavior_registry_find(bb_registry, scan.blocks[i]);
+        if (known == NULL) continue;
+        nmo_behavior_proto_t updated = *known;
+        updated.plugin_guid = block_plugin_find_dll(dlls, dll_count, known->dll)->plugin;
+        status = nmo_behavior_registry_add(bb_registry, &updated);
+    }
+
+    free(scan.blocks);
+    free(dlls);
+    yyjson_doc_free(doc);
+    if (status != NMO_OK)
+        NMO_RETURN_ERROR(status, NMO_SEVERITY_ERROR, "registering block plugins failed");
+    return NMO_OK;
+}
+
 nmo_status_t nmo_virtools_load_plugins(nmo_extension_registry_t *ext_registry, const char *path) {
     if (!ext_registry || !path)
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "null arg");
@@ -686,6 +783,10 @@ nmo_status_t nmo_virtools_load_data_dir(
         /* Then the blocks' local layouts as their DLLs declare them */
         snprintf(path, path_cap, "%s/virtools_building_block_layouts.json", data_dir);
         nmo_virtools_load_building_block_layouts(bb_registry, path); /* optional */
+
+        /* And the plugins their DLLs declare them under */
+        snprintf(path, path_cap, "%s/virtools_plugins.json", data_dir);
+        nmo_virtools_load_building_block_plugins(bb_registry, path); /* optional */
     }
 
     free(path);

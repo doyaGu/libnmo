@@ -168,6 +168,7 @@ static nmo_status_t deep_copy_proto(
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "arena string alloc failed");
     }
     tmp.version = src->version;
+    tmp.plugin_guid = src->plugin_guid;
     tmp.compatible_class_id = src->compatible_class_id;
     tmp.behavior_flags = src->behavior_flags;
     const char **inputs = NULL;

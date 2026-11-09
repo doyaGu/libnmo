@@ -46,6 +46,12 @@
 #include "format/nmo_chunk_context.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_type_runtime.h"
+#include "type/nmo_type_query.h"
+#include "type/nmo_object_guids.h"
+#include "object/nmo_class_ids.h"
+#include "object/nmo_object_enum_defs.h"
+#include "object/builtin/nmo_behavior_schemas.h"
+#include "extension/nmo_behavior_registry.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdalign.h>
@@ -1369,6 +1375,109 @@ static nmo_status_t save_build_data_section(nmo_serializer_t *ctx) {
     NMO_RETURN_OK();
 }
 
+static bool save_plugin_deps_has(
+    const nmo_plugin_dep_t *deps, size_t count, nmo_guid_t guid, uint32_t category)
+{
+    for (size_t i = 0; i < count; i++) {
+        if (deps[i].category == category && nmo_guid_equals(deps[i].guid, guid)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/*
+ * The plugin dependencies the file lists: those it was loaded with, then what
+ * the building blocks it saves need that they lack. CK2 (CKPluginManager::
+ * ComputeDependenciesList) lists for each building block its DLL's behavior
+ * plugin and the block's own prototype GUID, so a document that gains blocks
+ * names them too.
+ */
+static nmo_status_t save_build_plugin_deps(nmo_serializer_t *ctx) {
+    const nmo_file_state_t *dep_fstate = nmo_session_get_file_state(ctx->session);
+    uint32_t stored_count = dep_fstate ? dep_fstate->plugin_dep_count : 0;
+    nmo_plugin_dep_t *stored = dep_fstate ? dep_fstate->plugin_deps : NULL;
+    if (stored_count > 0 && stored == NULL) {
+        return SAVE_ERR(NMO_ERR_INVALID_STATE, "Missing plugin dependencies");
+    }
+    ctx->plugin_deps = stored;
+    ctx->plugin_count = stored_count;
+
+    nmo_context_t *context = nmo_session_get_context(ctx->session);
+    const nmo_behavior_registry_t *blocks = context ? nmo_context_get_bb_registry(context) : NULL;
+    if (ctx->type_reg == NULL) {
+        return NMO_OK;
+    }
+
+    /* At most a plugin and a prototype for each behavior saved */
+    size_t added_cap = 0;
+    nmo_plugin_dep_t *plugins = NULL;
+    nmo_plugin_dep_t *protos = NULL;
+    size_t plugin_count = 0;
+    size_t proto_count = 0;
+    for (size_t i = 0; i < ctx->object_count; i++) {
+        nmo_object_t *obj = ctx->objects[i];
+        if (!nmo_type_query_object_is_derived_from_class(ctx->type_reg, obj, NMO_CID_BEHAVIOR)) {
+            continue;
+        }
+        const nmo_behavior_state_t *state = (const nmo_behavior_state_t *)
+            nmo_type_query_object_get_ancestor_state_by_guid(ctx->type_reg, obj, CKPGUID_BEHAVIOR);
+        if (state == NULL || (state->flags & CKBEHAVIOR_BUILDINGBLOCK) == 0 ||
+            nmo_guid_is_null(state->block_guid)) {
+            continue;
+        }
+        if (added_cap == 0) {
+            added_cap = ctx->object_count;
+            size_t bytes = 0;
+            if (!nmo_safe_mul_size(added_cap, sizeof(nmo_plugin_dep_t), &bytes)) {
+                return SAVE_ERR(NMO_ERR_NOMEM, "Plugin dependency allocation overflow");
+            }
+            plugins = (nmo_plugin_dep_t *)nmo_arena_alloc(
+                save_scratch(ctx), bytes, alignof(nmo_plugin_dep_t));
+            protos = (nmo_plugin_dep_t *)nmo_arena_alloc(
+                save_scratch(ctx), bytes, alignof(nmo_plugin_dep_t));
+            if (plugins == NULL || protos == NULL) {
+                return SAVE_ERR(NMO_ERR_NOMEM, "Plugin dependency allocation failed");
+            }
+        }
+        const nmo_behavior_proto_t *proto = blocks
+            ? nmo_behavior_registry_find(blocks, state->block_guid) : NULL;
+        if (proto != NULL && !nmo_guid_is_null(proto->plugin_guid) &&
+            !save_plugin_deps_has(stored, stored_count, proto->plugin_guid, NMO_PLUGIN_BEHAVIOR_DLL) &&
+            !save_plugin_deps_has(plugins, plugin_count, proto->plugin_guid, NMO_PLUGIN_BEHAVIOR_DLL)) {
+            plugins[plugin_count++] = (nmo_plugin_dep_t){
+                proto->plugin_guid, NMO_PLUGIN_BEHAVIOR_DLL, 0};
+        }
+        if (!save_plugin_deps_has(stored, stored_count, state->block_guid, NMO_PLUGIN_BEHAVIOR_DLL) &&
+            !save_plugin_deps_has(protos, proto_count, state->block_guid, NMO_PLUGIN_BEHAVIOR_DLL)) {
+            protos[proto_count++] = (nmo_plugin_dep_t){
+                state->block_guid, NMO_PLUGIN_BEHAVIOR_DLL, 0};
+        }
+    }
+    if (plugin_count + proto_count == 0) {
+        return NMO_OK;
+    }
+
+    /* The loaded list keeps its order; the plugins come before the prototypes, as CK2 lists them */
+    size_t total = (size_t)stored_count + plugin_count + proto_count;
+    if (total > UINT32_MAX) {
+        return SAVE_ERR(NMO_ERR_INVALID_ARGUMENT, "Too many plugin dependencies");
+    }
+    nmo_plugin_dep_t *deps = (nmo_plugin_dep_t *)nmo_arena_alloc(
+        save_scratch(ctx), total * sizeof(nmo_plugin_dep_t), alignof(nmo_plugin_dep_t));
+    if (deps == NULL) {
+        return SAVE_ERR(NMO_ERR_NOMEM, "Plugin dependency allocation failed");
+    }
+    if (stored_count > 0) {
+        memcpy(deps, stored, stored_count * sizeof(nmo_plugin_dep_t));
+    }
+    memcpy(deps + stored_count, plugins, plugin_count * sizeof(nmo_plugin_dep_t));
+    memcpy(deps + stored_count + plugin_count, protos, proto_count * sizeof(nmo_plugin_dep_t));
+    ctx->plugin_deps = deps;
+    ctx->plugin_count = total;
+    return NMO_OK;
+}
+
 static nmo_status_t save_build_header1(nmo_serializer_t *ctx) {
     nmo_log(ctx->logger, NMO_LOG_INFO, "Step 1.7: Building header1 buffer");
 
@@ -1408,16 +1517,9 @@ static nmo_status_t save_build_header1(nmo_serializer_t *ctx) {
     }
 
     /* Build plugin dependencies */
-    {
-        const nmo_file_state_t *dep_fstate = nmo_session_get_file_state(ctx->session);
-        uint32_t stored_plugin_count = dep_fstate ? dep_fstate->plugin_dep_count : 0;
-        nmo_plugin_dep_t *stored_plugin_deps = dep_fstate ? dep_fstate->plugin_deps : NULL;
-
-        if (stored_plugin_count > 0 && stored_plugin_deps == NULL) {
-            return SAVE_ERR(NMO_ERR_INVALID_STATE, "Missing plugin dependencies");
-        }
-        ctx->plugin_deps = stored_plugin_deps;
-        ctx->plugin_count = stored_plugin_count;
+    nmo_status_t deps_result = save_build_plugin_deps(ctx);
+    if (deps_result != NMO_OK) {
+        return deps_result;
     }
 
     /* Build Header1 structure */

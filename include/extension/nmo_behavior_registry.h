@@ -57,6 +57,10 @@ typedef struct nmo_behavior_proto {
        entries; NULL for all the locals, then the settings */
     const uint8_t *local_order;
     uint32_t local_order_count;
+    /* The behavior plugin its DLL declares it under (CKObjectDeclaration::GetPluginIndex): the
+       first behavior plugin info the DLL gives, which a file using the block lists among its
+       plugin dependencies; null when not known */
+    nmo_guid_t plugin_guid;
 } nmo_behavior_proto_t;
 
 typedef int (*nmo_behavior_registry_visitor_fn)(
