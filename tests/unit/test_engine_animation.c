@@ -173,6 +173,7 @@ TEST(engine_animation, single_tcb_scale_key_clamps_and_preserves_unanimated_chan
     engine_fixture_t f;
     fixture_begin_document(&f);
     nmo_3dentity_state_t *entity = fixture_state(&f, f.owner_id);
+    ASSERT_NOT_NULL(entity);
     memset(entity->world_matrix, 0, sizeof(entity->world_matrix));
     entity->world_matrix[1] = -1;
     entity->world_matrix[4] = entity->world_matrix[10] = entity->world_matrix[15] = 1;

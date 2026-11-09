@@ -74,8 +74,9 @@ static inline nmo_object_id_t fixture_create(engine_fixture_t *f, nmo_class_id_t
 
 static inline void *fixture_state(engine_fixture_t *f, nmo_object_id_t id)
 {
-    nmo_object_t *object = nmo_object_repository_find_by_id(f->repo, id);
-    return object != NULL ? nmo_object_get_state(object) : NULL;
+    /* NULL for a missing object; nmo_object_get_state checks, so no inlined NULL branch
+       leaves GCC's fortified memset and memcpy a zero-size destination */
+    return nmo_object_get_state(nmo_object_repository_find_by_id(f->repo, id));
 }
 
 /* A script of the owner with one input; 0 on failure. Before fixture_begin_edit(). */
