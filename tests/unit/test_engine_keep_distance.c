@@ -270,7 +270,7 @@ TEST(engine_keep_distance, loaded_and_copied_constraints_keep_reference_bindings
             for (size_t i = 0; i < count; i++) ids[8+i] = eng_module_id(module,parameters[i]);
             ASSERT_TRUE(ids[2] != g.target); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,10));
             expect_position(host.engine,ids[2],legacy ? (eng_vector_t){2,0,0} : (eng_vector_t){2.4f,1.8f,0});
-            ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(host.engine,ids,8+count,false,copies));
+            ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(host.engine,ids,(int32_t)(8+count),false,copies));
             ASSERT_EQ(copies[1],nmo_engine_entity_parent(host.engine,copies[2])); ASSERT_EQ(copies[2],nmo_engine_entity_parent(host.engine,copies[3]));
             eng_vector_t anchor = legacy ? (eng_vector_t){12,0,0} : (eng_vector_t){10.4f,1.8f,0};
             eng_entity_set_position(host.engine,eng_entity_index(host.engine,copies[4]),&anchor,-1,false);

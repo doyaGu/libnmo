@@ -146,7 +146,7 @@ TEST(engine_keyed, lazy_roots_walk_past_empty_slots_to_standalone_or_character_a
         nmo_ref_t parts[] = {nmo_ref_from_id(0),nmo_ref_from_id(unbound),nmo_ref_from_id(l),nmo_ref_from_id(r)};
         nmo_object_id_t keyed = group(&f, "Global", parts, COUNT(parts), 0);
         nmo_keyedanimation_state_t *state = fixture_state(&f, keyed);
-        state->base.has_character = character;
+        state->base.has_character = (uint8_t)character;
         state->base.character = nmo_ref_from_id(actor);
         fixture_begin_edit(&f);
         fixture_commit(&f, NULL);

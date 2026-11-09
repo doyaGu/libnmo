@@ -375,7 +375,7 @@ TEST(engine_character_controller, loaded_and_copied_controllers_rebind_messages_
             ASSERT_EQ(NMO_OK,nmo_engine_send_message(host.engine,nmo_engine_message_type(host.engine,"Joy_Button1"),ids[0],0));
             ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
             ASSERT_EQ(ids[7],eng_character_active_animation(host.engine,ids[0]));
-            ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(host.engine,ids,object_count,false,copies));
+            ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(host.engine,ids,(int32_t)object_count,false,copies));
             ASSERT_EQ(copies[1],eng_character_root(host.engine,copies[0])); expect_message_table(host.engine,copies[3],g.enhanced);
             ASSERT_EQ(copies[7],eng_character_active_animation(host.engine,copies[0]));
             for (size_t i = 0; i < g.animation_count; i++) {

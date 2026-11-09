@@ -388,7 +388,7 @@ TEST(engine_set_scale, loaded_and_copied_scale_graphs_remap_entities_and_sprites
                 sprite_size(host.engine,ids[1],8,kind == 1 ? 2 : 3);
                 quad(host.engine,ids[1],-1,kind == 1 ? .25f : -1.625f,15,kind == 1 ? 6.25f : 7.375f);
             }
-            ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(host.engine,ids,count,false,copies));
+            ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(host.engine,ids,(int32_t)count,false,copies));
             for (size_t i = 0; i < count; i++) ASSERT_TRUE(copies[i] != 0);
             ASSERT_EQ(copies[1],nmo_engine_entity_parent(host.engine,copies[2]));
             nmo_object_id_t reference = 0; read_value(&host,copies[6],&reference,sizeof(reference)); ASSERT_EQ(copies[1],reference);

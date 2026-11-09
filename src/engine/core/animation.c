@@ -435,7 +435,7 @@ static anim_quat_t anim_tcb_rotation(const nmo_objanim_controller_t *c, float ti
     double elapsed = (double)time - a->time, remaining = (double)b->time - time;
     bool reversed = elapsed > remaining;
     float t = (float)((reversed ? remaining : elapsed) / ((double)b->time - a->time));
-    t = reversed ? anim_ease(t, b->ease_to, a->ease_from) : anim_ease(t, a->ease_from, b->ease_to);
+    t = (float)(reversed ? anim_ease(t, b->ease_to, a->ease_from) : anim_ease(t, a->ease_from, b->ease_to));
     anim_quat_t a_in, a_out, b_in, b_out;
     anim_tcb_tangents(keys, c->key_count, low, &a_in, &a_out);
     anim_tcb_tangents(keys, c->key_count, high, &b_in, &b_out);
