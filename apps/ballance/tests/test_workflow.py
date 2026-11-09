@@ -316,7 +316,7 @@ class WorkflowTests(unittest.TestCase):
             command = run.call_args.args[0]
             self.assertEqual(command[command.index('--steer') + 1], '0,0;10,0@360-1000')
             self.assertEqual(
-                command[command.index('--shot') + 1], f'{folder.resolve()}/preview.png@1100'
+                command[command.index('--shot') + 1], f"{folder.resolve() / 'preview.png'}@1100"
             )
             with self.assertRaisesRegex(ValueError, 'handoff'):
                 watch(level, route, Nmo(), folder, approach=True)
