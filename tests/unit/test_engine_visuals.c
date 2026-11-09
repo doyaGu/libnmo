@@ -1069,6 +1069,104 @@ TEST(engine_visuals, mark_system_draws_after_its_supporting_entity_while_it_rend
     fixture_end(&f);
 }
 
+TEST(engine_visuals, a_box_set_keeps_a_plain_supporting_entity_drawing_marks_out_of_view)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t camera = fixture_create(&f, NMO_CID_CAMERA, "Camera");
+    nmo_camera_state_t *lens = (nmo_camera_state_t *)fixture_state(&f, camera);
+    /* both supports behind the eye: a plain 3D entity and a 3D object, neither with a mesh */
+    nmo_object_id_t plain = fixture_create(&f, NMO_CID_3DENTITY, "Plain");
+    nmo_object_id_t object = fixture_create(&f, NMO_CID_3DOBJECT, "Object");
+    ASSERT_TRUE(lens != NULL && plain != 0 && object != 0);
+    lens->entity.has_entityndata_chunk = 1;
+    lens->projection_type = 1;
+    lens->fov = 1.0f;
+    lens->aspect_width = 4;
+    lens->aspect_height = 3;
+    lens->near_plane = 1.0f;
+    lens->far_plane = 100.0f;
+    const nmo_object_id_t supports[2] = {plain, object};
+    for (int i = 0; i < 2; i++) {
+        nmo_3dentity_state_t *state = (nmo_3dentity_state_t *)fixture_state(&f, supports[i]);
+        state->has_entityndata_chunk = 1;
+        memset(state->world_matrix, 0, sizeof(state->world_matrix));
+        state->world_matrix[0] = state->world_matrix[5] = state->world_matrix[10] = state->world_matrix[15] = 1.0f;
+        state->world_matrix[14] = -10.0f;
+    }
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    for (int i = 0; i < 2; i++) {
+        nmo_object_id_t marks = block_on(&f, GUID_MARK_SYSTEM, i == 0 ? "Plain Marks" : "Object Marks", 0);
+        ASSERT_TRUE(marks != 0);
+        fixture_link(&f, f.script_in, BLOCK_IN(&f, marks, 2), 0);
+        engine_fixture_value_t *setting = &f.values[f.value_count++];
+        setting->param = block_local(&f, marks, 3);
+        memcpy(setting->bytes, &supports[i], sizeof(int32_t));
+        setting->size = sizeof(int32_t);
+    }
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    f.engine->render.camera = camera;
+    eng_show(f.engine, plain, 1);
+    eng_show(f.engine, object, 1);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+
+    /* the plain entity's box is 10000 around it: in view, its marks drawn; the object's origin is
+       behind the eye: culled, no marks */
+    eng_vector_t low, high;
+    ASSERT_TRUE(eng_entity_local_box(f.engine, eng_entity_index(f.engine, plain), &low, &high));
+    ASSERT_FLOAT_EQ(-10000.0f, low.x, 0.0f);
+    ASSERT_FLOAT_EQ(10000.0f, high.z, 0.0f);
+    ASSERT_FALSE(eng_entity_local_box(f.engine, eng_entity_index(f.engine, object), &low, &high));
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    const nmo_engine_draw_t *draw = NULL;
+    ASSERT_EQ(1, primitive_draws(&frame, plain, &draw));
+    ASSERT_EQ(0, primitive_draws(&frame, object, &draw));
+    fixture_end(&f);
+}
+
+TEST(engine_visuals, a_box_set_follows_the_entity_until_another_mesh_takes_it_away)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t material = fixture_create(&f, NMO_CID_MATERIAL, "Material");
+    nmo_object_id_t mesh = 0, other = 0;
+    nmo_object_id_t object = face_object(&f, "Face", material, &mesh);
+    nmo_object_id_t spare = face_object(&f, "Spare", material, &other);
+    ASSERT_TRUE(object != 0 && spare != 0);
+    ((nmo_3dentity_state_t *)fixture_state(&f, object))->world_matrix[12] = 5.0f;
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    int32_t index = eng_entity_index(f.engine, object);
+
+    /* set in the world: kept in the entity's space, so it moves with the entity */
+    const eng_vector_t low = {4, -1, -1}, high = {6, 1, 1};
+    eng_entity_set_user_box(f.engine, index, &low, &high, false);
+    eng_vector_t min, max;
+    ASSERT_TRUE(eng_entity_local_box(f.engine, index, &min, &max));
+    ASSERT_FLOAT_EQ(-1.0f, min.x, 1e-6f);
+    ASSERT_FLOAT_EQ(1.0f, max.x, 1e-6f);
+    const eng_vector_t step = {10, 0, 0};
+    eng_entity_translate(f.engine, index, &step, -1, false);
+    ASSERT_TRUE(eng_entity_world_box(f.engine, index, &min, &max));
+    ASSERT_FLOAT_EQ(14.0f, min.x, 1e-5f);
+    ASSERT_FLOAT_EQ(16.0f, max.x, 1e-5f);
+
+    /* the same mesh keeps it, another takes it away: the mesh's box again (0..1) */
+    ASSERT_TRUE(eng_entity_set_current_mesh(f.engine, object, mesh));
+    ASSERT_TRUE(eng_entity_local_box(f.engine, index, &min, &max));
+    ASSERT_FLOAT_EQ(-1.0f, min.x, 1e-6f);
+    ASSERT_TRUE(eng_entity_set_current_mesh(f.engine, object, other));
+    ASSERT_TRUE(eng_entity_local_box(f.engine, index, &min, &max));
+    ASSERT_FLOAT_EQ(0.0f, min.x, 1e-6f);
+    ASSERT_FLOAT_EQ(1.0f, max.x, 1e-6f);
+    fixture_end(&f);
+}
+
 /* The frame's mesh draws of `object`, up to `max`, in order */
 static int mesh_draws(const nmo_engine_frame_t *frame, nmo_object_id_t object, const nmo_engine_draw_t **out, int max)
 {
@@ -1576,6 +1674,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_visuals, mark_system_draws_single_marks_that_fade_and_die);
     REGISTER_TEST(engine_visuals, mark_system_joins_continuous_marks_into_a_band);
     REGISTER_TEST(engine_visuals, mark_system_draws_after_its_supporting_entity_while_it_renders);
+    REGISTER_TEST(engine_visuals, a_box_set_keeps_a_plain_supporting_entity_drawing_marks_out_of_view);
+    REGISTER_TEST(engine_visuals, a_box_set_follows_the_entity_until_another_mesh_takes_it_away);
     REGISTER_TEST(engine_visuals, vertex_render_draws_a_sprite_at_each_vertex_instead_of_the_mesh);
     REGISTER_TEST(engine_visuals, motion_blur_draws_the_mesh_faded_along_its_last_matrices);
     REGISTER_TEST(engine_visuals, planar_reflection_mirrors_reflected_objects_inside_the_plane);

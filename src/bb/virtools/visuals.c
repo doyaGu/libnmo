@@ -2465,6 +2465,11 @@ static int bb_mark_system(blk_t *b)
     }
     nmo_object_id_t frame = (nmo_object_id_t)get_local_int(b, 3, 0);
     if (frame != 0) {
+        /* a plain 3D entity gets a box of 10000 around it, so that it is never culled */
+        if (nmo_engine_object_class(engine, frame) == NMO_CID_3DENTITY) {
+            const eng_vector_t low = {-10000.0f, -10000.0f, -10000.0f}, high = {10000.0f, 10000.0f, 10000.0f};
+            eng_entity_set_user_box(engine, eng_entity_index(engine, frame), &low, &high, true);
+        }
         eng_entity_callback_t callback = {frame, ENG_ENTITY_POST_RENDER, draw_marks_after, b->node, true};
         eng_add_entity_callback(engine, &callback);
     } else {

@@ -2486,6 +2486,10 @@ bool eng_entity_set_current_mesh(nmo_engine_t *engine, nmo_object_id_t entity, n
         (mesh != 0 && (mesh_module == NULL || mesh_module->repo != module->repo))) {
         return false;
     }
+    /* RCK3dEntity::SetCurrentMesh: another mesh takes the box set away */
+    if (mesh != 0 && nmo_ref_runtime_id(&state->current_mesh) != local) {
+        eng_entity_set_user_box(engine, eng_entity_index(engine, entity), NULL, NULL, false);
+    }
     state->current_mesh = nmo_ref_from_id(local);
     return true;
 }

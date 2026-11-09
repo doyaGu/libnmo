@@ -9,6 +9,7 @@
 #include "type/nmo_param_guids.h"
 #include "type/nmo_type_query.h"
 #include "../../src/engine/engine_internal.h"
+#include "../../src/engine/engine_transform.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -516,6 +517,21 @@ TEST(engine_mesh_modifiers, skin_join_makes_the_owner_follow_the_joined_vertices
     ASSERT_FLOAT_EQ(5.0f, vertex_of(&f, skin_mesh, 0).y, 1e-6f);
     ASSERT_FLOAT_EQ(1.0f, vertex_of(&f, skin_mesh, 3).x, 1e-6f);
     ASSERT_FLOAT_EQ(5.0f, vertex_of(&f, skin_mesh, 3).y, 1e-6f);
+
+    /* The skin all outside the last frame and the bone not: the skin takes the bone's world box
+       (SetBoundingBox), which its next join takes back */
+    int32_t skin_at = eng_entity_index(f.engine, skin), bone_at = eng_entity_index(f.engine, bone);
+    f.engine->entities.data[skin_at].frustum = ENG_FRUSTUM_OUTSIDE;
+    f.engine->entities.data[bone_at].frustum = ENG_FRUSTUM_INSIDE;
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    eng_vector_t low, high, bone_low, bone_high;
+    ASSERT_TRUE(f.engine->entities.data[skin_at].user_box);
+    ASSERT_TRUE(eng_entity_world_box(f.engine, skin_at, &low, &high));
+    ASSERT_TRUE(eng_entity_world_box(f.engine, bone_at, &bone_low, &bone_high));
+    ASSERT_FLOAT_EQ(bone_low.y, low.y, 1e-5f);
+    ASSERT_FLOAT_EQ(bone_high.x, high.x, 1e-5f);
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_FALSE(f.engine->entities.data[skin_at].user_box);
     fixture_end(&f);
 }
 

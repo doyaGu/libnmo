@@ -41,6 +41,9 @@ typedef struct eng_entity {
     bool destroyed;
     /* CKSceneGraphNode's frustum flags (ENG_FRUSTUM_*), as the last render or test left them */
     uint8_t frustum;
+    /* CK3dEntity::SetBoundingBox (VX_MOVEABLE_USERBOX): the box set, in the entity's space */
+    bool user_box;
+    eng_vector_t user_min, user_max;
     /* The world matrix at the start of the frame, saved while CK_3DENTITY_UPDATELASTFRAME is set */
     bool has_last_frame;
     eng_matrix_t last_frame;
@@ -148,9 +151,15 @@ bool eng_entity_world_box(nmo_engine_t *engine, int32_t index, eng_vector_t *min
 /* World bounds of the entity and its descendants, excluding empty geometry. */
 bool eng_entity_hierarchical_box(nmo_engine_t *engine, int32_t root, eng_vector_t *min,
     eng_vector_t *max);
+/* CK3dEntity::SetBoundingBox: the entity's box from now on, given in its own space (`local`) or
+ * the world's (kept in its own as VxBbox::TransformFrom the inverse world matrix has it); `min`
+ * NULL takes it away. The box queries, the frustum tests and a meshless entity's radius use it;
+ * a new current mesh takes it away. */
+void eng_entity_set_user_box(nmo_engine_t *engine, int32_t index, const eng_vector_t *min,
+    const eng_vector_t *max, bool local);
 /* RCK3dEntity::IsInViewFrustrum through a camera's `view_projection`
- * (eng_camera_view_projection): its current mesh's box (a sprite's rectangle), or its origin when
- * it has no mesh; marks it inside when all of it is, outside when none of it is, never clearing a
+ * (eng_camera_view_projection): its box set (SetBoundingBox), else its current mesh's box (a
+ * sprite's rectangle), or its origin when it has no mesh; marks it inside when all of it is, outside when none of it is, never clearing a
  * mark. False, unmarked, for a mesh without vertices. */
 bool eng_entity_in_view_frustum(nmo_engine_t *engine, int32_t index,
     const eng_matrix_t *view_projection);

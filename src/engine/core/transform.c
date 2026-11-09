@@ -904,8 +904,9 @@ float eng_entity_radius(nmo_engine_t *engine, int32_t index)
 }
 
 /*
- * The local box (GetBoundingBox(TRUE)): the sprite's own box or the current
- * mesh's vertices' extent; all zero, and false, without either.
+ * The local box (GetBoundingBox(TRUE)): the box set (SetBoundingBox), else the
+ * sprite's own box or the current mesh's vertices' extent; all zero, and false,
+ * without any.
  *
  * The world box (UpdateBox): the mesh's local box (its vertices' extent)
  * through the world matrix as VxBbox::TransformFrom has it; false without a
@@ -914,6 +915,12 @@ float eng_entity_radius(nmo_engine_t *engine, int32_t index)
 bool eng_entity_local_box(nmo_engine_t *engine, int32_t index, eng_vector_t *min,
                           eng_vector_t *max)
 {
+    const eng_entity_t *entity = eng_entity_at(engine, index);
+    if (entity->user_box) {
+        *min = entity->user_min;
+        *max = entity->user_max;
+        return true;
+    }
     const eng_sprite3d_t *sprite = eng_sprite3d(engine,eng_entity_at(engine,index)->id);
     if (sprite != NULL) {
         *min = (eng_vector_t){sprite->min.x,sprite->min.y,0};
@@ -940,16 +947,13 @@ bool eng_entity_local_box(nmo_engine_t *engine, int32_t index, eng_vector_t *min
     return mesh != NULL;
 }
 
-bool eng_entity_world_box(nmo_engine_t *engine, int32_t index, eng_vector_t *min,
-                          eng_vector_t *max)
+/* VxBbox::TransformFrom: the box's centre through `m`, its half extents through |m| (an inverted
+   box comes out the right way round) */
+static void eng_box_transform(const eng_matrix_t *m, const eng_vector_t *min, const eng_vector_t *max,
+                              eng_vector_t *out_min, eng_vector_t *out_max)
 {
-    eng_vector_t local_min, local_max;
-    if (!eng_entity_local_box(engine, index, &local_min, &local_max)) {
-        return false;
-    }
-    const float low[3] = {local_min.x, local_min.y, local_min.z};
-    const float high[3] = {local_max.x, local_max.y, local_max.z};
-    const eng_matrix_t *m = &eng_entity_at(engine, index)->world;
+    const float low[3] = {min->x, min->y, min->z};
+    const float high[3] = {max->x, max->y, max->z};
     eng_vector_t center = {(low[0] + high[0]) * 0.5f, (low[1] + high[1]) * 0.5f,
                            (low[2] + high[2]) * 0.5f};
     eng_vector_t c;
@@ -960,9 +964,41 @@ bool eng_entity_world_box(nmo_engine_t *engine, int32_t index, eng_vector_t *min
                    fabsf((high[2] - low[2]) * m->m[2][k])) *
                   0.5f;
     }
-    *min = (eng_vector_t){c.x - half[0], c.y - half[1], c.z - half[2]};
-    *max = (eng_vector_t){c.x + half[0], c.y + half[1], c.z + half[2]};
+    *out_min = (eng_vector_t){c.x - half[0], c.y - half[1], c.z - half[2]};
+    *out_max = (eng_vector_t){c.x + half[0], c.y + half[1], c.z + half[2]};
+}
+
+bool eng_entity_world_box(nmo_engine_t *engine, int32_t index, eng_vector_t *min,
+                          eng_vector_t *max)
+{
+    eng_vector_t local_min, local_max;
+    if (!eng_entity_local_box(engine, index, &local_min, &local_max)) {
+        return false;
+    }
+    eng_box_transform(&eng_entity_at(engine, index)->world, &local_min, &local_max, min, max);
     return true;
+}
+
+void eng_entity_set_user_box(nmo_engine_t *engine, int32_t index, const eng_vector_t *min,
+    const eng_vector_t *max, bool local)
+{
+    if (index < 0 || (size_t)index >= engine->entities.count) {
+        return;
+    }
+    eng_entity_t *entity = &engine->entities.data[index];
+    if (min == NULL) {
+        entity->user_box = false;
+        return;
+    }
+    if (local) {
+        entity->user_min = *min;
+        entity->user_max = *max;
+    } else {
+        eng_matrix_t inverse;
+        eng_matrix_inverse(&inverse, &entity->world);
+        eng_box_transform(&inverse, min, max, &entity->user_min, &entity->user_max);
+    }
+    entity->user_box = true;
 }
 
 bool eng_entity_hierarchical_box(nmo_engine_t *engine, int32_t root, eng_vector_t *min,
@@ -1011,7 +1047,10 @@ bool eng_entity_in_view_frustum(nmo_engine_t *engine, int32_t index,
     int visibility;
     nmo_mesh_state_t runtime;
     const nmo_mesh_state_t *mesh = eng_entity_mesh(engine, index, NULL, &runtime);
-    if (eng_sprite3d(engine, engine->entities.data[index].id) != NULL || mesh != NULL) {
+    if (engine->entities.data[index].user_box) {
+        visibility = eng_box_visibility(&matrix, &engine->entities.data[index].user_min,
+                                        &engine->entities.data[index].user_max, NULL);
+    } else if (eng_sprite3d(engine, engine->entities.data[index].id) != NULL || mesh != NULL) {
         if (mesh != NULL && mesh->vertex_count == 0 && eng_sprite3d(engine, engine->entities.data[index].id) == NULL) {
             return false;
         }

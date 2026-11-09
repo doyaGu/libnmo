@@ -1428,6 +1428,7 @@ static void skin_join_render(nmo_engine_t *engine, nmo_object_id_t entity, int32
     free(meshes);
     eng_mesh_build_face_normals(engine, copy);
     eng_mesh_vertices_moved(engine, copy, false);
+    eng_entity_set_user_box(engine, index, NULL, NULL, false); /* the box the block may have set */
 }
 
 static void skin_join_attach(blk_t *b, bool on)
@@ -1526,9 +1527,9 @@ static int cb_skin_join(blk_t *b, uint32_t message)
 /*
  * Skin Join: On, the owner's mesh vertices follow the joined objects' vertices
  * they were matched with (a pre render callback, so only while the owner is in
- * view); Off stops. The DLL hands a joined object's box in view to an owner
- * that was all outside (SetBoundingBox) so it renders again; the engine has no
- * user boxes, so that is left out.
+ * view, which takes back any box set); Off stops. While joining, an owner all
+ * outside the last frame's view takes the world box of the first joined object
+ * that was not (SetBoundingBox), so that it renders again.
  */
 static int bb_skin_join(blk_t *b)
 {
@@ -1544,6 +1545,27 @@ static int bb_skin_join(blk_t *b)
         const int32_t off = 0;
         nmo_engine_block_set_local_value(b, 2, &off, sizeof(off));
         return NMO_ENGINE_BR_OK;
+    }
+    nmo_engine_t *engine = b->engine;
+    int32_t owner = eng_entity_index(engine, nmo_engine_block_owner(b));
+    if (owner >= 0 && eng_entity_all_outside_frustum(engine, owner)) {
+        const eng_node_t *block = &engine->nodes.data[b->node];
+        eng_param_t *joined = eng_node_param(engine, block->first_local, block->local_count, 0);
+        size_t objects = joined != NULL && joined->data != NULL ? joined->size / sizeof(nmo_object_id_t) : 0;
+        for (size_t c = 0; c < objects; c++) {
+            nmo_object_id_t object = 0;
+            memcpy(&object, joined->data + c * sizeof(object), sizeof(object));
+            int32_t at = eng_entity_index(engine, object);
+            if (at >= 0 && !eng_entity_all_outside_frustum(engine, at)) {
+                /* GetBoundingBox: a meshless entity's world box is its position */
+                eng_vector_t low, high;
+                if (!eng_entity_world_box(engine, at, &low, &high)) {
+                    low = high = eng_entity_position(engine, at, -1);
+                }
+                eng_entity_set_user_box(engine, owner, &low, &high, false);
+                break;
+            }
+        }
     }
     return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
 }

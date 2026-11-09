@@ -1,4 +1,6 @@
 #include "engine_fixture.h"
+#include "../../src/engine/engine_internal.h"
+#include "../../src/engine/engine_transform.h"
 
 #include "engine/nmo_engine_render.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
@@ -101,11 +103,16 @@ TEST(engine_media, particle_system_exits_off_once_its_particles_died)
     fixture_commit(&f, NULL);
 
     ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    int32_t emitter = eng_entity_index(f.engine, f.owner_id);
+    eng_vector_t low, high;
+    ASSERT_FALSE(eng_entity_local_box(f.engine, emitter, &low, &high)); /* no mesh, no box */
     uint32_t frames = 0;
     while (runs(&f, exit_off) == 0 && frames < 40) {
         ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 25.0f));
         frames++;
     }
+    /* each update with particles sets the emitter's box (SetBoundingBox) */
+    ASSERT_TRUE(eng_entity_local_box(f.engine, emitter, &low, &high));
     ASSERT_EQ(1u, runs(&f, exit_on));
     ASSERT_EQ(1u, runs(&f, exit_off));
     /* The first frame emits (Emission Delay 200 ms, so only then); those particles live

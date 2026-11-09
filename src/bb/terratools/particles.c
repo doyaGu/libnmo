@@ -346,9 +346,15 @@ static void add_trail(blk_t *b, eng_emitter_t *e, const emitter_inputs_t *in, fl
     e->trail_pos[0] = here.x, e->trail_pos[1] = here.y, e->trail_pos[2] = here.z;
 }
 
-/* ParticleEmitter::UpdateParticles, without the interactors and deflectors */
-static void update_particles(eng_emitter_t *e, const emitter_inputs_t *in, float delta)
+/* ParticleEmitter::UpdateParticles, without the interactors and deflectors: then the emitter's
+   box (SetBoundingBox, in the world) is where its living particles were and went, which an emitter
+   whose particles all died leaves inverted */
+static void update_particles(nmo_engine_t *engine, eng_emitter_t *e, const emitter_inputs_t *in, float delta)
 {
+    if (e->particles.count == 0) {
+        return; /* no particles yet: nothing to do */
+    }
+    eng_vector_t low = {100000.0f, 100000.0f, 100000.0f}, high = {-100000.0f, -100000.0f, -100000.0f};
     size_t kept = 0;
     for (size_t i = 0; i < e->particles.count; i++) {
         eng_particle_t *p = &e->particles.data[i];
@@ -357,8 +363,14 @@ static void update_particles(eng_emitter_t *e, const emitter_inputs_t *in, float
         }
         float dt = p->life < delta ? p->life : delta;
         p->angle += p->dangle * dt;
-        for (int c = 0; c < 3; c++) {
-            p->pos[c] += p->dir[c] * dt;
+        for (int moved = 0; moved < 2; moved++) {
+            low = (eng_vector_t){p->pos[0] < low.x ? p->pos[0] : low.x, p->pos[1] < low.y ? p->pos[1] : low.y,
+                                 p->pos[2] < low.z ? p->pos[2] : low.z};
+            high = (eng_vector_t){high.x < p->pos[0] ? p->pos[0] : high.x, high.y < p->pos[1] ? p->pos[1] : high.y,
+                                  high.z < p->pos[2] ? p->pos[2] : high.z};
+            for (int c = 0; moved == 0 && c < 3; c++) {
+                p->pos[c] += p->dir[c] * dt;
+            }
         }
         if (in->evolutions & PE_COLOR) {
             for (int c = 0; c < 4; c++) {
@@ -394,6 +406,7 @@ static void update_particles(eng_emitter_t *e, const emitter_inputs_t *in, float
         e->particles.data[kept++] = *p;
     }
     e->particles.count = kept;
+    eng_entity_set_user_box(engine, eng_entity_index(engine, e->entity), &low, &high, false);
 }
 
 /*
@@ -466,7 +479,7 @@ static int bb_particle_system(blk_t *b)
                     add_particles(b, e, &in, shape);
                 }
             }
-            update_particles(e, &in, delta);
+            update_particles(b->engine, e, &in, delta);
             nmo_engine_block_set_local_value(b, 2, &emission_time, sizeof(emission_time));
         }
     }
