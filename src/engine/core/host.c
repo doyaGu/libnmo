@@ -18,6 +18,10 @@
 
 void eng_free_host(nmo_engine_t *engine)
 {
+    eng_clear_player_messages(engine);
+    free(engine->host.messages.data);
+    engine->host.messages.data = NULL;
+    engine->host.messages.capacity = 0;
     for (size_t i = 0; i < engine->host.registry.count; i++) {
         free(engine->host.registry.data[i].section);
         free(engine->host.registry.data[i].name);
@@ -172,6 +176,26 @@ const char *eng_registry_value(nmo_engine_t *engine, const char *section, const 
     return entry != NULL ? entry->value : NULL;
 }
 
+const char *nmo_engine_registry_value(const nmo_engine_t *engine, const char *section,
+                                     const char *name)
+{
+    return engine != NULL ? eng_registry_value((nmo_engine_t *)engine, section, name) : NULL;
+}
+
+bool eng_registry_has_key(nmo_engine_t *engine, const char *section)
+{
+    size_t length = section != NULL ? section_length(section) : 0;
+    for (size_t i = 0; section != NULL && i < engine->host.registry.count; i++) {
+        const char *key = engine->host.registry.data[i].section;
+        size_t key_length = strlen(key);
+        if (same_text(key, key_length < length ? key_length : length, section, length) &&
+            (key_length == length || key[length] == '\\')) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /* VxConfig reads a DWORD value; false when the value is not a number. */
 bool eng_registry_int(nmo_engine_t *engine, const char *section, const char *name,
                       int32_t *out)
@@ -277,4 +301,52 @@ const char *nmo_engine_path(const nmo_engine_t *engine, int32_t category, int32_
         return NULL;
     }
     return engine->host.paths[category].data[index];
+}
+
+/* ============================================================================
+ * The player's window
+ * ============================================================================ */
+
+void eng_post_player_message(nmo_engine_t *engine, uint32_t message, int32_t param, int32_t param2,
+                             const char *text)
+{
+    char *copy = text != NULL ? eng_text_copy(text, strlen(text)) : NULL;
+    nmo_engine_player_message_t *slot = NULL;
+    if ((text != NULL && copy == NULL) || !ENG_VEC_PUSH(engine->host.messages, slot)) {
+        free(copy);
+        return;
+    }
+    *slot = (nmo_engine_player_message_t){message, param, param2, copy};
+}
+
+void eng_clear_player_messages(nmo_engine_t *engine)
+{
+    for (size_t i = 0; i < engine->host.messages.count; i++) {
+        free((char *)engine->host.messages.data[i].text);
+    }
+    engine->host.messages.count = 0;
+}
+
+int32_t nmo_engine_player_message_count(const nmo_engine_t *engine)
+{
+    return engine != NULL ? (int32_t)engine->host.messages.count : 0;
+}
+
+bool nmo_engine_player_message(const nmo_engine_t *engine, int32_t index,
+                               nmo_engine_player_message_t *out)
+{
+    if (engine == NULL || index < 0 || (size_t)index >= engine->host.messages.count) {
+        return false;
+    }
+    if (out != NULL) {
+        *out = engine->host.messages.data[index];
+    }
+    return true;
+}
+
+void nmo_engine_set_window_activated(nmo_engine_t *engine)
+{
+    if (engine != NULL) {
+        engine->host.window_activated = true;
+    }
 }

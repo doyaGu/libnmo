@@ -30,6 +30,8 @@ typedef struct eng_host {
     char *current_directory;
     ENG_VEC(char *) paths[ENG_PATH_CATEGORIES]; /* CKPathManager: bitmap, data and sound paths */
     bool exit_requested; /* TT Exit to System posted TT_PLAYER_COMMAND_EXIT_TO_SYSTEM */
+    bool window_activated; /* the player saw WM_ACTIVATE (InterfaceManager's flag) */
+    ENG_VEC(nmo_engine_player_message_t) messages; /* posted this frame; texts are owned */
 } eng_host_t;
 
 /* core/host.c */
@@ -44,6 +46,13 @@ const char *eng_registry_value(nmo_engine_t *engine, const char *section, const 
 /* VxConfig reads a DWORD value; false when the value is not a number. */
 bool eng_registry_int(nmo_engine_t *engine, const char *section, const char *name, int32_t *out);
 bool eng_registry_float(nmo_engine_t *engine, const char *section, const char *name, float *out);
+/* RegOpenKeyEx: a value has that key or a key under it */
+bool eng_registry_has_key(nmo_engine_t *engine, const char *section);
+/* PostMessage to the player's window; `text` is copied */
+void eng_post_player_message(nmo_engine_t *engine, uint32_t message, int32_t param, int32_t param2,
+                             const char *text);
+/* The messages of the frame before go */
+void eng_clear_player_messages(nmo_engine_t *engine);
 /* The environment variable of that name; NULL when the host set none */
 eng_registry_value_t *eng_environment_find(nmo_engine_t *engine, const char *name);
 

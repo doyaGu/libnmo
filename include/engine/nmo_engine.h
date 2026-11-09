@@ -352,6 +352,42 @@ NMO_API const char *nmo_engine_path(const nmo_engine_t *engine, int32_t category
 NMO_API bool nmo_engine_exit_requested(const nmo_engine_t *engine);
 
 /**
+ * A registry value as blocks left it (the host's, or one a TT registry block
+ * wrote), as text; NULL when there is none. Keys and names compare as
+ * nmo_engine_set_registry_value() compares them.
+ */
+NMO_API const char *nmo_engine_registry_value(const nmo_engine_t *engine, const char *section,
+                                              const char *name);
+
+/*
+ * The messages the TT Interface Manager blocks post to the player's window
+ * (TT_InterfaceManager_RT's TT_MSG_*): what the player does with them is the
+ * host's.
+ */
+#define NMO_ENGINE_PLAYER_NO_GAMEINFO 0x5F7u /* param: the block's number, param2: 1 for arrays */
+#define NMO_ENGINE_PLAYER_CMO_RESTART 0x5F8u
+#define NMO_ENGINE_PLAYER_CMO_LOAD 0x5F9u    /* text: the CMO's name */
+#define NMO_ENGINE_PLAYER_LIMIT_FPS 0x5FCu   /* param: the frame rate */
+
+typedef struct nmo_engine_player_message {
+    uint32_t message;
+    int32_t param;  /* WPARAM */
+    int32_t param2; /* LPARAM */
+    const char *text; /* NULL for none */
+} nmo_engine_player_message_t;
+
+/** The messages posted during the last frame, in order: their count, and message `index`. */
+NMO_API int32_t nmo_engine_player_message_count(const nmo_engine_t *engine);
+NMO_API bool nmo_engine_player_message(const nmo_engine_t *engine, int32_t index,
+                                       nmo_engine_player_message_t *out);
+
+/**
+ * Tell the engine the player's window was activated (WM_ACTIVATE): TT Window
+ * Activate? reports it once.
+ */
+NMO_API void nmo_engine_set_window_activated(nmo_engine_t *engine);
+
+/**
  * Run one frame of `delta_ms` milliseconds. A failure selected by `fail_on`
  * returns NMO_ERR_VALIDATION_FAILED and is available through nmo_engine_failure().
  * The failed frame counts toward frame/time; later steps return the same error

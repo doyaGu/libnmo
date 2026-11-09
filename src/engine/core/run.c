@@ -609,6 +609,7 @@ nmo_status_t nmo_engine_step(nmo_engine_t *engine, float delta_ms)
     engine->profile.last.frame_time = delta_ms;
     memset(&engine->profile.frame, 0, sizeof(engine->profile.frame));
     eng_input_begin_frame(engine);
+    eng_clear_player_messages(engine);
     eng_sounds_begin_frame(engine);
     if (engine->scene_launch) {
         eng_relaunch_level_scene(engine); /* CKLevel::PreProcess */
