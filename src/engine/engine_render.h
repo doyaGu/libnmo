@@ -190,6 +190,9 @@ typedef struct eng_transparent {
 
 typedef struct eng_render {
     int32_t screen_mode;      /* the render context's mode, of the engine's driver's list */
+    /* The eye's world matrix of the scene being drawn, for render callbacks that turn things to it;
+       NULL outside eng_draw_scene */
+    const float *scene_view;
     /* The transparent objects of the main frame, and the frames drawn so far */
     ENG_VEC(eng_transparent_t) transparents;
     uint32_t transparent_frame;

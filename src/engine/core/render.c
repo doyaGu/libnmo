@@ -3370,6 +3370,8 @@ static nmo_status_t eng_draw_scene(nmo_engine_t *engine, const nmo_engine_frame_
     eng_render_t *render = &engine->render;
     float width = (float)frame->width, height = (float)frame->height;
     eng_render_args_t args = {frame->view, width, height, 0, pass};
+    const float *outer_view = render->scene_view;
+    render->scene_view = frame->view;
     if (frame->render_options & CK_RENDER_BACKGROUNDSPRITES) {
         eng_render_2d_root(engine, true, width, height);
     }
@@ -3394,11 +3396,13 @@ static nmo_status_t eng_draw_scene(nmo_engine_t *engine, const nmo_engine_frame_
     eng_walk_nodes(engine, -1, &walk, false);
     if (walk.status != NMO_OK) {
         free(walk.last.data);
+        render->scene_view = outer_view;
         return walk.status;
     }
     eng_managers_render(engine, ENG_RENDER_SCENE, &args);
     nmo_status_t status = eng_render_transparents(engine, frame, pass, walk.last.data, walk.last.count);
     free(walk.last.data);
+    render->scene_view = outer_view;
     if (status != NMO_OK) {
         return status;
     }

@@ -139,8 +139,6 @@ eng_tt_t *eng_tt(const nmo_engine_t *engine);
 void eng_free_tt_interface(nmo_engine_t *engine);
 
 /* particles.c */
-/* The particles of the emitters shown, as their render modes draw them */
-void eng_draw_particles(nmo_engine_t *engine, const float view[16]);
 void eng_free_emitters(nmo_engine_t *engine);
 
 /* gravity.c */

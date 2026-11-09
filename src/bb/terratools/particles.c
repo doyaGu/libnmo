@@ -17,6 +17,7 @@
 #include "terratools.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
+#include "object/nmo_object_enum_defs.h"
 #include "type/nmo_object_guids.h"
 #include "type/nmo_type_query.h"
 
@@ -1422,6 +1423,14 @@ static int bb_particle_system(blk_t *b)
  */
 static int cb_particle_system(blk_t *b, uint32_t message)
 {
+    if (message == NMO_ENGINE_MSG_LOAD) {
+        /* CKM_BEHAVIORNEWSCENE: the owner renders last, its particles among the transparent objects
+           (the engine sends no new scene message: the load is the nearest) */
+        int32_t owner = eng_entity_index(b->engine, nmo_engine_block_owner(b));
+        if (owner >= 0) {
+            b->engine->entities.data[owner].moveable_flags |= VX_MOVEABLE_RENDERLAST;
+        }
+    }
     eng_emitter_t *e = emitter_find(b);
     if (e == NULL) {
         return NMO_ENGINE_BR_OK;
@@ -1519,104 +1528,102 @@ static void draw_oriented_sprite(nmo_engine_t *engine, const eng_particle_t *p, 
  * Sprite (and the other sprite modes) a quad, each facing the eye and turned
  * by its angle; frames of a texture grid as its animation.
  */
-void eng_draw_particles(nmo_engine_t *engine, const float view[16])
+/* RenderParticles_*: the emitter's particles as its render mode draws them (its entity's post render
+   callback, so they draw where the entity renders, a render-last one among the transparent objects) */
+static void draw_emitter(nmo_engine_t *engine, const eng_emitter_t *e, const float view[16])
 {
     eng_render_t *render = &engine->render;
     const float right[3] = {view[0], view[1], view[2]}, up[3] = {view[4], view[5], view[6]};
     const float eye_z[3] = {view[8], view[9], view[10]};
-    const eng_tt_t *tt = eng_tt(engine);
-    for (size_t i = 0; i < tt->emitters.count; i++) {
-        const eng_emitter_t *e = &tt->emitters.data[i];
-        int32_t entity = e->entity != 0 ? eng_entity_index(engine, e->entity) : -1;
-        if (!e->shown || e->particles.count == 0 || entity < 0 || !eng_in_scene(engine, e->entity) ||
-            !nmo_engine_object_is_visible(engine, e->entity)) {
+    int32_t entity = e->entity != 0 ? eng_entity_index(engine, e->entity) : -1;
+    if (!e->shown || e->particles.count == 0 || entity < 0 || !eng_in_scene(engine, e->entity) ||
+        !nmo_engine_object_is_visible(engine, e->entity)) {
+        return;
+    }
+    bool line = e->render_mode == PR_LINE;
+    bool fast = e->render_mode == PR_FSPRITE;
+    float step = 1.0f;
+    int grid = 0;
+    if (e->frame_count > 1) {
+        grid = 1 + (int)sqrtf((float)(e->frame_count - 1));
+        step = 1.0f / (float)grid;
+    }
+    int32_t first = (int32_t)render->vertices.count;
+    for (size_t k = 0; k < e->particles.count; k++) {
+        const eng_particle_t *p = &e->particles.data[k];
+        if (line) {
+            draw_line(engine, p);
             continue;
         }
-        bool line = e->render_mode == PR_LINE;
-        bool fast = e->render_mode == PR_FSPRITE;
-        float step = 1.0f;
-        int grid = 0;
-        if (e->frame_count > 1) {
-            grid = 1 + (int)sqrtf((float)(e->frame_count - 1));
-            step = 1.0f / (float)grid;
+        float u0 = 0.0f, v0 = 0.0f;
+        if (grid > 0) {
+            u0 = (float)(p->frame % grid) * step;
+            v0 = (float)(p->frame / grid) * step;
         }
-        int32_t first = (int32_t)render->vertices.count;
-        for (size_t k = 0; k < e->particles.count; k++) {
-            const eng_particle_t *p = &e->particles.data[k];
-            if (line) {
-                draw_line(engine, p);
-                continue;
-            }
-            float u0 = 0.0f, v0 = 0.0f;
-            if (grid > 0) {
-                u0 = (float)(p->frame % grid) * step;
-                v0 = (float)(p->frame / grid) * step;
-            }
-            if (e->render_mode == PR_OSPRITE) {
-                draw_oriented_sprite(engine, p, eye_z, u0, v0, step);
-                continue;
-            }
-            float cr[3], cu[3];
-            float ca = cosf(p->angle), sa = sinf(p->angle);
-            for (int c = 0; c < 3; c++) {
-                float r = right[c] * p->size * 0.5f, u = up[c] * p->size * 0.5f;
-                cr[c] = p->angle != 0.0f ? r * ca - u * sa : r;
-                cu[c] = p->angle != 0.0f ? r * sa + u * ca : u;
-            }
-            uint32_t color = particle_color(p->color);
-            float a[3], bb[3], c3[3];
-            for (int c = 0; c < 3; c++) {
-                a[c] = p->pos[c] + cu[c];
-                bb[c] = p->pos[c] + cr[c] - cu[c];
-                c3[c] = p->pos[c] - cr[c] - cu[c];
-            }
-            if (fast) {
-                push_vertex(engine, a, u0 + step * 0.5f, v0, color);
-                push_vertex(engine, bb, u0 + step, v0 + step, color);
-                push_vertex(engine, c3, u0, v0 + step, color);
-                continue;
-            }
-            float tl[3], tr[3], br[3], bl[3];
-            for (int c = 0; c < 3; c++) {
-                tl[c] = p->pos[c] - cr[c] + cu[c];
-                tr[c] = p->pos[c] + cr[c] + cu[c];
-                br[c] = p->pos[c] + cr[c] - cu[c];
-                bl[c] = p->pos[c] - cr[c] - cu[c];
-            }
-            push_vertex(engine, tl, u0, v0, color);
-            push_vertex(engine, tr, u0 + step, v0, color);
-            push_vertex(engine, br, u0 + step, v0 + step, color);
-            push_vertex(engine, tl, u0, v0, color);
-            push_vertex(engine, br, u0 + step, v0 + step, color);
-            push_vertex(engine, bl, u0, v0 + step, color);
+        if (e->render_mode == PR_OSPRITE) {
+            draw_oriented_sprite(engine, p, eye_z, u0, v0, step);
+            continue;
         }
-        nmo_engine_draw_t *draw = eng_render_push(engine);
-        if (draw == NULL) {
-            return;
+        float cr[3], cu[3];
+        float ca = cosf(p->angle), sa = sinf(p->angle);
+        for (int c = 0; c < 3; c++) {
+            float r = right[c] * p->size * 0.5f, u = up[c] * p->size * 0.5f;
+            cr[c] = p->angle != 0.0f ? r * ca - u * sa : r;
+            cu[c] = p->angle != 0.0f ? r * sa + u * ca : u;
         }
-        draw->kind = line ? NMO_ENGINE_DRAW_LINES : NMO_ENGINE_DRAW_TRIANGLES;
-        draw->object = e->entity;
-        draw->first_vertex = first;
-        draw->vertex_count = (int32_t)render->vertices.count - first;
-        draw->source_blend = e->source_blend;
-        draw->dest_blend = e->dest_blend;
-        if (line) {
-            /* no texture; blending unless the destination factor is zero */
-            draw->blend = e->dest_blend != VXBLEND_ZERO;
-        } else {
-            draw->texture = e->texture;
-            draw->alpha_test = eng_texture_keyed(engine, e->texture);
-            /* SetState: no blending for an opaque destination factor */
-            draw->blend = !(e->dest_blend == VXBLEND_ZERO &&
-                            (e->source_blend == VXBLEND_SRCALPHA || e->source_blend == VXBLEND_SRCCOLOR ||
-                             e->source_blend == VXBLEND_ONE));
+        uint32_t color = particle_color(p->color);
+        float a[3], bb[3], c3[3];
+        for (int c = 0; c < 3; c++) {
+            a[c] = p->pos[c] + cu[c];
+            bb[c] = p->pos[c] + cr[c] - cu[c];
+            c3[c] = p->pos[c] - cr[c] - cu[c];
         }
-        draw->transparent = true;
-        const float *center4 = engine->entities.data[entity].world.m[3];
-        eng_vector_t center = {center4[0], center4[1], center4[2]};
-        draw->world[0] = draw->world[5] = draw->world[10] = draw->world[15] = 1.0f;
-        draw->world[12] = center.x, draw->world[13] = center.y, draw->world[14] = center.z;
+        if (fast) {
+            push_vertex(engine, a, u0 + step * 0.5f, v0, color);
+            push_vertex(engine, bb, u0 + step, v0 + step, color);
+            push_vertex(engine, c3, u0, v0 + step, color);
+            continue;
+        }
+        float tl[3], tr[3], br[3], bl[3];
+        for (int c = 0; c < 3; c++) {
+            tl[c] = p->pos[c] - cr[c] + cu[c];
+            tr[c] = p->pos[c] + cr[c] + cu[c];
+            br[c] = p->pos[c] + cr[c] - cu[c];
+            bl[c] = p->pos[c] - cr[c] - cu[c];
+        }
+        push_vertex(engine, tl, u0, v0, color);
+        push_vertex(engine, tr, u0 + step, v0, color);
+        push_vertex(engine, br, u0 + step, v0 + step, color);
+        push_vertex(engine, tl, u0, v0, color);
+        push_vertex(engine, br, u0 + step, v0 + step, color);
+        push_vertex(engine, bl, u0, v0 + step, color);
     }
+    nmo_engine_draw_t *draw = eng_render_push(engine);
+    if (draw == NULL) {
+        return;
+    }
+    draw->kind = line ? NMO_ENGINE_DRAW_LINES : NMO_ENGINE_DRAW_TRIANGLES;
+    draw->object = e->entity;
+    draw->first_vertex = first;
+    draw->vertex_count = (int32_t)render->vertices.count - first;
+    draw->source_blend = e->source_blend;
+    draw->dest_blend = e->dest_blend;
+    if (line) {
+        /* no texture; blending unless the destination factor is zero */
+        draw->blend = e->dest_blend != VXBLEND_ZERO;
+    } else {
+        draw->texture = e->texture;
+        draw->alpha_test = eng_texture_keyed(engine, e->texture);
+        /* SetState: no blending for an opaque destination factor */
+        draw->blend = !(e->dest_blend == VXBLEND_ZERO &&
+                        (e->source_blend == VXBLEND_SRCALPHA || e->source_blend == VXBLEND_SRCCOLOR ||
+                         e->source_blend == VXBLEND_ONE));
+    }
+    draw->transparent = true;
+    const float *center4 = engine->entities.data[entity].world.m[3];
+    eng_vector_t center = {center4[0], center4[1], center4[2]};
+    draw->world[0] = draw->world[5] = draw->world[10] = draw->world[15] = 1.0f;
+    draw->world[12] = center.x, draw->world[13] = center.y, draw->world[14] = center.z;
 }
 
 static const nmo_engine_block_desc_t eng_tt_particles_blocks[] = {
@@ -1644,12 +1651,35 @@ static const nmo_engine_block_desc_t eng_tt_particles_blocks[] = {
      cb_particle_system, NULL},
 };
 
+/* The emitter entity's post render callback: that block's emitter's particles */
+static void render_emitter(nmo_engine_t *engine, nmo_object_id_t entity, int32_t node, bool transparent)
+{
+    (void)entity, (void)transparent;
+    const eng_tt_t *tt = eng_tt(engine);
+    for (size_t i = 0; engine->render.scene_view != NULL && i < tt->emitters.count; i++) {
+        if (tt->emitters.data[i].node == node) {
+            draw_emitter(engine, &tt->emitters.data[i], engine->render.scene_view);
+            return;
+        }
+    }
+}
+
+/* ShowParticles: a shown emitter draws as its entity's post render callback, put there for the
+   frame (and its passes) as it is made */
 static void particle_manager_render(nmo_engine_t *engine, void *state, eng_render_stage_t stage,
                                     const eng_render_args_t *args)
 {
-    (void)state;
-    if (stage == ENG_RENDER_SCENE) {
-        eng_draw_particles(engine, args->view);
+    (void)state, (void)args;
+    if (stage != ENG_RENDER_PREPARE) {
+        return;
+    }
+    const eng_tt_t *tt = eng_tt(engine);
+    for (size_t i = 0; i < tt->emitters.count; i++) {
+        const eng_emitter_t *e = &tt->emitters.data[i];
+        if (e->shown && e->entity != 0) {
+            eng_entity_callback_t callback = {e->entity, ENG_ENTITY_POST_RENDER, render_emitter, e->node, true};
+            eng_add_entity_callback(engine, &callback);
+        }
     }
 }
 
