@@ -488,12 +488,16 @@ static nmo_object_id_t run_steer_object(const nmo_engine_t *engine, const char *
     return 0;
 }
 
-/* Whether name is base or one of the game's copies of it: base followed by
- * digits only (P_Modul_08_Schaukel, P_Modul_08_Schaukel001, ...). */
-static bool run_steer_copy_of(const char *name, const char *base)
+/* Whether name and wanted are copies of one object: the same name once the
+ * digits the game numbers copies with are taken off both ends
+ * (P_Modul_08_Schaukel, P_Modul_08_Schaukel001, ...). */
+static bool run_steer_copy_of(const char *name, const char *wanted)
 {
-    size_t n = strlen(base);
-    if (name == NULL || strncmp(name, base, n) != 0) {
+    size_t n = strlen(wanted);
+    while (n > 0 && wanted[n - 1] >= '0' && wanted[n - 1] <= '9') {
+        n--;
+    }
+    if (name == NULL || strncmp(name, wanted, n) != 0) {
         return false;
     }
     for (const char *c = name + n; *c != '\0'; c++) {
