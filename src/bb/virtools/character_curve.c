@@ -44,7 +44,7 @@ static int bb_character_curve(blk_t *b)
     }
     float length;
     if (!eng_curve_length(b->engine,curve,&length)) return NMO_ENGINE_BR_PARAMETERERROR;
-    eng_vector_t axis = get_in_vector(b,2,1,0,0), previous, position, ahead;
+    eng_vector_t axis = get_in_vector(b,2,1,0,0), previous = {0.0f, 0.0f, 0.0f}, position, ahead;
     float travelled = 0.0f, step = 0.0f;
     if (initial) {
         step = get_in_float(b,1,0); travelled = length*step;
