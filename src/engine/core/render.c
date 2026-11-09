@@ -739,6 +739,147 @@ nmo_face_t *eng_mesh_copy_faces(nmo_engine_t *engine, eng_mesh_copy_t *copy)
     return copy->faces;
 }
 
+/* The vertex normals from the faces (CKMesh::BuildNormals' vertex part) */
+static void eng_mesh_build_vertex_normals(const nmo_mesh_state_t *state, eng_mesh_copy_t *copy)
+{
+    uint32_t count = state->vertex_count;
+    nmo_mesh_state_t moved = *state;
+    moved.vertices = copy->vertices;
+    nmo_vector_t *normals = count > 0 ? (nmo_vector_t *)malloc(count * sizeof(nmo_vector_t)) : NULL;
+    if (normals != NULL && nmo_mesh_build_vertex_normals(&moved, normals) == NMO_OK) {
+        for (uint32_t v = 0; v < count; v++) {
+            copy->vertices[v].normal = normals[v];
+        }
+    }
+    free(normals);
+}
+
+void eng_mesh_build_face_normals(nmo_engine_t *engine, eng_mesh_copy_t *copy)
+{
+    const nmo_mesh_state_t *state = eng_mesh_state(engine, copy->mesh);
+    uint32_t count = state != NULL ? state->vertex_count : 0;
+    nmo_face_t *faces = count > 0 && state->face_vertex_indices != NULL ? eng_mesh_copy_faces(engine, copy) : NULL;
+    for (uint32_t f = 0; faces != NULL && f < state->face_count; f++) {
+        const uint16_t *k = &state->face_vertex_indices[3u * f];
+        if (k[0] >= count || k[1] >= count || k[2] >= count) {
+            continue;
+        }
+        const nmo_vector_t *p0 = &copy->vertices[k[0]].position, *p1 = &copy->vertices[k[1]].position;
+        const nmo_vector_t *p2 = &copy->vertices[k[2]].position;
+        double ax = (double)p1->x - p0->x, ay = (double)p1->y - p0->y, az = (double)p1->z - p0->z;
+        double bx = (double)p2->x - p0->x, by = (double)p2->y - p0->y, bz = (double)p2->z - p0->z;
+        double nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx;
+        double length = sqrt(nx * nx + ny * ny + nz * nz);
+        if (length > 0.0) {
+            faces[f].normal = (nmo_vector_t){(float)(nx / length), (float)(ny / length), (float)(nz / length)};
+        }
+    }
+}
+
+void eng_mesh_reset_vertices(nmo_engine_t *engine, eng_mesh_copy_t *copy)
+{
+    const nmo_mesh_state_t *state = eng_mesh_state(engine, copy->mesh);
+    if (state == NULL || state->vertices == NULL || state->vertex_count == 0) {
+        return;
+    }
+    memcpy(copy->vertices, state->vertices, state->vertex_count * sizeof(nmo_vertex_t));
+    if (nmo_mesh_normals_are_derived(state)) {
+        eng_mesh_build_vertex_normals(state, copy);
+    }
+    free(copy->colors);
+    copy->colors = NULL;
+}
+
+uint32_t *eng_mesh_copy_colors(nmo_engine_t *engine, eng_mesh_copy_t *copy)
+{
+    const nmo_mesh_state_t *state = eng_mesh_state(engine, copy->mesh);
+    uint32_t count = state != NULL ? state->vertex_count : 0;
+    if (copy->colors == NULL && count > 0) {
+        copy->colors = (uint32_t *)malloc(count * sizeof(uint32_t));
+        for (uint32_t v = 0; copy->colors != NULL && v < count; v++) {
+            copy->colors[v] = state->vertex_colors != NULL ? state->vertex_colors[v] : 0xFFFFFFFFu;
+        }
+    }
+    return copy->colors;
+}
+
+nmo_object_id_t eng_mesh_duplicate(nmo_engine_t *engine, nmo_object_id_t model, nmo_object_id_t source,
+                                   const char *name)
+{
+    const nmo_mesh_state_t *from = eng_mesh_state(engine, source);
+    nmo_object_id_t id = from != NULL ? eng_create_related_object_with_options(engine, model, NMO_CID_MESH,
+                                                                                 name, false) : 0;
+    const eng_module_t *module = id != 0 ? eng_module_of(engine, id, NULL) : NULL;
+    nmo_object_t *object = id != 0 ? eng_find_object(engine, id) : NULL;
+    nmo_mesh_state_t *state = object != NULL ? (nmo_mesh_state_t *)nmo_object_get_state(object) : NULL;
+    /* a range over an owned session borrows its owner's arena */
+    nmo_session_t *session = module != NULL ? module->session : NULL;
+    for (size_t i = 0; module != NULL && session == NULL && i < engine->modules.count; i++) {
+        if (engine->modules.data[i].repo == module->repo) {
+            session = engine->modules.data[i].session;
+        }
+    }
+    if (session == NULL || state == NULL) {
+        return 0;
+    }
+    nmo_arena_t *arena = nmo_session_get_arena(session);
+    const eng_mesh_copy_t *moved = eng_mesh_copy_find(engine, source);
+    size_t vertices = from->vertex_count, faces = from->face_count, groups = from->material_group_count;
+    state->vertices = vertices > 0 ? (nmo_vertex_t *)nmo_arena_alloc(arena, vertices * sizeof(nmo_vertex_t),
+                                                                      _Alignof(nmo_vertex_t)) : NULL;
+    state->vertex_colors = vertices > 0 ? (uint32_t *)nmo_arena_alloc(arena, vertices * sizeof(uint32_t),
+                                                                       _Alignof(uint32_t)) : NULL;
+    state->vertex_specular = vertices > 0 ? (uint32_t *)nmo_arena_alloc(arena, vertices * sizeof(uint32_t),
+                                                                         _Alignof(uint32_t)) : NULL;
+    state->faces = faces > 0 ? (nmo_face_t *)nmo_arena_alloc(arena, faces * sizeof(nmo_face_t),
+                                                             _Alignof(nmo_face_t)) : NULL;
+    state->face_vertex_indices = faces > 0 ? (uint16_t *)nmo_arena_alloc(arena, faces * 3u * sizeof(uint16_t),
+                                                                         _Alignof(uint16_t)) : NULL;
+    state->material_groups = groups > 0 ? (nmo_material_group_t *)nmo_arena_alloc(
+                                              arena, groups * sizeof(nmo_material_group_t),
+                                              _Alignof(nmo_material_group_t)) : NULL;
+    if ((vertices > 0 && (state->vertices == NULL || state->vertex_colors == NULL ||
+                          state->vertex_specular == NULL)) ||
+        (faces > 0 && (state->faces == NULL || state->face_vertex_indices == NULL)) ||
+        (groups > 0 && state->material_groups == NULL)) {
+        return 0;
+    }
+    /* what the source is now: its run time copy's vertices, colors and faces when it has one */
+    if (vertices > 0) {
+        memcpy(state->vertices, moved != NULL ? moved->vertices : from->vertices, vertices * sizeof(nmo_vertex_t));
+        const uint32_t *colors = moved != NULL && moved->colors != NULL ? moved->colors : from->vertex_colors;
+        for (size_t v = 0; v < vertices; v++) {
+            state->vertex_colors[v] = colors != NULL ? colors[v] : 0xFFFFFFFFu;
+            state->vertex_specular[v] = from->vertex_specular != NULL ? from->vertex_specular[v] : 0u;
+        }
+    }
+    if (faces > 0) {
+        memcpy(state->faces, moved != NULL && moved->faces != NULL ? moved->faces : from->faces,
+               faces * sizeof(nmo_face_t));
+        memcpy(state->face_vertex_indices, from->face_vertex_indices, faces * 3u * sizeof(uint16_t));
+    }
+    /* the groups' materials, when the copy's document can refer to them */
+    for (size_t g = 0; g < groups; g++) {
+        nmo_object_id_t material = moved != NULL && moved->groups != NULL && g < (size_t)moved->group_count
+                                       ? moved->groups[g] : eng_object_ref(engine, source, &from->material_groups[g].material);
+        nmo_object_id_t local = 0;
+        state->material_groups[g] = (nmo_material_group_t){0};
+        if (material != 0 && eng_module_of(engine, material, &local) == module) {
+            state->material_groups[g].material = nmo_ref_from_id(local);
+        }
+    }
+    state->vertex_count = (uint32_t)vertices;
+    state->face_count = (uint32_t)faces;
+    state->material_group_count = (uint32_t)groups;
+    state->has_material_groups = from->has_material_groups;
+    state->flags = moved != NULL ? moved->flags : from->flags;
+    if (moved != NULL) {
+        state->flags = moved->prelit ? (state->flags | VXMESH_PRELITMODE) : (state->flags & ~(uint32_t)VXMESH_PRELITMODE);
+    }
+    nmo_mesh_update_bounding_volumes(state);
+    return id;
+}
+
 void eng_mesh_vertices_moved(nmo_engine_t *engine, eng_mesh_copy_t *copy, bool rebuild_normals)
 {
     const nmo_mesh_state_t *state = eng_mesh_state(engine, copy->mesh);
@@ -747,31 +888,8 @@ void eng_mesh_vertices_moved(nmo_engine_t *engine, eng_mesh_copy_t *copy, bool r
         return;
     }
     if (rebuild_normals) {
-        nmo_mesh_state_t moved = *state;
-        moved.vertices = copy->vertices;
-        nmo_vector_t *normals = (nmo_vector_t *)malloc(count * sizeof(nmo_vector_t));
-        if (normals != NULL && nmo_mesh_build_vertex_normals(&moved, normals) == NMO_OK) {
-            for (uint32_t v = 0; v < count; v++) {
-                copy->vertices[v].normal = normals[v];
-            }
-        }
-        free(normals);
-        nmo_face_t *faces = state->face_vertex_indices != NULL ? eng_mesh_copy_faces(engine, copy) : NULL;
-        for (uint32_t f = 0; faces != NULL && f < state->face_count; f++) {
-            const uint16_t *k = &state->face_vertex_indices[3u * f];
-            if (k[0] >= count || k[1] >= count || k[2] >= count) {
-                continue;
-            }
-            const nmo_vector_t *p0 = &copy->vertices[k[0]].position, *p1 = &copy->vertices[k[1]].position;
-            const nmo_vector_t *p2 = &copy->vertices[k[2]].position;
-            double ax = (double)p1->x - p0->x, ay = (double)p1->y - p0->y, az = (double)p1->z - p0->z;
-            double bx = (double)p2->x - p0->x, by = (double)p2->y - p0->y, bz = (double)p2->z - p0->z;
-            double nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx;
-            double length = sqrt(nx * nx + ny * ny + nz * nz);
-            if (length > 0.0) {
-                faces[f].normal = (nmo_vector_t){(float)(nx / length), (float)(ny / length), (float)(nz / length)};
-            }
-        }
+        eng_mesh_build_vertex_normals(state, copy);
+        eng_mesh_build_face_normals(engine, copy);
     }
     double sum[3] = {0.0, 0.0, 0.0};
     for (uint32_t v = 0; v < count; v++) {
@@ -2055,7 +2173,10 @@ bool eng_entity_set_current_mesh(nmo_engine_t *engine, nmo_object_id_t entity, n
         ? (nmo_3dentity_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(engine->types, object,
                                                                                    CKPGUID_3DENTITY)
         : NULL;
-    if (state == NULL || (mesh != 0 && eng_module_of(engine, mesh, &local) != module)) {
+    /* a module over the same session (a range of objects made at run time) shares its IDs */
+    const eng_module_t *mesh_module = mesh != 0 ? eng_module_of(engine, mesh, &local) : NULL;
+    if (state == NULL || module == NULL ||
+        (mesh != 0 && (mesh_module == NULL || mesh_module->repo != module->repo))) {
         return false;
     }
     state->current_mesh = nmo_ref_from_id(local);

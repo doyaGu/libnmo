@@ -377,6 +377,19 @@ nmo_face_t *eng_mesh_copy_faces(nmo_engine_t *engine, eng_mesh_copy_t *copy);
 /* CKMesh::ModifierVertexMove(rebuild_normals, TRUE) once a block moved the copy's vertices: the
    vertex and face normals from the faces when `rebuild_normals`, the bounding sphere, a new version */
 void eng_mesh_vertices_moved(nmo_engine_t *engine, eng_mesh_copy_t *copy, bool rebuild_normals);
+/* CKMesh::BuildFaceNormals of the copy's vertices */
+void eng_mesh_build_face_normals(nmo_engine_t *engine, eng_mesh_copy_t *copy);
+/* CKMesh::LoadVertices of the mesh's initial value: the file's vertices and colors back in the
+   copy (the vertex normals built when the file has none); the caller then calls
+   eng_mesh_vertices_moved() */
+void eng_mesh_reset_vertices(nmo_engine_t *engine, eng_mesh_copy_t *copy);
+/* The copy's vertex colors, copied from the file the first time; NULL for no vertices */
+uint32_t *eng_mesh_copy_colors(nmo_engine_t *engine, eng_mesh_copy_t *copy);
+/* CKContext::CopyObject of a mesh, made in `model`'s document so `model` can take it: the
+   source's vertices, colors, faces and material groups as they are now (a material of another
+   document left out; no channels). 0 on failure */
+nmo_object_id_t eng_mesh_duplicate(nmo_engine_t *engine, nmo_object_id_t model, nmo_object_id_t source,
+                                   const char *name);
 /* CKMesh::GetTextureCoordinatesPtr: the UVs of `channel` (-1 the mesh's own, which a channel
    without UVs of its own shares), two floats every `*stride` bytes for `*count` vertices;
    NULL for no such channel or no vertices. */
@@ -451,8 +464,9 @@ nmo_engine_draw_t *eng_render_push(nmo_engine_t *engine);
    caller's to fill before the mesh renders. 0 out of memory */
 nmo_object_id_t eng_create_mesh(nmo_engine_t *engine, const char *name, int32_t vertex_count,
                                 int32_t face_count, struct nmo_mesh_state **out_state);
-/* CK3dEntity::SetCurrentMesh, for a mesh of the entity's own document (a created entity takes a
-   created mesh); 0 for none. False when it cannot refer to it. */
+/* CK3dEntity::SetCurrentMesh, for a mesh of the entity's own document or of objects made in it
+   at run time (a created entity takes a created mesh); 0 for none. False when it cannot refer
+   to it. */
 bool eng_entity_set_current_mesh(nmo_engine_t *engine, nmo_object_id_t entity, nmo_object_id_t mesh);
 /* CKMesh::GetBaryCenter and GetRadius, in the mesh's space; false for no mesh */
 bool eng_mesh_sphere(nmo_engine_t *engine, nmo_object_id_t mesh, struct eng_vector *center, float *radius);

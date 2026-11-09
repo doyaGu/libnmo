@@ -442,34 +442,15 @@ static void view_mesh_colors(view_mesh_t *cached, const nmo_engine_mesh_t *mesh)
     }
 }
 
-static view_mesh_t *view_mesh(nmo_view_t *view, nmo_object_id_t id, const nmo_engine_mesh_t *mesh)
+/* The mesh's faces as index lists, one per material group, and its colors */
+static void view_mesh_fill(view_mesh_t *cached, const nmo_engine_mesh_t *mesh)
 {
-    for (size_t i = 0; i < view->mesh_count; i++) {
-        if (view->meshes[i].id == id) {
-            if (view->meshes[i].version != mesh->version) {
-                view_mesh_colors(&view->meshes[i], mesh);
-            }
-            return &view->meshes[i];
-        }
-    }
-    if (view->mesh_count == view->mesh_capacity) {
-        size_t capacity = view->mesh_capacity != 0 ? view->mesh_capacity * 2 : 64;
-        view_mesh_t *grown = (view_mesh_t *)realloc(view->meshes, capacity * sizeof(*grown));
-        if (grown == NULL) {
-            return NULL;
-        }
-        view->meshes = grown;
-        view->mesh_capacity = capacity;
-    }
-    view_mesh_t *cached = &view->meshes[view->mesh_count++];
-    memset(cached, 0, sizeof(*cached));
-    cached->id = id;
     int32_t groups = mesh->material_count > 0 ? mesh->material_count : 1;
     cached->group_count = groups;
     cached->indices = (uint16_t **)calloc((size_t)groups, sizeof(uint16_t *));
     cached->counts = (int32_t *)calloc((size_t)groups, sizeof(int32_t));
     if (cached->indices == NULL || cached->counts == NULL) {
-        return cached;
+        return;
     }
     for (int32_t g = 0; g < groups; g++) {
         cached->indices[g] = (uint16_t *)malloc((size_t)mesh->face_count * 3u * sizeof(uint16_t));
@@ -489,6 +470,44 @@ static view_mesh_t *view_mesh(nmo_view_t *view, nmo_object_id_t id, const nmo_en
         }
     }
     view_mesh_colors(cached, mesh);
+}
+
+static void view_mesh_release(view_mesh_t *cached)
+{
+    for (int32_t g = 0; cached->indices != NULL && g < cached->group_count; g++) {
+        free(cached->indices[g]);
+    }
+    free(cached->indices);
+    free(cached->counts);
+    cached->indices = NULL;
+    cached->counts = NULL;
+}
+
+static view_mesh_t *view_mesh(nmo_view_t *view, nmo_object_id_t id, const nmo_engine_mesh_t *mesh)
+{
+    for (size_t i = 0; i < view->mesh_count; i++) {
+        if (view->meshes[i].id == id) {
+            if (view->meshes[i].version != mesh->version) {
+                /* a block changed it: its faces may have too (indices, material groups) */
+                view_mesh_release(&view->meshes[i]);
+                view_mesh_fill(&view->meshes[i], mesh);
+            }
+            return &view->meshes[i];
+        }
+    }
+    if (view->mesh_count == view->mesh_capacity) {
+        size_t capacity = view->mesh_capacity != 0 ? view->mesh_capacity * 2 : 64;
+        view_mesh_t *grown = (view_mesh_t *)realloc(view->meshes, capacity * sizeof(*grown));
+        if (grown == NULL) {
+            return NULL;
+        }
+        view->meshes = grown;
+        view->mesh_capacity = capacity;
+    }
+    view_mesh_t *cached = &view->meshes[view->mesh_count++];
+    memset(cached, 0, sizeof(*cached));
+    cached->id = id;
+    view_mesh_fill(cached, mesh);
     return cached;
 }
 
