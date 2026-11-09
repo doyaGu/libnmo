@@ -123,7 +123,7 @@ TEST(engine_scaleaxis, missing_or_ignored_channels_are_recovered_from_the_curren
     float initial[16];
     for (int combination = 0; combination < 4; combination++) {
         bool ignored = (combination & 1) != 0;
-        float sign = combination & 2 ? -1 : 1;
+        float sign = combination & 2 ? -1.0f : 1.0f;
         for (int i = 0; i < 3; i++) old_scale[i] = sign * (float)(2 + 2*i);
         expected_pose(initial, old_axis, old_scale, old_position, false);
         for (uint32_t mask = 0; mask < 8; mask++) {

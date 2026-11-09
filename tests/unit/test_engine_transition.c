@@ -1016,7 +1016,7 @@ TEST(engine_transition, secondary_stop_presets_and_unavailable_return_sources_re
 
 static void natural_secondary_begin(warp_rig_t *r, bool reverse)
 {
-    secondary_rig_begin(r,reverse ? -1000 : 1000,true);
+    secondary_rig_begin(r,reverse ? -1000.0f : 1000.0f,true);
     ASSERT_EQ(NMO_OK,eng_character_play_secondary_warp(r->f.engine,r->actor,r->secondary,reverse ? 2.0f : 6.0f,
         CKSECONDARYANIMATION_DOWARP|CKSECONDARYANIMATION_ONESHOT,2,0));
     r->warper = eng_character_secondary_warper(r->f.engine,r->actor,0);
