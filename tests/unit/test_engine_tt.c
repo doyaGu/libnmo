@@ -1527,6 +1527,7 @@ TEST(engine_tt, cel_shading_and_aniso_add_their_channels)
     fixture_input_int(&f, BLOCK_PIN(&f, cel, 0), (int32_t)sun);
     const float red[4] = {1.0f, 0.0f, 0.0f, 1.0f};
     fixture_input_value(&f, BLOCK_PIN(&f, cel, 1), red, sizeof(red));
+    fixture_input_int(&f, BLOCK_PIN(&f, cel, 2), 1); /* Outline */
     fixture_input_int(&f, fixture_target(&f, aniso), (int32_t)shiny);
     fixture_input_int(&f, BLOCK_PIN(&f, aniso, 0), (int32_t)eye); /* light and camera together */
     fixture_input_int(&f, BLOCK_PIN(&f, aniso, 1), (int32_t)eye);
@@ -1551,6 +1552,23 @@ TEST(engine_tt, cel_shading_and_aniso_add_their_channels)
     ASSERT_EQ(127, image.rgba[0]);      /* texel 0: half the colour */
     ASSERT_EQ(255, image.rgba[4 * 10]); /* texel 10: half of the colour plus white */
     ASSERT_EQ(127, image.rgba[4 * 10 + 1]);
+
+    /* Outline: the toon drawn again after itself, in wireframe over everything */
+    eng_show(f.engine, toon, 1);
+    eng_show(f.engine, cel_mesh, 1);
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    int toon_draws = 0;
+    const nmo_engine_draw_t *outline = NULL;
+    for (int32_t d = 0; d < frame.draw_count; d++) {
+        if (frame.draws[d].kind == NMO_ENGINE_DRAW_MESH && frame.draws[d].object == toon) {
+            if (toon_draws++ == 1) {
+                outline = &frame.draws[d];
+            }
+        }
+    }
+    ASSERT_EQ(2, toon_draws);
+    ASSERT_TRUE(outline != NULL && outline->wireframe && outline->no_z_test);
 
     /* Aniso: added on (ONE, ONE); vertex (1,0,0): base (cos 1, sin 1) through a light and camera
        straight up */

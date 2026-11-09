@@ -2805,9 +2805,25 @@ static int32_t add_uv_channel(nmo_engine_t *engine, eng_mesh_copy_t *copy, nmo_o
  * three tones of Color, and keeps smooth normals (the face normals round
  * each position summed); each frame the channel's U is 1 less how much each
  * vertex faces away from the Light. As in the DLL, after On the UVs written
- * are channel 0's. Outline (the target drawn again over everything after it
- * renders) is not drawn here.
+ * are channel 0's. With Outline, On also has the target drawn again over
+ * everything after it renders, in wireframe, from then on.
  */
+/* TT_CelShading's outline (the target's post render callback): its mesh rendered again in the
+   wireframe global render mode with the Z test always passing, so its edges show over everything */
+static void cel_outline(nmo_engine_t *engine, nmo_object_id_t entity, int32_t node, bool transparent)
+{
+    (void)node;
+    int32_t index = eng_entity_index(engine, entity);
+    nmo_object_id_t mesh = index >= 0 ? current_mesh_of(engine, entity) : 0;
+    nmo_engine_draw_t *draw =
+        mesh != 0 ? eng_render_entity_mesh(engine, entity, mesh, engine->entities.data[index].world.m[0], transparent)
+                  : NULL;
+    if (draw != NULL) {
+        draw->wireframe = true;
+        draw->no_z_test = true;
+    }
+}
+
 static int bb_cel_shading(blk_t *b)
 {
     nmo_engine_t *engine = b->engine;
@@ -2891,6 +2907,12 @@ static int bb_cel_shading(blk_t *b)
             nmo_engine_block_set_local_value(b, 0, normals, count * sizeof(*normals));
         }
         free(normals);
+        /* Outline: the target drawn again after it renders, from now on */
+        if (get_in_int(b, 2, 0) != 0) {
+            eng_entity_callback_t outline = {nmo_engine_block_target(b), ENG_ENTITY_POST_RENDER, cel_outline,
+                                             b->node, false};
+            eng_add_entity_callback(engine, &outline);
+        }
     }
     const eng_param_t *param = block_local(b, 0);
     const nmo_vector_t *normals = param != NULL ? (const nmo_vector_t *)param->data : NULL;

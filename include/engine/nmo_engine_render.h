@@ -81,6 +81,7 @@ typedef struct nmo_engine_draw {
     bool transparent;       /* blended: the draws come in the order to draw them (CK's scene
                                graph: the transparent objects after the opaque ones, sorted) */
     bool no_z_test, no_z_write; /* VX_MOVEABLE_NOZBUFFERTEST / NOZBUFFERWRITE */
+    bool wireframe;             /* a mesh drawn with the global render mode set to wireframe */
     bool z_only;            /* VX_MOVEABLE_ZBUFONLY: depth written, no color */
     /* A mesh drawn with a projection of its own (TT Sky's): fov > 0 */
     float fov, near_plane, far_plane;

@@ -900,8 +900,8 @@ static bool view_channel_folds(const nmo_engine_channel_t *channel,
             (channel->source_blend == 9 && channel->dest_blend == 1));
 }
 
-static void view_draw_mesh(nmo_view_t *view, const nmo_engine_frame_t *frame,
-                           const nmo_engine_draw_t *draw, const float view_m[16])
+static void view_draw_mesh_as(nmo_view_t *view, const nmo_engine_frame_t *frame,
+                              const nmo_engine_draw_t *draw, const float view_m[16])
 {
     nmo_engine_mesh_t mesh;
     if (!nmo_engine_mesh(view->engine, draw->mesh, &mesh) || mesh.vertices == NULL ||
@@ -1098,6 +1098,18 @@ static void view_draw_mesh(nmo_view_t *view, const nmo_engine_frame_t *frame,
         view_load_projection(frame, frame->orthographic, frame->fov, frame->near_plane,
                              frame->far_plane);
     }
+}
+
+/* A mesh draw; one with `wireframe` under the wireframe global render mode for itself */
+static void view_draw_mesh(nmo_view_t *view, const nmo_engine_frame_t *frame,
+                           const nmo_engine_draw_t *draw, const float view_m[16])
+{
+    int32_t shading = view->shading;
+    if (draw->wireframe) {
+        view->shading = 0;
+    }
+    view_draw_mesh_as(view, frame, draw, view_m);
+    view->shading = shading;
 }
 
 /* RCK2dEntity::Draw: a quad of the material's diffuse, textured with its source rect */
