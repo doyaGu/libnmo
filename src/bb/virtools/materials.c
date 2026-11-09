@@ -1304,12 +1304,145 @@ static int bb_environment_mapping(blk_t *b)
 }
 
 /*
+ * Screen Mapping's render callback with Disable Perspective Correction
+ * (the entity is drawn by it alone): the current mesh's vertices
+ * transformed to the screen (CKRenderContext::TransformVertices), each
+ * white, its UV where it falls in Screen UVs over the viewport (turned by
+ * Rotation about the middle, the turned V from Screen UVs' bottom as the
+ * DLL has it), with an rhw of 1, so that the texture is not perspective
+ * corrected, drawn as triangles with the mesh's first material.
+ */
+static void screen_mapping_render(nmo_engine_t *engine, nmo_object_id_t entity, int32_t node, bool transparent)
+{
+    (void)transparent;
+    blk_t block = {engine, node};
+    int32_t index = eng_entity_index(engine, entity);
+    nmo_object_id_t mesh_id = entity_mesh(engine, entity);
+    nmo_engine_mesh_t mesh;
+    if (index < 0 || mesh_id == 0 || !nmo_engine_mesh(engine, mesh_id, &mesh) || mesh.vertices == NULL ||
+        mesh.indices == NULL) {
+        return;
+    }
+    float rect[4] = {0.0f, 0.0f, 1.0f, 1.0f};
+    nmo_engine_block_get_input_value(&block, 1, rect, sizeof(rect));
+    float rotation = 0.0f;
+    nmo_engine_block_get_input_value(&block, 2, &rotation, sizeof(rotation));
+    int32_t viewport[4];
+    eng_render_viewport(engine, viewport);
+    /* VxRect::TransformFromHomogeneous: Screen UVs over the view rect */
+    float left = (float)viewport[0] + rect[0] * (float)viewport[2];
+    float top = (float)viewport[1] + rect[1] * (float)viewport[3];
+    float right = (float)viewport[0] + rect[2] * (float)viewport[2];
+    float bottom = (float)viewport[1] + rect[3] * (float)viewport[3];
+    float inv_w = 1.0f / (right - left), inv_h = 1.0f / (bottom - top);
+    bool turned = !(fabsf(rotation) <= 1.1920929e-07f);
+    float c = cosf(rotation), sn = sinf(rotation);
+    const eng_matrix_t *world = &engine->entities.data[index].world;
+    eng_vector_t *screen = (eng_vector_t *)malloc((size_t)mesh.vertex_count * sizeof(*screen));
+    if (screen == NULL) {
+        return;
+    }
+    for (int32_t v = 0; v < mesh.vertex_count; v++) {
+        const nmo_vector_t *p = &mesh.vertices[v].position;
+        eng_vector_t local = {p->x, p->y, p->z}, at;
+        eng_vector_transform(&at, world, &local);
+        eng_render_project(engine, &at, &screen[v]);
+    }
+    int32_t first = (int32_t)engine->render.vertices.count;
+    for (int32_t i = 0; i < mesh.face_count * 3; i++) {
+        uint16_t at = mesh.indices[i];
+        nmo_engine_vertex_t *vertex = NULL;
+        if (at >= mesh.vertex_count || !ENG_VEC_PUSH(engine->render.vertices, vertex)) {
+            continue;
+        }
+        const eng_vector_t *p = &screen[at];
+        float u, w;
+        if (turned) {
+            float u0 = (p->x - left) * inv_w - 0.5f, w0 = (p->y - bottom) * inv_h - 0.5f;
+            u = sn * w0 + u0 * c + 0.5f;
+            w = w0 * c - u0 * sn + 0.5f;
+        } else {
+            u = (p->x - left) * inv_w;
+            w = (p->y - top) * inv_h;
+        }
+        *vertex = (nmo_engine_vertex_t){p->x, p->y, p->z, u, w, 0xFFFFFFFFu, 0.0f, 0.0f, 0.0f};
+    }
+    free(screen);
+    int32_t count = (int32_t)engine->render.vertices.count - first;
+    nmo_engine_draw_t *draw = count > 0 ? eng_render_push(engine) : NULL;
+    if (draw == NULL) {
+        return;
+    }
+    draw->kind = NMO_ENGINE_DRAW_PRIMITIVE;
+    draw->object = entity;
+    draw->first_vertex = first;
+    draw->vertex_count = count;
+    draw->world[0] = draw->world[5] = draw->world[10] = draw->world[15] = 1.0f;
+    draw->material = nmo_engine_mesh_material(engine, mesh_id, 0);
+    draw->screen = true;
+}
+
+/* The render callback, when the mesh has one material ("Is Forcing" set); false and a
+   console line otherwise */
+static bool screen_mapping_force(blk_t *b, nmo_object_id_t target)
+{
+    nmo_engine_mesh_t mesh;
+    nmo_object_id_t mesh_id = entity_mesh(b->engine, target);
+    if (mesh_id == 0 || !nmo_engine_mesh(b->engine, mesh_id, &mesh)) {
+        return true; /* nothing to do */
+    }
+    if (mesh.material_count != 1) {
+        eng_console(b->engine, "There must be only one material for disabling perspective correction", true);
+        return false;
+    }
+    eng_entity_callback_t callback = {target, ENG_ENTITY_RENDER, screen_mapping_render, b->node, false};
+    eng_add_entity_callback(b->engine, &callback);
+    set_local_int(b, 1, 1);
+    return true;
+}
+
+static void screen_mapping_unforce(blk_t *b)
+{
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (get_local_int(b, 1, 0) != 0 && target != 0) {
+        eng_remove_entity_callback(b->engine, target, ENG_ENTITY_RENDER, screen_mapping_render, b->node);
+        set_local_int(b, 1, 0);
+    }
+}
+
+/* The callback: the load (and a settings edit) forces the render with Disable Perspective
+   Correction, or stops it without; Pause, Reset, the script's deactivation and a new scene
+   the script is not active in stop it */
+static int cb_screen_mapping(blk_t *b, uint32_t message)
+{
+    if (message == NMO_ENGINE_MSG_LOAD || message == 3u || message == 13u) { /* attach, settings edited */
+        if (get_local_int(b, 0, 0) == 0) {
+            screen_mapping_unforce(b);
+            return NMO_ENGINE_BR_OK;
+        }
+        if (get_local_int(b, 1, 0) != 0) {
+            return NMO_ENGINE_BR_OK;
+        }
+        nmo_object_id_t target = nmo_engine_block_target(b);
+        if (target == 0) {
+            return NMO_ENGINE_BR_OWNERERROR;
+        }
+        return screen_mapping_force(b, target) ? NMO_ENGINE_BR_OK : NMO_ENGINE_BR_GENERICERROR;
+    }
+    if (message == 4u || message == NMO_ENGINE_MSG_PAUSE || message == NMO_ENGINE_MSG_RESET ||
+        message == NMO_ENGINE_MSG_DEACTIVATESCRIPT ||
+        (message == NMO_ENGINE_MSG_NEWSCENE && !nmo_engine_parent_script_is_active(b->engine, block_node(b)->id))) {
+        screen_mapping_unforce(b);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
  * Screen Mapping: the target's current mesh's UVs of Channel are its
  * vertices as the render context's camera projects them (each divided by
  * its depth through a perspective camera), placed in Screen UVs and turned
- * by Rotation, centered on 0. With Disable Perspective Correction CK draws
- * the mesh itself in screen space instead, which the engine's host cannot
- * do: the block then leaves the UVs.
+ * by Rotation, centered on 0. With Disable Perspective Correction it forces
+ * its render callback instead, once.
  */
 static int bb_screen_mapping(blk_t *b)
 {
@@ -1321,10 +1454,16 @@ static int bb_screen_mapping(blk_t *b)
     if (entity < 0) {
         return NMO_ENGINE_BR_OWNERERROR;
     }
+    if (entity_mesh(engine, target) == 0 || get_local_int(b, 1, 0) != 0) {
+        return NMO_ENGINE_BR_OK;
+    }
+    if (get_local_int(b, 0, 0) != 0) {
+        return screen_mapping_force(b, target) ? NMO_ENGINE_BR_OK : NMO_ENGINE_BR_GENERICERROR;
+    }
     eng_mesh_copy_t *copy = eng_mesh_copy(engine, entity_mesh(engine, target));
     nmo_object_id_t camera = engine->render.camera;
     eng_matrix_t view_projection;
-    if (copy == NULL || get_local_int(b, 1, 0) != 0 || get_local_int(b, 0, 0) != 0 || camera == 0 ||
+    if (copy == NULL || camera == 0 ||
         !eng_camera_view_projection(engine, camera, &view_projection, NULL)) {
         return NMO_ENGINE_BR_OK;
     }
@@ -1410,7 +1549,7 @@ static const nmo_engine_block_desc_t eng_materials_blocks[] = {
     {NMO_GUID_INIT(0x7a7c4d7b, 0x468d0f33), "Change Texture Size", bb_change_texture_size, NULL, NULL},
     {NMO_GUID_INIT(0x6e407fcf, 0x0eff06a5), "Set MipMap Texture", bb_set_mipmap_texture, NULL, NULL},
     {NMO_GUID_INIT(0x10d1c997, 0x99dabef4), "Environment Mapping", bb_environment_mapping, NULL, NULL},
-    {NMO_GUID_INIT(0x58ef12ca, 0x26805940), "Screen Mapping", bb_screen_mapping, NULL, NULL},
+    {NMO_GUID_INIT(0x58ef12ca, 0x26805940), "Screen Mapping", bb_screen_mapping, cb_screen_mapping, NULL},
 };
 
 nmo_status_t eng_register_materials(nmo_engine_t *engine)

@@ -67,6 +67,14 @@ static nmo_object_id_t block_on(engine_fixture_t *f, nmo_guid_t guid, const char
     return id;
 }
 
+static nmo_object_id_t local_of(engine_fixture_t *f, nmo_object_id_t block, size_t pos)
+{
+    const nmo_behavior_state_t *state = (const nmo_behavior_state_t *)fixture_state(f, block);
+    return state != NULL && pos < state->local_parameters.count
+               ? nmo_behavior_ref_array_get_id(&state->local_parameters, pos)
+               : 0;
+}
+
 static void start(engine_fixture_t *f)
 {
     fixture_commit(f, NULL);
@@ -554,6 +562,71 @@ TEST(engine_materials, screen_mapping_projects_through_the_camera)
     fixture_end(&f);
 }
 
+/* With Disable Perspective Correction the quad draws itself at the screen with UVs where its
+ * vertices fall */
+TEST(engine_materials, screen_mapping_without_perspective_draws_at_the_screen)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t material = fixture_create(&f, NMO_CID_MATERIAL, "Screen");
+    nmo_object_id_t mesh = 0;
+    nmo_object_id_t quad = quad_object(&f, material, &mesh);
+    nmo_mesh_state_t *state = (nmo_mesh_state_t *)fixture_state(&f, mesh);
+    nmo_object_id_t camera = fixture_create(&f, NMO_CID_CAMERA, "Camera");
+    nmo_camera_state_t *lens = (nmo_camera_state_t *)fixture_state(&f, camera);
+    ASSERT_TRUE(material != 0 && quad != 0 && state != NULL && lens != NULL && place_at_origin(&f, camera));
+    ((nmo_3dentity_state_t *)fixture_state(&f, quad))->world_matrix[14] = 5.0f; /* in front of the camera */
+    /* one material group */
+    state->material_groups[0].material = nmo_ref_from_id(material);
+    state->faces[1].material_group_idx = 0;
+    state->material_group_count = 1;
+    lens->projection_type = 2;
+    lens->orthographic_zoom = 1.0f;
+    lens->aspect_width = lens->aspect_height = 1;
+    lens->near_plane = 1.0f;
+    lens->far_plane = 100.0f;
+    nmo_object_id_t screen = block_on(&f, GUID_SCREEN_MAPPING, "Screen Mapping", quad, 0, 0);
+    ASSERT_TRUE(screen != 0);
+    engine_fixture_value_t *setting = &f.values[f.value_count++];
+    setting->param = local_of(&f, screen, 0); /* Disable Perspective Correction */
+    const int32_t on = 1;
+    memcpy(setting->bytes, &on, sizeof(on));
+    setting->size = sizeof(on);
+    start(&f);
+    f.engine->render.camera = camera;
+    eng_show(f.engine, quad, 1);
+    eng_show(f.engine, mesh, 1);
+
+    step(&f, 1);
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    const nmo_engine_draw_t *draw = NULL;
+    for (int32_t i = 0; i < frame.draw_count; i++) {
+        ASSERT_TRUE(frame.draws[i].kind != NMO_ENGINE_DRAW_MESH || frame.draws[i].object != quad);
+        if (frame.draws[i].kind == NMO_ENGINE_DRAW_PRIMITIVE && frame.draws[i].object == quad) {
+            draw = &frame.draws[i];
+        }
+    }
+    ASSERT_NOT_NULL(draw);
+    ASSERT_TRUE(draw->screen);
+    ASSERT_EQ(material, draw->material);
+    ASSERT_EQ(6, draw->vertex_count);
+    int32_t viewport[4];
+    eng_render_viewport(f.engine, viewport);
+    const eng_vector_t corner = {1.0f, 1.0f, 5.0f};
+    eng_vector_t at;
+    eng_render_project(f.engine, &corner, &at);
+    const nmo_engine_vertex_t *v = &frame.vertices[draw->first_vertex + 4]; /* vertex 3 */
+    ASSERT_FLOAT_EQ(at.x, v->x, 1e-4f);
+    ASSERT_FLOAT_EQ(at.y, v->y, 1e-4f);
+    ASSERT_EQ(0xFFFFFFFFu, v->color);
+    ASSERT_FLOAT_EQ((at.x - (float)viewport[0]) / (float)viewport[2], v->u, 1e-5f);
+    ASSERT_FLOAT_EQ((at.y - (float)viewport[1]) / (float)viewport[3], v->v, 1e-5f);
+    nmo_vector2_t uv = uv_of(&f, mesh, 3);
+    ASSERT_FLOAT_EQ(1.0f, uv.x, 0.0f); /* the mesh's own UVs stay */
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_materials, setters_change_the_material_the_engine_keeps);
     REGISTER_TEST(engine_materials, set_material_replaces_then_applies_and_mesh_flags_follow);
@@ -564,4 +637,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_materials, texture_blocks_create_write_scale_and_set_levels);
     REGISTER_TEST(engine_materials, environment_mapping_maps_the_normals_at_the_next_render);
     REGISTER_TEST(engine_materials, screen_mapping_projects_through_the_camera);
+    REGISTER_TEST(engine_materials, screen_mapping_without_perspective_draws_at_the_screen);
 TEST_MAIN_END()

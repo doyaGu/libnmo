@@ -113,6 +113,10 @@ typedef struct nmo_engine_draw {
     bool lines, lit, two_sided, post;
     float projection_z_scale;
     bool no_fog;
+    /* A primitive with `screen` has its vertices transformed already: x and y in render
+       context pixels, z the depth from 0 to 1, each with an rhw of 1, so their texture
+       coordinates go across the screen without perspective (Screen Mapping's), no fog */
+    bool screen;
     /* A mesh with `fade` (a trail Motion Blur draws in its render callback) draws its
        materials alpha blended (srcalpha, invsrcalpha) at `fade_alpha` times their diffuse
        alpha. */

@@ -1363,12 +1363,27 @@ static void view_draw_primitive(nmo_view_t *view, const nmo_engine_frame_t *fram
         projection[14] *= draw->projection_z_scale;
         glLoadMatrixf(projection);
     }
-    bool fogged = draw->no_fog && glIsEnabled(GL_FOG);
+    bool fogged = (draw->no_fog || draw->screen) && glIsEnabled(GL_FOG);
     if (fogged) {
         glDisable(GL_FOG);
     }
+    if (draw->screen) {
+        /* The viewport's pixels, its depth z itself (near 0, far -1) */
+        const int32_t *vp = frame->viewport;
+        double left = 0.0, top = 0.0, width = frame->width, height = frame->height;
+        if (vp[2] > 0 && vp[3] > 0) {
+            left = vp[0], top = vp[1], width = vp[2], height = vp[3];
+        }
+        glMatrixMode(GL_PROJECTION);
+        glPushMatrix();
+        glLoadIdentity();
+        glOrtho(left, left + width, view_flip ? top : top + height, view_flip ? top + height : top, 0.0, -1.0);
+    }
     glMatrixMode(GL_MODELVIEW);
     glLoadMatrixf(view_m);
+    if (draw->screen) {
+        glLoadIdentity();
+    }
     const nmo_engine_vertex_t *v = &frame->vertices[draw->first_vertex];
     glBegin(draw->lines ? GL_LINES : GL_TRIANGLES);
     for (int32_t i = 0; i < draw->vertex_count; i++) {
@@ -1386,6 +1401,11 @@ static void view_draw_primitive(nmo_view_t *view, const nmo_engine_frame_t *fram
     glDisable(GL_LIGHTING);
     if (fogged) {
         glEnable(GL_FOG);
+    }
+    if (draw->screen) {
+        glMatrixMode(GL_PROJECTION);
+        glPopMatrix();
+        glMatrixMode(GL_MODELVIEW);
     }
     if (draw->projection_z_scale != 0.0f) {
         glMatrixMode(GL_PROJECTION);
