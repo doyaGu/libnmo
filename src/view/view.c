@@ -104,6 +104,7 @@ struct nmo_view {
     view_audio_t *audio; /* NULL when there is no audio device */
     view_text_t *text;   /* the sprite texts' fonts and textures */
     int32_t shading;     /* the frame's global render mode: 0 wireframe, 1 flat */
+    bool wireframe_layer; /* the frame being drawn's global render mode draws a wireframe over meshes */
     bool use_textures;
     /* The framebuffer render passes draw in, and its depth and stencil */
     GLuint target_fbo, target_depth;
@@ -1088,6 +1089,41 @@ static void view_draw_mesh_as(nmo_view_t *view, const nmo_engine_frame_t *frame,
         }
         glDrawElements(GL_TRIANGLES, cached->counts[g], GL_UNSIGNED_SHORT, cached->indices[g]);
     }
+    /* RCKMesh::DefaultRender with the global render mode's wireframe: every face again in lines,
+       in the vertex colors, untextured and unlit, with the projection's depth translation times
+       1.003 */
+    if (view->wireframe_layer) {
+        float projection[16];
+        glMatrixMode(GL_PROJECTION);
+        glPushMatrix();
+        glGetFloatv(GL_PROJECTION_MATRIX, projection);
+        projection[14] *= 1.003f;
+        glLoadMatrixf(projection);
+        glMatrixMode(GL_MODELVIEW);
+        glDisable(GL_TEXTURE_2D);
+        glDisable(GL_TEXTURE_CUBE_MAP);
+        view_set_texgen(view, NULL, NULL);
+        glDisable(GL_LIGHTING);
+        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+        if (cached->colors != NULL) {
+            glEnableClientState(GL_COLOR_ARRAY);
+            glColorPointer(4, GL_UNSIGNED_BYTE, 0, cached->colors);
+        } else {
+            glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+        }
+        for (int32_t g = 0; g < cached->group_count; g++) {
+            if (cached->counts[g] > 0) {
+                glDrawElements(GL_TRIANGLES, cached->counts[g], GL_UNSIGNED_SHORT, cached->indices[g]);
+            }
+        }
+        if (!prelit) {
+            glDisableClientState(GL_COLOR_ARRAY);
+        }
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        glMatrixMode(GL_PROJECTION);
+        glPopMatrix();
+        glMatrixMode(GL_MODELVIEW);
+    }
     /* The material channels, each over the faces it covers */
     for (int32_t c = 0; c < mesh.channel_count; c++) {
         const nmo_engine_channel_t *channel = &mesh.channels[c];
@@ -1547,6 +1583,7 @@ static void view_clip_draw(const nmo_view_t *view, const nmo_engine_draw_t *draw
    `window_h` high: its clear, background, 2D entities and 3D draws */
 static void view_draw_frame(nmo_view_t *view, const nmo_engine_frame_t *frame, int window_h)
 {
+    view->wireframe_layer = frame->wireframe_layer;
     /* The frame's viewport in the window, for its 3D draws (the whole frame without one) */
     int *scene = view->scene_view;
     const int32_t *viewport = frame->viewport;
