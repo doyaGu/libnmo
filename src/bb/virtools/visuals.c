@@ -2702,7 +2702,7 @@ static visuals_blur_t *motion_blur(nmo_engine_t *engine, int32_t node)
 static void blur_trail(nmo_engine_t *engine, nmo_object_id_t entity, nmo_object_id_t mesh, const eng_matrix_t *world,
                        float alpha, bool transparent)
 {
-    nmo_engine_draw_t *draw = eng_render_entity_mesh(engine, entity, mesh, world->m[0], transparent);
+    nmo_engine_draw_t *draw = eng_render_entity_mesh(engine, entity, mesh, world, transparent);
     if (draw != NULL) {
         draw->fade = true;
         draw->fade_alpha = alpha;
@@ -2721,7 +2721,7 @@ static void motion_blur_draw(nmo_engine_t *engine, nmo_object_id_t entity, int32
     const eng_matrix_t *at = &engine->entities.data[index].world;
     int32_t n = blur->n;
     if (memcmp(&blur->tab[0], &blur->tab[n - 1], sizeof(eng_matrix_t)) == 0) {
-        eng_render_entity_mesh(engine, entity, mesh, at->m[0], transparent);
+        eng_render_entity_mesh(engine, entity, mesh, at, transparent);
         return;
     }
     int32_t mid = (int32_t)((float)n * 0.33333334f);
@@ -3005,7 +3005,7 @@ static void planar_reflection_draw(nmo_engine_t *engine, nmo_object_id_t plane, 
         stencil->pass = VXSTENCILOP_REPLACE;
         nmo_object_id_t mesh = entity_shown_mesh(engine, plane);
         if (mesh != 0) {
-            nmo_engine_draw_t *draw = eng_render_entity_mesh(engine, plane, mesh, at.m[0], transparent);
+            nmo_engine_draw_t *draw = eng_render_entity_mesh(engine, plane, mesh, &at, transparent);
             if (draw != NULL) {
                 draw->stencil_only = true;
             }
@@ -3028,7 +3028,7 @@ static void planar_reflection_draw(nmo_engine_t *engine, nmo_object_id_t plane, 
         eng_matrix_t world;
         eng_matrix_multiply(&world, &reflect, &engine->entities.data[entity].world);
         if (mesh != 0) {
-            nmo_engine_draw_t *draw = eng_render_entity_mesh(engine, attribute.object, mesh, world.m[0], transparent);
+            nmo_engine_draw_t *draw = eng_render_entity_mesh(engine, attribute.object, mesh, &world, transparent);
             if (draw != NULL) {
                 draw->mirrored = !draw->mirrored;
             }
@@ -3036,7 +3036,7 @@ static void planar_reflection_draw(nmo_engine_t *engine, nmo_object_id_t plane, 
         }
         nmo_object_id_t own = entity_shown_mesh(engine, attribute.object);
         if (own != 0 && nmo_engine_object_is_visible(engine, attribute.object)) {
-            nmo_engine_draw_t *draw = eng_render_entity_mesh(engine, attribute.object, own, world.m[0], transparent);
+            nmo_engine_draw_t *draw = eng_render_entity_mesh(engine, attribute.object, own, &world, transparent);
             if (draw != NULL) {
                 draw->mirrored = !draw->mirrored;
             }
@@ -3048,7 +3048,7 @@ static void planar_reflection_draw(nmo_engine_t *engine, nmo_object_id_t plane, 
             }
             eng_matrix_multiply(&world, &reflect, &engine->entities.data[child].world);
             nmo_engine_draw_t *draw =
-                eng_render_entity_mesh(engine, engine->entities.data[child].id, child_mesh, world.m[0], transparent);
+                eng_render_entity_mesh(engine, engine->entities.data[child].id, child_mesh, &world, transparent);
             if (draw != NULL) {
                 draw->mirrored = !draw->mirrored;
             }
@@ -3772,7 +3772,7 @@ static void shadow_caster_draw(nmo_engine_t *engine, int32_t index)
     }
     nmo_object_id_t mesh = nmo_engine_object_is_visible(engine, id) ? entity_shown_mesh(engine, id) : 0;
     if (mesh != 0) {
-        nmo_engine_draw_t *draw = eng_render_entity_mesh(engine, id, mesh, engine->entities.data[index].world.m[0], false);
+        nmo_engine_draw_t *draw = eng_render_entity_mesh(engine, id, mesh, &engine->entities.data[index].world, false);
         if (draw != NULL) {
             draw->blackened = true;
             draw->no_z_test = true;

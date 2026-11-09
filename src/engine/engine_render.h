@@ -10,6 +10,7 @@
 #define NMO_ENGINE_RENDER_H_INTERNAL
 
 #include "engine_base.h"
+#include "engine_transform.h"
 
 #include "core/nmo_math.h"
 #include "engine/nmo_engine_render.h"
@@ -456,7 +457,7 @@ void eng_remove_entity_callback(nmo_engine_t *engine, nmo_object_id_t entity, en
 /* CKMesh::Render of the entity's `mesh` at `world` (rows, as VxMatrix), with the entity's
    moveable flags; drawn with the transparent ones when `transparent`. NULL out of memory. */
 nmo_engine_draw_t *eng_render_entity_mesh(nmo_engine_t *engine, nmo_object_id_t entity, nmo_object_id_t mesh,
-                                          const float world[16], bool transparent);
+                                          const eng_matrix_t *world, bool transparent);
 /* CKRenderContext::GetFirstFreeStencilBits: the first of the 8 stencil bits unused since the
    last stencil clear; with none left the blocks clear the stencil (Clear(CK_RENDER_CLEARSTENCIL)):
    the engine starts over at bit 0 */

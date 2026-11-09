@@ -2403,7 +2403,7 @@ void eng_remove_entity_callback(nmo_engine_t *engine, nmo_object_id_t entity, en
 }
 
 nmo_engine_draw_t *eng_render_entity_mesh(nmo_engine_t *engine, nmo_object_id_t entity, nmo_object_id_t mesh,
-                                          const float world[16], bool transparent)
+                                          const eng_matrix_t *world, bool transparent)
 {
     int32_t index = eng_entity_index(engine, entity);
     nmo_engine_draw_t *draw = NULL;
@@ -2414,7 +2414,7 @@ nmo_engine_draw_t *eng_render_entity_mesh(nmo_engine_t *engine, nmo_object_id_t 
     draw->kind = NMO_ENGINE_DRAW_MESH;
     draw->object = entity;
     draw->mesh = mesh;
-    memcpy(draw->world, world, sizeof(draw->world));
+    memcpy(draw->world, world->m, sizeof(draw->world));
     /* and the moveable flags RCKMesh::Render applies */
     draw->transparent = transparent;
     draw->no_z_test = (moveable & VX_MOVEABLE_NOZBUFFERTEST) != 0;
@@ -3028,7 +3028,7 @@ static nmo_status_t eng_render_entity(nmo_engine_t *engine, int32_t index, const
         eng_run_entity_callbacks(engine, id, ENG_ENTITY_POST_RENDER, last, true);
         return NMO_OK;
     }
-    if (eng_render_entity_mesh(engine, id, mesh, engine->entities.data[index].world.m[0], last) == NULL) {
+    if (eng_render_entity_mesh(engine, id, mesh, &engine->entities.data[index].world, last) == NULL) {
         return NMO_ERR_NOMEM;
     }
     eng_run_entity_callbacks(engine, id, ENG_ENTITY_POST_RENDER, last, true);

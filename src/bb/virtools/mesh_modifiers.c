@@ -294,7 +294,7 @@ static int bb_change_referential(blk_t *b)
     } else {
         eng_matrix_identity(&world);
     }
-    nmo_engine_set_entity_world_matrix(engine, id, &world.m[0][0], true);
+    eng_entity_set_world_matrix(engine, index, &world, true);
     entity = &engine->entities.data[index];
     if (ref >= 0) {
         entity->moveable_flags &= ~(uint32_t)VX_MOVEABLE_WORLDALIGNED;

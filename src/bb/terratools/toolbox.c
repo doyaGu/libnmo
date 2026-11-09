@@ -2816,7 +2816,7 @@ static void cel_outline(nmo_engine_t *engine, nmo_object_id_t entity, int32_t no
     int32_t index = eng_entity_index(engine, entity);
     nmo_object_id_t mesh = index >= 0 ? current_mesh_of(engine, entity) : 0;
     nmo_engine_draw_t *draw =
-        mesh != 0 ? eng_render_entity_mesh(engine, entity, mesh, engine->entities.data[index].world.m[0], transparent)
+        mesh != 0 ? eng_render_entity_mesh(engine, entity, mesh, &engine->entities.data[index].world, transparent)
                   : NULL;
     if (draw != NULL) {
         draw->wireframe = true;
@@ -4531,7 +4531,7 @@ static void stencil_shadow_draw(nmo_engine_t *engine, stencil_block_t *block)
                 continue;
             }
             nmo_engine_draw_t *draw = eng_render_entity_mesh(engine, caster->shadow_entity, caster->shadow_mesh,
-                                                             &engine->entities.data[object].world.m[0][0], false);
+                                                             &engine->entities.data[object].world, false);
             if (draw != NULL) {
                 draw->stencil_only = true;
                 draw->mirrored = pass == 1;
@@ -4563,7 +4563,7 @@ static void stencil_shadow_draw(nmo_engine_t *engine, stencil_block_t *block)
             continue;
         }
         nmo_engine_draw_t *draw = eng_render_entity_mesh(engine, caster->object, mesh,
-                                                         &engine->entities.data[object].world.m[0][0], false);
+                                                         &engine->entities.data[object].world, false);
         if (draw != NULL) {
             draw->no_z_test = true;
         }

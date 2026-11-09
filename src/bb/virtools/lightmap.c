@@ -1980,7 +1980,8 @@ static void lm_generate_objects(nmo_engine_t *engine, lightmap_t *lm)
         }
         eng_entity_set_current_mesh(engine, nent, nmesh);
         eng_entity_add_mesh(engine, nent, nmesh);
-        nmo_engine_set_entity_world_matrix(engine, nent, engine->entities.data[index].world.m[0], false);
+        eng_matrix_t world = engine->entities.data[index].world;
+        eng_entity_set_world_matrix(engine, nindex, &world, false);
         int32_t parent = engine->entities.data[index].parent;
         if (parent >= 0) {
             eng_entity_set_parent(engine, nindex, parent, true);
