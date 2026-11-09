@@ -102,7 +102,7 @@ TEST(engine_position_on_curve, follows_all_six_axes_and_keeps_scale_without_sche
         vector(up(&g),(eng_vector_t){99,0,0}); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); position(&g,g.f.owner_id,(eng_vector_t){8,0,6});
         float matrix[16]; ASSERT_TRUE(nmo_engine_entity_world_matrix(g.f.engine,g.f.owner_id,matrix)); int row = (axis-1)/2;
         eng_vector_t direction = {matrix[4*row],matrix[4*row+1],matrix[4*row+2]}; eng_vector_normalize(&direction);
-        float sign = axis%2 ? 1 : -1; vector(direction,(eng_vector_t){.8f*sign,0,.6f*sign});
+        float sign = axis%2 ? 1.0f : -1.0f; vector(direction,(eng_vector_t){.8f*sign,0,.6f*sign});
         vector(eng_entity_scale(g.f.engine,eng_entity_index(g.f.engine,g.f.owner_id),true),(eng_vector_t){2,3,4});
         ASSERT_EQ(1u,runs(&g.f,g.out)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(1u,runs(&g.f,g.block));
         ASSERT_FLOAT_EQ(3,((nmo_3dentity_state_t *)fixture_state(&g.f,g.f.owner_id))->world_matrix[12],0); fixture_end(&g.f);

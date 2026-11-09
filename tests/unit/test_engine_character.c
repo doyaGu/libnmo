@@ -222,7 +222,7 @@ TEST(engine_character, primary_handoff_carries_time_across_linked_and_mixed_cloc
         engine_fixture_t f;
         fixture_begin_document(&f);
         nmo_object_id_t body, actor = character(&f,&body);
-        nmo_object_id_t a = clip(&f,"A",actor,body,10,0,10), b = clip(&f,"B",actor,body,20,0,mixed ? 20 : 40);
+        nmo_object_id_t a = clip(&f,"A",actor,body,10,0,10), b = clip(&f,"B",actor,body,20,0,mixed ? 20.0f : 40.0f);
         nmo_keyedanimation_state_t *sa = fixture_state(&f,a), *sb = fixture_state(&f,b);
         if (mixed) sa->base.flags = 0;
         else sb->base.frame_rate = 500;
@@ -233,7 +233,7 @@ TEST(engine_character, primary_handoff_carries_time_across_linked_and_mixed_cloc
         ASSERT_TRUE(eng_keyed_animation_center(f.engine,a,mixed ? 9.5f : 8));
         ASSERT_EQ(NMO_OK,eng_character_set_active_animation(f.engine,actor,a));
         ASSERT_EQ(NMO_OK,eng_character_set_next_animation(f.engine,actor,b,CK_TRANSITION_TOSTART));
-        ASSERT_EQ(NMO_OK,eng_character_process(f.engine,actor,mixed ? 4 : 5));
+        ASSERT_EQ(NMO_OK,eng_character_process(f.engine,actor,mixed ? 4.0f : 5.0f));
         ASSERT_EQ(b,eng_character_active_animation(f.engine,actor));
         ASSERT_EQ(0u,eng_character_next_animation(f.engine,actor));
         ASSERT_FLOAT_EQ(mixed ? 2 : 1.5f,frame(f.engine,b),0.000001f);
@@ -264,7 +264,7 @@ TEST(engine_character, queued_self_is_consumed_once_and_reverse_playback_finishe
             ASSERT_TRUE(eng_keyed_animation_center(f.engine,a,8));
         }
         ASSERT_EQ(NMO_OK,eng_character_set_next_animation(f.engine,actor,b,CK_TRANSITION_TOSTART));
-        ASSERT_EQ(NMO_OK,eng_character_process(f.engine,actor,reverse ? 5 : 25));
+        ASSERT_EQ(NMO_OK,eng_character_process(f.engine,actor,reverse ? 5.0f : 25.0f));
         ASSERT_EQ(b,eng_character_active_animation(f.engine,actor));
         ASSERT_EQ(0u,eng_character_next_animation(f.engine,actor));
         ASSERT_FLOAT_EQ(reverse ? 3 : 10,frame(f.engine,b),0.000001f);

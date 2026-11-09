@@ -333,26 +333,26 @@ TEST(engine_animation_step, loaded_and_copied_graphs_remap_animation_bindings_an
             for (size_t i = 0; i < COUNT(original); i++) { ids[i] = eng_module_id(module,original[i]); ASSERT_TRUE(ids[i] != 0); }
             ASSERT_TRUE(ids[6] != g.animation); ASSERT_EQ(global ? ids[5] : ids[2],eng_object_animation_entity(host.engine,ids[6]));
             ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
-            position(host.engine,global ? ids[5] : ids[2],global ? 2 : 12,4,6);
-            position(host.engine,ids[3],global ? 5 : 15,4,6); position(host.engine,ids[4],global ? 0 : 40,0,0);
+            position(host.engine,global ? ids[5] : ids[2],global ? 2.0f : 12.0f,4,6);
+            position(host.engine,ids[3],global ? 5.0f : 15.0f,4,6); position(host.engine,ids[4],global ? 0.0f : 40.0f,0,0);
             ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(host.engine,ids,COUNT(ids),false,copies));
             ASSERT_EQ(global ? copies[5] : copies[2],eng_object_animation_entity(host.engine,copies[6]));
             ASSERT_EQ(copies[6],eng_keyed_animation_part(host.engine,copies[7],global ? copies[5] : copies[2]));
             nmo_object_id_t copied_reference = 0; read_value(&host,copies[11],&copied_reference,sizeof(copied_reference));
             ASSERT_EQ(global ? copies[7] : copies[6],copied_reference);
             const float different = .75f; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[12],&different,sizeof(different)));
-            move(host.engine,global ? copies[4] : copies[1],global ? 60 : 30);
+            move(host.engine,global ? copies[4] : copies[1],global ? 60.0f : 30.0f);
             ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,ids[8],true,true));
             ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[8],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
-            position(host.engine,global ? ids[5] : ids[2],global ? 2 : 12,4,6);
-            position(host.engine,global ? copies[5] : copies[2],global ? 6 : 36,12,18);
-            position(host.engine,copies[3],global ? 9 : 39,12,18); position(host.engine,copies[4],global ? 0 : 40,0,0);
+            position(host.engine,global ? ids[5] : ids[2],global ? 2.0f : 12.0f,4,6);
+            position(host.engine,global ? copies[5] : copies[2],global ? 6.0f : 36.0f,12,18);
+            position(host.engine,copies[3],global ? 9.0f : 39.0f,12,18); position(host.engine,copies[4],global ? 0.0f : 40.0f,0,0);
             float original_step = NAN; read_value(&host,ids[12],&original_step,sizeof(original_step)); ASSERT_FLOAT_EQ(.25f,original_step,0);
             nmo_engine_destroy_object(host.engine,ids[6]); nmo_engine_destroy_object(host.engine,ids[7]);
             nmo_engine_destroy_object(host.engine,global ? ids[4] : ids[2]); nmo_engine_destroy_object(host.engine,ids[0]);
             const float half = .5f; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[12],&half,sizeof(half)));
             ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[8],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
-            position(host.engine,global ? copies[5] : copies[2],global ? 4 : 34,8,12); position(host.engine,copies[3],global ? 7 : 37,8,12);
+            position(host.engine,global ? copies[5] : copies[2],global ? 4.0f : 34.0f,8,12); position(host.engine,copies[3],global ? 7.0f : 37.0f,8,12);
             ASSERT_EQ(2u,runs(&host,copies[10])); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,100)); ASSERT_EQ(2u,runs(&host,copies[9]));
             fixture_end(&host);
         }

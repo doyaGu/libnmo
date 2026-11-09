@@ -155,8 +155,8 @@ TEST(engine_keyed, lazy_roots_walk_past_empty_slots_to_standalone_or_character_a
             ASSERT_EQ(NMO_OK, nmo_engine_set_entity_world_matrix(f.engine, actor, matrix, false));
         }
         ASSERT_TRUE(eng_animation_set_step(f.engine, keyed, 0.5f));
-        position(f.engine, f.owner_id, character ? 103 : 3,0,0);
-        position(f.engine, leaf, character ? 105 : 5,0,0);
+        position(f.engine, f.owner_id, character ? 103.0f : 3.0f,0,0);
+        position(f.engine, leaf, character ? 105.0f : 5.0f,0,0);
         fixture_end(&f);
     }
 }

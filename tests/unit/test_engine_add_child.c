@@ -224,7 +224,7 @@ TEST(engine_add_child, loaded_and_copied_graphs_keep_parent_child_bindings_and_i
             ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(host.engine,ids,COUNT(ids),false,copies));
             ASSERT_EQ(copies[2],nmo_engine_entity_parent(host.engine,copies[3])); ASSERT_EQ(copies[3],nmo_engine_entity_parent(host.engine,copies[4]));
             child_fixture_t view = {.f.engine=host.engine}; set_parent_position(&view,copies[2],(eng_vector_t){210,20,30});
-            position(&view,copies[3],(eng_vector_t){disabled ? 4 : 204,22,42}); position(&view,ids[3],(eng_vector_t){4,22,42});
+            position(&view,copies[3],(eng_vector_t){disabled ? 4.0f : 204.0f,22,42}); position(&view,ids[3],(eng_vector_t){4,22,42});
             ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[10],&copies[1],sizeof(copies[1])));
             ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,ids[7],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[7],true,true));
             ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0)); ASSERT_EQ(ids[2],nmo_engine_entity_parent(host.engine,ids[3])); ASSERT_EQ(copies[1],nmo_engine_entity_parent(host.engine,copies[3]));
@@ -233,7 +233,7 @@ TEST(engine_add_child, loaded_and_copied_graphs_keep_parent_child_bindings_and_i
             int32_t child = eng_entity_index(host.engine,copies[3]); ASSERT_EQ(disabled != 0,(host.engine->entities.data[child].moveable_flags & VX_MOVEABLE_DONTUPDATEFROMPARENT) != 0);
             host.engine->entities.data[child].moveable_flags &= ~VX_MOVEABLE_DONTUPDATEFROMPARENT;
             set_parent_position(&view,copies[1],(eng_vector_t){90,-20,-30});
-            position(&view,copies[3],(eng_vector_t){disabled ? 104 : 304,22,42}); position(&view,copies[4],(eng_vector_t){disabled ? 106 : 306,25,46});
+            position(&view,copies[3],(eng_vector_t){disabled ? 104.0f : 304.0f,22,42}); position(&view,copies[4],(eng_vector_t){disabled ? 106.0f : 306.0f,25,46});
             ASSERT_EQ(2u,runs(&host,ids[8])); ASSERT_EQ(1u,runs(&host,copies[8])); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,10)); ASSERT_EQ(1u,runs(&host,copies[8])); fixture_end(&host);
         }
         ASSERT_EQ(g.old_parent,nmo_ref_runtime_id(&((nmo_3dentity_state_t *)fixture_state(&g.f,g.child))->parent)); fixture_end(&g.f); remove(path);

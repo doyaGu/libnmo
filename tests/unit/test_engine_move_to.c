@@ -123,7 +123,7 @@ TEST(engine_move_to, time_motion_counts_the_first_delta_and_finishes_only_after_
         fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,4),hierarchy); commit(&g);
         ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,25)); position(&g,g.f.owner_id,15,25,35);
         ASSERT_FLOAT_EQ(.25f,value(&g,BLOCK_POUT(&g.f,g.block,0)),1e-6f); ASSERT_EQ(0u,runs(&g.f,g.done));
-        position(&g,g.child,hierarchy ? 16 : 11,hierarchy ? 27 : 22,hierarchy ? 38 : 33);
+        position(&g,g.child,hierarchy ? 16.0f : 11.0f,hierarchy ? 27.0f : 22.0f,hierarchy ? 38.0f : 33.0f);
         ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,25)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,50));
         position(&g,g.f.owner_id,30,40,50); ASSERT_EQ(0u,runs(&g.f,g.done)); ASSERT_EQ(3u,runs(&g.f,g.loop));
         ASSERT_FLOAT_EQ(100,value(&g,local(&g,0)),0); ASSERT_FLOAT_EQ(1,value(&g,BLOCK_POUT(&g.f,g.block,0)),0);
@@ -231,7 +231,7 @@ TEST(engine_move_to, zero_and_negative_time_durations_keep_native_division_and_c
     for (size_t i = 0; i < COUNT(durations); i++) {
         move_fixture_t g; begin(&g,false,false,false); duration(&g,durations[i]); commit(&g);
         ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,5)); ASSERT_EQ(1u,runs(&g.f,g.done));
-        position(&g,g.f.owner_id,i == 0 ? 30 : 10,i == 0 ? 40 : 20,i == 0 ? 50 : 30);
+        position(&g,g.f.owner_id,i == 0 ? 30.0f : 10.0f,i == 0 ? 40.0f : 20.0f,i == 0 ? 50.0f : 30.0f);
         ASSERT_FLOAT_EQ(0,value(&g,BLOCK_POUT(&g.f,g.block,0)),0); ASSERT_FLOAT_EQ(0,value(&g,local(&g,0)),0); fixture_end(&g.f);
     }
 }
@@ -274,7 +274,7 @@ TEST(engine_move_to, old_float_time_versions_upgrade_only_runtime_metadata_and_f
         ASSERT_EQ(frames ? 0x10004u : 0x10005u,nmo_engine_block_version(&block));
         ASSERT_TRUE(nmo_guid_equals(frames ? CKPGUID_INT : CKPGUID_TIME,nmo_engine_block_input_parameter_type(&block,1)));
         ASSERT_EQ(0x10004u,saved->block_version);
-        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,1)); position(&g,g.f.owner_id,frames ? 10 : 20,frames ? 20 : 30,frames ? 30 : 40);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,1)); position(&g,g.f.owner_id,frames ? 10.0f : 20.0f,frames ? 20.0f : 30.0f,frames ? 30.0f : 40.0f);
         ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,1));
         if (frames) { ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,1)); ASSERT_EQ(1u,runs(&g.f,g.done)); }
         else ASSERT_EQ(0u,runs(&g.f,g.done));

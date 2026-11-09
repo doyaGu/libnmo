@@ -134,8 +134,8 @@ TEST(engine_set_orientation, transforms_axes_through_scaled_and_sheared_referenc
     for (int shear = 0; shear < 2; shear++) {
         orientation_fixture_t g; begin(&g); input(&g,0,(eng_vector_t){1,0,1}); fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,3),(int32_t)g.reference);
         nmo_3dentity_state_t *reference = fixture_state(&g.f,g.reference);
-        reference->world_matrix[0] = shear ? 2 : 0; reference->world_matrix[1] = shear ? 1 : 2;
-        reference->world_matrix[4] = shear ? 0 : -3; reference->world_matrix[5] = shear ? 3 : 0; reference->world_matrix[10] = 4; commit(&g);
+        reference->world_matrix[0] = shear ? 2.0f : 0.0f; reference->world_matrix[1] = shear ? 1.0f : 2.0f;
+        reference->world_matrix[4] = shear ? 0.0f : -3.0f; reference->world_matrix[5] = shear ? 3.0f : 0.0f; reference->world_matrix[10] = 4; commit(&g);
         ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0));
         if (shear) { float root = sqrtf(21); basis(&g,(eng_vector_t){4/root,2/root,-8/root},(eng_vector_t){0,3,0},(eng_vector_t){8/root,4/root,16/root}); }
         else { float root = sqrtf(5); basis(&g,(eng_vector_t){0,2/root,-4/root},(eng_vector_t){-3,0,0},(eng_vector_t){0,4/root,8/root}); }
@@ -168,7 +168,7 @@ TEST(engine_set_orientation, mirrored_and_collapsed_axes_use_native_positive_wor
 {
     for (int collapsed = 0; collapsed < 2; collapsed++) {
         orientation_fixture_t g; begin(&g); nmo_3dentity_state_t *target = fixture_state(&g.f,g.target);
-        target->world_matrix[0] = collapsed ? 0 : -2; target->world_matrix[5] = collapsed ? 0 : 3; target->world_matrix[10] = -4; commit(&g);
+        target->world_matrix[0] = collapsed ? 0.0f : -2.0f; target->world_matrix[5] = collapsed ? 0.0f : 3.0f; target->world_matrix[10] = -4; commit(&g);
         ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0));
         eng_vector_t scale = eng_entity_scale(g.f.engine,eng_entity_index(g.f.engine,g.target),false);
         ASSERT_FLOAT_EQ(collapsed ? 1e-6f : 2,scale.x,1e-10f); ASSERT_FLOAT_EQ(collapsed ? 1e-6f : 3,scale.y,1e-10f); ASSERT_FLOAT_EQ(4,scale.z,1e-6f);

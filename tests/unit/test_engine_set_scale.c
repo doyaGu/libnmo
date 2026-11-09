@@ -263,7 +263,7 @@ TEST(engine_set_scale, disconnected_vectors_use_unit_scale_and_collapsed_axes_st
         scale_fixture_t g; begin(&g);
         if (collapsed) ((nmo_3dentity_state_t *)fixture_state(&g.f,g.target))->world_matrix[0] = 0;
         ASSERT_EQ(NMO_OK,nmo_script_edit_disconnect_parameter(g.f.tx,BLOCK_PIN(&g.f,g.block,0))); commit(&g);
-        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); basis(g.f.engine,g.target,(eng_vector_t){collapsed ? 0 : 1,0,0},(eng_vector_t){0,1,0},(eng_vector_t){0,0,1}); fixture_end(&g.f);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); basis(g.f.engine,g.target,(eng_vector_t){collapsed ? 0.0f : 1.0f,0,0},(eng_vector_t){0,1,0},(eng_vector_t){0,0,1}); fixture_end(&g.f);
     }
 }
 
@@ -385,7 +385,7 @@ TEST(engine_set_scale, loaded_and_copied_scale_graphs_remap_entities_and_sprites
                 basis(host.engine,ids[1],(eng_vector_t){4,0,0},(eng_vector_t){0,6,0},(eng_vector_t){0,0,8});
                 position(host.engine,ids[2],hierarchy ? (eng_vector_t){7,10,13} : (eng_vector_t){5,7,9});
             } else {
-                sprite_size(host.engine,ids[1],8,kind == 1 ? 2 : 3);
+                sprite_size(host.engine,ids[1],8,kind == 1 ? 2.0f : 3.0f);
                 quad(host.engine,ids[1],-1,kind == 1 ? .25f : -1.625f,15,kind == 1 ? 6.25f : 7.375f);
             }
             ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(host.engine,ids,(int32_t)count,false,copies));
@@ -401,7 +401,7 @@ TEST(engine_set_scale, loaded_and_copied_scale_graphs_remap_entities_and_sprites
                 basis(host.engine,ids[1],(eng_vector_t){4,0,0},(eng_vector_t){0,6,0},(eng_vector_t){0,0,8});
             } else {
                 eng_show(host.engine,copies[1],1); sprite_size(host.engine,copies[1],4,6); quad(host.engine,copies[1],1,-7.25f,9,10.75f);
-                sprite_size(host.engine,ids[1],8,kind == 1 ? 2 : 3); eng_save_ic(host.engine,copies[1]);
+                sprite_size(host.engine,ids[1],8,kind == 1 ? 2.0f : 3.0f); eng_save_ic(host.engine,copies[1]);
                 ASSERT_EQ(copies[9],eng_sprite3d(host.engine,copies[1])->material);
             }
             nmo_engine_destroy_object(host.engine,ids[1]); nmo_engine_destroy_object(host.engine,ids[0]);

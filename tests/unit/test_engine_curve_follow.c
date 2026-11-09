@@ -54,7 +54,7 @@ static void begin(follow_fixture_t *g, bool frames, bool legacy, bool loop)
         nmo_curvepoint_state_t *point = fixture_state(&g->f,g->points[i]); ASSERT_NOT_NULL(point);
         point->base.parent = nmo_ref_from_id(g->path); point->base.has_entityndata_chunk = 1;
         point->curve = nmo_ref_from_id(g->path); point->linear = 1;
-        nmo_curvepoint_set_position(point,0,0,i ? 20 : 0); path->control_point_ids[i] = nmo_ref_from_id(g->points[i]);
+        nmo_curvepoint_set_position(point,0,0,i ? 20.0f : 0.0f); path->control_point_ids[i] = nmo_ref_from_id(g->points[i]);
     }
     g->f.script_id = fixture_add_script(&g->f,"Follow Script",&g->f.script_in); fixture_begin_edit(&g->f);
     g->block = fixture_block(&g->f,GUID_FOLLOW,"Curve Follow"); g->done = fixture_block(&g->f,GUID_NOP,"Done"); g->loop = fixture_block(&g->f,GUID_NOP,"Loop");
@@ -181,17 +181,17 @@ TEST(engine_curve_follow, single_frame_evaluates_the_curve_endpoint_without_over
 TEST(engine_curve_follow, path_transforms_and_hierarchy_are_resampled_without_changing_orientation_or_scale)
 {
     for (int frames = 0; frames < 2; frames++) for (int hierarchy = 0; hierarchy < 2; hierarchy++) {
-        follow_fixture_t g; begin(&g,frames,false,true); duration(&g,frames ? 3 : 100);
+        follow_fixture_t g; begin(&g,frames,false,true); duration(&g,frames ? 3.0f : 100.0f);
         fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,3),hierarchy); commit(&g);
         eng_matrix_t path; eng_matrix_from_euler(&path,0,1.57079632679f,0);
         for (int j = 0; j < 3; j++) path.m[2][j] *= 2;
         path.m[3][0] = 100; path.m[3][1] = 50; path.m[3][2] = 10;
         eng_entity_set_world_matrix(g.f.engine,eng_entity_index(g.f.engine,g.path),&path,false);
-        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,25)); position(&g,g.f.owner_id,frames ? 100 : 110,50,10);
-        position(&g,g.child,hierarchy ? (frames ? 102 : 112) : 5,hierarchy ? 53 : 7,hierarchy ? 14 : 9);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,25)); position(&g,g.f.owner_id,frames ? 100.0f : 110.0f,50,10);
+        position(&g,g.child,hierarchy ? (frames ? 102.0f : 112.0f) : 5,hierarchy ? 53.0f : 7.0f,hierarchy ? 14.0f : 9.0f);
         path.m[3][0] = 200; eng_entity_set_world_matrix(g.f.engine,eng_entity_index(g.f.engine,g.path),&path,false);
         ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,25)); position(&g,g.f.owner_id,220,50,10);
-        position(&g,g.child,hierarchy ? 222 : 5,hierarchy ? 53 : 7,hierarchy ? 14 : 9);
+        position(&g,g.child,hierarchy ? 222.0f : 5.0f,hierarchy ? 53.0f : 7.0f,hierarchy ? 14.0f : 9.0f);
         float matrix[16]; ASSERT_TRUE(nmo_engine_entity_world_matrix(g.f.engine,g.f.owner_id,matrix));
         ASSERT_FLOAT_EQ(2,matrix[0],1e-5f); ASSERT_FLOAT_EQ(3,matrix[5],1e-5f); ASSERT_FLOAT_EQ(4,matrix[10],1e-5f); fixture_end(&g.f);
     }
@@ -200,26 +200,26 @@ TEST(engine_curve_follow, path_transforms_and_hierarchy_are_resampled_without_ch
 TEST(engine_curve_follow, explicit_triggers_are_required_and_restart_wins_over_loop_in)
 {
     for (int frames = 0; frames < 2; frames++) {
-        follow_fixture_t g; begin(&g,frames,false,false); duration(&g,frames ? 3 : 100); commit(&g);
+        follow_fixture_t g; begin(&g,frames,false,false); duration(&g,frames ? 3.0f : 100.0f); commit(&g);
         nmo_engine_block_t block = {.engine=g.f.engine,.node=eng_map_get(&g.f.engine->node_map,g.block)};
         nmo_engine_block_activate_input(&block,1,true);
         ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,25)); ASSERT_TRUE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,1)));
         ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,25)); ASSERT_EQ(1u,runs(&g.f,g.block));
         ASSERT_EQ(NMO_OK,nmo_engine_activate_script(g.f.engine,g.f.script_id,true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,25));
-        position(&g,g.f.owner_id,0,0,frames ? 0 : 5); ASSERT_EQ(2u,runs(&g.f,g.block)); ASSERT_EQ(0u,runs(&g.f,g.done)); fixture_end(&g.f);
+        position(&g,g.f.owner_id,0,0,frames ? 0.0f : 5.0f); ASSERT_EQ(2u,runs(&g.f,g.block)); ASSERT_EQ(0u,runs(&g.f,g.done)); fixture_end(&g.f);
     }
 }
 
 TEST(engine_curve_follow, live_duration_and_path_geometry_control_absolute_positions)
 {
     for (int frames = 0; frames < 2; frames++) {
-        follow_fixture_t g; begin(&g,frames,false,true); duration(&g,frames ? 3 : 100); commit(&g);
-        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,25)); position(&g,g.f.owner_id,0,0,frames ? 0 : 5);
+        follow_fixture_t g; begin(&g,frames,false,true); duration(&g,frames ? 3.0f : 100.0f); commit(&g);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,25)); position(&g,g.f.owner_id,0,0,frames ? 0.0f : 5.0f);
         float changed = 200; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,source(&g,1),&changed,sizeof(changed)));
         eng_vector_t end = {0,0,40}, elsewhere = {-100,-200,-300};
         eng_entity_set_position(g.f.engine,eng_entity_index(g.f.engine,g.points[1]),&end,-1,false);
         eng_entity_set_position(g.f.engine,eng_entity_index(g.f.engine,g.f.owner_id),&elsewhere,-1,false);
-        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,25)); position(&g,g.f.owner_id,0,0,frames ? 20 : 10);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,25)); position(&g,g.f.owner_id,0,0,frames ? 20.0f : 10.0f);
         ASSERT_FLOAT_EQ(frames ? .5f : .25f,value(&g,BLOCK_POUT(&g.f,g.block,0)),1e-6f); fixture_end(&g.f);
     }
 }
@@ -227,7 +227,7 @@ TEST(engine_curve_follow, live_duration_and_path_geometry_control_absolute_posit
 TEST(engine_curve_follow, missing_progression_curves_are_only_optional_on_the_initial_frame)
 {
     for (int mode = 0; mode < 3; mode++) {
-        follow_fixture_t g; begin(&g,mode != 0,false,true); duration(&g,mode == 2 ? 1 : 3);
+        follow_fixture_t g; begin(&g,mode != 0,false,true); duration(&g,mode == 2 ? 1.0f : 3.0f);
         nmo_parameterin_set_source_id(fixture_state(&g.f,BLOCK_PIN(&g.f,g.block,2)),0); commit(&g);
         ASSERT_EQ(mode == 0 ? NMO_ERR_VALIDATION_FAILED : NMO_OK,nmo_engine_step(g.f.engine,1));
         if (mode == 0) {
@@ -250,7 +250,7 @@ TEST(engine_curve_follow, load_selects_duration_type_and_upgrades_only_old_float
         ASSERT_EQ(mode == 0 ? 0x10005u : 0x10004u,nmo_engine_block_version(&block));
         nmo_guid_t type = mode == 0 ? CKPGUID_TIME : mode == 1 ? CKPGUID_INT : CKPGUID_FLOAT;
         ASSERT_TRUE(nmo_guid_equals(type,nmo_engine_block_input_parameter_type(&block,1))); ASSERT_EQ(0x10004u,saved->block_version);
-        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,2.75f)); position(&g,g.f.owner_id,0,0,mode == 0 ? 11 : mode == 1 ? 8 : 0); fixture_end(&g.f);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,2.75f)); position(&g,g.f.owner_id,0,0,mode == 0 ? 11 : mode == 1 ? 8.0f : 0.0f); fixture_end(&g.f);
     }
 }
 
@@ -259,7 +259,7 @@ TEST(engine_curve_follow, zero_and_negative_durations_preserve_native_division_a
     const float durations[] = {0,-10};
     for (size_t i = 0; i < COUNT(durations); i++) {
         follow_fixture_t g; begin(&g,false,false,true); duration(&g,durations[i]); commit(&g);
-        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,5)); position(&g,g.f.owner_id,0,0,i ? 0 : 20);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,5)); position(&g,g.f.owner_id,0,0,i ? 0.0f : 20.0f);
         ASSERT_FLOAT_EQ(i ? -.5f : 1,value(&g,BLOCK_POUT(&g.f,g.block,0)),0); ASSERT_FLOAT_EQ(0,value(&g,local(&g,0)),0);
         ASSERT_EQ(1u,runs(&g.f,g.done)); fixture_end(&g.f);
     }

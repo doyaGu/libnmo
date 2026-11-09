@@ -126,10 +126,10 @@ TEST(engine_dolly, hierarchy_moves_or_keeps_descendants_and_kept_children_follow
         dolly_fixture_t g; begin(&g); ready(&g);
         ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.hierarchy_value,&values[i],sizeof(values[i])));
         ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); position(g.f.engine,g.camera,(eng_vector_t){3,4,9});
-        position(g.f.engine,g.child,(eng_vector_t){5,7,i == 0 ? 9 : 13}); position(g.f.engine,g.grandchild,(eng_vector_t){6,9,i == 0 ? 12 : 16});
+        position(g.f.engine,g.child,(eng_vector_t){5,7,i == 0 ? 9.0f : 13.0f}); position(g.f.engine,g.grandchild,(eng_vector_t){6,9,i == 0 ? 12.0f : 16.0f});
         eng_vector_t moved = {110,20,30}; eng_entity_set_position(g.f.engine,eng_entity_index(g.f.engine,g.parent),&moved,-1,false);
-        position(g.f.engine,g.camera,(eng_vector_t){103,4,9}); position(g.f.engine,g.child,(eng_vector_t){105,7,i == 0 ? 9 : 13});
-        position(g.f.engine,g.grandchild,(eng_vector_t){106,9,i == 0 ? 12 : 16}); fixture_end(&g.f);
+        position(g.f.engine,g.camera,(eng_vector_t){103,4,9}); position(g.f.engine,g.child,(eng_vector_t){105,7,i == 0 ? 9.0f : 13.0f});
+        position(g.f.engine,g.grandchild,(eng_vector_t){106,9,i == 0 ? 12.0f : 16.0f}); fixture_end(&g.f);
     }
 }
 
@@ -142,8 +142,8 @@ TEST(engine_dolly, disconnected_inputs_keep_native_distance_and_hierarchy_fallba
         ready(&g);
         if (kind == 0) { int32_t hierarchy = 0; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.hierarchy_value,&hierarchy,sizeof(hierarchy))); }
         if (kind == 1) { float value = 2; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.distance_value,&value,sizeof(value))); }
-        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); position(g.f.engine,g.camera,(eng_vector_t){3,4,kind == 1 ? 13 : 9});
-        position(g.f.engine,g.child,(eng_vector_t){5,7,kind == 0 ? 9 : kind == 1 ? 17 : 13}); fixture_end(&g.f);
+        ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); position(g.f.engine,g.camera,(eng_vector_t){3,4,kind == 1 ? 13.0f : 9.0f});
+        position(g.f.engine,g.child,(eng_vector_t){5,7,kind == 0 ? 9 : kind == 1 ? 17.0f : 13.0f}); fixture_end(&g.f);
     }
 }
 
@@ -244,20 +244,20 @@ TEST(engine_dolly, loaded_and_copied_dolly_graphs_keep_camera_targets_hierarchy_
             const nmo_object_id_t local[] = {source.f.owner_id,source.parent,source.camera,source.child,source.grandchild,source.f.script_id,source.block,source.after,source.target_value,source.distance_value,source.hierarchy_value};
             nmo_object_id_t ids[11], copies[11]; for (size_t i = 0; i < COUNT(local); i++) { ids[i] = eng_module_id(module,local[i]); ASSERT_TRUE(ids[i] != 0); }
             ASSERT_TRUE(ids[2] != source.camera); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0)); position(host.engine,ids[2],(eng_vector_t){3,4,13});
-            position(host.engine,ids[3],(eng_vector_t){5,7,hierarchy ? 17 : 9}); position(host.engine,ids[4],(eng_vector_t){6,9,hierarchy ? 20 : 12});
+            position(host.engine,ids[3],(eng_vector_t){5,7,hierarchy ? 17.0f : 9.0f}); position(host.engine,ids[4],(eng_vector_t){6,9,hierarchy ? 20.0f : 12.0f});
             ASSERT_EQ(NMO_OK,nmo_engine_copy_objects(host.engine,ids,COUNT(ids),false,copies)); ASSERT_EQ(copies[1],nmo_engine_entity_parent(host.engine,copies[2]));
             ASSERT_EQ(copies[2],nmo_engine_entity_parent(host.engine,copies[3])); ASSERT_EQ(copies[3],nmo_engine_entity_parent(host.engine,copies[4]));
             nmo_object_id_t target = 0; read_value(&host,copies[8],&target,sizeof(target)); ASSERT_EQ(copies[2],target);
             eng_vector_t moved = {110,20,30}; eng_entity_set_position(host.engine,eng_entity_index(host.engine,copies[1]),&moved,-1,false);
             float value = -1; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[9],&value,sizeof(value)));
             ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[5],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,100));
-            position(host.engine,copies[2],(eng_vector_t){103,4,9}); position(host.engine,copies[3],(eng_vector_t){105,7,hierarchy ? 13 : 9});
-            position(host.engine,copies[4],(eng_vector_t){106,9,hierarchy ? 16 : 12}); position(host.engine,ids[2],(eng_vector_t){3,4,13});
+            position(host.engine,copies[2],(eng_vector_t){103,4,9}); position(host.engine,copies[3],(eng_vector_t){105,7,hierarchy ? 13.0f : 9.0f});
+            position(host.engine,copies[4],(eng_vector_t){106,9,hierarchy ? 16.0f : 12.0f}); position(host.engine,ids[2],(eng_vector_t){3,4,13});
             read_value(&host,ids[9],&value,sizeof(value)); ASSERT_FLOAT_EQ(2,value,0);
             nmo_engine_destroy_object(host.engine,ids[2]); nmo_engine_destroy_object(host.engine,ids[1]); nmo_engine_destroy_object(host.engine,ids[5]);
             value = 2; int32_t yes = 1; ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[9],&value,sizeof(value))); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[10],&yes,sizeof(yes)));
             ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[5],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0));
-            position(host.engine,copies[2],(eng_vector_t){103,4,17}); position(host.engine,copies[3],(eng_vector_t){105,7,hierarchy ? 21 : 17}); position(host.engine,copies[4],(eng_vector_t){106,9,hierarchy ? 24 : 20});
+            position(host.engine,copies[2],(eng_vector_t){103,4,17}); position(host.engine,copies[3],(eng_vector_t){105,7,hierarchy ? 21.0f : 17.0f}); position(host.engine,copies[4],(eng_vector_t){106,9,hierarchy ? 24.0f : 20.0f});
             ASSERT_EQ(2u,runs(&host,copies[6])); ASSERT_EQ(2u,runs(&host,copies[7])); fixture_end(&host);
         }
         const nmo_targetcamera_state_t *camera = fixture_state(&source.f,source.camera); ASSERT_FLOAT_EQ(5,camera->base.entity.world_matrix[14],0); fixture_end(&source.f); remove(path);

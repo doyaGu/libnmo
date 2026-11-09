@@ -27,7 +27,7 @@ static void begin(ik_fixture_t *g, bool bent, uint32_t axes)
     memset(g,0,sizeof(*g)); fixture_begin_document(&g->f);
     g->root = body(g,"Shoulder",g->f.owner_id,(eng_vector_t){0,0,0},axes);
     g->middle = bent ? body(g,"Elbow",g->root,(eng_vector_t){1,0,0},axes) : 0;
-    g->end = body(g,"Hand",bent ? g->middle : g->root,(eng_vector_t){1,bent ? 1 : 0,0},7);
+    g->end = body(g,"Hand",bent ? g->middle : g->root,(eng_vector_t){1,bent ? 1.0f : 0.0f,0},7);
     ASSERT_TRUE(g->root != 0 && g->end != 0);
 }
 
@@ -143,7 +143,7 @@ TEST(engine_kinematic, inactive_joints_and_zero_radius_targets_do_not_change_the
     for (int locked = 0; locked < 2; locked++) {
         ik_fixture_t g; begin(&g,false,locked ? 0 : 4); commit(&g);
         eng_matrix_t root = local(&g,g.root), end = local(&g,g.end);
-        eng_vector_t target = {0,locked ? 1 : 0,0};
+        eng_vector_t target = {0,locked ? 1.0f : 0.0f,0};
         ASSERT_FALSE(eng_kinematic_set_position(g.f.engine,g.root,g.end,&target));
         eng_matrix_t actual = local(&g,g.root); same_matrix(&actual,&root); actual = local(&g,g.end); same_matrix(&actual,&end);
         fixture_end(&g.f);

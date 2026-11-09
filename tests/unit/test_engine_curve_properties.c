@@ -237,7 +237,7 @@ TEST(engine_curve_properties, disconnected_setter_inputs_use_native_defaults_and
             fixture_input_value(&g.f,BLOCK_PIN(&g.f,g.setter,2),&zero,sizeof(zero));
         } else for (int i = 0; i < 3; i++) ASSERT_EQ(NMO_OK,nmo_script_edit_disconnect_parameter(g.f.tx,BLOCK_PIN(&g.f,g.setter,i)));
         graph_commit(&g); set(g.f.engine,g.curve,0,17,.5f); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0));
-        outputs(&g.f,g.getter,connected ? 0 : 1,connected ? 0 : 100,0,connected ? 24 : 14); fixture_end(&g.f);
+        outputs(&g.f,g.getter,connected ? 0.0f : 1.0f,connected ? 0.0f : 100.0f,0,connected ? 24.0f : 14.0f); fixture_end(&g.f);
     }
 }
 

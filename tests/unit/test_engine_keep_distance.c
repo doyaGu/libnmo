@@ -156,7 +156,7 @@ TEST(engine_keep_distance, hierarchy_preserves_world_bases_and_moves_children_un
         for (int j = 0; j < 3; j++) { parent.m[0][j] *= 2; parent.m[1][j] *= 3; parent.m[2][j] *= 4; }
         parent.m[3][0] = 100; eng_entity_set_world_matrix(g.f.engine,eng_entity_index(g.f.engine,g.parent),&parent,true);
         ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,10)); position(&g,g.target,(eng_vector_t){6,0,0});
-        position(&g,g.child,(eng_vector_t){hierarchy ? 8 : 2,3,4});
+        position(&g,g.child,(eng_vector_t){hierarchy ? 8.0f : 2.0f,3,4});
         float matrix[16]; ASSERT_TRUE(nmo_engine_entity_world_matrix(g.f.engine,g.target,matrix));
         ASSERT_FLOAT_EQ(2,matrix[0],1e-5f); ASSERT_FLOAT_EQ(3,matrix[5],1e-5f); ASSERT_FLOAT_EQ(4,matrix[10],1e-5f);
         ASSERT_FLOAT_EQ(0,((nmo_3dentity_state_t *)fixture_state(&g.f,g.target))->world_matrix[12],0); fixture_end(&g.f);
@@ -166,7 +166,7 @@ TEST(engine_keep_distance, hierarchy_preserves_world_bases_and_moves_children_un
 TEST(engine_keep_distance, zero_delta_preserves_native_infinite_and_nan_attenuation_results)
 {
     for (int positive = 0; positive < 2; positive++) {
-        distance_fixture_t g; begin(&g,false,true); input_float(&g,3,positive ? 1 : 0); commit(&g);
+        distance_fixture_t g; begin(&g,false,true); input_float(&g,3,positive ? 1.0f : 0.0f); commit(&g);
         ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0));
         if (positive) position(&g,g.target,(eng_vector_t){0,0,0});
         else {
@@ -210,7 +210,7 @@ TEST(engine_keep_distance, samples_descendant_references_before_propagating_the_
         distance_fixture_t g; begin(&g,false,false);
         fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,1),(int32_t)g.child); fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,4),hierarchy); commit(&g);
         set_position(&g,g.child,(eng_vector_t){10,0,0}); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,10));
-        position(&g,g.target,(eng_vector_t){6,0,0}); position(&g,g.child,(eng_vector_t){hierarchy ? 16 : 10,0,0}); fixture_end(&g.f);
+        position(&g,g.target,(eng_vector_t){6,0,0}); position(&g,g.child,(eng_vector_t){hierarchy ? 16.0f : 10.0f,0,0}); fixture_end(&g.f);
     }
 }
 
@@ -277,7 +277,7 @@ TEST(engine_keep_distance, loaded_and_copied_constraints_keep_reference_bindings
             ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,ids[5],true,true));
             ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[5],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,20));
             eng_vector_t a = legacy ? (eng_vector_t){time ? 10.0f/3 : 3,0,0} : time ? (eng_vector_t){4,3,0} : (eng_vector_t){3.6f,2.7f,0};
-            eng_vector_t b = legacy ? (eng_vector_t){time ? 6 : 5,0,0} : time ? (eng_vector_t){5.6f,4.2f,0} : (eng_vector_t){4.8f,3.6f,0};
+            eng_vector_t b = legacy ? (eng_vector_t){time ? 6.0f : 5.0f,0,0} : time ? (eng_vector_t){5.6f,4.2f,0} : (eng_vector_t){4.8f,3.6f,0};
             expect_position(host.engine,ids[2],a); expect_position(host.engine,copies[2],b);
             expect_position(host.engine,copies[3],(eng_vector_t){b.x+2,b.y+3,4});
             float distance = 2, attenuation = 0; eng_vector_t zero = {0,0,0};
@@ -306,7 +306,7 @@ TEST(engine_keep_distance, curve_follow_outputs_drive_the_constraint_in_the_same
         for (size_t i = 0; i < 2; i++) {
             nmo_object_id_t id = fixture_create(&g.f,NMO_CID_CURVEPOINT,"Point"); nmo_curvepoint_state_t *point = fixture_state(&g.f,id); ASSERT_NOT_NULL(point);
             point->base.parent = nmo_ref_from_id(path_id); point->base.has_entityndata_chunk = 1; point->curve = nmo_ref_from_id(path_id); point->linear = 1;
-            nmo_curvepoint_set_position(point,i ? 20 : 0,0,0); path->control_point_ids[i] = nmo_ref_from_id(id);
+            nmo_curvepoint_set_position(point,i ? 20.0f : 0.0f,0,0); path->control_point_ids[i] = nmo_ref_from_id(id);
         }
         const nmo_behavior_state_t *script = fixture_state(&g.f,g.f.script_id);
         nmo_object_id_t first_link = nmo_behavior_ref_array_get_id(&script->sub_behavior_links,0);

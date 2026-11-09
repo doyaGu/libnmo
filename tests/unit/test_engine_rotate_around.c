@@ -122,9 +122,9 @@ TEST(engine_rotate_around, orbits_in_scaled_and_sheared_reference_space_while_ro
     for (int shear = 0; shear < 2; shear++) for (int keep_orientation = 0; keep_orientation < 2; keep_orientation++) {
         around_fixture_t g; begin(&g); fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,2),(int32_t)g.reference); fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,3),keep_orientation);
         nmo_3dentity_state_t *reference = fixture_state(&g.f,g.reference), *target = fixture_state(&g.f,g.target);
-        reference->world_matrix[0] = shear ? 2 : 0; reference->world_matrix[1] = shear ? 1 : 2;
-        reference->world_matrix[4] = shear ? 0 : -3; reference->world_matrix[5] = shear ? 3 : 0; reference->world_matrix[10] = 4;
-        target->world_matrix[12] = shear ? 12 : 4; target->world_matrix[13] = shear ? 27 : 22; target->world_matrix[14] = 42; commit(&g);
+        reference->world_matrix[0] = shear ? 2.0f : 0.0f; reference->world_matrix[1] = shear ? 1.0f : 2.0f;
+        reference->world_matrix[4] = shear ? 0.0f : -3.0f; reference->world_matrix[5] = shear ? 3.0f : 0.0f; reference->world_matrix[10] = 4;
+        target->world_matrix[12] = shear ? 12.0f : 4.0f; target->world_matrix[13] = shear ? 27.0f : 22.0f; target->world_matrix[14] = 42; commit(&g);
         ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); position(&g,g.target,shear ? (eng_vector_t){4,23,34} : (eng_vector_t){4,14,34});
         if (keep_orientation) basis(&g,(eng_vector_t){2,0,0},(eng_vector_t){0,3,0},(eng_vector_t){0,0,4});
         else if (shear) basis(&g,(eng_vector_t){0,0,2},(eng_vector_t){0,3,0},(eng_vector_t){-4,0,0});
@@ -281,7 +281,7 @@ TEST(engine_rotate_around, loaded_and_copied_orbits_keep_parameters_references_a
             ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,ids[5],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[5],true,true));
             ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,100)); expect_position(host.engine,ids[2],(eng_vector_t){8,26,18}); expect_position(host.engine,copies[2],(eng_vector_t){28,26,-22});
             expect_position(host.engine,copies[3],!hierarchy ? (eng_vector_t){14,29,46} : keep_orientation ? (eng_vector_t){30,29,-18} : (eng_vector_t){26,29,-26});
-            runtime_basis(host.engine,copies[2],(eng_vector_t){keep_orientation ? 2 : -2,0,0},(eng_vector_t){0,3,0},(eng_vector_t){0,0,keep_orientation ? 4 : -4});
+            runtime_basis(host.engine,copies[2],(eng_vector_t){keep_orientation ? 2.0f : -2.0f,0,0},(eng_vector_t){0,3,0},(eng_vector_t){0,0,keep_orientation ? 4.0f : -4.0f});
             nmo_engine_destroy_object(host.engine,ids[2]); nmo_engine_destroy_object(host.engine,ids[4]); nmo_engine_destroy_object(host.engine,ids[1]);
             float negative = -quarter; eng_vector_t z = {0,0,1}; int32_t yes = 1;
             ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[9],&z,sizeof(z))); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(host.engine,copies[10],&negative,sizeof(negative)));
@@ -290,7 +290,7 @@ TEST(engine_rotate_around, loaded_and_copied_orbits_keep_parameters_references_a
             eng_entity_set_position(host.engine,eng_entity_index(host.engine,copies[4]),&pivot,-1,false); eng_entity_set_position(host.engine,eng_entity_index(host.engine,copies[2]),&here,-1,false);
             ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[5],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,1));
             expect_position(host.engine,copies[2],(eng_vector_t){96,203,312});
-            runtime_basis(host.engine,copies[2],(eng_vector_t){keep_orientation ? 2 : -2,0,0},(eng_vector_t){0,3,0},(eng_vector_t){0,0,keep_orientation ? 4 : -4}); fixture_end(&host);
+            runtime_basis(host.engine,copies[2],(eng_vector_t){keep_orientation ? 2.0f : -2.0f,0,0},(eng_vector_t){0,3,0},(eng_vector_t){0,0,keep_orientation ? 4.0f : -4.0f}); fixture_end(&host);
         }
         ASSERT_FLOAT_EQ(12,((nmo_3dentity_state_t *)fixture_state(&g.f,g.target))->world_matrix[12],0); fixture_end(&g.f); remove(path);
     }
@@ -307,7 +307,7 @@ TEST(engine_rotate_around, curve_follow_moves_the_pivot_before_each_orbit_includ
         for (size_t i = 0; i < 2; i++) {
             nmo_object_id_t id = fixture_create(&g.f,NMO_CID_CURVEPOINT,"Point"); nmo_curvepoint_state_t *point = fixture_state(&g.f,id); ASSERT_NOT_NULL(point);
             point->base.parent = nmo_ref_from_id(path_id); point->base.has_entityndata_chunk = 1; point->curve = nmo_ref_from_id(path_id); point->linear = 1;
-            nmo_curvepoint_set_position(point,i ? 20 : 0,0,0); path->control_point_ids[i] = nmo_ref_from_id(id);
+            nmo_curvepoint_set_position(point,i ? 20.0f : 0.0f,0,0); path->control_point_ids[i] = nmo_ref_from_id(id);
         }
         const nmo_behavior_state_t *script = fixture_state(&g.f,g.f.script_id);
         nmo_object_id_t first_link = nmo_behavior_ref_array_get_id(&script->sub_behavior_links,0);

@@ -183,7 +183,7 @@ TEST(engine_billboard, texture_motion_uses_actual_projected_geometry_and_only_ap
     for (int is_sprite = 0; is_sprite < 2; is_sprite++) for (int apply = 0; apply < 2; apply++) {
         billboard_fixture_t g; graph_begin(&g,is_sprite ? NMO_CID_SPRITE3D : NMO_CID_3DENTITY); if (is_sprite) sprite(&g); else { mesh(&g,true); fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,0),0); }
         fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,4),apply); fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,5),0); fixture_input_value(&g.f,BLOCK_PIN(&g.f,g.block,3),&(float){.5f},sizeof(float)); graph_commit(&g);
-        eng_matrix_t before = g.f.engine->entities.data[eng_entity_index(g.f.engine,g.target)].world; ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); float z = is_sprite ? (apply ? 60 : 180) : (apply ? 20 : 60);
+        eng_matrix_t before = g.f.engine->entities.data[eng_entity_index(g.f.engine,g.target)].world; ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); float z = is_sprite ? (apply ? 60.0f : 180.0f) : (apply ? 20.0f : 60.0f);
         eng_matrix_t expected = {{{-1,0,0,0},{0,1,0,0},{0,0,-1,0},{3,4,z,1}}};
         if (apply) matrix(&g.f.engine->entities.data[eng_entity_index(g.f.engine,g.target)].world,&expected); else { matrix(&g.f.engine->entities.data[eng_entity_index(g.f.engine,g.target)].world,&before); output_matrix(&g,&expected); }
         if (is_sprite) { const eng_sprite3d_t *s = eng_sprite3d(g.f.engine,g.target); ASSERT_FLOAT_EQ(4,s->max.x-s->min.x,2e-4f); ASSERT_FLOAT_EQ(6,s->max.y-s->min.y,2e-4f); } fixture_end(&g.f);
@@ -194,7 +194,7 @@ TEST(engine_billboard, sprite_texture_scaling_preserves_offset_and_resizes_even_
 {
     for (int apply = 0; apply < 2; apply++) {
         billboard_fixture_t g; graph_begin(&g,NMO_CID_SPRITE3D); sprite(&g); fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,4),apply); graph_commit(&g); eng_matrix_t before = g.f.engine->entities.data[eng_entity_index(g.f.engine,g.target)].world; ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0));
-        const eng_sprite3d_t *s = eng_sprite3d(g.f.engine,g.target); float divisor = apply ? 3 : 9; ASSERT_FLOAT_EQ(4/divisor,s->max.x-s->min.x,2e-4f); ASSERT_FLOAT_EQ(6/divisor,s->max.y-s->min.y,2e-4f); ASSERT_FLOAT_EQ(.5f,s->offset.x,0); ASSERT_FLOAT_EQ(-.25f,s->offset.y,0); ASSERT_FLOAT_EQ(.2f,s->uv_rect.left,0);
+        const eng_sprite3d_t *s = eng_sprite3d(g.f.engine,g.target); float divisor = apply ? 3.0f : 9.0f; ASSERT_FLOAT_EQ(4/divisor,s->max.x-s->min.x,2e-4f); ASSERT_FLOAT_EQ(6/divisor,s->max.y-s->min.y,2e-4f); ASSERT_FLOAT_EQ(.5f,s->offset.x,0); ASSERT_FLOAT_EQ(-.25f,s->offset.y,0); ASSERT_FLOAT_EQ(.2f,s->uv_rect.left,0);
         if (!apply) { matrix(&g.f.engine->entities.data[eng_entity_index(g.f.engine,g.target)].world,&before); } vector(eng_entity_position(g.f.engine,eng_entity_index(g.f.engine,g.target),-1),(eng_vector_t){3,4,10}); fixture_end(&g.f);
     }
 }
