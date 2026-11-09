@@ -3316,7 +3316,10 @@ static int bb_planar_shadow(blk_t *b)
  * the block runs; the engine makes the pass with the frame, before its
  * draws, from the camera's matrix as the block left it. The DLL needs a
  * Camera for a cube map (it would crash without); the engine gives an owner
- * error. Version 1 blocks (their own texture, as an output) are not ported.
+ * error. A version 1 block renders into its own texture, its output: one the
+ * load makes ("RenderTexture") when the Width and Height settings are powers
+ * of two, never sized by it, so it draws nothing until a script gives it a
+ * size; its slot 0 alone, cube map or not.
  */
 static bool visuals_request_pass(nmo_engine_t *engine, const visuals_pass_request_t *request)
 {
@@ -3333,15 +3336,65 @@ static bool visuals_request_pass(nmo_engine_t *engine, const visuals_pass_reques
     return true;
 }
 
-static int bb_texture_render(blk_t *b)
+static bool power_of_two(int32_t value)
+{
+    return value > 0 && (value & (value - 1)) == 0;
+}
+
+static int texture_render(blk_t *b, bool version_1);
+
+static int bb_texture_render(blk_t *b) { return texture_render(b, false); }
+
+static int bb_texture_render_1(blk_t *b) { return texture_render(b, true); }
+
+/* A version 1 block's callback: the load and its attachment give it a new texture (the one
+   the file saved is let go), an edit of its settings another; its deletion or detachment
+   destroys it */
+static int cb_texture_render(blk_t *b, uint32_t message)
+{
+    if (nmo_engine_block_version(b) >= 0x00020000u) {
+        return NMO_ENGINE_BR_OK;
+    }
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t texture = (nmo_object_id_t)get_out_int(b, 0);
+    if (message == 2u || message == 4u) { /* CKM_BEHAVIORDELETE, CKM_BEHAVIORDETACH */
+        if (texture != 0) {
+            eng_destroy_objects(engine, &texture, 1, NULL);
+        }
+        return NMO_ENGINE_BR_OK;
+    }
+    if (message == NMO_ENGINE_MSG_LOAD) {
+        nmo_engine_block_set_function(b, bb_texture_render_1);
+    }
+    if (message == NMO_ENGINE_MSG_LOAD || message == 3u) { /* CKM_BEHAVIORATTACH */
+        texture = 0;
+        set_out_int(b, 0, 0);
+    } else if (message != 13u) { /* CKM_BEHAVIORSETTINGSEDITED */
+        return NMO_ENGINE_BR_OK;
+    }
+    if (!power_of_two(get_local_int(b, 1, 64)) || !power_of_two(get_local_int(b, 2, 64))) {
+        return NMO_ENGINE_BR_OK;
+    }
+    if (texture != 0) {
+        eng_destroy_objects(engine, &texture, 1, NULL);
+    }
+    set_out_int(b, 0, (int32_t)eng_create_object(engine, NMO_CID_TEXTURE, "RenderTexture"));
+    return NMO_ENGINE_BR_OK;
+}
+
+static int texture_render(blk_t *b, bool version_1)
 {
     nmo_engine_t *engine = b->engine;
-    nmo_object_id_t target = nmo_engine_block_target(b);
+    nmo_object_id_t target = version_1 ? (nmo_object_id_t)get_out_int(b, 0) : nmo_engine_block_target(b);
     eng_texture_t *texture = target != 0 ? eng_texture(engine, target) : NULL;
     if (texture == NULL || texture->sprite) {
+        eng_console(engine, "No texture Provided.", true);
         return NMO_ENGINE_BR_OWNERERROR;
     }
     IN_OFF(b, 0);
+    if (version_1 && nmo_engine_block_input_count(b) > 1) {
+        IN_OFF(b, 1);
+    }
     OUT_ON(b, 0);
     nmo_object_id_t input = nmo_engine_block_get_input_object(b, 0);
     nmo_object_id_t camera = input != 0 ? input : engine->render.camera;
@@ -3366,7 +3419,7 @@ static int bb_texture_render(blk_t *b)
     const nmo_texture_state_t *state = object != NULL
         ? (const nmo_texture_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(engine->types, object, CKPGUID_TEXTURE)
         : NULL;
-    if (state != NULL && state->is_cubemap) {
+    if (state != NULL && state->is_cubemap && !version_1) {
         if (input == 0) {
             return NMO_ENGINE_BR_OWNERERROR;
         }
@@ -3921,7 +3974,7 @@ static const nmo_engine_block_desc_t eng_visuals_blocks[] = {
     {NMO_GUID_INIT(0x06d0b04b, 0x1d4ea106), "Motion Blur", bb_motion_blur, cb_motion_blur, NULL},
     {NMO_GUID_INIT(0x44fe1b3c, 0x29ba3445), "Planar Reflection", bb_planar_reflection, NULL, NULL},
     {NMO_GUID_INIT(0x731072fa, 0x56cf087f), "Planar Shadow", bb_planar_shadow, NULL, NULL},
-    {NMO_GUID_INIT(0x67fc7084, 0x141154f7), "Texture Render", bb_texture_render, NULL, NULL},
+    {NMO_GUID_INIT(0x67fc7084, 0x141154f7), "Texture Render", bb_texture_render, cb_texture_render, NULL},
     {NMO_GUID_INIT(0x0718360b, 0x71e5002f), "ShadowCaster", bb_shadow_caster, cb_shadow_caster, NULL},
     {NMO_GUID_INIT(0x37f1163d, 0x35ad3e6b), "Global Blur", bb_global_blur, cb_global_blur, NULL},
 };

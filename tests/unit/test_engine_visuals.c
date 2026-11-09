@@ -1515,6 +1515,54 @@ TEST(engine_visuals, texture_render_asks_for_a_pass_into_its_target_once_a_run)
     fixture_end(&f);
 }
 
+/* A version 1 Texture Render renders into the texture the load made it, as its output, once a
+   script gave that a size */
+TEST(engine_visuals, texture_render_version_1_renders_into_its_own_texture)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t material = fixture_create(&f, NMO_CID_MATERIAL, "Material");
+    nmo_object_id_t mesh = 0;
+    nmo_object_id_t object = face_object(&f, "Face", material, &mesh);
+    ASSERT_TRUE(material != 0 && object != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t render = block_on(&f, GUID_TEXTURE_RENDER, "Texture Render", 0);
+    ASSERT_TRUE(render != 0);
+    nmo_behavior_state_t *state = (nmo_behavior_state_t *)fixture_state(&f, render);
+    nmo_object_id_t output = fixture_create(&f, NMO_CID_PARAMETEROUT, "Texture");
+    nmo_parameter_state_t *value = (nmo_parameter_state_t *)fixture_state(&f, output);
+    ASSERT_TRUE(state != NULL && value != NULL);
+    value->has_state = true;
+    value->mode = CKPARAM_MODE_BUFFER;
+    value->type_guid = CKPGUID_TEXTURE;
+    ASSERT_EQ(NMO_OK, nmo_array_alloc(&value->buffer_data, 1, 4, NULL));
+    memset(value->buffer_data.data, 0, 4);
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&state->out_parameters, output, NULL));
+    state->block_version = 0x00010000u;
+    fixture_commit(&f, NULL);
+    const int32_t size = 64; /* Width and Height */
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, local_of(&f, render, 1), &size, sizeof(size)));
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, local_of(&f, render, 2), &size, sizeof(size)));
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+
+    const void *data = NULL;
+    size_t data_size = 0;
+    ASSERT_EQ(NMO_OK, nmo_engine_param_value(f.engine, output, &data, &data_size, NULL));
+    ASSERT_EQ(4u, data_size);
+    nmo_object_id_t texture = *(const nmo_object_id_t *)data;
+    ASSERT_TRUE(texture != 0);
+    ASSERT_EQ(NMO_CID_TEXTURE, nmo_engine_object_class(f.engine, texture));
+    ASSERT_TRUE(eng_texture_create(f.engine, eng_texture(f.engine, texture), 32, 32, 0));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_EQ(1, frame.pass_count);
+    ASSERT_EQ(texture, frame.passes[0].texture);
+    ASSERT_EQ(32, frame.passes[0].width);
+    fixture_end(&f);
+}
+
 /* An attribute `name` (with a float value: the blocks only look for it). After
    fixture_begin_edit(). */
 static void plain_attribute(engine_fixture_t *f, nmo_object_id_t object, const char *name)
@@ -1693,6 +1741,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_visuals, planar_shadow_flattens_shadow_objects_on_the_plane_from_the_light);
     REGISTER_TEST(engine_visuals, a_scene_pass_draws_the_scene_into_a_texture_before_the_frame);
     REGISTER_TEST(engine_visuals, texture_render_asks_for_a_pass_into_its_target_once_a_run);
+    REGISTER_TEST(engine_visuals, texture_render_version_1_renders_into_its_own_texture);
     REGISTER_TEST(engine_visuals, shadow_caster_draws_its_shadow_texture_and_projects_it_on_receivers);
     REGISTER_TEST(engine_visuals, global_blur_stops_the_clear_and_lays_a_faint_quad_before_the_scene);
 TEST_MAIN_END()
