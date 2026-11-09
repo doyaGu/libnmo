@@ -36,6 +36,7 @@ typedef struct nmo_engine_block nmo_engine_block_t;
 #define NMO_ENGINE_MSG_RESET 9u
 #define NMO_ENGINE_MSG_LOAD 11u
 #define NMO_ENGINE_MSG_EDITED 12u
+#define NMO_ENGINE_MSG_NEWSCENE 15u
 #define NMO_ENGINE_MSG_ACTIVATESCRIPT 16u
 #define NMO_ENGINE_MSG_DEACTIVATESCRIPT 17u
 

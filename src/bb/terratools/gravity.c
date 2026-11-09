@@ -1327,7 +1327,7 @@ static int cb_real_shadow_mapping(blk_t *b, uint32_t message)
     }
     if (message == NMO_ENGINE_MSG_LOAD) {
         real_shadow_make(b, tss);
-    } else if (message == NMO_ENGINE_MSG_PAUSE || message == NMO_ENGINE_MSG_RESET || message == 15u /* NEWSCENE */ ||
+    } else if (message == NMO_ENGINE_MSG_PAUSE || message == NMO_ENGINE_MSG_RESET || message == NMO_ENGINE_MSG_NEWSCENE ||
                message == NMO_ENGINE_MSG_DEACTIVATESCRIPT) {
         real_shadow_remove(b->engine, tss->floor, eng_material(b->engine, tss->material) != NULL ? tss->material : 0,
                            tss->floor_count);

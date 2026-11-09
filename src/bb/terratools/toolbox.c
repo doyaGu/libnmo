@@ -1917,10 +1917,11 @@ static int bb_follow_camera(blk_t *b)
     return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
 }
 
-/* TT FollowCamera's callback: Init on load and script activation (and attach, new scene in CK) */
+/* TT FollowCamera's callback: Init on load, a new scene and script activation (and attach in CK) */
 static int follow_camera_callback(blk_t *b, uint32_t message)
 {
-    if (message == NMO_ENGINE_MSG_LOAD || message == NMO_ENGINE_MSG_ACTIVATESCRIPT) {
+    if (message == NMO_ENGINE_MSG_LOAD || message == NMO_ENGINE_MSG_NEWSCENE ||
+        message == NMO_ENGINE_MSG_ACTIVATESCRIPT) {
         set_local_int(b, FOLLOW_INIT, 1);
     }
     return NMO_ENGINE_BR_OK;
@@ -3832,7 +3833,7 @@ static int shadow_mapping_callback(blk_t *b, uint32_t message)
         words[1] = 0xFFFFFFFFu;
         nmo_engine_block_set_local_value(b, SHADOW_MAP_DATA, words, sizeof(words));
     } else if (message == NMO_ENGINE_MSG_RESET || message == NMO_ENGINE_MSG_PAUSE ||
-               message == NMO_ENGINE_MSG_DEACTIVATESCRIPT) {
+               message == NMO_ENGINE_MSG_NEWSCENE || message == NMO_ENGINE_MSG_DEACTIVATESCRIPT) {
         nmo_engine_block_get_local_value(b, SHADOW_MAP_DATA, words, sizeof(words));
         int32_t count = (int32_t)words[SHADOW_MAP_COUNT];
         for (int32_t k = 0; k < count && k < SHADOW_MAP_FLOORS; k++) {

@@ -157,6 +157,8 @@ static void eng_list_object(nmo_engine_t *engine, int32_t object)
     }
 }
 
+static void eng_warn_new_scene(nmo_engine_t *engine);
+
 nmo_status_t nmo_engine_start(nmo_engine_t *engine, nmo_engine_start_mode_t mode)
 {
     if (engine == NULL) {
@@ -255,7 +257,19 @@ nmo_status_t nmo_engine_start(nmo_engine_t *engine, nmo_engine_start_mode_t mode
     engine->scene_entries = scene; /* kept for a launch of the level scene */
     engine->scene_entry_count = scene_count;
     eng_sort_listed(engine);
+    eng_warn_new_scene(engine);
     return NMO_OK;
+}
+
+/* CKContext::WarnAllBehaviors(CKM_BEHAVIORNEWSCENE), as CKLevel::LaunchScene ends: every block
+   that has an owner hears of the scene */
+static void eng_warn_new_scene(nmo_engine_t *engine)
+{
+    for (size_t i = 0; i < engine->nodes.count; i++) {
+        if (engine->nodes.data[i].is_block && engine->nodes.data[i].owner != 0) {
+            eng_block_callback(engine, (int32_t)i, NMO_ENGINE_MSG_NEWSCENE);
+        }
+    }
 }
 
 void eng_launch_level_scene(nmo_engine_t *engine, int32_t activity, int32_t reset)
@@ -324,6 +338,7 @@ static void eng_relaunch_level_scene(nmo_engine_t *engine)
         }
     }
     eng_sort_listed(engine);
+    eng_warn_new_scene(engine);
 }
 
 nmo_status_t nmo_engine_activate_script(nmo_engine_t *engine, nmo_object_id_t script_id,

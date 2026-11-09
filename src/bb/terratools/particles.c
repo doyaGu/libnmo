@@ -1572,9 +1572,8 @@ static int bb_particle_system(blk_t *b)
  */
 static int cb_particle_system(blk_t *b, uint32_t message)
 {
-    if (message == NMO_ENGINE_MSG_LOAD) {
-        /* CKM_BEHAVIORNEWSCENE: the owner renders last, its particles among the transparent objects
-           (the engine sends no new scene message: the load is the nearest) */
+    if (message == NMO_ENGINE_MSG_NEWSCENE) {
+        /* the owner renders last, its particles among the transparent objects */
         int32_t owner = eng_entity_index(b->engine, nmo_engine_block_owner(b));
         if (owner >= 0) {
             b->engine->entities.data[owner].moveable_flags |= VX_MOVEABLE_RENDERLAST;

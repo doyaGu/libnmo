@@ -469,7 +469,7 @@ TEST(engine_media, particles_draw_where_their_render_last_emitter_sorts)
     ASSERT_TRUE(still_particles(&f, far, 0) != 0);
     fixture_commit(&f, NULL);
     ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
-    /* each owner renders last from the load (CKM_BEHAVIORNEWSCENE) */
+    /* each owner renders last from the start's new scene (CKM_BEHAVIORNEWSCENE) */
     const nmo_object_id_t owners[2] = {near, far};
     for (int i = 0; i < 2; i++) {
         int32_t at = eng_entity_index(f.engine, owners[i]);
@@ -487,6 +487,13 @@ TEST(engine_media, particles_draw_where_their_render_last_emitter_sorts)
     int near_draw = particle_draw(&frame, near), far_draw = particle_draw(&frame, far);
     ASSERT_TRUE(near_draw >= 0 && far_draw >= 0);
     ASSERT_TRUE(far_draw < near_draw);
+
+    /* a launch of the level scene warns the blocks again */
+    int32_t near_at = eng_entity_index(f.engine, near);
+    f.engine->entities.data[near_at].moveable_flags &= ~(uint32_t)VX_MOVEABLE_RENDERLAST;
+    eng_launch_level_scene(f.engine, 3, 2); /* do nothing, no reset */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 25.0f));
+    ASSERT_TRUE((f.engine->entities.data[near_at].moveable_flags & VX_MOVEABLE_RENDERLAST) != 0);
     fixture_end(&f);
 }
 
