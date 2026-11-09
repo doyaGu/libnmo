@@ -9,8 +9,10 @@
 
 #include "virtools.h"
 
+#include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_beobject_schemas.h"
 #include "object/builtin/nmo_bitmap_slots.h"
+#include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_defs.h"
 #include "type/nmo_object_guids.h"
 #include "type/nmo_type_query.h"
@@ -604,6 +606,388 @@ static int bb_set_material_effect(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* ============================================================================
+ * Gauge
+ * ============================================================================ */
+
+/*
+ * Gauge (the DLL's, without the later Pause/Resume): On keeps the target 2D
+ * entity's rect; each frame after, a shown entity's rect is that rect cut to
+ * Bar Progression toward the Orientation (from the center, the left, right,
+ * top or bottom, or a centered line), its source rect cut alike without
+ * Stretch (a sprite's in pixels, another's in fractions). Off stops.
+ */
+static int bb_gauge(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    eng_2d_t *entity = target != 0 ? eng_2d_entity(engine, target) : NULL;
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    if (IN_ACTIVE(b, 0)) {
+        OUT_ON(b, 0);
+        IN_OFF(b, 0);
+        if (entity == NULL) {
+            return NMO_ENGINE_BR_OK;
+        }
+        nmo_rect_t kept = (entity->flags & CK_2DENTITY_USEHOMOGENEOUSCOORD) ? entity->homogeneous : entity->rect;
+        nmo_engine_block_set_local_value(b, 0, &kept, sizeof(kept));
+    }
+    if (entity == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    if (!(eng_object_visibility(engine, target) & CK_OBJECT_VISIBLE)) {
+        return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+    }
+    nmo_rect_t rect = {0};
+    nmo_engine_block_get_local_value(b, 0, &rect, sizeof(rect));
+    float p = get_in_float(b, 0, 0.0f);
+    int32_t orientation = get_in_int(b, 1, 0);
+    bool stretch = get_in_int(b, 2, 1) != 0;
+    float w = rect.right - rect.left, h = rect.bottom - rect.top, x = 1.0f, y = 1.0f;
+    nmo_rect_t dest = rect;
+    switch (orientation) {
+    case 1: /* center */
+        x = y = p;
+        dest.left = (1.0f - p) * w * 0.5f + rect.left;
+        dest.top = (1.0f - p) * h * 0.5f + rect.top;
+        break;
+    case 2: x = -p; break; /* left */
+    case 4: x = p; break;  /* right */
+    case 8: y = -p; break; /* top */
+    case 16: y = p; break; /* bottom */
+    case 32: /* vertical center */
+        y = p;
+        dest.top = (1.0f - p) * h * 0.5f + rect.top;
+        break;
+    case 64: /* horizontal center */
+        x = p;
+        dest.left = (1.0f - p) * w * 0.5f + rect.left;
+        break;
+    default:
+        break;
+    }
+    dest.right = x * w + dest.left;
+    dest.bottom = y * h + dest.top;
+    if (dest.right < dest.left) {
+        float t = dest.right;
+        dest.right = dest.left;
+        dest.left = t;
+    }
+    if (dest.bottom < dest.top) {
+        float t = dest.top;
+        dest.top = dest.bottom;
+        dest.bottom = t;
+    }
+    if (stretch) {
+        entity->flags &= ~(uint32_t)CK_2DENTITY_USESRCRECT;
+    } else {
+        float image_w = 1.0f, image_h = 1.0f;
+        nmo_object_t *object = eng_find_object(engine, target);
+        eng_texture_t *bitmap = object != NULL && nmo_object_get_class_id(object) == NMO_CID_SPRITE
+                                    ? eng_texture(engine, target) : NULL;
+        int32_t bw = 0, bh = 0;
+        if (bitmap != NULL) {
+            eng_bitmap_size(engine, bitmap, &bw, &bh);
+            image_w = (float)bw, image_h = (float)bh;
+        }
+        nmo_rect_t source = {0.0f, 0.0f, 0.0f, 0.0f};
+        if (orientation & 32) {
+            source.top = (1.0f - y) * image_h * 0.5f;
+        }
+        if (orientation & 64) {
+            source.left = (1.0f - x) * image_w * 0.5f;
+        }
+        if (orientation & 1) {
+            source.left += (1.0f - x) * image_w * 0.5f;
+            source.top += (1.0f - y) * image_h * 0.5f;
+        }
+        source.right = fabsf(x) * image_w + source.left;
+        source.bottom = fabsf(y) * image_h + source.top;
+        entity->flags |= CK_2DENTITY_USESRCRECT;
+        entity->source = source;
+    }
+    if (entity->flags & CK_2DENTITY_USEHOMOGENEOUSCOORD) {
+        eng_2d_set_homogeneous_rect(engine, target, dest, false);
+    } else {
+        eng_2d_set_rect(engine, target, dest, false);
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+/* ============================================================================
+ * Replace Rendering (the Addons manager's frame requests)
+ * ============================================================================ */
+
+/* A material swapped while an entity (Per Object) or a mesh renders this frame */
+typedef struct addons_replace {
+    nmo_object_id_t entity, mesh;
+    nmo_object_id_t from, to;
+} addons_replace_t;
+
+typedef struct addons_state {
+    ENG_VEC(addons_replace_t) replaces;
+} addons_state_t;
+
+static void addons_destroy(nmo_engine_t *engine, void *state)
+{
+    (void)engine;
+    free(((addons_state_t *)state)->replaces.data);
+}
+
+/* The temporary render callbacks of this frame: the draws of the entity (its own render) or of
+   the mesh (any entity's) take the swap; gone after the frame */
+static void addons_render(nmo_engine_t *engine, void *state, eng_render_stage_t stage, const eng_render_args_t *args)
+{
+    addons_state_t *addons = (addons_state_t *)state;
+    if (stage != ENG_RENDER_SCENE || args->pass) {
+        return;
+    }
+    for (size_t r = 0; r < addons->replaces.count; r++) {
+        const addons_replace_t *swap = &addons->replaces.data[r];
+        for (size_t d = 0; d < engine->render.draws.count; d++) {
+            nmo_engine_draw_t *draw = &engine->render.draws.data[d];
+            if (draw->kind != NMO_ENGINE_DRAW_MESH || swap->from == 0 ||
+                (swap->entity != 0 ? draw->object != swap->entity : draw->mesh != swap->mesh)) {
+                continue;
+            }
+            draw->replaced_material = swap->from;
+            draw->replacing_material = swap->to;
+        }
+    }
+    addons->replaces.count = 0;
+}
+
+static const eng_manager_desc_t addons_manager = {
+    .name = "Addons1 Render Callbacks",
+    .state_size = sizeof(addons_state_t),
+    .destroy = addons_destroy,
+    .render = addons_render,
+};
+
+/*
+ * Replace Rendering: while On, each frame the target's current mesh renders
+ * In Material's faces with Out Material (Per Object: only when the target
+ * renders it; else whoever renders the mesh). Off stops.
+ */
+static int bb_replace_rendering(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        OUT_ON(b, 0);
+    }
+    nmo_object_id_t entity = nmo_engine_block_target(b);
+    int32_t index = eng_entity_index(engine, entity);
+    if (index < 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    nmo_object_t *object = eng_find_object(engine, entity);
+    const nmo_3dentity_state_t *state = object != NULL
+        ? (const nmo_3dentity_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(engine->types, object,
+                                                                                          CKPGUID_3DENTITY)
+        : NULL;
+    nmo_object_id_t mesh = state != NULL ? eng_object_ref(engine, entity, &state->current_mesh) : 0;
+    addons_state_t *addons = (addons_state_t *)eng_manager_state(engine, &addons_manager);
+    addons_replace_t *swap = NULL;
+    if (mesh != 0 && addons != NULL && ENG_VEC_PUSH(addons->replaces, swap)) {
+        *swap = (addons_replace_t){get_local_int(b, 0, 0) != 0 ? entity : 0, mesh,
+                                   nmo_engine_block_get_input_object(b, 0), nmo_engine_block_get_input_object(b, 1)};
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+/* ============================================================================
+ * Synchro Recorder and Synchro Player
+ * ============================================================================ */
+
+/* Synchro Recorder's inner struct (its local buffer): the array, the time now, the start, when
+   the key went down, and whether no key is down */
+typedef struct synchro_recorder {
+    nmo_object_id_t array;
+    float now, start, pressed;
+    bool released;
+} synchro_recorder_t;
+
+static void synchro_set(nmo_engine_t *engine, nmo_object_id_t array, int32_t row, int32_t column, float value)
+{
+    nmo_engine_cell_t cell = {.type = CKARRAYTYPE_FLOAT};
+    memcpy(&cell.value, &value, sizeof(value));
+    nmo_engine_array_set_cell(engine, array, row, column, &cell);
+}
+
+/* The end: a row at the time recorded with an amplitude of 0 */
+static void synchro_finish(nmo_engine_t *engine, const synchro_recorder_t *rec)
+{
+    int32_t row = nmo_engine_array_row_count(engine, rec->array);
+    if (nmo_engine_array_insert_row(engine, rec->array, -1, NULL) == NMO_OK) {
+        synchro_set(engine, rec->array, row, 0, rec->now - rec->start);
+        synchro_set(engine, rec->array, row, 1, 0.0f);
+    }
+}
+
+/*
+ * Synchro Recorder: On (re)makes the array named Synchro Array Name (made in
+ * the level when missing) with Time, Amplitude and Length columns; each frame
+ * the first of the Key inputs held down adds a row (its time since On and an
+ * amplitude from Min to Max by the key's rank), and its release sets that
+ * row's length; Escape ends the recording. The DLL times it by the real
+ * clock: the engine by its frame time.
+ */
+static int bb_synchro_recorder(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    synchro_recorder_t *rec = (synchro_recorder_t *)nmo_engine_block_state(b, sizeof(synchro_recorder_t));
+    if (rec == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    float now = (float)engine->time;
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        const char *name = input_string(b, 0);
+        name = name != NULL ? name : "";
+        const char *held = rec->array != 0 ? nmo_engine_object_name(engine, rec->array) : NULL;
+        if (rec->array == 0 || held == NULL || strcmp(held, name) != 0) {
+            rec->array = eng_object_named(engine, name, NMO_CID_DATAARRAY);
+            if (rec->array == 0) {
+                rec->array = eng_create_object(engine, NMO_CID_DATAARRAY, name);
+            }
+        }
+        if (rec->array == 0) {
+            return NMO_ENGINE_BR_OK;
+        }
+        nmo_engine_array_clear(engine, rec->array);
+        while (nmo_engine_array_column_count(engine, rec->array) > 0) {
+            nmo_engine_array_remove_column(engine, rec->array, 0);
+        }
+        static const char *const names[3] = {"Time", "Amplitude", "Length"};
+        for (int c = 0; c < 3; c++) {
+            nmo_engine_array_insert_column(engine, rec->array, -1, CKARRAYTYPE_FLOAT, NMO_GUID(0u, 0u));
+            nmo_engine_array_set_column_name(engine, rec->array, c, names[c]);
+        }
+        rec->start = now;
+        rec->released = true;
+    }
+    if (rec->array == 0) {
+        return NMO_ENGINE_BR_OK;
+    }
+    rec->now = now;
+    float min = get_in_float(b, 1, 0.0f), max = get_in_float(b, 2, 1.0f);
+    if (nmo_engine_is_key_down(engine, 1u)) { /* Escape */
+        synchro_finish(engine, rec);
+        return NMO_ENGINE_BR_OK;
+    }
+    int pins = nmo_engine_block_input_parameter_count(b);
+    for (int k = 3; k < pins; k++) {
+        if (!nmo_engine_is_key_down(engine, (uint32_t)get_in_int(b, k, 0))) {
+            continue;
+        }
+        if (rec->released) {
+            rec->released = false;
+            rec->pressed = now;
+            float amplitude = (float)((double)(max - min) * (double)(k - 2) / (double)(pins - 3) + (double)min);
+            int32_t row = nmo_engine_array_row_count(engine, rec->array);
+            if (nmo_engine_array_insert_row(engine, rec->array, -1, NULL) == NMO_OK) {
+                synchro_set(engine, rec->array, row, 0, now - rec->start);
+                synchro_set(engine, rec->array, row, 1, amplitude);
+            }
+        }
+        return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+    }
+    if (!rec->released) {
+        rec->released = true;
+        synchro_set(engine, rec->array, nmo_engine_array_row_count(engine, rec->array) - 1, 2, now - rec->pressed);
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+/* Synchro Recorder's reset: a recording left with a key's amplitude last is ended */
+static int cb_synchro_recorder(blk_t *b, uint32_t message)
+{
+    synchro_recorder_t *rec = (synchro_recorder_t *)nmo_engine_block_state(b, sizeof(synchro_recorder_t));
+    if (message != NMO_ENGINE_MSG_RESET || rec == NULL || rec->array == 0) {
+        return NMO_ENGINE_BR_OK;
+    }
+    int32_t rows = nmo_engine_array_row_count(b->engine, rec->array);
+    nmo_engine_cell_t cell = {0};
+    float amplitude = 0.0f;
+    if (rows > 0 && nmo_engine_array_get_cell(b->engine, rec->array, rows - 1, 1, &cell) == NMO_OK) {
+        memcpy(&amplitude, &cell.value, sizeof(amplitude));
+        if (amplitude != 0.0f) {
+            synchro_finish(b->engine, rec);
+        }
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Synchro Player's inner struct: when it started and the row it is at */
+typedef struct synchro_player {
+    float start;
+    int32_t line;
+} synchro_player_t;
+
+static float array_float(nmo_engine_t *engine, nmo_object_id_t array, int32_t row, int32_t column)
+{
+    nmo_engine_cell_t cell = {0};
+    float value = 0.0f;
+    if (nmo_engine_array_get_cell(engine, array, row, column, &cell) == NMO_OK) {
+        memcpy(&value, &cell.value, sizeof(value));
+    }
+    return value;
+}
+
+/*
+ * Synchro Player: On starts the array over; each row whose time has come
+ * gives its amplitude and length and an Impulse (the row held through its
+ * length with Keep Activated During Delay), the last row End. Off stops.
+ */
+static int bb_synchro_player(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t array = nmo_engine_block_get_input_object(b, 0);
+    if (array == 0 || eng_find_array(engine, array) == NULL) {
+        return NMO_ENGINE_BR_PARAMETERERROR;
+    }
+    synchro_player_t *player = (synchro_player_t *)nmo_engine_block_state(b, sizeof(synchro_player_t));
+    if (player == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    float now = (float)engine->time;
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        player->start = now;
+        player->line = 0;
+    }
+    float time = array_float(engine, array, player->line, 0);
+    if (time + player->start <= now) {
+        if (player->line == nmo_engine_array_row_count(engine, array) - 1) {
+            OUT_ON(b, 0);
+            return NMO_ENGINE_BR_OK;
+        }
+        float amplitude = array_float(engine, array, player->line, 1);
+        float delay = array_float(engine, array, player->line, 2);
+        if (get_local_int(b, 1, 0) == 0 || delay + player->start + time < now) {
+            player->line++;
+        }
+        set_out_float(b, 0, amplitude);
+        set_out_float(b, 1, delay);
+        OUT_ON(b, 1);
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
 static const nmo_engine_block_desc_t eng_addons_blocks[] = {
     {NMO_GUID_INIT(0x798e26a9, 0x34e4169e), "Movie Load", bb_movie_load, NULL, NULL},
     {NMO_GUID_INIT(0x060a0f8c, 0x09203b5f), "Time Settings", bb_time_settings, NULL, NULL},
@@ -620,9 +1004,14 @@ static const nmo_engine_block_desc_t eng_addons_blocks[] = {
     {NMO_GUID_INIT(0x1b241485, 0x1f572aac), "Hardware Level", bb_hardware_level, NULL, NULL},
     {NMO_GUID_INIT(0xbcfde546, 0xfeefd18b), "Set Listener Properties", bb_set_listener_properties, NULL, NULL},
     {NMO_GUID_INIT(0x3bd73009, 0x7aa01dac), "Set Material Effect", bb_set_material_effect, NULL, NULL},
+    {NMO_GUID_INIT(0x6a777fc4, 0x1dc17b23), "Gauge", bb_gauge, NULL, NULL},
+    {NMO_GUID_INIT(0x208f0030, 0x652f088e), "Replace Rendering", bb_replace_rendering, NULL, NULL},
+    {NMO_GUID_INIT(0x62ea3812, 0x1ed661a6), "Synchro Recorder", bb_synchro_recorder, cb_synchro_recorder, NULL},
+    {NMO_GUID_INIT(0x62da29d8, 0x1bbc6234), "Synchro Player", bb_synchro_player, NULL, NULL},
 };
 
 nmo_status_t eng_register_addons(nmo_engine_t *engine)
 {
-    return ENG_REGISTER_BLOCKS(engine, eng_addons_blocks);
+    nmo_status_t status = eng_add_manager(engine, &addons_manager, NULL);
+    return status == NMO_OK ? ENG_REGISTER_BLOCKS(engine, eng_addons_blocks) : status;
 }
