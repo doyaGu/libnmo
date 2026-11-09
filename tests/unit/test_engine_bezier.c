@@ -252,7 +252,8 @@ TEST(engine_bezier, saved_global_animation_plays_variable_size_keys_without_chan
 }
 
 TEST_MAIN_BEGIN()
-REGISTER_TEST(engine_bezier, position_and_scale_match_native_samples);
+/* 86 engine documents: near 40s under ASan in Debug on a busy runner */
+REGISTER_TEST_WITH_TIMEOUT(engine_bezier, position_and_scale_match_native_samples, 120.0);
 REGISTER_TEST(engine_bezier, invalid_packed_keys_preserve_the_pose_and_unaligned_keys_are_readable);
 REGISTER_TEST(engine_bezier, saved_global_animation_plays_variable_size_keys_without_changing_the_document);
 TEST_MAIN_END()
