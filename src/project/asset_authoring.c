@@ -1,5 +1,6 @@
 #include "project_internal.h"
 
+#include "core/nmo_utils.h"
 #include "object/nmo_asset_edit.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_edit.h"
@@ -17,8 +18,9 @@ static nmo_status_t asset_authoring_mesh_error(nmo_status_t status,
                                                const char *path)
 {
     const char *message = nmo_last_error_message();
-    char *cause = strdup(message != NULL && message[0] != '\0' ? message
-                                                                : nmo_error_string(status));
+    char *cause = nmo_text_strdup_or_empty(message != NULL && message[0] != '\0'
+                                               ? message
+                                               : nmo_error_string(status));
     nmo_last_error_setf((nmo_error_code_t)status, NMO_SEVERITY_ERROR, __FILE__, __LINE__,
                         "object '%s': mesh %s: %s", object_name != NULL ? object_name : "?",
                         path != NULL ? path : "?", cause != NULL ? cause : "");

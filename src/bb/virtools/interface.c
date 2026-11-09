@@ -1876,7 +1876,9 @@ static int bb_bitmap_text_display(blk_t *b)
         eng_param_t *previous = block_local(b, 1);
         char *joined = NULL;
         if (previous != NULL && previous->data != NULL && previous->size > 0) {
-            size_t old = strnlen((const char *)previous->data, previous->size);
+            const char *nul = memchr(previous->data, '\0', previous->size);
+            size_t old = nul != NULL ? (size_t)(nul - (const char *)previous->data)
+                                     : previous->size;
             joined = (char *)malloc(old + strlen(shown) + 2u);
             if (joined != NULL) {
                 memcpy(joined, previous->data, old);
