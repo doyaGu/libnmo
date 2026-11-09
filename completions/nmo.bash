@@ -15,7 +15,7 @@ _nmo() {
     fi
     local groups="file f chunk ch object obj behavior beh patch parameter param script resource res texture tex data da group grp scene sc entity ent material mat mesh m animation anim type t validate val convert conv diff d extension ext completion comp debug dbg repl"
     local global_flags="-h --help -V --version -f --format --color -o --output -v --verbose -q --quiet --strict --fail-on-warning --plugin --batch"
-    local value_options="-f --format --color -o --output --plugin --top -m --max-bytes -c --class --name -o --output -n -d --depth --id --type-guid --kind --max-nodes --max-edges --bb-guid --version -p --parent --nodes --guid --param-type --op-type --from --max-depth --frames --delta --start -s --script --unknown --max-iterations --seed -k --keys --to --delay --project --type -b --owner -i --index --sort -t --out-dir -f --format -q --quality --file -r --row --col -v --value --table --member --bg-color --ambient --fog-color --camera --fov --near --far --diffuse --range --specular --emissive --power --replace --replace-name --strip --compress --max-objects --max-fields --min-similarity --rename-similarity --object --behavior --remove-link --from-io --to-io --message-node --parameter --dataarray --write-node --write-operation --write-link --text"
+    local value_options="-f --format --color -o --output --plugin --top -m --max-bytes -c --class --name -o --output -n -d --depth --id --type-guid --kind --max-nodes --max-edges --bb-guid --version -p --parent --nodes --guid --param-type --op-type --from --max-depth --frames --delta --start -s --script --unknown --max-iterations --seed --observe -k --keys --to --delay --project --type -b --owner -i --index --sort -t --out-dir -f --format -q --quality --file -r --row --col -v --value --table --member --bg-color --ambient --fog-color --camera --fov --near --far --diffuse --range --specular --emissive --power --replace --replace-name --strip --compress --max-objects --max-fields --min-similarity --rename-similarity --object --behavior --remove-link --from-io --to-io --message-node --parameter --dataarray --write-node --write-operation --write-link --text"
     local file_value_options="-o --output --plugin -d --out-dir --file --obj"
 
     case "$prev" in
@@ -163,7 +163,7 @@ _nmo() {
             behavior/f/) echo '--name --guid --param-type --op-type --scripts --bbs' ;;
             behavior/trace/) echo '--from --max-depth' ;;
             behavior/tr/) echo '--from --max-depth' ;;
-            behavior/run/) echo '-n --frames --delta --start -s --script --unknown --strict --max-iterations --seed -t --trace -k --keys' ;;
+            behavior/run/) echo '-n --frames --delta --start -s --script --unknown --strict --max-iterations --seed --control --observe -t --trace -k --keys' ;;
             behavior/add-link/) echo '-p --parent --from --to -d --delay -o --output --dry-run' ;;
             behavior/remove-link/) echo '-p --parent -o --output --dry-run' ;;
             behavior/interface/) echo '' ;;
@@ -268,7 +268,7 @@ _nmo() {
             data/d/) echo '-r --row' ;;
             data/set-cell/) echo '-r --row -c --col -v --value -o --output --dry-run' ;;
             data/sc/) echo '-r --row -c --col -v --value -o --output --dry-run' ;;
-            data/fill/) echo '-t --table -o --output --dry-run' ;;
+            data/fill/) echo '--append -t --table -o --output --dry-run' ;;
             group/list/) echo '-m --member' ;;
             group/ls/) echo '-m --member' ;;
             group/show/) echo '' ;;
