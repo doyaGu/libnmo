@@ -2544,7 +2544,7 @@ static size_t cm_filter(nmo_engine_t *engine, const collision_manager_t *cm, int
     int32_t moving = moving_attribute(engine);
     for (size_t i = 0; i < count;) {
         int32_t index = eng_entity_index(engine, ids[i]);
-        eng_vector_t center;
+        eng_vector_t center = {0.0f, 0.0f, 0.0f};
         float r = index >= 0 ? hierarchy_sphere(engine, index, false, &center) : 0.0f;
         float d2 = 0.0f;
         if (!has_attribute(engine, ids[i], moving)) {

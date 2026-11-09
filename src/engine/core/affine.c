@@ -469,7 +469,7 @@ bool eng_matrix_decompose(const eng_matrix_t *matrix, bool principal_axes,
                                 (double)rows[r][1] * matrix->m[r][1] +
                                 (double)rows[r][2] * matrix->m[r][2]);
     }
-    eng_matrix_t result;
+    eng_matrix_t result = {{{0.0f}}};
     if (rotation != NULL) {
         affine_quaternion((const float (*)[3])rows, q);
         affine_rotation(q, &result);

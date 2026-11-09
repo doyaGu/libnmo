@@ -45,7 +45,7 @@ void eng_matrix_identity(eng_matrix_t *m)
 
 void eng_matrix_multiply4(eng_matrix_t *result, const eng_matrix_t *a, const eng_matrix_t *b)
 {
-    eng_matrix_t product;
+    eng_matrix_t product = {{{0.0f}}};
     for (int r = 0; r < 4; r++) for (int c = 0; c < 4; c++)
         product.m[r][c] = (float)((double)b->m[r][0]*a->m[0][c]+(double)b->m[r][1]*a->m[1][c]+(double)b->m[r][2]*a->m[2][c]+(double)b->m[r][3]*a->m[3][c]);
     *result = product;

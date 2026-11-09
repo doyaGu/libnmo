@@ -434,7 +434,7 @@ static bool ik_decompose(float **a, int m, int n, float *w, float **v, float *rv
     for (int k = n - 1; k >= 0; --k) {
         for (int its = 1; its <= 30; ++its) {
             int flag = 1;
-            int l, nm;
+            int l, nm = -1;
 
             for (l = k; l >= 0; --l) {
                 nm = l - 1;
