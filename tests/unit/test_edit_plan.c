@@ -1242,9 +1242,10 @@ TEST(edit_plan, executor_materializes_building_block_defaults) {
     ASSERT_EQ(CKPARAM_MODE_BUFFER, source_state->mode);
     ASSERT_TRUE(source_state->buffer_data.count >= sizeof(float));
 
+    /* "10" in percent units, as CKPercentageStringFunc reads it: 0.1 */
     float caret_value = 0.0f;
     memcpy(&caret_value, source_state->buffer_data.data, sizeof(caret_value));
-    ASSERT_TRUE(fabsf(caret_value - 10.0f) < 0.0001f);
+    ASSERT_TRUE(fabsf(caret_value - 0.1f) < 0.0001f);
 
     bool reported_created_source = false;
     for (size_t i = 0; i < report.created_object_count; ++i) {
