@@ -122,7 +122,7 @@ static void graph_commit(portal_fixture_t *g)
     nmo_engine_options_t options = nmo_engine_options_default(); options.fail_on = NMO_ENGINE_FAIL_ALL; fixture_commit(&g->f,&options); ASSERT_TRUE(nmo_engine_has_block(g->f.engine,GUID_PORTAL_MANAGEMENT)); ASSERT_EQ(NMO_OK,nmo_engine_start(g->f.engine,NMO_ENGINE_START_ALL)); g->f.engine->render.camera = g->camera;
 }
 
-static void connect(portal_fixture_t *g, bool wildcard)
+static void connect_portals(portal_fixture_t *g, bool wildcard)
 {
     ASSERT_TRUE(eng_place_add_portal(g->f.engine,g->places[0],g->places[1],wildcard ? 0 : g->portal[0])); ASSERT_TRUE(eng_place_add_portal(g->f.engine,g->places[1],g->places[2],wildcard ? 0 : g->portal[1]));
 }
@@ -155,7 +155,7 @@ static void move(portal_fixture_t *g, nmo_object_id_t id, eng_vector_t position)
 
 TEST(engine_portal_management, rendering_updates_collections_and_visibility_using_live_portals_before_each_frame)
 {
-    portal_fixture_t g; graph_begin(&g); graph_commit(&g); connect(&g,false); eng_show(g.f.engine,g.places[3],2); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,BLOCK_POUT(&g.f,g.block,0),&g.places[3],sizeof(g.places[3]))); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); outputs(&g,0,g.places+3,1); ASSERT_TRUE(nmo_engine_object_is_visible(g.f.engine,g.places[1])); ASSERT_EQ(1u,runs(&g.f,g.out));
+    portal_fixture_t g; graph_begin(&g); graph_commit(&g); connect_portals(&g,false); eng_show(g.f.engine,g.places[3],2); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,BLOCK_POUT(&g.f,g.block,0),&g.places[3],sizeof(g.places[3]))); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); outputs(&g,0,g.places+3,1); ASSERT_TRUE(nmo_engine_object_is_visible(g.f.engine,g.places[1])); ASSERT_EQ(1u,runs(&g.f,g.out));
     frame(&g); outputs(&g,0,g.places,1); outputs(&g,1,g.places,3); ASSERT_FALSE(nmo_engine_object_is_visible(g.f.engine,g.places[3])); float half = .5f/4.9f; rect(eng_place_viewport_clip(g.f.engine,g.places[1]),(nmo_rect_t){.5f-half,.5f-half,.5f+half,.5f+half});
     move(&g,g.portal[0],(eng_vector_t){100,0,5}); frame(&g); outputs(&g,0,g.places,1); outputs(&g,1,g.places,1); ASSERT_FALSE(nmo_engine_object_is_visible(g.f.engine,g.places[1])); ASSERT_FALSE(nmo_engine_object_is_visible(g.f.engine,g.places[2])); ASSERT_EQ(1u,runs(&g.f,g.block));
     ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,16)); ASSERT_EQ(2u,runs(&g.f,g.block)); ASSERT_EQ(1u,runs(&g.f,g.out)); fixture_end(&g.f);
@@ -164,7 +164,7 @@ TEST(engine_portal_management, rendering_updates_collections_and_visibility_usin
 TEST(engine_portal_management, inactive_portals_block_traversal_while_null_portals_ignore_projection_and_cycles)
 {
     for (int wildcard = 0; wildcard < 2; wildcard++) {
-        portal_fixture_t g; graph_begin(&g); graph_commit(&g); connect(&g,wildcard); ASSERT_EQ(NMO_OK,nmo_engine_activate_object(g.f.engine,g.portal[0],false)); move(&g,g.portal[0],(eng_vector_t){100,0,-10}); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); frame(&g); outputs(&g,1,g.places,wildcard ? 3 : 1);
+        portal_fixture_t g; graph_begin(&g); graph_commit(&g); connect_portals(&g,wildcard); ASSERT_EQ(NMO_OK,nmo_engine_activate_object(g.f.engine,g.portal[0],false)); move(&g,g.portal[0],(eng_vector_t){100,0,-10}); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); frame(&g); outputs(&g,1,g.places,wildcard ? 3 : 1);
         if (!wildcard) { move(&g,g.portal[0],(eng_vector_t){0,0,5}); ASSERT_EQ(NMO_OK,nmo_engine_activate_object(g.f.engine,g.portal[0],true)); }
         ASSERT_TRUE(eng_place_add_portal(g.f.engine,g.places[2],g.places[0],0)); frame(&g); outputs(&g,1,g.places,3); fixture_end(&g.f);
     }
@@ -174,7 +174,7 @@ TEST(engine_portal_management, traversal_depth_counts_the_starting_place_and_neg
 {
     const int32_t depths[] = {1,2,3,0,-1};
     for (size_t i = 0; i < COUNT(depths); i++) {
-        portal_fixture_t g; graph_begin(&g); fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,1),depths[i]); graph_commit(&g); connect(&g,true); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); frame(&g); outputs(&g,0,g.places,1); outputs(&g,1,g.places,depths[i] > 0 ? (size_t)depths[i] : 3); fixture_end(&g.f);
+        portal_fixture_t g; graph_begin(&g); fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,1),depths[i]); graph_commit(&g); connect_portals(&g,true); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); frame(&g); outputs(&g,0,g.places,1); outputs(&g,1,g.places,depths[i] > 0 ? (size_t)depths[i] : 3); fixture_end(&g.f);
     }
 }
 
@@ -183,7 +183,7 @@ TEST(engine_portal_management, missing_cameras_empty_debug_groups_and_outside_ca
     for (int kind = 0; kind < 3; kind++) {
         portal_fixture_t g; graph_begin(&g);
         if (kind == 1) { nmo_object_id_t cameras = fixture_create(&g.f,NMO_CID_GROUP,"Empty Debug Cameras"); ASSERT_TRUE(cameras != 0); fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,0),(int32_t)cameras); }
-        graph_commit(&g); connect(&g,true); if (kind == 0) g.f.engine->render.camera = 0; if (kind == 2) move(&g,g.camera,(eng_vector_t){100,0,0}); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); frame(&g);
+        graph_commit(&g); connect_portals(&g,true); if (kind == 0) g.f.engine->render.camera = 0; if (kind == 2) move(&g,g.camera,(eng_vector_t){100,0,0}); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); frame(&g);
         outputs(&g,0,NULL,0); outputs(&g,1,g.places,kind == 2 ? 3 : 0); for (int i = 0; i < 3; i++) ASSERT_EQ(kind == 2,nmo_engine_object_is_visible(g.f.engine,g.places[i])); fixture_end(&g.f);
     }
 }
@@ -192,7 +192,7 @@ TEST(engine_portal_management, trans_place_groups_are_filtered_by_hierarchy_boun
 {
     for (int invalid = 0; invalid < 2; invalid++) {
         portal_fixture_t g; graph_begin(&g); nmo_object_id_t trans = fixture_create(&g.f,NMO_CID_GROUP,"Trans Place Objects"), inside = box(&g,"Trans Inside",0,(eng_vector_t){-.2f,-.2f,9.8f},(eng_vector_t){.2f,.2f,10.2f}), outside = box(&g,"Trans Outside",0,(eng_vector_t){3.3f,-.2f,.8f},(eng_vector_t){3.7f,.2f,1.2f}); ASSERT_TRUE(trans != 0 && inside != 0 && outside != 0);
-        fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,2),(int32_t)trans); graph_commit(&g); connect(&g,false); ASSERT_TRUE(eng_group_add(g.f.engine,trans,inside)); ASSERT_TRUE(eng_group_add(g.f.engine,trans,outside));
+        fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,2),(int32_t)trans); graph_commit(&g); connect_portals(&g,false); ASSERT_TRUE(eng_group_add(g.f.engine,trans,inside)); ASSERT_TRUE(eng_group_add(g.f.engine,trans,outside));
         if (invalid) { nmo_object_id_t wrong = eng_create_object(g.f.engine,NMO_CID_GROUP,"Invalid Trans Member"); ASSERT_TRUE(wrong != 0); ASSERT_TRUE(eng_group_add(g.f.engine,trans,wrong)); }
         ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); frame(&g); outputs(&g,2,&inside,invalid ? 0 : 1); ASSERT_TRUE(nmo_engine_object_is_visible(g.f.engine,inside)); ASSERT_EQ(invalid != 0,nmo_engine_object_is_visible(g.f.engine,outside));
         if (!invalid) { move(&g,g.portal[0],(eng_vector_t){100,0,5}); frame(&g); outputs(&g,2,NULL,0); ASSERT_FALSE(nmo_engine_object_is_visible(g.f.engine,inside)); }
@@ -202,14 +202,14 @@ TEST(engine_portal_management, trans_place_groups_are_filtered_by_hierarchy_boun
 
 TEST(engine_portal_management, off_restores_places_but_retains_viewport_and_hidden_trans_place_objects)
 {
-    portal_fixture_t g; graph_begin(&g); nmo_object_id_t trans = fixture_create(&g.f,NMO_CID_GROUP,"Trans Objects"), object = box(&g,"Hidden Trans",0,(eng_vector_t){3.3f,0,.8f},(eng_vector_t){3.7f,.2f,1.2f}); fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,2),(int32_t)trans); graph_commit(&g); connect(&g,false); ASSERT_TRUE(eng_group_add(g.f.engine,trans,object)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); frame(&g);
+    portal_fixture_t g; graph_begin(&g); nmo_object_id_t trans = fixture_create(&g.f,NMO_CID_GROUP,"Trans Objects"), object = box(&g,"Hidden Trans",0,(eng_vector_t){3.3f,0,.8f},(eng_vector_t){3.7f,.2f,1.2f}); fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,2),(int32_t)trans); graph_commit(&g); connect_portals(&g,false); ASSERT_TRUE(eng_group_add(g.f.engine,trans,object)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); frame(&g);
     nmo_rect_t viewport = eng_place_viewport_clip(g.f.engine,g.places[1]); ASSERT_FALSE(nmo_engine_object_is_visible(g.f.engine,object)); activate(&g,1); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_FALSE(nmo_engine_behavior_is_active(g.f.engine,g.block));
     for (int i = 0; i < 3; i++) { ASSERT_TRUE(nmo_engine_object_is_visible(g.f.engine,g.places[i])); } rect(eng_place_viewport_clip(g.f.engine,g.places[1]),viewport); ASSERT_FALSE(nmo_engine_object_is_visible(g.f.engine,object)); move(&g,g.portal[0],(eng_vector_t){100,0,5}); frame(&g); outputs(&g,1,g.places,3); fixture_end(&g.f);
 }
 
 TEST(engine_portal_management, script_deactivation_keeps_the_manager_running_and_global_reset_restores_places_and_trans_objects)
 {
-    portal_fixture_t g; graph_begin(&g); nmo_object_id_t trans = fixture_create(&g.f,NMO_CID_GROUP,"Trans Objects"), object = box(&g,"Hidden Trans",0,(eng_vector_t){3.3f,0,.8f},(eng_vector_t){3.7f,.2f,1.2f}); fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,2),(int32_t)trans); graph_commit(&g); connect(&g,false); ASSERT_TRUE(eng_group_add(g.f.engine,trans,object)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); frame(&g);
+    portal_fixture_t g; graph_begin(&g); nmo_object_id_t trans = fixture_create(&g.f,NMO_CID_GROUP,"Trans Objects"), object = box(&g,"Hidden Trans",0,(eng_vector_t){3.3f,0,.8f},(eng_vector_t){3.7f,.2f,1.2f}); fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,2),(int32_t)trans); graph_commit(&g); connect_portals(&g,false); ASSERT_TRUE(eng_group_add(g.f.engine,trans,object)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); frame(&g);
     ASSERT_EQ(NMO_OK,nmo_engine_activate_script(g.f.engine,g.f.script_id,false,false)); move(&g,g.portal[0],(eng_vector_t){100,0,5}); frame(&g); outputs(&g,1,g.places,1); ASSERT_FALSE(nmo_engine_object_is_visible(g.f.engine,object));
     eng_managers_reset(g.f.engine); for (int i = 0; i < 3; i++) { ASSERT_TRUE(nmo_engine_object_is_visible(g.f.engine,g.places[i])); rect(eng_place_viewport_clip(g.f.engine,g.places[i]),(nmo_rect_t){0}); } ASSERT_TRUE(nmo_engine_object_is_visible(g.f.engine,object)); frame(&g); ASSERT_TRUE(nmo_engine_object_is_visible(g.f.engine,g.places[1])); fixture_end(&g.f);
 }
@@ -236,7 +236,7 @@ static void draw_clip(const nmo_engine_frame_t *result, nmo_object_id_t id, nmo_
 
 TEST(engine_portal_management, rendered_meshes_inherit_portal_viewports_and_hidden_places_emit_no_draws)
 {
-    portal_fixture_t g; graph_begin(&g); graph_commit(&g); connect(&g,false); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); nmo_engine_frame_t result; ASSERT_EQ(NMO_OK,nmo_engine_render_frame(g.f.engine,&result));
+    portal_fixture_t g; graph_begin(&g); graph_commit(&g); connect_portals(&g,false); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); nmo_engine_frame_t result; ASSERT_EQ(NMO_OK,nmo_engine_render_frame(g.f.engine,&result));
     const nmo_engine_draw_t *draw = find_draw(&result,g.geometry[0]); ASSERT_NOT_NULL(draw); ASSERT_FALSE(draw->clipped); draw_clip(&result,g.geometry[1],eng_place_viewport_clip(g.f.engine,g.places[1])); draw_clip(&result,g.geometry[2],eng_place_viewport_clip(g.f.engine,g.places[2])); draw = find_draw(&result,g.geometry[3]); ASSERT_NOT_NULL(draw); ASSERT_FALSE(draw->clipped);
     move(&g,g.portal[0],(eng_vector_t){100,0,5}); ASSERT_EQ(NMO_OK,nmo_engine_render_frame(g.f.engine,&result)); ASSERT_TRUE(find_draw(&result,g.geometry[1]) == NULL); ASSERT_TRUE(find_draw(&result,g.geometry[2]) == NULL); ASSERT_NOT_NULL(find_draw(&result,g.geometry[0])); fixture_end(&g.f);
 }
@@ -272,7 +272,7 @@ TEST(engine_portal_management, debug_camera_traversal_preserves_the_native_depth
 
 TEST(engine_portal_management, outside_debug_cameras_append_fallback_duplicates_in_camera_order)
 {
-    portal_fixture_t g; graph_begin(&g); nmo_object_id_t cameras = fixture_create(&g.f,NMO_CID_GROUP,"Outside Cameras"), other = second_camera(&g,(eng_vector_t){101,0,0}); ASSERT_TRUE(cameras != 0 && other != 0); fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,0),(int32_t)cameras); graph_commit(&g); connect(&g,true); move(&g,g.camera,(eng_vector_t){100,0,0}); ASSERT_TRUE(eng_group_add(g.f.engine,cameras,g.camera)); ASSERT_TRUE(eng_group_add(g.f.engine,cameras,other)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); frame(&g);
+    portal_fixture_t g; graph_begin(&g); nmo_object_id_t cameras = fixture_create(&g.f,NMO_CID_GROUP,"Outside Cameras"), other = second_camera(&g,(eng_vector_t){101,0,0}); ASSERT_TRUE(cameras != 0 && other != 0); fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,0),(int32_t)cameras); graph_commit(&g); connect_portals(&g,true); move(&g,g.camera,(eng_vector_t){100,0,0}); ASSERT_TRUE(eng_group_add(g.f.engine,cameras,g.camera)); ASSERT_TRUE(eng_group_add(g.f.engine,cameras,other)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); frame(&g);
     outputs(&g,0,NULL,0); outputs(&g,1,(nmo_object_id_t[]){g.places[0],g.places[1],g.places[2],g.places[0],g.places[1],g.places[2]},6); fixture_end(&g.f);
 }
 
@@ -282,7 +282,7 @@ TEST(engine_portal_management, only_current_and_rendered_places_notify_connected
     for (int i = 0; i < 3; i++) {
         ASSERT_EQ(NMO_OK,nmo_script_edit_add_parameter(g.f.tx,g.f.script_id,NMO_SCRIPT_EDIT_PARAM_LOCAL,CKPGUID_OBJECTARRAY,"Collection Destination",&destinations[i])); nmo_parameterout_state_t *source = fixture_state(&g.f,BLOCK_POUT(&g.f,g.block,i)); source->has_destinations = 1; source->destination_count = 1; source->destination_ids = nmo_arena_alloc(nmo_session_get_arena(g.f.session),sizeof(nmo_ref_t),_Alignof(nmo_ref_t)); ASSERT_NOT_NULL(source->destination_ids); source->destination_ids[0] = nmo_ref_from_id(destinations[i]);
     }
-    graph_commit(&g); connect(&g,false); ASSERT_TRUE(eng_group_add(g.f.engine,trans,object)); for (int i = 0; i < 3; i++) ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,destinations[i],&g.places[3],sizeof(g.places[3]))); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); frame(&g);
+    graph_commit(&g); connect_portals(&g,false); ASSERT_TRUE(eng_group_add(g.f.engine,trans,object)); for (int i = 0; i < 3; i++) ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,destinations[i],&g.places[3],sizeof(g.places[3]))); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); frame(&g);
     collection(g.f.engine,destinations[0],g.places,1); collection(g.f.engine,destinations[1],g.places,3); collection(g.f.engine,destinations[2],g.places+3,1); outputs(&g,2,&object,1);
     g.f.engine->render.camera = 0; frame(&g); outputs(&g,0,NULL,0); outputs(&g,1,NULL,0); outputs(&g,2,NULL,0); collection(g.f.engine,destinations[0],g.places,1); collection(g.f.engine,destinations[1],g.places,3); fixture_end(&g.f);
 }
