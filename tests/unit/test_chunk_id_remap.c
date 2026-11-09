@@ -151,6 +151,23 @@ TEST(chunk_id_remap, id_remap_preserves_maximum_target) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, id_remap_identity_until_an_id_moves) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    ASSERT_TRUE(nmo_id_remap_is_identity(NULL));
+
+    nmo_id_remap_t *remap = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(remap);
+    ASSERT_TRUE(nmo_id_remap_is_identity(remap));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 3u, 3u));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 4u, 4u));
+    ASSERT_TRUE(nmo_id_remap_is_identity(remap));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 5u, 6u));
+    ASSERT_FALSE(nmo_id_remap_is_identity(remap));
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, object_visibility_seek_errors_propagate_atomically) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
@@ -21810,6 +21827,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, legacy_material_colors_preserve_every_authored_byte);
     REGISTER_TEST(chunk_id_remap, id_remap_basic);
     REGISTER_TEST(chunk_id_remap, id_remap_preserves_maximum_target);
+    REGISTER_TEST(chunk_id_remap, id_remap_identity_until_an_id_moves);
     REGISTER_TEST(chunk_id_remap, object_visibility_seek_errors_propagate_atomically);
     REGISTER_TEST(chunk_id_remap, object_only_types_delegate_state_operations);
     REGISTER_TEST(chunk_id_remap, single_id_remap);

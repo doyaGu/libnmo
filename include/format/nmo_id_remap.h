@@ -87,6 +87,14 @@ nmo_status_t nmo_id_remap_lookup_id(const nmo_id_remap_t *remap, nmo_object_id_t
 size_t nmo_id_remap_get_count(const nmo_id_remap_t *remap);
 
 /**
+ * @brief Whether every mapping keeps its id (old id == new id)
+ *
+ * @param remap Remap table (NULL or empty counts as identity)
+ * @return true when no id moves
+ */
+bool nmo_id_remap_is_identity(const nmo_id_remap_t *remap);
+
+/**
  * @brief Clear all mappings
  * 
  * @param remap Remap table to clear

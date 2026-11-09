@@ -120,6 +120,14 @@ size_t nmo_id_remap_get_count(const nmo_id_remap_t *remap) {
     return remap ? remap->count : 0;
 }
 
+bool nmo_id_remap_is_identity(const nmo_id_remap_t *remap) {
+    if (remap == NULL) return true;
+    for (size_t i = 0; i < remap->count; ++i) {
+        if (remap->entries[i].old_id != remap->entries[i].new_id) return false;
+    }
+    return true;
+}
+
 void nmo_id_remap_clear(nmo_id_remap_t *remap) {
     if (remap) {
         remap->count = 0;

@@ -518,10 +518,13 @@ nmo_status_t nmo_chunk_merge_residue(
         if (out_stats != NULL) *out_stats = stats;
         return NMO_OK;
     }
-    /* Where the ids of a chunk read from a file are is unknown, so a piece
-       that is carried over cannot have them translated. */
-    if (original_to_target != NULL && nmo_id_remap_get_count(original_to_target) > 0 &&
-        original->ids.count == 0) {
+    /* A chunk read from a file holds its object references as file indices
+       and keeps no list of where they are (CKStateChunk writes none in file
+       mode), so a piece carried over cannot have them translated. That only
+       matters when an object's index changes: with every index kept, the
+       piece's references still point where they did. */
+    if (original_to_target != NULL && original->ids.count == 0 &&
+        !nmo_id_remap_is_identity(original_to_target)) {
         stats.ids_unknown = fragment_count;
     }
 
