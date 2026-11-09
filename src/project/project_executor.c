@@ -1543,10 +1543,12 @@ nmo_status_t nmo_project_executor_execute_to_file(
         &root,
         &root_id);
     if (status != NMO_OK) {
+        nmo_last_error_saved_t *error = nmo_last_error_save();
         nmo_workspace_edit_rollback(edit);
         nmo_workspace_destroy(workspace);
         nmo_document_destroy(document);
         nmo_context_release(ctx);
+        nmo_last_error_restore(error);
         return status;
     }
 
@@ -1554,10 +1556,12 @@ nmo_status_t nmo_project_executor_execute_to_file(
     size_t object_count = 0u;
     status = nmo_project_author_scenes(edit, plan, &objects, &object_count);
     if (status != NMO_OK) {
+        nmo_last_error_saved_t *error = nmo_last_error_save();
         nmo_workspace_edit_rollback(edit);
         nmo_workspace_destroy(workspace);
         nmo_document_destroy(document);
         nmo_context_release(ctx);
+        nmo_last_error_restore(error);
         return status;
     }
     project_report_set_generated_object_ids(report, objects, object_count);
@@ -1567,11 +1571,13 @@ nmo_status_t nmo_project_executor_execute_to_file(
         status = nmo_project_author_groups(edit, plan, objects, object_count);
     }
     if (status != NMO_OK) {
+        nmo_last_error_saved_t *error = nmo_last_error_save();
         nmo_workspace_edit_rollback(edit);
         free(objects);
         nmo_workspace_destroy(workspace);
         nmo_document_destroy(document);
         nmo_context_release(ctx);
+        nmo_last_error_restore(error);
         return status;
     }
 

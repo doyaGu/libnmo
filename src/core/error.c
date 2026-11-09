@@ -1,6 +1,7 @@
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_allocator.h"
+#include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -80,6 +81,25 @@ void nmo_last_error_clear(void) {
     tls_last_error.line = 0;
     tls_last_error.message[0] = '\0';
     tls_last_error.chain[0] = '\0';
+}
+
+nmo_last_error_saved_t *nmo_last_error_save(void) {
+    if (tls_last_error.code == NMO_OK && tls_last_error.message[0] == '\0') {
+        return NULL;
+    }
+    nmo_last_error_saved_t *saved = (nmo_last_error_saved_t *)malloc(sizeof(*saved));
+    if (saved != NULL) {
+        *saved = tls_last_error;
+    }
+    return saved;
+}
+
+void nmo_last_error_restore(nmo_last_error_saved_t *saved) {
+    if (saved == NULL) {
+        return;
+    }
+    tls_last_error = *saved;
+    free(saved);
 }
 
 nmo_error_code_t nmo_last_error_code(void) {

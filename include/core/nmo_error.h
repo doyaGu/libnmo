@@ -138,6 +138,23 @@ NMO_API size_t nmo_last_error_message_copy(char *dst, size_t cap);
  */
 NMO_API size_t nmo_last_error_chain_copy(char *dst, size_t cap);
 
+/** @brief A copy of the last error, kept while cleanup code runs. */
+typedef struct nmo_last_error_state nmo_last_error_saved_t;
+
+/**
+ * @brief Copy the last error aside (e.g. before cleanup on a failure path)
+ * @return The copy, or NULL when there is no error to keep (or no memory)
+ * @note Cleanup that succeeds clears the last error (NMO_RETURN_OK); restore
+ *       the copy afterwards so the caller still sees why the operation failed.
+ */
+NMO_API nmo_last_error_saved_t *nmo_last_error_save(void);
+
+/**
+ * @brief Make a copy from nmo_last_error_save() the last error again, and free it
+ * @param saved The copy (NULL does nothing)
+ */
+NMO_API void nmo_last_error_restore(nmo_last_error_saved_t *saved);
+
 /**
  * @brief Set last-error with formatted message (internal use)
  * @param code Error code

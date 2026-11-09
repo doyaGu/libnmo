@@ -385,7 +385,10 @@ void nmo_workspace_edit_rollback(nmo_workspace_edit_t *edit)
     if (edit == NULL || edit->finished) {
         return;
     }
+    /* A rollback is cleanup after a failure: it keeps that failure's error. */
+    nmo_last_error_saved_t *error = nmo_last_error_save();
     (void)workspace_edit_finish_rollback_status(edit, NMO_OK);
+    nmo_last_error_restore(error);
 }
 
 void *nmo_workspace_edit_alloc(

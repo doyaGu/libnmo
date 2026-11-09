@@ -209,6 +209,31 @@ TEST(workspace_edit, begin_commit_roundtrip) {
     nmo_context_release(ctx);
 }
 
+/* A rollback is cleanup after a failure; the failure's error outlives it. */
+TEST(workspace_edit, rollback_keeps_the_last_error) {
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_document_t *document = nmo_document_create(ctx);
+    nmo_workspace_t *workspace = NULL;
+    ASSERT_NOT_NULL(document);
+    ASSERT_EQ(NMO_OK, nmo_workspace_create(ctx, document, &workspace));
+
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_begin(workspace, "failing edit", &edit));
+    nmo_object_id_t id = 0;
+    ASSERT_EQ(NMO_OK, nmo_object_edit_create(edit,
+        &(nmo_object_create_desc_t){.class_id = NMO_CID_MESH, .name = "Mesh"}, &id));
+    NMO_SET_LAST_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "the cause");
+    nmo_workspace_edit_rollback(edit);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, nmo_last_error_code());
+    ASSERT_STR_EQ("the cause", nmo_last_error_message());
+
+    nmo_last_error_clear();
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
+    nmo_context_release(ctx);
+}
+
 TEST(workspace_edit, set_reference_field_commit_invalidates_ref_graph) {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
     ASSERT_NOT_NULL(ctx);
@@ -2405,6 +2430,7 @@ TEST(workspace_edit, snapshot_object_chunk_rollback_restores_null_chunk) {
 
 TEST_MAIN_BEGIN()
 REGISTER_TEST(workspace_edit, begin_commit_roundtrip);
+REGISTER_TEST(workspace_edit, rollback_keeps_the_last_error);
 REGISTER_TEST(workspace_edit, rejects_overlapping_edits_for_same_document);
 REGISTER_TEST(workspace_edit, set_reference_field_commit_invalidates_ref_graph);
 REGISTER_TEST(workspace_edit, set_fields_uses_explicit_object_type);
