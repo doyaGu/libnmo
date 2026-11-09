@@ -430,6 +430,7 @@ set_tests_properties(test_load_options PROPERTIES WORKING_DIRECTORY "${CMAKE_SOU
 # Runtime clean-break tests
 add_unit_test(test_runtime_kernel)
 add_unit_test(test_runtime_copy_delete)
+add_unit_test(test_behavior_delete)
 add_unit_test(test_bulk_destroy)
 add_unit_test(test_delete_rollback)
 add_unit_test(test_safe_detach_validation)
