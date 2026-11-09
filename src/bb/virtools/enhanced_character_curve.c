@@ -56,7 +56,7 @@ static int bb_enhanced_character_curve(blk_t *b)
         if (nmo_engine_block_set_local_value(b,2,&current,sizeof(current)) != NMO_OK) return NMO_ENGINE_BR_GENERICERROR;
         float total = get_local_float(b,3,0);
         if (forward ? current >= total : current < total) {
-            OUT_ON(b,0); set_out_float(b,0,forward ? 1 : 0);
+            OUT_ON(b,0); set_out_float(b,0,forward ? 1.0f : 0.0f);
             if (!get_in_int(b,5,0)) {
                 /* SetNextActiveAnimation(NULL) stops interruptible playback;
                  * its native error return is intentionally ignored. */

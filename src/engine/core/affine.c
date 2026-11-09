@@ -371,7 +371,7 @@ nmo_quaternion_t eng_quaternion_slerp(float step, nmo_quaternion_t a, nmo_quater
 {
     double t = step;
     double dot = (((double)a.z*b.z+(double)a.y*b.y)+(double)a.x*b.x)+(double)a.w*b.w;
-    double sign = dot < 0 ? -1 : 1, cosine = dot < 0 ? -dot : dot;
+    double sign = dot < 0 ? -1.0 : 1.0, cosine = dot < 0 ? -dot : dot;
     double left = 1-t, right = sign*t;
     if (cosine < .99) {
         double angle = acos(cosine), inverse = 1/sin(angle);

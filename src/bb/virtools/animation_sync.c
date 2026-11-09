@@ -90,7 +90,7 @@ static int sync_walk(blk_t *b, bool restore)
                  * cursors. Its inclusive frame test intentionally repeats keys
                  * at the previous endpoint and does not scan a loop's old tail. */
                 double start = fmax(0,trunc((double)previous)-2);
-                double end = fmin(keys,trunc((double)current)+2);
+                double end = fmin((double)keys,trunc((double)current)+2);
                 int32_t type = (int32_t)nmo_read_u32_le(record+64);
                 if (start < end && type >= 0)
                     for (size_t k = (size_t)start; k < (size_t)end; k++) {

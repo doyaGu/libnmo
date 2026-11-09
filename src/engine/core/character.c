@@ -447,13 +447,13 @@ static void character_terminal(nmo_engine_t *engine, eng_character_t *runtime, f
         eng_animation_position(engine, channel, current, &from);
         eng_animation_position(engine, channel, endpoint, &to);
         float length = eng_animation_length(eng_animation_playback_state(engine, runtime->active));
-        eng_object_animation_apply_step(engine, channel, endpoint == 0 || length <= 0 ? 0 : 1, runtime->active);
+        eng_object_animation_apply_step(engine, channel, endpoint == 0 || length <= 0 ? 0.0f : 1.0f, runtime->active);
         eng_entity_set_position(engine, root, &position, -1, false);
         eng_vector_t delta = {to.x-from.x,to.y-from.y,to.z-from.z};
         eng_entity_translate(engine, root, &delta, actor, false);
         character_root_position(engine, runtime);
     }
-    eng_animation_set_current_step(engine, runtime->active, endpoint == 0 ? 0 : 1);
+    eng_animation_set_current_step(engine, runtime->active, endpoint == 0 ? 0.0f : 1.0f);
     character_align(engine, runtime);
     eng_animation_set_current_step(engine, runtime->active, step);
 }
