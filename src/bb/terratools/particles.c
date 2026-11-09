@@ -70,6 +70,8 @@ enum { PL_RENDER = 4, PL_SRC_BLEND, PL_DEST_BLEND, PL_EVOLUTIONS = 8, PL_VARIANC
 #define GUID_SPHERICAL NMO_GUID(0x67c88f47, 0x8880721e)
 #define GUID_PLANAR NMO_GUID(0x49957bfe, 0x0ff27ffc)
 #define GUID_TIME_POINT NMO_GUID(0x569d2cc2, 0x3bcb01b9)
+#define GUID_WAVE NMO_GUID(0x02da5a18, 0x52227285)
+#define PR_OBJECT 4
 
 /* The values ReadInputs keeps on the emitter */
 typedef struct emitter_inputs {
@@ -165,7 +167,7 @@ static void read_inputs(blk_t *b, emitter_inputs_t *in)
 }
 
 /* The emitter a prototype makes; the other shapes emit as the point one does */
-typedef enum emitter_shape { SHAPE_POINT, SHAPE_PLANAR, SHAPE_SPHERICAL, SHAPE_TIME_POINT } emitter_shape_t;
+typedef enum emitter_shape { SHAPE_POINT, SHAPE_PLANAR, SHAPE_SPHERICAL, SHAPE_TIME_POINT, SHAPE_WAVE } emitter_shape_t;
 
 static emitter_shape_t emitter_shape(blk_t *b)
 {
@@ -175,6 +177,9 @@ static emitter_shape_t emitter_shape(blk_t *b)
     }
     if (nmo_guid_equals(guid, GUID_PLANAR)) {
         return SHAPE_PLANAR;
+    }
+    if (nmo_guid_equals(guid, GUID_WAVE)) {
+        return SHAPE_WAVE;
     }
     return nmo_guid_equals(guid, GUID_TIME_POINT) ? SHAPE_TIME_POINT : SHAPE_POINT;
 }
@@ -289,10 +294,14 @@ static void add_particles(blk_t *b, eng_emitter_t *e, const emitter_inputs_t *in
                 eng_vector_t r = {emitter_rand(e), emitter_rand(e), 0.0f};
                 eng_vector_transform(&pos, world, &r);
             } else {
-                /* PointEmitter: the entity's position */
+                /* PointEmitter, WaveEmitter: the entity's position */
                 pos = (eng_vector_t){world->m[3][0], world->m[3][1], world->m[3][2]};
             }
-            initiate_direction(e, in, world, &dir);
+            if (shape == SHAPE_WAVE) {
+                dir = (eng_vector_t){0.0f, 0.0f, 0.0f}; /* WaveEmitter::InitiateDirection */
+            } else {
+                initiate_direction(e, in, world, &dir);
+            }
         }
         init_particle(e, in, p, &pos, &dir);
     }
@@ -348,8 +357,10 @@ static void add_trail(blk_t *b, eng_emitter_t *e, const emitter_inputs_t *in, fl
 
 /* ParticleEmitter::UpdateParticles, without the interactors and deflectors: then the emitter's
    box (SetBoundingBox, in the world) is where its living particles were and went, which an emitter
-   whose particles all died leaves inverted */
-static void update_particles(nmo_engine_t *engine, eng_emitter_t *e, const emitter_inputs_t *in, float delta)
+   whose particles all died leaves inverted. A wave emitter's UpdateParticles2 neither turns nor
+   moves them (the box is where they were) */
+static void update_particles(nmo_engine_t *engine, eng_emitter_t *e, const emitter_inputs_t *in, float delta,
+                             bool wave)
 {
     if (e->particles.count == 0) {
         return; /* no particles yet: nothing to do */
@@ -362,8 +373,10 @@ static void update_particles(nmo_engine_t *engine, eng_emitter_t *e, const emitt
             continue; /* back to the pool */
         }
         float dt = p->life < delta ? p->life : delta;
-        p->angle += p->dangle * dt;
-        for (int moved = 0; moved < 2; moved++) {
+        if (!wave) {
+            p->angle += p->dangle * dt;
+        }
+        for (int moved = 0; moved < (wave ? 1 : 2); moved++) {
             low = (eng_vector_t){p->pos[0] < low.x ? p->pos[0] : low.x, p->pos[1] < low.y ? p->pos[1] : low.y,
                                  p->pos[2] < low.z ? p->pos[2] : low.z};
             high = (eng_vector_t){high.x < p->pos[0] ? p->pos[0] : high.x, high.y < p->pos[1] ? p->pos[1] : high.y,
@@ -381,7 +394,7 @@ static void update_particles(nmo_engine_t *engine, eng_emitter_t *e, const emitt
         if (in->evolutions & PE_SIZE) {
             p->size += p->dsize * dt;
         }
-        if (p->dframe_time != 0.0f && (in->evolutions & PE_TEXTURE)) {
+        if (p->dframe_time != 0.0f && (in->evolutions & PE_TEXTURE) && in->render_mode != PR_OBJECT) {
             p->frame_time += dt;
             float step = fabsf(p->dframe_time);
             int dir = p->dframe_time < 0.0f ? -1 : 1;
@@ -413,9 +426,10 @@ static void update_particles(nmo_engine_t *engine, eng_emitter_t *e, const emitt
  * GeneralParticleSystem: On starts emitting (Exit On), Off stops, Freeze
  * toggles; while not frozen, the inputs are read, particles emitted each
  * Emission Delay and moved by the frame time; Exit Off once no particle is
- * left after Off. Point, planar, spherical and time dependent point
- * emitters place their particles as the DLL does; the other shapes emit
- * from the entity's position.
+ * left after Off. Point, planar, spherical, time dependent point and wave
+ * emitters place their particles as the DLL does (a wave emitter's stay where
+ * they were emitted, unturned: WaveEmitter, UpdateParticles2); the other
+ * shapes emit from the entity's position.
  */
 static int bb_particle_system(blk_t *b)
 {
@@ -479,7 +493,7 @@ static int bb_particle_system(blk_t *b)
                     add_particles(b, e, &in, shape);
                 }
             }
-            update_particles(b->engine, e, &in, delta);
+            update_particles(b->engine, e, &in, delta, shape == SHAPE_WAVE);
             nmo_engine_block_set_local_value(b, 2, &emission_time, sizeof(emission_time));
         }
     }

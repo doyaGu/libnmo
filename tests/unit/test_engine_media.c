@@ -11,12 +11,14 @@
 #include "object/builtin/nmo_texture_schemas.h"
 #include "object/nmo_ref.h"
 
+#include <math.h>
 #include <stdio.h>
 
 #define GUID_NOP NMO_GUID(0x302561c4, 0x0d282980)
 #define GUID_DELAYER NMO_GUID(0x15d472a5, 0x3bea409f)
 #define GUID_WAVE_PLAYER NMO_GUID(0x5bde0e45, 0x2e2107d5)
 #define GUID_POINT_PARTICLES NMO_GUID(0x506b40f7, 0x30852e46)
+#define GUID_WAVE_PARTICLES NMO_GUID(0x02da5a18, 0x52227285)
 #define GUID_MOVIE_LOAD NMO_GUID(0x798e26a9, 0x34e4169e)
 #define GUID_MOVIE_PLAYER NMO_GUID(0x778d16d4, 0x1dd60060)
 #define GUID_PLAY_ANIMATION NMO_GUID(0x64221225, 0x769a143f)
@@ -119,6 +121,63 @@ TEST(engine_media, particle_system_exits_off_once_its_particles_died)
        100 ms, four updates of 25 ms, and leave in the fifth, after Off at 50 ms */
     ASSERT_EQ(5u, frames);
     ASSERT_FALSE(nmo_engine_behavior_is_active(f.engine, ps));
+    fixture_end(&f);
+}
+
+TEST(engine_media, wave_particles_stay_where_they_were_emitted)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t ps = fixture_block(&f, GUID_WAVE_PARTICLES, "Wave");
+    ASSERT_TRUE(ps != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, ps, 0), 0);
+    input_float(&f, BLOCK_PIN(&f, ps, 4), 0.01f);    /* Speed: a point emitter's would fly off */
+    input_float(&f, BLOCK_PIN(&f, ps, 8), 1000.0f);  /* Lifespan */
+    input_float(&f, BLOCK_PIN(&f, ps, 9), 0.0f);
+    input_float(&f, BLOCK_PIN(&f, ps, 0), 0.0f);      /* Emission Delay: emit at every update */
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    int32_t owner = eng_entity_index(f.engine, f.owner_id);
+    ASSERT_TRUE(owner >= 0);
+    const float origin[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    ASSERT_EQ(NMO_OK, nmo_engine_set_entity_world_matrix(f.engine, f.owner_id, origin, false));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 25.0f));
+    const float moved[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 5, 0, 0, 1};
+    ASSERT_EQ(NMO_OK, nmo_engine_set_entity_world_matrix(f.engine, f.owner_id, moved, false));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 25.0f));
+    eng_show(f.engine, f.owner_id, 1);
+
+    /* WaveEmitter: no direction, UpdateParticles2: no move. Each particle's quad is centred where
+       the emitter was when it came out, two updates later: x 0 or 5 */
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    int quads = 0, at_origin = 0;
+    for (int32_t d = 0; d < frame.draw_count; d++) {
+        const nmo_engine_draw_t *draw = &frame.draws[d];
+        if (draw->kind != NMO_ENGINE_DRAW_TRIANGLES || draw->object != f.owner_id) {
+            continue;
+        }
+        for (int32_t q = 0; q + 6 <= draw->vertex_count; q += 6) {
+            float low[3] = {1e9f, 1e9f, 1e9f}, high[3] = {-1e9f, -1e9f, -1e9f};
+            for (int32_t k = 0; k < 6; k++) {
+                const nmo_engine_vertex_t *v = &frame.vertices[draw->first_vertex + q + k];
+                const float p[3] = {v->x, v->y, v->z};
+                for (int c = 0; c < 3; c++) {
+                    low[c] = p[c] < low[c] ? p[c] : low[c];
+                    high[c] = p[c] > high[c] ? p[c] : high[c];
+                }
+            }
+            const float x = (low[0] + high[0]) * 0.5f;
+            ASSERT_TRUE(fabsf(x) < 1e-4f || fabsf(x - 5.0f) < 1e-4f);
+            ASSERT_FLOAT_EQ(0.0f, (low[1] + high[1]) * 0.5f, 1e-4f);
+            ASSERT_FLOAT_EQ(0.0f, (low[2] + high[2]) * 0.5f, 1e-4f);
+            at_origin += fabsf(x) < 1e-4f;
+            quads++;
+        }
+    }
+    ASSERT_TRUE(quads > 0);
+    ASSERT_TRUE(at_origin > 0);
+    ASSERT_TRUE(at_origin < quads);
     fixture_end(&f);
 }
 
@@ -912,6 +971,7 @@ TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_media, wave_player_ends_after_the_sound_length);
 REGISTER_TEST(engine_media, voices_follow_the_sound_settings_and_instances);
 REGISTER_TEST(engine_media, particle_system_exits_off_once_its_particles_died);
+REGISTER_TEST(engine_media, wave_particles_stay_where_they_were_emitted);
 REGISTER_TEST(engine_media, movie_player_shows_the_movie_frames_over_its_duration);
 REGISTER_TEST(engine_media, movie_texture_shows_the_decoded_frame_of_its_slot);
 REGISTER_TEST(engine_media, transparent_texture_clears_black_without_a_saved_color);
