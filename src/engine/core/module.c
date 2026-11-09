@@ -314,6 +314,16 @@ const eng_module_t *eng_module_of(const nmo_engine_t *engine, nmo_object_id_t id
 }
 
 /* An ID of the session outside the module's window: the module of that session owning it. */
+nmo_object_id_t eng_module_file_object(const eng_module_t *module, nmo_object_id_t file_id)
+{
+    if (module == NULL || file_id == 0) {
+        return file_id;
+    }
+    const nmo_object_t *object =
+        module->repo != NULL ? nmo_object_repository_find_by_file_id(module->repo, file_id) : NULL;
+    return eng_module_id(module, object != NULL ? object->id : file_id);
+}
+
 nmo_object_id_t eng_module_id_outside(const eng_module_t *module, nmo_object_id_t local)
 {
     const nmo_engine_t *engine = module->engine;

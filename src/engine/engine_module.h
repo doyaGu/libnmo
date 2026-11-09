@@ -80,6 +80,10 @@ nmo_object_id_t eng_create_related_object(nmo_engine_t *engine, nmo_object_id_t 
 /* A named object in the model's session, with an explicit dynamic flag. */
 nmo_object_id_t eng_create_related_object_with_options(nmo_engine_t *engine, nmo_object_id_t model,
     uint32_t class_id, const char *name, bool dynamic);
+/* The engine ID of the object a chunk of the module's file names by its own ID (the CK_ID it
+   was saved with, as a chunk saved without the file's context has it); the ID itself as the
+   module's when no object of the file had it */
+nmo_object_id_t eng_module_file_object(const eng_module_t *module, nmo_object_id_t file_id);
 /* The engine ID of an object of a module's session outside its window */
 nmo_object_id_t eng_module_id_outside(const eng_module_t *module, nmo_object_id_t local);
 /* The engine ID of a document's object ID; 0 stays 0. */

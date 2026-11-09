@@ -101,6 +101,9 @@ static bool eng_level_scene(nmo_engine_t *engine, eng_scene_entry_t **out_entrie
     *out_status = nmo_chunk_start_read(chunk);
     if (*out_status == NMO_OK) *out_status = nmo_scene_deserialize(&scene, chunk, NULL, NULL);
     bool read = *out_status == NMO_OK;
+    /* A level scene saved without the file's context names the objects by the IDs they were
+       saved with (CKLevel::Load's remap); one saved with it has the document's already */
+    bool own_ids = (chunk->chunk_options & NMO_CHUNK_OPTION_FILE) == 0;
     (void)nmo_chunk_start_read(chunk);
     eng_scene_entry_t *entries =
         read && scene.object_descs.count > 0
@@ -109,7 +112,7 @@ static bool eng_level_scene(nmo_engine_t *engine, eng_scene_entry_t **out_entrie
     if (entries != NULL) {
         const nmo_scene_object_desc_t *descs = (const nmo_scene_object_desc_t *)scene.object_descs.data;
         for (size_t i = 0; i < scene.object_descs.count; i++) {
-            entries[i].id = descs[i].ref.raw_id;
+            entries[i].id = own_ids ? eng_module_file_object(module, descs[i].ref.raw_id) : descs[i].ref.raw_id;
             entries[i].flags = descs[i].flags;
             entries[i].has_ic = descs[i].initial_value != NULL;
             if (entries[i].has_ic) {
@@ -123,10 +126,15 @@ static bool eng_level_scene(nmo_engine_t *engine, eng_scene_entry_t **out_entrie
         *out_status = NMO_ERR_NOMEM;
     }
     if (read && *out_status == NMO_OK) {
-        eng_render_apply_scene(engine, scene.background_color, scene.background_texture.raw_id,
+        nmo_object_id_t background = scene.background_texture.raw_id, camera = scene.starting_camera.raw_id;
+        if (own_ids) {
+            background = eng_module_file_object(module, background);
+            camera = eng_module_file_object(module, camera);
+        }
+        eng_render_apply_scene(engine, scene.background_color, background,
                                scene.ambient_light_color, (int32_t)scene.fog_mode,
                                scene.fog_color, scene.fog_start, scene.fog_end,
-                               scene.fog_density, scene.starting_camera.raw_id);
+                               scene.fog_density, camera);
     }
     nmo_scene_vtable.destroy(&scene, NULL, NULL);
     *out_entries = entries;
