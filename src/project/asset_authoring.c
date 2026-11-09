@@ -10,6 +10,22 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* An object's OBJ mesh failed to import: the error names the object and the
+   file, keeping the import's own message (or the status) as the cause. */
+static nmo_status_t asset_authoring_mesh_error(nmo_status_t status,
+                                               const char *object_name,
+                                               const char *path)
+{
+    const char *message = nmo_last_error_message();
+    char *cause = strdup(message != NULL && message[0] != '\0' ? message
+                                                                : nmo_error_string(status));
+    nmo_last_error_setf((nmo_error_code_t)status, NMO_SEVERITY_ERROR, __FILE__, __LINE__,
+                        "object '%s': mesh %s: %s", object_name != NULL ? object_name : "?",
+                        path != NULL ? path : "?", cause != NULL ? cause : "");
+    free(cause);
+    return status;
+}
+
 typedef struct project_material_authoring_desc {
     bool has_diffuse;
     float diffuse[4];
@@ -740,7 +756,7 @@ static nmo_status_t project_authoring_assets(
                 });
             if (status != NMO_OK) {
                 free(obj_material_bindings);
-                return status;
+                return asset_authoring_mesh_error(status, object.name, asset.external_mesh_path);
             }
             status = nmo_asset_edit_bind_entity_mesh(edit, object_id, mesh_id);
             if (status != NMO_OK) {

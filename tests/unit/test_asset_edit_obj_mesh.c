@@ -1,6 +1,7 @@
 #include "test_framework.h"
 
 #include "core/nmo_arena.h"
+#include "core/nmo_error.h"
 #include "runtime/nmo_document.h"
 #include "format/nmo_obj_parser.h"
 #include "format/nmo_object.h"
@@ -596,8 +597,35 @@ TEST(asset_edit_obj_mesh, imports_more_corners_than_vertices_allow)
     free(text);
 }
 
+/* A mesh the import refuses says why, not only that an argument is invalid. */
+TEST(asset_edit_obj_mesh, rejects_a_mesh_with_no_faces_saying_so)
+{
+    nmo_context_t *ctx = NULL;
+    nmo_document_t *doc = NULL;
+    nmo_workspace_t *workspace = NULL;
+    create_workspace(&ctx, &doc, &workspace);
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_begin(workspace, "no faces", &edit));
+    nmo_object_id_t mesh_id = 0u;
+    ASSERT_EQ(NMO_OK, nmo_object_edit_create(edit,
+        &(nmo_object_create_desc_t){.class_id = NMO_CID_MESH, .name = "Empty"}, &mesh_id));
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+    nmo_obj_data_t obj = {0};
+    parse_obj_or_fail(arena, "v 0 0 0\nv 1 0 0\n", &obj);
+    nmo_last_error_clear();
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, nmo_asset_edit_set_obj_mesh(edit, mesh_id, &obj, NULL));
+    const char *message = nmo_last_error_message();
+    ASSERT_NOT_NULL(message);
+    ASSERT_TRUE(strstr(message, "no faces or lines") != NULL);
+    nmo_arena_destroy(arena);
+    nmo_workspace_edit_rollback(edit);
+    destroy_workspace(ctx, doc, workspace);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(asset_edit_obj_mesh, imports_triangle_from_parsed_obj);
+REGISTER_TEST(asset_edit_obj_mesh, rejects_a_mesh_with_no_faces_saying_so);
 REGISTER_TEST(asset_edit_obj_mesh, imports_more_corners_than_vertices_allow);
 REGISTER_TEST(asset_edit_obj_mesh, binds_named_obj_materials);
 REGISTER_TEST(asset_edit_obj_mesh, rejects_wrong_class_material_binding);

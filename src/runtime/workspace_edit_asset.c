@@ -722,7 +722,9 @@ static nmo_status_t workspace_obj_mesh_get_or_add_vertex(
         workspace_obj_mesh_slot_t *entry = &dedup_table[slot];
         if (entry->idx_plus1 == 0) {
             if (*unique_count >= 65535u) {
-                return NMO_ERR_INVALID_ARGUMENT;
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                 "OBJ mesh has more than 65535 distinct vertices "
+                                 "(a CKMesh indexes its vertices with 16 bits): split it");
             }
 
             nmo_vertex_t *vertex = &vertices[*unique_count];
@@ -818,7 +820,8 @@ static nmo_status_t workspace_obj_mesh_compute_counts(
        they are added (workspace_obj_mesh_get_or_add_vertex). */
     counts.max_vertices = counts.face_vertex_count + counts.line_vertex_count;
     if (counts.max_vertices == 0) {
-        return NMO_ERR_INVALID_ARGUMENT;
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "OBJ mesh has no faces or lines");
     }
 
     if (!workspace_obj_mesh_checked_mul(
@@ -878,14 +881,17 @@ static nmo_status_t workspace_obj_mesh_build(
         return NMO_ERR_INVALID_ARGUMENT;
     }
     if (obj_data->face_count == 0 && obj_data->line_count == 0) {
-        return NMO_ERR_INVALID_ARGUMENT;
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "OBJ mesh has no faces or lines");
     }
     if ((obj_data->face_count > 0 && obj_data->faces == NULL) ||
         (obj_data->line_count > 0 && obj_data->lines == NULL)) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
     if (obj_data->material_name_count > UINT16_MAX) {
-        return NMO_ERR_INVALID_ARGUMENT;
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "OBJ mesh names %zu materials; a CKMesh holds at most 65535",
+                         obj_data->material_name_count);
     }
 
     workspace_obj_mesh_counts_t counts = {0};
@@ -895,7 +901,9 @@ static nmo_status_t workspace_obj_mesh_build(
     uint32_t material_group_count =
         workspace_obj_mesh_material_group_count(obj_data, &material_offset);
     if (material_group_count > UINT16_MAX) {
-        return NMO_ERR_INVALID_ARGUMENT;
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "OBJ mesh has %u material groups; a CKMesh holds at most 65535",
+                         material_group_count);
     }
 
     nmo_vertex_t *vertices = (nmo_vertex_t *)nmo_arena_alloc(
