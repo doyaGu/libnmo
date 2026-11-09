@@ -568,7 +568,7 @@ nmo_status_t eng_character_play_secondary_warp(nmo_engine_t *engine, nmo_object_
         runtime->active != animation && character_owned_keyed(engine,runtime,runtime->active);
     if (warp) {
         entry.warper = character_secondary_warper(engine,runtime);
-        float target_frame;
+        float target_frame = 0.0f;
         status = entry.warper != 0 ? eng_keyed_animation_transition(engine,entry.warper,runtime->active,animation,0,warp_length,frame,&target_frame) : NMO_ERR_NOMEM;
         entry.warp_gate.animation = entry.warper;
         if (status == NMO_OK && !character_secondary_bodies(engine,&entry.warp_gate)) status = NMO_ERR_NOMEM;

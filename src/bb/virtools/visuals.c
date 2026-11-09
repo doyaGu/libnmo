@@ -1683,7 +1683,7 @@ static void draw_info(nmo_engine_t *engine, int32_t node)
         info_box(engine, b, index, position);
     }
     nmo_object_id_t mesh_id = entity_current_mesh(engine, target);
-    nmo_engine_mesh_t mesh;
+    nmo_engine_mesh_t mesh = {0};
     bool has_mesh = mesh_id != 0 && nmo_engine_mesh(engine, mesh_id, &mesh);
     if (has_mesh && get_in_int(b, 4, 0) != 0) {
         info_normals(engine, b, index, &mesh, false, position);

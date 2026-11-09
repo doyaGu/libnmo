@@ -24,7 +24,7 @@ static billboard_surface_t surface(nmo_engine_t *engine, nmo_object_id_t id, int
     billboard_surface_t result = {.normal = {0,0,1}, .up = {0,1,0}};
     const nmo_3dentity_state_t *entity = nmo_type_query_object_get_ancestor_state_by_guid(engine->types,eng_find_object(engine,id),CKPGUID_3DENTITY);
     nmo_object_id_t mesh_id = entity != NULL ? eng_object_ref(engine,id,&entity->current_mesh) : 0;
-    nmo_engine_mesh_t mesh;
+    nmo_engine_mesh_t mesh = {0};
     result.mesh = eng_map_get(&engine->destroyed,mesh_id) < 0 && nmo_engine_mesh(engine,mesh_id,&mesh);
     result.face_mode = result.mesh && face >= 0;
     if (result.face_mode) {
