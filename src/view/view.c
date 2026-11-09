@@ -71,6 +71,7 @@ typedef struct view_texture {
     bool mipmapped; /* uploaded with its mipmaps */
     bool forced;    /* mipmapped by nmo_view_set_mipmaps, not by CK */
     bool target;    /* a render pass's: what it drew, not the engine's image */
+    bool cube;      /* a cube map: its six faces, no mipmaps */
     int target_w, target_h;
 } view_texture_t;
 
@@ -97,6 +98,7 @@ struct nmo_view {
     bool mipmap_all;                 /* mipmap every texture, not only CK's mipmapped ones */
     int view_x, view_y, view_w, view_h; /* where it shows in the window, in pixels */
     int scene_view[4]; /* where the frame being drawn draws its 3D: GL x, y (bottom), width, height */
+    float eye[16];     /* its camera's world matrix: the scene's root, the texgen referential */
     uint64_t start;
     bool cursor_shown;
     view_audio_t *audio; /* NULL when there is no audio device */
@@ -373,8 +375,21 @@ static GLuint view_texture(nmo_view_t *view, nmo_object_id_t id)
     if (texture != NULL && texture->target) {
         return texture->name;
     }
+    /* A cube map's faces, its version the newest of theirs */
+    bool cube = nmo_engine_texture_cube_map(view->engine, id);
+    nmo_engine_image_t faces[6];
     nmo_engine_image_t image;
-    bool has_image = nmo_engine_texture_image(view->engine, id, &image);
+    bool has_image = false;
+    if (cube) {
+        has_image = true;
+        image.version = 0;
+        for (int32_t face = 0; face < 6 && has_image; face++) {
+            has_image = nmo_engine_texture_face_image(view->engine, id, face, &faces[face]);
+            image.version = faces[face].version > image.version ? faces[face].version : image.version;
+        }
+    } else {
+        has_image = nmo_engine_texture_image(view->engine, id, &image);
+    }
     if (texture == NULL) {
         if (view->texture_count == view->texture_capacity) {
             size_t capacity = view->texture_capacity != 0 ? view->texture_capacity * 2 : 64;
@@ -395,6 +410,22 @@ static GLuint view_texture(nmo_view_t *view, nmo_object_id_t id)
     }
     /* Forced mipmaps leave out cutouts (clear texels, a transparent color's): small sprites
        of them would gather their dark edges into rings, which CK draws without */
+    if (cube) {
+        if (has_image && image.version != texture->version) {
+            texture->version = image.version;
+            texture->empty = false;
+            texture->cube = true;
+            texture->mipmapped = texture->forced = false;
+            glBindTexture(GL_TEXTURE_CUBE_MAP, texture->name);
+            for (int32_t face = 0; face < 6; face++) {
+                /* CK's face order and rows are GL's */
+                glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + (GLenum)face, 0, GL_RGBA, faces[face].width,
+                             faces[face].height, 0, GL_RGBA, GL_UNSIGNED_BYTE, faces[face].rgba);
+            }
+            glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAX_LEVEL, 0);
+        }
+        return texture->empty ? 0 : texture->name;
+    }
     bool mipmapped = has_image && (image.mipmapped ||
                                    (view->mipmap_all && !view_has_clear_texels(&image)));
     if (has_image && (image.version != texture->version || mipmapped != texture->mipmapped)) {
@@ -634,17 +665,35 @@ static bool view_affine_inverse(float out[16], const float m[16])
  * transform takes its matrix; the result is scaled by 0.4 (0.5 planar), V
  * flipped, about the texture's middle. The eye space here is the camera's,
  * so GL's generation is CK's, and the matrices are CK's row-vector ones.
+ * The cube map ones (31 reflect, 32 sky, 33 normals, 34 positions) take
+ * the reflection vector, position, normal and position into a cube map
+ * turned as the referential, or the camera; positions sends them into the
+ * object's space as well. CK's cube faces and their rows are GL's.
  */
+static void view_multiply(float out[16], const float a[16], const float b[16]);
 static void view_set_texgen(nmo_view_t *view, const nmo_engine_material_t *m, const float *world)
 {
     int32_t texgen = m != NULL ? m->texgen : 0;
-    GLint mode = texgen == 2 ? GL_REFLECTION_MAP : texgen == 3 ? GL_NORMAL_MAP
-                 : texgen == 4 ? GL_EYE_LINEAR : 0;
+    bool cube = texgen >= 31 && texgen <= 34; /* VXEFFECT_TGCUBEMAP_* */
+    GLint mode = texgen == 2 || texgen == 31 ? GL_REFLECTION_MAP
+                 : texgen == 3 || texgen == 33 ? GL_NORMAL_MAP
+                 : texgen == 4 || texgen == 32 || texgen == 34 ? GL_EYE_LINEAR
+                                                                : 0;
     float ref[16];
     bool referential = m != NULL && m->texgen_referential != 0 &&
                        nmo_engine_entity_world_matrix(view->engine, m->texgen_referential, ref);
     float t[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
-    if (texgen == 1 && referential) {
+    if (cube) {
+        /* The referential's world, the scene root's (the camera's) without one; positions
+           are then taken into the object's space; no translation either way */
+        memcpy(t, referential ? ref : view->eye, sizeof(t));
+        float inverse[16];
+        if (texgen == 34 && world != NULL && view_affine_inverse(inverse, world)) {
+            view_multiply(t, t, inverse);
+        }
+        t[12] = t[13] = t[14] = 0.0f;
+        t[15] = 1.0f;
+    } else if (texgen == 1 && referential) {
         memcpy(t, ref, sizeof(t));
     } else if (mode != 0) {
         if (mode != GL_EYE_LINEAR && referential && world != NULL) {
@@ -740,12 +789,14 @@ static void view_set_material(nmo_view_t *view, const nmo_engine_material_t *m, 
     }
     GLuint texture = view->use_textures ? view_texture(view, m->texture) : 0;
     if (texture != 0) {
-        glEnable(GL_TEXTURE_2D);
-        glBindTexture(GL_TEXTURE_2D, texture);
+        const view_texture_t *uploaded = view_uploaded(view, m->texture);
+        GLenum target = uploaded != NULL && uploaded->cube ? GL_TEXTURE_CUBE_MAP : GL_TEXTURE_2D;
+        glDisable(target == GL_TEXTURE_2D ? GL_TEXTURE_CUBE_MAP : GL_TEXTURE_2D);
+        glEnable(target);
+        glBindTexture(target, texture);
         GLint min_filter = view_filter(m->min_filter, true);
         /* Without mipmaps the device samples the image itself, whatever the mip filter; forced
            ones are sampled even under a filter that has no mip part */
-        const view_texture_t *uploaded = view_uploaded(view, m->texture);
         bool mipmapped = uploaded != NULL && uploaded->mipmapped;
         if (uploaded != NULL && uploaded->forced) {
             min_filter = min_filter == GL_NEAREST ? GL_NEAREST_MIPMAP_LINEAR
@@ -757,22 +808,28 @@ static void view_set_material(nmo_view_t *view, const nmo_engine_material_t *m, 
                              ? GL_NEAREST
                              : GL_LINEAR;
         }
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, min_filter);
+        glTexParameteri(target, GL_TEXTURE_MIN_FILTER, min_filter);
         /* The window has many more pixels than CK's render context: mipmaps seen at a
            slant stay sharp */
         if (view->anisotropy > 1.0f) {
-            glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT,
+            glTexParameterf(target, GL_TEXTURE_MAX_ANISOTROPY_EXT,
                             mipmapped && min_filter != GL_NEAREST && min_filter != GL_LINEAR
                                 ? view->anisotropy
                                 : 1.0f);
         }
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, view_filter(m->mag_filter, false));
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, (GLint)view_address(m->address_mode));
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, (GLint)view_address(m->address_mode));
+        glTexParameteri(target, GL_TEXTURE_MAG_FILTER, view_filter(m->mag_filter, false));
+        /* A cube's faces meet without seams */
+        GLint wrap = target == GL_TEXTURE_CUBE_MAP ? GL_CLAMP_TO_EDGE : (GLint)view_address(m->address_mode);
+        glTexParameteri(target, GL_TEXTURE_WRAP_S, wrap);
+        glTexParameteri(target, GL_TEXTURE_WRAP_T, wrap);
+        if (target == GL_TEXTURE_CUBE_MAP) {
+            glTexParameteri(target, GL_TEXTURE_WRAP_R, wrap);
+        }
         glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, view_texture_env(m->texture_blend));
         view_set_texgen(view, m, world);
     } else {
         glDisable(GL_TEXTURE_2D);
+        glDisable(GL_TEXTURE_CUBE_MAP);
         view_set_texgen(view, NULL, NULL);
     }
     if (m->alpha_blend) {
@@ -978,7 +1035,12 @@ static void view_draw_mesh_as(nmo_view_t *view, const nmo_engine_frame_t *frame,
         if (draw->replaced_material != 0 && material_id == draw->replaced_material) {
             material_id = draw->replacing_material;
         }
-        if (material_id == 0 || !nmo_engine_material(view->engine, material_id, &material)) {
+        bool known = material_id != 0 && nmo_engine_material(view->engine, material_id, &material);
+        if (known && draw->texgen != 0) { /* a pre-render's effect, the scene's root for referential */
+            material.texgen = draw->texgen;
+            material.texgen_referential = 0;
+        }
+        if (!known) {
             /* RCKRenderManager's default material: CKMaterial's defaults */
             memset(&material, 0, sizeof(material));
             material.diffuse[0] = material.diffuse[1] = material.diffuse[2] = 0.7f;
@@ -1171,6 +1233,7 @@ static void view_draw_sprite_text(nmo_view_t *view, const nmo_engine_draw_t *dra
     glDisable(GL_FOG);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDisable(GL_TEXTURE_CUBE_MAP);
     glEnable(GL_TEXTURE_2D);
     glBindTexture(GL_TEXTURE_2D, name);
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
@@ -1526,6 +1589,7 @@ static void view_draw_frame(nmo_view_t *view, const nmo_engine_frame_t *frame, i
     float view_m[16];
     glViewport(scene[0], scene[1], scene[2], scene[3]);
     view_begin_3d(frame, view_m);
+    memcpy(view->eye, frame->view, sizeof(view->eye));
     for (int32_t i = first_mesh; i < end_mesh; i++) {
         const nmo_engine_draw_t *draw = &frame->draws[i];
         if (draw->kind == NMO_ENGINE_DRAW_PRIMITIVE && draw->post) {
@@ -1650,6 +1714,7 @@ static void view_kept_end(nmo_view_t *view, int window_w, int window_h)
     glOrtho(0.0, 1.0, 0.0, 1.0, -1.0, 1.0);
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
+    glDisable(GL_TEXTURE_CUBE_MAP);
     glEnable(GL_TEXTURE_2D);
     glBindTexture(GL_TEXTURE_2D, view->kept_color);
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);

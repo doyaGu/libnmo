@@ -132,6 +132,7 @@ typedef struct sky_cube {
     float distortion;
     float scale;              /* the CubeMap's Distance */
     nmo_object_id_t orientation; /* Clouds Around's Orientation Object */
+    bool sky_map;             /* the CubeMap's material: drawn with VXEFFECT_TGCUBEMAP_SKYMAP */
     bool on;                  /* the block's own flag: On shows it each frame */
     bool shown;
 } sky_cube_t;
@@ -357,6 +358,7 @@ static int sky_block(blk_t *b, sky_kind_t kind)
     sky_colors(b, cube, kind == SKY_CUBEMAP ? 3 : 7);
     if (kind == SKY_CUBEMAP) {
         cube->scale = get_in_float(b, 1, 1.0f);
+        cube->sky_map = nmo_engine_block_get_input_object(b, 0) != 0;
     }
     if (engine->render.camera == 0) {
         return NMO_ENGINE_BR_PARAMETERERROR;
@@ -416,6 +418,8 @@ static void sky_render(nmo_engine_t *engine, void *state, eng_render_stage_t sta
         draw->fov = fov + (pi - fov) * cube.distortion;
         draw->near_plane = 1.0f;
         draw->far_plane = 200.0f;
+        /* The pre-render sets the material's effect, the post-render restores it */
+        draw->texgen = cube.sky_map ? 32 : 0;
     }
 }
 

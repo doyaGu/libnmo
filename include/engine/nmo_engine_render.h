@@ -121,6 +121,10 @@ typedef struct nmo_engine_draw {
     /* A mesh whose material group of `replaced_material` (non zero) draws with
        `replacing_material` instead (0: the default material): Replace Rendering. */
     nmo_object_id_t replaced_material, replacing_material;
+    /* A mesh with `texgen` (non zero) draws its materials generating that VX_EFFECTTEXGEN,
+       with the scene's root for referential, over their own effect (Sky Around (CubeMap)'s
+       pre-render, which sets VXEFFECT_TEXGEN to VXTEXGEN_SKYMAP and restores it after). */
+    int32_t texgen;
     /* A 3D draw renders with `stencil` (Planar Reflection's and Planar Shadow's plane masks).
        A mesh with `stencil_only` (VX_MOVEABLE_STENCILONLY) writes 1 to every stencil bit where
        it passes a less-or-equal depth test, and no color or depth. One `mirrored` has its
@@ -304,7 +308,8 @@ typedef struct nmo_engine_material {
     int32_t alpha_func;
     uint8_t alpha_ref;
     /* VX_EFFECTTEXGEN the texture coordinates come from (VXEFFECT_TEXGEN, VXEFFECT_TEXGENREF):
-       0 the mesh's, 1 transform, 2 reflect, 3 chrome, 4 planar, 5+ cube maps */
+       0 the mesh's, 1 transform, 2 reflect, 3 chrome, 4 planar; on a cube map 31 reflect,
+       32 sky (the camera space position), 33 normals, 34 positions */
     int32_t texgen;
     nmo_object_id_t texgen_referential; /* VXEFFECT_TEXGENREF's 3D entity; 0 for the scene's root */
 } nmo_engine_material_t;
@@ -327,6 +332,11 @@ typedef struct nmo_engine_image {
  */
 NMO_API bool nmo_engine_texture_image(nmo_engine_t *engine, nmo_object_id_t texture,
                                       nmo_engine_image_t *out);
+/** True when the texture is a cube map: its slots 0 to 5 are the faces +X, -X, +Y, -Y, +Z, -Z. */
+NMO_API bool nmo_engine_texture_cube_map(const nmo_engine_t *engine, nmo_object_id_t texture);
+/** A cube map's face `face` (0 to 5) as nmo_engine_texture_image() gives the current slot. */
+NMO_API bool nmo_engine_texture_face_image(nmo_engine_t *engine, nmo_object_id_t texture,
+                                           int32_t face, nmo_engine_image_t *out);
 /** The mipmap levels the texture's file saves (CKTexture's user mipmaps); 0 for none. */
 NMO_API int32_t nmo_engine_texture_user_mipmap_count(const nmo_engine_t *engine,
                                                      nmo_object_id_t texture);

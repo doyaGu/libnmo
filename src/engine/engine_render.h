@@ -223,6 +223,7 @@ typedef struct eng_render {
     eng_map_t sprite_3d_map;
     ENG_VEC(eng_image_t) images;
     ENG_VEC(eng_image_t) user_mipmaps; /* a texture's saved mipmap levels, `slot` their level */
+    ENG_VEC(eng_image_t) cube_faces;   /* a cube map's faces, `slot` the face */
     uint32_t image_version;
 
     /* The render context (CKRenderContext / CKRenderedScene) */

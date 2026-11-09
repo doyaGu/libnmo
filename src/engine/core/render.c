@@ -69,6 +69,10 @@ void eng_free_render(nmo_engine_t *engine)
         free(render->user_mipmaps.data[i].rgba);
     }
     free(render->user_mipmaps.data);
+    for (size_t i = 0; i < render->cube_faces.count; i++) {
+        free(render->cube_faces.data[i].rgba);
+    }
+    free(render->cube_faces.data);
     for (size_t i = 0; i < render->meshes.count; i++) {
         eng_mesh_t *mesh = &render->meshes.data[i];
         free(mesh->vertices);
@@ -3863,7 +3867,15 @@ void eng_texture_changed(nmo_engine_t *engine, nmo_object_id_t texture)
     if (image != NULL) {
         image->slot = -1;
     }
-    /* Its user mipmap levels are read again, keyed as the image now is */
+    /* Its cube faces and user mipmap levels are read again, keyed as the image now is */
+    for (size_t i = 0; i < engine->render.cube_faces.count; i++) {
+        eng_image_t *face = &engine->render.cube_faces.data[i];
+        if (face->texture == texture) {
+            free(face->rgba);
+            face->rgba = NULL;
+            face->width = -1; /* read again where it is */
+        }
+    }
     for (size_t i = 0; i < engine->render.user_mipmaps.count; i++) {
         eng_image_t *level = &engine->render.user_mipmaps.data[i];
         if (level->texture == texture) {
@@ -3871,6 +3883,45 @@ void eng_texture_changed(nmo_engine_t *engine, nmo_object_id_t texture)
             level->rgba = NULL;
             level->texture = 0;
         }
+    }
+}
+
+/* `image` filled with slot `slot`'s RGBA, keyed: the movie's frame, the image a block
+   wrote, else the file's */
+static void eng_slot_image(nmo_engine_t *engine, const nmo_bitmap_slots_t *state,
+                           eng_texture_t *slots, int32_t slot, eng_image_t *image)
+{
+    const uint8_t *frame = NULL;
+    int32_t fw = 0, fh = 0;
+    if (slots->movie && slots->movie_reader != NULL &&
+        eng_movie_frame(slots->movie_reader, slot, &frame, &fw, &fh)) {
+        image->rgba = eng_rgba_copy(frame, fw, fh, 4);
+        image->width = image->rgba != NULL ? fw : 0;
+        image->height = image->rgba != NULL ? fh : 0;
+        return;
+    }
+    const eng_surface_t *surface =
+        (size_t)slot < slots->surfaces.count && slots->surfaces.data[slot].rgba != NULL
+            ? &slots->surfaces.data[slot]
+            : NULL;
+    int w = 0, h = 0, ch = 0;
+    if (surface != NULL) {
+        w = surface->width;
+        h = surface->height;
+        image->rgba = eng_rgba_copy(surface->rgba, w, h, 4);
+    } else {
+        nmo_arena_t *arena = nmo_arena_create(NULL, 1u << 16);
+        uint8_t *pixels = arena != NULL ? eng_decode_slot(engine, state, slots, slot, arena, &w, &h, &ch)
+                                        : NULL;
+        image->rgba = eng_rgba_copy(pixels, w, h, ch);
+        if (arena != NULL) {
+            nmo_arena_destroy(arena);
+        }
+    }
+    if (image->rgba != NULL) {
+        image->width = w;
+        image->height = h;
+        eng_key_image(slots, image->rgba, w, h);
     }
 }
 
@@ -3901,43 +3952,7 @@ bool nmo_engine_texture_image(nmo_engine_t *engine, nmo_object_id_t texture,
         image->width = image->height = 0;
         image->slot = slot;
         image->version = ++engine->render.image_version;
-        const uint8_t *frame = NULL;
-        int32_t fw = 0, fh = 0;
-        if (slots->movie && slots->movie_reader != NULL &&
-            eng_movie_frame(slots->movie_reader, slot, &frame, &fw, &fh)) {
-            image->rgba = eng_rgba_copy(frame, fw, fh, 4);
-            image->width = image->rgba != NULL ? fw : 0;
-            image->height = image->rgba != NULL ? fh : 0;
-            out->width = image->width;
-            out->height = image->height;
-            out->rgba = image->rgba;
-            out->version = image->version;
-            out->mipmapped = slots->mipmap_level != 0;
-            return image->rgba != NULL;
-        }
-        const eng_surface_t *surface =
-            (size_t)slot < slots->surfaces.count && slots->surfaces.data[slot].rgba != NULL
-                ? &slots->surfaces.data[slot]
-                : NULL;
-        int w = 0, h = 0, ch = 0;
-        if (surface != NULL) {
-            w = surface->width;
-            h = surface->height;
-            image->rgba = eng_rgba_copy(surface->rgba, w, h, 4);
-        } else {
-            nmo_arena_t *arena = nmo_arena_create(NULL, 1u << 16);
-            uint8_t *pixels = arena != NULL ? eng_decode_slot(engine, state, slots, slot, arena, &w, &h, &ch)
-                                            : NULL;
-            image->rgba = eng_rgba_copy(pixels, w, h, ch);
-            if (arena != NULL) {
-                nmo_arena_destroy(arena);
-            }
-        }
-        if (image->rgba != NULL) {
-            image->width = w;
-            image->height = h;
-            eng_key_image(slots, image->rgba, w, h);
-        }
+        eng_slot_image(engine, state, slots, slot, image);
     }
     out->width = image->width;
     out->height = image->height;
@@ -3951,6 +3966,51 @@ static const nmo_texture_state_t *eng_texture_state(const nmo_engine_t *engine,
                                                    nmo_object_id_t texture);
 static uint8_t *eng_decode_user_level(const nmo_texture_state_t *state, int32_t level, int32_t *w,
                                       int32_t *h);
+
+bool nmo_engine_texture_cube_map(const nmo_engine_t *engine, nmo_object_id_t texture)
+{
+    const nmo_texture_state_t *state = engine != NULL ? eng_texture_state(engine, texture) : NULL;
+    return state != NULL && state->is_cubemap;
+}
+
+bool nmo_engine_texture_face_image(nmo_engine_t *engine, nmo_object_id_t texture, int32_t face,
+                                   nmo_engine_image_t *out)
+{
+    if (out == NULL || face < 0 || face >= 6 || !nmo_engine_texture_cube_map(engine, texture)) {
+        return false;
+    }
+    eng_texture_t *slots = eng_texture(engine, texture);
+    nmo_bitmap_slots_t bitmap;
+    if (slots == NULL || face >= slots->slot_count || !eng_bitmap_view(engine, texture, &bitmap)) {
+        return false;
+    }
+    eng_image_t *image = NULL;
+    for (size_t i = 0; i < engine->render.cube_faces.count && image == NULL; i++) {
+        eng_image_t *cached = &engine->render.cube_faces.data[i];
+        if (cached->texture == texture && cached->slot == face) {
+            image = cached;
+        }
+    }
+    if (image == NULL) {
+        if (!ENG_VEC_PUSH(engine->render.cube_faces, image)) {
+            return false;
+        }
+        image->texture = texture;
+        image->slot = face;
+        image->width = -1;
+    }
+    if (image->width < 0) {
+        image->width = image->height = 0;
+        image->version = ++engine->render.image_version;
+        eng_slot_image(engine, &bitmap, slots, face, image);
+    }
+    out->width = image->width;
+    out->height = image->height;
+    out->rgba = image->rgba;
+    out->version = image->version;
+    out->mipmapped = slots->mipmap_level != 0;
+    return image->rgba != NULL;
+}
 
 /* The surface entry of `slot`, the list grown to it; NULL without memory */
 static eng_surface_t *eng_surface_entry(eng_texture_t *texture, int32_t slot)
