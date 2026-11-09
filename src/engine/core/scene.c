@@ -5,6 +5,7 @@
  */
 
 #include "../engine_internal.h"
+#include "format/nmo_chunk.h"
 
 #include "object/builtin/nmo_targetlight_schemas.h"
 
@@ -58,6 +59,14 @@ static nmo_status_t eng_store_ic(nmo_engine_t *engine, const eng_ic_t *value)
     return NMO_OK;
 }
 
+/* An object an initial value names: one saved without the file's context names it by the ID it
+   was saved with (CKFile's remap of every chunk at load), one saved with it by the document's */
+static nmo_object_id_t eng_ic_ref(const eng_module_t *module, bool own_ids, const nmo_ref_t *ref)
+{
+    return own_ids ? eng_module_file_object(module, ref->raw_id)
+                   : eng_module_id(module, nmo_ref_runtime_id(ref));
+}
+
 nmo_status_t eng_load_ic(nmo_engine_t *engine, nmo_object_id_t id, nmo_chunk_t *chunk)
 {
     nmo_object_t *object = eng_find_object(engine, id);
@@ -86,6 +95,8 @@ nmo_status_t eng_load_ic(nmo_engine_t *engine, nmo_object_id_t id, nmo_chunk_t *
         status = type->vtable->create != NULL ? type->vtable->create(decoded.state, type, &context) : NMO_OK;
         created = status == NMO_OK;
     }
+    /* read before the reader marks it as read in the file's mode */
+    bool own_ids = saved != NULL && (saved->chunk_options & NMO_CHUNK_OPTION_FILE) == 0;
     if (status == NMO_OK) status = nmo_chunk_start_read(saved);
     if (status == NMO_OK) status = type->vtable->deserialize(decoded.state, saved, type, &context);
     eng_ic_t ic = {.id = id};
@@ -109,7 +120,7 @@ nmo_status_t eng_load_ic(nmo_engine_t *engine, nmo_object_id_t id, nmo_chunk_t *
                 ic.curve_points.ids = malloc((size_t)curve->control_point_count*sizeof(*ic.curve_points.ids));
                 if (ic.curve_points.ids == NULL) status = NMO_ERR_NOMEM;
                 else for (uint32_t i = 0; i < curve->control_point_count; i++) {
-                    ic.curve_points.ids[ic.curve_points.count++] = eng_module_id(module,nmo_ref_runtime_id(&curve->control_point_ids[i]));
+                    ic.curve_points.ids[ic.curve_points.count++] = eng_ic_ref(module, own_ids, &curve->control_point_ids[i]);
                 }
             }
         }
@@ -135,12 +146,12 @@ nmo_status_t eng_load_ic(nmo_engine_t *engine, nmo_object_id_t id, nmo_chunk_t *
             ic.has_matrix = entity->has_entityndata_chunk || entity->has_matrix_chunk;
             memcpy(ic.world, entity->world_matrix, sizeof(ic.world));
             ic.has_parent = entity->has_entityndata_chunk || entity->has_parent_chunk;
-            ic.parent = eng_module_id(module, nmo_ref_runtime_id(&entity->parent));
+            ic.parent = eng_ic_ref(module, own_ids, &entity->parent);
         }
         const nmo_targetcamera_state_t *target_camera = nmo_type_query_object_get_ancestor_state_by_guid(engine->types,&decoded,CKPGUID_TARGETCAMERA);
         if (target_camera != NULL && nmo_chunk_seek_identifier(saved,CK_STATESAVE_TCAMERATARGET) == NMO_OK) {
             ic.has_camera_target = true;
-            ic.camera_target = eng_module_id(module,nmo_ref_runtime_id(&target_camera->target));
+            ic.camera_target = eng_ic_ref(module, own_ids, &target_camera->target);
         }
         const nmo_camera_state_t *camera = nmo_type_query_object_get_ancestor_state_by_guid(
             engine->types, &decoded, CKPGUID_CAMERA);
@@ -179,7 +190,7 @@ nmo_status_t eng_load_ic(nmo_engine_t *engine, nmo_object_id_t id, nmo_chunk_t *
             const nmo_targetlight_state_t *target_light = nmo_type_query_object_get_ancestor_state_by_guid(
                 engine->types, &decoded, CKPGUID_TARGETLIGHT);
             if (target_light != NULL && target_light->has_target) {
-                l->target = eng_module_id(module, nmo_ref_runtime_id(&target_light->target));
+                l->target = eng_ic_ref(module, own_ids, &target_light->target);
             }
         }
         if (object->class_id == NMO_CID_MATERIAL) {
