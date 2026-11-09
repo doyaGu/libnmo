@@ -141,7 +141,7 @@ TEST(engine_character_controller, enhanced_message_priority_uses_button_presence
     for (size_t i = 0; i < COUNT(cases); i++) for (int reverse = 0; reverse < 2; reverse++) {
         controller_fixture_t g; begin_variant(&g,true,true); commit(&g);
         const char *expected[] = {"Joy_Left","Joy_Right","Joy_Up","Joy_Down","Joy_Button1","Joy_Button2","Joy_Button3","Joy_Button4","Joy_Button5","Joy_Button6"}; int32_t messages[11]; read_value(&g.f,local(&g),messages,sizeof(messages));
-        for (size_t j = 0; j < COUNT(expected); j++) ASSERT_EQ(nmo_engine_message_type(g.f.engine,expected[j]),messages[j]); ASSERT_EQ(0,messages[10]);
+        for (size_t j = 0; j < COUNT(expected); j++) { ASSERT_EQ(nmo_engine_message_type(g.f.engine,expected[j]),messages[j]); } ASSERT_EQ(0,messages[10]);
         const char *names[] = {cases[i].first,cases[i].second}; for (int j = 0; j < 2; j++) if (names[reverse ? 1-j : j] != NULL) send(&g,names[reverse ? 1-j : j]);
         ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(g.animations[0],eng_character_next_animation(g.f.engine,g.f.owner_id)); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); ASSERT_EQ(g.animations[cases[i].selected],eng_character_active_animation(g.f.engine,g.f.owner_id)); ASSERT_TRUE(eng_character_automatic(g.f.engine,g.f.owner_id)); ASSERT_EQ(2u,runs(&g.f,g.block));
         for (size_t j = 0; j < g.animation_count; j++) { ASSERT_EQ(j < 5,!!(eng_animation_playback_state(g.f.engine,g.animations[j])->flags & CKANIMATION_CANBEBREAK)); ASSERT_TRUE(eng_animation_state(g.f.engine,g.animations[j])->flags & CKANIMATION_CANBEBREAK); }
@@ -182,7 +182,7 @@ TEST(engine_character_controller, enhanced_truncated_message_tables_fail_after_e
     const size_t sizes[] = {4,28,40,43}; int32_t table[11] = {0};
     for (size_t i = 0; i < COUNT(sizes); i++) {
         controller_fixture_t g; begin_variant(&g,true,true); commit(&g); ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,local(&g),table,sizes[i])); ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,nmo_engine_step(g.f.engine,0)); nmo_engine_event_t failure; ASSERT_TRUE(nmo_engine_failure(g.f.engine,&failure)); ASSERT_EQ(g.block,failure.behavior_id); ASSERT_EQ(NMO_ENGINE_BR_PARAMETERERROR,failure.result); ASSERT_TRUE(eng_character_automatic(g.f.engine,g.f.owner_id));
-        for (int j = 0; j < 7; j++) ASSERT_EQ(j < 5,!!(eng_animation_playback_state(g.f.engine,g.animations[j])->flags & CKANIMATION_CANBEBREAK)); fixture_end(&g.f);
+        for (int j = 0; j < 7; j++) { ASSERT_EQ(j < 5,!!(eng_animation_playback_state(g.f.engine,g.animations[j])->flags & CKANIMATION_CANBEBREAK)); } fixture_end(&g.f);
     }
 }
 

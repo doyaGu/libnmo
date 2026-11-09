@@ -248,7 +248,7 @@ TEST(engine_remove_control_point, invalid_targets_consume_input_activate_output_
         ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,target,&bad,sizeof(bad))); if (kind == 1) nmo_engine_destroy_object(g.f.engine,g.curve);
         ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,nmo_engine_step(g.f.engine,0)); nmo_engine_event_t failure; ASSERT_TRUE(nmo_engine_failure(g.f.engine,&failure)); ASSERT_EQ(NMO_ENGINE_BR_OWNERERROR,failure.result);
         ASSERT_FALSE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,0))); ASSERT_TRUE(nmo_engine_io_is_active(g.f.engine,BLOCK_OUT(&g.f,g.block,0))); ASSERT_EQ(0u,runs(&g.f,g.out));
-        if (kind != 1) points(g.f.engine,g.curve,g.points,3); fixture_end(&g.f);
+        if (kind != 1) { points(g.f.engine,g.curve,g.points,3); } fixture_end(&g.f);
     }
 }
 

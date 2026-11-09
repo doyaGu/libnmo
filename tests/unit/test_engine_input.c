@@ -281,7 +281,7 @@ static void joystick_waiter_ready(joystick_waiter_fixture_t *g)
 
 static void joystick_waiter_values(joystick_waiter_fixture_t *g, const nmo_engine_joystick_state_t *state)
 {
-    float position[3], rotation[3], sliders[2], pov; read_value(&g->f,g->values[0],position,sizeof(position)); read_value(&g->f,g->values[1],rotation,sizeof(rotation)); read_value(&g->f,g->values[2],sliders,sizeof(sliders)); read_value(&g->f,g->values[3],&pov,sizeof(pov));
+    float position[3] = {0}, rotation[3] = {0}, sliders[2] = {0}, pov = 0.0f; read_value(&g->f,g->values[0],position,sizeof(position)); read_value(&g->f,g->values[1],rotation,sizeof(rotation)); read_value(&g->f,g->values[2],sliders,sizeof(sliders)); read_value(&g->f,g->values[3],&pov,sizeof(pov));
     ASSERT_TRUE(memcmp(state->position,position,sizeof(position)) == 0); ASSERT_TRUE(memcmp(state->rotation,rotation,sizeof(rotation)) == 0); ASSERT_TRUE(memcmp(state->sliders,sliders,sizeof(sliders)) == 0); ASSERT_TRUE(memcmp(&state->point_of_view,&pov,sizeof(pov)) == 0);
 }
 
@@ -605,7 +605,7 @@ static void joystick_mapper_saved(joystick_fixture_t *g, const void *records, si
 TEST(engine_input, joystick_mapper_loads_names_and_repeats_bindings_in_record_order_with_raw_analog_output)
 {
     joystick_fixture_t g; joystick_mapper_begin(&g); uint8_t records[240]; const uint32_t commands[] = {1043,1008,1012,1010,1008,1011}; const char *names[] = {"High Button","Forward","Action","Left","Forward","Right"};
-    for (size_t i = 0; i < 6; i++) mapper_record(records+40*i,commands[i],999,names[i]); joystick_mapper_saved(&g,records,sizeof(records),6); joystick_ready(&g); uint8_t runtime[240]; read_value(&g.f,g.table,runtime,sizeof(runtime));
+    for (size_t i = 0; i < 6; i++) { mapper_record(records+40*i,commands[i],999,names[i]); } joystick_mapper_saved(&g,records,sizeof(records),6); joystick_ready(&g); uint8_t runtime[240]; read_value(&g.f,g.table,runtime,sizeof(runtime));
     for (size_t i = 0; i < 6; i++) { ASSERT_EQ(commands[i],nmo_read_u32_le(runtime+40*i)); ASSERT_EQ(nmo_engine_message_type(g.f.engine,names[i]),(int32_t)nmo_read_u32_le(runtime+40*i+4)); }
     nmo_engine_joystick_state_t state = {.attached = true,.position = {-1,-.75f,1.5f},.point_of_view = -1,.buttons = 0x80000001u}; nmo_engine_set_joystick(g.f.engine,0,&state); const char *expected[] = {"High Button","Forward","Action","Left","Forward"};
     for (int frame = 0; frame < 2; frame++) { ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); joystick_received(&g,g.f.owner_id,expected,5); ASSERT_FALSE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,0))); float output[3]; read_value(&g.f,g.output,output,sizeof(output)); for (size_t i = 0; i < 3; i++) ASSERT_FLOAT_EQ(state.position[i],output[i],0); }
@@ -622,7 +622,7 @@ TEST(engine_input, joystick_mapper_supports_all_32_buttons_independently)
 TEST(engine_input, joystick_mapper_direction_comparisons_preserve_strict_negative_and_nonfinite_thresholds)
 {
     joystick_fixture_t g; joystick_mapper_begin(&g); uint8_t records[160]; const char *names[] = {"Up","Down","Left","Right"};
-    for (uint32_t i = 0; i < 4; i++) mapper_record(records+40*i,1008+i,-1,names[i]); joystick_mapper_saved(&g,records,sizeof(records),4); joystick_ready(&g);
+    for (uint32_t i = 0; i < 4; i++) { mapper_record(records+40*i,1008+i,-1,names[i]); } joystick_mapper_saved(&g,records,sizeof(records),4); joystick_ready(&g);
     nmo_engine_joystick_state_t state = {.attached = true,.position = {.5f,-.5f,20},.point_of_view = -1};
     for (int sign = 0; sign < 2; sign++) { nmo_engine_set_joystick(g.f.engine,0,&state); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); joystick_received(&g,g.f.owner_id,NULL,0); state.position[0] *= -1; state.position[1] *= -1; }
     state.position[0] = nextafterf(.5f,1); state.position[1] = nextafterf(-.5f,-1); nmo_engine_set_joystick(g.f.engine,0,&state); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); const char *first[] = {"Up","Right"}; joystick_received(&g,g.f.owner_id,first,2);
@@ -677,7 +677,7 @@ TEST(engine_input, joystick_mapper_truncated_bindings_and_wide_counts_fail_befor
 TEST(engine_input, joystick_mapper_wraps_native_button_shift_counts_and_continues_after_empty_message_names)
 {
     joystick_fixture_t g; joystick_mapper_begin(&g); uint8_t records[280]; const uint32_t commands[] = {1012,1044,980,UINT32_MAX,0x80000000u,1007,1043}; const char *names[] = {"","Wrapped High","Wrapped Low","Negative","Signed Limit","Below Directions","Last"};
-    for (size_t i = 0; i < 7; i++) mapper_record(records+40*i,commands[i],999,names[i]); joystick_mapper_saved(&g,records,sizeof(records),7); joystick_ready(&g); uint8_t runtime[280]; read_value(&g.f,g.table,runtime,sizeof(runtime)); ASSERT_EQ(UINT32_MAX,nmo_read_u32_le(runtime+4)); ASSERT_EQ(-1,nmo_engine_message_type(g.f.engine,"")); nmo_engine_joystick_state_t state = {.attached = true,.point_of_view = -1,.buttons = 0x80000001u | (1u << 11) | (1u << 12) | (1u << 27)}; nmo_engine_set_joystick(g.f.engine,0,&state); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); joystick_received(&g,g.f.owner_id,names+1,6); ASSERT_TRUE(nmo_engine_behavior_is_active(g.f.engine,g.block)); fixture_end(&g.f);
+    for (size_t i = 0; i < 7; i++) { mapper_record(records+40*i,commands[i],999,names[i]); } joystick_mapper_saved(&g,records,sizeof(records),7); joystick_ready(&g); uint8_t runtime[280] = {0}; read_value(&g.f,g.table,runtime,sizeof(runtime)); ASSERT_EQ(UINT32_MAX,nmo_read_u32_le(runtime+4)); ASSERT_EQ(-1,nmo_engine_message_type(g.f.engine,"")); nmo_engine_joystick_state_t state = {.attached = true,.point_of_view = -1,.buttons = 0x80000001u | (1u << 11) | (1u << 12) | (1u << 27)}; nmo_engine_set_joystick(g.f.engine,0,&state); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); joystick_received(&g,g.f.owner_id,names+1,6); ASSERT_TRUE(nmo_engine_behavior_is_active(g.f.engine,g.block)); fixture_end(&g.f);
 }
 
 TEST(engine_input, keyboard_mapper_loads_named_bindings_and_repeats_duplicate_keys_in_record_order)
@@ -710,7 +710,7 @@ TEST(engine_input, keyboard_mapper_live_keys_ids_and_counts_change_without_rebui
 TEST(engine_input, keyboard_mapper_out_of_range_keys_and_empty_names_do_not_block_valid_records)
 {
     keyboard_fixture_t g; mapper_begin(&g); uint8_t records[280]; const uint32_t keys[] = {UINT32_MAX,256,0x80000000u,KEY_X,KEY_X,0,255}; const char *names[] = {"Negative","Too Large","Signed Limit","","Good","Zero","Last"};
-    for (size_t i = 0; i < 7; i++) mapper_record(records+40*i,keys[i],999,names[i]); mapper_saved(&g,records,sizeof(records),7); keyboard_ready(&g); uint8_t runtime[280]; read_value(&g.f,g.table,runtime,sizeof(runtime)); ASSERT_EQ(UINT32_MAX,nmo_read_u32_le(runtime+3*40+4)); ASSERT_EQ(-1,nmo_engine_message_type(g.f.engine,"")); nmo_engine_set_key(g.f.engine,KEY_X,true); nmo_engine_set_key(g.f.engine,0,true); nmo_engine_set_key(g.f.engine,255,true); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); const char *received[] = {"Good","Zero","Last"}; keyboard_received(&g,g.f.owner_id,received,3); fixture_end(&g.f);
+    for (size_t i = 0; i < 7; i++) { mapper_record(records+40*i,keys[i],999,names[i]); } mapper_saved(&g,records,sizeof(records),7); keyboard_ready(&g); uint8_t runtime[280] = {0}; read_value(&g.f,g.table,runtime,sizeof(runtime)); ASSERT_EQ(UINT32_MAX,nmo_read_u32_le(runtime+3*40+4)); ASSERT_EQ(-1,nmo_engine_message_type(g.f.engine,"")); nmo_engine_set_key(g.f.engine,KEY_X,true); nmo_engine_set_key(g.f.engine,0,true); nmo_engine_set_key(g.f.engine,255,true); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); const char *received[] = {"Good","Zero","Last"}; keyboard_received(&g,g.f.owner_id,received,3); fixture_end(&g.f);
 }
 
 TEST(engine_input, keyboard_mapper_off_precedes_invalid_state_and_preserves_on_until_restart)

@@ -85,7 +85,7 @@ TEST(engine_set_portal, copies_obey_place_dependency_options_and_remap_live_link
     eng_dependencies_t deps; eng_default_copy_dependencies(&deps); deps.classes[NMO_CID_PLACE] = 1; ASSERT_EQ(NMO_OK,eng_copy_objects(g.f.engine,originals,3,&deps,false,false,copies));
     links(g.f.engine,copies[0],(eng_portal_link_t[]){{copies[1],copies[2]}},1); links(g.f.engine,copies[1],(eng_portal_link_t[]){{copies[0],copies[2]}},1);
     nmo_object_id_t single = 0; ASSERT_EQ(NMO_OK,eng_copy_objects(g.f.engine,&g.places[0],1,&deps,false,false,&single)); const eng_portal_list_t *list = eng_place_portals(g.f.engine,single); ASSERT_NOT_NULL(list); ASSERT_EQ(1u,list->count); ASSERT_EQ(g.places[1],list->data[0].place); ASSERT_TRUE(list->data[0].portal != g.portal && eng_entity_index(g.f.engine,list->data[0].portal) >= 0);
-    for (size_t i = 0; i < COUNT(originals); i++) nmo_engine_destroy_object(g.f.engine,originals[i]); links(g.f.engine,copies[0],(eng_portal_link_t[]){{copies[1],copies[2]}},1); links(g.f.engine,single,NULL,0); fixture_end(&g.f);
+    for (size_t i = 0; i < COUNT(originals); i++) { nmo_engine_destroy_object(g.f.engine,originals[i]); } links(g.f.engine,copies[0],(eng_portal_link_t[]){{copies[1],copies[2]}},1); links(g.f.engine,single,NULL,0); fixture_end(&g.f);
 }
 
 TEST(engine_set_portal, deletion_prunes_cached_and_unread_connections_without_turning_deleted_geometry_into_a_wildcard)
@@ -332,7 +332,7 @@ TEST(engine_set_portal, loaded_and_copied_graphs_remap_live_connections_and_fit_
         for (int pos = 0; pos < 3; pos++) { nmo_object_id_t reference = 0; read_value(&host,copies[12+pos],&reference,sizeof(reference)); ASSERT_EQ(copies[pos == 0 ? 3 : pos],reference); }
         for (int i = 1; i < 3; i++) eng_entity_set_position(host.engine,eng_entity_index(host.engine,copies[i]),&(eng_vector_t){10,20,30},-1,false);
         ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[5],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0)); expected.m[3][0] = 10; expected.m[3][1] = 20; expected.m[3][2] = 30; matrix(&host.engine->entities.data[eng_entity_index(host.engine,copies[3])].world,&expected); vector(eng_entity_position(host.engine,eng_entity_index(host.engine,ids[3]),-1),(eng_vector_t){0,0,0});
-        for (size_t i = 0; i < 5; i++) nmo_engine_destroy_object(host.engine,ids[i]); for (size_t i = 8; i < 12; i++) nmo_engine_destroy_object(host.engine,ids[i]);
+        for (size_t i = 0; i < 5; i++) { nmo_engine_destroy_object(host.engine,ids[i]); } for (size_t i = 8; i < 12; i++) nmo_engine_destroy_object(host.engine,ids[i]);
         for (int i = 1; i < 3; i++) eng_entity_set_position(host.engine,eng_entity_index(host.engine,copies[i]),&(eng_vector_t){-10,3,4},-1,false);
         ASSERT_EQ(NMO_OK,nmo_engine_activate_script(host.engine,copies[5],true,true)); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,0)); expected.m[3][0] = -10; expected.m[3][1] = 3; expected.m[3][2] = 4; matrix(&host.engine->entities.data[eng_entity_index(host.engine,copies[3])].world,&expected); vector(eng_entity_position(host.engine,eng_entity_index(host.engine,copies[4]),-1),(eng_vector_t){-7.9f,4.1f,4.1f});
         links(host.engine,copies[1],(eng_portal_link_t[]){{copies[2],copies[3]}},1); ASSERT_EQ(2u,runs(&host,copies[7])); ASSERT_EQ(NMO_OK,nmo_engine_step(host.engine,100)); ASSERT_EQ(2u,runs(&host,copies[6])); fixture_end(&host);

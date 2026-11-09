@@ -441,7 +441,7 @@ TEST(engine_curve_properties, bezier_progression_changes_curve_length_and_follow
     nmo_object_id_t curve = 0; ASSERT_EQ(NMO_OK,nmo_script_edit_ensure_input_parameter_source(g.f.tx,BLOCK_PIN(&g.f,progress,3),&curve));
     ASSERT_EQ(NMO_OK,nmo_script_edit_connect_parameter(g.f.tx,BLOCK_POUT(&g.f,progress,1),BLOCK_PIN(&g.f,g.setter,2)));
     fixture_link(&g.f,g.f.script_in,BLOCK_IN(&g.f,progress,0),0); fixture_link(&g.f,BLOCK_OUT(&g.f,progress,1),BLOCK_IN(&g.f,progress,1),1);
-    for (int out = 0; out < 2; out++) fixture_link(&g.f,BLOCK_OUT(&g.f,progress,out),BLOCK_IN(&g.f,g.setter,0),0); graph_commit(&g);
+    for (int out = 0; out < 2; out++) { fixture_link(&g.f,BLOCK_OUT(&g.f,progress,out),BLOCK_IN(&g.f,g.setter,0),0); } graph_commit(&g);
     for (int frame = 1; frame <= 5; frame++) {
         ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,10)); float fitting = frame < 4 ? frame*.125f : .5f;
         outputs(&g.f,g.getter,0,100,fitting,24-36*fitting);

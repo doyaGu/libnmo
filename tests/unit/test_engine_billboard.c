@@ -61,7 +61,7 @@ TEST(engine_billboard, matrix_uses_raw_local_axes_and_preserves_position_without
 TEST(engine_billboard, matrix_follows_normalized_live_camera_axes_and_uses_default_eye_after_deletion)
 {
     billboard_fixture_t g; begin(&g,NMO_CID_3DENTITY); commit(&g);
-    const eng_matrix_t camera = {{{0,0,-2,0},{0,3,0,0},{4,0,0,0},{7,8,9,1}}}; ASSERT_EQ(NMO_OK,nmo_engine_set_entity_world_matrix(g.f.engine,g.camera,&camera.m[0][0],false));
+    const eng_matrix_t camera = {{{0,0,-2,0},{0,3,0,0},{4,0,0,0},{7,8,9,1}}}; ASSERT_EQ(NMO_OK,nmo_engine_set_entity_world_matrix(g.f.engine,g.camera,(const float *)camera.m,false));
     eng_matrix_t actual; eng_entity_billboard_matrix(g.f.engine,eng_entity_index(g.f.engine,g.target),&(eng_vector_t){0,0,1},&(eng_vector_t){0,1,0},&actual);
     const eng_matrix_t expected = {{{0,0,1,0},{0,1,0,0},{-1,0,0,0},{3,4,10,1}}}; matrix(&actual,&expected);
     nmo_engine_destroy_object(g.f.engine,g.camera); eng_render_viewpoint(g.f.engine,&actual); eng_matrix_t identity; eng_matrix_identity(&identity); matrix(&actual,&identity); fixture_end(&g.f);
@@ -80,7 +80,7 @@ TEST(engine_billboard, orthographic_projection_uses_zoom_screen_mode_and_live_ca
 {
     billboard_fixture_t g; begin(&g,NMO_CID_3DENTITY); nmo_camera_state_t *camera = fixture_state(&g.f,g.camera); camera->projection_type = CK_ORTHOGRAPHICPROJECTION; camera->orthographic_zoom = .5f; commit(&g);
     eng_vector_t screen; eng_render_project(g.f.engine,&(eng_vector_t){2,1,10},&screen); vector(screen,(eng_vector_t){640,80,.09f});
-    const eng_matrix_t eye = {{{0,0,-2,0},{0,3,0,0},{4,0,0,0},{10,20,30,1}}}; ASSERT_EQ(NMO_OK,nmo_engine_set_entity_world_matrix(g.f.engine,g.camera,&eye.m[0][0],false));
+    const eng_matrix_t eye = {{{0,0,-2,0},{0,3,0,0},{4,0,0,0},{10,20,30,1}}}; ASSERT_EQ(NMO_OK,nmo_engine_set_entity_world_matrix(g.f.engine,g.camera,(const float *)eye.m,false));
     eng_vector_t world; eng_vector_transform(&world,&eye,&(eng_vector_t){2,1,10}); eng_render_project(g.f.engine,&world,&screen); vector(screen,(eng_vector_t){640,80,.09f});
     g.f.engine->render.screen_mode = 2; const eng_screen_mode_t *mode = &eng_screen_modes[2]; eng_render_project(g.f.engine,&world,&screen); vector(screen,(eng_vector_t){(float)mode->width,(float)mode->height*.5f-(float)mode->width*.25f,.09f}); fixture_end(&g.f);
 }
@@ -195,7 +195,7 @@ TEST(engine_billboard, sprite_texture_scaling_preserves_offset_and_resizes_even_
     for (int apply = 0; apply < 2; apply++) {
         billboard_fixture_t g; graph_begin(&g,NMO_CID_SPRITE3D); sprite(&g); fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,4),apply); graph_commit(&g); eng_matrix_t before = g.f.engine->entities.data[eng_entity_index(g.f.engine,g.target)].world; ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0));
         const eng_sprite3d_t *s = eng_sprite3d(g.f.engine,g.target); float divisor = apply ? 3 : 9; ASSERT_FLOAT_EQ(4/divisor,s->max.x-s->min.x,2e-4f); ASSERT_FLOAT_EQ(6/divisor,s->max.y-s->min.y,2e-4f); ASSERT_FLOAT_EQ(.5f,s->offset.x,0); ASSERT_FLOAT_EQ(-.25f,s->offset.y,0); ASSERT_FLOAT_EQ(.2f,s->uv_rect.left,0);
-        if (!apply) matrix(&g.f.engine->entities.data[eng_entity_index(g.f.engine,g.target)].world,&before); vector(eng_entity_position(g.f.engine,eng_entity_index(g.f.engine,g.target),-1),(eng_vector_t){3,4,10}); fixture_end(&g.f);
+        if (!apply) { matrix(&g.f.engine->entities.data[eng_entity_index(g.f.engine,g.target)].world,&before); } vector(eng_entity_position(g.f.engine,eng_entity_index(g.f.engine,g.target),-1),(eng_vector_t){3,4,10}); fixture_end(&g.f);
     }
 }
 

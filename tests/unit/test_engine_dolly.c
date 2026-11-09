@@ -96,7 +96,7 @@ TEST(engine_dolly, invalid_targets_fail_before_consuming_input_or_emitting_outpu
         ASSERT_EQ(NMO_OK,nmo_engine_set_param_value(g.f.engine,g.target_value,&target,sizeof(target)));
         ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,nmo_engine_step(g.f.engine,0)); nmo_engine_event_t failure; ASSERT_TRUE(nmo_engine_failure(g.f.engine,&failure)); ASSERT_EQ(NMO_ENGINE_BR_OWNERERROR,failure.result);
         ASSERT_TRUE(nmo_engine_io_is_active(g.f.engine,BLOCK_IN(&g.f,g.block,0))); ASSERT_FALSE(nmo_engine_io_is_active(g.f.engine,BLOCK_OUT(&g.f,g.block,0))); ASSERT_EQ(0u,runs(&g.f,g.after));
-        if (kind != 5) position(g.f.engine,g.camera,(eng_vector_t){3,4,5}); fixture_end(&g.f);
+        if (kind != 5) { position(g.f.engine,g.camera,(eng_vector_t){3,4,5}); } fixture_end(&g.f);
     }
 }
 

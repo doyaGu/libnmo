@@ -151,7 +151,7 @@ TEST(engine_rotate_around, self_references_keep_the_pivot_position_and_use_the_c
         fixture_input_int(&g.f,BLOCK_PIN(&g.f,g.block,3),keep_orientation); commit(&g); ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0));
         position(&g,g.target,(eng_vector_t){3,4,5});
         if (keep_orientation) basis(&g,(eng_vector_t){2,0,0},(eng_vector_t){0,3,0},(eng_vector_t){0,0,4});
-        else basis(&g,(eng_vector_t){0,0,2},(eng_vector_t){0,3,0},(eng_vector_t){-4,0,0}); fixture_end(&g.f);
+        else { basis(&g,(eng_vector_t){0,0,2},(eng_vector_t){0,3,0},(eng_vector_t){-4,0,0}); } fixture_end(&g.f);
     }
 }
 

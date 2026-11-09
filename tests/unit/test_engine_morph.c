@@ -498,7 +498,7 @@ TEST(engine_morph, merged_vertices_map_time_and_normals_blend_in_packed_angle_sp
     uint32_t words[COUNT(PackedNormalsWords)];
     memcpy(words, PackedNormalsWords, sizeof(words));
     for (int k = 0; k < 3; k++) for (int v = 0; v < 4; v++) words[16 + 17*k + v] = 400u << 16;
-    struct { uint32_t header[3]; struct { float time, positions[4][3]; uint32_t normals[4]; } keys[2]; } blob = {{2,4,1}, {{0}}};
+    struct { uint32_t header[3]; struct { float time, positions[4][3]; uint32_t normals[4]; } keys[2]; } blob = {{2,4,1}, {{0.0f, {{0.0f}}, {0}}}};
     for (int k = 0; k < 2; k++) {
         blob.keys[k].time = (float)k * 8;
         for (int v = 0; v < 4; v++) {
