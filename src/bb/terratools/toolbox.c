@@ -3191,7 +3191,8 @@ static int bb_set_fsaa(blk_t *b)
 
 /*
  * TT_ViewFrustumClipping: each frame, every 3D entity in the scene shown
- * when its box (CK3dEntity::IsInViewFrustrum) is in Camera's view, hidden
+ * when CK3dEntity::IsInViewFrustrum has it in Camera's view (its mesh's box,
+ * its origin without a mesh, never for a mesh without vertices), hidden
  * otherwise; all shown again when its script is deactivated. The DLL also
  * draws the scene through the camera first (into the back buffer the frame
  * clears again); that is not drawn here.
@@ -3208,22 +3209,15 @@ static int bb_view_frustum_clipping(blk_t *b)
         camera = engine->render.camera;
     }
     eng_matrix_t view;
-    eng_vector_t near_origin;
-    if (!eng_camera_view_projection(engine, camera, &view, &near_origin)) {
+    if (!eng_camera_view_projection(engine, camera, &view, NULL)) {
         return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
     }
     for (size_t i = 0; i < engine->entities.count; i++) {
-        const eng_entity_t *entity = &engine->entities.data[i];
-        if (entity->destroyed || !eng_in_scene(engine, entity->id)) {
+        nmo_object_id_t id = engine->entities.data[i].id;
+        if (engine->entities.data[i].destroyed || !eng_in_scene(engine, id)) {
             continue;
         }
-        /* A 3D entity without geometry has no box: never in view, as Is In View Frustrum has it */
-        eng_vector_t min = {0, 0, 0}, max = {0, 0, 0};
-        bool has_box = eng_entity_local_box(engine, (int32_t)i, &min, &max);
-        eng_matrix_t m;
-        eng_matrix_multiply4(&m, &view, &entity->world);
-        nmo_rect_t screen;
-        eng_show(engine, entity->id, has_box && eng_project_box(&m, &min, &max, &screen) ? 1 : 0);
+        eng_show(engine, id, eng_entity_in_view_frustum(engine, (int32_t)i, &view) ? 1 : 0);
     }
     return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
 }
@@ -3510,13 +3504,14 @@ static int sky_around_callback(blk_t *b, uint32_t message)
 
 /* ---- Shadows and flares ---- */
 
-/* A floor the shadow blocks look at: an object with the Floor attribute, shown and not hidden by a
-   parent; -1 for none */
+/* A floor the shadow blocks look at: an object with the Floor attribute, shown, not hidden by a
+   parent and not all outside the last frame's view; -1 for none */
 static int32_t visible_floor(nmo_engine_t *engine, const eng_attribute_t *attribute, int32_t type)
 {
     int32_t floor = attribute->type == type ? eng_entity_index(engine, attribute->object) : -1;
     if (floor < 0 || engine->entities.data[floor].destroyed ||
-        !nmo_engine_object_is_visible(engine, attribute->object) || eng_render_hidden_by_parent(engine, floor)) {
+        !nmo_engine_object_is_visible(engine, attribute->object) || eng_render_hidden_by_parent(engine, floor) ||
+        eng_entity_all_outside_frustum(engine, floor)) {
         return -1;
     }
     return floor;

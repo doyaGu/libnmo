@@ -625,36 +625,12 @@ static int bb_object_between(blk_t *b)
 }
 
 /*
- * The clip flags of a box through `matrix` (VxTransformBox2D's): false when
- * all of it is out of one plane; `all_inside` when no corner is out of any;
- * the screen extents in [0, 1] of the render context.
- */
-static bool frustum_box(const eng_matrix_t *matrix, const eng_vector_t *min, const eng_vector_t *max,
-                        bool *all_inside, nmo_rect_t *extents)
-{
-    *all_inside = false;
-    if (!eng_project_box(matrix, min, max, extents)) {
-        return false;
-    }
-    for (int i = 0; i < 8; i++) {
-        const double p[3] = {i & 4 ? max->x : min->x, i & 2 ? max->y : min->y, i & 1 ? max->z : min->z};
-        double h[4];
-        for (int c = 0; c < 4; c++) {
-            h[c] = p[0] * matrix->m[0][c] + p[1] * matrix->m[1][c] + p[2] * matrix->m[2][c] + matrix->m[3][c];
-        }
-        if (h[0] < -h[3] || h[0] > h[3] || h[1] < -h[3] || h[1] > h[3] || h[2] < 0 || h[2] > h[3]) {
-            return true;
-        }
-    }
-    *all_inside = true;
-    return true;
-}
-
-/*
- * Is In View Frustum: a 3D entity's box (its hierarchy's, with Test
- * Hierarchy) against the attached camera's frustum, its extents in render
- * context pixels; a 2D entity's rectangle against the view. Version 3 also
- * says whether it is all inside. Other objects do nothing.
+ * Is In View Frustum: a 3D entity tested against the attached camera's
+ * frustum (CK3dEntity::IsInViewFrustrum, or IsInViewFrustrumHierarchic with
+ * Test Hierarchy), all inside as the test's mark says (IsAllInsideFrustrum),
+ * its box's extents in render context pixels; a 2D entity's rectangle against
+ * the view. Version 3 also says whether it is all inside. Other objects do
+ * nothing.
  */
 static int bb_is_in_view_frustum(blk_t *b)
 {
@@ -677,15 +653,17 @@ static int bb_is_in_view_frustum(blk_t *b)
             eng_matrix_t matrix;
             bool has_box;
             if (hierarchy) {
+                inside = eng_entity_in_view_frustum_hierarchic(engine, entity, &view);
                 has_box = eng_entity_hierarchical_box(engine, entity, &min, &max);
                 matrix = view;
             } else {
+                inside = eng_entity_in_view_frustum(engine, entity, &view);
                 has_box = eng_entity_local_box(engine, entity, &min, &max);
                 eng_matrix_multiply4(&matrix, &view, &engine->entities.data[entity].world);
             }
+            all_inside = eng_entity_all_inside_frustum(engine, entity);
             nmo_rect_t screen;
-            if (has_box && frustum_box(&matrix, &min, &max, &all_inside, &screen)) {
-                inside = true;
+            if (inside && has_box && eng_project_box(&matrix, &min, &max, &screen)) {
                 extents = (nmo_rect_t){screen.left * (float)mode->width, screen.top * (float)mode->height,
                                        screen.right * (float)mode->width, screen.bottom * (float)mode->height};
             }

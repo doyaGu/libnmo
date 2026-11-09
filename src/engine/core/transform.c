@@ -987,6 +987,69 @@ bool eng_entity_hierarchical_box(nmo_engine_t *engine, int32_t root, eng_vector_
     return valid;
 }
 
+/* The mark ComputeBoxVisibility's answer leaves (none for a part in view); whether any is in view */
+static bool eng_frustum_mark(eng_entity_t *entity, int visibility)
+{
+    if (visibility == 2) {
+        entity->frustum |= ENG_FRUSTUM_INSIDE;
+    } else if (visibility == 0) {
+        entity->frustum |= ENG_FRUSTUM_OUTSIDE; /* SetAsOutsideFrustum leaves the inside bit */
+    }
+    return visibility != 0;
+}
+
+bool eng_entity_in_view_frustum(nmo_engine_t *engine, int32_t index,
+    const eng_matrix_t *view_projection)
+{
+    if (index < 0 || (size_t)index >= engine->entities.count || engine->entities.data[index].destroyed) {
+        return false;
+    }
+    eng_matrix_t matrix;
+    eng_matrix_multiply4(&matrix, view_projection, &engine->entities.data[index].world);
+    int visibility;
+    nmo_mesh_state_t runtime;
+    const nmo_mesh_state_t *mesh = eng_entity_mesh(engine, index, NULL, &runtime);
+    if (eng_sprite3d(engine, engine->entities.data[index].id) != NULL || mesh != NULL) {
+        if (mesh != NULL && mesh->vertex_count == 0 && eng_sprite3d(engine, engine->entities.data[index].id) == NULL) {
+            return false;
+        }
+        eng_vector_t min, max;
+        eng_entity_local_box(engine, index, &min, &max);
+        visibility = eng_box_visibility(&matrix, &min, &max, NULL);
+    } else {
+        /* TransformVertices of the origin: off screen when it is out of any plane */
+        const double x = matrix.m[3][0], y = matrix.m[3][1], z = matrix.m[3][2], w = matrix.m[3][3];
+        visibility = x < -w || x > w || y < -w || y > w || z < 0 || z > w ? 0 : 2;
+    }
+    return eng_frustum_mark(&engine->entities.data[index], visibility);
+}
+
+bool eng_entity_in_view_frustum_hierarchic(nmo_engine_t *engine, int32_t index,
+    const eng_matrix_t *view_projection)
+{
+    if (index < 0 || (size_t)index >= engine->entities.count || engine->entities.data[index].destroyed) {
+        return false;
+    }
+    engine->entities.data[index].frustum = 0; /* SetAsPotentiallyVisible */
+    eng_vector_t min, max;
+    int visibility = eng_entity_hierarchical_box(engine, index, &min, &max)
+                         ? eng_box_visibility(view_projection, &min, &max, NULL)
+                         : 1;
+    return eng_frustum_mark(&engine->entities.data[index], visibility);
+}
+
+bool eng_entity_all_inside_frustum(const nmo_engine_t *engine, int32_t index)
+{
+    return index >= 0 && (size_t)index < engine->entities.count &&
+           (engine->entities.data[index].frustum & ENG_FRUSTUM_INSIDE) != 0;
+}
+
+bool eng_entity_all_outside_frustum(const nmo_engine_t *engine, int32_t index)
+{
+    return index >= 0 && (size_t)index < engine->entities.count &&
+           (engine->entities.data[index].frustum & ENG_FRUSTUM_OUTSIDE) != 0;
+}
+
 /* VxIntersect::RayBox: the half-line from `origin` along `dir` meets the box. */
 bool eng_ray_box(const eng_vector_t *origin, const eng_vector_t *dir, const eng_vector_t *min,
                  const eng_vector_t *max)

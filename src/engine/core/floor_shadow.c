@@ -94,7 +94,7 @@ void eng_floor_shadow_place(nmo_engine_t *engine, eng_floor_shadow_t *shadow, nm
         const eng_attribute_t *attribute = &engine->attributes.values.data[i];
         int32_t floor = attribute->type == type ? eng_entity_index(engine, attribute->object) : -1;
         if (floor < 0 || engine->entities.data[floor].destroyed ||
-            !nmo_engine_object_is_visible(engine, attribute->object)) {
+            !nmo_engine_object_is_visible(engine, attribute->object) || eng_entity_all_outside_frustum(engine, floor)) {
             continue;
         }
         eng_vector_t fmin, fmax;

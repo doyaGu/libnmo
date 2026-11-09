@@ -273,6 +273,11 @@ void eng_render_project(nmo_engine_t *engine, const struct eng_vector *world, st
 /* The selected camera's inverse-world times projection, and its near-plane origin. */
 bool eng_camera_view_projection(nmo_engine_t *engine, nmo_object_id_t camera,
     struct eng_matrix *out, struct eng_vector *near_origin);
+/* CKRasterizerContext::ComputeBoxVisibility through VxTransformBox2D: 0 when all of the box is
+   out of one plane (or it is not a box), 2 when no corner is out of any, else 1; when not 0, its
+   normalized screen bounds in `out` (may be NULL). */
+int eng_box_visibility(const struct eng_matrix *matrix, const struct eng_vector *min,
+    const struct eng_vector *max, nmo_rect_t *out);
 /* VxTransformBox2D: normalized screen bounds, including native near-plane expansion. */
 bool eng_project_box(const struct eng_matrix *matrix, const struct eng_vector *min,
     const struct eng_vector *max, nmo_rect_t *out);
@@ -467,8 +472,9 @@ typedef struct eng_floor_shadow {
 /* The shadow's material: white, unlit by the specular and ambient, its texture clamped and
    copied; 0 out of memory */
 nmo_object_id_t eng_floor_shadow_material(nmo_engine_t *engine, const char *name);
-/* A_GetFloors and the channel UVs: the channel on the floors (Floor attribute, shown) under
-   `entity` whose height is within `max_height`, `zoom` times its width, off the others */
+/* A_GetFloors and the channel UVs: the channel on the floors (Floor attribute, shown, not all
+   outside the last frame's view) under `entity` whose height is within `max_height`, `zoom` times
+   its width, off the others */
 void eng_floor_shadow_place(nmo_engine_t *engine, eng_floor_shadow_t *shadow, nmo_object_id_t entity,
                             float zoom, float max_height);
 /* The channel off every floor it is on (the list stays) */

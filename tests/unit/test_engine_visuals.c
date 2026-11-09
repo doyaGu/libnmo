@@ -15,6 +15,7 @@
 #include "engine/nmo_engine_render.h"
 #include "object/builtin/nmo_2dentity_schemas.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_camera_schemas.h"
 #include "object/builtin/nmo_curve_schemas.h"
 #include "object/builtin/nmo_light_schemas.h"
 #include "object/builtin/nmo_material_schemas.h"
@@ -597,6 +598,68 @@ TEST(engine_visuals, simple_shadow_multiplies_the_floors_under_its_owner_until_o
     ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f)); /* Off, two frames after On */
     ASSERT_TRUE(nmo_engine_mesh(f.engine, floor_mesh, &desc));
     ASSERT_EQ(0, desc.channel_count);
+    fixture_end(&f);
+}
+
+TEST(engine_visuals, simple_shadow_skips_floors_outside_the_last_render)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t material = fixture_create(&f, NMO_CID_MATERIAL, "Material");
+    nmo_object_id_t texture = fixture_create(&f, NMO_CID_TEXTURE, "Shadow");
+    nmo_object_id_t mesh = 0;
+    nmo_object_id_t object = face_object(&f, "Face", material, &mesh);
+    nmo_object_id_t camera = fixture_create(&f, NMO_CID_CAMERA, "Camera");
+    nmo_camera_state_t *lens = (nmo_camera_state_t *)fixture_state(&f, camera);
+    ASSERT_TRUE(material != 0 && texture != 0 && object != 0 && lens != NULL);
+    nmo_mesh_update_bounding_volumes((nmo_mesh_state_t *)fixture_state(&f, mesh));
+    ((nmo_3dentity_state_t *)fixture_state(&f, object))->world_matrix[13] = 2.0f;
+    lens->entity.has_entityndata_chunk = 1;
+    lens->projection_type = 1; /* perspective */
+    lens->fov = 1.0f;
+    lens->aspect_width = 4;
+    lens->aspect_height = 3;
+    lens->near_plane = 1.0f;
+    lens->far_plane = 100.0f;
+    f.owner_id = object;
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t floor_mesh = 0;
+    nmo_object_id_t floor = floor_object(&f, &floor_mesh);
+    nmo_object_id_t shadow = block_on(&f, GUID_SIMPLE_SHADOW, "Simple Shadow", 0);
+    ASSERT_TRUE(floor != 0 && shadow != 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, shadow, 0), (int32_t)texture);
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    f.engine->render.camera = camera;
+    int32_t floor_index = eng_entity_index(f.engine, floor);
+
+    /* Nothing rendered yet: no floor is outside */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    nmo_engine_mesh_t desc;
+    ASSERT_TRUE(nmo_engine_mesh(f.engine, floor_mesh, &desc));
+    ASSERT_EQ(1, desc.channel_count);
+
+    /* Rendered by a camera 20 along Z looking away (+Z): the floor was all outside, the shadow leaves it */
+    const float away[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 20, 1};
+    ASSERT_EQ(NMO_OK, nmo_engine_set_entity_world_matrix(f.engine, camera, away, false));
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_TRUE(eng_entity_all_outside_frustum(f.engine, floor_index));
+    ASSERT_FALSE(eng_entity_all_inside_frustum(f.engine, floor_index));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    ASSERT_TRUE(nmo_engine_mesh(f.engine, floor_mesh, &desc));
+    ASSERT_EQ(0, desc.channel_count);
+
+    /* Turned back (-Z): all of the floor is in view, the shadow returns */
+    const float toward[16] = {-1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, 0, 0, 1, 20, 1};
+    ASSERT_EQ(NMO_OK, nmo_engine_set_entity_world_matrix(f.engine, camera, toward, false));
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_FALSE(eng_entity_all_outside_frustum(f.engine, floor_index));
+    ASSERT_TRUE(eng_entity_all_inside_frustum(f.engine, floor_index));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+    ASSERT_TRUE(nmo_engine_mesh(f.engine, floor_mesh, &desc));
+    ASSERT_EQ(1, desc.channel_count);
     fixture_end(&f);
 }
 
@@ -1382,6 +1445,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_visuals, render_curve_line_mode_draws_the_line_mesh);
     REGISTER_TEST(engine_visuals, show_object_information_draws_box_and_face_normals_after_the_scene);
     REGISTER_TEST(engine_visuals, simple_shadow_multiplies_the_floors_under_its_owner_until_off);
+    REGISTER_TEST(engine_visuals, simple_shadow_skips_floors_outside_the_last_render);
     REGISTER_TEST(engine_visuals, solid_trail_follows_the_owners_farthest_vertices_until_off);
     REGISTER_TEST(engine_visuals, mark_system_draws_single_marks_that_fade_and_die);
     REGISTER_TEST(engine_visuals, mark_system_joins_continuous_marks_into_a_band);

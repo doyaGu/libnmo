@@ -1021,8 +1021,8 @@ static int bb_synchro_player(blk_t *b)
  * INVSRCCOLOR) whose V coordinate is the fog the eye sees through to the
  * vertex: its distance along the eye's axis times FogDensity, for vertices
  * below the eye (on the fog's up side of the target); with the eye inside
- * the fog, less the part above the fog's top. The engine does not cull, so
- * objects out of view are computed too.
+ * the fog, less the part above the fog's top. An object all outside the last
+ * frame's view is left as it is.
  */
 static int bb_volumetric_fog(blk_t *b)
 {
@@ -1058,7 +1058,8 @@ static int bb_volumetric_fog(blk_t *b)
             : NULL;
         nmo_object_id_t mesh = state != NULL ? eng_object_ref(engine, id, &state->current_mesh) : 0;
         eng_mesh_copy_t *copy = mesh != 0 ? eng_mesh_copy(engine, mesh) : NULL;
-        if (copy == NULL || camera < 0 || !(eng_object_visibility(engine, id) & CK_OBJECT_VISIBLE)) {
+        if (copy == NULL || camera < 0 || !(eng_object_visibility(engine, id) & CK_OBJECT_VISIBLE) ||
+            eng_entity_all_outside_frustum(engine, index)) {
             continue;
         }
         int32_t channel = eng_mesh_channel(copy, material);

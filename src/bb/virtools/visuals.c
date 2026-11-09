@@ -1713,8 +1713,7 @@ static int bb_show_object_information(blk_t *b)
  * the Floor attribute, shown) under the owner as a channel multiplying them,
  * with UVs from the owner's position over each floor, and off the floors the
  * owner left. Off, a pause, reset or the script's deactivation take it off
- * the floors. The DLL also skips floors that were all outside the last
- * frame's frustum; the engine keeps no frustum test of the last render.
+ * the floors. Floors all outside the last frame's view are skipped.
  */
 static visuals_shadow_t *simple_shadow(nmo_engine_t *engine, int32_t node)
 {
@@ -2039,9 +2038,8 @@ static int cb_solid_trail(blk_t *b, uint32_t message)
  * draws them each frame after the opaque objects, or right after the
  * Supporting Entity renders when there is one, and they age only when drawn.
  * A single mark is not added once Maximum Marks are in use; a band mark
- * takes the place of its material's oldest. The DLL does not draw a single
- * mark whose entity was outside the last frame's frustum; the engine keeps
- * no frustum test of the last render, so it draws them all. The DLL keeps
+ * takes the place of its material's oldest. A single mark whose entity was
+ * all outside the last frame's view is not drawn. The DLL keeps
  * the materials in a hash table and draws them in its order; the engine
  * draws them in the order they were first used.
  */
@@ -2371,6 +2369,9 @@ static void draw_marks(nmo_engine_t *engine, const visuals_callback_t *callback,
                     if (index < 0 || engine->entities.data[index].destroyed) {
                         mark->lifespan = -1.0f; /* its referential was destroyed */
                         continue;
+                    }
+                    if (eng_entity_all_outside_frustum(engine, index)) {
+                        continue; /* its entity was not rendered */
                     }
                     for (int k = 0; k < 4; k++) {
                         eng_vector_transform(&corners[k], &engine->entities.data[index].world,
@@ -3428,10 +3429,10 @@ static int bb_texture_render(blk_t *b)
  * light's view get it as a material channel multiplying them (ZERO,
  * SRCCOLOR, unlit) with UVs projected from the light, on their faces turned
  * to it. Off or a pause takes the channel off them. CK renders as the block
- * runs; the engine makes the pass with the frame. The DLL also skips a
- * receiver that was outside the last frame's view; the engine keeps no
- * frustum test of the last render. Its test of a receiver against the
- * light's view checks the box's corners against each plane.
+ * runs; the engine makes the pass with the frame. A receiver that is hidden
+ * or was all outside the last frame's view gets its channel off. Its test of
+ * a receiver against the light's view checks the box's corners against each
+ * plane.
  */
 #define SHADOW_FOV 0.2f
 
@@ -3655,7 +3656,7 @@ static int bb_shadow_caster(blk_t *b)
         }
         copy->channels.data[channel].active = true;
         copy->version = ++engine->render.mesh_version;
-        if (!nmo_engine_object_is_visible(engine, attribute->object)) {
+        if (!nmo_engine_object_is_visible(engine, attribute->object) || eng_entity_all_outside_frustum(engine, o)) {
             copy->channels.data[channel].active = false;
             continue;
         }

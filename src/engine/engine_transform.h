@@ -39,10 +39,16 @@ typedef struct eng_entity {
     int32_t next_sibling, prev_sibling;
     bool scene_active; /* Scene activity also exists on entities without scripts. */
     bool destroyed;
+    /* CKSceneGraphNode's frustum flags (ENG_FRUSTUM_*), as the last render or test left them */
+    uint8_t frustum;
     /* The world matrix at the start of the frame, saved while CK_3DENTITY_UPDATELASTFRAME is set */
     bool has_last_frame;
     eng_matrix_t last_frame;
 } eng_entity_t;
+
+/* CKSGN_INSIDEFRUSTUM: all of it was inside; CKSGN_OUTSIDEFRUSTUM: none of it was */
+#define ENG_FRUSTUM_INSIDE 1u
+#define ENG_FRUSTUM_OUTSIDE 2u
 
 /* A ray's hit on an entity's mesh, in the entity's space */
 typedef struct eng_ray_hit {
@@ -142,6 +148,20 @@ bool eng_entity_world_box(nmo_engine_t *engine, int32_t index, eng_vector_t *min
 /* World bounds of the entity and its descendants, excluding empty geometry. */
 bool eng_entity_hierarchical_box(nmo_engine_t *engine, int32_t root, eng_vector_t *min,
     eng_vector_t *max);
+/* RCK3dEntity::IsInViewFrustrum through a camera's `view_projection`
+ * (eng_camera_view_projection): its current mesh's box (a sprite's rectangle), or its origin when
+ * it has no mesh; marks it inside when all of it is, outside when none of it is, never clearing a
+ * mark. False, unmarked, for a mesh without vertices. */
+bool eng_entity_in_view_frustum(nmo_engine_t *engine, int32_t index,
+    const eng_matrix_t *view_projection);
+/* RCK3dEntity::IsInViewFrustrumHierarchic: the marks cleared, then its hierarchy's world box
+ * tested (in view, unmarked, when no entity of it has a box) */
+bool eng_entity_in_view_frustum_hierarchic(nmo_engine_t *engine, int32_t index,
+    const eng_matrix_t *view_projection);
+/* CK3dEntity::IsAllInsideFrustrum / IsAllOutsideFrustrum: the marks the last render (or test)
+ * left; false for no entity */
+bool eng_entity_all_inside_frustum(const nmo_engine_t *engine, int32_t index);
+bool eng_entity_all_outside_frustum(const nmo_engine_t *engine, int32_t index);
 bool eng_ray_box(const eng_vector_t *origin, const eng_vector_t *dir, const eng_vector_t *min,
                  const eng_vector_t *max);
 int eng_entity_ray_intersection(nmo_engine_t *engine, int32_t index, const eng_vector_t *pos1,

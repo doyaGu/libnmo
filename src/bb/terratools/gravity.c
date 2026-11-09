@@ -1128,8 +1128,8 @@ static void real_shadow_floors(blk_t *b, real_shadow_t *tss, int32_t entity)
     for (size_t i = 0; type >= 0 && i < engine->attributes.values.count; i++) {
         const eng_attribute_t *attribute = &engine->attributes.values.data[i];
         int32_t floor = attribute->type == type ? eng_entity_index(engine, attribute->object) : -1;
-        /* IsAllOutsideFrustrum: the engine keeps no frustum test of the last render */
-        if (floor < 0 || engine->entities.data[floor].destroyed || !nmo_engine_object_is_visible(engine, attribute->object)) {
+        if (floor < 0 || engine->entities.data[floor].destroyed || !nmo_engine_object_is_visible(engine, attribute->object) ||
+            eng_entity_all_outside_frustum(engine, floor)) {
             continue;
         }
         eng_vector_t vmax = {1000.0f, 0.0f, 1000.0f}, vmin = {-1000.0f, 0.0f, -1000.0f};

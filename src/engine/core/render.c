@@ -2847,6 +2847,125 @@ static void eng_frame_camera(nmo_engine_t *engine, nmo_object_id_t id, nmo_engin
     }
 }
 
+/* CKSceneGraphNode::IsToBeParsed: in the scene, and shown, or not hierarchically hidden with a
+   child to parse */
+static bool eng_node_parsed(nmo_engine_t *engine, int32_t index)
+{
+    const eng_entity_t *entity = &engine->entities.data[index];
+    if (entity->destroyed || !eng_in_scene(engine, entity->id)) {
+        return false;
+    }
+    int32_t flags = eng_object_flags(engine, entity->id);
+    if (flags & OBJECT_VISIBLE) {
+        return true;
+    }
+    if (flags & OBJECT_HIERARCHICAL_HIDE) {
+        return false;
+    }
+    for (int32_t child = entity->first_child; child >= 0; child = engine->entities.data[child].next_sibling) {
+        if (eng_node_parsed(engine, child)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool eng_node_has_parsed_child(nmo_engine_t *engine, int32_t index)
+{
+    for (int32_t child = engine->entities.data[index].first_child; child >= 0;
+         child = engine->entities.data[child].next_sibling) {
+        if (eng_node_parsed(engine, child)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* RCK3dEntity::IsToBeRendered: shown, with a shown mesh (a sprite) or render callbacks */
+static bool eng_node_rendered(nmo_engine_t *engine, int32_t index)
+{
+    nmo_object_id_t id = engine->entities.data[index].id;
+    return (eng_object_flags(engine, id) & OBJECT_VISIBLE) &&
+           (eng_entity_current_mesh(engine, id) != 0 || eng_sprite3d(engine, id) != NULL ||
+            eng_run_entity_callbacks(engine, id, (eng_entity_callback_kind_t)-1, false, false));
+}
+
+/* CKSceneGraphNode::ClearTransparentFlags: outside, with the children to parse */
+static void eng_frustum_set_outside(nmo_engine_t *engine, int32_t index)
+{
+    eng_entity_t *entity = &engine->entities.data[index];
+    entity->frustum = (uint8_t)((entity->frustum & ~ENG_FRUSTUM_INSIDE) | ENG_FRUSTUM_OUTSIDE);
+    for (int32_t child = entity->first_child; child >= 0; child = engine->entities.data[child].next_sibling) {
+        if (eng_node_parsed(engine, child)) {
+            eng_frustum_set_outside(engine, child);
+        }
+    }
+}
+
+/* CKSceneGraphNode::NoTestsTraversal: inside, as are the children to parse; a rendered entity is
+   still tested as it renders (its extents are not up to date) */
+static void eng_frustum_no_tests(nmo_engine_t *engine, int32_t index, const eng_matrix_t *view)
+{
+    engine->entities.data[index].frustum = ENG_FRUSTUM_INSIDE;
+    if (eng_node_rendered(engine, index)) {
+        eng_entity_in_view_frustum(engine, index, view);
+    }
+    for (int32_t child = engine->entities.data[index].first_child; child >= 0;
+         child = engine->entities.data[child].next_sibling) {
+        if (eng_node_parsed(engine, child)) {
+            eng_frustum_no_tests(engine, child, view);
+        }
+    }
+}
+
+/* CKSceneGraphRootNode::RenderTransparents' tests: a node with children to parse tests its
+   hierarchy's box first (none of it in view: all of it outside; all of it: the children untested),
+   then a rendered entity tests its own as it renders or joins the transparent objects */
+static void eng_frustum_traverse(nmo_engine_t *engine, int32_t index, const eng_matrix_t *view)
+{
+    engine->entities.data[index].frustum = 0; /* SetAsPotentiallyVisible */
+    if (!eng_node_has_parsed_child(engine, index)) {
+        if (eng_node_rendered(engine, index)) {
+            eng_entity_in_view_frustum(engine, index, view);
+        }
+        return;
+    }
+    if (!eng_entity_in_view_frustum_hierarchic(engine, index, view)) {
+        eng_frustum_set_outside(engine, index);
+        return;
+    }
+    bool inside = eng_entity_all_inside_frustum(engine, index);
+    if (eng_node_rendered(engine, index)) {
+        eng_entity_in_view_frustum(engine, index, view);
+    }
+    for (int32_t child = engine->entities.data[index].first_child; child >= 0;
+         child = engine->entities.data[child].next_sibling) {
+        if (eng_node_parsed(engine, child)) {
+            if (inside) {
+                eng_frustum_no_tests(engine, child, view);
+            } else {
+                eng_frustum_traverse(engine, child, view);
+            }
+        }
+    }
+}
+
+/* The frustum flags the scene graph's traversal leaves on the entities through the attached
+   camera (CK3dEntity::IsAllInsideFrustrum / IsAllOutsideFrustrum read them); an entity not parsed
+   keeps its old flags */
+static void eng_frustum_update(nmo_engine_t *engine, nmo_object_id_t camera)
+{
+    eng_matrix_t view;
+    if (camera == 0 || !eng_camera_view_projection(engine, camera, &view, NULL)) {
+        return;
+    }
+    for (size_t i = 0; i < engine->entities.count; i++) {
+        if (engine->entities.data[i].parent < 0 && eng_node_parsed(engine, (int32_t)i)) {
+            eng_frustum_traverse(engine, (int32_t)i, &view);
+        }
+    }
+}
+
 /* CKRenderedScene::Draw: what the render context draws of the scene, from the draws' end, as
    `frame` sets it (its eye and render options); a pass leaves the temporary callbacks */
 static nmo_status_t eng_draw_scene(nmo_engine_t *engine, const nmo_engine_frame_t *frame, bool pass)
@@ -2859,6 +2978,9 @@ static nmo_status_t eng_draw_scene(nmo_engine_t *engine, const nmo_engine_frame_
     }
     eng_managers_render(engine, ENG_RENDER_PRE, &args);
     eng_managers_render(engine, ENG_RENDER_BACKGROUND, &args);
+    if (!pass) {
+        eng_frustum_update(engine, frame->camera);
+    }
     size_t first_entity_draw = render->draws.count;
     bool prioritized = false;
     for (size_t i = 0; i < engine->entities.count; i++) {
