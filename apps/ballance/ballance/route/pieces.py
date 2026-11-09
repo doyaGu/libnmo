@@ -1260,6 +1260,15 @@ def lay_module(layout: Layout, sector: int, part: Sector, piece: dict, track: Tr
             layout.modules.append((kind, sector, [where[0], edge, where[1]], turn_of(back)))
         if kind in MODULE_FLOORS:
             layout.module_floors.append(layout.modules[-1])
+    if kind == 'P_Modul_26':
+        # before each sack, wait for it as a beam under sacks does
+        # (wait_for_sacks): at one end of its swing, then going out the other
+        for offset in offsets:
+            sack = at(p, d, FUNNEL + offset)
+            wait = list(at(p, d, FUNNEL + offset - SACK_WAIT_BACK))
+            for aside in (SACK_SWING, -SACK_CLEAR):
+                there = at(sack, d, 0.0, aside)
+                layout.points.append(wait + [None, 0, SACK_SEAT, there[0], there[1], SACK_REACH])
     # no point at the module itself: driving at it, the ball would slow down
     # where it has to push or roll over it
     layout.points.append(list(at(p, d, FUNNEL + length)))

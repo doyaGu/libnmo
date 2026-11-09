@@ -79,7 +79,8 @@ SACK_HANG, CREST_POINT = 15.39, 2.75
 # side), then for it SACK_CLEAR out on the other side: going out, as it
 # must be, which leaves the ball, starting from rest, 45 frames to pass.
 # The game names the copies of P_Modul_26's sack SACK_SEAT, SACK_SEAT001,
-# ... in the order they are laid.
+# ... in the order it makes them, which changes with the sectors live at the
+# time; the autopilot takes any copy that comes to the place it waits on.
 SACK_NEAR, SACK_WAIT_BACK, SACK_SWING, SACK_CLEAR, SACK_REACH = 2.0, 5.0, 5.5, 3.3, 0.8
 SACK_SEAT = 'P_Modul_26_Sack'
 # Logs (Level_12's A08_Halfpipe_*, "halfpipes" in the levels' names): half
