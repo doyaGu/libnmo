@@ -2693,16 +2693,12 @@ static visuals_blur_t *motion_blur(nmo_engine_t *engine, int32_t node)
 }
 
 static void blur_trail(nmo_engine_t *engine, nmo_object_id_t entity, nmo_object_id_t mesh, const eng_matrix_t *world,
-                       float alpha, bool transparent, const eng_matrix_t *at)
+                       float alpha, bool transparent)
 {
     nmo_engine_draw_t *draw = eng_render_entity_mesh(engine, entity, mesh, world->m[0], transparent);
     if (draw != NULL) {
         draw->fade = true;
         draw->fade_alpha = alpha;
-        draw->has_sort_position = true;
-        draw->sort_position[0] = at->m[3][0];
-        draw->sort_position[1] = at->m[3][1];
-        draw->sort_position[2] = at->m[3][2];
     }
 }
 
@@ -2723,10 +2719,10 @@ static void motion_blur_draw(nmo_engine_t *engine, nmo_object_id_t entity, int32
     }
     int32_t mid = (int32_t)((float)n * 0.33333334f);
     for (int32_t a = mid; a < n; a++) {
-        blur_trail(engine, entity, mesh, &blur->tab[a], (float)(n - a) / (float)(n - mid), transparent, at);
+        blur_trail(engine, entity, mesh, &blur->tab[a], (float)(n - a) / (float)(n - mid), transparent);
     }
     for (int32_t a = mid - 1; a >= 0; a--) {
-        blur_trail(engine, entity, mesh, &blur->tab[a], (float)(a + 1) / (float)(mid + 1), transparent, at);
+        blur_trail(engine, entity, mesh, &blur->tab[a], (float)(a + 1) / (float)(mid + 1), transparent);
     }
 }
 
@@ -2949,20 +2945,6 @@ static eng_vector_t viewpoint_in(nmo_engine_t *engine, int32_t plane)
     return out;
 }
 
-/* A mesh draw an entity's render callback makes, sorted with the plane entity `at` */
-static nmo_engine_draw_t *plane_mesh_draw(nmo_engine_t *engine, nmo_object_id_t entity, nmo_object_id_t mesh,
-                                          const eng_matrix_t *world, bool transparent, const eng_matrix_t *at)
-{
-    nmo_engine_draw_t *draw = eng_render_entity_mesh(engine, entity, mesh, world->m[0], transparent);
-    if (draw != NULL) {
-        draw->has_sort_position = true;
-        draw->sort_position[0] = at->m[3][0];
-        draw->sort_position[1] = at->m[3][1];
-        draw->sort_position[2] = at->m[3][2];
-    }
-    return draw;
-}
-
 /*
  * Planar Reflection: each frame it is active, the target (a plane, seen from
  * the side its Plane Normal points to) draws, before itself, the entities
@@ -3016,7 +2998,7 @@ static void planar_reflection_draw(nmo_engine_t *engine, nmo_object_id_t plane, 
         stencil->pass = VXSTENCILOP_REPLACE;
         nmo_object_id_t mesh = entity_shown_mesh(engine, plane);
         if (mesh != 0) {
-            nmo_engine_draw_t *draw = plane_mesh_draw(engine, plane, mesh, &at, transparent, &at);
+            nmo_engine_draw_t *draw = eng_render_entity_mesh(engine, plane, mesh, at.m[0], transparent);
             if (draw != NULL) {
                 draw->stencil_only = true;
             }
@@ -3039,7 +3021,7 @@ static void planar_reflection_draw(nmo_engine_t *engine, nmo_object_id_t plane, 
         eng_matrix_t world;
         eng_matrix_multiply(&world, &reflect, &engine->entities.data[entity].world);
         if (mesh != 0) {
-            nmo_engine_draw_t *draw = plane_mesh_draw(engine, attribute.object, mesh, &world, transparent, &at);
+            nmo_engine_draw_t *draw = eng_render_entity_mesh(engine, attribute.object, mesh, world.m[0], transparent);
             if (draw != NULL) {
                 draw->mirrored = !draw->mirrored;
             }
@@ -3047,7 +3029,7 @@ static void planar_reflection_draw(nmo_engine_t *engine, nmo_object_id_t plane, 
         }
         nmo_object_id_t own = entity_shown_mesh(engine, attribute.object);
         if (own != 0 && nmo_engine_object_is_visible(engine, attribute.object)) {
-            nmo_engine_draw_t *draw = plane_mesh_draw(engine, attribute.object, own, &world, transparent, &at);
+            nmo_engine_draw_t *draw = eng_render_entity_mesh(engine, attribute.object, own, world.m[0], transparent);
             if (draw != NULL) {
                 draw->mirrored = !draw->mirrored;
             }
@@ -3059,7 +3041,7 @@ static void planar_reflection_draw(nmo_engine_t *engine, nmo_object_id_t plane, 
             }
             eng_matrix_multiply(&world, &reflect, &engine->entities.data[child].world);
             nmo_engine_draw_t *draw =
-                plane_mesh_draw(engine, engine->entities.data[child].id, child_mesh, &world, transparent, &at);
+                eng_render_entity_mesh(engine, engine->entities.data[child].id, child_mesh, world.m[0], transparent);
             if (draw != NULL) {
                 draw->mirrored = !draw->mirrored;
             }

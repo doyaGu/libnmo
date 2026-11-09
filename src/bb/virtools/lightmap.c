@@ -1786,10 +1786,6 @@ static nmo_engine_draw_t *lm_primitive(nmo_engine_t *engine, nmo_object_id_t ent
         draw->no_z_write = true;
         if (transparent) {
             draw->transparent = true;
-            draw->has_sort_position = true;
-            draw->sort_position[0] = world->m[3][0];
-            draw->sort_position[1] = world->m[3][1];
-            draw->sort_position[2] = world->m[3][2];
         }
     }
     return draw;

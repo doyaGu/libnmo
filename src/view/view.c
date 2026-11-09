@@ -1494,8 +1494,9 @@ static void view_draw_frame(nmo_view_t *view, const nmo_engine_frame_t *frame, i
         view_draw_quad(view, &quad);
     }
 
-    /* Background 2D entities, then the opaque meshes, the transparent ones back
-       to front, and the foreground 2D entities */
+    /* Background 2D entities, then the 3D draws in the frame's order (the engine
+       puts the transparent objects after the opaque ones, sorted as the scene
+       graph sorts them), the post primitives, and the foreground 2D entities */
     int32_t first_mesh = 0;
     while (first_mesh < frame->draw_count && frame->draws[first_mesh].kind == NMO_ENGINE_DRAW_QUAD &&
            frame->draws[first_mesh].background) {
@@ -1513,45 +1514,12 @@ static void view_draw_frame(nmo_view_t *view, const nmo_engine_frame_t *frame, i
     float view_m[16];
     glViewport(scene[0], scene[1], scene[2], scene[3]);
     view_begin_3d(frame, view_m);
-    int32_t *transparent = (int32_t *)malloc((size_t)(end_mesh - first_mesh + 1) * sizeof(int32_t));
-    float *depths = (float *)malloc((size_t)(end_mesh - first_mesh + 1) * sizeof(float));
-    int32_t transparent_count = 0;
     for (int32_t i = first_mesh; i < end_mesh; i++) {
         const nmo_engine_draw_t *draw = &frame->draws[i];
         if (draw->kind == NMO_ENGINE_DRAW_PRIMITIVE && draw->post) {
-            continue; /* after the transparent ones */
+            continue; /* after the others */
         }
-        if (draw->transparent && transparent != NULL && depths != NULL) {
-            const float *p = draw->has_sort_position ? draw->sort_position : &draw->world[12];
-            depths[transparent_count] = p[0] * view_m[2] + p[1] * view_m[6] + p[2] * view_m[10] + view_m[14];
-            transparent[transparent_count++] = i;
-            continue;
-        }
-        view_clip_draw(view,draw,window_h);
-        view_draw_state(draw);
-        if (draw->kind == NMO_ENGINE_DRAW_SPRITE3D) {
-            view_draw_sprite3d(view, frame, draw, view_m);
-            continue;
-        }
-        if (draw->kind == NMO_ENGINE_DRAW_PRIMITIVE) {
-            view_draw_primitive(view, frame, draw, view_m);
-            continue;
-        }
-        view_draw_mesh(view, frame, draw, view_m);
-    }
-    for (int32_t i = 1; i < transparent_count; i++) {
-        for (int32_t j = i; j > 0 && depths[j - 1] < depths[j]; j--) {
-            float d = depths[j];
-            depths[j] = depths[j - 1];
-            depths[j - 1] = d;
-            int32_t t = transparent[j];
-            transparent[j] = transparent[j - 1];
-            transparent[j - 1] = t;
-        }
-    }
-    for (int32_t i = 0; i < transparent_count; i++) {
-        const nmo_engine_draw_t *draw = &frame->draws[transparent[i]];
-        view_clip_draw(view,draw,window_h);
+        view_clip_draw(view, draw, window_h);
         view_draw_state(draw);
         if (draw->kind == NMO_ENGINE_DRAW_TRIANGLES || draw->kind == NMO_ENGINE_DRAW_LINES) {
             view_draw_triangles(view, frame, draw, view_m);
@@ -1577,8 +1545,6 @@ static void view_draw_frame(nmo_view_t *view, const nmo_engine_frame_t *frame, i
             view_draw_primitive(view, frame, draw, view_m);
         }
     }
-    free(transparent);
-    free(depths);
     glDisable(GL_STENCIL_TEST);
     glFrontFace(GL_CW);
     glDisable(GL_SCISSOR_TEST);

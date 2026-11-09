@@ -119,6 +119,71 @@ static int mesh_draw(const nmo_engine_frame_t *frame, nmo_object_id_t object)
     return -1;
 }
 
+TEST(engine_visuals, the_scene_graph_orders_children_priorities_and_transparent_objects)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t material = fixture_create(&f, NMO_CID_MATERIAL, "Material");
+    ASSERT_TRUE(material != 0);
+    const char *names[6] = {"A", "B", "C", "Near", "Middle", "Far"};
+    const float depth[6] = {5, 5, 5, 10, 20, 30};
+    nmo_object_id_t objects[6], meshes[6];
+    for (int i = 0; i < 6; i++) {
+        objects[i] = face_object(&f, names[i], material, &meshes[i]);
+        ASSERT_TRUE(objects[i] != 0);
+        ((nmo_3dentity_state_t *)fixture_state(&f, objects[i]))->world_matrix[14] = depth[i];
+    }
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    int32_t index[6];
+    for (int i = 0; i < 6; i++) {
+        eng_show(f.engine, objects[i], 1);
+        eng_show(f.engine, meshes[i], 1);
+        index[i] = eng_entity_index(f.engine, objects[i]);
+    }
+    for (int i = 3; i < 6; i++) {
+        f.engine->entities.data[index[i]].moveable_flags |= VX_MOVEABLE_RENDERLAST;
+    }
+    /* C becomes A's child: the parent, its child, then the next root */
+    ASSERT_TRUE(eng_entity_set_parent(f.engine, index[2], index[0], true));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    int at[6];
+    for (int i = 0; i < 6; i++) {
+        at[i] = mesh_draw(&frame, objects[i]);
+        ASSERT_TRUE(at[i] >= 0);
+    }
+    ASSERT_TRUE(at[0] < at[2] && at[2] < at[1]);
+    /* the transparent ones after every opaque one, back to front: the eye looks down Z */
+    ASSERT_TRUE(at[1] < at[5] && at[5] < at[4] && at[4] < at[3]);
+    ASSERT_TRUE(frame.draws[at[3]].transparent && !frame.draws[at[1]].transparent);
+
+    /* B's higher Z order puts it before A; the nearest transparent one's puts it first of those */
+    f.engine->entities.data[index[1]].render_priority = 5;
+    f.engine->entities.data[index[3]].render_priority = 5;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    for (int i = 0; i < 6; i++) {
+        at[i] = mesh_draw(&frame, objects[i]);
+    }
+    ASSERT_TRUE(at[1] < at[0] && at[0] < at[2]);
+    ASSERT_TRUE(at[2] < at[3] && at[3] < at[5] && at[5] < at[4]);
+
+    /* Equal Z orders: a root whose child has a higher one goes first, here B before A */
+    f.engine->entities.data[index[1]].render_priority = 0;
+    f.engine->entities.data[index[2]].render_priority = 7;
+    ASSERT_TRUE(eng_entity_set_parent(f.engine, index[2], index[1], true));
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    for (int i = 0; i < 3; i++) {
+        at[i] = mesh_draw(&frame, objects[i]);
+    }
+    ASSERT_TRUE(at[1] < at[2] && at[2] < at[0]);
+    fixture_end(&f);
+}
+
 TEST(engine_visuals, blink_cycles_the_target_and_fps_reports_the_rate)
 {
     engine_fixture_t f;
@@ -986,7 +1051,7 @@ TEST(engine_visuals, motion_blur_draws_the_mesh_faded_along_its_last_matrices)
     ASSERT_TRUE(draws[0]->transparent && !draws[0]->fade);
 
     /* Moved: four copies, a third back (the oldest three, still at 0) the most opaque, then the
-       newest at half; all sorted where the object is */
+       newest at half, in that order */
     const int32_t index = eng_entity_index(f.engine, object);
     eng_vector_t step = {1.0f, 0.0f, 0.0f};
     for (int moves = 1; moves <= 2; moves++) {
@@ -997,10 +1062,9 @@ TEST(engine_visuals, motion_blur_draws_the_mesh_faded_along_its_last_matrices)
     ASSERT_EQ(4, mesh_draws(&frame, object, draws, 8));
     const float x[4] = {1, 0, 0, 2}, alpha[4] = {1.0f, 2.0f / 3.0f, 1.0f / 3.0f, 0.5f};
     for (int k = 0; k < 4; k++) {
-        ASSERT_TRUE(draws[k]->fade && draws[k]->transparent && draws[k]->has_sort_position);
+        ASSERT_TRUE(draws[k]->fade && draws[k]->transparent);
         ASSERT_FLOAT_EQ(x[k], draws[k]->world[12], 1e-5f);
         ASSERT_FLOAT_EQ(alpha[k], draws[k]->fade_alpha, 1e-6f);
-        ASSERT_FLOAT_EQ(2.0f, draws[k]->sort_position[0], 1e-5f);
     }
 
     /* Off: the mesh once, opaque again */
@@ -1444,6 +1508,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_visuals, render_curve_draws_the_curve_each_frame_until_off);
     REGISTER_TEST(engine_visuals, render_curve_line_mode_draws_the_line_mesh);
     REGISTER_TEST(engine_visuals, show_object_information_draws_box_and_face_normals_after_the_scene);
+    REGISTER_TEST(engine_visuals, the_scene_graph_orders_children_priorities_and_transparent_objects);
     REGISTER_TEST(engine_visuals, simple_shadow_multiplies_the_floors_under_its_owner_until_off);
     REGISTER_TEST(engine_visuals, simple_shadow_skips_floors_outside_the_last_render);
     REGISTER_TEST(engine_visuals, solid_trail_follows_the_owners_farthest_vertices_until_off);

@@ -102,6 +102,7 @@ void eng_free_render(nmo_engine_t *engine)
     free(render->views.data);
     free(render->view_firsts.data);
     free(render->entity_callbacks.data);
+    free(render->transparents.data);
 }
 
 eng_mesh_t *eng_render_mesh(nmo_engine_t *engine, nmo_object_id_t id)
@@ -1404,16 +1405,10 @@ static void eng_normalize3(float v[3])
  * along the world X and Y axes times the sprite's size, from its offset, in
  * its UV rectangle, with its material's diffuse color (CallSprite3DBatches).
  */
-static bool eng_draw_sprite3d(nmo_engine_t *engine, const eng_entity_t *entity, const float camera[16])
+/* The sprite's quad in the world, oriented as UpdateOrientation turns it toward `camera` */
+static void eng_sprite3d_corners(const eng_sprite3d_t *state, const eng_entity_t *entity, const float camera[16],
+                                 float corners[4][3])
 {
-    const eng_sprite3d_t *state = eng_sprite3d(engine,entity->id);
-    if (state == NULL) return false;
-    nmo_object_id_t material_id = state->material;
-    eng_material_t *material = material_id != 0 && eng_map_get(&engine->destroyed,material_id) < 0
-        ? eng_material(engine, material_id) : NULL;
-    if (material == NULL) {
-        return true; /* only a sprite with a material joins a batch */
-    }
     float x[3] = {entity->world.m[0][0], entity->world.m[0][1], entity->world.m[0][2]};
     float y[3] = {entity->world.m[1][0], entity->world.m[1][1], entity->world.m[1][2]};
     if (camera != NULL && state->mode == VXSPRITE3D_BILLBOARD) {
@@ -1432,7 +1427,7 @@ static bool eng_draw_sprite3d(nmo_engine_t *engine, const eng_entity_t *entity, 
     }
     float width = state->max.x-state->min.x, height = state->max.y-state->min.y;
     float ox = (state->offset.x - 1.0f) * 0.5f, oy = (state->offset.y - 1.0f) * 0.5f;
-    float base[3], corners[4][3];
+    float base[3];
     for (int c = 0; c < 3; c++) {
         x[c] *= width;
         y[c] *= height;
@@ -1442,6 +1437,20 @@ static bool eng_draw_sprite3d(nmo_engine_t *engine, const eng_entity_t *entity, 
         corners[2][c] = base[c] + y[c] + x[c];
         corners[3][c] = base[c] + x[c];
     }
+}
+
+static bool eng_draw_sprite3d(nmo_engine_t *engine, const eng_entity_t *entity, const float camera[16])
+{
+    const eng_sprite3d_t *state = eng_sprite3d(engine,entity->id);
+    if (state == NULL) return false;
+    nmo_object_id_t material_id = state->material;
+    eng_material_t *material = material_id != 0 && eng_map_get(&engine->destroyed,material_id) < 0
+        ? eng_material(engine, material_id) : NULL;
+    if (material == NULL) {
+        return true; /* only a sprite with a material joins a batch */
+    }
+    float corners[4][3];
+    eng_sprite3d_corners(state, entity, camera, corners);
     const nmo_rect_t *uv = &state->uv_rect;
     const float uvs[4][2] = {{uv->left, uv->bottom}, {uv->left, uv->top}, {uv->right, uv->top},
                              {uv->right, uv->bottom}};
@@ -2325,46 +2334,6 @@ static int32_t eng_render_priority(const eng_entity_t *entity)
     return (entity->moveable_flags & VX_MOVEABLE_RENDERFIRST) ? 10000 : entity->render_priority;
 }
 
-typedef struct eng_priority_item {
-    int32_t priority;
-    size_t index;
-} eng_priority_item_t;
-
-static int eng_priority_compare(const void *a, const void *b)
-{
-    const eng_priority_item_t *x = (const eng_priority_item_t *)a, *y = (const eng_priority_item_t *)b;
-    if (x->priority != y->priority) {
-        return x->priority > y->priority ? -1 : 1;
-    }
-    return x->index < y->index ? -1 : x->index > y->index;
-}
-
-/* The scene graph's order, approximated: the entities' draws by priority, highest first,
-   the others kept in order (the scene graph's hierarchy is not modelled) */
-static void eng_sort_by_priority(nmo_engine_t *engine, size_t first, size_t end)
-{
-    size_t count = end - first;
-    eng_priority_item_t *items = count > 1 ? (eng_priority_item_t *)malloc(count * sizeof(*items)) : NULL;
-    nmo_engine_draw_t *copy = items != NULL ? (nmo_engine_draw_t *)malloc(count * sizeof(*copy)) : NULL;
-    if (copy == NULL) {
-        free(items);
-        return;
-    }
-    nmo_engine_draw_t *draws = &engine->render.draws.data[first];
-    for (size_t i = 0; i < count; i++) {
-        int32_t at = eng_entity_index(engine, draws[i].object);
-        items[i].priority = at >= 0 ? eng_render_priority(&engine->entities.data[at]) : 0;
-        items[i].index = i;
-    }
-    qsort(items, count, sizeof(*items), eng_priority_compare);
-    memcpy(copy, draws, count * sizeof(*copy));
-    for (size_t i = 0; i < count; i++) {
-        draws[i] = copy[items[i].index];
-    }
-    free(copy);
-    free(items);
-}
-
 bool eng_add_entity_callback(nmo_engine_t *engine, const eng_entity_callback_t *callback)
 {
     for (size_t i = 0; i < engine->render.entity_callbacks.count; i++) {
@@ -2950,24 +2919,455 @@ static void eng_frustum_traverse(nmo_engine_t *engine, int32_t index, const eng_
     }
 }
 
-/* The frustum flags the scene graph's traversal leaves on the entities through the attached
-   camera (CK3dEntity::IsAllInsideFrustrum / IsAllOutsideFrustrum read them); an entity not parsed
-   keeps its old flags */
-static void eng_frustum_update(nmo_engine_t *engine, nmo_object_id_t camera)
+/* The frustum flags the scene graph's traversal leaves on the entities through `view`
+   (CK3dEntity::IsAllInsideFrustrum / IsAllOutsideFrustrum read them); an entity not parsed keeps
+   its old flags */
+static void eng_frustum_update(nmo_engine_t *engine, const eng_matrix_t *view)
 {
-    eng_matrix_t view;
-    if (camera == 0 || !eng_camera_view_projection(engine, camera, &view, NULL)) {
-        return;
-    }
     for (size_t i = 0; i < engine->entities.count; i++) {
         if (engine->entities.data[i].parent < 0 && eng_node_parsed(engine, (int32_t)i)) {
-            eng_frustum_traverse(engine, (int32_t)i, &view);
+            eng_frustum_traverse(engine, (int32_t)i, view);
         }
     }
 }
 
+/* The frame's view and projection as the host draws it (RCKRenderContext::UpdateProjection:
+   the viewport's aspect) */
+static void eng_frame_view_projection(const nmo_engine_frame_t *frame, eng_matrix_t *out)
+{
+    float aspect = frame->viewport[2] > 0 && frame->viewport[3] > 0
+                       ? (float)frame->viewport[2] / (float)frame->viewport[3]
+                       : frame->height > 0 ? (float)frame->width / (float)frame->height : 1.0f;
+    float depth = frame->far_plane - frame->near_plane;
+    if (depth <= 0.0f) {
+        depth = 1.0f;
+    }
+    eng_matrix_t projection, eye, inverse;
+    memset(&projection, 0, sizeof(projection));
+    if (!frame->orthographic) {
+        double half = (double)frame->fov * 0.5;
+        float scale = (float)(cos(half) / sin(half));
+        projection.m[0][0] = scale;
+        projection.m[1][1] = scale * aspect;
+        projection.m[2][2] = frame->far_plane / depth;
+        projection.m[3][2] = -frame->near_plane * frame->far_plane / depth;
+        projection.m[2][3] = 1.0f;
+    } else {
+        projection.m[0][0] = frame->zoom;
+        projection.m[1][1] = frame->zoom * aspect;
+        projection.m[2][2] = 1.0f / depth;
+        projection.m[3][2] = -frame->near_plane / depth;
+        projection.m[3][3] = 1.0f;
+    }
+    memcpy(eye.m, frame->view, sizeof(eye.m));
+    eng_matrix_inverse(&inverse, &eye);
+    eng_matrix_multiply4(out, &projection, &inverse);
+}
+
+/* ---- The scene graph's order ---- */
+
+/* CKSceneGraphNode's own priority word (SetPriority: the Z order, 10000 rendered first, plus
+   10000) */
+static uint32_t eng_node_priority(const eng_entity_t *entity)
+{
+    int32_t priority = eng_render_priority(entity);
+    priority = priority < -10000 ? -10000 : priority > 10000 ? 10000 : priority;
+    return (uint32_t)(priority + 10000);
+}
+
+/* The other word, its children's highest (PrioritiesChanged), never under the 10000 a node
+   starts with since only a higher child raises it */
+static uint32_t eng_node_children_priority(const nmo_engine_t *engine, int32_t index)
+{
+    uint32_t highest = 10000;
+    for (int32_t child = engine->entities.data[index].first_child; child >= 0;
+         child = engine->entities.data[child].next_sibling) {
+        uint32_t own = eng_node_priority(&engine->entities.data[child]);
+        uint32_t below = eng_node_children_priority(engine, child);
+        highest = own > highest ? own : highest;
+        highest = below > highest ? below : highest;
+    }
+    return highest;
+}
+
+/* SortNodes' key: the own priority, then the children's */
+static uint32_t eng_node_key(const nmo_engine_t *engine, int32_t index)
+{
+    return eng_node_priority(&engine->entities.data[index]) << 16 | eng_node_children_priority(engine, index);
+}
+
+/* RCK3dEntity::IsToBeRenderedLast (RCKSprite3D's: its material blended, never with RENDERFIRST) */
+static bool eng_node_last(nmo_engine_t *engine, int32_t index)
+{
+    nmo_object_id_t id = engine->entities.data[index].id;
+    uint32_t moveable = engine->entities.data[index].moveable_flags;
+    if (moveable & VX_MOVEABLE_RENDERFIRST) {
+        return false;
+    }
+    const eng_sprite3d_t *sprite = eng_sprite3d(engine, id);
+    if (sprite != NULL) {
+        eng_material_t *material = sprite->material != 0 && eng_map_get(&engine->destroyed, sprite->material) < 0
+                                       ? eng_material(engine, sprite->material)
+                                       : NULL;
+        return material != NULL && material->desc.alpha_blend;
+    }
+    if (moveable & VX_MOVEABLE_RENDERLAST) {
+        return true;
+    }
+    nmo_object_id_t mesh = eng_entity_current_mesh(engine, id);
+    const nmo_mesh_state_t *mesh_state = mesh != 0 ? eng_mesh_state(engine, mesh) : NULL;
+    return mesh_state != NULL && mesh_state->face_count != 0 && eng_mesh_transparent(engine, mesh, mesh_state);
+}
+
+/* RCK3dEntity::Render: a sprite's quad, or the entity's render callbacks around its mesh */
+static nmo_status_t eng_render_entity(nmo_engine_t *engine, int32_t index, const nmo_engine_frame_t *frame,
+                                      bool last)
+{
+    eng_render_t *render = &engine->render;
+    nmo_object_id_t id = engine->entities.data[index].id;
+    if (eng_typed_state(engine, id, CKPGUID_SPRITE3D) != NULL) {
+        return eng_draw_sprite3d(engine, &engine->entities.data[index], frame->camera != 0 ? frame->view : NULL)
+                   ? NMO_OK
+                   : NMO_ERR_NOMEM;
+    }
+    nmo_object_id_t mesh = eng_entity_current_mesh(engine, id);
+    const nmo_mesh_state_t *mesh_state = mesh != 0 ? eng_mesh_state(engine, mesh) : NULL;
+    bool has_mesh = mesh_state != NULL && mesh_state->face_count != 0;
+    bool has_callbacks = eng_run_entity_callbacks(engine, id, (eng_entity_callback_kind_t)-1, false, false);
+    if (!has_mesh && !has_callbacks) {
+        return NMO_OK;
+    }
+    for (size_t m = 0; has_mesh && m < render->env_maps.count; m++) {
+        if (render->env_maps.data[m].entity == id) {
+            eng_run_env_map(engine, &render->env_maps.data[m], index, mesh);
+        }
+    }
+    eng_run_entity_callbacks(engine, id, ENG_ENTITY_PRE_RENDER, last, true);
+    if (eng_run_entity_callbacks(engine, id, ENG_ENTITY_RENDER, last, true) || !has_mesh) {
+        eng_run_entity_callbacks(engine, id, ENG_ENTITY_POST_RENDER, last, true);
+        return NMO_OK;
+    }
+    if (eng_render_entity_mesh(engine, id, mesh, engine->entities.data[index].world.m[0], last) == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    eng_run_entity_callbacks(engine, id, ENG_ENTITY_POST_RENDER, last, true);
+    return NMO_OK;
+}
+
+/* The scene's traversal: an entity renders as it is reached, or joins the transparent objects */
+typedef struct eng_scene_walk {
+    const nmo_engine_frame_t *frame;
+    ENG_VEC(int32_t) last; /* the transparent objects, in the order they were reached */
+    nmo_status_t status;
+} eng_scene_walk_t;
+
+static void eng_walk_nodes(nmo_engine_t *engine, int32_t parent, eng_scene_walk_t *walk);
+
+static void eng_walk_node(nmo_engine_t *engine, int32_t index, eng_scene_walk_t *walk)
+{
+    if (eng_node_rendered(engine, index)) {
+        if (eng_node_last(engine, index)) {
+            int32_t *queued = NULL;
+            if (!ENG_VEC_PUSH(walk->last, queued)) {
+                walk->status = NMO_ERR_NOMEM;
+                return;
+            }
+            *queued = index;
+        } else {
+            walk->status = eng_render_entity(engine, index, walk->frame, false);
+        }
+    }
+    if (walk->status == NMO_OK) {
+        eng_walk_nodes(engine, index, walk);
+    }
+}
+
+/* The children to parse of `parent` (-1: the root's, the entities without a parent), in their
+   order sorted by key, highest first (SortNodes, a stable bubble sort) */
+static void eng_walk_nodes(nmo_engine_t *engine, int32_t parent, eng_scene_walk_t *walk)
+{
+    size_t count = 0, capacity = 0;
+    struct { int32_t index; uint32_t key; } *nodes = NULL;
+    int32_t next = parent >= 0 ? engine->entities.data[parent].first_child : 0;
+    while (parent >= 0 ? next >= 0 : (size_t)next < engine->entities.count) {
+        int32_t index = next;
+        next = parent >= 0 ? engine->entities.data[index].next_sibling : next + 1;
+        if ((parent < 0 && engine->entities.data[index].parent >= 0) || !eng_node_parsed(engine, index)) {
+            continue;
+        }
+        if (count == capacity) {
+            capacity = capacity != 0 ? capacity * 2 : 8;
+            void *grown = realloc(nodes, capacity * sizeof(*nodes));
+            if (grown == NULL) {
+                free(nodes);
+                walk->status = NMO_ERR_NOMEM;
+                return;
+            }
+            nodes = grown;
+        }
+        nodes[count].index = index;
+        nodes[count].key = eng_node_key(engine, index);
+        for (size_t at = count++; at > 0 && nodes[at - 1].key < nodes[at].key; at--) {
+            int32_t i = nodes[at].index;
+            uint32_t k = nodes[at].key;
+            nodes[at] = nodes[at - 1];
+            nodes[at - 1].index = i;
+            nodes[at - 1].key = k;
+        }
+    }
+    for (size_t i = 0; i < count && walk->status == NMO_OK; i++) {
+        eng_walk_node(engine, nodes[i].index, walk);
+    }
+    free(nodes);
+}
+
+/* ---- The transparent objects ---- */
+
+#define ENG_TRANSPARENT_EPSILON 1.1920929e-7f
+
+/* VxProjectBoxZExtents: the box's corners' z / w through `matrix` (0 behind the eye), a flat box's
+   four (Z, then X, then Y flat); an invalid box gives 1e10 and -1e10 */
+static void eng_box_z_extents(const eng_matrix_t *matrix, const eng_vector_t *min, const eng_vector_t *max,
+                              float *zmin, float *zmax)
+{
+    *zmin = 1.0e10f;
+    *zmax = -1.0e10f;
+    if (!(min->x <= max->x && min->y <= max->y && min->z <= max->z)) {
+        return;
+    }
+    const double low[3] = {min->x, min->y, min->z}, high[3] = {max->x, max->y, max->z};
+    int x_mask = 4, y_mask = 2, z_mask = 1, count = 8;
+    if ((float)(high[2] - low[2]) <= ENG_TRANSPARENT_EPSILON) {
+        x_mask = 1, z_mask = 0, count = 4;
+    } else if ((float)(high[0] - low[0]) <= ENG_TRANSPARENT_EPSILON) {
+        x_mask = 0, count = 4;
+    } else if ((float)(high[1] - low[1]) <= ENG_TRANSPARENT_EPSILON) {
+        x_mask = 2, y_mask = 0, count = 4;
+    }
+    for (int i = 0; i < count; i++) {
+        const double p[3] = {(i & x_mask) ? high[0] : low[0], (i & y_mask) ? high[1] : low[1],
+                             (i & z_mask) ? high[2] : low[2]};
+        double z = p[0] * matrix->m[0][2] + p[1] * matrix->m[1][2] + p[2] * matrix->m[2][2] + matrix->m[3][2];
+        double w = p[0] * matrix->m[0][3] + p[1] * matrix->m[1][3] + p[2] * matrix->m[2][3] + matrix->m[3][3];
+        float value = !(w < 0) ? (float)(z / w) : 0.0f;
+        *zmin = value < *zmin ? value : *zmin;
+        *zmax = value > *zmax ? value : *zmax;
+    }
+}
+
+/* SortTransparentObjects' extents of an entity: its box (a sprite's quad, as turned to the eye) */
+static void eng_transparent_extents(nmo_engine_t *engine, eng_transparent_t *object, int32_t index,
+                                    const nmo_engine_frame_t *frame, const eng_matrix_t *view_projection)
+{
+    const eng_sprite3d_t *sprite = eng_sprite3d(engine, object->entity);
+    if (sprite != NULL) {
+        float corners[4][3];
+        eng_sprite3d_corners(sprite, &engine->entities.data[index], frame->camera != 0 ? frame->view : NULL,
+                             corners);
+        object->zmin = 1.0e10f;
+        object->zmax = -1.0e10f;
+        for (int k = 0; k < 4; k++) {
+            const eng_matrix_t *m = view_projection;
+            double z = corners[k][0] * m->m[0][2] + corners[k][1] * m->m[1][2] + corners[k][2] * m->m[2][2] + m->m[3][2];
+            double w = corners[k][0] * m->m[0][3] + corners[k][1] * m->m[1][3] + corners[k][2] * m->m[2][3] + m->m[3][3];
+            float value = !(w < 0) ? (float)(z / w) : 0.0f;
+            object->zmin = value < object->zmin ? value : object->zmin;
+            object->zmax = value > object->zmax ? value : object->zmax;
+        }
+        return;
+    }
+    eng_vector_t min = {1.0f, 1.0f, 1.0f}, max = {0.0f, 0.0f, 0.0f};
+    eng_entity_local_box(engine, index, &min, &max);
+    eng_matrix_t matrix;
+    eng_matrix_multiply4(&matrix, view_projection, &engine->entities.data[index].world);
+    eng_box_z_extents(&matrix, &min, &max, &object->zmin, &object->zmax);
+}
+
+/* VxBbox::Classify(box2, pt) of box `a`: which of the boxes is nearer `pt` */
+static int eng_box_classify(const eng_vector_t *amin, const eng_vector_t *amax, const eng_vector_t *bmin,
+                            const eng_vector_t *bmax, const eng_vector_t *pt)
+{
+    bool pt_out = pt->x < amin->x || pt->x > amax->x || pt->y < amin->y || pt->y > amax->y || pt->z < amin->z ||
+                  pt->z > amax->z;
+    bool b_out = bmax->z < amin->z || bmin->z > amax->z || bmax->x < amin->x || bmin->x > amax->x ||
+                 bmax->y < amin->y || bmin->y > amax->y;
+    bool b_in_a = bmin->x >= amin->x && bmin->y >= amin->y && bmin->z >= amin->z && bmax->x <= amax->x &&
+                  bmax->y <= amax->y && bmax->z <= amax->z;
+    bool a_in_b = amin->x >= bmin->x && amin->y >= bmin->y && amin->z >= bmin->z && amax->x <= bmax->x &&
+                  amax->y <= bmax->y && amax->z <= bmax->z;
+    if (pt_out) {
+        if (!b_out) {
+            if (b_in_a) {
+                return -1;
+            }
+            if (a_in_b) {
+                bool pt_in_b = pt->x >= bmin->x && pt->x <= bmax->x && pt->y >= bmin->y && pt->y <= bmax->y &&
+                               pt->z >= bmin->z && pt->z <= bmax->z;
+                return pt_in_b ? -1 : 1;
+            }
+        }
+    } else {
+        if (b_out) {
+            return -1;
+        }
+        if (a_in_b) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* The transparent objects' tie-breaker (CK2_3D sub_10009BB9): a flat entity `a` orders by the
+   side of its plane the eye and `b`'s box are on, otherwise the boxes classify */
+static int eng_transparent_classify(nmo_engine_t *engine, int32_t a, int32_t b, const eng_vector_t *eye)
+{
+    eng_vector_t lmin = {0, 0, 0}, lmax = {0, 0, 0}, amin = {0, 0, 0}, amax = {0, 0, 0}, bmin = {0, 0, 0},
+                 bmax = {0, 0, 0};
+    eng_entity_local_box(engine, a, &lmin, &lmax);
+    eng_entity_world_box(engine, a, &amin, &amax);
+    eng_entity_world_box(engine, b, &bmin, &bmax);
+    int row;
+    if (lmax.z - lmin.z < ENG_TRANSPARENT_EPSILON) {
+        row = 2;
+    } else if (lmax.y - lmin.y >= ENG_TRANSPARENT_EPSILON) {
+        if (lmax.x - lmin.x >= ENG_TRANSPARENT_EPSILON) {
+            return eng_box_classify(&amin, &amax, &bmin, &bmax, eye);
+        }
+        row = 0;
+    } else {
+        row = 1;
+    }
+    /* VxPlane(row, position), Classify(eye) * Classify(b's box) */
+    const eng_matrix_t *w = &engine->entities.data[a].world;
+    const float n[3] = {w->m[row][0], w->m[row][1], w->m[row][2]};
+    const float d = (float)(-((double)n[0] * w->m[3][0] + (double)n[1] * w->m[3][1] + (double)n[2] * w->m[3][2]));
+    float side = n[0] * eye->x + n[1] * eye->y + n[2] * eye->z + d;
+    const float near_p[3] = {n[0] >= 0 ? bmin.x : bmax.x, n[1] >= 0 ? bmin.y : bmax.y, n[2] >= 0 ? bmin.z : bmax.z};
+    const float far_p[3] = {n[0] >= 0 ? bmax.x : bmin.x, n[1] >= 0 ? bmax.y : bmin.y, n[2] >= 0 ? bmax.z : bmin.z};
+    float box_side = n[0] * near_p[0] + n[1] * near_p[1] + n[2] * near_p[2] + d;
+    if (!(box_side > 0.0f)) {
+        float far_side = n[0] * far_p[0] + n[1] * far_p[1] + n[2] * far_p[2] + d;
+        box_side = far_side < 0.0f ? far_side : 0.0f;
+    }
+    float product = side * box_side;
+    if (product != 0.0f) {
+        return product >= 0.0f ? 1 : -1;
+    }
+    return eng_box_classify(&amin, &amax, &bmin, &bmax, eye);
+}
+
+/* CKSceneGraphRootNode::SortTransparentObjects' bubble sort: the higher priority first, then
+   back to front by the projected depths, overlapping ones by the tie-breaker */
+static void eng_sort_transparents(nmo_engine_t *engine, eng_transparent_t *objects, size_t count,
+                                  const eng_vector_t *eye)
+{
+    for (size_t i = 1; i < count; i++) {
+        bool no_swaps = true;
+        for (size_t k = count - 1; k >= i; k--) {
+            eng_transparent_t *current = &objects[k], *prev = &objects[k - 1];
+            int32_t ci = eng_entity_index(engine, current->entity), pi = eng_entity_index(engine, prev->entity);
+            uint32_t cp = eng_node_priority(&engine->entities.data[ci]);
+            uint32_t pp = eng_node_priority(&engine->entities.data[pi]);
+            bool swap = false;
+            if (cp > pp) {
+                swap = true;
+            } else if (cp == pp && prev->zmin < current->zmax) {
+                if (!(current->zmin <= prev->zmax)) {
+                    swap = true;
+                } else {
+                    int first = eng_transparent_classify(engine, pi, ci, eye);
+                    if (first < 0) {
+                        swap = true;
+                    } else if (first == 0) {
+                        int second = eng_transparent_classify(engine, ci, pi, eye);
+                        swap = second > 0 || (second == 0 && prev->zmin + ENG_TRANSPARENT_EPSILON < current->zmin);
+                    }
+                }
+            }
+            if (swap) {
+                eng_transparent_t t = *current;
+                *current = *prev;
+                *prev = t;
+                no_swaps = false;
+            }
+        }
+        if (no_swaps) {
+            break;
+        }
+    }
+}
+
+/* The transparent objects drawn after the post render callbacks that come before them: the main
+   frame's list keeps its order from the last frame (new ones at its end, the ones not reached
+   this frame left out); a pass sorts the ones it reached */
+static nmo_status_t eng_render_transparents(nmo_engine_t *engine, const nmo_engine_frame_t *frame, bool pass,
+                                            const int32_t *reached, size_t reached_count)
+{
+    eng_render_t *render = &engine->render;
+    eng_transparent_t *objects = NULL, *local = NULL;
+    size_t count = 0;
+    if (!pass) {
+        uint32_t serial = ++render->transparent_frame;
+        for (size_t r = 0; r < reached_count; r++) {
+            nmo_object_id_t id = engine->entities.data[reached[r]].id;
+            size_t at = 0;
+            while (at < render->transparents.count && render->transparents.data[at].entity != id) {
+                at++;
+            }
+            if (at == render->transparents.count) {
+                eng_transparent_t *added = NULL;
+                if (!ENG_VEC_PUSH(render->transparents, added)) {
+                    return NMO_ERR_NOMEM;
+                }
+                memset(added, 0, sizeof(*added));
+                added->entity = id;
+            }
+            render->transparents.data[at].frame = serial;
+        }
+        for (size_t i = 0; i < render->transparents.count; i++) {
+            if (render->transparents.data[i].frame == serial) {
+                render->transparents.data[count++] = render->transparents.data[i];
+            }
+        }
+        render->transparents.count = count;
+        objects = render->transparents.data;
+    } else if (reached_count > 0) {
+        local = (eng_transparent_t *)calloc(reached_count, sizeof(*local));
+        if (local == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+        for (size_t r = 0; r < reached_count; r++) {
+            local[count++].entity = engine->entities.data[reached[r]].id;
+        }
+        objects = local;
+    }
+    if (count > 1) {
+        eng_matrix_t view_projection;
+        eng_frame_view_projection(frame, &view_projection);
+        for (size_t i = 0; i < count; i++) {
+            eng_transparent_extents(engine, &objects[i], eng_entity_index(engine, objects[i].entity), frame,
+                                    &view_projection);
+        }
+        const eng_vector_t eye = {frame->view[12], frame->view[13], frame->view[14]};
+        eng_sort_transparents(engine, objects, count, &eye);
+    }
+    nmo_status_t status = NMO_OK;
+    for (size_t i = 0; i < count && status == NMO_OK; i++) {
+        nmo_object_id_t id = pass ? local[i].entity : render->transparents.data[i].entity;
+        int32_t index = eng_entity_index(engine, id);
+        if (index >= 0 && !engine->entities.data[index].destroyed) {
+            status = eng_render_entity(engine, index, frame, true);
+        }
+    }
+    free(local);
+    return status;
+}
+
 /* CKRenderedScene::Draw: what the render context draws of the scene, from the draws' end, as
-   `frame` sets it (its eye and render options); a pass leaves the temporary callbacks */
+   `frame` sets it (its eye and render options): the scene graph traversed (the entities by
+   priority, each before its children, the transparent ones put off), the post render callbacks
+   that come before the transparent objects (ENG_RENDER_SCENE), the transparent objects sorted, the
+   other post render callbacks; a pass leaves the temporary callbacks */
 static nmo_status_t eng_draw_scene(nmo_engine_t *engine, const nmo_engine_frame_t *frame, bool pass)
 {
     eng_render_t *render = &engine->render;
@@ -2979,70 +3379,37 @@ static nmo_status_t eng_draw_scene(nmo_engine_t *engine, const nmo_engine_frame_
     eng_managers_render(engine, ENG_RENDER_PRE, &args);
     eng_managers_render(engine, ENG_RENDER_BACKGROUND, &args);
     if (!pass) {
-        eng_frustum_update(engine, frame->camera);
+        eng_matrix_t view_projection;
+        eng_frame_view_projection(frame, &view_projection);
+        eng_frustum_update(engine, &view_projection);
     }
-    size_t first_entity_draw = render->draws.count;
-    bool prioritized = false;
+    /* Scene traversal sees a character even without a mesh of its own.
+     * A plain Hide can leave its children traversable; hierarchy hide cannot. */
     for (size_t i = 0; i < engine->entities.count; i++) {
         const eng_entity_t *entity = &engine->entities.data[i];
-        if (entity->destroyed || !eng_in_scene(engine, entity->id) ||
-            eng_hidden_by_parent(engine, entity)) {
-            continue;
-        }
-        uint32_t flags = eng_object_flags(engine, entity->id);
-        /* Scene traversal sees a character even without a mesh of its own.
-         * A plain Hide can leave its children traversable; hierarchy hide cannot. */
-        if (!(flags & OBJECT_HIERARCHICAL_HIDE) && nmo_engine_object_class(engine, entity->id) == NMO_CID_CHARACTER) {
+        if (!entity->destroyed && eng_in_scene(engine, entity->id) && !eng_hidden_by_parent(engine, entity) &&
+            !(eng_object_flags(engine, entity->id) & OBJECT_HIERARCHICAL_HIDE) &&
+            nmo_engine_object_class(engine, entity->id) == NMO_CID_CHARACTER) {
             engine->entities.data[i].moveable_flags |= VX_MOVEABLE_CHARACTERRENDERED;
         }
-        if (!(flags & OBJECT_VISIBLE)) continue;
-        const nmo_sprite3d_state_t *sprite =
-            (const nmo_sprite3d_state_t *)eng_typed_state(engine, entity->id, CKPGUID_SPRITE3D);
-        if (sprite != NULL) {
-            if (!eng_draw_sprite3d(engine, entity, frame->camera != 0 ? frame->view : NULL)) {
-                return NMO_ERR_NOMEM;
-            }
-            continue;
-        }
-        nmo_object_id_t mesh = eng_entity_current_mesh(engine, entity->id);
-        const nmo_mesh_state_t *mesh_state = mesh != 0 ? eng_mesh_state(engine, mesh) : NULL;
-        bool has_mesh = mesh_state != NULL && mesh_state->face_count != 0;
-        nmo_object_id_t id = entity->id;
-        /* RCK3dEntity::Render: a mesh or callbacks */
-        bool has_callbacks = eng_run_entity_callbacks(engine, id, (eng_entity_callback_kind_t)-1, false, false);
-        if (!has_mesh && !has_callbacks) {
-            continue;
-        }
-        for (size_t m = 0; has_mesh && m < render->env_maps.count; m++) {
-            if (render->env_maps.data[m].entity == entity->id) {
-                eng_run_env_map(engine, &render->env_maps.data[m], (int32_t)i, mesh);
-            }
-        }
-        /* RCK3dEntity::IsToBeRenderedLast */
-        uint32_t moveable = engine->entities.data[i].moveable_flags;
-        bool last = (moveable & VX_MOVEABLE_RENDERFIRST) ? false
-                    : (moveable & VX_MOVEABLE_RENDERLAST) ? true
-                    : has_mesh && eng_mesh_transparent(engine, mesh, mesh_state);
-        prioritized = prioritized || eng_render_priority(&engine->entities.data[i]) != 0;
-        eng_run_entity_callbacks(engine, id, ENG_ENTITY_PRE_RENDER, last, true);
-        if (eng_run_entity_callbacks(engine, id, ENG_ENTITY_RENDER, last, true) || !has_mesh) {
-            eng_run_entity_callbacks(engine, id, ENG_ENTITY_POST_RENDER, last, true);
-            continue;
-        }
-        if (eng_render_entity_mesh(engine, id, mesh, engine->entities.data[i].world.m[0], last) == NULL) {
-            return NMO_ERR_NOMEM;
-        }
-        eng_run_entity_callbacks(engine, id, ENG_ENTITY_POST_RENDER, last, true);
     }
-    if (prioritized) {
-        eng_sort_by_priority(engine, first_entity_draw, render->draws.count);
+    eng_scene_walk_t walk;
+    memset(&walk, 0, sizeof(walk));
+    walk.frame = frame;
+    eng_walk_nodes(engine, -1, &walk);
+    if (walk.status != NMO_OK) {
+        free(walk.last.data);
+        return walk.status;
+    }
+    eng_managers_render(engine, ENG_RENDER_SCENE, &args);
+    nmo_status_t status = eng_render_transparents(engine, frame, pass, walk.last.data, walk.last.count);
+    free(walk.last.data);
+    if (status != NMO_OK) {
+        return status;
     }
     if (!pass) {
         render->env_maps.count = 0; /* temporary callbacks */
         eng_drop_temporary_callbacks(engine);
-    }
-    eng_managers_render(engine, ENG_RENDER_SCENE, &args);
-    if (!pass) {
         eng_draw_portal_clips(engine);
     }
     if (frame->render_options & CK_RENDER_FOREGROUNDSPRITES) {

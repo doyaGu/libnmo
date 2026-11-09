@@ -180,8 +180,19 @@ typedef struct eng_view_request {
     bool over_2d;
 } eng_view_request_t;
 
+/* CKSceneGraphRootNode's transparent object, kept from frame to frame in the order the last
+   sort left */
+typedef struct eng_transparent {
+    nmo_object_id_t entity;
+    float zmin, zmax; /* VxProjectBoxZExtents of its box this frame */
+    uint32_t frame;   /* the frame that last added it (m_TimeFpsCalc) */
+} eng_transparent_t;
+
 typedef struct eng_render {
     int32_t screen_mode;      /* the render context's mode, of the engine's driver's list */
+    /* The transparent objects of the main frame, and the frames drawn so far */
+    ENG_VEC(eng_transparent_t) transparents;
+    uint32_t transparent_frame;
     ENG_VEC(eng_env_map_t) env_maps;
     ENG_VEC(eng_entity_callback_t) entity_callbacks;
     /* The render context's stencil states as callbacks set them, given to each draw made, and

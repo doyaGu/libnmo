@@ -344,6 +344,8 @@ nmo_status_t eng_load_entities(nmo_engine_t *engine, const eng_range_t *range)
             return NMO_ERR_NOMEM;
         }
         engine->entities.data[engine->entities.count-1].entity_flags = state->entity_flags;
+        /* RCK3dEntity::Load's SetPriority of a saved Z order */
+        engine->entities.data[engine->entities.count-1].render_priority = nmo_3dentity_effective_z_order(state);
     }
     /* The parents, once every entity of the file is there */
     for (size_t i = 0; objects != NULL && i < count; i++) {

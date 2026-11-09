@@ -78,7 +78,8 @@ typedef struct nmo_engine_draw {
     float skew;
     bool nearest;           /* text of a font with Disable Filter */
     bool background;        /* a background 2D entity: no depth test or write */
-    bool transparent;       /* a mesh drawn after the opaque ones, back to front */
+    bool transparent;       /* blended: the draws come in the order to draw them (CK's scene
+                               graph: the transparent objects after the opaque ones, sorted) */
     bool no_z_test, no_z_write; /* VX_MOVEABLE_NOZBUFFERTEST / NOZBUFFERWRITE */
     bool z_only;            /* VX_MOVEABLE_ZBUFONLY: depth written, no color */
     /* A mesh drawn with a projection of its own (TT Sky's): fov > 0 */
@@ -86,7 +87,7 @@ typedef struct nmo_engine_draw {
     /* Triangles: the frame's vertices from first_vertex, textured with `texture`
        (modulated, clamped), blended source_blend/dest_blend (VXBLEND_MODE)
        unless `blend` is false, no lighting, no culling, alpha tested (alpha > 0)
-       when `alpha_test`; world[12..14] is their emitter's position, to sort by.
+       when `alpha_test`; world[12..14] is their emitter's position.
        Lines: pairs of the frame's vertices from first_vertex, untextured, blended
        the same way, no z write */
     int32_t first_vertex, vertex_count;
@@ -113,15 +114,12 @@ typedef struct nmo_engine_draw {
     bool no_fog;
     /* A mesh with `fade` (a trail Motion Blur draws in its render callback) draws its
        materials alpha blended (srcalpha, invsrcalpha) at `fade_alpha` times their diffuse
-       alpha. A transparent draw with `has_sort_position` sorts at `sort_position` instead of
-       world[12..14]: all the draws an entity's render callback makes sort where it is. */
+       alpha. */
     bool fade;
     float fade_alpha;
     /* A mesh whose material group of `replaced_material` (non zero) draws with
        `replacing_material` instead (0: the default material): Replace Rendering. */
     nmo_object_id_t replaced_material, replacing_material;
-    bool has_sort_position;
-    float sort_position[3];
     /* A 3D draw renders with `stencil` (Planar Reflection's and Planar Shadow's plane masks).
        A mesh with `stencil_only` (VX_MOVEABLE_STENCILONLY) writes 1 to every stencil bit where
        it passes a less-or-equal depth test, and no color or depth. One `mirrored` has its
