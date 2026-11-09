@@ -488,16 +488,44 @@ static nmo_object_id_t run_steer_object(const nmo_engine_t *engine, const char *
     return 0;
 }
 
+/* Whether name is base or one of the game's copies of it: base followed by
+ * digits only (P_Modul_08_Schaukel, P_Modul_08_Schaukel001, ...). */
+static bool run_steer_copy_of(const char *name, const char *base)
+{
+    size_t n = strlen(base);
+    if (name == NULL || strncmp(name, base, n) != 0) {
+        return false;
+    }
+    for (const char *c = name + n; *c != '\0'; c++) {
+        if (*c < '0' || *c > '9') {
+            return false;
+        }
+    }
+    return true;
+}
+
 /* Whether point i's object to wait for, if it has one, is within its reach
- * of its place, on X and Z. */
+ * of its place, on X and Z.  The game names the copies of a module's moving
+ * part by the order it makes them in, which changes with the sectors live at
+ * the time, so any moving copy of it within reach of the place will do: the
+ * place itself tells the copies apart. */
 static bool run_steer_waited(const nmo_engine_t *engine, const run_steer_t *steer, long i)
 {
     if (steer->waits[i] == NULL) {
         return true;
     }
-    nmo_object_id_t id = nmo_engine_object_named(engine, steer->waits[i], NMO_CID_3DENTITY);
     float m[16];
     const float *at = &steer->wait_at[i * 3];
+    for (int32_t k = 0; k < nmo_engine_physics_object_count(engine); k++) {
+        nmo_engine_physics_object_t object;
+        if (nmo_engine_physics_object_at(engine, k, &object) && !object.fixed &&
+            run_steer_copy_of(nmo_engine_object_name(engine, object.entity), steer->waits[i]) &&
+            nmo_engine_entity_world_matrix(engine, object.entity, m) &&
+            hypotf(m[12] - at[0], m[14] - at[1]) <= at[2]) {
+            return true;
+        }
+    }
+    nmo_object_id_t id = nmo_engine_object_named(engine, steer->waits[i], NMO_CID_3DENTITY);
     return id != 0 && nmo_engine_entity_world_matrix(engine, id, m) &&
            hypotf(m[12] - at[0], m[14] - at[1]) <= at[2];
 }
