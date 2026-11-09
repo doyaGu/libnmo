@@ -1752,7 +1752,8 @@ static void view_kept_end(nmo_view_t *view, int window_w, int window_h)
     glDisable(GL_TEXTURE_2D);
 }
 
-/* A render pass: into the texture its pass names, which then shows what was drawn */
+/* A render pass: into the texture its pass names (a cube map's face of its slot), which then shows
+   what was drawn */
 static void view_draw_pass(nmo_view_t *view, const nmo_engine_pass_t *pass)
 {
     if (view->target_fbo == 0) {
@@ -1769,17 +1770,34 @@ static void view_draw_pass(nmo_view_t *view, const nmo_engine_pass_t *pass)
     if (texture == NULL) {
         return;
     }
-    if (!texture->target || texture->target_w != pass->width || texture->target_h != pass->height) {
+    /* A cube map's pass draws the face of its slot (SetRenderTarget's CubeMapFace) */
+    bool cube = nmo_engine_texture_cube_map(view->engine, pass->texture);
+    GLenum target = cube ? GL_TEXTURE_CUBE_MAP : GL_TEXTURE_2D;
+    if (!texture->target || texture->cube != cube || texture->target_w != pass->width ||
+        texture->target_h != pass->height) {
+        bool kept = texture->cube; /* faces uploaded from the image stay until drawn over */
         texture->target = true;
+        texture->cube = cube;
         texture->empty = false;
         texture->mipmapped = texture->forced = false;
         texture->target_w = pass->width;
         texture->target_h = pass->height;
-        glBindTexture(GL_TEXTURE_2D, texture->name);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, pass->width, pass->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glBindTexture(target, texture->name);
+        for (int face = 0; face < (cube ? 6 : 1); face++) {
+            if (cube && kept) {
+                GLint w = 0, h = 0;
+                glGetTexLevelParameteriv(GL_TEXTURE_CUBE_MAP_POSITIVE_X + (GLenum)face, 0, GL_TEXTURE_WIDTH, &w);
+                glGetTexLevelParameteriv(GL_TEXTURE_CUBE_MAP_POSITIVE_X + (GLenum)face, 0, GL_TEXTURE_HEIGHT, &h);
+                if (w == pass->width && h == pass->height) {
+                    continue;
+                }
+            }
+            glTexImage2D(cube ? GL_TEXTURE_CUBE_MAP_POSITIVE_X + (GLenum)face : GL_TEXTURE_2D, 0, GL_RGBA,
+                         pass->width, pass->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+        }
+        glTexParameteri(target, GL_TEXTURE_MAX_LEVEL, 0);
+        glTexParameteri(target, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     }
     glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, view->target_fbo);
     if (view->target_w != pass->width || view->target_h != pass->height) {
@@ -1792,7 +1810,9 @@ static void view_draw_pass(nmo_view_t *view, const nmo_engine_pass_t *pass)
         glFramebufferRenderbufferEXT(GL_FRAMEBUFFER_EXT, GL_STENCIL_ATTACHMENT_EXT, GL_RENDERBUFFER_EXT,
                                      view->target_depth);
     }
-    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, GL_TEXTURE_2D, texture->name, 0);
+    GLenum attach = cube ? GL_TEXTURE_CUBE_MAP_POSITIVE_X + (GLenum)(pass->slot >= 0 && pass->slot < 6 ? pass->slot : 0)
+                         : GL_TEXTURE_2D;
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, attach, texture->name, 0);
     if (glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT) == GL_FRAMEBUFFER_COMPLETE_EXT) {
         view->view_x = pass->viewport[0];
         view->view_w = pass->viewport[2];
@@ -1802,7 +1822,7 @@ static void view_draw_pass(nmo_view_t *view, const nmo_engine_pass_t *pass)
         view_draw_frame(view, &pass->frame, pass->height);
         view_flip = false;
     }
-    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, GL_TEXTURE_2D, 0, 0);
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, attach, 0, 0);
     glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
 }
 
