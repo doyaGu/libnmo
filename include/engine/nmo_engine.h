@@ -381,6 +381,19 @@ NMO_API int32_t nmo_engine_player_message_count(const nmo_engine_t *engine);
 NMO_API bool nmo_engine_player_message(const nmo_engine_t *engine, int32_t index,
                                        nmo_engine_player_message_t *out);
 
+/*
+ * The lines blocks wrote to the console during the last frame
+ * (CKContext::OutputToConsole), in order; `beep` for OutputToConsoleExBeep.
+ */
+typedef struct nmo_engine_console_line {
+    const char *text;
+    bool beep;
+} nmo_engine_console_line_t;
+
+NMO_API int32_t nmo_engine_console_line_count(const nmo_engine_t *engine);
+NMO_API bool nmo_engine_console_line(const nmo_engine_t *engine, int32_t index,
+                                     nmo_engine_console_line_t *out);
+
 /**
  * Tell the engine the player's window was activated (WM_ACTIVATE): TT Window
  * Activate? reports it once.

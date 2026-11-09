@@ -32,6 +32,7 @@ typedef struct eng_host {
     bool exit_requested; /* TT Exit to System posted TT_PLAYER_COMMAND_EXIT_TO_SYSTEM */
     bool window_activated; /* the player saw WM_ACTIVATE (InterfaceManager's flag) */
     ENG_VEC(nmo_engine_player_message_t) messages; /* posted this frame; texts are owned */
+    ENG_VEC(nmo_engine_console_line_t) console;    /* written this frame; texts are owned */
 } eng_host_t;
 
 /* core/host.c */
@@ -51,8 +52,10 @@ bool eng_registry_has_key(nmo_engine_t *engine, const char *section);
 /* PostMessage to the player's window; `text` is copied */
 void eng_post_player_message(nmo_engine_t *engine, uint32_t message, int32_t param, int32_t param2,
                              const char *text);
-/* The messages of the frame before go */
+/* The messages and console lines of the frame before go */
 void eng_clear_player_messages(nmo_engine_t *engine);
+/* CKContext::OutputToConsole(Ex(Beep)): a console line; `text` is copied */
+void eng_console(nmo_engine_t *engine, const char *text, bool beep);
 /* The environment variable of that name; NULL when the host set none */
 eng_registry_value_t *eng_environment_find(nmo_engine_t *engine, const char *name);
 

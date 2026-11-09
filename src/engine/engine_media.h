@@ -76,6 +76,7 @@ typedef struct eng_texture {
 typedef struct eng_sound_manager {
     bool set;                    /* false: every factor 1 */
     float distance_factor, doppler_factor, global_gain;
+    float rolloff_factor;        /* CK_LISTENERSETTINGS' roll off; the engine attenuates no sound by it */
     nmo_object_id_t listener;    /* 0: the render context's camera */
 } eng_sound_manager_t;
 

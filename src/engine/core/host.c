@@ -22,6 +22,9 @@ void eng_free_host(nmo_engine_t *engine)
     free(engine->host.messages.data);
     engine->host.messages.data = NULL;
     engine->host.messages.capacity = 0;
+    free(engine->host.console.data);
+    engine->host.console.data = NULL;
+    engine->host.console.capacity = 0;
     for (size_t i = 0; i < engine->host.registry.count; i++) {
         free(engine->host.registry.data[i].section);
         free(engine->host.registry.data[i].name);
@@ -325,6 +328,37 @@ void eng_clear_player_messages(nmo_engine_t *engine)
         free((char *)engine->host.messages.data[i].text);
     }
     engine->host.messages.count = 0;
+    for (size_t i = 0; i < engine->host.console.count; i++) {
+        free((char *)engine->host.console.data[i].text);
+    }
+    engine->host.console.count = 0;
+}
+
+void eng_console(nmo_engine_t *engine, const char *text, bool beep)
+{
+    char *copy = eng_text_copy(text != NULL ? text : "", text != NULL ? strlen(text) : 0);
+    nmo_engine_console_line_t *slot = NULL;
+    if (copy == NULL || !ENG_VEC_PUSH(engine->host.console, slot)) {
+        free(copy);
+        return;
+    }
+    *slot = (nmo_engine_console_line_t){copy, beep};
+}
+
+int32_t nmo_engine_console_line_count(const nmo_engine_t *engine)
+{
+    return engine != NULL ? (int32_t)engine->host.console.count : 0;
+}
+
+bool nmo_engine_console_line(const nmo_engine_t *engine, int32_t index, nmo_engine_console_line_t *out)
+{
+    if (engine == NULL || index < 0 || (size_t)index >= engine->host.console.count) {
+        return false;
+    }
+    if (out != NULL) {
+        *out = engine->host.console.data[index];
+    }
+    return true;
 }
 
 int32_t nmo_engine_player_message_count(const nmo_engine_t *engine)

@@ -173,6 +173,7 @@ eng_sound_manager_t *eng_sound_manager(nmo_engine_t *engine)
     if (!manager->set) {
         manager->set = true;
         manager->distance_factor = manager->doppler_factor = manager->global_gain = 1.0f;
+        manager->rolloff_factor = 1.0f;
     }
     return manager;
 }
