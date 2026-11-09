@@ -1,6 +1,7 @@
 #include "engine_fixture.h"
 #include "core/nmo_arena.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_material_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_defs.h"
@@ -10,6 +11,7 @@
 #include "../../src/engine/engine_internal.h"
 
 #include <math.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -25,6 +27,11 @@
 #define GUID_VERTEX_TRANSLATE NMO_GUID(0x08032ebc, 0x791960c9)
 #define GUID_MESH_MORPHER NMO_GUID(0xff0d010a, 0x001d010a)
 #define GUID_MULTI_MESH_MORPHER NMO_GUID(0x53da65c4, 0x6f0f194a)
+#define GUID_SET_VERTEX_COUNT NMO_GUID(0x4bf4352e, 0x6c786db2)
+#define GUID_SET_FACE_COUNT NMO_GUID(0x15a14196, 0x69530840)
+#define GUID_SKIN_JOIN NMO_GUID(0x38677c72, 0x4f4715cb)
+#define GUID_PRECOMPUTE_LIGHTING NMO_GUID(0x053a5be9, 0x78cc3e15)
+#define GUID_GET_LOD_ATTRIBUTE NMO_GUID(0x62bf39fa, 0x53e264c6)
 
 static nmo_object_id_t started_block(engine_fixture_t *f, nmo_guid_t guid, const char *name)
 {
@@ -412,6 +419,169 @@ TEST(engine_mesh_modifiers, mesh_morpher_shows_a_blended_copy_of_the_start_mesh)
     fixture_end(&source);
 }
 
+TEST(engine_mesh_modifiers, count_blocks_resize_the_target_mesh)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t cut = grid_mesh(&f, "Cut", 3, 0.0f), grown = grid_mesh(&f, "Grown", 2, 0.0f);
+    ASSERT_TRUE(cut != 0 && grown != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t fewer = fixture_block(&f, GUID_SET_VERTEX_COUNT, "Fewer");
+    nmo_object_id_t faces = fixture_block(&f, GUID_SET_FACE_COUNT, "Faces");
+    nmo_object_id_t more = started_block(&f, GUID_SET_VERTEX_COUNT, "More");
+    ASSERT_TRUE(fewer != 0 && faces != 0 && more != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, fewer, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, fewer, 0), BLOCK_IN(&f, faces, 0), 0);
+    fixture_input_int(&f, fixture_target(&f, fewer), (int32_t)cut);
+    fixture_input_int(&f, fixture_target(&f, faces), (int32_t)cut);
+    fixture_input_int(&f, fixture_target(&f, more), (int32_t)grown);
+    fixture_input_int(&f, BLOCK_PIN(&f, fewer, 0), 6);
+    fixture_input_int(&f, BLOCK_PIN(&f, faces, 0), 6);
+    fixture_input_int(&f, BLOCK_PIN(&f, more, 0), 7);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    /* Six vertices drop the four faces of the second row of squares; six faces add two of vertex 0 */
+    nmo_engine_mesh_t out;
+    ASSERT_TRUE(nmo_engine_mesh(f.engine, cut, &out));
+    ASSERT_EQ(6, out.vertex_count);
+    ASSERT_EQ(6, out.face_count);
+    const uint16_t first[6] = {0, 3, 1, 1, 3, 4};
+    for (int k = 0; k < 6; k++) {
+        ASSERT_EQ(first[k], out.indices[k]);
+    }
+    for (int k = 12; k < 18; k++) {
+        ASSERT_EQ(0, out.indices[k]);
+    }
+    ASSERT_FLOAT_EQ(2.0f, out.vertices[5].position.x, 0.0f);
+    /* More vertices: the new ones zeroed and white */
+    ASSERT_TRUE(nmo_engine_mesh(f.engine, grown, &out));
+    ASSERT_EQ(7, out.vertex_count);
+    ASSERT_EQ(2, out.face_count);
+    ASSERT_FLOAT_EQ(1.0f, out.vertices[3].position.x, 0.0f);
+    ASSERT_FLOAT_EQ(0.0f, out.vertices[6].position.x, 0.0f);
+    fixture_end(&f);
+}
+
+TEST(engine_mesh_modifiers, dissociating_faces_gives_each_corner_a_vertex)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t mesh = grid_mesh(&f, "Mesh", 3, 0.0f);
+    ASSERT_TRUE(mesh != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    fixture_commit(&f, NULL);
+    ASSERT_TRUE(eng_mesh_dissociate_faces(f.engine, mesh));
+    nmo_engine_mesh_t out;
+    ASSERT_TRUE(nmo_engine_mesh(f.engine, mesh, &out));
+    ASSERT_EQ(24, out.vertex_count);
+    ASSERT_EQ(8, out.face_count);
+    for (int k = 0; k < 24; k++) {
+        ASSERT_EQ(k, out.indices[k]);
+    }
+    /* face 1 was (1, 3, 4) */
+    ASSERT_FLOAT_EQ(1.0f, out.vertices[3].position.x, 0.0f);
+    ASSERT_FLOAT_EQ(0.0f, out.vertices[4].position.x, 0.0f);
+    ASSERT_FLOAT_EQ(1.0f, out.vertices[4].position.z, 0.0f);
+    fixture_end(&f);
+}
+
+TEST(engine_mesh_modifiers, skin_join_makes_the_owner_follow_the_joined_vertices)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t skin_mesh = grid_mesh(&f, "Skin", 2, 0.0f), bone_mesh = grid_mesh(&f, "Bone", 2, 0.0f);
+    nmo_object_id_t skin = object_with(&f, "Skin", skin_mesh, 0.0f, 0.0f, 0.0f);
+    nmo_object_id_t bone = object_with(&f, "Bone", bone_mesh, 0.0f, 0.0f, 0.0f);
+    ASSERT_TRUE(skin != 0 && bone != 0);
+    f.owner_id = skin; /* the block joins its owner */
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t join = started_block(&f, GUID_SKIN_JOIN, "Join");
+    ASSERT_TRUE(join != 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, join, 1), (int32_t)bone);
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_notify_behavior_edited(f.engine, join, NULL));
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    const float moved[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 5, 0, 1};
+    ASSERT_EQ(NMO_OK, nmo_engine_set_entity_world_matrix(f.engine, bone, moved, false));
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    /* Each skin vertex took the bone vertex it was on, where the bone is now */
+    ASSERT_FLOAT_EQ(5.0f, vertex_of(&f, skin_mesh, 0).y, 1e-6f);
+    ASSERT_FLOAT_EQ(1.0f, vertex_of(&f, skin_mesh, 3).x, 1e-6f);
+    ASSERT_FLOAT_EQ(5.0f, vertex_of(&f, skin_mesh, 3).y, 1e-6f);
+    fixture_end(&f);
+}
+
+TEST(engine_mesh_modifiers, precompute_lighting_makes_the_mesh_prelit)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t mesh = grid_mesh(&f, "Mesh", 2, 0.0f);
+    nmo_object_id_t lit = object_with(&f, "Lit", mesh, 0.0f, 0.0f, 0.0f);
+    nmo_object_id_t material = fixture_create(&f, NMO_CID_MATERIAL, "Material");
+    ASSERT_TRUE(mesh != 0 && lit != 0 && material != 0);
+    nmo_material_state_t *colors = (nmo_material_state_t *)fixture_state(&f, material);
+    ASSERT_NOT_NULL(colors);
+    colors->diffuse_color = 0xFFFFFFFFu;
+    colors->ambient_color = 0xFF000000u;
+    colors->specular_color = 0xFF000000u;
+    colors->emissive_color = 0xFF336699u;
+    ((nmo_mesh_state_t *)fixture_state(&f, mesh))->material_groups[0].material = nmo_ref_from_id(material);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t precompute = started_block(&f, GUID_PRECOMPUTE_LIGHTING, "Precompute");
+    ASSERT_TRUE(precompute != 0);
+    fixture_input_int(&f, fixture_target(&f, precompute), (int32_t)lit);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    /* No light: the emissive color, the diffuse alpha */
+    nmo_engine_mesh_t out;
+    ASSERT_TRUE(nmo_engine_mesh(f.engine, mesh, &out));
+    ASSERT_TRUE(out.prelit);
+    ASSERT_NOT_NULL(out.colors);
+    uint32_t c = out.colors[2];
+    ASSERT_EQ(0xFFu, (c >> 24) & 0xFFu);
+    ASSERT_TRUE(abs((int)((c >> 16) & 0xFFu) - 0x33) <= 1);
+    ASSERT_TRUE(abs((int)((c >> 8) & 0xFFu) - 0x66) <= 1);
+    ASSERT_TRUE(abs((int)(c & 0xFFu) - 0x99) <= 1);
+    fixture_end(&f);
+}
+
+/* (LOD Manager Options has no test: its "Modify Parameters" setting has a type the edit layer
+   does not know, so it cannot make the block) */
+TEST(engine_mesh_modifiers, get_lod_attribute_without_the_attribute_is_not_found)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t mesh = grid_mesh(&f, "Mesh", 2, 0.0f);
+    nmo_object_id_t object = object_with(&f, "Object", mesh, 0.0f, 0.0f, 0.0f);
+    ASSERT_TRUE(object != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t get = started_block(&f, GUID_GET_LOD_ATTRIBUTE, "Get");
+    nmo_object_id_t missing = fixture_block(&f, GUID_SET_VERTEX_COUNT, "Missing"); /* any block, run by Not Found */
+    ASSERT_TRUE(get != 0 && missing != 0);
+    fixture_link(&f, BLOCK_OUT(&f, get, 1), BLOCK_IN(&f, missing, 0), 0);
+    fixture_input_int(&f, fixture_target(&f, get), (int32_t)object);
+    fixture_input_int(&f, fixture_target(&f, missing), (int32_t)mesh);
+    fixture_input_int(&f, BLOCK_PIN(&f, missing, 0), 4);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1u, runs(&f, missing));
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_mesh_modifiers, entity_mesh_blocks_keep_its_meshes);
 REGISTER_TEST(engine_mesh_modifiers, change_referential_moves_the_vertices_into_the_referential);
@@ -419,4 +589,9 @@ REGISTER_TEST(engine_mesh_modifiers, face_and_vertex_blocks_edit_the_target_mesh
 REGISTER_TEST(engine_mesh_modifiers, deformers_move_the_current_mesh_vertices);
 REGISTER_TEST(engine_mesh_modifiers, multi_mesh_morpher_blends_meshes_into_the_current_one);
 REGISTER_TEST(engine_mesh_modifiers, mesh_morpher_shows_a_blended_copy_of_the_start_mesh);
+REGISTER_TEST(engine_mesh_modifiers, count_blocks_resize_the_target_mesh);
+REGISTER_TEST(engine_mesh_modifiers, dissociating_faces_gives_each_corner_a_vertex);
+REGISTER_TEST(engine_mesh_modifiers, skin_join_makes_the_owner_follow_the_joined_vertices);
+REGISTER_TEST(engine_mesh_modifiers, precompute_lighting_makes_the_mesh_prelit);
+REGISTER_TEST(engine_mesh_modifiers, get_lod_attribute_without_the_attribute_is_not_found);
 TEST_MAIN_END()

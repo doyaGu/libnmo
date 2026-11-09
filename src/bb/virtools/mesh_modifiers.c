@@ -1,7 +1,6 @@
 /**
  * @file mesh_modifiers.c
- * @brief Ports of the MeshModifiers building blocks that keep a mesh's vertex
- *        and face counts.
+ * @brief Ports of the MeshModifiers building blocks and the LOD manager.
  *
  * Each function does what the block's function in MeshModifiers.dll does.
  * Ballance ships no MeshModifiers.dll, so the reference is the Ballanced
@@ -16,6 +15,8 @@
 
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
+#include "object/builtin/nmo_parameterin_schemas.h"
+#include "object/builtin/nmo_patchmesh_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_defs.h"
 #include "type/nmo_object_guids.h"
@@ -34,31 +35,6 @@
  * The entities' meshes (CK3dEntity::m_Meshes)
  * ============================================================================ */
 
-typedef struct mm_entity_meshes {
-    nmo_object_id_t entity;
-    ENG_VEC(nmo_object_id_t) meshes;
-} mm_entity_meshes_t;
-
-typedef struct mm_state {
-    ENG_VEC(mm_entity_meshes_t) entities;
-} mm_state_t;
-
-static void mm_destroy(nmo_engine_t *engine, void *state)
-{
-    (void)engine;
-    mm_state_t *mm = (mm_state_t *)state;
-    for (size_t i = 0; i < mm->entities.count; i++) {
-        free(mm->entities.data[i].meshes.data);
-    }
-    free(mm->entities.data);
-}
-
-static const eng_manager_desc_t mm_manager = {
-    .name = "MeshModifiers Meshes",
-    .state_size = sizeof(mm_state_t),
-    .destroy = mm_destroy,
-};
-
 static const nmo_3dentity_state_t *entity_state(nmo_engine_t *engine, nmo_object_id_t id)
 {
     nmo_object_t *object = id != 0 ? eng_find_object(engine, id) : NULL;
@@ -73,49 +49,6 @@ static nmo_object_id_t current_mesh(nmo_engine_t *engine, nmo_object_id_t entity
     return state != NULL ? eng_object_ref(engine, entity, &state->current_mesh) : 0;
 }
 
-/* The entity's meshes, its file's at first; NULL for no 3D entity or out of memory */
-static mm_entity_meshes_t *entity_meshes(nmo_engine_t *engine, nmo_object_id_t entity)
-{
-    mm_state_t *mm = (mm_state_t *)eng_manager_state(engine, &mm_manager);
-    const nmo_3dentity_state_t *state = entity_state(engine, entity);
-    if (mm == NULL || state == NULL) {
-        return NULL;
-    }
-    for (size_t i = 0; i < mm->entities.count; i++) {
-        if (mm->entities.data[i].entity == entity) {
-            return &mm->entities.data[i];
-        }
-    }
-    mm_entity_meshes_t *slot = NULL;
-    if (!ENG_VEC_PUSH(mm->entities, slot)) {
-        return NULL;
-    }
-    *slot = (mm_entity_meshes_t){entity, {0}};
-    for (uint32_t i = 0; i < state->mesh_count; i++) {
-        nmo_object_id_t mesh = eng_object_ref(engine, entity, &state->mesh_ids[i]);
-        nmo_object_id_t *item = NULL;
-        if (mesh != 0 && ENG_VEC_PUSH(slot->meshes, item)) {
-            *item = mesh;
-        }
-    }
-    return slot;
-}
-
-/* CK3dEntity::AddMesh: once */
-static void add_mesh(nmo_engine_t *engine, nmo_object_id_t entity, nmo_object_id_t mesh)
-{
-    mm_entity_meshes_t *list = mesh != 0 ? entity_meshes(engine, entity) : NULL;
-    for (size_t i = 0; list != NULL && i < list->meshes.count; i++) {
-        if (list->meshes.data[i] == mesh) {
-            return;
-        }
-    }
-    nmo_object_id_t *item = NULL;
-    if (list != NULL && ENG_VEC_PUSH(list->meshes, item)) {
-        *item = mesh;
-    }
-}
-
 /* CK3dEntity::SetCurrentMesh (a mesh of the entity's document; see eng_entity_set_current_mesh) */
 static void set_current_mesh(nmo_engine_t *engine, nmo_object_id_t entity, nmo_object_id_t mesh, bool add)
 {
@@ -123,7 +56,7 @@ static void set_current_mesh(nmo_engine_t *engine, nmo_object_id_t entity, nmo_o
         return;
     }
     if (eng_entity_set_current_mesh(engine, entity, mesh) && mesh != 0 && add) {
-        add_mesh(engine, entity, mesh);
+        eng_entity_add_mesh(engine, entity, mesh);
     }
 }
 
@@ -281,7 +214,7 @@ static int bb_add_mesh(blk_t *b)
     if (entity_state(b->engine, entity) == NULL) {
         return NMO_ENGINE_BR_OWNERERROR;
     }
-    add_mesh(b->engine, entity, nmo_engine_block_get_input_object(b, 0));
+    eng_entity_add_mesh(b->engine, entity, nmo_engine_block_get_input_object(b, 0));
     return NMO_ENGINE_BR_OK;
 }
 
@@ -296,20 +229,7 @@ static int bb_remove_mesh(blk_t *b)
     if (entity_state(engine, entity) == NULL) {
         return NMO_ENGINE_BR_OWNERERROR;
     }
-    nmo_object_id_t mesh = nmo_engine_block_get_input_object(b, 0);
-    mm_entity_meshes_t *list = mesh != 0 ? entity_meshes(engine, entity) : NULL;
-    for (size_t i = 0; list != NULL && i < list->meshes.count; i++) {
-        if (list->meshes.data[i] != mesh) {
-            continue;
-        }
-        memmove(&list->meshes.data[i], &list->meshes.data[i + 1],
-                (list->meshes.count - i - 1) * sizeof(nmo_object_id_t));
-        list->meshes.count--;
-        if (current_mesh(engine, entity) == mesh) {
-            set_current_mesh(engine, entity, list->meshes.count > 0 ? list->meshes.data[0] : 0, false);
-        }
-        break;
-    }
+    eng_entity_remove_mesh(engine, entity, nmo_engine_block_get_input_object(b, 0));
     return NMO_ENGINE_BR_OK;
 }
 
@@ -344,10 +264,10 @@ static int bb_change_referential(blk_t *b)
     } else {
         change = entity->world;
     }
-    mm_entity_meshes_t *list = entity_meshes(engine, id);
-    for (size_t i = 0; list != NULL && i < list->meshes.count; i++) {
-        eng_mesh_copy_t *copy = mesh_state(engine, list->meshes.data[i]) != NULL
-                                    ? eng_mesh_copy(engine, list->meshes.data[i]) : NULL;
+    int32_t meshes = eng_entity_mesh_count(engine, id);
+    for (int32_t i = 0; i < meshes; i++) {
+        nmo_object_id_t mesh = eng_entity_mesh_at(engine, id, i);
+        eng_mesh_copy_t *copy = mesh_state(engine, mesh) != NULL ? eng_mesh_copy(engine, mesh) : NULL;
         uint32_t count = copy != NULL ? vertex_count(engine, copy->mesh) : 0;
         for (uint32_t v = 0; v < count; v++) {
             eng_vector_t p = position_of(&copy->vertices[v]), moved;
@@ -1269,6 +1189,1017 @@ static int bb_multi_mesh_morpher(blk_t *b)
     return NMO_ENGINE_BR_OK;
 }
 
+/* ============================================================================
+ * The mesh's counts
+ * ============================================================================ */
+
+/* Set Vertex Count (CKMesh::SetVertexCount): the target mesh's vertex count (100 without a value). */
+static int bb_set_vertex_count(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_object_id_t mesh = nmo_engine_block_target(b);
+    if (mesh_state(b->engine, mesh) == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    eng_mesh_set_vertex_count(b->engine, mesh, get_in_int(b, 0, 100));
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Set Face Count (CKMesh::SetFaceCount): the target mesh's face count (100 without a value). */
+static int bb_set_face_count(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_object_id_t mesh = nmo_engine_block_target(b);
+    if (mesh_state(b->engine, mesh) == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    eng_mesh_set_face_count(b->engine, mesh, get_in_int(b, 0, 100));
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Explode's load callback: no mesh made yet */
+static int cb_explode(blk_t *b, uint32_t message)
+{
+    if (message == NMO_ENGINE_MSG_LOAD) {
+        nmo_object_id_t none = 0;
+        nmo_engine_block_set_local_value(b, 6, &none, sizeof(none));
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/* rand() % 100 / 100, as the DLL takes it */
+static float explode_random(nmo_engine_t *engine)
+{
+    return (float)(eng_random_u15(engine) % 100u) * 0.01f;
+}
+
+/*
+ * Explode: In shows a copy of the owner's mesh ("<name>Explode") whose faces
+ * are apart; each frame (Loop In) the faces fly from the mesh's center by the
+ * curve's growth since the last frame times Max Distance Factor times its
+ * radius (a random part of it each), plus Spreading Direction times their
+ * distance, turning with Rotation, each corner apart with Deformation. Past
+ * the Duration the owner gets its mesh back, is hidden, and Out.
+ */
+static int bb_explode(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t entity = nmo_engine_block_target(b);
+    if (entity_state(engine, entity) == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    int32_t duration = get_in_int(b, 0, 1000);
+    float max_distance = get_in_float(b, 2, 2.0f);
+    size_t curve_size = 0;
+    const void *curve = nmo_engine_block_input_data(b, 1, &curve_size);
+    if (curve == NULL || curve_size == 0) {
+        return NMO_ENGINE_BR_OK;
+    }
+    int32_t elapsed = 0;
+    if (IN_ACTIVE(b, 0)) {
+        nmo_object_id_t made = local_object(b, 6);
+        if (made != 0 && mesh_state(engine, made) != NULL) {
+            nmo_engine_destroy_object(engine, made);
+        }
+        nmo_object_id_t original = current_mesh(engine, entity);
+        nmo_engine_block_set_local_value(b, 5, &original, sizeof(original));
+        const char *name = original != 0 ? nmo_engine_object_name(engine, original) : NULL;
+        size_t length = name != NULL ? strlen(name) : 0;
+        char *explode_name = (char *)malloc(length + sizeof("Explode"));
+        made = 0;
+        if (explode_name != NULL && original != 0) {
+            memcpy(explode_name, name != NULL ? name : "", length);
+            memcpy(explode_name + length, "Explode", sizeof("Explode"));
+            made = eng_mesh_duplicate(engine, entity, original, explode_name);
+        }
+        free(explode_name);
+        if (made != 0) {
+            eng_mesh_dissociate_faces(engine, made);
+        }
+        nmo_engine_block_set_local_value(b, 6, &made, sizeof(made));
+        set_current_mesh(engine, entity, made, true);
+        eng_vector_t center = {0.0f, 0.0f, 0.0f};
+        float radius = 0.0f;
+        eng_mesh_sphere(engine, made, &center, &radius);
+        nmo_engine_block_set_local_value(b, 3, &center, sizeof(center));
+        nmo_engine_block_set_local_value(b, 0, &elapsed, sizeof(elapsed));
+        float last = max_distance * nmo_engine_curve_y(curve, curve_size, 0.0f);
+        nmo_engine_block_set_local_value(b, 1, &last, sizeof(last));
+        IN_OFF(b, 0);
+    } else {
+        IN_OFF(b, 1);
+        elapsed = get_local_int(b, 0, 0);
+    }
+    nmo_object_id_t shown = current_mesh(engine, entity);
+    eng_mesh_copy_t *copy = mesh_state(engine, shown) != NULL ? eng_mesh_copy(engine, shown) : NULL;
+    if (copy == NULL) {
+        return NMO_ENGINE_BR_GENERICERROR;
+    }
+    eng_vector_t direction = get_in_vector(b, 3, 0.0f, 0.0f, 0.0f);
+    bool rotate = get_in_int(b, 4, 1) != 0, deform = get_in_int(b, 5, 0) != 0;
+    elapsed += (int32_t)nmo_engine_block_delta_time(b);
+    nmo_engine_block_set_local_value(b, 0, &elapsed, sizeof(elapsed));
+    float value = max_distance * nmo_engine_curve_y(curve, curve_size, (float)elapsed / (float)duration);
+    float delta = value - get_local_float(b, 1, 0.0f);
+    nmo_engine_block_set_local_value(b, 1, &value, sizeof(value));
+    eng_vector_t center = {0.0f, 0.0f, 0.0f};
+    nmo_engine_block_get_local_value(b, 3, &center, sizeof(center));
+    eng_vector_t sphere_center;
+    float radius = 0.0f;
+    eng_mesh_sphere(engine, shown, &sphere_center, &radius);
+    float effect = max_distance * radius;
+    const nmo_mesh_state_t *state = mesh_state(engine, shown);
+    uint32_t count = state->vertex_count;
+    for (uint32_t f = 0; state->face_vertex_indices != NULL && f < state->face_count; f++) {
+        const uint16_t *k = &state->face_vertex_indices[3u * f];
+        if (k[0] >= count || k[1] >= count || k[2] >= count) {
+            continue;
+        }
+        nmo_vector_t *corner[3] = {&copy->vertices[k[0]].position, &copy->vertices[k[1]].position,
+                                   &copy->vertices[k[2]].position};
+        eng_vector_t from = {corner[0]->x - center.x, corner[0]->y - center.y, corner[0]->z - center.z};
+        float distance = eng_vector_magnitude(&from);
+        eng_vector_normalize(&from);
+        for (int c = 0; c < 3; c++) {
+            if (c > 0 && !deform) {
+                break;
+            }
+            float push = delta * effect * explode_random(engine);
+            eng_vector_t step = {from.x * push + direction.x * distance * 0.1f,
+                                 from.y * push + direction.y * distance * 0.1f,
+                                 from.z * push + direction.z * distance * 0.1f};
+            for (int v = deform ? c : 0; v < (deform ? c + 1 : 3); v++) {
+                corner[v]->x += step.x, corner[v]->y += step.y, corner[v]->z += step.z;
+            }
+        }
+        if (rotate) {
+            eng_vector_t axis = {(corner[0]->x + corner[1]->x + corner[2]->x) * 0.33333333f,
+                                 (corner[0]->y + corner[1]->y + corner[2]->y) * 0.33333333f,
+                                 (corner[0]->z + corner[1]->z + corner[2]->z) * 0.33333333f};
+            eng_matrix_t turn = rotation(axis.x, axis.y, axis.z, delta * 10.0f);
+            for (int v = 0; v < 3; v++) {
+                eng_vector_t p = {corner[v]->x, corner[v]->y, corner[v]->z}, moved;
+                eng_vector_transform(&moved, &turn, &p);
+                *corner[v] = (nmo_vector_t){moved.x, moved.y, moved.z};
+            }
+        }
+    }
+    eng_mesh_vertices_moved(engine, copy, false);
+    if (elapsed < duration) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    nmo_object_id_t original = local_object(b, 5), made = local_object(b, 6);
+    set_current_mesh(engine, entity, original, true);
+    eng_entity_remove_mesh(engine, entity, made);
+    if (made != 0 && mesh_state(engine, made) != NULL) {
+        nmo_engine_destroy_object(engine, made);
+    }
+    eng_show(engine, entity, 0); /* CKHIDE */
+    OUT_ON(b, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* ============================================================================
+ * Skin Join
+ * ============================================================================ */
+
+/* A vertex of the owner's mesh takes vertex `iv` of joined object `ie` (-1: none) */
+typedef struct mm_correspondence {
+    int32_t ie, iv;
+} mm_correspondence_t;
+
+/* The pre render callback: each vertex with a correspondence takes its joined vertex, and
+   normal, into the owner's space; the face normals are built again */
+static void skin_join_render(nmo_engine_t *engine, nmo_object_id_t entity, int32_t node, bool transparent)
+{
+    (void)transparent;
+    const eng_node_t *block = &engine->nodes.data[node];
+    eng_param_t *joined = eng_node_param(engine, block->first_local, block->local_count, 0);
+    eng_param_t *table = eng_node_param(engine, block->first_local, block->local_count, 1);
+    int32_t index = eng_entity_index(engine, entity);
+    nmo_object_id_t mesh = current_mesh(engine, entity);
+    eng_mesh_copy_t *copy = mesh_state(engine, mesh) != NULL ? eng_mesh_copy(engine, mesh) : NULL;
+    if (joined == NULL || table == NULL || table->data == NULL || index < 0 || copy == NULL) {
+        return;
+    }
+    size_t objects = joined->data != NULL ? joined->size / sizeof(nmo_object_id_t) : 0;
+    eng_matrix_t inverse;
+    eng_matrix_inverse(&inverse, &engine->entities.data[index].world);
+    eng_matrix_t *into = objects > 0 ? (eng_matrix_t *)malloc(objects * sizeof(eng_matrix_t)) : NULL;
+    nmo_object_id_t *meshes = objects > 0 ? (nmo_object_id_t *)calloc(objects, sizeof(nmo_object_id_t)) : NULL;
+    for (size_t c = 0; into != NULL && meshes != NULL && c < objects; c++) {
+        nmo_object_id_t object = 0;
+        memcpy(&object, joined->data + c * sizeof(object), sizeof(object));
+        int32_t at = eng_entity_index(engine, object);
+        eng_matrix_identity(&into[c]);
+        if (at >= 0) {
+            eng_matrix_multiply(&into[c], &inverse, &engine->entities.data[at].world);
+            meshes[c] = current_mesh(engine, object);
+        }
+    }
+    uint32_t count = vertex_count(engine, mesh);
+    size_t held = table->size / sizeof(mm_correspondence_t);
+    for (uint32_t i = 0; into != NULL && meshes != NULL && i < count && i < held; i++) {
+        mm_correspondence_t link;
+        memcpy(&link, table->data + i * sizeof(link), sizeof(link));
+        if (link.ie < 0 || (size_t)link.ie >= objects || meshes[link.ie] == 0) {
+            continue;
+        }
+        uint32_t other_count = 0;
+        const nmo_vertex_t *other = mesh_vertices(engine, meshes[link.ie], &other_count);
+        if (other == NULL || link.iv < 0 || (uint32_t)link.iv >= other_count) {
+            continue;
+        }
+        eng_vector_t p = position_of(&other[link.iv]), n = {other[link.iv].normal.x + p.x,
+                                                          other[link.iv].normal.y + p.y,
+                                                          other[link.iv].normal.z + p.z};
+        eng_vector_t at, tip;
+        eng_vector_transform(&at, &into[link.ie], &p);
+        eng_vector_transform(&tip, &into[link.ie], &n);
+        tip.x -= at.x, tip.y -= at.y, tip.z -= at.z;
+        eng_vector_normalize(&tip);
+        set_position(&copy->vertices[i], &at);
+        copy->vertices[i].normal = (nmo_vector_t){tip.x, tip.y, tip.z};
+    }
+    free(into);
+    free(meshes);
+    eng_mesh_build_face_normals(engine, copy);
+    eng_mesh_vertices_moved(engine, copy, false);
+}
+
+static void skin_join_attach(blk_t *b, bool on)
+{
+    nmo_object_id_t owner = nmo_engine_block_owner(b);
+    if (on) {
+        eng_entity_callback_t callback = {owner, ENG_ENTITY_PRE_RENDER, skin_join_render, b->node, false};
+        eng_add_entity_callback(b->engine, &callback);
+    } else {
+        eng_remove_entity_callback(b->engine, owner, ENG_ENTITY_PRE_RENDER, skin_join_render, b->node);
+    }
+}
+
+/*
+ * The edited callback: the joined objects (inputs 1 on), and for each vertex
+ * of the owner's mesh the nearest of their vertices (in the world) within
+ * Threshold.
+ */
+static void skin_join_edited(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    int pins = nmo_engine_block_input_parameter_count(b);
+    nmo_object_id_t *objects = pins > 1 ? (nmo_object_id_t *)malloc((size_t)pins * sizeof(nmo_object_id_t)) : NULL;
+    size_t count = 0, total = 0;
+    for (int a = 1; objects != NULL && a < pins; a++) {
+        nmo_object_id_t object = nmo_engine_block_get_input_object(b, a);
+        if (object != 0 && entity_state(engine, object) != NULL) {
+            objects[count++] = object;
+            total += vertex_count(engine, current_mesh(engine, object));
+        }
+    }
+    nmo_engine_block_set_local_value(b, 0, objects, count * sizeof(nmo_object_id_t));
+    eng_vector_t *positions = total > 0 ? (eng_vector_t *)malloc(total * sizeof(eng_vector_t)) : NULL;
+    mm_correspondence_t *of = total > 0 ? (mm_correspondence_t *)malloc(total * sizeof(mm_correspondence_t)) : NULL;
+    size_t at = 0;
+    for (size_t o = 0; positions != NULL && of != NULL && o < count; o++) {
+        uint32_t vertices = 0;
+        const nmo_vertex_t *v = mesh_vertices(engine, current_mesh(engine, objects[o]), &vertices);
+        int32_t index = eng_entity_index(engine, objects[o]);
+        for (uint32_t i = 0; v != NULL && index >= 0 && i < vertices && at < total; i++, at++) {
+            eng_vector_t p = position_of(&v[i]);
+            eng_vector_transform(&positions[at], &engine->entities.data[index].world, &p);
+            of[at] = (mm_correspondence_t){(int32_t)o, (int32_t)i};
+        }
+    }
+    nmo_object_id_t owner = nmo_engine_block_owner(b);
+    int32_t owner_index = eng_entity_index(engine, owner);
+    uint32_t mine = 0;
+    const nmo_vertex_t *own = mesh_vertices(engine, current_mesh(engine, owner), &mine);
+    mm_correspondence_t *table = own != NULL && mine > 0 && owner_index >= 0
+        ? (mm_correspondence_t *)malloc(mine * sizeof(mm_correspondence_t)) : NULL;
+    float threshold = get_in_float(b, 0, 0.2f);
+    threshold *= threshold;
+    for (uint32_t i = 0; table != NULL && i < mine; i++) {
+        eng_vector_t p = position_of(&own[i]), world;
+        eng_vector_transform(&world, &engine->entities.data[owner_index].world, &p);
+        float best = 66666666.0f;
+        table[i] = (mm_correspondence_t){-1, -1};
+        for (size_t j = 0; positions != NULL && j < at; j++) {
+            float dx = world.x - positions[j].x, dy = world.y - positions[j].y, dz = world.z - positions[j].z;
+            float d = dx * dx + dy * dy + dz * dz;
+            if (d < threshold && d < best) {
+                best = d;
+                table[i] = (mm_correspondence_t){of[j].ie, of[j].iv};
+            }
+        }
+    }
+    if (table != NULL) {
+        nmo_engine_block_set_local_value(b, 1, table, mine * sizeof(mm_correspondence_t));
+    }
+    free(table);
+    free(positions);
+    free(of);
+    free(objects);
+}
+
+/* Skin Join's callbacks: its render callback goes and comes back with the script, and goes
+   for good at reset; edited, the correspondences are made */
+static int cb_skin_join(blk_t *b, uint32_t message)
+{
+    bool joining = get_local_int(b, 2, 0) != 0;
+    if (message == NMO_ENGINE_MSG_EDITED) {
+        skin_join_edited(b);
+    } else if (message == NMO_ENGINE_MSG_RESET && joining) {
+        const int32_t off = 0;
+        nmo_engine_block_set_local_value(b, 2, &off, sizeof(off));
+        skin_join_attach(b, false);
+    } else if ((message == NMO_ENGINE_MSG_PAUSE || message == NMO_ENGINE_MSG_DEACTIVATESCRIPT) && joining) {
+        skin_join_attach(b, false);
+    } else if ((message == NMO_ENGINE_MSG_RESUME || message == NMO_ENGINE_MSG_ACTIVATESCRIPT) && joining) {
+        skin_join_attach(b, true);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * Skin Join: On, the owner's mesh vertices follow the joined objects' vertices
+ * they were matched with (a pre render callback); Off stops. The engine does
+ * not cull, so the DLL's bounding box hand-over for a culled owner is left out.
+ */
+static int bb_skin_join(blk_t *b)
+{
+    if (IN_ACTIVE(b, 0)) {
+        IN_OFF(b, 0);
+        const int32_t on = 1;
+        nmo_engine_block_set_local_value(b, 2, &on, sizeof(on));
+        skin_join_attach(b, true);
+    }
+    if (IN_ACTIVE(b, 1)) {
+        IN_OFF(b, 1);
+        skin_join_attach(b, false);
+        const int32_t off = 0;
+        nmo_engine_block_set_local_value(b, 2, &off, sizeof(off));
+        return NMO_ENGINE_BR_OK;
+    }
+    return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
+}
+
+/* ============================================================================
+ * Precompute Lighting
+ * ============================================================================ */
+
+/* VxPreparedLight: a light as the vertices of the entity see it */
+typedef struct mm_light {
+    int32_t type;
+    eng_vector_t position;  /* in the entity's space (a parallel light's normalized) */
+    eng_vector_t direction; /* toward the light, in the entity's space */
+    eng_vector_t halfway;
+    float range, inv_range;
+    float r, g, b;
+    float att[3];
+    float falloff, cosphi, costheta, inv_theta_minus_phi;
+    bool specular;
+} mm_light_t;
+
+static float mm_dot(const eng_vector_t *a, const eng_vector_t *b)
+{
+    return a->x * b->x + a->y * b->y + a->z * b->z;
+}
+
+/* LightingEngine::LitVertex: the lights' diffuse and specular on a vertex */
+static void lit_vertex(const mm_light_t *lights, size_t count, float power, const eng_vector_t *pos,
+                       const eng_vector_t *normal, float diffuse[3], float specular[3])
+{
+    diffuse[0] = diffuse[1] = diffuse[2] = specular[0] = specular[1] = specular[2] = 0.0f;
+    for (size_t l = 0; l < count; l++) {
+        const mm_light_t *light = &lights[l];
+        float attspot = 1.0f, factor = 0.0f;
+        eng_vector_t direction = {light->position.x - pos->x, light->position.y - pos->y, light->position.z - pos->z};
+        float att = eng_vector_magnitude(&direction);
+        switch (light->type) {
+        case VX_LIGHTPOINT:
+            if (att < light->range) {
+                direction.x /= att, direction.y /= att, direction.z /= att;
+                att = (light->range - att) * light->inv_range;
+                att = light->att[0] + light->att[1] * att + light->att[2] * att * att;
+                factor = att * mm_dot(normal, &direction);
+            }
+            break;
+        case VX_LIGHTSPOT:
+            if (att < light->range) {
+                direction.x /= att, direction.y /= att, direction.z /= att;
+                float rho = mm_dot(&direction, &light->direction);
+                if (rho <= light->cosphi) {
+                    attspot = 0.0f;
+                } else {
+                    float spot = 1.0f;
+                    if (rho <= light->costheta) {
+                        spot = (rho - light->cosphi) * light->inv_theta_minus_phi;
+                        if (light->falloff != 1.0f) {
+                            spot = (float)pow((double)spot, (double)light->falloff);
+                        }
+                    }
+                    att = (light->range - att) * light->inv_range;
+                    attspot = (light->att[0] + light->att[1] * att + light->att[2] * att * att) * spot;
+                    factor = attspot * mm_dot(normal, &direction);
+                }
+            }
+            break;
+        case VX_LIGHTDIREC:
+            factor = mm_dot(normal, &light->direction);
+            break;
+        case VX_LIGHTPARA:
+            factor = mm_dot(normal, &light->position);
+            break;
+        default:
+            break;
+        }
+        if (factor > 0.0f) {
+            diffuse[0] += light->r * factor, diffuse[1] += light->g * factor, diffuse[2] += light->b * factor;
+        }
+        if (light->specular && power != 0.0f) {
+            float s = mm_dot(normal, &light->halfway);
+            if (s > 0.0f && attspot > 0.0f) {
+                if (power != 1.0f) {
+                    s = (float)pow((double)s, (double)power);
+                }
+                s *= attspot;
+                specular[0] += light->r * s, specular[1] += light->g * s, specular[2] += light->b * s;
+            }
+        }
+    }
+}
+
+static float clamp01(float v)
+{
+    return v < 0.0f ? 0.0f : v > 1.0f ? 1.0f : v;
+}
+
+/*
+ * Precompute Lighting: the target's mesh becomes prelit, its vertex colors
+ * what the target lights in the scene (shown, within range) and the scene's
+ * ambient light make of each material group's material (a group without
+ * one is skipped). With Specular, the lights' specular too, the halfway
+ * vector taken from the camera's position as the DLL takes it.
+ */
+static int bb_precompute_lighting(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t entity = nmo_engine_block_target(b);
+    int32_t index = eng_entity_index(engine, entity);
+    if (index < 0) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    nmo_object_id_t mesh = current_mesh(engine, entity);
+    eng_mesh_copy_t *copy = mesh_state(engine, mesh) != NULL ? eng_mesh_copy(engine, mesh) : NULL;
+    if (copy == NULL) {
+        return NMO_ENGINE_BR_OWNERERROR;
+    }
+    bool with_specular = get_in_int(b, 0, 0) != 0;
+    int32_t camera = eng_entity_index(engine, engine->render.camera);
+    eng_vector_t camera_position = camera >= 0 ? eng_entity_position(engine, camera, -1) : (eng_vector_t){0.0f, 0.0f, 0.0f};
+    eng_vector_t center;
+    float radius = 0.0f;
+    eng_mesh_sphere(engine, mesh, &center, &radius);
+    nmo_object_id_t *ids = NULL;
+    size_t total = eng_objects_of_class(engine, NMO_CID_TARGETLIGHT, &ids);
+    mm_light_t *lights = total > 0 ? (mm_light_t *)calloc(total, sizeof(mm_light_t)) : NULL;
+    size_t count = 0;
+    eng_vector_t entity_position = eng_entity_position(engine, index, -1);
+    for (size_t i = 0; lights != NULL && i < total; i++) {
+        const eng_light_t *light = eng_light(engine, ids[i]);
+        int32_t at = eng_entity_index(engine, ids[i]);
+        if (light == NULL || at < 0 || !eng_in_scene(engine, ids[i]) ||
+            !(eng_object_visibility(engine, ids[i]) & CK_OBJECT_VISIBLE)) {
+            continue;
+        }
+        eng_vector_t world = eng_entity_position(engine, at, -1);
+        if (light->type == VX_LIGHTSPOT || light->type == VX_LIGHTPOINT) {
+            eng_vector_t apart = {entity_position.x - world.x, entity_position.y - world.y, entity_position.z - world.z};
+            if (light->range < eng_vector_magnitude(&apart) - radius) {
+                continue;
+            }
+        }
+        mm_light_t *prepared = &lights[count++];
+        prepared->type = light->type;
+        prepared->position = eng_entity_position(engine, at, index);
+        if (light->type == VX_LIGHTPARA) {
+            eng_vector_normalize(&prepared->position);
+        }
+        if (light->type == VX_LIGHTPOINT) {
+            prepared->direction = prepared->position;
+        } else {
+            const eng_matrix_t *m = &engine->entities.data[at].world;
+            eng_vector_t z = {m->m[2][0], m->m[2][1], m->m[2][2]};
+            eng_entity_transform_vector(engine, index, &prepared->direction, &z, -1, true);
+            eng_vector_normalize(&prepared->direction);
+            prepared->direction = (eng_vector_t){-prepared->direction.x, -prepared->direction.y, -prepared->direction.z};
+        }
+        memcpy(prepared->att, light->attenuation, sizeof(prepared->att));
+        prepared->range = light->range;
+        prepared->inv_range = 1.0f / light->range;
+        prepared->r = light->color[0], prepared->g = light->color[1], prepared->b = light->color[2];
+        if (light->type == VX_LIGHTSPOT) {
+            prepared->falloff = light->fall_off_shape;
+            prepared->cosphi = cosf(light->fall_off * 0.5f);
+            prepared->costheta = cosf(light->hot_spot * 0.5f);
+            prepared->inv_theta_minus_phi = 1.0f / (prepared->costheta - prepared->cosphi);
+        }
+        prepared->specular = with_specular && light->specular;
+        if (prepared->specular) {
+            eng_vector_t eye = camera_position;
+            eng_vector_normalize(&eye);
+            prepared->halfway = (eng_vector_t){eye.x + prepared->direction.x, eye.y + prepared->direction.y,
+                                               eye.z + prepared->direction.z};
+            eng_vector_normalize(&prepared->halfway);
+        }
+    }
+    free(ids);
+    nmo_engine_mesh_t shape;
+    uint32_t *colors = eng_mesh_copy_colors(engine, copy);
+    uint32_t vertices = vertex_count(engine, mesh);
+    bool *done = vertices > 0 ? (bool *)malloc(vertices * sizeof(bool)) : NULL;
+    if (colors != NULL && done != NULL && nmo_engine_mesh(engine, mesh, &shape)) {
+        float ambient[4] = {(float)((engine->render.ambient_light >> 16) & 0xFFu) / 255.0f,
+                            (float)((engine->render.ambient_light >> 8) & 0xFFu) / 255.0f,
+                            (float)(engine->render.ambient_light & 0xFFu) / 255.0f, 1.0f};
+        for (int32_t g = 0; g < shape.material_count; g++) {
+            nmo_object_id_t material_id = nmo_engine_mesh_material(engine, mesh, g);
+            const eng_material_t *material = material_id != 0 ? eng_material(engine, material_id) : NULL;
+            if (material == NULL) {
+                continue;
+            }
+            const nmo_engine_material_t *m = &material->desc;
+            float base[3];
+            for (int c = 0; c < 3; c++) {
+                base[c] = m->ambient[c] * ambient[c] + m->emissive[c];
+            }
+            memset(done, 0, vertices * sizeof(bool));
+            for (int32_t f = 0; f < shape.face_count; f++) {
+                uint32_t group = shape.faces != NULL ? shape.faces[f].material_group_idx : 0;
+                if (nmo_engine_mesh_material(engine, mesh, (int32_t)group) != material_id) {
+                    continue;
+                }
+                for (int k = 0; k < 3; k++) {
+                    uint16_t v = shape.indices[3 * f + k];
+                    if (v >= vertices || done[v]) {
+                        continue;
+                    }
+                    eng_vector_t p = position_of(&copy->vertices[v]);
+                    eng_vector_t n = {copy->vertices[v].normal.x, copy->vertices[v].normal.y, copy->vertices[v].normal.z};
+                    float diffuse[3], specular[3];
+                    lit_vertex(lights, count, m->power, &p, &n, diffuse, specular);
+                    float color[4];
+                    for (int c = 0; c < 3; c++) {
+                        color[c] = clamp01(base[c] + m->diffuse[c] * diffuse[c] + m->specular[c] * specular[c]);
+                    }
+                    color[3] = clamp01(m->diffuse[3]);
+                    colors[v] = vxcolor_to_color(color);
+                    done[v] = true;
+                }
+            }
+        }
+    }
+    free(done);
+    free(lights);
+    if (!copy->prelit) {
+        eng_mesh_set_lit_mode(engine, mesh, 0);
+    }
+    copy->version = ++engine->render.mesh_version;
+    return NMO_ENGINE_BR_OK;
+}
+
+/* ============================================================================
+ * Patch and progressive meshes
+ * ============================================================================ */
+
+/* Set PatchMesh Steps (CKPatchMesh::SetIterationCount): the target patch mesh's, or old
+   versions' target 3D object's current one; nothing for another mesh. The engine draws patch
+   meshes as their file has them. */
+static int bb_set_patch_mesh_steps(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t target = nmo_engine_block_target(b);
+    if (entity_state(engine, target) != NULL) {
+        target = current_mesh(engine, target);
+    }
+    nmo_object_t *object = target != 0 ? eng_find_object(engine, target) : NULL;
+    nmo_patchmesh_state_t *patch = object != NULL && nmo_object_get_class_id(object) == NMO_CID_PATCHMESH
+        ? (nmo_patchmesh_state_t *)nmo_object_get_state(object) : NULL;
+    if (patch != NULL) {
+        patch->iteration_count = get_in_int(b, 0, 1);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Set Progressive Mesh Options (CreatePM / DestroyPM, EnablePMGeoMorph, SetPMGeoMorphStep): the
+   target mesh's progressive mesh flags; the engine renders every face either way. */
+static int bb_set_progressive_mesh_options(blk_t *b)
+{
+    nmo_mesh_state_t *state = mesh_state(b->engine, nmo_engine_block_target(b));
+    if (state == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    state->has_progressive_mesh = get_in_int(b, 0, 1) != 0;
+    state->pm_morph_enabled = get_in_int(b, 1, 0) != 0;
+    state->pm_morph_step = get_in_int(b, 2, 0);
+    return NMO_ENGINE_BR_OK;
+}
+
+/* CKParameterIn::IsEnabled: the input was not disabled (a "Modify Parameters" setting) */
+static bool input_enabled(blk_t *b, int pos)
+{
+    const eng_node_t *node = block_node(b);
+    eng_param_t *pin = eng_node_param(b->engine, node->first_pin, node->pin_count, (uint32_t)pos);
+    nmo_object_t *object = pin != NULL ? eng_find_object(b->engine, pin->id) : NULL;
+    const nmo_parameterin_state_t *state = object != NULL && nmo_object_get_class_id(object) == NMO_CID_PARAMETERIN
+        ? (const nmo_parameterin_state_t *)nmo_object_get_state(object) : NULL;
+    return state == NULL || !state->is_disabled;
+}
+
+/* ============================================================================
+ * The LOD manager (LODManager)
+ * ============================================================================ */
+
+enum { LOD_ALPHA = 1, LOD_MULTI_MESH = 2, LOD_ANIMATION = 4, LOD_PATCH_MESH = 8 };
+
+/* LODOptions as the "LOD Options" parameter holds it */
+typedef struct lod_options {
+    int32_t flags;
+    float screen_mag, screen_min;
+    float faces_mag, faces_min;
+    float alpha_screen_mag, alpha_screen_min;
+} lod_options_t;
+
+/* A LOD entity faded this frame: its draws from `first` go alpha blended at `alpha`; a hidden
+   one gets `mesh` back after its render */
+typedef struct lod_fade {
+    nmo_object_id_t entity;
+    size_t first;
+    float alpha;
+    nmo_object_id_t mesh;
+} lod_fade_t;
+
+typedef struct lod_state {
+    bool active, build_normals, played;
+    float factor;
+    ENG_VEC(nmo_object_id_t) entities; /* the entities with the render callbacks */
+    ENG_VEC(lod_fade_t) fades;
+} lod_state_t;
+
+static void lod_destroy(nmo_engine_t *engine, void *state)
+{
+    (void)engine;
+    lod_state_t *lod = (lod_state_t *)state;
+    free(lod->entities.data);
+    free(lod->fades.data);
+}
+
+static void lod_pre_process(nmo_engine_t *engine, void *state);
+static void lod_reset(nmo_engine_t *engine, void *state);
+
+static const eng_manager_desc_t lod_manager = {
+    .name = "LOD (Level Of Detail)",
+    .state_size = sizeof(lod_state_t),
+    .destroy = lod_destroy,
+    .pre_process = lod_pre_process,
+    .reset = lod_reset,
+};
+
+static int32_t lod_attribute(const nmo_engine_t *engine)
+{
+    for (size_t t = 0; t < engine->attributes.types.count; t++) {
+        const eng_attribute_type_t *type = &engine->attributes.types.data[t];
+        if (type->present && type->name != NULL && strcmp(type->name, "LOD Object") == 0) {
+            return (int32_t)t;
+        }
+    }
+    return -1;
+}
+
+/* GetLOD: the entity's LOD options; NULL without the attribute */
+static lod_options_t *lod_options(nmo_engine_t *engine, nmo_object_id_t entity)
+{
+    eng_attribute_t *attribute = eng_attribute_find(engine, entity, lod_attribute(engine));
+    if (attribute == NULL) {
+        return NULL;
+    }
+    if (attribute->value.size < sizeof(lod_options_t) || attribute->value.data == NULL) {
+        /* LODOptionsParameterCreator's defaults */
+        const lod_options_t initial = {0, 0.4f, 0.01f, 1.0f, 0.02f, 0.1f, 0.05f};
+        if (!eng_param_resize(&attribute->value, sizeof(lod_options_t))) {
+            return NULL;
+        }
+        memcpy(attribute->value.data, &initial, sizeof(initial));
+    }
+    return (lod_options_t *)attribute->value.data;
+}
+
+/* SetObjectLOD: the mesh of the nearest face count above the proportion (Multiple Meshes),
+   the character's animation LOD, the fade (Alpha); patch and progressive meshes keep their
+   faces in the engine */
+static void lod_set_object(nmo_engine_t *engine, lod_state_t *lod, nmo_object_id_t entity, float faces,
+                           float alpha, const lod_options_t *options)
+{
+    if (options->flags & LOD_MULTI_MESH) {
+        int32_t count = eng_entity_mesh_count(engine, entity), most = -1;
+        for (int32_t i = 0; i < count; i++) {
+            const nmo_mesh_state_t *state = mesh_state(engine, eng_entity_mesh_at(engine, entity, i));
+            int32_t n = state != NULL ? (int32_t)state->face_count : 0;
+            most = n > most ? n : most;
+        }
+        if (count >= 2) {
+            int32_t wanted = (int32_t)((float)most * faces), best = most;
+            wanted = wanted > most ? most : wanted;
+            nmo_object_id_t chosen = 0;
+            for (int32_t i = 0; i < count; i++) {
+                nmo_object_id_t mesh = eng_entity_mesh_at(engine, entity, i);
+                const nmo_mesh_state_t *state = mesh_state(engine, mesh);
+                int32_t delta = (state != NULL ? (int32_t)state->face_count : 0) - wanted;
+                if (delta >= 0 && delta < best) {
+                    best = delta;
+                    chosen = mesh;
+                }
+            }
+            if (chosen != 0) {
+                set_current_mesh(engine, entity, chosen, false);
+            }
+        }
+    }
+    nmo_object_t *object = eng_find_object(engine, entity);
+    if ((options->flags & LOD_ANIMATION) && object != NULL && nmo_object_get_class_id(object) == NMO_CID_CHARACTER) {
+        eng_character_set_animation_lod(engine, entity, faces);
+    }
+    nmo_object_id_t mesh = current_mesh(engine, entity);
+    if (mesh == 0 || !(options->flags & LOD_ALPHA) || alpha >= 1.0f) {
+        return;
+    }
+    lod_fade_t *fade = NULL;
+    if (!ENG_VEC_PUSH(lod->fades, fade)) {
+        return;
+    }
+    *fade = (lod_fade_t){entity, engine->render.draws.count, alpha, 0};
+    if (alpha <= 0.001f) {
+        fade->mesh = mesh; /* not drawn this frame */
+        set_current_mesh(engine, entity, 0, false);
+    }
+}
+
+/* LODPreRender: the share of the screen the entity's box takes picks its faces and alpha */
+static void lod_pre_render(nmo_engine_t *engine, nmo_object_id_t entity, int32_t node, bool transparent)
+{
+    (void)node;
+    (void)transparent;
+    lod_state_t *lod = (lod_state_t *)eng_manager_state(engine, &lod_manager);
+    lod_options_t *options = lod != NULL ? lod_options(engine, entity) : NULL;
+    int32_t index = eng_entity_index(engine, entity), camera = eng_entity_index(engine, engine->render.camera);
+    float fov = 0.0f;
+    if (options == NULL || index < 0 || camera < 0 || !eng_camera_fov(engine, engine->render.camera, &fov)) {
+        return;
+    }
+    eng_vector_t min, max;
+    if (!eng_entity_world_box(engine, index, &min, &max)) {
+        return;
+    }
+    float dx = max.x - min.x, dy = max.y - min.y, dz = max.z - min.z, square = dx * dx + dy * dy + dz * dz;
+    const eng_matrix_t *cam = &engine->entities.data[camera].world, *at = &engine->entities.data[index].world;
+    float z = cam->m[2][0] * (at->m[3][0] - cam->m[3][0]) + cam->m[2][1] * (at->m[3][1] - cam->m[3][1]) +
+              cam->m[2][2] * (at->m[3][2] - cam->m[3][2]);
+    float width = 2.0f * tanf(0.5f * fov), inv_width2 = 1.0f / (width * width);
+    float screen = square / (z * z) * inv_width2, first = screen;
+    float smin = options->screen_min * options->screen_min, smag = options->screen_mag * options->screen_mag;
+    float faces = options->faces_mag, alpha = 1.0f;
+    if (smin < smag) {
+        screen = screen < smin ? smin : screen > smag ? smag : screen;
+        faces = options->faces_min + (screen - smin) / (smag - smin) * (options->faces_mag - options->faces_min);
+    } else if (screen < (smin + smag) * 0.5f) {
+        faces = options->faces_min;
+    }
+    if (options->flags & LOD_ALPHA) {
+        float amin = options->alpha_screen_min * options->alpha_screen_min;
+        float amag = options->alpha_screen_mag * options->alpha_screen_mag, s = first;
+        if (amin < amag) {
+            s = first < amin ? amin : first > amag ? amag : first;
+            alpha = (s - amin) / (amag - amin);
+        } else if (s < (amin + amag) * 0.5f) {
+            alpha = 0.0f;
+        }
+    }
+    lod_set_object(engine, lod, entity, faces * lod->factor, alpha * lod->factor, options);
+}
+
+/* LODPostRender: the entity's draws of this frame fade (the DLL's material alpha), a hidden one
+   gets its mesh back */
+static void lod_post_render(nmo_engine_t *engine, nmo_object_id_t entity, int32_t node, bool transparent)
+{
+    (void)node;
+    (void)transparent;
+    lod_state_t *lod = (lod_state_t *)eng_manager_state(engine, &lod_manager);
+    for (size_t i = 0; lod != NULL && i < lod->fades.count; i++) {
+        lod_fade_t *fade = &lod->fades.data[i];
+        if (fade->entity != entity) {
+            continue;
+        }
+        if (fade->mesh != 0) {
+            set_current_mesh(engine, entity, fade->mesh, false);
+        }
+        for (size_t d = fade->first; d < engine->render.draws.count; d++) {
+            nmo_engine_draw_t *draw = &engine->render.draws.data[d];
+            if (draw->object == entity) {
+                draw->fade = true;
+                draw->fade_alpha = fade->alpha;
+            }
+        }
+        lod->fades.data[i] = lod->fades.data[--lod->fades.count];
+        return;
+    }
+}
+
+static void lod_attach(nmo_engine_t *engine, lod_state_t *lod, nmo_object_id_t entity, bool on)
+{
+    eng_entity_callback_t pre = {entity, ENG_ENTITY_PRE_RENDER, lod_pre_render, -1, false};
+    eng_entity_callback_t post = {entity, ENG_ENTITY_POST_RENDER, lod_post_render, -1, false};
+    if (on) {
+        for (size_t i = 0; i < lod->entities.count; i++) {
+            if (lod->entities.data[i] == entity) {
+                return;
+            }
+        }
+        nmo_object_id_t *slot = NULL;
+        if (ENG_VEC_PUSH(lod->entities, slot)) {
+            *slot = entity;
+            eng_add_entity_callback(engine, &pre);
+            eng_add_entity_callback(engine, &post);
+        }
+        return;
+    }
+    eng_remove_entity_callback(engine, entity, ENG_ENTITY_PRE_RENDER, lod_pre_render, -1);
+    eng_remove_entity_callback(engine, entity, ENG_ENTITY_POST_RENDER, lod_post_render, -1);
+    /* RestoreNormalLOD: the most faces, no fade */
+    lod_options_t *options = lod_options(engine, entity);
+    if (options != NULL) {
+        lod_set_object(engine, lod, entity, options->faces_mag, 1.0f, options);
+    }
+}
+
+/* PreRenderCallbackOfAllLODObjects */
+static void lod_attach_all(nmo_engine_t *engine, lod_state_t *lod, bool on)
+{
+    int32_t type = lod_attribute(engine);
+    if (!on) {
+        for (size_t i = 0; i < lod->entities.count; i++) {
+            lod_attach(engine, lod, lod->entities.data[i], false);
+        }
+        lod->entities.count = 0;
+        return;
+    }
+    for (size_t i = 0; type >= 0 && i < engine->attributes.values.count; i++) {
+        const eng_attribute_t *attribute = &engine->attributes.values.data[i];
+        if (attribute->type == type && eng_entity_index(engine, attribute->object) >= 0) {
+            lod_attach(engine, lod, attribute->object, true);
+        }
+    }
+}
+
+/* ActivateLODManager */
+static void lod_activate(nmo_engine_t *engine, lod_state_t *lod, bool active)
+{
+    if (active != lod->active) {
+        lod_attach_all(engine, lod, active);
+        lod->active = active;
+    }
+}
+
+/* OnCKPlay from a reset: the defaults, then active */
+static void lod_pre_process(nmo_engine_t *engine, void *state)
+{
+    lod_state_t *lod = (lod_state_t *)state;
+    lod->fades.count = 0;
+    if (!lod->played) {
+        lod->played = true;
+        lod->factor = 1.0f;
+        lod->build_normals = false;
+        lod->active = false;
+        lod_activate(engine, lod, true);
+    }
+}
+
+/* OnCKPostReset: not active; the next play activates it again */
+static void lod_reset(nmo_engine_t *engine, void *state)
+{
+    lod_state_t *lod = (lod_state_t *)state;
+    lod_activate(engine, lod, false);
+    lod->played = false;
+}
+
+/* LOD Manager Options: the enabled inputs (Activate, Global LOD Factor, Build Normals For
+   Progressive Meshes) set the manager; the outputs give it. */
+static int bb_lod_manager_options(blk_t *b)
+{
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    nmo_engine_t *engine = b->engine;
+    lod_state_t *lod = (lod_state_t *)eng_manager_state(engine, &lod_manager);
+    if (lod == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    if (nmo_engine_block_input_parameter_count(b) > 0 && input_enabled(b, 0)) {
+        lod_activate(engine, lod, get_in_int(b, 0, 1) != 0);
+    }
+    if (nmo_engine_block_input_parameter_count(b) > 1 && input_enabled(b, 1)) {
+        lod->factor = get_in_float(b, 1, 1.0f);
+    }
+    if (nmo_engine_block_input_parameter_count(b) > 2 && input_enabled(b, 2)) {
+        lod->build_normals = get_in_int(b, 2, 0) != 0;
+    }
+    const int32_t active = lod->active ? 1 : 0, normals = lod->build_normals ? 1 : 0;
+    set_out_int(b, 0, active);
+    set_out_float(b, 1, lod->factor);
+    set_out_int(b, 2, normals);
+    return NMO_ENGINE_BR_OK;
+}
+
+/*
+ * Set LOD Attribute: the target gets the "LOD Object" attribute (the
+ * defaults) when it has none; the enabled inputs set its options (the
+ * percentages as fractions). Nothing when the documents have no such
+ * attribute type.
+ */
+static int bb_set_lod_attribute(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t entity = nmo_engine_block_target(b);
+    lod_state_t *lod = (lod_state_t *)eng_manager_state(engine, &lod_manager);
+    if (entity_state(engine, entity) == NULL || lod == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    IN_OFF(b, 0);
+    OUT_ON(b, 0);
+    if (lod_options(engine, entity) == NULL && nmo_engine_object_set_attribute(engine, entity, lod_attribute(engine)) &&
+        lod->active) {
+        lod_attach(engine, lod, entity, true); /* the attribute callback at run time */
+    }
+    lod_options_t *options = lod_options(engine, entity);
+    if (options == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    const int32_t bits[4] = {LOD_MULTI_MESH, LOD_ANIMATION, LOD_PATCH_MESH, LOD_ALPHA};
+    int pins = nmo_engine_block_input_parameter_count(b);
+    for (int i = 0; i < 4 && i < pins; i++) {
+        if (input_enabled(b, i)) {
+            if (get_in_int(b, i, 0) != 0) {
+                options->flags |= bits[i];
+            } else {
+                options->flags &= ~bits[i];
+            }
+        }
+    }
+    float *values[6] = {&options->screen_mag, &options->screen_min, &options->faces_mag,
+                        &options->faces_min, &options->alpha_screen_mag, &options->alpha_screen_min};
+    const float defaults[6] = {0.4f, 0.01f, 1.0f, 0.03f, 0.1f, 0.05f};
+    for (int i = 0; i < 6 && 4 + i < pins; i++) {
+        if (input_enabled(b, 4 + i)) {
+            *values[i] = get_in_float(b, 4 + i, defaults[i]);
+        }
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
+/* Get LOD Attribute: the target's LOD options (Found), or Not Found. */
+static int bb_get_lod_attribute(blk_t *b)
+{
+    nmo_engine_t *engine = b->engine;
+    nmo_object_id_t entity = nmo_engine_block_target(b);
+    if (entity_state(engine, entity) == NULL || eng_manager_state(engine, &lod_manager) == NULL) {
+        return NMO_ENGINE_BR_OK;
+    }
+    IN_OFF(b, 0);
+    lod_options_t *options = lod_options(engine, entity);
+    if (options == NULL) {
+        OUT_ON(b, 1);
+        return NMO_ENGINE_BR_OK;
+    }
+    OUT_ON(b, 0);
+    const int32_t bits[4] = {LOD_MULTI_MESH, LOD_ANIMATION, LOD_PATCH_MESH, LOD_ALPHA};
+    for (int i = 0; i < 4; i++) {
+        set_out_int(b, i, (options->flags & bits[i]) ? 1 : 0);
+    }
+    const float values[6] = {options->screen_mag, options->screen_min, options->faces_mag,
+                             options->faces_min, options->alpha_screen_mag, options->alpha_screen_min};
+    for (int i = 0; i < 6; i++) {
+        set_out_float(b, 4 + i, values[i]);
+    }
+    return NMO_ENGINE_BR_OK;
+}
+
 static const nmo_engine_block_desc_t eng_mesh_modifier_blocks[] = {
     {NMO_GUID_INIT(0x43890176, 0x58b2244e), "Select Mesh", bb_select_mesh, NULL, NULL},
     {NMO_GUID_INIT(0x7a1d593e, 0x12c5648d), "Add Mesh", bb_add_mesh, NULL, NULL},
@@ -1287,10 +2218,20 @@ static const nmo_engine_block_desc_t eng_mesh_modifier_blocks[] = {
     {NMO_GUID_INIT(0x08032ebc, 0x791960c9), "Vertex Translate", bb_vertex_translate, NULL, NULL},
     {NMO_GUID_INIT(0xff0d010a, 0x001d010a), "Mesh Morpher", bb_mesh_morpher, cb_mesh_morpher, NULL},
     {NMO_GUID_INIT(0x53da65c4, 0x6f0f194a), "Multi Mesh Morpher", bb_multi_mesh_morpher, NULL, NULL},
+    {NMO_GUID_INIT(0x4bf4352e, 0x6c786db2), "Set Vertex Count", bb_set_vertex_count, NULL, NULL},
+    {NMO_GUID_INIT(0x15a14196, 0x69530840), "Set Face Count", bb_set_face_count, NULL, NULL},
+    {NMO_GUID_INIT(0x002d010a, 0x003d010a), "Explode", bb_explode, cb_explode, NULL},
+    {NMO_GUID_INIT(0x38677c72, 0x4f4715cb), "Skin Join", bb_skin_join, cb_skin_join, NULL},
+    {NMO_GUID_INIT(0x053a5be9, 0x78cc3e15), "Precompute Lighting", bb_precompute_lighting, NULL, NULL},
+    {NMO_GUID_INIT(0x50c12830, 0x18033a52), "Set PatchMesh Steps", bb_set_patch_mesh_steps, NULL, NULL},
+    {NMO_GUID_INIT(0x10357830, 0x18099a52), "Set Progressive Mesh Options", bb_set_progressive_mesh_options, NULL, NULL},
+    {NMO_GUID_INIT(0x2b557187, 0x02027baf), "LOD Manager Options", bb_lod_manager_options, NULL, NULL},
+    {NMO_GUID_INIT(0x0d360136, 0x63d0633b), "Set LOD Attribute", bb_set_lod_attribute, NULL, NULL},
+    {NMO_GUID_INIT(0x62bf39fa, 0x53e264c6), "Get LOD Attribute", bb_get_lod_attribute, NULL, NULL},
 };
 
 nmo_status_t eng_register_mesh_modifiers(nmo_engine_t *engine)
 {
-    nmo_status_t status = eng_add_manager(engine, &mm_manager, NULL);
+    nmo_status_t status = eng_add_manager(engine, &lod_manager, NULL);
     return status == NMO_OK ? ENG_REGISTER_BLOCKS(engine, eng_mesh_modifier_blocks) : status;
 }
