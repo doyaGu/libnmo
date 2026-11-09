@@ -116,6 +116,9 @@ typedef struct nmo_engine_draw {
        world[12..14]: all the draws an entity's render callback makes sort where it is. */
     bool fade;
     float fade_alpha;
+    /* A mesh whose material group of `replaced_material` (non zero) draws with
+       `replacing_material` instead (0: the default material): Replace Rendering. */
+    nmo_object_id_t replaced_material, replacing_material;
     bool has_sort_position;
     float sort_position[3];
     /* A 3D draw renders with `stencil` (Planar Reflection's and Planar Shadow's plane masks).

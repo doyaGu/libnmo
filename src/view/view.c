@@ -975,6 +975,9 @@ static void view_draw_mesh(nmo_view_t *view, const nmo_engine_frame_t *frame,
         }
         nmo_engine_material_t material;
         nmo_object_id_t material_id = nmo_engine_mesh_material(view->engine, draw->mesh, g);
+        if (draw->replaced_material != 0 && material_id == draw->replaced_material) {
+            material_id = draw->replacing_material;
+        }
         if (material_id == 0 || !nmo_engine_material(view->engine, material_id, &material)) {
             /* RCKRenderManager's default material: CKMaterial's defaults */
             memset(&material, 0, sizeof(material));
@@ -1065,6 +1068,9 @@ static void view_draw_mesh(nmo_view_t *view, const nmo_engine_frame_t *frame,
     for (int32_t g = 0; folded && g < cached->group_count; g++) {
         nmo_engine_material_t material;
         nmo_object_id_t material_id = nmo_engine_mesh_material(view->engine, draw->mesh, g);
+        if (draw->replaced_material != 0 && material_id == draw->replaced_material) {
+            material_id = draw->replacing_material;
+        }
         if (cached->counts[g] == 0 || material_id == 0 ||
             !nmo_engine_material(view->engine, material_id, &material) || !(material.power > 0.05f)) {
             continue;

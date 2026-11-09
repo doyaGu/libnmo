@@ -304,6 +304,8 @@ void eng_load_2d_entities(nmo_engine_t *engine);
    the children moved along (their STICK flags, or their homogeneous rects); false for no
    2D entity */
 bool eng_2d_set_rect(nmo_engine_t *engine, nmo_object_id_t id, nmo_rect_t rect, bool keep_children);
+/* CK2dEntity::SetHomogeneousRect: the rect in fractions of the parent's (the render context's) */
+bool eng_2d_set_homogeneous_rect(nmo_engine_t *engine, nmo_object_id_t id, nmo_rect_t rect, bool keep_children);
 /* CK2dEntity::SetPosition: the top left corner, in homogeneous coordinates or in pixels
    from `ref`'s (0: the render context's) */
 bool eng_2d_set_position(nmo_engine_t *engine, nmo_object_id_t id, float x, float y, bool homogeneous,

@@ -1893,6 +1893,16 @@ static void eng_2d_set_homogeneous_at(nmo_engine_t *engine, int32_t index, nmo_r
     eng_2d_set_rect_at(engine, index, rect, keep_children);
 }
 
+bool eng_2d_set_homogeneous_rect(nmo_engine_t *engine, nmo_object_id_t id, nmo_rect_t rect, bool keep_children)
+{
+    int32_t at = eng_2d_index(engine, id);
+    if (at < 0) {
+        return false;
+    }
+    eng_2d_set_homogeneous_at(engine, at, rect, keep_children);
+    return true;
+}
+
 bool eng_2d_set_position(nmo_engine_t *engine, nmo_object_id_t id, float x, float y, bool homogeneous,
                          bool keep_children, nmo_object_id_t ref)
 {
