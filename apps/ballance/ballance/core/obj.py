@@ -82,6 +82,9 @@ class Mesh:
         self.lines: list[str] = []
         self.count = 0
         self.material: str | None = None
+        # each distinct corner (point, uv, normal) is written once and shared,
+        # so a mesh's corners can outnumber the 65535 vertices a CKMesh holds
+        self.corners: dict[tuple, int] = {}
 
     def triangle(self, material: str, facing: Vec3, *corners: tuple) -> None:
         a, b, c = (corner[0] for corner in corners)
@@ -97,16 +100,23 @@ class Mesh:
         if material != self.material:
             self.lines.append(f'usemtl {material}')
             self.material = material
+        refs = []
         for corner in corners:
             (x, y, z), (u, v) = corner[0], corner[1]
-            self.lines.append('v ' + ' '.join(map(decimal, (x, y, z))))
-            self.lines.append('vt ' + ' '.join(map(decimal, (u, v))))
-            if len(corner) > 2:
-                self.lines.append('vn ' + ' '.join(map(decimal, corner[2])))
-        refs = [self.count + i for i in (1, 2, 3)]
+            point = 'v ' + ' '.join(map(decimal, (x, y, z)))
+            uv = 'vt ' + ' '.join(map(decimal, (u, v)))
+            normal = 'vn ' + ' '.join(map(decimal, corner[2])) if len(corner) > 2 else None
+            key = (point, uv, normal)
+            if key not in self.corners:
+                self.lines.append(point)
+                self.lines.append(uv)
+                if normal is not None:
+                    self.lines.append(normal)
+                self.count += 1
+                self.corners[key] = self.count
+            refs.append(self.corners[key])
         form = '{0}/{0}/{0}' if len(corners[0]) > 2 else '{0}/{0}'
         self.lines.append('f ' + ' '.join(form.format(r) for r in refs))
-        self.count += 3
 
     def quad(self, material: str, facing: Vec3, *corners: tuple) -> None:
         self.triangle(material, facing, corners[0], corners[1], corners[2])
