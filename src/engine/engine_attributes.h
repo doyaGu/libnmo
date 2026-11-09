@@ -46,5 +46,8 @@ eng_attribute_t *eng_attribute_find(const nmo_engine_t *engine, nmo_object_id_t 
    `holder`): the int its parameter holds in `*out`; false when the field has no parameter */
 bool eng_struct_field(nmo_engine_t *engine, nmo_object_id_t holder, const uint8_t *data,
                       uint32_t size, uint32_t field, int32_t *out);
+/* The same field's whole value (a color's 16 bytes, say): its first `out_size` bytes */
+bool eng_struct_field_bytes(nmo_engine_t *engine, nmo_object_id_t holder, const uint8_t *data,
+                            uint32_t size, uint32_t field, void *out, uint32_t out_size);
 
 #endif /* NMO_ENGINE_ATTRIBUTES_H */

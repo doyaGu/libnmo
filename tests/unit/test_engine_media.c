@@ -1,6 +1,7 @@
 #include "engine_fixture.h"
 #include "../../src/engine/engine_internal.h"
 #include "../../src/engine/engine_transform.h"
+#include "../../src/bb/terratools/terratools.h"
 
 #include "engine/nmo_engine_render.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
@@ -10,6 +11,7 @@
 #include "object/builtin/nmo_sound_schemas.h"
 #include "object/builtin/nmo_texture_schemas.h"
 #include "object/nmo_ref.h"
+#include "type/nmo_param_guids.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -178,6 +180,163 @@ TEST(engine_media, wave_particles_stay_where_they_were_emitted)
     ASSERT_TRUE(quads > 0);
     ASSERT_TRUE(at_origin > 0);
     ASSERT_TRUE(at_origin < quads);
+    fixture_end(&f);
+}
+
+/* The block's local parameter at `pos` */
+static nmo_object_id_t local_of(engine_fixture_t *f, nmo_object_id_t block, size_t pos)
+{
+    const nmo_behavior_state_t *state = (const nmo_behavior_state_t *)fixture_state(f, block);
+    return state != NULL && pos < state->local_parameters.count
+               ? nmo_behavior_ref_array_get_id(&state->local_parameters, pos)
+               : 0;
+}
+
+/* A parameter of `type` holding `size` bytes, made as `class_id` */
+static nmo_object_id_t value_parameter(engine_fixture_t *f, nmo_class_id_t class_id, nmo_guid_t type,
+                                       const void *bytes, uint32_t size)
+{
+    nmo_object_id_t parameter = fixture_create(f, class_id, "Value");
+    nmo_parameter_state_t *state = (nmo_parameter_state_t *)fixture_state(f, parameter);
+    if (state == NULL || nmo_array_alloc(&state->buffer_data, 1, size, NULL) != NMO_OK) {
+        return 0;
+    }
+    state->has_state = true;
+    state->mode = CKPARAM_MODE_BUFFER;
+    state->type_guid = type;
+    memcpy(state->buffer_data.data, bytes, size);
+    return parameter;
+}
+
+/* The attribute `name` of parameter type `type` on `object`, its value `bytes`. After
+   fixture_begin_edit(). */
+static void value_attribute(engine_fixture_t *f, nmo_object_id_t object, const char *name, nmo_guid_t type,
+                            const void *bytes, uint32_t size)
+{
+    nmo_manager_entry_create_options_t options = {.enabled = true, .attribute_type_guid = type,
+        .category = "Particle System Interactors", .has_compatible_class_id = true,
+        .compatible_class_id = NMO_CID_3DENTITY, .has_flags = true, .flags = 0};
+    uint32_t attribute = 0;
+    ASSERT_EQ(NMO_OK, nmo_object_edit_ensure_attribute_manager_entry(nmo_script_edit_workspace_edit(f->tx), name,
+                                                                     &options, &attribute));
+    nmo_object_id_t parameter = value_parameter(f, NMO_CID_PARAMETEROUT, type, bytes, size);
+    ASSERT_TRUE(parameter != 0);
+    ASSERT_EQ(NMO_OK, nmo_beobject_attribute_array_append(&((nmo_beobject_state_t *)fixture_state(f, object))->attributes,
+                                                          parameter, attribute, NULL));
+}
+
+/* A 3D entity at the origin */
+static nmo_object_id_t plain_entity(engine_fixture_t *f, const char *name)
+{
+    nmo_object_id_t id = fixture_create(f, NMO_CID_3DENTITY, name);
+    nmo_3dentity_state_t *state = (nmo_3dentity_state_t *)fixture_state(f, id);
+    if (state != NULL) {
+        state->has_entityndata_chunk = 1;
+        memset(state->world_matrix, 0, sizeof(state->world_matrix));
+        state->world_matrix[0] = state->world_matrix[5] = state->world_matrix[10] = state->world_matrix[15] = 1.0f;
+    }
+    return id;
+}
+
+/* A point particle system on a new emitter at the origin, emitting still particles of weight and
+   surface 1 at every update and managing `interactors`. After fixture_begin_edit(). */
+static nmo_object_id_t still_particles(engine_fixture_t *f, nmo_object_id_t emitter, int32_t interactors)
+{
+    (void)emitter; /* the script's owner, set before the script */
+    nmo_object_id_t ps = fixture_block(f, GUID_POINT_PARTICLES, "Particles");
+    if (ps == 0) {
+        return 0;
+    }
+    fixture_link(f, f->script_in, BLOCK_IN(f, ps, 0), 0);
+    input_float(f, BLOCK_PIN(f, ps, 0), 0.0f);    /* Emission Delay */
+    input_float(f, BLOCK_PIN(f, ps, 4), 0.0f);    /* Speed */
+    input_float(f, BLOCK_PIN(f, ps, 8), 1000.0f); /* Lifespan */
+    input_float(f, BLOCK_PIN(f, ps, 9), 0.0f);
+    fixture_input_int(f, BLOCK_PIN(f, ps, 11), 1); /* Emission */
+    input_float(f, BLOCK_PIN(f, ps, 13), 1.0f);   /* Initial Size */
+    input_float(f, BLOCK_PIN(f, ps, 19), 1.0f);   /* Weight */
+    input_float(f, BLOCK_PIN(f, ps, 21), 1.0f);   /* Surface */
+    const float blue[4] = {0, 0, 1, 1};
+    fixture_input_value(f, BLOCK_PIN(f, ps, 23), blue, sizeof(blue)); /* Initial Color */
+    const int32_t settings[2][2] = {{9, 0}, {12, interactors}}; /* no Variances; Manage Interactors */
+    for (int i = 0; i < 2; i++) {
+        engine_fixture_value_t *setting = &f->values[f->value_count++];
+        setting->param = local_of(f, ps, (size_t)settings[i][0]);
+        memcpy(setting->bytes, &settings[i][1], sizeof(int32_t));
+        setting->size = sizeof(int32_t);
+    }
+    return ps;
+}
+
+TEST(engine_media, gravity_and_global_wind_push_the_particles)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t emitter = plain_entity(&f, "Emitter");
+    nmo_object_id_t field = plain_entity(&f, "Field");
+    ASSERT_TRUE(emitter != 0 && field != 0);
+    f.owner_id = emitter; /* the particles' target */
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    const float gravity = -0.001f, wind = 0.002f;
+    value_attribute(&f, field, "Particle Gravity", CKPGUID_FLOAT, &gravity, sizeof(gravity));
+    value_attribute(&f, field, "Particle Global Wind : Force", CKPGUID_FLOAT, &wind, sizeof(wind));
+    ASSERT_TRUE(still_particles(&f, emitter, 0x003) != 0); /* Gravity, Global Wind */
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 25.0f));
+
+    /* emitted still, then pushed before it moves: down by gravity * weight * 25 ms, along the
+       field's Z by wind * surface * 25 ms, and moved by that for 25 ms */
+    const eng_tt_t *tt = eng_tt(f.engine);
+    ASSERT_EQ(1u, (uint32_t)tt->emitters.count);
+    ASSERT_TRUE(tt->emitters.data[0].particles.count >= 1);
+    const eng_particle_t *p = &tt->emitters.data[0].particles.data[0];
+    ASSERT_FLOAT_EQ(0.0f, p->dir[0], 1e-7f);
+    ASSERT_FLOAT_EQ(-0.025f, p->dir[1], 1e-6f);
+    ASSERT_FLOAT_EQ(0.05f, p->dir[2], 1e-6f);
+    ASSERT_FLOAT_EQ(-0.625f, p->pos[1], 1e-5f);
+    ASSERT_FLOAT_EQ(1.25f, p->pos[2], 1e-5f);
+    fixture_end(&f);
+}
+
+TEST(engine_media, a_mutation_box_brings_size_and_color_to_its_own)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t emitter = plain_entity(&f, "Emitter");
+    nmo_object_id_t box = plain_entity(&f, "Box");
+    ASSERT_TRUE(emitter != 0 && box != 0);
+    f.owner_id = emitter; /* the particles' target */
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    /* Size 2 at 0.01 a ms, red at 0.02 a ms (the structure's fields) */
+    const float size = 2.0f, size_speed = 0.01f, red[4] = {1, 0, 0, 1}, color_speed = 0.02f;
+    const nmo_object_id_t fields[4] = {
+        value_parameter(&f, NMO_CID_PARAMETERLOCAL, CKPGUID_FLOAT, &size, sizeof(size)),
+        value_parameter(&f, NMO_CID_PARAMETERLOCAL, CKPGUID_FLOAT, &size_speed, sizeof(size_speed)),
+        value_parameter(&f, NMO_CID_PARAMETERLOCAL, CKPGUID_COLOR, red, sizeof(red)),
+        value_parameter(&f, NMO_CID_PARAMETERLOCAL, CKPGUID_FLOAT, &color_speed, sizeof(color_speed))};
+    const nmo_object_id_t structure[5] = {fields[0], fields[1], fields[2], fields[3], 0};
+    value_attribute(&f, box, "Particle Mutation Box", CKPGUID_FLOOR, structure, sizeof(structure));
+    ASSERT_TRUE(still_particles(&f, emitter, 0x080) != 0); /* Mutation Box */
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    const eng_vector_t low = {-10, -10, -10}, high = {10, 10, 10};
+    eng_entity_set_user_box(f.engine, eng_entity_index(f.engine, box), &low, &high, true);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 25.0f));
+
+    /* inside the box: size 1 a quarter of the way to 2, blue half way to red, their own
+       evolutions stopped */
+    const eng_tt_t *tt = eng_tt(f.engine);
+    ASSERT_EQ(1u, (uint32_t)tt->emitters.count);
+    ASSERT_TRUE(tt->emitters.data[0].particles.count >= 1);
+    const eng_particle_t *p = &tt->emitters.data[0].particles.data[0];
+    ASSERT_FLOAT_EQ(1.25f, p->size, 1e-5f);
+    ASSERT_FLOAT_EQ(0.0f, p->dsize, 0.0f);
+    ASSERT_FLOAT_EQ(0.5f, p->color[0], 1e-5f);
+    ASSERT_FLOAT_EQ(0.5f, p->color[2], 1e-5f);
+    ASSERT_FLOAT_EQ(1.0f, p->color[3], 1e-5f);
     fixture_end(&f);
 }
 
@@ -972,6 +1131,8 @@ REGISTER_TEST(engine_media, wave_player_ends_after_the_sound_length);
 REGISTER_TEST(engine_media, voices_follow_the_sound_settings_and_instances);
 REGISTER_TEST(engine_media, particle_system_exits_off_once_its_particles_died);
 REGISTER_TEST(engine_media, wave_particles_stay_where_they_were_emitted);
+REGISTER_TEST(engine_media, gravity_and_global_wind_push_the_particles);
+REGISTER_TEST(engine_media, a_mutation_box_brings_size_and_color_to_its_own);
 REGISTER_TEST(engine_media, movie_player_shows_the_movie_frames_over_its_duration);
 REGISTER_TEST(engine_media, movie_texture_shows_the_decoded_frame_of_its_slot);
 REGISTER_TEST(engine_media, transparent_texture_clears_black_without_a_saved_color);

@@ -20,6 +20,8 @@ typedef struct eng_particle {
     int32_t frame;
     float frame_time, dframe_time;
     float dt;             /* the time it last moved by (m_DeltaTime) */
+    float weight;         /* m_Weight: how much gravity and tunnels pull it */
+    float surface;        /* m_Surface: how much the winds and the atmosphere take it */
 } eng_particle_t;
 
 /* A particle system's emitter (ParticleEmitter): its particles, and how they draw */

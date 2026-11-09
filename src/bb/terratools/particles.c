@@ -5,9 +5,11 @@
  * Each function does what the block's function in TT_ParticleSystems_RT.dll
  * does (the reference is the Ballanced source of the blocks, or the DLL where
  * they differ). The emitters keep their particles in the render state and
- * draw them as their render modes do; the interactors and deflectors are
- * not ported, and each emitter has its own random numbers so that particles
- * do not change the gameplay's.
+ * draw them as their render modes do; the interactors (objects with the
+ * Particle System Interactors attributes) act on them as the ParticleManager
+ * does, the deflectors are not ported, and each emitter has its own random
+ * numbers so that particles do not change the gameplay's (the Disruption Box
+ * included, which takes the game's rand() in the DLL).
  */
 
 #include "../bb_sdk.h"
@@ -44,7 +46,23 @@ enum {
     PI_FRAME_COUNT, PI_FRAME_LOOP
 };
 /* Its settings, after the Emitter, Activity and EmissionTime locals */
-enum { PL_RENDER = 4, PL_SRC_BLEND, PL_DEST_BLEND, PL_EVOLUTIONS = 8, PL_VARIANCES };
+enum { PL_RENDER = 4, PL_SRC_BLEND, PL_DEST_BLEND, PL_EVOLUTIONS = 8, PL_VARIANCES, PL_DEFLECTORS, PL_MESSAGE,
+       PL_INTERACTORS };
+/* The inputs the interactors add (Particle.h WEIGHT..SURFACEVARIATION) */
+enum { PI_WEIGHT = 19, PI_WEIGHT_VAR, PI_SURFACE, PI_SURFACE_VAR };
+#define PI_GRAVITY 0x001
+#define PI_GLOBALWIND 0x002
+#define PI_LOCALWIND 0x004
+#define PI_MAGNET 0x008
+#define PI_VORTEX 0x010
+#define PI_DISRUPTIONBOX 0x020
+#define PI_ATMOSPHERE 0x040
+#define PI_MUTATIONBOX 0x080
+#define PI_TUNNEL 0x100
+#define PI_PROJECTOR 0x200
+#define PI_SURFACES (PI_LOCALWIND | PI_GLOBALWIND | PI_ATMOSPHERE)
+#define PV_WEIGHT 0x80
+#define PV_SURFACE 0x100
 #define PE_SIZE 0x1
 #define PE_COLOR 0x2
 #define PE_TEXTURE 0x4
@@ -82,6 +100,9 @@ typedef struct emitter_inputs {
     float start_color[4], start_color_var[4], end_color[4], end_color_var[4];
     int32_t start_frame, start_frame_var, frame_speed, frame_speed_var, frame_count, frame_loop;
     int32_t evolutions, variances, render_mode;
+    int32_t interactors;          /* Manage Interactors (PI_*) */
+    float weight, weight_var;     /* with gravity */
+    float surface, surface_var;   /* with the winds or the atmosphere */
 } emitter_inputs_t;
 
 void eng_free_emitters(nmo_engine_t *engine)
@@ -164,6 +185,20 @@ static void read_inputs(blk_t *b, emitter_inputs_t *in)
     in->frame_speed_var = get_in_int(b, PI_FRAME_SPEED_VAR, 0);
     in->frame_count = get_in_int(b, PI_FRAME_COUNT, 1);
     in->frame_loop = get_in_int(b, PI_FRAME_LOOP, PL_NOLOOP);
+    /* the setting's default names every interactor */
+    in->interactors = get_local_int(b, PL_INTERACTORS, 0x3FF);
+    if (in->interactors & PI_GRAVITY) {
+        in->weight = get_in_float(b, PI_WEIGHT, 0.0f);
+        if (in->variances & PV_WEIGHT) {
+            in->weight_var = get_in_float(b, PI_WEIGHT_VAR, 0.0f);
+        }
+    }
+    if (in->interactors & PI_SURFACES) {
+        in->surface = get_in_float(b, PI_SURFACE, 0.0f);
+        if (in->variances & PV_SURFACE) {
+            in->surface_var = get_in_float(b, PI_SURFACE_VAR, 0.0f);
+        }
+    }
 }
 
 /* The emitter a prototype makes; the other shapes emit as the point one does */
@@ -261,7 +296,13 @@ static void init_particle(eng_emitter_t *e, const emitter_inputs_t *in, eng_part
                                                          ? (float)in->frame_speed_var * emitter_rand(e)
                                                          : 0.0f)
                          : 0.0f;
+    if (in->interactors & PI_GRAVITY) {
+        p->weight = in->weight + (in->variances & PV_WEIGHT ? in->weight_var * emitter_rand(e) : 0.0f);
+    }
     p->dt = 0.01f;
+    if (in->interactors & PI_SURFACES) {
+        p->surface = in->surface + (in->variances & PV_SURFACE ? in->surface_var * emitter_rand(e) : 0.0f);
+    }
 }
 
 /* ParticleEmitter::AddParticles: up to Emission (plus variance) new particles, within Maximum
@@ -355,7 +396,412 @@ static void add_trail(blk_t *b, eng_emitter_t *e, const emitter_inputs_t *in, fl
     e->trail_pos[0] = here.x, e->trail_pos[1] = here.y, e->trail_pos[2] = here.z;
 }
 
-/* ParticleEmitter::UpdateParticles, without the interactors and deflectors: then the emitter's
+/* ---- Interactors (ParticleManager::Manage*) ---- */
+
+/* The attribute type of that name; -1 when the documents have none */
+static int32_t particle_attribute(const nmo_engine_t *engine, const char *name)
+{
+    for (size_t t = 0; t < engine->attributes.types.count; t++) {
+        const eng_attribute_type_t *type = &engine->attributes.types.data[t];
+        if (type->present && type->name != NULL && strcmp(type->name, name) == 0) {
+            return (int32_t)t;
+        }
+    }
+    return -1;
+}
+
+/* GetAttributeParameter()->GetValue of a plain value: its first `size` bytes, zero when short */
+static void attribute_value(const eng_attribute_t *attribute, void *out, size_t size)
+{
+    memset(out, 0, size);
+    if (attribute->has_value && attribute->value.data != NULL) {
+        memcpy(out, attribute->value.data, attribute->value.size < size ? attribute->value.size : size);
+    }
+}
+
+/* A structure attribute's field (its sub-parameter's value) */
+static void attribute_field(nmo_engine_t *engine, const eng_attribute_t *attribute, uint32_t field, void *out,
+                            uint32_t size)
+{
+    memset(out, 0, size);
+    if (attribute->has_value) {
+        eng_struct_field_bytes(engine, attribute->object, attribute->value.data, attribute->value.size, field, out, size);
+    }
+}
+
+/* CK3dEntity::GetBoundingBox(FALSE): a meshless entity's is its position */
+static void world_box(nmo_engine_t *engine, int32_t index, eng_vector_t *min, eng_vector_t *max)
+{
+    if (!eng_entity_world_box(engine, index, min, max)) {
+        *min = *max = eng_entity_position(engine, index, -1);
+    }
+}
+
+static bool boxes_meet(const eng_vector_t *amin, const eng_vector_t *amax, const eng_vector_t *bmin,
+                       const eng_vector_t *bmax)
+{
+    return amin->x <= bmax->x && amax->x >= bmin->x && amin->y <= bmax->y && amax->y >= bmin->y &&
+           amin->z <= bmax->z && amax->z >= bmin->z;
+}
+
+static bool inside_box(const float pos[3], const eng_vector_t *min, const eng_vector_t *max)
+{
+    return pos[0] >= min->x && pos[0] <= max->x && pos[1] >= min->y && pos[1] <= max->y && pos[2] >= min->z &&
+           pos[2] <= max->z;
+}
+
+/* Each object with the interactor's attribute, in the attribute list's order, with its entity */
+#define FOR_EACH_INTERACTOR(engine, type, attribute, at)                                                   \
+    for (size_t a_ = 0; (type) >= 0 && a_ < (engine)->attributes.values.count; a_++)                       \
+        for (const eng_attribute_t *attribute = &(engine)->attributes.values.data[a_]; attribute != NULL; \
+             attribute = NULL)                                                                             \
+            for (int32_t at = attribute->type == (type) ? eng_entity_index((engine), attribute->object) : -1; \
+                 at >= 0; at = -1)
+
+/* Gravity: down Y by the force times each particle's weight */
+static void manage_gravity(nmo_engine_t *engine, eng_emitter_t *e, float dt)
+{
+    int32_t type = particle_attribute(engine, "Particle Gravity");
+    FOR_EACH_INTERACTOR(engine, type, attribute, at) {
+        float g;
+        attribute_value(attribute, &g, sizeof(g));
+        for (size_t i = 0; i < e->particles.count; i++) {
+            eng_particle_t *p = &e->particles.data[i];
+            p->dir[1] = g * p->weight * dt + p->dir[1];
+        }
+    }
+}
+
+/* Atmosphere: the motion slowed by the friction times each particle's surface */
+static void manage_atmosphere(nmo_engine_t *engine, eng_emitter_t *e, float dt)
+{
+    int32_t type = particle_attribute(engine, "Particle Atmosphere");
+    FOR_EACH_INTERACTOR(engine, type, attribute, at) {
+        float f;
+        attribute_value(attribute, &f, sizeof(f));
+        for (size_t i = 0; i < e->particles.count; i++) {
+            eng_particle_t *p = &e->particles.data[i];
+            for (int c = 0; c < 3; c++) {
+                p->dir[c] = p->dir[c] - f * p->dir[c] * dt * p->surface;
+            }
+        }
+    }
+}
+
+/* Global Wind: along the object's Z by the force times each particle's surface */
+static void manage_global_wind(nmo_engine_t *engine, eng_emitter_t *e, float dt)
+{
+    int32_t type = particle_attribute(engine, "Particle Global Wind : Force");
+    FOR_EACH_INTERACTOR(engine, type, attribute, at) {
+        float force;
+        attribute_value(attribute, &force, sizeof(force));
+        eng_vector_t dir;
+        eng_entity_orientation(engine, at, &dir, NULL, NULL, -1);
+        for (size_t i = 0; i < e->particles.count; i++) {
+            eng_particle_t *p = &e->particles.data[i];
+            float k = force * p->surface * dt;
+            p->dir[0] += dir.x * k, p->dir[1] += dir.y * k, p->dir[2] += dir.z * k;
+        }
+    }
+}
+
+/* Local Wind: along the object's Z, in front of it within its radius, the force falling off with
+   the distance by the decay */
+static void manage_local_wind(nmo_engine_t *engine, eng_emitter_t *e, float dt)
+{
+    int32_t type = particle_attribute(engine, "Particle Local Wind : Force/Decay");
+    FOR_EACH_INTERACTOR(engine, type, attribute, at) {
+        float wind[2];
+        attribute_value(attribute, wind, sizeof(wind));
+        eng_vector_t dir;
+        eng_entity_orientation(engine, at, &dir, NULL, NULL, -1);
+        float radius = eng_entity_radius(engine, at);
+        for (size_t i = 0; i < e->particles.count; i++) {
+            eng_particle_t *p = &e->particles.data[i];
+            eng_vector_t local, pos = {p->pos[0], p->pos[1], p->pos[2]};
+            eng_entity_inverse_transform(engine, at, &local, &pos, -1);
+            if (local.z > 0.0f && radius * radius > local.y * local.y + local.x * local.x) {
+                float k = 1.0f / (local.z * wind[1] + 1.0f) * p->surface * wind[0] * dt;
+                p->dir[0] += dir.x * k, p->dir[1] += dir.y * k, p->dir[2] += dir.z * k;
+            }
+        }
+    }
+}
+
+/* Magnet: toward the object (or slowed inside its radius) */
+static void manage_magnet(nmo_engine_t *engine, eng_emitter_t *e, float dt)
+{
+    int32_t type = particle_attribute(engine, "Particle Magnet");
+    FOR_EACH_INTERACTOR(engine, type, attribute, at) {
+        float radius = eng_entity_radius(engine, at);
+        float force;
+        attribute_value(attribute, &force, sizeof(force));
+        eng_vector_t pos = eng_entity_position(engine, at, -1);
+        for (size_t i = 0; i < e->particles.count; i++) {
+            eng_particle_t *p = &e->particles.data[i];
+            float w[3] = {pos.x - p->pos[0] + dt * p->dir[0], pos.y - p->pos[1] + dt * p->dir[1],
+                          pos.z - p->pos[2] + dt * p->dir[2]};
+            float distance = sqrtf(w[2] * w[2] + w[1] * w[1] + w[0] * w[0]);
+            if (distance <= 0.0f) {
+                continue;
+            }
+            if (distance <= radius) {
+                float k = 1.0f / (distance + 1.0f);
+                p->dir[0] *= k, p->dir[1] *= k, p->dir[2] *= k;
+            } else {
+                float inv = 1.0f / (distance * distance);
+                for (int c = 0; c < 3; c++) {
+                    p->dir[c] = inv * w[c] * force * dt * 0.001f + p->dir[c];
+                }
+            }
+        }
+    }
+}
+
+/* Vortex: each particle turned about the object by the angles, less with the distance */
+static void manage_vortex(nmo_engine_t *engine, eng_emitter_t *e, float dt)
+{
+    (void)dt;
+    int32_t type = particle_attribute(engine, "Particle Vortex");
+    FOR_EACH_INTERACTOR(engine, type, attribute, at) {
+        float angles[3];
+        attribute_value(attribute, angles, sizeof(angles));
+        for (size_t i = 0; i < e->particles.count; i++) {
+            eng_particle_t *p = &e->particles.data[i];
+            eng_vector_t local, pos = {p->pos[0], p->pos[1], p->pos[2]}, turned;
+            eng_entity_inverse_transform(engine, at, &local, &pos, -1);
+            float k = 1.0f / (local.z * local.z + local.y * local.y + local.x * local.x + 1.0f);
+            eng_matrix_t m;
+            eng_matrix_from_euler(&m, angles[0] * k, angles[1] * k, angles[2] * k);
+            eng_vector_rotate(&turned, &m, &local);
+            eng_entity_transform(engine, at, &pos, &turned, -1);
+            p->pos[0] = pos.x, p->pos[1] = pos.y, p->pos[2] = pos.z;
+        }
+    }
+}
+
+/* Disruption Box: inside the object's box (when it meets the emitter's), toward a random point of
+   it by the strengths */
+static void manage_disruption_box(nmo_engine_t *engine, eng_emitter_t *e, float dt)
+{
+    int32_t type = particle_attribute(engine, "Particle Disruption Box");
+    int32_t emitter = eng_entity_index(engine, e->entity);
+    if (emitter < 0) {
+        return;
+    }
+    FOR_EACH_INTERACTOR(engine, type, attribute, at) {
+        float strength[3];
+        attribute_value(attribute, strength, sizeof(strength));
+        eng_vector_t min, max, emin, emax;
+        world_box(engine, at, &min, &max);
+        world_box(engine, emitter, &emin, &emax);
+        if (!boxes_meet(&emin, &emax, &min, &max)) {
+            continue;
+        }
+        for (size_t i = 0; i < e->particles.count; i++) {
+            eng_particle_t *p = &e->particles.data[i];
+            if (!inside_box(p->pos, &min, &max)) {
+                continue;
+            }
+            float x = emitter_rand01(e) * (max.x - min.x) + min.x;
+            float y = emitter_rand01(e) * (max.y - min.y) + min.y;
+            float z = emitter_rand01(e) * (max.z - min.z) + min.z;
+            p->dir[0] = strength[0] * (x - p->pos[0]) * dt + p->dir[0];
+            p->dir[1] = strength[1] * (y - p->pos[1]) * dt + p->dir[1];
+            p->dir[2] = (z - p->pos[2]) * strength[2] * dt + p->dir[2];
+        }
+    }
+}
+
+/* Mutation Box: inside the object's box (when it meets the emitter's), the size and the color
+   brought toward the attribute's at their speeds, their own evolutions stopped */
+static void manage_mutation_box(nmo_engine_t *engine, eng_emitter_t *e, float dt)
+{
+    int32_t type = particle_attribute(engine, "Particle Mutation Box");
+    int32_t emitter = eng_entity_index(engine, e->entity);
+    if (emitter < 0) {
+        return;
+    }
+    FOR_EACH_INTERACTOR(engine, type, attribute, at) {
+        eng_vector_t min, max, emin, emax;
+        world_box(engine, at, &min, &max);
+        world_box(engine, emitter, &emin, &emax);
+        if (!boxes_meet(&emin, &emax, &min, &max)) {
+            continue;
+        }
+        float size = 0.0f, size_speed = 0.0f, color[4], color_speed = 0.0f;
+        attribute_field(engine, attribute, 0, &size, sizeof(size));
+        attribute_field(engine, attribute, 1, &size_speed, sizeof(size_speed));
+        attribute_field(engine, attribute, 2, color, sizeof(color));
+        attribute_field(engine, attribute, 3, &color_speed, sizeof(color_speed));
+        size_speed *= dt;
+        color_speed *= dt;
+        for (size_t i = 0; i < e->particles.count; i++) {
+            eng_particle_t *p = &e->particles.data[i];
+            if (!inside_box(p->pos, &min, &max)) {
+                continue;
+            }
+            if (size_speed != 0.0f) {
+                p->dsize = 0.0f;
+                p->size = (size - p->size) * size_speed + p->size;
+            }
+            if (color_speed != 0.0f) {
+                for (int c = 0; c < 4; c++) {
+                    p->color[c] = (color[c] - p->color[c]) * color_speed + p->color[c];
+                    p->dcolor[c] = 0.0f;
+                }
+            }
+        }
+    }
+}
+
+/* Tunnel: along the object's Z within its unit square in front of it; behind it, within the
+   radius, drawn into the funnel the shape makes, the speed and the direction pulled by the
+   attractions times each particle's weight */
+static void manage_tunnel(nmo_engine_t *engine, eng_emitter_t *e, float dt)
+{
+    int32_t type = particle_attribute(engine, "Particle Tunnel");
+    float step = dt * 0.001f;
+    FOR_EACH_INTERACTOR(engine, type, attribute, at) {
+        float speed, radius, shape, speed_pull, dir_pull;
+        attribute_field(engine, attribute, 0, &speed, sizeof(speed));
+        attribute_field(engine, attribute, 1, &radius, sizeof(radius));
+        attribute_field(engine, attribute, 2, &shape, sizeof(shape));
+        attribute_field(engine, attribute, 3, &speed_pull, sizeof(speed_pull));
+        attribute_field(engine, attribute, 4, &dir_pull, sizeof(dir_pull));
+        const eng_matrix_t *m = &engine->entities.data[at].world;
+        float z_length = sqrtf(m->m[2][0] * m->m[2][0] + m->m[2][1] * m->m[2][1] + m->m[2][2] * m->m[2][2]);
+        float x_scale = 1.0f / sqrtf(m->m[0][0] * m->m[0][0] + m->m[0][1] * m->m[0][1] + m->m[0][2] * m->m[0][2]);
+        const float axis[3] = {m->m[2][0] / z_length, m->m[2][1] / z_length, m->m[2][2] / z_length};
+        eng_vector_t center = eng_entity_position(engine, at, -1);
+        for (size_t i = 0; i < e->particles.count; i++) {
+            eng_particle_t *p = &e->particles.data[i];
+            eng_vector_t local, pos = {p->pos[0], p->pos[1], p->pos[2]};
+            eng_entity_inverse_transform(engine, at, &local, &pos, -1);
+            if (local.z >= 1.0f) {
+                continue;
+            }
+            if (local.z >= 0.0f) {
+                if (fabsf(local.x) < 1.0f && fabsf(local.y) < 1.0f) {
+                    for (int c = 0; c < 3; c++) {
+                        p->dir[c] = axis[c] * speed;
+                    }
+                }
+                continue;
+            }
+            float d[3] = {p->pos[0] - center.x, p->pos[1] - center.y, p->pos[2] - center.z};
+            if (sqrtf(d[2] * d[2] + d[1] * d[1] + d[0] * d[0]) >= radius) {
+                continue;
+            }
+            float k = x_scale * z_length * shape;
+            float kz = k * local.z;
+            float q = kz * kz + 1.0f;
+            if (!(fabsf(local.x) < q && fabsf(local.y) < q)) {
+                continue;
+            }
+            float inv_q = 1.0f / q;
+            eng_vector_t toward = {inv_q * local.x * kz + inv_q * local.x * kz, inv_q * local.y * kz + inv_q * local.y * kz,
+                                   1.0f / k},
+                         w;
+            eng_entity_transform_vector(engine, at, &w, &toward, -1, false);
+            eng_vector_normalize(&w);
+            float s = sqrtf(p->dir[0] * p->dir[0] + p->dir[1] * p->dir[1] + p->dir[2] * p->dir[2]);
+            float new_speed = (speed - s) * p->weight * speed_pull * step + s;
+            float n[3] = {1.0f / s * p->dir[0], 1.0f / s * p->dir[1], 1.0f / s * p->dir[2]};
+            float pull = dir_pull * p->weight * step;
+            const float wv[3] = {w.x, w.y, w.z};
+            for (int c = 0; c < 3; c++) {
+                p->dir[c] = ((wv[c] - n[c]) * pull + n[c]) * new_speed;
+            }
+        }
+    }
+}
+
+/* Projector: each particle in the 3D sprite's projection takes its texture's texel times its
+   material's diffuse, fading with the depth; out of it, transparent black */
+static void manage_projector(nmo_engine_t *engine, eng_emitter_t *e, float dt)
+{
+    (void)dt;
+    int32_t type = particle_attribute(engine, "Particle Projector");
+    FOR_EACH_INTERACTOR(engine, type, attribute, at) {
+        const eng_sprite3d_t *sprite = eng_sprite3d(engine, attribute->object);
+        eng_material_t *material = sprite != NULL && sprite->material != 0 ? eng_material(engine, sprite->material) : NULL;
+        eng_texture_t *texture = material != NULL ? eng_texture(engine, material->desc.texture) : NULL;
+        if (texture == NULL) {
+            continue; /* the DLL reads through the missing material or texture */
+        }
+        eng_surface_t *surface = eng_texture_surface(engine, texture, -1);
+        float size[2] = {sprite->max.x - sprite->min.x, sprite->max.y - sprite->min.y};
+        float lens[3];
+        attribute_value(attribute, lens, sizeof(lens));
+        const float *diffuse = material->desc.diffuse;
+        float half = lens[0] * 0.5f;
+        float near_plane = 0.5f / tanf(half);
+        float far_plane = lens[2] + near_plane;
+        eng_matrix_t projection, frame, inverse, total;
+        memset(&projection, 0, sizeof(projection));
+        projection.m[0][0] = cosf(half) / sinf(half);
+        projection.m[1][1] = lens[1] * projection.m[0][0];
+        projection.m[2][2] = far_plane / (far_plane - near_plane);
+        projection.m[3][2] = -(projection.m[2][2] * near_plane);
+        projection.m[2][3] = 1.0f;
+        frame = engine->entities.data[at].world;
+        for (int c = 0; c < 3; c++) {
+            frame.m[0][c] *= -size[0];
+            frame.m[1][c] *= size[1];
+            frame.m[2][c] *= -1.0f;
+        }
+        float inv = 1.0f / sqrtf(frame.m[2][2] * frame.m[2][2] + frame.m[2][1] * frame.m[2][1] + frame.m[2][0] * frame.m[2][0]);
+        for (int c = 0; c < 3; c++) {
+            frame.m[3][c] -= frame.m[2][c] * inv * near_plane;
+        }
+        eng_matrix_inverse(&inverse, &frame);
+        eng_matrix_multiply4(&total, &projection, &inverse);
+        for (size_t i = 0; i < e->particles.count; i++) {
+            eng_particle_t *p = &e->particles.data[i];
+            float h[4];
+            for (int c = 0; c < 4; c++) {
+                h[c] = p->pos[0] * total.m[0][c] + p->pos[1] * total.m[1][c] + p->pos[2] * total.m[2][c] + total.m[3][c];
+            }
+            if (h[2] <= 0.0f || h[2] >= h[3] || h[0] <= -h[3] || h[0] >= h[3] || h[1] <= -h[3] || h[1] >= h[3]) {
+                p->color[0] = p->color[1] = p->color[2] = p->color[3] = 0.0f;
+                continue;
+            }
+            float iw = 1.0f / h[3];
+            float u = (1.0f - iw * h[0]) * 0.5f, v = (1.0f - iw * h[1]) * 0.5f, depth = 1.0f - iw * h[2];
+            /* CKBitmapData::GetPixel(x, y, -1): no bounds test, 0 without a picture */
+            uint8_t texel[4] = {0, 0, 0, 0};
+            if (surface != NULL && surface->rgba != NULL) {
+                int64_t x = (int64_t)(u * (float)surface->width), y = (int64_t)(v * (float)surface->height);
+                int64_t at_texel = x + y * surface->width;
+                if (at_texel >= 0 && at_texel < (int64_t)surface->width * surface->height) {
+                    memcpy(texel, &surface->rgba[4 * at_texel], 4);
+                }
+            }
+            for (int c = 0; c < 4; c++) {
+                p->color[c] = (float)texel[c] * 0.0039215689f * diffuse[c];
+            }
+            p->color[3] = depth * p->color[3];
+        }
+    }
+}
+
+/* The interactors the emitter manages, in UpdateParticles' order */
+static void manage_interactors(nmo_engine_t *engine, eng_emitter_t *e, int32_t flags, float dt)
+{
+    if (flags & PI_GRAVITY) manage_gravity(engine, e, dt);
+    if (flags & PI_ATMOSPHERE) manage_atmosphere(engine, e, dt);
+    if (flags & PI_GLOBALWIND) manage_global_wind(engine, e, dt);
+    if (flags & PI_LOCALWIND) manage_local_wind(engine, e, dt);
+    if (flags & PI_MAGNET) manage_magnet(engine, e, dt);
+    if (flags & PI_VORTEX) manage_vortex(engine, e, dt);
+    if (flags & PI_DISRUPTIONBOX) manage_disruption_box(engine, e, dt);
+    if (flags & PI_MUTATIONBOX) manage_mutation_box(engine, e, dt);
+    if (flags & PI_TUNNEL) manage_tunnel(engine, e, dt);
+    if (flags & PI_PROJECTOR) manage_projector(engine, e, dt);
+}
+
+/* ParticleEmitter::UpdateParticles, the interactors first, without the deflectors: then the emitter's
    box (SetBoundingBox, in the world) is where its living particles were and went, which an emitter
    whose particles all died leaves inverted. A wave emitter's UpdateParticles2 neither turns nor
    moves them (the box is where they were) */
@@ -365,6 +811,7 @@ static void update_particles(nmo_engine_t *engine, eng_emitter_t *e, const emitt
     if (e->particles.count == 0) {
         return; /* no particles yet: nothing to do */
     }
+    manage_interactors(engine, e, in->interactors, delta);
     eng_vector_t low = {100000.0f, 100000.0f, 100000.0f}, high = {-100000.0f, -100000.0f, -100000.0f};
     size_t kept = 0;
     for (size_t i = 0; i < e->particles.count; i++) {

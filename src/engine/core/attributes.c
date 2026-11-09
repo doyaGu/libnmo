@@ -188,13 +188,38 @@ bool eng_struct_field(nmo_engine_t *engine, nmo_object_id_t holder, const uint8_
         *out = eng_param_read_int(&engine->params.data[param]);
         return true;
     }
+    return eng_struct_field_bytes(engine, holder, data, size, field, out, 4);
+}
+
+bool eng_struct_field_bytes(nmo_engine_t *engine, nmo_object_id_t holder, const uint8_t *data,
+                            uint32_t size, uint32_t field, void *out, uint32_t out_size)
+{
+    if (data == NULL || size / 4u <= field) {
+        return false;
+    }
+    nmo_object_id_t local;
+    memcpy(&local, data + 4u * field, 4);
+    const eng_module_t *module = local != 0 ? eng_module_of(engine, holder, NULL) : NULL;
+    nmo_object_id_t id = module != NULL ? eng_module_id(module, local) : 0;
+    if (id == 0) {
+        return false;
+    }
+    int32_t param = eng_map_get(&engine->param_map, id);
+    if (param >= 0) {
+        const eng_param_t *p = &engine->params.data[param];
+        if (p->data == NULL || p->size < out_size) {
+            return false;
+        }
+        memcpy(out, p->data, out_size);
+        return true;
+    }
     const nmo_parameter_state_t *state = (const nmo_parameter_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
         engine->types, eng_find_object(engine, id), CKPGUID_PARAMETER);
     uint8_t *bytes = NULL;
     uint32_t count = 0;
-    bool found = state != NULL && eng_parameter_state_bytes(module, state, 4, &bytes, &count) && count >= 4;
+    bool found = state != NULL && eng_parameter_state_bytes(module, state, out_size, &bytes, &count) && count >= out_size;
     if (found) {
-        memcpy(out, bytes, 4);
+        memcpy(out, bytes, out_size);
     }
     free(bytes);
     return found;
