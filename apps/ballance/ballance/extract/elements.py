@@ -194,7 +194,10 @@ class ModuleCut(Cut):
             faces, mtl = levels.faces(path, objects[name])
             if self.method == 'clip-and-close':
                 part = clipped_in_frame(faces, matrix, self.box)
-                cut += part + closing_walls(part)
+                # a stopper is a lip under a floor's edge, not a floor: the
+                # walls that end a cut floor would hang a plate below it
+                stopper = self.kind.startswith('Floor_Stopper')
+                cut += part + ([] if stopper else closing_walls(part))
             else:
                 cut += in_frame(faces, matrix, self.box)
             mtls.append(mtl)
