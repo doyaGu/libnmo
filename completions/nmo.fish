@@ -302,7 +302,7 @@ complete -c nmo -n 'test (__nmo_pos_count) -eq 1; and (test (__nmo_group) = vali
 complete -c nmo -n 'test (__nmo_pos_count) -eq 1; and (test (__nmo_group) = validate or test (__nmo_group) = val)' -a 'crc' -d 'Alias for checksum'
 complete -c nmo -n 'test (__nmo_pos_count) -eq 1; and (test (__nmo_group) = convert or test (__nmo_group) = conv)' -a 'copy' -d 'Round-trip copy with save options'
 complete -c nmo -n 'test (__nmo_pos_count) -eq 1; and (test (__nmo_group) = convert or test (__nmo_group) = conv)' -a 'cp' -d 'Alias for copy'
-complete -c nmo -n 'test (__nmo_pos_count) -eq 1; and (test (__nmo_group) = convert or test (__nmo_group) = conv)' -a 'version' -d 'Show/modify file version metadata'
+complete -c nmo -n 'test (__nmo_pos_count) -eq 1; and (test (__nmo_group) = convert or test (__nmo_group) = conv)' -a 'version' -d 'Show file version metadata or write as version 8'
 complete -c nmo -n 'test (__nmo_pos_count) -eq 1; and (test (__nmo_group) = convert or test (__nmo_group) = conv)' -a 'v' -d 'Alias for version'
 complete -c nmo -n 'test (__nmo_pos_count) -eq 1; and (test (__nmo_group) = convert or test (__nmo_group) = conv)' -a 'strip' -d 'Remove objects by class/name pattern'
 complete -c nmo -n 'test (__nmo_pos_count) -eq 1; and (test (__nmo_group) = convert or test (__nmo_group) = conv)' -a 'st' -d 'Alias for strip'

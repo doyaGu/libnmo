@@ -782,9 +782,11 @@ static void convert_copy_usage(FILE *out) {
 }
 
 static void convert_version_usage(FILE *out) {
-    fprintf(out, "Usage: nmo convert version [--fast-save] <file>\n");
-    fprintf(out, "       nmo convert version [--fast-save] -o <output> <file>\n\n");
-    fprintf(out, "Show file version metadata, or copy with version info.\n");
+    fprintf(out, "Usage: nmo convert version <file>\n");
+    fprintf(out, "       nmo convert version [--to 8] [--fast-save] -o <output> <file>\n\n");
+    fprintf(out, "Show file version metadata, or write the file as version 8 (what\n");
+    fprintf(out, "Virtools 2.x writes, and the only version libnmo writes on request).\n");
+    fprintf(out, "Versions 2 to 7 are upgraded; version 9 is not written down to 8.\n");
 }
 
 static void convert_strip_usage(FILE *out) {
@@ -1295,7 +1297,7 @@ static const nmo_cli_action_t validate_actions[] = {
 
 static const nmo_cli_action_t convert_actions[] = {
     ACTION("copy", "cp", "Round-trip copy with save options", nmo_cmd_convert_copy, convert_copy_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),
-    ACTION("version", "v", "Show/modify file version metadata", nmo_cmd_convert_version, convert_version_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),
+    ACTION("version", "v", "Show file version metadata or write as version 8", nmo_cmd_convert_version, convert_version_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),
     ACTION("strip", "st", "Remove objects by class/name pattern", nmo_cmd_convert_strip, convert_strip_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),
     ACTION("merge", "m", "Merge objects from source into target", nmo_cmd_convert_merge, convert_merge_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),
     ACTION("export", "x", "Export selected objects to new file", nmo_cmd_convert_export, convert_export_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),

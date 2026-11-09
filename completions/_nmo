@@ -641,7 +641,7 @@ _nmo_actions() {
             acts=(
                 'copy:Round-trip copy with save options'
                 'cp:Alias for copy'
-                'version:Show/modify file version metadata'
+                'version:Show file version metadata or write as version 8'
                 'v:Alias for version'
                 'strip:Remove objects by class/name pattern'
                 'st:Alias for strip'

@@ -1898,12 +1898,29 @@ TEST(cli, convert_version_fast_save_json_reports_durability) {
     yyjson_val *data = json_envelope_data(doc);
     ASSERT_NOT_NULL(data);
     ASSERT_STR_EQ(yyjson_get_str(yyjson_obj_get(data, "save_durability")), "fast");
+    ASSERT_EQ(8u, (unsigned)yyjson_get_uint(yyjson_obj_get(data, "from_version")));
+    ASSERT_EQ(8u, (unsigned)yyjson_get_uint(yyjson_obj_get(data, "to_version")));
 
     yyjson_doc_free(doc);
     free(report);
     free(result.output);
     remove(report_path);
     remove(save_path);
+}
+
+/* libnmo writes version 8 only: another target is refused, nothing saved */
+TEST(cli, convert_version_refuses_a_target_other_than_8) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
+    const char *save_path = "test_cli_convert_version_to_7.nmo";
+    remove(save_path);
+    cli_run_result_t result = run_cli_capture(
+        "convert version --to 7 -o test_cli_convert_version_to_7.nmo \""
+        NMO_TEST_DATA_FILE("Ballance/Camera.nmo") "\"");
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_ARG_ERROR, result.exit_code);
+    ASSERT_TRUE(strstr(result.output, "version 8 only") != NULL);
+    ASSERT_FALSE(file_exists(save_path));
+    free(result.output);
 }
 
 TEST(cli, convert_copy_output_and_report_files) {
@@ -5047,6 +5064,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, convert_version_output_file_text);
     REGISTER_TEST(cli, convert_version_output_file_json);
     REGISTER_TEST(cli, convert_version_fast_save_json_reports_durability);
+    REGISTER_TEST(cli, convert_version_refuses_a_target_other_than_8);
     REGISTER_TEST(cli, convert_copy_output_and_report_files);
     REGISTER_TEST(cli, convert_copy_fast_save_json_reports_durability);
     REGISTER_TEST(cli, convert_merge_option_values_not_treated_as_files);

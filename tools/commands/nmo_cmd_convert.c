@@ -13,6 +13,7 @@
 #include "../nmo_tool_common.h"
 #include "nmo.h"
 #include "document/nmo_document_save.h"
+#include "document/nmo_document_file_state.h"
 #include "object/nmo_context.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_parse.h"
@@ -310,8 +311,13 @@ int nmo_cmd_convert_copy(int argc, char **argv, const nmo_cli_global_opts_t *glo
 }
 
 /* ============================================================================
- * nmo convert version - Show/modify file version metadata
+ * nmo convert version - Show file version metadata, or write the file as
+ * version 8: the version Virtools 2.x (Ballance's engine) writes, and the
+ * only one libnmo writes on request. Files from version 2 to 7 are upgraded;
+ * version 9 is newer and is not written down to 8 (convert copy keeps it).
  * ============================================================================ */
+
+#define CONVERT_WRITTEN_FILE_VERSION 8u
 
 static void convert_add_version_field(nmo_cli_record_t *rec, const char *key,
                                       const char *label, uint32_t value)
@@ -325,8 +331,9 @@ int nmo_cmd_convert_version(int argc, char **argv, const nmo_cli_global_opts_t *
     static const nmo_opt_def_t opts[] = {
         NMO_OPT_DEF_OUTPUT,
         NMO_OPT_DEF_FAST_SAVE,
+        {"--to", NULL, NMO_OPT_UINT, "File version to write (8, the default; the only one supported)"},
     };
-    enum { OPT_VERSION_OUTPUT, OPT_VERSION_FAST_SAVE, OPT_VERSION_COUNT };
+    enum { OPT_VERSION_OUTPUT, OPT_VERSION_FAST_SAVE, OPT_VERSION_TO, OPT_VERSION_COUNT };
     nmo_opt_val_t vals[OPT_VERSION_COUNT];
     const char *pos[8];
     nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
@@ -337,6 +344,15 @@ int nmo_cmd_convert_version(int argc, char **argv, const nmo_cli_global_opts_t *
 
     const char *output_path = nmo_opt_str(&vals[OPT_VERSION_OUTPUT]);
     bool fast_save = nmo_opt_flag(&vals[OPT_VERSION_FAST_SAVE]);
+    uint32_t target_version =
+        nmo_opt_uint_or(&vals[OPT_VERSION_TO], CONVERT_WRITTEN_FILE_VERSION);
+    if (target_version != CONVERT_WRITTEN_FILE_VERSION) {
+        fprintf(stderr,
+                "Error: libnmo writes file version %u only (what Virtools 2.x writes); "
+                "version %u is not supported\n",
+                CONVERT_WRITTEN_FILE_VERSION, target_version);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    }
 
     rc = nmo_cmd_ctx_open(&c);
     if (rc) return nmo_cmd_ctx_done(&c, rc);
@@ -360,7 +376,23 @@ int nmo_cmd_convert_version(int argc, char **argv, const nmo_cli_global_opts_t *
         return nmo_cmd_ctx_done(&c, nmo_cmd_ctx_emit_record(&c, rec, "convert.version", 0, false));
     }
 
-    /* If output specified, save the file (equivalent to copy) */
+    /* Write the file as version 8 */
+    const uint32_t from_version = info.file_version;
+    if (from_version > CONVERT_WRITTEN_FILE_VERSION) {
+        fprintf(stderr,
+                "Error: %s is file version %u, newer than %u; libnmo does not write a "
+                "file down to an older version (nmo convert copy keeps version %u)\n",
+                c.file_path, from_version, CONVERT_WRITTEN_FILE_VERSION, from_version);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    }
+    if (from_version != CONVERT_WRITTEN_FILE_VERSION) {
+        nmo_file_info_t upgraded = info;
+        upgraded.file_version = CONVERT_WRITTEN_FILE_VERSION;
+        if (nmo_document_set_file_info(c.document, &upgraded) != NMO_OK) {
+            fprintf(stderr, "Error: cannot set the file version to write\n");
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        }
+    }
     nmo_save_options_t save_opts = nmo_tool_owner_save_options_default();
     if (fast_save) {
         save_opts.durability = NMO_SAVE_DURABILITY_FAST;
@@ -374,6 +406,15 @@ int nmo_cmd_convert_version(int argc, char **argv, const nmo_cli_global_opts_t *
     if (rec) {
         nmo_cli_record_str(rec, "input_file", NULL, c.file_path);
         nmo_cli_record_str(rec, "output_file", NULL, output_path);
+        nmo_cli_record_uint(rec, "from_version", NULL, from_version);
+        nmo_cli_record_uint(rec, "to_version", NULL, CONVERT_WRITTEN_FILE_VERSION);
+        if (from_version != CONVERT_WRITTEN_FILE_VERSION) {
+            nmo_cli_record_raw_fmt(rec, "Upgraded from file version %u to %u\n",
+                                   from_version, CONVERT_WRITTEN_FILE_VERSION);
+        } else {
+            nmo_cli_record_raw_fmt(rec, "Already file version %u\n",
+                                   CONVERT_WRITTEN_FILE_VERSION);
+        }
         nmo_cli_record_str(rec, "save_durability", NULL,
                            convert_save_durability_name(save_opts.durability));
         convert_add_saved_text(rec, output_path, save_opts.durability);
