@@ -105,6 +105,12 @@ enum { PI_BOUNCE = 17, PI_BOUNCE_VAR, PI_WEIGHT, PI_WEIGHT_VAR, PI_SURFACE, PI_S
 #define GUID_PLANAR NMO_GUID(0x49957bfe, 0x0ff27ffc)
 #define GUID_TIME_POINT NMO_GUID(0x569d2cc2, 0x3bcb01b9)
 #define GUID_WAVE NMO_GUID(0x02da5a18, 0x52227285)
+#define GUID_LINEAR NMO_GUID(0x1f1e7188, 0x0ec26d1f)
+#define GUID_CUBIC NMO_GUID(0x3d7453f9, 0x1dba691f)
+#define GUID_DISC NMO_GUID(0x3fb65480, 0x6ca450e2)
+#define GUID_OBJECT NMO_GUID(0x13172f30, 0x3a7876ed)
+#define GUID_CURVE NMO_GUID(0x4a6524c4, 0x13b55824)
+#define GUID_CYLINDRICAL NMO_GUID(0x67c90f47, 0x1480721e)
 #define PR_OBJECT 4
 
 /* The values ReadInputs keeps on the emitter */
@@ -165,6 +171,13 @@ static float emitter_rand01(eng_emitter_t *e)
 {
     e->random = e->random * 1103515245u + 12345u;
     return (float)((e->random >> 16) & 0x7FFF) / 32767.0f;
+}
+
+/* The emitter's own rand(), 0 to RAND_MAX */
+static int32_t emitter_rand_u15(eng_emitter_t *e)
+{
+    e->random = e->random * 1103515245u + 12345u;
+    return (int32_t)((e->random >> 16) & 0x7FFF);
 }
 
 /* rand() * INV_RAND (0.000030518499: just under 1 at RAND_MAX), the deflectors' density roll */
@@ -236,8 +249,11 @@ static void read_inputs(blk_t *b, emitter_inputs_t *in)
     }
 }
 
-/* The emitter a prototype makes; the other shapes emit as the point one does */
-typedef enum emitter_shape { SHAPE_POINT, SHAPE_PLANAR, SHAPE_SPHERICAL, SHAPE_TIME_POINT, SHAPE_WAVE } emitter_shape_t;
+/* The emitter a prototype makes (ParticleManager::CreateNewEmitter) */
+typedef enum emitter_shape {
+    SHAPE_POINT, SHAPE_PLANAR, SHAPE_SPHERICAL, SHAPE_TIME_POINT, SHAPE_WAVE, SHAPE_LINEAR, SHAPE_CUBIC, SHAPE_DISC,
+    SHAPE_OBJECT, SHAPE_CURVE, SHAPE_CYLINDRICAL
+} emitter_shape_t;
 
 static emitter_shape_t emitter_shape(blk_t *b)
 {
@@ -248,8 +264,14 @@ static emitter_shape_t emitter_shape(blk_t *b)
     if (nmo_guid_equals(guid, GUID_PLANAR)) {
         return SHAPE_PLANAR;
     }
-    if (nmo_guid_equals(guid, GUID_WAVE)) {
-        return SHAPE_WAVE;
+    static const struct { nmo_guid_t guid; emitter_shape_t shape; } shapes[] = {
+        {GUID_WAVE, SHAPE_WAVE},   {GUID_LINEAR, SHAPE_LINEAR}, {GUID_CUBIC, SHAPE_CUBIC},
+        {GUID_DISC, SHAPE_DISC},   {GUID_OBJECT, SHAPE_OBJECT}, {GUID_CURVE, SHAPE_CURVE},
+        {GUID_CYLINDRICAL, SHAPE_CYLINDRICAL}};
+    for (size_t i = 0; i < sizeof(shapes) / sizeof(shapes[0]); i++) {
+        if (nmo_guid_equals(guid, shapes[i].guid)) {
+            return shapes[i].shape;
+        }
     }
     return nmo_guid_equals(guid, GUID_TIME_POINT) ? SHAPE_TIME_POINT : SHAPE_POINT;
 }
@@ -343,6 +365,153 @@ static void init_particle(eng_emitter_t *e, const emitter_inputs_t *in, eng_part
     }
 }
 
+/* ObjectEmitter's shape: the entity's current mesh as it is now (its vertices, indices and face
+   normals); false without one */
+static bool object_shape(nmo_engine_t *engine, nmo_object_id_t id, const nmo_vertex_t **vertices, uint32_t *vertex_count,
+                         const uint16_t **indices, const nmo_face_t **faces, uint32_t *face_count)
+{
+    nmo_object_t *object = eng_find_object(engine, id);
+    const nmo_3dentity_state_t *state = object != NULL
+        ? (const nmo_3dentity_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(engine->types, object,
+                                                                                          CKPGUID_3DENTITY)
+        : NULL;
+    nmo_object_id_t mesh = state != NULL ? eng_object_ref(engine, id, &state->current_mesh) : 0;
+    nmo_object_t *mesh_object = mesh != 0 ? eng_find_object(engine, mesh) : NULL;
+    const nmo_mesh_state_t *mesh_state = mesh_object != NULL
+        ? (const nmo_mesh_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(engine->types, mesh_object,
+                                                                                     CKPGUID_MESH)
+        : NULL;
+    if (mesh_state == NULL || mesh_state->face_count == 0 || mesh_state->face_vertex_indices == NULL) {
+        return false;
+    }
+    eng_mesh_copy_t *copy = eng_mesh_copy_find(engine, mesh);
+    *vertices = copy != NULL && copy->vertices != NULL ? copy->vertices : mesh_state->vertices;
+    *vertex_count = mesh_state->vertex_count;
+    *indices = mesh_state->face_vertex_indices;
+    *faces = copy != NULL ? eng_mesh_copy_faces(engine, copy) : mesh_state->faces;
+    *face_count = mesh_state->face_count;
+    return *vertices != NULL && *faces != NULL;
+}
+
+/* The emitter's InitiateParticle, and with true its own InitiateDirection (Spherical, Cylindrical
+   and Object leave the direction InitiateParticle gave, Wave none, Curve along the curve's Y);
+   false: ParticleEmitter::InitiateDirection's, around the entity's Z */
+static bool initiate_shape(nmo_engine_t *engine, eng_emitter_t *e, const emitter_inputs_t *in, int32_t entity,
+                           emitter_shape_t shape, eng_vector_t *pos, eng_vector_t *dir)
+{
+    const eng_matrix_t *world = &engine->entities.data[entity].world;
+    eng_vector_t r = {0.0f, 0.0f, 0.0f};
+    switch (shape) {
+    case SHAPE_SPHERICAL:
+        /* SphericalEmitter: from a random point of the unit sphere, outward */
+        r.x = emitter_rand(e), r.y = emitter_rand(e), r.z = emitter_rand(e);
+        eng_vector_normalize(&r);
+        eng_vector_transform(pos, world, &r);
+        eng_vector_rotate(dir, world, &r);
+        eng_vector_normalize(dir);
+        return true;
+    case SHAPE_CYLINDRICAL:
+        /* CylindricalEmitter: a random point of the unit tube about Z (height -1..1), outward */
+        r.y = emitter_rand(e);
+        r.x = emitter_rand(e);
+        eng_vector_normalize(&r);
+        eng_vector_rotate(dir, world, &r);
+        eng_vector_normalize(dir);
+        r.z = emitter_rand(e);
+        eng_vector_transform(pos, world, &r);
+        return true;
+    case SHAPE_PLANAR:
+        /* PlanarEmitter: a random point of the entity's local XY square */
+        r.y = emitter_rand(e);
+        r.x = emitter_rand(e);
+        eng_vector_transform(pos, world, &r);
+        return false;
+    case SHAPE_LINEAR:
+        /* LineEmitter: a random point of the entity's local X from -1 to 1 */
+        r.x = emitter_rand(e);
+        eng_vector_transform(pos, world, &r);
+        return false;
+    case SHAPE_CUBIC:
+        /* CubicEmitter: a random point of the entity's local -1..1 cube */
+        r.z = emitter_rand(e);
+        r.y = emitter_rand(e);
+        r.x = emitter_rand(e);
+        eng_vector_transform(pos, world, &r);
+        return false;
+    case SHAPE_DISC:
+        /* DiscEmitter: a random point of the local XY square, halved outside the unit disc */
+        r.y = emitter_rand(e);
+        r.x = emitter_rand(e);
+        if (r.x * r.x + r.y * r.y > 1.0f) {
+            r.x *= 0.5f, r.y *= 0.5f;
+        }
+        eng_vector_transform(pos, world, &r);
+        return false;
+    case SHAPE_OBJECT: {
+        /* ObjectEmitter: a random point of a random face of the entity's mesh, along the face's
+           normal turned within the yaw and pitch variances */
+        const nmo_vertex_t *vertices;
+        const uint16_t *indices;
+        const nmo_face_t *faces;
+        uint32_t vertex_count, face_count;
+        if (!object_shape(engine, e->entity, &vertices, &vertex_count, &indices, &faces, &face_count)) {
+            break; /* the DLL reads through the missing mesh: the entity's position */
+        }
+        uint32_t face = (uint32_t)emitter_rand_u15(e) % face_count;
+        const nmo_vector_t n = faces[face].normal;
+        float w[3];
+        for (int k = 0; k < 3; k++) {
+            w[k] = fabsf(emitter_rand(e));
+        }
+        float inv = 1.0f / (w[2] + w[1] + w[0]);
+        eng_vector_t local = {0.0f, 0.0f, 0.0f};
+        for (int k = 0; k < 3; k++) {
+            uint16_t v = indices[3u * face + (uint32_t)k];
+            const nmo_vector_t c = v < vertex_count ? vertices[v].position : (nmo_vector_t){0.0f, 0.0f, 0.0f};
+            local.x += c.x * w[k], local.y += c.y * w[k], local.z += c.z * w[k];
+        }
+        local.x *= inv, local.y *= inv, local.z *= inv;
+        eng_vector_transform(pos, world, &local);
+        eng_vector_t tip_local = {n.x + local.x, n.y + local.y, n.z + local.z}, base, tip;
+        eng_vector_transform(&base, world, &local);
+        eng_vector_transform(&tip, world, &tip_local);
+        eng_vector_t normal = {tip.x - base.x, tip.y - base.y, tip.z - base.z};
+        float pitch = emitter_rand(e) * in->pitch;
+        float yaw = emitter_rand(e) * in->yaw;
+        eng_matrix_t m;
+        eng_matrix_from_euler(&m, yaw, pitch, 0.0f);
+        eng_vector_rotate(dir, &m, &normal);
+        return true;
+    }
+    case SHAPE_CURVE: {
+        /* CurveEmitter: a random point of the entity's curve, along the entity's Y turned within the
+           variances */
+        float step = (float)emitter_rand_u15(e) * 0.000030518499f;
+        if (!eng_curve_position(engine, e->entity, step, pos)) {
+            *pos = (eng_vector_t){world->m[3][0], world->m[3][1], world->m[3][2]};
+        }
+        eng_vector_t up;
+        eng_entity_orientation(engine, entity, NULL, &up, NULL, -1);
+        float pitch = emitter_rand(e) * in->pitch;
+        float yaw = emitter_rand(e) * in->yaw;
+        eng_matrix_t m;
+        eng_matrix_from_euler(&m, yaw, 0.0f, pitch);
+        eng_vector_rotate(dir, &m, &up);
+        return true;
+    }
+    case SHAPE_WAVE:
+        /* WaveEmitter: the entity's position, no direction */
+        *pos = (eng_vector_t){world->m[3][0], world->m[3][1], world->m[3][2]};
+        *dir = (eng_vector_t){0.0f, 0.0f, 0.0f};
+        return true;
+    default:
+        break;
+    }
+    /* PointEmitter: the entity's position */
+    *pos = (eng_vector_t){world->m[3][0], world->m[3][1], world->m[3][2]};
+    return false;
+}
+
 /* ParticleEmitter::AddParticles: up to Emission (plus variance) new particles, within Maximum
    Number, placed and aimed by the emitter's shape */
 static void add_particles(blk_t *b, eng_emitter_t *e, const emitter_inputs_t *in, emitter_shape_t shape)
@@ -360,27 +529,8 @@ static void add_particles(blk_t *b, eng_emitter_t *e, const emitter_inputs_t *in
             return;
         }
         eng_vector_t pos, dir;
-        if (shape == SHAPE_SPHERICAL) {
-            /* SphericalEmitter: from a random point of the unit sphere, outward */
-            eng_vector_t r = {emitter_rand(e), emitter_rand(e), emitter_rand(e)};
-            eng_vector_normalize(&r);
-            eng_vector_transform(&pos, world, &r);
-            eng_vector_rotate(&dir, world, &r);
-            eng_vector_normalize(&dir);
-        } else {
-            if (shape == SHAPE_PLANAR) {
-                /* PlanarEmitter: a random point of the entity's local XY square */
-                eng_vector_t r = {emitter_rand(e), emitter_rand(e), 0.0f};
-                eng_vector_transform(&pos, world, &r);
-            } else {
-                /* PointEmitter, WaveEmitter: the entity's position */
-                pos = (eng_vector_t){world->m[3][0], world->m[3][1], world->m[3][2]};
-            }
-            if (shape == SHAPE_WAVE) {
-                dir = (eng_vector_t){0.0f, 0.0f, 0.0f}; /* WaveEmitter::InitiateDirection */
-            } else {
-                initiate_direction(e, in, world, &dir);
-            }
+        if (!initiate_shape(engine, e, in, entity, shape, &pos, &dir)) {
+            initiate_direction(e, in, world, &dir);
         }
         init_particle(e, in, p, &pos, &dir);
     }
@@ -1327,10 +1477,9 @@ static void update_particles(nmo_engine_t *engine, eng_emitter_t *e, const emitt
  * GeneralParticleSystem: On starts emitting (Exit On), Off stops, Freeze
  * toggles; while not frozen, the inputs are read, particles emitted each
  * Emission Delay and moved by the frame time; Exit Off once no particle is
- * left after Off. Point, planar, spherical, time dependent point and wave
- * emitters place their particles as the DLL does (a wave emitter's stay where
- * they were emitted, unturned: WaveEmitter, UpdateParticles2); the other
- * shapes emit from the entity's position.
+ * left after Off. Every emitter shape places its particles as the DLL does
+ * (a wave emitter's stay where they were emitted, unturned: WaveEmitter,
+ * UpdateParticles2).
  */
 static int bb_particle_system(blk_t *b)
 {

@@ -490,6 +490,78 @@ TEST(engine_media, particles_draw_where_their_render_last_emitter_sorts)
     fixture_end(&f);
 }
 
+/* A particle system of `guid` on the script's owner at the origin, emitting 20 particles at
+   0.001 a ms, no variances, no interactors or deflectors. After fixture_begin_edit(). */
+static nmo_object_id_t shaped_particles(engine_fixture_t *f, nmo_guid_t guid)
+{
+    nmo_object_id_t ps = fixture_block(f, guid, "Particles");
+    if (ps == 0) {
+        return 0;
+    }
+    fixture_link(f, f->script_in, BLOCK_IN(f, ps, 0), 0);
+    input_float(f, BLOCK_PIN(f, ps, 0), 0.0f);    /* Emission Delay */
+    input_float(f, BLOCK_PIN(f, ps, 4), 0.001f);  /* Speed */
+    input_float(f, BLOCK_PIN(f, ps, 8), 1000.0f); /* Lifespan */
+    fixture_input_int(f, BLOCK_PIN(f, ps, 11), 20); /* Emission */
+    const int32_t settings[3][2] = {{9, 0}, {10, 0}, {12, 0}};
+    for (int i = 0; i < 3; i++) {
+        engine_fixture_value_t *setting = &f->values[f->value_count++];
+        setting->param = local_of(f, ps, (size_t)settings[i][0]);
+        memcpy(setting->bytes, &settings[i][1], sizeof(int32_t));
+        setting->size = sizeof(int32_t);
+    }
+    return ps;
+}
+
+TEST(engine_media, line_cubic_disc_and_cylinder_emitters_place_their_particles)
+{
+    const nmo_guid_t guids[4] = {NMO_GUID(0x1f1e7188, 0x0ec26d1f), NMO_GUID(0x3d7453f9, 0x1dba691f),
+                                 NMO_GUID(0x3fb65480, 0x6ca450e2), NMO_GUID(0x67c90f47, 0x1480721e)};
+    for (int shape = 0; shape < 4; shape++) {
+        engine_fixture_t f;
+        fixture_begin_document(&f);
+        nmo_object_id_t emitter = plain_entity(&f, "Emitter");
+        ASSERT_TRUE(emitter != 0);
+        f.owner_id = emitter;
+        f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+        fixture_begin_edit(&f);
+        ASSERT_TRUE(shaped_particles(&f, guids[shape]) != 0);
+        fixture_commit(&f, NULL);
+        ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+        ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 25.0f));
+        const eng_emitter_t *e = &eng_tt(f.engine)->emitters.data[0];
+        ASSERT_EQ(20u, (uint32_t)e->particles.count);
+        for (size_t i = 0; i < e->particles.count; i++) {
+            const eng_particle_t *p = &e->particles.data[i];
+            /* where it came out: back by its 25 ms move */
+            const float at[3] = {p->pos[0] - p->dir[0] * 25.0f, p->pos[1] - p->dir[1] * 25.0f,
+                                 p->pos[2] - p->dir[2] * 25.0f};
+            switch (shape) {
+            case 0: /* the local X from -1 to 1 */
+                ASSERT_TRUE(fabsf(at[0]) <= 1.0f);
+                ASSERT_FLOAT_EQ(0.0f, at[1], 1e-6f);
+                ASSERT_FLOAT_EQ(0.0f, at[2], 1e-6f);
+                break;
+            case 1: /* the -1..1 cube */
+                ASSERT_TRUE(fabsf(at[0]) <= 1.0f && fabsf(at[1]) <= 1.0f && fabsf(at[2]) <= 1.0f);
+                break;
+            case 2: /* within the unit disc of XY */
+                ASSERT_TRUE(at[0] * at[0] + at[1] * at[1] <= 1.0f + 1e-5f);
+                ASSERT_FLOAT_EQ(0.0f, at[2], 1e-6f);
+                break;
+            default: /* on the unit tube about Z, going straight out */
+                ASSERT_FLOAT_EQ(1.0f, at[0] * at[0] + at[1] * at[1], 1e-4f);
+                ASSERT_TRUE(fabsf(at[2]) <= 1.0f);
+                ASSERT_FLOAT_EQ(0.0f, p->dir[2], 1e-7f);
+                ASSERT_FLOAT_EQ(0.0f, p->dir[0] * at[1] - p->dir[1] * at[0], 1e-6f);
+                ASSERT_TRUE(p->dir[0] * at[0] + p->dir[1] * at[1] > 0.0f);
+                break;
+            }
+        }
+        fixture_end(&f);
+    }
+}
+
 TEST(engine_media, voices_follow_the_sound_settings_and_instances)
 {
     engine_fixture_t f;
@@ -1286,6 +1358,7 @@ REGISTER_TEST(engine_media, a_mutation_box_brings_size_and_color_to_its_own);
 REGISTER_TEST(engine_media, an_infinite_plane_deflector_sends_the_particles_back);
 REGISTER_TEST(engine_media, a_sphere_deflector_kills_the_particles_that_hit_it);
 REGISTER_TEST(engine_media, particles_draw_where_their_render_last_emitter_sorts);
+REGISTER_TEST(engine_media, line_cubic_disc_and_cylinder_emitters_place_their_particles);
 REGISTER_TEST(engine_media, movie_player_shows_the_movie_frames_over_its_duration);
 REGISTER_TEST(engine_media, movie_texture_shows_the_decoded_frame_of_its_slot);
 REGISTER_TEST(engine_media, transparent_texture_clears_black_without_a_saved_color);
