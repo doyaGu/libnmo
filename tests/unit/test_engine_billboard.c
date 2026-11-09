@@ -265,8 +265,8 @@ TEST(engine_billboard, output_matrix_links_apply_the_corrected_pose_and_render_i
 TEST(engine_billboard, camera_switches_viewport_changes_and_live_materials_update_sprite_pixel_sizing)
 {
     billboard_fixture_t g; graph_begin(&g,NMO_CID_SPRITE3D); sprite(&g); fixture_input_value(&g.f,BLOCK_PIN(&g.f,g.block,3),&(float){1},sizeof(float)); nmo_object_id_t factor = source(&g,BLOCK_PIN(&g.f,g.block,3));
-    nmo_object_id_t second = fixture_create(&g.f,NMO_CID_CAMERA,"Second Camera"); ASSERT_TRUE(second != 0); nmo_camera_state_t *camera = fixture_state(&g.f,second); camera->has_cameraonly_chunk = camera->entity.has_entityndata_chunk = 1; camera->projection_type = CK_ORTHOGRAPHICPROJECTION; camera->orthographic_zoom = .5f;
-    const eng_matrix_t eye = {{{0,0,-1,0},{0,1,0,0},{1,0,0,0},{7,8,9,1}}}; memcpy(camera->entity.world_matrix,eye.m,sizeof(eye.m));
+    nmo_object_id_t second = fixture_create(&g.f,NMO_CID_CAMERA,"Second Camera"); ASSERT_TRUE(second != 0); nmo_camera_state_t *camera = fixture_state(&g.f,second); camera->has_cameraonly_chunk = camera->entity.has_entityndata_chunk = 1; camera->projection_type = CK_ORTHOGRAPHICPROJECTION; camera->orthographic_zoom = .5f; camera->near_plane = 1; camera->far_plane = 100;
+    const eng_matrix_t eye = {{{0,0,-1,0},{0,1,0,0},{1,0,0,0},{-7,4,10,1}}}; /* in front of the sprite, which is culled otherwise */ memcpy(camera->entity.world_matrix,eye.m,sizeof(eye.m));
     nmo_object_id_t activate = fixture_block(&g.f,NMO_GUID(0x368f0ab1,0x2d8957e4),"Use Second Camera"); ASSERT_TRUE(activate != 0); fixture_input_int(&g.f,fixture_target(&g.f,activate),(int32_t)second); fixture_link(&g.f,BLOCK_OUT(&g.f,g.out,0),BLOCK_IN(&g.f,activate,0),0); graph_commit(&g);
     ASSERT_EQ(NMO_OK,nmo_engine_step(g.f.engine,0)); const eng_sprite3d_t *s = eng_sprite3d(g.f.engine,g.target); ASSERT_FLOAT_EQ(2,s->max.y-s->min.y,2e-4f); ASSERT_EQ(second,g.f.engine->render.camera);
     trigger(&g); s = eng_sprite3d(g.f.engine,g.target); ASSERT_FLOAT_EQ(.4f,s->max.y-s->min.y,2e-4f); const eng_matrix_t expected = {{{0,0,1,0},{0,1,0,0},{-1,0,0,0},{3,4,10,1}}}; rendered_matrix(g.f.engine,g.target,&expected);

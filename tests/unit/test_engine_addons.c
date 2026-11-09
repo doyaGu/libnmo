@@ -871,7 +871,8 @@ TEST(engine_addons, lightmap_load_draws_the_saved_lightmaps)
     engine_fixture_t f;
     fixture_begin_document(&f);
     nmo_object_id_t mesh = grid_mesh(&f, "Ground", 2);
-    const float origin[3] = {0, 0, 0}, eye[3] = {0.5f, 3, -6};
+    /* the eye sees the ground: its lightmap draws as the ground renders */
+    const float origin[3] = {0, 0, 0}, eye[3] = {0.5f, 1, -6};
     nmo_object_id_t ground = placed_entity(&f, NMO_CID_3DOBJECT, "Ground", X_AXIS, Y_AXIS, Z_AXIS, origin, mesh);
     nmo_object_id_t camera = a_camera(&f, X_AXIS, Y_AXIS, Z_AXIS, eye, 1.0f);
     nmo_object_id_t texture = fixture_create(&f, NMO_CID_TEXTURE, "Saved Map");

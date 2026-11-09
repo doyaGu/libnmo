@@ -1525,8 +1525,10 @@ static int cb_skin_join(blk_t *b, uint32_t message)
 
 /*
  * Skin Join: On, the owner's mesh vertices follow the joined objects' vertices
- * they were matched with (a pre render callback); Off stops. The engine does
- * not cull, so the DLL's bounding box hand-over for a culled owner is left out.
+ * they were matched with (a pre render callback, so only while the owner is in
+ * view); Off stops. The DLL hands a joined object's box in view to an owner
+ * that was all outside (SetBoundingBox) so it renders again; the engine has no
+ * user boxes, so that is left out.
  */
 static int bb_skin_join(blk_t *b)
 {

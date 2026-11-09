@@ -184,6 +184,66 @@ TEST(engine_visuals, the_scene_graph_orders_children_priorities_and_transparent_
     fixture_end(&f);
 }
 
+TEST(engine_visuals, the_camera_culls_what_is_out_of_view_as_the_scene_graph_is_traversed)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t material = fixture_create(&f, NMO_CID_MATERIAL, "Material");
+    nmo_object_id_t camera = fixture_create(&f, NMO_CID_CAMERA, "Camera");
+    nmo_camera_state_t *lens = (nmo_camera_state_t *)fixture_state(&f, camera);
+    ASSERT_TRUE(material != 0 && lens != NULL);
+    lens->entity.has_entityndata_chunk = 1;
+    lens->projection_type = 1; /* perspective, at the origin looking down Z */
+    lens->fov = 1.0f;
+    lens->aspect_width = 4;
+    lens->aspect_height = 3;
+    lens->near_plane = 1.0f;
+    lens->far_plane = 100.0f;
+    /* Ahead in view, Behind the eye, a Parent behind with a Child ahead, a Group behind with its Member */
+    const char *names[6] = {"Ahead", "Behind", "Parent", "Child", "Group", "Member"};
+    const float depth[6] = {10, -10, -10, 10, -10, -12};
+    nmo_object_id_t objects[6], meshes[6];
+    for (int i = 0; i < 6; i++) {
+        objects[i] = face_object(&f, names[i], material, &meshes[i]);
+        ASSERT_TRUE(objects[i] != 0);
+        ((nmo_3dentity_state_t *)fixture_state(&f, objects[i]))->world_matrix[14] = depth[i];
+    }
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    int32_t index[6];
+    for (int i = 0; i < 6; i++) {
+        eng_show(f.engine, objects[i], 1);
+        eng_show(f.engine, meshes[i], 1);
+        index[i] = eng_entity_index(f.engine, objects[i]);
+    }
+    ASSERT_TRUE(eng_entity_set_parent(f.engine, index[3], index[2], true));
+    ASSERT_TRUE(eng_entity_set_parent(f.engine, index[5], index[4], true));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 10.0f));
+
+    /* Without a camera the engine's stand-in eye culls nothing */
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    for (int i = 0; i < 6; i++) {
+        ASSERT_TRUE(mesh_draw(&frame, objects[i]) >= 0);
+    }
+
+    f.engine->render.camera = camera;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_TRUE(mesh_draw(&frame, objects[0]) >= 0);
+    ASSERT_TRUE(mesh_draw(&frame, objects[1]) < 0);
+    ASSERT_TRUE(eng_entity_all_outside_frustum(f.engine, index[1]));
+    /* the parent's hierarchy reaches into the view: the parent alone is skipped */
+    ASSERT_TRUE(mesh_draw(&frame, objects[2]) < 0);
+    ASSERT_TRUE(mesh_draw(&frame, objects[3]) >= 0);
+    ASSERT_TRUE(eng_entity_all_inside_frustum(f.engine, index[3]));
+    /* the whole group is behind: both skipped, both outside */
+    ASSERT_TRUE(mesh_draw(&frame, objects[4]) < 0 && mesh_draw(&frame, objects[5]) < 0);
+    ASSERT_TRUE(eng_entity_all_outside_frustum(f.engine, index[4]) && eng_entity_all_outside_frustum(f.engine, index[5]));
+    fixture_end(&f);
+}
+
 TEST(engine_visuals, blink_cycles_the_target_and_fps_reports_the_rate)
 {
     engine_fixture_t f;
@@ -1509,6 +1569,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_visuals, render_curve_line_mode_draws_the_line_mesh);
     REGISTER_TEST(engine_visuals, show_object_information_draws_box_and_face_normals_after_the_scene);
     REGISTER_TEST(engine_visuals, the_scene_graph_orders_children_priorities_and_transparent_objects);
+    REGISTER_TEST(engine_visuals, the_camera_culls_what_is_out_of_view_as_the_scene_graph_is_traversed);
     REGISTER_TEST(engine_visuals, simple_shadow_multiplies_the_floors_under_its_owner_until_off);
     REGISTER_TEST(engine_visuals, simple_shadow_skips_floors_outside_the_last_render);
     REGISTER_TEST(engine_visuals, solid_trail_follows_the_owners_farthest_vertices_until_off);
