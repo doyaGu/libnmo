@@ -51,7 +51,9 @@ static run_result_t run_cli(const char *args)
 {
     run_result_t result = {{0}, -1};
     char command[2048];
-    snprintf(command, sizeof(command), "\"%s\" %s 2>&1", NMO_CLI_PATH, args);
+    /* the path unquoted, like the other CLI tests: cmd.exe strips the quotes of a command
+       that starts with one */
+    snprintf(command, sizeof(command), "%s %s 2>&1", NMO_CLI_PATH, args);
     FILE *pipe = RUN_POPEN(command, "r");
     if (pipe == NULL) {
         return result;
