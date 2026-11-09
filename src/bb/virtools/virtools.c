@@ -33,6 +33,7 @@ static nmo_status_t (*const virtools_sets[])(nmo_engine_t *engine) = {
     eng_register_3dtransfo,
     eng_register_collisions,
     eng_register_grids,
+    eng_register_mesh_modifiers,
 };
 
 nmo_status_t nmo_bb_virtools_register(nmo_engine_t *engine)

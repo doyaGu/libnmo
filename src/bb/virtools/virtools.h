@@ -51,6 +51,7 @@ nmo_status_t eng_register_curve_properties(nmo_engine_t *engine);
 nmo_status_t eng_register_mimic(nmo_engine_t *engine);
 nmo_status_t eng_register_collisions(nmo_engine_t *engine);
 nmo_status_t eng_register_grids(nmo_engine_t *engine);
+nmo_status_t eng_register_mesh_modifiers(nmo_engine_t *engine);
 /* BB_Orientate (3dtransfo.c): the entity's `dir_mode` axis turned toward `dir`; the up used */
 eng_vector_t eng_bb_orientate(nmo_engine_t *engine, int32_t entity, eng_vector_t dir, int32_t dir_mode,
                               float roll, eng_vector_t up, float speed, bool keep);

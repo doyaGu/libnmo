@@ -38,6 +38,7 @@ set(NMO_BB_VIRTOOLS_SOURCES
     virtools/interface_layouts.c
     virtools/lights.c
     virtools/materials.c
+    virtools/mesh_modifiers.c
     virtools/narratives.c
     virtools/sounds.c
     virtools/visuals.c
