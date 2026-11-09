@@ -250,7 +250,7 @@ static int bb_change_referential(blk_t *b)
     }
     int32_t ref = input_entity(b, 0);
     eng_entity_t *entity = &engine->entities.data[index];
-    eng_matrix_t change, inverse;
+    eng_matrix_t change, inverse = {{{0.0f}}};
     if (ref >= 0) {
         eng_matrix_inverse(&inverse, &engine->entities.data[ref].world);
     }

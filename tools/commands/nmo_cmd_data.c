@@ -1078,7 +1078,7 @@ static nmo_status_t data_fill_table(
         }
         if (args->append) {
             const nmo_dataarray_column_format_t *existing = &state->column_formats[index];
-            if (strcmp(existing->name, name) != 0 || existing->type != type ||
+            if (strcmp(existing->name, name) != 0 || (uint32_t)existing->type != type ||
                 !nmo_guid_equals(existing->parameter_type_guid, parameter_guid)) {
                 fprintf(stderr, "Error: Append column %zu differs from the existing schema\n", index);
                 return NMO_ERR_INVALID_ARGUMENT;

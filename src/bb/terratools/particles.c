@@ -1272,7 +1272,7 @@ static bool hit_local(nmo_engine_t *engine, int32_t at, const float prev[3], con
     if (!shape(engine, at, p0, p1, res, norm)) {
         return false;
     }
-    eng_vector_t lr = {res[0], res[1], res[2]}, ln = {norm[0], norm[1], norm[2]}, wr, wn;
+    eng_vector_t lr = {res[0], res[1], res[2]}, ln = {norm[0], norm[1], norm[2]}, wr = {0.0f, 0.0f, 0.0f}, wn;
     if (point_first) {
         eng_entity_transform(engine, at, &wr, &lr, -1);
     }
