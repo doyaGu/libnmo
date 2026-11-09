@@ -41,6 +41,9 @@ typedef struct eng_entity {
     bool destroyed;
     /* CKSceneGraphNode's frustum flags (ENG_FRUSTUM_*), as the last render or test left them */
     uint8_t frustum;
+    /* CK3dEntity::GetRenderExtents: its rectangle in the render context's pixels, as the last
+       render (or test that updates it) left it */
+    nmo_rect_t render_extents;
     /* CK3dEntity::SetBoundingBox (VX_MOVEABLE_USERBOX): the box set, in the entity's space */
     bool user_box;
     eng_vector_t user_min, user_max;
@@ -160,9 +163,11 @@ void eng_entity_set_user_box(nmo_engine_t *engine, int32_t index, const eng_vect
 /* RCK3dEntity::IsInViewFrustrum through a camera's `view_projection`
  * (eng_camera_view_projection): its box set (SetBoundingBox), else its current mesh's box (a
  * sprite's rectangle), or its origin when it has no mesh; marks it inside when all of it is, outside when none of it is, never clearing a
- * mark. False, unmarked, for a mesh without vertices. */
+ * mark. False, unmarked, for a mesh without vertices. With `update` (a render's test, flags with
+ * a low byte) its render extents start empty and take the box's rectangle in `viewport` (x, y,
+ * width, height) when any of it is in view; a meshless entity's are always its origin's pixel. */
 bool eng_entity_in_view_frustum(nmo_engine_t *engine, int32_t index,
-    const eng_matrix_t *view_projection);
+    const eng_matrix_t *view_projection, const int32_t viewport[4], bool update);
 /* RCK3dEntity::IsInViewFrustrumHierarchic: the marks cleared, then its hierarchy's world box
  * tested (in view, unmarked, when no entity of it has a box) */
 bool eng_entity_in_view_frustum_hierarchic(nmo_engine_t *engine, int32_t index,

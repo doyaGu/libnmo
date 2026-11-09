@@ -628,9 +628,10 @@ static int bb_object_between(blk_t *b)
  * Is In View Frustum: a 3D entity tested against the attached camera's
  * frustum (CK3dEntity::IsInViewFrustrum, or IsInViewFrustrumHierarchic with
  * Test Hierarchy), all inside as the test's mark says (IsAllInsideFrustrum),
- * its box's extents in render context pixels; a 2D entity's rectangle against
- * the view. Version 3 also says whether it is all inside. Other objects do
- * nothing.
+ * its extents the ones the last render left (GetRenderExtents: the test here
+ * does not update them, except a meshless entity's pixel); a 2D entity's
+ * rectangle against the view. Version 3 also says whether it is all inside.
+ * Other objects do nothing.
  */
 static int bb_is_in_view_frustum(blk_t *b)
 {
@@ -649,25 +650,13 @@ static int bb_is_in_view_frustum(blk_t *b)
     if (entity >= 0 && eng_is_child_class(engine, class_id, NMO_CID_3DENTITY)) {
         eng_matrix_t view;
         if (eng_camera_view_projection(engine, engine->render.camera, &view, NULL)) {
-            eng_vector_t min, max;
-            eng_matrix_t matrix;
-            bool has_box;
-            if (hierarchy) {
-                inside = eng_entity_in_view_frustum_hierarchic(engine, entity, &view);
-                has_box = eng_entity_hierarchical_box(engine, entity, &min, &max);
-                matrix = view;
-            } else {
-                inside = eng_entity_in_view_frustum(engine, entity, &view);
-                has_box = eng_entity_local_box(engine, entity, &min, &max);
-                eng_matrix_multiply4(&matrix, &view, &engine->entities.data[entity].world);
-            }
+            int32_t viewport[4];
+            eng_render_viewport(engine, viewport);
+            inside = hierarchy ? eng_entity_in_view_frustum_hierarchic(engine, entity, &view)
+                               : eng_entity_in_view_frustum(engine, entity, &view, viewport, false);
             all_inside = eng_entity_all_inside_frustum(engine, entity);
-            nmo_rect_t screen;
-            if (inside && has_box && eng_project_box(&matrix, &min, &max, &screen)) {
-                extents = (nmo_rect_t){screen.left * (float)mode->width, screen.top * (float)mode->height,
-                                       screen.right * (float)mode->width, screen.bottom * (float)mode->height};
-            }
         }
+        extents = engine->entities.data[entity].render_extents; /* GetRenderExtents */
     } else if (object != 0 && eng_is_child_class(engine, class_id, NMO_CID_2DENTITY)) {
         const eng_2d_t *flat = eng_2d_entity(engine, object);
         if (flat == NULL) {

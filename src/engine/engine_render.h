@@ -289,6 +289,8 @@ bool eng_camera_view_projection(nmo_engine_t *engine, nmo_object_id_t camera,
    normalized screen bounds in `out` (may be NULL). */
 int eng_box_visibility(const struct eng_matrix *matrix, const struct eng_vector *min,
     const struct eng_vector *max, nmo_rect_t *out);
+/* The same for up to eight points (a box's corners, a sprite's quad) */
+int eng_points_visibility(const struct eng_matrix *matrix, const double (*points)[3], int count, nmo_rect_t *out);
 /* VxTransformBox2D: normalized screen bounds, including native near-plane expansion. */
 bool eng_project_box(const struct eng_matrix *matrix, const struct eng_vector *min,
     const struct eng_vector *max, nmo_rect_t *out);

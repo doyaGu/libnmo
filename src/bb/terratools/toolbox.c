@@ -3212,12 +3212,15 @@ static int bb_view_frustum_clipping(blk_t *b)
     if (!eng_camera_view_projection(engine, camera, &view, NULL)) {
         return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
     }
+    int32_t viewport[4];
+    eng_render_viewport(engine, viewport);
     for (size_t i = 0; i < engine->entities.count; i++) {
         nmo_object_id_t id = engine->entities.data[i].id;
         if (engine->entities.data[i].destroyed || !eng_in_scene(engine, id)) {
             continue;
         }
-        eng_show(engine, id, eng_entity_in_view_frustum(engine, (int32_t)i, &view) ? 1 : 0);
+        /* IsInViewFrustrum(rc, 255): the render extents updated too */
+        eng_show(engine, id, eng_entity_in_view_frustum(engine, (int32_t)i, &view, viewport, true) ? 1 : 0);
     }
     return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
 }

@@ -3011,35 +3011,34 @@ typedef struct eng_scene_walk {
 
 static void eng_walk_nodes(nmo_engine_t *engine, int32_t parent, eng_scene_walk_t *walk, bool tested);
 
-/* RCK3dEntity::IsInViewFrustrum as the entity renders; RCKSprite3D's quad turned to the eye first
-   (UpdateOrientation) */
+/* RCK3dEntity::IsInViewFrustrum as the entity renders (its render extents updated);
+   RCKSprite3D's quad turned to the eye first (UpdateOrientation) */
 static bool eng_walk_in_view(nmo_engine_t *engine, int32_t index, const eng_scene_walk_t *walk)
 {
     const eng_sprite3d_t *sprite = eng_sprite3d(engine, engine->entities.data[index].id);
-    if (sprite == NULL) {
-        return eng_entity_in_view_frustum(engine, index, walk->view);
+    if (sprite == NULL || engine->entities.data[index].user_box) {
+        return eng_entity_in_view_frustum(engine, index, walk->view, walk->frame->viewport, true);
     }
     float corners[4][3];
     eng_sprite3d_corners(sprite, &engine->entities.data[index], walk->frame->camera != 0 ? walk->frame->view : NULL,
                          corners);
-    unsigned combined = 0, common = 63;
-    const eng_matrix_t *m = walk->view;
+    double points[4][3];
     for (int k = 0; k < 4; k++) {
-        double h[4];
-        for (int c = 0; c < 4; c++) {
-            h[c] = corners[k][0] * m->m[0][c] + corners[k][1] * m->m[1][c] + corners[k][2] * m->m[2][c] + m->m[3][c];
-        }
-        unsigned flags = (h[0] < -h[3] ? 1u : 0) | (h[0] > h[3] ? 2u : 0) | (h[1] < -h[3] ? 4u : 0) |
-                         (h[1] > h[3] ? 8u : 0) | (h[2] < 0 ? 16u : 0) | (h[2] > h[3] ? 32u : 0);
-        combined |= flags;
-        common &= flags;
+        points[k][0] = corners[k][0], points[k][1] = corners[k][1], points[k][2] = corners[k][2];
     }
+    nmo_rect_t screen;
+    int visibility = eng_points_visibility(walk->view, (const double (*)[3])points, 4, &screen);
     eng_entity_t *entity = &engine->entities.data[index];
-    if (common != 0) {
+    entity->render_extents = (nmo_rect_t){1e8f, 1e8f, -1e8f, -1e8f};
+    if (visibility == 0) {
         entity->frustum |= ENG_FRUSTUM_OUTSIDE;
         return false;
     }
-    if (combined == 0) {
+    const int32_t *v = walk->frame->viewport;
+    entity->render_extents = (nmo_rect_t){(float)v[0] + screen.left * (float)v[2], (float)v[1] + screen.top * (float)v[3],
+                                          (float)v[0] + screen.right * (float)v[2],
+                                          (float)v[1] + screen.bottom * (float)v[3]};
+    if (visibility == 2) {
         entity->frustum |= ENG_FRUSTUM_INSIDE;
     }
     return true;

@@ -1036,31 +1036,55 @@ static bool eng_frustum_mark(eng_entity_t *entity, int visibility)
     return visibility != 0;
 }
 
+/* A normalized rectangle in the viewport's pixels */
+static nmo_rect_t eng_viewport_rect(const nmo_rect_t *n, const int32_t viewport[4])
+{
+    const float x = (float)viewport[0], y = (float)viewport[1], w = (float)viewport[2], h = (float)viewport[3];
+    return (nmo_rect_t){x + n->left * w, y + n->top * h, x + n->right * w, y + n->bottom * h};
+}
+
 bool eng_entity_in_view_frustum(nmo_engine_t *engine, int32_t index,
-    const eng_matrix_t *view_projection)
+    const eng_matrix_t *view_projection, const int32_t viewport[4], bool update)
 {
     if (index < 0 || (size_t)index >= engine->entities.count || engine->entities.data[index].destroyed) {
         return false;
     }
+    if (update) {
+        engine->entities.data[index].render_extents = (nmo_rect_t){1e8f, 1e8f, -1e8f, -1e8f};
+    }
     eng_matrix_t matrix;
     eng_matrix_multiply4(&matrix, view_projection, &engine->entities.data[index].world);
     int visibility;
+    nmo_rect_t screen = {0, 0, 0, 0};
+    nmo_rect_t *extents = update ? &screen : NULL;
     nmo_mesh_state_t runtime;
     const nmo_mesh_state_t *mesh = eng_entity_mesh(engine, index, NULL, &runtime);
     if (engine->entities.data[index].user_box) {
         visibility = eng_box_visibility(&matrix, &engine->entities.data[index].user_min,
-                                        &engine->entities.data[index].user_max, NULL);
+                                        &engine->entities.data[index].user_max, extents);
     } else if (eng_sprite3d(engine, engine->entities.data[index].id) != NULL || mesh != NULL) {
         if (mesh != NULL && mesh->vertex_count == 0 && eng_sprite3d(engine, engine->entities.data[index].id) == NULL) {
             return false;
         }
         eng_vector_t min, max;
         eng_entity_local_box(engine, index, &min, &max);
-        visibility = eng_box_visibility(&matrix, &min, &max, NULL);
+        visibility = eng_box_visibility(&matrix, &min, &max, extents);
     } else {
-        /* TransformVertices of the origin: off screen when it is out of any plane */
+        /* TransformVertices of the origin: off screen when it is out of any plane; its pixel the
+           extents, whatever the flags */
         const double x = matrix.m[3][0], y = matrix.m[3][1], z = matrix.m[3][2], w = matrix.m[3][3];
         visibility = x < -w || x > w || y < -w || y > w || z < 0 || z > w ? 0 : 2;
+        if (viewport != NULL) {
+            const double d = fabs(w);
+            const nmo_rect_t n = {(float)(x / d * .5 + .5), (float)(y / d * -.5 + .5), 0, 0};
+            nmo_rect_t pixel = eng_viewport_rect(&n, viewport);
+            engine->entities.data[index].render_extents = (nmo_rect_t){pixel.left, pixel.top, pixel.left + 1.0f,
+                                                                         pixel.top + 1.0f};
+        }
+        extents = NULL;
+    }
+    if (visibility != 0 && extents != NULL && viewport != NULL) {
+        engine->entities.data[index].render_extents = eng_viewport_rect(&screen, viewport);
     }
     return eng_frustum_mark(&engine->entities.data[index], visibility);
 }

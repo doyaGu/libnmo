@@ -241,6 +241,17 @@ TEST(engine_visuals, the_camera_culls_what_is_out_of_view_as_the_scene_graph_is_
     /* the whole group is behind: both skipped, both outside */
     ASSERT_TRUE(mesh_draw(&frame, objects[4]) < 0 && mesh_draw(&frame, objects[5]) < 0);
     ASSERT_TRUE(eng_entity_all_outside_frustum(f.engine, index[4]) && eng_entity_all_outside_frustum(f.engine, index[5]));
+
+    /* Render extents (GetRenderExtents): the face ahead, a little right of and above the middle
+       of the 640 by 480 view; the one behind tested and left empty; the member never tested */
+    const nmo_rect_t *ahead = &f.engine->entities.data[index[0]].render_extents;
+    ASSERT_TRUE(ahead->left >= 320.0f && ahead->right > ahead->left && ahead->right < 640.0f);
+    ASSERT_TRUE(ahead->bottom <= 240.0f && ahead->top < ahead->bottom && ahead->top > 0.0f);
+    const nmo_rect_t *behind = &f.engine->entities.data[index[1]].render_extents;
+    ASSERT_FLOAT_EQ(1e8f, behind->left, 0.0f);
+    ASSERT_FLOAT_EQ(-1e8f, behind->right, 0.0f);
+    const nmo_rect_t *member = &f.engine->entities.data[index[5]].render_extents;
+    ASSERT_TRUE(member->left == 0.0f && member->right == 0.0f);
     fixture_end(&f);
 }
 

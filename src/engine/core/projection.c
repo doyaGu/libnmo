@@ -32,14 +32,12 @@ bool eng_camera_view_projection(nmo_engine_t *engine, nmo_object_id_t camera,
     return true;
 }
 
-int eng_box_visibility(const eng_matrix_t *matrix, const eng_vector_t *min,
-    const eng_vector_t *max, nmo_rect_t *out)
+int eng_points_visibility(const eng_matrix_t *matrix, const double (*points)[3], int count, nmo_rect_t *out)
 {
-    if (!(min->x <= max->x && min->y <= max->y && min->z <= max->z)) return 0;
     double vertices[8][3]; unsigned combined = 0, common = 63;
-    bool flat = max->z-min->z == 0; int count = flat ? 4 : 8;
+    if (count > 8) count = 8;
     for (int i = 0; i < count; i++) {
-        double p[3] = {i & (flat ? 1 : 4) ? max->x : min->x,i & 2 ? max->y : min->y,i & (flat ? 0 : 1) ? max->z : min->z}, h[4];
+        const double *p = points[i]; double h[4];
         for (int c = 0; c < 4; c++) {
             h[c] = p[0]*matrix->m[0][c]+p[1]*matrix->m[1][c]+p[2]*matrix->m[2][c]+matrix->m[3][c];
             if (!isfinite(h[c])) return 0;
@@ -65,6 +63,20 @@ int eng_box_visibility(const eng_matrix_t *matrix, const eng_vector_t *min,
         if (combined & 4u) rect.bottom = 1;
     }
     *out = rect; return combined != 0 ? 1 : 2;
+}
+
+int eng_box_visibility(const eng_matrix_t *matrix, const eng_vector_t *min,
+    const eng_vector_t *max, nmo_rect_t *out)
+{
+    if (!(min->x <= max->x && min->y <= max->y && min->z <= max->z)) return 0;
+    double corners[8][3];
+    bool flat = max->z-min->z == 0; int count = flat ? 4 : 8;
+    for (int i = 0; i < count; i++) {
+        corners[i][0] = i & (flat ? 1 : 4) ? max->x : min->x;
+        corners[i][1] = i & 2 ? max->y : min->y;
+        corners[i][2] = i & (flat ? 0 : 1) ? max->z : min->z;
+    }
+    return eng_points_visibility(matrix, (const double (*)[3])corners, count, out);
 }
 
 bool eng_project_box(const eng_matrix_t *matrix, const eng_vector_t *min,

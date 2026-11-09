@@ -686,6 +686,9 @@ TEST(engine_logics, ray_boxes_obstacles_and_the_view_frustum)
     nmo_object_id_t outside = nop_after(&f, BLOCK_OUT(&f, unseen, 1), 0);
     start(&f);
     f.engine->render.camera = camera;
+    /* the extents are the last render's (GetRenderExtents): render once before the blocks run */
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
 
     step(&f, 1);
     ASSERT_EQ(1u, runs(&f, hit));
