@@ -473,6 +473,11 @@ void eng_floor_shadow_place(nmo_engine_t *engine, eng_floor_shadow_t *shadow, nm
                             float zoom, float max_height);
 /* The channel off every floor it is on (the list stays) */
 void eng_floor_shadow_remove(nmo_engine_t *engine, eng_floor_shadow_t *shadow);
+/* Quads in world space (four corners, UVs each, a color each) as one transparent triangle
+   draw of `object`: `texture`, blended source_blend/dest_blend, without the depth test or write */
+void eng_render_push_quads(nmo_engine_t *engine, nmo_object_id_t object, const struct eng_vector *corners,
+                           const float (*uvs)[2], const uint32_t *colors, int32_t quads,
+                           nmo_object_id_t texture, int32_t source_blend, int32_t dest_blend);
 /* Add a draw to the frame being made; NULL out of memory */
 nmo_engine_draw_t *eng_render_push(nmo_engine_t *engine);
 /* CKContext::CreateObject(CKCID_MESH) then SetVertexCount and SetFaceCount: zeroed vertices,

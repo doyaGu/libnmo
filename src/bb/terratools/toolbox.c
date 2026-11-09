@@ -3528,40 +3528,7 @@ static void push_overlay_quads(nmo_engine_t *engine, nmo_object_id_t object, con
                                const float (*uvs)[2], const uint32_t *colors, int32_t quads,
                                nmo_object_id_t texture, int32_t source_blend, int32_t dest_blend)
 {
-    eng_render_t *render = &engine->render;
-    int32_t first = (int32_t)render->vertices.count;
-    eng_vector_t centre = {0.0f, 0.0f, 0.0f};
-    for (int32_t q = 0; q < quads; q++) {
-        static const int order[6] = {0, 1, 2, 0, 2, 3};
-        for (int i = 0; i < 6; i++) {
-            const eng_vector_t *p = &corners[4 * q + order[i]];
-            nmo_engine_vertex_t *vertex = NULL;
-            if (!ENG_VEC_PUSH(render->vertices, vertex)) {
-                return;
-            }
-            *vertex = (nmo_engine_vertex_t){p->x, p->y, p->z, uvs[4 * q + order[i]][0], uvs[4 * q + order[i]][1],
-                                            colors[q], 0.0f, 0.0f, 0.0f};
-        }
-        centre = corners[4 * q];
-    }
-    int32_t count = (int32_t)render->vertices.count - first;
-    nmo_engine_draw_t *draw = count > 0 ? eng_render_push(engine) : NULL;
-    if (draw == NULL) {
-        return;
-    }
-    draw->kind = NMO_ENGINE_DRAW_TRIANGLES;
-    draw->object = object;
-    draw->first_vertex = first;
-    draw->vertex_count = count;
-    draw->texture = texture;
-    draw->source_blend = source_blend;
-    draw->dest_blend = dest_blend;
-    draw->blend = true;
-    draw->transparent = true;
-    draw->no_z_test = true;
-    draw->no_z_write = true;
-    draw->world[0] = draw->world[5] = draw->world[10] = draw->world[15] = 1.0f;
-    draw->world[12] = centre.x, draw->world[13] = centre.y, draw->world[14] = centre.z;
+    eng_render_push_quads(engine, object, corners, uvs, colors, quads, texture, source_blend, dest_blend);
 }
 
 enum { SHADOW_PLANE_CORNERS };

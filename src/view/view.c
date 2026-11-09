@@ -1562,6 +1562,12 @@ static void view_draw_frame(nmo_view_t *view, const nmo_engine_frame_t *frame, i
         const nmo_engine_draw_t *draw = &frame->draws[i];
         if (draw->kind == NMO_ENGINE_DRAW_PRIMITIVE && draw->post) {
             view_clip_draw(view, draw, window_h);
+            if (draw->clears_stencil) {
+                glStencilMask(0xFFu);
+                glClearStencil((GLint)draw->stencil_clear);
+                glClear(GL_STENCIL_BUFFER_BIT);
+                continue;
+            }
             view_draw_state(draw);
             view_draw_primitive(view, frame, draw, view_m);
         }
@@ -1583,6 +1589,10 @@ static void view_draw_frame(nmo_view_t *view, const nmo_engine_frame_t *frame, i
     for (int32_t i = end_mesh; i < frame->draw_count; i++) {
         if (frame->draws[i].kind == NMO_ENGINE_DRAW_SPRITE_TEXT) {
             view_draw_sprite_text(view, &frame->draws[i]);
+        } else if (frame->draws[i].stencil.enabled) {
+            view_draw_state(&frame->draws[i]); /* a quad drawn where the stencil says (a shadow's) */
+            view_draw_quad(view, &frame->draws[i]);
+            glDisable(GL_STENCIL_TEST);
         } else {
             view_draw_quad(view, &frame->draws[i]);
         }

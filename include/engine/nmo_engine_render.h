@@ -130,6 +130,10 @@ typedef struct nmo_engine_draw {
     nmo_engine_stencil_t stencil;
     bool stencil_only;
     bool mirrored;
+    /* A post primitive with `clears_stencil` draws nothing: the stencil is cleared to
+       `stencil_clear` where it comes (CKRenderContext::Clear(CK_RENDER_CLEARSTENCIL, value)). */
+    bool clears_stencil;
+    uint32_t stencil_clear;
     /* A mesh `blackened` draws its materials with black diffuse, emissive and ambient
        (ShadowCaster's shadow) */
     bool blackened;
