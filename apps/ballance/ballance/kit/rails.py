@@ -1,13 +1,14 @@
 """Ballance rails built the way the original levels build them.
 
 A rail is two tubes whose middles are 3.8 apart, each an octagon 0.35 in
-radius with its two lowest faces left out, in the Rail material.  The tubes'
+radius, whole and capped at its ends (the originals leave the two lowest
+faces out and the ends open), in the Rail material.  The tubes'
 rings stand upright, square to the track: a straight rail has one at each
 end, so a slope changes at a kink (a hump has one every few units, as
 Level_12's do), and a bend is the originals' one bend, 90
 degrees about a point 8.1 to the side of the track's middle (the inner tube
 6.2, the outer 10), in nine steps of 10 degrees.  Normals are smooth around
-the tube; the two at its open bottom lean as the face beside them does.
+the tube.
 
 Where a rail meets a floor it stops at the floor's edge, open, with the tubes'
 middles 0.14 above the bottom of the V the floor opens to it there
@@ -31,12 +32,13 @@ BEND_STEP = 10.0
 ABOVE_V = 0.14
 REPEAT = 5.0
 
-# The ring's corners, in degrees from the tube's outer side up and over; the
-# faces join each to the next but the last to the first, leaving the bottom
-# open.  The normals at the open bottom's corners lean as their one face does.
-ANGLES = [0.0, 45.0, 90.0, 135.0, 180.0, 225.0, 315.0]
-NORMALS = [0.0, 45.0, 90.0, 135.0, 180.0, 202.5, 337.5]
-FACES = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (6, 0)]
+# The ring's corners, in degrees from the tube's outer side up and over, and
+# its faces, all round.  The originals leave the two lowest faces out, as
+# their camera never looks up at a rail; levels that stack their tracks
+# show the open half pipe from below.
+ANGLES = [45.0 * k for k in range(8)]
+NORMALS = ANGLES
+FACES = [(k, (k + 1) % 8) for k in range(8)]
 # A beam's corners, from its right side up and over, and its faces, all round.
 BEAM_ANGLES = [22.5 + 45.0 * k for k in range(8)]
 BEAM_FACES = [(k, (k + 1) % 8) for k in range(8)]
@@ -116,6 +118,7 @@ def _tube(mesh: Mesh, run: list[Ring], side: float) -> None:
                 )
             )
         rings.append((corners, along / REPEAT))
+    _caps(mesh, [corners for corners, _ in rings])
     for (a, va), (b, vb) in zip(rings, rings[1:]):
         for i, j in FACES:
             quad = [(a[i], va), (a[j], va), (b[j], vb), (b[i], vb)]
@@ -148,6 +151,7 @@ def _beam(mesh: Mesh, run: list[Ring]) -> None:
                 )
             )
         rings.append((corners, along / REPEAT))
+    _caps(mesh, [corners for corners, _ in rings])
     for (a, va), (b, vb) in zip(rings, rings[1:]):
         for i, j in BEAM_FACES:
             quad = [(a[i], va), (a[j], va), (b[j], vb), (b[i], vb)]
@@ -156,6 +160,26 @@ def _beam(mesh: Mesh, run: list[Ring]) -> None:
                     ((point, (u, v), normal)) for (point, normal, u), v in (quad[t] for t in tri)
                 ]
                 mesh.triangle('Rail', corners[0][2], *corners)
+
+
+def _caps(mesh: Mesh, rings: list[list[tuple]]) -> None:
+    """Closes a tube's two ends, each with its ring's octagon, facing out
+    along the tube: a rail or a beam ending over a beam or in the air shows
+    its end."""
+    if len(rings) < 2:
+        return
+    for ring, inner in ((rings[0], rings[1]), (rings[-1], rings[-2])):
+        points = [point for point, _, _ in ring]
+        centre = tuple(sum(p[j] for p in points) / len(points) for j in range(3))
+        inside = tuple(sum(p[j] for p, _, _ in inner) / len(inner) for j in range(3))
+        out = tuple(c - i for c, i in zip(centre, inside))
+        length = math.sqrt(sum(v * v for v in out)) or 1.0
+        out = tuple(v / length for v in out)
+        for k in range(len(points)):
+            a, b = points[k], points[(k + 1) % len(points)]
+            mesh.triangle(
+                'Rail', out, (centre, (0.5, 0.5), out), (a, (0.0, 0.0), out), (b, (1.0, 0.0), out)
+            )
 
 
 def bend(
