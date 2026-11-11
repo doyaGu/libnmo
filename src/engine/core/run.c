@@ -646,6 +646,7 @@ nmo_status_t nmo_engine_step(nmo_engine_t *engine, float delta_ms)
     if (status == NMO_OK) {
         eng_dispatch_messages(engine); /* CKMessageManager::PostProcess */
         eng_managers_post_process(engine); /* the packs' managers' PostProcess */
+        eng_sounds_end_frame(engine); /* DX7SoundManager::PostProcess */
         eng_delete_dynamic_objects(engine); /* CKObjectManager::PostProcess */
         if (!engine->failed) eng_animations_end_frame(engine);
     }

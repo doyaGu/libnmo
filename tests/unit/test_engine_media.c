@@ -618,6 +618,43 @@ TEST(engine_media, voices_follow_the_sound_settings_and_instances)
     fixture_end(&f);
 }
 
+TEST(engine_media, playing_sounds_get_a_velocity_from_their_moves)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t sound = create_sound(&f, 1000);
+    ASSERT_TRUE(sound != 0);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t place = fixture_block(&f, GUID_POSITION_SOUND, "Place");
+    nmo_object_id_t player = fixture_block(&f, GUID_WAVE_PLAYER, "Player");
+    nmo_object_id_t blocks[2] = {place, player};
+    for (int i = 0; i < 2; i++) {
+        ASSERT_TRUE(blocks[i] != 0 && fixture_target(&f, blocks[i]) != 0);
+        fixture_input_int(&f, fixture_target(&f, blocks[i]), (int32_t)sound);
+    }
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, place, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, place, 0), BLOCK_IN(&f, player, 0), 0);
+    const float position[3] = {5.0f, 0.0f, 0.0f};
+    fixture_input_value(&f, BLOCK_PIN(&f, place, 1), position, sizeof(position));
+    fixture_commit(&f, NULL);
+    /* A point sound: the sound manager leaves background sounds where they are */
+    eng_sound_t *made = eng_sound(f.engine, sound);
+    ASSERT_NOT_NULL(made);
+    made->type = CK_WAVESOUND_POINT;
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    /* From the origin to (5, 0, 0) in a frame: the move times the frame's 20 ms times 0.001 */
+    const eng_sound_t *state = eng_sound(f.engine, sound);
+    ASSERT_NOT_NULL(state);
+    ASSERT_FLOAT_EQ(0.1f, state->velocity[0], 1e-6f);
+    ASSERT_FLOAT_EQ(0.0f, state->velocity[1], 0.0f);
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_FLOAT_EQ(0.0f, eng_sound(f.engine, sound)->velocity[0], 0.0f);
+    fixture_end(&f);
+}
+
 /* The files the engine loads, from the scratch directory */
 static const char *resolve_scratch(void *user_data, const char *name)
 {
@@ -1358,6 +1395,7 @@ TEST(engine_media, fade_out_lowers_the_global_gain_over_its_delay)
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_media, wave_player_ends_after_the_sound_length);
 REGISTER_TEST(engine_media, voices_follow_the_sound_settings_and_instances);
+    REGISTER_TEST(engine_media, playing_sounds_get_a_velocity_from_their_moves);
 REGISTER_TEST(engine_media, particle_system_exits_off_once_its_particles_died);
 REGISTER_TEST(engine_media, wave_particles_stay_where_they_were_emitted);
 REGISTER_TEST(engine_media, gravity_and_global_wind_push_the_particles);

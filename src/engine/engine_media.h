@@ -34,6 +34,8 @@ typedef struct eng_sound {
     bool mute_after_max;
     nmo_object_id_t attached;    /* PositionSound's object; 0 for the world */
     float place[3], heading[3]; /* PositionSound's position and direction, in the attached object's space */
+    float old_place[3]; /* m_OldPosition: the world position the last frame's update left */
+    float velocity[3];  /* what the sound manager set as the source's velocity */
 } eng_sound_t;
 
 /* An instance of a sound (CKWaveSound::PlayMinion): it plays once, then goes */
@@ -92,6 +94,8 @@ typedef struct eng_media {
 /* core/media.c */
 /* The sounds move on by the frame time (the sound manager's frame). */
 void eng_sounds_begin_frame(nmo_engine_t *engine);
+/* DX7SoundManager::PostProcess: CKWaveSound::UpdatePosition of each playing sound but a background one */
+void eng_sounds_end_frame(nmo_engine_t *engine);
 void eng_free_sounds(nmo_engine_t *engine);
 /* The engine's state of sound `id`, made the first time; NULL when `id` is no CKWaveSound. */
 eng_sound_t *eng_sound(nmo_engine_t *engine, nmo_object_id_t id);

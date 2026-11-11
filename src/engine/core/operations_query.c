@@ -1631,13 +1631,19 @@ static nmo_status_t op_get_min_max(nmo_engine_t *engine, eng_param_t *src1, eng_
     return write_floats(engine, out, distances, 2u);
 }
 
-/* CKVectorGetVelocityWaveSound: nothing moves a sound here */
+/* CKVectorGetVelocityWaveSound: the velocity the sound manager last gave it */
 static nmo_status_t op_get_velocity(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
                                     eng_param_t *out)
 {
     (void)src2;
-    const eng_vector_t still = {0.0f, 0.0f, 0.0f};
-    return param_wavesound(engine, src1) != NULL ? write_vector(engine, out, &still) : NMO_OK;
+    if (param_wavesound(engine, src1) == NULL) {
+        return NMO_OK;
+    }
+    const eng_sound_t *sound = param_sound(engine, src1);
+    const eng_vector_t velocity = sound != NULL ? (eng_vector_t){sound->velocity[0], sound->velocity[1],
+                                                                 sound->velocity[2]}
+                                                : (eng_vector_t){0.0f, 0.0f, 0.0f};
+    return write_vector(engine, out, &velocity);
 }
 
 /* ============================================================================

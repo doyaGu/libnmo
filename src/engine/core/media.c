@@ -205,6 +205,35 @@ static void eng_voice_place(nmo_engine_t *engine, const eng_sound_t *sound, nmo_
     voice->world_direction[2] = direction.z;
 }
 
+/*
+ * DX7SoundManager::PostProcess calls CKWaveSound::UpdatePosition with the
+ * time manager's delta (ms) for each sound playing that is not a background
+ * one; PositionSource sets the source's velocity to the world position's
+ * change since the last update times that delta and 0.001 (a product, as
+ * CK2.dll has it), and keeps the position for the next.
+ */
+void eng_sounds_end_frame(nmo_engine_t *engine)
+{
+    const double delta = engine->delta;
+    for (size_t i = 0; i < engine->media.sounds.count; i++) {
+        eng_sound_t *sound = &engine->media.sounds.data[i];
+        if (!sound->playing || sound->paused || (sound->type & 1u) != 0) {
+            continue;
+        }
+        eng_vector_t position = {sound->place[0], sound->place[1], sound->place[2]};
+        int32_t attached = sound->attached != 0 ? eng_entity_index(engine, sound->attached) : -1;
+        if (attached >= 0) {
+            eng_vector_t local = position;
+            eng_entity_transform(engine, attached, &position, &local, -1);
+        }
+        const float world[3] = {position.x, position.y, position.z};
+        for (int c = 0; c < 3; c++) {
+            sound->velocity[c] = (float)((world[c] - sound->old_place[c]) * delta * 0.001);
+            sound->old_place[c] = world[c];
+        }
+    }
+}
+
 bool nmo_engine_sound_listener(const nmo_engine_t *engine, nmo_object_id_t *out_listener,
                                float *out_distance_factor, float *out_doppler_factor, float *out_global_gain)
 {
