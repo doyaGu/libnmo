@@ -531,6 +531,32 @@ TEST(engine_operations, plugin_value_operations_on_mixed_and_compound_types)
     fixture_end(&f);
 }
 
+TEST(engine_operations, grids_layer_by_name)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    const nmo_guid_t by_name = NMO_GUID(0x470c4e6c, 0x144748b6);
+    nmo_object_id_t known = local_value(&f, CKPGUID_STRING, "Known", "Nothing", 8);
+    nmo_object_id_t unknown = local_value(&f, CKPGUID_STRING, "Unknown", "Nothing", 8);
+    ASSERT_TRUE(known != 0 && unknown != 0);
+    const nmo_object_id_t outputs[] = {operation(&f, by_name, known, 0, CKPGUID_LAYERTYPE),
+                                       operation(&f, by_name, unknown, 0, CKPGUID_LAYERTYPE)};
+    const nmo_guid_t types[] = {CKPGUID_LAYERTYPE, CKPGUID_LAYERTYPE};
+    nmo_object_id_t reads[2];
+    ASSERT_TRUE(outputs[0] != 0 && outputs[1] != 0);
+    ASSERT_TRUE(read_chain(&f, outputs, types, reads, 2) != 0);
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, known, "- default -", 12));
+
+    run_frame(&f, 16.0f);
+    int32_t type = -1;
+    read_value(&f, BLOCK_POUT(&f, reads[0], 0), &type, sizeof(type));
+    ASSERT_EQ(1, type);
+    read_value(&f, BLOCK_POUT(&f, reads[1], 0), &type, sizeof(type));
+    ASSERT_EQ(0, type);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_operations, per_second_scales_by_the_frame_delta);
     REGISTER_TEST(engine_operations, random_stays_in_its_bounds_and_repeats_with_the_seed);
@@ -540,4 +566,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_operations, box_and_rectangle_getters);
     REGISTER_TEST(engine_operations, curve_getters);
     REGISTER_TEST(engine_operations, plugin_value_operations_on_mixed_and_compound_types);
+    REGISTER_TEST(engine_operations, grids_layer_by_name);
 TEST_MAIN_END()
