@@ -82,8 +82,19 @@ typedef struct eng_sound_manager {
     nmo_object_id_t listener;    /* 0: the render context's camera */
 } eng_sound_manager_t;
 
+/* A WAV file's PCM data and format (WAVEFORMATEX), read once */
+typedef struct eng_wave {
+    char *name;
+    bool valid;
+    uint16_t channels, bits_per_sample, block_align;
+    uint32_t sample_rate, bytes_per_second;
+    uint8_t *data;
+    size_t size;
+} eng_wave_t;
+
 typedef struct eng_media {
     eng_sound_manager_t manager;
+    ENG_VEC(eng_wave_t) waves;
     ENG_VEC(eng_sound_t) sounds;
     ENG_VEC(eng_sound_instance_t) instances;
     uint32_t instance_keys;
@@ -97,6 +108,9 @@ void eng_sounds_begin_frame(nmo_engine_t *engine);
 /* DX7SoundManager::PostProcess: CKWaveSound::UpdatePosition of each playing sound but a background one */
 void eng_sounds_end_frame(nmo_engine_t *engine);
 void eng_free_sounds(nmo_engine_t *engine);
+/* The PCM data and format of the WAV file `name` names (through the file resolver), read the
+   first time it is asked for; NULL when it is no readable WAV file */
+const eng_wave_t *eng_wave(nmo_engine_t *engine, const char *name);
 /* The engine's state of sound `id`, made the first time; NULL when `id` is no CKWaveSound. */
 eng_sound_t *eng_sound(nmo_engine_t *engine, nmo_object_id_t id);
 /* The sound manager's settings, every factor 1 until a block sets one. */

@@ -27,6 +27,7 @@ static nmo_status_t (*const virtools_sets[])(nmo_engine_t *engine) = {
     eng_register_controllers,
     eng_register_interface,
     eng_register_sounds,
+    eng_register_sound_spectrum,
     eng_register_materials,
     eng_register_visuals,
     eng_register_addons,

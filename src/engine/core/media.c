@@ -94,6 +94,11 @@ void eng_free_sounds(nmo_engine_t *engine)
     free(engine->media.sounds.data);
     free(engine->media.instances.data);
     free(engine->media.voices.data);
+    for (size_t i = 0; i < engine->media.waves.count; i++) {
+        free(engine->media.waves.data[i].name);
+        free(engine->media.waves.data[i].data);
+    }
+    free(engine->media.waves.data);
 }
 
 void eng_sounds_begin_frame(nmo_engine_t *engine)
@@ -399,6 +404,73 @@ float eng_wave_length(nmo_engine_t *engine, const char *name)
         return -1.0f;
     }
     return (float)((double)data_size * 1000.0 / (double)bytes_per_second);
+}
+
+/* The format and data chunks of a RIFF WAVE file read whole */
+static bool eng_wave_parse(const unsigned char *bytes, size_t size, eng_wave_t *wave)
+{
+    if (size < 12 || memcmp(bytes, "RIFF", 4) != 0 || memcmp(bytes + 8, "WAVE", 4) != 0) {
+        return false;
+    }
+    bool has_format = false, has_data = false;
+    size_t at = 12;
+    while (at + 8 <= size && !(has_format && has_data)) {
+        uint32_t chunk = read_le32(bytes + at + 4);
+        const unsigned char *body = bytes + at + 8;
+        size_t left = size - at - 8;
+        if (memcmp(bytes + at, "fmt ", 4) == 0 && chunk >= 16 && left >= 16) {
+            wave->channels = (uint16_t)(body[2] | body[3] << 8);
+            wave->sample_rate = read_le32(body + 4);
+            wave->bytes_per_second = read_le32(body + 8);
+            wave->block_align = (uint16_t)(body[12] | body[13] << 8);
+            wave->bits_per_sample = (uint16_t)(body[14] | body[15] << 8);
+            has_format = true;
+        } else if (memcmp(bytes + at, "data", 4) == 0) {
+            wave->size = chunk < left ? chunk : left;
+            wave->data = (uint8_t *)malloc(wave->size > 0 ? wave->size : 1u);
+            if (wave->data == NULL) {
+                return false;
+            }
+            memcpy(wave->data, body, wave->size);
+            has_data = true;
+        }
+        if ((size_t)chunk + (chunk & 1u) > left) {
+            break;
+        }
+        at += 8u + chunk + (chunk & 1u);
+    }
+    return has_format && has_data;
+}
+
+const eng_wave_t *eng_wave(nmo_engine_t *engine, const char *name)
+{
+    if (name == NULL) {
+        return NULL;
+    }
+    for (size_t i = 0; i < engine->media.waves.count; i++) {
+        const eng_wave_t *wave = &engine->media.waves.data[i];
+        if (strcmp(wave->name, name) == 0) {
+            return wave->valid ? wave : NULL;
+        }
+    }
+    eng_wave_t *wave = NULL;
+    char *copy = eng_text_printf("%s", name);
+    if (copy == NULL || !ENG_VEC_PUSH(engine->media.waves, wave)) {
+        free(copy);
+        return NULL;
+    }
+    memset(wave, 0, sizeof(*wave));
+    wave->name = copy;
+    size_t size = 0;
+    unsigned char *bytes = nmo_engine_read_sound_file(engine, name, &size);
+    wave->valid = bytes != NULL && eng_wave_parse(bytes, size, wave);
+    free(bytes);
+    if (!wave->valid) {
+        free(wave->data);
+        wave->data = NULL;
+        wave->size = 0;
+    }
+    return wave->valid ? wave : NULL;
 }
 
 uint32_t eng_wave_sample_rate(nmo_engine_t *engine, const char *name)

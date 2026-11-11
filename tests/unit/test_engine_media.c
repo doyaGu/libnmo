@@ -38,6 +38,7 @@
 #define GUID_SET_LISTENER NMO_GUID(0x28cd6341, 0x0cad5793)
 #define GUID_SOUND_MANAGER_SETUP NMO_GUID(0x04c05c6a, 0x6454792b)
 #define GUID_FADE_OUT NMO_GUID(0x1b82338f, 0x5a656975)
+#define GUID_GET_SOUND_SPECTRUM NMO_GUID(0x47082a75, 0x112b7c1b)
 
 static void input_float(engine_fixture_t *f, nmo_object_id_t pin, float value)
 {
@@ -665,6 +666,81 @@ static const char *resolve_scratch(void *user_data, const char *name)
 }
 
 /* The start of an AVI file: its RIFF header and main header, with `frames` frames */
+/* A mono 8-bit WAV of `seconds` of a `tone` Hz sine at 8000 samples a second */
+static void write_tone(const char *name, double tone, uint32_t samples)
+{
+    uint8_t header[44] = {0};
+    const uint32_t riff = 36u + samples, format = 16u, rate = 8000u;
+    const uint16_t pcm = 1u, channels = 1u, align = 1u, bits = 8u;
+    memcpy(header, "RIFF", 4);
+    memcpy(header + 4, &riff, 4);
+    memcpy(header + 8, "WAVEfmt ", 8);
+    memcpy(header + 16, &format, 4);
+    memcpy(header + 20, &pcm, 2);
+    memcpy(header + 22, &channels, 2);
+    memcpy(header + 24, &rate, 4);
+    memcpy(header + 28, &rate, 4);
+    memcpy(header + 32, &align, 2);
+    memcpy(header + 34, &bits, 2);
+    memcpy(header + 36, "data", 4);
+    memcpy(header + 40, &samples, 4);
+    char path[512];
+    snprintf(path, sizeof(path), "%s/%s", NMO_TEST_SCRATCH_DIR, name);
+    FILE *out = fopen(path, "wb");
+    ASSERT_NOT_NULL(out);
+    ASSERT_EQ(sizeof(header), fwrite(header, 1, sizeof(header), out));
+    for (uint32_t i = 0; i < samples; i++) {
+        const uint8_t value = (uint8_t)(128.0 + 100.0 * sin(2.0 * 3.14159265358979 * tone * i / rate));
+        fputc(value, out);
+    }
+    fclose(out);
+}
+
+TEST(engine_media, get_sound_spectrum_finds_the_tone_band)
+{
+    write_tone("tone.wav", 1000.0, 8000u);
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t sound = create_sound(&f, 1000);
+    ASSERT_TRUE(sound != 0);
+    nmo_wavesound_state_t *state = (nmo_wavesound_state_t *)fixture_state(&f, sound);
+    ASSERT_NOT_NULL(state);
+    state->base.file_name = (char *)"tone.wav";
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t near = fixture_block(&f, GUID_GET_SOUND_SPECTRUM, "Near");
+    nmo_object_id_t far = fixture_block(&f, GUID_GET_SOUND_SPECTRUM, "Far");
+    nmo_object_id_t blocks[2] = {near, far};
+    const int32_t ranges[2][2] = {{900, 1100}, {3000, 3500}};
+    for (int i = 0; i < 2; i++) {
+        ASSERT_TRUE(blocks[i] != 0 && fixture_target(&f, blocks[i]) != 0);
+        fixture_input_int(&f, fixture_target(&f, blocks[i]), (int32_t)sound);
+        fixture_input_int(&f, BLOCK_PIN(&f, blocks[i], 0), ranges[i][0]);
+        fixture_input_int(&f, BLOCK_PIN(&f, blocks[i], 1), ranges[i][1]);
+    }
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, near, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, near, 0), BLOCK_IN(&f, far, 0), 0);
+    fixture_commit(&f, NULL);
+    nmo_engine_set_file_resolver(f.engine, resolve_scratch, NULL);
+    /* The Band Count setting's 128 */
+    const int32_t band_count = 128;
+    for (int i = 0; i < 2; i++) {
+        ASSERT_EQ(NMO_OK, nmo_engine_set_param_value(f.engine, local_of(&f, blocks[i], 0), &band_count,
+                                                     sizeof(band_count)));
+    }
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    float tone_level = -1.0f, other_level = -1.0f;
+    read_value(&f, BLOCK_POUT(&f, near, 0), &tone_level, sizeof(tone_level));
+    read_value(&f, BLOCK_POUT(&f, far, 0), &other_level, sizeof(other_level));
+    /* Levels of 0 to 1: the tone's bands stand well above the others */
+    ASSERT_TRUE(tone_level > 0.0f && tone_level <= 1.0f);
+    ASSERT_TRUE(other_level >= 0.0f);
+    ASSERT_TRUE(tone_level > other_level + 0.2f);
+    fixture_end(&f);
+}
+
 static void write_movie(const char *name, uint32_t frames)
 {
     uint8_t avi[32 + 56] = {0};
@@ -1396,6 +1472,7 @@ TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_media, wave_player_ends_after_the_sound_length);
 REGISTER_TEST(engine_media, voices_follow_the_sound_settings_and_instances);
     REGISTER_TEST(engine_media, playing_sounds_get_a_velocity_from_their_moves);
+    REGISTER_TEST(engine_media, get_sound_spectrum_finds_the_tone_band);
 REGISTER_TEST(engine_media, particle_system_exits_off_once_its_particles_died);
 REGISTER_TEST(engine_media, wave_particles_stay_where_they_were_emitted);
 REGISTER_TEST(engine_media, gravity_and_global_wind_push_the_particles);

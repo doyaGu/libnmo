@@ -42,6 +42,7 @@ set(NMO_BB_VIRTOOLS_SOURCES
     virtools/mesh_modifiers.c
     virtools/narratives.c
     virtools/sounds.c
+    virtools/sound_spectrum.c
     virtools/visuals.c
     virtools/world_environments.c
     virtools/logics/array.c

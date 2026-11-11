@@ -38,6 +38,7 @@ nmo_status_t eng_register_controllers(nmo_engine_t *engine);
 nmo_status_t eng_register_interface(nmo_engine_t *engine);
 nmo_status_t eng_register_interface_layouts(nmo_engine_t *engine);
 nmo_status_t eng_register_sounds(nmo_engine_t *engine);
+nmo_status_t eng_register_sound_spectrum(nmo_engine_t *engine);
 nmo_status_t eng_register_materials(nmo_engine_t *engine);
 nmo_status_t eng_register_visuals(nmo_engine_t *engine);
 nmo_status_t eng_register_addons(nmo_engine_t *engine);
