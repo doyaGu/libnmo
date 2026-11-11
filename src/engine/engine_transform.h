@@ -81,6 +81,8 @@ bool eng_matrix_decompose(const eng_matrix_t *matrix, bool principal_axes,
  * Failed conversions leave outputs unchanged. */
 bool eng_quaternion_from_matrix(const eng_matrix_t *matrix, nmo_quaternion_t *out);
 bool eng_matrix_from_quaternion(eng_matrix_t *matrix, const nmo_quaternion_t *quaternion);
+/* VxQuaternion::FromMatrix(MatIsUnit): no normalizing (FromEulerAngles's conversion) */
+void eng_quaternion_from_unit_matrix(const eng_matrix_t *matrix, nmo_quaternion_t *out);
 /* VxQuaternion::ToMatrix also computes zero and nonfinite inputs directly. */
 void eng_matrix_from_quaternion_unchecked(eng_matrix_t *matrix, const nmo_quaternion_t *quaternion);
 /* Shortest-arc Slerp; close inputs use the native unnormalized linear blend. */

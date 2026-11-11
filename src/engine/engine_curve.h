@@ -64,4 +64,8 @@ void eng_copy_curve_points(nmo_engine_t *engine, nmo_object_id_t source, nmo_obj
                             const nmo_object_id_t *originals, const nmo_object_id_t *copies, size_t count);
 void eng_curve_forget_object(nmo_engine_t *engine, nmo_object_id_t id);
 
+/* CK2dCurve::GetLength and GetPos on a 2D curve parameter value (curve.c); false for no curve */
+bool eng_curve2d_length(const void *curve, size_t size, float *out_length);
+bool eng_curve2d_pos(const void *curve, size_t size, float step, float out[2]);
+
 #endif /* NMO_ENGINE_CURVE_H */

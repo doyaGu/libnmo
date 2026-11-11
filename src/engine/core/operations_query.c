@@ -116,6 +116,17 @@
 #define OP_GET_MOUSE_X NMO_GUID_INIT(0x53c51abe, 0x0eba68de)
 #define OP_GET_MOUSE_Y NMO_GUID_INIT(0x27af3c9f, 0x0dbc4eb3)
 
+#define OP_GET_PARENT_Q NMO_GUID_INIT(0x5bf9718f, 0x030b698c)
+#define OP_GET_DISTANCE_Q NMO_GUID_INIT(0x265c7d00, 0x5c8f1702)
+#define OP_GET_LENGTH_Q NMO_GUID_INIT(0x556a69af, 0x076e3f09)
+#define OP_GET_COUNT_Q NMO_GUID_INIT(0x44df6f61, 0x5f8f55c8)
+#define OP_GET_CURRENT_Q NMO_GUID_INIT(0x6a5c5061, 0x5efe7428)
+#define OP_GET_TYPE_Q NMO_GUID_INIT(0x35aa0ddb, 0x7a5e3335)
+#define OP_GET_MATERIAL_Q NMO_GUID_INIT(0x6b8c78bd, 0x7b846d3c)
+#define OP_GET_PLACE_Q NMO_GUID_INIT(0x1814113a, 0x5dc54c26)
+#define OP_GET_BOUNDING_BOX_Q NMO_GUID_INIT(0x31a7649f, 0x305e5164)
+#define OP_TRANSFORM_Q NMO_GUID_INIT(0x38865f64, 0x5ec70752)
+
 #define CK_WAVESOUND_FILESTREAMED 0x00002000u
 
 /* ---- Operands and results ---- */
@@ -1629,6 +1640,302 @@ static nmo_status_t op_get_velocity(nmo_engine_t *engine, eng_param_t *src1, eng
 }
 
 /* ============================================================================
+ * Objects the registry has nothing for: 2D entities, curves, animations,
+ * sounds, sprites, places, the level, and the render context's transforms
+ * ============================================================================ */
+
+static nmo_object_id_t param_id(const eng_param_t *param)
+{
+    return (nmo_object_id_t)param_u32(param);
+}
+
+/* CK2dEntityGetParent2dEntity: 0 for none */
+static nmo_status_t op_get_parent_2d(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                     eng_param_t *out)
+{
+    (void)src2;
+    const eng_2d_t *entity = param_id(src1) != 0 ? eng_2d_entity(engine, param_id(src1)) : NULL;
+    return write_u32(engine, out, entity != NULL ? entity->parent : 0u);
+}
+
+/* CKFloatGetDistance2dEntity: between the top left corners, in render context pixels */
+static nmo_status_t op_get_distance_2d(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                       eng_param_t *out)
+{
+    const eng_2d_t *a = param_id(src1) != 0 ? eng_2d_entity(engine, param_id(src1)) : NULL;
+    const eng_2d_t *b = param_id(src2) != 0 ? eng_2d_entity(engine, param_id(src2)) : NULL;
+    if (a == NULL || b == NULL) {
+        return NMO_OK;
+    }
+    const float dx = a->rect.left - b->rect.left, dy = a->rect.top - b->rect.top;
+    return write_float(engine, out, (float)sqrt(dy * dy + dx * dx));
+}
+
+/* CKFloatGetLengthCurve, CKIntGetCountCurve */
+static nmo_status_t op_get_curve_length(nmo_engine_t *engine, eng_param_t *src1,
+                                        eng_param_t *src2, eng_param_t *out)
+{
+    (void)src2;
+    float length;
+    nmo_object_id_t curve = param_object_of_class(engine, src1, CKPGUID_CURVE);
+    return curve != 0 && eng_curve_length(engine, curve, &length) ? write_float(engine, out, length)
+                                                                  : NMO_OK;
+}
+
+static nmo_status_t op_get_curve_count(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                       eng_param_t *out)
+{
+    (void)src2;
+    nmo_object_id_t curve = param_object_of_class(engine, src1, CKPGUID_CURVE);
+    if (curve == 0) {
+        return NMO_OK;
+    }
+    const eng_curve_points_t *points = eng_curve_points(engine, curve);
+    return write_u32(engine, out, points != NULL ? (uint32_t)points->count : 0u);
+}
+
+/* CKFloatGetLengthCurveCurvePoint: the point's length along its curve, when the curve is there */
+static nmo_status_t op_get_curve_point_length(nmo_engine_t *engine, eng_param_t *src1,
+                                              eng_param_t *src2, eng_param_t *out)
+{
+    float length;
+    if (param_id(src1) == 0 || eng_find_object(engine, param_id(src1)) == NULL) {
+        return NMO_OK;
+    }
+    nmo_object_id_t point = param_object_of_class(engine, src2, CKPGUID_CURVEPOINT);
+    return point != 0 && eng_curve_point_length(engine, point, &length)
+               ? write_float(engine, out, length)
+               : NMO_OK;
+}
+
+/* CKFloatGetLengthAnimation: its length in frames */
+static nmo_status_t op_get_animation_length(nmo_engine_t *engine, eng_param_t *src1,
+                                            eng_param_t *src2, eng_param_t *out)
+{
+    (void)src2;
+    const nmo_animation_state_t *state =
+        param_id(src1) != 0 ? eng_animation_playback_state(engine, param_id(src1)) : NULL;
+    return state != NULL ? write_float(engine, out, eng_animation_length(state)) : NMO_OK;
+}
+
+/* CKFloatGetLengthWaveSound: CKWaveSound::GetSoundLength, whole milliseconds */
+static nmo_status_t op_get_sound_length(nmo_engine_t *engine, eng_param_t *src1,
+                                        eng_param_t *src2, eng_param_t *out)
+{
+    (void)src2;
+    const eng_sound_t *sound = param_sound(engine, src1);
+    return sound != NULL ? write_float(engine, out, (float)(int64_t)sound->length) : NMO_OK;
+}
+
+/*
+ * CKFloatGetDistanceFromListenerWaveSound: CKWaveSound::GetSound3DInformation,
+ * the length of the sound's position taken through the listener's Transform
+ * into its attached object's space (CK2.dll's order); nothing without a listener.
+ */
+static nmo_status_t op_get_sound_distance(nmo_engine_t *engine, eng_param_t *src1,
+                                          eng_param_t *src2, eng_param_t *out)
+{
+    (void)src2;
+    const eng_sound_t *sound = param_sound(engine, src1);
+    nmo_object_id_t listener = 0;
+    if (sound == NULL || !nmo_engine_sound_listener(engine, &listener, NULL, NULL, NULL)) {
+        return NMO_OK;
+    }
+    int32_t index = listener != 0 ? eng_entity_index(engine, listener) : -1;
+    if (index < 0) {
+        return NMO_OK;
+    }
+    int32_t ref = sound->attached != 0 ? eng_entity_index(engine, sound->attached) : -1;
+    const eng_vector_t place = {sound->place[0], sound->place[1], sound->place[2]};
+    eng_vector_t v;
+    eng_entity_transform(engine, index, &v, &place, ref);
+    return write_float(engine, out, (float)sqrt(v.x * v.x + v.y * v.y + v.z * v.z));
+}
+
+/* CKIntGetCurrentTexture, CKIntGetCurrentSprite: the slot shown now */
+static nmo_status_t op_get_current_texture(nmo_engine_t *engine, eng_param_t *src1,
+                                           eng_param_t *src2, eng_param_t *out)
+{
+    (void)src2;
+    nmo_object_id_t id = param_object_of_class(engine, src1, CKPGUID_TEXTURE);
+    return id != 0 ? write_u32(engine, out, (uint32_t)nmo_engine_texture_current_slot(engine, id))
+                   : NMO_OK;
+}
+
+static nmo_status_t op_get_current_sprite(nmo_engine_t *engine, eng_param_t *src1,
+                                          eng_param_t *src2, eng_param_t *out)
+{
+    (void)src2;
+    nmo_object_id_t id = param_object_of_class(engine, src1, CKPGUID_SPRITE);
+    const eng_texture_t *sprite = id != 0 ? eng_texture(engine, id) : NULL;
+    return sprite != NULL ? write_u32(engine, out, (uint32_t)sprite->current_slot) : NMO_OK;
+}
+
+/* CKIdGetObjectTypeObject: the class, 0 for no object */
+static nmo_status_t op_get_type_beobject(nmo_engine_t *engine, eng_param_t *src1,
+                                         eng_param_t *src2, eng_param_t *out)
+{
+    (void)src2;
+    return write_u32(engine, out, (uint32_t)nmo_engine_object_class(engine, param_id(src1)));
+}
+
+/* CKMaterialGetMaterialSprite3D: 0 for none */
+static nmo_status_t op_get_material_sprite3d(nmo_engine_t *engine, eng_param_t *src1,
+                                             eng_param_t *src2, eng_param_t *out)
+{
+    (void)src2;
+    const eng_sprite3d_t *sprite = param_id(src1) != 0 ? eng_sprite3d(engine, param_id(src1)) : NULL;
+    return write_u32(engine, out, sprite != NULL ? sprite->material : 0u);
+}
+
+/* CKPlaceGetPlace3DEntityPlace: the portal of the place leading to the entity's place, 0 for none */
+static nmo_status_t op_get_place_portal(nmo_engine_t *engine, eng_param_t *src1,
+                                        eng_param_t *src2, eng_param_t *out)
+{
+    nmo_object_id_t other = param_id(src1), place = param_id(src2);
+    const eng_portal_list_t *links =
+        other != 0 && eng_find_object(engine, other) != NULL && place != 0 ? eng_place_portals(engine, place) : NULL;
+    for (size_t i = 0; links != NULL && i < links->count; i++) {
+        if (links->data[i].place == other) {
+            return write_u32(engine, out, links->data[i].portal);
+        }
+    }
+    return write_u32(engine, out, 0u);
+}
+
+/* CKSceneGetCurrentSceneNoneNone: 0 while the level scene is the current one (it always is) */
+static nmo_status_t op_get_current_scene(nmo_engine_t *engine, eng_param_t *src1,
+                                         eng_param_t *src2, eng_param_t *out)
+{
+    (void)src1;
+    (void)src2;
+    return write_u32(engine, out, 0u);
+}
+
+/* CKLevelGetCurrentLevelNoneNone */
+static nmo_status_t op_get_current_level(nmo_engine_t *engine, eng_param_t *src1,
+                                         eng_param_t *src2, eng_param_t *out)
+{
+    (void)src1;
+    (void)src2;
+    nmo_object_id_t *ids = NULL;
+    size_t count = eng_objects_of_class(engine, NMO_CID_LEVEL, &ids);
+    nmo_object_id_t level = count > 0 ? ids[0] : 0;
+    free(ids);
+    return level != 0 ? write_u32(engine, out, level) : NMO_OK;
+}
+
+/* CKRectGetBox3dEntity: CK3dEntity::GetRenderExtents */
+static nmo_status_t op_get_render_extents(nmo_engine_t *engine, eng_param_t *src1,
+                                          eng_param_t *src2, eng_param_t *out)
+{
+    (void)src2;
+    int32_t index = param_entity(engine, src1);
+    if (index < 0) {
+        return NMO_OK;
+    }
+    const nmo_rect_t *r = &engine->entities.data[index].render_extents;
+    const float rect[4] = {r->left, r->top, r->right, r->bottom};
+    return write_floats(engine, out, rect, 4u);
+}
+
+/* CK2dVectorTransformVector3dEntity: CKRenderContext::Transform of a point in the entity's space */
+static nmo_status_t op_transform_to_screen(nmo_engine_t *engine, eng_param_t *src1,
+                                           eng_param_t *src2, eng_param_t *out)
+{
+    const eng_vector_t point = {param_component(src1, 0), param_component(src1, 1),
+                                param_component(src1, 2)};
+    int32_t ref = param_entity(engine, src2);
+    eng_vector_t world = point, screen;
+    if (ref >= 0) {
+        eng_entity_transform(engine, ref, &world, &point, -1);
+    }
+    eng_render_project(engine, &world, &screen);
+    const float xy[2] = {screen.x, screen.y};
+    return write_floats(engine, out, xy, 2u);
+}
+
+/*
+ * CKVectorTransform2dVectorFloat: the screen point at that depth in front of
+ * the attached camera, in the world. Both offsets are scaled by the
+ * viewport's width; a perspective camera spreads them by tan(fov / 2) times
+ * the depth, another by one over its zoom. Nothing without a camera.
+ */
+static nmo_status_t op_transform_from_screen(nmo_engine_t *engine, eng_param_t *src1,
+                                             eng_param_t *src2, eng_param_t *out)
+{
+    const float x = param_component(src1, 0), y = param_component(src1, 1);
+    const float depth = param_float(src2);
+    nmo_object_id_t camera = engine->render.camera;
+    int32_t index = camera != 0 ? eng_entity_index(engine, camera) : -1;
+    if (index < 0) {
+        return NMO_OK;
+    }
+    int32_t viewport[4];
+    eng_render_viewport(engine, viewport);
+    const float left = (float)viewport[0], top = (float)viewport[1];
+    const float right = left + (float)viewport[2], bottom = top + (float)viewport[3];
+    const float width = right - left, inverse = 1.0f / width;
+    const float sx = (float)((x - left - width * 0.5f) * inverse) * 2.0f;
+    const float sy = (float)(((bottom - top) * 0.5f + top - y) * inverse) * 2.0f;
+    uint32_t projection = 1;
+    float fov = 0.5f, zoom = 1.0f;
+    eng_camera_projection_type(engine, camera, &projection);
+    eng_vector_t local;
+    if (projection == 1u) {
+        eng_camera_fov(engine, camera, &fov);
+        const float t = (float)tan(fov * 0.5);
+        local = (eng_vector_t){t * sx * depth, t * sy * depth, depth};
+    } else {
+        eng_camera_orthographic_zoom(engine, camera, &zoom);
+        const float scale = 1.0f / zoom;
+        local = (eng_vector_t){scale * sx, scale * sy, depth};
+    }
+    eng_vector_t world;
+    eng_entity_transform(engine, index, &world, &local, -1);
+    return write_floats(engine, out, &world.x, 3u);
+}
+
+/* VxRect::Transform(destScreenSize, srcScreenSize) */
+static nmo_status_t op_transform_rect_size(nmo_engine_t *engine, eng_param_t *src1,
+                                           eng_param_t *src2, eng_param_t *out)
+{
+    const eng_screen_mode_t *mode = screen_mode(engine);
+    const float dest[2] = {(float)mode->width, (float)mode->height};
+    const float source[2] = {param_component(src2, 0), param_component(src2, 1)};
+    float r[4];
+    for (int i = 0; i < 4; i++) {
+        r[i] = param_component(src1, (size_t)i);
+    }
+    const float inverse_w = 1.0f / source[0], inverse_h = 1.0f / source[1];
+    r[0] *= inverse_w * dest[0];
+    r[1] *= inverse_h * dest[1];
+    r[2] *= inverse_w * dest[0];
+    r[3] *= inverse_h * dest[1];
+    return write_floats(engine, out, r, 4u);
+}
+
+/* VxRect::Transform(destScreen, srcScreen), the destination the render context's (0, 0, w, h) */
+static nmo_status_t op_transform_rect_rect(nmo_engine_t *engine, eng_param_t *src1,
+                                           eng_param_t *src2, eng_param_t *out)
+{
+    const eng_screen_mode_t *mode = screen_mode(engine);
+    const float dest[4] = {0.0f, 0.0f, (float)mode->width, (float)mode->height};
+    float r[4], s[4];
+    for (int i = 0; i < 4; i++) {
+        r[i] = param_component(src1, (size_t)i);
+        s[i] = param_component(src2, (size_t)i);
+    }
+    const float inverse_w = 1.0f / (s[2] - s[0]), inverse_h = 1.0f / (s[3] - s[1]);
+    const float n[4] = {(r[0] - s[0]) * inverse_w, (r[1] - s[1]) * inverse_h,
+                        (r[2] - s[2]) * inverse_w, (r[3] - s[3]) * inverse_h};
+    const float dw = dest[2] - dest[0], dh = dest[3] - dest[1];
+    const float result[4] = {n[0] * dw + dest[0], n[1] * dh + dest[1], n[2] * dw + dest[2],
+                             n[3] * dh + dest[3]};
+    return write_floats(engine, out, result, 4u);
+}
+
+/* ============================================================================
  * The table
  * ============================================================================ */
 
@@ -1639,6 +1946,26 @@ typedef struct query_op {
 } query_op_t;
 
 static const query_op_t query_ops[] = {
+    {OP_GET_PARENT_Q, CKPGUID_2DENTITY_INIT, CKPGUID_2DENTITY_INIT, {0, 0}, op_get_parent_2d},
+    {OP_GET_DISTANCE_Q, CKPGUID_FLOAT_INIT, CKPGUID_2DENTITY_INIT, CKPGUID_2DENTITY_INIT, op_get_distance_2d},
+    {OP_GET_LENGTH_Q, CKPGUID_FLOAT_INIT, CKPGUID_CURVE_INIT, {0, 0}, op_get_curve_length},
+    {OP_GET_LENGTH_Q, CKPGUID_FLOAT_INIT, CKPGUID_CURVE_INIT, CKPGUID_CURVEPOINT_INIT, op_get_curve_point_length},
+    {OP_GET_LENGTH_Q, CKPGUID_FLOAT_INIT, CKPGUID_ANIMATION_INIT, {0, 0}, op_get_animation_length},
+    {OP_GET_LENGTH_Q, CKPGUID_FLOAT_INIT, CKPGUID_WAVESOUND_INIT, {0, 0}, op_get_sound_length},
+    {OP_GET_DISTANCE_Q, CKPGUID_FLOAT_INIT, CKPGUID_WAVESOUND_INIT, {0, 0}, op_get_sound_distance},
+    {OP_GET_COUNT_Q, CKPGUID_INT_INIT, CKPGUID_CURVE_INIT, {0, 0}, op_get_curve_count},
+    {OP_GET_CURRENT_Q, CKPGUID_INT_INIT, CKPGUID_TEXTURE_INIT, {0, 0}, op_get_current_texture},
+    {OP_GET_CURRENT_Q, CKPGUID_INT_INIT, CKPGUID_SPRITE_INIT, {0, 0}, op_get_current_sprite},
+    {OP_GET_CURRENT_Q, CKPGUID_SCENE_INIT, {0, 0}, {0, 0}, op_get_current_scene},
+    {OP_GET_CURRENT_Q, CKPGUID_LEVEL_INIT, {0, 0}, {0, 0}, op_get_current_level},
+    {OP_GET_TYPE_Q, CKPGUID_CLASSID_INIT, CKPGUID_BEOBJECT_INIT, {0, 0}, op_get_type_beobject},
+    {OP_GET_MATERIAL_Q, CKPGUID_MATERIAL_INIT, CKPGUID_SPRITE3D_INIT, {0, 0}, op_get_material_sprite3d},
+    {OP_GET_PLACE_Q, CKPGUID_PLACE_INIT, CKPGUID_3DENTITY_INIT, CKPGUID_PLACE_INIT, op_get_place_portal},
+    {OP_GET_BOUNDING_BOX_Q, CKPGUID_RECT_INIT, CKPGUID_3DENTITY_INIT, {0, 0}, op_get_render_extents},
+    {OP_TRANSFORM_Q, CKPGUID_2DVECTOR_INIT, CKPGUID_VECTOR_INIT, CKPGUID_3DENTITY_INIT, op_transform_to_screen},
+    {OP_TRANSFORM_Q, CKPGUID_VECTOR_INIT, CKPGUID_2DVECTOR_INIT, CKPGUID_FLOAT_INIT, op_transform_from_screen},
+    {OP_TRANSFORM_Q, CKPGUID_RECT_INIT, CKPGUID_RECT_INIT, CKPGUID_2DVECTOR_INIT, op_transform_rect_size},
+    {OP_TRANSFORM_Q, CKPGUID_RECT_INIT, CKPGUID_RECT_INIT, CKPGUID_RECT_INIT, op_transform_rect_rect},
     {OP_GET_RADIUS, CKPGUID_FLOAT_INIT, CKPGUID_3DENTITY_INIT, {0, 0}, op_get_radius},
     {OP_GET_GEOMETRIC_CENTER, CKPGUID_VECTOR_INIT, CKPGUID_3DENTITY_INIT, {0, 0}, op_get_center_entity},
     {OP_GET_GEOMETRIC_CENTER, CKPGUID_VECTOR_INIT, CKPGUID_BOX_INIT, {0, 0}, op_get_center_box},
@@ -1756,5 +2083,5 @@ eng_builtin_op_fn eng_operation_builtin_query(nmo_guid_t operation, nmo_guid_t r
             return op->fn;
         }
     }
-    return NULL;
+    return eng_operation_builtin_values(operation, result, input1, input2);
 }

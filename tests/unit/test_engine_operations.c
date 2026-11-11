@@ -443,6 +443,94 @@ TEST(engine_operations, curve_getters)
     fixture_end(&f);
 }
 
+/* An Identity per output, each activated after the one before; the last one's ID */
+static nmo_object_id_t read_chain(engine_fixture_t *f, const nmo_object_id_t *outputs,
+                                  const nmo_guid_t *types, nmo_object_id_t *identities, size_t count)
+{
+    nmo_object_id_t after = f->script_in;
+    for (size_t i = 0; i < count; i++) {
+        identities[i] = identity_of(f, outputs[i], types[i], after);
+        if (identities[i] == 0) {
+            return 0;
+        }
+        after = BLOCK_OUT(f, identities[i], 0);
+    }
+    return identities[count - 1];
+}
+
+TEST(engine_operations, plugin_value_operations_on_mixed_and_compound_types)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    const nmo_guid_t add = NMO_GUID(0x33cc6b49, 0x3589282b), div = NMO_GUID(0x748c3502, 0x0fea0cf1);
+    const nmo_guid_t and_op = NMO_GUID(0x4a450980, 0x6b230426), opposite = NMO_GUID(0x599c2cb6, 0x3e7d4de8);
+    const nmo_guid_t inferior = NMO_GUID(0x74a36ef4, 0x61262b24), distance = NMO_GUID(0x265c7d00, 0x5c8f1702);
+    const nmo_guid_t length = NMO_GUID(0x556a69af, 0x076e3f09);
+    nmo_object_id_t one_half = local_float(&f, CKPGUID_FLOAT, "OneHalf", 1.5f);
+    nmo_object_id_t two = local_int(&f, "Two", 2), zero = local_int(&f, "Zero", 0);
+    nmo_object_id_t six = local_int(&f, "Six", 6), three = local_int(&f, "Three", 3);
+    nmo_object_id_t almost_two = local_float(&f, CKPGUID_FLOAT, "AlmostTwo", 1.9f);
+    const int32_t no = 0;
+    nmo_object_id_t off = local_value(&f, CKPGUID_BOOL, "Off", &no, sizeof(no));
+    const float origin[3] = {0, 0, 0}, far[3] = {3, 4, 0};
+    nmo_object_id_t a = local_value(&f, CKPGUID_VECTOR, "A", origin, sizeof(origin));
+    nmo_object_id_t b = local_value(&f, CKPGUID_VECTOR, "B", far, sizeof(far));
+    const float bright[4] = {0.6f, 0.2f, 0.9f, 1.0f};
+    nmo_object_id_t color = local_value(&f, CKPGUID_COLOR, "Color", bright, sizeof(bright));
+    nmo_object_id_t curve = 0;
+    ASSERT_EQ(NMO_OK, nmo_script_edit_add_parameter(f.tx, f.script_id, NMO_SCRIPT_EDIT_PARAM_LOCAL,
+                                                    CKPGUID_2DCURVE, "Curve", &curve));
+    ASSERT_TRUE(one_half && two && zero && six && three && almost_two && off && a && b && color);
+    const nmo_object_id_t outputs[] = {
+        operation(&f, add, one_half, two, CKPGUID_FLOAT),      /* CKFloatAddFloatInt */
+        operation(&f, add, two, almost_two, CKPGUID_INT),      /* CKIntAddIntFloat: 2 + (int)1.9 */
+        operation(&f, and_op, six, three, CKPGUID_INT),        /* CKIntAndIntInt */
+        operation(&f, opposite, off, 0, CKPGUID_BOOL),         /* CKBoolNotBool */
+        operation(&f, inferior, one_half, two, CKPGUID_BOOL),  /* CKBoolInfFloatInt */
+        operation(&f, div, one_half, zero, CKPGUID_FLOAT),     /* divides by one instead */
+        operation(&f, distance, a, b, CKPGUID_FLOAT),          /* CKFloatGetDistanceVector */
+        operation(&f, add, color, color, CKPGUID_COLOR),       /* CKColorAddColorColor: capped */
+        operation(&f, length, curve, 0, CKPGUID_FLOAT),        /* CKFloatGetLength2dCurve */
+    };
+    const nmo_guid_t types[] = {CKPGUID_FLOAT, CKPGUID_INT, CKPGUID_INT, CKPGUID_BOOL, CKPGUID_BOOL,
+                                CKPGUID_FLOAT, CKPGUID_FLOAT, CKPGUID_COLOR, CKPGUID_FLOAT};
+    const size_t count = sizeof(types) / sizeof(types[0]);
+    for (size_t i = 0; i < count; i++) {
+        ASSERT_TRUE(outputs[i] != 0);
+    }
+    nmo_object_id_t reads[sizeof(types) / sizeof(types[0])];
+    ASSERT_TRUE(read_chain(&f, outputs, types, reads, count) != 0);
+    fixture_commit(&f, NULL);
+
+    run_frame(&f, 16.0f);
+    float value = 0.0f;
+    int32_t integer = 0;
+    read_value(&f, BLOCK_POUT(&f, reads[0], 0), &value, sizeof(value));
+    ASSERT_FLOAT_EQ(3.5f, value, 0.0f);
+    read_value(&f, BLOCK_POUT(&f, reads[1], 0), &integer, sizeof(integer));
+    ASSERT_EQ(3, integer);
+    read_value(&f, BLOCK_POUT(&f, reads[2], 0), &integer, sizeof(integer));
+    ASSERT_EQ(2, integer);
+    read_value(&f, BLOCK_POUT(&f, reads[3], 0), &integer, sizeof(integer));
+    ASSERT_EQ(1, integer);
+    read_value(&f, BLOCK_POUT(&f, reads[4], 0), &integer, sizeof(integer));
+    ASSERT_EQ(1, integer);
+    read_value(&f, BLOCK_POUT(&f, reads[5], 0), &value, sizeof(value));
+    ASSERT_FLOAT_EQ(1.5f, value, 0.0f);
+    read_value(&f, BLOCK_POUT(&f, reads[6], 0), &value, sizeof(value));
+    ASSERT_FLOAT_EQ(5.0f, value, 1e-6f);
+    float sum[4] = {0, 0, 0, 0};
+    read_value(&f, BLOCK_POUT(&f, reads[7], 0), sum, sizeof(sum));
+    ASSERT_FLOAT_EQ(1.0f, sum[0], 0.0f);
+    ASSERT_FLOAT_EQ(0.4f, sum[1], 1e-6f);
+    ASSERT_FLOAT_EQ(1.0f, sum[2], 0.0f);
+    ASSERT_FLOAT_EQ(1.0f, sum[3], 0.0f);
+    /* The default curve from (0, 0) to (1, 1): at least the straight line's length */
+    read_value(&f, BLOCK_POUT(&f, reads[8], 0), &value, sizeof(value));
+    ASSERT_TRUE(value >= 1.4142f && value < 1.6f);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_operations, per_second_scales_by_the_frame_delta);
     REGISTER_TEST(engine_operations, random_stays_in_its_bounds_and_repeats_with_the_seed);
@@ -451,4 +539,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(engine_operations, object_class_group_and_collection_getters);
     REGISTER_TEST(engine_operations, box_and_rectangle_getters);
     REGISTER_TEST(engine_operations, curve_getters);
+    REGISTER_TEST(engine_operations, plugin_value_operations_on_mixed_and_compound_types);
 TEST_MAIN_END()

@@ -379,3 +379,141 @@ float nmo_engine_curve_y(const void *curve, size_t size, float x)
     }
     return y >= 0.0f ? y : 0.0f;
 }
+
+/* ============================================================================
+ * Length and GetPos
+ * ============================================================================ */
+
+/* The points of a 2D curve parameter value; NULL when the bytes hold none */
+static const curve_point_t *curve_points(const void *curve, size_t size, uint32_t *out_count)
+{
+    curve_header_t header;
+    if (curve == NULL || size < sizeof(header)) {
+        return NULL;
+    }
+    memcpy(&header, curve, sizeof(header));
+    if (header.magic != CURVE_MAGIC ||
+        (size - sizeof(header)) / sizeof(curve_point_t) < header.count) {
+        return NULL;
+    }
+    *out_count = header.count;
+    return (const curve_point_t *)(const void *)((const uint8_t *)curve + sizeof(header));
+}
+
+/*
+ * CK2dCurve::Update's lengths: each point's length along the curve, the
+ * total in `lengths[count - 1]`. A segment is straight when the first point
+ * is linear (CK2.dll reads m_ControlPoints[0]'s flag for every segment);
+ * else its Hermite curve is summed over 100 chords.
+ */
+static void curve_lengths(const curve_point_t *points, uint32_t count, float *lengths)
+{
+    float total = 0.0f;
+    lengths[0] = 0.0f;
+    for (uint32_t i = 0; i + 1 < count; i++) {
+        const curve_point_t *s = &points[i], *e = &points[i + 1];
+        if ((points[0].flags & CURVE_POINT_LINEAR) != 0) {
+            const float dx = e->x - s->x, dy = e->y - s->y;
+            total = (float)(sqrt((double)dx * dx + (double)dy * dy) + total);
+        } else {
+            float x = s->x, y = s->y;
+            for (int k = 1; k <= 100; k++) {
+                const double t = (double)k * 0.0099999998;
+                const float h4x = (float)((t - 1.0) * e->in_x * t * t);
+                const float h4y = (float)((t - 1.0) * e->in_y * t * t);
+                const double h3 = (t - 2.0) * t + 1.0;
+                const float h3x = (float)(h3 * s->out_x * t), h3y = (float)(h3 * s->out_y * t);
+                const double h2 = 3.0 - (t + t);
+                const float h2x = (float)(h2 * e->x * t * t), h2y = (float)(h2 * e->y * t * t);
+                const double h1 = (t + t - 3.0) * t * t + 1.0;
+                const float px = (float)(h1 * s->x + h2x + h3x) + h4x;
+                const float py = (float)(h1 * s->y) + h2y + h3y + h4y;
+                const float dx = px - x, dy = py - y;
+                total = (float)(sqrt((double)dx * dx + (double)dy * dy) + total);
+                x = px;
+                y = py;
+            }
+        }
+        lengths[i + 1] = total;
+    }
+}
+
+bool eng_curve2d_length(const void *curve, size_t size, float *out_length)
+{
+    uint32_t count = 0;
+    const curve_point_t *points = curve_points(curve, size, &count);
+    if (points == NULL) {
+        return false;
+    }
+    if (count < 2) {
+        *out_length = 0.0f;
+        return true;
+    }
+    float *lengths = (float *)malloc(count * sizeof(float));
+    if (lengths == NULL) {
+        return false;
+    }
+    curve_lengths(points, count, lengths);
+    *out_length = lengths[count - 1];
+    free(lengths);
+    return true;
+}
+
+/*
+ * CK2dCurve::GetPos: the point `step` (clamped to [0, 1]) of the way along
+ * the curve's length. The segment ends at the first point whose length is
+ * past it, so the curve's very end (step 1) finds none and fails, leaving
+ * the output as it was.
+ */
+bool eng_curve2d_pos(const void *curve, size_t size, float step, float out[2])
+{
+    uint32_t count = 0;
+    const curve_point_t *points = curve_points(curve, size, &count);
+    if (points == NULL || count < 2) {
+        return false;
+    }
+    float *lengths = (float *)malloc(count * sizeof(float));
+    if (lengths == NULL) {
+        return false;
+    }
+    curve_lengths(points, count, lengths);
+    double clamped = step;
+    if (step > 1.0f) {
+        clamped = 1.0;
+    }
+    if (clamped < 0.0) {
+        clamped = 0.0;
+    }
+    const float target = (float)(clamped * lengths[count - 1]);
+    bool found = false;
+    for (uint32_t i = 0; i < count; i++) {
+        if (!((double)lengths[i] > (double)target)) {
+            continue;
+        }
+        const uint32_t first = i > 0 ? i - 1 : 0;
+        const curve_point_t *s = &points[first], *e = &points[i];
+        double t = 0.0;
+        const double span = (double)lengths[i] - lengths[first];
+        if (span != 0.0) {
+            t = (target - lengths[first]) / (float)span;
+        }
+        if ((s->flags & CURVE_POINT_LINEAR) != 0) {
+            out[0] = (float)((e->x - s->x) * t) + s->x;
+            out[1] = (float)((e->y - s->y) * t + s->y);
+        } else {
+            const float h4x = (float)((t - 1.0) * e->in_x * t * t);
+            const float h4y = (float)((t - 1.0) * e->in_y * t * t);
+            const double h3 = (t - 2.0) * t + 1.0;
+            const float h3x = (float)(h3 * s->out_x * t), h3y = (float)(h3 * s->out_y * t);
+            const double h2 = 3.0 - 2.0 * t;
+            const float h2x = (float)(h2 * e->x * t * t), h2y = (float)(h2 * e->y * t * t);
+            const double h1 = (2.0 * t - 3.0) * t * t + 1.0;
+            out[0] = (float)(h1 * s->x + h2x + h3x) + h4x;
+            out[1] = (float)(h1 * s->y) + h2y + h3y + h4y;
+        }
+        found = true;
+        break;
+    }
+    free(lengths);
+    return found;
+}

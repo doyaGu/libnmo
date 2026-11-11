@@ -347,6 +347,17 @@ bool eng_quaternion_from_matrix(const eng_matrix_t *matrix, nmo_quaternion_t *ou
     return true;
 }
 
+/* VxQuaternion::FromMatrix with MatIsUnit: the rotation rows as they are */
+void eng_quaternion_from_unit_matrix(const eng_matrix_t *matrix, nmo_quaternion_t *out)
+{
+    float rows[3][3], q[4];
+    for (int r = 0; r < 3; r++) {
+        for (int c = 0; c < 3; c++) rows[r][c] = matrix->m[r][c];
+    }
+    affine_quaternion((const float (*)[3])rows, q);
+    *out = (nmo_quaternion_t){q[0],q[1],q[2],q[3]};
+}
+
 void eng_matrix_from_quaternion_unchecked(eng_matrix_t *matrix, const nmo_quaternion_t *quaternion)
 {
     const float q[] = {quaternion->x,quaternion->y,quaternion->z,quaternion->w};
