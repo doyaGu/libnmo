@@ -117,6 +117,9 @@ struct nmo_view {
     GLuint last_fbo, last_color;
     int last_w, last_h;
     bool last_valid;
+    /* The vertex colors and speculars of the lit mesh being drawn */
+    uint8_t *lit_colors, *lit_speculars;
+    int32_t lit_capacity;
     int kept_w, kept_h;
 };
 
@@ -933,6 +936,204 @@ static void view_inverse(float out[16], const float m[16])
 }
 
 /* ============================================================================
+ * Lighting
+ *
+ * Direct3D 7's vertex lighting, which GL's fixed function cannot do: a point
+ * or spot light reaches no farther than its range; a spot is full inside half
+ * its inner cone, nothing outside half its outer one, and ((rho - cos phi/2)
+ * / (cos theta/2 - cos phi/2))^falloff between; attenuation is 1 / (a0 + a1 d
+ * + a2 d^2). The color is the emissive, the ambient times the global ambient
+ * and each light's diffuse times N.L, clamped, the material's diffuse alpha;
+ * the specular (added after texturing) each light's specular times (N.H)^power
+ * with the local viewer's half vector, where N.L is positive. The world space
+ * here is the scene's, the eye the camera's position.
+ * ============================================================================ */
+
+typedef struct view_lighting {
+    const nmo_engine_frame_t *frame;
+    const nmo_engine_material_t *material;
+    bool specular;   /* VXRENDERSTATE_SPECULARENABLE: the material's power above 0.05 */
+    float eye[3];
+    float ambient[3];
+} view_lighting_t;
+
+static view_lighting_t view_lighting(const nmo_engine_frame_t *frame, const nmo_engine_material_t *m)
+{
+    view_lighting_t l;
+    l.frame = frame;
+    l.material = m;
+    l.specular = m->power > 0.05f;
+    l.eye[0] = frame->view[12], l.eye[1] = frame->view[13], l.eye[2] = frame->view[14];
+    float ambient[4];
+    view_color(frame->ambient_light, ambient);
+    l.ambient[0] = ambient[0], l.ambient[1] = ambient[1], l.ambient[2] = ambient[2];
+    return l;
+}
+
+static uint8_t view_unit_byte(float v)
+{
+    v = v < 0.0f ? 0.0f : v > 1.0f ? 1.0f : v;
+    return (uint8_t)(v * 255.0f + 0.5f);
+}
+
+/* One vertex at world position `p` with world normal `n` (unit): its color and specular, RGBA bytes */
+static void view_light_vertex(const view_lighting_t *l, const float p[3], const float n[3],
+                              uint8_t diffuse_out[4], uint8_t specular_out[4])
+{
+    const nmo_engine_material_t *m = l->material;
+    float d[3], s[3] = {0.0f, 0.0f, 0.0f};
+    for (int c = 0; c < 3; c++) {
+        d[c] = m->emissive[c] + m->ambient[c] * l->ambient[c];
+    }
+    float to_eye[3] = {l->eye[0] - p[0], l->eye[1] - p[1], l->eye[2] - p[2]};
+    float eye_len = sqrtf(to_eye[0] * to_eye[0] + to_eye[1] * to_eye[1] + to_eye[2] * to_eye[2]);
+    if (eye_len > 0.0f) {
+        to_eye[0] /= eye_len, to_eye[1] /= eye_len, to_eye[2] /= eye_len;
+    }
+    for (int32_t i = 0; i < l->frame->light_count && i < 8; i++) {
+        const nmo_engine_light_t *light = &l->frame->lights[i];
+        float L[3], scale = 1.0f;
+        if (light->type == 3) {
+            L[0] = -light->direction[0], L[1] = -light->direction[1], L[2] = -light->direction[2];
+            float len = sqrtf(L[0] * L[0] + L[1] * L[1] + L[2] * L[2]);
+            if (len <= 0.0f) {
+                continue;
+            }
+            L[0] /= len, L[1] /= len, L[2] /= len;
+        } else {
+            L[0] = light->position[0] - p[0], L[1] = light->position[1] - p[1], L[2] = light->position[2] - p[2];
+            float dist = sqrtf(L[0] * L[0] + L[1] * L[1] + L[2] * L[2]);
+            if (dist > light->range) {
+                continue;
+            }
+            if (dist > 0.0f) {
+                L[0] /= dist, L[1] /= dist, L[2] /= dist;
+            }
+            float att = light->attenuation[0] + light->attenuation[1] * dist + light->attenuation[2] * dist * dist;
+            scale = att > 0.0f ? 1.0f / att : 1.0f;
+            if (light->type == 2) {
+                float axis[3] = {light->direction[0], light->direction[1], light->direction[2]};
+                float alen = sqrtf(axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]);
+                float rho = alen > 0.0f ? -(L[0] * axis[0] + L[1] * axis[1] + L[2] * axis[2]) / alen : 1.0f;
+                float cos_inner = cosf(light->inner_cone * 0.5f), cos_outer = cosf(light->outer_cone * 0.5f);
+                if (rho <= cos_outer) {
+                    continue;
+                }
+                if (rho <= cos_inner) {
+                    float t = cos_inner - cos_outer > 0.0f ? (rho - cos_outer) / (cos_inner - cos_outer) : 1.0f;
+                    scale *= light->falloff == 1.0f ? t : powf(t, light->falloff);
+                }
+            }
+        }
+        float ndotl = n[0] * L[0] + n[1] * L[1] + n[2] * L[2];
+        if (ndotl <= 0.0f) {
+            continue;
+        }
+        for (int c = 0; c < 3; c++) {
+            d[c] += m->diffuse[c] * light->color[c] * ndotl * scale;
+        }
+        if (l->specular && light->specular) {
+            float h[3] = {L[0] + to_eye[0], L[1] + to_eye[1], L[2] + to_eye[2]};
+            float hlen = sqrtf(h[0] * h[0] + h[1] * h[1] + h[2] * h[2]);
+            float ndoth = hlen > 0.0f ? (n[0] * h[0] + n[1] * h[1] + n[2] * h[2]) / hlen : 0.0f;
+            if (ndoth > 0.0f) {
+                float power = powf(ndoth, m->power) * scale;
+                for (int c = 0; c < 3; c++) {
+                    s[c] += m->specular[c] * light->color[c] * power;
+                }
+            }
+        }
+    }
+    for (int c = 0; c < 3; c++) {
+        diffuse_out[c] = view_unit_byte(d[c]);
+        specular_out[c] = view_unit_byte(s[c]);
+    }
+    diffuse_out[3] = view_unit_byte(m->diffuse[3]);
+    specular_out[3] = 255;
+}
+
+/*
+ * A mesh's vertices lit by the material, in the world `world` puts them in
+ * (normals by its inverse transpose, made unit); colors and speculars RGBA
+ * bytes a vertex; whether any specular is not black.
+ */
+static bool view_light_mesh(const view_lighting_t *l, const nmo_vertex_t *vertices, int32_t count,
+                            const float world[16], uint8_t *colors, uint8_t *speculars)
+{
+    float inverse[16];
+    if (!view_affine_inverse(inverse, world)) {
+        memset(inverse, 0, sizeof(inverse));
+        inverse[0] = inverse[5] = inverse[10] = inverse[15] = 1.0f;
+    }
+    bool any = false;
+    for (int32_t v = 0; v < count; v++) {
+        const nmo_vector_t *q = &vertices[v].position, *k = &vertices[v].normal;
+        float p[3], n[3];
+        for (int c = 0; c < 3; c++) {
+            p[c] = q->x * world[c] + q->y * world[4 + c] + q->z * world[8 + c] + world[12 + c];
+            /* row vectors: n (A^-1)^T */
+            n[c] = k->x * inverse[c * 4 + 0] + k->y * inverse[c * 4 + 1] + k->z * inverse[c * 4 + 2];
+        }
+        float len = sqrtf(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+        if (len > 0.0f) {
+            n[0] /= len, n[1] /= len, n[2] /= len;
+        }
+        view_light_vertex(l, p, n, &colors[v * 4], &speculars[v * 4]);
+        any = any || speculars[v * 4] != 0 || speculars[v * 4 + 1] != 0 || speculars[v * 4 + 2] != 0;
+    }
+    return any;
+}
+
+/* The view's buffers for lit colors, grown to `count` vertices */
+static bool view_lit_buffers(nmo_view_t *view, int32_t count)
+{
+    if (count <= view->lit_capacity) {
+        return true;
+    }
+    uint8_t *colors = (uint8_t *)realloc(view->lit_colors, (size_t)count * 4u);
+    if (colors != NULL) {
+        view->lit_colors = colors;
+    }
+    uint8_t *speculars = (uint8_t *)realloc(view->lit_speculars, (size_t)count * 4u);
+    if (speculars != NULL) {
+        view->lit_speculars = speculars;
+    }
+    if (colors == NULL || speculars == NULL) {
+        return false;
+    }
+    view->lit_capacity = count;
+    return true;
+}
+
+/*
+ * Light the mesh for a material and point the color arrays at the result
+ * (GL's lighting off); the specular summed when any. False when the buffers
+ * could not be made.
+ */
+static bool view_use_lit_colors(nmo_view_t *view, const nmo_engine_frame_t *frame,
+                                const nmo_engine_material_t *m, const nmo_vertex_t *vertices,
+                                int32_t count, const float world[16])
+{
+    if (!view_lit_buffers(view, count)) {
+        return false;
+    }
+    view_lighting_t l = view_lighting(frame, m);
+    bool specular = view_light_mesh(&l, vertices, count, world, view->lit_colors, view->lit_speculars);
+    glDisable(GL_LIGHTING);
+    glEnableClientState(GL_COLOR_ARRAY);
+    glColorPointer(4, GL_UNSIGNED_BYTE, 0, view->lit_colors);
+    if (specular) {
+        glEnable(GL_COLOR_SUM);
+        glEnableClientState(GL_SECONDARY_COLOR_ARRAY);
+        glSecondaryColorPointer(3, GL_UNSIGNED_BYTE, 4, view->lit_speculars);
+    } else {
+        glDisableClientState(GL_SECONDARY_COLOR_ARRAY);
+        glDisable(GL_COLOR_SUM);
+    }
+    return true;
+}
+
+/* ============================================================================
  * Drawing
  * ============================================================================ */
 
@@ -987,6 +1188,123 @@ static bool view_channel_folds(const nmo_engine_channel_t *channel,
             (channel->source_blend == 9 && channel->dest_blend == 1));
 }
 
+/* A mesh with VXMESH_WRAPU/WRAPV drawn as faces of their own, each face's UVs moved the short way */
+typedef struct view_wrapped {
+    nmo_vertex_t *vertices;
+    uint32_t *colors, *speculars;
+    uint16_t *indices;
+    nmo_engine_channel_t *channels;
+    float **channel_uvs;
+    int32_t channel_count;
+} view_wrapped_t;
+
+static void view_wrapped_free(view_wrapped_t *w)
+{
+    free(w->vertices);
+    free(w->colors);
+    free(w->speculars);
+    free(w->indices);
+    for (int32_t c = 0; w->channel_uvs != NULL && c < w->channel_count; c++) {
+        free(w->channel_uvs[c]);
+    }
+    free(w->channel_uvs);
+    free(w->channels);
+    memset(w, 0, sizeof(*w));
+}
+
+/* The nearest wrap of `d` (D3DRENDERSTATE_WRAP0: coordinates on a cylinder) */
+static float view_wrap_delta(float d)
+{
+    return d - floorf(d + 0.5f);
+}
+
+/*
+ * Direct3D interpolates a wrapped coordinate along the shorter way round, per
+ * triangle: each face gets vertices of its own, the second and third
+ * coordinates taken to within half a unit of the first. Only the first
+ * coordinate set wraps (WRAP0); the channels' sets are copied as they are.
+ */
+static bool view_wrap_mesh(nmo_engine_mesh_t *mesh, view_wrapped_t *w)
+{
+    memset(w, 0, sizeof(*w));
+    const int32_t count = mesh->face_count * 3;
+    if (mesh->face_count <= 0 || count > 65535) {
+        return false;
+    }
+    w->vertices = (nmo_vertex_t *)malloc((size_t)count * sizeof(nmo_vertex_t));
+    w->indices = (uint16_t *)malloc((size_t)count * sizeof(uint16_t));
+    w->colors = mesh->colors != NULL ? (uint32_t *)malloc((size_t)count * sizeof(uint32_t)) : NULL;
+    w->speculars = mesh->speculars != NULL ? (uint32_t *)malloc((size_t)count * sizeof(uint32_t)) : NULL;
+    w->channel_count = mesh->channel_count;
+    w->channels = mesh->channel_count > 0
+                      ? (nmo_engine_channel_t *)malloc((size_t)mesh->channel_count * sizeof(nmo_engine_channel_t))
+                      : NULL;
+    w->channel_uvs = mesh->channel_count > 0 ? (float **)calloc((size_t)mesh->channel_count, sizeof(float *))
+                                             : NULL;
+    if (w->vertices == NULL || w->indices == NULL || (mesh->colors != NULL && w->colors == NULL) ||
+        (mesh->speculars != NULL && w->speculars == NULL) ||
+        (mesh->channel_count > 0 && (w->channels == NULL || w->channel_uvs == NULL))) {
+        view_wrapped_free(w);
+        return false;
+    }
+    for (int32_t f = 0; f < mesh->face_count; f++) {
+        for (int k = 0; k < 3; k++) {
+            uint16_t index = mesh->indices[f * 3 + k];
+            if (index >= (uint32_t)mesh->vertex_count) {
+                index = 0;
+            }
+            const int32_t at = f * 3 + k;
+            w->vertices[at] = mesh->vertices[index];
+            w->indices[at] = (uint16_t)at;
+            if (w->colors != NULL) {
+                w->colors[at] = mesh->colors[index];
+            }
+            if (w->speculars != NULL) {
+                w->speculars[at] = mesh->speculars[index];
+            }
+        }
+        nmo_vertex_t *first = &w->vertices[f * 3];
+        for (int k = 1; k < 3; k++) {
+            if (mesh->wrap_u) {
+                first[k].uv.x = first[0].uv.x + view_wrap_delta(first[k].uv.x - first[0].uv.x);
+            }
+            if (mesh->wrap_v) {
+                first[k].uv.y = first[0].uv.y + view_wrap_delta(first[k].uv.y - first[0].uv.y);
+            }
+        }
+    }
+    for (int32_t c = 0; c < mesh->channel_count; c++) {
+        w->channels[c] = mesh->channels[c];
+        if (mesh->channels[c].uvs == NULL) {
+            continue;
+        }
+        float *uvs = (float *)malloc((size_t)count * 2u * sizeof(float));
+        if (uvs == NULL) {
+            view_wrapped_free(w);
+            return false;
+        }
+        for (int32_t at = 0; at < count; at++) {
+            uint16_t index = mesh->indices[at];
+            index = index < (uint32_t)mesh->vertex_count ? index : 0;
+            uvs[at * 2] = mesh->channels[c].uvs[index * 2];
+            uvs[at * 2 + 1] = mesh->channels[c].uvs[index * 2 + 1];
+        }
+        w->channel_uvs[c] = uvs;
+        w->channels[c].uvs = uvs;
+    }
+    mesh->vertex_count = count;
+    mesh->vertices = w->vertices;
+    mesh->indices = w->indices;
+    mesh->colors = w->colors;
+    mesh->speculars = w->speculars;
+    mesh->channels = w->channels;
+    return true;
+}
+
+static void view_draw_mesh_body(nmo_view_t *view, const nmo_engine_frame_t *frame,
+                                const nmo_engine_draw_t *draw, const float view_m[16],
+                                nmo_engine_mesh_t mesh, view_mesh_t *cached);
+
 static void view_draw_mesh_as(nmo_view_t *view, const nmo_engine_frame_t *frame,
                               const nmo_engine_draw_t *draw, const float view_m[16])
 {
@@ -995,10 +1313,32 @@ static void view_draw_mesh_as(nmo_view_t *view, const nmo_engine_frame_t *frame,
         mesh.indices == NULL) {
         return;
     }
+    view_wrapped_t wrapped;
+    if ((mesh.wrap_u || mesh.wrap_v) && view_wrap_mesh(&mesh, &wrapped)) {
+        view_mesh_t faces;
+        memset(&faces, 0, sizeof(faces));
+        faces.id = draw->mesh;
+        view_mesh_fill(&faces, &mesh);
+        if (faces.indices != NULL) {
+            view_draw_mesh_body(view, frame, draw, view_m, mesh, &faces);
+        }
+        view_mesh_release(&faces);
+        free(faces.colors);
+        free(faces.speculars);
+        view_wrapped_free(&wrapped);
+        return;
+    }
     view_mesh_t *cached = view_mesh(view, draw->mesh, &mesh);
     if (cached == NULL || cached->indices == NULL) {
         return;
     }
+    view_draw_mesh_body(view, frame, draw, view_m, mesh, cached);
+}
+
+static void view_draw_mesh_body(nmo_view_t *view, const nmo_engine_frame_t *frame,
+                                const nmo_engine_draw_t *draw, const float view_m[16],
+                                nmo_engine_mesh_t mesh, view_mesh_t *cached)
+{
     if (draw->fov > 0.0f) {
         view_load_projection(frame, false, draw->fov, draw->near_plane, draw->far_plane);
     }
@@ -1100,16 +1440,15 @@ static void view_draw_mesh_as(nmo_view_t *view, const nmo_engine_frame_t *frame,
             material.dest_blend = 6;   /* VXBLEND_INVSRCALPHA */
             material.diffuse[3] *= draw->fade_alpha;
         }
-        if (prelit) {
-            glDisable(GL_LIGHTING);
-        } else {
-            glEnable(GL_LIGHTING);
-            glColor4fv(material.diffuse);
-        }
         if (folded) {
             material.power = 0.0f; /* its specular comes after the channels */
         }
-        view_set_material(view, &material, !prelit, true, draw->world);
+        glDisable(GL_LIGHTING);
+        if (!prelit) {
+            glColor4fv(material.diffuse);
+            view_use_lit_colors(view, frame, &material, mesh.vertices, mesh.vertex_count, draw->world);
+        }
+        view_set_material(view, &material, false, true, draw->world);
         if (draw->no_z_test) {
             glDisable(GL_DEPTH_TEST);
         }
@@ -1118,9 +1457,12 @@ static void view_draw_mesh_as(nmo_view_t *view, const nmo_engine_frame_t *frame,
         }
         glDrawElements(GL_TRIANGLES, cached->counts[g], GL_UNSIGNED_SHORT, cached->indices[g]);
     }
-    if (summed) {
+    if (summed || !prelit) {
         glDisableClientState(GL_SECONDARY_COLOR_ARRAY);
         glDisable(GL_COLOR_SUM);
+    }
+    if (!prelit) {
+        glDisableClientState(GL_COLOR_ARRAY);
     }
     /* RCKMesh::DefaultRender with the global render mode's wireframe: every face again in lines,
        in the vertex colors, untextured and unlit, with the projection's depth translation times
@@ -1181,18 +1523,19 @@ static void view_draw_mesh_as(nmo_view_t *view, const nmo_engine_frame_t *frame,
             }
             material.texture_blend = 4; /* MODULATEALPHA: the texture times white */
         }
+        glDisable(GL_LIGHTING);
+        glColor4fv(material.diffuse);
         if (lit) {
-            glEnable(GL_LIGHTING);
-        } else {
-            glDisable(GL_LIGHTING);
-            glColor4fv(material.diffuse);
+            view_use_lit_colors(view, frame, &material, mesh.vertices, mesh.vertex_count, draw->world);
+        } else if (!prelit) {
+            glDisableClientState(GL_COLOR_ARRAY);
         }
         material.alpha_blend = true;
         material.source_blend = channel->source_blend;
         material.dest_blend = channel->dest_blend;
         material.z_write = false;
         material.z_func = 4;
-        view_set_material(view, &material, lit, true, draw->world);
+        view_set_material(view, &material, false, true, draw->world);
         if (channel->uvs != NULL) {
             glTexCoordPointer(2, GL_FLOAT, 0, channel->uvs);
         } else {
@@ -1200,6 +1543,11 @@ static void view_draw_mesh_as(nmo_view_t *view, const nmo_engine_frame_t *frame,
         }
         if (count > 0) {
             glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_SHORT, indices);
+        }
+        if (lit) {
+            glDisableClientState(GL_SECONDARY_COLOR_ARRAY);
+            glDisable(GL_COLOR_SUM);
+            glDisableClientState(GL_COLOR_ARRAY);
         }
         free(indices);
     }
@@ -1224,9 +1572,11 @@ static void view_draw_mesh_as(nmo_view_t *view, const nmo_engine_frame_t *frame,
         material.dest_blend = 2;
         material.z_write = false;
         material.z_func = 4;
-        glEnable(GL_LIGHTING);
-        view_set_material(view, &material, true, true, draw->world);
+        view_use_lit_colors(view, frame, &material, mesh.vertices, mesh.vertex_count, draw->world);
+        view_set_material(view, &material, false, true, draw->world);
         glDrawElements(GL_TRIANGLES, cached->counts[g], GL_UNSIGNED_SHORT, cached->indices[g]);
+        glDisableClientState(GL_SECONDARY_COLOR_ARRAY);
+        glDisable(GL_COLOR_SUM);
     }
     glDisableClientState(GL_COLOR_ARRAY);
     glDisableClientState(GL_TEXTURE_COORD_ARRAY);
@@ -1434,13 +1784,12 @@ static void view_draw_primitive(nmo_view_t *view, const nmo_engine_frame_t *fram
     if (draw->two_sided) {
         material.two_sided = true;
     }
-    if (draw->lit) {
-        glEnable(GL_LIGHTING);
-        glColor4fv(material.diffuse);
-    } else {
-        glDisable(GL_LIGHTING);
+    glDisable(GL_LIGHTING);
+    view_set_material(view, &material, false, true, NULL);
+    view_lighting_t lighting = view_lighting(frame, &material);
+    if (draw->lit && lighting.specular) {
+        glEnable(GL_COLOR_SUM);
     }
-    view_set_material(view, &material, draw->lit, true, NULL);
     if (draw->projection_z_scale != 0.0f) {
         /* GL's depth translation is the matrix's [14], as D3D's is its [3][2] */
         float projection[16];
@@ -1475,7 +1824,17 @@ static void view_draw_primitive(nmo_view_t *view, const nmo_engine_frame_t *fram
     glBegin(draw->lines ? GL_LINES : GL_TRIANGLES);
     for (int32_t i = 0; i < draw->vertex_count; i++) {
         if (draw->lit) {
-            glNormal3f(v[i].nx, v[i].ny, v[i].nz);
+            /* in the world already: lit as they are */
+            const float p[3] = {v[i].x, v[i].y, v[i].z};
+            float n[3] = {v[i].nx, v[i].ny, v[i].nz};
+            float len = sqrtf(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+            if (len > 0.0f) {
+                n[0] /= len, n[1] /= len, n[2] /= len;
+            }
+            uint8_t color[4], specular[4];
+            view_light_vertex(&lighting, p, n, color, specular);
+            glColor4ub(color[0], color[1], color[2], color[3]);
+            glSecondaryColor3ub(specular[0], specular[1], specular[2]);
         } else {
             float color[4];
             view_color(v[i].color, color);
@@ -1486,6 +1845,7 @@ static void view_draw_primitive(nmo_view_t *view, const nmo_engine_frame_t *fram
     }
     glEnd();
     glDisable(GL_LIGHTING);
+    glDisable(GL_COLOR_SUM);
     if (fogged) {
         glEnable(GL_FOG);
     }
@@ -2219,6 +2579,8 @@ void nmo_view_close(nmo_view_t *view)
         glDeleteFramebuffersEXT(1, &view->target_fbo);
         glDeleteRenderbuffersEXT(1, &view->target_depth);
     }
+    free(view->lit_colors);
+    free(view->lit_speculars);
     if (view->last_fbo != 0) {
         glDeleteFramebuffersEXT(1, &view->last_fbo);
     }
