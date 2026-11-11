@@ -182,7 +182,7 @@ typedef struct nmo_engine_view nmo_engine_view_t;
  * CKTexture::CopyContext (Copy Buffer to Texture): the frame's `src` rectangle (left, top,
  * right, bottom in render context pixels) into slot `face` of `texture` at `dest` (texels,
  * the same size). CK copies the back buffer as the block runs, so what the frame before
- * drew; a host copies once it drew the frame. The copy goes to the texture as the device
+ * drew: a host copies from the frame it drew last, before drawing this one. The copy goes to the texture as the device
  * holds it: the texture shows it, the engine's image unchanged, until that image changes.
  */
 typedef struct nmo_engine_buffer_copy {

@@ -113,6 +113,10 @@ struct nmo_view {
     /* The frame kept between frames when the render context does not clear its background
        (Global Blur): drawn there, then shown */
     GLuint kept_fbo, kept_color, kept_depth;
+    /* The frame drawn before, for Copy Buffer to Texture (CK copies the back buffer as the block runs) */
+    GLuint last_fbo, last_color;
+    int last_w, last_h;
+    bool last_valid;
     int kept_w, kept_h;
 };
 
@@ -1623,6 +1627,12 @@ static void view_clip_draw(const nmo_view_t *view, const nmo_engine_draw_t *draw
 static void view_draw_frame(nmo_view_t *view, const nmo_engine_frame_t *frame, int window_h)
 {
     view->wireframe_layer = frame->wireframe_layer;
+    /* VXRENDERSTATE_ANTIALIAS: the samples are there; they smooth only while a block turned it on */
+    if (frame->antialias) {
+        glEnable(GL_MULTISAMPLE);
+    } else {
+        glDisable(GL_MULTISAMPLE);
+    }
     /* The frame's viewport in the window, for its 3D draws (the whole frame without one) */
     int *scene = view->scene_view;
     const int32_t *viewport = frame->viewport;
@@ -1916,9 +1926,57 @@ static void view_draw_pass(nmo_view_t *view, const nmo_engine_pass_t *pass)
  * nearest to its texel size into the texture's uploaded image, top row
  * first. Only a 2D texture's face 0 is copied.
  */
-static void view_copy_buffers(nmo_view_t *view, const nmo_engine_frame_t *frame, int window_h)
+/* Keep what the frame just drawn left (the window's pixels) for the next frame's buffer copies */
+static void view_keep_last_frame(nmo_view_t *view, int window_w, int window_h)
 {
-    if (frame->width <= 0 || frame->height <= 0) {
+    if (window_w <= 0 || window_h <= 0) {
+        return;
+    }
+    if (view->last_color == 0) {
+        glGenTextures(1, &view->last_color);
+    }
+    glBindTexture(GL_TEXTURE_2D, view->last_color);
+    if (view->last_w != window_w || view->last_h != window_h) {
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, window_w, window_h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+        view->last_w = window_w;
+        view->last_h = window_h;
+    }
+    glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, window_w, window_h);
+    view->last_valid = true;
+}
+
+/* Read from the frame before (bound for reading); false when there is none of this size */
+static bool view_bind_last_frame(nmo_view_t *view, int window_w, int window_h)
+{
+    if (!view->last_valid || view->last_w != window_w || view->last_h != window_h) {
+        return false;
+    }
+    if (view->last_fbo == 0) {
+        glGenFramebuffersEXT(1, &view->last_fbo);
+    }
+    glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, view->last_fbo);
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, GL_TEXTURE_2D, view->last_color, 0);
+    if (glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT) != GL_FRAMEBUFFER_COMPLETE_EXT) {
+        glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
+        return false;
+    }
+    return true;
+}
+
+/*
+ * The frame's buffer copies, before it is drawn: CK copies the back buffer
+ * as the block runs, so the copies hold the frame drawn before this one.
+ */
+static void view_copy_buffers(nmo_view_t *view, const nmo_engine_frame_t *frame, int window_w, int window_h)
+{
+    if (frame->width <= 0 || frame->height <= 0 || frame->copy_count <= 0) {
+        return;
+    }
+    GLint bound = 0;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING_EXT, &bound);
+    if (!view_bind_last_frame(view, window_w, window_h)) {
         return;
     }
     float sx = (float)view->view_w / (float)frame->width, sy = (float)view->view_h / (float)frame->height;
@@ -1957,6 +2015,7 @@ static void view_copy_buffers(nmo_view_t *view, const nmo_engine_frame_t *frame,
         free(read);
         free(texels);
     }
+    glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, (GLuint)bound);
 }
 
 static nmo_status_t view_render(nmo_view_t *view, nmo_engine_frame_t *out_frame)
@@ -1983,9 +2042,9 @@ static nmo_status_t view_render(nmo_view_t *view, nmo_engine_frame_t *out_frame)
     view->view_y = (window_h - view->view_h) / 2;
 
     /* Without CK_RENDER_CLEARBACK the frames before stay under the new one (Global Blur) */
+    view_copy_buffers(view, &frame, window_w, window_h);
     if (!(frame.render_options & 0x20u) && view_kept_begin(view, window_w, window_h)) {
         view_draw_frame(view, &frame, window_h);
-        view_copy_buffers(view, &frame, window_h);
         view_kept_end(view, window_w, window_h);
     } else {
         glViewport(0, 0, window_w, window_h);
@@ -1994,8 +2053,8 @@ static nmo_status_t view_render(nmo_view_t *view, nmo_engine_frame_t *out_frame)
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         view_draw_frame(view, &frame, window_h);
-        view_copy_buffers(view, &frame, window_h);
     }
+    view_keep_last_frame(view, window_w, window_h);
     view_text_end_frame(view->text);
     *out_frame = frame;
     return NMO_OK;
@@ -2113,7 +2172,7 @@ nmo_status_t nmo_view_open(nmo_engine_t *engine, const char *title, int scale,
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
     SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    /* Edges smoothed with 4 samples a pixel, or none when the driver has no such format */
+    /* 4 samples a pixel for TT_SetFSAA's antialiasing, or none when the driver has no such format */
     for (int samples = 4; samples >= 0 && view->context == NULL; samples -= 4) {
         SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, samples > 0 ? 1 : 0);
         SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, samples);
@@ -2159,6 +2218,12 @@ void nmo_view_close(nmo_view_t *view)
     if (view->target_fbo != 0) {
         glDeleteFramebuffersEXT(1, &view->target_fbo);
         glDeleteRenderbuffersEXT(1, &view->target_depth);
+    }
+    if (view->last_fbo != 0) {
+        glDeleteFramebuffersEXT(1, &view->last_fbo);
+    }
+    if (view->last_color != 0) {
+        glDeleteTextures(1, &view->last_color);
     }
     if (view->kept_fbo != 0) {
         glDeleteFramebuffersEXT(1, &view->kept_fbo);
