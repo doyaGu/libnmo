@@ -4,6 +4,12 @@
 #include "object/builtin/nmo_group_schemas.h"
 #include "object/nmo_object_enum_defs.h"
 #include "object/nmo_ref.h"
+#include "type/nmo_object_guids.h"
+#include "type/nmo_param_guids.h"
+#include "object/builtin/nmo_parameteroperation_schemas.h"
+#include "object/builtin/nmo_parameterin_schemas.h"
+#include "object/builtin/nmo_parameter_schemas.h"
+#include "object/builtin/nmo_behavior_schemas.h"
 #include "../../src/engine/engine_internal.h"
 
 #define GUID_NOP NMO_GUID(0x302561c4, 0x0d282980)
@@ -15,6 +21,8 @@
 #define GUID_TT_PUSH_BUTTON2 NMO_GUID(0x14d325d1, 0x6748654e)
 #define GUID_SHOW_MOUSE_CURSOR NMO_GUID(0x16f6368f, 0x506b60fc)
 #define GUID_TEXT_DISPLAY NMO_GUID(0xf22d010a, 0xf2cd010a)
+#define GUID_IDENTITY NMO_GUID(0x15151652, 0xaeefffd5)
+#define OP_GET_TEXT NMO_GUID(0x764e2b8b, 0x6b430baf)
 #define GUID_ALIGN_2D NMO_GUID(0x03385bc3, 0x1034102f)
 #define GUID_ALIGN_3D NMO_GUID(0x0f384bc3, 0x1b34102f)
 #define GUID_FLOW_LAYOUT_2D NMO_GUID(0x295f342c, 0x95e467e6)
@@ -206,6 +214,53 @@ TEST(engine_interface, text_display_shows_its_text_until_off)
     ASSERT_FALSE(nmo_engine_behavior_is_active(f.engine, display));
     ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
     ASSERT_NULL(sprite_text_draw(&frame));
+    fixture_end(&f);
+}
+
+TEST(engine_interface, text_display_keeps_its_text_in_a_sprite_text)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t display = fixture_block(&f, GUID_TEXT_DISPLAY, "Text Display");
+    nmo_object_id_t identity = fixture_block(&f, GUID_IDENTITY, "Identity");
+    ASSERT_TRUE(display != 0 && identity != 0);
+    const nmo_behavior_state_t *state = (const nmo_behavior_state_t *)fixture_state(&f, display);
+    ASSERT_TRUE(state != NULL && state->local_parameters.count > 0);
+    const nmo_object_id_t sprite_local =
+        nmo_ref_runtime_id(&((const nmo_behavior_ref_t *)state->local_parameters.data)[0].ref);
+    /* Get Text reads the CKSpriteText the block keeps in its first local */
+    nmo_object_id_t op = 0;
+    ASSERT_EQ(NMO_OK, nmo_script_edit_add_operation(f.tx, f.script_id, OP_GET_TEXT, sprite_local, 0, 0, &op));
+    const nmo_parameteroperation_state_t *op_state =
+        (const nmo_parameteroperation_state_t *)fixture_state(&f, op);
+    nmo_object_id_t text = op_state != NULL ? nmo_parameteroperation_out_id(op_state) : 0;
+    nmo_parameter_state_t *text_state = (nmo_parameter_state_t *)fixture_state(&f, text);
+    nmo_parameterin_state_t *op_in =
+        (nmo_parameterin_state_t *)fixture_state(&f, nmo_parameteroperation_in1_id(op_state));
+    nmo_parameterin_state_t *pin = (nmo_parameterin_state_t *)fixture_state(&f, BLOCK_PIN(&f, identity, 0));
+    nmo_parameter_state_t *pout = (nmo_parameter_state_t *)fixture_state(&f, BLOCK_POUT(&f, identity, 0));
+    ASSERT_TRUE(text_state != NULL && op_in != NULL && pin != NULL && pout != NULL);
+    text_state->type_guid = CKPGUID_STRING;
+    op_in->type_guid = CKPGUID_SPRITETEXT;
+    pin->type_guid = CKPGUID_STRING;
+    pout->type_guid = CKPGUID_STRING;
+    ASSERT_EQ(NMO_OK, nmo_script_edit_connect_parameter(f.tx, text, BLOCK_PIN(&f, identity, 0)));
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, display, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, display, 0), BLOCK_IN(&f, identity, 0), 0);
+    fixture_input_value(&f, BLOCK_PIN(&f, display, 4), "Hello", 6);
+    fixture_commit(&f, NULL);
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+
+    /* Made at load: a sprite text of its own */
+    uint32_t sprite = 0;
+    read_value(&f, sprite_local, &sprite, sizeof(sprite));
+    ASSERT_TRUE(sprite != 0);
+    ASSERT_EQ(NMO_CID_SPRITETEXT, nmo_engine_object_class(f.engine, sprite));
+    ASSERT_STR_EQ("TextDisplay Sprite", nmo_engine_object_name(f.engine, sprite));
+    char got[16] = {0};
+    read_value(&f, BLOCK_POUT(&f, identity, 0), got, 7);
+    ASSERT_STR_EQ("Hello ", got);
     fixture_end(&f);
 }
 
@@ -702,6 +757,7 @@ TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_interface, fonts_are_numbered_by_name);
 REGISTER_TEST(engine_interface, text_2d_draws_until_off);
 REGISTER_TEST(engine_interface, text_display_shows_its_text_until_off);
+REGISTER_TEST(engine_interface, text_display_keeps_its_text_in_a_sprite_text);
 REGISTER_TEST(engine_interface, push_button_follows_the_mouse);
 REGISTER_TEST(engine_interface, tt_push_button2_needs_the_cursor_shown);
 REGISTER_TEST(engine_interface, layouts_place_2d_and_3d_entities);

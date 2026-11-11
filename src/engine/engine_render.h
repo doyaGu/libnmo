@@ -192,6 +192,11 @@ typedef struct eng_transparent {
     uint32_t frame;   /* the frame that last added it (m_TimeFpsCalc) */
 } eng_transparent_t;
 
+typedef struct eng_sprite_text_owned {
+    nmo_object_id_t id;
+    char *text;
+} eng_sprite_text_owned_t;
+
 typedef struct eng_render {
     int32_t screen_mode;      /* the render context's mode, of the engine's driver's list */
     /* The eye's world matrix of the scene being drawn, for render callbacks that turn things to it;
@@ -269,6 +274,8 @@ typedef struct eng_render {
     /* What nmo_engine_render_frame() handed out last */
     ENG_VEC(nmo_engine_draw_t) draws;
     ENG_VEC(nmo_engine_light_t) frame_lights;
+    /* The texts CKSpriteText::SetText gave sprite texts at run time, which their states point at */
+    ENG_VEC(eng_sprite_text_owned_t) sprite_texts;
 } eng_render_t;
 
 /* core/render.c */
@@ -323,6 +330,8 @@ void eng_material_from_state(const nmo_engine_t *engine, nmo_object_id_t id,
                               const struct nmo_material_state *state, nmo_engine_material_t *out);
 /* A material made at run time (CreateObject(CKCID_MATERIAL)), with CKMaterial's defaults */
 eng_material_t *eng_material_new(nmo_engine_t *engine, nmo_object_id_t id);
+/* CKSpriteText::SetText: the text its state holds from now on (copied); false for no sprite text */
+bool eng_sprite_text_set(nmo_engine_t *engine, nmo_object_id_t id, const char *text);
 /* The 2D entity drawn no more: the object was destroyed */
 void eng_2d_destroy(nmo_engine_t *engine, nmo_object_id_t id);
 /* The 2D entity's run time state; NULL for no CK2dEntity */

@@ -32,6 +32,7 @@
 #include "object/builtin/nmo_targetlight_schemas.h"
 #include "object/builtin/nmo_texture_schemas.h"
 #include "object/nmo_class_ids.h"
+#include "object/builtin/nmo_spritetext_schemas.h"
 #include "type/nmo_object_guids.h"
 #include "type/nmo_type_query.h"
 
@@ -59,6 +60,10 @@ void eng_free_render(nmo_engine_t *engine)
     free(render->entity_2d_map.slots);
     free(render->lights.data);
     free(render->light_map.slots);
+    for (size_t i = 0; i < render->sprite_texts.count; i++) {
+        free(render->sprite_texts.data[i].text);
+    }
+    free(render->sprite_texts.data);
     free(render->sprites_3d.data);
     free(render->sprite_3d_map.slots);
     for (size_t i = 0; i < render->images.count; i++) {
@@ -1806,6 +1811,39 @@ eng_2d_t *eng_2d_entity(nmo_engine_t *engine, nmo_object_id_t id)
         return NULL;
     }
     return entity;
+}
+
+bool eng_sprite_text_set(nmo_engine_t *engine, nmo_object_id_t id, const char *text)
+{
+    nmo_object_t *object = id != 0 ? eng_find_object(engine, id) : NULL;
+    nmo_spritetext_state_t *state =
+        object != NULL ? (nmo_spritetext_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
+                             engine->types, object, CKPGUID_SPRITETEXT)
+                       : NULL;
+    if (state == NULL) {
+        return false;
+    }
+    eng_sprite_text_owned_t *owned = NULL;
+    for (size_t i = 0; i < engine->render.sprite_texts.count && owned == NULL; i++) {
+        if (engine->render.sprite_texts.data[i].id == id) {
+            owned = &engine->render.sprite_texts.data[i];
+        }
+    }
+    if (owned == NULL) {
+        if (!ENG_VEC_PUSH(engine->render.sprite_texts, owned)) {
+            return false;
+        }
+        owned->id = id;
+        owned->text = NULL;
+    }
+    char *copy = eng_text_printf("%s", text != NULL ? text : "");
+    if (copy == NULL) {
+        return false;
+    }
+    free(owned->text);
+    owned->text = copy;
+    state->text_content = copy;
+    return true;
 }
 
 void eng_2d_destroy(nmo_engine_t *engine, nmo_object_id_t id)

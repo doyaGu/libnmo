@@ -17,6 +17,7 @@
 #include "virtools.h"
 
 #include "object/builtin/nmo_texture_schemas.h"
+#include "object/nmo_class_ids.h"
 #include "type/nmo_type_guids.h"
 
 #include <math.h>
@@ -85,6 +86,7 @@ typedef struct eng_text {
 /* A CKSpriteText a Text Display block made: what it shows and where */
 typedef struct eng_sprite_text {
     int32_t node;
+    nmo_object_id_t object; /* the CKSpriteText "TextDisplay Sprite" in local 0 (its text set on it) */
     bool shown;
     float x, y, width, height;
     char *text; /* NULL until it is drawn the first time */
@@ -1072,6 +1074,7 @@ static int bb_text_display(blk_t *b)
         free(sprite->text);
         sprite->text = text;
         text = NULL;
+        eng_sprite_text_set(b->engine, sprite->object, sprite->text);
     }
     free(text);
     return NMO_ENGINE_BR_ACTIVATENEXTFRAME;
@@ -1083,6 +1086,17 @@ static int cb_text_display(blk_t *b, uint32_t message)
     eng_sprite_text_t *sprite = text_display_sprite(b);
     if (sprite == NULL) {
         return NMO_ENGINE_BR_OK;
+    }
+    /* The load makes the block's CKSpriteText, added to the level, and keeps it in local 0 */
+    if (message == NMO_ENGINE_MSG_LOAD && sprite->object == 0) {
+        nmo_object_id_t object = eng_create_object(b->engine, NMO_CID_SPRITETEXT, "TextDisplay Sprite");
+        sprite = text_display_sprite(b);
+        if (sprite == NULL || object == 0) {
+            return NMO_ENGINE_BR_OK;
+        }
+        sprite->object = object;
+        const uint32_t id = (uint32_t)object;
+        nmo_engine_block_set_local_value(b, 0, &id, sizeof(id));
     }
     if (message == NMO_ENGINE_MSG_RESET || message == NMO_ENGINE_MSG_PAUSE ||
         message == NMO_ENGINE_MSG_DEACTIVATESCRIPT) {
