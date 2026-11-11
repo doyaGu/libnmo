@@ -844,6 +844,38 @@ NMO_API bool nmo_engine_sound_listener(const nmo_engine_t *engine, nmo_object_id
                                        float *out_global_gain);
 /** The voices to hear this frame, `*out_count` of them; valid until the next step. */
 NMO_API const nmo_engine_voice_t *nmo_engine_voices(nmo_engine_t *engine, size_t *out_count);
+/* ---- MIDI ---- */
+
+/**
+ * A midi sound to hear now (Midi Player): the host plays its file from
+ * `position`, again from the start when `start` changes. As MidiSound, it
+ * stays playing after the file's end until it is stopped.
+ */
+typedef struct nmo_engine_midi_voice {
+    nmo_object_id_t sound;
+    const char *file;  /* the MIDI file as the sound names it */
+    uint32_t start;
+    float position;    /* ms since it started */
+    bool paused;
+} nmo_engine_midi_voice_t;
+
+/** The midi sounds playing or paused, `*out_count` of them; valid until the next step. */
+NMO_API const nmo_engine_midi_voice_t *nmo_engine_midi_voices(nmo_engine_t *engine, size_t *out_count);
+/**
+ * The MIDI input devices the host has (midiInGetNumDevs); none until it
+ * says. The Midi Manager opens its port at the start when a MIDI block is
+ * loaded, if the port is one of them.
+ */
+NMO_API void nmo_engine_set_midi_input_devices(nmo_engine_t *engine, int32_t count);
+/** The MIDI input port open now; -1 for none. */
+NMO_API int32_t nmo_engine_midi_input_port(const nmo_engine_t *engine);
+/**
+ * A short message the open port received (MIDIINPROC's dwParam1: status in
+ * the low byte, then the note and the velocity) and its time; the blocks
+ * see it at the next frame. NMO_ERR_INVALID_STATE while no port is open.
+ */
+NMO_API nmo_status_t nmo_engine_midi_input(nmo_engine_t *engine, uint32_t message, uint32_t time);
+
 /** The whole file a sound names, through the path manager's sound paths; free() it. */
 NMO_API unsigned char *nmo_engine_read_sound_file(nmo_engine_t *engine, const char *name,
                                                   size_t *out_size);

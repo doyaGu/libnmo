@@ -116,6 +116,7 @@
 #define OP_GET_MOUSE_X NMO_GUID_INIT(0x53c51abe, 0x0eba68de)
 #define OP_GET_MOUSE_Y NMO_GUID_INIT(0x27af3c9f, 0x0dbc4eb3)
 
+#define OP_IS_NOTE_ACTIVE NMO_GUID_INIT(0x25d70112, 0x683835b8)
 #define OP_GET_LAYER_BY_NAME NMO_GUID_INIT(0x470c4e6c, 0x144748b6)
 #define OP_GET_PARENT_Q NMO_GUID_INIT(0x5bf9718f, 0x030b698c)
 #define OP_GET_DISTANCE_Q NMO_GUID_INIT(0x265c7d00, 0x5c8f1702)
@@ -1951,6 +1952,14 @@ static nmo_status_t op_get_layer_by_name(nmo_engine_t *engine, eng_param_t *src1
     return write_u32(engine, out, (uint32_t)eng_grid_type_from_name(engine, name != NULL ? name : ""));
 }
 
+/* BoolIsNoteActiveIntInt (MidiManager.dll): the note held on the channel */
+static nmo_status_t op_is_note_active(nmo_engine_t *engine, eng_param_t *src1, eng_param_t *src2,
+                                      eng_param_t *out)
+{
+    return write_u32(engine, out,
+                     eng_midi_note_active(engine, (int32_t)param_u32(src1), (int32_t)param_u32(src2)) ? 1u : 0u);
+}
+
 /* ============================================================================
  * The table
  * ============================================================================ */
@@ -1962,6 +1971,7 @@ typedef struct query_op {
 } query_op_t;
 
 static const query_op_t query_ops[] = {
+    {OP_IS_NOTE_ACTIVE, CKPGUID_BOOL_INIT, CKPGUID_INT_INIT, CKPGUID_INT_INIT, op_is_note_active},
     {OP_GET_LAYER_BY_NAME, CKPGUID_LAYERTYPE_INIT, CKPGUID_STRING_INIT, {0, 0}, op_get_layer_by_name},
     {OP_GET_PARENT_Q, CKPGUID_2DENTITY_INIT, CKPGUID_2DENTITY_INIT, {0, 0}, op_get_parent_2d},
     {OP_GET_DISTANCE_Q, CKPGUID_FLOAT_INIT, CKPGUID_2DENTITY_INIT, CKPGUID_2DENTITY_INIT, op_get_distance_2d},

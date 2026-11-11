@@ -43,6 +43,7 @@ set(NMO_BB_VIRTOOLS_SOURCES
     virtools/narratives.c
     virtools/sounds.c
     virtools/sound_spectrum.c
+    virtools/midi.c
     virtools/visuals.c
     virtools/world_environments.c
     virtools/logics/array.c

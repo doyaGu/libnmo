@@ -39,6 +39,9 @@
 #define GUID_SOUND_MANAGER_SETUP NMO_GUID(0x04c05c6a, 0x6454792b)
 #define GUID_FADE_OUT NMO_GUID(0x1b82338f, 0x5a656975)
 #define GUID_GET_SOUND_SPECTRUM NMO_GUID(0x47082a75, 0x112b7c1b)
+#define GUID_READ_MIDI NMO_GUID(0x408c50ed, 0x68ba5988)
+#define GUID_MIDI_EVENT NMO_GUID(0x7c652f90, 0x64404377)
+#define GUID_MIDI_PLAYER NMO_GUID(0x843cb43a, 0xa12dac48)
 
 static void input_float(engine_fixture_t *f, nmo_object_id_t pin, float value)
 {
@@ -738,6 +741,101 @@ TEST(engine_media, get_sound_spectrum_finds_the_tone_band)
     ASSERT_TRUE(tone_level > 0.0f && tone_level <= 1.0f);
     ASSERT_TRUE(other_level >= 0.0f);
     ASSERT_TRUE(tone_level > other_level + 0.2f);
+    fixture_end(&f);
+}
+
+TEST(engine_media, midi_blocks_read_the_input_port)
+{
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t read = fixture_block(&f, GUID_READ_MIDI, "Read");
+    nmo_object_id_t event = fixture_block(&f, GUID_MIDI_EVENT, "Event");
+    nmo_object_id_t pressed = fixture_block(&f, GUID_NOP, "Pressed");
+    nmo_object_id_t released = fixture_block(&f, GUID_NOP, "Released");
+    nmo_object_id_t chord = fixture_block(&f, GUID_NOP, "Chord");
+    ASSERT_TRUE(read != 0 && event != 0 && pressed != 0 && released != 0 && chord != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, read, 0), 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, event, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, read, 0), BLOCK_IN(&f, pressed, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, read, 1), BLOCK_IN(&f, released, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, event, 0), BLOCK_IN(&f, chord, 0), 0);
+    fixture_input_int(&f, BLOCK_PIN(&f, read, 0), 2);  /* Channel */
+    fixture_input_int(&f, BLOCK_PIN(&f, event, 0), 2);
+    fixture_input_int(&f, BLOCK_PIN(&f, event, 1), 60); /* Note 1 */
+    fixture_commit(&f, NULL);
+    nmo_engine_set_midi_input_devices(f.engine, 1);
+    /* No port before the start; then the default one, a MIDI block being there */
+    ASSERT_EQ(-1, nmo_engine_midi_input_port(f.engine));
+    ASSERT_EQ(NMO_ERR_INVALID_STATE, nmo_engine_midi_input(f.engine, 0x00643C92u, 0));
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(0, nmo_engine_midi_input_port(f.engine));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(0u, runs(&f, pressed));
+
+    /* Note On 60 at velocity 100 on channel 2: the next frame sees it */
+    ASSERT_EQ(NMO_OK, nmo_engine_midi_input(f.engine, 0x00643C92u, 1000));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1u, runs(&f, pressed));
+    ASSERT_EQ(1u, runs(&f, chord));
+    int32_t value = 0;
+    read_value(&f, BLOCK_POUT(&f, read, 0), &value, sizeof(value));
+    ASSERT_EQ(60, value);
+    read_value(&f, BLOCK_POUT(&f, read, 1), &value, sizeof(value));
+    ASSERT_EQ(100, value);
+    /* Held: no message, nothing new */
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1u, runs(&f, pressed));
+    ASSERT_EQ(1u, runs(&f, chord));
+    /* Note Off */
+    ASSERT_EQ(NMO_OK, nmo_engine_midi_input(f.engine, 0x00003C82u, 1040));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(1u, runs(&f, released));
+    fixture_end(&f);
+}
+
+TEST(engine_media, midi_player_follows_midisound_states)
+{
+    char path[512];
+    snprintf(path, sizeof(path), "%s/%s", NMO_TEST_SCRATCH_DIR, "song.mid");
+    FILE *song = fopen(path, "wb");
+    ASSERT_NOT_NULL(song);
+    fputs("MThd", song);
+    fclose(song);
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    nmo_object_id_t sound = fixture_create(&f, NMO_CID_MIDISOUND, "Song");
+    nmo_midisound_state_t *state = (nmo_midisound_state_t *)fixture_state(&f, sound);
+    ASSERT_NOT_NULL(state);
+    state->base.file_name = (char *)"song.mid";
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    nmo_object_id_t player = fixture_block(&f, GUID_MIDI_PLAYER, "Player");
+    ASSERT_TRUE(player != 0 && fixture_target(&f, player) != 0);
+    fixture_input_int(&f, fixture_target(&f, player), (int32_t)sound);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, player, 0), 0);
+    fixture_commit(&f, NULL);
+    nmo_engine_set_file_resolver(f.engine, resolve_scratch, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    size_t count = 0;
+    const nmo_engine_midi_voice_t *voices = nmo_engine_midi_voices(f.engine, &count);
+    ASSERT_EQ(1u, count);
+    ASSERT_EQ(sound, voices[0].sound);
+    ASSERT_STR_EQ("song.mid", voices[0].file);
+    ASSERT_FLOAT_EQ(20.0f, voices[0].position, 0.0f);
+    ASSERT_FALSE(voices[0].paused);
+    /* Pause, then Stop: no voice */
+    eng_midi_sound_t *made = eng_midi_sound(f.engine, sound);
+    ASSERT_NOT_NULL(made);
+    eng_midi_sound_pause(made);
+    voices = nmo_engine_midi_voices(f.engine, &count);
+    ASSERT_EQ(1u, count);
+    ASSERT_TRUE(voices[0].paused);
+    eng_midi_sound_stop(made);
+    nmo_engine_midi_voices(f.engine, &count);
+    ASSERT_EQ(0u, count);
     fixture_end(&f);
 }
 
@@ -1473,6 +1571,8 @@ REGISTER_TEST(engine_media, wave_player_ends_after_the_sound_length);
 REGISTER_TEST(engine_media, voices_follow_the_sound_settings_and_instances);
     REGISTER_TEST(engine_media, playing_sounds_get_a_velocity_from_their_moves);
     REGISTER_TEST(engine_media, get_sound_spectrum_finds_the_tone_band);
+    REGISTER_TEST(engine_media, midi_blocks_read_the_input_port);
+    REGISTER_TEST(engine_media, midi_player_follows_midisound_states);
 REGISTER_TEST(engine_media, particle_system_exits_off_once_its_particles_died);
 REGISTER_TEST(engine_media, wave_particles_stay_where_they_were_emitted);
 REGISTER_TEST(engine_media, gravity_and_global_wind_push_the_particles);

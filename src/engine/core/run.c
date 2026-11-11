@@ -186,6 +186,7 @@ nmo_status_t nmo_engine_start(nmo_engine_t *engine, nmo_engine_start_mode_t mode
     }
     eng_reset_messages(engine); /* CKMessageManager::OnCKReset */
     eng_managers_reset(engine);
+    eng_midi_reset(engine); /* MidiManager::OnCKReset */
     for (size_t i = 0; i < engine->nodes.count; i++) {
         if (engine->nodes.data[i].is_block) {
             eng_block_callback(engine, (int32_t)i, NMO_ENGINE_MSG_RESET);
@@ -266,6 +267,7 @@ nmo_status_t nmo_engine_start(nmo_engine_t *engine, nmo_engine_start_mode_t mode
     engine->scene_entry_count = scene_count;
     eng_sort_listed(engine);
     eng_warn_new_scene(engine);
+    eng_midi_play(engine); /* MidiManager::OnCKPlay */
     return NMO_OK;
 }
 
@@ -634,11 +636,13 @@ nmo_status_t nmo_engine_step(nmo_engine_t *engine, float delta_ms)
     eng_input_begin_frame(engine);
     eng_clear_player_messages(engine);
     eng_sounds_begin_frame(engine);
+    eng_midi_sounds_begin_frame(engine);
     if (engine->scene_launch) {
         eng_relaunch_level_scene(engine); /* CKLevel::PreProcess */
     }
     eng_entities_save_last_frame(engine); /* CKRenderManager::PreProcess */
     eng_managers_pre_process(engine);
+    eng_midi_pre_process(engine); /* MidiManager::PreProcess */
     eng_emit(engine, NMO_ENGINE_EVENT_FRAME_BEGIN, -1, 0, 0);
     engine->dynamic.defer = true;
     nmo_status_t status = engine->failed ? NMO_ERR_VALIDATION_FAILED : eng_manager_execute(engine);
@@ -647,6 +651,7 @@ nmo_status_t nmo_engine_step(nmo_engine_t *engine, float delta_ms)
         eng_dispatch_messages(engine); /* CKMessageManager::PostProcess */
         eng_managers_post_process(engine); /* the packs' managers' PostProcess */
         eng_sounds_end_frame(engine); /* DX7SoundManager::PostProcess */
+        eng_midi_post_process(engine); /* MidiManager::PostProcess */
         eng_delete_dynamic_objects(engine); /* CKObjectManager::PostProcess */
         if (!engine->failed) eng_animations_end_frame(engine);
     }

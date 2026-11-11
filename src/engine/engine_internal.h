@@ -25,6 +25,7 @@
 #include "engine_kinematic.h"
 #include "engine_manager.h"
 #include "engine_media.h"
+#include "engine_midi.h"
 #include "engine_message.h"
 #include "engine_module.h"
 #include "engine_portal.h"
@@ -101,6 +102,7 @@ struct nmo_engine {
     eng_grids_t grids;
     eng_input_t input;
     eng_media_t media;
+    eng_midi_t midi;
     eng_render_t render;
     eng_host_t host;
     /* The managers the block packs added, in the order they were added */
