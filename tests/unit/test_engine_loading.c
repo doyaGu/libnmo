@@ -272,9 +272,45 @@ TEST(engine_loading, fill_group_by_class)
     fixture_end(&f);
 }
 
+TEST(engine_loading, objects_created_after_a_load_get_later_ids)
+{
+    save_loaded_file();
+    engine_fixture_t f;
+    fixture_begin(&f);
+    nmo_object_id_t before = fixture_block(&f, GUID_OBJECT_CREATE, "Before");
+    nmo_object_id_t load = fixture_block(&f, GUID_OBJECT_LOAD, "Load");
+    nmo_object_id_t after = fixture_block(&f, GUID_OBJECT_CREATE, "After");
+    ASSERT_TRUE(before != 0 && load != 0 && after != 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, before, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, before, 0), BLOCK_IN(&f, load, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, load, 0), BLOCK_IN(&f, after, 0), 0);
+    nmo_object_id_t creates[2] = {before, after};
+    for (int i = 0; i < 2; i++) {
+        fixture_input_int(&f, BLOCK_PIN(&f, creates[i], 0), NMO_CID_DATAARRAY);
+        fixture_input_value(&f, BLOCK_PIN(&f, creates[i], 1), "Made", sizeof("Made"));
+    }
+    fixture_input_value(&f, BLOCK_PIN(&f, load, 0), "loaded.nmo", sizeof("loaded.nmo"));
+    fixture_input_int(&f, BLOCK_PIN(&f, load, 2), NMO_CID_3DENTITY);
+    fixture_commit(&f, NULL);
+    nmo_engine_set_file_resolver(f.engine, resolve_scratch, NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
+    uint32_t first = 0, master = 0, second = 0;
+    read_value(&f, BLOCK_POUT(&f, before, 0), &first, sizeof(first));
+    read_value(&f, BLOCK_POUT(&f, load, 1), &master, sizeof(master));
+    read_value(&f, BLOCK_POUT(&f, after, 0), &second, sizeof(second));
+    /* As CK's one ID counter: creation order is ID order across the load */
+    ASSERT_TRUE(first != 0 && master != 0 && second != 0);
+    ASSERT_TRUE(first < master);
+    ASSERT_TRUE(master < second);
+    fixture_end(&f);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(engine_loading, object_load_adds_the_file_to_the_level);
 REGISTER_TEST(engine_loading, level_scene_says_what_starts_active);
 REGISTER_TEST(engine_loading, object_create_and_add_to_group);
 REGISTER_TEST(engine_loading, fill_group_by_class);
+REGISTER_TEST(engine_loading, objects_created_after_a_load_get_later_ids);
 TEST_MAIN_END()

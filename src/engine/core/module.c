@@ -451,15 +451,16 @@ nmo_object_id_t eng_object_named(const nmo_engine_t *engine, const char *name, u
 /*
  * CKContext::CreateObject and CKLevel::AddObject: a new object of the class
  * and name in the module of created objects; 0 when it cannot be made. A new
- * data array is empty.
+ * data array is empty. CK gives IDs from one counter, so its class lists
+ * (creation order) are in ID order; a file loaded since the last module of
+ * created objects was made therefore starts another one after it, keeping
+ * the IDs of later objects above that file's.
  */
 nmo_object_id_t eng_create_object(nmo_engine_t *engine, uint32_t class_id, const char *name)
 {
     int32_t index = -1;
-    for (size_t i = 0; i < engine->modules.count; i++) {
-        if (engine->modules.data[i].created) {
-            index = (int32_t)i;
-        }
+    if (engine->modules.count > 0 && engine->modules.data[engine->modules.count - 1u].created) {
+        index = (int32_t)engine->modules.count - 1;
     }
     if (index < 0) {
         nmo_context_t *ctx = nmo_workspace_internal_context(engine->workspace);
