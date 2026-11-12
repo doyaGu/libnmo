@@ -612,6 +612,9 @@ typedef struct nmo_type_registry {
     nmo_arena_array_t free_slots;  /* Stack of freed type slots */
     nmo_hash_table_t *class_id_inherited_map; /* class_id -> inherited type_id cache */
     uint32_t class_id_inherited_version;      /* Cache version (matches registry_version) */
+    /* The same cache for the class ids below NMO_TYPE_CLASS_ID_FAST_LIMIT, which
+     * every loaded object asks for: type_id + 1, 0 when not cached. */
+    uint32_t class_id_inherited_fast[256];
     
     /* === Derivation Cache === */
     bool derivation_masks_valid;        /* FALSE when types change (lazy update) */

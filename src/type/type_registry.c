@@ -925,7 +925,23 @@ static void reset_class_id_inherited_cache(nmo_type_registry_t *registry) {
         64,
         NULL,
         NULL);
+    memset(registry->class_id_inherited_fast, 0, sizeof(registry->class_id_inherited_fast));
     registry->class_id_inherited_version = registry->registry_version;
+}
+
+#define NMO_TYPE_CLASS_ID_FAST_LIMIT \
+    (sizeof(((nmo_type_registry_t *)0)->class_id_inherited_fast) / sizeof(uint32_t))
+
+/* Remembers what a class id resolved to, for the next lookup. */
+static void class_id_inherited_remember(nmo_type_registry_t *registry,
+                                        uint32_t class_id,
+                                        nmo_type_id_t type_id) {
+    if (registry->class_id_inherited_map) {
+        nmo_hash_table_insert(registry->class_id_inherited_map, &class_id, &type_id);
+    }
+    if (class_id < NMO_TYPE_CLASS_ID_FAST_LIMIT && type_id >= 0) {
+        registry->class_id_inherited_fast[class_id] = (uint32_t)type_id + 1u;
+    }
 }
 
 static nmo_type_id_t get_parent_type_id(
@@ -1904,19 +1920,26 @@ const nmo_type_descriptor_t* nmo_type_registry_find_by_class_id_inherited(
 
     ensure_class_id_inherited_cache(mutable_registry);
 
+    if (class_id < NMO_TYPE_CLASS_ID_FAST_LIMIT &&
+        mutable_registry->class_id_inherited_fast[class_id] != 0u) {
+        return nmo_type_registry_get_by_id(
+            mutable_registry,
+            (nmo_type_id_t)(mutable_registry->class_id_inherited_fast[class_id] - 1u));
+    }
+
     nmo_type_id_t cached_id = NMO_TYPE_ID_INVALID;
     if (mutable_registry->class_id_inherited_map &&
         nmo_hash_table_get(mutable_registry->class_id_inherited_map, &class_id, &cached_id) == NMO_OK) {
+        if (class_id < NMO_TYPE_CLASS_ID_FAST_LIMIT && cached_id >= 0) {
+            mutable_registry->class_id_inherited_fast[class_id] = (uint32_t)cached_id + 1u;
+        }
         return nmo_type_registry_get_by_id(mutable_registry, cached_id);
     }
 
     // First try direct lookup
     const nmo_type_descriptor_t *type = nmo_type_registry_find_by_class_id(registry, class_id);
     if (type) {
-        nmo_type_id_t type_id = type->id;
-        if (mutable_registry->class_id_inherited_map) {
-            nmo_hash_table_insert(mutable_registry->class_id_inherited_map, &class_id, &type_id);
-        }
+        class_id_inherited_remember(mutable_registry, class_id, type->id);
         return type;
     }
 
@@ -1953,10 +1976,7 @@ const nmo_type_descriptor_t* nmo_type_registry_find_by_class_id_inherited(
 
         type = nmo_type_registry_find_by_class_id(registry, parent_id);
         if (type) {
-            nmo_type_id_t type_id = type->id;
-            if (mutable_registry->class_id_inherited_map) {
-                nmo_hash_table_insert(mutable_registry->class_id_inherited_map, &class_id, &type_id);
-            }
+            class_id_inherited_remember(mutable_registry, class_id, type->id);
             return type;
         }
 
