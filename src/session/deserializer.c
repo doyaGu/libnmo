@@ -1156,7 +1156,13 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
 
         /* Parse Data section */
         if (ds->chunk_pool == NULL) {
+            /* The counts come from the file header. Every manager and object
+             * entry takes at least a dword of the data section, so no more of
+             * them fit than it has dwords; the pool grows if the hint is low. */
             size_t pool_hint = (size_t)ds->header.object_count + (size_t)ds->header.manager_count;
+            if (pool_hint > data_size / sizeof(uint32_t)) {
+                pool_hint = data_size / sizeof(uint32_t);
+            }
             ds->chunk_pool = nmo_session_ensure_chunk_pool(session, pool_hint);
             if (ds->chunk_pool == NULL) {
                 nmo_log(logger, NMO_LOG_WARN,
