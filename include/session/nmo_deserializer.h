@@ -61,6 +61,12 @@ typedef struct nmo_manager_data nmo_manager_data_t;
 /** Default maximum included file payload size (bytes). */
 #define NMO_LOAD_DEFAULT_MAX_INCLUDED_FILE_SIZE (512u * 1024u * 1024u)
 
+/** Default maximum bytes Header1 and the data section unpack to (512 MiB). */
+#define NMO_LOAD_DEFAULT_MAX_UNPACKED_SIZE (512u * 1024u * 1024u)
+
+/** Default maximum number of objects a file may hold. */
+#define NMO_LOAD_DEFAULT_MAX_OBJECT_COUNT (1u << 20)
+
 /** Maximum diagnostic message length, including the terminating NUL. */
 #define NMO_LOAD_ISSUE_MESSAGE_MAX 256u
 
@@ -126,6 +132,15 @@ typedef struct nmo_load_options {
     nmo_load_profile_t profile;      /**< Load depth profile */
     uint32_t max_included_name_len;  /**< Max included filename length */
     uint32_t max_included_file_size; /**< Max included file payload size */
+    /**
+     * Most bytes Header1, the data section and the packed object entries in it
+     * (file version < 4) may take unpacked, in all; 0 sets no limit. A file
+     * that declares more fails with NMO_ERR_LIMIT_EXCEEDED before anything is
+     * allocated for it.
+     */
+    uint64_t max_unpacked_size;
+    /** Most objects the file may hold; 0 sets no limit (NMO_ERR_LIMIT_EXCEEDED past it) */
+    uint32_t max_object_count;
     bool collect_perf_stats;         /**< Collect phase-level timing stats */
     nmo_load_perf_stats_t *perf_stats; /**< Optional caller-owned stats sink */
     nmo_load_diagnostics_t *diagnostics; /**< Optional caller-owned issue sink */

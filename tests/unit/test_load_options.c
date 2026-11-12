@@ -1005,6 +1005,68 @@ TEST(load_options, public_two_phase_serializer_can_save_a_full_session)
     ASSERT_EQ(0, remove_status);
 }
 
+TEST(load_options, limits_refuse_files_that_exceed_them)
+{
+    const char *path = NMO_TEST_SCRATCH_FILE("load_limits.nmo");
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    static const char *const names[] = {"first", "second", "third"};
+    for (size_t i = 0u; i < 3u; ++i) {
+        nmo_object_id_t id = 0u;
+        ASSERT_EQ(NMO_OK, nmo_session_create_object(session, NMO_CID_OBJECT, names[i],
+                                                   (nmo_guid_t){0, 0}, &id, NULL));
+    }
+    nmo_serializer_t *serializer = nmo_serializer_create(session, NULL);
+    ASSERT_NOT_NULL(serializer);
+    ASSERT_EQ(NMO_OK, nmo_serializer_layout(serializer));
+    ASSERT_EQ(NMO_OK, nmo_serializer_commit(serializer, path));
+    nmo_serializer_destroy(serializer);
+    nmo_session_destroy(session);
+
+    nmo_load_perf_stats_t stats = {0};
+    nmo_load_options_t options = nmo_load_options_default();
+    options.collect_perf_stats = true;
+    options.perf_stats = &stats;
+    session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    ASSERT_EQ(NMO_OK, nmo_load_file(session, path, &options));
+    ASSERT_EQ(3u, nmo_object_repository_get_count(nmo_session_get_repository(session)));
+    nmo_session_destroy(session);
+    const uint64_t unpacked = (uint64_t)stats.unpacked_header1_bytes + stats.unpacked_data_bytes;
+    ASSERT_GT(unpacked, 0u);
+
+    const struct {
+        uint64_t max_unpacked_size;
+        uint32_t max_object_count;
+        nmo_status_t expected;
+    } cases[] = {
+        {unpacked - 1u, 0u, NMO_ERR_LIMIT_EXCEEDED},
+        {unpacked, 0u, NMO_OK},
+        {0u, 2u, NMO_ERR_LIMIT_EXCEEDED},
+        {0u, 3u, NMO_OK},
+        {0u, 0u, NMO_OK},
+    };
+    for (size_t i = 0u; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        options = nmo_load_options_default();
+        options.max_unpacked_size = cases[i].max_unpacked_size;
+        options.max_object_count = cases[i].max_object_count;
+        session = nmo_session_create(ctx);
+        ASSERT_NOT_NULL(session);
+        ASSERT_EQ(cases[i].expected, nmo_load_file(session, path, &options));
+        if (cases[i].expected != NMO_OK) {
+            ASSERT_FALSE(nmo_session_has_materialized_load_state(session));
+            ASSERT_EQ(0u, nmo_object_repository_get_count(nmo_session_get_repository(session)));
+        }
+        nmo_session_destroy(session);
+    }
+    ASSERT_STR_EQ("Limit exceeded", nmo_error_string(NMO_ERR_LIMIT_EXCEEDED));
+
+    nmo_context_release(ctx);
+    ASSERT_EQ(0, remove(path));
+}
+
 TEST(load_options, included_payload_sizes_are_validated_during_save_layout)
 {
     const uint32_t sizes[] = {INT32_MAX, 0x80000000u, UINT32_MAX};
@@ -1176,6 +1238,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(load_options, included_file_failure_does_not_publish_prefix);
     REGISTER_TEST(load_options, included_file_loading_stops_at_header_count);
     REGISTER_TEST(load_options, included_lengths_remain_signed_when_limits_are_raised);
+    REGISTER_TEST(load_options, limits_refuse_files_that_exceed_them);
 TEST_MAIN_END()
 
 

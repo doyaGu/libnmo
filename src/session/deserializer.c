@@ -455,6 +455,8 @@ nmo_load_options_t nmo_load_options_default(void) {
     opts.profile = NMO_LOAD_PROFILE_FULL;
     opts.max_included_name_len = NMO_LOAD_DEFAULT_MAX_INCLUDED_NAME_LEN;
     opts.max_included_file_size = NMO_LOAD_DEFAULT_MAX_INCLUDED_FILE_SIZE;
+    opts.max_unpacked_size = NMO_LOAD_DEFAULT_MAX_UNPACKED_SIZE;
+    opts.max_object_count = NMO_LOAD_DEFAULT_MAX_OBJECT_COUNT;
     return opts;
 }
 
@@ -606,6 +608,25 @@ nmo_status_t nmo_deserializer_parse_header(nmo_deserializer_t *ds)
     result = deserializer_require_bytes(io, packed_header_size + packed_data_size);
     if (result != NMO_OK) {
         return result;
+    }
+
+    /* The caller's limits, checked against what the header declares before
+     * anything is allocated for it. From version 7 the header holds the object
+     * table; below it the data section has the count, checked there. */
+    const uint64_t unpacked_size =
+        (ds->header.file_version >= 7u ? (uint64_t)ds->header.hdr1_unpack_size : 0u) +
+        (ds->header.file_version >= 5u ? (uint64_t)ds->header.data_unpack_size : 0u);
+    if (ds->options.max_unpacked_size != 0u && unpacked_size > ds->options.max_unpacked_size) {
+        nmo_log(logger, NMO_LOG_ERROR, "File unpacks to %llu bytes, over the limit of %llu",
+                (unsigned long long)unpacked_size,
+                (unsigned long long)ds->options.max_unpacked_size);
+        return NMO_ERR_LIMIT_EXCEEDED;
+    }
+    if (ds->header.file_version >= 7u && ds->options.max_object_count != 0u &&
+        ds->header.object_count > ds->options.max_object_count) {
+        nmo_log(logger, NMO_LOG_ERROR, "File holds %u objects, over the limit of %u",
+                ds->header.object_count, ds->options.max_object_count);
+        return NMO_ERR_LIMIT_EXCEEDED;
     }
 
     /* Phase 3: Read and Decompress Header1 */
@@ -794,6 +815,7 @@ nmo_status_t nmo_deserializer_parse_header(nmo_deserializer_t *ds)
  * takes the rest of the file as the data section. */
 static nmo_status_t deserializer_read_to_end(nmo_io_interface_t *io,
                                              nmo_allocator_t *allocator,
+                                             uint64_t max_size,
                                              void **out_buffer,
                                              size_t *out_size)
 {
@@ -829,6 +851,10 @@ static nmo_status_t deserializer_read_to_end(nmo_io_interface_t *io,
             break;
         }
         size += got;
+        if (max_size != 0u && (uint64_t)size > max_size) {
+            free(buffer);
+            return NMO_ERR_LIMIT_EXCEEDED;
+        }
     }
     if (size > 0) {
         void *copy = nmo_alloc(allocator, size, 16);
@@ -1076,6 +1102,13 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
     ds->data_sect.manager_count = ds->header.manager_count;
     ds->data_sect.object_count = ds->header.object_count;
     ds->data_sect.file_write_mode = ds->header.file_write_mode;
+    /* What Header1 leaves of the size limit. The header check keeps it at least
+     * the data section's declared size, so it is not 0 with a section to parse. */
+    if (ds->options.max_unpacked_size != 0u) {
+        ds->data_sect.max_unpacked_size = ds->options.max_unpacked_size -
+            (ds->header.file_version >= 7u ? (uint64_t)ds->header.hdr1_unpack_size : 0u);
+    }
+    ds->data_sect.max_object_count = ds->options.max_object_count;
     const bool data_to_end = ds->header.file_version < 5u;
 
     const void *crc_data_packed = NULL;
@@ -1101,7 +1134,8 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
         int read_result = NMO_OK;
         if (data_to_end) {
             read_result = deserializer_read_to_end(
-                io, &ds->section_allocator, &packed_buffer, &packed_size);
+                io, &ds->section_allocator, ds->data_sect.max_unpacked_size,
+                &packed_buffer, &packed_size);
             bytes_read = packed_size;
         } else {
             packed_buffer = nmo_alloc(&ds->section_allocator, packed_size, 16);
