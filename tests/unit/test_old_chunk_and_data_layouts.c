@@ -645,6 +645,74 @@ TEST(data_section_layouts, record_counts_are_bounded_before_array_allocation)
     nmo_arena_destroy(arena);
 }
 
+TEST(data_section_layouts, limits_are_checked_before_allocation)
+{
+    /* Version 8 takes the header's object count, 6 the section's; three empty entries each. */
+    uint8_t v8[12] = {0};
+    uint8_t v6[32] = {0};
+    nmo_write_u32_le(v6 + 4u, 3u);
+    for (uint32_t i = 0u; i < 3u; ++i) {
+        nmo_write_u32_le(v6 + 8u + i * 8u, i + 1u);
+    }
+    const struct {
+        uint32_t version;
+        const uint8_t *bytes;
+        size_t size;
+    } layouts[] = {{8u, v8, sizeof(v8)}, {6u, v6, sizeof(v6)}};
+    for (size_t l = 0u; l < sizeof(layouts) / sizeof(layouts[0]); ++l) {
+        const struct {
+            uint64_t max_unpacked_size;
+            uint32_t max_object_count;
+            nmo_status_t expected;
+        } cases[] = {
+            {0u, 2u, NMO_ERR_LIMIT_EXCEEDED},
+            {0u, 3u, NMO_OK},
+            {layouts[l].size - 1u, 0u, NMO_ERR_LIMIT_EXCEEDED},
+            {layouts[l].size, 0u, NMO_OK},
+        };
+        for (size_t c = 0u; c < sizeof(cases) / sizeof(cases[0]); ++c) {
+            nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+            ASSERT_NOT_NULL(arena);
+            const size_t before = nmo_arena_bytes_used(arena);
+            nmo_data_section_t section = {0};
+            section.object_count = 3u;
+            section.max_unpacked_size = cases[c].max_unpacked_size;
+            section.max_object_count = cases[c].max_object_count;
+            ASSERT_EQ(cases[c].expected, nmo_data_section_parse(
+                layouts[l].bytes, layouts[l].size, layouts[l].version, &section, NULL, arena));
+            if (cases[c].expected == NMO_OK) {
+                ASSERT_EQ(3u, section.object_count);
+            } else {
+                ASSERT_EQ(before, nmo_arena_bytes_used(arena));
+                ASSERT_NULL(section.objects);
+            }
+            nmo_arena_destroy(arena);
+        }
+    }
+
+    /* A packed entry's unpacked bytes count after the section's own. */
+    uint8_t raw[64];
+    memset(raw, 0x5A, sizeof(raw));
+    uint8_t bytes[128] = {0};
+    mz_ulong compressed_size = sizeof(bytes) - 28u;
+    ASSERT_EQ(MZ_OK, mz_compress(bytes + 28u, &compressed_size, raw, sizeof(raw)));
+    const uint32_t words[] = {1u, 1u, 1u, (uint32_t)sizeof(raw), 23u, 0u, (uint32_t)compressed_size};
+    for (size_t d = 0; d < sizeof(words) / sizeof(words[0]); ++d) {
+        nmo_write_u32_le(bytes + d * 4u, words[d]);
+    }
+    const size_t size = 28u + compressed_size;
+    for (uint64_t extra = sizeof(raw) - 1u; extra <= sizeof(raw); ++extra) {
+        nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+        ASSERT_NOT_NULL(arena);
+        nmo_data_section_t section = {0};
+        section.file_write_mode = NMO_FILE_WRITE_CHUNK_COMPRESSED_OLD;
+        section.max_unpacked_size = size + extra;
+        ASSERT_EQ(extra == sizeof(raw) ? NMO_OK : NMO_ERR_LIMIT_EXCEEDED,
+                  nmo_data_section_parse(bytes, size, 2u, &section, NULL, arena));
+        nmo_arena_destroy(arena);
+    }
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(data_section_layouts, record_counts_are_bounded_before_array_allocation);
     REGISTER_TEST(data_section_layouts, legacy_objects_reject_invalid_lengths_and_compressed_data);
@@ -659,4 +727,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(data_section_layouts, version_7_uses_the_section_object_count_up_to_the_header_s);
     REGISTER_TEST(data_section_layouts, version_6_and_5_take_the_section_object_count);
     REGISTER_TEST(data_section_layouts, version_8_has_no_leading_counts);
+    REGISTER_TEST(data_section_layouts, limits_are_checked_before_allocation);
 TEST_MAIN_END()

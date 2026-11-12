@@ -99,6 +99,16 @@ typedef struct nmo_data_section {
      * zlib packed when NMO_FILE_WRITE_CHUNK_COMPRESSED_OLD is set.
      */
     uint32_t file_write_mode;
+
+    /**
+     * Limits parse holds the section to before it allocates, failing with
+     * NMO_ERR_LIMIT_EXCEEDED past one; parse reads them and leaves them
+     * unchanged, and 0 sets no limit. max_unpacked_size counts the section's
+     * own bytes and what its packed object entries (file version < 4) unpack
+     * to; max_object_count counts the object entries it holds.
+     */
+    uint64_t max_unpacked_size;
+    uint32_t max_object_count;
 } nmo_data_section_t;
 
 /**

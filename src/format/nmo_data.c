@@ -171,7 +171,8 @@ static nmo_status_t parse_object_entry_v2(
     nmo_object_data_t *obj,
     nmo_chunk_pool_t *chunk_pool,
     nmo_arena_t *keep_arena,
-    nmo_arena_t *scratch_arena) {
+    nmo_arena_t *scratch_arena,
+    uint64_t *unpack_left) {
     CHECK_BUFFER_SIZE(scratch_arena, *pos, 8, size);
     obj->object_id = nmo_read_u32_le(data + *pos);
     obj->data_size = nmo_read_u32_le(data + *pos + 4);
@@ -211,6 +212,12 @@ static nmo_status_t parse_object_entry_v2(
                              "Object entry %u cannot inflate from %u to %u bytes",
                              (unsigned)index, (unsigned)stored_size, (unsigned)obj->data_size);
         }
+        if (obj->data_size > *unpack_left) {
+            NMO_RETURN_ERROR(NMO_ERR_LIMIT_EXCEEDED, NMO_SEVERITY_ERROR,
+                             "Object entry %u unpacks past the data section's size limit",
+                             (unsigned)index);
+        }
+        *unpack_left -= obj->data_size;
         unpacked = (uint8_t *)nmo_arena_alloc(scratch_arena, obj->data_size, alignof(uint32_t));
         if (unpacked == NULL) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
@@ -290,6 +297,12 @@ static nmo_status_t parse_object_data(
     }
     memset(section->objects, 0, object_bytes);
 
+    /* What packed entries may still unpack to; the section's bytes come first */
+    uint64_t unpack_left = UINT64_MAX;
+    if (section->max_unpacked_size != 0u) {
+        unpack_left = section->max_unpacked_size - (uint64_t)size;
+    }
+
     /* Parse each object */
     for (uint32_t i = 0; i < section->object_count; i++) {
         nmo_object_data_t *obj = &section->objects[i];
@@ -298,7 +311,7 @@ static nmo_status_t parse_object_data(
         if (file_version < 4) {
             NMO_RETURN_IF_ERROR(parse_object_entry_v2(
                 data, size, pos, section->file_write_mode, i, obj, chunk_pool,
-                keep_arena, scratch_arena));
+                keep_arena, scratch_arena, &unpack_left));
             continue;
         }
 
@@ -422,6 +435,13 @@ nmo_status_t nmo_data_section_parse_ex(
     staged.object_count = data_section->object_count;
     staged.save_id_max = data_section->save_id_max;
     staged.file_write_mode = data_section->file_write_mode;
+    staged.max_unpacked_size = data_section->max_unpacked_size;
+    staged.max_object_count = data_section->max_object_count;
+    if (staged.max_unpacked_size != 0u && (uint64_t)size > staged.max_unpacked_size) {
+        NMO_RETURN_ERROR(NMO_ERR_LIMIT_EXCEEDED, NMO_SEVERITY_ERROR,
+                         "Data section of %zu bytes is over the %llu byte limit",
+                         size, (unsigned long long)staged.max_unpacked_size);
+    }
 
     const uint8_t *buffer = (const uint8_t *) data;
     size_t pos = 0;
@@ -454,6 +474,11 @@ nmo_status_t nmo_data_section_parse_ex(
             }
         }
         staged.object_count = section_object_count;
+    }
+    if (staged.max_object_count != 0u && staged.object_count > staged.max_object_count) {
+        NMO_RETURN_ERROR(NMO_ERR_LIMIT_EXCEEDED, NMO_SEVERITY_ERROR,
+                         "Data section holds %u objects, over the limit of %u",
+                         (unsigned)staged.object_count, (unsigned)staged.max_object_count);
     }
 
     /* Parse manager data (file_version >= 6) */
