@@ -551,7 +551,16 @@ nmo_status_t nmo_object_repository_reserve(nmo_object_repository_t *repo, size_t
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Invalid repository reserve arguments");
     }
-    return nmo_indexed_map_reserve(repo->id_map, count);
+    nmo_status_t result = nmo_indexed_map_reserve(repo->id_map, count);
+    if (result != NMO_OK) {
+        return result;
+    }
+    /* Every loaded object has a file id; the table keeps under 70% of its
+     * slots full. The name table holds each name once and grows as it needs. */
+    if (count > SIZE_MAX / 2) {
+        return NMO_ERR_NOMEM;
+    }
+    return nmo_hash_table_reserve(repo->file_id_table, count + count / 2 + 1u);
 }
 
 nmo_status_t nmo_object_repository_add(nmo_object_repository_t *repo, nmo_object_t **obj_ref) {
