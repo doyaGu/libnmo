@@ -577,7 +577,7 @@ default_data_done:;
                 return result;
             }
             nmo_array_set_lifecycle(
-                &duplicate_names, &out_state->duplicate_manager_names.lifecycle);
+                &duplicate_names, out_state->duplicate_manager_names.lifecycle);
             for (;;) {
                 if (nmo_chunk_get_position(chunk) >= duplicate_section_end) {
                     nmo_array_dispose(&duplicate_names);

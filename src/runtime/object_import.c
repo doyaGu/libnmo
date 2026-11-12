@@ -467,7 +467,7 @@ static nmo_status_t import_field_value(void *state,
             return st;
         }
         if (arr->element_size != 0) {
-            nmo_array_set_lifecycle(&temp, &arr->lifecycle);
+            nmo_array_set_lifecycle(&temp, arr->lifecycle);
         }
 
         yyjson_val *elem;
@@ -809,7 +809,7 @@ static nmo_status_t import_array_raw_hex(
         return st;
     }
     if (arr->element_size != 0) {
-        nmo_array_set_lifecycle(&temp, &arr->lifecycle);
+        nmo_array_set_lifecycle(&temp, arr->lifecycle);
     }
     if (expected_size > 0) {
         void *data = NULL;

@@ -30,8 +30,10 @@ static void character_part_dispose(void *element, void *user_data)
 
 static void character_parts_set_lifecycle(nmo_array_t *parts)
 {
-    nmo_container_lifecycle_t lifecycle = NMO_CONTAINER_LIFECYCLE_INIT;
-    lifecycle.dispose = character_part_dispose;
+    /* Static: the array keeps a pointer to its hooks. */
+    static const nmo_container_lifecycle_t lifecycle = {
+        .dispose = character_part_dispose,
+    };
     nmo_array_set_lifecycle(parts, &lifecycle);
 }
 

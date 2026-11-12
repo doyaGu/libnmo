@@ -126,7 +126,7 @@ static nmo_status_t workspace_edit_clone_behavior_ref_array(
     if (status != NMO_OK) {
         return status;
     }
-    nmo_array_set_lifecycle(destination, &source->lifecycle);
+    nmo_array_set_lifecycle(destination, source->lifecycle);
 
     nmo_behavior_ref_t *destination_refs = NULL;
     status = nmo_array_extend(

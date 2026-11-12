@@ -34,7 +34,7 @@ typedef struct nmo_array {
     size_t capacity;           /**< Maximum number of elements allocated */
     size_t element_size;       /**< Size of each element in bytes */
     nmo_allocator_t allocator; /**< Allocator for allocations */
-    nmo_container_lifecycle_t lifecycle; /**< Optional lifecycle hooks */
+    const nmo_container_lifecycle_t *lifecycle; /**< Hooks the array points to, NULL for none */
 } nmo_array_t;
 
 /**
@@ -60,6 +60,10 @@ NMO_API nmo_status_t nmo_array_init(nmo_array_t *array,
  * (append/insert/set/clone). Move callbacks are invoked when elements
  * are relocated inside the array (reserve/insert/remove/shrink).
  * When init/reset are NULL, new slots are zero-initialized by default.
+ *
+ * The array keeps the pointer, not a copy: the hooks must outlive the array
+ * and every array copied from it. Hooks are usually a static const table.
+ * Passing NULL removes them.
  */
 NMO_API void nmo_array_set_lifecycle(nmo_array_t *array,
                                       const nmo_container_lifecycle_t *lifecycle);

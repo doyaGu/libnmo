@@ -285,6 +285,27 @@ TEST(nmo_array, clone_preserves_lifecycle_copy) {
     nmo_array_dispose(&array);
 }
 
+TEST(nmo_array, keeps_a_pointer_to_its_hooks) {
+    static const nmo_container_lifecycle_t hooks = {
+        .copy = tracked_value_copy,
+    };
+    nmo_array_t array;
+    ASSERT_EQ(NMO_OK, nmo_array_init(&array, sizeof(tracked_value_t), 0, NULL));
+    ASSERT_NULL(array.lifecycle);
+    nmo_array_set_lifecycle(&array, &hooks);
+    ASSERT_EQ(&hooks, array.lifecycle);
+
+    /* A clone points to the same hooks. */
+    nmo_array_t clone;
+    ASSERT_EQ(NMO_OK, nmo_array_clone(&array, &clone, NULL));
+    ASSERT_EQ(&hooks, clone.lifecycle);
+
+    nmo_array_set_lifecycle(&array, NULL);
+    ASSERT_NULL(array.lifecycle);
+    nmo_array_dispose(&clone);
+    nmo_array_dispose(&array);
+}
+
 TEST(nmo_array, swap_resize_and_shrink) {
     nmo_array_t first, second;
     nmo_array_init(&first, sizeof(uint32_t), 0, NULL);
@@ -349,6 +370,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(nmo_array, lifecycle_callbacks);
     REGISTER_TEST(nmo_array, removal_copies_output_before_dispose);
     REGISTER_TEST(nmo_array, set_data_and_clone);
+    REGISTER_TEST(nmo_array, keeps_a_pointer_to_its_hooks);
     REGISTER_TEST(nmo_array, clone_preserves_lifecycle_copy);
     REGISTER_TEST(nmo_array, swap_resize_and_shrink);
     REGISTER_TEST(nmo_array, invalid_arguments);

@@ -52,8 +52,10 @@ static void nmo_scene_object_desc_dispose(void *element, void *user_data)
 
 static void nmo_scene_object_descs_set_lifecycle(nmo_array_t *descs)
 {
-    nmo_container_lifecycle_t lifecycle = NMO_CONTAINER_LIFECYCLE_INIT;
-    lifecycle.dispose = nmo_scene_object_desc_dispose;
+    /* Static: the array keeps a pointer to its hooks. */
+    static const nmo_container_lifecycle_t lifecycle = {
+        .dispose = nmo_scene_object_desc_dispose,
+    };
     nmo_array_set_lifecycle(descs, &lifecycle);
 }
 

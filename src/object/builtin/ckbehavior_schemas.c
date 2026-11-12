@@ -66,8 +66,10 @@ static void nmo_behavior_ref_dispose(void *element, void *user_data)
 
 static void nmo_behavior_ref_array_set_lifecycle(nmo_array_t *array)
 {
-    nmo_container_lifecycle_t lifecycle = NMO_CONTAINER_LIFECYCLE_INIT;
-    lifecycle.dispose = nmo_behavior_ref_dispose;
+    /* Static: the array keeps a pointer to its hooks. */
+    static const nmo_container_lifecycle_t lifecycle = {
+        .dispose = nmo_behavior_ref_dispose,
+    };
     nmo_array_set_lifecycle(array, &lifecycle);
 }
 

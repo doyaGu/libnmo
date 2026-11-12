@@ -32,8 +32,10 @@ static void grid_layer_dispose(void *element, void *user_data)
 
 static void grid_layers_set_lifecycle(nmo_array_t *layers)
 {
-    nmo_container_lifecycle_t lifecycle = NMO_CONTAINER_LIFECYCLE_INIT;
-    lifecycle.dispose = grid_layer_dispose;
+    /* Static: the array keeps a pointer to its hooks. */
+    static const nmo_container_lifecycle_t lifecycle = {
+        .dispose = grid_layer_dispose,
+    };
     nmo_array_set_lifecycle(layers, &lifecycle);
 }
 

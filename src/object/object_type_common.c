@@ -805,7 +805,7 @@ static nmo_status_t layout_copy_owned(
         nmo_status_t result = nmo_array_init(
             &out->array, record->size, from->count, &from->allocator);
         if (result != NMO_OK) return result;
-        nmo_array_set_lifecycle(&out->array, &from->lifecycle);
+        nmo_array_set_lifecycle(&out->array, from->lifecycle);
         void *elements = NULL;
         result = nmo_array_extend(&out->array, from->count, &elements);
         for (size_t i = 0; result == NMO_OK && i < from->count; ++i) {
@@ -1405,9 +1405,11 @@ void nmo_object_array_set_chunk_lifecycle(nmo_array_t *array)
         return;
     }
 
-    nmo_container_lifecycle_t lifecycle = NMO_CONTAINER_LIFECYCLE_INIT;
-    lifecycle.reset = nmo_object_reset_chunk_ptr;
-    lifecycle.dispose = nmo_object_dispose_chunk_ptr;
+    /* Static: the array keeps a pointer to its hooks. */
+    static const nmo_container_lifecycle_t lifecycle = {
+        .reset = nmo_object_reset_chunk_ptr,
+        .dispose = nmo_object_dispose_chunk_ptr,
+    };
     nmo_array_set_lifecycle(array, &lifecycle);
 }
 
@@ -1417,8 +1419,10 @@ void nmo_object_array_set_string_lifecycle(nmo_array_t *array)
         return;
     }
 
-    nmo_container_lifecycle_t lifecycle = NMO_CONTAINER_LIFECYCLE_INIT;
-    lifecycle.reset = nmo_object_reset_string_ptr;
+    /* Static: the array keeps a pointer to its hooks. */
+    static const nmo_container_lifecycle_t lifecycle = {
+        .reset = nmo_object_reset_string_ptr,
+    };
     nmo_array_set_lifecycle(array, &lifecycle);
 }
 
