@@ -5,12 +5,15 @@
 
 set(NMO_RENDER_SOURCES
     render.c
+    render_draw.c
     render_font.c
+    render_frame.c
     render_image.c
     render_light.c
     render_math.c
     render_mesh.c
     render_text.c
+    render_texture.c
 )
 list(TRANSFORM NMO_RENDER_SOURCES PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/")
 

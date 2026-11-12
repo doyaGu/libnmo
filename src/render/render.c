@@ -17,7 +17,36 @@
 static void render_release_text(void *user_data, uintptr_t handle)
 {
     render_backend_t *backend = (render_backend_t *)user_data;
-    backend->ops->release_text(backend, handle);
+    backend->ops->texture_destroy(backend, handle);
+}
+
+/* The state a device starts in (OpenGL's and Direct3D's defaults) */
+static void render_default_state(render_state_t *s)
+{
+    static const float identity[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    memset(s, 0, sizeof(*s));
+    s->antialias = true;
+    memcpy(s->projection, identity, sizeof(identity));
+    memcpy(s->model_view, identity, sizeof(identity));
+    memcpy(s->texture_matrix, identity, sizeof(identity));
+    s->sampler.min_filter = RENDER_FILTER_NEAREST;
+    s->sampler.mip = RENDER_MIP_LINEAR;
+    s->sampler.mag_filter = RENDER_FILTER_LINEAR;
+    s->sampler.address = 1;
+    s->color[0] = s->color[1] = s->color[2] = s->color[3] = 1.0f;
+    s->front_ccw = true;
+    s->alpha_func = 8;       /* VXCMP_ALWAYS */
+    s->source_blend = 2;     /* VXBLEND_ONE */
+    s->dest_blend = 1;       /* VXBLEND_ZERO */
+    s->depth_func = 2;       /* VXCMP_LESS */
+    s->depth_write = true;
+    s->color_write = true;
+    s->stencil_func = 8;
+    s->stencil_mask = s->stencil_write_mask = 0xFFFFFFFFu;
+    s->stencil_fail = s->stencil_zfail = s->stencil_pass = 1; /* VXSTENCILOP_KEEP */
+    s->fog_mode = 1;
+    s->fog_end = 1.0f;
+    s->fog_density = 1.0f;
 }
 
 nmo_status_t render_create(nmo_engine_t *engine, render_backend_t *backend,
@@ -30,7 +59,7 @@ nmo_status_t render_create(nmo_engine_t *engine, render_backend_t *backend,
     }
     render->engine = engine;
     render->backend = backend;
-    backend->render = render;
+    render_default_state(&render->state);
     render->frame_width = 640;
     render->frame_height = 480;
     render->text = render_text_open();
@@ -44,6 +73,10 @@ void nmo_render_destroy(nmo_render_t *render)
         return;
     }
     render_text_close(render->text, render_release_text, render->backend);
+    render_textures_free(render);
+    render_mesh_cache_free(&render->meshes);
+    free(render->lit_colors);
+    free(render->lit_speculars);
     render->backend->ops->destroy(render->backend);
     free(render);
 }
@@ -78,7 +111,7 @@ static nmo_status_t render_frame(nmo_render_t *render, int target_w, int target_
     render->rect[3] = (int)((float)frame.height * scale);
     render->rect[0] = (target_w - render->rect[2]) / 2;
     render->rect[1] = (target_h - render->rect[3]) / 2;
-    status = render->backend->ops->draw(render->backend, &frame, target_w, target_h, render->rect);
+    status = render_draw_main(render, &frame, target_w, target_h);
     render_text_end_frame(render->text, render_release_text, render->backend);
     render->frame = frame;
     render->has_frame = true;
@@ -135,7 +168,7 @@ nmo_status_t nmo_render_screenshot(nmo_render_t *render, int width, int height, 
     nmo_arena_t *arena = nmo_arena_create(NULL, 1u << 20);
     nmo_status_t status = NMO_ERR_NOMEM;
     if (pixels != NULL && arena != NULL) {
-        status = render->backend->ops->read_pixels(render->backend, height, rect, pixels);
+        status = render->backend->ops->read_pixels(render->backend, rect, pixels);
     }
     if (status == NMO_OK) {
         size_t size = 0;
