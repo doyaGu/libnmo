@@ -172,8 +172,33 @@ TEST(stb_adapter, roundtrip_png) {
     nmo_arena_destroy(arena_decode);
 }
 
+/* stb_image decodes missing data as zeros, so a bare header could make it fill
+ * an image of any size. One that claims far more pixels than its bytes can
+ * hold is refused before decoding. */
+TEST(stb_adapter, refuses_image_larger_than_its_data) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 64 * 1024);
+    ASSERT_NOT_NULL(arena);
+
+    uint8_t tga[18] = {0};
+    tga[2] = 2;                      /* uncompressed true color */
+    write_u16_le(&tga[12], 16384);   /* width */
+    write_u16_le(&tga[14], 16384);   /* height */
+    tga[16] = 32;                    /* bits per pixel */
+    tga[17] = 8;                     /* alpha bits */
+
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+    uint8_t *pixels = nmo_stbi_load_from_memory(arena, tga, (int)sizeof(tga),
+                                                &width, &height, &channels, 4);
+    ASSERT_NULL(pixels);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(stb_adapter, load_embedded_bitmap);
+    REGISTER_TEST(stb_adapter, refuses_image_larger_than_its_data);
     REGISTER_TEST(stb_adapter, write_png_signature);
     REGISTER_TEST(stb_adapter, roundtrip_png);
 TEST_MAIN_END()

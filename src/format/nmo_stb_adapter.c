@@ -17,6 +17,9 @@
 
 #define NMO_STB_FLAG_SYSTEM 0x1u
 
+/* The most pixels an encoded image may claim per byte of its data. */
+#define NMO_STBI_MAX_PIXELS_PER_BYTE 16384u
+
 typedef struct nmo_stb_allocation_header {
     size_t size;
     uint32_t flags;
@@ -163,6 +166,21 @@ uint8_t *nmo_stbi_load_from_memory(nmo_arena_t *arena,
 
     nmo_arena_t *previous = nmo_stb_get_arena();
     nmo_stb_set_arena(arena);
+
+    /* stb_image reads past the end of its data as zeros, so a few bytes can
+     * claim an image of any size and the decoder fills all of it. No format
+     * packs more than about 8256 pixels into a byte (a one-bit PNG at the best
+     * deflate ratio), so a larger claim is refused before decoding. */
+    int info_width = 0;
+    int info_height = 0;
+    int info_channels = 0;
+    if (stbi_info_from_memory(buffer, len, &info_width, &info_height, &info_channels) &&
+        info_width > 0 && info_height > 0 &&
+        (uint64_t)info_width * (uint64_t)info_height / NMO_STBI_MAX_PIXELS_PER_BYTE >
+            (uint64_t)len) {
+        nmo_stb_set_arena(previous);
+        return NULL;
+    }
 
     uint8_t *pixels = stbi_load_from_memory(buffer,
                                             len,
