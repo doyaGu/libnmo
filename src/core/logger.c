@@ -55,8 +55,8 @@ void nmo_vlog(nmo_logger_t *logger, nmo_log_level_t level, const char *format, v
         return;
     }
 
-    // Filter by log level
-    if (level < logger->level) {
+    // Filter by log level; the null logger drops messages before formatting
+    if (level < logger->level || logger->log == null_log) {
         return;
     }
 
