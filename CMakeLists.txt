@@ -141,6 +141,13 @@ if(ZLIB_INCLUDE_DIRS)
 endif()
 # yyjson include dirs are provided to targets that include yyjson directly (e.g. nmo_cli).
 
+# Platform layer: what the library takes from the operating system
+if(WIN32)
+    set(NMO_PLATFORM_SOURCES src/platform/platform_windows.c)
+else()
+    set(NMO_PLATFORM_SOURCES src/platform/platform_posix.c)
+endif()
+
 # Core library sources
 set(NMO_CORE_SOURCES
     src/core/allocator.c
@@ -387,6 +394,7 @@ set(NMO_BEHAVIOR_SOURCES
 
 # Combine all sources (yyjson compiled directly into nmo)
 set(NMO_SOURCES
+    ${NMO_PLATFORM_SOURCES}
     ${NMO_CORE_SOURCES}
     ${NMO_IO_SOURCES}
     ${NMO_FORMAT_SOURCES}
