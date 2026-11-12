@@ -706,7 +706,11 @@ TEST(chunk_api, direct_write_allocation_failure_is_atomic) {
     const size_t position_before = nmo_chunk_get_position(chunk);
     const size_t data_size_before = nmo_chunk_get_data_size(chunk);
 
-    ASSERT_NOT_NULL(nmo_arena_alloc(arena, 100000u, 16u));
+    /* Fill the arena's current block, so the next allocation takes a new one
+     * from the allocator. */
+    if (nmo_arena_block_available(arena) > 0) {
+        ASSERT_NOT_NULL(nmo_arena_alloc(arena, nmo_arena_block_available(arena), 1));
+    }
     allocator_state.allowed_allocations = allocator_state.allocation_count;
     write_data = (uint32_t *)(uintptr_t)1u;
     ASSERT_EQ(NMO_ERR_NOMEM,
@@ -874,7 +878,11 @@ TEST(chunk_api, object_tracking_allocation_failure_is_atomic) {
     const size_t ids_count_before = chunk->ids.count;
     const uint32_t options_before = chunk->chunk_options;
 
-    ASSERT_NOT_NULL(nmo_arena_alloc(arena, 100000, 16));
+    /* Fill the arena's current block, so the next allocation takes a
+     * new one from the allocator. */
+    if (nmo_arena_block_available(arena) > 0) {
+        ASSERT_NOT_NULL(nmo_arena_alloc(arena, nmo_arena_block_available(arena), 1));
+    }
     allocator_state.allowed_allocations = allocator_state.allocation_count;
     ASSERT_EQ(NMO_ERR_NOMEM, nmo_chunk_write_object_id(chunk, 42u));
     ASSERT_EQ(position_before, nmo_chunk_get_position(chunk));
@@ -1584,7 +1592,11 @@ TEST(chunk_api, sub_chunk_tracking_failure_is_atomic) {
     const uint32_t sub_options_before = sub->chunk_options;
     const nmo_chunk_file_context_t* sub_context_before = sub->file_context;
 
-    ASSERT_NOT_NULL(nmo_arena_alloc(arena, 100000, 16));
+    /* Fill the arena's current block, so the next allocation takes a
+     * new one from the allocator. */
+    if (nmo_arena_block_available(arena) > 0) {
+        ASSERT_NOT_NULL(nmo_arena_alloc(arena, nmo_arena_block_available(arena), 1));
+    }
     allocator_state.allowed_allocations = allocator_state.allocation_count;
     ASSERT_EQ(NMO_ERR_NOMEM,
         nmo_chunk_write_sub_chunk(parent, sub));
@@ -1637,7 +1649,11 @@ TEST(chunk_api, sub_chunk_sequence_write_failure_is_atomic) {
     ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
         nmo_chunk_start_sub_chunk_sequence(chunk, SIZE_MAX));
 #endif
-    ASSERT_NOT_NULL(nmo_arena_alloc(arena, 100000, 16));
+    /* Fill the arena's current block, so the next allocation takes a
+     * new one from the allocator. */
+    if (nmo_arena_block_available(arena) > 0) {
+        ASSERT_NOT_NULL(nmo_arena_alloc(arena, nmo_arena_block_available(arena), 1));
+    }
     allocator_state.allowed_allocations = allocator_state.allocation_count;
     ASSERT_EQ(NMO_ERR_NOMEM,
         nmo_chunk_start_sub_chunk_sequence(chunk, 1));
@@ -1677,7 +1693,11 @@ TEST(chunk_api, manager_sequence_write_failure_is_atomic) {
     const size_t data_size_before = nmo_chunk_get_data_size(chunk);
     const size_t managers_count_before = chunk->managers.count;
     const uint32_t options_before = chunk->chunk_options;
-    ASSERT_NOT_NULL(nmo_arena_alloc(arena, 100000, 16));
+    /* Fill the arena's current block, so the next allocation takes a
+     * new one from the allocator. */
+    if (nmo_arena_block_available(arena) > 0) {
+        ASSERT_NOT_NULL(nmo_arena_alloc(arena, nmo_arena_block_available(arena), 1));
+    }
     allocator_state.allowed_allocations = allocator_state.allocation_count;
     ASSERT_EQ(NMO_ERR_NOMEM,
         nmo_chunk_start_manager_sequence(chunk, manager_guid, 1));

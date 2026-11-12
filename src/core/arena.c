@@ -7,10 +7,15 @@
 #include <math.h>
 
 #define NMO_ARENA_DEFAULT_CHUNK_SIZE (64 * 1024)   // 64 KB
-#define NMO_ARENA_DEFAULT_MAX_CHUNK (16 * 1024 * 1024)  // 16 MB
+/* Blocks stop growing at 1 MB, which bounds the unused tail of the last block;
+ * an allocation larger than a block gets a block of its own. */
+#define NMO_ARENA_DEFAULT_MAX_CHUNK (1024 * 1024)  // 1 MB
 #define NMO_ARENA_DEFAULT_GROWTH_FACTOR 2.0f
 #define NMO_ARENA_MAX_GROWTH_FACTOR 8.0f
 #define NMO_ARENA_ALIGNMENT 16
+/* An allocation this large that does not fit the next block gets a block of
+ * its own; a smaller one is worth no allocation from the backing allocator. */
+#define NMO_ARENA_OWN_BLOCK_MIN 4096u
 
 /**
  * Safely multiply a size by a float factor with overflow protection.
@@ -141,15 +146,10 @@ nmo_arena_t *nmo_arena_create_ex(nmo_allocator_t *allocator, const nmo_arena_con
     arena->mark_depth = 0;
     arena->mark_epoch = 1;
 
-    // Create first chunk
-    arena->first = arena_create_chunk(&alloc, cfg.initial_block_size);
-    if (arena->first == NULL) {
-        nmo_free(&alloc, arena);
-        return NULL;
-    }
-
-    arena->current = arena->first;
-    arena->total_allocated = cfg.initial_block_size;
+    /* The first block is taken on the first allocation: many arenas (one per
+     * object, scratch arenas of operations that may not run) stay empty. */
+    arena->first = NULL;
+    arena->current = NULL;
 
     return arena;
 }
@@ -183,83 +183,76 @@ void *nmo_arena_alloc(nmo_arena_t *arena, size_t size, size_t alignment) {
         return NULL;
     }
 
+    /* The current block, or the one after it when a reset or rewind left it
+     * empty for reuse. */
     nmo_arena_chunk_t *chunk = arena->current;
+    for (int step = 0; chunk != NULL && step < 2; ++step, chunk = chunk->next) {
+        if (step > 0 && chunk->used != 0) {
+            break;
+        }
+        size_t aligned_used = nmo_arena_align_used(chunk, alignment);
+        if (aligned_used != SIZE_MAX && aligned_used <= chunk->size &&
+            size <= chunk->size - aligned_used) {
+            if (chunk != arena->current) {
+                arena->current = chunk;
+                arena->next_chunk_size = chunk->size;
+            }
+            chunk->used = aligned_used + size;
+            arena->bytes_used += size;
+            return chunk->data + aligned_used;
+        }
+    }
 
-    // Align current position using absolute base address
-    size_t aligned_used = nmo_arena_align_used(chunk, alignment);
-    if (aligned_used == SIZE_MAX) {
+    /* A fresh block's payload is not necessarily aligned to the caller's
+     * boundary, so it has room for the leading padding as well. */
+    if (size > SIZE_MAX - (alignment - 1)) {
         return NULL;
     }
-    size_t remaining = aligned_used <= chunk->size ? (chunk->size - aligned_used) : 0;
+    size_t required_size = size + alignment - 1;
 
-    // Check if current chunk has enough space
-    if (remaining < size) {
-        int used_existing = 0;
-        nmo_arena_chunk_t *next_chunk = chunk->next;
-        if (next_chunk != NULL) {
-            size_t next_aligned = nmo_arena_align_used(next_chunk, alignment);
-            size_t next_remaining = next_aligned <= next_chunk->size
-                ? (next_chunk->size - next_aligned)
-                : 0;
-            if (next_aligned != SIZE_MAX && next_remaining >= size) {
-                chunk = next_chunk;
-                arena->current = next_chunk;
-                arena->next_chunk_size = next_chunk->size;
-                aligned_used = next_aligned;
-                remaining = next_remaining;
-                used_existing = 1;
-            }
-        }
-
-        if (!used_existing) {
-            // Calculate next chunk size with growth factor (Phase 5)
-            size_t new_chunk_size = safe_size_multiply_float(
-                arena->next_chunk_size,
-                arena->growth_factor,
-                arena->max_chunk_size
-            );
-
-            /* A fresh chunk's flexible-array payload is not necessarily aligned
-             * to the caller's requested boundary. Reserve enough room for the
-             * leading alignment padding as well as the allocation itself. */
-            if (size > SIZE_MAX - (alignment - 1)) {
-                return NULL;
-            }
-            size_t required_chunk_size = size + alignment - 1;
-
-            // If requested size plus alignment padding is larger, use it.
-            if (required_chunk_size > new_chunk_size) {
-                new_chunk_size = required_chunk_size;
-            }
-
-            nmo_arena_chunk_t *new_chunk = arena_create_chunk(&arena->allocator, new_chunk_size);
-            if (new_chunk == NULL) {
-                return NULL;
-            }
-
-            // Link new chunk
-            new_chunk->next = chunk->next;
-            chunk->next = new_chunk;
-            arena->current = new_chunk;
-            arena->total_allocated += new_chunk_size;
-            arena->next_chunk_size = new_chunk_size;  /* Update for next growth */
-
-            chunk = new_chunk;
-            aligned_used = nmo_arena_align_used(chunk, alignment);
-            if (aligned_used == SIZE_MAX ||
-                aligned_used > chunk->size ||
-                size > chunk->size - aligned_used) {
-                return NULL;
-            }
-        }
+    nmo_arena_chunk_t *current = arena->current;
+    size_t block_size = current == NULL
+        ? arena->next_chunk_size
+        : safe_size_multiply_float(arena->next_chunk_size, arena->growth_factor,
+                                   arena->max_chunk_size);
+    /* An allocation that does not fit the next block gets a block of its own
+     * after the current one when it is large: the current block keeps its free
+     * space for the allocations that follow, and later blocks keep growing
+     * from their own size. A small one (only a tiny first block is smaller)
+     * starts a block of its size, which the blocks after it grow from. */
+    const int own_block = required_size > block_size &&
+                          required_size >= NMO_ARENA_OWN_BLOCK_MIN;
+    if (required_size > block_size) {
+        block_size = required_size;
     }
 
-    // Allocate from current chunk
-    void *ptr = chunk->data + aligned_used;
-    chunk->used = aligned_used + size;
-    arena->bytes_used += size;
+    nmo_arena_chunk_t *fresh = arena_create_chunk(&arena->allocator, block_size);
+    if (fresh == NULL) {
+        return NULL;
+    }
+    if (current == NULL) {
+        fresh->next = arena->first;
+        arena->first = fresh;
+    } else {
+        fresh->next = current->next;
+        current->next = fresh;
+    }
+    arena->total_allocated += block_size;
+    if (!own_block || current == NULL) {
+        arena->current = fresh;
+    }
+    if (!own_block) {
+        arena->next_chunk_size = block_size;
+    }
 
-    return ptr;
+    size_t aligned_used = nmo_arena_align_used(fresh, alignment);
+    if (aligned_used == SIZE_MAX || aligned_used > fresh->size ||
+        size > fresh->size - aligned_used) {
+        return NULL;
+    }
+    fresh->used = aligned_used + size;
+    arena->bytes_used += size;
+    return fresh->data + aligned_used;
 }
 
 void nmo_arena_reset(nmo_arena_t *arena) {
@@ -306,6 +299,13 @@ size_t nmo_arena_bytes_used(nmo_arena_t *arena) {
     return arena ? arena->bytes_used : 0;
 }
 
+size_t nmo_arena_block_available(const nmo_arena_t *arena) {
+    if (arena == NULL || arena->current == NULL) {
+        return 0;
+    }
+    return arena->current->size - arena->current->used;
+}
+
 nmo_status_t nmo_arena_get_allocator(
     const nmo_arena_t *arena,
     nmo_allocator_t *out_allocator)
@@ -318,13 +318,15 @@ nmo_status_t nmo_arena_get_allocator(
 }
 
 nmo_status_t nmo_arena_mark(nmo_arena_t *arena, nmo_arena_mark_t *out_mark) {
-    if (arena == NULL || out_mark == NULL || arena->current == NULL) {
+    if (arena == NULL || out_mark == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
+    /* Before the first block, a mark has no block: rewinding to it empties
+     * every block taken since. */
     out_mark->arena = arena;
     out_mark->chunk = arena->current;
-    out_mark->chunk_used = arena->current->used;
+    out_mark->chunk_used = arena->current != NULL ? arena->current->used : 0;
     out_mark->bytes_used = arena->bytes_used;
     out_mark->mark_epoch = arena->mark_epoch;
     out_mark->mark_depth = ++arena->mark_depth;
@@ -368,7 +370,22 @@ nmo_status_t nmo_arena_rewind(nmo_arena_t *arena, const nmo_arena_mark_t *mark) 
     }
 
     nmo_arena_chunk_t *target = (nmo_arena_chunk_t *)mark->chunk;
-    if (target == NULL || mark->chunk_used > target->size) {
+    if (target == NULL) {
+        if (mark->chunk_used != 0 || mark->bytes_used != 0) {
+            NMO_DEBUG_ASSERT(0 && "Invalid arena rewind mark payload");
+            return NMO_ERR_INVALID_STATE;
+        }
+        for (nmo_arena_chunk_t *chunk = arena->first; chunk != NULL; chunk = chunk->next) {
+            chunk->used = 0;
+        }
+        arena->current = arena->first;
+        arena->bytes_used = 0;
+        arena->next_chunk_size = arena->first != NULL ? arena->first->size
+                                                      : arena->initial_chunk_size;
+        arena->mark_depth--;
+        return NMO_OK;
+    }
+    if (mark->chunk_used > target->size) {
         NMO_DEBUG_ASSERT(0 && "Invalid arena rewind mark payload");
         return NMO_ERR_INVALID_STATE;
     }
@@ -431,11 +448,18 @@ nmo_status_t nmo_arena_reserve(nmo_arena_t *arena, size_t total_size) {
         }
         
         // Link chunk at end of chain
-        nmo_arena_chunk_t *last = arena->first;
-        while (last->next != NULL) {
-            last = last->next;
+        if (arena->first == NULL) {
+            arena->first = new_chunk;
+        } else {
+            nmo_arena_chunk_t *last = arena->first;
+            while (last->next != NULL) {
+                last = last->next;
+            }
+            last->next = new_chunk;
         }
-        last->next = new_chunk;
+        if (arena->current == NULL) {
+            arena->current = new_chunk;
+        }
         
         arena->total_allocated += chunk_size;
         arena->next_chunk_size = chunk_size;

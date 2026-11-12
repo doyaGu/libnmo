@@ -750,8 +750,9 @@ TEST(object_serialization, schema_allocation_failure_is_transactional) {
     ASSERT_NOT_NULL(object);
     nmo_arena_t *storage_arena = nmo_object_get_storage_arena(object);
     ASSERT_NOT_NULL(storage_arena);
-    ASSERT_NOT_NULL(nmo_arena_alloc(
-        storage_arena, nmo_arena_total_allocated(storage_arena), 1));
+    /* The storage arena takes its first block on first use, so the state's
+     * first allocation goes to the failing allocator. */
+    ASSERT_EQ((size_t)0, nmo_arena_total_allocated(storage_arena));
 
     nmo_chunk_t *chunk = nmo_chunk_create(chunk_arena);
     ASSERT_NOT_NULL(chunk);

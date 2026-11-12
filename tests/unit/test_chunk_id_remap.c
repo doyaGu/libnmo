@@ -20235,7 +20235,9 @@ TEST(chunk_id_remap, animation_refs_round_trip_and_failure_is_atomic) {
 
     fail_after_allocator_state_t allocator_state = {
         .allocation_count = 0,
-        .allowed_allocations = 2,
+        /* The arena itself: its first block, the deserializer's first
+         * allocation, fails. */
+        .allowed_allocations = 1,
     };
     nmo_allocator_t failing_allocator = nmo_allocator_custom(
         fail_after_alloc, fail_after_free, &allocator_state);
@@ -20254,7 +20256,7 @@ TEST(chunk_id_remap, animation_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(0x12345678u, failed_alloc.flags);
     ASSERT_EQ(0u, failed_alloc.legacy_body_part_count);
     ASSERT_NULL(failed_alloc.legacy_body_parts);
-    ASSERT_EQ(2u, allocator_state.allocation_count);
+    ASSERT_EQ(1u, allocator_state.allocation_count);
 
     nmo_animation_state_t invalid;
     ASSERT_EQ(NMO_OK, nmo_animation_vtable.create(
@@ -21610,9 +21612,11 @@ TEST(chunk_id_remap, objectanimation_newdata_morph_normals_are_bounded) {
         truncated, CK_STATESAVE_OBJANIMMORPHCOMP));
     nmo_chunk_close(truncated);
 
+    /* The arena and the block of the one allocation the deserializer makes
+     * before it finds the chunk truncated. */
     fail_after_allocator_state_t allocator_state = {
         .allocation_count = 0,
-        .allowed_allocations = 3,
+        .allowed_allocations = 2,
     };
     nmo_allocator_t failing_allocator = nmo_allocator_custom(
         fail_after_alloc, fail_after_free, &allocator_state);
@@ -21630,7 +21634,7 @@ TEST(chunk_id_remap, objectanimation_newdata_morph_normals_are_bounded) {
     ASSERT_EQ(0x12345678u, failed.flags);
     ASSERT_NULL(failed.morph_normals_sizes);
     ASSERT_NULL(failed.morph_normals_data);
-    ASSERT_EQ(3u, allocator_state.allocation_count);
+    ASSERT_EQ(2u, allocator_state.allocation_count);
 
     nmo_objectanimation_vtable.destroy(&source, NULL, NULL);
     nmo_objectanimation_vtable.destroy(&failed, NULL, NULL);

@@ -56,8 +56,8 @@ typedef struct nmo_arena_mark {
  * @brief Arena configuration (Phase 5 optimization)
  */
 typedef struct nmo_arena_config {
-    size_t initial_block_size; /**< Initial block size (default: 64KB) */
-    size_t max_block_size;     /**< Maximum block size (default: 16MB, 0=unlimited) */
+    size_t initial_block_size; /**< First block size, taken on first allocation (default: 64KB) */
+    size_t max_block_size;     /**< Maximum block size (default: 1MB, 0=unlimited) */
     float growth_factor;       /**< Growth factor for new blocks (default: 2.0) */
     size_t alignment;          /**< Default alignment (default: 16 bytes, max: 16) */
 } nmo_arena_config_t;
@@ -132,6 +132,15 @@ NMO_API size_t nmo_arena_total_allocated(nmo_arena_t *arena);
  * @return Bytes used
  */
 NMO_API size_t nmo_arena_bytes_used(nmo_arena_t *arena);
+
+/**
+ * @brief Get bytes still free in the block allocations currently come from
+ *
+ * An allocation of at most this size, with alignment 1, takes no new block.
+ * @param arena Arena allocator
+ * @return Free bytes in the current block (0 before the first block)
+ */
+NMO_API size_t nmo_arena_block_available(const nmo_arena_t *arena);
 
 /**
  * @brief Copy the allocator backing an arena.

@@ -253,6 +253,74 @@ TEST(arena, release_mark_keeps_allocations) {
     nmo_arena_destroy(arena);
 }
 
+TEST(arena, first_block_is_taken_on_first_allocation) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    ASSERT_EQ((size_t)0, nmo_arena_total_allocated(arena));
+
+    ASSERT_NOT_NULL(nmo_arena_alloc(arena, 16, 8));
+    ASSERT_EQ((size_t)4096, nmo_arena_total_allocated(arena));
+
+    nmo_arena_destroy(arena);
+}
+
+TEST(arena, oversized_allocation_keeps_the_current_block) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+
+    uint8_t *before = (uint8_t *)nmo_arena_alloc(arena, 100, 1);
+    ASSERT_NOT_NULL(before);
+    uint8_t *large = (uint8_t *)nmo_arena_alloc(arena, 1u << 20, 1);
+    ASSERT_NOT_NULL(large);
+    large[0] = 1;
+    large[(1u << 20) - 1] = 2;
+    /* The block it went to is its own: the next small allocation follows the
+     * first one, and the blocks after it keep growing from 4 KB. */
+    uint8_t *after = (uint8_t *)nmo_arena_alloc(arena, 100, 1);
+    ASSERT_EQ(before + 100, after);
+    ASSERT_EQ((size_t)4096 + (1u << 20), nmo_arena_total_allocated(arena));
+    ASSERT_NOT_NULL(nmo_arena_alloc(arena, 4000, 1));
+    ASSERT_EQ((size_t)4096 + (1u << 20) + 8192, nmo_arena_total_allocated(arena));
+
+    nmo_arena_destroy(arena);
+}
+
+TEST(arena, blocks_grow_past_allocations_larger_than_them) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 1);
+    ASSERT_NOT_NULL(arena);
+
+    /* Allocations larger than the next block, but not large, start a block of
+     * their size, and the blocks after them grow from it: a tiny first block
+     * costs a few blocks, not one per allocation. */
+    for (int i = 0; i < 64; ++i) {
+        ASSERT_NOT_NULL(nmo_arena_alloc(arena, 64, 8));
+    }
+    ASSERT_TRUE(nmo_arena_total_allocated(arena) < 64u * 71u);
+    ASSERT_TRUE(nmo_arena_total_allocated(arena) >= 64u * 64u);
+
+    nmo_arena_destroy(arena);
+}
+
+TEST(arena, rewind_to_a_mark_before_the_first_block) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 256);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_arena_mark_t mark;
+    ASSERT_EQ(NMO_OK, nmo_arena_mark(arena, &mark));
+    void *first = nmo_arena_alloc(arena, 64, 8);
+    ASSERT_NOT_NULL(first);
+    ASSERT_NOT_NULL(nmo_arena_alloc(arena, 4096, 8));
+    ASSERT_EQ(NMO_OK, nmo_arena_rewind(arena, &mark));
+    ASSERT_EQ((size_t)0, nmo_arena_bytes_used(arena));
+
+    /* The blocks are kept and reused. */
+    size_t total = nmo_arena_total_allocated(arena);
+    ASSERT_EQ(first, nmo_arena_alloc(arena, 64, 8));
+    ASSERT_EQ(total, nmo_arena_total_allocated(arena));
+
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(arena, create_destroy);
     REGISTER_TEST(arena, create_with_custom_allocator);
@@ -269,4 +337,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(arena, mark_rewind_bytes_used);
     REGISTER_TEST(arena, mark_rewind_across_chunks);
     REGISTER_TEST(arena, release_mark_keeps_allocations);
+    REGISTER_TEST(arena, first_block_is_taken_on_first_allocation);
+    REGISTER_TEST(arena, oversized_allocation_keeps_the_current_block);
+    REGISTER_TEST(arena, blocks_grow_past_allocations_larger_than_them);
+    REGISTER_TEST(arena, rewind_to_a_mark_before_the_first_block);
 TEST_MAIN_END()

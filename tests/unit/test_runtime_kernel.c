@@ -1689,8 +1689,12 @@ TEST(runtime_kernel, deserialize_propagates_chunk_reader_oom) {
     ASSERT_NOT_NULL(load_session);
     ASSERT_EQ(NMO_OK, nmo_id_mapping_register(load_session, obj, 0));
 
-    ASSERT_NOT_NULL(nmo_arena_alloc(
-        arena, 2u * 1024u * 1024u, 1u));
+    /* Fill the arena's current block, so the reader's next allocation takes
+     * a new one from the failing allocator. */
+    const size_t block_left = nmo_arena_block_available(arena);
+    if (block_left > 0) {
+        ASSERT_NOT_NULL(nmo_arena_alloc(arena, block_left, 1u));
+    }
     fail_state.fail_allocations = 1;
 
     nmo_load_diagnostics_t diagnostics;
@@ -1890,6 +1894,9 @@ TEST(runtime_kernel, prepare_loaded_objects_propagates_remap_growth_oom) {
     nmo_object_repository_t *repo = nmo_object_repository_create(NULL);
     ASSERT_NOT_NULL(arena);
     ASSERT_NOT_NULL(repo);
+    /* The arena's first block, taken before allocations fail: the remap's
+     * first entries fit it, its growth does not. */
+    ASSERT_EQ(NMO_OK, nmo_arena_reserve(arena, 2048));
 
     nmo_object_desc_t descs[33] = {0};
     for (size_t i = 0; i < 33; ++i) {
