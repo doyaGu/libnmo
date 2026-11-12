@@ -17,15 +17,18 @@
 #include <stdint.h>
 #include <assert.h>
 
-#define NMO_POOL_NONE SIZE_MAX
+/* Entries are counted in 32 bits: a session keeps the pool's bookkeeping for
+ * every chunk of every file it loaded, so it is kept small. */
+#define NMO_POOL_NONE UINT32_MAX
+#define NMO_POOL_MAX_ENTRIES (UINT32_MAX - 1u)
 
 /**
  * @brief Pool entry for tracking chunks
  */
 typedef struct nmo_pool_entry {
     nmo_chunk_t *chunk;     /**< Chunk pointer */
-    size_t next_free;       /**< Next available entry, NMO_POOL_NONE at the end */
-    int in_use;             /**< 1 if acquired, 0 if available */
+    uint32_t next_free;     /**< Next available entry, NMO_POOL_NONE at the end */
+    uint32_t in_use;        /**< 1 if acquired, 0 if available */
 } nmo_pool_entry_t;
 
 /**
@@ -36,8 +39,8 @@ struct nmo_chunk_pool {
     size_t capacity;            /**< Total capacity */
     size_t count;               /**< Number of entries (total chunks) */
     size_t available;           /**< Number of available chunks */
-    size_t free_head;           /**< First available entry, NMO_POOL_NONE if none */
-    size_t *slots;              /**< Chunk address to entry index + 1; 0 is empty */
+    uint32_t free_head;         /**< First available entry, NMO_POOL_NONE if none */
+    uint32_t *slots;            /**< Chunk address to entry index + 1; 0 is empty */
     size_t slot_mask;           /**< Slot count - 1; the count is a power of two */
     nmo_arena_t *arena;         /**< Arena for allocations */
 };
@@ -50,21 +53,21 @@ static size_t pool_hash(const nmo_chunk_t *chunk) {
     return (size_t)v;
 }
 
-static void pool_slot_insert(nmo_chunk_pool_t *pool, size_t index) {
+static void pool_slot_insert(nmo_chunk_pool_t *pool, uint32_t index) {
     size_t slot = pool_hash(pool->entries[index].chunk) & pool->slot_mask;
     while (pool->slots[slot] != 0) {
         slot = (slot + 1) & pool->slot_mask;
     }
-    pool->slots[slot] = index + 1;
+    pool->slots[slot] = index + 1u;
 }
 
-static size_t pool_find(const nmo_chunk_pool_t *pool, const nmo_chunk_t *chunk) {
+static uint32_t pool_find(const nmo_chunk_pool_t *pool, const nmo_chunk_t *chunk) {
     if (pool->slots == NULL) {
         return NMO_POOL_NONE;
     }
     size_t slot = pool_hash(chunk) & pool->slot_mask;
     while (pool->slots[slot] != 0) {
-        size_t index = pool->slots[slot] - 1;
+        uint32_t index = pool->slots[slot] - 1u;
         if (pool->entries[index].chunk == chunk) {
             return index;
         }
@@ -73,26 +76,26 @@ static size_t pool_find(const nmo_chunk_pool_t *pool, const nmo_chunk_t *chunk) 
     return NMO_POOL_NONE;
 }
 
-/* Sizes the address table for `capacity` entries (at most half full) and
- * fills it with the entries the pool has. */
+/* Sizes the address table for `capacity` entries (at most three quarters
+ * full) and fills it with the entries the pool has. */
 static int pool_build_slots(nmo_chunk_pool_t *pool, size_t capacity) {
     size_t slot_count = 16;
-    while (slot_count / 2 < capacity) {
-        if (slot_count > SIZE_MAX / 2 / sizeof(size_t)) {
+    while (slot_count - slot_count / 4 < capacity) {
+        if (slot_count > SIZE_MAX / 2 / sizeof(uint32_t)) {
             return 0;
         }
         slot_count *= 2;
     }
-    size_t *slots = (size_t *)nmo_arena_alloc(
-        pool->arena, slot_count * sizeof(size_t), _Alignof(size_t));
+    uint32_t *slots = (uint32_t *)nmo_arena_alloc(
+        pool->arena, slot_count * sizeof(uint32_t), _Alignof(uint32_t));
     if (slots == NULL) {
         return 0;
     }
-    memset(slots, 0, slot_count * sizeof(size_t));
+    memset(slots, 0, slot_count * sizeof(uint32_t));
     pool->slots = slots;
     pool->slot_mask = slot_count - 1;
     for (size_t i = 0; i < pool->count; i++) {
-        pool_slot_insert(pool, i);
+        pool_slot_insert(pool, (uint32_t)i);
     }
     return 1;
 }
@@ -105,6 +108,7 @@ NMO_API nmo_chunk_pool_t *nmo_chunk_pool_create(
     nmo_arena_t *arena
 ) {
     if (!arena || initial_capacity == 0 ||
+        initial_capacity > NMO_POOL_MAX_ENTRIES ||
         initial_capacity > SIZE_MAX / sizeof(nmo_pool_entry_t)) {
         return NULL;
     }
@@ -191,10 +195,14 @@ NMO_API nmo_chunk_t *nmo_chunk_pool_acquire(
     }
 
     if (pool->count >= pool->capacity) {
-        if (pool->capacity > SIZE_MAX / 2 / sizeof(nmo_pool_entry_t)) {
+        if (pool->capacity >= NMO_POOL_MAX_ENTRIES ||
+            pool->capacity > SIZE_MAX / 2 / sizeof(nmo_pool_entry_t)) {
             return NULL;
         }
         size_t new_capacity = pool->capacity * 2;
+        if (new_capacity > NMO_POOL_MAX_ENTRIES) {
+            new_capacity = NMO_POOL_MAX_ENTRIES;
+        }
         nmo_pool_entry_t *new_entries = (nmo_pool_entry_t *)nmo_arena_alloc(
             pool->arena,
             new_capacity * sizeof(nmo_pool_entry_t),
@@ -222,7 +230,7 @@ NMO_API nmo_chunk_t *nmo_chunk_pool_acquire(
     entry->chunk = chunk;
     entry->next_free = NMO_POOL_NONE;
     entry->in_use = 1;
-    pool_slot_insert(pool, pool->count);
+    pool_slot_insert(pool, (uint32_t)pool->count);
     pool->count++;
     return chunk;
 }
@@ -238,7 +246,7 @@ NMO_API void nmo_chunk_pool_release(
         return;
     }
 
-    size_t index = pool_find(pool, chunk);
+    uint32_t index = pool_find(pool, chunk);
     if (index == NMO_POOL_NONE || !pool->entries[index].in_use) {
         /* Released twice, or never acquired from this pool. */
         assert(0 && "Chunk not found in pool or already released");
@@ -266,8 +274,8 @@ NMO_API int nmo_chunk_pool_validate(
     if (!pool || !chunk) {
         return 0;
     }
-    size_t index = pool_find(pool, chunk);
-    return index != NMO_POOL_NONE ? pool->entries[index].in_use : 0;
+    uint32_t index = pool_find(pool, chunk);
+    return index != NMO_POOL_NONE ? (int)pool->entries[index].in_use : 0;
 }
 
 /**
@@ -310,7 +318,7 @@ NMO_API void nmo_chunk_pool_clear(
     /* Every chunk becomes available, the first acquired first again. */
     for (size_t i = 0; i < pool->count; i++) {
         pool->entries[i].in_use = 0;
-        pool->entries[i].next_free = i + 1 < pool->count ? i + 1 : NMO_POOL_NONE;
+        pool->entries[i].next_free = i + 1 < pool->count ? (uint32_t)(i + 1) : NMO_POOL_NONE;
         reset_chunk(pool->entries[i].chunk);
     }
     pool->free_head = pool->count > 0 ? 0 : NMO_POOL_NONE;
