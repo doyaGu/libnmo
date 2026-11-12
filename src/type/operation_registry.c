@@ -165,8 +165,9 @@ static nmo_operation_p1_layer_t *find_or_create_p1_layer(
     memset(p1_layer, 0, sizeof(*p1_layer));
     p1_layer->p1_type_guid = *p1_type_guid;
 
-    /* Initial capacity for P2 layers */
-    if (nmo_arena_array_init(&p1_layer->p2_layers, sizeof(nmo_operation_p2_layer_t), 4, registry->arena) != NMO_OK) {
+    /* Room for one P2 layer: most operations take one P2 type per P1 type, and
+     * the array doubles for the rest. */
+    if (nmo_arena_array_init(&p1_layer->p2_layers, sizeof(nmo_operation_p2_layer_t), 1, registry->arena) != NMO_OK) {
         return NULL;
     }
 
@@ -199,8 +200,9 @@ static nmo_operation_p2_layer_t *find_or_create_p2_layer(
     memset(p2_layer, 0, sizeof(*p2_layer));
     p2_layer->p2_type_guid = *p2_type_guid;
 
-    /* Initial capacity for cells */
-    if (nmo_arena_array_init(&p2_layer->cells, sizeof(nmo_operation_tree_cell_t), 4, registry->arena) != NMO_OK) {
+    /* Room for one cell: a P2 layer nearly always holds a single result type,
+     * and the array doubles for the rest. */
+    if (nmo_arena_array_init(&p2_layer->cells, sizeof(nmo_operation_tree_cell_t), 1, registry->arena) != NMO_OK) {
         return NULL;
     }
 
