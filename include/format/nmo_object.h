@@ -38,12 +38,15 @@ typedef struct nmo_type_descriptor nmo_type_descriptor_t;
  * together with stable repository/query facades instead of depending on direct
  * field access.
  */
+/* Every loaded object has one of these: the fields are ordered to leave no
+ * padding, which keeps it in a smaller malloc size class. */
 typedef struct nmo_object {
     /* Identity */
     nmo_object_id_t id;      /**< Runtime object ID */
     nmo_class_id_t class_id; /**< Object class ID */
     const char *name;      /**< Object name (optional) */
     uint32_t flags;        /**< Object flags */
+    uint32_t save_flags;   /**< Flags for saving */
     nmo_guid_t type_guid;  /**< Type GUID (for typed objects like parameters) */
 
     /* Hierarchy */
@@ -63,7 +66,6 @@ typedef struct nmo_object {
     nmo_object_id_t file_index; /**< FileIndex offset in uncompressed file buffer (Header1) */
     nmo_object_id_t file_id;    /**< Object ID stored in file (Header1 Object) */
     uint32_t creation_flags;  /**< Flags used during creation */
-    uint32_t save_flags;      /**< Flags for saving */
 
     /* Memory management */
     nmo_allocator_t allocator; /**< Allocator snapshot for explicit frees */
