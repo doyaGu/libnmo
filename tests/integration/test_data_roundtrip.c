@@ -26,6 +26,7 @@ static void test_manager_chunk_with_data_size_unset(void);
 static void test_object_chunk_with_data_size_unset(void);
 static void test_parse_with_chunk_pool(void);
 static void test_parse_failure_is_atomic(void);
+static void test_parse_ex_keeps_chunks_past_scratch(void);
 
 static void register_tests(void) {
     test_register("data_roundtrip", "empty_data_section", test_empty_data_section);
@@ -37,6 +38,8 @@ static void register_tests(void) {
     test_register("data_roundtrip", "object_chunk_with_data_size_unset", test_object_chunk_with_data_size_unset);
     test_register("data_roundtrip", "parse_with_chunk_pool", test_parse_with_chunk_pool);
     test_register("data_roundtrip", "parse_failure_is_atomic", test_parse_failure_is_atomic);
+    test_register("data_roundtrip", "parse_ex_keeps_chunks_past_scratch",
+                  test_parse_ex_keeps_chunks_past_scratch);
 }
 
 static void test_empty_data_section(void) {
@@ -534,4 +537,67 @@ static void test_parse_failure_is_atomic(void) {
 int main(void) {
     register_tests();
     return test_framework_run();
+}
+
+/* A loader parses into two arenas and drops the scratch one once the chunks
+ * are handed on: the managers and every chunk must outlive it. */
+static void test_parse_ex_keeps_chunks_past_scratch(void) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0xDEADBEEFu));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0xCAFEBABEu));
+    nmo_chunk_close(chunk);
+    void *chunk_data = NULL;
+    size_t chunk_size = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_serialize_version1(chunk, &chunk_data, &chunk_size, arena));
+
+    nmo_data_section_t data = {0};
+    data.manager_count = 1;
+    data.object_count = 1;
+    data.managers = (nmo_manager_data_t *)nmo_arena_alloc(arena, sizeof(nmo_manager_data_t), 8);
+    data.objects = (nmo_object_data_t *)nmo_arena_alloc(arena, sizeof(nmo_object_data_t), 8);
+    ASSERT_NOT_NULL(data.managers);
+    ASSERT_NOT_NULL(data.objects);
+    memset(data.managers, 0, sizeof(nmo_manager_data_t));
+    memset(data.objects, 0, sizeof(nmo_object_data_t));
+    data.managers[0].guid.d1 = 0x12345678u;
+    data.managers[0].chunk = chunk;
+    data.managers[0].data_size = (uint32_t)chunk_size;
+    data.objects[0].chunk = chunk;
+    data.objects[0].data_size = (uint32_t)chunk_size;
+
+    size_t size = nmo_data_section_calculate_size(&data, 8, arena);
+    uint8_t *buffer = (uint8_t *)nmo_arena_alloc(arena, size, 16);
+    ASSERT_NOT_NULL(buffer);
+    size_t written = 0;
+    ASSERT_EQ(NMO_OK, nmo_data_section_serialize(&data, 8, buffer, size, &written, arena));
+
+    nmo_arena_t *keep = nmo_arena_create(NULL, 1024);
+    nmo_arena_t *scratch = nmo_arena_create(NULL, 1024);
+    ASSERT_NOT_NULL(keep);
+    ASSERT_NOT_NULL(scratch);
+    nmo_data_section_t parsed = {0};
+    parsed.manager_count = 1;
+    parsed.object_count = 1;
+    ASSERT_EQ(NMO_OK, nmo_data_section_parse_ex(
+        buffer, written, 8, &parsed, NULL, keep, scratch));
+    nmo_chunk_t *object_chunk = parsed.objects[0].chunk;
+    ASSERT_NOT_NULL(object_chunk);
+    nmo_arena_destroy(scratch);
+
+    ASSERT_EQ(0x12345678u, parsed.managers[0].guid.d1);
+    ASSERT_NOT_NULL(parsed.managers[0].chunk);
+    ASSERT_EQ((size_t)8, nmo_chunk_get_data_size(parsed.managers[0].chunk));
+    ASSERT_EQ((size_t)8, nmo_chunk_get_data_size(object_chunk));
+    const uint32_t *words = (const uint32_t *)nmo_chunk_get_data(object_chunk, NULL);
+    ASSERT_NOT_NULL(words);
+    ASSERT_EQ(0xDEADBEEFu, words[0]);
+    ASSERT_EQ(0xCAFEBABEu, words[1]);
+
+    nmo_arena_destroy(keep);
+    nmo_arena_destroy(arena);
 }

@@ -152,6 +152,27 @@ NMO_API nmo_status_t nmo_data_section_parse(
     nmo_arena_t *arena);
 
 /**
+ * @brief Parse Data section, keeping what outlives the parse apart
+ *
+ * As nmo_data_section_parse, with the manager array and the chunks made
+ * without the pool in keep_arena, and the object entry array and the buffers
+ * of packed entries in scratch_arena. A loader that has handed the chunks on
+ * can release scratch_arena.
+ *
+ * @param keep_arena Arena for the manager array and chunks
+ * @param scratch_arena Arena for the object entries and temporary buffers
+ * @return NMO_OK on success, error code otherwise
+ */
+NMO_API nmo_status_t nmo_data_section_parse_ex(
+    const void *data,
+    size_t size,
+    uint32_t file_version,
+    nmo_data_section_t *data_section,
+    nmo_chunk_pool_t *chunk_pool,
+    nmo_arena_t *keep_arena,
+    nmo_arena_t *scratch_arena);
+
+/**
  * @brief Serialize Data section to buffer
  *
  * @param data_section Data section to serialize

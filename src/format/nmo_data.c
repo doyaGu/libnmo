@@ -170,8 +170,9 @@ static nmo_status_t parse_object_entry_v2(
     uint32_t index,
     nmo_object_data_t *obj,
     nmo_chunk_pool_t *chunk_pool,
-    nmo_arena_t *arena) {
-    CHECK_BUFFER_SIZE(arena, *pos, 8, size);
+    nmo_arena_t *keep_arena,
+    nmo_arena_t *scratch_arena) {
+    CHECK_BUFFER_SIZE(scratch_arena, *pos, 8, size);
     obj->object_id = nmo_read_u32_le(data + *pos);
     obj->data_size = nmo_read_u32_le(data + *pos + 4);
     *pos += 8;
@@ -184,7 +185,7 @@ static nmo_status_t parse_object_entry_v2(
         NMO_RETURN_OK();
     }
 
-    CHECK_BUFFER_SIZE(arena, *pos, 12, size);
+    CHECK_BUFFER_SIZE(scratch_arena, *pos, 12, size);
     const uint32_t class_id = nmo_read_u32_le(data + *pos);
     const uint32_t stored_size = nmo_read_u32_le(data + *pos + 8);
     *pos += 12;
@@ -198,7 +199,7 @@ static nmo_status_t parse_object_entry_v2(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                          "Object entry %u has an invalid stored size", (unsigned)index);
     }
-    CHECK_BUFFER_SIZE(arena, *pos, stored_size, size);
+    CHECK_BUFFER_SIZE(scratch_arena, *pos, stored_size, size);
     const uint8_t *stored = data + *pos;
     *pos += stored_size;
     const uint8_t *bytes = stored;
@@ -210,7 +211,7 @@ static nmo_status_t parse_object_entry_v2(
                              "Object entry %u cannot inflate from %u to %u bytes",
                              (unsigned)index, (unsigned)stored_size, (unsigned)obj->data_size);
         }
-        unpacked = (uint8_t *)nmo_arena_alloc(arena, obj->data_size, alignof(uint32_t));
+        unpacked = (uint8_t *)nmo_arena_alloc(scratch_arena, obj->data_size, alignof(uint32_t));
         if (unpacked == NULL) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                              "Failed to allocate object entry %u", (unsigned)index);
@@ -225,7 +226,7 @@ static nmo_status_t parse_object_entry_v2(
         byte_count = (size_t)unpacked_size;
     }
 
-    nmo_chunk_t *chunk = allocate_chunk(chunk_pool, arena);
+    nmo_chunk_t *chunk = allocate_chunk(chunk_pool, keep_arena);
     if (chunk == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                          "Failed to create object chunk (index=%u)", (unsigned)index);
@@ -261,7 +262,8 @@ static nmo_status_t parse_object_data(
     uint32_t file_version,
     nmo_data_section_t *section,
     nmo_chunk_pool_t *chunk_pool,
-    nmo_arena_t *arena) {
+    nmo_arena_t *keep_arena,
+    nmo_arena_t *scratch_arena) {
     if (section->object_count == 0) {
         section->objects = NULL;
         NMO_RETURN_OK();
@@ -280,7 +282,7 @@ static nmo_status_t parse_object_data(
         NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Object data allocation overflow");
     }
     section->objects = (nmo_object_data_t *) nmo_arena_alloc(
-        arena,
+        scratch_arena,
         object_bytes,
         alignof(nmo_object_data_t));
     if (section->objects == NULL) {
@@ -295,14 +297,15 @@ static nmo_status_t parse_object_data(
         obj->object_id = 0;
         if (file_version < 4) {
             NMO_RETURN_IF_ERROR(parse_object_entry_v2(
-                data, size, pos, section->file_write_mode, i, obj, chunk_pool, arena));
+                data, size, pos, section->file_write_mode, i, obj, chunk_pool,
+                keep_arena, scratch_arena));
             continue;
         }
 
         /* For file_version < 7, object ID is stored here */
         /* For file_version >= 8, object IDs are in Header1 */
         if (file_version < 7) {
-            CHECK_BUFFER_SIZE(arena, *pos, 4, size);
+            CHECK_BUFFER_SIZE(scratch_arena, *pos, 4, size);
             obj->object_id = nmo_read_u32_le(data + *pos);
             *pos += 4;
             /* Object ID is not stored in nmo_object_data for version < 7
@@ -310,16 +313,16 @@ static nmo_status_t parse_object_data(
         }
 
         /* Read data size */
-        CHECK_BUFFER_SIZE(arena, *pos, 4, size);
+        CHECK_BUFFER_SIZE(scratch_arena, *pos, 4, size);
         obj->data_size = nmo_read_u32_le(data + *pos);
         *pos += 4;
 
         /* Parse chunk data if present */
         if (obj->data_size > 0) {
-            CHECK_BUFFER_SIZE(arena, *pos, obj->data_size, size);
+            CHECK_BUFFER_SIZE(scratch_arena, *pos, obj->data_size, size);
 
             /* Create chunk */
-            obj->chunk = allocate_chunk(chunk_pool, arena);
+            obj->chunk = allocate_chunk(chunk_pool, keep_arena);
             if (obj->chunk == NULL) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                         "Failed to create object chunk (index=%u, size=%u)",
@@ -388,7 +391,19 @@ nmo_status_t nmo_data_section_parse(
     nmo_data_section_t *data_section,
     nmo_chunk_pool_t *chunk_pool,
     nmo_arena_t *arena) {
-    if (arena == NULL) {
+    return nmo_data_section_parse_ex(
+        data, size, file_version, data_section, chunk_pool, arena, arena);
+}
+
+nmo_status_t nmo_data_section_parse_ex(
+    const void *data,
+    size_t size,
+    uint32_t file_version,
+    nmo_data_section_t *data_section,
+    nmo_chunk_pool_t *chunk_pool,
+    nmo_arena_t *keep_arena,
+    nmo_arena_t *scratch_arena) {
+    if (keep_arena == NULL || scratch_arena == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                 "NULL arena passed to nmo_data_section_parse");
     }
@@ -414,7 +429,7 @@ nmo_status_t nmo_data_section_parse(
     /* Below version 8 the section carries SaveIDMax and ObjectCount first,
        and the engine reads the objects by the section's count. */
     if (data_section_has_leading_counts(file_version)) {
-        CHECK_BUFFER_SIZE(arena, pos, 8, size);
+        CHECK_BUFFER_SIZE(scratch_arena, pos, 8, size);
         staged.save_id_max = nmo_read_u32_le(buffer + pos);
         pos += 4;
         const uint32_t section_object_count = nmo_read_u32_le(buffer + pos);
@@ -445,7 +460,7 @@ nmo_status_t nmo_data_section_parse(
     nmo_status_t result = NMO_OK;
     if (data_section_has_manager_block(file_version) && staged.manager_count > 0) {
         result = parse_manager_data(
-            buffer, size, &pos, &staged, chunk_pool, arena);
+            buffer, size, &pos, &staged, chunk_pool, keep_arena);
         if (result != NMO_OK) {
             release_pooled_chunks(&staged, chunk_pool);
             return result;
@@ -455,7 +470,8 @@ nmo_status_t nmo_data_section_parse(
     /* Parse object data */
     if (staged.object_count > 0) {
         result = parse_object_data(
-            buffer, size, &pos, file_version, &staged, chunk_pool, arena);
+            buffer, size, &pos, file_version, &staged, chunk_pool,
+            keep_arena, scratch_arena);
         if (result != NMO_OK) {
             release_pooled_chunks(&staged, chunk_pool);
             return result;
