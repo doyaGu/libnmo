@@ -91,7 +91,8 @@ static bool same_with_padding(uint32_t original, uint32_t canonical)
     return false;
 }
 
-/* Marks the dwords of a chunk that hold object ids. */
+/* Marks the dwords of a chunk that hold object ids, or with marks NULL only
+ * checks that its id list stays inside its data. */
 static bool mark_id_positions(const nmo_chunk_t *chunk, uint8_t *marks)
 {
     const uint32_t *ids = array_words(&chunk->ids);
@@ -99,16 +100,71 @@ static bool mark_id_positions(const nmo_chunk_t *chunk, uint8_t *marks)
     for (size_t i = 0; i < chunk->ids.count; ++i) {
         if (ids[i] != ID_SEQUENCE_MARKER) {
             if (ids[i] >= chunk->data.count) return false;
-            marks[ids[i]] = 1;
+            if (marks != NULL) marks[ids[i]] = 1;
             continue;
         }
         if (++i >= chunk->ids.count || ids[i] >= chunk->data.count) return false;
         const size_t header = ids[i];
         const size_t count = data[header];
         if (count > chunk->data.count - header - 1u) return false;
-        for (size_t k = 0; k < count; ++k) marks[header + 1u + k] = 1;
+        if (marks != NULL) {
+            for (size_t k = 0; k < count; ++k) marks[header + 1u + k] = 1;
+        }
     }
     return true;
+}
+
+/* Walks the dword ranges a chunk's id list covers, in the list's order. The
+ * list must have passed mark_id_positions. */
+typedef struct id_range_cursor {
+    const nmo_chunk_t *chunk;
+    size_t next;    /* next entry of the id list */
+    size_t lo;      /* current range: [lo, hi) */
+    size_t hi;
+} id_range_cursor_t;
+
+static bool id_range_next(id_range_cursor_t *cursor)
+{
+    const nmo_chunk_t *chunk = cursor->chunk;
+    const uint32_t *ids = array_words(&chunk->ids);
+    while (cursor->next < chunk->ids.count) {
+        const uint32_t entry = ids[cursor->next++];
+        if (entry != ID_SEQUENCE_MARKER) {
+            cursor->lo = entry;
+            cursor->hi = (size_t)entry + 1u;
+            return true;
+        }
+        const size_t header = ids[cursor->next++];
+        const size_t count = chunk_words(chunk)[header];
+        if (count == 0) continue;
+        cursor->lo = header + 1u;
+        cursor->hi = header + 1u + count;
+        return true;
+    }
+    return false;
+}
+
+/* Whether each range starts at or after the end of the one before, as a writer
+ * that appends leaves them. */
+static bool id_ranges_ordered(const nmo_chunk_t *chunk)
+{
+    id_range_cursor_t cursor = {chunk, 0, 0, 0};
+    size_t end = 0;
+    while (id_range_next(&cursor)) {
+        if (cursor.lo < end) return false;
+        end = cursor.hi;
+    }
+    return true;
+}
+
+/* A dword of the original that differs from the canonical one is still the
+ * same value in these cases. */
+static bool same_dword(uint32_t original, uint32_t canonical)
+{
+    /* A null id is 0xFFFFFFFF in a chunk written for a file and 0 in one
+       written without (which does not track it either). */
+    if (original == 0xFFFFFFFFu && canonical == 0u) return true;
+    return same_with_padding(original, canonical);
 }
 
 static bool arrays_equal(const nmo_chunk_array_t *a, const nmo_chunk_array_t *b)
@@ -128,25 +184,37 @@ static bool equivalent_impl(const nmo_chunk_t *a, const nmo_chunk_t *b, bool a_u
     }
 
     const size_t count = a->data.count;
-    uint8_t *marks = count > 0 ? (uint8_t *)calloc(count, 1) : NULL;
-    if (count > 0 && marks == NULL) return false;
-    bool equal = count == 0 || mark_id_positions(a_untracked ? b : a, marks);
+    const nmo_chunk_t *id_owner = a_untracked ? b : a;
+    bool equal = count == 0 || mark_id_positions(id_owner, NULL);
     if (equal && !a_untracked && a->ids.count > 0) {
         /* The id positions must agree; their values are not compared. */
         equal = arrays_equal(&a->ids, &b->ids);
     }
-    if (equal && count > 0) {
-        const uint32_t *da = chunk_words(a);
-        const uint32_t *db = chunk_words(b);
-        for (size_t i = 0; i < count && equal; ++i) {
-            if (marks[i] || da[i] == db[i]) continue;
-            /* A null id is 0xFFFFFFFF in a chunk written for a file and 0 in
-               one written without (which does not track it either). */
-            if (da[i] == 0xFFFFFFFFu && db[i] == 0u) continue;
-            equal = same_with_padding(da[i], db[i]);
+    const uint32_t *da = count > 0 ? chunk_words(a) : NULL;
+    const uint32_t *db = count > 0 ? chunk_words(b) : NULL;
+    if (equal && count > 0 && memcmp(da, db, count * sizeof(uint32_t)) != 0) {
+        /* The dwords that differ must be ids, whose values are not compared,
+         * or the same value written another way. */
+        if (id_ranges_ordered(id_owner)) {
+            id_range_cursor_t ids = {id_owner, 0, 0, 0};
+            bool in_list = id_range_next(&ids);
+            for (size_t i = 0; i < count && equal; ++i) {
+                if (da[i] == db[i]) continue;
+                while (in_list && ids.hi <= i) in_list = id_range_next(&ids);
+                if (in_list && i >= ids.lo) continue;
+                equal = same_dword(da[i], db[i]);
+            }
+        } else {
+            uint8_t *marks = (uint8_t *)calloc(count, 1);
+            if (marks == NULL) return false;
+            (void)mark_id_positions(id_owner, marks);
+            for (size_t i = 0; i < count && equal; ++i) {
+                if (marks[i] || da[i] == db[i]) continue;
+                equal = same_dword(da[i], db[i]);
+            }
+            free(marks);
         }
     }
-    free(marks);
     if (!equal) return false;
     /* A chunk read from a file holds its sub-chunks only inside its data. */
     if (a_untracked) return true;
