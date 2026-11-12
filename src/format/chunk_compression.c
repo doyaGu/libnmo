@@ -221,7 +221,7 @@ nmo_status_t nmo_chunk_decompress(nmo_chunk_t *chunk) {
                                (const unsigned char *) src_data, src_len);
 
     if (result != MZ_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR, "Decompression failed");
+        NMO_RETURN_ERROR(NMO_ERR_DECOMPRESSION_FAILED, NMO_SEVERITY_ERROR, "Decompression failed");
     }
 
     // Verify decompressed size
