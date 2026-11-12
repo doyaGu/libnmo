@@ -15,7 +15,7 @@ if(NOT SOURCE_DIR)
 endif()
 
 # Lowest layer first. Must match the README layer table.
-set(layers core io format type extension object export session runtime document chunk behavior engine bb edit lua project)
+set(layers core io format type extension object export session runtime document chunk behavior engine bb render view edit lua project)
 
 file(STRINGS "${SOURCE_DIR}/tests/layering_allowlist.txt" allowlist_lines)
 set(allowlist "")
@@ -70,15 +70,15 @@ foreach(source_file IN LISTS source_files)
 endforeach()
 
 # The core's public headers must not pull in the optional components: engine/,
-# bb/, edit/, lua/ and project/ headers (and Lua's own lua.h) belong to
-# nmo_engine, the block packs (nmo_bb_*), nmo_edit, nmo_lua and nmo_project
-# only. The components may include each other's headers downward: engine and
+# bb/, render/, edit/, lua/ and project/ headers (and Lua's own lua.h) belong to
+# nmo_engine, the block packs (nmo_bb_*), nmo_render, nmo_edit, nmo_lua and
+# nmo_project only. The components may include each other's headers downward: engine and
 # edit, the packs on top of engine, then lua and project on top of edit.
 file(GLOB_RECURSE public_headers "${SOURCE_DIR}/include/*.h")
 set(component_violations "")
 foreach(header IN LISTS public_headers)
     file(RELATIVE_PATH relative_path "${SOURCE_DIR}" "${header}")
-    if(relative_path MATCHES "^include/(engine|bb|edit|lua|project)/"
+    if(relative_path MATCHES "^include/(engine|bb|render|edit|lua|project)/"
        OR relative_path STREQUAL "include/nmo_engine.h"
        OR relative_path STREQUAL "include/nmo_edit.h"
        OR relative_path STREQUAL "include/nmo_lua.h"
@@ -86,7 +86,7 @@ foreach(header IN LISTS public_headers)
         continue()
     endif()
     file(STRINGS "${header}" include_lines
-        REGEX "^[ \t]*#[ \t]*include[ \t]*\"(engine|bb|edit|lua|project)/")
+        REGEX "^[ \t]*#[ \t]*include[ \t]*\"(engine|bb|render|edit|lua|project)/")
     foreach(include_line IN LISTS include_lines)
         string(APPEND component_violations "${relative_path}: ${include_line}\n")
     endforeach()
@@ -95,7 +95,7 @@ if(component_violations)
     message(FATAL_ERROR
         "Layering audit failed: core public header includes an optional component\n"
         "${component_violations}"
-        "Move the declaration into include/engine, include/bb, include/edit, include/lua or include/project, or forward-declare the type.\n")
+        "Move the declaration into include/engine, include/bb, include/render, include/edit, include/lua or include/project, or forward-declare the type.\n")
 endif()
 
 # The engine knows no block pack: its public headers include no bb/ header
@@ -140,6 +140,33 @@ if(pack_violations)
         "Layering audit failed: the engine includes a block pack, or a pack another pack\n"
         "${pack_violations}"
         "Keep the engine free of packs; share what packs need through the engine (src/engine).\n")
+endif()
+
+# Graphics APIs and window systems stay at the edges, so that a backend or a
+# host can be replaced alone: a graphics API's headers (OpenGL, OpenGL ES,
+# Vulkan, Metal, Direct3D) only in a backend of the renderer,
+# src/render/<backend>/, and a window system's (SDL) only in the view, src/view.
+set(platform_violations "")
+file(GLOB_RECURSE platform_files "${SOURCE_DIR}/src/*.c" "${SOURCE_DIR}/src/*.h" "${SOURCE_DIR}/src/*.m")
+foreach(platform_file IN LISTS platform_files)
+    file(RELATIVE_PATH relative_path "${SOURCE_DIR}" "${platform_file}")
+    file(STRINGS "${platform_file}" include_lines
+        REGEX "^[ \t]*#[ \t]*(include|import)[ \t]*<(GL|GLES[0-9]*|OpenGL|OpenGLES|vulkan|Metal|SDL[0-9]*)/|^[ \t]*#[ \t]*include[ \t]*<d3d[0-9a-z_]*\\.h>")
+    foreach(include_line IN LISTS include_lines)
+        if(include_line MATCHES "<SDL")
+            if(NOT relative_path MATCHES "^src/view/")
+                string(APPEND platform_violations "${relative_path}: ${include_line} (a window system outside src/view)\n")
+            endif()
+        elseif(NOT relative_path MATCHES "^src/render/[a-z0-9_]+/")
+            string(APPEND platform_violations "${relative_path}: ${include_line} (a graphics API outside a renderer backend)\n")
+        endif()
+    endforeach()
+endforeach()
+if(platform_violations)
+    message(FATAL_ERROR
+        "Layering audit failed: a graphics API or window system outside its edge\n"
+        "${platform_violations}"
+        "Draw through nmo_render's backend interface (src/render/render_internal.h); open windows in src/view.\n")
 endif()
 
 # Report allowlist entries that no longer exist so the list stays honest.
