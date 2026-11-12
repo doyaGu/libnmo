@@ -374,6 +374,63 @@ TEST(hash_table, iterator_early_stop) {
     nmo_hash_table_destroy(table);
 }
 
+/* Replace takes the caller's key as well as the value: a table of names
+ * then points to the copy that is still alive. */
+TEST(hash_table, replace_takes_the_new_key) {
+    nmo_hash_table_t *table = nmo_hash_table_create(
+        NULL, sizeof(const char *), sizeof(int), 16, nmo_hash_string, nmo_compare_string);
+    ASSERT_NOT_NULL(table);
+
+    char first[] = "Light";
+    char second[] = "Light";
+    const char *key = first;
+    int value = 1;
+    ASSERT_EQ(NMO_OK, nmo_hash_table_insert(table, &key, &value));
+    key = second;
+    value = 2;
+    ASSERT_EQ(NMO_OK, nmo_hash_table_insert(table, &key, &value));
+    ASSERT_EQ((size_t)1, nmo_hash_table_get_count(table));
+
+    /* Insert kept the first key; replace takes the second. */
+    first[0] = 'X';
+    int out = 0;
+    ASSERT_NE(NMO_OK, nmo_hash_table_get(table, &key, &out));
+    first[0] = 'L';
+    value = 3;
+    ASSERT_EQ(NMO_OK, nmo_hash_table_replace(table, &key, &value));
+    ASSERT_EQ((size_t)1, nmo_hash_table_get_count(table));
+    first[0] = 'X';
+    ASSERT_EQ(NMO_OK, nmo_hash_table_get(table, &key, &out));
+    ASSERT_EQ(3, out);
+
+    nmo_hash_table_destroy(table);
+}
+
+/* Many keys with colliding slots and removals still find each other. */
+TEST(hash_table, finds_keys_among_many_and_after_removals) {
+    nmo_hash_table_t *table = nmo_hash_table_create(
+        NULL, sizeof(uint32_t), sizeof(uint32_t), 16, nmo_hash_uint32, NULL);
+    ASSERT_NOT_NULL(table);
+    for (uint32_t k = 0; k < 5000; ++k) {
+        uint32_t v = k * 7u;
+        ASSERT_EQ(NMO_OK, nmo_hash_table_insert(table, &k, &v));
+    }
+    for (uint32_t k = 0; k < 5000; k += 2) {
+        ASSERT_EQ(NMO_OK, nmo_hash_table_remove(table, &k));
+    }
+    for (uint32_t k = 0; k < 5000; ++k) {
+        uint32_t v = 0;
+        if (k % 2 == 0) {
+            ASSERT_FALSE(nmo_hash_table_contains(table, &k));
+        } else {
+            ASSERT_EQ(NMO_OK, nmo_hash_table_get(table, &k, &v));
+            ASSERT_EQ(k * 7u, v);
+        }
+    }
+    ASSERT_EQ((size_t)2500, nmo_hash_table_get_count(table));
+    nmo_hash_table_destroy(table);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(hash_table, basic);
     REGISTER_TEST(hash_table, multiple);
@@ -386,5 +443,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(hash_table, lifecycle_hooks);
     REGISTER_TEST(hash_table, reserve_invalid);
     REGISTER_TEST(hash_table, iterator_early_stop);
+    REGISTER_TEST(hash_table, replace_takes_the_new_key);
+    REGISTER_TEST(hash_table, finds_keys_among_many_and_after_removals);
 TEST_MAIN_END()
 

@@ -14,9 +14,22 @@
 
 typedef enum nmo_hash_entry_state {
     NMO_HASH_ENTRY_EMPTY = 0,
-    NMO_HASH_ENTRY_OCCUPIED = 1,
-    NMO_HASH_ENTRY_TOMBSTONE = 2
+    NMO_HASH_ENTRY_TOMBSTONE = 1,
+    /* An occupied slot holds this bit and seven bits of its key's hash, so
+     * a probe compares keys (a strcmp for string keys) only where those bits
+     * match. */
+    NMO_HASH_ENTRY_OCCUPIED = 0x80
 } nmo_hash_entry_state_t;
+
+static inline int nmo_hash_slot_occupied(uint8_t state) {
+    return (state & NMO_HASH_ENTRY_OCCUPIED) != 0;
+}
+
+/* The state of a slot that holds a key with this hash. The index takes the
+ * low bits of the hash; these come from higher ones. */
+static inline uint8_t nmo_hash_slot_tag(size_t hash) {
+    return (uint8_t)(NMO_HASH_ENTRY_OCCUPIED | ((hash >> 25) & 0x7Fu));
+}
 
 struct nmo_hash_table {
     nmo_allocator_t allocator;
@@ -152,7 +165,7 @@ static int nmo_hash_table_rehash_internal(nmo_hash_table_t *table, size_t new_ca
     if (old_states != NULL) {
         table->count = 0;
         for (size_t i = 0; i < old_capacity; ++i) {
-            if (old_states[i] == NMO_HASH_ENTRY_OCCUPIED) {
+            if (nmo_hash_slot_occupied(old_states[i])) {
                 const void *key_ptr = old_keys + (i * table->key_size);
                 const void *value_ptr = old_values + (i * table->value_size);
                 nmo_status_t place_result = nmo_hash_table_place_entry(table, key_ptr, value_ptr);
@@ -192,10 +205,15 @@ static int nmo_hash_table_should_grow(const nmo_hash_table_t *table) {
 
 static int nmo_hash_table_find_slot(const nmo_hash_table_t *table,
                                     const void *key,
-                                    int *found) {
+                                    int *found,
+                                    uint8_t *out_tag) {
     size_t mask = table->capacity - 1;
     size_t hash = table->hash_func ? table->hash_func(key, table->key_size)
                                    : nmo_hash_fnv1a(key, table->key_size);
+    const uint8_t tag = nmo_hash_slot_tag(hash);
+    if (out_tag != NULL) {
+        *out_tag = tag;
+    }
     size_t index = hash & mask;
     ptrdiff_t tombstone_index = -1;
 
@@ -206,11 +224,13 @@ static int nmo_hash_table_find_slot(const nmo_hash_table_t *table,
             return tombstone_index >= 0 ? (int)tombstone_index : (int)index;
         }
 
-        if (state == NMO_HASH_ENTRY_OCCUPIED) {
-            const void *existing_key = table->keys + (index * table->key_size);
-            if (table->compare_func(existing_key, key, table->key_size) == 0) {
-                *found = 1;
-                return (int)index;
+        if (nmo_hash_slot_occupied(state)) {
+            if (state == tag) {
+                const void *existing_key = table->keys + (index * table->key_size);
+                if (table->compare_func(existing_key, key, table->key_size) == 0) {
+                    *found = 1;
+                    return (int)index;
+                }
             }
         } else if (tombstone_index < 0) {
             tombstone_index = (ptrdiff_t)index;
@@ -222,7 +242,8 @@ static int nmo_hash_table_find_slot(const nmo_hash_table_t *table,
 
 static nmo_status_t nmo_hash_table_place_entry(nmo_hash_table_t *table, const void *key, const void *value) {
     int found = 0;
-    int slot = nmo_hash_table_find_slot(table, key, &found);
+    uint8_t tag = 0;
+    int slot = nmo_hash_table_find_slot(table, key, &found, &tag);
     if (slot < 0) {
         return NMO_ERR_INVALID_STATE;
     }
@@ -231,7 +252,7 @@ static nmo_status_t nmo_hash_table_place_entry(nmo_hash_table_t *table, const vo
     uint8_t *value_dest = table->values + ((size_t)slot * table->value_size);
     nmo_hash_table_move_key(table, key_dest, (void *)key);
     nmo_hash_table_move_value(table, value_dest, (void *)value);
-    table->states[slot] = NMO_HASH_ENTRY_OCCUPIED;
+    table->states[slot] = tag;
     table->count++;
     return NMO_OK;
 }
@@ -355,7 +376,12 @@ void nmo_hash_table_set_lifecycle(nmo_hash_table_t *table,
     }
 }
 
-nmo_status_t nmo_hash_table_insert(nmo_hash_table_t *table, const void *key, const void *value) {
+/* Inserts an entry; an equal key keeps its slot and takes the new value, and
+ * with replace_key the new key as well. */
+static nmo_status_t nmo_hash_table_store(nmo_hash_table_t *table,
+                                         const void *key,
+                                         const void *value,
+                                         int replace_key) {
     if (table == NULL || key == NULL || value == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid hash table insert arguments");
     }
@@ -380,12 +406,20 @@ nmo_status_t nmo_hash_table_insert(nmo_hash_table_t *table, const void *key, con
     }
 
     int found = 0;
-    int slot = nmo_hash_table_find_slot(table, key, &found);
+    uint8_t tag = 0;
+    int slot = nmo_hash_table_find_slot(table, key, &found, &tag);
     if (slot < 0) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Failed to find hash table slot");
     }
 
     uint8_t *value_dest = table->values + ((size_t)slot * table->value_size);
+    if (found && replace_key) {
+        uint8_t *key_dest = table->keys + ((size_t)slot * table->key_size);
+        if (table->key_lifecycle.dispose) {
+            table->key_lifecycle.dispose(key_dest, table->key_lifecycle.user_data);
+        }
+        nmo_hash_table_copy_key(table, key_dest, key);
+    }
     if (found) {
         if (table->value_lifecycle.reset == NULL &&
             table->value_lifecycle.dispose == NULL &&
@@ -409,9 +443,17 @@ nmo_status_t nmo_hash_table_insert(nmo_hash_table_t *table, const void *key, con
     uint8_t *key_dest = table->keys + ((size_t)slot * table->key_size);
     nmo_hash_table_copy_key(table, key_dest, key);
     nmo_hash_table_copy_value(table, value_dest, value);
-    table->states[slot] = NMO_HASH_ENTRY_OCCUPIED;
+    table->states[slot] = tag;
     table->count++;
     NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_hash_table_insert(nmo_hash_table_t *table, const void *key, const void *value) {
+    return nmo_hash_table_store(table, key, value, 0);
+}
+
+nmo_status_t nmo_hash_table_replace(nmo_hash_table_t *table, const void *key, const void *value) {
+    return nmo_hash_table_store(table, key, value, 1);
 }
 
 nmo_status_t nmo_hash_table_get(const nmo_hash_table_t *table, const void *key, void *value_out) {
@@ -420,7 +462,7 @@ nmo_status_t nmo_hash_table_get(const nmo_hash_table_t *table, const void *key, 
     }
 
     int found = 0;
-    int slot = nmo_hash_table_find_slot(table, key, &found);
+    int slot = nmo_hash_table_find_slot(table, key, &found, NULL);
     if (slot < 0 || !found) {
         NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_INFO, "Key not found");
     }
@@ -439,7 +481,7 @@ nmo_status_t nmo_hash_table_remove(nmo_hash_table_t *table, const void *key) {
     }
 
     int found = 0;
-    int slot = nmo_hash_table_find_slot(table, key, &found);
+    int slot = nmo_hash_table_find_slot(table, key, &found, NULL);
     if (slot < 0 || !found) {
         NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_INFO, "Key not found");
     }
@@ -458,7 +500,7 @@ int nmo_hash_table_contains(const nmo_hash_table_t *table, const void *key) {
         return 0;
     }
     int found = 0;
-    int slot = nmo_hash_table_find_slot(table, key, &found);
+    int slot = nmo_hash_table_find_slot(table, key, &found, NULL);
     return slot >= 0 && found ? 1 : 0;
 }
 
@@ -536,7 +578,7 @@ void nmo_hash_table_clear(nmo_hash_table_t *table) {
     }
 
     for (size_t i = 0; i < table->capacity; ++i) {
-        if (table->states[i] == NMO_HASH_ENTRY_OCCUPIED) {
+        if (nmo_hash_slot_occupied(table->states[i])) {
             nmo_hash_table_dispose_entry(table, i);
         }
         table->states[i] = NMO_HASH_ENTRY_EMPTY;
@@ -552,7 +594,7 @@ void nmo_hash_table_iterate(const nmo_hash_table_t *table,
     }
 
     for (size_t i = 0; i < table->capacity; ++i) {
-        if (table->states[i] == NMO_HASH_ENTRY_OCCUPIED) {
+        if (nmo_hash_slot_occupied(table->states[i])) {
             void *value_ptr = table->values + (i * table->value_size);
             const void *key_ptr = table->keys + (i * table->key_size);
             if (!func(key_ptr, value_ptr, user_data)) {

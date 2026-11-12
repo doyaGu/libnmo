@@ -78,6 +78,19 @@ void nmo_hash_table_set_lifecycle(nmo_hash_table_t *table,
 nmo_status_t nmo_hash_table_insert(nmo_hash_table_t *table, const void *key, const void *value);
 
 /**
+ * @brief Insert an entry, or replace both the key and the value of an equal one
+ *
+ * As nmo_hash_table_insert, except that an equal key already present is
+ * replaced by this one too: for keys that point to their data (strings), the
+ * entry then points to the caller's, which may outlive the old one.
+ * @param table Hash table
+ * @param key Key pointer
+ * @param value Value pointer
+ * @return Result with NMO_OK on success or error code on failure
+ */
+nmo_status_t nmo_hash_table_replace(nmo_hash_table_t *table, const void *key, const void *value);
+
+/**
  * @brief Get value by key
  * @param table Hash table
  * @param key Key pointer
