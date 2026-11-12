@@ -72,6 +72,16 @@ typedef struct nmo_deserializer {
     /* Derived from session */
     nmo_context_t *ctx;
     nmo_arena_t *arena;
+    /* What only the load reads: the file's sections as read and unpacked,
+     * Header1's object table and the data section's entries. It goes with
+     * the deserializer; what the session keeps stays in arena. */
+    nmo_arena_t *load_arena;
+    /* The data section as read and as unpacked, from the session arena's
+     * allocator. They are freed once the section is parsed: every chunk
+     * copies its bytes out. */
+    nmo_allocator_t section_allocator;
+    uint8_t *section_packed;
+    uint8_t *section_unpacked;
     nmo_object_repository_t *repo;
     nmo_logger_t *logger;
     nmo_id_sanitizer_t *id_sanitizer;
@@ -81,7 +91,7 @@ typedef struct nmo_deserializer {
     /* Header data */
     nmo_file_header_t header;
     nmo_header1_t hdr1;
-    const uint8_t *hdr1_packed;     /* Header1 as stored, for the file checksum (arena owned) */
+    const uint8_t *hdr1_packed;     /* Header1 as stored, for the file checksum (load arena) */
 
     /* Data section */
     nmo_data_section_t data_sect;
@@ -490,12 +500,24 @@ nmo_deserializer_t *nmo_deserializer_create(
         return NULL;
     }
 
+    nmo_allocator_t arena_allocator;
+    if (nmo_arena_get_allocator(arena, &arena_allocator) != NMO_OK) {
+        return NULL;
+    }
+    nmo_arena_t *load_arena = nmo_arena_create(&arena_allocator, 64u * 1024u);
+    if (load_arena == NULL) {
+        return NULL;
+    }
+
     nmo_deserializer_t *ds = (nmo_deserializer_t *)nmo_arena_alloc(
         arena, sizeof(nmo_deserializer_t), sizeof(void *));
     if (ds == NULL) {
+        nmo_arena_destroy(load_arena);
         return NULL;
     }
     memset(ds, 0, sizeof(nmo_deserializer_t));
+    ds->load_arena = load_arena;
+    ds->section_allocator = arena_allocator;
 
     ds->session = session;
     ds->io = io;
@@ -625,7 +647,7 @@ nmo_status_t nmo_deserializer_parse_header(nmo_deserializer_t *ds)
         ds->hdr1.plugin_deps = NULL;
     } else {
         /* Read packed header1 data */
-        void *packed_hdr1 = nmo_arena_alloc(arena, ds->header.hdr1_pack_size, 16);
+        void *packed_hdr1 = nmo_arena_alloc(ds->load_arena, ds->header.hdr1_pack_size, 16);
         if (packed_hdr1 == NULL) {
             nmo_log(logger, NMO_LOG_ERROR, "Failed to allocate packed header1 buffer");
             return NMO_ERR_NOMEM;
@@ -661,7 +683,7 @@ nmo_status_t nmo_deserializer_parse_header(nmo_deserializer_t *ds)
                         ds->header.hdr1_pack_size, ds->header.hdr1_unpack_size);
                 return NMO_ERR_INVALID_FORMAT;
             }
-            hdr1_data = nmo_arena_alloc(arena, ds->header.hdr1_unpack_size, 16);
+            hdr1_data = nmo_arena_alloc(ds->load_arena, ds->header.hdr1_unpack_size, 16);
             if (hdr1_data == NULL) {
                 nmo_log(logger, NMO_LOG_ERROR, "Failed to allocate unpacked header1 buffer");
                 return NMO_ERR_NOMEM;
@@ -696,7 +718,7 @@ nmo_status_t nmo_deserializer_parse_header(nmo_deserializer_t *ds)
         /* Phase 4: Parse Header1 */
         nmo_log(logger, NMO_LOG_INFO, "Phase 4: Parsing header1");
         uint64_t parse_start = load_perf_begin(ds);
-        result = nmo_header1_parse(hdr1_data, hdr1_size, &ds->hdr1, arena);
+        result = nmo_header1_parse(hdr1_data, hdr1_size, &ds->hdr1, ds->load_arena);
         load_perf_end(ds, NMO_LOAD_PERF_HEADER1_PARSE, parse_start);
         if (result != NMO_OK) {
             nmo_log(logger, NMO_LOG_ERROR, "Failed to parse header1");
@@ -704,7 +726,23 @@ nmo_status_t nmo_deserializer_parse_header(nmo_deserializer_t *ds)
         }
     }
 
-    int dep_store_result = nmo_session_set_plugin_dependencies(session, ds->hdr1.plugin_deps, ds->hdr1.plugin_dep_count);
+    /* The session keeps the plugin dependencies; the rest of Header1 goes
+     * with the load. */
+    nmo_plugin_dep_t *session_deps = NULL;
+    if (ds->hdr1.plugin_dep_count > 0 && ds->hdr1.plugin_deps != NULL) {
+        size_t deps_bytes = 0;
+        if (!nmo_safe_mul_size(ds->hdr1.plugin_dep_count, sizeof(nmo_plugin_dep_t), &deps_bytes)) {
+            return NMO_ERR_NOMEM;
+        }
+        session_deps = (nmo_plugin_dep_t *)nmo_arena_alloc(
+            arena, deps_bytes, alignof(nmo_plugin_dep_t));
+        if (session_deps == NULL) {
+            nmo_log(logger, NMO_LOG_ERROR, "Failed to keep plugin dependencies");
+            return NMO_ERR_NOMEM;
+        }
+        memcpy(session_deps, ds->hdr1.plugin_deps, deps_bytes);
+    }
+    int dep_store_result = nmo_session_set_plugin_dependencies(session, session_deps, ds->hdr1.plugin_dep_count);
     if (dep_store_result != NMO_OK) {
         nmo_log(logger, NMO_LOG_ERROR,
                 "Failed to store plugin dependencies (code=%d)", dep_store_result);
@@ -760,7 +798,7 @@ nmo_status_t nmo_deserializer_parse_header(nmo_deserializer_t *ds)
 /* Below file version 5 the header has no section sizes, and CKFile::ReadFileData
  * takes the rest of the file as the data section. */
 static nmo_status_t deserializer_read_to_end(nmo_io_interface_t *io,
-                                             nmo_arena_t *arena,
+                                             nmo_allocator_t *allocator,
                                              void **out_buffer,
                                              size_t *out_size)
 {
@@ -798,7 +836,7 @@ static nmo_status_t deserializer_read_to_end(nmo_io_interface_t *io,
         size += got;
     }
     if (size > 0) {
-        void *copy = nmo_arena_alloc(arena, size, 16);
+        void *copy = nmo_alloc(allocator, size, 16);
         if (copy == NULL) {
             free(buffer);
             return NMO_ERR_NOMEM;
@@ -809,6 +847,19 @@ static nmo_status_t deserializer_read_to_end(nmo_io_interface_t *io,
     }
     free(buffer);
     return NMO_OK;
+}
+
+/* Frees the data section's buffers. */
+static void deserializer_release_section(nmo_deserializer_t *ds)
+{
+    if (ds->section_unpacked != NULL && ds->section_unpacked != ds->section_packed) {
+        nmo_free(&ds->section_allocator, ds->section_unpacked);
+    }
+    if (ds->section_packed != NULL) {
+        nmo_free(&ds->section_allocator, ds->section_packed);
+    }
+    ds->section_unpacked = NULL;
+    ds->section_packed = NULL;
 }
 
 /* Files below version 7 have no Header1 object table. CKFile::ReadFileData takes
@@ -830,7 +881,7 @@ static nmo_status_t deserializer_build_legacy_object_table(nmo_deserializer_t *d
                          "Object table allocation overflow");
     }
     nmo_object_desc_t *objects = (nmo_object_desc_t *)nmo_arena_alloc(
-        ds->arena, bytes, alignof(nmo_object_desc_t));
+        ds->load_arena, bytes, alignof(nmo_object_desc_t));
     if (objects == NULL) {
         return NMO_ERR_NOMEM;
     }
@@ -1055,14 +1106,16 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
         uint64_t data_read_start = load_perf_begin(ds);
         int read_result = NMO_OK;
         if (data_to_end) {
-            read_result = deserializer_read_to_end(io, arena, &packed_buffer, &packed_size);
+            read_result = deserializer_read_to_end(
+                io, &ds->section_allocator, &packed_buffer, &packed_size);
             bytes_read = packed_size;
         } else {
-            packed_buffer = nmo_arena_alloc(arena, packed_size, 16);
+            packed_buffer = nmo_alloc(&ds->section_allocator, packed_size, 16);
             read_result = packed_buffer != NULL
                 ? nmo_io_read(io, packed_buffer, packed_size, &bytes_read)
                 : NMO_ERR_NOMEM;
         }
+        ds->section_packed = (uint8_t *)packed_buffer;
         load_perf_end(ds, NMO_LOAD_PERF_DATA_READ, data_read_start);
         if (read_result != NMO_OK) {
             nmo_log(logger, NMO_LOG_ERROR, "Failed to read data section");
@@ -1097,7 +1150,8 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
                 ds->id_mapping = NULL;
                 return NMO_ERR_INVALID_FORMAT;
             }
-            data_buffer = nmo_arena_alloc(arena, ds->header.data_unpack_size, 16);
+            data_buffer = nmo_alloc(&ds->section_allocator, ds->header.data_unpack_size, 16);
+            ds->section_unpacked = (uint8_t *)data_buffer;
             if (data_buffer == NULL) {
                 nmo_log(logger, NMO_LOG_ERROR, "Failed to allocate unpacked data buffer");
                 nmo_id_mapping_destroy(id_map);
@@ -1171,9 +1225,13 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
         }
 
         uint64_t data_parse_start = load_perf_begin(ds);
-        result = nmo_data_section_parse(data_buffer, data_size, ds->header.file_version,
-                                        &ds->data_sect, ds->chunk_pool, arena);
+        /* The chunks and the manager array stay with the session; the object
+         * entries and unpacked entry buffers go with the load. */
+        result = nmo_data_section_parse_ex(data_buffer, data_size, ds->header.file_version,
+                                           &ds->data_sect, ds->chunk_pool,
+                                           arena, ds->load_arena);
         load_perf_end(ds, NMO_LOAD_PERF_DATA_PARSE, data_parse_start);
+        deserializer_release_section(ds);
         if (result != NMO_OK) {
             nmo_log(logger, NMO_LOG_ERROR, "Failed to parse data section");
             nmo_id_mapping_destroy(id_map);
@@ -1540,7 +1598,10 @@ void nmo_deserializer_destroy(nmo_deserializer_t *ds)
         ds->io = NULL;
     }
 
-    /* The deserializer struct itself is arena-allocated (session arena),
-     * so it will be freed when the session is destroyed. */
+    /* What only the load read goes now. The deserializer struct itself is
+     * in the session arena and goes with the session. */
+    deserializer_release_section(ds);
+    nmo_arena_destroy(ds->load_arena);
+    ds->load_arena = NULL;
 }
 
