@@ -5,13 +5,9 @@
 
 #include "format/nmo_perf_stats.h"
 
-#include <string.h>
+#include "../platform/platform.h"
 
-#ifdef _WIN32
-#include <windows.h>
-#else
-#include <time.h>
-#endif
+#include <string.h>
 
 static const char *const nmo_load_perf_phase_names[NMO_LOAD_PERF_PHASE_COUNT] = {
     "open_detect",
@@ -93,35 +89,12 @@ void nmo_save_perf_stats_record(nmo_save_perf_stats_t *stats,
 }
 
 uint64_t nmo_perf_now_ticks(void) {
-#ifdef _WIN32
-    LARGE_INTEGER counter;
-    QueryPerformanceCounter(&counter);
-    return (uint64_t)counter.QuadPart;
-#else
-    struct timespec ts;
-    if (timespec_get(&ts, TIME_UTC) != TIME_UTC) {
-        return 0;
-    }
-    return ((uint64_t)ts.tv_sec * 1000000000ull) + (uint64_t)ts.tv_nsec;
-#endif
+    return nmo_platform_ticks();
 }
 
 double nmo_perf_elapsed_ms(uint64_t start_ticks, uint64_t end_ticks) {
     if (end_ticks < start_ticks) {
         return 0.0;
     }
-#ifdef _WIN32
-    static LARGE_INTEGER frequency;
-    static int initialized = 0;
-    if (!initialized) {
-        QueryPerformanceFrequency(&frequency);
-        initialized = 1;
-    }
-    if (frequency.QuadPart <= 0) {
-        return 0.0;
-    }
-    return ((double)(end_ticks - start_ticks) * 1000.0) / (double)frequency.QuadPart;
-#else
-    return (double)(end_ticks - start_ticks) / 1000000.0;
-#endif
+    return nmo_platform_ticks_to_ms(end_ticks - start_ticks);
 }

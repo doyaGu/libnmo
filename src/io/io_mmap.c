@@ -2,9 +2,7 @@
  * @file io_mmap.c
  * @brief Memory-mapped file IO implementation (Phase 2.1)
  *
- * Cross-platform implementation of memory-mapped file access:
- * - Windows: CreateFileMapping/MapViewOfFile
- * - POSIX: mmap(2)
+ * The mapping itself is the platform layer's (mmap(2), MapViewOfFile).
  */
 
 #include "io/nmo_io_mmap.h"
@@ -14,37 +12,18 @@
 #include <string.h>
 #include <stdio.h>
 
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#else
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <unistd.h>
-#endif
+#include "../platform/platform.h"
 
 /**
  * @brief Memory-mapped file context structure
  */
 struct nmo_io_mmap {
-#ifdef _WIN32
-    HANDLE file_handle;
-    HANDLE mapping_handle;
-#else
-    int fd;
-#endif
-    void *data;
+    nmo_platform_mapping_t *mapping;
+    const void *data;
     size_t size;
     size_t position;
 };
 
-/* ============================================================================
- * Platform-specific Implementation
- * ============================================================================ */
-
-#ifdef _WIN32
-
 nmo_io_mmap_t *nmo_io_mmap_open(const char *path) {
     if (path == NULL) {
         return NULL;
@@ -57,75 +36,12 @@ nmo_io_mmap_t *nmo_io_mmap_open(const char *path) {
     }
     memset(mmap_ctx, 0, sizeof(nmo_io_mmap_t));
 
-    mmap_ctx->file_handle = INVALID_HANDLE_VALUE;
-    mmap_ctx->mapping_handle = NULL;
-    mmap_ctx->data = NULL;
-
-    /* Open file for reading */
-    mmap_ctx->file_handle = CreateFileA(
-        path,
-        GENERIC_READ,
-        FILE_SHARE_READ,
-        NULL,
-        OPEN_EXISTING,
-        FILE_ATTRIBUTE_NORMAL,
-        NULL
-    );
-
-    if (mmap_ctx->file_handle == INVALID_HANDLE_VALUE) {
+    /* The whole file, read only; an empty one has no data */
+    mmap_ctx->mapping = nmo_platform_map(path, &mmap_ctx->data, &mmap_ctx->size);
+    if (mmap_ctx->mapping == NULL) {
         nmo_free(&alloc, mmap_ctx);
         return NULL;
     }
-
-    /* Get file size */
-    LARGE_INTEGER file_size;
-    if (!GetFileSizeEx(mmap_ctx->file_handle, &file_size)) {
-        CloseHandle(mmap_ctx->file_handle);
-        nmo_free(&alloc, mmap_ctx);
-        return NULL;
-    }
-
-    mmap_ctx->size = (size_t)file_size.QuadPart;
-
-    /* Handle empty files */
-    if (mmap_ctx->size == 0) {
-        mmap_ctx->data = NULL;
-        mmap_ctx->position = 0;
-        return mmap_ctx;
-    }
-
-    /* Create file mapping */
-    mmap_ctx->mapping_handle = CreateFileMappingA(
-        mmap_ctx->file_handle,
-        NULL,
-        PAGE_READONLY,
-        0,
-        0,
-        NULL
-    );
-
-    if (mmap_ctx->mapping_handle == NULL) {
-        CloseHandle(mmap_ctx->file_handle);
-        nmo_free(&alloc, mmap_ctx);
-        return NULL;
-    }
-
-    /* Map view of file */
-    mmap_ctx->data = MapViewOfFile(
-        mmap_ctx->mapping_handle,
-        FILE_MAP_READ,
-        0,
-        0,
-        0
-    );
-
-    if (mmap_ctx->data == NULL) {
-        CloseHandle(mmap_ctx->mapping_handle);
-        CloseHandle(mmap_ctx->file_handle);
-        nmo_free(&alloc, mmap_ctx);
-        return NULL;
-    }
-
     mmap_ctx->position = 0;
     return mmap_ctx;
 }
@@ -134,102 +50,14 @@ void nmo_io_mmap_close(nmo_io_mmap_t *mmap_ctx) {
     if (mmap_ctx == NULL) {
         return;
     }
-
-    if (mmap_ctx->data != NULL) {
-        UnmapViewOfFile(mmap_ctx->data);
-    }
-
-    if (mmap_ctx->mapping_handle != NULL) {
-        CloseHandle(mmap_ctx->mapping_handle);
-    }
-
-    if (mmap_ctx->file_handle != INVALID_HANDLE_VALUE) {
-        CloseHandle(mmap_ctx->file_handle);
-    }
-
+    nmo_platform_unmap(mmap_ctx->mapping);
     nmo_allocator_t alloc = nmo_allocator_default();
     nmo_free(&alloc, mmap_ctx);
 }
 
 int nmo_io_mmap_supported(void) {
-    return 1;  /* Windows always supports memory mapping */
+    return 1; /* every platform maps files */
 }
-
-#else /* POSIX */
-
-nmo_io_mmap_t *nmo_io_mmap_open(const char *path) {
-    if (path == NULL) {
-        return NULL;
-    }
-
-    nmo_allocator_t alloc = nmo_allocator_default();
-    nmo_io_mmap_t *mmap_ctx = (nmo_io_mmap_t *)nmo_alloc(&alloc, sizeof(nmo_io_mmap_t), _Alignof(nmo_io_mmap_t));
-    if (mmap_ctx == NULL) {
-        return NULL;
-    }
-    memset(mmap_ctx, 0, sizeof(nmo_io_mmap_t));
-
-    mmap_ctx->fd = -1;
-    mmap_ctx->data = MAP_FAILED;
-
-    /* Open file for reading */
-    mmap_ctx->fd = open(path, O_RDONLY);
-    if (mmap_ctx->fd < 0) {
-        nmo_free(&alloc, mmap_ctx);
-        return NULL;
-    }
-
-    /* Get file size */
-    struct stat st;
-    if (fstat(mmap_ctx->fd, &st) != 0) {
-        close(mmap_ctx->fd);
-        nmo_free(&alloc, mmap_ctx);
-        return NULL;
-    }
-
-    mmap_ctx->size = (size_t)st.st_size;
-
-    /* Handle empty files */
-    if (mmap_ctx->size == 0) {
-        mmap_ctx->data = NULL;
-        mmap_ctx->position = 0;
-        return mmap_ctx;
-    }
-
-    /* Memory map the file */
-    mmap_ctx->data = mmap(NULL, mmap_ctx->size, PROT_READ, MAP_PRIVATE, mmap_ctx->fd, 0);
-    if (mmap_ctx->data == MAP_FAILED) {
-        close(mmap_ctx->fd);
-        nmo_free(&alloc, mmap_ctx);
-        return NULL;
-    }
-
-    mmap_ctx->position = 0;
-    return mmap_ctx;
-}
-
-void nmo_io_mmap_close(nmo_io_mmap_t *mmap_ctx) {
-    if (mmap_ctx == NULL) {
-        return;
-    }
-
-    if (mmap_ctx->data != NULL && mmap_ctx->data != MAP_FAILED && mmap_ctx->size > 0) {
-        munmap(mmap_ctx->data, mmap_ctx->size);
-    }
-
-    if (mmap_ctx->fd >= 0) {
-        close(mmap_ctx->fd);
-    }
-
-    nmo_allocator_t alloc = nmo_allocator_default();
-    nmo_free(&alloc, mmap_ctx);
-}
-
-int nmo_io_mmap_supported(void) {
-    return 1;  /* POSIX systems support mmap */
-}
-
-#endif /* _WIN32 */
 
 /* ============================================================================
  * Platform-independent Implementation

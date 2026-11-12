@@ -1,13 +1,14 @@
 #include "core/nmo_allocator.h"
 #include "core/nmo_debug.h"
 #include "core/nmo_utils.h"
+#include "../platform/platform.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdalign.h>
 
-// Default allocator using malloc/free
+// Default allocator: the platform's aligned allocation
 static void *default_alloc(void *user_data, size_t size, size_t alignment) {
     (void) user_data;
 
@@ -23,52 +24,12 @@ static void *default_alloc(void *user_data, size_t size, size_t alignment) {
         return NULL;
     }
 
-    // On Windows, always use _aligned_malloc to ensure _aligned_free works correctly
-    // On other platforms, use malloc for small alignments
-#if defined(_WIN32)
-    // Ensure alignment is at least sizeof(void*)
-    if (alignment < sizeof(void *)) {
-        alignment = sizeof(void *);
-    }
-    return _aligned_malloc(size, alignment);
-#else
-    // For alignments <= malloc's natural alignment, just use malloc
-    if (alignment <= sizeof(void *) * 2) {
-        return malloc(size);
-    }
-
-    // For larger alignments, use aligned_alloc or posix_memalign
-#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
-    size_t aligned_size = nmo_align(size, alignment);
-    if (aligned_size < size) {
-        return NULL;
-    }
-    return aligned_alloc(alignment, aligned_size);
-#else
-    void *ptr = NULL;
-    if (posix_memalign(&ptr, alignment, size) != 0) {
-        return NULL;
-    }
-    return ptr;
-#endif
-#endif
+    return nmo_platform_aligned_alloc(size, alignment);
 }
 
 static void default_free(void *user_data, void *ptr) {
     (void) user_data;
-
-    if (ptr == NULL) {
-        return;
-    }
-
-#if defined(_WIN32)
-    // On Windows, all allocations use _aligned_malloc, so use _aligned_free
-    _aligned_free(ptr);
-#else
-    // On other platforms, we may have used malloc, aligned_alloc, or posix_memalign
-    // All of these can be freed with free()
-    free(ptr);
-#endif
+    nmo_platform_aligned_free(ptr);
 }
 
 nmo_allocator_t nmo_allocator_default(void) {

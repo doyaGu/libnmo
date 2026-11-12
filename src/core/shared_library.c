@@ -2,26 +2,16 @@
 
 #include "core/nmo_allocator.h"
 #include "core/nmo_error.h"
+#include "../platform/platform.h"
 
-#include <string.h>
-#include <stdio.h>
 #include <stdalign.h>
-
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#else
-#include <dlfcn.h>
-#endif
+#include <stdlib.h>
+#include <string.h>
 
 struct nmo_shared_library {
     nmo_allocator_t allocator;
     char *path;
-#ifdef _WIN32
-    HMODULE handle;
-#else
     void *handle;
-#endif
 };
 
 static nmo_status_t nmo_shared_library_make_error(
@@ -36,48 +26,13 @@ static nmo_status_t nmo_shared_library_make_error(
     NMO_RETURN_ERROR(code, NMO_SEVERITY_ERROR, "%s", context);
 }
 
-#ifdef _WIN32
-static void nmo_shared_library_get_system_error(char *buffer, size_t buffer_size) {
-    if (!buffer || buffer_size == 0) {
-        return;
-    }
-
-    DWORD error_code = GetLastError();
-    DWORD written = FormatMessageA(
-        FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-        NULL,
-        error_code,
-        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-        buffer,
-        (DWORD)buffer_size,
-        NULL);
-
-    if (written == 0) {
-        (void)snprintf(buffer, buffer_size, "Windows error %lu", (unsigned long)error_code);
-        return;
-    }
-
-    /* Trim trailing whitespace/newlines */
-    while (written > 0 && (buffer[written - 1] == '\r' || buffer[written - 1] == '\n' || buffer[written - 1] == ' ')) {
-        buffer[written - 1] = '\0';
-        written--;
-    }
+/* The error with the platform's message, which goes */
+static nmo_status_t nmo_shared_library_system_error(nmo_error_code_t code, const char *context, char *message)
+{
+    nmo_status_t status = nmo_shared_library_make_error(code, context, message);
+    free(message);
+    return status;
 }
-#else
-static void nmo_shared_library_get_system_error(char *buffer, size_t buffer_size) {
-    if (!buffer || buffer_size == 0) {
-        return;
-    }
-
-    const char *err = dlerror();
-    if (err == NULL) {
-        (void)snprintf(buffer, buffer_size, "dynamic loader error (unknown)");
-        return;
-    }
-
-    (void)snprintf(buffer, buffer_size, "%s", err);
-}
-#endif
 
 static void nmo_shared_library_release(nmo_shared_library_t *library) {
     if (library == NULL) {
@@ -131,26 +86,12 @@ nmo_status_t nmo_shared_library_open(
 
     memcpy(library->path, path, path_len + 1);
 
-#ifdef _WIN32
-    HMODULE handle = LoadLibraryA(path);
-    if (handle == NULL) {
-        char error_buffer[256] = {0};
-        nmo_shared_library_get_system_error(error_buffer, sizeof(error_buffer));
+    char *message = NULL;
+    library->handle = nmo_platform_library_open(path, &message);
+    if (library->handle == NULL) {
         nmo_shared_library_release(library);
-        return nmo_shared_library_make_error(NMO_ERR_CANT_OPEN_FILE, "LoadLibrary failed", error_buffer);
+        return nmo_shared_library_system_error(NMO_ERR_CANT_OPEN_FILE, "Failed to load the library", message);
     }
-    library->handle = handle;
-#else
-    dlerror(); /* Clear any prior error */
-    void *handle = dlopen(path, RTLD_NOW);
-    if (handle == NULL) {
-        char error_buffer[256] = {0};
-        nmo_shared_library_get_system_error(error_buffer, sizeof(error_buffer));
-        nmo_shared_library_release(library);
-        return nmo_shared_library_make_error(NMO_ERR_CANT_OPEN_FILE, "dlopen failed", error_buffer);
-    }
-    library->handle = handle;
-#endif
 
     *out_library = library;
     NMO_RETURN_OK();
@@ -162,11 +103,7 @@ void nmo_shared_library_close(nmo_shared_library_t *library) {
     }
 
     if (library->handle != NULL) {
-#ifdef _WIN32
-        (void)FreeLibrary(library->handle);
-#else
-        (void)dlclose(library->handle);
-#endif
+        nmo_platform_library_close(library->handle);
         library->handle = NULL;
     }
 
@@ -192,30 +129,10 @@ nmo_status_t nmo_shared_library_get_symbol(
         return nmo_shared_library_make_error(NMO_ERR_INVALID_ARGUMENT, "symbol_name must not be NULL", NULL);
     }
 
-#ifdef _WIN32
-    FARPROC proc = GetProcAddress(library->handle, symbol_name);
-    if (proc == NULL) {
-        char error_buffer[256] = {0};
-        nmo_shared_library_get_system_error(error_buffer, sizeof(error_buffer));
-        return nmo_shared_library_make_error(NMO_ERR_NOT_FOUND, "GetProcAddress failed", error_buffer);
+    char *message = NULL;
+    if (nmo_platform_library_symbol(library->handle, symbol_name, out_symbol, &message) != 0) {
+        return nmo_shared_library_system_error(NMO_ERR_NOT_FOUND, "Failed to find the symbol", message);
     }
-    union {
-        FARPROC fp;
-        void *ptr;
-    } caster;
-    caster.fp = proc;
-    *out_symbol = caster.ptr;
-#else
-    dlerror();
-    void *symbol = dlsym(library->handle, symbol_name);
-    const char *dl_err = dlerror();
-    if (dl_err != NULL) {
-        char error_buffer[256] = {0};
-        (void)snprintf(error_buffer, sizeof(error_buffer), "%s", dl_err);
-        return nmo_shared_library_make_error(NMO_ERR_NOT_FOUND, "dlsym failed", error_buffer);
-    }
-    *out_symbol = symbol;
-#endif
 
     NMO_RETURN_OK();
 }

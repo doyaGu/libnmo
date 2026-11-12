@@ -6,6 +6,7 @@
 #include "io/nmo_io_file.h"
 #include "io/nmo_io.h"
 #include "core/nmo_allocator.h"
+#include "../platform/platform.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -36,22 +37,9 @@ static nmo_status_t nmo_file_seek64(FILE *fp, int64_t offset, int whence) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-#if defined(_WIN32)
-    if (_fseeki64(fp, offset, whence) != 0) {
+    if (nmo_platform_seek(fp, offset, whence) != 0) {
         return NMO_ERR_INVALID_OFFSET;
     }
-#elif defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200112L
-    if (fseeko(fp, (off_t) offset, whence) != 0) {
-        return NMO_ERR_INVALID_OFFSET;
-    }
-#else
-    if (offset > LONG_MAX || offset < LONG_MIN) {
-        return NMO_ERR_INVALID_OFFSET;
-    }
-    if (fseek(fp, (long) offset, whence) != 0) {
-        return NMO_ERR_INVALID_OFFSET;
-    }
-#endif
 
     return NMO_OK;
 }
@@ -61,19 +49,7 @@ static int64_t nmo_file_tell64(FILE *fp) {
         return -1;
     }
 
-#if defined(_WIN32)
-    __int64 pos = _ftelli64(fp);
-    if (pos < 0) {
-        return -1;
-    }
-    return (int64_t) pos;
-#elif defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200112L
-    off_t pos = ftello(fp);
-    return (int64_t) pos;
-#else
-    long pos = ftell(fp);
-    return (int64_t) pos;
-#endif
+    return nmo_platform_tell(fp);
 }
 
 /**
@@ -235,7 +211,7 @@ nmo_io_interface_t *nmo_file_io_open(const char *path, nmo_io_mode_t mode) {
     }
 
     // Try to open the file
-    FILE *fp = fopen(path, mode_str);
+    FILE *fp = nmo_platform_fopen(path, mode_str);
     if (fp == NULL) {
         // Return NULL - caller should check errno for specific error
         return NULL;
