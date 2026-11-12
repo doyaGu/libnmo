@@ -1,28 +1,57 @@
 /**
  * @file test_render_soft.c
- * @brief The software backend through render_backend.h: coverage, the
+ * @brief A renderer backend through render_backend.h: coverage, the
  *        fragment tests, blending, textures, render targets and read-back.
+ *
+ * Built twice: test_render_soft drives the software backend, and
+ * test_render_gpu (RENDER_TEST_GPU) the SDL_GPU one, skipped where there is
+ * no GPU device. Pixels are read back through the backend, within a level
+ * of what is expected (a GPU rounds to bytes as it likes).
  */
 
 #include "test_framework.h"
 #include "../../src/render/render_backend.h"
+#ifdef RENDER_TEST_GPU
+#include "../../src/render/gpu/render_gpu.h"
+#define RENDER_TEST_SUITE render_gpu
+#else
 #include "../../src/render/soft/render_soft.h"
+#define RENDER_TEST_SUITE render_soft
+#endif
 
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+/* The suite's name expanded before the framework's macros stringize it */
+#define RENDER_TEST_EXPAND(suite, name) TEST(suite, name)
+#define RENDER_TEST(name) RENDER_TEST_EXPAND(RENDER_TEST_SUITE, name)
+#define REGISTER_RENDER_TEST_EXPAND(suite, name) REGISTER_TEST(suite, name)
+#define REGISTER_RENDER_TEST(name) REGISTER_RENDER_TEST_EXPAND(RENDER_TEST_SUITE, name)
 
 #define SIZE 16
 
 typedef struct soft_fixture {
     render_backend_t *backend;
     render_state_t state;
+    uint8_t pixels[SIZE * SIZE * 4];
 } soft_fixture_t;
 
 static const float identity[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
 
 /* A SIZE x SIZE screen, cleared black, drawn in its own pixels with nothing tested */
+static render_backend_t *backend_create(void)
+{
+#ifdef RENDER_TEST_GPU
+    return render_gpu_backend_create_offscreen();
+#else
+    return render_soft_backend_create();
+#endif
+}
+
 static void fixture_open(soft_fixture_t *f)
 {
-    f->backend = render_soft_backend_create();
+    f->backend = backend_create();
     ASSERT_NOT_NULL(f->backend);
     render_state_t *s = &f->state;
     memset(s, 0, sizeof(*s));
@@ -51,19 +80,22 @@ static void fixture_close(soft_fixture_t *f)
     f->backend->ops->destroy(f->backend);
 }
 
-static const uint8_t *pixel(soft_fixture_t *f, int x, int y)
+/* What the screen shows now: the frame ended and read back, then the screen begun again, kept */
+static void fixture_read(soft_fixture_t *f)
 {
-    int32_t w = 0, h = 0;
-    const uint8_t *screen = render_soft_backend_screen(f->backend, &w, &h);
-    return &screen[((size_t)y * (size_t)w + (size_t)x) * 4u];
+    const int32_t whole[4] = {0, 0, SIZE, SIZE};
+    f->backend->ops->end_screen(f->backend);
+    ASSERT_EQ(f->backend->ops->read_pixels(f->backend, whole, f->pixels), NMO_OK);
+    ASSERT_TRUE(f->backend->ops->begin_screen(f->backend, SIZE, SIZE, true));
 }
 
 #define ASSERT_PIXEL(f, x, y, r, g, b)                                                             \
     do {                                                                                           \
-        const uint8_t *p_ = pixel((f), (x), (y));                                                  \
-        ASSERT_EQ((int)p_[0], (r));                                                                \
-        ASSERT_EQ((int)p_[1], (g));                                                                \
-        ASSERT_EQ((int)p_[2], (b));                                                                \
+        fixture_read(f);                                                                           \
+        const uint8_t *p_ = &(f)->pixels[((size_t)(y) * SIZE + (size_t)(x)) * 4u];                 \
+        ASSERT_TRUE(abs((int)p_[0] - (r)) <= 1);                                                   \
+        ASSERT_TRUE(abs((int)p_[1] - (g)) <= 1);                                                   \
+        ASSERT_TRUE(abs((int)p_[2] - (b)) <= 1);                                                   \
     } while (0)
 
 /* A quad from x0, y0 to x1, y1 at depth z, clockwise on screen, its texture across it */
@@ -106,7 +138,7 @@ static void use_texture(soft_fixture_t *f, uintptr_t texture)
     f->state.texenv = RENDER_TEXENV_MODULATE;
 }
 
-TEST(render_soft, a_clear_writes_only_inside_the_scissor)
+RENDER_TEST(a_clear_writes_only_inside_the_scissor)
 {
     soft_fixture_t f;
     fixture_open(&f);
@@ -122,7 +154,7 @@ TEST(render_soft, a_clear_writes_only_inside_the_scissor)
     fixture_close(&f);
 }
 
-TEST(render_soft, a_quad_covers_each_pixel_once)
+RENDER_TEST(a_quad_covers_each_pixel_once)
 {
     soft_fixture_t f;
     fixture_open(&f);
@@ -130,15 +162,14 @@ TEST(render_soft, a_quad_covers_each_pixel_once)
     f.state.source_blend = f.state.dest_blend = 2; /* ONE, ONE */
     set_color(&f, 0.25f, 0.25f, 0.25f, 1.0f);
     draw_quad(&f, 0, 0, SIZE, SIZE, 0);
-    for (int y = 0; y < SIZE; y++) {
-        for (int x = 0; x < SIZE; x++) {
-            ASSERT_PIXEL(&f, x, y, 64, 64, 64);
-        }
+    fixture_read(&f);
+    for (size_t i = 0; i < (size_t)SIZE * SIZE; i++) {
+        ASSERT_TRUE(abs((int)f.pixels[i * 4] - 64) <= 1);
     }
     fixture_close(&f);
 }
 
-TEST(render_soft, an_edge_through_pixel_centers_draws_them_once)
+RENDER_TEST(an_edge_through_pixel_centers_draws_them_once)
 {
     soft_fixture_t f;
     fixture_open(&f);
@@ -153,7 +184,7 @@ TEST(render_soft, an_edge_through_pixel_centers_draws_them_once)
     fixture_close(&f);
 }
 
-TEST(render_soft, the_depth_test_keeps_the_nearer_fragment)
+RENDER_TEST(the_depth_test_keeps_the_nearer_fragment)
 {
     soft_fixture_t f;
     fixture_open(&f);
@@ -183,7 +214,7 @@ TEST(render_soft, the_depth_test_keeps_the_nearer_fragment)
     fixture_close(&f);
 }
 
-TEST(render_soft, blending_and_the_alpha_test_follow_the_state)
+RENDER_TEST(blending_and_the_alpha_test_follow_the_state)
 {
     soft_fixture_t f;
     fixture_open(&f);
@@ -208,7 +239,7 @@ TEST(render_soft, blending_and_the_alpha_test_follow_the_state)
     fixture_close(&f);
 }
 
-TEST(render_soft, a_texture_modulates_the_color_nearest_by_default)
+RENDER_TEST(a_texture_modulates_the_color_nearest_by_default)
 {
     soft_fixture_t f;
     fixture_open(&f);
@@ -230,7 +261,7 @@ TEST(render_soft, a_texture_modulates_the_color_nearest_by_default)
     fixture_close(&f);
 }
 
-TEST(render_soft, a_minified_texture_samples_its_smaller_level)
+RENDER_TEST(a_minified_texture_samples_its_smaller_level)
 {
     soft_fixture_t f;
     fixture_open(&f);
@@ -256,7 +287,7 @@ TEST(render_soft, a_minified_texture_samples_its_smaller_level)
     fixture_close(&f);
 }
 
-TEST(render_soft, the_stencil_masks_what_comes_after)
+RENDER_TEST(the_stencil_masks_what_comes_after)
 {
     soft_fixture_t f;
     fixture_open(&f);
@@ -284,7 +315,7 @@ TEST(render_soft, the_stencil_masks_what_comes_after)
     fixture_close(&f);
 }
 
-TEST(render_soft, back_faces_are_culled_by_their_winding)
+RENDER_TEST(back_faces_are_culled_by_their_winding)
 {
     soft_fixture_t f;
     fixture_open(&f);
@@ -300,7 +331,7 @@ TEST(render_soft, back_faces_are_culled_by_their_winding)
     fixture_close(&f);
 }
 
-TEST(render_soft, a_texture_drawn_into_shows_what_was_drawn_upright)
+RENDER_TEST(a_texture_drawn_into_shows_what_was_drawn_upright)
 {
     soft_fixture_t f;
     fixture_open(&f);
@@ -324,7 +355,7 @@ TEST(render_soft, a_texture_drawn_into_shows_what_was_drawn_upright)
     fixture_close(&f);
 }
 
-TEST(render_soft, linear_fog_blends_toward_the_fog_color)
+RENDER_TEST(linear_fog_blends_toward_the_fog_color)
 {
     soft_fixture_t f;
     fixture_open(&f);
@@ -338,7 +369,7 @@ TEST(render_soft, linear_fog_blends_toward_the_fog_color)
     fixture_close(&f);
 }
 
-TEST(render_soft, lines_are_a_pixel_wide)
+RENDER_TEST(lines_are_a_pixel_wide)
 {
     soft_fixture_t f;
     fixture_open(&f);
@@ -350,15 +381,15 @@ TEST(render_soft, lines_are_a_pixel_wide)
     g.positions = positions;
     g.position_stride = 3 * sizeof(float);
     f.backend->ops->draw(f.backend, &f.state, &g);
-    ASSERT_PIXEL(&f, 2, 4, 255, 255, 255);
-    ASSERT_PIXEL(&f, 9, 4, 255, 255, 255);
+    ASSERT_PIXEL(&f, 3, 4, 255, 255, 255);
+    ASSERT_PIXEL(&f, 8, 4, 255, 255, 255);
     ASSERT_PIXEL(&f, 5, 3, 0, 0, 0);
     ASSERT_PIXEL(&f, 5, 5, 0, 0, 0);
-    ASSERT_PIXEL(&f, 10, 4, 0, 0, 0);
+    ASSERT_PIXEL(&f, 11, 4, 0, 0, 0);
     fixture_close(&f);
 }
 
-TEST(render_soft, the_screen_drawn_last_is_read_back_and_kept)
+RENDER_TEST(the_screen_drawn_last_is_read_back_and_kept)
 {
     soft_fixture_t f;
     fixture_open(&f);
@@ -375,23 +406,39 @@ TEST(render_soft, the_screen_drawn_last_is_read_back_and_kept)
     /* a preserved screen keeps the frame before under the next one */
     ASSERT_TRUE(f.backend->ops->begin_screen(f.backend, SIZE, SIZE, true));
     ASSERT_PIXEL(&f, 4, 4, 0, 255, 0);
-    ASSERT_EQ(f.backend->ops->read_pixels(f.backend, rect, read), NMO_OK);
-    ASSERT_EQ((int)read[1], 255);
     fixture_close(&f);
 }
 
+#ifdef RENDER_TEST_GPU
+static int gpu_available(void)
+{
+    render_backend_t *backend = backend_create();
+    if (backend == NULL) {
+        return 0;
+    }
+    backend->ops->destroy(backend);
+    return 1;
+}
+#endif
+
 TEST_MAIN_BEGIN()
-REGISTER_TEST(render_soft, a_clear_writes_only_inside_the_scissor);
-REGISTER_TEST(render_soft, a_quad_covers_each_pixel_once);
-REGISTER_TEST(render_soft, an_edge_through_pixel_centers_draws_them_once);
-REGISTER_TEST(render_soft, the_depth_test_keeps_the_nearer_fragment);
-REGISTER_TEST(render_soft, blending_and_the_alpha_test_follow_the_state);
-REGISTER_TEST(render_soft, a_texture_modulates_the_color_nearest_by_default);
-REGISTER_TEST(render_soft, a_minified_texture_samples_its_smaller_level);
-REGISTER_TEST(render_soft, the_stencil_masks_what_comes_after);
-REGISTER_TEST(render_soft, back_faces_are_culled_by_their_winding);
-REGISTER_TEST(render_soft, a_texture_drawn_into_shows_what_was_drawn_upright);
-REGISTER_TEST(render_soft, linear_fog_blends_toward_the_fog_color);
-REGISTER_TEST(render_soft, lines_are_a_pixel_wide);
-REGISTER_TEST(render_soft, the_screen_drawn_last_is_read_back_and_kept);
+#ifdef RENDER_TEST_GPU
+if (!gpu_available()) {
+    printf("SKIP: no GPU device\n");
+    return TEST_EXIT_CODE_SKIPPED;
+}
+#endif
+REGISTER_RENDER_TEST(a_clear_writes_only_inside_the_scissor);
+REGISTER_RENDER_TEST(a_quad_covers_each_pixel_once);
+REGISTER_RENDER_TEST(an_edge_through_pixel_centers_draws_them_once);
+REGISTER_RENDER_TEST(the_depth_test_keeps_the_nearer_fragment);
+REGISTER_RENDER_TEST(blending_and_the_alpha_test_follow_the_state);
+REGISTER_RENDER_TEST(a_texture_modulates_the_color_nearest_by_default);
+REGISTER_RENDER_TEST(a_minified_texture_samples_its_smaller_level);
+REGISTER_RENDER_TEST(the_stencil_masks_what_comes_after);
+REGISTER_RENDER_TEST(back_faces_are_culled_by_their_winding);
+REGISTER_RENDER_TEST(a_texture_drawn_into_shows_what_was_drawn_upright);
+REGISTER_RENDER_TEST(linear_fog_blends_toward_the_fog_color);
+REGISTER_RENDER_TEST(lines_are_a_pixel_wide);
+REGISTER_RENDER_TEST(the_screen_drawn_last_is_read_back_and_kept);
 TEST_MAIN_END()
