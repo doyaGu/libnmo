@@ -524,19 +524,8 @@ static nmo_status_t chunk_deserialize_internal(nmo_read_ctx_t *ctx, nmo_arena_t 
     NMO_RETURN_OK();
 }
 
-/**
- * Create empty chunk
- */
-nmo_chunk_t *nmo_chunk_create(nmo_arena_t *arena) {
-    if (!arena) {
-        return NULL;
-    }
-
-    nmo_chunk_t *chunk = nmo_arena_alloc(arena, sizeof(nmo_chunk_t), sizeof(void *));
-    if (!chunk) {
-        return NULL;
-    }
-
+/* An empty chunk whose arrays take their memory from `arena`. */
+static void chunk_init(nmo_chunk_t *chunk, nmo_arena_t *arena) {
     /* Initialize all fields to 0/NULL */
     memset(chunk, 0, sizeof(nmo_chunk_t));
 
@@ -552,7 +541,21 @@ nmo_chunk_t *nmo_chunk_create(nmo_arena_t *arena) {
     chunk->owns_data = 1;
     chunk->arena = arena;
     chunk->file_context = NULL;
+}
 
+/**
+ * Create empty chunk
+ */
+nmo_chunk_t *nmo_chunk_create(nmo_arena_t *arena) {
+    if (!arena) {
+        return NULL;
+    }
+
+    nmo_chunk_t *chunk = nmo_arena_alloc(arena, sizeof(nmo_chunk_t), sizeof(void *));
+    if (!chunk) {
+        return NULL;
+    }
+    chunk_init(chunk, arena);
     return chunk;
 }
 
@@ -1321,19 +1324,19 @@ nmo_status_t nmo_chunk_parse(nmo_chunk_t *chunk, const void *data, size_t size) 
                          "Chunk buffer must be DWORD aligned");
     }
 
-    nmo_chunk_t *staged = nmo_chunk_create(chunk->arena);
-    if (staged == NULL) {
-        return NMO_ERR_NOMEM;
-    }
-    staged->file_context = chunk->file_context;
-    staged->chunk_options = chunk->chunk_options & NMO_CHUNK_OPTION_FILE;
+    /* Parsed into a copy, so a failure leaves the chunk as it was. The copy
+     * lives on the stack: nothing keeps its address. */
+    nmo_chunk_t staged;
+    chunk_init(&staged, chunk->arena);
+    staged.file_context = chunk->file_context;
+    staged.chunk_options = chunk->chunk_options & NMO_CHUNK_OPTION_FILE;
 
-    nmo_status_t result = chunk_parse_into(staged, data, size);
+    nmo_status_t result = chunk_parse_into(&staged, data, size);
     if (result != NMO_OK) {
         return result;
     }
 
-    *chunk = *staged;
+    *chunk = staged;
     return NMO_OK;
 }
 
