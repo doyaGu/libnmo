@@ -186,6 +186,9 @@ eng_builtin_op_fn eng_operation_builtin_text(nmo_guid_t operation, nmo_guid_t re
 /* core/operations_query.c: the operations that read objects' state (the getters) */
 eng_builtin_op_fn eng_operation_builtin_query(nmo_guid_t operation, nmo_guid_t result,
                                               nmo_guid_t input1, nmo_guid_t input2);
+/* Whether the engine has a function registered for exactly these types (none: a null GUID) */
+bool eng_operation_available(nmo_engine_t *engine, nmo_guid_t operation, nmo_guid_t result,
+                             nmo_guid_t input1, nmo_guid_t input2);
 /* The plugin's operations on values the registry lacks (operations_values.c) */
 eng_builtin_op_fn eng_operation_builtin_values(nmo_guid_t operation, nmo_guid_t result,
                                                nmo_guid_t input1, nmo_guid_t input2);

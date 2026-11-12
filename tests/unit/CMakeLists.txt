@@ -326,6 +326,8 @@ add_unit_test(test_engine_strings)
 target_link_libraries(test_engine_strings PRIVATE ${NMO_TEST_BB_PACKS} nmo_engine nmo_edit)
 add_unit_test(test_engine_operations)
 target_link_libraries(test_engine_operations PRIVATE ${NMO_TEST_BB_PACKS} nmo_engine nmo_edit)
+add_unit_test(test_engine_operation_functions)
+target_link_libraries(test_engine_operation_functions PRIVATE ${NMO_TEST_BB_PACKS} nmo_engine nmo_edit yyjson)
 add_unit_test(test_engine_logics)
 target_link_libraries(test_engine_logics PRIVATE ${NMO_TEST_BB_PACKS} nmo_engine nmo_edit)
 

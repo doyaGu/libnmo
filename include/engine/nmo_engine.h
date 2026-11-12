@@ -896,6 +896,24 @@ NMO_API int32_t nmo_engine_mesh_face_count(const nmo_engine_t *engine, nmo_objec
 NMO_API bool nmo_engine_mesh_face(const nmo_engine_t *engine, nmo_object_id_t mesh, int32_t index,
                                   int32_t out_vertices[3]);
 
+/* ---- Operations without a function ---- */
+
+/**
+ * A parameter operation the engine was asked to run for types it has no
+ * function for (none of the plugins' registrations matches them or their
+ * parents): its output stays as it was, as CK's does. Names are the type
+ * registry's ("?" when it has none); the inputs' are NULL for none.
+ */
+typedef struct nmo_engine_missing_operation {
+    nmo_guid_t operation, result, input1, input2;
+    const char *operation_name, *result_name, *input1_name, *input2_name;
+    uint32_t count; /* the times it was asked for */
+} nmo_engine_missing_operation_t;
+
+/** Each signature asked for without a function since the engine was made, once. */
+NMO_API const nmo_engine_missing_operation_t *nmo_engine_missing_operations(const nmo_engine_t *engine,
+                                                                           size_t *out_count);
+
 /** "execute", "link", ... */
 NMO_API const char *nmo_engine_event_kind_name(nmo_engine_event_kind_t kind);
 

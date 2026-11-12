@@ -245,6 +245,7 @@ void nmo_engine_destroy(nmo_engine_t *engine)
     eng_free_managers(engine);
     eng_free_sounds(engine);
     eng_free_midi(engine);
+    free(engine->missing_operations.data);
     eng_free_textures(engine);
     free(engine->op_lookups.data);
     free(engine->ios.data);

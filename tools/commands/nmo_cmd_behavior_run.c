@@ -1228,6 +1228,40 @@ static bool run_add_unknown(nmo_cli_record_t *rec, const run_state_t *state)
     return true;
 }
 
+/* The operations asked for with no function for their types: their outputs never changed */
+static bool run_add_missing_operations(nmo_cli_record_t *rec, const nmo_engine_t *engine)
+{
+    nmo_cli_record_array_t *list =
+        nmo_cli_record_array(rec, "missing_operations", "Operations without a function");
+    if (list == NULL) {
+        return false;
+    }
+    nmo_cli_record_array_omit_empty(list);
+    size_t count = 0;
+    const nmo_engine_missing_operation_t *missing = nmo_engine_missing_operations(engine, &count);
+    for (size_t i = 0; i < count; i++) {
+        const nmo_engine_missing_operation_t *m = &missing[i];
+        nmo_cli_record_t *item = nmo_cli_record_new();
+        bool ok = item != NULL && nmo_cli_record_str(item, "operation", NULL, m->operation_name) &&
+                  nmo_cli_record_guid(item, "guid", NULL, m->operation) &&
+                  nmo_cli_record_str(item, "result", NULL, m->result_name) &&
+                  (m->input1_name == NULL || nmo_cli_record_str(item, "input1", NULL, m->input1_name)) &&
+                  (m->input2_name == NULL || nmo_cli_record_str(item, "input2", NULL, m->input2_name)) &&
+                  nmo_cli_record_uint(item, "runs", NULL, m->count) &&
+                  nmo_cli_record_set_summary_fmt(item, "  %s: %s <- %s, %s: %u run%s", m->operation_name,
+                                                 m->result_name, m->input1_name != NULL ? m->input1_name : "None",
+                                                 m->input2_name != NULL ? m->input2_name : "None", m->count,
+                                                 m->count == 1u ? "" : "s");
+        if (!ok || !nmo_cli_record_array_add(list, item)) {
+            if (!ok) {
+                nmo_cli_record_free(item);
+            }
+            return false;
+        }
+    }
+    return true;
+}
+
 static bool run_add_active_scripts(nmo_cli_record_t *rec, const nmo_engine_t *engine)
 {
     nmo_cli_record_array_t *list =
@@ -2166,6 +2200,7 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
                                    nmo_engine_exit_requested(engine));
     ok = ok && run_add_failure(rec, engine);
     ok = ok && run_add_unknown(rec, &state);
+    ok = ok && run_add_missing_operations(rec, engine);
     ok = ok && run_add_physics(rec, &state);
     ok = ok && run_add_observed(rec, &state);
     ok = ok && run_add_active_scripts(rec, engine);

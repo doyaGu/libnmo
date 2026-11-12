@@ -174,6 +174,61 @@ static bool eng_operation_exact(nmo_engine_t *engine, nmo_guid_t guid,
     return false;
 }
 
+bool eng_operation_available(nmo_engine_t *engine, nmo_guid_t operation, nmo_guid_t result,
+                             nmo_guid_t input1, nmo_guid_t input2)
+{
+    const nmo_type_descriptor_t *tr = nmo_type_registry_find_by_guid(engine->types, result);
+    const nmo_type_descriptor_t *t1 =
+        nmo_guid_is_null(input1) ? NULL : nmo_type_registry_find_by_guid(engine->types, input1);
+    const nmo_type_descriptor_t *t2 =
+        nmo_guid_is_null(input2) ? NULL : nmo_type_registry_find_by_guid(engine->types, input2);
+    if (tr == NULL || (!nmo_guid_is_null(input1) && t1 == NULL) || (!nmo_guid_is_null(input2) && t2 == NULL)) {
+        return false;
+    }
+    eng_op_lookup_t found = {operation, t1, t2, tr, NULL, NULL, false};
+    return eng_operation_exact(engine, operation, tr, t1, t2, &found) ||
+           eng_operation_builtin_text(operation, result, input1, input2) != NULL;
+}
+
+static const char *eng_guid_name(const nmo_engine_t *engine, nmo_guid_t guid)
+{
+    if (nmo_guid_is_null(guid)) {
+        return NULL;
+    }
+    const char *name = nmo_type_registry_guid_to_name(engine->types, guid);
+    return name != NULL && name[0] != '\0' ? name : "?";
+}
+
+/* An operation asked for without a function: noted once a signature, counted */
+static void eng_note_missing_operation(nmo_engine_t *engine, nmo_guid_t operation, nmo_guid_t result,
+                                       nmo_guid_t input1, nmo_guid_t input2)
+{
+    for (size_t i = 0; i < engine->missing_operations.count; i++) {
+        nmo_engine_missing_operation_t *known = &engine->missing_operations.data[i];
+        if (nmo_guid_equals(known->operation, operation) && nmo_guid_equals(known->result, result) &&
+            nmo_guid_equals(known->input1, input1) && nmo_guid_equals(known->input2, input2)) {
+            known->count++;
+            return;
+        }
+    }
+    nmo_engine_missing_operation_t *slot = NULL;
+    if (!ENG_VEC_PUSH(engine->missing_operations, slot)) {
+        return;
+    }
+    *slot = (nmo_engine_missing_operation_t){operation, result, input1, input2,
+                                             eng_guid_name(engine, operation), eng_guid_name(engine, result),
+                                             eng_guid_name(engine, input1), eng_guid_name(engine, input2), 1u};
+}
+
+const nmo_engine_missing_operation_t *nmo_engine_missing_operations(const nmo_engine_t *engine,
+                                                                   size_t *out_count)
+{
+    if (out_count != NULL) {
+        *out_count = engine != NULL ? engine->missing_operations.count : 0u;
+    }
+    return engine != NULL ? engine->missing_operations.data : NULL;
+}
+
 typedef struct eng_type_triple {
     const nmo_type_descriptor_t *tr, *t1, *t2;
 } eng_type_triple_t;
@@ -311,6 +366,7 @@ nmo_status_t eng_operation_execute(nmo_engine_t *engine, nmo_guid_t guid, eng_pa
         return builtin(engine, src1, src2, out);
     }
     if (found == NULL || found->cell == NULL) {
+        eng_note_missing_operation(engine, guid, out->type, eng_type_guid(t1), eng_type_guid(t2));
         return NMO_ERR_NOT_FOUND;
     }
     const nmo_operation_tree_cell_t *cell = found->cell;

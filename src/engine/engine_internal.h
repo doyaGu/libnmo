@@ -103,6 +103,7 @@ struct nmo_engine {
     eng_input_t input;
     eng_media_t media;
     eng_midi_t midi;
+    ENG_VEC(nmo_engine_missing_operation_t) missing_operations;
     eng_render_t render;
     eng_host_t host;
     /* The managers the block packs added, in the order they were added */
