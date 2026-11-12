@@ -687,8 +687,7 @@ TEST(object_serialization, failed_schema_releases_object_state) {
     ASSERT_EQ((size_t)1, deserialize_stats.errors);
     ASSERT_NULL(owned->state);
     ASSERT_EQ(0u, owned->state_size);
-    ASSERT_EQ((size_t)0,
-              nmo_arena_bytes_used(nmo_object_get_storage_arena(owned)));
+    ASSERT_NULL(owned->storage_arena);
     ASSERT_EQ(bytes_before, stats.current_bytes);
 
     nmo_object_repository_destroy(repo);

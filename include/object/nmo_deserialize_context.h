@@ -78,6 +78,9 @@ typedef struct nmo_deserialize_context {
     
     /** Object being deserialized */
     nmo_object_t *object;
+
+    /** Object whose storage arena becomes the arena when first asked for */
+    nmo_object_t *arena_object;
     
     /** Aggregated runtime view (type + operation registries) */
     const nmo_type_runtime_t *type_runtime;
@@ -165,7 +168,19 @@ static inline nmo_deserialize_context_t *nmo_deserialize_context_get(void *conte
 static inline nmo_arena_t *nmo_deserialize_context_get_arena(void *context)
 {
     nmo_deserialize_context_t *ctx = nmo_deserialize_context_get(context);
-    return ctx != NULL ? ctx->arena : NULL;
+    if (ctx == NULL) {
+        return NULL;
+    }
+    /* The object's arena, created only when something is allocated: most
+     * objects keep no state buffers. */
+    if (ctx->arena_object != NULL) {
+        nmo_arena_t *obj_arena = nmo_object_get_storage_arena(ctx->arena_object);
+        if (obj_arena != NULL) {
+            ctx->arena = obj_arena;
+        }
+        ctx->arena_object = NULL;
+    }
+    return ctx->arena;
 }
 
 /**
@@ -197,12 +212,9 @@ static inline void nmo_deserialize_context_set_object(
 {
     if (ctx != NULL) {
         ctx->object = object;
-        /* Prefer per-object allocation arena when available. */
+        /* Prefer the per-object allocation arena, taken when first needed. */
         if (object != NULL) {
-            nmo_arena_t *obj_arena = nmo_object_get_storage_arena(object);
-            if (obj_arena != NULL) {
-                ctx->arena = obj_arena;
-            }
+            ctx->arena_object = object;
         }
     }
 }

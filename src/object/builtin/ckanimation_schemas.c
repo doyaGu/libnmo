@@ -1067,15 +1067,18 @@ static nmo_status_t nmo_objectanimation_adopt_shared_keys(
         }
         nmo_objectanimation_state_t *state = sharer->state;
         if (state->format != CKOBJANIM_FORMAT_SHARED ||
-            nmo_ref_runtime_id(&state->shared_anim) != owner_id ||
-            sharer->storage_arena == NULL) {
+            nmo_ref_runtime_id(&state->shared_anim) != owner_id) {
+            continue;
+        }
+        nmo_arena_t *sharer_arena = nmo_object_get_storage_arena(sharer);
+        if (sharer_arena == NULL) {
             continue;
         }
 
         nmo_objanim_controller_t *controllers = NULL;
         if (owner_state->controller_count > 0u) {
             controllers = nmo_arena_alloc(
-                sharer->storage_arena,
+                sharer_arena,
                 sizeof(*controllers) * owner_state->controller_count,
                 _Alignof(nmo_objanim_controller_t));
             if (controllers == NULL) {
@@ -1086,7 +1089,7 @@ static nmo_status_t nmo_objectanimation_adopt_shared_keys(
                 controllers[c] = owner_state->controllers[c];
                 controllers[c].data = NULL;
                 NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(
-                    sharer->storage_arena, &controllers[c].data,
+                    sharer_arena, &controllers[c].data,
                     owner_state->controllers[c].data,
                     owner_state->controllers[c].data_size));
             }

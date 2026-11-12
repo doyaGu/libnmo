@@ -198,9 +198,14 @@ static void object_system_clear_failed_object_state(nmo_object_t *obj)
 {
     if (obj != NULL) {
         (void)nmo_object_alloc_state(obj, 0);
-        nmo_arena_t *storage_arena = nmo_object_get_storage_arena(obj);
-        if (storage_arena != NULL) {
-            nmo_arena_reset(storage_arena);
+        /* The arena held what the failed state took, and any serialization
+         * kept for fidelity: release it, and the next state that needs one
+         * creates it again. */
+        nmo_arena_destroy(obj->storage_arena);
+        obj->storage_arena = NULL;
+        if (obj->fidelity_canonical != NULL) {
+            obj->fidelity_canonical = NULL;
+            obj->fidelity_captured = 0;
         }
     }
 }

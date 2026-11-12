@@ -173,7 +173,10 @@ NMO_API nmo_status_t nmo_object_add_child(nmo_object_t *parent, nmo_object_t *ch
 /**
  * @brief Get per-object storage arena
  *
- * The returned arena is owned by the object and destroyed in nmo_object_destroy().
+ * The arena is created on the first call, so objects that never allocate state
+ * buffers have none. It is owned by the object and destroyed in
+ * nmo_object_destroy().
+ * @return The arena, or NULL when it cannot be created
  * @ownership borrowed
  */
 NMO_API nmo_arena_t *nmo_object_get_storage_arena(const nmo_object_t *object);
