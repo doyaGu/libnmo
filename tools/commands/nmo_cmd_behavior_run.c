@@ -1893,8 +1893,14 @@ static bool run_set_registry(nmo_engine_t *engine, const char *text)
     return true;
 }
 
+/*
+ * The window a run shows (--window, --shot): the view, in a build that has
+ * one. Without it there is never a window (run_parse_args refuses the
+ * options), and these do nothing.
+ */
 #ifdef NMO_HAS_VIEW
-/* Save the window if the --shot list names frame `frame`: FILE@FRAME,... */
+typedef nmo_view_t run_window_t;
+
 /*
  * The player's loop (CGamePlayer, CKTimeManager): wait out the frame rate
  * limit when the game set one (vertical sync paces the others), then step
@@ -1934,6 +1940,7 @@ static void run_pace(nmo_view_t *view, float delta, double *last_frame)
     }
 }
 
+/* Save the window if the --shot list names frame `frame`: FILE@FRAME,... */
 static void run_take_shots(nmo_view_t *view, const char *shots, uint64_t frame)
 {
     for (const char *item = shots; item != NULL && *item != '\0';) {
@@ -1949,6 +1956,99 @@ static void run_take_shots(nmo_view_t *view, const char *shots, uint64_t frame)
         }
         item = end != NULL ? end + 1 : NULL;
     }
+}
+
+static nmo_status_t run_window_open(nmo_engine_t *engine, const char *title, const run_args_t *args,
+                                    run_window_t **out_window)
+{
+    nmo_status_t status = nmo_view_open(engine, title, 2, out_window);
+    nmo_view_set_mipmaps(*out_window, args->mipmaps);
+    return status;
+}
+
+static void run_window_close(run_window_t *window)
+{
+    nmo_view_close(window);
+}
+
+static double run_window_time(const run_window_t *window)
+{
+    return window != NULL ? nmo_view_time(window) : 0.0;
+}
+
+/* Pass the window's input to the engine; false once it is closed */
+static bool run_window_poll(run_window_t *window)
+{
+    return nmo_view_poll(window);
+}
+
+/* The frame's time: the time that passed when played in real time, else `delta` waited out */
+static float run_window_pace(nmo_engine_t *engine, run_window_t *window, const run_args_t *args,
+                             float delta, double *last_frame)
+{
+    if (args->real_time) {
+        return run_real_time_delta(engine, window, last_frame);
+    }
+    run_pace(window, delta, last_frame);
+    return delta;
+}
+
+/* Draw the frame, play its sounds and save the shots it is in */
+static nmo_status_t run_window_show(run_window_t *window, nmo_engine_t *engine, const run_args_t *args)
+{
+    nmo_status_t status = nmo_view_draw(window);
+    if (!args->mute) {
+        nmo_view_play_sounds(window);
+    }
+    run_take_shots(window, args->shots, nmo_engine_frame(engine));
+    return status;
+}
+#else
+typedef struct run_window run_window_t;
+
+static nmo_status_t run_window_open(nmo_engine_t *engine, const char *title, const run_args_t *args,
+                                    run_window_t **out_window)
+{
+    (void)engine;
+    (void)title;
+    (void)args;
+    *out_window = NULL;
+    return NMO_ERR_INVALID_STATE;
+}
+
+static void run_window_close(run_window_t *window)
+{
+    (void)window;
+}
+
+static double run_window_time(const run_window_t *window)
+{
+    (void)window;
+    return 0.0;
+}
+
+static bool run_window_poll(run_window_t *window)
+{
+    (void)window;
+    return true;
+}
+
+static float run_window_pace(nmo_engine_t *engine, run_window_t *window, const run_args_t *args,
+                             float delta, double *last_frame)
+{
+    (void)engine;
+    (void)window;
+    (void)args;
+    (void)last_frame;
+    return delta;
+}
+
+static nmo_status_t run_window_show(run_window_t *window, nmo_engine_t *engine, const run_args_t *args)
+{
+    (void)window;
+    (void)engine;
+    (void)args;
+    return NMO_OK;
 }
 #endif
 
@@ -1986,17 +2086,14 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 #endif
-#ifdef NMO_HAS_VIEW
-    nmo_view_t *view = NULL;
-    if (args->window && nmo_view_open(engine, ctx->file_path, 2, &view) != NMO_OK) {
+    run_window_t *window = NULL;
+    if (args->window && run_window_open(engine, ctx->file_path, args, &window) != NMO_OK) {
 #ifdef NMO_HAS_PHYSICS_IVP
         nmo_physics_ivp_detach(physics);
 #endif
         nmo_engine_destroy(engine);
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
-    nmo_view_set_mipmaps(view, args->mipmaps);
-#endif
     const nmo_script_model_t *model = nmo_engine_script_model(engine);
     run_files_t files = {.write = args->write, .path = args->path,
                          .folder = run_folder_of(ctx->file_path)};
@@ -2081,9 +2178,7 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
             fputs("frame,x,y,z,speed,next,up,down,left,right,object_id,object_name\n", steer.log);
         }
     }
-#ifdef NMO_HAS_VIEW
-    double last_frame = view != NULL ? nmo_view_time(view) : 0.0;
-#endif
+    double last_frame = run_window_time(window);
     int control_remaining = 0;
     for (uint32_t f = 0;
          status == NMO_OK &&
@@ -2106,11 +2201,9 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
                 nmo_engine_set_key(engine, run_key_code(arrows[k], strlen(arrows[k])), false);
             }
         }
-#ifdef NMO_HAS_VIEW
-        if (view != NULL && !nmo_view_poll(view)) {
+        if (window != NULL && !run_window_poll(window)) {
             break;
         }
-#endif
         run_send_messages(engine, messages, message_count, f);
         /* A key is down in a frame one of its ranges covers */
         for (long k = 0; k < key_count; k++) {
@@ -2125,13 +2218,9 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
             run_steer_frame(engine, &steer, f);
         }
         float delta = args->delta_ms;
-#ifdef NMO_HAS_VIEW
-        if (view != NULL && args->real_time) {
-            delta = run_real_time_delta(engine, view, &last_frame);
-        } else if (view != NULL) {
-            run_pace(view, delta, &last_frame);
+        if (window != NULL) {
+            delta = run_window_pace(engine, window, args, delta, &last_frame);
         }
-#endif
         uint64_t deaths_before = state.deaths;
         status = nmo_engine_step(engine, delta);
         if (args->control) {
@@ -2145,15 +2234,9 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
         if (status == NMO_OK && physics_log != NULL && !run_log_physics(physics_log, engine)) {
             status = NMO_ERR_INVALID_ARGUMENT;
         }
-#ifdef NMO_HAS_VIEW
-        if (status == NMO_OK && view != NULL) {
-            status = nmo_view_draw(view);
-            if (!args->mute) {
-                nmo_view_play_sounds(view);
-            }
-            run_take_shots(view, args->shots, nmo_engine_frame(engine));
+        if (status == NMO_OK && window != NULL) {
+            status = run_window_show(window, engine, args);
         }
-#endif
         if (status == NMO_OK && nmo_engine_exit_requested(engine)) {
             break; /* the player quits after the frame */
         }
@@ -2218,9 +2301,7 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
         nmo_cli_record_free(rec);
     }
     free(state.unknown);
-#ifdef NMO_HAS_VIEW
-    nmo_view_close(view);
-#endif
+    run_window_close(window);
 #ifdef NMO_HAS_PHYSICS_IVP
     nmo_physics_ivp_detach(physics);
 #endif
