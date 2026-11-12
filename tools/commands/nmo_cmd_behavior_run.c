@@ -48,6 +48,9 @@
 #ifdef NMO_HAS_VIEW
 #include "engine/nmo_view.h"
 #endif
+#ifdef NMO_HAS_RENDER_SOFT
+#include "render/nmo_render_soft.h"
+#endif
 
 typedef struct run_args {
     uint32_t frames;
@@ -75,6 +78,7 @@ typedef struct run_args {
     const char *shots;    /* "menu.png@700,...": frames a window saves */
     bool mute;            /* --mute: the window plays no sound */
     bool mipmaps;         /* --mipmaps: the window mipmaps every texture */
+    bool headless;        /* --headless: the --shot frames drawn in memory, without a window */
     bool quiet;           /* --quiet, or a window played until it closes: no events listed */
     bool control;         /* stdin step commands; the engine waits between commands */
     bool real_time;       /* a window with no --delta or --shot: frames take the time that passed */
@@ -1894,13 +1898,22 @@ static bool run_set_registry(nmo_engine_t *engine, const char *text)
 }
 
 /*
- * The window a run shows (--window, --shot): the view, in a build that has
- * one. Without it there is never a window (run_parse_args refuses the
- * options), and these do nothing.
+ * Where a run shows its frames: a window (--window, --shot; the view, in a
+ * build that has one) or memory (--headless; the software renderer, in a
+ * build with nmo_render). A build without one never has it
+ * (run_parse_args refuses the options), and these do nothing.
  */
+typedef struct run_window {
 #ifdef NMO_HAS_VIEW
-typedef nmo_view_t run_window_t;
+    nmo_view_t *view;
+#endif
+#ifdef NMO_HAS_RENDER_SOFT
+    nmo_render_t *render; /* --headless: the frames drawn in memory */
+#endif
+    bool none;
+} run_window_t;
 
+#ifdef NMO_HAS_VIEW
 /*
  * The player's loop (CGamePlayer, CKTimeManager): wait out the frame rate
  * limit when the game set one (vertical sync paces the others), then step
@@ -1939,9 +1952,30 @@ static void run_pace(nmo_view_t *view, float delta, double *last_frame)
         *last_frame = now; /* behind: start afresh rather than rush to catch up */
     }
 }
+#endif
 
-/* Save the window if the --shot list names frame `frame`: FILE@FRAME,... */
-static void run_take_shots(nmo_view_t *view, const char *shots, uint64_t frame)
+/* Save the frame to `path`: the window as it shows it, or the frame drawn in memory */
+static nmo_status_t run_window_save(run_window_t *window, const char *path)
+{
+#ifdef NMO_HAS_VIEW
+    if (window->view != NULL) {
+        return nmo_view_screenshot(window->view, path);
+    }
+#endif
+#ifdef NMO_HAS_RENDER_SOFT
+    if (window->render != NULL) {
+        int width = 0, height = 0;
+        nmo_render_frame_size(window->render, &width, &height);
+        return nmo_render_screenshot(window->render, width, height, path);
+    }
+#endif
+    (void)window;
+    (void)path;
+    return NMO_ERR_INVALID_STATE;
+}
+
+/* Save the frame if the --shot list names frame `frame`: FILE@FRAME,... */
+static void run_take_shots(run_window_t *window, const char *shots, uint64_t frame)
 {
     for (const char *item = shots; item != NULL && *item != '\0';) {
         const char *end = strchr(item, ',');
@@ -1949,7 +1983,7 @@ static void run_take_shots(nmo_view_t *view, const char *shots, uint64_t frame)
         const char *at = memchr(item, '@', length);
         if (at != NULL && strtoull(at + 1, NULL, 10) == frame) {
             char *path = run_strndup(item, (size_t)(at - item));
-            if (path != NULL && nmo_view_screenshot(view, path) != NMO_OK) {
+            if (path != NULL && run_window_save(window, path) != NMO_OK) {
                 fprintf(stderr, "Error: Could not save %s\n", path);
             }
             free(path);
@@ -1961,81 +1995,84 @@ static void run_take_shots(nmo_view_t *view, const char *shots, uint64_t frame)
 static nmo_status_t run_window_open(nmo_engine_t *engine, const char *title, const run_args_t *args,
                                     run_window_t **out_window)
 {
-    nmo_status_t status = nmo_view_open(engine, title, 2, out_window);
-    nmo_view_set_mipmaps(*out_window, args->mipmaps);
+    (void)engine;
+    (void)title;
+    run_window_t *window = (run_window_t *)calloc(1, sizeof(*window));
+    *out_window = window;
+    if (window == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    nmo_status_t status = NMO_ERR_INVALID_STATE;
+#ifdef NMO_HAS_RENDER_SOFT
+    if (args->headless) {
+        status = nmo_render_create_soft(engine, &window->render);
+        nmo_render_set_mipmaps(window->render, args->mipmaps);
+    }
+#endif
+#ifdef NMO_HAS_VIEW
+    if (!args->headless) {
+        status = nmo_view_open(engine, title, 2, &window->view);
+        nmo_view_set_mipmaps(window->view, args->mipmaps);
+    }
+#endif
+    (void)args;
+    if (status != NMO_OK) {
+        free(window);
+        *out_window = NULL;
+    }
     return status;
 }
 
 static void run_window_close(run_window_t *window)
 {
-    nmo_view_close(window);
+    if (window == NULL) {
+        return;
+    }
+#ifdef NMO_HAS_VIEW
+    nmo_view_close(window->view);
+#endif
+#ifdef NMO_HAS_RENDER_SOFT
+    nmo_render_destroy(window->render);
+#endif
+    free(window);
 }
 
 static double run_window_time(const run_window_t *window)
 {
-    return window != NULL ? nmo_view_time(window) : 0.0;
+#ifdef NMO_HAS_VIEW
+    if (window != NULL && window->view != NULL) {
+        return nmo_view_time(window->view);
+    }
+#endif
+    (void)window;
+    return 0.0;
 }
 
 /* Pass the window's input to the engine; false once it is closed */
 static bool run_window_poll(run_window_t *window)
 {
-    return nmo_view_poll(window);
-}
-
-/* The frame's time: the time that passed when played in real time, else `delta` waited out */
-static float run_window_pace(nmo_engine_t *engine, run_window_t *window, const run_args_t *args,
-                             float delta, double *last_frame)
-{
-    if (args->real_time) {
-        return run_real_time_delta(engine, window, last_frame);
+#ifdef NMO_HAS_VIEW
+    if (window->view != NULL) {
+        return nmo_view_poll(window->view);
     }
-    run_pace(window, delta, last_frame);
-    return delta;
-}
-
-/* Draw the frame, play its sounds and save the shots it is in */
-static nmo_status_t run_window_show(run_window_t *window, nmo_engine_t *engine, const run_args_t *args)
-{
-    nmo_status_t status = nmo_view_draw(window);
-    if (!args->mute) {
-        nmo_view_play_sounds(window);
-    }
-    run_take_shots(window, args->shots, nmo_engine_frame(engine));
-    return status;
-}
-#else
-typedef struct run_window run_window_t;
-
-static nmo_status_t run_window_open(nmo_engine_t *engine, const char *title, const run_args_t *args,
-                                    run_window_t **out_window)
-{
-    (void)engine;
-    (void)title;
-    (void)args;
-    *out_window = NULL;
-    return NMO_ERR_INVALID_STATE;
-}
-
-static void run_window_close(run_window_t *window)
-{
-    (void)window;
-}
-
-static double run_window_time(const run_window_t *window)
-{
-    (void)window;
-    return 0.0;
-}
-
-static bool run_window_poll(run_window_t *window)
-{
+#endif
     (void)window;
     return true;
 }
 
+/* The frame's time: the time that passed when a window plays in real time, else `delta`, which a
+   window waits out */
 static float run_window_pace(nmo_engine_t *engine, run_window_t *window, const run_args_t *args,
                              float delta, double *last_frame)
 {
+#ifdef NMO_HAS_VIEW
+    if (window->view != NULL) {
+        if (args->real_time) {
+            return run_real_time_delta(engine, window->view, last_frame);
+        }
+        run_pace(window->view, delta, last_frame);
+    }
+#endif
     (void)engine;
     (void)window;
     (void)args;
@@ -2043,14 +2080,22 @@ static float run_window_pace(nmo_engine_t *engine, run_window_t *window, const r
     return delta;
 }
 
+/* Draw the frame, play its sounds and save the shots it is in. In memory only the shots are
+   drawn. */
 static nmo_status_t run_window_show(run_window_t *window, nmo_engine_t *engine, const run_args_t *args)
 {
-    (void)window;
-    (void)engine;
-    (void)args;
-    return NMO_OK;
-}
+    nmo_status_t status = NMO_OK;
+#ifdef NMO_HAS_VIEW
+    if (window->view != NULL) {
+        status = nmo_view_draw(window->view);
+        if (!args->mute) {
+            nmo_view_play_sounds(window->view);
+        }
+    }
 #endif
+    run_take_shots(window, args->shots, nmo_engine_frame(engine));
+    return status;
+}
 
 static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
 {
@@ -2087,7 +2132,8 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
     }
 #endif
     run_window_t *window = NULL;
-    if (args->window && run_window_open(engine, ctx->file_path, args, &window) != NMO_OK) {
+    if ((args->window || args->headless) &&
+        run_window_open(engine, ctx->file_path, args, &window) != NMO_OK) {
 #ifdef NMO_HAS_PHYSICS_IVP
         nmo_physics_ivp_detach(physics);
 #endif
@@ -2097,7 +2143,7 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
     const nmo_script_model_t *model = nmo_engine_script_model(engine);
     run_files_t files = {.write = args->write, .path = args->path,
                          .folder = run_folder_of(ctx->file_path)};
-    if (files.write == NULL && args->window) {
+    if (files.write == NULL && (args->window || args->headless)) {
         files.temporary = run_make_temporary_folder();
         files.write = files.temporary;
     }
@@ -2358,6 +2404,8 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
         {"--window", "-w", NMO_OPT_FLAG,
          "Show the frames in a window and play with its keyboard and mouse, until it closes"},
         {"--shot", NULL, NMO_OPT_STRING, "Save the window at frames: FILE.png@FRAME,..."},
+        {"--headless", NULL, NMO_OPT_FLAG,
+         "Draw the --shot frames in memory with the software renderer, without a window"},
         {"--mute", NULL, NMO_OPT_FLAG, "Play no sound in the window"},
         {"--mipmaps", NULL, NMO_OPT_FLAG,
          "Mipmap every texture in the window but cutouts (default: only those CK mipmaps)"},
@@ -2366,7 +2414,7 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
     };
     enum { OPT_FRAMES, OPT_DELTA, OPT_START, OPT_SCRIPT, OPT_UNKNOWN, OPT_STRICT, OPT_MAX_ITER, OPT_SEED,
            OPT_TRACE, OPT_KEYS, OPT_STEER, OPT_STEER_OBJECT, OPT_STEER_LOG, OPT_PHYSICS_LOG, OPT_CONTROL, OPT_OBSERVE, OPT_PATH, OPT_WRITE, OPT_MESSAGE, OPT_REGISTRY, OPT_PHYSICS,
-           OPT_WINDOW, OPT_SHOT, OPT_MUTE, OPT_MIPMAPS, OPT_QUIET, OPT_COUNT };
+           OPT_WINDOW, OPT_SHOT, OPT_HEADLESS, OPT_MUTE, OPT_MIPMAPS, OPT_QUIET, OPT_COUNT };
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
@@ -2384,9 +2432,20 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
     out->shots = nmo_opt_str(&vals[OPT_SHOT]);
     out->mute = nmo_opt_flag(&vals[OPT_MUTE]);
     out->mipmaps = nmo_opt_flag(&vals[OPT_MIPMAPS]);
-    if (out->shots != NULL) {
+    out->headless = nmo_opt_flag(&vals[OPT_HEADLESS]);
+    if (out->headless && out->window) {
+        fprintf(stderr, "Error: --headless draws without a window: leave out --window\n");
+        return false;
+    }
+    if (out->shots != NULL && !out->headless) {
         out->window = true;
     }
+#ifndef NMO_HAS_RENDER_SOFT
+    if (out->headless) {
+        fprintf(stderr, "Error: --headless needs a build with the renderer (NMO_RENDER)\n");
+        return false;
+    }
+#endif
     /* A played window runs for minutes: listing its events would grow without end */
     out->quiet = nmo_opt_flag(&vals[OPT_QUIET]) || (out->window && !out->frames_given);
 #ifndef NMO_HAS_VIEW
