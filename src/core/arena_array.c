@@ -19,6 +19,14 @@
 #define NMO_ARENA_ARRAY_ALIGN ((size_t)( \
     NMO_MAX_ALIGN > 16u ? 16u : NMO_MAX_ALIGN))
 
+static const nmo_container_lifecycle_t nmo_arena_array_no_hooks = NMO_CONTAINER_LIFECYCLE_INIT;
+
+/* The array's hooks, or hooks that do nothing. */
+static inline const nmo_container_lifecycle_t *nmo_arena_array_hooks(
+    const nmo_arena_array_t *array) {
+    return array->lifecycle != NULL ? array->lifecycle : &nmo_arena_array_no_hooks;
+}
+
 static void nmo_arena_array_copy_range(nmo_arena_array_t *array,
                                        uint8_t *dest,
                                        const uint8_t *src,
@@ -27,10 +35,10 @@ static void nmo_arena_array_copy_range(nmo_arena_array_t *array,
         return;
     }
 
-    if (array->lifecycle.copy) {
+    if (nmo_arena_array_hooks(array)->copy) {
         size_t stride = array->element_size;
         for (size_t i = 0; i < count; ++i) {
-            nmo_container_copy_element(&array->lifecycle,
+            nmo_container_copy_element(nmo_arena_array_hooks(array),
                                        dest + (i * stride),
                                        src + (i * stride),
                                        stride);
@@ -54,13 +62,13 @@ static void nmo_arena_array_init_range(nmo_arena_array_t *array, size_t start, s
     if (!nmo_safe_mul_size(count, array->element_size, &bytes)) {
         return;
     }
-    if (array->lifecycle.init == NULL) {
+    if (nmo_arena_array_hooks(array)->init == NULL) {
         memset(base, 0, bytes);
         return;
     }
 
     for (size_t i = 0; i < count; ++i) {
-        nmo_container_init_element(&array->lifecycle,
+        nmo_container_init_element(nmo_arena_array_hooks(array),
                                    base + (i * array->element_size),
                                    array->element_size);
     }
@@ -74,18 +82,18 @@ static void nmo_arena_array_move_range(nmo_arena_array_t *array,
         return;
     }
 
-    if (array->lifecycle.move) {
+    if (nmo_arena_array_hooks(array)->move) {
         size_t stride = array->element_size;
         if (dest < src) {
             for (size_t i = 0; i < count; ++i) {
-                nmo_container_move_element(&array->lifecycle,
+                nmo_container_move_element(nmo_arena_array_hooks(array),
                                            dest + (i * stride),
                                            src + (i * stride),
                                            stride);
             }
         } else {
             for (size_t i = count; i > 0; --i) {
-                nmo_container_move_element(&array->lifecycle,
+                nmo_container_move_element(nmo_arena_array_hooks(array),
                                            dest + ((i - 1) * stride),
                                            src + ((i - 1) * stride),
                                            stride);
@@ -97,7 +105,7 @@ static void nmo_arena_array_move_range(nmo_arena_array_t *array,
 }
 
 static void nmo_arena_array_dispose_range(nmo_arena_array_t *array, size_t start, size_t count) {
-    if (array == NULL || array->data == NULL || array->lifecycle.dispose == NULL || count == 0) {
+    if (array == NULL || array->data == NULL || nmo_arena_array_hooks(array)->dispose == NULL || count == 0) {
         return;
     }
 
@@ -111,7 +119,7 @@ static void nmo_arena_array_dispose_range(nmo_arena_array_t *array, size_t start
 
     uint8_t *base = (uint8_t *)array->data + (start * array->element_size);
     for (size_t i = 0; i < count; ++i) {
-        array->lifecycle.dispose(base + (i * array->element_size), array->lifecycle.user_data);
+        nmo_arena_array_hooks(array)->dispose(base + (i * array->element_size), nmo_arena_array_hooks(array)->user_data);
     }
 }
 
@@ -129,7 +137,7 @@ static void nmo_arena_array_reset_range(nmo_arena_array_t *array, size_t start, 
     }
 
     uint8_t *base = (uint8_t *)array->data + (start * array->element_size);
-    if (array->lifecycle.reset == NULL && array->lifecycle.dispose == NULL) {
+    if (nmo_arena_array_hooks(array)->reset == NULL && nmo_arena_array_hooks(array)->dispose == NULL) {
         size_t bytes = 0;
         if (!nmo_safe_mul_size(count, array->element_size, &bytes)) {
             return;
@@ -139,27 +147,31 @@ static void nmo_arena_array_reset_range(nmo_arena_array_t *array, size_t start, 
     }
 
     for (size_t i = 0; i < count; ++i) {
-        nmo_container_reset_element(&array->lifecycle,
+        nmo_container_reset_element(nmo_arena_array_hooks(array),
                                     base + (i * array->element_size),
                                     array->element_size);
     }
 }
 
-void nmo_arena_array_set_lifecycle(nmo_arena_array_t *array,
-                                    const nmo_container_lifecycle_t *lifecycle) {
+nmo_status_t nmo_arena_array_set_lifecycle(nmo_arena_array_t *array,
+                                            const nmo_container_lifecycle_t *lifecycle) {
     if (!array) {
-        return;
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid array lifecycle arguments");
     }
-    if (lifecycle) {
-        array->lifecycle = *lifecycle;
-    } else {
-        array->lifecycle.init = NULL;
-        array->lifecycle.reset = NULL;
-        array->lifecycle.copy = NULL;
-        array->lifecycle.move = NULL;
-        array->lifecycle.dispose = NULL;
-        array->lifecycle.user_data = NULL;
+    if (lifecycle == NULL) {
+        array->lifecycle = NULL;
+        NMO_RETURN_OK();
     }
+    nmo_container_lifecycle_t *copy = (nmo_container_lifecycle_t *)nmo_arena_alloc(
+        array->arena, sizeof(*copy), _Alignof(nmo_container_lifecycle_t));
+    if (copy == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "Failed to allocate array lifecycle");
+    }
+    *copy = *lifecycle;
+    array->lifecycle = copy;
+    NMO_RETURN_OK();
 }
 
 nmo_status_t nmo_arena_array_init(nmo_arena_array_t *array,
@@ -175,12 +187,7 @@ nmo_status_t nmo_arena_array_init(nmo_arena_array_t *array,
     array->capacity = 0;
     array->element_size = element_size;
     array->arena = arena;
-    array->lifecycle.init = NULL;
-    array->lifecycle.reset = NULL;
-    array->lifecycle.copy = NULL;
-    array->lifecycle.move = NULL;
-    array->lifecycle.dispose = NULL;
-    array->lifecycle.user_data = NULL;
+    array->lifecycle = NULL;
 
     if (initial_capacity > 0) {
         return nmo_arena_array_reserve(array, initial_capacity);
@@ -265,8 +272,8 @@ nmo_status_t nmo_arena_array_append(nmo_arena_array_t *array, const void *elemen
     }
 
     uint8_t *dest = (uint8_t *)array->data + (array->count * array->element_size);
-    if (array->lifecycle.copy) {
-        nmo_container_copy_element(&array->lifecycle, dest, element, array->element_size);
+    if (nmo_arena_array_hooks(array)->copy) {
+        nmo_container_copy_element(nmo_arena_array_hooks(array), dest, element, array->element_size);
     } else {
         memcpy(dest, element, array->element_size);
     }
@@ -343,16 +350,16 @@ nmo_status_t nmo_arena_array_set(nmo_arena_array_t *array, size_t index, const v
     }
 
     uint8_t *dest = (uint8_t *)array->data + (index * array->element_size);
-    if (array->lifecycle.reset == NULL &&
-        array->lifecycle.dispose == NULL &&
-        array->lifecycle.copy == NULL) {
+    if (nmo_arena_array_hooks(array)->reset == NULL &&
+        nmo_arena_array_hooks(array)->dispose == NULL &&
+        nmo_arena_array_hooks(array)->copy == NULL) {
         memcpy(dest, element, array->element_size);
         NMO_RETURN_OK();
     }
 
     nmo_arena_array_reset_range(array, index, 1);
-    if (array->lifecycle.copy) {
-        nmo_container_copy_element(&array->lifecycle, dest, element, array->element_size);
+    if (nmo_arena_array_hooks(array)->copy) {
+        nmo_container_copy_element(nmo_arena_array_hooks(array), dest, element, array->element_size);
     } else {
         memcpy(dest, element, array->element_size);
     }
@@ -399,8 +406,8 @@ nmo_status_t nmo_arena_array_insert(nmo_arena_array_t *array,
                                    move_count);
     }
 
-    if (array->lifecycle.copy) {
-        nmo_container_copy_element(&array->lifecycle, dest, element, array->element_size);
+    if (nmo_arena_array_hooks(array)->copy) {
+        nmo_container_copy_element(nmo_arena_array_hooks(array), dest, element, array->element_size);
     } else {
         memcpy(dest, element, array->element_size);
     }
@@ -421,7 +428,7 @@ nmo_status_t nmo_arena_array_remove(nmo_arena_array_t *array,
 
     if (out_element) {
         nmo_container_copy_element(
-            &array->lifecycle, out_element, target, array->element_size);
+            nmo_arena_array_hooks(array), out_element, target, array->element_size);
     }
 
     nmo_arena_array_dispose_range(array, index, 1);
@@ -449,7 +456,7 @@ nmo_status_t nmo_arena_array_pop(nmo_arena_array_t *array, void *out_element) {
 
     if (out_element) {
         nmo_container_copy_element(
-            &array->lifecycle, out_element, target, array->element_size);
+            nmo_arena_array_hooks(array), out_element, target, array->element_size);
     }
 
     nmo_arena_array_dispose_range(array, array->count - 1, 1);
@@ -496,12 +503,7 @@ nmo_status_t nmo_arena_array_alloc(nmo_arena_array_t *array,
     array->count = 0;
     array->capacity = 0;
     array->data = NULL;
-    array->lifecycle.init = NULL;
-    array->lifecycle.reset = NULL;
-    array->lifecycle.copy = NULL;
-    array->lifecycle.move = NULL;
-    array->lifecycle.dispose = NULL;
-    array->lifecycle.user_data = NULL;
+    array->lifecycle = NULL;
 
     if (count == 0) {
         NMO_RETURN_OK();
@@ -538,7 +540,10 @@ nmo_status_t nmo_arena_array_clone(const nmo_arena_array_t *src,
     if (result != NMO_OK) {
         return result;
     }
-    nmo_arena_array_set_lifecycle(dest, &src->lifecycle);
+    result = nmo_arena_array_set_lifecycle(dest, src->lifecycle);
+    if (result != NMO_OK) {
+        return result;
+    }
 
     // Copy data if any
     if (src->count > 0 && src->data) {

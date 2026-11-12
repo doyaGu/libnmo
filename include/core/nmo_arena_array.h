@@ -34,7 +34,7 @@ typedef struct nmo_arena_array {
     size_t capacity;           /**< Maximum number of elements allocated */
     size_t element_size;       /**< Size of each element in bytes */
     nmo_arena_t *arena;        /**< Arena for allocations */
-    nmo_container_lifecycle_t lifecycle; /**< Optional lifecycle hooks */
+    const nmo_container_lifecycle_t *lifecycle; /**< Lifecycle hooks in the array's arena, NULL for none */
 } nmo_arena_array_t;
 
 /**
@@ -61,13 +61,16 @@ NMO_API nmo_status_t nmo_arena_array_init(nmo_arena_array_t *array,
  * Copy callbacks run when elements are written into the array and move
  * callbacks run when elements are relocated inside the array.
  * When init/reset are NULL, new slots are zero-initialized by default.
- * Passing NULL resets the lifecycle to a no-op configuration.
+ * Passing NULL resets the lifecycle to a no-op configuration. The hooks are
+ * copied into the array's arena, so most arrays, which have none, keep only a
+ * pointer.
  *
  * @param array  Array to configure (required)
  * @param lifecycle Lifecycle hooks (NULL to reset)
+ * @return NMO_OK, or NMO_ERR_NOMEM when the arena cannot hold the copy
  */
-NMO_API void nmo_arena_array_set_lifecycle(nmo_arena_array_t *array,
-                                            const nmo_container_lifecycle_t *lifecycle);
+NMO_API nmo_status_t nmo_arena_array_set_lifecycle(nmo_arena_array_t *array,
+                                                    const nmo_container_lifecycle_t *lifecycle);
 
 /**
  * @brief Reserve capacity in array
@@ -357,7 +360,7 @@ NMO_API nmo_status_t nmo_arena_array_resize(nmo_arena_array_t *array, size_t new
  * Usage: NMO_ARENA_ARRAY_INIT(uint32_t, arena_ptr)
  */
 #define NMO_ARENA_ARRAY_INIT(type, arena_ptr) \
-    { NULL, 0, 0, sizeof(type), (arena_ptr), NMO_CONTAINER_LIFECYCLE_INIT }
+    { NULL, 0, 0, sizeof(type), (arena_ptr), NULL }
 
 /**
  * @brief Get typed element from array
