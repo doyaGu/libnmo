@@ -145,7 +145,8 @@ endif()
 # Graphics APIs and window systems stay at the edges, so that a backend or a
 # host can be replaced alone: a graphics API's headers (OpenGL, OpenGL ES,
 # Vulkan, Metal, Direct3D) only in a backend of the renderer,
-# src/render/<backend>/, and a window system's (SDL) only in the view, src/view.
+# src/render/<backend>/, and SDL's only in the view, src/view, and in the
+# renderer's SDL_GPU backend, src/render/gpu.
 set(platform_violations "")
 file(GLOB_RECURSE platform_files "${SOURCE_DIR}/src/*.c" "${SOURCE_DIR}/src/*.h" "${SOURCE_DIR}/src/*.m")
 foreach(platform_file IN LISTS platform_files)
@@ -154,8 +155,8 @@ foreach(platform_file IN LISTS platform_files)
         REGEX "^[ \t]*#[ \t]*(include|import)[ \t]*<(GL|GLES[0-9]*|OpenGL|OpenGLES|vulkan|Metal|SDL[0-9]*)/|^[ \t]*#[ \t]*include[ \t]*<d3d[0-9a-z_]*\\.h>")
     foreach(include_line IN LISTS include_lines)
         if(include_line MATCHES "<SDL")
-            if(NOT relative_path MATCHES "^src/view/")
-                string(APPEND platform_violations "${relative_path}: ${include_line} (a window system outside src/view)\n")
+            if(NOT relative_path MATCHES "^src/(view|render/gpu)/")
+                string(APPEND platform_violations "${relative_path}: ${include_line} (SDL outside src/view and src/render/gpu)\n")
             endif()
         elseif(NOT relative_path MATCHES "^src/render/[a-z0-9_]+/")
             string(APPEND platform_violations "${relative_path}: ${include_line} (a graphics API outside a renderer backend)\n")
