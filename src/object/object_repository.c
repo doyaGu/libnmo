@@ -198,25 +198,10 @@ static nmo_status_t nmo_object_repository_link_name(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    nmo_object_t *previous = NULL;
-    bool replaced =
-        nmo_hash_table_get(repo->name_table, &obj->name, &previous) == NMO_OK;
-    if (replaced) {
-        nmo_status_t remove_result =
-            nmo_hash_table_remove(repo->name_table, &obj->name);
-        if (remove_result != NMO_OK) {
-            return remove_result;
-        }
-    }
-
-    nmo_status_t insert_result =
-        nmo_hash_table_insert(repo->name_table, &obj->name, &obj);
-    if (insert_result != NMO_OK && replaced && previous != NULL &&
-        previous->name != NULL && previous->name[0] != '\0') {
-        (void)nmo_hash_table_insert(
-            repo->name_table, &previous->name, &previous);
-    }
-    return insert_result;
+    /* A name finds the newest object that has it, and the entry points to
+     * that object's own copy of the name. A failure (only to grow, for a name
+     * not there yet) leaves the table as it was. */
+    return nmo_hash_table_replace(repo->name_table, &obj->name, &obj);
 }
 
 static void nmo_object_repository_unlink_name(
