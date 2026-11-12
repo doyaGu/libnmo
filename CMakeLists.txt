@@ -101,6 +101,29 @@ if(APPLE)
     endif()
 endif()
 
+# libFuzzer builds of the harnesses in tests/fuzz. Everything is compiled with
+# coverage instrumentation, ASan and UBSan, and undefined behavior aborts so the
+# fuzzer counts it as a crash. Needs a Clang that ships libFuzzer (Apple's does
+# not; Homebrew's llvm does).
+option(NMO_BUILD_FUZZERS "Build the libFuzzer harnesses in tests/fuzz (Clang with libFuzzer)" OFF)
+if(NMO_BUILD_FUZZERS)
+    include(CheckCSourceCompiles)
+    set(CMAKE_REQUIRED_FLAGS "-fsanitize=fuzzer")
+    set(CMAKE_REQUIRED_LINK_OPTIONS -fsanitize=fuzzer)
+    check_c_source_compiles(
+        "#include <stddef.h>
+        #include <stdint.h>
+        int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) { (void)data; (void)size; return 0; }"
+        NMO_LIBFUZZER_AVAILABLE)
+    unset(CMAKE_REQUIRED_FLAGS)
+    unset(CMAKE_REQUIRED_LINK_OPTIONS)
+    if(NOT NMO_LIBFUZZER_AVAILABLE)
+        message(FATAL_ERROR "NMO_BUILD_FUZZERS is ON, but ${CMAKE_C_COMPILER} cannot link with -fsanitize=fuzzer")
+    endif()
+    add_compile_options(-fsanitize=fuzzer-no-link,address,undefined -fno-sanitize-recover=undefined -g)
+    add_link_options(-fsanitize=address,undefined)
+endif()
+
 # Find bundled third-party dependencies through one shared entrypoint.
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/deps" "${CMAKE_CURRENT_BINARY_DIR}/deps" EXCLUDE_FROM_ALL)
 

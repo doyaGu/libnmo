@@ -1,0 +1,6 @@
+# LeakSanitizer suppressions for libFuzzer runs:
+#   LSAN_OPTIONS=suppressions=tests/fuzz/lsan.supp
+# On macOS the thread libFuzzer starts to watch the RSS limit is still alive
+# at exit, so its std::thread state is reported as a leak, and in -fork mode
+# that report ends the run.
+leak:fuzzer::StartRssThread
