@@ -57,15 +57,16 @@ const char *nmo_error_string(nmo_status_t code) {
  * ============================================================================= */
 
 #define NMO_LAST_ERROR_MESSAGE_SIZE 1024
-#define NMO_LAST_ERROR_CHAIN_SIZE 4096
 
+/* Expected misses (a key not found, an identifier a chunk lacks) set the last
+ * error on hot paths, so setting it stays cheap: a message without arguments is
+ * copied rather than formatted, and the chain is built only when asked for. */
 typedef struct nmo_last_error_state {
     nmo_error_code_t code;
     nmo_severity_t severity;
     const char *file;
     int line;
     char message[NMO_LAST_ERROR_MESSAGE_SIZE];
-    char chain[NMO_LAST_ERROR_CHAIN_SIZE];
 } nmo_last_error_state_t;
 
 #if defined(_MSC_VER)
@@ -75,12 +76,17 @@ static _Thread_local nmo_last_error_state_t tls_last_error = {0};
 #endif
 
 void nmo_last_error_clear(void) {
+    /* Every successful return clears it: leave a clear state untouched. */
+    if (tls_last_error.code == NMO_OK && tls_last_error.message[0] == '\0' &&
+        tls_last_error.file == NULL && tls_last_error.line == 0 &&
+        tls_last_error.severity == NMO_SEVERITY_DEBUG) {
+        return;
+    }
     tls_last_error.code = NMO_OK;
     tls_last_error.severity = NMO_SEVERITY_DEBUG;
     tls_last_error.file = NULL;
     tls_last_error.line = 0;
     tls_last_error.message[0] = '\0';
-    tls_last_error.chain[0] = '\0';
 }
 
 nmo_last_error_saved_t *nmo_last_error_save(void) {
@@ -133,13 +139,22 @@ size_t nmo_last_error_message_copy(char *dst, size_t cap) {
 }
 
 size_t nmo_last_error_chain_copy(char *dst, size_t cap) {
-    size_t len = strlen(tls_last_error.chain);
-    if (cap > 0 && dst != NULL) {
-        size_t copy_len = (len < cap - 1) ? len : cap - 1;
-        memcpy(dst, tls_last_error.chain, copy_len);
-        dst[copy_len] = '\0';
+    /* The message, the error code's name and where it was set. */
+    if (dst == NULL) {
+        cap = 0;
     }
-    return len;
+    const char *code_str = nmo_error_string(tls_last_error.code);
+    int len = tls_last_error.file != NULL
+        ? snprintf(dst, cap, "[%s] %s (%s:%d)", code_str, tls_last_error.message,
+                   tls_last_error.file, tls_last_error.line)
+        : snprintf(dst, cap, "[%s] %s", code_str, tls_last_error.message);
+    if (len < 0) {
+        if (cap > 0) {
+            dst[0] = '\0';
+        }
+        return 0;
+    }
+    return (size_t)len;
 }
 
 static void nmo_last_error_set_v(nmo_error_code_t code,
@@ -153,32 +168,36 @@ static void nmo_last_error_set_v(nmo_error_code_t code,
     tls_last_error.file = file;
     tls_last_error.line = line;
 
-    // Format message
+    const char *text = NULL;
+    if (fmt == NULL) {
+        text = "";
+    } else if (strchr(fmt, '%') == NULL) {
+        text = fmt;
+    } else if (fmt[0] == '%' && fmt[1] == 's' && fmt[2] == '\0') {
+        va_list args_copy;
+        va_copy(args_copy, args);
+        text = va_arg(args_copy, const char *);
+        va_end(args_copy);
+        if (text == NULL) {
+            text = "(null)";
+        }
+    }
+    if (text != NULL) {
+        size_t len = strlen(text);
+        if (len >= NMO_LAST_ERROR_MESSAGE_SIZE) {
+            len = NMO_LAST_ERROR_MESSAGE_SIZE - 1;
+        }
+        memmove(tls_last_error.message, text, len);
+        tls_last_error.message[len] = '\0';
+        return;
+    }
+
     va_list args_copy;
     va_copy(args_copy, args);
     int msg_len = vsnprintf(tls_last_error.message, NMO_LAST_ERROR_MESSAGE_SIZE, fmt, args_copy);
     va_end(args_copy);
     if (msg_len < 0) {
         tls_last_error.message[0] = '\0';
-        msg_len = 0;
-    } else if (msg_len >= NMO_LAST_ERROR_MESSAGE_SIZE) {
-        msg_len = NMO_LAST_ERROR_MESSAGE_SIZE - 1;
-    }
-
-    // Format chain (message + file:line + error code name)
-    int chain_len = 0;
-    const char *code_str = nmo_error_string(code);
-    if (file != NULL) {
-        chain_len = snprintf(tls_last_error.chain, NMO_LAST_ERROR_CHAIN_SIZE,
-                             "[%s] %s (%s:%d)",
-                             code_str, tls_last_error.message, file, line);
-    } else {
-        chain_len = snprintf(tls_last_error.chain, NMO_LAST_ERROR_CHAIN_SIZE,
-                             "[%s] %s",
-                             code_str, tls_last_error.message);
-    }
-    if (chain_len < 0 || chain_len >= NMO_LAST_ERROR_CHAIN_SIZE) {
-        tls_last_error.chain[NMO_LAST_ERROR_CHAIN_SIZE - 1] = '\0';
     }
 }
 
