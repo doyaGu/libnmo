@@ -445,6 +445,16 @@ nmo_status_t nmo_object_system_create_objects_from_header1(
 
     memset(created, 0, sizeof(nmo_object_t *) * desc_count);
 
+    /* Room for every object of the file at once. */
+    if (desc_count > SIZE_MAX - nmo_object_repository_get_count(repo)) {
+        return NMO_ERR_NOMEM;
+    }
+    nmo_status_t reserve_result = nmo_object_repository_reserve(
+        repo, nmo_object_repository_get_count(repo) + desc_count);
+    if (reserve_result != NMO_OK) {
+        return reserve_result;
+    }
+
     unsigned char *repeated_file_ids = NULL;
     nmo_status_t repeat_result = object_system_find_repeated_file_ids(
         scratch_arena, descs, desc_count, logger, &repeated_file_ids);

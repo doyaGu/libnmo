@@ -125,6 +125,17 @@ NMO_API void nmo_object_repository_remove_mutation_observer(
     void *user_data);
 
 /**
+ * @brief Make room for a number of objects at once
+ *
+ * A loader that knows how many objects a file holds reserves them before
+ * adding any, so the ID index does not grow one doubling at a time.
+ * @param repository Repository
+ * @param count Number of objects the repository is to hold
+ * @return NMO_OK, or NMO_ERR_NOMEM
+ */
+NMO_API nmo_status_t nmo_object_repository_reserve(nmo_object_repository_t *repository, size_t count);
+
+/**
  * @brief Add object to repository
  * @param repository Repository
  * @param object In/out object pointer (move ownership into repository)

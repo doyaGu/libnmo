@@ -561,6 +561,14 @@ static void nmo_object_repository_notify_mutation(
 /**
  * Add object
  */
+nmo_status_t nmo_object_repository_reserve(nmo_object_repository_t *repo, size_t count) {
+    if (repo == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid repository reserve arguments");
+    }
+    return nmo_indexed_map_reserve(repo->id_map, count);
+}
+
 nmo_status_t nmo_object_repository_add(nmo_object_repository_t *repo, nmo_object_t **obj_ref) {
     if (repo == NULL || obj_ref == NULL || *obj_ref == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;

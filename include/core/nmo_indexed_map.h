@@ -91,6 +91,17 @@ void nmo_indexed_map_destroy(nmo_indexed_map_t *map);
 nmo_status_t nmo_indexed_map_insert(nmo_indexed_map_t *map, const void *key, const void *value);
 
 /**
+ * @brief Make room for a number of entries at once
+ *
+ * The map holds count entries without growing again. Growing one doubling at
+ * a time leaves each smaller copy of the dense arrays in the map's arena.
+ * @param map Indexed map
+ * @param count Number of entries the map is to hold
+ * @return NMO_OK, or NMO_ERR_NOMEM
+ */
+nmo_status_t nmo_indexed_map_reserve(nmo_indexed_map_t *map, size_t count);
+
+/**
  * @brief Get value by key
  * @param map Indexed map
  * @param key Key pointer

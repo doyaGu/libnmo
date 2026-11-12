@@ -445,6 +445,33 @@ void nmo_indexed_map_set_lifecycle(nmo_indexed_map_t *map,
     }
 }
 
+nmo_status_t nmo_indexed_map_reserve(nmo_indexed_map_t *map, size_t count) {
+    if (map == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid indexed map reserve arguments");
+    }
+
+    if (count > map->array_capacity) {
+        int result = indexed_map_allocate_dense(map, count);
+        if (result != NMO_OK) {
+            NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR, "Failed to reserve indexed map entries");
+        }
+    }
+
+    /* The hash keeps at most LOAD_FACTOR of its slots full. */
+    if ((double)count > (double)map->capacity * LOAD_FACTOR) {
+        size_t slots = indexed_map_next_capacity((size_t)((double)count / LOAD_FACTOR) + 1u);
+        if (slots == 0) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Indexed map capacity overflow");
+        }
+        int result = indexed_map_rehash(map, slots);
+        if (result != NMO_OK) {
+            NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR, "Failed to reserve indexed map slots");
+        }
+    }
+
+    NMO_RETURN_OK();
+}
+
 nmo_status_t nmo_indexed_map_insert(nmo_indexed_map_t *map, const void *key, const void *value) {
     if (map == NULL || key == NULL || value == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid indexed map insert arguments");
