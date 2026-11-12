@@ -50,6 +50,7 @@ typedef enum nmo_error_code {
     NMO_ERR_ALREADY_EXISTS,       /**< Item already exists */
     NMO_ERR_CORRUPT,              /**< Corrupted data */
     NMO_ERR_CANCELLED,            /**< Operation cancelled */
+    NMO_ERR_LIMIT_EXCEEDED,       /**< Input exceeds a limit the caller set */
 } nmo_error_code_t;
 
 /**

@@ -36,6 +36,7 @@ static const char *error_messages[] = {
     [NMO_ERR_ALREADY_EXISTS] = "Item already exists",
     [NMO_ERR_CORRUPT] = "Corrupted data",
     [NMO_ERR_CANCELLED] = "Operation cancelled",
+    [NMO_ERR_LIMIT_EXCEEDED] = "Limit exceeded",
 };
 
 const char *nmo_error_string(nmo_status_t code) {
