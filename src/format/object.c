@@ -6,6 +6,11 @@
 
 #define INITIAL_CHILD_CAPACITY 4
 
+/* First block of an object's storage arena, taken when its state first needs
+ * one. Most objects keep a few hundred bytes of state or none, and the arena
+ * grows by doubling for the few that keep more. */
+#define NMO_OBJECT_STORAGE_FIRST_BLOCK 1024u
+
 nmo_object_t *nmo_object_create(const nmo_allocator_t *allocator,
                                nmo_object_id_t id,
                                nmo_class_id_t class_id)
@@ -19,7 +24,7 @@ nmo_object_t *nmo_object_create(const nmo_allocator_t *allocator,
 
     memset(object, 0, sizeof(*object));
     object->allocator = effective;
-    object->storage_arena = nmo_arena_create(&object->allocator, 0);
+    object->storage_arena = nmo_arena_create(&object->allocator, NMO_OBJECT_STORAGE_FIRST_BLOCK);
     if (object->storage_arena == NULL) {
         nmo_free(&object->allocator, object);
         return NULL;
