@@ -583,8 +583,13 @@ nmo_status_t nmo_indexed_map_remove(nmo_indexed_map_t *map, const void *key) {
 }
 
 int nmo_indexed_map_contains(const nmo_indexed_map_t *map, const void *key) {
-    nmo_status_t result = nmo_indexed_map_get(map, key, NULL);
-    return result == NMO_OK ? 1 : 0;
+    /* A query: a missing key is an answer, not an error to record. */
+    if (map == NULL || key == NULL) {
+        return 0;
+    }
+    int found = 0;
+    int slot = indexed_map_find_slot(map, key, &found);
+    return slot >= 0 && found ? 1 : 0;
 }
 
 size_t nmo_indexed_map_get_count(const nmo_indexed_map_t *map) {

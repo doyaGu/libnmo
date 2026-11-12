@@ -453,8 +453,13 @@ nmo_status_t nmo_hash_table_remove(nmo_hash_table_t *table, const void *key) {
 }
 
 int nmo_hash_table_contains(const nmo_hash_table_t *table, const void *key) {
-    nmo_status_t result = nmo_hash_table_get(table, key, NULL);
-    return result == NMO_OK ? 1 : 0;
+    /* A query: a missing key is an answer, not an error to record. */
+    if (table == NULL || key == NULL) {
+        return 0;
+    }
+    int found = 0;
+    int slot = nmo_hash_table_find_slot(table, key, &found);
+    return slot >= 0 && found ? 1 : 0;
 }
 
 size_t nmo_hash_table_get_count(const nmo_hash_table_t *table) {
