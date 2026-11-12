@@ -8,6 +8,7 @@
 #define NMO_RENDER_MATH_H
 
 #include "engine/nmo_engine_render.h"
+#include "render_backend.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -26,5 +27,12 @@ bool render_affine_inverse(float out[16], const float m[16]);
  */
 void render_projection(const nmo_engine_frame_t *frame, bool orthographic, float fov,
                        float near_plane, float far_plane, float out[16]);
+
+/*
+ * A draw's projection as a backend applies it: Direct3D's (y up, depth
+ * 0..w), its depth translation scaled, or the 2D and screen ones built the
+ * same way, for a backend that draws into rectangles from the top left.
+ */
+void render_clip_projection(const render_state_t *state, float out[16]);
 
 #endif /* NMO_RENDER_MATH_H */

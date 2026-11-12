@@ -70,6 +70,35 @@ bool render_affine_inverse(float out[16], const float m[16])
     return true;
 }
 
+void render_clip_projection(const render_state_t *s, float out[16])
+{
+    memset(out, 0, 16 * sizeof(float));
+    if (s->projection_kind == RENDER_PROJECTION_2D) {
+        /* x right, y down in render context pixels; z -1..1 to 1..0 */
+        out[0] = 2.0f / s->projection_rect[0];
+        out[5] = -2.0f / s->projection_rect[1];
+        out[10] = -0.5f;
+        out[12] = -1.0f;
+        out[13] = 1.0f;
+        out[14] = 0.5f;
+        out[15] = 1.0f;
+    } else if (s->projection_kind == RENDER_PROJECTION_SCREEN) {
+        float left = s->projection_rect[0], top = s->projection_rect[1];
+        float width = s->projection_rect[2], height = s->projection_rect[3];
+        out[0] = 2.0f / width;
+        out[5] = -2.0f / height;
+        out[10] = 1.0f;
+        out[12] = -2.0f * left / width - 1.0f;
+        out[13] = 2.0f * top / height + 1.0f;
+        out[15] = 1.0f;
+    } else {
+        memcpy(out, s->projection, 16 * sizeof(float));
+        if (s->depth_scale != 0.0f) {
+            out[14] *= s->depth_scale;
+        }
+    }
+}
+
 void render_projection(const nmo_engine_frame_t *frame, bool orthographic, float fov,
                        float near_plane, float far_plane, float out[16])
 {

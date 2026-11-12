@@ -774,35 +774,6 @@ static void soft_line(soft_context_t *ctx, const soft_vertex_t *a, const soft_ve
  * Draws
  * ============================================================================ */
 
-static void soft_projection_matrix(const render_state_t *s, float out[16])
-{
-    memset(out, 0, 16 * sizeof(float));
-    if (s->projection_kind == RENDER_PROJECTION_2D) {
-        /* x right, y down in render context pixels; z -1..1 to 1..0 */
-        out[0] = 2.0f / s->projection_rect[0];
-        out[5] = -2.0f / s->projection_rect[1];
-        out[10] = -0.5f;
-        out[12] = -1.0f;
-        out[13] = 1.0f;
-        out[14] = 0.5f;
-        out[15] = 1.0f;
-    } else if (s->projection_kind == RENDER_PROJECTION_SCREEN) {
-        float left = s->projection_rect[0], top = s->projection_rect[1];
-        float width = s->projection_rect[2], height = s->projection_rect[3];
-        out[0] = 2.0f / width;
-        out[5] = -2.0f / height;
-        out[10] = 1.0f;
-        out[12] = -2.0f * left / width - 1.0f;
-        out[13] = 2.0f * top / height + 1.0f;
-        out[15] = 1.0f;
-    } else {
-        memcpy(out, s->projection, 16 * sizeof(float));
-        if (s->depth_scale != 0.0f) {
-            out[14] *= s->depth_scale;
-        }
-    }
-}
-
 /* What a draw may touch: the viewport, cut by the scissor, on the surface */
 static void soft_bounds(const soft_surface_t *surface, const render_state_t *s, bool viewport,
                         int32_t out[4])
@@ -871,7 +842,7 @@ void soft_draw(soft_surface_t *surface, const render_state_t *s, const render_ge
         ctx.viewport[c] = (float)s->viewport[c];
     }
     memcpy(ctx.model_view, s->model_view, sizeof(ctx.model_view));
-    soft_projection_matrix(s, ctx.projection);
+    render_clip_projection(s, ctx.projection);
     float inverse[16];
     if (!render_affine_inverse(inverse, s->model_view)) {
         memset(inverse, 0, sizeof(inverse));
