@@ -26,9 +26,18 @@ extern "C" {
 
 typedef struct nmo_view nmo_view_t;
 
-/** Open a window `scale` times the size of the render context. */
+/** What a view draws with */
+typedef enum nmo_view_renderer {
+    NMO_VIEW_RENDERER_GL = 0,  /* an OpenGL context: nmo_render_gl */
+    NMO_VIEW_RENDERER_GPU = 1, /* an SDL GPU device (Metal or Vulkan): nmo_render_gpu */
+} nmo_view_renderer_t;
+
+/** Open a window `scale` times the size of the render context, drawn with OpenGL. */
 NMO_API nmo_status_t nmo_view_open(nmo_engine_t *engine, const char *title, int scale,
                                    nmo_view_t **out_view);
+/** Open a window drawn with `renderer`. */
+NMO_API nmo_status_t nmo_view_open_with(nmo_engine_t *engine, const char *title, int scale,
+                                        nmo_view_renderer_t renderer, nmo_view_t **out_view);
 NMO_API void nmo_view_close(nmo_view_t *view);
 /** Pass the window's input to the engine; false once the window is closed. */
 NMO_API bool nmo_view_poll(nmo_view_t *view);

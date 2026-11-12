@@ -51,6 +51,9 @@
 #ifdef NMO_HAS_RENDER_SOFT
 #include "render/nmo_render_soft.h"
 #endif
+#ifdef NMO_HAS_RENDER_GPU
+#include "render/nmo_render_gpu.h"
+#endif
 
 typedef struct run_args {
     uint32_t frames;
@@ -79,6 +82,7 @@ typedef struct run_args {
     bool mute;            /* --mute: the window plays no sound */
     bool mipmaps;         /* --mipmaps: the window mipmaps every texture */
     bool headless;        /* --headless: the --shot frames drawn in memory, without a window */
+    bool gpu;             /* --renderer gpu: drawn with an SDL GPU device */
     bool quiet;           /* --quiet, or a window played until it closes: no events listed */
     bool control;         /* stdin step commands; the engine waits between commands */
     bool real_time;       /* a window with no --delta or --shot: frames take the time that passed */
@@ -2005,13 +2009,20 @@ static nmo_status_t run_window_open(nmo_engine_t *engine, const char *title, con
     nmo_status_t status = NMO_ERR_INVALID_STATE;
 #ifdef NMO_HAS_RENDER_SOFT
     if (args->headless) {
+#ifdef NMO_HAS_RENDER_GPU
+        status = args->gpu ? nmo_render_create_gpu_offscreen(engine, &window->render)
+                           : nmo_render_create_soft(engine, &window->render);
+#else
         status = nmo_render_create_soft(engine, &window->render);
+#endif
         nmo_render_set_mipmaps(window->render, args->mipmaps);
     }
 #endif
 #ifdef NMO_HAS_VIEW
     if (!args->headless) {
-        status = nmo_view_open(engine, title, 2, &window->view);
+        status = nmo_view_open_with(engine, title, 2,
+                                    args->gpu ? NMO_VIEW_RENDERER_GPU : NMO_VIEW_RENDERER_GL,
+                                    &window->view);
         nmo_view_set_mipmaps(window->view, args->mipmaps);
     }
 #endif
@@ -2406,6 +2417,9 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
         {"--shot", NULL, NMO_OPT_STRING, "Save the window at frames: FILE.png@FRAME,..."},
         {"--headless", NULL, NMO_OPT_FLAG,
          "Draw the --shot frames in memory with the software renderer, without a window"},
+        {"--renderer", NULL, NMO_OPT_STRING,
+         "Draw with gl or gpu (an SDL GPU device: Metal or Vulkan); default: gl in a "
+         "window, the software renderer headless"},
         {"--mute", NULL, NMO_OPT_FLAG, "Play no sound in the window"},
         {"--mipmaps", NULL, NMO_OPT_FLAG,
          "Mipmap every texture in the window but cutouts (default: only those CK mipmaps)"},
@@ -2414,7 +2428,7 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
     };
     enum { OPT_FRAMES, OPT_DELTA, OPT_START, OPT_SCRIPT, OPT_UNKNOWN, OPT_STRICT, OPT_MAX_ITER, OPT_SEED,
            OPT_TRACE, OPT_KEYS, OPT_STEER, OPT_STEER_OBJECT, OPT_STEER_LOG, OPT_PHYSICS_LOG, OPT_CONTROL, OPT_OBSERVE, OPT_PATH, OPT_WRITE, OPT_MESSAGE, OPT_REGISTRY, OPT_PHYSICS,
-           OPT_WINDOW, OPT_SHOT, OPT_HEADLESS, OPT_MUTE, OPT_MIPMAPS, OPT_QUIET, OPT_COUNT };
+           OPT_WINDOW, OPT_SHOT, OPT_HEADLESS, OPT_RENDERER, OPT_MUTE, OPT_MIPMAPS, OPT_QUIET, OPT_COUNT };
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
@@ -2433,6 +2447,19 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
     out->mute = nmo_opt_flag(&vals[OPT_MUTE]);
     out->mipmaps = nmo_opt_flag(&vals[OPT_MIPMAPS]);
     out->headless = nmo_opt_flag(&vals[OPT_HEADLESS]);
+    const char *renderer = nmo_opt_str(&vals[OPT_RENDERER]);
+    if (renderer != NULL && strcmp(renderer, "gpu") != 0 &&
+        !(strcmp(renderer, "gl") == 0 && !out->headless)) {
+        fprintf(stderr, "Error: --renderer is gl (in a window) or gpu\n");
+        return false;
+    }
+    out->gpu = renderer != NULL && strcmp(renderer, "gpu") == 0;
+#ifndef NMO_HAS_RENDER_GPU
+    if (out->gpu) {
+        fprintf(stderr, "Error: --renderer gpu needs a build with the GPU renderer (NMO_RENDER_GPU)\n");
+        return false;
+    }
+#endif
     if (out->headless && out->window) {
         fprintf(stderr, "Error: --headless draws without a window: leave out --window\n");
         return false;

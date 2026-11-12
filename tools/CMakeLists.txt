@@ -93,6 +93,9 @@ endif()
 if(TARGET nmo_render_soft)
     target_link_libraries(nmo_cli PRIVATE nmo_render_soft)
 endif()
+if(TARGET nmo_render_gpu)
+    target_link_libraries(nmo_cli PRIVATE nmo_render_gpu)
+endif()
 
 # The analyses `nmo script analyze` bundles, compiled into nmo_cmd_script_analyze.c.
 foreach(_nmo_analysis IN ITEMS summary messages arrays interactions)

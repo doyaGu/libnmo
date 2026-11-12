@@ -7,6 +7,7 @@
 
 #include "engine/nmo_view.h"
 #include "render/nmo_render_gl.h"
+#include "render/nmo_render_gpu.h"
 #include "view_audio.h"
 
 #include <SDL3/SDL.h>
@@ -17,7 +18,8 @@
 struct nmo_view {
     nmo_engine_t *engine;
     SDL_Window *window;
-    SDL_GLContext context;
+    SDL_GLContext context;  /* an OpenGL view's */
+    SDL_GPUDevice *device;  /* a GPU view's: the renderer shows the frames itself */
     nmo_render_t *render;
     uint64_t start;
     bool cursor_shown;
@@ -166,7 +168,9 @@ nmo_status_t nmo_view_draw(nmo_view_t *view)
         return status;
     }
     nmo_render_pick(view->render);
-    SDL_GL_SwapWindow(view->window);
+    if (view->context != NULL) {
+        SDL_GL_SwapWindow(view->window);
+    }
     return NMO_OK;
 }
 
@@ -210,8 +214,29 @@ double nmo_view_time(const nmo_view_t *view)
  * The window
  * ============================================================================ */
 
+/* The window and its SDL GPU device, which the renderer claims */
+static nmo_status_t view_open_gpu(nmo_view_t *view, const char *title, int scale)
+{
+    view->window = SDL_CreateWindow(title != NULL ? title : "nmo", 640 * scale, 480 * scale,
+                                    SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+    view->device = view->window != NULL
+                       ? SDL_CreateGPUDevice((SDL_GPUShaderFormat)nmo_render_gpu_shader_formats(), false, NULL)
+                       : NULL;
+    if (view->device == NULL) {
+        fprintf(stderr, "Error: Could not open a GPU window (%s)\n", SDL_GetError());
+        return NMO_ERR_INVALID_STATE;
+    }
+    return nmo_render_create_gpu(view->engine, view->device, view->window, &view->render);
+}
+
 nmo_status_t nmo_view_open(nmo_engine_t *engine, const char *title, int scale,
                            nmo_view_t **out_view)
+{
+    return nmo_view_open_with(engine, title, scale, NMO_VIEW_RENDERER_GL, out_view);
+}
+
+nmo_status_t nmo_view_open_with(nmo_engine_t *engine, const char *title, int scale,
+                                nmo_view_renderer_t renderer, nmo_view_t **out_view)
 {
     if (engine == NULL || out_view == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
@@ -229,6 +254,18 @@ nmo_status_t nmo_view_open(nmo_engine_t *engine, const char *title, int scale,
     view->engine = engine;
     if (scale < 1) {
         scale = 1;
+    }
+    if (renderer == NMO_VIEW_RENDERER_GPU) {
+        nmo_status_t gpu_status = view_open_gpu(view, title, scale);
+        if (gpu_status != NMO_OK) {
+            nmo_view_close(view);
+            return gpu_status;
+        }
+        view->audio = view_audio_open();
+        view->start = SDL_GetTicksNS();
+        view->cursor_shown = true;
+        *out_view = view;
+        return NMO_OK;
     }
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
@@ -271,10 +308,13 @@ void nmo_view_close(nmo_view_t *view)
     if (view == NULL) {
         return;
     }
-    nmo_render_destroy(view->render); /* with its context current */
+    nmo_render_destroy(view->render); /* with its context current, or its device there */
     view_audio_close(view->audio);
     if (view->context != NULL) {
         SDL_GL_DestroyContext(view->context);
+    }
+    if (view->device != NULL) {
+        SDL_DestroyGPUDevice(view->device);
     }
     if (view->window != NULL) {
         SDL_DestroyWindow(view->window);
