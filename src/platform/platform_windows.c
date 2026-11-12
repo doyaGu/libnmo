@@ -24,6 +24,14 @@ static char *platform_copy(const char *text)
     return copy;
 }
 
+/* free() with the last error kept, so nmo_platform_error_message() still tells the failure before it */
+static void platform_free(void *ptr)
+{
+    DWORD code = GetLastError();
+    free(ptr);
+    SetLastError(code);
+}
+
 /* A UTF-8 string as UTF-16, malloc'ed; NULL when it is not one */
 static wchar_t *platform_wide(const char *utf8)
 {
@@ -120,8 +128,8 @@ FILE *nmo_platform_fopen(const char *path, const char *mode)
     wchar_t *wide_path = platform_wide(path);
     wchar_t *wide_mode = platform_wide(mode);
     FILE *file = wide_path != NULL && wide_mode != NULL ? _wfopen(wide_path, wide_mode) : NULL;
-    free(wide_path);
-    free(wide_mode);
+    platform_free(wide_path);
+    platform_free(wide_mode);
     return file;
 }
 
@@ -154,13 +162,13 @@ nmo_platform_mapping_t *nmo_platform_map(const char *path, const void **out_data
     }
     mapping->file = CreateFileW(wide, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING,
                                 FILE_ATTRIBUTE_NORMAL, NULL);
-    free(wide);
+    platform_free(wide);
     LARGE_INTEGER size;
     if (mapping->file == INVALID_HANDLE_VALUE || !GetFileSizeEx(mapping->file, &size)) {
         if (mapping->file != INVALID_HANDLE_VALUE) {
             CloseHandle(mapping->file);
         }
-        free(mapping);
+        platform_free(mapping);
         return NULL;
     }
     if (size.QuadPart > 0) {
@@ -171,7 +179,7 @@ nmo_platform_mapping_t *nmo_platform_map(const char *path, const void **out_data
                 CloseHandle(mapping->mapping);
             }
             CloseHandle(mapping->file);
-            free(mapping);
+            platform_free(mapping);
             return NULL;
         }
     }
@@ -201,19 +209,34 @@ struct nmo_platform_file {
     HANDLE handle;
 };
 
+/* The attributes MoveFileExW would lose: the replacing file's own are what the target ends with */
+#define PLATFORM_KEPT_ATTRIBUTES (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_NOT_CONTENT_INDEXED)
+
+/* The attributes a file replacing the one at `like` takes from it; normal when there is none */
+static DWORD platform_kept_attributes(const char *like)
+{
+    wchar_t *wide = like != NULL ? platform_wide(like) : NULL;
+    DWORD attributes = wide != NULL ? GetFileAttributesW(wide) : INVALID_FILE_ATTRIBUTES;
+    free(wide);
+    if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & PLATFORM_KEPT_ATTRIBUTES) == 0) {
+        return FILE_ATTRIBUTE_NORMAL;
+    }
+    return attributes & PLATFORM_KEPT_ATTRIBUTES;
+}
+
 int nmo_platform_file_create_new(const char *path, const char *like, nmo_platform_file_t **out_file)
 {
-    (void)like; /* a replaced file's attributes are the move's to keep */
     *out_file = NULL;
     wchar_t *wide = platform_wide(path);
     if (wide == NULL) {
         return -1;
     }
+    /* Not FILE_ATTRIBUTE_TEMPORARY: the file keeps its attributes when it is moved in place */
     HANDLE handle = CreateFileW(wide, GENERIC_READ | GENERIC_WRITE, 0, NULL, CREATE_NEW,
-                                FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_SEQUENTIAL_SCAN, NULL);
+                                platform_kept_attributes(like) | FILE_FLAG_SEQUENTIAL_SCAN, NULL);
     if (handle == INVALID_HANDLE_VALUE) {
         DWORD error = GetLastError();
-        free(wide);
+        platform_free(wide);
         return error == ERROR_FILE_EXISTS || error == ERROR_ALREADY_EXISTS ? 1 : -1;
     }
     nmo_platform_file_t *file = (nmo_platform_file_t *)malloc(sizeof(*file));
@@ -263,8 +286,8 @@ int nmo_platform_replace(const char *from, const char *to, bool write_through)
     wchar_t *wide_to = platform_wide(to);
     DWORD flags = MOVEFILE_REPLACE_EXISTING | (write_through ? MOVEFILE_WRITE_THROUGH : 0u);
     int result = wide_from != NULL && wide_to != NULL && MoveFileExW(wide_from, wide_to, flags) ? 0 : -1;
-    free(wide_from);
-    free(wide_to);
+    platform_free(wide_from);
+    platform_free(wide_to);
     return result;
 }
 
@@ -278,7 +301,7 @@ int nmo_platform_remove(const char *path)
 {
     wchar_t *wide = platform_wide(path);
     int result = wide != NULL && DeleteFileW(wide) ? 0 : -1;
-    free(wide);
+    platform_free(wide);
     return result;
 }
 
@@ -296,7 +319,7 @@ void *nmo_platform_library_open(const char *path, char **out_error)
 {
     wchar_t *wide = platform_wide(path);
     HMODULE library = wide != NULL ? LoadLibraryW(wide) : NULL;
-    free(wide);
+    platform_free(wide);
     if (library == NULL) {
         platform_last_error(out_error, "LoadLibrary failed");
     }

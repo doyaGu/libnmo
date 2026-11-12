@@ -60,6 +60,9 @@ TEST(txn_windows, basic_commit) {
 
     int correct = file_contains(TEST_FILE, TEST_DATA);
     ASSERT_TRUE(correct);
+
+    /* The saved file is an ordinary one, not marked temporary */
+    ASSERT_FALSE(GetFileAttributesA(TEST_FILE) & FILE_ATTRIBUTE_TEMPORARY);
 }
 
 /**
@@ -111,6 +114,41 @@ TEST(txn_windows, replace_existing) {
 
     int correct = file_contains(TEST_FILE, new_data);
     ASSERT_TRUE(correct);
+    ASSERT_FALSE(GetFileAttributesA(TEST_FILE) & FILE_ATTRIBUTE_TEMPORARY);
+}
+
+/**
+ * Test 3b: Replacing a hidden file keeps it hidden
+ */
+TEST(txn_windows, replace_keeps_hidden) {
+    const char *hidden_file = "test_hidden.dat";
+    SetFileAttributesA(hidden_file, FILE_ATTRIBUTE_NORMAL);
+    DeleteFileA(hidden_file);
+    FILE *f = fopen(hidden_file, "wb");
+    ASSERT_NOT_NULL(f);
+    fputs("old", f);
+    fclose(f);
+    ASSERT_TRUE(SetFileAttributesA(hidden_file, FILE_ATTRIBUTE_HIDDEN));
+
+    nmo_txn_desc_t desc = {
+        .path = hidden_file,
+        .durability = NMO_TXN_FSYNC,
+        .staging_dir = NULL
+    };
+    nmo_txn_handle_t *txn = nmo_txn_open(&desc);
+    ASSERT_NOT_NULL(txn);
+    ASSERT_EQ(NMO_OK, nmo_txn_write(txn, "new", 3));
+    ASSERT_EQ(NMO_OK, nmo_txn_commit(txn));
+    nmo_txn_close(txn);
+
+    DWORD attrs = GetFileAttributesA(hidden_file);
+    ASSERT_TRUE(attrs != INVALID_FILE_ATTRIBUTES);
+    ASSERT_TRUE(attrs & FILE_ATTRIBUTE_HIDDEN);
+    ASSERT_FALSE(attrs & FILE_ATTRIBUTE_TEMPORARY);
+    ASSERT_TRUE(file_contains(hidden_file, "new"));
+
+    SetFileAttributesA(hidden_file, FILE_ATTRIBUTE_NORMAL);
+    DeleteFileA(hidden_file);
 }
 
 /**
@@ -190,6 +228,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(txn_windows, basic_commit);
     REGISTER_TEST(txn_windows, rollback);
     REGISTER_TEST(txn_windows, replace_existing);
+    REGISTER_TEST(txn_windows, replace_keeps_hidden);
     REGISTER_TEST(txn_windows, multiple_writes);
     REGISTER_TEST(txn_windows, implicit_rollback);
     REGISTER_TEST(txn_windows, malformed_utf8_path_is_scanned_safely);

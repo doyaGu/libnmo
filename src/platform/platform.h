@@ -69,9 +69,10 @@ typedef struct nmo_platform_file nmo_platform_file_t;
 
 /*
  * Create the file at `path` for writing, only if there is none: 0 and the
- * file, 1 when one is there already, -1 when it cannot be made. It gets the
- * permissions of the file at `like` when there is one (POSIX), and is
- * marked temporary (Windows).
+ * file, 1 when one is there already, -1 when it cannot be made. From the
+ * file at `like`, when there is one, it takes what replacing that file would
+ * otherwise lose: its permissions (POSIX), or its hidden, system and
+ * not-indexed attributes (Windows).
  */
 int nmo_platform_file_create_new(const char *path, const char *like, nmo_platform_file_t **out_file);
 /* Write all of `size` bytes */
