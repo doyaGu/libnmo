@@ -307,8 +307,7 @@ TEST(chunk_id_remap, malformed_subchunk_remap_reports_and_rolls_back) {
     nmo_chunk_close(chunk);
 
     const uint32_t sequence_marker = UINT32_MAX;
-    ASSERT_EQ(NMO_OK, nmo_arena_array_append(
-        &chunk->chunk_refs, &sequence_marker));
+    ASSERT_EQ(NMO_OK, nmo_chunk_array_append(&chunk->chunk_refs, chunk->arena, sizeof(uint32_t), &sequence_marker));
 
     nmo_id_remap_t* remap = nmo_id_remap_create(arena);
     ASSERT_NOT_NULL(remap);
@@ -332,7 +331,7 @@ TEST(chunk_id_remap, malformed_chunk_arrays_are_rejected_before_remap) {
     nmo_id_remap_t* remap = nmo_id_remap_create(arena);
     ASSERT_NOT_NULL(remap);
 
-    nmo_arena_array_t* arrays[] = {
+    nmo_chunk_array_t* arrays[] = {
         &chunk->data,
         &chunk->ids,
         &chunk->chunk_refs,
@@ -353,11 +352,6 @@ TEST(chunk_id_remap, malformed_chunk_arrays_are_rejected_before_remap) {
     void* original_data = chunk->data.data;
     size_t original_count = chunk->data.count;
     size_t original_capacity = chunk->data.capacity;
-
-    chunk->data.element_size = sizeof(uint64_t);
-    ASSERT_EQ(NMO_ERR_INVALID_STATE,
-        nmo_chunk_remap_object_ids(chunk, remap));
-    chunk->data.element_size = sizeof(uint32_t);
 
     chunk->data.count = SIZE_MAX / sizeof(uint32_t) + 1u;
     chunk->data.capacity = chunk->data.count;
@@ -387,31 +381,31 @@ TEST(chunk_id_remap, malformed_id_metadata_reports_and_rolls_back) {
     ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 10, 20));
 
     const uint32_t invalid_offset = 99;
-    ASSERT_EQ(NMO_OK, nmo_arena_array_append(&chunk->ids, &invalid_offset));
+    ASSERT_EQ(NMO_OK, nmo_chunk_array_append(&chunk->ids, chunk->arena, sizeof(uint32_t), &invalid_offset));
     ASSERT_EQ(NMO_ERR_INVALID_STATE,
         nmo_chunk_remap_object_ids(chunk, remap));
     ASSERT_EQ(10u, NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data)[0]);
 
-    nmo_arena_array_clear(&chunk->ids);
+    nmo_chunk_array_clear(&chunk->ids);
     const uint32_t sequence_marker = UINT32_MAX;
-    ASSERT_EQ(NMO_OK, nmo_arena_array_append(&chunk->ids, &sequence_marker));
+    ASSERT_EQ(NMO_OK, nmo_chunk_array_append(&chunk->ids, chunk->arena, sizeof(uint32_t), &sequence_marker));
     ASSERT_EQ(NMO_ERR_INVALID_STATE,
         nmo_chunk_remap_object_ids(chunk, remap));
     ASSERT_EQ(10u, NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data)[0]);
 
     const uint32_t sequence_offset = 0;
-    ASSERT_EQ(NMO_OK, nmo_arena_array_append(&chunk->ids, &sequence_offset));
+    ASSERT_EQ(NMO_OK, nmo_chunk_array_append(&chunk->ids, chunk->arena, sizeof(uint32_t), &sequence_offset));
     ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
         nmo_chunk_remap_object_ids(chunk, remap));
     ASSERT_EQ(10u, NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data)[0]);
 
     nmo_chunk_t* empty = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(empty);
-    ASSERT_EQ(NMO_OK, nmo_arena_array_append(&empty->ids, &sequence_offset));
+    ASSERT_EQ(NMO_OK, nmo_chunk_array_append(&empty->ids, empty->arena, sizeof(uint32_t), &sequence_offset));
     ASSERT_EQ(NMO_ERR_INVALID_STATE,
         nmo_chunk_remap_object_ids(empty, remap));
-    nmo_arena_array_clear(&empty->ids);
-    ASSERT_EQ(NMO_OK, nmo_arena_array_append(&empty->chunk_refs, &sequence_offset));
+    nmo_chunk_array_clear(&empty->ids);
+    ASSERT_EQ(NMO_OK, nmo_chunk_array_append(&empty->chunk_refs, empty->arena, sizeof(uint32_t), &sequence_offset));
     ASSERT_EQ(NMO_ERR_INVALID_STATE,
         nmo_chunk_remap_object_ids(empty, remap));
 

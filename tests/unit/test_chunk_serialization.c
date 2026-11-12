@@ -39,7 +39,7 @@ TEST(chunk_serialization, version_info_packing) {
     chunk->chunk_options = 0x07;      // IDS|CHN|MAN (NOT FILE - IDS aren't serialized in file mode)
 
     // Add some data
-    nmo_status_t resize_result = nmo_arena_array_resize(&chunk->data, 2);
+    nmo_status_t resize_result = nmo_chunk_array_resize(&chunk->data, chunk->arena, sizeof(uint32_t), 2);
     ASSERT_EQ(resize_result, NMO_OK);
     uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
     ASSERT_NOT_NULL(data);
@@ -47,7 +47,7 @@ TEST(chunk_serialization, version_info_packing) {
     data[1] = 0x11223344;
 
     // Add IDs to trigger CHNK_OPTION_IDS
-    resize_result = nmo_arena_array_resize(&chunk->ids, 1);
+    resize_result = nmo_chunk_array_resize(&chunk->ids, chunk->arena, sizeof(uint32_t), 1);
     ASSERT_EQ(resize_result, NMO_OK);
     uint32_t *ids = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->ids);
     ASSERT_NOT_NULL(ids);
@@ -106,7 +106,7 @@ TEST(chunk_serialization, full_serialization) {
     chunk->chunk_version = 7;
 
     // Add data
-    nmo_status_t resize_result = nmo_arena_array_resize(&chunk->data, 3);
+    nmo_status_t resize_result = nmo_chunk_array_resize(&chunk->data, chunk->arena, sizeof(uint32_t), 3);
     ASSERT_EQ(resize_result, NMO_OK);
     uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
     ASSERT_NOT_NULL(data);
@@ -115,7 +115,7 @@ TEST(chunk_serialization, full_serialization) {
     data[2] = 300;
 
     // Add IDs
-    resize_result = nmo_arena_array_resize(&chunk->ids, 2);
+    resize_result = nmo_chunk_array_resize(&chunk->ids, chunk->arena, sizeof(uint32_t), 2);
     ASSERT_EQ(resize_result, NMO_OK);
     uint32_t *ids = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->ids);
     ASSERT_NOT_NULL(ids);
@@ -123,7 +123,7 @@ TEST(chunk_serialization, full_serialization) {
     ids[1] = 1002;
 
     // Add managers
-    resize_result = nmo_arena_array_resize(&chunk->managers, 1);
+    resize_result = nmo_chunk_array_resize(&chunk->managers, chunk->arena, sizeof(uint32_t), 1);
     ASSERT_EQ(resize_result, NMO_OK);
     uint32_t *managers = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->managers);
     ASSERT_NOT_NULL(managers);
@@ -249,7 +249,7 @@ TEST(chunk_serialization, rejects_invalid_public_array_state) {
     ASSERT_NOT_NULL(chunk);
 
 #if SIZE_MAX > UINT32_MAX
-    nmo_arena_array_t *arrays[] = {
+    nmo_chunk_array_t *arrays[] = {
         &chunk->data,
         &chunk->ids,
         &chunk->chunk_refs,
@@ -279,7 +279,7 @@ TEST(chunk_serialization, rejects_invalid_public_array_state) {
     }
 #endif
 
-    nmo_arena_array_t *invalid_arrays[] = {
+    nmo_chunk_array_t *invalid_arrays[] = {
         &chunk->data,
         &chunk->ids,
         &chunk->chunk_refs,
@@ -305,18 +305,8 @@ TEST(chunk_serialization, rejects_invalid_public_array_state) {
         ASSERT_NULL(invalid_output);
         ASSERT_EQ(0u, invalid_size);
 
-        invalid_arrays[i]->capacity = 1;
-        invalid_arrays[i]->element_size = sizeof(uint64_t);
-        invalid_output = (void *)(uintptr_t)1;
-        invalid_size = 123;
-        ASSERT_EQ(NMO_ERR_INVALID_STATE,
-            nmo_chunk_serialize(chunk, &invalid_output, &invalid_size, arena));
-        ASSERT_NULL(invalid_output);
-        ASSERT_EQ(0u, invalid_size);
-
         invalid_arrays[i]->count = 0;
         invalid_arrays[i]->capacity = 0;
-        invalid_arrays[i]->element_size = sizeof(uint32_t);
         invalid_arrays[i]->data = NULL;
     }
 

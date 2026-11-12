@@ -64,7 +64,7 @@ static int append_extra_dword(nmo_chunk_t *chunk, size_t *out_position)
 {
     const size_t start = last_section_start(chunk);
     const size_t old_count = chunk->data.count;
-    if (nmo_arena_array_resize(&chunk->data, old_count + 1u) != NMO_OK) return 0;
+    if (nmo_chunk_array_resize(&chunk->data, chunk->arena, sizeof(uint32_t), old_count + 1u) != NMO_OK) return 0;
     uint32_t *d = (uint32_t *)chunk->data.data;
     d[old_count] = EXTRA_DWORD;
     (void)start;

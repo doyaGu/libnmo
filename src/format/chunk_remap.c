@@ -15,7 +15,7 @@
 // Internal Helpers
 // =============================================================================
 
-static nmo_status_t validate_remap_array(const nmo_arena_array_t *array,
+static nmo_status_t validate_remap_array(const nmo_chunk_array_t *array,
                                          const char *name,
                                          size_t *out_bytes) {
     if (!array || !name || !out_bytes) {
@@ -30,11 +30,7 @@ static nmo_status_t validate_remap_array(const nmo_arena_array_t *array,
         NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
                          "Malformed chunk %s array", name);
     }
-    if (array->element_size != sizeof(uint32_t)) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
-                         "Invalid chunk %s element size", name);
-    }
-    if (!nmo_safe_mul_size(array->count, array->element_size, out_bytes)) {
+    if (!nmo_safe_mul_size(array->count, sizeof(uint32_t), out_bytes)) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
                          "Chunk %s array size overflow", name);
     }

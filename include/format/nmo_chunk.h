@@ -37,6 +37,19 @@ typedef enum nmo_chunk_options {
 } nmo_chunk_options_t;
 
 /**
+ * @brief An array of a chunk
+ *
+ * Its memory comes from the chunk's arena and its element type is fixed by the
+ * field that holds it, so it keeps neither: a loaded file has a chunk for every
+ * object. Grow it with the nmo_chunk_array_* functions.
+ */
+typedef struct nmo_chunk_array {
+    void *data;      /**< Elements */
+    size_t count;    /**< Elements in use */
+    size_t capacity; /**< Elements allocated */
+} nmo_chunk_array_t;
+
+/**
  * @brief CKStateChunk structure
  *
  * This is the fundamental serialization container in Virtools.
@@ -51,12 +64,12 @@ typedef struct nmo_chunk {
     uint8_t chunk_class_id; /**< Legacy class ID (8-bit) */
     uint32_t chunk_options; /**< Option flags */
 
-    /* Data buffer and tracking lists (arena-backed) */
-    nmo_arena_array_t data;       /**< Payload buffer (uint32_t), count in DWORDs */
-    nmo_arena_array_t ids;        /**< Object ID tracking list (uint32_t) */
-    nmo_arena_array_t chunks;     /**< Sub-chunk list (nmo_chunk_t *) */
-    nmo_arena_array_t chunk_refs; /**< Sub-chunk offset/int-list data (uint32_t) */
-    nmo_arena_array_t managers;   /**< Manager int list (uint32_t) */
+    /* Data buffer and tracking lists (in the chunk's arena) */
+    nmo_chunk_array_t data;       /**< Payload buffer (uint32_t), count in DWORDs */
+    nmo_chunk_array_t ids;        /**< Object ID tracking list (uint32_t) */
+    nmo_chunk_array_t chunks;     /**< Sub-chunk list (nmo_chunk_t *) */
+    nmo_chunk_array_t chunk_refs; /**< Sub-chunk offset/int-list data (uint32_t) */
+    nmo_chunk_array_t managers;   /**< Manager int list (uint32_t) */
 
     /* Compression info (for statistics and pack/unpack) */
     size_t uncompressed_size; /**< Original size for stats */
@@ -86,6 +99,71 @@ typedef struct nmo_chunk_header {
     uint32_t sub_chunk_count; /**< Number of sub-chunks */
     uint32_t flags;           /**< Chunk option flags */
 } nmo_chunk_header_t;
+
+// =============================================================================
+// CHUNK ARRAYS
+// =============================================================================
+
+/**
+ * @brief Make room for capacity elements
+ *
+ * A larger buffer comes from the arena; the old one stays there until the
+ * arena goes.
+ * @return NMO_OK, NMO_ERR_INVALID_ARGUMENT or NMO_ERR_NOMEM
+ */
+NMO_API nmo_status_t nmo_chunk_array_reserve(nmo_chunk_array_t *array,
+                                             nmo_arena_t *arena,
+                                             size_t element_size,
+                                             size_t capacity);
+
+/**
+ * @brief Make room for additional elements past count, doubling the capacity
+ * @return NMO_OK, NMO_ERR_INVALID_ARGUMENT or NMO_ERR_NOMEM
+ */
+NMO_API nmo_status_t nmo_chunk_array_ensure_space(nmo_chunk_array_t *array,
+                                                  nmo_arena_t *arena,
+                                                  size_t element_size,
+                                                  size_t additional);
+
+/**
+ * @brief Set the element count; new elements are zeroed
+ * @return NMO_OK, NMO_ERR_INVALID_ARGUMENT or NMO_ERR_NOMEM
+ */
+NMO_API nmo_status_t nmo_chunk_array_resize(nmo_chunk_array_t *array,
+                                            nmo_arena_t *arena,
+                                            size_t element_size,
+                                            size_t count);
+
+/**
+ * @brief Append a copy of one element
+ * @return NMO_OK, NMO_ERR_INVALID_ARGUMENT or NMO_ERR_NOMEM
+ */
+NMO_API nmo_status_t nmo_chunk_array_append(nmo_chunk_array_t *array,
+                                            nmo_arena_t *arena,
+                                            size_t element_size,
+                                            const void *element);
+
+/**
+ * @brief Drop every element, keeping the buffer
+ */
+static inline void nmo_chunk_array_clear(nmo_chunk_array_t *array) {
+    if (array != NULL) {
+        array->count = 0;
+    }
+}
+
+/**
+ * @brief Use a buffer the caller allocated (in the chunk's arena) as the array
+ */
+static inline void nmo_chunk_array_set_data(nmo_chunk_array_t *array,
+                                            void *data,
+                                            size_t count) {
+    if (array != NULL) {
+        array->data = data;
+        array->count = count;
+        array->capacity = count;
+    }
+}
 
 // =============================================================================
 // LIFECYCLE OPERATIONS

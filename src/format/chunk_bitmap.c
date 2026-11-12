@@ -272,7 +272,7 @@ static nmo_status_t nmo_chunk_bitmap_write_legacy_payload(nmo_chunk_t *chunk,
         return make_error(NMO_ERR_INVALID_OFFSET, "Legacy bitmap position overflow");
     }
     if (end_pos > chunk->data.count) {
-        result = nmo_arena_array_resize(&chunk->data, end_pos);
+        result = nmo_chunk_array_resize(&chunk->data, chunk->arena, sizeof(uint32_t), end_pos);
         NMO_RETURN_IF_ERROR(result);
     }
 

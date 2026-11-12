@@ -238,7 +238,7 @@ static nmo_status_t parse_object_entry_v2(
     const size_t dword_count = byte_count / sizeof(uint32_t);
     for (size_t i = 0; i < dword_count; ++i) {
         const uint32_t value = nmo_read_u32_le(bytes + i * sizeof(uint32_t));
-        NMO_RETURN_IF_ERROR(nmo_arena_array_append(&chunk->data, &value));
+        NMO_RETURN_IF_ERROR(nmo_chunk_array_append(&chunk->data, chunk->arena, sizeof(uint32_t), &value));
     }
     chunk->uncompressed_size = dword_count * sizeof(uint32_t);
     obj->chunk = chunk;

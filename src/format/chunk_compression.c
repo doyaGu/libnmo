@@ -66,7 +66,7 @@ static nmo_status_t chunk_commit_compressed_payload(nmo_chunk_t *chunk,
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Compressed payload size overflow");
     }
 
-    nmo_status_t result = nmo_arena_array_resize(&chunk->data, dest_dwords);
+    nmo_status_t result = nmo_chunk_array_resize(&chunk->data, chunk->arena, sizeof(uint32_t), dest_dwords);
     NMO_RETURN_IF_ERROR(result);
 
     uint32_t *new_data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
@@ -229,8 +229,7 @@ nmo_status_t nmo_chunk_decompress(nmo_chunk_t *chunk) {
         NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Decompressed size mismatch");
     }
 
-    nmo_status_t set_result = nmo_arena_array_set_data(&chunk->data, decompressed, chunk->unpack_size);
-    NMO_RETURN_IF_ERROR(set_result);
+    nmo_chunk_array_set_data(&chunk->data, decompressed, chunk->unpack_size);
     chunk->chunk_options &= ~NMO_CHUNK_OPTION_PACKED;
     chunk->compressed_size = 0;
     size_t final_size;

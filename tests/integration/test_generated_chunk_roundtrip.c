@@ -150,7 +150,7 @@ static int add_unmodeled_data(nmo_chunk_t *chunk, extra_flavor_t flavor)
     if (start == (size_t)-1) return 0;
     const size_t old_count = chunk->data.count;
     const size_t added = flavor == EXTRA_TRAILING_DWORD ? 1u : 3u;
-    if (nmo_arena_array_resize(&chunk->data, old_count + added) != NMO_OK) return 0;
+    if (nmo_chunk_array_resize(&chunk->data, chunk->arena, sizeof(uint32_t), old_count + added) != NMO_OK) return 0;
     uint32_t *d = (uint32_t *)chunk->data.data;
     if (flavor == EXTRA_TRAILING_DWORD) {
         d[old_count] = EXTRA_DWORD;

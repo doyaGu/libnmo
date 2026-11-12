@@ -103,18 +103,111 @@ static uint32_t chunk_compute_option_flags(const nmo_chunk_t *chunk) {
     return option_flags;
 }
 
-static int chunk_array_state_is_valid(const nmo_arena_array_t *array,
+nmo_status_t nmo_chunk_array_reserve(nmo_chunk_array_t *array,
+                                     nmo_arena_t *arena,
+                                     size_t element_size,
+                                     size_t capacity) {
+    if (array == NULL || arena == NULL || element_size == 0) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid chunk array reserve arguments");
+    }
+    if (capacity <= array->capacity) {
+        NMO_RETURN_OK();
+    }
+    size_t bytes = 0;
+    if (!nmo_safe_mul_size(capacity, element_size, &bytes)) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Chunk array size overflow");
+    }
+    void *data = nmo_arena_alloc(arena, bytes, element_size >= 8 ? 8 : 4);
+    if (data == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate chunk array");
+    }
+    if (array->data != NULL && array->count > 0) {
+        memcpy(data, array->data, array->count * element_size);
+    }
+    array->data = data;
+    array->capacity = capacity;
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_chunk_array_ensure_space(nmo_chunk_array_t *array,
+                                          nmo_arena_t *arena,
+                                          size_t element_size,
+                                          size_t additional) {
+    if (array == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid chunk array argument");
+    }
+    if (additional > SIZE_MAX - array->count) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Chunk array size overflow");
+    }
+    const size_t required = array->count + additional;
+    if (required <= array->capacity) {
+        NMO_RETURN_OK();
+    }
+    /* Start with 4, then double. */
+    size_t capacity = array->capacity == 0 ? 4 : array->capacity;
+    while (capacity < required) {
+        if (capacity > SIZE_MAX / 2) {
+            capacity = required;
+            break;
+        }
+        capacity *= 2;
+    }
+    return nmo_chunk_array_reserve(array, arena, element_size, capacity);
+}
+
+nmo_status_t nmo_chunk_array_resize(nmo_chunk_array_t *array,
+                                    nmo_arena_t *arena,
+                                    size_t element_size,
+                                    size_t count) {
+    if (array == NULL || element_size == 0) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid chunk array resize arguments");
+    }
+    if (count <= array->count) {
+        array->count = count;
+        NMO_RETURN_OK();
+    }
+    nmo_status_t result = nmo_chunk_array_ensure_space(
+        array, arena, element_size, count - array->count);
+    if (result != NMO_OK) {
+        return result;
+    }
+    memset((uint8_t *)array->data + array->count * element_size, 0,
+           (count - array->count) * element_size);
+    array->count = count;
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_chunk_array_append(nmo_chunk_array_t *array,
+                                    nmo_arena_t *arena,
+                                    size_t element_size,
+                                    const void *element) {
+    if (element == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid chunk array append arguments");
+    }
+    nmo_status_t result = nmo_chunk_array_ensure_space(array, arena, element_size, 1);
+    if (result != NMO_OK) {
+        return result;
+    }
+    memcpy((uint8_t *)array->data + array->count * element_size, element, element_size);
+    array->count++;
+    NMO_RETURN_OK();
+}
+
+static int chunk_array_state_is_valid(const nmo_chunk_array_t *array,
                                       size_t element_size) {
     if (array == NULL) return 0;
     if (array->count == 0) return 1;
     return array->data != NULL &&
            array->count <= array->capacity &&
-           array->element_size == element_size &&
            array->count <= SIZE_MAX / element_size;
 }
 
 static nmo_status_t chunk_validate_serialized_array(
-    const nmo_arena_array_t *array)
+    const nmo_chunk_array_t *array)
 {
     if (array == NULL) return NMO_ERR_INVALID_ARGUMENT;
     if (array->count > UINT32_MAX) return NMO_ERR_INVALID_ARGUMENT;
@@ -228,7 +321,7 @@ static nmo_status_t chunk_build_subchunks_from_refs(nmo_chunk_t *chunk) {
                 }
 
                 if (sub != NULL) {
-                    nmo_status_t append_result = nmo_arena_array_append(&chunk->chunks, &sub);
+                    nmo_status_t append_result = nmo_chunk_array_append(&chunk->chunks, chunk->arena, sizeof(nmo_chunk_t *), &sub);
                     NMO_RETURN_IF_ERROR(append_result);
 
                     if (sub->chunk_refs.count > 0) {
@@ -258,7 +351,7 @@ static nmo_status_t chunk_build_subchunks_from_refs(nmo_chunk_t *chunk) {
         }
 
         if (sub != NULL) {
-            nmo_status_t append_result = nmo_arena_array_append(&chunk->chunks, &sub);
+            nmo_status_t append_result = nmo_chunk_array_append(&chunk->chunks, chunk->arena, sizeof(nmo_chunk_t *), &sub);
             NMO_RETURN_IF_ERROR(append_result);
 
             if (sub->chunk_refs.count > 0) {
@@ -272,7 +365,7 @@ static nmo_status_t chunk_build_subchunks_from_refs(nmo_chunk_t *chunk) {
 }
 
 static nmo_status_t chunk_validate_offset_list(const nmo_chunk_t *chunk,
-                                               const nmo_arena_array_t *list,
+                                               const nmo_chunk_array_t *list,
                                                const char *label) {
     if (chunk == NULL || list == NULL || label == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to offset list validation");
@@ -439,7 +532,7 @@ static nmo_status_t chunk_deserialize_internal(nmo_read_ctx_t *ctx, nmo_arena_t 
     if (ctx->pos > ctx->size || data_size > ctx->size - ctx->pos) {
         return NMO_ERR_BUFFER_OVERRUN;
     }
-    result = nmo_arena_array_resize(&chunk->data, chunk_size_dwords);
+    result = nmo_chunk_array_resize(&chunk->data, chunk->arena, sizeof(uint32_t), chunk_size_dwords);
     NMO_RETURN_IF_ERROR(result);
 
     if (chunk_size_dwords > 0) {
@@ -462,7 +555,7 @@ static nmo_status_t chunk_deserialize_internal(nmo_read_ctx_t *ctx, nmo_arena_t 
         if (ctx->pos > ctx->size || ids_size > ctx->size - ctx->pos) {
             return NMO_ERR_BUFFER_OVERRUN;
         }
-        result = nmo_arena_array_resize(&chunk->ids, id_count);
+        result = nmo_chunk_array_resize(&chunk->ids, chunk->arena, sizeof(uint32_t), id_count);
         NMO_RETURN_IF_ERROR(result);
 
         if (id_count > 0) {
@@ -486,7 +579,7 @@ static nmo_status_t chunk_deserialize_internal(nmo_read_ctx_t *ctx, nmo_arena_t 
         if (ctx->pos > ctx->size || refs_size > ctx->size - ctx->pos) {
             return NMO_ERR_BUFFER_OVERRUN;
         }
-        result = nmo_arena_array_resize(&chunk->chunk_refs, ref_count);
+        result = nmo_chunk_array_resize(&chunk->chunk_refs, chunk->arena, sizeof(uint32_t), ref_count);
         NMO_RETURN_IF_ERROR(result);
 
         if (ref_count > 0) {
@@ -510,7 +603,7 @@ static nmo_status_t chunk_deserialize_internal(nmo_read_ctx_t *ctx, nmo_arena_t 
         if (ctx->pos > ctx->size || managers_size > ctx->size - ctx->pos) {
             return NMO_ERR_BUFFER_OVERRUN;
         }
-        result = nmo_arena_array_resize(&chunk->managers, manager_count);
+        result = nmo_chunk_array_resize(&chunk->managers, chunk->arena, sizeof(uint32_t), manager_count);
         NMO_RETURN_IF_ERROR(result);
 
         if (manager_count > 0) {
@@ -528,13 +621,6 @@ static nmo_status_t chunk_deserialize_internal(nmo_read_ctx_t *ctx, nmo_arena_t 
 static void chunk_init(nmo_chunk_t *chunk, nmo_arena_t *arena) {
     /* Initialize all fields to 0/NULL */
     memset(chunk, 0, sizeof(nmo_chunk_t));
-
-    /* Initialize arena-backed arrays */
-    chunk->data = (nmo_arena_array_t)NMO_ARENA_ARRAY_INIT(uint32_t, arena);
-    chunk->ids = (nmo_arena_array_t)NMO_ARENA_ARRAY_INIT(uint32_t, arena);
-    chunk->chunks = (nmo_arena_array_t)NMO_ARENA_ARRAY_INIT(nmo_chunk_t *, arena);
-    chunk->chunk_refs = (nmo_arena_array_t)NMO_ARENA_ARRAY_INIT(uint32_t, arena);
-    chunk->managers = (nmo_arena_array_t)NMO_ARENA_ARRAY_INIT(uint32_t, arena);
 
     /* Set defaults */
     chunk->chunk_version = NMO_CHUNK_VERSION4;
@@ -973,31 +1059,31 @@ nmo_chunk_t *nmo_chunk_clone(const nmo_chunk_t *src, nmo_arena_t *arena) {
     clone->unpack_size = src->unpack_size;
 
     if (src->data.count > 0) {
-        nmo_status_t result = nmo_arena_array_resize(&clone->data, src->data.count);
+        nmo_status_t result = nmo_chunk_array_resize(&clone->data, clone->arena, sizeof(uint32_t), src->data.count);
         NMO_RETURN_NULL_IF_ERROR(result);
         memcpy(clone->data.data, src->data.data, src->data.count * sizeof(uint32_t));
     }
 
     if (src->ids.count > 0) {
-        nmo_status_t result = nmo_arena_array_resize(&clone->ids, src->ids.count);
+        nmo_status_t result = nmo_chunk_array_resize(&clone->ids, clone->arena, sizeof(uint32_t), src->ids.count);
         NMO_RETURN_NULL_IF_ERROR(result);
         memcpy(clone->ids.data, src->ids.data, src->ids.count * sizeof(uint32_t));
     }
 
     if (src->chunk_refs.count > 0) {
-        nmo_status_t result = nmo_arena_array_resize(&clone->chunk_refs, src->chunk_refs.count);
+        nmo_status_t result = nmo_chunk_array_resize(&clone->chunk_refs, clone->arena, sizeof(uint32_t), src->chunk_refs.count);
         NMO_RETURN_NULL_IF_ERROR(result);
         memcpy(clone->chunk_refs.data, src->chunk_refs.data, src->chunk_refs.count * sizeof(uint32_t));
     }
 
     if (src->managers.count > 0) {
-        nmo_status_t result = nmo_arena_array_resize(&clone->managers, src->managers.count);
+        nmo_status_t result = nmo_chunk_array_resize(&clone->managers, clone->arena, sizeof(uint32_t), src->managers.count);
         NMO_RETURN_NULL_IF_ERROR(result);
         memcpy(clone->managers.data, src->managers.data, src->managers.count * sizeof(uint32_t));
     }
 
     if (src->chunks.count > 0) {
-        nmo_status_t result = nmo_arena_array_resize(&clone->chunks, src->chunks.count);
+        nmo_status_t result = nmo_chunk_array_resize(&clone->chunks, clone->arena, sizeof(nmo_chunk_t *), src->chunks.count);
         NMO_RETURN_NULL_IF_ERROR(result);
 
         nmo_chunk_t **src_chunks = NMO_ARENA_ARRAY_DATA(nmo_chunk_t*, &src->chunks);
@@ -1102,7 +1188,7 @@ static nmo_status_t chunk_parse_into(nmo_chunk_t *chunk,
                 NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Buffer too small for chunk data");
             }
 
-            nmo_status_t result = nmo_arena_array_resize(&chunk->data, chunk_size);
+            nmo_status_t result = nmo_chunk_array_resize(&chunk->data, chunk->arena, sizeof(uint32_t), chunk_size);
             NMO_RETURN_IF_ERROR(result);
 
             memcpy(chunk->data.data, &buf[pos], chunk_size * sizeof(uint32_t));
@@ -1115,7 +1201,7 @@ static nmo_status_t chunk_parse_into(nmo_chunk_t *chunk,
                 NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Buffer too small for ID array");
             }
 
-            nmo_status_t result = nmo_arena_array_resize(&chunk->ids, id_count);
+            nmo_status_t result = nmo_chunk_array_resize(&chunk->ids, chunk->arena, sizeof(uint32_t), id_count);
             NMO_RETURN_IF_ERROR(result);
 
             memcpy(chunk->ids.data, &buf[pos], id_count * sizeof(uint32_t));
@@ -1129,7 +1215,7 @@ static nmo_status_t chunk_parse_into(nmo_chunk_t *chunk,
                 NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Buffer too small for chunk array");
             }
 
-            nmo_status_t result = nmo_arena_array_resize(&chunk->chunk_refs, chunk_count);
+            nmo_status_t result = nmo_chunk_array_resize(&chunk->chunk_refs, chunk->arena, sizeof(uint32_t), chunk_count);
             NMO_RETURN_IF_ERROR(result);
 
             memcpy(chunk->chunk_refs.data, &buf[pos], chunk_count * sizeof(uint32_t));
@@ -1156,7 +1242,7 @@ static nmo_status_t chunk_parse_into(nmo_chunk_t *chunk,
                 NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Buffer too small for chunk data");
             }
 
-            nmo_status_t result = nmo_arena_array_resize(&chunk->data, chunk_size);
+            nmo_status_t result = nmo_chunk_array_resize(&chunk->data, chunk->arena, sizeof(uint32_t), chunk_size);
             NMO_RETURN_IF_ERROR(result);
 
             memcpy(chunk->data.data, &buf[pos], chunk_size * sizeof(uint32_t));
@@ -1169,7 +1255,7 @@ static nmo_status_t chunk_parse_into(nmo_chunk_t *chunk,
                 NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Buffer too small for ID array");
             }
 
-            nmo_status_t result = nmo_arena_array_resize(&chunk->ids, id_count);
+            nmo_status_t result = nmo_chunk_array_resize(&chunk->ids, chunk->arena, sizeof(uint32_t), id_count);
             NMO_RETURN_IF_ERROR(result);
 
             memcpy(chunk->ids.data, &buf[pos], id_count * sizeof(uint32_t));
@@ -1182,7 +1268,7 @@ static nmo_status_t chunk_parse_into(nmo_chunk_t *chunk,
                 NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Buffer too small for chunk array");
             }
 
-            nmo_status_t result = nmo_arena_array_resize(&chunk->chunk_refs, chunk_count);
+            nmo_status_t result = nmo_chunk_array_resize(&chunk->chunk_refs, chunk->arena, sizeof(uint32_t), chunk_count);
             NMO_RETURN_IF_ERROR(result);
 
             memcpy(chunk->chunk_refs.data, &buf[pos], chunk_count * sizeof(uint32_t));
@@ -1195,7 +1281,7 @@ static nmo_status_t chunk_parse_into(nmo_chunk_t *chunk,
                 NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Buffer too small for manager array");
             }
 
-            nmo_status_t result = nmo_arena_array_resize(&chunk->managers, manager_count);
+            nmo_status_t result = nmo_chunk_array_resize(&chunk->managers, chunk->arena, sizeof(uint32_t), manager_count);
             NMO_RETURN_IF_ERROR(result);
 
             memcpy(chunk->managers.data, &buf[pos], manager_count * sizeof(uint32_t));
@@ -1229,7 +1315,7 @@ static nmo_status_t chunk_parse_into(nmo_chunk_t *chunk,
                 NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Buffer too small for chunk data");
             }
 
-            nmo_status_t result = nmo_arena_array_resize(&chunk->data, chunk_size);
+            nmo_status_t result = nmo_chunk_array_resize(&chunk->data, chunk->arena, sizeof(uint32_t), chunk_size);
             NMO_RETURN_IF_ERROR(result);
 
             memcpy(chunk->data.data, &buf[pos], chunk_size * sizeof(uint32_t));
@@ -1248,7 +1334,7 @@ static nmo_status_t chunk_parse_into(nmo_chunk_t *chunk,
                     NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Buffer too small for ID array");
                 }
 
-                nmo_status_t result = nmo_arena_array_resize(&chunk->ids, id_count);
+                nmo_status_t result = nmo_chunk_array_resize(&chunk->ids, chunk->arena, sizeof(uint32_t), id_count);
                 NMO_RETURN_IF_ERROR(result);
 
                 memcpy(chunk->ids.data, &buf[pos], id_count * sizeof(uint32_t));
@@ -1266,7 +1352,7 @@ static nmo_status_t chunk_parse_into(nmo_chunk_t *chunk,
                 if (!dword_range_fits(pos, (size_t) chunk_count, size_dwords)) {
                     NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Buffer too small for chunk array");
                 }
-                nmo_status_t result = nmo_arena_array_resize(&chunk->chunk_refs, chunk_count);
+                nmo_status_t result = nmo_chunk_array_resize(&chunk->chunk_refs, chunk->arena, sizeof(uint32_t), chunk_count);
                 NMO_RETURN_IF_ERROR(result);
 
                 memcpy(chunk->chunk_refs.data, &buf[pos], chunk_count * sizeof(uint32_t));
@@ -1285,7 +1371,7 @@ static nmo_status_t chunk_parse_into(nmo_chunk_t *chunk,
                     NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Buffer too small for manager array");
                 }
 
-                nmo_status_t result = nmo_arena_array_resize(&chunk->managers, manager_count);
+                nmo_status_t result = nmo_chunk_array_resize(&chunk->managers, chunk->arena, sizeof(uint32_t), manager_count);
                 NMO_RETURN_IF_ERROR(result);
 
                 memcpy(chunk->managers.data, &buf[pos], manager_count * sizeof(uint32_t));
@@ -1723,7 +1809,7 @@ nmo_status_t nmo_chunk_check_size(nmo_chunk_t *chunk, size_t needed_bytes) {
         }
 
         if (new_size > chunk->data.capacity) {
-            nmo_status_t reserve_result = nmo_arena_array_reserve(&chunk->data, new_size);
+            nmo_status_t reserve_result = nmo_chunk_array_reserve(&chunk->data, chunk->arena, sizeof(uint32_t), new_size);
             NMO_RETURN_IF_ERROR(reserve_result);
         }
 
@@ -2138,16 +2224,16 @@ nmo_status_t nmo_chunk_write_object_sequence_start(nmo_chunk_t *chunk, size_t co
             NMO_CHUNK_RETURN_INVALID_ARGUMENT(
                 "Object sequence position does not fit the 32-bit format");
         }
-        result = nmo_arena_array_ensure_space(&chunk->ids, 2u);
+        result = nmo_chunk_array_ensure_space(&chunk->ids, chunk->arena, sizeof(uint32_t), 2u);
         NMO_RETURN_IF_ERROR(result);
 
         /* CK2: AddEntries adds -1 marker followed by position */
         uint32_t sentinel = 0xFFFFFFFFu;
-        nmo_status_t list_result = nmo_arena_array_append(&chunk->ids, &sentinel);
+        nmo_status_t list_result = nmo_chunk_array_append(&chunk->ids, chunk->arena, sizeof(uint32_t), &sentinel);
         NMO_RETURN_IF_ERROR(list_result);
 
         uint32_t pos = (uint32_t) state->current_pos;
-        list_result = nmo_arena_array_append(&chunk->ids, &pos);
+        list_result = nmo_chunk_array_append(&chunk->ids, chunk->arena, sizeof(uint32_t), &pos);
         NMO_RETURN_IF_ERROR(list_result);
 
         /* Set IDS option since we added tracking entries */
@@ -2308,7 +2394,7 @@ nmo_status_t nmo_chunk_start_manager_sequence(nmo_chunk_t *chunk,
 
     // Track sequence start in manager list (CK2 AddEntries)
     uint32_t sentinel = 0xFFFFFFFFu;
-    nmo_status_t list_result = nmo_arena_array_append(&chunk->managers, &sentinel);
+    nmo_status_t list_result = nmo_chunk_array_append(&chunk->managers, chunk->arena, sizeof(uint32_t), &sentinel);
     if (list_result != NMO_OK) {
         chunk->managers.count = managers_count_before;
         chunk->chunk_options = options_before;
@@ -2316,7 +2402,7 @@ nmo_status_t nmo_chunk_start_manager_sequence(nmo_chunk_t *chunk,
     }
 
     uint32_t pos = (uint32_t) state->current_pos;
-    list_result = nmo_arena_array_append(&chunk->managers, &pos);
+    list_result = nmo_chunk_array_append(&chunk->managers, chunk->arena, sizeof(uint32_t), &pos);
     if (list_result != NMO_OK) {
         chunk->managers.count = managers_count_before;
         chunk->chunk_options = options_before;
@@ -2358,7 +2444,7 @@ nmo_status_t nmo_chunk_write_manager_int(nmo_chunk_t *chunk,
     const uint32_t options_before = chunk->chunk_options;
     chunk->chunk_options |= NMO_CHUNK_OPTION_MAN;
     uint32_t pos = (uint32_t) state->current_pos;
-    nmo_status_t list_result = nmo_arena_array_append(&chunk->managers, &pos);
+    nmo_status_t list_result = nmo_chunk_array_append(&chunk->managers, chunk->arena, sizeof(uint32_t), &pos);
     if (list_result != NMO_OK) {
         chunk->managers.count = managers_count_before;
         chunk->chunk_options = options_before;

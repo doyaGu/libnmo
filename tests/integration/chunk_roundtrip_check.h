@@ -73,7 +73,7 @@ static int same_padding(uint32_t original, uint32_t saved)
     return 0;
 }
 
-static int payloads_equal(const nmo_arena_array_t *a, const nmo_arena_array_t *b,
+static int payloads_equal(const nmo_chunk_array_t *a, const nmo_chunk_array_t *b,
                           size_t *padding_fixes)
 {
     if (a->count != b->count) {
@@ -93,7 +93,7 @@ static int payloads_equal(const nmo_arena_array_t *a, const nmo_arena_array_t *b
     return 1;
 }
 
-static int arrays_equal(const nmo_arena_array_t *a, const nmo_arena_array_t *b,
+static int arrays_equal(const nmo_chunk_array_t *a, const nmo_chunk_array_t *b,
                         size_t element_size)
 {
     if (a->count != b->count) {

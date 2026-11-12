@@ -142,7 +142,7 @@ static void reset_chunk(nmo_chunk_t *chunk) {
     // Clear data buffer (keep capacity)
     chunk->data.count = 0;
     if (chunk->data.data) {
-        memset(chunk->data.data, 0, chunk->data.capacity * chunk->data.element_size);
+        memset(chunk->data.data, 0, chunk->data.capacity * sizeof(uint32_t));
     }
 
     // Clear tracking lists

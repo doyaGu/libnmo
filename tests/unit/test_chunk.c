@@ -142,21 +142,13 @@ TEST(chunk, clone_rejects_malformed_public_state) {
     nmo_chunk_t* chunk = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(chunk);
 
-    nmo_arena_array_t* arrays[] = {
+    nmo_chunk_array_t* arrays[] = {
         &chunk->data,
         &chunk->ids,
         &chunk->chunk_refs,
         &chunk->managers,
         &chunk->chunks,
     };
-    const size_t element_sizes[] = {
-        sizeof(uint32_t),
-        sizeof(uint32_t),
-        sizeof(uint32_t),
-        sizeof(uint32_t),
-        sizeof(nmo_chunk_t*),
-    };
-
     for (size_t i = 0; i < sizeof(arrays) / sizeof(arrays[0]); ++i) {
         arrays[i]->count = 1;
         arrays[i]->capacity = 1;
@@ -167,14 +159,9 @@ TEST(chunk, clone_rejects_malformed_public_state) {
         arrays[i]->count = 2;
         ASSERT_NULL(nmo_chunk_clone(chunk, arena));
 
-        arrays[i]->count = 1;
-        arrays[i]->element_size = element_sizes[i] + 1u;
-        ASSERT_NULL(nmo_chunk_clone(chunk, arena));
-
         arrays[i]->data = NULL;
         arrays[i]->count = 0;
         arrays[i]->capacity = 0;
-        arrays[i]->element_size = element_sizes[i];
     }
 
     nmo_arena_destroy(arena);
@@ -217,11 +204,11 @@ TEST(chunk, start_write_discards_previous_tracking_state) {
     nmo_chunk_t* sub = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(sub);
 
-    ASSERT_EQ(NMO_OK, nmo_arena_array_resize(&chunk->data, 1u));
-    ASSERT_EQ(NMO_OK, nmo_arena_array_resize(&chunk->ids, 1u));
-    ASSERT_EQ(NMO_OK, nmo_arena_array_resize(&chunk->chunks, 1u));
-    ASSERT_EQ(NMO_OK, nmo_arena_array_resize(&chunk->chunk_refs, 1u));
-    ASSERT_EQ(NMO_OK, nmo_arena_array_resize(&chunk->managers, 1u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_array_resize(&chunk->data, chunk->arena, sizeof(uint32_t), 1u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_array_resize(&chunk->ids, chunk->arena, sizeof(uint32_t), 1u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_array_resize(&chunk->chunks, chunk->arena, sizeof(nmo_chunk_t *), 1u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_array_resize(&chunk->chunk_refs, chunk->arena, sizeof(uint32_t), 1u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_array_resize(&chunk->managers, chunk->arena, sizeof(uint32_t), 1u));
     NMO_ARENA_ARRAY_DATA(nmo_chunk_t*, &chunk->chunks)[0] = sub;
     chunk->chunk_options |= NMO_CHUNK_OPTION_IDS |
                             NMO_CHUNK_OPTION_CHN |

@@ -940,7 +940,7 @@ nmo_status_t nmo_chunk_write_object_id(nmo_chunk_t *chunk, nmo_object_id_t id) {
                 "Object ID position does not fit the 32-bit format");
         }
         uint32_t pos = (uint32_t) state->current_pos;
-        nmo_status_t list_result = nmo_arena_array_append(&chunk->ids, &pos);
+        nmo_status_t list_result = nmo_chunk_array_append(&chunk->ids, chunk->arena, sizeof(uint32_t), &pos);
         NMO_RETURN_IF_ERROR(list_result);
         /* CKStateChunk: file-mode does NOT serialize ID lists */
         if ((chunk->chunk_options & NMO_CHUNK_OPTION_FILE) == 0) {

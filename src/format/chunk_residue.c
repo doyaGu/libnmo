@@ -18,7 +18,7 @@ static const uint32_t *chunk_words(const nmo_chunk_t *chunk)
     return chunk->data.count > 0 ? NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data) : NULL;
 }
 
-static const uint32_t *array_words(const nmo_arena_array_t *array)
+static const uint32_t *array_words(const nmo_chunk_array_t *array)
 {
     return array->count > 0 ? NMO_ARENA_ARRAY_DATA(uint32_t, array) : NULL;
 }
@@ -37,7 +37,7 @@ static uint64_t digest_update(uint64_t hash, const void *bytes, size_t size)
     return hash;
 }
 
-static uint64_t digest_array(uint64_t hash, const nmo_arena_array_t *array)
+static uint64_t digest_array(uint64_t hash, const nmo_chunk_array_t *array)
 {
     const uint64_t count = array->count;
     hash = digest_update(hash, &count, sizeof(count));
@@ -103,7 +103,7 @@ static bool mark_id_positions(const nmo_chunk_t *chunk, uint8_t *marks)
     return true;
 }
 
-static bool arrays_equal(const nmo_arena_array_t *a, const nmo_arena_array_t *b)
+static bool arrays_equal(const nmo_chunk_array_t *a, const nmo_chunk_array_t *b)
 {
     return a->count == b->count &&
         (a->count == 0 || memcmp(a->data, b->data, a->count * sizeof(uint32_t)) == 0);
@@ -230,7 +230,7 @@ typedef struct fragment {
     bool whole_section;
 } fragment_t;
 
-static bool list_touches_range(const nmo_arena_array_t *list, size_t start, size_t end)
+static bool list_touches_range(const nmo_chunk_array_t *list, size_t start, size_t end)
 {
     const uint32_t *values = array_words(list);
     for (size_t i = 0; i < list->count; ++i) {
@@ -389,7 +389,7 @@ static void copy_fragment(
  * Values the edit did not touch
  * --------------------------------------------------------------------------- */
 
-static void mark_positions(const nmo_arena_array_t *list, bool *skip, size_t size)
+static void mark_positions(const nmo_chunk_array_t *list, bool *skip, size_t size)
 {
     const uint32_t *values = array_words(list);
     for (size_t i = 0; i < list->count; ++i) {
@@ -612,19 +612,19 @@ nmo_status_t nmo_chunk_merge_residue(
     }
 
     /* Install the result. */
-    nmo_status_t status = nmo_arena_array_resize(&target->data, out_pos);
+    nmo_status_t status = nmo_chunk_array_resize(&target->data, target->arena, sizeof(uint32_t), out_pos);
     if (status != NMO_OK) return status;
     memcpy(target->data.data, out, out_pos * sizeof(uint32_t));
-    status = nmo_arena_array_resize(&target->ids, 0);
+    status = nmo_chunk_array_resize(&target->ids, target->arena, sizeof(uint32_t), 0);
     if (status != NMO_OK) return status;
     for (size_t k = 0; k < entry_count; ++k) {
         if (entries[k].sequence) {
             const uint32_t marker = ID_SEQUENCE_MARKER;
-            status = nmo_arena_array_append(&target->ids, &marker);
+            status = nmo_chunk_array_append(&target->ids, target->arena, sizeof(uint32_t), &marker);
             if (status != NMO_OK) return status;
         }
         const uint32_t position = (uint32_t)entries[k].pos;
-        status = nmo_arena_array_append(&target->ids, &position);
+        status = nmo_chunk_array_append(&target->ids, target->arena, sizeof(uint32_t), &position);
         if (status != NMO_OK) return status;
     }
     if (target->ids.count > 0) target->chunk_options |= NMO_CHUNK_OPTION_IDS;

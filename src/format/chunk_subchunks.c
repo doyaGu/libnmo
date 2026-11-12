@@ -11,7 +11,7 @@
 // Sub-chunks
 // =============================================================================
 
-static nmo_status_t validate_sub_chunk_array(const nmo_arena_array_t *array) {
+static nmo_status_t validate_sub_chunk_array(const nmo_chunk_array_t *array) {
     if (array == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -20,8 +20,7 @@ static nmo_status_t validate_sub_chunk_array(const nmo_arena_array_t *array) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
     if (array->count > 0 &&
-        (array->data == NULL || array->count > array->capacity ||
-         array->element_size != sizeof(uint32_t))) {
+        (array->data == NULL || array->count > array->capacity)) {
         return NMO_ERR_INVALID_STATE;
     }
     return NMO_OK;
@@ -32,7 +31,7 @@ static nmo_status_t validate_sub_chunk_payload(const nmo_chunk_t *sub) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    const nmo_arena_array_t *arrays[] = {
+    const nmo_chunk_array_t *arrays[] = {
         &sub->data, &sub->ids, &sub->chunk_refs, &sub->managers,
     };
     size_t payload_dwords = 7u;
@@ -154,7 +153,7 @@ nmo_status_t nmo_chunk_write_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t *sub) {
     const size_t chunks_count_before = chunk->chunks.count;
     const size_t refs_count_before = chunk->chunk_refs.count;
     const uint32_t options_before = chunk->chunk_options;
-    nmo_status_t list_result = nmo_arena_array_append(&chunk->chunks, &sub);
+    nmo_status_t list_result = nmo_chunk_array_append(&chunk->chunks, chunk->arena, sizeof(nmo_chunk_t *), &sub);
     if (list_result != NMO_OK) {
         chunk->chunks.count = chunks_count_before;
         return list_result;
@@ -165,7 +164,7 @@ nmo_status_t nmo_chunk_write_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t *sub) {
     /* Track sub-chunk position before writing (CK2 AddEntry uses CurrentPos-1). */
     {
         uint32_t header_pos = (uint32_t) size_header_offset;
-        result = nmo_arena_array_append(&chunk->chunk_refs, &header_pos);
+        result = nmo_chunk_array_append(&chunk->chunk_refs, chunk->arena, sizeof(uint32_t), &header_pos);
     }
     if (result != NMO_OK) {
         chunk->chunks.count = chunks_count_before;
@@ -207,7 +206,7 @@ nmo_status_t nmo_chunk_write_sub_chunk_sequence(nmo_chunk_t *chunk, nmo_chunk_t 
 
     const size_t chunks_count_before = chunk->chunks.count;
     const uint32_t options_before = chunk->chunk_options;
-    nmo_status_t list_result = nmo_arena_array_append(&chunk->chunks, &sub);
+    nmo_status_t list_result = nmo_chunk_array_append(&chunk->chunks, chunk->arena, sizeof(nmo_chunk_t *), &sub);
     if (list_result != NMO_OK) {
         chunk->chunks.count = chunks_count_before;
         return list_result;
@@ -303,7 +302,7 @@ static nmo_status_t read_old_layout_sub_chunk(
     sub->chunk_options = NMO_CHUNK_OPTION_FILE_KEPT;
 
     if (data_size > 0) {
-        result = nmo_arena_array_resize(&sub->data, data_size);
+        result = nmo_chunk_array_resize(&sub->data, sub->arena, sizeof(uint32_t), data_size);
         if (result != NMO_OK) {
             state->current_pos = start_pos;
             return result;
@@ -474,7 +473,7 @@ nmo_status_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub)
                                    "Insufficient data");
         }
 
-        result = nmo_arena_array_resize(&sub->data, data_size);
+        result = nmo_chunk_array_resize(&sub->data, sub->arena, sizeof(uint32_t), data_size);
         if (result != NMO_OK) {
             state->current_pos = start_pos;
             return result;
@@ -496,7 +495,7 @@ nmo_status_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub)
                                    "Insufficient IDs data");
         }
 
-        result = nmo_arena_array_resize(&sub->ids, id_count);
+        result = nmo_chunk_array_resize(&sub->ids, sub->arena, sizeof(uint32_t), id_count);
         if (result != NMO_OK) {
             state->current_pos = start_pos;
             return result;
@@ -518,7 +517,7 @@ nmo_status_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub)
                                    "Insufficient chunk refs data");
         }
 
-        result = nmo_arena_array_resize(&sub->chunk_refs, chunk_count);
+        result = nmo_chunk_array_resize(&sub->chunk_refs, sub->arena, sizeof(uint32_t), chunk_count);
         if (result != NMO_OK) {
             state->current_pos = start_pos;
             return result;
@@ -540,7 +539,7 @@ nmo_status_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub)
                                    "Insufficient manager refs data");
         }
 
-        result = nmo_arena_array_resize(&sub->managers, manager_count);
+        result = nmo_chunk_array_resize(&sub->managers, sub->arena, sizeof(uint32_t), manager_count);
         if (result != NMO_OK) {
             state->current_pos = start_pos;
             return result;
@@ -586,14 +585,14 @@ nmo_status_t nmo_chunk_start_sub_chunk_sequence(nmo_chunk_t *chunk, size_t count
 
     // Track sequence start (CK2 AddEntries)
     uint32_t sentinel = 0xFFFFFFFFu;
-    result = nmo_arena_array_append(&chunk->chunk_refs, &sentinel);
+    result = nmo_chunk_array_append(&chunk->chunk_refs, chunk->arena, sizeof(uint32_t), &sentinel);
     if (result != NMO_OK) {
         chunk->chunk_refs.count = refs_count_before;
         return result;
     }
     {
         uint32_t pos = (uint32_t) state->current_pos;
-        result = nmo_arena_array_append(&chunk->chunk_refs, &pos);
+        result = nmo_chunk_array_append(&chunk->chunk_refs, chunk->arena, sizeof(uint32_t), &pos);
     }
     if (result != NMO_OK) {
         chunk->chunk_refs.count = refs_count_before;
@@ -620,7 +619,7 @@ nmo_status_t nmo_chunk_add_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t *sub_chunk)
     NMO_CHUNK_CHECK_ARGS(chunk, sub_chunk, "Invalid arguments");
 
     /* Add sub-chunk */
-    nmo_status_t result = nmo_arena_array_append(&chunk->chunks, &sub_chunk);
+    nmo_status_t result = nmo_chunk_array_append(&chunk->chunks, chunk->arena, sizeof(nmo_chunk_t *), &sub_chunk);
     NMO_RETURN_IF_ERROR(result);
 
     /* Set CHN flag */

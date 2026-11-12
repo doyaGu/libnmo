@@ -868,7 +868,7 @@ TEST(chunk_api, object_tracking_allocation_failure_is_atomic) {
     nmo_chunk_t* chunk = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(chunk);
     ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
-    ASSERT_EQ(NMO_OK, nmo_arena_array_reserve(&chunk->data, 64u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_array_reserve(&chunk->data, chunk->arena, sizeof(uint32_t), 64u));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0x12345678u));
     while (chunk->ids.count < chunk->ids.capacity) {
         ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(chunk, 7u));
@@ -1546,12 +1546,6 @@ TEST(chunk_api, sub_chunk_write_rejects_unencodable_payload) {
     ASSERT_EQ(NMO_ERR_INVALID_STATE,
         nmo_chunk_write_sub_chunk(parent, sub));
     sub->data.capacity = data_capacity;
-
-    const size_t data_element_size = sub->data.element_size;
-    sub->data.element_size = 1u;
-    ASSERT_EQ(NMO_ERR_INVALID_STATE,
-        nmo_chunk_write_sub_chunk(parent, sub));
-    sub->data.element_size = data_element_size;
 
 #if SIZE_MAX > UINT32_MAX
     const size_t data_count = sub->data.count;

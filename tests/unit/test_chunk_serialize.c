@@ -103,7 +103,7 @@ TEST(chunk_serialize, parse_failure_preserves_chunk_state) {
     chunk->class_id = 0xABCDEF01u;
     chunk->data_version = 9;
     chunk->chunk_version = NMO_CHUNK_VERSION2;
-    ASSERT_EQ(NMO_OK, nmo_arena_array_resize(&chunk->data, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_array_resize(&chunk->data, chunk->arena, sizeof(uint32_t), 1));
     uint32_t *original_data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
     ASSERT_NOT_NULL(original_data);
     original_data[0] = 0x12345678u;
