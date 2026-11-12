@@ -161,6 +161,39 @@ static nmo_class_id_t object_system_default_chunk_class_id(const nmo_object_t *o
     return obj->class_id == NMO_CID_3DOBJECT ? NMO_CID_3DENTITY : obj->class_id;
 }
 
+/* The chunk of an object that has nothing to write: no state, and no data in
+ * the file it was loaded from. */
+static nmo_chunk_t *object_system_empty_chunk(
+    const nmo_object_t *obj,
+    nmo_arena_t *arena,
+    const nmo_chunk_file_context_t *file_ctx,
+    nmo_status_t *out_status)
+{
+    nmo_chunk_t *empty_chunk = nmo_chunk_create(arena);
+    if (empty_chunk == NULL) {
+        if (out_status != NULL) {
+            *out_status = NMO_ERR_NOMEM;
+        }
+        return NULL;
+    }
+    empty_chunk->class_id = object_system_default_chunk_class_id(obj);
+    empty_chunk->chunk_version = NMO_CHUNK_VERSION4;
+    empty_chunk->data_version = NMO_CHUNK_DATA_VERSION_CURRENT;
+    empty_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    if (file_ctx != NULL) {
+        nmo_chunk_set_file_context(empty_chunk, file_ctx);
+    }
+    nmo_status_t empty_result = nmo_chunk_start_write(empty_chunk);
+    if (empty_result != NMO_OK) {
+        if (out_status != NULL) {
+            *out_status = empty_result;
+        }
+        return NULL;
+    }
+    nmo_chunk_close(empty_chunk);
+    return empty_chunk;
+}
+
 static void object_system_clear_failed_object_state(nmo_object_t *obj)
 {
     if (obj != NULL) {
@@ -449,6 +482,8 @@ static nmo_chunk_t *object_system_serialize_impl(
     const nmo_type_descriptor_t *schema_type =
         nmo_type_query_find_for_object(type_rt->types, obj);
 
+    /* Without a schema that writes it, an object keeps the chunk it was
+     * loaded with; one that had no data in the file gets an empty chunk. */
     if (schema_type == NULL) {
         if (logger) {
             nmo_log(logger, NMO_LOG_WARN,
@@ -457,6 +492,9 @@ static nmo_chunk_t *object_system_serialize_impl(
         if (state_only) {
             if (out_status != NULL) *out_status = NMO_ERR_NOT_SUPPORTED;
             return NULL;
+        }
+        if (obj->chunk == NULL) {
+            return object_system_empty_chunk(obj, arena, file_ctx, out_status);
         }
         return obj->chunk;
     }
@@ -471,6 +509,9 @@ static nmo_chunk_t *object_system_serialize_impl(
             if (out_status != NULL) *out_status = NMO_ERR_NOT_SUPPORTED;
             return NULL;
         }
+        if (obj->chunk == NULL) {
+            return object_system_empty_chunk(obj, arena, file_ctx, out_status);
+        }
         return obj->chunk;
     }
 
@@ -481,28 +522,7 @@ static nmo_chunk_t *object_system_serialize_impl(
         }
 
         if (obj->chunk == NULL) {
-            nmo_chunk_t *empty_chunk = nmo_chunk_create(arena);
-            if (empty_chunk != NULL) {
-                empty_chunk->class_id = object_system_default_chunk_class_id(obj);
-                empty_chunk->chunk_version = NMO_CHUNK_VERSION4;
-                empty_chunk->data_version = NMO_CHUNK_DATA_VERSION_CURRENT;
-                empty_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
-                if (file_ctx != NULL) {
-                    nmo_chunk_set_file_context(empty_chunk, file_ctx);
-                }
-                nmo_status_t empty_result = nmo_chunk_start_write(empty_chunk);
-                if (empty_result != NMO_OK) {
-                    if (out_status != NULL) {
-                        *out_status = empty_result;
-                    }
-                    return NULL;
-                }
-                nmo_chunk_close(empty_chunk);
-                return empty_chunk;
-            }
-            if (out_status != NULL) {
-                *out_status = NMO_ERR_NOMEM;
-            }
+            return object_system_empty_chunk(obj, arena, file_ctx, out_status);
         }
 
         return obj->chunk;
