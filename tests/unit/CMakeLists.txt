@@ -346,6 +346,11 @@ target_link_libraries(test_engine_world_environments PRIVATE ${NMO_TEST_BB_PACKS
 add_unit_test(test_engine_narratives)
 target_link_libraries(test_engine_narratives PRIVATE ${NMO_TEST_BB_PACKS} nmo_engine nmo_edit)
 
+if(TARGET nmo_render_soft)
+    add_unit_test(test_render_soft)
+    target_link_libraries(test_render_soft PRIVATE nmo_render_soft)
+endif()
+
 add_unit_test(test_engine_sprites)
 target_link_libraries(test_engine_sprites PRIVATE ${NMO_TEST_BB_PACKS} nmo_engine nmo_edit)
 
