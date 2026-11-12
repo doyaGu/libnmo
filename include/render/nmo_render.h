@@ -68,10 +68,13 @@ NMO_API void nmo_render_pick(nmo_render_t *render);
 NMO_API void nmo_render_target_to_frame(const nmo_render_t *render, float x, float y,
                                         float *out_x, float *out_y);
 
+/** The render context of the frame drawn last (640 x 480 before any): its own size. */
+NMO_API void nmo_render_frame_size(const nmo_render_t *render, int *out_width, int *out_height);
+
 /**
- * Draw the frame again into a target of `width` x `height` pixels and save
- * the part of it the frame covers as a PNG file. The target is read before
- * the host shows it.
+ * Draw the frame into a target of `width` x `height` pixels and save the
+ * part of it the frame covers as a PNG file. The target is read before the
+ * host shows it.
  */
 NMO_API nmo_status_t nmo_render_screenshot(nmo_render_t *render, int width, int height,
                                            const char *path);

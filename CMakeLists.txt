@@ -480,7 +480,7 @@ set(NMO_IVP_SOURCE_DIR "" CACHE PATH "libivp source tree: builds the libivp phys
 if(NMO_IVP_SOURCE_DIR)
     add_subdirectory(src/physics_ivp)
 endif()
-option(NMO_RENDER "Build the renderer of the engine's frames (nmo_render, no graphics API of its own)" OFF)
+option(NMO_RENDER "Build the renderer of the engine's frames and its software backend (nmo_render, nmo_render_soft; no graphics API, no window)" ON)
 option(NMO_RENDER_GL "Build the renderer's OpenGL backend (nmo_render_gl); implies NMO_RENDER" OFF)
 option(NMO_VIEWER "Build the SDL3/OpenGL view of the engine (nmo_view, nmo behavior run --window); implies NMO_RENDER_GL" OFF)
 if(NMO_RENDER OR NMO_RENDER_GL OR NMO_VIEWER)

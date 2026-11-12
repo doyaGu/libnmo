@@ -154,9 +154,15 @@ void nmo_render_target_to_frame(const nmo_render_t *render, float x, float y, fl
     *out_y = render->rect[3] > 0 ? py * (float)render->frame_height / (float)render->rect[3] : 0.0f;
 }
 
+void nmo_render_frame_size(const nmo_render_t *render, int *out_width, int *out_height)
+{
+    *out_width = render != NULL ? render->frame_width : 0;
+    *out_height = render != NULL ? render->frame_height : 0;
+}
+
 nmo_status_t nmo_render_screenshot(nmo_render_t *render, int width, int height, const char *path)
 {
-    if (render == NULL || path == NULL || render->rect[2] <= 0 || render->rect[3] <= 0) {
+    if (render == NULL || path == NULL || width <= 0 || height <= 0) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
     nmo_status_t render_status = render_frame(render, width, height);

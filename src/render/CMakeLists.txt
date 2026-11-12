@@ -25,6 +25,14 @@ if(UNIX)
 endif()
 add_library(nmo::render ALIAS nmo_render)
 
+# The software backend: a rasterizer in C, drawing into memory. It needs no
+# device and no window, so it builds wherever the front end does.
+add_library(nmo_render_soft STATIC "${CMAKE_CURRENT_SOURCE_DIR}/soft/render_soft.c"
+                                   "${CMAKE_CURRENT_SOURCE_DIR}/soft/soft_raster.c")
+target_link_libraries(nmo_render_soft PUBLIC nmo_render)
+target_compile_definitions(nmo_render_soft PUBLIC NMO_HAS_RENDER_SOFT=1)
+add_library(nmo::render_soft ALIAS nmo_render_soft)
+
 # The OpenGL backend: the fixed function pipeline (OpenGL 2.1 and
 # EXT_framebuffer_object), in the context the host made current.
 if(NMO_RENDER_GL OR NMO_VIEWER)
