@@ -179,14 +179,8 @@ set(NMO_IO_SOURCES
     src/io/io_file.c
     src/io/io_memory.c
     src/io/io_mmap.c
+    src/io/txn.c
 )
-
-# Platform-specific IO sources
-if(WIN32)
-    list(APPEND NMO_IO_SOURCES src/io/txn_windows.c)
-else()
-    list(APPEND NMO_IO_SOURCES src/io/txn_posix.c)
-endif()
 
 # Format layer sources
 set(NMO_FORMAT_SOURCES
