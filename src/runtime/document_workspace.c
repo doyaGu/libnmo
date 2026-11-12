@@ -623,6 +623,7 @@ nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
 
     memset(&session->finish_stats, 0, sizeof(session->finish_stats));
     session->finish_stats_valid = 0;
+    session->finish_references_counted = 0;
     memset(&session->plugin_diag, 0, sizeof(session->plugin_diag));
     session->plugin_diag_valid = 0;
 

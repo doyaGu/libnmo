@@ -58,6 +58,9 @@ typedef struct nmo_file_state {
 typedef struct nmo_runtime_load_stats {
     size_t total_objects;
     uint32_t flags;
+    /* The references the objects hold. A strict load (NMO_LOAD_STRICT) counts
+     * them as it loads; for any other load they are counted when the stats are
+     * read, in the objects as they are then. */
     struct {
         uint32_t total;
         uint32_t resolved;

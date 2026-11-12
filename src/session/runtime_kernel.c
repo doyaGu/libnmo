@@ -698,6 +698,83 @@ static nmo_status_t runtime_fit_layer_cells(nmo_session_t *session,
     return NMO_OK;
 }
 
+/* Resolves the registered references and puts their counts, with up to 8 of
+ * those that do not resolve, in stats->references. */
+static nmo_status_t runtime_fill_reference_stats(
+    nmo_reference_resolver_t *resolver,
+    nmo_runtime_load_stats_t *stats)
+{
+    nmo_status_t resolve_result = nmo_reference_resolver_resolve_all(resolver);
+    if (resolve_result != NMO_OK) {
+        return resolve_result;
+    }
+
+    nmo_reference_stats_t resolver_stats;
+    if (nmo_reference_resolver_get_stats(resolver, &resolver_stats) == NMO_OK) {
+        stats->references.total = resolver_stats.total_count;
+        stats->references.resolved = resolver_stats.resolved_count;
+        stats->references.unresolved = resolver_stats.unresolved_count;
+        stats->references.ambiguous = resolver_stats.ambiguous_count;
+    }
+
+    stats->references.unresolved_preview_count = 0;
+    if (stats->references.unresolved > 0) {
+        nmo_object_ref_t **unresolved_refs = NULL;
+        size_t unresolved_count = 0;
+        if (nmo_reference_resolver_get_unresolved(resolver, &unresolved_refs,
+                                                   &unresolved_count) == NMO_OK) {
+            size_t preview_count = unresolved_count < 8 ? unresolved_count : 8;
+            stats->references.unresolved_preview_count = (uint32_t)preview_count;
+            for (size_t i = 0; i < preview_count; i++) {
+                stats->references.unresolved_preview[i].id = unresolved_refs[i]->id;
+                stats->references.unresolved_preview[i].class_id =
+                    unresolved_refs[i]->class_id;
+            }
+        }
+    }
+    return NMO_OK;
+}
+
+nmo_status_t nmo_session_internal_count_references(
+    const nmo_session_t *session,
+    nmo_runtime_load_stats_t *stats)
+{
+    if (session == NULL || stats == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    /* Counting only reads the session: the resolver is a temporary one. */
+    nmo_session_t *readable = (nmo_session_t *)session;
+    nmo_context_t *ctx = nmo_session_get_context(readable);
+    nmo_object_repository_t *repo = nmo_session_get_repository(readable);
+    const nmo_type_runtime_t *type_rt = ctx != NULL ? nmo_context_get_type_runtime(ctx) : NULL;
+    nmo_arena_t *session_arena = nmo_session_get_arena(readable);
+    if (repo == NULL || type_rt == NULL || type_rt->types == NULL || session_arena == NULL) {
+        return NMO_OK;
+    }
+
+    nmo_allocator_t allocator;
+    if (nmo_arena_get_allocator(session_arena, &allocator) != NMO_OK) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    nmo_arena_t *arena = nmo_arena_create(&allocator, 4096);
+    if (arena == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    nmo_reference_resolver_t *resolver = nmo_reference_resolver_create(repo, arena);
+    if (resolver == NULL) {
+        nmo_arena_destroy(arena);
+        return NMO_ERR_NOMEM;
+    }
+    nmo_status_t status = nmo_object_system_capture_references(
+        repo, type_rt, resolver, nmo_context_get_logger(ctx));
+    if (status == NMO_OK) {
+        status = runtime_fill_reference_stats(resolver, stats);
+    }
+    nmo_reference_resolver_destroy(resolver);
+    nmo_arena_destroy(arena);
+    return status;
+}
+
 nmo_status_t nmo_runtime_kernel_finalize_load(
     nmo_session_t *session,
     const nmo_runtime_request_t *request,
@@ -726,43 +803,17 @@ nmo_status_t nmo_runtime_kernel_finalize_load(
     memset(&finish_stats, 0, sizeof(finish_stats));
     nmo_load_perf_stats_t *perf_stats = runtime_load_perf_stats(request);
 
+    /* A strict load registered its references in the session's resolver. */
+    int references_counted = 0;
     nmo_reference_resolver_t *resolver = nmo_session_get_reference_resolver(session);
     if (resolver != NULL) {
         uint64_t reference_start = runtime_load_perf_begin(perf_stats);
-        nmo_status_t resolve_result =
-            nmo_reference_resolver_resolve_all(resolver);
+        nmo_status_t resolve_result = runtime_fill_reference_stats(resolver, &finish_stats);
+        runtime_load_perf_end(perf_stats, NMO_LOAD_PERF_REFERENCE_RESOLVE, reference_start);
         if (resolve_result != NMO_OK) {
-            runtime_load_perf_end(
-                perf_stats, NMO_LOAD_PERF_REFERENCE_RESOLVE,
-                reference_start);
             return resolve_result;
         }
-
-        nmo_reference_stats_t resolver_stats;
-        if (nmo_reference_resolver_get_stats(resolver, &resolver_stats) == NMO_OK) {
-            finish_stats.references.total = resolver_stats.total_count;
-            finish_stats.references.resolved = resolver_stats.resolved_count;
-            finish_stats.references.unresolved = resolver_stats.unresolved_count;
-            finish_stats.references.ambiguous = resolver_stats.ambiguous_count;
-        }
-
-        /* Populate unresolved reference preview (up to 8 samples) */
-        if (finish_stats.references.unresolved > 0) {
-            nmo_object_ref_t **unresolved_refs = NULL;
-            size_t unresolved_count = 0;
-            if (nmo_reference_resolver_get_unresolved(resolver, &unresolved_refs,
-                                                       &unresolved_count) == NMO_OK) {
-                size_t preview_count = unresolved_count < 8 ? unresolved_count : 8;
-                finish_stats.references.unresolved_preview_count = (uint32_t)preview_count;
-                for (size_t i = 0; i < preview_count; i++) {
-                    finish_stats.references.unresolved_preview[i].id =
-                        unresolved_refs[i]->id;
-                    finish_stats.references.unresolved_preview[i].class_id =
-                        unresolved_refs[i]->class_id;
-                }
-            }
-        }
-        runtime_load_perf_end(perf_stats, NMO_LOAD_PERF_REFERENCE_RESOLVE, reference_start);
+        references_counted = 1;
 
         /* The references were registered to count what resolves; nothing
          * points into them, so they go with the load instead of the session. */
@@ -882,7 +933,7 @@ nmo_status_t nmo_runtime_kernel_finalize_load(
     }
 
     finish_stats.flags = 0;
-    nmo_session_set_runtime_load_stats(session, &finish_stats);
+    nmo_session_internal_set_load_stats(session, &finish_stats, references_counted);
 
     if (out_report != NULL) {
         out_report->status = NMO_OK;

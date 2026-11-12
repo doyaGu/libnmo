@@ -11,6 +11,7 @@
 #include "session/nmo_session_pipeline.h"
 #include "object/nmo_shadow_storage.h"
 #include "session/nmo_reference_resolver.h"
+#include "session_internal.h"
 #include "object/nmo_ref_enumerate.h"
 
 #include "format/nmo_header1.h"
@@ -188,6 +189,40 @@ static bool object_system_capture_ref(
     }
 
     return true;
+}
+
+nmo_status_t nmo_object_system_capture_references(
+    nmo_object_repository_t *repo,
+    const nmo_type_runtime_t *type_rt,
+    nmo_reference_resolver_t *resolver,
+    nmo_logger_t *logger)
+{
+    if (repo == NULL || type_rt == NULL || type_rt->types == NULL || resolver == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    const size_t count = nmo_object_repository_get_count(repo);
+    for (size_t i = 0; i < count; ++i) {
+        nmo_object_t *obj = nmo_object_repository_get_by_index(repo, i);
+        if (obj == NULL || obj->state == NULL) {
+            continue;
+        }
+        object_system_ref_capture_ctx_t ref_ctx = {
+            .resolver = resolver,
+            .repo = repo,
+            .source = obj,
+            .logger = logger,
+            .status = NMO_OK
+        };
+        nmo_status_t result = nmo_ref_enumerate_object(
+            type_rt->types, obj, object_system_capture_ref, &ref_ctx);
+        if (result == NMO_OK) {
+            result = ref_ctx.status;
+        }
+        if (result == NMO_ERR_NOMEM || result == NMO_ERR_INTERNAL) {
+            return result;
+        }
+    }
+    return NMO_OK;
 }
 
 static void object_system_rollback_created(

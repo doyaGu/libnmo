@@ -552,12 +552,18 @@ nmo_status_t nmo_session_get_runtime_load_stats(
     }
 
     *out_stats = session->finish_stats;
+    if (!session->finish_references_counted) {
+        /* A load counts references only when it is strict; count them now,
+         * in the objects as they are. */
+        return nmo_session_internal_count_references(session, out_stats);
+    }
     return NMO_OK;
 }
 
-void nmo_session_set_runtime_load_stats(
+void nmo_session_internal_set_load_stats(
     nmo_session_t *session,
-    const nmo_runtime_load_stats_t *stats
+    const nmo_runtime_load_stats_t *stats,
+    int references_counted
 ) {
     if (session == NULL || stats == NULL) {
         return;
@@ -565,6 +571,14 @@ void nmo_session_set_runtime_load_stats(
 
     session->finish_stats = *stats;
     session->finish_stats_valid = 1;
+    session->finish_references_counted = references_counted ? 1 : 0;
+}
+
+void nmo_session_set_runtime_load_stats(
+    nmo_session_t *session,
+    const nmo_runtime_load_stats_t *stats
+) {
+    nmo_session_internal_set_load_stats(session, stats, 1);
 }
 
 void nmo_session_set_plugin_diagnostics(

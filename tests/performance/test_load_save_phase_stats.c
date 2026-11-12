@@ -210,13 +210,23 @@ TEST(phase_stats, load_records_required_phases) {
     ASSERT_TRUE(stats.phases[NMO_LOAD_PERF_DATA_PARSE].calls > 0);
     ASSERT_TRUE(stats.phases[NMO_LOAD_PERF_OBJECT_CREATE].calls > 0);
     ASSERT_TRUE(stats.phases[NMO_LOAD_PERF_OBJECT_DESERIALIZE].calls > 0);
-    ASSERT_TRUE(stats.phases[NMO_LOAD_PERF_REFERENCE_RESOLVE].calls > 0);
+    /* Only a strict load resolves the references as it goes; the others
+     * count them when their statistics are asked for. */
+    ASSERT_EQ(0, stats.phases[NMO_LOAD_PERF_REFERENCE_RESOLVE].calls);
     ASSERT_TRUE(stats.phases[NMO_LOAD_PERF_MANAGER_POST_LOAD].calls > 0);
     ASSERT_TRUE(stats.phases[NMO_LOAD_PERF_INDEX_REBUILD].calls > 0);
     ASSERT_TRUE(stats.packed_header1_bytes > 0);
     ASSERT_TRUE(stats.unpacked_header1_bytes > 0);
     ASSERT_TRUE(stats.packed_data_bytes > 0);
     ASSERT_TRUE(stats.unpacked_data_bytes > 0);
+
+    nmo_session_t *strict_session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(strict_session);
+    nmo_load_perf_stats_reset(&stats);
+    opts.flags |= NMO_LOAD_STRICT;
+    ASSERT_EQ(NMO_OK, nmo_load_file(strict_session, fixture, &opts));
+    ASSERT_TRUE(stats.phases[NMO_LOAD_PERF_REFERENCE_RESOLVE].calls > 0);
+    nmo_session_destroy(strict_session);
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);

@@ -82,6 +82,7 @@ typedef struct nmo_session {
     /* Finish loading diagnostics */
     nmo_runtime_load_stats_t finish_stats;
     int finish_stats_valid;
+    int finish_references_counted; /* finish_stats.references holds counts */
 
     /* Plugin dependency diagnostics */
     nmo_session_plugin_diagnostics_t plugin_diag;
@@ -126,6 +127,25 @@ void nmo_session_set_manager_data(
     nmo_session_t *session,
     nmo_manager_data_t *data,
     uint32_t count);
+/* Stores the stats of a finished load; references_counted says whether their
+ * reference counts were taken (else they are counted when asked for). */
+void nmo_session_internal_set_load_stats(
+    nmo_session_t *session,
+    const nmo_runtime_load_stats_t *stats,
+    int references_counted);
+
+/* Counts the references of the session's objects into stats->references. */
+nmo_status_t nmo_session_internal_count_references(
+    const nmo_session_t *session,
+    nmo_runtime_load_stats_t *stats);
+
+/* Registers the references every object's state holds in the resolver. */
+nmo_status_t nmo_object_system_capture_references(
+    nmo_object_repository_t *repo,
+    const nmo_type_runtime_t *type_rt,
+    nmo_reference_resolver_t *resolver,
+    nmo_logger_t *logger);
+
 void nmo_session_set_runtime_load_stats(
     nmo_session_t *session,
     const nmo_runtime_load_stats_t *stats);
