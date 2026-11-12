@@ -256,11 +256,10 @@ static int object_system_compare_file_id_entries(const void *a, const void *b) {
     return left->index < right->index ? -1 : (left->index > right->index ? 1 : 0);
 }
 
-/* A file can give two objects the same file id, and loads all the same: from
- * version 7 on references are file indices, and below it the id sanitizer
- * resolves them. A saved file cannot repeat an id, so the first object keeps it
- * and the later ones are created without it, which gives them new ids on save.
- * Marks those later entries in *out_repeats (NULL when no id repeats). */
+/* A file can give two objects the same file id, and loads all the same. A
+ * saved file cannot repeat an id, so the first object keeps it and the later
+ * ones are created without it, which gives them new ids on save. Marks those
+ * later entries in *out_repeats (NULL when no id repeats). */
 static nmo_status_t object_system_find_repeated_file_ids(
     nmo_arena_t *scratch_arena,
     const nmo_object_desc_t *descs,
@@ -270,12 +269,57 @@ static nmo_status_t object_system_find_repeated_file_ids(
 {
     *out_repeats = NULL;
     size_t entry_count = 0;
+    nmo_object_id_t max_file_id = 0;
     for (size_t i = 0; i < count; i++) {
         if (descs[i].class_id != 0 && descs[i].file_id != 0) {
             entry_count++;
+            if (descs[i].file_id > max_file_id) {
+                max_file_id = descs[i].file_id;
+            }
         }
     }
     if (entry_count < 2) {
+        return NMO_OK;
+    }
+
+    /* A file numbers its objects from 1, so its ids index an array that
+     * finds the repeats in one pass; ids far sparser than that are sorted. */
+    if ((uint64_t)max_file_id <= 4u * (uint64_t)count + 1024u) {
+        nmo_allocator_t allocator = nmo_allocator_default();
+        const size_t slots = (size_t)max_file_id + 1u;
+        uint32_t *first_index = (uint32_t *)nmo_alloc(
+            &allocator, slots * sizeof(uint32_t), alignof(uint32_t));
+        if (first_index == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+        memset(first_index, 0xFF, slots * sizeof(uint32_t));
+        unsigned char *repeats = NULL;
+        for (size_t i = 0; i < count; i++) {
+            if (descs[i].class_id == 0 || descs[i].file_id == 0) {
+                continue;
+            }
+            uint32_t *first = &first_index[descs[i].file_id];
+            if (*first == UINT32_MAX) {
+                *first = (uint32_t)i;
+                continue;
+            }
+            if (repeats == NULL) {
+                repeats = (unsigned char *)nmo_arena_alloc(scratch_arena, count, 1);
+                if (repeats == NULL) {
+                    nmo_free(&allocator, first_index);
+                    return NMO_ERR_NOMEM;
+                }
+                memset(repeats, 0, count);
+            }
+            repeats[i] = 1;
+            if (logger) {
+                nmo_log(logger, NMO_LOG_WARN,
+                        "  Object %u repeats file id %u of object %u; it gets a new id on save",
+                        (uint32_t)i, descs[i].file_id, *first);
+            }
+        }
+        nmo_free(&allocator, first_index);
+        *out_repeats = repeats;
         return NMO_OK;
     }
 
