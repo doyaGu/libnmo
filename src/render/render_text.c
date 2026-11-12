@@ -1,18 +1,17 @@
 /**
- * @file text.c
+ * @file render_text.c
  * @brief Sprite texts drawn as VxDrawBitmapText would: the sprite cleared to
  *        nothing, the text in its color with the font CreateFont would pick,
  *        placed by the sprite's alignment.
  *
- * The font is the face's TrueType file from the system's font folders
- * (bold from weight 600, italic from the style), rendered by stb_truetype at
- * the size CreateFont gives a point size at 96 dots an inch. Each different
- * sprite becomes a texture, dropped once no frame has drawn it for a second.
+ * The font is the face's TrueType file the font loader finds (bold from
+ * weight 600, italic from the style), rendered by stb_truetype at the size
+ * CreateFont gives a point size at 96 dots an inch. Each different sprite
+ * keeps its pixels, and a backend's image of them, until no frame has drawn
+ * it for a second.
  */
 
-#define GL_SILENCE_DEPRECATION
-
-#include "view_text.h"
+#include "render_text.h"
 
 /* stb is third-party code: its unused static functions stay out of -Werror */
 #if defined(__clang__)
@@ -33,14 +32,7 @@
 #pragma GCC diagnostic pop
 #endif
 
-#ifdef __APPLE__
-#include <OpenGL/gl.h>
-#else
-#include <GL/gl.h>
-#endif
-
 #include <math.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -54,21 +46,22 @@ typedef struct text_font {
 } text_font_t;
 
 typedef struct text_sprite {
+    render_text_sprite_t image;
     char *text, *font;
     int32_t size, weight;
     bool italic;
     uint32_t align, color;
-    int width, height;
-    GLuint name;
     uint64_t used;
 } text_sprite_t;
 
-struct view_text {
+struct render_text {
     text_font_t *fonts;
     size_t font_count;
     text_sprite_t *sprites;
     size_t sprite_count, sprite_capacity;
     uint64_t frame;
+    nmo_render_font_loader_fn loader;
+    void *loader_data;
 };
 
 static char *text_copy(const char *s)
@@ -81,73 +74,7 @@ static char *text_copy(const char *s)
     return copy;
 }
 
-/* dir/name: exact size */
-static char *text_path(const char *dir, const char *name)
-{
-    size_t a = strlen(dir), b = strlen(name);
-    char *path = (char *)malloc(a + 1 + b + 1);
-    if (path != NULL) {
-        memcpy(path, dir, a);
-        path[a] = '/';
-        memcpy(path + a + 1, name, b + 1);
-    }
-    return path;
-}
-
-static unsigned char *text_read_file(const char *path)
-{
-    FILE *file = fopen(path, "rb");
-    if (file == NULL) {
-        return NULL;
-    }
-    unsigned char *data = NULL;
-    if (fseek(file, 0, SEEK_END) == 0) {
-        long size = ftell(file);
-        data = size > 0 ? (unsigned char *)malloc((size_t)size) : NULL;
-        if (data != NULL && (fseek(file, 0, SEEK_SET) != 0 ||
-                             fread(data, 1, (size_t)size, file) != (size_t)size)) {
-            free(data);
-            data = NULL;
-        }
-    }
-    fclose(file);
-    return data;
-}
-
-/* The file of `face` in this style: "Face Bold Italic.ttf" and the like, then "Face.ttf" */
-static unsigned char *text_find_font(const char *face, bool bold, bool italic)
-{
-    static const char *const dirs[] = {
-        "/System/Library/Fonts/Supplemental", "/System/Library/Fonts", "/Library/Fonts",
-        "C:/Windows/Fonts", "/usr/share/fonts/truetype/msttcorefonts", "/usr/share/fonts/TTF",
-    };
-    const char *style = bold && italic ? " Bold Italic" : bold ? " Bold" : italic ? " Italic" : "";
-    size_t face_length = strlen(face), style_length = strlen(style);
-    for (int plain = 0; plain < 2; plain++) {
-        const char *suffix = plain ? "" : style;
-        size_t suffix_length = plain ? 0 : style_length;
-        char *name = (char *)malloc(face_length + suffix_length + 5);
-        if (name == NULL) {
-            return NULL;
-        }
-        memcpy(name, face, face_length);
-        memcpy(name + face_length, suffix, suffix_length);
-        memcpy(name + face_length + suffix_length, ".ttf", 5);
-        for (size_t d = 0; d < sizeof(dirs) / sizeof(dirs[0]); d++) {
-            char *path = text_path(dirs[d], name);
-            unsigned char *data = path != NULL ? text_read_file(path) : NULL;
-            free(path);
-            if (data != NULL) {
-                free(name);
-                return data;
-            }
-        }
-        free(name);
-    }
-    return NULL;
-}
-
-static const text_font_t *text_font(view_text_t *text, const char *face, bool bold, bool italic)
+static const text_font_t *text_font(render_text_t *text, const char *face, bool bold, bool italic)
 {
     for (size_t i = 0; i < text->font_count; i++) {
         const text_font_t *font = &text->fonts[i];
@@ -169,7 +96,8 @@ static const text_font_t *text_font(view_text_t *text, const char *face, bool bo
     font->face = copy;
     font->bold = bold;
     font->italic = italic;
-    font->data = text_find_font(face, bold, italic);
+    font->data = text->loader != NULL ? text->loader(text->loader_data, face, bold, italic)
+                                      : render_font_system(NULL, face, bold, italic);
     if (font->data != NULL && !stbtt_InitFont(&font->info, font->data,
                                               stbtt_GetFontOffsetForIndex(font->data, 0))) {
         free(font->data);
@@ -248,25 +176,37 @@ static unsigned char *text_render(const text_font_t *font, const nmo_engine_draw
     return rgba;
 }
 
-view_text_t *view_text_open(void)
+render_text_t *render_text_open(void)
 {
-    return (view_text_t *)calloc(1, sizeof(view_text_t));
+    return (render_text_t *)calloc(1, sizeof(render_text_t));
 }
 
-static void text_sprite_free(text_sprite_t *sprite)
+void render_text_set_font_loader(render_text_t *text, nmo_render_font_loader_fn loader,
+                                 void *user_data)
 {
-    glDeleteTextures(1, &sprite->name);
+    if (text != NULL) {
+        text->loader = loader;
+        text->loader_data = user_data;
+    }
+}
+
+static void text_sprite_free(text_sprite_t *sprite, render_text_release_fn release, void *user_data)
+{
+    if (sprite->image.handle != 0 && release != NULL) {
+        release(user_data, sprite->image.handle);
+    }
+    free(sprite->image.rgba);
     free(sprite->text);
     free(sprite->font);
 }
 
-void view_text_close(view_text_t *text)
+void render_text_close(render_text_t *text, render_text_release_fn release, void *user_data)
 {
     if (text == NULL) {
         return;
     }
     for (size_t i = 0; i < text->sprite_count; i++) {
-        text_sprite_free(&text->sprites[i]);
+        text_sprite_free(&text->sprites[i], release, user_data);
     }
     free(text->sprites);
     for (size_t i = 0; i < text->font_count; i++) {
@@ -277,33 +217,33 @@ void view_text_close(view_text_t *text)
     free(text);
 }
 
-unsigned int view_text_texture(view_text_t *text, const nmo_engine_draw_t *draw)
+render_text_sprite_t *render_text_sprite(render_text_t *text, const nmo_engine_draw_t *draw)
 {
     int width = (int)(draw->rect[2] - draw->rect[0]), height = (int)(draw->rect[3] - draw->rect[1]);
     if (text == NULL || draw->text == NULL || draw->font_name == NULL || width <= 0 || height <= 0) {
-        return 0;
+        return NULL;
     }
     for (size_t i = 0; i < text->sprite_count; i++) {
         text_sprite_t *s = &text->sprites[i];
         if (s->size == draw->font_size && s->weight == draw->font_weight &&
             s->italic == draw->italic && s->align == draw->text_align && s->color == draw->color &&
-            s->width == width && s->height == height && strcmp(s->text, draw->text) == 0 &&
+            s->image.width == width && s->image.height == height && strcmp(s->text, draw->text) == 0 &&
             strcmp(s->font, draw->font_name) == 0) {
             s->used = text->frame;
-            return s->name;
+            return &s->image;
         }
     }
     const text_font_t *font = text_font(text, draw->font_name, draw->font_weight >= 600, draw->italic);
     unsigned char *rgba = font != NULL ? text_render(font, draw, width, height) : NULL;
     if (rgba == NULL) {
-        return 0;
+        return NULL;
     }
     if (text->sprite_count == text->sprite_capacity) {
         size_t capacity = text->sprite_capacity != 0 ? text->sprite_capacity * 2 : 8;
         text_sprite_t *grown = (text_sprite_t *)realloc(text->sprites, capacity * sizeof(*grown));
         if (grown == NULL) {
             free(rgba);
-            return 0;
+            return NULL;
         }
         text->sprites = grown;
         text->sprite_capacity = capacity;
@@ -316,7 +256,7 @@ unsigned int view_text_texture(view_text_t *text, const nmo_engine_draw_t *draw)
         free(s->text);
         free(s->font);
         free(rgba);
-        return 0;
+        return NULL;
     }
     text->sprite_count++;
     s->size = draw->font_size;
@@ -324,19 +264,14 @@ unsigned int view_text_texture(view_text_t *text, const nmo_engine_draw_t *draw)
     s->italic = draw->italic;
     s->align = draw->text_align;
     s->color = draw->color;
-    s->width = width;
-    s->height = height;
+    s->image.width = width;
+    s->image.height = height;
+    s->image.rgba = rgba;
     s->used = text->frame;
-    glGenTextures(1, &s->name);
-    glBindTexture(GL_TEXTURE_2D, s->name);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
-    free(rgba);
-    return s->name;
+    return &s->image;
 }
 
-void view_text_end_frame(view_text_t *text)
+void render_text_end_frame(render_text_t *text, render_text_release_fn release, void *user_data)
 {
     if (text == NULL) {
         return;
@@ -346,7 +281,7 @@ void view_text_end_frame(view_text_t *text)
         if (text->frame - text->sprites[i].used < TEXT_KEEP_FRAMES) {
             text->sprites[kept++] = text->sprites[i];
         } else {
-            text_sprite_free(&text->sprites[i]);
+            text_sprite_free(&text->sprites[i], release, user_data);
         }
     }
     text->sprite_count = kept;
