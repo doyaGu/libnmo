@@ -1913,7 +1913,6 @@ TEST(runtime_kernel, prepare_loaded_objects_propagates_remap_growth_oom) {
             &object_allocator,
             arena,
             repo,
-            NULL,
             test_id_register_noop,
             NULL,
             descs,

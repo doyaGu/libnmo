@@ -24,7 +24,6 @@ typedef struct nmo_object_index nmo_object_index_t;
 typedef struct nmo_session_plugin_dependency_status nmo_session_plugin_dependency_status_t;
 typedef struct nmo_extension_registry nmo_extension_registry_t;
 typedef struct nmo_chunk_pool nmo_chunk_pool_t;
-typedef struct nmo_id_sanitizer nmo_id_sanitizer_t;
 typedef struct nmo_shadow_storage nmo_shadow_storage_t;
 typedef struct nmo_object_repository nmo_object_repository_t;
 typedef struct nmo_ref_graph nmo_ref_graph_t;
@@ -59,39 +58,18 @@ typedef struct nmo_session_behavior_interface_diagnostics {
 
 NMO_API nmo_chunk_pool_t *nmo_session_get_chunk_pool(
     const nmo_session_t *session);
-NMO_API nmo_id_sanitizer_t *nmo_session_get_id_sanitizer(
-    const nmo_session_t *session);
 NMO_API nmo_shadow_storage_t *nmo_session_get_shadow_storage(
     const nmo_session_t *session);
 NMO_API nmo_chunk_pool_t *nmo_session_ensure_chunk_pool(
     nmo_session_t *session,
     size_t initial_capacity_hint);
-NMO_API nmo_id_sanitizer_t *nmo_id_sanitizer_create(
-    nmo_arena_t *arena);
-NMO_API void nmo_id_sanitizer_destroy(nmo_id_sanitizer_t *sanitizer);
-NMO_API void nmo_id_sanitizer_reset(nmo_id_sanitizer_t *sanitizer);
+/**
+ * @brief An object id without the reference flag
+ *
+ * A file marks the ids of objects it only refers to with
+ * NMO_OBJECT_REFERENCE_FLAG; the id itself is the rest.
+ */
 NMO_API uint32_t nmo_id_sanitize(uint32_t raw_id);
-NMO_API nmo_status_t nmo_id_sanitizer_register(
-    nmo_id_sanitizer_t *sanitizer,
-    uint32_t file_id,
-    uint32_t runtime_id);
-NMO_API int32_t nmo_id_register_external(
-    nmo_id_sanitizer_t *sanitizer,
-    int32_t negative_id);
-NMO_API nmo_status_t nmo_id_sanitizer_reseed(
-    nmo_id_sanitizer_t *sanitizer,
-    const uint32_t *file_ids,
-    const uint32_t *runtime_ids,
-    size_t count);
-NMO_API uint32_t nmo_id_file_to_runtime(
-    const nmo_id_sanitizer_t *sanitizer,
-    uint32_t file_id);
-NMO_API uint32_t nmo_id_runtime_to_file(
-    const nmo_id_sanitizer_t *sanitizer,
-    uint32_t runtime_id);
-NMO_API int32_t nmo_id_original_external(
-    const nmo_id_sanitizer_t *sanitizer,
-    uint32_t runtime_id);
 NMO_API nmo_object_index_t *nmo_session_get_object_index(
     const nmo_session_t *session);
 NMO_API nmo_status_t nmo_session_get_object_index_stats(

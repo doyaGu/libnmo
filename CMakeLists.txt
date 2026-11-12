@@ -337,7 +337,6 @@ set(NMO_RUNTIME_SOURCES
     src/session/deserializer.c
     src/session/id_mapping.c
     src/session/save_id_remap.c
-    src/session/id_sanitizer.c
     src/session/reference_resolver.c
     src/session/runtime_kernel.c
     src/session/runtime_ref_remap.c
@@ -457,7 +456,6 @@ install(DIRECTORY include/
     PATTERN "schema" EXCLUDE
     PATTERN "session/nmo_context.h" EXCLUDE
     PATTERN "session/nmo_object_system.h" EXCLUDE
-    PATTERN "session/nmo_id_sanitizer.h" EXCLUDE
     PATTERN "session/nmo_runtime_delete.h" EXCLUDE
     PATTERN "session/nmo_runtime_ref_remap.h" EXCLUDE
     PATTERN "session/nmo_save_id_remap.h" EXCLUDE

@@ -24,7 +24,6 @@
 
 typedef struct nmo_object_repository nmo_object_repository_t;
 typedef struct nmo_object_query_index nmo_object_query_index_t;
-typedef struct nmo_id_sanitizer nmo_id_sanitizer_t;
 typedef struct nmo_shadow_storage nmo_shadow_storage_t;
 typedef struct nmo_chunk_pool nmo_chunk_pool_t;
 typedef struct nmo_behavior_index nmo_behavior_index_t;
@@ -61,9 +60,6 @@ typedef struct nmo_session {
     /* Reference resolver (initialised on demand) */
     nmo_reference_resolver_t *reference_resolver;
     nmo_arena_t *reference_resolver_arena;
-
-    /* ID sanitizer */
-    nmo_id_sanitizer_t *id_sanitizer;
 
     /* Shadow storage (included files + chunk tails) */
     nmo_shadow_storage_t *shadow_storage;

@@ -634,21 +634,9 @@ nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
     session->reference_resolver = NULL;
     session->reference_resolver_arena = NULL;
 
-    /* Initialize ID sanitizer */
-    session->id_sanitizer = nmo_id_sanitizer_create(session->arena);
-    if (session->id_sanitizer == NULL) {
-        nmo_object_repository_destroy(session->repository);
-        nmo_arena_destroy(session->arena);
-        nmo_free(&session->allocator, session);
-        nmo_context_release(ctx);
-        return NULL;
-    }
-
     /* Initialize shadow storage */
     session->shadow_storage = nmo_shadow_storage_create(session->arena);
     if (session->shadow_storage == NULL) {
-        nmo_id_sanitizer_destroy(session->id_sanitizer);
-        session->id_sanitizer = NULL;
         nmo_object_repository_destroy(session->repository);
         nmo_arena_destroy(session->arena);
         nmo_free(&session->allocator, session);
@@ -705,11 +693,6 @@ void nmo_session_destroy(nmo_session_t *session) {
         if (session->reference_resolver_arena != NULL) {
             nmo_arena_destroy(session->reference_resolver_arena);
             session->reference_resolver_arena = NULL;
-        }
-
-        if (session->id_sanitizer != NULL) {
-            nmo_id_sanitizer_destroy(session->id_sanitizer);
-            session->id_sanitizer = NULL;
         }
 
         if (session->shadow_storage != NULL) {

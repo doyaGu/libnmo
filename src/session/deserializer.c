@@ -84,7 +84,6 @@ typedef struct nmo_deserializer {
     uint8_t *section_unpacked;
     nmo_object_repository_t *repo;
     nmo_logger_t *logger;
-    nmo_id_sanitizer_t *id_sanitizer;
     nmo_shadow_storage_t *shadow_storage;
     nmo_chunk_pool_t *chunk_pool;
 
@@ -542,7 +541,6 @@ nmo_deserializer_t *nmo_deserializer_create(
     ds->arena = arena;
     ds->repo = nmo_session_get_repository(session);
     ds->logger = nmo_context_get_logger(ds->ctx);
-    ds->id_sanitizer = nmo_session_get_id_sanitizer(session);
     ds->shadow_storage = nmo_session_get_shadow_storage(session);
     ds->chunk_pool = NULL;
     ds->phase_completed = 0;
@@ -580,9 +578,6 @@ nmo_status_t nmo_deserializer_parse_header(nmo_deserializer_t *ds)
     }
 
     nmo_session_reset_reference_resolver(session);
-    if (ds->id_sanitizer != NULL) {
-        nmo_id_sanitizer_reset(ds->id_sanitizer);
-    }
 
     /* Phase 2: Parse File Header */
     nmo_log(logger, NMO_LOG_INFO, "Phase 2: Parsing file header");
@@ -963,7 +958,6 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
     nmo_arena_t *arena = ds->arena;
     nmo_logger_t *logger = ds->logger;
     nmo_object_repository_t *repo = ds->repo;
-    nmo_id_sanitizer_t *id_sanitizer = ds->id_sanitizer;
     nmo_shadow_storage_t *shadow_storage = ds->shadow_storage;
     const nmo_load_flags_t flags = ds->options.flags;
     const int preserve_shadow = (flags & NMO_LOAD_PRESERVE_SHADOW) != 0;
@@ -1320,7 +1314,6 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
             obj_allocator,
             arena,
             repo,
-            id_sanitizer,
             cb_id_register,
             id_map,
             ds->hdr1.objects,

@@ -417,7 +417,6 @@ nmo_status_t nmo_object_system_create_objects_from_header1(
     const nmo_allocator_t *object_allocator,
     nmo_arena_t *scratch_arena,
     nmo_object_repository_t *repo,
-    nmo_id_sanitizer_t *id_sanitizer,
     nmo_id_register_fn id_register_fn,
     void *id_register_ctx,
     const nmo_object_desc_t *descs,
@@ -483,9 +482,6 @@ nmo_status_t nmo_object_system_create_objects_from_header1(
         nmo_object_t *obj = nmo_object_create(object_allocator, NMO_OBJECT_ID_NONE, desc->class_id);
         if (obj == NULL) {
             object_system_rollback_created(repo, created, desc_count);
-            if (id_sanitizer != NULL) {
-                nmo_id_sanitizer_reset(id_sanitizer);
-            }
             return NMO_ERR_NOMEM;
         }
 
@@ -498,9 +494,6 @@ nmo_status_t nmo_object_system_create_objects_from_header1(
             if (name_result != NMO_OK) {
                 nmo_object_destroy(obj);
                 object_system_rollback_created(repo, created, desc_count);
-                if (id_sanitizer != NULL) {
-                    nmo_id_sanitizer_reset(id_sanitizer);
-                }
                 return name_result;
             }
         }
@@ -510,9 +503,6 @@ nmo_status_t nmo_object_system_create_objects_from_header1(
         if (add_result != NMO_OK) {
             nmo_object_destroy(obj);
             object_system_rollback_created(repo, created, desc_count);
-            if (id_sanitizer != NULL) {
-                nmo_id_sanitizer_reset(id_sanitizer);
-            }
             return add_result;
         }
 
@@ -524,33 +514,13 @@ nmo_status_t nmo_object_system_create_objects_from_header1(
         int file_index_result = nmo_object_set_file_index(obj, desc->file_index);
         if (file_index_result != NMO_OK) {
             object_system_rollback_created(repo, created, desc_count);
-            if (id_sanitizer != NULL) {
-                nmo_id_sanitizer_reset(id_sanitizer);
-            }
             return file_index_result;
         }
 
         int reg_result = id_register_fn(id_register_ctx, obj, (nmo_object_id_t)i);
         if (reg_result != NMO_OK) {
             object_system_rollback_created(repo, created, desc_count);
-            if (id_sanitizer != NULL) {
-                nmo_id_sanitizer_reset(id_sanitizer);
-            }
             return reg_result;
-        }
-
-        if (id_sanitizer != NULL && sanitized_id != 0) {
-            int sanitize_result = nmo_id_sanitizer_register(id_sanitizer, sanitized_id, obj->id);
-            if (sanitize_result != NMO_OK) {
-                if (logger) {
-                    nmo_log(logger, NMO_LOG_ERROR,
-                            "  Failed to register ID sanitizer mapping (file_id=%u, runtime_id=%u)",
-                            sanitized_id, obj->id);
-                }
-                object_system_rollback_created(repo, created, desc_count);
-                nmo_id_sanitizer_reset(id_sanitizer);
-                return sanitize_result;
-            }
         }
 
         if (logger) {
@@ -574,7 +544,6 @@ nmo_status_t nmo_object_system_prepare_loaded_objects(
     const nmo_allocator_t *object_allocator,
     nmo_arena_t *scratch_arena,
     nmo_object_repository_t *repo,
-    nmo_id_sanitizer_t *id_sanitizer,
     nmo_id_register_fn id_register_fn,
     void *id_register_ctx,
     const nmo_object_desc_t *descs,
@@ -599,7 +568,6 @@ nmo_status_t nmo_object_system_prepare_loaded_objects(
         object_allocator,
         scratch_arena,
         repo,
-        id_sanitizer,
         id_register_fn,
         id_register_ctx,
         descs,

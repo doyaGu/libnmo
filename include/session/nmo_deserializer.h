@@ -45,7 +45,6 @@ typedef struct nmo_io_interface nmo_io_interface_t;
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_logger nmo_logger_t;
 typedef struct nmo_shadow_storage nmo_shadow_storage_t;
-typedef struct nmo_id_sanitizer nmo_id_sanitizer_t;
 typedef struct nmo_reference_resolver nmo_reference_resolver_t;
 typedef struct nmo_object_desc nmo_object_desc_t;
 typedef struct nmo_chunk nmo_chunk_t;
@@ -244,7 +243,6 @@ NMO_API nmo_status_t nmo_object_system_create_objects_from_header1(
     const nmo_allocator_t *object_allocator,
     nmo_arena_t *scratch_arena,
     nmo_object_repository_t *repo,
-    nmo_id_sanitizer_t *id_sanitizer,
     nmo_id_register_fn id_register_fn,
     void *id_register_ctx,
     const nmo_object_desc_t *descs,
@@ -255,7 +253,6 @@ NMO_API nmo_status_t nmo_object_system_prepare_loaded_objects(
     const nmo_allocator_t *object_allocator,
     nmo_arena_t *scratch_arena,
     nmo_object_repository_t *repo,
-    nmo_id_sanitizer_t *id_sanitizer,
     nmo_id_register_fn id_register_fn,
     void *id_register_ctx,
     const nmo_object_desc_t *descs,

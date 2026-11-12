@@ -107,8 +107,8 @@ nmo_chunk_pool_t *nmo_session_get_chunk_pool(const nmo_session_t *session) {
     return session ? session->chunk_pool : NULL;
 }
 
-nmo_id_sanitizer_t *nmo_session_get_id_sanitizer(const nmo_session_t *session) {
-    return session ? session->id_sanitizer : NULL;
+uint32_t nmo_id_sanitize(uint32_t raw_id) {
+    return raw_id & ~NMO_OBJECT_REFERENCE_FLAG;
 }
 
 nmo_shadow_storage_t *nmo_session_get_shadow_storage(const nmo_session_t *session) {

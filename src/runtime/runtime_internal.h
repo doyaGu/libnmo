@@ -34,7 +34,6 @@ typedef struct nmo_object nmo_object_t;
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk_pool nmo_chunk_pool_t;
 typedef struct nmo_shadow_storage nmo_shadow_storage_t;
-typedef struct nmo_id_sanitizer nmo_id_sanitizer_t;
 typedef struct nmo_object_repository nmo_object_repository_t;
 typedef struct nmo_type_registry nmo_type_registry_t;
 typedef struct nmo_ref_graph nmo_ref_graph_t;
