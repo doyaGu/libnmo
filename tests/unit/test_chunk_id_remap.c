@@ -1992,6 +1992,39 @@ TEST(chunk_id_remap, dataarray_preserves_large_dimensions) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, dataarray_refuses_unbounded_rows_without_columns) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    /* Rows without columns take no bytes, so only the count bounds them. */
+    const int32_t claims[] = {(1 << 20) + 1, INT32_MAX};
+    for (size_t i = 0; i < sizeof(claims) / sizeof(claims[0]); ++i) {
+        nmo_chunk_t *chunk = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(chunk);
+        chunk->class_id = NMO_CID_DATAARRAY;
+        chunk->data_version = 7;
+        chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            chunk, CK_STATESAVE_DATAARRAYDATA));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, claims[i]));
+        nmo_chunk_close(chunk);
+
+        nmo_dataarray_state_t state;
+        ASSERT_EQ(NMO_OK, nmo_dataarray_vtable.create(&state, NULL, NULL));
+        ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_dataarray_deserialize(
+            &state, chunk, NULL, &deserialize_context));
+        ASSERT_EQ(0u, state.row_count);
+        ASSERT_NULL(state.rows);
+        nmo_dataarray_vtable.destroy(&state, NULL, NULL);
+    }
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, dataarray_failures_keep_state_and_target_chunk_atomic) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
@@ -21872,6 +21905,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, dataarray_parameter_cells_require_parameter_class);
     REGISTER_TEST(chunk_id_remap, dataarray_legacy_members_match_storage_mode);
     REGISTER_TEST(chunk_id_remap, dataarray_preserves_large_dimensions);
+    REGISTER_TEST(chunk_id_remap, dataarray_refuses_unbounded_rows_without_columns);
     REGISTER_TEST(chunk_id_remap, dataarray_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, dataarray_copy_preserves_typed_cell_content);
     REGISTER_TEST(chunk_id_remap, attributemanager_failures_keep_state_and_target_chunk_atomic);

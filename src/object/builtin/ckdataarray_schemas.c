@@ -41,6 +41,12 @@ static void nmo_dataarray_dispose_base_arrays(nmo_dataarray_state_t *state)
     nmo_array_dispose(&state->base.legacy_attributes);
 }
 
+/* A row without columns takes no bytes in the file, so the data section cannot
+ * bound how many of them a file claims; the engine creates every one. A file
+ * claiming more than this many is taken as corrupt rather than allocated
+ * (16 MB of rows on a 64-bit build). */
+#define NMO_DATAARRAY_MAX_EMPTY_ROWS (1u << 20)
+
 static bool nmo_dataarray_size_mul_overflows(size_t count, size_t element_size)
 {
     return count != 0 && element_size > SIZE_MAX / count;
@@ -415,6 +421,11 @@ static nmo_status_t nmo_dataarray_deserialize_internal(
         if (total_cells > nmo_chunk_identifier_remaining_dwords(chunk)) {
             NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                              "Cell count exceeds data section payload");
+        }
+        if (out_state->column_count == 0 &&
+            (uint32_t)row_count > NMO_DATAARRAY_MAX_EMPTY_ROWS) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                             "Data array has too many rows without columns");
         }
 
         out_state->row_count = (uint32_t)row_count;
