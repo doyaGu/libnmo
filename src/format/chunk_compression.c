@@ -205,6 +205,10 @@ nmo_status_t nmo_chunk_decompress(nmo_chunk_t *chunk) {
     if (!nmo_safe_mul_size(chunk->unpack_size, sizeof(uint32_t), &dest_len_check)) {
         NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Decompression buffer size overflow");
     }
+    if (!nmo_inflate_size_possible(used_bytes, dest_len_check)) {
+        NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR,
+                         "%zu packed bytes cannot inflate to %zu bytes", used_bytes, dest_len_check);
+    }
     mz_ulong dest_len = (mz_ulong)dest_len_check;
     uint32_t *decompressed = (uint32_t *) nmo_arena_alloc(chunk->arena,
                                                           dest_len, sizeof(uint32_t));

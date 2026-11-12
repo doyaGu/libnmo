@@ -205,6 +205,11 @@ static nmo_status_t parse_object_entry_v2(
     size_t byte_count = stored_size;
     uint8_t *unpacked = NULL;
     if (packed) {
+        if (!nmo_inflate_size_possible(stored_size, obj->data_size)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Object entry %u cannot inflate from %u to %u bytes",
+                             (unsigned)index, (unsigned)stored_size, (unsigned)obj->data_size);
+        }
         unpacked = (uint8_t *)nmo_arena_alloc(arena, obj->data_size, alignof(uint32_t));
         if (unpacked == NULL) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,

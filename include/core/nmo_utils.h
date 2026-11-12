@@ -333,6 +333,27 @@ static inline int nmo_safe_mul_size(size_t a, size_t b, size_t *out) {
 }
 
 /**
+ * @brief Largest factor by which a zlib stream can grow when inflated.
+ *
+ * A deflate match yields at most 258 bytes and costs at least two bits (one for
+ * the length code, one for the distance code), so no stream inflates to more
+ * than 1032 times its size.
+ */
+#define NMO_INFLATE_MAX_RATIO 1032u
+
+/**
+ * @brief Whether a zlib stream of @p packed_size bytes can inflate to
+ *        @p unpacked_size bytes.
+ *
+ * Checking a declared unpacked size with this before allocating for it keeps a
+ * few bytes of input from asking for gigabytes.
+ * @return 1 when the size is possible, 0 when no stream of that length reaches it.
+ */
+static inline int nmo_inflate_size_possible(uint64_t packed_size, uint64_t unpacked_size) {
+    return unpacked_size / NMO_INFLATE_MAX_RATIO <= packed_size;
+}
+
+/**
  * @brief Add two size_t values, checking for overflow.
  * @param a First operand.
  * @param b Second operand.

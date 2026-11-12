@@ -654,6 +654,13 @@ nmo_status_t nmo_deserializer_parse_header(nmo_deserializer_t *ds)
             nmo_log(logger, NMO_LOG_INFO, "  Decompressing header1: %u -> %u bytes",
                     ds->header.hdr1_pack_size, ds->header.hdr1_unpack_size);
 
+            if (!nmo_inflate_size_possible(ds->header.hdr1_pack_size,
+                                           ds->header.hdr1_unpack_size)) {
+                nmo_log(logger, NMO_LOG_ERROR,
+                        "Header1 cannot inflate from %u to %u bytes",
+                        ds->header.hdr1_pack_size, ds->header.hdr1_unpack_size);
+                return NMO_ERR_INVALID_FORMAT;
+            }
             hdr1_data = nmo_arena_alloc(arena, ds->header.hdr1_unpack_size, 16);
             if (hdr1_data == NULL) {
                 nmo_log(logger, NMO_LOG_ERROR, "Failed to allocate unpacked header1 buffer");
@@ -1081,6 +1088,15 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
             nmo_log(logger, NMO_LOG_INFO, "  Decompressing data: %u -> %u bytes",
                     ds->header.data_pack_size, ds->header.data_unpack_size);
 
+            if (!nmo_inflate_size_possible(ds->header.data_pack_size,
+                                           ds->header.data_unpack_size)) {
+                nmo_log(logger, NMO_LOG_ERROR,
+                        "Data section cannot inflate from %u to %u bytes",
+                        ds->header.data_pack_size, ds->header.data_unpack_size);
+                nmo_id_mapping_destroy(id_map);
+                ds->id_mapping = NULL;
+                return NMO_ERR_INVALID_FORMAT;
+            }
             data_buffer = nmo_arena_alloc(arena, ds->header.data_unpack_size, 16);
             if (data_buffer == NULL) {
                 nmo_log(logger, NMO_LOG_ERROR, "Failed to allocate unpacked data buffer");
