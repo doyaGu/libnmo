@@ -13,10 +13,8 @@
 #include "format/nmo_object.h"
 #include "core/nmo_logger.h"
 #include "core/nmo_allocator.h"
+#include <ctype.h>
 #include <string.h>
-#ifndef _WIN32
-#include <strings.h>
-#endif
 #include <stdlib.h>
 #include <stdalign.h>
 
@@ -558,6 +556,17 @@ nmo_object_t *nmo_resolve_strategy_guid(
     return NULL;
 }
 
+/* Two names equal letter for letter, ASCII case aside (as strcasecmp compares) */
+static bool resolver_names_equal_ignoring_case(const char *a, const char *b)
+{
+    for (; *a != '\0' && *b != '\0'; a++, b++) {
+        if (tolower((unsigned char)*a) != tolower((unsigned char)*b)) {
+            return false;
+        }
+    }
+    return *a == *b;
+}
+
 nmo_object_t *nmo_resolve_strategy_fuzzy(
     void *context,
     const nmo_object_ref_t *ref,
@@ -587,15 +596,9 @@ nmo_object_t *nmo_resolve_strategy_fuzzy(
         const char *obj_name = nmo_object_get_name(obj);
 
         if (obj_name) {
-#ifdef _WIN32
-            if (_stricmp(obj_name, ref->name) == 0) {
+            if (resolver_names_equal_ignoring_case(obj_name, ref->name)) {
                 return obj;
             }
-#else
-            if (strcasecmp(obj_name, ref->name) == 0) {
-                return obj;
-            }
-#endif
         }
     }
 
