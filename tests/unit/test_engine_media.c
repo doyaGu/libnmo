@@ -711,9 +711,9 @@ TEST(engine_media, get_sound_spectrum_finds_the_tone_band)
     state->base.file_name = (char *)"tone.wav";
     f.script_id = fixture_add_script(&f, "Script", &f.script_in);
     fixture_begin_edit(&f);
-    nmo_object_id_t near = fixture_block(&f, GUID_GET_SOUND_SPECTRUM, "Near");
-    nmo_object_id_t far = fixture_block(&f, GUID_GET_SOUND_SPECTRUM, "Far");
-    nmo_object_id_t blocks[2] = {near, far};
+    nmo_object_id_t tone_block = fixture_block(&f, GUID_GET_SOUND_SPECTRUM, "Near");
+    nmo_object_id_t other_block = fixture_block(&f, GUID_GET_SOUND_SPECTRUM, "Far");
+    nmo_object_id_t blocks[2] = {tone_block, other_block};
     const int32_t ranges[2][2] = {{900, 1100}, {3000, 3500}};
     for (int i = 0; i < 2; i++) {
         ASSERT_TRUE(blocks[i] != 0 && fixture_target(&f, blocks[i]) != 0);
@@ -721,8 +721,8 @@ TEST(engine_media, get_sound_spectrum_finds_the_tone_band)
         fixture_input_int(&f, BLOCK_PIN(&f, blocks[i], 0), ranges[i][0]);
         fixture_input_int(&f, BLOCK_PIN(&f, blocks[i], 1), ranges[i][1]);
     }
-    fixture_link(&f, f.script_in, BLOCK_IN(&f, near, 0), 0);
-    fixture_link(&f, BLOCK_OUT(&f, near, 0), BLOCK_IN(&f, far, 0), 0);
+    fixture_link(&f, f.script_in, BLOCK_IN(&f, tone_block, 0), 0);
+    fixture_link(&f, BLOCK_OUT(&f, tone_block, 0), BLOCK_IN(&f, other_block, 0), 0);
     fixture_commit(&f, NULL);
     nmo_engine_set_file_resolver(f.engine, resolve_scratch, NULL);
     /* The Band Count setting's 128 */
@@ -735,8 +735,8 @@ TEST(engine_media, get_sound_spectrum_finds_the_tone_band)
     ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
     ASSERT_EQ(NMO_OK, nmo_engine_step(f.engine, 20.0f));
     float tone_level = -1.0f, other_level = -1.0f;
-    read_value(&f, BLOCK_POUT(&f, near, 0), &tone_level, sizeof(tone_level));
-    read_value(&f, BLOCK_POUT(&f, far, 0), &other_level, sizeof(other_level));
+    read_value(&f, BLOCK_POUT(&f, tone_block, 0), &tone_level, sizeof(tone_level));
+    read_value(&f, BLOCK_POUT(&f, other_block, 0), &other_level, sizeof(other_level));
     /* Levels of 0 to 1: the tone's bands stand well above the others */
     ASSERT_TRUE(tone_level > 0.0f && tone_level <= 1.0f);
     ASSERT_TRUE(other_level >= 0.0f);

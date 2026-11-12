@@ -472,9 +472,9 @@ TEST(engine_operations, plugin_value_operations_on_mixed_and_compound_types)
     nmo_object_id_t almost_two = local_float(&f, CKPGUID_FLOAT, "AlmostTwo", 1.9f);
     const int32_t no = 0;
     nmo_object_id_t off = local_value(&f, CKPGUID_BOOL, "Off", &no, sizeof(no));
-    const float origin[3] = {0, 0, 0}, far[3] = {3, 4, 0};
+    const float origin[3] = {0, 0, 0}, distant[3] = {3, 4, 0};
     nmo_object_id_t a = local_value(&f, CKPGUID_VECTOR, "A", origin, sizeof(origin));
-    nmo_object_id_t b = local_value(&f, CKPGUID_VECTOR, "B", far, sizeof(far));
+    nmo_object_id_t b = local_value(&f, CKPGUID_VECTOR, "B", distant, sizeof(distant));
     const float bright[4] = {0.6f, 0.2f, 0.9f, 1.0f};
     nmo_object_id_t color = local_value(&f, CKPGUID_COLOR, "Color", bright, sizeof(bright));
     nmo_object_id_t curve = 0;
