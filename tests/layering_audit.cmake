@@ -15,7 +15,7 @@ if(NOT SOURCE_DIR)
 endif()
 
 # Lowest layer first. Must match the README layer table.
-set(layers core io format type extension object export session runtime document chunk behavior engine bb render view edit lua project)
+set(layers platform core io format type extension object export session runtime document chunk behavior engine bb render view edit lua project)
 
 file(STRINGS "${SOURCE_DIR}/tests/layering_allowlist.txt" allowlist_lines)
 set(allowlist "")
@@ -168,6 +168,33 @@ if(platform_violations)
         "Layering audit failed: a graphics API or window system outside its edge\n"
         "${platform_violations}"
         "Draw through nmo_render's backend interface (src/render/render_internal.h); open windows in src/view.\n")
+endif()
+
+# The operating system stays behind the platform layer: no source outside
+# src/platform includes an operating system's headers (POSIX's, Windows')
+# or branches on which system it is built for. A renderer backend may pick
+# where its graphics API's headers are, and nothing else.
+set(os_violations "")
+file(GLOB_RECURSE os_files "${SOURCE_DIR}/src/*.c" "${SOURCE_DIR}/src/*.h")
+foreach(os_file IN LISTS os_files)
+    file(RELATIVE_PATH relative_path "${SOURCE_DIR}" "${os_file}")
+    if(relative_path MATCHES "^src/platform/")
+        continue()
+    endif()
+    file(STRINGS "${os_file}" os_lines
+        REGEX "^[ \t]*#[ \t]*include[ \t]*<(windows|unistd|dlfcn|fcntl|libgen|strings|dirent|pthread|io|direct|malloc)\\.h>|^[ \t]*#[ \t]*include[ \t]*<(sys|mach)/|^[ \t]*#[ \t]*(if|ifdef|ifndef|elif).*(_WIN32|_WIN64|__APPLE__|__linux__|__unix__|__ANDROID__|__EMSCRIPTEN__|__FreeBSD__|__MINGW32__|_POSIX_C_SOURCE)")
+    foreach(os_line IN LISTS os_lines)
+        if(relative_path MATCHES "^src/render/[a-z0-9_]+/" AND os_line MATCHES "^[ \t]*#[ \t]*(if|ifdef|ifndef|elif)")
+            continue()
+        endif()
+        string(APPEND os_violations "${relative_path}: ${os_line}\n")
+    endforeach()
+endforeach()
+if(os_violations)
+    message(FATAL_ERROR
+        "Layering audit failed: the operating system outside the platform layer\n"
+        "${os_violations}"
+        "Add what is needed to src/platform/platform.h and implement it there.\n")
 endif()
 
 # Report allowlist entries that no longer exist so the list stays honest.
