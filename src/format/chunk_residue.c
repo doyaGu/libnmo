@@ -27,35 +27,43 @@ static const uint32_t *array_words(const nmo_chunk_array_t *array)
  * Digest
  * --------------------------------------------------------------------------- */
 
-static uint64_t digest_update(uint64_t hash, const void *bytes, size_t size)
+/* Mixes one value into the digest. Each step is a bijection of the digest and
+ * of the value, so two inputs that differ in one value at the same place never
+ * end with the same digest: a state that changed is never taken for one that
+ * did not because of a single changed dword. */
+static uint64_t digest_mix(uint64_t hash, uint64_t value)
 {
-    const uint8_t *p = (const uint8_t *)bytes;
-    for (size_t i = 0; i < size; ++i) {
-        hash ^= p[i];
-        hash *= 1099511628211ull;
+    hash ^= value;
+    hash *= 0x9E3779B97F4A7C15ull;
+    hash ^= hash >> 29;
+    return hash;
+}
+
+/* Two dwords a step: a digest is taken of every object at load and save. */
+static uint64_t digest_array(uint64_t hash, const nmo_chunk_array_t *array)
+{
+    hash = digest_mix(hash, (uint64_t)array->count);
+    const uint32_t *words = array->count > 0 ? (const uint32_t *)array->data : NULL;
+    size_t i = 0;
+    for (; i + 1 < array->count; i += 2) {
+        uint64_t pair;
+        memcpy(&pair, words + i, sizeof(pair));
+        hash = digest_mix(hash, pair);
+    }
+    if (i < array->count) {
+        hash = digest_mix(hash, words[i]);
     }
     return hash;
 }
 
-static uint64_t digest_array(uint64_t hash, const nmo_chunk_array_t *array)
-{
-    const uint64_t count = array->count;
-    hash = digest_update(hash, &count, sizeof(count));
-    return array->count > 0
-        ? digest_update(hash, array->data, array->count * sizeof(uint32_t))
-        : hash;
-}
-
 static uint64_t digest_chunk(uint64_t hash, const nmo_chunk_t *chunk)
 {
-    const uint32_t versions[2] = {chunk->data_version, chunk->chunk_version};
-    hash = digest_update(hash, versions, sizeof(versions));
+    hash = digest_mix(hash, ((uint64_t)chunk->data_version << 32) | chunk->chunk_version);
     hash = digest_array(hash, &chunk->data);
     hash = digest_array(hash, &chunk->ids);
     hash = digest_array(hash, &chunk->chunk_refs);
     hash = digest_array(hash, &chunk->managers);
-    const uint64_t sub_count = chunk->chunks.count;
-    hash = digest_update(hash, &sub_count, sizeof(sub_count));
+    hash = digest_mix(hash, (uint64_t)chunk->chunks.count);
     nmo_chunk_t *const *subs = chunk->chunks.count > 0
         ? (nmo_chunk_t *const *)chunk->chunks.data : NULL;
     for (size_t i = 0; i < chunk->chunks.count; ++i) {
