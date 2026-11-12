@@ -92,6 +92,22 @@ static nmo_ref_kind_t nmo_ref_kind_from_field(const nmo_type_field_t *field) {
     return NMO_REF_KIND_UNKNOWN;
 }
 
+/* A field's kind, matched from its name only when the field holds a
+ * reference: most fields visited hold none. */
+typedef struct nmo_ref_lazy_kind {
+    const nmo_type_field_t *field;
+    bool known;
+    nmo_ref_kind_t kind;
+} nmo_ref_lazy_kind_t;
+
+static nmo_ref_kind_t nmo_ref_lazy_kind_get(nmo_ref_lazy_kind_t *lazy) {
+    if (!lazy->known) {
+        lazy->kind = nmo_ref_kind_from_field(lazy->field);
+        lazy->known = true;
+    }
+    return lazy->kind;
+}
+
 static bool nmo_ref_field_visitor(
     void *user_data,
     const nmo_type_field_t *field,
@@ -102,14 +118,14 @@ static bool nmo_ref_field_visitor(
         return true;
     }
 
-    nmo_ref_kind_t kind = nmo_ref_kind_from_field(field);
+    nmo_ref_lazy_kind_t kind = {field, false, NMO_REF_KIND_UNKNOWN};
 
     if (!nmo_field_is_array(field)) {
         nmo_object_id_t id = field->size == sizeof(nmo_ref_t)
             ? nmo_ref_runtime_id((const nmo_ref_t *)field_ptr)
             : nmo_field_get_object_id(ctx->instance, field);
         if (id != 0) {
-            return ctx->visitor(ctx->user_data, id, kind, field->name, 0);
+            return ctx->visitor(ctx->user_data, id, nmo_ref_lazy_kind_get(&kind), field->name, 0);
         }
         return true;
     }
@@ -125,7 +141,7 @@ static bool nmo_ref_field_visitor(
             for (size_t i = 0; i < arr->count; ++i) {
                 const nmo_object_id_t id = nmo_ref_runtime_id(&refs[i]);
                 if (id != NMO_OBJECT_ID_NONE && !ctx->visitor(
-                        ctx->user_data, id, kind, field->name, (uint32_t)i)) {
+                        ctx->user_data, id, nmo_ref_lazy_kind_get(&kind), field->name, (uint32_t)i)) {
                     return false;
                 }
             }
@@ -140,7 +156,7 @@ static bool nmo_ref_field_visitor(
             if (ids[i] == 0) {
                 continue;
             }
-            if (!ctx->visitor(ctx->user_data, ids[i], kind, field->name, (uint32_t)i)) {
+            if (!ctx->visitor(ctx->user_data, ids[i], nmo_ref_lazy_kind_get(&kind), field->name, (uint32_t)i)) {
                 return false;
             }
         }
@@ -159,7 +175,7 @@ static bool nmo_ref_field_visitor(
             for (uint32_t i = 0; i < count; ++i) {
                 const nmo_object_id_t id = nmo_ref_runtime_id(&refs[i]);
                 if (id != NMO_OBJECT_ID_NONE && !ctx->visitor(
-                        ctx->user_data, id, kind, field->name, i)) {
+                        ctx->user_data, id, nmo_ref_lazy_kind_get(&kind), field->name, i)) {
                     return false;
                 }
             }
@@ -179,7 +195,7 @@ static bool nmo_ref_field_visitor(
             if (ids[i] == 0) {
                 continue;
             }
-            if (!ctx->visitor(ctx->user_data, ids[i], kind, field->name, i)) {
+            if (!ctx->visitor(ctx->user_data, ids[i], nmo_ref_lazy_kind_get(&kind), field->name, i)) {
                 return false;
             }
         }
