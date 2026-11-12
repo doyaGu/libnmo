@@ -140,6 +140,43 @@ TEST(load_session_id_remap, register_objects) {
     nmo_object_repository_destroy(repo);
 }
 
+/* File indices index an array; indices past it go to a hash table, and both
+ * answer lookups and the full listing. */
+TEST(load_session_id_remap, register_far_and_near_file_indices) {
+    nmo_allocator_t allocator = nmo_allocator_default();
+    nmo_object_repository_t *repo = nmo_object_repository_create(&allocator);
+    ASSERT_NOT_NULL(repo);
+    nmo_id_mapping_t *session = nmo_id_mapping_create(repo, 10);
+    ASSERT_NOT_NULL(session);
+
+    const nmo_object_id_t indices[] = {0u, 3000u, 1u << 25};
+    for (size_t i = 0; i < 3; i++) {
+        nmo_object_t *obj = nmo_object_create(&allocator, (nmo_object_id_t)(200 + i), 0x00000001);
+        ASSERT_NOT_NULL(obj);
+        nmo_object_t *repo_obj = obj;
+        ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &obj));
+        ASSERT_EQ(NMO_OK, nmo_id_mapping_register(session, repo_obj, indices[i]));
+        ASSERT_EQ(NMO_ERR_INVALID_STATE, nmo_id_mapping_register(session, repo_obj, indices[i]));
+    }
+    for (size_t i = 0; i < 3; i++) {
+        nmo_object_id_t runtime_id = 0;
+        ASSERT_EQ(NMO_OK, nmo_id_mapping_get_runtime_id(session, indices[i], &runtime_id));
+        ASSERT_EQ((nmo_object_id_t)(200 + i), runtime_id);
+    }
+    nmo_object_id_t missing = 0;
+    ASSERT_NE(NMO_OK, nmo_id_mapping_get_runtime_id(session, 2u, &missing));
+    ASSERT_NE(NMO_OK, nmo_id_mapping_get_runtime_id(session, (1u << 25) + 1u, &missing));
+
+    nmo_object_id_t *file_ids = NULL;
+    nmo_object_id_t *runtime_ids = NULL;
+    size_t count = 0;
+    ASSERT_EQ(NMO_OK, nmo_id_mapping_get_all(session, &file_ids, &runtime_ids, &count));
+    ASSERT_EQ((size_t)3, count);
+
+    nmo_id_mapping_destroy(session);
+    nmo_object_repository_destroy(repo);
+}
+
 /**
  * Test building remap table from load session
  */
@@ -473,6 +510,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(load_session_id_remap, create_destroy);
     REGISTER_TEST(load_session_id_remap, with_existing_objects);
     REGISTER_TEST(load_session_id_remap, register_objects);
+    REGISTER_TEST(load_session_id_remap, register_far_and_near_file_indices);
     REGISTER_TEST(load_session_id_remap, build_remap_table);
     REGISTER_TEST(load_session_id_remap, remap_table_iteration);
     REGISTER_TEST(load_session_id_remap, id_remap_plan_create);

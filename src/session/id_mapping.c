@@ -13,11 +13,18 @@
 #include <string.h>
 #include <stdalign.h>
 
+/* File indices count the objects of a file from 0, so they index an array;
+ * one past this goes to the hash table instead. */
+#define NMO_ID_MAPPING_DENSE_LIMIT (1u << 24)
+
 struct nmo_id_mapping {
     nmo_object_repository_t *repo;
     nmo_object_id_t saved_id_max;
     nmo_object_id_t id_base;
-    nmo_hash_table_t *id_mappings;
+    nmo_object_id_t *dense;        /* file index -> runtime id, 0 for none */
+    size_t dense_capacity;
+    size_t dense_count;
+    nmo_hash_table_t *id_mappings; /* the other file indices */
     int active;
     nmo_arena_t *arena;
 };
@@ -69,9 +76,37 @@ nmo_status_t nmo_id_mapping_register(nmo_id_mapping_t *mapping,
 {
     if (mapping == NULL || obj == NULL || !mapping->active)
         return NMO_ERR_INVALID_ARGUMENT;
-    if (nmo_hash_table_contains(mapping->id_mappings, &file_index))
+    if (file_index >= NMO_ID_MAPPING_DENSE_LIMIT || obj->id == NMO_OBJECT_ID_NONE) {
+        if (nmo_hash_table_contains(mapping->id_mappings, &file_index) ||
+            (file_index < mapping->dense_capacity && mapping->dense[file_index] != 0))
+            return NMO_ERR_INVALID_STATE;
+        return nmo_hash_table_insert(mapping->id_mappings, &file_index, &obj->id);
+    }
+
+    if (file_index >= mapping->dense_capacity) {
+        size_t capacity = mapping->dense_capacity > 0 ? mapping->dense_capacity * 2u : 256u;
+        if (capacity <= file_index) capacity = (size_t)file_index + 1u;
+        if (capacity > NMO_ID_MAPPING_DENSE_LIMIT) capacity = NMO_ID_MAPPING_DENSE_LIMIT;
+        nmo_allocator_t allocator = nmo_allocator_default();
+        nmo_object_id_t *grown = (nmo_object_id_t *)nmo_alloc(
+            &allocator, capacity * sizeof(nmo_object_id_t), alignof(nmo_object_id_t));
+        if (grown == NULL) return NMO_ERR_NOMEM;
+        if (mapping->dense_capacity > 0) {
+            memcpy(grown, mapping->dense, mapping->dense_capacity * sizeof(nmo_object_id_t));
+        }
+        memset(grown + mapping->dense_capacity, 0,
+               (capacity - mapping->dense_capacity) * sizeof(nmo_object_id_t));
+        nmo_free(&allocator, mapping->dense);
+        mapping->dense = grown;
+        mapping->dense_capacity = capacity;
+    }
+    if (mapping->dense[file_index] != 0 ||
+        (nmo_hash_table_get_count(mapping->id_mappings) > 0 &&
+         nmo_hash_table_contains(mapping->id_mappings, &file_index)))
         return NMO_ERR_INVALID_STATE;
-    return nmo_hash_table_insert(mapping->id_mappings, &file_index, &obj->id);
+    mapping->dense[file_index] = obj->id;
+    mapping->dense_count++;
+    return NMO_OK;
 }
 
 nmo_status_t nmo_id_mapping_end(nmo_id_mapping_t *mapping) {
@@ -86,6 +121,10 @@ nmo_status_t nmo_id_mapping_get_runtime_id(const nmo_id_mapping_t *mapping,
 {
     if (mapping == NULL || out_runtime_id == NULL)
         return NMO_ERR_INVALID_ARGUMENT;
+    if (file_index < mapping->dense_capacity && mapping->dense[file_index] != 0) {
+        *out_runtime_id = mapping->dense[file_index];
+        return NMO_OK;
+    }
     nmo_object_id_t runtime_id = 0;
     nmo_status_t result = nmo_hash_table_get(mapping->id_mappings, &file_index, &runtime_id);
     if (result != NMO_OK) return result;
@@ -123,7 +162,7 @@ nmo_status_t nmo_id_mapping_get_all(const nmo_id_mapping_t *mapping,
     if (mapping == NULL || file_ids == NULL || runtime_ids == NULL || count == NULL)
         return NMO_ERR_INVALID_ARGUMENT;
 
-    size_t n = nmo_hash_table_get_count(mapping->id_mappings);
+    size_t n = mapping->dense_count + nmo_hash_table_get_count(mapping->id_mappings);
     if (n == 0) { *file_ids = NULL; *runtime_ids = NULL; *count = 0; return NMO_OK; }
 
     nmo_object_id_t *fids = (nmo_object_id_t *)nmo_arena_alloc(
@@ -133,6 +172,13 @@ nmo_status_t nmo_id_mapping_get_all(const nmo_id_mapping_t *mapping,
     if (fids == NULL || rids == NULL) return NMO_ERR_NOMEM;
 
     mapping_collector_t collector = { fids, rids, 0 };
+    for (size_t i = 0; i < mapping->dense_capacity; ++i) {
+        if (mapping->dense[i] != 0) {
+            fids[collector.index] = (nmo_object_id_t)i;
+            rids[collector.index] = mapping->dense[i];
+            collector.index++;
+        }
+    }
     nmo_hash_table_iterate(mapping->id_mappings, collect_mapping, &collector);
 
     *file_ids = fids;
@@ -143,6 +189,8 @@ nmo_status_t nmo_id_mapping_get_all(const nmo_id_mapping_t *mapping,
 
 void nmo_id_mapping_destroy(nmo_id_mapping_t *mapping) {
     if (mapping != NULL) {
+        nmo_allocator_t allocator = nmo_allocator_default();
+        nmo_free(&allocator, mapping->dense);
         nmo_hash_table_destroy(mapping->id_mappings);
         nmo_arena_destroy(mapping->arena);
     }
