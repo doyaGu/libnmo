@@ -207,6 +207,83 @@ static void object_system_rollback_created(
     }
 }
 
+typedef struct object_system_file_id_entry {
+    nmo_object_id_t file_id;
+    uint32_t index;
+} object_system_file_id_entry_t;
+
+static int object_system_compare_file_id_entries(const void *a, const void *b) {
+    const object_system_file_id_entry_t *left = (const object_system_file_id_entry_t *)a;
+    const object_system_file_id_entry_t *right = (const object_system_file_id_entry_t *)b;
+    if (left->file_id != right->file_id) {
+        return left->file_id < right->file_id ? -1 : 1;
+    }
+    return left->index < right->index ? -1 : (left->index > right->index ? 1 : 0);
+}
+
+/* A file can give two objects the same file id, and loads all the same: from
+ * version 7 on references are file indices, and below it the id sanitizer
+ * resolves them. A saved file cannot repeat an id, so the first object keeps it
+ * and the later ones are created without it, which gives them new ids on save.
+ * Marks those later entries in *out_repeats (NULL when no id repeats). */
+static nmo_status_t object_system_find_repeated_file_ids(
+    nmo_arena_t *scratch_arena,
+    const nmo_object_desc_t *descs,
+    size_t count,
+    nmo_logger_t *logger,
+    unsigned char **out_repeats)
+{
+    *out_repeats = NULL;
+    size_t entry_count = 0;
+    for (size_t i = 0; i < count; i++) {
+        if (descs[i].class_id != 0 && descs[i].file_id != 0) {
+            entry_count++;
+        }
+    }
+    if (entry_count < 2) {
+        return NMO_OK;
+    }
+
+    object_system_file_id_entry_t *entries = (object_system_file_id_entry_t *)nmo_arena_alloc(
+        scratch_arena, sizeof(*entries) * entry_count, alignof(object_system_file_id_entry_t));
+    if (entries == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    size_t filled = 0;
+    for (size_t i = 0; i < count; i++) {
+        if (descs[i].class_id != 0 && descs[i].file_id != 0) {
+            entries[filled].file_id = descs[i].file_id;
+            entries[filled].index = (uint32_t)i;
+            filled++;
+        }
+    }
+    qsort(entries, entry_count, sizeof(*entries), object_system_compare_file_id_entries);
+
+    unsigned char *repeats = NULL;
+    size_t first = 0;
+    for (size_t i = 1; i < entry_count; i++) {
+        if (entries[i].file_id != entries[first].file_id) {
+            first = i;
+            continue;
+        }
+        if (repeats == NULL) {
+            repeats = (unsigned char *)nmo_arena_alloc(scratch_arena, count, 1);
+            if (repeats == NULL) {
+                return NMO_ERR_NOMEM;
+            }
+            memset(repeats, 0, count);
+        }
+        repeats[entries[i].index] = 1;
+        if (logger) {
+            nmo_log(logger, NMO_LOG_WARN,
+                    "  Object %u repeats file id %u of object %u; it gets a new id on save",
+                    entries[i].index, entries[i].file_id, entries[first].index);
+        }
+    }
+    *out_repeats = repeats;
+    return NMO_OK;
+}
+
 static size_t object_system_build_create_plan(
     const nmo_type_descriptor_t *schema_type,
     object_system_created_layer_t *layers,
@@ -363,6 +440,13 @@ nmo_status_t nmo_object_system_create_objects_from_header1(
 
     memset(created, 0, sizeof(nmo_object_t *) * desc_count);
 
+    unsigned char *repeated_file_ids = NULL;
+    nmo_status_t repeat_result = object_system_find_repeated_file_ids(
+        scratch_arena, descs, desc_count, logger, &repeated_file_ids);
+    if (repeat_result != NMO_OK) {
+        return repeat_result;
+    }
+
     for (size_t i = 0; i < desc_count; i++) {
         const nmo_object_desc_t *desc = &descs[i];
 
@@ -392,7 +476,7 @@ nmo_status_t nmo_object_system_create_objects_from_header1(
 
         obj->flags = desc->flags;
         obj->save_flags = desc->flags;
-        obj->file_id = desc->file_id;
+        obj->file_id = (repeated_file_ids != NULL && repeated_file_ids[i]) ? 0 : desc->file_id;
 
         if (desc->name != NULL && desc->name[0] != '\0') {
             int name_result = nmo_object_set_name(obj, desc->name);
