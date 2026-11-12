@@ -763,6 +763,10 @@ nmo_status_t nmo_runtime_kernel_finalize_load(
             }
         }
         runtime_load_perf_end(perf_stats, NMO_LOAD_PERF_REFERENCE_RESOLVE, reference_start);
+
+        /* The references were registered to count what resolves; nothing
+         * points into them, so they go with the load instead of the session. */
+        nmo_session_reset_reference_resolver(session);
     }
 
     /* Strict mode: fail if any references are unresolved */
