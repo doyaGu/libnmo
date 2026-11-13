@@ -416,6 +416,45 @@ RENDER_TEST(the_screen_drawn_last_is_read_back_and_kept)
     fixture_close(&f);
 }
 
+#ifdef RENDER_TEST_GPU
+/* A white triangle with a slanted edge drawn in a frame of its own: the pixels it leaves gray */
+static int slanted_edge_grays(soft_fixture_t *f, bool antialias)
+{
+    f->state.antialias = antialias;
+    const float positions[9] = {0, 0, 0, SIZE, 0, 0, 0, SIZE * 0.7f, 0};
+    render_geometry_t g;
+    memset(&g, 0, sizeof(g));
+    g.primitive = RENDER_PRIMITIVE_TRIANGLE_FAN;
+    g.vertex_count = 3;
+    g.positions = positions;
+    g.position_stride = 3 * sizeof(float);
+    f->backend->ops->draw(f->backend, &f->state, &g);
+    fixture_read(f);
+    int grays = 0;
+    for (size_t i = 0; i < (size_t)SIZE * SIZE; i++) {
+        grays += f->pixels[i * 4] > 8 && f->pixels[i * 4] < 247;
+    }
+    return grays;
+}
+
+/* Antialiasing (TT_SetFSAA) smooths an edge in the screen's samples; without it a pixel is in or out */
+RENDER_TEST(antialiasing_smooths_a_slanted_edge)
+{
+    soft_fixture_t f;
+    fixture_open(&f);
+    ASSERT_EQ(slanted_edge_grays(&f, false), 0);
+    fixture_close(&f);
+    fixture_open(&f);
+    ASSERT_TRUE(slanted_edge_grays(&f, true) >= 8);
+    /* the samples resolved into the screen are what the next frame, not antialiased, keeps */
+    uint8_t smoothed[SIZE * SIZE * 4];
+    memcpy(smoothed, f.pixels, sizeof(smoothed));
+    fixture_read(&f);
+    ASSERT_TRUE(memcmp(smoothed, f.pixels, sizeof(smoothed)) == 0);
+    fixture_close(&f);
+}
+#endif
+
 #if defined(RENDER_TEST_GPU) || defined(RENDER_TEST_GL3)
 static int gpu_available(void)
 {
@@ -454,4 +493,7 @@ REGISTER_RENDER_TEST(a_texture_drawn_into_shows_what_was_drawn_upright);
 REGISTER_RENDER_TEST(linear_fog_blends_toward_the_fog_color);
 REGISTER_RENDER_TEST(lines_are_a_pixel_wide);
 REGISTER_RENDER_TEST(the_screen_drawn_last_is_read_back_and_kept);
+#ifdef RENDER_TEST_GPU
+REGISTER_RENDER_TEST(antialiasing_smooths_a_slanted_edge);
+#endif
 TEST_MAIN_END()

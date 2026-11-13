@@ -15,7 +15,11 @@
  * start at the top left, as the front end's do.
  *
  * The shader comes as Metal source, SPIR-V and DXIL, for SDL_GPU's Metal,
- * Vulkan and Direct3D 12 drivers.
+ * Vulkan and Direct3D 12 drivers. A frame whose draws on the screen ask for
+ * antialiasing (VXRENDERSTATE_ANTIALIAS, which TT_SetFSAA sets) draws the
+ * screen in 4 samples a pixel, resolved into the screen at the end of each
+ * pass, as the OpenGL backend's window has 4 samples it smooths with only
+ * then; textures are drawn into with 1.
  */
 
 #include "render/nmo_render_gpu.h"
@@ -121,6 +125,7 @@ typedef struct gpu_pipeline_key {
     uint8_t depth_test, depth_func, depth_write;
     uint8_t stencil, stencil_func, stencil_fail, stencil_zfail, stencil_pass;
     uint8_t stencil_compare_mask, stencil_write_mask;
+    uint8_t samples; /* the SDL_GPUSampleCount of the target drawn into */
 } gpu_pipeline_key_t;
 
 typedef struct gpu_pipeline {
@@ -151,6 +156,7 @@ typedef struct gpu {
     bool own_device;
     SDL_GPUShaderFormat format;  /* the shader format the device takes */
     SDL_GPUTextureFormat depth_format;
+    SDL_GPUSampleCount samples;  /* an antialiased screen's: 4, or 1 where the device cannot */
     SDL_GPUShader *vertex[2], *fragment[2]; /* smooth, flat */
     SDL_GPUTexture *white_2d, *white_cube;  /* bound where no texture is */
 
@@ -158,6 +164,10 @@ typedef struct gpu {
     SDL_GPUTexture *screen, *screen_depth, *last;
     int32_t screen_w, screen_h, last_w, last_h;
     bool screen_fresh, last_valid;
+    /* The screen in `samples` a pixel, drawn into while a frame antialiases; resolved into `screen` */
+    SDL_GPUTexture *multisample, *multisample_depth;
+    bool multisample_fresh; /* holds nothing of the frame before: cleared before it is drawn into */
+    bool antialias;         /* the frame being replayed draws the screen in `multisample` */
 
     /* The frame being recorded */
     GPU_VEC(gpu_op_t) ops;
@@ -281,6 +291,35 @@ static SDL_GPUTexture *gpu_make_texture(gpu_t *gpu, render_texture_kind_t kind, 
     return SDL_CreateGPUTexture(gpu->device, &info);
 }
 
+/* A target of the screen's size in gpu->samples a pixel: drawn into, never sampled */
+static SDL_GPUTexture *gpu_make_multisample(gpu_t *gpu, SDL_GPUTextureUsageFlags usage,
+                                            SDL_GPUTextureFormat format)
+{
+    SDL_GPUTextureCreateInfo info;
+    memset(&info, 0, sizeof(info));
+    info.type = SDL_GPU_TEXTURETYPE_2D;
+    info.format = format;
+    info.usage = usage;
+    info.width = (Uint32)gpu->screen_w;
+    info.height = (Uint32)gpu->screen_h;
+    info.layer_count_or_depth = 1;
+    info.num_levels = 1;
+    info.sample_count = gpu->samples;
+    return SDL_CreateGPUTexture(gpu->device, &info);
+}
+
+static void gpu_release_multisample(gpu_t *gpu)
+{
+    if (gpu->multisample != NULL) {
+        SDL_ReleaseGPUTexture(gpu->device, gpu->multisample);
+        gpu->multisample = NULL;
+    }
+    if (gpu->multisample_depth != NULL) {
+        SDL_ReleaseGPUTexture(gpu->device, gpu->multisample_depth);
+        gpu->multisample_depth = NULL;
+    }
+}
+
 static SDL_GPUGraphicsPipeline *gpu_pipeline(gpu_t *gpu, const gpu_pipeline_key_t *key)
 {
     for (size_t i = 0; i < gpu->pipelines.count; i++) {
@@ -329,7 +368,7 @@ static SDL_GPUGraphicsPipeline *gpu_pipeline(gpu_t *gpu, const gpu_pipeline_key_
     info.rasterizer_state.front_face =
         key->front_ccw ? SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE : SDL_GPU_FRONTFACE_CLOCKWISE;
     info.rasterizer_state.enable_depth_clip = true;
-    info.multisample_state.sample_count = SDL_GPU_SAMPLECOUNT_1;
+    info.multisample_state.sample_count = (SDL_GPUSampleCount)key->samples;
     SDL_GPUDepthStencilState *ds = &info.depth_stencil_state;
     ds->enable_depth_test = key->depth_test != 0;
     ds->enable_depth_write = key->depth_test != 0 && key->depth_write != 0;
@@ -611,6 +650,7 @@ static bool gpu_begin_screen(render_backend_t *backend, int32_t width, int32_t h
             SDL_ReleaseGPUTexture(gpu->device, gpu->screen);
             SDL_ReleaseGPUTexture(gpu->device, gpu->screen_depth);
         }
+        gpu_release_multisample(gpu); /* made again at the new size once a frame antialiases */
         gpu->screen = gpu_make_texture(gpu, RENDER_TEXTURE_2D, width, height, 1,
                                        SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER,
                                        GPU_COLOR_FORMAT);
@@ -833,6 +873,7 @@ typedef struct gpu_replay_pass {
     SDL_GPURenderPass *pass;
     const gpu_op_t *begin; /* what it draws into */
     int32_t width, height;
+    SDL_GPUSampleCount samples; /* of what it draws into */
 } gpu_replay_pass_t;
 
 static bool gpu_begin_pass(gpu_t *gpu, SDL_GPUCommandBuffer *cmd, const gpu_op_t *begin,
@@ -847,13 +888,25 @@ static bool gpu_begin_pass(gpu_t *gpu, SDL_GPUCommandBuffer *cmd, const gpu_op_t
     depth.load_op = depth.stencil_load_op = SDL_GPU_LOADOP_LOAD;
     depth.store_op = depth.stencil_store_op = SDL_GPU_STOREOP_STORE;
     depth.clear_depth = 1.0f;
+    out->samples = SDL_GPU_SAMPLECOUNT_1;
     if (begin->texture == NULL) {
         if (gpu->screen == NULL || gpu->screen_depth == NULL) {
             return false;
         }
         color.texture = gpu->screen;
         depth.texture = gpu->screen_depth;
-        if (gpu->screen_fresh) { /* black, far and 0, as a new window's buffers */
+        bool fresh = gpu->screen_fresh;
+        if (gpu->antialias) {
+            /* Kept for the passes after this one, and resolved into the screen at its end */
+            color.texture = gpu->multisample;
+            color.store_op = SDL_GPU_STOREOP_RESOLVE_AND_STORE;
+            color.resolve_texture = gpu->screen;
+            depth.texture = gpu->multisample_depth;
+            fresh = fresh || gpu->multisample_fresh;
+            gpu->multisample_fresh = false;
+            out->samples = gpu->samples;
+        }
+        if (fresh) { /* black, far and 0, as a new window's buffers */
             color.load_op = depth.load_op = depth.stencil_load_op = SDL_GPU_LOADOP_CLEAR;
             color.clear_color.a = 1.0f;
             gpu->screen_fresh = false;
@@ -939,6 +992,7 @@ static void gpu_replay_draw(gpu_t *gpu, SDL_GPUCommandBuffer *cmd, const gpu_rep
     }
     gpu_pipeline_key_t key;
     memset(&key, 0, sizeof(key));
+    key.samples = (uint8_t)pass->samples;
     if (clear) {
         /* A quad over the whole target at the far plane, cut by the scissor */
         key.primitive = (uint8_t)SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
@@ -1165,6 +1219,34 @@ static void gpu_replay(gpu_t *gpu)
     }
     SDL_EndGPUCopyPass(copy);
 
+    /* The screen in more samples while the frame's draws on it antialias (a frame's all do or none) */
+    bool antialias = false, on_screen = false;
+    for (size_t i = 0; i < gpu->ops.count && !antialias; i++) {
+        const gpu_op_t *op = &gpu->ops.items[i];
+        if (op->kind == GPU_OP_BEGIN || op->kind == GPU_OP_END) {
+            on_screen = op->kind == GPU_OP_BEGIN && op->texture == NULL;
+        } else if (op->kind == GPU_OP_DRAW && on_screen) {
+            antialias = gpu->states.items[op->state].antialias;
+        }
+    }
+    antialias = antialias && gpu->samples != SDL_GPU_SAMPLECOUNT_1 && gpu->screen != NULL;
+    if (antialias && gpu->multisample == NULL) {
+        gpu->multisample = gpu_make_multisample(gpu, SDL_GPU_TEXTUREUSAGE_COLOR_TARGET, GPU_COLOR_FORMAT);
+        gpu->multisample_depth =
+            gpu_make_multisample(gpu, SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET, gpu->depth_format);
+        gpu->multisample_fresh = true;
+        if (gpu->multisample == NULL || gpu->multisample_depth == NULL) {
+            gpu_release_multisample(gpu);
+            antialias = false;
+        }
+    }
+    if (!antialias) {
+        /* Drawn without it, the screen moves on from what the samples hold: a frame that
+           antialiases again starts them black, as a new window (Virtools clears each frame) */
+        gpu->multisample_fresh = true;
+    }
+    gpu->antialias = antialias;
+
     gpu_replay_pass_t pass;
     memset(&pass, 0, sizeof(pass));
     for (size_t i = 0; i < gpu->ops.count; i++) {
@@ -1346,6 +1428,7 @@ static void gpu_destroy(render_backend_t *backend)
     for (size_t i = 0; i < gpu->depths.count; i++) {
         SDL_ReleaseGPUTexture(gpu->device, gpu->depths.items[i].texture);
     }
+    gpu_release_multisample(gpu);
     SDL_GPUTexture *textures[5] = {gpu->screen, gpu->screen_depth, gpu->last, gpu->white_2d, gpu->white_cube};
     for (int i = 0; i < 5; i++) {
         if (textures[i] != NULL) {
@@ -1472,6 +1555,10 @@ static gpu_t *gpu_make(SDL_GPUDevice *device, SDL_Window *window, bool own_devic
                                                      SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET)
                             ? SDL_GPU_TEXTUREFORMAT_D24_UNORM_S8_UINT
                             : SDL_GPU_TEXTUREFORMAT_D32_FLOAT_S8_UINT;
+    gpu->samples = SDL_GPUTextureSupportsSampleCount(device, GPU_COLOR_FORMAT, SDL_GPU_SAMPLECOUNT_4) &&
+                           SDL_GPUTextureSupportsSampleCount(device, gpu->depth_format, SDL_GPU_SAMPLECOUNT_4)
+                       ? SDL_GPU_SAMPLECOUNT_4
+                       : SDL_GPU_SAMPLECOUNT_1;
     bool ok = (formats & gpu->format) != 0;
     for (int flat = 0; ok && flat < 2; flat++) {
         gpu->vertex[flat] = gpu_shader(gpu, false, flat != 0);
