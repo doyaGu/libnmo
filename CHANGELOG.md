@@ -9,6 +9,28 @@ never tagged; the numbering restarted at 0.2.0.
 
 ## [Unreleased]
 
+### Added
+- CI builds the renderer's OpenGL and SDL_GPU backends and the SDL3 viewer (`NMO_VIEWER`) on
+  Linux, macOS, MSVC and MinGW against SDL 3.4.18, and runs the render, viewer and layering
+  tests there (`render-*` jobs). The macOS runner draws the SDL_GPU tests on Metal; the others
+  have no GPU and skip them.
+
+### Changed
+- `nmo_render_create_gl()` takes a loader of the current context's functions
+  (`nmo_render_gl_loader_t`: `SDL_GL_GetProcAddress`, `glfwGetProcAddress` and their like)
+  before the output pointer. The OpenGL backend takes from it the functions past OpenGL 1.1 it
+  uses, those of EXT_framebuffer_object and the secondary color ones, by their extension or core
+  names, and returns `NMO_ERR_NOT_SUPPORTED` when the context lacks one. Code that creates an
+  OpenGL renderer passes its loader; the viewer passes SDL's.
+
+### Fixed
+- The OpenGL backend and the viewer build on Windows with MSVC and MinGW. The backend called the
+  functions past OpenGL 1.1 directly, which Windows' `opengl32` does not export, and included
+  `glext.h`, which the Windows SDK does not have; it now names the constants it needs itself, and
+  `gl.h` gets `APIENTRY` and `WINGDIAPI` so it needs no `windows.h`.
+- `test_engine_camera_orbit` clears the filter quad it reads, which GCC 13 reported as maybe used
+  uninitialized in optimized builds.
+
 ## [0.3.0] - 2026-11-13
 
 0.3.0 holds the 2,210 commits made since 0.2.0 (July 16 to November 12, 2026). Files of

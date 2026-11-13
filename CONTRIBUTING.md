@@ -236,8 +236,8 @@ for the related geometry and traversal tests.
 The layer stack, lowest to highest:
 
 ```
-core -> io -> format -> type -> extension -> object -> export -> session
-     -> runtime -> document -> chunk -> behavior -> edit -> lua -> project
+platform -> core -> io -> format -> type -> extension -> object -> export -> session -> runtime
+         -> document -> chunk -> behavior -> engine -> bb -> render -> view -> edit -> lua -> project
 ```
 
 A source file may include headers from its own layer and from layers below it, never from a
@@ -255,33 +255,49 @@ longer needed.
 4. Error handling: return `nmo_status_t`; check every non-`NMO_OK` result; use
     `nmo_last_error_*()` for detailed diagnostics when the API documents it
 5. Memory safety: bounds-check all array and buffer accesses
-6. Platform independence: use portable types (`uint32_t`, not `unsigned int`), portable abstractions
+6. Platform independence: use portable types (`uint32_t`, not `unsigned int`), and reach the
+    operating system only through `src/platform/platform.h`. No other source, in `src/` or in
+    `tools/`, includes a system header (`<windows.h>`, `<unistd.h>`, `<sys/...>`), defines a
+    feature macro (`_POSIX_C_SOURCE`) or branches on `_WIN32`, `__APPLE__` or `__linux__`; add
+    what is missing to `platform.h` and implement it in `platform_posix.c` and
+    `platform_windows.c`. Paths are UTF-8: the library opens, removes and renames files only with
+    `nmo_platform_fopen()`, `nmo_platform_remove()` and `nmo_platform_replace()`, and gives yyjson
+    and Lua open files or bytes, not paths. Graphics API headers belong in `src/render/<backend>/`,
+    and SDL only in `src/render/gpu/` and `src/view/`. `test_layering_audit` checks all of this.
 
 ### Directory Reference
 
 Ranks match the order in `tests/layering_audit.cmake`; a layer may include itself and any layer
 with a lower rank.
 
-| Rank | Directory       | Layer     |
-|------|-----------------|-----------|
-| 1    | `src/core/`     | Core      |
-| 2    | `src/io/`       | IO        |
-| 3    | `src/format/`   | Format    |
-| 4    | `src/type/`     | Type      |
-| 5    | `src/extension/`| Extension |
-| 6    | `src/object/`   | Object    |
-| 7    | `src/session/`  | Session   |
-| 8    | `src/runtime/`  | Runtime   |
-| 9    | `src/document/` | Document  |
-| 10   | `src/chunk/`    | Chunk     |
-| 11   | `src/behavior/` | Behavior  |
-| 12   | `src/export/`   | Export    |
-| 13   | `src/edit/`     | Edit      |
-| 14   | `src/lua/`      | Lua       |
-| 15   | `src/project/`  | Project   |
+| Rank | Directory        | Layer       |
+|------|------------------|-------------|
+| 1    | `src/platform/`  | Platform    |
+| 2    | `src/core/`      | Core        |
+| 3    | `src/io/`        | IO          |
+| 4    | `src/format/`    | Format      |
+| 5    | `src/type/`      | Type        |
+| 6    | `src/extension/` | Extension   |
+| 7    | `src/object/`    | Object      |
+| 8    | `src/export/`    | Export      |
+| 9    | `src/session/`   | Session     |
+| 10   | `src/runtime/`   | Runtime     |
+| 11   | `src/document/`  | Document    |
+| 12   | `src/chunk/`     | Chunk       |
+| 13   | `src/behavior/`  | Behavior    |
+| 14   | `src/engine/`    | Engine      |
+| 15   | `src/bb/`        | Block packs |
+| 16   | `src/render/`    | Render      |
+| 17   | `src/view/`      | View        |
+| 18   | `src/edit/`      | Edit        |
+| 19   | `src/lua/`       | Lua         |
+| 20   | `src/project/`   | Project     |
 
 The Edit, Lua and Project layers build into their own libraries (`nmo_edit`, `nmo_lua`,
-`nmo_project`) on top of the core library `nmo`, and Lua and Project build on Edit. The core must
+`nmo_project`) on top of the core library `nmo`, and Lua and Project build on Edit. The Engine
+and block pack layers are libraries too (`nmo_engine`, `nmo_bb_*`), and so are the Render and
+View layers (`nmo_render`, its backends, `nmo_view`), which are built for the CLI and not
+installed. The core must
 not depend on them: no core source or public header includes an `edit/`, `lua/` or `project/`
 header (the audit checks both), and core tests link only `nmo`.
 

@@ -102,6 +102,17 @@ Library `nmo_lua` (`nmo_lua.h`).
 - Thread-safe context with atomic reference counting
 - Ownership tagging with debug-mode assertions
 - Custom logging subsystem with severity levels
+- A platform layer (`src/platform/platform.h`) through which the library and the CLI reach the
+  operating system: aligned memory, clocks, UTF-8 paths, file mapping, atomic file replacement,
+  directories, terminals and shared libraries, implemented once for POSIX and once for Windows
+
+### Rendering
+
+- `nmo_render` draws the frames of the behavior engine (`nmo_engine_render_frame()`) as CK2's
+  Direct3D 7 rasterizer does, through a backend interface with three backends: a software
+  rasterizer (built by default, no GPU or window needed), OpenGL 2.1, and SDL_GPU (Metal or Vulkan)
+- `nmo_view` shows the frames in an SDL3 window with either GPU backend and plays the engine's
+  sounds (`nmo behavior run --window`); `--headless` draws shot frames in memory instead
 
 ### CLI and Tooling
 
@@ -120,9 +131,14 @@ Library `nmo_lua` (`nmo_lua.h`).
 
 ### Cross-Platform
 
-- Windows, Linux, macOS
-- CI pipeline with three-platform builds on every pull request
-- Performance baseline gate in CI
+- Windows (MSVC and MinGW), Linux and macOS. The operating system is reached only through
+  `src/platform/`; a port to another system implements `src/platform/platform.h` and nothing else
+- Paths are UTF-8 everywhere. On Windows the library opens every file through the
+  wide-character API, and `nmo.exe` runs with the UTF-8 code page (Windows 10 1903 and later), so
+  its command line and the `io.open` of Lua scripts take UTF-8 too
+- CI builds and tests every release platform, runs ASan/UBSan, MemorySanitizer and
+  pattern-initialized builds, and builds the OpenGL and SDL_GPU backends and the viewer on all
+  four platforms
 
 ---
 
@@ -264,8 +280,8 @@ Dependency direction is downward: a source file may include headers from its own
 and from layers below it. From lowest to highest:
 
 ```
-core -> io -> format -> type -> extension -> object -> export -> session
-     -> runtime -> document -> chunk -> behavior -> engine -> bb -> edit -> lua -> project
+platform -> core -> io -> format -> type -> extension -> object -> export -> session -> runtime
+         -> document -> chunk -> behavior -> engine -> bb -> render -> view -> edit -> lua -> project
 ```
 
 `tests/layering_audit.cmake` (run as `test_layering_audit`) enforces this order, for direct
@@ -277,9 +293,18 @@ The same test keeps the block packs apart: the engine's headers include no `bb/`
 pack (`src/bb/<pack>/`) includes neither another pack's files nor its public header.
 `tests/layering_calls_audit.py` (`test_layering_calls_audit`) checks the same order on the
 functions a file calls, which an include check cannot see when a header pulls in another layer.
+It also keeps the system and the graphics APIs at the edges:
+- no source outside `src/platform/`, in `src/` or in `tools/`, includes an operating system's
+  headers, asks for its extensions (`_POSIX_C_SOURCE` and the like) or branches on which system
+  it is built for;
+- nothing in `src/` opens, removes or renames a file by path but through the platform layer
+  (`nmo_platform_fopen()` and the like), since the C library takes the ANSI code page on Windows;
+- graphics API headers appear only in `src/render/<backend>/`, and SDL only in
+  `src/render/gpu/` and `src/view/`.
 
 | Layer     | Source           | Headers               | Responsibility                                                                   |
 |-----------|------------------|-----------------------|----------------------------------------------------------------------------------|
+| Platform  | `src/platform/`  | (internal)            | What the library takes from the operating system: memory, time, errors, UTF-8 paths and files, mapping, atomic replacement, directories, terminals, shared libraries |
 | Core      | `src/core/`      | `include/core/`       | Arena, allocator, GUID, hash tables, containers, error, math, logging           |
 | IO        | `src/io/`        | `include/io/`         | File, memory, mmap and transactional IO                                          |
 | Format    | `src/format/`    | `include/format/`     | File header, chunks, ID remap, image codec, obj parser, file state types, load and save phase timing |
@@ -294,6 +319,8 @@ functions a file calls, which an include check cannot see when a header pulls in
 | Behavior  | `src/behavior/`  | `include/behavior/`   | Behavior graph traversal, behavior acceleration and interface views, parameter chains, script walker, script edit graph |
 | Engine    | `src/engine/`    | `include/engine/`     | Behavior engine: the CK2 runtime the graphs run in (behavior, message, render context, scenes, attributes, arrays) and the manager hooks block packs add theirs through; it registers no blocks (library `nmo_engine`) |
 | Block packs | `src/bb/`      | `include/bb/`         | Building block ports, a pack per set of DLLs with the managers they keep: `virtools` (the stock DLLs, font manager), `physics` (physics_RT, the physics manager and the provider API), `terratools` (the TT_* DLLs); each reaches the engine only through `src/bb/bb_sdk.h` (libraries `nmo_bb_virtools`, `nmo_bb_physics`, `nmo_bb_terratools`) |
+| Render    | `src/render/`    | `include/render/`     | The engine's frames drawn as Direct3D 7 draws them: the front end, the backend interface (`src/render/render_backend.h`) and the software, OpenGL and SDL_GPU backends (libraries `nmo_render`, `nmo_render_soft`, `nmo_render_gl`, `nmo_render_gpu`) |
+| View      | `src/view/`      | `include/engine/nmo_view.h` | An SDL3 window showing the frames with OpenGL or SDL_GPU, its input and the engine's sounds (library `nmo_view`, `NMO_VIEWER`) |
 | Edit      | `src/edit/`      | `include/edit/`       | Edit plans and their JSON form, script edits, behavior rewrites (replace, fold), semantic validator, probe analyzer, behavior execute (library `nmo_edit`) |
 | Lua       | `src/lua/`       | `include/lua/`        | Lua 5.5 runtime, module system, bindings for all layers, fold-map parser (library `nmo_lua`) |
 | Project   | `src/project/`   | `include/project/`    | Project plan, asset/scene/script authoring, executor, manifest, validator (library `nmo_project`) |
@@ -322,10 +349,19 @@ matching library. Static builds produce one archive per library; with `NMO_BUILD
 all of them are compiled into the single shared `nmo` library and `nmo::engine`, the
 `nmo::bb_*` packs, `nmo::edit`, `nmo::lua` and `nmo::project` are interface targets on it.
 
-Two optional hosts build on the engine and the packs: `nmo_physics_ivp` (with
-`NMO_IVP_SOURCE_DIR` set to a libivp source tree) simulates the physics pack's objects, and
-`nmo_view` (with `NMO_VIEWER=ON`) shows the engine's frames in an SDL3/OpenGL window
-(`nmo behavior run --window`).
+Optional hosts build on the engine and the packs: `nmo_physics_ivp` (with
+`NMO_IVP_SOURCE_DIR` set to a libivp source tree) simulates the physics pack's objects, the
+renderer draws the engine's frames, and `nmo_view` (with `NMO_VIEWER=ON`) shows them in an SDL3
+window (`nmo behavior run --window`). The renderer's libraries are built in the tree for the CLI
+and the viewer and are not installed:
+
+| Library          | Option           | Needs        | What it is                                                       |
+|------------------|------------------|--------------|------------------------------------------------------------------|
+| `nmo_render`     | `NMO_RENDER`     | -            | The front end: the engine's frames turned into a backend's draws |
+| `nmo_render_soft`| `NMO_RENDER`     | -            | A software rasterizer drawing into memory (`nmo_render_soft_pixels()`) |
+| `nmo_render_gl`  | `NMO_RENDER_GL`  | OpenGL       | The OpenGL 2.1 backend, in the context current in the host; the functions past 1.1 come from the host's loader (`nmo_render_create_gl(engine, loader, &render)`, where SDL's is `SDL_GL_GetProcAddress`) |
+| `nmo_render_gpu` | `NMO_RENDER_GPU` | SDL3         | The SDL_GPU backend: a device on Metal or Vulkan, in a window or offscreen |
+| `nmo_view`       | `NMO_VIEWER`     | SDL3, OpenGL | The SDL3 window, drawing with either GPU backend (implies both)  |
 
 The IVP provider uses libivp's build options directly. A fresh build with a
 current libivp defaults to reference-compatible internal state:
@@ -392,6 +428,8 @@ editor development is paused. The toolchain has no dependency on that applicatio
 | isocline              | -               | Optional REPL line editing (`NMO_USE_ISOCLINE`, default ON). Uses `deps/isocline/` if present, otherwise a pinned upstream archive is fetched at configure time |
 | stb                   | -               | Bundled; image decode                      |
 | Threads               | POSIX or Win32  | For atomic reference counting              |
+| SDL3                  | -               | Optional: the SDL_GPU backend and the viewer (`NMO_RENDER_GPU`, `NMO_VIEWER`); tested with 3.4.18 |
+| OpenGL                | 2.1             | Optional: the OpenGL backend and the viewer (`NMO_RENDER_GL`, `NMO_VIEWER`) |
 
 Lua is downloaded and SHA-256 verified by CMake `FetchContent` during the
 first configure. For offline builds, unpack the official tarball and either
@@ -434,6 +472,11 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
 ```
 
+`nmo.exe` embeds a manifest that runs it with the UTF-8 code page (`cmake/nmo_utf8.manifest`,
+through `nmo_use_utf8_code_page()`), so paths beyond ASCII work on its command line on Windows 10
+1903 and later; older Windows keep the ANSI code page. The library itself takes UTF-8 paths on
+every Windows, whatever the program's code page.
+
 ### Build Options
 
 | Option                     | Default | Description                                  |
@@ -446,6 +489,11 @@ cmake --build build --config Release
 | `NMO_MINGW_STATIC_RUNTIME` | OFF     | Link MinGW CLI executables with `-static`    |
 | `NMO_ENABLE_SIMD`          | OFF     | Enable SIMD optimizations                    |
 | `NMO_ENABLE_SANITIZERS`    | auto    | ASan/UBSan in Debug (non-Windows by default) |
+| `NMO_RENDER`               | ON      | The renderer and its software backend        |
+| `NMO_RENDER_GL`            | OFF     | The OpenGL backend (needs OpenGL)            |
+| `NMO_RENDER_GPU`           | OFF     | The SDL_GPU backend (needs SDL3)             |
+| `NMO_VIEWER`               | OFF     | The SDL3 viewer; implies both GPU backends   |
+| `NMO_IVP_SOURCE_DIR`       | (empty) | A libivp source tree: builds the physics provider `nmo_physics_ivp` |
 
 ### API Reference
 
@@ -567,6 +615,11 @@ on every pull request, and on `v*` tags:
 - **`sanitizers`**: Ubuntu, clang, Debug build with ASan/UBSan, then `ctest`
   without the `performance` label (those tests assert on wall-clock ratios and
   are not meaningful on shared runners)
+- **`auto-var-init`** and **`memory-sanitizer`**: the same tests built with every automatic
+  variable filled with a pattern, and under MemorySanitizer, for reads of memory never written
+- **`render-backends`**: a build with `NMO_VIEWER` (the OpenGL and SDL_GPU backends and the
+  viewer) against SDL3 on Linux, macOS, Windows MSVC and Windows MinGW, then the render, viewer
+  and layering tests; only the macOS runner has a GPU, elsewhere the SDL_GPU tests skip
 - **`package`**: one Release build per platform (Linux x64 on Ubuntu 22.04,
   macOS universal, Windows MSVC, Windows MinGW). `tools/scripts/package_release.py`
   runs the tests, installs the package, checks the install from the outside, and

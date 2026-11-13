@@ -82,7 +82,10 @@ nmo behavior run --frames 1600 --delta 16.667 --physics ivp \
 This example assumes an existing probe directory and generated harness.
 `--physics ivp` requires a CLI built with libivp. `--window` opens the
 viewer when built with viewer support; `--shot FILE.png@FRAME,...` saves
-specified frames. `--write` is also searched before `--path` for loaded
+specified frames. `--headless` draws the shot frames in memory with the
+software renderer instead, with no window or GPU. `--renderer gl` (the
+default in a window) draws with OpenGL, and `--renderer gpu` with SDL_GPU,
+in the window or, with `--headless`, offscreen. `--write` is also searched before `--path` for loaded
 files, allowing a local `Level_01.NMO` to override the installed level.
 
 `--steer` takes `X,Z[,Y[,F[,NAME,WX,WZ,REACH]]];...@FRAME[-FRAME]`.
