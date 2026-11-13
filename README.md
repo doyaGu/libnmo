@@ -2,8 +2,10 @@
 
 **libnmo** is a C17 library for reading, writing, inspecting, and transforming
 Virtools composition files (`.nmo`, `.cmo`, `.vmo`). It implements a complete
-serialization pipeline with a layered architecture, symmetric read/write
-operations, and full compatibility with Virtools file format versions 2 through 9.
+serialization pipeline with a layered architecture and symmetric read/write
+operations. It loads files of versions 2 to 9 as the Virtools 2.x engine (CK2) loads
+them. Every Virtools sample it is tested on is of version 8; versions 2 to 7 and 9 are
+checked against CK2's code and against files the tests build.
 
 ---
 

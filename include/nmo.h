@@ -6,7 +6,7 @@
  * @brief Main public header for libnmo - Virtools file format library
  *
  * libnmo is a C library for reading and writing Virtools file formats
- * (.nmo/.cmo/.vmo) with full compatibility with the original Virtools runtime.
+ * (.nmo/.cmo/.vmo) as the original Virtools runtime (CK2) reads and writes them.
  *
  * Architecture:
  * - Core Layer: allocator, arena, error, logger, GUID, math, color, refcount, containers

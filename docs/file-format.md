@@ -14,9 +14,11 @@ The code is the authority: `src/format/` (header, Header1, data section, chunks)
 - All integers are little-endian. A *dword* is 4 bytes.
 - A GUID is two dwords, `d1` then `d2`, written `{D1-D2}` in hex.
 - Sizes are in bytes unless they say dwords.
-- *File version* is the `file_version` header field, 2 to 9. Virtools 2.x writes 8, and so
-  does libnmo. Files of versions 2 to 7 load; libnmo saves them as version 8. Version 9
-  loads but is never written down to 8.
+- *File version* is the `file_version` header field, 2 to 9. Virtools 2.x writes 8. libnmo
+  writes a new document as 8 (the project layer writes 9), saves a file it loaded in that
+  file's version from version 7 on, and saves a file below version 7 as version 8. Version 9
+  is never written down to 8. Only version 8 is checked against files Virtools wrote; the
+  other versions are checked against CK2's code and against files the tests build.
 
 ## File layout
 

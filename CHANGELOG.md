@@ -34,7 +34,9 @@ never tagged; the numbering restarted at 0.2.0.
 ## [0.3.0] - 2026-11-13
 
 0.3.0 holds the 2,210 commits made since 0.2.0 (July 16 to November 12, 2026). Files of
-versions 2 to 7 load as CK2 loads them. A default save writes back the original chunk of every
+versions 2 to 7 load as CK2 loads them, though every Virtools sample at hand is of version 8:
+the older versions, and version 9, are checked against CK2's code and against files the tests
+build, not against files Virtools wrote. A default save writes back the original chunk of every
 unchanged object byte for byte, and keeps in an edited object what its schema does not model.
 The built-in classes are read as the engine reads them, and each is described by a state layout.
 The edit stack, the Lua runtime and the project layer are libraries of their own, and every
