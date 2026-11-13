@@ -263,6 +263,13 @@ void nmo_view_play_sounds(nmo_view_t *view)
     }
 }
 
+void nmo_view_set_volume(nmo_view_t *view, float volume)
+{
+    if (view != NULL) {
+        view_audio_set_gain(view->audio, volume);
+    }
+}
+
 void nmo_view_wait(const nmo_view_t *view, double ms)
 {
     if (view != NULL && ms > 0.0) {

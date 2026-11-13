@@ -82,6 +82,13 @@ void view_audio_close(view_audio_t *audio)
     SDL_QuitSubSystem(SDL_INIT_AUDIO);
 }
 
+void view_audio_set_gain(view_audio_t *audio, float gain)
+{
+    if (audio != NULL) {
+        SDL_SetAudioDeviceGain(audio->device, gain < 0.0f ? 0.0f : gain);
+    }
+}
+
 /* The wave file `name` as stereo floats, read the first time it is asked for */
 static const audio_wave_t *audio_wave(view_audio_t *audio, nmo_engine_t *engine, const char *name)
 {

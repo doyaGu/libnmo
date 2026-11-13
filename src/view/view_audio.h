@@ -15,5 +15,7 @@ view_audio_t *view_audio_open(void);
 void view_audio_close(view_audio_t *audio);
 /* Start, follow and stop a stream for each voice the engine has now. */
 void view_audio_play(view_audio_t *audio, nmo_engine_t *engine);
+/* Scale everything the device plays by `gain` (1 as the voices have it, 0 silent). */
+void view_audio_set_gain(view_audio_t *audio, float gain);
 
 #endif /* NMO_VIEW_AUDIO_H */

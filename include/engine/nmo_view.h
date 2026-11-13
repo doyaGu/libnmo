@@ -55,6 +55,8 @@ NMO_API nmo_status_t nmo_view_draw(nmo_view_t *view);
  * engine has it. Nothing plays when there is no device.
  */
 NMO_API void nmo_view_play_sounds(nmo_view_t *view);
+/** Scale every sound the view plays by `volume` (1 as the engine has them, 0 silent). */
+NMO_API void nmo_view_set_volume(nmo_view_t *view, float volume);
 /**
  * Mipmap every texture but cutouts (`all`: those with clear texels, a
  * transparent color's, keep CK's sampling), or only those CK mipmaps (the
