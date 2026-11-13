@@ -3,6 +3,9 @@
  * @brief The OpenGL backend: the front end's Direct3D 7 state applied to
  *        OpenGL's fixed function pipeline (2.1 with EXT_framebuffer_object).
  *
+ * Everything past OpenGL 1.1 comes from the host's loader and is named
+ * here, so only a 1.1 gl.h is needed (Windows has no more).
+ *
  * Matrices stay in Virtools' convention (row vectors, left-handed): the
  * model-view matrix loads as it is, and the projection is Direct3D's
  * followed by a remap of depth to OpenGL's -1..1. Front faces are
@@ -19,11 +22,20 @@
 
 #ifdef __APPLE__
 #include <OpenGL/gl.h>
-#include <OpenGL/glext.h>
 #else
-#define GL_GLEXT_PROTOTYPES 1
+#ifdef _WIN32
+/* What windows.h gives Windows' gl.h, without windows.h */
+#ifndef APIENTRY
+#define APIENTRY __stdcall
+#endif
+#ifndef WINGDIAPI
+#define WINGDIAPI __declspec(dllimport)
+#endif
+#endif
 #include <GL/gl.h>
-#include <GL/glext.h>
+#endif
+#ifndef APIENTRY
+#define APIENTRY
 #endif
 
 #include <stdlib.h>
@@ -56,9 +68,83 @@
 #ifndef GL_CLAMP_TO_BORDER
 #define GL_CLAMP_TO_BORDER 0x812D
 #endif
+#ifndef GL_TEXTURE_WRAP_R
+#define GL_TEXTURE_WRAP_R 0x8072
+#endif
+#ifndef GL_COLOR_SUM
+#define GL_COLOR_SUM 0x8458
+#endif
+#ifndef GL_SECONDARY_COLOR_ARRAY
+#define GL_SECONDARY_COLOR_ARRAY 0x845E
+#endif
+#ifndef GL_INCR_WRAP
+#define GL_INCR_WRAP 0x8507
+#endif
+#ifndef GL_DECR_WRAP
+#define GL_DECR_WRAP 0x8508
+#endif
+#ifndef GL_TEXTURE_CUBE_MAP
+#define GL_TEXTURE_CUBE_MAP 0x8513
+#endif
+#ifndef GL_TEXTURE_CUBE_MAP_POSITIVE_X
+#define GL_TEXTURE_CUBE_MAP_POSITIVE_X 0x8515
+#endif
+#ifndef GL_DEPTH24_STENCIL8_EXT
+#define GL_DEPTH24_STENCIL8_EXT 0x88F0
+#endif
+#ifndef GL_FRAMEBUFFER_BINDING_EXT
+#define GL_FRAMEBUFFER_BINDING_EXT 0x8CA6
+#endif
+#ifndef GL_FRAMEBUFFER_COMPLETE_EXT
+#define GL_FRAMEBUFFER_COMPLETE_EXT 0x8CD5
+#endif
+#ifndef GL_COLOR_ATTACHMENT0_EXT
+#define GL_COLOR_ATTACHMENT0_EXT 0x8CE0
+#endif
+#ifndef GL_DEPTH_ATTACHMENT_EXT
+#define GL_DEPTH_ATTACHMENT_EXT 0x8D00
+#endif
+#ifndef GL_STENCIL_ATTACHMENT_EXT
+#define GL_STENCIL_ATTACHMENT_EXT 0x8D20
+#endif
+#ifndef GL_FRAMEBUFFER_EXT
+#define GL_FRAMEBUFFER_EXT 0x8D40
+#endif
+#ifndef GL_RENDERBUFFER_EXT
+#define GL_RENDERBUFFER_EXT 0x8D41
+#endif
+
+/* The functions past OpenGL 1.1: EXT_framebuffer_object's and 1.4's secondary color */
+typedef void (APIENTRY *rgl_gen_t)(GLsizei n, GLuint *names);
+typedef void (APIENTRY *rgl_delete_t)(GLsizei n, const GLuint *names);
+typedef void (APIENTRY *rgl_bind_t)(GLenum target, GLuint name);
+typedef GLenum (APIENTRY *rgl_check_t)(GLenum target);
+typedef void (APIENTRY *rgl_attach_texture_t)(GLenum target, GLenum attachment, GLenum texture_target,
+                                              GLuint texture, GLint level);
+typedef void (APIENTRY *rgl_attach_renderbuffer_t)(GLenum target, GLenum attachment,
+                                                   GLenum renderbuffer_target, GLuint renderbuffer);
+typedef void (APIENTRY *rgl_storage_t)(GLenum target, GLenum format, GLsizei width, GLsizei height);
+typedef void (APIENTRY *rgl_secondary_color_t)(GLubyte red, GLubyte green, GLubyte blue);
+typedef void (APIENTRY *rgl_secondary_pointer_t)(GLint size, GLenum type, GLsizei stride, const void *pointer);
+
+typedef struct rgl_functions {
+    rgl_gen_t gen_framebuffers;
+    rgl_delete_t delete_framebuffers;
+    rgl_bind_t bind_framebuffer;
+    rgl_check_t check_framebuffer_status;
+    rgl_attach_texture_t framebuffer_texture_2d;
+    rgl_attach_renderbuffer_t framebuffer_renderbuffer;
+    rgl_gen_t gen_renderbuffers;
+    rgl_delete_t delete_renderbuffers;
+    rgl_bind_t bind_renderbuffer;
+    rgl_storage_t renderbuffer_storage;
+    rgl_secondary_color_t secondary_color_3ub;
+    rgl_secondary_pointer_t secondary_color_pointer;
+} rgl_functions_t;
 
 typedef struct rgl {
     render_backend_t base;
+    rgl_functions_t fn; /* what is past OpenGL 1.1 */
     float anisotropy; /* the driver's most for mipmapped textures; 0 for none */
     int screen_w, screen_h;
     bool kept;        /* the screen draws into the kept frame */
@@ -310,7 +396,7 @@ static void rgl_apply(const rgl_t *gl, const render_state_t *s)
     glDisable(GL_LIGHTING); /* the front end lit the vertices */
     glEnable(GL_NORMALIZE);
     glColor4fv(s->color);
-    glSecondaryColor3ub(s->secondary[0], s->secondary[1], s->secondary[2]);
+    gl->fn.secondary_color_3ub(s->secondary[0], s->secondary[1], s->secondary[2]);
     if (s->color_sum) {
         glEnable(GL_COLOR_SUM);
     } else {
@@ -422,7 +508,7 @@ static void rgl_draw(render_backend_t *backend, const render_state_t *s, const r
         }
         if (g->speculars != NULL) {
             glEnableClientState(GL_SECONDARY_COLOR_ARRAY);
-            glSecondaryColorPointer(3, GL_UNSIGNED_BYTE, (GLsizei)g->specular_stride, g->speculars);
+            gl->fn.secondary_color_pointer(3, GL_UNSIGNED_BYTE, (GLsizei)g->specular_stride, g->speculars);
         }
         glDrawElements(mode, g->index_count, GL_UNSIGNED_SHORT, g->indices);
         glDisableClientState(GL_SECONDARY_COLOR_ARRAY);
@@ -442,7 +528,7 @@ static void rgl_draw(render_backend_t *backend, const render_state_t *s, const r
         }
         if (g->speculars != NULL) {
             const uint8_t *c = &g->speculars[(size_t)i * g->specular_stride];
-            glSecondaryColor3ub(c[0], c[1], c[2]);
+            gl->fn.secondary_color_3ub(c[0], c[1], c[2]);
         }
         if (g->normals != NULL) {
             glNormal3fv((const float *)((const uint8_t *)g->normals + (size_t)i * g->normal_stride));
@@ -543,11 +629,11 @@ static bool rgl_kept_begin(rgl_t *gl, int window_w, int window_h)
 {
     bool made = false;
     if (gl->kept_fbo == 0) {
-        glGenFramebuffersEXT(1, &gl->kept_fbo);
+        gl->fn.gen_framebuffers(1, &gl->kept_fbo);
         glGenTextures(1, &gl->kept_color);
-        glGenRenderbuffersEXT(1, &gl->kept_depth);
+        gl->fn.gen_renderbuffers(1, &gl->kept_depth);
     }
-    glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, gl->kept_fbo);
+    gl->fn.bind_framebuffer(GL_FRAMEBUFFER_EXT, gl->kept_fbo);
     if (gl->kept_w != window_w || gl->kept_h != window_h) {
         gl->kept_w = window_w;
         gl->kept_h = window_h;
@@ -556,16 +642,16 @@ static bool rgl_kept_begin(rgl_t *gl, int window_w, int window_h)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glBindRenderbufferEXT(GL_RENDERBUFFER_EXT, gl->kept_depth);
-        glRenderbufferStorageEXT(GL_RENDERBUFFER_EXT, GL_DEPTH24_STENCIL8_EXT, window_w, window_h);
-        glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, GL_TEXTURE_2D, gl->kept_color, 0);
-        glFramebufferRenderbufferEXT(GL_FRAMEBUFFER_EXT, GL_DEPTH_ATTACHMENT_EXT, GL_RENDERBUFFER_EXT, gl->kept_depth);
-        glFramebufferRenderbufferEXT(GL_FRAMEBUFFER_EXT, GL_STENCIL_ATTACHMENT_EXT, GL_RENDERBUFFER_EXT,
+        gl->fn.bind_renderbuffer(GL_RENDERBUFFER_EXT, gl->kept_depth);
+        gl->fn.renderbuffer_storage(GL_RENDERBUFFER_EXT, GL_DEPTH24_STENCIL8_EXT, window_w, window_h);
+        gl->fn.framebuffer_texture_2d(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, GL_TEXTURE_2D, gl->kept_color, 0);
+        gl->fn.framebuffer_renderbuffer(GL_FRAMEBUFFER_EXT, GL_DEPTH_ATTACHMENT_EXT, GL_RENDERBUFFER_EXT, gl->kept_depth);
+        gl->fn.framebuffer_renderbuffer(GL_FRAMEBUFFER_EXT, GL_STENCIL_ATTACHMENT_EXT, GL_RENDERBUFFER_EXT,
                                      gl->kept_depth);
         made = true;
     }
-    if (glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT) != GL_FRAMEBUFFER_COMPLETE_EXT) {
-        glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
+    if (gl->fn.check_framebuffer_status(GL_FRAMEBUFFER_EXT) != GL_FRAMEBUFFER_COMPLETE_EXT) {
+        gl->fn.bind_framebuffer(GL_FRAMEBUFFER_EXT, 0);
         return false;
     }
     if (made) {
@@ -583,7 +669,7 @@ static bool rgl_kept_begin(rgl_t *gl, int window_w, int window_h)
 /* The kept frame shown in the window */
 static void rgl_kept_end(rgl_t *gl, int window_w, int window_h)
 {
-    glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
+    gl->fn.bind_framebuffer(GL_FRAMEBUFFER_EXT, 0);
     glViewport(0, 0, window_w, window_h);
     glDisable(GL_SCISSOR_TEST);
     glDisable(GL_DEPTH_TEST);
@@ -671,27 +757,27 @@ static bool rgl_begin_target(render_backend_t *backend, uintptr_t texture, rende
 {
     rgl_t *gl = (rgl_t *)backend;
     if (gl->target_fbo == 0) {
-        glGenFramebuffersEXT(1, &gl->target_fbo);
-        glGenRenderbuffersEXT(1, &gl->target_depth);
+        gl->fn.gen_framebuffers(1, &gl->target_fbo);
+        gl->fn.gen_renderbuffers(1, &gl->target_depth);
     }
-    glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, gl->target_fbo);
+    gl->fn.bind_framebuffer(GL_FRAMEBUFFER_EXT, gl->target_fbo);
     if (gl->target_fbo_w != width || gl->target_fbo_h != height) {
         gl->target_fbo_w = width;
         gl->target_fbo_h = height;
-        glBindRenderbufferEXT(GL_RENDERBUFFER_EXT, gl->target_depth);
-        glRenderbufferStorageEXT(GL_RENDERBUFFER_EXT, GL_DEPTH24_STENCIL8_EXT, width, height);
-        glFramebufferRenderbufferEXT(GL_FRAMEBUFFER_EXT, GL_DEPTH_ATTACHMENT_EXT, GL_RENDERBUFFER_EXT,
+        gl->fn.bind_renderbuffer(GL_RENDERBUFFER_EXT, gl->target_depth);
+        gl->fn.renderbuffer_storage(GL_RENDERBUFFER_EXT, GL_DEPTH24_STENCIL8_EXT, width, height);
+        gl->fn.framebuffer_renderbuffer(GL_FRAMEBUFFER_EXT, GL_DEPTH_ATTACHMENT_EXT, GL_RENDERBUFFER_EXT,
                                      gl->target_depth);
-        glFramebufferRenderbufferEXT(GL_FRAMEBUFFER_EXT, GL_STENCIL_ATTACHMENT_EXT, GL_RENDERBUFFER_EXT,
+        gl->fn.framebuffer_renderbuffer(GL_FRAMEBUFFER_EXT, GL_STENCIL_ATTACHMENT_EXT, GL_RENDERBUFFER_EXT,
                                      gl->target_depth);
     }
     gl->target_attach = kind == RENDER_TEXTURE_CUBE ? GL_TEXTURE_CUBE_MAP_POSITIVE_X + (GLenum)face
                                                     : GL_TEXTURE_2D;
-    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, gl->target_attach,
+    gl->fn.framebuffer_texture_2d(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, gl->target_attach,
                               (GLuint)texture, 0);
-    if (glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT) != GL_FRAMEBUFFER_COMPLETE_EXT) {
-        glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, gl->target_attach, 0, 0);
-        glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
+    if (gl->fn.check_framebuffer_status(GL_FRAMEBUFFER_EXT) != GL_FRAMEBUFFER_COMPLETE_EXT) {
+        gl->fn.framebuffer_texture_2d(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, gl->target_attach, 0, 0);
+        gl->fn.bind_framebuffer(GL_FRAMEBUFFER_EXT, 0);
         return false;
     }
     gl->flip = true;
@@ -702,8 +788,8 @@ static bool rgl_begin_target(render_backend_t *backend, uintptr_t texture, rende
 static void rgl_end_target(render_backend_t *backend)
 {
     rgl_t *gl = (rgl_t *)backend;
-    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, gl->target_attach, 0, 0);
-    glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
+    gl->fn.framebuffer_texture_2d(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, gl->target_attach, 0, 0);
+    gl->fn.bind_framebuffer(GL_FRAMEBUFFER_EXT, 0);
     gl->flip = false;
     gl->target_h = gl->screen_h;
 }
@@ -742,13 +828,13 @@ static bool rgl_read_last_frame(render_backend_t *backend, const int32_t rect[4]
     GLint bound = 0;
     glGetIntegerv(GL_FRAMEBUFFER_BINDING_EXT, &bound);
     if (gl->last_fbo == 0) {
-        glGenFramebuffersEXT(1, &gl->last_fbo);
+        gl->fn.gen_framebuffers(1, &gl->last_fbo);
     }
-    glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, gl->last_fbo);
-    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, GL_TEXTURE_2D, gl->last_color, 0);
-    bool read = glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT) == GL_FRAMEBUFFER_COMPLETE_EXT &&
+    gl->fn.bind_framebuffer(GL_FRAMEBUFFER_EXT, gl->last_fbo);
+    gl->fn.framebuffer_texture_2d(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, GL_TEXTURE_2D, gl->last_color, 0);
+    bool read = gl->fn.check_framebuffer_status(GL_FRAMEBUFFER_EXT) == GL_FRAMEBUFFER_COMPLETE_EXT &&
                 rgl_read_rect(gl->last_h, rect, rgba);
-    glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, (GLuint)bound);
+    gl->fn.bind_framebuffer(GL_FRAMEBUFFER_EXT, (GLuint)bound);
     return read;
 }
 
@@ -769,19 +855,19 @@ static void rgl_destroy(render_backend_t *backend)
 {
     rgl_t *gl = (rgl_t *)backend;
     if (gl->target_fbo != 0) {
-        glDeleteFramebuffersEXT(1, &gl->target_fbo);
-        glDeleteRenderbuffersEXT(1, &gl->target_depth);
+        gl->fn.delete_framebuffers(1, &gl->target_fbo);
+        gl->fn.delete_renderbuffers(1, &gl->target_depth);
     }
     if (gl->last_fbo != 0) {
-        glDeleteFramebuffersEXT(1, &gl->last_fbo);
+        gl->fn.delete_framebuffers(1, &gl->last_fbo);
     }
     if (gl->last_color != 0) {
         glDeleteTextures(1, &gl->last_color);
     }
     if (gl->kept_fbo != 0) {
-        glDeleteFramebuffersEXT(1, &gl->kept_fbo);
+        gl->fn.delete_framebuffers(1, &gl->kept_fbo);
         glDeleteTextures(1, &gl->kept_color);
-        glDeleteRenderbuffersEXT(1, &gl->kept_depth);
+        gl->fn.delete_renderbuffers(1, &gl->kept_depth);
     }
     free(gl);
 }
@@ -805,15 +891,54 @@ static const render_backend_ops_t rgl_ops = {
     rgl_read_pixels,
 };
 
-nmo_status_t nmo_render_create_gl(nmo_engine_t *engine, nmo_render_t **out_render)
+/* A function of the context by one name or the other (an extension's, the core's) */
+static nmo_render_gl_function_t rgl_load(nmo_render_gl_loader_t load, const char *name, const char *other)
 {
-    if (engine == NULL || out_render == NULL) {
+    nmo_render_gl_function_t function = load(name);
+    return function != NULL ? function : load(other);
+}
+
+/* The functions past OpenGL 1.1; false when the context lacks one */
+static bool rgl_load_functions(rgl_functions_t *fn, nmo_render_gl_loader_t load)
+{
+    fn->gen_framebuffers = (rgl_gen_t)rgl_load(load, "glGenFramebuffersEXT", "glGenFramebuffers");
+    fn->delete_framebuffers = (rgl_delete_t)rgl_load(load, "glDeleteFramebuffersEXT", "glDeleteFramebuffers");
+    fn->bind_framebuffer = (rgl_bind_t)rgl_load(load, "glBindFramebufferEXT", "glBindFramebuffer");
+    fn->check_framebuffer_status =
+        (rgl_check_t)rgl_load(load, "glCheckFramebufferStatusEXT", "glCheckFramebufferStatus");
+    fn->framebuffer_texture_2d =
+        (rgl_attach_texture_t)rgl_load(load, "glFramebufferTexture2DEXT", "glFramebufferTexture2D");
+    fn->framebuffer_renderbuffer =
+        (rgl_attach_renderbuffer_t)rgl_load(load, "glFramebufferRenderbufferEXT", "glFramebufferRenderbuffer");
+    fn->gen_renderbuffers = (rgl_gen_t)rgl_load(load, "glGenRenderbuffersEXT", "glGenRenderbuffers");
+    fn->delete_renderbuffers = (rgl_delete_t)rgl_load(load, "glDeleteRenderbuffersEXT", "glDeleteRenderbuffers");
+    fn->bind_renderbuffer = (rgl_bind_t)rgl_load(load, "glBindRenderbufferEXT", "glBindRenderbuffer");
+    fn->renderbuffer_storage =
+        (rgl_storage_t)rgl_load(load, "glRenderbufferStorageEXT", "glRenderbufferStorage");
+    fn->secondary_color_3ub =
+        (rgl_secondary_color_t)rgl_load(load, "glSecondaryColor3ub", "glSecondaryColor3ubEXT");
+    fn->secondary_color_pointer =
+        (rgl_secondary_pointer_t)rgl_load(load, "glSecondaryColorPointer", "glSecondaryColorPointerEXT");
+    return fn->gen_framebuffers != NULL && fn->delete_framebuffers != NULL && fn->bind_framebuffer != NULL &&
+           fn->check_framebuffer_status != NULL && fn->framebuffer_texture_2d != NULL &&
+           fn->framebuffer_renderbuffer != NULL && fn->gen_renderbuffers != NULL &&
+           fn->delete_renderbuffers != NULL && fn->bind_renderbuffer != NULL && fn->renderbuffer_storage != NULL &&
+           fn->secondary_color_3ub != NULL && fn->secondary_color_pointer != NULL;
+}
+
+nmo_status_t nmo_render_create_gl(nmo_engine_t *engine, nmo_render_gl_loader_t load, nmo_render_t **out_render)
+{
+    if (engine == NULL || load == NULL || out_render == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
     *out_render = NULL;
     rgl_t *gl = (rgl_t *)calloc(1, sizeof(*gl));
     if (gl == NULL) {
         return NMO_ERR_NOMEM;
+    }
+    if (!rgl_load_functions(&gl->fn, load)) {
+        free(gl);
+        return NMO_ERR_NOT_SUPPORTED;
     }
     gl->base.ops = &rgl_ops;
     glEnable(GL_MULTISAMPLE);

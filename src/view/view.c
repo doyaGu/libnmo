@@ -235,6 +235,12 @@ nmo_status_t nmo_view_open(nmo_engine_t *engine, const char *title, int scale,
     return nmo_view_open_with(engine, title, scale, NMO_VIEW_RENDERER_GL, out_view);
 }
 
+/* SDL's loader of the OpenGL context's functions, as nmo_render_create_gl takes it */
+static nmo_render_gl_function_t view_gl_function(const char *name)
+{
+    return (nmo_render_gl_function_t)SDL_GL_GetProcAddress(name);
+}
+
 nmo_status_t nmo_view_open_with(nmo_engine_t *engine, const char *title, int scale,
                                 nmo_view_renderer_t renderer, nmo_view_t **out_view)
 {
@@ -291,7 +297,7 @@ nmo_status_t nmo_view_open_with(nmo_engine_t *engine, const char *title, int sca
         return NMO_ERR_INVALID_STATE;
     }
     SDL_GL_SetSwapInterval(1);
-    nmo_status_t status = nmo_render_create_gl(engine, &view->render);
+    nmo_status_t status = nmo_render_create_gl(engine, view_gl_function, &view->render);
     if (status != NMO_OK) {
         nmo_view_close(view);
         return status;
