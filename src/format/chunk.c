@@ -364,6 +364,14 @@ static nmo_status_t chunk_build_subchunks_from_refs(nmo_chunk_t *chunk) {
     return nmo_chunk_start_read(chunk);
 }
 
+nmo_status_t nmo_chunk_rebuild_sub_chunks(nmo_chunk_t *chunk) {
+    if (chunk == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to subchunk builder");
+    }
+    chunk->chunks.count = 0;
+    return chunk_build_subchunks_from_refs(chunk);
+}
+
 static nmo_status_t chunk_validate_offset_list(const nmo_chunk_t *chunk,
                                                const nmo_chunk_array_t *list,
                                                const char *label) {

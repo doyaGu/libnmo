@@ -3,6 +3,7 @@
 #include "format/nmo_chunk_residue.h"
 #include "core/nmo_utils.h"
 #include "format/nmo_chunk_api.h"
+#include "chunk_serialization_internal.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -315,7 +316,7 @@ static bool list_touches_range(const nmo_chunk_array_t *list, size_t start, size
     return false;
 }
 
-/* The fragment can be copied when nothing in it refers to a sub-chunk or a manager. */
+/* Nothing in the range is a sub-chunk or a manager value. */
 static bool fragment_is_plain(const nmo_chunk_t *original, size_t start, size_t end)
 {
     return !list_touches_range(&original->chunk_refs, start, end) &&
@@ -326,6 +327,12 @@ typedef struct id_entry {
     size_t pos;
     bool sequence;
 } id_entry_t;
+
+/* Positions for one of a chunk's lists (ids, sub-chunks, manager values) */
+typedef struct entry_list {
+    id_entry_t *items;
+    size_t count;
+} entry_list_t;
 
 static int compare_id_entries(const void *a, const void *b)
 {
@@ -425,7 +432,61 @@ static size_t map_position(const section_list_t *sections, const size_t *new_sta
     return pos;
 }
 
-/* Copies a fragment of the original to out[dest] and records its object ids. */
+/* Adds the positions of list that fall in the fragment, moved to dest. */
+static void collect_fragment_entries(const nmo_chunk_array_t *list, const fragment_t *frag,
+                                     size_t dest, entry_list_t *out)
+{
+    const uint32_t *values = array_words(list);
+    for (size_t k = 0; k < list->count; ++k) {
+        bool sequence = false;
+        if (values[k] == ID_SEQUENCE_MARKER) {
+            if (++k >= list->count) break;
+            sequence = true;
+        }
+        if (values[k] >= frag->source_start && values[k] < frag->source_end) {
+            out->items[out->count++] =
+                (id_entry_t){dest + (values[k] - frag->source_start), sequence};
+        }
+    }
+}
+
+/* Adds the positions of list, moved with the sections of the target. */
+static void collect_moved_entries(const nmo_chunk_array_t *list, const section_list_t *sections,
+                                  const size_t *new_starts, entry_list_t *out)
+{
+    const uint32_t *values = array_words(list);
+    for (size_t k = 0; k < list->count; ++k) {
+        bool sequence = false;
+        if (values[k] == ID_SEQUENCE_MARKER) {
+            if (++k >= list->count) break;
+            sequence = true;
+        }
+        out->items[out->count++] =
+            (id_entry_t){map_position(sections, new_starts, values[k]), sequence};
+    }
+}
+
+/* Replaces list with the positions, in order, each sequence behind its marker. */
+static nmo_status_t install_entries(nmo_chunk_t *target, nmo_chunk_array_t *list,
+                                    entry_list_t *entries)
+{
+    qsort(entries->items, entries->count, sizeof(id_entry_t), compare_id_entries);
+    nmo_status_t status = nmo_chunk_array_resize(list, target->arena, sizeof(uint32_t), 0);
+    for (size_t k = 0; status == NMO_OK && k < entries->count; ++k) {
+        if (entries->items[k].sequence) {
+            const uint32_t marker = ID_SEQUENCE_MARKER;
+            status = nmo_chunk_array_append(list, target->arena, sizeof(uint32_t), &marker);
+        }
+        const uint32_t position = (uint32_t)entries->items[k].pos;
+        if (status == NMO_OK) {
+            status = nmo_chunk_array_append(list, target->arena, sizeof(uint32_t), &position);
+        }
+    }
+    return status;
+}
+
+/* Copies a fragment of the original to out[dest] and records where its object
+   ids, sub-chunks and manager values land. */
 static void copy_fragment(
     const fragment_t *frag,
     const nmo_chunk_t *original,
@@ -433,8 +494,9 @@ static void copy_fragment(
     const nmo_id_remap_t *map,
     uint32_t *out,
     size_t dest,
-    id_entry_t *entries,
-    size_t *entry_count)
+    entry_list_t *id_entries,
+    entry_list_t *ref_entries,
+    entry_list_t *manager_entries)
 {
     memcpy(out + dest, o_data + frag->source_start,
            (frag->source_end - frag->source_start) * sizeof(uint32_t));
@@ -444,7 +506,7 @@ static void copy_fragment(
             if (ids[k] >= frag->source_start && ids[k] < frag->source_end) {
                 const size_t np = dest + (ids[k] - frag->source_start);
                 out[np] = translate_id(map, out[np]);
-                entries[(*entry_count)++] = (id_entry_t){np, false};
+                id_entries->items[id_entries->count++] = (id_entry_t){np, false};
             }
             continue;
         }
@@ -457,8 +519,10 @@ static void copy_fragment(
         for (size_t m = 0; m < count; ++m) {
             out[new_header + 1u + m] = translate_id(map, out[new_header + 1u + m]);
         }
-        entries[(*entry_count)++] = (id_entry_t){new_header, true};
+        id_entries->items[id_entries->count++] = (id_entry_t){new_header, true};
     }
+    collect_fragment_entries(&original->chunk_refs, frag, dest, ref_entries);
+    collect_fragment_entries(&original->managers, frag, dest, manager_entries);
 }
 
 /* ---------------------------------------------------------------------------
@@ -578,15 +642,10 @@ nmo_status_t nmo_chunk_merge_residue(
         const section_t *t = find_section(&t_sections, o->id);
         if (c == NULL) {
             if (t != NULL) continue;  /* the target wrote the section itself */
-            if (!fragment_is_plain(original, o->start, o->end)) { stats.skipped++; continue; }
             fragments[fragment_count++] = (fragment_t){o->start, o->end, o->id, true};
         } else if (payload_dwords(o) > payload_dwords(c)) {
             if (t == NULL) continue;  /* the edit removed the section */
             const size_t tail_start = o->start + 2u + payload_dwords(c);
-            if (!fragment_is_plain(original, tail_start, o->end)) {
-                stats.skipped++;
-                continue;
-            }
             fragments[fragment_count++] = (fragment_t){tail_start, o->end, o->id, false};
         }
     }
@@ -615,14 +674,21 @@ nmo_status_t nmo_chunk_merge_residue(
     uint32_t *out = nmo_arena_alloc(arena, total_out * sizeof(uint32_t), _Alignof(uint32_t));
     size_t *section_new_start = nmo_arena_alloc(arena, max_sections * sizeof(size_t), _Alignof(size_t));
     size_t *output_starts = nmo_arena_alloc(arena, max_sections * sizeof(size_t), _Alignof(size_t));
-    const size_t id_capacity = target->ids.count + original->ids.count + 2u;
-    id_entry_t *entries = nmo_arena_alloc(arena, id_capacity * sizeof(id_entry_t), _Alignof(id_entry_t));
-    if (out == NULL || section_new_start == NULL || output_starts == NULL || entries == NULL) {
+    entry_list_t id_entries = {nmo_arena_alloc(
+        arena, (target->ids.count + original->ids.count + 2u) * sizeof(id_entry_t),
+        _Alignof(id_entry_t)), 0};
+    entry_list_t ref_entries = {nmo_arena_alloc(
+        arena, (target->chunk_refs.count + original->chunk_refs.count + 1u) * sizeof(id_entry_t),
+        _Alignof(id_entry_t)), 0};
+    entry_list_t manager_entries = {nmo_arena_alloc(
+        arena, (target->managers.count + original->managers.count + 1u) * sizeof(id_entry_t),
+        _Alignof(id_entry_t)), 0};
+    if (out == NULL || section_new_start == NULL || output_starts == NULL ||
+        id_entries.items == NULL || ref_entries.items == NULL || manager_entries.items == NULL) {
         return NMO_ERR_NOMEM;
     }
 
     size_t out_pos = 0;
-    size_t entry_count = 0;
     size_t output_count = 0;
 
     for (size_t i = 0; i < t_sections.count; ++i) {
@@ -636,7 +702,7 @@ nmo_status_t nmo_chunk_merge_residue(
             const fragment_t *frag = &fragments[f];
             if (frag->whole_section || frag->target_id != t->id) continue;
             copy_fragment(frag, original, o_data, original_to_target, out, out_pos,
-                          entries, &entry_count);
+                          &id_entries, &ref_entries, &manager_entries);
             out_pos += frag->source_end - frag->source_start;
             stats.tails_kept++;
         }
@@ -646,7 +712,7 @@ nmo_status_t nmo_chunk_merge_residue(
         if (!frag->whole_section) continue;
         output_starts[output_count++] = out_pos;
         copy_fragment(frag, original, o_data, original_to_target, out, out_pos,
-                      entries, &entry_count);
+                      &id_entries, &ref_entries, &manager_entries);
         out_pos += frag->source_end - frag->source_start;
         stats.sections_kept++;
     }
@@ -656,54 +722,27 @@ nmo_status_t nmo_chunk_merge_residue(
         out[output_starts[k] + 1] = k + 1 < output_count ? (uint32_t)output_starts[k + 1] : 0u;
     }
 
-    /* Positions of the target's own id entries move with their sections. */
-    const uint32_t *t_ids = array_words(&target->ids);
-    for (size_t k = 0; k < target->ids.count; ++k) {
-        if (t_ids[k] == ID_SEQUENCE_MARKER) {
-            if (++k >= target->ids.count) break;
-            entries[entry_count++] = (id_entry_t){
-                map_position(&t_sections, section_new_start, t_ids[k]), true};
-        } else {
-            entries[entry_count++] = (id_entry_t){
-                map_position(&t_sections, section_new_start, t_ids[k]), false};
-        }
-    }
-    qsort(entries, entry_count, sizeof(id_entry_t), compare_id_entries);
-
-    /* The positions of sub-chunks and manager ids move with their sections. */
-    if (target->chunk_refs.count > 0) {
-        uint32_t *refs = NMO_ARENA_ARRAY_DATA(uint32_t, &target->chunk_refs);
-        for (size_t k = 0; k < target->chunk_refs.count; ++k) {
-            if (refs[k] == ID_SEQUENCE_MARKER) {
-                if (++k >= target->chunk_refs.count) break;
-            }
-            refs[k] = (uint32_t)map_position(&t_sections, section_new_start, refs[k]);
-        }
-    }
-    if (target->managers.count > 0) {
-        uint32_t *managers = NMO_ARENA_ARRAY_DATA(uint32_t, &target->managers);
-        for (size_t k = 0; k < target->managers.count; ++k) {
-            managers[k] = (uint32_t)map_position(&t_sections, section_new_start, managers[k]);
-        }
-    }
+    /* The target's own positions move with their sections. */
+    const size_t carried_refs = ref_entries.count;
+    collect_moved_entries(&target->ids, &t_sections, section_new_start, &id_entries);
+    collect_moved_entries(&target->chunk_refs, &t_sections, section_new_start, &ref_entries);
+    collect_moved_entries(&target->managers, &t_sections, section_new_start, &manager_entries);
 
     /* Install the result. */
     nmo_status_t status = nmo_chunk_array_resize(&target->data, target->arena, sizeof(uint32_t), out_pos);
     if (status != NMO_OK) return status;
     memcpy(target->data.data, out, out_pos * sizeof(uint32_t));
-    status = nmo_chunk_array_resize(&target->ids, target->arena, sizeof(uint32_t), 0);
-    if (status != NMO_OK) return status;
-    for (size_t k = 0; k < entry_count; ++k) {
-        if (entries[k].sequence) {
-            const uint32_t marker = ID_SEQUENCE_MARKER;
-            status = nmo_chunk_array_append(&target->ids, target->arena, sizeof(uint32_t), &marker);
-            if (status != NMO_OK) return status;
-        }
-        const uint32_t position = (uint32_t)entries[k].pos;
-        status = nmo_chunk_array_append(&target->ids, target->arena, sizeof(uint32_t), &position);
-        if (status != NMO_OK) return status;
-    }
+    NMO_RETURN_IF_ERROR(install_entries(target, &target->ids, &id_entries));
+    NMO_RETURN_IF_ERROR(install_entries(target, &target->chunk_refs, &ref_entries));
+    NMO_RETURN_IF_ERROR(install_entries(target, &target->managers, &manager_entries));
     if (target->ids.count > 0) target->chunk_options |= NMO_CHUNK_OPTION_IDS;
+    if (target->chunk_refs.count > 0) target->chunk_options |= NMO_CHUNK_OPTION_CHN;
+    if (target->managers.count > 0) target->chunk_options |= NMO_CHUNK_OPTION_MAN;
+    /* Sub-chunks carried over join the chunk's list of sub-chunks, read from
+       the data as a loaded chunk has them. */
+    if (carried_refs > 0) {
+        NMO_RETURN_IF_ERROR(nmo_chunk_rebuild_sub_chunks(target));
+    }
     nmo_chunk_close(target);
 
     if (out_stats != NULL) *out_stats = stats;

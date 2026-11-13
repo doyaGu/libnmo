@@ -115,7 +115,6 @@ TEST(chunk_residue, merge_keeps_unknown_sections_and_tails)
     ASSERT_EQ(NMO_OK, nmo_chunk_merge_residue(target, original, canonical, map, arena, &stats));
     ASSERT_EQ(1u, stats.tails_kept);
     ASSERT_EQ(1u, stats.sections_kept);
-    ASSERT_EQ(0u, stats.skipped);
 
     const uint32_t *d = words(target);
     /* A: id, next, 99, tail | B: id, next, 8 | X: id, next, 0xBBBB0002, 9 */
@@ -262,13 +261,89 @@ TEST(chunk_residue, merge_moves_sub_chunk_references_with_their_sections)
     nmo_chunk_residue_stats_t stats;
     ASSERT_EQ(NMO_OK, nmo_chunk_merge_residue(target, original, canonical, NULL, arena, &stats));
     ASSERT_EQ(1u, stats.tails_kept);
-    ASSERT_EQ(0u, stats.skipped);
     ASSERT_EQ(1u, target->chunk_refs.count);
     const uint32_t after = ((const uint32_t *)target->chunk_refs.data)[0];
     ASSERT_EQ(before + 1u, after);
     /* The reference still names the header of the sub-chunk. */
     ASSERT_EQ(header_dword, words(target)[after]);
     ASSERT_EQ(0xAAAA0001u, words(target)[3]);
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_residue, merge_carries_sub_chunks_and_manager_values)
+{
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NOT_NULL(arena);
+    const nmo_guid_t manager = {0x12345678u, 0x9ABCDEF0u};
+
+    /* The file: section A ends with a manager value the schema does not
+     * model, and section X, unknown to it, holds a sub-chunk. */
+    nmo_chunk_t *sub_x = begin(arena, 7);
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(sub_x, 0x5151u));
+    nmo_chunk_close(sub_x);
+    nmo_chunk_t *original = begin(arena, 7);
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(original, SECTION_A));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(original, 10));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_manager_int(original, manager, 7u));   /* tail */
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(original, SECTION_X));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(original, 0x0B0Bu));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_sub_chunk(original, sub_x));
+    nmo_chunk_close(original);
+
+    nmo_chunk_t *canonical = begin(arena, 7);
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(canonical, SECTION_A));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(canonical, 10));
+    nmo_chunk_close(canonical);
+
+    /* The edited chunk has a sub-chunk of its own in section B. */
+    nmo_chunk_t *sub_b = begin(arena, 7);
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(sub_b, 0x6161u));
+    nmo_chunk_close(sub_b);
+    nmo_chunk_t *target = begin(arena, 7);
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(target, SECTION_A));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(target, 99));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(target, SECTION_B));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_sub_chunk(target, sub_b));
+    nmo_chunk_close(target);
+
+    nmo_chunk_residue_stats_t stats;
+    ASSERT_EQ(NMO_OK, nmo_chunk_merge_residue(target, original, canonical, NULL, arena, &stats));
+    ASSERT_EQ(1u, stats.tails_kept);
+    ASSERT_EQ(1u, stats.sections_kept);
+
+    /* A: id, next, 99, then the manager value: guid and value */
+    const uint32_t *d = words(target);
+    ASSERT_EQ(1u, target->managers.count);
+    const uint32_t value_at = ((const uint32_t *)target->managers.data)[0];
+    ASSERT_EQ(3u, value_at);
+    ASSERT_EQ(manager.d1, d[value_at]);
+    ASSERT_EQ(manager.d2, d[value_at + 1u]);
+    ASSERT_EQ(7u, d[value_at + 2u]);
+    ASSERT_TRUE((target->chunk_options & NMO_CHUNK_OPTION_MAN) != 0u);
+
+    /* Both sub-chunks are listed in the order of the data, B's then X's */
+    ASSERT_EQ(2u, target->chunk_refs.count);
+    const uint32_t *refs = (const uint32_t *)target->chunk_refs.data;
+    ASSERT_TRUE(refs[0] < refs[1]);
+    ASSERT_EQ(2u, target->chunks.count);
+    nmo_chunk_t *const *subs = (nmo_chunk_t *const *)target->chunks.data;
+    ASSERT_EQ(0x6161u, words(subs[0])[0]);
+    ASSERT_EQ(0x5151u, words(subs[1])[0]);
+
+    /* The result reads back as it is */
+    void *bytes = NULL;
+    size_t size = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_serialize(target, &bytes, &size, arena));
+    nmo_chunk_t *parsed = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(parsed);
+    ASSERT_EQ(NMO_OK, nmo_chunk_parse(parsed, bytes, size));
+    ASSERT_EQ(target->data.count, parsed->data.count);
+    ASSERT_EQ(0, memcmp(d, words(parsed), target->data.count * sizeof(uint32_t)));
+    ASSERT_EQ(1u, parsed->managers.count);
+    ASSERT_EQ(value_at, ((const uint32_t *)parsed->managers.data)[0]);
+    ASSERT_EQ(2u, parsed->chunks.count);
+    nmo_chunk_t *const *parsed_subs = (nmo_chunk_t *const *)parsed->chunks.data;
+    ASSERT_EQ(0x5151u, words(parsed_subs[1])[0]);
     nmo_arena_destroy(arena);
 }
 
@@ -299,5 +374,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_residue, translate_uses_the_layout_when_the_chunk_tracks_no_ids);
     REGISTER_TEST(chunk_residue, merge_restores_values_the_schema_normalized_but_the_edit_left_alone);
     REGISTER_TEST(chunk_residue, merge_moves_sub_chunk_references_with_their_sections);
+    REGISTER_TEST(chunk_residue, merge_carries_sub_chunks_and_manager_values);
     REGISTER_TEST(chunk_residue, merge_does_nothing_across_data_versions);
 TEST_MAIN_END()

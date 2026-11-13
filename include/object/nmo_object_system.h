@@ -202,7 +202,9 @@ NMO_API nmo_chunk_t *nmo_object_system_fidelity_reuse(
  * @param chunk         The chunk written for the object, ids already in file indices
  * @param original      The chunk the object had before
  * @param current       From nmo_object_system_fidelity_inspect()
- * @param out_skipped   Optional: pieces of the original that could not be carried over
+ * @param out_ids_unknown Optional: pieces carried over that may refer to objects
+ *                        whose file index changed (a chunk read from a file does
+ *                        not say where its ids are)
  */
 NMO_API nmo_status_t nmo_object_system_fidelity_commit(
     nmo_object_t *obj,
@@ -213,7 +215,7 @@ NMO_API nmo_status_t nmo_object_system_fidelity_commit(
     nmo_arena_t *arena,
     uint32_t file_index,
     uint32_t file_count,
-    size_t *out_skipped);
+    size_t *out_ids_unknown);
 
 #ifdef __cplusplus
 }

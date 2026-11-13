@@ -80,7 +80,6 @@ NMO_API nmo_status_t nmo_chunk_translate_ids_with_layout(
 typedef struct nmo_chunk_residue_stats {
     size_t sections_kept;   /**< sections the canonical chunk does not have */
     size_t tails_kept;      /**< trailing dwords of sections both have */
-    size_t skipped;         /**< residue that could not be carried over */
     size_t values_restored; /**< dwords the edit left alone that get the file's value back */
     size_t ids_unknown;     /**< carried pieces that may hold object ids that moved (original tracks none) */
 } nmo_chunk_residue_stats_t;
@@ -90,8 +89,9 @@ typedef struct nmo_chunk_residue_stats {
  *
  * target, original and canonical must have the same chunk and data versions;
  * otherwise the layouts differ and nothing is merged. Object ids of the kept
- * dwords are translated through original_to_target when that is not NULL.
- * Residue that contains sub-chunks or manager references is skipped.
+ * dwords are translated through original_to_target when that is not NULL. The
+ * sub-chunks and manager values in what is kept move with it; the sub-chunks
+ * are then read again from the data into target's list of sub-chunks.
  *
  * @param target               Chunk written for the object now; modified
  * @param original             Chunk the object was loaded from
