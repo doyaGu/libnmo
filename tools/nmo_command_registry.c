@@ -1016,6 +1016,17 @@ static void scene_show_usage(FILE *out) {
     fprintf(out, "For CKLevel: scene list, current scene, level scene.\n");
 }
 
+static void scene_export_usage(FILE *out) {
+    fprintf(out, "Usage: nmo scene export [options] <file> -o <output.glb>\n\n");
+    fprintf(out, "Write the 3D entities and the meshes, materials and textures they draw\n");
+    fprintf(out, "as glTF 2.0 binary. Each entity is a node under its parent; Z is\n");
+    fprintf(out, "negated for glTF's right-handed frame.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  -o, --output <path>     Output .glb file (required)\n");
+    fprintf(out, "  --external-textures     Name texture files instead of embedding pixels\n");
+    fprintf(out, "  --no-color-key          Keep the key colour of colour-keyed textures opaque\n");
+}
+
 static void scene_set_usage(FILE *out) {
     fprintf(out, "Usage: nmo scene set [--id <id> | --name <name> | <id>] [options] <file> -o <output>\n\n");
     fprintf(out, "Set scene properties.\n\n");
@@ -1343,6 +1354,7 @@ static const nmo_cli_action_t scene_actions[] = {
     ACTION("list", "ls", "List scenes and levels", nmo_cmd_scene_list, scene_list_usage, NMO_REPL_ACTION_READ_SESSION),
     ACTION("show", "s", "Show scene/level details", nmo_cmd_scene_show, scene_show_usage, NMO_REPL_ACTION_READ_SESSION),
     ACTION("set", NULL, "Set scene properties", nmo_cmd_scene_set, scene_set_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),
+    ACTION("export", "x", "Export the 3D scene as glTF", nmo_cmd_scene_export, scene_export_usage, NMO_REPL_ACTION_READ_SESSION),
 };
 
 static const nmo_cli_action_t entity_actions[] = {

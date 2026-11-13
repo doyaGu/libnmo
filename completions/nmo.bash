@@ -66,7 +66,7 @@ _nmo() {
             texture) echo 'list ls show s extract x replace rep' ;;
             data) echo 'list ls show s dump d set-cell sc fill' ;;
             group) echo 'list ls show s add a remove rm' ;;
-            scene) echo 'list ls show s set' ;;
+            scene) echo 'list ls show s set export x' ;;
             entity) echo 'list ls show s set-position sp set-parent set-camera sc set-light sl' ;;
             material) echo 'list ls show s set' ;;
             mesh) echo 'list ls show s export x import imp' ;;
@@ -282,6 +282,8 @@ _nmo() {
             scene/show/) echo '' ;;
             scene/s/) echo '' ;;
             scene/set/) echo '--id -n --name -o --output --bg-color --ambient --fog-color --camera --dry-run' ;;
+            scene/export/) echo '-o --output --external-textures --no-color-key' ;;
+            scene/x/) echo '-o --output --external-textures --no-color-key' ;;
             entity/list/) echo '-c --class' ;;
             entity/ls/) echo '-c --class' ;;
             entity/show/) echo '' ;;

@@ -290,6 +290,8 @@ _nmo_action_flags() {
         scene/show/) echo '' ;;
         scene/s/) echo '' ;;
         scene/set/) echo '--id -n --name -o --output --bg-color --ambient --fog-color --camera --dry-run' ;;
+        scene/export/) echo '-o --output --external-textures --no-color-key' ;;
+        scene/x/) echo '-o --output --external-textures --no-color-key' ;;
         entity/list/) echo '-c --class' ;;
         entity/ls/) echo '-c --class' ;;
         entity/show/) echo '' ;;
@@ -566,6 +568,8 @@ _nmo_actions() {
                 'show:Show scene/level details'
                 's:Alias for show'
                 'set:Set scene properties'
+                'export:Export the 3D scene as glTF'
+                'x:Alias for export'
             ) ;;
         entity)
             acts=(

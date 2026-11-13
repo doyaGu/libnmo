@@ -17,6 +17,7 @@
 #include "object/nmo_class_ids.h"
 #include "object/builtin/nmo_scene_schemas.h"
 #include "object/builtin/nmo_level_schemas.h"
+#include "document/nmo_document_export.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -399,6 +400,90 @@ int nmo_cmd_scene_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
     return nmo_cmd_ctx_done(&c, rc);
 }
 
+/* ============================================================================
+ * scene export - glTF
+ * ============================================================================ */
+
+typedef struct scene_export_args {
+    const char *output;
+    bool external_textures;
+    bool no_color_key;
+} scene_export_args_t;
+
+static int scene_export_parse(nmo_cmd_ctx_t *c, int argc, char **argv,
+                              bool expect_file_operand, scene_export_args_t *args)
+{
+    static const char *usage = "nmo scene export [options] <file> -o <output.glb>";
+    static const nmo_opt_def_t opts[] = {
+        {"--output", "-o", NMO_OPT_STRING, "Output glTF binary (.glb)"},
+        {"--external-textures", NULL, NMO_OPT_FLAG, "Name texture files instead of embedding pixels"},
+        {"--no-color-key", NULL, NMO_OPT_FLAG, "Keep the key colour of colour-keyed textures opaque"},
+    };
+    enum { OPT_OUTPUT, OPT_EXTERNAL, OPT_NO_KEY, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[16];
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
+    memset(args, 0, sizeof(*args));
+    int rc = nmo_cmd_ctx_parse(c, argc, argv, opts, OPT_COUNT, &r);
+    if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
+    if (r.pos_count != (expect_file_operand ? 1u : 0u)) {
+        fprintf(stderr, "Usage: %s\n", usage);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    args->output = nmo_opt_str(&vals[OPT_OUTPUT]);
+    args->external_textures = nmo_opt_flag(&vals[OPT_EXTERNAL]);
+    args->no_color_key = nmo_opt_flag(&vals[OPT_NO_KEY]);
+    if (args->output == NULL || args->output[0] == '\0') {
+        fprintf(stderr, "Error: Missing -o <output.glb>\n");
+        fprintf(stderr, "Usage: %s\n", usage);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+static int scene_export_run(nmo_cmd_ctx_t *c, const scene_export_args_t *args)
+{
+    nmo_gltf_export_options_t options = nmo_gltf_export_options_default();
+    options.embed_textures = !args->external_textures;
+    options.apply_color_key = !args->no_color_key;
+    nmo_gltf_export_stats_t stats;
+    nmo_status_t status = nmo_document_export_gltf(c->document, args->output, &options, &stats);
+    if (status != NMO_OK) {
+        fprintf(stderr, "Error: Cannot write '%s': %s\n", args->output, nmo_error_string(status));
+        return status == NMO_ERR_NOMEM ? NMO_CLI_EXIT_INTERNAL_ERROR : NMO_CLI_EXIT_IO_ERROR;
+    }
+
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL &&
+        nmo_cli_record_str(rec, "output", "Output", args->output) &&
+        nmo_cli_record_uint(rec, "nodes", "Nodes", stats.nodes) &&
+        nmo_cli_record_uint(rec, "meshes", "Meshes", stats.meshes) &&
+        nmo_cli_record_uint(rec, "primitives", "Primitives", stats.primitives) &&
+        nmo_cli_record_uint(rec, "materials", "Materials", stats.materials) &&
+        nmo_cli_record_uint(rec, "textures", "Textures", stats.textures) &&
+        nmo_cli_record_uint(rec, "images_embedded", "Images embedded", stats.images_embedded) &&
+        nmo_cli_record_uint(rec, "images_external", "Images by file name", stats.images_external) &&
+        nmo_cli_record_uint(rec, "images_missing", "Textures without pixels", stats.images_missing) &&
+        nmo_cli_record_uint(rec, "vertices", "Vertices", stats.vertices) &&
+        nmo_cli_record_uint(rec, "triangles", "Triangles", stats.triangles);
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        fprintf(stderr, "Error: Out of memory\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+    return nmo_cmd_ctx_emit_record(c, rec, "scene.export", 24, c->colorize);
+}
+
+int nmo_cmd_scene_export(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_begin(&c, global);
+    scene_export_args_t args;
+    int rc = scene_export_parse(&c, argc, argv, true, &args);
+    if (rc == NMO_CLI_EXIT_SUCCESS) rc = nmo_cmd_ctx_open(&c);
+    if (rc == NMO_CLI_EXIT_SUCCESS) rc = scene_export_run(&c, &args);
+    return nmo_cmd_ctx_done(&c, rc);
+}
+
 int nmo_cmd_scene_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 {
     if (!ctx || argc < 1 || !argv || !argv[0]) {
@@ -414,6 +499,12 @@ int nmo_cmd_scene_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
         int rc = scene_show_parse(ctx, argc, argv, true, &args);
         if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
         return scene_show_run(ctx, &args);
+    }
+    if (strcmp(argv[0], "export") == 0 || strcmp(argv[0], "x") == 0) {
+        scene_export_args_t args;
+        int rc = scene_export_parse(ctx, argc, argv, false, &args);
+        if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
+        return scene_export_run(ctx, &args);
     }
 
     fprintf(stderr, "Unsupported scene read action in session: %s\n", argv[0]);
