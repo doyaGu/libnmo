@@ -222,6 +222,39 @@ NMO_API void nmo_texture_bitmap2_image(
     size_t *out_size,
     const char **out_ext);
 
+/** @brief RGBA pixels of a texture slot. */
+typedef struct nmo_texture_image {
+    int width;     /**< Width in pixels */
+    int height;    /**< Height in pixels */
+    uint8_t *rgba; /**< width * height pixels of 4 bytes (R, G, B, A), top row first */
+} nmo_texture_image_t;
+
+/**
+ * @brief Decode the image a texture holds in one of its slots to RGBA.
+ *
+ * Reads whichever form the slot has: an image file a reader decodes (with a
+ * separate alpha plane composited), raw colour planes (plain or in Virtools'
+ * DCT plane codec, as the low bits of the compression field say), or a
+ * BITMAP2 image (falling back to interleaved pixels in the texture's video
+ * format). A texture that only names a file holds no pixels.
+ *
+ * @param slot       Slot index, below the state's slot count
+ * @param arena      Holds the pixels
+ * @param out        Receives the image on success
+ * @param out_reason Optional: on failure, a short reason ("no_pixel_data",
+ *                   "unsupported_raw_compression", "unsupported_raw_bpp",
+ *                   "decode_failed", "bitmap2_decode_failed", ...)
+ * @return NMO_OK; NMO_ERR_NOT_FOUND when the slot holds no pixels;
+ *         NMO_ERR_NOT_SUPPORTED for a raw layout that cannot be read;
+ *         NMO_ERR_INVALID_FORMAT when the data does not decode
+ */
+NMO_API nmo_status_t nmo_texture_decode_slot(
+    const nmo_texture_state_t *state,
+    uint32_t slot,
+    nmo_arena_t *arena,
+    nmo_texture_image_t *out,
+    const char **out_reason);
+
 /**
  * @brief Desired video format as the engine uses it after a load.
  *

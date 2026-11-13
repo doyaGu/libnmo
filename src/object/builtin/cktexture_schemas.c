@@ -1658,6 +1658,167 @@ void nmo_texture_bitmap2_image(
     if (out_ext != NULL) *out_ext = ext;
 }
 
+/* A reader's image file, with its separate alpha plane or single alpha */
+static uint8_t *texture_decode_reader(nmo_arena_t *arena, const nmo_texture_reader_slot_t *rs,
+                                      int *w, int *h)
+{
+    if (rs->data == NULL || rs->data_size == 0 || rs->data_size > INT32_MAX) return NULL;
+    int channels = 0;
+    uint8_t *pixels = nmo_stbi_load_from_memory(arena, rs->data, (int)rs->data_size,
+                                                 w, h, &channels, 4);
+    if (pixels == NULL) return NULL;
+    const size_t pixel_count = (size_t)*w * (size_t)*h;
+    if (rs->alpha_plane != NULL && rs->alpha_plane_size > 0) {
+        const size_t usable = rs->alpha_plane_size < pixel_count ? rs->alpha_plane_size : pixel_count;
+        for (size_t i = 0; i < usable; ++i) pixels[i * 4 + 3] = rs->alpha_plane[i];
+    } else if (rs->format_type == 2 && rs->alpha_count == 1) {
+        /* A single distinct alpha: the engine blits that constant over the image */
+        for (size_t i = 0; i < pixel_count; ++i) pixels[i * 4 + 3] = (uint8_t)rs->alpha_value;
+    }
+    return pixels;
+}
+
+/* Raw colour planes as stored, or each in the DCT plane codec */
+static uint8_t *texture_decode_raw(nmo_arena_t *arena, const nmo_texture_raw_slot_t *rs, bool dct)
+{
+    if (rs->width <= 0 || rs->height <= 0) return NULL;
+    const uint8_t *red = rs->red_data, *green = rs->green_data, *blue = rs->blue_data;
+    uint32_t red_size = rs->red_size, green_size = rs->green_size, blue_size = rs->blue_size;
+    if (dct) {
+        const uint8_t *encoded[3] = {rs->red_data, rs->green_data, rs->blue_data};
+        const uint32_t sizes[3] = {rs->red_size, rs->green_size, rs->blue_size};
+        uint8_t *planes[3] = {NULL, NULL, NULL};
+        for (int i = 0; i < 3; ++i) {
+            int w = 0, h = 0;
+            if (encoded[i] == NULL ||
+                nmo_image_decode_dct_plane(encoded[i], sizes[i], arena, &w, &h, &planes[i]) != NMO_OK ||
+                w != rs->width || h != rs->height) {
+                return NULL;
+            }
+        }
+        const uint32_t plane_size = (uint32_t)((size_t)rs->width * (size_t)rs->height);
+        red = planes[0], green = planes[1], blue = planes[2];
+        red_size = green_size = blue_size = plane_size;
+    }
+    uint8_t *pixels = NULL;
+    int channels = 0;
+    if (nmo_image_reconstruct_pixels(red, green, blue, rs->alpha_data,
+                                     red_size, green_size, blue_size, rs->alpha_size,
+                                     rs->width, rs->height, rs->bits_per_pixel,
+                                     arena, &pixels, &channels) != NMO_OK) {
+        return NULL;
+    }
+    return pixels;
+}
+
+/* A BITMAP2 image file, or else pixels interleaved in the texture's video format */
+static uint8_t *texture_decode_bitmap2(nmo_arena_t *arena, const nmo_texture_state_t *state,
+                                       const nmo_texture_bitmap2_slot_t *bs, int *w, int *h)
+{
+    if (bs->buffer == NULL || bs->buffer_size == 0) return NULL;
+    const uint8_t *data = NULL;
+    size_t size = 0;
+    nmo_texture_bitmap2_image(bs, &data, &size, NULL);
+    int channels = 0;
+    uint8_t *pixels = size <= INT32_MAX
+        ? nmo_stbi_load_from_memory(arena, data, (int)size, w, h, &channels, 4) : NULL;
+    if (pixels != NULL) return pixels;
+
+    if (state->reader_width <= 0 || state->reader_height <= 0 || state->reader_bpp <= 0) return NULL;
+    const int32_t bytes_per_line = nmo_image_calc_bytes_per_line(state->reader_width, state->reader_bpp);
+    if (bytes_per_line <= 0 ||
+        bs->buffer_size < (size_t)bytes_per_line * (size_t)state->reader_height) {
+        return NULL;
+    }
+    nmo_image_desc_t desc;
+    memset(&desc, 0, sizeof(desc));
+    desc.format = (nmo_pixel_format_t)state->desired_video_format;
+    desc.width = state->reader_width;
+    desc.height = state->reader_height;
+    desc.bits_per_pixel = state->reader_bpp;
+    desc.bytes_per_line = bytes_per_line;
+    desc.image_data = bs->buffer;
+    if (nmo_image_decode_interleaved_to_rgba32(&desc, arena, &pixels, w, h) != NMO_OK) return NULL;
+    return pixels;
+}
+
+nmo_status_t nmo_texture_decode_slot(
+    const nmo_texture_state_t *state,
+    uint32_t slot,
+    nmo_arena_t *arena,
+    nmo_texture_image_t *out,
+    const char **out_reason)
+{
+    const char *reason_sink = NULL;
+    const char **reason = out_reason != NULL ? out_reason : &reason_sink;
+    *reason = NULL;
+    if (state == NULL || arena == NULL || out == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    memset(out, 0, sizeof(*out));
+    if (slot >= state->slot_count) {
+        *reason = "no_slot";
+        return NMO_ERR_NOT_FOUND;
+    }
+
+    int w = 0, h = 0;
+    uint8_t *pixels = NULL;
+    switch (state->bitmap_kind) {
+    case CKTEXTURE_BITMAP_READER:
+        if (state->reader_slots == NULL) {
+            *reason = "no_reader_data";
+            return NMO_ERR_NOT_FOUND;
+        }
+        pixels = texture_decode_reader(arena, &state->reader_slots[slot], &w, &h);
+        break;
+    case CKTEXTURE_BITMAP_RAW: {
+        if (state->raw_slots == NULL) {
+            *reason = "no_raw_data";
+            return NMO_ERR_NOT_FOUND;
+        }
+        const nmo_texture_raw_slot_t *rs = &state->raw_slots[slot];
+        /* ReadRawBitmap keeps the low four bits of the compression field: 0
+         * stores the colour planes as they are, 1 in the DCT plane codec, and
+         * anything else stores no colour planes. */
+        const uint32_t compression = rs->compression & 0xFu;
+        if (compression > 1u) {
+            *reason = "unsupported_raw_compression";
+            return NMO_ERR_NOT_SUPPORTED;
+        }
+        pixels = texture_decode_raw(arena, rs, compression == 1u);
+        if (pixels == NULL && compression == 0u && rs->bits_per_pixel != 32) {
+            *reason = "unsupported_raw_bpp";
+            return NMO_ERR_NOT_SUPPORTED;
+        }
+        w = rs->width;
+        h = rs->height;
+        break;
+    }
+    case CKTEXTURE_BITMAP_BITMAP2:
+        if (state->bitmap2_slots == NULL) {
+            *reason = "no_bitmap2_data";
+            return NMO_ERR_NOT_FOUND;
+        }
+        pixels = texture_decode_bitmap2(arena, state, &state->bitmap2_slots[slot], &w, &h);
+        if (pixels == NULL) {
+            *reason = "bitmap2_decode_failed";
+            return NMO_ERR_INVALID_FORMAT;
+        }
+        break;
+    default:
+        *reason = "no_pixel_data";
+        return NMO_ERR_NOT_FOUND;
+    }
+    if (pixels == NULL || w <= 0 || h <= 0) {
+        *reason = "decode_failed";
+        return NMO_ERR_INVALID_FORMAT;
+    }
+    out->width = w;
+    out->height = h;
+    out->rgba = pixels;
+    return NMO_OK;
+}
+
 nmo_status_t nmo_texture_replace_bitmap(
     nmo_texture_state_t *state,
     nmo_arena_t *arena,
