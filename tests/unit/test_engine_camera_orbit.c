@@ -256,7 +256,7 @@ TEST(engine_camera_orbit, camera_color_filter_colors_the_view_of_its_camera)
     f.engine->render.camera = camera;
 
     step(&f, 1);
-    nmo_engine_draw_t quad;
+    nmo_engine_draw_t quad = {0}; /* filter_quads fills it only when it finds one */
     ASSERT_EQ(1, filter_quads(&f, &quad));
     ASSERT_EQ(VXBLEND_ONE, quad.source_blend);
     ASSERT_EQ(VXBLEND_ONE, quad.dest_blend);
