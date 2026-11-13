@@ -66,7 +66,7 @@ nmo behavior interface show <id> <file>     # Interface layout data
 ```
 
 `behavior dump` takes `--values` to include decoded local and output parameter values, and
-`--flows` (one behavior only, not with `--all`) to include execution and data flow summaries.
+`--flows` to include the execution and data flows of every dumped graph.
 
 ## Behavior Playback and Physics Traces
 
@@ -238,6 +238,9 @@ named group when the file has none. `list` and `show` also run in the REPL.
 nmo scene list <file>          # List scenes and levels
 nmo scene show <id> <file>     # Scene details
 nmo scene set <id> [options] <file> -o <out>   # Set scene properties
+nmo scene export <file> -o <out.glb>           # The 3D scene as glTF 2.0 binary
+    [--external-textures]      # name texture files instead of embedding PNGs
+    [--no-color-key]           # keep the key colour of colour-keyed textures opaque
 
 nmo entity list <file>         # List 3D entities
 nmo entity show <id> <file>    # Entity details and transform
@@ -346,7 +349,7 @@ nmo diff full <file-a> <file-b>       # Full comparison
 ## Debugging and REPL
 
 ```
-nmo debug load-phases [--profile=full|metadata|header-only] <file>
+nmo debug load-phases [--profile=full|objects|metadata|header-only] <file>
                                 # Load pipeline phase details and statistics
 nmo debug chunks <file>         # Chunk parse details
 nmo debug objects <file>        # Object load details

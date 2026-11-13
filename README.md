@@ -36,7 +36,7 @@ operations, and full compatibility with Virtools file format versions 2 through 
 
 - Symmetric read/write operations driven by unified vtable-based schemas
 - Two-phase commit save pipeline (Layout/Serialize, then Pack/Commit)
-- Optional zlib compression and CRC-32 integrity on save
+- Optional zlib compression and the Adler-32 file checksum on save
 - Shadow storage for lossless round-trips of unknown chunk tail data
 - Reserve-and-patch pattern for forward-reference writes
 - Memory-mapped zero-copy IO alongside buffered file IO
@@ -113,6 +113,8 @@ Library `nmo_lua` (`nmo_lua.h`).
 - JSON output with stable envelope (`schema_version`, `tool`, `command`)
 - Shell completions for Bash, Fish, Zsh, and PowerShell
 - DOT graph export for object hierarchies and behavior graphs
+- glTF 2.0 export of a file's 3D scene (`nmo scene export`, `nmo_export_gltf()`):
+  entities, meshes, materials and embedded textures
 - Semantic object diff and comparison
 - Performance statistics and benchmarking
 
@@ -231,6 +233,26 @@ Compile:
 ```sh
 cc -o demo demo.c -lnmo
 ```
+
+### Python Quick Start
+
+`bindings/python` holds the `nmo` package, a ctypes binding over the shared
+library. Build libnmo with `-DNMO_BUILD_SHARED=ON` and point `NMO_LIBRARY` at
+it (and `NMO_DATA_DIR` at `data/` for the building block and plugin tables):
+
+```python
+import nmo
+
+with nmo.open("Level_01.NMO") as doc:
+    print(doc.info.file_version, len(doc))
+    for obj in doc.objects("CK3dObject"):
+        print(obj.id, obj.name, obj.fields["world_matrix"])
+    doc.export_gltf("level.glb")
+```
+
+`Object.set()` writes fields and `Document.save()` saves; `nmo.open(path,
+profile="objects")` loads the object table only and reads an object's state
+when `Object.load_state()` asks for it.
 
 ---
 
@@ -425,6 +447,15 @@ cmake --build build --config Release
 | `NMO_ENABLE_SIMD`          | OFF     | Enable SIMD optimizations                    |
 | `NMO_ENABLE_SANITIZERS`    | auto    | ASan/UBSan in Debug (non-Windows by default) |
 
+### API Reference
+
+With Doxygen installed, the `nmo_docs` target writes the API reference, with
+the public headers and the documents below, to `<build>/docs/html`:
+
+```sh
+cmake --build cmake-build-release --target nmo_docs
+```
+
 ### Running Tests
 
 ```sh
@@ -465,6 +496,9 @@ cc app.c $(pkg-config --cflags libnmo-lua libnmo-project) $(pkg-config --static 
 
 ## Reference Documentation
 
+- [File Format](docs/file-format.md): the layout of `.nmo`/`.cmo`/`.vmo` files,
+  from the header to chunk encoding, and
+  [how each class stores its state](docs/file-format-classes.md).
 - [CLI Reference](docs/cli-reference.md): every `nmo` command group, the
   REPL, and shell completions.
 - [API Documentation](docs/api.md): C entry points by area.
