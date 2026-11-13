@@ -13,6 +13,9 @@
  * to frame, so a frame that does not clear draws over the one before.
  * Textures and the screen are drawn into upright: SDL_GPU's coordinates
  * start at the top left, as the front end's do.
+ *
+ * The shader comes as Metal source, SPIR-V and DXIL, for SDL_GPU's Metal,
+ * Vulkan and Direct3D 12 drivers.
  */
 
 #include "render/nmo_render_gpu.h"
@@ -243,6 +246,13 @@ static SDL_GPUShader *gpu_shader(gpu_t *gpu, bool fragment, bool flat)
                              : (flat ? fixed_flat_vertex_msl : fixed_smooth_vertex_msl);
         info.code_size = fragment ? (flat ? sizeof(fixed_flat_fragment_msl) : sizeof(fixed_smooth_fragment_msl))
                                   : (flat ? sizeof(fixed_flat_vertex_msl) : sizeof(fixed_smooth_vertex_msl));
+    } else if (gpu->format == SDL_GPU_SHADERFORMAT_DXIL) {
+        info.format = SDL_GPU_SHADERFORMAT_DXIL;
+        info.entrypoint = "main";
+        info.code = fragment ? (flat ? fixed_flat_fragment_dxil : fixed_smooth_fragment_dxil)
+                             : (flat ? fixed_flat_vertex_dxil : fixed_smooth_vertex_dxil);
+        info.code_size = fragment ? (flat ? sizeof(fixed_flat_fragment_dxil) : sizeof(fixed_smooth_fragment_dxil))
+                                  : (flat ? sizeof(fixed_flat_vertex_dxil) : sizeof(fixed_smooth_vertex_dxil));
     } else {
         info.format = SDL_GPU_SHADERFORMAT_SPIRV;
         info.entrypoint = "main";
@@ -1436,7 +1446,7 @@ static bool gpu_make_white(gpu_t *gpu)
 
 uint32_t nmo_render_gpu_shader_formats(void)
 {
-    return SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_MSL;
+    return SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_MSL | SDL_GPU_SHADERFORMAT_DXIL;
 }
 
 /* The backend on `device`, the window claimed; NULL when it cannot be set up (an own device goes) */
@@ -1454,13 +1464,15 @@ static gpu_t *gpu_make(SDL_GPUDevice *device, SDL_Window *window, bool own_devic
     gpu->device = device;
     gpu->own_device = own_device;
     SDL_GPUShaderFormat formats = SDL_GetGPUShaderFormats(device);
-    gpu->format = (formats & SDL_GPU_SHADERFORMAT_MSL) ? SDL_GPU_SHADERFORMAT_MSL : SDL_GPU_SHADERFORMAT_SPIRV;
+    gpu->format = (formats & SDL_GPU_SHADERFORMAT_MSL)    ? SDL_GPU_SHADERFORMAT_MSL
+                  : (formats & SDL_GPU_SHADERFORMAT_DXIL) ? SDL_GPU_SHADERFORMAT_DXIL
+                                                          : SDL_GPU_SHADERFORMAT_SPIRV;
     gpu->depth_format = SDL_GPUTextureSupportsFormat(device, SDL_GPU_TEXTUREFORMAT_D24_UNORM_S8_UINT,
                                                      SDL_GPU_TEXTURETYPE_2D,
                                                      SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET)
                             ? SDL_GPU_TEXTUREFORMAT_D24_UNORM_S8_UINT
                             : SDL_GPU_TEXTUREFORMAT_D32_FLOAT_S8_UINT;
-    bool ok = (formats & (SDL_GPU_SHADERFORMAT_MSL | SDL_GPU_SHADERFORMAT_SPIRV)) != 0;
+    bool ok = (formats & gpu->format) != 0;
     for (int flat = 0; ok && flat < 2; flat++) {
         gpu->vertex[flat] = gpu_shader(gpu, false, flat != 0);
         gpu->fragment[flat] = gpu_shader(gpu, true, flat != 0);

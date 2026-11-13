@@ -30,7 +30,7 @@ typedef struct nmo_view nmo_view_t;
 /** What a view draws with */
 typedef enum nmo_view_renderer {
     NMO_VIEW_RENDERER_GL = 0,   /* an OpenGL context: nmo_render_gl */
-    NMO_VIEW_RENDERER_GPU = 1,  /* an SDL GPU device (Metal or Vulkan): nmo_render_gpu */
+    NMO_VIEW_RENDERER_GPU = 1,  /* an SDL GPU device (Metal, Vulkan or Direct3D 12): nmo_render_gpu */
     NMO_VIEW_RENDERER_SOFT = 2, /* memory (nmo_render_soft), shown by an SDL renderer at the
                                    render context's size, scaled to the window */
     NMO_VIEW_RENDERER_GL3 = 3,  /* an OpenGL 3.3 core, OpenGL ES 3.0 or WebGL 2 context: nmo_render_gl3 */

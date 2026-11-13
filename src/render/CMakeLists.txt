@@ -33,7 +33,7 @@ target_link_libraries(nmo_render_soft PUBLIC nmo_render)
 target_compile_definitions(nmo_render_soft PUBLIC NMO_HAS_RENDER_SOFT=1)
 add_library(nmo::render_soft ALIAS nmo_render_soft)
 
-# The SDL_GPU backend: Metal or Vulkan through SDL3 (no DXIL yet), with the
+# The SDL_GPU backend: Metal, Vulkan or Direct3D 12 through SDL3, with the
 # shaders of gpu/shaders compiled ahead of time and checked in
 # (tools/scripts/gen_gpu_shaders.py), so building it needs only SDL3.
 if(NMO_RENDER_GPU OR (NMO_VIEWER AND NOT EMSCRIPTEN))

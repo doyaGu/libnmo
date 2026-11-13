@@ -1,7 +1,7 @@
 /**
  * @file nmo_render_gpu.h
  * @brief The SDL_GPU backend of nmo_render: Direct3D 7's fixed function
- *        state drawn with shaders on Metal or Vulkan.
+ *        state drawn with shaders on Metal, Vulkan or Direct3D 12.
  */
 
 #ifndef NMO_RENDER_GPU_H
