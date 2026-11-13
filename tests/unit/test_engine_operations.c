@@ -37,17 +37,21 @@
 #define OP_GET_CURVE_TANGENT NMO_GUID(0x54ba6299, 0x51bf236d)
 #define OP_GET_OUT_TANGENT NMO_GUID(0xabc16e82, 0x73ef6952)
 
-/* A local parameter of the script of `type` holding `size` bytes of `data` */
+/* A local parameter of the script of `type` holding `size` bytes of `data`; a string holds
+   its text, its buffer grown to it (it starts as large as a pointer) */
 static nmo_object_id_t local_value(engine_fixture_t *f, nmo_guid_t type, const char *name,
                                    const void *data, size_t size)
 {
     nmo_object_id_t id = 0;
     if (nmo_script_edit_add_parameter(f->tx, f->script_id, NMO_SCRIPT_EDIT_PARAM_LOCAL, type,
-                                      name, &id) != NMO_OK ||
-        nmo_script_edit_set_parameter_bytes(f->tx, id, (const uint8_t *)data, size) != NMO_OK) {
+                                      name, &id) != NMO_OK) {
         return 0;
     }
-    return id;
+    nmo_status_t status =
+        nmo_guid_equals(type, CKPGUID_STRING)
+            ? nmo_script_edit_set_parameter_value(f->tx, id, (const char *)data)
+            : nmo_script_edit_set_parameter_bytes(f->tx, id, (const uint8_t *)data, size);
+    return status == NMO_OK ? id : 0;
 }
 
 static nmo_object_id_t local_float(engine_fixture_t *f, nmo_guid_t type, const char *name,

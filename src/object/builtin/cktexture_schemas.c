@@ -23,6 +23,7 @@
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_arena_array.h"
+#include "core/nmo_utils.h"
 #include "format/nmo_image.h"
 #include "format/nmo_stb_adapter.h"
 #include "type/nmo_reflection.h"
@@ -290,22 +291,19 @@ static nmo_status_t nmo_texture_validate_array_count(
                          "Texture %s count cannot be negative", label);
     }
 
+    /* The data first: a count the chunk cannot hold is truncated whatever
+       the width of size_t, before its allocation could overflow */
     const size_t item_count = (size_t)count;
+    const size_t remaining_dwords = nmo_chunk_identifier_remaining_dwords(chunk);
+    if (fixed_dwords > remaining_dwords ||
+        (minimum_dwords_per_element != 0 &&
+         item_count > (remaining_dwords - fixed_dwords) / minimum_dwords_per_element)) {
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                         "Texture %s count exceeds remaining DWORDs", label);
+    }
     if (element_size != 0 && item_count > SIZE_MAX / element_size) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                          "Texture %s allocation size overflow", label);
-    }
-    if (minimum_dwords_per_element != 0 &&
-        item_count > (SIZE_MAX - fixed_dwords) / minimum_dwords_per_element) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                         "Texture %s DWORD count overflow", label);
-    }
-
-    const size_t required_dwords =
-        fixed_dwords + item_count * minimum_dwords_per_element;
-    if (required_dwords > nmo_chunk_identifier_remaining_dwords(chunk)) {
-        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
-                         "Texture %s count exceeds remaining DWORDs", label);
     }
 
     NMO_RETURN_OK();
@@ -817,7 +815,7 @@ static nmo_status_t nmo_texture_legacy_tail_format(
 
     uint32_t buffer_size = 0;
     memcpy(&buffer_size, tail, sizeof(buffer_size));
-    const size_t buffer_dwords = ((size_t)buffer_size + 3u) / 4u;
+    const size_t buffer_dwords = nmo_bytes_to_dwords(buffer_size);
     if (buffer_dwords > (tail_size - sizeof(uint32_t)) / sizeof(uint32_t)) {
         return NMO_ERR_TRUNCATED_CHUNK;
     }

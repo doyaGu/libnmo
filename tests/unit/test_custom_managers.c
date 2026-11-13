@@ -23,9 +23,6 @@ static nmo_guid_t type_guid1 = {0x40000001, 0x00000001};
 static nmo_guid_t type_guid2 = {0x40000002, 0x00000002};
 
 /* Mock serialization callbacks */
-static int serialize_call_count = 0;
-static int deserialize_call_count = 0;
-
 static nmo_status_t mock_serialize(
     const void *instance,
     struct nmo_chunk *chunk,
@@ -33,7 +30,6 @@ static nmo_status_t mock_serialize(
     (void)instance;
     (void)chunk;
     (void)manager_context;
-    serialize_call_count++;
     NMO_RETURN_OK();
 }
 
@@ -44,7 +40,6 @@ static nmo_status_t mock_deserialize(
     (void)instance;
     (void)chunk;
     (void)manager_context;
-    deserialize_call_count++;
     NMO_RETURN_OK();
 }
 
@@ -54,9 +49,6 @@ static void setup(void) {
     
     registry = nmo_type_registry_create(arena);
     ASSERT_NE(NULL, registry);
-    
-    serialize_call_count = 0;
-    deserialize_call_count = 0;
 }
 
 static void teardown(void) {

@@ -1895,11 +1895,12 @@ TEST(runtime_kernel, prepare_loaded_objects_propagates_remap_growth_oom) {
     ASSERT_NOT_NULL(arena);
     ASSERT_NOT_NULL(repo);
     /* The arena's first block, taken before allocations fail: the remap's
-     * first entries fit it, its growth does not. */
+     * first entries fit it, its growth to 128 entries (1 KiB) does not,
+     * whatever the size of the pointers the block holds besides. */
     ASSERT_EQ(NMO_OK, nmo_arena_reserve(arena, 2048));
 
-    nmo_object_desc_t descs[33] = {0};
-    for (size_t i = 0; i < 33; ++i) {
+    nmo_object_desc_t descs[129] = {0};
+    for (size_t i = 0; i < 129; ++i) {
         descs[i].file_id = (nmo_object_id_t)(i + 1u);
         descs[i].class_id = NMO_CID_OBJECT;
         descs[i].file_index = (nmo_object_id_t)i;
@@ -1916,14 +1917,14 @@ TEST(runtime_kernel, prepare_loaded_objects_propagates_remap_growth_oom) {
             test_id_register_noop,
             NULL,
             descs,
-            33,
+            129,
             NULL,
             0,
             NULL,
             0,
             NULL,
             NULL));
-    ASSERT_EQ((size_t)33, nmo_object_repository_get_count(repo));
+    ASSERT_EQ((size_t)129, nmo_object_repository_get_count(repo));
 
     fail_state.fail_allocations = 0;
     nmo_object_repository_destroy(repo);

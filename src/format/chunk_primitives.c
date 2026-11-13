@@ -331,7 +331,7 @@ nmo_status_t nmo_chunk_read_string_checked(
     uint32_t len = data[state->current_pos++];
     if (len == 0) return NMO_OK;
 
-    size_t dwords = ((size_t)len + 3u) / 4u;
+    size_t dwords = nmo_bytes_to_dwords(len);
     if (!nmo_chunk_has_read_capacity(chunk, dwords)) {
         state->current_pos = start_pos;
         return NMO_ERR_TRUNCATED_CHUNK;
@@ -744,7 +744,7 @@ nmo_status_t nmo_chunk_read_buffer(nmo_chunk_t *chunk,
         NMO_RETURN_OK();
     }
 
-    size_t dwords = ((size_t) size + 3u) / 4u;
+    size_t dwords = nmo_bytes_to_dwords(size);
     if (!nmo_chunk_has_read_capacity(chunk, dwords)) {
         state->current_pos = start_pos;
         NMO_CHUNK_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
@@ -793,7 +793,7 @@ nmo_status_t nmo_chunk_read_and_fill_buffer_checked(
         state->current_pos = start_pos;
         return NMO_ERR_OUT_OF_BOUNDS;
     }
-    size_t dwords = ((size_t)size + 3u) / 4u;
+    size_t dwords = nmo_bytes_to_dwords(size);
     if (!nmo_chunk_has_read_capacity(chunk, dwords)) {
         state->current_pos = start_pos;
         return NMO_ERR_TRUNCATED_CHUNK;
@@ -818,7 +818,7 @@ nmo_status_t nmo_chunk_read_and_fill_buffer_nosize_checked(
 {
     NMO_CHUNK_CHECK_ARGS(chunk, buffer, "Invalid buffer read arguments");
     if (buffer_size == 0) return NMO_OK;
-    size_t dwords = (buffer_size + 3u) / 4u;
+    size_t dwords = nmo_bytes_to_dwords(buffer_size);
     NMO_CHUNK_CHECK_BOUNDS(chunk, dwords);
     nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     uint32_t *data_dwords = get_data_u32(chunk);

@@ -359,7 +359,7 @@ static nmo_status_t nmo_mesh_read_raw_bytes(nmo_chunk_t *chunk, void *buffer, si
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_mesh_read_raw_bytes");
     }
 
-    size_t dwords = (bytes + 3) / 4;
+    size_t dwords = nmo_bytes_to_dwords(bytes);
     NMO_CHUNK_CHECK_BOUNDS_MSG(chunk, dwords, "Insufficient data for raw buffer");
 
     nmo_chunk_parser_state_t *state = (nmo_chunk_parser_state_t *)chunk->parser_state;

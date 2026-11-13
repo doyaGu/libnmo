@@ -44,8 +44,6 @@ test_config_t g_test_config = {
 
 /* Internal state tracking */
 static int g_test_count = 0;
-static int g_pass_count = 0;
-static int g_fail_count = 0;
 static int g_skip_count = 0;
 static int g_current_skipped = 0;
 static char g_current_skip_message[512];
@@ -295,8 +293,6 @@ void test_framework_init(void) {
     
     /* Reset counters */
     g_test_count = 0;
-    g_pass_count = 0;
-    g_fail_count = 0;
     g_skip_count = 0;
     g_total_time = 0.0;
 }
@@ -432,12 +428,6 @@ void test_add_result_with_time(const char *suite, const char *name, int passed,
         entry = entry->next;
     }
 
-    if (passed) {
-        g_pass_count++;
-    } else {
-        g_fail_count++;
-    }
-    
     g_total_time += execution_time_ms;
 }
 

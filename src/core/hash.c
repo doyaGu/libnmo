@@ -261,11 +261,18 @@ uint32_t nmo_xxhash32(const void *data, size_t len, uint32_t seed) {
 
 size_t nmo_hash_fnv1a(const void *data, size_t size) {
     const unsigned char *bytes = (const unsigned char *)data;
-    size_t hash = 14695981039346656037ULL;
+    /* FNV-1a as wide as size_t: the 64-bit basis and prime, or the 32-bit ones */
+#if SIZE_MAX > UINT32_MAX
+    size_t hash = (size_t)14695981039346656037ULL;
+    const size_t prime = (size_t)1099511628211ULL;
+#else
+    size_t hash = (size_t)2166136261u;
+    const size_t prime = (size_t)16777619u;
+#endif
 
     for (size_t i = 0; i < size; i++) {
         hash ^= bytes[i];
-        hash *= 1099511628211ULL;
+        hash *= prime;
     }
 
     return hash;

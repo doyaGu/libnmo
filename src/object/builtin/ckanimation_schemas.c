@@ -1595,7 +1595,7 @@ static nmo_status_t nmo_animation_validate_payload_size(
     uint32_t size_bytes,
     size_t trailing_dwords)
 {
-    const size_t required_dwords = ((size_t)size_bytes + 3u) / 4u;
+    const size_t required_dwords = nmo_bytes_to_dwords(size_bytes);
     const size_t remaining_dwords =
         nmo_chunk_identifier_remaining_dwords(chunk);
     if (trailing_dwords > remaining_dwords ||

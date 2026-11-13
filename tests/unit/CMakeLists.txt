@@ -72,10 +72,7 @@ add_unit_test(test_mesh_normals)
 # New Phase 6 / type system suites replace their coverage.
 
 # Schema v2 layer tests (Phase 5.5)
-add_test(NAME test_type_registry
-    COMMAND ${CMAKE_COMMAND} -E env
-    $<TARGET_FILE:test_type_registry_exe>
-)
+add_test(NAME test_type_registry COMMAND test_type_registry_exe)
 add_executable(test_type_registry_exe type/test_type_registry.c)
 target_link_libraries(test_type_registry_exe PRIVATE nmo test_framework)
 target_include_directories(test_type_registry_exe PRIVATE 

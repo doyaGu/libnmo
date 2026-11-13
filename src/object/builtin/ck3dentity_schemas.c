@@ -31,6 +31,7 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_utils.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_object_struct_guids.h"
 #include "type/nmo_reflection.h"
@@ -221,7 +222,7 @@ static nmo_status_t nmo_3dentity_read_raw_bytes(nmo_chunk_t *chunk, void *buffer
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_3dentity_read_raw_bytes");
     }
 
-    size_t dwords = (bytes + 3) / 4;
+    size_t dwords = nmo_bytes_to_dwords(bytes);
     NMO_CHUNK_CHECK_BOUNDS_MSG(chunk, dwords, "Insufficient data for raw buffer");
 
     nmo_chunk_parser_state_t *state = (nmo_chunk_parser_state_t *)chunk->parser_state;
@@ -730,15 +731,13 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
                                  "Invalid per-vertex bone count");
             }
             const size_t fixed_vertex_dwords = data_version < 6 ? 6u : 3u;
-            if ((size_t)bone_count_i >
-                (SIZE_MAX - fixed_vertex_dwords) / 2u) {
-                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                                 "Per-vertex bone payload size exceeds limits");
-            }
             NMO_RETURN_IF_ERROR(nmo_3dentity_identifier_payload_size_bytes(
                 chunk, &remaining_bytes));
-            if (fixed_vertex_dwords + (size_t)bone_count_i * 2u >
-                remaining_bytes / sizeof(uint32_t)) {
+            /* Divided, so a count past what the chunk holds is truncated
+               whatever the width of size_t */
+            const size_t remaining_dwords = remaining_bytes / sizeof(uint32_t);
+            if (fixed_vertex_dwords > remaining_dwords ||
+                (size_t)bone_count_i > (remaining_dwords - fixed_vertex_dwords) / 2u) {
                 NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                                  "Per-vertex bone data exceeds remaining DWORDs");
             }

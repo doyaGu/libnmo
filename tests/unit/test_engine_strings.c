@@ -196,10 +196,10 @@ TEST(engine_strings, substring_scan_and_reverse)
 static nmo_object_id_t local_string(engine_fixture_t *f, const char *name, const char *text)
 {
     nmo_object_id_t id = 0;
+    /* The string setter grows the buffer, which starts as large as a pointer */
     if (nmo_script_edit_add_parameter(f->tx, f->script_id, NMO_SCRIPT_EDIT_PARAM_LOCAL,
                                       CKPGUID_STRING, name, &id) != NMO_OK ||
-        nmo_script_edit_set_parameter_bytes(f->tx, id, (const uint8_t *)text, strlen(text) + 1u) !=
-            NMO_OK) {
+        nmo_script_edit_set_parameter_value(f->tx, id, text) != NMO_OK) {
         return 0;
     }
     return id;

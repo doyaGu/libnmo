@@ -809,7 +809,7 @@ static float initial_pair_similarity(const nmo_object_t *obj1,
 static uint32_t hash_bytes32(const void *data, size_t size, uint32_t seed)
 {
     if (!data || size == 0) return nmo_hash_int32(seed ^ 0x85ebca6bu);
-    size_t hv = nmo_hash_fnv1a(data, size);
+    uint64_t hv = (uint64_t)nmo_hash_fnv1a(data, size);
     uint32_t lo = (uint32_t)hv;
     uint32_t hi = (uint32_t)(hv >> 32);
     return nmo_hash_int32(seed ^ lo ^ (hi * 0x9e3779b9u));

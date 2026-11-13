@@ -7,6 +7,7 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_utils.h"
 
 #include <limits.h>
 #include <string.h>
@@ -1058,7 +1059,7 @@ static nmo_status_t read_interface_string(
         return NMO_OK;
     }
 
-    size_t payload_dwords = ((size_t)size + 3u) / 4u;
+    size_t payload_dwords = nmo_bytes_to_dwords(size);
     if (payload_dwords > nmo_chunk_identifier_remaining_dwords(chunk)) {
         (void)nmo_chunk_goto(chunk, start_pos);
         NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
@@ -1099,7 +1100,7 @@ static nmo_status_t read_interface_buffer(
     const uint32_t *data =
         NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
     const uint32_t size = data[state->current_pos];
-    const size_t payload_dwords = ((size_t)size + 3u) / 4u;
+    const size_t payload_dwords = nmo_bytes_to_dwords(size);
     if (payload_dwords > remaining - 1u) {
         return NMO_ERR_TRUNCATED_CHUNK;
     }

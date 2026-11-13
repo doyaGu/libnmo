@@ -45,13 +45,7 @@ struct nmo_indexed_map {
 };
 
 static size_t indexed_map_hash_default(const void *data, size_t size) {
-    const unsigned char *bytes = (const unsigned char *)data;
-    size_t hash = 14695981039346656037ULL;
-    for (size_t i = 0; i < size; ++i) {
-        hash ^= bytes[i];
-        hash *= 1099511628211ULL;
-    }
-    return hash;
+    return nmo_hash_fnv1a(data, size);
 }
 
 static int indexed_map_default_compare(const void *a, const void *b, size_t size) {

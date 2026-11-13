@@ -136,7 +136,7 @@ static nmo_status_t nmo_patchmesh_check_buffer_available(
     size_t trailing_dwords,
     const char *label)
 {
-    const size_t dword_count = ((size_t)byte_count + 3u) / 4u;
+    const size_t dword_count = nmo_bytes_to_dwords(byte_count);
     const size_t remaining_dwords =
         nmo_chunk_identifier_remaining_dwords(chunk);
     if (trailing_dwords > remaining_dwords ||
