@@ -441,7 +441,7 @@ cmake --build build --config Release
 | `NMO_BUILD_TESTS`          | ON      | Build the test suite (enables ctest)         |
 | `NMO_BUILD_TOOLS`          | ON      | Build the `nmo` CLI tool                     |
 | `NMO_BUILD_EXAMPLES`       | OFF     | Build example programs                       |
-| `NMO_BUILD_SHARED`         | OFF     | Build as shared library (SOVERSION 2)        |
+| `NMO_BUILD_SHARED`         | OFF     | Build as shared library (SOVERSION 3)        |
 | `NMO_USE_ISOCLINE`         | ON      | Line editing in the REPL (see isocline above)|
 | `NMO_MINGW_STATIC_RUNTIME` | OFF     | Link MinGW CLI executables with `-static`    |
 | `NMO_ENABLE_SIMD`          | OFF     | Enable SIMD optimizations                    |

@@ -117,8 +117,8 @@ def _library_names():
     if sys.platform == "win32":
         return ["nmo.dll", "libnmo.dll"]
     if sys.platform == "darwin":
-        return ["libnmo.dylib", "libnmo.2.dylib"]
-    return ["libnmo.so", "libnmo.so.2"]
+        return ["libnmo.dylib", "libnmo.3.dylib"]
+    return ["libnmo.so", "libnmo.so.3"]
 
 
 def _candidates():

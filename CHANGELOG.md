@@ -9,9 +9,27 @@ never tagged; the numbering restarted at 0.2.0.
 
 ## [Unreleased]
 
-Changes since 0.2.0 (`5005aac3`, 2026-07-16). About 1,000 commits of July to September are summarized
-by theme in the sections marked "July to September"; the other sections record the work from
-September 30 on in detail.
+## [0.3.0] - 2026-11-13
+
+0.3.0 holds the 2,210 commits made since 0.2.0 (July 16 to November 12, 2026). Files of
+versions 2 to 7 load as CK2 loads them. A default save writes back the original chunk of every
+unchanged object byte for byte, and keeps in an edited object what its schema does not model.
+The built-in classes are read as the engine reads them, and each is described by a state layout.
+The edit stack, the Lua runtime and the project layer are libraries of their own, and every
+layer depends only on the layers below it. New in this release is a behavior engine that runs a
+file's behavior graphs frame by frame as CK2 does. It comes with C ports of all 670 building
+blocks of the stock Virtools DLLs, physics_RT and the TT DLLs, and runs Ballance from its intro
+into its levels. Also new: a renderer for the engine's frames, with software, OpenGL and
+SDL_GPU backends; an SDL3 viewer; physics through libivp; a script model of a file's behaviors
+with Lua analyses; glTF export; a Python binding over the shared library; a platform layer under
+the library; load limits; and libFuzzer harnesses. A load also keeps far less memory than before:
+Menu.nmo now keeps about 15 MB, where it kept 1.3 GB. "Upgrading from 0.2.0" lists what breaks
+source compatibility.
+
+Changes since 0.2.0 (`5005aac3`, 2026-07-16). The sections marked "July to September" summarize
+about 1,000 commits by theme, and the sections marked "October to November" summarize the 884
+commits of October 2 to November 12 the same way. The other sections give the work of
+September 30 to October 2 in detail.
 
 ### Upgrading from 0.2.0
 What breaks source compatibility, in short; the sections below give the details.
@@ -47,6 +65,89 @@ What breaks source compatibility, in short; the sections below give the details.
   checksum mismatch on load is a warning (`NMO_LOAD_VERIFY_CRC` makes it an error), files of
   versions 2 to 6 load and are saved as version 8, and an object table entry of class 0 creates no
   object.
+- The ID sanitizer is gone: `nmo_id_sanitizer_create()`, `nmo_id_sanitizer_destroy()`,
+  `nmo_id_sanitizer_reset()`, `nmo_id_sanitizer_register()`, `nmo_id_sanitizer_reseed()`,
+  `nmo_id_register_external()`, `nmo_id_file_to_runtime()`, `nmo_id_runtime_to_file()`,
+  `nmo_id_original_external()`, `nmo_session_get_id_sanitizer()` and the type `nmo_id_sanitizer_t`
+  (`session/nmo_session_pipeline.h`). Nothing read its tables. `nmo_id_sanitize()` stays.
+- Changed signatures:
+  - `nmo_object_system_create_objects_from_header1()` and
+    `nmo_object_system_prepare_loaded_objects()` no longer take an `id_sanitizer` parameter.
+  - The last parameter of `nmo_object_system_fidelity_commit()` is now `out_ids_unknown`, which
+    counts carried pieces that may refer to objects whose file index changed. It was
+    `out_skipped`. `nmo_chunk_residue_stats_t` lost `skipped`.
+  - `nmo_arena_array_set_lifecycle()` returns `nmo_status_t` instead of `void`.
+- Struct members of another type:
+  - The `data`, `ids`, `chunks`, `chunk_refs` and `managers` members of `nmo_chunk_t` are
+    `nmo_chunk_array_t` (`data`, `count`, `capacity`, with memory from the chunk's arena). Grow
+    them with `nmo_chunk_array_reserve()`, `_ensure_space()`, `_resize()` and `_append()`, not
+    with the `nmo_arena_array_*` functions.
+  - The `lifecycle` member of `nmo_array_t` and of `nmo_arena_array_t` is now a pointer (NULL
+    for no hooks), and `NMO_ARENA_ARRAY_INIT` sets it to NULL.
+- `nmo_array_set_lifecycle()` keeps the pointer it is given instead of a copy. The hooks must
+  outlive the array and every array copied from it; a `static const` table, as the library uses,
+  does.
+- Struct layouts that changed (rebuild against the new headers):
+  - `nmo_object_t`: `save_flags` moved after `flags`.
+  - `nmo_type_descriptor_t`: new `object_class_id` after `class_id`.
+  - `nmo_type_registry_t`: new `class_id_inherited_fast`.
+  - `nmo_type_view_t`: new `object_class_id`.
+  - `nmo_load_options_t`: new `max_unpacked_size` and `max_object_count` before
+    `collect_perf_stats`.
+  - `nmo_data_section_t`: the same two limits, at the end.
+  - `nmo_deserialize_context_t`: new `arena_object`.
+  - `nmo_serialize_context_t`: new `type_registry`.
+  - `nmo_behavior_proto_t`: new `local_order`, `local_order_count` and `plugin_guid`.
+  - `nmo_edit_op_t`: new `add_parameter.owner_ref` and `connect_parameter.source_parameter_ref`.
+  - `nmo_project_report_t`: new `group_diff`, between `script_diff` and `manager_diff`.
+  - `nmo_asset_material_render_flags_t` and `nmo_project_material_render_flags_t`: the alpha
+    reference, two-sided and z write fields.
+  - `nmo_project_asset_desc_t` and `nmo_project_material_spec_t`: the external texture, texture
+    format and shared material fields.
+- The shared library's SOVERSION is 3 (`libnmo.so.3`, `libnmo.3.dylib`), and a Windows DLL
+  exports every function that is not static.
+- `NMO_EXTENSION_ABI_VERSION` is 5, because the serialize context gained `type_registry`. The
+  host requires an exact match, so rebuild extensions that were built against version 4.
+- The `class_id` of an extension's `nmo_extension_type_desc_t` now sets the registered type's
+  `object_class_id` (the class its values refer to), and no longer its `class_id`. A plugin type
+  is therefore never a class's schema type, and `nmo_type_registry_guid_to_class_id()` gives 0
+  for it.
+- Changed behavior:
+  - Loads have limits by default. `nmo_load_options_default()` sets `max_unpacked_size` to
+    512 MiB and `max_object_count` to 1,048,576 (`NMO_LOAD_DEFAULT_MAX_UNPACKED_SIZE`,
+    `NMO_LOAD_DEFAULT_MAX_OBJECT_COUNT`). A file past either limit fails with the new
+    `NMO_ERR_LIMIT_EXCEEDED`. A value of 0 sets no limit.
+  - `NMO_LOAD_PROFILE_HEADER_ONLY` no longer reads Header1, so it is no longer the same as
+    `NMO_LOAD_PROFILE_METADATA` and gives no plugin dependencies.
+  - `nmo_chunk_compress()` and `nmo_chunk_compress_if_beneficial()` fail with
+    `NMO_ERR_INVALID_ARGUMENT` for a compression level other than -1 (zlib's default) or 0 to 9.
+    Before, they clamped it.
+  - On Windows the library opens, maps and saves files by UTF-8 path wherever it opens a file
+    itself, and `nmo.exe` runs with the UTF-8 code page. A path in the ANSI code page with
+    characters outside ASCII no longer opens.
+  - Arenas take their first block on the first allocation, and blocks grow to at most 1 MB by
+    default (`nmo_arena_config_t.max_block_size`, 16 MB before). An allocation of 4 KB or more
+    that does not fit gets a block of its own, so `nmo_arena_total_allocated()` gives other
+    numbers.
+  - `nmo_object_get_storage_arena()` creates the arena on its first call, and returns NULL when
+    it cannot.
+  - `nmo_object_add_child()` moves a child out of its previous parent, does nothing for a child
+    the parent already holds, and refuses a cycle.
+  - `nmo_image_reconstruct_pixels()` fails for a channel shorter than width × height. Before,
+    it treated the channel as absent.
+  - For any load that is not strict, `nmo_document_get_runtime_load_stats()` counts references
+    when it is called, in the objects as they are then.
+  - A save no longer keeps the loaded plugin dependency list unchanged. It drops the plugin of
+    each known building block the file no longer saves, and adds the plugins of new blocks and
+    of managers that save data.
+  - CLI: the global options `--no-pager`, `--locale`, `--encoding` and `-F`/`--filter` are
+    rejected now; before, they were parsed and ignored. `nmo convert version -o` writes the
+    file as version 8 and refuses a newer file; before, it copied the file.
+- None found:
+  - Removed or moved public headers: none found. The 65 headers changed under `include/` were
+    all added or modified.
+  - Renamed public functions or types: none found.
+  - Removed Lua functions, CLI commands or CMake targets: none found.
 
 ### Added - Build, install and release packages (July to September)
 - Lua 5.5.1 is downloaded and SHA-256 verified at configure time (FetchContent), and isocline, the REPL
@@ -115,6 +216,320 @@ What breaks source compatibility, in short; the sections below give the details.
   to nothing.
 - The corpus has no such file; `test_legacy_file_load` builds files of each version, compressed
   and not, and checks the load and the save.
+
+### Added - Behavior engine (October to November)
+- The new library `nmo_engine` (CMake `nmo::engine`, pkg-config `libnmo-engine`, umbrella
+  header `nmo_engine.h`) runs the behavior graphs of a document frame by frame, as CK2's behavior
+  manager does. Scripts run in priority order, and a graph takes its active sub-behaviors from an
+  iteration stack. Immediate and delayed links work as in CK2. A graph stops at the iteration
+  limit (`NMO_ENGINE_DEFAULT_MAX_ITERATIONS`, 8000). An input reads its real source, and reading
+  an operation's output runs the operation first. `nmo_engine_create()` copies what the engine
+  needs from the workspace, and the engine never changes the document. `nmo_engine_start()`,
+  `nmo_engine_step()` and `nmo_engine_set_trace()` drive and observe it. The headers are
+  `engine/nmo_engine.h`, `engine/nmo_engine_block.h` and `engine/nmo_engine_render.h`.
+- The engine keeps the runtime state that CK2's managers keep:
+  - messages, with their parameters, delivered at the end of a frame to an object, a group or a
+    class;
+  - data arrays (`nmo_engine_array_*`), compared, searched and sorted as CKDataArray does;
+  - groups, object attributes, and the scene activity of objects and scripts, with the activate
+    and deactivate callbacks;
+  - the world and local matrices and the hierarchy of 3D entities;
+  - copies made with CK's copy dependencies and object names (`nmo_engine_copy_objects()`),
+    and destruction deferred until the behaviors have run;
+  - initial conditions, including those saved without the file's context;
+  - files loaded at run time, each a module with an ID range of its own (`nmo_engine_load()`);
+  - sounds, fonts, the time manager's settings (`nmo_engine_time_settings()`,
+    `nmo_engine_frame_delta()`), the floor, collision, grid and LOD managers, curves, portals,
+    cameras, user bounding boxes and render extents.
+- A host gives the engine its input: keys, the mouse, joysticks and MIDI (`nmo_engine_set_key()`,
+  `nmo_engine_set_mouse_position()`, `nmo_engine_set_joystick()`, `nmo_engine_midi_input()`). It
+  also gives the 2D entity under the mouse or a picker, a file resolver, a file writer and a file
+  system (`nmo_engine_set_file_system()`), registry values, environment variables, the current
+  directory and the search paths. The engine hands back the sounds to play
+  (`nmo_engine_voices()`), console lines, player messages and a request to quit
+  (`nmo_engine_exit_requested()`).
+- `nmo_engine_options_t.fail_on` (`NMO_ENGINE_FAIL_*`) stops execution at the first selected
+  failure: an unknown block, a block or operation error, or an infinite loop.
+  `nmo_engine_failure()` returns that event. `nmo_engine_missing_operations()` lists the
+  operation signatures that were asked for and have no function.
+- Building blocks run C functions registered by prototype GUID (`nmo_engine_register_block()`).
+  The `nmo_engine_block_*` functions give a block its IOs, parameters, locals, messages, text
+  values and memory of its own (`nmo_engine_block_state()`). A block may have only an editor
+  callback (`nmo_engine_notify_behavior_edited()`). Block packs add managers with pre-process,
+  post-process, render and teardown hooks, each run at a fixed stage of a frame. The engine
+  registers no block itself.
+- `nmo_register_math_operations()` registers the math operations of the Parameter Operations
+  plugin (`NMO_OP_GUID_*` in `type/nmo_operations.h`). The engine adds Per Second, Random (from
+  its seeded sequence) and the object getters. It finds an operation by its exact types first,
+  then by their parent types in CK2's order. `data/virtools_operation_functions.json` lists the
+  428 functions that ParameterOperations, Grids, MidiManager and the input manager register; each
+  has a function, and a test checks this.
+
+### Added - Building block packs (October to November)
+- The building block ports are three libraries on top of the engine; the engine knows none of
+  them. A host registers the packs it wants:
+  - `nmo_bb_virtools` holds the stock DLLs and the font manager (`bb/nmo_bb_virtools.h`,
+    `nmo_bb_virtools_register()`).
+  - `nmo_bb_physics` holds physics_RT and the physics manager (`bb/nmo_bb_physics.h`).
+  - `nmo_bb_terratools` holds the TT_* DLLs and their managers (`bb/nmo_bb_terratools.h`).
+
+  The CMake targets are `nmo::bb_virtools`, `nmo::bb_physics` and `nmo::bb_terratools`, and the
+  pkg-config file is `libnmo-bb`. A pack reaches the engine only through `src/bb/bb_sdk.h`, and
+  the layering audit keeps the packs apart.
+- Together the packs port all 670 building blocks that `data/virtools_building_blocks*.json`
+  lists, each as its DLL runs it. The DLLs are 3D Transformations, Cameras, Characters,
+  Collisions, Controllers, Grids, Interface, Lights, Logics, Materials, MeshModifiers, Narratives,
+  Sounds, Visuals, World Environments, BuildingBlocksAddons1, MidiManager, MP3Reader,
+  physics_RT and the TT DLLs. Every building block in Ballance's `base.cmo` and `3D Entities`
+  files has a function, and the engine runs the game from its intro and menus into all 13
+  levels.
+- A block with several versions picks its function on load, as the original does.
+  `data/virtools_building_block_layouts.json` (read by
+  `nmo_virtools_load_building_block_layouts()`) gives 25 blocks their locals and settings in the
+  order their DLLs declare them, and adding a block creates them in that order.
+  `nmo_virtools_load_building_block_plugins()` gives each prototype the plugin its DLL declares
+  it under (`nmo_behavior_proto_t.plugin_guid`). `nmo_virtools_load_data_dir()` reads both
+  files.
+
+### Added - Animation, characters and controllers in the engine (October to November)
+- Object animations play as `CKObjectAnimation::SetStep` evaluates them. This covers linear,
+  TCB and Bezier controllers for position, rotation and scale, scale-axis and mesh morph
+  controllers, shared keyframe data and merged animations. Keyed animations keep their root
+  offsets, and affine poses are split into rotation and scale.
+- Characters play primary and secondary animations with root motion, transitions and warps
+  (with best-frame matching), blends, LOD by channel contribution, and exclusive bone ownership.
+  This is scheduled before the scripts, as in CK2. Animations transfer and retarget by body part
+  name, and IK Position solves kinematic chains.
+- The character blocks run as their DLLs do: Character Controller, Enhanced Character
+  Controller, Unlimited Controller, Animation Synchronizer, Go To, the curve followers, and blend
+  creation and control. So do the keyboard and joystick controllers, mappers and waiters, on
+  original graphs as well as on copied ones.
+
+### Added - Physics through a provider, and libivp (October to November)
+- The physics pack keeps what CKIpionManager keeps for the blocks of physics_RT: Physicalize,
+  the Set Physics constraints, forces, impulses, springs, buoyancy, and collision and contact
+  detection. After each frame's behaviors it steps a host's simulation, which
+  `nmo_engine_set_physics_provider()` sets; without one, nothing moves.
+  `nmo_engine_physics_object()`, `nmo_engine_physics_constraint()`,
+  `nmo_engine_physics_gravity()`, `nmo_engine_physics_collision()` and
+  `nmo_engine_physics_contact()` read the pack's state and report events to it.
+- `nmo_physics_ivp` (`engine/nmo_physics_ivp.h`, `nmo_physics_ivp_attach()`,
+  `nmo_physics_ivp_detach()`) is a provider built on libivp, the C17 port of Ipion's IVP. It is
+  built when `NMO_IVP_SOURCE_DIR` names a libivp source tree. It keeps an IVP environment as
+  physics_RT does: ball and polygon shapes, materials, damping, no-collision groups,
+  constraints, springs and collision listeners. The README describes libivp's
+  `IVP_STABLE_INTERNAL_STATE` option.
+
+### Added - `nmo behavior run` (October to November)
+- `nmo behavior run <file>` runs the behavior graphs of a file for `--frames` frames of
+  `--delta` ms each, without changing the file. It reports script activations, building block
+  executions, messages and effects; with `--trace` it reports links, operations and graphs too.
+  At the end it lists the blocks and operations that have no function and the scripts still
+  active. Other options:
+  - `--start`, `--script`, `--unknown stop|pass`, `--seed` and `--max-iterations`;
+  - `--strict`, which stops at an unknown block, an execution error or the iteration limit and
+    exits with code 3.
+- Input and environment:
+  - `--keys KEY@FRAME[-FRAME],...` holds keys down;
+  - `--message` sends a message at a frame;
+  - `--registry` sets registry values;
+  - `--path` gives folders to find files in;
+  - `--write` gives a folder that saves go to; it is read before the others, and the run's file
+    system is confined to it.
+- Play:
+  - `--physics ivp` simulates physics (in a build with libivp);
+  - `--steer` and `--steer-object` drive a ball through points with the arrow keys, as a player
+    would, with heights, holds, waits for a moving object, rush and precision modes, and end
+    frames;
+  - `--steer-log` and `--physics-log` write CSV traces;
+  - `--observe` reports the final world matrices of named entities;
+  - `--control` keeps one world alive for `step COUNT MASK` commands on stdin and answers each
+    with a JSON snapshot of poses.
+- Display:
+  - `--window` plays the file in the viewer (`NMO_VIEWER`);
+  - `--shot FILE.png@FRAME,...` saves frames;
+  - `--headless` draws those frames in memory with the software renderer;
+  - `--renderer gpu` draws with SDL_GPU;
+  - `--mute` silences the window, and `--mipmaps` mipmaps every texture but cutouts.
+
+### Added - Renderer and viewer (October to November)
+- `nmo_engine_render_frame()` (`engine/nmo_engine_render.h`) lists what the render context
+  would draw, in the order CK2_3D draws it. The list covers the scene graph walk with frustum
+  culling and the sorting of transparent objects, render callbacks, passes into textures and
+  cube map faces, 2D entities, sprites and sprite texts, particles, and stencil, mirrored and
+  primitive draws. It also carries the render options and the global render mode.
+  `nmo_engine_mesh()`, `nmo_engine_material()`, `nmo_engine_texture_image()` and the functions
+  beside them give the meshes, materials and decoded textures the list names. Nothing in the
+  engine rasterizes. Movie Load decodes Microsoft Video 1 AVI frames.
+- `nmo_render` (`render/nmo_render.h`) draws such a frame through a backend that takes a
+  Direct3D 7 fixed-function state in Virtools' enums. There are three backends:
+  - `nmo_render_soft`, a software rasterizer, built by default (`NMO_RENDER`);
+  - `nmo_render_gl` for OpenGL (`NMO_RENDER_GL`);
+  - `nmo_render_gpu` for SDL_GPU on Metal or Vulkan (`NMO_RENDER_GPU`), with its shaders
+    checked in as SPIR-V and MSL.
+
+  The renderer lights vertices as Direct3D 7 does, mipmaps only the textures CK mipmaps, and
+  draws sprite text with stb_truetype.
+- `nmo_view` (`engine/nmo_view.h`, `NMO_VIEWER`, needs SDL3) is a window that shows the frames,
+  feeds the keyboard and mouse to the engine and plays its sounds. `nmo_view_open_with()`
+  chooses OpenGL or SDL_GPU.
+- The layering audit allows a graphics API's headers only in a backend under
+  `src/render/<backend>/`, and SDL only there and in `src/view`.
+
+### Added - Script model and script analysis (October)
+- `behavior/nmo_script_model.h` is a read-only model of every behavior graph of a document
+  (`nmo_script_model_build()`). It covers scripts, the graphs no script holds, building blocks,
+  IOs, parameters with their decoded values, operations, links, and the parameter reads and
+  writes inside each graph. Lookups include `nmo_script_model_value_source()` and
+  `nmo_script_model_param_writers()`. The model tells values written at run time from saved
+  ones, and `nmo_behavior_op_block_operation_guid()` names the operation an Op block runs.
+- `behavior/nmo_script_index.h` lists what building blocks do with messages, data arrays and
+  scripts (`nmo_script_index_build()`, `nmo_script_index_uses()`), and where each message goes.
+  A key is resolved from a saved value, or from the name a script looks the object up by. Both
+  headers are included by `nmo.h`.
+- In Lua, the `nmo.script` module gives the model as tables (`nmo_lua_register_script_bindings()`,
+  and `nmo_lua_push_script_model()` in `lua/nmo_lua_script.h`).
+  `nmo_lua_runtime_execute_file()` and `nmo_lua_runtime_execute_buffer()` run a script with
+  arguments, as the `lua` interpreter does, and `nmo_lua_runtime_state()` is public.
+- In the CLI:
+  - `nmo script view` shows a graph as readable blocks;
+  - `nmo script xref` cross-references messages, data arrays and script activation;
+  - `nmo script analyze` runs a Lua script over the models of one or more files. It comes with
+    the analyses `summary`, `messages`, `arrays` and `interactions`.
+
+  `behavior dump`, `behavior show` and `behavior trace` read their flows from the model, and
+  `behavior dump --flows` now works with `--all`. `behavior find` takes a positional name
+  pattern, and parameter values print the names of messages and keyboard keys.
+  `docs/lua-script-analysis.md` describes all of this.
+
+### Added - Authoring of groups, external textures, hidden entities and shared materials (October to November)
+- Groups:
+  - `nmo_object_edit_add_group_member()` and `nmo_object_edit_remove_group_member()` change a
+    group's members;
+  - project plans and manifests author groups (root `groups` and object `groups`;
+    `nmo_project_plan_add_group()` and the functions beside it; `nmo_project_report_t.group_diff`);
+  - `nmo group list|show|add|remove` does the same from the CLI, and `group list` and
+    `group show` also run in the REPL.
+- A texture can name an image file instead of holding the image (`nmo_texture_set_external_file()`,
+  `nmo_asset_edit_set_texture_external()`, manifest `texture_save: "external"`). It can also take
+  the pixel format the engine converts it to (`nmo_asset_edit_set_texture_video_format()`,
+  manifest `texture_format`). Material render flags take the alpha reference, two-sided and z write
+  (manifest `two_sided`, `z_write` and alpha `ref`).
+- `nmo_entity_edit_set_visible()`, `NMO_PROJECT_OBJECT_FLAG_HIDDEN` and the manifest's `visible`
+  hide a 3D entity.
+- Each material in a manifest's root `materials` becomes one shared CKMaterial. Objects use it by
+  name (`material`), and OBJ material groups of the same name use it too
+  (`nmo_project_plan_add_shared_material()` and the functions beside it).
+- `nmo_object_edit_create_parameter()`, `nmo_object_edit_add_dataarray_column()` and
+  `nmo_object_edit_add_dataarray_row()` create parameters and fill data arrays.
+  `nmo data fill <id> --table <table.json>` gives an empty array its columns and rows, and
+  `--append` adds rows to an array with the same schema.
+- `nmo_edit_plan_add_parameter_ex()` and `nmo_edit_plan_add_connect_parameter_ex()` take the
+  owner or the source as a handle of an earlier operation (JSON `owner` and `source`). Script
+  edits also find the value an input owns and an operation's output.
+- OBJ import checks CKMesh's limit of 65,535 against distinct vertices, not face corners. When it
+  refuses a file, it says why and names the object.
+
+### Added - Objects by id, object table loads, glTF and Python (November)
+- `document/nmo_document_objects.h` reads a document's objects by id, for a binding that holds no
+  object pointers:
+  - `nmo_document_object_count()`, `nmo_document_object_at()`, `nmo_document_object_name()` and
+    `nmo_document_object_class()`;
+  - `nmo_document_class_name()`, `nmo_document_class_id()` and `nmo_document_class_is_derived()`;
+  - `nmo_document_object_json()`, which gives the fields as `object export` writes them;
+  - `nmo_document_import_json()`, which writes them back through object import in one workspace
+    edit.
+- `NMO_LOAD_PROFILE_OBJECTS` loads only the object table: ids, classes, names and chunks, and the
+  manager chunks. It parses no object state and runs no manager or finalize hooks, and the session
+  is read only. `nmo_document_load_object_state()` parses one object's state when it is needed.
+  `nmo object list` loads this way; Menu.nmo takes 16 ms instead of 24.
+- `nmo_texture_decode_slot()` decodes a texture slot to RGBA, whatever form the slot holds the
+  image in. `texture extract` uses it.
+- `export/nmo_export_gltf.h`: `nmo_export_gltf()` and `nmo_document_export_gltf()` write a file's
+  3D entities, meshes, materials and textures as a .glb. Textures are embedded as PNG, or named
+  by their file. Z is negated and triangle winding reversed for glTF. Lights, cameras,
+  animations and skins are not written. From the CLI, use
+  `nmo scene export <file> -o <out.glb> [--external-textures] [--no-color-key]`.
+- A shared libnmo on Windows exports every function that is not static, as it does elsewhere
+  (it exported nothing before), and links its Lua objects as position-independent code.
+- `bindings/python` is a ctypes package, `nmo`, over the shared library. It finds the library
+  through `NMO_LIBRARY`, next to the package, or with the system loader. It opens a file with a
+  load profile and gives the file info and the objects by id, with their names, classes and
+  fields. It writes fields, saves, reads object states on request and exports glTF. A failed call
+  raises `NmoError`. A shared build runs `test_python_binding`.
+
+### Added - File format specification and API reference (November)
+- `docs/file-format.md` describes the file format as CK2 and libnmo read and write it: the
+  header, the checksum, compression, Header1 (object table, plugin dependencies, included file
+  list), the data section of each file version, included files, the chunk envelope of each chunk
+  version, sections, value encodings and object references.
+  `docs/file-format-classes.md` gives each built-in class's chunk sections in write order, with
+  their identifiers, contents, data versions and the older layouts read.
+- With Doxygen found, the `nmo_docs` target writes the API reference from the public headers and
+  the documents to `<build>/docs/html`.
+- Stale `@param` names in a dozen headers match their functions again.
+
+### Added - Load limits (November)
+- `NMO_ERR_LIMIT_EXCEEDED` means the input is not corrupt but needs more than the caller
+  allowed. `nmo_load_options_t.max_unpacked_size` (512 MiB by default) limits what Header1, the
+  data section and its packed object entries unpack to, and `max_object_count` (1,048,576 by
+  default) limits the number of objects. Both are checked before anything is allocated. The
+  limits are also fields of `nmo_data_section_t`, and `nmo_data_section_parse()` checks them.
+- Declared sizes are bounded before memory is allocated for them:
+  - No deflate stream inflates to more than 1,032 times its size (`NMO_INFLATE_MAX_RATIO`,
+    `nmo_inflate_size_possible()` in `core/nmo_utils.h`), so a larger declared unpacked size is
+    refused.
+  - The chunk pool's size hint stops at the data section's dword count.
+  - An image that claims more than 16,384 pixels per byte of its data is refused.
+  - A data array without columns holds at most 1,048,576 rows.
+- A chunk that fails to inflate reports `NMO_ERR_DECOMPRESSION_FAILED`, and only that object
+  loses its chunk.
+
+### Added - Platform layer (November)
+- `src/platform/platform.h` is the lowest layer and the only code that names the operating
+  system. It covers aligned memory, a monotonic clock, the process id, system error messages,
+  UTF-8 file opening, 64-bit seek, read-only mapping, the file operations of an atomic
+  replacement, and shared libraries. For the tools it also covers directories, temporary
+  directories, terminals, the executable's path and the home directory. `platform_posix.c`
+  serves macOS, Linux and the BSDs, and `platform_windows.c` serves Windows. The layering audit
+  fails on operating system headers or platform branches anywhere else (`tools/` included), and
+  on opening, removing or renaming a file by path outside the layer.
+- Transactional saves have one implementation, `txn.c`. It writes a temporary file named
+  `.{base}.{pid}.{n}.tmp` next to the target or in the staging directory, and moves it over the
+  target on commit. On Windows the saved file is no longer marked temporary, and it keeps the
+  hidden, system and not-indexed attributes of the file it replaces.
+- On Windows every file the library opens, maps or saves takes a UTF-8 path, and yyjson and Lua
+  are given the open file or its bytes. `nmo.exe` carries a manifest for the UTF-8 code page
+  (Windows 10 1903 and later). `test_cli_utf8_paths` reads, copies and extracts a file under a
+  Chinese folder name.
+
+### Added - Ballance tools in `apps/` (October to November)
+- `apps/ballance` builds, checks and plays Ballance levels through the `nmo` CLI. It reads the
+  game's meshes and textures from a local installation. The work is in the `ballance` Python
+  package, whose layers are `core`, `game`, `kit`, `route`, `extract`, `autoplay`, `verify` and
+  `view`. The scripts in `apps/ballance/scripts` are thin wrappers: `ballance_build_level.py`,
+  `ballance_check_level.py`, `ballance_verify_level.py`, `ballance_map_view.py`,
+  `ballance_autoplay.py`, `ballance_play_level.py` and others.
+- Routes lay floors on the originals' 2.5 grid, with rails, railings, and the mechanisms cut
+  out of the original levels. The package also has:
+  - free-form rail and floor geometry, connectors, holed platforms and spatial reservations;
+  - a level check, and a verifier for floor faults, clearance, landings, mechanism motion and
+    played runs;
+  - an A* autopilot that writes steering points;
+  - a test base that plays a level from any sector without the game's `base.cmo`.
+- The data files are:
+  - `level_materials.json`: the originals' 48 shared materials, as manifest presets;
+  - the resource and motion catalogs, and the mechanism parameters;
+  - `base_ballance_bb_manifest.json` and `build-base-ballance-bb.ps1`, moved from
+    `tools/ballance/`.
+
+  Authored maps are kept out of version control.
+- `apps/ballance-editor` is a separate browser editor that uses the toolchain. Its development
+  is paused.
+- `docs/ballance-level-format.md`, `ballance-level-builder.md`, `ballance-freeform.md`,
+  `ballance-native-resources.md`, `ballance-spatial-constraints.md` and
+  `ballance-gameplay-scenarios.md` describe the tools. CTest runs the package's tests as
+  `test_ballance_tools`.
 
 ### Changed - CLI output comes from records (July to September)
 - Every command builds its output as a record (`tools/nmo_cli_record.h`) and renders it as text,
@@ -389,6 +804,91 @@ What breaks source compatibility, in short; the sections below give the details.
   when a spec no longer matches one; `test_lua_edit_bindings_generated` fails when the generated
   files are out of date. The Lua functions behave as before.
 
+### Changed - Parameter values are read as Virtools writes them (October to November)
+- `nmo_type_value_from_string()` reads the text Virtools writes for prototype defaults:
+  - angles as `TURNS:DEGREES`, added together as CK2 adds them, or with a degree sign;
+  - colors as bytes without parentheses (`R,G,B` is opaque), while the parenthesized form keeps
+    its 0 to 1 values;
+  - vectors without parentheses;
+  - flags separated by commas as well as by `|`, with names in any case;
+  - class names for a class id;
+  - the engine's names of enum values, kept as aliases that are read but never written
+    (`nmo_type_registry_add_enum_value_alias()`, `NMO_ENUM_VALUE_FLAG_ALIAS`).
+- Adding a block from its prototype accepts what CK2 accepts:
+  - an enum, flags or keyboard key default that names no value reads as zero;
+  - `NULL` names no object;
+  - a percentage default is in percent units;
+  - a quaternion default takes the constructor's values;
+  - Buffer and None parameters start empty;
+  - a structure default that the editor cannot write is left zeroed.
+- `nmo_behavior_keyboard_key_name()` and `nmo_behavior_keyboard_key_from_name()` map DirectInput
+  scan codes to key names and back.
+
+### Changed - Parameter types know the class their values refer to (October)
+- `nmo_type_descriptor_t.object_class_id` and `nmo_type_view_t.object_class_id` give the class
+  that a parameter type's values refer to (`CKParameterTypeDesc::Cid`). This is kept apart from
+  `class_id`, the class the type is the schema of. The Script type (`CKPGUID_SCRIPT`) refers to
+  behaviors, and plugin types are registered with the class they refer to. The Lua type view has
+  `object_class_id`.
+
+### Changed - Loads keep less memory and take less time (November)
+- Loading Menu.nmo (287 KB, about 16,000 objects) in a Release build used to keep 1.3 GB of heap
+  and take 92 ms. It now keeps about 15 MB (peak about 17 MB) and takes about 11 ms.
+- Per object:
+  - An arena takes its first block on the first allocation, where every object's arena used to
+    take 64 KB when created (1 GB for 16,000 objects, 98% unused).
+  - An object's storage arena is created when first asked for, and starts at 1 KB.
+  - `nmo_object_t` is 160 bytes instead of 168.
+  - A chunk is 208 bytes instead of 528: its arrays are `nmo_chunk_array_t`, and array
+    lifecycle hooks are kept out of line.
+  - `nmo_array_t` is 64 bytes instead of 104.
+- Per load:
+  - What only a load reads (Header1, the object tables, the data section entries and buffers)
+    is freed when the load ends. `nmo_data_section_parse_ex()` parses into a kept arena and a
+    scratch arena, so Level_12 holds 8.8 MB instead of 10.6 and peaks at 9.9 MB instead of 11.7.
+  - The reference resolver is released once a load is finalized, and only a strict load counts
+    references while it loads.
+  - The ID sanitizer, which nothing read, is gone.
+- Lookups:
+  - A free pooled chunk is found in constant time instead of by a scan, and the pool keeps
+    32-bit bookkeeping (24 bytes a chunk instead of 54).
+  - Hash table slots carry a fingerprint of their key's hash, and `nmo_hash_table_replace()`
+    inserts in one probe.
+  - The repository, its file id table and the ID index are reserved for the file's object
+    count (`nmo_object_repository_reserve()`, `nmo_indexed_map_reserve()`).
+  - File indices map to runtime ids through an array, and repeated file ids are found without
+    sorting.
+  - Class ids below 256 look up their type in an array.
+  - The fidelity digest mixes eight bytes a step, and chunk comparison walks the id ranges
+    instead of marking every dword.
+- Error paths:
+  - The last error is no longer formatted when a message has no arguments, and its chain is
+    built only on request.
+  - `nmo_hash_table_contains()` and `nmo_indexed_map_contains()` no longer record a miss as an
+    error.
+  - The null logger drops messages before formatting them.
+
+### Changed - Saves (November)
+- A save writes the plugin dependencies the file was loaded with, less the plugin of each known
+  building block the file no longer saves. It adds the plugins of new building blocks and of
+  managers that save data, as CK2 lists them.
+- Residue that holds sub-chunks or manager values is carried into an edited object's chunk like
+  any other residue. Its sub-chunks and manager values move with it, and the target's sub-chunks
+  are read again from its data. The save warns of carried residue that may refer to moved objects
+  only when an object's index actually moves.
+- `nmo_last_error_save()` and `nmo_last_error_restore()` keep the last error through cleanup.
+  A failed edit's rollback and the project executor's teardown no longer erase why the
+  operation failed.
+
+### Changed - CLI options (October)
+- Global options are accepted after the action. Command options are parsed before the file is
+  opened, so a wrong option fails at once. `--` ends the options, and a negative number is read
+  as a value, not an option.
+- An id selector that misses reports the requested id, or the class it did not match.
+  `object show` and `object export` print the elements of reference arrays as session ids.
+- `nmo convert version -o` writes the file as version 8. It upgrades files of versions 2 to 7
+  and refuses a newer file; `nmo convert copy` keeps a file's version.
+
 ### Removed - Unused APIs (July to September)
 - Headers: `session/nmo_builder.h` (the staged file builder), `session/nmo_runtime_result.h` (result
   objects of copy, destroy and destroy preview that only the Lua bindings used),
@@ -412,6 +912,15 @@ What breaks source compatibility, in short; the sections below give the details.
 - `nmo_beobject_clone_attributes` and `nmo_beobject_clone_legacy_attributes` are gone. They deep copied the modern
   and the legacy attribute arrays of a CKBeObject for the hand written copy hook; the state layout of the
   behavior object does that now, and nothing else called them.
+
+### Removed - The ID sanitizer and ignored CLI options (October to November)
+- The ID sanitizer: `nmo_id_sanitizer_t` and its functions, the session's sanitizer and its
+  getter, and the sanitizer parameter of the object system's creation functions (see "Upgrading
+  from 0.2.0").
+- The global CLI options `--no-pager`, `--locale`, `--encoding` and `-F`/`--filter`, which were
+  parsed and ignored. The `diff` commands lost their own `--format`, which was ignored; the
+  global `-f` still applies to them.
+- `src/io/txn_posix.c` and `src/io/txn_windows.c`; `txn.c` on the platform layer replaces them.
 
 ### Fixed - Malformed input fails cleanly (July to September)
 - Reading and writing the state of a built-in class is atomic: a state is replaced only when its
@@ -706,6 +1215,46 @@ the tests build each layout dword by dword.
   (save, convert, load and inspect a file, and the registration examples). The sanitizer job of CI
   builds and runs them.
 
+### Fixed - Malformed and older input (October)
+- A SpriteText reads its font fields in the engine's order and is saved through its 2D entity
+  base. Legacy BodyPart joint flags are read as integers and decoded as the engine decodes them.
+  An empty Morph controller is written with its whole header.
+- Chunks:
+  - Write and clone state is reset completely.
+  - Legacy chunks keep their 16-bit data and chunk version fields.
+  - Only a sub-chunk file flag of 1 means the parent's file; other values are written back as 0.
+  - `nmo_chunk_read_string_checked()` accepts a string that ends before its declared payload, as
+    `CKStateChunk` reads it.
+- Files:
+  - A data section whose packed size equals its unpacked size is still unpacked when the write
+    mode says it is compressed, and falls back to the raw bytes as CKFile does.
+  - Legacy object entries honor their decompression capacity, and malformed ones are refused.
+  - Header1 fields and section sizes are checked as signed values.
+  - The extents of sections and included files are checked before anything is allocated for
+    them, and a save refuses included payloads and section sizes the format cannot encode.
+  - The deserializer no longer reads its IO after closing it.
+- Schemas:
+  - Animation controller records and legacy morph vertex arrays are validated.
+  - Partial legacy key arrays and material colors are completed with constructor defaults.
+  - Legacy material colors are quantized by truncation, as `RCKMaterial::Save` does.
+  - A light's ambient alpha defaults to 1.
+  - Mesh face mask prefixes are kept, and mesh normals stay finite at any geometry scale.
+  - Bitmap records and channels are bounded by their sections, and a texture with invalid
+    reader dimensions is refused on save.
+  - Layer cells are fitted to the grid's dimensions on load, save and copy.
+  - `CKBeObject` reads only the first dword of an older initial value's data section, as
+    `CKBeObject::Load` does.
+- Runtime:
+  - An object's hierarchy links are removed before the object is destroyed.
+  - Animation edits are published only after their payloads are ready, and their record arrays
+    are bounded.
+  - Save statistics count every committed byte.
+  - An object added with its own id moves the repository's next runtime id past it.
+- Saves:
+  - An object that repeats an earlier object's file id is loaded without it, with a warning, and
+    gets a new id on save; before, the save failed with "Out of memory".
+  - An object with no data and no schema is saved with an empty chunk instead of failing.
+
 ### Tests
 - Six corpus tests (`test_corpus_semantics_{geometry,media,scene,behavior}` and the earlier
   `test_corpus_invariants`) check about 300 relationships the engine guarantees between decoded
@@ -753,6 +1302,26 @@ the tests build each layout dword by dword.
   `NMO_TEST_DATA_FILE()` and `TEST_REQUIRE_FIXTURE()`, a sample that does not load fails the case, and
   the two integration tests load samples that exist (the Nop files, and the two uncompressed samples for
   the mmap path). Running them found the name index bug above.
+- 75 engine test programs (`test_engine_*`) build graphs through script edits, check blocks
+  against their DLLs, and in many cases also check loaded and copied graphs.
+  `test_engine_replay` checks that replays are deterministic. `test_engine_operation_functions`
+  asks the engine for each of the 428 operation functions.
+- `test_render_soft` drives the software backend. It is built a second time as
+  `test_render_gpu`, which skips when there is no GPU device.
+- New tests: `test_script_model`, `test_export_gltf`, `test_document_objects`,
+  `test_physics_ivp` (with libivp), `test_cli_behavior_run`, `test_cli_utf8_paths`,
+  `test_behavior_delete` (link endpoints when graphs, IOs or links are deleted),
+  `test_ballance_tools` and `test_python_binding`.
+- `tests/fuzz` holds libFuzzer harnesses: `fuzz_load`, `fuzz_roundtrip`, `fuzz_chunk` and
+  `fuzz_obj`. Every build links them with a replay main, and CTest runs them over the seeds that
+  `fuzz_seeds` generates and the inputs under `tests/fuzz/regressions/`.
+  `-DNMO_BUILD_FUZZERS=ON` links them with libFuzzer, under ASan and UBSan.
+- Each test binary changes to its CTest working directory first (CMake 3.28 or later), so a test
+  run by hand no longer writes into the directory it was started from.
+- The tree builds clean under GCC `-Wpedantic` (no compound literals in static tables, no
+  `strdup` or `strnlen` under `-std=c17`) and under MSVC `/W4 /WX` and MinGW (explicit narrowing,
+  initialized locals, no names that `windows.h` or Winsock define). The release package's
+  consumer build no longer receives libnmo's `-DNMO_*` options.
 
 ## [0.2.0] - 2026-07-14
 

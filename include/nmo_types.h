@@ -23,7 +23,7 @@ extern "C" {
 
 // Version information
 #define NMO_VERSION_MAJOR 0
-#define NMO_VERSION_MINOR 2
+#define NMO_VERSION_MINOR 3
 #define NMO_VERSION_PATCH 0
 
 // Common types

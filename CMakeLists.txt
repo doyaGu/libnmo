@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.15)
 
 project(libnmo
-    VERSION 0.2.0
+    VERSION 0.3.0
     DESCRIPTION "C library for reading and writing Virtools file formats (.nmo/.cmo/.vmo)"
     LANGUAGES C
 )
@@ -441,7 +441,7 @@ endif()
 # Set library properties
 set_target_properties(nmo PROPERTIES
     VERSION ${PROJECT_VERSION}
-    SOVERSION 2
+    SOVERSION 3
     PUBLIC_HEADER "include/nmo.h"
 )
 
