@@ -205,13 +205,13 @@ jobs:
         run: ctest --test-dir build --output-on-failure -R "render|view|cli_behavior_run|layering"
 
   # The web player (apps/web): libnmo compiled to WebAssembly (Emscripten),
-  # with the engine, the software renderer and the GL3 backend's WebGL 2
-  # dialect. Its unit test (test_render_gl3) needs a browser's canvas, which
-  # Node.js (ctest's emulator here) has none of, so it is left to a real
-  # browser and excluded from this job's filter; everything else the web
-  # build has in common with a native one (the core, the engine, layering)
-  # still runs under Node. No libivp here, so the player's physics are a
-  # stub: the artifact plays the menus, not a rolling ball.
+  # with the engine, the software renderer, the GL3 backend's WebGL 2 dialect,
+  # and libivp (doyaGu/libivp, a public sibling project) for a rolling ball
+  # rather than a menus-only stub. Its unit test (test_render_gl3) needs a
+  # browser's canvas, which Node.js (ctest's emulator here) has none of, so
+  # it is left to a real browser and excluded from this job's filter;
+  # everything else the web build has in common with a native one (the core,
+  # the engine, layering) still runs under Node.
   web:
     name: web
     runs-on: ubuntu-latest
@@ -223,13 +223,20 @@ jobs:
       - name: Get the Lua sources
         uses: ./.github/actions/lua-source
 
+      - uses: actions/checkout@v7
+        with:
+          repository: doyaGu/libivp
+          path: libivp
+
       - name: Set up Emscripten
         uses: mymindstorm/setup-emsdk@v14
         with:
           version: 7.0.0
 
       - name: Configure
-        run: emcmake cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DNMO_BUILD_TOOLS=OFF
+        run: |
+          emcmake cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DNMO_BUILD_TOOLS=OFF \
+            -DNMO_IVP_SOURCE_DIR="$PWD/libivp"
 
       - name: Build
         run: cmake --build build --parallel -- -k 0
@@ -249,6 +256,28 @@ jobs:
             build/apps/web/nmo-player.mjs
             build/apps/web/nmo-player.wasm
             build/apps/web/nmo-player.data
+
+      # Published by the deploy-pages job below, main only.
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/apps/web
+
+  # The web job's artifact, to GitHub Pages: every push to main republishes
+  # the page at its own URL, so no asset path or version needs to be named.
+  deploy-pages:
+    name: deploy-pages
+    needs: [web]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
 
   # The Python binding (bindings/python) loads libnmo as a shared library,
   # which the release packages, static only, do not hold. Each system builds
