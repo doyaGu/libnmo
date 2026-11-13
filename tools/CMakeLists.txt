@@ -18,6 +18,9 @@ add_executable(nmo_cli
     nmo_cli_sort.c
     nmo_cli_write.c
 
+    # What a run's host gives the engine (shared with the web player)
+    nmo_run_host.c
+
     # Session management
     nmo_tool_owner.c
     nmo_tool_session.c

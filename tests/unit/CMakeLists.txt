@@ -198,6 +198,15 @@ target_link_libraries(test_cli_record PRIVATE nmo test_framework yyjson)
 target_include_directories(test_cli_record PRIVATE ../../tools)
 add_test(NAME test_cli_record COMMAND test_cli_record)
 
+# What a run's host gives the engine (shared by the CLI and the web player)
+add_executable(test_run_host test_run_host.c ../../tools/nmo_run_host.c)
+target_link_libraries(test_run_host PRIVATE nmo_engine nmo test_framework)
+target_include_directories(test_run_host PRIVATE ../../tools)
+if(NMO_BUILD_SHARED)
+    target_sources(test_run_host PRIVATE "${PROJECT_SOURCE_DIR}/${NMO_PLATFORM_SOURCES}")
+endif()
+add_test(NAME test_run_host COMMAND test_run_host)
+
 # Parameter value decoding
 add_unit_test(test_param_value)
 

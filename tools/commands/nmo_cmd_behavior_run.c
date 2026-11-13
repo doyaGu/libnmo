@@ -9,6 +9,7 @@
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cli_record.h"
 #include "../nmo_opt.h"
+#include "../nmo_run_host.h"
 
 #include "nmo_engine.h"
 #include "bb/nmo_bb_physics.h"
@@ -38,6 +39,15 @@
 #include "render/nmo_render_gpu.h"
 #endif
 
+/* What draws a run's frames (--renderer) */
+typedef enum run_renderer {
+    RUN_RENDERER_DEFAULT, /* gl3, then gl, then soft (whichever the build has), soft headless */
+    RUN_RENDERER_GL,
+    RUN_RENDERER_GL3,
+    RUN_RENDERER_GPU,
+    RUN_RENDERER_SOFT,
+} run_renderer_t;
+
 typedef struct run_args {
     uint32_t frames;
     float delta_ms;
@@ -65,89 +75,11 @@ typedef struct run_args {
     bool mute;            /* --mute: the window plays no sound */
     bool mipmaps;         /* --mipmaps: the window mipmaps every texture */
     bool headless;        /* --headless: the --shot frames drawn in memory, without a window */
-    bool gpu;             /* --renderer gpu: drawn with an SDL GPU device */
+    run_renderer_t renderer; /* --renderer */
     bool quiet;           /* --quiet, or a window played until it closes: no events listed */
     bool control;         /* stdin step commands; the engine waits between commands */
     bool real_time;       /* a window with no --delta or --shot: frames take the time that passed */
 } run_args_t;
-
-/* A key held down from frame `first` to frame `last`. */
-typedef struct run_key {
-    uint32_t key;
-    uint32_t first;
-    uint32_t last;
-} run_key_t;
-
-/* A key: a name nmo_behavior_keyboard_key_name() spells, or a scan code. */
-static uint32_t run_key_code(const char *name, size_t length)
-{
-    char *copy = (char *)malloc(length + 1u);
-    if (copy == NULL) {
-        return 0;
-    }
-    memcpy(copy, name, length);
-    copy[length] = '\0';
-    uint32_t key = nmo_behavior_keyboard_key_from_name(copy);
-    if (key == 0 && length > 0) {
-        char *end = NULL;
-        unsigned long code = strtoul(copy, &end, 0);
-        key = (end != NULL && *end == '\0' && code > 0 && code < 256) ? (uint32_t)code : 0u;
-    }
-    free(copy);
-    return key;
-}
-
-static bool run_frame_number(const char **text, uint32_t *out)
-{
-    const char *start = *text;
-    char *end = NULL;
-    unsigned long value = strtoul(start, &end, 10);
-    if (end == start || value > UINT32_MAX) {
-        return false;
-    }
-    *out = (uint32_t)value;
-    *text = end;
-    return true;
-}
-
-/*
- * Parse "KEY@FRAME[-FRAME],..." into `out` (when not NULL); the count, or -1
- * when the text is malformed. A key name ends at its '@', so names with
- * commas or spaces ("Right Shift") need no quoting inside the list.
- */
-static long run_parse_keys(const char *spec, run_key_t *out)
-{
-    long count = 0;
-    const char *p = spec;
-    while (p != NULL && *p != '\0') {
-        const char *at = strchr(p, '@');
-        if (at == NULL || at == p) {
-            return -1;
-        }
-        run_key_t entry = {.key = run_key_code(p, (size_t)(at - p))};
-        p = at + 1;
-        if (entry.key == 0 || !run_frame_number(&p, &entry.first)) {
-            return -1;
-        }
-        entry.last = entry.first;
-        if (*p == '-') {
-            p++;
-            if (!run_frame_number(&p, &entry.last) || entry.last < entry.first) {
-                return -1;
-            }
-        }
-        if (*p == ',') {
-            p++;
-        } else if (*p != '\0') {
-            return -1;
-        }
-        if (out != NULL) {
-            out[count] = entry;
-        }
-        count++;
-    }
-    return count;
-}
 
 /*
  * --steer: from frame `first` (to `last`), the arrow keys roll an object through the
@@ -365,10 +297,10 @@ static bool run_parse_steer(const char *spec, run_steer_t *out)
     }
     const char *p = at + 1;
     uint32_t first = 0, last = UINT32_MAX;
-    if (!run_frame_number(&p, &first)) {
+    if (!nmo_run_frame_number(&p, &first)) {
         return false;
     }
-    if (*p == '-' && (++p, !run_frame_number(&p, &last) || last < first)) {
+    if (*p == '-' && (++p, !nmo_run_frame_number(&p, &last) || last < first)) {
         return false;
     }
     if (*p != '\0') {
@@ -601,7 +533,7 @@ static void run_steer_frame(nmo_engine_t *engine, run_steer_t *steer, uint32_t f
     }
     if (frame >= steer->first) {
         for (int k = 0; k < 4; k++) {
-            nmo_engine_set_key(engine, run_key_code(arrows[k], strlen(arrows[k])), down[k]);
+            nmo_engine_set_key(engine, nmo_run_key_code(arrows[k], strlen(arrows[k])), down[k]);
         }
         if (steer->log != NULL && steered != 0 && steer->placed) {
             fprintf(steer->log, "%u,%.3f,%.3f,%.3f,%.4f,%ld,%d,%d,%d,%d,%u,\"", frame, m[12], m[13],
@@ -655,7 +587,7 @@ static long run_parse_messages(const char *spec, run_message_t *out)
         size_t name_length = (size_t)(at - p);
         p = at + 1;
         uint32_t frame = 0;
-        if (!run_frame_number(&p, &frame) || *p != ':') {
+        if (!nmo_run_frame_number(&p, &frame) || *p != ':') {
             return -1;
         }
         const char *recipient = ++p;
@@ -1146,7 +1078,7 @@ static int run_control_request(nmo_engine_t *engine, const run_args_t *args, con
         }
         const char *arrows[] = {"Up", "Down", "Left", "Right"};
         for (int k = 0; k < 4; k++) {
-            uint32_t key = run_key_code(arrows[k], strlen(arrows[k]));
+            uint32_t key = nmo_run_key_code(arrows[k], strlen(arrows[k]));
             nmo_engine_set_key(engine, key, (mask & (1u << k)) != 0);
         }
         if (count != 0) {
@@ -1285,507 +1217,6 @@ static bool run_add_active_scripts(nmo_cli_record_t *rec, const nmo_engine_t *en
     return true;
 }
 
-/*
- * Where the files a document loads are found: --write, --path, then the run
- * file's folder; and where the files it saves go: --write, or nowhere.
- */
-typedef struct run_files {
-    const char *write;
-    const char *path;
-    char *folder;
-    char *found; /* the path last given to the engine */
-    /* A window run without --write saves into a folder of its own, removed at the end */
-    char *temporary;
-    char **written; /* the files saved there */
-    size_t written_count;
-    char **directories; /* the folders the file blocks made there */
-    size_t directory_count;
-    nmo_engine_t *engine;
-} run_files_t;
-
-static char *run_join(const char *folder, const char *name, size_t name_length)
-{
-    size_t folder_length = folder != NULL ? strlen(folder) : 0u;
-    char *joined = (char *)malloc(folder_length + name_length + 2u);
-    if (joined == NULL) {
-        return NULL;
-    }
-    size_t n = 0;
-    if (folder_length > 0) {
-        memcpy(joined, folder, folder_length);
-        n = folder_length;
-        if (joined[n - 1] != '/') {
-            joined[n++] = '/';
-        }
-    }
-    for (size_t i = 0; i < name_length; i++) {
-        joined[n++] = name[i] == '\\' ? '/' : name[i];
-    }
-    joined[n] = '\0';
-    return joined;
-}
-
-static bool run_file_exists(const char *path)
-{
-    FILE *file = fopen(path, "rb");
-    if (file == NULL) {
-        return false;
-    }
-    fclose(file);
-    return true;
-}
-
-/*
- * The engine's file resolver: a name relative to the run file's folder (or
- * --path), with Windows separators; its last part alone as well, for files
- * copied into one folder. An absolute name (the machine the file was made
- * on: "E:\\Game\\Database.tdb") or one leaving the folder is found by its
- * last part only, so nothing outside the folders is read; one that leaves it
- * only by leading ".." parts (Ballance's "..\\Sounds\\", from its Bin folder)
- * is also found by the rest of it inside the folders.
- */
-static const char *run_resolve_file(void *user_data, const char *name)
-{
-    run_files_t *files = (run_files_t *)user_data;
-    free(files->found);
-    files->found = NULL;
-    size_t length = strlen(name);
-    if (length == 0) {
-        return NULL;
-    }
-    bool outside = name[0] == '/' || name[0] == '\\' || (length > 1 && name[1] == ':');
-    for (size_t i = 0; i + 1 < length && !outside; i++) {
-        bool starts = i == 0 || name[i - 1] == '/' || name[i - 1] == '\\';
-        outside = starts && name[i] == '.' && name[i + 1] == '.';
-    }
-    const char *base = name;
-    for (const char *p = name; *p != '\0'; p++) {
-        if (*p == '/' || *p == '\\') {
-            base = p + 1;
-        }
-    }
-    if (base[0] == '\0' || strcmp(base, ".") == 0 || strcmp(base, "..") == 0) {
-        return NULL;
-    }
-    /* The name past its leading ".." parts, when no other part leaves the folder */
-    const char *inner = name;
-    while (inner[0] == '.' && inner[1] == '.' && (inner[2] == '\\' || inner[2] == '/')) {
-        inner += 3;
-    }
-    bool inner_inside = inner != name && inner[0] != '/' && inner[0] != '\\' &&
-                        (inner[0] == '\0' || inner[1] != ':');
-    for (size_t i = 0; inner_inside && inner[i] != '\0' && inner[i + 1] != '\0'; i++) {
-        bool starts = i == 0 || inner[i - 1] == '/' || inner[i - 1] == '\\';
-        inner_inside = !(starts && inner[i] == '.' && inner[i + 1] == '.');
-    }
-    const char *folders[3] = {files->write, files->path, files->folder};
-    for (int f = 0; f < 3; f++) {
-        if (f < 2 && folders[f] == NULL) {
-            continue;
-        }
-        for (int whole = outside ? (inner_inside ? 2 : 0) : 1; whole >= 0; whole--) {
-            const char *part = whole == 2 ? inner : whole ? name : base;
-            if (whole == 1 && outside) {
-                continue;
-            }
-            char *candidate = run_join(folders[f], part, strlen(part));
-            if (candidate != NULL && run_file_exists(candidate)) {
-                files->found = candidate;
-                return candidate;
-            }
-            free(candidate);
-        }
-    }
-    return NULL;
-}
-
-/*
- * The engine's file writer: a saved file goes into the --write folder under
- * its name's last part (where the resolver finds it first), never next to the
- * run file; without --write nothing is written (a window run has a temporary
- * folder instead, whose files it remembers to remove).
- */
-static nmo_status_t run_write_file(void *user_data, const char *name, const void *data,
-                                   size_t size)
-{
-    run_files_t *files = (run_files_t *)user_data;
-    if (files->write == NULL) {
-        return NMO_ERR_NOT_SUPPORTED;
-    }
-    const char *base = name;
-    for (const char *p = name; *p != '\0'; p++) {
-        if (*p == '/' || *p == '\\') {
-            base = p + 1;
-        }
-    }
-    if (base[0] == '\0' || strcmp(base, ".") == 0 || strcmp(base, "..") == 0) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    char *path = run_join(files->write, base, strlen(base));
-    FILE *file = path != NULL ? fopen(path, "wb") : NULL;
-    if (file == NULL) {
-        free(path);
-        return NMO_ERR_CANT_OPEN_FILE;
-    }
-    bool written = size == 0 || fwrite(data, 1, size, file) == size;
-    bool closed = fclose(file) == 0;
-    bool listed = false;
-    for (size_t i = 0; files->temporary != NULL && i < files->written_count && !listed; i++) {
-        listed = strcmp(files->written[i], path) == 0;
-    }
-    char **grown = files->temporary != NULL && !listed
-                       ? (char **)realloc(files->written,
-                                          (files->written_count + 1u) * sizeof(*grown))
-                       : NULL;
-    if (grown != NULL) {
-        files->written = grown;
-        files->written[files->written_count++] = path;
-        path = NULL;
-    }
-    free(path);
-    return written && closed ? NMO_OK : NMO_ERR_CANT_WRITE_FILE;
-}
-
-/* ---- The file blocks' file system (TT_CopyFile, TT_ListDir, ...) ----
- *
- * The blocks read where the resolver reads (--write, --path, the run file's
- * folder) and change files only inside --write: a name that stays inside it
- * keeps its path there, any other goes there by its last part, as the writer
- * puts saved files. Without --write they change nothing. A window run's
- * temporary folder loses what they made there at the end.
- */
-
-/* An absolute name, or one with a ".." part */
-static bool run_name_leaves(const char *name)
-{
-    size_t length = strlen(name);
-    if (length > 0 && (name[0] == '/' || name[0] == '\\' || (length > 1 && name[1] == ':'))) {
-        return true;
-    }
-    for (size_t i = 0; i + 1 < length; i++) {
-        bool starts = i == 0 || name[i - 1] == '/' || name[i - 1] == '\\';
-        if (starts && name[i] == '.' && name[i + 1] == '.' &&
-            (name[i + 2] == '\0' || name[i + 2] == '/' || name[i + 2] == '\\')) {
-            return true;
-        }
-    }
-    return false;
-}
-
-static const char *run_last_part(const char *name)
-{
-    const char *base = name;
-    for (const char *p = name; *p != '\0'; p++) {
-        if (*p == '/' || *p == '\\') {
-            base = p + 1;
-        }
-    }
-    return base;
-}
-
-/* `name` in `folder`: at its path when it stays inside, else by its last part; NULL for none */
-static char *run_place(const char *folder, const char *name)
-{
-    const char *part = run_name_leaves(name) ? run_last_part(name) : name;
-    if (part[0] == '\0' || strcmp(part, ".") == 0 || strcmp(part, "..") == 0) {
-        return NULL;
-    }
-    size_t length = strlen(part);
-    while (length > 0 && (part[length - 1] == '/' || part[length - 1] == '\\')) {
-        length--; /* "Save\\" names the folder Save */
-    }
-    return length > 0 ? run_join(folder, part, length) : NULL;
-}
-
-static bool run_is_directory(const char *path)
-{
-    return path != NULL && nmo_platform_is_directory(path);
-}
-
-/* The folder a name means, in the first of the folders the resolver reads that has it */
-static char *run_find_directory(const run_files_t *files, const char *name)
-{
-    const char *folders[3] = {files->write, files->path, files->folder};
-    for (int f = 0; f < 3; f++) {
-        if (folders[f] == NULL) {
-            continue;
-        }
-        char *path = name[0] != '\0' ? run_place(folders[f], name) : run_join(folders[f], "", 0);
-        if (run_is_directory(path)) {
-            return path;
-        }
-        free(path);
-    }
-    return NULL;
-}
-
-/* A path inside --write to remember: a window run's temporary folder removes it at the end */
-static void run_remember(char ***list, size_t *count, const run_files_t *files, const char *path)
-{
-    if (files->temporary == NULL) {
-        return;
-    }
-    for (size_t i = 0; i < *count; i++) {
-        if (strcmp((*list)[i], path) == 0) {
-            return;
-        }
-    }
-    size_t length = strlen(path);
-    char *copy = (char *)malloc(length + 1u);
-    char **grown = copy != NULL ? (char **)realloc(*list, (*count + 1u) * sizeof(*grown)) : NULL;
-    if (grown == NULL) {
-        free(copy);
-        return;
-    }
-    memcpy(copy, path, length + 1u);
-    *list = grown;
-    (*list)[(*count)++] = copy;
-}
-
-static bool run_fs_exists(void *user_data, const char *name)
-{
-    run_files_t *files = (run_files_t *)user_data;
-    if (run_resolve_file(files, name) != NULL) {
-        return true;
-    }
-    char *directory = run_find_directory(files, name);
-    free(directory);
-    return directory != NULL;
-}
-
-static bool run_fs_copy(void *user_data, const char *source, const char *destination, bool overwrite)
-{
-    run_files_t *files = (run_files_t *)user_data;
-    const char *found = run_resolve_file(files, source);
-    char *from_path = found != NULL ? run_join(NULL, found, strlen(found)) : NULL;
-    char *to_path = files->write != NULL ? run_place(files->write, destination) : NULL;
-    bool done = false;
-    if (from_path != NULL && to_path != NULL && strcmp(from_path, to_path) != 0 &&
-        (overwrite || !run_file_exists(to_path)) && !run_is_directory(to_path)) {
-        FILE *in = fopen(from_path, "rb");
-        FILE *out = in != NULL ? fopen(to_path, "wb") : NULL;
-        done = out != NULL;
-        char buffer[4096];
-        size_t n;
-        while (done && in != NULL && (n = fread(buffer, 1, sizeof(buffer), in)) > 0) {
-            done = fwrite(buffer, 1, n, out) == n;
-        }
-        done = done && !ferror(in);
-        if (out != NULL) {
-            done = fclose(out) == 0 && done;
-            run_remember(&files->written, &files->written_count, files, to_path);
-        }
-        if (in != NULL) {
-            fclose(in);
-        }
-    }
-    free(from_path);
-    free(to_path);
-    return done;
-}
-
-static bool run_fs_remove_file(void *user_data, const char *name)
-{
-    run_files_t *files = (run_files_t *)user_data;
-    char *path = files->write != NULL ? run_place(files->write, name) : NULL;
-    bool done = path != NULL && nmo_platform_remove(path) == 0;
-    free(path);
-    return done;
-}
-
-static bool run_fs_create_directory(void *user_data, const char *name)
-{
-    run_files_t *files = (run_files_t *)user_data;
-    char *path = files->write != NULL ? run_place(files->write, name) : NULL;
-    bool done = path != NULL && nmo_platform_make_directory(path) == 0;
-    if (done) {
-        run_remember(&files->directories, &files->directory_count, files, path);
-    }
-    free(path);
-    return done;
-}
-
-static bool run_fs_remove_directory(void *user_data, const char *name)
-{
-    run_files_t *files = (run_files_t *)user_data;
-    char *path = files->write != NULL ? run_place(files->write, name) : NULL;
-    bool done = path != NULL && nmo_platform_remove_directory(path) == 0;
-    free(path);
-    return done;
-}
-
-/* A folder the resolver can read becomes the current directory, reported by the name given */
-static bool run_fs_set_current_directory(void *user_data, const char *name)
-{
-    run_files_t *files = (run_files_t *)user_data;
-    char *directory = run_find_directory(files, name);
-    free(directory);
-    return directory != NULL && nmo_engine_set_current_directory(files->engine, name) == NMO_OK;
-}
-
-static int run_lower(int c)
-{
-    return c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c;
-}
-
-/* A Windows file mask: * and ?, without case; "*.*" is everything */
-static bool run_mask_matches(const char *mask, const char *name)
-{
-    if (strcmp(mask, "*.*") == 0) {
-        return true;
-    }
-    if (*mask == '\0') {
-        return *name == '\0';
-    }
-    if (*mask == '*') {
-        for (const char *rest = name;; rest++) {
-            if (run_mask_matches(mask + 1, rest)) {
-                return true;
-            }
-            if (*rest == '\0') {
-                return false;
-            }
-        }
-    }
-    if (*name == '\0') {
-        return false;
-    }
-    if (*mask == '?' || run_lower((unsigned char)*mask) == run_lower((unsigned char)*name)) {
-        return run_mask_matches(mask + 1, name + 1);
-    }
-    return false;
-}
-
-static int run_compare_names(const void *a, const void *b)
-{
-    const char *x = *(const char *const *)a, *y = *(const char *const *)b;
-    for (; *x != '\0' && run_lower((unsigned char)*x) == run_lower((unsigned char)*y); x++, y++) {
-    }
-    return run_lower((unsigned char)*x) - run_lower((unsigned char)*y);
-}
-
-typedef struct run_listing {
-    const char *mask;
-    char **names;
-    size_t count;
-    bool ok;
-} run_listing_t;
-
-/* Keeps a copy of each name the mask matches */
-static bool run_list_visit(void *context, const char *name)
-{
-    run_listing_t *listing = (run_listing_t *)context;
-    if (!run_mask_matches(listing->mask, name)) {
-        return true;
-    }
-    size_t length = strlen(name);
-    char *copy = (char *)malloc(length + 1u);
-    char **grown = copy != NULL ? (char **)realloc(listing->names, (listing->count + 1u) * sizeof(*grown)) : NULL;
-    if (grown == NULL) {
-        free(copy);
-        listing->ok = false;
-        return false;
-    }
-    memcpy(copy, name, length + 1u);
-    listing->names = grown;
-    listing->names[listing->count++] = copy;
-    return true;
-}
-
-/* FindFirstFile/FindNextFile over the folder of the pattern, in name order as NTFS gives them */
-static bool run_fs_list(void *user_data, const char *pattern, void (*found)(void *, const char *),
-                        void *context)
-{
-    run_files_t *files = (run_files_t *)user_data;
-    const char *mask = run_last_part(pattern);
-    size_t folder_length = (size_t)(mask - pattern);
-    char *folder_name = (char *)malloc(folder_length + 1u);
-    if (folder_name == NULL) {
-        return false;
-    }
-    memcpy(folder_name, pattern, folder_length);
-    folder_name[folder_length] = '\0';
-    char *folder = run_find_directory(files, folder_name);
-    free(folder_name);
-    if (folder == NULL || mask[0] == '\0') {
-        free(folder);
-        return false;
-    }
-    run_listing_t listing = {mask, NULL, 0, true};
-    (void)nmo_platform_list_directory(folder, run_list_visit, &listing); /* a folder it cannot read lists nothing */
-    free(folder);
-    if (listing.count > 1) {
-        qsort(listing.names, listing.count, sizeof(*listing.names), run_compare_names);
-    }
-    for (size_t i = 0; i < listing.count; i++) {
-        if (listing.ok) {
-            found(context, listing.names[i]);
-        }
-        free(listing.names[i]);
-    }
-    free(listing.names);
-    return listing.ok;
-}
-
-/* A new empty folder for a window run's saves; NULL when none could be made */
-static char *run_make_temporary_folder(void)
-{
-    return nmo_platform_make_temporary_directory("nmo-run-");
-}
-
-/* What run_files_t holds, with the temporary folder and the files saved in it removed */
-static void run_files_release(run_files_t *files)
-{
-    for (size_t i = 0; i < files->written_count; i++) {
-        (void)nmo_platform_remove(files->written[i]);
-        free(files->written[i]);
-    }
-    free(files->written);
-    for (size_t i = files->directory_count; i > 0; i--) {
-        (void)nmo_platform_remove_directory(files->directories[i - 1]);
-        free(files->directories[i - 1]);
-    }
-    free(files->directories);
-    if (files->temporary != NULL) {
-        (void)nmo_platform_remove_directory(files->temporary);
-        free(files->temporary);
-    }
-    free(files->folder);
-    free(files->found);
-}
-
-/* The folder of `file`, "" for the current one. */
-static char *run_folder_of(const char *file)
-{
-    const char *slash = file != NULL ? strrchr(file, '/') : NULL;
-    size_t length = slash != NULL ? (size_t)(slash - file) : 0u;
-    char *folder = (char *)malloc(length + 1u);
-    if (folder != NULL) {
-        memcpy(folder, file, length);
-        folder[length] = '\0';
-    }
-    return folder;
-}
-
-/*
- * The path manager's paths a game player adds (GamePlayer.cpp): the
- * document's folder for data, sounds and bitmaps, and its Sounds and
- * Textures folders.
- */
-static bool run_add_paths(nmo_engine_t *engine)
-{
-    static const struct {
-        int32_t category; /* 0 bitmaps, 1 data, 2 sounds */
-        const char *path;
-    } paths[] = {{1, "."}, {2, "."}, {2, "Sounds"}, {0, "."}, {0, "Textures"}};
-    for (size_t i = 0; i < sizeof(paths) / sizeof(paths[0]); i++) {
-        if (nmo_engine_add_path(engine, paths[i].category, paths[i].path) != NMO_OK) {
-            return false;
-        }
-    }
-    return true;
-}
-
 static const char *run_start_name(nmo_engine_start_mode_t mode)
 {
     switch (mode) {
@@ -1793,46 +1224,6 @@ static const char *run_start_name(nmo_engine_start_mode_t mode)
     case NMO_ENGINE_START_NONE: return "none";
     default: return "scene";
     }
-}
-
-/*
- * The registry values of --registry: KEY\NAME=VALUE entries separated by
- * ';', set in `engine` when given. False when an entry is not one.
- */
-static bool run_set_registry(nmo_engine_t *engine, const char *text)
-{
-    while (text != NULL && *text != '\0') {
-        const char *end = strchr(text, ';');
-        size_t length = end != NULL ? (size_t)(end - text) : strlen(text);
-        const char *equals = memchr(text, '=', length);
-        const char *slash = NULL;
-        for (const char *p = text; equals != NULL && p < equals; p++) {
-            if (*p == '\\') {
-                slash = p;
-            }
-        }
-        if (slash == NULL || slash == text || slash + 1 == equals) {
-            return false;
-        }
-        if (engine != NULL) {
-            char *entry = (char *)malloc(length + 1u);
-            if (entry == NULL) {
-                return false;
-            }
-            memcpy(entry, text, length);
-            entry[length] = '\0';
-            entry[slash - text] = '\0';
-            entry[equals - text] = '\0';
-            nmo_status_t status = nmo_engine_set_registry_value(
-                engine, entry, entry + (slash - text) + 1, entry + (equals - text) + 1);
-            free(entry);
-            if (status != NMO_OK) {
-                return false;
-            }
-        }
-        text = end != NULL ? end + 1 : NULL;
-    }
-    return true;
 }
 
 /*
@@ -1944,8 +1335,9 @@ static nmo_status_t run_window_open(nmo_engine_t *engine, const char *title, con
 #ifdef NMO_HAS_RENDER_SOFT
     if (args->headless) {
 #ifdef NMO_HAS_RENDER_GPU
-        status = args->gpu ? nmo_render_create_gpu_offscreen(engine, &window->render)
-                           : nmo_render_create_soft(engine, &window->render);
+        status = args->renderer == RUN_RENDERER_GPU
+                     ? nmo_render_create_gpu_offscreen(engine, &window->render)
+                     : nmo_render_create_soft(engine, &window->render);
 #else
         status = nmo_render_create_soft(engine, &window->render);
 #endif
@@ -1954,9 +1346,19 @@ static nmo_status_t run_window_open(nmo_engine_t *engine, const char *title, con
 #endif
 #ifdef NMO_HAS_VIEW
     if (!args->headless) {
-        status = nmo_view_open_with(engine, title, 2,
-                                    args->gpu ? NMO_VIEW_RENDERER_GPU : NMO_VIEW_RENDERER_GL,
-                                    &window->view);
+        nmo_view_renderer_t renderer =
+            args->renderer == RUN_RENDERER_GPU  ? NMO_VIEW_RENDERER_GPU
+            : args->renderer == RUN_RENDERER_GL ? NMO_VIEW_RENDERER_GL
+            : args->renderer == RUN_RENDERER_GL3  ? NMO_VIEW_RENDERER_GL3
+            : args->renderer == RUN_RENDERER_SOFT ? NMO_VIEW_RENDERER_SOFT
+            /* the default: the richest the build has */
+            : nmo_view_has_renderer(NMO_VIEW_RENDERER_GL3)  ? NMO_VIEW_RENDERER_GL3
+            : nmo_view_has_renderer(NMO_VIEW_RENDERER_GL)   ? NMO_VIEW_RENDERER_GL
+                                                             : NMO_VIEW_RENDERER_SOFT;
+        status = nmo_view_open_with(engine, title, 2, renderer, &window->view);
+        if (status == NMO_ERR_NOT_SUPPORTED) {
+            fprintf(stderr, "Error: This build's view has no such renderer\n");
+        }
         nmo_view_set_mipmaps(window->view, args->mipmaps);
     }
 #endif
@@ -2086,26 +1488,19 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
     const nmo_script_model_t *model = nmo_engine_script_model(engine);
-    run_files_t files = {.write = args->write, .path = args->path,
-                         .folder = run_folder_of(ctx->file_path)};
-    if (files.write == NULL && (args->window || args->headless)) {
-        files.temporary = run_make_temporary_folder();
-        files.write = files.temporary;
-    }
-    nmo_engine_set_file_resolver(engine, run_resolve_file, &files);
-    nmo_engine_set_file_writer(engine, run_write_file, &files);
-    files.engine = engine;
-    const nmo_engine_file_system_t file_system = {
-        &files, run_fs_exists, run_fs_copy, run_fs_remove_file, run_fs_create_directory,
-        run_fs_remove_directory, run_fs_set_current_directory, run_fs_list};
-    nmo_engine_set_file_system(engine, &file_system);
-    if (!run_set_registry(engine, args->registry) || !run_add_paths(engine)) {
+    /* A window or headless run without --write saves into a temporary folder */
+    nmo_run_files_t files;
+    bool files_ok = nmo_run_files_init(&files, ctx->file_path, args->path, args->write,
+                                       args->window || args->headless);
+    nmo_run_files_attach(&files, engine);
+    if (!files_ok || !nmo_run_set_registry(engine, args->registry) ||
+        !nmo_run_add_paths(engine)) {
         fprintf(stderr, "Error: Out of memory\n");
 #ifdef NMO_HAS_PHYSICS_IVP
         nmo_physics_ivp_detach(physics);
 #endif
         nmo_engine_destroy(engine);
-        run_files_release(&files);
+        nmo_run_files_release(&files);
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
@@ -2129,13 +1524,13 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
             exit_code = NMO_CLI_EXIT_ARG_ERROR;
         }
     }
-    long key_count = args->keys != NULL ? run_parse_keys(args->keys, NULL) : 0;
-    run_key_t *keys = key_count > 0 ? (run_key_t *)calloc((size_t)key_count, sizeof(run_key_t))
+    long key_count = args->keys != NULL ? nmo_run_parse_keys(args->keys, NULL) : 0;
+    nmo_run_key_t *keys = key_count > 0 ? (nmo_run_key_t *)calloc((size_t)key_count, sizeof(nmo_run_key_t))
                                     : NULL;
     if (key_count > 0 && keys == NULL) {
         status = NMO_ERR_NOMEM;
     } else if (keys != NULL) {
-        run_parse_keys(args->keys, keys);
+        nmo_run_parse_keys(args->keys, keys);
     }
     long message_count = args->messages != NULL ? run_parse_messages(args->messages, NULL) : 0;
     run_message_t *messages = message_count > 0
@@ -2189,22 +1584,14 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
         if (steer.points != NULL && f > steer.last && f - steer.last == 1) {
             const char *const arrows[] = {"Up", "Down", "Left", "Right"};
             for (int k = 0; k < 4; k++) {
-                nmo_engine_set_key(engine, run_key_code(arrows[k], strlen(arrows[k])), false);
+                nmo_engine_set_key(engine, nmo_run_key_code(arrows[k], strlen(arrows[k])), false);
             }
         }
         if (window != NULL && !run_window_poll(window)) {
             break;
         }
         run_send_messages(engine, messages, message_count, f);
-        /* A key is down in a frame one of its ranges covers */
-        for (long k = 0; k < key_count; k++) {
-            bool down = false;
-            for (long j = 0; j < key_count; j++) {
-                down = down || (keys[j].key == keys[k].key && f >= keys[j].first &&
-                                f <= keys[j].last);
-            }
-            nmo_engine_set_key(engine, keys[k].key, down);
-        }
+        nmo_run_apply_keys(engine, keys, key_count, f);
         if (steer.points != NULL) {
             run_steer_frame(engine, &steer, f);
         }
@@ -2297,7 +1684,7 @@ static int run_execute(nmo_cmd_ctx_t *ctx, const run_args_t *args)
     nmo_physics_ivp_detach(physics);
 #endif
     nmo_engine_destroy(engine);
-    run_files_release(&files);
+    nmo_run_files_release(&files);
     return exit_code;
 }
 
@@ -2352,8 +1739,9 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
         {"--headless", NULL, NMO_OPT_FLAG,
          "Draw the --shot frames in memory with the software renderer, without a window"},
         {"--renderer", NULL, NMO_OPT_STRING,
-         "Draw with gl or gpu (an SDL GPU device: Metal or Vulkan); default: gl in a "
-         "window, the software renderer headless"},
+         "Draw with gl, gl3 (OpenGL 3.3 core, OpenGL ES 3.0 or WebGL 2), gpu (an SDL GPU "
+         "device: Metal or Vulkan) or soft (the software renderer, scaled to the window); "
+         "default: the richest the build has in a window, soft headless"},
         {"--mute", NULL, NMO_OPT_FLAG, "Play no sound in the window"},
         {"--mipmaps", NULL, NMO_OPT_FLAG,
          "Mipmap every texture in the window but cutouts (default: only those CK mipmaps)"},
@@ -2382,18 +1770,27 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
     out->mipmaps = nmo_opt_flag(&vals[OPT_MIPMAPS]);
     out->headless = nmo_opt_flag(&vals[OPT_HEADLESS]);
     const char *renderer = nmo_opt_str(&vals[OPT_RENDERER]);
-    if (renderer != NULL && strcmp(renderer, "gpu") != 0 &&
-        !(strcmp(renderer, "gl") == 0 && !out->headless)) {
-        fprintf(stderr, "Error: --renderer is gl (in a window) or gpu\n");
-        return false;
+    out->renderer = RUN_RENDERER_DEFAULT;
+    if (renderer != NULL) {
+        out->renderer = strcmp(renderer, "gl") == 0     ? RUN_RENDERER_GL
+                        : strcmp(renderer, "gl3") == 0  ? RUN_RENDERER_GL3
+                        : strcmp(renderer, "gpu") == 0  ? RUN_RENDERER_GPU
+                        : strcmp(renderer, "soft") == 0 ? RUN_RENDERER_SOFT
+                                                        : RUN_RENDERER_DEFAULT;
+        if (out->renderer == RUN_RENDERER_DEFAULT ||
+            ((out->renderer == RUN_RENDERER_GL || out->renderer == RUN_RENDERER_GL3) && out->headless)) {
+            fprintf(stderr, "Error: --renderer is gl or gl3 (in a window), gpu or soft\n");
+            return false;
+        }
     }
-    out->gpu = renderer != NULL && strcmp(renderer, "gpu") == 0;
 #ifndef NMO_HAS_RENDER_GPU
-    if (out->gpu) {
+    if (out->renderer == RUN_RENDERER_GPU) {
         fprintf(stderr, "Error: --renderer gpu needs a build with the GPU renderer (NMO_RENDER_GPU)\n");
         return false;
     }
 #endif
+    /* --renderer gl and --renderer gl3 need no such compile-time check: a build without
+       either reports it at runtime instead (nmo_view_has_renderer, run_window_open). */
     if (out->headless && out->window) {
         fprintf(stderr, "Error: --headless draws without a window: leave out --window\n");
         return false;
@@ -2449,11 +1846,11 @@ static bool run_parse_args(nmo_cmd_ctx_t *c, int argc, char **argv, bool expect_
         return false;
     }
     out->registry = nmo_opt_str(&vals[OPT_REGISTRY]);
-    if (!run_set_registry(NULL, out->registry)) {
+    if (!nmo_run_set_registry(NULL, out->registry)) {
         fprintf(stderr, "Error: Invalid --registry: %s\n", out->registry);
         return false;
     }
-    if (out->keys != NULL && run_parse_keys(out->keys, NULL) < 0) {
+    if (out->keys != NULL && nmo_run_parse_keys(out->keys, NULL) < 0) {
         fprintf(stderr, "Error: Invalid --keys: %s\n", out->keys);
         return false;
     }
