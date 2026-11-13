@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "output": "box.cmo",
+  "document": {"name": "Sample"},
+  "scenes": [{
+    "name": "Level",
+    "objects": [
+      {"name": "Camera", "class": "CKCamera"},
+      {"name": "Box", "class": "CK3dObject",
+       "mesh": {"primitive": "cube"},
+       "material": {"color": [1, 1, 1, 1], "texture": "box.png"},
+       "transform": {"position": [1, 2, 3]}}
+    ]
+  }]
+}

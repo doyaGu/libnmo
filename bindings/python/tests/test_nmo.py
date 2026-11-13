@@ -1,8 +1,14 @@
-"""Tests of the Python binding against the shared libnmo and the test files.
+"""Tests of the Python binding against the shared libnmo.
 
 Run from the repository root with NMO_LIBRARY set to the shared library:
     NMO_LIBRARY=build/libnmo.dylib PYTHONPATH=bindings/python \
         python3 -m unittest discover -s bindings/python/tests
+
+data/box.cmo, a textured cube, is what the tests read, so they run where the
+Virtools samples are not (CI). libnmo's project layer made it from box.json:
+    nmo patch apply --project bindings/python/tests/data/box.json \
+        -o bindings/python/tests/data/box.cmo
+The Corpus cases also read Virtools samples under data/ when they are there.
 """
 
 import os
@@ -14,13 +20,19 @@ import nmo
 from nmo import _native
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-BOX = os.path.join(ROOT, "data", "Ballance", "P_Box.nmo")
+SAMPLE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "box.cmo")
+P_BOX = os.path.join(ROOT, "data", "Ballance", "P_Box.nmo")
 BTE = os.path.join(ROOT, "data", "Demo", "BTE.cmo")
 
 
 def need(path):
     if not os.path.exists(path):
         raise unittest.SkipTest(f"{path} is not here")
+
+
+def read_glb_header(path):
+    with open(path, "rb") as glb:
+        return struct.unpack("<III", glb.read(12))
 
 
 class NativeLayout(unittest.TestCase):
@@ -44,23 +56,24 @@ class NativeLayout(unittest.TestCase):
 
 class Reading(unittest.TestCase):
     def test_objects_classes_and_fields(self):
-        need(BOX)
-        with nmo.open(BOX) as doc:
-            self.assertEqual(8, doc.info.file_version)
+        with nmo.open(SAMPLE) as doc:
+            self.assertEqual(9, doc.info.file_version)
             self.assertEqual(doc.info.object_count, len(doc))
             self.assertTrue(doc.info.crc_ok)
             self.assertFalse(doc.partial)
             names = {obj.name for obj in doc}
-            self.assertIn("P_Box_MF", names)
-            box = doc.objects("CK3dEntity")[0]
+            self.assertTrue({"Box", "Box_Mesh", "Box_Texture", "Camera"} <= names)
+            box = doc.objects("CK3dObject")[0]
+            self.assertEqual("Box", box.name)
             self.assertEqual("CK3dObject", box.class_name)
+            self.assertEqual({"Box", "Camera"}, {obj.name for obj in doc.objects("CK3dEntity")})
             self.assertTrue(box.is_a("CKBeObject"))
             self.assertFalse(box.is_a("CKMesh"))
             self.assertEqual([box], doc.objects("CK3dObject", derived=False))
-            self.assertEqual([box], doc.objects(name="P_Box_MF"))
+            self.assertEqual([box], doc.objects(name="Box"))
             self.assertEqual(box, doc[box.id])
             fields = box.fields
-            self.assertIn("world_matrix", fields)
+            self.assertTrue(fields["world_matrix"].endswith("1, 2, 3, 1)"))
             self.assertIn("priority", fields)
             snapshot = box.to_dict()
             self.assertEqual(box.id, snapshot["id"])
@@ -71,10 +84,9 @@ class Reading(unittest.TestCase):
                 doc.objects("NoSuchClass")
 
     def test_object_table_profile_reads_states_on_request(self):
-        need(BOX)
-        with nmo.open(BOX, profile="objects") as doc:
+        with nmo.open(SAMPLE, profile="objects") as doc:
             self.assertTrue(doc.partial)
-            box = doc.objects("CK3dEntity")[0]
+            box = doc.objects("CK3dObject")[0]
             self.assertEqual({}, box.fields)
             box.load_state()
             self.assertIn("world_matrix", box.fields)
@@ -86,28 +98,62 @@ class Reading(unittest.TestCase):
             nmo.open(os.path.join(ROOT, "no such file.nmo"))
         self.assertNotEqual(0, caught.exception.status)
         with self.assertRaises(ValueError):
-            nmo.open(BOX, profile="everything")
+            nmo.open(SAMPLE, profile="everything")
 
 
 class Writing(unittest.TestCase):
     def test_fields_written_are_saved(self):
-        need(BOX)
         with tempfile.TemporaryDirectory() as scratch:
-            out = os.path.join(scratch, "box.nmo")
+            out = os.path.join(scratch, "box.cmo")
             matrix = "(1, 0, 0, 0; 0, 1, 0, 0; 0, 0, 1, 0; 7, 8, 9, 1)"
-            with nmo.open(BOX) as doc:
-                box = doc.objects("CK3dEntity")[0]
+            with nmo.open(SAMPLE) as doc:
+                box = doc.objects("CK3dObject")[0]
                 self.assertEqual(2, box.set(priority=5, world_matrix=matrix))
                 self.assertEqual(5, box.fields["priority"])
                 with self.assertRaises(KeyError):
                     box.set(no_such_field=1)
                 doc.save(out)
             with nmo.open(out) as again:
-                box = again.objects("CK3dEntity")[0]
+                box = again.objects("CK3dObject")[0]
                 self.assertEqual(5, box.fields["priority"])
                 self.assertEqual(matrix, box.fields["world_matrix"])
 
     def test_gltf_export(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            out = os.path.join(scratch, "box.glb")
+            with nmo.open(SAMPLE) as doc:
+                stats = doc.export_gltf(out)
+            self.assertEqual(1, stats["meshes"])
+            self.assertEqual(12, stats["triangles"])
+            self.assertEqual(1, stats["images_embedded"])
+            magic, version, length = read_glb_header(out)
+            self.assertEqual(0x46546C67, magic)
+            self.assertEqual(2, version)
+            self.assertEqual(os.path.getsize(out), length)
+
+    def test_closed_document(self):
+        doc = nmo.open(SAMPLE)
+        box = next(iter(doc))
+        doc.close()
+        with self.assertRaises(ValueError):
+            len(doc)
+        with self.assertRaises(ValueError):
+            box.name
+
+
+class Corpus(unittest.TestCase):
+    """The same calls on files Virtools wrote."""
+
+    def test_reads_a_virtools_file(self):
+        need(P_BOX)
+        with nmo.open(P_BOX) as doc:
+            self.assertEqual(8, doc.info.file_version)
+            self.assertTrue(doc.info.crc_ok)
+            box = doc.objects("CK3dEntity")[0]
+            self.assertEqual("P_Box_MF", box.name)
+            self.assertIn("world_matrix", box.fields)
+
+    def test_exports_a_virtools_scene(self):
         need(BTE)
         with tempfile.TemporaryDirectory() as scratch:
             out = os.path.join(scratch, "bte.glb")
@@ -115,21 +161,7 @@ class Writing(unittest.TestCase):
                 stats = doc.export_gltf(out)
             self.assertGreater(stats["nodes"], 0)
             self.assertGreater(stats["images_embedded"], 0)
-            with open(out, "rb") as glb:
-                magic, version, length = struct.unpack("<III", glb.read(12))
-            self.assertEqual(0x46546C67, magic)
-            self.assertEqual(2, version)
-            self.assertEqual(os.path.getsize(out), length)
-
-    def test_closed_document(self):
-        need(BOX)
-        doc = nmo.open(BOX)
-        box = next(iter(doc))
-        doc.close()
-        with self.assertRaises(ValueError):
-            len(doc)
-        with self.assertRaises(ValueError):
-            box.name
+            self.assertEqual(os.path.getsize(out), read_glb_header(out)[2])
 
 
 if __name__ == "__main__":
