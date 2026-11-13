@@ -192,6 +192,76 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure -R "render|view|cli_behavior_run|layering"
 
+  # The Python binding (bindings/python) loads libnmo as a shared library,
+  # which the release packages, static only, do not hold. Each system builds
+  # the library shared here and runs the binding's tests against it; they read
+  # a sample kept beside them, so they need no Virtools files. A missing Python
+  # leaves the test unregistered, which --no-tests=error turns into a failure.
+  shared-library:
+    name: shared-${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            os: ubuntu-latest
+          - platform: macos
+            os: macos-latest
+          - platform: windows-msvc
+            os: windows-latest
+            msvc: true
+          - platform: windows-mingw
+            os: windows-latest
+            mingw: true
+
+    defaults:
+      run:
+        shell: ${{ matrix.mingw && 'msys2 {0}' || 'bash' }}
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v7
+        if: ${{ !matrix.mingw }}
+        with:
+          python-version: '3.x'
+
+      - name: Install Ninja (Ubuntu)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Install Ninja (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja
+
+      - name: Set up MSYS2 (MinGW)
+        if: matrix.mingw
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-python
+
+      - name: Set up MSVC
+        if: matrix.msvc
+        uses: ./.github/actions/setup-msvc
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DNMO_BUILD_SHARED=ON -DNMO_BUILD_TOOLS=OFF
+
+      - name: Build
+        run: cmake --build build --target nmo
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure --no-tests=error -R "^test_python_binding$"
+
   # Release builds: tools/scripts/package_release.py runs the test suite,
   # installs the package, checks it from the outside and archives it.
   package:

@@ -253,8 +253,10 @@ cc -o demo demo.c -lnmo
 ### Python Quick Start
 
 `bindings/python` holds the `nmo` package, a ctypes binding over the shared
-library. Build libnmo with `-DNMO_BUILD_SHARED=ON` and point `NMO_LIBRARY` at
-it (and `NMO_DATA_DIR` at `data/` for the building block and plugin tables):
+library. The release packages hold only the static library, so build libnmo
+with `-DNMO_BUILD_SHARED=ON` and point `NMO_LIBRARY` at it (and `NMO_DATA_DIR`
+at `data/` for the building block and plugin tables). CI runs the binding's
+tests against a shared build on Linux, macOS, Windows MSVC and Windows MinGW.
 
 ```python
 import nmo
@@ -456,7 +458,8 @@ cmake --build cmake-build-release
 Each GitHub release has prebuilt packages for Linux (x64), macOS (universal),
 Windows MSVC and Windows MinGW. A package holds the `nmo` CLI, the static
 library with its headers, CMake and pkg-config files, runtime data, and shell
-completions. To build one locally:
+completions. It has no shared library, which the Python binding needs (see
+[Python Quick Start](#python-quick-start)). To build one locally:
 
 ```sh
 python tools/scripts/package_release.py --platform linux-x64
@@ -620,6 +623,8 @@ on every pull request, and on `v*` tags:
 - **`render-backends`**: a build with `NMO_VIEWER` (the OpenGL and SDL_GPU backends and the
   viewer) against SDL3 on Linux, macOS, Windows MSVC and Windows MinGW, then the render, viewer
   and layering tests; only the macOS runner has a GPU, elsewhere the SDL_GPU tests skip
+- **`shared-library`**: libnmo built with `NMO_BUILD_SHARED=ON` on the same four systems, then
+  `test_python_binding`, which reads a sample kept in `bindings/python/tests/data`
 - **`package`**: one Release build per platform (Linux x64 on Ubuntu 22.04,
   macOS universal, Windows MSVC, Windows MinGW). `tools/scripts/package_release.py`
   runs the tests, installs the package, checks the install from the outside, and

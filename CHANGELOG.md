@@ -478,7 +478,12 @@ What breaks source compatibility, in short; the sections below give the details.
   through `NMO_LIBRARY`, next to the package, or with the system loader. It opens a file with a
   load profile and gives the file info and the objects by id, with their names, classes and
   fields. It writes fields, saves, reads object states on request and exports glTF. A failed call
-  raises `NmoError`. A shared build runs `test_python_binding`.
+  raises `NmoError`. The release packages hold only the static library, so the binding needs
+  libnmo built with `-DNMO_BUILD_SHARED=ON`.
+- A shared build runs `test_python_binding`. It reads `bindings/python/tests/data/box.cmo`, a
+  textured cube the project layer builds from `box.json` beside it, and Virtools samples only
+  when they are there. CI builds libnmo shared on Linux, macOS, MSVC and MinGW and runs it
+  (`shared-*` jobs).
 
 ### Added - File format specification and API reference (November)
 - `docs/file-format.md` describes the file format as CK2 and libnmo read and write it: the
