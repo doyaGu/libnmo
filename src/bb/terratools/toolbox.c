@@ -28,6 +28,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "../../platform/platform.h"
 
 /* ============================================================================
  * TT Toolbox and TT Interface Manager
@@ -5121,7 +5122,7 @@ static int bb_exist_file(blk_t *b)
         const char *path = engine->host.resolve_file != NULL
                                ? engine->host.resolve_file(engine->host.resolve_file_user_data, name)
                                : NULL;
-        FILE *file = path != NULL ? fopen(path, "rb") : NULL;
+        FILE *file = path != NULL ? nmo_platform_fopen(path, "rb") : NULL;
         exists = file != NULL;
         if (file != NULL) {
             fclose(file);

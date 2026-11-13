@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "../../../platform/platform.h"
 
 /* ============================================================================
  * Logics/Strings
@@ -287,7 +288,7 @@ static int bb_load_string(blk_t *b)
     const char *path = name != NULL && engine->host.resolve_file != NULL
                            ? engine->host.resolve_file(engine->host.resolve_file_user_data, name)
                            : NULL;
-    FILE *file = path != NULL ? fopen(path, "rb") : NULL;
+    FILE *file = path != NULL ? nmo_platform_fopen(path, "rb") : NULL;
     if (file == NULL) {
         OUT_ON(b, 1);
         return NMO_ENGINE_BR_OK;

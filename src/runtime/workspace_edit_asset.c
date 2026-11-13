@@ -20,6 +20,7 @@
 #include <stdlib.h>
 
 #include "workspace_edit_internal.h"
+#include "../platform/platform.h"
 
 /* RCKMesh constructor: a new mesh is visible and renders its channels. A
  * mesh without VXMESH_VISIBLE is skipped by RCK3dEntity::Render. */
@@ -1174,7 +1175,7 @@ static uint8_t *workspace_edit_read_file_to_heap(
         return NULL;
     }
 
-    FILE *file = fopen(path, "rb");
+    FILE *file = nmo_platform_fopen(path, "rb");
     if (file == NULL) {
         return NULL;
     }

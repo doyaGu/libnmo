@@ -199,6 +199,31 @@ if(os_violations)
         "Add what is needed to src/platform/platform.h and implement it there.\n")
 endif()
 
+# Paths are UTF-8 on every system, and the C library's file calls take the
+# ANSI code page on Windows: the library opens, removes and renames files by
+# path only through the platform layer, and hands its libraries open files
+# rather than paths. (The command line tools run with the UTF-8 code page.)
+set(path_violations "")
+file(GLOB_RECURSE path_files "${SOURCE_DIR}/src/*.c" "${SOURCE_DIR}/src/*.h")
+foreach(path_file IN LISTS path_files)
+    file(RELATIVE_PATH relative_path "${SOURCE_DIR}" "${path_file}")
+    if(relative_path MATCHES "^src/platform/")
+        continue()
+    endif()
+    file(STRINGS "${path_file}" path_lines
+        REGEX "(^|[^A-Za-z0-9_.>])(fopen|freopen|remove|rename|tmpfile|yyjson_read_file|yyjson_write_file|yyjson_mut_write_file|luaL_loadfilex?|luaL_dofile|mz_zip_reader_init_file|mz_zip_writer_init_file|stbi_load|stbi_write_[a-z]+)[ \t]*\\(")
+    foreach(path_line IN LISTS path_lines)
+        string(STRIP "${path_line}" path_line)
+        string(APPEND path_violations "${relative_path}: ${path_line}\n")
+    endforeach()
+endforeach()
+if(path_violations)
+    message(FATAL_ERROR
+        "Layering audit failed: a file opened by path outside the platform layer\n"
+        "${path_violations}"
+        "Use nmo_platform_fopen, nmo_platform_remove or nmo_platform_replace (src/platform/platform.h).\n")
+endif()
+
 # Report allowlist entries that no longer exist so the list stays honest.
 set(stale "")
 foreach(entry IN LISTS allowlist)

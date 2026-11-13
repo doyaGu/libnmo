@@ -17,6 +17,7 @@
 #include <string.h>
 #include <time.h>
 #include <stdarg.h>
+#include "../platform/platform.h"
 
 /**
  * @brief Collect object statistics
@@ -421,7 +422,12 @@ nmo_status_t nmo_stats_export_json(
                             (uint64_t)stats->references.unresolved);
     yyjson_mut_obj_add_val(doc, root, "references", section);
 
-    if (!yyjson_mut_write_file(output_path, doc, flags, NULL, NULL)) {
+    FILE *file = nmo_platform_fopen(output_path, "wb");
+    bool written = file != NULL && yyjson_mut_write_fp(file, doc, flags, NULL, NULL);
+    if (file != NULL && fclose(file) != 0) {
+        written = false;
+    }
+    if (!written) {
         yyjson_mut_doc_free(doc);
         return -1;
     }

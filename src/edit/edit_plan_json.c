@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "../platform/platform.h"
 
 static void add_str_safe(yyjson_mut_doc *doc,
                          yyjson_mut_val *obj,
@@ -2517,7 +2518,7 @@ nmo_status_t nmo_edit_plan_manifest_json_read_file(
     }
     memset(out_manifest, 0, sizeof(*out_manifest));
 
-    fp = fopen(path, "rb");
+    fp = nmo_platform_fopen(path, "rb");
     if (fp == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_CANT_OPEN_FILE, NMO_SEVERITY_ERROR,
                          "Failed to open edit plan manifest file: %s", path);

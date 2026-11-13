@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "../../platform/platform.h"
 
 /* ============================================================================
  * Sounds
@@ -351,7 +352,7 @@ static bool eng_wave_scan(nmo_engine_t *engine, const char *name, uint32_t *out_
     const char *path = engine->host.resolve_file != NULL
                            ? engine->host.resolve_file(engine->host.resolve_file_user_data, name)
                            : NULL;
-    FILE *file = path != NULL ? fopen(path, "rb") : NULL;
+    FILE *file = path != NULL ? nmo_platform_fopen(path, "rb") : NULL;
     if (file == NULL) {
         return false;
     }
@@ -627,7 +628,7 @@ int32_t eng_movie_frame_count(nmo_engine_t *engine, const char *name)
     const char *path = engine->host.resolve_file != NULL
                            ? engine->host.resolve_file(engine->host.resolve_file_user_data, name)
                            : NULL;
-    FILE *file = path != NULL ? fopen(path, "rb") : NULL;
+    FILE *file = path != NULL ? nmo_platform_fopen(path, "rb") : NULL;
     if (file == NULL) {
         return -1;
     }
@@ -706,7 +707,7 @@ bool eng_media_file_exists(nmo_engine_t *engine, const char *name)
     const char *path = engine->host.resolve_file != NULL
                            ? engine->host.resolve_file(engine->host.resolve_file_user_data, name)
                            : NULL;
-    FILE *file = path != NULL ? fopen(path, "rb") : NULL;
+    FILE *file = path != NULL ? nmo_platform_fopen(path, "rb") : NULL;
     if (file != NULL) {
         fclose(file);
     }

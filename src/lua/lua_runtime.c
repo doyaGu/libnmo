@@ -7,10 +7,74 @@
 #include "lua.h"
 #include "lauxlib.h"
 #include "lualib.h"
+#include "../platform/platform.h"
+
+#include <stdio.h>
+#include <string.h>
 
 struct nmo_lua_runtime {
     lua_State *state;
 };
+
+/* All of a file, malloc'ed; NULL when it cannot be read */
+static char *nmo_lua_runtime_read_file(FILE *file, size_t *out_size)
+{
+    size_t capacity = 4096;
+    size_t size = 0;
+    char *data = (char *)malloc(capacity);
+    while (data != NULL) {
+        size += fread(data + size, 1, capacity - size, file);
+        if (size < capacity) {
+            break;
+        }
+        char *grown = (char *)realloc(data, capacity * 2);
+        if (grown == NULL) {
+            free(data);
+        }
+        data = grown;
+        capacity *= 2;
+    }
+    if (data != NULL && ferror(file)) {
+        free(data);
+        data = NULL;
+    }
+    *out_size = size;
+    return data;
+}
+
+/*
+ * What luaL_loadfilex does in text mode, for a UTF-8 path: the chunk is named
+ * "@path", a UTF-8 byte order mark and a first line starting with '#' are
+ * passed over (its line end kept, so line numbers hold).
+ */
+static int nmo_lua_runtime_load_file(lua_State *state, const char *path)
+{
+    FILE *file = nmo_platform_fopen(path, "rb");
+    if (file == NULL) {
+        lua_pushfstring(state, "cannot open %s", path);
+        return LUA_ERRFILE;
+    }
+    size_t size = 0;
+    char *data = nmo_lua_runtime_read_file(file, &size);
+    fclose(file);
+    if (data == NULL) {
+        lua_pushfstring(state, "cannot read %s", path);
+        return LUA_ERRFILE;
+    }
+    size_t start = 0;
+    if (size >= 3 && memcmp(data, "\xEF\xBB\xBF", 3) == 0) {
+        start = 3;
+    }
+    if (start < size && data[start] == '#') {
+        const char *line_end = (const char *)memchr(data + start, '\n', size - start);
+        start = line_end != NULL ? (size_t)(line_end - data) : size;
+    }
+    lua_pushfstring(state, "@%s", path);
+    int status = luaL_loadbufferx(state, data + start, size - start, lua_tostring(state, -1), "t");
+    lua_remove(state, -2);
+    free(data);
+    return status;
+}
 
 static int nmo_lua_runtime_traceback(lua_State *state)
 {
@@ -127,7 +191,7 @@ static nmo_status_t nmo_lua_runtime_execute_script(nmo_lua_runtime_t *runtime,
 
     int load_status = LUA_OK;
     if (path != NULL) {
-        load_status = luaL_loadfilex(state, path, "t");
+        load_status = nmo_lua_runtime_load_file(state, path);
     } else {
         lua_pushfstring(state, "=%s", script_name);
         load_status = luaL_loadbufferx(state, text, text_size, lua_tostring(state, -1), "t");

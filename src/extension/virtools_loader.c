@@ -23,6 +23,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include "../platform/platform.h"
 
 /* ============================================================================
  * Helpers
@@ -208,12 +209,26 @@ static nmo_status_t register_struct_metadata(nmo_type_registry_t *registry, nmo_
     return status;
 }
 
+/* The JSON file at a UTF-8 path, as yyjson_read_file would read it */
+static yyjson_doc *virtools_read_json(const char *path, yyjson_read_err *err) {
+    FILE *file = nmo_platform_fopen(path, "rb");
+    if (file == NULL) {
+        err->code = YYJSON_READ_ERROR_FILE_OPEN;
+        err->msg = "file opening failed";
+        err->pos = 0;
+        return NULL;
+    }
+    yyjson_doc *doc = yyjson_read_fp(file, NMO_VIRTOOLS_JSON_READ_FLAGS, NULL, err);
+    fclose(file);
+    return doc;
+}
+
 nmo_status_t nmo_virtools_load_param_types(nmo_type_registry_t *registry, const char *path) {
     if (!registry || !path)
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "null arg");
 
     yyjson_read_err err;
-    yyjson_doc *doc = yyjson_read_file(path, NMO_VIRTOOLS_JSON_READ_FLAGS, NULL, &err);
+    yyjson_doc *doc = virtools_read_json(path, &err);
     if (!doc)
         NMO_RETURN_ERROR(NMO_ERR_CANT_READ_FILE, NMO_SEVERITY_ERROR, "JSON parse error: %s", err.msg);
 
@@ -346,7 +361,7 @@ nmo_status_t nmo_virtools_load_operations(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "null arg");
 
     yyjson_read_err err;
-    yyjson_doc *doc = yyjson_read_file(path, NMO_VIRTOOLS_JSON_READ_FLAGS, NULL, &err);
+    yyjson_doc *doc = virtools_read_json(path, &err);
     if (!doc)
         NMO_RETURN_ERROR(NMO_ERR_CANT_READ_FILE, NMO_SEVERITY_ERROR, "JSON parse error: %s", err.msg);
 
@@ -452,7 +467,7 @@ nmo_status_t nmo_virtools_load_building_blocks(nmo_behavior_registry_t *bb_regis
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "null arg");
 
     yyjson_read_err err;
-    yyjson_doc *doc = yyjson_read_file(path, NMO_VIRTOOLS_JSON_READ_FLAGS, NULL, &err);
+    yyjson_doc *doc = virtools_read_json(path, &err);
     if (!doc)
         NMO_RETURN_ERROR(NMO_ERR_CANT_READ_FILE, NMO_SEVERITY_ERROR, "JSON parse error: %s at %zu", err.msg, err.pos);
 
@@ -531,7 +546,7 @@ nmo_status_t nmo_virtools_load_building_block_layouts(nmo_behavior_registry_t *b
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "null arg");
 
     yyjson_read_err err;
-    yyjson_doc *doc = yyjson_read_file(path, NMO_VIRTOOLS_JSON_READ_FLAGS, NULL, &err);
+    yyjson_doc *doc = virtools_read_json(path, &err);
     if (!doc)
         NMO_RETURN_ERROR(NMO_ERR_CANT_READ_FILE, NMO_SEVERITY_ERROR, "JSON parse error: %s at %zu", err.msg, err.pos);
     yyjson_val *root = yyjson_doc_get_root(doc);
@@ -632,7 +647,7 @@ nmo_status_t nmo_virtools_load_building_block_plugins(nmo_behavior_registry_t *b
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "null arg");
 
     yyjson_read_err err;
-    yyjson_doc *doc = yyjson_read_file(path, NMO_VIRTOOLS_JSON_READ_FLAGS, NULL, &err);
+    yyjson_doc *doc = virtools_read_json(path, &err);
     if (!doc)
         NMO_RETURN_ERROR(NMO_ERR_CANT_READ_FILE, NMO_SEVERITY_ERROR, "JSON parse error: %s at %zu", err.msg, err.pos);
     yyjson_val *root = yyjson_doc_get_root(doc);
@@ -689,7 +704,7 @@ nmo_status_t nmo_virtools_load_plugins(nmo_extension_registry_t *ext_registry, c
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "null arg");
 
     yyjson_read_err err;
-    yyjson_doc *doc = yyjson_read_file(path, NMO_VIRTOOLS_JSON_READ_FLAGS, NULL, &err);
+    yyjson_doc *doc = virtools_read_json(path, &err);
     if (!doc)
         NMO_RETURN_ERROR(NMO_ERR_CANT_READ_FILE, NMO_SEVERITY_ERROR, "JSON parse error: %s at %zu", err.msg, err.pos);
 

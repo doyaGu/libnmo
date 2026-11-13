@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "../platform/platform.h"
 
 /* dir/name: exact size */
 static char *font_path(const char *dir, const char *name)
@@ -27,7 +28,7 @@ static char *font_path(const char *dir, const char *name)
 
 static unsigned char *font_read_file(const char *path)
 {
-    FILE *file = fopen(path, "rb");
+    FILE *file = nmo_platform_fopen(path, "rb");
     if (file == NULL) {
         return NULL;
     }

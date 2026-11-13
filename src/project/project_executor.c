@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "../platform/platform.h"
 
 static char *project_executor_strdup(const char *src)
 {
@@ -1612,7 +1613,7 @@ nmo_status_t nmo_project_executor_execute_to_file(
     memcpy(temp_path, output_path, output_len);
     memcpy(temp_path + output_len, ".tmp", 5u);
 
-    remove(temp_path);
+    (void)nmo_platform_remove(temp_path);
     status = nmo_document_save_file(document, temp_path, NULL);
     if (status == NMO_OK) {
         nmo_document_t *loaded = NULL;
@@ -1624,8 +1625,7 @@ nmo_status_t nmo_project_executor_execute_to_file(
     report->evidence.post_save_validate_checked = true;
     report->evidence.post_save_validate_ok = status == NMO_OK;
     if (status == NMO_OK) {
-        remove(output_path);
-        if (rename(temp_path, output_path) != 0) {
+        if (nmo_platform_replace(temp_path, output_path, false) != 0) {
             status = NMO_ERR_CANT_WRITE_FILE;
             NMO_SET_LAST_ERROR(status, NMO_SEVERITY_ERROR,
                                "failed to publish generated project output: %s",
@@ -1633,7 +1633,7 @@ nmo_status_t nmo_project_executor_execute_to_file(
         }
     }
     if (status != NMO_OK) {
-        remove(temp_path);
+        (void)nmo_platform_remove(temp_path);
     }
     free(temp_path);
     nmo_workspace_destroy(workspace);

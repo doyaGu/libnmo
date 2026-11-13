@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "../platform/platform.h"
 
 static void render_release_text(void *user_data, uintptr_t handle)
 {
@@ -180,7 +181,7 @@ nmo_status_t nmo_render_screenshot(nmo_render_t *render, int width, int height, 
         size_t size = 0;
         uint8_t *png = nmo_stbi_write_to_memory(arena, NMO_BITMAP_FORMAT_PNG, rect[2], rect[3], 4,
                                                 pixels, 0, &size);
-        FILE *file = png != NULL ? fopen(path, "wb") : NULL;
+        FILE *file = png != NULL ? nmo_platform_fopen(path, "wb") : NULL;
         status = file != NULL && fwrite(png, 1, size, file) == size ? NMO_OK : NMO_ERR_CANT_WRITE_FILE;
         if (file != NULL) {
             fclose(file);

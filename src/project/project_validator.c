@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "../platform/platform.h"
 
 static char *project_validation_strdup(const char *src)
 {
@@ -210,7 +211,7 @@ static bool project_validation_file_exists(const char *path)
     if (!path || path[0] == '\0') {
         return false;
     }
-    FILE *file = fopen(path, "rb");
+    FILE *file = nmo_platform_fopen(path, "rb");
     if (!file) {
         return false;
     }
@@ -230,7 +231,7 @@ static nmo_status_t project_validation_read_file(
     *out_data = NULL;
     *out_size = 0u;
 
-    FILE *fp = fopen(path, "rb");
+    FILE *fp = nmo_platform_fopen(path, "rb");
     if (!fp) {
         NMO_RETURN_ERROR(NMO_ERR_CANT_OPEN_FILE, NMO_SEVERITY_ERROR,
                          "failed to open project asset file");
