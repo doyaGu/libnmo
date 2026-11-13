@@ -78,6 +78,19 @@ if(Python3_Interpreter_FOUND)
                 ${PROJECT_SOURCE_DIR}/tools/scripts/gen_lua_edit_bindings.py
                 --check
     )
+    # The Python binding loads the shared library (bindings/python)
+    if(NMO_BUILD_SHARED)
+        add_test(
+            NAME test_python_binding
+            COMMAND ${CMAKE_COMMAND} -E env
+                    "NMO_LIBRARY=$<TARGET_FILE:nmo>"
+                    "NMO_DATA_DIR=${PROJECT_SOURCE_DIR}/data"
+                    "PYTHONPATH=${PROJECT_SOURCE_DIR}/bindings/python"
+                    "PYTHONDONTWRITEBYTECODE=1"
+                    ${Python3_EXECUTABLE} -m unittest discover
+                    -s "${PROJECT_SOURCE_DIR}/bindings/python/tests" -v
+        )
+    endif()
 endif()
 
 # Unit tests
