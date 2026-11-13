@@ -78,9 +78,14 @@ h1 {
 }
 
 /* Only playing locks the stage to 4:3: before that, the poster's own
-   content sizes it (comfortably, even narrow where 4:3 would be short). */
+   content sizes it (comfortably, even narrow where 4:3 would be short).
+   max-width caps it to whatever width keeps a 4:3 box within 70% of the
+   viewport's height, so a short, wide viewport (a phone held sideways)
+   shrinks the stage instead of pushing the control bar off-screen. */
 body.playing #stage {
     aspect-ratio: 4 / 3;
+    max-width: calc(70dvh * 4 / 3);
+    align-self: center;
 }
 
 /* The stage box, not the canvas, keeps 4:3: absolute positioning (rather
@@ -113,6 +118,85 @@ body.playing #stage {
 
 body.playing #poster {
     display: none;
+}
+
+/* A touch screen without a keyboard needs its own steering: a D-pad and an
+   Esc/menu button, overlaid on the stage, that feed the same arrow/Escape
+   keys a keyboard would (see player.mjs's sendKey). Hidden otherwise: a
+   mouse-and-keyboard device, touch or not, already has real arrow keys. */
+#touch-controls {
+    display: none;
+}
+
+@media (hover: none) and (pointer: coarse) {
+    body.playing #touch-controls {
+        display: block;
+        position: absolute;
+        inset: 0;
+        z-index: 2;
+        pointer-events: none;
+    }
+}
+
+#dpad {
+    position: absolute;
+    left: 16px;
+    bottom: 16px;
+    display: grid;
+    grid-template-columns: repeat(3, 56px);
+    grid-template-rows: repeat(3, 56px);
+    gap: 4px;
+}
+
+.dpad-btn,
+.action-btn {
+    pointer-events: auto;
+    touch-action: none;
+    -webkit-touch-callout: none;
+    user-select: none;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 10px;
+    background: rgba(20, 20, 20, 0.55);
+    color: #f0f0ee;
+}
+
+.dpad-btn:active,
+.action-btn:active {
+    background: rgba(79, 211, 138, 0.35);
+}
+
+.dpad-btn svg {
+    width: 20px;
+    height: 20px;
+    fill: currentColor;
+}
+
+.dpad-up { grid-area: 1 / 2; }
+.dpad-left { grid-area: 2 / 1; }
+.dpad-right { grid-area: 2 / 3; }
+.dpad-down { grid-area: 3 / 2; }
+
+#touch-actions {
+    position: absolute;
+    right: 16px;
+    bottom: 16px;
+    display: grid;
+    grid-template-columns: repeat(2, 50px);
+    gap: 8px;
+}
+
+.action-btn {
+    width: 50px;
+    height: 50px;
+    border-radius: 999px;
+    font: 600 10px/1 system-ui, sans-serif;
+}
+
+#ios-note {
+    margin: 10px 0 0;
+    color: var(--chrome-fg-dim);
+    font-size: 12px;
+    line-height: 1.5;
 }
 
 #poster-body {
@@ -266,6 +350,23 @@ select {
     cursor: default;
 }
 
+/* A finger needs a bigger target than a mouse pointer does */
+@media (pointer: coarse) {
+    #controlbar {
+        height: 52px;
+    }
+
+    .icon-button {
+        width: 46px;
+        height: 46px;
+    }
+
+    .icon-button svg {
+        width: 22px;
+        height: 22px;
+    }
+}
+
 #fps {
     margin-left: 4px;
     min-width: 4.5em;
@@ -278,26 +379,45 @@ select {
     flex: 1;
 }
 
-/* ---- Full screen keeps the control bar; only the stage grows ---- */
+/* ---- Full screen keeps the control bar; only the stage grows ----
+   .fake-fullscreen is the same layout without the real Fullscreen API,
+   for iPhone Safari, which only grants it to <video> (player.mjs falls
+   back to this class when requestFullscreen rejects, throws, or is
+   simply absent). */
 
 #player:fullscreen,
-#player:-webkit-full-screen {
+#player:-webkit-full-screen,
+#player.fake-fullscreen {
     width: 100vw;
-    height: 100vh;
+    height: 100dvh;
+    max-width: none;
     border-radius: 0;
 }
 
+#player.fake-fullscreen {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+}
+
+body.fullscreen-lock {
+    overflow: hidden;
+}
+
 #player:fullscreen #stage,
-#player:-webkit-full-screen #stage {
+#player:-webkit-full-screen #stage,
+#player.fake-fullscreen #stage {
     flex: 1 1 auto;
     aspect-ratio: auto;
+    max-width: none;
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
 #player:fullscreen #canvas,
-#player:-webkit-full-screen #canvas {
+#player:-webkit-full-screen #canvas,
+#player.fake-fullscreen #canvas {
     position: static;
     inset: auto;
     width: auto !important;

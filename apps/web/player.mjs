@@ -100,6 +100,68 @@ function setHidden(element, hidden) {
     element.toggleAttribute('hidden', hidden);
 }
 
+/* A touch screen's D-pad/Esc, as a real keydown/keyup the view's keyboard
+   polling already reads (the engine re-syncs the arrow keys from that same
+   tracked state every frame, so this has to go through it rather than some
+   separate side channel). */
+const KEY_INFO = {
+    ArrowUp: {keyCode: 38, key: 'ArrowUp'},
+    ArrowDown: {keyCode: 40, key: 'ArrowDown'},
+    ArrowLeft: {keyCode: 37, key: 'ArrowLeft'},
+    ArrowRight: {keyCode: 39, key: 'ArrowRight'},
+    Enter: {keyCode: 13, key: 'Enter'},
+    Escape: {keyCode: 27, key: 'Escape'},
+    Space: {keyCode: 32, key: ' '},
+    ShiftLeft: {keyCode: 16, key: 'Shift'},
+};
+
+function sendKey(code, down) {
+    const info = KEY_INFO[code];
+    document.dispatchEvent(new KeyboardEvent(down ? 'keydown' : 'keyup', {
+        code,
+        key: info.key,
+        keyCode: info.keyCode,
+        which: info.keyCode,
+        bubbles: true,
+        cancelable: true,
+    }));
+}
+
+/* Each button tracks its own held pointers (by id), so two fingers on two
+   different buttons (e.g. steering a diagonal) hold both keys down, and a
+   second finger joining or leaving an already-held button does not send a
+   spurious extra keydown/keyup. `sync` only acts on an actual down/up
+   transition: releasing a captured pointer fires both `pointerup` and
+   `lostpointercapture`, and a plain size check would send keyup twice. */
+function setupTouchControls() {
+    for (const button of document.querySelectorAll('#touch-controls [data-key]')) {
+        const code = button.dataset.key;
+        const held = new Set();
+        let down = false;
+        const sync = () => {
+            const wantDown = held.size > 0;
+            if (wantDown !== down) {
+                down = wantDown;
+                sendKey(code, down);
+            }
+        };
+        const press = (event) => {
+            event.preventDefault();
+            button.setPointerCapture(event.pointerId);
+            held.add(event.pointerId);
+            sync();
+        };
+        const release = (event) => {
+            held.delete(event.pointerId);
+            sync();
+        };
+        button.addEventListener('pointerdown', press);
+        button.addEventListener('pointerup', release);
+        button.addEventListener('pointercancel', release);
+        button.addEventListener('lostpointercapture', release);
+    }
+}
+
 function startPage() {
     const $ = (id) => document.getElementById(id);
     const status = $('status');
@@ -130,6 +192,14 @@ function startPage() {
     }
     setHidden($('mute').querySelector('.icon-unmuted'), muted);
     setHidden($('mute').querySelector('.icon-muted'), !muted);
+    setupTouchControls();
+
+    /* iOS Safari's folder picker has a long history of silently falling
+       back to individual files instead of a real folder; there is no
+       reliable feature test for that, so this is a plain platform check. */
+    if (/iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream) {
+        $('ios-note').hidden = false;
+    }
 
     const print = (text, error) => {
         const line = document.createElement('div');
@@ -164,6 +234,7 @@ function startPage() {
             }
             $('fps').textContent = '';
             paused = false;
+            autoPaused = false;
             setHidden(playPause.querySelector('.icon-pause'), false);
             setHidden(playPause.querySelector('.icon-play'), true);
             playPause.disabled = true;
@@ -274,6 +345,29 @@ function startPage() {
         setHidden(playPause.querySelector('.icon-play'), !paused);
     });
 
+    /* A hidden tab throttles requestAnimationFrame to a few fps (or less),
+       the main loop's own clock: rather than stumble along at that rate (or
+       jump by the huge gap it leaves once visible again, which can make a
+       physics step unstable), freeze the engine while hidden and resume
+       where it left off. Tracked apart from `paused` so a user's own pause
+       is not silently lifted just because the tab came back into view. */
+    let autoPaused = false;
+    document.addEventListener('visibilitychange', async () => {
+        if (!document.body.classList.contains('playing')) {
+            return;
+        }
+        const player = await ready;
+        if (document.hidden) {
+            if (!paused) {
+                player._player_pause();
+                autoPaused = true;
+            }
+        } else if (autoPaused) {
+            player._player_resume();
+            autoPaused = false;
+        }
+    });
+
     muteButton.addEventListener('click', async () => {
         const player = await ready;
         muted = !muted;
@@ -288,10 +382,43 @@ function startPage() {
     });
 
     fullscreenButton.addEventListener('click', () => {
+        const el = $('player');
+        if (el.classList.contains('fake-fullscreen')) {
+            el.classList.remove('fake-fullscreen');
+            document.body.classList.remove('fullscreen-lock');
+            return;
+        }
         if (document.fullscreenElement) {
             document.exitFullscreen();
-        } else {
-            $('player').requestFullscreen?.();
+            return;
+        }
+        /* iPhone Safari grants the real Fullscreen API to <video> only: it
+           may throw, reject, or just silently do nothing, so a plain CSS
+           "cover the viewport" stand-in catches all three. */
+        const fallback = () => {
+            el.classList.add('fake-fullscreen');
+            document.body.classList.add('fullscreen-lock');
+        };
+        if (!el.requestFullscreen) {
+            fallback();
+            return;
+        }
+        try {
+            Promise.resolve(el.requestFullscreen()).catch(fallback);
+        } catch {
+            fallback();
+            return;
+        }
+        setTimeout(() => {
+            if (!document.fullscreenElement) {
+                fallback();
+            }
+        }, 400);
+    });
+
+    document.addEventListener('fullscreenchange', () => {
+        if (!document.fullscreenElement) {
+            document.body.classList.remove('fullscreen-lock');
         }
     });
 
