@@ -112,7 +112,7 @@ typedef struct nmo_enum_type_def_t {
  *
  * @param type_registry Type registry
  * @param enum_def Enum type definition
- * @param out_type_id Output type ID (optional)
+ * @param out_guid Receives the GUID of the registered type (optional)
  * @return NMO_OK on success, error code on failure
  *
  * Example:
@@ -174,7 +174,7 @@ typedef struct nmo_flags_type_def_t {
  *
  * @param type_registry Type registry
  * @param flags_def Flags type definition
- * @param out_type_id Output type ID (optional)
+ * @param out_guid Receives the GUID of the registered type (optional)
  * @return NMO_OK on success, error code on failure
  *
  * Example:
@@ -259,7 +259,7 @@ typedef struct nmo_union_type_def_t {
  *
  * @param type_registry Type registry
  * @param struct_def Struct type definition
- * @param out_type_id Output type ID (optional)
+ * @param out_guid Receives the GUID of the registered type (optional)
  * @return NMO_OK on success, error code on failure
  *
  * Example:

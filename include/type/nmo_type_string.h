@@ -22,7 +22,7 @@
  * - Enum:       name | integer                   e.g., "RED", "1"
  * - Flags:      name1|name2 | 0xvalue            e.g., "READ|WRITE", "0x03"
  * - String:     "..." (supports escaping)        e.g., "\"Hello\\nWorld\""
- * - ObjectID:   #id                              e.g., "#12345"
+ * - ObjectID:   \#id                             e.g., "#12345"
  */
 
 #ifndef NMO_TYPE_STRING_H

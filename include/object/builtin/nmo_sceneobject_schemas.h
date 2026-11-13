@@ -38,9 +38,10 @@ typedef struct nmo_sceneobject_state {
 /**
  * @brief Deserialize CKSceneObject from chunk
  * 
- * @param chunk Chunk to read from
- * @param arena Arena for allocations
- * @param out_state Output state structure
+ * @param instance State of the class to fill
+ * @param chunk    Chunk to read
+ * @param type     Type descriptor of the class
+ * @param context  Deserialize context (nmo_deserialize_context_t *)
  * @return Result indicating success or error
  */
 NMO_API nmo_status_t nmo_sceneobject_deserialize(
@@ -52,9 +53,10 @@ NMO_API nmo_status_t nmo_sceneobject_deserialize(
 /**
  * @brief Serialize CKSceneObject to chunk
  * 
- * @param in_state State to serialize (input)
- * @param out_chunk Chunk to write to (output)
- * @param arena Arena allocator for error handling
+ * @param instance  State of the class to write
+ * @param out_chunk Chunk to write to
+ * @param type      Type descriptor of the class
+ * @param context   Serialize context (nmo_serialize_context_t *)
  * @return Result indicating success or error
  */
 NMO_API nmo_status_t nmo_sceneobject_serialize(

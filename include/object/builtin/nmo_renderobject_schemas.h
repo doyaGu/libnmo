@@ -55,9 +55,10 @@ typedef struct nmo_renderobject_state {
 /**
  * @brief Deserialize CKRenderObject from chunk (public API)
  * 
- * @param chunk Chunk containing CKRenderObject data
- * @param arena Arena for allocations
- * @param out_state Output state structure
+ * @param instance State of the class to fill
+ * @param chunk    Chunk to read
+ * @param type     Type descriptor of the class
+ * @param context  Deserialize context (nmo_deserialize_context_t *)
  * @return Result indicating success or error
  */
 NMO_API nmo_status_t nmo_renderobject_deserialize(
@@ -69,8 +70,10 @@ NMO_API nmo_status_t nmo_renderobject_deserialize(
 /**
  * @brief Serialize CKRenderObject to chunk (public API)
  * 
- * @param chunk Chunk to write to
- * @param state State to serialize
+ * @param instance  State of the class to write
+ * @param out_chunk Chunk to write to
+ * @param type      Type descriptor of the class
+ * @param context   Serialize context (nmo_serialize_context_t *)
  * @return Result indicating success or error
  */
 NMO_API nmo_status_t nmo_renderobject_serialize(

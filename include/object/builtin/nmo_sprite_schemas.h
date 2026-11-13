@@ -107,8 +107,8 @@ typedef struct nmo_sprite_state {
 /**
  * @brief CKSprite deserialize function pointer type
  * 
- * @param chunk Chunk containing CKSprite data
- * @param arena Arena for allocations
+ * @param out_chunk Chunk containing CKSprite data
+ * @param arena     Arena for allocations
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
@@ -120,8 +120,9 @@ typedef nmo_status_t (*nmo_sprite_deserialize_fn)(
 /**
  * @brief CKSprite serialize function pointer type
  * 
- * @param chunk Chunk to write to
- * @param state Input state structure
+ * @param in_state  Input state structure
+ * @param out_chunk Chunk to write to
+ * @param arena     Arena for temporary allocations
  * @return Result indicating success or error
  */
 typedef nmo_status_t (*nmo_sprite_serialize_fn)(
@@ -134,21 +135,12 @@ typedef nmo_status_t (*nmo_sprite_serialize_fn)(
  * ============================================================================= */
 
 /**
- * @brief Register CKSprite schema types
- * 
- * Registers schema types for CKSprite state structures.
- * Must be called during initialization before using CKSprite schemas.
- * 
- * @param registry Schema registry to register into
- * @param arena Arena for schema allocations
- * @return Result indicating success or error
- */
-/**
  * @brief Deserialize CKSprite from chunk (public API)
  * 
- * @param chunk Chunk containing CKSprite data
- * @param arena Arena for allocations
- * @param out_state Output state structure
+ * @param instance State of the class to fill
+ * @param chunk    Chunk to read
+ * @param type     Type descriptor of the class
+ * @param context  Deserialize context (nmo_deserialize_context_t *)
  * @return Result indicating success or error
  */
 NMO_API nmo_status_t nmo_sprite_deserialize(
@@ -160,9 +152,10 @@ NMO_API nmo_status_t nmo_sprite_deserialize(
 /**
  * @brief Serialize CKSprite to chunk (public API)
  * 
- * @param chunk Chunk to write to
- * @param state State to serialize
- * @param arena Arena for temporary allocations
+ * @param instance  State of the class to write
+ * @param out_chunk Chunk to write to
+ * @param type      Type descriptor of the class
+ * @param context   Serialize context (nmo_serialize_context_t *)
  * @return Result indicating success or error
  */
 NMO_API nmo_status_t nmo_sprite_serialize(

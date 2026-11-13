@@ -50,9 +50,10 @@ typedef struct nmo_object_state {
  * Reads CKObject visibility state from chunk using identifier-based reading.
  * Symmetric to CKObject::Load in Virtools SDK.
  * 
- * @param chunk Chunk containing object data
- * @param arena Arena for allocations
- * @param out_state Output state structure
+ * @param instance State of the class to fill
+ * @param chunk    Chunk to read
+ * @param type     Type descriptor of the class
+ * @param context  Deserialize context (nmo_deserialize_context_t *)
  * @return Result indicating success or error
  */
 /**
@@ -74,9 +75,10 @@ NMO_API nmo_status_t nmo_object_deserialize(
  * Writes CKObject visibility state to chunk using identifier-based writing.
  * Symmetric to CKObject::Save in Virtools SDK.
  * 
- * @param in_state  Input state structure to serialize
- * @param out_chunk Output chunk to write to
- * @param arena     Arena for temporary allocations
+ * @param instance  State of the class to write
+ * @param out_chunk Chunk to write to
+ * @param type      Type descriptor of the class
+ * @param context   Serialize context (nmo_serialize_context_t *)
  * @return Result indicating success or error
  */
 /**
@@ -100,8 +102,9 @@ NMO_DECLARE_OBJECT_SCHEMA(nmo_object_vtable, nmo_register_object_type)
  * Called after deserialization to resolve references and initialize runtime state.
  * Equivalent to CKObject::PostLoad() in Virtools SDK.
  * 
- * @param state Deserialized object state
- * @param context Serialization context (nmo_serialize_context_t*)
+ * @param instance Deserialized object state
+ * @param type     Type descriptor of the class
+ * @param context  Repository the object is in
  * @return Result indicating success or error
  */
 /**

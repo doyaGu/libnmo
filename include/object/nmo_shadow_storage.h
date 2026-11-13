@@ -146,19 +146,27 @@ NMO_API bool nmo_shadow_has_included_files(const nmo_shadow_storage_t *storage);
 NMO_API size_t nmo_shadow_chunk_tail_count(const nmo_shadow_storage_t *storage);
 
 /**
+ * @brief Called for each captured chunk tail; return false to stop.
+ *
+ * @param chunk_id Id of the object the tail belongs to
+ * @param data     Tail bytes
+ * @param size     Tail size in bytes
+ * @param user     User data given to nmo_shadow_iterate_chunk_tails()
+ */
+typedef bool (*nmo_shadow_tail_callback_t)(uint32_t chunk_id,
+                                           const void *data,
+                                           size_t size,
+                                           void *user);
+
+/**
  * @brief Iterate over all captured chunk tails.
  *
- * Callback receives chunk_id, data pointer, and size for each tail.
  * Iteration continues while callback returns true.
  *
  * @param storage  Shadow storage instance
  * @param callback Function to call for each tail
  * @param user     User data passed to callback
  */
-typedef bool (*nmo_shadow_tail_callback_t)(uint32_t chunk_id,
-                                           const void *data,
-                                           size_t size,
-                                           void *user);
 
 NMO_API void nmo_shadow_iterate_chunk_tails(const nmo_shadow_storage_t *storage,
                                              nmo_shadow_tail_callback_t callback,

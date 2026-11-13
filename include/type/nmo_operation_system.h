@@ -428,12 +428,11 @@ NMO_API const nmo_operation_family_t *nmo_operation_registry_get_family(
 );
 
 /**
- * @brief Enumerate all operations in family
+ * @brief Called for each operation of a family
  *
- * @param family    Operation family
- * @param callback  Callback for each operation
- * @param user_data User data for callback
- * @return NMO_OK on success, error code on failure
+ * @param cell      The operation's cell in the family's tree
+ * @param user_data User data given with the callback
+ * @return NMO_OK to go on, an error code to stop
  */
 typedef nmo_status_t (*nmo_operation_enum_fn)(
     const nmo_operation_tree_cell_t *cell,

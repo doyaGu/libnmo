@@ -1160,11 +1160,11 @@ NMO_API nmo_status_t nmo_chunk_start_manager_sequence(nmo_chunk_t *chunk,
 /**
  * @brief Write manager int
  *
- * Writes manager ID and value pair.
- * Tracks position in managers[] list.
+ * Writes the manager GUID and the value, and records the position in the
+ * managers[] list.
  *
  * @param chunk Chunk (required)
- * @param mgr_id Manager ID
+ * @param manager_guid GUID of the manager the value belongs to
  * @param value Integer value
  * @return NMO_OK on success, error code on failure
  */
@@ -1175,10 +1175,10 @@ NMO_API nmo_status_t nmo_chunk_write_manager_int(nmo_chunk_t *chunk,
 /**
  * @brief Read manager int
  *
- * Reads manager ID and value pair.
+ * Reads the manager GUID and the value.
  *
  * @param chunk Chunk (required)
- * @param out_mgr_id Output manager ID (required)
+ * @param out_manager_guid Receives the manager GUID (required)
  * @param out_value Output value (required)
  * @return NMO_OK on success, error code on failure
  */
