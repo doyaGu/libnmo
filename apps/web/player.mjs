@@ -297,7 +297,7 @@ function startPage() {
                 return element;
             };
             button('Play', 'play-button small', () => play(game.id));
-            button('Settings', 'button small', () => openSettings(game));
+            button('Settings', 'button small', async () => openSettings(await library.get(game.id)));
             button('Saves', 'button small', () => openSaves(game));
             button('Remove', 'button small', () => removeGame(game));
             item.append(info, actions);
@@ -421,7 +421,7 @@ function startPage() {
                 entry: plan.inner,
                 profile: plan.profile.id,
                 source: pending.source ?? null,
-                settings: {values: {}, keymap: {}, registry: ''},
+                settings: {values: {}, keys: [], pad: {}, registry: []},
             }, files, (done, total) => setStatus(`Copying ${done} of ${total} files…`, done / total));
         } catch (error) {
             busy = false;
@@ -522,11 +522,43 @@ function startPage() {
 
     /* ---- Playing ---- */
 
+    /* A game's own settings, as the dialog keeps them: profile option
+       values, key pairs [player's key, game key], gamepad buttons
+       {index: key code ('' for none)} over the profile's, and registry
+       entries [key, name, value]; read from the earlier shape too
+       (keymap {game key: player's key}, registry as KEY\NAME=VALUE lines) */
+    const gameSettings = (game) => {
+        const own = game.settings ?? {};
+        const keys = own.keys ?? Object.entries(own.keymap ?? {}).map(([to, from]) => [from, to]);
+        let registry = own.registry ?? [];
+        if (typeof registry === 'string') {
+            registry = registry.split('\n').map((line) => line.trim()).filter(Boolean).map((line) => {
+                const equals = line.indexOf('=');
+                const head = equals >= 0 ? line.slice(0, equals) : line;
+                const slash = head.lastIndexOf('\\');
+                return [head.slice(0, Math.max(slash, 0)), head.slice(slash + 1), equals >= 0 ? line.slice(equals + 1) : ''];
+            });
+        }
+        return {values: own.values ?? {}, keys, pad: own.pad ?? {}, registry};
+    };
+
+    /* The game's keys and gamepad buttons, from now on */
+    const applyInput = (game) => {
+        const profile = profileById(game.profile);
+        const own = gameSettings(game);
+        remapper.set(own.keys);
+        gamepads.release();
+        gamepads.mapping = {
+            stick: profile.gamepad?.stick,
+            buttons: {...(profile.gamepad?.buttons ?? {}), ...own.pad},
+        };
+    };
+
     const runArgs = (game) => {
         const profile = profileById(game.profile);
-        const own = game.settings ?? {};
+        const own = gameSettings(game);
         const lines = ['--write', `/save/${game.id}`, '--path', '/game'];
-        const registry = registryFor(profile, own.values, own.registry ?? '');
+        const registry = registryFor(profile, own.values, own.registry);
         if (registry) {
             lines.push('--registry', registry);
         }
@@ -599,8 +631,7 @@ function startPage() {
         api.setVolume(settings.volume);
         api.setMute(settings.muted ? 1 : 0);
         api.setFrameLimit(settings.frameLimit ? 1 : 0);
-        remapper.set(current.settings?.keymap);
-        gamepads.profile = profile;
+        applyInput(current);
         buildTouchControls($('touch-controls'), profile);
         $('hint').textContent = profile.hint;
         document.title = `${current.name} · nmo player`;
@@ -627,7 +658,7 @@ function startPage() {
         $('hint').textContent = '';
         remapper.releaseAll();
         gamepads.release();
-        gamepads.profile = null;
+        gamepads.mapping = null;
         setPaused(false);
         autoPaused = false;
         setControls(false);
@@ -830,61 +861,142 @@ function startPage() {
     /* ---- Settings ---- */
 
     let editing = null;      /* the game whose settings the dialog shows */
-    let editingKeymap = {};
-    let capturing = null;    /* the game key waiting for the player's key */
+    let draft = null;        /* its settings as the dialog has them */
+    let capturing = null;    /* what waits for a key: {list: 'keys', row, side} or {list: 'pad', button} */
 
-    const drawKeymap = () => {
-        const table = $('keymap');
-        const profile = profileById(editing.profile);
-        table.replaceChildren(...profile.keys.map((code) => {
-            const row = document.createElement('tr');
-            const game = document.createElement('td');
-            game.textContent = keyName(code);
-            const bound = document.createElement('td');
-            const mapped = editingKeymap[code];
-            bound.textContent = capturing === code ? 'Press a key…' : keyName(mapped ?? code);
-            bound.className = mapped ? 'remapped' : '';
-            const actions = document.createElement('td');
-            const change = document.createElement('button');
-            change.type = 'button';
-            change.className = 'button small';
-            change.textContent = 'Change';
-            change.addEventListener('click', () => {
-                capturing = code;
-                drawKeymap();
-            });
-            actions.append(change);
-            if (mapped) {
-                const reset = document.createElement('button');
-                reset.type = 'button';
-                reset.className = 'button small';
-                reset.textContent = 'Reset';
-                reset.addEventListener('click', () => {
-                    delete editingKeymap[code];
-                    drawKeymap();
-                });
-                actions.append(reset);
-            }
-            row.append(game, bound, actions);
-            return row;
-        }));
+    const PAD_BUTTONS = [
+        [0, 'A / Cross'], [1, 'B / Circle'], [2, 'X / Square'], [3, 'Y / Triangle'],
+        [4, 'Left shoulder'], [5, 'Right shoulder'], [6, 'Left trigger'], [7, 'Right trigger'],
+        [8, 'Back / Select'], [9, 'Start'], [10, 'Left stick'], [11, 'Right stick'],
+    ];
+
+    const element = (tag, props = {}, children = []) => {
+        const node = Object.assign(document.createElement(tag), props);
+        node.append(...children);
+        return node;
     };
+    const smallButton = (text, action, extra = '') => {
+        const button = element('button', {type: 'button', className: `button small ${extra}`, textContent: text});
+        button.addEventListener('click', action);
+        return button;
+    };
+    const capture = (target) => {
+        capturing = target;
+        drawKeymap();
+        drawPadmap();
+    };
+    const capturingIs = (list, a, b) => capturing?.list === list &&
+        (list === 'pad' ? capturing.button === a : capturing.row === a && capturing.side === b);
 
+    function drawKeymap() {
+        const table = $('keymap');
+        if (draft.keys.length === 0) {
+            table.replaceChildren(element('tr', {}, [element('td', {className: 'dim', textContent: 'The game gets the keys you press, as they are.'})]));
+            return;
+        }
+        table.replaceChildren(...draft.keys.map(([from, to], row) => {
+            const key = (code, side) => smallButton(
+                capturingIs('keys', row, side) ? 'Press a key…' : code ? keyName(code) : '?',
+                () => capture({list: 'keys', row, side}), 'key');
+            return element('tr', {}, [
+                element('td', {}, [key(from, 'from')]),
+                element('td', {className: 'dim', textContent: '→'}),
+                element('td', {}, [key(to, 'to')]),
+                element('td', {}, [smallButton('Remove', () => {
+                    draft.keys.splice(row, 1);
+                    capture(null);
+                })]),
+            ]);
+        }));
+    }
+
+    function drawPadmap() {
+        const profile = profileById(editing.profile);
+        const defaults = profile.gamepad?.buttons ?? {};
+        $('padmap').replaceChildren(...PAD_BUTTONS.map(([button, label]) => {
+            const own = Object.hasOwn(draft.pad, button);
+            const code = own ? draft.pad[button] : defaults[button];
+            const actions = [smallButton(
+                capturingIs('pad', button) ? 'Press a key…' : code ? keyName(code) : 'Nothing',
+                () => capture({list: 'pad', button}), 'key')];
+            if (code) {
+                actions.push(smallButton('Clear', () => {
+                    draft.pad[button] = '';
+                    capture(null);
+                }));
+            }
+            if (own) {
+                actions.push(smallButton('Default', () => {
+                    delete draft.pad[button];
+                    capture(null);
+                }));
+            }
+            return element('tr', {}, [element('td', {textContent: label}), element('td', {}, actions)]);
+        }));
+    }
+
+    function drawRegistry() {
+        const table = $('registry');
+        if (draft.registry.length === 0) {
+            table.replaceChildren(element('tr', {}, [element('td', {className: 'dim', textContent: 'None added.'})]));
+            return;
+        }
+        const fields = [['Key', 'Software\\Company\\Game'], ['Name', 'Setting'], ['Value', '1']];
+        table.replaceChildren(...draft.registry.map((entry, row) => element('tr', {}, [
+            ...fields.map(([label, placeholder], column) => {
+                const input = element('input', {value: entry[column] ?? '', placeholder, spellcheck: false});
+                input.setAttribute('aria-label', label);
+                input.addEventListener('input', () => {
+                    entry[column] = input.value;
+                });
+                return element('td', {}, [input]);
+            }),
+            element('td', {}, [smallButton('Remove', () => {
+                draft.registry.splice(row, 1);
+                drawRegistry();
+            })]),
+        ])));
+    }
+
+    $('keymap-add').addEventListener('click', () => {
+        draft.keys.push(['', '']);
+        capture({list: 'keys', row: draft.keys.length - 1, side: 'from'});
+    });
+    $('registry-add').addEventListener('click', () => {
+        draft.registry.push(['', '', '']);
+        drawRegistry();
+        $('registry').querySelector('tr:last-child input')?.focus();
+    });
+
+    /* The key the player presses while a key button waits for one; Esc
+       gives up (and drops a new key row left half chosen) */
     window.addEventListener('keydown', (event) => {
         if (capturing === null || !settingsDialog.open) {
             return;
         }
         event.preventDefault();
         event.stopImmediatePropagation();
-        if (event.code !== 'Escape') {
-            if (event.code === capturing) {
-                delete editingKeymap[capturing];
+        const target = capturing;
+        capturing = null;
+        if (target.list === 'pad') {
+            if (event.code !== 'Escape') {
+                draft.pad[target.button] = event.code;
+            }
+        } else {
+            const pair = draft.keys[target.row];
+            if (event.code === 'Escape') {
+                if (!pair[0] || !pair[1]) {
+                    draft.keys.splice(target.row, 1);
+                }
             } else {
-                editingKeymap[capturing] = event.code;
+                pair[target.side === 'from' ? 0 : 1] = event.code;
+                if (target.side === 'from' && !pair[1]) {
+                    capturing = {list: 'keys', row: target.row, side: 'to'};
+                }
             }
         }
-        capturing = null;
         drawKeymap();
+        drawPadmap();
     }, true);
 
     function openSettings(game) {
@@ -893,22 +1005,25 @@ function startPage() {
         $('game-settings').hidden = editing === null;
         if (editing) {
             const profile = profileById(editing.profile);
-            const own = editing.settings ?? {};
-            $('game-settings-title').textContent = `${editing.name} (${profile.name})`;
+            const own = gameSettings(editing);
+            draft = {keys: own.keys.map((pair) => [...pair]), pad: {...own.pad},
+                     registry: own.registry.map((entry) => [...entry])};
+            $('game-settings-title').textContent =
+                editing.name === profile.name ? editing.name : `${editing.name} (${profile.name})`;
+            $('profile-options').hidden = profile.settings.length === 0;
+            $('profile-options-title').textContent = `${profile.name} options`;
             $('profile-settings').replaceChildren(...profile.settings.map((setting) => {
-                const label = document.createElement('label');
-                const select = document.createElement('select');
+                const select = element('select');
                 select.dataset.setting = setting.id;
                 for (const [value, text] of setting.options) {
                     select.append(new Option(text, value));
                 }
-                select.value = own.values?.[setting.id] ?? setting.default;
-                label.append(setting.label, ' ', select);
-                return label;
+                select.value = own.values[setting.id] ?? setting.default;
+                return element('label', {}, [setting.label, ' ', select]);
             }));
-            editingKeymap = {...(own.keymap ?? {})};
             drawKeymap();
-            $('registry').value = (own.registry ?? '');
+            drawPadmap();
+            drawRegistry();
         }
         $('opt-renderer').value = settings.renderer;
         $('opt-scale').value = settings.scale;
@@ -950,11 +1065,18 @@ function startPage() {
                 values[select.dataset.setting] = select.value;
             }
             const updated = await library.update(editing.id, {
-                settings: {values, keymap: editingKeymap, registry: $('registry').value},
+                settings: {
+                    values,
+                    keys: draft.keys.filter(([from, to]) => from && to),
+                    pad: draft.pad,
+                    registry: draft.registry
+                        .map((entry) => entry.map((part) => part.trim()))
+                        .filter(([key, name]) => key && name),
+                },
             });
             if (current?.id === updated.id) {
                 current = updated;
-                remapper.set(updated.settings.keymap);
+                applyInput(updated);
             }
             refreshLibrary();
         }

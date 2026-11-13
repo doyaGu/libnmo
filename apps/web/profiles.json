@@ -6,7 +6,6 @@
       "match": {"files": ["base.cmo", "database.tdb"]},
       "entry": "base.cmo",
       "files": {"include": ["base.cmo", "database.tdb", "3d entities", "textures", "sounds", "text"]},
-      "keys": ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "Space", "Enter", "Escape"],
       "touch": {"dpad": true, "buttons": ["Enter", "Escape", "Space", "ShiftLeft"]},
       "gamepad": {
         "stick": "arrows",
@@ -27,7 +26,6 @@
       "id": "generic",
       "name": "Virtools game",
       "files": {"exclude": [".exe", ".dll", ".pdb"]},
-      "keys": ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter", "Escape", "Space", "ShiftLeft", "ControlLeft"],
       "touch": {"dpad": true, "buttons": ["Enter", "Escape", "Space", "ShiftLeft"]},
       "gamepad": {
         "stick": "arrows",

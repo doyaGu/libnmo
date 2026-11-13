@@ -135,13 +135,21 @@
     <h2>Settings</h2>
     <fieldset id="game-settings">
       <legend id="game-settings-title">This game</legend>
-      <div id="profile-settings" class="grid"></div>
+      <div id="profile-options">
+        <h3 id="profile-options-title">Options</h3>
+        <div id="profile-settings" class="grid"></div>
+      </div>
       <h3>Keys</h3>
-      <p class="dim">Press <em>Change</em>, then the key you want to play with.</p>
-      <table id="keymap"></table>
+      <p class="dim">Play with keys of your choice: pressing the first key sends the game the second.</p>
+      <table id="keymap" class="editor"></table>
+      <button type="button" id="keymap-add" class="button small">Add a key</button>
+      <h3>Gamepad buttons</h3>
+      <p class="dim">The key each button presses (a gamepad is also the game's joystick).</p>
+      <table id="padmap" class="editor"></table>
       <h3>Registry</h3>
-      <p class="dim">More values the game reads, one <code>KEY\NAME=VALUE</code> a line.</p>
-      <textarea id="registry" rows="3" spellcheck="false"></textarea>
+      <p class="dim">Values the game reads from the Windows registry.</p>
+      <table id="registry" class="editor"></table>
+      <button type="button" id="registry-add" class="button small">Add a value</button>
     </fieldset>
     <fieldset>
       <legend>Player</legend>

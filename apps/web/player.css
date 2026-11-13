@@ -560,8 +560,7 @@ body.fullscreen-lock {
 input[type="url"],
 input[type="search"],
 input[type="number"],
-#plan input,
-textarea {
+#plan input {
     font: inherit;
     font-size: 14px;
     padding: 6px 10px;
@@ -702,25 +701,37 @@ dialog .dim {
     font-size: 14px;
 }
 
-dialog textarea {
-    width: 100%;
-    font: 13px/1.4 ui-monospace, monospace;
+table.editor {
+    border-collapse: collapse;
+    margin-bottom: 6px;
 }
 
-#keymap td {
-    padding: 3px 10px 3px 0;
+table.editor td {
+    padding: 3px 8px 3px 0;
+    vertical-align: middle;
 }
 
-#keymap td:first-child {
-    min-width: 5em;
+table.editor .button.key {
+    min-width: 6.5em;
 }
 
-#keymap .remapped {
-    color: var(--chrome-accent);
-}
-
-#keymap button + button {
+table.editor .button + .button {
     margin-left: 6px;
+}
+
+#registry input {
+    width: 100%;
+    min-width: 6em;
+    font: 13px/1.4 ui-monospace, monospace;
+    padding: 4px 8px;
+    border: 1px solid #4a4a48;
+    border-radius: 6px;
+    background: #1c1c1b;
+    color: var(--chrome-fg);
+}
+
+#registry td:first-child {
+    width: 50%;
 }
 
 /* ---- Developer tools ---- */

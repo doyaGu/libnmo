@@ -78,8 +78,8 @@ function isEditable(target) {
 }
 
 /*
- * Keys the player pressed, sent as others: `map` is {game key: player's
- * key}. Typing in the page's own fields never reaches the game at all:
+ * Keys the player pressed, sent as others: set() takes [player's key, game
+ * key] pairs. Typing in the page's own fields never reaches the game at all:
  * SDL listens on the window, so those keys stop at the document, after
  * the field itself has had them.
  */
@@ -120,11 +120,11 @@ export class KeyRemapper {
         window.addEventListener('keyup', handle, true);
     }
 
-    set(map = {}) {
+    set(pairs = []) {
         this.releaseAll();
         this.physical = new Map();
-        for (const [game, player] of Object.entries(map)) {
-            if (player && player !== game) {
+        for (const [player, game] of pairs) {
+            if (player && game && player !== game) {
                 this.physical.set(player, game);
             }
         }
@@ -154,14 +154,15 @@ function pointOfView(buttons) {
 /*
  * Gamepads, read every animation frame: each of the first four is the
  * engine's joystick of the same slot (axes, POV hat and buttons), and the
- * first also presses the profile's keys (its stick and D-pad as the arrows,
- * its buttons as `gamepad.buttons` says).
+ * first also presses keys as `mapping` says: {stick: 'arrows' (the stick
+ * and D-pad as the arrow keys) or none, buttons: {index: key code}}, the
+ * standard mapping's button indices.
  */
 export class Gamepads {
     constructor(setJoystick) {
         this.setJoystick = setJoystick;
         this.enabled = true;
-        this.profile = null;
+        this.mapping = null;
         this.keysDown = new Set();
         this.attached = new Set();
         this.onChange = null;
@@ -197,7 +198,7 @@ export class Gamepads {
             });
             this.setJoystick(pad.index, true, axis(0), axis(1), 0, axis(2), axis(3), 0,
                              pointOfView(pad.buttons), buttons >>> 0);
-            if (this.profile && keys.size === 0 && pad === pads.find(Boolean)) {
+            if (this.mapping && pad === pads.find(Boolean)) {
                 this.padKeys(pad, keys);
             }
         }
@@ -221,7 +222,7 @@ export class Gamepads {
     }
 
     padKeys(pad, keys) {
-        const config = this.profile.gamepad ?? {};
+        const config = this.mapping;
         const dead = 0.5;
         if (config.stick === 'arrows') {
             const x = pad.axes[0] ?? 0, y = pad.axes[1] ?? 0;
@@ -231,7 +232,7 @@ export class Gamepads {
             if (x > dead || pad.buttons[15]?.pressed) keys.add('ArrowRight');
         }
         for (const [index, code] of Object.entries(config.buttons ?? {})) {
-            if (pad.buttons[index]?.pressed) {
+            if (code && pad.buttons[index]?.pressed) {
                 keys.add(code);
             }
         }

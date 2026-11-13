@@ -3,16 +3,17 @@
 // among the files it is given ("match": base names that must all be there,
 // any case), which composition it starts from ("entry", a base name), which
 // of its files the game reads ("files": "include" the first path parts, or
-// "exclude" extensions), its registry "settings", the "keys" it plays with
-// (for remapping), its "touch" buttons and "gamepad" keys, and a "hint" on
-// how to play. A profile without "match" never recognizes a game; the one
-// with id "generic" is what any other game runs with.
+// "exclude" extensions), its own options ("settings", each a registry value
+// with a few choices), its "touch" buttons, the keys a gamepad presses by
+// default ("gamepad") and a "hint" on how to play. A profile without
+// "match" never recognizes a game; the one with id "generic" is what any
+// other game runs with. Key remapping and registry values a player adds
+// themselves are the game's own settings, not the profile's.
 
 /* What runs a game when profiles.json could not be read */
 const FALLBACK = {
     id: 'generic',
     name: 'Virtools game',
-    keys: ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Escape', 'Space'],
     touch: {dpad: true, buttons: ['Enter', 'Escape', 'Space']},
     gamepad: {stick: 'arrows', buttons: {}},
     settings: [],
@@ -74,16 +75,16 @@ export function detectProfile(paths) {
     return PROFILES.find((profile) => profile.detect?.(paths)) ?? GENERIC;
 }
 
-/* The registry values a game starts with: its profile's settings as chosen
-   (`values`, by setting id), then the extra KEY\NAME=VALUE lines */
-export function registryFor(profile, values = {}, extra = '') {
+/* The registry values a game starts with, as the player's --registry takes
+   them: its profile's options as chosen (`values`, by setting id), then
+   `extra` [key, name, value] entries */
+export function registryFor(profile, values = {}, extra = []) {
     const entries = profile.settings
         .filter((setting) => setting.registry)
         .map((setting) => `${setting.registry}=${values[setting.id] ?? setting.default}`);
-    for (const line of extra.split('\n')) {
-        const entry = line.trim();
-        if (entry !== '' && !entry.startsWith('#')) {
-            entries.push(entry);
+    for (const [key, name, value] of extra) {
+        if (key && name) {
+            entries.push(`${key}\\${name}=${value ?? ''}`);
         }
     }
     return entries.join(';');
