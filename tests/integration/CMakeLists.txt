@@ -91,6 +91,15 @@ target_link_libraries(test_engine_replay PRIVATE nmo_bb_virtools nmo_bb_physics
 
 # CLI tests
 if(TARGET nmo_cli)
+    # Paths beyond ASCII. On Windows the test runs with the UTF-8 code page as
+    # nmo does, so the command lines it hands nmo are UTF-8.
+    add_executable(test_cli_utf8_paths test_cli_utf8_paths.c)
+    target_link_libraries(test_cli_utf8_paths PRIVATE nmo test_framework)
+    add_dependencies(test_cli_utf8_paths nmo_cli)
+    target_compile_definitions(test_cli_utf8_paths PRIVATE NMO_CLI_PATH="$<TARGET_FILE:nmo_cli>")
+    nmo_use_utf8_code_page(test_cli_utf8_paths)
+    add_test(NAME test_cli_utf8_paths COMMAND test_cli_utf8_paths)
+
     add_executable(test_cli_behavior_run test_cli_behavior_run.c)
     target_link_libraries(test_cli_behavior_run PRIVATE nmo_bb_virtools nmo_bb_physics
                           nmo_bb_terratools nmo_engine nmo_edit test_framework yyjson)

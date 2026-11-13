@@ -82,6 +82,7 @@ add_executable(nmo_cli
     commands/nmo_cmd_completion.c
 )
 set_target_properties(nmo_cli PROPERTIES OUTPUT_NAME nmo)
+nmo_use_utf8_code_page(nmo_cli)
 target_link_libraries(nmo_cli PRIVATE nmo_project nmo_lua nmo_edit nmo_bb_virtools nmo_bb_physics
                       nmo_bb_terratools nmo_engine nmo yyjson)
 # The tools reach the system through libnmo's platform layer. A static libnmo
