@@ -128,6 +128,51 @@ int nmo_platform_clear_terminal(void)
     return system("clear") == 0 ? 0 : -1;
 }
 
+void nmo_platform_use_utf8_console(void)
+{
+}
+
+char *nmo_platform_read_line(FILE *stream)
+{
+    if (stream == NULL) {
+        return NULL;
+    }
+    size_t capacity = 128u;
+    size_t length = 0u;
+    char *line = (char *)malloc(capacity);
+    if (line == NULL) {
+        return NULL;
+    }
+    for (;;) {
+        int ch = fgetc(stream);
+        if (ch == EOF) {
+            if (length == 0u) {
+                free(line);
+                return NULL;
+            }
+            break;
+        }
+        if (ch == '\n') {
+            break;
+        }
+        if (length + 2u > capacity) {
+            char *grown = (char *)realloc(line, capacity * 2u);
+            if (grown == NULL) {
+                free(line);
+                return NULL;
+            }
+            line = grown;
+            capacity *= 2u;
+        }
+        line[length++] = (char)ch;
+    }
+    if (length > 0u && line[length - 1u] == '\r') {
+        length--;
+    }
+    line[length] = '\0';
+    return line;
+}
+
 /* ---- Errors ---- */
 
 char *nmo_platform_error_message(void)

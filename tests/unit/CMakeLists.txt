@@ -7,6 +7,12 @@ macro(add_unit_test name)
     set_tests_properties(${name} PROPERTIES SKIP_RETURN_CODE 77)
 endmacro()
 
+# Platform layer tests; a shared libnmo does not export the platform layer
+add_unit_test(test_platform_console)
+if(NMO_BUILD_SHARED)
+    target_sources(test_platform_console PRIVATE "${PROJECT_SOURCE_DIR}/${NMO_PLATFORM_SOURCES}")
+endif()
+
 # Core layer tests
 add_unit_test(test_allocator)
 # The test asks for SIZE_MAX bytes and expects NULL; a sanitizer would abort instead.

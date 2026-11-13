@@ -432,39 +432,7 @@ char *nmo_repl_readline_basic(const char *prompt) {
         printf("%s", prompt);
         fflush(stdout);
     }
-
-    /* Read up to the newline into a buffer that grows with the line. */
-    size_t capacity = 256u;
-    size_t length = 0u;
-    char *line = (char *)malloc(capacity);
-    if (!line) {
-        return NULL;
-    }
-    for (;;) {
-        int ch = fgetc(stdin);
-        if (ch == EOF) {
-            if (length == 0u) {
-                free(line);
-                return NULL; /* EOF with no input, like fgets */
-            }
-            break;
-        }
-        if (ch == '\n') {
-            break;
-        }
-        if (length + 2u > capacity) {
-            capacity *= 2u;
-            char *grown = (char *)realloc(line, capacity);
-            if (!grown) {
-                free(line);
-                return NULL;
-            }
-            line = grown;
-        }
-        line[length++] = (char)ch;
-    }
-    line[length] = '\0';
-    return line;
+    return nmo_platform_read_line(stdin);
 }
 
 #endif /* NMO_HAVE_ISOCLINE */

@@ -9,11 +9,15 @@
 #include "nmo.h"
 #include "nmo_cli_dispatch.h"
 #include "nmo_cli_common.h"
+#include "../src/platform/platform.h"
 
 #include <stdio.h>
 #include <string.h>
 
 int main(int argc, char **argv) {
+    /* Paths are printed as UTF-8, which a Windows console shows right only in its UTF-8 code page */
+    nmo_platform_use_utf8_console();
+
     /* Handle no arguments */
     if (argc < 2) {
         nmo_cli_print_usage(stderr);

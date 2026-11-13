@@ -47,6 +47,20 @@ char *nmo_platform_home_directory(void);
 bool nmo_platform_is_terminal(FILE *stream);
 /* Clear the terminal's screen with the system's command for it */
 int nmo_platform_clear_terminal(void);
+/*
+ * Have the console show what this process writes as UTF-8 until the
+ * process ends, when the console gets back the code page it had. A Windows
+ * console has a code page of its own, the system's by default, whatever the
+ * process's; other systems' terminals take the bytes as they come, and
+ * there this does nothing.
+ */
+void nmo_platform_use_utf8_console(void);
+/*
+ * A line read from `stream`, without its \n or \r\n, malloc'ed; NULL at the
+ * end of the stream with nothing read, or when out of memory. A line typed
+ * at a Windows console comes as UTF-8, whatever the console's code page.
+ */
+char *nmo_platform_read_line(FILE *stream);
 
 /* ---- Errors ---- */
 

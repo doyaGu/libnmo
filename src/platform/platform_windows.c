@@ -185,6 +185,147 @@ int nmo_platform_clear_terminal(void)
     return system("cls") == 0 ? 0 : -1;
 }
 
+/* The console's output code page before nmo_platform_use_utf8_console(); 0 while it has not changed it */
+static UINT platform_console_code_page;
+
+static void platform_restore_console(void)
+{
+    UINT code_page = platform_console_code_page;
+    if (code_page != 0) {
+        platform_console_code_page = 0;
+        SetConsoleOutputCP(code_page);
+    }
+}
+
+/* Ctrl+C, Ctrl+Break and closing the console end the process without running atexit() */
+static BOOL WINAPI platform_console_event(DWORD event)
+{
+    (void)event;
+    platform_restore_console();
+    return FALSE; /* the next handler, at last the system's, ends the process */
+}
+
+void nmo_platform_use_utf8_console(void)
+{
+    UINT code_page = GetConsoleOutputCP();
+    if (code_page == 0 || code_page == CP_UTF8 || platform_console_code_page != 0) {
+        return; /* no console, one that takes UTF-8 already, or changed before */
+    }
+    if (SetConsoleOutputCP(CP_UTF8)) {
+        platform_console_code_page = code_page;
+        atexit(platform_restore_console);
+        SetConsoleCtrlHandler(platform_console_event, TRUE);
+    }
+}
+
+/* The console that `stream` reads from; NULL when it reads from something else */
+static HANDLE platform_console_input(FILE *stream)
+{
+    int fd = _fileno(stream);
+    if (fd < 0 || !_isatty(fd)) {
+        return NULL;
+    }
+    HANDLE handle = (HANDLE)_get_osfhandle(fd);
+    DWORD mode = 0;
+    return handle != INVALID_HANDLE_VALUE && GetConsoleMode(handle, &mode) ? handle : NULL;
+}
+
+/*
+ * A line typed at `console`, as UTF-8: the console gives it as UTF-16,
+ * where reading bytes would give it in the console's code page. Read one
+ * character at a time, so that nothing after the line is taken.
+ */
+static char *platform_read_console_line(HANDLE console)
+{
+    size_t capacity = 128u;
+    size_t length = 0u;
+    wchar_t *line = (wchar_t *)malloc(capacity * sizeof(wchar_t));
+    if (line == NULL) {
+        return NULL;
+    }
+    for (;;) {
+        wchar_t ch = 0;
+        DWORD count = 0;
+        if (!ReadConsoleW(console, &ch, 1, &count, NULL) || count == 0) {
+            if (length == 0u) {
+                platform_free(line);
+                return NULL;
+            }
+            break;
+        }
+        if (ch == L'\n') {
+            break;
+        }
+        if (length + 2u > capacity) {
+            wchar_t *grown = (wchar_t *)realloc(line, capacity * 2u * sizeof(wchar_t));
+            if (grown == NULL) {
+                free(line);
+                return NULL;
+            }
+            line = grown;
+            capacity *= 2u;
+        }
+        line[length++] = ch;
+    }
+    if (length > 0u && line[length - 1u] == L'\r') {
+        length--;
+    }
+    /* Ctrl+Z at the start of a line ends the input, as the C library has it */
+    if (length > 0u && line[0] == 0x1A) {
+        free(line);
+        return NULL;
+    }
+    line[length] = L'\0';
+    char *utf8 = platform_utf8(line);
+    free(line);
+    return utf8;
+}
+
+char *nmo_platform_read_line(FILE *stream)
+{
+    if (stream == NULL) {
+        return NULL;
+    }
+    HANDLE console = platform_console_input(stream);
+    if (console != NULL) {
+        return platform_read_console_line(console);
+    }
+    size_t capacity = 128u;
+    size_t length = 0u;
+    char *line = (char *)malloc(capacity);
+    if (line == NULL) {
+        return NULL;
+    }
+    for (;;) {
+        int ch = fgetc(stream);
+        if (ch == EOF) {
+            if (length == 0u) {
+                free(line);
+                return NULL;
+            }
+            break;
+        }
+        if (ch == '\n') {
+            break;
+        }
+        if (length + 2u > capacity) {
+            char *grown = (char *)realloc(line, capacity * 2u);
+            if (grown == NULL) {
+                free(line);
+                return NULL;
+            }
+            line = grown;
+            capacity *= 2u;
+        }
+        line[length++] = (char)ch;
+    }
+    if (length > 0u && line[length - 1u] == '\r') {
+        length--;
+    }
+    line[length] = '\0';
+    return line;
+}
+
 /* ---- Errors ---- */
 
 char *nmo_platform_error_message(void)
