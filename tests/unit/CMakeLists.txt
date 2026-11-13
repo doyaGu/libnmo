@@ -364,6 +364,18 @@ if(TARGET nmo_render_gpu)
     add_test(NAME test_render_gpu COMMAND test_render_gpu)
     set_tests_properties(test_render_gpu PROPERTIES SKIP_RETURN_CODE 77)
 endif()
+# The same tests on the GL3 backend; they skip where there is no GL context.
+# Under Emscripten SDL's video backend needs a browser's `window`/canvas, which
+# Node.js (ctest's emulator there) has neither: the offscreen context this test
+# opens crashes outright rather than failing gracefully, so build the library
+# (the web player's view uses it) but leave this unit test to a real browser.
+if(TARGET nmo_render_gl3 AND NOT EMSCRIPTEN)
+    add_executable(test_render_gl3 test_render_soft.c)
+    target_link_libraries(test_render_gl3 PRIVATE nmo test_framework nmo_render_gl3)
+    target_compile_definitions(test_render_gl3 PRIVATE NMO_SOURCE_DIR="${CMAKE_SOURCE_DIR}" RENDER_TEST_GL3=1)
+    add_test(NAME test_render_gl3 COMMAND test_render_gl3)
+    set_tests_properties(test_render_gl3 PROPERTIES SKIP_RETURN_CODE 77)
+endif()
 
 add_unit_test(test_engine_sprites)
 target_link_libraries(test_engine_sprites PRIVATE ${NMO_TEST_BB_PACKS} nmo_engine nmo_edit)

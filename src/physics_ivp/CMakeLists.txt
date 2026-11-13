@@ -8,6 +8,14 @@ set_directory_properties(PROPERTIES COMPILE_OPTIONS "")
 set(IVP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(IVP_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
 add_subdirectory("${NMO_IVP_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/libivp" EXCLUDE_FROM_ALL)
+# ...and its warnings stay warnings: a newer compiler than libivp's own CI
+# (Emscripten's) must not stop libnmo's build
+foreach(_nmo_ivp_target IN ITEMS ivp ivp_qhull)
+    if(TARGET ${_nmo_ivp_target})
+        target_compile_options(${_nmo_ivp_target} PRIVATE
+                               $<IF:$<C_COMPILER_ID:MSVC>,/WX-,-Wno-error>)
+    endif()
+endforeach()
 
 # Report the selected libivp policy, including values migrated from old caches.
 if(DEFINED IVP_STABLE_INTERNAL_STATE)

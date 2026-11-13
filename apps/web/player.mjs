@@ -1,0 +1,252 @@
+// nmo's web player page: the player picks their game folder, its files are
+// copied into the player's memory file system (nothing leaves the browser),
+// and the engine runs base.cmo on the canvas. Node.js (run_node.mjs) imports
+// the same file selection.
+
+import createNmoPlayer from './nmo-player.mjs';
+
+/* The parts of a Ballance folder the game reads, by their first path part (any case) */
+const GAME_PARTS = ['base.cmo', 'database.tdb', '3d entities', 'textures', 'sounds', 'text'];
+
+/*
+ * The game's files among `paths` (relative paths with '/' separators, as a
+ * folder picker or a drop gives them): those under the folder holding
+ * base.cmo, as [source path, path inside that folder]. Empty when no
+ * base.cmo is there.
+ */
+export function selectGameFiles(paths) {
+    let root = null;
+    for (const path of paths) {
+        const parts = path.split('/');
+        if (parts[parts.length - 1].toLowerCase() === 'base.cmo') {
+            const folder = parts.slice(0, -1).join('/');
+            if (root === null || folder.length < root.length) {
+                root = folder;
+            }
+        }
+    }
+    if (root === null) {
+        return [];
+    }
+    const prefix = root === '' ? '' : root + '/';
+    const selected = [];
+    for (const path of paths) {
+        if (!path.startsWith(prefix)) {
+            continue;
+        }
+        const inner = path.slice(prefix.length);
+        if (GAME_PARTS.includes(inner.split('/')[0].toLowerCase())) {
+            selected.push([path, inner]);
+        }
+    }
+    return selected;
+}
+
+/* Write `data` (bytes) at `path` in the module's file system, making its folders */
+export function writeGameFile(module, path, data) {
+    const slash = path.lastIndexOf('/');
+    if (slash > 0) {
+        module.FS.mkdirTree(path.slice(0, slash));
+    }
+    module.FS.writeFile(path, data);
+}
+
+/* ---- The page ---- */
+
+const LANGUAGES = [
+    ['0', 'Deutsch'],
+    ['1', 'English'],
+    ['2', 'Español'],
+    ['3', 'Italiano'],
+    ['4', 'Français'],
+];
+
+/* The files of a dropped folder, with paths relative to the drop */
+async function droppedFiles(items) {
+    const files = [];
+    const readEntry = async (entry, path) => {
+        if (entry.isFile) {
+            const file = await new Promise((resolve, reject) => entry.file(resolve, reject));
+            files.push([path + entry.name, file]);
+        } else if (entry.isDirectory) {
+            const reader = entry.createReader();
+            for (;;) {
+                const batch = await new Promise((resolve, reject) => reader.readEntries(resolve, reject));
+                if (batch.length === 0) {
+                    break;
+                }
+                for (const child of batch) {
+                    await readEntry(child, path + entry.name + '/');
+                }
+            }
+        }
+    };
+    const entries = [];
+    for (const item of items) {
+        const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+        if (entry !== null) {
+            entries.push(entry);
+        }
+    }
+    for (const entry of entries) {
+        await readEntry(entry, '');
+    }
+    return files;
+}
+
+function startPage() {
+    const $ = (id) => document.getElementById(id);
+    const status = $('status');
+    const progress = $('progress');
+    const startButton = $('start');
+    const log = $('log');
+    const language = $('language');
+    let gameReady = false;
+
+    for (const [value, label] of LANGUAGES) {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = label;
+        language.append(option);
+    }
+    try {
+        language.value = localStorage.getItem('nmo-player-language') ?? '1';
+    } catch {
+        language.value = '1';
+    }
+
+    const print = (text, error) => {
+        const line = document.createElement('div');
+        line.textContent = text;
+        if (error) {
+            line.className = 'error';
+            $('log-box').open = true;
+        }
+        log.append(line);
+        log.scrollTop = log.scrollHeight;
+    };
+
+    let module = null;
+    const persist = () => {
+        module?.FS.syncfs(false, (error) => {
+            if (error) {
+                print('Could not keep the saves: ' + error, true);
+            }
+        });
+    };
+    const ready = createNmoPlayer({
+        canvas: $('canvas'),
+        print: (text) => print(text, false),
+        printErr: (text) => print(text, true),
+        persistSaves: persist,
+        onPlayerExit: (code) => {
+            status.textContent = code === 0 ? 'The game has ended.' : 'The game stopped with an error (see the log).';
+            document.body.classList.remove('playing');
+        },
+    }).then(async (created) => {
+        module = created;
+        module.FS.mkdir('/save');
+        module.FS.mount(module.IDBFS, {}, '/save');
+        await new Promise((resolve) => module.FS.syncfs(true, () => resolve()));
+        module.FS.mkdir('/game');
+        return module;
+    });
+    ready.catch((error) => {
+        status.textContent = 'The player could not start: ' + error;
+    });
+
+    const load = async (files) => {
+        const selected = selectGameFiles(files.map(([path]) => path));
+        if (selected.length === 0) {
+            status.textContent = 'That folder has no base.cmo. Choose the Ballance folder.';
+            return;
+        }
+        const byPath = new Map(files);
+        const player = await ready;
+        startButton.disabled = true;
+        progress.hidden = false;
+        progress.max = selected.length;
+        let done = 0;
+        for (const [source, inner] of selected) {
+            const data = new Uint8Array(await byPath.get(source).arrayBuffer());
+            writeGameFile(player, '/game/' + inner, data);
+            done++;
+            if (done % 25 === 0 || done === selected.length) {
+                progress.value = done;
+                status.textContent = `Copied ${done} of ${selected.length} files…`;
+            }
+        }
+        gameReady = true;
+        status.textContent = `${selected.length} files ready. Press Start.`;
+        startButton.disabled = false;
+    };
+
+    $('folder').addEventListener('change', (event) => {
+        const files = [...event.target.files].map((file) => [file.webkitRelativePath || file.name, file]);
+        load(files);
+    });
+    const drop = $('drop');
+    drop.addEventListener('dragover', (event) => {
+        event.preventDefault();
+        drop.classList.add('over');
+    });
+    drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+    drop.addEventListener('drop', async (event) => {
+        event.preventDefault();
+        drop.classList.remove('over');
+        load(await droppedFiles([...event.dataTransfer.items]));
+    });
+
+    startButton.addEventListener('click', async () => {
+        if (!gameReady) {
+            return;
+        }
+        const player = await ready;
+        try {
+            localStorage.setItem('nmo-player-language', language.value);
+        } catch {
+            /* the choice is only remembered where storage works */
+        }
+        document.body.classList.add('playing');
+        status.textContent = 'Playing. Esc pauses; the arrow keys roll the ball.';
+        const canvas = $('canvas');
+        canvas.focus();
+        const scale = window.innerWidth >= 1340 && window.innerHeight >= 1080 ? '2' : '1';
+        const code = player.callMain([
+            '--write', '/save',
+            '--registry', `Software\\Ballance\\Settings\\Language=${language.value}`,
+            '--scale', scale,
+            '/game/base.cmo',
+        ]);
+        if (code !== 0) {
+            status.textContent = 'The game could not start (see the log).';
+            document.body.classList.remove('playing');
+            return;
+        }
+        let frames = player._player_frames();
+        setInterval(() => {
+            const now = player._player_frames();
+            $('fps').textContent = `${now - frames} fps`;
+            frames = now;
+        }, 1000);
+    });
+
+    $('fullscreen').addEventListener('click', () => $('canvas').requestFullscreen?.());
+
+    /* For tests: load files fetched from a list of URLs, as a chosen folder would */
+    globalThis.nmoPlayer = {
+        loadFromUrls: async (base, paths) => {
+            const files = [];
+            for (const path of paths) {
+                const response = await fetch(base + path.split('/').map(encodeURIComponent).join('/'));
+                files.push([path, await response.blob()]);
+            }
+            await load(files);
+        },
+        ready,
+    };
+}
+
+if (typeof document !== 'undefined') {
+    startPage();
+}

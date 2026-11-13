@@ -1,0 +1,165 @@
+:root {
+    color-scheme: light dark;
+    --bg: #f6f6f4;
+    --fg: #1d1d1b;
+    --muted: #66655f;
+    --panel: #ffffff;
+    --line: #d9d8d2;
+    --accent: #2f6f4f;
+    --error: #a3271f;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #161615;
+        --fg: #e9e8e3;
+        --muted: #a09f98;
+        --panel: #20201e;
+        --line: #3a3a36;
+        --accent: #6fbf94;
+        --error: #f08a80;
+    }
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 24px 16px 48px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.5 system-ui, sans-serif;
+}
+
+header,
+main {
+    max-width: 1280px;
+    margin: 0 auto;
+}
+
+h1 {
+    margin: 0 0 4px;
+    font-size: 22px;
+}
+
+header p {
+    margin: 0 0 20px;
+    max-width: 680px;
+    color: var(--muted);
+}
+
+#drop {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 20px;
+    border: 2px dashed var(--line);
+    border-radius: 8px;
+    background: var(--panel);
+}
+
+#drop.over {
+    border-color: var(--accent);
+}
+
+#drop span {
+    color: var(--muted);
+}
+
+.button,
+button,
+select {
+    font: inherit;
+    padding: 6px 14px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--panel);
+    color: var(--fg);
+    cursor: pointer;
+}
+
+.button input {
+    display: none;
+}
+
+#start {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--bg);
+}
+
+#start:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 12px;
+}
+
+progress {
+    width: 100%;
+    margin-top: 12px;
+}
+
+#status {
+    color: var(--muted);
+}
+
+#screen {
+    display: none;
+}
+
+body.playing #setup {
+    display: none;
+}
+
+body.playing #screen {
+    display: block;
+}
+
+/* SDL sizes the canvas inline; the page fits it to the width, keeping 4:3 */
+#canvas {
+    display: block;
+    width: min(100%, 1280px) !important;
+    height: auto !important;
+    aspect-ratio: 4 / 3;
+    background: #000;
+    outline: none;
+}
+
+#canvas:fullscreen {
+    width: auto !important;
+    height: 100% !important;
+    margin: 0 auto;
+}
+
+#fps {
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    min-width: 5em;
+}
+
+#log-box {
+    margin-top: 20px;
+}
+
+#log {
+    max-height: 240px;
+    overflow: auto;
+    padding: 8px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--panel);
+    font: 12px/1.4 ui-monospace, monospace;
+    white-space: pre-wrap;
+}
+
+#log .error {
+    color: var(--error);
+}

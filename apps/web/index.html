@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>nmo player</title>
+<link rel="stylesheet" href="player.css">
+<script type="module" src="player.mjs"></script>
+</head>
+<body>
+<header>
+  <h1>nmo player</h1>
+  <p>Runs a Virtools game with libnmo's engine, compiled to WebAssembly. Choose your own
+     Ballance folder (the one holding <code>base.cmo</code>): its files are copied into
+     this tab's memory and never leave your computer. Saves stay in this browser.</p>
+</header>
+
+<main>
+  <section id="setup">
+    <div id="drop">
+      <label class="button">Choose the Ballance folder
+        <input id="folder" type="file" webkitdirectory directory multiple>
+      </label>
+      <span>or drop it here</span>
+    </div>
+    <div class="row">
+      <label>Language <select id="language"></select></label>
+      <button id="start" disabled>Start</button>
+    </div>
+    <progress id="progress" value="0" hidden></progress>
+  </section>
+
+  <p id="status">Waiting for the game folder.</p>
+
+  <div id="screen">
+    <canvas id="canvas" tabindex="0" oncontextmenu="event.preventDefault()"></canvas>
+    <div class="row">
+      <span id="fps"></span>
+      <button id="fullscreen">Full screen</button>
+    </div>
+  </div>
+
+  <details id="log-box">
+    <summary>Log</summary>
+    <div id="log"></div>
+  </details>
+</main>
+</body>
+</html>

@@ -3,10 +3,12 @@
  * @brief A renderer backend through render_backend.h: coverage, the
  *        fragment tests, blending, textures, render targets and read-back.
  *
- * Built twice: test_render_soft drives the software backend, and
- * test_render_gpu (RENDER_TEST_GPU) the SDL_GPU one, skipped where there is
- * no GPU device. Pixels are read back through the backend, within a level
- * of what is expected (a GPU rounds to bytes as it likes).
+ * Built three times: test_render_soft drives the software backend,
+ * test_render_gpu (RENDER_TEST_GPU) the SDL_GPU one, and test_render_gl3
+ * (RENDER_TEST_GL3) the GL3 one; the latter two skip where there is no GPU
+ * device or GL context. Pixels are read back through the backend, within a
+ * level of what is expected (a GPU or a GL driver rounds to bytes as it
+ * likes).
  */
 
 #include "test_framework.h"
@@ -14,6 +16,9 @@
 #ifdef RENDER_TEST_GPU
 #include "../../src/render/gpu/render_gpu.h"
 #define RENDER_TEST_SUITE render_gpu
+#elif defined(RENDER_TEST_GL3)
+#include "../../src/render/gl3/render_gl3.h"
+#define RENDER_TEST_SUITE render_gl3
 #else
 #include "../../src/render/soft/render_soft.h"
 #define RENDER_TEST_SUITE render_soft
@@ -44,6 +49,8 @@ static render_backend_t *backend_create(void)
 {
 #ifdef RENDER_TEST_GPU
     return render_gpu_backend_create_offscreen();
+#elif defined(RENDER_TEST_GL3)
+    return render_gl3_backend_create_offscreen();
 #else
     return render_soft_backend_create();
 #endif
@@ -409,7 +416,7 @@ RENDER_TEST(the_screen_drawn_last_is_read_back_and_kept)
     fixture_close(&f);
 }
 
-#ifdef RENDER_TEST_GPU
+#if defined(RENDER_TEST_GPU) || defined(RENDER_TEST_GL3)
 static int gpu_available(void)
 {
     render_backend_t *backend = backend_create();
@@ -422,9 +429,15 @@ static int gpu_available(void)
 #endif
 
 TEST_MAIN_BEGIN()
-#ifdef RENDER_TEST_GPU
+#if defined(RENDER_TEST_GPU) || defined(RENDER_TEST_GL3)
 if (!gpu_available()) {
-    printf("SKIP: no GPU device\n");
+    printf("SKIP: no %s device\n",
+#ifdef RENDER_TEST_GPU
+           "GPU"
+#else
+           "GL3"
+#endif
+    );
     return TEST_EXIT_CODE_SKIPPED;
 }
 #endif
