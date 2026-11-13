@@ -441,6 +441,9 @@ add_unit_test(test_context_threadsafe)  # Thread-safety tests
 # Partial load profiles
 add_unit_test(test_load_options)
 set_tests_properties(test_load_options PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+add_unit_test(test_export_gltf)
+target_link_libraries(test_export_gltf PRIVATE yyjson)
+set_tests_properties(test_export_gltf PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
 # Runtime clean-break tests
 add_unit_test(test_runtime_kernel)

@@ -348,6 +348,7 @@ set(NMO_RUNTIME_SOURCES
 set(NMO_DOCUMENT_SOURCES
     src/document/object_diff.c
     src/document/document_file_state.c
+    src/document/document_export.c
     src/document/document_load.c
     src/document/document_save.c
     src/document/document_compare.c
@@ -364,6 +365,7 @@ set(NMO_CHUNK_SOURCES
 # Export layer sources
 set(NMO_EXPORT_SOURCES
     src/export/export_dot.c
+    src/export/export_gltf.c
     src/export/export_hexdump.c
     src/export/export_json_util.c
 )
