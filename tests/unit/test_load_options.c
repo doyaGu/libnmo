@@ -16,6 +16,8 @@
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_header.h"
+#include "format/nmo_header1.h"
+#include "format/nmo_data.h"
 #include "format/nmo_object.h"
 #include "object/nmo_context.h"
 #include "session/nmo_deserializer.h"
@@ -1161,6 +1163,57 @@ TEST(load_options, limits_refuse_files_that_exceed_them)
     ASSERT_EQ(0, remove(path));
 }
 
+TEST(load_options, save_lists_the_plugin_of_a_manager_that_saves_data)
+{
+    const char *path = NMO_TEST_SCRATCH_FILE("manager_plugin_dependency.nmo");
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){ .data_dir = NMO_TEST_DATA_DIR });
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_id_t id = 0u;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(session, NMO_CID_OBJECT, "owner",
+                                               (nmo_guid_t){0, 0}, &id, NULL));
+
+    /* The Floor Manager of Collisions.dll is a plugin: a file with its data
+       lists it, as CK2 does for each manager that saves data */
+    const nmo_guid_t floor_manager = {0x420936F9u, 0u};
+    nmo_arena_t *arena = nmo_session_get_arena(session);
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 1u));
+    nmo_chunk_close(chunk);
+    nmo_manager_data_t *managers = (nmo_manager_data_t *)nmo_arena_alloc(
+        arena, sizeof(*managers), _Alignof(nmo_manager_data_t));
+    ASSERT_NOT_NULL(managers);
+    memset(managers, 0, sizeof(*managers));
+    managers[0].guid = floor_manager;
+    managers[0].chunk = chunk;
+    nmo_session_set_manager_data(session, managers, 1u);
+
+    nmo_serializer_t *serializer = nmo_serializer_create(session, NULL);
+    ASSERT_NOT_NULL(serializer);
+    ASSERT_EQ(NMO_OK, nmo_serializer_layout(serializer));
+    ASSERT_EQ(NMO_OK, nmo_serializer_commit(serializer, path));
+    nmo_serializer_destroy(serializer);
+    nmo_session_destroy(session);
+
+    session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    ASSERT_EQ(NMO_OK, nmo_session_load_file(session, path, NULL, NULL));
+    const nmo_file_state_t *state = nmo_session_get_file_state(session);
+    size_t listed = 0u;
+    for (uint32_t i = 0u; i < state->plugin_dep_count; ++i) {
+        if (nmo_guid_equals(state->plugin_deps[i].guid, floor_manager)) {
+            ASSERT_EQ((uint32_t)NMO_PLUGIN_MANAGER_DLL, state->plugin_deps[i].category);
+            listed++;
+        }
+    }
+    ASSERT_EQ(1u, listed);
+    destroy_ctx_session(ctx, session);
+    ASSERT_EQ(0, remove(path));
+}
+
 TEST(load_options, included_payload_sizes_are_validated_during_save_layout)
 {
     const uint32_t sizes[] = {INT32_MAX, 0x80000000u, UINT32_MAX};
@@ -1334,6 +1387,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(load_options, included_file_loading_stops_at_header_count);
     REGISTER_TEST(load_options, included_lengths_remain_signed_when_limits_are_raised);
     REGISTER_TEST(load_options, limits_refuse_files_that_exceed_them);
+    REGISTER_TEST(load_options, save_lists_the_plugin_of_a_manager_that_saves_data);
 TEST_MAIN_END()
 
 

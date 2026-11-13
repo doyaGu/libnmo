@@ -1386,12 +1386,37 @@ static bool save_plugin_deps_has(
     return false;
 }
 
+/* Adds guid to the first *count entries of set unless it is there already. */
+static void save_guid_set_add(nmo_guid_t *set, size_t *count, nmo_guid_t guid)
+{
+    for (size_t i = 0; i < *count; i++) {
+        if (nmo_guid_equals(set[i], guid)) {
+            return;
+        }
+    }
+    set[(*count)++] = guid;
+}
+
+static bool save_guid_set_has(const nmo_guid_t *set, size_t count, nmo_guid_t guid)
+{
+    for (size_t i = 0; i < count; i++) {
+        if (nmo_guid_equals(set[i], guid)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /*
- * The plugin dependencies the file lists: those it was loaded with, then what
- * the building blocks it saves need that they lack. CK2 (CKPluginManager::
- * ComputeDependenciesList) lists for each building block its DLL's behavior
- * plugin and the block's own prototype GUID, so a document that gains blocks
- * names them too.
+ * The plugin dependencies the file lists. CK2 (CKPluginManager::
+ * ComputeDependenciesList) computes them from what it saves: for each building
+ * block its DLL's behavior plugin and its prototype GUID, the plugin of each
+ * manager that saves data, and the DLLs that created the parameter types and
+ * attributes in use, which libnmo cannot tell (files list block DLLs that none
+ * of their blocks come from). So the list the file was loaded with is kept,
+ * less the prototypes of blocks no longer saved, and gains what the saved
+ * blocks and manager data need that it lacks: the manager plugins, then the
+ * block plugins before the prototypes, as CK2 orders them.
  */
 static nmo_status_t save_build_plugin_deps(nmo_serializer_t *ctx) {
     const nmo_file_state_t *dep_fstate = nmo_session_get_file_state(ctx->session);
@@ -1402,19 +1427,35 @@ static nmo_status_t save_build_plugin_deps(nmo_serializer_t *ctx) {
     }
     ctx->plugin_deps = stored;
     ctx->plugin_count = stored_count;
-
-    nmo_context_t *context = nmo_session_get_context(ctx->session);
-    const nmo_behavior_registry_t *blocks = context ? nmo_context_get_bb_registry(context) : NULL;
     if (ctx->type_reg == NULL) {
         return NMO_OK;
     }
 
-    /* At most a plugin and a prototype for each behavior saved */
-    size_t added_cap = 0;
-    nmo_plugin_dep_t *plugins = NULL;
-    nmo_plugin_dep_t *protos = NULL;
-    size_t plugin_count = 0;
+    nmo_context_t *context = nmo_session_get_context(ctx->session);
+    const nmo_behavior_registry_t *blocks = context ? nmo_context_get_bb_registry(context) : NULL;
+    nmo_extension_registry_t *plugins = nmo_session_get_extension_registry(ctx->session);
+
+    /* What the saved objects and manager data need, each GUID once */
+    size_t capacity = 0;
+    size_t bytes = 0;
+    if (!nmo_safe_add_size(ctx->object_count, ctx->manager_entry_count, &capacity) ||
+        !nmo_safe_mul_size(capacity, sizeof(nmo_guid_t), &bytes)) {
+        return SAVE_ERR(NMO_ERR_NOMEM, "Plugin dependency allocation overflow");
+    }
+    nmo_guid_t *needed_protos = NULL;
+    nmo_guid_t *needed_plugins = NULL;
+    nmo_guid_t *needed_managers = NULL;
+    if (capacity > 0) {
+        needed_protos = (nmo_guid_t *)nmo_arena_alloc(save_scratch(ctx), bytes, alignof(nmo_guid_t));
+        needed_plugins = (nmo_guid_t *)nmo_arena_alloc(save_scratch(ctx), bytes, alignof(nmo_guid_t));
+        needed_managers = (nmo_guid_t *)nmo_arena_alloc(save_scratch(ctx), bytes, alignof(nmo_guid_t));
+        if (needed_protos == NULL || needed_plugins == NULL || needed_managers == NULL) {
+            return SAVE_ERR(NMO_ERR_NOMEM, "Plugin dependency allocation failed");
+        }
+    }
     size_t proto_count = 0;
+    size_t plugin_count = 0;
+    size_t manager_count = 0;
     for (size_t i = 0; i < ctx->object_count; i++) {
         nmo_object_t *obj = ctx->objects[i];
         if (!nmo_type_query_object_is_derived_from_class(ctx->type_reg, obj, NMO_CID_BEHAVIOR)) {
@@ -1426,55 +1467,74 @@ static nmo_status_t save_build_plugin_deps(nmo_serializer_t *ctx) {
             nmo_guid_is_null(state->block_guid)) {
             continue;
         }
-        if (added_cap == 0) {
-            added_cap = ctx->object_count;
-            size_t bytes = 0;
-            if (!nmo_safe_mul_size(added_cap, sizeof(nmo_plugin_dep_t), &bytes)) {
-                return SAVE_ERR(NMO_ERR_NOMEM, "Plugin dependency allocation overflow");
-            }
-            plugins = (nmo_plugin_dep_t *)nmo_arena_alloc(
-                save_scratch(ctx), bytes, alignof(nmo_plugin_dep_t));
-            protos = (nmo_plugin_dep_t *)nmo_arena_alloc(
-                save_scratch(ctx), bytes, alignof(nmo_plugin_dep_t));
-            if (plugins == NULL || protos == NULL) {
-                return SAVE_ERR(NMO_ERR_NOMEM, "Plugin dependency allocation failed");
-            }
-        }
+        save_guid_set_add(needed_protos, &proto_count, state->block_guid);
         const nmo_behavior_proto_t *proto = blocks
             ? nmo_behavior_registry_find(blocks, state->block_guid) : NULL;
-        if (proto != NULL && !nmo_guid_is_null(proto->plugin_guid) &&
-            !save_plugin_deps_has(stored, stored_count, proto->plugin_guid, NMO_PLUGIN_BEHAVIOR_DLL) &&
-            !save_plugin_deps_has(plugins, plugin_count, proto->plugin_guid, NMO_PLUGIN_BEHAVIOR_DLL)) {
-            plugins[plugin_count++] = (nmo_plugin_dep_t){
-                proto->plugin_guid, NMO_PLUGIN_BEHAVIOR_DLL, 0};
-        }
-        if (!save_plugin_deps_has(stored, stored_count, state->block_guid, NMO_PLUGIN_BEHAVIOR_DLL) &&
-            !save_plugin_deps_has(protos, proto_count, state->block_guid, NMO_PLUGIN_BEHAVIOR_DLL)) {
-            protos[proto_count++] = (nmo_plugin_dep_t){
-                state->block_guid, NMO_PLUGIN_BEHAVIOR_DLL, 0};
+        if (proto != NULL && !nmo_guid_is_null(proto->plugin_guid)) {
+            save_guid_set_add(needed_plugins, &plugin_count, proto->plugin_guid);
         }
     }
-    if (plugin_count + proto_count == 0) {
-        return NMO_OK;
+    for (size_t i = 0; i < ctx->manager_entry_count; i++) {
+        const nmo_extension_plugin_info_t *info = plugins != NULL
+            ? nmo_extension_registry_find(plugins, ctx->manager_entries[i].guid) : NULL;
+        if (info != NULL && info->category == NMO_PLUGIN_MANAGER_DLL) {
+            save_guid_set_add(needed_managers, &manager_count, ctx->manager_entries[i].guid);
+        }
     }
 
-    /* The loaded list keeps its order; the plugins come before the prototypes, as CK2 lists them */
-    size_t total = (size_t)stored_count + plugin_count + proto_count;
-    if (total > UINT32_MAX) {
+    const size_t needed = proto_count + plugin_count + manager_count;
+    size_t total = 0;
+    if (!nmo_safe_add_size(stored_count, needed, &total) || total > UINT32_MAX ||
+        !nmo_safe_mul_size(total, sizeof(nmo_plugin_dep_t), &bytes)) {
         return SAVE_ERR(NMO_ERR_INVALID_ARGUMENT, "Too many plugin dependencies");
     }
+    if (total == 0) {
+        return NMO_OK;
+    }
     nmo_plugin_dep_t *deps = (nmo_plugin_dep_t *)nmo_arena_alloc(
-        save_scratch(ctx), total * sizeof(nmo_plugin_dep_t), alignof(nmo_plugin_dep_t));
+        save_scratch(ctx), bytes, alignof(nmo_plugin_dep_t));
     if (deps == NULL) {
         return SAVE_ERR(NMO_ERR_NOMEM, "Plugin dependency allocation failed");
     }
-    if (stored_count > 0) {
-        memcpy(deps, stored, stored_count * sizeof(nmo_plugin_dep_t));
+
+    /* The loaded list in its order, less the prototype of a known block that
+       is no longer saved */
+    size_t count = 0;
+    size_t dropped = 0;
+    for (uint32_t i = 0; i < stored_count; i++) {
+        const nmo_plugin_dep_t *dep = &stored[i];
+        if (dep->category == NMO_PLUGIN_BEHAVIOR_DLL && blocks != NULL &&
+            nmo_behavior_registry_find(blocks, dep->guid) != NULL &&
+            !save_guid_set_has(needed_protos, proto_count, dep->guid)) {
+            dropped++;
+            continue;
+        }
+        deps[count++] = *dep;
     }
-    memcpy(deps + stored_count, plugins, plugin_count * sizeof(nmo_plugin_dep_t));
-    memcpy(deps + stored_count + plugin_count, protos, proto_count * sizeof(nmo_plugin_dep_t));
+    const size_t kept = count;
+    const struct {
+        const nmo_guid_t *guids;
+        size_t count;
+        uint32_t category;
+    } additions[] = {
+        {needed_managers, manager_count, NMO_PLUGIN_MANAGER_DLL},
+        {needed_plugins, plugin_count, NMO_PLUGIN_BEHAVIOR_DLL},
+        {needed_protos, proto_count, NMO_PLUGIN_BEHAVIOR_DLL},
+    };
+    for (size_t a = 0; a < sizeof(additions) / sizeof(additions[0]); a++) {
+        for (size_t i = 0; i < additions[a].count; i++) {
+            if (!save_plugin_deps_has(deps, count, additions[a].guids[i], additions[a].category)) {
+                deps[count++] = (nmo_plugin_dep_t){additions[a].guids[i], additions[a].category, 0};
+            }
+        }
+    }
+    if (dropped > 0 || count > kept) {
+        nmo_log(ctx->logger, NMO_LOG_INFO,
+                "  Plugin dependencies: %zu dropped with their blocks, %zu added",
+                dropped, count - kept);
+    }
     ctx->plugin_deps = deps;
-    ctx->plugin_count = total;
+    ctx->plugin_count = count;
     return NMO_OK;
 }
 
