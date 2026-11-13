@@ -9,31 +9,9 @@ never tagged; the numbering restarted at 0.2.0.
 
 ## [Unreleased]
 
-### Added
-- CI builds the renderer's OpenGL and SDL_GPU backends and the SDL3 viewer (`NMO_VIEWER`) on
-  Linux, macOS, MSVC and MinGW against SDL 3.4.18, and runs the render, viewer and layering
-  tests there (`render-*` jobs). The macOS runner draws the SDL_GPU tests on Metal; the others
-  have no GPU and skip them.
-
-### Changed
-- `nmo_render_create_gl()` takes a loader of the current context's functions
-  (`nmo_render_gl_loader_t`: `SDL_GL_GetProcAddress`, `glfwGetProcAddress` and their like)
-  before the output pointer. The OpenGL backend takes from it the functions past OpenGL 1.1 it
-  uses, those of EXT_framebuffer_object and the secondary color ones, by their extension or core
-  names, and returns `NMO_ERR_NOT_SUPPORTED` when the context lacks one. Code that creates an
-  OpenGL renderer passes its loader; the viewer passes SDL's.
-
-### Fixed
-- The OpenGL backend and the viewer build on Windows with MSVC and MinGW. The backend called the
-  functions past OpenGL 1.1 directly, which Windows' `opengl32` does not export, and included
-  `glext.h`, which the Windows SDK does not have; it now names the constants it needs itself, and
-  `gl.h` gets `APIENTRY` and `WINGDIAPI` so it needs no `windows.h`.
-- `test_engine_camera_orbit` clears the filter quad it reads, which GCC 13 reported as maybe used
-  uninitialized in optimized builds.
-
 ## [0.3.0] - 2026-11-13
 
-0.3.0 holds the 2,210 commits made since 0.2.0 (July 16 to November 12, 2026). Files of
+0.3.0 holds about 2,220 commits made since 0.2.0 (July 16 to November 13, 2026). Files of
 versions 2 to 7 load as CK2 loads them, though every Virtools sample at hand is of version 8:
 the older versions, and version 9, are checked against CK2's code and against files the tests
 build, not against files Virtools wrote. A default save writes back the original chunk of every
@@ -51,8 +29,8 @@ Menu.nmo now keeps about 15 MB, where it kept 1.3 GB. "Upgrading from 0.2.0" lis
 source compatibility.
 
 Changes since 0.2.0 (`5005aac3`, 2026-07-16). The sections marked "July to September" summarize
-about 1,000 commits by theme, and the sections marked "October to November" summarize the 884
-commits of October 2 to November 12 the same way. The other sections give the work of
+about 1,000 commits by theme, and the sections marked "October to November" summarize the
+about 900 commits of October 2 to November 13 the same way. The other sections give the work of
 September 30 to October 2 in detail.
 
 ### Upgrading from 0.2.0
@@ -388,7 +366,13 @@ What breaks source compatibility, in short; the sections below give the details.
 - `nmo_render` (`render/nmo_render.h`) draws such a frame through a backend that takes a
   Direct3D 7 fixed-function state in Virtools' enums. There are three backends:
   - `nmo_render_soft`, a software rasterizer, built by default (`NMO_RENDER`);
-  - `nmo_render_gl` for OpenGL (`NMO_RENDER_GL`);
+  - `nmo_render_gl` for OpenGL (`NMO_RENDER_GL`). `nmo_render_create_gl()` takes a loader of
+    the current context's functions (`nmo_render_gl_loader_t`: `SDL_GL_GetProcAddress`,
+    `glfwGetProcAddress` and their like), from which the backend takes the functions past
+    OpenGL 1.1 it uses, those of EXT_framebuffer_object and the secondary color ones, by their
+    extension or core names; it returns `NMO_ERR_NOT_SUPPORTED` when the context lacks one.
+    Windows' `opengl32` exports only OpenGL 1.1, and the backend names the constants it needs
+    itself instead of including `glext.h`, which the Windows SDK does not have;
   - `nmo_render_gpu` for SDL_GPU on Metal or Vulkan (`NMO_RENDER_GPU`), with its shaders
     checked in as SPIR-V and MSL.
 
@@ -399,6 +383,10 @@ What breaks source compatibility, in short; the sections below give the details.
   chooses OpenGL or SDL_GPU.
 - The layering audit allows a graphics API's headers only in a backend under
   `src/render/<backend>/`, and SDL only there and in `src/view`.
+- The release packages leave the OpenGL and SDL_GPU backends and the viewer out. CI builds them
+  on Linux, macOS, MSVC and MinGW against SDL 3.4.18 and runs the render, viewer and layering
+  tests there (`render-*` jobs). The macOS runner draws the SDL_GPU tests on Metal; the others
+  have no GPU and skip them.
 
 ### Added - Script model and script analysis (October)
 - `behavior/nmo_script_model.h` is a read-only model of every behavior graph of a document
@@ -1351,6 +1339,8 @@ the tests build each layout dword by dword.
   `strdup` or `strnlen` under `-std=c17`) and under MSVC `/W4 /WX` and MinGW (explicit narrowing,
   initialized locals, no names that `windows.h` or Winsock define). The release package's
   consumer build no longer receives libnmo's `-DNMO_*` options.
+- `test_engine_camera_orbit` clears the filter quad it reads, which GCC 13 reported as maybe used
+  uninitialized in optimized builds.
 
 ## [0.2.0] - 2026-07-14
 
