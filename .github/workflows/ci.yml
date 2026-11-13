@@ -101,6 +101,97 @@ jobs:
           MSAN_OPTIONS: print_stats=0:halt_on_error=1:exitcode=86
         run: ctest --test-dir build --output-on-failure --parallel 4 --label-exclude performance
 
+  # The renderer's graphics backends and the window (NMO_VIEWER: OpenGL,
+  # SDL_GPU and SDL3) are left out of the release builds, which have no
+  # SDL3; built here on every system, so code only one of them compiles does
+  # not get in. Of the runners only the macOS one has a GPU to draw with: the
+  # SDL_GPU tests skip elsewhere, and the software backend's tests carry the
+  # pixels.
+  render-backends:
+    name: render-${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            os: ubuntu-24.04
+          - platform: macos
+            os: macos-latest
+          - platform: windows-msvc
+            os: windows-latest
+            msvc: true
+          - platform: windows-mingw
+            os: windows-latest
+            mingw: true
+    env:
+      SDL3_VERSION: 3.4.18
+
+    defaults:
+      run:
+        shell: ${{ matrix.mingw && 'msys2 {0}' || 'bash' }}
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      # Ubuntu has no SDL3 package: built from its release, without X11 or
+      # Wayland (the job opens no window, and X11 brings a dozen packages).
+      - name: Install SDL3 (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libgl-dev
+          curl -fsSL --retry 3 -o sdl.tar.gz \
+            "https://github.com/libsdl-org/SDL/releases/download/release-$SDL3_VERSION/SDL3-$SDL3_VERSION.tar.gz"
+          tar -xzf sdl.tar.gz
+          cmake -S "SDL3-$SDL3_VERSION" -B sdl-build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF -DSDL_X11=OFF -DSDL_WAYLAND=OFF -DSDL_UNIX_CONSOLE_BUILD=ON
+          cmake --build sdl-build
+          sudo cmake --install sdl-build
+          sudo ldconfig
+
+      - name: Install SDL3 (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja sdl3
+
+      - name: Set up MSYS2 with SDL3 (MinGW)
+        if: matrix.mingw
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-sdl3
+
+      - name: Set up MSVC
+        if: matrix.msvc
+        uses: ./.github/actions/setup-msvc
+
+      # SDL's development release for Visual C++: headers, import library,
+      # DLL and CMake package. The DLL's folder goes on PATH for the tests.
+      - name: Install SDL3 (MSVC)
+        if: matrix.msvc
+        run: |
+          curl -fsSL --retry 3 -o sdl.zip \
+            "https://github.com/libsdl-org/SDL/releases/download/release-$SDL3_VERSION/SDL3-devel-$SDL3_VERSION-VC.zip"
+          unzip -q sdl.zip
+          echo "SDL3_DIR=$(cygpath -m "$PWD/SDL3-$SDL3_VERSION/cmake")" >> "$GITHUB_ENV"
+          cygpath -w "$PWD/SDL3-$SDL3_VERSION/lib/x64" >> "$GITHUB_PATH"
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DNMO_VIEWER=ON
+
+      - name: Build
+        run: cmake --build build --parallel -- -k 0
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -R "render|view|cli_behavior_run|layering"
+
   # Release builds: tools/scripts/package_release.py runs the test suite,
   # installs the package, checks it from the outside and archives it.
   package:
