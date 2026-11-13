@@ -248,12 +248,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: nmo-web-player
+          # The page and every module it loads (apps/web/CMakeLists.txt's NMO_PLAYER_PAGE_FILES),
+          # and the player itself
           path: |
-            build/apps/web/index.html
-            build/apps/web/player.mjs
-            build/apps/web/player.css
-            build/apps/web/run_node.mjs
-            build/apps/web/nmo-player.mjs
+            build/apps/web/*.html
+            build/apps/web/*.mjs
+            build/apps/web/*.css
             build/apps/web/nmo-player.wasm
             build/apps/web/nmo-player.data
 

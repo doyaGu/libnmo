@@ -1,13 +1,12 @@
 /**
  * @file player.c
- * @brief nmo's player: runs a Virtools document (Ballance's base.cmo) in the
+ * @brief nmo's player: runs a Virtools composition (a .cmo or .vmo) in the
  *        engine as a game player does, in a browser (WebAssembly, the page
  *        in this folder), in a desktop window, or headless (Node.js or
  *        natively) saving frames as PNG files.
  *
- *     player [options] base.cmo
- *       --registry KEY\NAME=VALUE;...  registry values (default: Ballance's
- *                                      Software\Ballance\Settings\Language=1)
+ *     player [options] FILE
+ *       --registry KEY\NAME=VALUE;...  registry values the game reads
  *       --path DIR       more files to load (besides the document's folder)
  *       --write DIR      where saved files go, read first (default: none; a
  *                        window run saves into a temporary folder)
@@ -19,15 +18,23 @@
  *       -n N             frames to run (default: until the window closes)
  *       --delta MS       a fixed frame time (default: the time that passed;
  *                        16.667 headless or with --shot)
+ *       --no-frame-limit step every turn of the loop, ignoring the game's frame rate limit
  *       --keys KEY@FRAME[-FRAME],...  keys held down
  *       --shot FILE.png@FRAME,...     frames saved
  *       --mute           play no sound
+ *
+ * In the browser the page starts a run with player_start() and ends it with
+ * player_stop(), as often as it likes, and asks about the running game (its
+ * files, objects, scripts and what the behavior engine did) through the
+ * other player_* functions.
  */
 
 #include "nmo_engine.h"
 #include "bb/nmo_bb_physics.h"
 #include "bb/nmo_bb_terratools.h"
 #include "bb/nmo_bb_virtools.h"
+#include "document/nmo_document_objects.h"
+#include "engine/nmo_engine_render.h"
 #include "render/nmo_render_soft.h"
 #include "nmo_run_host.h"
 #ifdef NMO_HAS_VIEW
@@ -39,6 +46,7 @@
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
+#include <emscripten/heap.h>
 #endif
 
 #include <stdio.h>
@@ -49,6 +57,9 @@
 #ifndef PLAYER_DATA_DIR
 #define PLAYER_DATA_DIR "/nmo/data"
 #endif
+
+/* The most behavior engine events one trace keeps */
+#define PLAYER_TRACE_LIMIT 500000u
 
 /* What the window draws with (--renderer); PLAYER_RENDERER_AUTO tries gl3, then soft */
 typedef enum player_renderer {
@@ -67,6 +78,7 @@ typedef struct player_args {
     bool physics;
     bool headless;
     bool mute;
+    bool no_frame_limit;
     int scale;
     uint32_t frames; /* 0: until the window closes */
     float delta_ms;  /* 0: the time that passed */
@@ -75,6 +87,8 @@ typedef struct player_args {
 
 typedef struct player {
     player_args_t args;
+    char *arg_text;       /* player_start's arguments, which `args` points into */
+    char **argv;
     nmo_context_t *ctx;
     nmo_document_t *document;
     nmo_workspace_t *workspace;
@@ -93,7 +107,16 @@ typedef struct player {
     uint32_t frame;       /* frames run */
     double last_step;     /* the window's clock when the engine last stepped */
     int exit_code;
-    bool muted;            /* --mute, or the page's mute button (player_set_mute) */
+    bool muted;           /* --mute, or the page's mute button (player_set_mute) */
+    float volume;         /* the page's volume (player_set_volume) */
+    bool frame_limit;     /* keep to the game's frame rate limit */
+    double step_ms;       /* how long the last frame took the engine */
+    double draw_ms;       /* and drawing it */
+    char *label;          /* player_label's last answer */
+    /* player_trace: the events of the next frames */
+    nmo_engine_event_t *trace;
+    size_t trace_count, trace_capacity;
+    int trace_frames;     /* frames still to record; 0 when not recording */
 } player_t;
 
 static int player_usage(void)
@@ -101,14 +124,13 @@ static int player_usage(void)
     fprintf(stderr,
             "Usage: player [--registry SPEC] [--path DIR] [--write DIR] [--physics none|ivp]\n"
             "              [--headless] [--renderer gl3|soft] [--scale N] [-n N] [--delta MS]\n"
-            "              [--keys SPEC] [--shot FILE@FRAME,...] [--mute] FILE\n");
+            "              [--no-frame-limit] [--keys SPEC] [--shot FILE@FRAME,...] [--mute] FILE\n");
     return 2;
 }
 
 static bool player_parse(int argc, char **argv, player_args_t *out)
 {
-    *out = (player_args_t){.registry = "Software\\Ballance\\Settings\\Language=1",
-                           .physics = true, .scale = 1};
+    *out = (player_args_t){.physics = true, .scale = 1};
     for (int i = 1; i < argc; i++) {
         const char *arg = argv[i];
         const char *value = i + 1 < argc ? argv[i + 1] : NULL;
@@ -141,6 +163,8 @@ static bool player_parse(int argc, char **argv, player_args_t *out)
                 out->headless = true;
             } else if (strcmp(arg, "--mute") == 0) {
                 out->mute = true;
+            } else if (strcmp(arg, "--no-frame-limit") == 0) {
+                out->no_frame_limit = true;
             } else if (arg[0] != '-' && out->file == NULL) {
                 out->file = arg;
             } else {
@@ -182,9 +206,19 @@ static void player_persist(void)
 {
     emscripten_run_script("if (typeof Module.persistSaves === 'function') Module.persistSaves();");
 }
+
+static double player_now(void)
+{
+    return emscripten_get_now();
+}
 #else
 static void player_persist(void)
 {
+}
+
+static double player_now(void)
+{
+    return 0.0; /* the timings are the page's alone */
 }
 #endif
 
@@ -198,11 +232,22 @@ static nmo_status_t player_write(void *user_data, const char *name, const void *
     return status;
 }
 
+/* The volume the view plays at: none while muted */
+static void player_apply_volume(player_t *player)
+{
+#ifdef NMO_HAS_VIEW
+    nmo_view_set_volume(player->view, player->muted ? 0.0f : player->volume);
+#else
+    (void)player;
+#endif
+}
+
 /* The document, its engine with the block packs and physics, and the window or memory it draws in */
 static nmo_status_t player_open(player_t *player)
 {
     const player_args_t *args = &player->args;
     player->muted = args->mute;
+    player->frame_limit = !args->no_frame_limit;
     nmo_context_desc_t desc;
     memset(&desc, 0, sizeof(desc));
     desc.data_dir = PLAYER_DATA_DIR;
@@ -259,6 +304,7 @@ static nmo_status_t player_open(player_t *player)
             status = nmo_view_open_with(player->engine, args->file, args->scale,
                                         NMO_VIEW_RENDERER_SOFT, &player->view);
         }
+        player_apply_volume(player);
 #endif
     }
     if (status != NMO_OK) {
@@ -324,10 +370,16 @@ static void player_close(player_t *player)
         nmo_context_release(player->ctx);
         player->ctx = NULL;
     }
+    free(player->label);
+    player->label = NULL;
+    free(player->trace);
+    player->trace = NULL;
+    player->trace_count = player->trace_capacity = 0u;
+    player->trace_frames = 0;
 }
 
 /* Save the frame to `path`: the window's, or the one drawn in memory */
-static void player_save(player_t *player, const char *path)
+static nmo_status_t player_save(player_t *player, const char *path)
 {
     nmo_status_t status = NMO_ERR_INVALID_STATE;
 #ifdef NMO_HAS_VIEW
@@ -343,6 +395,7 @@ static void player_save(player_t *player, const char *path)
     if (status != NMO_OK) {
         fprintf(stderr, "Error: Could not save %s\n", path);
     }
+    return status;
 }
 
 /* Save the frame if the --shot list names frame `frame`: FILE@FRAME,... */
@@ -365,6 +418,43 @@ static void player_take_shots(player_t *player, uint64_t frame)
         item = end != NULL ? end + 1 : NULL;
     }
 }
+
+/* What the blocks wrote to the console this frame, on the player's output */
+static void player_print_console(player_t *player)
+{
+    int32_t count = nmo_engine_console_line_count(player->engine);
+    for (int32_t i = 0; i < count; i++) {
+        nmo_engine_console_line_t line;
+        if (nmo_engine_console_line(player->engine, i, &line) && line.text != NULL) {
+            printf("[console] %s\n", line.text);
+        }
+    }
+}
+
+#ifdef __EMSCRIPTEN__
+/* player_trace's recorder: each event of the frames being traced */
+static void player_on_trace(const nmo_engine_event_t *event, void *user_data)
+{
+    player_t *player = (player_t *)user_data;
+    if (player->trace_count == player->trace_capacity) {
+        if (player->trace_capacity >= PLAYER_TRACE_LIMIT) {
+            return;
+        }
+        size_t capacity = player->trace_capacity == 0u ? 4096u : player->trace_capacity * 2u;
+        if (capacity > PLAYER_TRACE_LIMIT) {
+            capacity = PLAYER_TRACE_LIMIT;
+        }
+        nmo_engine_event_t *grown =
+            (nmo_engine_event_t *)realloc(player->trace, capacity * sizeof(*grown));
+        if (grown == NULL) {
+            return;
+        }
+        player->trace = grown;
+        player->trace_capacity = capacity;
+    }
+    player->trace[player->trace_count++] = *event;
+}
+#endif
 
 typedef enum player_tick_result {
     PLAYER_TICK_STEPPED,
@@ -395,7 +485,8 @@ static player_tick_result_t player_tick(player_t *player)
             nmo_engine_time_settings_t settings;
             nmo_engine_time_settings(engine, &settings);
             /* 4 ms early still counts: display refreshes jitter around the limit */
-            if ((settings.limit_options & 0x40u) != 0 && settings.frame_rate_limit > 0.0f &&
+            if (player->frame_limit && (settings.limit_options & 0x40u) != 0 &&
+                settings.frame_rate_limit > 0.0f &&
                 now - player->last_step < 1000.0 / settings.frame_rate_limit - 4.0) {
                 return PLAYER_TICK_WAITING;
             }
@@ -405,12 +496,19 @@ static player_tick_result_t player_tick(player_t *player)
     }
 #endif
     nmo_run_apply_keys(engine, player->keys, player->key_count, player->frame);
+    double started = player_now();
     nmo_status_t status = nmo_engine_step(engine, delta);
+    double stepped = player_now();
+    player->step_ms = stepped - started;
+    if (player->trace_frames > 0 && --player->trace_frames == 0) {
+        nmo_engine_set_trace(engine, NULL, NULL);
+    }
     if (status != NMO_OK) {
         fprintf(stderr, "Error: Behavior engine failed (%s)\n", nmo_error_string(status));
         player->exit_code = 1;
         return PLAYER_TICK_DONE;
     }
+    player_print_console(player);
 #ifdef NMO_HAS_VIEW
     if (player->view != NULL) {
         status = nmo_view_draw(player->view);
@@ -419,11 +517,10 @@ static player_tick_result_t player_tick(player_t *player)
             player->exit_code = 1;
             return PLAYER_TICK_DONE;
         }
-        if (!player->muted) {
-            nmo_view_play_sounds(player->view);
-        }
+        nmo_view_play_sounds(player->view);
     }
 #endif
+    player->draw_ms = player_now() - stepped;
     player_take_shots(player, nmo_engine_frame(engine));
     player->frame++;
     if ((args->frames > 0 && player->frame >= args->frames) || nmo_engine_exit_requested(engine)) {
@@ -432,21 +529,342 @@ static player_tick_result_t player_tick(player_t *player)
     return PLAYER_TICK_STEPPED;
 }
 
+/* Parse the arguments and open the game: 0 when it is ready to run, 2 on bad arguments */
+static int player_begin(player_t *player, int argc, char **argv)
+{
+    player->volume = 1.0f;
+    if (!player_parse(argc, argv, &player->args)) {
+        return player_usage();
+    }
+    if (player_open(player) != NMO_OK) {
+        player_close(player);
+        return 1;
+    }
+    return 0;
+}
+
 static player_t g_player;
 
 #ifdef __EMSCRIPTEN__
+#define PLAYER_EXPORT EMSCRIPTEN_KEEPALIVE
+
+static bool g_running;      /* a run's loop is going (or paused) */
+static int g_last_exit_code; /* how the last run ended (player_exit_code once it has) */
+
+static void player_end(player_t *player)
+{
+    player_close(player);
+    free(player->argv);
+    free(player->arg_text);
+    float volume = player->volume;
+    memset(player, 0, sizeof(*player));
+    player->volume = volume;
+    g_running = false;
+}
+
 /* The browser calls this once an animation frame */
 static void player_browser_frame(void *user_data)
 {
     player_t *player = (player_t *)user_data;
     if (player_tick(player) == PLAYER_TICK_DONE) {
+        g_last_exit_code = player->exit_code;
         emscripten_cancel_main_loop();
-        player_close(player);
+        player_end(player);
         emscripten_run_script("if (typeof Module.onPlayerExit === 'function') "
                               "Module.onPlayerExit(Module._player_exit_code());");
     }
 }
-#endif
+
+/* End the run going on, if any; the page's Stop button and a new player_start */
+PLAYER_EXPORT void player_stop(void)
+{
+    if (g_running) {
+        emscripten_cancel_main_loop();
+        player_end(&g_player);
+    }
+}
+
+/*
+ * Start a run, as main does with the arguments in `text` (one to a line):
+ * 0 when it runs (on the browser's animation frames, until the game quits
+ * or the page stops it), 1 when the game could not start, 2 on bad
+ * arguments. A run going on ends first.
+ */
+PLAYER_EXPORT int player_start(const char *text)
+{
+    player_stop();
+    player_t *player = &g_player;
+    size_t length = strlen(text);
+    int argc = 2; /* the program's name, and the last line */
+    for (size_t i = 0; i < length; i++) {
+        argc += text[i] == '\n';
+    }
+    player->arg_text = (char *)malloc(length + 1u);
+    player->argv = (char **)calloc((size_t)argc + 1u, sizeof(char *));
+    if (player->arg_text == NULL || player->argv == NULL) {
+        player_end(player);
+        return 1;
+    }
+    memcpy(player->arg_text, text, length + 1u);
+    static char program[] = "player";
+    player->argv[0] = program;
+    argc = 1;
+    for (char *line = player->arg_text; line != NULL;) {
+        char *end = strchr(line, '\n');
+        if (end != NULL) {
+            *end = '\0';
+        }
+        if (*line != '\0') {
+            player->argv[argc++] = line;
+        }
+        line = end != NULL ? end + 1 : NULL;
+    }
+    int result = player_begin(player, argc, player->argv);
+    if (result != 0) {
+        player_end(player);
+        return result;
+    }
+    if (player->args.headless) {
+        fprintf(stderr, "Error: The page's runs draw in its window: --headless is for main\n");
+        player_end(player);
+        return 2;
+    }
+    g_running = true;
+    emscripten_set_main_loop_arg(player_browser_frame, player, 0, false);
+    return 0;
+}
+
+/* Whether a run is going on */
+PLAYER_EXPORT int player_running(void)
+{
+    return g_running;
+}
+
+/* The page's play/pause, mute and volume controls */
+PLAYER_EXPORT void player_pause(void)
+{
+    emscripten_pause_main_loop();
+}
+
+PLAYER_EXPORT void player_resume(void)
+{
+    emscripten_resume_main_loop();
+}
+
+PLAYER_EXPORT void player_set_mute(int muted)
+{
+    g_player.muted = muted != 0;
+    player_apply_volume(&g_player);
+}
+
+PLAYER_EXPORT void player_set_volume(float volume)
+{
+    g_player.volume = volume < 0.0f ? 0.0f : volume;
+    player_apply_volume(&g_player);
+}
+
+/* Whether to keep to the game's frame rate limit (--no-frame-limit is the opposite) */
+PLAYER_EXPORT void player_set_frame_limit(int limit)
+{
+    g_player.frame_limit = limit != 0;
+}
+
+/* Save the window's frame as a PNG file: 0 when saved */
+PLAYER_EXPORT int player_screenshot(const char *path)
+{
+    return g_running && player_save(&g_player, path) == NMO_OK ? 0 : 1;
+}
+
+/* The state of a gamepad, as joystick `slot` (0-3): axes in -1..1, POV in
+   hundredths of a degree (negative when centered), bit 0 for button 1 */
+PLAYER_EXPORT void player_set_joystick(int slot, int attached, float x, float y, float z,
+                                       float rx, float ry, float rz, float pov, uint32_t buttons)
+{
+    if (!g_running) {
+        return;
+    }
+    nmo_engine_joystick_state_t state = {
+        .attached = attached != 0,
+        .position = {x, y, z},
+        .rotation = {rx, ry, rz},
+        .point_of_view = pov,
+        .buttons = buttons,
+    };
+    nmo_engine_set_joystick(g_player.engine, slot, &state);
+}
+
+/* ---- What the page's developer tools show ---- */
+
+/* How long the last frame took the engine, and drawing it, in ms */
+PLAYER_EXPORT double player_step_ms(void)
+{
+    return g_player.step_ms;
+}
+
+PLAYER_EXPORT double player_draw_ms(void)
+{
+    return g_player.draw_ms;
+}
+
+/* The WebAssembly memory the player has taken, in bytes */
+PLAYER_EXPORT double player_memory(void)
+{
+    return (double)emscripten_get_heap_size();
+}
+
+/* The engine's clock, in ms */
+PLAYER_EXPORT double player_time(void)
+{
+    return g_running ? nmo_engine_time(g_player.engine) : 0.0;
+}
+
+/* The files the engine runs: the composition (0), then those loaded since */
+PLAYER_EXPORT int player_file_count(void)
+{
+    int count = g_running ? 1 : 0;
+    while (g_running && nmo_engine_loaded_file_name(g_player.engine, count) != NULL) {
+        count++;
+    }
+    return count;
+}
+
+PLAYER_EXPORT const char *player_file_name(int file)
+{
+    if (!g_running) {
+        return NULL;
+    }
+    return file == 0 ? g_player.args.file : nmo_engine_loaded_file_name(g_player.engine, file);
+}
+
+PLAYER_EXPORT int player_object_count(int file)
+{
+    return g_running ? nmo_engine_loaded_object_count(g_player.engine, file) : 0;
+}
+
+PLAYER_EXPORT uint32_t player_object(int file, int index)
+{
+    return g_running ? nmo_engine_loaded_object(g_player.engine, file, index) : 0u;
+}
+
+PLAYER_EXPORT const char *player_object_name(uint32_t id)
+{
+    return g_running ? nmo_engine_object_name(g_player.engine, id) : NULL;
+}
+
+PLAYER_EXPORT int player_object_class(uint32_t id)
+{
+    return g_running ? nmo_engine_object_class(g_player.engine, id) : 0;
+}
+
+PLAYER_EXPORT const char *player_class_name(int class_id)
+{
+    return g_running ? nmo_document_class_name(g_player.document, (nmo_class_id_t)class_id) : NULL;
+}
+
+/* Bit 0: the object is active in the scene; bit 1: it is visible */
+PLAYER_EXPORT int player_object_state(uint32_t id)
+{
+    if (!g_running) {
+        return 0;
+    }
+    return (nmo_engine_object_is_active(g_player.engine, id) ? 1 : 0) |
+           (nmo_engine_object_is_visible(g_player.engine, id) ? 2 : 0);
+}
+
+PLAYER_EXPORT int player_script_count(void)
+{
+    return g_running ? nmo_engine_script_count(g_player.engine) : 0;
+}
+
+PLAYER_EXPORT uint32_t player_script_id(int index)
+{
+    return g_running ? nmo_engine_script_id(g_player.engine, index) : 0u;
+}
+
+/* A behavior's (or any object's) "Name#id" label; valid until the next call */
+PLAYER_EXPORT const char *player_label(uint32_t id)
+{
+    if (!g_running) {
+        return NULL;
+    }
+    size_t length = nmo_engine_label(g_player.engine, id, NULL, 0u);
+    char *label = (char *)malloc(length + 1u);
+    if (label == NULL) {
+        return NULL;
+    }
+    nmo_engine_label(g_player.engine, id, label, length + 1u);
+    free(g_player.label);
+    g_player.label = label;
+    return label;
+}
+
+PLAYER_EXPORT int player_behavior_active(uint32_t id)
+{
+    return g_running && nmo_engine_behavior_is_active(g_player.engine, id);
+}
+
+PLAYER_EXPORT double player_behavior_executions(uint32_t id)
+{
+    return g_running ? (double)nmo_engine_behavior_execution_count(g_player.engine, id) : 0.0;
+}
+
+PLAYER_EXPORT const char *player_message_name(int type)
+{
+    return g_running ? nmo_engine_message_type_name(g_player.engine, type) : NULL;
+}
+
+/* Record what the behavior engine does in the next `frames` frames; read it
+   with the player_trace_* functions once player_tracing() says it is done */
+PLAYER_EXPORT void player_trace(int frames)
+{
+    if (!g_running || frames <= 0) {
+        return;
+    }
+    g_player.trace_count = 0u;
+    g_player.trace_frames = frames;
+    nmo_engine_set_trace(g_player.engine, player_on_trace, &g_player);
+}
+
+PLAYER_EXPORT int player_tracing(void)
+{
+    return g_player.trace_frames > 0;
+}
+
+PLAYER_EXPORT int player_trace_count(void)
+{
+    return (int)g_player.trace_count;
+}
+
+PLAYER_EXPORT int player_trace_kind(int index)
+{
+    return (int)g_player.trace[index].kind;
+}
+
+PLAYER_EXPORT double player_trace_frame(int index)
+{
+    return (double)g_player.trace[index].frame;
+}
+
+PLAYER_EXPORT uint32_t player_trace_behavior(int index)
+{
+    return g_player.trace[index].behavior_id;
+}
+
+PLAYER_EXPORT uint32_t player_trace_object(int index)
+{
+    return g_player.trace[index].object_id;
+}
+
+PLAYER_EXPORT int player_trace_result(int index)
+{
+    return g_player.trace[index].result;
+}
+
+PLAYER_EXPORT int player_trace_depth(int index)
+{
+    return (int)g_player.trace[index].depth;
+}
+#endif /* __EMSCRIPTEN__ */
 
 /* Frames run so far (the page shows the rate) */
 #ifdef __EMSCRIPTEN__
@@ -460,30 +878,14 @@ uint32_t player_frames(void)
 /* 0 when the run ended well, else 1 */
 #ifdef __EMSCRIPTEN__
 EMSCRIPTEN_KEEPALIVE
-#endif
+int player_exit_code(void)
+{
+    return g_running ? g_player.exit_code : g_last_exit_code;
+}
+#else
 int player_exit_code(void)
 {
     return g_player.exit_code;
-}
-
-#ifdef __EMSCRIPTEN__
-/* The page's play/pause and mute buttons */
-EMSCRIPTEN_KEEPALIVE
-void player_pause(void)
-{
-    emscripten_pause_main_loop();
-}
-
-EMSCRIPTEN_KEEPALIVE
-void player_resume(void)
-{
-    emscripten_resume_main_loop();
-}
-
-EMSCRIPTEN_KEEPALIVE
-void player_set_mute(int muted)
-{
-    g_player.muted = muted != 0;
 }
 #endif
 
@@ -491,27 +893,25 @@ int main(int argc, char **argv)
 {
     player_t *player = &g_player;
     memset(player, 0, sizeof(*player));
-    if (!player_parse(argc, argv, &player->args)) {
-        return player_usage();
-    }
-    if (player_open(player) != NMO_OK) {
-        player_close(player);
-        return 1;
+    int result = player_begin(player, argc, argv);
+    if (result != 0) {
+        return result;
     }
 #ifdef __EMSCRIPTEN__
     if (!player->args.headless) {
         /* The browser's animation frames drive the loop; main returns at once */
+        g_running = true;
         emscripten_set_main_loop_arg(player_browser_frame, player, 0, false);
         return 0;
     }
 #endif
     for (;;) {
-        player_tick_result_t result = player_tick(player);
-        if (result == PLAYER_TICK_DONE) {
+        player_tick_result_t result_tick = player_tick(player);
+        if (result_tick == PLAYER_TICK_DONE) {
             break;
         }
 #ifdef NMO_HAS_VIEW
-        if (result == PLAYER_TICK_WAITING) {
+        if (result_tick == PLAYER_TICK_WAITING) {
             nmo_view_wait(player->view, 1.0);
         }
 #endif

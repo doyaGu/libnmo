@@ -1,146 +1,104 @@
-// nmo's web player page: the player picks their game folder, its files are
-// copied into the player's memory file system (nothing leaves the browser),
-// and the engine runs base.cmo on the canvas. Node.js (run_node.mjs) imports
-// the same file selection.
+// nmo's web player page: a library of Virtools games kept in this browser,
+// added from a folder, a .zip, a single composition or a URL; each runs in
+// the engine (nmo-player.wasm) on the canvas, with its own settings, keys
+// and saves, and the developer tools underneath.
+//
+// URL parameters: ?src=URL (a .zip, .cmo or .vmo to add, or play if it was
+// added before), &entry=PATH (the composition inside a .zip), &profile=ID,
+// &name=NAME, &autoplay=1 (add and start without asking).
 
 import createNmoPlayer from './nmo-player.mjs';
+import {planGame, writeGameFile, removeTree, listTree} from './games.mjs';
+import {PROFILES, profileById, registryFor} from './profiles.mjs';
+import {openLibrary} from './library.mjs';
+import {zipFiles, writeZip} from './zip.mjs';
+import {KeyRemapper, Gamepads, buildTouchControls, keyName} from './input.mjs';
+import {createDevtools} from './devtools.mjs';
 
-/* The parts of a Ballance folder the game reads, by their first path part (any case) */
-const GAME_PARTS = ['base.cmo', 'database.tdb', '3d entities', 'textures', 'sounds', 'text'];
+const SETTINGS_KEY = 'nmo-player-settings';
+const DEFAULT_SETTINGS = {
+    renderer: 'auto',
+    scale: 'auto',
+    touch: 'auto',
+    physics: true,
+    frameLimit: true,
+    gamepad: true,
+    pointerLock: false,
+    volume: 1,
+    muted: false,
+    devtools: false,
+};
 
-/*
- * The game's files among `paths` (relative paths with '/' separators, as a
- * folder picker or a drop gives them): those under the folder holding
- * base.cmo, as [source path, path inside that folder]. Empty when no
- * base.cmo is there.
- */
-export function selectGameFiles(paths) {
-    let root = null;
-    for (const path of paths) {
-        const parts = path.split('/');
-        if (parts[parts.length - 1].toLowerCase() === 'base.cmo') {
-            const folder = parts.slice(0, -1).join('/');
-            if (root === null || folder.length < root.length) {
-                root = folder;
-            }
+function loadSettings() {
+    try {
+        const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}');
+        /* The page before the settings dialog kept only these two */
+        if (localStorage.getItem('nmo-player-muted') === '1' && saved.muted === undefined) {
+            saved.muted = true;
         }
+        return {...DEFAULT_SETTINGS, ...saved};
+    } catch {
+        return {...DEFAULT_SETTINGS};
     }
-    if (root === null) {
-        return [];
-    }
-    const prefix = root === '' ? '' : root + '/';
-    const selected = [];
-    for (const path of paths) {
-        if (!path.startsWith(prefix)) {
-            continue;
-        }
-        const inner = path.slice(prefix.length);
-        if (GAME_PARTS.includes(inner.split('/')[0].toLowerCase())) {
-            selected.push([path, inner]);
-        }
-    }
-    return selected;
 }
 
-/* Write `data` (bytes) at `path` in the module's file system, making its folders */
-export function writeGameFile(module, path, data) {
-    const slash = path.lastIndexOf('/');
-    if (slash > 0) {
-        module.FS.mkdirTree(path.slice(0, slash));
+function saveSettings(settings) {
+    try {
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    } catch {
+        /* remembered only where storage works */
     }
-    module.FS.writeFile(path, data);
 }
 
-/* ---- A .zip of the Ballance folder, read without a library: the browser's
-   own DecompressionStream does the one compression method (deflate) a zip
-   actually needs. Reads the central directory for the names (cheap, no
-   decompression), so the caller can run the same selectGameFiles over it a
-   folder's paths go through, then decompresses only the files it keeps. ---- */
-
-const ZIP_EOCD_SIGNATURE = 0x06054b50;
-const ZIP_CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50;
-const ZIP_LOCAL_FILE_SIGNATURE = 0x04034b50;
-
-/* Every entry's name and where to find its data, from the directory at the
-   end of the zip (not the local headers scattered through it, which a
-   streamed/appended zip can disagree with). */
-export function readZipEntries(buffer) {
-    const view = new DataView(buffer);
-    const bytes = new Uint8Array(buffer);
-    const shortest = 22; /* the EOCD record holds no comment */
-    const longestComment = 65535;
-    let eocd = -1;
-    for (let i = bytes.length - shortest; i >= Math.max(0, bytes.length - shortest - longestComment); i--) {
-        if (view.getUint32(i, true) === ZIP_EOCD_SIGNATURE) {
-            eocd = i;
-            break;
-        }
-    }
-    if (eocd < 0) {
-        throw new Error('no end-of-central-directory record (not a zip file?)');
-    }
-    const entryCount = view.getUint16(eocd + 10, true);
-    let offset = view.getUint32(eocd + 16, true);
-    const entries = [];
-    for (let i = 0; i < entryCount; i++) {
-        if (view.getUint32(offset, true) !== ZIP_CENTRAL_DIRECTORY_SIGNATURE) {
-            throw new Error('a central directory entry is not where it should be');
-        }
-        const flags = view.getUint16(offset + 8, true);
-        const method = view.getUint16(offset + 10, true);
-        const compressedSize = view.getUint32(offset + 20, true);
-        const nameLength = view.getUint16(offset + 28, true);
-        const extraLength = view.getUint16(offset + 30, true);
-        const commentLength = view.getUint16(offset + 32, true);
-        const localHeaderOffset = view.getUint32(offset + 42, true);
-        const nameBytes = bytes.subarray(offset + 46, offset + 46 + nameLength);
-        const name = flags & 0x0800
-            ? new TextDecoder('utf-8').decode(nameBytes)
-            : String.fromCharCode(...nameBytes); /* plain ASCII either way for this game's files */
-        entries.push({name, method, compressedSize, localHeaderOffset});
-        offset += 46 + nameLength + extraLength + commentLength;
-    }
-    return entries;
+/* The player's C functions (player.c's player_*) */
+function bindApi(module) {
+    const n = 'number', s = 'string';
+    const wrap = (name, result, args = []) => module.cwrap(`player_${name}`, result, args);
+    return {
+        start: wrap('start', n, [s]),
+        stop: wrap('stop', null),
+        running: wrap('running', n),
+        pause: wrap('pause', null),
+        resume: wrap('resume', null),
+        setMute: wrap('set_mute', null, [n]),
+        setVolume: wrap('set_volume', null, [n]),
+        setFrameLimit: wrap('set_frame_limit', null, [n]),
+        screenshot: wrap('screenshot', n, [s]),
+        setJoystick: wrap('set_joystick', null, [n, n, n, n, n, n, n, n, n, n]),
+        frames: wrap('frames', n),
+        stepMs: wrap('step_ms', n),
+        drawMs: wrap('draw_ms', n),
+        time: wrap('time', n),
+        memory: wrap('memory', n),
+        fileCount: wrap('file_count', n),
+        fileName: wrap('file_name', s, [n]),
+        objectCount: wrap('object_count', n, [n]),
+        object: wrap('object', n, [n, n]),
+        objectName: wrap('object_name', s, [n]),
+        objectClass: wrap('object_class', n, [n]),
+        className: wrap('class_name', s, [n]),
+        objectState: wrap('object_state', n, [n]),
+        scriptCount: wrap('script_count', n),
+        scriptId: wrap('script_id', n, [n]),
+        label: wrap('label', s, [n]),
+        behaviorActive: wrap('behavior_active', n, [n]),
+        behaviorExecutions: wrap('behavior_executions', n, [n]),
+        messageName: wrap('message_name', s, [n]),
+        trace: wrap('trace', null, [n]),
+        tracing: wrap('tracing', n),
+        traceCount: wrap('trace_count', n),
+        traceKind: wrap('trace_kind', n, [n]),
+        traceFrame: wrap('trace_frame', n, [n]),
+        traceBehavior: wrap('trace_behavior', n, [n]),
+        traceObject: wrap('trace_object', n, [n]),
+        traceResult: wrap('trace_result', n, [n]),
+        traceDepth: wrap('trace_depth', n, [n]),
+    };
 }
 
-/* One entry's bytes, decompressed; the local header's own name/extra
-   lengths (not the central directory's, which can differ) say where they
-   start. */
-export async function readZipEntryData(buffer, entry) {
-    const view = new DataView(buffer);
-    const bytes = new Uint8Array(buffer);
-    if (view.getUint32(entry.localHeaderOffset, true) !== ZIP_LOCAL_FILE_SIGNATURE) {
-        throw new Error(`"${entry.name}" has no local file header where its central directory entry points`);
-    }
-    const nameLength = view.getUint16(entry.localHeaderOffset + 26, true);
-    const extraLength = view.getUint16(entry.localHeaderOffset + 28, true);
-    const start = entry.localHeaderOffset + 30 + nameLength + extraLength;
-    const compressed = bytes.subarray(start, start + entry.compressedSize);
-    if (entry.method === 0) {
-        return compressed;
-    }
-    if (entry.method === 8) {
-        if (typeof DecompressionStream === 'undefined') {
-            throw new Error("this browser can't inflate a zip's compressed files");
-        }
-        const stream = new Blob([compressed]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
-        return new Uint8Array(await new Response(stream).arrayBuffer());
-    }
-    throw new Error(`"${entry.name}" uses zip compression method ${entry.method}, not store or deflate`);
-}
-
-/* ---- The page ---- */
-
-const LANGUAGES = [
-    ['0', 'Deutsch'],
-    ['1', 'English'],
-    ['2', 'Español'],
-    ['3', 'Italiano'],
-    ['4', 'Français'],
-];
-
-/* The files of a dropped folder, with paths relative to the drop */
-async function droppedFiles(items) {
+/* The files of a drop, with paths relative to it; webkitGetAsEntry must be
+   called before the drop handler first awaits, so `entries` come in ready */
+async function droppedFiles(entries) {
     const files = [];
     const readEntry = async (entry, path) => {
         if (entry.isFile) {
@@ -159,13 +117,6 @@ async function droppedFiles(items) {
             }
         }
     };
-    const entries = [];
-    for (const item of items) {
-        const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
-        if (entry !== null) {
-            entries.push(entry);
-        }
-    }
     for (const entry of entries) {
         await readEntry(entry, '');
     }
@@ -178,216 +129,377 @@ function setHidden(element, hidden) {
     element.toggleAttribute('hidden', hidden);
 }
 
-/* A touch screen's D-pad/Esc, as a real keydown/keyup the view's keyboard
-   polling already reads (the engine re-syncs the arrow keys from that same
-   tracked state every frame, so this has to go through it rather than some
-   separate side channel). */
-const KEY_INFO = {
-    ArrowUp: {keyCode: 38, key: 'ArrowUp'},
-    ArrowDown: {keyCode: 40, key: 'ArrowDown'},
-    ArrowLeft: {keyCode: 37, key: 'ArrowLeft'},
-    ArrowRight: {keyCode: 39, key: 'ArrowRight'},
-    Enter: {keyCode: 13, key: 'Enter'},
-    Escape: {keyCode: 27, key: 'Escape'},
-    Space: {keyCode: 32, key: ' '},
-    ShiftLeft: {keyCode: 16, key: 'Shift'},
-};
-
-function sendKey(code, down) {
-    const info = KEY_INFO[code];
-    document.dispatchEvent(new KeyboardEvent(down ? 'keydown' : 'keyup', {
-        code,
-        key: info.key,
-        keyCode: info.keyCode,
-        which: info.keyCode,
-        bubbles: true,
-        cancelable: true,
-    }));
+function formatSize(bytes) {
+    if (bytes >= 1073741824) return `${(bytes / 1073741824).toFixed(1)} GB`;
+    if (bytes >= 1048576) return `${(bytes / 1048576).toFixed(1)} MB`;
+    if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
+    return `${bytes} B`;
 }
 
-/* Each button tracks its own held pointers (by id), so two fingers on two
-   different buttons (e.g. steering a diagonal) hold both keys down, and a
-   second finger joining or leaving an already-held button does not send a
-   spurious extra keydown/keyup. `sync` only acts on an actual down/up
-   transition: releasing a captured pointer fires both `pointerup` and
-   `lostpointercapture`, and a plain size check would send keyup twice. */
-function setupTouchControls() {
-    for (const button of document.querySelectorAll('#touch-controls [data-key]')) {
-        const code = button.dataset.key;
-        const held = new Set();
-        let down = false;
-        const sync = () => {
-            const wantDown = held.size > 0;
-            if (wantDown !== down) {
-                down = wantDown;
-                sendKey(code, down);
-            }
-        };
-        const press = (event) => {
-            event.preventDefault();
-            button.setPointerCapture(event.pointerId);
-            held.add(event.pointerId);
-            sync();
-        };
-        const release = (event) => {
-            held.delete(event.pointerId);
-            sync();
-        };
-        button.addEventListener('pointerdown', press);
-        button.addEventListener('pointerup', release);
-        button.addEventListener('pointercancel', release);
-        button.addEventListener('lostpointercapture', release);
+function download(name, blob) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = name;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/* A file name made safe for a download */
+function fileNameOf(text) {
+    return text.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'game';
+}
+
+async function fetchWithProgress(url, onProgress) {
+    const response = await fetch(url);
+    if (!response.ok) {
+        throw new Error(`${response.status} ${response.statusText}`);
     }
+    const total = Number(response.headers.get('content-length')) || 0;
+    if (!response.body) {
+        return response.blob();
+    }
+    const reader = response.body.getReader();
+    const chunks = [];
+    let received = 0;
+    for (;;) {
+        const {done, value} = await reader.read();
+        if (done) {
+            break;
+        }
+        chunks.push(value);
+        received += value.length;
+        onProgress(received, total);
+    }
+    return new Blob(chunks, {type: response.headers.get('content-type') ?? ''});
+}
+
+/* A file is a zip by its name or its first bytes */
+async function isZip(name, blob) {
+    if (/\.zip$/i.test(name)) {
+        return true;
+    }
+    const head = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
+    return head[0] === 0x50 && head[1] === 0x4b && head[2] === 3 && head[3] === 4;
 }
 
 function startPage() {
     const $ = (id) => document.getElementById(id);
+    const canvas = $('canvas');
     const status = $('status');
     const loadbar = $('loadbar');
     const loadfill = $('loadfill');
-    const startButton = $('start');
-    const log = $('log');
-    const language = $('language');
     const playPause = $('playpause');
     const muteButton = $('mute');
-    const fullscreenButton = $('fullscreen');
-    let gameReady = false;
-    let paused = false;
-    let muted = false;
-    let fpsTimer = null;
-
-    for (const [value, label] of LANGUAGES) {
-        const option = document.createElement('option');
-        option.value = value;
-        option.textContent = label;
-        language.append(option);
-    }
-    try {
-        language.value = localStorage.getItem('nmo-player-language') ?? '1';
-        muted = localStorage.getItem('nmo-player-muted') === '1';
-    } catch {
-        language.value = '1';
-    }
-    setHidden($('mute').querySelector('.icon-unmuted'), muted);
-    setHidden($('mute').querySelector('.icon-muted'), !muted);
-    setupTouchControls();
-
-    /* iOS Safari's folder picker has a long history of silently falling
-       back to individual files instead of a real folder; there is no
-       reliable feature test for that, so this is a plain platform check. */
-    if (/iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream) {
-        $('ios-note').hidden = false;
-    }
-
-    const print = (text, error) => {
-        const line = document.createElement('div');
-        line.textContent = text;
-        if (error) {
-            line.className = 'error';
-            $('log-box').open = true;
-        }
-        log.append(line);
-        log.scrollTop = log.scrollHeight;
-    };
+    const volume = $('volume');
+    const settingsDialog = $('settings');
+    const savesDialog = $('saves');
+    const settings = loadSettings();
 
     let module = null;
+    let api = null;
+    let library = null;
+    let games = [];
+    let pending = null;    /* files offered, not yet added: {files, byPath, source} */
+    let current = null;    /* the game playing (its meta) */
+    let loadedId = null;   /* the game whose files are in /game */
+    let paused = false;
+    let autoPaused = false;
+    let fpsTimer = null;
+    let busy = false;
+
+    const devtools = createDevtools($('devtools'), () => api);
+    const remapper = new KeyRemapper();
+    const gamepads = new Gamepads((...args) => api?.running() === 1 && api.setJoystick(...args));
+    gamepads.enabled = settings.gamepad;
+    gamepads.onChange = (pads) => {
+        $('pad-note').hidden = pads.length === 0;
+        $('pad-note').title = pads.join(', ');
+    };
+
+    const setStatus = (text, progress) => {
+        status.textContent = text;
+        loadbar.hidden = progress === undefined;
+        if (progress !== undefined) {
+            loadfill.style.width = `${Math.round(progress * 100)}%`;
+        }
+    };
+
+    /* ---- The player module ---- */
+
     const persist = () => {
         module?.FS.syncfs(false, (error) => {
             if (error) {
-                print('Could not keep the saves: ' + error, true);
+                devtools.print('Could not keep the saves: ' + error, true);
             }
         });
     };
+
     const ready = createNmoPlayer({
-        canvas: $('canvas'),
-        print: (text) => print(text, false),
-        printErr: (text) => print(text, true),
+        canvas,
+        print: (text) => devtools.print(text, false),
+        printErr: (text) => devtools.print(text, true),
+        setStatus: (text) => {
+            const match = /\((\d+)\/(\d+)\)/.exec(text);
+            $('boot').textContent = match
+                ? `Loading the player… ${Math.round((100 * Number(match[1])) / Number(match[2]))}%`
+                : text || '';
+        },
         persistSaves: persist,
         onPlayerExit: (code) => {
-            status.textContent = code === 0 ? 'The game has ended. Press Start to play again.' : 'The game stopped with an error (see the log).';
-            document.body.classList.remove('playing');
-            if (fpsTimer !== null) {
-                clearInterval(fpsTimer);
-                fpsTimer = null;
-            }
-            $('fps').textContent = '';
-            paused = false;
-            autoPaused = false;
-            setHidden(playPause.querySelector('.icon-pause'), false);
-            setHidden(playPause.querySelector('.icon-play'), true);
-            playPause.disabled = true;
-            muteButton.disabled = true;
-            fullscreenButton.disabled = true;
+            endRun(code === 0 ? `${current?.name ?? 'The game'} has ended.` : 'The game stopped with an error (see the log).');
         },
     }).then(async (created) => {
         module = created;
+        api = bindApi(module);
         module.FS.mkdir('/save');
         module.FS.mount(module.IDBFS, {}, '/save');
         await new Promise((resolve) => module.FS.syncfs(true, () => resolve()));
         module.FS.mkdir('/game');
+        $('boot').textContent = '';
         return module;
     });
     ready.catch((error) => {
-        status.textContent = 'The player could not start: ' + error;
+        $('boot').textContent = 'The player could not start: ' + error;
     });
 
-    const load = async (files) => {
-        const selected = selectGameFiles(files.map(([path]) => path));
-        if (selected.length === 0) {
-            status.textContent = "That has no base.cmo. Choose the Ballance folder, or a .zip of it.";
+    /* ---- The library ---- */
+
+    const refreshLibrary = async () => {
+        if (!library) {
             return;
         }
-        const byPath = new Map(files);
-        const player = await ready;
-        startButton.disabled = true;
-        loadbar.hidden = false;
-        let done = 0;
-        for (const [source, inner] of selected) {
-            const data = new Uint8Array(await byPath.get(source).arrayBuffer());
-            writeGameFile(player, '/game/' + inner, data);
-            done++;
-            if (done % 25 === 0 || done === selected.length) {
-                loadfill.style.width = `${(100 * done) / selected.length}%`;
-                status.textContent = `Copied ${done} of ${selected.length} files…`;
-            }
+        games = await library.list();
+        const list = $('games');
+        list.replaceChildren(...games.map((game) => {
+            const profile = profileById(game.profile);
+            const item = document.createElement('li');
+            item.className = 'game';
+            const info = document.createElement('div');
+            info.className = 'game-info';
+            const name = document.createElement('strong');
+            name.textContent = game.name;
+            const detail = document.createElement('span');
+            detail.className = 'dim';
+            detail.textContent = [profile.name, game.entry, formatSize(game.size), `${game.count} files`].join(' · ');
+            info.append(name, detail);
+            const actions = document.createElement('div');
+            actions.className = 'game-actions';
+            const button = (label, className, action) => {
+                const element = document.createElement('button');
+                element.type = 'button';
+                element.className = className;
+                element.textContent = label;
+                element.addEventListener('click', action);
+                actions.append(element);
+                return element;
+            };
+            button('Play', 'play-button small', () => play(game.id));
+            button('Settings', 'button small', () => openSettings(game));
+            button('Saves', 'button small', () => openSaves(game));
+            button('Remove', 'button small', () => removeGame(game));
+            item.append(info, actions);
+            return item;
+        }));
+        $('no-games').hidden = games.length > 0;
+        if (library.persistent) {
+            const estimate = await navigator.storage?.estimate?.().catch(() => null);
+            $('storage-note').textContent = estimate?.usage
+                ? `Kept in this browser · ${formatSize(estimate.usage)} used`
+                : 'Kept in this browser';
+        } else {
+            $('storage-note').textContent = "This browser can't keep games: they last until the tab closes.";
         }
-        gameReady = true;
-        status.textContent = `${selected.length} files ready. Press Start.`;
-        startButton.disabled = false;
     };
 
-    /* A zip entry wrapped to look like the File/Blob `load` already reads
-       (byPath.get(source).arrayBuffer()): decompressed lazily, only for the
-       entries selectGameFiles actually keeps. */
-    const loadZip = async (file) => {
-        let buffer;
-        try {
-            buffer = await file.arrayBuffer();
-        } catch (error) {
-            status.textContent = `Could not read ${file.name}: ${error.message}`;
+    const removeGame = async (game) => {
+        if (!confirm(`Remove "${game.name}" from this browser? Its saves are deleted too.`)) {
             return;
         }
-        let entries;
-        try {
-            entries = readZipEntries(buffer);
-        } catch (error) {
-            status.textContent = `${file.name} does not look like a zip file (${error.message}).`;
-            return;
+        if (current?.id === game.id) {
+            stopRun();
         }
-        const files = entries
-            .filter((entry) => !entry.name.endsWith('/'))
-            .map((entry) => [entry.name, {arrayBuffer: () => readZipEntryData(buffer, entry)}]);
-        await load(files);
+        await library.remove(game.id);
+        await ready;
+        removeTree(module, `/save/${game.id}`);
+        persist();
+        if (loadedId === game.id) {
+            removeTree(module, '/game');
+            module.FS.mkdir('/game');
+            loadedId = null;
+        }
+        await refreshLibrary();
+    };
+
+    /* ---- Adding a game ---- */
+
+    const planForm = $('plan');
+    const planEntry = $('plan-entry');
+    const planProfile = $('plan-profile');
+    for (const profile of PROFILES) {
+        planProfile.append(new Option(profile.name, profile.id));
+    }
+
+    const currentPlan = () => planGame(pending.files.map(([path]) => path), {
+        entry: planEntry.value,
+        profile: planProfile.value,
+    });
+
+    const describePlan = () => {
+        const plan = currentPlan();
+        const size = plan.files.reduce((sum, [path]) => sum + (pending.byPath.get(path)?.size ?? 0), 0);
+        $('plan-summary').textContent = `${plan.files.length} files${size ? `, ${formatSize(size)}` : ''}, ` +
+            `from ${plan.root || 'the top folder'}.`;
+    };
+
+    /* Offer `files` ([path, file-like]) as a game: the form to add it, or straight in with options.autoplay */
+    const offer = async (files, source, options = {}) => {
+        const plan = planGame(files.map(([path]) => path), options);
+        if (!plan) {
+            setStatus('There is no .cmo, .vmo or .nmo there to start.');
+            return null;
+        }
+        pending = {files, byPath: new Map(files), source};
+        $('plan-name').value = options.name ?? plan.name;
+        planEntry.replaceChildren(...plan.entries.map((entry) => new Option(entry, entry)));
+        planEntry.value = plan.entry;
+        planProfile.value = plan.profile.id;
+        describePlan();
+        if (options.autoplay) {
+            return addPending();
+        }
+        planForm.hidden = false;
+        setStatus(plan.profile.detect ? `This looks like ${plan.profile.name}.` : '');
+        $('plan-name').focus();
+        return null;
+    };
+
+    planEntry.addEventListener('change', describePlan);
+    planProfile.addEventListener('change', describePlan);
+    $('plan-cancel').addEventListener('click', () => {
+        pending = null;
+        planForm.hidden = true;
+        setStatus('');
+    });
+    planForm.addEventListener('submit', (event) => {
+        event.preventDefault();
+        addPending();
+    });
+
+    /* Copy the offered game into the library (and, on the way, into /game), then play it */
+    const addPending = async () => {
+        if (busy || pending === null) {
+            return null;
+        }
+        busy = true;
+        const plan = currentPlan();
+        const name = $('plan-name').value.trim() || plan.name;
+        await ready;
+        stopRun();
+        removeTree(module, '/game');
+        module.FS.mkdir('/game');
+        loadedId = null;
+        let copied = 0;
+        const files = plan.files.map(([source, inner]) => {
+            const file = pending.byPath.get(source);
+            return [inner, {
+                size: file.size,
+                arrayBuffer: async () => {
+                    const data = await file.arrayBuffer();
+                    writeGameFile(module, '/game/' + inner, new Uint8Array(data));
+                    copied++;
+                    return data;
+                },
+            }];
+        });
+        planForm.hidden = true;
+        setStatus('Copying…', 0);
+        let game;
+        try {
+            navigator.storage?.persist?.();
+            game = await library.add({
+                name,
+                entry: plan.inner,
+                profile: plan.profile.id,
+                source: pending.source ?? null,
+                settings: {values: {}, keymap: {}, registry: ''},
+            }, files, (done, total) => setStatus(`Copying ${done} of ${total} files…`, done / total));
+        } catch (error) {
+            busy = false;
+            setStatus(`Could not add the game: ${error.message}`);
+            planForm.hidden = false;
+            return null;
+        }
+        if (copied === files.length) {
+            loadedId = game.id;
+        }
+        pending = null;
+        busy = false;
+        await refreshLibrary();
+        await play(game.id);
+        return game;
+    };
+
+    const offerZip = async (blob, source, options) => {
+        let files;
+        try {
+            files = zipFiles(await blob.arrayBuffer());
+        } catch (error) {
+            setStatus(`That does not look like a zip file (${error.message}).`);
+            return null;
+        }
+        return offer(files, source, options);
+    };
+
+    const offerFile = async (file, options) => (await isZip(file.name, file))
+        ? offerZip(file, null, options)
+        : offer([[file.name, file]], null, options);
+
+    const loadUrl = async (url, options = {}) => {
+        const absolute = new URL(url, location.href).href;
+        const known = games.find((game) => game.source === absolute);
+        if (known) {
+            if (options.autoplay) {
+                await play(known.id);
+            } else {
+                setStatus(`"${known.name}" is in your games already.`);
+            }
+            return known;
+        }
+        setStatus('Downloading…', 0);
+        let blob;
+        try {
+            blob = await fetchWithProgress(absolute, (received, total) => setStatus(
+                `Downloading… ${formatSize(received)}${total ? ` of ${formatSize(total)}` : ''}`,
+                total ? received / total : 0));
+        } catch (error) {
+            setStatus(`Could not download ${absolute}: ${error.message}`);
+            return null;
+        }
+        const name = decodeURIComponent(new URL(absolute).pathname.split('/').pop() || 'game');
+        return (await isZip(name, blob))
+            ? offerZip(blob, absolute, options)
+            : offer([[name, blob]], absolute, options);
     };
 
     $('folder').addEventListener('change', (event) => {
-        const files = [...event.target.files].map((file) => [file.webkitRelativePath || file.name, file]);
-        load(files);
+        offer([...event.target.files].map((file) => [file.webkitRelativePath || file.name, file]), null);
+        event.target.value = '';
     });
-    $('zipfile').addEventListener('change', (event) => {
+    $('file').addEventListener('change', (event) => {
         const file = event.target.files[0];
         if (file) {
-            loadZip(file);
+            offerFile(file);
+        }
+        event.target.value = '';
+    });
+    $('url-form').addEventListener('submit', (event) => {
+        event.preventDefault();
+        const url = $('url').value.trim();
+        if (url) {
+            loadUrl(url);
         }
     });
     const drop = $('drop');
@@ -399,67 +511,198 @@ function startPage() {
     drop.addEventListener('drop', async (event) => {
         event.preventDefault();
         drop.classList.remove('over');
-        const items = [...event.dataTransfer.items];
-        /* A single dropped .zip (not a folder) skips the tree walk entirely */
-        if (items.length === 1 && items[0].kind === 'file') {
+        const items = [...event.dataTransfer.items].filter((item) => item.kind === 'file');
+        const entries = items.map((item) => item.webkitGetAsEntry?.()).filter(Boolean);
+        if (items.length === 1 && !entries[0]?.isDirectory) {
             const file = items[0].getAsFile();
-            if (file && /\.zip$/i.test(file.name)) {
-                await loadZip(file);
+            if (file) {
+                await offerFile(file);
                 return;
             }
         }
-        load(await droppedFiles(items));
+        offer(await droppedFiles(entries), null);
     });
 
-    startButton.addEventListener('click', async () => {
-        if (!gameReady) {
+    /* ---- Playing ---- */
+
+    const runArgs = (game) => {
+        const profile = profileById(game.profile);
+        const own = game.settings ?? {};
+        const lines = ['--write', `/save/${game.id}`, '--path', '/game'];
+        const registry = registryFor(profile, own.values, own.registry ?? '');
+        if (registry) {
+            lines.push('--registry', registry);
+        }
+        if (settings.renderer !== 'auto') {
+            lines.push('--renderer', settings.renderer);
+        }
+        const scale = settings.scale !== 'auto' ? settings.scale
+            : window.innerWidth >= 1340 && window.innerHeight >= 1080 ? '2' : '1';
+        lines.push('--scale', scale);
+        if (!settings.physics) {
+            lines.push('--physics', 'none');
+        }
+        if (!settings.frameLimit) {
+            lines.push('--no-frame-limit');
+        }
+        lines.push('/game/' + game.entry);
+        return lines.join('\n');
+    };
+
+    /* Saves the page before the library kept straight in /save (Ballance's):
+       the first Ballance game played takes them */
+    const adoptOldSaves = (game) => {
+        const folder = `/save/${game.id}`;
+        if (game.profile !== 'ballance' || module.FS.analyzePath(folder).exists) {
             return;
         }
-        const player = await ready;
-        try {
-            localStorage.setItem('nmo-player-language', language.value);
-        } catch {
-            /* the choice is only remembered where storage works */
+        module.FS.mkdir(folder);
+        for (const name of module.FS.readdir('/save')) {
+            const path = `/save/${name}`;
+            if (name !== '.' && name !== '..' && !module.FS.isDir(module.FS.stat(path).mode)) {
+                module.FS.rename(path, `${folder}/${name}`);
+            }
         }
+        persist();
+    };
+
+    const setControls = (playing) => {
+        for (const id of ['playpause', 'restart', 'stop', 'screenshot', 'fullscreen']) {
+            $(id).disabled = !playing;
+        }
+    };
+
+    const setPaused = (value) => {
+        paused = value;
+        setHidden(playPause.querySelector('.icon-pause'), paused);
+        setHidden(playPause.querySelector('.icon-play'), !paused);
+        playPause.setAttribute('aria-label', paused ? 'Play' : 'Pause');
+        playPause.title = paused ? 'Play' : 'Pause';
+    };
+
+    /* The stage takes the shape of the game's render context, as the canvas has it */
+    const fitStage = () => {
+        if (canvas.width > 0 && canvas.height > 0) {
+            $('stage').style.setProperty('--aspect', `${canvas.width} / ${canvas.height}`);
+        }
+    };
+
+    const startRun = () => {
+        const profile = profileById(current.profile);
         document.body.classList.add('playing');
-        status.textContent = 'Playing. The arrow keys roll the ball; Esc opens the game\'s menu.';
-        const canvas = $('canvas');
-        canvas.focus();
-        const scale = window.innerWidth >= 1340 && window.innerHeight >= 1080 ? '2' : '1';
-        const code = player.callMain([
-            '--write', '/save',
-            '--registry', `Software\\Ballance\\Settings\\Language=${language.value}`,
-            '--scale', scale,
-            '/game/base.cmo',
-        ]);
+        devtools.reset();
+        const code = api.start(runArgs(current));
         if (code !== 0) {
-            status.textContent = 'The game could not start (see the log).';
             document.body.classList.remove('playing');
-            return;
+            setStatus('The game could not start (see the log).');
+            $('devtools').hidden = false;
+            devtools.show('log');
+            return false;
         }
-        player._player_set_mute(muted ? 1 : 0);
-        paused = false;
-        playPause.disabled = false;
-        muteButton.disabled = false;
-        fullscreenButton.disabled = false;
-        let frames = player._player_frames();
+        api.setVolume(settings.volume);
+        api.setMute(settings.muted ? 1 : 0);
+        api.setFrameLimit(settings.frameLimit ? 1 : 0);
+        remapper.set(current.settings?.keymap);
+        gamepads.profile = profile;
+        buildTouchControls($('touch-controls'), profile);
+        $('hint').textContent = profile.hint;
+        document.title = `${current.name} · nmo player`;
+        fitStage();
+        setPaused(false);
+        setControls(true);
+        setStatus('');
+        let frames = api.frames();
+        clearInterval(fpsTimer);
         fpsTimer = setInterval(() => {
-            const now = player._player_frames();
+            const now = api.frames();
             $('fps').textContent = paused ? 'paused' : `${now - frames} fps`;
             frames = now;
         }, 1000);
+        canvas.focus();
+        return true;
+    };
+
+    function endRun(message) {
+        document.body.classList.remove('playing');
+        clearInterval(fpsTimer);
+        fpsTimer = null;
+        $('fps').textContent = '';
+        $('hint').textContent = '';
+        remapper.releaseAll();
+        gamepads.release();
+        gamepads.profile = null;
+        setPaused(false);
+        autoPaused = false;
+        setControls(false);
+        if (document.pointerLockElement) {
+            document.exitPointerLock();
+        }
+        current = null;
+        document.title = 'nmo player';
+        devtools.reset();
+        if (message) {
+            setStatus(message);
+        }
+        refreshLibrary();
+    }
+
+    function stopRun() {
+        if (api?.running() === 1) {
+            api.stop();
+            endRun('');
+        }
+    }
+
+    async function play(id) {
+        if (busy && pending === null) {
+            return;
+        }
+        await ready;
+        const game = await library.get(id);
+        if (!game) {
+            return;
+        }
+        busy = true;
+        stopRun();
+        if (loadedId !== id) {
+            removeTree(module, '/game');
+            module.FS.mkdir('/game');
+            loadedId = null;
+            const files = await library.files(id);
+            let done = 0;
+            for (const [inner, source] of files) {
+                writeGameFile(module, '/game/' + inner, new Uint8Array(await source.arrayBuffer()));
+                if (++done % 25 === 0 || done === files.length) {
+                    setStatus(`Loading ${game.name}… ${done} of ${files.length} files`, done / files.length);
+                }
+            }
+            loadedId = id;
+        }
+        adoptOldSaves(game);
+        module.FS.mkdirTree(`/save/${id}`);
+        current = await library.update(id, {played: Date.now()});
+        busy = false;
+        startRun();
+    }
+
+    $('stop').addEventListener('click', stopRun);
+    $('restart').addEventListener('click', () => {
+        if (current) {
+            api.stop();
+            startRun();
+        }
     });
 
-    playPause.addEventListener('click', async () => {
-        const player = await ready;
-        paused = !paused;
-        if (paused) {
-            player._player_pause();
-        } else {
-            player._player_resume();
+    playPause.addEventListener('click', () => {
+        if (api?.running() !== 1) {
+            return;
         }
-        setHidden(playPause.querySelector('.icon-pause'), paused);
-        setHidden(playPause.querySelector('.icon-play'), !paused);
+        setPaused(!paused);
+        if (paused) {
+            api.pause();
+        } else {
+            api.resume();
+        }
     });
 
     /* A hidden tab throttles requestAnimationFrame to a few fps (or less),
@@ -468,37 +711,86 @@ function startPage() {
        physics step unstable), freeze the engine while hidden and resume
        where it left off. Tracked apart from `paused` so a user's own pause
        is not silently lifted just because the tab came back into view. */
-    let autoPaused = false;
-    document.addEventListener('visibilitychange', async () => {
-        if (!document.body.classList.contains('playing')) {
+    document.addEventListener('visibilitychange', () => {
+        if (api?.running() !== 1) {
             return;
         }
-        const player = await ready;
         if (document.hidden) {
             if (!paused) {
-                player._player_pause();
+                api.pause();
                 autoPaused = true;
             }
         } else if (autoPaused) {
-            player._player_resume();
+            api.resume();
             autoPaused = false;
         }
     });
 
-    muteButton.addEventListener('click', async () => {
-        const player = await ready;
-        muted = !muted;
-        player._player_set_mute(muted ? 1 : 0);
-        setHidden(muteButton.querySelector('.icon-unmuted'), muted);
-        setHidden(muteButton.querySelector('.icon-muted'), !muted);
-        try {
-            localStorage.setItem('nmo-player-muted', muted ? '1' : '0');
-        } catch {
-            /* the choice is only remembered where storage works */
+    const showMute = () => {
+        setHidden(muteButton.querySelector('.icon-unmuted'), settings.muted);
+        setHidden(muteButton.querySelector('.icon-muted'), !settings.muted);
+        muteButton.setAttribute('aria-label', settings.muted ? 'Unmute' : 'Mute');
+        muteButton.title = settings.muted ? 'Unmute' : 'Mute';
+        volume.value = String(settings.muted ? 0 : settings.volume);
+    };
+    muteButton.addEventListener('click', () => {
+        settings.muted = !settings.muted;
+        if (!settings.muted && settings.volume === 0) {
+            settings.volume = 1;
+        }
+        api?.setVolume(settings.volume);
+        api?.setMute(settings.muted ? 1 : 0);
+        showMute();
+        saveSettings(settings);
+    });
+    volume.addEventListener('input', () => {
+        settings.volume = Number(volume.value);
+        settings.muted = settings.volume === 0;
+        api?.setVolume(settings.volume);
+        api?.setMute(settings.muted ? 1 : 0);
+        setHidden(muteButton.querySelector('.icon-unmuted'), settings.muted);
+        setHidden(muteButton.querySelector('.icon-muted'), !settings.muted);
+    });
+    volume.addEventListener('change', () => saveSettings(settings));
+    showMute();
+
+    $('screenshot').addEventListener('click', () => {
+        const path = '/screenshot.png';
+        if (api?.screenshot(path) !== 0) {
+            devtools.print('Could not take the screenshot', true);
+            return;
+        }
+        const data = module.FS.readFile(path);
+        module.FS.unlink(path);
+        download(`${fileNameOf(current?.name ?? 'nmo')} ${api.frames()}.png`, new Blob([data], {type: 'image/png'}));
+    });
+
+    canvas.addEventListener('click', () => {
+        if (settings.pointerLock && api?.running() === 1 && !document.pointerLockElement) {
+            Promise.resolve(canvas.requestPointerLock?.()).catch(() => {});
         }
     });
 
-    fullscreenButton.addEventListener('click', () => {
+    const devtoolsButton = $('devtools-button');
+    const showDevtools = (shown) => {
+        $('devtools').hidden = !shown;
+        devtoolsButton.setAttribute('aria-pressed', String(shown));
+        devtools.refresh();
+    };
+    devtoolsButton.addEventListener('click', () => {
+        settings.devtools = $('devtools').hidden;
+        showDevtools(settings.devtools);
+        saveSettings(settings);
+    });
+    showDevtools(settings.devtools);
+
+    const applyTouchMode = () => {
+        document.body.classList.toggle('touch-always', settings.touch === 'always');
+        document.body.classList.toggle('touch-never', settings.touch === 'never');
+    };
+    applyTouchMode();
+
+    $('fullscreen').addEventListener('click', () => {
         const el = $('player');
         if (el.classList.contains('fake-fullscreen')) {
             el.classList.remove('fake-fullscreen');
@@ -532,29 +824,275 @@ function startPage() {
             }
         }, 400);
     });
-
     document.addEventListener('fullscreenchange', () => {
         if (!document.fullscreenElement) {
             document.body.classList.remove('fullscreen-lock');
         }
     });
 
-    /* For tests: load files fetched from a list of URLs, as a chosen folder would */
+    /* ---- Settings ---- */
+
+    let editing = null;      /* the game whose settings the dialog shows */
+    let editingKeymap = {};
+    let capturing = null;    /* the game key waiting for the player's key */
+
+    const drawKeymap = () => {
+        const table = $('keymap');
+        const profile = profileById(editing.profile);
+        table.replaceChildren(...profile.keys.map((code) => {
+            const row = document.createElement('tr');
+            const game = document.createElement('td');
+            game.textContent = keyName(code);
+            const bound = document.createElement('td');
+            const mapped = editingKeymap[code];
+            bound.textContent = capturing === code ? 'Press a key…' : keyName(mapped ?? code);
+            bound.className = mapped ? 'remapped' : '';
+            const actions = document.createElement('td');
+            const change = document.createElement('button');
+            change.type = 'button';
+            change.className = 'button small';
+            change.textContent = 'Change';
+            change.addEventListener('click', () => {
+                capturing = code;
+                drawKeymap();
+            });
+            actions.append(change);
+            if (mapped) {
+                const reset = document.createElement('button');
+                reset.type = 'button';
+                reset.className = 'button small';
+                reset.textContent = 'Reset';
+                reset.addEventListener('click', () => {
+                    delete editingKeymap[code];
+                    drawKeymap();
+                });
+                actions.append(reset);
+            }
+            row.append(game, bound, actions);
+            return row;
+        }));
+    };
+
+    window.addEventListener('keydown', (event) => {
+        if (capturing === null || !settingsDialog.open) {
+            return;
+        }
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (event.code !== 'Escape') {
+            if (event.code === capturing) {
+                delete editingKeymap[capturing];
+            } else {
+                editingKeymap[capturing] = event.code;
+            }
+        }
+        capturing = null;
+        drawKeymap();
+    }, true);
+
+    function openSettings(game) {
+        editing = game ?? null;
+        capturing = null;
+        $('game-settings').hidden = editing === null;
+        if (editing) {
+            const profile = profileById(editing.profile);
+            const own = editing.settings ?? {};
+            $('game-settings-title').textContent = `${editing.name} (${profile.name})`;
+            $('profile-settings').replaceChildren(...profile.settings.map((setting) => {
+                const label = document.createElement('label');
+                const select = document.createElement('select');
+                select.dataset.setting = setting.id;
+                for (const [value, text] of setting.options) {
+                    select.append(new Option(text, value));
+                }
+                select.value = own.values?.[setting.id] ?? setting.default;
+                label.append(setting.label, ' ', select);
+                return label;
+            }));
+            editingKeymap = {...(own.keymap ?? {})};
+            drawKeymap();
+            $('registry').value = (own.registry ?? '');
+        }
+        $('opt-renderer').value = settings.renderer;
+        $('opt-scale').value = settings.scale;
+        $('opt-touch').value = settings.touch;
+        $('opt-physics').checked = settings.physics;
+        $('opt-frame-limit').checked = settings.frameLimit;
+        $('opt-gamepad').checked = settings.gamepad;
+        $('opt-pointer-lock').checked = settings.pointerLock;
+        $('settings-restart').hidden = current === null;
+        settingsDialog.showModal();
+    }
+
+    $('settings-button').addEventListener('click', () => openSettings(current));
+
+    /* Done or Save and restart (the form's submit, before the dialog closes;
+       Esc closes it without one and keeps everything as it was) */
+    settingsDialog.querySelector('form').addEventListener('submit', async (event) => {
+        const choice = event.submitter?.value;
+        capturing = null;
+        if (choice !== 'save' && choice !== 'restart') {
+            return;
+        }
+        Object.assign(settings, {
+            renderer: $('opt-renderer').value,
+            scale: $('opt-scale').value,
+            touch: $('opt-touch').value,
+            physics: $('opt-physics').checked,
+            frameLimit: $('opt-frame-limit').checked,
+            gamepad: $('opt-gamepad').checked,
+            pointerLock: $('opt-pointer-lock').checked,
+        });
+        saveSettings(settings);
+        applyTouchMode();
+        gamepads.enabled = settings.gamepad;
+        api?.setFrameLimit(settings.frameLimit ? 1 : 0);
+        if (editing) {
+            const values = {};
+            for (const select of $('profile-settings').querySelectorAll('select')) {
+                values[select.dataset.setting] = select.value;
+            }
+            const updated = await library.update(editing.id, {
+                settings: {values, keymap: editingKeymap, registry: $('registry').value},
+            });
+            if (current?.id === updated.id) {
+                current = updated;
+                remapper.set(updated.settings.keymap);
+            }
+            refreshLibrary();
+        }
+        if (choice === 'restart' && current) {
+            api.stop();
+            startRun();
+        }
+    });
+
+    /* ---- Saves ---- */
+
+    let savesGame = null;
+
+    const drawSaves = () => {
+        const folder = `/save/${savesGame.id}`;
+        const files = listTree(module, folder);
+        const table = $('saves-table');
+        if (files.length === 0) {
+            const row = document.createElement('tr');
+            const cell = document.createElement('td');
+            cell.className = 'dim';
+            cell.textContent = 'Nothing saved yet.';
+            row.append(cell);
+            table.replaceChildren(row);
+        } else {
+            table.replaceChildren(...files.map(([path, size, time]) => {
+                const row = document.createElement('tr');
+                for (const text of [path, formatSize(size), new Date(time).toLocaleString()]) {
+                    const cell = document.createElement('td');
+                    cell.textContent = text;
+                    row.append(cell);
+                }
+                return row;
+            }));
+        }
+        $('saves-export').disabled = files.length === 0;
+        $('saves-clear').disabled = files.length === 0;
+    };
+
+    async function openSaves(game) {
+        await ready;
+        savesGame = game;
+        $('saves-title').textContent = `Saves of ${game.name}`;
+        drawSaves();
+        savesDialog.showModal();
+    }
+
+    $('saves-export').addEventListener('click', () => {
+        const folder = `/save/${savesGame.id}`;
+        const files = listTree(module, folder).map(([path]) => [path, module.FS.readFile(`${folder}/${path}`)]);
+        download(`${fileNameOf(savesGame.name)} saves.zip`, writeZip(files));
+    });
+    $('saves-import').addEventListener('change', async (event) => {
+        const file = event.target.files[0];
+        event.target.value = '';
+        if (!file) {
+            return;
+        }
+        try {
+            const folder = `/save/${savesGame.id}`;
+            for (const [path, entry] of zipFiles(await file.arrayBuffer())) {
+                writeGameFile(module, `${folder}/${path}`, new Uint8Array(await entry.arrayBuffer()));
+            }
+            persist();
+            drawSaves();
+            if (current?.id === savesGame.id) {
+                devtools.print('Saves imported: restart the game to load them.', false);
+            }
+        } catch (error) {
+            alert(`Could not import ${file.name}: ${error.message}`);
+        }
+    });
+    $('saves-clear').addEventListener('click', () => {
+        if (!confirm(`Delete every save of "${savesGame.name}"? This cannot be undone.`)) {
+            return;
+        }
+        const folder = `/save/${savesGame.id}`;
+        removeTree(module, folder);
+        module.FS.mkdir(folder);
+        persist();
+        drawSaves();
+    });
+
+    /* ---- Start ---- */
+
+    if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
+        $('ios-note').hidden = false;
+    }
+
+    const opened = openLibrary().then(async (opened) => {
+        library = opened;
+        await refreshLibrary();
+        const params = new URLSearchParams(location.search);
+        const src = params.get('src');
+        if (src) {
+            $('url').value = src;
+            await loadUrl(src, {
+                entry: params.get('entry') ?? undefined,
+                profile: params.get('profile') ?? undefined,
+                name: params.get('name') ?? undefined,
+                autoplay: params.get('autoplay') === '1',
+            });
+        }
+        return library;
+    });
+
+    /* For embedding pages and tests */
     globalThis.nmoPlayer = {
-        loadFromUrls: async (base, paths) => {
+        ready,
+        library: opened,
+        /* Offer files fetched from `base` + each of `paths`, as a chosen folder would */
+        loadFromUrls: async (base, paths, options) => {
+            await opened;
             const files = [];
             for (const path of paths) {
                 const response = await fetch(base + path.split('/').map(encodeURIComponent).join('/'));
                 files.push([path, await response.blob()]);
             }
-            await load(files);
+            return offer(files, null, options);
         },
-        /* For tests: load a zip fetched from a URL, as a dropped/chosen one would */
-        loadZipFromUrl: async (url) => {
-            const response = await fetch(url);
-            await loadZip(new File([await response.blob()], url.split('/').pop()));
+        loadUrl: async (url, options) => {
+            await opened;
+            return loadUrl(url, options);
         },
-        ready,
+        games: async () => {
+            await opened;
+            return library.list();
+        },
+        play: async (id) => {
+            await opened;
+            return play(id);
+        },
+        stop: () => stopRun(),
+        api: () => api,
+        module: () => module,
     };
 }
 

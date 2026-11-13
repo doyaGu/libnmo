@@ -18,6 +18,10 @@ foreach(_nmo_player_part IN ITEMS nmo_view nmo_physics_ivp)
     endif()
 endforeach()
 
+# The page: index.html and the modules it loads (the CI job publishes these)
+set(NMO_PLAYER_PAGE_FILES index.html player.css player.mjs run_node.mjs
+    games.mjs profiles.mjs library.mjs zip.mjs input.mjs devtools.mjs)
+
 if(EMSCRIPTEN)
     set_target_properties(nmo_player PROPERTIES OUTPUT_NAME nmo-player SUFFIX ".mjs")
     # libnmo's data files, at the path player.c gives the context
@@ -33,15 +37,16 @@ if(EMSCRIPTEN)
     target_link_options(nmo_player PRIVATE
         -sMODULARIZE=1 -sEXPORT_ES6=1 -sEXPORT_NAME=createNmoPlayer
         -sINVOKE_RUN=0 -sENVIRONMENT=web,node
-        -sEXPORTED_RUNTIME_METHODS=FS,IDBFS,callMain
-        -sEXPORTED_FUNCTIONS=_main,_player_frames,_player_exit_code,_player_pause,_player_resume,_player_set_mute
+        -sEXPORTED_RUNTIME_METHODS=FS,IDBFS,callMain,ccall,cwrap,UTF8ToString
+        # _main and the player_* functions player.c marks EMSCRIPTEN_KEEPALIVE
+        -sEXPORTED_FUNCTIONS=_main
         # WebGL 2 / GLES3 for the GL3 backend (nmo_render_gl3): see src/render/CMakeLists.txt's
         # comment on why these can't just be nmo_render_gl3's own INTERFACE link options.
         -sMAX_WEBGL_VERSION=2 -sMIN_WEBGL_VERSION=2 -sFULL_ES3=1
         -lidbfs.js
         ${_nmo_player_preload})
     set_property(TARGET nmo_player APPEND PROPERTY LINK_DEPENDS ${_nmo_player_data})
-    foreach(_nmo_player_page IN ITEMS index.html player.mjs player.css run_node.mjs)
+    foreach(_nmo_player_page IN ITEMS ${NMO_PLAYER_PAGE_FILES})
         configure_file("${CMAKE_CURRENT_SOURCE_DIR}/${_nmo_player_page}"
                        "${CMAKE_CURRENT_BINARY_DIR}/${_nmo_player_page}" COPYONLY)
     endforeach()

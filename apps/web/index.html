@@ -9,80 +9,84 @@
 </head>
 <body>
 <main>
-  <h1>nmo player</h1>
+  <header id="masthead">
+    <h1>nmo player</h1>
+    <span id="boot">Loading the player…</span>
+  </header>
 
   <div id="player">
     <div id="stage">
       <canvas id="canvas" tabindex="0" oncontextmenu="event.preventDefault()"></canvas>
-
-      <div id="touch-controls">
-        <div id="dpad">
-          <button class="dpad-btn dpad-up" data-key="ArrowUp" aria-label="Up">
-            <svg viewBox="0 0 20 20" aria-hidden="true"><polygon points="10,5 16,14 4,14"/></svg>
-          </button>
-          <button class="dpad-btn dpad-left" data-key="ArrowLeft" aria-label="Left">
-            <svg viewBox="0 0 20 20" aria-hidden="true"><polygon points="5,10 14,4 14,16"/></svg>
-          </button>
-          <button class="dpad-btn dpad-right" data-key="ArrowRight" aria-label="Right">
-            <svg viewBox="0 0 20 20" aria-hidden="true"><polygon points="15,10 6,4 6,16"/></svg>
-          </button>
-          <button class="dpad-btn dpad-down" data-key="ArrowDown" aria-label="Down">
-            <svg viewBox="0 0 20 20" aria-hidden="true"><polygon points="10,15 4,6 16,6"/></svg>
-          </button>
-        </div>
-        <div id="touch-actions">
-          <button class="action-btn" data-key="Enter">Enter</button>
-          <button class="action-btn" data-key="Escape" aria-label="Menu">Esc</button>
-          <button class="action-btn" data-key="Space">Space</button>
-          <button class="action-btn" data-key="ShiftLeft" aria-label="Shift">Shift</button>
-        </div>
-      </div>
+      <div id="touch-controls"></div>
 
       <div id="poster">
         <div id="poster-body">
-          <p class="lede">Runs a Virtools game with libnmo's engine, compiled to WebAssembly.
-             Choose your own Ballance folder (the one holding <code>base.cmo</code>), or a
-             <code>.zip</code> of it: its files are copied into this tab's memory (unzipped
-             right here, never uploaded) and never leave your computer. Saves stay in this
-             browser.</p>
+          <section id="library" aria-labelledby="library-title">
+            <div class="section-head">
+              <h2 id="library-title">Games</h2>
+              <span id="storage-note"></span>
+            </div>
+            <ul id="games"></ul>
+            <p id="no-games" class="dim" hidden>No games yet. Add one below.</p>
+          </section>
 
-          <div id="drop">
-            <label class="button">Choose the Ballance folder
-              <input id="folder" type="file" webkitdirectory directory multiple>
-            </label>
-            <label class="button">or a .zip of it
-              <input id="zipfile" type="file" accept=".zip,application/zip,application/x-zip-compressed">
-            </label>
-            <span>or drop either here</span>
-          </div>
+          <section id="add" aria-labelledby="add-title">
+            <h2 id="add-title">Add a game</h2>
+            <p class="dim">Any Virtools game: its folder, a <code>.zip</code> of it, or a single
+               <code>.cmo</code>/<code>.vmo</code>. The files stay in this browser and are never uploaded.</p>
+            <div id="drop">
+              <label class="button">Folder…
+                <input id="folder" type="file" webkitdirectory directory multiple>
+              </label>
+              <label class="button">.zip or file…
+                <input id="file" type="file" accept=".zip,.cmo,.vmo,.nmo,application/zip">
+              </label>
+              <span>or drop it here</span>
+            </div>
+            <form id="url-form" class="inline-form">
+              <input id="url" type="url" placeholder="https://… a .zip, .cmo or .vmo" aria-label="Game URL">
+              <button class="button" type="submit">Load</button>
+            </form>
+            <p id="ios-note" class="dim" hidden>iOS Safari's folder picker can be unreliable — a .zip,
+               a dropped folder, or a desktop browser work better.</p>
 
-          <p id="ios-note" hidden>iOS Safari's folder picker can be unreliable here — if Start
-             stays off after choosing one, try dragging the folder in instead, or a desktop
-             browser.</p>
+            <form id="plan" hidden>
+              <div class="grid">
+                <label>Name <input id="plan-name" required></label>
+                <label>Starts from <select id="plan-entry"></select></label>
+                <label>Game <select id="plan-profile"></select></label>
+              </div>
+              <p id="plan-summary" class="dim"></p>
+              <div class="row">
+                <button type="button" id="plan-cancel" class="button">Cancel</button>
+                <button type="submit" class="play-button">
+                  <svg viewBox="0 0 20 20" aria-hidden="true"><polygon points="6,4 16,10 6,16"/></svg>
+                  Add and play
+                </button>
+              </div>
+            </form>
 
-          <div id="loadbar" hidden>
-            <div id="loadfill"></div>
-          </div>
-
-          <p id="status">Waiting for the game folder.</p>
-
-          <div class="row">
-            <label>Language <select id="language"></select></label>
-            <button id="start" class="play-button" disabled>
-              <svg viewBox="0 0 20 20" aria-hidden="true"><polygon points="6,4 16,10 6,16"/></svg>
-              Start
-            </button>
-          </div>
+            <div id="loadbar" hidden><div id="loadfill"></div></div>
+            <p id="status" role="status"></p>
+          </section>
         </div>
       </div>
     </div>
 
     <div id="controlbar">
-      <button id="playpause" class="icon-button" disabled title="Play/Pause" aria-label="Play/Pause">
+      <button id="playpause" class="icon-button" disabled title="Pause (P)" aria-label="Pause">
         <svg class="icon-pause" viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.5" height="12"/><rect x="11.5" y="4" width="3.5" height="12"/></svg>
         <svg class="icon-play" viewBox="0 0 20 20" aria-hidden="true" hidden><polygon points="5,3 16,10 5,17"/></svg>
       </button>
-      <button id="mute" class="icon-button" disabled title="Mute" aria-label="Mute">
+      <button id="restart" class="icon-button" disabled title="Restart" aria-label="Restart">
+        <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4.5 10a5.5 5.5 0 1 0 1.7-4"/><path d="M4 3.5V7h3.5"/>
+        </svg>
+      </button>
+      <button id="stop" class="icon-button" disabled title="Stop and go back to the games" aria-label="Stop">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="5" width="10" height="10" rx="1"/></svg>
+      </button>
+      <button id="mute" class="icon-button" title="Mute (M)" aria-label="Mute">
         <svg class="icon-unmuted" viewBox="0 0 20 20" aria-hidden="true">
           <path d="M3 7.5v5h3.2l4.3 3.6V3.9L6.2 7.5H3z"/>
           <path d="M13.3 7a3.6 3.6 0 0 1 0 6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
@@ -92,9 +96,28 @@
           <path d="M13 7.5l4 4m0-4l-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
         </svg>
       </button>
+      <input id="volume" type="range" min="0" max="1" step="0.05" value="1" aria-label="Volume">
       <span id="fps"></span>
       <span class="spacer"></span>
-      <button id="fullscreen" class="icon-button" disabled title="Full screen" aria-label="Full screen">
+      <span id="pad-note" title="Gamepad connected" hidden>
+        <svg viewBox="0 0 24 16" aria-hidden="true"><path d="M6 2h12a5 5 0 0 1 5 5v1a6 6 0 0 1-10.5 4h-1A6 6 0 0 1 1 8V7a5 5 0 0 1 5-5z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6 6v4M4 8h4" stroke="currentColor" stroke-width="1.6"/><circle cx="16.5" cy="7" r="1.2"/><circle cx="19" cy="9.5" r="1.2"/></svg>
+      </span>
+      <button id="screenshot" class="icon-button" disabled title="Save a screenshot" aria-label="Screenshot">
+        <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
+          <path d="M2.5 6.5h3l1.5-2h6l1.5 2h3v9h-15z"/><circle cx="10" cy="11" r="3"/>
+        </svg>
+      </button>
+      <button id="settings-button" class="icon-button" title="Settings" aria-label="Settings">
+        <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+          <path d="M3 5h8M15 5h2M3 10h2M9 10h8M3 15h10M17 15h0"/><circle cx="13" cy="5" r="2"/><circle cx="7" cy="10" r="2"/><circle cx="15" cy="15" r="2"/>
+        </svg>
+      </button>
+      <button id="devtools-button" class="icon-button" title="Developer tools" aria-label="Developer tools" aria-pressed="false">
+        <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M7 6l-4 4 4 4M13 6l4 4-4 4M11 4l-2 12"/>
+        </svg>
+      </button>
+      <button id="fullscreen" class="icon-button" disabled title="Full screen (F)" aria-label="Full screen">
         <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
           <path d="M3 7.5V3h4.5M12.5 3H17v4.5M17 12.5V17h-4.5M7.5 17H3v-4.5"/>
         </svg>
@@ -102,10 +125,75 @@
     </div>
   </div>
 
-  <details id="log-box">
-    <summary>Log</summary>
-    <div id="log"></div>
-  </details>
+  <p id="hint" class="dim"></p>
+
+  <section id="devtools" hidden aria-label="Developer tools"></section>
 </main>
+
+<dialog id="settings">
+  <form method="dialog">
+    <h2>Settings</h2>
+    <fieldset id="game-settings">
+      <legend id="game-settings-title">This game</legend>
+      <div id="profile-settings" class="grid"></div>
+      <h3>Keys</h3>
+      <p class="dim">Press <em>Change</em>, then the key you want to play with.</p>
+      <table id="keymap"></table>
+      <h3>Registry</h3>
+      <p class="dim">More values the game reads, one <code>KEY\NAME=VALUE</code> a line.</p>
+      <textarea id="registry" rows="3" spellcheck="false"></textarea>
+    </fieldset>
+    <fieldset>
+      <legend>Player</legend>
+      <div class="grid">
+        <label>Renderer
+          <select id="opt-renderer">
+            <option value="auto">Automatic</option>
+            <option value="gl3">WebGL 2</option>
+            <option value="soft">Software</option>
+          </select>
+        </label>
+        <label>Size
+          <select id="opt-scale">
+            <option value="auto">Automatic</option>
+            <option value="1">1×</option>
+            <option value="2">2×</option>
+            <option value="3">3×</option>
+          </select>
+        </label>
+        <label>Touch buttons
+          <select id="opt-touch">
+            <option value="auto">On touch screens</option>
+            <option value="always">Always</option>
+            <option value="never">Never</option>
+          </select>
+        </label>
+      </div>
+      <label class="check"><input id="opt-physics" type="checkbox"> Simulate physics</label>
+      <label class="check"><input id="opt-frame-limit" type="checkbox"> Keep to the game's frame rate limit</label>
+      <label class="check"><input id="opt-gamepad" type="checkbox"> Use gamepads</label>
+      <label class="check"><input id="opt-pointer-lock" type="checkbox"> Capture the mouse when the game is clicked (Esc releases it)</label>
+      <p class="dim">The renderer, size, physics and this game's settings take effect when the game (re)starts.</p>
+    </fieldset>
+    <div class="row end">
+      <button id="settings-restart" class="button" value="restart" hidden>Save and restart</button>
+      <button class="play-button" value="save">Done</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="saves">
+  <form method="dialog">
+    <h2 id="saves-title">Saves</h2>
+    <p class="dim">What the game wrote, kept in this browser.</p>
+    <div class="table-wrap"><table id="saves-table"></table></div>
+    <div class="row end">
+      <label class="button">Import .zip…<input id="saves-import" type="file" accept=".zip,application/zip"></label>
+      <button type="button" id="saves-export" class="button">Export .zip</button>
+      <button type="button" id="saves-clear" class="button danger">Delete all</button>
+      <button class="play-button" value="close">Close</button>
+    </div>
+  </form>
+</dialog>
 </body>
 </html>

@@ -1,32 +1,42 @@
-// Run nmo's web player in Node.js as the page runs it: the game folder's
-// files copied into the player's memory file system (which tells case apart,
-// as a browser's does), then main with the given options and /game/base.cmo.
+// Run nmo's web player in Node.js as the page runs it: the game's files
+// copied into the player's memory file system (which tells case apart, as a
+// browser's does), then main with the given options and the composition.
 //
-//   node run_node.mjs GAME_FOLDER [--out DIR] -- [player options]
+//   node run_node.mjs GAME [--entry PATH] [--profile ID] [--out DIR] -- [player options]
 //
-// Files the player writes under /out (--shot /out/menu.png@760) are copied
-// to --out (default: the current folder). The exit code is the player's.
+// GAME is a folder or a single .cmo/.vmo. The composition is the one the
+// page would pick (--entry names another, by its path inside GAME), and
+// --profile picks a game profile (profiles.mjs) the page would otherwise
+// guess, with its registry settings at their defaults. Files the player
+// writes under /out (--shot /out/menu.png@760) are copied to --out (default:
+// the current folder). The exit code is the player's.
 
 import fs from 'node:fs';
 import path from 'node:path';
 import createNmoPlayer from './nmo-player.mjs';
-import { selectGameFiles, writeGameFile } from './player.mjs';
+import { planGame, writeGameFile } from './games.mjs';
+import { registryFor } from './profiles.mjs';
 
 const args = process.argv.slice(2);
 const dashes = args.indexOf('--');
 const own = dashes >= 0 ? args.slice(0, dashes) : args;
 const playerArgs = dashes >= 0 ? args.slice(dashes + 1) : [];
-let gameFolder = null;
+let game = null;
 let outFolder = '.';
+const options = {};
 for (let i = 0; i < own.length; i++) {
     if (own[i] === '--out' && i + 1 < own.length) {
         outFolder = own[++i];
-    } else if (gameFolder === null) {
-        gameFolder = own[i];
+    } else if (own[i] === '--entry' && i + 1 < own.length) {
+        options.entry = own[++i];
+    } else if (own[i] === '--profile' && i + 1 < own.length) {
+        options.profile = own[++i];
+    } else if (game === null) {
+        game = own[i];
     }
 }
-if (gameFolder === null) {
-    console.error('Usage: node run_node.mjs GAME_FOLDER [--out DIR] -- [player options]');
+if (game === null) {
+    console.error('Usage: node run_node.mjs GAME [--entry PATH] [--profile ID] [--out DIR] -- [player options]');
     process.exit(2);
 }
 
@@ -44,20 +54,24 @@ function listFiles(folder, prefix = '') {
     return found;
 }
 
+const single = fs.statSync(game).isFile();
+const folder = single ? path.dirname(game) : game;
+const plan = planGame(single ? [path.basename(game)] : listFiles(folder), options);
+if (plan === null) {
+    console.error(`No .cmo, .vmo or .nmo in ${game}`);
+    process.exit(2);
+}
 const player = await createNmoPlayer({
     print: (text) => console.log(text),
     printErr: (text) => console.error(text),
 });
-const selected = selectGameFiles(listFiles(gameFolder));
-if (selected.length === 0) {
-    console.error(`No base.cmo in ${gameFolder}`);
-    process.exit(2);
-}
-for (const [source, inner] of selected) {
-    writeGameFile(player, '/game/' + inner, fs.readFileSync(path.join(gameFolder, source)));
+for (const [source, inner] of plan.files) {
+    writeGameFile(player, '/game/' + inner, fs.readFileSync(path.join(folder, source)));
 }
 player.FS.mkdir('/out');
-const code = player.callMain([...playerArgs, '/game/base.cmo']);
+const registry = registryFor(plan.profile);
+const registryArgs = registry && !playerArgs.includes('--registry') ? ['--registry', registry] : [];
+const code = player.callMain([...registryArgs, '--path', '/game', ...playerArgs, '/game/' + plan.inner]);
 fs.mkdirSync(outFolder, { recursive: true });
 for (const name of player.FS.readdir('/out')) {
     if (name !== '.' && name !== '..') {
