@@ -350,6 +350,7 @@ set(NMO_DOCUMENT_SOURCES
     src/document/document_file_state.c
     src/document/document_export.c
     src/document/document_load.c
+    src/document/document_objects.c
     src/document/document_save.c
     src/document/document_compare.c
     src/document/document_compare_result.c
