@@ -1,3 +1,9 @@
+# Under Emscripten the tests run in Node.js (CMAKE_CROSSCOMPILING_EMULATOR)
+# and read the fixtures and scratch folders straight from the host's disk.
+if(EMSCRIPTEN)
+    add_link_options(-sNODERAWFS=1)
+endif()
+
 # Test framework
 add_library(test_framework STATIC test_framework.c)
 target_include_directories(test_framework PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

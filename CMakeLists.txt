@@ -44,7 +44,7 @@ option(NMO_MINGW_STATIC_RUNTIME "Link MinGW CLI executables with the static runt
 # toolchains (notably some MinGW distributions on Windows). Keep them opt-in on
 # Windows and on by default on non-Windows GCC/Clang Debug builds.
 set(_nmo_enable_sanitizers_default OFF)
-if(NOT MSVC AND NOT WIN32)
+if(NOT MSVC AND NOT WIN32 AND NOT EMSCRIPTEN)
     set(_nmo_enable_sanitizers_default ON)
 endif()
 option(NMO_ENABLE_SANITIZERS "Enable ASan/UBSan in Debug builds when supported" ${_nmo_enable_sanitizers_default})
@@ -52,6 +52,13 @@ option(NMO_ENABLE_SANITIZERS "Enable ASan/UBSan in Debug builds when supported" 
 # Set default build type to Release
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+
+# WebAssembly (Emscripten): every program grows its memory as it needs
+# (Ballance's files take a few hundred megabytes) and gets a stack as large as
+# a desktop main thread's instead of Emscripten's 64 KiB.
+if(EMSCRIPTEN)
+    add_link_options(-sALLOW_MEMORY_GROWTH=1 -sMAXIMUM_MEMORY=4GB -sSTACK_SIZE=8MB)
 endif()
 
 # Compiler flags
