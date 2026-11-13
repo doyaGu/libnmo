@@ -33,13 +33,6 @@
 #include <stdlib.h>
 #include <errno.h>
 
-#ifdef _WIN32
-#include <direct.h>
-#define NMO_MESH_PATH_SEP '\\'
-#else
-#include <sys/stat.h>
-#define NMO_MESH_PATH_SEP '/'
-#endif
 
 static int nmo_cmd_mesh_export_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 
@@ -74,34 +67,6 @@ static const char *resolve_name(const nmo_cmd_ctx_t *c, nmo_object_id_t id) {
     nmo_object_t *obj = nmo_core_find_by_id(c, id);
     if (!obj) return NULL;
     return nmo_object_get_name(obj);
-}
-
-static int mesh_ensure_dir(const char *dir_path) {
-    if (!dir_path || !*dir_path) return -1;
-#ifdef _WIN32
-    if (_mkdir(dir_path) == 0) return 0;
-#else
-    if (mkdir(dir_path, 0755) == 0) return 0;
-#endif
-    if (errno == EEXIST) return 0;
-    return -1;
-}
-
-static char *mesh_join_path(const char *dir, const char *file) {
-    if (!dir || !file) return NULL;
-    size_t dir_len = strlen(dir);
-    size_t file_len = strlen(file);
-    size_t need_sep = (dir_len > 0 &&
-                       dir[dir_len - 1] != (char)NMO_MESH_PATH_SEP) ? 1u : 0u;
-    size_t total = dir_len + need_sep + file_len + 1u;
-    char *out = (char *)malloc(total);
-    if (!out) return NULL;
-    memcpy(out, dir, dir_len);
-    size_t pos = dir_len;
-    if (need_sep) out[pos++] = (char)NMO_MESH_PATH_SEP;
-    memcpy(out + pos, file, file_len);
-    out[pos + file_len] = '\0';
-    return out;
 }
 
 /*
@@ -587,8 +552,8 @@ static int export_single_mesh(const nmo_cmd_ctx_t *c,
     char *obj_fname = safe_name ? nmo_tool_strdup_fmt("%s.obj", safe_name) : NULL;
     char *mtl_fname = safe_name ? nmo_tool_strdup_fmt("%s.mtl", safe_name) : NULL;
     free(safe_name);
-    char *obj_path = obj_fname ? mesh_join_path(out_dir, obj_fname) : NULL;
-    char *mtl_path = mtl_fname ? mesh_join_path(out_dir, mtl_fname) : NULL;
+    char *obj_path = obj_fname ? nmo_tool_join_path(out_dir, obj_fname) : NULL;
+    char *mtl_path = mtl_fname ? nmo_tool_join_path(out_dir, mtl_fname) : NULL;
     if (!obj_path || !mtl_path) {
         free(display_name);
         free(obj_fname);
@@ -747,9 +712,10 @@ static int mesh_export_run(nmo_cmd_ctx_t *ctx, const mesh_export_args_t *args,
                            bool close_ctx, const char *usage) {
     nmo_cmd_ctx_t c = *ctx;
 
-    if (mesh_ensure_dir(args->out_dir) < 0) {
-        fprintf(stderr, "Error: Cannot create directory '%s' (%s)\n",
-                args->out_dir, strerror(errno));
+    char *reason = NULL;
+    if (nmo_tool_ensure_directory(args->out_dir, &reason) != 0) {
+        fprintf(stderr, "Error: Cannot create directory '%s' (%s)\n", args->out_dir, reason);
+        free(reason);
         return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR)
                          : NMO_CLI_EXIT_IO_ERROR;
     }

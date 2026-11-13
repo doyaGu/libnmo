@@ -1,7 +1,3 @@
-#if !defined(_WIN32) && !defined(_XOPEN_SOURCE)
-#define _XOPEN_SOURCE 700
-#endif
-
 /**
  * @file nmo_cmd_validate.c
  * @brief CLI validate command group implementation
@@ -18,6 +14,7 @@
 #include "../nmo_cli_record.h"
 #include "../nmo_opt.h"
 #include "../nmo_tool_common.h"
+#include "../../src/platform/platform.h"
 
 #include "nmo.h"
 #include "chunk/nmo_chunk_inspect.h"
@@ -147,26 +144,11 @@ static int validate_emit(const nmo_cmd_ctx_t *c, nmo_cli_record_t *rec,
     return emit_rc != NMO_CLI_EXIT_SUCCESS ? emit_rc : rc;
 }
 
+/* The same file by the system's identity, or by name when either is not there */
 static bool paths_refer_same_file(const char *a, const char *b)
 {
     if (!a || !b) return false;
-    /* Both resolvers allocate the result when given a NULL buffer. */
-#ifdef _WIN32
-    char *full_a = _fullpath(NULL, a, 0);
-    char *full_b = _fullpath(NULL, b, 0);
-    bool same = (full_a && full_b)
-        ? nmo_tool_streq_ci(full_a, full_b)
-        : nmo_tool_streq_ci(a, b);
-#else
-    char *full_a = realpath(a, NULL);
-    char *full_b = realpath(b, NULL);
-    bool same = (full_a && full_b)
-        ? strcmp(full_a, full_b) == 0
-        : strcmp(a, b) == 0;
-#endif
-    free(full_a);
-    free(full_b);
-    return same;
+    return nmo_platform_same_file(a, b) || strcmp(a, b) == 0;
 }
 
 static int validate_all_object(size_t index, nmo_object_t *obj,

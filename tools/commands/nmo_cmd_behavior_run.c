@@ -1,10 +1,3 @@
-#if !defined(_WIN32) && !defined(_XOPEN_SOURCE)
-#define _XOPEN_SOURCE 700 /* mkdtemp */
-#endif
-#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
-#define _DARWIN_C_SOURCE /* where Darwin declares mkdtemp */
-#endif
-
 /**
  * @file nmo_cmd_behavior_run.c
  * @brief CLI behavior run: execute the behavior graphs of a file frame by frame
@@ -30,17 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <sys/stat.h>
-#ifdef _WIN32
-#include <direct.h>
-#include <io.h>
-#ifndef S_ISDIR
-#define S_ISDIR(mode) (((mode) & _S_IFMT) == _S_IFDIR)
-#endif
-#else
-#include <dirent.h>
-#include <unistd.h>
-#endif
+#include "../../src/platform/platform.h"
 
 #ifdef NMO_HAS_PHYSICS_IVP
 #include "engine/nmo_physics_ivp.h"
@@ -1516,8 +1499,7 @@ static char *run_place(const char *folder, const char *name)
 
 static bool run_is_directory(const char *path)
 {
-    struct stat info;
-    return path != NULL && stat(path, &info) == 0 && S_ISDIR(info.st_mode);
+    return path != NULL && nmo_platform_is_directory(path);
 }
 
 /* The folder a name means, in the first of the folders the resolver reads that has it */
@@ -1606,11 +1588,7 @@ static bool run_fs_remove_file(void *user_data, const char *name)
 {
     run_files_t *files = (run_files_t *)user_data;
     char *path = files->write != NULL ? run_place(files->write, name) : NULL;
-#ifdef _WIN32
-    bool done = path != NULL && _unlink(path) == 0;
-#else
-    bool done = path != NULL && unlink(path) == 0;
-#endif
+    bool done = path != NULL && nmo_platform_remove(path) == 0;
     free(path);
     return done;
 }
@@ -1619,11 +1597,7 @@ static bool run_fs_create_directory(void *user_data, const char *name)
 {
     run_files_t *files = (run_files_t *)user_data;
     char *path = files->write != NULL ? run_place(files->write, name) : NULL;
-#ifdef _WIN32
-    bool done = path != NULL && _mkdir(path) == 0;
-#else
-    bool done = path != NULL && mkdir(path, 0777) == 0;
-#endif
+    bool done = path != NULL && nmo_platform_make_directory(path) == 0;
     if (done) {
         run_remember(&files->directories, &files->directory_count, files, path);
     }
@@ -1635,11 +1609,7 @@ static bool run_fs_remove_directory(void *user_data, const char *name)
 {
     run_files_t *files = (run_files_t *)user_data;
     char *path = files->write != NULL ? run_place(files->write, name) : NULL;
-#ifdef _WIN32
-    bool done = path != NULL && _rmdir(path) == 0;
-#else
-    bool done = path != NULL && rmdir(path) == 0;
-#endif
+    bool done = path != NULL && nmo_platform_remove_directory(path) == 0;
     free(path);
     return done;
 }
@@ -1694,6 +1664,34 @@ static int run_compare_names(const void *a, const void *b)
     return run_lower((unsigned char)*x) - run_lower((unsigned char)*y);
 }
 
+typedef struct run_listing {
+    const char *mask;
+    char **names;
+    size_t count;
+    bool ok;
+} run_listing_t;
+
+/* Keeps a copy of each name the mask matches */
+static bool run_list_visit(void *context, const char *name)
+{
+    run_listing_t *listing = (run_listing_t *)context;
+    if (!run_mask_matches(listing->mask, name)) {
+        return true;
+    }
+    size_t length = strlen(name);
+    char *copy = (char *)malloc(length + 1u);
+    char **grown = copy != NULL ? (char **)realloc(listing->names, (listing->count + 1u) * sizeof(*grown)) : NULL;
+    if (grown == NULL) {
+        free(copy);
+        listing->ok = false;
+        return false;
+    }
+    memcpy(copy, name, length + 1u);
+    listing->names = grown;
+    listing->names[listing->count++] = copy;
+    return true;
+}
+
 /* FindFirstFile/FindNextFile over the folder of the pattern, in name order as NTFS gives them */
 static bool run_fs_list(void *user_data, const char *pattern, void (*found)(void *, const char *),
                         void *context)
@@ -1713,107 +1711,43 @@ static bool run_fs_list(void *user_data, const char *pattern, void (*found)(void
         free(folder);
         return false;
     }
-    char **names = NULL;
-    size_t count = 0;
-    bool ok = true;
-#ifdef _WIN32
-    char *search = run_join(folder, "*", 1);
-    struct _finddata_t entry;
-    intptr_t handle = search != NULL ? _findfirst(search, &entry) : -1;
-    free(search);
-    for (int more = handle != -1 ? 0 : -1; more == 0 && ok; more = _findnext(handle, &entry)) {
-        const char *entry_name = entry.name;
-#else
-    DIR *dir = opendir(folder);
-    struct dirent *entry;
-    while (dir != NULL && ok && (entry = readdir(dir)) != NULL) {
-        const char *entry_name = entry->d_name;
-#endif
-        if (!run_mask_matches(mask, entry_name)) {
-            continue;
-        }
-        size_t length = strlen(entry_name);
-        char *copy = (char *)malloc(length + 1u);
-        char **grown = copy != NULL ? (char **)realloc(names, (count + 1u) * sizeof(*grown)) : NULL;
-        ok = grown != NULL;
-        if (!ok) {
-            free(copy);
-            break;
-        }
-        memcpy(copy, entry_name, length + 1u);
-        names = grown;
-        names[count++] = copy;
-    }
-#ifdef _WIN32
-    if (handle != -1) {
-        _findclose(handle);
-    }
-#else
-    if (dir != NULL) {
-        closedir(dir);
-    }
-#endif
+    run_listing_t listing = {mask, NULL, 0, true};
+    (void)nmo_platform_list_directory(folder, run_list_visit, &listing); /* a folder it cannot read lists nothing */
     free(folder);
-    if (count > 1) {
-        qsort(names, count, sizeof(*names), run_compare_names);
+    if (listing.count > 1) {
+        qsort(listing.names, listing.count, sizeof(*listing.names), run_compare_names);
     }
-    for (size_t i = 0; i < count; i++) {
-        if (ok) {
-            found(context, names[i]);
+    for (size_t i = 0; i < listing.count; i++) {
+        if (listing.ok) {
+            found(context, listing.names[i]);
         }
-        free(names[i]);
+        free(listing.names[i]);
     }
-    free(names);
-    return ok;
+    free(listing.names);
+    return listing.ok;
 }
 
 /* A new empty folder for a window run's saves; NULL when none could be made */
 static char *run_make_temporary_folder(void)
 {
-#ifdef _WIN32
-    char *name = _tempnam(NULL, "nmo-run-");
-    if (name != NULL && _mkdir(name) != 0) {
-        free(name);
-        name = NULL;
-    }
-    return name;
-#else
-    const char *base = getenv("TMPDIR");
-    if (base == NULL || base[0] == '\0') {
-        base = "/tmp";
-    }
-    char *name = run_join(base, "nmo-run-XXXXXX", strlen("nmo-run-XXXXXX"));
-    if (name != NULL && mkdtemp(name) == NULL) {
-        free(name);
-        name = NULL;
-    }
-    return name;
-#endif
+    return nmo_platform_make_temporary_directory("nmo-run-");
 }
 
 /* What run_files_t holds, with the temporary folder and the files saved in it removed */
 static void run_files_release(run_files_t *files)
 {
     for (size_t i = 0; i < files->written_count; i++) {
-        remove(files->written[i]);
+        (void)nmo_platform_remove(files->written[i]);
         free(files->written[i]);
     }
     free(files->written);
     for (size_t i = files->directory_count; i > 0; i--) {
-#ifdef _WIN32
-        _rmdir(files->directories[i - 1]);
-#else
-        rmdir(files->directories[i - 1]);
-#endif
+        (void)nmo_platform_remove_directory(files->directories[i - 1]);
         free(files->directories[i - 1]);
     }
     free(files->directories);
     if (files->temporary != NULL) {
-#ifdef _WIN32
-        _rmdir(files->temporary);
-#else
-        rmdir(files->temporary);
-#endif
+        (void)nmo_platform_remove_directory(files->temporary);
         free(files->temporary);
     }
     free(files->folder);

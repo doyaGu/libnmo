@@ -5,6 +5,7 @@
 #include "core/nmo_error.h"
 #include "core/nmo_parse.h"
 #include "yyjson.h"
+#include "../src/platform/platform.h"
 
 #include <ctype.h>
 #include <limits.h>
@@ -35,8 +36,44 @@ int nmo_tool_stricmp(const char *a, const char *b) {
     return tolower((unsigned char)*a) - tolower((unsigned char)*b);
 }
 
+int nmo_tool_strnicmp(const char *a, const char *b, size_t n) {
+    for (size_t i = 0; i < n; i++) {
+        int da = tolower((unsigned char)a[i]);
+        int db = tolower((unsigned char)b[i]);
+        if (da != db || da == '\0') {
+            return da - db;
+        }
+    }
+    return 0;
+}
+
 bool nmo_tool_streq_ci(const char *a, const char *b) {
     return nmo_tool_stricmp(a, b) == 0;
+}
+
+char *nmo_tool_join_path(const char *dir, const char *file) {
+    if (!dir || !file) {
+        return NULL;
+    }
+    size_t dir_len = strlen(dir);
+    if (dir_len == 0 || nmo_platform_is_separator(dir[dir_len - 1])) {
+        return nmo_tool_strdup_fmt("%s%s", dir, file);
+    }
+    return nmo_tool_strdup_fmt("%s%c%s", dir, nmo_platform_separator(), file);
+}
+
+int nmo_tool_ensure_directory(const char *path, char **out_reason) {
+    if (out_reason) {
+        *out_reason = NULL;
+    }
+    if (path && *path && nmo_platform_make_directory(path) >= 0) {
+        return 0;
+    }
+    if (out_reason) {
+        char *reason = path && *path ? nmo_platform_error_message() : NULL;
+        *out_reason = reason ? reason : nmo_tool_strdup_fmt("%s", path && *path ? "unknown error" : "no path");
+    }
+    return -1;
 }
 
 bool nmo_tool_match_wildcard_ci(const char *pattern, const char *value) {

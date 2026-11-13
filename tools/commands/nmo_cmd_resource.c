@@ -29,13 +29,6 @@
 #include <errno.h>
 #include <stdbool.h>
 
-#ifdef _WIN32
-#include <direct.h>
-#define NMO_PATH_SEP '\\'
-#else
-#include <sys/stat.h>
-#define NMO_PATH_SEP '/'
-#endif
 
 static int nmo_cmd_resource_extract_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 
@@ -120,52 +113,15 @@ int nmo_cmd_resource_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 /* Returns 0 when the directory exists or was created; otherwise -1 with a
  * malloc'd message in *out_error (free with free()). */
 static int ensure_dir_exists(const char *dir_path, char **out_error) {
-    if (!dir_path || !*dir_path) {
-        return -1;
-    }
-
-#ifdef _WIN32
-    if (_mkdir(dir_path) == 0) {
+    char *reason = NULL;
+    if (nmo_tool_ensure_directory(dir_path, &reason) == 0) {
         return 0;
     }
-    if (errno == EEXIST) {
-        return 0;
-    }
-#else
-    if (mkdir(dir_path, 0755) == 0) {
-        return 0;
-    }
-    if (errno == EEXIST) {
-        return 0;
-    }
-#endif
-
     if (out_error) {
-        *out_error = nmo_tool_strdup_fmt("Failed to create directory '%s' (%s)", dir_path, strerror(errno));
+        *out_error = nmo_tool_strdup_fmt("Failed to create directory '%s' (%s)", dir_path ? dir_path : "", reason);
     }
+    free(reason);
     return -1;
-}
-
-static char *join_path(const char *dir, const char *file) {
-    if (!dir || !file) {
-        return NULL;
-    }
-    size_t dir_len = strlen(dir);
-    size_t file_len = strlen(file);
-    size_t need_sep = (dir_len > 0 && dir[dir_len - 1] != (char)NMO_PATH_SEP) ? 1u : 0u;
-    size_t total = dir_len + need_sep + file_len + 1u;
-    char *out = (char *)malloc(total);
-    if (!out) {
-        return NULL;
-    }
-    memcpy(out, dir, dir_len);
-    size_t pos = dir_len;
-    if (need_sep) {
-        out[pos++] = (char)NMO_PATH_SEP;
-    }
-    memcpy(out + pos, file, file_len);
-    out[pos + file_len] = '\0';
-    return out;
 }
 
 static int ascii_lower(int ch) {
@@ -633,7 +589,7 @@ static int resource_extract_run(nmo_cmd_ctx_t *ctx,
         nmo_cli_record_str(e, "name", NULL, res->name ? res->name : "");
 
         char *safe_name = nmo_tool_sanitize_filename_dup(res->name, i);
-        char *path = safe_name ? join_path(args->out_dir, safe_name) : NULL;
+        char *path = safe_name ? nmo_tool_join_path(args->out_dir, safe_name) : NULL;
         if (!path) {
             free(safe_name);
             errors++;

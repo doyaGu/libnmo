@@ -14,6 +14,19 @@ extern "C" {
 /** Case-insensitive string compare (ASCII, locale-independent). */
 int nmo_tool_stricmp(const char *a, const char *b);
 
+/** Case-insensitive compare of at most `n` characters (ASCII, locale-independent). */
+int nmo_tool_strnicmp(const char *a, const char *b, size_t n);
+
+/** "<dir><separator><file>", no separator added when `dir` is empty or ends with one; malloc'd. */
+char *nmo_tool_join_path(const char *dir, const char *file);
+
+/**
+ * Make the directory at `path` unless something is there already. -1 when
+ * it cannot be made, with the system's reason in *out_reason (malloc'd,
+ * free with free()) when out_reason is not NULL.
+ */
+int nmo_tool_ensure_directory(const char *path, char **out_reason);
+
 /** Case-insensitive equality check (ASCII, locale-independent). */
 bool nmo_tool_streq_ci(const char *a, const char *b);
 

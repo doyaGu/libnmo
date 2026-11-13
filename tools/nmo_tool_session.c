@@ -1,7 +1,3 @@
-#if defined(__linux__) && !defined(_POSIX_C_SOURCE)
-#define _POSIX_C_SOURCE 200809L
-#endif
-
 #include "nmo_tool_session.h"
 
 #include "nmo_tool_common.h"
@@ -12,30 +8,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#elif defined(__APPLE__)
-#include <mach-o/dyld.h>
-#elif defined(__linux__)
-#include <unistd.h>
-#endif
+#include "../src/platform/platform.h"
 
 static bool nmo_tool_dir_exists(const char *path) {
-    if (!path || path[0] == '\0') {
-        return false;
-    }
-    struct stat st;
-    if (stat(path, &st) != 0) {
-        return false;
-    }
-#ifdef _WIN32
-    return (st.st_mode & _S_IFDIR) != 0;
-#else
-    return S_ISDIR(st.st_mode);
-#endif
+    return path && path[0] != '\0' && nmo_platform_is_directory(path);
 }
 
 /* "<base><suffix>" when that directory exists, else NULL. malloc'd. */
@@ -49,65 +26,10 @@ static char *nmo_tool_existing_dir_dup(const char *base, const char *suffix)
     return path;
 }
 
-/* malloc'd absolute path of the running executable, or NULL when unknown. */
-static char *nmo_tool_executable_path_dup(void)
-{
-#ifdef _WIN32
-    DWORD capacity = 260u;
-    for (;;) {
-        char *buffer = (char *)malloc(capacity);
-        if (buffer == NULL) {
-            return NULL;
-        }
-        DWORD len = GetModuleFileNameA(NULL, buffer, capacity);
-        if (len > 0u && len < capacity) {
-            return buffer;
-        }
-        free(buffer);
-        if (len == 0u || capacity >= (DWORD)1u << 20) {
-            return NULL;
-        }
-        capacity *= 2u;
-    }
-#elif defined(__APPLE__)
-    uint32_t size = 0u;
-    (void)_NSGetExecutablePath(NULL, &size); /* reports the required size */
-    char *buffer = (char *)malloc(size > 0u ? size : 1u);
-    if (buffer == NULL) {
-        return NULL;
-    }
-    if (_NSGetExecutablePath(buffer, &size) != 0) {
-        free(buffer);
-        return NULL;
-    }
-    return buffer;
-#elif defined(__linux__)
-    size_t capacity = 256u;
-    for (;;) {
-        char *buffer = (char *)malloc(capacity);
-        if (buffer == NULL) {
-            return NULL;
-        }
-        ssize_t len = readlink("/proc/self/exe", buffer, capacity - 1u);
-        if (len > 0 && (size_t)len < capacity - 1u) {
-            buffer[len] = '\0';
-            return buffer;
-        }
-        free(buffer);
-        if (len <= 0 || capacity >= (size_t)1u << 20) {
-            return NULL;
-        }
-        capacity *= 2u;
-    }
-#else
-    return NULL;
-#endif
-}
-
 /* malloc'd data directory located relative to the executable, or NULL. */
 static char *nmo_tool_resolve_executable_data_dir_dup(void)
 {
-    char *exe_path = nmo_tool_executable_path_dup();
+    char *exe_path = nmo_platform_executable_path();
     if (exe_path == NULL) {
         return NULL;
     }

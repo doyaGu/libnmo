@@ -3,11 +3,15 @@
  * @brief The platform layer on POSIX systems: macOS, Linux, the BSDs.
  */
 
-/* mkstemp's neighbours, fdatasync, fseeko, clock_gettime, strdup */
+/* mkdtemp, fdatasync, fseeko, fileno, readlink, clock_gettime */
 #define _POSIX_C_SOURCE 200809L
+#if defined(__APPLE__)
+#define _DARWIN_C_SOURCE /* where Darwin declares mkdtemp */
+#endif
 
 #include "platform.h"
 
+#include <dirent.h>
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -18,6 +22,9 @@
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
 
 /* A copy of `text`, malloc'ed to its size */
 static char *platform_copy(const char *text)
@@ -69,6 +76,56 @@ double nmo_platform_ticks_to_ms(uint64_t ticks)
 unsigned long nmo_platform_process_id(void)
 {
     return (unsigned long)getpid();
+}
+
+char *nmo_platform_executable_path(void)
+{
+#if defined(__APPLE__)
+    uint32_t size = 0;
+    (void)_NSGetExecutablePath(NULL, &size); /* tells the size */
+    char *path = (char *)malloc(size > 0 ? size : 1);
+    if (path != NULL && _NSGetExecutablePath(path, &size) != 0) {
+        free(path);
+        path = NULL;
+    }
+    return path;
+#elif defined(__linux__)
+    for (size_t capacity = 256;; capacity *= 2) {
+        char *path = (char *)malloc(capacity);
+        if (path == NULL) {
+            return NULL;
+        }
+        ssize_t length = readlink("/proc/self/exe", path, capacity - 1);
+        if (length > 0 && (size_t)length < capacity - 1) {
+            path[length] = '\0';
+            return path;
+        }
+        free(path);
+        if (length <= 0 || capacity >= ((size_t)1 << 20)) {
+            return NULL;
+        }
+    }
+#else
+    return NULL;
+#endif
+}
+
+char *nmo_platform_home_directory(void)
+{
+    const char *home = getenv("HOME");
+    return home != NULL && home[0] != '\0' ? platform_copy(home) : NULL;
+}
+
+/* ---- Terminals ---- */
+
+bool nmo_platform_is_terminal(FILE *stream)
+{
+    return stream != NULL && isatty(fileno(stream)) == 1;
+}
+
+int nmo_platform_clear_terminal(void)
+{
+    return system("clear") == 0 ? 0 : -1;
 }
 
 /* ---- Errors ---- */
@@ -152,6 +209,75 @@ void nmo_platform_unmap(nmo_platform_mapping_t *mapping)
     }
     close(mapping->fd);
     free(mapping);
+}
+
+bool nmo_platform_same_file(const char *a, const char *b)
+{
+    struct stat sa;
+    struct stat sb;
+    return stat(a, &sa) == 0 && stat(b, &sb) == 0 && sa.st_dev == sb.st_dev && sa.st_ino == sb.st_ino;
+}
+
+/* ---- Directories ---- */
+
+int nmo_platform_make_directory(const char *path)
+{
+    if (mkdir(path, 0777) == 0) {
+        return 0;
+    }
+    return errno == EEXIST ? 1 : -1;
+}
+
+int nmo_platform_remove_directory(const char *path)
+{
+    return rmdir(path) == 0 ? 0 : -1;
+}
+
+bool nmo_platform_is_directory(const char *path)
+{
+    struct stat st;
+    return stat(path, &st) == 0 && S_ISDIR(st.st_mode);
+}
+
+int nmo_platform_list_directory(const char *path, bool (*visit)(void *context, const char *name),
+                                void *context)
+{
+    DIR *dir = opendir(path[0] != '\0' ? path : ".");
+    if (dir == NULL) {
+        return -1;
+    }
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL && visit(context, entry->d_name)) {
+    }
+    closedir(dir);
+    return 0;
+}
+
+char *nmo_platform_make_temporary_directory(const char *prefix)
+{
+    const char *base = getenv("TMPDIR");
+    if (base == NULL || base[0] == '\0') {
+        base = "/tmp";
+    }
+    static const char unique[] = "XXXXXX";
+    size_t base_length = strlen(base);
+    size_t prefix_length = strlen(prefix);
+    size_t joint = base[base_length - 1] == '/' ? 0 : 1;
+    char *path = (char *)malloc(base_length + joint + prefix_length + sizeof(unique));
+    if (path == NULL) {
+        return NULL;
+    }
+    memcpy(path, base, base_length);
+    if (joint != 0) {
+        path[base_length] = '/';
+    }
+    memcpy(path + base_length + joint, prefix, prefix_length);
+    memcpy(path + base_length + joint + prefix_length, unique, sizeof(unique));
+    if (mkdtemp(path) == NULL) {
+        free(path);
+        return NULL;
+    }
+    return path;
 }
 
 /* ---- Files written to replace others at once ---- */

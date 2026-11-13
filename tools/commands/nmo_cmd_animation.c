@@ -29,10 +29,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include <sys/stat.h>
-#ifdef _WIN32
-#include <direct.h>
-#endif
 
 static int nmo_cmd_animation_export_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 
@@ -1035,26 +1031,16 @@ static int animation_export_visitor(size_t index,
     return 0;
 }
 
-static int anim_ensure_dir(const char *dir_path) {
-    if (!dir_path || !*dir_path) return -1;
-#ifdef _WIN32
-    if (_mkdir(dir_path) == 0) return 0;
-#else
-    if (mkdir(dir_path, 0755) == 0) return 0;
-#endif
-    if (errno == EEXIST) return 0;
-    return -1;
-}
-
 static int animation_export_run(nmo_cmd_ctx_t *ctx,
                                 const animation_export_args_t *args,
                                 bool close_ctx,
                                 const char *usage) {
     nmo_cmd_ctx_t c = *ctx;
 
-    if (anim_ensure_dir(args->out_dir) < 0) {
-        fprintf(stderr, "Error: Cannot create directory '%s' (%s)\n",
-                args->out_dir, strerror(errno));
+    char *reason = NULL;
+    if (nmo_tool_ensure_directory(args->out_dir, &reason) != 0) {
+        fprintf(stderr, "Error: Cannot create directory '%s' (%s)\n", args->out_dir, reason);
+        free(reason);
         return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR)
                          : NMO_CLI_EXIT_IO_ERROR;
     }

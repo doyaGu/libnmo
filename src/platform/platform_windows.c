@@ -9,7 +9,9 @@
 
 #include "platform.h"
 
+#include <io.h>
 #include <malloc.h>
+#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -45,6 +47,40 @@ static wchar_t *platform_wide(const char *utf8)
         wide = NULL;
     }
     return wide;
+}
+
+/* A UTF-16 string as UTF-8, malloc'ed; NULL when it cannot be */
+static char *platform_utf8(const wchar_t *wide)
+{
+    int size = WideCharToMultiByte(CP_UTF8, 0, wide, -1, NULL, 0, NULL, NULL);
+    if (size <= 0) {
+        return NULL;
+    }
+    char *utf8 = (char *)malloc((size_t)size);
+    if (utf8 != NULL && WideCharToMultiByte(CP_UTF8, 0, wide, -1, utf8, size, NULL, NULL) <= 0) {
+        free(utf8);
+        utf8 = NULL;
+    }
+    return utf8;
+}
+
+/* printf into a string malloc'ed to its size */
+static char *platform_format(const char *format, ...)
+{
+    va_list args;
+    va_start(args, format);
+    int length = vsnprintf(NULL, 0, format, args);
+    va_end(args);
+    if (length < 0) {
+        return NULL;
+    }
+    char *text = (char *)malloc((size_t)length + 1);
+    if (text != NULL) {
+        va_start(args, format);
+        vsnprintf(text, (size_t)length + 1, format, args);
+        va_end(args);
+    }
+    return text;
 }
 
 /* The system's message for an error code, malloc'ed, its line ends trimmed */
@@ -99,6 +135,54 @@ double nmo_platform_ticks_to_ms(uint64_t ticks)
 unsigned long nmo_platform_process_id(void)
 {
     return (unsigned long)GetCurrentProcessId();
+}
+
+char *nmo_platform_executable_path(void)
+{
+    for (DWORD capacity = 260;; capacity *= 2) {
+        wchar_t *wide = (wchar_t *)malloc((size_t)capacity * sizeof(wchar_t));
+        if (wide == NULL) {
+            return NULL;
+        }
+        DWORD length = GetModuleFileNameW(NULL, wide, capacity);
+        if (length > 0 && length < capacity) {
+            char *path = platform_utf8(wide);
+            free(wide);
+            return path;
+        }
+        free(wide);
+        if (length == 0 || capacity >= ((DWORD)1 << 20)) {
+            return NULL;
+        }
+    }
+}
+
+char *nmo_platform_home_directory(void)
+{
+    DWORD size = GetEnvironmentVariableW(L"USERPROFILE", NULL, 0);
+    if (size == 0) {
+        return NULL;
+    }
+    wchar_t *wide = (wchar_t *)malloc((size_t)size * sizeof(wchar_t));
+    if (wide == NULL) {
+        return NULL;
+    }
+    DWORD length = GetEnvironmentVariableW(L"USERPROFILE", wide, size);
+    char *home = length > 0 && length < size ? platform_utf8(wide) : NULL;
+    free(wide);
+    return home;
+}
+
+/* ---- Terminals ---- */
+
+bool nmo_platform_is_terminal(FILE *stream)
+{
+    return stream != NULL && _isatty(_fileno(stream)) != 0;
+}
+
+int nmo_platform_clear_terminal(void)
+{
+    return system("cls") == 0 ? 0 : -1;
 }
 
 /* ---- Errors ---- */
@@ -201,6 +285,119 @@ void nmo_platform_unmap(nmo_platform_mapping_t *mapping)
     }
     CloseHandle(mapping->file);
     free(mapping);
+}
+
+/* What tells a file from every other on the system: its volume and its index there */
+static bool platform_file_identity(const char *path, BY_HANDLE_FILE_INFORMATION *info)
+{
+    wchar_t *wide = platform_wide(path);
+    HANDLE handle = wide != NULL ? CreateFileW(wide, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                               NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL)
+                                 : INVALID_HANDLE_VALUE;
+    platform_free(wide);
+    if (handle == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+    BOOL known = GetFileInformationByHandle(handle, info);
+    CloseHandle(handle);
+    return known != 0;
+}
+
+bool nmo_platform_same_file(const char *a, const char *b)
+{
+    BY_HANDLE_FILE_INFORMATION x;
+    BY_HANDLE_FILE_INFORMATION y;
+    return platform_file_identity(a, &x) && platform_file_identity(b, &y) &&
+           x.dwVolumeSerialNumber == y.dwVolumeSerialNumber && x.nFileIndexHigh == y.nFileIndexHigh &&
+           x.nFileIndexLow == y.nFileIndexLow;
+}
+
+/* ---- Directories ---- */
+
+int nmo_platform_make_directory(const char *path)
+{
+    wchar_t *wide = platform_wide(path);
+    if (wide == NULL) {
+        return -1;
+    }
+    BOOL made = CreateDirectoryW(wide, NULL);
+    DWORD error = made ? 0 : GetLastError();
+    platform_free(wide);
+    if (made) {
+        return 0;
+    }
+    return error == ERROR_ALREADY_EXISTS ? 1 : -1;
+}
+
+int nmo_platform_remove_directory(const char *path)
+{
+    wchar_t *wide = platform_wide(path);
+    int result = wide != NULL && RemoveDirectoryW(wide) ? 0 : -1;
+    platform_free(wide);
+    return result;
+}
+
+bool nmo_platform_is_directory(const char *path)
+{
+    wchar_t *wide = platform_wide(path);
+    DWORD attributes = wide != NULL ? GetFileAttributesW(wide) : INVALID_FILE_ATTRIBUTES;
+    platform_free(wide);
+    return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+}
+
+int nmo_platform_list_directory(const char *path, bool (*visit)(void *context, const char *name),
+                                void *context)
+{
+    size_t length = strlen(path);
+    const char *joint = length == 0 || nmo_platform_is_separator(path[length - 1]) ? "" : "\\";
+    char *pattern = platform_format("%s%s*", path, joint);
+    wchar_t *wide = pattern != NULL ? platform_wide(pattern) : NULL;
+    free(pattern);
+    WIN32_FIND_DATAW entry;
+    HANDLE find = wide != NULL ? FindFirstFileW(wide, &entry) : INVALID_HANDLE_VALUE;
+    platform_free(wide);
+    if (find == INVALID_HANDLE_VALUE) {
+        return -1;
+    }
+    bool more = true;
+    do {
+        char *name = platform_utf8(entry.cFileName);
+        if (name != NULL) { /* a name UTF-8 cannot hold is passed over */
+            more = visit(context, name);
+            free(name);
+        }
+    } while (more && FindNextFileW(find, &entry));
+    FindClose(find);
+    return 0;
+}
+
+char *nmo_platform_make_temporary_directory(const char *prefix)
+{
+    DWORD size = GetTempPathW(0, NULL);
+    wchar_t *wide = size > 0 ? (wchar_t *)malloc((size_t)size * sizeof(wchar_t)) : NULL;
+    DWORD length = wide != NULL ? GetTempPathW(size, wide) : 0;
+    char *base = length > 0 && length < size ? platform_utf8(wide) : NULL;
+    free(wide);
+    if (base == NULL) {
+        return NULL;
+    }
+    /* GetTempPathW ends the folder with a backslash */
+    unsigned long pid = (unsigned long)GetCurrentProcessId();
+    unsigned long seed = (unsigned long)(nmo_platform_ticks() & 0xFFFFFFFFu);
+    for (unsigned long attempt = 0; attempt < 64u; attempt++) {
+        char *path = platform_format("%s%s%lx-%lx", base, prefix, pid, (seed + attempt * 7919u) & 0xFFFFFFFFu);
+        int made = path != NULL ? nmo_platform_make_directory(path) : -1;
+        if (made == 0) {
+            free(base);
+            return path;
+        }
+        free(path);
+        if (made < 0) {
+            break;
+        }
+    }
+    free(base);
+    return NULL;
 }
 
 /* ---- Files written to replace others at once ---- */

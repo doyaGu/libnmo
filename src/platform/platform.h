@@ -36,6 +36,17 @@ uint64_t nmo_platform_ticks(void);
 double nmo_platform_ticks_to_ms(uint64_t ticks);
 /* This process's id */
 unsigned long nmo_platform_process_id(void);
+/* The path of the running executable, malloc'ed; NULL when it is not known */
+char *nmo_platform_executable_path(void);
+/* The user's home directory, malloc'ed; NULL when it is not known */
+char *nmo_platform_home_directory(void);
+
+/* ---- Terminals ---- */
+
+/* Whether `stream` is an interactive terminal */
+bool nmo_platform_is_terminal(FILE *stream);
+/* Clear the terminal's screen with the system's command for it */
+int nmo_platform_clear_terminal(void);
 
 /* ---- Errors ---- */
 
@@ -62,6 +73,27 @@ typedef struct nmo_platform_mapping nmo_platform_mapping_t;
 /* Map the file at `path`: its bytes (NULL for an empty file) and size; NULL when it cannot be */
 nmo_platform_mapping_t *nmo_platform_map(const char *path, const void **out_data, size_t *out_size);
 void nmo_platform_unmap(nmo_platform_mapping_t *mapping);
+
+/* Whether `a` and `b` are the same existing file, whatever names they have */
+bool nmo_platform_same_file(const char *a, const char *b);
+
+/* ---- Directories ---- */
+
+/* Make the directory at `path`: 0, 1 when something is there already, -1 when it cannot be made */
+int nmo_platform_make_directory(const char *path);
+/* Remove the empty directory at `path` */
+int nmo_platform_remove_directory(const char *path);
+/* Whether there is a directory at `path` */
+bool nmo_platform_is_directory(const char *path);
+/*
+ * Call `visit` with the name of each entry of the directory at `path`, in
+ * the system's order ("." and ".." too where the system lists them), until
+ * it returns false. -1 when the directory cannot be read.
+ */
+int nmo_platform_list_directory(const char *path, bool (*visit)(void *context, const char *name),
+                                void *context);
+/* A new empty directory in the system's temporary one, named `prefix` and more; malloc'ed, NULL when none could be made */
+char *nmo_platform_make_temporary_directory(const char *prefix);
 
 /* ---- Files written to replace others at once ---- */
 

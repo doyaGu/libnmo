@@ -8,6 +8,7 @@
 #include "nmo_repl_input.h"
 #include "nmo_repl_util.h"
 #include "nmo_tool_owner.h"
+#include "../src/platform/platform.h"
 
 #include "nmo_repl_session.h"
 
@@ -1287,13 +1288,7 @@ static int cmd_clear(nmo_repl_context_t *repl, int argc, char **argv) {
     (void)repl;
     (void)argc;
     (void)argv;
-    int rc;
-#if defined(_WIN32)
-    rc = system("cls");
-#else
-    rc = system("clear");
-#endif
-    if (rc != 0) {
+    if (nmo_platform_clear_terminal() != 0) {
         /* Clearing the screen is cosmetic; fall back to a form feed. */
         fputs("\033[2J\033[H", stdout);
     }

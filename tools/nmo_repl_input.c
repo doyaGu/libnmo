@@ -1,13 +1,11 @@
 #include "nmo_repl_input.h"
 
 #include "nmo_tool_common.h"
+#include "../src/platform/platform.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#ifndef _WIN32
-#include <strings.h>
-#endif
 
 #ifdef NMO_HAVE_ISOCLINE
 
@@ -24,16 +22,13 @@ static const char *nmo_repl_get_history_path(void) {
         return path;
     }
 
-#ifdef _WIN32
-    const char *home = getenv("USERPROFILE");
-#else
-    const char *home = getenv("HOME");
-#endif
-    if (!home || !home[0]) {
+    char *home = nmo_platform_home_directory();
+    if (!home) {
         return NULL;
     }
 
     path = nmo_tool_strdup_fmt("%s/.nmo_history", home);
+    free(home);
     return path;
 }
 
@@ -150,11 +145,7 @@ static void complete_class_names(ic_completion_env_t *cenv, const char *word_pre
 static int name_cmp_icase(const void *a, const void *b) {
     const char *sa = *(const char *const *)a;
     const char *sb = *(const char *const *)b;
-#ifdef _WIN32
-    return _stricmp(sa, sb);
-#else
-    return strcasecmp(sa, sb);
-#endif
+    return nmo_tool_stricmp(sa, sb);
 }
 
 typedef struct name_cache_build_ctx {
@@ -280,11 +271,7 @@ static void complete_object_names(ic_completion_env_t *cenv, const char *prefix)
             ic_add_completion(cenv, name);
             added++;
         } else {
-#ifdef _WIN32
-            if (_strnicmp(name, prefix, prefix_len) == 0) {
-#else
-            if (strncasecmp(name, prefix, prefix_len) == 0) {
-#endif
+            if (nmo_tool_strnicmp(name, prefix, prefix_len) == 0) {
                 ic_add_completion(cenv, name);
                 added++;
             }

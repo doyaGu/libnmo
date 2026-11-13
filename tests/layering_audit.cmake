@@ -171,18 +171,20 @@ if(platform_violations)
 endif()
 
 # The operating system stays behind the platform layer: no source outside
-# src/platform includes an operating system's headers (POSIX's, Windows')
+# src/platform, the library's or the command line tools', includes an
+# operating system's headers (POSIX's, Windows'), asks for its extensions,
 # or branches on which system it is built for. A renderer backend may pick
 # where its graphics API's headers are, and nothing else.
 set(os_violations "")
-file(GLOB_RECURSE os_files "${SOURCE_DIR}/src/*.c" "${SOURCE_DIR}/src/*.h")
+file(GLOB_RECURSE os_files "${SOURCE_DIR}/src/*.c" "${SOURCE_DIR}/src/*.h"
+                           "${SOURCE_DIR}/tools/*.c" "${SOURCE_DIR}/tools/*.h")
 foreach(os_file IN LISTS os_files)
     file(RELATIVE_PATH relative_path "${SOURCE_DIR}" "${os_file}")
     if(relative_path MATCHES "^src/platform/")
         continue()
     endif()
     file(STRINGS "${os_file}" os_lines
-        REGEX "^[ \t]*#[ \t]*include[ \t]*<(windows|unistd|dlfcn|fcntl|libgen|strings|dirent|pthread|io|direct|malloc)\\.h>|^[ \t]*#[ \t]*include[ \t]*<(sys|mach)/|^[ \t]*#[ \t]*(if|ifdef|ifndef|elif).*(_WIN32|_WIN64|__APPLE__|__linux__|__unix__|__ANDROID__|__EMSCRIPTEN__|__FreeBSD__|__MINGW32__|_POSIX_C_SOURCE)")
+        REGEX "^[ \t]*#[ \t]*include[ \t]*<(windows|unistd|dlfcn|fcntl|libgen|strings|dirent|pthread|io|direct|malloc)\\.h>|^[ \t]*#[ \t]*include[ \t]*<(sys|mach|mach-o)/|^[ \t]*#[ \t]*define[ \t]+_(POSIX_C|XOPEN|DARWIN_C|GNU|DEFAULT|BSD)_SOURCE|^[ \t]*#[ \t]*(if|ifdef|ifndef|elif).*(_WIN32|_WIN64|__APPLE__|__linux__|__unix__|__ANDROID__|__EMSCRIPTEN__|__FreeBSD__|__MINGW32__|_POSIX_C_SOURCE)")
     foreach(os_line IN LISTS os_lines)
         if(relative_path MATCHES "^src/render/[a-z0-9_]+/" AND os_line MATCHES "^[ \t]*#[ \t]*(if|ifdef|ifndef|elif)")
             continue()

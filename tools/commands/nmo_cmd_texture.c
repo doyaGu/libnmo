@@ -31,13 +31,6 @@
 #include <stdlib.h>
 #include <errno.h>
 
-#ifdef _WIN32
-#include <direct.h>
-#define NMO_TEX_PATH_SEP '\\'
-#else
-#include <sys/stat.h>
-#define NMO_TEX_PATH_SEP '/'
-#endif
 
 static int nmo_cmd_texture_extract_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 
@@ -112,34 +105,14 @@ static const char *format_label(const nmo_texture_state_t *ts) {
 /* Returns 0 when the directory exists or was created; otherwise -1 with a
  * malloc'd message in *out_error (free with free()). */
 static int tex_ensure_dir(const char *dir_path, char **out_error) {
-    if (!dir_path || !*dir_path) return -1;
-#ifdef _WIN32
-    if (_mkdir(dir_path) == 0) return 0;
-#else
-    if (mkdir(dir_path, 0755) == 0) return 0;
-#endif
-    if (errno == EEXIST) return 0;
+    char *reason = NULL;
+    if (nmo_tool_ensure_directory(dir_path, &reason) == 0) return 0;
     if (out_error) {
         *out_error = nmo_tool_strdup_fmt("Failed to create directory '%s' (%s)",
-                                         dir_path, strerror(errno));
+                                         dir_path ? dir_path : "", reason);
     }
+    free(reason);
     return -1;
-}
-
-static char *tex_join_path(const char *dir, const char *file) {
-    if (!dir || !file) return NULL;
-    size_t dir_len = strlen(dir);
-    size_t file_len = strlen(file);
-    size_t need_sep = (dir_len > 0 && dir[dir_len - 1] != (char)NMO_TEX_PATH_SEP) ? 1u : 0u;
-    size_t total = dir_len + need_sep + file_len + 1u;
-    char *out = (char *)malloc(total);
-    if (!out) return NULL;
-    memcpy(out, dir, dir_len);
-    size_t pos = dir_len;
-    if (need_sep) out[pos++] = (char)NMO_TEX_PATH_SEP;
-    memcpy(out + pos, file, file_len);
-    out[pos + file_len] = '\0';
-    return out;
 }
 
 static bool tex_file_exists(const char *path) {
@@ -1045,7 +1018,7 @@ static int texture_extract_run(nmo_cmd_ctx_t *ctx,
 
         /* Write to file */
         char *fname = tex_filename_dup(name, id, args->ext);
-        char *path = fname ? tex_join_path(args->out_dir, fname) : NULL;
+        char *path = fname ? nmo_tool_join_path(args->out_dir, fname) : NULL;
         if (!path) {
             free(fname);
             warnings++;

@@ -84,6 +84,11 @@ add_executable(nmo_cli
 set_target_properties(nmo_cli PROPERTIES OUTPUT_NAME nmo)
 target_link_libraries(nmo_cli PRIVATE nmo_project nmo_lua nmo_edit nmo_bb_virtools nmo_bb_physics
                       nmo_bb_terratools nmo_engine nmo yyjson)
+# The tools reach the system through libnmo's platform layer. A static libnmo
+# brings it; a shared one does not export it, so the tools build their own.
+if(NMO_BUILD_SHARED)
+    target_sources(nmo_cli PRIVATE "${PROJECT_SOURCE_DIR}/${NMO_PLATFORM_SOURCES}")
+endif()
 if(TARGET nmo_physics_ivp)
     target_link_libraries(nmo_cli PRIVATE nmo_physics_ivp)
 endif()
