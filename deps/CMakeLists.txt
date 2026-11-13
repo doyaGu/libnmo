@@ -97,6 +97,10 @@ if(NOT TARGET lua::lua)
     set(LUA_BUILD_LIBEDIT OFF CACHE BOOL "" FORCE)
     set(NMO_LUA_SOURCE_ROOT "${NMO_LUA_DIR}")
     add_subdirectory("${NMO_LUA_WRAPPER_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/lua" EXCLUDE_FROM_ALL)
+    # A shared libnmo links the Lua objects into itself
+    if(NMO_BUILD_SHARED AND TARGET liblua_objects)
+        set_target_properties(liblua_objects PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    endif()
 endif()
 
 if(TARGET liblua_objects)

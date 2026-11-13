@@ -411,6 +411,9 @@ set(NMO_SOURCES
 # components declared below; the core does not depend on either of them.
 if(NMO_BUILD_SHARED)
     add_library(nmo SHARED ${NMO_SOURCES})
+    # A DLL exports what a shared object does on other systems: every
+    # function that is not static, NMO_API or not.
+    set_target_properties(nmo PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
 else()
     add_library(nmo STATIC ${NMO_SOURCES})
 endif()
