@@ -204,6 +204,52 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure -R "render|view|cli_behavior_run|layering"
 
+  # The web player (apps/web): libnmo compiled to WebAssembly (Emscripten),
+  # with the engine, the software renderer and the GL3 backend's WebGL 2
+  # dialect. Its unit test (test_render_gl3) needs a browser's canvas, which
+  # Node.js (ctest's emulator here) has none of, so it is left to a real
+  # browser and excluded from this job's filter; everything else the web
+  # build has in common with a native one (the core, the engine, layering)
+  # still runs under Node. No libivp here, so the player's physics are a
+  # stub: the artifact plays the menus, not a rolling ball.
+  web:
+    name: web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Get the Lua sources
+        uses: ./.github/actions/lua-source
+
+      - name: Set up Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 7.0.0
+
+      - name: Configure
+        run: emcmake cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DNMO_BUILD_TOOLS=OFF
+
+      - name: Build
+        run: cmake --build build --parallel -- -k 0
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -R "render_soft|engine|layering"
+
+      - name: Upload the web player
+        uses: actions/upload-artifact@v4
+        with:
+          name: nmo-web-player
+          path: |
+            build/apps/web/index.html
+            build/apps/web/player.mjs
+            build/apps/web/player.css
+            build/apps/web/run_node.mjs
+            build/apps/web/nmo-player.mjs
+            build/apps/web/nmo-player.wasm
+            build/apps/web/nmo-player.data
+
   # The Python binding (bindings/python) loads libnmo as a shared library,
   # which the release packages, static only, do not hold. Each system builds
   # the library shared here and runs the binding's tests against it; they read
