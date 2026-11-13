@@ -116,11 +116,21 @@ typedef enum nmo_load_flags {
 
 /**
  * @brief Amount of file data to materialize during load.
+ *
+ * Every profile but FULL leaves the session read only: it cannot be changed or
+ * saved, nor loaded into again.
  */
 typedef enum nmo_load_profile {
     NMO_LOAD_PROFILE_FULL = 0,       /**< Parse and finalize the complete file */
-    NMO_LOAD_PROFILE_METADATA,       /**< Parse file header/Header1 only */
-    NMO_LOAD_PROFILE_HEADER_ONLY     /**< Parse file header/Header1 only */
+    NMO_LOAD_PROFILE_METADATA,       /**< File header and Header1: file info and plugin dependencies */
+    NMO_LOAD_PROFILE_HEADER_ONLY,    /**< File header only; Header1 is not read */
+    /**
+     * The object table: every object with its id, class, name and chunk, and
+     * the manager chunks, but no object state, and no manager or finalize
+     * hooks. nmo_session_load_object_state() parses an object's state when it
+     * is needed.
+     */
+    NMO_LOAD_PROFILE_OBJECTS
 } nmo_load_profile_t;
 
 /**

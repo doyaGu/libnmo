@@ -651,10 +651,14 @@ nmo_status_t nmo_deserializer_parse_header(nmo_deserializer_t *ds)
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    /* Below version 7 the engine reads no Header1 (CKFile::ReadFileHeaders
-     * leaves the cursor at the data section whatever the size fields say); the
-     * object table is built from the data section in Phase 8. */
-    if (ds->header.file_version < 7u) {
+    /* The header-only profile stops at the file header. Below version 7 the
+     * engine reads no Header1 (CKFile::ReadFileHeaders leaves the cursor at the
+     * data section whatever the size fields say); the object table is built
+     * from the data section in Phase 8. */
+    if (ds->options.profile == NMO_LOAD_PROFILE_HEADER_ONLY) {
+        nmo_log(logger, NMO_LOG_INFO, "  Header1 not read (header-only profile)");
+        ds->hdr1.object_count = 0;
+    } else if (ds->header.file_version < 7u) {
         nmo_log(logger, NMO_LOG_INFO, "  No header1 below file version 7");
         ds->hdr1.object_count = 0;
     } else if (ds->header.hdr1_pack_size == 0 || ds->header.hdr1_unpack_size == 0) {
@@ -975,7 +979,9 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
     if (ds->phase_completed != 1) {
         return NMO_ERR_INVALID_STATE;
     }
-    if (ds->options.profile != NMO_LOAD_PROFILE_FULL) {
+    /* The object table profile stops before the object states */
+    const bool objects_only = ds->options.profile == NMO_LOAD_PROFILE_OBJECTS;
+    if (ds->options.profile != NMO_LOAD_PROFILE_FULL && !objects_only) {
         return NMO_ERR_INVALID_STATE;
     }
 
@@ -990,7 +996,7 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
     const int enforce_plugin_dependencies = (flags & NMO_LOAD_CHECK_DEPENDENCIES) != 0;
     nmo_status_t result;
 
-    nmo_session_internal_set_partial_load(session, 0);
+    nmo_session_internal_set_partial_load(session, objects_only);
 
     /* Phase 5: Start Load Session */
     nmo_log(logger, NMO_LOG_INFO, "Phase 5: Starting load session (max ID: %u)",
@@ -1068,8 +1074,9 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
     /* Phase 7: Manager Pre-Load Hooks */
     nmo_log(logger, NMO_LOG_INFO, "Phase 7: Executing manager pre-load hooks");
 
+    /* The object table profile leaves the managers alone: it hands them no data */
     nmo_manager_registry_t *manager_reg = nmo_context_get_manager_registry(ds->ctx);
-    if (manager_reg != NULL) {
+    if (manager_reg != NULL && !objects_only) {
         uint32_t manager_count = nmo_manager_registry_get_count(manager_reg);
         nmo_log(logger, NMO_LOG_INFO, "  Found %u registered managers", manager_count);
 
@@ -1377,7 +1384,9 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
     /* Phase 13b: Dispatch manager chunks to registered managers */
     nmo_log(logger, NMO_LOG_INFO, "Phase 13b: Dispatching manager chunks");
 
-    if (ds->data_sect.managers != NULL && ds->data_sect.manager_count > 0) {
+    if (objects_only) {
+        nmo_log(logger, NMO_LOG_INFO, "  Manager chunks kept, not dispatched (object table profile)");
+    } else if (ds->data_sect.managers != NULL && ds->data_sect.manager_count > 0) {
         if (manager_reg == NULL) {
             nmo_log(logger, NMO_LOG_WARN, "  Manager registry unavailable; preserving %u chunk(s) for round-trip",
                     ds->data_sect.manager_count);
@@ -1435,7 +1444,9 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
     /* Phase 14: Deserialize Objects */
     nmo_log(logger, NMO_LOG_INFO, "Phase 14: Deserializing objects");
 
-    {
+    if (objects_only) {
+        nmo_log(logger, NMO_LOG_INFO, "  Object states are parsed on request (object table profile)");
+    } else {
         const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(ds->ctx);
         if (type_rt == NULL) {
             nmo_log(logger, NMO_LOG_ERROR, "Type registry not initialized in context");
@@ -1524,6 +1535,7 @@ skip_object_processing:
 
     nmo_log(logger, NMO_LOG_INFO, "Load complete: %zu objects loaded", ds->stats.object_count);
 
+    nmo_session_internal_set_deferred_object_states(session, objects_only);
     ds->phase_completed = 2;
     return NMO_OK;
 }
@@ -1535,6 +1547,13 @@ nmo_status_t nmo_deserializer_finalize(nmo_deserializer_t *ds)
     }
     if (ds->phase_completed != 2) {
         return NMO_ERR_INVALID_STATE;
+    }
+    if (ds->options.profile == NMO_LOAD_PROFILE_OBJECTS) {
+        /* No state to finalize: the object table is complete as parsed */
+        nmo_id_mapping_destroy(ds->id_mapping);
+        ds->id_mapping = NULL;
+        ds->phase_completed = 3;
+        return NMO_OK;
     }
     if (ds->options.profile != NMO_LOAD_PROFILE_FULL) {
         return NMO_ERR_INVALID_STATE;

@@ -77,3 +77,10 @@ const nmo_session_plugin_diagnostics_t *nmo_document_get_plugin_diagnostics(
 {
     return nmo_document_internal_plugin_diagnostics(document);
 }
+
+nmo_status_t nmo_document_load_object_state(nmo_document_t *document, nmo_object_id_t id)
+{
+    nmo_session_t *session = nmo_document_internal_session(document);
+    return session != NULL ? nmo_session_load_object_state(session, id)
+                           : NMO_ERR_INVALID_ARGUMENT;
+}

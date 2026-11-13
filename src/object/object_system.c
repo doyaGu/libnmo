@@ -444,6 +444,73 @@ nmo_status_t nmo_object_system_deserialize_repository(
     return NMO_OK;
 }
 
+nmo_status_t nmo_object_system_deserialize_object(
+    nmo_object_t *obj,
+    nmo_object_repository_t *repo,
+    const nmo_type_runtime_t *type_rt,
+    nmo_arena_t *arena,
+    uint32_t deser_flags)
+{
+    if (obj == NULL || repo == NULL || type_rt == NULL || type_rt->types == NULL ||
+        arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (obj->state != NULL || obj->chunk == NULL) {
+        return NMO_OK;
+    }
+
+    const nmo_type_descriptor_t *schema_type =
+        nmo_type_query_find_for_object(type_rt->types, obj);
+    if (schema_type == NULL || schema_type->vtable == NULL ||
+        schema_type->vtable->deserialize == NULL) {
+        return NMO_ERR_NOT_SUPPORTED;
+    }
+
+    uint32_t state_size = schema_type->size;
+    if (schema_type->ext && schema_type->ext->total_state_size > 0) {
+        state_size = schema_type->ext->total_state_size;
+    }
+    nmo_status_t result = nmo_object_alloc_state(obj, state_size);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    nmo_deserialize_context_t deser_ctx = nmo_deserialize_context_create(
+        arena, repo, type_rt, deser_flags);
+    void *state = nmo_object_get_state(obj);
+    nmo_deserialize_context_set_object(&deser_ctx, obj);
+    deser_ctx.chunk_version = nmo_chunk_get_data_version(obj->chunk);
+
+    object_system_created_layer_t create_plan[OBJECT_SYSTEM_MAX_HIERARCHY_DEPTH];
+    object_system_created_layer_t created_layers[OBJECT_SYSTEM_MAX_HIERARCHY_DEPTH];
+    size_t plan_count = object_system_build_create_plan(
+        schema_type, create_plan, OBJECT_SYSTEM_MAX_HIERARCHY_DEPTH);
+    if (plan_count == 0) {
+        create_plan[0].type = schema_type;
+        create_plan[0].offset = 0;
+        plan_count = 1;
+    }
+    size_t created_count = 0;
+    result = object_system_create_state_layers(
+        state, &deser_ctx, create_plan, plan_count,
+        created_layers, OBJECT_SYSTEM_MAX_HIERARCHY_DEPTH, &created_count);
+
+    /* An empty chunk leaves the state as created, with its defaults */
+    size_t data_size = 0;
+    if (result == NMO_OK && nmo_chunk_get_data(obj->chunk, &data_size) != NULL && data_size > 0) {
+        result = nmo_chunk_start_read(obj->chunk);
+        if (result == NMO_OK) {
+            result = schema_type->vtable->deserialize(state, obj->chunk, schema_type, &deser_ctx);
+        }
+    }
+    if (result != NMO_OK) {
+        object_system_destroy_state_layers(state, &deser_ctx, created_layers, created_count);
+        object_system_clear_failed_object_state(obj);
+    }
+    nmo_chunk_close(obj->chunk);
+    return result;
+}
+
 /* With state_only the chunk is always the schema's serialization of the state:
  * an object the schema cannot write yields NULL instead of its old chunk. */
 static nmo_chunk_t *object_system_serialize_impl(

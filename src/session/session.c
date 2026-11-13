@@ -895,6 +895,12 @@ void nmo_session_internal_set_partial_load(nmo_session_t *session, int partial) 
     }
 }
 
+void nmo_session_internal_set_deferred_object_states(nmo_session_t *session, int deferred) {
+    if (session != NULL) {
+        session->deferred_object_states = deferred ? 1 : 0;
+    }
+}
+
 int nmo_session_has_materialized_load_state(const nmo_session_t *session) {
     if (session == NULL) {
         return 0;

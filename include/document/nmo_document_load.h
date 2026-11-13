@@ -35,6 +35,24 @@ NMO_API nmo_status_t nmo_document_get_runtime_load_stats(
     nmo_runtime_load_stats_t *out_stats);
 NMO_API const nmo_session_plugin_diagnostics_t *nmo_document_get_plugin_diagnostics(
     const nmo_document_t *document);
+/**
+ * @brief Parse the state of one object of a document loaded with
+ *        NMO_LOAD_PROFILE_OBJECTS.
+ *
+ * The schema reads the object's chunk and the object's own dependency hooks
+ * run, as a full load does for it. The session-wide steps of a full load do
+ * not run (handing managers their data, fitting layer cells to their grid,
+ * indexing behaviors), so the state lacks what those steps would add to it.
+ * An object that already has a state, or has no chunk, is left as it is.
+ *
+ * @return NMO_OK; NMO_ERR_NOT_FOUND for an unknown id; NMO_ERR_NOT_SUPPORTED
+ *         when no schema reads the object's class; NMO_ERR_INVALID_STATE when
+ *         the document was not loaded with NMO_LOAD_PROFILE_OBJECTS; or the
+ *         schema's error, with the object left without a state.
+ */
+NMO_API nmo_status_t nmo_document_load_object_state(
+    nmo_document_t *document,
+    nmo_object_id_t id);
 
 #ifdef __cplusplus
 }

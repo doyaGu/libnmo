@@ -1769,6 +1769,10 @@ static bool debug_load_profile_from_arg(const char *arg, nmo_load_profile_t *out
         *out_profile = NMO_LOAD_PROFILE_HEADER_ONLY;
         return true;
     }
+    if (strcmp(arg, "objects") == 0) {
+        *out_profile = NMO_LOAD_PROFILE_OBJECTS;
+        return true;
+    }
     return false;
 }
 
@@ -1780,6 +1784,8 @@ static const char *debug_load_profile_name(nmo_load_profile_t profile) {
             return "metadata";
         case NMO_LOAD_PROFILE_HEADER_ONLY:
             return "header-only";
+        case NMO_LOAD_PROFILE_OBJECTS:
+            return "objects";
         default:
             return "unknown";
     }
@@ -1789,7 +1795,7 @@ static int debug_parse_load_profile(nmo_cmd_ctx_t *c, int argc, char **argv,
                                     nmo_load_profile_t *profile)
 {
     static const nmo_opt_def_t opts[] = {
-        {"--profile",      NULL, NMO_OPT_STRING, "Load profile: full|metadata|header-only"},
+        {"--profile",      NULL, NMO_OPT_STRING, "Load profile: full|objects|metadata|header-only"},
         {"--load-profile", NULL, NMO_OPT_STRING, "Same as --profile"},
     };
     nmo_opt_val_t vals[2];

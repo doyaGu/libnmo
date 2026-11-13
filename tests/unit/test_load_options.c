@@ -27,6 +27,7 @@
 #include "type/nmo_type_system.h"
 #include "core/nmo_allocator.h"
 #include "core/nmo_utils.h"
+#include "object/nmo_object_system.h"
 #include "../../src/session/load_diagnostics_internal.h"
 
 #include <stdio.h>
@@ -94,6 +95,7 @@ TEST(load_options, metadata_profile_stops_after_header_and_rejects_mutation)
     ASSERT_TRUE(info.object_count > 0);
     ASSERT_TRUE(stats.phases[NMO_LOAD_PERF_HEADER1_READ].calls > 0);
     ASSERT_TRUE(stats.phases[NMO_LOAD_PERF_HEADER1_PARSE].calls > 0);
+    ASSERT_TRUE(nmo_session_get_file_state(session)->plugin_dep_count > 0u);
     ASSERT_EQ((uint64_t)0, stats.phases[NMO_LOAD_PERF_DATA_READ].calls);
     ASSERT_EQ((uint64_t)0, stats.phases[NMO_LOAD_PERF_DATA_PARSE].calls);
     ASSERT_EQ((uint64_t)0, stats.phases[NMO_LOAD_PERF_OBJECT_CREATE].calls);
@@ -324,11 +326,103 @@ TEST(load_options, header_only_profile_stops_after_header)
     nmo_file_info_t info = nmo_session_get_file_info(session);
     ASSERT_TRUE(info.object_count > 0);
     ASSERT_TRUE(nmo_session_get_header(session) != NULL);
-    ASSERT_TRUE(stats.phases[NMO_LOAD_PERF_HEADER1_PARSE].calls > 0);
+    ASSERT_EQ((uint64_t)0, stats.phases[NMO_LOAD_PERF_HEADER1_READ].calls);
+    ASSERT_EQ((uint64_t)0, stats.phases[NMO_LOAD_PERF_HEADER1_PARSE].calls);
+    ASSERT_EQ(0u, nmo_session_get_file_state(session)->plugin_dep_count);
     ASSERT_EQ((uint64_t)0, stats.phases[NMO_LOAD_PERF_DATA_READ].calls);
     ASSERT_EQ((uint64_t)0, stats.phases[NMO_LOAD_PERF_OBJECT_CREATE].calls);
     ASSERT_TRUE(nmo_session_is_partial_load(session));
 
+    destroy_ctx_session(ctx, session);
+}
+
+TEST(load_options, objects_profile_builds_the_table_and_parses_states_on_request)
+{
+    const char *path = "data/Ballance/Gameplay.nmo";
+    TEST_REQUIRE_FILE(path);
+    nmo_load_perf_stats_t stats = {0};
+    nmo_context_t *ctx = NULL;
+    nmo_session_t *session = NULL;
+    ASSERT_EQ(NMO_OK, load_fixture_with_profile(
+        path, NMO_LOAD_PROFILE_OBJECTS, &ctx, &session, &stats));
+    ASSERT_TRUE(stats.phases[NMO_LOAD_PERF_DATA_PARSE].calls > 0);
+    ASSERT_TRUE(stats.phases[NMO_LOAD_PERF_OBJECT_CREATE].calls > 0);
+    ASSERT_EQ((uint64_t)0, stats.phases[NMO_LOAD_PERF_OBJECT_DESERIALIZE].calls);
+    ASSERT_EQ((uint64_t)0, stats.phases[NMO_LOAD_PERF_INDEX_REBUILD].calls);
+    ASSERT_TRUE(nmo_session_is_partial_load(session));
+
+    nmo_session_t *full = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(full);
+    ASSERT_EQ(NMO_OK, nmo_session_load_file(full, path, NULL, NULL));
+    nmo_document_t *document = NULL;
+    nmo_document_t *full_document = NULL;
+    ASSERT_EQ(NMO_OK, nmo_session_borrow_document(session, &document));
+    ASSERT_EQ(NMO_OK, nmo_session_borrow_document(full, &full_document));
+
+    /* Each object is there as a full load has it, without a state until one
+     * is asked for; that state then serializes as the full load's does. */
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_repository_t *full_repo = nmo_session_get_repository(full);
+    const size_t count = nmo_object_repository_get_count(full_repo);
+    ASSERT_TRUE(count > 0u);
+    ASSERT_EQ(count, nmo_object_repository_get_count(repo));
+    const nmo_type_runtime_t *types = nmo_context_get_type_runtime(ctx);
+    nmo_arena_t *arena = nmo_arena_create(NULL, 1u << 16);
+    ASSERT_NOT_NULL(arena);
+    size_t with_state = 0u;
+    for (size_t i = 0u; i < count; ++i) {
+        nmo_object_t *expected = nmo_object_repository_get_by_index(full_repo, i);
+        nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
+        ASSERT_EQ(expected->id, object->id);
+        ASSERT_EQ(expected->class_id, object->class_id);
+        ASSERT_STR_EQ(expected->name ? expected->name : "", object->name ? object->name : "");
+        ASSERT_EQ(nmo_chunk_get_data_size(expected->chunk), nmo_chunk_get_data_size(object->chunk));
+        ASSERT_NULL(object->state);
+
+        ASSERT_EQ(NMO_OK, nmo_document_load_object_state(document, object->id));
+        ASSERT_EQ(expected->state != NULL, object->state != NULL);
+        if (object->state == NULL) {
+            continue;
+        }
+        with_state++;
+        nmo_status_t expected_status = NMO_OK;
+        nmo_status_t status = NMO_OK;
+        nmo_chunk_t *expected_chunk = nmo_object_system_serialize_object_state(
+            expected, types, arena, arena, full_repo, NULL, &expected_status);
+        nmo_chunk_t *chunk = nmo_object_system_serialize_object_state(
+            object, types, arena, arena, repo, NULL, &status);
+        ASSERT_EQ(expected_status, status);
+        size_t expected_size = 0u;
+        size_t size = 0u;
+        const void *expected_bytes = expected_chunk != NULL
+            ? nmo_chunk_get_data(expected_chunk, &expected_size) : NULL;
+        const void *bytes = chunk != NULL ? nmo_chunk_get_data(chunk, &size) : NULL;
+        ASSERT_EQ(expected_size, size);
+        ASSERT_TRUE(size == 0u || memcmp(expected_bytes, bytes, size) == 0);
+    }
+    ASSERT_TRUE(with_state > 0u);
+    nmo_arena_destroy(arena);
+
+    /* A parsed state stays; only a document loaded for its objects parses */
+    const nmo_object_t *first = nmo_object_repository_get_by_index(repo, 0u);
+    const void *first_state = first->state;
+    ASSERT_EQ(NMO_OK, nmo_document_load_object_state(document, first->id));
+    ASSERT_TRUE(first->state == first_state);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_document_load_object_state(document, NMO_OBJECT_ID_INVALID));
+    ASSERT_EQ(NMO_ERR_INVALID_STATE, nmo_document_load_object_state(full_document, first->id));
+
+    /* The table is read only */
+    ASSERT_EQ(NMO_ERR_INVALID_STATE,
+              nmo_save_file(session, NMO_TEST_SCRATCH_FILE("objects_profile_should_not_save.nmo"),
+                            NULL));
+    nmo_object_id_t created_id = 0u;
+    ASSERT_EQ(NMO_ERR_INVALID_STATE,
+              nmo_session_create_object(session, NMO_CID_OBJECT, "blocked",
+                                        (nmo_guid_t){0, 0}, &created_id, NULL));
+
+    nmo_document_destroy(document);
+    nmo_document_destroy(full_document);
+    nmo_session_destroy(full);
     destroy_ctx_session(ctx, session);
 }
 
@@ -1226,6 +1320,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(load_options, changed_object_save_preserves_unlisted_chunks);
     REGISTER_TEST(load_options, header_only_profile_stops_after_header);
     REGISTER_TEST(load_options, full_profile_is_default);
+    REGISTER_TEST(load_options, objects_profile_builds_the_table_and_parses_states_on_request);
     REGISTER_TEST(load_options, diagnostics_lifecycle_is_caller_owned);
     REGISTER_TEST(load_options, diagnostics_capture_current_chunk_section);
     REGISTER_TEST(load_options, custom_allocator_controls_object_and_schema_storage);

@@ -14,6 +14,10 @@
 #include "format/nmo_header.h"
 #include "core/nmo_logger.h"
 #include "core/nmo_error.h"
+#include "object/nmo_context.h"
+#include "object/nmo_deserialize_context.h"
+#include "object/nmo_object_repository.h"
+#include "object/nmo_object_system.h"
 #include <string.h>
 
 static nmo_load_perf_stats_t *load_perf_sink_from_options(
@@ -43,7 +47,8 @@ static void load_perf_end(nmo_load_perf_stats_t *stats,
 static int nmo_load_profile_is_valid(nmo_load_profile_t profile) {
     return profile == NMO_LOAD_PROFILE_FULL ||
            profile == NMO_LOAD_PROFILE_METADATA ||
-           profile == NMO_LOAD_PROFILE_HEADER_ONLY;
+           profile == NMO_LOAD_PROFILE_HEADER_ONLY ||
+           profile == NMO_LOAD_PROFILE_OBJECTS;
 }
 
 /**
@@ -172,7 +177,8 @@ nmo_status_t nmo_load_file(nmo_session_t *session,
     }
 
     nmo_status_t st = nmo_deserializer_parse_header(ds);
-    if (st == NMO_OK && opts->profile != NMO_LOAD_PROFILE_FULL) {
+    if (st == NMO_OK && (opts->profile == NMO_LOAD_PROFILE_METADATA ||
+                         opts->profile == NMO_LOAD_PROFILE_HEADER_ONLY)) {
         nmo_deserializer_destroy(ds);
         return NMO_OK;
     }
@@ -185,4 +191,59 @@ nmo_status_t nmo_load_file(nmo_session_t *session,
 
     nmo_deserializer_destroy(ds);
     return st;
+}
+
+/*
+ * What a full load does for one object: the schema reads its chunk, then its
+ * own dependency hooks run as finalize runs them (a failed hook is logged and
+ * the state kept). The session-wide steps of finalize are not run.
+ */
+nmo_status_t nmo_session_load_object_state(nmo_session_t *session, nmo_object_id_t id)
+{
+    if (session == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (!session->deferred_object_states) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_t *obj = repo != NULL ? nmo_object_repository_find_by_id(repo, id) : NULL;
+    if (obj == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    if (obj->state != NULL) {
+        return NMO_OK;
+    }
+    nmo_context_t *ctx = nmo_session_get_context(session);
+    const nmo_type_runtime_t *type_rt = ctx != NULL ? nmo_context_get_type_runtime(ctx) : NULL;
+    if (type_rt == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    nmo_status_t result = nmo_object_system_deserialize_object(
+        obj, repo, type_rt, nmo_session_get_arena(session),
+        NMO_DESER_FLAG_FILE_MODE | NMO_DESER_FLAG_PRESERVE_RAW);
+    if (result != NMO_OK || obj->state == NULL) {
+        return result;
+    }
+
+    const nmo_type_descriptor_t *type = runtime_find_type_for_object(type_rt, obj);
+    if (type == NULL || type->vtable == NULL) {
+        return NMO_OK;
+    }
+    nmo_status_t hook_result = NMO_OK;
+    if (type->vtable->prepare_dependencies != NULL) {
+        hook_result = type->vtable->prepare_dependencies(obj->state, type, repo);
+    }
+    if (hook_result == NMO_OK && type->vtable->remap_dependencies != NULL) {
+        hook_result = type->vtable->remap_dependencies(obj->state, type, repo);
+    }
+    if (hook_result == NMO_ERR_NOMEM || hook_result == NMO_ERR_INTERNAL) {
+        return hook_result;
+    }
+    if (hook_result != NMO_OK) {
+        nmo_log(nmo_context_get_logger(ctx), NMO_LOG_WARN,
+                "Load hook failed for object %u: %d", obj->id, hook_result);
+    }
+    return NMO_OK;
 }

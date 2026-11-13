@@ -70,6 +70,25 @@ NMO_API nmo_status_t nmo_object_system_deserialize_repository(
     nmo_object_system_deserialize_stats_t *out_stats);
 
 /**
+ * @brief Deserialize one object's state from its chunk.
+ *
+ * Does for one object what nmo_object_system_deserialize_repository() does for
+ * each: allocates the state, creates its layers and reads the chunk with the
+ * schema, closing the chunk after. An object that already has a state, or has
+ * no chunk, is left as it is.
+ *
+ * @return NMO_OK; NMO_ERR_NOT_SUPPORTED when no schema reads the object's
+ *         class; otherwise the error of the step that failed, with the object
+ *         left without a state.
+ */
+NMO_API nmo_status_t nmo_object_system_deserialize_object(
+    nmo_object_t *obj,
+    nmo_object_repository_t *repo,
+    const nmo_type_runtime_t *type_rt,
+    nmo_arena_t *arena,
+    uint32_t deser_flags);
+
+/**
  * @brief Serialize an object's chunk using schema dispatch.
  *
  * Returns either:

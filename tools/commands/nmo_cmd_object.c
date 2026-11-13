@@ -296,7 +296,11 @@ static int object_list_single(const char *file_path,
     nmo_workspace_t *workspace = NULL;
     char *open_error = NULL;
 
-    if (!nmo_tool_open_document(file_path, &ctx, &document, &workspace, &open_error)) {
+    /* The list needs each object's id, class, name and chunk, not its state */
+    nmo_load_options_t load_opts = nmo_load_options_default();
+    load_opts.profile = NMO_LOAD_PROFILE_OBJECTS;
+    if (!nmo_tool_open_document_opts(file_path, &load_opts, &ctx, &document, &workspace,
+                                     &open_error)) {
         fprintf(stderr, "Error: %s\n", open_error ? open_error : "Failed to open file");
         free(open_error);
         return NMO_CLI_EXIT_IO_ERROR;
@@ -401,7 +405,10 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
     }
     free(pos);
 
-    /* Single file mode */
+    /* Single file mode: the object table is enough for the list */
+    nmo_load_options_t load_opts = nmo_load_options_default();
+    load_opts.profile = NMO_LOAD_PROFILE_OBJECTS;
+    c.load_options = &load_opts;
     rc = nmo_cmd_ctx_open(&c);
     if (rc) return nmo_cmd_ctx_done(&c, rc);
 

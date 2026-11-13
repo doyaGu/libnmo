@@ -102,6 +102,8 @@ typedef struct nmo_session {
 
     /* Partial loads contain only metadata/header state and cannot be mutated. */
     int partial_load;
+    /* Loaded with NMO_LOAD_PROFILE_OBJECTS: object states are parsed on request. */
+    int deferred_object_states;
 
     /* Cached reference graph (lazy-built, invalidated on mutation) */
     nmo_ref_graph_t *cached_ref_graph;
@@ -236,6 +238,12 @@ nmo_status_t nmo_save_file(
     const char *path,
     const nmo_save_options_t *opts);
 void nmo_session_internal_set_partial_load(nmo_session_t *session, int partial);
+void nmo_session_internal_set_deferred_object_states(nmo_session_t *session, int deferred);
+/**
+ * Parses the state of one object of a session loaded with
+ * NMO_LOAD_PROFILE_OBJECTS (see nmo_document_load_object_state()).
+ */
+nmo_status_t nmo_session_load_object_state(nmo_session_t *session, nmo_object_id_t id);
 void nmo_session_invalidate_behavior_index(nmo_session_t *session);
 /** Drop the caches an edit with these flags made stale (nmo_edit_flags.h). */
 nmo_status_t nmo_runtime_apply_edit_flags(nmo_session_t *session, uint32_t flags);
