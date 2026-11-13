@@ -597,6 +597,48 @@ if(NMO_BUILD_EXAMPLES)
 endif()
 
 # Print configuration summary
+# API reference: `cmake --build <build> --target nmo_docs` writes <build>/docs/html
+# from the public headers and the format and API documents, when Doxygen is found.
+find_package(Doxygen QUIET)
+if(DOXYGEN_FOUND)
+    set(DOXYGEN_PROJECT_NAME "libnmo")
+    set(DOXYGEN_PROJECT_NUMBER "${PROJECT_VERSION}")
+    set(DOXYGEN_PROJECT_BRIEF "${PROJECT_DESCRIPTION}")
+    set(DOXYGEN_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/docs")
+    set(DOXYGEN_GENERATE_LATEX NO)
+    set(DOXYGEN_OPTIMIZE_OUTPUT_FOR_C YES)
+    set(DOXYGEN_EXTRACT_ALL YES)
+    set(DOXYGEN_EXTRACT_STATIC NO)
+    set(DOXYGEN_RECURSIVE YES)
+    set(DOXYGEN_FILE_PATTERNS "*.h" "*.md")
+    set(DOXYGEN_STRIP_FROM_PATH "${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}")
+    set(DOXYGEN_STRIP_FROM_INC_PATH "${PROJECT_SOURCE_DIR}/include")
+    set(DOXYGEN_USE_MDFILE_AS_MAINPAGE "${PROJECT_SOURCE_DIR}/README.md")
+    set(DOXYGEN_MARKDOWN_SUPPORT YES)
+    set(DOXYGEN_ENABLE_PREPROCESSING YES)
+    set(DOXYGEN_MACRO_EXPANSION YES)
+    set(DOXYGEN_EXPAND_ONLY_PREDEF YES)
+    set(DOXYGEN_PREDEFINED "NMO_API=")
+    # Headers mark who owns a returned pointer with @ownership
+    set(DOXYGEN_ALIASES "ownership=@par Ownership:^^")
+    # Heading anchors as GitHub makes them, which the documents link to
+    set(DOXYGEN_MARKDOWN_ID_STYLE GITHUB)
+    set(DOXYGEN_EXCLUDE "${PROJECT_SOURCE_DIR}/docs/Virtools")
+    set(DOXYGEN_INCLUDED_BY_GRAPH NO)
+    set(DOXYGEN_DOT_GRAPH_MAX_NODES 100)
+    set(DOXYGEN_WARN_IF_UNDOCUMENTED NO)
+    set(DOXYGEN_WARN_IF_INCOMPLETE_DOC NO)
+    set(DOXYGEN_QUIET YES)
+    doxygen_add_docs(nmo_docs
+        "${PROJECT_SOURCE_DIR}/include"
+        "${PROJECT_SOURCE_DIR}/README.md"
+        "${PROJECT_SOURCE_DIR}/CHANGELOG.md"
+        "${PROJECT_SOURCE_DIR}/CONTRIBUTING.md"
+        "${PROJECT_SOURCE_DIR}/docs"
+        WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
+        COMMENT "Generating the libnmo API reference")
+endif()
+
 message(STATUS "")
 message(STATUS "libnmo configuration summary:")
 message(STATUS "  Version:       ${PROJECT_VERSION}")
@@ -608,6 +650,7 @@ message(STATUS "  Build tools:   ${NMO_BUILD_TOOLS}")
 message(STATUS "  Build examples: ${NMO_BUILD_EXAMPLES}")
 message(STATUS "  Enable SIMD:   ${NMO_ENABLE_SIMD}")
 message(STATUS "  Build shared:  ${NMO_BUILD_SHARED}")
+message(STATUS "  API reference: ${DOXYGEN_FOUND} (target nmo_docs)")
 message(STATUS "  MinGW static runtime: ${NMO_MINGW_STATIC_RUNTIME}")
 message(STATUS "  ZLIB found:    ${ZLIB_FOUND}")
 message(STATUS "  yyjson found:  ${YYJSON_FOUND}")
