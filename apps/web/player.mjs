@@ -9,7 +9,7 @@
 
 import createNmoPlayer from './nmo-player.mjs';
 import {planGame, writeGameFile, removeTree, listTree} from './games.mjs';
-import {PROFILES, profileById, registryFor} from './profiles.mjs';
+import {PROFILES, loadProfiles, profileById, registryFor} from './profiles.mjs';
 import {openLibrary} from './library.mjs';
 import {zipFiles, writeZip} from './zip.mjs';
 import {KeyRemapper, Gamepads, buildTouchControls, keyName} from './input.mjs';
@@ -338,9 +338,6 @@ function startPage() {
     const planForm = $('plan');
     const planEntry = $('plan-entry');
     const planProfile = $('plan-profile');
-    for (const profile of PROFILES) {
-        planProfile.append(new Option(profile.name, profile.id));
-    }
 
     const currentPlan = () => planGame(pending.files.map(([path]) => path), {
         entry: planEntry.value,
@@ -1047,7 +1044,13 @@ function startPage() {
         $('ios-note').hidden = false;
     }
 
-    const opened = openLibrary().then(async (opened) => {
+    /* The game profiles (profiles.json), then the library they describe */
+    const opened = loadProfiles().catch((error) => {
+        devtools.print(`Could not read the game profiles (profiles.json): ${error.message}`, true);
+    }).then(() => {
+        planProfile.replaceChildren(...PROFILES.map((profile) => new Option(profile.name, profile.id)));
+        return openLibrary();
+    }).then(async (opened) => {
         library = opened;
         await refreshLibrary();
         const params = new URLSearchParams(location.search);

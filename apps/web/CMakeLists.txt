@@ -20,7 +20,7 @@ endforeach()
 
 # The page: index.html and the modules it loads (the CI job publishes these)
 set(NMO_PLAYER_PAGE_FILES index.html player.css player.mjs run_node.mjs
-    games.mjs profiles.mjs library.mjs zip.mjs input.mjs devtools.mjs)
+    games.mjs profiles.mjs profiles.json library.mjs zip.mjs input.mjs devtools.mjs)
 
 if(EMSCRIPTEN)
     set_target_properties(nmo_player PROPERTIES OUTPUT_NAME nmo-player SUFFIX ".mjs")

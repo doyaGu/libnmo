@@ -1,0 +1,40 @@
+{
+  "profiles": [
+    {
+      "id": "ballance",
+      "name": "Ballance",
+      "match": {"files": ["base.cmo", "database.tdb"]},
+      "entry": "base.cmo",
+      "files": {"include": ["base.cmo", "database.tdb", "3d entities", "textures", "sounds", "text"]},
+      "keys": ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "Space", "Enter", "Escape"],
+      "touch": {"dpad": true, "buttons": ["Enter", "Escape", "Space", "ShiftLeft"]},
+      "gamepad": {
+        "stick": "arrows",
+        "buttons": {"0": "Enter", "1": "Escape", "2": "Space", "3": "ShiftLeft", "4": "ShiftLeft", "5": "ShiftLeft", "9": "Escape"}
+      },
+      "settings": [
+        {
+          "id": "language",
+          "label": "Language",
+          "registry": "Software\\Ballance\\Settings\\Language",
+          "options": [["0", "Deutsch"], ["1", "English"], ["2", "Español"], ["3", "Italiano"], ["4", "Français"]],
+          "default": "1"
+        }
+      ],
+      "hint": "The arrow keys roll the ball, Shift with an arrow turns the camera, Space looks from above, Esc opens the menu."
+    },
+    {
+      "id": "generic",
+      "name": "Virtools game",
+      "files": {"exclude": [".exe", ".dll", ".pdb"]},
+      "keys": ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter", "Escape", "Space", "ShiftLeft", "ControlLeft"],
+      "touch": {"dpad": true, "buttons": ["Enter", "Escape", "Space", "ShiftLeft"]},
+      "gamepad": {
+        "stick": "arrows",
+        "buttons": {"0": "Enter", "1": "Escape", "2": "Space", "3": "ShiftLeft", "9": "Escape"}
+      },
+      "settings": [],
+      "hint": "The game reads the keyboard and the mouse; a gamepad works as a joystick and as the arrow keys."
+    }
+  ]
+}

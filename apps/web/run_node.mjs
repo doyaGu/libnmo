@@ -6,7 +6,7 @@
 //
 // GAME is a folder or a single .cmo/.vmo. The composition is the one the
 // page would pick (--entry names another, by its path inside GAME), and
-// --profile picks a game profile (profiles.mjs) the page would otherwise
+// --profile picks a game profile (profiles.json) the page would otherwise
 // guess, with its registry settings at their defaults. Files the player
 // writes under /out (--shot /out/menu.png@760) are copied to --out (default:
 // the current folder). The exit code is the player's.
@@ -15,7 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import createNmoPlayer from './nmo-player.mjs';
 import { planGame, writeGameFile } from './games.mjs';
-import { registryFor } from './profiles.mjs';
+import { loadProfiles, registryFor } from './profiles.mjs';
 
 const args = process.argv.slice(2);
 const dashes = args.indexOf('--');
@@ -54,6 +54,7 @@ function listFiles(folder, prefix = '') {
     return found;
 }
 
+await loadProfiles();
 const single = fs.statSync(game).isFile();
 const folder = single ? path.dirname(game) : game;
 const plan = planGame(single ? [path.basename(game)] : listFiles(folder), options);

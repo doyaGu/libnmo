@@ -1,59 +1,69 @@
-// What the player knows about particular games: a profile says how to find
-// a game's composition among the files it is given, which of them the game
-// reads, which registry settings it offers, which keys it plays with (for
-// remapping, a gamepad and the touch screen buttons) and a line on how to
-// play. Any Virtools game runs with the generic profile; the others only
-// make a known game nicer to start.
+// Game profiles: what the player knows about particular games, as data in
+// profiles.json next to this module. A profile says how to recognize a game
+// among the files it is given ("match": base names that must all be there,
+// any case), which composition it starts from ("entry", a base name), which
+// of its files the game reads ("files": "include" the first path parts, or
+// "exclude" extensions), its registry "settings", the "keys" it plays with
+// (for remapping), its "touch" buttons and "gamepad" keys, and a "hint" on
+// how to play. A profile without "match" never recognizes a game; the one
+// with id "generic" is what any other game runs with.
 
-/* Keys a game commonly plays with, by KeyboardEvent.code */
-const ARROWS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
-
-/* The generic gamepad: stick and D-pad steer with the arrows; buttons in the
-   standard mapping's order (0 A/cross, 1 B/circle, 2 X/square, 3 Y/triangle,
-   4/5 shoulders, 8 back/select, 9 start) */
-const GAMEPAD_KEYS = {0: 'Enter', 1: 'Escape', 2: 'Space', 3: 'ShiftLeft', 9: 'Escape'};
-
-export const GENERIC = {
+/* What runs a game when profiles.json could not be read */
+const FALLBACK = {
     id: 'generic',
     name: 'Virtools game',
-    keys: [...ARROWS, 'Enter', 'Escape', 'Space', 'ShiftLeft', 'ControlLeft'],
-    touch: {dpad: true, buttons: ['Enter', 'Escape', 'Space', 'ShiftLeft']},
-    gamepad: {stick: 'arrows', buttons: GAMEPAD_KEYS},
+    keys: ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Escape', 'Space'],
+    touch: {dpad: true, buttons: ['Enter', 'Escape', 'Space']},
+    gamepad: {stick: 'arrows', buttons: {}},
     settings: [],
-    hint: 'The game reads the keyboard and the mouse; a gamepad works as a joystick and as the arrow keys.',
-    /* No guess at the composition: the shortest path among them */
-    entry: null,
-    /* Every file but the Windows player's own programs */
-    keep: (inner) => !/\.(exe|dll|pdb)$/i.test(inner),
+    hint: '',
 };
 
-/* The parts of a Ballance folder the game reads, by their first path part (any case) */
-const BALLANCE_PARTS = ['base.cmo', 'database.tdb', '3d entities', 'textures', 'sounds', 'text'];
+function baseName(path) {
+    return path.split('/').pop().toLowerCase();
+}
 
-export const BALLANCE = {
-    id: 'ballance',
-    name: 'Ballance',
-    keys: [...ARROWS, 'ShiftLeft', 'Space', 'Enter', 'Escape'],
-    touch: {dpad: true, buttons: ['Enter', 'Escape', 'Space', 'ShiftLeft']},
-    gamepad: {stick: 'arrows', buttons: {0: 'Enter', 1: 'Escape', 2: 'Space', 3: 'ShiftLeft', 4: 'ShiftLeft', 5: 'ShiftLeft', 9: 'Escape'}},
-    settings: [{
-        id: 'language',
-        label: 'Language',
-        registry: 'Software\\Ballance\\Settings\\Language',
-        options: [['0', 'Deutsch'], ['1', 'English'], ['2', 'Español'], ['3', 'Italiano'], ['4', 'Français']],
-        default: '1',
-    }],
-    hint: 'The arrow keys roll the ball, Shift with an arrow turns the camera, Space looks from above, Esc opens the menu.',
-    /* The folder holding base.cmo and Database.tdb is the game's */
-    detect: (paths) => {
-        const names = new Set(paths.map((path) => path.split('/').pop().toLowerCase()));
-        return names.has('base.cmo') && names.has('database.tdb');
-    },
-    entry: (candidates) => candidates.find((path) => path.split('/').pop().toLowerCase() === 'base.cmo') ?? null,
-    keep: (inner) => BALLANCE_PARTS.includes(inner.split('/')[0].toLowerCase()),
-};
+/*
+ * A profile from its JSON: the data as it is, with functions for what
+ * games.mjs asks of it: detect(paths), entry(candidates) and keep(inner).
+ */
+function makeProfile(data) {
+    const profile = {...FALLBACK, ...data};
+    const required = (data.match?.files ?? []).map((name) => name.toLowerCase());
+    profile.detect = required.length === 0 ? null : (paths) => {
+        const names = new Set(paths.map(baseName));
+        return required.every((name) => names.has(name));
+    };
+    const entry = data.entry?.toLowerCase();
+    profile.entry = entry ? (candidates) => candidates.find((path) => baseName(path) === entry) ?? null : null;
+    const include = data.files?.include?.map((part) => part.toLowerCase());
+    const exclude = data.files?.exclude?.map((extension) => extension.toLowerCase()) ?? [];
+    profile.keep = include
+        ? (inner) => include.includes(inner.split('/')[0].toLowerCase())
+        : (inner) => !exclude.some((extension) => inner.toLowerCase().endsWith(extension));
+    return profile;
+}
 
-export const PROFILES = [BALLANCE, GENERIC];
+export let PROFILES = [makeProfile(FALLBACK)];
+export let GENERIC = PROFILES[0];
+
+/* Use the profiles in `data` (profiles.json's contents) */
+export function setProfiles(data) {
+    PROFILES = (data?.profiles ?? []).map(makeProfile);
+    GENERIC = PROFILES.find((profile) => profile.id === 'generic') ?? makeProfile(FALLBACK);
+    if (!PROFILES.includes(GENERIC)) {
+        PROFILES.push(GENERIC);
+    }
+}
+
+/* Read profiles.json, from the page's server or (in Node.js) its folder */
+export async function loadProfiles() {
+    const url = new URL('./profiles.json', import.meta.url);
+    const text = url.protocol === 'file:'
+        ? await (await import('node:fs/promises')).readFile(url, 'utf8')
+        : await (await fetch(url)).text();
+    setProfiles(JSON.parse(text));
+}
 
 export function profileById(id) {
     return PROFILES.find((profile) => profile.id === id) ?? GENERIC;

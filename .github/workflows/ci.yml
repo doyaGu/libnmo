@@ -254,6 +254,7 @@ jobs:
             build/apps/web/*.html
             build/apps/web/*.mjs
             build/apps/web/*.css
+            build/apps/web/*.json
             build/apps/web/nmo-player.wasm
             build/apps/web/nmo-player.data
 
