@@ -3,7 +3,6 @@
     --bg: #f6f6f4;
     --fg: #1d1d1b;
     --muted: #66655f;
-    --panel: #ffffff;
     --line: #d9d8d2;
     --accent: #2f6f4f;
     --error: #a3271f;
@@ -14,15 +13,30 @@
         --bg: #161615;
         --fg: #e9e8e3;
         --muted: #a09f98;
-        --panel: #20201e;
         --line: #3a3a36;
         --accent: #6fbf94;
         --error: #f08a80;
     }
 }
 
+/* The player's own skin: a dark "device" look, the same in a light or dark
+   page (like a media player embed keeps its own chrome either way). */
+:root {
+    --chrome-top: #3c3c3c;
+    --chrome-bottom: #202020;
+    --chrome-fg: #e8e8e6;
+    --chrome-fg-dim: #8a8a87;
+    --chrome-hover: rgba(255, 255, 255, 0.12);
+    --chrome-accent: #4fd38a;
+}
+
 * {
     box-sizing: border-box;
+}
+
+/* Some engines don't display:none an SVG's own [hidden] by default */
+[hidden] {
+    display: none !important;
 }
 
 body {
@@ -33,50 +47,121 @@ body {
     font: 15px/1.5 system-ui, sans-serif;
 }
 
-header,
 main {
-    max-width: 1280px;
+    max-width: 960px;
     margin: 0 auto;
 }
 
 h1 {
-    margin: 0 0 4px;
-    font-size: 22px;
+    margin: 0 0 14px;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--muted);
 }
 
-header p {
-    margin: 0 0 20px;
-    max-width: 680px;
-    color: var(--muted);
+/* ---- The player widget: a stage, an overlay poster, a control bar ---- */
+
+#player {
+    display: flex;
+    flex-direction: column;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #000;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px rgba(0, 0, 0, 0.28);
+}
+
+#stage {
+    position: relative;
+    width: 100%;
+    background: #000;
+    overflow: hidden;
+}
+
+/* Only playing locks the stage to 4:3: before that, the poster's own
+   content sizes it (comfortably, even narrow where 4:3 would be short). */
+body.playing #stage {
+    aspect-ratio: 4 / 3;
+}
+
+/* The stage box, not the canvas, keeps 4:3: absolute positioning (rather
+   than a percentage height in normal flow) stops the canvas's own backing
+   size (SDL's, often not 4:3 itself once it accounts for the device pixel
+   ratio) from setting the stage's height through it. */
+#canvas {
+    display: block;
+    position: absolute;
+    inset: 0;
+    width: 100% !important;
+    height: 100% !important;
+    background: #000;
+    outline: none;
+}
+
+/* position: relative (not absolute) so it sizes the stage pre-play instead
+   of being sized by it; z-index puts it above the absolutely-positioned
+   canvas regardless. */
+#poster {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 24px;
+    background: radial-gradient(ellipse at top, #2a2a2a, #0c0c0c 70%);
+    color: var(--chrome-fg);
+}
+
+body.playing #poster {
+    display: none;
+}
+
+#poster-body {
+    width: 100%;
+    max-width: 440px;
+    text-align: center;
+}
+
+.lede {
+    margin: 0 0 18px;
+    color: #b9b8b4;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.lede code {
+    color: #e8e8e6;
 }
 
 #drop {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 12px;
-    padding: 20px;
-    border: 2px dashed var(--line);
+    justify-content: center;
+    gap: 10px;
+    padding: 18px;
+    border: 2px dashed #4a4a48;
     border-radius: 8px;
-    background: var(--panel);
+    background: rgba(255, 255, 255, 0.03);
 }
 
 #drop.over {
-    border-color: var(--accent);
+    border-color: var(--chrome-accent);
+    background: rgba(79, 211, 138, 0.08);
 }
 
 #drop span {
-    color: var(--muted);
+    color: var(--chrome-fg-dim);
+    font-size: 13px;
 }
 
 .button,
-button,
 select {
     font: inherit;
-    padding: 6px 14px;
-    border: 1px solid var(--line);
+    padding: 7px 14px;
+    border: 1px solid #4a4a48;
     border-radius: 6px;
-    background: var(--panel);
-    color: var(--fg);
+    background: #2c2c2a;
+    color: var(--chrome-fg);
     cursor: pointer;
 }
 
@@ -84,78 +169,157 @@ select {
     display: none;
 }
 
-#start {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--bg);
+#loadbar {
+    height: 6px;
+    margin: 16px 0 4px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.1);
+    overflow: hidden;
 }
 
-#start:disabled {
-    opacity: 0.4;
-    cursor: default;
+#loadfill {
+    height: 100%;
+    width: 0%;
+    background: var(--chrome-accent);
+    transition: width 0.15s ease-out;
+}
+
+#status {
+    margin: 10px 0 0;
+    color: var(--chrome-fg-dim);
+    font-size: 13px;
 }
 
 .row {
     display: flex;
     align-items: center;
-    gap: 12px;
-    margin-top: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin-top: 18px;
 }
 
-progress {
-    width: 100%;
-    margin-top: 12px;
+.play-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font: inherit;
+    font-weight: 600;
+    padding: 9px 20px 9px 16px;
+    border: none;
+    border-radius: 999px;
+    background: var(--chrome-accent);
+    color: #0a1f12;
+    cursor: pointer;
 }
 
-#status {
-    color: var(--muted);
+.play-button svg {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
 }
 
-#screen {
-    display: none;
+.play-button:disabled {
+    opacity: 0.35;
+    cursor: default;
 }
 
-body.playing #setup {
-    display: none;
+/* ---- The control bar, always visible, like a media player's own ---- */
+
+#controlbar {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 42px;
+    padding: 0 8px;
+    background: linear-gradient(to bottom, var(--chrome-top), var(--chrome-bottom));
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-body.playing #screen {
-    display: block;
+.icon-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 30px;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--chrome-fg);
+    cursor: pointer;
 }
 
-/* SDL sizes the canvas inline; the page fits it to the width, keeping 4:3 */
-#canvas {
-    display: block;
-    width: min(100%, 1280px) !important;
-    height: auto !important;
-    aspect-ratio: 4 / 3;
-    background: #000;
-    outline: none;
+.icon-button svg {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
 }
 
-#canvas:fullscreen {
-    width: auto !important;
-    height: 100% !important;
-    margin: 0 auto;
+.icon-button:hover:not(:disabled) {
+    background: var(--chrome-hover);
+}
+
+.icon-button:disabled {
+    color: var(--chrome-fg-dim);
+    opacity: 0.5;
+    cursor: default;
 }
 
 #fps {
-    color: var(--muted);
+    margin-left: 4px;
+    min-width: 4.5em;
+    color: var(--chrome-fg-dim);
+    font: 12px/1 ui-monospace, monospace;
     font-variant-numeric: tabular-nums;
-    min-width: 5em;
 }
+
+.spacer {
+    flex: 1;
+}
+
+/* ---- Full screen keeps the control bar; only the stage grows ---- */
+
+#player:fullscreen,
+#player:-webkit-full-screen {
+    width: 100vw;
+    height: 100vh;
+    border-radius: 0;
+}
+
+#player:fullscreen #stage,
+#player:-webkit-full-screen #stage {
+    flex: 1 1 auto;
+    aspect-ratio: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#player:fullscreen #canvas,
+#player:-webkit-full-screen #canvas {
+    position: static;
+    inset: auto;
+    width: auto !important;
+    height: 100% !important;
+    max-width: 100%;
+    aspect-ratio: 4 / 3;
+}
+
+/* ---- Supporting text below the widget ---- */
 
 #log-box {
     margin-top: 20px;
+    color: var(--muted);
 }
 
 #log {
     max-height: 240px;
     overflow: auto;
+    margin-top: 8px;
     padding: 8px;
     border: 1px solid var(--line);
     border-radius: 6px;
-    background: var(--panel);
     font: 12px/1.4 ui-monospace, monospace;
     white-space: pre-wrap;
 }

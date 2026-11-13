@@ -94,14 +94,27 @@ async function droppedFiles(items) {
     return files;
 }
 
+/* An SVG icon's `hidden` attribute, set through `toggleAttribute`: some
+   engines don't reflect the `hidden` IDL property on SVG elements. */
+function setHidden(element, hidden) {
+    element.toggleAttribute('hidden', hidden);
+}
+
 function startPage() {
     const $ = (id) => document.getElementById(id);
     const status = $('status');
-    const progress = $('progress');
+    const loadbar = $('loadbar');
+    const loadfill = $('loadfill');
     const startButton = $('start');
     const log = $('log');
     const language = $('language');
+    const playPause = $('playpause');
+    const muteButton = $('mute');
+    const fullscreenButton = $('fullscreen');
     let gameReady = false;
+    let paused = false;
+    let muted = false;
+    let fpsTimer = null;
 
     for (const [value, label] of LANGUAGES) {
         const option = document.createElement('option');
@@ -111,9 +124,12 @@ function startPage() {
     }
     try {
         language.value = localStorage.getItem('nmo-player-language') ?? '1';
+        muted = localStorage.getItem('nmo-player-muted') === '1';
     } catch {
         language.value = '1';
     }
+    setHidden($('mute').querySelector('.icon-unmuted'), muted);
+    setHidden($('mute').querySelector('.icon-muted'), !muted);
 
     const print = (text, error) => {
         const line = document.createElement('div');
@@ -140,8 +156,19 @@ function startPage() {
         printErr: (text) => print(text, true),
         persistSaves: persist,
         onPlayerExit: (code) => {
-            status.textContent = code === 0 ? 'The game has ended.' : 'The game stopped with an error (see the log).';
+            status.textContent = code === 0 ? 'The game has ended. Press Start to play again.' : 'The game stopped with an error (see the log).';
             document.body.classList.remove('playing');
+            if (fpsTimer !== null) {
+                clearInterval(fpsTimer);
+                fpsTimer = null;
+            }
+            $('fps').textContent = '';
+            paused = false;
+            setHidden(playPause.querySelector('.icon-pause'), false);
+            setHidden(playPause.querySelector('.icon-play'), true);
+            playPause.disabled = true;
+            muteButton.disabled = true;
+            fullscreenButton.disabled = true;
         },
     }).then(async (created) => {
         module = created;
@@ -164,15 +191,14 @@ function startPage() {
         const byPath = new Map(files);
         const player = await ready;
         startButton.disabled = true;
-        progress.hidden = false;
-        progress.max = selected.length;
+        loadbar.hidden = false;
         let done = 0;
         for (const [source, inner] of selected) {
             const data = new Uint8Array(await byPath.get(source).arrayBuffer());
             writeGameFile(player, '/game/' + inner, data);
             done++;
             if (done % 25 === 0 || done === selected.length) {
-                progress.value = done;
+                loadfill.style.width = `${(100 * done) / selected.length}%`;
                 status.textContent = `Copied ${done} of ${selected.length} files…`;
             }
         }
@@ -208,7 +234,7 @@ function startPage() {
             /* the choice is only remembered where storage works */
         }
         document.body.classList.add('playing');
-        status.textContent = 'Playing. Esc pauses; the arrow keys roll the ball.';
+        status.textContent = 'Playing. The arrow keys roll the ball; Esc opens the game\'s menu.';
         const canvas = $('canvas');
         canvas.focus();
         const scale = window.innerWidth >= 1340 && window.innerHeight >= 1080 ? '2' : '1';
@@ -223,15 +249,51 @@ function startPage() {
             document.body.classList.remove('playing');
             return;
         }
+        player._player_set_mute(muted ? 1 : 0);
+        paused = false;
+        playPause.disabled = false;
+        muteButton.disabled = false;
+        fullscreenButton.disabled = false;
         let frames = player._player_frames();
-        setInterval(() => {
+        fpsTimer = setInterval(() => {
             const now = player._player_frames();
-            $('fps').textContent = `${now - frames} fps`;
+            $('fps').textContent = paused ? 'paused' : `${now - frames} fps`;
             frames = now;
         }, 1000);
     });
 
-    $('fullscreen').addEventListener('click', () => $('canvas').requestFullscreen?.());
+    playPause.addEventListener('click', async () => {
+        const player = await ready;
+        paused = !paused;
+        if (paused) {
+            player._player_pause();
+        } else {
+            player._player_resume();
+        }
+        setHidden(playPause.querySelector('.icon-pause'), paused);
+        setHidden(playPause.querySelector('.icon-play'), !paused);
+    });
+
+    muteButton.addEventListener('click', async () => {
+        const player = await ready;
+        muted = !muted;
+        player._player_set_mute(muted ? 1 : 0);
+        setHidden(muteButton.querySelector('.icon-unmuted'), muted);
+        setHidden(muteButton.querySelector('.icon-muted'), !muted);
+        try {
+            localStorage.setItem('nmo-player-muted', muted ? '1' : '0');
+        } catch {
+            /* the choice is only remembered where storage works */
+        }
+    });
+
+    fullscreenButton.addEventListener('click', () => {
+        if (document.fullscreenElement) {
+            document.exitFullscreen();
+        } else {
+            $('player').requestFullscreen?.();
+        }
+    });
 
     /* For tests: load files fetched from a list of URLs, as a chosen folder would */
     globalThis.nmoPlayer = {

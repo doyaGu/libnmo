@@ -8,35 +8,66 @@
 <script type="module" src="player.mjs"></script>
 </head>
 <body>
-<header>
-  <h1>nmo player</h1>
-  <p>Runs a Virtools game with libnmo's engine, compiled to WebAssembly. Choose your own
-     Ballance folder (the one holding <code>base.cmo</code>): its files are copied into
-     this tab's memory and never leave your computer. Saves stay in this browser.</p>
-</header>
-
 <main>
-  <section id="setup">
-    <div id="drop">
-      <label class="button">Choose the Ballance folder
-        <input id="folder" type="file" webkitdirectory directory multiple>
-      </label>
-      <span>or drop it here</span>
-    </div>
-    <div class="row">
-      <label>Language <select id="language"></select></label>
-      <button id="start" disabled>Start</button>
-    </div>
-    <progress id="progress" value="0" hidden></progress>
-  </section>
+  <h1>nmo player</h1>
 
-  <p id="status">Waiting for the game folder.</p>
+  <div id="player">
+    <div id="stage">
+      <canvas id="canvas" tabindex="0" oncontextmenu="event.preventDefault()"></canvas>
 
-  <div id="screen">
-    <canvas id="canvas" tabindex="0" oncontextmenu="event.preventDefault()"></canvas>
-    <div class="row">
+      <div id="poster">
+        <div id="poster-body">
+          <p class="lede">Runs a Virtools game with libnmo's engine, compiled to WebAssembly.
+             Choose your own Ballance folder (the one holding <code>base.cmo</code>): its files
+             are copied into this tab's memory and never leave your computer. Saves stay in
+             this browser.</p>
+
+          <div id="drop">
+            <label class="button">Choose the Ballance folder
+              <input id="folder" type="file" webkitdirectory directory multiple>
+            </label>
+            <span>or drop it here</span>
+          </div>
+
+          <div id="loadbar" hidden>
+            <div id="loadfill"></div>
+          </div>
+
+          <p id="status">Waiting for the game folder.</p>
+
+          <div class="row">
+            <label>Language <select id="language"></select></label>
+            <button id="start" class="play-button" disabled>
+              <svg viewBox="0 0 20 20" aria-hidden="true"><polygon points="6,4 16,10 6,16"/></svg>
+              Start
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="controlbar">
+      <button id="playpause" class="icon-button" disabled title="Play/Pause" aria-label="Play/Pause">
+        <svg class="icon-pause" viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.5" height="12"/><rect x="11.5" y="4" width="3.5" height="12"/></svg>
+        <svg class="icon-play" viewBox="0 0 20 20" aria-hidden="true" hidden><polygon points="5,3 16,10 5,17"/></svg>
+      </button>
+      <button id="mute" class="icon-button" disabled title="Mute" aria-label="Mute">
+        <svg class="icon-unmuted" viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M3 7.5v5h3.2l4.3 3.6V3.9L6.2 7.5H3z"/>
+          <path d="M13.3 7a3.6 3.6 0 0 1 0 6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+        <svg class="icon-muted" viewBox="0 0 20 20" aria-hidden="true" hidden>
+          <path d="M3 7.5v5h3.2l4.3 3.6V3.9L6.2 7.5H3z"/>
+          <path d="M13 7.5l4 4m0-4l-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+      </button>
       <span id="fps"></span>
-      <button id="fullscreen">Full screen</button>
+      <span class="spacer"></span>
+      <button id="fullscreen" class="icon-button" disabled title="Full screen" aria-label="Full screen">
+        <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 7.5V3h4.5M12.5 3H17v4.5M17 12.5V17h-4.5M7.5 17H3v-4.5"/>
+        </svg>
+      </button>
     </div>
   </div>
 

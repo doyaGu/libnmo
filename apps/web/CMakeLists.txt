@@ -34,7 +34,7 @@ if(EMSCRIPTEN)
         -sMODULARIZE=1 -sEXPORT_ES6=1 -sEXPORT_NAME=createNmoPlayer
         -sINVOKE_RUN=0 -sENVIRONMENT=web,node
         -sEXPORTED_RUNTIME_METHODS=FS,IDBFS,callMain
-        -sEXPORTED_FUNCTIONS=_main,_player_frames,_player_exit_code
+        -sEXPORTED_FUNCTIONS=_main,_player_frames,_player_exit_code,_player_pause,_player_resume,_player_set_mute
         # WebGL 2 / GLES3 for the GL3 backend (nmo_render_gl3): see src/render/CMakeLists.txt's
         # comment on why these can't just be nmo_render_gl3's own INTERFACE link options.
         -sMAX_WEBGL_VERSION=2 -sMIN_WEBGL_VERSION=2 -sFULL_ES3=1

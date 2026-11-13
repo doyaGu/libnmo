@@ -93,6 +93,7 @@ typedef struct player {
     uint32_t frame;       /* frames run */
     double last_step;     /* the window's clock when the engine last stepped */
     int exit_code;
+    bool muted;            /* --mute, or the page's mute button (player_set_mute) */
 } player_t;
 
 static int player_usage(void)
@@ -201,6 +202,7 @@ static nmo_status_t player_write(void *user_data, const char *name, const void *
 static nmo_status_t player_open(player_t *player)
 {
     const player_args_t *args = &player->args;
+    player->muted = args->mute;
     nmo_context_desc_t desc;
     memset(&desc, 0, sizeof(desc));
     desc.data_dir = PLAYER_DATA_DIR;
@@ -417,7 +419,7 @@ static player_tick_result_t player_tick(player_t *player)
             player->exit_code = 1;
             return PLAYER_TICK_DONE;
         }
-        if (!args->mute) {
+        if (!player->muted) {
             nmo_view_play_sounds(player->view);
         }
     }
@@ -463,6 +465,27 @@ int player_exit_code(void)
 {
     return g_player.exit_code;
 }
+
+#ifdef __EMSCRIPTEN__
+/* The page's play/pause and mute buttons */
+EMSCRIPTEN_KEEPALIVE
+void player_pause(void)
+{
+    emscripten_pause_main_loop();
+}
+
+EMSCRIPTEN_KEEPALIVE
+void player_resume(void)
+{
+    emscripten_resume_main_loop();
+}
+
+EMSCRIPTEN_KEEPALIVE
+void player_set_mute(int muted)
+{
+    g_player.muted = muted != 0;
+}
+#endif
 
 int main(int argc, char **argv)
 {
