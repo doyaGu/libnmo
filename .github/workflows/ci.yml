@@ -197,6 +197,9 @@ jobs:
   # the library shared here and runs the binding's tests against it; they read
   # a sample kept beside them, so they need no Virtools files. A missing Python
   # leaves the test unregistered, which --no-tests=error turns into a failure.
+  # CMake takes the Python on PATH, not the one the Windows registry names:
+  # the MinGW job needs MSYS2's, whose folder holds the MinGW runtime DLLs
+  # libnmo.dll loads (Python looks for a DLL's dependencies on no PATH).
   shared-library:
     name: shared-${{ matrix.platform }}
     runs-on: ${{ matrix.os }}
@@ -254,7 +257,9 @@ jobs:
         uses: ./.github/actions/setup-msvc
 
       - name: Configure
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DNMO_BUILD_SHARED=ON -DNMO_BUILD_TOOLS=OFF
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          -DNMO_BUILD_SHARED=ON -DNMO_BUILD_TOOLS=OFF -DPython3_FIND_REGISTRY=NEVER
 
       - name: Build
         run: cmake --build build --target nmo

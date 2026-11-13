@@ -274,6 +274,11 @@ with nmo.open("Level_01.NMO") as doc:
 profile="objects")` loads the object table only and reads an object's state
 when `Object.load_state()` asks for it.
 
+A MinGW build of `libnmo.dll` loads MinGW's runtime DLLs, and Python on Windows
+does not look for a DLL's dependencies on `PATH`. MSYS2's own Python finds them,
+as they sit beside it; another Python needs `os.add_dll_directory()` on MinGW's
+`bin` folder (`ucrt64\bin` under MSYS2) before `import nmo`.
+
 ---
 
 ## Architecture
