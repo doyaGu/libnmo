@@ -51,6 +51,84 @@ export function writeGameFile(module, path, data) {
     module.FS.writeFile(path, data);
 }
 
+/* ---- A .zip of the Ballance folder, read without a library: the browser's
+   own DecompressionStream does the one compression method (deflate) a zip
+   actually needs. Reads the central directory for the names (cheap, no
+   decompression), so the caller can run the same selectGameFiles over it a
+   folder's paths go through, then decompresses only the files it keeps. ---- */
+
+const ZIP_EOCD_SIGNATURE = 0x06054b50;
+const ZIP_CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50;
+const ZIP_LOCAL_FILE_SIGNATURE = 0x04034b50;
+
+/* Every entry's name and where to find its data, from the directory at the
+   end of the zip (not the local headers scattered through it, which a
+   streamed/appended zip can disagree with). */
+export function readZipEntries(buffer) {
+    const view = new DataView(buffer);
+    const bytes = new Uint8Array(buffer);
+    const shortest = 22; /* the EOCD record holds no comment */
+    const longestComment = 65535;
+    let eocd = -1;
+    for (let i = bytes.length - shortest; i >= Math.max(0, bytes.length - shortest - longestComment); i--) {
+        if (view.getUint32(i, true) === ZIP_EOCD_SIGNATURE) {
+            eocd = i;
+            break;
+        }
+    }
+    if (eocd < 0) {
+        throw new Error('no end-of-central-directory record (not a zip file?)');
+    }
+    const entryCount = view.getUint16(eocd + 10, true);
+    let offset = view.getUint32(eocd + 16, true);
+    const entries = [];
+    for (let i = 0; i < entryCount; i++) {
+        if (view.getUint32(offset, true) !== ZIP_CENTRAL_DIRECTORY_SIGNATURE) {
+            throw new Error('a central directory entry is not where it should be');
+        }
+        const flags = view.getUint16(offset + 8, true);
+        const method = view.getUint16(offset + 10, true);
+        const compressedSize = view.getUint32(offset + 20, true);
+        const nameLength = view.getUint16(offset + 28, true);
+        const extraLength = view.getUint16(offset + 30, true);
+        const commentLength = view.getUint16(offset + 32, true);
+        const localHeaderOffset = view.getUint32(offset + 42, true);
+        const nameBytes = bytes.subarray(offset + 46, offset + 46 + nameLength);
+        const name = flags & 0x0800
+            ? new TextDecoder('utf-8').decode(nameBytes)
+            : String.fromCharCode(...nameBytes); /* plain ASCII either way for this game's files */
+        entries.push({name, method, compressedSize, localHeaderOffset});
+        offset += 46 + nameLength + extraLength + commentLength;
+    }
+    return entries;
+}
+
+/* One entry's bytes, decompressed; the local header's own name/extra
+   lengths (not the central directory's, which can differ) say where they
+   start. */
+export async function readZipEntryData(buffer, entry) {
+    const view = new DataView(buffer);
+    const bytes = new Uint8Array(buffer);
+    if (view.getUint32(entry.localHeaderOffset, true) !== ZIP_LOCAL_FILE_SIGNATURE) {
+        throw new Error(`"${entry.name}" has no local file header where its central directory entry points`);
+    }
+    const nameLength = view.getUint16(entry.localHeaderOffset + 26, true);
+    const extraLength = view.getUint16(entry.localHeaderOffset + 28, true);
+    const start = entry.localHeaderOffset + 30 + nameLength + extraLength;
+    const compressed = bytes.subarray(start, start + entry.compressedSize);
+    if (entry.method === 0) {
+        return compressed;
+    }
+    if (entry.method === 8) {
+        if (typeof DecompressionStream === 'undefined') {
+            throw new Error("this browser can't inflate a zip's compressed files");
+        }
+        const stream = new Blob([compressed]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+        return new Uint8Array(await new Response(stream).arrayBuffer());
+    }
+    throw new Error(`"${entry.name}" uses zip compression method ${entry.method}, not store or deflate`);
+}
+
 /* ---- The page ---- */
 
 const LANGUAGES = [
@@ -256,7 +334,7 @@ function startPage() {
     const load = async (files) => {
         const selected = selectGameFiles(files.map(([path]) => path));
         if (selected.length === 0) {
-            status.textContent = 'That folder has no base.cmo. Choose the Ballance folder.';
+            status.textContent = "That has no base.cmo. Choose the Ballance folder, or a .zip of it.";
             return;
         }
         const byPath = new Map(files);
@@ -278,9 +356,39 @@ function startPage() {
         startButton.disabled = false;
     };
 
+    /* A zip entry wrapped to look like the File/Blob `load` already reads
+       (byPath.get(source).arrayBuffer()): decompressed lazily, only for the
+       entries selectGameFiles actually keeps. */
+    const loadZip = async (file) => {
+        let buffer;
+        try {
+            buffer = await file.arrayBuffer();
+        } catch (error) {
+            status.textContent = `Could not read ${file.name}: ${error.message}`;
+            return;
+        }
+        let entries;
+        try {
+            entries = readZipEntries(buffer);
+        } catch (error) {
+            status.textContent = `${file.name} does not look like a zip file (${error.message}).`;
+            return;
+        }
+        const files = entries
+            .filter((entry) => !entry.name.endsWith('/'))
+            .map((entry) => [entry.name, {arrayBuffer: () => readZipEntryData(buffer, entry)}]);
+        await load(files);
+    };
+
     $('folder').addEventListener('change', (event) => {
         const files = [...event.target.files].map((file) => [file.webkitRelativePath || file.name, file]);
         load(files);
+    });
+    $('zipfile').addEventListener('change', (event) => {
+        const file = event.target.files[0];
+        if (file) {
+            loadZip(file);
+        }
     });
     const drop = $('drop');
     drop.addEventListener('dragover', (event) => {
@@ -291,7 +399,16 @@ function startPage() {
     drop.addEventListener('drop', async (event) => {
         event.preventDefault();
         drop.classList.remove('over');
-        load(await droppedFiles([...event.dataTransfer.items]));
+        const items = [...event.dataTransfer.items];
+        /* A single dropped .zip (not a folder) skips the tree walk entirely */
+        if (items.length === 1 && items[0].kind === 'file') {
+            const file = items[0].getAsFile();
+            if (file && /\.zip$/i.test(file.name)) {
+                await loadZip(file);
+                return;
+            }
+        }
+        load(await droppedFiles(items));
     });
 
     startButton.addEventListener('click', async () => {
@@ -431,6 +548,11 @@ function startPage() {
                 files.push([path, await response.blob()]);
             }
             await load(files);
+        },
+        /* For tests: load a zip fetched from a URL, as a dropped/chosen one would */
+        loadZipFromUrl: async (url) => {
+            const response = await fetch(url);
+            await loadZip(new File([await response.blob()], url.split('/').pop()));
         },
         ready,
     };

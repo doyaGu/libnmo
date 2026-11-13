@@ -41,15 +41,19 @@
       <div id="poster">
         <div id="poster-body">
           <p class="lede">Runs a Virtools game with libnmo's engine, compiled to WebAssembly.
-             Choose your own Ballance folder (the one holding <code>base.cmo</code>): its files
-             are copied into this tab's memory and never leave your computer. Saves stay in
-             this browser.</p>
+             Choose your own Ballance folder (the one holding <code>base.cmo</code>), or a
+             <code>.zip</code> of it: its files are copied into this tab's memory (unzipped
+             right here, never uploaded) and never leave your computer. Saves stay in this
+             browser.</p>
 
           <div id="drop">
             <label class="button">Choose the Ballance folder
               <input id="folder" type="file" webkitdirectory directory multiple>
             </label>
-            <span>or drop it here</span>
+            <label class="button">or a .zip of it
+              <input id="zipfile" type="file" accept=".zip,application/zip,application/x-zip-compressed">
+            </label>
+            <span>or drop either here</span>
           </div>
 
           <p id="ios-note" hidden>iOS Safari's folder picker can be unreliable here — if Start
