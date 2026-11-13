@@ -24,6 +24,9 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Get the Lua sources
+        uses: ./.github/actions/lua-source
+
       - name: Install Ninja
         run: sudo apt-get update && sudo apt-get install -y ninja-build
 
@@ -53,6 +56,9 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Get the Lua sources
+        uses: ./.github/actions/lua-source
+
       - name: Install Ninja
         run: sudo apt-get update && sudo apt-get install -y ninja-build
 
@@ -80,6 +86,9 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
+
+      - name: Get the Lua sources
+        uses: ./.github/actions/lua-source
 
       - name: Install Ninja
         run: sudo apt-get update && sudo apt-get install -y ninja-build
@@ -135,6 +144,9 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
+
+      - name: Get the Lua sources
+        uses: ./.github/actions/lua-source
 
       # Ubuntu has no SDL3 package: built from its release, without X11 or
       # Wayland (the job opens no window, and X11 brings a dozen packages).
@@ -227,6 +239,9 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Get the Lua sources
+        uses: ./.github/actions/lua-source
+
       - uses: actions/setup-python@v7
         if: ${{ !matrix.mingw }}
         with:
@@ -300,6 +315,9 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
+
+      - name: Get the Lua sources
+        uses: ./.github/actions/lua-source
 
       - uses: actions/setup-python@v7
         if: ${{ !matrix.mingw }}

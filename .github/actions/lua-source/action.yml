@@ -1,0 +1,62 @@
+name: Lua sources
+description: >-
+  Unpack the Lua release that deps/CMakeLists.txt names into deps/lua, where
+  the configure step takes it instead of downloading it. The tarball is kept
+  in the Actions cache, so lua.org, whose downloads fail now and then, is
+  asked for it only when the version changes; every job checks it against
+  the SHA-256 that deps/CMakeLists.txt gives.
+runs:
+  using: composite
+  steps:
+    # deps/CMakeLists.txt is the one place that names the release.
+    - id: release
+      shell: bash
+      run: |
+        value() {
+          awk -v name="set($1" '$1 == name { gsub(/[")]/, "", $2); print $2 }' deps/CMakeLists.txt
+        }
+        version=$(value NMO_LUA_VERSION)
+        sha256=$(value NMO_LUA_SHA256)
+        url=$(value NMO_LUA_URL)
+        url=${url//'${NMO_LUA_VERSION}'/$version}
+        if [ -z "$version" ] || [ -z "$sha256" ] || [ -z "$url" ]; then
+          echo "::error::deps/CMakeLists.txt gives no NMO_LUA_VERSION, NMO_LUA_SHA256 or NMO_LUA_URL"
+          exit 1
+        fi
+        {
+          echo "version=$version"
+          echo "sha256=$sha256"
+          echo "url=$url"
+        } >> "$GITHUB_OUTPUT"
+
+    - id: cache
+      uses: actions/cache@v6
+      with:
+        path: ${{ runner.temp }}/lua-release
+        key: lua-${{ steps.release.outputs.version }}-${{ steps.release.outputs.sha256 }}
+
+    - if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        DIR: ${{ runner.temp }}/lua-release
+        VERSION: ${{ steps.release.outputs.version }}
+        URL: ${{ steps.release.outputs.url }}
+      run: |
+        cmake -E make_directory "$DIR"
+        curl -fsSL --retry 5 --retry-all-errors --retry-delay 10 -o "$DIR/lua-$VERSION.tar.gz" "$URL"
+
+    - shell: bash
+      env:
+        DIR: ${{ runner.temp }}/lua-release
+        VERSION: ${{ steps.release.outputs.version }}
+        SHA256: ${{ steps.release.outputs.sha256 }}
+      run: |
+        archive="$DIR/lua-$VERSION.tar.gz"
+        actual=$(cmake -E sha256sum "$archive" | cut -d ' ' -f 1)
+        if [ "$actual" != "$SHA256" ]; then
+          echo "::error::lua-$VERSION.tar.gz has SHA-256 $actual, deps/CMakeLists.txt gives $SHA256"
+          exit 1
+        fi
+        cd deps
+        cmake -E tar xzf "$archive"
+        cmake -E rename "lua-$VERSION" lua
