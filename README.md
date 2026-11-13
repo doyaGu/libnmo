@@ -112,7 +112,8 @@ Library `nmo_lua` (`nmo_lua.h`).
 
 - `nmo_render` draws the frames of the behavior engine (`nmo_engine_render_frame()`) as CK2's
   Direct3D 7 rasterizer does, through a backend interface with three backends: a software
-  rasterizer (built by default, no GPU or window needed), OpenGL 2.1, and SDL_GPU (Metal or Vulkan)
+  rasterizer (built by default, no GPU or window needed), OpenGL 2.1, and SDL_GPU (Metal, Vulkan or
+  Direct3D 12)
 - `nmo_view` shows the frames in an SDL3 window with either GPU backend and plays the engine's
   sounds (`nmo behavior run --window`); `--headless` draws shot frames in memory instead
 
@@ -369,7 +370,7 @@ and the viewer and are not installed:
 | `nmo_render`     | `NMO_RENDER`     | -            | The front end: the engine's frames turned into a backend's draws |
 | `nmo_render_soft`| `NMO_RENDER`     | -            | A software rasterizer drawing into memory (`nmo_render_soft_pixels()`) |
 | `nmo_render_gl`  | `NMO_RENDER_GL`  | OpenGL       | The OpenGL 2.1 backend, in the context current in the host; the functions past 1.1 come from the host's loader (`nmo_render_create_gl(engine, loader, &render)`, where SDL's is `SDL_GL_GetProcAddress`) |
-| `nmo_render_gpu` | `NMO_RENDER_GPU` | SDL3         | The SDL_GPU backend: a device on Metal or Vulkan, in a window or offscreen |
+| `nmo_render_gpu` | `NMO_RENDER_GPU` | SDL3         | The SDL_GPU backend: a device on Metal, Vulkan or Direct3D 12, in a window or offscreen |
 | `nmo_view`       | `NMO_VIEWER`     | SDL3, OpenGL | The SDL3 window, drawing with either GPU backend (implies both)  |
 
 The IVP provider uses libivp's build options directly. A fresh build with a
@@ -629,7 +630,8 @@ on every pull request, and on `v*` tags:
   variable filled with a pattern, and under MemorySanitizer, for reads of memory never written
 - **`render-backends`**: a build with `NMO_VIEWER` (the OpenGL and SDL_GPU backends and the
   viewer) against SDL3 on Linux, macOS, Windows MSVC and Windows MinGW, then the render, viewer
-  and layering tests; only the macOS runner has a GPU, elsewhere the SDL_GPU tests skip
+  and layering tests; the SDL_GPU tests draw with Metal on macOS and with Direct3D 12 on Windows,
+  and skip on Linux, whose runner has no GPU
 - **`shared-library`**: libnmo built with `NMO_BUILD_SHARED=ON` on the same four systems, then
   `test_python_binding`, which reads a sample kept in `bindings/python/tests/data`
 - **`package`**: one Release build per platform (Linux x64 on Ubuntu 22.04,

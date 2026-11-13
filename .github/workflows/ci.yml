@@ -113,9 +113,9 @@ jobs:
   # The renderer's graphics backends and the window (NMO_VIEWER: OpenGL,
   # SDL_GPU and SDL3) are left out of the release builds, which have no
   # SDL3; built here on every system, so code only one of them compiles does
-  # not get in. Of the runners only the macOS one has a GPU to draw with: the
-  # SDL_GPU tests skip elsewhere, and the software backend's tests carry the
-  # pixels.
+  # not get in. The SDL_GPU tests draw with Metal on macOS and with Direct3D 12
+  # on Windows; the Linux runner has no GPU, so they skip there, and the
+  # software backend's tests carry the pixels.
   render-backends:
     name: render-${{ matrix.platform }}
     runs-on: ${{ matrix.os }}
