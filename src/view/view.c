@@ -7,6 +7,7 @@
  */
 
 #include "engine/nmo_view.h"
+#include "engine/nmo_engine_render.h"
 #include "render/nmo_render_soft.h"
 #ifdef NMO_HAS_RENDER_GL
 #include "render/nmo_render_gl.h"
@@ -286,16 +287,20 @@ double nmo_view_time(const nmo_view_t *view)
  * The window
  * ============================================================================ */
 
-static SDL_Window *view_create_window(const char *title, int scale, SDL_WindowFlags flags)
+/* A window `scale` times the size of the engine's render context, as its screen mode has it */
+static SDL_Window *view_create_window(const nmo_engine_t *engine, const char *title, int scale,
+                                      SDL_WindowFlags flags)
 {
-    return SDL_CreateWindow(title != NULL ? title : "nmo", 640 * scale, 480 * scale,
+    int32_t width = 640, height = 480;
+    nmo_engine_screen_mode_info(nmo_engine_screen_mode(engine), &width, &height, NULL);
+    return SDL_CreateWindow(title != NULL ? title : "nmo", width * scale, height * scale,
                             flags | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
 }
 
 /* The window and an SDL renderer showing the frames the software backend draws */
 static nmo_status_t view_open_soft(nmo_view_t *view, const char *title, int scale)
 {
-    view->window = view_create_window(title, scale, 0);
+    view->window = view_create_window(view->engine, title, scale, 0);
     view->renderer = view->window != NULL ? SDL_CreateRenderer(view->window, NULL) : NULL;
     if (view->renderer == NULL) {
         fprintf(stderr, "Error: Could not open a window (%s)\n", SDL_GetError());
@@ -309,7 +314,7 @@ static nmo_status_t view_open_soft(nmo_view_t *view, const char *title, int scal
 /* The window and its SDL GPU device, which the renderer claims */
 static nmo_status_t view_open_gpu(nmo_view_t *view, const char *title, int scale)
 {
-    view->window = view_create_window(title, scale, 0);
+    view->window = view_create_window(view->engine, title, scale, 0);
     view->device = view->window != NULL
                        ? SDL_CreateGPUDevice((SDL_GPUShaderFormat)nmo_render_gpu_shader_formats(), false, NULL)
                        : NULL;
@@ -340,7 +345,7 @@ static nmo_status_t view_open_gl(nmo_view_t *view, const char *title, int scale)
     for (int samples = 4; samples >= 0 && view->context == NULL; samples -= 4) {
         SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, samples > 0 ? 1 : 0);
         SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, samples);
-        view->window = view_create_window(title, scale, SDL_WINDOW_OPENGL);
+        view->window = view_create_window(view->engine, title, scale, SDL_WINDOW_OPENGL);
         view->context = view->window != NULL ? SDL_GL_CreateContext(view->window) : NULL;
         if (view->context == NULL && view->window != NULL && samples > 0) {
             SDL_DestroyWindow(view->window);
@@ -374,7 +379,7 @@ static nmo_status_t view_open_gl3_try(nmo_view_t *view, const char *title, int s
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
     SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    view->window = view_create_window(title, scale, SDL_WINDOW_OPENGL);
+    view->window = view_create_window(view->engine, title, scale, SDL_WINDOW_OPENGL);
     view->context = view->window != NULL ? SDL_GL_CreateContext(view->window) : NULL;
     nmo_status_t status = NMO_ERR_INVALID_STATE;
     if (view->context != NULL) {
