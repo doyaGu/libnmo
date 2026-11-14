@@ -14,8 +14,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import createNmoPlayer from './nmo-player.mjs';
-import { planGame, writeGameFile } from './games.mjs';
-import { loadProfiles, registryFor } from './profiles.mjs';
+import { GAME_FOLDER, planGame, playerArguments, writeGameFile } from './games.mjs';
+import { loadProfiles } from './profiles.mjs';
 
 const args = process.argv.slice(2);
 const dashes = args.indexOf('--');
@@ -36,7 +36,10 @@ for (let i = 0; i < own.length; i++) {
     }
 }
 if (game === null) {
-    console.error('Usage: node run_node.mjs GAME [--entry PATH] [--profile ID] [--out DIR] -- [player options]');
+    console.error(
+        'Usage: node run_node.mjs GAME [--entry PATH] [--profile ID] [--out DIR] ' +
+            '-- [player options]'
+    );
     process.exit(2);
 }
 
@@ -67,12 +70,14 @@ const player = await createNmoPlayer({
     printErr: (text) => console.error(text),
 });
 for (const [source, inner] of plan.files) {
-    writeGameFile(player, '/game/' + inner, fs.readFileSync(path.join(folder, source)));
+    writeGameFile(player, `${GAME_FOLDER}/${inner}`, fs.readFileSync(path.join(folder, source)));
 }
 player.FS.mkdir('/out');
-const registry = registryFor(plan.profile);
-const registryArgs = registry && !playerArgs.includes('--registry') ? ['--registry', registry] : [];
-const code = player.callMain([...registryArgs, '--path', '/game', ...playerArgs, '/game/' + plan.inner]);
+/* The profile's registry options at their defaults, unless the options give the registry */
+const profile = playerArgs.includes('--registry')
+    ? { ...plan.profile, settings: [] }
+    : plan.profile;
+const code = player.callMain(playerArguments({ profile, entry: plan.inner, more: playerArgs }));
 fs.mkdirSync(outFolder, { recursive: true });
 for (const name of player.FS.readdir('/out')) {
     if (name !== '.' && name !== '..') {

@@ -14,6 +14,8 @@
  *       --headless       draw only the --shot frames, in memory, without a window
  *       --renderer gl3|soft  what the window draws with (default: gl3, falling back to
  *                        soft where the context has no OpenGL 3.3/ES 3.0/WebGL 2)
+ *       --size WxH       the render context's size, a screen mode of the engine's
+ *                        driver (default: 640x480, as the game starts)
  *       --scale N        the window's size, N times the render context's
  *       -n N             frames to run (default: until the window closes)
  *       --delta MS       a fixed frame time (default: the time that passed;
@@ -80,10 +82,23 @@ typedef struct player_args {
     bool mute;
     bool no_frame_limit;
     int scale;
+    int32_t width, height; /* --size; 0 for the default screen mode */
     uint32_t frames; /* 0: until the window closes */
     float delta_ms;  /* 0: the time that passed */
     player_renderer_t renderer;
 } player_args_t;
+
+/* One event of a trace as the page reads it, straight from memory: six 32-bit words */
+typedef struct player_trace_record {
+    uint32_t kind; /* nmo_engine_event_kind_t */
+    uint32_t frame;
+    uint32_t behavior;
+    uint32_t object;
+    int32_t result;
+    uint32_t depth;
+} player_trace_record_t;
+
+_Static_assert(sizeof(player_trace_record_t) == 24u, "the page reads a record as 6 words");
 
 typedef struct player {
     player_args_t args;
@@ -113,9 +128,13 @@ typedef struct player {
     double step_ms;       /* how long the last frame took the engine */
     double draw_ms;       /* and drawing it */
     char *label;          /* player_label's last answer */
+    float matrix[16];     /* player_entity_matrix's last answer */
+    const void *param;    /* player_param_value's last answer: the value's bytes */
+    char param_type[NMO_GUID_STRING_SIZE]; /* and its type */
     /* player_trace: the events of the next frames */
-    nmo_engine_event_t *trace;
+    player_trace_record_t *trace;
     size_t trace_count, trace_capacity;
+    size_t trace_dropped; /* events past PLAYER_TRACE_LIMIT, or that found no memory */
     int trace_frames;     /* frames still to record; 0 when not recording */
 } player_t;
 
@@ -123,8 +142,9 @@ static int player_usage(void)
 {
     fprintf(stderr,
             "Usage: player [--registry SPEC] [--path DIR] [--write DIR] [--physics none|ivp]\n"
-            "              [--headless] [--renderer gl3|soft] [--scale N] [-n N] [--delta MS]\n"
-            "              [--no-frame-limit] [--keys SPEC] [--shot FILE@FRAME,...] [--mute] FILE\n");
+            "              [--headless] [--renderer gl3|soft] [--size WxH] [--scale N] [-n N]\n"
+            "              [--delta MS] [--no-frame-limit] [--keys SPEC] [--shot FILE@FRAME,...]\n"
+            "              [--mute] FILE\n");
     return 2;
 }
 
@@ -151,6 +171,9 @@ static bool player_parse(int argc, char **argv, player_args_t *out)
         } else if (strcmp(arg, "--renderer") == 0 && value != NULL &&
                    (strcmp(value, "gl3") == 0 || strcmp(value, "soft") == 0)) {
             out->renderer = strcmp(value, "gl3") == 0 ? PLAYER_RENDERER_GL3 : PLAYER_RENDERER_SOFT;
+        } else if (strcmp(arg, "--size") == 0 && value != NULL &&
+                   sscanf(value, "%dx%d", &out->width, &out->height) == 2) {
+            /* checked against the screen modes once there is an engine */
         } else if (strcmp(arg, "--scale") == 0 && value != NULL && atoi(value) >= 1) {
             out->scale = atoi(value);
         } else if (strcmp(arg, "-n") == 0 && value != NULL) {
@@ -242,7 +265,23 @@ static void player_apply_volume(player_t *player)
 #endif
 }
 
-/* The document, its engine with the block packs and physics, and the window or memory it draws in */
+/* The render context's size: the first screen mode that size (the 16-bit one, as a game
+   starts in); NMO_ERR_INVALID_ARGUMENT when the driver has none */
+static nmo_status_t player_set_size(nmo_engine_t *engine, int32_t width, int32_t height)
+{
+    int32_t count = nmo_engine_screen_mode_count();
+    for (int32_t mode = 0; mode < count; mode++) {
+        int32_t mode_width = 0, mode_height = 0;
+        nmo_engine_screen_mode_info(mode, &mode_width, &mode_height, NULL);
+        if (mode_width == width && mode_height == height) {
+            return nmo_engine_set_screen_mode(engine, mode);
+        }
+    }
+    return NMO_ERR_INVALID_ARGUMENT;
+}
+
+/* The document, its engine with the block packs and physics, and the window or memory it
+   draws in */
 static nmo_status_t player_open(player_t *player)
 {
     const player_args_t *args = &player->args;
@@ -287,19 +326,27 @@ static nmo_status_t player_open(player_t *player)
         fprintf(stderr, "Error: Could not create the engine (%s)\n", nmo_error_string(status));
         return status;
     }
+    if (args->width != 0 || args->height != 0) {
+        status = player_set_size(player->engine, args->width, args->height);
+        if (status != NMO_OK) {
+            fprintf(stderr, "Error: The engine has no %dx%d screen mode\n", args->width,
+                    args->height);
+            return status;
+        }
+    }
 
     if (args->headless) {
         status = nmo_render_create_soft(player->engine, &player->render);
     } else {
 #ifdef NMO_HAS_VIEW
-        nmo_view_renderer_t renderer =
-            args->renderer == PLAYER_RENDERER_SOFT ||
-                    (args->renderer == PLAYER_RENDERER_AUTO && !nmo_view_has_renderer(NMO_VIEW_RENDERER_GL3))
-                ? NMO_VIEW_RENDERER_SOFT
-                : NMO_VIEW_RENDERER_GL3;
-        status = nmo_view_open_with(player->engine, args->file, args->scale, renderer, &player->view);
-        if (status != NMO_OK && renderer == NMO_VIEW_RENDERER_GL3 && args->renderer == PLAYER_RENDERER_AUTO) {
-            /* The context came up without WebGL 2/GL ES 3.0/GL 3.3: the software renderer instead */
+        bool soft = args->renderer == PLAYER_RENDERER_SOFT ||
+                    (args->renderer == PLAYER_RENDERER_AUTO &&
+                     !nmo_view_has_renderer(NMO_VIEW_RENDERER_GL3));
+        nmo_view_renderer_t renderer = soft ? NMO_VIEW_RENDERER_SOFT : NMO_VIEW_RENDERER_GL3;
+        status = nmo_view_open_with(player->engine, args->file, args->scale, renderer,
+                                    &player->view);
+        if (status != NMO_OK && !soft && args->renderer == PLAYER_RENDERER_AUTO) {
+            /* The context came up without WebGL 2/GL ES 3.0/GL 3.3: the software renderer */
             fprintf(stderr, "GL3 is not available here; falling back to the software renderer\n");
             status = nmo_view_open_with(player->engine, args->file, args->scale,
                                         NMO_VIEW_RENDERER_SOFT, &player->view);
@@ -374,7 +421,7 @@ static void player_close(player_t *player)
     player->label = NULL;
     free(player->trace);
     player->trace = NULL;
-    player->trace_count = player->trace_capacity = 0u;
+    player->trace_count = player->trace_capacity = player->trace_dropped = 0u;
     player->trace_frames = 0;
 }
 
@@ -388,8 +435,9 @@ static nmo_status_t player_save(player_t *player, const char *path)
     }
 #endif
     if (player->render != NULL) {
-        int width = 0, height = 0;
-        nmo_render_frame_size(player->render, &width, &height);
+        /* At the render context's size, as its screen mode has it now */
+        int32_t width = 640, height = 480;
+        nmo_engine_screen_mode_info(nmo_engine_screen_mode(player->engine), &width, &height, NULL);
         status = nmo_render_screenshot(player->render, width, height, path);
     }
     if (status != NMO_OK) {
@@ -432,27 +480,34 @@ static void player_print_console(player_t *player)
 }
 
 #ifdef __EMSCRIPTEN__
-/* player_trace's recorder: each event of the frames being traced */
+/* player_trace's recorder: each event of the frames being traced, until PLAYER_TRACE_LIMIT */
 static void player_on_trace(const nmo_engine_event_t *event, void *user_data)
 {
     player_t *player = (player_t *)user_data;
     if (player->trace_count == player->trace_capacity) {
-        if (player->trace_capacity >= PLAYER_TRACE_LIMIT) {
-            return;
-        }
         size_t capacity = player->trace_capacity == 0u ? 4096u : player->trace_capacity * 2u;
         if (capacity > PLAYER_TRACE_LIMIT) {
             capacity = PLAYER_TRACE_LIMIT;
         }
-        nmo_engine_event_t *grown =
-            (nmo_engine_event_t *)realloc(player->trace, capacity * sizeof(*grown));
+        player_trace_record_t *grown =
+            capacity > player->trace_capacity
+                ? (player_trace_record_t *)realloc(player->trace, capacity * sizeof(*grown))
+                : NULL;
         if (grown == NULL) {
+            player->trace_dropped++;
             return;
         }
         player->trace = grown;
         player->trace_capacity = capacity;
     }
-    player->trace[player->trace_count++] = *event;
+    player->trace[player->trace_count++] = (player_trace_record_t){
+        .kind = (uint32_t)event->kind,
+        .frame = (uint32_t)event->frame,
+        .behavior = event->behavior_id,
+        .object = event->object_id,
+        .result = event->result,
+        .depth = event->depth,
+    };
 }
 #endif
 
@@ -761,14 +816,14 @@ PLAYER_EXPORT const char *player_class_name(int class_id)
     return g_running ? nmo_document_class_name(g_player.document, (nmo_class_id_t)class_id) : NULL;
 }
 
-/* Bit 0: the object is active in the scene; bit 1: it is visible */
-PLAYER_EXPORT int player_object_state(uint32_t id)
+PLAYER_EXPORT int player_object_active(uint32_t id)
 {
-    if (!g_running) {
-        return 0;
-    }
-    return (nmo_engine_object_is_active(g_player.engine, id) ? 1 : 0) |
-           (nmo_engine_object_is_visible(g_player.engine, id) ? 2 : 0);
+    return g_running && nmo_engine_object_is_active(g_player.engine, id);
+}
+
+PLAYER_EXPORT int player_object_visible(uint32_t id)
+{
+    return g_running && nmo_engine_object_is_visible(g_player.engine, id);
 }
 
 PLAYER_EXPORT int player_script_count(void)
@@ -808,19 +863,93 @@ PLAYER_EXPORT double player_behavior_executions(uint32_t id)
     return g_running ? (double)nmo_engine_behavior_execution_count(g_player.engine, id) : 0.0;
 }
 
+/* CKBEHAVIOR_* flags of a behavior now; 0 for anything else */
+PLAYER_EXPORT uint32_t player_behavior_flags(uint32_t id)
+{
+    return g_running ? nmo_engine_behavior_flags(g_player.engine, id) : 0u;
+}
+
+/* A 3D entity's world (or, with `world` 0, local) matrix, 16 floats by rows,
+   valid until the next call; NULL for anything else */
+PLAYER_EXPORT const float *player_entity_matrix(uint32_t id, int world)
+{
+    if (!g_running) {
+        return NULL;
+    }
+    bool found = world ? nmo_engine_entity_world_matrix(g_player.engine, id, g_player.matrix)
+                       : nmo_engine_entity_local_matrix(g_player.engine, id, g_player.matrix);
+    return found ? g_player.matrix : NULL;
+}
+
+PLAYER_EXPORT uint32_t player_entity_parent(uint32_t id)
+{
+    return g_running ? nmo_engine_entity_parent(g_player.engine, id) : 0u;
+}
+
+/* The value a parameter holds now: its size in bytes (then its bytes from
+   player_param_bytes and its type's GUID from player_param_type, valid until
+   the next call into the engine), or -1 when `id` holds none */
+PLAYER_EXPORT int player_param_value(uint32_t id)
+{
+    const void *data = NULL;
+    size_t size = 0u;
+    nmo_guid_t type = {0u, 0u};
+    if (!g_running ||
+        nmo_engine_param_value(g_player.engine, id, &data, &size, &type) != NMO_OK ||
+        size > (size_t)INT32_MAX) {
+        g_player.param = NULL;
+        g_player.param_type[0] = '\0';
+        return -1;
+    }
+    g_player.param = data;
+    nmo_guid_format(type, g_player.param_type, sizeof(g_player.param_type));
+    return (int)size;
+}
+
+PLAYER_EXPORT const void *player_param_bytes(void)
+{
+    return g_player.param;
+}
+
+PLAYER_EXPORT const char *player_param_type(void)
+{
+    return g_player.param_type;
+}
+
 PLAYER_EXPORT const char *player_message_name(int type)
 {
     return g_running ? nmo_engine_message_type_name(g_player.engine, type) : NULL;
 }
 
+/* The screen modes a game can be started in (--size), from the engine's driver */
+PLAYER_EXPORT int player_screen_mode_count(void)
+{
+    return nmo_engine_screen_mode_count();
+}
+
+PLAYER_EXPORT int player_screen_mode_width(int mode)
+{
+    int32_t width = 0;
+    nmo_engine_screen_mode_info(mode, &width, NULL, NULL);
+    return width;
+}
+
+PLAYER_EXPORT int player_screen_mode_height(int mode)
+{
+    int32_t height = 0;
+    nmo_engine_screen_mode_info(mode, NULL, &height, NULL);
+    return height;
+}
+
 /* Record what the behavior engine does in the next `frames` frames; read it
-   with the player_trace_* functions once player_tracing() says it is done */
+   with player_trace_records once player_tracing says it is done */
 PLAYER_EXPORT void player_trace(int frames)
 {
     if (!g_running || frames <= 0) {
         return;
     }
     g_player.trace_count = 0u;
+    g_player.trace_dropped = 0u;
     g_player.trace_frames = frames;
     nmo_engine_set_trace(g_player.engine, player_on_trace, &g_player);
 }
@@ -830,64 +959,57 @@ PLAYER_EXPORT int player_tracing(void)
     return g_player.trace_frames > 0;
 }
 
+/* The trace: player_trace_count records of 6 words (player_trace_record_t) */
+PLAYER_EXPORT const player_trace_record_t *player_trace_records(void)
+{
+    return g_player.trace;
+}
+
 PLAYER_EXPORT int player_trace_count(void)
 {
     return (int)g_player.trace_count;
 }
 
-PLAYER_EXPORT int player_trace_kind(int index)
+/* Events the trace has no room for */
+PLAYER_EXPORT double player_trace_dropped(void)
 {
-    return (int)g_player.trace[index].kind;
+    return (double)g_player.trace_dropped;
 }
 
-PLAYER_EXPORT double player_trace_frame(int index)
+/* What a record's kind means, in a few words */
+PLAYER_EXPORT const char *player_trace_kind_name(int kind)
 {
-    return (double)g_player.trace[index].frame;
+    switch ((nmo_engine_event_kind_t)kind) {
+    case NMO_ENGINE_EVENT_FRAME_BEGIN: return "frame begin";
+    case NMO_ENGINE_EVENT_FRAME_END: return "frame end";
+    case NMO_ENGINE_EVENT_ACTIVATE: return "activate";
+    case NMO_ENGINE_EVENT_EXECUTE: return "execute";
+    case NMO_ENGINE_EVENT_LINK: return "link";
+    case NMO_ENGINE_EVENT_LINK_DELAYED: return "link delayed";
+    case NMO_ENGINE_EVENT_LINK_ARRIVED: return "link arrived";
+    case NMO_ENGINE_EVENT_OPERATION: return "operation";
+    case NMO_ENGINE_EVENT_UNKNOWN_BLOCK: return "unknown block";
+    case NMO_ENGINE_EVENT_INFINITE_LOOP: return "infinite loop";
+    case NMO_ENGINE_EVENT_MESSAGE_SENT: return "message sent";
+    case NMO_ENGINE_EVENT_MESSAGE_RECEIVED: return "message received";
+    case NMO_ENGINE_EVENT_EFFECT: return "effect";
+    case NMO_ENGINE_EVENT_FILE_LOADED: return "file loaded";
+    }
+    return "";
 }
-
-PLAYER_EXPORT uint32_t player_trace_behavior(int index)
-{
-    return g_player.trace[index].behavior_id;
-}
-
-PLAYER_EXPORT uint32_t player_trace_object(int index)
-{
-    return g_player.trace[index].object_id;
-}
-
-PLAYER_EXPORT int player_trace_result(int index)
-{
-    return g_player.trace[index].result;
-}
-
-PLAYER_EXPORT int player_trace_depth(int index)
-{
-    return (int)g_player.trace[index].depth;
-}
-#endif /* __EMSCRIPTEN__ */
 
 /* Frames run so far (the page shows the rate) */
-#ifdef __EMSCRIPTEN__
-EMSCRIPTEN_KEEPALIVE
-#endif
-uint32_t player_frames(void)
+PLAYER_EXPORT uint32_t player_frames(void)
 {
     return g_player.frame;
 }
 
-/* 0 when the run ended well, else 1 */
-#ifdef __EMSCRIPTEN__
-EMSCRIPTEN_KEEPALIVE
-int player_exit_code(void)
+/* 0 when the run (going on, or the last) ended well, else 1 */
+PLAYER_EXPORT int player_exit_code(void)
 {
     return g_running ? g_player.exit_code : g_last_exit_code;
 }
-#else
-int player_exit_code(void)
-{
-    return g_player.exit_code;
-}
-#endif
+#endif /* __EMSCRIPTEN__ */
 
 int main(int argc, char **argv)
 {
@@ -906,12 +1028,12 @@ int main(int argc, char **argv)
     }
 #endif
     for (;;) {
-        player_tick_result_t result_tick = player_tick(player);
-        if (result_tick == PLAYER_TICK_DONE) {
+        player_tick_result_t step = player_tick(player);
+        if (step == PLAYER_TICK_DONE) {
             break;
         }
 #ifdef NMO_HAS_VIEW
-        if (result_tick == PLAYER_TICK_WAITING) {
+        if (step == PLAYER_TICK_WAITING) {
             nmo_view_wait(player->view, 1.0);
         }
 #endif

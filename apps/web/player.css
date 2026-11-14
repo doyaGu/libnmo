@@ -134,21 +134,13 @@ body.playing #poster {
 }
 
 @media (hover: none) and (pointer: coarse) {
-    body.playing:not(.touch-never) #touch-controls {
+    body.playing #touch-controls {
         display: block;
         position: absolute;
         inset: 0;
         z-index: 2;
         pointer-events: none;
     }
-}
-
-body.playing.touch-always #touch-controls {
-    display: block;
-    position: absolute;
-    inset: 0;
-    z-index: 2;
-    pointer-events: none;
 }
 
 #dpad {
@@ -734,6 +726,32 @@ table.editor .button + .button {
     width: 50%;
 }
 
+/* ---- The performance overlay, over the game's top left corner ---- */
+
+#overlay {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 3;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.6);
+    color: #e8e8e6;
+    font: 12px/1.4 ui-monospace, monospace;
+    pointer-events: none;
+}
+
+/* While a game is added, loaded or removed, the library's buttons wait */
+body.busy #games button,
+body.busy #plan button[type="submit"] {
+    pointer-events: none;
+    opacity: 0.5;
+}
+
+#saves-note:empty {
+    display: none;
+}
+
 /* ---- Developer tools ---- */
 
 #devtools {
@@ -870,6 +888,34 @@ table.editor .button + .button {
     height: 90px;
 }
 
+#devtools tr.pickable {
+    cursor: pointer;
+}
+
+#devtools tr.pickable:hover {
+    background: rgba(128, 128, 128, 0.15);
+}
+
+.details {
+    margin-top: 10px;
+}
+
+.details:empty {
+    display: none;
+}
+
+.details-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.details dd {
+    overflow-wrap: anywhere;
+    font: 12px/1.45 ui-monospace, monospace;
+}
+
 .log {
     max-height: 300px;
     overflow: auto;
@@ -884,4 +930,8 @@ table.editor .button + .button {
 
 .log .console {
     color: var(--accent);
+}
+
+.log .warning {
+    color: var(--muted);
 }

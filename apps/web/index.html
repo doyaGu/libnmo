@@ -18,6 +18,7 @@
     <div id="stage">
       <canvas id="canvas" tabindex="0" oncontextmenu="event.preventDefault()"></canvas>
       <div id="touch-controls"></div>
+      <div id="overlay" aria-live="off" hidden></div>
 
       <div id="poster">
         <div id="poster-body">
@@ -74,7 +75,7 @@
     </div>
 
     <div id="controlbar">
-      <button id="playpause" class="icon-button" disabled title="Pause (P)" aria-label="Pause">
+      <button id="playpause" class="icon-button" disabled title="Pause" aria-label="Pause">
         <svg class="icon-pause" viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.5" height="12"/><rect x="11.5" y="4" width="3.5" height="12"/></svg>
         <svg class="icon-play" viewBox="0 0 20 20" aria-hidden="true" hidden><polygon points="5,3 16,10 5,17"/></svg>
       </button>
@@ -86,7 +87,7 @@
       <button id="stop" class="icon-button" disabled title="Stop and go back to the games" aria-label="Stop">
         <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="5" width="10" height="10" rx="1"/></svg>
       </button>
-      <button id="mute" class="icon-button" title="Mute (M)" aria-label="Mute">
+      <button id="mute" class="icon-button" title="Mute" aria-label="Mute">
         <svg class="icon-unmuted" viewBox="0 0 20 20" aria-hidden="true">
           <path d="M3 7.5v5h3.2l4.3 3.6V3.9L6.2 7.5H3z"/>
           <path d="M13.3 7a3.6 3.6 0 0 1 0 6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
@@ -117,7 +118,7 @@
           <path d="M7 6l-4 4 4 4M13 6l4 4-4 4M11 4l-2 12"/>
         </svg>
       </button>
-      <button id="fullscreen" class="icon-button" disabled title="Full screen (F)" aria-label="Full screen">
+      <button id="fullscreen" class="icon-button" disabled title="Full screen" aria-label="Full screen">
         <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
           <path d="M3 7.5V3h4.5M12.5 3H17v4.5M17 12.5V17h-4.5M7.5 17H3v-4.5"/>
         </svg>
@@ -135,6 +136,9 @@
     <h2>Settings</h2>
     <fieldset id="game-settings">
       <legend id="game-settings-title">This game</legend>
+      <div class="grid">
+        <label>Screen size <select id="game-size"></select></label>
+      </div>
       <div id="profile-options">
         <h3 id="profile-options-title">Options</h3>
         <div id="profile-settings" class="grid"></div>
@@ -161,7 +165,7 @@
             <option value="soft">Software</option>
           </select>
         </label>
-        <label>Size
+        <label>Window scale
           <select id="opt-scale">
             <option value="auto">Automatic</option>
             <option value="1">1×</option>
@@ -169,19 +173,13 @@
             <option value="3">3×</option>
           </select>
         </label>
-        <label>Touch buttons
-          <select id="opt-touch">
-            <option value="auto">On touch screens</option>
-            <option value="always">Always</option>
-            <option value="never">Never</option>
-          </select>
-        </label>
       </div>
       <label class="check"><input id="opt-physics" type="checkbox"> Simulate physics</label>
       <label class="check"><input id="opt-frame-limit" type="checkbox"> Keep to the game's frame rate limit</label>
       <label class="check"><input id="opt-gamepad" type="checkbox"> Use gamepads</label>
       <label class="check"><input id="opt-pointer-lock" type="checkbox"> Capture the mouse when the game is clicked (Esc releases it)</label>
-      <p class="dim">The renderer, size, physics and this game's settings take effect when the game (re)starts.</p>
+      <label class="check"><input id="opt-overlay" type="checkbox"> Show the frame rate and timings over the game</label>
+      <p class="dim">The renderer, scale, physics and this game's screen size, options and registry take effect when the game (re)starts.</p>
     </fieldset>
     <div class="row end">
       <button id="settings-restart" class="button" value="restart" hidden>Save and restart</button>
@@ -195,6 +193,7 @@
     <h2 id="saves-title">Saves</h2>
     <p class="dim">What the game wrote, kept in this browser.</p>
     <div class="table-wrap"><table id="saves-table"></table></div>
+    <p id="saves-note" class="dim" role="status"></p>
     <div class="row end">
       <label class="button">Import .zip…<input id="saves-import" type="file" accept=".zip,application/zip"></label>
       <button type="button" id="saves-export" class="button">Export .zip</button>

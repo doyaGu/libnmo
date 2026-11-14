@@ -19,8 +19,9 @@ foreach(_nmo_player_part IN ITEMS nmo_view nmo_physics_ivp)
 endforeach()
 
 # The page: index.html and the modules it loads (the CI job publishes these)
-set(NMO_PLAYER_PAGE_FILES index.html player.css player.mjs run_node.mjs
-    games.mjs profiles.mjs profiles.json library.mjs zip.mjs input.mjs devtools.mjs)
+set(NMO_PLAYER_PAGE_FILES index.html player.css player.mjs run_node.mjs dom.mjs
+    games.mjs profiles.mjs profiles.json library.mjs zip.mjs input.mjs devtools.mjs
+    saves.mjs settings.mjs)
 
 if(EMSCRIPTEN)
     set_target_properties(nmo_player PROPERTIES OUTPUT_NAME nmo-player SUFFIX ".mjs")
@@ -37,7 +38,7 @@ if(EMSCRIPTEN)
     target_link_options(nmo_player PRIVATE
         -sMODULARIZE=1 -sEXPORT_ES6=1 -sEXPORT_NAME=createNmoPlayer
         -sINVOKE_RUN=0 -sENVIRONMENT=web,node
-        -sEXPORTED_RUNTIME_METHODS=FS,IDBFS,callMain,ccall,cwrap,UTF8ToString
+        -sEXPORTED_RUNTIME_METHODS=FS,IDBFS,callMain,ccall,cwrap,UTF8ToString,HEAPU8,HEAP32,HEAPF32
         # _main and the player_* functions player.c marks EMSCRIPTEN_KEEPALIVE
         -sEXPORTED_FUNCTIONS=_main
         # WebGL 2 / GLES3 for the GL3 backend (nmo_render_gl3): see src/render/CMakeLists.txt's

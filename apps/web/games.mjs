@@ -3,24 +3,34 @@
 // relative paths ('/' separators, as a folder picker, a drop, a zip or
 // Node.js's file listing gives them), shared by the page and run_node.mjs.
 
-import {detectProfile, profileById} from './profiles.mjs';
+import { detectProfile, profileById, registryFor } from './profiles.mjs';
 
-/* What a player can start: a composition (.cmo), a player-ready one (.vmo), or an object file (.nmo) */
+/* What a player can start: a composition (.cmo), a player-ready one (.vmo), or an object
+   file (.nmo) */
 export const ENTRY_EXTENSIONS = ['.cmo', '.vmo', '.nmo'];
 
 /* What file systems and archivers leave behind, never a game's */
 function isJunk(path) {
-    return path.split('/').some((part) =>
-        part === '__MACOSX' || part === '.DS_Store' || part === 'Thumbs.db' || part === 'desktop.ini');
+    return path
+        .split('/')
+        .some(
+            (part) =>
+                part === '__MACOSX' ||
+                part === '.DS_Store' ||
+                part === 'Thumbs.db' ||
+                part === 'desktop.ini'
+        );
 }
 
 function depth(path) {
     return path.split('/').length;
 }
 
-/* The compositions among `paths`, shallowest first, then .cmo before .vmo before .nmo, then by name */
+/* The compositions among `paths`, shallowest first, then .cmo before .vmo before .nmo, then by
+   name */
 export function findEntries(paths) {
-    const rank = (path) => ENTRY_EXTENSIONS.findIndex((extension) => path.toLowerCase().endsWith(extension));
+    const rank = (path) =>
+        ENTRY_EXTENSIONS.findIndex((extension) => path.toLowerCase().endsWith(extension));
     return paths
         .filter((path) => !isJunk(path) && rank(path) >= 0)
         .sort((a, b) => depth(a) - depth(b) || rank(a) - rank(b) || a.localeCompare(b));
@@ -59,18 +69,24 @@ export function planGame(paths, options = {}) {
         return null;
     }
     let entry = options.entry && entries.includes(options.entry) ? options.entry : null;
-    entry ??= profile.entry?.(entries) ?? entries[0];
-    const root = profile.detect ? entry.split('/').slice(0, -1).join('/') : commonFolder(usable);
+    entry ??= profile.findEntry(entries) ?? entries[0];
+    /* A game its profile knows lives in its composition's folder */
+    const known = profile.recognizes(usable);
+    const root = known ? entry.split('/').slice(0, -1).join('/') : commonFolder(usable);
     const prefix = root === '' ? '' : root + '/';
     const files = [];
     for (const path of usable) {
         if (path.startsWith(prefix)) {
             const inner = path.slice(prefix.length);
-            if (inner === entry.slice(prefix.length) || profile.keep(inner)) {
+            if (inner === entry.slice(prefix.length) || profile.keeps(inner)) {
                 files.push([path, inner]);
             }
         }
     }
+    const entryName = entry
+        .split('/')
+        .pop()
+        .replace(/\.[^.]+$/, '');
     return {
         profile,
         entries,
@@ -78,8 +94,61 @@ export function planGame(paths, options = {}) {
         inner: entry.slice(prefix.length),
         root,
         files,
-        name: root.split('/').pop() || (profile.detect ? profile.name : entry.split('/').pop().replace(/\.[^.]+$/, '')),
+        name: root.split('/').pop() || (known ? profile.name : entryName),
     };
+}
+
+/* Where the page keeps the game files of the run, and a game's saves */
+export const GAME_FOLDER = '/game';
+export const SAVES_FOLDER = '/save';
+
+export function saveFolder(id) {
+    return `${SAVES_FOLDER}/${id}`;
+}
+
+/*
+ * The player's arguments for a game of `profile` starting from `entry`
+ * (its path inside GAME_FOLDER): its registry values (`values`, the
+ * profile's options, then `registry`, [key, name, value] entries), where
+ * it saves (`write`), and `more` of the player's options before the file.
+ */
+export function playerArguments({
+    profile,
+    entry,
+    values = {},
+    registry = [],
+    write = null,
+    more = [],
+}) {
+    const args = ['--path', GAME_FOLDER];
+    if (write) {
+        args.push('--write', write);
+    }
+    const text = registryFor(profile, values, registry);
+    if (text) {
+        args.push('--registry', text);
+    }
+    return [...args, ...more, `${GAME_FOLDER}/${entry}`];
+}
+
+/*
+ * Saves the page kept straight in SAVES_FOLDER before it kept each game's
+ * apart: whichever game is played first that has files by those names (a
+ * save is a game file written over, read first) takes them into `folder`.
+ */
+export function adoptLooseSaves(module, folder) {
+    if (module.FS.analyzePath(folder).exists) {
+        return false;
+    }
+    const gameNames = new Set(module.FS.readdir(GAME_FOLDER).map((name) => name.toLowerCase()));
+    const loose = module.FS.readdir(SAVES_FOLDER).filter(
+        (name) => name !== '.' && name !== '..' && gameNames.has(name.toLowerCase())
+    );
+    module.FS.mkdir(folder);
+    for (const name of loose) {
+        module.FS.rename(`${SAVES_FOLDER}/${name}`, `${folder}/${name}`);
+    }
+    return loose.length > 0;
 }
 
 /* Write `data` (bytes) at `path` in the module's file system, making its folders */

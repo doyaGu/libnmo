@@ -7,15 +7,37 @@
 
 /* keyCode for the codes the page sends (SDL maps either) */
 const KEY_CODES = {
-    ArrowUp: 38, ArrowDown: 40, ArrowLeft: 37, ArrowRight: 39,
-    Enter: 13, Escape: 27, Space: 32, Tab: 9, Backspace: 8,
-    ShiftLeft: 16, ShiftRight: 16, ControlLeft: 17, ControlRight: 17, AltLeft: 18, AltRight: 18,
+    ArrowUp: 38,
+    ArrowDown: 40,
+    ArrowLeft: 37,
+    ArrowRight: 39,
+    Enter: 13,
+    Escape: 27,
+    Space: 32,
+    Tab: 9,
+    Backspace: 8,
+    ShiftLeft: 16,
+    ShiftRight: 16,
+    ControlLeft: 17,
+    ControlRight: 17,
+    AltLeft: 18,
+    AltRight: 18,
 };
 
 const KEY_NAMES = {
-    ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→',
-    Space: 'Space', Escape: 'Esc', Enter: 'Enter', ShiftLeft: 'Shift', ShiftRight: 'Right Shift',
-    ControlLeft: 'Ctrl', ControlRight: 'Right Ctrl', AltLeft: 'Alt', AltRight: 'Right Alt',
+    ArrowUp: '↑',
+    ArrowDown: '↓',
+    ArrowLeft: '←',
+    ArrowRight: '→',
+    Space: 'Space',
+    Escape: 'Esc',
+    Enter: 'Enter',
+    ShiftLeft: 'Shift',
+    ShiftRight: 'Right Shift',
+    ControlLeft: 'Ctrl',
+    ControlRight: 'Right Ctrl',
+    AltLeft: 'Alt',
+    AltRight: 'Right Alt',
 };
 
 function keyCodeOf(code) {
@@ -73,8 +95,10 @@ export function sendKey(code, down) {
 }
 
 function isEditable(target) {
-    return target instanceof HTMLElement &&
-        (target.isContentEditable || ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName));
+    return (
+        target instanceof HTMLElement &&
+        (target.isContentEditable || ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName))
+    );
 }
 
 /*
@@ -140,10 +164,9 @@ export class KeyRemapper {
 
 /* The POV hat from the standard mapping's D-pad (buttons 12-15), in hundredths of a degree */
 function pointOfView(buttons) {
-    const up = buttons[12]?.pressed, down = buttons[13]?.pressed;
-    const left = buttons[14]?.pressed, right = buttons[15]?.pressed;
-    const x = (right ? 1 : 0) - (left ? 1 : 0);
-    const y = (down ? 1 : 0) - (up ? 1 : 0);
+    const pressed = (index) => (buttons[index]?.pressed ? 1 : 0);
+    const x = pressed(15) - pressed(14);
+    const y = pressed(13) - pressed(12);
     if (x === 0 && y === 0) {
         return -1;
     }
@@ -151,12 +174,34 @@ function pointOfView(buttons) {
     return Math.round(((degrees + 360) % 360) * 100);
 }
 
+/* A joystick no gamepad holds */
+const DETACHED = { attached: false, position: [0, 0, 0], rotation: [0, 0, 0], pov: -1, buttons: 0 };
+
+/* A gamepad as the engine's joystick: the left stick its position, the
+   right stick its rotation, the D-pad its POV hat, bit i for button i */
+function joystickOf(pad) {
+    const axis = (index) => pad.axes[index] ?? 0;
+    let buttons = 0;
+    pad.buttons.forEach((button, index) => {
+        if (button.pressed && index < 32) {
+            buttons |= 1 << index;
+        }
+    });
+    return {
+        attached: true,
+        position: [axis(0), axis(1), 0],
+        rotation: [axis(2), axis(3), 0],
+        pov: pointOfView(pad.buttons),
+        buttons: buttons >>> 0,
+    };
+}
+
 /*
  * Gamepads, read every animation frame: each of the first four is the
- * engine's joystick of the same slot (axes, POV hat and buttons), and the
- * first also presses keys as `mapping` says: {stick: 'arrows' (the stick
- * and D-pad as the arrow keys) or none, buttons: {index: key code}}, the
- * standard mapping's button indices.
+ * engine's joystick of the same slot (setJoystick(slot, state), state as
+ * joystickOf makes it), and the first also presses keys as `mapping`
+ * says: {stick: 'arrows' (the stick and D-pad as the arrow keys) or none,
+ * buttons: {index: key code}}, the standard mapping's button indices.
  */
 export class Gamepads {
     constructor(setJoystick) {
@@ -189,22 +234,14 @@ export class Gamepads {
                 continue;
             }
             seen.add(pad.index);
-            const axis = (i) => pad.axes[i] ?? 0;
-            let buttons = 0;
-            pad.buttons.forEach((button, i) => {
-                if (button.pressed && i < 32) {
-                    buttons |= 1 << i;
-                }
-            });
-            this.setJoystick(pad.index, true, axis(0), axis(1), 0, axis(2), axis(3), 0,
-                             pointOfView(pad.buttons), buttons >>> 0);
+            this.setJoystick(pad.index, joystickOf(pad));
             if (this.mapping && pad === pads.find(Boolean)) {
                 this.padKeys(pad, keys);
             }
         }
         for (const index of this.attached) {
             if (!seen.has(index)) {
-                this.setJoystick(index, false, 0, 0, 0, 0, 0, 0, -1, 0);
+                this.setJoystick(index, DETACHED);
             }
         }
         this.attached = seen;
@@ -225,11 +262,19 @@ export class Gamepads {
         const config = this.mapping;
         const dead = 0.5;
         if (config.stick === 'arrows') {
-            const x = pad.axes[0] ?? 0, y = pad.axes[1] ?? 0;
-            if (y < -dead || pad.buttons[12]?.pressed) keys.add('ArrowUp');
-            if (y > dead || pad.buttons[13]?.pressed) keys.add('ArrowDown');
-            if (x < -dead || pad.buttons[14]?.pressed) keys.add('ArrowLeft');
-            if (x > dead || pad.buttons[15]?.pressed) keys.add('ArrowRight');
+            const x = pad.axes[0] ?? 0;
+            const y = pad.axes[1] ?? 0;
+            const arrows = [
+                ['ArrowUp', y < -dead, 12],
+                ['ArrowDown', y > dead, 13],
+                ['ArrowLeft', x < -dead, 14],
+                ['ArrowRight', x > dead, 15],
+            ];
+            for (const [code, tilted, button] of arrows) {
+                if (tilted || pad.buttons[button]?.pressed) {
+                    keys.add(code);
+                }
+            }
         }
         for (const [index, code] of Object.entries(config.buttons ?? {})) {
             if (code && pad.buttons[index]?.pressed) {
@@ -292,7 +337,9 @@ export function buildTouchControls(root, profile) {
             const button = document.createElement('button');
             button.className = `dpad-btn dpad-${code.slice(5).toLowerCase()}`;
             button.setAttribute('aria-label', code.slice(5));
-            button.innerHTML = `<svg viewBox="0 0 20 20" aria-hidden="true"><polygon points="${points}"/></svg>`;
+            button.innerHTML =
+                '<svg viewBox="0 0 20 20" aria-hidden="true">' +
+                `<polygon points="${points}"/></svg>`;
             bindTouchButton(button, code);
             dpad.append(button);
         }

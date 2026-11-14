@@ -10,39 +10,44 @@
 // other game runs with. Key remapping and registry values a player adds
 // themselves are the game's own settings, not the profile's.
 
-/* What runs a game when profiles.json could not be read */
-const FALLBACK = {
-    id: 'generic',
-    name: 'Virtools game',
-    touch: {dpad: true, buttons: ['Enter', 'Escape', 'Space']},
-    gamepad: {stick: 'arrows', buttons: {}},
-    settings: [],
-    hint: '',
-};
+/* What every game runs with when profiles.json could not be read: no
+   buttons, keys or options of its own */
+const FALLBACK = { id: 'generic', name: 'Virtools game' };
 
 function baseName(path) {
     return path.split('/').pop().toLowerCase();
 }
 
 /*
- * A profile from its JSON: the data as it is, with functions for what
- * games.mjs asks of it: detect(paths), entry(candidates) and keep(inner).
+ * A profile from its JSON: the data as it is (with the fields it leaves
+ * out empty), and the checks games.mjs asks of a profile: recognizes(paths),
+ * findEntry(candidates) and keeps(path inside the game).
  */
 function makeProfile(data) {
-    const profile = {...FALLBACK, ...data};
     const required = (data.match?.files ?? []).map((name) => name.toLowerCase());
-    profile.detect = required.length === 0 ? null : (paths) => {
-        const names = new Set(paths.map(baseName));
-        return required.every((name) => names.has(name));
-    };
     const entry = data.entry?.toLowerCase();
-    profile.entry = entry ? (candidates) => candidates.find((path) => baseName(path) === entry) ?? null : null;
     const include = data.files?.include?.map((part) => part.toLowerCase());
     const exclude = data.files?.exclude?.map((extension) => extension.toLowerCase()) ?? [];
-    profile.keep = include
-        ? (inner) => include.includes(inner.split('/')[0].toLowerCase())
-        : (inner) => !exclude.some((extension) => inner.toLowerCase().endsWith(extension));
-    return profile;
+    return {
+        touch: { dpad: false, buttons: [] },
+        gamepad: { stick: null, buttons: {} },
+        settings: [],
+        hint: '',
+        ...data,
+        recognizes(paths) {
+            const names = new Set(paths.map(baseName));
+            return required.length > 0 && required.every((name) => names.has(name));
+        },
+        findEntry(candidates) {
+            return entry ? (candidates.find((path) => baseName(path) === entry) ?? null) : null;
+        },
+        keeps(inner) {
+            if (include) {
+                return include.includes(inner.split('/')[0].toLowerCase());
+            }
+            return !exclude.some((extension) => inner.toLowerCase().endsWith(extension));
+        },
+    };
 }
 
 export let PROFILES = [makeProfile(FALLBACK)];
@@ -60,9 +65,17 @@ export function setProfiles(data) {
 /* Read profiles.json, from the page's server or (in Node.js) its folder */
 export async function loadProfiles() {
     const url = new URL('./profiles.json', import.meta.url);
-    const text = url.protocol === 'file:'
-        ? await (await import('node:fs/promises')).readFile(url, 'utf8')
-        : await (await fetch(url)).text();
+    let text;
+    if (url.protocol === 'file:') {
+        const fs = await import('node:fs/promises');
+        text = await fs.readFile(url, 'utf8');
+    } else {
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`${response.status} ${response.statusText}`);
+        }
+        text = await response.text();
+    }
     setProfiles(JSON.parse(text));
 }
 
@@ -72,7 +85,7 @@ export function profileById(id) {
 
 /* The profile for a game made of `paths`: the first that knows it, else the generic one */
 export function detectProfile(paths) {
-    return PROFILES.find((profile) => profile.detect?.(paths)) ?? GENERIC;
+    return PROFILES.find((profile) => profile.recognizes(paths)) ?? GENERIC;
 }
 
 /* The registry values a game starts with, as the player's --registry takes
