@@ -332,6 +332,43 @@ bool nmo_engine_object_is_visible(const nmo_engine_t *engine, nmo_object_id_t id
     return engine != NULL && (eng_object_flags(engine, id) & OBJECT_VISIBLE) != 0;
 }
 
+int32_t nmo_engine_screen_mode_count(void)
+{
+    return ENG_SCREEN_MODE_COUNT;
+}
+
+bool nmo_engine_screen_mode_info(int32_t mode, int32_t *out_width, int32_t *out_height,
+                                 int32_t *out_bpp)
+{
+    if (mode < 0 || mode >= ENG_SCREEN_MODE_COUNT) {
+        return false;
+    }
+    if (out_width != NULL) {
+        *out_width = eng_screen_modes[mode].width;
+    }
+    if (out_height != NULL) {
+        *out_height = eng_screen_modes[mode].height;
+    }
+    if (out_bpp != NULL) {
+        *out_bpp = eng_screen_modes[mode].bpp;
+    }
+    return true;
+}
+
+int32_t nmo_engine_screen_mode(const nmo_engine_t *engine)
+{
+    return engine != NULL ? engine->render.screen_mode : 0;
+}
+
+nmo_status_t nmo_engine_set_screen_mode(nmo_engine_t *engine, int32_t mode)
+{
+    if (engine == NULL || mode < 0 || mode >= ENG_SCREEN_MODE_COUNT) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    engine->render.screen_mode = mode;
+    return NMO_OK;
+}
+
 /* ============================================================================
  * Materials
  * ============================================================================ */

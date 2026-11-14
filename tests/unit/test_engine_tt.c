@@ -591,6 +591,34 @@ TEST(engine_tt, drivers_and_screen_modes_fill_their_arrays)
     fixture_end(&f);
 }
 
+TEST(engine_tt, a_host_screen_mode_sizes_the_render_context)
+{
+    engine_fixture_t f;
+    fixture_begin_document(&f);
+    f.script_id = fixture_add_script(&f, "Script", &f.script_in);
+    fixture_begin_edit(&f);
+    fixture_commit(&f, NULL);
+
+    ASSERT_EQ(ENG_SCREEN_MODE_COUNT, nmo_engine_screen_mode_count());
+    int32_t width = 0, height = 0, bpp = 0;
+    ASSERT_TRUE(nmo_engine_screen_mode_info(2, &width, &height, &bpp));
+    ASSERT_EQ(800, width);
+    ASSERT_EQ(600, height);
+    ASSERT_FALSE(nmo_engine_screen_mode_info(ENG_SCREEN_MODE_COUNT, NULL, NULL, NULL));
+    ASSERT_EQ(0, nmo_engine_screen_mode(f.engine));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, nmo_engine_set_screen_mode(f.engine, -1));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, nmo_engine_set_screen_mode(f.engine, ENG_SCREEN_MODE_COUNT));
+    ASSERT_EQ(NMO_OK, nmo_engine_set_screen_mode(f.engine, 2));
+    ASSERT_EQ(2, nmo_engine_screen_mode(f.engine));
+
+    ASSERT_EQ(NMO_OK, nmo_engine_start(f.engine, NMO_ENGINE_START_ALL));
+    nmo_engine_frame_t frame;
+    ASSERT_EQ(NMO_OK, nmo_engine_render_frame(f.engine, &frame));
+    ASSERT_EQ(800, frame.viewport[2]);
+    ASSERT_EQ(600, frame.viewport[3]);
+    fixture_end(&f);
+}
+
 TEST(engine_tt, timer_and_strings)
 {
     FILE *text = fopen(NMO_TEST_SCRATCH_FILE("text.txt"), "wb");
@@ -2731,6 +2759,7 @@ REGISTER_TEST(engine_tt, debug_mode_and_exit_to_system);
 REGISTER_TEST(engine_tt, statistics_reports_the_last_frame);
 REGISTER_TEST(engine_tt, read_registry_reads_what_the_host_set);
 REGISTER_TEST(engine_tt, drivers_and_screen_modes_fill_their_arrays);
+REGISTER_TEST(engine_tt, a_host_screen_mode_sizes_the_render_context);
 REGISTER_TEST(engine_tt, timer_and_strings);
 REGISTER_TEST(engine_tt, linear_volume_maps_the_volume);
 REGISTER_TEST(engine_tt, preload_textures_counts_each_texture_once);

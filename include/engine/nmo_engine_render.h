@@ -274,6 +274,21 @@ NMO_API nmo_status_t nmo_engine_render_frame(nmo_engine_t *engine, nmo_engine_fr
 NMO_API bool nmo_engine_object_is_visible(const nmo_engine_t *engine, nmo_object_id_t id);
 
 /*
+ * The screen modes of the engine's one render driver, as TT List
+ * ScreenModes lists them: the sizes (and depths) a render context can
+ * have. A player picks one before the game starts, and TT Change
+ * ScreenMode picks another while it runs.
+ */
+NMO_API int32_t nmo_engine_screen_mode_count(void);
+/** Mode `mode`'s width, height and bits per pixel (each optional); false past the list. */
+NMO_API bool nmo_engine_screen_mode_info(int32_t mode, int32_t *out_width, int32_t *out_height,
+                                         int32_t *out_bpp);
+/** The render context's mode now (0, 640 x 480, until changed). */
+NMO_API int32_t nmo_engine_screen_mode(const nmo_engine_t *engine);
+/** Change the render context's mode; NMO_ERR_INVALID_ARGUMENT for one past the list. */
+NMO_API nmo_status_t nmo_engine_set_screen_mode(nmo_engine_t *engine, int32_t mode);
+
+/*
  * A material channel of a mesh (CKMesh::AddChannel): drawn over the mesh's
  * faces with its own material, blended source_blend/dest_blend.
  */
